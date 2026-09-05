@@ -15,6 +15,7 @@ type Props = ViewProps & {
     content: string
     detail: string
     status: string
+    isEditing: boolean
     canEdit: boolean
     canDelete: boolean
     canReorder: boolean

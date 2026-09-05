@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef } from 'react'
-import { composerPatch } from '@pulpo/client-core'
+import { composerPatch, sameComposerContent } from '@pulpo/client-core'
 import type { ComposerState } from '@pulpo/contracts'
 import { usePreferencesStore } from '../../store/preferences'
 import { mobileComposerSync } from './composerSync'
@@ -13,6 +13,7 @@ export function useComposerSync(userId: string | null, draftId: string, state: C
   const wasEditing = useRef(false)
   const baseline = useRef(state)
   const skippingEdit = useRef(false)
+  const hiddenSubmission = useRef<ComposerState | null>(null)
   const opened = useRef<string | null>(null)
   const sync = enabled && userId ? mobileComposerSync(userId) : null
   useEffect(() => {
@@ -23,10 +24,17 @@ export function useComposerSync(userId: string | null, draftId: string, state: C
     deferred.current = null
     wasEditing.current = false
     skippingEdit.current = false
+    hiddenSubmission.current = null
     void sync.open(draftId, latest.current.state, (checkpoint) => {
       if (disposed || !usePreferencesStore.getState().composerSyncEnabled || latest.current.identity !== identity) return
       opened.current = identity
-      const remote = { ...checkpoint.snapshot.state, ...checkpoint.pending }
+      let remote = { ...checkpoint.snapshot.state, ...checkpoint.pending }
+      // An optimistic clear is local until acceptance. Coordinator notifications
+      // (including our own control writes) can still carry the submitted text.
+      if (hiddenSubmission.current) {
+        if (sameComposerContent(remote, hiddenSubmission.current)) remote = { ...remote, content: '', attachments: [] }
+        else hiddenSubmission.current = null
+      }
       // Keep the actual shared state as the baseline. Mobile can resolve model
       // defaults while applying it; those resolved values must also be synced
       // so conditional submission clears compare against the state we send.
@@ -52,8 +60,9 @@ export function useComposerSync(userId: string | null, draftId: string, state: C
     if (paused) return
     if (skippingEdit.current) { skippingEdit.current = false; baseline.current = state; return }
     const patch = composerPatch(baseline.current, state)
+    if (!sameComposerContent(baseline.current, state)) hiddenSubmission.current = null
     baseline.current = state
     sync.edit(draftId, patch)
   })
-  return { sync, skipNextEdit: () => { skippingEdit.current = true } }
+  return { sync, skipNextEdit: () => { hiddenSubmission.current = latest.current.state; skippingEdit.current = true } }
 }

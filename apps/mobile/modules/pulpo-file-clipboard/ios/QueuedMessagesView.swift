@@ -6,9 +6,31 @@ struct QueuedMessageRow: Record {
   @Field var content: String = ""
   @Field var detail: String = ""
   @Field var status: String = ""
+  @Field var isEditing: Bool = false
   @Field var canEdit: Bool = false
   @Field var canDelete: Bool = false
   @Field var canReorder: Bool = false
+}
+
+// Draw separators above entries so the queue never has a trailing row divider.
+private final class QueuedMessageCell: UITableViewCell {
+  private let separator = UIView()
+  var showsSeparator = false { didSet { separator.isHidden = !showsSeparator } }
+
+  override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
+    super.init(style: style, reuseIdentifier: reuseIdentifier)
+    separator.backgroundColor = .separator
+    separator.isUserInteractionEnabled = false
+    addSubview(separator)
+  }
+
+  required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+  override func layoutSubviews() {
+    super.layoutSubviews()
+    separator.frame = CGRect(x: 5, y: 0, width: max(0, bounds.width - 10), height: 1 / traitCollection.displayScale)
+    bringSubviewToFront(separator)
+  }
 }
 
 /// UIKit supplies the long-press lift, insertion preview, autoscroll and drop animation.
@@ -24,6 +46,8 @@ public final class QueuedMessagesView: ExpoView, UITableViewDataSource, UITableV
     super.init(appContext: appContext)
     table.backgroundColor = .clear
     table.separatorStyle = .none
+    table.tableFooterView = UIView()
+    table.showsVerticalScrollIndicator = true
     table.dataSource = self
     table.delegate = self
     table.dragDelegate = self
@@ -32,7 +56,7 @@ public final class QueuedMessagesView: ExpoView, UITableViewDataSource, UITableV
     table.rowHeight = UITableView.automaticDimension
     table.estimatedRowHeight = 56
     table.contentInsetAdjustmentBehavior = .never
-    table.register(UITableViewCell.self, forCellReuseIdentifier: "queue")
+    table.register(QueuedMessageCell.self, forCellReuseIdentifier: "queue")
     addSubview(table)
     contentSizeObservation = table.observe(\.contentSize, options: [.new]) { [weak self] _, _ in
       self?.reportContentHeight()
@@ -66,22 +90,26 @@ public final class QueuedMessagesView: ExpoView, UITableViewDataSource, UITableV
   public func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
     let row = rows[indexPath.row]
     let cell = tableView.dequeueReusableCell(withIdentifier: "queue", for: indexPath)
+    (cell as? QueuedMessageCell)?.showsSeparator = indexPath.row > 0
     cell.selectionStyle = .none
     cell.backgroundColor = .clear
     cell.contentView.subviews.forEach { $0.removeFromSuperview() }
     let card = UIView()
-    card.backgroundColor = .secondarySystemBackground
-    card.layer.cornerRadius = 10
+    card.backgroundColor = row.status == "failed" ? UIColor.systemRed.withAlphaComponent(0.06)
+      : row.isEditing ? UIColor.tertiarySystemFill : .clear
+    card.layer.cornerRadius = 8
     card.translatesAutoresizingMaskIntoConstraints = false
     cell.contentView.addSubview(card)
     let text = UILabel()
     text.font = .preferredFont(forTextStyle: .subheadline)
+    text.textColor = row.isEditing ? .secondaryLabel : .label
     text.adjustsFontForContentSizeCategory = true
     text.numberOfLines = 0
     text.text = row.content
     let detail = UILabel()
     detail.font = .preferredFont(forTextStyle: .caption1)
-    detail.textColor = .secondaryLabel
+    detail.textColor = row.status == "failed" ? .systemRed : .secondaryLabel
+    detail.adjustsFontForContentSizeCategory = true
     detail.numberOfLines = 0
     detail.text = row.detail
     detail.isHidden = row.detail.isEmpty
@@ -102,12 +130,12 @@ public final class QueuedMessagesView: ExpoView, UITableViewDataSource, UITableV
     }
     let stack = UIStackView(arrangedSubviews: [labels])
     stack.alignment = .center
-    for (action, symbol, enabled) in [("edit", "pencil", row.canEdit), ("delete", "trash", row.canDelete)] {
+    for (action, symbol, enabled) in [("delete", "trash", row.canDelete), ("edit", row.isEditing ? "xmark" : "pencil", row.canEdit)] {
       let button = UIButton(type: .system)
       button.setImage(UIImage(systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: 14, weight: .regular)), for: .normal)
       button.tintColor = .secondaryLabel
       button.isEnabled = enabled
-      button.accessibilityLabel = "\(action.capitalized) queued message \(indexPath.row + 1)"
+      button.accessibilityLabel = action == "edit" && row.isEditing ? "Cancel queued message edit" : "\(action.capitalized) queued message \(indexPath.row + 1)"
       button.addAction(UIAction { [weak self] _ in self?.onAction(["id": row.id, "action": action]) }, for: .touchUpInside)
       button.widthAnchor.constraint(equalToConstant: 44).isActive = true
       button.heightAnchor.constraint(equalToConstant: 44).isActive = true
@@ -118,14 +146,18 @@ public final class QueuedMessagesView: ExpoView, UITableViewDataSource, UITableV
     NSLayoutConstraint.activate([
       card.leadingAnchor.constraint(equalTo: cell.contentView.leadingAnchor),
       card.trailingAnchor.constraint(equalTo: cell.contentView.trailingAnchor),
-      card.topAnchor.constraint(equalTo: cell.contentView.topAnchor, constant: 2),
-      card.bottomAnchor.constraint(equalTo: cell.contentView.bottomAnchor, constant: -2),
-      stack.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 10),
-      stack.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -4),
+      card.topAnchor.constraint(equalTo: cell.contentView.topAnchor, constant: 0),
+      card.bottomAnchor.constraint(equalTo: cell.contentView.bottomAnchor, constant: 0),
+      stack.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 5),
+      stack.trailingAnchor.constraint(equalTo: card.trailingAnchor),
       stack.topAnchor.constraint(equalTo: card.topAnchor, constant: 4),
       stack.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -4),
     ])
     return cell
+  }
+
+  public func tableView(_ tableView: UITableView, willDisplay cell: UITableViewCell, forRowAt indexPath: IndexPath) {
+    (cell as? QueuedMessageCell)?.showsSeparator = indexPath.row > 0
   }
 
   public func tableView(_ tableView: UITableView, itemsForBeginning session: UIDragSession, at indexPath: IndexPath) -> [UIDragItem] {
@@ -156,6 +188,11 @@ public final class QueuedMessagesView: ExpoView, UITableViewDataSource, UITableV
     let row = rows.remove(at: source)
     rows.insert(row, at: destination)
     table.moveRow(at: IndexPath(row: source, section: 0), to: IndexPath(row: destination, section: 0))
+    for cell in table.visibleCells {
+      if let indexPath = table.indexPath(for: cell) {
+        (cell as? QueuedMessageCell)?.showsSeparator = indexPath.row > 0
+      }
+    }
     UISelectionFeedbackGenerator().selectionChanged()
     onAction(["id": id, "action": "reorder", "targetMessageId": target, "edge": source < destination ? "after" : "before"])
   }

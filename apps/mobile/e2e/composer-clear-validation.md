@@ -38,3 +38,13 @@ Local setup: existing Compose PostgreSQL plus dedicated Redis 6391, disposable d
 - Full client-core, web, and mobile test suites passed; web builds, mobile typecheck, and repository lint passed. Web tests used `NODE_OPTIONS=--no-experimental-webstorage` for this machine's Node/jsdom compatibility.
 
 The installed simulator native shell was reused with this checkout's JavaScript bundle; no new native build or physical iPhone deployment was needed. These results establish the local reproduction and fix, not deployment or verification on `dev.pulpo.baby`.
+
+## Single-client follow-up — September 5, 2026
+
+An observing web client is not required for another replay path. Mobile's optimistic clear skipped one local sync edit, but left the submitted text in the coordinator until queue acceptance. A later coordinator notification could apply that text to the now-empty composer. Changing a local composer control also produces such a notification. Acceptance then compared the entire composer state, so a changed model, preset, or other control prevented the submitted content from being cleared.
+
+Two regressions run against the original mobile hook failed by restoring `shared draft` into an empty composer: a delayed same-content notification and a local control change before acceptance. They pass with submission content hidden from those notifications. The shared acceptance check now compares message content and attachment IDs, preserving the latest controls. Web uses the same protection.
+
+Related fixes cover attachment and chat identity checks after asynchronous preparation, preservation of newer typing on send failure with sync disabled, preservation of newer runtime/disk drafts after acceptance, empty runtime draft tombstones, and synchronous send locking. The extracted mobile submission lifecycle is used by the actual send handler and has delayed preparation/acceptance/failure regressions.
+
+Validation for this follow-up is automated: 353 mobile, 420 web, and 51 client-core tests passed; mobile typechecking, the web production build, and repository lint passed. This follow-up did not reproduce the user's exact tap sequence on a simulator or physical iPhone and did not deploy a build.

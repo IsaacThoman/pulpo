@@ -36,6 +36,21 @@ function useDraft() {
   return { state, setState, ...sync }
 }
 describe('composer view binding', () => {
+  it('does not replay submitted text when controls change before queue acceptance', async () => {
+    const view = renderHook(useDraft)
+    await act(async () => { view.result.current.setState((state) => ({ ...state, content: 'queued' })) })
+    const submitted = view.result.current.state
+    await act(async () => { await registry.sync!.prepareSubmission('new', submitted) })
+    await act(async () => {
+      view.result.current.skipNextEdit()
+      view.result.current.setState((state) => ({ ...state, content: '' }))
+    })
+    await act(async () => { view.result.current.setState((state) => ({ ...state, agentMode: false })) })
+    expect(view.result.current.state.content).toBe('')
+    await act(async () => { await registry.sync!.completeSubmission('new', submitted) })
+    expect(view.result.current.state.content).toBe('')
+    view.unmount()
+  })
   it('keeps local editing functional while sync is disabled', async () => {
     useSettings.getState().set('composerSyncEnabled', false)
     const view = renderHook(useDraft)

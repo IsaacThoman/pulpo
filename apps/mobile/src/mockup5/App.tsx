@@ -3,6 +3,7 @@ import { enqueueMessage, mutateQueuedMessage, shouldQueueMessage } from '../feat
 import type { MobileQueuedMessage } from '../types';
 import { mobileComposerSync } from '../features/chat/composerSync';
 import { useComposerSync } from '../features/chat/useComposerSync';
+import { submitComposerDraft } from '../features/chat/composerSubmission';
 import type { ComposerState } from '@pulpo/contracts';
 import {
   createContext,
@@ -263,7 +264,11 @@ import {
   usesPersistentSidebar,
 } from '../responsive';
 
+const CHAT_COMPOSER_BOTTOM_PADDING = 156;
+const CHAT_COMPOSER_MESSAGE_GAP = 12;
+
 type ChatScrollViewProps = ScrollViewProps & {
+  composerPadding: SharedValue<number>;
   blankSpace: SharedValue<number>;
   freezeKeyboardLayout: boolean;
   keyboardOffset: number;
@@ -271,6 +276,7 @@ type ChatScrollViewProps = ScrollViewProps & {
 
 const ChatScrollView = forwardRef<KeyboardChatScrollViewRef, ChatScrollViewProps>(({
   blankSpace,
+  composerPadding,
   freezeKeyboardLayout,
   keyboardOffset,
   ...props
@@ -279,6 +285,7 @@ const ChatScrollView = forwardRef<KeyboardChatScrollViewRef, ChatScrollViewProps
     {...props}
     automaticallyAdjustContentInsets={false}
     blankSpace={blankSpace}
+    extraContentPadding={composerPadding}
     contentInsetAdjustmentBehavior="never"
     freeze={freezeKeyboardLayout}
     keyboardLiftBehavior="whenAtEnd"
@@ -3459,6 +3466,7 @@ function ChatView({
   const submittedTurnFollowRevision = useRef(0);
   const measuredContentHeight = useRef(0);
   const keyboardBlankSpace = useSharedValue(0);
+  const composerPadding = useSharedValue(0);
   const preferredAgentMode = usePreferencesStore((state) => state.agentModes[model.id] ?? true);
   const agentAvailable = usePrototypeStore((state) => state.agentAvailable);
   const canUseAgent = agentAvailable && model.agentEnabled;
@@ -3474,18 +3482,16 @@ function ChatView({
   const nativeImagePreviewPendingRef = useRef(false);
   const draftOwnerRef = useRef(`draft:${Crypto.randomUUID()}`);
   const setAttachments = useCallback((update: SetStateAction<ComposerAttachment[]>) => {
-    setAttachmentState((current) => {
-      const next = typeof update === 'function' ? update(current) : update;
-      attachmentsRef.current = next;
-      for (const attachment of next) {
-        latestAttachmentsRef.current.set(attachment.localId, attachment);
-        const activeDraft = activeDraftRef.current;
-        if (activeDraft && attachment.ownerId.startsWith('draft:')) {
-          attachmentDraftOwnersRef.current.set(attachment.localId, activeDraft);
-        }
+    const next = typeof update === 'function' ? update(attachmentsRef.current) : update;
+    attachmentsRef.current = next;
+    for (const attachment of next) {
+      latestAttachmentsRef.current.set(attachment.localId, attachment);
+      const activeDraft = activeDraftRef.current;
+      if (activeDraft && attachment.ownerId.startsWith('draft:')) {
+        attachmentDraftOwnersRef.current.set(attachment.localId, activeDraft);
       }
-      return next;
-    });
+    }
+    setAttachmentState(next);
   }, []);
   const [imageViewer, setImageViewer] = useState<{
     attachments: Attachment[];
@@ -3493,6 +3499,8 @@ function ChatView({
     origin?: AttachmentImageTransitionOrigin;
   } | null>(null);
   const [messageEdit, setMessageEdit] = useState<MessageEditSession | null>(null);
+  const [queueCollapsed, setQueueCollapsed] = useState(false);
+  useEffect(() => { setQueueCollapsed(false); }, [chatId]);
   const preservedComposerRef = useRef<{
     input: string;
     attachments: ComposerAttachment[];
@@ -3505,6 +3513,7 @@ function ChatView({
   const draftLoadRevisionRef = useRef(0);
   const messageEditChatIdRef = useRef(chatId);
   const [sending, setSending] = useState(false);
+  const sendingRef = useRef(false);
   const [presetPickerOpen, setPresetPickerOpen] = useState(false);
   const [headerOverlayHeight, setHeaderOverlayHeight] = useState(insets.top + 64);
   const [promptConfig, setPromptConfig] = useState({
@@ -3565,10 +3574,11 @@ function ChatView({
     <ChatScrollView
       {...props}
       blankSpace={keyboardBlankSpace}
+      composerPadding={composerPadding}
       freezeKeyboardLayout={!keyboardLayoutEnabled}
       keyboardOffset={keyboardSafeAreaOffset}
     />
-  ), [keyboardBlankSpace, keyboardLayoutEnabled, keyboardSafeAreaOffset]);
+  ), [composerPadding, keyboardBlankSpace, keyboardLayoutEnabled, keyboardSafeAreaOffset]);
   const emptyStateAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{
       translateY: -resolveKeyboardLayoutProgress(keyboardProgress.value, keyboardLayoutEnabled) * (
@@ -4291,7 +4301,7 @@ function ChatView({
   }, [messageEdit, setAttachments]);
 
   const submitMessage = async () => {
-    if (sending) return;
+    if (sendingRef.current) return;
     const sendPolicy = attachmentSendPolicy(attachments, { editing: Boolean(messageEdit) });
     if (!sendPolicy.allowed) {
       Alert.alert(
@@ -4302,22 +4312,22 @@ function ChatView({
       );
       return;
     }
+    sendingRef.current = true;
     setSending(true);
     let followSnapshot: ChatFollowSnapshot | null = null;
     const submittedDraft = { input, attachments: [...attachments], agentEnabled: activeAgentEnabled };
     const submittedDraftIdentity = activeDraftRef.current;
     const restoreSubmittedDraft = () => {
-      if (activeDraftRef.current?.scope !== submittedDraftIdentity?.scope) return;
-      if (composerSync && !composerSync.canRestoreSubmission(submittedDraftIdentity?.draftId ?? NEW_CHAT_DRAFT_ID, sharedComposerState)) return;
       onChangeInput(submittedDraft.input);
+      inputRef.current = submittedDraft.input;
       setAttachments(restoreLatestDraft(submittedDraft.attachments, latestAttachmentsRef.current));
-      setAgentEnabled(submittedDraft.agentEnabled);
       draftOwnerRef.current = submittedDraft.attachments[0]?.ownerId ?? `draft:${Crypto.randomUUID()}`;
       requestAnimationFrame(() => composerInputRef.current?.focus());
     };
     try {
       if (messageEdit) {
         const prepared = await Promise.all(submittedDraft.attachments.map(uploadOne));
+        if (messageEditChatIdRef.current !== chatId) return;
         if (prepared.some((attachment) => attachment === null)) {
           Alert.alert('Some files couldn’t upload', 'Retry or remove the failed files, then save again.');
           return;
@@ -4328,7 +4338,7 @@ function ChatView({
             action: 'save_edit', input: submittedDraft.input.trim(), modelId: model.id, presetSelections,
             agentMode: activeAgentEnabled, attachmentIds: (prepared as PreparedAttachment[]).map((item) => item.serverId),
           }, (prepared as PreparedAttachment[]).map((item) => ({ id: item.serverId, name: item.name, mimeType: item.mimeType, sizeBytes: item.size ?? 0 })));
-          restoreComposer();
+          if (queueEditRef.current === queueEdit && messageEditChatIdRef.current === queueEdit.chatId) restoreComposer();
           return;
         }
         const accepted = await onEdit(
@@ -4339,59 +4349,66 @@ function ChatView({
         );
         if (accepted) {
           for (const attachment of submittedDraft.attachments) latestAttachmentsRef.current.delete(attachment.localId);
-          restoreComposer();
+          if (messageEditChatIdRef.current === chatId) restoreComposer();
         }
         return;
       }
-      // Arm before invoking onSend: it inserts the optimistic rows before its
-      // first network await, so arming after the promise resolves is too late.
       const sharedDraftId = submittedDraftIdentity?.draftId ?? NEW_CHAT_DRAFT_ID;
-      const submittedRevision = await composerSync?.prepareSubmission(sharedDraftId, sharedComposerState);
-      if (!shouldQueueMessage(assistantStatus !== 'idle', queuedMessages.length)) followSnapshot = armSubmittedTurnFollow();
-      const pendingSend = onSend(
-        submittedDraft.input,
-        submittedDraft.attachments,
-        { presetSelections, agentEnabled: activeAgentEnabled, temporary, autoExpire },
-        async () => {
-          const prepared = await Promise.all(submittedDraft.attachments.map(uploadOne));
-          if (prepared.some((attachment) => attachment === null)) {
-            throw new Error('Some files couldn’t upload. Retry or remove the failed files, then send again.');
-          }
-          return prepared as PreparedAttachment[];
+      const accepted = await submitComposerDraft({
+        submitted: { scope: submittedDraftIdentity?.scope ?? null, body: submittedDraft.input, attachments: submittedDraft.attachments },
+        current: () => ({ scope: activeDraftRef.current?.scope ?? null, body: inputRef.current, attachments: attachmentsRef.current }),
+        prepare: async () => composerSync?.prepareSubmission(sharedDraftId, sharedComposerState),
+        send: () => {
+          // Arm before onSend inserts its optimistic rows.
+          if (!shouldQueueMessage(assistantStatus !== 'idle', queuedMessages.length)) followSnapshot = armSubmittedTurnFollow();
+          return onSend(
+            submittedDraft.input,
+            submittedDraft.attachments,
+            { presetSelections, agentEnabled: activeAgentEnabled, temporary, autoExpire },
+            async () => {
+              const prepared = await Promise.all(submittedDraft.attachments.map(uploadOne));
+              if (prepared.some((attachment) => attachment === null)) {
+                throw new Error('Some files couldn’t upload. Retry or remove the failed files, then send again.');
+              }
+              return prepared as PreparedAttachment[];
+            },
+          );
         },
-      );
-      if (inputRef.current === submittedDraft.input) {
-        skipNextEdit();
-        onChangeInput('');
-        inputRef.current = '';
-        setAttachments([]);
-        draftOwnerRef.current = `draft:${Crypto.randomUUID()}`;
-      }
-      const accepted = await pendingSend;
+        clear: () => {
+          skipNextEdit();
+          onChangeInput('');
+          inputRef.current = '';
+          attachmentsRef.current = [];
+          setAttachments([]);
+          draftOwnerRef.current = `draft:${Crypto.randomUUID()}`;
+          if (submittedDraftIdentity) {
+            cacheComposerDraft(submittedDraftIdentity.scope, { body: '', attachments: [] });
+            if (submittedDraftIdentity.namespace) void saveDraft(submittedDraftIdentity.namespace, sharedDraftId, '', []);
+          }
+        },
+        canRestore: () => !composerSync || composerSync.canRestoreSubmission(sharedDraftId, sharedComposerState),
+        restore: restoreSubmittedDraft,
+        complete: async (revision) => { await composerSync?.completeSubmission(sharedDraftId, sharedComposerState, revision ?? undefined); },
+      });
       if (!accepted) {
         if (followSnapshot) restoreSubmittedTurnFollow(followSnapshot);
         followSnapshot = null;
-        restoreSubmittedDraft();
         return;
       }
-      await composerSync?.completeSubmission(sharedDraftId, sharedComposerState, submittedRevision ?? undefined);
-      if (submittedDraftIdentity) {
-        deleteCachedComposerDraft(submittedDraftIdentity.scope);
-        if (submittedDraftIdentity.namespace) {
-          void saveDraft(submittedDraftIdentity.namespace, submittedDraftIdentity.draftId, '', []);
-        }
-      }
       followSnapshot = null;
+      const retainedAttachments = submittedDraftIdentity
+        ? cachedComposerDraft<ComposerAttachment>(submittedDraftIdentity.scope)?.attachments ?? [] : [];
       for (const attachment of submittedDraft.attachments) {
+        if ([...attachmentsRef.current, ...retainedAttachments].some((item) => item.localId === attachment.localId)) continue;
         latestAttachmentsRef.current.delete(attachment.localId);
         activeUploadsRef.current.delete(attachment.localId);
         attachmentDraftOwnersRef.current.delete(attachment.localId);
       }
     } catch (error) {
       if (followSnapshot) restoreSubmittedTurnFollow(followSnapshot);
-      if (!messageEdit) restoreSubmittedDraft();
       Alert.alert('Couldn’t send message', error instanceof Error ? error.message : 'Your complete draft was restored. Please try again.');
     } finally {
+      sendingRef.current = false;
       setSending(false);
     }
   };
@@ -4770,45 +4787,78 @@ function ChatView({
       )}
 
       <KeyboardStickyView enabled={keyboardLayoutEnabled} offset={keyboardOffset} style={styles.composerSticky}>
-        <View style={[styles.composerWrap, styles.chatContent, { paddingHorizontal: Math.max(12, horizontalPadding - 6), paddingBottom: Math.max(insets.bottom, 10) }]}>
-            {queuedMessages.length > 0 && (
-              <QueuedMessagesView
-                maxHeight={Math.min(200, windowHeight * 0.25)}
-                style={{ marginBottom: 8 }}
-                rows={queuedMessages.map((item) => {
-                  const locked = queueBusy || sending || item.status === 'dispatching' || Boolean(item.pendingSubmissionId && !item.localFailure) || expired;
-                  return {
-                    id: item.id,
-                    content: item.content || 'Attachments',
-                    detail: [item.attachments.map((attachment) => attachment.name).join(', '), item.error].filter(Boolean).join(' · '),
-                    status: item.pendingSubmissionId && !item.localFailure ? 'Waiting to sync' : item.status,
-                    canEdit: !locked && !messageEdit && !queuedMessages.some((candidate) => candidate.status === 'editing' && candidate.id !== item.id),
-                    canDelete: !locked && !messageEdit,
-                    canReorder: !locked && !messageEdit && !queuedMessages.some((candidate) => Boolean(candidate.pendingSubmissionId) || candidate.status === 'editing'),
-                  };
-                })}
-                onAction={({ nativeEvent: action }) => {
-                  const item = queuedMessages.find((candidate) => candidate.id === action.id);
-                  if (!item || queueBusy || sending || expired || messageEdit || item.status === 'dispatching') return;
-                  if (action.action === 'edit') {
-                    void beginQueueEdit(item);
-                  } else if (chatId && draftNamespace) {
-                    if (action.action === 'delete') {
-                      void runQueueAction(() => mutateQueuedMessage(queueClient, draftNamespace, chatId, item.id, { action: 'delete' }));
-                    } else if (action.targetMessageId && action.edge) {
-                      const targetMessageId = action.targetMessageId;
-                      const edge = action.edge;
-                      void runQueueAction(() => mutateQueuedMessage(queueClient, draftNamespace, chatId, item.id, { action: 'reorder', targetMessageId, edge }));
-                    }
-                  }
-                }}
-              />
-            )}
+        <View
+          onLayout={({ nativeEvent: { layout } }) => {
+            // The resting composer is already covered by the transcript's static
+            // padding. Let the keyboard controller lift only the additional height,
+            // using the same at-end behavior for queue expansion and multiline drafts.
+            composerPadding.value = Math.max(0, layout.height + CHAT_COMPOSER_MESSAGE_GAP - CHAT_COMPOSER_BOTTOM_PADDING);
+          }}
+          style={[styles.composerWrap, styles.chatContent, { paddingHorizontal: Math.max(12, horizontalPadding - 6), paddingBottom: Math.max(insets.bottom, 10) }]}
+        >
             <Glass
               interactive
               style={styles.composer}
               tintColor={temporary ? colorScheme === 'dark' ? 'rgba(88,28,135,0.32)' : 'rgba(175,82,222,0.16)' : undefined}
             >
+              {queuedMessages.length > 0 && (
+                <View style={styles.composerQueue}>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={queueCollapsed ? 'Expand queued messages' : 'Collapse queued messages'}
+                    accessibilityState={{ expanded: !queueCollapsed }}
+                    onPress={() => { Haptics.selectionAsync(); setQueueCollapsed((value) => !value); }}
+                    style={styles.composerQueueHeader}
+                  >
+                    <Text style={styles.composerQueueTitle}>Queued</Text>
+                    <View style={styles.composerQueueDisclosure}>
+                      {queuedMessages.some((item) => item.status === 'failed' || item.localFailure) && (
+                        <Icon name="exclamationmark.circle" size={13} color={COLORS.critical} />
+                      )}
+                      <Icon name={queueCollapsed ? 'chevron.up' : 'chevron.down'} size={11} color={COLORS.muted} />
+                    </View>
+                  </Pressable>
+                  {!queueCollapsed && (
+                    <QueuedMessagesView
+                      maxHeight={Math.min(200, windowHeight * 0.25)}
+                      style={styles.composerQueueRows}
+                      rows={queuedMessages.map((item) => {
+                        const isEditing = queueEditRef.current?.id === item.id;
+                        const locked = queueBusy || sending || item.status === 'dispatching' || Boolean(item.pendingSubmissionId && !item.localFailure) || expired;
+                        return {
+                          id: item.id,
+                          content: isEditing ? 'Editing queued message…' : item.content || 'Attachments',
+                          isEditing,
+                          detail: [item.pendingSubmissionId && !item.localFailure ? 'Waiting to sync' : item.status === 'dispatching' ? 'Sending…' : item.status === 'editing' && !isEditing ? 'Editing on another device' : item.status === 'failed' && !item.error ? 'Couldn’t send. Edit to retry.' : '', item.attachments.map((attachment) => attachment.name).join(', '), item.error].filter(Boolean).join(' · '),
+                          status: item.pendingSubmissionId && !item.localFailure ? 'Waiting to sync' : item.status,
+                          canEdit: !locked && (!messageEdit || isEditing) && !queuedMessages.some((candidate) => candidate.status === 'editing' && candidate.id !== item.id),
+                          canDelete: !locked && !messageEdit,
+                          canReorder: !locked && !messageEdit && !queuedMessages.some((candidate) => Boolean(candidate.pendingSubmissionId) || candidate.status === 'editing'),
+                        };
+                      })}
+                      onAction={({ nativeEvent: action }) => {
+                        const item = queuedMessages.find((candidate) => candidate.id === action.id);
+                        if (!item || queueBusy || sending || expired || item.status === 'dispatching' || (item.pendingSubmissionId && !item.localFailure)) return;
+                        if (messageEdit) {
+                          if (action.action === 'edit' && queueEditRef.current?.id === item.id) void cancelMessageEdit();
+                          return;
+                        }
+                        if (action.action === 'edit') {
+                          void beginQueueEdit(item);
+                        } else if (chatId && draftNamespace) {
+                          if (action.action === 'delete') {
+                            void runQueueAction(() => mutateQueuedMessage(queueClient, draftNamespace, chatId, item.id, { action: 'delete' }));
+                          } else if (action.targetMessageId && action.edge) {
+                            const targetMessageId = action.targetMessageId;
+                            const edge = action.edge;
+                            void runQueueAction(() => mutateQueuedMessage(queueClient, draftNamespace, chatId, item.id, { action: 'reorder', targetMessageId, edge }));
+                          }
+                        }
+                      }}
+                    />
+                  )}
+                </View>
+              )}
               {messageEdit ? (
                 <View style={styles.messageEditBanner}>
                   <Icon name="pencil" size={12} color={COLORS.muted} />
@@ -4845,7 +4895,9 @@ function ChatView({
                 maxFontSizeMultiplier={1.6}
                 multiline
                 maxLength={1_000_000}
-                onChangeText={onChangeInput}
+                onFocus={() => setQueueCollapsed(true)}
+                onBlur={() => setQueueCollapsed(false)}
+                onChangeText={(value) => { inputRef.current = value; onChangeInput(value); }}
                 onSelectionChange={(event) => { inputSelectionRef.current = event.nativeEvent.selection; }}
                 placeholder={attachments.length > 0 ? 'Add a caption…' : messageEdit ? 'Edit message…' : temporary ? 'Temporary message…' : 'Message…'}
                 placeholderTextColor={COLORS.muted}
@@ -5551,7 +5603,7 @@ const styles = StyleSheet.create({
   temporaryExpiredBanner: { backgroundColor: 'rgba(139,92,246,0.14)' },
   connectionBannerText: { color: COLORS.muted, fontSize: 11.5, fontWeight: '600' },
   chatContent: { width: '100%', maxWidth: CHAT_CONTENT_MAX, alignSelf: 'center' },
-  conversation: { width: '100%', minWidth: 0, paddingBottom: 156 },
+  conversation: { width: '100%', minWidth: 0, paddingBottom: CHAT_COMPOSER_BOTTOM_PADDING },
   transcriptColumn: { width: '100%', minWidth: 0, maxWidth: CHAT_CONTENT_MAX, alignSelf: 'center' },
   emptyConversation: { flex: 1, justifyContent: 'center', paddingBottom: 156 },
   emptyConversationAccessible: { flexGrow: 1, justifyContent: 'flex-start', paddingBottom: 220 },
@@ -5675,6 +5727,11 @@ const styles = StyleSheet.create({
   suggestionLabel: { color: COLORS.textSoft, fontSize: 13, lineHeight: 18 },
 
   composerSticky: { position: 'absolute', left: 0, right: 0, bottom: 0 },
+  composerQueue: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.line, marginBottom: 10 },
+  composerQueueHeader: { minHeight: 44, paddingHorizontal: 5, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  composerQueueTitle: { color: COLORS.muted, fontSize: 12, fontWeight: '500' },
+  composerQueueDisclosure: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  composerQueueRows: { marginBottom: 6 },
   composerWrap: { paddingTop: 6 },
   composer: { minHeight: 108, borderRadius: 28, paddingTop: 8, paddingHorizontal: 10, paddingBottom: 4 },
   messageEditBanner: { flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 6, paddingBottom: 8 },

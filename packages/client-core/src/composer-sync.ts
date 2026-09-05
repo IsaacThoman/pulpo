@@ -29,6 +29,11 @@ export function composerPatch(before: ComposerState, after: ComposerState): Part
   return Object.fromEntries((Object.keys(after) as (keyof ComposerState)[]).filter((key) => !equal(before[key], after[key])).map((key) => [key, after[key]]))
 }
 
+/** Submission clears consume message content, while leaving composer controls intact. */
+export function sameComposerContent(before: ComposerState, after: ComposerState): boolean {
+  return before.content === after.content && equal(before.attachments.map((item) => item.id), after.attachments.map((item) => item.id))
+}
+
 /** One account/instance per coordinator. A disconnected client never replays against a new revision. */
 export class ComposerSync {
   private entries = new Map<string, Entry>()
@@ -175,7 +180,7 @@ export class ComposerSync {
   }
   canRestoreSubmission(draftId: string, submitted: ComposerState): boolean {
     const entry = this.entries.get(draftId)
-    return !entry || equal({ ...entry.snapshot.state, ...entry.inflight, ...entry.pending }, submitted)
+    return !entry || sameComposerContent({ ...entry.snapshot.state, ...entry.inflight, ...entry.pending }, submitted)
   }
   async prepareSubmission(draftId: string, submitted: ComposerState): Promise<number | null> {
     const revision = await this.flush(draftId)
@@ -206,7 +211,7 @@ export class ComposerSync {
     for (let attempt = 0; attempt < 3; attempt++) {
       const revision = await this.flush(entry.snapshot.draftId)
       if (revision === null) return
-      const matching = submitted.some((receipt) => equal(entry.snapshot.state, receipt.state))
+      const matching = submitted.some((receipt) => sameComposerContent(entry.snapshot.state, receipt.state))
       if (matching) {
         const result = await this.clear(entry.snapshot.draftId, revision)
         if (result === 'pending') return
