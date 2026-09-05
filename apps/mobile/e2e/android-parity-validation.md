@@ -93,14 +93,3 @@ showed a System UI timeout after reboot. Restarting without snapshots and
 relaunching the app restored operation; the file and final layout checks above
 were completed afterward. No Pulpo JavaScript or Android runtime crash was
 reported during that investigation.
-
-## Screenshots
-
-![Android conversation](evidence/android-parity/android-chat-final.png)
-![Android settings](evidence/android-parity/android-settings-final.png)
-![Android wide layout](evidence/android-parity/android-wide-final.png)
-![Android model menu](evidence/android-parity/android-models-final.png)
-![Sliding history with inline folders](evidence/android-parity/android-history-inline.png)
-![History context menu](evidence/android-parity/android-history-menu.png)
-![Native PDF viewer](evidence/android-parity/android-pdf-viewer.png)
-![iOS baseline](evidence/android-parity/ios-current.png)

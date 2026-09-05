@@ -20,7 +20,7 @@ Reviewed September 5, 2026 on Android 17 / API 37, with an iPhone 17 Pro / iOS 2
 
 | Area | Checks in this pass |
 | --- | --- |
-| Empty chat | Expiry off/on, temporary on/off, expiry restoration, stable landing model/provider/composer bounds and centered header between visible actions; tested with keyboard visible and hidden. Captured an intermediate animation frame and the complete transition recording below. |
+| Empty chat | Expiry off/on, temporary on/off, expiry restoration, stable landing model/provider/composer bounds and centered header between visible actions; tested with keyboard visible and hidden. Visually checked intermediate animation frames and the complete transition. |
 | Reduced motion | Repeated all badge states with Android animator duration scale disabled; controls remain usable and bounds stay fixed. Restored the prior system setting. |
 | Appearance | Changed system light → dark → light with an unsent draft open. Text, logos, suggestion cards, and composer update together; the draft remains intact. Removed the test draft afterward. This resolves the live-theme limitation recorded in the selector review. |
 | Populated chat | Opened an existing conversation, checked transcript and code styling, opened its message menu and native Select text screen, and returned without editing or sending. |
@@ -45,14 +45,11 @@ python3 apps/mobile/e2e/android-badge-layout.py --model 'GPT-5.6 Terra'
 
 The model argument is the selected model’s visible name. The script changes only unsent draft flags and finishes with both off. Bounds from this review are saved in [layout-regression.json](evidence/android-quality/layout-regression.json).
 
-## Evidence
+## Follow-up checks
 
 ### Wallpaper-independent temporary colors
 
-Temporary mode previously reused Android’s wallpaper-derived secondary container and primary accent, making it gray on a phone with a monochrome palette. A dedicated light/dark purple palette now supplies the chat surface, composer, badge, and active ghost button. Other Android controls retain their normal dynamic theme. The emulator previews below verify both appearances; TypeScript, lint, and the production-configured Release build passed.
-
-![Temporary purple in light mode](evidence/android-quality/temporary-purple-light.png)
-![Temporary purple in dark mode](evidence/android-quality/temporary-purple-dark.png)
+Temporary mode previously reused Android’s wallpaper-derived secondary container and primary accent, making it gray on a phone with a monochrome palette. A dedicated light/dark purple palette now supplies the chat surface, composer, badge, and active ghost button. Other Android controls retain their normal dynamic theme. Both appearances were visually verified on the emulator; TypeScript, lint, and the production-configured Release build passed.
 
 ### Temporary composer tint follow-up
 
@@ -67,12 +64,3 @@ The model menu uses centered native content inside an animated available-width c
 The shared Android menu stretched its label with Compose `weight(1)` inside a full-width button. This separated short labels from their chevrons in the model selector, generation presets, and lab filter. The button now wraps its native content within its available slot. A trailing 26 dp inset reserves an 18 dp chevron plus an 8 dp gap without allowing long text to push the chevron out. The 48 dp touch target is retained. Compact presets also use the available composer width instead of truncating early.
 
 On Android 17, UI Automator measured a 21 px / 8 dp label-to-chevron gap at 420 dpi for both model and generation menus. Checks covered GPT-5.6 Luna, DeepSeek V4 Flash, GLM-5.3 Flash, short and combined preset labels, 320 dp width, and 200% text. At 320 dp, `Low · Fast` fits completely; long model labels ellipsize with the arrow visible. Model selection and opening/dismissing menus worked. Device size and font scale were restored. Targeted menu interaction tests, mobile TypeScript, lint, and the production-configured Release build passed.
-
-![Header recenters between visible controls while landing content stays stable](evidence/android-quality/header-centering.gif)
-
-Earlier landing-badge animation reference (before the header-centering follow-up):
-![Stable landing layout with animated expiry and temporary states](evidence/android-quality/badge-motion.gif)
-![Live dark appearance with the draft retained](evidence/android-quality/live-dark.png)
-![Live return to light appearance with the same draft](evidence/android-quality/live-light.png)
-![Android interface settings](evidence/android-quality/interface.png)
-![Android two-factor screen](evidence/android-quality/two-factor.png)

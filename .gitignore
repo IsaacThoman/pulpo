@@ -35,3 +35,12 @@ apps/mobile/.expo/
 apps/mobile/ios/
 apps/mobile/android/
 apps/mobile/.env.local
+
+# Generated mobile visual QA captures (keep outside version control)
+apps/mobile/e2e/evidence/**/*.png
+apps/mobile/e2e/evidence/**/*.jpg
+apps/mobile/e2e/evidence/**/*.jpeg
+apps/mobile/e2e/evidence/**/*.gif
+apps/mobile/e2e/evidence/**/*.mp4
+apps/mobile/e2e/evidence/**/*.mov
+apps/mobile/e2e/evidence/**/*.webm

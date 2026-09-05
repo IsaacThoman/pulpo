@@ -65,13 +65,6 @@ phone size, density, and text scale were restored after the review.
 
 This pass does not replace physical-device testing, a complete TalkBack audit,
 or release-signed passkey/App Link validation. The new landscape IME option was
-typechecked and bundled; the final keyboard screenshots cover portrait and
+typechecked and bundled; the final keyboard checks cover portrait and
 wide layouts. Generation and queue lifecycle checks remain documented in the
 earlier fixture report.
-
-## Evidence
-
-![Compact history at 200% text](evidence/android-layout/large-text-history.png)
-![Production catalog search with keyboard](evidence/android-layout/model-search.png)
-![Profile screen with keyboard](evidence/android-layout/profile-keyboard.png)
-![Native text-selection controls](evidence/android-layout/text-selection.png)
