@@ -6,12 +6,12 @@ import { ComposerSync } from '@pulpo/client-core'
 import { emptyComposerState, type ComposerAck, type ComposerSnapshot, type ComposerState, type ComposerWrite } from '@pulpo/contracts'
 
 const clients = vi.hoisted(() => ({ mobile: null as ComposerSync | null, web: null as ComposerSync | null }))
-vi.mock('../../../../mobile/src/features/chat/composerSync', () => ({ mobileComposerSync: () => clients.mobile }))
-vi.mock('../../../../mobile/src/store/preferences', () => ({ usePreferencesStore: Object.assign(() => true, { getState: () => ({ composerSyncEnabled: true }) }) }))
+vi.mock('../../mobile/src/features/chat/composerSync', () => ({ mobileComposerSync: () => clients.mobile }))
+vi.mock('../../mobile/src/store/preferences', () => ({ usePreferencesStore: Object.assign(() => true, { getState: () => ({ composerSyncEnabled: true }) }) }))
 vi.mock('@/lib/local-first/composer-sync', () => ({ webComposerSync: () => clients.web }))
 vi.mock('@/stores/composer-sync-preference', () => ({ useComposerSyncPreference: Object.assign((select: (state: object) => unknown) => select({ enabled: true, generation: '' }), { getState: () => ({ enabled: true, generation: '' }) }) }))
-import { useComposerSync as useMobileSync } from '../../../../mobile/src/features/chat/useComposerSync'
-import { useComposerSync as useWebSync } from './use-composer-sync'
+import { useComposerSync as useMobileSync } from '../../mobile/src/features/chat/useComposerSync'
+import { useComposerSync as useWebSync } from '../src/components/chat/use-composer-sync'
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
 let root: Root
