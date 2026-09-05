@@ -15,3 +15,5 @@ The admin Users screen shows deletion progress and the most recent cleanup error
 Apply database migrations before starting the updated API and worker, then release the updated clients. Older clients remain compatible; updated clients treat missing account-deletion support as unavailable. Do not roll back the database guards while deletions are pending.
 
 For the PostgreSQL integration suite, use an isolated database named `pulpo_account_test`, run the migrations, and set `PULPO_ACCOUNT_DELETION_TESTS=true` and `DATABASE_URL` explicitly before running `npm run test -w @pulpo/server -- src/account`. The integration tests truncate fixtures and must never target a service database. External storage, queue dispatch, and Stripe are mocked in those tests.
+
+Clients fetch session-authenticated `GET /api/me/deletion` before showing credential fields. Its `twoFactorEnabled` value controls whether an authenticator or recovery code is shown and required; unavailable status blocks submission and offers retry. Pending sessions can use this endpoint; API keys and impersonation cannot. The server still verifies current requirements on deletion submission.

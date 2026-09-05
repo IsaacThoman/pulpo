@@ -982,6 +982,8 @@ const esUi: Record<string, string> = {
   "Restrict this key to specific models, or allow every model.": "Restringe esta clave a modelos concretos o permite todos los modelos.",
   "Retained tool output (bytes)": "Salida de herramienta retenida (bytes)",
   "retry": "reintentar",
+  "Some data on this device could not be removed. Clear this site’s local storage to remove it.": "No se pudieron eliminar algunos datos de este dispositivo. Borra el almacenamiento local de este sitio para eliminarlos.",
+  "Retry": "Reintentar",
   "Retry {{0}}": "Reintentar {{0}}",
   "Retry delay (sec)": "Retardo de reintento (seg)",
   "Retry or remove the failed upload to continue. Later messages will wait.": "Vuelva a intentarlo o elimine la carga fallida para continuar. Los mensajes posteriores esperarán.",

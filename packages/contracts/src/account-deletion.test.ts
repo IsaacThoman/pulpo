@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { accountDeletionInputSchema, authSettingsSchema, mobileConfigSchema } from './index.js'
+import { accountDeletionRequirementsSchema, accountDeletionInputSchema, authSettingsSchema, mobileConfigSchema } from './index.js'
 
 describe('account deletion contracts', () => {
   it('enables deletion by default for new and existing instance settings', () => {
@@ -16,4 +16,10 @@ describe('account deletion contracts', () => {
     expect(mobileConfigSchema.parse(config).auth.accountDeletionEnabled).toBe(false)
     expect(mobileConfigSchema.parse({ ...config, auth: { ...auth, accountDeletionEnabled: true } }).auth.accountDeletionEnabled).toBe(true)
   })
+  it('does not interpret missing second-factor status as disabled', () => {
+    expect(accountDeletionRequirementsSchema.safeParse({}).success).toBe(false)
+    expect(accountDeletionRequirementsSchema.safeParse({ twoFactorEnabled: null }).success).toBe(false)
+    expect(accountDeletionRequirementsSchema.parse({ twoFactorEnabled: false })).toEqual({ twoFactorEnabled: false })
+  })
+
 })

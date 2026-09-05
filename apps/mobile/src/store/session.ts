@@ -233,18 +233,23 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   logout: async (localOnly = false) => {
     const { user, instanceUrl, token } = get()
     if (token && !localOnly) await mobileApi.logout().catch(() => undefined)
-    await Promise.all([
-      SecureStore.deleteItemAsync(SESSION_TOKEN_KEY),
-      setValue(GLOBAL_NAMESPACE, ACTIVE_SESSION_NAMESPACE_KEY, null),
-    ])
-    if (user) {
-      const namespace = cacheNamespace(instanceUrl, user.id)
-      clearComposerDraftCacheNamespace(namespace)
-      clearMobileComposerSync(namespace)
-      removeCachedFiles(await clearNamespace(namespace))
-    }
+    // Revoked sessions must disappear from memory even if local storage fails.
     configureApi({ instanceUrl, token: null, onUnauthorized: () => { void get().handleUnauthorized() } })
     set({ token: null, user: null, status: 'anonymous', error: null })
+    const cleanup = await Promise.allSettled([
+      SecureStore.deleteItemAsync(SESSION_TOKEN_KEY),
+      setValue(GLOBAL_NAMESPACE, ACTIVE_SESSION_NAMESPACE_KEY, null),
+      (async () => {
+        if (!user) return
+        const namespace = cacheNamespace(instanceUrl, user.id)
+        clearComposerDraftCacheNamespace(namespace)
+        clearMobileComposerSync(namespace)
+        removeCachedFiles(await clearNamespace(namespace))
+      })(),
+    ])
+    const failure = cleanup.find((result) => result.status === 'rejected')
+    if (failure?.status === 'rejected') throw failure.reason
+
   },
 
   refreshSession: async () => {

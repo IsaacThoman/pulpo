@@ -2,8 +2,9 @@ import Fastify from 'fastify'
 import cookie from '@fastify/cookie'
 import { describe, expect, it, vi } from 'vitest'
 import { AppError } from '../lib/errors.js'
-const mocks = vi.hoisted(() => ({ sensitiveAuth: vi.fn(), accept: vi.fn() }))
+const mocks = vi.hoisted(() => ({ sensitiveAuth: vi.fn(), accept: vi.fn(), hasTwoFactor: vi.fn() }))
 vi.mock('../auth/service.js', () => ({ authenticateSessionToken: async () => ({ id: 'owner' }), requestSessionToken: () => 'session' }))
+vi.mock('../auth/two-factor.js', () => ({ hasTwoFactor: mocks.hasTwoFactor }))
 vi.mock('../auth/sensitive-action.js', () => ({ requireSensitiveAuth: mocks.sensitiveAuth }))
 vi.mock('./deletion.js', () => ({ acceptAccountDeletion: mocks.accept }))
 import { registerAccountDeletionRoutes } from './routes.js'
@@ -18,6 +19,7 @@ describe('account deletion authorization', () => {
     app.setErrorHandler((error, _request, reply) => reply.code(error instanceof AppError ? error.statusCode : 500).send())
     await registerAccountDeletionRoutes(app)
     expect((await app.inject({ method: 'DELETE', url: '/api/me', payload: { currentPassword: 'password' } })).statusCode).toBe(401)
+    expect((await app.inject({ method: 'GET', url: '/api/me/deletion' })).statusCode).toBe(401)
     await app.close()
   })
   it('does not accept deletion when the second factor is missing', async () => {
@@ -32,4 +34,16 @@ describe('account deletion authorization', () => {
     expect(mocks.accept).not.toHaveBeenCalled()
     await app.close()
   })
+  it.each([false, true])('reports actual second-factor requirements for pending sessions: %s', async (enabled) => {
+    mocks.hasTwoFactor.mockResolvedValueOnce(enabled)
+    const app = Fastify()
+    app.addHook('onRequest', async (request) => { Object.assign(request, { user: { id: 'owner', role: 'pending' } }) })
+    await registerAccountDeletionRoutes(app)
+    const response = await app.inject({ method: 'GET', url: '/api/me/deletion' })
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toEqual({ twoFactorEnabled: enabled })
+    expect(mocks.hasTwoFactor).toHaveBeenLastCalledWith('owner')
+    await app.close()
+  })
+
 })

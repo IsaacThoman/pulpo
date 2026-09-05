@@ -23,12 +23,12 @@ Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
 let root: Root
 let container: HTMLDivElement
 beforeEach(() => {
-  vi.clearAllMocks(); mocks.logout.mockResolvedValue(undefined)
+  vi.resetAllMocks(); mocks.logout.mockResolvedValue(undefined)
   container = document.createElement('div'); document.body.append(container); root = createRoot(container)
 })
 afterEach(async () => { await act(async () => root.unmount()); container.remove() })
 async function mount(settings: object) {
-  mocks.request.mockResolvedValueOnce(settings)
+  mocks.request.mockImplementation(async (path: string) => path === '/api/me/deletion' ? { twoFactorEnabled: false } : settings)
   await act(async () => root.render(<DeleteAccountForm onClose={() => {}} />))
 }
 async function enterPassword() {
@@ -76,4 +76,37 @@ describe('mobile account deletion', () => {
     expect(container.textContent).toContain('Enter your authenticator code')
     expect(mocks.logout).not.toHaveBeenCalled()
   })
+  it('does not display a second-factor field when two-factor authentication is disabled', async () => {
+    await mount({ accountDeletionEnabled: true })
+    expect(container.querySelectorAll('input')).toHaveLength(1)
+  })
+  it('requires an enabled second factor before final confirmation', async () => {
+    mocks.request.mockImplementation(async (path: string) => path === '/api/me/deletion' ? { twoFactorEnabled: true } : { accountDeletionEnabled: true })
+    await act(async () => root.render(<DeleteAccountForm onClose={() => {}} />))
+    await enterPassword(); await requestDeletion()
+    expect(mocks.alert).not.toHaveBeenCalled()
+    const input = container.querySelector<HTMLInputElement>('input[aria-label="Authenticator or recovery code"]')!
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'recovery-code')
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await requestDeletion(); await confirmDeletion()
+    expect(mocks.deleteAccount).toHaveBeenCalledWith('secret', 'recovery-code')
+  })
+  it('fails closed and supports retry if requirements cannot be loaded', async () => {
+    mocks.request.mockResolvedValueOnce({ accountDeletionEnabled: true }).mockRejectedValueOnce(new Error('offline'))
+    await act(async () => root.render(<DeleteAccountForm onClose={() => {}} />))
+    expect(container.querySelector('input')).toBeNull()
+    mocks.request.mockImplementation(async (path: string) => path === '/api/me/deletion' ? { twoFactorEnabled: false } : { accountDeletionEnabled: true })
+    await act(async () => Array.from(container.querySelectorAll('button')).find((button) => button.textContent === 'Retry')!.click())
+    expect(container.querySelectorAll('input')).toHaveLength(1)
+  })
+
+  it('reports acceptance separately from local cleanup failures', async () => {
+    await mount({ accountDeletionEnabled: true }); await enterPassword(); await requestDeletion()
+    mocks.logout.mockRejectedValueOnce(new Error('Storage failed'))
+    await confirmDeletion()
+    expect(mocks.alert).toHaveBeenLastCalledWith('Account deletion started', expect.stringContaining('Some data on this device could not be removed'))
+  })
+
 })

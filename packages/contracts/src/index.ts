@@ -1175,6 +1175,11 @@ export const managementTokenSchema = z.object({
 })
 export type ManagementToken = z.infer<typeof managementTokenSchema>
 
+export const accountDeletionRequirementsSchema = z.object({
+  twoFactorEnabled: z.boolean(),
+})
+export type AccountDeletionRequirements = z.infer<typeof accountDeletionRequirementsSchema>
+
 export const accountDeletionInputSchema = z.object({
   currentPassword: z.string().min(1).max(1024),
   verificationCode: z.string().trim().min(1).max(128).optional(),

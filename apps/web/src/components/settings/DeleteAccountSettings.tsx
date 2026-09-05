@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { accountDeletionRequirementsSchema, type AccountDeletionRequirements } from '@pulpo/contracts'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
@@ -14,6 +15,10 @@ export function DeleteAccountSettings() {
   const logout = useAuth((state) => state.logout)
   const navigate = useNavigate()
   const [settings, setSettings] = useState<{ accountDeletionEnabled?: boolean; adminEmail?: string } | null>(null)
+  const [requirements, setRequirements] = useState<AccountDeletionRequirements | null>(null)
+  const [checking, setChecking] = useState(false)
+  const requirementsRequest = useRef(0)
+  useEffect(() => () => { requirementsRequest.current += 1 }, [])
   const [open, setOpen] = useState(false)
   const [password, setPassword] = useState('')
   const [code, setCode] = useState('')
@@ -27,24 +32,47 @@ export function DeleteAccountSettings() {
     return () => { active = false }
   }, [])
 
+  const loadRequirements = async () => {
+    const requestId = ++requirementsRequest.current
+    setChecking(true); setRequirements(null); setCode('')
+    try {
+      const [status, availability] = await Promise.all([
+        apiRequest('/api/me/deletion'),
+        apiRequest<{ accountDeletionEnabled?: boolean; adminEmail?: string }>('/api/auth/settings'),
+      ])
+      if (requestId !== requirementsRequest.current) return
+      setSettings(availability)
+      setRequirements(accountDeletionRequirementsSchema.parse(status))
+    } catch {
+      if (requestId === requirementsRequest.current) setError(ui('Could not load account deletion settings.'))
+    } finally { if (requestId === requirementsRequest.current) setChecking(false) }
+  }
+
   const handleOpenChange = (nextOpen: boolean) => {
     if (busy) return
     setOpen(nextOpen)
-    if (!nextOpen) { setPassword(''); setCode(''); setError('') }
+    if (nextOpen) { setError(''); void loadRequirements() }
+    if (!nextOpen) { requirementsRequest.current += 1; setRequirements(null); setPassword(''); setCode(''); setError('') }
   }
 
   const submit = async () => {
-    if (busy || !password) return
+    if (busy || checking || !requirements || !settings?.accountDeletionEnabled || !password || (requirements.twoFactorEnabled && !code.trim())) return
     setBusy(true); setError('')
     try {
-      await apiRequest('/api/me', { method: 'DELETE', body: { currentPassword: password, verificationCode: code.trim() || undefined } })
+      await apiRequest('/api/me', { method: 'DELETE', body: { currentPassword: password, verificationCode: requirements.twoFactorEnabled ? code.trim() : undefined } })
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : ui('Could not delete account.'))
+      await loadRequirements()
       setBusy(false)
       return
     }
     // Clear local data after durable acceptance, even though the session has already been revoked.
-    await logout(true)
+    try {
+      await logout(true)
+    } catch {
+      navigate('/login', { replace: true, state: { accountDeletionRequested: true, accountDeletionCleanupFailed: true } })
+      return
+    }
     navigate('/login', { replace: true, state: { accountDeletionRequested: true } })
   }
 
@@ -70,19 +98,23 @@ export function DeleteAccountSettings() {
       <DialogTitle>{ui('Permanently delete account')}</DialogTitle>
       <DialogDescription>{ui('Permanently delete your account? This cannot be undone.')}</DialogDescription>
       <form className="space-y-4" onSubmit={(event) => { event.preventDefault(); void submit() }}>
-        <p className="break-all text-sm">{user?.email} · {useAuth.getState().instanceUrl || window.location.origin}</p>
+        <div className="min-w-0 text-sm"><p className="break-words">{user?.email}</p><p className="break-words text-xs text-muted-foreground [overflow-wrap:anywhere]">{useAuth.getState().instanceUrl || window.location.origin}</p></div>
         <p className="text-sm text-muted-foreground">{ui('Deletion is permanent. Your chats, files, memories, and shared links will be removed. Subscriptions will be canceled and unused credits forfeited, with no automatic refunds. Access ends immediately; background cleanup may take time. Backups and payment records follow existing retention policies.')}</p>
-        <div className="space-y-2">
+        {checking && <p role="status">{ui('Loading…')}</p>}
+        {!checking && !requirements && <Button type="button" variant="outline" onClick={() => { setError(''); void loadRequirements() }}>{ui('Retry')}</Button>}
+        {settings && !settings.accountDeletionEnabled && <p>{settings.accountDeletionEnabled === false ? ui('Account deletion is disabled by the instance administrator.') : ui('This server does not support account deletion.')}{settings.adminEmail && <> <a href={`mailto:${settings.adminEmail}`}>{settings.adminEmail}</a></>}</p>}
+        {requirements && settings?.accountDeletionEnabled && <><div className="space-y-2">
           <Label htmlFor="delete-account-password">{ui('Current password')}</Label>
           <Input id="delete-account-password" type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} required disabled={busy} />
         </div>
-        <div className="space-y-2">
-          <Label htmlFor="delete-account-code">{ui('Authenticator or recovery code (if enabled)')}</Label>
-          <Input id="delete-account-code" autoComplete="one-time-code" value={code} onChange={(event) => setCode(event.target.value)} disabled={busy} />
-        </div>
+        {requirements.twoFactorEnabled && <div className="space-y-2">
+          <Label htmlFor="delete-account-code">{ui('Authenticator or recovery code')}</Label>
+          <Input id="delete-account-code" required autoComplete="one-time-code" value={code} onChange={(event) => setCode(event.target.value)} disabled={busy} />
+        </div>}
+        </> }
         {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
         <Separator />
-        <Button className="w-full" type="submit" variant="destructive" disabled={busy || !password}>{busy ? ui('Deleting…') : ui('Permanently delete account')}</Button>
+        <Button className="w-full" type="submit" variant="destructive" disabled={busy || checking || !requirements || !settings?.accountDeletionEnabled || !password || (requirements.twoFactorEnabled && !code.trim())}>{busy ? ui('Deleting…') : ui('Permanently delete account')}</Button>
       </form>
     </DialogContent>
   </Dialog>

@@ -79,6 +79,7 @@ export function LoginPage() {
       </div>
 
       {location.state?.accountDeletionRequested && <p role="status" className="text-sm text-muted-foreground">{ui('Account deletion has started. Your access has ended and cleanup will continue automatically.')}</p>}
+      {location.state?.accountDeletionCleanupFailed && <p role="alert" className="text-sm text-destructive">{ui('Some data on this device could not be removed. Clear this site’s local storage to remove it.')}</p>}
       <form onSubmit={submit} className="space-y-4">
         {!twoFactorStep && <div className="space-y-2">
           <Label htmlFor="email">{t('auth.email')}</Label>
