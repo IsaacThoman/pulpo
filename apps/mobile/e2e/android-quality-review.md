@@ -47,6 +47,10 @@ The model argument is the selected model’s visible name. The script changes on
 
 ## Evidence
 
+### Temporary composer tint follow-up
+
+Android now renders the composer as an animated Material surface instead of the glass fallback, which ignored the iOS-only tint. Its opaque surrounding layer shares the chat background animation, including the bottom inset; the card blends toward the same tint at 55% strength for separation. The same temporary-mode progress drives both layers and respects reduced motion. Light/dark appearance and keyboard-open states were visually checked; normal mode restores the original surface colors. TypeScript, lint, and the Release build passed.
+
 ### Header centering follow-up
 
 The model menu uses centered native content inside an animated available-width container. Expanded controls center it 24 dp left of the screen midpoint; hiding the hourglass centers it on the screen. Native label/chevron spacing remains 8 dp. A 220 ms animation follows the hourglass fade, and reduced motion applies the final layout immediately. The device regression checks the actual clickable dropdown against the neighboring control bounds, plus unchanged landing content. Header/menu interaction tests, TypeScript, lint, and the Release build passed.

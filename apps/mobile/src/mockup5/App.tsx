@@ -1031,6 +1031,13 @@ function Glass({ children, style, interactive = false, tintColor, ...props }: Gl
   );
 }
 
+function ComposerSurface({ surfaceStyle, ...props }: GlassProps & { surfaceStyle?: ComponentProps<typeof Reanimated.View>['style'] }) {
+  // Android uses an opaque, animated Material surface. Glass tintColor only
+  // affects the iOS glass implementation and cannot tint its Android fallback.
+  if (Platform.OS === 'android') return <Reanimated.View style={[props.style, surfaceStyle]}>{props.children}</Reanimated.View>;
+  return <Glass {...props} />;
+}
+
 function RoundButton({ icon, onPress, accessibilityLabel, selected = false, selectedColor = 'purple', size = 44, tinted = false }: { icon: SymbolName | 'ghost'; onPress: () => void; accessibilityLabel: string; selected?: boolean; selectedColor?: 'purple' | 'teal'; size?: number; tinted?: boolean }) {
   const { styles, COLORS } = useChatStyles();
   const colorScheme = useColorScheme();
@@ -3701,6 +3708,13 @@ function ChatView({
       Platform.OS === 'android' ? [COLORS.background as string, COLORS.fillStrong as string] : colorScheme === 'dark' ? ['#000000', '#080312'] : ['#ffffff', '#f4f0ff'],
     ),
   }));
+  const temporaryComposerAnimatedStyle = useAnimatedStyle(() => ({
+    backgroundColor: interpolateColor(
+      temporaryProgress.value * 0.55,
+      [0, 1],
+      [COLORS.elevated as string, COLORS.fillStrong as string],
+    ),
+  }));
   const temporaryLabelAnimatedStyle = useAnimatedStyle(() => ({
     opacity: temporaryProgress.value,
     transform: [
@@ -4881,7 +4895,8 @@ function ChatView({
         />
       )}
 
-      <KeyboardStickyView enabled={keyboardLayoutEnabled} offset={keyboardOffset} style={[styles.composerSticky, Platform.OS === 'android' && styles.androidComposerSurface]}>
+      <KeyboardStickyView enabled={keyboardLayoutEnabled} offset={keyboardOffset} style={styles.composerSticky}>
+        {Platform.OS === 'android' && <Reanimated.View pointerEvents="none" style={[StyleSheet.absoluteFill, temporarySurfaceAnimatedStyle]} />}
         <View
           onLayout={({ nativeEvent: { layout } }) => {
             // The resting composer is already covered by the transcript's static
@@ -4891,9 +4906,10 @@ function ChatView({
           }}
           style={[styles.composerWrap, styles.chatContent, { paddingHorizontal: Math.max(12, horizontalPadding - 6), paddingBottom: Math.max(insets.bottom, 10) }]}
         >
-            <Glass
+            <ComposerSurface
               interactive
-              style={styles.composer}
+              style={[styles.composer, Platform.OS === 'android' && { borderRadius: 24 }]}
+              surfaceStyle={temporaryComposerAnimatedStyle}
               tintColor={temporary ? colorScheme === 'dark' ? 'rgba(88,28,135,0.32)' : 'rgba(175,82,222,0.16)' : undefined}
             >
               {queuedMessages.length > 0 && (
@@ -5086,7 +5102,7 @@ function ChatView({
                   </>
                 )}
               </View>
-            </Glass>
+            </ComposerSurface>
         </View>
       </KeyboardStickyView>
 
@@ -5776,7 +5792,6 @@ function createChatStyles(COLORS: ChatColors) { return StyleSheet.create({
   suggestionLabel: { color: COLORS.textSoft, fontSize: 13, lineHeight: 18 },
 
   composerSticky: { position: 'absolute', left: 0, right: 0, bottom: 0 },
-  androidComposerSurface: { backgroundColor: COLORS.background },
   composerQueue: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.line, marginBottom: 10 },
   composerQueueHeader: { minHeight: 44, paddingHorizontal: 5, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   composerQueueTitle: { color: COLORS.muted, fontSize: 12, fontWeight: '500' },
