@@ -1186,20 +1186,20 @@ export function Sidebar({
               </span>
               <div
                 className={cn(
-                  'min-w-0 flex-1 whitespace-nowrap transition-[opacity,transform] ease-[cubic-bezier(0.4,0,0.2,1)]',
+                  'flex min-w-0 flex-1 items-center gap-2 whitespace-nowrap transition-[opacity,transform] ease-[cubic-bezier(0.4,0,0.2,1)]',
                   !sidebarPins.friends && pendingSocialCount ? 'pr-8' : 'pr-2',
                   sidebarTextTransition
                 )}
               >
-                <div className="flex min-w-0 items-center gap-2">
-                  <span className="truncate text-sm font-medium">{user?.name ?? t('sidebar.signedOut')}</span>
-                  {billingEnabled && billingQuery.data && (
-                    <Badge variant="secondary" className="px-1.5 py-0 text-[10px] leading-4">
-                      {billingPlanName(billingQuery.data.plan)}
-                    </Badge>
-                  )}
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-medium">{user?.name ?? t('sidebar.signedOut')}</div>
+                  <div className="truncate text-xs text-muted-foreground">{user?.username ? uit`@${user.username}` : ''}</div>
                 </div>
-                <div className="truncate text-xs text-muted-foreground">{user?.username ? uit`@${user.username}` : ''}</div>
+                {billingEnabled && billingQuery.data && (
+                  <Badge variant="secondary" className="px-1.5 py-0 text-[10px] leading-4">
+                    {billingPlanName(billingQuery.data.plan)}
+                  </Badge>
+                )}
               </div>
               {!sidebarPins.friends && Boolean(pendingSocialCount) && (
                 <span className={cn(
