@@ -1,6 +1,6 @@
 import { useComposerSyncPreference } from '@/stores/composer-sync-preference'
 import { useEffect, useLayoutEffect, useRef } from 'react'
-import { composerPatch } from '@pulpo/client-core'
+import { composerPatch, sameComposerContent } from '@pulpo/client-core'
 import type { ComposerState } from '@pulpo/contracts'
 import { webComposerSync } from '@/lib/local-first/composer-sync'
 
@@ -14,6 +14,7 @@ export function useComposerSync(userId: string | undefined, draftId: string, sta
   const wasEditing = useRef(false)
   const baseline = useRef(state)
   const applying = useRef(false)
+  const hiddenSubmission = useRef<ComposerState | null>(null)
   const opened = useRef<string | null>(null)
   const sync = enabled && userId ? webComposerSync(userId) : null
   useEffect(() => {
@@ -24,10 +25,15 @@ export function useComposerSync(userId: string | undefined, draftId: string, sta
     deferred.current = null
     wasEditing.current = false
     applying.current = false
+    hiddenSubmission.current = null
     void sync.open(draftId, latest.current.state, (checkpoint) => {
       if (disposed || !useComposerSyncPreference.getState().enabled || useComposerSyncPreference.getState().generation !== generation || latest.current.identity !== identity) return
       opened.current = identity
-      const remote = { ...checkpoint.snapshot.state, ...checkpoint.pending }
+      let remote = { ...checkpoint.snapshot.state, ...checkpoint.pending }
+      if (hiddenSubmission.current) {
+        if (sameComposerContent(remote, hiddenSubmission.current)) remote = { ...remote, content: '', attachments: [] }
+        else hiddenSubmission.current = null
+      }
       if (!remote.model) remote.model = latest.current.state.model
       if (latest.current.editing) deferred.current = remote
       if (Object.keys(composerPatch(latest.current.state, remote)).length) {
@@ -52,8 +58,9 @@ export function useComposerSync(userId: string | undefined, draftId: string, sta
     if (paused) return
     if (applying.current) { applying.current = false; baseline.current = state; return }
     const patch = composerPatch(baseline.current, state)
+    if (!sameComposerContent(baseline.current, state)) hiddenSubmission.current = null
     baseline.current = state
     sync.edit(draftId, patch)
   })
-  return { sync, skipNextEdit: () => { applying.current = true } }
+  return { sync, skipNextEdit: () => { hiddenSubmission.current = latest.current.state; applying.current = true } }
 }
