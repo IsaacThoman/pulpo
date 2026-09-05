@@ -21,6 +21,7 @@ export function selectedAssistantStatus(messages: readonly GenerationMessage[]):
 export function composerGenerationAction(
   status: AssistantGenerationStatus,
   editingMessage: boolean,
+  hasDraft = false,
 ): 'stop' | 'submit' {
-  return status !== 'idle' && !editingMessage ? 'stop' : 'submit'
+  return status !== 'idle' && !editingMessage && !hasDraft ? 'stop' : 'submit'
 }

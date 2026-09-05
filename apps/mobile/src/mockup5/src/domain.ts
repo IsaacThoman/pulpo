@@ -1,3 +1,4 @@
+import type { MobileQueuedMessage } from '../../types';
 export type ThemePreference = 'system' | 'light' | 'dark';
 export type TextSizePreference = 'default' | 'large' | 'extra-large';
 export type TrashRetention = 'instant' | '24h' | '7d' | '30d' | '90d' | 'indefinite';
@@ -120,6 +121,7 @@ export interface PrototypeChat {
   expired?: boolean;
   /** False while a server chat only has list metadata and its transcript is loading. */
   detailLoaded?: boolean;
+  queuedMessages?: MobileQueuedMessage[];
   messages: PrototypeMessage[];
   deletedAt: number | null;
   purgeAt: number | null;

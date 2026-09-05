@@ -1,4 +1,4 @@
-import type { ChatPreset, EmbeddedResponseSnapshot, ResponseSnapshot, User } from '@pulpo/contracts'
+import type { ChatPreset, QueuedMessage, EmbeddedResponseSnapshot, ResponseSnapshot, User } from '@pulpo/contracts'
 
 export type { User }
 
@@ -26,6 +26,8 @@ export interface MobileModel {
   presets: ChatPreset[]
 }
 
+export type MobileQueuedMessage = QueuedMessage & { pendingSubmissionId?: string; localFailure?: boolean }
+
 export interface ServerChat {
   id: string
   title: string
@@ -42,6 +44,7 @@ export interface ServerChat {
   deletedAt?: string | null
   purgeAt?: string | null
   attachments?: ServerAttachment[]
+  queuedMessages?: MobileQueuedMessage[]
   responses?: ServerResponse[]
 }
 

@@ -1,0 +1,24 @@
+{
+  "passed": true,
+  "chatId": "fa8e882d-c91f-4b0b-adc9-fbd57d321f25",
+  "queueBefore": [
+    "From mobile B edited",
+    "Web A edited",
+    "Offline first",
+    "Offline second",
+    "Lost acknowledgment",
+    "Attachment settings check"
+  ],
+  "completedResponses": 7,
+  "providerOrder": [
+    "HOLD QA cross-client",
+    "From mobile B edited",
+    "Web A edited",
+    "Offline first",
+    "Offline second",
+    "Lost acknowledgment",
+    "Attachment settings check"
+  ],
+  "alternateModelAndImageRetained": true,
+  "exactlyOnce": true
+}

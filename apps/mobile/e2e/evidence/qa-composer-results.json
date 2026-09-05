@@ -1,0 +1,1 @@
+{"passed":true,"chatId":"01a06f38-07bb-70fc-be97-535b00682611","checks":["real socket synchronization","multiple offline accepted receipts","restart clears earlier accepted draft","unsubmitted remote draft preserved"]}
