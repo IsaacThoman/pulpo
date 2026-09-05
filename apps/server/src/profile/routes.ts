@@ -50,7 +50,7 @@ export async function registerProfileRoutes(app: FastifyInstance): Promise<void>
       const { updated, friendChanges } = await db.transaction(async (tx) => {
         await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`avatar:${user.id}`}))`)
         const [current] = await tx.select().from(users).where(eq(users.id, user.id)).limit(1)
-        if (!current) throw notFound('User')
+        if (!current || current.deletionRequestedAt) throw notFound('User')
         previousKey = current.avatarObjectKey
         const [updated] = await tx.update(users).set({
           avatarObjectKey: key,

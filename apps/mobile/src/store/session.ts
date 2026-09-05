@@ -36,7 +36,7 @@ interface SessionState {
   login: (email: string, password: string, twoFactorCode?: string) => Promise<'authenticated' | 'two-factor-required'>
   loginWithPasskey: (forceBrowser?: boolean) => Promise<void>
   signup: (name: string, username: string, email: string, password: string) => Promise<void>
-  logout: () => Promise<void>
+  logout: (localOnly?: boolean) => Promise<void>
   refreshSession: () => Promise<void>
   switchInstance: (url: string) => Promise<MobileConfig>
   setUser: (user: User) => Promise<void>
@@ -230,9 +230,9 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     set({ token: result.session.token, user: result.user, status: result.user.role === 'pending' ? 'pending' : 'authenticated', error: null })
   },
 
-  logout: async () => {
+  logout: async (localOnly = false) => {
     const { user, instanceUrl, token } = get()
-    if (token) await mobileApi.logout().catch(() => undefined)
+    if (token && !localOnly) await mobileApi.logout().catch(() => undefined)
     await Promise.all([
       SecureStore.deleteItemAsync(SESSION_TOKEN_KEY),
       setValue(GLOBAL_NAMESPACE, ACTIVE_SESSION_NAMESPACE_KEY, null),

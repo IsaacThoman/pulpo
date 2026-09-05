@@ -8,6 +8,8 @@ interface AdminUserRow {
     id: string; name: string; username: string; avatarUrl?: string | null; profileColor: string | null; email: string
     role: 'pending' | 'user' | 'admin'; balanceMicros: number; createdAt: string
     storageLimitBytes: number
+    deletionRequestedAt?: string | null
+    deletionError?: string | null
     blocked: boolean
     inviteCodeQuota?: number
   }
@@ -34,6 +36,7 @@ function mapAdmin(row: AdminUserRow): MonitorUser {
     joinedAt: Date.parse(row.user.createdAt), blocked: row.user.blocked,
     lastActiveAt: row.lastActiveAt ? Date.parse(row.lastActiveAt) : null,
     twoFactorEnabled: row.twoFactorEnabled,
+    deletionRequestedAt: row.user.deletionRequestedAt, deletionError: row.user.deletionError,
     inviteCodeQuota: row.user.inviteCodeQuota ?? 0,
   }
 }

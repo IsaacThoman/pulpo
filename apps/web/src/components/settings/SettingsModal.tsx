@@ -1,3 +1,4 @@
+import { DeleteAccountSettings } from './DeleteAccountSettings'
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from '@/i18n/useAppTranslation'
 import { useNavigate } from 'react-router-dom'
@@ -883,6 +884,7 @@ export function SettingsModal({
                   <PasswordSettings />
                   <PasskeySettings />
                   <TwoFactorSettings />
+                  <DeleteAccountSettings />
                   <Separator className="my-3" />
                   <Row label={ui("Sign out")} hint="End this session on this device.">
                     <Button variant="outline" size="sm" onClick={() => { onClose(); logout(); navigate('/login') }}>{ui("Sign out")}</Button>

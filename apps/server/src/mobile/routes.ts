@@ -49,6 +49,7 @@ export async function registerMobileRoutes(app: FastifyInstance): Promise<void> 
       instance: { name: config.INSTANCE_NAME, version: config.PULPO_VERSION, publicUrl: config.PUBLIC_URL },
       setupRequired: !existingUser,
       auth: {
+        accountDeletionEnabled: auth.accountDeletionEnabled,
         signupEnabled: auth.signupEnabled,
         pendingDetails: auth.pendingDetails,
         adminEmail: auth.adminEmail,

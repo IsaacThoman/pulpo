@@ -1,3 +1,4 @@
+import { registerAccountDeletionRoutes } from './account/routes.js'
 import Fastify from 'fastify'
 import cookie from '@fastify/cookie'
 import cors from '@fastify/cors'
@@ -129,6 +130,7 @@ export async function buildApp() {
   await ensureBootstrapPreset()
   await registerMobileRoutes(app)
   await registerAuthRoutes(app)
+  await registerAccountDeletionRoutes(app)
   await registerProfileRoutes(app)
   await registerCodexRoutes(app)
   await registerFriendRoutes(app)

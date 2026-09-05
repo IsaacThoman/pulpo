@@ -114,6 +114,7 @@ export const mobileApi = {
   updateProfile: (name: string) => apiRequest<{ user: User }>('/api/me', { method: 'PATCH', body: { name } }),
   changePassword: (currentPassword: string, newPassword: string) =>
     apiRequest<void>('/api/me/password', { method: 'POST', body: { currentPassword, newPassword } }),
+  deleteAccount: (currentPassword: string, verificationCode?: string) => apiRequest('/api/me', { method: 'DELETE', body: { currentPassword, verificationCode } }),
   twoFactorStatus: () => apiRequest<TwoFactorStatus>('/api/me/two-factor'),
   beginTwoFactorEnrollment: (currentPassword: string, verificationCode?: string) =>
     apiRequest<TwoFactorEnrollment>('/api/me/two-factor/enrollment', {

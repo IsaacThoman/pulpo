@@ -1,4 +1,18 @@
 const esUi: Record<string, string> = {
+  "Account deletion in progress": "Eliminación de cuenta en curso",
+  "Could not load account deletion settings.": "No se pudo cargar la configuración de eliminación de la cuenta.",
+  "Permanently delete your account? This cannot be undone.": "¿Eliminar tu cuenta permanentemente? Esta acción no se puede deshacer.",
+  "Could not delete account.": "No se pudo eliminar la cuenta.",
+  "Delete account": "Eliminar cuenta",
+  "Account deletion is disabled by the instance administrator.": "El administrador de la instancia ha desactivado la eliminación de cuentas.",
+  "This server does not support account deletion.": "Este servidor no permite eliminar cuentas.",
+  "Deletion is permanent. Your chats, files, memories, and shared links will be removed. Subscriptions will be canceled and unused credits forfeited, with no automatic refunds. Access ends immediately; background cleanup may take time. Backups and payment records follow existing retention policies.": "La eliminación es permanente. Se eliminarán tus chats, archivos, recuerdos y enlaces compartidos. Se cancelarán las suscripciones y se perderán los créditos sin usar, sin reembolsos automáticos. El acceso termina de inmediato; la limpieza en segundo plano puede tardar. Las copias de seguridad y los registros de pago siguen las políticas de conservación existentes.",
+  "Authenticator or recovery code (if enabled)": "Código de autenticación o recuperación (si está activado)",
+  "Permanently delete account": "Eliminar cuenta permanentemente",
+  "Allow users to delete their accounts": "Permitir que los usuarios eliminen sus cuentas",
+  "Account deletion has started. Your access has ended and cleanup will continue automatically.": "La eliminación de la cuenta ha comenzado. Tu acceso ha terminado y la limpieza continuará automáticamente.",
+  "You can edit your profile and delete conversations and cached downloads in the app. When enabled by your instance administrator, use Delete account in web Security settings or mobile Account settings. Deletion permanently ends access and starts automatic data cleanup and subscription cancellation. Backups and payment records follow existing retention policies. For retention questions, disabled account deletion, or a copy of server-held data, contact your instance operator. For the default service, open a request through": "Puedes editar tu perfil y eliminar conversaciones y descargas en caché desde la aplicación. Si el administrador de tu instancia lo permite, usa Eliminar cuenta en Seguridad en la web o en Cuenta en el móvil. La eliminación termina el acceso permanentemente e inicia la limpieza automática de datos y la cancelación de suscripciones. Las copias de seguridad y los registros de pago siguen las políticas de conservación existentes. Para consultas de conservación, eliminación desactivada o una copia de tus datos, contacta con el operador de tu instancia. Para el servicio predeterminado, abre una solicitud mediante",
+
   "Sync composer drafts": "Sincronizar borradores de mensajes",
   "Share unsent drafts across your devices. This account setting applies to web, desktop, and mobile. Turning it off keeps drafts local on each device; existing server drafts remain.": "Comparte borradores sin enviar entre tus dispositivos. Esta preferencia de la cuenta se aplica a la web, el escritorio y el móvil. Al desactivarla, los borradores se conservan en cada dispositivo; los borradores existentes en el servidor se mantienen.",
   "Could not start Codex sign-in.": "No se pudo iniciar la sesión de Codex.",

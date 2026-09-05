@@ -1,3 +1,4 @@
+import { DeleteAccountForm } from '../../../components/DeleteAccount';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import {
   Alert, Button as RNButton, Image, Platform, StyleSheet, Text, View,
@@ -55,6 +56,10 @@ function NativeDestinationRow({ icon, title, detail, onPress }: { icon: string; 
   return <SwiftUIButton onPress={onPress} modifiers={[buttonStyle('plain'), foregroundStyle('primary')]}><SwiftUIHStack spacing={12} modifiers={[contentShape(shapes.rectangle())]}><SwiftUIImage systemName={icon as never} size={17} modifiers={[frame({ width: 22, height: 22 })]} /><SwiftUIText>{title}</SwiftUIText><SwiftUISpacer />{detail ? <SwiftUIText modifiers={[foregroundStyle('secondary'), font({ textStyle: 'footnote' })]}>{detail}</SwiftUIText> : null}<SwiftUIImage systemName="chevron.right" size={11} modifiers={[foregroundStyle('secondary')]} /></SwiftUIHStack></SwiftUIButton>;
 }
 
+export function DeleteAccountScreen({ navigation }: NativeStackScreenProps<RootStackParamList, 'DeleteAccount'>) {
+  return <DeleteAccountForm onClose={() => navigation.goBack()} />;
+}
+
 export function AccountScreen({ navigation }: NativeStackScreenProps<RootStackParamList, 'Account'>) {
   const theme = useAppTheme();
   const session = usePrototypeStore((state) => state.session);
@@ -63,7 +68,7 @@ export function AccountScreen({ navigation }: NativeStackScreenProps<RootStackPa
   const twoFactorSupported = useSessionStore((state) => state.config?.capabilities.twoFactorAuth ?? false);
   const passkeysSupported = useSessionStore((state) => state.config?.capabilities.passkeys ?? false);
   const user = session.user;
-  const confirmSignOut = () => Alert.alert('Sign out?', 'End this session on this device.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Sign out', style: 'destructive', onPress: signOut }]);
+  const confirmSignOut = () => Alert.alert('Sign out?', 'End this session on this device.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Sign out', style: 'destructive', onPress: () => { void signOut(); } }]);
 
   if (Platform.OS === 'ios') return <SwiftUIHost modifiers={[tint(theme.blue)]} style={styles.flex}><SwiftUIForm>
     <SwiftUISection title="Profile">
@@ -73,10 +78,10 @@ export function AccountScreen({ navigation }: NativeStackScreenProps<RootStackPa
     </SwiftUISection>
     <SwiftUISection title="Security"><NativeDestinationRow icon="lock.rotation" title="Change Password" onPress={() => navigation.navigate('ChangePassword')} />{passkeysSupported ? <NativeDestinationRow icon="person.badge.key" title="Passkeys" onPress={() => navigation.navigate('Passkeys')} /> : null}{twoFactorSupported ? <NativeDestinationRow icon="checkmark.shield" title="Two-Factor Authentication" onPress={() => navigation.navigate('TwoFactor')} /> : null}</SwiftUISection>
     <SwiftUISection title="Server"><NativeDestinationRow icon="network" title="Pulpo Instance" detail={instance.version} onPress={() => navigation.navigate('InstanceDetails')} /></SwiftUISection>
-    <SwiftUISection title="Session"><SwiftUIButton label="Sign Out" role="destructive" systemImage="rectangle.portrait.and.arrow.right" onPress={confirmSignOut} /></SwiftUISection>
+    <SwiftUISection title="Delete account"><NativeDestinationRow icon="trash" title="Delete Account" onPress={() => navigation.navigate('DeleteAccount')} /></SwiftUISection><SwiftUISection title="Session"><SwiftUIButton label="Sign Out" role="destructive" systemImage="rectangle.portrait.and.arrow.right" onPress={confirmSignOut} /></SwiftUISection>
   </SwiftUIForm></SwiftUIHost>;
 
-  return <Screen><PageHeader title="Account" onBack={() => navigation.goBack()} /><SectionTitle>Profile</SectionTitle><Card><ListRow title="Name" value={user?.name ?? 'Pulpo Member'} /><ListRow title="Email" value={user?.email ?? ''} /><ListRow icon="person.crop.circle" title="Edit profile" last onPress={() => navigation.navigate('EditProfile')} /></Card><SectionTitle>Security</SectionTitle><Card><ListRow icon="lock.rotation" title="Change password" last={!passkeysSupported && !twoFactorSupported} onPress={() => navigation.navigate('ChangePassword')} />{passkeysSupported ? <ListRow icon="person.badge.key" title="Passkeys" last={!twoFactorSupported} onPress={() => navigation.navigate('Passkeys')} /> : null}{twoFactorSupported ? <ListRow icon="checkmark.shield" title="Two-factor authentication" last onPress={() => navigation.navigate('TwoFactor')} /> : null}</Card><SectionTitle>Server</SectionTitle><Card><ListRow icon="network" title="Pulpo instance" value={instance.version} last onPress={() => navigation.navigate('InstanceDetails')} /></Card><SectionTitle>Session</SectionTitle><Card><ListRow icon="rectangle.portrait.and.arrow.right" iconColor={theme.red} title="Sign out" destructive last onPress={confirmSignOut} /></Card></Screen>;
+  return <Screen><PageHeader title="Account" onBack={() => navigation.goBack()} /><SectionTitle>Profile</SectionTitle><Card><ListRow title="Name" value={user?.name ?? 'Pulpo Member'} /><ListRow title="Email" value={user?.email ?? ''} /><ListRow icon="person.crop.circle" title="Edit profile" last onPress={() => navigation.navigate('EditProfile')} /></Card><SectionTitle>Security</SectionTitle><Card><ListRow icon="lock.rotation" title="Change password" last={!passkeysSupported && !twoFactorSupported} onPress={() => navigation.navigate('ChangePassword')} />{passkeysSupported ? <ListRow icon="person.badge.key" title="Passkeys" last={!twoFactorSupported} onPress={() => navigation.navigate('Passkeys')} /> : null}{twoFactorSupported ? <ListRow icon="checkmark.shield" title="Two-factor authentication" last onPress={() => navigation.navigate('TwoFactor')} /> : null}</Card><SectionTitle>Server</SectionTitle><Card><ListRow icon="network" title="Pulpo instance" value={instance.version} last onPress={() => navigation.navigate('InstanceDetails')} /></Card><SectionTitle>Delete account</SectionTitle><Card><ListRow icon="trash" title="Delete account" destructive last onPress={() => navigation.navigate('DeleteAccount')} /></Card><SectionTitle>Session</SectionTitle><Card><ListRow icon="rectangle.portrait.and.arrow.right" iconColor={theme.red} title="Sign out" destructive last onPress={confirmSignOut} /></Card></Screen>;
 }
 
 type PasskeyAction = 'list' | 'add' | 'rename' | 'delete';

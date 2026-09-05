@@ -140,6 +140,8 @@ export interface UsageRecord {
 }
 
 export interface MonitorUser {
+  deletionRequestedAt?: string | null
+  deletionError?: string | null
   id: string
   name: string
   username: string
