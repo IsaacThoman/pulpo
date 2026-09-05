@@ -111,7 +111,7 @@ export const materialSymbolNames: Record<string, string> = {
   "list.bullet": "list",
   "arrow.turn.up.left": "reply",
   "arrow.triangle.branch": "fork_right",
-  "ghost": "domino_mask",
+  "ghost": "ghost_outline",
   "bot": "smart_toy",
   "chevron.up.chevron.down": "unfold_more",
   "circle": "radio_button_unchecked",

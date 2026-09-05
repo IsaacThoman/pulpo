@@ -30,7 +30,7 @@ const icons: Record<string, ImageSourcePropType> = {
   'delete_forever': require('../../assets/material/delete_forever.xml'),
   'description': require('../../assets/material/description.xml'),
   'dns': require('../../assets/material/dns.xml'),
-  'domino_mask': require('../../assets/material/domino_mask.xml'),
+  'ghost_outline': require('../../assets/material/ghost_outline.xml'),
   'download': require('../../assets/material/download.xml'),
   'edit': require('../../assets/material/edit.xml'),
   'edit_square': require('../../assets/material/edit_square.xml'),
