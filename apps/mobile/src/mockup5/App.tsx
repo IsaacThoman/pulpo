@@ -1062,7 +1062,7 @@ function DrawerNewChatButton({ isDark, onPress }: { isDark: boolean; onPress: ()
   const glassTintColor = isDark ? 'rgba(255,255,255,0.85)' : 'rgba(0,0,0,0.85)';
   if (Platform.OS === 'ios') {
     return (
-      <SwiftUIHost colorScheme={isDark ? 'dark' : 'light'} style={styles.drawerNewChatButtonHost}>
+      <SwiftUIHost ignoreSafeArea="all" colorScheme={isDark ? 'dark' : 'light'} style={styles.drawerNewChatButtonHost}>
         <SwiftUIButton onPress={onPress} modifiers={[buttonStyle('plain'), swiftUIAccessibilityLabel('New Chat')]}>
           <SwiftUIHStack spacing={7.5} modifiers={[
             frame({ width: 123.75, height: 48.75 }),
@@ -5243,16 +5243,6 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
       transform: [{ translateY: interpolate(collapseProgress, [0, 1], [0, -DRAWER_ACTION_HEIGHT]) }],
     };
   });
-  const newChatButtonAnimatedStyle = useAnimatedStyle(() => {
-    const collapseProgress = searchActiveProgress.value;
-    return {
-      opacity: interpolate(collapseProgress, [0, 0.72], [1, 0]),
-      transform: [
-        { translateY: interpolate(collapseProgress, [0, 1], [0, 12]) },
-        { scale: interpolate(collapseProgress, [0, 1], [1, 0.86]) },
-      ],
-    };
-  });
   const filtered = useMemo(
     () => chats.filter((chat) => chat.title.toLowerCase().includes(search.toLowerCase())),
     [chats, search],
@@ -5440,12 +5430,9 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
           style={styles.flex}
           onTouchStart={dismissSearch}
         />
-        <Reanimated.View
-          pointerEvents={searchActive ? 'none' : 'auto'}
-          style={[styles.drawerNewChatButton, { bottom: insets.bottom + 14 }, newChatButtonAnimatedStyle]}
-        >
+        <View style={[styles.drawerNewChatButton, { bottom: insets.bottom + 14 }]}>
           <DrawerNewChatButton isDark={isDark} onPress={() => { dismissSearch(); onNewChat(); }} />
-        </Reanimated.View>
+        </View>
       </SafeAreaView>
     </View>
   );
