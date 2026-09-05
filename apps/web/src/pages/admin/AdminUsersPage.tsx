@@ -157,6 +157,7 @@ export function AdminUsersPage() {
                   <td className="px-3 py-2">
                     <span className="flex items-center gap-2">
                       <ProfileAvatar name={u.name} avatarUrl={u.avatarUrl} className="size-6" fallbackClassName="text-[9px]" />
+                      {u.deletionRequestedAt && <span className="text-xs text-destructive" title={u.deletionError ?? undefined}>{ui('Account deletion in progress')}{u.deletionError && <span className="block max-w-72 whitespace-normal">{u.deletionError}</span>}</span>}
                       <span>{u.name}<span className="ml-1.5 text-xs text-muted-foreground">@{u.username}</span></span>
                     </span>
                   </td>

@@ -92,6 +92,7 @@ export function AuthenticationSection() {
   const auth = useAuth()
   const models = useAvailableModels()
   const [t, setT, save] = useAdminSetting('auth', {
+    accountDeletionEnabled: true,
     signupEnabled: auth.signupEnabled,
     defaultBalanceMicros: 5_000_000,
     defaultStorageLimitBytes: 5_000 * 1024 * 1024,
@@ -112,6 +113,7 @@ export function AuthenticationSection() {
   return (
     <div>
       <Section title={ui("User access")}>
+        <Toggle label={ui("Allow users to delete their accounts")} checked={t.accountDeletionEnabled} onChange={(v) => s('accountDeletionEnabled', v)} />
         <Toggle
           label={ui("Enable new sign ups")}
           checked={t.signupEnabled}

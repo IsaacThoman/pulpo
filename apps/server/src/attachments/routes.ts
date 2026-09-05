@@ -7,7 +7,7 @@ import { MAX_CONFIGURABLE_ATTACHMENT_BYTES } from '@pulpo/contracts'
 import { requireUser } from '../auth/service.js'
 import { getConfig } from '../config.js'
 import { db } from '../database/client.js'
-import { attachments, chats, queuedMessages, responses } from '../database/schema.js'
+import { attachments, chats, queuedMessages, responses, users } from '../database/schema.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import { getBlobStore } from '../storage/index.js'
@@ -75,7 +75,12 @@ export async function registerAttachmentRoutes(app: FastifyInstance): Promise<vo
     const objectKey = `users/${user.id}/attachments/${id}`
     const created = await reserveAttachment({ id, userId: user.id, objectKey, ...input })
     const storageDriver = getConfig().STORAGE_DRIVER
-    const uploadUrl = await getBlobStore().createUploadUrl(objectKey, { contentType: input.mimeType, contentLength: input.sizeBytes }, 900)
+    const uploadUrl = await db.transaction(async (tx) => {
+      // Do not mint upload URLs after deletion starts; acceptance waits for this short lock.
+      const [owner] = await tx.select({ deleting: users.deletionRequestedAt }).from(users).where(eq(users.id, user.id)).for('share')
+      if (!owner || owner.deleting) throw new AppError(403, 'account_deleting', 'Account deletion has started')
+      return getBlobStore().createUploadUrl(objectKey, { contentType: input.mimeType, contentLength: input.sizeBytes }, 900)
+    })
     reply.code(201)
     return { attachment: created, uploadUrl, uploadHeaders: { 'content-type': attachmentUploadContentType(storageDriver, input.mimeType) } }
   })
@@ -111,6 +116,12 @@ export async function registerAttachmentRoutes(app: FastifyInstance): Promise<vo
       }
       request.log.error({ err: cause }, 'Attachment storage write failed')
       throw new AppError(500, attachmentStorageErrorCode(cause), 'Attachment storage write failed', 'server_error')
+    }
+    const [owner] = await db.select({ deleting: users.deletionRequestedAt }).from(users).where(eq(users.id, user.id))
+    if (!owner || owner.deleting) {
+      // A streamed upload may finish after session revocation and the worker's file sweep.
+      await getBlobStore().delete(key)
+      throw new AppError(403, 'account_deleting', 'Account deletion has started')
     }
     reply.code(204).send()
   })

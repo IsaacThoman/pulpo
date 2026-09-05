@@ -4,6 +4,7 @@ export type RootStackParamList = {
   Chat: { chatId?: string } | undefined;
   Settings: undefined;
   Account: undefined;
+  DeleteAccount: undefined;
   EditProfile: undefined;
   ChangePassword: undefined;
   TwoFactor: undefined;

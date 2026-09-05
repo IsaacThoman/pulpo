@@ -53,9 +53,10 @@ export function priceIdForPlan(plan: PaidBillingPlan): string {
 }
 
 async function checkoutUser(userId: string) {
-  const [user] = await db.select({ id: users.id, name: users.name, email: users.email })
+  const [user] = await db.select({ id: users.id, name: users.name, email: users.email, blocked: users.blocked })
     .from(users).where(eq(users.id, userId)).limit(1)
   if (!user) throw new AppError(404, 'user_not_found', 'User not found')
+  if (user.blocked) throw new AppError(403, 'account_blocked', 'The account cannot make billing changes')
   return user
 }
 
@@ -115,11 +116,12 @@ const checkoutCustomerUpdates = {
   name: 'auto',
 } as const
 
-export async function createCreditCheckout(input: {
+async function createCreditCheckoutUnchecked(input: {
   userId: string
   creditCents: number
   idempotencyKey: string
 }): Promise<{ url: string; checkoutId: string; chargeCents: number }> {
+  await checkoutUser(input.userId)
   const chargeCents = chargeCentsForCredits(input.creditCents)
   const prior = await existingCheckout(input.userId, input.idempotencyKey)
   if (prior?.checkoutUrl && prior.stripeCheckoutSessionId) {
@@ -183,11 +185,12 @@ export async function createCreditCheckout(input: {
   }
 }
 
-export async function createSubscriptionCheckout(input: {
+async function createSubscriptionCheckoutUnchecked(input: {
   userId: string
   plan: PaidBillingPlan
   idempotencyKey: string
 }): Promise<{ url: string; checkoutId: string }> {
+  await checkoutUser(input.userId)
   const [current] = await db.select({ id: billingSubscriptions.stripeSubscriptionId })
     .from(billingSubscriptions).where(and(
       eq(billingSubscriptions.userId, input.userId),
@@ -245,7 +248,7 @@ export async function createSubscriptionCheckout(input: {
   }
 }
 
-export async function createCustomerPortalUrl(userId: string): Promise<string> {
+async function createCustomerPortalUrlUnchecked(userId: string): Promise<string> {
   const customerId = await ensureCustomer(userId)
   const session = await getStripeClient().billingPortal.sessions.create({
     customer: customerId,
@@ -309,10 +312,11 @@ async function saveSubscription(subscription: Stripe.Subscription): Promise<Retu
   return result
 }
 
-export async function changeSubscription(input: {
+async function changeSubscriptionUnchecked(input: {
   userId: string
   plan: BillingPlan
 }): Promise<{ plan: BillingPlan; status: string; cancelAtPeriodEnd: boolean; currentPeriodEnd: string | null }> {
+  await checkoutUser(input.userId)
   const current = await currentPaidSubscription(input.userId)
   if (!current) throw new AppError(409, 'subscription_missing', 'Subscribe to a paid plan first')
 
@@ -379,4 +383,26 @@ export async function changeSubscription(input: {
     }
     rethrowStripe(error)
   }
+}
+
+// Hold a shared user lock while creating external billing resources. Deletion waits
+// for in-flight operations, then its cleanup sees every resulting Stripe ID.
+async function withBillingAccount<T>(userId: string, operation: () => Promise<T>): Promise<T> {
+  return db.transaction(async (tx) => {
+    const [user] = await tx.select().from(users).where(eq(users.id, userId)).for('share')
+    if (!user || user.blocked || user.deletionRequestedAt) throw new AppError(403, 'account_blocked', 'The account cannot make billing changes')
+    return operation()
+  })
+}
+export async function createCreditCheckout(input: Parameters<typeof createCreditCheckoutUnchecked>[0]) {
+  return withBillingAccount(input.userId, () => createCreditCheckoutUnchecked(input))
+}
+export async function createSubscriptionCheckout(input: Parameters<typeof createSubscriptionCheckoutUnchecked>[0]) {
+  return withBillingAccount(input.userId, () => createSubscriptionCheckoutUnchecked(input))
+}
+export async function changeSubscription(input: Parameters<typeof changeSubscriptionUnchecked>[0]) {
+  return withBillingAccount(input.userId, () => changeSubscriptionUnchecked(input))
+}
+export async function createCustomerPortalUrl(userId: string) {
+  return withBillingAccount(userId, () => createCustomerPortalUrlUnchecked(userId))
 }

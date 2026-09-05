@@ -25,7 +25,7 @@ export function PrivacyPage() {
     </section>
     <section>
       <h2>{ui("Control and deletion")}</h2>
-      <p>{ui("You can edit profile details, delete conversations and cached downloads, and sign out in the app. For account deletion, retention questions, or a copy of server-held data, contact the operator of your selected Pulpo instance. For the default service, open a request through")} <a href="https://github.com/IsaacThoman/pulpo/issues">{ui("Pulpo support")}</a>.</p>
+      <p>{ui("You can edit your profile and delete conversations and cached downloads in the app. When enabled by your instance administrator, use Delete account in web Security settings or mobile Account settings. Deletion permanently ends access and starts automatic data cleanup and subscription cancellation. Backups and payment records follow existing retention policies. For retention questions, disabled account deletion, or a copy of server-held data, contact your instance operator. For the default service, open a request through")} <a href="https://github.com/IsaacThoman/pulpo/issues">{ui("Pulpo support")}</a>.</p>
     </section>
     <section>
       <h2>{ui("Security and changes")}</h2>

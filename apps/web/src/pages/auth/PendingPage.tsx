@@ -1,3 +1,4 @@
+import { DeleteAccountSettings } from '@/components/settings/DeleteAccountSettings'
 import { useRef, useState } from 'react'
 import { useTranslation } from '@/i18n/useAppTranslation'
 import { Navigate, useNavigate } from 'react-router-dom'
@@ -190,6 +191,7 @@ export function PendingPage() {
             {t('auth.refreshStatus')}
           </Button>
         </div>
+        <DeleteAccountSettings />
       </div>
     </div>
   )

@@ -8,6 +8,7 @@ import {
   episodicMemoryGenerations,
   responses,
   userPreferences,
+  users,
 } from '../database/schema.js'
 import { newId } from '../lib/ids.js'
 import { activeLineageChunks } from './chunks.js'
@@ -45,6 +46,8 @@ function eligibleChatCondition(now = new Date()) {
 }
 
 export async function userMemoryIsEnabled(userId: string): Promise<boolean> {
+  const [owner] = await db.select({ deleting: users.deletionRequestedAt }).from(users).where(eq(users.id, userId)).limit(1)
+  if (!owner || owner.deleting) return false
   const [preference] = await db.select({ values: userPreferences.values }).from(userPreferences)
     .where(eq(userPreferences.userId, userId)).limit(1)
   return (preference?.values as { memoryEnabled?: unknown } | undefined)?.memoryEnabled === true
