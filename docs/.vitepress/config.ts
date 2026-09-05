@@ -11,6 +11,7 @@ const sidebar = [
   {
     text: 'Legal',
     items: [
+      { text: 'Hosted service terms', link: '/terms-hosted' },
       { text: 'Software privacy policy', link: '/privacy' },
       { text: 'Hosted service privacy policy', link: '/privacy-hosted' },
     ],
