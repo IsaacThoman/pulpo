@@ -191,33 +191,52 @@ export class ComposerSync {
     await this.finishSubmission(entry)
   }
   private async finishSubmission(entry: Entry): Promise<void> {
+    if (entry.finishing) { await entry.finishing; return this.finishSubmission(entry) }
     if (!entry.submissions?.length || !entry.ready || !this.transport) return
+    entry.finishing = this.finishSubmissions(entry)
+    try { await entry.finishing } finally { entry.finishing = undefined }
+  }
+  private async finishSubmissions(entry: Entry): Promise<void> {
     const submitted = entry.submissions
-    const revision = await this.flush(entry.snapshot.draftId)
-    if (revision === null) return
-    entry.submissions = entry.submissions?.filter((receipt) => !submitted.includes(receipt))
-    this.notify(entry, false)
-    // More than one message can be accepted while offline. The server may still
-    // hold any one of those drafts; clear only a matching submitted version.
-    const matching = [...submitted].reverse().find((receipt) => equal(entry.snapshot.state, receipt.state))
-    if (matching) await this.clear(entry.snapshot.draftId, matching.revision ?? revision)
+    if (!submitted?.length) return
+    // Keep receipts durable until the matching draft is cleared or replaced.
+    // A same-state write can advance its revision while the send is pending.
+    // Bound retries if another client is continuously changing the revision;
+    // the retained receipts will be checked again on reconnect.
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const revision = await this.flush(entry.snapshot.draftId)
+      if (revision === null) return
+      const matching = submitted.some((receipt) => equal(entry.snapshot.state, receipt.state))
+      if (matching) {
+        const result = await this.clear(entry.snapshot.draftId, revision)
+        if (result === 'pending') return
+        if (result === 'conflict') continue
+      }
+      entry.submissions = entry.submissions?.filter((receipt) => !submitted.includes(receipt))
+      this.notify(entry, false)
+      return
+    }
   }
 
-  async clear(draftId: string, revision: number): Promise<void> {
+  async clear(draftId: string, revision: number): Promise<'cleared' | 'conflict' | 'pending'> {
     const entry = this.entries.get(draftId)
-    if (!entry) return
+    if (!entry) return 'pending'
     entry.clearRevision = revision
     this.notify(entry, false)
     await entry.saved
-    if (!this.transport || !entry.ready) return
+    if (!this.transport || !entry.ready) return 'pending'
+    const generation = this.generation
     try {
       const result = await this.transport.write({ draftId, baseRevision: revision, mutationId: `${this.clientId}:${++this.sequence}`, patch: {}, clear: true })
+      if (generation !== this.generation) return 'pending'
       if (result.ok) {
         entry.clearRevision = undefined
         this.receive(result.snapshot, !result.conflict)
         this.notify(entry)
+        return result.conflict ? 'conflict' : 'cleared'
       }
     } catch { /* A successful submission's conditional clear is durable and retried on reconnect. */ }
+    return 'pending'
   }
 }
 interface Entry extends ComposerCheckpoint {
@@ -226,6 +245,7 @@ interface Entry extends ComposerCheckpoint {
   saved: Promise<void>
   inflight?: Partial<ComposerState>
   writing?: Promise<void>
+  finishing?: Promise<void>
   timer?: ReturnType<typeof setTimeout>
   ready: boolean
   reconciling?: { generation: number; promise: Promise<void> }
