@@ -159,6 +159,7 @@ import {
 } from './src/screens/MemberScreens';
 import type { RootStackParamList } from './src/navigation';
 import { usePrototypeStore } from './src/store/prototypeStore';
+import { MoveToFolderSheet } from './src/components/MoveToFolderSheet';
 import type { ActivityStep, PrototypeChat, PrototypeMessage, PrototypeModel, ResponseBranch } from './src/domain';
 import { chatRemovalBehavior } from './src/chatRemoval';
 import { modelSubtitle, reconcileComposerModelId, resolveDisplayModel } from './src/modelIdentity';
@@ -5087,7 +5088,7 @@ function NativeFoldersDisclosure({ folders, onCreate, onSelectChat }: {
             </SwiftUIHStack>
           </SwiftUIButton>
         </SwiftUIContextMenu.Trigger>
-        <SwiftUIContextMenu.Items><SwiftUIButton label="New folder" systemImage="folder.badge.plus" onPress={onCreate} /><SwiftUIButton label="Manage folders" systemImage="folder" onPress={() => Alert.alert('Manage folders')} /><SwiftUIDivider /><SwiftUIButton label="Sort folders" systemImage="arrow.up.arrow.down" onPress={() => Alert.alert('Sort folders')} /></SwiftUIContextMenu.Items>
+        <SwiftUIContextMenu.Items><SwiftUIButton label="New folder" systemImage="folder.badge.plus" onPress={onCreate} /></SwiftUIContextMenu.Items>
       </SwiftUIContextMenu>
     </SwiftUIHost>
     {expanded ? <Reanimated.View entering={entering} exiting={exiting} layout={layout} style={styles.nativeFoldersContent}>
@@ -5211,9 +5212,9 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
   const isDark = themePreference === 'dark' || (themePreference === 'system' && appearance !== 'light');
   const togglePin = usePrototypeStore((state) => state.togglePin);
   const renameChat = usePrototypeStore((state) => state.renameChat);
-  const moveChat = usePrototypeStore((state) => state.moveChat);
   const upsertChat = usePrototypeStore((state) => state.upsertChat);
   const addFolder = usePrototypeStore((state) => state.addFolder);
+  const [folderSheet, setFolderSheet] = useState<{ chatId: string; folderId: string | null } | null>(null);
   const [search, setSearch] = useState('');
   const [searchFocused, setSearchFocused] = useState(false);
   const [hideNewChatButton, setHideNewChatButton] = useState(
@@ -5306,11 +5307,7 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
       return;
     }
     if (action === 'move') {
-      Alert.alert('Move to folder', chat.title, [
-        { text: 'No folder', onPress: () => moveChat(chat.id, null) },
-        ...folders.slice(0, 3).map((folder) => ({ text: folder.name, onPress: () => moveChat(chat.id, folder.id) })),
-        { text: 'Cancel', style: 'cancel' as const },
-      ]);
+      setFolderSheet({ chatId: chat.id, folderId: chat.folderId });
       return;
     }
     if (action === 'duplicate') {
@@ -5319,16 +5316,19 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
         upsertChat({ id: copy.id, title: copy.title, modelId: copy.modelId, pinned: copy.pinned, folderId: copy.folderId, temporary: copy.temporary, createdAt: Date.parse(copy.createdAt), updatedAt: Date.parse(copy.updatedAt), deletedAt: null, purgeAt: null, messages: source?.messages ?? [] });
       }).catch((error) => Alert.alert('Couldn’t duplicate chat', error instanceof Error ? error.message : undefined));
     }
-  }, [folders, moveChat, renameChat, requiresConfirmation, togglePin, trashChat, upsertChat]);
+  }, [renameChat, requiresConfirmation, togglePin, trashChat, upsertChat]);
 
   const showChatActions = useCallback((chat: HistoryChatSummary) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     Alert.alert(chat.title, undefined, [
       { text: 'Rename', onPress: () => runChatAction(chat, 'rename') },
-      { text: 'Share', onPress: () => runChatAction(chat, 'share') },
-      { text: removeChatLabel, style: 'destructive', onPress: () => runChatAction(chat, 'delete') },
-      { text: 'Cancel', style: 'cancel' },
-    ]);
+      { text: 'Move to folder', onPress: () => runChatAction(chat, 'move') },
+      { text: 'More', onPress: () => Alert.alert(chat.title, undefined, [
+        { text: 'Share', onPress: () => runChatAction(chat, 'share') },
+        { text: removeChatLabel, style: 'destructive', onPress: () => runChatAction(chat, 'delete') },
+        { text: 'Cancel', style: 'cancel' },
+      ], { cancelable: true }) },
+    ], { cancelable: true });
   }, [removeChatLabel, runChatAction]);
 
   const selectHistoryChat = useCallback((chat: HistoryChatSummary) => {
@@ -5396,37 +5396,9 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
         </View>}
 
         <Reanimated.View pointerEvents={searchActive ? 'none' : 'auto'} style={searchActionsAnimatedStyle}>
-          {Platform.OS === 'ios' ? <NativeFoldersDisclosure folders={folderItems} onSelectChat={selectHistoryChat} onCreate={() => { dismissSearch(); Alert.prompt('New folder', 'Create a folder for related chats.', (name) => name.trim() && addFolder(name)); }} /> : <NativeObjectContextMenu
-            style={styles.folderContextMenuHost}
-            preview={(
-              <View style={styles.folderContextPreview}>
-                <Icon name="folder.fill" size={34} color={COLORS.textSoft} />
-                <Text style={styles.folderContextPreviewTitle}>Folders</Text>
-                <Text style={styles.folderContextPreviewMeta}>{folders.length} folders · Organize your Pulpo chats</Text>
-              </View>
-            )}
-            items={(
-              <>
-                <SwiftUIButton label="New folder" systemImage="folder.badge.plus" onPress={() => Platform.OS === 'ios' && Alert.prompt('New folder', undefined, (name) => name.trim() && addFolder(name))} />
-                <SwiftUIButton label="Manage folders" systemImage="folder" onPress={() => Alert.alert('Manage folders')} />
-                <SwiftUIDivider />
-                <SwiftUIButton label="Sort folders" systemImage="arrow.up.arrow.down" onPress={() => Alert.alert('Sort folders')} />
-              </>
-            )}
-          >
-            <Pressable
-              accessibilityLabel={`Folders, ${folders.length}`}
-              accessibilityRole="button"
-              delayLongPress={350}
-              onLongPress={() => Platform.OS !== 'ios' && Alert.alert('Folders', 'New folder · Manage folders · Sort folders')}
-              onPress={() => Platform.OS === 'ios' ? Alert.prompt('New folder', 'Create a folder for related chats.', (name) => name.trim() && addFolder(name)) : Haptics.selectionAsync()}
-              style={({ pressed }) => [styles.navRow, styles.folderNavRow, pressed && styles.navRowPressed]}
-            >
-              <Icon name="folder" size={17} color={COLORS.textSoft} />
-              <Text style={styles.navText}>Folders</Text>
-              <Text style={styles.navMeta}>{folders.length}</Text>
-            </Pressable>
-          </NativeObjectContextMenu>}
+          {Platform.OS === 'ios' ? <NativeFoldersDisclosure folders={folderItems} onSelectChat={selectHistoryChat} onCreate={() => { dismissSearch(); Alert.prompt('New folder', 'Create a folder for related chats.', (name) => name.trim() && addFolder(name)); }} /> : <View style={[styles.navRow, styles.folderNavRow]}>
+            <Icon name="folder" size={17} color={COLORS.textSoft} /><Text style={styles.navText}>Folders</Text><Text style={styles.navMeta}>{folders.length}</Text>
+          </View>}
         </Reanimated.View>
 
         <SectionList
@@ -5457,6 +5429,7 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
           <DrawerNewChatButton isDark={isDark} onPress={() => { dismissSearch(); onNewChat(); }} />
         </View>
       </SafeAreaView>
+      {folderSheet ? <MoveToFolderSheet chatId={folderSheet.chatId} folderId={folderSheet.folderId} folders={folders} onClose={() => setFolderSheet(null)} /> : null}
     </View>
   );
 });
