@@ -12,7 +12,7 @@ export function useComposerSync(userId: string | null, draftId: string, state: C
   const deferred = useRef<ComposerState | null>(null)
   const wasEditing = useRef(false)
   const baseline = useRef(state)
-  const applying = useRef(false)
+  const skippingEdit = useRef(false)
   const opened = useRef<string | null>(null)
   const sync = enabled && userId ? mobileComposerSync(userId) : null
   useEffect(() => {
@@ -22,17 +22,19 @@ export function useComposerSync(userId: string | null, draftId: string, state: C
     baseline.current = latest.current.state
     deferred.current = null
     wasEditing.current = false
-    applying.current = false
+    skippingEdit.current = false
     void sync.open(draftId, latest.current.state, (checkpoint) => {
       if (disposed || !usePreferencesStore.getState().composerSyncEnabled || latest.current.identity !== identity) return
       opened.current = identity
       const remote = { ...checkpoint.snapshot.state, ...checkpoint.pending }
-      if (!remote.model) remote.model = latest.current.state.model
-      if (latest.current.editing) deferred.current = remote
-      if (Object.keys(composerPatch(latest.current.state, remote)).length) {
-        applying.current = true
-        baseline.current = remote
-        latest.current.apply(remote)
+      // Keep the actual shared state as the baseline. Mobile can resolve model
+      // defaults while applying it; those resolved values must also be synced
+      // so conditional submission clears compare against the state we send.
+      baseline.current = remote
+      const display = remote.model ? remote : { ...remote, model: latest.current.state.model }
+      if (latest.current.editing) deferred.current = display
+      if (Object.keys(composerPatch(latest.current.state, display)).length) {
+        latest.current.apply(display)
       }
     }).then((cleanup) => { if (disposed) cleanup(); else close = cleanup })
     return () => { disposed = true; opened.current = null; close?.() }
@@ -44,15 +46,14 @@ export function useComposerSync(userId: string | null, draftId: string, state: C
     if (!editing && deferred.current) {
       const remote = deferred.current
       deferred.current = null
-      applying.current = true
       latest.current.apply(remote)
       return
     }
     if (paused) return
-    if (applying.current) { applying.current = false; baseline.current = state; return }
+    if (skippingEdit.current) { skippingEdit.current = false; baseline.current = state; return }
     const patch = composerPatch(baseline.current, state)
     baseline.current = state
     sync.edit(draftId, patch)
   })
-  return { sync, skipNextEdit: () => { applying.current = true } }
+  return { sync, skipNextEdit: () => { skippingEdit.current = true } }
 }
