@@ -100,8 +100,8 @@ export function ListRow({ icon, iconColor, leading, title, detail, value, onPres
 
 export function Field({ label, error, ...props }: TextInputProps & { label?: string; error?: string }) {
   const theme = useAppTheme();
-  if (Platform.OS === 'android') return <MaterialField label={label} error={error} {...props} />;
-  return <View style={styles.fieldWrap}>{label ? <Text style={[styles.fieldLabel, { color: theme.secondary }]}>{label}</Text> : null}{Platform.OS === 'ios' ? <NativeField {...props} /> : <TextInput placeholderTextColor={theme.secondary} {...props} style={[styles.field, { color: theme.text, backgroundColor: theme.elevated, borderColor: error ? theme.red : theme.separator }, props.style]} />}{error ? <Text style={[styles.fieldError, { color: theme.red }]}>{error}</Text> : null}</View>;
+  if (Platform.OS === 'android') return <View style={{ marginBottom: 16 }}><MaterialField label={label} error={error} {...props} /></View>;
+  return <View style={styles.fieldWrap}>{label ? <Text style={[styles.fieldLabel, { color: theme.secondary }]}>{label}</Text> : null}{Platform.OS === 'ios' ? <NativeField {...props} accessibilityLabel={props.accessibilityLabel ?? label} /> : <TextInput placeholderTextColor={theme.secondary} {...props} style={[styles.field, { color: theme.text, backgroundColor: theme.elevated, borderColor: error ? theme.red : theme.separator }, props.style]} />}{error ? <Text style={[styles.fieldError, { color: theme.red }]}>{error}</Text> : null}</View>;
 }
 
 export function PasswordField({ label, value, onChangeText, placeholder, revealed, onToggleVisibility }: {
@@ -144,6 +144,7 @@ function NativeField(props: TextInputProps) {
   const fieldHeight = props.multiline ? 130 : 50;
   const modifiers = [
     textFieldStyle('roundedBorder'), frame({ maxWidth: Infinity, minHeight: fieldHeight }), controlSize('large'),
+    ...(props.accessibilityLabel ? [swiftUIAccessibilityLabel(props.accessibilityLabel)] : []),
     ...(props.keyboardType ? [keyboardType(props.keyboardType as never)] : []),
     ...(props.autoCapitalize === 'none' ? [textInputAutocapitalization('never')] : []),
     ...(props.autoCorrect === false ? [autocorrectionDisabled()] : []),

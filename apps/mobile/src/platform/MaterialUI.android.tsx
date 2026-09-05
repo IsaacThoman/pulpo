@@ -65,9 +65,12 @@ export function MaterialField({ label, error, icon, trailingAction, ...props }: 
 }
 
 export function MaterialSwitch({ label, value, onChange }: {label: string; value: boolean; onChange: (value: boolean) => void}) {
-  return <Host style={{ width: 56, height: 48 }}><Switch value={value} onCheckedChange={onChange}>
-    <Switch.ThumbContent><Icon source={materialIcon(value ? 'checkmark' : 'xmark')} size={16} contentDescription={label} /></Switch.ThumbContent>
-  </Switch></Host>;
+  return <View accessible accessibilityRole="switch" accessibilityLabel={label} accessibilityState={{ checked: value }}
+    accessibilityActions={[{ name: 'activate' }]} onAccessibilityAction={() => onChange(!value)} onAccessibilityTap={() => onChange(!value)}>
+    <View importantForAccessibility="no-hide-descendants"><Host style={{ width: 56, height: 48 }}><Switch value={value} onCheckedChange={onChange}>
+      <Switch.ThumbContent><Icon source={materialIcon(value ? 'checkmark' : 'xmark')} size={16} /></Switch.ThumbContent>
+    </Switch></Host></View>
+  </View>;
 }
 
 export function MaterialSegmented<T extends string>({ options, value, onChange }: {options: readonly {value: T; label: string}[]; value: T; onChange: (value: T) => void}) {
@@ -160,13 +163,15 @@ export function MaterialOverlays() {
   if (!state) return null;
   const dismiss = () => update(null);
   if (state.kind === 'selection') return <MaterialDialog visible fullScreen title="Select text" onClose={dismiss}><ScrollView><RNText selectable style={{ color: colors.onSurface, fontSize: 16, lineHeight: 24, paddingBottom: 24 }}>{state.text}</RNText></ScrollView></MaterialDialog>;
-  if (state.kind === 'actions' && state.anchor) return <Host style={{ position: 'absolute', left: state.anchor.x, top: state.anchor.y, width: 1, height: 1 }} ignoreSafeAreaKeyboardInsets>
+  if (state.kind === 'actions' && state.anchor) return <Host key="anchored-actions" style={{ position: 'absolute', left: state.anchor.x, top: state.anchor.y, width: 1, height: 1 }} ignoreSafeAreaKeyboardInsets>
     <DropdownMenu expanded onDismissRequest={dismiss}>
       <DropdownMenu.Trigger><Column modifiers={[size(1, 1)]} /></DropdownMenu.Trigger>
       <DropdownMenu.Items><MenuItems actions={state.actions} onDismiss={dismiss} /></DropdownMenu.Items>
     </DropdownMenu>
   </Host>;
-  return <Host style={{ position: 'absolute', width: 1, height: 1 }}>{state.kind === 'prompt' ? <Prompt options={state.options} /> : <AlertDialog onDismissRequest={dismiss}>
+  // Separate host identities prevent Compose props from being reset to null when
+  // React batches dismissal of an anchored menu with opening its prompt.
+  return <Host key={state.kind} style={{ position: 'absolute', width: 1, height: 1 }} ignoreSafeAreaKeyboardInsets>{state.kind === 'prompt' ? <Prompt options={state.options} /> : <AlertDialog onDismissRequest={dismiss}>
     <AlertDialog.Title><Text>{state.title}</Text></AlertDialog.Title>
     <AlertDialog.Text><Column modifiers={[fillMaxWidth(), verticalScroll()]}>
       {state.actions.map((action) => <ListItem key={action.label} modifiers={action.disabled ? [] : [clickable(() => { dismiss(); action.onPress(); })]} colors={{ containerColor: colors.surfaceContainerHigh, contentColor: action.disabled ? colors.outline : action.destructive ? colors.error : colors.onSurface }}>

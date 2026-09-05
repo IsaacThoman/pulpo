@@ -1,4 +1,5 @@
 import { showActions } from '../../../platform/materialActions';
+import { useSubpageBack } from '../../../platform/useSubpageBack';
 import { DeleteAccountForm } from '../../../components/DeleteAccount';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import {
@@ -102,6 +103,7 @@ export function PasskeysScreen({ navigation }: NativeStackScreenProps<RootStackP
   const refresh = useCallback(() => mobileApi.passkeys().then(setData).catch((next) => setError(next instanceof Error ? next.message : 'Could not load passkeys.')), []);
   useEffect(() => { void refresh(); }, [refresh]);
   const reset = () => { setAction('list'); setSelected(null); setName(''); setCurrentPassword(''); setVerificationCode(''); setError(''); setForceSafari(false); };
+  useSubpageBack(action !== 'list', reset);
   const fail = (next: unknown, fallback: string) => {
     if (next instanceof PasskeyCancelledError) return;
     setError(next instanceof Error ? next.message : fallback);
@@ -184,7 +186,7 @@ export function EditProfileScreen({ navigation }: NativeStackScreenProps<RootSta
   }, [name, navigation, save]);
 
   if (Platform.OS === 'ios') return <SwiftUIHost modifiers={[tint(theme.blue)]} style={styles.flex}><SwiftUIForm><SwiftUISection title="Profile" footer={<SwiftUIText modifiers={[foregroundStyle('secondary')]}>This is the name shown on your Pulpo account.</SwiftUIText>}><NativeFormTextField title="Name" value={name} onChange={setName} /><SwiftUILabeledContent label="Email"><SwiftUIText modifiers={[foregroundStyle('secondary')]}>{session.user?.email ?? ''}</SwiftUIText></SwiftUILabeledContent></SwiftUISection></SwiftUIForm></SwiftUIHost>;
-  return <Screen><PageHeader title="Edit Profile" onBack={() => navigation.goBack()} /><View style={{ gap: 20 }}><Field label="Display name" value={name} onChangeText={setName} /><PrimaryButton label="Save" disabled={!name.trim()} onPress={save} /></View></Screen>;
+  return <Screen><PageHeader title="Edit Profile" onBack={() => navigation.goBack()} /><Field label="Display name" value={name} onChangeText={setName} /><PrimaryButton label="Save" disabled={!name.trim()} onPress={save} /></Screen>;
 }
 
 function NativePasswordField({ placeholder, value, onChange }: { placeholder: string; value: string; onChange: (value: string) => void }) {
@@ -229,6 +231,7 @@ export function TwoFactorScreen({ navigation }: NativeStackScreenProps<RootStack
   const refresh = useCallback(() => mobileApi.twoFactorStatus().then(setStatus).catch((next) => setError(next instanceof Error ? next.message : 'Could not load two-factor status.')), []);
   useEffect(() => { void refresh(); }, [refresh]);
   const reset = () => { setAction('idle'); setEnrollment(null); setRecoveryCodes([]); setCurrentPassword(''); setVerificationCode(''); setConfirmationCode(''); setError(''); };
+  useSubpageBack(action !== 'idle', reset);
   const fail = (next: unknown) => setError(next instanceof Error ? next.message : 'Could not update two-factor authentication.');
   const begin = () => {
     setLoading(true); setError('');
@@ -382,6 +385,7 @@ export function SettingsDetailScreen({ navigation, route }: NativeStackScreenPro
 }
 
 function Toggle({ title, detail, value, onChange, last = false }: { title: string; detail?: string; value: boolean; onChange: (value: boolean) => void; last?: boolean }) { return <ListRow title={title} detail={detail} last={last}><NativeSwitch label={title} value={value} onChange={onChange} /></ListRow>; }
+const retentionLabels: Record<string, string> = { instant: 'No retention', '24h': '24 hours', '7d': '7 days', '30d': '30 days', '90d': '90 days', indefinite: 'Indefinitely' };
 export function TrashScreen({ navigation }: NativeStackScreenProps<RootStackParamList, 'Trash'>) {
   const theme = useAppTheme();
   const storedChats = usePrototypeStore((state) => state.chats);
@@ -405,7 +409,7 @@ export function TrashScreen({ navigation }: NativeStackScreenProps<RootStackPara
     </SwiftUISection>
   </SwiftUIForm></SwiftUIHost>;
   return <Screen><PageHeader title="Trash" subtitle={`${chats.length} recoverable chat${chats.length === 1 ? '' : 's'}`} onBack={() => navigation.goBack()} right={chats.length ? <GlassIconButton icon="trash.slash" label="Empty trash" onPress={() => Alert.alert('Empty trash?', 'This cannot be undone.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Delete all', style: 'destructive', onPress: empty }])} /> : undefined} />
-    <SectionTitle>Retention</SectionTitle><Card><ListRow title="Keep trashed chats" detail="Chats are permanently removed after this period." value={retention === 'indefinite' ? 'Indefinitely' : retention} last onPress={() => showActions('Trash retention', ['instant', '24h', '7d', '30d', '90d', 'indefinite'].map((value) => ({ label: value === 'instant' ? 'No retention' : value === 'indefinite' ? 'Indefinitely' : value, selected: retention === value, onPress: () => setPreference('trashRetention', value as typeof retention) })))} /></Card>
+    <SectionTitle>Retention</SectionTitle><Card><ListRow title="Keep trashed chats" detail="Chats are permanently removed after this period." value={retentionLabels[retention]} last onPress={() => showActions('Trash retention', ['instant', '24h', '7d', '30d', '90d', 'indefinite'].map((value) => ({ label: retentionLabels[value], selected: retention === value, onPress: () => setPreference('trashRetention', value as typeof retention) })))} /></Card>
     {chats.length === 0 ? <EmptyState icon="trash" title="Trash is empty" detail="Deleted chats will appear here when retention is enabled." /> : <><SectionTitle>Trashed chats</SectionTitle><Card>{chats.map((chat, index) => <ListRow key={chat.id} icon="bubble.left" iconColor={theme.red} title={chat.title} detail={`Trashed ${relative(chat.deletedAt!)} ago · ${chat.purgeAt ? `deletes in ${Math.max(1, Math.ceil((chat.purgeAt - Date.now()) / 86_400_000))}d` : 'kept indefinitely'}`} last={index === chats.length - 1} onPress={() => Alert.alert(chat.title, `Trashed ${relative(chat.deletedAt!)} ago${chat.purgeAt ? `\nDeletes in ${relative(Date.now() - (chat.purgeAt - Date.now()))}` : '\nKept indefinitely'}`, [{ text: 'Restore', onPress: () => restore(chat.id) }, { text: 'Delete permanently', style: 'destructive', onPress: () => remove(chat.id) }, { text: 'Cancel', style: 'cancel' }])} />)}</Card></>}
   </Screen>;
 }

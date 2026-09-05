@@ -101,6 +101,34 @@ describe('composer realtime synchronization', () => {
     expect(f.snapshot().state.content).toBe('offline')
     a.sync.dispose(); b.sync.dispose()
   })
+  it.each([false, true])('recovers a lost acknowledgement without overwriting another writer (remote edit: %s)', async (remoteEdit) => {
+    const f = fixture(), a = f.client('a')
+    await a.open()
+    a.sync.connect({ ...f.transport, write: async (input) => {
+      await f.transport.write(input)
+      throw new Error('connection lost after commit')
+    } })
+    await a.sync.open('new', state(), a.listener)
+    a.sync.edit('new', { content: 'Offline reta' })
+    await a.sync.flush('new')
+    a.sync.disconnect()
+    a.sync.edit('new', { content: 'Offline retained draft' })
+    await vi.waitFor(() => expect(a.saved()?.pending.content).toBe('Offline retained draft'))
+    const checkpoint = a.saved()
+    if (remoteEdit) {
+      const other = f.client('other')
+      await other.open()
+      other.sync.edit('new', { content: 'New draft from another device' })
+      await other.sync.flush('new')
+      other.sync.dispose()
+    }
+    a.sync.dispose()
+    const restarted = f.client('restarted', checkpoint)
+    await restarted.open()
+    expect(f.snapshot().state.content).toBe(remoteEdit ? 'New draft from another device' : 'Offline retained draft')
+    restarted.sync.dispose()
+  })
+
   it('coalesces typing with a trailing flush during continuous input', async () => {
     vi.useFakeTimers()
     try {

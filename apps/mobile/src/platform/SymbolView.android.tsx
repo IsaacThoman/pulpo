@@ -9,7 +9,7 @@ import { materialIcon } from './materialIcons';
 export function SymbolView({ name, size = 24, tintColor, style, accessibilityLabel, ...props }: SymbolViewProps) {
   const colors = useMaterialColors();
   const symbol = typeof name === 'string' ? name : name.android ?? name.ios ?? 'info';
-  return <View style={[{ width: size, height: size, flexShrink: 0 }, style]} accessible={Boolean(accessibilityLabel)} accessibilityLabel={accessibilityLabel} importantForAccessibility={accessibilityLabel ? 'yes' : 'no-hide-descendants'} testID={props.testID}>
+  return <View pointerEvents="none" style={[{ width: size, height: size, flexShrink: 0 }, style]} accessible={Boolean(accessibilityLabel)} accessibilityLabel={accessibilityLabel} importantForAccessibility={accessibilityLabel ? 'yes' : 'no-hide-descendants'} testID={props.testID}>
     <Host style={{ width: size, height: size }} pointerEvents="none" ignoreSafeAreaKeyboardInsets><Icon source={materialIcon(symbol)} size={size} tint={materialTint(tintColor, colors) ?? colors.onSurface} /></Host>
   </View>;
 }

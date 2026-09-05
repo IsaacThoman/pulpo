@@ -1,11 +1,17 @@
 import { accountDeletionRequirementsSchema, type AccountDeletionRequirements } from '@pulpo/contracts'
 import { useAppTheme } from '../mockup5/src/theme'
 import { useEffect, useState } from 'react'
-import { Alert, Button, Linking, Modal, SafeAreaView, ScrollView, Text, TextInput, View } from 'react-native'
+import { Alert, Button as RNButton, KeyboardAvoidingView, Linking, Modal, Platform, ScrollView, Text, TextInput, View } from 'react-native'
+import { SafeAreaView } from 'react-native-safe-area-context'
+import { MaterialButton, MaterialField } from '../platform/MaterialUI'
 import { useQueryClient } from '@tanstack/react-query'
 import { apiRequest, mobileApi } from '../api/client'
 import { useSessionStore } from '../store/session'
 import { cacheNamespace } from '../data/database'
+
+function Button({ title, color, ...props }: { title: string; color?: string; disabled?: boolean; onPress: () => void }) {
+  return Platform.OS === 'android' ? <MaterialButton label={title} variant={color ? 'destructive' : 'secondary'} {...props} /> : <RNButton title={title} color={color} {...props} />
+}
 
 export function DeleteAccountForm({ onClose }: { onClose: () => void }) {
   const theme = useAppTheme()
@@ -69,7 +75,7 @@ export function DeleteAccountForm({ onClose }: { onClose: () => void }) {
     }
     Alert.alert('Account deletion started', 'Your access has ended. Permanent cleanup and subscription cancellation will continue automatically.')
   }
-  return <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }}><ScrollView contentContainerStyle={{ padding: 24, gap: 16 }} keyboardShouldPersistTaps="handled">
+  return <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }}><KeyboardAvoidingView behavior={Platform.OS === 'android' ? 'padding' : undefined} style={{ flex: 1 }}><ScrollView contentContainerStyle={{ padding: 24, gap: 16 }} keyboardShouldPersistTaps="handled">
     <Text accessibilityRole="header" style={{ fontSize: 24, fontWeight: '600', color: theme.text }}>Delete account</Text>
     <Text style={{ color: theme.secondary }}>{user?.email}{'\n'}{instanceUrl}</Text>
     {!settings && !error ? <Text style={{ color: theme.secondary }}>Loading…</Text> : null}
@@ -81,9 +87,9 @@ export function DeleteAccountForm({ onClose }: { onClose: () => void }) {
     {!requirements && error ? <Button title="Retry" disabled={checking} onPress={() => { setError(''); void loadRequirements() }} /> : null}
     {settings?.accountDeletionEnabled && requirements ? <>
       <Text style={{ color: theme.secondary }}>Deletion is permanent. Your chats, files, memories, and shared links will be removed. Subscriptions will be canceled and unused credits forfeited, with no automatic refunds. Access ends immediately; background cleanup may take time. Backups and payment records follow existing retention policies.</Text>
-      <Text style={{ color: theme.text }}>Current password</Text>
-      <TextInput accessibilityLabel="Current password" secureTextEntry textContentType="password" autoCapitalize="none" value={password} onChangeText={setPassword} editable={!busy} style={{ borderWidth: 1, borderColor: theme.separator, padding: 12, borderRadius: 8, color: theme.text }} />
-      {requirements.twoFactorEnabled ? <><Text style={{ color: theme.text }}>Authenticator or recovery code</Text>
+      {Platform.OS === 'android' ? <MaterialField label="Current password" secureTextEntry autoComplete="current-password" value={password} onChangeText={setPassword} editable={!busy} /> : <><Text style={{ color: theme.text }}>Current password</Text>
+      <TextInput accessibilityLabel="Current password" secureTextEntry textContentType="password" autoCapitalize="none" value={password} onChangeText={setPassword} editable={!busy} style={{ borderWidth: 1, borderColor: theme.separator, padding: 12, borderRadius: 8, color: theme.text }} /></>}
+      {requirements.twoFactorEnabled ? Platform.OS === 'android' ? <MaterialField label="Authenticator or recovery code" autoComplete="one-time-code" autoCapitalize="none" autoCorrect={false} value={code} onChangeText={setCode} editable={!busy} /> : <><Text style={{ color: theme.text }}>Authenticator or recovery code</Text>
       <TextInput accessibilityLabel="Authenticator or recovery code" textContentType="oneTimeCode" autoCapitalize="none" autoCorrect={false} value={code} onChangeText={setCode} editable={!busy} style={{ borderWidth: 1, borderColor: theme.separator, padding: 12, borderRadius: 8, color: theme.text }} />
       </> : null}
       <Button title={busy ? 'Deleting…' : 'Permanently delete account'} color="#b91c1c" disabled={busy || !password || (requirements.twoFactorEnabled && !code.trim())} onPress={() => Alert.alert('Permanently delete account?', 'This cannot be undone.', [
@@ -92,7 +98,7 @@ export function DeleteAccountForm({ onClose }: { onClose: () => void }) {
     </> : null}
     {error ? <Text accessibilityRole="alert" style={{ color: theme.red }}>{error}</Text> : null}
     <Button title="Cancel" disabled={busy} onPress={onClose} />
-  </ScrollView></SafeAreaView>
+  </ScrollView></KeyboardAvoidingView></SafeAreaView>
 }
 
 export function DeleteAccountAction() {

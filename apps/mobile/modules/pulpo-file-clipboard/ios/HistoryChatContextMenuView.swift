@@ -6,6 +6,7 @@ public final class HistoryChatContextMenuView: ExpoView, UIContextMenuInteractio
   let onChatPress = EventDispatcher()
   let onPreviewRequest = EventDispatcher()
 
+  private var pendingAction: String?
   private var pinned = false
   private var removeChatLabel = "Delete chat"
   private var expirationAction = "hidden"
@@ -163,9 +164,18 @@ public final class HistoryChatContextMenuView: ExpoView, UIContextMenuInteractio
     willEndFor configuration: UIContextMenuConfiguration,
     animator: UIContextMenuInteractionAnimating?
   ) {
-    animator?.addCompletion { [weak self] in
-      self?.activePreviewController = nil
+    let finish = { [weak self] in
+      guard let self else { return }
+      self.activePreviewController = nil
+      if let action = self.pendingAction {
+        self.pendingAction = nil
+        self.onAction(["action": action])
+      }
     }
+    // UIKit temporarily inserts preview views beside the React-managed row.
+    // Wait until dismissal restores that hierarchy before pin/trash can move it.
+    if let animator { animator.addCompletion(finish) }
+    else { DispatchQueue.main.async(execute: finish) }
   }
 
   private func menuAction(
@@ -183,7 +193,7 @@ public final class HistoryChatContextMenuView: ExpoView, UIContextMenuInteractio
       image: image,
       attributes: attributes
     ) { [weak self] _ in
-      self?.onAction(["action": action])
+      self?.pendingAction = action
     }
   }
 

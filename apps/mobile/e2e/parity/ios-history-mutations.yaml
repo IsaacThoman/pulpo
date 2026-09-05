@@ -1,0 +1,30 @@
+appId: com.isaacthoman.pulpo
+---
+- longPressOn: Parity Android actions copy
+- tapOn: Move
+- assertVisible: Move to folder
+- tapOn: Android QA
+- longPressOn: Parity Android actions copy
+- tapOn: Move
+- tapOn: No folder
+- longPressOn: Parity Android actions copy
+- tapOn: 'Expire in.*'
+- longPressOn: Parity Android actions copy
+- tapOn: 'Disable expiry.*'
+- longPressOn: Parity Android actions copy
+- tapOn: Trash
+- tapOn: Settings
+- tapOn: 'Trash, Retention.*'
+- tapOn: 'Parity Android actions copy.*'
+- tapOn: Restore
+- tapOn: Settings
+- tapOn: Chat
+- longPressOn: Parity Android actions copy
+- tapOn: Trash
+- tapOn: Settings
+- tapOn: 'Trash, Retention.*'
+- tapOn: 'Parity Android actions copy.*'
+- tapOn: Delete permanently
+- assertVisible: Trash is empty
+- tapOn: Settings
+- tapOn: Chat

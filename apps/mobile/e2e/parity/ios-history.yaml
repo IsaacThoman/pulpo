@@ -1,0 +1,21 @@
+appId: com.isaacthoman.pulpo
+---
+- hideKeyboard
+- tapOn: Open chats
+- tapOn: Search chats
+- inputText: missing-parity-xyz
+- assertVisible: No chats match.*
+- tapOn: Clear search
+- hideKeyboard
+- longPressOn: Parity Android actions
+- tapOn: Pin chat
+- longPressOn: Parity Android actions
+- tapOn: Unpin chat
+- longPressOn: Parity Android actions
+- tapOn: Rename chat
+- tapOn: Cancel
+- longPressOn: Parity Android actions
+- tapOn: Duplicate chat
+- extendedWaitUntil:
+    visible: Parity Android actions copy
+    timeout: 10000

@@ -1,4 +1,5 @@
 import { MaterialButton, MaterialField } from '../../../platform/MaterialUI';
+import { useSubpageBack } from '../../../platform/useSubpageBack';
 import { DeleteAccountAction } from '../../../components/DeleteAccount';
 import type { ComponentProps, PropsWithChildren, ReactNode } from 'react';
 import { useState } from 'react';
@@ -131,6 +132,7 @@ export function AuthExperience() {
     setPasskeyFallback(false);
     setPage(next);
   };
+  useSubpageBack(page !== 'login', () => goTo('login'));
   const run = async (action: () => Promise<void>) => {
     setError('');
     setLoading(true);

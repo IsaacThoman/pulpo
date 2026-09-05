@@ -809,6 +809,7 @@ function AttachmentStrip({ attachments, onPreviewFile, onPreviewImage, onRemove,
   return (
     <ScrollView
       accessibilityLabel={`${attachments.length} of ${MAX_COMPOSER_ATTACHMENTS} attachments`}
+      keyboardShouldPersistTaps="handled"
       horizontal
       contentContainerStyle={styles.attachmentStripContent}
       showsHorizontalScrollIndicator={false}
@@ -862,19 +863,19 @@ function AttachmentStrip({ attachments, onPreviewFile, onPreviewImage, onRemove,
             {attachment.state === 'uploading' ? (
               <View style={styles.attachmentLoadingOverlay}><ActivityIndicator color="#ffffff" size="small" /></View>
             ) : null}
-            <Pressable
-              accessibilityLabel={`Remove ${attachment.name}`}
-              accessibilityRole="button"
-              onPress={(event) => {
-                event.stopPropagation();
-                onRemove(attachment.localId);
-              }}
-              style={styles.removeAttachmentHitTarget}
-            >
-              <View style={styles.removeAttachmentButton}>
-                <Icon name="xmark" size={9} color="#ffffff" weight="bold" />
-              </View>
-            </Pressable>
+          </Pressable>
+          <Pressable
+            accessibilityLabel={`Remove ${attachment.name}`}
+            accessibilityRole="button"
+            onPress={(event) => {
+              event.stopPropagation();
+              onRemove(attachment.localId);
+            }}
+            style={styles.removeAttachmentHitTarget}
+          >
+            <View style={styles.removeAttachmentButton}>
+              <Icon name="xmark" size={9} color="#ffffff" weight="bold" />
+            </View>
           </Pressable>
           {attachment.state === 'failed' ? (
             <Pressable
@@ -1501,10 +1502,11 @@ function PrototypeRoot() {
     });
   }, [authKeyboardHandoffPending, keyboardHandedOffToken, productionStatus, productionToken]);
   if (productionStatus === 'hydrating') return null;
-  if (status !== 'signed-in') return <AuthExperience />;
+  // Pending-account sign-out/deletion must discard the earlier signup form.
+  if (status !== 'signed-in') return <AuthExperience key={status === 'pending' ? 'pending' : 'auth'} />;
   // Retain the focused auth input until its keyboard is fully gone. The chat
   // input can then mount and auto-focus against a clean keyboard state.
-  if (authKeyboardHandoffPending) return <AuthExperience />;
+  if (authKeyboardHandoffPending) return <AuthExperience key="auth" />;
   return (
     <NavigationContainer theme={navigationTheme}>
       <RootStack.Navigator
@@ -4839,7 +4841,7 @@ function ChatView({
         />
       )}
 
-      <KeyboardStickyView enabled={keyboardLayoutEnabled} offset={keyboardOffset} style={styles.composerSticky}>
+      <KeyboardStickyView enabled={keyboardLayoutEnabled} offset={keyboardOffset} style={[styles.composerSticky, Platform.OS === 'android' && styles.androidComposerSurface]}>
         <View
           onLayout={({ nativeEvent: { layout } }) => {
             // The resting composer is already covered by the transcript's static
@@ -5721,6 +5723,7 @@ const styles = StyleSheet.create({
   suggestionLabel: { color: COLORS.textSoft, fontSize: 13, lineHeight: 18 },
 
   composerSticky: { position: 'absolute', left: 0, right: 0, bottom: 0 },
+  androidComposerSurface: { backgroundColor: COLORS.background },
   composerQueue: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.line, marginBottom: 10 },
   composerQueueHeader: { minHeight: 44, paddingHorizontal: 5, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   composerQueueTitle: { color: COLORS.muted, fontSize: 12, fontWeight: '500' },
@@ -5733,9 +5736,9 @@ const styles = StyleSheet.create({
   messageEditCancel: { color: COLORS.muted, fontSize: 12, fontWeight: '600', paddingHorizontal: 4, paddingVertical: 2 },
   attachmentRestrictionText: { color: COLORS.warning, fontSize: 11, lineHeight: 15, paddingHorizontal: 6, paddingBottom: 6 },
   attachmentErrorText: { color: COLORS.critical, fontSize: 11, lineHeight: 15, paddingHorizontal: 6, paddingBottom: 6 },
-  attachmentStrip: { height: 72, marginBottom: 3 },
+  attachmentStrip: { height: 78, marginBottom: 3 },
   attachmentStripContent: { gap: 6, paddingHorizontal: 2 },
-  attachmentFrame: { paddingTop: 6, paddingRight: 6 },
+  attachmentFrame: { paddingTop: 12, paddingRight: 12 },
   failedAttachment: { borderWidth: 1, borderColor: 'rgba(255,69,58,0.55)' },
   imageAttachment: { width: 64, height: 64, borderRadius: 13, overflow: 'visible', backgroundColor: COLORS.fill },
   attachmentImage: { width: 64, height: 64, borderRadius: 13 },
@@ -5745,7 +5748,7 @@ const styles = StyleSheet.create({
   fileAttachmentCopy: { flex: 1 },
   fileAttachmentName: { color: COLORS.text, fontSize: 12.5, fontWeight: '600' },
   fileAttachmentMeta: { color: COLORS.muted, fontSize: 10.5, marginTop: 3 },
-  removeAttachmentHitTarget: { position: 'absolute', top: -12, right: -12, width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  removeAttachmentHitTarget: { position: 'absolute', top: 0, right: 0, width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   removeAttachmentButton: { width: 20, height: 20, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: '#3a3a3c', borderWidth: 2, borderColor: COLORS.elevated },
   attachmentRetryOverlay: { position: 'absolute', left: 6, right: 6, bottom: 4, minHeight: 24, borderRadius: 9, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, backgroundColor: 'rgba(196,43,37,0.92)', paddingHorizontal: 7 },
   attachmentRetryText: { color: '#ffffff', fontSize: 10.5, fontWeight: '700' },
