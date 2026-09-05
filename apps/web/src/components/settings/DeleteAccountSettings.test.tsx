@@ -23,12 +23,12 @@ async function mount(settings: object) {
   await act(async () => root.render(<DeleteAccountSettings />))
 }
 async function click(text: string) {
-  const button = Array.from(container.querySelectorAll('button')).find((item) => item.textContent === text)
+  const button = Array.from(document.querySelectorAll('button')).find((item) => item.textContent === text)
   expect(button).toBeDefined()
   await act(async () => button!.click())
 }
 async function password(value: string) {
-  const input = container.querySelector<HTMLInputElement>('#delete-account-password')!
+  const input = document.querySelector<HTMLInputElement>('#delete-account-password')!
   await act(async () => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value)
     input.dispatchEvent(new Event('input', { bubbles: true }))
@@ -38,20 +38,22 @@ async function password(value: string) {
 describe('web account deletion', () => {
   it.each([{}, { accountDeletionEnabled: false, adminEmail: 'admin@example.test' }])('does not offer deletion when unavailable: %j', async (settings) => {
     await mount(settings)
-    expect(container.querySelector('button')).toBeNull()
-    expect(container.textContent).toMatch(/disabled|does not support/)
+    expect(document.querySelector('button')).toBeNull()
+    expect(document.body.textContent).toMatch(/disabled|does not support/)
   })
   it('identifies the account and instance, and clears secrets when the form is canceled', async () => {
     await mount({ accountDeletionEnabled: true }); await click('Delete account')
-    expect(container.textContent).toContain('me@example.test · https://instance.test')
-    expect(container.textContent).toContain('no automatic refunds')
-    await password('secret'); await click('Cancel'); await click('Delete account')
-    expect(container.querySelector<HTMLInputElement>('#delete-account-password')!.value).toBe('')
+    expect(document.querySelector('[role="dialog"]')).not.toBeNull()
+    expect(container.querySelector('form')).toBeNull()
+    expect(document.body.textContent).toContain('me@example.test · https://instance.test')
+    expect(document.body.textContent).toContain('no automatic refunds')
+    await password('secret'); await click('Close'); await click('Delete account')
+    expect(document.querySelector<HTMLInputElement>('#delete-account-password')!.value).toBe('')
   })
   it('does not send a request when final confirmation is canceled', async () => {
     await mount({ accountDeletionEnabled: true }); await click('Delete account'); await password('secret')
-    vi.mocked(window.confirm).mockReturnValue(false)
-    await click('Permanently delete account')
+    await click('Close')
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
     expect(mocks.request).toHaveBeenCalledTimes(1)
     expect(mocks.logout).not.toHaveBeenCalled()
   })
@@ -60,6 +62,7 @@ describe('web account deletion', () => {
     mocks.request.mockResolvedValueOnce({ status: 'deletion_requested' })
     await click('Permanently delete account')
     expect(mocks.request).toHaveBeenLastCalledWith('/api/me', { method: 'DELETE', body: { currentPassword: 'secret', verificationCode: undefined } })
+    expect(window.confirm).not.toHaveBeenCalled()
     expect(mocks.logout).toHaveBeenCalledWith(true)
     expect(mocks.navigate).toHaveBeenCalledWith('/login', { replace: true, state: { accountDeletionRequested: true } })
   })
@@ -67,7 +70,7 @@ describe('web account deletion', () => {
     await mount({ accountDeletionEnabled: true }); await click('Delete account'); await password('secret')
     mocks.request.mockRejectedValueOnce(new Error('Transfer Pool ownership first'))
     await click('Permanently delete account')
-    expect(container.querySelector('[role="alert"]')!.textContent).toContain('Transfer Pool ownership')
+    expect(document.querySelector('[role="alert"]')!.textContent).toContain('Transfer Pool ownership')
     expect(mocks.logout).not.toHaveBeenCalled()
   })
 })

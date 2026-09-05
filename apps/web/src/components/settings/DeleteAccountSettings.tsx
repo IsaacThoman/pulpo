@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogDescription, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
+import { Separator } from '@/components/ui/separator'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { apiRequest } from '@/lib/api'
@@ -25,8 +27,14 @@ export function DeleteAccountSettings() {
     return () => { active = false }
   }, [])
 
+  const handleOpenChange = (nextOpen: boolean) => {
+    if (busy) return
+    setOpen(nextOpen)
+    if (!nextOpen) { setPassword(''); setCode(''); setError('') }
+  }
+
   const submit = async () => {
-    if (!window.confirm(ui('Permanently delete your account? This cannot be undone.'))) return
+    if (busy || !password) return
     setBusy(true); setError('')
     try {
       await apiRequest('/api/me', { method: 'DELETE', body: { currentPassword: password, verificationCode: code.trim() || undefined } })
@@ -40,33 +48,42 @@ export function DeleteAccountSettings() {
     navigate('/login', { replace: true, state: { accountDeletionRequested: true } })
   }
 
-  return <div className="border-t">
-    <div className="flex min-w-0 flex-col items-start gap-2 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-      <div className="min-w-0 flex-1">
-        <h3 className="text-sm font-medium">{ui('Delete account')}</h3>
-        <div className="mt-0.5 text-xs text-muted-foreground">
-          {!settings && !error && ui('Loading…')}
-          {settings?.accountDeletionEnabled && ui('Permanently delete your account and its data.')}
-          {settings && !settings.accountDeletionEnabled && <>
-            {settings.accountDeletionEnabled === false ? ui('Account deletion is disabled by the instance administrator.') : ui('This server does not support account deletion.')}
-            {settings.adminEmail && <> <a href={`mailto:${settings.adminEmail}`} className="underline">{settings.adminEmail}</a></>}
-          </>}
+  return <Dialog open={open} onOpenChange={handleOpenChange}>
+    <div className="border-t">
+      <div className="flex min-w-0 flex-col items-start gap-2 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+        <div className="min-w-0 flex-1">
+          <h3 className="text-sm font-medium">{ui('Delete account')}</h3>
+          <div className="mt-0.5 text-xs text-muted-foreground">
+            {!settings && !error && ui('Loading…')}
+            {settings?.accountDeletionEnabled && ui('Permanently delete your account and its data.')}
+            {settings && !settings.accountDeletionEnabled && <>
+              {settings.accountDeletionEnabled === false ? ui('Account deletion is disabled by the instance administrator.') : ui('This server does not support account deletion.')}
+              {settings.adminEmail && <> <a href={`mailto:${settings.adminEmail}`} className="underline">{settings.adminEmail}</a></>}
+            </>}
+          </div>
         </div>
+        {settings?.accountDeletionEnabled && <DialogTrigger asChild><Button className="shrink-0" variant="destructive" size="sm">{ui('Delete account')}</Button></DialogTrigger>}
       </div>
-      {settings?.accountDeletionEnabled && !open && <Button className="shrink-0" variant="destructive" size="sm" onClick={() => setOpen(true)}>{ui('Delete account')}</Button>}
+      {!open && error && <p role="alert" className="pb-3 text-sm text-destructive">{error}</p>}
     </div>
-    {settings?.accountDeletionEnabled && open && <form className="space-y-3 pb-3" onSubmit={(event) => { event.preventDefault(); void submit() }}>
+    <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-md" showCloseButton={!busy} onEscapeKeyDown={(event) => { if (busy) event.preventDefault() }} onInteractOutside={(event) => { if (busy) event.preventDefault() }}>
+      <DialogTitle>{ui('Permanently delete account')}</DialogTitle>
+      <DialogDescription>{ui('Permanently delete your account? This cannot be undone.')}</DialogDescription>
+      <form className="space-y-4" onSubmit={(event) => { event.preventDefault(); void submit() }}>
         <p className="break-all text-sm">{user?.email} · {useAuth.getState().instanceUrl || window.location.origin}</p>
         <p className="text-sm text-muted-foreground">{ui('Deletion is permanent. Your chats, files, memories, and shared links will be removed. Subscriptions will be canceled and unused credits forfeited, with no automatic refunds. Access ends immediately; background cleanup may take time. Backups and payment records follow existing retention policies.')}</p>
-        <Label htmlFor="delete-account-password">{ui('Current password')}</Label>
-        <Input id="delete-account-password" type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} required disabled={busy} />
-        <Label htmlFor="delete-account-code">{ui('Authenticator or recovery code (if enabled)')}</Label>
-        <Input id="delete-account-code" autoComplete="one-time-code" value={code} onChange={(event) => setCode(event.target.value)} disabled={busy} />
-        <div className="flex flex-wrap justify-end gap-2">
-          <Button type="button" variant="outline" disabled={busy} onClick={() => { setOpen(false); setPassword(''); setCode(''); setError('') }}>{ui('Cancel')}</Button>
-          <Button type="submit" variant="destructive" disabled={busy || !password}>{busy ? ui('Deleting…') : ui('Permanently delete account')}</Button>
+        <div className="space-y-2">
+          <Label htmlFor="delete-account-password">{ui('Current password')}</Label>
+          <Input id="delete-account-password" type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} required disabled={busy} />
         </div>
-      </form>}
-    {error && <p role="alert" className="pb-3 text-sm text-destructive">{error}</p>}
-  </div>
+        <div className="space-y-2">
+          <Label htmlFor="delete-account-code">{ui('Authenticator or recovery code (if enabled)')}</Label>
+          <Input id="delete-account-code" autoComplete="one-time-code" value={code} onChange={(event) => setCode(event.target.value)} disabled={busy} />
+        </div>
+        {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
+        <Separator />
+        <Button className="w-full" type="submit" variant="destructive" disabled={busy || !password}>{busy ? ui('Deleting…') : ui('Permanently delete account')}</Button>
+      </form>
+    </DialogContent>
+  </Dialog>
 }
