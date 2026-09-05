@@ -14,6 +14,9 @@ struct QueuedMessageRow: Record {
 /// UIKit supplies the long-press lift, insertion preview, autoscroll and drop animation.
 public final class QueuedMessagesView: ExpoView, UITableViewDataSource, UITableViewDelegate, UITableViewDragDelegate, UITableViewDropDelegate {
   let onAction = EventDispatcher()
+  let onContentHeightChange = EventDispatcher()
+  private var contentSizeObservation: NSKeyValueObservation?
+  private var reportedHeight: CGFloat = -1
   private let table = UITableView(frame: .zero, style: .plain)
   private var rows: [QueuedMessageRow] = []
 
@@ -31,11 +34,26 @@ public final class QueuedMessagesView: ExpoView, UITableViewDataSource, UITableV
     table.contentInsetAdjustmentBehavior = .never
     table.register(UITableViewCell.self, forCellReuseIdentifier: "queue")
     addSubview(table)
+    contentSizeObservation = table.observe(\.contentSize, options: [.new]) { [weak self] _, _ in
+      self?.reportContentHeight()
+    }
   }
 
   public override func layoutSubviews() {
     super.layoutSubviews()
     table.frame = bounds
+    table.layoutIfNeeded()
+    reportContentHeight()
+  }
+
+  private func reportContentHeight() {
+    guard table.bounds.width > 0 else { return }
+    let height = ceil(table.contentSize.height)
+    guard height != reportedHeight else { return }
+    reportedHeight = height
+    DispatchQueue.main.async { [weak self] in
+      self?.onContentHeightChange(["height": height])
+    }
   }
 
   func setRows(_ value: [QueuedMessageRow]) {
@@ -59,12 +77,12 @@ public final class QueuedMessagesView: ExpoView, UITableViewDataSource, UITableV
     let text = UILabel()
     text.font = .preferredFont(forTextStyle: .subheadline)
     text.adjustsFontForContentSizeCategory = true
-    text.numberOfLines = 2
+    text.numberOfLines = 0
     text.text = row.content
     let detail = UILabel()
     detail.font = .preferredFont(forTextStyle: .caption1)
     detail.textColor = .secondaryLabel
-    detail.numberOfLines = 1
+    detail.numberOfLines = 0
     detail.text = row.detail
     detail.isHidden = row.detail.isEmpty
     let labels = UIStackView(arrangedSubviews: [text, detail])

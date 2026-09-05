@@ -42,3 +42,7 @@ Mobile tests (315), mobile typecheck, iOS export, simulator build, repository li
 ![Native queue with icon controls and reordered messages](evidence/native-queue-icons.png)
 
 Compact layout follow-up: reduced standard queue rows from 80 to 56 points, halved vertical padding, and set action symbols to 14 points while preserving 44-point button targets. Rows size to their content. Visually checked the updated layout on the iOS 26.5 simulator and refreshed the screenshot above; mobile typecheck, repository lint, and the native simulator build passed.
+
+Dynamic sizing follow-up: removed text/detail line limits and connected the native table's measured content height to the queue container. Short cards stay compact; multiline cards expand and the container grows up to its existing scroll limit. In the iOS 26.5 simulator, verified a one-line and five-line card together with no truncation, then removed the long card and confirmed the container shrank without leftover space. Mobile typecheck, repository lint, and native simulator build passed.
+
+![Queue cards sized to their text](evidence/native-queue-dynamic.png)

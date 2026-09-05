@@ -29,7 +29,7 @@ public final class PulpoFileClipboardModule: Module {
     .runOnQueue(DispatchQueue.main)
 
     View(QueuedMessagesView.self) {
-      Events("onAction")
+      Events("onAction", "onContentHeightChange")
       Prop("rows") { (view, value: [QueuedMessageRow]) in
         view.setRows(value)
       }
