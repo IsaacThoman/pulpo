@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+vi.mock('expo-crypto', async () => ({ randomUUID: (await import('node:crypto')).randomUUID }));
 
 vi.mock('@react-native-async-storage/async-storage', () => ({
   default: {
@@ -48,6 +49,14 @@ beforeEach(() => {
 });
 
 describe('prototype store', () => {
+  it('uses the same server-valid UUID for optimistic folders and persistence', () => {
+    const createFolder = vi.fn(async () => undefined);
+    configureProductionActions({ createFolder });
+    const folderId = usePrototypeStore.getState().addFolder(' Android QA ');
+    expect(folderId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
+    expect(createFolder).toHaveBeenCalledWith('Android QA', folderId);
+    expect(usePrototypeStore.getState().folders.find((folder) => folder.id === folderId)?.name).toBe('Android QA');
+  });
   it('optimistically persists the new-chat expiration choice', async () => {
     const persistPreference = vi.fn(async () => undefined);
     configureProductionActions({ setPreference: persistPreference });

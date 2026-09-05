@@ -13,9 +13,11 @@ vi.mock('expo-web-browser', () => ({ openAuthSessionAsync: vi.fn() }))
 vi.mock('react-native-passkeys', () => ({ isSupported: mocks.supported, create: vi.fn(), get: vi.fn() }))
 vi.mock('react-native', () => ({ Platform: { OS: 'ios' } }))
 
+import { Platform } from 'react-native'
+import Constants from 'expo-constants'
 import { canUseNativePasskeys, PasskeyCancelledError, validatePasskeyCallback } from './passkeys'
 
-beforeEach(() => mocks.supported.mockReturnValue(true))
+beforeEach(() => { mocks.supported.mockReturnValue(true); (Platform as { OS: string }).OS = 'ios' })
 
 describe('native passkey domain selection', () => {
   it('uses native support only for compiled standard HTTPS domains', () => {
@@ -24,6 +26,16 @@ describe('native passkey domain selection', () => {
     expect(canUseNativePasskeys('https://custom.example.com')).toBe(false)
     expect(canUseNativePasskeys('http://pulpo.baby')).toBe(false)
     expect(canUseNativePasskeys('https://pulpo.baby:8443')).toBe(false)
+  })
+
+  it('uses Credential Manager only for explicitly configured Android domains', () => {
+    (Platform as { OS: string }).OS = 'android'
+    expect(canUseNativePasskeys('https://pulpo.baby')).toBe(false)
+    Constants.expoConfig!.extra!.androidPasskeyDomains = ['chat.example.com']
+    expect(canUseNativePasskeys('https://chat.example.com')).toBe(true)
+    expect(canUseNativePasskeys('http://chat.example.com')).toBe(false)
+    expect(canUseNativePasskeys('https://chat.example.com:8443')).toBe(false)
+    delete Constants.expoConfig!.extra!.androidPasskeyDomains
   })
 
   it('falls back when the native API is unavailable', () => {

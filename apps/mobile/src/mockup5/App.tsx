@@ -1,4 +1,10 @@
+import { quickModelChoices } from '../platform/androidLayout';
+import { MaterialButton, MaterialContextMenu, MaterialField, MaterialIconButton, MaterialLoading, MaterialMenu, MaterialRow, MaterialDialog, type Action as MaterialAction } from '../platform/MaterialUI';
+import type { MenuAnchor } from '../platform/MaterialUI.types';
+import { promptText, selectText, showActions } from '../platform/materialActions';
 import { QueuedMessagesView } from '../native/QueuedMessagesView';
+import { openAttachmentFile } from '../native/openFile';
+import { shareLocalFile } from '../native/shareFile';
 import { enqueueMessage, mutateQueuedMessage, shouldQueueMessage } from '../features/chat/messageQueue';
 import type { MobileQueuedMessage } from '../types';
 import { mobileComposerSync } from '../features/chat/composerSync';
@@ -26,13 +32,13 @@ import {
   ActivityIndicator,
   Alert,
   Appearance,
+  BackHandler,
   type ColorValue,
   DynamicColorIOS,
   FlatList,
   Image,
   Keyboard,
   Linking,
-  Modal,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
   Platform,
@@ -101,7 +107,7 @@ import * as ExpoHaptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
 import * as Network from 'expo-network';
 import { StatusBar } from 'expo-status-bar';
-import { SymbolView } from 'expo-symbols';
+import { SymbolView } from '../platform/SymbolView';
 import { DarkTheme as NavigationDarkTheme, DefaultTheme as NavigationLightTheme, NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator, type NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useQueryClient } from '@tanstack/react-query';
@@ -242,9 +248,7 @@ import {
 import { copyFile, supportsFileClipboard } from '../native/fileClipboard';
 import {
   AttachmentPreviewError,
-  previewFile,
   previewImages as previewNativeImages,
-  supportsAttachmentPreview,
   supportsNativeImageGallery,
   updatePreviewImage as updateNativePreviewImage,
 } from '../native/attachmentPreview';
@@ -314,25 +318,25 @@ function readableColor(light: string, dark: string, android: string, fallback = 
 
 // Native semantic colors automatically follow the device's appearance and contrast settings.
 const COLORS = {
-  background: systemColor('systemBackground', '?attr/colorBackground', '#ffffff'),
-  panel: systemColor('secondarySystemBackground', '?attr/colorBackgroundFloating', '#f2f2f7'),
-  card: systemColor('secondarySystemGroupedBackground', '?attr/colorBackgroundFloating', '#ffffff'),
-  secondary: systemColor('tertiarySystemFill', '?attr/colorControlHighlight', '#d1d1d6'),
-  elevated: systemColor('secondarySystemBackground', '?attr/colorBackgroundFloating', '#f2f2f7'),
-  line: systemColor('separator', '?attr/colorControlNormal', '#c6c6c8'),
-  lineSoft: systemColor('opaqueSeparator', '?attr/colorControlNormal', '#c6c6c8'),
-  text: systemColor('label', '?attr/textColorPrimary', '#000000'),
-  textSoft: systemColor('label', '?attr/textColorPrimary', '#000000'),
-  muted: readableColor('#68686F', '#A1A1A8', '?attr/textColorSecondary'),
-  dim: systemColor('tertiaryLabel', '?attr/textColorSecondary', '#3c3c434d'),
-  fill: systemColor('tertiarySystemFill', '?attr/colorControlHighlight', '#7676801f'),
-  fillStrong: systemColor('secondarySystemFill', '?attr/colorControlHighlight', '#78788029'),
-  accent: systemColor('systemBlue', '?attr/colorAccent', '#007aff'),
-  positive: systemColor('systemGreen', '?attr/colorAccent', '#34c759'),
-  critical: readableColor('#C5221F', '#FF8A84', '?attr/colorError'),
-  criticalAction: readableColor('#A91511', '#FFB0AB', '?attr/colorError'),
-  warning: readableColor('#A24B00', '#FFB15A', '?attr/colorAccent'),
-  foregroundOnAccent: '#ffffff',
+  background: systemColor('systemBackground', '@color/pulpo_surface', '#ffffff'),
+  panel: systemColor('secondarySystemBackground', '@color/pulpo_container', '#f2f2f7'),
+  card: systemColor('secondarySystemGroupedBackground', '@color/pulpo_container', '#ffffff'),
+  secondary: systemColor('tertiarySystemFill', '@color/pulpo_container', '#d1d1d6'),
+  elevated: systemColor('secondarySystemBackground', '@color/pulpo_container', '#f2f2f7'),
+  line: systemColor('separator', '@color/pulpo_outline', '#c6c6c8'),
+  lineSoft: systemColor('opaqueSeparator', '@color/pulpo_outline', '#c6c6c8'),
+  text: systemColor('label', '@color/pulpo_text', '#000000'),
+  textSoft: systemColor('label', '@color/pulpo_text', '#000000'),
+  muted: readableColor('#68686F', '#A1A1A8', '@color/pulpo_secondary'),
+  dim: systemColor('tertiaryLabel', '@color/pulpo_secondary', '#3c3c434d'),
+  fill: systemColor('tertiarySystemFill', '@color/pulpo_container', '#7676801f'),
+  fillStrong: systemColor('secondarySystemFill', '@color/pulpo_container', '#78788029'),
+  accent: systemColor('systemBlue', '@color/pulpo_primary', '#007aff'),
+  positive: systemColor('systemGreen', '@color/pulpo_primary', '#34c759'),
+  critical: readableColor('#C5221F', '#FF8A84', '@color/pulpo_error'),
+  criticalAction: readableColor('#A91511', '#FFB0AB', '@color/pulpo_error'),
+  warning: readableColor('#A24B00', '#FFB15A', '@color/pulpo_primary'),
+  foregroundOnAccent: Platform.OS === 'android' ? PlatformColor('@color/pulpo_on_primary') : '#ffffff',
   mono: Platform.select({ ios: 'Menlo', default: 'monospace' }) as string,
 };
 
@@ -1012,7 +1016,7 @@ function Glass({ children, style, interactive = false, tintColor, ...props }: Gl
   const colorScheme = useColorScheme();
   const { reduceTransparency } = useAccessibilityPreferences();
   const available = Platform.OS === 'ios' && isGlassEffectAPIAvailable() && !reduceTransparency;
-  if (!available) return <View {...props} style={[styles.glassFallback, style]}>{children}</View>;
+  if (!available) return <View {...props} style={[styles.glassFallback, style, Platform.OS === 'android' && { backgroundColor: COLORS.elevated, borderWidth: 0, borderRadius: 24 }]}>{children}</View>;
   return (
     <GlassView {...props} colorScheme={colorScheme === 'light' || colorScheme === 'dark' ? colorScheme : undefined} glassEffectStyle="regular" isInteractive={interactive} style={style} tintColor={tintColor}>
       {children}
@@ -1022,6 +1026,7 @@ function Glass({ children, style, interactive = false, tintColor, ...props }: Gl
 
 function RoundButton({ icon, onPress, accessibilityLabel, selected = false, selectedColor = 'purple', size = 44, tinted = false }: { icon: SymbolName | 'ghost'; onPress: () => void; accessibilityLabel: string; selected?: boolean; selectedColor?: 'purple' | 'teal'; size?: number; tinted?: boolean }) {
   const colorScheme = useColorScheme();
+  if (Platform.OS === 'android') return <MaterialIconButton label={accessibilityLabel} icon={typeof icon === 'string' ? icon : 'menu'} onPress={onPress} selected={selected} size={size} />;
   const selectedForeground = colorScheme === 'dark' ? '#f2f2f7' : '#1c1c1e';
   const ghostColor = selectedForeground;
   const accent = selectedColor === 'teal' ? '#14B8A6' : '#AF52DE';
@@ -1068,6 +1073,7 @@ function RoundButton({ icon, onPress, accessibilityLabel, selected = false, sele
 }
 
 function DrawerNewChatButton({ isDark, onPress }: { isDark: boolean; onPress: () => void }) {
+  if (Platform.OS === 'android') return <MaterialButton label="New chat" icon="square.and.pencil" onPress={onPress} compact />;
   const foregroundColor = isDark ? '#1C1C1E' : '#FFFFFF';
   const glassTintColor = isDark ? 'rgba(255,255,255,0.85)' : 'rgba(0,0,0,0.85)';
   if (Platform.OS === 'ios') {
@@ -1261,6 +1267,17 @@ function FallbackTemporaryChatHeaderControl({
 
 function TemporaryChatHeaderControl(props: TemporaryChatHeaderControlProps) {
   const { reduceMotion } = useAccessibilityPreferences();
+  if (Platform.OS === 'android') return <View style={{ flexDirection: 'row' }}>
+    {props.expanded && props.leadingAction !== 'none' ? <MaterialIconButton
+      icon={props.leadingAction === 'save' ? 'bookmark' : 'hourglass'}
+      label={props.leadingAction === 'save' ? 'Save chat' : props.expirationEnabled ? 'Disable automatic expiration' : 'Enable automatic expiration'}
+      disabled={props.leadingAction === 'save' && (props.saving || props.saveDisabled)}
+      selected={props.leadingAction === 'expiration' && props.expirationEnabled}
+      onPress={props.leadingAction === 'save' ? props.onSave : props.onToggleExpiration} /> : null}
+    <MaterialIconButton icon={props.trailingAction === 'ghost' ? 'ghost' : 'square.and.pencil'}
+      label={props.trailingAction === 'ghost' ? props.active ? 'Disable temporary chat' : 'Enable temporary chat' : 'New chat'}
+      selected={props.active} onPress={props.trailingAction === 'ghost' ? props.onToggleTemporary : props.onNewChat} />
+  </View>;
   return Platform.OS === 'ios'
     ? (
       <PersistentNativeTemporaryChatHeaderView
@@ -1276,19 +1293,26 @@ function AppHeader({ children, edgeAligned = false }: { children: ReactNode; edg
   return <View pointerEvents="box-none" style={[styles.appHeader, edgeAligned && styles.appHeaderEdgeAligned]}>{children}</View>;
 }
 
+const EMPTY_MATERIAL_ACTIONS: MaterialAction[] = [];
+
 function NativeObjectContextMenu({
   children,
   items,
   preview,
   style,
   fillWidth = false,
+  androidActions,
+  title = 'Message actions',
 }: {
   children: ReactNode;
   items: ReactNode;
   preview?: ReactNode;
   style?: ComponentProps<typeof View>['style'];
   fillWidth?: boolean;
+  androidActions?: MaterialAction[];
+  title?: string;
 }) {
+  if (Platform.OS === 'android') return <MaterialContextMenu title={title} actions={androidActions ?? EMPTY_MATERIAL_ACTIONS} style={style}>{children}</MaterialContextMenu>;
   if (Platform.OS !== 'ios') return <View style={style}>{children}</View>;
   return (
     <SwiftUIHost ignoreSafeArea="all" matchContents={fillWidth ? { vertical: true } : true} style={style}>
@@ -1367,6 +1391,7 @@ function ResponsePendingDot({ delay, reduceMotion }: { delay: number; reduceMoti
 
 function ResponsePendingIndicator() {
   const { reduceMotion } = useAccessibilityPreferences();
+  if (Platform.OS === 'android' && !reduceMotion) return <View accessibilityLabel="Assistant is responding" accessibilityRole="progressbar"><MaterialLoading /></View>;
 
   return (
     <View
@@ -1489,7 +1514,7 @@ function PrototypeRoot() {
         <RootStack.Screen name="Chat" component={AppContent} />
         <RootStack.Screen name="Settings" component={MemberSettingsScreen} options={{ headerShown: Platform.OS === 'ios', title: 'Settings' }} />
         <RootStack.Screen name="Account" component={AccountScreen} options={{ headerShown: Platform.OS === 'ios', title: 'Account', headerBackTitle: 'Settings' }} />
-        <RootStack.Screen name="EditProfile" component={EditProfileScreen} options={{ headerShown: Platform.OS === 'ios', presentation: 'formSheet', title: 'Edit Profile' }} />
+        <RootStack.Screen name="EditProfile" component={EditProfileScreen} options={{ headerShown: Platform.OS === 'ios', presentation: Platform.OS === 'ios' ? 'formSheet' : 'card', title: 'Edit Profile' }} />
         <RootStack.Screen name="ChangePassword" component={ChangePasswordScreen} options={{ headerShown: Platform.OS === 'ios', title: 'Change Password', headerBackTitle: 'Account' }} />
         <RootStack.Screen name="DeleteAccount" component={DeleteAccountScreen} options={{ headerShown: false }} />
         <RootStack.Screen name="TwoFactor" component={TwoFactorScreen} options={{ headerShown: false }} />
@@ -1671,6 +1696,17 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     });
   }, [openOffset, persistentSidebar, reduceMotion, slideX]);
 
+  useEffect(() => {
+    if (Platform.OS !== 'android' || !panelOpen) return;
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (!navigation.isFocused()) return false;
+      animatePanel(false);
+      return true;
+    });
+    return () => subscription.remove();
+  }, [animatePanel, navigation, panelOpen]);
+
+
   const animateWideSidebar = useCallback((visible: boolean, velocity = 0) => {
     setWideSidebarVisible(visible);
     if (!visible) Keyboard.dismiss();
@@ -1835,8 +1871,9 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     };
   }, [compactDrawerCorners, openOffset, persistentSidebar, reduceMotion]);
   const panelAnimatedStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: persistentSidebar || reduceMotion ? 0 : interpolate(slideX.value, [0, openOffset], [-36, 0]) }],
-  }), [openOffset, persistentSidebar, reduceMotion]);
+    display: (persistentSidebar ? wideSidebarProgress.value : slideX.value) === 0 ? 'none' : 'flex',
+    transform: [{ translateX: persistentSidebar ? 0 : reduceMotion ? 0 : interpolate(slideX.value, [0, openOffset], [-36, 0]) }],
+  }), [openOffset, persistentSidebar, reduceMotion, wideSidebarProgress]);
   const sidebarFrameAnimatedStyle = useAnimatedStyle(() => ({
     width: persistentSidebar
       ? interpolate(wideSidebarProgress.value, [0, 1], [0, SIDEBAR_WIDTH])
@@ -2378,6 +2415,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
 
         {/* History page, revealed underneath as the chat view slides right */}
         <Reanimated.View
+          collapsable={false}
           accessibilityElementsHidden={!historyVisible}
           importantForAccessibility={!historyVisible ? 'no-hide-descendants' : 'auto'}
           pointerEvents={historyVisible ? 'auto' : 'none'}
@@ -2403,10 +2441,10 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
 
         {/* Main chat view sliding over to the right */}
         <Reanimated.View
-          accessibilityElementsHidden={!persistentSidebar && panelOpen}
-          importantForAccessibility={!persistentSidebar && panelOpen ? 'no-hide-descendants' : 'auto'}
+          collapsable={false}
           style={[persistentSidebar ? styles.persistentMainView : styles.mainView, mainAnimatedStyle]}
         >
+          <View collapsable={false} style={styles.flex} importantForAccessibility={!persistentSidebar && panelOpen ? 'no-hide-descendants' : 'auto'} accessibilityElementsHidden={!persistentSidebar && panelOpen}>
           <ChatView
             messages={messages}
             queuedMessages={activePrototypeChat?.queuedMessages ?? EMPTY_MOBILE_QUEUE}
@@ -2453,6 +2491,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
               setComposerFocusRequest({ revision: composerFocusRevision.current, target: 'composer' });
             }}
           />
+          </View>
           {/* Tap catcher while the panel is open */}
           {!persistentSidebar && panelOpen && (
             <Pressable accessibilityLabel="Close chats" accessibilityRole="button" style={StyleSheet.absoluteFill} onPress={() => animatePanel(false)} />
@@ -2531,13 +2570,7 @@ function useMessageActionRunner({ message, onEdit, onRegenerate }: {
         onEdit(message, message.text);
         return;
       }
-      if (Platform.OS === 'ios') {
-        Alert.prompt('Edit response', 'Saving creates a response branch.', (text) => {
-          const trimmed = text.trim();
-          if (!trimmed) return;
-          onEdit(message, trimmed);
-        }, 'plain-text', message.text);
-      }
+      promptText({ title: 'Edit response', message: 'Saving creates a response branch.', value: message.text, multiline: true, onSubmit: (text) => onEdit(message, text) });
       return;
     }
     if (action === 'regenerate') {
@@ -2579,6 +2612,15 @@ function MessageContextMenu({
   return (
     <NativeObjectContextMenu
       fillWidth={message.role === 'assistant'}
+      androidActions={[
+        { label: 'Copy', icon: 'doc.on.doc', onPress: () => runAction('copy') },
+        { label: 'Select text', icon: 'doc.text', onPress: () => selectText(message.text) },
+        { label: 'Share', icon: 'square.and.arrow.up', onPress: () => runAction('share') },
+        { label: 'Reply', icon: 'arrowshape.turn.up.left', onPress: () => runAction('reply') },
+        { label: message.role === 'user' ? 'Edit message' : 'Edit response', icon: 'pencil', onPress: () => runAction('edit') },
+        ...(message.role === 'assistant' ? [{ label: 'Regenerate response', icon: 'arrow.clockwise', onPress: () => runAction('regenerate') }] : []),
+        { label: 'Delete message', icon: 'trash', destructive: true, onPress: () => runAction('delete') },
+      ]}
       style={message.role === 'user' ? styles.userMessageContextHost : styles.assistantMessageContextHost}
       preview={(
         <View style={[styles.messageContextPreview, message.role === 'user' && styles.messageContextPreviewUser]}>
@@ -2588,7 +2630,7 @@ function MessageContextMenu({
               {message.role === 'user' ? 'YOU' : model.name}
             </Text>
           </View>
-          <SafeMarkdown containerStyle={styles.messageContextPreviewMarkdown}>{previewText}</SafeMarkdown>
+          <SafeMarkdown selectable={Platform.OS !== 'android'} containerStyle={styles.messageContextPreviewMarkdown}>{previewText}</SafeMarkdown>
         </View>
       )}
       items={(
@@ -2623,7 +2665,7 @@ function SentAttachmentContextMenu({ attachment, message, onEdit, onRegenerate, 
 }) {
   const runMessageAction = useMessageActionRunner({ message, onEdit, onRegenerate });
   const shareAttachment = () => {
-    if (attachment.uri) void Share.share({ message: attachment.name, url: attachment.uri });
+    if (attachment.uri) void (Platform.OS === 'android' ? shareLocalFile(attachment.uri, attachment.name, attachment.mimeType) : Share.share({ message: attachment.name, url: attachment.uri })).catch((error) => Alert.alert('Couldn’t share attachment', error instanceof Error ? error.message : undefined));
     else void shareServerAttachment(attachment.id, attachment.name, attachment.mimeType).catch((error) => Alert.alert('Couldn’t share attachment', error instanceof Error ? error.message : undefined));
   };
   const copyAttachment = () => {
@@ -2636,6 +2678,14 @@ function SentAttachmentContextMenu({ attachment, message, onEdit, onRegenerate, 
   return (
     <NativeObjectContextMenu
       style={attachment.kind === 'image' ? styles.sentImageContextHost : styles.sentFileContextHost}
+      title={attachment.name}
+      androidActions={[
+        { label: 'Share file', icon: 'square.and.arrow.up', onPress: shareAttachment },
+        ...(message.role === 'user' && !message.text ? [
+          { label: 'Edit message', icon: 'pencil', onPress: () => runMessageAction('edit') },
+          { label: 'Delete message', icon: 'trash', destructive: true, onPress: () => runMessageAction('delete') },
+        ] : []),
+      ]}
       preview={attachment.kind === 'image' ? (
         <ResolvedAttachmentImage attachment={attachment} variant="preview" />
       ) : (
@@ -2868,7 +2918,7 @@ function CompactionStepContent({ step }: { step: Extract<TimelineStep, { kind: '
       {item.summary ? (
         <View style={styles.compactionSection}>
           <Text style={styles.compactionSectionTitle}>Compacted summary</Text>
-          <SafeMarkdown compact>{item.summary}</SafeMarkdown>
+          <SafeMarkdown selectable={Platform.OS !== 'android'} compact>{item.summary}</SafeMarkdown>
         </View>
       ) : null}
       {item.retained_turns.length ? (
@@ -2935,7 +2985,7 @@ function WorkBlock({ steps, active, durationMs, onOpenChat }: {
         <View style={styles.reasoningBody}>
           {steps.map((step, index) => {
             if (step.kind === 'reasoning') {
-              return <SafeMarkdown compact key={`reasoning:${index}`} streaming={step.active}>{step.text || (step.active ? 'Thinking…' : '')}</SafeMarkdown>;
+              return <SafeMarkdown selectable={Platform.OS !== 'android'} compact key={`reasoning:${index}`} streaming={step.active}>{step.text || (step.active ? 'Thinking…' : '')}</SafeMarkdown>;
             }
             if (step.kind === 'workspace') {
               const detail = step.workspace.error ?? step.workspace.state?.replaceAll('_', ' ') ?? 'Workspace';
@@ -3126,7 +3176,7 @@ const MessageRow = memo(function MessageRow({
             <MessageContextMenu message={message} model={model} onEdit={onEdit} onRegenerate={onRegenerate}>
               <View style={styles.userMessageContextContent}>
                 <View style={styles.userBubble}>
-                  <SafeMarkdown containerStyle={styles.userMessageMarkdown}>{message.text}</SafeMarkdown>
+                  <SafeMarkdown selectable={Platform.OS !== 'android'} containerStyle={styles.userMessageMarkdown}>{message.text}</SafeMarkdown>
                 </View>
               </View>
             </MessageContextMenu>
@@ -3154,7 +3204,7 @@ const MessageRow = memo(function MessageRow({
                         onOpenChat={onOpenChat}
                       />;
                     }
-                    return <SafeMarkdown
+                    return <SafeMarkdown selectable={Platform.OS !== 'android'}
                       containerStyle={styles.assistantMarkdown}
                       key={`text:${index}`}
                       streaming={streaming && !timeline.slice(index + 1).some((item) => item.kind === 'text')}
@@ -3215,6 +3265,15 @@ const MessageRow = memo(function MessageRow({
     </View>
   );
 });
+
+function AndroidModelMenu({ model, models, onSelectModel, onBrowse }: { model: Model; models: Model[]; onSelectModel: (model: Model) => void; onBrowse: () => void }) {
+  const favorites = usePreferencesStore((state) => state.favoriteModelIds);
+  const quickChoices = quickModelChoices(models, model.id, favorites);
+  return <MaterialMenu label={`Model, ${model.name}`} text={model.name} icon="chevron.down" actions={[
+    { label: 'Browse all models', icon: 'magnifyingglass', onPress: onBrowse },
+    ...quickChoices.map((option) => ({ label: option.name, selected: option.id === model.id, onPress: () => onSelectModel(option) })),
+  ]} />;
+}
 
 const NativeModelMenu = memo(function NativeModelMenu({ model, models, onSelectModel, tinted = false }: { model: Model; models: Model[]; onSelectModel: (model: Model) => void; tinted?: boolean }) {
   const colorScheme = useColorScheme();
@@ -3455,6 +3514,7 @@ function ChatView({
   const availableChatWidth = windowWidth - (persistentSidebar && sidebarVisible ? SIDEBAR_WIDTH : 0);
   const assistantSideRail = usesAssistantSideRail(Math.max(0, availableChatWidth - horizontalPadding * 2));
   const accessibilityLayout = fontScale >= 1.6;
+  const scrollLanding = accessibilityLayout || (Platform.OS === 'android' && windowHeight < 650);
   const listRef = useRef<FlatList<Message>>(null);
   const isNearBottom = useRef(true);
   const shouldAutoFollow = useRef(true);
@@ -3514,7 +3574,6 @@ function ChatView({
   const messageEditChatIdRef = useRef(chatId);
   const [sending, setSending] = useState(false);
   const sendingRef = useRef(false);
-  const [presetPickerOpen, setPresetPickerOpen] = useState(false);
   const [headerOverlayHeight, setHeaderOverlayHeight] = useState(insets.top + 64);
   const [promptConfig, setPromptConfig] = useState({
     enabled: true,
@@ -3652,15 +3711,6 @@ function ChatView({
         duration: target ? 320 : 240,
       });
   }, [expirationBadgeProgress, landingBadge?.kind, reduceMotion]);
-
-  useEffect(() => {
-    if (!hasGenerationPresets) setPresetPickerOpen(false);
-  }, [hasGenerationPresets]);
-
-  const openPresetPicker = useCallback(() => {
-    Haptics.selectionAsync();
-    setPresetPickerOpen(true);
-  }, []);
 
   const toggleAgent = useCallback(() => {
     if (!canUseAgent) return;
@@ -4001,7 +4051,7 @@ function ChatView({
 
   const shareImagePreview = useCallback((item: AttachmentImagePreviewItem) => {
     const share = item.uri
-      ? Share.share({ message: item.name, url: item.uri })
+      ? Platform.OS === 'android' ? shareLocalFile(item.uri, item.name) : Share.share({ message: item.name, url: item.uri })
       : shareServerAttachment(item.id, item.name)
     void share
       .catch((error) => Alert.alert('Couldn’t share image', error instanceof Error ? error.message : undefined));
@@ -4009,7 +4059,7 @@ function ChatView({
 
   const shareResolvedAttachment = useCallback((attachment: Attachment) => {
     if (attachment.uri) {
-      void Share.share({ message: attachment.name, url: attachment.uri })
+      void (Platform.OS === 'android' ? shareLocalFile(attachment.uri, attachment.name, attachment.mimeType) : Share.share({ message: attachment.name, url: attachment.uri }))
         .catch((error) => Alert.alert('Couldn’t share attachment', error instanceof Error ? error.message : undefined));
       return;
     }
@@ -4020,11 +4070,7 @@ function ChatView({
   const openFilePreview = useCallback((attachment: Attachment) => {
     void (async () => {
       const uri = attachment.uri || (await downloadAttachment(attachment.id, attachment.name)).uri;
-      if (!supportsAttachmentPreview) throw new AttachmentPreviewError(
-        'Native file previews are unavailable on this platform.',
-        'ERR_ATTACHMENT_PREVIEW_UNAVAILABLE',
-      );
-      await previewFile(uri, attachment.name);
+      await openAttachmentFile(uri, attachment.name, attachment.mimeType);
     })().catch((error) => {
       const message = error instanceof AttachmentPreviewError
         ? previewFallbackMessage(error.code)
@@ -4582,8 +4628,12 @@ function ChatView({
 
   const emptyLandingContent = (
     <View style={styles.emptyState}>
-      <Reanimated.View style={[styles.emptyIdentity, emptyStateAnimatedStyle]}>
+      <Reanimated.View style={[styles.emptyIdentity, !scrollLanding && emptyStateAnimatedStyle]}>
         <View style={styles.emptyModelLineWrap}>
+          {Platform.OS === 'android' ? landingBadge ? <View accessibilityLabel={landingBadge.kind === 'temporary' ? 'Temporary chat' : `Chat expires in ${landingBadge.period}`} style={styles.androidLandingBadge}>
+            <Icon name={landingBadge.kind === 'temporary' ? 'theatermasks' : 'hourglass'} size={18} color={landingBadge.kind === 'temporary' ? COLORS.accent : '#14B8A6'} />
+            <Text style={[styles.expirationLabelText, landingBadge.kind === 'temporary' && { color: COLORS.accent }]}>{landingBadge.kind === 'temporary' ? 'Temporary' : `Expires in ${landingBadge.period}`}</Text>
+          </View> : null : <>
           <Reanimated.View
             accessible={temporary}
             accessibilityElementsHidden={!temporary}
@@ -4606,6 +4656,7 @@ function ChatView({
               {`Expires in ${expirationPeriod === 'disabled' ? '' : expirationPeriod}`}
             </Text>
           </Reanimated.View>
+          </>}
           <View style={[styles.emptyModelLine, accessibilityLayout && styles.emptyModelLineAccessible]}>
             <ModelMark model={model} size={48} />
             <Text maxFontSizeMultiplier={1.6} style={styles.emptyTitle}>{model.name}</Text>
@@ -4657,6 +4708,8 @@ function ChatView({
           <Reanimated.View pointerEvents="box-none" style={[styles.modelTriggerWrap, modelTriggerAnimatedStyle]}>
             {Platform.OS === 'ios' && !accessibilityLayout ? (
               <NativeModelMenu model={model} models={models} onSelectModel={onSelectModel} tinted={temporary} />
+            ) : Platform.OS === 'android' ? (
+              <AndroidModelMenu model={model} models={models} onSelectModel={onSelectModel} onBrowse={onOpenModelPicker} />
             ) : (
               <Pressable
                 accessibilityHint="Opens the model picker"
@@ -4719,15 +4772,15 @@ function ChatView({
         <View
           accessibilityLabel="Loading conversation"
           accessibilityRole="progressbar"
-          style={[styles.emptyConversation, styles.chatContent, { paddingHorizontal: horizontalPadding, paddingTop: headerOverlayHeight + 16 }]}
+          style={[styles.emptyConversation, styles.chatContent, { paddingHorizontal: horizontalPadding, paddingTop: Platform.OS === 'android' ? 16 : headerOverlayHeight + 16 }]}
         >
           <ActivityIndicator color={COLORS.muted} />
         </View>
       ) : empty ? (
-        accessibilityLayout ? (
+        scrollLanding ? (
           <ScrollView
             alwaysBounceVertical
-            contentContainerStyle={[styles.emptyConversationAccessible, { paddingHorizontal: horizontalPadding, paddingTop: headerOverlayHeight + 16 }]}
+            contentContainerStyle={[styles.emptyConversationAccessible, { paddingHorizontal: horizontalPadding, paddingTop: Platform.OS === 'android' ? 16 : headerOverlayHeight + 16 }]}
             keyboardDismissMode="interactive"
             keyboardShouldPersistTaps="handled"
             onTouchStart={Keyboard.dismiss}
@@ -4739,7 +4792,7 @@ function ChatView({
         ) : (
           // Normal-size landing stays outside a scroll view so keyboard focus
           // cannot retain a stale offset and clip the identity.
-          <View onTouchStart={Keyboard.dismiss} style={[styles.emptyConversation, styles.chatContent, { paddingHorizontal: horizontalPadding, paddingTop: headerOverlayHeight + 16 }]}>
+          <View onTouchStart={Keyboard.dismiss} style={[styles.emptyConversation, styles.chatContent, { paddingHorizontal: horizontalPadding, paddingTop: Platform.OS === 'android' ? 16 : headerOverlayHeight + 16 }]}>
             {emptyLandingContent}
           </View>
         )
@@ -4748,7 +4801,7 @@ function ChatView({
         <FlatList
           alwaysBounceVertical
           bounces
-          contentContainerStyle={[styles.conversation, { paddingHorizontal: horizontalPadding, paddingTop: headerOverlayHeight + 16 }]}
+          contentContainerStyle={[styles.conversation, { paddingHorizontal: horizontalPadding, paddingTop: Platform.OS === 'android' ? 16 : headerOverlayHeight + 16 }]}
           contentInsetAdjustmentBehavior="never"
           data={messages}
           initialNumToRender={10}
@@ -4891,6 +4944,7 @@ function ChatView({
               <TextInput
                 ref={composerInputRef}
                 accessibilityLabel="Message"
+                disableFullscreenUI
                 editable={!composerFocusSuppressed && !(messageEdit && sending)}
                 maxFontSizeMultiplier={1.6}
                 multiline
@@ -4908,14 +4962,11 @@ function ChatView({
                 {Platform.OS === 'ios' ? (
                   <NativeAttachmentMenu onTakePhoto={takePhoto} onPickFiles={pickFiles} onPickPhotos={pickPhotos} />
                 ) : (
-                  <Pressable
-                    accessibilityLabel="Add attachment"
-                    accessibilityRole="button"
-                    onPress={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)}
-                    style={({ pressed }) => [styles.composerCircle, pressed && styles.pressed]}
-                  >
-                    <Icon name="plus" size={16} />
-                  </Pressable>
+                  <MaterialMenu label="Add attachment" icon="plus" actions={[
+                    { label: 'Take photo', icon: 'camera', onPress: takePhoto },
+                    { label: 'Photos', icon: 'photo.on.rectangle', onPress: pickPhotos },
+                    { label: 'Choose files', icon: 'doc', onPress: pickFiles },
+                  ]} />
                 )}
                 {hasGenerationPresets && (Platform.OS === 'ios' ? (
                   <SwiftUIHost ignoreSafeArea="keyboard" matchContents style={styles.effortMenuHost}>
@@ -4944,15 +4995,11 @@ function ChatView({
                     </SwiftUIMenu>
                   </SwiftUIHost>
                 ) : (
-                  <Pressable
-                    accessibilityHint="Opens chat preset choices"
-                    accessibilityLabel={`Generation options, ${presetLabel}`}
-                    accessibilityRole="button"
-                    onPress={openPresetPicker}
-                    style={({ pressed }) => [styles.effortPill, pressed && styles.pressed]}
-                  >
-                    <Text maxFontSizeMultiplier={1.4} style={styles.effortText}>{presetLabel}</Text>
-                  </Pressable>
+                  <MaterialMenu label={`Generation options, ${presetLabel}`} text={presetLabel} compact icon="chevron.down" actions={(prototypeModel?.presets ?? []).flatMap((preset) => preset.choices.map((choice) => ({
+                    label: (prototypeModel?.presets.length ?? 0) > 1 ? `${preset.name}: ${choice.label}` : choice.label,
+                    selected: choice.id === presetSelections[preset.id],
+                    onPress: () => onSelectPreset(preset.id, choice.id),
+                  })))} />
                 ))}
                 <View style={styles.flex} />
                 {Platform.OS === 'ios' ? (
@@ -4989,44 +5036,15 @@ function ChatView({
                   </>
                 ) : (
                   <>
-                    <Pressable
-                      accessibilityLabel="Agent mode"
-                      accessibilityRole="switch"
-                      accessibilityState={{ checked: activeAgentEnabled }}
-                      disabled={!canUseAgent}
-                      onPress={toggleAgent}
-                      style={({ pressed }) => [styles.agentCircle, activeAgentEnabled && styles.agentCircleActive, pressed && styles.pressed]}
-                    >
-                      <Bot color={activeAgentEnabled ? COLORS.foregroundOnAccent : COLORS.muted} size={13} strokeWidth={2} />
-                    </Pressable>
-                    <Pressable
-                      accessibilityLabel={composerAction === 'stop' ? 'Stop generating' : messageEdit ? queueEditRef.current ? 'Save queued message' : 'Save and resend message' : 'Send message'}
-                      accessibilityRole="button"
-                      accessibilityState={{ disabled: composerAction === 'submit' && !canSend }}
-                      disabled={composerAction === 'submit' && !canSend}
-                      onPress={() => composerAction === 'stop' ? onStop() : submitMessage()}
-                      style={({ pressed }) => [styles.sendButton, composerAction === 'submit' && !canSend && styles.disabledButton, pressed && styles.pressed]}
-                    >
-                      <Icon
-                        name={composerAction === 'stop' ? 'stop.fill' : 'arrow.up'}
-                        size={14}
-                        color={COLORS.foregroundOnAccent}
-                        weight="bold"
-                      />
-                    </Pressable>
+                    <MaterialIconButton label={activeAgentEnabled ? 'Turn off Agent mode' : 'Turn on Agent mode'} icon="bot" selected={activeAgentEnabled} disabled={!canUseAgent} onPress={toggleAgent} />
+                    <MaterialIconButton label={composerAction === 'stop' ? 'Stop generating' : messageEdit ? queueEditRef.current ? 'Save queued message' : 'Save and resend message' : 'Send message'} icon={composerAction === 'stop' ? 'stop.fill' : 'arrow.up'} prominent disabled={composerAction === 'submit' && !canSend} onPress={() => composerAction === 'stop' ? onStop() : submitMessage()} />
                   </>
                 )}
               </View>
             </Glass>
         </View>
       </KeyboardStickyView>
-      <GenerationPresetSheet
-        model={prototypeModel}
-        selections={presetSelections}
-        visible={presetPickerOpen}
-        onClose={() => setPresetPickerOpen(false)}
-        onSelect={onSelectPreset}
-      />
+
       <AttachmentImageViewer
         initialIndex={imageViewer?.initialIndex ?? 0}
         items={imageViewer?.attachments ?? []}
@@ -5039,49 +5057,6 @@ function ChatView({
         visible={Boolean(imageViewer)}
       />
     </Reanimated.View>
-  );
-}
-
-function GenerationPresetSheet({
-  visible,
-  model,
-  selections,
-  onClose,
-  onSelect,
-}: {
-  visible: boolean;
-  model?: PrototypeModel;
-  selections: GenerationSelections;
-  onClose: () => void;
-  onSelect: (presetId: string, choiceId: string) => void;
-}) {
-  return (
-    <Modal animationType="fade" onRequestClose={onClose} transparent visible={visible}>
-      <View accessibilityViewIsModal style={styles.optionModal}>
-        <Pressable accessibilityLabel="Close generation options" accessibilityRole="button" onPress={onClose} style={StyleSheet.absoluteFill} />
-        <View style={styles.optionSheet}>
-          <Text accessibilityRole="header" style={styles.optionTitle}>Generation options</Text>
-          <Text style={styles.optionSubtitle}>Choose this model’s chat presets.</Text>
-          {(model?.presets ?? []).map((preset) => (
-            <View key={preset.id}>
-              <Text style={styles.sheetSection}>{preset.name.toUpperCase()}</Text>
-              {preset.choices.map((choice) => (
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: choice.id === selections[preset.id] }}
-                  key={choice.id}
-                  onPress={() => onSelect(preset.id, choice.id)}
-                  style={({ pressed }) => [styles.optionRow, pressed && styles.navRowPressed]}
-                >
-                  <Text style={styles.optionRowText}>{choice.label}</Text>
-                  {choice.id === selections[preset.id] && <Icon name="checkmark" size={16} color={COLORS.accent} weight="semibold" />}
-                </Pressable>
-              ))}
-            </View>
-          ))}
-        </View>
-      </View>
-    </Modal>
   );
 }
 
@@ -5177,6 +5152,35 @@ function NativeFoldersDisclosure({ folders, onCreate, onSelectChat }: {
   </Reanimated.View>;
 }
 
+function AndroidFoldersDisclosure({ folders, onSelectChat, onCreate }: {
+  folders: { id: string; name: string; chats: HistoryChatSummary[] }[];
+  onSelectChat: (chat: HistoryChatSummary) => void;
+  onCreate: () => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const [openFolders, setOpenFolders] = useState<Set<string>>(() => new Set());
+  const toggleFolder = (id: string) => setOpenFolders((current) => {
+    const next = new Set(current);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
+  return <View>
+    <Pressable accessibilityRole="button" accessibilityLabel="Folders" accessibilityState={{ expanded }} onPress={() => setExpanded(!expanded)} android_ripple={{ color: COLORS.fillStrong }} style={styles.androidFolderRow}>
+      <Icon name="folder" size={22} color={COLORS.text} /><Text style={[styles.chatTitle, styles.flex]}>Folders</Text>
+      <Text style={styles.chatTime}>{folders.length}</Text><Icon name={expanded ? 'chevron.down' : 'chevron.right'} size={16} color={COLORS.muted} />
+    </Pressable>
+    {expanded ? <ScrollView nestedScrollEnabled style={{ maxHeight: 220 }}>
+      {folders.map((folder) => <View key={folder.id}>
+        <Pressable accessibilityRole="button" accessibilityLabel={folder.name} accessibilityState={{ expanded: openFolders.has(folder.id) }} onPress={() => toggleFolder(folder.id)} android_ripple={{ color: COLORS.fillStrong }} style={[styles.androidFolderRow, { paddingLeft: 30 }]}>
+          <Icon name={openFolders.has(folder.id) ? 'chevron.down' : 'chevron.right'} size={16} color={COLORS.muted} /><Text style={[styles.chatTitle, styles.flex]}>{folder.name}</Text><Text style={styles.chatTime}>{folder.chats.length}</Text>
+        </Pressable>
+        {openFolders.has(folder.id) ? folder.chats.length ? folder.chats.map((chat) => <Pressable key={chat.id} accessibilityRole="button" accessibilityLabel={chat.title} onPress={() => onSelectChat(chat)} android_ripple={{ color: COLORS.fillStrong }} style={[styles.androidFolderRow, { paddingLeft: 52 }]}><Icon name="bubble.left" size={18} color={COLORS.muted} /><Text numberOfLines={1} style={[styles.chatTitle, styles.flex]}>{chat.title}</Text></Pressable>) : <Text style={{ color: COLORS.muted, paddingLeft: 52, paddingVertical: 12 }}>No chats yet</Text> : null}
+      </View>)}
+      <Pressable accessibilityRole="button" accessibilityLabel="New folder" onPress={onCreate} android_ripple={{ color: COLORS.fillStrong }} style={[styles.androidFolderRow, { paddingLeft: 30 }]}><Icon name="folder.badge.plus" size={22} color={COLORS.muted} /><Text style={styles.chatTitle}>New folder</Text></Pressable>
+    </ScrollView> : null}
+  </View>;
+}
+
 type HistoryChatAction = HistoryChatContextMenuAction;
 const DEFAULT_HISTORY_PREVIEW = 'Start a new conversation with your selected model.';
 
@@ -5189,17 +5193,20 @@ const HistoryChatRow = memo(function HistoryChatRow({ active, chat, expirationMe
   previewText: string;
   removeChatLabel: string;
   onChatAction: (chat: HistoryChatSummary, action: HistoryChatAction) => void;
-  onOpenActions: (chat: HistoryChatSummary) => void;
+  onOpenActions: (chat: HistoryChatSummary, anchor?: MenuAnchor) => void;
   onPreviewRequest: (chat: HistoryChatSummary) => void;
   onSelectChat: (chat: HistoryChatSummary) => void;
 }) {
+  const { fontScale } = useWindowDimensions();
+  const largeAndroidText = Platform.OS === 'android' && fontScale >= 1.5;
   const expirationAction = expirationMenuAction?.kind ?? 'hidden';
   const rowContent = <>
     <View style={styles.flex}>
-      <Text numberOfLines={1} style={styles.chatTitle}>{chat.title}</Text>
+      <Text numberOfLines={largeAndroidText ? 2 : 1} style={styles.chatTitle}>{chat.title}</Text>
+      {largeAndroidText ? <Text style={styles.chatTime}>{chat.time}</Text> : null}
     </View>
     {chat.expiresAt !== null ? <Icon name="hourglass" size={13} color="#14B8A6" /> : null}
-    <Text style={styles.chatTime}>{chat.time}</Text>
+    <>{!largeAndroidText ? <Text style={styles.chatTime}>{chat.time}</Text> : null}</>
   </>;
   if (Platform.OS === 'ios') return (
     <HistoryChatContextMenuView
@@ -5233,9 +5240,9 @@ const HistoryChatRow = memo(function HistoryChatRow({ active, chat, expirationMe
       accessibilityRole="button"
       accessibilityState={{ selected: active }}
       delayLongPress={350}
-      onLongPress={() => onOpenActions(chat)}
+      onLongPress={(event) => onOpenActions(chat, { x: event.nativeEvent.pageX, y: event.nativeEvent.pageY })}
       onPress={() => onSelectChat(chat)}
-      style={({ pressed }) => [styles.chatRow, active && styles.chatRowActive, pressed && styles.navRowPressed]}
+      style={({ pressed }) => [styles.chatRow, { paddingVertical: largeAndroidText ? 10 : 4 }, active && styles.chatRowActive, pressed && styles.navRowPressed]}
     >
       {rowContent}
     </Pressable>
@@ -5253,6 +5260,8 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
   onPreviewRequest: (chatId: string) => void;
 }) {
   const insets = useSafeAreaInsets();
+  const { fontScale } = useWindowDimensions();
+  const newChatWidth = Platform.OS === 'android' ? Math.min(240, 160 + Math.max(0, fontScale - 1) * 70) : undefined;
   const folders = usePrototypeStore((state) => state.folders);
   const trashChat = usePrototypeStore((state) => state.trashChat);
   const trashRetention = usePrototypeStore((state) => state.preferences.trashRetention);
@@ -5350,7 +5359,7 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
       if (Platform.OS === 'ios') {
         Alert.prompt('Rename chat', undefined, (title) => title.trim() && renameChat(chat.id, title), 'plain-text', chat.title);
       } else {
-        Alert.alert('Rename chat', 'Long-press rename is available with a native prompt on iOS.');
+        promptText({ title: 'Rename chat', value: chat.title, onSubmit: (title) => renameChat(chat.id, title) });
       }
       return;
     }
@@ -5370,18 +5379,19 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
     }
   }, [renameChat, requiresConfirmation, togglePin, trashChat, upsertChat]);
 
-  const showChatActions = useCallback((chat: HistoryChatSummary) => {
+  const showChatActions = useCallback((chat: HistoryChatSummary, anchor?: MenuAnchor) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    Alert.alert(chat.title, undefined, [
-      { text: 'Rename', onPress: () => runChatAction(chat, 'rename') },
-      { text: 'Move to folder', onPress: () => runChatAction(chat, 'move') },
-      { text: 'More', onPress: () => Alert.alert(chat.title, undefined, [
-        { text: 'Share', onPress: () => runChatAction(chat, 'share') },
-        { text: removeChatLabel, style: 'destructive', onPress: () => runChatAction(chat, 'delete') },
-        { text: 'Cancel', style: 'cancel' },
-      ], { cancelable: true }) },
-    ], { cancelable: true });
-  }, [removeChatLabel, runChatAction]);
+    const expiry = resolveHistoryChatExpiryMenuAction(chat.expiresAt, automaticChatExpiration);
+    showActions(chat.title, [
+      { label: chat.pinned ? 'Unpin chat' : 'Pin chat', icon: 'pin', onPress: () => runChatAction(chat, 'pin') },
+      { label: 'Rename', icon: 'pencil', onPress: () => runChatAction(chat, 'rename') },
+      { label: 'Move to folder', icon: 'folder', onPress: () => runChatAction(chat, 'move') },
+      { label: 'Duplicate', icon: 'doc.on.doc', onPress: () => runChatAction(chat, 'duplicate') },
+      { label: 'Share', icon: 'square.and.arrow.up', onPress: () => runChatAction(chat, 'share') },
+      ...(expiry ? [{ label: expiry.kind === 'disable' ? 'Disable automatic expiration' : 'Enable automatic expiration', icon: 'hourglass', onPress: () => runChatAction(chat, expiry.kind === 'disable' ? 'disable-expiration' : 'enable-expiration') }] : []),
+      { label: removeChatLabel, icon: 'trash', destructive: true, onPress: () => runChatAction(chat, 'delete') },
+    ], anchor);
+  }, [automaticChatExpiration, removeChatLabel, runChatAction]);
 
   const selectHistoryChat = useCallback((chat: HistoryChatSummary) => {
     dismissSearch();
@@ -5429,7 +5439,7 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
         </AppHeader>
 
         {Platform.OS === 'ios' ? <NativeDrawerSearch fieldRef={nativeSearchRef} focused={searchFocused} value={search} onChange={setSearch} onFocusChange={setSearchFocused} /> : <View style={styles.searchBox}>
-          <Icon name="magnifyingglass" size={17} color="#FFFFFF" />
+          <Icon name="magnifyingglass" size={24} color={COLORS.muted} />
           <TextInput
             accessibilityLabel="Search chats"
             value={search}
@@ -5448,9 +5458,8 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
         </View>}
 
         <Reanimated.View pointerEvents={searchActive ? 'none' : 'auto'} style={searchActionsAnimatedStyle}>
-          {Platform.OS === 'ios' ? <NativeFoldersDisclosure folders={folderItems} onSelectChat={selectHistoryChat} onCreate={() => { dismissSearch(); Alert.prompt('New folder', 'Create a folder for related chats.', (name) => name.trim() && addFolder(name)); }} /> : <View style={[styles.navRow, styles.folderNavRow]}>
-            <Icon name="folder" size={17} color={COLORS.textSoft} /><Text style={styles.navText}>Folders</Text><Text style={styles.navMeta}>{folders.length}</Text>
-          </View>}
+          {Platform.OS === 'ios' ? <NativeFoldersDisclosure folders={folderItems} onSelectChat={selectHistoryChat} onCreate={() => { dismissSearch(); Alert.prompt('New folder', 'Create a folder for related chats.', (name) => name.trim() && addFolder(name)); }} /> : <AndroidFoldersDisclosure folders={folderItems} onSelectChat={selectHistoryChat} onCreate={() => { dismissSearch(); promptText({ title: 'New folder', confirmLabel: 'Create', onSubmit: (name) => addFolder(name) }); }} />}
+
         </Reanimated.View>
 
         <SectionList
@@ -5476,7 +5485,7 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
           accessibilityElementsHidden={hideNewChatButton}
           importantForAccessibility={hideNewChatButton ? 'no-hide-descendants' : 'auto'}
           pointerEvents={hideNewChatButton ? 'none' : 'auto'}
-          style={[styles.drawerNewChatButton, { bottom: insets.bottom + 14, opacity: hideNewChatButton ? 0 : 1 }]}
+          style={[styles.drawerNewChatButton, { bottom: insets.bottom + 14, opacity: hideNewChatButton ? 0 : 1, ...(newChatWidth ? { width: newChatWidth, height: undefined } : {}) }]}
         >
           <DrawerNewChatButton isDark={isDark} onPress={() => { dismissSearch(); onNewChat(); }} />
         </View>
@@ -5488,50 +5497,33 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
 
 function ModelSheet({ visible, selected, models, onClose, onSelect }: { visible: boolean; selected: string; models: Model[]; onClose: () => void; onSelect: (model: Model) => void }) {
   if (Platform.OS === 'ios') return <NativeModelSheet visible={visible} selected={selected} models={models} onClose={onClose} onSelect={onSelect} />;
-  return (
-    <Modal animationType="slide" presentationStyle="pageSheet" visible={visible} onRequestClose={onClose}>
-      <View accessibilityViewIsModal accessibilityLabel="Choose a model" onAccessibilityEscape={onClose} style={styles.sheet}>
-        <SafeAreaView style={styles.sheetSafe} edges={['bottom']}>
-          <View style={styles.sheetGrabber} />
-          <View style={styles.sheetHeader}>
-            <View>
-              <Text accessibilityRole="header" style={styles.sheetTitle}>Choose a model</Text>
-              <Text style={styles.sheetSubtitle}>Available through Pulpo</Text>
-            </View>
-            <Pressable accessibilityLabel="Close model picker" accessibilityRole="button" hitSlop={6} onPress={onClose} style={({ pressed }) => [styles.sheetClose, pressed && styles.pressed]}>
-              <Icon name="xmark" size={14} color={COLORS.muted} weight="semibold" />
-            </Pressable>
-          </View>
-          <Text style={styles.sheetSection}>RECOMMENDED</Text>
-          {models.map((model) => (
-            <Pressable
-              accessibilityLabel={`${model.name}, ${model.lab}, ${model.detail}`}
-              accessibilityRole="button"
-              accessibilityState={{ selected: selected === model.id }}
-              delayLongPress={350}
-              key={model.id}
-              onLongPress={() => Alert.alert(model.name, 'Set as default · Favorite · Model information')}
-              onPress={() => onSelect(model)}
-              style={({ pressed }) => [styles.modelRow, pressed && styles.navRowPressed]}
-            >
-              <ModelMark model={model} size={42} />
-              <View style={styles.flex}>
-                <Text style={styles.modelRowTitle}>{model.name}</Text>
-                <Text style={styles.modelRowDetail}>{model.lab} · {model.detail}</Text>
-              </View>
-              {selected === model.id
-                ? <Icon name="checkmark.circle.fill" size={22} color={COLORS.textSoft} />
-                : <Icon name="star" size={17} color={COLORS.dim} />}
-            </Pressable>
-          ))}
-          <View style={styles.sheetFootnote}>
-            <Icon name="info.circle" size={13} color={COLORS.dim} />
-            <Text style={styles.sheetFootnoteText}>Routing, fallbacks and spend limits apply from your Pulpo workspace.</Text>
-          </View>
-        </SafeAreaView>
+  return <AndroidModelSheet visible={visible} selected={selected} models={models} onClose={onClose} onSelect={onSelect} />;
+}
+
+function AndroidModelSheet({ visible, selected, models, onClose, onSelect }: { visible: boolean; selected: string; models: Model[]; onClose: () => void; onSelect: (model: Model) => void }) {
+  const [query, setQuery] = useState('');
+  const [lab, setLab] = useState<string | null>(null);
+  const { width, height, fontScale } = useWindowDimensions();
+  const [favoritesOnly, setFavoritesOnly] = useState(false);
+  const favoriteIds = usePreferencesStore((state) => state.favoriteModelIds);
+  useEffect(() => { if (!visible) { setQuery(''); setLab(null); setFavoritesOnly(false); } }, [visible]);
+  const labs = [...new Set(models.map((model) => model.lab))];
+  const filtered = models.filter((model) => (!lab || model.lab === lab) && (!favoritesOnly || favoriteIds.includes(model.id)) && `${model.name} ${model.lab} ${model.detail}`.toLowerCase().includes(query.trim().toLowerCase()));
+  return <MaterialDialog visible={visible} title="Choose a model" fullScreen={width < 600 || height < 600 || fontScale >= 1.5} onClose={onClose} contentHeight={Math.max(220, 144 + filtered.length * 76)}>
+    <View style={{ flex: 1, gap: 8 }}>
+      <MaterialField label="Search models" icon="magnifyingglass" value={query} onChangeText={setQuery} autoCapitalize="none" autoCorrect={false} />
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        <View style={{ flex: 1, minWidth: 0 }}><MaterialMenu label="Filter models by lab" text={lab ?? 'All labs'} icon="chevron.down" actions={[
+          { label: 'All labs', selected: lab === null, onPress: () => setLab(null) },
+          ...labs.map((name) => ({ label: name, selected: name === lab, onPress: () => setLab(name) })),
+        ]} /></View>
+        <MaterialIconButton label={favoritesOnly ? 'Show all models' : 'Show favorite models'} icon="star" selected={favoritesOnly} onPress={() => setFavoritesOnly(!favoritesOnly)} />
       </View>
-    </Modal>
-  );
+      <FlatList removeClippedSubviews={false} data={filtered} keyExtractor={(model) => model.id} keyboardShouldPersistTaps="handled" style={{ flex: 1 }}
+        renderItem={({ item: model }) => <MaterialRow title={model.name} detailLines={2} detail={[model.lab, model.detail].filter(Boolean).join(' · ')} selected={selected === model.id} onPress={() => onSelect(model)} />}
+        ListEmptyComponent={<Text style={{ color: COLORS.muted, padding: 16 }}>{query || lab || favoritesOnly ? 'No matching models' : 'No models available'}</Text>} />
+    </View>
+  </MaterialDialog>;
 }
 
 function NativeModelSheet({ visible, selected, models: availableModels, onClose, onSelect }: { visible: boolean; selected: string; models: Model[]; onClose: () => void; onSelect: (model: Model) => void }) {
@@ -5560,6 +5552,7 @@ const styles = StyleSheet.create({
   persistentPanel: { borderRightColor: COLORS.lineSoft, overflow: 'hidden' },
   historyPanelContent: { flex: 1 },
   persistentPanelContent: { width: SIDEBAR_WIDTH },
+  androidFolderRow: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16 },
   historyLoading: { alignItems: 'center', gap: 8, paddingVertical: 20 },
 
   // Main chat view
@@ -5574,10 +5567,10 @@ const styles = StyleSheet.create({
   },
   persistentMainView: { flex: 1, minWidth: 0, overflow: 'hidden', backgroundColor: COLORS.background },
   chatRoot: { flex: 1, backgroundColor: COLORS.background },
-  chatHeaderOverlay: { position: 'absolute', zIndex: 2, top: 0, left: 0, right: 0 },
+  chatHeaderOverlay: { position: Platform.OS === 'android' ? 'relative' : 'absolute', zIndex: 2, top: 0, left: 0, right: 0 },
   appHeader: { width: '100%', maxWidth: CHAT_CONTENT_MAX, alignSelf: 'center', height: 64, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
   appHeaderEdgeAligned: { maxWidth: '100%' },
-  headerActionExpanded: { width: 88, height: 44, alignItems: 'flex-end' },
+  headerActionExpanded: { width: Platform.OS === 'android' ? 96 : 88, height: Platform.OS === 'android' ? 48 : 44, alignItems: 'flex-end' },
   roundButton: { alignItems: 'center', justifyContent: 'center' },
   roundButtonCustomIcon: { width: 28, height: 28, alignItems: 'center', justifyContent: 'center' },
   roundButtonSelected: { backgroundColor: 'rgba(175,82,222,0.18)' },
@@ -5594,9 +5587,9 @@ const styles = StyleSheet.create({
   // but base its center in the gap between the 44-point leading button and
   // 88-point trailing control. The 22-point transition above then reaches the
   // screen center when temporary mode collapses the trailing control.
-  modelTriggerWrap: { position: 'absolute', top: 10, left: -22, right: 22, height: 44, alignItems: 'center', justifyContent: 'center' },
+  modelTriggerWrap: { position: 'absolute', top: Platform.OS === 'android' ? 8 : 10, left: Platform.OS === 'android' ? 66 : -22, right: Platform.OS === 'android' ? 112 : 22, height: Platform.OS === 'android' ? 48 : 44, alignItems: 'center', justifyContent: 'center' },
   modelMenuHost: { width: 230, height: 44, justifyContent: 'center' },
-  modelTrigger: { minHeight: 44, maxWidth: 218, borderRadius: 22, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 14, paddingVertical: 8 },
+  modelTrigger: { minHeight: Platform.OS === 'android' ? 48 : 44, maxWidth: 218, borderRadius: 22, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 14, paddingVertical: 8 },
   modelTriggerText: { color: COLORS.text, fontSize: 15, fontWeight: '600', letterSpacing: -0.2, flexShrink: 1 },
   connectionBanner: { alignSelf: 'center', maxWidth: '92%', flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 12, backgroundColor: COLORS.fill, paddingHorizontal: 10, paddingVertical: 6, marginBottom: 3 },
   connectionBannerOffline: { backgroundColor: 'rgba(255,159,63,0.12)' },
@@ -5610,6 +5603,7 @@ const styles = StyleSheet.create({
   emptyState: { width: '100%', maxWidth: 720, alignSelf: 'center', alignItems: 'center' },
   emptyIdentity: { alignItems: 'center' },
   emptyModelLineWrap: { position: 'relative', alignItems: 'center' },
+  androidLandingBadge: { flexDirection: 'row', alignItems: 'center', alignSelf: 'center', gap: 6, marginBottom: 16 },
   temporaryLabel: { position: 'absolute', left: 0, right: 0, bottom: '100%', marginBottom: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
   temporaryLabelText: { color: '#6d28d9', fontSize: 12, fontWeight: '600' },
   temporaryLabelTextDark: { color: '#c4b5fd' },
@@ -5720,7 +5714,7 @@ const styles = StyleSheet.create({
   suggestionReveal: { width: '100%', overflow: 'hidden' },
   suggestionGrid: { width: '100%', flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 8 },
   suggestionGridAccessible: { flexDirection: 'column', flexWrap: 'nowrap' },
-  suggestionCard: { width: '48.7%', minHeight: 68, borderRadius: 13, borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.line, backgroundColor: COLORS.card, paddingHorizontal: 13, paddingVertical: 11, justifyContent: 'center' },
+  suggestionCard: { width: '48.7%', minHeight: 68, borderRadius: Platform.OS === 'android' ? 24 : 13, borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.line, backgroundColor: COLORS.card, paddingHorizontal: 13, paddingVertical: 11, justifyContent: 'center' },
   temporarySuggestionCardLight: { backgroundColor: 'rgba(237,233,254,0.82)', borderColor: 'rgba(139,92,246,0.48)' },
   temporarySuggestionCardDark: { backgroundColor: 'rgba(46,16,101,0.58)', borderColor: 'rgba(124,58,237,0.52)' },
   suggestionCardAccessible: { width: '100%' },
@@ -5781,8 +5775,8 @@ const styles = StyleSheet.create({
   panelRoot: { flex: 1, backgroundColor: COLORS.panel },
   profileChip: { flexDirection: 'row', alignItems: 'center', gap: 11 },
   profileName: { color: COLORS.text, fontSize: 17, fontWeight: '600', letterSpacing: -0.3 },
-  searchBox: { height: DRAWER_ACTION_HEIGHT, marginHorizontal: 10, marginTop: 6, borderRadius: 13, backgroundColor: COLORS.panel, borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.lineSoft, flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 12 },
-  nativeDrawerSearchHost: { height: DRAWER_ACTION_HEIGHT, marginHorizontal: 22, marginTop: 6, borderRadius: 13, backgroundColor: COLORS.panel },
+  searchBox: { height: Platform.OS === 'android' ? 56 : DRAWER_ACTION_HEIGHT, marginHorizontal: 10, marginTop: 6, borderRadius: Platform.OS === 'android' ? 28 : 13, backgroundColor: COLORS.panel, borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.lineSoft, flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 12 },
+  nativeDrawerSearchHost: { height: DRAWER_ACTION_HEIGHT, marginHorizontal: 22, marginTop: 6, borderRadius: Platform.OS === 'android' ? 28 : 13, backgroundColor: COLORS.panel },
   nativeFoldersDisclosureHost: { alignSelf: 'stretch', minHeight: DRAWER_ACTION_HEIGHT, marginHorizontal: 22 },
   nativeFoldersHeaderHost: { alignSelf: 'stretch', height: DRAWER_ACTION_HEIGHT },
   nativeFoldersContent: { alignSelf: 'stretch', overflow: 'hidden' },
@@ -5801,13 +5795,13 @@ const styles = StyleSheet.create({
   navText: { color: COLORS.textSoft, fontSize: 15, fontWeight: '500' },
   navMeta: { color: COLORS.muted, fontSize: 12.5, marginLeft: 'auto' },
   chatList: { paddingHorizontal: 10, paddingBottom: 16 },
-  drawerNewChatButton: { position: 'absolute', zIndex: 2, right: 16, width: 123.75, height: 48.75 },
+  drawerNewChatButton: { position: 'absolute', zIndex: 2, right: 16, width: Platform.OS === 'android' ? 160 : 123.75, height: Platform.OS === 'android' ? 52 : 48.75 },
   drawerNewChatButtonHost: { width: 123.75, height: 48.75 },
   drawerNewChatButtonFallback: { width: 123.75, height: 48.75, borderRadius: 24.375, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7.5 },
   drawerNewChatButtonText: { color: COLORS.text, fontSize: 14.0625, fontWeight: '600' },
   sectionLabel: { color: COLORS.muted, fontSize: 11, fontWeight: '600', marginTop: 16, marginBottom: 5, marginHorizontal: 12 },
   chatContextMenuHost: { width: '100%', height: 44 },
-  chatRow: { minHeight: 44, borderRadius: 13, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  chatRow: { minHeight: Platform.OS === 'android' ? 48 : 44, borderRadius: 13, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 10 },
   chatRowActive: { backgroundColor: COLORS.secondary },
   chatTitle: { color: COLORS.textSoft, fontSize: 15 },
   chatTime: { color: COLORS.muted, fontSize: 12 },

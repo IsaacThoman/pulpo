@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { randomUUID } from 'expo-crypto';
 import { create } from 'zustand';
 import type {
   AppPreferences, PersistedPrototypeState,
@@ -61,7 +62,6 @@ const retentionMs: Record<AppPreferences['trashRetention'], number | null> = {
 };
 
 const initialsFor = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase()).join('') || '?';
-const id = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 const productionPreferenceKeys = new Set(['theme', 'textSize', 'streamResponses', 'showReasoning', 'memoryEnabled', 'haptics', 'sendWithEnter', 'attachmentCacheMb', 'localChatLimit', 'trashRetention', 'automaticChatExpiration', 'newChatAutoExpire']);
 const actionVersions = new Map<string, number>();
 
@@ -105,7 +105,7 @@ export const usePrototypeStore = create<PrototypeStore>()((set, get) => ({
     );
   },
   addFolder: (name) => {
-    const folderId = id('folder');
+    const folderId = randomUUID();
     const trimmed = name.trim();
     set((state) => ({ folders: [...state.folders, { id: folderId, name: trimmed, expanded: true }] }));
     runOptimisticAction(`folder:${folderId}:create`, productionActions.createFolder(trimmed, folderId), () => set((state) => ({
