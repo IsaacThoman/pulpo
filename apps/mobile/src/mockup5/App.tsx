@@ -121,6 +121,7 @@ import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import {
   KeyboardChatScrollView,
   KeyboardController,
+  KeyboardEvents,
   KeyboardStickyView,
   type KeyboardChatScrollViewRef,
   useReanimatedKeyboardAnimation,
@@ -1062,7 +1063,7 @@ function DrawerNewChatButton({ isDark, onPress }: { isDark: boolean; onPress: ()
   const glassTintColor = isDark ? 'rgba(255,255,255,0.85)' : 'rgba(0,0,0,0.85)';
   if (Platform.OS === 'ios') {
     return (
-      <SwiftUIHost colorScheme={isDark ? 'dark' : 'light'} style={styles.drawerNewChatButtonHost}>
+      <SwiftUIHost ignoreSafeArea="all" colorScheme={isDark ? 'dark' : 'light'} style={styles.drawerNewChatButtonHost}>
         <SwiftUIButton onPress={onPress} modifiers={[buttonStyle('plain'), swiftUIAccessibilityLabel('New Chat')]}>
           <SwiftUIHStack spacing={7.5} modifiers={[
             frame({ width: 123.75, height: 48.75 }),
@@ -5213,6 +5214,21 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
   const addFolder = usePrototypeStore((state) => state.addFolder);
   const [search, setSearch] = useState('');
   const [searchFocused, setSearchFocused] = useState(false);
+  const [hideNewChatButton, setHideNewChatButton] = useState(
+    () => !(Platform.OS === 'ios' && Platform.isPad) && KeyboardController.isVisible(),
+  );
+  useEffect(() => {
+    if (Platform.OS === 'ios' && Platform.isPad) return;
+    // Restore at dismissal start, rather than waiting for keyboardDidHide.
+    const subscriptions = [
+      KeyboardEvents.addListener('keyboardWillShow', () => setHideNewChatButton(true)),
+      KeyboardEvents.addListener('keyboardDidShow', () => setHideNewChatButton(true)),
+      KeyboardEvents.addListener('keyboardWillHide', () => setHideNewChatButton(false)),
+      KeyboardEvents.addListener('keyboardDidHide', () => setHideNewChatButton(false)),
+    ];
+    setHideNewChatButton(KeyboardController.isVisible());
+    return () => subscriptions.forEach((subscription) => subscription.remove());
+  }, []);
   const folderItems = useMemo(() => {
     return folders.map((folder) => ({
       id: folder.id,
@@ -5220,8 +5236,8 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
       chats: chats.filter((chat) => chat.folderId === folder.id),
     }));
   }, [chats, folders]);
-  const { progress: keyboardProgress } = useReanimatedKeyboardAnimation();
-  const searchQueryProgress = useSharedValue(search.length > 0 ? 1 : 0);
+  const searchActive = searchFocused || search.length > 0;
+  const searchActiveProgress = useSharedValue(searchActive ? 1 : 0);
   const nativeSearchRef = useRef<SwiftUITextFieldRef>(null);
   const dismissSearch = useCallback(() => {
     Keyboard.dismiss();
@@ -5231,25 +5247,16 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
     if (!drawerOpen) dismissSearch();
   }, [dismissSearch, drawerOpen]);
   useEffect(() => {
-    searchQueryProgress.value = withTiming(search.length > 0 ? 1 : 0, { duration: 180 });
-  }, [search, searchQueryProgress]);
+    // The composer keyboard must not collapse controls in the persistent sidebar.
+    searchActiveProgress.value = withTiming(searchActive ? 1 : 0, { duration: 180 });
+  }, [searchActive, searchActiveProgress]);
   const searchActionsAnimatedStyle = useAnimatedStyle(() => {
-    const collapseProgress = Math.max(keyboardProgress.value, searchQueryProgress.value);
+    const collapseProgress = searchActiveProgress.value;
     return {
       maxHeight: interpolate(collapseProgress, [0, 1], [1000, 0]),
       opacity: interpolate(collapseProgress, [0, 0.72], [1, 0]),
       overflow: 'hidden',
       transform: [{ translateY: interpolate(collapseProgress, [0, 1], [0, -DRAWER_ACTION_HEIGHT]) }],
-    };
-  });
-  const newChatButtonAnimatedStyle = useAnimatedStyle(() => {
-    const collapseProgress = Math.max(keyboardProgress.value, searchQueryProgress.value);
-    return {
-      opacity: interpolate(collapseProgress, [0, 0.72], [1, 0]),
-      transform: [
-        { translateY: interpolate(collapseProgress, [0, 1], [0, 12]) },
-        { scale: interpolate(collapseProgress, [0, 1], [1, 0.86]) },
-      ],
     };
   });
   const filtered = useMemo(
@@ -5386,7 +5393,7 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
           )}
         </View>}
 
-        <Reanimated.View pointerEvents={searchFocused || search.length > 0 ? 'none' : 'auto'} style={searchActionsAnimatedStyle}>
+        <Reanimated.View pointerEvents={searchActive ? 'none' : 'auto'} style={searchActionsAnimatedStyle}>
           {Platform.OS === 'ios' ? <NativeFoldersDisclosure folders={folderItems} onSelectChat={selectHistoryChat} onCreate={() => { dismissSearch(); Alert.prompt('New folder', 'Create a folder for related chats.', (name) => name.trim() && addFolder(name)); }} /> : <NativeObjectContextMenu
             style={styles.folderContextMenuHost}
             preview={(
@@ -5439,12 +5446,14 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
           style={styles.flex}
           onTouchStart={dismissSearch}
         />
-        <Reanimated.View
-          pointerEvents={searchFocused || search.length > 0 ? 'none' : 'auto'}
-          style={[styles.drawerNewChatButton, { bottom: insets.bottom + 14 }, newChatButtonAnimatedStyle]}
+        <View
+          accessibilityElementsHidden={hideNewChatButton}
+          importantForAccessibility={hideNewChatButton ? 'no-hide-descendants' : 'auto'}
+          pointerEvents={hideNewChatButton ? 'none' : 'auto'}
+          style={[styles.drawerNewChatButton, { bottom: insets.bottom + 14, opacity: hideNewChatButton ? 0 : 1 }]}
         >
           <DrawerNewChatButton isDark={isDark} onPress={() => { dismissSearch(); onNewChat(); }} />
-        </Reanimated.View>
+        </View>
       </SafeAreaView>
     </View>
   );
