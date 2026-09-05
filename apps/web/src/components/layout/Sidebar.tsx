@@ -37,6 +37,7 @@ import { chatHasStreamingResponse } from '@/lib/response-tracking'
 import type { Chat, Folder } from '@/lib/types'
 import { ExpiryCountdown } from '@/components/chat/ExpiryCountdown'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import {
   DropdownMenu,
@@ -61,7 +62,7 @@ import { ProfileAvatar } from '@/components/ProfileAvatar'
 import { apiRequest } from '@/lib/api'
 import { toggleSidebarPin, type SidebarPinKey } from '@/lib/sidebar-pins'
 import { newChatLocationState } from '@/lib/new-chat-navigation'
-import { fetchBillingSummary } from '@/lib/billing'
+import { billingPlanName, fetchBillingSummary } from '@/lib/billing'
 import { isDesktopRuntime } from '@/lib/runtime'
 import { uit } from '@/i18n/ui'
 
@@ -1190,7 +1191,14 @@ export function Sidebar({
                   sidebarTextTransition
                 )}
               >
-                <div className="truncate text-sm font-medium">{user?.name ?? t('sidebar.signedOut')}</div>
+                <div className="flex min-w-0 items-center gap-2">
+                  <span className="truncate text-sm font-medium">{user?.name ?? t('sidebar.signedOut')}</span>
+                  {billingEnabled && billingQuery.data && (
+                    <Badge variant="secondary" className="px-1.5 py-0 text-[10px] leading-4">
+                      {billingPlanName(billingQuery.data.plan)}
+                    </Badge>
+                  )}
+                </div>
                 <div className="truncate text-xs text-muted-foreground">{user?.username ? uit`@${user.username}` : ''}</div>
               </div>
               {!sidebarPins.friends && Boolean(pendingSocialCount) && (
