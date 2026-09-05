@@ -5220,8 +5220,8 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
       chats: chats.filter((chat) => chat.folderId === folder.id),
     }));
   }, [chats, folders]);
-  const { progress: keyboardProgress } = useReanimatedKeyboardAnimation();
-  const searchQueryProgress = useSharedValue(search.length > 0 ? 1 : 0);
+  const searchActive = searchFocused || search.length > 0;
+  const searchActiveProgress = useSharedValue(searchActive ? 1 : 0);
   const nativeSearchRef = useRef<SwiftUITextFieldRef>(null);
   const dismissSearch = useCallback(() => {
     Keyboard.dismiss();
@@ -5231,10 +5231,11 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
     if (!drawerOpen) dismissSearch();
   }, [dismissSearch, drawerOpen]);
   useEffect(() => {
-    searchQueryProgress.value = withTiming(search.length > 0 ? 1 : 0, { duration: 180 });
-  }, [search, searchQueryProgress]);
+    // The composer keyboard must not collapse controls in the persistent sidebar.
+    searchActiveProgress.value = withTiming(searchActive ? 1 : 0, { duration: 180 });
+  }, [searchActive, searchActiveProgress]);
   const searchActionsAnimatedStyle = useAnimatedStyle(() => {
-    const collapseProgress = Math.max(keyboardProgress.value, searchQueryProgress.value);
+    const collapseProgress = searchActiveProgress.value;
     return {
       maxHeight: interpolate(collapseProgress, [0, 1], [1000, 0]),
       opacity: interpolate(collapseProgress, [0, 0.72], [1, 0]),
@@ -5243,7 +5244,7 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
     };
   });
   const newChatButtonAnimatedStyle = useAnimatedStyle(() => {
-    const collapseProgress = Math.max(keyboardProgress.value, searchQueryProgress.value);
+    const collapseProgress = searchActiveProgress.value;
     return {
       opacity: interpolate(collapseProgress, [0, 0.72], [1, 0]),
       transform: [
@@ -5386,7 +5387,7 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
           )}
         </View>}
 
-        <Reanimated.View pointerEvents={searchFocused || search.length > 0 ? 'none' : 'auto'} style={searchActionsAnimatedStyle}>
+        <Reanimated.View pointerEvents={searchActive ? 'none' : 'auto'} style={searchActionsAnimatedStyle}>
           {Platform.OS === 'ios' ? <NativeFoldersDisclosure folders={folderItems} onSelectChat={selectHistoryChat} onCreate={() => { dismissSearch(); Alert.prompt('New folder', 'Create a folder for related chats.', (name) => name.trim() && addFolder(name)); }} /> : <NativeObjectContextMenu
             style={styles.folderContextMenuHost}
             preview={(
@@ -5440,7 +5441,7 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
           onTouchStart={dismissSearch}
         />
         <Reanimated.View
-          pointerEvents={searchFocused || search.length > 0 ? 'none' : 'auto'}
+          pointerEvents={searchActive ? 'none' : 'auto'}
           style={[styles.drawerNewChatButton, { bottom: insets.bottom + 14 }, newChatButtonAnimatedStyle]}
         >
           <DrawerNewChatButton isDark={isDark} onPress={() => { dismissSearch(); onNewChat(); }} />
