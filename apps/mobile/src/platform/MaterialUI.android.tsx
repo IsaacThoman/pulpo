@@ -29,12 +29,12 @@ export function MaterialButton({ label, icon, onPress, disabled, loading, varian
   </Host>;
 }
 
-export function MaterialIconButton({ label, icon, onPress, disabled, selected, prominent, size: requestedSize = 48, color }: IconButtonProps) {
+export function MaterialIconButton({ label, icon, onPress, disabled, selected, prominent, size: requestedSize = 48, color, containerColor }: IconButtonProps) {
   const colors = useMaterialColors();
   const dimension = Math.max(48, requestedSize);
   const Component = prominent ? FilledIconButton : selected ? FilledTonalIconButton : IconButton;
   return <Host style={{ width: dimension, height: dimension }} ignoreSafeAreaKeyboardInsets>
-    <Component enabled={!disabled} onClick={onPress} colors={!prominent && !selected ? { contentColor: colors.onSurface, disabledContentColor: colors.outline } : undefined} modifiers={[size(dimension, dimension)]}>
+    <Component enabled={!disabled} onClick={onPress} colors={containerColor ? { containerColor: materialTint(containerColor, colors), contentColor: materialTint(color, colors) } : !prominent && !selected ? { contentColor: colors.onSurface, disabledContentColor: colors.outline } : undefined} modifiers={[size(dimension, dimension)]}>
       <Icon source={materialIcon(icon)} size={24} contentDescription={label} tint={materialTint(color, colors)} />
     </Component>
   </Host>;

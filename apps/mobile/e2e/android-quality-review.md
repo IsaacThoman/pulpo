@@ -47,9 +47,16 @@ The model argument is the selected model’s visible name. The script changes on
 
 ## Evidence
 
+### Wallpaper-independent temporary colors
+
+Temporary mode previously reused Android’s wallpaper-derived secondary container and primary accent, making it gray on a phone with a monochrome palette. A dedicated light/dark purple palette now supplies the chat surface, composer, badge, and active ghost button. Other Android controls retain their normal dynamic theme. The emulator previews below verify both appearances; TypeScript, lint, and the production-configured Release build passed.
+
+![Temporary purple in light mode](evidence/android-quality/temporary-purple-light.png)
+![Temporary purple in dark mode](evidence/android-quality/temporary-purple-dark.png)
+
 ### Temporary composer tint follow-up
 
-Android now renders the composer as an animated Material surface instead of the glass fallback, which ignored the iOS-only tint. Its opaque surrounding layer shares the chat background animation, including the bottom inset; the card blends toward the same tint at 55% strength for separation. The same temporary-mode progress drives both layers and respects reduced motion. Light/dark appearance and keyboard-open states were visually checked; normal mode restores the original surface colors. TypeScript, lint, and the Release build passed.
+Android now renders the composer as an animated Material surface instead of the glass fallback, which ignored the iOS-only tint. Its opaque surrounding layer shares the chat background animation, including the bottom inset; the card uses a separate purple surface for separation. The same temporary-mode progress drives both layers and respects reduced motion. Light/dark appearance and keyboard-open states were visually checked; normal mode restores the original surface colors. TypeScript, lint, and the Release build passed.
 
 ### Header centering follow-up
 

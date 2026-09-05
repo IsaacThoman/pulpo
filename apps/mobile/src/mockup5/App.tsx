@@ -9,6 +9,7 @@ import { enqueueMessage, mutateQueuedMessage, shouldQueueMessage } from '../feat
 import type { MobileQueuedMessage } from '../types';
 import { mobileComposerSync } from '../features/chat/composerSync';
 import { useComposerSync } from '../features/chat/useComposerSync';
+import { temporaryChatColors } from '../features/chat/temporaryColors';
 import { submitComposerDraft } from '../features/chat/composerSubmission';
 import type { ComposerState } from '@pulpo/contracts';
 import {
@@ -1285,6 +1286,7 @@ function FallbackTemporaryChatHeaderControl({
 
 function AndroidTemporaryChatHeaderControl(props: TemporaryChatHeaderControlProps) {
   const { reduceMotion } = useAccessibilityPreferences();
+  const temporaryColors = temporaryChatColors(useColorScheme() === 'dark');
   const visible = props.expanded && props.leadingAction !== 'none';
   const progress = useSharedValue(visible ? 1 : 0);
   useEffect(() => {
@@ -1307,6 +1309,8 @@ function AndroidTemporaryChatHeaderControl(props: TemporaryChatHeaderControlProp
     </Reanimated.View>
     <MaterialIconButton icon={props.trailingAction === 'ghost' ? 'ghost' : 'square.and.pencil'}
       label={props.trailingAction === 'ghost' ? props.active ? 'Disable temporary chat' : 'Enable temporary chat' : props.active ? 'New temporary chat' : 'New chat'}
+      color={props.active ? temporaryColors.onControl : undefined}
+      containerColor={props.active ? temporaryColors.control : undefined}
       selected={props.active} onPress={props.trailingAction === 'ghost' ? props.onToggleTemporary : props.onNewChat} />
   </View>;
 }
@@ -3701,18 +3705,19 @@ function ChatView({
       transform: [{ translateY: interpolate(progress, [0, 1], [0, -14]) }],
     };
   }, [keyboardLayoutEnabled]);
+  const temporaryColors = temporaryChatColors(colorScheme === 'dark');
   const temporarySurfaceAnimatedStyle = useAnimatedStyle(() => ({
     backgroundColor: interpolateColor(
       temporaryProgress.value,
       [0, 1],
-      Platform.OS === 'android' ? [COLORS.background as string, COLORS.fillStrong as string] : colorScheme === 'dark' ? ['#000000', '#080312'] : ['#ffffff', '#f4f0ff'],
+      Platform.OS === 'android' ? [COLORS.background as string, temporaryColors.surface] : colorScheme === 'dark' ? ['#000000', '#080312'] : ['#ffffff', '#f4f0ff'],
     ),
   }));
   const temporaryComposerAnimatedStyle = useAnimatedStyle(() => ({
     backgroundColor: interpolateColor(
-      temporaryProgress.value * 0.55,
+      temporaryProgress.value,
       [0, 1],
-      [COLORS.elevated as string, COLORS.fillStrong as string],
+      [COLORS.elevated as string, temporaryColors.composer],
     ),
   }));
   const temporaryLabelAnimatedStyle = useAnimatedStyle(() => ({
@@ -4695,8 +4700,8 @@ function ChatView({
             pointerEvents="none"
             style={[styles.temporaryLabel, Platform.OS === 'android' && styles.androidLandingBadge, temporaryLabelAnimatedStyle]}
           >
-            {Platform.OS === 'android' ? <Icon name="ghost" size={18} color={COLORS.accent} /> : <Ghost color={colorScheme === 'dark' ? '#c4b5fd' : '#6d28d9'} size={14} strokeWidth={2} />}
-            <Text style={[styles.temporaryLabelText, colorScheme === 'dark' && styles.temporaryLabelTextDark, Platform.OS === 'android' && { color: COLORS.accent }]}>Temporary</Text>
+            {Platform.OS === 'android' ? <Icon name="ghost" size={18} color={temporaryColors.accent} /> : <Ghost color={colorScheme === 'dark' ? '#c4b5fd' : '#6d28d9'} size={14} strokeWidth={2} />}
+            <Text style={[styles.temporaryLabelText, colorScheme === 'dark' && styles.temporaryLabelTextDark, Platform.OS === 'android' && { color: temporaryColors.accent }]}>Temporary</Text>
           </Reanimated.View>
           <Reanimated.View
             accessible={landingBadge?.kind === 'expiration'}
