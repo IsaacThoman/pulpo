@@ -70,10 +70,10 @@ export function DeleteAccountSettings() {
     try {
       await logout(true)
     } catch {
-      navigate('/login', { replace: true, state: { accountDeletionRequested: true, accountDeletionCleanupFailed: true } })
+      navigate('/account-deletion', { replace: true, state: { accountDeletionCleanupFailed: true } })
       return
     }
-    navigate('/login', { replace: true, state: { accountDeletionRequested: true } })
+    navigate('/account-deletion', { replace: true })
   }
 
   return <Dialog open={open} onOpenChange={handleOpenChange}>

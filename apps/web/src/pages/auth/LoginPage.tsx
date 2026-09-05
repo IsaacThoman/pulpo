@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from '@/i18n/useAppTranslation'
-import { Link, Navigate, useNavigate, useLocation } from 'react-router-dom'
+import { Link, Navigate, useNavigate } from 'react-router-dom'
 import { ArrowLeft, Eye, EyeOff, Loader2, Server, ShieldCheck } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -20,7 +20,6 @@ export function LoginPage() {
   const instanceUrl = useAuth((s) => s.instanceUrl)
   const chooseInstance = useAuth((s) => s.chooseInstance)
   const navigate = useNavigate()
-  const location = useLocation()
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -78,8 +77,6 @@ export function LoginPage() {
         </p>
       </div>
 
-      {location.state?.accountDeletionRequested && <p role="status" className="text-sm text-muted-foreground">{ui('Account deletion has started. Your access has ended and cleanup will continue automatically.')}</p>}
-      {location.state?.accountDeletionCleanupFailed && <p role="alert" className="text-sm text-destructive">{ui('Some data on this device could not be removed. Clear this site’s local storage to remove it.')}</p>}
       <form onSubmit={submit} className="space-y-4">
         {!twoFactorStep && <div className="space-y-2">
           <Label htmlFor="email">{t('auth.email')}</Label>

@@ -59,14 +59,14 @@ describe('web account deletion', () => {
     expect(mocks.request.mock.calls.every((call) => call[1]?.method !== 'DELETE')).toBe(true)
     expect(mocks.logout).not.toHaveBeenCalled()
   })
-  it('clears local state only after acceptance and shows confirmation on sign-in', async () => {
+  it('clears local state only after acceptance and shows the dedicated confirmation page', async () => {
     await mount({ accountDeletionEnabled: true }); await click('Delete account'); await password('secret')
     mocks.request.mockResolvedValueOnce({ status: 'deletion_requested' })
     await click('Permanently delete account')
     expect(mocks.request).toHaveBeenLastCalledWith('/api/me', { method: 'DELETE', body: { currentPassword: 'secret', verificationCode: undefined } })
     expect(window.confirm).not.toHaveBeenCalled()
     expect(mocks.logout).toHaveBeenCalledWith(true)
-    expect(mocks.navigate).toHaveBeenCalledWith('/login', { replace: true, state: { accountDeletionRequested: true } })
+    expect(mocks.navigate).toHaveBeenCalledWith('/account-deletion', { replace: true })
   })
   it('keeps the session and form after an API failure', async () => {
     await mount({ accountDeletionEnabled: true }); await click('Delete account'); await password('secret')
@@ -118,11 +118,11 @@ describe('web account deletion', () => {
     expect(document.querySelector('[role="dialog"]')!.textContent).toContain('disabled by the instance administrator')
   })
 
-  it('returns to sign-in with acceptance and a local-cleanup warning if storage fails', async () => {
+  it('shows acceptance and a local-cleanup warning on the confirmation page if storage fails', async () => {
     await mount({ accountDeletionEnabled: true }); await click('Delete account'); await password('secret')
     mocks.logout.mockRejectedValueOnce(new Error('Storage failed'))
     await click('Permanently delete account')
-    expect(mocks.navigate).toHaveBeenCalledWith('/login', { replace: true, state: { accountDeletionRequested: true, accountDeletionCleanupFailed: true } })
+    expect(mocks.navigate).toHaveBeenCalledWith('/account-deletion', { replace: true, state: { accountDeletionCleanupFailed: true } })
   })
 
 })
