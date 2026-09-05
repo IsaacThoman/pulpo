@@ -28,3 +28,15 @@ A separate web UI run created a held response and queued follow-up, then edited 
 ![Editing a queued attachment with its saved model](evidence/native-edit-attachment.png)
 
 ![Completed queued turns and attachment](evidence/native-completed.png)
+
+## Native queue UI refinement
+
+Replaced queue metadata and text/arrow controls with UIKit cards, SF Symbol pencil/trash buttons, and UITableView long-press drag/drop. VoiceOver exposes Move up/Move down actions; edit locks and pending submissions disable mutation controls.
+
+Revalidated on the iOS 26.5 simulator: pencil opens editing, cancel and save restore an existing draft, trash removes the selected queued message, and native accessibility reordering persists to the API. Releasing the fixture produced exactly three completed turns in order: `HOLD Native drag acceptance`, `Second follow-up edited`, `First follow-up`. The queue disappeared and the draft remained intact.
+
+**Touch-drag validation limitation:** the available UI automation exposes drag without a configurable press-and-hold duration. Its attempted drag did not lift a row. The UIKit drag/drop implementation compiles, but the actual long-press lift/drop gesture still needs manual verification. Accessibility reordering exercised the same native move and server reconciliation path successfully.
+
+Mobile tests (315), mobile typecheck, iOS export, simulator build, repository lint, full repository tests with the Node web-storage workaround above, and isolated API acceptance all passed for this refinement.
+
+![Native queue with icon controls and reordered messages](evidence/native-queue-icons.png)

@@ -1,3 +1,4 @@
+import { QueuedMessagesView } from '../native/QueuedMessagesView';
 import { enqueueMessage, mutateQueuedMessage, shouldQueueMessage } from '../features/chat/messageQueue';
 import type { MobileQueuedMessage } from '../types';
 import { mobileComposerSync } from '../features/chat/composerSync';
@@ -4767,26 +4768,36 @@ function ChatView({
       <KeyboardStickyView enabled={keyboardLayoutEnabled} offset={keyboardOffset} style={styles.composerSticky}>
         <View style={[styles.composerWrap, styles.chatContent, { paddingHorizontal: Math.max(12, horizontalPadding - 6), paddingBottom: Math.max(insets.bottom, 10) }]}>
             {queuedMessages.length > 0 && (
-              <ScrollView keyboardShouldPersistTaps="handled" style={{ maxHeight: Math.min(200, windowHeight * 0.25), marginBottom: 8 }} accessibilityLabel="Queued messages">
-                {queuedMessages.map((item, index) => {
+              <QueuedMessagesView
+                style={{ height: Math.min(queuedMessages.length * 80, 200, windowHeight * 0.25), marginBottom: 8 }}
+                rows={queuedMessages.map((item) => {
                   const locked = queueBusy || sending || item.status === 'dispatching' || Boolean(item.pendingSubmissionId && !item.localFailure) || expired;
-                  const queueAction = (action: Parameters<typeof mutateQueuedMessage>[4]) => {
-                    if (chatId && draftNamespace) void runQueueAction(() => mutateQueuedMessage(queueClient, draftNamespace, chatId, item.id, action));
+                  return {
+                    id: item.id,
+                    content: item.content || 'Attachments',
+                    detail: [item.attachments.map((attachment) => attachment.name).join(', '), item.error].filter(Boolean).join(' · '),
+                    status: item.pendingSubmissionId && !item.localFailure ? 'Waiting to sync' : item.status,
+                    canEdit: !locked && !messageEdit && !queuedMessages.some((candidate) => candidate.status === 'editing' && candidate.id !== item.id),
+                    canDelete: !locked && !messageEdit,
+                    canReorder: !locked && !messageEdit && !queuedMessages.some((candidate) => Boolean(candidate.pendingSubmissionId) || candidate.status === 'editing'),
                   };
-                  return <View key={item.id} style={{ padding: 10, marginBottom: 4, borderRadius: 12, backgroundColor: COLORS.panel }}>
-                    <Text style={{ color: COLORS.muted, fontSize: 11 }}>{index + 1} · {models.find((candidate) => candidate.id === item.modelId)?.name ?? item.modelId} · {item.pendingSubmissionId && !item.localFailure ? 'Waiting to sync' : item.status}</Text>
-                    <Text numberOfLines={2} style={{ color: COLORS.text, fontSize: 14 }}>{item.content || 'Attachments'}</Text>
-                    {item.attachments.length > 0 && <Text numberOfLines={1} style={{ color: COLORS.muted, fontSize: 12 }}>{item.attachments.map((attachment) => attachment.name).join(', ')}</Text>}
-                    {item.error && <Text accessibilityRole="alert" style={{ color: COLORS.text, fontSize: 12 }}>{item.error}</Text>}
-                    <View style={{ flexDirection: 'row', gap: 18, marginTop: 6 }}>
-                      <Pressable accessibilityRole="button" accessibilityLabel={`Edit queued message ${index + 1}`} disabled={locked || Boolean(messageEdit) || queuedMessages.some((candidate) => candidate.status === 'editing' && candidate.id !== item.id)} onPress={() => void beginQueueEdit(item)}><Text style={{ color: COLORS.muted, paddingVertical: 6 }}>Edit</Text></Pressable>
-                      <Pressable accessibilityRole="button" accessibilityLabel={`Delete queued message ${index + 1}`} disabled={locked || Boolean(messageEdit)} onPress={() => queueAction({ action: 'delete' })}><Text style={{ color: COLORS.muted, paddingVertical: 6 }}>Delete</Text></Pressable>
-                      <Pressable accessibilityRole="button" accessibilityLabel={`Move queued message ${index + 1} up`} disabled={locked || index === 0 || queuedMessages.some((candidate) => Boolean(candidate.pendingSubmissionId)) || queuedMessages[index - 1]?.status === 'dispatching'} onPress={() => queueAction({ action: 'reorder', targetMessageId: queuedMessages[index - 1]!.id, edge: 'before' })}><Text style={{ color: COLORS.muted, paddingVertical: 6 }}>↑</Text></Pressable>
-                      <Pressable accessibilityRole="button" accessibilityLabel={`Move queued message ${index + 1} down`} disabled={locked || index === queuedMessages.length - 1 || queuedMessages.some((candidate) => Boolean(candidate.pendingSubmissionId)) || queuedMessages[index + 1]?.status === 'dispatching'} onPress={() => queueAction({ action: 'reorder', targetMessageId: queuedMessages[index + 1]!.id, edge: 'after' })}><Text style={{ color: COLORS.muted, paddingVertical: 6 }}>↓</Text></Pressable>
-                    </View>
-                  </View>;
                 })}
-              </ScrollView>
+                onAction={({ nativeEvent: action }) => {
+                  const item = queuedMessages.find((candidate) => candidate.id === action.id);
+                  if (!item || queueBusy || sending || expired || messageEdit || item.status === 'dispatching') return;
+                  if (action.action === 'edit') {
+                    void beginQueueEdit(item);
+                  } else if (chatId && draftNamespace) {
+                    if (action.action === 'delete') {
+                      void runQueueAction(() => mutateQueuedMessage(queueClient, draftNamespace, chatId, item.id, { action: 'delete' }));
+                    } else if (action.targetMessageId && action.edge) {
+                      const targetMessageId = action.targetMessageId;
+                      const edge = action.edge;
+                      void runQueueAction(() => mutateQueuedMessage(queueClient, draftNamespace, chatId, item.id, { action: 'reorder', targetMessageId, edge }));
+                    }
+                  }
+                }}
+              />
             )}
             <Glass
               interactive

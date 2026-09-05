@@ -28,6 +28,13 @@ public final class PulpoFileClipboardModule: Module {
     }
     .runOnQueue(DispatchQueue.main)
 
+    View(QueuedMessagesView.self) {
+      Events("onAction")
+      Prop("rows") { (view, value: [QueuedMessageRow]) in
+        view.setRows(value)
+      }
+    }
+
     View(TemporaryChatHeaderView.self) {
       Events("onToggleExpiration", "onToggleTemporary", "onSave", "onNewChat")
 
