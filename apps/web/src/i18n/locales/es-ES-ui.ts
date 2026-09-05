@@ -1,4 +1,5 @@
 const esUi: Record<string, string> = {
+  "Permanently delete your account and its data.": "Elimina permanentemente tu cuenta y sus datos.",
   "Account deletion in progress": "Eliminación de cuenta en curso",
   "Could not load account deletion settings.": "No se pudo cargar la configuración de eliminación de la cuenta.",
   "Permanently delete your account? This cannot be undone.": "¿Eliminar tu cuenta permanentemente? Esta acción no se puede deshacer.",

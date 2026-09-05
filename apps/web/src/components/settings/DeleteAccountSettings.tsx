@@ -40,27 +40,33 @@ export function DeleteAccountSettings() {
     navigate('/login', { replace: true, state: { accountDeletionRequested: true } })
   }
 
-  return <div className="space-y-3 border-t py-4">
-    <h3 className="text-sm font-medium">{ui('Delete account')}</h3>
-    {!settings && !error && <p className="text-sm text-muted-foreground">{ui('Loading…')}</p>}
-    {settings && !settings.accountDeletionEnabled && <p className="text-sm text-muted-foreground">
-      {settings.accountDeletionEnabled === false ? ui('Account deletion is disabled by the instance administrator.') : ui('This server does not support account deletion.')}
-      {settings.adminEmail && <> <a href={`mailto:${settings.adminEmail}`} className="underline">{settings.adminEmail}</a></>}
-    </p>}
-    {settings?.accountDeletionEnabled && <>
-      {!open ? <Button variant="destructive" size="sm" onClick={() => setOpen(true)}>{ui('Delete account')}</Button> : <form className="space-y-3" onSubmit={(event) => { event.preventDefault(); void submit() }}>
+  return <div className="border-t">
+    <div className="flex min-w-0 flex-col items-start gap-2 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+      <div className="min-w-0 flex-1">
+        <h3 className="text-sm font-medium">{ui('Delete account')}</h3>
+        <div className="mt-0.5 text-xs text-muted-foreground">
+          {!settings && !error && ui('Loading…')}
+          {settings?.accountDeletionEnabled && ui('Permanently delete your account and its data.')}
+          {settings && !settings.accountDeletionEnabled && <>
+            {settings.accountDeletionEnabled === false ? ui('Account deletion is disabled by the instance administrator.') : ui('This server does not support account deletion.')}
+            {settings.adminEmail && <> <a href={`mailto:${settings.adminEmail}`} className="underline">{settings.adminEmail}</a></>}
+          </>}
+        </div>
+      </div>
+      {settings?.accountDeletionEnabled && !open && <Button className="shrink-0" variant="destructive" size="sm" onClick={() => setOpen(true)}>{ui('Delete account')}</Button>}
+    </div>
+    {settings?.accountDeletionEnabled && open && <form className="space-y-3 pb-3" onSubmit={(event) => { event.preventDefault(); void submit() }}>
         <p className="break-all text-sm">{user?.email} · {useAuth.getState().instanceUrl || window.location.origin}</p>
         <p className="text-sm text-muted-foreground">{ui('Deletion is permanent. Your chats, files, memories, and shared links will be removed. Subscriptions will be canceled and unused credits forfeited, with no automatic refunds. Access ends immediately; background cleanup may take time. Backups and payment records follow existing retention policies.')}</p>
         <Label htmlFor="delete-account-password">{ui('Current password')}</Label>
         <Input id="delete-account-password" type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} required disabled={busy} />
         <Label htmlFor="delete-account-code">{ui('Authenticator or recovery code (if enabled)')}</Label>
         <Input id="delete-account-code" autoComplete="one-time-code" value={code} onChange={(event) => setCode(event.target.value)} disabled={busy} />
-        <div className="flex gap-2">
+        <div className="flex flex-wrap justify-end gap-2">
           <Button type="button" variant="outline" disabled={busy} onClick={() => { setOpen(false); setPassword(''); setCode(''); setError('') }}>{ui('Cancel')}</Button>
           <Button type="submit" variant="destructive" disabled={busy || !password}>{busy ? ui('Deleting…') : ui('Permanently delete account')}</Button>
         </div>
       </form>}
-    </>}
-    {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
+    {error && <p role="alert" className="pb-3 text-sm text-destructive">{error}</p>}
   </div>
 }
