@@ -47,6 +47,12 @@ The model argument is the selected model’s visible name. The script changes on
 
 ## Evidence
 
+### Dropdown trigger spacing follow-up
+
+The shared Android menu stretched its label with Compose `weight(1)` inside a full-width button. This separated short labels from their chevrons in the model selector, generation presets, and lab filter. The button now wraps its native content within its available slot. A trailing 26 dp inset reserves an 18 dp chevron plus an 8 dp gap without allowing long text to push the chevron out. The 48 dp touch target is retained. Compact presets also use the available composer width instead of truncating early.
+
+On Android 17, UI Automator measured a 21 px / 8 dp label-to-chevron gap at 420 dpi for both model and generation menus. Checks covered GPT-5.6 Luna, DeepSeek V4 Flash, GLM-5.3 Flash, short and combined preset labels, 320 dp width, and 200% text. At 320 dp, `Low · Fast` fits completely; long model labels ellipsize with the arrow visible. Model selection and opening/dismissing menus worked. Device size and font scale were restored. Targeted menu interaction tests, mobile TypeScript, lint, and the production-configured Release build passed.
+
 ![Stable layout with animated expiry and temporary states](evidence/android-quality/badge-motion.gif)
 ![Live dark appearance with the draft retained](evidence/android-quality/live-dark.png)
 ![Live return to light appearance with the same draft](evidence/android-quality/live-light.png)

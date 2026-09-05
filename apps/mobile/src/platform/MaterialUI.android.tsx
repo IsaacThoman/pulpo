@@ -2,13 +2,13 @@ import { Fragment, useEffect, useRef, useState, useSyncExternalStore } from 'rea
 import { Keyboard, KeyboardAvoidingView, Modal, Pressable, ScrollView, Text as RNText, View, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
-  AlertDialog, Button, Column, DropdownMenu, DropdownMenuItem, FilledIconButton,
+  AlertDialog, Box, Button, Column, DropdownMenu, DropdownMenuItem, FilledIconButton,
   FilledTonalButton, FilledTonalIconButton, Host, HorizontalDivider, Icon, IconButton, ListItem, Spacer,
   LoadingIndicator, OutlinedTextField, RNHostView,
   SegmentedButton, SingleChoiceSegmentedButtonRow, Switch, Text, TextButton,
   useMaterialColors, useNativeState,
 } from '@expo/ui/jetpack-compose';
-import { clickable, defaultMinSize, fillMaxWidth, height, padding, semantics, size, verticalScroll, weight, width } from '@expo/ui/jetpack-compose/modifiers';
+import { clickable, defaultMinSize, fillMaxWidth, height, padding, semantics, size, verticalScroll, weight, width, wrapContentWidth } from '@expo/ui/jetpack-compose/modifiers';
 import { getMaterialOverlay, showActions, subscribe, update } from './materialActions.android';
 import { androidDialogBodyHeight } from './androidLayout';
 import { materialTint } from './materialTint';
@@ -113,11 +113,19 @@ export function MaterialMenu({ label, icon, actions = EMPTY_ACTIONS, sections = 
   const groups: MenuSection[] = submenu
     ? [{ id: 'back', actions: [{ label: 'Back', icon: 'arrow.left', onPress: () => setSubmenu(undefined), keepOpen: true }] }, { id: 'submenu', title: submenu.title, actions: submenu.actions }]
     : [...sections, ...(actions.length ? [{ id: 'actions', actions }] : [])];
-  return <Host style={{ width: text ? compact ? Math.min(200, Math.max(112, windowWidth - 216)) : 230 : 48, maxWidth: '100%', height: 48 }} ignoreSafeAreaKeyboardInsets><DropdownMenu expanded={expanded} onDismissRequest={dismiss}>
-    <DropdownMenu.Trigger>{text ? <TextButton onClick={() => setExpanded(true)} modifiers={[fillMaxWidth(), height(48)]}>
+  // The host bounds long labels, but the native button wraps its contents.
+  // Reserve the chevron inside the label's intrinsic width: Row weight would
+  // stretch short labels, while an unweighted Row could push the chevron out.
+  // Compact composer menus leave 144 dp for the three icon buttons and
+  // 40 dp for the composer's outer spacing, inner padding, and row gaps.
+  const triggerWidth = text ? compact ? Math.min(200, Math.max(48, windowWidth - 184)) : 230 : 48;
+  return <Host style={{ width: triggerWidth, maxWidth: '100%', height: 48 }} ignoreSafeAreaKeyboardInsets><DropdownMenu expanded={expanded} onDismissRequest={dismiss} modifiers={text ? [wrapContentWidth('start')] : undefined}>
+    <DropdownMenu.Trigger>{text ? <TextButton onClick={() => setExpanded(true)} modifiers={[height(48)]}>
       {image ? <><Icon source={image} tint={null} size={24} /><Spacer modifiers={[width(8)]} /></> : null}
-      <Text style={{ typography: 'titleMedium' }} maxLines={1} overflow="ellipsis" modifiers={[weight(1)]}>{text}</Text>
-      <Spacer modifiers={[width(8)]} /><Icon source={materialIcon(icon)} size={18} contentDescription={label} />
+      <Box contentAlignment="centerEnd">
+        <Text style={{ typography: 'titleMedium' }} maxLines={1} overflow="ellipsis" modifiers={[padding(0, 0, 26, 0)]}>{text}</Text>
+        <Icon source={materialIcon(icon)} size={18} contentDescription={label} />
+      </Box>
     </TextButton> : <IconButton colors={{ contentColor: colors.onSurface }} onClick={() => setExpanded(true)}><Icon source={materialIcon(icon)} size={24} contentDescription={label} /></IconButton>}</DropdownMenu.Trigger>
     <DropdownMenu.Items>{groups.map((group, index) => <Fragment key={group.id}>
       {index > 0 ? <HorizontalDivider modifiers={[padding(0, 8, 0, 8)]} /> : null}

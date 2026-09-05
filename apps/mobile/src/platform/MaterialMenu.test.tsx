@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 vi.mock('react-native', () => ({ useWindowDimensions: () => ({ width: 412 }) }))
 vi.mock('react-native-safe-area-context', () => ({ SafeAreaView: () => null }))
 vi.mock('./materialIcons', () => ({ materialIcon: (name: string) => name }))
-vi.mock('@expo/ui/jetpack-compose/modifiers', () => Object.fromEntries(['clickable', 'defaultMinSize', 'fillMaxWidth', 'height', 'padding', 'semantics', 'size', 'verticalScroll', 'weight', 'width'].map(name => [name, () => ({})])))
+vi.mock('@expo/ui/jetpack-compose/modifiers', () => Object.fromEntries(['clickable', 'defaultMinSize', 'fillMaxWidth', 'height', 'padding', 'semantics', 'size', 'verticalScroll', 'weight', 'width', 'wrapContentWidth'].map(name => [name, () => ({})])))
 vi.mock('@expo/ui/jetpack-compose', async () => {
   const { createElement, createContext, useContext } = await import('react')
   const Expanded = createContext(false)
@@ -16,7 +16,7 @@ vi.mock('@expo/ui/jetpack-compose', async () => {
     Items: ({ children }: { children: ReactNode }) => useContext(Expanded) ? createElement('div', { role: 'menu' }, children) : null,
   })
   return {
-    Host: Container, Column: Container, Text: ({ children }: { children: ReactNode }) => createElement('span', null, children),
+    Host: Container, Box: Container, Column: Container, Text: ({ children }: { children: ReactNode }) => createElement('span', null, children),
     Icon: ({ contentDescription }: { contentDescription?: string }) => createElement('span', null, contentDescription),
     Spacer: () => null, HorizontalDivider: () => createElement('hr'), TextButton: Button, IconButton: Button,
     DropdownMenu: Dropdown, DropdownMenuItem: Object.assign(Button, { Text: Container, LeadingIcon: Container, TrailingIcon: Container }),
@@ -36,11 +36,11 @@ async function click(label: string) {
 describe('native Android menu interactions', () => {
   it('preserves preset sections and dispatches identical choice labels to their own preset', async () => {
     const reasoning = vi.fn(), verbosity = vi.fn()
-    await act(async () => root.render(<MaterialMenu label="Options" icon="chevron.down" sections={[
+    await act(async () => root.render(<MaterialMenu label="Options" text="High · High" icon="chevron.down" sections={[
       { id: 'reasoning', title: 'Reasoning', actions: [{ id: 'high', label: 'High', onPress: reasoning }] },
       { id: 'verbosity', title: 'Verbosity', actions: [{ id: 'high', label: 'High', onPress: verbosity }] },
     ]} />))
-    await click('Options')
+    await click('High · HighOptions')
     const menu = container.querySelector('[role=menu]')!
     expect(menu.textContent).toBe('ReasoningHighVerbosityHigh')
     const choices = menu.querySelectorAll('button')
