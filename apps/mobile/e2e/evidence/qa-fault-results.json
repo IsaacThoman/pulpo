@@ -1,0 +1,1 @@
+{"passed":true,"chatId":"01a06f36-b12a-777b-bfd6-98fce716cf76","checks":["lost acknowledgment replay","edit lock blocks sequential dispatch","cancel resumes dispatch","retry after dispatch","idle enqueue race","invalid model rejection","exact execution order"]}

@@ -1,7 +1,9 @@
+import { reconcileQueuedMessages } from '../features/chat/messageQueuePolicy'
 import { queryOptions } from '@tanstack/react-query'
 import { mobileApi } from '../api/client'
 import {
   cacheChats,
+  pendingOutbox,
   cacheOpenedChat,
   cachedChats,
   getValue,
@@ -102,6 +104,8 @@ export function chatQuery(namespace: string, id: string, localChatLimit = 50) {
         const memory = client.getQueryData<ServerChat>(queryKeys.chat(namespace, id))
         const cached = memory ? mergeCachedChat(persisted ?? null, memory) : persisted
         const chat = mergeCachedChat(cached ?? null, incoming)
+        chat.queuedMessages = reconcileQueuedMessages(incoming.queuedMessages ?? [], cached?.queuedMessages ?? [],
+          new Set((await pendingOutbox(namespace)).map((row) => row.id)))
         if (!chat.temporary) enqueueCacheWrite(namespace, () => cacheOpenedChat(namespace, chat, localChatLimit))
         return chat
       } catch (error) {

@@ -1,3 +1,5 @@
+import { createOutboxScheduler } from '../data/outboxScheduler'
+import { subscribeToOutboxChanges } from '../data/outboxNotifications'
 import { bindMobileComposerSocket } from '../features/chat/composerSync'
 import { useEffect, useRef } from 'react'
 import { AppState } from 'react-native'
@@ -15,6 +17,7 @@ import {
   cacheNamespace,
   deleteResponseCursor,
   getValue,
+  pendingOutbox,
   responseCursors,
   saveResponseCursors,
   setValue,
@@ -220,6 +223,27 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
       }
       for (const scope of syncInvalidationScopes(result)) invalidateScope(scope, activeChatId)
     }
+    const outboxScheduler = createOutboxScheduler({
+      isActive: () => !disposed && appStateValue === 'active',
+      flush: async () => {
+        const { replayed, rejected } = await replayOutbox(namespace, queryClient)
+        if (disposed) return null
+        if (replayed || rejected) {
+          useRealtimeStore.getState().setSyncError(rejected
+            ? `${rejected} offline change${rejected === 1 ? '' : 's'} could not be synced. Queued messages can be edited and retried.` : null)
+          invalidateScope('chats', activeChatSubscription())
+          invalidateScope('folders')
+          void queryClient.invalidateQueries({ queryKey: queryKeys.settings(namespace) })
+        }
+        const remaining = await pendingOutbox(namespace)
+        return remaining.length ? Math.max(1_000, remaining[0]!.nextAttemptAt - Date.now()) : null
+      },
+      onError: (error) => useRealtimeStore.getState().setSyncError(error instanceof Error ? error.message : 'Offline changes could not be synced.'),
+    })
+    const { schedule: scheduleOutboxReplay, flush: flushOutbox } = outboxScheduler
+    const unsubscribeOutbox = subscribeToOutboxChanges((changedNamespace) => {
+      if (changedNamespace === namespace) scheduleOutboxReplay()
+    })
     const sync = async () => {
       if (!socket.connected || disposed) return
       try {
@@ -243,16 +267,7 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
             afterSequence: Math.max(cursors[responseId] ?? 0, subscription.afterSequence),
           })
         }
-        void replayOutbox(namespace).then(({ replayed, rejected }) => {
-          useRealtimeStore.getState().setSyncError(rejected
-            ? `${rejected} offline change${rejected === 1 ? '' : 's'} could not be synced and was reconciled with the server.`
-            : null)
-          if (replayed || rejected) invalidateScope('chats', activeChatId)
-          if (replayed || rejected) invalidateScope('folders')
-          if (replayed || rejected) void queryClient.invalidateQueries({ queryKey: queryKeys.settings(namespace) })
-        }).catch((error) => {
-          useRealtimeStore.getState().setSyncError(error instanceof Error ? error.message : 'Offline changes could not be synced.')
-        })
+        void flushOutbox()
       } catch (error) {
         useRealtimeStore.getState().setSyncError(error instanceof Error ? error.message : 'Realtime sync failed.')
       }
@@ -304,6 +319,7 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
         useRealtimeStore.getState().setConnectionPhase('idle')
         return
       }
+      scheduleOutboxReplay()
       silentConnectionAttempt = true
       foregroundGraceUntil = Date.now() + FOREGROUND_CONNECTION_GRACE_MS
       if (socket.connected) {
@@ -318,6 +334,7 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
         socket.connect()
       }
     })
+    scheduleOutboxReplay()
     // Attach every listener before opening the transport so a fast cold-start connection cannot be missed.
     useRealtimeStore.getState().setConnectionPhase('connecting')
     scheduleConnectionFailure()
@@ -325,6 +342,8 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
     return () => {
       disposed = true
       appState.remove()
+      unsubscribeOutbox()
+      outboxScheduler.dispose()
       clearConnectionFailureTimer()
       if (eventTimer) clearTimeout(eventTimer)
       if (revisionTimer) clearTimeout(revisionTimer)

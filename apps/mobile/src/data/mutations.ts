@@ -1,3 +1,4 @@
+import { notifyOutboxChanged } from './outboxNotifications'
 import * as Crypto from 'expo-crypto'
 import { completeOutboxEntity, enqueueOutbox } from './database'
 
@@ -29,4 +30,5 @@ export async function queueOfflineMutation(input: {
     attempts: 0,
     nextAttemptAt: 0,
   })
+  notifyOutboxChanged(input.namespace)
 }
