@@ -134,7 +134,10 @@ export function Composer({
   const navigate = useNavigate()
   const userId = useAuth((s) => s.user?.id)
   const draftId = chatId ?? NEW_CHAT_DRAFT_ID
-  const initialRuntimeDraft = userId ? runtimeComposerDraft(userId, draftId) : null
+  // The composer is keyed by chat. Capture its starting draft once: consulting
+  // the mutable cache on every render can restart hydration after a remote
+  // clear, before the debounced disk save has removed the old draft.
+  const [initialRuntimeDraft] = useState(() => userId ? runtimeComposerDraft(userId, draftId) : null)
   const [value, setValue] = useState(initialRuntimeDraft?.content ?? '')
   const [attachmentIds, setAttachmentIds] = useState<string[]>(initialRuntimeDraft?.attachmentIds ?? [])
   const [draftHydrated, setDraftHydrated] = useState(Boolean(initialRuntimeDraft))
@@ -304,7 +307,7 @@ export function Composer({
   }, [editingQueueId, messageEdit, onEditStateChange, recovery])
 
   useEffect(() => {
-    if (!userId || initialRuntimeDraft) return
+    if (!userId || initialRuntimeDraft || draftHydrated) return
     let cancelled = false
     void loadComposerDraft(userId, draftId).then((draft) => {
       if (cancelled) return
@@ -322,7 +325,7 @@ export function Composer({
       setDraftHydrated(true)
     }).catch(() => setDraftHydrated(true))
     return () => { cancelled = true }
-  }, [autosize, chatId, draftId, focusAtEnd, initialRuntimeDraft, restoreDraftAttachments, temporary, userId])
+  }, [autosize, chatId, draftHydrated, draftId, focusAtEnd, initialRuntimeDraft, restoreDraftAttachments, temporary, userId])
 
   useEffect(() => {
     if (!userId) return undefined

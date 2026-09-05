@@ -1,3 +1,4 @@
+import { deleteAccountData, resumeAccountDeletions } from './account/deletion.js'
 import { Worker } from 'bullmq'
 import { and, inArray, isNull, eq } from 'drizzle-orm'
 import { getConfig } from './config.js'
@@ -70,7 +71,8 @@ concurrencyRefreshInterval.unref()
 
 const maintenanceWorker = new Worker<MaintenanceJob>('maintenance', async (job) => {
   if (job.data.type === 'export') await createExport(String(job.data.payload?.exportId))
-  if (job.data.type === 'cleanup') await runCleanup()
+  if (job.data.type === 'delete-account') await deleteAccountData(String(job.data.payload?.userId))
+  if (job.data.type === 'cleanup') { await resumeAccountDeletions(); await runCleanup() }
   if (job.data.type === 'backup-schedule') await runOffsiteBackupSchedule()
   if (job.data.type === 'scrub-response-binary-context') await scrubPersistedResponseBinaryContext()
   if (job.data.type === 'purge-chats') {

@@ -152,10 +152,13 @@ async function resolveUser(tx: Transaction, input: {
     : []
   const metadataUserId = await userExists(tx, input.metadataUserId)
   const customerUserId = await customerUser(tx, input.customerId ?? null)
-  return matchingStripeOwner(
+  const owner = matchingStripeOwner(
     [checkout?.userId, subscription?.userId, metadataUserId, customerUserId],
     input.resourceId,
   )
+  if (!owner) return null
+  const [account] = await tx.select({ deleting: users.deletionRequestedAt }).from(users).where(eq(users.id, owner)).limit(1).for('share')
+  return account && !account.deleting ? owner : null
 }
 
 function subscriptionPriceId(subscription: Stripe.Subscription | undefined): string | null {
@@ -179,7 +182,7 @@ async function upsertSubscription(
   const customerId = idOf(subscription.customer)
   const [existing] = await tx.select().from(billingSubscriptions)
     .where(eq(billingSubscriptions.stripeSubscriptionId, subscription.id)).for('update')
-  const userId = existing?.userId ?? await resolveUser(tx, {
+  const userId = await resolveUser(tx, {
     subscriptionId: subscription.id,
     customerId,
     metadataUserId: subscription.metadata.pulpo_user_id,

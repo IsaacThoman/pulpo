@@ -51,6 +51,8 @@ export const users = pgTable('users', {
   balanceMicros: bigint('balance_micros', { mode: 'number' }).notNull().default(0),
   storageLimitBytes: bigint('storage_limit_bytes', { mode: 'number' }).notNull().default(5_368_709_120),
   blocked: boolean('blocked').notNull().default(false),
+  deletionRequestedAt: timestamp('deletion_requested_at', { withTimezone: true }),
+  deletionError: text('deletion_error'),
   stateRevision: bigint('state_revision', { mode: 'number' }).notNull().default(0),
   username: text('username').notNull(),
   profileColor: text('profile_color'),

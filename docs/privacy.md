@@ -44,7 +44,7 @@ The administrator dashboard records hourly aggregate counts, latency histograms,
 
 ## Your choices and deletion
 
-The Pulpo app provides controls to edit certain profile information, enable or disable Memories, move individual or all conversations to Trash for deletion under the selected server’s retention settings, change servers, and sign out. Requests concerning an account or information held on a server must be directed to that server’s operator.
+The Pulpo app provides controls to edit certain profile information, enable or disable Memories, move individual or all conversations to Trash for deletion under the selected server’s retention settings, change servers, and sign out. When enabled by the instance administrator, use **Delete account** in web **Settings → Security** or mobile **Account** settings. Confirm your current password and authenticator or recovery code if two-factor authentication is enabled. Deletion immediately ends access and begins irreversible cleanup of account data and cancellation of subscriptions, without automatic refunds or recovery of unused credits. Background cleanup may take time; backups and payment records follow existing retention policies. If account deletion is disabled, or for other requests concerning server-held information, contact that server’s operator.
 
 For requests involving `pulpo.baby`, see the [hosted service privacy policy](./privacy-hosted). For a different Pulpo instance, contact the organization or person operating that instance.
 

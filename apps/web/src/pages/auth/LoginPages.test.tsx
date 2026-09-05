@@ -26,6 +26,7 @@ vi.mock('@/lib/passkeys', () => ({
   cancelPasskeyCeremony: vi.fn(),
 }))
 
+import { AccountDeletionPage } from './AccountDeletionPage'
 import { LoginPage } from './LoginPage'
 import { LoginOptionsPage } from './LoginOptionsPage'
 import i18n from '@/i18n'
@@ -84,4 +85,23 @@ describe('login pages', () => {
     expect(markup).toContain('Más opciones de inicio de sesión')
     expect(markup).toContain('¿Olvidaste tu contraseña?')
   })
+  it('shows deletion confirmation on its own page with a link to sign in and no credential form', () => {
+    const markup = renderToStaticMarkup(<MemoryRouter><AccountDeletionPage /></MemoryRouter>)
+    expect(markup).toContain('Account deletion in progress')
+    expect(markup).toContain('cleanup will continue automatically')
+    expect(markup).toContain('href="/login"')
+    expect(markup).not.toContain('<form')
+    expect(markup).not.toContain('<input')
+    expect(markup).not.toContain('Some data on this device')
+  })
+
+  it('keeps cleanup warnings on the confirmation page and deletion notices off login', () => {
+    const initialEntries = [{ pathname: '/account-deletion', state: { accountDeletionRequested: true, accountDeletionCleanupFailed: true } }]
+    const confirmation = renderToStaticMarkup(<MemoryRouter initialEntries={initialEntries}><AccountDeletionPage /></MemoryRouter>)
+    expect(confirmation).toContain('Some data on this device could not be removed')
+    const login = renderToStaticMarkup(<MemoryRouter initialEntries={initialEntries}><LoginPage /></MemoryRouter>)
+    expect(login).not.toContain('Account deletion')
+    expect(login).not.toContain('Some data on this device')
+  })
+
 })

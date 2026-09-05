@@ -36,7 +36,7 @@ interface SessionState {
   login: (email: string, password: string, twoFactorCode?: string) => Promise<'authenticated' | 'two-factor-required'>
   loginWithPasskey: (forceBrowser?: boolean) => Promise<void>
   signup: (name: string, username: string, email: string, password: string) => Promise<void>
-  logout: () => Promise<void>
+  logout: (localOnly?: boolean) => Promise<void>
   refreshSession: () => Promise<void>
   switchInstance: (url: string) => Promise<MobileConfig>
   setUser: (user: User) => Promise<void>
@@ -230,21 +230,26 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     set({ token: result.session.token, user: result.user, status: result.user.role === 'pending' ? 'pending' : 'authenticated', error: null })
   },
 
-  logout: async () => {
+  logout: async (localOnly = false) => {
     const { user, instanceUrl, token } = get()
-    if (token) await mobileApi.logout().catch(() => undefined)
-    await Promise.all([
-      SecureStore.deleteItemAsync(SESSION_TOKEN_KEY),
-      setValue(GLOBAL_NAMESPACE, ACTIVE_SESSION_NAMESPACE_KEY, null),
-    ])
-    if (user) {
-      const namespace = cacheNamespace(instanceUrl, user.id)
-      clearComposerDraftCacheNamespace(namespace)
-      clearMobileComposerSync(namespace)
-      removeCachedFiles(await clearNamespace(namespace))
-    }
+    if (token && !localOnly) await mobileApi.logout().catch(() => undefined)
+    // Revoked sessions must disappear from memory even if local storage fails.
     configureApi({ instanceUrl, token: null, onUnauthorized: () => { void get().handleUnauthorized() } })
     set({ token: null, user: null, status: 'anonymous', error: null })
+    const cleanup = await Promise.allSettled([
+      SecureStore.deleteItemAsync(SESSION_TOKEN_KEY),
+      setValue(GLOBAL_NAMESPACE, ACTIVE_SESSION_NAMESPACE_KEY, null),
+      (async () => {
+        if (!user) return
+        const namespace = cacheNamespace(instanceUrl, user.id)
+        clearComposerDraftCacheNamespace(namespace)
+        clearMobileComposerSync(namespace)
+        removeCachedFiles(await clearNamespace(namespace))
+      })(),
+    ])
+    const failure = cleanup.find((result) => result.status === 'rejected')
+    if (failure?.status === 'rejected') throw failure.reason
+
   },
 
   refreshSession: async () => {

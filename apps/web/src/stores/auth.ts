@@ -75,7 +75,7 @@ interface AuthState {
   passkeyLogin: (useBrowserAutofill?: boolean) => Promise<AuthResult>
   signup: (name: string, username: string, email: string, password: string) => Promise<AuthResult>
   setup: (name: string, username: string, email: string, password: string) => Promise<AuthResult>
-  logout: () => Promise<void>
+  logout: (localOnly?: boolean) => Promise<void>
   switchInstance: (url: string) => Promise<void>
   chooseInstance: () => Promise<void>
   handleDesktopUnauthorized: () => Promise<void>
@@ -348,16 +348,19 @@ export const useAuth = create<AuthState>()((set, get) => ({
     }
   },
 
-  logout: async () => {
+  logout: async (localOnly = false) => {
     const userId = get().user?.id
     set({ user: null, checkingSession: false })
     cacheProfile(null)
-    await apiRequest(isDesktopRuntime() ? '/api/mobile/auth/logout' : '/api/auth/logout', { method: 'POST' }).catch(() => undefined)
+    if (!localOnly) await apiRequest(isDesktopRuntime() ? '/api/mobile/auth/logout' : '/api/auth/logout', { method: 'POST' }).catch(() => undefined)
     if (isDesktopRuntime()) {
       await clearDesktopSession()
       configureDesktopRuntime({ instanceUrl: get().instanceUrl, token: null, onUnauthorized: () => { void get().handleDesktopUnauthorized() } })
     }
+    await queryClient.cancelQueries()
     queryClient.clear()
+    const { useChat } = await import('./chat')
+    useChat.setState({ chats: [], folders: [], activeChatId: null, activeTemporaryChatId: null, streamingIds: [], responseSequences: {}, responseChatIds: {} })
     if (userId) {
       clearRuntimeComposerDrafts(userId)
       clearWebComposerSync()

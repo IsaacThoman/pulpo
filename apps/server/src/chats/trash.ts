@@ -188,6 +188,7 @@ export async function expireNormalChats(now = new Date(), userId?: string): Prom
 export async function purgePendingChats(userId?: string): Promise<number> {
   const pending = await db.select({ id: chats.id, temporary: chats.temporary }).from(chats).where(and(
     isNotNull(chats.purgeStartedAt),
+    sql`exists (select 1 from ${users} where ${users.id} = ${chats.userId} and ${users.deletionRequestedAt} is null)`,
     userId ? eq(chats.userId, userId) : undefined,
   ))
   let purged = 0

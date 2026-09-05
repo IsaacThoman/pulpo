@@ -33,6 +33,7 @@ const AdminSettingsPage = lazy(() => import('@/pages/admin/settings/AdminSetting
 const AdminBillingPage = lazy(() => import('@/pages/admin/AdminBillingPage').then((module) => ({ default: module.AdminBillingPage })))
 const AdminChatsPage = lazy(() => import('@/pages/admin/AdminChatsPage').then((module) => ({ default: module.AdminChatsPage })))
 const AdminChatPage = lazy(() => import('@/pages/admin/AdminChatPage').then((module) => ({ default: module.AdminChatPage })))
+const AccountDeletionPage = lazy(() => import('@/pages/auth/AccountDeletionPage').then((module) => ({ default: module.AccountDeletionPage })))
 const LoginPage = lazy(() => import('@/pages/auth/LoginPage').then((module) => ({ default: module.LoginPage })))
 const LoginOptionsPage = lazy(() => import('@/pages/auth/LoginOptionsPage').then((module) => ({ default: module.LoginOptionsPage })))
 const SetupPage = lazy(() => import('@/pages/auth/SetupPage').then((module) => ({ default: module.SetupPage })))
@@ -87,6 +88,7 @@ export default function App() {
         <Routes>
         <Route element={<LocalizedRoute><AuthLayout /></LocalizedRoute>}>
           <Route path="setup" element={<LocalizedRoute><SetupPage /></LocalizedRoute>} />
+          <Route path="account-deletion" element={<LocalizedRoute><AccountDeletionPage /></LocalizedRoute>} />
           <Route path="login" element={<LocalizedRoute><LoginPage /></LocalizedRoute>} />
           <Route path="login/options" element={<LocalizedRoute><LoginOptionsPage /></LocalizedRoute>} />
           <Route path="signup" element={<LocalizedRoute><SignupPage /></LocalizedRoute>} />

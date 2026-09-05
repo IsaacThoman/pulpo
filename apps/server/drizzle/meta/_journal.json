@@ -421,6 +421,13 @@
       "when": 1788552467870,
       "tag": "0059_powerful_riptide",
       "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1788574075824,
+      "tag": "0060_plain_sentry",
+      "breakpoints": true
     }
   ]
 }

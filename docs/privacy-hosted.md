@@ -100,7 +100,7 @@ We retain account information and user content while needed to provide the hoste
 
 Some records may be retained longer when needed for security, fraud prevention, billing and accounting, dispute resolution, enforcement, or legal compliance. Data sent to an AI model, tool, payment, or other service provider may be retained by that provider under its agreement and privacy policy.
 
-To request deletion of your hosted account, a copy of your information, or help exercising an applicable privacy right, contact [support@pulpo.baby](mailto:support@pulpo.baby). We may need to verify your identity before completing a request.
+When available, you can delete your hosted account from web **Settings → Security → Delete account** or mobile **Account → Delete account**. Deletion is irreversible: access ends immediately, followed by automatic data cleanup and subscription cancellation, without automatic refunds or recovery of unused credits. Backups and payment records follow existing retention policies. If this control is unavailable, or to request a copy of your information or help exercising an applicable privacy right, contact [support@pulpo.baby](mailto:support@pulpo.baby). We may need to verify your identity before completing a request.
 
 ## Security
 

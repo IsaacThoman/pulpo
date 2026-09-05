@@ -90,6 +90,7 @@ export const mobileConfigSchema = z.object({
   }),
   setupRequired: z.boolean(),
       auth: z.object({
+        accountDeletionEnabled: z.boolean().optional().default(false),
         signupEnabled: z.boolean(),
         pendingDetails: z.boolean(),
         adminEmail: z.string(),
@@ -1174,7 +1175,19 @@ export const managementTokenSchema = z.object({
 })
 export type ManagementToken = z.infer<typeof managementTokenSchema>
 
+export const accountDeletionRequirementsSchema = z.object({
+  twoFactorEnabled: z.boolean(),
+})
+export type AccountDeletionRequirements = z.infer<typeof accountDeletionRequirementsSchema>
+
+export const accountDeletionInputSchema = z.object({
+  currentPassword: z.string().min(1).max(1024),
+  verificationCode: z.string().trim().min(1).max(128).optional(),
+})
+export type AccountDeletionInput = z.infer<typeof accountDeletionInputSchema>
+
 export const authSettingsSchema = z.object({
+  accountDeletionEnabled: z.boolean().default(true),
   signupEnabled: z.boolean().default(true),
   defaultBalanceMicros: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).default(5_000_000),
   defaultStorageLimitBytes: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).default(5_000 * 1024 * 1024),
@@ -1611,6 +1624,7 @@ export const queuedMessageSchema = z.object({
 export type QueuedMessage = z.infer<typeof queuedMessageSchema>
 
 export const createQueuedMessageSchema = z.object({
+  clientId: idSchema.optional(),
   input: z.string().trim().max(1_000_000).default(''),
   modelId: z.string().min(1),
   presetSelections: z.record(z.string(), z.string()).default({}),

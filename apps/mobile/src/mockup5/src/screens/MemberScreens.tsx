@@ -1,3 +1,4 @@
+import { DeleteAccountForm } from '../../../components/DeleteAccount';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import {
   Alert, Button as RNButton, Image, Platform, StyleSheet, Text, View,
@@ -16,6 +17,7 @@ import {
   LabeledContent as SwiftUILabeledContent,
   Menu as SwiftUIMenu,
   ProgressView as SwiftUIProgressView,
+  RNHostView as SwiftUIRNHostView,
   Section as SwiftUISection,
   SecureField as SwiftUISecureField,
   Spacer as SwiftUISpacer,
@@ -26,8 +28,9 @@ import {
   useNativeState,
 } from '@expo/ui/swift-ui';
 import { accessibilityHint, accessibilityValue, background, buttonStyle, contentShape, font, foregroundStyle, frame, lineLimit, multilineTextAlignment, shapes, textFieldStyle, tint } from '@expo/ui/swift-ui/modifiers';
-import { Badge, Card, EmptyState, Field, GlassIconButton, ListRow, NativeSwitch, PageHeader, PrimaryButton, Screen, SectionTitle, Segmented } from '../components/PrototypeUI';
+import { Card, EmptyState, Field, GlassIconButton, ListRow, NativeSwitch, PageHeader, PrimaryButton, Screen, SectionTitle, Segmented } from '../components/PrototypeUI';
 import { useAppTheme } from '../theme';
+import { ProfileAvatar } from '../components/ProfileAvatar';
 import { usePrototypeStore } from '../store/prototypeStore';
 import type { RootStackParamList, SettingsSection } from '../navigation';
 import { apiRequest, mobileApi } from '../../../api/client';
@@ -53,6 +56,10 @@ function NativeDestinationRow({ icon, title, detail, onPress }: { icon: string; 
   return <SwiftUIButton onPress={onPress} modifiers={[buttonStyle('plain'), foregroundStyle('primary')]}><SwiftUIHStack spacing={12} modifiers={[contentShape(shapes.rectangle())]}><SwiftUIImage systemName={icon as never} size={17} modifiers={[frame({ width: 22, height: 22 })]} /><SwiftUIText>{title}</SwiftUIText><SwiftUISpacer />{detail ? <SwiftUIText modifiers={[foregroundStyle('secondary'), font({ textStyle: 'footnote' })]}>{detail}</SwiftUIText> : null}<SwiftUIImage systemName="chevron.right" size={11} modifiers={[foregroundStyle('secondary')]} /></SwiftUIHStack></SwiftUIButton>;
 }
 
+export function DeleteAccountScreen({ navigation }: NativeStackScreenProps<RootStackParamList, 'DeleteAccount'>) {
+  return <DeleteAccountForm onClose={() => navigation.goBack()} />;
+}
+
 export function AccountScreen({ navigation }: NativeStackScreenProps<RootStackParamList, 'Account'>) {
   const theme = useAppTheme();
   const session = usePrototypeStore((state) => state.session);
@@ -61,21 +68,20 @@ export function AccountScreen({ navigation }: NativeStackScreenProps<RootStackPa
   const twoFactorSupported = useSessionStore((state) => state.config?.capabilities.twoFactorAuth ?? false);
   const passkeysSupported = useSessionStore((state) => state.config?.capabilities.passkeys ?? false);
   const user = session.user;
-  const confirmSignOut = () => Alert.alert('Sign out?', 'End this session on this device.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Sign out', style: 'destructive', onPress: signOut }]);
+  const confirmSignOut = () => Alert.alert('Sign out?', 'End this session on this device.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Sign out', style: 'destructive', onPress: () => { void signOut(); } }]);
 
   if (Platform.OS === 'ios') return <SwiftUIHost modifiers={[tint(theme.blue)]} style={styles.flex}><SwiftUIForm>
     <SwiftUISection title="Profile">
       <SwiftUILabeledContent label="Name"><SwiftUIText>{user?.name ?? 'Pulpo Member'}</SwiftUIText></SwiftUILabeledContent>
       <SwiftUILabeledContent label="Email"><SwiftUIText modifiers={[foregroundStyle('secondary')]}>{user?.email ?? ''}</SwiftUIText></SwiftUILabeledContent>
-      <SwiftUILabeledContent label="Role"><SwiftUIText modifiers={[foregroundStyle('secondary')]}>Member</SwiftUIText></SwiftUILabeledContent>
       <NativeDestinationRow icon="person.crop.circle" title="Edit Profile" onPress={() => navigation.navigate('EditProfile')} />
     </SwiftUISection>
     <SwiftUISection title="Security"><NativeDestinationRow icon="lock.rotation" title="Change Password" onPress={() => navigation.navigate('ChangePassword')} />{passkeysSupported ? <NativeDestinationRow icon="person.badge.key" title="Passkeys" onPress={() => navigation.navigate('Passkeys')} /> : null}{twoFactorSupported ? <NativeDestinationRow icon="checkmark.shield" title="Two-Factor Authentication" onPress={() => navigation.navigate('TwoFactor')} /> : null}</SwiftUISection>
     <SwiftUISection title="Server"><NativeDestinationRow icon="network" title="Pulpo Instance" detail={instance.version} onPress={() => navigation.navigate('InstanceDetails')} /></SwiftUISection>
-    <SwiftUISection title="Session"><SwiftUIButton label="Sign Out" role="destructive" systemImage="rectangle.portrait.and.arrow.right" onPress={confirmSignOut} /></SwiftUISection>
+    <SwiftUISection title="Delete account"><NativeDestinationRow icon="trash" title="Delete Account" onPress={() => navigation.navigate('DeleteAccount')} /></SwiftUISection><SwiftUISection title="Session"><SwiftUIButton label="Sign Out" role="destructive" systemImage="rectangle.portrait.and.arrow.right" onPress={confirmSignOut} /></SwiftUISection>
   </SwiftUIForm></SwiftUIHost>;
 
-  return <Screen><PageHeader title="Account" onBack={() => navigation.goBack()} /><SectionTitle>Profile</SectionTitle><Card><ListRow title="Name" value={user?.name ?? 'Pulpo Member'} /><ListRow title="Email" value={user?.email ?? ''} /><ListRow title="Role" value="Member" /><ListRow icon="person.crop.circle" title="Edit profile" last onPress={() => navigation.navigate('EditProfile')} /></Card><SectionTitle>Security</SectionTitle><Card><ListRow icon="lock.rotation" title="Change password" last={!passkeysSupported && !twoFactorSupported} onPress={() => navigation.navigate('ChangePassword')} />{passkeysSupported ? <ListRow icon="person.badge.key" title="Passkeys" last={!twoFactorSupported} onPress={() => navigation.navigate('Passkeys')} /> : null}{twoFactorSupported ? <ListRow icon="checkmark.shield" title="Two-factor authentication" last onPress={() => navigation.navigate('TwoFactor')} /> : null}</Card><SectionTitle>Server</SectionTitle><Card><ListRow icon="network" title="Pulpo instance" value={instance.version} last onPress={() => navigation.navigate('InstanceDetails')} /></Card><SectionTitle>Session</SectionTitle><Card><ListRow icon="rectangle.portrait.and.arrow.right" iconColor={theme.red} title="Sign out" destructive last onPress={confirmSignOut} /></Card></Screen>;
+  return <Screen><PageHeader title="Account" onBack={() => navigation.goBack()} /><SectionTitle>Profile</SectionTitle><Card><ListRow title="Name" value={user?.name ?? 'Pulpo Member'} /><ListRow title="Email" value={user?.email ?? ''} /><ListRow icon="person.crop.circle" title="Edit profile" last onPress={() => navigation.navigate('EditProfile')} /></Card><SectionTitle>Security</SectionTitle><Card><ListRow icon="lock.rotation" title="Change password" last={!passkeysSupported && !twoFactorSupported} onPress={() => navigation.navigate('ChangePassword')} />{passkeysSupported ? <ListRow icon="person.badge.key" title="Passkeys" last={!twoFactorSupported} onPress={() => navigation.navigate('Passkeys')} /> : null}{twoFactorSupported ? <ListRow icon="checkmark.shield" title="Two-factor authentication" last onPress={() => navigation.navigate('TwoFactor')} /> : null}</Card><SectionTitle>Server</SectionTitle><Card><ListRow icon="network" title="Pulpo instance" value={instance.version} last onPress={() => navigation.navigate('InstanceDetails')} /></Card><SectionTitle>Delete account</SectionTitle><Card><ListRow icon="trash" title="Delete account" destructive last onPress={() => navigation.navigate('DeleteAccount')} /></Card><SectionTitle>Session</SectionTitle><Card><ListRow icon="rectangle.portrait.and.arrow.right" iconColor={theme.red} title="Sign out" destructive last onPress={confirmSignOut} /></Card></Screen>;
 }
 
 type PasskeyAction = 'list' | 'add' | 'rename' | 'delete';
@@ -277,10 +283,10 @@ const settingsSections: { id: SettingsDestination; title: string; detail: string
 export function MemberSettingsScreen({ navigation }: NativeStackScreenProps<RootStackParamList, 'Settings'>) {
   const theme = useAppTheme(); const session = usePrototypeStore((state) => state.session); const instance = usePrototypeStore((state) => state.instance);
   const open = (section: SettingsDestination) => section === 'trash' ? navigation.navigate('Trash') : navigation.navigate('SettingsDetail', { section });
-  if (Platform.OS === 'ios') return <SwiftUIHost modifiers={[tint(theme.blue)]} style={styles.flex}><SwiftUIForm><SwiftUISection><SwiftUIButton modifiers={[buttonStyle('plain'), foregroundStyle('primary')]} onPress={() => navigation.navigate('Account')}><SwiftUIHStack spacing={12} modifiers={[contentShape(shapes.rectangle())]}><SwiftUIImage systemName="person.crop.circle.fill" size={42} /><SwiftUIVStack alignment="leading" spacing={2}><SwiftUIText modifiers={[font({ textStyle: 'headline' })]}>{session.user?.name ?? 'Pulpo Member'}</SwiftUIText><SwiftUIText modifiers={[font({ textStyle: 'footnote' }), foregroundStyle('secondary')]}>{session.user?.email ?? ''} · Member</SwiftUIText></SwiftUIVStack><SwiftUISpacer /><SwiftUIImage systemName="chevron.right" size={11} color={theme.tertiary} /></SwiftUIHStack></SwiftUIButton></SwiftUISection><SwiftUISection title="Member settings">{settingsSections.slice(0, 2).map((section) => <NativeSettingsLink key={section.id} icon={section.icon} title={section.title} detail={section.detail} onPress={() => open(section.id)} />)}</SwiftUISection><SwiftUISection title="Data and support">{settingsSections.slice(2).map((section) => <NativeSettingsLink key={section.id} icon={section.icon} title={section.title} detail={section.detail} onPress={() => open(section.id)} />)}</SwiftUISection></SwiftUIForm></SwiftUIHost>;
+  if (Platform.OS === 'ios') return <SwiftUIHost modifiers={[tint(theme.blue)]} style={styles.flex}><SwiftUIForm><SwiftUISection><SwiftUIButton modifiers={[buttonStyle('plain'), foregroundStyle('primary')]} onPress={() => navigation.navigate('Account')}><SwiftUIHStack spacing={12} modifiers={[contentShape(shapes.rectangle())]}><SwiftUIRNHostView matchContents><ProfileAvatar size={42} /></SwiftUIRNHostView><SwiftUIVStack alignment="leading" spacing={2}><SwiftUIText modifiers={[font({ textStyle: 'headline' })]}>{session.user?.name ?? 'Pulpo Member'}</SwiftUIText><SwiftUIText modifiers={[font({ textStyle: 'footnote' }), foregroundStyle('secondary')]}>{session.user?.email ?? ''}</SwiftUIText></SwiftUIVStack><SwiftUISpacer /><SwiftUIImage systemName="chevron.right" size={11} color={theme.tertiary} /></SwiftUIHStack></SwiftUIButton></SwiftUISection><SwiftUISection title="Preferences">{settingsSections.slice(0, 2).map((section) => <NativeSettingsLink key={section.id} icon={section.icon} title={section.title} detail={section.detail} onPress={() => open(section.id)} />)}</SwiftUISection><SwiftUISection title="Data and support">{settingsSections.slice(2).map((section) => <NativeSettingsLink key={section.id} icon={section.icon} title={section.title} detail={section.detail} onPress={() => open(section.id)} />)}</SwiftUISection></SwiftUIForm></SwiftUIHost>;
   return <Screen><PageHeader title="Settings" subtitle={new URL(instance.url).hostname} onBack={() => navigation.goBack()} />
-    <Card style={styles.profileCard}><View style={[styles.profileAvatar, { backgroundColor: theme.text }]}><Text style={[styles.profileInitials, { color: theme.background }]}>{session.user?.initials ?? '?'}</Text></View><View style={styles.flex}><Text style={[styles.profileName, { color: theme.text }]}>{session.user?.name ?? 'Pulpo Member'}</Text><Text style={[styles.profileEmail, { color: theme.secondary }]}>{session.user?.email}</Text></View><Badge label="Member" color={theme.green} /></Card>
-    <SectionTitle>Member settings</SectionTitle><Card>{settingsSections.slice(0, 2).map((section, index) => <ListRow key={section.id} icon={section.icon} title={section.title} detail={section.detail} last={index === 1} onPress={() => open(section.id)} />)}</Card>
+    <Card style={styles.profileCard}><ProfileAvatar size={48} /><View style={styles.flex}><Text style={[styles.profileName, { color: theme.text }]}>{session.user?.name ?? 'Pulpo Member'}</Text><Text style={[styles.profileEmail, { color: theme.secondary }]}>{session.user?.email}</Text></View></Card>
+    <SectionTitle>Preferences</SectionTitle><Card>{settingsSections.slice(0, 2).map((section, index) => <ListRow key={section.id} icon={section.icon} title={section.title} detail={section.detail} last={index === 1} onPress={() => open(section.id)} />)}</Card>
     <SectionTitle>Data and support</SectionTitle><Card>{settingsSections.slice(2).map((section, index, list) => <ListRow key={section.id} icon={section.icon} title={section.title} detail={section.detail} last={index === list.length - 1} onPress={() => open(section.id)} />)}</Card>
   </Screen>;
 }
@@ -405,6 +411,6 @@ export function TrashScreen({ navigation }: NativeStackScreenProps<RootStackPara
 
 const styles = StyleSheet.create({
   flex: { flex: 1 }, helper: { fontSize: 12, lineHeight: 18 },
-  profileCard: { flexDirection: 'row', alignItems: 'center', padding: 15, gap: 12 }, profileAvatar: { width: 48, height: 48, borderRadius: 17, alignItems: 'center', justifyContent: 'center' }, profileInitials: { fontSize: 15, fontWeight: '900' }, profileName: { fontSize: 16, fontWeight: '700' }, profileEmail: { fontSize: 12, marginTop: 3 }, storage: { padding: 15 }, storageLine: { flexDirection: 'row', justifyContent: 'space-between' }, storageTitle: { fontSize: 14, fontWeight: '700' }, storagePercent: { fontSize: 12 }, storageTrack: { height: 8, borderRadius: 4, overflow: 'hidden', marginVertical: 11 }, storageBar: { height: 8, borderRadius: 4 },
+  profileCard: { flexDirection: 'row', alignItems: 'center', padding: 15, gap: 12 }, profileName: { fontSize: 16, fontWeight: '700' }, profileEmail: { fontSize: 12, marginTop: 3 }, storage: { padding: 15 }, storageLine: { flexDirection: 'row', justifyContent: 'space-between' }, storageTitle: { fontSize: 14, fontWeight: '700' }, storagePercent: { fontSize: 12 }, storageTrack: { height: 8, borderRadius: 4, overflow: 'hidden', marginVertical: 11 }, storageBar: { height: 8, borderRadius: 4 },
   twoFactorHelp: { fontSize: 14, lineHeight: 20, marginVertical: 12 }, twoFactorError: { fontSize: 13, lineHeight: 18, marginVertical: 8 }, twoFactorQr: { width: 240, height: 240, alignSelf: 'center', borderRadius: 16, backgroundColor: '#ffffff', marginBottom: 16 }, twoFactorKey: { padding: 14, gap: 12, marginBottom: 16 }, twoFactorKeyText: { fontFamily: Platform.select({ ios: 'Menlo', default: 'monospace' }), fontSize: 13, textAlign: 'center' }, twoFactorCodes: { padding: 18, flexDirection: 'row', flexWrap: 'wrap', marginVertical: 14 }, twoFactorCode: { width: '50%', fontFamily: Platform.select({ ios: 'Menlo', default: 'monospace' }), fontSize: 14, lineHeight: 28, textAlign: 'center' },
 });

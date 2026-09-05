@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   nativeAuthenticate: vi.fn(),
   runSafariPasskeyAuthentication: vi.fn(),
   configureApi: vi.fn(),
+  clearNamespace: vi.fn(async () => []),
   deleteToken: vi.fn(async () => undefined),
 }))
 
@@ -28,7 +29,7 @@ vi.mock('expo-secure-store', () => ({
 }))
 vi.mock('../data/database', () => ({
   cacheNamespace: (instanceUrl: string, userId: string) => `${new URL(instanceUrl).origin}|${userId}`,
-  clearNamespace: vi.fn(async () => []),
+  clearNamespace: mocks.clearNamespace,
   getValue: vi.fn(async (namespace: string, key: string) => mocks.values.get(`${namespace}:${key}`) ?? null),
   setValue: vi.fn(async (namespace: string, key: string, value: unknown) => {
     mocks.values.set(`${namespace}:${key}`, value)
@@ -110,7 +111,8 @@ beforeEach(() => {
   mocks.nativeAuthenticate.mockReset()
   mocks.runSafariPasskeyAuthentication.mockReset()
   mocks.configureApi.mockReset()
-  mocks.deleteToken.mockClear()
+  mocks.deleteToken.mockReset().mockResolvedValue(undefined)
+  mocks.clearNamespace.mockReset().mockResolvedValue([])
   useSessionStore.setState({
     status: 'hydrating', instanceUrl, token: null, user: null, config: null, error: null,
   })
@@ -238,5 +240,19 @@ describe('passkey login', () => {
     expect(mocks.exchangeBrowserPasskey).toHaveBeenCalledWith('authorization-code', 'code-verifier', 'Test iPhone')
     expect(mocks.passkeyOptions).not.toHaveBeenCalled()
     expect(useSessionStore.getState()).toMatchObject({ status: 'authenticated', token: 'safari-passkey-token', user: signedIn })
+  })
+})
+
+
+describe('local sign-out after account deletion', () => {
+  it('revokes in-memory credentials and continues cache cleanup when secure storage fails', async () => {
+    const signedIn = user('deleted-user')
+    useSessionStore.setState({ status: 'authenticated', token: 'revoked-token', user: signedIn })
+    mocks.deleteToken.mockRejectedValueOnce(new Error('Secure storage unavailable'))
+    await expect(useSessionStore.getState().logout(true)).rejects.toThrow('Secure storage unavailable')
+    expect(useSessionStore.getState()).toMatchObject({ status: 'anonymous', token: null, user: null })
+    expect(mocks.configureApi).toHaveBeenCalledWith(expect.objectContaining({ token: null }))
+    expect(mocks.clearNamespace).toHaveBeenCalledWith(`${instanceUrl}|deleted-user`)
+    expect(mocks.values.get('global:activeSessionNamespace')).toBeNull()
   })
 })

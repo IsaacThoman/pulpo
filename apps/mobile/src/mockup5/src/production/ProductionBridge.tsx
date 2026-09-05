@@ -99,6 +99,7 @@ function mapChat(chat: ServerChat, messages: PrototypeMessage[] = [], detailLoad
     expired: false,
     detailLoaded: detailLoaded || chat.responses !== undefined,
     messages,
+    queuedMessages: chat.queuedMessages,
     deletedAt: chat.deletedAt ? Date.parse(chat.deletedAt) : null,
     purgeAt: chat.purgeAt ? Date.parse(chat.purgeAt) : null,
   }
@@ -449,7 +450,7 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
         chats: [
           ...pendingLocalChats,
           ...serverChats.map((chat) => mapChat(
-            chat,
+            { ...chat, queuedMessages: chat.queuedMessages ?? oldChats.get(chat.id)?.queuedMessages },
             oldChats.get(chat.id)?.messages,
             oldChats.get(chat.id)?.detailLoaded,
           )),

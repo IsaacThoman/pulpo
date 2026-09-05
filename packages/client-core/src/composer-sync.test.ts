@@ -145,6 +145,39 @@ describe('submission acknowledgments', () => {
     await vi.waitFor(() => expect(f.snapshot().state.content).toBe(''))
     a.sync.dispose(); b.sync.dispose()
   })
+  it('migrates a legacy single accepted-draft receipt', async () => {
+    const f = fixture(), a = f.client('a')
+    await a.open(state('legacy accepted'))
+    const saved: ComposerCheckpoint = { snapshot: f.snapshot(), pending: {}, submission: { state: state('legacy accepted'), revision: f.snapshot().revision } }
+    a.sync.dispose()
+    const b = f.client('upgraded', saved); await b.open()
+    await vi.waitFor(() => expect(f.snapshot().state.content).toBe(''))
+    expect(b.saved()).not.toHaveProperty('submission')
+    b.sync.dispose()
+  })
+  it('clears an earlier accepted draft after multiple offline sends and relaunch', async () => {
+    const f = fixture(), a = f.client('a')
+    await a.open(state('first accepted'))
+    const revision = await a.sync.prepareSubmission('new', state('first accepted'))
+    a.sync.disconnect()
+    await a.sync.completeSubmission('new', state('first accepted'), revision!)
+    await a.sync.completeSubmission('new', state('second accepted'))
+    const b = f.client('restarted', a.saved()); await b.open()
+    await vi.waitFor(() => expect(f.snapshot().state.content).toBe(''))
+    a.sync.dispose(); b.sync.dispose()
+  })
+  it('preserves an unsubmitted remote draft after multiple offline sends', async () => {
+    const f = fixture(), a = f.client('a')
+    await a.open(state('first accepted'))
+    a.sync.disconnect()
+    await a.sync.completeSubmission('new', state('first accepted'))
+    await a.sync.completeSubmission('new', state('second accepted'))
+    const remote = f.client('remote'); await remote.open()
+    remote.sync.edit('new', { content: 'keep remote draft' }); await remote.sync.flush('new')
+    const b = f.client('restarted', a.saved()); await b.open()
+    expect(f.snapshot().state.content).toBe('keep remote draft')
+    a.sync.dispose(); b.sync.dispose(); remote.sync.dispose()
+  })
   it('does not clear edits made while awaiting submission acknowledgment', async () => {
     const f = fixture(), a = f.client('a')
     await a.open(state('submitted'))
@@ -162,6 +195,120 @@ describe('submission acknowledgments', () => {
     expect(await a.sync.prepareSubmission('new', state('submitted'))).toBeNull()
     await a.sync.completeSubmission('new', state('submitted'))
     expect(f.snapshot().state.content).toBe('remote replacement')
+    a.sync.dispose(); b.sync.dispose()
+  })
+})
+
+
+describe('conditional submission clear races', () => {
+  it('uses the current revision when an identical remote write advances the draft', async () => {
+    const f = fixture(), a = f.client('mobile'), b = f.client('web')
+    await a.open(state('submitted')); await b.open()
+    const revision = await a.sync.prepareSubmission('new', state('submitted'))
+    b.sync.edit('new', { content: 'submitted' }); await b.sync.flush('new')
+    a.sync.receive(f.snapshot())
+    await a.sync.completeSubmission('new', state('submitted'), revision!)
+    expect(f.snapshot().state.content).toBe('')
+    expect(f.writes.at(-1)).toMatchObject({ clear: true, baseRevision: revision! + 1 })
+    a.sync.dispose(); b.sync.dispose()
+  })
+
+  it.each(['submitted', 'new remote draft'])('rechecks the state after a clear conflict (%s)', async (content) => {
+    const f = fixture(), a = f.client('mobile'), b = f.client('web')
+    await a.open(state('submitted')); await b.open()
+    const revision = await a.sync.prepareSubmission('new', state('submitted'))
+    const write = f.transport.write
+    let raced = false
+    f.transport.write = async (input) => {
+      if (input.clear && !raced) {
+        raced = true
+        b.sync.edit('new', { content }); await b.sync.flush('new')
+      }
+      return write(input)
+    }
+    await a.sync.completeSubmission('new', state('submitted'), revision!)
+    expect(f.snapshot().state.content).toBe(content === 'submitted' ? '' : content)
+    expect(f.writes.filter((input) => input.clear)).toHaveLength(content === 'submitted' ? 2 : 1)
+    a.sync.dispose(); b.sync.dispose()
+  })
+
+  it('keeps the receipt through a failed clear and restart with an advanced revision', async () => {
+    const f = fixture(), a = f.client('mobile'), b = f.client('web')
+    await a.open(state('submitted')); await b.open()
+    const revision = await a.sync.prepareSubmission('new', state('submitted'))
+    const write = f.transport.write
+    f.transport.write = async (input) => input.clear ? { ok: false, error: 'temporarily_unavailable' } : write(input)
+    await a.sync.completeSubmission('new', state('submitted'), revision!)
+    await vi.waitFor(() => expect(a.saved()?.submissions).toHaveLength(1))
+    b.sync.edit('new', { content: 'submitted' }); await b.sync.flush('new')
+    f.transport.write = write
+    const restarted = f.client('restarted', a.saved())
+    a.sync.dispose()
+    await restarted.open()
+    expect(f.snapshot().state.content).toBe('')
+    await vi.waitFor(() => expect(restarted.saved()?.submissions).toEqual([]))
+    restarted.sync.dispose(); b.sync.dispose()
+  })
+
+  it('bounds repeated conflicts and retains the receipt for reconnect', async () => {
+    const f = fixture(), a = f.client('mobile'), b = f.client('web')
+    await a.open(state('submitted')); await b.open()
+    const revision = await a.sync.prepareSubmission('new', state('submitted'))
+    const write = f.transport.write
+    f.transport.write = async (input) => {
+      if (input.clear) { b.sync.edit('new', { content: 'submitted' }); await b.sync.flush('new') }
+      return write(input)
+    }
+    await a.sync.completeSubmission('new', state('submitted'), revision!)
+    expect(f.writes.filter((input) => input.clear)).toHaveLength(3)
+    await vi.waitFor(() => expect(a.saved()?.submissions).toHaveLength(1))
+    f.transport.write = write
+    a.sync.disconnect(); a.sync.connect(f.transport)
+    await vi.waitFor(() => expect(f.snapshot().state.content).toBe(''))
+    a.sync.dispose(); b.sync.dispose()
+  })
+})
+
+
+describe('submission clear lifecycle', () => {
+  it('serializes simultaneous acceptance receipts for the same draft', async () => {
+    const f = fixture(), a = f.client('mobile')
+    await a.open(state('submitted'))
+    const revision = await a.sync.prepareSubmission('new', state('submitted'))
+    await Promise.all([
+      a.sync.completeSubmission('new', state('submitted'), revision!),
+      a.sync.completeSubmission('new', state('submitted'), revision!),
+    ])
+    expect(f.snapshot().state.content).toBe('')
+    expect(f.writes.filter((input) => input.clear)).toHaveLength(1)
+    await vi.waitFor(() => expect(a.saved()?.submissions).toEqual([]))
+    a.sync.dispose()
+  })
+
+  it('does not retire receipts using a clear acknowledgment from an old connection', async () => {
+    const f = fixture(), a = f.client('mobile'), b = f.client('web')
+    await a.open(state('submitted')); await b.open()
+    const revision = await a.sync.prepareSubmission('new', state('submitted'))
+    const write = f.transport.write
+    let acknowledge: (() => void) | undefined
+    f.transport.write = async (input) => {
+      const result = await write(input)
+      if (input.clear) await new Promise<void>((resolve) => { acknowledge = resolve })
+      return result
+    }
+    const completion = a.sync.completeSubmission('new', state('submitted'), revision!)
+    await vi.waitFor(() => expect(acknowledge).toBeDefined())
+    a.sync.disconnect()
+    acknowledge!()
+    await completion
+    expect(a.saved()?.submissions).toHaveLength(1)
+    expect(a.saved()?.clearRevision).toBe(revision)
+    f.transport.write = write
+    b.sync.receive(f.snapshot())
+    b.sync.edit('new', { content: 'new remote draft' }); await b.sync.flush('new')
+    a.sync.connect(f.transport)
+    await vi.waitFor(() => expect(a.saved()?.submissions).toEqual([]))
+    expect(f.snapshot().state.content).toBe('new remote draft')
     a.sync.dispose(); b.sync.dispose()
   })
 })

@@ -1,3 +1,4 @@
+import { lockAccountAdministration } from '../account/deletion.js'
 import { and, desc, eq, isNull, ne, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
@@ -111,8 +112,10 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
       patch.balanceMicros,
     ].some((value) => value !== undefined)
     const relatedChanges = await db.transaction(async (tx) => {
+      await lockAccountAdministration(tx)
       const [current] = await tx.select().from(users).where(eq(users.id, id)).limit(1)
       if (!current) throw notFound('User')
+      if (current.deletionRequestedAt) throw new AppError(409, 'account_deleting', 'This account is being permanently deleted')
       const balanceChanged = patch.balanceMicros !== undefined && patch.balanceMicros !== current.balanceMicros
       const { password, ...userPatch } = patch
       const [updated] = await tx.update(users).set({
@@ -209,7 +212,12 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
     const admin = requireAdmin(request)
     const { id } = request.params as { id: string }
     if (id === admin.id) throw new AppError(409, 'cannot_delete_self', 'You cannot delete your own account')
-    const deleted = await db.delete(users).where(eq(users.id, id)).returning({ id: users.id })
+    const deleted = await db.transaction(async (tx) => {
+      await lockAccountAdministration(tx)
+      const [target] = await tx.select().from(users).where(eq(users.id, id))
+      if (target?.deletionRequestedAt) throw new AppError(409, 'account_deleting', 'Account cleanup is already in progress')
+      return tx.delete(users).where(eq(users.id, id)).returning({ id: users.id })
+    })
     if (!deleted.length) throw notFound('User')
     reply.code(204).send()
   })

@@ -51,6 +51,7 @@ export function mergeCachedChat(existing: ServerChat | null, incoming: ServerCha
     ...incoming,
     responses: mergeCachedResponseDetails(existing.responses, incoming.responses),
     attachments: incoming.attachments ?? existing.attachments,
+    queuedMessages: incoming.queuedMessages ?? existing.queuedMessages,
   }
 }
 
