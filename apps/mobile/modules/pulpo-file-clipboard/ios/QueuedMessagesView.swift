@@ -26,7 +26,8 @@ public final class QueuedMessagesView: ExpoView, UITableViewDataSource, UITableV
     table.dragDelegate = self
     table.dropDelegate = self
     table.dragInteractionEnabled = true
-    table.rowHeight = 80
+    table.rowHeight = UITableView.automaticDimension
+    table.estimatedRowHeight = 56
     table.contentInsetAdjustmentBehavior = .never
     table.register(UITableViewCell.self, forCellReuseIdentifier: "queue")
     addSubview(table)
@@ -52,7 +53,7 @@ public final class QueuedMessagesView: ExpoView, UITableViewDataSource, UITableV
     cell.contentView.subviews.forEach { $0.removeFromSuperview() }
     let card = UIView()
     card.backgroundColor = .secondarySystemBackground
-    card.layer.cornerRadius = 12
+    card.layer.cornerRadius = 10
     card.translatesAutoresizingMaskIntoConstraints = false
     cell.contentView.addSubview(card)
     let text = UILabel()
@@ -68,7 +69,7 @@ public final class QueuedMessagesView: ExpoView, UITableViewDataSource, UITableV
     detail.isHidden = row.detail.isEmpty
     let labels = UIStackView(arrangedSubviews: [text, detail])
     labels.axis = .vertical
-    labels.spacing = 3
+    labels.spacing = 2
     labels.isAccessibilityElement = true
     labels.accessibilityLabel = [row.content, row.detail].filter { !$0.isEmpty }.joined(separator: ", ")
     labels.accessibilityValue = row.status
@@ -85,7 +86,7 @@ public final class QueuedMessagesView: ExpoView, UITableViewDataSource, UITableV
     stack.alignment = .center
     for (action, symbol, enabled) in [("edit", "pencil", row.canEdit), ("delete", "trash", row.canDelete)] {
       let button = UIButton(type: .system)
-      button.setImage(UIImage(systemName: symbol), for: .normal)
+      button.setImage(UIImage(systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: 14, weight: .regular)), for: .normal)
       button.tintColor = .secondaryLabel
       button.isEnabled = enabled
       button.accessibilityLabel = "\(action.capitalized) queued message \(indexPath.row + 1)"
@@ -101,10 +102,10 @@ public final class QueuedMessagesView: ExpoView, UITableViewDataSource, UITableV
       card.trailingAnchor.constraint(equalTo: cell.contentView.trailingAnchor),
       card.topAnchor.constraint(equalTo: cell.contentView.topAnchor, constant: 2),
       card.bottomAnchor.constraint(equalTo: cell.contentView.bottomAnchor, constant: -2),
-      stack.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 12),
+      stack.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 10),
       stack.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -4),
-      stack.topAnchor.constraint(equalTo: card.topAnchor, constant: 8),
-      stack.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -8),
+      stack.topAnchor.constraint(equalTo: card.topAnchor, constant: 4),
+      stack.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -4),
     ])
     return cell
   }

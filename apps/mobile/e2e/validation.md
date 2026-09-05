@@ -40,3 +40,5 @@ Revalidated on the iOS 26.5 simulator: pencil opens editing, cancel and save res
 Mobile tests (315), mobile typecheck, iOS export, simulator build, repository lint, full repository tests with the Node web-storage workaround above, and isolated API acceptance all passed for this refinement.
 
 ![Native queue with icon controls and reordered messages](evidence/native-queue-icons.png)
+
+Compact layout follow-up: reduced standard queue rows from 80 to 56 points, halved vertical padding, and set action symbols to 14 points while preserving 44-point button targets. Rows size to their content. Visually checked the updated layout on the iOS 26.5 simulator and refreshed the screenshot above; mobile typecheck, repository lint, and the native simulator build passed.

@@ -4769,7 +4769,7 @@ function ChatView({
         <View style={[styles.composerWrap, styles.chatContent, { paddingHorizontal: Math.max(12, horizontalPadding - 6), paddingBottom: Math.max(insets.bottom, 10) }]}>
             {queuedMessages.length > 0 && (
               <QueuedMessagesView
-                style={{ height: Math.min(queuedMessages.length * 80, 200, windowHeight * 0.25), marginBottom: 8 }}
+                style={{ height: Math.min(queuedMessages.reduce((height, item) => height + (item.attachments.length > 0 || item.error ? 72 : 56), 0), 200, windowHeight * 0.25), marginBottom: 8 }}
                 rows={queuedMessages.map((item) => {
                   const locked = queueBusy || sending || item.status === 'dispatching' || Boolean(item.pendingSubmissionId && !item.localFailure) || expired;
                   return {
