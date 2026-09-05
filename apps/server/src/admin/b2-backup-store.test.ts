@@ -16,7 +16,8 @@ vi.mock('@aws-sdk/client-s3', async (importOriginal) => {
   return { ...actual, S3Client: class { send = mocks.send } }
 })
 
-import { B2BackupStore } from './b2-backup-store.js'
+import { AppError } from '../lib/errors.js'
+import { B2BackupStore, backupConnectionError } from './b2-backup-store.js'
 
 const settings = {
   enabled: true,
@@ -111,5 +112,24 @@ describe('Backblaze backup store', () => {
     for await (const chunk of downloaded.body) chunks.push(Buffer.from(chunk))
     expect(Buffer.concat(chunks).toString()).toBe('ciphertext')
     expect(downloaded.contentLength).toBe(10)
+  })
+})
+
+describe('backup connection errors', () => {
+  it.each([
+    ['SignatureDoesNotMatch', 'backup_credentials_invalid'],
+    ['AccessDenied', 'backup_access_denied'],
+    ['NoSuchBucket', 'backup_bucket_missing'],
+  ])('explains %s without exposing upstream details', (name, code) => {
+    const error = Object.assign(new Error('sensitive upstream content'), { name })
+    expect(backupConnectionError(error)).toMatchObject({ statusCode: 400, code })
+    expect(backupConnectionError(error).message).not.toContain('sensitive')
+  })
+
+  it('preserves actionable configuration errors and hides unexpected upstream details', () => {
+    const error = new AppError(400, 'backup_default_retention', 'Remove the bucket default retention rule')
+    expect(backupConnectionError(error)).toBe(error)
+    expect(backupConnectionError(new Error('secret'))).toMatchObject({ statusCode: 502, code: 'backup_connection_failed' })
+    expect(backupConnectionError(new Error('secret')).message).not.toContain('secret')
   })
 })
