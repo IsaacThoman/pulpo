@@ -42,7 +42,8 @@ import { normalChatIsExpired } from '../chats/expiration.js'
 import { activeDetailedPayloadCondition, detailedPayloadCaptureIsActive } from '../logging/detailed-payload-retention.js'
 import { resolveModelParameters } from './model-parameters.js'
 import { backgroundRequestParameter, promptCacheKeyParameter, responseIncludeParameter } from './upstream-request.js'
-import { browserChatOutputError, generationEventHasStartedOutput, generationOutputHasStarted } from './output-text.js'
+import { browserChatOutputError, generationOutputHasStarted } from './output-text.js'
+import { firstTokenTimeout } from './first-token-timeout.js'
 import { responseAttachmentIds, responseInputText } from '../messages/input.js'
 import { recalledChatContext, recallItemFromOutput, retrieveAutomaticRecall } from '../episodic-memory/automatic-recall.js'
 import { memoryDocumentContext, readMemoryDocument } from '../memory-document/service.js'
@@ -739,10 +740,9 @@ async function processGenerationAttempt(
     await publishAdminUsage(requestLog.id)
   }
   const controller = new AbortController()
-  let firstTokenTimer: ReturnType<typeof setTimeout> | undefined
-  if (record.model.firstTokenTimeoutEnabled) firstTokenTimer = setTimeout(() => controller.abort(new Error('First-token timeout')), record.model.firstTokenTimeoutSeconds * 1000)
-  await db.update(responses).set({ status: 'in_progress', error: null, completedAt: null, startedAt: new Date(), updatedAt: new Date() }).where(eq(responses.id, responseId))
+  const firstToken = firstTokenTimeout(controller, record.model.firstTokenTimeoutEnabled ? record.model.firstTokenTimeoutSeconds * 1000 : undefined)
   try {
+    await db.update(responses).set({ status: 'in_progress', error: null, completedAt: null, startedAt: new Date(), updatedAt: new Date() }).where(eq(responses.id, responseId))
     const parameters = resolveModelParameters(record.model, record.response.parameters, {
       publicApi: Boolean(requestLog.apiKeyId),
     })
@@ -777,7 +777,6 @@ async function processGenerationAttempt(
         throw new Error('Generation cancelled')
       }
       const upstream = rawEvent as unknown as UpstreamEvent
-      if (firstTokenTimer && (upstream.type.includes('output_text.delta') || upstream.type.includes('content_part.added'))) { clearTimeout(firstTokenTimer); firstTokenTimer = undefined }
       sequence += 1
       const event: ResponseEvent = {
         responseId,
@@ -799,7 +798,7 @@ async function processGenerationAttempt(
         await db.update(responses).set({ openaiResponseId: upstreamResponse.id }).where(eq(responses.id, responseId))
       }
       output = upstreamResponse?.output ? [...contextItems, ...upstreamResponse.output] : accumulateEventOutput(output, event)
-      outputStarted ||= generationEventHasStartedOutput(upstream.type, upstream) || generationOutputHasStarted(output)
+      outputStarted ||= firstToken.observe(upstream.type, upstream, output)
       if (upstreamResponse?.usage) {
         usage = normalizeUsage(upstreamResponse.usage)
         if (record.model.useProviderCost) providerCostMicros = providerReportedCostMicros(upstreamResponse.usage)
@@ -833,8 +832,9 @@ async function processGenerationAttempt(
         if (updated) await publishSnapshot(toSnapshot(updated))
       }
     }
+    firstToken.clear()
+    firstToken.throwIfTimedOut()
     await flushTelemetry(true)
-    if (firstTokenTimer) { clearTimeout(firstTokenTimer); firstTokenTimer = undefined }
     if (terminalStatus === 'failed' || terminalStatus === 'cancelled') {
       throw new Error(terminalError?.message ?? `Generation ${terminalStatus}`)
     }
@@ -868,9 +868,10 @@ async function processGenerationAttempt(
     await db.update(chats).set({ updatedAt: completedAt }).where(eq(chats.id, record.response.chatId))
     const [completed] = await db.select().from(responses).where(eq(responses.id, responseId)).limit(1)
     if (completed) await publishSnapshot(toSnapshot(completed))
-  } catch (error) {
+  } catch (caughtError) {
+    firstToken.clear()
+    const error = firstToken.error ?? caughtError
     await flushTelemetry(true).catch(() => undefined)
-    if (firstTokenTimer) clearTimeout(firstTokenTimer)
     const cancelled = await isCancellationRequested(responseId)
     const completedAt = new Date()
     await db.update(responses).set({
