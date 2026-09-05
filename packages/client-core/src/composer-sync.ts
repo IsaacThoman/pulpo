@@ -4,7 +4,9 @@ export interface ComposerCheckpoint {
   snapshot: ComposerSnapshot
   pending: Partial<ComposerState>
   clearRevision?: number
+  /** Legacy single receipt, migrated when loading older checkpoints. */
   submission?: { state: ComposerState; revision?: number }
+  submissions?: Array<{ state: ComposerState; revision?: number }>
 }
 export interface ComposerTransport {
   read(draftId: string): Promise<ComposerAck>
@@ -47,7 +49,7 @@ export class ComposerSync {
           entry!.snapshot = saved.snapshot
           entry!.pending = saved.pending
           entry!.clearRevision = saved.clearRevision
-          entry!.submission = saved.submission
+          entry!.submissions = saved.submissions ?? (saved.submission ? [saved.submission] : [])
         }
         else if (initial.content || initial.attachments.length || initial.model) entry!.pending = { ...initial }
       })
@@ -77,7 +79,7 @@ export class ComposerSync {
     this.entries.clear()
   }
   private checkpoint(entry: Entry): ComposerCheckpoint {
-    return { snapshot: entry.snapshot, pending: { ...entry.inflight, ...entry.pending }, clearRevision: entry.clearRevision, submission: entry.submission }
+    return { snapshot: entry.snapshot, pending: { ...entry.inflight, ...entry.pending }, clearRevision: entry.clearRevision, submissions: entry.submissions }
   }
   private notify(entry: Entry, publish = true): void {
     if (this.disposed) return
@@ -183,19 +185,22 @@ export class ComposerSync {
   async completeSubmission(draftId: string, submitted: ComposerState, revision?: number): Promise<void> {
     const entry = this.entries.get(draftId)
     if (!entry) return
-    entry.submission = { state: submitted, revision }
+    entry.submissions = [...(entry.submissions ?? []), { state: submitted, revision }]
     this.notify(entry, false)
     await entry.saved
     await this.finishSubmission(entry)
   }
   private async finishSubmission(entry: Entry): Promise<void> {
-    if (!entry.submission || !entry.ready || !this.transport) return
-    const submitted = entry.submission
+    if (!entry.submissions?.length || !entry.ready || !this.transport) return
+    const submitted = entry.submissions
     const revision = await this.flush(entry.snapshot.draftId)
     if (revision === null) return
-    entry.submission = undefined
+    entry.submissions = entry.submissions?.filter((receipt) => !submitted.includes(receipt))
     this.notify(entry, false)
-    if (equal(entry.snapshot.state, submitted.state)) await this.clear(entry.snapshot.draftId, submitted.revision ?? revision)
+    // More than one message can be accepted while offline. The server may still
+    // hold any one of those drafts; clear only a matching submitted version.
+    const matching = [...submitted].reverse().find((receipt) => equal(entry.snapshot.state, receipt.state))
+    if (matching) await this.clear(entry.snapshot.draftId, matching.revision ?? revision)
   }
 
   async clear(draftId: string, revision: number): Promise<void> {
