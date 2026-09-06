@@ -1,19 +1,19 @@
-import { Fragment, useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import { Keyboard, KeyboardAvoidingView, Modal, Pressable, ScrollView, Text as RNText, View, useWindowDimensions } from 'react-native';
+import { Fragment, useEffect, useImperativeHandle, useRef, useState, useSyncExternalStore } from 'react';
+import { Keyboard, KeyboardAvoidingView, Modal, Pressable, ScrollView, StyleSheet, Text as RNText, View, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
-  AlertDialog, Box, Button, Column, DropdownMenu, DropdownMenuItem, FilledIconButton,
+  AlertDialog, Box, Button, Card, Column, DropdownMenu, DropdownMenuItem, FilledIconButton,
   FilledTonalButton, FilledTonalIconButton, Host, HorizontalDivider, Icon, IconButton, ListItem, Spacer,
-  LoadingIndicator, OutlinedTextField, RNHostView,
-  SegmentedButton, SingleChoiceSegmentedButtonRow, Switch, Text, TextButton,
+  LoadingIndicator, OutlinedTextField, RNHostView, Row,
+  SegmentedButton, Shape, SingleChoiceSegmentedButtonRow, Switch, Text, TextButton, TextField, type TextFieldRef,
   useMaterialColors, useNativeState,
 } from '@expo/ui/jetpack-compose';
-import { clickable, defaultMinSize, fillMaxWidth, height, padding, semantics, size, verticalScroll, weight, width, wrapContentWidth } from '@expo/ui/jetpack-compose/modifiers';
+import { clickable, defaultMinSize, fillMaxWidth, height, padding, semantics, size, toggleable, verticalScroll, weight, width, wrapContentWidth } from '@expo/ui/jetpack-compose/modifiers';
 import { getMaterialOverlay, showActions, subscribe, update } from './materialActions.android';
 import { androidDialogBodyHeight } from './androidLayout';
 import { materialTint } from './materialTint';
 import { materialIcon } from './materialIcons';
-import type { Action, ButtonProps, ContextMenuProps, FieldProps, IconButtonProps, PromptOptions, RowProps, DialogProps, MenuProps, MenuSection } from './MaterialUI.types';
+import type { Action, ButtonProps, CardProps, SearchFieldProps, SuggestionButtonProps, NavigationRowProps, ContextMenuProps, FieldProps, IconButtonProps, PromptOptions, RowProps, DialogProps, MenuProps, MenuSection } from './MaterialUI.types';
 export type { Action } from './MaterialUI.types';
 
 export function MaterialButton({ label, icon, onPress, disabled, loading, variant = 'primary', compact }: ButtonProps) {
@@ -216,4 +216,73 @@ export function MaterialOverlays() {
     </Column></AlertDialog.Text>
     <AlertDialog.ConfirmButton><TextButton onClick={dismiss}><Text>Cancel</Text></TextButton></AlertDialog.ConfirmButton>
   </AlertDialog>}</Host>;
+}
+
+// Compose owns the button shape, ripple, semantics and text measurement.
+export function MaterialSuggestionButton({ label, onPress, fullWidth, containerColor, contentColor }: SuggestionButtonProps) {
+  const { fontScale } = useWindowDimensions();
+  return <Host matchContents={{ vertical: true }} style={{ width: fullWidth ? '100%' : '48.7%' }} ignoreSafeAreaKeyboardInsets>
+    <FilledTonalButton onClick={onPress} shape={Shape.RoundedCorner({ cornerRadii: { topStart: 16, topEnd: 16, bottomStart: 16, bottomEnd: 16 } })} colors={{ containerColor, contentColor }} contentPadding={{ start: 20, end: 20, top: 12, bottom: 12 }} modifiers={[fillMaxWidth(), defaultMinSize({ minHeight: 68 })]}>
+      <Box contentAlignment="centerStart" modifiers={[weight(1), defaultMinSize({ minHeight: fullWidth ? 44 : 60 * fontScale })]}>
+        <Text style={{ typography: 'bodyMedium', textAlign: 'start' }} modifiers={[fillMaxWidth()]}>{label}</Text>
+      </Box>
+    </FilledTonalButton>
+  </Host>;
+}
+
+export function MaterialSearchField({ value: query, onChange, onFocusChange, fieldRef }: SearchFieldProps) {
+  const nativeRef = useRef<TextFieldRef>(null);
+  useImperativeHandle(fieldRef, () => ({ blur: async () => { await nativeRef.current?.blur(); } }), []);
+  const value = useNativeState(query);
+  const lastNativeText = useRef(query);
+  useEffect(() => {
+    if (lastNativeText.current !== query) { lastNativeText.current = query; value.set(query); }
+  }, [query, value]);
+  const change = (text: string) => { lastNativeText.current = text; onChange(text); };
+  const clear = () => { value.set(''); change(''); };
+  return <Host matchContents={{ vertical: true }} style={{ marginHorizontal: 10, marginTop: 6 }} ignoreSafeAreaKeyboardInsets>
+    <TextField ref={nativeRef} value={value} onValueChange={change} onFocusChanged={onFocusChange} singleLine
+      keyboardOptions={{ capitalization: 'none', autoCorrectEnabled: false, imeAction: 'search' }}
+      keyboardActions={{ onSearch: () => { Keyboard.dismiss(); void nativeRef.current?.blur(); } }} modifiers={[fillMaxWidth()]}>
+      <TextField.Placeholder><Text>Search chats</Text></TextField.Placeholder>
+      <TextField.LeadingIcon><Icon source={materialIcon('magnifyingglass')} size={24} /></TextField.LeadingIcon>
+      {query.length > 0 ? <TextField.TrailingIcon><IconButton onClick={clear}><Icon source={materialIcon('xmark')} size={24} contentDescription="Clear search" /></IconButton></TextField.TrailingIcon> : null}
+    </TextField>
+  </Host>;
+}
+
+export function MaterialCard({ children, style }: CardProps) {
+  const colors = useMaterialColors();
+  const { margin, marginTop, marginBottom, marginLeft, marginRight, marginStart, marginEnd, marginHorizontal, marginVertical, ...contentStyle } = StyleSheet.flatten(style) ?? {};
+  const spacing = { margin, marginTop, marginBottom, marginLeft, marginRight, marginStart, marginEnd, marginHorizontal, marginVertical };
+  return <Host matchContents={{ vertical: true }} style={[{ width: '100%' }, spacing]} ignoreSafeAreaKeyboardInsets>
+    <Card colors={{ containerColor: colors.surfaceContainerLow }} modifiers={[fillMaxWidth()]}>
+      <RNHostView matchContents modifiers={[fillMaxWidth()]}><View style={contentStyle}>{children}</View></RNHostView>
+    </Card>
+  </Host>;
+}
+
+export function MaterialNavigationRow({ title, icon, value, expanded, onPress }: NavigationRowProps) {
+  const colors = useMaterialColors();
+  return <Host matchContents={{ vertical: true }} style={{ width: '100%' }} ignoreSafeAreaKeyboardInsets>
+    <ListItem colors={{ containerColor: colors.surfaceContainerLow }} modifiers={[clickable(onPress)]}>
+      <ListItem.HeadlineContent><Text maxLines={2} overflow="ellipsis">{title}</Text></ListItem.HeadlineContent>
+      {icon ? <ListItem.LeadingContent><Icon source={materialIcon(icon)} size={24} /></ListItem.LeadingContent> : null}
+      {expanded !== undefined || value ? <ListItem.TrailingContent><Row horizontalArrangement={{ spacedBy: 8 }} verticalAlignment="center">
+        {value ? <Text>{value}</Text> : null}
+        {expanded !== undefined ? <Icon source={materialIcon(expanded ? 'chevron.down' : 'chevron.right')} size={20} contentDescription={expanded ? 'Expanded' : 'Collapsed'} /> : null}
+      </Row></ListItem.TrailingContent> : null}
+    </ListItem>
+  </Host>;
+}
+
+export function MaterialToggleRow({ title, detail, value, onChange }: { title: string; detail?: string; value: boolean; onChange: (value: boolean) => void }) {
+  const colors = useMaterialColors();
+  return <Host matchContents={{ vertical: true }} style={{ width: '100%' }} ignoreSafeAreaKeyboardInsets>
+    <ListItem colors={{ containerColor: colors.surfaceContainerLow }} modifiers={[toggleable(value, () => onChange(!value), { role: 'switch' })]}>
+        <ListItem.HeadlineContent><Text>{title}</Text></ListItem.HeadlineContent>
+        {detail ? <ListItem.SupportingContent><Text>{detail}</Text></ListItem.SupportingContent> : null}
+        <ListItem.TrailingContent><Switch value={value} onCheckedChange={onChange} /></ListItem.TrailingContent>
+    </ListItem>
+  </Host>;
 }

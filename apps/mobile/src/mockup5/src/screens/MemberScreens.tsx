@@ -1,3 +1,4 @@
+import { MaterialToggleRow } from '../../../platform/MaterialUI';
 import { showActions } from '../../../platform/materialActions';
 import { useSubpageBack } from '../../../platform/useSubpageBack';
 import { DeleteAccountForm } from '../../../components/DeleteAccount';
@@ -386,11 +387,8 @@ export function SettingsDetailScreen({ navigation, route }: NativeStackScreenPro
 }
 
 function Toggle({ title, detail, value, onChange, last = false }: { title: string; detail?: string; value: boolean; onChange: (value: boolean) => void; last?: boolean }) {
-  const row = <ListRow title={title} detail={detail} last={last}><NativeSwitch label={title} value={value} onChange={onChange} /></ListRow>;
-  if (Platform.OS !== 'android') return row;
-  return <Pressable accessibilityRole="switch" accessibilityLabel={title} accessibilityHint={detail} accessibilityState={{ checked: value }} onPress={() => onChange(!value)}>
-    <View pointerEvents="none" importantForAccessibility="no-hide-descendants">{row}</View>
-  </Pressable>;
+  if (Platform.OS === 'android') return <MaterialToggleRow title={title} detail={detail} value={value} onChange={onChange} />;
+  return <ListRow title={title} detail={detail} last={last}><NativeSwitch label={title} value={value} onChange={onChange} /></ListRow>;
 }
 
 const retentionLabels: Record<string, string> = { instant: 'No retention', '24h': '24 hours', '7d': '7 days', '30d': '30 days', '90d': '90 days', indefinite: 'Indefinitely' };
