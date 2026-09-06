@@ -4,7 +4,7 @@ import type { ViewProps } from 'react-native'
 
 export type QueueAction = {
   id: string
-  action: 'edit' | 'delete' | 'reorder'
+  action: 'edit' | 'delete' | 'reorder' | 'retry'
   targetMessageId?: string
   edge?: 'before' | 'after'
 }
@@ -12,6 +12,8 @@ export type QueueAction = {
 type Props = ViewProps & {
   rows: Array<{
     id: string
+    kind?: 'shelf'
+    canRetry?: boolean
     content: string
     detail: string
     status: string

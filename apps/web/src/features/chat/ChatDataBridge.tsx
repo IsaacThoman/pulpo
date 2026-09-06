@@ -1,3 +1,4 @@
+import { bindWebShelfSocket } from '@/lib/local-first/shelf'
 import { useComposerSyncPreference } from '@/stores/composer-sync-preference'
 import { bindWebComposerSocket } from '@/lib/local-first/composer-sync'
 import { useEffect, useMemo, useRef } from 'react'
@@ -106,6 +107,7 @@ export function ChatDataBridge() {
       withCredentials: !isDesktopRuntime(),
       auth: { composerSyncEnabled: useComposerSyncPreference.getState().enabled, ...(isDesktopRuntime() ? { sessionToken: runtimeSessionToken() } : {}) },
     })
+    const unbindShelf = bindWebShelfSocket(userId, socket)
     const unbindComposer = bindWebComposerSocket(userId, socket)
     socketRef.current = socket
     const subscribedResponseIds = subscribedResponseIdsRef.current
@@ -290,6 +292,7 @@ export function ChatDataBridge() {
       if (revisionTimer !== undefined) window.clearTimeout(revisionTimer)
       flushEventBatches()
       void flushCursors()
+      unbindShelf()
       unbindComposer()
       socket.disconnect()
       socketRef.current = null

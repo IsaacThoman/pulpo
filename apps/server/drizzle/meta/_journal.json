@@ -442,6 +442,13 @@
       "when": 1788719280008,
       "tag": "0062_chat_search_recall",
       "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "7",
+      "when": 1788723779125,
+      "tag": "0063_shelved_drafts",
+      "breakpoints": true
     }
   ]
 }

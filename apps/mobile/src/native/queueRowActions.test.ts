@@ -21,3 +21,9 @@ describe('Android queue actions', () => {
     expect(queueRowActions([], 0)).toEqual([]);
   });
 });
+
+it('uses shelf-specific restore/delete labels and exposes retry with accessible reordering', () => {
+  const rows = [{ id: 'a', kind: 'shelf' as const, content: 'Draft', detail: '', status: 'failed', isEditing: false, canEdit: true, canDelete: true, canReorder: true, canRetry: true },
+    { id: 'b', kind: 'shelf' as const, content: 'Other', detail: '', status: '', isEditing: false, canEdit: true, canDelete: true, canReorder: true }]
+  expect(queueRowActions(rows, 0).map((action) => action.label)).toEqual(['Restore draft', 'Move down', 'Retry', 'Delete shelved draft'])
+})

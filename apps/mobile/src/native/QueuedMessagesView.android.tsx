@@ -15,7 +15,7 @@ export function QueuedMessagesView({ rows, maxHeight, onAction, style, ...props 
       <View style={styles.copy}><Text numberOfLines={2} style={{ color: theme.text, fontSize: 14 }}>{row.content}</Text>
         {row.detail ? <Text numberOfLines={2} style={{ color: row.status === 'failed' ? theme.red : theme.secondary, fontSize: 12 }}>{row.detail}</Text> : null}
       </View>
-      <MaterialMenu label={`Actions for queued message ${index + 1}`} icon="ellipsis" actions={queueRowActions(rows, index).map((action) => ({ ...action, onPress: () => onAction({ nativeEvent: action.event }) }))} />
+      <MaterialMenu label={`Actions for ${row.kind === 'shelf' ? 'shelved draft' : 'queued message'} ${index + 1}`} icon="ellipsis" actions={queueRowActions(rows, index).map((action) => ({ ...action, onPress: () => onAction({ nativeEvent: action.event }) }))} />
     </View>)}
   </ScrollView>;
 }

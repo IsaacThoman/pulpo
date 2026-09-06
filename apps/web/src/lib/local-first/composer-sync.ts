@@ -13,6 +13,15 @@ export function webComposerSync(userId: string): ComposerSync | null {
   if (!sync) {
     const key = (id: string) => `composer-sync:${account}:${generation ? `${generation}:` : ''}${id}`
     sync = new ComposerSync({
+      recoverShelfContent: async (state) => {
+        const drafts = await import('./composer-drafts')
+        const local = drafts.runtimeComposerDraft(userId, 'new') ?? await drafts.loadComposerDraft(userId, 'new')
+        const attachments = local?.content === state.content ? local.attachments.map((a) => ({
+          localId: a.localId, id: a.status === 'ready' ? a.serverId : undefined,
+          name: a.name, mimeType: a.mimeType, size: a.size, source: a.file,
+        })) : state.attachments.map((a) => ({ ...a, localId: a.id }))
+        await (await import('./shelf')).webShelf(userId).saveCopy(state.content, attachments)
+      },
       load: async (id) => (await localDb.kv.get(key(id)))?.value as ComposerCheckpoint | undefined ?? null,
       save: async (id, value) => { await localDb.kv.put({ key: key(id), value, updatedAt: Date.now() }) },
     }, crypto.randomUUID())

@@ -40,6 +40,7 @@ const icons: Record<string, ImageSourcePropType> = {
   'expand_more': require('../../assets/material/expand_more.xml'),
   'find_in_page': require('../../assets/material/find_in_page.xml'),
   'folder': require('../../assets/material/folder.xml'),
+  'inventory_2': require('../../assets/material/inventory_2.xml'),
   'folder_zip': require('../../assets/material/folder_zip.xml'),
   'fork_right': require('../../assets/material/fork_right.xml'),
   'forum': require('../../assets/material/forum.xml'),

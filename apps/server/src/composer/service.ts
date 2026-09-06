@@ -63,8 +63,8 @@ export async function accessComposer(userId: string, draftId: string, write?: Co
   })
 }
 
-export async function composerAttachmentIsLive(userId: string, id: string): Promise<boolean> {
-  const [row] = await db.select({ draftId: composerDrafts.draftId }).from(composerDrafts).where(and(
+export async function composerAttachmentIsLive(userId: string, id: string, database: Pick<typeof db, 'select'> = db): Promise<boolean> {
+  const [row] = await database.select({ draftId: composerDrafts.draftId }).from(composerDrafts).where(and(
     eq(composerDrafts.userId, userId),
     sql`${composerDrafts.state}->'attachments' @> ${JSON.stringify([{ id }])}::jsonb`,
     or(isNull(composerDrafts.expiresAt), sql`${composerDrafts.expiresAt} > now()`),

@@ -563,3 +563,4 @@ export class PulpoManagementClient {
 export * from "./composer-sync.js"
 
 export { initialActivityTiming } from './activity-timing.js'
+export * from "./shelf.js"

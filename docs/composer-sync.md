@@ -14,6 +14,8 @@ Interface settings include **Sync composer drafts**, enabled by default. This is
 
 Turning sync back on resumes the shared server draft. Pending updates from before opting out are retired. Offline clients receive the account setting when they reconnect. The server also checks the account preference before accepting draft operations or broadcasting drafts, including requests from older clients.
 
+[Shelved drafts](./shelved-drafts.md) are explicit account-wide saves and synchronize independently of this preference. Shelf restores change only text and attachments; a divergent restored draft displaced during composer reconciliation is preserved as a recoverable shelf copy.
+
 ## Rollout
 
 1. Run `npm run db:migrate` before starting the updated server. Migration 0059 preserves the earlier composer tables and migrates their content and attachment references.

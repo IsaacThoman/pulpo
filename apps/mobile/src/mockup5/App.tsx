@@ -1,4 +1,5 @@
 import { initialActivityTiming } from '@pulpo/client-core';
+import { mobileShelf, durableShelfAttachments, shelfComposerAttachments } from '../features/chat/shelf';
 import { useAppTheme } from './src/theme';
 import { MaterialSearchField, MaterialSuggestionButton, MaterialNavigationRow, MaterialButton, MaterialContextMenu, MaterialField, MaterialIconButton, MaterialLoading, MaterialMenu, MaterialRow, MaterialDialog, type Action as MaterialAction } from '../platform/MaterialUI';
 import type { MenuAnchor } from '../platform/MaterialUI.types';
@@ -24,6 +25,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type ComponentProps,
   type RefObject,
   type ReactNode,
@@ -3632,6 +3634,18 @@ function ChatView({
     origin?: AttachmentImageTransitionOrigin;
   } | null>(null);
   const [messageEdit, setMessageEdit] = useState<MessageEditSession | null>(null);
+  const shelf = draftNamespace ? mobileShelf(draftNamespace) : null;
+  const shelfRows = useSyncExternalStore(shelf?.subscribe ?? EMPTY_SHELF_SUBSCRIBE, shelf?.getSnapshot ?? EMPTY_SHELF_SNAPSHOT);
+  const [shelfBusy, setShelfBusy] = useState(false);
+  const shelfBusyRef = useRef(false);
+  const [shelfCollapsed, setShelfCollapsed] = useState(false);
+  const [shelfError, setShelfError] = useState<string | null>(null);
+  const showShelf = !chatId && messages.length === 0 && !temporary && Boolean(shelf) && !messageEdit;
+  const activeShelf = useRef(shelf);
+  activeShelf.current = showShelf ? shelf : null;
+  const shelfMounted = useRef(true);
+  useEffect(() => { shelfMounted.current = true; return () => { shelfMounted.current = false; }; }, []);
+  useEffect(() => { if (shelf) void shelf.hydrate().then(() => shelf.sync()).catch(() => undefined); }, [shelf]);
   const [queueCollapsed, setQueueCollapsed] = useState(false);
   useEffect(() => { setQueueCollapsed(false); }, [chatId]);
   const preservedComposerRef = useRef<{
@@ -3917,7 +3931,7 @@ function ChatView({
   const { sync: composerSync, skipNextEdit } = useComposerSync(
     draftNamespace, chatId ?? NEW_CHAT_DRAFT_ID, sharedComposerState,
     hydratedComposerScope === `${draftNamespace ?? 'local'}\u0000${chatId ?? NEW_CHAT_DRAFT_ID}`,
-    Boolean(messageEdit),
+    Boolean(messageEdit || shelfBusy),
     (remote) => {
       const current = preservedComposerRef.current?.attachments ?? attachmentsRef.current;
       const byId = new Map(current.map((a) => [a.serverId, a]));
@@ -4329,6 +4343,40 @@ function ChatView({
     readerInteracting.current = snapshot.readerInteracting;
     chatTailPending.current = snapshot.tailPending;
   }, []);
+
+  const runShelfAction = async (action: () => Promise<void>) => {
+    if (!showShelf || shelfBusyRef.current || sending || hydratedDraftScopeRef.current !== activeDraftRef.current?.scope) return;
+    shelfBusyRef.current = true; setShelfBusy(true); setShelfError(null);
+    try { await action(); } catch (error) { setShelfError(error instanceof Error ? error.message : 'Could not save draft'); }
+    finally { shelfBusyRef.current = false; setShelfBusy(false); }
+  };
+  const transferShelf = (restoreId?: string) => runShelfAction(async () => {
+    if (!shelf || !draftNamespace) return;
+    const identity = activeDraftRef.current;
+    const before = { content: inputRef.current, attachments: durableShelfAttachments(draftNamespace, attachmentsRef.current) };
+    const old = [...attachmentsRef.current];
+    const isCurrent = () => shelfMounted.current && activeShelf.current === shelf && activeDraftRef.current === identity && inputRef.current === before.content && attachmentsRef.current.length === old.length && attachmentsRef.current.every((a, index) => a.localId === old[index]?.localId);
+    const restored = restoreId ? await shelf.restore(restoreId, before, isCurrent) : (await shelf.shelve(before.content, before.attachments, isCurrent), null);
+    const after = restored ?? { content: '', attachments: [] };
+    const next = shelfComposerAttachments(after.attachments);
+    if (!isCurrent()) {
+      if (after.content.trim() || after.attachments.length) await shelf.saveCopy(after.content, after.attachments);
+      return;
+    }
+    if (identity) cacheComposerDraft(identity.scope, { body: after.content, attachments: next });
+    // Invalidate the old upload owner. Any late completion cleans up its own
+    // reservation; the shelf owns durable copies and its own upload attempts.
+    for (const a of old) { latestAttachmentsRef.current.delete(a.localId); attachmentDraftOwnersRef.current.delete(a.localId); }
+    skipNextEdit();
+    inputRef.current = after.content; onChangeInput(after.content); setAttachments(next);
+    composerSync?.replaceShelfContent('new', { ...sharedComposerState, content: after.content,
+      attachments: after.attachments.filter((a) => a.id).map((a) => ({ id: a.id!, name: a.name, mimeType: a.mimeType, size: a.size })) });
+    setShelfCollapsed(false); Haptics.selectionAsync();
+    if (restoreId) {
+      placeComposerCursorAtEnd(after.content);
+      requestAnimationFrame(() => composerInputRef.current?.focus());
+    }
+  });
 
   const persistInactiveDraftAttachment = useCallback((attachment: ComposerAttachment) => {
     const owner = attachmentDraftOwnersRef.current.get(attachment.localId);
@@ -4953,6 +5001,26 @@ function ChatView({
               surfaceStyle={temporaryComposerAnimatedStyle}
               tintColor={temporary ? colorScheme === 'dark' ? 'rgba(88,28,135,0.32)' : 'rgba(175,82,222,0.16)' : undefined}
             >
+              {showShelf && shelfRows.length > 0 && <View style={styles.composerQueue}>
+                <Pressable accessibilityRole="button" accessibilityLabel={shelfCollapsed ? 'Expand shelved drafts' : 'Collapse shelved drafts'} accessibilityState={{ expanded: !shelfCollapsed }}
+                  onPress={() => { Haptics.selectionAsync(); setShelfCollapsed((value) => !value); }} style={styles.composerQueueHeader}>
+                  <Text style={styles.composerQueueTitle}>Shelved · {shelfRows.length}</Text>
+                  <Icon name={shelfCollapsed ? 'chevron.up' : 'chevron.down'} size={11} color={COLORS.muted} />
+                </Pressable>
+                {!shelfCollapsed && <QueuedMessagesView maxHeight={Math.min(200, windowHeight * 0.25)} style={styles.composerQueueRows}
+                  rows={shelfRows.map((row) => ({ id: row.id, kind: 'shelf', content: row.content.slice(0, 200) || 'Attachments',
+                    detail: [row.attachments.map((a) => a.name).join(', '), row.error || (row.status === 'uploading' ? 'Uploading…' : row.status === 'pending' ? 'Waiting to sync' : '')].filter(Boolean).join(' · '),
+                    status: row.status ?? '', isEditing: false, canEdit: !shelfBusy && !sending, canDelete: !shelfBusy && !sending, canReorder: !shelfBusy && !sending,
+                    canRetry: row.status === 'failed' && !shelfBusy,
+                  }))}
+                  onAction={({ nativeEvent: action }) => {
+                    if (action.action === 'edit') void transferShelf(action.id);
+                    else if (action.action === 'delete') void runShelfAction(() => shelf!.delete(action.id));
+                    else if (action.action === 'retry') void runShelfAction(() => shelf!.retry());
+                    else if (action.targetMessageId && action.edge) void runShelfAction(() => shelf!.reorder(action.id, action.targetMessageId!, action.edge!));
+                  }} />}
+              </View>}
+              {showShelf && shelfError && <Text accessibilityRole="alert" style={styles.attachmentErrorText}>{shelfError}</Text>}
               {queuedMessages.length > 0 && (
                 <View style={styles.composerQueue}>
                   <Pressable
@@ -5044,12 +5112,12 @@ function ChatView({
                 ref={composerInputRef}
                 accessibilityLabel="Message"
                 disableFullscreenUI
-                editable={!composerFocusSuppressed && !(messageEdit && sending)}
+                editable={!shelfBusy && !composerFocusSuppressed && !(messageEdit && sending)}
                 maxFontSizeMultiplier={1.6}
                 multiline
                 maxLength={1_000_000}
-                onFocus={() => setQueueCollapsed(true)}
-                onBlur={() => setQueueCollapsed(false)}
+                onFocus={() => { setQueueCollapsed(true); setShelfCollapsed(true); }}
+                onBlur={() => { setQueueCollapsed(false); setShelfCollapsed(false); }}
                 onChangeText={(value) => { inputRef.current = value; onChangeInput(value); }}
                 onSelectionChange={(event) => { inputSelectionRef.current = event.nativeEvent.selection; }}
                 placeholder={attachments.length > 0 ? 'Add a caption…' : messageEdit ? 'Edit message…' : temporary ? 'Temporary message…' : 'Message…'}
@@ -5128,8 +5196,10 @@ function ChatView({
                         </SwiftUIRNHostView>
                       </SwiftUIButton>
                     </SwiftUIHost>
+                    {showShelf && <NativeComposerIconButton label="Shelve draft" systemImage="archivebox"
+                      disabled={shelfBusy || sending || (!input.trim() && !attachments.length)} onPress={() => { void transferShelf(); }} />}
                     <NativeComposerIconButton
-                      disabled={composerAction === 'submit' && !canSend}
+                      disabled={shelfBusy || composerAction === 'submit' && !canSend}
                       label={composerAction === 'stop' ? 'Stop generating' : messageEdit ? queueEditRef.current ? 'Save queued message' : 'Save and resend message' : 'Send message'}
                       onPress={() => composerAction === 'stop' ? onStop() : submitMessage()}
                       prominent
@@ -5139,7 +5209,8 @@ function ChatView({
                 ) : (
                   <>
                     <MaterialIconButton label={activeAgentEnabled ? 'Turn off Agent mode' : 'Turn on Agent mode'} icon="bot" color={activeAgentEnabled ? nativeAgentTint : undefined} selected={activeAgentEnabled} disabled={!canUseAgent} onPress={toggleAgent} />
-                    <MaterialIconButton label={composerAction === 'stop' ? 'Stop generating' : messageEdit ? queueEditRef.current ? 'Save queued message' : 'Save and resend message' : 'Send message'} icon={composerAction === 'stop' ? 'stop.fill' : 'arrow.up'} prominent disabled={composerAction === 'submit' && !canSend} onPress={() => composerAction === 'stop' ? onStop() : submitMessage()} />
+                    {showShelf && <MaterialIconButton label="Shelve draft" icon="archivebox" disabled={shelfBusy || sending || (!input.trim() && !attachments.length)} onPress={() => { void transferShelf(); }} />}
+                    <MaterialIconButton label={composerAction === 'stop' ? 'Stop generating' : messageEdit ? queueEditRef.current ? 'Save queued message' : 'Save and resend message' : 'Send message'} icon={composerAction === 'stop' ? 'stop.fill' : 'arrow.up'} prominent disabled={shelfBusy || composerAction === 'submit' && !canSend} onPress={() => composerAction === 'stop' ? onStop() : submitMessage()} />
                   </>
                 )}
               </View>
@@ -5959,3 +6030,7 @@ function ChatStylesProvider({ children }: { children: ReactNode }) {
   }, [theme.background, theme.elevated, theme.fill, theme.separator, theme.text, theme.secondary, theme.tertiary, theme.fillStrong, theme.accent, theme.green, theme.red, theme.orange, theme.accentText]);
   return <ChatStylesContext.Provider value={value}>{children}</ChatStylesContext.Provider>;
 }
+
+const EMPTY_SHELF_ROWS: import("@pulpo/client-core").LocalShelvedDraft[] = [];
+const EMPTY_SHELF_SNAPSHOT = () => EMPTY_SHELF_ROWS;
+const EMPTY_SHELF_SUBSCRIBE = () => () => undefined;

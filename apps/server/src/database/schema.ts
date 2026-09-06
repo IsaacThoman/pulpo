@@ -550,6 +550,7 @@ export const attachments = pgTable('attachments', {
   id: uuid('id').primaryKey(),
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   chatId: uuid('chat_id').references(() => chats.id, { onDelete: 'cascade' }),
+  shelvedAt: timestamp('shelved_at', { withTimezone: true }),
   status: attachmentStatusEnum('status').notNull().default('pending'),
   objectKey: text('object_key').notNull(),
   originalName: text('original_name').notNull(),
@@ -1177,3 +1178,25 @@ export const composerDraftAttachments = pgTable('composer_draft_attachments', {
   attachmentId: uuid('attachment_id').notNull().references(() => attachments.id, { onDelete: 'cascade' }),
   position: integer('position').notNull(),
 }, (table) => [primaryKey({ columns: [table.draftId, table.attachmentId] }), uniqueIndex('composer_draft_attachments_position_unique').on(table.draftId, table.position)])
+
+// Keep consumed IDs as tombstones: an offline retry must never recreate a draft.
+export const shelvedDrafts = pgTable('shelved_drafts', {
+  id: uuid('id').primaryKey(),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  content: text('content').notNull(),
+  attachmentData: jsonb('attachment_data').$type<import('@pulpo/contracts').ShelvedDraft['attachments']>().notNull().default([]),
+  position: integer('position').notNull().default(0),
+  revision: integer('revision').notNull().default(0),
+  deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  ...timestamps,
+}, (table) => [index('shelved_drafts_account_order').on(table.userId, table.position)]);
+
+export const shelvedDraftAttachments = pgTable('shelved_draft_attachments', {
+  draftId: uuid('draft_id').notNull().references(() => shelvedDrafts.id, { onDelete: 'cascade' }),
+  attachmentId: uuid('attachment_id').notNull().references(() => attachments.id, { onDelete: 'cascade' }),
+}, (table) => [primaryKey({ columns: [table.draftId, table.attachmentId] }), index('shelf_attachment_reference').on(table.attachmentId)]);
+
+export const shelfOperations = pgTable('shelf_operations', {
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  operationId: uuid('operation_id').notNull(),
+}, (table) => [primaryKey({ columns: [table.userId, table.operationId] })]);
