@@ -44,3 +44,17 @@ export function resolveKeyboardLayoutProgress(progress: number, enabled: boolean
   'worklet'
   return enabled ? progress : 0
 }
+
+/** Center the landing identity in the space above the moving composer.
+ * Keyboard controller heights are negative; mirror half of the composer's lift.
+ * This must not depend on whether suggestion buttons have been laid out.
+ */
+export function chatLandingKeyboardTranslation(
+  keyboardHeight: number,
+  keyboardProgress: number,
+  composerKeyboardOffset: number,
+  enabled: boolean,
+): number {
+  'worklet'
+  return enabled ? Math.min(0, keyboardHeight + keyboardProgress * composerKeyboardOffset) / 2 : 0
+}

@@ -238,7 +238,7 @@ import {
 } from '../features/chat/history';
 import { activityDurationMs, buildLegacyMessageTimeline, buildMessageTimeline, completedActivityLabel, timelineActivityIsActive, workspaceIsActive, type TimelineStep } from '../features/chat/timeline';
 import { toolActivityPresentation } from '../features/chat/toolActivityPresentation';
-import { chatKeyboardBlankSpace, isNearChatBottom, resolveKeyboardLayoutProgress, shouldFollowChatContent } from '../features/chat/viewport';
+import { chatLandingKeyboardTranslation, chatKeyboardBlankSpace, isNearChatBottom, resolveKeyboardLayoutProgress, shouldFollowChatContent } from '../features/chat/viewport';
 import {
   nextChatStartsTemporary,
   resolveChatHeaderAction,
@@ -3653,7 +3653,7 @@ function ChatView({
     count: 4,
     prompts: DEFAULT_SUGGESTED_PROMPTS,
   });
-  const { progress: keyboardProgress } = useReanimatedKeyboardAnimation();
+  const { height: keyboardHeight, progress: keyboardProgress } = useReanimatedKeyboardAnimation();
   const suggestionGridHeight = useSharedValue(0);
   const temporaryProgress = useSharedValue(temporary ? 1 : 0);
   const landingBadge = resolveChatLandingBadge(temporary, autoExpire, expirationPeriod);
@@ -3713,11 +3713,13 @@ function ChatView({
   ), [composerPadding, keyboardBlankSpace, keyboardLayoutEnabled, keyboardSafeAreaOffset]);
   const emptyStateAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{
-      translateY: -resolveKeyboardLayoutProgress(keyboardProgress.value, keyboardLayoutEnabled) * (
+      translateY: Platform.OS === 'android'
+        ? chatLandingKeyboardTranslation(keyboardHeight.value, keyboardProgress.value, keyboardSafeAreaOffset, keyboardLayoutEnabled)
+        : -resolveKeyboardLayoutProgress(keyboardProgress.value, keyboardLayoutEnabled) * (
         Math.min(64, windowHeight * 0.065) + suggestionGridHeight.value * 0.5
       ),
     }],
-  }), [keyboardLayoutEnabled]);
+  }), [keyboardLayoutEnabled, keyboardSafeAreaOffset, windowHeight]);
   const suggestionsAnimatedStyle = useAnimatedStyle(() => {
     const progress = resolveKeyboardLayoutProgress(keyboardProgress.value, keyboardLayoutEnabled);
     return {
@@ -4748,8 +4750,8 @@ function ChatView({
         </View>
         <Text maxFontSizeMultiplier={1.6} style={styles.emptyProvider}>{modelSubtitle(model)}</Text>
       </Reanimated.View>
-      {/* Keep measuring the collapsed grid so keyboard-open identity positioning
-          stays identical regardless of the account preference. */}
+      {/* iOS retains its grid-based landing transition. Android centers from the
+          actual keyboard lift, independently of this hidden grid measurement. */}
       <Reanimated.View
         accessibilityElementsHidden={!showPromptSuggestions}
         importantForAccessibility={showPromptSuggestions ? 'auto' : 'no-hide-descendants'}
