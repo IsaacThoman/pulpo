@@ -41,7 +41,7 @@ describe('public chat DTOs', () => {
       createdAt: date, updatedAt: date,
     }
     const result = toPublicChatResponse(row, [row], {
-      usageCost: { costMicros: 4_200, subscriptionCoveredMicros: 3_000 },
+      usageCost: { costMicros: 4_200, inferenceReferenceCostMicros: 38_500, subscriptionCoveredMicros: 3_000 },
     })
 
     expect(result).toMatchObject({
@@ -49,6 +49,7 @@ describe('public chat DTOs', () => {
       displayModelId: 'model-actual',
       agentMode: true,
       costMicros: 4_200,
+      inferenceReferenceCostMicros: 38_500,
       subscriptionCoveredMicros: 3_000,
     })
     for (const field of [
@@ -152,7 +153,9 @@ describe('public chat DTOs', () => {
       createdAt: new Date(date.getTime() + index), updatedAt: date,
     }))
 
-    const result = toPublicBranchActivation(rows, rows[1]!.id)
+    const result = toPublicBranchActivation(rows, rows[1]!.id, new Map([
+      [rows[1]!.id, { costMicros: 1_700, inferenceReferenceCostMicros: 38_500, subscriptionCoveredMicros: 0 }],
+    ]))
 
     expect(result.activeBranchLeafId).toBe(rows[1]!.id)
     expect(result.responses.find((response) => response.id === rows[0]!.id)).toMatchObject({
@@ -160,6 +163,7 @@ describe('public chat DTOs', () => {
     })
     expect(result.responses.find((response) => response.id === rows[1]!.id)).toMatchObject({
       input: rows[1]!.input, output: rows[1]!.output, detailAvailable: true,
+      costMicros: 1_700, inferenceReferenceCostMicros: 38_500, subscriptionCoveredMicros: 0,
     })
   })
 })

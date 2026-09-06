@@ -21,7 +21,7 @@ import { workspaceContinueWithoutAgentAvailableAtMs, type CompactionItem, type R
 import type { Chat, Message } from '@/lib/types'
 import { hasMultipleBranches } from '@/lib/message-branches'
 import { getCatalogModel } from '@/stores/catalog'
-import { formatCost, formatDuration, formatSecondsLabel, timeAgo } from '@/lib/format'
+import { formatDuration, formatSecondsLabel, timeAgo } from '@/lib/format'
 import { useChat } from '@/stores/chat'
 import { useSettings } from '@/stores/settings'
 import { useUploadOutbox } from '@/stores/upload-outbox'
@@ -47,7 +47,7 @@ import { cn } from '@/lib/utils'
 import { writeClipboardText } from '@/lib/clipboard'
 import { ui, activeLocale } from '@/i18n/ui'
 import { toolActivityPresentation } from './tool-activity-presentation'
-import { SubscriptionCoverageCost } from '@/components/usage/SubscriptionCoverageCost'
+import { UsageCostBreakdown } from '@/components/usage/UsageCostBreakdown'
 
 function ActionButton({
   label,
@@ -860,11 +860,11 @@ export const MessageItem = memo(function MessageItem({
                     {message.latencyMs !== undefined && ` · ${formatDuration(message.latencyMs)}`}
                     {showResponseCost && message.cost !== undefined && <>
                       {' · '}
-                      <SubscriptionCoverageCost
+                      <UsageCostBreakdown
                         costUsd={message.cost}
+                        inferenceReferenceUsd={message.inferenceReferenceCost ?? 0}
                         subscriptionCoveredUsd={message.subscriptionCoveredCost ?? 0}
                         personal
-                        formattedCost={formatCost(message.cost)}
                         highlightCoverage={false}
                       />
                     </>}

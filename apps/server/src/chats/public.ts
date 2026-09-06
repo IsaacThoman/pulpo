@@ -6,7 +6,7 @@ import { responseDisplayModelId } from './modelIdentity.js'
 
 type ChatRow = typeof chats.$inferSelect
 type ResponseRow = typeof responses.$inferSelect
-type ResponseUsageCost = { costMicros: number; subscriptionCoveredMicros: number }
+type ResponseUsageCost = { costMicros: number; inferenceReferenceCostMicros: number; subscriptionCoveredMicros: number }
 
 export interface PublicChatResponse {
   id: string
@@ -21,6 +21,7 @@ export interface PublicChatResponse {
   presetSelections: Record<string, string>
   usage: ResponseSnapshot['usage']
   costMicros: number | null
+  inferenceReferenceCostMicros: number | null
   subscriptionCoveredMicros: number | null
   error: unknown
   createdAt: string
@@ -51,6 +52,7 @@ export function toPublicChatResponse(
     presetSelections: response.presetSelections as Record<string, string>,
     usage: snapshot.usage,
     costMicros: options.usageCost?.costMicros ?? null,
+    inferenceReferenceCostMicros: options.usageCost?.inferenceReferenceCostMicros ?? null,
     subscriptionCoveredMicros: options.usageCost?.subscriptionCoveredMicros ?? null,
     error: snapshot.error,
     createdAt: response.createdAt.toISOString(),

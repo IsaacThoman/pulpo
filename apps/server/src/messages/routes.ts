@@ -225,11 +225,13 @@ export async function registerMessageRoutes(app: FastifyInstance): Promise<void>
     const costRows = turns.length ? await db.select({
       responseId: usageEvents.responseId,
       costMicros: usageEvents.costMicros,
+      inferenceReferenceCostMicros: usageEvents.inferenceReferenceCostMicros,
       subscriptionCoveredMicros: usageEvents.weeklyCostMicros,
     }).from(usageEvents).where(inArray(usageEvents.responseId, turns.map((response) => response.id))) : []
     const usageCostsByResponseId = new Map(costRows.flatMap((row) => (
       row.responseId ? [[row.responseId, {
         costMicros: Number(row.costMicros),
+        inferenceReferenceCostMicros: Number(row.inferenceReferenceCostMicros),
         subscriptionCoveredMicros: Number(row.subscriptionCoveredMicros),
       }] as const] : []
     )))
