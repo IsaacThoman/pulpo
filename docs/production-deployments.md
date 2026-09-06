@@ -1,19 +1,19 @@
 # Production deployments
 
-Production uses a persistent Coolify infrastructure service and three independent
+Production uses a persistent Coolify infrastructure application and three independent
 Dockerfile applications. Local Compose and development/PR previews keep using
 `compose.yaml`.
 
 | Resource | Configuration | Health | Shutdown budget |
 | --- | --- | --- | --- |
-| Infrastructure | `deploy/compose.production-infra.yaml` | Postgres/Redis checks | Manual maintenance only |
+| Infrastructure | `deploy/compose.production-infra.yaml`, raw Compose mode | Postgres/Redis checks | Manual maintenance only |
 | API | `apps/server/Dockerfile`, target `production-api` | HTTP `/ready`, Postgres + Redis | 30 seconds |
 | Worker | Same Dockerfile, target `production-worker` | Private HTTP `:3000/ready`, consumers + Postgres + Redis | 900 seconds |
 | Web | `Dockerfile.web`, target `production-web` | HTTP `/ready`, frontend exists | 30 seconds |
 
-The infrastructure service reuses the original named external volumes. Set
+The infrastructure application reuses the original named external volumes. Set
 `PULPO_DATA_PREFIX` to the original Coolify application UUID and retain its
-Postgres/S3 credentials. API and worker share that application's existing object
+Postgres/S3 credentials. Enable **Raw Docker Compose Deployment**: Coolify 4.3.10's normal parser rewrites named volume references even when they are declared external. Raw mode preserves these references. Verify the rendered mount sources before starting it. API and worker share that application's existing object
 volume at `/app/data/objects`. Preserve `ENCRYPTION_KEY` and set `PULPO_INSTANCE_ID`
 to the existing identity (`pulpo.baby` on this installation).
 
@@ -69,7 +69,7 @@ compatible with the current database schema.
 During the one-time separation, preserve a private copy of the old Compose file,
 runtime environment, container metadata, and a fresh database backup. Never run
 old and new Postgres containers against the same data volume concurrently. Stop
-the legacy application before starting the infrastructure service. For rollback,
+the legacy application before starting the infrastructure application. For rollback,
 stop the replacement infrastructure before bringing the saved legacy Compose
 stack back up. Never remove its volumes. Keep the legacy resource stopped with
 automatic deployment disabled after cutover.
