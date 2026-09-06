@@ -208,7 +208,7 @@ func (s *boundedSnapshotter) Prepare(ctx context.Context, key, parent string, op
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	size := s.diskBytes
-	if s.sandboxParent != "" && parent == s.sandboxParent {
+	if s.sandboxParent != "" && (parent == s.sandboxParent || strings.HasSuffix(parent, "/"+s.sandboxParent)) {
 		size = sandboxDiskBytes
 	}
 	mounts, err := s.Snapshotter.Prepare(ctx, key, parent, opts...)

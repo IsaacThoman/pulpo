@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/containerd/containerd/v2/core/mount"
+	"github.com/containerd/containerd/v2/core/snapshots"
 	"github.com/containerd/containerd/v2/plugins/snapshots/erofs"
 )
 
@@ -161,5 +162,46 @@ func TestKataReceivesFormattedBlockMount(t *testing.T) {
 	}
 	if mounts[0].Type != "ext4" {
 		t.Fatalf("Kata would ignore %s and use memory", mounts[0].Type)
+	}
+}
+
+// containerd's metadata proxy namespaces the parent key before calling an
+// external snapshotter. Exercise that path rather than only the bare digest.
+type parentSnapshotter struct {
+	snapshots.Snapshotter
+	mounts []mount.Mount
+	info   snapshots.Info
+}
+
+func (p *parentSnapshotter) Prepare(_ context.Context, key, parent string, _ ...snapshots.Opt) ([]mount.Mount, error) {
+	p.info = snapshots.Info{Name: key, Parent: parent}
+	return p.mounts, nil
+}
+func (p *parentSnapshotter) Update(_ context.Context, info snapshots.Info, _ ...string) (snapshots.Info, error) {
+	p.info.Labels = info.Labels
+	return p.info, nil
+}
+func TestNamespacedPauseParentGetsSmallReservedDisk(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "snapshots", "1")
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	parent := "sha256:1021ef88c7974bfff89c5a0ec4fd3160daac6c48a075f74cff721f85dd104e68"
+	stub := &parentSnapshotter{mounts: []mount.Mount{{Type: "mkfs/ext4", Source: filepath.Join(dir, "rwlayer.img")}}}
+	s := &boundedSnapshotter{Snapshotter: stub, root: root, sandboxParent: parent, diskBytes: 256 << 20, budgetBytes: 512 << 20}
+	if _, err := s.Prepare(context.Background(), "sandbox", "k8s.io/4/"+parent); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(stub.mounts[0].Source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Size() != sandboxDiskBytes {
+		t.Fatalf("sandbox allocated %d", info.Size())
+	}
+	total, err := s.reservedBytes()
+	if err != nil || total != sandboxDiskBytes {
+		t.Fatalf("sandbox reservation %d %v", total, err)
 	}
 }

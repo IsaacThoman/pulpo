@@ -313,7 +313,7 @@ async function workspaceInventory(instanceId: string) {
   const spec = desiredSpec(instanceId)
   return pods.filter((pod) => {
     const state = pod.metadata?.labels?.['pulpo.dev/state']
-    return state === 'warm' ? podMatchesSpec(pod, spec) : podInstanceId(pod) === instanceId
+    return state === 'warm' ? podMatchesSpec(pod, spec, runtimeClassName) : podInstanceId(pod) === instanceId
   }).map((pod) => {
     const labels = pod.metadata?.labels ?? {}
     const annotations = pod.metadata?.annotations ?? {}

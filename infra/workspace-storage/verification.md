@@ -35,3 +35,13 @@ Issues discovered and corrected during testing:
 
 Production migration and final regression results are recorded below once the
 completed adapter/controller revision is deployed.
+
+Controller integration in a separate Kubernetes namespace:
+
+- The updated controller rejected a requested 50 GiB allowance, created and
+  claimed a bounded workspace, and executed a command through the normal
+  controller → daemon API. Guest sudo worked and the writable filesystem
+  reported 20,957,446,144 filesystem bytes on its 20 GiB virtual block device.
+- Confirmed the pause sandbox uses 134,217,728 bytes while the workspace uses
+  21,474,836,480 bytes. A seventh allocation regression test covers containerd's
+  namespaced parent keys, which otherwise defeat exact pause-chain matching.
