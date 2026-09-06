@@ -116,6 +116,13 @@ jobs:
         run: npm run db:migrate -w @pulpo/server
       - name: Test chat retrieval against PostgreSQL
         run: npm run test:episodic-search -w @pulpo/server
+      - name: Create disposable migration recovery database
+        run: node --input-type=module -e 'import postgres from "postgres"; const sql = postgres(process.env.DATABASE_URL); await sql.unsafe("CREATE DATABASE pulpo_migration_test"); await sql.end();'
+      - name: Test persistent preview migration recovery
+        env:
+          DATABASE_URL: postgres://postgres:search-test@localhost:5432/pulpo_migration_test
+          PULPO_MIGRATION_POSTGRES_TEST: '1'
+        run: npm run test -w @pulpo/server -- src/database/migration-recovery.postgres.test.ts
 
   cli-package:
     name: CLI package / Node ${{ matrix.node }}
