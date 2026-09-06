@@ -1042,7 +1042,7 @@ export function SettingsModal({
                   <Row label={ui("Open search with double Shift")} hint={ui("Press Shift twice quickly to open search.")}>
                     <Switch checked={s.doubleShiftSearch} onCheckedChange={(v) => s.set('doubleShiftSearch', v)} />
                   </Row>
-                  <Row label={ui("Show prompt suggestions")} hint={ui("Show suggested prompts in new chats. Syncs across your devices.")}>
+                  <Row label={ui("Show prompt suggestions")} hint={ui("Show suggested prompts in new chats.")}>
                     <Switch aria-label={ui("Show prompt suggestions")} checked={s.showPromptSuggestions} onCheckedChange={(v) => s.set('showPromptSuggestions', v)} />
                   </Row>
                   <Row label={ui("Show reasoning")} hint="Show expandable thought/work activity above assistant replies.">

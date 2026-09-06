@@ -1047,7 +1047,7 @@ const esUi: Record<string, string> = {
   "Show key": "Mostrar clave",
   "Show provider API key": "Mostrar clave API del proveedor",
   "Show prompt suggestions": "Mostrar sugerencias de mensajes",
-  "Show suggested prompts in new chats. Syncs across your devices.": "Muestra sugerencias de mensajes en chats nuevos. Se sincroniza entre tus dispositivos.",
+  "Show suggested prompts in new chats.": "Muestra sugerencias de mensajes en chats nuevos.",
   "Show reasoning": "Mostrar razonamiento",
   "Show response costs": "Mostrar costes de las respuestas",
   "Show suggested prompts": "Mostrar prompts sugeridos",
