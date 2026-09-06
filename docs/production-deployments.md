@@ -28,6 +28,15 @@ cookie for Socket.IO polling during container overlap. Both HTTP and HTTPS
 routers are configured without forcing an HTTP redirect (Cloudflare can connect
 over HTTP). Keep `traefik.docker.network=coolify` on application routes.
 
+Both API and web Traefik services must actively probe `/ready` every 2 seconds
+with a 1-second timeout (`loadbalancer.healthcheck.path`, `.interval`, `.timeout`).
+Their shutdown handlers make readiness fail, continue serving for 5 seconds so
+the proxy can withdraw that backend, and then drain connections. Docker's
+startup health retries alone do not withdraw a shutting-down backend quickly
+enough. When adding/changing these service settings on a live deployment, use
+new router/service names and a higher priority for the first replacement to
+avoid conflicting old/new Traefik definitions; keep those names stable afterward.
+
 ## Release ordering
 
 The CI workflow serializes main releases. It captures the released commit and

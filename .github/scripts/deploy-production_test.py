@@ -20,6 +20,11 @@ class ProductionDeploymentTests(unittest.TestCase):
                 'fi\n'
             )
             (root / "coolify").chmod(0o755)
+            (root / "curl").write_text(
+                '#!/bin/bash\nset -eu\n'
+                'echo "[{\\"key\\":\\"COMPOSE_REMOVE_ORPHANS\\",\\"value\\":\\"$ORPHANS\\"}]"\n'
+            )
+            (root / "curl").chmod(0o755)
             (root / "deploy-coolify-commit.sh").write_text(
                 '#!/bin/bash\nset -eu\n'
                 'echo "deploy $COOLIFY_APP_UUID $1" >> "$TRACE"\n'
@@ -34,6 +39,7 @@ class ProductionDeploymentTests(unittest.TestCase):
             result = subprocess.run(
                 ["bash", str(root / "deploy-production.sh"), "a" * 40],
                 env={**os.environ, "COOLIFY_APP_UUID": "api",
+                     "COOLIFY_URL": "https://coolify.example.invalid", "COOLIFY_TOKEN": "test-token",
                      "COOLIFY_WORKER_APP_UUID": "api" if duplicate else "worker",
                      "COOLIFY_WEB_APP_UUID": "web", "FAIL_ON": fail_on,
                      "ORPHANS": "1" if remove_orphans else "false",

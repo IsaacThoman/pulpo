@@ -29,7 +29,7 @@ const shutdown = async (signal: string) => {
   deadline.unref()
   try {
     // Allow proxy health events to propagate before closing existing sockets.
-    await new Promise((resolve) => setTimeout(resolve, 3_000))
+    await new Promise((resolve) => setTimeout(resolve, 5_000))
     await Promise.all([
       app.close(),
       new Promise<void>((resolve) => io.close(() => resolve())),
