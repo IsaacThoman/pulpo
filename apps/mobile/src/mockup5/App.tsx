@@ -5012,9 +5012,7 @@ function ChatView({
                   }))}
                   onAction={({ nativeEvent: action }) => {
                     if (action.action === 'edit') void transferShelf(action.id);
-                    else if (action.action === 'delete') Alert.alert('Delete shelved draft?', 'This removes the saved prompt and its attachments from your shelf.', [
-                      { text: 'Cancel', style: 'cancel' }, { text: 'Delete', style: 'destructive', onPress: () => { void runShelfAction(() => shelf!.delete(action.id)); } },
-                    ]);
+                    else if (action.action === 'delete') void runShelfAction(() => shelf!.delete(action.id));
                     else if (action.action === 'retry') void runShelfAction(() => shelf!.retry());
                     else if (action.targetMessageId && action.edge) void runShelfAction(() => shelf!.reorder(action.id, action.targetMessageId!, action.edge!));
                   }} />}

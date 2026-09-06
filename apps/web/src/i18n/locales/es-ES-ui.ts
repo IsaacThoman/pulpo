@@ -6,8 +6,6 @@ const esUi: Record<string, string> = {
   "Move up": "Mover hacia arriba",
   "An attachment is unavailable": "Un archivo adjunto no está disponible",
   "Could not save draft": "No se pudo guardar el borrador",
-  "This removes the saved prompt and its attachments from your shelf.": "Se eliminarán el borrador guardado y sus archivos adjuntos.",
-  "Delete shelved draft?": "¿Eliminar borrador guardado?",
   "Delete shelved draft": "Eliminar borrador guardado",
   "Reorder shelved draft": "Reordenar borrador guardado",
   "Restore draft": "Restaurar borrador",

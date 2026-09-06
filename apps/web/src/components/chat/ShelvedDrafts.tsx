@@ -2,8 +2,6 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { useState } from 'react'
 import type { LocalShelvedDraft } from '@pulpo/client-core'
 import { Archive, ChevronDown, GripVertical, Loader2, RotateCcw, Trash2 } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { ui } from '@/i18n/ui'
 
 export function ShelvedDrafts({ rows, busy, collapsed, onCollapse, onRestore, onDelete, onReorder, onRetry }: {
@@ -11,7 +9,6 @@ export function ShelvedDrafts({ rows, busy, collapsed, onCollapse, onRestore, on
   onRestore: (id: string) => void; onDelete: (id: string) => void
   onReorder: (id: string, targetId: string, edge: 'before' | 'after') => void; onRetry: () => void
 }) {
-  const [deleting, setDeleting] = useState<string | null>(null)
   const [dragId, setDragId] = useState<string | null>(null)
   const [drop, setDrop] = useState<{ id: string; edge: 'before' | 'after' } | null>(null)
   if (!rows.length) return null
@@ -43,15 +40,9 @@ export function ShelvedDrafts({ rows, busy, collapsed, onCollapse, onRestore, on
           </p>}
         </button>
         {row.status === 'failed' && <button type="button" disabled={busy} onClick={onRetry} className="px-1 text-xs text-destructive">{ui('Retry')}</button>}
-        <button type="button" className={actionClass} disabled={busy} aria-label={ui('Delete shelved draft')} onClick={() => setDeleting(row.id)}><Trash2 className="size-3.5" /></button>
+        <button type="button" className={actionClass} disabled={busy} aria-label={ui('Delete shelved draft')} onClick={() => onDelete(row.id)}><Trash2 className="size-3.5" /></button>
         <button type="button" className={actionClass} disabled={busy} aria-label={ui('Restore draft')} onClick={() => onRestore(row.id)}><RotateCcw className="size-3.5" /></button>
       </div>)}
     </div>}
-    <Dialog open={deleting !== null} onOpenChange={(open) => { if (!open) setDeleting(null) }}>
-      <DialogContent className="sm:max-w-sm"><DialogTitle>{ui('Delete shelved draft?')}</DialogTitle>
-        <DialogDescription>{ui('This removes the saved prompt and its attachments from your shelf.')}</DialogDescription>
-        <div className="flex justify-end gap-2"><Button variant="outline" onClick={() => setDeleting(null)}>{ui('Cancel')}</Button><Button variant="destructive" onClick={() => { if (deleting) onDelete(deleting); setDeleting(null) }}>{ui('Delete')}</Button></div>
-      </DialogContent>
-    </Dialog>
   </section>
 }
