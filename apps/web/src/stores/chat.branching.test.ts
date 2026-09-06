@@ -883,3 +883,18 @@ describe('server receipt timing in the web store', () => {
     expect(assistant()?.initialResponseDurationMs).toBe(10_000)
   })
 })
+
+describe('stable hydrated message identities', () => {
+  it('reuses unchanged completed messages and queue state across detail snapshots', () => {
+    const first = detail(responseAId, [response(responseAId, 'completed')])
+    useChat.getState().setDetailedChat(first)
+    const previous = useChat.getState().chats.find((chat) => chat.id === chatId)!
+    const next = structuredClone(first)
+    next.title = 'Updated title'
+    useChat.getState().setDetailedChat(next)
+    const updated = useChat.getState().chats.find((chat) => chat.id === chatId)!
+    expect(updated.messages).toBe(previous.messages)
+    expect(updated.queuedMessages).toBe(previous.queuedMessages)
+    expect(updated.title).toBe('Updated title')
+  })
+})

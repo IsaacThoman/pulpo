@@ -15,6 +15,21 @@ interface PersistableChatQuery {
   data: unknown
 }
 
+// Query data is immutable. Weak keys avoid retaining evicted transcripts.
+const measuredBytes = new WeakMap<object, number | null>()
+
+export function serializedQueryBytes(data: unknown): number | null {
+  const object = data !== null && typeof data === 'object' ? data : undefined
+  if (object && measuredBytes.has(object)) return measuredBytes.get(object)!
+  let bytes: number | null = null
+  try {
+    const serialized = JSON.stringify(data)
+    if (serialized !== undefined) bytes = utf8ByteLength(serialized)
+  } catch { /* non-serializable data is not eligible for persistence */ }
+  if (object) measuredBytes.set(object, bytes)
+  return bytes
+}
+
 export function retainedChatQueryHashes(
   queries: PersistableChatQuery[],
   maxCount: number,
@@ -24,14 +39,8 @@ export function retainedChatQueryHashes(
   let totalBytes = 0
   for (const query of [...queries].sort((left, right) => right.dataUpdatedAt - left.dataUpdatedAt)) {
     if (retained.size >= Math.max(0, maxCount)) break
-    let serialized: string | undefined
-    try {
-      serialized = JSON.stringify(query.data)
-    } catch {
-      continue
-    }
-    if (serialized === undefined) continue
-    const bytes = utf8ByteLength(serialized)
+    const bytes = serializedQueryBytes(query.data)
+    if (bytes === null) continue
     if (bytes > maxBytes - totalBytes) continue
     retained.add(query.queryHash)
     totalBytes += bytes

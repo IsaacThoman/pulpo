@@ -1,7 +1,7 @@
 import { apiRequest, ApiError, isNetworkError } from '@/lib/api'
 import { localAccountKey, localDb, type OutboxMutation } from './database'
 
-let flushing: Promise<void> | null = null
+const flushing = new Map<string, Promise<string[]>>()
 
 export async function enqueueMutation(
   mutation: Omit<OutboxMutation, 'id' | 'createdAt' | 'attempts' | 'nextAttemptAt' | 'idempotencyKey'> & {
@@ -22,8 +22,9 @@ export async function enqueueMutation(
   return record
 }
 
-async function runOutbox(userId: string): Promise<void> {
-  if (!navigator.onLine) return
+async function runOutbox(userId: string): Promise<string[]> {
+  if (!navigator.onLine) return []
+  const settledPaths: string[] = []
   const accountKey = localAccountKey(userId)
   const due = await localDb.outbox
     .where('[userId+nextAttemptAt]')
@@ -37,9 +38,11 @@ async function runOutbox(userId: string): Promise<void> {
         idempotencyKey: mutation.idempotencyKey,
       })
       await localDb.outbox.delete(mutation.id)
+      settledPaths.push(mutation.path)
     } catch (error) {
       if (error instanceof ApiError && error.status < 500) {
         await localDb.outbox.delete(mutation.id)
+        settledPaths.push(mutation.path)
         continue
       }
       const attempts = mutation.attempts + 1
@@ -51,11 +54,17 @@ async function runOutbox(userId: string): Promise<void> {
       if (isNetworkError(error)) break
     }
   }
+  return settledPaths
 }
 
 const DexieMinKey = -Infinity
 
-export function flushOutbox(userId: string): Promise<void> {
-  if (!flushing) flushing = runOutbox(userId).finally(() => { flushing = null })
-  return flushing
+export function flushOutbox(userId: string): Promise<string[]> {
+  const key = localAccountKey(userId)
+  let pending = flushing.get(key)
+  if (!pending) {
+    pending = runOutbox(userId).finally(() => { flushing.delete(key) })
+    flushing.set(key, pending)
+  }
+  return pending
 }
