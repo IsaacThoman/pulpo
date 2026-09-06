@@ -77,27 +77,94 @@ development.
 
 ## Optional automatic deployment
 
-`.github/workflows/workspace-controller.yml` always builds the controller on
-relevant pushes. Its deploy job is opt-in: it runs only when the repository
-variable `WORKSPACE_CONTROLLER_RUNNER` names a self-hosted GitHub Actions
-runner. The runner must have access to the cluster and its container runtime.
+`.github/workflows/workspace-controller.yml` tests and builds relevant pull
+requests. Only pushes or manual dispatches on `main` publish the controller to
+`ghcr.io/<lowercase-repository-owner>/pulpo-workspace-controller`. Each published
+commit gets a `sha-<commit>` tag; deployments use the registry's immutable digest
+recorded in the workflow summary. PRs and dispatches on other branches neither
+publish nor deploy. Production rollouts are not cancelled by newer runs or PRs.
+
+The deploy job is opt-in: it runs only when `WORKSPACE_CONTROLLER_RUNNER` names
+a self-hosted GitHub Actions runner. The runner needs Python 3 and Kubernetes
+access to read/patch the Deployment and create/watch/delete Jobs and read Pods
+in the target namespace. Containerd access and local image imports are no longer
+used. Kubernetes must be able to pull the image independently of the CI runner.
 
 | Repository variable                       | Default                                        | Purpose                                     |
 | ----------------------------------------- | ---------------------------------------------- | ------------------------------------------- |
 | `WORKSPACE_CONTROLLER_RUNNER`             | none                                           | Runner label; setting it enables deployment |
 | `WORKSPACE_CONTROLLER_KUBECTL_COMMAND`    | `kubectl`                                      | Kubernetes command available to the runner  |
-| `WORKSPACE_CONTROLLER_CONTAINERD_COMMAND` | `ctr`                                          | Containerd command available to the runner  |
 | `WORKSPACE_CONTROLLER_NAMESPACE`          | `pulpo-workspaces`                             | Target namespace                            |
 | `WORKSPACE_CONTROLLER_DEPLOYMENT`         | `pulpo-workspace-controller`                   | Target Deployment                           |
 | `WORKSPACE_CONTROLLER_CONTAINER_NAME`     | `controller`                                   | Container updated in the Deployment         |
-| `WORKSPACE_CONTROLLER_IMAGE_REPOSITORY`   | `docker.io/library/pulpo-workspace-controller` | Local image name used for commit tags       |
 
-The workflow transfers an OCI image artifact to the runner and imports it
-directly into containerd, avoiding registry credentials. This is intended for a
-single-node cluster. In a multi-node cluster, publish the image to a registry or
-import it on every node where the controller can be scheduled.
+The old `WORKSPACE_CONTROLLER_CONTAINERD_COMMAND` and
+`WORKSPACE_CONTROLLER_IMAGE_REPOSITORY` variables are unused and can be removed.
+Keep published controller digests referenced by running deployments and rollback
+versions; registry retention must not delete them.
+
+### Registry access and migration
+
+If the controller package already exists from a manual publication, connect it
+to the source repository and grant that repository write access under the
+package's **Manage Actions access** settings before the first workflow publish.
+An existing unlinked package does not automatically grant the repository's
+`GITHUB_TOKEN` publishing access, even with `packages: write` in the workflow.
+The pre-existing `IsaacThoman/pulpo-workspace-controller` package was unlinked
+when checked during this migration. See
+[GitHub Packages permissions](https://docs.github.com/en/packages/learn-github-packages/about-permissions-for-github-packages).
+
+GHCR packages are private on first publication. Either explicitly make the
+controller package public, or provision a durable read-only registry credential
+as an `imagePullSecret` on the Deployment or its ServiceAccount. Use a credential
+with `read:packages` and package access; do not use a workflow's short-lived
+`GITHUB_TOKEN` as the cluster credential. Refer to the
+[GitHub Container Registry documentation](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry)
+and [Kubernetes pull-secret documentation](https://kubernetes.io/docs/tasks/configure-pod-container/pull-image-private-registry/).
+
+Before changing the Deployment, the deploy script runs a short-lived Kubernetes
+Job using the new digest, `imagePullPolicy: Always`, the controller's service
+account/pull-secret references, and its scheduling settings. The Job only starts
+Node and exits; it does not start another controller or mount controller secrets.
+A failed pull or scheduling timeout leaves the existing Deployment unchanged
+and fails the workflow. The Job has a deadline, a cleanup TTL, and explicit
+cleanup. Always-pull verifies registry access even if layers are cached; a full
+empty-cache recovery drill is still required on a disposable node.
+
+On the first publication the deploy job may fail until package visibility or
+cluster pull credentials are configured. Configure access and rerun the failed
+deploy job; do not work around this failure by importing the image locally.
+
+If the image pulls but the controller fails readiness, the rollout fails and the
+new desired image remains visible for diagnosis. To roll back, run the same
+deploy script with `IMAGE_REF` set to a retained, known-good registry digest and
+the same namespace/Deployment settings. Rollback also requires a successful
+pull check; it must not depend on a surviving node cache.
+
+For an existing installation, also apply the PriorityClass and controller
+resource reservations from `kubernetes.yaml`, after substituting both real image
+digests and preserving deployment-specific TLS, networking, and settings.
+**Automatic deployment updates only the controller image and pull policy.** It
+does not apply the example manifest or overwrite live configuration. The custom
+priority is non-preempting; it helps scheduling/eviction order without terminating
+other pods to make room. Resource values are starting budgets to tune against
+observed controller load, not a guarantee against disk exhaustion.
+
+See [workspace storage isolation and recovery](storage-isolation.md) for the
+remaining infrastructure work, rollout order, and acceptance tests. The current
+workspace `ephemeral-storage` limit is an eviction threshold, not a hard quota.
 
 For local development, leave agent mode disabled and use the fake controller
 in server integration tests. A full local run requires a kind or k3d cluster
 with an available sandbox runtime; ordinary Docker Compose does not mount the
 Docker socket and does not start workspaces.
+
+### Enforced writable storage
+
+Install and verify the [bounded Kata runtime](../workspace-storage/README.md)
+before selecting `PULPO_RUNTIME_CLASS=kata-pulpo-bounded`. This runtime supports
+exactly `20Gi` of writable disk per workspace; other requested sizes are rejected.
+`PULPO_MAX_WORKSPACE_PODS=6` caps pending, running and terminating workspace pods,
+including warm capacity. The host independently reserves backing blocks and
+retains reservations until storage is actually reclaimed. The controller must
+remain a singleton. Runtime changes invalidate old warm-pod compatibility.

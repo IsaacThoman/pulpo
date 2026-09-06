@@ -1,0 +1,30 @@
+name: Verify workspace storage isolation
+on:
+  pull_request:
+    paths:
+      - infra/workspace-storage/**
+      - .github/workflows/workspace-storage.yml
+  push:
+    branches: [dev, main]
+    paths:
+      - infra/workspace-storage/**
+      - .github/workflows/workspace-storage.yml
+permissions:
+  contents: read
+jobs:
+  storage:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: infra/workspace-storage/go.mod
+          cache-dependency-path: infra/workspace-storage/go.sum
+      - name: Build and test allocation lifecycle
+        working-directory: infra/workspace-storage
+        run: |
+          go vet ./...
+          go test -c -race -o /tmp/pulpo-storage-tests .
+          sudo /tmp/pulpo-storage-tests -test.v
+          CGO_ENABLED=0 go build -trimpath -o /tmp/pulpo-snapshotter .
+          python3 -m py_compile install.py

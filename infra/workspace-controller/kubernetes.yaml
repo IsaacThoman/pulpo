@@ -34,6 +34,15 @@ roleRef:
   kind: Role
   name: pulpo-workspace-controller
 ---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: pulpo-workspace-controller
+value: 100000
+globalDefault: false
+preemptionPolicy: Never
+description: Prefer the shared controller over disposable workspaces without preempting running pods.
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -52,10 +61,23 @@ spec:
         app.kubernetes.io/name: pulpo-workspace-controller
     spec:
       serviceAccountName: pulpo-workspace-controller
+      priorityClassName: pulpo-workspace-controller
+      # For private images, configure imagePullSecrets here or on the ServiceAccount.
       containers:
         - name: controller
           image: ghcr.io/your-org/pulpo-workspace-controller@sha256:REPLACE_WITH_CONTROLLER_DIGEST
           imagePullPolicy: IfNotPresent
+          # Reservations and priority reduce eviction risk. They do not isolate
+          # this node's disk from workspace writes; see storage-isolation.md.
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+              ephemeral-storage: 256Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+              ephemeral-storage: 1Gi
           ports:
             - name: http
               containerPort: 8786
@@ -63,7 +85,10 @@ spec:
             - name: PULPO_WORKSPACE_NAMESPACE
               value: pulpo-workspaces
             - name: PULPO_RUNTIME_CLASS
-              value: kata
+              value: kata-pulpo-bounded
+            # Install infra/workspace-storage and verify the node first.
+            - name: PULPO_MAX_WORKSPACE_PODS
+              value: "6"
             - name: PULPO_WARM_CAPACITY
               value: "1"
             - name: PULPO_MAX_ACTIVE_WORKSPACES_TOTAL
