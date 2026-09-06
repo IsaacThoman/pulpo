@@ -17,8 +17,8 @@ export function ProfileAvatar({
 }) {
   const image = useRuntimeImageUrl(avatarUrl, { authenticated: true })
   return (
-    <Avatar className={className}>
-      {image.url && <AvatarImage src={image.url} alt={uit`${name}'s profile picture`} className="object-cover" />}
+    <Avatar className={cn(className, 'rounded-none')}>
+      {image.url && <AvatarImage src={image.url} alt={uit`${name}'s profile picture`} className="object-contain" />}
       <AvatarFallback className={cn('bg-zinc-700 font-semibold text-zinc-100 dark:bg-zinc-300 dark:text-zinc-900', fallbackClassName)}>
         {profileInitials(name)}
       </AvatarFallback>
