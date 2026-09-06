@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { retainedChatQueryHashes, utf8ByteLength } from './chat-cache-policy'
 
 describe('persisted chat query byte limits', () => {
@@ -15,4 +15,15 @@ describe('persisted chat query byte limits', () => {
 
     expect([...retained]).toEqual(['middle', 'old'])
   })
+})
+
+it('reuses byte measurements for unchanged immutable data', () => {
+  const toJSON = vi.fn(() => ({ content: 'x'.repeat(100_000) }))
+  const data = { toJSON }
+  const query = { queryHash: 'chat', dataUpdatedAt: 1, data }
+  retainedChatQueryHashes([query], 50)
+  retainedChatQueryHashes([{ ...query, dataUpdatedAt: 2 }], 50)
+  expect(toJSON).toHaveBeenCalledTimes(1)
+  retainedChatQueryHashes([{ ...query, data: { toJSON } }], 50)
+  expect(toJSON).toHaveBeenCalledTimes(2)
 })

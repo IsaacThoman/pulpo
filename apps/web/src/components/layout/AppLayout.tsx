@@ -1,10 +1,8 @@
-import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
 import { PanelLeftOpen } from 'lucide-react'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { Sidebar } from './Sidebar'
-import { SearchModal } from './SearchModal'
-import { SettingsModal } from '@/components/settings/SettingsModal'
 import { SettingsDialogProvider, type SettingsSectionId } from '@/components/settings/settings-dialog'
 import { ChatDataBridge } from '@/features/chat/ChatDataBridge'
 import { SettingsBridge } from '@/features/settings/SettingsBridge'
@@ -18,6 +16,9 @@ import { useSettings } from '@/stores/settings'
 import { useDesktopChrome } from '@/stores/desktopChrome'
 import { isDesktopRuntime } from '@/lib/runtime'
 
+const SearchModal = lazy(() => import('./SearchModal').then((module) => ({ default: module.SearchModal })))
+const SettingsModal = lazy(() => import('@/components/settings/SettingsModal').then((module) => ({ default: module.SettingsModal })))
+
 export function AppLayout() {
   const [collapsed, setCollapsed] = useState(() => window.matchMedia('(width < 750px)').matches)
   const [mobile, setMobile] = useState(() => window.matchMedia('(width < 750px)').matches)
@@ -26,6 +27,7 @@ export function AppLayout() {
   const [searchOpen, setSearchOpen] = useState(false)
   const [searchHasQuery, setSearchHasQuery] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [settingsMounted, setSettingsMounted] = useState(false)
   const [settingsSection, setSettingsSection] = useState<SettingsSectionId>('general')
   const doubleShiftSearch = useSettings((state) => state.doubleShiftSearch)
   const animationSpeed = useSettings((state) => state.animationSpeed)
@@ -37,6 +39,7 @@ export function AppLayout() {
   const previousPathRef = useRef(location.pathname)
   const doubleShiftRef = useRef<DoubleShiftState>({ lastPressAt: null })
   const openSettings = useCallback((section: SettingsSectionId = 'general') => {
+    setSettingsMounted(true)
     setSettingsSection(section)
     setSettingsOpen(true)
   }, [])
@@ -190,19 +193,23 @@ export function AppLayout() {
             </Suspense>
           </main>
         </div>
-        <SearchModal
-          open={searchOpen}
-          onClose={() => {
-            setSearchOpen(false)
-            setSearchHasQuery(false)
-          }}
-          onQueryPresenceChange={setSearchHasQuery}
-        />
-        <SettingsModal
-          open={settingsOpen}
-          initialSection={settingsSection}
-          onClose={() => setSettingsOpen(false)}
-        />
+        {searchOpen && <Suspense fallback={<div role="status" className="fixed inset-x-0 top-1/4 z-50 text-center">{ui("Loading…")}</div>}>
+          <SearchModal
+            open={searchOpen}
+            onClose={() => {
+              setSearchOpen(false)
+              setSearchHasQuery(false)
+            }}
+            onQueryPresenceChange={setSearchHasQuery}
+          />
+        </Suspense>}
+        {settingsMounted && <Suspense fallback={<div role="status" className="fixed inset-x-0 top-1/4 z-50 text-center">{ui("Loading…")}</div>}>
+          <SettingsModal
+            open={settingsOpen}
+            initialSection={settingsSection}
+            onClose={() => setSettingsOpen(false)}
+          />
+        </Suspense>}
       </TooltipProvider>
     </SettingsDialogProvider>
   )

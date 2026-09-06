@@ -1,5 +1,8 @@
-export function shouldPersistQuery(query: { queryKey: readonly unknown[]; state: { status: string; data?: unknown } }): boolean {
-  if (query.state.status !== 'success') return false
+import { isNetworkError } from './api'
+
+export function shouldPersistQuery(query: { queryKey: readonly unknown[]; state: { status: string; data?: unknown; error?: unknown } }): boolean {
+  const recoverableRefetch = query.state.status === 'error' && query.state.data !== undefined && isNetworkError(query.state.error)
+  if (query.state.status !== 'success' && !recoverableRefetch) return false
   if (typeof query.queryKey[1] === 'string' && query.queryKey[1].startsWith('admin-chat:')) return false
   if (typeof query.queryKey[0] === 'string' && query.queryKey[0].startsWith('admin-billing')) return false
   if (query.queryKey[0] === 'chat') {

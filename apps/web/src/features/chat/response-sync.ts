@@ -96,3 +96,21 @@ export function coalesceResponseEvents(events: ResponseEvent[]): ResponseEvent[]
   }
   return compacted
 }
+
+/** Refresh optimistic state after successful replay or a permanent rejection. */
+export function outboxInvalidationQueryKeys(paths: readonly string[], userId: string, activeChatId?: string): string[][] {
+  const keys = new Map<string, string[]>()
+  const add = (key: string[]) => keys.set(JSON.stringify(key), key)
+  for (const path of paths) {
+    if (path.startsWith('/api/settings')) { add(['settings', userId]); continue }
+    if (path.startsWith('/api/folders')) add(['folders', userId])
+    if (/^\/api\/(chats|folders|messages|responses)(\/|$)/.test(path)) {
+      add(['chats', userId])
+      add(['deleted-chats', userId])
+      const chatId = /^\/api\/chats\/([^/?]+)/.exec(path)?.[1]
+      if (chatId && chatId !== 'order') add(['chat', userId, chatId])
+      if (activeChatId) add(['chat', userId, activeChatId])
+    }
+  }
+  return [...keys.values()]
+}

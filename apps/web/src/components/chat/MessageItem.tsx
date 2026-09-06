@@ -24,6 +24,7 @@ import { hasMultipleBranches } from '@/lib/message-branches'
 import { getCatalogModel } from '@/stores/catalog'
 import { formatDuration, formatSecondsLabel, timeAgo } from '@/lib/format'
 import { useChat } from '@/stores/chat'
+import { selectAvailableChatIds } from '@/lib/chat-availability'
 import { useSettings } from '@/stores/settings'
 import { useUploadOutbox } from '@/stores/upload-outbox'
 import { Markdown } from './Markdown'
@@ -353,13 +354,12 @@ function recallDate(value: string): string {
 
 function RecallStepRow({
   item,
-  availableChatIds,
   onOpenChat,
 }: {
   item: RecallItem
-  availableChatIds: Set<string> | null
   onOpenChat: (chatId: string) => void
 }) {
+  const availableChatIds = useChat(selectAvailableChatIds)
   return (
     <div className="space-y-2">
       {item.sources.map((source) => {
@@ -403,7 +403,6 @@ function ActivityBlock({
   onStop,
   onContinue,
   capacityPending,
-  availableChatIds,
   onOpenChat,
 }: {
   steps: ActivityStep[]
@@ -415,7 +414,6 @@ function ActivityBlock({
   onStop: (id: string) => void
   onContinue: (id: string) => void
   capacityPending: boolean
-  availableChatIds: Set<string> | null
   onOpenChat: (chatId: string) => void
 }) {
   const workspace = steps.find((step): step is WorkspaceStep => step.kind === 'workspace')?.workspace
@@ -531,7 +529,7 @@ function ActivityBlock({
                 return <CompactionStepRow key={step.compaction.id} item={step.compaction} />
               }
               if (step.kind === 'recall') {
-                return <RecallStepRow key={step.recall.id} item={step.recall} availableChatIds={availableChatIds} onOpenChat={onOpenChat} />
+                return <RecallStepRow key={step.recall.id} item={step.recall} onOpenChat={onOpenChat} />
               }
               return (
                 <ActivityToolRow
@@ -570,7 +568,7 @@ export const MessageItem = memo(function MessageItem({
   composerEditActive = false,
   onOpenChat = ignoreOpenChat,
 }: {
-  chat: Chat
+  chat: Pick<Chat, 'id' | 'expired' | 'modelId'>
   message: Message
   streaming: boolean
   activeModelId: string
@@ -584,7 +582,6 @@ export const MessageItem = memo(function MessageItem({
   const deleteUserMessage = useChat((state) => state.deleteUserMessage)
   const stopStreaming = useChat((state) => state.stopStreaming)
   const continueWithoutAgent = useChat((state) => state.continueWithoutAgent)
-  const chats = useChat((state) => state.chats)
   const returnSubmissionToComposer = useUploadOutbox((state) => state.returnSubmissionToComposer)
   const showReasoning = useSettings((s) => s.showReasoning)
   const showResponseCost = useSettings((s) => s.showResponseCost)
@@ -592,10 +589,6 @@ export const MessageItem = memo(function MessageItem({
   const [draft, setDraft] = useState(message.content)
   const [capacityActionPending, setCapacityActionPending] = useState(false)
   const [streamingFallbackDurationMs, setStreamingFallbackDurationMs] = useState<number>()
-  const availableChatIds = useMemo(
-    () => chats.length ? new Set(chats.filter((item) => !item.expired).map((item) => item.id)) : null,
-    [chats],
-  )
   const timeline = useMemo(() => {
     if (message.role !== 'assistant') return [] as TimelineSegment[]
     const items = message.outputItems ?? []
@@ -796,7 +789,6 @@ export const MessageItem = memo(function MessageItem({
                         void continueWithoutAgent(id).catch(() => setCapacityActionPending(false))
                       }}
                       capacityPending={capacityActionPending}
-                      availableChatIds={availableChatIds}
                       onOpenChat={onOpenChat}
                     />
                   )

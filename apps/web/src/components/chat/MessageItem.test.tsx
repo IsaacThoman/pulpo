@@ -69,8 +69,9 @@ describe('user message actions', () => {
 
   it('keeps edit enabled while an assistant response is streaming', async () => {
     const { MessageItem } = await import('./MessageItem')
+    const streamingChat: Chat = { ...chat, messages: [user(), assistant({ done: false })] }
     const markup = renderToStaticMarkup(<MessageItem
-      chat={{ ...chat, messages: [user(), assistant({ done: false })] }}
+      chat={streamingChat}
       message={user()}
       streaming={false}
       activeModelId="model-1"
