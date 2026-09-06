@@ -23,9 +23,10 @@ it('round-trips legacy and separate records, writing only changed bodies', () =>
   const unrelated = splitQueryCache(snapshot(), 'account-a', first.data)
   expect(unrelated.changed.size).toBe(0)
   queryClient.setQueryData(['chat', 'user', 'a'], { id: 'a', text: 'completed response', temporary: false })
-  const terminal = splitQueryCache(snapshot(), 'account-a', unrelated.data)
+  const terminalSnapshot = snapshot()
+  const terminal = splitQueryCache(terminalSnapshot, 'account-a', unrelated.data)
   expect(terminal.changed.size).toBe(1)
-  expect(restoreQueryCache(terminal.envelope, terminal.data)).toEqual(snapshot())
+  expect(restoreQueryCache(terminal.envelope, terminal.data)).toEqual(terminalSnapshot)
 })
 
 it('does not mix instances, retain removed chats, or hydrate missing bodies', () => {
