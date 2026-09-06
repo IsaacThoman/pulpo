@@ -60,3 +60,22 @@ The [Maestro reproductions](parity/README.md) document explicit fixture prerequi
 - Native passkey enrollment/sign-in, biometric interaction, verified links, and certificate/domain association require configured release signing and a suitable credential environment. Form validation is covered; successful ceremonies are not claimed.
 - iOS Simulator camera could open/dismiss but did not return a captured photo. Real iPhone capture, full TalkBack/VoiceOver traversal, physical haptics, pinch-zoom/multi-image paging, and all external share targets remain unverified.
 - Actual password replacement, email reset delivery, invite redemption, timed expiration after waiting the full period, and background cleanup/payment side effects were not exercised end to end. No production account deletion or bulk production deletion was attempted.
+
+## Response-loader follow-up
+
+The response-pending indicator uses Material's seven-shape morphing animation
+on iOS as well as Android. Android keeps its native Compose control with explicit
+48 dp sizing and theme color; iOS renders matched Material curves with SVG and
+Reanimated on the UI thread. Reduce Motion shows a static shape, replacing the
+old dots fallback while retaining the accessible progress label.
+
+Android's expressive loader was still present in the branch history. It appears
+only before response content or reasoning activity arrives. The physical phone
+reported animation scale 1.0 but was locked during this investigation, so its
+reported missing-loader state has not been reproduced.
+
+Isolated Android 17 and iOS 26.5 previews verified animated shapes and the static
+reduced-motion variant. The Android native loader remained visible with the
+keyboard open. Geometry and lifecycle regressions cover clipping, loop rotation,
+live reduced-motion changes, and animation cleanup. Captures remain outside
+version control.

@@ -163,7 +163,12 @@ export function MaterialDialog({ visible, title, onClose, children, contentHeigh
     <AlertDialog.ConfirmButton><TextButton onClick={onClose}><Text>Done</Text></TextButton></AlertDialog.ConfirmButton>
   </AlertDialog></Host>;
 }
-export function MaterialLoading() { return <Host style={{ width: 48, height: 48 }}><LoadingIndicator /></Host>; }
+export function MaterialLoading() {
+  const colors = useMaterialColors();
+  return <Host ignoreSafeAreaKeyboardInsets style={{ width: 48, height: 48 }}>
+    <LoadingIndicator color={colors.primary} modifiers={[size(48, 48)]} />
+  </Host>;
+}
 
 export function MaterialContextMenu({ title, actions, children, style }: ContextMenuProps) {
   const trigger = useRef<View>(null);

@@ -1,3 +1,4 @@
+import { ExpressiveLoadingIndicator } from '../components/ExpressiveLoadingIndicator';
 import { useAppTheme } from './src/theme';
 import { MaterialButton, MaterialContextMenu, MaterialField, MaterialIconButton, MaterialLoading, MaterialMenu, MaterialRow, MaterialDialog, type Action as MaterialAction } from '../platform/MaterialUI';
 import type { MenuAnchor } from '../platform/MaterialUI.types';
@@ -145,9 +146,6 @@ import Reanimated, {
   type SharedValue,
   useAnimatedStyle,
   useSharedValue,
-  withDelay,
-  withRepeat,
-  withSequence,
   withSpring,
   withTiming,
 } from 'react-native-reanimated';
@@ -1406,37 +1404,9 @@ function ModelMark({ model, size = 28, logo = 'model' }: { model: Model; size?: 
 }
 
 /** Neutral pending state; reasoning is rendered only from reasoning output. */
-function ResponsePendingDot({ delay, reduceMotion }: { delay: number; reduceMotion: boolean }) {
-  const { styles } = useChatStyles();
-  const translateY = useSharedValue(0);
-  const animatedStyle = useAnimatedStyle(() => ({ transform: [{ translateY: translateY.value }] }));
-
-  useEffect(() => {
-    cancelAnimation(translateY);
-    translateY.value = 0;
-    if (reduceMotion) return undefined;
-
-    translateY.value = withDelay(
-      delay,
-      withRepeat(
-        withSequence(
-          withTiming(-4, { duration: 300 }),
-          withTiming(0, { duration: 300 }),
-        ),
-        -1,
-      ),
-    );
-    return () => cancelAnimation(translateY);
-  }, [delay, reduceMotion, translateY]);
-
-  return <Reanimated.View style={[styles.responsePendingDot, animatedStyle]} />;
-}
-
 function ResponsePendingIndicator() {
-  const { styles } = useChatStyles();
+  const { styles, COLORS } = useChatStyles();
   const { reduceMotion } = useAccessibilityPreferences();
-  if (Platform.OS === 'android' && !reduceMotion) return <View accessibilityLabel="Assistant is responding" accessibilityRole="progressbar"><MaterialLoading /></View>;
-
   return (
     <View
       accessibilityLabel="Assistant is responding"
@@ -1444,9 +1414,9 @@ function ResponsePendingIndicator() {
       accessibilityRole="progressbar"
       style={styles.responsePending}
     >
-      <ResponsePendingDot delay={0} reduceMotion={reduceMotion} />
-      <ResponsePendingDot delay={150} reduceMotion={reduceMotion} />
-      <ResponsePendingDot delay={300} reduceMotion={reduceMotion} />
+      {Platform.OS === 'android' && !reduceMotion
+        ? <MaterialLoading />
+        : <ExpressiveLoadingIndicator color={COLORS.accent} reduceMotion={reduceMotion} />}
     </View>
   );
 }
@@ -5736,7 +5706,6 @@ function createChatStyles(COLORS: ChatColors) { return StyleSheet.create({
   assistantMarkdown: { width: '100%', maxWidth: '100%', minWidth: 0 },
   assistantText: { color: COLORS.textSoft, fontSize: 15.5, lineHeight: 25.5, letterSpacing: -0.1 },
   responsePending: { alignItems: 'center', flexDirection: 'row', gap: 4, minHeight: 28, paddingVertical: 4 },
-  responsePendingDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: COLORS.muted },
   reasoningTrigger: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 4 },
   reasoningContextHost: { width: '100%' },
   reasoningLabel: { color: COLORS.muted, fontSize: 12.5, fontWeight: '500' },
