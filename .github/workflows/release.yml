@@ -867,16 +867,19 @@ jobs:
         run: bash .github/scripts/wait-http-health.sh "${PRODUCTION_URL%/}/health" production 90 2
 
   google-play:
-    name: Build and submit Android to Google Play
+    name: Release Android to GitHub and Google Play
     if: >-
       github.event_name == 'push' &&
       github.ref == 'refs/heads/main' &&
       needs.release.outputs.version != ''
     needs: release
+    permissions:
+      contents: write
     uses: ./.github/workflows/android-release.yml
     with:
       version: ${{ needs.release.outputs.version }}
       upload: true
+      publish_github: true
       release_status: ${{ vars.ANDROID_RELEASE_STATUS || 'completed' }}
     secrets: inherit
 
