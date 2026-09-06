@@ -1304,6 +1304,7 @@ function AndroidTemporaryChatHeaderControl(props: TemporaryChatHeaderControlProp
         icon={props.leadingAction === 'save' ? 'bookmark' : 'hourglass'}
         label={props.leadingAction === 'save' ? props.saving ? 'Saving chat' : 'Save chat' : props.expirationEnabled ? 'Disable automatic expiration' : 'Enable automatic expiration'}
         disabled={!visible || (props.leadingAction === 'save' && (props.saving || props.saveDisabled))}
+        color={props.leadingAction === 'expiration' && props.expirationEnabled ? '#14B8A6' : undefined}
         selected={props.leadingAction === 'expiration' && props.expirationEnabled}
         onPress={props.leadingAction === 'save' ? props.onSave : props.onToggleExpiration} />
     </Reanimated.View>
@@ -4710,8 +4711,8 @@ function ChatView({
             pointerEvents="none"
             style={[styles.temporaryLabel, Platform.OS === 'android' && styles.androidLandingBadge, expirationLabelAnimatedStyle]}
           >
-            {Platform.OS === 'android' ? <Icon name="hourglass" size={18} color={COLORS.positive} /> : <Hourglass color="#14B8A6" size={14} strokeWidth={2} />}
-            <Text style={[styles.expirationLabelText, Platform.OS === 'android' && { color: COLORS.positive }]}>
+            {Platform.OS === 'android' ? <Icon name="hourglass" size={18} color="#14B8A6" /> : <Hourglass color="#14B8A6" size={14} strokeWidth={2} />}
+            <Text style={styles.expirationLabelText}>
               {`Expires in ${expirationPeriod === 'disabled' ? '' : expirationPeriod}`}
             </Text>
           </Reanimated.View>
@@ -5104,7 +5105,7 @@ function ChatView({
                   </>
                 ) : (
                   <>
-                    <MaterialIconButton label={activeAgentEnabled ? 'Turn off Agent mode' : 'Turn on Agent mode'} icon="bot" selected={activeAgentEnabled} disabled={!canUseAgent} onPress={toggleAgent} />
+                    <MaterialIconButton label={activeAgentEnabled ? 'Turn off Agent mode' : 'Turn on Agent mode'} icon="bot" color={activeAgentEnabled ? nativeAgentTint : undefined} selected={activeAgentEnabled} disabled={!canUseAgent} onPress={toggleAgent} />
                     <MaterialIconButton label={composerAction === 'stop' ? 'Stop generating' : messageEdit ? queueEditRef.current ? 'Save queued message' : 'Save and resend message' : 'Send message'} icon={composerAction === 'stop' ? 'stop.fill' : 'arrow.up'} prominent disabled={composerAction === 'submit' && !canSend} onPress={() => composerAction === 'stop' ? onStop() : submitMessage()} />
                   </>
                 )}
