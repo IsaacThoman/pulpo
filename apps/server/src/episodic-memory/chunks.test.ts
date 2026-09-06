@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { activeLineageChunks, chatTurnChunk } from './chunks.js'
+import { activeLineageChunks, activeLineagePassages, chatTurnChunk, chatTurnPassages, PASSAGE_CHARACTERS } from './chunks.js'
 
 function turn(id: string, parentResponseId: string | null, user: string, assistant: string, status = 'completed') {
   return {
@@ -15,6 +15,29 @@ function turn(id: string, parentResponseId: string | null, user: string, assista
 }
 
 describe('episodic chat chunks', () => {
+  it('indexes long-answer tails with bounded overlapping passages and no private content', () => {
+    const answer = `${'Performance details and measurements. '.repeat(400)}Final recommendation: benchmark 2000-turn chats.`
+    const passages = chatTurnPassages(turn('long', null, 'audit pulpo', answer))
+    expect(passages.length).toBeGreaterThan(2)
+    expect(passages.every((passage, index) => passage.chunkIndex === index && passage.text.length <= PASSAGE_CHARACTERS)).toBe(true)
+    expect(passages.at(-1)?.text).toContain('benchmark 2000-turn chats')
+    const text = passages.map((passage) => passage.text).join('\n')
+    expect(text).not.toMatch(/private|raw-file/)
+    const previous = passages[1]!.text.replace(/^Assistant: /, '')
+    const next = passages[2]!.text.replace(/^Assistant: /, '')
+    expect(next.startsWith(previous.slice(-300).trim())).toBe(true)
+    expect(chatTurnPassages(turn('failed', null, 'question', answer, 'failed'))).toEqual([])
+  })
+
+  it('keeps inactive branches out of passage indexing', () => {
+    const passages = activeLineagePassages({ activeBranchLeafId: 'active', activeResponseId: 'active' }, [
+      turn('root', null, 'root', 'root answer'),
+      turn('inactive', 'root', 'inactive secret', 'old answer'),
+      turn('active', 'root', 'active branch', 'new answer'),
+    ])
+    expect([...new Set(passages.map((passage) => passage.responseId))]).toEqual(['root', 'active'])
+    expect(passages.map((passage) => passage.text).join('\n')).not.toContain('inactive secret')
+  })
   it('contains only user text and visible final assistant text', () => {
     const chunk = chatTurnChunk(turn('one', null, 'inspect the report', 'The visible answer'))
     expect(chunk?.text).toBe('User: inspect the report\n\nAssistant: The visible answer')
