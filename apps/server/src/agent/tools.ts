@@ -15,8 +15,8 @@ export function createWorkspaceTools(
   const tool = (name: string, description: string, parameters: ReturnType<typeof Type.Object>, execute: AgentTool['execute']): AgentTool => ({ name, label: name, description, parameters, executionMode: 'sequential', execute })
   const started = (operationId: string) => () => onOperationStarted?.(operationId)
   return [
-    tool('read', 'Read bounded, numbered lines from a UTF-8 workspace file. Bare reads start at line 1 and return at most 2,000 lines or 50 KiB. Use offset and limit to page, readAll for an intentional whole-file request subject to the same 50 KiB safety cap, and grep or bash for large datasets or oversized lines.', Type.Object({
-      path: Type.String({ description: 'Path to a UTF-8 file inside /workspace.' }),
+    tool('read', 'Read bounded, numbered lines from a UTF-8 file anywhere in the disposable VM using normal filesystem permissions. Use bash with sudo for files requiring elevated permissions. Bare reads start at line 1 and return at most 2,000 lines or 50 KiB. Use offset and limit to page, readAll for an intentional whole-file request subject to the same 50 KiB safety cap, and grep or bash for large datasets or oversized lines.', Type.Object({
+      path: Type.String({ description: 'Absolute path to a UTF-8 file anywhere in the VM, or a relative path resolved against /workspace.' }),
       offset: Type.Optional(Type.Integer({ minimum: 1, description: 'One-based line number at which to start reading.' })),
       limit: Type.Optional(Type.Integer({ minimum: 1, maximum: READ_MAX_LINE_LIMIT, description: 'Maximum lines to return; defaults to 2,000.' })),
       readAll: Type.Optional(Type.Boolean({ description: 'Request the whole file when small enough; cannot be combined with offset or limit and never bypasses the 50 KiB cap.' })),

@@ -14,10 +14,10 @@ describe('agent workspace tools', () => {
     const tools = createWorkspaceTools({ execute } as unknown as WorkspaceManager, 1_000)
     const tool = tools.find((candidate) => candidate.name === 'read')
 
-    const result = await tool!.execute('read-1', { path: '/workspace/file.txt', offset: 5, limit: 2 })
+    const result = await tool!.execute('read-1', { path: '/opt/pulpo/PACKAGES.md', offset: 5, limit: 2 })
 
     expect(execute).toHaveBeenCalledWith(
-      'read-1', 'read', { path: '/workspace/file.txt', offset: 5, limit: 2 }, undefined, undefined, expect.any(Function),
+      'read-1', 'read', { path: '/opt/pulpo/PACKAGES.md', offset: 5, limit: 2 }, undefined, undefined, expect.any(Function),
     )
     expect(result.content).toEqual([{ type: 'text', text: '5: five\n6: six\n\n[Showing lines 5-6. Continue with offset=7.]' }])
     expect(result.details).toEqual(details)

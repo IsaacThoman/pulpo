@@ -7,7 +7,7 @@ import { dirname, isAbsolute, resolve, relative } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
 import { Transform } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
-import { readTextFile, resolveReadableWorkspacePath } from './read.js'
+import { readTextFile, resolveReadableVmPath } from './read.js'
 
 const port = Number(process.env.PORT ?? 8787)
 const token = process.env.PULPO_WORKSPACE_TOKEN
@@ -87,10 +87,6 @@ function vmPath(value: unknown): string {
   return resolve(requested)
 }
 
-async function readableWorkspacePath(value: unknown): Promise<string> {
-  return resolveReadableWorkspacePath(root, workspacePath(value))
-}
-
 async function exportPath(value: unknown): Promise<string> {
   const requested = workspacePath(value)
   const resolved = await realpath(requested)
@@ -142,7 +138,7 @@ async function finishOperation(operation: Operation, type: string, args: Record<
         })
       })
     } else if (type === 'read') {
-      const result = await readTextFile(await readableWorkspacePath(args.path), args)
+      const result = await readTextFile(await resolveReadableVmPath(root, args.path), args)
       operation.output = result.output
       operation.details = result.details
     }
