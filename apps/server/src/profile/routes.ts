@@ -8,7 +8,7 @@ import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import { publishStateChange } from '../responses/events.js'
 import { getBlobStore } from '../storage/index.js'
-import { normalizeProfileAvatar, PROFILE_AVATAR_MAX_BYTES } from './avatar.js'
+import { normalizeProfileAvatar, parseProfileAvatarCrop, PROFILE_AVATAR_MAX_BYTES } from './avatar.js'
 import {
   bumpAccountRevisions,
   friendPeerIds,
@@ -31,18 +31,21 @@ export async function registerProfileRoutes(app: FastifyInstance): Promise<void>
   app.put('/api/me/avatar', async (request, reply) => {
     const user = requireUser(request)
     let part
+    let source
     try {
-      part = await request.file({ limits: { fileSize: PROFILE_AVATAR_MAX_BYTES, files: 1 } })
+      part = await request.file({ limits: { fileSize: PROFILE_AVATAR_MAX_BYTES, files: 1, fields: 1, fieldSize: 1024 } })
+      if (!part) throw new AppError(400, 'avatar_file_required', 'Choose a profile picture to upload')
+      source = await part.toBuffer()
     } catch (cause) {
       if (cause && typeof cause === 'object' && 'code' in cause && cause.code === 'FST_REQ_FILE_TOO_LARGE') {
         throw new AppError(413, 'avatar_too_large', 'Profile pictures may be at most 5 MiB')
       }
       throw cause
     }
-    if (!part) throw new AppError(400, 'avatar_file_required', 'Choose a profile picture to upload')
-    const source = await part.toBuffer()
     if (part.file.truncated) throw new AppError(413, 'avatar_too_large', 'Profile pictures may be at most 5 MiB')
-    const image = await normalizeProfileAvatar(source, part.mimetype)
+    const cropField = part.fields.crop
+    const crop = parseProfileAvatarCrop(cropField && !Array.isArray(cropField) && cropField.type === 'field' ? cropField.value : cropField)
+    const image = await normalizeProfileAvatar(source, part.mimetype, crop)
     const key = `users/${user.id}/avatar/${newId()}.webp`
     await getBlobStore().put(key, image, { contentType: 'image/webp', contentLength: image.byteLength })
     let previousKey: string | null = null
