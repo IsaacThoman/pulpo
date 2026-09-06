@@ -13,7 +13,7 @@ initial saturation tests.
   space when closed. Creating tiny files reached ENOSPC at 65,517 files.
   Writing a sparse 1 TiB logical file stopped at the physical disk boundary.
   Normal writes worked after cleanup.
-- Six allocation tests passed: concurrent budget enforcement, restart/remount
+- Initial six allocation tests passed: concurrent budget enforcement, restart/remount
   preservation, incomplete allocation/symlink refusal, host headroom refusal,
   deleted-open backing disk retention, and Kata ext4 mount descriptor handling.
 - A Kubernetes canary passed the daemon startup guard with the full 20 GiB disk.
@@ -33,8 +33,7 @@ Issues discovered and corrected during testing:
 - Kubernetes creates a separate pause sandbox snapshot. It receives a pinned
   128 MiB allowance rather than wasting another 20 GiB per workspace.
 
-Production migration and final regression results are recorded below once the
-completed adapter/controller revision is deployed.
+The production rollout results follow below.
 
 Controller integration in a separate Kubernetes namespace:
 
@@ -45,3 +44,41 @@ Controller integration in a separate Kubernetes namespace:
 - Confirmed the pause sandbox uses 134,217,728 bytes while the workspace uses
   21,474,836,480 bytes. A seventh allocation regression test covers containerd's
   namespaced parent keys, which otherwise defeat exact pause-chain matching.
+
+## Production rollout
+
+PR #486 merged into dev as `a10481f2c65077b44a754be4cf9eed47675cb401`.
+The controller VM runs the tested controller build from source `e4b3e452` and
+`PULPO_RUNTIME_CLASS=kata-pulpo-bounded`, with a six-Pod ceiling. Old unclaimed
+OverlayFS warm capacity was replaced. No active user lease needed termination.
+
+The real HTTPS controller API passed its health check, claimed a new bounded
+workspace, executed guest-root and filesystem checks through the daemon, and
+released the verification lease. All checked writable paths reported
+20,957,446,144 filesystem bytes within the 20 GiB virtual disk. The new warm pod
+and controller were Ready. A separate controller restart test recovered both
+leases and preserved the file written before restart; configured Pod capacity
+rejected an additional workspace.
+
+The host snapshotter service has a 128 GiB aggregate writable budget, a 40 GiB
+free-space floor, and a 128 MiB reservation for the pinned pause sandbox. The
+small-disk, multi-VM test services and test namespace are no longer needed for
+normal operation. Test disks are not part of the production allocation pool.
+
+### Pending registry promotion
+
+The live controller image is temporarily
+`docker.io/library/pulpo-workspace-controller:storage-e4b3e452`, imported for the
+authorized VM rollout. Its OCI index digest is
+`sha256:5520b91965035e89f1172de690ad9b90ca0a2ee5ab5b774728ec969d99350dbb`.
+A root-only archive is retained at
+`/var/backups/pulpo-workspace-storage/images/controller-storage-e4b3e452.tar`.
+The previous deployment is backed up at
+`/var/backups/pulpo-workspace-storage/controller-before-storage.json`.
+
+This archive is a recovery fallback, not a registry credential. The GHCR
+controller package remains private and Kubernetes still needs a durable,
+read-only pull credential (or explicitly approved public package visibility).
+Resolve that before the main-branch registry deployment. The existing deployment
+workflow verifies an actual Kubernetes pull before replacing this healthy
+controller. No broad personal GitHub token was installed on the node.
