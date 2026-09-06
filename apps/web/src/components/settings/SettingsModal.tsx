@@ -1,5 +1,5 @@
 import { DeleteAccountSettings } from './DeleteAccountSettings'
-import { useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { useTranslation } from '@/i18n/useAppTranslation'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
@@ -69,7 +69,8 @@ import { DesktopAppVersion } from './DesktopAppVersion'
 import { AnimationSpeedInput } from './AnimationSpeedInput'
 import { chatImportFileIsTooLarge } from './chat-import'
 import { ui, uit } from '@/i18n/ui'
-import { Markdown } from '@/components/chat/Markdown'
+
+const Markdown = lazy(() => import('@/components/chat/Markdown').then((module) => ({ default: module.Markdown })))
 
 const SECTION_CONFIG = {
   general: { labelKey: 'settings.sections.general', icon: SlidersHorizontal },
@@ -948,7 +949,7 @@ export function SettingsModal({
                         <div className="rounded-lg border px-3 py-8 text-sm text-muted-foreground">{ui('Could not load MEMORY.md.')}</div>
                       ) : memoryPreview ? (
                         <div className="min-h-52 rounded-lg border bg-muted/20 px-4 py-3 text-sm">
-                          {memoryDraft.trim() ? <Markdown content={memoryDraft} /> : <span className="text-muted-foreground">{ui('MEMORY.md is empty.')}</span>}
+                          {memoryDraft.trim() ? <Suspense fallback={<span className="text-muted-foreground">{ui("Loading…")}</span>}><Markdown content={memoryDraft} /></Suspense> : <span className="text-muted-foreground">{ui('MEMORY.md is empty.')}</span>}
                         </div>
                       ) : (
                         <Textarea

@@ -1,6 +1,5 @@
 import { lazy, Suspense, useEffect, type ReactNode } from 'react'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
-import { AppLayout } from '@/components/layout/AppLayout'
 import { RequireAuth } from '@/components/auth/RequireAuth'
 import { RequireAdmin } from '@/components/auth/RequireAdmin'
 import { AuthLayout } from '@/pages/auth/AuthLayout'
@@ -11,6 +10,8 @@ import { DesktopTitleBar } from '@/components/desktop/DesktopTitleBar'
 import { desktopStartupSurface } from '@/lib/desktop-startup'
 import { ui } from '@/i18n/ui'
 import { LocaleBoundary } from '@/i18n/LocaleBoundary'
+
+const AppLayout = lazy(() => import('@/components/layout/AppLayout').then((module) => ({ default: module.AppLayout })))
 
 const ChatPage = lazy(() => import('@/pages/ChatPage').then((module) => ({ default: module.ChatPage })))
 const UsageLayout = lazy(() => import('@/pages/usage/UsageLayout').then((module) => ({ default: module.UsageLayout })))

@@ -94,6 +94,8 @@ export function SettingsBridge() {
   const applyingRemote = useRef(false)
   const { data, refetch } = useQuery({
     queryKey: ['settings', userId],
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
     queryFn: () => apiRequest<SettingsDocument>('/api/settings'),
     enabled: Boolean(networkReady && userId),
   })

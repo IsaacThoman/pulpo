@@ -110,6 +110,8 @@ function cacheProfile(user: AuthUser | null): void {
 }
 
 const cachedProfile = readCachedProfile()
+let bootstrapPromise: Promise<void> | null = null
+let bootstrapVersion = 0
 
 export const useAuth = create<AuthState>()((set, get) => ({
   user: cachedProfile,
@@ -129,134 +131,151 @@ export const useAuth = create<AuthState>()((set, get) => ({
   instanceReady: !isDesktopRuntime(),
   instanceError: '',
 
-  bootstrap: async () => {
-    if (!get().checkingSession) return
-    if (isDesktopRuntime()) {
-      const stored = await loadDesktopSession()
-      const instanceUrl = stored?.instanceUrl ?? runtimeInstanceUrl()
-      configureDesktopRuntime({
-        instanceUrl,
-        token: stored?.token ?? null,
-        onUnauthorized: () => { void get().handleDesktopUnauthorized() },
-      })
-      if (!stored) {
-        cacheProfile(null)
-        set({ user: null })
-      }
-      const [configResult, authSettings, authResult] = await Promise.all([
-        apiRequest<MobileConfig>('/api/mobile/config').then(
-          (value) => ({ ok: true as const, value }),
-          (error: unknown) => ({ ok: false as const, error }),
-        ),
-        apiRequest<PublicAuthSettings>('/api/auth/settings').catch(() => null),
-        stored
-          ? apiRequest<AuthResponse>('/api/mobile/me').then(
+  bootstrap: () => {
+    if (!get().checkingSession) return Promise.resolve()
+    if (bootstrapPromise) return bootstrapPromise
+    const version = bootstrapVersion
+    const request = (async () => {
+      if (isDesktopRuntime()) {
+        const stored = await loadDesktopSession()
+        if (version !== bootstrapVersion) return
+        const instanceUrl = stored?.instanceUrl ?? runtimeInstanceUrl()
+        configureDesktopRuntime({
+          instanceUrl,
+          token: stored?.token ?? null,
+          onUnauthorized: () => { void get().handleDesktopUnauthorized() },
+        })
+        if (!stored) {
+          cacheProfile(null)
+          set({ user: null })
+        }
+        const [configResult, authSettings, authResult] = await Promise.all([
+          apiRequest<MobileConfig>('/api/mobile/config').then(
             (value) => ({ ok: true as const, value }),
             (error: unknown) => ({ ok: false as const, error }),
-          )
-          : Promise.resolve(null),
-      ])
-      if (!configResult.ok) {
-        const error = configResult.error
-        set({
-          checkingSession: false,
-          instanceUrl,
-          instanceReady: false,
-          instanceError: error instanceof Error ? error.message : 'Could not connect to this Pulpo instance.',
-        })
-        return
-      }
-      const config = configResult.value
-      const publicSettings = authSettings ?? {
-        signupEnabled: config.auth.signupEnabled,
-        pendingDetails: config.auth.pendingDetails,
-        adminEmail: config.auth.adminEmail,
-        pendingMessage: config.auth.pendingMessage,
-        apiKeysEnabled: true,
-        maxAttachmentBytes: config.limits.maxAttachmentBytes,
-        billingEnabled: false,
-        inviteCodesEnabled: config.auth.inviteCodesEnabled,
-        dictationEnabled: false,
-      }
-      if (!stored) {
-        set({
-          user: null,
-          checkingSession: false,
-          setupRequired: config.setupRequired,
-          instanceUrl,
-          instanceName: config.instance.name,
-          instanceReady: true,
-          instanceError: '',
-          ...publicSettings,
-        })
-        return
-      }
-      if (authResult?.ok) {
-        const response = authResult.value
-        const user = normalizeUser(response.user)
-        cacheProfile(user)
-        set({
-          user,
-          checkingSession: false,
-          setupRequired: config.setupRequired,
-          instanceUrl,
-          instanceName: config.instance.name,
-          instanceReady: true,
-          instanceError: '',
-          ...publicSettings,
-        })
-      } else {
-        const error = authResult?.error
-        if (error instanceof ApiError && error.status === 401) {
-          await clearDesktopSession()
-          configureDesktopRuntime({ instanceUrl, token: null, onUnauthorized: () => { void get().handleDesktopUnauthorized() } })
-          cacheProfile(null)
-          set({ user: null, checkingSession: false, setupRequired: config.setupRequired, instanceUrl, instanceName: config.instance.name, instanceReady: true, ...publicSettings })
-        } else {
+          ),
+          apiRequest<PublicAuthSettings>('/api/auth/settings').catch(() => null),
+          stored
+            ? apiRequest<AuthResponse>('/api/mobile/me').then(
+              (value) => ({ ok: true as const, value }),
+              (error: unknown) => ({ ok: false as const, error }),
+            )
+            : Promise.resolve(null),
+        ])
+        if (version !== bootstrapVersion) return
+        if (!configResult.ok) {
+          const error = configResult.error
           set({
-            user: readCachedProfile(),
+            checkingSession: false,
+            instanceUrl,
+            instanceReady: false,
+            instanceError: error instanceof Error ? error.message : 'Could not connect to this Pulpo instance.',
+          })
+          return
+        }
+        const config = configResult.value
+        const publicSettings = authSettings ?? {
+          signupEnabled: config.auth.signupEnabled,
+          pendingDetails: config.auth.pendingDetails,
+          adminEmail: config.auth.adminEmail,
+          pendingMessage: config.auth.pendingMessage,
+          apiKeysEnabled: true,
+          maxAttachmentBytes: config.limits.maxAttachmentBytes,
+          billingEnabled: false,
+          inviteCodesEnabled: config.auth.inviteCodesEnabled,
+          dictationEnabled: false,
+        }
+        if (!stored) {
+          set({
+            user: null,
             checkingSession: false,
             setupRequired: config.setupRequired,
             instanceUrl,
             instanceName: config.instance.name,
-            instanceReady: false,
-            instanceError: error instanceof Error ? error.message : 'Could not validate the saved session.',
+            instanceReady: true,
+            instanceError: '',
             ...publicSettings,
           })
+          return
         }
-      }
-      return
-    }
-    const [setupStatus, authSettings] = await Promise.all([
-      apiRequest<{ required: boolean }>('/api/auth/setup-status').catch(() => null),
-      apiRequest<PublicAuthSettings>('/api/auth/settings').catch(() => null),
-    ])
-    const publicSettings = authSettings ?? {
-      signupEnabled: get().signupEnabled,
-      pendingDetails: get().pendingDetails,
-      adminEmail: get().adminEmail,
-      pendingMessage: get().pendingMessage,
-      apiKeysEnabled: get().apiKeysEnabled,
-      maxAttachmentBytes: get().maxAttachmentBytes,
-      billingEnabled: get().billingEnabled,
-      inviteCodesEnabled: get().inviteCodesEnabled,
-      dictationEnabled: get().dictationEnabled,
-    }
-    try {
-      const response = await apiRequest<AuthResponse>('/api/me')
-      const user = normalizeUser(response.user)
-      cacheProfile(user)
-      set({ user, checkingSession: false, setupRequired: setupStatus?.required ?? false, ...publicSettings })
-    } catch (error) {
-      if (error instanceof ApiError && error.status === 401) {
-        cacheProfile(null)
-        set({ user: null, checkingSession: false, setupRequired: setupStatus?.required ?? false, ...publicSettings })
+        if (authResult?.ok) {
+          const response = authResult.value
+          const user = normalizeUser(response.user)
+          cacheProfile(user)
+          set({
+            user,
+            checkingSession: false,
+            setupRequired: config.setupRequired,
+            instanceUrl,
+            instanceName: config.instance.name,
+            instanceReady: true,
+            instanceError: '',
+            ...publicSettings,
+          })
+        } else {
+          const error = authResult?.error
+          if (error instanceof ApiError && error.status === 401) {
+            await clearDesktopSession()
+            configureDesktopRuntime({ instanceUrl, token: null, onUnauthorized: () => { void get().handleDesktopUnauthorized() } })
+            cacheProfile(null)
+            set({ user: null, checkingSession: false, setupRequired: config.setupRequired, instanceUrl, instanceName: config.instance.name, instanceReady: true, ...publicSettings })
+          } else {
+            set({
+              user: readCachedProfile(),
+              checkingSession: false,
+              setupRequired: config.setupRequired,
+              instanceUrl,
+              instanceName: config.instance.name,
+              instanceReady: false,
+              instanceError: error instanceof Error ? error.message : 'Could not validate the saved session.',
+              ...publicSettings,
+            })
+          }
+        }
         return
       }
-      // A cached profile may render offline data, while every server mutation
-      // remains protected by the HTTP-only session once connectivity returns.
-      set({ checkingSession: false, setupRequired: setupStatus?.required ?? get().setupRequired, ...publicSettings })
-    }
+      const [setupStatus, authSettings, authResult] = await Promise.all([
+        apiRequest<{ required: boolean }>('/api/auth/setup-status').catch(() => null),
+        apiRequest<PublicAuthSettings>('/api/auth/settings').catch(() => null),
+        apiRequest<AuthResponse>('/api/me').then(
+          (value) => ({ ok: true as const, value }),
+          (error: unknown) => ({ ok: false as const, error }),
+        ),
+      ])
+      if (version !== bootstrapVersion) return
+      const publicSettings = authSettings ?? {
+        signupEnabled: get().signupEnabled,
+        pendingDetails: get().pendingDetails,
+        adminEmail: get().adminEmail,
+        pendingMessage: get().pendingMessage,
+        apiKeysEnabled: get().apiKeysEnabled,
+        maxAttachmentBytes: get().maxAttachmentBytes,
+        billingEnabled: get().billingEnabled,
+        inviteCodesEnabled: get().inviteCodesEnabled,
+        dictationEnabled: get().dictationEnabled,
+      }
+      try {
+        if (!authResult.ok) throw authResult.error
+        const response = authResult.value
+        const user = normalizeUser(response.user)
+        cacheProfile(user)
+        set({ user, checkingSession: false, setupRequired: setupStatus?.required ?? false, ...publicSettings })
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 401) {
+          cacheProfile(null)
+          set({ user: null, checkingSession: false, setupRequired: setupStatus?.required ?? false, ...publicSettings })
+          return
+        }
+        // A cached profile may render offline data, while every server mutation
+        // remains protected by the HTTP-only session once connectivity returns.
+        set({ checkingSession: false, setupRequired: setupStatus?.required ?? get().setupRequired, ...publicSettings })
+      }
+    })()
+    bootstrapPromise = request
+    void request.finally(() => {
+      if (bootstrapPromise === request) bootstrapPromise = null
+    }).catch(() => undefined)
+    return request
   },
 
   login: async (email, password, twoFactorCode) => {
@@ -349,6 +368,8 @@ export const useAuth = create<AuthState>()((set, get) => ({
   },
 
   logout: async (localOnly = false) => {
+    bootstrapVersion += 1
+    bootstrapPromise = null
     const userId = get().user?.id
     set({ user: null, checkingSession: false })
     cacheProfile(null)
