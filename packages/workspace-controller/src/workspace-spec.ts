@@ -17,7 +17,8 @@ export function workspaceSpecHash(spec: WorkspaceSpec): string {
     .digest('hex')
 }
 
-export function podMatchesSpec(pod: k8s.V1Pod, spec: WorkspaceSpec): boolean {
+export function podMatchesSpec(pod: k8s.V1Pod, spec: WorkspaceSpec, runtimeClassName?: string): boolean {
+  if (runtimeClassName && pod.spec?.runtimeClassName !== runtimeClassName) return false
   const container = pod.spec?.containers[0]
   if (container?.image !== spec.imageDigest) return false
 

@@ -158,3 +158,13 @@ For local development, leave agent mode disabled and use the fake controller
 in server integration tests. A full local run requires a kind or k3d cluster
 with an available sandbox runtime; ordinary Docker Compose does not mount the
 Docker socket and does not start workspaces.
+
+### Enforced writable storage
+
+Install and verify the [bounded Kata runtime](../workspace-storage/README.md)
+before selecting `PULPO_RUNTIME_CLASS=kata-pulpo-bounded`. This runtime supports
+exactly `20Gi` of writable disk per workspace; other requested sizes are rejected.
+`PULPO_MAX_WORKSPACE_PODS=6` caps pending, running and terminating workspace pods,
+including warm capacity. The host independently reserves backing blocks and
+retains reservations until storage is actually reclaimed. The controller must
+remain a singleton. Runtime changes invalidate old warm-pod compatibility.
