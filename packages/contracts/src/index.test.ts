@@ -435,11 +435,13 @@ describe('shared contracts', () => {
     })
     expect(document.account).toMatchObject({
       theme: 'system', trashRetention: '30d', automaticChatExpiration: '24h', newChatAutoExpire: false,
-      nickname: '', animationSpeed: 1, showResponseCost: false, favoriteModelIds: [], agentModes: {},
+      nickname: '', animationSpeed: 1, showPromptSuggestions: true, showResponseCost: false, favoriteModelIds: [], agentModes: {},
       instructionPresetSelections: {},
       sidebarPins: { usage: false, billing: false, friends: false, apiKeys: false },
     })
     expect(managementAccountSettingsSchema.parse({ username: 'pulpo_user', newChatAutoExpire: false }).newChatAutoExpire).toBe(false)
+    expect(managementAccountSettingsSchema.parse({ username: 'pulpo_user', showPromptSuggestions: false }).showPromptSuggestions).toBe(false)
+    expect(managementAccountSettingsSchema.safeParse({ username: 'pulpo_user', showPromptSuggestions: 'false' }).success).toBe(false)
     expect(animationSpeedSchema.parse(undefined)).toBe(1)
     expect(animationSpeedSchema.safeParse(0.01).success).toBe(true)
     expect(animationSpeedSchema.safeParse(5).success).toBe(true)

@@ -3680,6 +3680,7 @@ function ChatView({
       composer.setNativeProps({ selection: { start: end, end } });
     });
   }, [composerInputRef]);
+  const showPromptSuggestions = usePrototypeStore((state) => state.preferences.showPromptSuggestions);
   const isEmptyConversation = messages.length === 0;
   const suggestions = useMemo(
     () => promptConfig.enabled ? pickSuggestedPrompts(promptConfig.prompts, promptConfig.count) : [],
@@ -3719,14 +3720,14 @@ function ChatView({
   const suggestionsAnimatedStyle = useAnimatedStyle(() => {
     const progress = resolveKeyboardLayoutProgress(keyboardProgress.value, keyboardLayoutEnabled);
     return {
-      height: suggestionGridHeight.value > 0
+      height: !showPromptSuggestions ? 0 : suggestionGridHeight.value > 0
         ? suggestionGridHeight.value * (1 - progress)
         : undefined,
-      marginTop: interpolate(progress, [0, 1], [30, 0]),
-      opacity: interpolate(progress, [0, 0.65], [1, 0]),
+      marginTop: showPromptSuggestions ? interpolate(progress, [0, 1], [30, 0]) : 0,
+      opacity: showPromptSuggestions ? interpolate(progress, [0, 0.65], [1, 0]) : 0,
       transform: [{ translateY: interpolate(progress, [0, 1], [0, -14]) }],
     };
-  }, [keyboardLayoutEnabled]);
+  }, [keyboardLayoutEnabled, showPromptSuggestions]);
   const temporaryColors = temporaryChatColors(colorScheme === 'dark');
   const temporarySurfaceAnimatedStyle = useAnimatedStyle(() => ({
     backgroundColor: interpolateColor(
@@ -4746,7 +4747,14 @@ function ChatView({
         </View>
         <Text maxFontSizeMultiplier={1.6} style={styles.emptyProvider}>{modelSubtitle(model)}</Text>
       </Reanimated.View>
-      <Reanimated.View style={[styles.suggestionReveal, suggestionsAnimatedStyle]}>
+      {/* Keep measuring the collapsed grid so keyboard-open identity positioning
+          stays identical regardless of the account preference. */}
+      <Reanimated.View
+        accessibilityElementsHidden={!showPromptSuggestions}
+        importantForAccessibility={showPromptSuggestions ? 'auto' : 'no-hide-descendants'}
+        pointerEvents={showPromptSuggestions ? 'auto' : 'none'}
+        style={[styles.suggestionReveal, suggestionsAnimatedStyle]}
+      >
         <View
           onLayout={(event) => {
             suggestionGridHeight.value = Math.max(suggestionGridHeight.value, event.nativeEvent.layout.height);

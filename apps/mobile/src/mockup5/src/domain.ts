@@ -141,6 +141,7 @@ export interface AppPreferences {
   textSize: TextSizePreference;
   sendWithEnter: boolean;
   streamResponses: boolean;
+  showPromptSuggestions: boolean;
   showReasoning: boolean;
   memoryEnabled: boolean;
   haptics: boolean;
