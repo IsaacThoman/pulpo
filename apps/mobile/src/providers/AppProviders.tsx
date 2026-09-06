@@ -1,8 +1,7 @@
 import { MaterialOverlays } from '../platform/MaterialUI'
 import { useEffect, useMemo } from 'react'
 import { AppState, Keyboard, View } from 'react-native'
-import { QueryClient, QueryClientProvider, focusManager, onlineManager } from '@tanstack/react-query'
-import * as Network from 'expo-network'
+import { QueryClient, QueryClientProvider, focusManager } from '@tanstack/react-query'
 import * as SplashScreen from 'expo-splash-screen'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
 import { KeyboardProvider, useReanimatedKeyboardAnimation } from 'react-native-keyboard-controller'
@@ -14,6 +13,7 @@ import { isNetworkError } from '../api/client'
 import { useAppTheme } from '../theme'
 import { purgeLegacyPrototypeSnapshots } from '../mockup5/src/store/prototypeStore'
 import { RealtimeProvider } from './RealtimeProvider'
+import { ConnectivityProvider } from './ConnectivityProvider'
 import { startKeyboardStateReconciliation } from './keyboardStateReconciliation'
 
 void SplashScreen.preventAutoHideAsync()
@@ -60,18 +60,6 @@ function Bootstrap({ children }: { children: React.ReactNode }) {
   }, [hydratePreferences, hydrateSession])
 
   useEffect(() => {
-    const update = async () => {
-      const state = await Network.getNetworkStateAsync()
-      onlineManager.setOnline(Boolean(state.isConnected && state.isInternetReachable !== false))
-    }
-    void update()
-    const subscription = Network.addNetworkStateListener((state) => {
-      onlineManager.setOnline(Boolean(state.isConnected && state.isInternetReachable !== false))
-    })
-    return () => subscription.remove()
-  }, [])
-
-  useEffect(() => {
     const subscription = AppState.addEventListener('change', (state) => {
       focusManager.setFocused(state === 'active')
     })
@@ -107,7 +95,7 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
       <KeyboardStateReconciler>
         <SafeAreaProvider>
           <QueryClientProvider client={queryClient}>
-            <Bootstrap><RealtimeProvider>{children}<MaterialOverlays /></RealtimeProvider></Bootstrap>
+            <ConnectivityProvider><Bootstrap><RealtimeProvider>{children}<MaterialOverlays /></RealtimeProvider></Bootstrap></ConnectivityProvider>
           </QueryClientProvider>
         </SafeAreaProvider>
       </KeyboardStateReconciler>

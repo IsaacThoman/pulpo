@@ -106,7 +106,7 @@ import * as Crypto from 'expo-crypto';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ExpoHaptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
-import * as Network from 'expo-network';
+import { useNetworkOffline } from '../providers/useNetworkOffline';
 import { StatusBar } from 'expo-status-bar';
 import { SymbolView } from '../platform/SymbolView';
 import { DarkTheme as NavigationDarkTheme, DefaultTheme as NavigationLightTheme, NavigationContainer } from '@react-navigation/native';
@@ -3274,7 +3274,7 @@ const MessageRow = memo(function MessageRow({
               <MessageContextMenu message={message} model={model} onEdit={onEdit} onRegenerate={onRegenerate}>
                 <View style={styles.responseError}><Icon name="exclamationmark.triangle" size={15} color={COLORS.critical} /><Text style={styles.responseErrorText}>{message.error}</Text><Pressable accessibilityRole="button" onPress={() => onRegenerate(message)}><Text style={styles.tryAgainText}>Try again</Text></Pressable></View>
               </MessageContextMenu>
-            ) : message.status === 'streaming' ? <ResponsePendingIndicator /> : null}
+            ) : streaming ? <ResponsePendingIndicator /> : null}
             {extraOutput.map((item, index) => {
               const details = JSON.stringify(item, null, 2).slice(0, 4000);
               return <View key={`${String(item.type)}:${index}`} style={styles.otherOutput}>
@@ -3636,8 +3636,7 @@ function ChatView({
   const expirationBadgeProgress = useSharedValue(landingBadge?.kind === 'expiration' ? 1 : 0);
   const realtimeConnectionPhase = useRealtimeStore((state) => state.connectionPhase);
   const syncError = useRealtimeStore((state) => state.syncError);
-  const networkState = Network.useNetworkState();
-  const networkOffline = networkState.isConnected === false || networkState.isInternetReachable === false;
+  const networkOffline = useNetworkOffline();
   const connectionState = networkOffline
     ? 'offline'
     : realtimeConnectionPhase === 'connected' ? 'online' : realtimeConnectionPhase;
