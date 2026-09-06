@@ -205,11 +205,14 @@ set up. Once the app is ready for tester distribution, use `completed`.
 The artifact is saved before upload, so upload failures still leave a
 downloadable signed bundle.
 
-To match iOS's release trigger, set the **repository variable**
-`ANDROID_RELEASE_ENABLED=true`. Each new semantic release from a push to
-`main` then builds that exact tag and uploads to internal testing. The
-repository variable `ANDROID_RELEASE_STATUS` defaults to `draft`; set it to
-`completed` when releases should become available to internal testers.
+Android uses the same automatic trigger as iOS: each new semantic release
+from a push to `main` builds that exact tag and uploads to internal testing.
+The repository's default branch does not control this trigger, and pushes to
+`dev` do not release either mobile app. Configure the `google-play` credentials
+before promoting this workflow to `main`.
+
+The repository variable `ANDROID_RELEASE_STATUS` defaults to `draft`; set it
+to `completed` when releases should become available to internal testers.
 Promote a tested release to closed testing or production in Play Console.
 
 For native Android passkeys, configure the server's

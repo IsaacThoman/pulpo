@@ -871,8 +871,7 @@ jobs:
     if: >-
       github.event_name == 'push' &&
       github.ref == 'refs/heads/main' &&
-      needs.release.outputs.version != '' &&
-      vars.ANDROID_RELEASE_ENABLED == 'true'
+      needs.release.outputs.version != ''
     needs: release
     uses: ./.github/workflows/android-release.yml
     with:
