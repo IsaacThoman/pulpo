@@ -145,6 +145,7 @@ export async function executePublicGeneration(input: {
     })
     try {
       created = await createResponse({
+        requestReceivedAt: input.reply.request.requestReceivedAt,
         ownerUserId: input.key.userId,
         chatId,
         apiKeyId: input.key.id,

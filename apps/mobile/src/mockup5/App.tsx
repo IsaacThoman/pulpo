@@ -1,3 +1,4 @@
+import { initialActivityTiming } from '@pulpo/client-core';
 import { useAppTheme } from './src/theme';
 import { MaterialButton, MaterialContextMenu, MaterialField, MaterialIconButton, MaterialLoading, MaterialMenu, MaterialRow, MaterialDialog, type Action as MaterialAction } from '../platform/MaterialUI';
 import type { MenuAnchor } from '../platform/MaterialUI.types';
@@ -531,6 +532,9 @@ type Message = {
   role: 'user' | 'assistant';
   text: string;
   createdAt?: number;
+  requestReceivedAt?: string | null;
+  firstReplyTextAt?: string | null;
+  initialResponseDurationMs?: number;
   latencyMs?: number;
   modelId?: string;
   attachments?: Attachment[];
@@ -602,6 +606,9 @@ function prototypeMessageToLegacy(message: PrototypeMessage, chatId: string, cha
     role: message.role,
     text: message.branches?.[message.activeBranch ?? 0]?.text ?? message.text,
     createdAt: message.createdAt,
+    requestReceivedAt: message.requestReceivedAt,
+    firstReplyTextAt: message.firstReplyTextAt,
+    initialResponseDurationMs: message.initialResponseDurationMs,
     latencyMs: message.latencyMs,
     modelId: message.modelId,
     attachments: message.attachments?.map((attachment) => ({
@@ -3013,16 +3020,24 @@ function RecallStepContent({ step, onOpenChat }: {
   })}</View>;
 }
 
-function WorkBlock({ steps, active, durationMs, onOpenChat }: {
+function WorkBlock({ steps, active, durationMs, initialWork, onOpenChat }: {
   steps: TimelineStep[];
   active: boolean;
   durationMs?: number;
+  initialWork?: boolean;
   onOpenChat: (chatId: string) => void;
 }) {
   const { styles, COLORS } = useChatStyles();
   const [open, setOpen] = useState(false);
-  if (steps.length === 0) return null;
-  const label = workLabel(steps, active, durationMs);
+  if (steps.length === 0 && durationMs === undefined) return null;
+  const failed = steps.some((step) => (step.kind === 'compaction' && step.compaction.status === 'failed')
+    || (step.kind === 'workspace' && ['expired', 'unavailable'].includes(step.workspace.state ?? '')));
+  const label = initialWork !== undefined && !active && durationMs !== undefined && !failed
+    ? `${initialWork ? 'Worked' : 'Thought'} for ${Math.max(0, Math.round(durationMs / 1000))}s`
+    : workLabel(steps, active, durationMs);
+  if (steps.length === 0) return <View style={styles.reasoningTrigger}>
+    <WorkTriggerIcon active={false} steps={[]} /><Text style={styles.reasoningLabel}>{label}</Text>
+  </View>;
   return (
     <View style={[styles.workBlock, !open && styles.workBlockCollapsed]}>
       <Pressable
@@ -3163,7 +3178,7 @@ const MessageRow = memo(function MessageRow({
   const [capacityPending, setCapacityPending] = useState(false);
   const [streamingFallbackDurationMs, setStreamingFallbackDurationMs] = useState<number>();
   const streaming = message.status === 'streaming' || message.status === 'queued';
-  const responseStartedAt = useMemo(() => message.createdAt ?? Date.now(), [message.createdAt]);
+  const responseStartedAt = useMemo(() => message.requestReceivedAt ? Date.parse(message.requestReceivedAt) : message.createdAt ?? Date.now(), [message.createdAt, message.requestReceivedAt]);
   const extraOutput = useMemo(() => otherOutputItems(message.outputItems), [message.outputItems]);
   const capacityWorkspace = useMemo(() => (message.outputItems ?? []).find((item) => (
     (item as { type?: string }).type === 'pulpo_workspace'
@@ -3187,6 +3202,8 @@ const MessageRow = memo(function MessageRow({
     });
   }, [message.outputItems, message.reasoning, message.role, message.text, message.thinkSeconds, showReasoning, streaming]);
   const elapsedMs = useElapsedMs(responseStartedAt, streaming && message.role === 'assistant', message.latencyMs);
+  const initialActivity = initialActivityTiming(timeline);
+  const initialDurationMs = message.initialResponseDurationMs;
   const activitySegments = timeline.filter((segment) => segment.kind === 'activity');
   const firstTextTimelineIndex = timeline.findIndex((segment) => segment.kind === 'text');
   const lastActivityTimelineIndex = timeline.reduce(
@@ -3242,19 +3259,24 @@ const MessageRow = memo(function MessageRow({
         </View>
       ) : (
         <AssistantFrame model={model} sideRail={sideRail} time={timeAgo(message.createdAt ?? Date.now())}>
+            {initialActivity.index === -1 && initialDurationMs !== undefined && (
+              <WorkBlock steps={[]} active={false} durationMs={initialDurationMs} initialWork={false} onOpenChat={onOpenChat} />
+            )}
             {timeline.length ? (
               <MessageContextMenu message={message} model={model} onEdit={onEdit} onRegenerate={onRegenerate}>
                 <View style={styles.assistantContent}>
                   {timeline.map((segment, index) => {
                     if (segment.kind === 'activity') {
-                      const active = timelineActivityIsActive(timeline, index, streaming);
+                      const active = streaming && timelineActivityIsActive(timeline, index, streaming);
+                      const initial = index === initialActivity.index && initialDurationMs !== undefined;
                       const segmentDurationMs = activityDurationMs(segment.steps);
                       const useResponseDurationFallback = activitySegments.length === 1
                         && index === lastActivityTimelineIndex
                         && (!streaming || activityFinishedDuringStream);
                       return <WorkBlock
                         active={active}
-                        durationMs={segmentDurationMs ?? (useResponseDurationFallback
+                        initialWork={initial ? initialActivity.worked : undefined}
+                        durationMs={initial ? initialDurationMs : segmentDurationMs ?? (useResponseDurationFallback
                           ? streamingFallbackDurationMs ?? elapsedMs
                           : undefined)}
                         key={`activity:${index}`}

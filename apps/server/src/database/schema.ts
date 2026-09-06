@@ -484,6 +484,8 @@ export const responses = pgTable('responses', {
   idempotencyScope: text('idempotency_scope').notNull().default('default'),
   idempotencyFingerprint: text('idempotency_fingerprint'),
   startedAt: timestamp('started_at', { withTimezone: true }),
+  requestReceivedAt: timestamp('request_received_at', { withTimezone: true }),
+  firstReplyTextAt: timestamp('first_reply_text_at', { withTimezone: true }),
   completedAt: timestamp('completed_at', { withTimezone: true }),
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
   ...timestamps,
@@ -507,6 +509,7 @@ export const queuedMessages = pgTable('queued_messages', {
   status: text('status').notNull().default('pending'),
   error: text('error'),
   dispatchResponseId: uuid('dispatch_response_id').notNull(),
+  requestReceivedAt: timestamp('request_received_at', { withTimezone: true }),
   ...timestamps,
 }, (table) => [
   uniqueIndex('queued_messages_chat_position_unique').on(table.chatId, table.position),

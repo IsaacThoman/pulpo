@@ -292,6 +292,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     }
     try {
       const response = await createResponse({
+        requestReceivedAt: request.requestReceivedAt,
         ownerUserId: user.id,
         chatId: chat.id,
         input: input.response,
@@ -629,6 +630,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       if (!parent) throw new AppError(400, 'invalid_parent_response', 'The selected parent response is unavailable')
     }
     const response = await createResponse({
+      requestReceivedAt: request.requestReceivedAt,
       ownerUserId: user.id,
       billingUserId: billingUserForRequest(request).id,
       actorUserId: request.adminChatAccess?.actorUser.id,
@@ -647,6 +649,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     const { id } = request.params as { id: string }
     const input = createQueuedMessageSchema.parse(request.body)
     const result = await createQueuedMessage(user.id, id, input, {
+      requestReceivedAt: request.requestReceivedAt,
       billingUserId: billingUserForRequest(request).id,
       actorUserId: request.adminChatAccess?.actorUser.id,
     })

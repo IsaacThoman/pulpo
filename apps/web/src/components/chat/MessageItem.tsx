@@ -1,3 +1,4 @@
+import { initialActivityTiming } from '@pulpo/client-core'
 import { memo, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from '@/i18n/useAppTranslation'
 import {
@@ -397,6 +398,7 @@ function ActivityBlock({
   active,
   showDuration,
   durationMs,
+  initialWork,
   messageId,
   onStop,
   onContinue,
@@ -408,6 +410,7 @@ function ActivityBlock({
   active: boolean
   showDuration: boolean
   durationMs?: number
+  initialWork?: boolean
   messageId: string
   onStop: (id: string) => void
   onContinue: (id: string) => void
@@ -451,6 +454,9 @@ function ActivityBlock({
   const runningTool = tools.find((tool) => tool.status === 'running')
 
   const label = (() => {
+    if (initialWork !== undefined && !active && durationMs !== undefined && !workspaceFailed && compaction?.status !== 'failed') {
+      return ui(initialWork ? 'Worked for {{duration}}' : 'Thought for {{duration}}', { duration: formatSecondsLabel(durationMs) })
+    }
     if (compaction?.status === 'in_progress') return ui("Compacting context…")
     if (compaction?.status === 'failed') return ui("Context compaction failed")
     if (compaction) return ui("Compacted context")
@@ -497,8 +503,12 @@ function ActivityBlock({
     return <Brain className="size-3.5 shrink-0" />
   })()
 
-  if (steps.length === 0) return null
-  if (compaction && steps.length === 1) return <CompactionStepRow item={compaction} />
+  if (steps.length === 0) return durationMs === undefined ? null : (
+    <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+      <Brain className="size-3.5 shrink-0" />{label}
+    </div>
+  )
+  if (compaction && steps.length === 1 && initialWork === undefined) return <CompactionStepRow item={compaction} />
 
   return (
     <div className="space-y-1.5">
@@ -607,7 +617,9 @@ export const MessageItem = memo(function MessageItem({
     if (message.content) segments.push({ kind: 'text', text: message.content })
     return segments
   }, [message.role, message.outputItems, showReasoning, message.reasoning, message.content, streaming])
-  const elapsedMs = useElapsedMs(message.timestamp, streaming && message.role === 'assistant', message.latencyMs)
+  const elapsedMs = useElapsedMs(message.requestReceivedAt ? Date.parse(message.requestReceivedAt) : message.timestamp, streaming && message.role === 'assistant', message.latencyMs)
+  const initialActivity = initialActivityTiming(timeline)
+  const initialDurationMs = message.initialResponseDurationMs
   const activitySegments = timeline.filter((segment): segment is ActivitySegment => segment.kind === 'activity')
   const lastActivityTimelineIndex = timeline.reduce(
     (lastIndex, segment, index) => segment.kind === 'activity' ? index : lastIndex,
@@ -750,6 +762,12 @@ export const MessageItem = memo(function MessageItem({
             </div>
           ) : (
             <>
+              {initialActivity.index === -1 && initialDurationMs !== undefined && (
+                <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                  <Brain className="size-3.5 shrink-0" />
+                  {ui('Thought for {{duration}}', { duration: formatSecondsLabel(initialDurationMs) })}
+                </div>
+              )}
               {timeline.map((segment, index) => {
                 if (segment.kind === 'activity') {
                   activityOrdinal += 1
@@ -757,7 +775,8 @@ export const MessageItem = memo(function MessageItem({
                   const hasFollowingText = timeline
                     .slice(index + 1)
                     .some((entry) => entry.kind === 'text')
-                  const active = !hasFollowingText && (segment.active || (streaming && isLastActivity))
+                  const active = streaming && !hasFollowingText && (segment.active || isLastActivity)
+                  const initial = index === initialActivity.index && initialDurationMs !== undefined
                   const segmentDurationMs = activityDurationMs(segment.steps)
                   const useResponseDurationFallback = activitySegments.length === 1
                     && isLastActivity
@@ -767,8 +786,9 @@ export const MessageItem = memo(function MessageItem({
                       key={`activity:${index}`}
                       steps={segment.steps}
                       active={active}
-                      showDuration={!active && (segmentDurationMs !== undefined || useResponseDurationFallback)}
-                      durationMs={segmentDurationMs ?? streamingFallbackDurationMs ?? elapsedMs}
+                      showDuration={!active && (initial || segmentDurationMs !== undefined || useResponseDurationFallback)}
+                      durationMs={initial ? initialDurationMs : segmentDurationMs ?? streamingFallbackDurationMs ?? elapsedMs}
+                      initialWork={initial ? initialActivity.worked : undefined}
                       messageId={message.id}
                       onStop={stopStreaming}
                       onContinue={(id) => {

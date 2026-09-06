@@ -42,7 +42,7 @@ const row = {
 }
 
 function reply(): FastifyReply {
-  return { code: vi.fn().mockReturnThis() } as unknown as FastifyReply
+  return { request: { requestReceivedAt: createdAt }, code: vi.fn().mockReturnThis() } as unknown as FastifyReply
 }
 
 describe('public generation execution', () => {
@@ -73,6 +73,7 @@ describe('public generation execution', () => {
     })
 
     expect(mocks.createResponse).toHaveBeenCalledWith(expect.objectContaining({
+      requestReceivedAt: createdAt,
       ownerUserId: 'user-1', apiKeyId: 'key-1', idempotencyKey: 'retry-1',
       idempotencyScope: 'api:key-1:responses', metadata: { trace: '1' }, rawInput: 'hello',
       publiclyStored: false,

@@ -19,7 +19,7 @@ import {
 import { decryptSecret } from '../lib/crypto.js'
 import { getConfig } from '../config.js'
 import { newId } from '../lib/ids.js'
-import { isCancellationRequested, publishResponseEvent, publishSnapshot } from './events.js'
+import { isCancellationRequested, createResponseEventPublisher, publishSnapshot } from './events.js'
 import { getActivePricing, releaseBudget, settleBudget } from '../accounting/service.js'
 import { toSnapshot } from './service.js'
 import { getBlobStore } from '../storage/index.js'
@@ -319,6 +319,7 @@ async function processCodexGenerationAttempt(
   startedAt: number,
 ): Promise<void> {
   const responseId = record.response.id
+  const publishResponseEvent = createResponseEventPublisher(record.response)
   const allHistory = await db.select().from(responses).where(and(
     eq(responses.chatId, record.response.chatId), ne(responses.id, responseId), isNull(responses.deletedAt),
   )).orderBy(asc(responses.createdAt), asc(responses.id))
@@ -470,6 +471,7 @@ async function processCodexGenerationAttempt(
       }
     }
     if (!finalMessage) finalMessage = await stream.result()
+    if (!text) text = finalMessage.content.flatMap((part) => part.type === 'text' ? [part.text] : []).join('')
     const usage = codexUsage(finalMessage)
     const terminalOutput = output().map((item) => {
       const value = item as Record<string, unknown>
@@ -536,6 +538,7 @@ async function processGenerationAttempt(
     .where(eq(responses.id, responseId))
     .limit(1)
   if (!record || ['completed', 'cancelled'].includes(record.response.status)) return
+  const publishResponseEvent = createResponseEventPublisher(record.response)
   if (record.provider.id === CODEX_PROVIDER_ID) {
     await processCodexGenerationAttempt(record, startedAt)
     return
