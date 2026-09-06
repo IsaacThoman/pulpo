@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   chatKeyboardBlankSpace,
+  chatLandingKeyboardTranslation,
   isNearChatBottom,
   resolveKeyboardLayoutProgress,
   shouldFollowChatContent,
@@ -42,5 +43,30 @@ describe('chat viewport following', () => {
   it('waits for valid measurements before applying keyboard blank space', () => {
     expect(chatKeyboardBlankSpace(0, 460)).toBe(0)
     expect(chatKeyboardBlankSpace(800, 0)).toBe(0)
+  })
+})
+
+describe('empty chat keyboard centering', () => {
+  it('keeps equal space above and below the identity as different keyboards lift the composer', () => {
+    const headerBottom = 100, restingComposerTop = 750
+    const restingIdentityCenter = (headerBottom + restingComposerTop) / 2
+    for (const keyboardHeight of [280, 360, 420]) {
+      for (const progress of [0, 0.25, 0.5, 1]) {
+        const composerOffset = 12
+        const lift = -keyboardHeight * progress
+        const center = restingIdentityCenter + chatLandingKeyboardTranslation(lift, progress, composerOffset, true)
+        const composerTop = restingComposerTop + lift + progress * composerOffset
+        expect(center - headerBottom).toBe(composerTop - center)
+      }
+    }
+  })
+
+  it('leaves background chat content in place when another surface owns the keyboard', () => {
+    expect(chatLandingKeyboardTranslation(-360, 1, 12, false)).toBe(0)
+  })
+
+  it('does not shift down when a restored screen has no visible keyboard', () => {
+    expect(chatLandingKeyboardTranslation(0, 0, 12, true)).toBe(0)
+    expect(chatLandingKeyboardTranslation(0, 1, 12, true)).toBe(0)
   })
 })
