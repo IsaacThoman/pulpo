@@ -85,7 +85,10 @@ spec:
             - name: PULPO_WORKSPACE_NAMESPACE
               value: pulpo-workspaces
             - name: PULPO_RUNTIME_CLASS
-              value: kata
+              value: kata-pulpo-bounded
+            # Install infra/workspace-storage and verify the node first.
+            - name: PULPO_MAX_WORKSPACE_PODS
+              value: "6"
             - name: PULPO_WARM_CAPACITY
               value: "1"
             - name: PULPO_MAX_ACTIVE_WORKSPACES_TOTAL

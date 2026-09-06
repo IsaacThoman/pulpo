@@ -4,6 +4,7 @@ import { randomBytes, randomUUID } from 'node:crypto'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import * as k8s from '@kubernetes/client-node'
+import { BOUNDED_RUNTIME, storageSettings, workspacePodSlots } from './storage.js'
 import { CapacityReservationError, CapacityTracker, WorkspaceCapacityError } from './capacity.js'
 import { isStaleStartingPod, isUnleasedOrphanPod, podMatchesSpec, WORKSPACE_SPEC_HASH_ANNOTATION, workspaceSpecHash, type WorkspaceSpec } from './workspace-spec.js'
 import { effectiveWarmTargets, instanceIdHash, normalizeInstanceId, WORKSPACE_INSTANCE_ANNOTATION, WORKSPACE_INSTANCE_HASH_LABEL, WORKSPACE_INSTANCE_HEADER, type WarmRequest } from './tenancy.js'
@@ -22,6 +23,7 @@ function environmentInteger(name: string, fallback: number, minimum: number, max
 }
 
 const defaultWarmCapacity = environmentInteger('PULPO_WARM_CAPACITY', 1, 0, 100)
+const maxWorkspacePods = environmentInteger('PULPO_MAX_WORKSPACE_PODS', runtimeClassName === BOUNDED_RUNTIME ? 6 : 100, 1, 10_000)
 const maxActiveWorkspacesTotal = environmentInteger('PULPO_MAX_ACTIVE_WORKSPACES_TOTAL', 100, 1, 10_000)
 const port = environmentInteger('PORT', 8786, 1, 65_535)
 if (!image?.includes('@sha256:')) throw new Error('PULPO_WORKSPACE_IMAGE must be an immutable digest reference')
@@ -63,6 +65,7 @@ const activeOperations = new Map<string, Set<string>>()
 const capacityTracker = new CapacityTracker({ maxActiveTotal: maxActiveWorkspacesTotal })
 let reconcileInFlight: Promise<void> | undefined
 let warmClaimTail: Promise<void> = Promise.resolve()
+let podCreationTail: Promise<void> = Promise.resolve()
 let useControllerWarmRequest = defaultWarmCapacity > 0
 
 function json(response: ServerResponse, status: number, value: unknown): void { response.writeHead(status, { 'content-type': 'application/json' }); response.end(JSON.stringify(value)) }
@@ -83,30 +86,39 @@ async function withWarmClaimLock<T>(operation: () => Promise<T>): Promise<T> {
 }
 
 async function createWorkspacePod(state: 'warm' | 'starting', spec: WorkspaceSpec, chatId?: string, instanceId?: string): Promise<{ name: string; daemonToken: string }> {
-  const name = podName()
-  const daemonToken = randomBytes(32).toString('hex')
-  await core.createNamespacedPod({ namespace, body: {
-    metadata: {
-      name,
-      labels: {
-        'app.kubernetes.io/name': 'pulpo-workspace',
-        'pulpo.dev/state': state,
-        ...(instanceId ? { [WORKSPACE_INSTANCE_HASH_LABEL]: instanceIdHash(instanceId) } : {}),
+  const storage = storageSettings(runtimeClassName, spec)
+  const previous = podCreationTail
+  let release!: () => void
+  podCreationTail = new Promise<void>((resolve) => { release = resolve })
+  await previous
+  try {
+    const pods = (await core.listNamespacedPod({ namespace, labelSelector: 'app.kubernetes.io/name=pulpo-workspace' })).items
+    if (workspacePodSlots(pods) >= maxWorkspacePods) throw new WorkspaceCapacityError('controller')
+    const name = podName()
+    const daemonToken = randomBytes(32).toString('hex')
+    await core.createNamespacedPod({ namespace, body: {
+      metadata: {
+        name,
+        labels: {
+          'app.kubernetes.io/name': 'pulpo-workspace',
+          'pulpo.dev/state': state,
+          ...(instanceId ? { [WORKSPACE_INSTANCE_HASH_LABEL]: instanceIdHash(instanceId) } : {}),
+        },
+        annotations: {
+          'pulpo.dev/daemon-token': daemonToken,
+          [WORKSPACE_SPEC_HASH_ANNOTATION]: workspaceSpecHash(spec),
+          ...(instanceId ? { [WORKSPACE_INSTANCE_ANNOTATION]: instanceId } : {}),
+          ...(chatId ? { 'pulpo.dev/chat-id': chatId } : {}),
+        },
       },
-      annotations: {
-        'pulpo.dev/daemon-token': daemonToken,
-        [WORKSPACE_SPEC_HASH_ANNOTATION]: workspaceSpecHash(spec),
-        ...(instanceId ? { [WORKSPACE_INSTANCE_ANNOTATION]: instanceId } : {}),
-        ...(chatId ? { 'pulpo.dev/chat-id': chatId } : {}),
+      spec: {
+        runtimeClassName, automountServiceAccountToken: false, restartPolicy: 'Never', enableServiceLinks: false,
+        securityContext: { seccompProfile: { type: 'RuntimeDefault' } },
+        containers: [{ name: 'workspace', ...(storage.command ? { command: storage.command } : {}), image: spec.imageDigest, imagePullPolicy: 'IfNotPresent', env: [{ name: 'PULPO_WORKSPACE_TOKEN', value: daemonToken }], ports: [{ name: 'daemon', containerPort: 8787 }], readinessProbe: { httpGet: { path: '/healthz', port: 8787 }, periodSeconds: 2 }, resources: { requests: { cpu: spec.cpu, memory: spec.memory, 'ephemeral-storage': spec.ephemeralStorage }, limits: { cpu: spec.cpu, memory: spec.memory, 'ephemeral-storage': storage.limit } }, securityContext: { allowPrivilegeEscalation: true } }],
       },
-    },
-    spec: {
-      runtimeClassName, automountServiceAccountToken: false, restartPolicy: 'Never', enableServiceLinks: false,
-      securityContext: { seccompProfile: { type: 'RuntimeDefault' } },
-      containers: [{ name: 'workspace', image: spec.imageDigest, imagePullPolicy: 'IfNotPresent', env: [{ name: 'PULPO_WORKSPACE_TOKEN', value: daemonToken }], ports: [{ name: 'daemon', containerPort: 8787 }], readinessProbe: { httpGet: { path: '/healthz', port: 8787 }, periodSeconds: 2 }, resources: { requests: { cpu: spec.cpu, memory: spec.memory, 'ephemeral-storage': spec.ephemeralStorage }, limits: { cpu: spec.cpu, memory: spec.memory, 'ephemeral-storage': spec.ephemeralStorage } }, securityContext: { allowPrivilegeEscalation: true } }],
-    },
-  } })
-  return { name, daemonToken }
+    } })
+    return { name, daemonToken }
+  } finally { release() }
 }
 
 function isPodReady(pod: k8s.V1Pod | undefined): pod is k8s.V1Pod & { metadata: { name: string }; status: { podIP: string } } {
@@ -119,7 +131,7 @@ function isPodReady(pod: k8s.V1Pod | undefined): pod is k8s.V1Pod & { metadata: 
 
 async function findReadyWarmPod(spec: WorkspaceSpec): Promise<k8s.V1Pod | undefined> {
   const pods = (await core.listNamespacedPod({ namespace, labelSelector: 'app.kubernetes.io/name=pulpo-workspace,pulpo.dev/state=warm' })).items
-  return pods.find((candidate) => podMatchesSpec(candidate, spec) && isPodReady(candidate))
+  return pods.find((candidate) => podMatchesSpec(candidate, spec, runtimeClassName) && isPodReady(candidate))
 }
 
 async function waitForPodReady(name: string, deadline: number): Promise<k8s.V1Pod> {
@@ -166,10 +178,15 @@ async function reconcileOnce(): Promise<void> {
   const allWarm = pods.filter((pod) => pod.metadata?.labels?.['pulpo.dev/state'] === 'warm')
   const retained = new Set<string>()
   for (const target of targets.values()) {
-    const compatible = allWarm.filter((pod) => podMatchesSpec(pod, target.spec))
+    const compatible = allWarm.filter((pod) => podMatchesSpec(pod, target.spec, runtimeClassName))
     const keep = compatible.slice(0, target.capacity)
     for (const pod of keep) if (pod.metadata?.name) retained.add(pod.metadata.name)
-    for (let count = keep.length; count < target.capacity; count += 1) await createWorkspacePod('warm', target.spec)
+    for (let count = keep.length; count < target.capacity; count += 1) {
+      try { await createWorkspacePod('warm', target.spec) } catch (error) {
+        if (error instanceof WorkspaceCapacityError) break
+        throw error
+      }
+    }
   }
   const excess = allWarm.filter((pod) => pod.metadata?.name && !retained.has(pod.metadata.name))
   await Promise.all(excess.flatMap((pod) => pod.metadata?.name ? [core.deleteNamespacedPod({ namespace, name: pod.metadata.name }).catch(() => undefined)] : []))
@@ -231,6 +248,7 @@ async function claim(instanceId: string, input: ClaimInput): Promise<Lease> {
     memory: input.resources?.memory || defaultSpec.memory,
     ephemeralStorage: input.resources?.ephemeralStorage || defaultSpec.ephemeralStorage,
   }
+  storageSettings(runtimeClassName, spec)
   const requestedWarmCapacity = Number.isInteger(input.warmCapacity) ? Math.max(0, Math.min(100, input.warmCapacity!)) : 0
   if (requestedWarmCapacity > 0) useControllerWarmRequest = false
   warmRequests.set(instanceId, { spec, capacity: requestedWarmCapacity })
@@ -295,7 +313,7 @@ async function workspaceInventory(instanceId: string) {
   const spec = desiredSpec(instanceId)
   return pods.filter((pod) => {
     const state = pod.metadata?.labels?.['pulpo.dev/state']
-    return state === 'warm' ? podMatchesSpec(pod, spec) : podInstanceId(pod) === instanceId
+    return state === 'warm' ? podMatchesSpec(pod, spec, runtimeClassName) : podInstanceId(pod) === instanceId
   }).map((pod) => {
     const labels = pod.metadata?.labels ?? {}
     const annotations = pod.metadata?.annotations ?? {}
