@@ -3,6 +3,8 @@ import UIKit
 
 struct QueuedMessageRow: Record {
   @Field var id: String = ""
+  @Field var kind: String = ""
+  @Field var canRetry: Bool = false
   @Field var content: String = ""
   @Field var detail: String = ""
   @Field var status: String = ""
@@ -104,7 +106,7 @@ public final class QueuedMessagesView: ExpoView, UITableViewDataSource, UITableV
     text.font = .preferredFont(forTextStyle: .subheadline)
     text.textColor = row.isEditing ? .secondaryLabel : .label
     text.adjustsFontForContentSizeCategory = true
-    text.numberOfLines = 0
+    text.numberOfLines = row.kind == "shelf" ? 2 : 0
     text.text = row.content
     let detail = UILabel()
     detail.font = .preferredFont(forTextStyle: .caption1)
@@ -130,12 +132,15 @@ public final class QueuedMessagesView: ExpoView, UITableViewDataSource, UITableV
     }
     let stack = UIStackView(arrangedSubviews: [labels])
     stack.alignment = .center
-    for (action, symbol, enabled) in [("delete", "trash", row.canDelete), ("edit", row.isEditing ? "xmark" : "pencil", row.canEdit)] {
+    var actions = [("delete", "trash", row.canDelete), ("edit", row.kind == "shelf" ? "arrow.uturn.backward" : row.isEditing ? "xmark" : "pencil", row.canEdit)]
+    if row.canRetry { actions.insert(("retry", "arrow.clockwise", true), at: 0) }
+    for (action, symbol, enabled) in actions {
       let button = UIButton(type: .system)
       button.setImage(UIImage(systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: 14, weight: .regular)), for: .normal)
       button.tintColor = .secondaryLabel
       button.isEnabled = enabled
       button.accessibilityLabel = action == "edit" && row.isEditing ? "Cancel queued message edit" : "\(action.capitalized) queued message \(indexPath.row + 1)"
+      if row.kind == "shelf" { button.accessibilityLabel = action == "edit" ? "Restore draft" : action == "retry" ? "Retry saving draft" : "Delete shelved draft" }
       button.addAction(UIAction { [weak self] _ in self?.onAction(["id": row.id, "action": action]) }, for: .touchUpInside)
       button.widthAnchor.constraint(equalToConstant: 44).isActive = true
       button.heightAnchor.constraint(equalToConstant: 44).isActive = true

@@ -1,3 +1,4 @@
+import { clearMobileShelf } from '../features/chat/shelf-registry'
 import { clearMobileComposerSync } from '../features/chat/composerSync'
 import { Appearance } from 'react-native'
 import * as Device from 'expo-device'
@@ -243,6 +244,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         if (!user) return
         const namespace = cacheNamespace(instanceUrl, user.id)
         clearComposerDraftCacheNamespace(namespace)
+        clearMobileShelf(namespace)
         clearMobileComposerSync(namespace)
         removeCachedFiles(await clearNamespace(namespace))
       })(),
@@ -274,6 +276,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     if (previous.user) {
       const namespace = cacheNamespace(previous.instanceUrl, previous.user.id)
       clearComposerDraftCacheNamespace(namespace)
+      clearMobileShelf(namespace)
       clearMobileComposerSync(namespace)
       removeCachedFiles(await clearNamespace(namespace))
     }

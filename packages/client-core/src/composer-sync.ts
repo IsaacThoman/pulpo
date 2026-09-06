@@ -2,6 +2,7 @@ import { emptyComposerState, type ComposerAck, type ComposerSnapshot, type Compo
 
 export interface ComposerCheckpoint {
   snapshot: ComposerSnapshot
+  shelfContent?: ComposerState
   pending: Partial<ComposerState>
   clearRevision?: number
   /** Identifies a draft write whose server acknowledgement may have been lost. */
@@ -15,6 +16,7 @@ export interface ComposerTransport {
   write(input: ComposerWrite): Promise<ComposerAck>
 }
 export interface ComposerPersistence {
+  recoverShelfContent?(state: ComposerState): Promise<void>
   load(draftId: string): Promise<ComposerCheckpoint | null>
   save(draftId: string, checkpoint: ComposerCheckpoint): Promise<void>
 }
@@ -53,6 +55,7 @@ export class ComposerSync {
       entry.loaded = this.persistence.load(draftId).catch(() => null).then((saved) => {
         if (saved) {
           // Read supported fields only; old checkpoints may still contain retired recovery copies.
+          entry!.shelfContent = saved.shelfContent
           entry!.snapshot = saved.snapshot
           entry!.pending = saved.pending
           entry!.unacknowledgedMutationId = saved.unacknowledgedMutationId
@@ -87,7 +90,7 @@ export class ComposerSync {
     this.entries.clear()
   }
   private checkpoint(entry: Entry): ComposerCheckpoint {
-    return { snapshot: entry.snapshot, pending: { ...entry.inflight, ...entry.pending }, unacknowledgedMutationId: entry.unacknowledgedMutationId, clearRevision: entry.clearRevision, submissions: entry.submissions }
+    return { shelfContent: entry.shelfContent, snapshot: entry.snapshot, pending: { ...entry.inflight, ...entry.pending }, unacknowledgedMutationId: entry.unacknowledgedMutationId, clearRevision: entry.clearRevision, submissions: entry.submissions }
   }
   private notify(entry: Entry, publish = true): void {
     if (this.disposed) return
@@ -116,7 +119,10 @@ export class ComposerSync {
         const acceptedOwnWrite = entry.unacknowledgedMutationId
           && result.snapshot.mutationId === entry.unacknowledgedMutationId
           && result.snapshot.clearedRevision === entry.snapshot.clearedRevision
-        if (!acceptedOwnWrite) entry.pending = {}
+        if (!acceptedOwnWrite) {
+          await this.recoverShelfContent(entry, result.snapshot)
+          entry.pending = {}
+        }
       }
       entry.unacknowledgedMutationId = undefined
       if (result.snapshot.revision >= entry.snapshot.revision) entry.snapshot = result.snapshot
@@ -133,6 +139,7 @@ export class ComposerSync {
     if (!entry.ready) { if (this.transport) void this.reconcile(entry); return }
     if (snapshot.revision <= entry.snapshot.revision) return
     if (!preservePending && snapshot.clearedRevision > entry.snapshot.clearedRevision && Object.keys(entry.pending).length) {
+      if (entry.shelfContent) { entry.ready = false; if (this.transport) void this.reconcile(entry); return }
       entry.pending = {}
     }
     entry.snapshot = snapshot
@@ -176,10 +183,12 @@ export class ComposerSync {
         entry.unacknowledgedMutationId = undefined
         if (result.conflict) {
           if (result.snapshot.clearedRevision > previous.clearedRevision) {
+            await this.recoverShelfContent(entry, result.snapshot)
             entry.pending = {}
           }
           else entry.pending = { ...patch, ...entry.pending }
         }
+        if (!result.conflict && !Object.keys(entry.pending).length) entry.shelfContent = undefined
         if (result.snapshot.revision >= entry.snapshot.revision) entry.snapshot = result.snapshot
       } catch {
         entry.pending = { ...patch, ...entry.pending }
@@ -189,6 +198,21 @@ export class ComposerSync {
     await entry.writing
     entry.writing = undefined
     return entry.ready ? this.flush(draftId) : null
+  }
+  /** Protect explicit shelf restores from the automatic draft conflict policy. */
+  replaceShelfContent(draftId: string, state: ComposerState): void {
+    const entry = this.entries.get(draftId)
+    if (!entry) return
+    entry.shelfContent = state
+    this.edit(draftId, { content: state.content, attachments: state.attachments })
+  }
+  private async recoverShelfContent(entry: Entry, remote: ComposerSnapshot): Promise<void> {
+    if (!entry.shelfContent) return
+    const content = { ...entry.shelfContent, ...entry.inflight, ...entry.pending }
+    if ((content.content.trim() || content.attachments.length) && !sameComposerContent(content, remote.state)) {
+      await this.persistence.recoverShelfContent?.(content)
+    }
+    entry.shelfContent = undefined
   }
   canRestoreSubmission(draftId: string, submitted: ComposerState): boolean {
     const entry = this.entries.get(draftId)

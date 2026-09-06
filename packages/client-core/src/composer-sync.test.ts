@@ -18,9 +18,9 @@ function fixture() {
       return { ok: true, snapshot }
     },
   }
-  function client(id: string, saved: ComposerCheckpoint | null = null) {
+  function client(id: string, saved: ComposerCheckpoint | null = null, recoverShelfContent?: (state: ComposerState) => Promise<void>) {
     const save = vi.fn(async (key: string, value: ComposerCheckpoint) => { saved = structuredClone(value) })
-    const sync = new ComposerSync({ load: async () => saved, save }, id)
+    const sync = new ComposerSync({ load: async () => saved, save, recoverShelfContent }, id)
     const listener = vi.fn()
     return { sync, save, listener, saved: () => saved, open: async (initial = state()) => { sync.connect(transport); await sync.open('new', initial, listener) } }
   }
@@ -361,5 +361,41 @@ describe('submission clear lifecycle', () => {
     await vi.waitFor(() => expect(a.saved()?.submissions).toEqual([]))
     expect(f.snapshot().state.content).toBe('new remote draft')
     a.sync.dispose(); b.sync.dispose()
+  })
+})
+
+describe('explicit shelf restore recovery', () => {
+  it('saves a divergent offline restore before adopting another device’s composer', async () => {
+    const f = fixture(), recover = vi.fn(async () => {}), a = f.client('a', null, recover), b = f.client('b')
+    await a.open(); await b.open()
+    a.sync.disconnect()
+    a.sync.replaceShelfContent('new', state('restored offline'))
+    b.sync.edit('new', { content: 'newer device draft' }); await b.sync.flush('new')
+    a.sync.connect(f.transport)
+    await vi.waitFor(() => expect(recover).toHaveBeenCalledWith(state('restored offline')))
+    await vi.waitFor(() => expect(a.listener.mock.lastCall?.[0].snapshot.state.content).toBe('newer device draft'))
+    expect(a.listener.mock.lastCall?.[0].pending).toEqual({})
+    expect(recover).toHaveBeenCalledTimes(1)
+    a.sync.dispose(); b.sync.dispose()
+  })
+  it('retains the protected restore when saving its recovery copy fails', async () => {
+    const f = fixture(), recover = vi.fn(async () => { throw new Error('disk full') }), a = f.client('a', null, recover), b = f.client('b')
+    await a.open(); await b.open(); a.sync.disconnect()
+    a.sync.replaceShelfContent('new', state('protected'))
+    b.sync.edit('new', { content: 'remote' }); await b.sync.flush('new')
+    a.sync.connect(f.transport)
+    await vi.waitFor(() => expect(recover).toHaveBeenCalled())
+    expect(a.saved()?.shelfContent?.content).toBe('protected')
+    expect(a.saved()?.pending.content).toBe('protected')
+    a.sync.dispose(); b.sync.dispose()
+  })
+  it('restores only content and attachments, preserving the active controls', async () => {
+    const f = fixture(), a = f.client('a')
+    const initial = { ...state('before'), model: { id: 'chosen', presets: { effort: 'high' } }, agentMode: false, autoExpire: true }
+    await a.open(initial)
+    a.sync.replaceShelfContent('new', { ...state('after'), model: { id: 'ignored', presets: {} } })
+    await a.sync.flush('new')
+    expect(f.snapshot().state).toEqual({ ...initial, content: 'after' })
+    a.sync.dispose()
   })
 })

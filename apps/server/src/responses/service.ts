@@ -202,6 +202,7 @@ export async function createResponse(options: CreateResponseOptions) {
       eq(attachments.userId, options.ownerUserId),
       inArray(attachments.id, attachmentIds),
       isNull(attachments.chatId),
+      isNull(attachments.shelvedAt),
     ))
   }
   const storedInput = options.rawInput !== undefined

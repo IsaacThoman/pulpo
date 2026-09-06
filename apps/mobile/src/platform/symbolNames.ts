@@ -104,6 +104,7 @@ export const materialSymbolNames: Record<string, string> = {
   "ellipsis.circle": "more_horiz",
   "chevron.left.forwardslash.chevron.right": "code",
   "tablecells.fill": "table_chart",
+  "archivebox": "inventory_2",
   "archivebox.fill": "folder_zip",
   "waveform": "graphic_eq",
   "play.rectangle.fill": "movie",

@@ -1,9 +1,13 @@
+import { ShelvedDrafts } from './ShelvedDrafts'
+import { webShelf, shelfDraftAttachments } from '@/lib/local-first/shelf'
+import type { ShelfAttachment } from '@pulpo/client-core'
 import { useComposerSync } from './use-composer-sync'
 import type { ComposerState } from '@pulpo/contracts'
-import { useCallback, useEffect, useRef, useState, type DragEvent as ReactDragEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type DragEvent as ReactDragEvent } from 'react'
 import { useTranslation } from '@/i18n/useAppTranslation'
 import { useNavigate } from 'react-router-dom'
 import {
+  Archive,
   AlertCircle,
   ArrowUp,
   Bot,
@@ -133,6 +137,18 @@ export function Composer({
   const { t } = useTranslation()
   const navigate = useNavigate()
   const userId = useAuth((s) => s.user?.id)
+  const shelf = userId ? webShelf(userId) : null
+  const shelfRows = useSyncExternalStore(shelf?.subscribe ?? EMPTY_SUBSCRIBE, shelf?.getSnapshot ?? EMPTY_SHELF_SNAPSHOT)
+  const [shelfBusy, setShelfBusy] = useState(false)
+  const shelfBusyRef = useRef(false)
+  const shelfMounted = useRef(true)
+  const [shelfCollapsed, setShelfCollapsed] = useState(false)
+  const [shelfError, setShelfError] = useState<string | null>(null)
+  const showShelf = !chatId && !temporary && Boolean(shelf) && !messageEdit
+  const activeShelf = useRef(shelf)
+  activeShelf.current = showShelf ? shelf : null
+  useEffect(() => { shelfMounted.current = true; return () => { shelfMounted.current = false } }, [])
+  useEffect(() => { if (shelf) void shelf.hydrate().then(() => shelf.sync()).catch(() => undefined) }, [shelf])
   const draftId = chatId ?? NEW_CHAT_DRAFT_ID
   // The composer is keyed by chat. Capture its starting draft once: consulting
   // the mutable cache on every render can restart hydration after a remote
@@ -262,7 +278,7 @@ export function Composer({
       .map((a) => ({ id: a.id, name: a.name, mimeType: a.mimeType, size: a.size })),
     model: { id: modelId, presets: selections }, agentMode: agentModeEnabled, temporary, autoExpire,
   }
-  const { sync: composerSync, skipNextEdit } = useComposerSync(syncEnabled ? userId : undefined, draftId, sharedComposerState, draftHydrated, Boolean(editingExisting || recovery || submitting), (remote) => {
+  const { sync: composerSync, skipNextEdit } = useComposerSync(syncEnabled ? userId : undefined, draftId, sharedComposerState, draftHydrated, Boolean(editingExisting || recovery || submitting || shelfBusy), (remote) => {
     const currentIds = preservedDraftRef.current?.attachmentIds ?? attachmentIdsRef.current
     const pending = currentIds.filter((id) => uploadsRef.current[id] && uploadsRef.current[id].status !== 'ready')
     const currentByServerId = new Map(currentIds.map((id) => [uploadsRef.current[id]?.id, id]))
@@ -673,6 +689,42 @@ export function Composer({
     }
   }
 
+  const shelfAttachments = (): ShelfAttachment[] => attachmentIdsRef.current.map((id) => {
+    const a = uploadsRef.current[id]
+    if (!a) throw new Error(ui('An attachment is unavailable'))
+    return { localId: a.localId, id: a.status === 'ready' ? a.id : undefined, name: a.name, mimeType: a.mimeType, size: a.size, source: a.file }
+  })
+  const runShelfAction = async (action: () => Promise<void>) => {
+    if (shelfBusyRef.current || !showShelf || !draftHydrated || submitting || dictationState !== 'idle') return
+    shelfBusyRef.current = true
+    setShelfBusy(true); setShelfError(null)
+    try { await action() } catch (error) { setShelfError(error instanceof Error ? error.message : ui('Could not save draft')) }
+    finally { shelfBusyRef.current = false; if (shelfMounted.current) setShelfBusy(false) }
+  }
+  const transferShelf = (restoreId?: string) => runShelfAction(async () => {
+    if (!shelf || !userId) return
+    const before = { content: valueRef.current, attachments: shelfAttachments() }
+    const oldIds = [...attachmentIdsRef.current]
+    const isCurrent = () => shelfMounted.current && activeShelf.current === shelf && valueRef.current === before.content && attachmentIdsRef.current.length === oldIds.length && attachmentIdsRef.current.every((id, index) => id === oldIds[index])
+    const restored = restoreId ? await shelf.restore(restoreId, before, isCurrent) : (await shelf.shelve(before.content, before.attachments, isCurrent), null)
+    const after = restored ?? { content: '', attachments: [] }
+    // The shelf transaction already persisted the new composer. A late operation
+    // may update that scope's sync state, but must not touch a different screen.
+    if (!isCurrent()) {
+      if (after.content.trim() || after.attachments.length) await shelf.saveCopy(after.content, after.attachments)
+      return
+    }
+    const ids = restoreDraftAttachments(shelfDraftAttachments(after.attachments), { chatId: null, temporary: false })
+    skipNextEdit()
+    valueRef.current = after.content; attachmentIdsRef.current = ids
+    setValue(after.content); setAttachmentIds(ids)
+    rememberRuntimeComposerDraft(userId, 'new', { content: after.content, attachmentIds: ids, attachments: shelfDraftAttachments(after.attachments) })
+    consumeUploads(oldIds.filter((id) => !ids.includes(id)))
+    composerSync?.replaceShelfContent('new', { ...sharedComposerState, content: after.content, attachments: after.attachments.filter((a) => a.id).map((a) => ({ id: a.id!, name: a.name, mimeType: a.mimeType, size: a.size })) })
+    setShelfCollapsed(false)
+    requestAnimationFrame(() => { autosize(); focusAtEnd() })
+  })
+
   const beginQueueEdit = async (messageId: string) => {
     if (!chatId || submitting || messageEdit) return
     if (editingQueueId === messageId) {
@@ -855,6 +907,12 @@ export function Composer({
           > {ui("Cancel")} </button>
         </div>
       )}
+      {showShelf && <ShelvedDrafts rows={shelfRows} busy={shelfBusy || !draftHydrated || submitting || dictationState !== 'idle'} collapsed={shelfCollapsed}
+        onCollapse={() => setShelfCollapsed((value) => !value)} onRestore={(id) => { void transferShelf(id) }}
+        onDelete={(id) => { void runShelfAction(() => shelf!.delete(id)) }}
+        onReorder={(id, targetId, edge) => { void runShelfAction(() => shelf!.reorder(id, targetId, edge)) }}
+        onRetry={() => { void runShelfAction(() => shelf!.retry()) }} />}
+      {showShelf && shelfError && <p role="alert" className="px-3 py-2 text-xs text-destructive">{shelfError}</p>}
       {queuedMessages.length > 0 && (
         <div className={cn(
           'max-h-48 overflow-y-auto border border-b-0 bg-card px-2 pt-2 pb-1 shadow-sm',
@@ -967,7 +1025,7 @@ export function Composer({
       <div
         className={cn(
           'relative rounded-2xl border bg-card shadow-sm transition-[background-color,box-shadow,border-color] duration-200 focus-within:shadow-md',
-          (queuedMessages.length > 0 || messageEdit || recovery) && '-mt-px rounded-t-xl',
+          (queuedMessages.length > 0 || showShelf && shelfRows.length > 0 || messageEdit || recovery) && '-mt-px rounded-t-xl',
           temporary && '!border-violet-500/50 bg-violet-100/80 dark:!border-violet-600/50 dark:bg-violet-950/60',
           temporary && 'border-dashed',
         )}
@@ -1000,6 +1058,7 @@ export function Composer({
 
         <textarea
           ref={ref}
+          readOnly={shelfBusy}
           value={value}
           onChange={(e) => {
             setValue(e.target.value)
@@ -1137,6 +1196,12 @@ export function Composer({
             <TooltipContent side="top">{dictationState === 'recording' ? t('chat.stopDictation') : dictationState === 'transcribing' ? t('chat.transcribing') : t('chat.dictate')}</TooltipContent>
           </Tooltip>}
 
+          {showShelf && <Tooltip><TooltipTrigger asChild><button type="button"
+            disabled={!hasDraft || shelfBusy || submitting || dictationState !== 'idle' || !draftHydrated}
+            onClick={() => { void transferShelf() }} aria-label={ui('Shelve draft')}
+            className="flex size-8 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40">
+            {shelfBusy ? <Loader2 className="size-4 animate-spin" /> : <Archive className="size-4" />}
+          </button></TooltipTrigger><TooltipContent>{ui('Shelve draft')}</TooltipContent></Tooltip>}
           {composerPrimaryAction(Boolean(streamingResponseId) && !messageEdit, hasDraft || Boolean(editingQueueId) || Boolean(messageEdit)) === 'stop' ? (
             <Button
               size="icon-sm"
@@ -1152,7 +1217,7 @@ export function Composer({
               size="icon-sm"
               className="rounded-full"
               onClick={() => void submit()}
-              disabled={!canSend}
+              disabled={!canSend || shelfBusy}
               aria-label={messageEdit ? t('chat.saveAndResend') : t('chat.sendMessage')}
             >
               {submitting ? <Loader2 className="size-4 animate-spin" /> : <ArrowUp className="size-4" />}
@@ -1165,3 +1230,7 @@ export function Composer({
     </div>
   )
 }
+
+const EMPTY_SHELF_ROWS: import("@pulpo/client-core").LocalShelvedDraft[] = []
+const EMPTY_SHELF_SNAPSHOT = () => EMPTY_SHELF_ROWS
+const EMPTY_SUBSCRIBE = () => () => undefined

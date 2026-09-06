@@ -13,6 +13,14 @@ export function mobileComposerSync(namespace: string): ComposerSync | null {
   if (!sync) {
     const key = (id: string) => `composer-sync:${composerSyncGeneration ? `${composerSyncGeneration}:` : ''}${id}`
     sync = new ComposerSync({
+      recoverShelfContent: async (state) => {
+        const { cachedComposerDraft } = await import('./composerDraftCache')
+        const local = cachedComposerDraft<{ localId: string; serverId?: string; name: string; mimeType: string; size?: number; uri: string; state?: string }>(`${namespace}\u0000new`)
+        const { mobileShelf, durableShelfAttachments } = await import('./shelf')
+        const attachments = local?.body === state.content ? durableShelfAttachments(namespace, local.attachments)
+          : state.attachments.map((a) => ({ ...a, localId: a.id }))
+        await mobileShelf(namespace).saveCopy(state.content, attachments)
+      },
       load: (id) => getValue<ComposerCheckpoint>(namespace, key(id)),
       save: (id, value) => setValue(namespace, key(id), value),
     }, `mobile-${Date.now()}-${Math.random().toString(36).slice(2)}`)

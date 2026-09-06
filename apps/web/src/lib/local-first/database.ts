@@ -146,6 +146,7 @@ export async function clearLocalUserData(userId: string): Promise<void> {
   const accountKey = localAccountKey(userId)
   await localDb.transaction('rw', localDb.outbox, localDb.drafts, localDb.attachmentBlobs, localDb.kv, async () => {
     await localDb.kv.where('key').startsWith(`composer-sync:${accountKey}:`).delete()
+    await localDb.kv.delete(`shelf:${accountKey}`)
     await localDb.outbox.where('userId').equals(accountKey).delete()
     await localDb.drafts.where('userId').equals(accountKey).delete()
     await localDb.attachmentBlobs.where('userId').equals(accountKey).delete()
