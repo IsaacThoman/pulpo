@@ -111,20 +111,46 @@ describe('buildMessageTimeline', () => {
     expect(recalledChatLabel(2)).toBe('Recalled from 2 chats')
   })
 
-  it('keeps work visible when reasoning is hidden', () => {
-    const timeline = buildMessageTimeline([
-      { type: 'reasoning', status: 'in_progress', summary: [{ text: 'secret' }] },
-      {
-        type: 'pulpo_workspace', state: 'waiting', position: 2,
-        continueWithoutAgentAvailableAt: '2026-08-14T12:00:15.000Z',
-      },
-    ], false)
-    expect(timeline).toMatchObject([{
-      kind: 'activity', active: true, steps: [{
-        kind: 'workspace',
-        workspace: { position: 2, continueWithoutAgentAvailableAt: '2026-08-14T12:00:15.000Z' },
-      }],
-    }])
+  it.each([
+    { type: 'reasoning', status: 'completed', summary: [{ text: 'Private summary' }] },
+    { type: 'reasoning', status: 'in_progress', summary: [{ text: 'Thinking' }] },
+    { type: 'pulpo_tool', tool: 'bash', status: 'completed', output: 'Tool output' },
+    { type: 'pulpo_tool', tool: 'bash', status: 'running' },
+    { type: 'pulpo_workspace', state: 'ready' },
+    { type: 'pulpo_workspace', state: 'waiting', position: 2 },
+    { type: 'pulpo_recall', status: 'completed', sources: [] },
+    { type: 'pulpo_compaction', status: 'completed', summary: 'Context summary' },
+    { type: 'pulpo_compaction', status: 'in_progress' },
+  ])('hides $type activity ($status $state) when reasoning is off', (item) => {
+    expect(buildMessageTimeline([item], false)).toEqual([])
+    expect(buildMessageTimeline([
+      { type: 'message', content: [{ text: 'Before work' }] },
+      item,
+      { type: 'message', content: [{ text: 'Answer' }] },
+    ], false)).toEqual([
+      { kind: 'text', text: 'Before work' },
+      { kind: 'text', text: 'Answer' },
+    ])
+    expect(buildMessageTimeline([item], true)).toMatchObject([{ kind: 'activity' }])
+  })
+
+  it('hides a whole work sequence while preserving assistant text and stored output', () => {
+    const output = [
+      { type: 'pulpo_workspace', state: 'ready' },
+      { type: 'pulpo_recall', status: 'completed', sources: [] },
+      { type: 'reasoning', status: 'completed', summary: [{ text: 'Plan' }] },
+      { type: 'pulpo_tool', tool: 'bash', status: 'completed', output: 'Done' },
+      { type: 'message', content: [{ text: 'First answer' }] },
+      { type: 'pulpo_compaction', status: 'completed', summary: 'Context' },
+      { type: 'pulpo_tool', tool: 'bash', status: 'running' },
+      { type: 'message', status: 'in_progress', content: [{ text: 'Final answer' }] },
+    ]
+    const visible = buildMessageTimeline(output, true)
+    expect(buildMessageTimeline(output, false)).toEqual([
+      { kind: 'text', text: 'First answer' },
+      { kind: 'text', text: 'Final answer' },
+    ])
+    expect(buildMessageTimeline(output, true)).toEqual(visible)
   })
 
   it('preserves context compaction as its own activity between assistant turns', () => {
@@ -152,6 +178,15 @@ describe('buildMessageTimeline', () => {
 })
 
 describe('buildLegacyMessageTimeline', () => {
+  it.each([false, true])('hides cached reasoning when streaming is %s', (streaming) => {
+    expect(buildLegacyMessageTimeline({
+      reasoning: 'Private summary',
+      text: 'Answer',
+      streaming,
+      showReasoning: false,
+    })).toEqual([{ kind: 'text', text: 'Answer' }])
+  })
+
   it('does not manufacture thinking activity for an ordinary stream', () => {
     expect(buildLegacyMessageTimeline({
       reasoning: undefined,

@@ -805,7 +805,7 @@ export const MessageItem = memo(function MessageItem({
             <MessageAttachmentList attachments={message.attachments} align="start" />
           )}
 
-          {otherItems.map((item, index) => {
+          {showReasoning && otherItems.map((item, index) => {
             const type = (item as { type?: string }).type ?? 'unknown'
             return (
               <details
