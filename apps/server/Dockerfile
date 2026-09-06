@@ -31,17 +31,18 @@ COPY --from=build /app/packages/contracts/dist packages/contracts/dist
 COPY --from=build /app/packages/client-core/dist packages/client-core/dist
 COPY --from=build /app/apps/server/dist apps/server/dist
 COPY --from=build /app/apps/server/drizzle apps/server/drizzle
+COPY deploy/healthcheck.mjs /app/deploy/healthcheck.mjs
 USER node
 CMD ["node", "apps/server/dist/api.js"]
 
 FROM runtime AS production-worker
 ENV PULPO_WORKER_HEALTH_PORT=3000
-HEALTHCHECK --interval=5s --timeout=3s --start-period=30s --retries=12 CMD node -e "fetch('http://127.0.0.1:3000/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+HEALTHCHECK --interval=5s --timeout=3s --start-period=30s --retries=120 CMD node /app/deploy/healthcheck.mjs
 CMD ["node", "apps/server/dist/worker.js"]
 
 FROM runtime AS production-api
 COPY --chmod=755 deploy/start-api.sh /app/deploy/start-api.sh
-HEALTHCHECK --interval=5s --timeout=3s --start-period=30s --retries=12 CMD node -e "fetch('http://127.0.0.1:3000/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+HEALTHCHECK --interval=5s --timeout=3s --start-period=30s --retries=120 CMD node /app/deploy/healthcheck.mjs
 CMD ["/app/deploy/start-api.sh"]
 
 # Preserve the default image contract for local Compose and PR previews.
