@@ -79,6 +79,44 @@ jobs:
       - name: Validate production deployment ordering
         run: python3 .github/scripts/deploy-production_test.py
 
+  chat-search:
+    name: Chat search / PostgreSQL
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.action != 'closed'
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: pgvector/pgvector:0.8.6-pg17
+        env:
+          POSTGRES_PASSWORD: search-test
+          POSTGRES_DB: pulpo_search_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://postgres:search-test@localhost:5432/pulpo_search_test
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.18.1
+          cache: npm
+      - name: Install dependencies
+        run: npm clean-install --ignore-scripts
+      - name: Build contracts
+        run: npm run build -w @pulpo/contracts
+      - name: Apply database migrations
+        run: npm run db:migrate -w @pulpo/server
+      - name: Test chat retrieval against PostgreSQL
+        run: npm run test:episodic-search -w @pulpo/server
+
   cli-package:
     name: CLI package / Node ${{ matrix.node }}
     if: >-
@@ -199,7 +237,7 @@ jobs:
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'push' && github.ref == 'refs/heads/main')
-    needs: [checks, cli-package, desktop-windows-check]
+    needs: [checks, chat-search, cli-package, desktop-windows-check]
     runs-on: ubuntu-24.04
     outputs:
       version: ${{ steps.release.outputs.version }}
@@ -689,7 +727,7 @@ jobs:
       github.event.action != 'closed' &&
       github.event.pull_request.base.ref == 'dev' &&
       github.event.pull_request.head.repo.full_name == github.repository
-    needs: [checks, cli-package]
+    needs: [checks, chat-search, cli-package]
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -800,7 +838,7 @@ jobs:
     if: >-
       github.event_name == 'push' &&
       github.ref == 'refs/heads/dev'
-    needs: [checks, cli-package]
+    needs: [checks, chat-search, cli-package]
     runs-on: ubuntu-24.04
     environment: development
     permissions:

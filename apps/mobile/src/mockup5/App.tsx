@@ -1,7 +1,7 @@
 import { initialActivityTiming } from '@pulpo/client-core';
 import { mobileShelf, durableShelfAttachments, shelfComposerAttachments } from '../features/chat/shelf';
 import { useAppTheme } from './src/theme';
-import { MaterialButton, MaterialContextMenu, MaterialField, MaterialIconButton, MaterialLoading, MaterialMenu, MaterialRow, MaterialDialog, type Action as MaterialAction } from '../platform/MaterialUI';
+import { MaterialSearchField, MaterialSuggestionButton, MaterialNavigationRow, MaterialButton, MaterialContextMenu, MaterialField, MaterialIconButton, MaterialLoading, MaterialMenu, MaterialRow, MaterialDialog, type Action as MaterialAction } from '../platform/MaterialUI';
 import type { MenuAnchor } from '../platform/MaterialUI.types';
 import { promptText, selectText, showActions } from '../platform/materialActions';
 import { QueuedMessagesView } from '../native/QueuedMessagesView';
@@ -3491,8 +3491,9 @@ function NativeModelSectionRow({ label, section, models, selected = false }: { l
 }
 
 function SuggestedPromptButton({ label, accessible, onPress, temporary = false }: { label: string; accessible: boolean; onPress: () => void; temporary?: boolean }) {
-  const { styles } = useChatStyles();
+  const { styles, COLORS } = useChatStyles();
   const colorScheme = useColorScheme();
+  if (Platform.OS === 'android') return <MaterialSuggestionButton label={label} onPress={onPress} fullWidth={accessible} containerColor={temporary ? temporaryChatColors(colorScheme === 'dark').composer : COLORS.elevated} contentColor={COLORS.textSoft} />;
   const temporaryStyle = temporary
     ? colorScheme === 'dark' ? styles.temporarySuggestionCardDark : styles.temporarySuggestionCardLight
     : undefined;
@@ -5329,7 +5330,7 @@ function AndroidFoldersDisclosure({ folders, onSelectChat, onCreate }: {
   onSelectChat: (chat: HistoryChatSummary) => void;
   onCreate: () => void;
 }) {
-  const { COLORS, styles } = useChatStyles();
+  const { COLORS } = useChatStyles();
   const [expanded, setExpanded] = useState(false);
   const [openFolders, setOpenFolders] = useState<Set<string>>(() => new Set());
   const toggleFolder = (id: string) => setOpenFolders((current) => {
@@ -5338,18 +5339,13 @@ function AndroidFoldersDisclosure({ folders, onSelectChat, onCreate }: {
     return next;
   });
   return <View>
-    <Pressable accessibilityRole="button" accessibilityLabel="Folders" accessibilityState={{ expanded }} onPress={() => setExpanded(!expanded)} android_ripple={{ color: COLORS.fillStrong }} style={styles.androidFolderRow}>
-      <Icon name="folder" size={22} color={COLORS.text} /><Text style={[styles.chatTitle, styles.flex]}>Folders</Text>
-      <Text style={styles.chatTime}>{folders.length}</Text><Icon name={expanded ? 'chevron.down' : 'chevron.right'} size={16} color={COLORS.muted} />
-    </Pressable>
+    <MaterialNavigationRow title="Folders" icon="folder" value={String(folders.length)} expanded={expanded} onPress={() => setExpanded(!expanded)} />
     {expanded ? <ScrollView nestedScrollEnabled style={{ maxHeight: 220 }}>
-      {folders.map((folder) => <View key={folder.id}>
-        <Pressable accessibilityRole="button" accessibilityLabel={folder.name} accessibilityState={{ expanded: openFolders.has(folder.id) }} onPress={() => toggleFolder(folder.id)} android_ripple={{ color: COLORS.fillStrong }} style={[styles.androidFolderRow, { paddingLeft: 30 }]}>
-          <Icon name={openFolders.has(folder.id) ? 'chevron.down' : 'chevron.right'} size={16} color={COLORS.muted} /><Text style={[styles.chatTitle, styles.flex]}>{folder.name}</Text><Text style={styles.chatTime}>{folder.chats.length}</Text>
-        </Pressable>
-        {openFolders.has(folder.id) ? folder.chats.length ? folder.chats.map((chat) => <Pressable key={chat.id} accessibilityRole="button" accessibilityLabel={chat.title} onPress={() => onSelectChat(chat)} android_ripple={{ color: COLORS.fillStrong }} style={[styles.androidFolderRow, { paddingLeft: 52 }]}><Icon name="bubble.left" size={18} color={COLORS.muted} /><Text numberOfLines={1} style={[styles.chatTitle, styles.flex]}>{chat.title}</Text></Pressable>) : <Text style={{ color: COLORS.muted, paddingLeft: 52, paddingVertical: 12 }}>No chats yet</Text> : null}
+      {folders.map((folder) => <View key={folder.id} style={{ paddingLeft: 16 }}>
+        <MaterialNavigationRow title={folder.name} icon="folder" value={String(folder.chats.length)} expanded={openFolders.has(folder.id)} onPress={() => toggleFolder(folder.id)} />
+        {openFolders.has(folder.id) ? <View style={{ paddingLeft: 16 }}>{folder.chats.length ? folder.chats.map((chat) => <MaterialNavigationRow key={chat.id} title={chat.title} icon="bubble.left" onPress={() => onSelectChat(chat)} />) : <Text style={{ color: COLORS.muted, padding: 16 }}>No chats yet</Text>}</View> : null}
       </View>)}
-      <Pressable accessibilityRole="button" accessibilityLabel="New folder" onPress={onCreate} android_ripple={{ color: COLORS.fillStrong }} style={[styles.androidFolderRow, { paddingLeft: 30 }]}><Icon name="folder.badge.plus" size={22} color={COLORS.muted} /><Text style={styles.chatTitle}>New folder</Text></Pressable>
+      <View style={{ paddingLeft: 16 }}><MaterialNavigationRow title="New folder" icon="folder.badge.plus" onPress={onCreate} /></View>
     </ScrollView> : null}
   </View>;
 }
@@ -5478,9 +5474,11 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
   const searchActive = searchFocused || search.length > 0;
   const searchActiveProgress = useSharedValue(searchActive ? 1 : 0);
   const nativeSearchRef = useRef<SwiftUITextFieldRef>(null);
+  const materialSearchRef = useRef<{ blur: () => Promise<void> }>(null);
   const dismissSearch = useCallback(() => {
     Keyboard.dismiss();
     void nativeSearchRef.current?.blur();
+    void materialSearchRef.current?.blur();
   }, []);
   useEffect(() => {
     if (!drawerOpen) dismissSearch();
@@ -5613,7 +5611,7 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
           <RoundButton icon="gearshape" accessibilityLabel="Settings" onPress={() => { dismissSearch(); onOpenSettings(); }} />
         </AppHeader>
 
-        {Platform.OS === 'ios' ? <NativeDrawerSearch fieldRef={nativeSearchRef} focused={searchFocused} value={search} onChange={setSearch} onFocusChange={setSearchFocused} /> : <View style={styles.searchBox}>
+        {Platform.OS === 'ios' ? <NativeDrawerSearch fieldRef={nativeSearchRef} focused={searchFocused} value={search} onChange={setSearch} onFocusChange={setSearchFocused} /> : Platform.OS === 'android' ? <MaterialSearchField fieldRef={materialSearchRef} value={search} onChange={setSearch} onFocusChange={setSearchFocused} /> : <View style={styles.searchBox}>
           <Icon name="magnifyingglass" size={24} color={COLORS.muted} />
           <TextInput
             accessibilityLabel="Search chats"
@@ -5732,7 +5730,6 @@ function createChatStyles(COLORS: ChatColors) { return StyleSheet.create({
   persistentPanel: { borderRightColor: COLORS.lineSoft, overflow: 'hidden' },
   historyPanelContent: { flex: 1 },
   persistentPanelContent: { width: SIDEBAR_WIDTH },
-  androidFolderRow: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16 },
   historyLoading: { alignItems: 'center', gap: 8, paddingVertical: 20 },
 
   // Main chat view
@@ -5894,7 +5891,7 @@ function createChatStyles(COLORS: ChatColors) { return StyleSheet.create({
   suggestionReveal: { width: '100%', overflow: 'hidden' },
   suggestionGrid: { width: '100%', flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 8 },
   suggestionGridAccessible: { flexDirection: 'column', flexWrap: 'nowrap' },
-  suggestionCard: { width: '48.7%', minHeight: 68, borderRadius: Platform.OS === 'android' ? 24 : 13, borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.line, backgroundColor: COLORS.card, paddingHorizontal: 13, paddingVertical: 11, justifyContent: 'center' },
+  suggestionCard: { width: '48.7%', minHeight: 68, borderRadius: 13, borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.line, backgroundColor: COLORS.card, paddingHorizontal: 13, paddingVertical: 11, justifyContent: 'center' },
   temporarySuggestionCardLight: { backgroundColor: 'rgba(237,233,254,0.82)', borderColor: 'rgba(139,92,246,0.48)' },
   temporarySuggestionCardDark: { backgroundColor: 'rgba(46,16,101,0.58)', borderColor: 'rgba(124,58,237,0.52)' },
   suggestionCardAccessible: { width: '100%' },
@@ -5955,8 +5952,8 @@ function createChatStyles(COLORS: ChatColors) { return StyleSheet.create({
   panelRoot: { flex: 1, backgroundColor: COLORS.panel },
   profileChip: { flexDirection: 'row', alignItems: 'center', gap: 11 },
   profileName: { color: COLORS.text, fontSize: 17, fontWeight: '600', letterSpacing: -0.3 },
-  searchBox: { height: Platform.OS === 'android' ? 56 : DRAWER_ACTION_HEIGHT, marginHorizontal: 10, marginTop: 6, borderRadius: Platform.OS === 'android' ? 28 : 13, backgroundColor: COLORS.panel, borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.lineSoft, flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 12 },
-  nativeDrawerSearchHost: { height: DRAWER_ACTION_HEIGHT, marginHorizontal: 22, marginTop: 6, borderRadius: Platform.OS === 'android' ? 28 : 13, backgroundColor: COLORS.panel },
+  searchBox: { height: DRAWER_ACTION_HEIGHT, marginHorizontal: 10, marginTop: 6, borderRadius: 13, backgroundColor: COLORS.panel, borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.lineSoft, flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 12 },
+  nativeDrawerSearchHost: { height: DRAWER_ACTION_HEIGHT, marginHorizontal: 22, marginTop: 6, borderRadius: 13, backgroundColor: COLORS.panel },
   nativeFoldersDisclosureHost: { alignSelf: 'stretch', minHeight: DRAWER_ACTION_HEIGHT, marginHorizontal: 22 },
   nativeFoldersHeaderHost: { alignSelf: 'stretch', height: DRAWER_ACTION_HEIGHT },
   nativeFoldersContent: { alignSelf: 'stretch', overflow: 'hidden' },

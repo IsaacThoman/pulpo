@@ -26,7 +26,7 @@ Composer handoffs check the captured scope, content, and attachment selection be
 
 ## Rollout and verification
 
-1. Apply additive migration **0062_shelved_drafts** with `npm run db:migrate` before starting the updated server.
+1. Apply additive migration **0063_shelved_drafts** with `npm run db:migrate` before starting the updated server.
 2. Deploy the updated server before updated web/mobile clients. Older servers leave shelf operations pending locally; they cannot synchronize them.
 3. Verify two devices on one account, including composer sync opt-out, offline restore/swap, attachment upload, reconnect, ordering, and deletion. Check iOS/Android keyboard transitions, large text, themes, and accessibility on devices before release.
 

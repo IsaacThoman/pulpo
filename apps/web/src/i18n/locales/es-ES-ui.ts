@@ -1275,7 +1275,7 @@ const esUi: Record<string, string> = {
   "Your username is now @": "Tu nombre de usuario ahora es @",
   "Zoom": "Zoom",
   "$16 accumulating platform credits added each month": "$16 en créditos de plataforma acumulables añadidos cada mes",
-  "$2 accumulating platform credits added each month": "$2 en créditos de plataforma acumulables añadidos cada mes",
+  "$1 accumulating platform credits added each month": "$1 en créditos de plataforma acumulables añadidos cada mes",
   "Cancel any time": "Cancela cuando quieras",
   "Everything in Pulpo Baby": "Todo lo incluido en Pulpo Baby",
   "Everything in Pulpo Eight": "Todo lo incluido en Pulpo Eight",
