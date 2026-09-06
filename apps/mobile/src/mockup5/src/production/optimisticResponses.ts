@@ -359,6 +359,20 @@ export function reconcileOptimisticResponses(
     changed = true
   }
 
+  // A queued turn or another device can advance the server leaf while an
+  // accepted local turn is still protected from stale list/detail reads.
+  // Preserve that descendant instead of hiding it behind its optimistic parent.
+  const serverLeaf = chat.activeBranchLeafId ?? chat.activeResponseId
+  if (optimisticLeaf && serverLeaf) {
+    const seen = new Set<string>()
+    let ancestor: string | null = serverLeaf
+    while (ancestor && !seen.has(ancestor)) {
+      if (ancestor === optimisticLeaf) { optimisticLeaf = serverLeaf; break }
+      seen.add(ancestor)
+      ancestor = serverById.get(ancestor)?.parentResponseId ?? null
+    }
+  }
+
   if (optimisticLeaf && (
     chat.activeResponseId !== optimisticLeaf
     || chat.activeBranchLeafId !== optimisticLeaf

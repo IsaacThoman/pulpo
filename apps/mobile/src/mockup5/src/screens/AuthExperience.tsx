@@ -1,9 +1,11 @@
+import { MaterialButton, MaterialField } from '../../../platform/MaterialUI';
+import { useSubpageBack } from '../../../platform/useSubpageBack';
 import { DeleteAccountAction } from '../../../components/DeleteAccount';
 import type { ComponentProps, PropsWithChildren, ReactNode } from 'react';
 import { useState } from 'react';
-import { ActivityIndicator, Image, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
+import { ActivityIndicator, Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { SymbolView } from 'expo-symbols';
+import { SymbolView } from '../../../platform/SymbolView';
 import { useAppTheme } from '../theme';
 import { normalizeInstanceUrl } from '../domain';
 import { mobileApi } from '../../../api/client';
@@ -40,7 +42,7 @@ function useCompactAuthLayout() {
 function AuthShell({ title, subtitle, children, footer, colors }: PropsWithChildren<{ title: string; subtitle: string; footer?: ReactNode; colors: AuthColors }>) {
   const insets = useSafeAreaInsets();
   const compact = useCompactAuthLayout();
-  return <View style={[styles.root, { backgroundColor: colors.background }]}>
+  return <KeyboardAvoidingView behavior={Platform.OS === 'android' ? 'padding' : undefined} style={[styles.root, { backgroundColor: colors.background }]}>
     <ScrollView alwaysBounceVertical={false} automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'} keyboardShouldPersistTaps="handled" contentContainerStyle={[styles.content, compact && styles.compactContent, { paddingTop: insets.top + (compact ? 14 : 42), paddingBottom: insets.bottom + (compact ? 8 : 24) }]}>
       <View style={[styles.brand, compact && styles.compactBrand]}>
         <Image source={require('../../assets/pulpo-smiley.png')} style={[styles.logo, compact && styles.compactLogo]} />
@@ -53,11 +55,12 @@ function AuthShell({ title, subtitle, children, footer, colors }: PropsWithChild
       <View style={[styles.form, compact && styles.compactForm]}>{children}</View>
       {footer ? <View style={[styles.footer, compact && styles.compactFooter]}>{footer}</View> : null}
     </ScrollView>
-  </View>;
+  </KeyboardAvoidingView>;
 }
 
 function AuthField({ colors, icon, invalid = false, label, ...props }: AuthFieldProps) {
   const compact = useCompactAuthLayout();
+  if (Platform.OS === 'android') return <MaterialField label={label} icon={typeof icon === 'string' ? icon : undefined} error={invalid ? 'Check this value' : undefined} autoCapitalize="none" {...props} />;
   return <View style={[styles.field, compact && styles.compactField, { backgroundColor: colors.surface, borderColor: invalid ? colors.destructive : colors.border }]}>
     <SymbolView name={icon} tintColor={colors.textFaint} size={18} />
     <TextInput accessibilityLabel={label} placeholder={label} placeholderTextColor={colors.textFaint} autoCapitalize="none" style={[styles.input, compact && styles.compactInput, { color: colors.text }]} {...props} />
@@ -73,6 +76,7 @@ function PrimaryAuthButton({ label, colors, loading = false, disabled = false, i
   onPress: () => void;
 }) {
   const compact = useCompactAuthLayout();
+  if (Platform.OS === 'android') return <MaterialButton label={label} onPress={onPress} disabled={disabled} loading={loading} icon={typeof icon === 'string' ? icon : undefined} />;
   const inactive = disabled || loading;
   const backgroundColor = inactive ? colors.border : colors.accent;
   const foregroundColor = inactive ? colors.textMuted : colors.accentText;
@@ -87,7 +91,7 @@ function BackToSignIn({ colors, onPress, label = 'Back to sign in' }: { colors: 
 
 export function AuthExperience() {
   const theme = useAppTheme();
-  const colors = theme.isDark ? mockupOneDark : mockupOneLight;
+  const colors: AuthColors = Platform.OS === 'android' ? { background: theme.background, surface: theme.elevated, border: theme.separator, text: theme.text, textMuted: theme.secondary, textFaint: theme.secondary, accent: theme.accent, accentText: theme.accentText, destructive: theme.red } : theme.isDark ? mockupOneDark : mockupOneLight;
   const productionStatus = useSessionStore((state) => state.status);
   const productionUser = useSessionStore((state) => state.user);
   const productionInstanceUrl = useSessionStore((state) => state.instanceUrl);
@@ -128,6 +132,7 @@ export function AuthExperience() {
     setPasskeyFallback(false);
     setPage(next);
   };
+  useSubpageBack(page !== 'login', () => goTo('login'));
   const run = async (action: () => Promise<void>) => {
     setError('');
     setLoading(true);
@@ -155,7 +160,7 @@ export function AuthExperience() {
       if (nextError instanceof PasskeyCancelledError) return;
       if (nextError instanceof NativePasskeyError) {
         setPasskeyFallback(true);
-        setError('Native passkeys are not available for this server configuration. You can continue securely in Safari.');
+        setError('Native passkeys are not available for this server configuration. Continue securely in your browser.');
         return;
       }
       setError(nextError instanceof Error ? nextError.message : 'Could not sign in with a passkey.');
@@ -279,7 +284,7 @@ export function AuthExperience() {
   </AuthShell>;
 
   if (page === 'login-options') return <AuthShell colors={colors} title="More login options" subtitle="Choose another way to sign in to your Pulpo account.">
-    <PrimaryAuthButton label={passkeyFallback ? 'Try passkey in Safari' : 'Sign in with a passkey'} colors={colors} loading={loading} icon="person.badge.key" onPress={() => submitPasskey(passkeyFallback)} />
+    <PrimaryAuthButton label={passkeyFallback ? 'Try passkey in browser' : 'Sign in with a passkey'} colors={colors} loading={loading} icon="person.badge.key" onPress={() => submitPasskey(passkeyFallback)} />
     {error ? <Text accessibilityRole="alert" style={[styles.error, { color: colors.destructive }]}>{error}</Text> : null}
     <BackToSignIn colors={colors} onPress={() => goTo('login')} />
   </AuthShell>;

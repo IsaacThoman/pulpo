@@ -1,0 +1,27 @@
+appId: com.isaacthoman.pulpo
+---
+- extendedWaitUntil:
+    visible: 'Completed: Parity Android actions'
+    timeout: 10000
+- tapOn: Previous version
+- assertVisible: Edited Android response
+- tapOn: Next version
+- longPressOn: 'Completed: Parity Android actions'
+- tapOn: Copy
+- longPressOn: 'Completed: Parity Android actions'
+- tapOn: Reply
+- longPressOn: 'Completed: Parity Android actions'
+- tapOn: Edit response
+- tapOn: Cancel
+- longPressOn: 'Completed: Parity Android actions'
+- tapOn: Regenerate response
+- extendedWaitUntil:
+    visible: '4 / 4'
+    timeout: 10000
+- longPressOn: 'Completed: Parity Android actions'
+- tapOn: Delete message
+- tapOn: Cancel
+- longPressOn: Parity Android actions
+- tapOn: Edit message
+- assertVisible: Cancel message edit
+- tapOn: Cancel message edit

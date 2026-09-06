@@ -45,16 +45,16 @@ function bytesToBase64(bytes: Uint8Array): string {
 }
 
 export function passkeyDomainAllowList(): string[] {
-  const domains = Constants.expoConfig?.extra?.passkeyDomains
+  const domains = Platform.OS === 'android' ? Constants.expoConfig?.extra?.androidPasskeyDomains : Constants.expoConfig?.extra?.passkeyDomains
   return Array.isArray(domains)
     ? domains.filter((value): value is string => typeof value === 'string').map((value) => value.toLowerCase())
-    : ['pulpo.baby']
+    : Platform.OS === 'android' ? [] : ['pulpo.baby']
 }
 
 export function canUseNativePasskeys(instanceUrl: string): boolean {
   try {
     const url = new URL(instanceUrl)
-    return Platform.OS === 'ios'
+    return (Platform.OS === 'ios' || Platform.OS === 'android')
       && url.protocol === 'https:'
       && (!url.port || url.port === '443')
       && passkeyDomainAllowList().includes(url.hostname.toLowerCase())

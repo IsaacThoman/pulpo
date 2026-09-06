@@ -1,6 +1,6 @@
 import { requireNativeViewManager } from 'expo-modules-core'
 import type { ComponentProps } from 'react'
-import type { ViewProps } from 'react-native'
+import { Platform, type ViewProps } from 'react-native'
 
 type NativeEvent = { nativeEvent: Record<string, never> }
 
@@ -19,10 +19,11 @@ type TemporaryChatHeaderNativeProps = ViewProps & {
   onNewChat: (event: NativeEvent) => void
 }
 
-const TemporaryChatHeaderNativeView = requireNativeViewManager<TemporaryChatHeaderNativeProps>(
+const TemporaryChatHeaderNativeView = Platform.OS === 'ios' ? requireNativeViewManager<TemporaryChatHeaderNativeProps>(
   'PulpoFileClipboard',
   'TemporaryChatHeaderView',
-)
+) : (_props: TemporaryChatHeaderNativeProps) => null
+
 
 export type TemporaryChatHeaderViewProps = Omit<
   ComponentProps<typeof TemporaryChatHeaderNativeView>,

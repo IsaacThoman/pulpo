@@ -18,4 +18,4 @@ export const lightTheme = {
 
 export const themePalettes = { dark: darkTheme, light: lightTheme } as const;
 
-export type AppTheme = typeof darkTheme | typeof lightTheme;
+export type AppTheme = { [K in keyof typeof darkTheme]: K extends 'isDark' ? boolean : string };

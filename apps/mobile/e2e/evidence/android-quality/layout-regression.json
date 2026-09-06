@@ -1,0 +1,87 @@
+[
+  {
+    "mode": "none",
+    "model": [
+      "[406,851][834,943]"
+    ],
+    "composer": [
+      "[58,2075][1024,2162]"
+    ],
+    "header": [
+      228,
+      84,
+      727,
+      210
+    ],
+    "headerCenter": 477.5,
+    "availableCenter": 477.5
+  },
+  {
+    "mode": "expiry",
+    "model": [
+      "[406,851][834,943]"
+    ],
+    "composer": [
+      "[58,2075][1024,2162]"
+    ],
+    "header": [
+      228,
+      84,
+      727,
+      210
+    ],
+    "headerCenter": 477.5,
+    "availableCenter": 477.5
+  },
+  {
+    "mode": "temporary",
+    "model": [
+      "[406,851][834,943]"
+    ],
+    "composer": [
+      "[58,2075][1024,2162]"
+    ],
+    "header": [
+      291,
+      84,
+      790,
+      210
+    ],
+    "headerCenter": 540.5,
+    "availableCenter": 540.5
+  },
+  {
+    "mode": "expiry-restored",
+    "model": [
+      "[406,851][834,943]"
+    ],
+    "composer": [
+      "[58,2075][1024,2162]"
+    ],
+    "header": [
+      228,
+      84,
+      727,
+      210
+    ],
+    "headerCenter": 477.5,
+    "availableCenter": 477.5
+  },
+  {
+    "mode": "none-restored",
+    "model": [
+      "[406,851][834,943]"
+    ],
+    "composer": [
+      "[58,2075][1024,2162]"
+    ],
+    "header": [
+      228,
+      84,
+      727,
+      210
+    ],
+    "headerCenter": 477.5,
+    "availableCenter": 477.5
+  }
+]

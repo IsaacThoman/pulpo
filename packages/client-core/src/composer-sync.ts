@@ -4,6 +4,8 @@ export interface ComposerCheckpoint {
   snapshot: ComposerSnapshot
   pending: Partial<ComposerState>
   clearRevision?: number
+  /** Identifies a draft write whose server acknowledgement may have been lost. */
+  unacknowledgedMutationId?: string
   /** Legacy single receipt, migrated when loading older checkpoints. */
   submission?: { state: ComposerState; revision?: number }
   submissions?: Array<{ state: ComposerState; revision?: number }>
@@ -53,6 +55,7 @@ export class ComposerSync {
           // Read supported fields only; old checkpoints may still contain retired recovery copies.
           entry!.snapshot = saved.snapshot
           entry!.pending = saved.pending
+          entry!.unacknowledgedMutationId = saved.unacknowledgedMutationId
           entry!.clearRevision = saved.clearRevision
           entry!.submissions = saved.submissions ?? (saved.submission ? [saved.submission] : [])
         }
@@ -84,7 +87,7 @@ export class ComposerSync {
     this.entries.clear()
   }
   private checkpoint(entry: Entry): ComposerCheckpoint {
-    return { snapshot: entry.snapshot, pending: { ...entry.inflight, ...entry.pending }, clearRevision: entry.clearRevision, submissions: entry.submissions }
+    return { snapshot: entry.snapshot, pending: { ...entry.inflight, ...entry.pending }, unacknowledgedMutationId: entry.unacknowledgedMutationId, clearRevision: entry.clearRevision, submissions: entry.submissions }
   }
   private notify(entry: Entry, publish = true): void {
     if (this.disposed) return
@@ -108,8 +111,14 @@ export class ComposerSync {
       const result = await this.transport?.read(entry.snapshot.draftId)
       if (generation !== this.generation || !result?.ok) return
       if (result.snapshot.revision !== entry.snapshot.revision && Object.keys(entry.pending).length) {
-        entry.pending = {}
+        // An acknowledgement can disappear after the server commits our partial
+        // draft. That exact mutation is safe to rebase; another writer still wins.
+        const acceptedOwnWrite = entry.unacknowledgedMutationId
+          && result.snapshot.mutationId === entry.unacknowledgedMutationId
+          && result.snapshot.clearedRevision === entry.snapshot.clearedRevision
+        if (!acceptedOwnWrite) entry.pending = {}
       }
+      entry.unacknowledgedMutationId = undefined
       if (result.snapshot.revision >= entry.snapshot.revision) entry.snapshot = result.snapshot
       entry.ready = true
       if (entry.clearRevision !== undefined) await this.clear(entry.snapshot.draftId, entry.clearRevision)
@@ -156,12 +165,15 @@ export class ComposerSync {
     entry.inflight = patch
     entry.pending = {}
     const input: ComposerWrite = { draftId, patch, baseRevision: entry.snapshot.revision, mutationId: `${this.clientId}:${++this.sequence}` }
+    entry.unacknowledgedMutationId = input.mutationId
+    this.notify(entry, false)
     const previous = entry.snapshot
     entry.writing = (async () => {
       try {
         const result = await this.transport!.write(input)
         if (generation !== this.generation) { entry.pending = { ...patch, ...entry.pending }; return }
         if (!result.ok) throw new Error(result.error)
+        entry.unacknowledgedMutationId = undefined
         if (result.conflict) {
           if (result.snapshot.clearedRevision > previous.clearedRevision) {
             entry.pending = {}

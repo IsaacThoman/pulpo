@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+vi.mock('expo-crypto', async () => ({ randomUUID: (await import('node:crypto')).randomUUID }))
 import type { MobileModel, ServerChat, ServerFolder } from '../../../types'
 
 const mocks = vi.hoisted(() => ({

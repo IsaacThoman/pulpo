@@ -4,6 +4,8 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const mocks = vi.hoisted(() => ({ request: vi.fn(), deleteAccount: vi.fn(), logout: vi.fn(), alert: vi.fn(), cancelQueries: vi.fn(), removeQueries: vi.fn() }))
 vi.mock('react-native', () => ({
+  Platform: { OS: 'ios' },
+  KeyboardAvoidingView: ({ children }: { children: import('react').ReactNode }) => createElement('div', null, children),
   Alert: { alert: mocks.alert }, Linking: { openURL: vi.fn() },
   Button: ({ title, onPress, disabled }: { title: string; onPress: () => void; disabled?: boolean }) => createElement('button', { onClick: onPress, disabled }, title),
   TextInput: ({ value, onChangeText, accessibilityLabel, editable }: { value: string; onChangeText: (value: string) => void; accessibilityLabel: string; editable: boolean }) => createElement('input', { 'aria-label': accessibilityLabel, value, disabled: !editable, onChange: (event: { target: { value: string } }) => onChangeText(event.target.value) }),
@@ -13,6 +15,7 @@ vi.mock('react-native', () => ({
   Text: ({ children }: { children: import('react').ReactNode }) => createElement('span', null, children),
   View: ({ children }: { children: import('react').ReactNode }) => createElement('div', null, children),
 }))
+vi.mock('react-native-safe-area-context', () => ({ SafeAreaView: ({ children }: { children: import('react').ReactNode }) => createElement('div', null, children) }))
 vi.mock('../mockup5/src/theme', () => ({ useAppTheme: () => ({ background: '#fff', text: '#111', secondary: '#333', separator: '#888', red: '#b00' }) }))
 vi.mock('../api/client', () => ({ apiRequest: mocks.request, mobileApi: { deleteAccount: mocks.deleteAccount } }))
 vi.mock('../data/database', () => ({ cacheNamespace: () => 'instance|user' }))

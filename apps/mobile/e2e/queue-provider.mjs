@@ -15,7 +15,7 @@ http.createServer(async (req, res) => {
     : (last?.content ?? []).filter((item) => item.type === 'input_text').map((item) => item.text).join(' ')
   requests.push({ prompt, model: body.model, input: body.input, at: Date.now() })
   const id = `resp_${randomUUID()}`
-  const text = `Completed: ${prompt}`
+  const text = prompt === "PARITY RICH" ? "# Rich response\n\nThis is **bold**, *italic*, and `inline code`.\n\n- First item\n- Second item\n\n| Platform | Result |\n| --- | --- |\n| Android | Ready |\n| iOS | Ready |\n\n```js\nconst parity = true;\nconsole.log(parity);\n```\n\n[Open example](https://example.com)\n\n> A quoted paragraph.\n\nFinal paragraph after the table and code block." : `Completed: ${prompt}`
   const item = { id: `msg_${randomUUID()}`, type: 'message', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text, annotations: [] }] }
   const response = { id, object: 'response', created_at: Math.floor(Date.now() / 1000), status: 'completed', model: body.model,
     output: [item], usage: { input_tokens: 10, output_tokens: 10, total_tokens: 20 } }

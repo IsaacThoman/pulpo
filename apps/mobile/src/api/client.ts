@@ -45,6 +45,8 @@ interface RequestOptions extends Omit<RequestInit, 'body'> {
   auth?: boolean
   idempotencyKey?: string
   timeoutMs?: number
+  /** Security forms can reject a current password while the bearer session is valid. */
+  verifySessionOnUnauthorized?: boolean
 }
 
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
@@ -78,7 +80,13 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
     error?: { message?: string; code?: string }
   } | undefined
   if (!response.ok) {
-    if (response.status === 401 && options.auth !== false) unauthorizedHandler?.()
+    if (response.status === 401 && options.auth !== false) {
+      if (options.verifySessionOnUnauthorized) {
+        // Let the session endpoint decide whether to sign out. Keep credential
+        // errors (and temporary verification network failures) in the form.
+        await apiRequest('/api/mobile/me').catch(() => undefined)
+      } else unauthorizedHandler?.()
+    }
     throw new ApiError(
       response.status,
       body?.error?.code ?? 'request_failed',
@@ -113,41 +121,41 @@ export const mobileApi = {
   redeemInviteCode: (code: string) => apiRequest<{ user: User }>('/api/invite-codes/redeem', { method: 'POST', body: { code } }),
   updateProfile: (name: string) => apiRequest<{ user: User }>('/api/me', { method: 'PATCH', body: { name } }),
   changePassword: (currentPassword: string, newPassword: string) =>
-    apiRequest<void>('/api/me/password', { method: 'POST', body: { currentPassword, newPassword } }),
-  deleteAccount: (currentPassword: string, verificationCode?: string) => apiRequest('/api/me', { method: 'DELETE', body: { currentPassword, verificationCode } }),
+    apiRequest<void>('/api/me/password', { method: 'POST', verifySessionOnUnauthorized: true, body: { currentPassword, newPassword } }),
+  deleteAccount: (currentPassword: string, verificationCode?: string) => apiRequest('/api/me', { method: 'DELETE', verifySessionOnUnauthorized: true, body: { currentPassword, verificationCode } }),
   twoFactorStatus: () => apiRequest<TwoFactorStatus>('/api/me/two-factor'),
   beginTwoFactorEnrollment: (currentPassword: string, verificationCode?: string) =>
     apiRequest<TwoFactorEnrollment>('/api/me/two-factor/enrollment', {
-      method: 'POST', body: { currentPassword, verificationCode },
+      method: 'POST', verifySessionOnUnauthorized: true, body: { currentPassword, verificationCode },
     }),
   confirmTwoFactorEnrollment: (code: string) => apiRequest<TwoFactorRecoveryCodes>('/api/me/two-factor/enrollment/confirm', {
-    method: 'POST', body: { code },
+    method: 'POST', verifySessionOnUnauthorized: true, body: { code },
   }),
   regenerateTwoFactorRecoveryCodes: (currentPassword: string, verificationCode: string) =>
     apiRequest<TwoFactorRecoveryCodes>('/api/me/two-factor/recovery-codes', {
-      method: 'POST', body: { currentPassword, verificationCode },
+      method: 'POST', verifySessionOnUnauthorized: true, body: { currentPassword, verificationCode },
     }),
   disableTwoFactor: (currentPassword: string, verificationCode: string) => apiRequest<void>('/api/me/two-factor', {
-    method: 'DELETE', body: { currentPassword, verificationCode },
+    method: 'DELETE', verifySessionOnUnauthorized: true, body: { currentPassword, verificationCode },
   }),
   passkeys: () => apiRequest<PasskeyList>('/api/me/passkeys'),
   beginPasskeyRegistration: (name: string, currentPassword: string, verificationCode?: string) =>
     apiRequest<PasskeyCeremony>('/api/me/passkeys/registration/options', {
-      method: 'POST', body: { name, currentPassword, verificationCode },
+      method: 'POST', verifySessionOnUnauthorized: true, body: { name, currentPassword, verificationCode },
     }),
   verifyPasskeyRegistration: (ceremonyToken: string, response: PasskeyRegistrationResponse) =>
     apiRequest<{ passkey: PasskeySummary }>('/api/me/passkeys/registration/verify', {
-      method: 'POST', body: { ceremonyToken, response },
+      method: 'POST', verifySessionOnUnauthorized: true, body: { ceremonyToken, response },
     }),
   beginBrowserPasskeyRegistration: (name: string, currentPassword: string, state: string, verificationCode?: string) =>
     apiRequest<{ url: string }>('/api/me/passkeys/browser-registration', {
-      method: 'POST', body: { name, currentPassword, verificationCode, state },
+      method: 'POST', verifySessionOnUnauthorized: true, body: { name, currentPassword, verificationCode, state },
     }),
   renamePasskey: (id: string, name: string) => apiRequest<{ passkey: PasskeySummary }>(`/api/me/passkeys/${id}`, {
     method: 'PATCH', body: { name },
   }),
   deletePasskey: (id: string, currentPassword: string, verificationCode?: string) => apiRequest<void>(`/api/me/passkeys/${id}`, {
-    method: 'DELETE', body: { currentPassword, verificationCode },
+    method: 'DELETE', verifySessionOnUnauthorized: true, body: { currentPassword, verificationCode },
   }),
   forgotPassword: (email: string) => apiRequest<{ accepted: true }>('/api/auth/forgot-password', {
     method: 'POST', auth: false, body: { email },

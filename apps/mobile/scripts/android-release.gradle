@@ -1,0 +1,25 @@
+// Applied after Expo's generated app configuration so release builds never use
+// the template's debug signing key. Read secrets from the build process only.
+def releaseEnvironment = { String name ->
+    def value = System.getenv(name)
+    if (value == null || value.isEmpty()) {
+        throw new GradleException("Missing Android release environment variable: ${name}")
+    }
+    return value
+}
+
+android {
+    signingConfigs {
+        pulpoUpload {
+            storeFile file(releaseEnvironment('ANDROID_UPLOAD_KEYSTORE_PATH'))
+            storePassword releaseEnvironment('ANDROID_UPLOAD_STORE_PASSWORD')
+            keyAlias releaseEnvironment('ANDROID_UPLOAD_KEY_ALIAS')
+            keyPassword releaseEnvironment('ANDROID_UPLOAD_KEY_PASSWORD')
+        }
+    }
+    buildTypes {
+        release {
+            signingConfig signingConfigs.pulpoUpload
+        }
+    }
+}
