@@ -848,6 +848,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.release.outputs.commit }}
 
       - name: Set up Coolify CLI
         run: bash .github/scripts/setup-coolify.sh
