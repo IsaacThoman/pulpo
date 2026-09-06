@@ -1338,6 +1338,7 @@ export const managementAccountSettingsSchema = z.object({
   composerSyncEnabled: z.boolean().default(true),
   sendWithEnter: z.boolean().default(true),
   streamResponses: z.boolean().default(true),
+  showPromptSuggestions: z.boolean().default(true),
   showReasoning: z.boolean().default(true),
   showResponseCost: z.boolean().default(false),
   chatWidth: z.enum(['full', 'narrow']).default('narrow'),

@@ -13,7 +13,7 @@ import { isDesktopRuntime } from '@/lib/runtime'
 import { normalizeAnimationSpeed } from '@/lib/animation-speed'
 
 const persistedKeys = [
-  'composerSyncEnabled', 'theme', 'language', 'sendWithEnter', 'doubleShiftSearch', 'streamResponses', 'showReasoning', 'showResponseCost',
+  'composerSyncEnabled', 'theme', 'language', 'sendWithEnter', 'doubleShiftSearch', 'streamResponses', 'showPromptSuggestions', 'showReasoning', 'showResponseCost',
   'chatWidth', 'animationSpeed', 'customInstructions', 'instructionPresetSelections', 'nickname', 'memoryEnabled', 'agentModes',
   'leaderboardVisible', 'leaderboardColor', 'generation',
   'localChatLimit',

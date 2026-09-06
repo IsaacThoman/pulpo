@@ -300,7 +300,7 @@ export function BillingPage() {
           <DialogHeader><DialogTitle>{ui("Compare plans")}</DialogTitle></DialogHeader>
           <div className="grid gap-6 py-2 sm:grid-cols-3 sm:gap-0 sm:divide-x">
             <PlanColumn plan="baby" current={managedPlan} cancelAtPeriodEnd={summary?.subscription?.cancelAtPeriodEnd ?? false} benefits={[ui("Pay as you go"), ui("Share platform credits with your pool"), ui("Free and source-available")]} onChoose={() => void changePlan('baby')} disabled={submitting} />
-            <PlanColumn plan="eight" current={managedPlan} cancelAtPeriodEnd={summary?.subscription?.cancelAtPeriodEnd ?? false} benefits={[ui("Everything in Pulpo Baby"), ui("High usage limits"), ui("Higher workspace and file limits"), ui("$2 accumulating platform credits added each month"), ui("Cancel any time")]} onChoose={() => void changePlan('eight')} disabled={submitting} />
+            <PlanColumn plan="eight" current={managedPlan} cancelAtPeriodEnd={summary?.subscription?.cancelAtPeriodEnd ?? false} benefits={[ui("Everything in Pulpo Baby"), ui("High usage limits"), ui("Higher workspace and file limits"), ui("$1 accumulating platform credits added each month"), ui("Cancel any time")]} onChoose={() => void changePlan('eight')} disabled={submitting} />
             <PlanColumn plan="fat" current={managedPlan} cancelAtPeriodEnd={summary?.subscription?.cancelAtPeriodEnd ?? false} benefits={[ui("Everything in Pulpo Eight"), ui("Highest usage limits"), ui("Highest workspace and file limits"), ui("$16 accumulating platform credits added each month")]} onChoose={() => void changePlan('fat')} disabled={submitting} />
           </div>
           {planError && <p className="text-center text-sm text-destructive">{planError}</p>}

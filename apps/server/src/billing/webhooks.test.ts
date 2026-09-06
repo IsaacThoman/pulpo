@@ -35,8 +35,8 @@ describe('billing webhook lifecycle rules', () => {
   })
 
   it.each([
-    ['eight', 'subscription_create', 2_000_000],
-    ['eight', 'subscription_cycle', 2_000_000],
+    ['eight', 'subscription_create', 1_000_000],
+    ['eight', 'subscription_cycle', 1_000_000],
     ['fat', 'subscription_create', 16_000_000],
     ['fat', 'subscription_cycle', 16_000_000],
   ] as const)('grants %s credit for %s orders', (plan, billingReason, expected) => {
