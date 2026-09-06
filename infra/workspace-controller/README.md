@@ -105,6 +105,15 @@ versions; registry retention must not delete them.
 
 ### Registry access and migration
 
+If the controller package already exists from a manual publication, connect it
+to the source repository and grant that repository write access under the
+package's **Manage Actions access** settings before the first workflow publish.
+An existing unlinked package does not automatically grant the repository's
+`GITHUB_TOKEN` publishing access, even with `packages: write` in the workflow.
+The pre-existing `IsaacThoman/pulpo-workspace-controller` package was unlinked
+when checked during this migration. See
+[GitHub Packages permissions](https://docs.github.com/en/packages/learn-github-packages/about-permissions-for-github-packages).
+
 GHCR packages are private on first publication. Either explicitly make the
 controller package public, or provision a durable read-only registry credential
 as an `imagePullSecret` on the Deployment or its ServiceAccount. Use a credential
