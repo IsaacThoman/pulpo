@@ -96,6 +96,7 @@ describe('assistant response metadata', () => {
         tokensIn: 802,
         tokensOut: 12,
         cost: 0.0042,
+        inferenceReferenceCost: 0.0385,
         latencyMs: 932,
       })}
       streaming={false}
@@ -105,6 +106,7 @@ describe('assistant response metadata', () => {
     const text = container.textContent ?? ''
     expect(text).toContain('802→12 tok · 13tok/sec · 932ms')
     expect(text).not.toContain('$0.0042')
+    expect(container.querySelector('[data-inference-reference-cost]')).toBeNull()
   })
 
   it('renders tokens, speed, time, and cost in that order', async () => {
@@ -148,6 +150,47 @@ describe('assistant response metadata', () => {
     expect(markup).not.toContain('text-violet-700')
     expect(markup).toContain('cursor-help')
     expect(markup).toContain('aria-label="$0.0042 · $0.0030 covered by your subscription · $0.0012 charged to balance"')
+  })
+
+  it('matches the usage table total and breakdown for subscription-backed inference', async () => {
+    useSettings.setState({ showResponseCost: true })
+    const { MessageItem } = await import('./MessageItem')
+    const { UsageCostBreakdown } = await import('@/components/usage/UsageCostBreakdown')
+    const { container } = render(<TooltipProvider>
+      <MessageItem
+        chat={chat}
+        message={assistant({
+          content: 'Answer', tokensIn: 2_936, tokensOut: 183,
+          cost: 0.0017, inferenceReferenceCost: 0.0385, latencyMs: 18_700,
+        })}
+        streaming={false}
+        activeModelId="model-1"
+      />
+      <div data-testid="usage-table-cost">
+        <UsageCostBreakdown costUsd={0.0017} inferenceReferenceUsd={0.0385} subscriptionCoveredUsd={0} personal />
+      </div>
+    </TooltipProvider>)
+
+    const annotation = container.querySelector('[data-inference-reference-cost]')
+    const tableCost = container.querySelector('[data-testid="usage-table-cost"] [data-inference-reference-cost]')
+    expect(annotation?.textContent).toBe('$0.0402')
+    expect(annotation?.textContent).toBe(tableCost?.textContent)
+    expect(annotation?.getAttribute('aria-label')).toBe('$0.0402 · API equivalent: $0.0385 · Pulpo usage: $0.0017')
+    expect(annotation?.getAttribute('aria-label')).toBe(tableCost?.getAttribute('aria-label'))
+  })
+
+  it.each([undefined, 0])('uses usage-table precision when inference reference cost is %s', async (inferenceReferenceCost) => {
+    useSettings.setState({ showResponseCost: true })
+    const { MessageItem } = await import('./MessageItem')
+    const { container } = render(<MessageItem
+      chat={chat}
+      message={assistant({ content: 'Answer', cost: 0.0123, inferenceReferenceCost })}
+      streaming={false}
+      activeModelId="model-1"
+    />)
+
+    expect(container.textContent).toContain('$0.0123')
+    expect(container.querySelector('[data-inference-reference-cost]')).toBeNull()
   })
 })
 

@@ -1,4 +1,5 @@
 import { formatUsd } from '@/lib/format'
+import { cn } from '@/lib/utils'
 import { ui, uit } from '@/i18n/ui'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { SubscriptionCoverageCost } from './SubscriptionCoverageCost'
@@ -9,17 +10,20 @@ export function UsageCostBreakdown({
   inferenceReferenceUsd,
   subscriptionCoveredUsd,
   personal = false,
+  highlightCoverage = true,
 }: {
   costUsd: number
   inferenceReferenceUsd: number
   subscriptionCoveredUsd: number
   personal?: boolean
+  highlightCoverage?: boolean
 }) {
   if (inferenceReferenceUsd <= 0) {
     return <SubscriptionCoverageCost
       costUsd={costUsd}
       subscriptionCoveredUsd={subscriptionCoveredUsd}
       personal={personal}
+      highlightCoverage={highlightCoverage}
     />
   }
 
@@ -37,7 +41,10 @@ export function UsageCostBreakdown({
         tabIndex={0}
         aria-label={accessibleBreakdown}
         data-inference-reference-cost
-        className="cursor-help whitespace-nowrap rounded-sm font-medium text-violet-700 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 dark:text-violet-300"
+        className={cn(
+          'cursor-help whitespace-nowrap rounded-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1',
+          highlightCoverage && 'text-violet-700 dark:text-violet-300',
+        )}
       >
         {formattedCombined}
       </span>

@@ -66,6 +66,7 @@ export interface Message {
   tokensIn?: number
   tokensOut?: number
   cost?: number
+  inferenceReferenceCost?: number
   subscriptionCoveredCost?: number
   latencyMs?: number
   reasoning?: string

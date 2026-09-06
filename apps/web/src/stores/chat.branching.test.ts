@@ -210,11 +210,12 @@ afterAll(() => {
 })
 
 describe('chat store branching integration', () => {
-  it('projects the settled response cost from micros to USD', () => {
+  it('projects settled and inference reference response costs from micros to USD', () => {
     const settled = {
       ...response(responseAId, 'completed'),
       usage: { inputTokens: 802, outputTokens: 12 },
       costMicros: 4_200,
+      inferenceReferenceCostMicros: 38_500,
       subscriptionCoveredMicros: 3_000,
     }
 
@@ -224,6 +225,7 @@ describe('chat store branching integration', () => {
       tokensIn: 802,
       tokensOut: 12,
       cost: 0.0042,
+      inferenceReferenceCost: 0.0385,
       subscriptionCoveredCost: 0.003,
     })
   })
