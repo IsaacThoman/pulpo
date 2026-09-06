@@ -3,7 +3,7 @@ WORKDIR /app
 COPY packages/workspace-controller/package.json packages/workspace-controller/tsconfig.json ./
 RUN npm install --include=dev --ignore-scripts
 COPY packages/workspace-controller/src ./src
-RUN npm run build
+RUN npm test && npm run build
 
 FROM node:24.18.1-bookworm-slim
 WORKDIR /app
