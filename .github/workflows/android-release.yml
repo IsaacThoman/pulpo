@@ -1,0 +1,154 @@
+name: Android release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: App version (for example, 1.2.3)
+        required: true
+        type: string
+      upload:
+        description: Upload to Google Play internal testing
+        default: false
+        type: boolean
+      release_status:
+        description: Use draft until the first Play release is set up
+        default: draft
+        type: choice
+        options: [draft, completed]
+  workflow_call:
+    inputs:
+      version:
+        required: true
+        type: string
+      upload:
+        default: false
+        type: boolean
+      release_status:
+        default: draft
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-google-play
+  cancel-in-progress: false
+
+jobs:
+  android:
+    name: Build signed Android bundle
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    environment: google-play
+    env:
+      CI: 1
+      EXPO_NO_TELEMETRY: 1
+      EXPO_PUBLIC_DEFAULT_INSTANCE_URL: https://pulpo.baby
+      PULPO_ANDROID_PASSKEY_DOMAINS: ${{ vars.PULPO_ANDROID_PASSKEY_DOMAINS }}
+    steps:
+      - name: Check out release tag
+        if: github.event_name != 'workflow_dispatch'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: v${{ inputs.version }}
+
+      - name: Check out selected ref
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set Android version
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+          RELEASE_STATUS: ${{ inputs.release_status }}
+        run: |
+          set -euo pipefail
+          if [[ ! "${RELEASE_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo 'Version must use major.minor.patch.' >&2
+            exit 1
+          fi
+          if [[ "${RELEASE_STATUS}" != draft && "${RELEASE_STATUS}" != completed ]]; then
+            echo 'Release status must be draft or completed.' >&2
+            exit 1
+          fi
+          # Seconds since 2024 keep codes increasing on retries and well below
+          # Google Play's 2,100,000,000 limit. All Android runs share one lock.
+          version_code="$(( $(date -u +%s) - 1704067200 ))"
+          if (( version_code <= 0 || version_code > 2100000000 )); then
+            echo 'Android version code is outside the Google Play range.' >&2
+            exit 1
+          fi
+          {
+            echo "PULPO_APP_VERSION=${RELEASE_VERSION}"
+            echo "PULPO_ANDROID_VERSION_CODE=${version_code}"
+          } >> "${GITHUB_ENV}"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.18.1
+          cache: npm
+
+      - name: Set up Java
+        uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6.0.0
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Install Android SDK packages
+        run: |
+          set -euo pipefail
+          "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" \
+            'platforms;android-37.0' 'build-tools;37.0.0' 'platform-tools'
+
+      - name: Install dependencies
+        run: npm clean-install
+
+      - name: Build mobile workspace dependencies
+        run: |
+          npm run build -w @pulpo/contracts
+          npm run build -w @pulpo/client-core
+
+      - name: Generate the native Android project
+        working-directory: apps/mobile
+        run: npx expo prebuild --platform android --clean --no-install
+
+      # As with TestFlight, signing credentials are only exposed after npm and
+      # Expo lifecycle scripts finish. The temporary keystore is never cached.
+      - name: Build and verify signed app bundle
+        env:
+          ANDROID_UPLOAD_KEYSTORE_BASE64: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_BASE64 }}
+          ANDROID_UPLOAD_STORE_PASSWORD: ${{ secrets.ANDROID_UPLOAD_STORE_PASSWORD }}
+          ANDROID_UPLOAD_KEY_ALIAS: ${{ secrets.ANDROID_UPLOAD_KEY_ALIAS }}
+          ANDROID_UPLOAD_KEY_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEY_PASSWORD }}
+        run: bash apps/mobile/scripts/build-android-release.sh
+
+      - name: Save Android app bundle
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: Pulpo-${{ inputs.version }}-Android-${{ env.PULPO_ANDROID_VERSION_CODE }}
+          path: apps/mobile/android/app/build/outputs/bundle/release/app-release.aab
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Validate Google Play credentials
+        if: inputs.upload
+        env:
+          GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${GOOGLE_PLAY_SERVICE_ACCOUNT_JSON}" ]]; then
+            echo 'Configure GOOGLE_PLAY_SERVICE_ACCOUNT_JSON in the google-play environment.' >&2
+            exit 1
+          fi
+
+      - name: Upload to Google Play internal testing
+        if: inputs.upload
+        uses: r0adkll/upload-google-play@e738b9dd8f2476ea806d921b64aacd24f34515a5 # v1.1.5
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: com.isaacthoman.pulpo
+          releaseFiles: apps/mobile/android/app/build/outputs/bundle/release/app-release.aab
+          releaseName: ${{ inputs.version }} (${{ env.PULPO_ANDROID_VERSION_CODE }})
+          tracks: internal
+          status: ${{ inputs.release_status }}
