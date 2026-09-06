@@ -3276,7 +3276,7 @@ const MessageRow = memo(function MessageRow({
                 <View style={styles.responseError}><Icon name="exclamationmark.triangle" size={15} color={COLORS.critical} /><Text style={styles.responseErrorText}>{message.error}</Text><Pressable accessibilityRole="button" onPress={() => onRegenerate(message)}><Text style={styles.tryAgainText}>Try again</Text></Pressable></View>
               </MessageContextMenu>
             ) : streaming ? <ResponsePendingIndicator /> : null}
-            {extraOutput.map((item, index) => {
+            {showReasoning && extraOutput.map((item, index) => {
               const details = JSON.stringify(item, null, 2).slice(0, 4000);
               return <View key={`${String(item.type)}:${index}`} style={styles.otherOutput}>
                 <View style={styles.workRow}><Icon name="doc.text.magnifyingglass" size={13} color={COLORS.muted} /><Text style={styles.workRowTitle}>{outputItemTitle(item)}</Text></View>

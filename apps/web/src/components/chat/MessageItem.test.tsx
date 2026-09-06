@@ -2,7 +2,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { cleanup, render } from '@testing-library/react'
+import { act, cleanup, render } from '@testing-library/react'
 import type { Chat, Message } from '@/lib/types'
 import i18n from '@/i18n'
 import { TooltipProvider } from '@/components/ui/tooltip'
@@ -30,6 +30,7 @@ Object.defineProperty(window, 'localStorage', {
 const { useSettings } = await import('@/stores/settings')
 
 afterEach(cleanup)
+beforeEach(() => useSettings.setState({ showReasoning: true }))
 
 const chat: Chat = {
   id: 'chat-1', title: 'Chat', modelId: 'model-1', messages: [],
@@ -167,6 +168,73 @@ describe('activityDurationMs', () => {
     expect(activityDurationMs([
       { kind: 'reasoning' },
     ])).toBeUndefined()
+  })
+})
+
+describe('show reasoning preference', () => {
+  it.each([false, true])('updates work visibility immediately when streaming is %s', async (streaming) => {
+    const { MessageItem } = await import('./MessageItem')
+    const { container } = render(<MessageItem
+      chat={chat}
+      message={assistant({
+        done: !streaming,
+        content: 'Answer',
+        outputItems: [
+          { type: 'pulpo_workspace', state: 'ready' },
+          { type: 'reasoning', status: 'completed', summary: [{ text: 'Private summary' }] },
+          { type: 'pulpo_tool', tool: 'bash', status: 'completed', output: 'Tool output' },
+          { type: 'custom_result', value: 'Extra work details' },
+          { type: 'message', content: [{ text: 'Answer' }] },
+        ],
+      })}
+      streaming={streaming}
+      activeModelId="model-1"
+    />)
+
+    expect(container.textContent).toContain('Worked')
+    expect(container.textContent).toContain('Extra work details')
+    act(() => useSettings.setState({ showReasoning: false }))
+    expect(container.textContent).toContain('Answer')
+    for (const hidden of ['Worked', 'Private summary', 'Started workspace', 'Tool output', 'Extra work details']) {
+      expect(container.textContent).not.toContain(hidden)
+    }
+    act(() => useSettings.setState({ showReasoning: true }))
+    expect(container.textContent).toContain('Worked')
+    expect(container.textContent).toContain('Extra work details')
+  })
+
+  it('keeps the pending indicator while streaming hidden work without answer text', async () => {
+    useSettings.setState({ showReasoning: false })
+    const { MessageItem } = await import('./MessageItem')
+    const { container } = render(<MessageItem
+      chat={chat}
+      message={assistant({
+        done: false,
+        outputItems: [{ type: 'pulpo_tool', tool: 'bash', status: 'running' }],
+      })}
+      streaming
+      activeModelId="model-1"
+    />)
+
+    expect(container.querySelector('.animate-bounce')).not.toBeNull()
+    expect(container.textContent).not.toContain('Running')
+    expect(container.textContent).not.toContain('Working')
+  })
+
+  it('keeps cached answer text and terminal errors visible while hiding legacy reasoning', async () => {
+    useSettings.setState({ showReasoning: false })
+    const { MessageItem } = await import('./MessageItem')
+    const { container } = render(<MessageItem
+      chat={chat}
+      message={assistant({ content: 'Answer', reasoning: 'Private summary', error: 'Generation failed' })}
+      streaming={false}
+      activeModelId="model-1"
+    />)
+
+    expect(container.textContent).toContain('Answer')
+    expect(container.textContent).toContain('Generation failed')
+    expect(container.textContent).not.toContain('Thought')
+    expect(container.textContent).not.toContain('Private summary')
   })
 })
 

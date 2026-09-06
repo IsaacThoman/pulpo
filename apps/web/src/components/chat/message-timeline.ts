@@ -87,9 +87,9 @@ function messageTextFromItem(item: unknown): string {
   }).join('')
 }
 
-function activityHasContent(steps: ActivityStep[], showReasoning: boolean): boolean {
+function activityHasContent(steps: ActivityStep[]): boolean {
   return steps.some((step) => {
-    if (step.kind === 'reasoning') return showReasoning && Boolean(step.text)
+    if (step.kind === 'reasoning') return Boolean(step.text)
     return true
   })
 }
@@ -116,11 +116,8 @@ export function buildTimeline(outputItems: unknown[], showReasoning: boolean): T
 
   const flushActivity = () => {
     if (!activity) return
-    const steps = showReasoning
-      ? activity.steps
-      : activity.steps.filter((step) => step.kind !== 'reasoning')
-    if (activityHasContent(steps, true)) {
-      segments.push({ ...activity, steps })
+    if (activityHasContent(activity.steps)) {
+      segments.push(activity)
     }
     activity = null
   }
@@ -194,5 +191,6 @@ export function buildTimeline(outputItems: unknown[], showReasoning: boolean): T
     }
   }
 
-  return segments
+  // The preference controls the entire work disclosure, including workspace-only activity.
+  return showReasoning ? segments : segments.filter((segment) => segment.kind === 'text')
 }

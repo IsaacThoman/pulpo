@@ -124,14 +124,46 @@ describe('buildTimeline', () => {
     expect(timeline[2]).toMatchObject({ kind: 'activity', active: true })
   })
 
-  it('merges hidden reasoning with tools without exposing reasoning steps', () => {
-    const activity = onlyActivity([
-      reasoning('Private summary.'),
-      message(''),
-      tool('run'),
-    ], false)
+  it.each([
+    { type: 'reasoning', status: 'completed', summary: [{ text: 'Private summary' }] },
+    { type: 'reasoning', status: 'in_progress', summary: [{ text: 'Thinking' }] },
+    { type: 'pulpo_tool', tool: 'bash', status: 'completed', output: 'Tool output' },
+    { type: 'pulpo_tool', tool: 'bash', status: 'running' },
+    { type: 'pulpo_workspace', state: 'ready' },
+    { type: 'pulpo_workspace', state: 'waiting', position: 2 },
+    { type: 'pulpo_recall', status: 'completed', sources: [] },
+    { type: 'pulpo_compaction', status: 'completed', summary: 'Context summary' },
+    { type: 'pulpo_compaction', status: 'in_progress' },
+  ])('hides $type activity ($status $state) when reasoning is off', (item) => {
+    expect(buildTimeline([item], false)).toEqual([])
+    expect(buildTimeline([
+      { type: 'message', content: [{ text: 'Before work' }] },
+      item,
+      { type: 'message', content: [{ text: 'Answer' }] },
+    ], false)).toEqual([
+      { kind: 'text', text: 'Before work' },
+      { kind: 'text', text: 'Answer' },
+    ])
+    expect(buildTimeline([item], true)).toMatchObject([{ kind: 'activity' }])
+  })
 
-    expect(activity.steps.map((step) => step.kind)).toEqual(['tool'])
+  it('hides a whole work sequence while preserving assistant text and stored output', () => {
+    const output = [
+      { type: 'pulpo_workspace', state: 'ready' },
+      { type: 'pulpo_recall', status: 'completed', sources: [] },
+      { type: 'reasoning', status: 'completed', summary: [{ text: 'Plan' }] },
+      { type: 'pulpo_tool', tool: 'bash', status: 'completed', output: 'Done' },
+      { type: 'message', content: [{ text: 'First answer' }] },
+      { type: 'pulpo_compaction', status: 'completed', summary: 'Context' },
+      { type: 'pulpo_tool', tool: 'bash', status: 'running' },
+      { type: 'message', status: 'in_progress', content: [{ text: 'Final answer' }] },
+    ]
+    const visible = buildTimeline(output, true)
+    expect(buildTimeline(output, false)).toEqual([
+      { kind: 'text', text: 'First answer' },
+      { kind: 'text', text: 'Final answer' },
+    ])
+    expect(buildTimeline(output, true)).toEqual(visible)
   })
 
   it('places one workspace step before the first tool in merged activity', () => {
@@ -164,15 +196,15 @@ describe('buildTimeline', () => {
     expect(activityDurationMs(activity.steps)).toBe(5_000)
   })
 
-  it('shows compaction independently of reasoning visibility and preserves its timeline position', () => {
+  it('preserves compaction as a separate activity when reasoning is enabled', () => {
     const compaction = {
       id: 'compact-1', type: 'pulpo_compaction', phase: 'pre_response', status: 'completed',
       model_id: 'hidden-model', estimated_tokens: 110_000, threshold_tokens: 100_000,
       retained_turns: [{ role: 'user', content: 'kept exactly' }], retained_context: [], retained_context_turns: [],
       summary: 'Earlier context', started_at: new Date(0).toISOString(), duration_ms: 500,
     }
-    const timeline = buildTimeline([compaction, reasoning('hidden'), message('Answer')], false)
-    expect(timeline.map((segment) => segment.kind)).toEqual(['activity', 'text'])
+    const timeline = buildTimeline([compaction, reasoning('Plan'), message('Answer')], true)
+    expect(timeline.map((segment) => segment.kind)).toEqual(['activity', 'activity', 'text'])
     const activity = timeline[0] as ActivitySegment
     expect(activity.steps).toEqual([{ kind: 'compaction', compaction }])
     expect(activityDurationMs(activity.steps)).toBe(500)
