@@ -178,8 +178,9 @@ After the workflow is merged, open Actions → **Android release** → **Run
 workflow**. Select the branch or tag to build, enter its app version, and leave
 **Upload to Google Play internal testing** unchecked. The workflow installs
 JDK 21 / SDK 37, builds the shared packages, prebuilds Android, and runs Gradle
-`bundleRelease`. It overrides Expo's debug signing default and verifies the
-bundle against the upload certificate before saving the `.aab` artifact.
+`bundleRelease assembleRelease` together. It overrides Expo's debug signing
+default and verifies both the `.aab` and universal `.apk` against the upload
+certificate before saving the artifacts. APK verification uses `apksigner`.
 
 Download the `Pulpo-<version>-Android-<versionCode>` artifact and upload its
 `.aab` to Play Console → Pulpo → Testing → Internal testing. Enroll in Play App
@@ -205,11 +206,16 @@ input must match it: tag `v1.2.3` requires version `1.2.3`. Other branches can
 build downloadable artifacts with upload unchecked. Keep the manual run's
 status `draft` while the app's first release is being set up. Once the app is
 ready for tester distribution, use `completed`.
-The artifact is saved before upload, so upload failures still leave a
-downloadable signed bundle.
+The artifacts are saved before upload, so upload failures still leave a
+downloadable signed bundle and APK.
 
 Android uses the same automatic trigger as iOS: each new semantic release
-from a push to `main` builds that exact tag and uploads to internal testing.
+from a push to `main` builds that exact tag, uploads to internal testing, and
+attaches `Pulpo-<version>-Android.apk` plus its `.sha256` checksum to the
+GitHub release alongside the desktop assets. GitHub publishing and Play upload
+run independently after the build, so a Play upload failure does not block APK
+publishing. Obtainium can track `https://github.com/IsaacThoman/pulpo` and install
+the APK directly; the `.aab` is for Google Play.
 The repository's default branch does not control this trigger, and pushes to
 `dev` do not release either mobile app. Configure the `google-play` credentials
 before promoting this workflow to `main`.
@@ -219,9 +225,23 @@ testers. The optional repository variable `ANDROID_RELEASE_STATUS=draft` can
 hold automatic uploads as drafts during initial Play setup. Promote a tested
 release to closed testing or production in Play Console.
 
+For a manual APK publication, select the release tag in **Android release**,
+enter the matching version, and enable **Attach APK to the existing GitHub
+release**. The workflow verifies that the checkout matches the tag's commit;
+the GitHub release must already exist. Leave that option unchecked for builds
+that should only produce downloadable Actions artifacts.
+
+GitHub APK updates must keep using the same signing key. These APKs use the
+configured upload key; Google Play signs delivered APKs with its app-signing
+key. If those certificates differ, Android cannot install one channel's APK
+as an update to the other channel's installation. Keep a backup of the upload
+key for future GitHub releases, even if the Play upload key is later reset.
+
 For native Android passkeys, configure the server's
 `PULPO_ANDROID_CERTIFICATE_FINGERPRINTS` with the **Play app-signing certificate**
 SHA-256 fingerprint, then set `PULPO_ANDROID_PASSKEY_DOMAINS=pulpo.baby` in the
 `google-play` environment before building. Verify `assetlinks.json` and test
 passkeys and shared links with the Play-installed app. The upload certificate
-is a different key. Leaving the domains unset uses browser authentication.
+is a different key. To support GitHub APK installations too, include the upload
+certificate's SHA-256 fingerprint in the server allowlist. Leaving the domains
+unset uses browser authentication.
