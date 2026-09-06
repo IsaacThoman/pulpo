@@ -16,7 +16,7 @@ COPY packages/client-core packages/client-core
 COPY apps/server apps/server
 RUN npm run build -w @pulpo/contracts && npm run build -w @pulpo/client-core && npm run build -w @pulpo/server
 
-FROM node:22-bookworm-slim
+FROM node:22-bookworm-slim AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 COPY package.json package-lock.json ./
@@ -31,5 +31,19 @@ COPY --from=build /app/packages/contracts/dist packages/contracts/dist
 COPY --from=build /app/packages/client-core/dist packages/client-core/dist
 COPY --from=build /app/apps/server/dist apps/server/dist
 COPY --from=build /app/apps/server/drizzle apps/server/drizzle
+COPY deploy/healthcheck.mjs /app/deploy/healthcheck.mjs
 USER node
-CMD ["npm", "run", "start:api", "-w", "@pulpo/server"]
+CMD ["node", "apps/server/dist/api.js"]
+
+FROM runtime AS production-worker
+ENV PULPO_WORKER_HEALTH_PORT=3000
+HEALTHCHECK --interval=5s --timeout=3s --start-period=30s --retries=120 CMD node /app/deploy/healthcheck.mjs
+CMD ["node", "apps/server/dist/worker.js"]
+
+FROM runtime AS production-api
+COPY --chmod=755 deploy/start-api.sh /app/deploy/start-api.sh
+HEALTHCHECK --interval=5s --timeout=3s --start-period=30s --retries=120 CMD node /app/deploy/healthcheck.mjs
+CMD ["/app/deploy/start-api.sh"]
+
+# Preserve the default image contract for local Compose and PR previews.
+FROM runtime AS default

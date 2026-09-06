@@ -1,4 +1,8 @@
 import { deleteAccountData, resumeAccountDeletions } from './account/deletion.js'
+import { createServer } from 'node:http'
+import { checkReadiness } from './runtime-health.js'
+import { queryClient } from './database/client.js'
+import { redis } from './redis.js'
 import { Worker } from 'bullmq'
 import { and, inArray, isNull, eq } from 'drizzle-orm'
 import { getConfig } from './config.js'
@@ -163,13 +167,36 @@ for (const response of recoverable) {
 await recoverMessageQueues()
 if ((await readEpisodicMemorySettings()).enabled) await enqueueEpisodicReconciliation()
 
+const workers = [generationWorker, codexLoginWorker, embeddingWorker, maintenanceWorker]
+await Promise.all(workers.map((worker) => worker.waitUntilReady()))
+let stopping = false
+// Private health endpoint used by Docker/Coolify, never routed publicly.
+const healthServer = createServer((_request, response) => {
+  void (async () => {
+    try {
+      if (stopping || workers.some((worker) => !worker.isRunning())) throw new Error('Worker is stopping')
+      await checkReadiness([() => queryClient`select 1`, () => redis.ping()])
+      response.writeHead(200, { 'Content-Type': 'application/json' })
+      response.end(JSON.stringify({ status: 'ok', service: 'pulpo-worker' }))
+    } catch {
+      response.writeHead(503)
+      response.end('unavailable')
+    }
+  })()
+})
+if (process.env.PULPO_WORKER_HEALTH_PORT) {
+  healthServer.listen(Number(process.env.PULPO_WORKER_HEALTH_PORT), '0.0.0.0')
+}
+
 const shutdown = async (signal: string) => {
+  if (stopping) return
+  stopping = true
   console.info(JSON.stringify({ level: 'info', service: 'pulpo-worker', event: 'worker.stopping', signal }))
   clearInterval(concurrencyRefreshInterval)
-  await generationWorker.close()
-  await codexLoginWorker.close()
-  await embeddingWorker.close()
-  await maintenanceWorker.close()
+  healthServer.close()
+  // Stop all consumers from taking more jobs immediately, then drain them
+  // together. Sequential close could keep accepting work during shutdown.
+  await Promise.all(workers.map((worker) => worker.close()))
   process.exit(0)
 }
 

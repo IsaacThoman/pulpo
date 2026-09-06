@@ -323,5 +323,9 @@ export async function createSocketServer(httpServer: HttpServer) {
     }
   })
 
+  httpServer.once('close', () => {
+    adapterRedis.disconnect()
+    subscriber.disconnect()
+  })
   return io
 }
