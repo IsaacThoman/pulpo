@@ -19,7 +19,7 @@ to the existing identity (`pulpo.baby` on this installation).
 
 Services connect on the `coolify` network with unique `pulpo-prod-*` aliases.
 API/worker use `pulpo-prod-postgres`, `pulpo-prod-redis`, `pulpo-prod-ollama`, and
-`pulpo-prod-seaweed-s3`. No infrastructure service publishes a host port.
+`pulpo-prod-seaweed-s3`. No infrastructure service publishes a host port. Set the infrastructure's custom build command to `true`: it uses prebuilt images and needs no build-time secret interpolation.
 
 Traefik routes `/api`, `/v1`, `/socket.io`, `/health`, and `/ready` on the public
 hostname directly to the API. The web application handles remaining paths.
@@ -37,7 +37,10 @@ deploys API, worker, and web from that exact SHA, using repository variables:
 - `COOLIFY_PULPO_WORKER_APP_UUID`: worker application
 - `COOLIFY_PULPO_WEB_APP_UUID`: frontend application
 
-Disable independent Git auto-deploy on these applications. The replacement API
+Disable independent Git auto-deploy on these applications. Set
+`COMPOSE_REMOVE_ORPHANS=false` in each application (build time and runtime).
+Enabling orphan removal makes Compose delete the old release before the new
+container becomes healthy, defeating rolling updates and failure recovery. The replacement API
 runs `database/migrate.js` before opening its HTTP listener. That process takes a
 PostgreSQL advisory lock, with a five-minute lock timeout, to prevent simultaneous
 migration runners from racing. Drizzle applies pending SQL in its transaction.
