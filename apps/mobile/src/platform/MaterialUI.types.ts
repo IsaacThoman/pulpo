@@ -14,7 +14,7 @@ export type MenuAnchor = { x: number; y: number };
 export type MenuSection = { id: string; title?: string; actions: Action[] };
 export type MenuProps = { label: string; icon: string; actions?: Action[]; sections?: MenuSection[]; text?: string; compact?: boolean; image?: ImageSourcePropType; centered?: boolean };
 
-export type SuggestionButtonProps = { label: string; onPress: () => void; fullWidth?: boolean; temporary?: boolean };
+export type SuggestionButtonProps = { label: string; onPress: () => void; fullWidth?: boolean; containerColor: ColorValue; contentColor: ColorValue };
 export type CardProps = { children: ReactNode; style?: StyleProp<ViewStyle> };
 export type SearchFieldProps = { value: string; onChange: (value: string) => void; onFocusChange: (focused: boolean) => void; fieldRef?: Ref<{ blur: () => Promise<void> }> };
 export type NavigationRowProps = { title: string; icon?: string; value?: string; expanded?: boolean; onPress: () => void };

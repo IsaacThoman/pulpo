@@ -3489,9 +3489,9 @@ function NativeModelSectionRow({ label, section, models, selected = false }: { l
 }
 
 function SuggestedPromptButton({ label, accessible, onPress, temporary = false }: { label: string; accessible: boolean; onPress: () => void; temporary?: boolean }) {
-  const { styles } = useChatStyles();
+  const { styles, COLORS } = useChatStyles();
   const colorScheme = useColorScheme();
-  if (Platform.OS === 'android') return <MaterialSuggestionButton label={label} onPress={onPress} fullWidth={accessible} temporary={temporary} />;
+  if (Platform.OS === 'android') return <MaterialSuggestionButton label={label} onPress={onPress} fullWidth={accessible} containerColor={temporary ? temporaryChatColors(colorScheme === 'dark').composer : COLORS.elevated} contentColor={COLORS.textSoft} />;
   const temporaryStyle = temporary
     ? colorScheme === 'dark' ? styles.temporarySuggestionCardDark : styles.temporarySuggestionCardLight
     : undefined;

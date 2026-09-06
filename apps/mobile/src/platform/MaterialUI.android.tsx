@@ -219,10 +219,10 @@ export function MaterialOverlays() {
 }
 
 // Compose owns the button shape, ripple, semantics and text measurement.
-export function MaterialSuggestionButton({ label, onPress, fullWidth, temporary }: SuggestionButtonProps) {
+export function MaterialSuggestionButton({ label, onPress, fullWidth, containerColor, contentColor }: SuggestionButtonProps) {
   const { fontScale } = useWindowDimensions();
-  return <Host matchContents={{ vertical: true }} style={{ width: fullWidth ? '100%' : '48.7%' }} seedColor={temporary ? '#AF52DE' : undefined} ignoreSafeAreaKeyboardInsets>
-    <FilledTonalButton onClick={onPress} contentPadding={{ start: 20, end: 20, top: 12, bottom: 12 }} modifiers={[fillMaxWidth(), defaultMinSize({ minHeight: 68 })]}>
+  return <Host matchContents={{ vertical: true }} style={{ width: fullWidth ? '100%' : '48.7%' }} ignoreSafeAreaKeyboardInsets>
+    <FilledTonalButton onClick={onPress} colors={{ containerColor, contentColor }} contentPadding={{ start: 20, end: 20, top: 12, bottom: 12 }} modifiers={[fillMaxWidth(), defaultMinSize({ minHeight: 68 })]}>
       <Box contentAlignment="centerStart" modifiers={[weight(1), defaultMinSize({ minHeight: fullWidth ? 44 : 60 * fontScale })]}>
         <Text style={{ typography: 'bodyMedium', textAlign: 'start' }} modifiers={[fillMaxWidth()]}>{label}</Text>
       </Box>
