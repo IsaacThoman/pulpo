@@ -140,6 +140,7 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
   const chat = useChat((s) => chatId ? s.chats.find((item) => item.id === chatId) ?? null : null)
   useDocumentTitle(adminMode ? null : chat?.title)
   const adminAccessRequiredChatId = useChat((state) => state.adminAccessRequiredChatId)
+  const showPromptSuggestions = useSettings((s) => s.showPromptSuggestions)
   const chatWidth = useSettings((s) => s.chatWidth)
   const defaultModelId = useSettings((s) => s.defaultModelId)
   const automaticChatExpiration = useSettings((s) => s.automaticChatExpiration)
@@ -273,14 +274,14 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
   const isEmpty = !chat
   const effectiveNewChatAutoExpire = automaticChatExpiration !== 'disabled' && newChatAutoExpire
   const suggestions = useMemo(
-    () => (promptConfig.enabled ? pickSuggestedPrompts(promptConfig.prompts.map((prompt) => {
+    () => (showPromptSuggestions && promptConfig.enabled ? pickSuggestedPrompts(promptConfig.prompts.map((prompt) => {
       if (!prompt.translationKey) return prompt
       const value = t(prompt.translationKey)
       return { ...prompt, label: value, message: value }
     }), promptConfig.count) : []),
     // Re-roll when opening a new empty chat
     // oxlint-disable-next-line react/exhaustive-deps -- chat identity intentionally re-rolls suggestions
-    [chatId, isEmpty, promptConfig, t],
+    [chatId, isEmpty, promptConfig, showPromptSuggestions, t],
   )
 
   const sendSuggestion = (s: string) => {

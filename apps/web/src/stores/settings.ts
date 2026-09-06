@@ -28,6 +28,7 @@ export interface SettingsState {
   sendWithEnter: boolean
   doubleShiftSearch: boolean
   streamResponses: boolean
+  showPromptSuggestions: boolean
   showReasoning: boolean
   showResponseCost: boolean
   chatWidth: 'full' | 'narrow'
@@ -63,6 +64,7 @@ export const DEFAULT_SETTINGS = {
   sendWithEnter: true,
   doubleShiftSearch: true,
   streamResponses: true,
+  showPromptSuggestions: true,
   showReasoning: true,
   showResponseCost: false,
   chatWidth: 'narrow' as const,

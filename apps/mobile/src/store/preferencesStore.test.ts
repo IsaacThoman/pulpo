@@ -27,6 +27,23 @@ beforeEach(() => {
 })
 
 describe('realtime preference reconciliation', () => {
+  it('preserves a pending suggestion opt-out, persists remote changes, and resets for another account', async () => {
+    await usePreferencesStore.getState().setPreference('showPromptSuggestions', false)
+    await usePreferencesStore.getState().applyServerPreferences({ showPromptSuggestions: true })
+    expect(usePreferencesStore.getState()).toMatchObject({
+      showPromptSuggestions: false,
+      pendingServerPreferenceKeys: ['showPromptSuggestions'],
+    })
+    await usePreferencesStore.getState().applyServerPreferences({ showPromptSuggestions: false })
+    expect(usePreferencesStore.getState().pendingServerPreferenceKeys).toEqual([])
+    await usePreferencesStore.getState().hydrate()
+    expect(usePreferencesStore.getState().showPromptSuggestions).toBe(false)
+    await usePreferencesStore.getState().applyServerPreferences({ showPromptSuggestions: true })
+    expect(usePreferencesStore.getState().showPromptSuggestions).toBe(true)
+    await usePreferencesStore.getState().applyServerPreferences({ showPromptSuggestions: false })
+    await usePreferencesStore.getState().resetSynchronizedPreferences('other-account')
+    expect(usePreferencesStore.getState().showPromptSuggestions).toBe(true)
+  })
   it('persists remote composer opt-out and retires pending checkpoints', async () => {
     const before = usePreferencesStore.getState().composerSyncGeneration
     await usePreferencesStore.getState().applyServerPreferences({ composerSyncEnabled: false })

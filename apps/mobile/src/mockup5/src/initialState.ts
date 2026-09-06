@@ -19,7 +19,7 @@ export function createInitialState(): PersistedPrototypeState {
       textSize: 'default',
       sendWithEnter: true,
       streamResponses: true,
-      showReasoning: true,
+      showPromptSuggestions: true, showReasoning: true,
       memoryEnabled: false,
       haptics: true,
       localChatLimit: 50,

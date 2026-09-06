@@ -186,6 +186,7 @@ export const usePreferencesStore = create<PreferenceState>((set, get) => ({
     const reset = {
       synchronizedOwnerNamespace: namespace,
       composerSyncEnabled: defaults.composerSyncEnabled,
+      showPromptSuggestions: defaults.showPromptSuggestions,
       favoriteModelIds: [],
       providerOrder: [],
       generation: {},
