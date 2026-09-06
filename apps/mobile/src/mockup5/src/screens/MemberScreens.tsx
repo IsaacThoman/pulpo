@@ -5,7 +5,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'reac
 import {
   Alert, Pressable, Button as RNButton, Image, Platform, StyleSheet, Text, View,
 } from 'react-native';
-import * as Network from 'expo-network';
+import { useNetworkOffline } from '../../../providers/useNetworkOffline';
 import * as Clipboard from 'expo-clipboard';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { PasskeyList, PasskeySummary, TwoFactorEnrollment, TwoFactorStatus } from '@pulpo/contracts';
@@ -266,8 +266,8 @@ export function InstanceDetailsScreen({ navigation }: NativeStackScreenProps<Roo
   const theme = useAppTheme();
   const instance = usePrototypeStore((state) => state.instance);
   const realtimeConnectionPhase = useRealtimeStore((state) => state.connectionPhase);
-  const networkState = Network.useNetworkState();
-  const connectionLabel = networkState.isConnected === false || networkState.isInternetReachable === false
+  const networkOffline = useNetworkOffline();
+  const connectionLabel = networkOffline
     ? 'Offline'
     : realtimeConnectionPhase === 'connected' ? 'Connected'
       : realtimeConnectionPhase === 'reconnecting' ? 'Reconnecting' : 'Connecting';

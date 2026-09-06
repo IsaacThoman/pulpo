@@ -129,35 +129,99 @@ Routine Expo and Xcode output is written to `/tmp/pulpo-ios-deploy.log`. A
 failed deployment prints only the final 80 lines. Override the defaults with
 `PULPO_IOS_DEVICE`, `PULPO_INSTANCE_URL`, or `PULPO_IOS_DEPLOY_LOG`.
 
-## EAS and TestFlight
+## GitHub Actions releases
 
-The app identity is `isaacthoman/pulpo`, its bundle identifier is
-`com.isaacthoman.pulpo`, and its Apple team is `PX72AL9366`.
+Both platforms build directly on GitHub runners using Expo prebuild and the
+native toolchain. No Expo account, EAS project, or Expo cloud build is needed.
+The bundle/package identifier is `com.isaacthoman.pulpo`.
+
+The `testflight` job in `.github/workflows/release.yml` builds the semantic
+release tag with Xcode and uploads it to TestFlight using the `testflight`
+GitHub environment. Its Apple team is `PX72AL9366`. App Store metadata is
+versioned in `store.config.json`; credentials belong in GitHub secrets.
+
+### Android signing setup
+
+Create a GitHub environment named `google-play` under repository Settings →
+Environments. Add these environment secrets:
+
+| Secret | Value |
+| --- | --- |
+| `ANDROID_UPLOAD_KEYSTORE_BASE64` | Base64-encoded Android upload keystore |
+| `ANDROID_UPLOAD_STORE_PASSWORD` | Keystore password |
+| `ANDROID_UPLOAD_KEY_ALIAS` | Upload key alias, such as `pulpo-upload` |
+| `ANDROID_UPLOAD_KEY_PASSWORD` | Password for that key |
+| `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` | Google service account JSON key; only needed for automatic uploads |
+
+If no upload key has been registered for this app, generate one outside the
+repository with JDK 21's `keytool`. If a key is already registered, reuse it.
+Keep a secure backup of the keystore and passwords.
 
 ```bash
-cd apps/mobile
-npx eas-cli login
-npx eas-cli init
-npx eas-cli build --platform ios --profile preview
-npx eas-cli build --platform ios --profile production
-npx eas-cli submit --platform ios --profile production
+mkdir -p "$HOME/.pulpo-signing"
+chmod 700 "$HOME/.pulpo-signing"
+keytool -genkeypair -v -storetype JKS \
+  -keystore "$HOME/.pulpo-signing/upload.keystore" \
+  -alias pulpo-upload -keyalg RSA -keysize 3072 -validity 10000
+chmod 600 "$HOME/.pulpo-signing/upload.keystore"
+base64 < "$HOME/.pulpo-signing/upload.keystore" | \
+  gh secret set ANDROID_UPLOAD_KEYSTORE_BASE64 --env google-play --repo IsaacThoman/pulpo
 ```
 
-Android uses the same Expo project and package name. Build an installable preview
-APK or a production Play Store app bundle with:
+Set the other secrets in GitHub's UI or with `gh secret set NAME --env
+google-play --repo IsaacThoman/pulpo`, which prompts for the value. Do not commit
+keys, passwords, or service account JSON to the repository.
 
-```bash
-npx eas-cli build --platform android --profile preview
-npx eas-cli build --platform android --profile production
-```
+### First Play Store bundle
 
-Configure the real Android signing credentials in EAS/Play Console before
-distribution. These commands build artifacts; Play Store publication remains
-a separate release step. `PULPO_ANDROID_VERSION_CODE` overrides the local native
-version code; EAS production uses its remote incrementing version.
+After the workflow is merged, open Actions → **Android release** → **Run
+workflow**. Select the branch or tag to build, enter its app version, and leave
+**Upload to Google Play internal testing** unchecked. The workflow installs
+JDK 21 / SDK 37, builds the shared packages, prebuilds Android, and runs Gradle
+`bundleRelease`. It overrides Expo's debug signing default and verifies the
+bundle against the upload certificate before saving the `.aab` artifact.
 
-`eas-cli init` must be run while signed in to the `isaacthoman` Expo account so
-it can write the real EAS project ID. Never substitute another owner or team.
-App Store metadata is versioned in `store.config.json`; review credentials and
-contact details still belong in protected App Store Connect/EAS configuration,
-not source control.
+Download the `Pulpo-<version>-Android-<versionCode>` artifact and upload its
+`.aab` to Play Console → Pulpo → Testing → Internal testing. Enroll in Play App
+Signing using a Google-generated app-signing key. Finish the first release
+setup in Play Console before enabling the API upload action.
+
+The app version comes from the workflow input or semantic release. Version
+codes use seconds since January 1, 2024, and are regenerated for reruns. All
+Android runs are serialized. If an existing Play upload used a higher version
+code, adjust this scheme before uploading; Google requires increasing codes.
+
+### Automatic uploads and releases
+
+Enable the [Google Play Android Developer API](https://developers.google.com/android-publisher/getting_started)
+in a Google Cloud project, create a service account and JSON key, then invite
+its email through Play Console → Users and permissions. Grant access to Pulpo
+with **View app information (read-only)** and **Release apps to testing tracks**.
+Store the JSON as `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` in `google-play`.
+
+Run **Android release** from `main` or a release tag with upload checked to
+send a new bundle to the `internal` track. When running from a tag, the version
+input must match it: tag `v1.2.3` requires version `1.2.3`. Other branches can
+build downloadable artifacts with upload unchecked. Keep the manual run's
+status `draft` while the app's first release is being set up. Once the app is
+ready for tester distribution, use `completed`.
+The artifact is saved before upload, so upload failures still leave a
+downloadable signed bundle.
+
+Android uses the same automatic trigger as iOS: each new semantic release
+from a push to `main` builds that exact tag and uploads to internal testing.
+The repository's default branch does not control this trigger, and pushes to
+`dev` do not release either mobile app. Configure the `google-play` credentials
+before promoting this workflow to `main`.
+
+Automatic releases default to `completed`, making them available to internal
+testers. The optional repository variable `ANDROID_RELEASE_STATUS=draft` can
+hold automatic uploads as drafts during initial Play setup. Promote a tested
+release to closed testing or production in Play Console.
+
+For native Android passkeys, configure the server's
+`PULPO_ANDROID_CERTIFICATE_FINGERPRINTS` with the **Play app-signing certificate**
+SHA-256 fingerprint, then set `PULPO_ANDROID_PASSKEY_DOMAINS=pulpo.baby` in the
+`google-play` environment before building. Verify `assetlinks.json` and test
+passkeys and shared links with the Play-installed app. The upload certificate
+is a different key. Leaving the domains unset uses browser authentication.
