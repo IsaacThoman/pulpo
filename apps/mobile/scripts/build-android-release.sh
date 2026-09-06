@@ -33,7 +33,7 @@ if ! grep -Fqx "${signing_line}" "${mobile_dir}/android/app/build.gradle"; then
 fi
 
 cd "${mobile_dir}/android"
-./gradlew :app:bundleRelease --no-daemon --no-configuration-cache --console=plain
+./gradlew :app:bundleRelease :app:assembleRelease --no-daemon --no-configuration-cache --console=plain
 
 bundle_path="${mobile_dir}/android/app/build/outputs/bundle/release/app-release.aab"
 test -s "${bundle_path}"
@@ -56,3 +56,18 @@ if ! cmp -s "${signing_dir}/expected.der" "${signing_dir}/actual.der"; then
   exit 1
 fi
 echo "Verified signed Android bundle: ${bundle_path}"
+
+apk_path="${mobile_dir}/android/app/build/outputs/apk/release/app-release.apk"
+test -s "${apk_path}"
+build_tools="${ANDROID_HOME:?Set ANDROID_HOME to the Android SDK}/build-tools/37.0.0"
+"${build_tools}/apksigner" verify --verbose --print-certs "${apk_path}" > "${signing_dir}/apk-verification.txt"
+expected_digest="$(openssl dgst -sha256 "${signing_dir}/expected.der" | awk '{print $NF}')"
+# Build Tools 37 labels the signer by signature scheme (for example V3.0).
+# Require one signer and require every reported signing certificate to match.
+actual_digest="$(sed -n 's/^.*Signer.*certificate SHA-256 digest: //p' "${signing_dir}/apk-verification.txt" | sort -u)"
+if ! grep -qx 'Number of signers: 1' "${signing_dir}/apk-verification.txt" ||
+   [[ "${actual_digest}" != "${expected_digest}" ]]; then
+  echo 'The APK was not signed with the configured Android upload key.' >&2
+  exit 1
+fi
+echo "Verified signed Android APK: ${apk_path}"
