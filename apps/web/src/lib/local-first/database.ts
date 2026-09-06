@@ -1,11 +1,13 @@
 import Dexie, { type EntityTable } from 'dexie'
 import type { PersistedClient, Persister } from '@tanstack/react-query-persist-client'
 import { retainedChatQueryHashes } from './chat-cache-policy'
+import { createPersistenceQueue } from './persistence-queue'
+import { chatDataPrefix, restoreQueryCache, splitQueryCache, type StoredQueryClient } from './query-cache-records'
 import { runtimeAccountKey, runtimeInstanceUrl, isDesktopRuntime } from '../runtime'
 
 const DEFAULT_MAX_LOCAL_CHATS = 50
 function queryCacheKey(): string {
-  return isDesktopRuntime() ? `query-cache-v1:${runtimeInstanceUrl()}` : 'query-cache-v1'
+  return isDesktopRuntime() ? `query-cache-v2:${runtimeInstanceUrl()}` : 'query-cache-v2'
 }
 
 export function localAccountKey(userId: string): string {
@@ -129,16 +131,52 @@ function trimChatQueries(client: PersistedClient): PersistedClient {
   }
 }
 
+let writtenChatData = new Map<string, unknown>()
+const reportPersistenceError = (error: unknown) => console.warn('Unable to persist the local query cache', error)
+const persistenceQueue = createPersistenceQueue<{ key: string; client: PersistedClient }>(async ({ key, client }) => {
+  const plan = splitQueryCache(trimChatQueries(client), key, writtenChatData)
+  const updatedAt = Date.now()
+  await localDb.transaction('rw', localDb.kv, async () => {
+    const oldKeys = await localDb.kv.where('key').startsWith(chatDataPrefix(key)).primaryKeys()
+    const removed = oldKeys.filter((oldKey) => !plan.data.has(oldKey))
+    if (removed.length) await localDb.kv.bulkDelete(removed)
+    await localDb.kv.bulkPut([
+      ...[...plan.changed].map(([recordKey, value]) => ({ key: recordKey, value, updatedAt })),
+      { key, value: plan.envelope, updatedAt },
+    ])
+    await localDb.kv.delete(key.replace('query-cache-v2', 'query-cache-v1'))
+  })
+  // Only remember identities after the atomic write succeeds.
+  writtenChatData = plan.data
+}, reportPersistenceError)
+
+export function flushQueryPersistence(): Promise<void> {
+  return persistenceQueue.flush().catch(reportPersistenceError)
+}
+
 export const indexedDbPersister: Persister = {
-  persistClient: async (client) => {
-    await localDb.kv.put({ key: queryCacheKey(), value: trimChatQueries(client), updatedAt: Date.now() })
+  persistClient: (client) => {
+    // Capture the instance before deferring the write.
+    persistenceQueue.schedule({ key: queryCacheKey(), client })
   },
   restoreClient: async () => {
-    const row = await localDb.kv.get(queryCacheKey())
-    return row?.value as PersistedClient | undefined
+    const key = queryCacheKey()
+    const row = await localDb.kv.get(key) ?? await localDb.kv.get(key.replace('query-cache-v2', 'query-cache-v1'))
+    if (!row) return undefined
+    const client = row.value as StoredQueryClient
+    const keys = Object.values(client.chatDataKeys ?? {})
+    const records = await localDb.kv.bulkGet(keys)
+    writtenChatData = new Map(records.flatMap((record) => record ? [[record.key, record.value] as const] : []))
+    return restoreQueryCache(client, writtenChatData)
   },
   removeClient: async () => {
-    await localDb.kv.delete(queryCacheKey())
+    const key = queryCacheKey()
+    await persistenceQueue.cancel()
+    await localDb.transaction('rw', localDb.kv, async () => {
+      await localDb.kv.bulkDelete([key, key.replace('query-cache-v2', 'query-cache-v1')])
+      await localDb.kv.where('key').startsWith(chatDataPrefix(key)).delete()
+    })
+    writtenChatData.clear()
   },
 }
 

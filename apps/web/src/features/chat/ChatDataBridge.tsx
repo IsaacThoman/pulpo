@@ -20,17 +20,12 @@ import { queryClient } from '@/lib/query-client'
 import { useAuth } from '@/stores/auth'
 import { mergeServerChatDetails, useChat, type ServerChat, type ServerFolder } from '@/stores/chat'
 import { useCatalog } from '@/stores/catalog'
-import { coalesceResponseEvents, groupResponseEvents, isTerminalSnapshot, stateInvalidationQueryKeys, syncInvalidationScopes, takeContiguousResponseEvents } from './response-sync'
+import { coalesceResponseEvents, groupResponseEvents, outboxInvalidationQueryKeys, isTerminalSnapshot, stateInvalidationQueryKeys, syncInvalidationScopes, takeContiguousResponseEvents } from './response-sync'
 import { isDesktopRuntime, runtimeInstanceUrl, runtimeSessionToken } from '@/lib/runtime'
+import { createSyncScheduler } from './sync-scheduler'
 import { adminAccessRequiredChatId } from '@/features/admin-chat/route-access'
 
 type PulpoSocket = Socket<ServerToClientEvents, ClientToServerEvents>
-
-function invalidateStateScope(scope: StateInvalidationScope, userId: string): void {
-  for (const queryKey of stateInvalidationQueryKeys(scope, userId)) {
-    void queryClient.invalidateQueries({ queryKey })
-  }
-}
 
 function tabId(): string {
   const existing = sessionStorage.getItem('pulpo-tab-id')
@@ -68,23 +63,28 @@ export function ChatDataBridge() {
 
   const chatsQuery = useQuery({
     queryKey: ['chats', userId],
-    queryFn: () => apiRequest<{ data: ServerChat[] }>('/api/chats').then((response) => response.data),
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    queryFn: ({ signal }) => apiRequest<{ data: ServerChat[] }>('/api/chats', { signal }).then((response) => response.data),
     enabled: Boolean(!adminChatView && networkReady && userId && userRole !== 'pending'),
   })
   const foldersQuery = useQuery({
     queryKey: ['folders', userId],
-    queryFn: () => apiRequest<{ data: ServerFolder[] }>('/api/folders').then((response) => response.data),
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    queryFn: ({ signal }) => apiRequest<{ data: ServerFolder[] }>('/api/folders', { signal }).then((response) => response.data),
     enabled: Boolean(!adminChatView && networkReady && userId && userRole !== 'pending'),
   })
   const chatQuery = useQuery({
     queryKey: ['chat', userId, chatId],
-    queryFn: async () => {
-      const incoming = await apiRequest<ServerChat>(`/api/chats/${chatId}?format=compact&scope=active`)
+    queryFn: async ({ signal }) => {
+      const incoming = await apiRequest<ServerChat>(`/api/chats/${chatId}?format=compact&scope=active`, { signal })
       return mergeServerChatDetails(queryClient.getQueryData<ServerChat>(['chat', userId, chatId]), incoming)
     },
     enabled: Boolean(!adminChatView && networkReady && userId && chatId),
     retry: false,
     refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   })
 
   useEffect(() => { if (chatsQuery.data) replaceSummaries(chatsQuery.data) }, [chatsQuery.data, replaceSummaries])
@@ -115,6 +115,8 @@ export function ChatDataBridge() {
     let eventFrame: number | undefined
     let cursorTimer: number | undefined
     let revisionTimer: number | undefined
+    let disposed = false
+    const pendingQueryKeys = new Map<string, string[]>()
     let pendingRevision: RevisionInvalidationBatch | undefined
     const pendingEvents = new Map<string, ResponseEvent[]>()
     const pendingCursors = new Map<string, number>()
@@ -143,21 +145,29 @@ export function ChatDataBridge() {
         cursorTimer = window.setTimeout(() => { void flushCursors() }, 250)
       }
     }
-    const flushRevisionInvalidations = () => {
-      if (revisionTimer !== undefined) window.clearTimeout(revisionTimer)
+    const flushInvalidations = () => {
       revisionTimer = undefined
       const batch = pendingRevision
       pendingRevision = undefined
-      if (!batch) return
-      void queryClient.invalidateQueries({ queryKey: ['chats', userId] })
-      void queryClient.invalidateQueries({ queryKey: ['deleted-chats', userId] })
-      for (const changedChatId of batch.chatIds) {
-        void queryClient.invalidateQueries({ queryKey: ['chat', userId, changedChatId] })
+      const add = (key: string[]) => pendingQueryKeys.set(JSON.stringify(key), key)
+      if (batch) {
+        if (batch.chatIds.length || batch.accountOnlyRevisions.length || batch.scopes.includes('chats')) {
+          add(['chats', userId])
+          add(['deleted-chats', userId])
+        }
+        for (const id of batch.chatIds) add(['chat', userId, id])
+        for (const scope of batch.scopes) for (const key of stateInvalidationQueryKeys(scope, userId)) add(key)
+        if (batch.accountOnlyRevisions.length) add(['settings', userId])
       }
-      for (const scope of batch.scopes) invalidateStateScope(scope, userId)
-      if (batch.accountOnlyRevisions.length) {
-        void queryClient.invalidateQueries({ queryKey: ['settings', userId] })
-      }
+      for (const queryKey of pendingQueryKeys.values()) void queryClient.invalidateQueries({ queryKey })
+      pendingQueryKeys.clear()
+    }
+    const queueInvalidation = (queryKey: string[]) => {
+      pendingQueryKeys.set(JSON.stringify(queryKey), queryKey)
+      revisionTimer ??= window.setTimeout(flushInvalidations, 16)
+    }
+    const invalidateStateScope = (scope: StateInvalidationScope) => {
+      for (const key of stateInvalidationQueryKeys(scope, userId)) queueInvalidation(key)
     }
     const queueRevisionInvalidation = (event: {
       revision: number
@@ -166,7 +176,7 @@ export function ChatDataBridge() {
     }) => {
       revisionRef.current = Math.max(revisionRef.current, event.revision)
       pendingRevision = mergeRevisionInvalidation(pendingRevision, event)
-      revisionTimer ??= window.setTimeout(flushRevisionInvalidations, 16)
+      revisionTimer ??= window.setTimeout(flushInvalidations, 16)
     }
     const applyEventBatch = (events: ResponseEvent[]) => {
       const compacted = coalesceResponseEvents(events)
@@ -197,7 +207,7 @@ export function ChatDataBridge() {
       }
     }
     const applySync = (result: SyncResult) => {
-      revisionRef.current = result.accountRevision
+      revisionRef.current = Math.max(revisionRef.current, result.accountRevision)
       for (const events of groupResponseEvents(result.events)) {
         for (const event of events) queueEvent(event)
         flushEventBatches(events[0]?.responseId)
@@ -213,12 +223,12 @@ export function ChatDataBridge() {
         }
       }
       const scopes = syncInvalidationScopes(result)
-      for (const scope of scopes) invalidateStateScope(scope, userId)
+      for (const scope of scopes) invalidateStateScope(scope)
       if (scopes.includes('chats')) {
-        void queryClient.invalidateQueries({ queryKey: ['deleted-chats', userId] })
+        queueInvalidation(['deleted-chats', userId])
       }
       if (scopes.includes('chats') && activeChatIdRef.current) {
-        void queryClient.invalidateQueries({ queryKey: ['chat', userId, activeChatIdRef.current] })
+        queueInvalidation(['chat', userId, activeChatIdRef.current])
       }
     }
     const applyLiveSnapshot = (snapshot: Parameters<typeof applyResponseSnapshot>[0]) => {
@@ -232,29 +242,33 @@ export function ChatDataBridge() {
         rememberCursor(snapshot.responseId, snapshot.sequence)
       }
     }
-    const sync = async () => {
+    const syncScheduler = createSyncScheduler(async () => {
+      if (disposed || !socket.connected) return
+      const settledPaths = await flushOutbox(userId)
+      if (disposed) return
+      for (const key of outboxInvalidationQueryKeys(settledPaths, userId, activeChatIdRef.current)) queueInvalidation(key)
       const cursors = await localDb.responseCursors.where('tabId').equals(currentTabId).toArray()
-      socket.emit('client.sync', {
+      if (disposed || !socket.connected) return
+      const afterSequences = new Map(cursors.map((cursor) => [cursor.responseId, cursor.sequence]))
+      const result = await socket.timeout(10_000).emitWithAck('client.sync', {
         tabId: currentTabId,
         accountRevision: revisionRef.current,
         activeChatId: activeChatIdRef.current,
-        responseCursors: Object.fromEntries(cursors.map((cursor) => [cursor.responseId, cursor.sequence])),
-      }, applySync)
+        responseCursors: Object.fromEntries(afterSequences),
+      })
+      if (disposed || !socket.connected) return
+      applySync(result)
       if (activeChatIdRef.current) socket.emit('chat.subscribe', { chatId: activeChatIdRef.current })
       subscribedResponseIds.clear()
       for (const responseId of useChat.getState().streamingIds) {
-        const cursor = await localDb.responseCursors.get(`${currentTabId}:${responseId}`)
-        socket.emit('response.subscribe', { responseId, afterSequence: cursor?.sequence ?? 0 })
+        socket.emit('response.subscribe', { responseId, afterSequence: afterSequences.get(responseId) ?? 0 })
         subscribedResponseIds.add(responseId)
       }
-      void flushOutbox(userId).then(() => Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['chats', userId] }),
-        queryClient.invalidateQueries({ queryKey: ['folders', userId] }),
-        queryClient.invalidateQueries({ queryKey: ['settings', userId] }),
-      ]))
-    }
+    }, (error) => {
+      if (!disposed && socket.connected) console.warn('Unable to synchronize chat state', error)
+    })
 
-    socket.on('connect', sync)
+    socket.on('connect', syncScheduler.request)
     socket.on('response.event', queueEvent)
     socket.on('response.snapshot', applyLiveSnapshot)
     socket.on('chat.changed', ({ chatId: changedChatId, revision }) => {
@@ -263,12 +277,14 @@ export function ChatDataBridge() {
     socket.on('account.revision', ({ revision, scopes }) => {
       queueRevisionInvalidation({ revision, scopes })
     })
-    const wake = () => { if (document.visibilityState === 'visible') void sync() }
-    const online = () => void sync()
+    const wake = () => { if (document.visibilityState === 'visible') syncScheduler.request() }
+    const online = syncScheduler.request
     document.addEventListener('visibilitychange', wake)
     window.addEventListener('focus', wake)
     window.addEventListener('online', online)
     return () => {
+      disposed = true
+      syncScheduler.dispose()
       document.removeEventListener('visibilitychange', wake)
       window.removeEventListener('focus', wake)
       window.removeEventListener('online', online)
