@@ -1,5 +1,6 @@
+import { MaterialIconButton } from '../platform/MaterialUI'
 import { Platform, Pressable, StyleSheet, View } from 'react-native'
-import { SymbolView } from 'expo-symbols'
+import { SymbolView } from '../platform/SymbolView'
 import {
   Button as SwiftUIButton,
   Host as SwiftUIHost,
@@ -38,6 +39,7 @@ export function GlassIconButton({ colorScheme, icon, label, onPress }: {
       </SwiftUIButton>
     </SwiftUIHost>
   }
+  if (Platform.OS === 'android') return <MaterialIconButton icon={icon} label={label} onPress={onPress} color={foreground} />
   return <Pressable
     accessibilityLabel={label}
     accessibilityRole="button"

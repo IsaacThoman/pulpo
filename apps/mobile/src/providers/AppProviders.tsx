@@ -1,3 +1,4 @@
+import { MaterialOverlays } from '../platform/MaterialUI'
 import { useEffect, useMemo } from 'react'
 import { AppState, Keyboard, View } from 'react-native'
 import { QueryClient, QueryClientProvider, focusManager, onlineManager } from '@tanstack/react-query'
@@ -106,7 +107,7 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
       <KeyboardStateReconciler>
         <SafeAreaProvider>
           <QueryClientProvider client={queryClient}>
-            <Bootstrap><RealtimeProvider>{children}</RealtimeProvider></Bootstrap>
+            <Bootstrap><RealtimeProvider>{children}<MaterialOverlays /></RealtimeProvider></Bootstrap>
           </QueryClientProvider>
         </SafeAreaProvider>
       </KeyboardStateReconciler>

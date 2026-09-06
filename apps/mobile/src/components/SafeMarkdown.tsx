@@ -1,5 +1,5 @@
 import { memo, useMemo } from 'react'
-import { Linking, StyleSheet, type TextStyle, type ViewStyle } from 'react-native'
+import { Linking, Platform, StyleSheet, type TextStyle, type ViewStyle } from 'react-native'
 import { EnrichedMarkdownText, type MarkdownStyle } from 'react-native-enriched-markdown'
 import { useAppTheme } from '../theme'
 import { beginsWithMarkdownHeading, normalizeMathDelimiters } from './markdown'
@@ -7,12 +7,14 @@ import { beginsWithMarkdownHeading, normalizeMathDelimiters } from './markdown'
 export const SafeMarkdown = memo(function SafeMarkdown({
   children,
   compact = false,
+  selectable = true,
   containerStyle,
   tightenLeadingHeading = false,
 }: {
   children: string
   streaming?: boolean
   compact?: boolean
+  selectable?: boolean
   containerStyle?: ViewStyle | TextStyle
   tightenLeadingHeading?: boolean
 }) {
@@ -33,8 +35,8 @@ export const SafeMarkdown = memo(function SafeMarkdown({
       strong: { color: theme.text },
       em: { color: compact ? theme.secondary : theme.text },
       link: { color: theme.blue, underline: true },
-      code: { color: theme.text, backgroundColor: theme.fillStrong, borderColor: theme.separator, fontFamily: 'Menlo', fontSize: Math.max(11, fontSize - 2) },
-      codeBlock: { color: theme.text, backgroundColor: theme.elevated, borderColor: theme.separator, borderWidth: 1, borderRadius: 10, fontFamily: 'Menlo', fontSize: Math.max(11, fontSize - 2), lineHeight: Math.max(16, lineHeight - 3), padding: 12, marginBottom: 10 },
+      code: { color: theme.text, backgroundColor: theme.fillStrong, borderColor: theme.separator, fontFamily: Platform.OS === 'android' ? 'monospace' : 'Menlo', fontSize: Math.max(11, fontSize - 2) },
+      codeBlock: { color: theme.text, backgroundColor: theme.elevated, borderColor: theme.separator, borderWidth: 1, borderRadius: 10, fontFamily: Platform.OS === 'android' ? 'monospace' : 'Menlo', fontSize: Math.max(11, fontSize - 2), lineHeight: Math.max(16, lineHeight - 3), padding: 12, marginBottom: 10 },
       blockquote: { color: theme.secondary, backgroundColor: theme.fill, borderColor: theme.secondary, borderWidth: 2, gapWidth: 10, fontSize, lineHeight, marginBottom: 10 },
       thematicBreak: { color: theme.separator, height: 1, marginTop: 12, marginBottom: 12 },
       table: { color: theme.text, fontSize: Math.max(12, fontSize - 2), lineHeight: Math.max(17, lineHeight - 4), headerBackgroundColor: theme.fillStrong, headerTextColor: theme.text, rowEvenBackgroundColor: theme.fill, rowOddBackgroundColor: theme.background, borderColor: theme.separator, borderWidth: 1, borderRadius: 10, cellPaddingHorizontal: 9, cellPaddingVertical: 7, marginBottom: 12 },
@@ -64,7 +66,7 @@ export const SafeMarkdown = memo(function SafeMarkdown({
     onLinkPress={({ url }) => {
       if (/^https?:\/\//i.test(url)) void Linking.openURL(url)
     }}
-    selectable
+    selectable={selectable}
     // Socket snapshots already stream the source markdown. The renderer's
     // additional tail animation can report a stale intrinsic height on iOS,
     // leaving later content underneath sibling controls and outside the list's

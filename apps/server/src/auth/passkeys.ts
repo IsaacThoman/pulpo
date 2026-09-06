@@ -1,3 +1,4 @@
+import { passkeyVerificationOrigins } from './android-app.js'
 import { createHash } from 'node:crypto'
 import { and, eq, gt, inArray, isNull, ne, sql } from 'drizzle-orm'
 import {
@@ -192,7 +193,7 @@ async function insertVerifiedPasskey(
     verification = await verifyRegistrationResponse({
       response: response as unknown as RegistrationResponseJSON,
       expectedChallenge: ceremony.challenge,
-      expectedOrigin: ceremony.expectedOrigin,
+      expectedOrigin: passkeyVerificationOrigins(ceremony.flow, ceremony.expectedOrigin, getConfig().PULPO_ANDROID_CERTIFICATE_FINGERPRINTS ?? ''),
       expectedRPID: ceremony.rpId,
       requireUserPresence: true,
       requireUserVerification: true,
@@ -375,7 +376,7 @@ export async function finishPasskeyAuthentication(input: {
     verification = await verifyAuthenticationResponse({
       response: input.response as unknown as AuthenticationResponseJSON,
       expectedChallenge: ceremony.challenge,
-      expectedOrigin: ceremony.expectedOrigin,
+      expectedOrigin: passkeyVerificationOrigins(ceremony.flow, ceremony.expectedOrigin, getConfig().PULPO_ANDROID_CERTIFICATE_FINGERPRINTS ?? ''),
       expectedRPID: ceremony.rpId,
       credential: {
         id: row.credential.credentialId,

@@ -24,6 +24,7 @@ const passkeyDomains = [...new Set([
 
 const config: ExpoConfig = {
   name: 'Pulpo',
+  platforms: ['ios', 'android'],
   slug: 'pulpo',
   owner: 'isaacthoman',
   version: appVersion,
@@ -96,16 +97,22 @@ const config: ExpoConfig = {
   },
   android: {
     package: 'com.isaacthoman.pulpo',
+    versionCode: Number(process.env.PULPO_ANDROID_VERSION_CODE ?? '1'),
+    predictiveBackGestureEnabled: true,
+    softwareKeyboardLayoutMode: 'resize',
+    adaptiveIcon: { foregroundImage: './assets/pulpo-smiley.png', backgroundColor: '#F1F6EF' },
+    intentFilters: [{ action: 'VIEW', autoVerify: true, category: ['BROWSABLE', 'DEFAULT'], data: [{ scheme: 'https', host: 'pulpo.baby', pathPrefix: '/share/' }] }],
     blockedPermissions: ['android.permission.RECORD_AUDIO'],
   },
   plugins: [
     './plugins/with-pulpo-icons',
+    './plugins/with-pulpo-android',
     'expo-router',
     'expo-secure-store',
     'expo-sqlite',
     [
       'expo-build-properties',
-      { ios: { deploymentTarget: '26.0', useFrameworks: 'dynamic', buildReactNativeFromSource: true } },
+      { ios: { deploymentTarget: '26.0', useFrameworks: 'dynamic', buildReactNativeFromSource: true }, android: { compileSdkVersion: 37, targetSdkVersion: 37, buildToolsVersion: '37.0.0' } },
     ],
     ['react-native-enriched-markdown', { enableMath: true }],
     [
@@ -130,6 +137,7 @@ const config: ExpoConfig = {
   extra: {
     defaultInstanceUrl,
     passkeyDomains,
+    androidPasskeyDomains: (process.env.PULPO_ANDROID_PASSKEY_DOMAINS ?? '').split(',').map((value) => httpsHostname(value.trim())).filter(Boolean),
     eas: {},
   },
 }

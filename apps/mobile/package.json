@@ -10,7 +10,8 @@
     "prebuild": "expo prebuild",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "export": "expo export --platform ios"
+    "export": "expo export --platform all",
+    "android": "expo run:android"
   },
   "dependencies": {
     "@expo/ui": "~57.0.9",
@@ -33,6 +34,7 @@
     "expo-glass-effect": "~57.0.1",
     "expo-haptics": "~57.0.1",
     "expo-image-picker": "~57.0.7",
+    "expo-intent-launcher": "~57.0.1",
     "expo-linking": "~57.0.5",
     "expo-network": "~57.0.1",
     "expo-router": "~57.0.10",
@@ -42,6 +44,7 @@
     "expo-sqlite": "~57.0.1",
     "expo-status-bar": "~57.0.1",
     "expo-symbols": "~57.0.1",
+    "expo-system-ui": "~57.0.3",
     "expo-web-browser": "~57.0.2",
     "katex": "^0.16.47",
     "lucide-react-native": "^1.28.0",

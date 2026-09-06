@@ -1,3 +1,4 @@
+import { androidAssetLinks } from '../auth/android-app.js'
 import { eq, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import {
@@ -36,6 +37,11 @@ import {
 import { createInitialAdmin } from '../auth/initial-admin.js'
 
 export async function registerMobileRoutes(app: FastifyInstance): Promise<void> {
+  app.get('/.well-known/assetlinks.json', async (_request, reply) => {
+    reply.header('Cache-Control', 'public, max-age=3600')
+    return androidAssetLinks(getConfig().PULPO_ANDROID_CERTIFICATE_FINGERPRINTS ?? '')
+  })
+
   app.get('/api/mobile/config', async () => {
     const config = getConfig()
     const [[existingUser], [setting]] = await Promise.all([

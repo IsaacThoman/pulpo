@@ -12,11 +12,13 @@
     },
     "preview": {
       "distribution": "internal",
+      "android": { "buildType": "apk" },
       "ios": { "resourceClass": "m-medium" },
       "env": { "EXPO_PUBLIC_DEFAULT_INSTANCE_URL": "https://pulpo.baby", "EXPO_ROUTER_DISABLE_RN_NAVIGATION_CHECK": "1" }
     },
     "production": {
       "autoIncrement": true,
+      "android": { "buildType": "app-bundle" },
       "ios": { "resourceClass": "m-medium" },
       "env": { "EXPO_PUBLIC_DEFAULT_INSTANCE_URL": "https://pulpo.baby", "EXPO_ROUTER_DISABLE_RN_NAVIGATION_CHECK": "1" }
     }

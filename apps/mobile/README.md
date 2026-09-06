@@ -1,9 +1,12 @@
-# Pulpo for iPhone
+# Pulpo Mobile
 
-Pulpo Mobile is the iOS 26 member client for a Pulpo instance. It uses Expo SDK
-57, Expo Router, React Native 0.86, SwiftUI-backed controls from `@expo/ui`,
-Liquid Glass, TanStack Query, Zustand, SQLite, SecureStore, FileSystem, and
-Socket.IO.
+Pulpo Mobile is the iOS 26 and Android member client for a Pulpo instance. It
+uses Expo SDK 57, Expo Router, React Native 0.86, TanStack Query, Zustand,
+SQLite, SecureStore, FileSystem, and Socket.IO. iOS uses SwiftUI and Liquid
+Glass; Android uses Jetpack Compose Material 3 Expressive through `@expo/ui`,
+with dynamic system colors and native fields, buttons, switches, contextual menus
+and dialogs. Chat history uses the same sliding conversation layout as iOS;
+folders expand inline, and model selection opens beneath the toolbar title.
 
 Generated `ios/` and `android/` projects are intentionally ignored. Continuous
 Native Generation recreates them from `app.config.ts` and the installed config
@@ -24,10 +27,40 @@ Choose an iOS 26 simulator from Expo CLI. The iOS simulator reaches the host's
 Compose gateway through `localhost`. The development build permits local HTTP;
 production instance switching accepts HTTPS only.
 
-Only the bearer session token is placed in iOS Keychain through SecureStore.
+Only the bearer session token is placed in platform secure storage through SecureStore.
 The active instance, preferences, cached queries, drafts, cursors, search index,
 outbox, and attachment metadata are stored in namespaced SQLite tables. Cached
 attachment bytes use the app cache and are evicted by the configured LRU quota.
+
+### Android development
+
+Install Android Studio, an Android 17 / API 37 system image, SDK Platform 37,
+Build Tools 37.0.0, and JDK 21. Set `ANDROID_HOME` to your Android SDK directory
+and `JAVA_HOME` to your JDK. Start an emulator in Android Studio's Device Manager.
+
+```bash
+adb reverse tcp:8080 tcp:8080
+adb reverse tcp:8081 tcp:8081
+EXPO_PUBLIC_DEFAULT_INSTANCE_URL=http://localhost:8080 npm run dev:android
+```
+
+The first command forwards the local Pulpo gateway, and the second forwards
+Metro. Use the actual server port if your stack runs elsewhere. If Metro does
+not connect, set **Debug server host & port for device** in the development
+menu to `localhost:8081`, then reload. USB Android devices support the same
+forwarding workflow. `10.0.2.2` is also available on standard Android emulators.
+
+The generated project targets API 37 and supports the Expo SDK's minimum
+Android version. Material colors follow the wallpaper on Android 12+
+and use the bundled Material palette on older versions. The app supports system
+Back, edge-to-edge insets, keyboard resizing, rotation, and the existing wide
+layout. Files open using a native Android viewer with a temporary read grant;
+sharing uses Android's sharesheet with the actual attachment bytes.
+
+Platform UI lives in `src/platform/MaterialUI.android.tsx`. Android-only view
+implementations use Metro's `.android.tsx` resolution, leaving the SwiftUI
+implementations available to iOS. Keep business logic, server operations, cache,
+drafts, and queue state shared between platforms.
 
 ## Configuration and validation
 
@@ -48,9 +81,30 @@ This generates matching `webcredentials:` associated-domain entitlements and
 exposes the same allow-list to runtime selection. Each domain must serve the
 Pulpo AASA document for Apple team `PX72AL9366` and bundle
 `com.isaacthoman.pulpo`. Instances not compiled into the app remain supported
-through the authorization-code-with-PKCE Safari flow. Changing an instance's
+through the authorization-code-with-PKCE browser flow. Changing an instance's
 canonical `PUBLIC_URL` hostname invalidates passkeys registered for the old
 hostname.
+
+### Android passkeys and verified links
+
+Native Android passkeys require the app's real signing certificate and a
+verified HTTPS domain. Before building, set `PULPO_ANDROID_PASSKEY_DOMAINS` to
+the comma-separated hostnames configured for that signed build. On each server,
+set `PULPO_ANDROID_CERTIFICATE_FINGERPRINTS` to the comma-separated SHA-256
+certificate fingerprints (colon-separated or plain hex). For Google Play use
+the **app signing** certificate, which differs from the upload certificate.
+
+The API and gateway serve `/.well-known/assetlinks.json` for package
+`com.isaacthoman.pulpo`. The same certificate allow-list validates Android
+Credential Manager origins during native passkey ceremonies; browser passkey
+origin checks remain scoped to the HTTPS site. Multiple fingerprints support
+certificate rotation. With no configured certificates, the endpoint returns
+an empty list and grants no app association.
+
+Unlisted instances use the browser flow with PKCE. The default Android build
+has no native-passkey domains until release signing is configured. Local HTTP
+fixtures exercise password authentication; they cannot verify production
+Credential Manager or HTTPS App Links.
 
 ```bash
 npm run mobile:typecheck
@@ -88,6 +142,19 @@ npx eas-cli build --platform ios --profile preview
 npx eas-cli build --platform ios --profile production
 npx eas-cli submit --platform ios --profile production
 ```
+
+Android uses the same Expo project and package name. Build an installable preview
+APK or a production Play Store app bundle with:
+
+```bash
+npx eas-cli build --platform android --profile preview
+npx eas-cli build --platform android --profile production
+```
+
+Configure the real Android signing credentials in EAS/Play Console before
+distribution. These commands build artifacts; Play Store publication remains
+a separate release step. `PULPO_ANDROID_VERSION_CODE` overrides the local native
+version code; EAS production uses its remote incrementing version.
 
 `eas-cli init` must be run while signed in to the `isaacthoman` Expo account so
 it can write the real EAS project ID. Never substitute another owner or team.

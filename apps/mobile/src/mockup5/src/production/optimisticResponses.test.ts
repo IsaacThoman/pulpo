@@ -141,6 +141,30 @@ describe('optimistic response reconciliation', () => {
     expect(reconciled.attachments?.map((attachment) => attachment.id)).toEqual(['attachment-1'])
   })
 
+  it('keeps completed queued descendants visible while the local parent awaits reconciliation', () => {
+    const queryClient = new QueryClient()
+    seed(queryClient)
+    const parent = queryClient.getQueryData<ServerChat>(chatKey('chat-1'))!.responses![0]!
+    const second = { ...parent, id: 'queued-2', parentResponseId: parent.id, status: 'completed' as const }
+    const third = { ...second, id: 'queued-3', parentResponseId: second.id }
+    const incoming = { ...staleChat(), responses: [parent, second, third], activeResponseId: third.id, activeBranchLeafId: third.id }
+
+    const reconciled = reconcileOptimisticResponses(namespace, incoming, realtime.snapshots as never)
+    expect(reconciled.activeBranchLeafId).toBe(third.id)
+    expect(reconciled.activeResponseId).toBe(third.id)
+    expect(reconciled.attachments?.map((attachment) => attachment.id)).toEqual(['attachment-1'])
+  })
+
+  it('does not replace an accepted local turn with a stale unrelated server branch', () => {
+    const queryClient = new QueryClient()
+    seed(queryClient)
+    const parent = queryClient.getQueryData<ServerChat>(chatKey('chat-1'))!.responses![0]!
+    const unrelated = { ...parent, id: 'older-branch', parentResponseId: null }
+    const incoming = { ...staleChat(), responses: [parent, unrelated], activeResponseId: unrelated.id, activeBranchLeafId: unrelated.id }
+
+    expect(reconcileOptimisticResponses(namespace, incoming, realtime.snapshots as never).activeBranchLeafId).toBe(parent.id)
+  })
+
   it('marks a newly-created chat as protected from stale chat-list replacement', () => {
     const queryClient = new QueryClient()
     queryClient.setQueryData(['chats', namespace], [staleChat('older-chat')])

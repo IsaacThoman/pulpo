@@ -1,3 +1,4 @@
+import { androidCertificateFingerprints } from './auth/android-app.js'
 import { z } from 'zod'
 
 const booleanString = z
@@ -14,6 +15,7 @@ const configSchema = z.object({
   HOST: z.string().default('0.0.0.0'),
   PORT: z.coerce.number().int().positive().default(3000),
   PUBLIC_URL: z.url().default('http://localhost:5173'),
+  PULPO_ANDROID_CERTIFICATE_FINGERPRINTS: z.string().default('').refine((value) => { try { androidCertificateFingerprints(value); return true } catch { return false } }, 'Use comma-separated SHA-256 signing certificate fingerprints'),
   INSTANCE_NAME: z.string().trim().min(1).default('Pulpo'),
   PULPO_VERSION: z.string().trim().min(1).default('0.1.0'),
   PULPO_BILLING_ENABLED: booleanString,

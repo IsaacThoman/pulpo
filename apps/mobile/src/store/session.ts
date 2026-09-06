@@ -48,7 +48,7 @@ function allowLocalhost(): boolean {
 }
 
 async function deviceLabel(): Promise<string> {
-  return Device.deviceName ?? Device.modelName ?? 'Pulpo for iPhone'
+  return Device.deviceName ?? Device.modelName ?? 'Pulpo Mobile'
 }
 
 async function rememberActiveNamespace(namespace: string): Promise<void> {

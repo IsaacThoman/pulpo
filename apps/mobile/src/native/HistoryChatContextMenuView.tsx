@@ -1,6 +1,6 @@
 import { requireNativeViewManager } from 'expo-modules-core'
 import type { ComponentProps, ReactNode } from 'react'
-import type { ViewProps } from 'react-native'
+import { Platform, type ViewProps } from 'react-native'
 
 export type HistoryChatContextMenuAction =
   | 'share'
@@ -40,10 +40,11 @@ type HistoryChatContextMenuNativeProps = ViewProps & {
 }
 
 const HistoryChatContextMenuNativeView =
-  requireNativeViewManager<HistoryChatContextMenuNativeProps>(
+  Platform.OS === 'ios' ? requireNativeViewManager<HistoryChatContextMenuNativeProps>(
     'PulpoFileClipboard',
     'HistoryChatContextMenuView',
-  )
+  ) : (_props: HistoryChatContextMenuNativeProps) => null
+
 
 export type HistoryChatContextMenuViewProps = Omit<
   ComponentProps<typeof HistoryChatContextMenuNativeView>,
