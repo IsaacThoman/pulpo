@@ -11,7 +11,7 @@ import {
   users,
 } from '../database/schema.js'
 import { newId } from '../lib/ids.js'
-import { activeLineageChunks } from './chunks.js'
+import { activeLineagePassages } from './chunks.js'
 import { OllamaClient } from './ollama.js'
 import { EPISODIC_MEMORY_AUDIT_ACTIONS } from './audit.js'
 import { EPISODIC_MEMORY_PROFILES } from './profiles.js'
@@ -123,7 +123,7 @@ export async function reconcileChatGeneration(
     eq(responses.userId, userId),
     isNull(responses.deletedAt),
   )).orderBy(asc(responses.createdAt), asc(responses.id))
-  const chunks = activeLineageChunks(chat, turns)
+  const chunks = activeLineagePassages(chat, turns)
   const expectedIds = chunks.map((chunk) => chunk.responseId)
   if (expectedIds.length) {
     await db.delete(chatTurnEmbeddings).where(and(
@@ -143,13 +143,17 @@ export async function reconcileChatGeneration(
     eq(chatTurnEmbeddings.generationId, generation.id),
     eq(chatTurnEmbeddings.chatId, chatId),
   ))
-  const byResponse = new Map(existing.map((row) => [row.responseId, row]))
+  const passageKey = (row: { responseId: string; chunkIndex: number }) => `${row.responseId}:${row.chunkIndex}`
+  const expectedPassages = new Set(chunks.map(passageKey))
+  const obsolete = existing.filter((row) => !expectedPassages.has(passageKey(row)))
+  if (obsolete.length) await db.delete(chatTurnEmbeddings).where(inArray(chatTurnEmbeddings.id, obsolete.map((row) => row.id)))
+  const byResponse = new Map(existing.map((row) => [passageKey(row), row]))
   for (const chunk of chunks) {
-    const current = byResponse.get(chunk.responseId)
+    const current = byResponse.get(passageKey(chunk))
     if (!current) {
       await db.insert(chatTurnEmbeddings).values({
         id: newId(), generationId: generation.id, userId, chatId, responseId: chunk.responseId,
-        contentHash: chunk.contentHash, chunkText: chunk.text,
+        chunkIndex: chunk.chunkIndex, contentHash: chunk.contentHash, chunkText: chunk.text,
       })
     } else if (current.contentHash !== chunk.contentHash || current.status !== 'ready') {
       await db.update(chatTurnEmbeddings).set({

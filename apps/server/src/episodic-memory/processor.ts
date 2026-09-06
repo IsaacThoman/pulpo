@@ -9,6 +9,7 @@ import { OllamaClient } from './ollama.js'
 import { EPISODIC_MEMORY_AUDIT_ACTIONS } from './audit.js'
 import { watchCancellation } from './cancellation.js'
 import { measureEpisodicMemoryOperation } from './metrics.js'
+import { CHAT_INDEX_VERSION } from './chunks.js'
 import {
   activeGeneration,
   buildAndActivateGeneration,
@@ -54,7 +55,7 @@ export async function processEmbeddingJob(job: EmbeddingJob): Promise<void> {
 
   const [active] = await db.select().from(episodicMemoryGenerations)
     .where(eq(episodicMemoryGenerations.active, true)).limit(1)
-  if (!job.force && active?.profile === profile.id && active.status === 'ready') return
+  if (!job.force && active?.profile === profile.id && active.status === 'ready' && active.indexVersion === CHAT_INDEX_VERSION) return
 
   if (job.force) {
     await db.update(episodicMemoryGenerations).set({ cancelRequestedAt: new Date(), updatedAt: new Date() })
@@ -63,12 +64,14 @@ export async function processEmbeddingJob(job: EmbeddingJob): Promise<void> {
   const [existing] = await db.select().from(episodicMemoryGenerations)
     .where(and(
       eq(episodicMemoryGenerations.profile, profile.id),
+      eq(episodicMemoryGenerations.indexVersion, CHAT_INDEX_VERSION),
       eq(episodicMemoryGenerations.active, false),
       inArray(episodicMemoryGenerations.status, ['pending', 'pulling', 'indexing']),
     )).orderBy(desc(episodicMemoryGenerations.createdAt)).limit(1)
   const generationId = existing?.id ?? newId()
   if (!existing) await db.insert(episodicMemoryGenerations).values({
     id: generationId,
+    indexVersion: CHAT_INDEX_VERSION,
     profile: profile.id,
     model: profile.model,
     dimension: profile.dimension,

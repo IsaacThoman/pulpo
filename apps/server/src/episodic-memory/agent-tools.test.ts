@@ -2,6 +2,18 @@ import { describe, expect, it, vi } from 'vitest'
 import { createEpisodicMemoryTools, decodeEpisodicCursor, fitTranscriptPageBytes, type EpisodicTranscriptPage } from './agent-tools.js'
 
 describe('episodic-memory agent tools', () => {
+  it('includes degraded-search diagnostics within the output byte budget', async () => {
+    const search = vi.fn(async (input) => {
+      input.onDiagnostics({ availability: 'available', index: 'incomplete', semantic: 'unavailable' })
+      return [{ chatId: 'source', responseId: 'response', title: 'Performance audit', updatedAt: '2026-08-27T00:00:00.000Z', excerpt: 'Matching text', score: 0.02 }]
+    })
+    const [tool] = createEpisodicMemoryTools({ userId: 'user', currentChatId: 'current', maxOutputBytes: 1_024, search, recordMetric: vi.fn() })
+    const result = await tool!.execute('search', { query: 'performance' })
+    const text = (result.content[0] as { text: string }).text
+    expect(JSON.parse(text).search).toEqual({ availability: 'available', index: 'incomplete', semantic: 'unavailable' })
+    expect(Buffer.byteLength(text, 'utf8')).toBeLessThanOrEqual(1_024)
+  })
+
   it('bounds search results, excludes the current chat through the service input, and marks the operation started', async () => {
     const search = vi.fn().mockResolvedValue(Array.from({ length: 11 }, (_, index) => ({
       chatId: `chat-${index}`,

@@ -155,7 +155,7 @@ async function verifyGeneration(profile: 'embeddinggemma' | 'qwen3-embedding', d
   assert(active?.profile === profile, `${profile} was not activated`)
   assert(active.status === 'ready' && active.dimension === dimension && active.modelDigest, `${profile} metadata is incomplete`)
   const chunks = await db.select().from(chatTurnEmbeddings).where(eq(chatTurnEmbeddings.generationId, active.id))
-  assert(chunks.length === 2, `expected two active-lineage chunks, received ${chunks.length}`)
+  assert(chunks.length === 2, `expected two active-lineage passages, received ${chunks.length}`)
   assert(chunks.every((chunk) => chunk.status === 'ready' && chunk.embedding?.length === dimension), 'chat vectors are incomplete')
   assert(chunks.every((chunk) => !chunk.chunkText.includes('SECRET') && !chunk.chunkText.includes('attachment')), 'private response data reached a chunk')
 }
