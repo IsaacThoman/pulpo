@@ -1046,6 +1046,8 @@ const esUi: Record<string, string> = {
   "Show admin details in pending overlay": "Mostrar los detalles del administrador en la superposición pendiente",
   "Show key": "Mostrar clave",
   "Show provider API key": "Mostrar clave API del proveedor",
+  "Show prompt suggestions": "Mostrar sugerencias de mensajes",
+  "Show suggested prompts in new chats. Syncs across your devices.": "Muestra sugerencias de mensajes en chats nuevos. Se sincroniza entre tus dispositivos.",
   "Show reasoning": "Mostrar razonamiento",
   "Show response costs": "Mostrar costes de las respuestas",
   "Show suggested prompts": "Mostrar prompts sugeridos",

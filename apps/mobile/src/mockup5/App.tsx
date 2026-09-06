@@ -3658,12 +3658,13 @@ function ChatView({
       composer.setNativeProps({ selection: { start: end, end } });
     });
   }, [composerInputRef]);
+  const showPromptSuggestions = usePrototypeStore((state) => state.preferences.showPromptSuggestions);
   const isEmptyConversation = messages.length === 0;
   const suggestions = useMemo(
-    () => promptConfig.enabled ? pickSuggestedPrompts(promptConfig.prompts, promptConfig.count) : [],
+    () => showPromptSuggestions && promptConfig.enabled ? pickSuggestedPrompts(promptConfig.prompts, promptConfig.count) : [],
     // Re-roll when opening a new empty chat.
     // oxlint-disable-next-line react/exhaustive-deps -- chat identity intentionally re-rolls suggestions
-    [chatId, isEmptyConversation, promptConfig],
+    [chatId, isEmptyConversation, promptConfig, showPromptSuggestions],
   );
 
   useEffect(() => {
@@ -3687,13 +3688,14 @@ function ChatView({
       keyboardOffset={keyboardSafeAreaOffset}
     />
   ), [composerPadding, keyboardBlankSpace, keyboardLayoutEnabled, keyboardSafeAreaOffset]);
+  const hasSuggestions = suggestions.length > 0;
   const emptyStateAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{
       translateY: -resolveKeyboardLayoutProgress(keyboardProgress.value, keyboardLayoutEnabled) * (
-        Math.min(64, windowHeight * 0.065) + suggestionGridHeight.value * 0.5
+        Math.min(64, windowHeight * 0.065) + (hasSuggestions ? suggestionGridHeight.value * 0.5 : 0)
       ),
     }],
-  }), [keyboardLayoutEnabled]);
+  }), [hasSuggestions, keyboardLayoutEnabled, windowHeight]);
   const suggestionsAnimatedStyle = useAnimatedStyle(() => {
     const progress = resolveKeyboardLayoutProgress(keyboardProgress.value, keyboardLayoutEnabled);
     return {
@@ -4724,7 +4726,7 @@ function ChatView({
         </View>
         <Text maxFontSizeMultiplier={1.6} style={styles.emptyProvider}>{modelSubtitle(model)}</Text>
       </Reanimated.View>
-      <Reanimated.View style={[styles.suggestionReveal, suggestionsAnimatedStyle]}>
+      {hasSuggestions && <Reanimated.View style={[styles.suggestionReveal, suggestionsAnimatedStyle]}>
         <View
           onLayout={(event) => {
             suggestionGridHeight.value = Math.max(suggestionGridHeight.value, event.nativeEvent.layout.height);
@@ -4741,7 +4743,7 @@ function ChatView({
             />
           ))}
         </View>
-      </Reanimated.View>
+      </Reanimated.View>}
     </View>
   );
 

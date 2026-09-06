@@ -62,7 +62,7 @@ const retentionMs: Record<AppPreferences['trashRetention'], number | null> = {
 };
 
 const initialsFor = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase()).join('') || '?';
-const productionPreferenceKeys = new Set(['theme', 'textSize', 'streamResponses', 'showReasoning', 'memoryEnabled', 'haptics', 'sendWithEnter', 'attachmentCacheMb', 'localChatLimit', 'trashRetention', 'automaticChatExpiration', 'newChatAutoExpire']);
+const productionPreferenceKeys = new Set(['theme', 'textSize', 'streamResponses', 'showPromptSuggestions', 'showReasoning', 'memoryEnabled', 'haptics', 'sendWithEnter', 'attachmentCacheMb', 'localChatLimit', 'trashRetention', 'automaticChatExpiration', 'newChatAutoExpire']);
 const actionVersions = new Map<string, number>();
 
 function automaticExpirationDeadline(now = Date.now()): number | null {
