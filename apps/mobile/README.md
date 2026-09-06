@@ -199,9 +199,12 @@ its email through Play Console → Users and permissions. Grant access to Pulpo
 with **View app information (read-only)** and **Release apps to testing tracks**.
 Store the JSON as `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` in `google-play`.
 
-Run **Android release** with upload checked to send a new bundle to the
-`internal` track. Keep status `draft` while the app's first release is being
-set up. Once the app is ready for tester distribution, use `completed`.
+Run **Android release** from `main` or a release tag with upload checked to
+send a new bundle to the `internal` track. When running from a tag, the version
+input must match it: tag `v1.2.3` requires version `1.2.3`. Other branches can
+build downloadable artifacts with upload unchecked. Keep the manual run's
+status `draft` while the app's first release is being set up. Once the app is
+ready for tester distribution, use `completed`.
 The artifact is saved before upload, so upload failures still leave a
 downloadable signed bundle.
 
@@ -211,9 +214,10 @@ The repository's default branch does not control this trigger, and pushes to
 `dev` do not release either mobile app. Configure the `google-play` credentials
 before promoting this workflow to `main`.
 
-The repository variable `ANDROID_RELEASE_STATUS` defaults to `draft`; set it
-to `completed` when releases should become available to internal testers.
-Promote a tested release to closed testing or production in Play Console.
+Automatic releases default to `completed`, making them available to internal
+testers. The optional repository variable `ANDROID_RELEASE_STATUS=draft` can
+hold automatic uploads as drafts during initial Play setup. Promote a tested
+release to closed testing or production in Play Console.
 
 For native Android passkeys, configure the server's
 `PULPO_ANDROID_CERTIFICATE_FINGERPRINTS` with the **Play app-signing certificate**

@@ -25,7 +25,7 @@ on:
         default: false
         type: boolean
       release_status:
-        default: draft
+        default: completed
         type: string
 
 permissions:
@@ -57,10 +57,11 @@ jobs:
         if: github.event_name == 'workflow_dispatch'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Set Android version
+      - name: Validate release inputs and set Android version
         env:
           RELEASE_VERSION: ${{ inputs.version }}
           RELEASE_STATUS: ${{ inputs.release_status }}
+          UPLOAD_RELEASE: ${{ inputs.upload }}
         run: |
           set -euo pipefail
           if [[ ! "${RELEASE_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
@@ -69,6 +70,13 @@ jobs:
           fi
           if [[ "${RELEASE_STATUS}" != draft && "${RELEASE_STATUS}" != completed ]]; then
             echo 'Release status must be draft or completed.' >&2
+            exit 1
+          fi
+          if [[ "${UPLOAD_RELEASE}" == true &&
+                "${GITHUB_REF}" != refs/heads/main &&
+                "${GITHUB_REF}" != "refs/tags/v${RELEASE_VERSION}" ]]; then
+            echo 'Google Play uploads require main or a release tag matching the app version (v<version>).' >&2
+            echo 'Leave upload unchecked to build a downloadable bundle from another branch.' >&2
             exit 1
           fi
           # Seconds since 2024 keep codes increasing on retries and well below

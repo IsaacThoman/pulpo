@@ -138,7 +138,6 @@ const config: ExpoConfig = {
     defaultInstanceUrl,
     passkeyDomains,
     androidPasskeyDomains: (process.env.PULPO_ANDROID_PASSKEY_DOMAINS ?? '').split(',').map((value) => httpsHostname(value.trim())).filter(Boolean),
-    eas: {},
   },
 }
 

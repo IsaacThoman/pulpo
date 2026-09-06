@@ -877,7 +877,7 @@ jobs:
     with:
       version: ${{ needs.release.outputs.version }}
       upload: true
-      release_status: ${{ vars.ANDROID_RELEASE_STATUS || 'draft' }}
+      release_status: ${{ vars.ANDROID_RELEASE_STATUS || 'completed' }}
     secrets: inherit
 
   testflight:
