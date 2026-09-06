@@ -6,10 +6,10 @@ import {
   READ_MAX_OUTPUT_BYTES,
   parseReadArguments,
   readTextFile,
-  resolveReadableWorkspacePath,
+  resolveReadableVmPath,
 } from './read.js'
 
-describe('bounded workspace reads', () => {
+describe('bounded VM reads', () => {
   let directory = ''
 
   beforeEach(async () => { directory = await mkdtemp(join(tmpdir(), 'pulpo-read-')) })
@@ -94,7 +94,20 @@ describe('bounded workspace reads', () => {
     await expect(readTextFile(await fixture('invalid.txt', new Uint8Array([0xff, 0xfe, 0xfd])), {})).rejects.toThrow('not valid UTF-8')
   })
 
-  it('allows internal symlinks but rejects directories and escaping symlinks', async () => {
+  it('reads absolute paths outside the workspace and resolves relative paths against it', async () => {
+    const root = join(directory, 'workspace')
+    await mkdir(root)
+    const inside = join(root, 'inside.txt')
+    const outside = await fixture('PACKAGES.md', '# Installed packages\n')
+    await writeFile(inside, 'inside')
+
+    await expect(resolveReadableVmPath(root, 'inside.txt')).resolves.toBe(await realpath(inside))
+    await expect(resolveReadableVmPath(root, '../PACKAGES.md')).resolves.toBe(await realpath(outside))
+    const result = await readTextFile(await resolveReadableVmPath(root, outside), {})
+    expect(result.output).toBe('1: # Installed packages\n\n[End of file - 1 line total.]')
+  })
+
+  it('allows symlinks inside and outside the workspace but rejects directories', async () => {
     const root = join(directory, 'workspace')
     await mkdir(root)
     const inside = join(root, 'inside.txt')
@@ -104,8 +117,16 @@ describe('bounded workspace reads', () => {
     await symlink(inside, join(root, 'internal-link'))
     await symlink(outside, join(root, 'escaping-link'))
 
-    await expect(resolveReadableWorkspacePath(root, root)).rejects.toThrow('regular file')
-    await expect(resolveReadableWorkspacePath(root, join(root, 'internal-link'))).resolves.toBe(await realpath(inside))
-    await expect(resolveReadableWorkspacePath(root, join(root, 'escaping-link'))).rejects.toThrow('escapes /workspace')
+    await expect(resolveReadableVmPath(root, root)).rejects.toThrow('regular file')
+    await expect(resolveReadableVmPath(root, 'internal-link')).resolves.toBe(await realpath(inside))
+    await expect(resolveReadableVmPath(root, 'escaping-link')).resolves.toBe(await realpath(outside))
+    await expect(resolveReadableVmPath(root, directory)).rejects.toThrow('regular file')
+  })
+
+  it('rejects missing files and invalid paths', async () => {
+    await expect(resolveReadableVmPath(directory, 'missing.txt')).rejects.toMatchObject({ code: 'ENOENT' })
+    for (const path of [undefined, null, 42, '', '   ']) {
+      await expect(resolveReadableVmPath(directory, path)).rejects.toThrow('path must be a non-empty string')
+    }
   })
 })

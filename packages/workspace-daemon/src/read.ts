@@ -1,6 +1,6 @@
 import { createReadStream } from 'node:fs'
 import { open, realpath, stat } from 'node:fs/promises'
-import { isAbsolute, relative } from 'node:path'
+import { resolve } from 'node:path'
 
 export const READ_DEFAULT_LINE_LIMIT = 2_000
 export const READ_MAX_LINE_LIMIT = 2_000
@@ -45,12 +45,9 @@ export type ReadResult = {
   details: ReadResultDetails
 }
 
-export async function resolveReadableWorkspacePath(root: string, requested: string): Promise<string> {
-  const [resolvedRoot, resolved] = await Promise.all([realpath(root), realpath(requested)])
-  const fromRoot = relative(resolvedRoot, resolved)
-  if (resolved !== resolvedRoot && (fromRoot === '..' || fromRoot.startsWith('../') || isAbsolute(fromRoot))) {
-    throw new Error('Path escapes /workspace')
-  }
+export async function resolveReadableVmPath(root: string, requested: unknown): Promise<string> {
+  if (typeof requested !== 'string' || !requested.trim()) throw new Error('path must be a non-empty string')
+  const resolved = await realpath(resolve(root, requested))
   const metadata = await stat(resolved)
   if (!metadata.isFile()) throw new Error('Path must be a regular file')
   return resolved
