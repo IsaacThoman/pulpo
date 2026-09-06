@@ -4857,13 +4857,16 @@ function ChatView({
           </View>
         )
       ) : (
-        /* The full-screen transcript scrolls beneath the transparent status/header overlay. */
+        /* Keep Android Compose hosts attached as follow-up rows are inserted and scrolled
+         * into view; clipping can leave the pending loader blank. List virtualization
+         * still bounds the rendered window. */
         <FlatList
           alwaysBounceVertical
           bounces
           contentContainerStyle={[styles.conversation, { paddingHorizontal: horizontalPadding, paddingTop: Platform.OS === 'android' ? 16 : headerOverlayHeight + 16 }]}
           contentInsetAdjustmentBehavior="never"
           data={messages}
+          removeClippedSubviews={Platform.OS === 'android' ? false : undefined}
           initialNumToRender={10}
           keyboardDismissMode="interactive"
           keyboardShouldPersistTaps="handled"
