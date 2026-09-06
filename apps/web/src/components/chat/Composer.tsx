@@ -915,7 +915,7 @@ export function Composer({
       {showShelf && shelfError && <p role="alert" className="px-3 py-2 text-xs text-destructive">{shelfError}</p>}
       {queuedMessages.length > 0 && (
         <div className={cn(
-          'max-h-48 overflow-y-auto border border-b-0 bg-card px-2 pt-2 pb-1 shadow-sm',
+          '-mb-3 max-h-48 overflow-y-auto border border-b-0 bg-card px-2 pt-2 pb-4 shadow-sm',
           messageEdit ? 'rounded-none' : 'rounded-t-2xl',
         )}>
           {queuedMessages.map((message) => {

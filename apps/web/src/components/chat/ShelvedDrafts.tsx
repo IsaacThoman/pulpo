@@ -16,7 +16,7 @@ export function ShelvedDrafts({ rows, busy, collapsed, onCollapse, onRestore, on
   const [drop, setDrop] = useState<{ id: string; edge: 'before' | 'after' } | null>(null)
   if (!rows.length) return null
   const actionClass = 'flex size-9 shrink-0 sm:size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40'
-  return <section aria-label={ui('Shelved drafts')} className="rounded-t-2xl border border-b-0 bg-card px-2 pt-1 shadow-sm">
+  return <section aria-label={ui('Shelved drafts')} className="-mb-3 rounded-t-2xl border border-b-0 bg-card px-2 pt-1 pb-3 shadow-sm">
     <button type="button" onClick={onCollapse} aria-expanded={!collapsed} className="flex w-full items-center gap-2 px-2 py-2 text-xs font-medium text-muted-foreground">
       <Archive className="size-3.5" /><span>{ui('Shelved')} · {rows.length}</span><ChevronDown className={`ml-auto size-3.5 transition-transform ${collapsed ? '-rotate-90' : ''}`} />
     </button>
