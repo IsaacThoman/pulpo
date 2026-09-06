@@ -105,8 +105,9 @@ export async function createQueuedMessage(
   userId: string,
   chatId: string,
   input: CreateQueuedMessageInput,
-  attribution: { billingUserId?: string; actorUserId?: string | null } = {},
+  attribution: { billingUserId?: string; actorUserId?: string | null; requestReceivedAt?: Date | null } = {},
 ): Promise<{ queuedMessage: QueuedMessage | null }> {
+  const requestReceivedAt = attribution.requestReceivedAt ?? new Date()
   await validateQueueInput(userId, chatId, input)
   const id = input.clientId ?? newId()
   await db.transaction(async (tx) => {
@@ -143,6 +144,7 @@ export async function createQueuedMessage(
       attachmentIds: [...new Set(input.attachmentIds)],
       position: nextQueuePosition(positionRow?.value),
       dispatchResponseId: input.clientId ?? newId(),
+      requestReceivedAt,
     })
   })
   await bumpQueueRevision(userId, chatId)
@@ -296,6 +298,7 @@ export async function advanceMessageQueue(chatId: string): Promise<void> {
       const [chat] = await db.select({ activeBranchLeafId: chats.activeBranchLeafId, activeResponseId: chats.activeResponseId })
         .from(chats).where(eq(chats.id, chatId)).limit(1)
       await createResponse({
+        requestReceivedAt: claim.requestReceivedAt ?? claim.createdAt,
         ownerUserId: claim.userId,
         billingUserId: claim.billingUserId ?? claim.userId,
         actorUserId: claim.actorUserId,

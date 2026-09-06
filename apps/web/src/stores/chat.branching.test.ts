@@ -847,3 +847,39 @@ describe('chat store branching integration', () => {
     expect(queryClient.getQueryData<ServerChat>(['chat', userId, chatId])?.responses).toHaveLength(3)
   })
 })
+
+
+describe('server receipt timing in the web store', () => {
+  it('freezes on live reply text and retains the same duration after completion and reload', () => {
+    const id = '00000000-0000-4000-8000-000000000099'
+    const initial = response(id, 'in_progress')
+    const requestReceivedAt = '2026-09-06T12:00:00.000Z'
+    const firstReplyTextAt = '2026-09-06T12:00:10.000Z'
+    initial.snapshot = { ...initial.snapshot, requestReceivedAt, updatedAt: requestReceivedAt }
+    useChat.getState().setDetailedChat(detail(id, [initial]))
+    useChat.getState().applyResponseEvents([{
+      responseId: id, sequence: 1, type: 'response.reasoning_summary_text.delta',
+      payload: { delta: 'Thinking' }, emittedAt: '2026-09-06T12:00:03.000Z', requestReceivedAt,
+    }])
+    const assistant = () => useChat.getState().chats[0]?.messages.find((message) => message.id === id)
+    expect(assistant()?.initialResponseDurationMs).toBeUndefined()
+    useChat.getState().applyResponseEvents([{
+      responseId: id, sequence: 2, type: 'response.output_text.delta',
+      payload: { delta: 'Hello' }, emittedAt: firstReplyTextAt, requestReceivedAt, firstReplyTextAt,
+    }])
+    expect(assistant()?.initialResponseDurationMs).toBe(10_000)
+    useChat.getState().applyResponseEvents([{
+      responseId: id, sequence: 3, type: 'response.output_text.delta',
+      payload: { delta: ' world' }, emittedAt: '2026-09-06T12:00:15.000Z',
+    }])
+    expect(assistant()?.initialResponseDurationMs).toBe(10_000)
+    const completed = response(id, 'completed')
+    completed.snapshot = {
+      ...completed.snapshot, requestReceivedAt, firstReplyTextAt, sequence: 4, updatedAt: '2026-09-06T12:00:30.000Z',
+    }
+    useChat.getState().applyResponseSnapshot(completed.snapshot)
+    expect(assistant()?.initialResponseDurationMs).toBe(10_000)
+    useChat.getState().setDetailedChat(detail(id, [completed]))
+    expect(assistant()?.initialResponseDurationMs).toBe(10_000)
+  })
+})

@@ -30,6 +30,7 @@ declare module 'fastify' {
     adminChatAccess: AdminChatAccessContext | null
     apiKeyId: string | null
     rawBody: string | null
+    requestReceivedAt: Date | null
   }
 }
 

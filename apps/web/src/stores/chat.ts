@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import {
+  initialResponseDurationMs,
   mergeResponseSnapshots,
   type CreateQueuedMessageInput,
   type EmbeddedResponseSnapshot,
@@ -353,6 +354,9 @@ function messagesFromResponses(responses: ServerResponse[], attachmentRows: Serv
         subscriptionCoveredCost: response.subscriptionCoveredMicros == null
           ? undefined
           : response.subscriptionCoveredMicros / 1_000_000,
+        requestReceivedAt: response.snapshot.requestReceivedAt,
+        firstReplyTextAt: response.snapshot.firstReplyTextAt,
+        initialResponseDurationMs: initialResponseDurationMs(response.snapshot, done ? response.completedAt ?? response.snapshot.updatedAt : undefined),
         latencyMs: response.completedAt
           ? Math.max(0, Date.parse(response.completedAt) - timestamp)
           : undefined,
@@ -951,6 +955,8 @@ export const useChat = create<ChatState>()((set, get) => ({
               const base: ResponseSnapshot = {
                 responseId,
                 status: message.done ? 'completed' : 'in_progress',
+                requestReceivedAt: message.requestReceivedAt,
+                firstReplyTextAt: message.firstReplyTextAt,
                 sequence: currentSequence,
                 output: message.outputItems ?? [],
                 usage: null,
@@ -960,6 +966,9 @@ export const useChat = create<ChatState>()((set, get) => ({
               const projected = freshEvents.reduce(applyEventToSnapshot, base)
               return {
                 ...message,
+                requestReceivedAt: projected.requestReceivedAt,
+                firstReplyTextAt: projected.firstReplyTextAt,
+                initialResponseDurationMs: initialResponseDurationMs(projected),
                 content: outputText(projected.output),
                 reasoning: reasoningText(projected.output),
                 outputItems: projected.output,
@@ -993,6 +1002,9 @@ export const useChat = create<ChatState>()((set, get) => ({
             if (message.id !== snapshot.responseId) return message
             return {
               ...message,
+              requestReceivedAt: snapshot.requestReceivedAt,
+              firstReplyTextAt: snapshot.firstReplyTextAt,
+              initialResponseDurationMs: initialResponseDurationMs(snapshot, !inFlight ? snapshot.updatedAt : undefined),
               content: snapshot.output.length ? outputText(snapshot.output) : message.content,
               reasoning: snapshot.output.length ? reasoningText(snapshot.output) : message.reasoning,
               done: !inFlight,

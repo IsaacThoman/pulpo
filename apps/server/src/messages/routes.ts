@@ -87,6 +87,7 @@ export async function registerMessageRoutes(app: FastifyInstance): Promise<void>
     const attachmentIds = responseAttachmentIds(original.input)
     const generation = resolveBranchGenerationSettings(original, selection)
     const created = await createResponse({
+      requestReceivedAt: request.requestReceivedAt,
       ownerUserId: user.id,
       billingUserId: billingUserForRequest(request).id,
       actorUserId: request.adminChatAccess?.actorUser.id,
@@ -136,6 +137,7 @@ export async function registerMessageRoutes(app: FastifyInstance): Promise<void>
         throw new AppError(400, 'empty_message', 'Message must include text or attachments')
       }
       const created = await createResponse({
+        requestReceivedAt: request.requestReceivedAt,
         ownerUserId: user.id,
         billingUserId: billingUserForRequest(request).id,
         actorUserId: request.adminChatAccess?.actorUser.id,

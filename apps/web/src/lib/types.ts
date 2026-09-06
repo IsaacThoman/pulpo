@@ -68,6 +68,9 @@ export interface Message {
   cost?: number
   inferenceReferenceCost?: number
   subscriptionCoveredCost?: number
+  requestReceivedAt?: string | null
+  firstReplyTextAt?: string | null
+  initialResponseDurationMs?: number
   latencyMs?: number
   reasoning?: string
   /** Selected preset choice ids keyed by preset id. */
