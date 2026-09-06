@@ -3661,10 +3661,10 @@ function ChatView({
   const showPromptSuggestions = usePrototypeStore((state) => state.preferences.showPromptSuggestions);
   const isEmptyConversation = messages.length === 0;
   const suggestions = useMemo(
-    () => showPromptSuggestions && promptConfig.enabled ? pickSuggestedPrompts(promptConfig.prompts, promptConfig.count) : [],
+    () => promptConfig.enabled ? pickSuggestedPrompts(promptConfig.prompts, promptConfig.count) : [],
     // Re-roll when opening a new empty chat.
     // oxlint-disable-next-line react/exhaustive-deps -- chat identity intentionally re-rolls suggestions
-    [chatId, isEmptyConversation, promptConfig, showPromptSuggestions],
+    [chatId, isEmptyConversation, promptConfig],
   );
 
   useEffect(() => {
@@ -3688,25 +3688,24 @@ function ChatView({
       keyboardOffset={keyboardSafeAreaOffset}
     />
   ), [composerPadding, keyboardBlankSpace, keyboardLayoutEnabled, keyboardSafeAreaOffset]);
-  const hasSuggestions = suggestions.length > 0;
   const emptyStateAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{
       translateY: -resolveKeyboardLayoutProgress(keyboardProgress.value, keyboardLayoutEnabled) * (
-        Math.min(64, windowHeight * 0.065) + (hasSuggestions ? suggestionGridHeight.value * 0.5 : 0)
+        Math.min(64, windowHeight * 0.065) + suggestionGridHeight.value * 0.5
       ),
     }],
-  }), [hasSuggestions, keyboardLayoutEnabled, windowHeight]);
+  }), [keyboardLayoutEnabled]);
   const suggestionsAnimatedStyle = useAnimatedStyle(() => {
     const progress = resolveKeyboardLayoutProgress(keyboardProgress.value, keyboardLayoutEnabled);
     return {
-      height: suggestionGridHeight.value > 0
+      height: !showPromptSuggestions ? 0 : suggestionGridHeight.value > 0
         ? suggestionGridHeight.value * (1 - progress)
         : undefined,
-      marginTop: interpolate(progress, [0, 1], [30, 0]),
-      opacity: interpolate(progress, [0, 0.65], [1, 0]),
+      marginTop: showPromptSuggestions ? interpolate(progress, [0, 1], [30, 0]) : 0,
+      opacity: showPromptSuggestions ? interpolate(progress, [0, 0.65], [1, 0]) : 0,
       transform: [{ translateY: interpolate(progress, [0, 1], [0, -14]) }],
     };
-  }, [keyboardLayoutEnabled]);
+  }, [keyboardLayoutEnabled, showPromptSuggestions]);
   const temporaryColors = temporaryChatColors(colorScheme === 'dark');
   const temporarySurfaceAnimatedStyle = useAnimatedStyle(() => ({
     backgroundColor: interpolateColor(
@@ -4726,7 +4725,14 @@ function ChatView({
         </View>
         <Text maxFontSizeMultiplier={1.6} style={styles.emptyProvider}>{modelSubtitle(model)}</Text>
       </Reanimated.View>
-      {hasSuggestions && <Reanimated.View style={[styles.suggestionReveal, suggestionsAnimatedStyle]}>
+      {/* Keep measuring the collapsed grid so keyboard-open identity positioning
+          stays identical regardless of the account preference. */}
+      <Reanimated.View
+        accessibilityElementsHidden={!showPromptSuggestions}
+        importantForAccessibility={showPromptSuggestions ? 'auto' : 'no-hide-descendants'}
+        pointerEvents={showPromptSuggestions ? 'auto' : 'none'}
+        style={[styles.suggestionReveal, suggestionsAnimatedStyle]}
+      >
         <View
           onLayout={(event) => {
             suggestionGridHeight.value = Math.max(suggestionGridHeight.value, event.nativeEvent.layout.height);
@@ -4743,7 +4749,7 @@ function ChatView({
             />
           ))}
         </View>
-      </Reanimated.View>}
+      </Reanimated.View>
     </View>
   );
 
