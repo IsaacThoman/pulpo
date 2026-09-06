@@ -24,6 +24,7 @@ import { CODEX_PI_PROVIDER_ID, CODEX_PROVIDER_ID } from '../codex/constants.js'
 import { detailedPayloadPolicy } from '../logging/detailed-payload-retention.js'
 
 export interface CreateResponseOptions {
+  requestReceivedAt?: Date | null
   /** Owner of the chat, response, files, memory document, and conversation context. */
   ownerUserId: string
   /** Account whose billing entitlements fund the generation. Defaults to the owner. */
@@ -215,6 +216,7 @@ export async function createResponse(options: CreateResponseOptions) {
   await db.insert(responses).values({
     id,
     chatId: chat.id,
+    requestReceivedAt: options.requestReceivedAt ?? now,
     userId: options.ownerUserId,
     modelId: model.id,
     previousResponseId: parentResponseId,
@@ -301,6 +303,8 @@ export async function createResponse(options: CreateResponseOptions) {
 export function toSnapshot(response: typeof responses.$inferSelect): ResponseSnapshot {
   return {
     responseId: response.id,
+    requestReceivedAt: response.requestReceivedAt?.toISOString() ?? null,
+    firstReplyTextAt: response.firstReplyTextAt?.toISOString() ?? null,
     status: response.status,
     sequence: response.lastSequence,
     output: sanitizeOutputForClient(response.output as unknown[]),

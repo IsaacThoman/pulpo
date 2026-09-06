@@ -1,5 +1,7 @@
 import { create } from 'zustand'
+import { replaceEqualDeep } from '@tanstack/react-query'
 import {
+  initialResponseDurationMs,
   mergeResponseSnapshots,
   type CreateQueuedMessageInput,
   type EmbeddedResponseSnapshot,
@@ -15,6 +17,7 @@ import {
 import type { Attachment, Chat, Folder, Message, QueuedMessage } from '@/lib/types'
 import { apiRequest, ApiError, isNetworkError } from '@/lib/api'
 import { enqueueMutation } from '@/lib/local-first/outbox'
+import { flushQueryPersistence } from '@/lib/local-first/database'
 import { queryClient } from '@/lib/query-client'
 import { chatOptionsFor, resolveGeneration, useModelConfig } from '@/stores/modelConfig'
 import { useSettings } from '@/stores/settings'
@@ -353,6 +356,9 @@ function messagesFromResponses(responses: ServerResponse[], attachmentRows: Serv
         subscriptionCoveredCost: response.subscriptionCoveredMicros == null
           ? undefined
           : response.subscriptionCoveredMicros / 1_000_000,
+        requestReceivedAt: response.snapshot.requestReceivedAt,
+        firstReplyTextAt: response.snapshot.firstReplyTextAt,
+        initialResponseDurationMs: initialResponseDurationMs(response.snapshot, done ? response.completedAt ?? response.snapshot.updatedAt : undefined),
         latencyMs: response.completedAt
           ? Math.max(0, Date.parse(response.completedAt) - timestamp)
           : undefined,
@@ -378,9 +384,10 @@ function toChat(
     : undefined
   const selectedById = new Map(selectedResponses?.map((response) => [response.id, response]) ?? [])
   const serverMessages = selectedResponses ? messagesFromResponses(selectedResponses, row.attachments ?? []) : current?.messages ?? []
+  const localById = new Map(current?.messages.map((message) => [message.id, message]))
   const messages = mergePendingLocalMessages(
     serverMessages.map((message) => {
-      const local = current?.messages.find((candidate) => candidate.id === message.id)
+      const local = localById.get(message.id)
       const response = selectedById.get(message.id)
       if (local && response && !message.done && (responseSequences[response.id] ?? 0) > response.snapshot.sequence) {
         return { ...message, content: local.content, reasoning: local.reasoning, outputItems: local.outputItems }
@@ -405,8 +412,8 @@ function toChat(
     id: row.id,
     title: row.title,
     modelId: row.modelId,
-    messages,
-    queuedMessages,
+    messages: replaceEqualDeep(current?.messages, messages),
+    queuedMessages: replaceEqualDeep(current?.queuedMessages, queuedMessages),
     createdAt: Date.parse(row.createdAt),
     updatedAt: Date.parse(row.updatedAt),
     pinned: row.pinned,
@@ -951,6 +958,8 @@ export const useChat = create<ChatState>()((set, get) => ({
               const base: ResponseSnapshot = {
                 responseId,
                 status: message.done ? 'completed' : 'in_progress',
+                requestReceivedAt: message.requestReceivedAt,
+                firstReplyTextAt: message.firstReplyTextAt,
                 sequence: currentSequence,
                 output: message.outputItems ?? [],
                 usage: null,
@@ -960,6 +969,9 @@ export const useChat = create<ChatState>()((set, get) => ({
               const projected = freshEvents.reduce(applyEventToSnapshot, base)
               return {
                 ...message,
+                requestReceivedAt: projected.requestReceivedAt,
+                firstReplyTextAt: projected.firstReplyTextAt,
+                initialResponseDurationMs: initialResponseDurationMs(projected),
                 content: outputText(projected.output),
                 reasoning: reasoningText(projected.output),
                 outputItems: projected.output,
@@ -993,6 +1005,9 @@ export const useChat = create<ChatState>()((set, get) => ({
             if (message.id !== snapshot.responseId) return message
             return {
               ...message,
+              requestReceivedAt: snapshot.requestReceivedAt,
+              firstReplyTextAt: snapshot.firstReplyTextAt,
+              initialResponseDurationMs: initialResponseDurationMs(snapshot, !inFlight ? snapshot.updatedAt : undefined),
               content: snapshot.output.length ? outputText(snapshot.output) : message.content,
               reasoning: snapshot.output.length ? reasoningText(snapshot.output) : message.reasoning,
               done: !inFlight,
@@ -1017,6 +1032,7 @@ export const useChat = create<ChatState>()((set, get) => ({
       void queryClient.invalidateQueries({ queryKey: chatsKey() })
       if (affectedChatId) void queryClient.invalidateQueries({ queryKey: chatKey(affectedChatId) })
     }
+    if (terminal) void flushQueryPersistence()
   },
 
   newChat: (modelId) => {

@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import type { ReactNode, Ref } from 'react';
 import type { ColorValue, ImageSourcePropType, StyleProp, TextInputProps, ViewStyle } from 'react-native';
 export type Action = { id?: string; image?: ImageSourcePropType; keepOpen?: boolean; submenu?: { title: string; actions: Action[] }; label: string; icon?: string; onPress: () => void; destructive?: boolean; disabled?: boolean; selected?: boolean; detail?: string };
 export type ButtonProps = { label: string; icon?: string; onPress: () => void; disabled?: boolean; loading?: boolean; variant?: 'primary' | 'secondary' | 'destructive' | 'plain'; compact?: boolean };
@@ -13,3 +13,8 @@ export type MenuAnchor = { x: number; y: number };
 
 export type MenuSection = { id: string; title?: string; actions: Action[] };
 export type MenuProps = { label: string; icon: string; actions?: Action[]; sections?: MenuSection[]; text?: string; compact?: boolean; image?: ImageSourcePropType; centered?: boolean };
+
+export type SuggestionButtonProps = { label: string; onPress: () => void; fullWidth?: boolean; containerColor: ColorValue; contentColor: ColorValue };
+export type CardProps = { children: ReactNode; style?: StyleProp<ViewStyle> };
+export type SearchFieldProps = { value: string; onChange: (value: string) => void; onFocusChange: (focused: boolean) => void; fieldRef?: Ref<{ blur: () => Promise<void> }> };
+export type NavigationRowProps = { title: string; icon?: string; value?: string; expanded?: boolean; onPress: () => void };

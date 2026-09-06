@@ -1,8 +1,34 @@
-import type { ResponseEvent, ResponseSnapshot, StateInvalidationScope } from '@pulpo/contracts'
+import { eq, sql } from 'drizzle-orm'
+import { eventHasAssistantReplyText, hasAssistantReplyText, type ResponseEvent, type ResponseSnapshot, type StateInvalidationScope } from '@pulpo/contracts'
+import { db } from '../database/client.js'
+import { responses } from '../database/schema.js'
 import { redis } from '../redis.js'
 import { getConfig } from '../config.js'
 
 const eventKey = (responseId: string) => `pulpo:response:${responseId}:events`
+
+/** Persist once per generation; COALESCE also protects against worker recovery races. */
+async function recordFirstReplyTextAt(responseId: string, emittedAt: string): Promise<string> {
+  const [row] = await db.update(responses).set({
+    firstReplyTextAt: sql`coalesce(${responses.firstReplyTextAt}, ${emittedAt}::timestamptz)`,
+  }).where(eq(responses.id, responseId)).returning({ firstReplyTextAt: responses.firstReplyTextAt })
+  return row?.firstReplyTextAt?.toISOString() ?? emittedAt
+}
+
+export function createResponseEventPublisher(response: {
+  id: string
+  requestReceivedAt?: Date | null
+  firstReplyTextAt?: Date | null
+}) {
+  const requestReceivedAt = response.requestReceivedAt?.toISOString()
+  let firstReplyTextAt = response.firstReplyTextAt?.toISOString()
+  return async (event: ResponseEvent): Promise<void> => {
+    if (requestReceivedAt && !firstReplyTextAt && eventHasAssistantReplyText(event.type, event.payload)) {
+      firstReplyTextAt = await recordFirstReplyTextAt(response.id, event.emittedAt)
+    }
+    await publishResponseEvent({ ...event, requestReceivedAt, firstReplyTextAt })
+  }
+}
 
 export async function publishResponseEvent(event: ResponseEvent): Promise<void> {
   const pipeline = redis.pipeline()
@@ -33,6 +59,9 @@ export async function readResponseEvents(responseId: string, afterSequence: numb
 }
 
 export async function publishSnapshot(snapshot: ResponseSnapshot): Promise<void> {
+  if (snapshot.requestReceivedAt && !snapshot.firstReplyTextAt && hasAssistantReplyText(snapshot.output)) {
+    snapshot = { ...snapshot, firstReplyTextAt: await recordFirstReplyTextAt(snapshot.responseId, new Date().toISOString()) }
+  }
   await redis.publish('pulpo:response-snapshots', JSON.stringify(snapshot))
 }
 

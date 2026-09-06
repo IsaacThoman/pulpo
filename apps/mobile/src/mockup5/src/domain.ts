@@ -94,6 +94,9 @@ export interface PrototypeMessage {
   role: 'user' | 'assistant';
   text: string;
   createdAt: number;
+  requestReceivedAt?: string | null;
+  firstReplyTextAt?: string | null;
+  initialResponseDurationMs?: number;
   latencyMs?: number;
   modelId?: string;
   attachments?: PrototypeAttachment[];
@@ -138,6 +141,7 @@ export interface AppPreferences {
   textSize: TextSizePreference;
   sendWithEnter: boolean;
   streamResponses: boolean;
+  showPromptSuggestions: boolean;
   showReasoning: boolean;
   memoryEnabled: boolean;
   haptics: boolean;

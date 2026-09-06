@@ -37,7 +37,7 @@ describe('public chat DTOs', () => {
       output: [{ type: 'message', content: [{ type: 'output_text', text: 'answer' }] }],
       usage: null, error: null, lastSequence: 2, upstreamSequence: 3,
       idempotencyKey: 'private-key', idempotencyScope: 'default', idempotencyFingerprint: null,
-      metadata: {}, publiclyStored: true, incompleteDetails: null, startedAt: date, completedAt: date, deletedAt: null,
+      metadata: {}, publiclyStored: true, incompleteDetails: null, requestReceivedAt: date, firstReplyTextAt: date, startedAt: date, completedAt: date, deletedAt: null,
       createdAt: date, updatedAt: date,
     }
     const result = toPublicChatResponse(row, [row], {
@@ -48,6 +48,7 @@ describe('public chat DTOs', () => {
       id: row.id,
       displayModelId: 'model-actual',
       agentMode: true,
+      snapshot: expect.objectContaining({ requestReceivedAt: date.toISOString(), firstReplyTextAt: date.toISOString() }),
       costMicros: 4_200,
       inferenceReferenceCostMicros: 38_500,
       subscriptionCoveredMicros: 3_000,
@@ -71,7 +72,7 @@ describe('public chat DTOs', () => {
       output: [{ type: 'message', content: [{ type: 'output_text', text: 'unique-output-sentinel' }] }],
       usage: null, error: null, metadata: {}, publiclyStored: true, incompleteDetails: null,
       lastSequence: 1, upstreamSequence: 1, idempotencyKey: null, idempotencyScope: 'default', idempotencyFingerprint: null,
-      startedAt: date, completedAt: date, deletedAt: null, createdAt: date, updatedAt: date,
+      requestReceivedAt: date, firstReplyTextAt: date, startedAt: date, completedAt: date, deletedAt: null, createdAt: date, updatedAt: date,
     }
     const legacy = toPublicChatResponse(row, [row])
     const compact = toPublicChatResponse(row, [row], { compact: true })
@@ -96,7 +97,7 @@ describe('public chat DTOs', () => {
       usage: { inputTokens: 1, outputTokens: 1 }, error: { message: 'hidden with body' },
       metadata: {}, publiclyStored: true, incompleteDetails: null, lastSequence: 1, upstreamSequence: 1,
       idempotencyKey: null, idempotencyScope: 'default', idempotencyFingerprint: null,
-      startedAt: date, completedAt: date, deletedAt: null, createdAt: date, updatedAt: date,
+      requestReceivedAt: date, firstReplyTextAt: date, startedAt: date, completedAt: date, deletedAt: null, createdAt: date, updatedAt: date,
     }
     const stub = toPublicChatResponseStub(row, [row])
 
@@ -126,7 +127,7 @@ describe('public chat DTOs', () => {
       ],
       usage: null, error: null, metadata: {}, publiclyStored: true, incompleteDetails: null,
       lastSequence: 1, upstreamSequence: 1, idempotencyKey: null, idempotencyScope: 'default', idempotencyFingerprint: null,
-      startedAt: date, completedAt: date, deletedAt: null, createdAt: new Date(date.getTime() + index), updatedAt: date,
+      requestReceivedAt: date, firstReplyTextAt: date, startedAt: date, completedAt: date, deletedAt: null, createdAt: new Date(date.getTime() + index), updatedAt: date,
     }))
 
     const payload = JSON.stringify(toPublicChatResponses(rows, rows[0]!.id, { compact: true, activeOnly: true }))
@@ -149,7 +150,7 @@ describe('public chat DTOs', () => {
       output: [{ type: 'message', content: [{ type: 'output_text', text: `answer ${index}` }] }],
       usage: null, error: null, metadata: {}, publiclyStored: true, incompleteDetails: null,
       lastSequence: 1, upstreamSequence: 1, idempotencyKey: null, idempotencyScope: 'default', idempotencyFingerprint: null,
-      startedAt: date, completedAt: date, deletedAt: null,
+      requestReceivedAt: date, firstReplyTextAt: date, startedAt: date, completedAt: date, deletedAt: null,
       createdAt: new Date(date.getTime() + index), updatedAt: date,
     }))
 

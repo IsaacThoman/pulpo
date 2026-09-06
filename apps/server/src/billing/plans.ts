@@ -8,7 +8,7 @@ export const PLAN_MONTHLY_PRICE_CENTS: Record<PaidBillingPlan, number> = {
 }
 
 export const PLAN_MONTHLY_CREDIT_MICROS: Record<PaidBillingPlan, number> = {
-  eight: 2_000_000,
+  eight: 1_000_000,
   fat: 16_000_000,
 }
 

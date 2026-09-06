@@ -1,5 +1,6 @@
+import { initialActivityTiming } from '@pulpo/client-core';
 import { useAppTheme } from './src/theme';
-import { MaterialButton, MaterialContextMenu, MaterialField, MaterialIconButton, MaterialLoading, MaterialMenu, MaterialRow, MaterialDialog, type Action as MaterialAction } from '../platform/MaterialUI';
+import { MaterialSearchField, MaterialSuggestionButton, MaterialNavigationRow, MaterialButton, MaterialContextMenu, MaterialField, MaterialIconButton, MaterialLoading, MaterialMenu, MaterialRow, MaterialDialog, type Action as MaterialAction } from '../platform/MaterialUI';
 import type { MenuAnchor } from '../platform/MaterialUI.types';
 import { promptText, selectText, showActions } from '../platform/materialActions';
 import { QueuedMessagesView } from '../native/QueuedMessagesView';
@@ -237,7 +238,7 @@ import {
 } from '../features/chat/history';
 import { activityDurationMs, buildLegacyMessageTimeline, buildMessageTimeline, completedActivityLabel, timelineActivityIsActive, workspaceIsActive, type TimelineStep } from '../features/chat/timeline';
 import { toolActivityPresentation } from '../features/chat/toolActivityPresentation';
-import { chatKeyboardBlankSpace, isNearChatBottom, resolveKeyboardLayoutProgress, shouldFollowChatContent } from '../features/chat/viewport';
+import { chatLandingKeyboardTranslation, chatKeyboardBlankSpace, isNearChatBottom, resolveKeyboardLayoutProgress, shouldFollowChatContent } from '../features/chat/viewport';
 import {
   nextChatStartsTemporary,
   resolveChatHeaderAction,
@@ -531,6 +532,9 @@ type Message = {
   role: 'user' | 'assistant';
   text: string;
   createdAt?: number;
+  requestReceivedAt?: string | null;
+  firstReplyTextAt?: string | null;
+  initialResponseDurationMs?: number;
   latencyMs?: number;
   modelId?: string;
   attachments?: Attachment[];
@@ -602,6 +606,9 @@ function prototypeMessageToLegacy(message: PrototypeMessage, chatId: string, cha
     role: message.role,
     text: message.branches?.[message.activeBranch ?? 0]?.text ?? message.text,
     createdAt: message.createdAt,
+    requestReceivedAt: message.requestReceivedAt,
+    firstReplyTextAt: message.firstReplyTextAt,
+    initialResponseDurationMs: message.initialResponseDurationMs,
     latencyMs: message.latencyMs,
     modelId: message.modelId,
     attachments: message.attachments?.map((attachment) => ({
@@ -3013,16 +3020,24 @@ function RecallStepContent({ step, onOpenChat }: {
   })}</View>;
 }
 
-function WorkBlock({ steps, active, durationMs, onOpenChat }: {
+function WorkBlock({ steps, active, durationMs, initialWork, onOpenChat }: {
   steps: TimelineStep[];
   active: boolean;
   durationMs?: number;
+  initialWork?: boolean;
   onOpenChat: (chatId: string) => void;
 }) {
   const { styles, COLORS } = useChatStyles();
   const [open, setOpen] = useState(false);
-  if (steps.length === 0) return null;
-  const label = workLabel(steps, active, durationMs);
+  if (steps.length === 0 && durationMs === undefined) return null;
+  const failed = steps.some((step) => (step.kind === 'compaction' && step.compaction.status === 'failed')
+    || (step.kind === 'workspace' && ['expired', 'unavailable'].includes(step.workspace.state ?? '')));
+  const label = initialWork !== undefined && !active && durationMs !== undefined && !failed
+    ? `${initialWork ? 'Worked' : 'Thought'} for ${Math.max(0, Math.round(durationMs / 1000))}s`
+    : workLabel(steps, active, durationMs);
+  if (steps.length === 0) return <View style={styles.reasoningTrigger}>
+    <WorkTriggerIcon active={false} steps={[]} /><Text style={styles.reasoningLabel}>{label}</Text>
+  </View>;
   return (
     <View style={[styles.workBlock, !open && styles.workBlockCollapsed]}>
       <Pressable
@@ -3163,7 +3178,7 @@ const MessageRow = memo(function MessageRow({
   const [capacityPending, setCapacityPending] = useState(false);
   const [streamingFallbackDurationMs, setStreamingFallbackDurationMs] = useState<number>();
   const streaming = message.status === 'streaming' || message.status === 'queued';
-  const responseStartedAt = useMemo(() => message.createdAt ?? Date.now(), [message.createdAt]);
+  const responseStartedAt = useMemo(() => message.requestReceivedAt ? Date.parse(message.requestReceivedAt) : message.createdAt ?? Date.now(), [message.createdAt, message.requestReceivedAt]);
   const extraOutput = useMemo(() => otherOutputItems(message.outputItems), [message.outputItems]);
   const capacityWorkspace = useMemo(() => (message.outputItems ?? []).find((item) => (
     (item as { type?: string }).type === 'pulpo_workspace'
@@ -3187,6 +3202,8 @@ const MessageRow = memo(function MessageRow({
     });
   }, [message.outputItems, message.reasoning, message.role, message.text, message.thinkSeconds, showReasoning, streaming]);
   const elapsedMs = useElapsedMs(responseStartedAt, streaming && message.role === 'assistant', message.latencyMs);
+  const initialActivity = initialActivityTiming(timeline);
+  const initialDurationMs = message.initialResponseDurationMs;
   const activitySegments = timeline.filter((segment) => segment.kind === 'activity');
   const firstTextTimelineIndex = timeline.findIndex((segment) => segment.kind === 'text');
   const lastActivityTimelineIndex = timeline.reduce(
@@ -3242,19 +3259,24 @@ const MessageRow = memo(function MessageRow({
         </View>
       ) : (
         <AssistantFrame model={model} sideRail={sideRail} time={timeAgo(message.createdAt ?? Date.now())}>
+            {initialActivity.index === -1 && initialDurationMs !== undefined && (
+              <WorkBlock steps={[]} active={false} durationMs={initialDurationMs} initialWork={false} onOpenChat={onOpenChat} />
+            )}
             {timeline.length ? (
               <MessageContextMenu message={message} model={model} onEdit={onEdit} onRegenerate={onRegenerate}>
                 <View style={styles.assistantContent}>
                   {timeline.map((segment, index) => {
                     if (segment.kind === 'activity') {
-                      const active = timelineActivityIsActive(timeline, index, streaming);
+                      const active = streaming && timelineActivityIsActive(timeline, index, streaming);
+                      const initial = index === initialActivity.index && initialDurationMs !== undefined;
                       const segmentDurationMs = activityDurationMs(segment.steps);
                       const useResponseDurationFallback = activitySegments.length === 1
                         && index === lastActivityTimelineIndex
                         && (!streaming || activityFinishedDuringStream);
                       return <WorkBlock
                         active={active}
-                        durationMs={segmentDurationMs ?? (useResponseDurationFallback
+                        initialWork={initial ? initialActivity.worked : undefined}
+                        durationMs={initial ? initialDurationMs : segmentDurationMs ?? (useResponseDurationFallback
                           ? streamingFallbackDurationMs ?? elapsedMs
                           : undefined)}
                         key={`activity:${index}`}
@@ -3467,8 +3489,9 @@ function NativeModelSectionRow({ label, section, models, selected = false }: { l
 }
 
 function SuggestedPromptButton({ label, accessible, onPress, temporary = false }: { label: string; accessible: boolean; onPress: () => void; temporary?: boolean }) {
-  const { styles } = useChatStyles();
+  const { styles, COLORS } = useChatStyles();
   const colorScheme = useColorScheme();
+  if (Platform.OS === 'android') return <MaterialSuggestionButton label={label} onPress={onPress} fullWidth={accessible} containerColor={temporary ? temporaryChatColors(colorScheme === 'dark').composer : COLORS.elevated} contentColor={COLORS.textSoft} />;
   const temporaryStyle = temporary
     ? colorScheme === 'dark' ? styles.temporarySuggestionCardDark : styles.temporarySuggestionCardLight
     : undefined;
@@ -3630,7 +3653,7 @@ function ChatView({
     count: 4,
     prompts: DEFAULT_SUGGESTED_PROMPTS,
   });
-  const { progress: keyboardProgress } = useReanimatedKeyboardAnimation();
+  const { height: keyboardHeight, progress: keyboardProgress } = useReanimatedKeyboardAnimation();
   const suggestionGridHeight = useSharedValue(0);
   const temporaryProgress = useSharedValue(temporary ? 1 : 0);
   const landingBadge = resolveChatLandingBadge(temporary, autoExpire, expirationPeriod);
@@ -3658,6 +3681,7 @@ function ChatView({
       composer.setNativeProps({ selection: { start: end, end } });
     });
   }, [composerInputRef]);
+  const showPromptSuggestions = usePrototypeStore((state) => state.preferences.showPromptSuggestions);
   const isEmptyConversation = messages.length === 0;
   const suggestions = useMemo(
     () => promptConfig.enabled ? pickSuggestedPrompts(promptConfig.prompts, promptConfig.count) : [],
@@ -3689,22 +3713,24 @@ function ChatView({
   ), [composerPadding, keyboardBlankSpace, keyboardLayoutEnabled, keyboardSafeAreaOffset]);
   const emptyStateAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{
-      translateY: -resolveKeyboardLayoutProgress(keyboardProgress.value, keyboardLayoutEnabled) * (
+      translateY: Platform.OS === 'android'
+        ? chatLandingKeyboardTranslation(keyboardHeight.value, keyboardProgress.value, keyboardSafeAreaOffset, keyboardLayoutEnabled)
+        : -resolveKeyboardLayoutProgress(keyboardProgress.value, keyboardLayoutEnabled) * (
         Math.min(64, windowHeight * 0.065) + suggestionGridHeight.value * 0.5
       ),
     }],
-  }), [keyboardLayoutEnabled]);
+  }), [keyboardLayoutEnabled, keyboardSafeAreaOffset, windowHeight]);
   const suggestionsAnimatedStyle = useAnimatedStyle(() => {
     const progress = resolveKeyboardLayoutProgress(keyboardProgress.value, keyboardLayoutEnabled);
     return {
-      height: suggestionGridHeight.value > 0
+      height: !showPromptSuggestions ? 0 : suggestionGridHeight.value > 0
         ? suggestionGridHeight.value * (1 - progress)
         : undefined,
-      marginTop: interpolate(progress, [0, 1], [30, 0]),
-      opacity: interpolate(progress, [0, 0.65], [1, 0]),
+      marginTop: showPromptSuggestions ? interpolate(progress, [0, 1], [30, 0]) : 0,
+      opacity: showPromptSuggestions ? interpolate(progress, [0, 0.65], [1, 0]) : 0,
       transform: [{ translateY: interpolate(progress, [0, 1], [0, -14]) }],
     };
-  }, [keyboardLayoutEnabled]);
+  }, [keyboardLayoutEnabled, showPromptSuggestions]);
   const temporaryColors = temporaryChatColors(colorScheme === 'dark');
   const temporarySurfaceAnimatedStyle = useAnimatedStyle(() => ({
     backgroundColor: interpolateColor(
@@ -4724,7 +4750,14 @@ function ChatView({
         </View>
         <Text maxFontSizeMultiplier={1.6} style={styles.emptyProvider}>{modelSubtitle(model)}</Text>
       </Reanimated.View>
-      <Reanimated.View style={[styles.suggestionReveal, suggestionsAnimatedStyle]}>
+      {/* iOS retains its grid-based landing transition. Android centers from the
+          actual keyboard lift, independently of this hidden grid measurement. */}
+      <Reanimated.View
+        accessibilityElementsHidden={!showPromptSuggestions}
+        importantForAccessibility={showPromptSuggestions ? 'auto' : 'no-hide-descendants'}
+        pointerEvents={showPromptSuggestions ? 'auto' : 'none'}
+        style={[styles.suggestionReveal, suggestionsAnimatedStyle]}
+      >
         <View
           onLayout={(event) => {
             suggestionGridHeight.value = Math.max(suggestionGridHeight.value, event.nativeEvent.layout.height);
@@ -5228,7 +5261,7 @@ function AndroidFoldersDisclosure({ folders, onSelectChat, onCreate }: {
   onSelectChat: (chat: HistoryChatSummary) => void;
   onCreate: () => void;
 }) {
-  const { COLORS, styles } = useChatStyles();
+  const { COLORS } = useChatStyles();
   const [expanded, setExpanded] = useState(false);
   const [openFolders, setOpenFolders] = useState<Set<string>>(() => new Set());
   const toggleFolder = (id: string) => setOpenFolders((current) => {
@@ -5237,18 +5270,13 @@ function AndroidFoldersDisclosure({ folders, onSelectChat, onCreate }: {
     return next;
   });
   return <View>
-    <Pressable accessibilityRole="button" accessibilityLabel="Folders" accessibilityState={{ expanded }} onPress={() => setExpanded(!expanded)} android_ripple={{ color: COLORS.fillStrong }} style={styles.androidFolderRow}>
-      <Icon name="folder" size={22} color={COLORS.text} /><Text style={[styles.chatTitle, styles.flex]}>Folders</Text>
-      <Text style={styles.chatTime}>{folders.length}</Text><Icon name={expanded ? 'chevron.down' : 'chevron.right'} size={16} color={COLORS.muted} />
-    </Pressable>
+    <MaterialNavigationRow title="Folders" icon="folder" value={String(folders.length)} expanded={expanded} onPress={() => setExpanded(!expanded)} />
     {expanded ? <ScrollView nestedScrollEnabled style={{ maxHeight: 220 }}>
-      {folders.map((folder) => <View key={folder.id}>
-        <Pressable accessibilityRole="button" accessibilityLabel={folder.name} accessibilityState={{ expanded: openFolders.has(folder.id) }} onPress={() => toggleFolder(folder.id)} android_ripple={{ color: COLORS.fillStrong }} style={[styles.androidFolderRow, { paddingLeft: 30 }]}>
-          <Icon name={openFolders.has(folder.id) ? 'chevron.down' : 'chevron.right'} size={16} color={COLORS.muted} /><Text style={[styles.chatTitle, styles.flex]}>{folder.name}</Text><Text style={styles.chatTime}>{folder.chats.length}</Text>
-        </Pressable>
-        {openFolders.has(folder.id) ? folder.chats.length ? folder.chats.map((chat) => <Pressable key={chat.id} accessibilityRole="button" accessibilityLabel={chat.title} onPress={() => onSelectChat(chat)} android_ripple={{ color: COLORS.fillStrong }} style={[styles.androidFolderRow, { paddingLeft: 52 }]}><Icon name="bubble.left" size={18} color={COLORS.muted} /><Text numberOfLines={1} style={[styles.chatTitle, styles.flex]}>{chat.title}</Text></Pressable>) : <Text style={{ color: COLORS.muted, paddingLeft: 52, paddingVertical: 12 }}>No chats yet</Text> : null}
+      {folders.map((folder) => <View key={folder.id} style={{ paddingLeft: 16 }}>
+        <MaterialNavigationRow title={folder.name} icon="folder" value={String(folder.chats.length)} expanded={openFolders.has(folder.id)} onPress={() => toggleFolder(folder.id)} />
+        {openFolders.has(folder.id) ? <View style={{ paddingLeft: 16 }}>{folder.chats.length ? folder.chats.map((chat) => <MaterialNavigationRow key={chat.id} title={chat.title} icon="bubble.left" onPress={() => onSelectChat(chat)} />) : <Text style={{ color: COLORS.muted, padding: 16 }}>No chats yet</Text>}</View> : null}
       </View>)}
-      <Pressable accessibilityRole="button" accessibilityLabel="New folder" onPress={onCreate} android_ripple={{ color: COLORS.fillStrong }} style={[styles.androidFolderRow, { paddingLeft: 30 }]}><Icon name="folder.badge.plus" size={22} color={COLORS.muted} /><Text style={styles.chatTitle}>New folder</Text></Pressable>
+      <View style={{ paddingLeft: 16 }}><MaterialNavigationRow title="New folder" icon="folder.badge.plus" onPress={onCreate} /></View>
     </ScrollView> : null}
   </View>;
 }
@@ -5377,9 +5405,11 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
   const searchActive = searchFocused || search.length > 0;
   const searchActiveProgress = useSharedValue(searchActive ? 1 : 0);
   const nativeSearchRef = useRef<SwiftUITextFieldRef>(null);
+  const materialSearchRef = useRef<{ blur: () => Promise<void> }>(null);
   const dismissSearch = useCallback(() => {
     Keyboard.dismiss();
     void nativeSearchRef.current?.blur();
+    void materialSearchRef.current?.blur();
   }, []);
   useEffect(() => {
     if (!drawerOpen) dismissSearch();
@@ -5512,7 +5542,7 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
           <RoundButton icon="gearshape" accessibilityLabel="Settings" onPress={() => { dismissSearch(); onOpenSettings(); }} />
         </AppHeader>
 
-        {Platform.OS === 'ios' ? <NativeDrawerSearch fieldRef={nativeSearchRef} focused={searchFocused} value={search} onChange={setSearch} onFocusChange={setSearchFocused} /> : <View style={styles.searchBox}>
+        {Platform.OS === 'ios' ? <NativeDrawerSearch fieldRef={nativeSearchRef} focused={searchFocused} value={search} onChange={setSearch} onFocusChange={setSearchFocused} /> : Platform.OS === 'android' ? <MaterialSearchField fieldRef={materialSearchRef} value={search} onChange={setSearch} onFocusChange={setSearchFocused} /> : <View style={styles.searchBox}>
           <Icon name="magnifyingglass" size={24} color={COLORS.muted} />
           <TextInput
             accessibilityLabel="Search chats"
@@ -5631,7 +5661,6 @@ function createChatStyles(COLORS: ChatColors) { return StyleSheet.create({
   persistentPanel: { borderRightColor: COLORS.lineSoft, overflow: 'hidden' },
   historyPanelContent: { flex: 1 },
   persistentPanelContent: { width: SIDEBAR_WIDTH },
-  androidFolderRow: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16 },
   historyLoading: { alignItems: 'center', gap: 8, paddingVertical: 20 },
 
   // Main chat view
@@ -5793,7 +5822,7 @@ function createChatStyles(COLORS: ChatColors) { return StyleSheet.create({
   suggestionReveal: { width: '100%', overflow: 'hidden' },
   suggestionGrid: { width: '100%', flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 8 },
   suggestionGridAccessible: { flexDirection: 'column', flexWrap: 'nowrap' },
-  suggestionCard: { width: '48.7%', minHeight: 68, borderRadius: Platform.OS === 'android' ? 24 : 13, borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.line, backgroundColor: COLORS.card, paddingHorizontal: 13, paddingVertical: 11, justifyContent: 'center' },
+  suggestionCard: { width: '48.7%', minHeight: 68, borderRadius: 13, borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.line, backgroundColor: COLORS.card, paddingHorizontal: 13, paddingVertical: 11, justifyContent: 'center' },
   temporarySuggestionCardLight: { backgroundColor: 'rgba(237,233,254,0.82)', borderColor: 'rgba(139,92,246,0.48)' },
   temporarySuggestionCardDark: { backgroundColor: 'rgba(46,16,101,0.58)', borderColor: 'rgba(124,58,237,0.52)' },
   suggestionCardAccessible: { width: '100%' },
@@ -5854,8 +5883,8 @@ function createChatStyles(COLORS: ChatColors) { return StyleSheet.create({
   panelRoot: { flex: 1, backgroundColor: COLORS.panel },
   profileChip: { flexDirection: 'row', alignItems: 'center', gap: 11 },
   profileName: { color: COLORS.text, fontSize: 17, fontWeight: '600', letterSpacing: -0.3 },
-  searchBox: { height: Platform.OS === 'android' ? 56 : DRAWER_ACTION_HEIGHT, marginHorizontal: 10, marginTop: 6, borderRadius: Platform.OS === 'android' ? 28 : 13, backgroundColor: COLORS.panel, borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.lineSoft, flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 12 },
-  nativeDrawerSearchHost: { height: DRAWER_ACTION_HEIGHT, marginHorizontal: 22, marginTop: 6, borderRadius: Platform.OS === 'android' ? 28 : 13, backgroundColor: COLORS.panel },
+  searchBox: { height: DRAWER_ACTION_HEIGHT, marginHorizontal: 10, marginTop: 6, borderRadius: 13, backgroundColor: COLORS.panel, borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.lineSoft, flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 12 },
+  nativeDrawerSearchHost: { height: DRAWER_ACTION_HEIGHT, marginHorizontal: 22, marginTop: 6, borderRadius: 13, backgroundColor: COLORS.panel },
   nativeFoldersDisclosureHost: { alignSelf: 'stretch', minHeight: DRAWER_ACTION_HEIGHT, marginHorizontal: 22 },
   nativeFoldersHeaderHost: { alignSelf: 'stretch', height: DRAWER_ACTION_HEIGHT },
   nativeFoldersContent: { alignSelf: 'stretch', overflow: 'hidden' },

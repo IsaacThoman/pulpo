@@ -46,6 +46,11 @@ export async function buildApp() {
     requestIdHeader: 'x-request-id',
   })
 
+  app.decorateRequest('requestReceivedAt', null)
+  app.addHook('onRequest', async (request) => {
+    request.requestReceivedAt = new Date()
+  })
+
   app.removeContentTypeParser('application/json')
   app.addContentTypeParser('application/json', { parseAs: 'string' }, (request, body, done) => {
     const rawBody = typeof body === 'string' ? body : body.toString('utf8')

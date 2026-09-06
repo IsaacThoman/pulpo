@@ -447,6 +447,7 @@ export const chats = pgTable('chats', {
   ...timestamps,
 }, (table) => [
   index('chats_user_updated_idx').on(table.userId, table.updatedAt),
+  index('chats_title_search_idx').using('gin', sql`to_tsvector('simple', ${table.title})`),
   index('chats_expiry_idx').on(table.expiresAt)
     .where(sql`${table.expiresAt} is not null and ${table.deletedAt} is null and ${table.purgeStartedAt} is null`),
 ])
@@ -484,6 +485,8 @@ export const responses = pgTable('responses', {
   idempotencyScope: text('idempotency_scope').notNull().default('default'),
   idempotencyFingerprint: text('idempotency_fingerprint'),
   startedAt: timestamp('started_at', { withTimezone: true }),
+  requestReceivedAt: timestamp('request_received_at', { withTimezone: true }),
+  firstReplyTextAt: timestamp('first_reply_text_at', { withTimezone: true }),
   completedAt: timestamp('completed_at', { withTimezone: true }),
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
   ...timestamps,
@@ -507,6 +510,7 @@ export const queuedMessages = pgTable('queued_messages', {
   status: text('status').notNull().default('pending'),
   error: text('error'),
   dispatchResponseId: uuid('dispatch_response_id').notNull(),
+  requestReceivedAt: timestamp('request_received_at', { withTimezone: true }),
   ...timestamps,
 }, (table) => [
   uniqueIndex('queued_messages_chat_position_unique').on(table.chatId, table.position),
@@ -783,6 +787,7 @@ export const userMemoryDocumentRevisions = pgTable('user_memory_document_revisio
 
 export const episodicMemoryGenerations = pgTable('episodic_memory_generations', {
   id: uuid('id').primaryKey(),
+  indexVersion: integer('index_version').notNull().default(1),
   profile: text('profile').notNull(),
   model: text('model').notNull(),
   modelDigest: text('model_digest'),
@@ -814,6 +819,7 @@ export const chatTurnEmbeddings = pgTable('chat_turn_embeddings', {
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   chatId: uuid('chat_id').notNull().references(() => chats.id, { onDelete: 'cascade' }),
   responseId: uuid('response_id').notNull().references(() => responses.id, { onDelete: 'cascade' }),
+  chunkIndex: integer('chunk_index').notNull().default(0),
   contentHash: text('content_hash').notNull(),
   chunkText: text('chunk_text').notNull(),
   searchVector: tsvector('search_vector').notNull().generatedAlwaysAs(sql`to_tsvector('simple', coalesce("chunk_text", ''))`),
@@ -823,7 +829,7 @@ export const chatTurnEmbeddings = pgTable('chat_turn_embeddings', {
   indexedAt: timestamp('indexed_at', { withTimezone: true }),
   ...timestamps,
 }, (table) => [
-  uniqueIndex('chat_turn_embeddings_generation_response_unique').on(table.generationId, table.responseId),
+  uniqueIndex('chat_turn_embeddings_generation_response_unique').on(table.generationId, table.responseId, table.chunkIndex),
   index('chat_turn_embeddings_user_generation_idx').on(table.userId, table.generationId),
   index('chat_turn_embeddings_chat_idx').on(table.chatId),
   index('chat_turn_embeddings_search_idx').using('gin', table.searchVector),

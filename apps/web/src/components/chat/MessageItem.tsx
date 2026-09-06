@@ -1,3 +1,4 @@
+import { initialActivityTiming } from '@pulpo/client-core'
 import { memo, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from '@/i18n/useAppTranslation'
 import {
@@ -23,6 +24,7 @@ import { hasMultipleBranches } from '@/lib/message-branches'
 import { getCatalogModel } from '@/stores/catalog'
 import { formatDuration, formatSecondsLabel, timeAgo } from '@/lib/format'
 import { useChat } from '@/stores/chat'
+import { selectAvailableChatIds } from '@/lib/chat-availability'
 import { useSettings } from '@/stores/settings'
 import { useUploadOutbox } from '@/stores/upload-outbox'
 import { Markdown } from './Markdown'
@@ -352,13 +354,12 @@ function recallDate(value: string): string {
 
 function RecallStepRow({
   item,
-  availableChatIds,
   onOpenChat,
 }: {
   item: RecallItem
-  availableChatIds: Set<string> | null
   onOpenChat: (chatId: string) => void
 }) {
+  const availableChatIds = useChat(selectAvailableChatIds)
   return (
     <div className="space-y-2">
       {item.sources.map((source) => {
@@ -397,22 +398,22 @@ function ActivityBlock({
   active,
   showDuration,
   durationMs,
+  initialWork,
   messageId,
   onStop,
   onContinue,
   capacityPending,
-  availableChatIds,
   onOpenChat,
 }: {
   steps: ActivityStep[]
   active: boolean
   showDuration: boolean
   durationMs?: number
+  initialWork?: boolean
   messageId: string
   onStop: (id: string) => void
   onContinue: (id: string) => void
   capacityPending: boolean
-  availableChatIds: Set<string> | null
   onOpenChat: (chatId: string) => void
 }) {
   const workspace = steps.find((step): step is WorkspaceStep => step.kind === 'workspace')?.workspace
@@ -451,6 +452,9 @@ function ActivityBlock({
   const runningTool = tools.find((tool) => tool.status === 'running')
 
   const label = (() => {
+    if (initialWork !== undefined && !active && durationMs !== undefined && !workspaceFailed && compaction?.status !== 'failed') {
+      return ui(initialWork ? 'Worked for {{duration}}' : 'Thought for {{duration}}', { duration: formatSecondsLabel(durationMs) })
+    }
     if (compaction?.status === 'in_progress') return ui("Compacting context…")
     if (compaction?.status === 'failed') return ui("Context compaction failed")
     if (compaction) return ui("Compacted context")
@@ -497,8 +501,12 @@ function ActivityBlock({
     return <Brain className="size-3.5 shrink-0" />
   })()
 
-  if (steps.length === 0) return null
-  if (compaction && steps.length === 1) return <CompactionStepRow item={compaction} />
+  if (steps.length === 0) return durationMs === undefined ? null : (
+    <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+      <Brain className="size-3.5 shrink-0" />{label}
+    </div>
+  )
+  if (compaction && steps.length === 1 && initialWork === undefined) return <CompactionStepRow item={compaction} />
 
   return (
     <div className="space-y-1.5">
@@ -521,7 +529,7 @@ function ActivityBlock({
                 return <CompactionStepRow key={step.compaction.id} item={step.compaction} />
               }
               if (step.kind === 'recall') {
-                return <RecallStepRow key={step.recall.id} item={step.recall} availableChatIds={availableChatIds} onOpenChat={onOpenChat} />
+                return <RecallStepRow key={step.recall.id} item={step.recall} onOpenChat={onOpenChat} />
               }
               return (
                 <ActivityToolRow
@@ -560,7 +568,7 @@ export const MessageItem = memo(function MessageItem({
   composerEditActive = false,
   onOpenChat = ignoreOpenChat,
 }: {
-  chat: Chat
+  chat: Pick<Chat, 'id' | 'expired' | 'modelId'>
   message: Message
   streaming: boolean
   activeModelId: string
@@ -574,7 +582,6 @@ export const MessageItem = memo(function MessageItem({
   const deleteUserMessage = useChat((state) => state.deleteUserMessage)
   const stopStreaming = useChat((state) => state.stopStreaming)
   const continueWithoutAgent = useChat((state) => state.continueWithoutAgent)
-  const chats = useChat((state) => state.chats)
   const returnSubmissionToComposer = useUploadOutbox((state) => state.returnSubmissionToComposer)
   const showReasoning = useSettings((s) => s.showReasoning)
   const showResponseCost = useSettings((s) => s.showResponseCost)
@@ -582,10 +589,6 @@ export const MessageItem = memo(function MessageItem({
   const [draft, setDraft] = useState(message.content)
   const [capacityActionPending, setCapacityActionPending] = useState(false)
   const [streamingFallbackDurationMs, setStreamingFallbackDurationMs] = useState<number>()
-  const availableChatIds = useMemo(
-    () => chats.length ? new Set(chats.filter((item) => !item.expired).map((item) => item.id)) : null,
-    [chats],
-  )
   const timeline = useMemo(() => {
     if (message.role !== 'assistant') return [] as TimelineSegment[]
     const items = message.outputItems ?? []
@@ -607,7 +610,9 @@ export const MessageItem = memo(function MessageItem({
     if (message.content) segments.push({ kind: 'text', text: message.content })
     return segments
   }, [message.role, message.outputItems, showReasoning, message.reasoning, message.content, streaming])
-  const elapsedMs = useElapsedMs(message.timestamp, streaming && message.role === 'assistant', message.latencyMs)
+  const elapsedMs = useElapsedMs(message.requestReceivedAt ? Date.parse(message.requestReceivedAt) : message.timestamp, streaming && message.role === 'assistant', message.latencyMs)
+  const initialActivity = initialActivityTiming(timeline)
+  const initialDurationMs = message.initialResponseDurationMs
   const activitySegments = timeline.filter((segment): segment is ActivitySegment => segment.kind === 'activity')
   const lastActivityTimelineIndex = timeline.reduce(
     (lastIndex, segment, index) => segment.kind === 'activity' ? index : lastIndex,
@@ -750,6 +755,12 @@ export const MessageItem = memo(function MessageItem({
             </div>
           ) : (
             <>
+              {initialActivity.index === -1 && initialDurationMs !== undefined && (
+                <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                  <Brain className="size-3.5 shrink-0" />
+                  {ui('Thought for {{duration}}', { duration: formatSecondsLabel(initialDurationMs) })}
+                </div>
+              )}
               {timeline.map((segment, index) => {
                 if (segment.kind === 'activity') {
                   activityOrdinal += 1
@@ -757,7 +768,8 @@ export const MessageItem = memo(function MessageItem({
                   const hasFollowingText = timeline
                     .slice(index + 1)
                     .some((entry) => entry.kind === 'text')
-                  const active = !hasFollowingText && (segment.active || (streaming && isLastActivity))
+                  const active = streaming && !hasFollowingText && (segment.active || isLastActivity)
+                  const initial = index === initialActivity.index && initialDurationMs !== undefined
                   const segmentDurationMs = activityDurationMs(segment.steps)
                   const useResponseDurationFallback = activitySegments.length === 1
                     && isLastActivity
@@ -767,8 +779,9 @@ export const MessageItem = memo(function MessageItem({
                       key={`activity:${index}`}
                       steps={segment.steps}
                       active={active}
-                      showDuration={!active && (segmentDurationMs !== undefined || useResponseDurationFallback)}
-                      durationMs={segmentDurationMs ?? streamingFallbackDurationMs ?? elapsedMs}
+                      showDuration={!active && (initial || segmentDurationMs !== undefined || useResponseDurationFallback)}
+                      durationMs={initial ? initialDurationMs : segmentDurationMs ?? streamingFallbackDurationMs ?? elapsedMs}
+                      initialWork={initial ? initialActivity.worked : undefined}
                       messageId={message.id}
                       onStop={stopStreaming}
                       onContinue={(id) => {
@@ -776,7 +789,6 @@ export const MessageItem = memo(function MessageItem({
                         void continueWithoutAgent(id).catch(() => setCapacityActionPending(false))
                       }}
                       capacityPending={capacityActionPending}
-                      availableChatIds={availableChatIds}
                       onOpenChat={onOpenChat}
                     />
                   )

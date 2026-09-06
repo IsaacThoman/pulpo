@@ -1,3 +1,4 @@
+import { initialResponseDurationMs } from '@pulpo/contracts'
 import { hydrateEmbeddedResponseSnapshot, lineageFromLeaf } from '@pulpo/client-core'
 import { mergeResponseSnapshots, type ResponseSnapshot } from '@pulpo/contracts'
 import type { ServerAttachment, ServerChat, ServerResponse } from '../../types'
@@ -36,6 +37,9 @@ export interface DisplayMessage {
   modelId: string
   status: ServerResponse['status']
   createdAt: string
+  requestReceivedAt?: string | null
+  firstReplyTextAt?: string | null
+  initialResponseDurationMs?: number
   latencyMs?: number
   attachments: DisplayAttachment[]
   activity: ActivityItem[]
@@ -209,6 +213,9 @@ export function projectChat(chat: ServerChat, liveSnapshots: Record<string, Resp
     }, {
       id: response.id, responseId: response.id, role: 'assistant', text: outputText(output), reasoning: reasoningText(output),
       modelId: response.displayModelId ?? response.modelId, status, createdAt: response.createdAt,
+      requestReceivedAt: snapshot.requestReceivedAt,
+      firstReplyTextAt: snapshot.firstReplyTextAt,
+      initialResponseDurationMs: initialResponseDurationMs(snapshot, ['queued', 'in_progress'].includes(status) ? undefined : response.completedAt ?? snapshot.updatedAt),
       latencyMs: response.completedAt
         ? Math.max(0, Date.parse(response.completedAt) - Date.parse(response.createdAt))
         : undefined,

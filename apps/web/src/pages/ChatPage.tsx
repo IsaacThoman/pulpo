@@ -1,5 +1,6 @@
 import type { ComposerState } from '@pulpo/contracts'
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useShallow } from 'zustand/react/shallow'
 import { useTranslation } from '@/i18n/useAppTranslation'
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { Ghost, Hourglass, Loader2, Save, SquarePen } from 'lucide-react'
@@ -8,7 +9,7 @@ import { getCatalogModel, useCatalog } from '@/stores/catalog'
 import { ModelSelector } from '@/components/chat/ModelSelector'
 import { Composer, type ComposerMessageEdit } from '@/components/chat/Composer'
 import { ExpiryCountdown } from '@/components/chat/ExpiryCountdown'
-import { MessageItem } from '@/components/chat/MessageItem'
+import { MessageList } from '@/components/chat/MessageList'
 import { ModelIcon } from '@/components/ModelIcon'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -137,9 +138,16 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
   const navigate = useNavigate()
   const activeTemporaryChatId = useChat((state) => state.activeTemporaryChatId)
   const chatId = routeChatId ?? activeTemporaryChatId ?? undefined
-  const chat = useChat((s) => chatId ? s.chats.find((item) => item.id === chatId) ?? null : null)
+  const chat = useChat(useShallow((state) => {
+    const current = chatId ? state.chats.find((item) => item.id === chatId) : undefined
+    return current ? {
+      id: current.id, title: current.title, modelId: current.modelId,
+      temporary: current.temporary, expired: current.expired, expiresAt: current.expiresAt,
+    } : null
+  }))
   useDocumentTitle(adminMode ? null : chat?.title)
   const adminAccessRequiredChatId = useChat((state) => state.adminAccessRequiredChatId)
+  const showPromptSuggestions = useSettings((s) => s.showPromptSuggestions)
   const chatWidth = useSettings((s) => s.chatWidth)
   const defaultModelId = useSettings((s) => s.defaultModelId)
   const automaticChatExpiration = useSettings((s) => s.automaticChatExpiration)
@@ -262,25 +270,26 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
     setComposerEditActive(false)
   }, [chatId])
 
-  const beginMessageEdit = (message: Message) => {
+  const beginMessageEdit = useCallback((message: Message) => {
     setMessageEdit({
       messageId: message.id,
       content: message.content,
       attachments: message.attachments ?? [],
     })
-  }
+  }, [])
+  const openChat = useCallback((sourceChatId: string) => navigate(`/c/${sourceChatId}`), [navigate])
 
   const isEmpty = !chat
   const effectiveNewChatAutoExpire = automaticChatExpiration !== 'disabled' && newChatAutoExpire
   const suggestions = useMemo(
-    () => (promptConfig.enabled ? pickSuggestedPrompts(promptConfig.prompts.map((prompt) => {
+    () => (showPromptSuggestions && promptConfig.enabled ? pickSuggestedPrompts(promptConfig.prompts.map((prompt) => {
       if (!prompt.translationKey) return prompt
       const value = t(prompt.translationKey)
       return { ...prompt, label: value, message: value }
     }), promptConfig.count) : []),
     // Re-roll when opening a new empty chat
     // oxlint-disable-next-line react/exhaustive-deps -- chat identity intentionally re-rolls suggestions
-    [chatId, isEmpty, promptConfig, t],
+    [chatId, isEmpty, promptConfig, showPromptSuggestions, t],
   )
 
   const sendSuggestion = (s: string) => {
@@ -491,18 +500,13 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
                 chatWidth === 'narrow' ? 'max-w-5xl' : 'max-w-[min(100%,90rem)]'
               )}
             >
-              {chat.messages.map((m) => (
-                <MessageItem
-                  key={m.id}
-                  chat={chat}
-                  message={m}
-                  streaming={m.role === 'assistant' && !m.done}
-                  activeModelId={modelId}
-                  onEditUserMessage={beginMessageEdit}
-                  onOpenChat={(sourceChatId) => navigate(`/c/${sourceChatId}`)}
-                  composerEditActive={composerEditActive || Boolean(messageEdit)}
-                />
-              ))}
+              <MessageList
+                chat={chat}
+                activeModelId={modelId}
+                onEditUserMessage={beginMessageEdit}
+                onOpenChat={openChat}
+                composerEditActive={composerEditActive || Boolean(messageEdit)}
+              />
               <div className="h-px" />
             </div>
           </ScrollArea>
