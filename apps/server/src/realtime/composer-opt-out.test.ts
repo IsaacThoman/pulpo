@@ -1,4 +1,4 @@
-import type { Server as HttpServer } from 'node:http'
+import { createServer } from 'node:http'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { emptyComposerState } from '@pulpo/contracts'
 
@@ -38,7 +38,7 @@ function connect(auth = {}, adminChatAccess: unknown = null) {
 beforeEach(async () => {
   vi.clearAllMocks()
   mocks.enabled = true
-  await createSocketServer({} as HttpServer)
+  await createSocketServer(createServer())
   mocks.access.mockResolvedValue({ ok: true, snapshot: { draftId: 'new', revision: 1, clearedRevision: 0, mutationId: null, state: emptyComposerState() } })
 })
 describe('composer socket opt-out', () => {
