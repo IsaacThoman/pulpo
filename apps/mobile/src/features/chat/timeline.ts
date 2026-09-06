@@ -133,8 +133,7 @@ export function buildMessageTimeline(output: unknown[], showReasoning: boolean):
 
   const flush = () => {
     if (!activity) return
-    const steps = showReasoning ? activity.steps : activity.steps.filter((step) => step.kind !== 'reasoning')
-    if (activityHasContent(steps)) segments.push({ ...activity, steps })
+    if (activityHasContent(activity.steps)) segments.push(activity)
     activity = null
   }
 
@@ -196,7 +195,8 @@ export function buildMessageTimeline(output: unknown[], showReasoning: boolean):
       segments.unshift({ kind: 'activity', steps: [{ kind: 'workspace', workspace }], active: workspaceIsActive(workspace.state) })
     }
   }
-  return segments
+  // The preference controls the entire work disclosure, including workspace-only activity.
+  return showReasoning ? segments : segments.filter((segment) => segment.kind === 'text')
 }
 
 export function activityDurationMs(steps: TimelineStep[]): number | undefined {

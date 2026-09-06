@@ -2,7 +2,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { cleanup, render } from '@testing-library/react'
+import { act, cleanup, render } from '@testing-library/react'
 import type { Chat, Message } from '@/lib/types'
 import i18n from '@/i18n'
 import { TooltipProvider } from '@/components/ui/tooltip'
@@ -30,6 +30,7 @@ Object.defineProperty(window, 'localStorage', {
 const { useSettings } = await import('@/stores/settings')
 
 afterEach(cleanup)
+beforeEach(() => useSettings.setState({ showReasoning: true }))
 
 const chat: Chat = {
   id: 'chat-1', title: 'Chat', modelId: 'model-1', messages: [],
@@ -95,6 +96,7 @@ describe('assistant response metadata', () => {
         tokensIn: 802,
         tokensOut: 12,
         cost: 0.0042,
+        inferenceReferenceCost: 0.0385,
         latencyMs: 932,
       })}
       streaming={false}
@@ -104,6 +106,7 @@ describe('assistant response metadata', () => {
     const text = container.textContent ?? ''
     expect(text).toContain('802→12 tok · 13tok/sec · 932ms')
     expect(text).not.toContain('$0.0042')
+    expect(container.querySelector('[data-inference-reference-cost]')).toBeNull()
   })
 
   it('renders tokens, speed, time, and cost in that order', async () => {
@@ -148,6 +151,47 @@ describe('assistant response metadata', () => {
     expect(markup).toContain('cursor-help')
     expect(markup).toContain('aria-label="$0.0042 · $0.0030 covered by your subscription · $0.0012 charged to balance"')
   })
+
+  it('matches the usage table total and breakdown for subscription-backed inference', async () => {
+    useSettings.setState({ showResponseCost: true })
+    const { MessageItem } = await import('./MessageItem')
+    const { UsageCostBreakdown } = await import('@/components/usage/UsageCostBreakdown')
+    const { container } = render(<TooltipProvider>
+      <MessageItem
+        chat={chat}
+        message={assistant({
+          content: 'Answer', tokensIn: 2_936, tokensOut: 183,
+          cost: 0.0017, inferenceReferenceCost: 0.0385, latencyMs: 18_700,
+        })}
+        streaming={false}
+        activeModelId="model-1"
+      />
+      <div data-testid="usage-table-cost">
+        <UsageCostBreakdown costUsd={0.0017} inferenceReferenceUsd={0.0385} subscriptionCoveredUsd={0} personal />
+      </div>
+    </TooltipProvider>)
+
+    const annotation = container.querySelector('[data-inference-reference-cost]')
+    const tableCost = container.querySelector('[data-testid="usage-table-cost"] [data-inference-reference-cost]')
+    expect(annotation?.textContent).toBe('$0.0402')
+    expect(annotation?.textContent).toBe(tableCost?.textContent)
+    expect(annotation?.getAttribute('aria-label')).toBe('$0.0402 · API equivalent: $0.0385 · Pulpo usage: $0.0017')
+    expect(annotation?.getAttribute('aria-label')).toBe(tableCost?.getAttribute('aria-label'))
+  })
+
+  it.each([undefined, 0])('uses usage-table precision when inference reference cost is %s', async (inferenceReferenceCost) => {
+    useSettings.setState({ showResponseCost: true })
+    const { MessageItem } = await import('./MessageItem')
+    const { container } = render(<MessageItem
+      chat={chat}
+      message={assistant({ content: 'Answer', cost: 0.0123, inferenceReferenceCost })}
+      streaming={false}
+      activeModelId="model-1"
+    />)
+
+    expect(container.textContent).toContain('$0.0123')
+    expect(container.querySelector('[data-inference-reference-cost]')).toBeNull()
+  })
 })
 
 describe('activityDurationMs', () => {
@@ -167,6 +211,73 @@ describe('activityDurationMs', () => {
     expect(activityDurationMs([
       { kind: 'reasoning' },
     ])).toBeUndefined()
+  })
+})
+
+describe('show reasoning preference', () => {
+  it.each([false, true])('updates work visibility immediately when streaming is %s', async (streaming) => {
+    const { MessageItem } = await import('./MessageItem')
+    const { container } = render(<MessageItem
+      chat={chat}
+      message={assistant({
+        done: !streaming,
+        content: 'Answer',
+        outputItems: [
+          { type: 'pulpo_workspace', state: 'ready' },
+          { type: 'reasoning', status: 'completed', summary: [{ text: 'Private summary' }] },
+          { type: 'pulpo_tool', tool: 'bash', status: 'completed', output: 'Tool output' },
+          { type: 'custom_result', value: 'Extra work details' },
+          { type: 'message', content: [{ text: 'Answer' }] },
+        ],
+      })}
+      streaming={streaming}
+      activeModelId="model-1"
+    />)
+
+    expect(container.textContent).toContain('Worked')
+    expect(container.textContent).toContain('Extra work details')
+    act(() => useSettings.setState({ showReasoning: false }))
+    expect(container.textContent).toContain('Answer')
+    for (const hidden of ['Worked', 'Private summary', 'Started workspace', 'Tool output', 'Extra work details']) {
+      expect(container.textContent).not.toContain(hidden)
+    }
+    act(() => useSettings.setState({ showReasoning: true }))
+    expect(container.textContent).toContain('Worked')
+    expect(container.textContent).toContain('Extra work details')
+  })
+
+  it('keeps the pending indicator while streaming hidden work without answer text', async () => {
+    useSettings.setState({ showReasoning: false })
+    const { MessageItem } = await import('./MessageItem')
+    const { container } = render(<MessageItem
+      chat={chat}
+      message={assistant({
+        done: false,
+        outputItems: [{ type: 'pulpo_tool', tool: 'bash', status: 'running' }],
+      })}
+      streaming
+      activeModelId="model-1"
+    />)
+
+    expect(container.querySelector('.animate-bounce')).not.toBeNull()
+    expect(container.textContent).not.toContain('Running')
+    expect(container.textContent).not.toContain('Working')
+  })
+
+  it('keeps cached answer text and terminal errors visible while hiding legacy reasoning', async () => {
+    useSettings.setState({ showReasoning: false })
+    const { MessageItem } = await import('./MessageItem')
+    const { container } = render(<MessageItem
+      chat={chat}
+      message={assistant({ content: 'Answer', reasoning: 'Private summary', error: 'Generation failed' })}
+      streaming={false}
+      activeModelId="model-1"
+    />)
+
+    expect(container.textContent).toContain('Answer')
+    expect(container.textContent).toContain('Generation failed')
+    expect(container.textContent).not.toContain('Thought')
+    expect(container.textContent).not.toContain('Private summary')
   })
 })
 
