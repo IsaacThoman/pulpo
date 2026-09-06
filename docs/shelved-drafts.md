@@ -2,7 +2,7 @@
 
 The regular new-chat composer has an account-wide shelf on web, iOS, and Android. **Shelve draft** saves exact text and ordered attachments, then clears the composer. The tray opens to reveal the saved draft. Restoring into a nonempty composer saves the outgoing draft in the selected row's position. Model, presets, Agent mode, and other composer settings stay unchanged.
 
-The tray uses the queued-message controls, including drag ordering on web and iOS and accessible move actions on every platform. Mobile collapses it when the keyboard focuses the composer. Delete removes the draft immediately without confirmation. Temporary mode and existing conversations hide the shelf. Empty or whitespace-only text without attachments is treated as an empty composer; whitespace around nonempty text is preserved.
+The tray uses the queued-message controls, including drag ordering on web and iOS, native move actions, and Alt+Arrow Up/Down on a focused web row. Mobile collapses it when the keyboard focuses the composer. Delete removes the draft immediately without confirmation. Temporary mode and existing conversations hide the shelf. Empty or whitespace-only text without attachments is treated as an empty composer; whitespace around nonempty text is preserved.
 
 ## Persistence and synchronization
 

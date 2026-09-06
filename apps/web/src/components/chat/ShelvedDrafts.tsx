@@ -1,7 +1,6 @@
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { useState } from 'react'
 import type { LocalShelvedDraft } from '@pulpo/client-core'
-import { Archive, ChevronDown, GripVertical, Loader2, RotateCcw, Trash2 } from 'lucide-react'
+import { Archive, ChevronDown, CornerDownRight, Loader2, RotateCcw, Trash2 } from 'lucide-react'
 import { ui } from '@/i18n/ui'
 
 export function ShelvedDrafts({ rows, busy, collapsed, onCollapse, onRestore, onDelete, onReorder, onRetry }: {
@@ -19,18 +18,20 @@ export function ShelvedDrafts({ rows, busy, collapsed, onCollapse, onRestore, on
     </button>
     {!collapsed && <div className="max-h-48 overflow-y-auto pb-1">
       {rows.map((row, index) => <div key={row.id} draggable={!busy && rows.length > 1}
+        role="group" aria-label={ui('Reorder shelved draft')} tabIndex={!busy && rows.length > 1 ? 0 : undefined}
+        aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
+        onKeyDown={(event) => {
+          if (busy || event.target !== event.currentTarget || !event.altKey) return
+          const target = event.key === 'ArrowUp' ? rows[index - 1] : event.key === 'ArrowDown' ? rows[index + 1] : undefined
+          if (target) { event.preventDefault(); onReorder(row.id, target.id, event.key === 'ArrowUp' ? 'before' : 'after') }
+        }}
         onDragStart={(event) => { setDragId(row.id); event.dataTransfer.setData('text/plain', row.id); event.dataTransfer.effectAllowed = 'move' }}
         onDragOver={(event) => { if (!dragId || dragId === row.id) return; event.preventDefault(); const box = event.currentTarget.getBoundingClientRect(); setDrop({ id: row.id, edge: event.clientY < box.top + box.height / 2 ? 'before' : 'after' }) }}
         onDrop={(event) => { event.preventDefault(); if (dragId && drop?.id === row.id) onReorder(dragId, row.id, drop.edge); setDragId(null); setDrop(null) }}
         onDragEnd={() => { setDragId(null); setDrop(null) }}
-        className={`relative flex min-w-0 items-start gap-1 rounded-lg px-1 py-1.5 text-sm ${dragId === row.id ? 'opacity-40' : ''} ${row.status === 'failed' ? 'bg-destructive/5' : ''}`}>
+        className={`relative flex min-w-0 items-start gap-2 rounded-lg px-2 py-1.5 text-sm focus-visible:outline-ring ${!busy && rows.length > 1 ? 'cursor-grab active:cursor-grabbing' : ''} ${dragId === row.id ? 'opacity-40' : ''} ${row.status === 'failed' ? 'bg-destructive/5' : ''}`}>
         {drop?.id === row.id && <div className={`pointer-events-none absolute inset-x-1 h-0.5 bg-foreground/35 ${drop.edge === 'before' ? 'top-0' : 'bottom-0'}`} />}
-        <DropdownMenu><DropdownMenuTrigger asChild><button type="button" disabled={busy || rows.length < 2} aria-label={ui('Reorder shelved draft')} className={`${actionClass} cursor-grab`}>
-          <GripVertical aria-hidden="true" className="size-3.5" />
-        </button></DropdownMenuTrigger><DropdownMenuContent align="start">
-          <DropdownMenuItem disabled={index === 0} onSelect={() => onReorder(row.id, rows[index - 1]!.id, 'before')}>{ui('Move up')}</DropdownMenuItem>
-          <DropdownMenuItem disabled={index === rows.length - 1} onSelect={() => onReorder(row.id, rows[index + 1]!.id, 'after')}>{ui('Move down')}</DropdownMenuItem>
-        </DropdownMenuContent></DropdownMenu>
+        <CornerDownRight className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
         <button type="button" disabled={busy} onClick={() => onRestore(row.id)} aria-label={`${ui('Restore draft')}: ${row.content.slice(0, 200) || ui('Attachments')}`} className="min-w-0 flex-1 rounded text-left focus-visible:outline-ring">
           <p className="truncate">{row.content.slice(0, 200) || ui('Attachments')}</p>
           {row.attachments.length > 0 && <p className="truncate text-xs text-muted-foreground">{row.attachments.map((a) => a.name).join(', ')}</p>}
