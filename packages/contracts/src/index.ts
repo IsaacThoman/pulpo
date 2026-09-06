@@ -1,3 +1,5 @@
+import { eventHasAssistantReplyText } from './response-timing.js'
+export * from './response-timing.js'
 import type { ComposerAck, ComposerSnapshot, ComposerWrite } from './composer.js'
 export * from './composer.js'
 import { z } from 'zod'
@@ -408,6 +410,8 @@ export const responseUsageSchema = z.object({
 export type ResponseUsage = z.infer<typeof responseUsageSchema>
 
 export const storedResponseSchema = z.object({
+  requestReceivedAt: isoDateSchema.nullable().optional(),
+  firstReplyTextAt: isoDateSchema.nullable().optional(),
   id: idSchema,
   chatId: idSchema,
   userId: idSchema,
@@ -426,6 +430,8 @@ export const storedResponseSchema = z.object({
 export type StoredResponse = z.infer<typeof storedResponseSchema>
 
 export const responseEventSchema = z.object({
+  requestReceivedAt: isoDateSchema.nullable().optional(),
+  firstReplyTextAt: isoDateSchema.nullable().optional(),
   responseId: idSchema,
   sequence: z.number().int().positive(),
   type: z.string().min(1),
@@ -478,6 +484,8 @@ export const recallItemSchema = z.object({
 export type RecallItem = z.infer<typeof recallItemSchema>
 
 export const responseSnapshotSchema = z.object({
+  requestReceivedAt: isoDateSchema.nullable().optional(),
+  firstReplyTextAt: isoDateSchema.nullable().optional(),
   responseId: idSchema,
   status: responseStatusSchema,
   sequence: z.number().int().nonnegative(),
@@ -654,12 +662,23 @@ export function applyResponseEventToSnapshot(snapshot: ResponseSnapshot, event: 
     status: snapshot.status === 'queued' ? 'in_progress' : snapshot.status,
     sequence: event.sequence,
     output,
+    requestReceivedAt: snapshot.requestReceivedAt ?? event.requestReceivedAt,
+    firstReplyTextAt: snapshot.firstReplyTextAt ?? event.firstReplyTextAt
+      ?? (eventHasAssistantReplyText(event.type, event.payload) ? event.emittedAt : undefined),
     updatedAt: event.emittedAt,
   }
 }
 
 export function mergeResponseSnapshots(current: ResponseSnapshot, incoming: ResponseSnapshot): ResponseSnapshot {
   if (incoming.sequence < current.sequence) return current
+  const requestReceivedAt = current.requestReceivedAt ?? incoming.requestReceivedAt
+  const firstReplyTextAt = current.firstReplyTextAt ?? incoming.firstReplyTextAt
+  if (current.requestReceivedAt !== requestReceivedAt || current.firstReplyTextAt !== firstReplyTextAt) {
+    current = { ...current, requestReceivedAt, firstReplyTextAt }
+  }
+  if (incoming.requestReceivedAt !== requestReceivedAt || incoming.firstReplyTextAt !== firstReplyTextAt) {
+    incoming = { ...incoming, requestReceivedAt, firstReplyTextAt }
+  }
   if (incoming.sequence === current.sequence) {
     const currentTerminal = current.status !== 'queued' && current.status !== 'in_progress'
     const incomingTerminal = incoming.status !== 'queued' && incoming.status !== 'in_progress'

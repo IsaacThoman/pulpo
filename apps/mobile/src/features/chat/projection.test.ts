@@ -184,3 +184,21 @@ describe('projectChat branch variants', () => {
     expect(assistant?.branch.variants.map((branch) => branch.modelId)).toEqual(['actual-a', 'actual-b'])
   })
 })
+
+describe('initial wait projection', () => {
+  it('keeps identical timing in live, completed, and reloaded mobile messages', () => {
+    const row = response({ id: 'response-timed', text: 'Question', output: 'Answer', branchIds: ['response-timed'], branchIndex: 0 })
+    const requestReceivedAt = '2026-08-04T11:59:50.000Z'
+    const firstReplyTextAt = '2026-08-04T12:00:00.000Z'
+    row.snapshot = { ...row.snapshot, requestReceivedAt, firstReplyTextAt, updatedAt: '2026-08-04T12:00:05.000Z' }
+    const chat = { id: 'chat-timed', responses: [row] } as ServerChat
+    const completed = projectChat(chat, {})[1]!
+    const live = projectChat(chat, { [row.id]: { ...row.snapshot, output: row.output, sequence: 2, status: 'in_progress' } })[1]!
+    const reloaded = projectChat(JSON.parse(JSON.stringify(chat)), {})[1]!
+    for (const message of [live, completed, reloaded]) {
+      expect(message.initialResponseDurationMs).toBe(10_000)
+      expect(message.requestReceivedAt).toBe(requestReceivedAt)
+      expect(message.firstReplyTextAt).toBe(firstReplyTextAt)
+    }
+  })
+})

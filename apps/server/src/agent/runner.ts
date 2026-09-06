@@ -10,7 +10,7 @@ import { getConfig } from '../config.js'
 import { newId } from '../lib/ids.js'
 import { parseAgentSettings, parsePersonalizationSettings, parseWebToolsSettings } from '../settings/application-settings.js'
 import { composeCustomInstructions } from '../settings/instruction-presets.js'
-import { isCancellationRequested, publishResponseEvent, publishSnapshot } from '../responses/events.js'
+import { isCancellationRequested, createResponseEventPublisher, publishSnapshot } from '../responses/events.js'
 import { toSnapshot } from '../responses/service.js'
 import { persistResponseItems } from '../responses/storage.js'
 import { extendBudgetReservationFixedCost, getActivePricing, releaseBudget, resizeBudgetReservation, settleBudget } from '../accounting/service.js'
@@ -282,6 +282,7 @@ async function runAgentGeneration(responseId: string): Promise<void> {
   const streams = openAIResponsesApi()
   const emptyUsage = { inputTokens: 0, cachedInputTokens: 0, cacheWriteTokens: 0, outputTokens: 0, reasoningTokens: 0, totalTokens: 0 }
   const persistedUsage = record.response.usage as typeof emptyUsage | null
+  const publishResponseEvent = createResponseEventPublisher(record.response)
   let streamProjection: ResponseSnapshot = toSnapshot(record.response)
   let modelTurns = existingRun?.modelTurns ?? 0; let toolCalls = existingRun?.toolCalls ?? 0
   let usage = persistedUsage ?? emptyUsage
