@@ -1,3 +1,4 @@
+import { bindMobileShelfSocket } from '../features/chat/shelf'
 import { createOutboxScheduler } from '../data/outboxScheduler'
 import { subscribeToOutboxChanges } from '../data/outboxNotifications'
 import { bindMobileComposerSocket } from '../features/chat/composerSync'
@@ -89,6 +90,7 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
       reconnectionDelayMax: 5_000,
       timeout: 10_000,
     }) as PulpoSocket
+    const unbindShelf = bindMobileShelfSocket(namespace, socket)
     const unbindComposer = bindMobileComposerSocket(namespace, socket)
     const unregisterSocket = registerRealtimeSocket(socket)
 
@@ -350,6 +352,7 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
       flushEventBatches()
       void flushCursors().catch(() => undefined)
       socket.disconnect()
+      unbindShelf()
       unbindComposer()
       unregisterSocket()
       useRealtimeStore.getState().setConnectionPhase('idle')

@@ -297,7 +297,8 @@ export async function shareChat(id: string): Promise<string> {
   return `${apiOrigin()}/share/${result.token}`
 }
 
-export async function uploadAttachment(draft: AttachmentDraft, chatId: string | null): Promise<ServerAttachment> {
+export async function uploadAttachment(draft: AttachmentDraft, chatId: string | null, assertSession: () => Promise<void> = async () => {}): Promise<ServerAttachment> {
+  await assertSession()
   const maxAttachmentBytes = useSessionStore.getState().config?.limits?.maxAttachmentBytes
   const validation = attachmentValidationError(
     { name: draft.name, mimeType: draft.mimeType, sizeBytes: draft.sizeBytes },
@@ -313,6 +314,7 @@ export async function uploadAttachment(draft: AttachmentDraft, chatId: string | 
     body: { chatId, originalName: draft.name, mimeType: draft.mimeType, sizeBytes: draft.sizeBytes },
   })
   try {
+    await assertSession()
     const file = new File(draft.uri)
     const uploadUrl = apiUrl(reservation.uploadUrl)
     const result = await file.upload(uploadUrl, {
@@ -321,6 +323,7 @@ export async function uploadAttachment(draft: AttachmentDraft, chatId: string | 
       headers: { ...reservation.uploadHeaders, ...nativeAuthorizationHeaders(uploadUrl) },
     })
     if (result.status < 200 || result.status >= 300) throw new Error(`Upload failed (${result.status})`)
+    await assertSession()
     const confirmed = await apiRequest<ServerAttachment>(`/api/attachments/${reservation.attachment.id}/confirm`, { method: 'POST' })
     await cacheUploadedAttachment(
       confirmed.id,
@@ -332,7 +335,7 @@ export async function uploadAttachment(draft: AttachmentDraft, chatId: string | 
     // Reservations are created before transferring bytes. Failed attempts are
     // never referenced by a message, so reclaim them before a retry reserves a
     // replacement. Cleanup is best-effort so the original actionable error wins.
-    await deleteUnreferencedAttachment(reservation.attachment.id).catch(() => undefined)
+    await assertSession().then(() => deleteUnreferencedAttachment(reservation.attachment.id)).catch(() => undefined)
     throw error
   }
 }

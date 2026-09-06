@@ -30,6 +30,7 @@ export function stateInvalidationQueryKeys(
       ...(activeChatId ? [['chat', namespace, activeChatId]] : []),
     ]
   }
+  if (scope === 'shelved-drafts') return [['shelved-drafts', namespace]]
   if (scope === 'models' || scope === 'folders' || scope === 'settings') return [[scope, namespace]]
   return []
 }

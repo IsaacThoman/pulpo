@@ -1693,7 +1693,7 @@ export const syncRequestSchema = z.object({
 })
 export type SyncRequest = z.infer<typeof syncRequestSchema>
 
-export const stateInvalidationScopeSchema = z.enum(['chats', 'folders', 'models', 'usage', 'settings', 'friends', 'pool', 'billing'])
+export const stateInvalidationScopeSchema = z.enum(['chats', 'folders', 'models', 'usage', 'settings', 'friends', 'pool', 'billing', 'shelved-drafts'])
 export type StateInvalidationScope = z.infer<typeof stateInvalidationScopeSchema>
 
 export const syncResultSchema = z.object({
@@ -1728,3 +1728,5 @@ export interface ServerToClientEvents {
   'sync.result': (result: SyncResult) => void
   'admin.usage.upsert': (event: z.infer<typeof adminUsageEventSchema>) => void
 }
+
+export * from "./shelf.js"

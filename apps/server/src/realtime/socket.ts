@@ -38,6 +38,7 @@ export const FULL_STATE_INVALIDATION_SCOPES: StateInvalidationScope[] = [
   'friends',
   'pool',
   'billing',
+  'shelved-drafts',
 ]
 
 export function cookieValue(header: string | undefined, name: string): string | undefined {

@@ -1,3 +1,4 @@
+import { registerShelfRoutes } from './shelf/routes.js'
 import { registerAccountDeletionRoutes } from './account/routes.js'
 import Fastify from 'fastify'
 import cookie from '@fastify/cookie'
@@ -144,6 +145,7 @@ export async function buildApp() {
   await registerCatalogRoutes(app)
   await registerCatalogIconRoutes(app)
   await registerAdminChatAccess(app)
+  await registerShelfRoutes(app)
   await registerChatRoutes(app)
   await registerApiKeyRoutes(app)
   await registerSettingsRoutes(app)

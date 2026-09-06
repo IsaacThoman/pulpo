@@ -1,3 +1,4 @@
+import { shelfAttachmentIsLive } from '../shelf/routes.js'
 import { composerAttachmentIsLive } from '../composer/service.js'
 import { and, eq, isNull, or } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
@@ -196,26 +197,28 @@ export async function registerAttachmentRoutes(app: FastifyInstance): Promise<vo
   app.delete('/api/attachments/:id', async (request, reply) => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
-    const [attachment] = await db.select().from(attachments).where(and(eq(attachments.id, id), eq(attachments.userId, user.id))).limit(1)
-    if (!attachment) throw notFound('Attachment')
-    if (attachment.origin !== 'user') {
-      throw new AppError(409, 'attachment_in_use', 'Generated attachments cannot be removed this way')
-    }
-    const responseRows = await db.select({ input: responses.input }).from(responses).where(and(
-      eq(responses.userId, user.id),
-      isNull(responses.deletedAt),
-    ))
-    const queueRows = await db.select({ attachmentIds: queuedMessages.attachmentIds }).from(queuedMessages).where(
-      eq(queuedMessages.userId, user.id),
-    )
-    const referenced = attachmentReferenceIsLive(
-      id,
-      responseRows.map((row) => row.input),
-      queueRows.map((row) => row.attachmentIds),
-    )
-    if (referenced || await composerAttachmentIsLive(user.id, id)) throw new AppError(409, 'attachment_in_use', 'Attachment is still used by a message')
-    await getBlobStore().delete(attachment.objectKey)
-    await db.update(attachments).set({ status: 'deleted', updatedAt: new Date() }).where(eq(attachments.id, id))
+    await db.transaction(async (tx) => {
+      const [attachment] = await tx.select().from(attachments).where(and(eq(attachments.id, id), eq(attachments.userId, user.id))).limit(1).for('update')
+      if (!attachment) throw notFound('Attachment')
+      if (attachment.origin !== 'user') {
+        throw new AppError(409, 'attachment_in_use', 'Generated attachments cannot be removed this way')
+      }
+      const responseRows = await tx.select({ input: responses.input }).from(responses).where(and(
+        eq(responses.userId, user.id),
+        isNull(responses.deletedAt),
+      ))
+      const queueRows = await tx.select({ attachmentIds: queuedMessages.attachmentIds }).from(queuedMessages).where(
+        eq(queuedMessages.userId, user.id),
+      )
+      const referenced = attachmentReferenceIsLive(
+        id,
+        responseRows.map((row) => row.input),
+        queueRows.map((row) => row.attachmentIds),
+      )
+      if (referenced || await composerAttachmentIsLive(user.id, id, tx) || await shelfAttachmentIsLive(user.id, id, tx)) throw new AppError(409, 'attachment_in_use', 'Attachment is still used by a message')
+      await getBlobStore().delete(attachment.objectKey)
+      await tx.update(attachments).set({ status: 'deleted', updatedAt: new Date() }).where(eq(attachments.id, id))
+    })
     reply.code(204).send()
   })
 }

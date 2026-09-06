@@ -1,3 +1,4 @@
+import { clearWebShelves } from '@/lib/local-first/shelf-registry'
 import { clearWebComposerSync } from '@/lib/local-first/composer-sync'
 import { create } from 'zustand'
 import { apiRequest, ApiError } from '@/lib/api'
@@ -384,6 +385,7 @@ export const useAuth = create<AuthState>()((set, get) => ({
     useChat.setState({ chats: [], folders: [], activeChatId: null, activeTemporaryChatId: null, streamingIds: [], responseSequences: {}, responseChatIds: {} })
     if (userId) {
       clearRuntimeComposerDrafts(userId)
+      clearWebShelves()
       clearWebComposerSync()
       await clearLocalUserData(userId)
     }
@@ -439,6 +441,7 @@ export const useAuth = create<AuthState>()((set, get) => ({
     configureDesktopRuntime({ instanceUrl: get().instanceUrl, token: null, onUnauthorized: () => { void get().handleDesktopUnauthorized() } })
     queryClient.clear()
     clearRuntimeComposerDrafts(userId)
+      clearWebShelves()
       clearWebComposerSync()
     await clearLocalUserData(userId)
     set({ user: null, checkingSession: false })

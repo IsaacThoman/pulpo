@@ -28,6 +28,7 @@ vi.mock('@/stores/chat', () => ({
   mergeServerChatDetails: (_previous: unknown, incoming: unknown) => incoming,
 }))
 vi.mock('@/lib/local-first/composer-sync', () => ({ bindWebComposerSocket: () => () => {} }))
+vi.mock('@/lib/local-first/shelf', () => ({ bindWebShelfSocket: () => () => {} }))
 vi.mock('@/stores/composer-sync-preference', () => ({ useComposerSyncPreference: { getState: () => ({ enabled: false }) } }))
 vi.mock('@/lib/local-first/outbox', () => ({ flushOutbox: mocks.flushOutbox }))
 vi.mock('@/lib/local-first/database', () => ({ localDb: { responseCursors: {

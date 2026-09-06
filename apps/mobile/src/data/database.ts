@@ -1,3 +1,4 @@
+import { shelfComposerCheckpoint, type ComposerCheckpoint, type ShelfHandoff, type ShelfCheckpoint } from '@pulpo/client-core'
 import * as SQLite from 'expo-sqlite'
 import {
   MOBILE_DATABASE_VERSION,
@@ -73,13 +74,20 @@ export async function clearNamespace(namespace: string): Promise<string[]> {
     const files = await database.getAllAsync<{ local_uri: string }>(
       'SELECT local_uri FROM attachment_cache WHERE namespace = ?', namespace,
     )
+    const shelfRow = await database.getFirstAsync<{ value: string }>('SELECT value FROM kv WHERE namespace = ? AND key = ?', namespace, 'shelved-drafts')
+    const shelf = shelfRow ? JSON.parse(shelfRow.value) as ShelfCheckpoint : undefined
+    const shelfSources = [...Object.values(shelf?.files ?? {}), ...(shelf?.operations ?? []).flatMap((op) => [
+      ...(op.action.type === 'save' ? op.action.draft.attachments : op.action.type === 'restore' ? op.action.replacement?.attachments ?? [] : []), ...(op.removed ?? []),
+    ])].map((a) => a.source).filter((source): source is string => typeof source === 'string' && source.includes('/shelved-drafts/'))
+    const draftRows = await database.getAllAsync<{ attachments: string }>('SELECT attachments FROM drafts WHERE namespace = ?', namespace)
+    for (const row of draftRows) for (const a of JSON.parse(row.attachments) as Array<{ uri?: string }>) if (a.uri?.includes('/shelved-drafts/')) shelfSources.push(a.uri)
     await database.withTransactionAsync(async () => {
       for (const table of ['kv', 'drafts', 'response_cursors', 'outbox', 'chat_cache', 'chat_access', 'attachment_cache']) {
         await database.runAsync(`DELETE FROM ${table} WHERE namespace = ?`, namespace)
       }
       await database.runAsync('DELETE FROM chat_fts WHERE namespace = ?', namespace)
     })
-    return files.map((file) => file.local_uri)
+    return [...new Set([...files.map((file) => file.local_uri), ...shelfSources])]
   })
 }
 
@@ -481,5 +489,34 @@ export async function responseCursors(namespace: string): Promise<Record<string,
       'SELECT response_id, sequence FROM response_cursors WHERE namespace = ?', namespace,
     )
     return Object.fromEntries(rows.map((row) => [row.response_id, row.sequence]))
+  })
+}
+
+/** Commit an explicit shelf transfer together with the new-chat draft. */
+export async function saveShelfCheckpoint(namespace: string, value: unknown, composer?: { body: string; attachments: unknown[]; syncKey?: string; handoff?: ShelfHandoff }): Promise<void> {
+  await withDatabase(async (database) => {
+    await database.withTransactionAsync(async () => {
+      await database.runAsync(`INSERT INTO kv(namespace, key, value, updated_at) VALUES (?, ?, ?, ?)
+        ON CONFLICT(namespace, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+        namespace, 'shelved-drafts', JSON.stringify(value), Date.now())
+      if (composer?.handoff?.isCurrent && !composer.handoff.isCurrent()) throw new Error('The composer changed. Please try again.')
+      if (composer) await database.runAsync(`INSERT INTO drafts(namespace, chat_id, body, attachments, updated_at) VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(namespace, chat_id) DO UPDATE SET body = excluded.body, attachments = excluded.attachments, updated_at = excluded.updated_at`,
+        namespace, 'new', composer.body, JSON.stringify(composer.attachments), Date.now())
+      if (composer?.syncKey && composer.handoff) {
+        const row = await database.getFirstAsync<{ value: string }>('SELECT value FROM kv WHERE namespace = ? AND key = ?', namespace, composer.syncKey)
+        const checkpoint = shelfComposerCheckpoint(row ? JSON.parse(row.value) as ComposerCheckpoint : null, composer.handoff)
+        await database.runAsync(`INSERT INTO kv(namespace, key, value, updated_at) VALUES (?, ?, ?, ?)
+          ON CONFLICT(namespace, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+          namespace, composer.syncKey, JSON.stringify(checkpoint), Date.now())
+      }
+    })
+  })
+}
+
+export async function shelfFileIsUsedByDraft(namespace: string, localId: string, serverId?: string): Promise<boolean> {
+  return withDatabase(async (database) => {
+    const rows = await database.getAllAsync<{ attachments: string }>('SELECT attachments FROM drafts WHERE namespace = ?', namespace)
+    return rows.some((row) => (JSON.parse(row.attachments) as Array<{ localId?: string; serverId?: string }>).some((a) => a.localId === localId || serverId && a.serverId === serverId))
   })
 }
