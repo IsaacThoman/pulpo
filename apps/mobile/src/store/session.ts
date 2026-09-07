@@ -1,3 +1,4 @@
+import { clearShortcutsSession, syncShortcutsSession } from '../shortcuts/native'
 import { clearMobileShelf } from '../features/chat/shelf-registry'
 import { clearMobileComposerSync } from '../features/chat/composerSync'
 import { Appearance, Platform } from 'react-native'
@@ -233,6 +234,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 
   logout: async (localOnly = false) => {
     const { user, instanceUrl, token } = get()
+    clearShortcutsSession()
     if (token && !localOnly) await mobileApi.logout().catch(() => undefined)
     // Revoked sessions must disappear from memory even if local storage fails.
     configureApi({ instanceUrl, token: null, onUnauthorized: () => { void get().handleUnauthorized() } })
@@ -274,6 +276,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       configureApi({ instanceUrl: previous.instanceUrl, token: previous.token, onUnauthorized: () => { void get().handleUnauthorized() } })
       throw error
     }
+    clearShortcutsSession()
     if (previous.token) {
       configureApi({ instanceUrl: previous.instanceUrl, token: previous.token })
       await mobileApi.logout().catch(() => undefined)
@@ -301,6 +304,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   },
 
   handleUnauthorized: async () => {
+    clearShortcutsSession()
     // Stop authenticated work immediately, even if platform storage is unavailable.
     configureApi({ instanceUrl: get().instanceUrl, token: null })
     set({ token: null, user: null, status: 'anonymous', error: 'Your session expired. Sign in again.' })
@@ -315,3 +319,10 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 function deviceMetadata() {
   return { platform: Platform.OS === 'ios' ? 'ios' as const : Platform.OS === 'android' ? 'android' as const : 'unknown' as const }
 }
+
+// Synchronous native bridge: account transitions cannot race a queued React effect.
+useSessionStore.subscribe((state, previous) => {
+  if (state.status !== previous.status || state.token !== previous.token
+    || state.instanceUrl !== previous.instanceUrl || state.user?.id !== previous.user?.id
+    || state.user?.blocked !== previous.user?.blocked) syncShortcutsSession(state)
+})

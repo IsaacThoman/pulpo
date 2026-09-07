@@ -6,6 +6,8 @@ import { protectTranscript } from '../data/transcriptResidency';
 import { incomingFiles, releaseImportedFile } from '../native/incomingFiles';
 import { useIncomingFileImport } from '../features/chat/useIncomingFileImport';
 import { incomingFileAttachment } from '../features/chat/incomingFileAttachment';
+import { useShortcutInbox } from '../shortcuts/inbox';
+import { shortcutsScope } from '../shortcuts/native';
 import { useDictation } from '../features/chat/useDictation';
 import { setComposerSelection } from '../features/chat/composerSelection';
 import { ToolImagePreview } from '../components/ToolImagePreview';
@@ -2211,6 +2213,53 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     composerFocusRevision.current += 1;
     setComposerFocusRequest({ revision: composerFocusRevision.current, target: 'composer' });
   }, [activeChatId, animatePanel, navigation, newChat, pendingImports, productionInstanceUrl, productionScopeReady, productionUserId]);
+  const shortcutDestination = useShortcutInbox((state) => state.pending[0]);
+  const shortcutActions = useRef({ animatePanel, dismissComposer, finishExistingChatTransition, interruptDrawerTransition, navigation, newChat, abandonActiveTemporaryChat });
+  shortcutActions.current = { animatePanel, dismissComposer, finishExistingChatTransition, interruptDrawerTransition, navigation, newChat, abandonActiveTemporaryChat };
+  useEffect(() => {
+    const destination = shortcutDestination;
+    if (!destination || !productionScopeReady) return;
+    let disposed = false;
+    const handle = async () => {
+      try {
+        if (destination.scope !== shortcutsScope()) throw new Error('Open the account and server this shortcut was created for, or enable Apple Shortcuts in Settings.');
+        setModelSheet(false);
+        if (destination.action === 'open-chat' && destination.chatId) {
+          const owner = useSessionStore.getState();
+          const chat = await apiRequest<ServerChat>(`/api/chats/${destination.chatId}?format=compact&scope=active`);
+          if (disposed || useSessionStore.getState().token !== owner.token || destination.scope !== shortcutsScope()) return;
+          if (chat.temporary || chat.deletedAt) throw new Error('This chat is no longer available.');
+          const namespace = cacheNamespace(owner.instanceUrl, owner.user!.id);
+          queryClient.setQueryData(queryKeys.chat(namespace, chat.id), chat);
+          queryClient.setQueryData<ServerChat[]>(queryKeys.chats(namespace), (chats = []) => [chat, ...chats.filter((item) => item.id !== chat.id)]);
+          shortcutActions.current.interruptDrawerTransition();
+          shortcutActions.current.abandonActiveTemporaryChat();
+          shortcutActions.current.navigation.popTo('Chat', { chatId: chat.id });
+          setActiveChatId(chat.id);
+          setSelectedModelId(chat.modelId);
+          composerFollowsDefaultModel.current = false;
+          setComposerFocusSuppressed(true);
+          shortcutActions.current.dismissComposer();
+          composerFocusRevision.current += 1;
+          setComposerFocusRequest({ revision: composerFocusRevision.current, target: 'content' });
+          shortcutActions.current.animatePanel(false, 0, shortcutActions.current.finishExistingChatTransition);
+        } else {
+          shortcutActions.current.navigation.popTo('Chat', { chatId: undefined });
+          shortcutActions.current.newChat(destination.action === 'temporary-chat');
+          setComposerFocusSuppressed(false);
+          composerFocusRevision.current += 1;
+          setComposerFocusRequest({ revision: composerFocusRevision.current, target: 'composer' });
+          shortcutActions.current.animatePanel(false);
+        }
+      } catch (error) {
+        if (!disposed) Alert.alert('Shortcut unavailable', error instanceof Error ? error.message : 'Could not open this chat.');
+      } finally {
+        if (!disposed) useShortcutInbox.getState().acknowledge(destination.requestId);
+      }
+    };
+    void handle();
+    return () => { disposed = true; };
+  }, [productionScopeReady, queryClient, shortcutDestination]);
 
   const newChatFromHistory = useCallback(() => {
     newChat();

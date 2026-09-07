@@ -112,6 +112,7 @@ const config: ExpoConfig = {
   },
   plugins: [
     './plugins/with-pulpo-icons',
+    './plugins/with-pulpo-shortcuts',
     './plugins/with-pulpo-android',
     'expo-router',
     'expo-secure-store',
