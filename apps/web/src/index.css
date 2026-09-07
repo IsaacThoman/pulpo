@@ -592,13 +592,9 @@ html[data-desktop="true"] a {
 
   html[data-desktop="true"] .mobile-sidebar-opener {
     position: fixed;
-    top: 3px;
-    left: 12px;
+    top: 46px;
+    left: 8px;
     z-index: 43;
-  }
-
-  html[data-desktop-os="darwin"] .mobile-sidebar-opener {
-    left: 84px;
   }
 
   html[data-desktop="true"] .mobile-sidebar-backdrop,
@@ -611,24 +607,73 @@ html[data-desktop="true"] a {
     z-index: 44;
   }
 
+  html[data-desktop="true"] .mobile-sidebar-backdrop::after {
+    position: absolute;
+    top: 0;
+    right: 0;
+    left: 0;
+    height: 1px;
+    background: var(--sidebar);
+    border-top: 1px solid var(--sidebar-border);
+    content: '';
+    pointer-events: none;
+  }
+
   html[data-desktop="true"] .mobile-sidebar {
     z-index: 45;
+    overflow: visible;
+    border-right-width: 0;
+  }
+
+  html[data-desktop="true"] .mobile-sidebar::before {
+    position: absolute;
+    top: 0;
+    left: calc(100% - 1px);
+    width: 16px;
+    height: 16px;
+    background: radial-gradient(
+      circle at 100% 100%,
+      transparent calc(1rem - 1px),
+      var(--sidebar-border) calc(1rem - 1px),
+      var(--sidebar-border) 1rem,
+      var(--sidebar) 1rem
+    ), radial-gradient(
+      circle at 100% 100%,
+      transparent calc(1rem - 1px),
+      var(--sidebar) calc(1rem - 1px)
+    );
+    content: '';
+    pointer-events: none;
+  }
+
+  html[data-desktop="true"] .mobile-sidebar::after {
+    position: absolute;
+    top: 16px;
+    right: 0;
+    bottom: 0;
+    border-right: 1px solid var(--sidebar-border);
+    content: '';
+    pointer-events: none;
+  }
+
+  html[data-desktop="true"] .mobile-sidebar[aria-hidden="true"]::before {
+    visibility: hidden;
   }
 
   html[data-desktop="true"] .desktop-model-titlebar-slot[data-compact="true"] {
-    left: 52px;
+    left: 12px;
     height: 38px;
     /* Reserve two chat actions and at least 40px of draggable space. */
-    max-width: calc(100vw - 188px);
+    max-width: calc(100vw - 148px);
   }
 
   html[data-desktop-os="darwin"] .desktop-model-titlebar-slot[data-compact="true"] {
-    left: 124px;
-    max-width: calc(100vw - 260px);
+    left: 84px;
+    max-width: calc(100vw - 220px);
   }
 
   html[data-desktop-os="win32"] .desktop-model-titlebar-slot[data-compact="true"] {
-    max-width: calc(100vw - 326px);
+    max-width: calc(100vw - 286px);
   }
 
   html[data-desktop="true"] .desktop-actions-titlebar-slot[data-compact="true"] {

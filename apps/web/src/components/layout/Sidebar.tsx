@@ -962,7 +962,7 @@ export function Sidebar({
         !mobile && (collapsed ? 'desktop-collapsed-sidebar w-[52px]' : 'w-[264px]')
       )}
     >
-      {!mobile && (
+      {!mobile && isDesktopRuntime() && (
         <div
           aria-hidden="true"
           className={cn(

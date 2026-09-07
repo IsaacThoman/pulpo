@@ -67,12 +67,15 @@ describe('narrow desktop layout', () => {
     expect(view.container.querySelector('aside')?.getAttribute('data-mobile')).toBe('false')
   })
 
-  it('opens and dismisses the compact sidebar using buttons, backdrop, Escape, and shortcut', () => {
+  it.each(['desktop', 'browser'])('opens and dismisses the compact %s sidebar using buttons, backdrop, Escape, and shortcut', (runtime) => {
     narrow = true
+    if (runtime === 'browser') Reflect.deleteProperty(window, 'pulpoDesktop')
     const view = mount()
     const sidebar = view.container.querySelector('aside')!
     const opener = screen.getByRole('button', { name: 'Open sidebar' })
+    expect(opener.getAttribute('aria-expanded')).toBe('false')
     fireEvent.click(opener)
+    expect(opener.getAttribute('aria-expanded')).toBe('true')
     expect(sidebar.getAttribute('aria-hidden')).toBe('false')
     fireEvent.click(opener)
     expect(sidebar.getAttribute('aria-hidden')).toBe('true')
@@ -86,6 +89,7 @@ describe('narrow desktop layout', () => {
     fireEvent.click(opener)
     fireEvent.click(screen.getByRole('button', { name: 'Navigate' }))
     expect(sidebar.getAttribute('aria-hidden')).toBe('true')
+    expect(opener.getAttribute('aria-expanded')).toBe('false')
   })
 
   it('keeps mobile web controls in the page header', () => {
