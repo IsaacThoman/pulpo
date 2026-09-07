@@ -5,10 +5,9 @@ Shortcuts also appear automatically under **App Shortcuts → Pulpo**: Ask Pulpo
 New Chat, Find Chats, and Open Chat. Open Pulpo and sign in once before using them.
 This requires a native build; Expo Go and Android do not expose Apple actions.
 
-In Pulpo, **Settings → Apple Shortcuts** explains the actions, opens Shortcuts,
-and lets you disable their access on this device. Actions require an unlocked
-device, the signed-in account, and an internet connection. Siri can use phrases
-such as “Ask Pulpo” and “New chat in Pulpo.”
+Build workflows in Apple’s Shortcuts app using the Pulpo actions. Actions require
+an unlocked device, the signed-in account, and an internet connection. Siri can
+use phrases such as “Ask Pulpo” and “New chat in Pulpo.”
 
 ## Actions
 
