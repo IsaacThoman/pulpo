@@ -8,7 +8,7 @@ import * as SecureStore from 'expo-secure-store'
 import { create } from 'zustand'
 import { normalizeInstanceUrl } from '@pulpo/client-core'
 import type { MobileConfig, User } from '@pulpo/contracts'
-import { ApiError, apiOrigin, configureApi, isNetworkError, mobileApi } from '../api/client'
+import { ApiError, configureApi, isNetworkError, mobileApi } from '../api/client'
 import {
   canUseNativePasskeys,
   NativePasskeyError,
@@ -255,16 +255,25 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   },
 
   refreshSession: async () => {
+    const { token, instanceUrl } = get()
     const { user } = await mobileApi.me()
-    await get().setUser(user)
-    set({ status: user.role === 'pending' ? 'pending' : 'authenticated', error: null })
+    if (get().token !== token || get().instanceUrl !== instanceUrl) return
+    await persistAccount(instanceUrl, user)
+    if (get().token !== token || get().instanceUrl !== instanceUrl) return
+    set({ user, status: user.role === 'pending' ? 'pending' : 'authenticated', error: null })
   },
 
   switchInstance: async (value) => {
     const previous = get()
     const instanceUrl = normalizeInstanceUrl(value, allowLocalhost())
     configureApi({ instanceUrl, token: null })
-    const config = await mobileApi.config()
+    let config: MobileConfig
+    try {
+      config = await mobileApi.config()
+    } catch (error) {
+      configureApi({ instanceUrl: previous.instanceUrl, token: previous.token, onUnauthorized: () => { void get().handleUnauthorized() } })
+      throw error
+    }
     if (previous.token) {
       configureApi({ instanceUrl: previous.instanceUrl, token: previous.token })
       await mobileApi.logout().catch(() => undefined)
@@ -292,13 +301,14 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   },
 
   handleUnauthorized: async () => {
-    await Promise.all([
+    // Stop authenticated work immediately, even if platform storage is unavailable.
+    configureApi({ instanceUrl: get().instanceUrl, token: null })
+    set({ token: null, user: null, status: 'anonymous', error: 'Your session expired. Sign in again.' })
+    Appearance.setColorScheme('unspecified')
+    await Promise.allSettled([
       SecureStore.deleteItemAsync(SESSION_TOKEN_KEY),
       setValue(GLOBAL_NAMESPACE, ACTIVE_SESSION_NAMESPACE_KEY, null),
     ])
-    configureApi({ instanceUrl: apiOrigin(), token: null })
-    set({ token: null, user: null, status: 'anonymous', error: 'Your session expired. Sign in again.' })
-    Appearance.setColorScheme('unspecified')
   },
 }))
 

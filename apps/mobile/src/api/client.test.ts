@@ -204,3 +204,22 @@ describe('device metadata on native authentication', () => {
     }
   })
 })
+
+describe('session changes during requests', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    configureApi({ instanceUrl: 'https://pulpo.baby', token: null })
+  })
+
+  it('ignores an old session rejection after signing in again', async () => {
+    const onUnauthorized = vi.fn()
+    configureApi({ instanceUrl: 'https://fixture.example', token: 'old', onUnauthorized })
+    let resolve!: (response: Response) => void
+    vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>((done) => { resolve = done })))
+    const request = mobileApi.me()
+    configureApi({ instanceUrl: 'https://fixture.example', token: 'new', onUnauthorized })
+    resolve(Response.json({ error: { code: 'unauthorized' } }, { status: 401 }))
+    await expect(request).rejects.toThrow()
+    expect(onUnauthorized).not.toHaveBeenCalled()
+  })
+})
