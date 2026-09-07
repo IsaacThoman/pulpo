@@ -109,13 +109,18 @@ const config: ExpoConfig = {
     softwareKeyboardLayoutMode: 'resize',
     adaptiveIcon: { foregroundImage: './assets/pulpo-smiley.png', backgroundColor: '#F1F6EF' },
     intentFilters: [{ action: 'VIEW', autoVerify: true, category: ['BROWSABLE', 'DEFAULT'], data: [{ scheme: 'https', host: 'pulpo.baby', pathPrefix: '/share/' }] }],
-    blockedPermissions: ['android.permission.RECORD_AUDIO'],
   },
   plugins: [
     './plugins/with-pulpo-icons',
     './plugins/with-pulpo-android',
     'expo-router',
     'expo-secure-store',
+    ['expo-audio', {
+      microphonePermission: 'Allow Pulpo to use the microphone for dictation.',
+      recordAudioAndroid: true,
+      enableBackgroundRecording: false,
+      enableBackgroundPlayback: false,
+    }],
     'expo-sqlite',
     [
       'expo-build-properties',
@@ -127,7 +132,7 @@ const config: ExpoConfig = {
       {
         photosPermission: 'Allow Pulpo to attach photos to your chats.',
         cameraPermission: 'Allow Pulpo to take photos to attach to your chats.',
-        microphonePermission: false,
+        microphonePermission: 'Allow Pulpo to use the microphone for dictation.',
       },
     ],
     [

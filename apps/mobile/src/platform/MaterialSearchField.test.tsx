@@ -64,3 +64,13 @@ it('reports focus and releases the native field on keyboard submit and drawer di
   await act(async () => native.focus(false))
   expect(onFocusChange).toHaveBeenLastCalledWith(false)
 })
+it('does not blur an unbound hidden field and tolerates disposal during dismissal', async () => {
+  const fieldRef = createRef<{ blur: () => Promise<void> }>()
+  await act(async () => root.render(<MaterialSearchField value="" fieldRef={fieldRef} onChange={vi.fn()} onFocusChange={vi.fn()} />))
+  await act(async () => fieldRef.current!.blur())
+  expect(native.blur).not.toHaveBeenCalled()
+  await act(async () => native.focus(true))
+  native.blur.mockRejectedValueOnce(new Error('No handler registered for AsyncFunction blur'))
+  await act(async () => fieldRef.current!.blur())
+  expect(native.blur).toHaveBeenCalledOnce()
+})
