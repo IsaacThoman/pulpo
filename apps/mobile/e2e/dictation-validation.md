@@ -116,7 +116,7 @@ emulator startup was unstable; the completed Android run used Android 16.
 Physical-device deployment and merging are outside this validation.
 Raw screenshots, recordings, build logs, and generated projects stay outside Git.
 
-Toolbar follow-up: shelf is first, followed by attachments, chat presets, and
-Agent mode; dictation and send stay right-aligned. The compact iPhone layout was
+Toolbar follow-up: attachments, chat presets, and Agent mode are left-aligned.
+Shelf is first in the right-aligned group, before dictation and send. The compact iPhone layout was
 checked in the simulator. After reconciling the latest dev performance changes,
 all 541 mobile tests, typechecking, and lint passed.
