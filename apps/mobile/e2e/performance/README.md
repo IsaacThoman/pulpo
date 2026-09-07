@@ -31,7 +31,7 @@ latency; keep any screenshots and result bundles outside the repository.
 `testSelectLongAndCachedChats` alternates between the 1,000-turn and short chats
 twice, checks the selected transcript's native test identifier, and verifies the
 keyboard stays dismissed. This covers initial local hydration and resident detail
-selection after drawer closure; it does not measure physical-device frame timing.
+selection before drawer closure; it does not measure physical-device frame timing.
 
 Set `EXPO_PUBLIC_PERF_COLD_CHAT=1` to omit chat 3's offline document, delay its
 network response by five seconds, and make chat 4 empty. `testSelectedChatCover` checks that selection
@@ -45,6 +45,16 @@ requests. It records the selected chat at request start and elapsed transfer/gat
 times, allowing verification that I/O begins before selection commits. These
 synthetic timings are not native frame-rate measurements; keep the output outside
 Git with other run artifacts.
+
+The fixture writes `Documents/ui-selection-timings.json` with tap, activation,
+native content-ready, and slide boundary markers. Content-ready means native
+viewport layout plus one JavaScript animation frame, not photon-level visibility
+or completion of every Markdown row's measurement. Set
+`EXPO_PUBLIC_PERF_SELECTION_FRAMES=1` for `ui-selection-frames.json`, containing
+UI frame-callback gaps between JavaScript slide boundary notifications. This
+window can extend beyond native animation completion when JavaScript is busy.
+Keep these raw samples outside Git; simulator/XCTest overhead and the measurement
+window prevent treating them as device FPS.
 
 Build current native dependencies first (`expo prebuild`, `pod install`, then
 Release Xcode/Gradle builds). Keep the normal build intact. Export a harness from

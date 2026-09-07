@@ -93,7 +93,12 @@ export function deletedChatsQuery(namespace: string, localChatLimit = 50) {
   })
 }
 
-export function chatQuery(namespace: string, id: string, localChatLimit = 50, beforeDecode?: (signal: AbortSignal) => Promise<void>) {
+export interface ChatPreparation {
+  beforeDecode: (signal: AbortSignal, source: 'local' | 'network') => Promise<void>
+  onLocalReady: (available: boolean) => void
+}
+
+export function chatQuery(namespace: string, id: string, localChatLimit = 50, preparation?: ChatPreparation) {
   return queryOptions({
     queryKey: queryKeys.chat(namespace, id),
     gcTime: 5 * 60 * 1_000,
@@ -102,17 +107,19 @@ export function chatQuery(namespace: string, id: string, localChatLimit = 50, be
       const query = client.getQueryCache().find({ queryKey: key, exact: true })
       const revision = query?.state.dataUpdateCount
       const resident = client.getQueryData<ServerChat>(key)
-      const ready = beforeDecode ? () => beforeDecode(signal) : undefined
-      const local = resident?.responses ? Promise.resolve(resident) : cachedChat(namespace, id, ready)
+      const ready = preparation ? () => preparation.beforeDecode(signal, 'network') : undefined
+      const localReady = preparation ? () => preparation.beforeDecode(signal, 'local') : undefined
+      const local = resident?.responses ? Promise.resolve(resident) : cachedChat(namespace, id, localReady)
       const cachedPromise = local.then(async (chat) => {
-        await ready?.()
+        await localReady?.()
         // Local hydration must not roll back a mutation, a newer request, or an account change.
         if (chat?.responses && !signal.aborted && query === client.getQueryCache().find({ queryKey: key, exact: true })
           && query?.state.dataUpdateCount === revision && !client.getQueryData(key)) {
           client.setQueryData(key, chat, { updatedAt: 0 })
         }
+        preparation?.onLocalReady(Boolean(chat?.responses))
         return chat
-      }).catch(() => undefined)
+      }).catch(() => { preparation?.onLocalReady(false); return undefined })
       try {
         const [incoming, persisted] = await Promise.all([mobileApi.chat(id, signal, ready), cachedPromise])
         await ready?.()

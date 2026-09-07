@@ -1,3 +1,5 @@
+import { chooseCachedChatOpening } from '../features/chat/cachedChatOpening';
+import { recordChatSelection } from '../features/chat/selectionTiming';
 import { prepareChatSelection } from '../data/prepareChat';
 import { createDrawerTransition } from '../features/chat/drawerTransition';
 import { protectTranscript } from '../data/transcriptResidency';
@@ -1608,7 +1610,10 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   const [drawerTransition] = useState(createDrawerTransition);
   const [openingChat, setOpeningChat] = useState<HistoryChatSummary | null>(null);
   const pendingChatSlide = useRef<(() => void) | null>(null);
+  const readyChatSlide = useRef<(() => void) | null>(null);
+  const cancelCacheDecision = useRef<(() => void) | null>(null);
   const chatPreparation = useRef<ReturnType<typeof prepareChatSelection> | null>(null);
+  const timedSelection = useRef<string | null>(null);
   const revealChatFrame = useRef<number | null>(null);
   const [wideSidebarVisible, setWideSidebarVisible] = useState(true);
   const [modelSheet, setModelSheet] = useState(false);
@@ -1726,6 +1731,9 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     if (!requestedChatId || !storedChats.some((chat) => chat.id === requestedChatId && chat.deletedAt === null)) return;
     drawerTransition.cancel();
     pendingChatSlide.current = null;
+    readyChatSlide.current = null;
+    cancelCacheDecision.current?.();
+    cancelCacheDecision.current = null;
     chatPreparation.current?.cancel();
     chatPreparation.current = null;
     setOpeningChat(null);
@@ -1754,6 +1762,9 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   const interruptDrawerTransition = useCallback(() => {
     drawerTransition.cancel();
     pendingChatSlide.current = null;
+    readyChatSlide.current = null;
+    cancelCacheDecision.current?.();
+    cancelCacheDecision.current = null;
     chatPreparation.current?.cancel();
     chatPreparation.current = null;
     setOpeningChat(null);
@@ -1762,6 +1773,9 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
 
   useLayoutEffect(() => {
     pendingChatSlide.current = null;
+    readyChatSlide.current = null;
+    cancelCacheDecision.current?.();
+    cancelCacheDecision.current = null;
     chatPreparation.current?.cancel();
     chatPreparation.current = null;
     setOpeningChat(null);
@@ -1772,6 +1786,9 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     return () => {
       drawerTransition.cancel();
       pendingChatSlide.current = null;
+      readyChatSlide.current = null;
+      cancelCacheDecision.current?.();
+      cancelCacheDecision.current = null;
       chatPreparation.current?.cancel();
       chatPreparation.current = null;
       if (revealChatFrame.current !== null) cancelAnimationFrame(revealChatFrame.current);
@@ -1781,11 +1798,17 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   const animatePanel = useCallback((open: boolean, velocity = 0, onFinished?: () => void) => {
     if (open || !onFinished) {
       pendingChatSlide.current = null;
+      readyChatSlide.current = null;
+      cancelCacheDecision.current?.();
+      cancelCacheDecision.current = null;
       chatPreparation.current?.cancel();
       chatPreparation.current = null;
       setOpeningChat(null);
     }
+    const timedChat = !open && onFinished ? timedSelection.current : null;
+    if (timedChat) recordChatSelection(timedChat, 'slideStart');
     const finish = drawerTransition.begin(() => {
+      if (timedChat) recordChatSelection(timedChat, 'slideEnd');
       setPanelOpen(open);
       setComposerFocusSuppressed(false);
       onFinished?.();
@@ -2067,40 +2090,87 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   }, [activeChatId, discardStoredChat, productionInstanceUrl, productionUserId, queryClient]);
 
   const selectChat = useCallback((chat: HistoryChatSummary) => {
+    timedSelection.current = chat.id;
+    const resident = usePrototypeStore.getState().chats.find((item) => item.id === chat.id)?.detailLoaded === true;
+    recordChatSelection(chat.id, 'tap', resident);
     drawerTransition.cancel();
+    cancelCacheDecision.current?.();
+    readyChatSlide.current = null;
     if (thinkingTimer.current) clearTimeout(thinkingTimer.current);
     thinkingTimer.current = null;
     setComposerFocusSuppressed(true);
     dismissComposer();
     chatPreparation.current?.cancel();
-    chatPreparation.current = productionUserId && idSchema.safeParse(chat.id).success
+    const preparation = productionUserId && idSchema.safeParse(chat.id).success
       ? prepareChatSelection(queryClient, cacheNamespace(productionInstanceUrl, productionUserId), chat.id, usePreferencesStore.getState().localChatLimit)
       : null;
-    // Hide only the message area before starting the slide. Keep the old
-    // transcript mounted until the spring finishes, preserving the chat chrome.
-    pendingChatSlide.current = () => animatePanel(false, 0, () => {
+    chatPreparation.current = preparation;
+    let cancelled = false;
+    let cancelDecision: (() => void) | undefined;
+    cancelCacheDecision.current = () => { cancelled = true; cancelDecision?.(); };
+    const selectedChat = () => {
       const session = useSessionStore.getState();
-      if (session.instanceUrl !== productionInstanceUrl || session.user?.id !== productionUserId) { chatPreparation.current?.cancel(); chatPreparation.current = null; setOpeningChat(null); return; }
-      const selected = usePrototypeStore.getState().chats.find((item) => item.id === chat.id && item.deletedAt === null);
-      if (!selected) { chatPreparation.current?.cancel(); chatPreparation.current = null; setOpeningChat(null); return; }
-      chatPreparation.current?.finish();
-      chatPreparation.current = null;
+      if (cancelled || session.instanceUrl !== productionInstanceUrl || session.user?.id !== productionUserId) return undefined;
+      return usePrototypeStore.getState().chats.find((item) => item.id === chat.id && item.deletedAt === null);
+    };
+    const activate = () => {
+      const selected = selectedChat();
+      if (!selected) { preparation?.cancel(); readyChatSlide.current = null; setOpeningChat(null); return; }
       abandonActiveTemporaryChat();
       composerFollowsDefaultModel.current = false;
+      recordChatSelection(selected.id, 'activate');
       setActiveChatId(selected.id);
       setSelectedModelId(selected.modelId);
       setAssistantStatus('idle');
       composerFocusRevision.current += 1;
       setComposerFocusRequest({ revision: composerFocusRevision.current, target: 'content' });
+    };
+    const finish = () => {
+      preparation?.finish();
+      if (chatPreparation.current === preparation) chatPreparation.current = null;
       finishExistingChatTransition();
-    });
+    };
+    const cached = () => {
+      if (cancelled) return;
+      // Mount the initial cached viewport before starting native movement.
+      // Server revalidation stays gated until that movement completes.
+      readyChatSlide.current = () => { if (!cancelled) animatePanel(false, 0, finish); };
+      activate();
+    };
+    const fallback = () => {
+      if (cancelled) return;
+      preparation?.pauseLocal();
+      animatePanel(false, 0, () => {
+        if (!selectedChat()) { preparation?.cancel(); setOpeningChat(null); return; }
+        finish();
+        activate();
+      });
+    };
+    if (resident && !reduceMotion && !persistentSidebar) {
+      // Reuse projected messages in the tap's own React commit.
+      pendingChatSlide.current = null;
+      preparation?.allowLocal();
+      cached();
+    } else {
+      pendingChatSlide.current = () => {
+        if (reduceMotion || persistentSidebar) { fallback(); return; }
+        preparation?.allowLocal();
+        cancelDecision = chooseCachedChatOpening(preparation?.localReady ?? Promise.resolve(false), cached, fallback);
+      };
+    }
     setOpeningChat({ ...chat });
-  }, [abandonActiveTemporaryChat, animatePanel, dismissComposer, drawerTransition, finishExistingChatTransition, productionInstanceUrl, productionUserId, queryClient]);
+  }, [abandonActiveTemporaryChat, animatePanel, dismissComposer, drawerTransition, finishExistingChatTransition, persistentSidebar, productionInstanceUrl, productionUserId, queryClient, reduceMotion]);
 
   useLayoutEffect(() => {
     const start = pendingChatSlide.current;
     pendingChatSlide.current = null;
     start?.();
+    // Removing the message placeholder commits before the cached chat slides in.
+    if (!openingChat) {
+      const ready = readyChatSlide.current;
+      readyChatSlide.current = null;
+      ready?.();
+    }
   }, [openingChat]);
 
   const revealSelectedChat = useCallback((chatId: string) => {
@@ -2109,6 +2179,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     // Native layout is ready. Reveal on the next frame, guarding replacement selections.
     revealChatFrame.current = requestAnimationFrame(() => {
       revealChatFrame.current = null;
+      recordChatSelection(chatId, 'contentReady');
       setOpeningChat((current) => current === openingChat ? null : current);
     });
   }, [activeChatId, openingChat]);

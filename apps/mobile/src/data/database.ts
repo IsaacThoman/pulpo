@@ -213,14 +213,24 @@ function searchableText(chat: ServerChat): string {
 
 async function cacheChatsInDatabase(database: SQLite.SQLiteDatabase, namespace: string, chats: ServerChat[]): Promise<void> {
   await database.withTransactionAsync(async () => {
+    // Account refreshes can contain thousands of unchanged summaries. Read their
+    // metadata in two batches instead of two native SQLite round trips per row.
+    const ids = chats.length > 1 ? JSON.stringify(chats.map((chat) => chat.id)) : undefined
+    const summaries = ids ? new Map((await database.getAllAsync<{ chat_id: string; payload: string }>(
+      'SELECT chat_id, payload FROM chat_cache WHERE namespace = ? AND chat_id IN (SELECT value FROM json_each(?))', namespace, ids,
+    )).map((row) => [row.chat_id, row])) : undefined
+    const titles = ids ? new Map((await database.getAllAsync<{ chat_id: string; title: string }>(
+      'SELECT chat_id, title FROM chat_fts WHERE namespace = ? AND chat_id IN (SELECT value FROM json_each(?))', namespace, ids,
+    )).map((row) => [row.chat_id, row])) : undefined
     for (const chat of chats) {
       if (chat.temporary) {
         await database.runAsync('DELETE FROM chat_cache WHERE namespace = ? AND chat_id = ?', namespace, chat.id)
         await database.runAsync('DELETE FROM chat_access WHERE namespace = ? AND chat_id = ?', namespace, chat.id)
         await database.runAsync('DELETE FROM chat_fts WHERE namespace = ? AND chat_id = ?', namespace, chat.id)
+        summaries?.delete(chat.id); titles?.delete(chat.id)
         continue
       }
-      const current = await database.getFirstAsync<{ payload: string }>(
+      const current = summaries ? summaries.get(chat.id) : await database.getFirstAsync<{ payload: string }>(
         'SELECT payload FROM chat_cache WHERE namespace = ? AND chat_id = ?', namespace, chat.id,
       )
       const summary = withoutCachedChatDetails(mergeCachedChat(current ? JSON.parse(current.payload) : null, chat))
@@ -230,6 +240,7 @@ async function cacheChatsInDatabase(database: SQLite.SQLiteDatabase, namespace: 
          ON CONFLICT(namespace, chat_id) DO UPDATE SET payload = excluded.payload, updated_at = excluded.updated_at`,
         namespace, chat.id, summaryPayload, Date.parse(summary.updatedAt) || Date.now(),
       )
+      summaries?.set(chat.id, { chat_id: chat.id, payload: summaryPayload })
       let body: string | undefined
       if (chat.responses !== undefined) {
         const detail = await database.getFirstAsync<{ payload: string }>(
@@ -256,10 +267,11 @@ async function cacheChatsInDatabase(database: SQLite.SQLiteDatabase, namespace: 
           }
         }
       }
-      const indexed = await database.getFirstAsync<{ title: string }>('SELECT title FROM chat_fts WHERE namespace = ? AND chat_id = ?', namespace, chat.id)
+      const indexed = titles ? titles.get(chat.id) : await database.getFirstAsync<{ title: string }>('SELECT title FROM chat_fts WHERE namespace = ? AND chat_id = ?', namespace, chat.id)
       if (!indexed) await database.runAsync('INSERT INTO chat_fts(namespace, chat_id, title, body) VALUES (?, ?, ?, ?)', namespace, chat.id, summary.title, body ?? '')
       else if (body !== undefined) await database.runAsync('UPDATE chat_fts SET title = ?, body = ? WHERE namespace = ? AND chat_id = ?', summary.title, body, namespace, chat.id)
       else if (indexed.title !== summary.title) await database.runAsync('UPDATE chat_fts SET title = ? WHERE namespace = ? AND chat_id = ?', summary.title, namespace, chat.id)
+      titles?.set(chat.id, { chat_id: chat.id, title: summary.title })
     }
   })
 }

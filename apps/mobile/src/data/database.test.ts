@@ -138,6 +138,22 @@ describe('split transcript cache', () => {
     expect((await read)?.responses).toEqual([])
   })
 
+  it('batches unchanged summary metadata reads without touching transcript bodies or search text', async () => {
+    const api = await import('./database')
+    const documents = Array.from({ length: 100 }, (_, i) => chat(String(i)))
+    await api.cacheChats('n', documents)
+    const summaries = await api.cachedChatSummaries('n')
+    const before = statements.length
+    await api.cacheChats('n', summaries)
+    const reads = statements.slice(before).filter((sql) => sql.startsWith('SELECT'))
+    expect(reads).toHaveLength(2)
+    expect(reads.every((sql) => sql.includes('json_each'))).toBe(true)
+    expect(statements.slice(before).some((sql) => /chat_details|INSERT|UPDATE/.test(sql))).toBe(false)
+    await api.cacheChats('n', [{ ...summaries[0]!, title: 'first' }, { ...summaries[0]!, title: 'latest' }])
+    expect((await api.cachedChat('n', summaries[0]!.id))?.title).toBe('latest')
+    expect(db.prepare('SELECT title FROM chat_fts WHERE namespace = ? AND chat_id = ?').get('n', summaries[0]!.id)).toEqual({ title: 'latest' })
+  })
+
   it('retains exact byte boundaries and evicts the oldest document beyond the aggregate quota', async () => {
     const api = await import('./database')
     const limit = 5 * 1024 * 1024

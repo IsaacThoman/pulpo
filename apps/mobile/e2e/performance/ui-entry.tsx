@@ -1,3 +1,5 @@
+import { runOnJS, runOnUI, useFrameCallback, useSharedValue } from 'react-native-reanimated'
+import { observeChatSelection } from '../../src/features/chat/selectionTiming'
 // Synthetic Release UI smoke fixture. Never imported by the normal application.
 import React, { useEffect, useState } from 'react'
 import { registerRootComponent } from 'expo'
@@ -14,6 +16,19 @@ import { activeChatSubscription, useRealtimeStore } from '../../src/providers/re
 import { File, Paths } from 'expo-file-system'
 import type { MobileModel, User, ServerChat } from '../../src/types'
 import { fixture } from './fixture'
+
+const selectionSamples: unknown[] = []
+let recordFrames: ((stage: string, chatId: string) => void) | undefined
+let saveSelectionTimer: ReturnType<typeof setTimeout> | undefined
+observeChatSelection((sample) => {
+  selectionSamples.push(sample)
+  recordFrames?.(sample.stage, sample.chatId)
+  if (sample.stage === 'slideStart' && saveSelectionTimer) clearTimeout(saveSelectionTimer)
+  if (sample.stage === 'slideEnd' || sample.stage === 'contentReady') {
+    if (saveSelectionTimer) clearTimeout(saveSelectionTimer)
+    saveSelectionTimer = setTimeout(() => new File(Paths.document, 'ui-selection-timings.json').write(JSON.stringify(selectionSamples)), 1500)
+  }
+})
 
 const origin = 'https://127.0.0.1:1'
 const user = { id: '00000000-0000-4000-8000-000000000001', name: 'Performance fixture', email: 'fixture@example.invalid', role: 'user', stateRevision: 0 } as User
@@ -78,6 +93,31 @@ async function seed() {
   await setValue(namespace, 'model-catalog', { data: [model], agentAvailable: false })
 }
 export default function FixtureApp() {
+  const frameGaps = useSharedValue<number[]>([])
+  const frames = useFrameCallback((frame) => {
+    if (frame.timeSincePreviousFrame !== null) frameGaps.modify((gaps) => {
+      'worklet'
+      if (gaps.length < 180) gaps.push(frame.timeSincePreviousFrame!)
+      return gaps
+    })
+  }, false)
+  useEffect(() => {
+    if (process.env.EXPO_PUBLIC_PERF_SELECTION_FRAMES !== '1') return
+    const reports: Array<{ chatId: string; gaps: number[] }> = []
+    let save: ReturnType<typeof setTimeout> | undefined
+    const collect = (chatId: string, gaps: number[]) => {
+      reports.push({ chatId, gaps })
+      save = setTimeout(() => new File(Paths.document, 'ui-selection-frames.json').write(JSON.stringify(reports)), 1500)
+    }
+    recordFrames = (stage, chatId) => {
+      if (stage === 'slideStart') { if (save) clearTimeout(save); frameGaps.value = []; frames.setActive(true) }
+      if (stage === 'slideEnd') {
+        frames.setActive(false)
+        runOnUI(() => { 'worklet'; runOnJS(collect)(chatId, frameGaps.value) })()
+      }
+    }
+    return () => { frames.setActive(false); recordFrames = undefined; if (save) clearTimeout(save) }
+  }, [frameGaps, frames])
   const [ready, setReady] = useState(false)
   const [streamStatus, setStreamStatus] = useState('')
   useEffect(() => { void seed().then(() => setReady(true)) }, [])

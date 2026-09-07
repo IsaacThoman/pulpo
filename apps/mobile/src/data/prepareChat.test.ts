@@ -44,6 +44,45 @@ it('reuses resident data without reading SQLite or replacing it during the slide
   c.clear()
 })
 
+it('can publish cached detail for the initial viewport while holding network revalidation', async () => {
+  const c = client()
+  const selection = prepareChatSelection(c, 'n', 'a', 50)
+  selection.allowLocal()
+  await expect(selection.localReady).resolves.toBe(true)
+  expect(c.getQueryData(queryKeys.chat('n', 'a'))).toEqual(local)
+  expect(mocks.write).not.toHaveBeenCalled()
+  selection.finish()
+  await vi.waitFor(() => expect(c.getQueryData(queryKeys.chat('n', 'a'))).toEqual(server))
+  c.clear()
+})
+
+it('holds a slow local read again once the placeholder starts sliding', async () => {
+  let diskReady!: () => void
+  const disk = new Promise<void>((resolve) => { diskReady = resolve })
+  mocks.disk.mockImplementation(async (_n, _id, ready) => { await disk; await ready?.(); return local })
+  const c = client()
+  const selection = prepareChatSelection(c, 'n', 'a', 50)
+  selection.allowLocal()
+  selection.pauseLocal()
+  diskReady()
+  await Promise.resolve(); await Promise.resolve()
+  expect(c.getQueryData(queryKeys.chat('n', 'a'))).toBeUndefined()
+  selection.finish()
+  await vi.waitFor(() => expect(c.getQueryData(queryKeys.chat('n', 'a'))).toEqual(server))
+  c.clear()
+})
+
+it('reports a broken cache as unavailable instead of waiting forever for its first viewport', async () => {
+  mocks.disk.mockRejectedValue(new Error('invalid document'))
+  const c = client()
+  const selection = prepareChatSelection(c, 'n', 'a', 50)
+  selection.allowLocal()
+  await expect(selection.localReady).resolves.toBe(false)
+  selection.finish()
+  await vi.waitFor(() => expect(c.getQueryData(queryKeys.chat('n', 'a'))).toEqual(server))
+  c.clear()
+})
+
 it('cancels abandoned work without late data or writes and permits a subsequent selection', async () => {
   const c = client()
   const abandoned = prepareChatSelection(c, 'old', 'a', 50)
