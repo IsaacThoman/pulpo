@@ -5160,23 +5160,31 @@ function ChatView({
                   {!canUseAgent ? 'Choose an Agent-capable model or remove non-image files.' : 'Turn on Agent mode to use non-image files.'}
                 </Text>
               ) : null}
-              <TextInput
-                ref={composerInputRef}
-                accessibilityLabel="Message"
-                disableFullscreenUI
-                editable={!shelfBusy && !composerFocusSuppressed && !(messageEdit && sending)}
-                maxFontSizeMultiplier={1.6}
-                multiline
-                maxLength={1_000_000}
-                onFocus={() => { setQueueCollapsed(true); setShelfCollapsed(true); }}
-                onBlur={() => { setQueueCollapsed(false); setShelfCollapsed(false); }}
-                onChangeText={(value) => { inputRef.current = value; onChangeInput(value); }}
-                onSelectionChange={(event) => { inputSelectionRef.current = event.nativeEvent.selection; }}
-                placeholder={attachments.length > 0 ? 'Add a caption…' : messageEdit ? 'Edit message…' : temporary ? 'Temporary message…' : 'Message…'}
-                placeholderTextColor={COLORS.muted}
-                style={styles.input}
-                value={input}
-              />
+              <View style={styles.composerInputRow}>
+                <TextInput
+                  ref={composerInputRef}
+                  accessibilityLabel="Message"
+                  disableFullscreenUI
+                  editable={!shelfBusy && !composerFocusSuppressed && !(messageEdit && sending)}
+                  maxFontSizeMultiplier={1.6}
+                  multiline
+                  maxLength={1_000_000}
+                  onFocus={() => { setQueueCollapsed(true); setShelfCollapsed(true); }}
+                  onBlur={() => { setQueueCollapsed(false); setShelfCollapsed(false); }}
+                  onChangeText={(value) => { inputRef.current = value; onChangeInput(value); }}
+                  onSelectionChange={(event) => { inputSelectionRef.current = event.nativeEvent.selection; }}
+                  placeholder={attachments.length > 0 ? 'Add a caption…' : messageEdit ? 'Edit message…' : temporary ? 'Temporary message…' : 'Message…'}
+                  placeholderTextColor={COLORS.muted}
+                  style={[styles.input, styles.flex]}
+                  value={input}
+                />
+                {showShelf && (Platform.OS === 'ios' ? (
+                  <NativeComposerIconButton label="Shelve draft" systemImage="archivebox"
+                    disabled={shelfBusy || sending || (!input.trim() && !attachments.length)} onPress={() => { void transferShelf(); }} />
+                ) : (
+                  <MaterialIconButton label="Shelve draft" icon="archivebox" disabled={shelfBusy || sending || (!input.trim() && !attachments.length)} onPress={() => { void transferShelf(); }} />
+                ))}
+              </View>
               <View style={styles.composerBar}>
                 {Platform.OS === 'ios' ? (
                   <NativeAttachmentMenu onTakePhoto={takePhoto} onPickFiles={pickFiles} onPickPhotos={pickPhotos} />
@@ -5248,8 +5256,6 @@ function ChatView({
                         </SwiftUIRNHostView>
                       </SwiftUIButton>
                     </SwiftUIHost>
-                    {showShelf && <NativeComposerIconButton label="Shelve draft" systemImage="archivebox"
-                      disabled={shelfBusy || sending || (!input.trim() && !attachments.length)} onPress={() => { void transferShelf(); }} />}
                     <NativeComposerIconButton
                       disabled={shelfBusy || composerAction === 'submit' && !canSend}
                       label={composerAction === 'stop' ? 'Stop generating' : messageEdit ? queueEditRef.current ? 'Save queued message' : 'Save and resend message' : 'Send message'}
@@ -5261,7 +5267,6 @@ function ChatView({
                 ) : (
                   <>
                     <MaterialIconButton label={activeAgentEnabled ? 'Turn off Agent mode' : 'Turn on Agent mode'} icon="bot" color={activeAgentEnabled ? nativeAgentTint : undefined} selected={activeAgentEnabled} disabled={!canUseAgent} onPress={toggleAgent} />
-                    {showShelf && <MaterialIconButton label="Shelve draft" icon="archivebox" disabled={shelfBusy || sending || (!input.trim() && !attachments.length)} onPress={() => { void transferShelf(); }} />}
                     <MaterialIconButton label={composerAction === 'stop' ? 'Stop generating' : messageEdit ? queueEditRef.current ? 'Save queued message' : 'Save and resend message' : 'Send message'} icon={composerAction === 'stop' ? 'stop.fill' : 'arrow.up'} prominent disabled={shelfBusy || composerAction === 'submit' && !canSend} onPress={() => composerAction === 'stop' ? onStop() : submitMessage()} />
                   </>
                 )}
@@ -5983,6 +5988,7 @@ function createChatStyles(COLORS: ChatColors) { return StyleSheet.create({
   attachmentRetryOverlay: { position: 'absolute', left: 6, right: 6, bottom: 4, minHeight: 24, borderRadius: 9, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, backgroundColor: 'rgba(196,43,37,0.92)', paddingHorizontal: 7 },
   attachmentRetryText: { color: '#ffffff', fontSize: 10.5, fontWeight: '700' },
   input: { minHeight: 30, maxHeight: 120, color: COLORS.text, fontSize: 16, lineHeight: 22, paddingHorizontal: 5, paddingTop: 0 },
+  composerInputRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 1 },
   composerBar: { flexDirection: 'row', alignItems: 'center', marginTop: 'auto', gap: 1 },
   composerCircle: { width: 44, height: 44, borderRadius: 22, backgroundColor: COLORS.fillStrong, alignItems: 'center', justifyContent: 'center' },
   nativeComposerCircleHost: { width: 44, height: 44 },
