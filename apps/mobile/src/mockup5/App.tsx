@@ -1317,14 +1317,12 @@ function AndroidTemporaryChatHeaderControl(props: TemporaryChatHeaderControlProp
         label={props.leadingAction === 'save' ? props.saving ? 'Saving chat' : 'Save chat' : props.expirationEnabled ? 'Disable automatic expiration' : 'Enable automatic expiration'}
         disabled={!visible || (props.leadingAction === 'save' && (props.saving || props.saveDisabled))}
         color={props.leadingAction === 'expiration' && props.expirationEnabled ? '#14B8A6' : undefined}
-        selected={props.leadingAction === 'expiration' && props.expirationEnabled}
         onPress={props.leadingAction === 'save' ? props.onSave : props.onToggleExpiration} />
     </Reanimated.View>
     <MaterialIconButton icon={props.trailingAction === 'ghost' ? 'ghost' : 'square.and.pencil'}
       label={props.trailingAction === 'ghost' ? props.active ? 'Disable temporary chat' : 'Enable temporary chat' : props.active ? 'New temporary chat' : 'New chat'}
-      color={props.active ? temporaryColors.onControl : undefined}
-      containerColor={props.active ? temporaryColors.control : undefined}
-      selected={props.active} onPress={props.trailingAction === 'ghost' ? props.onToggleTemporary : props.onNewChat} />
+      color={props.active ? temporaryColors.accent : undefined}
+      onPress={props.trailingAction === 'ghost' ? props.onToggleTemporary : props.onNewChat} />
   </View>;
 }
 
@@ -5263,7 +5261,7 @@ function ChatView({
                 ) : (
                   <>
                     {showShelf && Boolean(input.trim() || attachments.length) && <MaterialIconButton label="Shelve draft" icon="archivebox" disabled={shelfBusy || sending} onPress={() => { void transferShelf(); }} />}
-                    <MaterialIconButton label={activeAgentEnabled ? 'Turn off Agent mode' : 'Turn on Agent mode'} icon="bot" color={activeAgentEnabled ? nativeAgentTint : undefined} selected={activeAgentEnabled} disabled={!canUseAgent} onPress={toggleAgent} />
+                    <MaterialIconButton label={activeAgentEnabled ? 'Turn off Agent mode' : 'Turn on Agent mode'} icon="bot" color={activeAgentEnabled ? nativeAgentTint : undefined} disabled={!canUseAgent} onPress={toggleAgent} />
                     <MaterialIconButton label={composerAction === 'stop' ? 'Stop generating' : messageEdit ? queueEditRef.current ? 'Save queued message' : 'Save and resend message' : 'Send message'} icon={composerAction === 'stop' ? 'stop.fill' : 'arrow.up'} prominent disabled={shelfBusy || composerAction === 'submit' && !canSend} onPress={() => composerAction === 'stop' ? onStop() : submitMessage()} />
                   </>
                 )}
