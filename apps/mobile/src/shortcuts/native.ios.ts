@@ -6,6 +6,8 @@ interface ShortcutsModule {
   getEnabled(): boolean
   setEnabled(enabled: boolean): void
   getScope(): string | null
+  takePendingNavigation?(): string[]
+  addListener?(event: 'navigation', listener: () => void): { remove(): void }
 }
 const native = requireOptionalNativeModule<ShortcutsModule>('PulpoShortcuts')
 export const shortcutsAvailable = native !== null
@@ -29,3 +31,12 @@ export function clearShortcutsSession(): void {
 export function shortcutsEnabled(): boolean { return native?.getEnabled() ?? false }
 export function setShortcutsEnabled(enabled: boolean): void { native?.setEnabled(enabled) }
 export function shortcutsScope(): string | null { return native?.getScope() ?? null }
+
+export function listenForNativeShortcutLinks(receive: (url: string) => void): () => void {
+  if (!native?.takePendingNavigation || !native.addListener) return () => undefined
+  const drain = () => { for (const url of native.takePendingNavigation!()) receive(url) }
+  // Subscribe before draining: requests during bridge startup cannot fall into a gap.
+  const subscription = native.addListener('navigation', drain)
+  drain()
+  return () => subscription.remove()
+}

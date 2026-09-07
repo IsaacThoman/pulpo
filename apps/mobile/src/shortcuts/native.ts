@@ -13,3 +13,5 @@ export function clearShortcutsSession(): void {}
 export function shortcutsEnabled(): boolean { return false }
 export function setShortcutsEnabled(_enabled: boolean): void {}
 export function shortcutsScope(): string | null { return null }
+
+export function listenForNativeShortcutLinks(_receive: (url: string) => void): () => void { return () => undefined }

@@ -2061,8 +2061,8 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     setComposerFocusRequest({ revision: composerFocusRevision.current, target: 'composer' });
   }, [activeChatId, animatePanel, navigation, newChat, pendingImports, productionInstanceUrl, productionScopeReady, productionUserId]);
   const shortcutDestination = useShortcutInbox((state) => state.pending[0]);
-  const shortcutActions = useRef({ animatePanel, dismissComposer, navigation, newChat, abandonActiveTemporaryChat });
-  shortcutActions.current = { animatePanel, dismissComposer, navigation, newChat, abandonActiveTemporaryChat };
+  const shortcutActions = useRef({ animatePanel, dismissComposer, finishExistingChatTransition, navigation, newChat, abandonActiveTemporaryChat });
+  shortcutActions.current = { animatePanel, dismissComposer, finishExistingChatTransition, navigation, newChat, abandonActiveTemporaryChat };
   useEffect(() => {
     const destination = shortcutDestination;
     if (!destination || !productionScopeReady) return;
@@ -2086,14 +2086,17 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
           composerFollowsDefaultModel.current = false;
           setComposerFocusSuppressed(true);
           shortcutActions.current.dismissComposer();
+          composerFocusRevision.current += 1;
+          setComposerFocusRequest({ revision: composerFocusRevision.current, target: 'content' });
+          shortcutActions.current.animatePanel(false, 0, shortcutActions.current.finishExistingChatTransition);
         } else {
           shortcutActions.current.navigation.popTo('Chat', { chatId: undefined });
           shortcutActions.current.newChat(destination.action === 'temporary-chat');
           setComposerFocusSuppressed(false);
           composerFocusRevision.current += 1;
           setComposerFocusRequest({ revision: composerFocusRevision.current, target: 'composer' });
+          shortcutActions.current.animatePanel(false);
         }
-        shortcutActions.current.animatePanel(false);
       } catch (error) {
         if (!disposed) Alert.alert('Shortcut unavailable', error instanceof Error ? error.message : 'Could not open this chat.');
       } finally {

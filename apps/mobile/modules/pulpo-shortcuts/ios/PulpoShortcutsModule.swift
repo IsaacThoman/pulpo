@@ -1,8 +1,20 @@
 import ExpoModulesCore
+import Foundation
 
 public final class PulpoShortcutsModule: Module {
+  private var navigationObserver: NSObjectProtocol?
   public func definition() -> ModuleDefinition {
     Name("PulpoShortcuts")
+    Events("navigation")
+    OnCreate { [weak self] in
+      self?.navigationObserver = NotificationCenter.default.addObserver(forName: ShortcutNavigationInbox.changed, object: nil, queue: .main) { [weak self] _ in
+        self?.sendEvent("navigation", [:])
+      }
+    }
+    OnDestroy { [weak self] in
+      if let observer = self?.navigationObserver { NotificationCenter.default.removeObserver(observer) }
+    }
+    Function("takePendingNavigation") { ShortcutNavigationInbox.takePending() }
     Function("setSession") { (origin: String?, userID: String?, token: String?) in
       do {
         if let origin, let userID, let token {

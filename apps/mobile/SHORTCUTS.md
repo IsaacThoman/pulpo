@@ -81,6 +81,11 @@ Only the disabled/unavailable flags use UserDefaults.
 The config plugin copies `intents/PulpoAppIntents.swift` into the generated app's
 main target so Xcode extracts App Intents metadata and Siri phrases. Do not move
 those definitions into an unreferenced pod or commit the generated `ios/` tree.
+Navigation actions use iOS 26 foreground execution and a bounded, in-process
+native inbox to deliver scoped navigation requests, including before JavaScript
+starts. The bridge subscribes before draining that inbox; request IDs deduplicate
+delivery. External navigation-only links use the same parser. `OpenURLIntent`
+cannot launch the custom `pulpo` scheme.
 See Apple's [App Intents documentation](https://developer.apple.com/documentation/appintents/appintent)
 and [App Shortcuts documentation](https://developer.apple.com/documentation/appintents/app-shortcuts).
 
@@ -107,3 +112,12 @@ fixture, and verify all eight actions under Shortcuts → Pulpo. Exercise an Ask
 result, Start Chat → Open Chat, Find → Choose → Continue, temporary questions,
 long-running responses, disabled access, sign-out, and account-scoped links.
 Check new/open chat navigation both with the app running and after termination.
+
+Simulator builds need Xcode's simulated Keychain entitlements and a development
+signature carrying the app's team identity to execute App Shortcuts. An unsigned
+build cannot save the session; an ad-hoc build can display the catalog but iOS
+may refuse to resolve its App Shortcuts provider. If Xcode forces ad-hoc signing
+for the simulator, re-sign the app and its debug/preview dylibs using your Apple
+Development identity, retaining Xcode's embedded simulated entitlements. Do not
+add device entitlements to the simulator's code signature. Physical-device
+builds use the normal development signing and provisioning flow.

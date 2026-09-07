@@ -8,6 +8,27 @@ public struct ShortcutFailure: LocalizedError {
   public var errorDescription: String? { message }
 }
 
+// Foreground intents may execute before React Native installs its URL listener.
+// Retain only navigation URLs in this process until the bridge consumes them.
+public enum ShortcutNavigationInbox {
+  public static let changed = Notification.Name("PulpoShortcutNavigationChanged")
+  private static let lock = NSLock()
+  private static var pending: [String] = []
+  public static func enqueue(_ url: String) {
+    lock.lock()
+    if !pending.contains(url) { pending.append(url) }
+    pending = Array(pending.suffix(16))
+    lock.unlock()
+    NotificationCenter.default.post(name: changed, object: nil)
+  }
+  public static func takePending() -> [String] {
+    lock.lock(); defer { lock.unlock() }
+    let urls = pending
+    pending.removeAll()
+    return urls
+  }
+}
+
 public struct ShortcutSession: Codable, Equatable, Sendable {
   public let origin: String
   public let userID: String

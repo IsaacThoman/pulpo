@@ -1,6 +1,6 @@
 import AppIntents
 import Foundation
-import PulpoShortcuts
+internal import PulpoShortcuts
 
 struct PulpoModelEntity: AppEntity {
   static let typeDisplayRepresentation = TypeDisplayRepresentation(name: "Pulpo Model")
@@ -133,31 +133,35 @@ struct GetPulpoModelsIntent: AppIntent {
 }
 
 struct OpenPulpoChatIntent: AppIntent {
+  static let supportedModes: IntentModes = .foreground(.immediate)
   static let title: LocalizedStringResource = "Open Chat in Pulpo"
   static let description = IntentDescription("Open a saved chat in Pulpo without sending a message.", categoryName: "Open")
   static let authenticationPolicy: IntentAuthenticationPolicy = .requiresAuthentication
   @Parameter(title: "Chat") var chat: PulpoChatEntity
   static var parameterSummary: some ParameterSummary { Summary("Open \(\.$chat)") }
-  func perform() async throws -> some IntentResult & OpensIntent {
+  @MainActor func perform() async throws -> some IntentResult {
     let api = try ShortcutsAPI.current()
     let selected = try await api.chat(chat.id)
     var url = URLComponents(string: "pulpo://shortcuts")!
     url.queryItems = [URLQueryItem(name: "action", value: "open-chat"), URLQueryItem(name: "scope", value: api.session.scope), URLQueryItem(name: "chatId", value: selected.id), URLQueryItem(name: "requestId", value: UUID().uuidString)]
-    return .result(opensIntent: OpenURLIntent(url.url!))
+    ShortcutNavigationInbox.enqueue(url.url!.absoluteString)
+    return .result()
   }
 }
 
 struct NewPulpoChatIntent: AppIntent {
+  static let supportedModes: IntentModes = .foreground(.immediate)
   static let title: LocalizedStringResource = "New Chat in Pulpo"
   static let description = IntentDescription("Open the new-chat composer. Existing drafts are preserved. Nothing is sent until you tap Send.", categoryName: "Open")
   static let authenticationPolicy: IntentAuthenticationPolicy = .requiresAuthentication
   @Parameter(title: "Temporary Chat", default: false) var temporary: Bool
   static var parameterSummary: some ParameterSummary { Summary("Open a new Pulpo chat") { \.$temporary } }
-  func perform() async throws -> some IntentResult & OpensIntent {
+  @MainActor func perform() async throws -> some IntentResult {
     let session = try ShortcutSessionStore.load()
     var url = URLComponents(string: "pulpo://shortcuts")!
     url.queryItems = [URLQueryItem(name: "action", value: temporary ? "temporary-chat" : "new-chat"), URLQueryItem(name: "scope", value: session.scope), URLQueryItem(name: "requestId", value: UUID().uuidString)]
-    return .result(opensIntent: OpenURLIntent(url.url!))
+    ShortcutNavigationInbox.enqueue(url.url!.absoluteString)
+    return .result()
   }
 }
 

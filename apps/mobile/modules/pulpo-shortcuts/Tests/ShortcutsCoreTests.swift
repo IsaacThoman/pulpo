@@ -17,6 +17,16 @@ private final class StubProtocol: URLProtocol {
 }
 
 final class ShortcutsCoreTests: XCTestCase {
+  func testNavigationRetainsEarlyRequestsAndDrainsOnce() {
+    _ = ShortcutNavigationInbox.takePending()
+    for n in 0..<20 { ShortcutNavigationInbox.enqueue("pulpo://shortcuts?requestId=\(n)") }
+    ShortcutNavigationInbox.enqueue("pulpo://shortcuts?requestId=19")
+    let pending = ShortcutNavigationInbox.takePending()
+    XCTAssertEqual(pending.count, 16)
+    XCTAssertEqual(pending.first, "pulpo://shortcuts?requestId=4")
+    XCTAssertEqual(pending.last, "pulpo://shortcuts?requestId=19")
+    XCTAssertTrue(ShortcutNavigationInbox.takePending().isEmpty)
+  }
   let model = "provider/model:version"
   let chat = "00000000-0000-4000-8000-000000000002"
   let response = "00000000-0000-4000-8000-000000000003"

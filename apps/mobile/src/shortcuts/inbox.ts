@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { listenForNativeShortcutLinks } from './native'
 import { parseShortcutURL, type ShortcutDestination } from './links'
 
 interface ShortcutInbox {
@@ -31,6 +32,7 @@ export function listenForShortcutLinks(linking: {
   let receivedWarmLink = false
   const receive = (url: string) => { if (active) useShortcutInbox.getState().receive(url) }
   const listener = linking.addEventListener('url', ({ url }) => { receivedWarmLink = true; receive(url) })
+  const stopNative = listenForNativeShortcutLinks((url) => { receivedWarmLink = true; receive(url) })
   void linking.getInitialURL().then((url) => { if (url && !receivedWarmLink) receive(url) }).catch(() => undefined)
-  return () => { active = false; listener.remove() }
+  return () => { active = false; listener.remove(); stopNative() }
 }
