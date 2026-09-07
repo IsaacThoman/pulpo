@@ -2,7 +2,7 @@
 import { act, createElement, useState } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ComposerSync } from '@pulpo/client-core'
+import { ComposerSync, localComposerDraftId } from '@pulpo/client-core'
 import { emptyComposerState, type ComposerAck, type ComposerSnapshot, type ComposerState, type ComposerWrite } from '@pulpo/contracts'
 
 const clients = vi.hoisted(() => ({ mobile: null as ComposerSync | null, web: null as ComposerSync | null }))
@@ -52,7 +52,7 @@ async function fixture() {
   let web!: ComposerState
   function Mobile() {
     const [state, setState] = useState(initial)
-    const controls = useMobileSync('account', draftId, state, true, false, setState)
+    const controls = useMobileSync('account', localComposerDraftId(draftId, state.temporary), state, true, false, setState)
     mobile = { state, setState, skipNextEdit: controls.skipNextEdit }
     return null
   }
@@ -110,4 +110,26 @@ describe('queued submission with a second composer client regression', () => {
     expect(transport.write).not.toHaveBeenCalled()
     expect(f.mobile().state.content).toBe('')
   })
+})
+
+
+it('hands the mobile composer to temporary mode and back without hydration replay', async () => {
+  const f = await fixture()
+  await act(async () => {
+    f.mobile().setState({ ...f.mobile().state, temporary: true })
+    await clients.mobile!.takeTemporary(draftId)
+  })
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
+  expect(f.mobile().state.content).toBe(f.initial.content)
+  expect(f.web().content).toBe('')
+  const privateState = { ...f.mobile().state, content: 'local temporary edit', autoExpire: true, agentMode: false }
+  await act(async () => { f.mobile().setState(privateState) })
+  expect(f.web().content).toBe('')
+  await act(async () => {
+    await clients.mobile!.returnFromTemporary(draftId, privateState)
+    f.mobile().setState({ ...privateState, temporary: false })
+  })
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
+  expect(f.mobile().state).toEqual({ ...privateState, temporary: false })
+  expect(f.web()).toEqual({ ...privateState, temporary: false })
 })

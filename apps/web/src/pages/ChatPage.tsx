@@ -161,6 +161,7 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
   const routeModelId = params.get('model')
   const navigationState = location.state as NewChatLocationState | null
   const carriedModelId = navigationState?.selectedModelId
+  const temporaryComposerRef = useRef<{ toggle: () => Promise<void> } | null>(null)
   const [temporary, setTemporary] = useState(false)
   const [savingTemporary, setSavingTemporary] = useState(false)
   const [temporaryError, setTemporaryError] = useState<string | null>(null)
@@ -300,7 +301,8 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
   const handleTemporaryControl = async () => {
     setTemporaryError(null)
     if (!chat) {
-      setTemporary((value) => !value)
+      try { await temporaryComposerRef.current?.toggle() }
+      catch (error) { setTemporaryError(error instanceof Error ? error.message : t('chat.temporarySaveError')) }
       return
     }
     if (!chat.temporary || chat.expired || savingTemporary) return
@@ -487,7 +489,7 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
               chatWidth === 'narrow' ? 'max-w-5xl' : 'max-w-[min(100%,90rem)]'
             )}
           >
-            <Composer syncEnabled={!adminMode} onSyncControls={applyComposerControls} key={temporaryMode ? "temporary:new" : "new"} chatId={null} modelId={modelId} temporary={temporaryMode} autoExpire={effectiveNewChatAutoExpire} />
+            <Composer syncEnabled={!adminMode} onSyncControls={applyComposerControls} key="new" temporaryControlRef={temporaryComposerRef} onTemporaryChange={setTemporary} chatId={null} modelId={modelId} temporary={temporaryMode} autoExpire={effectiveNewChatAutoExpire} />
           </div>
         </>
       ) : (

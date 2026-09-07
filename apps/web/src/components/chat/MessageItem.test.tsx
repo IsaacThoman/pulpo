@@ -655,21 +655,49 @@ describe('initial server receipt timing', () => {
     expect(markup).not.toContain('Worked for 3 seconds')
   })
 
-  it.each([true, false])('respects reasoning visibility %s for a compact wait label', async (showReasoning) => {
+  it.each([true, false])('hides timing-only labels with reasoning visibility %s', async (showReasoning) => {
     useSettings.setState({ showReasoning })
     const { MessageItem } = await import('./MessageItem')
     const { container } = render(<MessageItem chat={chat} activeModelId="model-1" streaming={false}
       message={assistant({ content: 'Reply', initialResponseDurationMs: 10_000 })} />)
-    expect(container.textContent?.includes('Thought for 10 seconds')).toBe(showReasoning)
+    expect(container.textContent).not.toContain('Thought')
     expect(container.textContent).toContain('Reply')
   })
 
-  it('retains errors alongside the initial wait when no reply was emitted', async () => {
+  it('retains errors without inventing activity when no reply was emitted', async () => {
     const { MessageItem } = await import('./MessageItem')
     const markup = renderToStaticMarkup(<MessageItem chat={chat} activeModelId="model-1" streaming={false}
       message={assistant({ error: 'Generation failed', initialResponseDurationMs: 8_000 })} />)
-    expect(markup).toContain('Thought for 8 seconds')
+    expect(markup).not.toContain('Thought')
     expect(markup).toContain('Generation failed')
+  })
+
+  it.each([false, true])('hides timing for empty reasoning output when streaming is %s', async (streaming) => {
+    const { MessageItem } = await import('./MessageItem')
+    const markup = renderToStaticMarkup(<MessageItem chat={chat} activeModelId="model-1" streaming={streaming}
+      message={assistant({
+        done: !streaming, initialResponseDurationMs: 10_000,
+        outputItems: [
+          { type: 'reasoning', status: 'completed', summary: [] },
+          { type: 'message', content: [{ type: 'output_text', text: 'Reply' }] },
+        ],
+      })} />)
+    expect(markup).not.toContain('Thought')
+    expect(markup).toContain('Reply')
+  })
+
+  it('keeps the full initial wait for actual reasoning', async () => {
+    const { MessageItem } = await import('./MessageItem')
+    const markup = renderToStaticMarkup(<MessageItem chat={chat} activeModelId="model-1" streaming={false}
+      message={assistant({
+        initialResponseDurationMs: 10_000,
+        outputItems: [
+          { type: 'reasoning', status: 'completed', summary: [{ text: 'Plan' }], durationMs: 2_000 },
+          { type: 'message', content: [{ type: 'output_text', text: 'Reply' }] },
+        ],
+      })} />)
+    expect(markup).toContain('Thought for 10 seconds')
+    expect(markup).toContain('Reply')
   })
 })
 

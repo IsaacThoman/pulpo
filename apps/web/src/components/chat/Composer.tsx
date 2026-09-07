@@ -4,8 +4,9 @@ import { ComposerTray } from './ComposerTray'
 import { webShelf, shelfDraftAttachments } from '@/lib/local-first/shelf'
 import type { ShelfAttachment } from '@pulpo/client-core'
 import { useComposerSync } from './use-composer-sync'
+import { webComposerSync } from '@/lib/local-first/composer-sync'
 import type { ComposerState } from '@pulpo/contracts'
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type DragEvent as ReactDragEvent } from 'react'
+import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, useSyncExternalStore, type Ref, type DragEvent as ReactDragEvent } from 'react'
 import { useTranslation } from '@/i18n/useAppTranslation'
 import { useNavigate } from 'react-router-dom'
 import {
@@ -123,6 +124,8 @@ export function Composer({
   messageEdit = null,
   onMessageEditComplete,
   onEditStateChange,
+  temporaryControlRef,
+  onTemporaryChange,
 }: {
   chatId: string | null
   modelId: string
@@ -134,6 +137,8 @@ export function Composer({
   messageEdit?: ComposerMessageEdit | null
   onMessageEditComplete?: (result: 'saved' | 'cancelled') => void
   onEditStateChange?: (active: boolean) => void
+  temporaryControlRef?: Ref<{ toggle: () => Promise<void> }>
+  onTemporaryChange?: (temporary: boolean) => void
 }) {
   const { t } = useTranslation()
   const navigate = useNavigate()
@@ -151,6 +156,11 @@ export function Composer({
   useEffect(() => { shelfMounted.current = true; return () => { shelfMounted.current = false } }, [])
   useEffect(() => { if (shelf) void shelf.hydrate().then(() => shelf.sync()).catch(() => undefined) }, [shelf])
   const draftId = localComposerDraftId(chatId, temporary)
+  const [handoffBusy, setHandoffBusy] = useState(false)
+  const handoffBusyRef = useRef(false)
+  const draftOwnershipRef = useRef(draftId)
+  const handoffIdentity = useRef('')
+  handoffIdentity.current = `${userId ?? 'local'}\u0000${draftId}`
   // The composer is keyed by chat. Capture its starting draft once: consulting
   // the mutable cache on every render can restart hydration after a remote
   // clear, before the debounced disk save has removed the old draft.
@@ -255,7 +265,7 @@ export function Composer({
   const readyAttachments = attachments.filter((a) => a.status === 'ready' && a.id)
   const hasDraft = value.trim().length > 0 || attachments.length > 0
   const editingExisting = Boolean(messageEdit || editingQueueId)
-  const canSend = desktopCanMutate && dictationState === 'idle' && canSubmitComposerDraft({
+  const canSend = !handoffBusy && desktopCanMutate && dictationState === 'idle' && canSubmitComposerDraft({
     modelId,
     hasText: value.trim().length > 0,
     attachmentCount: attachments.length,
@@ -280,7 +290,10 @@ export function Composer({
       .map((a) => ({ id: a.id, name: a.name, mimeType: a.mimeType, size: a.size })),
     model: { id: modelId, presets: selections }, agentMode: agentModeEnabled, temporary, autoExpire,
   }
-  const { sync: composerSync, skipNextEdit } = useComposerSync(syncEnabled ? userId : undefined, draftId, sharedComposerState, draftHydrated, Boolean(editingExisting || recovery || submitting || shelfBusy), (remote) => {
+  const currentComposerState = useRef(sharedComposerState)
+  currentComposerState.current = sharedComposerState
+  const { sync: composerSync, skipNextEdit } = useComposerSync(syncEnabled ? userId : undefined, draftId, sharedComposerState, draftHydrated && !handoffBusy, Boolean(editingExisting || recovery || submitting || shelfBusy), (remote) => {
+    if (handoffBusyRef.current) return
     const currentIds = preservedDraftRef.current?.attachmentIds ?? attachmentIdsRef.current
     const pending = currentIds.filter((id) => uploadsRef.current[id] && uploadsRef.current[id].status !== 'ready')
     const currentByServerId = new Map(currentIds.map((id) => [uploadsRef.current[id]?.id, id]))
@@ -308,6 +321,50 @@ export function Composer({
     }
   }, Boolean(editingExisting || recovery))
 
+  useImperativeHandle(temporaryControlRef, () => ({
+    toggle: async () => {
+      if (chatId || !onTemporaryChange || handoffBusyRef.current) return
+      if (!draftHydrated || editingExisting || recovery || submitting || shelfBusy || dictationState !== 'idle') {
+        throw new Error('Finish the current composer action before changing temporary mode.')
+      }
+      handoffBusyRef.current = true
+      setHandoffBusy(true)
+      const identity = handoffIdentity.current
+      const destination = localComposerDraftId(null, !temporary)
+      const ids = [...attachmentIdsRef.current]
+      const draft = { content: valueRef.current, attachmentIds: ids, attachments: persistedDraftAttachments(ids, useUploadOutbox.getState().uploads) }
+      useUploadOutbox.getState().moveDraftUploads(ids, { chatId: null, temporary: !temporary })
+      try {
+        const coordinator = syncEnabled && userId ? webComposerSync(userId) : null
+        const moveLocal = async () => {
+          if (!userId) return
+          rememberRuntimeComposerDraft(userId, destination, draft)
+          // A pending old save must finish before removing the shared local slot.
+          await saveComposerDraft(userId, destination, draft)
+          await deleteComposerDraft(userId, draftId)
+        }
+        if (!temporary && coordinator) await coordinator.takeTemporary('new', moveLocal)
+        else await moveLocal()
+        if (!shelfMounted.current || handoffIdentity.current !== identity) return
+        if (temporary) await coordinator?.returnFromTemporary('new', { ...currentComposerState.current, content: draft.content, temporary: false,
+          attachments: ids.map((id) => useUploadOutbox.getState().uploads[id])
+            .filter((a): a is UploadRecord & { id: string } => Boolean(a?.id && a.status === 'ready'))
+            .map((a) => ({ id: a.id, name: a.name, mimeType: a.mimeType, size: a.size })),
+        })
+        if (!shelfMounted.current || handoffIdentity.current !== identity) return
+        draftOwnershipRef.current = destination
+        onTemporaryChange(!temporary)
+      } catch (error) {
+        if (userId) rememberRuntimeComposerDraft(userId, draftId, draft)
+        useUploadOutbox.getState().moveDraftUploads(ids, { chatId: null, temporary })
+        throw error
+      } finally {
+        handoffBusyRef.current = false
+        if (shelfMounted.current) setHandoffBusy(false)
+      }
+    },
+  }))
+
   const focusAtEnd = useCallback(() => {
     const el = ref.current
     if (!el) return
@@ -324,8 +381,28 @@ export function Composer({
     onEditStateChange?.(Boolean(editingQueueId || messageEdit || recovery))
   }, [editingQueueId, messageEdit, onEditStateChange, recovery])
 
+  useLayoutEffect(() => {
+    // Explicit handoffs already moved ownership. Other mode changes retain the
+    // usual independent slots (for example, navigating to a fresh new chat).
+    const previous = draftOwnershipRef.current
+    if (previous === draftId) return
+    if (userId) {
+      const outgoing = { content: valueRef.current, attachmentIds: attachmentIdsRef.current,
+        attachments: persistedDraftAttachments(attachmentIdsRef.current, uploadsRef.current) }
+      rememberRuntimeComposerDraft(userId, previous, outgoing)
+      void saveComposerDraft(userId, previous, outgoing)
+    }
+    draftOwnershipRef.current = draftId
+    const incoming = userId ? runtimeComposerDraft(userId, draftId) : null
+    valueRef.current = incoming?.content ?? ''
+    attachmentIdsRef.current = incoming?.attachmentIds ?? []
+    setValue(valueRef.current)
+    setAttachmentIds(attachmentIdsRef.current)
+    setDraftHydrated(Boolean(incoming) || !userId)
+  }, [draftId, userId])
+
   useEffect(() => {
-    if (!userId || initialRuntimeDraft || draftHydrated) return
+    if (!userId || draftHydrated) return
     let cancelled = false
     void loadComposerDraft(userId, draftId).then((draft) => {
       if (cancelled) return
@@ -348,6 +425,7 @@ export function Composer({
   useEffect(() => {
     if (!userId) return undefined
     return () => {
+      if (draftOwnershipRef.current !== draftId || handoffBusyRef.current) return
       const preserved = preservedDraftRef.current
       const content = preserved?.value ?? valueRef.current
       const ids = preserved?.attachmentIds ?? attachmentIdsRef.current
@@ -526,17 +604,17 @@ export function Composer({
   }
 
   useEffect(() => {
-    if (!userId || !draftHydrated || editingExisting || recovery) return
+    if (!userId || !draftHydrated || editingExisting || recovery || handoffBusy) return
     const draft: PersistedComposerDraft = {
       content: value,
       attachments: persistedDraftAttachments(attachmentIds, uploads),
     }
     rememberRuntimeComposerDraft(userId, draftId, { ...draft, attachmentIds })
     const timeout = window.setTimeout(() => {
-      void saveComposerDraft(userId, draftId, draft)
+      if (!handoffBusyRef.current) void saveComposerDraft(userId, draftId, draft)
     }, 150)
     return () => window.clearTimeout(timeout)
-  }, [attachmentIds, draftHydrated, draftId, editingExisting, recovery, uploads, userId, value])
+  }, [attachmentIds, draftHydrated, draftId, editingExisting, handoffBusy, recovery, uploads, userId, value])
 
   const restorePreservedDraft = useCallback(() => {
     const preserved = preservedDraftRef.current
@@ -842,7 +920,7 @@ export function Composer({
   }
 
   return (
-    <div className={cn('w-full min-w-0', centered && 'px-2')}>
+    <div inert={handoffBusy} className={cn('w-full min-w-0', centered && 'px-2')}>
       {dragging && (
         <div className="pointer-events-none fixed inset-0 z-[100] flex items-center justify-center bg-black/35 backdrop-grayscale" role="status">
           <div className="flex flex-col items-center gap-3 text-center text-white drop-shadow-sm">
@@ -1061,7 +1139,7 @@ export function Composer({
 
         <textarea
           ref={ref}
-          readOnly={shelfBusy}
+          readOnly={handoffBusy || shelfBusy}
           value={value}
           onChange={(e) => {
             setValue(e.target.value)

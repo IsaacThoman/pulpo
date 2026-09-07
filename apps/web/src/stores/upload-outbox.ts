@@ -82,6 +82,7 @@ interface UploadOutboxState {
   uploads: Record<string, UploadRecord>
   submissions: PendingSubmission[]
   preservedDrafts: Record<string, PreservedComposerDraft>
+  moveDraftUploads: (localIds: string[], options: AddFilesOptions) => void
   addFiles: (files: File[], options: AddFilesOptions) => string[]
   addExistingAttachments: (attachments: Attachment[], options: AddFilesOptions) => string[]
   restoreDraftAttachments: (attachments: PersistedDraftAttachment[], options: AddFilesOptions) => string[]
@@ -425,6 +426,11 @@ export const useUploadOutbox = create<UploadOutboxState>()((set, get) => ({
   submissions: [],
   preservedDrafts: {},
 
+  moveDraftUploads: (localIds, options) => {
+    set((state) => ({ uploads: Object.fromEntries(Object.entries(state.uploads).map(([id, record]) => [
+      id, localIds.includes(id) ? { ...record, ...options } : record,
+    ])) }))
+  },
   addFiles: (files, options) => {
     const records = files.map((file): UploadRecord => ({
       localId: crypto.randomUUID(),
