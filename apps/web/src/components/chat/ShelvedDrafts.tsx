@@ -33,7 +33,7 @@ export function ShelvedDrafts({ rows, busy, collapsed, onCollapse, onRestore, on
         <button type="button" disabled={busy} onClick={() => onRestore(row.id)} aria-label={`${ui('Restore draft')}: ${row.content.slice(0, 200) || ui('Attachments')}`} className="min-w-0 flex-1 rounded text-left focus-visible:outline-ring">
           <p className="truncate">{row.content.slice(0, 200) || ui('Attachments')}</p>
           {row.attachments.length > 0 && <p className="truncate text-xs text-muted-foreground">{row.attachments.map((a) => a.name).join(', ')}</p>}
-          {row.status && <p role="status" className={`flex items-center gap-1 text-xs ${row.status === 'failed' ? 'text-destructive' : 'text-muted-foreground'}`}>
+          {(row.status === 'failed' || row.status === 'uploading' || row.showPendingStatus) && <p role="status" className={`flex items-center gap-1 text-xs ${row.status === 'failed' ? 'text-destructive' : 'text-muted-foreground'}`}>
             {row.status === 'uploading' && <Loader2 className="size-3 animate-spin" />}
             {row.status === 'failed' ? row.error : row.status === 'uploading' ? ui('Uploading…') : ui('Waiting to sync')}
           </p>}
