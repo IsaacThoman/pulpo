@@ -3494,9 +3494,6 @@ const MessageRow = memo(function MessageRow({
         </View>
       ) : (
         <AssistantFrame model={model} sideRail={sideRail} time={timeAgo(message.createdAt ?? Date.now())}>
-            {showReasoning && initialActivity.index === -1 && initialDurationMs !== undefined && (
-              <WorkBlock steps={[]} active={false} durationMs={initialDurationMs} initialWork={false} onOpenChat={onOpenChat} />
-            )}
             {timeline.length ? (
               <MessageContextMenu message={message} model={model} onEdit={onEdit} onRegenerate={onRegenerate}>
                 <View style={styles.assistantContent}>
