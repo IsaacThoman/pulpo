@@ -7,6 +7,8 @@ import { protectTranscript } from '../data/transcriptResidency';
 import { incomingFiles, releaseImportedFile } from '../native/incomingFiles';
 import { useIncomingFileImport } from '../features/chat/useIncomingFileImport';
 import { incomingFileAttachment } from '../features/chat/incomingFileAttachment';
+import { useDictation } from '../features/chat/useDictation';
+import { setComposerSelection } from '../features/chat/composerSelection';
 import { ToolImagePreview } from '../components/ToolImagePreview';
 import { localComposerDraftId } from '@pulpo/client-core';
 import { DevicesScreen } from '../components/Devices';
@@ -3919,7 +3921,8 @@ function ChatView({
     agentEnabled: boolean;
   } | null>(null);
   const inputRef = useRef(input);
-  const inputSelectionRef = useRef({ start: input.length, end: input.length });
+  const [inputSelection, setInputSelection] = useState({ start: input.length, end: input.length });
+  const inputSelectionRef = useRef(inputSelection);
   const hydratedDraftScopeRef = useRef<string | null>(null);
   const [hydratedComposerScope, setHydratedComposerScope] = useState<string | null>(null);
   const draftLoadRevisionRef = useRef(0);
@@ -3949,17 +3952,34 @@ function ChatView({
     syncError,
   });
   inputRef.current = input;
+  const composerScreenFocused = useIsFocused();
+  const dictationEnabled = useSessionStore((state) => state.status === 'authenticated' && state.config?.capabilities.dictation === true);
+  const dictationToken = useSessionStore((state) => state.token);
+  const dictationInstance = useSessionStore((state) => state.instanceUrl);
+  const dictation = useDictation({
+    identity: JSON.stringify([dictationInstance, dictationToken, draftNamespace, localComposerDraftId(chatId, temporary), messageEdit?.message.id, composerFocusRequest.revision]),
+    enabled: dictationEnabled && !expired && composerScreenFocused,
+    canStart: !networkOffline && !sending && !queueBusy && !shelfBusy && !composerFocusSuppressed
+      && hydratedComposerScope === `${draftNamespace ?? 'local'}\u0000${localComposerDraftId(chatId, temporary)}`,
+    read: () => ({ text: inputRef.current, selection: inputSelectionRef.current }),
+    apply: (value, cursor) => {
+      inputRef.current = value;
+      setComposerSelection(setInputSelection, inputSelectionRef, { start: cursor, end: cursor });
+      onChangeInput(value);
+    },
+  });
+  const { busy: dictationBusy, isBusy: isDictationBusy } = dictation;
+  const dictationLabel = dictation.phase === 'recording' ? 'Stop dictation' : dictation.phase === 'transcribing' ? 'Transcribing…' : 'Dictate';
+  const dictationDisabled = dictationBusy ? dictation.phase !== 'recording'
+    : !composerScreenFocused || networkOffline || sending || queueBusy || shelfBusy || expired || composerFocusSuppressed
+      || hydratedComposerScope !== `${draftNamespace ?? 'local'}\u0000${localComposerDraftId(chatId, temporary)}`;
 
   // Draft hydration owns the selection only. Navigation intent owns focus so
   // a new chat becoming persisted cannot reopen the keyboard after sending.
   const placeComposerCursorAtEnd = useCallback((body: string) => {
-    requestAnimationFrame(() => {
-      const composer = composerInputRef.current;
-      if (!composer) return;
-      const end = body.length;
-      composer.setNativeProps({ selection: { start: end, end } });
-    });
-  }, [composerInputRef]);
+    const end = body.length;
+    setComposerSelection(setInputSelection, inputSelectionRef, { start: end, end });
+  }, []);
   const showPromptSuggestions = usePrototypeStore((state) => state.preferences.showPromptSuggestions);
   const isEmptyConversation = messages.length === 0;
   const suggestions = useMemo(
@@ -4093,10 +4113,11 @@ function ChatView({
     if (!preserved) return;
     draftOwnerRef.current = preserved.attachments[0]?.ownerId ?? `draft:${Crypto.randomUUID()}`;
     onChangeInput(preserved.input);
+    placeComposerCursorAtEnd(preserved.input);
     setAttachments(restoreLatestDraft(preserved.attachments, latestAttachmentsRef.current));
     setAgentEnabled(preserved.agentEnabled);
     requestAnimationFrame(() => composerInputRef.current?.focus());
-  }, [composerInputRef, onChangeInput, onSelectModel, setAttachments]);
+  }, [composerInputRef, onChangeInput, onSelectModel, placeComposerCursorAtEnd, setAttachments]);
 
   const cleanupEditUploads = useCallback((session: MessageEditSession, values: ComposerAttachment[]) => {
     for (const attachment of values) {
@@ -4107,7 +4128,7 @@ function ChatView({
   }, []);
 
   const cancelMessageEdit = useCallback(async () => {
-    if (!messageEdit || sending || queueBusy) return;
+    if (!messageEdit || sending || queueBusy || isDictationBusy()) return;
     const queueEdit = queueEditRef.current;
     if (queueEdit) {
       setQueueBusy(true);
@@ -4118,7 +4139,7 @@ function ChatView({
     cleanupEditUploads(messageEdit, attachments);
     restoreComposer();
     Haptics.selectionAsync();
-  }, [attachments, cleanupEditUploads, messageEdit, restoreComposer, sending, queueBusy, queueClient]);
+  }, [attachments, cleanupEditUploads, messageEdit, restoreComposer, sending, queueBusy, queueClient, isDictationBusy]);
 
   const activeDraftSnapshot = useCallback(() => ({
     body: preservedComposerRef.current?.input ?? inputRef.current,
@@ -4213,14 +4234,13 @@ function ChatView({
       if (preservedComposerRef.current) {
         preservedComposerRef.current = { input: remote.content, attachments: next, agentEnabled: remote.agentMode };
       } else {
-        const selection = inputSelectionRef.current;
+        const previousSelection = inputSelectionRef.current;
+        const selection = composerInputRef.current?.isFocused()
+          ? { start: Math.min(previousSelection.start, remote.content.length), end: Math.min(previousSelection.end, remote.content.length) }
+          : { start: remote.content.length, end: remote.content.length };
+        setComposerSelection(setInputSelection, inputSelectionRef, selection);
         inputRef.current = remote.content;
         onChangeInput(remote.content);
-        requestAnimationFrame(() => {
-          if (composerInputRef.current?.isFocused()) composerInputRef.current.setNativeProps({ selection: {
-            start: Math.min(selection.start, remote.content.length), end: Math.min(selection.end, remote.content.length),
-          } });
-        });
         setAttachments(next);
         setAgentEnabled(remote.agentMode);
         if (remote.model) {
@@ -4260,13 +4280,14 @@ function ChatView({
   }, [attachments, chatId, cleanupEditUploads, messageEdit, queueClient]);
 
   const beginMessageEdit = useCallback((message: Message) => {
-    if (messageEdit || sending) return;
+    if (messageEdit || sending || isDictationBusy()) return;
     preservedComposerRef.current = { input, attachments, agentEnabled };
     const editOwnerId = `edit:${message.id}:${Crypto.randomUUID()}`;
     draftOwnerRef.current = editOwnerId;
     const existing = message.attachments ?? [];
     setMessageEdit({ message, originalAttachmentIds: new Set(existing.map((attachment) => attachment.id)) });
     onChangeInput(message.text);
+    placeComposerCursorAtEnd(message.text);
     setAttachments(existing.map((attachment) => ({
       ...attachment,
       localId: `sent:${message.id}:${attachment.id}`,
@@ -4278,10 +4299,10 @@ function ChatView({
     })));
     requestAnimationFrame(() => composerInputRef.current?.focus());
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-  }, [agentEnabled, attachments, composerInputRef, input, messageEdit, onChangeInput, sending, setAttachments]);
+  }, [agentEnabled, attachments, composerInputRef, input, messageEdit, onChangeInput, placeComposerCursorAtEnd, sending, setAttachments, isDictationBusy]);
 
   const runQueueAction = async (operation: () => Promise<void>) => {
-    if (queueBusy || sending) return;
+    if (queueBusy || sending || isDictationBusy()) return;
     setQueueBusy(true);
     try { await operation(); }
     catch (error) { Alert.alert('Couldn’t update queue', error instanceof Error ? error.message : 'Please try again.'); }
@@ -4323,12 +4344,13 @@ function ChatView({
   }, [queueClient]);
 
   const handleMessageEditAction = useCallback((message: Message, content: string) => {
+    if (isDictationBusy()) return;
     if (message.role === 'user') {
       beginMessageEdit(message);
       return;
     }
     void onEdit(message, content);
-  }, [beginMessageEdit, onEdit]);
+  }, [beginMessageEdit, onEdit, isDictationBusy]);
 
   const resolvePreviewImageUri = useCallback(async (item: AttachmentImagePreviewItem): Promise<string> => {
     const source = previewSource({ ...item, kind: 'image' });
@@ -4634,7 +4656,7 @@ function ChatView({
   }, []);
 
   const runShelfAction = async (action: () => Promise<void>) => {
-    if (!showShelf || shelfBusyRef.current || sending || hydratedDraftScopeRef.current !== activeDraftRef.current?.scope) return;
+    if (!showShelf || shelfBusyRef.current || sending || isDictationBusy() || hydratedDraftScopeRef.current !== activeDraftRef.current?.scope) return;
     shelfBusyRef.current = true; setShelfBusy(true); setShelfError(null);
     try { await action(); } catch (error) { setShelfError(error instanceof Error ? error.message : 'Could not save draft'); }
     finally { shelfBusyRef.current = false; setShelfBusy(false); }
@@ -4778,7 +4800,7 @@ function ChatView({
   }, [messageEdit, setAttachments]);
 
   const submitMessage = async () => {
-    if (sendingRef.current) return;
+    if (sendingRef.current || isDictationBusy()) return;
     const sendPolicy = attachmentSendPolicy(attachments, { editing: Boolean(messageEdit) });
     if (!sendPolicy.allowed) {
       Alert.alert(
@@ -4892,6 +4914,7 @@ function ChatView({
   };
 
   const submitSuggestion = useCallback((message: string) => {
+    if (isDictationBusy()) return;
     const followSnapshot = armSubmittedTurnFollow();
     void onSend(message, [], { presetSelections, agentEnabled: activeAgentEnabled, temporary, autoExpire }).then((accepted) => {
       if (!accepted) restoreSubmittedTurnFollow(followSnapshot);
@@ -4899,7 +4922,7 @@ function ChatView({
       restoreSubmittedTurnFollow(followSnapshot);
       Alert.alert('Couldn’t send message', error instanceof Error ? error.message : undefined);
     });
-  }, [activeAgentEnabled, armSubmittedTurnFollow, autoExpire, onSend, presetSelections, restoreSubmittedTurnFollow, temporary]);
+  }, [activeAgentEnabled, armSubmittedTurnFollow, autoExpire, onSend, presetSelections, restoreSubmittedTurnFollow, temporary, isDictationBusy]);
 
   const nativeAgentTint = colorScheme === 'dark' ? '#BF5AF2' : '#AF52DE';
   const nativeAgentForeground = activeAgentEnabled ? '#ffffff' : colorScheme === 'dark' ? '#f2f2f7' : '#1c1c1e';
@@ -5042,10 +5065,10 @@ function ChatView({
           : onActivateBranch}
         onOpenChat={onOpenChat}
         sideRail={assistantSideRail}
-        editingLocked={Boolean(messageEdit)}
+        editingLocked={Boolean(messageEdit) || dictationBusy}
       />
     </View>
-  ), [assistantSideRail, expired, handleMessageEditAction, latestMessageId, messageEdit, model, models, onActivateBranch, onOpenChat, onRegenerate, openFilePreview, openImageViewer, styles.transcriptColumn]);
+  ), [assistantSideRail, expired, handleMessageEditAction, latestMessageId, messageEdit, dictationBusy, model, models, onActivateBranch, onOpenChat, onRegenerate, openFilePreview, openImageViewer, styles.transcriptColumn]);
 
   const empty = isEmptyConversation && assistantStatus === 'idle';
   const headerAction = resolveChatHeaderAction(chatId, messages.length, temporary);
@@ -5076,6 +5099,7 @@ function ChatView({
   const canSend = Boolean(model.id)
     && (input.trim().length > 0 || attachments.length > 0)
     && !sending
+    && !dictationBusy
     && !queueBusy
     && !expired
     && !(attachments.some((attachment) => attachment.kind === 'file') && (!activeAgentEnabled || !canUseAgent))
@@ -5371,8 +5395,8 @@ function ChatView({
                 <QueuedMessagesView maxHeight={Math.min(200, windowHeight * 0.25)} style={styles.composerQueueRows}
                   rows={shelfRows.map((row) => ({ id: row.id, kind: 'shelf', content: row.content.slice(0, 200) || 'Attachments',
                     detail: [row.attachments.map((a) => a.name).join(', '), row.error || (row.status === 'uploading' ? 'Uploading…' : row.showPendingStatus ? 'Waiting to sync' : '')].filter(Boolean).join(' · '),
-                    status: row.status ?? '', isEditing: false, canEdit: !shelfBusy && !sending, canDelete: !shelfBusy && !sending, canReorder: !shelfBusy && !sending,
-                    canRetry: row.status === 'failed' && !shelfBusy,
+                    status: row.status ?? '', isEditing: false, canEdit: !shelfBusy && !sending && !dictationBusy, canDelete: !shelfBusy && !sending && !dictationBusy, canReorder: !shelfBusy && !sending && !dictationBusy,
+                    canRetry: row.status === 'failed' && !shelfBusy && !sending && !dictationBusy,
                   }))}
                   onAction={({ nativeEvent: action }) => {
                     if (action.action === 'edit') void transferShelf(action.id);
@@ -5393,7 +5417,7 @@ function ChatView({
                       style={styles.composerQueueRows}
                       rows={queuedMessages.map((item) => {
                         const isEditing = queueEditRef.current?.id === item.id;
-                        const locked = queueBusy || sending || item.status === 'dispatching' || Boolean(item.pendingSubmissionId && !item.localFailure) || expired;
+                        const locked = dictationBusy || queueBusy || sending || item.status === 'dispatching' || Boolean(item.pendingSubmissionId && !item.localFailure) || expired;
                         return {
                           id: item.id,
                           content: isEditing ? 'Editing queued message…' : item.content || 'Attachments',
@@ -5407,7 +5431,7 @@ function ChatView({
                       })}
                       onAction={({ nativeEvent: action }) => {
                         const item = queuedMessages.find((candidate) => candidate.id === action.id);
-                        if (!item || queueBusy || sending || expired || item.status === 'dispatching' || (item.pendingSubmissionId && !item.localFailure)) return;
+                        if (!item || isDictationBusy() || queueBusy || sending || expired || item.status === 'dispatching' || (item.pendingSubmissionId && !item.localFailure)) return;
                         if (messageEdit) {
                           if (action.action === 'edit' && queueEditRef.current?.id === item.id) void cancelMessageEdit();
                           return;
@@ -5431,7 +5455,7 @@ function ChatView({
                 <View style={styles.messageEditBanner}>
                   <Icon name="pencil" size={12} color={COLORS.muted} />
                   <Text style={styles.messageEditBannerText}>{queueEditRef.current ? 'Editing queued message' : 'Editing message'}</Text>
-                  <Pressable accessibilityLabel="Cancel message edit" accessibilityRole="button" disabled={sending} onPress={cancelMessageEdit}>
+                  <Pressable accessibilityLabel="Cancel message edit" accessibilityRole="button" disabled={sending || dictationBusy} onPress={cancelMessageEdit}>
                     <Text style={styles.messageEditCancel}>Cancel</Text>
                   </Pressable>
                 </View>
@@ -5456,6 +5480,18 @@ function ChatView({
                   {!canUseAgent ? 'Choose an Agent-capable model or remove non-image files.' : 'Turn on Agent mode to use non-image files.'}
                 </Text>
               ) : null}
+              {dictationBusy && (
+                <View style={styles.messageEditBanner}>
+                  {dictation.phase !== 'recording' && <ActivityIndicator size="small" />}
+                  <Text accessibilityLiveRegion="polite" style={styles.messageEditBannerText}>
+                    {dictation.phase === 'recording' ? `Recording · ${dictation.seconds}s / 90s` : dictation.phase === 'transcribing' ? 'Transcribing…' : dictation.phase === 'cancelling' ? 'Cancelling…' : 'Preparing microphone…'}
+                  </Text>
+                  <Pressable accessibilityLabel="Cancel dictation" accessibilityRole="button" onPress={dictation.cancel} style={{ minHeight: 44, justifyContent: 'center' }}>
+                    <Text style={styles.messageEditCancel}>Cancel</Text>
+                  </Pressable>
+                </View>
+              )}
+              {dictation.error && <Text accessibilityRole="alert" style={styles.attachmentErrorText}>{dictation.error}</Text>}
               <TextInput
                 ref={composerInputRef}
                 accessibilityLabel="Message"
@@ -5467,7 +5503,8 @@ function ChatView({
                 onFocus={() => { setQueueCollapsed(true); setShelfCollapsed(true); }}
                 onBlur={() => { setQueueCollapsed(false); setShelfCollapsed(false); }}
                 onChangeText={(value) => { inputRef.current = value; onChangeInput(value); }}
-                onSelectionChange={(event) => { inputSelectionRef.current = event.nativeEvent.selection; }}
+                selection={{ start: Math.min(inputSelection.start, input.length), end: Math.min(inputSelection.end, input.length) }}
+                onSelectionChange={(event) => { setComposerSelection(setInputSelection, inputSelectionRef, event.nativeEvent.selection); }}
                 placeholder={attachments.length > 0 ? 'Add a caption…' : messageEdit ? 'Edit message…' : temporary ? 'Temporary message…' : 'Message…'}
                 placeholderTextColor={COLORS.muted}
                 style={styles.input}
@@ -5519,47 +5556,49 @@ function ChatView({
                     })),
                   }))} />
                 ))}
-                <View style={styles.flex} />
                 {Platform.OS === 'ios' ? (
-                  <>
-                    {showShelf && Boolean(input.trim() || attachments.length) && <NativeComposerIconButton label="Shelve draft" systemImage="archivebox"
-                      disabled={shelfBusy || sending} onPress={() => { void transferShelf(); }} />}
-                    <SwiftUIHost ignoreSafeArea="keyboard" style={styles.nativeAgentHost}>
-                      <SwiftUIButton
-                        onPress={() => {
-                          toggleAgent();
-                        }}
-                        modifiers={[
-                          buttonStyle(activeAgentEnabled ? 'glassProminent' : 'glass'),
-                          buttonBorderShape('circle'),
-                          controlSize('regular'),
-                          tint(nativeAgentTint),
-                          swiftUIDisabled(!canUseAgent),
-                          swiftUIAccessibilityLabel('Agent mode'),
-                          swiftUIAccessibilityHint(!agentAvailable ? 'Unavailable on this Pulpo instance.' : !model.agentEnabled ? 'Unavailable for this model.' : activeAgentEnabled ? 'On. Double tap to turn off.' : 'Off. Double tap to turn on.'),
-                        ]}
-                      >
-                        <SwiftUIRNHostView matchContents>
-                          <View pointerEvents="none" style={styles.nativeAgentIcon}>
-                            <Bot color={nativeAgentForeground} size={13} strokeWidth={2} />
-                          </View>
-                        </SwiftUIRNHostView>
-                      </SwiftUIButton>
-                    </SwiftUIHost>
-                    <NativeComposerIconButton
-                      disabled={shelfBusy || composerAction === 'submit' && !canSend}
-                      label={composerAction === 'stop' ? 'Stop generating' : messageEdit ? queueEditRef.current ? 'Save queued message' : 'Save and resend message' : 'Send message'}
-                      onPress={() => composerAction === 'stop' ? onStop() : submitMessage()}
-                      prominent
-                      systemImage={composerAction === 'stop' ? 'stop.fill' : 'arrow.up'}
-                    />
-                  </>
+                  <SwiftUIHost ignoreSafeArea="keyboard" style={styles.nativeAgentHost}>
+                    <SwiftUIButton
+                      onPress={() => {
+                        toggleAgent();
+                      }}
+                      modifiers={[
+                        buttonStyle(activeAgentEnabled ? 'glassProminent' : 'glass'),
+                        buttonBorderShape('circle'),
+                        controlSize('regular'),
+                        tint(nativeAgentTint),
+                        swiftUIDisabled(!canUseAgent),
+                        swiftUIAccessibilityLabel('Agent mode'),
+                        swiftUIAccessibilityHint(!agentAvailable ? 'Unavailable on this Pulpo instance.' : !model.agentEnabled ? 'Unavailable for this model.' : activeAgentEnabled ? 'On. Double tap to turn off.' : 'Off. Double tap to turn on.'),
+                      ]}
+                    >
+                      <SwiftUIRNHostView matchContents>
+                        <View pointerEvents="none" style={styles.nativeAgentIcon}>
+                          <Bot color={nativeAgentForeground} size={13} strokeWidth={2} />
+                        </View>
+                      </SwiftUIRNHostView>
+                    </SwiftUIButton>
+                  </SwiftUIHost>
                 ) : (
-                  <>
-                    {showShelf && Boolean(input.trim() || attachments.length) && <MaterialIconButton label="Shelve draft" icon="archivebox" disabled={shelfBusy || sending} onPress={() => { void transferShelf(); }} />}
-                    <MaterialIconButton label={activeAgentEnabled ? 'Turn off Agent mode' : 'Turn on Agent mode'} icon="bot" color={activeAgentEnabled ? nativeAgentTint : undefined} disabled={!canUseAgent} onPress={toggleAgent} />
-                    <MaterialIconButton label={composerAction === 'stop' ? 'Stop generating' : messageEdit ? queueEditRef.current ? 'Save queued message' : 'Save and resend message' : 'Send message'} icon={composerAction === 'stop' ? 'stop.fill' : 'arrow.up'} prominent disabled={shelfBusy || composerAction === 'submit' && !canSend} onPress={() => composerAction === 'stop' ? onStop() : submitMessage()} />
-                  </>
+                  <MaterialIconButton label={activeAgentEnabled ? 'Turn off Agent mode' : 'Turn on Agent mode'} icon="bot" color={activeAgentEnabled ? nativeAgentTint : undefined} disabled={!canUseAgent} onPress={toggleAgent} />
+                )}
+                <View style={styles.flex} />
+                {showShelf && Boolean(input.trim() || attachments.length) && (Platform.OS === 'ios'
+                  ? <NativeComposerIconButton label="Shelve draft" systemImage="archivebox" disabled={shelfBusy || sending || dictationBusy} onPress={() => { void transferShelf(); }} />
+                  : <MaterialIconButton label="Shelve draft" icon="archivebox" disabled={shelfBusy || sending || dictationBusy} onPress={() => { void transferShelf(); }} />)}
+                {dictationEnabled && (Platform.OS === 'ios'
+                  ? <NativeComposerIconButton label={dictationLabel} systemImage={dictation.phase === 'recording' ? 'stop.fill' : 'mic'} prominent={dictation.phase === 'recording'} disabled={dictationDisabled} onPress={dictation.phase === 'recording' ? dictation.stop : dictation.start} />
+                  : <MaterialIconButton label={dictationLabel} icon={dictation.phase === 'recording' ? 'stop.fill' : 'mic'} selected={dictation.phase === 'recording'} disabled={dictationDisabled} onPress={dictation.phase === 'recording' ? dictation.stop : dictation.start} />)}
+                {Platform.OS === 'ios' ? (
+                  <NativeComposerIconButton
+                    disabled={dictationBusy || shelfBusy || composerAction === 'submit' && !canSend}
+                    label={composerAction === 'stop' ? 'Stop generating' : messageEdit ? queueEditRef.current ? 'Save queued message' : 'Save and resend message' : 'Send message'}
+                    onPress={() => composerAction === 'stop' ? onStop() : submitMessage()}
+                    prominent
+                    systemImage={composerAction === 'stop' ? 'stop.fill' : 'arrow.up'}
+                  />
+                ) : (
+                  <MaterialIconButton label={composerAction === 'stop' ? 'Stop generating' : messageEdit ? queueEditRef.current ? 'Save queued message' : 'Save and resend message' : 'Send message'} icon={composerAction === 'stop' ? 'stop.fill' : 'arrow.up'} prominent disabled={dictationBusy || shelfBusy || composerAction === 'submit' && !canSend} onPress={() => composerAction === 'stop' ? onStop() : submitMessage()} />
                 )}
               </View>
             </ComposerSurface>

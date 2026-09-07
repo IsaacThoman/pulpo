@@ -32,7 +32,7 @@ export function DictationSection() {
   return <div>
     <Section title={ui("Dictation")} hint="Transcribe microphone recordings on the server with Groq Whisper Large v3 Turbo. Audio is not retained by Pulpo.">
       <Toggle
-        label={ui("Enable web dictation")}
+        label={ui("Enable dictation")}
         hint="Shows the microphone control in the web chat composer. Disabled by default."
         checked={enabled}
         onChange={setEnabled}

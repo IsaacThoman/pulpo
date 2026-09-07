@@ -49,6 +49,67 @@ describe('chat transfer during navigation', () => {
   })
 })
 
+describe('multipart requests', () => {
+  afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); configureApi({ instanceUrl: 'https://pulpo.baby', token: null }) })
+  it('sends the form unchanged with bearer auth and a generated content-type boundary', async () => {
+    configureApi({ instanceUrl: 'https://fixture.example', token: 'test-session' })
+    const fetch = vi.fn(async () => Response.json({ text: 'Transcript' }))
+    vi.stubGlobal('fetch', fetch)
+    const form = new FormData()
+    form.append('file', new Blob(['audio'], { type: 'audio/mp4' }), 'dictation.m4a')
+    await expect(apiRequest('/api/dictation/transcriptions', { method: 'POST', body: form, headers: { 'content-type': 'application/json' } })).resolves.toEqual({ text: 'Transcript' })
+    const options = (fetch.mock.calls[0] as unknown as [string, RequestInit])[1]
+    expect(options.body).toBe(form)
+    expect(new Headers(options.headers).get('authorization')).toBe('Bearer test-session')
+    expect(new Headers(options.headers).has('content-type')).toBe(false)
+  })
+  it('honors cancellation that happened before the request started', async () => {
+    const abort = new AbortController(); abort.abort()
+    const fetch = vi.fn(async (_url, options) => {
+      expect(options.signal.aborted).toBe(true)
+      throw new DOMException('Aborted', 'AbortError')
+    })
+    vi.stubGlobal('fetch', fetch)
+    await expect(apiRequest('/api/dictation/transcriptions', { method: 'POST', body: new FormData(), signal: abort.signal })).rejects.toMatchObject({ name: 'AbortError' })
+  })
+  it('does not sign out a replacement session when an old upload returns 401', async () => {
+    const onUnauthorized = vi.fn()
+    configureApi({ instanceUrl: 'https://fixture.example', token: 'old', onUnauthorized })
+    let respond!: (value: Response) => void
+    vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>((resolve) => { respond = resolve })))
+    const request = apiRequest('/api/dictation/transcriptions', { method: 'POST', body: new FormData() })
+    configureApi({ instanceUrl: 'https://fixture.example', token: 'new', onUnauthorized })
+    respond(Response.json({ error: { message: 'Expired' } }, { status: 401 }))
+    await expect(request).rejects.toThrow('Expired')
+    expect(onUnauthorized).not.toHaveBeenCalled()
+  })
+  it('keeps the timeout active while waiting for the response body', async () => {
+    vi.useFakeTimers()
+    vi.stubGlobal('fetch', vi.fn(async (_url, options) => ({
+      status: 200, ok: true,
+      json: () => new Promise((_resolve, reject) => {
+        options.signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')))
+      }),
+    })))
+    const request = apiRequest('/api/dictation/transcriptions', { method: 'POST', body: new FormData(), timeoutMs: 45_000 })
+    const rejected = expect(request).rejects.toMatchObject({ code: 'request_timeout' })
+    await vi.advanceTimersByTimeAsync(45_000); await rejected
+    expect(vi.getTimerCount()).toBe(0)
+  })
+  it('uses the dictation timeout without retrying or leaving timers behind', async () => {
+    vi.useFakeTimers()
+    const fetch = vi.fn((_url, options) => new Promise((_resolve, reject) => {
+      options.signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')))
+    }))
+    vi.stubGlobal('fetch', fetch)
+    const request = apiRequest('/api/dictation/transcriptions', { method: 'POST', body: new FormData(), timeoutMs: 45_000 })
+    const rejected = expect(request).rejects.toMatchObject({ code: 'request_timeout' })
+    await vi.advanceTimersByTimeAsync(45_000); await rejected
+    expect(fetch).toHaveBeenCalledOnce()
+    expect(vi.getTimerCount()).toBe(0)
+  })
+})
+
 describe('attachment URL resolution', () => {
   afterEach(() => configureApi({ instanceUrl: 'https://pulpo.baby', token: null }))
 
@@ -167,15 +228,23 @@ describe('profile request isolation', () => {
     }
   })
 
-  it('discards late profile responses while keeping bearer authentication shared', async () => {
+  it.each(['json', 'multipart'])('discards late %s profile responses while keeping bearer authentication shared', async (format) => {
     const { configureDataProfile } = await import('@pulpo/client-core')
     let finish!: (response: Response) => void
     const fetchMock = vi.fn((_input: string, _init?: RequestInit) => new Promise<Response>((resolve) => { finish = resolve }))
     vi.stubGlobal('fetch', fetchMock)
     configureApi({ instanceUrl: 'https://pulpo.test', token: 'shared-session' })
     configureDataProfile({ instance: 'https://pulpo.test', userId: 'owner', profileId: 'personal' })
-    const pending = apiRequest('/api/chats')
+    const form = new FormData()
+    form.append('file', new Blob(['audio'], { type: 'audio/mp4' }), 'dictation.m4a')
+    const pending = format === 'multipart'
+      ? apiRequest('/api/dictation/transcriptions', { method: 'POST', body: form })
+      : apiRequest('/api/chats')
     const headers = new Headers(fetchMock.mock.calls[0]?.[1]?.headers)
+    if (format === 'multipart') {
+      expect(fetchMock.mock.calls[0]?.[1]?.body).toBe(form)
+      expect(headers.has('content-type')).toBe(false)
+    }
     expect(headers.get('X-Pulpo-Profile-Id')).toBe('personal')
     expect(headers.get('authorization')).toBe('Bearer shared-session')
     configureDataProfile({ instance: 'https://pulpo.test', userId: 'owner', profileId: 'work' })

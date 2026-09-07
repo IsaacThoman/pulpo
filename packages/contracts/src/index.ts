@@ -143,6 +143,7 @@ export const mobileConfigSchema = z.object({
     publicSharing: z.literal(true),
     attachments: z.literal(true),
     folders: z.literal(true),
+    dictation: z.boolean().optional().default(false),
     twoFactorAuth: z.boolean().optional().default(false),
     passkeys: z.boolean().optional().default(false),
   }),

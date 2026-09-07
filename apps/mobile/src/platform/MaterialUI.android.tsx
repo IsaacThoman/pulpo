@@ -231,7 +231,14 @@ export function MaterialSuggestionButton({ label, onPress, fullWidth, containerC
 
 export function MaterialSearchField({ value: query, onChange, onFocusChange, fieldRef }: SearchFieldProps) {
   const nativeRef = useRef<TextFieldRef>(null);
-  useImperativeHandle(fieldRef, () => ({ blur: async () => { await nativeRef.current?.blur(); } }), []);
+  const focused = useRef(false);
+  const blur = async () => {
+    // Hidden drawer fields may not have a bound native handler yet, or may
+    // have been disposed between dismissal and this asynchronous call.
+    if (!focused.current) return;
+    try { await nativeRef.current?.blur(); } catch { /* Dismissal is best effort. */ }
+  };
+  useImperativeHandle(fieldRef, () => ({ blur }));
   const value = useNativeState(query);
   const lastNativeText = useRef(query);
   useEffect(() => {
@@ -240,9 +247,9 @@ export function MaterialSearchField({ value: query, onChange, onFocusChange, fie
   const change = (text: string) => { lastNativeText.current = text; onChange(text); };
   const clear = () => { value.set(''); change(''); };
   return <Host matchContents={{ vertical: true }} style={{ marginHorizontal: 10, marginTop: 6 }} ignoreSafeAreaKeyboardInsets>
-    <TextField ref={nativeRef} value={value} onValueChange={change} onFocusChanged={onFocusChange} singleLine
+    <TextField ref={nativeRef} value={value} onValueChange={change} onFocusChanged={(next) => { focused.current = next; onFocusChange(next); }} singleLine
       keyboardOptions={{ capitalization: 'none', autoCorrectEnabled: false, imeAction: 'search' }}
-      keyboardActions={{ onSearch: () => { Keyboard.dismiss(); void nativeRef.current?.blur(); } }} modifiers={[fillMaxWidth()]}>
+      keyboardActions={{ onSearch: () => { Keyboard.dismiss(); void blur(); } }} modifiers={[fillMaxWidth()]}>
       <TextField.Placeholder><Text>Search chats</Text></TextField.Placeholder>
       <TextField.LeadingIcon><Icon source={materialIcon('magnifyingglass')} size={24} /></TextField.LeadingIcon>
       {query.length > 0 ? <TextField.TrailingIcon><IconButton onClick={clear}><Icon source={materialIcon('xmark')} size={24} contentDescription="Clear search" /></IconButton></TextField.TrailingIcon> : null}
