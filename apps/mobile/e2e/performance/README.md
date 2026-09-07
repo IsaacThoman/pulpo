@@ -22,6 +22,12 @@ it measured functions, not full-app startup.
   live account, or model calls are involved.
 - `fixture.ts`: deterministic shared transcript generator.
 
+For a large-account drawer check, set `EXPO_PUBLIC_PERF_HISTORY_COUNT=5000` when
+exporting `ui-entry.tsx`, then run the `testLargeHistorySwipe` XCTest case. Extra
+chats contain summaries only. The case repeats swipe-open/chat-selection cycles
+and searches for the 5,000th chat. It checks interaction correctness, not frame
+latency; keep any screenshots and result bundles outside the repository.
+
 Build current native dependencies first (`expo prebuild`, `pod install`, then
 Release Xcode/Gradle builds). Keep the normal build intact. Export a harness from
 `apps/mobile`, for example:

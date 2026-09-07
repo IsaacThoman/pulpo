@@ -131,3 +131,27 @@ The 10 MiB serialized inactive budget is explicitly not a heap estimate.
   on this host; API 36 was used instead.
 
 No deployment, server API changes, settings, or UI redesign were made.
+
+## Large-account drawer follow-up
+
+The closed drawer previously used `display: none`, so beginning a swipe restored
+layout for its virtualized list. It now stays measured behind the chat view with
+zero opacity while closed; pointer events and accessibility remain gated by drawer
+visibility. History projection caches summary metadata without retaining transcript
+objects, reuses date formatters, and preserves unchanged row/list references.
+Section and folder grouping use one pass. Preview lookup uses a shared chat index,
+and row preview callbacks retain identity.
+
+Desktop Node microbenchmarks on the same host (five measured samples after three
+warmups, 5,000 chats): summary generation fell from 139.44 ms to 2.73 ms; a warm
+transcript-only update took 0.66 ms. Section grouping fell from 9.48 ms to 0.08 ms.
+These measure JavaScript preparation, not native swipe latency or physical-device
+frame rates. The iOS Release simulator fixture supports 5,000 summaries for the
+`testLargeHistorySwipe` interaction check. That native test passed five swipe-open
+and selection cycles plus search for the 5,000th chat on iPhone 17 Pro / iOS 26.5,
+using the existing Release native shell with a freshly exported production-mode
+fixture bundle. Raw screenshots/logs remain outside Git.
+
+Regression coverage includes 5,000-chat projection, unchanged transcript updates,
+ordering, removal/reinsertion, visibility, folders, expiry, and date boundaries.
+Mobile type checking, repository lint, and all 441 mobile tests passed.

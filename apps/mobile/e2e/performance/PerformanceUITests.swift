@@ -1,5 +1,27 @@
 import XCTest
 final class PerformanceUITests: XCTestCase {
+  func testLargeHistorySwipe() {
+    continueAfterFailure = false
+    let app = XCUIApplication(bundleIdentifier: "com.isaacthoman.pulpo")
+    app.launch()
+    XCTAssertTrue(app.buttons["Open chats"].waitForExistence(timeout: 30))
+    // Run with EXPO_PUBLIC_PERF_HISTORY_COUNT=5000 when exporting the fixture.
+    for _ in 0..<5 {
+      let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.04, dy: 0.45))
+      let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0.45))
+      start.press(forDuration: 0.01, thenDragTo: end)
+      let row = app.staticTexts["Performance chat 2"].firstMatch
+      XCTAssertTrue(row.waitForExistence(timeout: 3))
+      row.tap()
+      XCTAssertTrue(app.buttons["Open chats"].waitForExistence(timeout: 3))
+    }
+    app.buttons["Open chats"].tap()
+    app.buttons["Search chats"].tap()
+    let search = app.textFields.firstMatch
+    XCTAssertTrue(search.waitForExistence(timeout: 3))
+    search.tap(); search.typeText("Performance chat 5000")
+    XCTAssertTrue(app.staticTexts["Performance chat 5000"].firstMatch.waitForExistence(timeout: 5))
+  }
   func testPreviewAndResume() {
     continueAfterFailure = false
     let app = XCUIApplication(bundleIdentifier: "com.isaacthoman.pulpo")

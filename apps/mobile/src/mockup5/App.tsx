@@ -235,8 +235,8 @@ import {
   historyChatSections,
   historyChatSummary,
   resolveHistoryChatExpiryMenuAction,
-  reuseHistoryChatSummaries,
-  visibleHistoryChats,
+  createHistoryProjector,
+  historyFolderItems,
   type HistoryChatExpiryMenuAction,
   type HistoryChatSummary,
 } from '../features/chat/history';
@@ -1657,7 +1657,12 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   const thinkingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const activeResponseId = useRef<string | null>(null);
   const activeResponseSubscription = useRef<(() => void) | null>(null);
-  const previousHistoryChats = useRef<HistoryChatSummary[]>([]);
+  const projectHistory = useMemo(() => {
+    // Discard cached summary ownership when the account or instance changes.
+    void productionInstanceUrl;
+    void productionUserId;
+    return createHistoryProjector();
+  }, [productionInstanceUrl, productionUserId]);
   const pendingTemporaryStart = useRef<{
     chatId: string;
     promise: ReturnType<typeof startServerChat>;
@@ -1930,7 +1935,9 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     };
   }, [compactDrawerCorners, openOffset, persistentSidebar, reduceMotion]);
   const panelAnimatedStyle = useAnimatedStyle(() => ({
-    display: (persistentSidebar ? wideSidebarProgress.value : slideX.value) === 0 ? 'none' : 'flex',
+    // Keep the virtualized list measured before the first swipe frame.
+    // Interaction and accessibility are gated on the enclosing view.
+    opacity: (persistentSidebar ? wideSidebarProgress.value : slideX.value) === 0 ? 0 : 1,
     transform: [{ translateX: persistentSidebar ? 0 : reduceMotion ? 0 : interpolate(slideX.value, [0, openOffset], [-36, 0]) }],
   }), [openOffset, persistentSidebar, reduceMotion, wideSidebarProgress]);
   const sidebarFrameAnimatedStyle = useAnimatedStyle(() => ({
@@ -1949,20 +1956,13 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     }],
   }), [persistentSidebar, wideSidebarProgress]);
   const historyVisible = persistentSidebar ? wideSidebarVisible : panelOpen;
-  const historyChats = useMemo(() => {
-    const now = Date.now();
-    const projected = visibleHistoryChats(storedChats).map((chat) => historyChatSummary(chat, now));
-    return reuseHistoryChatSummaries(previousHistoryChats.current, projected);
-  }, [storedChats]);
+  const historyChats = useMemo(() => projectHistory(storedChats), [projectHistory, storedChats]);
   const loadHistoryPreview = useCallback((chatId: string) => {
     if (!productionUserId) return;
     const namespace = cacheNamespace(productionInstanceUrl, productionUserId);
     const localChatLimit = usePrototypeStore.getState().preferences.localChatLimit;
     void hydrateProductionChatPreview(queryClient, namespace, chatId, localChatLimit).catch(() => undefined);
   }, [productionInstanceUrl, productionUserId, queryClient]);
-  useEffect(() => {
-    previousHistoryChats.current = historyChats;
-  }, [historyChats]);
   const activePrototypeChat = useMemo(() => storedChats.find((chat) => chat.id === activeChatId && chat.deletedAt === null) ?? null, [activeChatId, storedChats]);
   const activeChat = useMemo(() => activePrototypeChat ? prototypeChatToLegacy(activePrototypeChat) : null, [activePrototypeChat]);
   const chatAutoExpire = activePrototypeChat
@@ -5501,6 +5501,7 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
   const automaticChatExpiration = usePrototypeStore((state) => state.preferences.automaticChatExpiration);
   const models = usePrototypeStore((state) => state.models);
   const previewChats = usePrototypeStore((state) => state.chats);
+  const previewChatsById = useMemo(() => new Map(previewChats.map((chat) => [chat.id, chat])), [previewChats]);
   const themePreference = usePrototypeStore((state) => state.preferences.theme);
   const appearance = useColorScheme();
   const isDark = themePreference === 'dark' || (themePreference === 'system' && appearance !== 'light');
@@ -5526,13 +5527,7 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
     setHideNewChatButton(KeyboardController.isVisible());
     return () => subscriptions.forEach((subscription) => subscription.remove());
   }, []);
-  const folderItems = useMemo(() => {
-    return folders.map((folder) => ({
-      id: folder.id,
-      name: folder.name,
-      chats: chats.filter((chat) => chat.folderId === folder.id),
-    }));
-  }, [chats, folders]);
+  const folderItems = useMemo(() => historyFolderItems(folders, chats), [chats, folders]);
   const searchActive = searchFocused || search.length > 0;
   const searchActiveProgress = useSharedValue(searchActive ? 1 : 0);
   const nativeSearchRef = useRef<SwiftUITextFieldRef>(null);
@@ -5559,7 +5554,10 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
     };
   });
   const filtered = useMemo(
-    () => chats.filter((chat) => chat.title.toLowerCase().includes(search.toLowerCase())),
+    () => {
+      const query = search.toLowerCase();
+      return query ? chats.filter((chat) => chat.title.toLowerCase().includes(query)) : chats;
+    },
     [chats, search],
   );
   const sections = useMemo(() => {
@@ -5633,8 +5631,9 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
     onSelectChat(chat);
   }, [dismissSearch, onSelectChat]);
 
+  const requestHistoryPreview = useCallback((chat: HistoryChatSummary) => onPreviewRequest(chat.id), [onPreviewRequest]);
   const renderHistoryChat = useCallback(({ item }: { item: HistoryChatSummary }) => {
-    const source = previewChats.find((chat) => chat.id === item.id);
+    const source = previewChatsById.get(item.id);
     const previewText = source?.detailLoaded === false
       ? 'Loading preview…'
       : source?.messages.at(-1)?.text || DEFAULT_HISTORY_PREVIEW;
@@ -5657,10 +5656,10 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
       removeChatLabel={removeChatLabel}
       onChatAction={runChatAction}
       onOpenActions={showChatActions}
-      onPreviewRequest={(chat) => onPreviewRequest(chat.id)}
+      onPreviewRequest={requestHistoryPreview}
       onSelectChat={selectHistoryChat}
     />;
-  }, [activeChatId, automaticChatExpiration, isDark, models, onPreviewRequest, previewChats, removeChatLabel, runChatAction, selectHistoryChat, showChatActions]);
+  }, [activeChatId, automaticChatExpiration, isDark, models, requestHistoryPreview, previewChatsById, removeChatLabel, runChatAction, selectHistoryChat, showChatActions]);
 
   return (
     <View style={styles.panelRoot}>

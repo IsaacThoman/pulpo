@@ -23,6 +23,13 @@ const chats: ServerChat[] = Array.from({ length: 20 }, (_, i) => ({
   title: i === 0 ? 'Performance 1000 turns' : `Performance chat ${i + 1}`,
   sortOrder: i,
 }))
+// Exercise large accounts without retaining thousands of synthetic transcripts.
+const historyCount = Number(process.env.EXPO_PUBLIC_PERF_HISTORY_COUNT ?? 20)
+for (let i = chats.length; i < historyCount; i++) {
+  chats.push({ ...withoutCachedChatDetails(chats[1]!),
+    id: `00000000-0000-4000-8000-${String(i + 100).padStart(12, '0')}`,
+    title: `Performance chat ${i + 1}`, sortOrder: i })
+}
 const model = { id: 'fixture', name: 'Fixture model', description: 'Synthetic local test', executionMode: 'stream', maxOutputTokens: 4096, agentEnabled: false, tags: [], logo: null, iconLight: null, iconDark: null, provider: { id: 'fixture', name: 'Fixture' }, lab: null, presets: [] } as MobileModel
 configureApi({ instanceUrl: origin, token: null })
 mobileApi.chats = async () => ({ data: chats.map(withoutCachedChatDetails) })
