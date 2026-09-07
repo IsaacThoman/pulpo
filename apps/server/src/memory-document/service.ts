@@ -1,6 +1,7 @@
-import { and, desc, eq, gte, lt, sql } from 'drizzle-orm'
+import { and, desc, eq, gt, gte, isNull, lt, or, sql } from 'drizzle-orm'
 import { db } from '../database/client.js'
-import { userMemoryDocumentRevisions, userMemoryDocuments } from '../database/schema.js'
+import { chats, responses, userMemoryDocumentRevisions, userMemoryDocuments } from '../database/schema.js'
+import { chatAllowsMemory } from '../chats/memory-policy.js'
 import { newId } from '../lib/ids.js'
 
 export const MEMORY_DOCUMENT_MAX_CHARACTERS = 16_000
@@ -130,6 +131,23 @@ export async function listMemoryDocumentRevisions(userId: string, now = new Date
   )).orderBy(desc(userMemoryDocumentRevisions.supersededAt)).limit(MEMORY_DOCUMENT_REVISION_LIMIT)
 }
 
+/** Check agent-origin access before reading, and again inside the write transaction. */
+export async function assertAgentMemoryAccess(
+  userId: string,
+  responseId: string | null | undefined,
+  executor: Pick<typeof db, 'select'> = db,
+): Promise<void> {
+  if (!responseId) throw new MemoryDocumentError('memory_access_denied', 'Memory is unavailable for this response')
+  const [chat] = await executor.select({ temporary: chats.temporary }).from(responses)
+    .innerJoin(chats, eq(chats.id, responses.chatId))
+    .where(and(
+      eq(responses.id, responseId), eq(responses.userId, userId), eq(chats.userId, userId),
+      isNull(responses.deletedAt), isNull(chats.deletedAt), isNull(chats.purgeStartedAt),
+      or(isNull(chats.expiresAt), gt(chats.expiresAt, new Date())),
+    )).limit(1)
+  if (!chatAllowsMemory(chat)) throw new MemoryDocumentError('memory_access_denied', 'Memory is unavailable for this response')
+}
+
 export async function updateMemoryDocument(input: {
   userId: string
   expectedRevision: number
@@ -142,6 +160,7 @@ export async function updateMemoryDocument(input: {
   const summary = normalizeSummary(input.summary)
   return db.transaction(async (tx) => {
     await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${input.userId}, 0))`)
+    if (input.editor === 'agent') await assertAgentMemoryAccess(input.userId, input.sourceResponseId, tx)
     const [current] = await tx.select().from(userMemoryDocuments)
       .where(eq(userMemoryDocuments.userId, input.userId)).limit(1)
     const currentRevision = current?.revision ?? 0

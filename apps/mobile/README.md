@@ -127,7 +127,38 @@ npm run deploy:iphone
 
 Routine Expo and Xcode output is written to `/tmp/pulpo-ios-deploy.log`. A
 failed deployment prints only the final 80 lines. Override the defaults with
-`PULPO_IOS_DEVICE`, `PULPO_INSTANCE_URL`, or `PULPO_IOS_DEPLOY_LOG`.
+`PULPO_IOS_DEVICE`, `PULPO_IOS_CONFIGURATION`, `PULPO_INSTANCE_URL`, or
+`PULPO_IOS_DEPLOY_LOG`.
+
+The command snapshots the invoking worktree into
+`~/.cache/pulpo/iphone-build/checkout` and builds there, so all worktrees reuse
+the same source path, dependencies, generated iOS project, and Xcode DerivedData.
+It includes tracked edits, non-ignored untracked files, and root/mobile `.env*`
+files; files absent from the next worktree are removed from the snapshot.
+Unchanged source files retain their build-directory timestamps. Generated output
+and other ignored files are not copied. The original worktree is not modified.
+
+The first deployment installs dependencies and generates the native project.
+Later deployments reinstall dependencies when package manifests, the lockfile,
+repository npm configuration, or Node/npm versions change. Expo's native fingerprint checks
+resolved app configuration, native dependencies, plugins, and assets; native
+changes trigger a clean iOS prebuild. The shared contracts and client-core
+packages are rebuilt from the snapshot before every deployment.
+
+A process lock serializes the entire snapshot/build/install/launch sequence.
+Another deployment waits without changing the active build or its log. Python 3,
+Node/npm, Git, and the existing Apple build tools must be available. To choose
+another persistent location, set `PULPO_IOS_BUILD_ROOT` to an empty directory
+outside your source checkouts and use that same value across worktrees.
+
+Existing per-worktree DerivedData directories are not removed automatically.
+This change does not enable ccache or modify Xcode's global settings.
+
+Test deployment orchestration without building or installing an app:
+
+```bash
+python3 apps/mobile/scripts/deploy-iphone_test.py
+```
 
 ## GitHub Actions releases
 

@@ -199,6 +199,9 @@ export const sessions = pgTable('sessions', {
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
   lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).notNull().defaultNow(),
   deviceLabel: text('device_label'),
+  appType: text('app_type'),
+  platform: text('platform'),
+  latestIpAddress: text('latest_ip_address'),
   userAgent: text('user_agent'),
   ipAddress: text('ip_address'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -725,6 +728,20 @@ export const chatImportSources = pgTable('chat_import_sources', {
   primaryKey({ columns: [table.userId, table.source, table.sourceChatId] }),
   index('chat_import_fingerprint_idx').on(table.userId, table.source, table.fingerprint),
 ])
+
+// Staging survives a restore's TRUNCATE users CASCADE so abandoned chunks can
+// still be reclaimed. Ownership is checked explicitly on every upload request.
+export const restoreUploads = pgTable('restore_uploads', {
+  id: uuid('id').primaryKey(),
+  userId: uuid('user_id').notNull(),
+  originalName: text('original_name').notNull(),
+  sizeBytes: bigint('size_bytes', { mode: 'number' }).notNull(),
+  fingerprint: text('fingerprint').notNull(),
+  parts: jsonb('parts').$type<Record<string, { size: number; checksum: string }>>().notNull().default({}),
+  status: text('status').notNull().default('uploading'),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  ...timestamps,
+}, (table) => [index('restore_uploads_expiry_idx').on(table.expiresAt)])
 
 export const backupJobs = pgTable('backup_jobs', {
   id: uuid('id').primaryKey(),

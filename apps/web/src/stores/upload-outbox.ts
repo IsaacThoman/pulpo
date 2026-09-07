@@ -1,3 +1,4 @@
+import { localComposerDraftId } from '@pulpo/client-core'
 import type { ComposerState } from '@pulpo/contracts'
 import { webComposerSync } from '@/lib/local-first/composer-sync'
 import { create } from 'zustand'
@@ -14,7 +15,6 @@ import { useChat, waitForResponseDispatch } from '@/stores/chat'
 import { optimisticSubmissionPlacement, uploadOutboxHeadAction } from '@/components/chat/composer-upload-policy'
 import { ui } from '@/i18n/ui'
 import {
-  NEW_CHAT_DRAFT_ID,
   updateComposerDraftAttachment,
   runtimeComposerDraft,
   type PersistedDraftAttachment,
@@ -161,11 +161,11 @@ function deleteRemoteAttachment(id: string): void {
 function persistDraftUpload(record: UploadRecord): void {
   const userId = useAuth.getState().user?.id
   if (!userId) return
-  const draftId = record.chatId ?? NEW_CHAT_DRAFT_ID
-  if (record.status === 'ready' && record.id && runtimeComposerDraft(userId, draftId)?.attachments.some((item) => item.localId === record.localId)) {
+  const draftId = localComposerDraftId(record.chatId, Boolean(record.temporary))
+  if (!record.temporary && record.status === 'ready' && record.id && runtimeComposerDraft(userId, draftId)?.attachments.some((item) => item.localId === record.localId)) {
     webComposerSync(userId)?.attachToInactiveDraft(draftId, { id: record.id, name: record.name, mimeType: record.mimeType, size: record.size })
   }
-  void updateComposerDraftAttachment(userId, record.chatId ?? NEW_CHAT_DRAFT_ID, {
+  void updateComposerDraftAttachment(userId, draftId, {
     localId: record.localId,
     serverId: record.id,
     name: record.name,

@@ -15,7 +15,7 @@ export function useComposerSync(userId: string | null, draftId: string, state: C
   const skippingEdit = useRef(false)
   const hiddenSubmission = useRef<ComposerState | null>(null)
   const opened = useRef<string | null>(null)
-  const sync = enabled && userId ? mobileComposerSync(userId) : null
+  const sync = enabled && !state.temporary && userId ? mobileComposerSync(userId) : null
   useEffect(() => {
     if (!sync || !hydrated) return
     let disposed = false
@@ -26,7 +26,7 @@ export function useComposerSync(userId: string | null, draftId: string, state: C
     skippingEdit.current = false
     hiddenSubmission.current = null
     void sync.open(draftId, latest.current.state, (checkpoint) => {
-      if (disposed || !usePreferencesStore.getState().composerSyncEnabled || latest.current.identity !== identity) return
+      if (disposed || latest.current.state.temporary || !usePreferencesStore.getState().composerSyncEnabled || latest.current.identity !== identity) return
       opened.current = identity
       let remote = { ...checkpoint.snapshot.state, ...checkpoint.pending }
       // An optimistic clear is local until acceptance. Coordinator notifications

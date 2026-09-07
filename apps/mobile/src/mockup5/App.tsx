@@ -1,3 +1,6 @@
+import { ToolImagePreview } from '../components/ToolImagePreview';
+import { localComposerDraftId } from '@pulpo/client-core';
+import { DevicesScreen } from '../components/Devices';
 import { initialActivityTiming } from '@pulpo/client-core';
 import { mobileShelf, durableShelfAttachments, shelfComposerAttachments } from '../features/chat/shelf';
 import { useAppTheme } from './src/theme';
@@ -1314,14 +1317,12 @@ function AndroidTemporaryChatHeaderControl(props: TemporaryChatHeaderControlProp
         label={props.leadingAction === 'save' ? props.saving ? 'Saving chat' : 'Save chat' : props.expirationEnabled ? 'Disable automatic expiration' : 'Enable automatic expiration'}
         disabled={!visible || (props.leadingAction === 'save' && (props.saving || props.saveDisabled))}
         color={props.leadingAction === 'expiration' && props.expirationEnabled ? '#14B8A6' : undefined}
-        selected={props.leadingAction === 'expiration' && props.expirationEnabled}
         onPress={props.leadingAction === 'save' ? props.onSave : props.onToggleExpiration} />
     </Reanimated.View>
     <MaterialIconButton icon={props.trailingAction === 'ghost' ? 'ghost' : 'square.and.pencil'}
       label={props.trailingAction === 'ghost' ? props.active ? 'Disable temporary chat' : 'Enable temporary chat' : props.active ? 'New temporary chat' : 'New chat'}
-      color={props.active ? temporaryColors.onControl : undefined}
-      containerColor={props.active ? temporaryColors.control : undefined}
-      selected={props.active} onPress={props.trailingAction === 'ghost' ? props.onToggleTemporary : props.onNewChat} />
+      color={props.active ? temporaryColors.accent : undefined}
+      onPress={props.trailingAction === 'ghost' ? props.onToggleTemporary : props.onNewChat} />
   </View>;
 }
 
@@ -1573,6 +1574,7 @@ function PrototypeRoot() {
         <RootStack.Screen name="ChangePassword" component={ChangePasswordScreen} options={{ headerShown: Platform.OS === 'ios', title: 'Change Password', headerBackTitle: 'Account' }} />
         <RootStack.Screen name="DeleteAccount" component={DeleteAccountScreen} options={{ headerShown: false }} />
         <RootStack.Screen name="TwoFactor" component={TwoFactorScreen} options={{ headerShown: false }} />
+        <RootStack.Screen name="Devices" component={DevicesScreen} options={{ headerShown: false }} />
         <RootStack.Screen name="Passkeys" component={PasskeysScreen} options={{ headerShown: false }} />
         <RootStack.Screen name="InstanceDetails" component={InstanceDetailsScreen} options={{ headerShown: Platform.OS === 'ios', title: 'Pulpo Instance', headerBackTitle: 'Account' }} />
         <RootStack.Screen name="SettingsDetail" component={SettingsDetailScreen} options={{ headerShown: Platform.OS === 'ios', headerBackTitle: 'Settings' }} />
@@ -1988,8 +1990,10 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     discardStoredChat(chat.id);
     if (!productionUserId) return;
     const namespace = cacheNamespace(productionInstanceUrl, productionUserId);
-    deleteCachedComposerDraft(composerDraftScope(namespace, chat.id));
-    void saveDraft(namespace, chat.id, '', []);
+    for (const draftId of [chat.id, localComposerDraftId(chat.id, true)]) {
+      deleteCachedComposerDraft(composerDraftScope(namespace, draftId));
+      void saveDraft(namespace, draftId, '', []);
+    }
     discardOptimisticChat(namespace, chat.id);
     queryClient.removeQueries({ queryKey: queryKeys.chat(namespace, chat.id), exact: true });
     for (const message of chat.messages) {
@@ -2935,7 +2939,7 @@ const ToolStepRow = memo(function ToolStepRow({ step }: { step: Extract<Timeline
   const [open, setOpen] = useState(false);
   const failed = step.tool.status === 'failed' || step.tool.isError;
   const running = step.tool.status === 'running';
-  const hasBody = step.tool.arguments !== undefined || Boolean(step.tool.output);
+  const hasBody = step.tool.arguments !== undefined || Boolean(step.tool.output) || Boolean(step.tool.imagePreview);
   const details = useMemo(() => [
     step.tool.arguments === undefined ? '' : typeof step.tool.arguments === 'string' ? step.tool.arguments : JSON.stringify(step.tool.arguments, null, 2),
     step.tool.output ?? '',
@@ -2961,6 +2965,7 @@ const ToolStepRow = memo(function ToolStepRow({ step }: { step: Extract<Timeline
         {seconds !== null && <Text style={styles.workToolDuration}>{seconds}s</Text>}
         {hasBody && <Icon name={open ? 'chevron.down' : 'chevron.right'} size={10} color={COLORS.dim} weight="semibold" />}
       </Pressable>
+      <ToolImagePreview preview={step.tool.imagePreview} expanded={open} mutedColor={COLORS.muted} />
       {open && details ? (
         <ScrollView nestedScrollEnabled style={styles.workDetailScroller}>
           <Text selectable style={styles.workDetail}>{details}</Text>
@@ -3531,6 +3536,69 @@ function SuggestedPromptButton({ label, accessible, onPress, temporary = false }
 
 const EMPTY_MOBILE_QUEUE: MobileQueuedMessage[] = [];
 
+function ComposerQueueSection({ title, subject, collapsed, onToggle, failed = false, children }: {
+  title: string;
+  subject: string;
+  collapsed: boolean;
+  onToggle: () => void;
+  failed?: boolean;
+  children: ReactNode;
+}) {
+  const { styles, COLORS } = useChatStyles();
+  const { reduceMotion } = useAccessibilityPreferences();
+  const progress = useSharedValue(collapsed ? 0 : 1);
+  const contentHeight = useSharedValue(0);
+
+  useEffect(() => {
+    const target = collapsed ? 0 : 1;
+    progress.set(reduceMotion ? target : withSpring(target, {
+      damping: 24,
+      stiffness: 260,
+      mass: 0.8,
+      overshootClamping: true,
+    }));
+  }, [collapsed, progress, reduceMotion]);
+
+  const revealStyle = useAnimatedStyle(() => ({ height: contentHeight.value * progress.value }));
+  const contentStyle = useAnimatedStyle(() => ({ opacity: progress.value }));
+  const chevronStyle = useAnimatedStyle(() => ({ transform: [{ rotate: `${180 * progress.value}deg` }] }));
+
+  return (
+    <View style={styles.composerQueue}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`${collapsed ? 'Expand' : 'Collapse'} ${subject}`}
+        accessibilityState={{ expanded: !collapsed }}
+        onPress={() => { Haptics.selectionAsync(); onToggle(); }}
+        style={styles.composerQueueHeader}
+      >
+        <Text style={styles.composerQueueTitle}>{title}</Text>
+        <View style={styles.composerQueueDisclosure}>
+          {failed && <Icon name="exclamationmark.circle" size={13} color={COLORS.critical} />}
+          <Reanimated.View style={chevronStyle}>
+            <Icon name="chevron.up" size={11} color={COLORS.muted} />
+          </Reanimated.View>
+        </View>
+      </Pressable>
+      <Reanimated.View
+        accessibilityElementsHidden={collapsed}
+        importantForAccessibility={collapsed ? 'no-hide-descendants' : 'auto'}
+        pointerEvents={collapsed ? 'none' : 'auto'}
+        style={[styles.composerQueueClip, revealStyle]}
+      >
+        {/* Measure at full height so native tables keep their scroll position and
+            row layout while the surrounding composer expands or contracts. */}
+        <Reanimated.View
+          onLayout={({ nativeEvent: { layout } }) => { contentHeight.set(layout.height); }}
+          style={[styles.composerQueueContent, contentStyle]}
+        >
+          {children}
+        </Reanimated.View>
+      </Reanimated.View>
+    </View>
+  );
+}
+
 function ChatView({
   messages, queuedMessages, chatId, chatLoaded, draftNamespace, keyboardLayoutEnabled, model, models, prototypeModel, presetSelections: defaultPresetSelections, input, composerInputRef, composerFocusSuppressed, composerFocusRequest, onChangeInput, onSend, assistantStatus,
   onEdit, onRegenerate, onActivateBranch, onOpenChat, onStop, onTogglePanel, onOpenModelPicker, onSelectModel, onNewChat, onSaveTemporary, persistentSidebar, sidebarVisible, temporary, autoExpire, expirationPeriod, showAutoExpirationControl, expired, savingTemporary, onTemporaryChange, onAutoExpirationChange,
@@ -3859,7 +3927,7 @@ function ChatView({
   }), []);
 
   useEffect(() => {
-    const draftId = chatId ?? NEW_CHAT_DRAFT_ID;
+    const draftId = localComposerDraftId(chatId, temporary);
     const scope = `${draftNamespace ?? 'local'}\u0000${draftId}`;
     const previous = activeDraftRef.current;
     if (previous?.scope === scope) return;
@@ -3918,7 +3986,7 @@ function ChatView({
         setHydratedComposerScope(scope);
       }
     });
-  }, [activeDraftSnapshot, chatId, draftNamespace, onChangeInput, placeComposerCursorAtEnd, setAttachments]);
+  }, [activeDraftSnapshot, chatId, temporary, draftNamespace, onChangeInput, placeComposerCursorAtEnd, setAttachments]);
 
   const sharedComposerState: ComposerState = {
     content: preservedComposerRef.current?.input ?? input,
@@ -3929,8 +3997,8 @@ function ChatView({
     agentMode: preservedComposerRef.current?.agentEnabled ?? agentEnabled, temporary, autoExpire,
   };
   const { sync: composerSync, skipNextEdit } = useComposerSync(
-    draftNamespace, chatId ?? NEW_CHAT_DRAFT_ID, sharedComposerState,
-    hydratedComposerScope === `${draftNamespace ?? 'local'}\u0000${chatId ?? NEW_CHAT_DRAFT_ID}`,
+    draftNamespace, localComposerDraftId(chatId, temporary), sharedComposerState,
+    hydratedComposerScope === `${draftNamespace ?? 'local'}\u0000${localComposerDraftId(chatId, temporary)}`,
     Boolean(messageEdit || shelfBusy),
     (remote) => {
       const current = preservedComposerRef.current?.attachments ?? attachmentsRef.current;
@@ -3962,7 +4030,6 @@ function ChatView({
           if (selected && selected.id !== model.id) onSelectModel(selected);
         }
         if (!chatId) {
-          if (remote.temporary !== temporary) onTemporaryChange(remote.temporary);
           if (remote.autoExpire !== autoExpire) onAutoExpirationChange(remote.autoExpire);
         }
       }
@@ -4388,7 +4455,7 @@ function ChatView({
       attachments: draft.attachments.map((item) => item.localId === attachment.localId ? attachment : item),
     };
     cacheComposerDraft(owner.scope, updated);
-    if (owner.namespace && attachment.state === 'ready' && attachment.serverId) {
+    if (owner.namespace && !owner.draftId.startsWith('temporary:') && attachment.state === 'ready' && attachment.serverId) {
       mobileComposerSync(owner.namespace)?.attachToInactiveDraft(owner.draftId, { id: attachment.serverId, name: attachment.name, mimeType: attachment.mimeType, size: attachment.size ?? 0 });
     }
     if (owner.namespace) void saveDraft(owner.namespace, owner.draftId, updated.body, updated.attachments);
@@ -5001,15 +5068,13 @@ function ChatView({
               surfaceStyle={temporaryComposerAnimatedStyle}
               tintColor={temporary ? colorScheme === 'dark' ? 'rgba(88,28,135,0.32)' : 'rgba(175,82,222,0.16)' : undefined}
             >
-              {showShelf && shelfRows.length > 0 && <View style={styles.composerQueue}>
-                <Pressable accessibilityRole="button" accessibilityLabel={shelfCollapsed ? 'Expand shelved drafts' : 'Collapse shelved drafts'} accessibilityState={{ expanded: !shelfCollapsed }}
-                  onPress={() => { Haptics.selectionAsync(); setShelfCollapsed((value) => !value); }} style={styles.composerQueueHeader}>
-                  <Text style={styles.composerQueueTitle}>Shelved · {shelfRows.length}</Text>
-                  <Icon name={shelfCollapsed ? 'chevron.up' : 'chevron.down'} size={11} color={COLORS.muted} />
-                </Pressable>
-                {!shelfCollapsed && <QueuedMessagesView maxHeight={Math.min(200, windowHeight * 0.25)} style={styles.composerQueueRows}
+              {showShelf && shelfRows.length > 0 && <ComposerQueueSection
+                title={`Shelved · ${shelfRows.length}`} subject="shelved drafts" collapsed={shelfCollapsed}
+                onToggle={() => setShelfCollapsed((value) => !value)}
+              >
+                <QueuedMessagesView maxHeight={Math.min(200, windowHeight * 0.25)} style={styles.composerQueueRows}
                   rows={shelfRows.map((row) => ({ id: row.id, kind: 'shelf', content: row.content.slice(0, 200) || 'Attachments',
-                    detail: [row.attachments.map((a) => a.name).join(', '), row.error || (row.status === 'uploading' ? 'Uploading…' : row.status === 'pending' ? 'Waiting to sync' : '')].filter(Boolean).join(' · '),
+                    detail: [row.attachments.map((a) => a.name).join(', '), row.error || (row.status === 'uploading' ? 'Uploading…' : row.showPendingStatus ? 'Waiting to sync' : '')].filter(Boolean).join(' · '),
                     status: row.status ?? '', isEditing: false, canEdit: !shelfBusy && !sending, canDelete: !shelfBusy && !sending, canReorder: !shelfBusy && !sending,
                     canRetry: row.status === 'failed' && !shelfBusy,
                   }))}
@@ -5018,27 +5083,15 @@ function ChatView({
                     else if (action.action === 'delete') void runShelfAction(() => shelf!.delete(action.id));
                     else if (action.action === 'retry') void runShelfAction(() => shelf!.retry());
                     else if (action.targetMessageId && action.edge) void runShelfAction(() => shelf!.reorder(action.id, action.targetMessageId!, action.edge!));
-                  }} />}
-              </View>}
+                  }} />
+              </ComposerQueueSection>}
               {showShelf && shelfError && <Text accessibilityRole="alert" style={styles.attachmentErrorText}>{shelfError}</Text>}
               {queuedMessages.length > 0 && (
-                <View style={styles.composerQueue}>
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel={queueCollapsed ? 'Expand queued messages' : 'Collapse queued messages'}
-                    accessibilityState={{ expanded: !queueCollapsed }}
-                    onPress={() => { Haptics.selectionAsync(); setQueueCollapsed((value) => !value); }}
-                    style={styles.composerQueueHeader}
-                  >
-                    <Text style={styles.composerQueueTitle}>Queued</Text>
-                    <View style={styles.composerQueueDisclosure}>
-                      {queuedMessages.some((item) => item.status === 'failed' || item.localFailure) && (
-                        <Icon name="exclamationmark.circle" size={13} color={COLORS.critical} />
-                      )}
-                      <Icon name={queueCollapsed ? 'chevron.up' : 'chevron.down'} size={11} color={COLORS.muted} />
-                    </View>
-                  </Pressable>
-                  {!queueCollapsed && (
+                <ComposerQueueSection
+                  title="Queued" subject="queued messages" collapsed={queueCollapsed}
+                  onToggle={() => setQueueCollapsed((value) => !value)}
+                  failed={queuedMessages.some((item) => item.status === 'failed' || Boolean(item.localFailure))}
+                >
                     <QueuedMessagesView
                       maxHeight={Math.min(200, windowHeight * 0.25)}
                       style={styles.composerQueueRows}
@@ -5076,8 +5129,7 @@ function ChatView({
                         }
                       }}
                     />
-                  )}
-                </View>
+                </ComposerQueueSection>
               )}
               {messageEdit ? (
                 <View style={styles.messageEditBanner}>
@@ -5174,6 +5226,8 @@ function ChatView({
                 <View style={styles.flex} />
                 {Platform.OS === 'ios' ? (
                   <>
+                    {showShelf && Boolean(input.trim() || attachments.length) && <NativeComposerIconButton label="Shelve draft" systemImage="archivebox"
+                      disabled={shelfBusy || sending} onPress={() => { void transferShelf(); }} />}
                     <SwiftUIHost ignoreSafeArea="keyboard" style={styles.nativeAgentHost}>
                       <SwiftUIButton
                         onPress={() => {
@@ -5196,8 +5250,6 @@ function ChatView({
                         </SwiftUIRNHostView>
                       </SwiftUIButton>
                     </SwiftUIHost>
-                    {showShelf && <NativeComposerIconButton label="Shelve draft" systemImage="archivebox"
-                      disabled={shelfBusy || sending || (!input.trim() && !attachments.length)} onPress={() => { void transferShelf(); }} />}
                     <NativeComposerIconButton
                       disabled={shelfBusy || composerAction === 'submit' && !canSend}
                       label={composerAction === 'stop' ? 'Stop generating' : messageEdit ? queueEditRef.current ? 'Save queued message' : 'Save and resend message' : 'Send message'}
@@ -5208,8 +5260,8 @@ function ChatView({
                   </>
                 ) : (
                   <>
-                    <MaterialIconButton label={activeAgentEnabled ? 'Turn off Agent mode' : 'Turn on Agent mode'} icon="bot" color={activeAgentEnabled ? nativeAgentTint : undefined} selected={activeAgentEnabled} disabled={!canUseAgent} onPress={toggleAgent} />
-                    {showShelf && <MaterialIconButton label="Shelve draft" icon="archivebox" disabled={shelfBusy || sending || (!input.trim() && !attachments.length)} onPress={() => { void transferShelf(); }} />}
+                    {showShelf && Boolean(input.trim() || attachments.length) && <MaterialIconButton label="Shelve draft" icon="archivebox" disabled={shelfBusy || sending} onPress={() => { void transferShelf(); }} />}
+                    <MaterialIconButton label={activeAgentEnabled ? 'Turn off Agent mode' : 'Turn on Agent mode'} icon="bot" color={activeAgentEnabled ? nativeAgentTint : undefined} disabled={!canUseAgent} onPress={toggleAgent} />
                     <MaterialIconButton label={composerAction === 'stop' ? 'Stop generating' : messageEdit ? queueEditRef.current ? 'Save queued message' : 'Save and resend message' : 'Send message'} icon={composerAction === 'stop' ? 'stop.fill' : 'arrow.up'} prominent disabled={shelfBusy || composerAction === 'submit' && !canSend} onPress={() => composerAction === 'stop' ? onStop() : submitMessage()} />
                   </>
                 )}
@@ -5905,6 +5957,8 @@ function createChatStyles(COLORS: ChatColors) { return StyleSheet.create({
   composerQueueTitle: { color: COLORS.muted, fontSize: 12, fontWeight: '500' },
   composerQueueDisclosure: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   composerQueueRows: { marginBottom: 6 },
+  composerQueueClip: { overflow: 'hidden' },
+  composerQueueContent: { position: 'absolute', top: 0, left: 0, right: 0 },
   composerWrap: { paddingTop: 6 },
   composer: { minHeight: 108, borderRadius: 28, paddingTop: 8, paddingHorizontal: 10, paddingBottom: 4 },
   messageEditBanner: { flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 6, paddingBottom: 8 },

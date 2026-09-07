@@ -1,4 +1,6 @@
+import { localComposerDraftId } from '@pulpo/client-core'
 import { ShelvedDrafts } from './ShelvedDrafts'
+import { ComposerTray } from './ComposerTray'
 import { webShelf, shelfDraftAttachments } from '@/lib/local-first/shelf'
 import type { ShelfAttachment } from '@pulpo/client-core'
 import { useComposerSync } from './use-composer-sync'
@@ -58,7 +60,6 @@ import { dictationFilename, insertDictationText, preferredDictationMimeType } fr
 import { isDesktopRuntime } from '@/lib/runtime'
 import { ui, uit } from '@/i18n/ui'
 import {
-  NEW_CHAT_DRAFT_ID,
   deleteComposerDraft,
   loadComposerDraft,
   rememberRuntimeComposerDraft,
@@ -149,7 +150,7 @@ export function Composer({
   activeShelf.current = showShelf ? shelf : null
   useEffect(() => { shelfMounted.current = true; return () => { shelfMounted.current = false } }, [])
   useEffect(() => { if (shelf) void shelf.hydrate().then(() => shelf.sync()).catch(() => undefined) }, [shelf])
-  const draftId = chatId ?? NEW_CHAT_DRAFT_ID
+  const draftId = localComposerDraftId(chatId, temporary)
   // The composer is keyed by chat. Capture its starting draft once: consulting
   // the mutable cache on every render can restart hydration after a remote
   // clear, before the debounced disk save has removed the old draft.
@@ -160,6 +161,7 @@ export function Composer({
   const [dragging, setDragging] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [queueError, setQueueError] = useState<string | null>(null)
+  const [queueCollapsed, setQueueCollapsed] = useState(false)
   const [dictationError, setDictationError] = useState<string | null>(null)
   const [dictationState, setDictationState] = useState<'idle' | 'recording' | 'transcribing'>('idle')
   const [editingQueueId, setEditingQueueId] = useState<string | null>(null)
@@ -914,10 +916,11 @@ export function Composer({
         onRetry={() => { void runShelfAction(() => shelf!.retry()) }} />}
       {showShelf && shelfError && <p role="alert" className="px-3 py-2 text-xs text-destructive">{shelfError}</p>}
       {queuedMessages.length > 0 && (
-        <div className={cn(
-          '-mb-3 max-h-48 overflow-y-auto border border-b-0 bg-card px-2 pt-2 pb-4 shadow-sm',
-          messageEdit ? 'rounded-none' : 'rounded-t-2xl',
-        )}>
+        <ComposerTray label={ui('Queued messages')} title={ui('Queued')}
+          icon={<CornerDownRight aria-hidden="true" className="size-3.5" />}
+          count={queuedMessages.length} collapsed={queueCollapsed}
+          onCollapse={() => setQueueCollapsed((value) => !value)}
+          className={messageEdit ? 'rounded-none' : undefined}>
           {queuedMessages.map((message) => {
             const editing = editingQueueId === message.id
             const anotherEditing = queuedMessages.some((item) => item.status === 'editing' && item.id !== message.id)
@@ -1020,7 +1023,7 @@ export function Composer({
               </div>
             )
           })}
-        </div>
+        </ComposerTray>
       )}
       <div
         className={cn(
@@ -1180,6 +1183,13 @@ export function Composer({
 
           <div className="flex-1" />
 
+          {showShelf && hasDraft && <Tooltip><TooltipTrigger asChild><button type="button"
+            disabled={shelfBusy || submitting || dictationState !== 'idle' || !draftHydrated}
+            onClick={() => { void transferShelf() }} aria-label={ui('Shelve draft')}
+            className="flex size-8 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40">
+            {shelfBusy ? <Loader2 className="size-4 animate-spin" /> : <Archive className="size-4" />}
+          </button></TooltipTrigger><TooltipContent>{ui('Shelve draft')}</TooltipContent></Tooltip>}
+
           {dictationEnabled && <Tooltip>
             <TooltipTrigger asChild>
               <button
@@ -1196,12 +1206,6 @@ export function Composer({
             <TooltipContent side="top">{dictationState === 'recording' ? t('chat.stopDictation') : dictationState === 'transcribing' ? t('chat.transcribing') : t('chat.dictate')}</TooltipContent>
           </Tooltip>}
 
-          {showShelf && <Tooltip><TooltipTrigger asChild><button type="button"
-            disabled={!hasDraft || shelfBusy || submitting || dictationState !== 'idle' || !draftHydrated}
-            onClick={() => { void transferShelf() }} aria-label={ui('Shelve draft')}
-            className="flex size-8 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40">
-            {shelfBusy ? <Loader2 className="size-4 animate-spin" /> : <Archive className="size-4" />}
-          </button></TooltipTrigger><TooltipContent>{ui('Shelve draft')}</TooltipContent></Tooltip>}
           {composerPrimaryAction(Boolean(streamingResponseId) && !messageEdit, hasDraft || Boolean(editingQueueId) || Boolean(messageEdit)) === 'stop' ? (
             <Button
               size="icon-sm"

@@ -1,6 +1,6 @@
 import { clearMobileShelf } from '../features/chat/shelf-registry'
 import { clearMobileComposerSync } from '../features/chat/composerSync'
-import { Appearance } from 'react-native'
+import { Appearance, Platform } from 'react-native'
 import * as Device from 'expo-device'
 import { File } from 'expo-file-system'
 import { clearComposerDraftCacheNamespace } from '../features/chat/composerDraftCache'
@@ -189,7 +189,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     configureApi({ instanceUrl: get().instanceUrl, token: null, onUnauthorized: () => { void get().handleUnauthorized() } })
     let result
     try {
-      result = await mobileApi.login(email.trim(), password, await deviceLabel(), twoFactorCode)
+      result = await mobileApi.login(email.trim(), password, await deviceLabel(), twoFactorCode, deviceMetadata())
     } catch (error) {
       if (error instanceof ApiError && error.code === 'two_factor_required') return 'two-factor-required'
       throw error
@@ -213,10 +213,10 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         if (error instanceof PasskeyCancelledError) throw error
         throw new NativePasskeyError(error)
       }
-      result = await mobileApi.verifyPasskey(ceremony.ceremonyToken, response, await deviceLabel())
+      result = await mobileApi.verifyPasskey(ceremony.ceremonyToken, response, await deviceLabel(), deviceMetadata())
     } else {
       const { code, codeVerifier } = await runSafariPasskeyAuthentication(instanceUrl)
-      result = await mobileApi.exchangeBrowserPasskey(code, codeVerifier, await deviceLabel())
+      result = await mobileApi.exchangeBrowserPasskey(code, codeVerifier, await deviceLabel(), deviceMetadata())
     }
     await persistSession(instanceUrl, result.user, result.session.token)
     configureApi({ instanceUrl, token: result.session.token, onUnauthorized: () => { void get().handleUnauthorized() } })
@@ -225,7 +225,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 
   signup: async (name, username, email, password) => {
     configureApi({ instanceUrl: get().instanceUrl, token: null, onUnauthorized: () => { void get().handleUnauthorized() } })
-    const result = await mobileApi.signup(name.trim(), username.trim().toLowerCase(), email.trim(), password, await deviceLabel())
+    const result = await mobileApi.signup(name.trim(), username.trim().toLowerCase(), email.trim(), password, await deviceLabel(), deviceMetadata())
     await persistSession(get().instanceUrl, result.user, result.session.token)
     configureApi({ instanceUrl: get().instanceUrl, token: result.session.token, onUnauthorized: () => { void get().handleUnauthorized() } })
     set({ token: result.session.token, user: result.user, status: result.user.role === 'pending' ? 'pending' : 'authenticated', error: null })
@@ -301,3 +301,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     Appearance.setColorScheme('unspecified')
   },
 }))
+
+function deviceMetadata() {
+  return { platform: Platform.OS === 'ios' ? 'ios' as const : Platform.OS === 'android' ? 'android' as const : 'unknown' as const }
+}

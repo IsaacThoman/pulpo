@@ -1,3 +1,4 @@
+import { ToolImagePreview } from './ToolImagePreview'
 import { initialActivityTiming } from '@pulpo/client-core'
 import { memo, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from '@/i18n/useAppTranslation'
@@ -192,7 +193,7 @@ function ActivityToolRow({ tool }: { tool: ToolItem }) {
   const Icon = toolActivityPresentation(tool.tool).icon
   const running = tool.status === 'running'
   const failed = tool.status === 'failed' || tool.isError
-  const hasBody = tool.arguments !== undefined || Boolean(tool.output)
+  const hasBody = tool.arguments !== undefined || Boolean(tool.output) || Boolean(tool.imagePreview)
   const liveMs = useElapsedMs(
     tool.startedAt ? Date.parse(tool.startedAt) : 0,
     running && Boolean(tool.startedAt),
@@ -219,6 +220,7 @@ function ActivityToolRow({ tool }: { tool: ToolItem }) {
       {hasBody && (
         <CollapsibleContent>
           <div className="mt-1 space-y-1.5 pl-4">
+            <ToolImagePreview preview={tool.imagePreview} expanded={open} />
             {tool.arguments !== undefined && (
               <pre className="max-h-28 overflow-auto whitespace-pre-wrap break-all font-mono text-[11px] leading-4 text-muted-foreground/90">
                 {typeof tool.arguments === 'string'

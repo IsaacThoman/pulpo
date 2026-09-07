@@ -1,48 +1,21 @@
-
+import { avatarDrawRect, type AvatarCropSettings } from '@pulpo/contracts'
 import { ui } from '@/i18n/ui'
 
-export interface AvatarCropSettings {
-  cropToCircle: boolean
-  zoom: number
-  offsetX: number
-  offsetY: number
+export { avatarDrawRect, DEFAULT_AVATAR_CROP, type AvatarCropSettings } from '@pulpo/contracts'
+
+export function isGifAvatar(file: File): boolean {
+  return file.type.toLowerCase() === 'image/gif' || (!file.type && /\.gif$/i.test(file.name))
 }
 
-export const DEFAULT_AVATAR_CROP: AvatarCropSettings = {
-  cropToCircle: true,
-  zoom: 1,
-  offsetX: 0,
-  offsetY: 0,
-}
-
-export interface AvatarDrawRect {
-  x: number
-  y: number
-  width: number
-  height: number
-}
-
-export function avatarDrawRect(
-  imageWidth: number,
-  imageHeight: number,
-  settings: AvatarCropSettings,
-  canvasSize = 512,
-): AvatarDrawRect {
-  const scale = settings.cropToCircle
-    ? Math.max(canvasSize / imageWidth, canvasSize / imageHeight) * settings.zoom
-    : Math.min(canvasSize / imageWidth, canvasSize / imageHeight)
-  const width = imageWidth * scale
-  const height = imageHeight * scale
-  const maxOffsetX = settings.cropToCircle ? Math.max(0, (width - canvasSize) / 2) : 0
-  const maxOffsetY = settings.cropToCircle ? Math.max(0, (height - canvasSize) / 2) : 0
-  const offsetX = Math.max(-maxOffsetX, Math.min(maxOffsetX, settings.offsetX))
-  const offsetY = Math.max(-maxOffsetY, Math.min(maxOffsetY, settings.offsetY))
-  return {
-    x: (canvasSize - width) / 2 + offsetX,
-    y: (canvasSize - height) / 2 + offsetY,
-    width,
-    height,
+export async function prepareAvatarUpload(file: File, settings: AvatarCropSettings): Promise<FormData> {
+  const body = new FormData()
+  if (isGifAvatar(file)) {
+    body.append('crop', JSON.stringify(settings))
+    body.append('file', new File([file], file.name, { type: 'image/gif' }))
+  } else {
+    body.append('file', await prepareAvatarFile(file, settings))
   }
+  return body
 }
 
 export async function prepareAvatarFile(file: File, settings: AvatarCropSettings): Promise<File> {
@@ -65,7 +38,7 @@ export async function prepareAvatarFile(file: File, settings: AvatarCropSettings
       'image/webp',
       0.9,
     ))
-    return new File([blob], 'avatar.webp', { type: 'image/webp' })
+    return new File([blob], blob.type === 'image/webp' ? 'avatar.webp' : 'avatar.png', { type: blob.type })
   } finally {
     image.close()
   }

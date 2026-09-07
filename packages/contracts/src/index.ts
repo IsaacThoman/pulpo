@@ -1,4 +1,5 @@
 import { eventHasAssistantReplyText } from './response-timing.js'
+export * from './avatar-crop.js'
 export * from './response-timing.js'
 import type { ComposerAck, ComposerSnapshot, ComposerWrite } from './composer.js'
 export * from './composer.js'
@@ -9,6 +10,16 @@ export { CHAT_PRESET_ICON_NAMES } from './chat-preset-icons.generated.js'
 
 export const idSchema = z.uuid()
 export const isoDateSchema = z.iso.datetime()
+
+/** Durable display metadata for an image inspected by an agent tool. */
+export const toolImagePreviewSchema = z.object({
+  attachmentId: idSchema,
+  name: z.string(),
+  mimeType: z.literal('image/webp'),
+  sizeBytes: z.number().int().nonnegative(),
+})
+export type ToolImagePreview = z.infer<typeof toolImagePreviewSchema>
+
 export const DEFAULT_MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
 export const MAX_CONFIGURABLE_ATTACHMENT_BYTES = 1_000 * 1024 * 1024
 export const WORKSPACE_CONTINUE_WITHOUT_AGENT_DELAY_MS = 15_000
@@ -63,9 +74,31 @@ export const signupInputSchema = z.object({
 
 export const setupInputSchema = signupInputSchema
 
+export const sessionAppTypeSchema = z.enum(['web', 'mobile', 'desktop', 'cli', 'unknown'])
+export const sessionPlatformSchema = z.enum(['ios', 'android', 'windows', 'macos', 'linux', 'unknown'])
 export const nativeDeviceSchema = z.object({
   deviceLabel: z.string().trim().min(1).max(120),
+  appType: z.enum(['mobile', 'desktop', 'cli']).optional(),
+  platform: sessionPlatformSchema.optional(),
 })
+export type NativeDevice = z.infer<typeof nativeDeviceSchema>
+
+export const deviceSessionSchema = z.object({
+  id: idSchema,
+  deviceLabel: z.string(),
+  appType: sessionAppTypeSchema,
+  platform: sessionPlatformSchema,
+  browser: z.string().nullable(),
+  signInIp: z.string().nullable(),
+  latestIp: z.string().nullable(),
+  createdAt: isoDateSchema,
+  lastSeenAt: isoDateSchema,
+  expiresAt: isoDateSchema,
+  isCurrent: z.boolean(),
+})
+export type DeviceSession = z.infer<typeof deviceSessionSchema>
+export const deviceSessionListSchema = z.object({ sessions: z.array(deviceSessionSchema) })
+export type DeviceSessionList = z.infer<typeof deviceSessionListSchema>
 
 export const nativeLoginInputSchema = loginInputSchema.and(nativeDeviceSchema)
 export const nativeSignupInputSchema = signupInputSchema.and(nativeDeviceSchema)
@@ -253,7 +286,7 @@ export const mobilePasskeyVerifyInputSchema = verifyPasskeyAuthenticationInputSc
 export const mobilePasskeyCodeExchangeInputSchema = z.object({
   code: z.string().min(32),
   codeVerifier: z.string().regex(/^[A-Za-z0-9._~-]{43,128}$/),
-  deviceLabel: nativeDeviceSchema.shape.deviceLabel,
+  ...nativeDeviceSchema.shape,
 })
 
 export const updateProfileInputSchema = z.object({

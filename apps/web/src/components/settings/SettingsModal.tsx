@@ -1,4 +1,5 @@
 import { DeleteAccountSettings } from './DeleteAccountSettings'
+import { DeviceSettings } from './DeviceSettings'
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { useTranslation } from '@/i18n/useAppTranslation'
 import { useNavigate } from 'react-router-dom'
@@ -10,6 +11,7 @@ import {
   CreditCard,
   Info,
   KeyRound,
+  Laptop,
   Loader2,
   Copy,
   ExternalLink,
@@ -62,7 +64,7 @@ import { PasskeySettings } from './PasskeySettings'
 import { TwoFactorSettings } from './TwoFactorSettings'
 import { UsernameSettings } from './UsernameSettings'
 import { AvatarCropEditor } from './AvatarCropEditor'
-import { DEFAULT_AVATAR_CROP, prepareAvatarFile } from './avatar-crop'
+import { DEFAULT_AVATAR_CROP, prepareAvatarUpload } from './avatar-crop'
 import { SETTINGS_SECTION_IDS, type SettingsSectionId } from './settings-dialog'
 import { InstructionPresetButtons } from './InstructionPresetButtons'
 import { DesktopAppVersion } from './DesktopAppVersion'
@@ -76,6 +78,7 @@ const SECTION_CONFIG = {
   general: { labelKey: 'settings.sections.general', icon: SlidersHorizontal },
   profile: { labelKey: 'settings.sections.profile', icon: User },
   security: { labelKey: 'settings.sections.security', icon: ShieldCheck },
+  devices: { labelKey: 'settings.sections.devices', icon: Laptop },
   connections: { labelKey: 'settings.sections.connections', icon: Plug },
   personalization: { labelKey: 'settings.sections.personalization', icon: Sparkles },
   interface: { labelKey: 'settings.sections.interface', icon: Monitor },
@@ -428,8 +431,7 @@ export function SettingsModal({
     setProfileError('')
     setProfileMessage('')
     try {
-      const body = new FormData()
-      body.append('file', await prepareAvatarFile(avatarCandidate.file, avatarCrop))
+      const body = await prepareAvatarUpload(avatarCandidate.file, avatarCrop)
       const result = await apiRequest<{ user: Omit<AuthUser, 'initials'> }>('/api/me/avatar', { method: 'PUT', body })
       replaceUser(result.user)
       setAvatarCandidate(null)
@@ -808,7 +810,7 @@ export function SettingsModal({
                     <input
                       ref={avatarInputRef}
                       type="file"
-                      accept="image/jpeg,image/png,image/webp"
+                      accept="image/jpeg,image/png,image/webp,image/gif"
                       className="hidden"
                       onChange={(event) => {
                         const file = event.currentTarget.files?.[0]
@@ -830,7 +832,7 @@ export function SettingsModal({
                     </div>
                   </div>
                   {avatarCandidate && <div className="mb-3 rounded-lg border bg-muted/20 p-3">
-                    <AvatarCropEditor imageUrl={avatarCandidate.url} settings={avatarCrop} onChange={setAvatarCrop} />
+                    <AvatarCropEditor key={avatarCandidate.url} imageUrl={avatarCandidate.url} settings={avatarCrop} onChange={setAvatarCrop} />
                     <div className="mt-3 flex justify-end gap-2"><Button size="sm" disabled={profileSaving} onClick={() => void uploadAvatar()}>{ui("Use picture")}</Button><Button size="sm" variant="outline" disabled={profileSaving} onClick={() => setAvatarCandidate(null)}>{ui("Cancel")}</Button></div>
                   </div>}
                   <Row label={ui("Display name")}><Input value={profileName} onChange={(event) => { setProfileMessage(''); setProfileName(event.target.value) }} maxLength={120} className="w-52" /></Row>
@@ -892,6 +894,8 @@ export function SettingsModal({
                   </Row>
                 </div>
               )}
+
+              {section === 'devices' && <DeviceSettings />}
 
               {section === 'personalization' && (
                 <div>

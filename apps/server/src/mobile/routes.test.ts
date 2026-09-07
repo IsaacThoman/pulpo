@@ -52,7 +52,7 @@ describe('native initial setup', () => {
     expect(mocks.createInitialAdmin).toHaveBeenCalledWith({
       name: 'Admin', username: 'admin', email: 'admin@example.com', password: 'password', deviceLabel: 'Pulpo for Mac',
     })
-    expect(mocks.createNativeSession).toHaveBeenCalledWith('11111111-1111-4111-8111-111111111111', 'Pulpo for Mac', request)
+    expect(mocks.createNativeSession).toHaveBeenCalledWith('11111111-1111-4111-8111-111111111111', 'Pulpo for Mac', request, { appType: undefined, platform: undefined })
     expect(reply.code).toHaveBeenCalledWith(201)
     expect(result).toMatchObject({ user: { role: 'admin' }, session: { token: 't'.repeat(43) } })
   })

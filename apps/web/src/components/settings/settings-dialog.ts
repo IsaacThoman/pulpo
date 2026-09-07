@@ -4,6 +4,7 @@ export const SETTINGS_SECTION_IDS = [
   'general',
   'profile',
   'security',
+  'devices',
   'connections',
   'personalization',
   'interface',

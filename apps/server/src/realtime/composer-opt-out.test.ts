@@ -27,7 +27,7 @@ function connect(auth = {}, adminChatAccess: unknown = null) {
   const handlers = new Map<string, (...args: any[]) => unknown>()
   const rooms = new Set(['composer:user']) // Recovered sockets can restore previous rooms.
   const socket = {
-    data: { user: { id: 'user' }, adminChatAccess, composerSyncEnabled: true },
+    data: { user: { id: 'user' }, actorUser: { id: 'user' }, adminChatAccess, composerSyncEnabled: true },
     handshake: { auth },
     join: (room: string) => rooms.add(room), leave: (room: string) => rooms.delete(room),
     on: (event: string, callback: (...args: any[]) => unknown) => handlers.set(event, callback),
@@ -83,4 +83,12 @@ describe('composer socket opt-out', () => {
     expect(client.rooms.has('composer:user')).toBe(false)
     expect(client.socket.data.composerSyncEnabled).toBe(false)
   })
+})
+
+it('does not broadcast temporary composer snapshots from older publishers', async () => {
+  mocks.message!('pulpo:composer-changes', JSON.stringify({ userId: 'user', snapshot: {
+    draftId: 'new', revision: 1, state: { ...emptyComposerState(), temporary: true, content: 'private draft' },
+  } }))
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  expect(mocks.emit).not.toHaveBeenCalled()
 })

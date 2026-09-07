@@ -93,3 +93,15 @@ export function resolveAgentParentMessages(
     ...lineage.slice(checkpointIndex + 1).flatMap((response) => replayedTurn(response, attachmentsById)),
   ]
 }
+
+const MEMORY_TOOL_NAMES = new Set(['search_chats', 'read_chat', 'update_memory'])
+
+/** Remove explicit memory operations from checkpoints created before memory was disabled. */
+export function withoutMemoryToolMessages(messages: AgentMessage[]): AgentMessage[] {
+  return messages.flatMap((message): AgentMessage[] => {
+    if (message.role === 'toolResult' && MEMORY_TOOL_NAMES.has(message.toolName)) return []
+    if (message.role !== 'assistant') return [message]
+    const content = message.content.filter((part) => part.type !== 'toolCall' || !MEMORY_TOOL_NAMES.has(part.name))
+    return content.length ? [{ ...message, content }] : []
+  })
+}
