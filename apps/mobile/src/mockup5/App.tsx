@@ -5228,6 +5228,8 @@ function ChatView({
                 <View style={styles.flex} />
                 {Platform.OS === 'ios' ? (
                   <>
+                    {showShelf && Boolean(input.trim() || attachments.length) && <NativeComposerIconButton label="Shelve draft" systemImage="archivebox"
+                      disabled={shelfBusy || sending} onPress={() => { void transferShelf(); }} />}
                     <SwiftUIHost ignoreSafeArea="keyboard" style={styles.nativeAgentHost}>
                       <SwiftUIButton
                         onPress={() => {
@@ -5250,8 +5252,6 @@ function ChatView({
                         </SwiftUIRNHostView>
                       </SwiftUIButton>
                     </SwiftUIHost>
-                    {showShelf && <NativeComposerIconButton label="Shelve draft" systemImage="archivebox"
-                      disabled={shelfBusy || sending || (!input.trim() && !attachments.length)} onPress={() => { void transferShelf(); }} />}
                     <NativeComposerIconButton
                       disabled={shelfBusy || composerAction === 'submit' && !canSend}
                       label={composerAction === 'stop' ? 'Stop generating' : messageEdit ? queueEditRef.current ? 'Save queued message' : 'Save and resend message' : 'Send message'}
@@ -5262,8 +5262,8 @@ function ChatView({
                   </>
                 ) : (
                   <>
+                    {showShelf && Boolean(input.trim() || attachments.length) && <MaterialIconButton label="Shelve draft" icon="archivebox" disabled={shelfBusy || sending} onPress={() => { void transferShelf(); }} />}
                     <MaterialIconButton label={activeAgentEnabled ? 'Turn off Agent mode' : 'Turn on Agent mode'} icon="bot" color={activeAgentEnabled ? nativeAgentTint : undefined} selected={activeAgentEnabled} disabled={!canUseAgent} onPress={toggleAgent} />
-                    {showShelf && <MaterialIconButton label="Shelve draft" icon="archivebox" disabled={shelfBusy || sending || (!input.trim() && !attachments.length)} onPress={() => { void transferShelf(); }} />}
                     <MaterialIconButton label={composerAction === 'stop' ? 'Stop generating' : messageEdit ? queueEditRef.current ? 'Save queued message' : 'Save and resend message' : 'Send message'} icon={composerAction === 'stop' ? 'stop.fill' : 'arrow.up'} prominent disabled={shelfBusy || composerAction === 'submit' && !canSend} onPress={() => composerAction === 'stop' ? onStop() : submitMessage()} />
                   </>
                 )}

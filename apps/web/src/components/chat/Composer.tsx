@@ -1183,6 +1183,13 @@ export function Composer({
 
           <div className="flex-1" />
 
+          {showShelf && hasDraft && <Tooltip><TooltipTrigger asChild><button type="button"
+            disabled={shelfBusy || submitting || dictationState !== 'idle' || !draftHydrated}
+            onClick={() => { void transferShelf() }} aria-label={ui('Shelve draft')}
+            className="flex size-8 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40">
+            {shelfBusy ? <Loader2 className="size-4 animate-spin" /> : <Archive className="size-4" />}
+          </button></TooltipTrigger><TooltipContent>{ui('Shelve draft')}</TooltipContent></Tooltip>}
+
           {dictationEnabled && <Tooltip>
             <TooltipTrigger asChild>
               <button
@@ -1199,12 +1206,6 @@ export function Composer({
             <TooltipContent side="top">{dictationState === 'recording' ? t('chat.stopDictation') : dictationState === 'transcribing' ? t('chat.transcribing') : t('chat.dictate')}</TooltipContent>
           </Tooltip>}
 
-          {showShelf && <Tooltip><TooltipTrigger asChild><button type="button"
-            disabled={!hasDraft || shelfBusy || submitting || dictationState !== 'idle' || !draftHydrated}
-            onClick={() => { void transferShelf() }} aria-label={ui('Shelve draft')}
-            className="flex size-8 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40">
-            {shelfBusy ? <Loader2 className="size-4 animate-spin" /> : <Archive className="size-4" />}
-          </button></TooltipTrigger><TooltipContent>{ui('Shelve draft')}</TooltipContent></Tooltip>}
           {composerPrimaryAction(Boolean(streamingResponseId) && !messageEdit, hasDraft || Boolean(editingQueueId) || Boolean(messageEdit)) === 'stop' ? (
             <Button
               size="icon-sm"
