@@ -13,7 +13,7 @@ import {
   type SyncResult,
 } from '@pulpo/contracts'
 import { mergeRevisionInvalidation, type RevisionInvalidationBatch } from '@pulpo/client-core'
-import { apiOrigin } from '../api/client'
+import { apiOrigin, mobileApi } from '../api/client'
 import {
   cacheNamespace,
   deleteResponseCursor,
@@ -295,8 +295,12 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
       useRealtimeStore.getState().setConnectionPhase(phase)
       if (phase === 'connecting') scheduleConnectionFailure()
     })
-    socket.on('connect_error', () => {
+    socket.on('connect_error', (error) => {
       if (disposed) return
+      if (error.message === 'unauthorized') {
+        void mobileApi.me().catch(() => undefined)
+        return
+      }
       const phase = phaseAfterDisconnect(
         !silentConnectionAttempt,
         appStateValue === 'active',

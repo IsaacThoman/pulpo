@@ -1,3 +1,4 @@
+import { desktopDevice } from '@/lib/runtime'
 import { clearWebShelves } from '@/lib/local-first/shelf-registry'
 import { clearWebComposerSync } from '@/lib/local-first/composer-sync'
 import { create } from 'zustand'
@@ -283,7 +284,7 @@ export const useAuth = create<AuthState>()((set, get) => ({
     try {
       if (isDesktopRuntime()) configureDesktopRuntime({ instanceUrl: get().instanceUrl, token: null, onUnauthorized: () => { void get().handleDesktopUnauthorized() } })
       const response = isDesktopRuntime()
-        ? await apiRequest<NativeAuthResponse>('/api/mobile/auth/login', { method: 'POST', body: { email, password, twoFactorCode, deviceLabel: 'Pulpo for Mac' } })
+        ? await apiRequest<NativeAuthResponse>('/api/mobile/auth/login', { method: 'POST', body: { email, password, twoFactorCode, ...desktopDevice() } })
         : await apiRequest<AuthResponse>('/api/auth/login', { method: 'POST', body: { email, password, twoFactorCode } })
       const user = normalizeUser(response.user)
       if (isDesktopRuntime() && 'session' in response) {
@@ -333,7 +334,7 @@ export const useAuth = create<AuthState>()((set, get) => ({
     try {
       if (isDesktopRuntime()) configureDesktopRuntime({ instanceUrl: get().instanceUrl, token: null, onUnauthorized: () => { void get().handleDesktopUnauthorized() } })
       const response = isDesktopRuntime()
-        ? await apiRequest<NativeAuthResponse>('/api/mobile/auth/signup', { method: 'POST', body: { name, username, email, password, deviceLabel: 'Pulpo for Mac' } })
+        ? await apiRequest<NativeAuthResponse>('/api/mobile/auth/signup', { method: 'POST', body: { name, username, email, password, ...desktopDevice() } })
         : await apiRequest<AuthResponse>('/api/auth/signup', { method: 'POST', body: { name, username, email, password } })
       const user = normalizeUser(response.user)
       if (isDesktopRuntime() && 'session' in response) {
@@ -352,7 +353,7 @@ export const useAuth = create<AuthState>()((set, get) => ({
   setup: async (name, username, email, password) => {
     try {
       const response = isDesktopRuntime()
-        ? await apiRequest<NativeAuthResponse>('/api/mobile/auth/setup', { method: 'POST', body: { name, username, email, password, deviceLabel: 'Pulpo for Mac' } })
+        ? await apiRequest<NativeAuthResponse>('/api/mobile/auth/setup', { method: 'POST', body: { name, username, email, password, ...desktopDevice() } })
         : await apiRequest<AuthResponse>('/api/auth/setup', { method: 'POST', body: { name, username, email, password } })
       const user = normalizeUser(response.user)
       if (isDesktopRuntime() && 'session' in response) {
@@ -376,8 +377,8 @@ export const useAuth = create<AuthState>()((set, get) => ({
     cacheProfile(null)
     if (!localOnly) await apiRequest(isDesktopRuntime() ? '/api/mobile/auth/logout' : '/api/auth/logout', { method: 'POST' }).catch(() => undefined)
     if (isDesktopRuntime()) {
-      await clearDesktopSession()
       configureDesktopRuntime({ instanceUrl: get().instanceUrl, token: null, onUnauthorized: () => { void get().handleDesktopUnauthorized() } })
+      await clearDesktopSession()
     }
     await queryClient.cancelQueries()
     queryClient.clear()

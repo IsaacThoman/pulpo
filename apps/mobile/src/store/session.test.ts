@@ -18,7 +18,7 @@ const mocks = vi.hoisted(() => ({
   deleteToken: vi.fn(async () => undefined),
 }))
 
-vi.mock('react-native', () => ({ Appearance: { setColorScheme: vi.fn() } }))
+vi.mock('react-native', () => ({ Appearance: { setColorScheme: vi.fn() }, Platform: { OS: 'ios' } }))
 vi.mock('expo-device', () => ({ deviceName: 'Test iPhone', modelName: 'iPhone' }))
 vi.mock('expo-file-system', () => ({ File: class { exists = false; delete() {} } }))
 vi.mock('expo-secure-store', () => ({
@@ -207,7 +207,7 @@ describe('two-factor login', () => {
     mocks.login.mockResolvedValue({ user: signedIn, session: { token: 'new-session-token', expiresAt: '2026-09-01T00:00:00.000Z' } })
 
     await expect(useSessionStore.getState().login('member@example.com', 'password', '123456')).resolves.toBe('authenticated')
-    expect(mocks.login).toHaveBeenCalledWith('member@example.com', 'password', 'Test iPhone', '123456')
+    expect(mocks.login).toHaveBeenCalledWith('member@example.com', 'password', 'Test iPhone', '123456', { platform: 'ios' })
     expect(useSessionStore.getState()).toMatchObject({ status: 'authenticated', token: 'new-session-token', user: signedIn })
   })
 })
@@ -225,7 +225,7 @@ describe('passkey login', () => {
 
     await useSessionStore.getState().loginWithPasskey()
 
-    expect(mocks.verifyPasskey).toHaveBeenCalledWith(ceremony.ceremonyToken, assertion, 'Test iPhone')
+    expect(mocks.verifyPasskey).toHaveBeenCalledWith(ceremony.ceremonyToken, assertion, 'Test iPhone', { platform: 'ios' })
     expect(mocks.runSafariPasskeyAuthentication).not.toHaveBeenCalled()
     expect(useSessionStore.getState()).toMatchObject({ status: 'authenticated', token: 'native-passkey-token', user: signedIn })
   })
@@ -237,7 +237,7 @@ describe('passkey login', () => {
 
     await useSessionStore.getState().loginWithPasskey()
 
-    expect(mocks.exchangeBrowserPasskey).toHaveBeenCalledWith('authorization-code', 'code-verifier', 'Test iPhone')
+    expect(mocks.exchangeBrowserPasskey).toHaveBeenCalledWith('authorization-code', 'code-verifier', 'Test iPhone', { platform: 'ios' })
     expect(mocks.passkeyOptions).not.toHaveBeenCalled()
     expect(useSessionStore.getState()).toMatchObject({ status: 'authenticated', token: 'safari-passkey-token', user: signedIn })
   })
