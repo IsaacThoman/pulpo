@@ -1,4 +1,5 @@
 import { eventHasAssistantReplyText } from './response-timing.js'
+export * from './avatar-crop.js'
 export * from './response-timing.js'
 import type { ComposerAck, ComposerSnapshot, ComposerWrite } from './composer.js'
 export * from './composer.js'
