@@ -1,0 +1,152 @@
+// Standalone simulator benchmark entry. Never imported by the application.
+import React, { useEffect, useState } from 'react'
+import { registerRootComponent } from 'expo'
+import { Platform, ScrollView, Text } from 'react-native'
+import { File, Paths } from 'expo-file-system'
+import { hydrateEmbeddedResponseSnapshot } from '@pulpo/client-core'
+import { projectChat } from '../../src/features/chat/projection'
+import { useRealtimeStore } from '../../src/providers/realtimeStore'
+import { cachedChats, getValue, markCachedChatOpened, mobileDatabase } from '../../src/data/database'
+import { utf8ByteLength } from '../../src/data/cache'
+import type { ServerChat, ServerResponse } from '../../src/types'
+
+const namespace = 'performance-audit-synthetic'
+const pause = () => new Promise<void>((resolve) => setTimeout(resolve, 30))
+const round = (value: number) => Math.round(value * 100) / 100
+
+function fixture(turns: number, chars = 256, chatId = 'benchmark'): ServerChat {
+  const responses: ServerResponse[] = Array.from({ length: turns }, (_, index) => {
+    const id = `${chatId}-response-${index}`
+    const output = [{ type: 'message', content: [{ type: 'output_text', text: 'x'.repeat(chars) }] }]
+    return {
+      id, parentResponseId: index ? `${chatId}-response-${index - 1}` : null,
+      previousResponseId: index ? `${chatId}-response-${index - 1}` : null,
+      userMessageId: `${id}-user`, modelId: 'fixture', status: 'completed',
+      input: [{ role: 'user', content: 'Synthetic performance question' }], output,
+      presetSelections: {}, agentMode: false, usage: null, error: null,
+      createdAt: '2026-09-06T00:00:00.000Z', completedAt: '2026-09-06T00:00:01.000Z',
+      snapshot: { responseId: id, sequence: 1, status: 'completed', output, updatedAt: '2026-09-06T00:00:01.000Z' },
+      branches: { user: { ids: [id], index: 0 }, assistant: { ids: [id], index: 0 } },
+    } as ServerResponse
+  })
+  return {
+    id: chatId, title: 'Synthetic benchmark', modelId: 'fixture', pinned: false, folderId: null,
+    sortOrder: 0, temporary: false, activeResponseId: responses.at(-1)?.id ?? null,
+    activeBranchLeafId: responses.at(-1)?.id ?? null,
+    createdAt: '2026-09-06T00:00:00.000Z', updatedAt: '2026-09-06T00:00:01.000Z', responses,
+  }
+}
+
+async function measure(work: () => unknown | Promise<unknown>, repetitions = 15) {
+  for (let index = 0; index < 3; index++) await work()
+  const samplesMs: number[] = []
+  for (let index = 0; index < repetitions; index++) {
+    await pause()
+    const started = performance.now()
+    await work()
+    samplesMs.push(performance.now() - started)
+  }
+  const sorted = [...samplesMs].sort((a, b) => a - b)
+  return { medianMs: round(sorted[Math.floor(sorted.length / 2)]!), p95Ms: round(sorted[Math.ceil(sorted.length * 0.95) - 1]!), samplesMs: samplesMs.map(round) }
+}
+
+async function run(report: (text: string) => void) {
+  const result: Record<string, unknown> = {
+    date: new Date().toISOString(), platform: Platform.OS, osVersion: Platform.Version,
+    reactNative: Platform.constants.reactNativeVersion,
+    hermes: Boolean((globalThis as unknown as { HermesInternal?: unknown }).HermesInternal),
+    dev: __DEV__, sourceCommit: '675eb022',
+    method: 'Synthetic functions in a reused Release simulator native shell; current checkout JS. No screen FPS, network, or physical-device measurements.',
+  }
+  const projection: unknown[] = []
+  for (const turns of [10, 100, 250, 500, 1000]) {
+    report(`Projecting ${turns} turns…`)
+    const chat = fixture(turns)
+    let sequence = 2
+    const last = chat.responses!.at(-1)!
+    projection.push({ turns, ...await measure(() => {
+      const messages = projectChat(chat, { [last.id]: { ...hydrateEmbeddedResponseSnapshot(last.snapshot, last.output), sequence: sequence++, status: 'in_progress' } })
+      if (messages.length !== turns * 2) throw new Error('Fixture lineage is incomplete')
+    }) })
+  }
+  result.projection = projection
+
+  const hydration: unknown[] = []
+  for (const turns of [100, 500, 1000]) {
+    report(`Hydrating ${turns} snapshots…`)
+    const snapshots = fixture(turns).responses!.map((response) => hydrateEmbeddedResponseSnapshot(response.snapshot, response.output))
+    let notifications = 0
+    const unsubscribe = useRealtimeStore.subscribe(() => { notifications++ })
+    const timing = await measure(() => {
+      useRealtimeStore.getState().resetSnapshots()
+      notifications = 0
+      for (const snapshot of snapshots) useRealtimeStore.getState().receiveSnapshot(snapshot)
+    })
+    hydration.push({ turns, notifications, ...timing })
+    unsubscribe()
+  }
+  result.snapshotHydration = hydration
+  useRealtimeStore.getState().resetSnapshots()
+  for (let index = 0; index < 20; index++) {
+    for (const response of fixture(100, 256, `visited-${index}`).responses!) {
+      useRealtimeStore.getState().receiveSnapshot(hydrateEmbeddedResponseSnapshot(response.snapshot, response.output))
+    }
+  }
+  result.retainedSnapshotsAfter20Chats = Object.keys(useRealtimeStore.getState().snapshots).length
+  useRealtimeStore.getState().resetSnapshots()
+
+  const database = await mobileDatabase()
+  const cache: unknown[] = []
+  for (const count of [1, 10, 45]) {
+    report(`Reading cache with ${count} documents…`)
+    await database.runAsync('DELETE FROM chat_cache WHERE namespace = ?', namespace)
+    await database.runAsync('DELETE FROM chat_access WHERE namespace = ?', namespace)
+    let bytes = 0
+    await database.withTransactionAsync(async () => {
+      for (let index = 0; index < count; index++) {
+        const chat = fixture(100, 2048, `cached-${index}`)
+        const payload = JSON.stringify(chat)
+        bytes += payload.length // Fixtures contain ASCII only.
+        await database.runAsync('INSERT INTO chat_cache(namespace, chat_id, payload, updated_at) VALUES (?, ?, ?, ?)', namespace, chat.id, payload, index)
+      }
+    })
+    const payloads = await database.getAllAsync<{ payload: string }>('SELECT payload FROM chat_cache WHERE namespace = ?', namespace)
+    const byteCounting = await measure(() => {
+      const total = payloads.reduce((sum, row) => sum + utf8ByteLength(row.payload), 0)
+      if (total !== bytes) throw new Error('Unexpected payload bytes')
+    }, 5)
+    const all = await measure(async () => {
+      const chats = await cachedChats(namespace)
+      if (!chats.find((chat) => chat.id === 'cached-0')) throw new Error('Missing fixture')
+    }, 10)
+    const targeted = await measure(async () => {
+      const row = await database.getFirstAsync<{ payload: string }>('SELECT payload FROM chat_cache WHERE namespace = ? AND chat_id = ?', namespace, 'cached-0')
+      if (!JSON.parse(row!.payload).responses) throw new Error('Missing fixture')
+    }, 10)
+    const trim = await measure(() => markCachedChatOpened(namespace, 'cached-0', 50), 10)
+    const queueStarted = performance.now()
+    const maintenance = markCachedChatOpened(namespace, 'cached-0', 50)
+    await getValue(namespace, 'nonexistent')
+    const queuedReadMs = round(performance.now() - queueStarted)
+    await maintenance
+    cache.push({ count, payloadBytes: bytes, byteCounting, readAllAndFind: all, targetedRead: targeted, markOpenedAndTrim: trim, tinyReadBehindTrimMs: queuedReadMs })
+  }
+  result.cache = cache
+  await database.runAsync('DELETE FROM chat_cache WHERE namespace = ?', namespace)
+  await database.runAsync('DELETE FROM chat_access WHERE namespace = ?', namespace)
+  const output = new File(Paths.document, 'performance-audit.json')
+  output.write(JSON.stringify(result, null, 2))
+  report(`Complete\n\n${JSON.stringify(result, null, 2)}`)
+}
+
+function Audit() {
+  const [status, setStatus] = useState('Starting isolated performance audit…')
+  useEffect(() => { void run(setStatus).catch((error) => {
+    const text = String(error?.stack ?? error)
+    new File(Paths.document, 'performance-audit-error.txt').write(text)
+    setStatus(text)
+  }) }, [])
+  return <ScrollView contentContainerStyle={{ padding: 24, paddingTop: 70 }}><Text selectable>{status}</Text></ScrollView>
+}
+
+registerRootComponent(Audit)

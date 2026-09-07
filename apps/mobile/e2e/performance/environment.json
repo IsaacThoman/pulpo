@@ -1,0 +1,23 @@
+{
+  "sourceCommit": "675eb02274d9e2f66212e55c1a7662acdfacb9f1",
+  "hostChip": "Apple M3 Pro",
+  "hostOS": "26.6.2",
+  "xcode": "26.6 (17F113)",
+  "simulatorModel": "iPhone 17 Pro",
+  "nativeShell": "Reused Release simulator Pulpo.app; native binary was not rebuilt from the audited checkout",
+  "nativeBinarySha256": "e2f2cf248a65229b91fd24445d465cf9b8c632d3514f35e76602765ba04db80e",
+  "auditBundleSha256": "83f152b937fa84ee0c1216bf0a74c883c041240c281e7544dc0910ad15bf558c",
+  "productionHermesBundleBytes": {
+    "ios": 7991054,
+    "android": 8289074
+  },
+  "exportAssetBytes": 1171283,
+  "validation": {
+    "mobileTestsPassed": 408,
+    "mobileTestFilesPassed": 65,
+    "typecheck": "passed",
+    "iosExport": "passed",
+    "androidExport": "passed",
+    "fullAppSmoke": "Blocked: reused native shell lacks ExpoImage. Not a fresh native-build result."
+  }
+}

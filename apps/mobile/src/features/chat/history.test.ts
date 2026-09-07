@@ -1,5 +1,7 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
+  createHistoryProjector,
+  historyFolderItems,
   historyChatSections,
   historyChatSummary,
   resolveHistoryChatExpiryMenuAction,
@@ -114,5 +116,53 @@ describe('reuseHistoryChatSummaries', () => {
     expect(removed).toEqual([first, third])
     expect(removed[0]).toBe(first)
     expect(removed[1]).toBe(third)
+  })
+})
+
+
+describe('large history projection', () => {
+  const now = Date.UTC(2026, 8, 7, 12)
+  const source = { id: 'a', title: 'A', modelId: 'fixture', updatedAt: now - 1_000,
+    pinned: false, folderId: null, expiresAt: null, deletedAt: null, temporary: false }
+
+  it('projects only changed metadata across 5,000 chats and releases removed entries', () => {
+    const format = vi.fn(historyChatSummary)
+    const project = createHistoryProjector(format)
+    const chats = Array.from({ length: 5_000 }, (_, i) => ({ ...source, id: String(i) }))
+    const first = project(chats, now)
+    format.mockClear()
+    expect(project(chats.map((chat) => ({ ...chat, messages: [{ text: 'streaming' }] })), now)).toBe(first)
+    expect(format).not.toHaveBeenCalled()
+    const renamed = project(chats.map((chat, i) => i === 10 ? { ...chat, title: 'Renamed' } : chat), now)
+    expect(format).toHaveBeenCalledTimes(1)
+    expect(renamed[9]).toBe(first[9])
+    expect(renamed[10].title).toBe('Renamed')
+    project([], now)
+    format.mockClear()
+    project(chats.slice(0, 1), now)
+    expect(format).toHaveBeenCalledTimes(1)
+  })
+
+  it('preserves ordering and updates expiry, folders, visibility, and date boundaries', () => {
+    const project = createHistoryProjector()
+    const a = { ...source, updatedAt: now - 86_400_000 + 1 }
+    const b = { ...source, id: 'b', pinned: true }
+    const first = project([a, b], now)
+    expect(project([b, a], now)).toEqual([first[1], first[0]])
+    const next = project([{ ...a, folderId: 'folder', expiresAt: now + 1000 }, b], now + 2)
+    expect(next[0]).toMatchObject({ section: 'Yesterday', folderId: 'folder', expiresAt: now + 1000 })
+    expect(next[0].time).toBe(historyChatSummary(a, now + 2).time)
+    expect(project([{ ...a, temporary: true }, { ...b, deletedAt: now }], now)).toEqual([])
+    expect(createHistoryProjector()([a], now)[0]).not.toBe(first[0])
+  })
+
+  it('groups large sections and folders without changing order or mutating inputs', () => {
+    const chats = Array.from({ length: 5000 }, (_, i) => Object.freeze(historyChatSummary({ ...source, id: String(i), folderId: i % 2 ? 'b' : 'a' }, now)))
+    expect(historyChatSections(chats)[0].data).toEqual(chats)
+    const folders = historyFolderItems([{ id: 'b', name: 'B' }, { id: 'a', name: 'A' }, { id: 'empty', name: 'Empty' }], chats)
+    expect(folders.map((f) => f.id)).toEqual(['b', 'a', 'empty'])
+    expect(folders[0].chats).toEqual(chats.filter((c) => c.folderId === 'b'))
+    expect(folders[1].chats).toEqual(chats.filter((c) => c.folderId === 'a'))
+    expect(folders[2].chats).toEqual([])
   })
 })
