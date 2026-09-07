@@ -68,7 +68,20 @@ export async function loadComposerDraft(userId: string, chatId: string): Promise
   }
 }
 
-export async function saveComposerDraft(
+const draftWrites = new Map<string, Promise<void>>()
+function serializeDraftWrite(userId: string, chatId: string, write: () => Promise<void>): Promise<void> {
+  const key = draftScope(userId, chatId)
+  const operation = (draftWrites.get(key) ?? Promise.resolve()).catch(() => undefined).then(write)
+  draftWrites.set(key, operation)
+  void operation.finally(() => { if (draftWrites.get(key) === operation) draftWrites.delete(key) }).catch(() => undefined)
+  return operation
+}
+
+export function saveComposerDraft(userId: string, chatId: string, draft: PersistedComposerDraft): Promise<void> {
+  return serializeDraftWrite(userId, chatId, () => writeComposerDraft(userId, chatId, draft))
+}
+
+async function writeComposerDraft(
   userId: string,
   chatId: string,
   draft: PersistedComposerDraft,
@@ -93,7 +106,9 @@ export async function saveComposerDraft(
 
 export async function deleteComposerDraft(userId: string, chatId: string): Promise<void> {
   runtimeDrafts.delete(draftScope(userId, chatId))
-  await localDb.drafts.where('[userId+chatId]').equals([localAccountKey(userId), chatId]).delete()
+  await serializeDraftWrite(userId, chatId, async () => {
+    await localDb.drafts.where('[userId+chatId]').equals([localAccountKey(userId), chatId]).delete()
+  })
 }
 
 export async function updateComposerDraftAttachment(

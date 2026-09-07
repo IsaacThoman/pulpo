@@ -488,3 +488,186 @@ it('does not share or clear a normal draft through temporary submission or shelf
   expect(JSON.stringify(a.saved())).not.toContain('private callback')
   a.sync.dispose()
 })
+
+describe('temporary composer handoffs', () => {
+  it('takes content without publishing pending typing, retaining remote controls', async () => {
+    const f = fixture(), a = f.client('a'), b = f.client('b')
+    const initial = { ...state('shared'), model: { id: 'model', presets: { effort: 'high' } }, autoExpire: true,
+      attachments: [{ id: 'file', name: 'file', mimeType: 'text/plain', size: 1 }] }
+    await a.open(initial); await b.open()
+    a.sync.edit('new', { content: 'latest local keystrokes' })
+    await a.sync.takeTemporary('new')
+    await vi.waitFor(() => expect(f.snapshot().state.content).toBe(''))
+    b.sync.receive(f.snapshot())
+    expect(b.listener.mock.lastCall?.[0].snapshot.state).toEqual({ ...initial, content: '', attachments: [] })
+    expect(f.writes.some((write) => write.patch.content === 'latest local keystrokes')).toBe(false)
+    a.sync.edit('new', { content: 'private' })
+    await a.sync.flush('new')
+    expect(f.snapshot().state.content).toBe('')
+    expect(JSON.stringify(a.saved())).not.toContain('shared')
+    a.sync.dispose(); b.sync.dispose()
+  })
+
+  it.each([false, true])('retries a content-free offline take receipt without clearing newer work (%s)', async (newer) => {
+    const f = fixture(), a = f.client('a'), b = f.client('b')
+    await a.open(state('shared')); await b.open()
+    a.sync.disconnect()
+    a.sync.edit('new', { content: 'offline local' })
+    await a.sync.takeTemporary('new')
+    const checkpoint = a.saved()!
+    expect(checkpoint.temporaryTake).toEqual({ revision: f.snapshot().revision, mutationId: undefined })
+    expect(JSON.stringify(checkpoint)).not.toContain('shared')
+    expect(JSON.stringify(checkpoint)).not.toContain('offline local')
+    if (newer) { b.sync.edit('new', { content: 'newer draft' }); await b.sync.flush('new') }
+    const resumed = f.client('resumed', checkpoint)
+    await resumed.open()
+    expect(f.snapshot().state.content).toBe(newer ? 'newer draft' : '')
+    a.sync.dispose(); b.sync.dispose(); resumed.sync.dispose()
+  })
+
+  it.each([false, true])('retires an in-flight write even when its acknowledgement is lost (%s)', async (lostAck) => {
+    const f = fixture(), a = f.client('a')
+    await a.open(state('before'))
+    let settle!: () => void
+    const barrier = new Promise<void>((resolve) => { settle = resolve })
+    a.sync.connect({ ...f.transport, write: async (input) => {
+      const result = await f.transport.write(input)
+      await barrier
+      if (lostAck) throw new Error('lost acknowledgement')
+      return result
+    } })
+    await a.sync.open('new', state(), a.listener)
+    a.sync.edit('new', { content: 'in flight' })
+    const flush = a.sync.flush('new')
+    await a.sync.takeTemporary('new')
+    expect(a.saved()?.temporaryTake?.mutationId).toBe(f.snapshot().mutationId)
+    settle(); await flush
+    await vi.waitFor(() => expect(f.snapshot().state.content).toBe(''))
+    expect(a.saved()?.pending).toEqual({})
+    a.sync.dispose()
+  })
+
+  it('returns all controls and preserves a divergent shared draft before publishing', async () => {
+    const f = fixture(), recovered = vi.fn(async () => {}), a = f.client('a', null, recovered), b = f.client('b')
+    await a.open(state('original')); await b.open()
+    await a.sync.takeTemporary('new')
+    await vi.waitFor(() => expect(f.snapshot().state.content).toBe(''))
+    b.sync.receive(f.snapshot())
+    b.sync.edit('new', { content: 'other device' }); await b.sync.flush('new')
+    const returning = { ...state('temporary edits'), temporary: true, model: { id: 'other-model', presets: { effort: 'low' } }, agentMode: false, autoExpire: true }
+    await a.sync.returnFromTemporary('new', returning)
+    await a.sync.open('new', state(), a.listener)
+    await vi.waitFor(() => expect(f.snapshot().state.content).toBe('temporary edits'))
+    expect(f.snapshot().state).toEqual({ ...returning, temporary: false })
+    expect(recovered).toHaveBeenCalledExactlyOnceWith(state('other device'), 'remote')
+    b.sync.receive(f.snapshot())
+    expect(b.listener.mock.lastCall?.[0].snapshot.state.content).toBe('temporary edits')
+    a.sync.dispose(); b.sync.dispose()
+  })
+
+  it('retains an offline return through reload and preserves the shared draft on reconnect', async () => {
+    const f = fixture(), a = f.client('a'), b = f.client('b'), recovered = vi.fn(async () => {})
+    await a.open(state('original')); await b.open()
+    a.sync.disconnect()
+    await a.sync.takeTemporary('new')
+    await a.sync.returnFromTemporary('new', state('returned offline'))
+    b.sync.edit('new', { content: 'newer' }); await b.sync.flush('new')
+    const resumed = f.client('resumed', a.saved(), recovered)
+    await resumed.open()
+    expect(f.snapshot().state.content).toBe('returned offline')
+    expect(recovered).toHaveBeenCalledExactlyOnceWith(state('newer'), 'remote')
+    a.sync.dispose(); b.sync.dispose(); resumed.sync.dispose()
+  })
+
+  it('does not overwrite shared content if saving its shelf copy fails', async () => {
+    const f = fixture(), recovered = vi.fn(async (): Promise<void> => { throw new Error('disk full') }), a = f.client('a', null, recovered)
+    await a.open(state('shared'))
+    await a.sync.returnFromTemporary('new', state('returned'))
+    await vi.waitFor(() => expect(recovered).toHaveBeenCalled())
+    expect(f.snapshot().state.content).toBe('shared')
+    expect(a.saved()?.pending.content).toBe('returned')
+    recovered.mockImplementation(async () => {})
+    a.sync.connect(f.transport)
+    await vi.waitFor(() => expect(f.snapshot().state.content).toBe('returned'))
+    a.sync.dispose()
+  })
+
+  it('serializes a rapid return behind an already-sent clear', async () => {
+    const f = fixture(), a = f.client('a', null, async () => {})
+    await a.open(state('shared'))
+    let settle!: () => void
+    const barrier = new Promise<void>((resolve) => { settle = resolve })
+    let clearing = false
+    a.sync.connect({ ...f.transport, write: async (input) => {
+      if (input.clear) { clearing = true; await barrier }
+      return f.transport.write(input)
+    } })
+    await a.sync.open('new', state(), a.listener)
+    await a.sync.takeTemporary('new')
+    await vi.waitFor(() => expect(clearing).toBe(true))
+    await a.sync.returnFromTemporary('new', state('returned'))
+    settle()
+    await vi.waitFor(() => expect(f.snapshot().state.content).toBe('returned'))
+    expect(a.saved()?.temporaryReturn).toBeUndefined()
+    a.sync.dispose()
+  })
+})
+
+it('resumes ordinary new-chat edits after navigating away from temporary mode offline', async () => {
+  const f = fixture(), a = f.client('a')
+  await a.open(state('taken'))
+  a.sync.disconnect()
+  await a.sync.takeTemporary('new')
+  await a.sync.open('new', state(), a.listener)
+  a.sync.edit('new', { content: 'fresh normal draft' })
+  a.sync.connect(f.transport)
+  await vi.waitFor(() => expect(f.snapshot().state.content).toBe('fresh normal draft'))
+  a.sync.dispose()
+})
+
+it('does not take a newer remote revision arriving while the local handoff is being staged', async () => {
+  const f = fixture(), a = f.client('a'), b = f.client('b')
+  await a.open(state('taken')); await b.open()
+  b.sync.edit('new', { content: 'newer' }); await b.sync.flush('new')
+  const take = a.sync.takeTemporary('new')
+  a.sync.receive(f.snapshot())
+  await take
+  await a.sync.open('new', state(), a.listener)
+  expect(f.snapshot().state.content).toBe('newer')
+  a.sync.dispose(); b.sync.dispose()
+})
+
+it('surfaces failed handoff persistence without losing the normal pending draft', async () => {
+  const f = fixture()
+  let fail = false
+  const sync = new ComposerSync({ load: async () => null, save: async () => { if (fail) throw new Error('disk full') } }, 'a')
+  sync.connect(f.transport)
+  const listener = vi.fn()
+  await sync.open('new', state('shared'), listener)
+  sync.edit('new', { content: 'latest local' })
+  fail = true
+  await expect(sync.takeTemporary('new')).rejects.toThrow('disk full')
+  fail = false
+  await sync.open('new', state(), listener)
+  expect(listener.mock.lastCall?.[0].pending.content).toBe('latest local')
+  await sync.flush('new')
+  expect(f.snapshot().state.content).toBe('latest local')
+  sync.dispose()
+})
+
+it('pauses writes during local storage transfer and rolls back if the local move fails', async () => {
+  const f = fixture(), a = f.client('a')
+  await a.open(state('shared'))
+  a.sync.edit('new', { content: 'pending typing' })
+  let fail!: (error: Error) => void
+  const localSave = new Promise<void>((_, reject) => { fail = reject })
+  const take = a.sync.takeTemporary('new', () => localSave)
+  const rejected = expect(take).rejects.toThrow('local storage failed')
+  await a.sync.flush('new')
+  expect(f.snapshot().state.content).toBe('shared')
+  fail(new Error('local storage failed'))
+  await rejected
+  await a.sync.flush('new')
+  expect(f.snapshot().state.content).toBe('pending typing')
+  a.sync.dispose()
+})

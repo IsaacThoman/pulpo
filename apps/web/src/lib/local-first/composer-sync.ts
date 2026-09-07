@@ -13,10 +13,10 @@ export function webComposerSync(userId: string): ComposerSync | null {
   if (!sync) {
     const key = (id: string) => `composer-sync:${account}:${generation ? `${generation}:` : ''}${id}`
     sync = new ComposerSync({
-      recoverShelfContent: async (state) => {
+      recoverShelfContent: async (state, source) => {
         const drafts = await import('./composer-drafts')
         const local = drafts.runtimeComposerDraft(userId, 'new') ?? await drafts.loadComposerDraft(userId, 'new')
-        const attachments = local?.content === state.content ? local.attachments.map((a) => ({
+        const attachments = source !== 'remote' && local?.content === state.content ? local.attachments.map((a) => ({
           localId: a.localId, id: a.status === 'ready' ? a.serverId : undefined,
           name: a.name, mimeType: a.mimeType, size: a.size, source: a.file,
         })) : state.attachments.map((a) => ({ ...a, localId: a.id }))
