@@ -2,7 +2,7 @@ import type { QueryClient } from '@tanstack/react-query'
 import { chatQuery, queryKeys } from './queries'
 import { protectTranscript } from './transcriptResidency'
 
-/** Start native I/O now, but keep decoding and publishing off the animation path. */
+/** Start loading without an animation gate; retain ownership until navigation settles. */
 export function prepareChatSelection(client: QueryClient, namespace: string, id: string, localChatLimit: number) {
   const key = queryKeys.chat(namespace, id)
   const release = protectTranscript(namespace, id)
@@ -12,32 +12,18 @@ export function prepareChatSelection(client: QueryClient, namespace: string, id:
     return { finish: release, cancel: release }
   }
 
-  let phase: 'waiting' | 'ready' | 'cancelled' = 'waiting'
-  const waiters = new Set<() => void>()
-  const wait = (signal: AbortSignal) => new Promise<void>((resolve, reject) => {
-    const check = () => {
-      if (phase === 'waiting' && !signal.aborted) return
-      waiters.delete(check)
-      signal.removeEventListener('abort', check)
-      if (phase === 'cancelled' || signal.aborted) reject(new Error('Chat preparation cancelled'))
-      else resolve()
-    }
-    waiters.add(check)
-    signal.addEventListener('abort', check, { once: true })
-    check()
-  })
-  void client.prefetchQuery({ ...chatQuery(namespace, id, localChatLimit, wait), retry: false })
+  let settled = false
+  void client.prefetchQuery({ ...chatQuery(namespace, id, localChatLimit), retry: false })
   const owned = client.getQueryCache().find({ queryKey: key, exact: true })
   const ownedPromise = owned?.promise
   const settle = (cancel: boolean) => {
-    if (phase !== 'waiting') return
+    if (settled) return
+    settled = true
     const current = client.getQueryCache().find({ queryKey: key, exact: true })
     // A newly attached preview/detail observer adopts the request on interruption.
     const ownsFetch = current === owned && current?.promise === ownedPromise
     const adopted = ownsFetch && Boolean(current?.getObserversCount())
-    phase = cancel && !adopted ? 'cancelled' : 'ready'
     if (cancel && !adopted && ownsFetch) void client.cancelQueries({ queryKey: key, exact: true }, { revert: false })
-    for (const check of waiters) check()
     release()
   }
   return { finish: () => settle(false), cancel: () => settle(true) }

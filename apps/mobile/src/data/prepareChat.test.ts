@@ -18,21 +18,22 @@ beforeEach(() => {
   mocks.outbox.mockResolvedValue([])
 })
 
-it('starts disk and network I/O immediately but publishes and persists only after the slide', async () => {
+it('publishes local and server data without waiting for animation completion', async () => {
+  let resolve!: (value: ServerChat) => void
+  mocks.network.mockReturnValue(new Promise<ServerChat>((r) => { resolve = r }))
   const c = client()
   const selection = prepareChatSelection(c, 'n', 'a', 50)
   expect(mocks.disk).toHaveBeenCalledOnce()
   expect(mocks.network).toHaveBeenCalledOnce()
-  await Promise.resolve(); await Promise.resolve()
-  expect(c.getQueryData(queryKeys.chat('n', 'a'))).toBeUndefined()
-  expect(mocks.outbox).not.toHaveBeenCalled()
-  expect(mocks.write).not.toHaveBeenCalled()
-  selection.finish()
+  await vi.waitFor(() => expect(c.getQueryData(queryKeys.chat('n', 'a'))).toEqual(local))
+  resolve(server)
   await vi.waitFor(() => expect(c.getQueryData(queryKeys.chat('n', 'a'))).toEqual(server))
+  expect(mocks.write).toHaveBeenCalled()
+  selection.finish()
   c.clear()
 })
 
-it('reuses resident data without reading SQLite or replacing it during the slide', async () => {
+it('reuses resident data without reading SQLite before revalidation', async () => {
   const c = client()
   c.setQueryData(queryKeys.chat('n', 'a'), local)
   const selection = prepareChatSelection(c, 'n', 'a', 50)

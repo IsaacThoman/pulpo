@@ -31,7 +31,7 @@ latency; keep any screenshots and result bundles outside the repository.
 `testSelectLongAndCachedChats` alternates between the 1,000-turn and short chats
 twice, checks the selected transcript's native test identifier, and verifies the
 keyboard stays dismissed. This covers initial local hydration and resident detail
-selection after drawer closure; it does not measure physical-device frame timing.
+selection while the drawer closes; it does not measure physical-device frame timing.
 
 Set `EXPO_PUBLIC_PERF_COLD_CHAT=1` to omit chat 3's offline document, delay its
 network response by five seconds, and make chat 4 empty. `testSelectedChatCover` checks that selection
@@ -45,21 +45,36 @@ waits beyond drawer completion, and types without tapping the composer. It also
 starts from the unsaved-chat landing, and checks that the keyboard remains
 visible and the input stays above it.
 
-The UI fixture also writes `Documents/ui-preparation-timings.json` for prepared
-requests. It records the selected chat at request start and elapsed transfer/gate
-times, allowing verification that I/O begins before selection commits. These
-synthetic timings are not native frame-rate measurements; keep the output outside
-Git with other run artifacts.
+`testLatestViewportAndOlderHistory` verifies that the latest response mounts,
+scrolling loads older rows, and streaming leaves an older visible row in place.
+`testGalleryFromLatestTurn` opens and closes a gallery from both short and bottom-anchored long transcripts. `testLargeMarkdownSelection` checks cold and warm reopening of a 1,500-paragraph
+native Markdown response, including its visible tail. Native Markdown accessibility
+elements are queried as `any`, rather than assuming they are `staticText`.
+
+Set `EXPO_PUBLIC_PERF_VIEWPORT_POSITIONS=1` for the full UI suite.
+`testOpeningViewportDoesNotDrift` measures the latest row from its first visible
+frame, rather than waiting until native layout has settled. It requires at least
+ten samples and at most three points of movement before any reader gesture.
+`testImmediateScrollKeepsReaderPosition` starts dragging after a warm selection
+without intervening row/list queries, then checks the reader's anchor. Position
+samples are written to `Documents/ui-transcript-positions.json`; disable this
+instrumentation when comparing animation/selection latency.
 
 The fixture writes `Documents/ui-selection-timings.json` with tap, activation,
-native content-ready, and slide boundary markers. Content-ready means native
-viewport layout plus one JavaScript animation frame, not photon-level visibility
-or completion of every Markdown row's measurement. Set
-`EXPO_PUBLIC_PERF_SELECTION_FRAMES=1` for `ui-selection-frames.json`, containing
-UI frame-callback gaps between JavaScript slide boundary notifications. This
-window can extend beyond native animation completion when JavaScript is busy.
-Keep these raw samples outside Git; simulator/XCTest overhead and the measurement
-window prevent treating them as device FPS.
+content-ready, and slide markers. Content-ready means native viewport/content
+measurement plus one JavaScript animation frame; it is not photon-level visibility
+or completion of asynchronous Markdown layout. Per-chat timing files preserve
+results across subsequent test launches. The optional animation observer records
+first movement and spring completion on the UI runtime. All selection timestamps
+use `Date.now()` because Hermes and the UI runtime have different performance
+clock origins.
+
+Set `EXPO_PUBLIC_PERF_SELECTION_FRAMES=1` for `ui-selection-frames.json`.
+Frame samples contain wall timestamps and native frame-callback intervals. Filter
+them using UI motion boundaries; JavaScript completion can arrive much later when
+its thread is busy. The first interval can include a stall before first motion.
+Keep raw samples, recordings, screenshots, and result bundles outside Git.
+Simulator/XCTest overhead means these are not physical-device FPS measurements.
 
 Build current native dependencies first (`expo prebuild`, `pod install`, then
 Release Xcode/Gradle builds). Keep the normal build intact. Export a harness from

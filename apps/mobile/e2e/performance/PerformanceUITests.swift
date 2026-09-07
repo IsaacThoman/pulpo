@@ -1,5 +1,121 @@
 import XCTest
 final class PerformanceUITests: XCTestCase {
+  func testOpeningViewportDoesNotDrift() {
+    continueAfterFailure = false
+    let app = XCUIApplication(bundleIdentifier: "com.isaacthoman.pulpo")
+    app.launch()
+    XCTAssertTrue(app.buttons["Open chats"].waitForExistence(timeout: 30))
+    app.buttons["Open chats"].tap()
+    app.staticTexts["Performance 1000 turns"].firstMatch.tap()
+    // The fixture samples the actual latest row from its first visible frame,
+    // including the period XCTest otherwise skips while waiting for idle.
+    let report = app.staticTexts["Fixture viewport"]
+    let measured = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label BEGINSWITH 'Viewport drift:'"), object: report)
+    XCTAssertEqual(XCTWaiter.wait(for: [measured], timeout: 12), .completed)
+    let drift = Double(report.label.replacingOccurrences(of: "Viewport drift: ", with: ""))
+    XCTAssertNotNil(drift)
+    XCTAssertLessThanOrEqual(drift!, 3, report.label)
+  }
+
+  func testImmediateScrollKeepsReaderPosition() {
+    continueAfterFailure = false
+    let app = XCUIApplication(bundleIdentifier: "com.isaacthoman.pulpo")
+    app.launch()
+    XCTAssertTrue(app.buttons["Open chats"].waitForExistence(timeout: 30))
+    // Warm the detail once, then drag immediately after reopening. Do not wait
+    // for transcript/row existence: those waits masked the initial fill race.
+    app.buttons["Open chats"].tap()
+    app.staticTexts["Performance 1000 turns"].firstMatch.tap()
+    XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "chat-transcript-00000000-0000-4000-8000-000000000100").firstMatch.waitForExistence(timeout: 10))
+    app.buttons["Open chats"].tap()
+    app.staticTexts["Performance chat 2"].firstMatch.tap()
+    app.buttons["Open chats"].tap()
+    let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3))
+    let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.78))
+    app.staticTexts["Performance 1000 turns"].firstMatch.tap()
+    start.press(forDuration: 0.01, thenDragTo: end)
+    Thread.sleep(forTimeInterval: 1)
+    let olderRows = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'chat-message-00000000-0000-4000-8000-000000000100-response-' AND identifier ENDSWITH ':input' AND NOT identifier CONTAINS 'response-999:'"))
+    let older = olderRows.allElementsBoundByIndex.first { $0.isHittable && $0.frame.minY > 150 && $0.frame.maxY < 650 }
+    XCTAssertNotNil(older, "The opening gesture must reach older messages")
+    let anchor = app.descendants(matching: .any).matching(identifier: older!.identifier).firstMatch
+    let position = anchor.frame.minY
+    Thread.sleep(forTimeInterval: 2)
+    XCTAssertTrue(anchor.isHittable)
+    XCTAssertEqual(anchor.frame.minY, position, accuracy: 3)
+  }
+
+  func testGalleryFromLatestTurn() {
+    continueAfterFailure = false
+    let app = XCUIApplication(bundleIdentifier: "com.isaacthoman.pulpo")
+    app.launch()
+    XCTAssertTrue(app.buttons["Open chats"].waitForExistence(timeout: 30))
+    for (title, suffix) in [("Performance chat 2", "000000000101"), ("Performance 1000 turns", "000000000100")] {
+      app.buttons["Open chats"].tap()
+      app.staticTexts[title].firstMatch.tap()
+      let transcript = app.descendants(matching: .any).matching(identifier: "chat-transcript-00000000-0000-4000-8000-\(suffix)").firstMatch
+      XCTAssertTrue(transcript.waitForExistence(timeout: 10))
+      let preview = app.descendants(matching: .any).matching(identifier: "Preview fixture.png").firstMatch
+      for _ in 0..<3 {
+        if preview.exists && preview.isHittable { break }
+        transcript.swipeDown()
+      }
+      XCTAssertTrue(preview.waitForExistence(timeout: 5))
+      preview.tap()
+      let close = app.buttons["Close image preview"]
+      XCTAssertTrue(close.waitForExistence(timeout: 5))
+      close.tap()
+      XCTAssertTrue(transcript.waitForExistence(timeout: 5))
+    }
+  }
+
+  func testLatestViewportAndOlderHistory() {
+    continueAfterFailure = false
+    let app = XCUIApplication(bundleIdentifier: "com.isaacthoman.pulpo")
+    app.launch()
+    XCTAssertTrue(app.buttons["Open chats"].waitForExistence(timeout: 30))
+    app.buttons["Open chats"].tap()
+    app.staticTexts["Performance 1000 turns"].firstMatch.tap()
+    let transcript = app.descendants(matching: .any).matching(identifier: "chat-transcript-00000000-0000-4000-8000-000000000100").firstMatch
+    XCTAssertTrue(transcript.waitForExistence(timeout: 10))
+    let latest = app.descendants(matching: .any).matching(identifier: "chat-message-00000000-0000-4000-8000-000000000100-response-999").firstMatch
+    XCTAssertTrue(latest.waitForExistence(timeout: 5))
+    let olderRows = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'chat-message-00000000-0000-4000-8000-000000000100-response-' AND identifier ENDSWITH ':input' AND NOT identifier CONTAINS 'response-999:'"))
+    var older: XCUIElement?
+    for _ in 0..<4 {
+      transcript.swipeDown()
+      older = olderRows.allElementsBoundByIndex.first { $0.isHittable && $0.frame.minY > 150 && $0.frame.maxY < 650 }
+      if older != nil { break }
+    }
+    XCTAssertNotNil(older)
+    let anchor = app.descendants(matching: .any).matching(identifier: older!.identifier).firstMatch
+    let position = anchor.frame.minY
+    app.descendants(matching: .any).matching(identifier: "Fixture stream").firstMatch.tap()
+    Thread.sleep(forTimeInterval: 2)
+    XCTAssertTrue(anchor.isHittable, "Streaming must not jump the reader back to the tail")
+    XCTAssertEqual(anchor.frame.minY, position, accuracy: 3)
+
+  }
+
+  func testLargeMarkdownSelection() {
+    continueAfterFailure = false
+    let app = XCUIApplication(bundleIdentifier: "com.isaacthoman.pulpo")
+    app.launch()
+    XCTAssertTrue(app.buttons["Open chats"].waitForExistence(timeout: 30))
+    for _ in 0..<2 {
+      app.buttons["Open chats"].tap()
+      app.staticTexts["Performance chat 5"].firstMatch.tap()
+      let transcript = app.descendants(matching: .any).matching(identifier: "chat-transcript-00000000-0000-4000-8000-000000000104").firstMatch
+      XCTAssertTrue(transcript.waitForExistence(timeout: 15))
+      let tail = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'Large Markdown tail marker'")).firstMatch
+      XCTAssertTrue(tail.waitForExistence(timeout: 15))
+      XCTAssertTrue(tail.isHittable)
+      app.buttons["Open chats"].tap()
+      app.staticTexts["Performance chat 2"].firstMatch.tap()
+      XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "chat-transcript-00000000-0000-4000-8000-000000000101").firstMatch.waitForExistence(timeout: 10))
+    }
+  }
+
   func testNewChatKeepsComposerFocused() {
     continueAfterFailure = false
     let app = XCUIApplication(bundleIdentifier: "com.isaacthoman.pulpo")

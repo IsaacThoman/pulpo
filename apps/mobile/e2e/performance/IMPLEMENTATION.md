@@ -1,5 +1,9 @@
 # Mobile performance fixes
 
+The current sidebar-selection implementation is described in **Overlapping
+selection with stable long-chat positioning** below. Earlier transition sections
+record superseded experiments and their measurements.
+
 Implemented and profiled on `fix-mobile-performance`, originally based on
 `675eb02274d9e2f66212e55c1a7662acdfacb9f1`. Before opening the PR, rebased cleanly
 onto `dev` at `8bb8c2fc0830ad328b1e520209f9156980f52355` and reran mobile type
@@ -377,3 +381,115 @@ drawer/search, cached-selection, and content-placeholder XCTest cases also
 passed. Mobile type checking, lint, all 458 mobile tests, and both production
 exports passed. Physical
 iPhone/Android validation has not been repeated for this focus change.
+
+
+## Overlapping selection with stable long-chat positioning
+
+Chat selection starts targeted local/network loading and the closing spring
+without an animation-completion decode/publication gate. A content-only cover
+hides the previous transcript while the destination activates in a React
+transition. Preparation still pins residency and preserves cancellation, request
+adoption, scope, and optimistic ownership. Header/composer and New Chat keyboard
+ownership remain unchanged.
+
+Long transcripts (more than eight message rows) use a latest-first adapter with
+an inverted FlatList. The visual conversation remains chronological; source
+messages are never reversed in place. The latest message starts at native offset
+zero, so virtualizing older rows changes the far end of the list without moving
+the visible tail. Short conversations retain their normal top-aligned layout.
+Initial native work is one row; subsequent batches are one row every 32 ms with
+a three-viewport virtualization window. Reversed arrays have weak ownership and
+reuse unchanged message references from the scoped projector.
+
+The earlier incremental normal-order viewport was rejected after device feedback.
+It prepended rows while native anchoring and repeated tail corrections adjusted
+the same scroll position. The new list has no history-prepending timers and no
+opening scroll-to-bottom loop for long chats. Native anchoring protects an older
+reader's position; explicit sends can request the tail using the current keyboard
+inset. Passive layout scroll events cannot rearm following after a gesture.
+
+A 1,500-paragraph profile previously exposed 209.1 ms native intervals even with
+one initial row. Initial messages above 24,000 UTF-16 characters therefore keep
+the content-only cover until spring completion before mounting native Markdown.
+Replacing an already mounted large latest message similarly retains that tree
+under the cover until completion. Data loading/decoding stays immediate. This
+exception does not defer ordinary chats because they have many historical turns.
+Same-chat reselection retains its measured transcript, and delayed activation
+rechecks scope/deletion and keeps preparation ownership until readiness/cancellation.
+
+### Position regression evidence
+
+The opt-in native harness samples the actual latest row's screen position for
+five seconds, including the frames XCTest otherwise skips while waiting for
+idle. On the same iPhone 17 Pro / iOS 26.5 Release shell with 5,000 summaries and
+a 1,000-turn transcript:
+
+| Untouched opening | Latest-row bottom displacement |
+| --- | ---: |
+| Rejected incremental/prepending viewport | 668.7 points |
+| Bottom-anchored viewport | 0 points across 282 samples |
+
+The new regression test fails on the previous implementation and passes on the
+fix. A separate native test drags immediately after warm reopening without
+waiting for transcript/row-existence queries, then checks the older visible
+message remains fixed as rendering settles. In its recorded run, the gesture
+began 546 ms after the content-ready marker. This is an XCTest interaction check,
+not a claim to cover every possible physical touch timing.
+
+### Selection latency reference
+
+Same M3 Pro host, iPhone 17 Pro / iOS 26.5 Release shell, current native modules,
+5,000 summaries, and identical synthetic documents. No builds ran during these
+measured selection tests. The previous branch is `719430d3`; dev is `2dd9344e`.
+Each cell is one warm reopening, so these small samples are not SLOs.
+
+| Warm selection | Build | Tap to first UI motion | Content-ready marker | Longest UI interval |
+| --- | --- | ---: | ---: | ---: |
+| 1,000 turns | dev | 84 ms | 71 ms | 100.3 ms |
+| 1,000 turns | previous branch | 16 ms | 501 ms | 16.7 ms |
+| 1,000 turns | initial bottom-anchored implementation | 16 ms | 154 ms | 36.7 ms |
+| One turn | dev | 538 ms | 97 ms | 583.3 ms |
+| One turn | previous branch | 203 ms | 639 ms | 182.1 ms |
+| One turn | initial bottom-anchored implementation | 32 ms | 143 ms | 54.7 ms |
+
+The initial bottom-anchored run precedes the final gesture/inset ownership
+refinements. Later functional runs shared the host with unrelated Xcode builds
+and are not used as controlled latency comparisons.
+
+Content-ready is a native measurement/RAF marker, not photon-level visibility or
+completed asynchronous Markdown layout. Dev can report it before reaching its
+latest viewport, and hydrates disk details at startup, making cold comparisons
+unsuitable. Frame intervals can include the stall leading into first motion.
+Position instrumentation is disabled for latency measurement. Raw samples,
+recordings, screenshots, logs, and result bundles remain outside Git.
+
+### Validation
+
+- 464 mobile tests, mobile type checking, and changed-file lint pass.
+- The earlier 74 shared client-core and 78 contracts tests remain the shared
+  package baseline; this viewport change does not modify those packages.
+- Both production exports pass.
+- All 12 native iOS UI tests passed. These cover opening stability, immediate scrolling, older-reader
+  anchoring while streaming, long/cached selection, 1,500-paragraph Markdown,
+  short/long galleries, content-only loading, empty/reselected chats, previews,
+  New Chat autofocus, streaming while typing, foreground resume, and repeated
+  switching. The final passive-event and timer-cleanup guards were followed by
+  successful reruns of immediate scrolling, all three New Chat focus paths, and
+  long/cached selection.
+
+- The final Android API 36 / arm64 Release fixture passed long-chat opening at
+  the latest turn, scrolling to older history, short/long cached reopening, and
+  opening/closing the long-chat gallery. Repeated emulator System UI ANRs and
+  stalled UI-automation/screenshot calls prevented completion of the final
+  streaming/typing, foreground-resume, and New Chat focus reruns. A clean AVD
+  with 4 GiB RAM and host graphics was attempted after the initial 2 GiB /
+  software-rendered emulator failures. These are partial functional results,
+  not Android frame measurements or a claim that the remaining cases passed.
+
+Physical-device frame profiling remains unverified because Instruments reported
+the iPhone offline. The serialized residency budget does not establish a native
+heap plateau; the previously documented memory limitation remains. The list
+adapter adds no independent strong transcript owner.
+
+The user requested leaving the concurrent iPhone deployment alone. This final
+viewport update is not deployed to either physical device.

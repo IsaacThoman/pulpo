@@ -1,4 +1,5 @@
-import { recordChatSelection } from '../features/chat/selectionTiming';
+import { INITIAL_TRANSCRIPT_ROWS, hasLargeInitialMessage, transcriptListMessages, usesBottomAnchoredTranscript } from '../features/chat/transcriptWindow';
+import { hasChatSelectionObserver, recordChatSelection, hasTranscriptPositionObserver, recordTranscriptPosition } from '../features/chat/selectionTiming';
 import { prepareChatSelection } from '../data/prepareChat';
 import { createDrawerTransition } from '../features/chat/drawerTransition';
 import { protectTranscript } from '../data/transcriptResidency';
@@ -23,6 +24,7 @@ import {
   createContext,
   forwardRef,
   memo,
+  startTransition,
   useCallback,
   useContext,
   useEffect,
@@ -151,6 +153,7 @@ import Reanimated, {
   LinearTransition,
   runOnJS,
   type SharedValue,
+  useAnimatedReaction,
   useAnimatedStyle,
   useSharedValue,
   withDelay,
@@ -281,6 +284,8 @@ const CHAT_COMPOSER_BOTTOM_PADDING = 156;
 const CHAT_COMPOSER_MESSAGE_GAP = 12;
 
 type ChatScrollViewProps = ScrollViewProps & {
+  inverted?: boolean;
+  onContentInsetChange?: (insets: { top: number }) => void;
   composerPadding: SharedValue<number>;
   blankSpace: SharedValue<number>;
   freezeKeyboardLayout: boolean;
@@ -1602,6 +1607,14 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   const openOffset = drawerWidth;
 
   const slideX = useSharedValue(0);
+  const measuredMotion = useSharedValue<{ chatId: string; origin: number } | null>(null);
+  useAnimatedReaction(() => measuredMotion.value ? slideX.value : null, (offset) => {
+    const sample = measuredMotion.value;
+    if (sample && offset !== null && Math.abs(offset - sample.origin) > 0.5) {
+      measuredMotion.value = null;
+      runOnJS(recordChatSelection)(sample.chatId, 'motionStart', undefined, Date.now());
+    }
+  });
   const gestureStartX = useSharedValue(0);
   const wideSidebarProgress = useSharedValue(1);
   const wideSidebarGestureStart = useSharedValue(1);
@@ -1788,6 +1801,8 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
       setOpeningChat(null);
     }
     const timedChat = !open && onFinished ? timedSelection.current : null;
+    const measure = hasChatSelectionObserver();
+    if (timedChat && measure) measuredMotion.value = { chatId: timedChat, origin: slideX.value };
     if (timedChat) recordChatSelection(timedChat, 'slideStart');
     const finish = drawerTransition.begin(() => {
       if (timedChat) recordChatSelection(timedChat, 'slideEnd');
@@ -1799,7 +1814,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
       finish(true);
       return;
     }
-    // Existing-chat selection defers mounting until closure. Ordinary closure
+    // Existing-chat selection retains drawer keyboard ownership until closure. Ordinary closure
     // (including New Chat) hands layout/focus back now, before autofocus runs.
     if (open || !onFinished) setPanelOpen(open);
     if (open) {
@@ -1820,9 +1835,10 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
       mass: 0.9,
       overshootClamping: true,
     }, (finished) => {
+      if (timedChat && measure && finished) runOnJS(recordChatSelection)(timedChat, 'motionEnd', undefined, Date.now());
       runOnJS(finish)(finished === true);
     });
-  }, [drawerTransition, openOffset, persistentSidebar, reduceMotion, slideX]);
+  }, [drawerTransition, measuredMotion, openOffset, persistentSidebar, reduceMotion, slideX]);
 
   useEffect(() => {
     if (Platform.OS !== 'android' || !panelOpen) return;
@@ -2084,28 +2100,51 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     chatPreparation.current = productionUserId && idSchema.safeParse(chat.id).success
       ? prepareChatSelection(queryClient, cacheNamespace(productionInstanceUrl, productionUserId), chat.id, usePreferencesStore.getState().localChatLimit)
       : null;
-    // Starting movement never waits for cache reads or destination layout.
-    // Hide only the message area before starting the slide. Keep the old
-    // transcript mounted until the spring finishes, preserving the chat chrome.
-    pendingChatSlide.current = () => animatePanel(false, 0, () => {
-      const session = useSessionStore.getState();
-      if (session.instanceUrl !== productionInstanceUrl || session.user?.id !== productionUserId) { chatPreparation.current?.cancel(); chatPreparation.current = null; setOpeningChat(null); return; }
-      const selected = usePrototypeStore.getState().chats.find((item) => item.id === chat.id && item.deletedAt === null);
-      if (!selected) { chatPreparation.current?.cancel(); chatPreparation.current = null; setOpeningChat(null); return; }
-      chatPreparation.current?.finish();
-      chatPreparation.current = null;
-      abandonActiveTemporaryChat();
-      composerFollowsDefaultModel.current = false;
-      recordChatSelection(selected.id, 'activate');
-      setActiveChatId(selected.id);
-      setSelectedModelId(selected.modelId);
-      setAssistantStatus('idle');
-      composerFocusRevision.current += 1;
-      setComposerFocusRequest({ revision: composerFocusRevision.current, target: 'content' });
-      finishExistingChatTransition();
-    });
+    // Commit the content cover first, then start native movement before asking
+    // React to mount the destination's bounded initial viewport.
+    pendingChatSlide.current = () => {
+      // Removing an already mounted huge Markdown tree can stall UIKit too.
+      // Retain that tree under the cover until the spring completes.
+      const previous = usePrototypeStore.getState().chats.find((item) => item.id === activeChatId);
+      const deferReplacement = activeChatId !== chat.id && hasLargeInitialMessage(previous?.messages ?? []);
+      const activate = () => {
+        const session = useSessionStore.getState();
+        if (session.instanceUrl !== productionInstanceUrl || session.user?.id !== productionUserId) {
+          chatPreparation.current?.cancel();
+          chatPreparation.current = null;
+          setOpeningChat(null);
+          return;
+        }
+        const selected = usePrototypeStore.getState().chats.find((item) => item.id === chat.id && item.deletedAt === null);
+        if (!selected) {
+          chatPreparation.current?.cancel();
+          chatPreparation.current = null;
+          setOpeningChat(null);
+          return;
+        }
+        abandonActiveTemporaryChat();
+        composerFollowsDefaultModel.current = false;
+        recordChatSelection(selected.id, 'activate');
+        startTransition(() => {
+          setActiveChatId(selected.id);
+          setSelectedModelId(selected.modelId);
+          setAssistantStatus('idle');
+          composerFocusRevision.current += 1;
+          setComposerFocusRequest({ revision: composerFocusRevision.current, target: 'content' });
+        });
+      };
+      animatePanel(false, 0, () => {
+        if (deferReplacement) activate();
+        else {
+          chatPreparation.current?.finish();
+          chatPreparation.current = null;
+        }
+        finishExistingChatTransition();
+      });
+      if (!deferReplacement) activate();
+    };
     setOpeningChat({ ...chat });
-  }, [abandonActiveTemporaryChat, animatePanel, dismissComposer, drawerTransition, finishExistingChatTransition, productionInstanceUrl, productionUserId, queryClient]);
+  }, [abandonActiveTemporaryChat, activeChatId, animatePanel, dismissComposer, drawerTransition, finishExistingChatTransition, productionInstanceUrl, productionUserId, queryClient]);
 
   useLayoutEffect(() => {
     const start = pendingChatSlide.current;
@@ -2116,9 +2155,12 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   const revealSelectedChat = useCallback((chatId: string) => {
     if (!openingChat || openingChat.id !== chatId || activeChatId !== chatId) return;
     if (revealChatFrame.current !== null) cancelAnimationFrame(revealChatFrame.current);
+    const preparation = chatPreparation.current;
     // Native layout is ready. Reveal on the next frame, guarding replacement selections.
     revealChatFrame.current = requestAnimationFrame(() => {
       revealChatFrame.current = null;
+      preparation?.finish();
+      if (chatPreparation.current === preparation) chatPreparation.current = null;
       recordChatSelection(chatId, 'contentReady');
       setOpeningChat((current) => current === openingChat ? null : current);
     });
@@ -2622,6 +2664,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
             openingChatId={openingChat?.id ?? null}
             draftNamespace={productionUserId ? cacheNamespace(productionInstanceUrl, productionUserId) : null}
             keyboardLayoutEnabled={!panelOpen}
+            transcriptTransitionActive={panelOpen && !persistentSidebar && !reduceMotion}
             model={selectedModel}
             models={availableModels}
             prototypeModel={selectedPrototypeModel}
@@ -3709,7 +3752,7 @@ function ComposerQueueSection({ title, subject, collapsed, onToggle, failed = fa
 }
 
 function ChatView({
-  messages, queuedMessages, chatId, chatLoaded, onTranscriptReady, openingChatId, draftNamespace, keyboardLayoutEnabled, model, models, prototypeModel, presetSelections: defaultPresetSelections, input, composerInputRef, composerFocusSuppressed, composerFocusRequest, onChangeInput, onSend, assistantStatus,
+  messages, queuedMessages, chatId, chatLoaded, onTranscriptReady, openingChatId, draftNamespace, keyboardLayoutEnabled, transcriptTransitionActive, model, models, prototypeModel, presetSelections: defaultPresetSelections, input, composerInputRef, composerFocusSuppressed, composerFocusRequest, onChangeInput, onSend, assistantStatus,
   onEdit, onRegenerate, onActivateBranch, onOpenChat, onStop, onTogglePanel, onOpenModelPicker, onSelectModel, onNewChat, onSaveTemporary, persistentSidebar, sidebarVisible, temporary, autoExpire, expirationPeriod, showAutoExpirationControl, expired, savingTemporary, onTemporaryChange, onAutoExpirationChange,
 }: {
   messages: Message[];
@@ -3717,6 +3760,7 @@ function ChatView({
   chatId: string | null;
   chatLoaded: boolean;
   onTranscriptReady: (chatId: string) => void;
+  transcriptTransitionActive: boolean;
   openingChatId: string | null;
   draftNamespace: string | null;
   keyboardLayoutEnabled: boolean;
@@ -3770,9 +3814,29 @@ function ChatView({
   const accessibilityLayout = fontScale >= 1.6;
   const scrollLanding = accessibilityLayout || (Platform.OS === 'android' && windowHeight < 650);
   const listRef = useRef<FlatList<Message>>(null);
+  const latestRowRef = useRef<View>(null);
+  const latestMessageId = messages.at(-1)?.id;
+  useEffect(() => {
+    if (!chatId || !chatLoaded || !hasTranscriptPositionObserver()) return;
+    const end = Date.now() + 5000;
+    let frame = 0;
+    let cancelled = false;
+    const sample = () => {
+      if (cancelled || Date.now() > end) return;
+      latestRowRef.current?.measureInWindow((_x, y, _width, height) => {
+        if (!cancelled && height > 0) recordTranscriptPosition({ chatId, kind: 'measure', at: Date.now(), bottom: y + height });
+      });
+      frame = requestAnimationFrame(sample);
+    };
+    frame = requestAnimationFrame(sample);
+    return () => { cancelled = true; cancelAnimationFrame(frame); };
+  }, [chatId, chatLoaded]);
   const isNearBottom = useRef(true);
   const shouldAutoFollow = useRef(true);
   const readerInteracting = useRef(false);
+  const [maintainReaderAnchor, setMaintainReaderAnchor] = useState(false);
+  const transcriptTopInset = useRef(0);
+  const updateTranscriptInset = useCallback((insets: { top: number }) => { transcriptTopInset.current = insets.top; }, []);
   const chatTailPending = useRef(true);
   const chatViewportHeight = useRef(0);
   const measuredTranscriptId = useRef<string | null>(null);
@@ -3783,6 +3847,12 @@ function ChatView({
   const tailSettleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const submittedTurnFollowRevision = useRef(0);
   const measuredContentHeight = useRef(0);
+  // Latest-first list coordinates keep the tail at offset zero. Virtualizing
+  // older rows then changes only the far end, never the visible row's origin.
+  // Short conversations retain their top-aligned layout and keyboard behavior.
+  const bottomAnchored = usesBottomAnchoredTranscript(messages);
+  const visibleMessages = useMemo(() => transcriptListMessages(messages), [messages]);
+
   const keyboardBlankSpace = useSharedValue(0);
   const composerPadding = useSharedValue(0);
   const preferredAgentMode = usePreferencesStore((state) => state.agentModes[model.id] ?? true);
@@ -3902,12 +3972,14 @@ function ChatView({
   const renderChatScrollComponent = useCallback((props: ScrollViewProps) => (
     <ChatScrollView
       {...props}
+      inverted={bottomAnchored}
+      onContentInsetChange={updateTranscriptInset}
       blankSpace={keyboardBlankSpace}
       composerPadding={composerPadding}
       freezeKeyboardLayout={!keyboardLayoutEnabled}
       keyboardOffset={keyboardSafeAreaOffset}
     />
-  ), [composerPadding, keyboardBlankSpace, keyboardLayoutEnabled, keyboardSafeAreaOffset]);
+  ), [bottomAnchored, composerPadding, keyboardBlankSpace, keyboardLayoutEnabled, keyboardSafeAreaOffset, updateTranscriptInset]);
   const emptyStateAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{
       translateY: Platform.OS === 'android'
@@ -4504,6 +4576,7 @@ function ChatView({
     // assistant row. Hold this intent across keyboard/layout scroll events
     // until their final measured content height has settled.
     readerInteracting.current = false;
+    setMaintainReaderAnchor(false);
     isNearBottom.current = true;
     shouldAutoFollow.current = true;
     chatTailPending.current = true;
@@ -4523,6 +4596,7 @@ function ChatView({
     }
     isNearBottom.current = snapshot.nearBottom;
     shouldAutoFollow.current = snapshot.autoFollow;
+    setMaintainReaderAnchor(!snapshot.autoFollow);
     readerInteracting.current = snapshot.readerInteracting;
     chatTailPending.current = snapshot.tailPending;
   }, []);
@@ -4787,8 +4861,10 @@ function ChatView({
   const nativeAgentForeground = activeAgentEnabled ? '#ffffff' : colorScheme === 'dark' ? '#f2f2f7' : '#1c1c1e';
 
   const updateBottomProximity = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+    const { contentOffset, contentInset, contentSize, layoutMeasurement } = event.nativeEvent;
     const nearBottom = isNearChatBottom({
+      inverted: bottomAnchored,
+      insetTop: contentInset.top,
       offsetY: contentOffset.y,
       contentHeight: contentSize.height,
       viewportHeight: layoutMeasurement.height,
@@ -4800,8 +4876,9 @@ function ChatView({
     if (chatTailPending.current) {
       return;
     }
-    if (!readerInteracting.current) shouldAutoFollow.current = nearBottom;
-  }, []);
+    // Native measurement and anchor adjustments also emit scroll events. Only
+    // an actual gesture ending may rearm following after the reader takes over.
+  }, [bottomAnchored]);
 
   const cancelPendingFollow = useCallback(() => {
     if (pendingFollowFrame.current === null) return;
@@ -4819,8 +4896,8 @@ function ChatView({
     // scrollToEnd relies on VirtualizedList's last-cell estimate, which can be
     // stale for one very tall native Markdown row. The measured content height
     // is clamped by the native scroll view and reliably reaches the real tail.
-    listRef.current?.scrollToOffset({ animated, offset: measuredContentHeight.current });
-  }, []);
+    listRef.current?.scrollToOffset({ animated, offset: bottomAnchored ? -transcriptTopInset.current : measuredContentHeight.current });
+  }, [bottomAnchored]);
 
   const scheduleTailSettle = useCallback(() => {
     cancelTailSettle();
@@ -4838,22 +4915,31 @@ function ChatView({
   }, [cancelTailSettle, scrollToMeasuredTail]);
 
   const beginReaderInteraction = useCallback(() => {
+    if (chatId && hasTranscriptPositionObserver()) recordTranscriptPosition({ chatId, at: Date.now(), kind: 'readerStart' });
     submittedTurnFollowRevision.current += 1;
     readerInteracting.current = true;
+    setMaintainReaderAnchor(true);
     chatTailPending.current = false;
     shouldAutoFollow.current = false;
     cancelPendingFollow();
     cancelTailSettle();
-  }, [cancelPendingFollow, cancelTailSettle]);
+  }, [cancelPendingFollow, cancelTailSettle, chatId]);
 
   const endReaderInteraction = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    // Native layout/keyboard adjustments can emit an end event without a drag.
+    if (!readerInteracting.current) return;
+    if (chatId && hasTranscriptPositionObserver()) recordTranscriptPosition({ chatId, at: Date.now(), kind: 'readerEnd' });
     readerInteracting.current = false;
     updateBottomProximity(event);
     shouldAutoFollow.current = isNearBottom.current;
-  }, [updateBottomProximity]);
+    setMaintainReaderAnchor(!isNearBottom.current);
+  }, [chatId, updateBottomProximity]);
 
   const followContentIfNeeded = useCallback(() => {
     const establishingChatTail = chatTailPending.current;
+    // Native anchoring owns long transcripts. Explicit sends can request the
+    // tail, but row measurement must never launch competing scroll corrections.
+    if (bottomAnchored && !establishingChatTail) return;
     if (!shouldFollowChatContent(
       shouldAutoFollow.current && isNearBottom.current,
       readerInteracting.current,
@@ -4868,27 +4954,30 @@ function ChatView({
       )) return;
       scrollToMeasuredTail(chatTailPending.current ? false : assistantStatus === 'idle');
     });
-  }, [assistantStatus, scrollToMeasuredTail]);
+  }, [assistantStatus, bottomAnchored, scrollToMeasuredTail]);
 
   const handleContentSizeChange = useCallback((_width: number, height: number) => {
     measuredContentHeight.current = height;
     keyboardBlankSpace.value = chatKeyboardBlankSpace(chatViewportHeight.current, height);
     followContentIfNeeded();
+    if (chatId && chatLoaded && measuredTranscriptId.current === chatId) onTranscriptReady(chatId);
     if (!chatTailPending.current) return;
     scheduleTailSettle();
-  }, [followContentIfNeeded, keyboardBlankSpace, scheduleTailSettle]);
+  }, [chatId, chatLoaded, followContentIfNeeded, keyboardBlankSpace, onTranscriptReady, scheduleTailSettle]);
 
   useEffect(() => {
     submittedTurnFollowRevision.current += 1;
     isNearBottom.current = true;
     shouldAutoFollow.current = true;
     readerInteracting.current = false;
-    chatTailPending.current = true;
+    chatTailPending.current = !bottomAnchored;
+    setMaintainReaderAnchor(false);
     measuredContentHeight.current = 0;
     keyboardBlankSpace.value = 0;
     cancelPendingFollow();
-    scheduleTailSettle();
-  }, [cancelPendingFollow, chatId, keyboardBlankSpace, scheduleTailSettle]);
+    cancelTailSettle();
+    if (!bottomAnchored) scheduleTailSettle();
+  }, [bottomAnchored, cancelPendingFollow, cancelTailSettle, chatId, draftNamespace, keyboardBlankSpace, scheduleTailSettle]);
 
   useEffect(() => () => {
     cancelPendingFollow();
@@ -4896,7 +4985,7 @@ function ChatView({
   }, [cancelPendingFollow, cancelTailSettle]);
 
   const renderMessage = useCallback(({ item }: { item: Message }) => (
-    <View style={styles.transcriptColumn}>
+    <View ref={item.id === latestMessageId ? latestRowRef : undefined} testID={`chat-message-${item.id}`} style={styles.transcriptColumn}>
       <MessageRow
         message={item}
         model={responseModel(item, models, model)}
@@ -4912,7 +5001,7 @@ function ChatView({
         editingLocked={Boolean(messageEdit)}
       />
     </View>
-  ), [assistantSideRail, expired, handleMessageEditAction, messageEdit, model, models, onActivateBranch, onOpenChat, onRegenerate, openFilePreview, openImageViewer, styles.transcriptColumn]);
+  ), [assistantSideRail, expired, handleMessageEditAction, latestMessageId, messageEdit, model, models, onActivateBranch, onOpenChat, onRegenerate, openFilePreview, openImageViewer, styles.transcriptColumn]);
 
   const empty = isEmptyConversation && assistantStatus === 'idle';
   const headerAction = resolveChatHeaderAction(chatId, messages.length, temporary);
@@ -4929,9 +5018,16 @@ function ChatView({
   useEffect(() => {
     // Empty chats have no transcript list to emit a native layout event.
     if (chatId && chatLoaded && messages.length === 0) onTranscriptReady(chatId);
-    else if (chatId && chatLoaded && measuredTranscriptId.current === chatId) onTranscriptReady(chatId);
+    else if (chatId && chatLoaded && measuredTranscriptId.current === chatId && measuredContentHeight.current > 0) onTranscriptReady(chatId);
   }, [chatId, chatLoaded, messages.length, onTranscriptReady]);
   const hasPendingAssistant = messages.some((message) => message.role === 'assistant' && (message.status === 'queued' || message.status === 'streaming'));
+  const pendingAssistantContent = assistantStatus === 'thinking' && !hasPendingAssistant ? (
+    <View accessibilityLiveRegion="polite" style={[styles.assistantRow, styles.transcriptColumn]}>
+      <AssistantFrame model={model} sideRail={assistantSideRail} time="now">
+        <ResponsePendingIndicator />
+      </AssistantFrame>
+    </View>
+  ) : null;
   const attachmentPolicy = attachmentSendPolicy(attachments, { editing: Boolean(messageEdit) });
   const canSend = Boolean(model.id)
     && (input.trim().length > 0 || attachments.length > 0)
@@ -5133,35 +5229,40 @@ function ChatView({
             {emptyLandingContent}
           </View>
         )
-      ) : (
+      ) : transcriptTransitionActive && openingChatId === chatId
+        && measuredTranscriptId.current !== chatId && hasLargeInitialMessage(messages) ? null : (
         /* Keep Android Compose hosts attached as follow-up rows are inserted and scrolled
          * into view; clipping can leave the pending loader blank. List virtualization
          * still bounds the rendered window. */
         <FlatList
           alwaysBounceVertical
           bounces
-          contentContainerStyle={[styles.conversation, { paddingHorizontal: horizontalPadding, paddingTop: Platform.OS === 'android' ? 16 : headerOverlayHeight + 16 }]}
+          contentContainerStyle={[styles.conversation, {
+            paddingHorizontal: horizontalPadding,
+            paddingTop: bottomAnchored ? CHAT_COMPOSER_BOTTOM_PADDING : Platform.OS === 'android' ? 16 : headerOverlayHeight + 16,
+            paddingBottom: bottomAnchored ? Platform.OS === 'android' ? 16 : headerOverlayHeight + 16 : CHAT_COMPOSER_BOTTOM_PADDING,
+          }]}
           contentInsetAdjustmentBehavior="never"
-          data={messages}
+          data={visibleMessages}
+          inverted={bottomAnchored}
+          maintainVisibleContentPosition={bottomAnchored && maintainReaderAnchor ? { minIndexForVisible: 0 } : undefined}
+          maxToRenderPerBatch={1}
+          updateCellsBatchingPeriod={32}
+          windowSize={3}
           removeClippedSubviews={Platform.OS === 'android' ? false : undefined}
-          initialNumToRender={10}
+          initialNumToRender={INITIAL_TRANSCRIPT_ROWS}
           keyboardDismissMode="interactive"
           keyboardShouldPersistTaps="handled"
-          key={chatId ?? 'unsaved-chat'}
+          key={`${draftNamespace}:${chatId ?? 'unsaved-chat'}:${bottomAnchored}`}
           testID={`chat-transcript-${chatId ?? 'unsaved-chat'}`}
           keyExtractor={(message) => message.id}
-          ListFooterComponent={assistantStatus === 'thinking' && !hasPendingAssistant ? (
-            <View accessibilityLiveRegion="polite" style={[styles.assistantRow, styles.transcriptColumn]}>
-              <AssistantFrame model={model} sideRail={assistantSideRail} time="now">
-                <ResponsePendingIndicator />
-              </AssistantFrame>
-            </View>
-          ) : null}
+          ListHeaderComponent={bottomAnchored ? pendingAssistantContent : null}
+          ListFooterComponent={bottomAnchored ? null : pendingAssistantContent}
           onContentSizeChange={handleContentSizeChange}
           onLayout={(event) => {
             chatViewportHeight.current = event.nativeEvent.layout.height;
             measuredTranscriptId.current = chatId;
-            if (chatId && chatLoaded) onTranscriptReady(chatId);
+            if (chatId && chatLoaded && measuredContentHeight.current > 0) onTranscriptReady(chatId);
             keyboardBlankSpace.value = chatKeyboardBlankSpace(
               chatViewportHeight.current,
               measuredContentHeight.current,

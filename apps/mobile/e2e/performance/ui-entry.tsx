@@ -1,5 +1,5 @@
 import { runOnJS, runOnUI, useFrameCallback, useSharedValue } from 'react-native-reanimated'
-import { observeChatSelection } from '../../src/features/chat/selectionTiming'
+import { observeChatSelection, observeTranscriptPosition, type TranscriptPositionSample } from '../../src/features/chat/selectionTiming'
 // Synthetic Release UI smoke fixture. Never imported by the normal application.
 import React, { useEffect, useState } from 'react'
 import { registerRootComponent } from 'expo'
@@ -17,7 +17,23 @@ import { File, Paths } from 'expo-file-system'
 import type { MobileModel, User, ServerChat } from '../../src/types'
 import { fixture } from './fixture'
 
-const selectionSamples: unknown[] = []
+const transcriptPositions: TranscriptPositionSample[] = []
+let positionReport: ((text: string) => void) | undefined
+let positionTimer: ReturnType<typeof setTimeout> | undefined
+if (process.env.EXPO_PUBLIC_PERF_VIEWPORT_POSITIONS === '1') observeTranscriptPosition((sample) => {
+  transcriptPositions.push(sample)
+  if (positionTimer) clearTimeout(positionTimer)
+  positionTimer = setTimeout(() => {
+    new File(Paths.document, 'ui-transcript-positions.json').write(JSON.stringify(transcriptPositions))
+    const ready = selectionSamples.findLast((item) => item.chatId === sample.chatId && item.stage === 'contentReady')?.at ?? Infinity
+    const after = transcriptPositions.filter((item) => item.chatId === sample.chatId && item.at >= ready)
+    const firstGesture = after.find((item) => item.kind === 'readerStart')?.at ?? Infinity
+    const bottoms = after.filter((item) => item.kind === 'measure' && item.at < firstGesture).map((item) => item.bottom!)
+    if (bottoms.length >= 10) positionReport?.(`Viewport drift: ${(Math.max(...bottoms) - Math.min(...bottoms)).toFixed(1)}`)
+  }, 500)
+})
+
+const selectionSamples: Array<{ chatId: string; stage: string; at: number; resident?: boolean }> = []
 let recordFrames: ((stage: string, chatId: string) => void) | undefined
 let saveSelectionTimer: ReturnType<typeof setTimeout> | undefined
 observeChatSelection((sample) => {
@@ -26,7 +42,10 @@ observeChatSelection((sample) => {
   if (sample.stage === 'slideStart' && saveSelectionTimer) clearTimeout(saveSelectionTimer)
   if (sample.stage === 'slideEnd' || sample.stage === 'contentReady') {
     if (saveSelectionTimer) clearTimeout(saveSelectionTimer)
-    saveSelectionTimer = setTimeout(() => new File(Paths.document, 'ui-selection-timings.json').write(JSON.stringify(selectionSamples)), 1500)
+    saveSelectionTimer = setTimeout(() => {
+      new File(Paths.document, 'ui-selection-timings.json').write(JSON.stringify(selectionSamples))
+      for (const chatId of new Set(selectionSamples.map((item) => item.chatId))) new File(Paths.document, `ui-selection-${chatId}.json`).write(JSON.stringify(selectionSamples.filter((item) => item.chatId === chatId)))
+    }, 1500)
   }
 })
 
@@ -83,6 +102,9 @@ async function seed() {
   response.input = [{ role: 'user', content: [{ type: 'input_text', text: 'Open the synthetic gallery image' }, { type: 'input_file', attachment_id: attachment.id }] }]
   const output = [{ type: 'message', content: [{ type: 'output_text', text: '## Native Markdown\n\nThis is the last answer in a **1,000-turn** conversation.\n\n- Scroll through history\n- Type while streaming\n- Open the image gallery\n\n```ts\nconst ready = true\n```' }] }]
   response.output = output; response.snapshot = { ...response.snapshot, output }
+  const large = chats[4]!.responses!.at(-1)!
+  const largeOutput = [{ type: 'message', content: [{ type: 'output_text', text: '# Large Markdown fixture\n\n' + 'A paragraph with **formatting** and `code` for native layout.\n\n'.repeat(1500) + '\nLarge Markdown tail marker' }] }]
+  large.output = largeOutput; large.snapshot = { ...large.snapshot, output: largeOutput }
   const short = chats[1]!
   short.attachments = [attachment]
   short.responses![0]!.input = response.input
@@ -93,19 +115,19 @@ async function seed() {
   await setValue(namespace, 'model-catalog', { data: [model], agentAvailable: false })
 }
 export default function FixtureApp() {
-  const frameGaps = useSharedValue<number[]>([])
+  const frameGaps = useSharedValue<Array<{ at: number; gap: number }>>([])
   const frames = useFrameCallback((frame) => {
     if (frame.timeSincePreviousFrame !== null) frameGaps.modify((gaps) => {
       'worklet'
-      if (gaps.length < 180) gaps.push(frame.timeSincePreviousFrame!)
+      if (gaps.length < 180) gaps.push({ at: Date.now(), gap: frame.timeSincePreviousFrame! })
       return gaps
     })
   }, false)
   useEffect(() => {
     if (process.env.EXPO_PUBLIC_PERF_SELECTION_FRAMES !== '1') return
-    const reports: Array<{ chatId: string; gaps: number[] }> = []
+    const reports: Array<{ chatId: string; gaps: Array<{ at: number; gap: number }> }> = []
     let save: ReturnType<typeof setTimeout> | undefined
-    const collect = (chatId: string, gaps: number[]) => {
+    const collect = (chatId: string, gaps: Array<{ at: number; gap: number }>) => {
       reports.push({ chatId, gaps })
       save = setTimeout(() => new File(Paths.document, 'ui-selection-frames.json').write(JSON.stringify(reports)), 1500)
     }
@@ -118,6 +140,8 @@ export default function FixtureApp() {
     }
     return () => { frames.setActive(false); recordFrames = undefined; if (save) clearTimeout(save) }
   }, [frameGaps, frames])
+  const [viewportReport, setViewportReport] = useState('Viewport pending')
+  useEffect(() => { positionReport = setViewportReport; return () => { positionReport = undefined } }, [])
   const [ready, setReady] = useState(false)
   const [streamStatus, setStreamStatus] = useState('')
   useEffect(() => { void seed().then(() => setReady(true)) }, [])
@@ -136,6 +160,6 @@ export default function FixtureApp() {
     }, 100)
   }
   if (!ready) return <Text>Seeding isolated fixture…</Text>
-  return <AppProviders><App /><View style={{ position: 'absolute', top: 120, right: 12 }}><Pressable onPress={stream} accessibilityLabel="Fixture stream"><Text style={{ backgroundColor: '#ffe5a0', padding: 5, fontSize: 10 }}>Fixture stream</Text></Pressable><Text style={{ backgroundColor: '#ffe5a0', fontSize: 10 }}>{streamStatus}</Text></View></AppProviders>
+  return <AppProviders><App /><View style={{ position: 'absolute', top: 120, right: 12 }}><Pressable onPress={stream} accessibilityLabel="Fixture stream"><Text style={{ backgroundColor: '#ffe5a0', padding: 5, fontSize: 10 }}>Fixture stream</Text></Pressable><Text style={{ backgroundColor: '#ffe5a0', fontSize: 10 }}>{streamStatus}</Text>{process.env.EXPO_PUBLIC_PERF_VIEWPORT_POSITIONS === '1' && <Text testID="Fixture viewport" style={{ backgroundColor: '#ffe5a0', fontSize: 10 }}>{viewportReport}</Text>}</View></AppProviders>
 }
 registerRootComponent(FixtureApp)
