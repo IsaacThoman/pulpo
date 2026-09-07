@@ -52,4 +52,14 @@ age --decrypt \
 
 Sign in to the replacement Pulpo instance as an administrator, open **Admin → Settings → Database**, and upload `pulpo-instance.tar.gz` under **Recover full application**. The restore endpoint intentionally refuses encrypted age files so the private identity never crosses into Pulpo.
 
+The browser uploads backups up to 20 GiB in 16 MiB chunks, with two requests in flight. Each request remains below Cloudflare's 100 MB upload limit. Progress, transient-error retries, and **Pause upload** are available while uploading. Keep the page open; to resume after a refresh or browser restart, select the same file and enter `RESTORE` again. Pulpo verifies previously uploaded chunks before skipping them. **Discard upload** removes an unfinished transfer.
+
+Upload state is stored in PostgreSQL and chunks in the configured local/S3 blob store, so API restarts do not discard progress. Inactive uploads expire after 24 hours and the maintenance sweep removes their chunks. Finished uploads remain available for status inspection for 24 hours before cleanup. No instance data is replaced until the complete archive has passed integrity checks. The worker then imports the database transactionally and invalidates existing sessions.
+
+Restore extraction uses the worker's temporary disk rather than buffering the archive in RAM. Allow disk space for the expanded archive and a second copy of its database JSON. Extraction is limited to 100 GiB, manifests and individual database rows to 64 MiB, and database nesting to 1,000 levels. Payload memory is bounded by individual rows/batches; the manifest and reference indexes remain in memory.
+
+For development validation, `PULPO_RESTORE_TESTS=true` enables the restore integration suite against a migrated disposable database whose URL ends in `/pulpo_restore_test`. The tests replace that database's contents; never point them at a running instance.
+
+Run `npm run test:restore-memory -w @pulpo/server` for a standalone archive/JSON streaming check with a 96 MiB JavaScript heap and a 320 MiB peak-RSS budget.
+
 Keep the original Pulpo `ENCRYPTION_KEY` with your deployment recovery material when possible. Provider and storage credentials inside a full backup are encrypted with that deployment key and must otherwise be entered again after recovery.

@@ -1,4 +1,11 @@
 import { createHash } from 'node:crypto'
+import { createReadStream, createWriteStream } from 'node:fs'
+import { mkdtemp, open, rm, stat } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { Transform } from 'node:stream'
+import { pipeline } from 'node:stream/promises'
+import { registerRestoreUploadRoutes } from './restore-upload-routes.js'
 import { and, desc, eq, gt, inArray, isNull, lt, ne, or, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
@@ -78,6 +85,7 @@ async function publicBackupSettings() {
 }
 
 export async function registerAdminSettingsRoutes(app: FastifyInstance): Promise<void> {
+  await registerRestoreUploadRoutes(app)
   app.get('/api/banners', async () => {
     const now = new Date()
     return { data: await db.select().from(banners).where(and(
@@ -613,12 +621,26 @@ export async function registerAdminSettingsRoutes(app: FastifyInstance): Promise
     const confirmationField = part.fields.confirmation
     const confirmation = String(confirmationField && !Array.isArray(confirmationField) && confirmationField.type === 'field' ? confirmationField.value : '')
     if (confirmation !== 'RESTORE') throw new AppError(400, 'restore_confirmation_required', 'Type RESTORE to confirm replacement')
-    const id = newId(); const objectKey = `restore-uploads/${admin.id}/${id}.tar.gz`; const bytes = await part.toBuffer()
-    if (isAgeEncryptedBackup(bytes)) {
-      throw new AppError(400, 'backup_must_be_decrypted', 'Decrypt the .age backup locally before uploading its .tar.gz contents')
-    }
-    await getBlobStore().put(objectKey, bytes, { contentType: part.mimetype, contentLength: bytes.byteLength })
-    await db.insert(backupJobs).values({ id, userId: admin.id, operation: 'restore', objectKey, originalName: part.filename, archiveSizeBytes: bytes.byteLength, archiveChecksum: createHash('sha256').update(bytes).digest('hex') })
+    const id = newId(); const objectKey = `restore-uploads/${admin.id}/${id}.tar.gz`
+    const directory = await mkdtemp(join(tmpdir(), 'pulpo-restore-upload-'))
+    const path = join(directory, 'archive.tar.gz')
+    try {
+      const hash = createHash('sha256')
+      await pipeline(part.file, new Transform({
+        transform(chunk: Buffer, _encoding, callback) { hash.update(chunk); callback(null, chunk) },
+      }), createWriteStream(path, { flags: 'wx', mode: 0o600 }))
+      if (part.file.truncated) throw new AppError(413, 'backup_too_large', 'Backup exceeds the 20 GiB upload limit')
+      const handle = await open(path, 'r')
+      const header = Buffer.alloc(24)
+      try { await handle.read(header, 0, 24, 0) } finally { await handle.close() }
+      if (isAgeEncryptedBackup(header)) throw new AppError(400, 'backup_must_be_decrypted', 'Decrypt the .age backup locally before uploading its .tar.gz contents')
+      const { size } = await stat(path)
+      await getBlobStore().putStream(objectKey, createReadStream(path), { contentType: part.mimetype, contentLength: size })
+      await db.insert(backupJobs).values({ id, userId: admin.id, operation: 'restore', objectKey, originalName: part.filename, archiveSizeBytes: size, archiveChecksum: hash.digest('hex') })
+    } catch (error) {
+      await getBlobStore().delete(objectKey).catch(() => undefined)
+      throw error
+    } finally { await rm(directory, { recursive: true, force: true }).catch(() => undefined) }
     await maintenanceQueue.add('restore', { type: 'restore', payload: { jobId: id } }, { jobId: `restore-${id}` })
     reply.code(202); return { id, status: 'queued' }
   })
