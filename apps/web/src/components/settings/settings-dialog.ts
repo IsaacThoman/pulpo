@@ -3,6 +3,7 @@ import { createContext, createElement, useContext, type ReactNode } from 'react'
 export const SETTINGS_SECTION_IDS = [
   'general',
   'profile',
+  'profiles',
   'security',
   'devices',
   'connections',

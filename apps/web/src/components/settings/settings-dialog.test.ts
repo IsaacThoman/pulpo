@@ -6,6 +6,7 @@ describe('settings dialog sections', () => {
     expect(SETTINGS_SECTION_IDS).toEqual([
       'general',
       'profile',
+      'profiles',
       'security',
       'devices',
       'connections',

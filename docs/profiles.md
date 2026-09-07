@@ -1,6 +1,6 @@
 # Private profiles
 
-An account can create, rename, recolor, switch, and delete private profiles from the web account menu or the mobile drawer and Settings. Chats, folders, attachments, composer and shelved drafts, memory documents and revisions, embeddings, imports, and preferences belong to a profile. Authentication, billing, account quotas, provider connections, API keys, friends, and public identity belong to the account.
+An account can switch private profiles from the web account menu or the mobile drawer. The web Profiles settings panel and mobile Settings provide creation, renaming, color customization, and deletion. Chats, folders, attachments, composer and shelved drafts, memory documents and revisions, embeddings, imports, and preferences belong to a profile. Authentication, billing, account quotas, provider connections, API keys, friends, and public identity belong to the account.
 
 ## Migration and compatibility
 

@@ -1175,7 +1175,7 @@ export function Sidebar({
 
       {/* user footer */}
       <div className="border-t border-sidebar-border p-2">
-        <ProfileSwitcher collapsed={collapsed}>
+        <ProfileSwitcher collapsed={collapsed} textTransition={sidebarTextTransition} notificationCount={sidebarPins.friends ? 0 : pendingSocialCount}>
           <div className="px-2 py-1.5 text-xs text-muted-foreground">{user?.name}</div>
             {accountNavItem('usage', t('sidebar.usage'), '/usage', <BarChart3 />)}
             {accountNavItem('friends', t('sidebar.friends'), '/friends', <UsersRound />, pendingSocialCount)}

@@ -1,4 +1,8 @@
 const esUi: Record<string, string> = {
+  'Edit profile': 'Editar perfil',
+  'Current profile': 'Perfil actual',
+  'Edit {{name}}': 'Editar {{name}}',
+  'Delete {{name}}': 'Eliminar {{name}}',
   "Could not save profile": "No se pudo guardar el perfil",
   "Switch profile": "Cambiar de perfil",
   "Profiles": "Perfiles",

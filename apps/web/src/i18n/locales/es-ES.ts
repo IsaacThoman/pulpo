@@ -190,6 +190,7 @@ const esES = {
   settings: {
     title: 'Ajustes',
     sections: {
+      profiles: 'Perfiles',
       general: 'General',
       profile: 'Perfil',
       security: 'Seguridad',
