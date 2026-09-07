@@ -608,7 +608,18 @@ html[data-desktop="true"] a {
 
   html[data-desktop="true"] .mobile-sidebar-backdrop {
     z-index: 44;
+  }
+
+  html[data-desktop="true"] .mobile-sidebar-backdrop::after {
+    position: absolute;
+    top: 0;
+    right: 0;
+    left: 0;
+    height: 1px;
+    background: var(--sidebar);
     border-top: 1px solid var(--sidebar-border);
+    content: '';
+    pointer-events: none;
   }
 
   html[data-desktop="true"] .mobile-sidebar {
@@ -629,6 +640,10 @@ html[data-desktop="true"] a {
       var(--sidebar-border) calc(1rem - 1px),
       var(--sidebar-border) 1rem,
       var(--sidebar) 1rem
+    ), radial-gradient(
+      circle at 100% 100%,
+      transparent calc(1rem - 1px),
+      var(--sidebar) calc(1rem - 1px)
     );
     content: '';
     pointer-events: none;
