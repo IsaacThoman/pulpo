@@ -1,3 +1,4 @@
+import { ToolImagePreview } from '../components/ToolImagePreview';
 import { localComposerDraftId } from '@pulpo/client-core';
 import { DevicesScreen } from '../components/Devices';
 import { initialActivityTiming } from '@pulpo/client-core';
@@ -2940,7 +2941,7 @@ const ToolStepRow = memo(function ToolStepRow({ step }: { step: Extract<Timeline
   const [open, setOpen] = useState(false);
   const failed = step.tool.status === 'failed' || step.tool.isError;
   const running = step.tool.status === 'running';
-  const hasBody = step.tool.arguments !== undefined || Boolean(step.tool.output);
+  const hasBody = step.tool.arguments !== undefined || Boolean(step.tool.output) || Boolean(step.tool.imagePreview);
   const details = useMemo(() => [
     step.tool.arguments === undefined ? '' : typeof step.tool.arguments === 'string' ? step.tool.arguments : JSON.stringify(step.tool.arguments, null, 2),
     step.tool.output ?? '',
@@ -2966,6 +2967,7 @@ const ToolStepRow = memo(function ToolStepRow({ step }: { step: Extract<Timeline
         {seconds !== null && <Text style={styles.workToolDuration}>{seconds}s</Text>}
         {hasBody && <Icon name={open ? 'chevron.down' : 'chevron.right'} size={10} color={COLORS.dim} weight="semibold" />}
       </Pressable>
+      <ToolImagePreview preview={step.tool.imagePreview} expanded={open} mutedColor={COLORS.muted} />
       {open && details ? (
         <ScrollView nestedScrollEnabled style={styles.workDetailScroller}>
           <Text selectable style={styles.workDetail}>{details}</Text>

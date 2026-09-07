@@ -1,3 +1,4 @@
+import type { ToolImagePreview } from '@pulpo/contracts'
 import { Type } from '@earendil-works/pi-ai'
 import type { AgentTool } from '@earendil-works/pi-agent-core'
 import type { WorkspaceManager } from './controller.js'
@@ -11,6 +12,7 @@ export function createWorkspaceTools(
   commandTimeoutMs: number,
   onOperationStarted?: (operationId: string) => void | Promise<void>,
   onAttachFile?: (operationId: string, path: string, name: string | undefined, signal?: AbortSignal) => Promise<{ id: string; name: string; mimeType: string; sizeBytes: number }>,
+  onImagePreview?: (operationId: string, path: string, data: string) => Promise<ToolImagePreview>,
 ): AgentTool[] {
   const tool = (name: string, description: string, parameters: ReturnType<typeof Type.Object>, execute: AgentTool['execute']): AgentTool => ({ name, label: name, description, parameters, executionMode: 'sequential', execute })
   const started = (operationId: string) => () => onOperationStarted?.(operationId)
@@ -35,12 +37,20 @@ export function createWorkspaceTools(
     tool('view_image', 'View a PNG, JPEG, GIF, or WebP image using the model\'s vision capability. Absolute paths anywhere in the disposable VM are allowed.', Type.Object({ path: Type.String() }), async (id, args, signal) => {
       const path = String(record(args).path ?? '')
       const viewed = await manager.viewImage(path, signal, started(id))
+      let imagePreview: ToolImagePreview | undefined
+      if (onImagePreview) {
+        try {
+          imagePreview = await onImagePreview(id, path, viewed.data)
+        } catch (error) {
+          console.warn('Agent image preview unavailable', { operationId: id, error: error instanceof Error ? error.message : String(error) })
+        }
+      }
       return {
         content: [
           { type: 'text' as const, text: `Viewed ${path} (${viewed.mimeType}, ${viewed.sizeBytes} bytes)` },
           { type: 'image' as const, data: viewed.data, mimeType: viewed.mimeType },
         ],
-        details: { path, mimeType: viewed.mimeType, sizeBytes: viewed.sizeBytes },
+        details: { path, mimeType: viewed.mimeType, sizeBytes: viewed.sizeBytes, ...(imagePreview ? { imagePreview } : {}) },
       }
     }),
     tool('bash', 'Run a bash command in the disposable Linux workspace. Passwordless sudo is available.', Type.Object({ command: Type.String(), cwd: Type.Optional(Type.String()), timeoutMs: Type.Optional(Type.Number()) }), async (id, args, signal, onUpdate) => {

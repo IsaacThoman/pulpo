@@ -1,7 +1,7 @@
 import { Agent, type AgentMessage } from '@earendil-works/pi-agent-core'
 import { openAIResponsesApi } from '@earendil-works/pi-ai/api/openai-responses.lazy'
 import type { Api, AssistantMessage, Context, Model } from '@earendil-works/pi-ai'
-import type { CompactionItem, RecallItem, ResponseSnapshot } from '@pulpo/contracts'
+import { toolImagePreviewSchema, type ToolImagePreview, type CompactionItem, type RecallItem, type ResponseSnapshot } from '@pulpo/contracts'
 import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm'
 import { db } from '../database/client.js'
 import { agentRuns, applicationSettings, attachments, chats, generationAttempts, models, providerConnections, requestLogs, responses, toolExecutions, userPreferences } from '../database/schema.js'
@@ -24,6 +24,7 @@ import { truncateUtf8 } from './output.js'
 import { buildAgentOutput, type ToolTimelineItem } from './timeline.js'
 import { messagesForPersistence } from './context.js'
 import { basename } from 'node:path'
+import { storeToolImagePreview } from '../attachments/tool-image-preview.js'
 import { storeGeneratedAttachment } from '../attachments/generated.js'
 import type { AttachmentTimelineItem } from './timeline.js'
 import { KagiClient } from './kagi.js'
@@ -327,16 +328,28 @@ async function runAgentGeneration(responseId: string): Promise<void> {
   const turnRetryAttempts = new Map<number, number>()
   let currentRetryAttempt = 1
   let lastResponder: { runtime: RuntimeModel; pricing: ActivePricing } | undefined
-  const toolItems = new Map<string, ToolTimelineItem>()
+  const toolItems = new Map<string, ToolTimelineItem>((record.response.output as unknown[]).flatMap((raw) => {
+    const item = raw as ToolTimelineItem | null
+    return item?.type === 'pulpo_tool' && typeof item.id === 'string' ? [[item.id, { ...item }]] : []
+  }))
   const generatedAttachmentRows = await db.select().from(attachments).where(and(
-    eq(attachments.sourceResponseId, responseId), eq(attachments.origin, 'assistant'), eq(attachments.status, 'ready'),
+    eq(attachments.sourceResponseId, responseId), inArray(attachments.origin, ['assistant', 'tool_preview']), eq(attachments.status, 'ready'),
   ))
   const attachmentItems = new Map<string, AttachmentTimelineItem>(generatedAttachmentRows.flatMap((attachment) => (
-    attachment.sourceToolCallId ? [[attachment.sourceToolCallId, {
+    attachment.origin === 'assistant' && attachment.sourceToolCallId ? [[attachment.sourceToolCallId, {
       type: 'pulpo_attachment' as const, attachment_id: attachment.id, name: attachment.originalName,
       mime_type: attachment.mimeType, size_bytes: attachment.sizeBytes, status: 'completed' as const,
     }] as const] : []
   )))
+  const imagePreviews = new Map<string, ToolImagePreview>(generatedAttachmentRows.flatMap((attachment) => (
+    attachment.origin === 'tool_preview' && attachment.sourceToolCallId ? [[attachment.sourceToolCallId, {
+      attachmentId: attachment.id, name: attachment.originalName, mimeType: 'image/webp' as const, sizeBytes: attachment.sizeBytes,
+    }]] : []
+  )))
+  for (const [id, imagePreview] of imagePreviews) {
+    const item = toolItems.get(id)
+    if (item?.tool === 'view_image') item.imagePreview = imagePreview
+  }
   const compactionItems: CompactionItem[] = (record.response.output as unknown[]).filter((raw): raw is CompactionItem => (
     (raw as { type?: string }).type === 'pulpo_compaction'
   ))
@@ -647,7 +660,15 @@ async function runAgentGeneration(responseId: string): Promise<void> {
       systemPrompt: agentSystemPrompt,
       model: active.piModel,
       tools: [
-        ...createWorkspaceTools(manager, settings.commandTimeoutSeconds * 1000, markToolStarted, attachFile),
+        ...createWorkspaceTools(manager, settings.commandTimeoutSeconds * 1000, markToolStarted, attachFile, async (toolCallId, path, data) => {
+          const existing = imagePreviews.get(toolCallId)
+          if (existing) return existing
+          const preview = await storeToolImagePreview({
+            responseId, toolCallId, userId: record.response.userId, chatId: record.response.chatId, path, data,
+          })
+          imagePreviews.set(toolCallId, preview)
+          return preview
+        }),
         ...configuredWebTools,
         ...memoryTools,
       ],
@@ -893,6 +914,9 @@ async function runAgentGeneration(responseId: string): Promise<void> {
     } else if (event.type === 'tool_execution_end') {
       const output = truncateUtf8(toolResultText(event.result), settings.maxToolOutputBytes)
       const details = toolResultDetails(event.result)
+      const imagePreview = event.toolName === 'view_image' && !event.isError
+        ? toolImagePreviewSchema.safeParse(details.imagePreview).data
+        : undefined
       const providerExecution = webProviderExecutions.get(event.toolCallId)
       const providerCostMicros = nonNegativeMicros(details.providerCostMicros ?? providerExecution?.providerCostMicros)
       const billedCostMicros = event.isError ? 0 : nonNegativeMicros(details.billedCostMicros)
@@ -900,7 +924,7 @@ async function runAgentGeneration(responseId: string): Promise<void> {
       const item = toolItems.get(event.toolCallId)
       if (item) {
         const durationMs = item.startedAt ? Math.max(0, Date.now() - Date.parse(item.startedAt)) : undefined
-        Object.assign(item, { output, status: event.isError ? 'failed' : 'completed', isError: event.isError, ...(durationMs !== undefined ? { durationMs } : {}) })
+        Object.assign(item, { ...(imagePreview ? { imagePreview } : {}), output, status: event.isError ? 'failed' : 'completed', isError: event.isError, ...(durationMs !== undefined ? { durationMs } : {}) })
       }
       await db.update(toolExecutions).set({
         workspaceLeaseId: manager.leaseId,
@@ -914,7 +938,7 @@ async function runAgentGeneration(responseId: string): Promise<void> {
         updatedAt: new Date(),
       }).where(and(eq(toolExecutions.agentRunId, runId), eq(toolExecutions.operationId, event.toolCallId)))
       webProviderExecutions.delete(event.toolCallId)
-      await emit('pulpo.agent.tool.completed', { id: event.toolCallId, output, isError: event.isError, durationMs: item?.durationMs })
+      await emit('pulpo.agent.tool.completed', { id: event.toolCallId, output, isError: event.isError, durationMs: item?.durationMs, ...(imagePreview ? { imagePreview } : {}) })
       if (manager.continuedWithoutAgent) agent.state.tools = []
       await snapshotIfDue()
     }

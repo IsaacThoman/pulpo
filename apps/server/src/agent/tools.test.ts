@@ -79,6 +79,33 @@ describe('agent workspace tools', () => {
     expect(JSON.stringify(result.details)).not.toContain('base64-pixels')
   })
 
+  it('adds durable preview metadata without changing the model image or exporting the file again', async () => {
+    const image = { data: 'base64-pixels', mimeType: 'image/png', sizeBytes: 123 }
+    const viewImage = vi.fn().mockResolvedValue(image)
+    const preview = { attachmentId: '00000000-0000-4000-8000-000000000001', name: 'chart.png.webp', mimeType: 'image/webp' as const, sizeBytes: 50 }
+    const storePreview = vi.fn().mockResolvedValue(preview)
+    const tool = createWorkspaceTools({ viewImage } as unknown as WorkspaceManager, 1_000, undefined, undefined, storePreview)
+      .find((tool) => tool.name === 'view_image')!
+    const result = await tool.execute('call-1', { path: '/tmp/chart.png' })
+    expect(storePreview).toHaveBeenCalledWith('call-1', '/tmp/chart.png', image.data)
+    expect(result.content[1]).toEqual({ type: 'image', data: image.data, mimeType: image.mimeType })
+    expect(result.details).toMatchObject({ imagePreview: preview })
+    expect(JSON.stringify(result.details)).not.toContain(image.data)
+  })
+
+  it('keeps a successful image read successful when preview storage fails', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    try {
+      const viewImage = vi.fn().mockResolvedValue({ data: 'pixels', mimeType: 'image/png', sizeBytes: 123 })
+      const tool = createWorkspaceTools({ viewImage } as unknown as WorkspaceManager, 1_000, undefined, undefined,
+        vi.fn().mockRejectedValue(new Error('Quota exceeded'))).find((tool) => tool.name === 'view_image')!
+      const result = await tool.execute('call-1', { path: '/tmp/chart.png' })
+      expect(result.content[1]).toEqual({ type: 'image', data: 'pixels', mimeType: 'image/png' })
+      expect(result.details).not.toHaveProperty('imagePreview')
+      expect(warn).toHaveBeenCalledOnce()
+    } finally { warn.mockRestore() }
+  })
+
   it('attaches a workspace file without returning its bytes to the model', async () => {
     const attach = vi.fn().mockResolvedValue({ id: 'file-1', name: 'report.pdf', mimeType: 'application/pdf', sizeBytes: 456 })
     const tools = createWorkspaceTools({} as WorkspaceManager, 1_000, undefined, attach)

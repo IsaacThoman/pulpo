@@ -2,7 +2,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { act, cleanup, render } from '@testing-library/react'
+import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import type { Chat, Message } from '@/lib/types'
 import i18n from '@/i18n'
 import { TooltipProvider } from '@/components/ui/tooltip'
@@ -669,5 +669,33 @@ describe('initial server receipt timing', () => {
       message={assistant({ error: 'Generation failed', initialResponseDurationMs: 8_000 })} />)
     expect(markup).toContain('Thought for 8 seconds')
     expect(markup).toContain('Generation failed')
+  })
+})
+
+
+describe('view_image tool details', () => {
+  it('expands preview-only tools and preserves arguments and text output for regular image reads', async () => {
+    const { MessageItem } = await import('./MessageItem')
+    const imagePreview = { attachmentId: '00000000-0000-4000-8000-000000000001', name: 'chart.png.webp', mimeType: 'image/webp', sizeBytes: 100 }
+    const { container, getByText, queryByText } = render(<TooltipProvider><MessageItem
+      chat={chat}
+      message={assistant({ outputItems: [
+        { id: 'view-1', type: 'pulpo_tool', tool: 'view_image', status: 'completed', imagePreview },
+        { id: 'view-2', type: 'pulpo_tool', tool: 'view_image', status: 'completed', arguments: { path: '/tmp/chart.png' }, output: 'Viewed chart.png', imagePreview },
+      ] })}
+      streaming={false}
+      activeModelId="model-1"
+    /></TooltipProvider>)
+    fireEvent.click(getByText(/^Worked/))
+    const tools = [...container.querySelectorAll('button')].filter((button) => button.textContent?.includes('view_image'))
+    expect(tools).toHaveLength(2)
+    expect(queryByText('Image preview unavailable')).toBeNull()
+    fireEvent.click(tools[0]!)
+    expect(getByText('Image preview unavailable')).toBeTruthy()
+    fireEvent.click(tools[0]!)
+    expect(queryByText('Image preview unavailable')).toBeNull()
+    fireEvent.click(tools[1]!)
+    expect(getByText('Viewed chart.png')).toBeTruthy()
+    expect(container.querySelector('pre')?.textContent).toContain('/tmp/chart.png')
   })
 })
