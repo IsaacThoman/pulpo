@@ -40,6 +40,13 @@ hides the previous transcript and intermediate
 spinner, reveals the loaded transcript, handles selecting the same chat again,
 and switches through an empty chat.
 
+With the same cold-chat fixture, `testChatCoverLandscapeSidebar` and
+`testChatCoverLandscapeFullWidth` verify the loading column on a 13-inch iPad
+with the sidebar shown and hidden. `testChatCoverPortrait` covers narrower iPad
+panes and iPhone screens. These checks assert the centered, at-most-840-point
+column and compare its bounds with the loaded message row. The landscape cases
+skip on iPhone. The generated XCTest runner supports both device families.
+
 `testNewChatKeepsComposerFocused` opens New Chat from the drawer and header,
 waits beyond drawer completion, and types without tapping the composer. It also
 starts from the unsaved-chat landing, and checks that the keyboard remains

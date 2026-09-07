@@ -11,7 +11,7 @@ target.build_configurations.each do |config|
   config.build_settings['GENERATE_INFOPLIST_FILE'] = 'YES'
   config.build_settings['SWIFT_VERSION'] = '5.0'
   config.build_settings['CODE_SIGNING_ALLOWED'] = 'NO'
-  config.build_settings['TARGETED_DEVICE_FAMILY'] = '1'
+  config.build_settings['TARGETED_DEVICE_FAMILY'] = '1,2'
 end
 project.save
 scheme = Xcodeproj::XCScheme.new
