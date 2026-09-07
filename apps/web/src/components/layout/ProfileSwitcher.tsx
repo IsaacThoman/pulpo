@@ -3,7 +3,6 @@ import { Check } from 'lucide-react'
 import { useProfiles } from '@/stores/profiles'
 import { useAuth } from '@/stores/auth'
 import { ProfileAvatar } from '@/components/ProfileAvatar'
-import { DataProfileBadge } from '@/components/DataProfileBadge'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
 import { ui, uit } from '@/i18n/ui'
@@ -40,7 +39,7 @@ export function ProfileSwitcher({ collapsed = false, textTransition, notificatio
     </DropdownMenuTrigger>
     <DropdownMenuContent side="top" align="start" className="w-64">
       <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">{ui('Profiles')}</div>
-      <div className="max-h-72 overflow-y-auto">{profiles.map((profile) => <DropdownMenuItem key={profile.id} onSelect={() => void select(profile.id)} className="gap-3 py-2"><DataProfileBadge profile={profile} /><span className="flex-1 truncate">{profile.name}</span>{profile.id === activeId && <Check className="size-4" />}</DropdownMenuItem>)}</div>
+      <div className="max-h-72 overflow-y-auto">{profiles.map((profile) => <DropdownMenuItem key={profile.id} onSelect={() => void select(profile.id)} className="gap-3 py-2"><span className="flex-1 truncate">{profile.name}</span>{profile.id === activeId && <Check className="size-4" />}</DropdownMenuItem>)}</div>
       {children && <><DropdownMenuSeparator />{children}</>}
     </DropdownMenuContent>
   </DropdownMenu>

@@ -2,7 +2,6 @@ import { useState } from 'react'
 import { Check, Pencil, Plus, Trash2 } from 'lucide-react'
 import type { DataProfile } from '@pulpo/contracts'
 import { useProfiles, saveDataProfile, removeDataProfile } from '@/stores/profiles'
-import { DataProfileBadge } from '@/components/DataProfileBadge'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -42,7 +41,6 @@ export function ProfilesSettings() {
     <p className="text-sm text-muted-foreground">{ui('Keep chats, files, memories, and settings separate. Your account and billing stay shared.')}</p>
     <div className="mt-4 divide-y">
       {profiles.map((profile) => <div key={profile.id} className="flex min-w-0 items-center gap-3 py-4">
-        <DataProfileBadge profile={profile} />
         <div className="min-w-0 flex-1">
           <div className="truncate text-sm font-medium" title={profile.name}>{profile.name}</div>
           {profile.id === activeId && <div className="mt-0.5 text-xs text-muted-foreground">{ui('Current profile')}</div>}
