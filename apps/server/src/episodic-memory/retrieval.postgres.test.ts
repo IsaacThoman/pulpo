@@ -136,6 +136,36 @@ describe.skipIf(!enabled)('PostgreSQL chat retrieval', () => {
     expect((await search('quartz deployment')).results[0]?.chatId).toBe(source.id)
   })
 
+  it('prevents a temporary caller from searching or reading normal chats', async () => {
+    await db.update(chats).set({ temporary: true }).where(eq(chats.id, currentId))
+    expect((await search('pulpo performance')).results).toEqual([])
+    expect((await search('pulpo performance', semantic, 'automatic')).results).toEqual([])
+    const { readEpisodicChatPage } = await import('./agent-tools.js')
+    expect(await readEpisodicChatPage({
+      userId: owner, currentChatId: currentId, chatId: sourceId, maxOutputBytes: 4_096,
+    })).toBeNull()
+  })
+
+  it('blocks memory profile reads and writes originating from temporary responses', async () => {
+    const { assertAgentMemoryAccess, readMemoryDocument, updateMemoryDocument } = await import('../memory-document/service.js')
+    const [chat] = await db.select({ responseId: chats.activeResponseId }).from(chats).where(eq(chats.id, currentId))
+    const responseId = chat!.responseId!
+    await updateMemoryDocument({ userId: owner, editor: 'user', expectedRevision: 0, content: 'Captain Violet', summary: 'Seed profile' })
+    await expect(assertAgentMemoryAccess(owner, responseId)).resolves.toBeUndefined()
+    await db.update(chats).set({ temporary: true }).where(eq(chats.id, currentId))
+    await expect(assertAgentMemoryAccess(owner, responseId)).rejects.toMatchObject({ code: 'memory_access_denied' })
+    await expect(updateMemoryDocument({
+      userId: owner, sourceResponseId: responseId, editor: 'agent',
+      expectedRevision: 1, content: 'Temporary secret', summary: 'Remember',
+    })).rejects.toMatchObject({ code: 'memory_access_denied' })
+    expect(await readMemoryDocument(owner)).toMatchObject({ content: 'Captain Violet', revision: 1 })
+    await db.update(chats).set({ temporary: false }).where(eq(chats.id, currentId))
+    await expect(updateMemoryDocument({
+      userId: owner, sourceResponseId: responseId, editor: 'agent',
+      expectedRevision: 1, content: 'Normal memory', summary: 'Remember',
+    })).resolves.toMatchObject({ content: 'Normal memory', revision: 2 })
+  })
+
   it('applies ownership, current-chat, expiry and deletion exclusions to both titles and passages', async () => {
     for (const excluded of ['temporary', 'deleted', 'purging', 'expired'] as const) {
       await seedChat('Pulpo Performance Audit', 'pulpo performance audit web app', { excluded })

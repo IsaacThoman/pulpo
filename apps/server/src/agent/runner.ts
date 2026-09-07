@@ -49,12 +49,10 @@ import { agentSnapshotIsDue } from './snapshot-policy.js'
 import { lineageFromLeaf } from '../messages/branching.js'
 import { responseUserAttachmentIds } from '../messages/input.js'
 import { responseInputText } from '../messages/input.js'
-import { createEpisodicMemoryTools } from '../episodic-memory/agent-tools.js'
+import { createGenerationMemoryTools } from './memory-tools.js'
 import { readEpisodicMemorySettings } from '../episodic-memory/settings.js'
-import { recalledChatContext, recallItemFromOutput, retrieveAutomaticRecall } from '../episodic-memory/automatic-recall.js'
-import { memoryDocumentContext, readMemoryDocument } from '../memory-document/service.js'
-import { createMemoryDocumentTool } from '../memory-document/agent-tool.js'
-import { messagesFromAgentContext, resolveAgentParentMessages, systemPromptFromAgentContext } from './history.js'
+import { generationSystemPrompt, loadGenerationMemory } from '../responses/memory-context.js'
+import { messagesFromAgentContext, resolveAgentParentMessages, systemPromptFromAgentContext, withoutMemoryToolMessages } from './history.js'
 import { agentSamplingParameters, resolveAgentModelParameters } from './model-parameters.js'
 import { redis } from '../redis.js'
 import {
@@ -165,18 +163,18 @@ async function runAgentGeneration(responseId: string): Promise<void> {
     parsePersonalizationSettings(personalizationRow?.value),
     preferenceValues,
   )
-  const memoryDocument = preferenceValues.memoryEnabled
-    ? await readMemoryDocument(record.response.userId)
-    : null
-  const memoryContext = memoryDocument ? memoryDocumentContext(memoryDocument) : ''
-  const existingRecallItem = recallItemFromOutput(record.response.output, responseId)
-  const recallItem = existingRecallItem ?? await retrieveAutomaticRecall({
+  const [chatState] = await db.select({ temporary: chats.temporary }).from(chats)
+    .where(eq(chats.id, record.response.chatId)).limit(1)
+  const memory = await loadGenerationMemory({
+    chat: chatState,
+    memoryEnabled: preferenceValues.memoryEnabled,
     responseId,
     userId: record.response.userId,
     currentChatId: record.response.chatId,
     query: responseInputText(record.response.input),
+    output: record.response.output,
   })
-  const recallContext = recalledChatContext(recallItem)
+  const { memoryContext, recallContext, recallItem } = memory
   const baseAgentSystemPrompt = buildAgentSystemPrompt(
     record.model.systemPrompt,
     record.model.agentInstructions,
@@ -207,14 +205,13 @@ async function runAgentGeneration(responseId: string): Promise<void> {
   )
   const [existingRun] = await db.select().from(agentRuns).where(eq(agentRuns.responseId, responseId)).limit(1)
   const runId = existingRun?.id ?? newId()
-  const agentSystemPrompt = systemPromptFromAgentContext(existingRun?.context) ?? currentAgentSystemPrompt
+  const agentSystemPrompt = generationSystemPrompt(memory.enabled, currentAgentSystemPrompt, systemPromptFromAgentContext(existingRun?.context))
   let resumedMessages = existingRun ? messagesFromAgentContext(existingRun.context) : parentMessages
+  if (!memory.enabled) resumedMessages = withoutMemoryToolMessages(resumedMessages)
   await db.insert(agentRuns).values({ id: runId, responseId, status: 'running', context: { systemPrompt: agentSystemPrompt, messages: resumedMessages }, startedAt: new Date() }).onConflictDoUpdate({ target: agentRuns.responseId, set: { status: 'running', updatedAt: new Date() } })
   const [requestLog] = await db.select().from(requestLogs).where(eq(requestLogs.responseId, responseId)).limit(1)
   if (!requestLog) throw new Error('Request log is missing')
   const detailedPayloadsEnabled = detailedPayloadCaptureIsActive(requestLog)
-  const [chatState] = await db.select({ temporary: chats.temporary }).from(chats)
-    .where(eq(chats.id, record.response.chatId)).limit(1)
   let sidecarCostMicros = 0
   const imageInterceptor = await createModelImageInterceptor(requestLog.id, {
     allowCache: !chatState?.temporary,
@@ -379,7 +376,7 @@ async function runAgentGeneration(responseId: string): Promise<void> {
     emissionQueue = emission
     return emission
   }
-  if (recallItem && !existingRecallItem) {
+  if (recallItem && !memory.reusedRecall) {
     await emit('pulpo.recall.completed', recallItem)
     await db.update(responses).set({
       status: 'in_progress',
@@ -618,21 +615,15 @@ async function runAgentGeneration(responseId: string): Promise<void> {
     onProviderAttempts: (operationId, execution) => { webProviderExecutions.set(operationId, execution) },
     reserveBillableCost: (amountMicros) => extendBudgetReservationFixedCost(responseId, amountMicros),
   })
-  const episodicMemoryTools = episodicMemorySettings.enabled && preferenceValues.memoryEnabled === true
-    ? createEpisodicMemoryTools({
-        userId: record.response.userId,
-        currentChatId: record.response.chatId,
-        maxOutputBytes: settings.maxToolOutputBytes,
-        onOperationStarted: markToolStarted,
-      })
-    : []
-  const memoryDocumentTools = preferenceValues.memoryEnabled === true
-      ? [createMemoryDocumentTool({
-        userId: record.response.userId,
-        responseId,
-        onOperationStarted: markToolStarted,
-      })]
-    : []
+  const memoryTools = createGenerationMemoryTools({
+    memoryEnabled: memory.enabled,
+    episodicMemoryEnabled: episodicMemorySettings.enabled,
+    userId: record.response.userId,
+    responseId,
+    currentChatId: record.response.chatId,
+    maxOutputBytes: settings.maxToolOutputBytes,
+    onOperationStarted: markToolStarted,
+  })
   const attachFile = async (operationId: string, path: string, name: string | undefined, signal?: AbortSignal) => {
     const [existing] = await db.select().from(attachments).where(and(
       eq(attachments.sourceResponseId, responseId), eq(attachments.sourceToolCallId, operationId), eq(attachments.status, 'ready'),
@@ -679,8 +670,7 @@ async function runAgentGeneration(responseId: string): Promise<void> {
           return preview
         }),
         ...configuredWebTools,
-        ...episodicMemoryTools,
-        ...memoryDocumentTools,
+        ...memoryTools,
       ],
       messages: resumedMessages,
       thinkingLevel: initialParameters.reasoning,

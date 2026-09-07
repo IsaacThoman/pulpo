@@ -56,6 +56,7 @@ export function clearRuntimeComposerDrafts(userId: string, chatIds?: Iterable<st
 }
 
 export async function loadComposerDraft(userId: string, chatId: string): Promise<PersistedComposerDraft | null> {
+  if (chatId.startsWith('temporary:')) return null
   const accountKey = localAccountKey(userId)
   const row = await localDb.drafts.where('[userId+chatId]').equals([accountKey, chatId]).first()
   if (!row) return null
@@ -72,6 +73,8 @@ export async function saveComposerDraft(
   chatId: string,
   draft: PersistedComposerDraft,
 ): Promise<void> {
+  // IndexedDB is shared by browser tabs; temporary drafts stay in this tab's runtime cache.
+  if (chatId.startsWith('temporary:')) return
   const accountKey = localAccountKey(userId)
   if (!draft.content && draft.attachments.length === 0) {
     await localDb.drafts.where('[userId+chatId]').equals([accountKey, chatId]).delete()

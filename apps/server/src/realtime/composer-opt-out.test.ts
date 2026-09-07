@@ -84,3 +84,11 @@ describe('composer socket opt-out', () => {
     expect(client.socket.data.composerSyncEnabled).toBe(false)
   })
 })
+
+it('does not broadcast temporary composer snapshots from older publishers', async () => {
+  mocks.message!('pulpo:composer-changes', JSON.stringify({ userId: 'user', snapshot: {
+    draftId: 'new', revision: 1, state: { ...emptyComposerState(), temporary: true, content: 'private draft' },
+  } }))
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  expect(mocks.emit).not.toHaveBeenCalled()
+})

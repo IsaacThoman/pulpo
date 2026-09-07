@@ -1,3 +1,4 @@
+import { localComposerDraftId } from '@pulpo/client-core'
 import { queryClient } from '@/lib/query-client'
 import { localAccountKey, localDb } from './database'
 import { clearRuntimeComposerDrafts } from './composer-drafts'
@@ -13,7 +14,8 @@ export async function clearLocalChats(userId: string, chatIds: string[]): Promis
   if (!ids.length) return
 
   const idSet = new Set(ids)
-  clearRuntimeComposerDrafts(userId, ids)
+  const draftIds = new Set(ids.flatMap((id) => [id, localComposerDraftId(id, true)]))
+  clearRuntimeComposerDrafts(userId, draftIds)
   const attachmentIds = new Set<string>()
   const responseIds = new Set<string>()
   for (const chatId of ids) {
@@ -27,7 +29,7 @@ export async function clearLocalChats(userId: string, chatIds: string[]): Promis
   )
 
   await localDb.transaction('rw', localDb.drafts, localDb.attachmentBlobs, localDb.responseCursors, async () => {
-    await localDb.drafts.where('userId').equals(localAccountKey(userId)).filter((draft) => idSet.has(draft.chatId)).delete()
+    await localDb.drafts.where('userId').equals(localAccountKey(userId)).filter((draft) => draftIds.has(draft.chatId)).delete()
     if (attachmentIds.size) await localDb.attachmentBlobs.bulkDelete([...attachmentIds])
     if (responseIds.size) {
       await localDb.responseCursors.filter((cursor) => responseIds.has(cursor.responseId)).delete()

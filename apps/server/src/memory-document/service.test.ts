@@ -10,14 +10,11 @@ const mocks = vi.hoisted(() => ({
 function selectBuilder() {
   const result = mocks.selectResults.shift() ?? []
   const terminal = { limit: vi.fn(async () => result) }
-  return {
-    from: vi.fn(() => ({
-      where: vi.fn(() => ({
-        ...terminal,
-        orderBy: vi.fn(() => terminal),
-      })),
-    })),
+  const query = {
+    where: vi.fn(() => ({ ...terminal, orderBy: vi.fn(() => terminal) })),
+    innerJoin: vi.fn(() => query),
   }
+  return { from: vi.fn(() => query) }
 }
 
 function databaseExecutor() {
@@ -150,5 +147,33 @@ describe('MEMORY.md versioning', () => {
   it('purges only expired revision rows through the cleanup path', async () => {
     mocks.deletedCount = 3
     await expect(purgeExpiredMemoryDocumentRevisions(new Date('2026-08-29T00:00:00Z'))).resolves.toBe(3)
+  })
+})
+
+
+describe('agent memory access', () => {
+  it.each([true, undefined])('rejects writes from temporary or unavailable chats (%s)', async (temporary) => {
+    mocks.selectResults = [temporary === undefined ? [] : [{ temporary }]]
+    await expect(updateMemoryDocument({
+      userId: 'user', sourceResponseId: 'response', editor: 'agent',
+      content: 'secret from temporary chat', expectedRevision: 0, summary: 'Remember',
+    })).rejects.toMatchObject({ code: 'memory_access_denied' })
+    expect(mocks.inserted).toEqual([])
+    expect(mocks.updated).toEqual([])
+  })
+
+  it('requires a source response for agent writes', async () => {
+    await expect(updateMemoryDocument({
+      userId: 'user', editor: 'agent', content: 'secret', expectedRevision: 0, summary: 'Remember',
+    })).rejects.toMatchObject({ code: 'memory_access_denied' })
+    expect(mocks.inserted).toEqual([])
+  })
+
+  it('allows agent writes from an eligible normal chat', async () => {
+    mocks.selectResults = [[{ temporary: false }], []]
+    await expect(updateMemoryDocument({
+      userId: 'user', sourceResponseId: 'response', editor: 'agent',
+      content: 'normal memory', expectedRevision: 0, summary: 'Remember',
+    })).resolves.toMatchObject({ content: 'normal memory', revision: 1 })
   })
 })

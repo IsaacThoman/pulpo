@@ -106,6 +106,7 @@ export async function createSocketServer(httpServer: HttpServer) {
   })
 
   const broadcastComposer = async (userId: string, snapshot: ComposerSnapshot) => {
+    if (snapshot.state?.temporary) return
     if (await composerAccountEnabled(userId)) io.to(`composer:${userId}`).emit('composer.changed', snapshot)
   }
 
