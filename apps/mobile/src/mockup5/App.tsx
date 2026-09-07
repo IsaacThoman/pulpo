@@ -1,3 +1,6 @@
+import { incomingFiles, releaseImportedFile } from '../native/incomingFiles';
+import { useIncomingFileImport } from '../features/chat/useIncomingFileImport';
+import { incomingFileAttachment } from '../features/chat/incomingFileAttachment';
 import { ToolImagePreview } from '../components/ToolImagePreview';
 import { localComposerDraftId } from '@pulpo/client-core';
 import { DevicesScreen } from '../components/Devices';
@@ -115,7 +118,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { useNetworkOffline } from '../providers/useNetworkOffline';
 import { StatusBar } from 'expo-status-bar';
 import { SymbolView } from '../platform/SymbolView';
-import { DarkTheme as NavigationDarkTheme, DefaultTheme as NavigationLightTheme, NavigationContainer } from '@react-navigation/native';
+import { DarkTheme as NavigationDarkTheme, DefaultTheme as NavigationLightTheme, NavigationContainer, useIsFocused } from '@react-navigation/native';
 import { createNativeStackNavigator, type NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useQueryClient } from '@tanstack/react-query';
 import { workspaceContinueWithoutAgentAvailableAtMs } from '@pulpo/contracts';
@@ -1585,6 +1588,9 @@ function PrototypeRoot() {
 }
 
 function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParamList, 'Chat'>) {
+  const isFocused = useIsFocused();
+  const pendingImports = useSyncExternalStore(incomingFiles.subscribe, incomingFiles.getSnapshot);
+  const navigatedImport = useRef<string | null>(null);
   const { styles } = useChatStyles();
   const queryClient = useQueryClient();
   const productionInstanceUrl = useSessionStore((state) => state.instanceUrl);
@@ -2037,6 +2043,21 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     composerFollowsDefaultModel.current = true;
     setSelectedModelId(reconcileComposerModelId(prototypeModels, '', defaultModelId, true));
   }, [abandonActiveTemporaryChat, defaultModelId, prototypeModels]);
+
+  useEffect(() => {
+    if (!productionScopeReady || !productionUserId) return;
+    const namespace = cacheNamespace(productionInstanceUrl, productionUserId);
+    const incoming = pendingImports.find((item) => item.namespace === namespace);
+    if (!incoming || navigatedImport.current === incoming.id) return;
+    navigatedImport.current = incoming.id;
+    navigation.popTo('Chat', { chatId: undefined });
+    if (activeChatId) newChat();
+    setModelSheet(false);
+    animatePanel(false);
+    setComposerFocusSuppressed(false);
+    composerFocusRevision.current += 1;
+    setComposerFocusRequest({ revision: composerFocusRevision.current, target: 'composer' });
+  }, [activeChatId, animatePanel, navigation, newChat, pendingImports, productionInstanceUrl, productionScopeReady, productionUserId]);
 
   const newChatFromHistory = useCallback(() => {
     newChat();
@@ -2506,6 +2527,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
         >
           <View collapsable={false} style={styles.flex} importantForAccessibility={!persistentSidebar && panelOpen ? 'no-hide-descendants' : 'auto'} accessibilityElementsHidden={!persistentSidebar && panelOpen}>
           <ChatView
+            acceptIncomingFiles={!activeChatId && productionScopeReady && isFocused}
             messages={messages}
             queuedMessages={activePrototypeChat?.queuedMessages ?? EMPTY_MOBILE_QUEUE}
             chatId={activeChat?.id ?? null}
@@ -3600,9 +3622,10 @@ function ComposerQueueSection({ title, subject, collapsed, onToggle, failed = fa
 }
 
 function ChatView({
-  messages, queuedMessages, chatId, chatLoaded, draftNamespace, keyboardLayoutEnabled, model, models, prototypeModel, presetSelections: defaultPresetSelections, input, composerInputRef, composerFocusSuppressed, composerFocusRequest, onChangeInput, onSend, assistantStatus,
+  acceptIncomingFiles, messages, queuedMessages, chatId, chatLoaded, draftNamespace, keyboardLayoutEnabled, model, models, prototypeModel, presetSelections: defaultPresetSelections, input, composerInputRef, composerFocusSuppressed, composerFocusRequest, onChangeInput, onSend, assistantStatus,
   onEdit, onRegenerate, onActivateBranch, onOpenChat, onStop, onTogglePanel, onOpenModelPicker, onSelectModel, onNewChat, onSaveTemporary, persistentSidebar, sidebarVisible, temporary, autoExpire, expirationPeriod, showAutoExpirationControl, expired, savingTemporary, onTemporaryChange, onAutoExpirationChange,
 }: {
+  acceptIncomingFiles: boolean;
   messages: Message[];
   queuedMessages: MobileQueuedMessage[];
   chatId: string | null;
@@ -3996,7 +4019,7 @@ function ChatView({
     model: { id: model.id, presets: presetSelections },
     agentMode: preservedComposerRef.current?.agentEnabled ?? agentEnabled, temporary, autoExpire,
   };
-  const { sync: composerSync, skipNextEdit } = useComposerSync(
+  const { sync: composerSync, ready: composerSyncReady, skipNextEdit } = useComposerSync(
     draftNamespace, localComposerDraftId(chatId, temporary), sharedComposerState,
     hydratedComposerScope === `${draftNamespace ?? 'local'}\u0000${localComposerDraftId(chatId, temporary)}`,
     Boolean(messageEdit || shelfBusy),
@@ -4253,7 +4276,7 @@ function ChatView({
       attempt: 0,
       managed: true,
     }));
-    const result = selectAttachmentBatch(attachments, coordinated);
+    const result = selectAttachmentBatch(attachmentsRef.current, coordinated);
     if (result.accepted.length) {
       setAttachments((current) => [...current, ...result.accepted].slice(0, MAX_COMPOSER_ATTACHMENTS));
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -4264,7 +4287,28 @@ function ChatView({
         `You can attach up to ${MAX_COMPOSER_ATTACHMENTS} items. ${result.overflowCount} ${result.overflowCount === 1 ? 'item was' : 'items were'} not added.`,
       );
     }
-  }, [attachments, setAttachments]);
+    return result.accepted;
+  }, [setAttachments]);
+
+  useIncomingFileImport(incomingFiles, {
+    namespace: draftNamespace,
+    ready: acceptIncomingFiles && composerSyncReady && !chatId && !messageEdit && !sending && !shelfBusy
+      && hydratedComposerScope === `${draftNamespace ?? 'local'}\u0000${localComposerDraftId(chatId, temporary)}`,
+    report: (message) => Alert.alert('Couldn’t import file', message),
+    accept: (item) => {
+      const prepared = incomingFileAttachment(item, attachmentsRef.current,
+        useSessionStore.getState().config?.limits.maxAttachmentBytes);
+      if (prepared.error) {
+        Alert.alert('Couldn’t import file', prepared.error);
+        return { accepted: false, saved: Promise.resolve() };
+      }
+      if (prepared.attachment) addAttachments([prepared.attachment]);
+      const identity = activeDraftRef.current!;
+      const snapshot = activeDraftSnapshot();
+      cacheComposerDraft(identity.scope, snapshot);
+      return { accepted: true, saved: saveDraft(identity.namespace!, identity.draftId, snapshot.body, snapshot.attachments) };
+    },
+  });
 
   const pickPhotos = useCallback(async () => {
     try {
@@ -4433,7 +4477,10 @@ function ChatView({
     if (identity) cacheComposerDraft(identity.scope, { body: after.content, attachments: next });
     // Invalidate the old upload owner. Any late completion cleans up its own
     // reservation; the shelf owns durable copies and its own upload attempts.
-    for (const a of old) { latestAttachmentsRef.current.delete(a.localId); attachmentDraftOwnersRef.current.delete(a.localId); }
+    for (const a of old) {
+      if (a.localId.startsWith('import:')) releaseImportedFile(a.uri);
+      latestAttachmentsRef.current.delete(a.localId); attachmentDraftOwnersRef.current.delete(a.localId);
+    }
     skipNextEdit();
     inputRef.current = after.content; onChangeInput(after.content); setAttachments(next);
     composerSync?.replaceShelfContent('new', { ...sharedComposerState, content: after.content,
@@ -4467,6 +4514,13 @@ function ChatView({
     const active = activeUploadsRef.current.get(current.localId);
     if (active?.attempt === current.attempt) return active.promise;
 
+    const uploadNamespace = draftNamespace;
+    const assertUploadSession = async () => {
+      const session = useSessionStore.getState();
+      if (!session.user || session.status !== 'authenticated' || cacheNamespace(session.instanceUrl, session.user.id) !== uploadNamespace) {
+        throw new Error('The attachment session ended.');
+      }
+    };
     const attempted = startUploadAttempt(current);
     latestAttachmentsRef.current.set(attempted.localId, attempted);
     setAttachments((values) => values.map((item) => item.localId === attempted.localId ? attempted : item));
@@ -4480,7 +4534,7 @@ function ChatView({
           mimeType: attempted.mimeType,
           sizeBytes: attempted.size ?? 0,
           state: 'uploading',
-        }, null);
+        }, null, assertUploadSession);
         const settled = settleUploadSuccess({
           attempted,
           current: latestAttachmentsRef.current.get(attempted.localId),
@@ -4519,7 +4573,7 @@ function ChatView({
     })();
     activeUploadsRef.current.set(attempted.localId, { attempt: attempted.attempt, promise });
     return promise;
-  }, [persistInactiveDraftAttachment, setAttachments]);
+  }, [draftNamespace, persistInactiveDraftAttachment, setAttachments]);
 
   useEffect(() => {
     for (const attachment of attachments) {
@@ -4537,6 +4591,7 @@ function ChatView({
       const target = current.find((attachment) => attachment.localId === localId);
       const cleanupId = target && cleanupServerIdOnRemoval(target, messageEdit?.originalAttachmentIds);
       if (cleanupId) void deleteUnreferencedAttachment(cleanupId).catch(() => undefined);
+      if (target?.localId.startsWith('import:')) releaseImportedFile(target.uri);
       latestAttachmentsRef.current.delete(localId);
       attachmentDraftOwnersRef.current.delete(localId);
       return current.filter((attachment) => attachment.localId !== localId);
@@ -4644,6 +4699,7 @@ function ChatView({
         ? cachedComposerDraft<ComposerAttachment>(submittedDraftIdentity.scope)?.attachments ?? [] : [];
       for (const attachment of submittedDraft.attachments) {
         if ([...attachmentsRef.current, ...retainedAttachments].some((item) => item.localId === attachment.localId)) continue;
+        if (attachment.localId.startsWith('import:')) releaseImportedFile(attachment.uri);
         latestAttachmentsRef.current.delete(attachment.localId);
         activeUploadsRef.current.delete(attachment.localId);
         attachmentDraftOwnersRef.current.delete(attachment.localId);
