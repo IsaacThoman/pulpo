@@ -1,3 +1,4 @@
+import { handleSessionConnectionError } from '@/lib/session-revocation'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Activity, AlertTriangle, ChevronDown, ChevronRight, CircleCheck, Clock3, Coins, RefreshCw, Zap } from 'lucide-react'
 import { io, type Socket } from 'socket.io-client'
@@ -44,6 +45,7 @@ export function AdminUsagePage() {
       withCredentials: !isDesktopRuntime(),
       auth: isDesktopRuntime() ? { sessionToken: runtimeSessionToken() } : undefined,
     })
+    socket.on('connect_error', (error) => { void handleSessionConnectionError(error) })
     const subscribe = () => { socket.emit('admin.usage.subscribe'); void load() }
     socket.on('connect', subscribe)
     socket.on('admin.usage.upsert', (_event: AdminUsageEvent) => { void load() })

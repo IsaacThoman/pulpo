@@ -1,5 +1,6 @@
 import { androidCertificateFingerprints } from './auth/android-app.js'
 import { z } from 'zod'
+import { trustedProxyAddresses } from './lib/client-ip.js'
 
 const booleanString = z
   .enum(['true', 'false'])
@@ -14,6 +15,10 @@ const configSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   HOST: z.string().default('0.0.0.0'),
   PORT: z.coerce.number().int().positive().default(3000),
+  PULPO_CLIENT_IP_MODE: z.enum(['direct', 'forwarded', 'cloudflare']).default('direct'),
+  PULPO_TRUSTED_PROXY_CIDRS: z.string().default('').refine((value) => {
+    try { trustedProxyAddresses(value); return true } catch { return false }
+  }, 'Use comma-separated proxy IPs/CIDRs; blanket trust and hop counts are not supported'),
   PUBLIC_URL: z.url().default('http://localhost:5173'),
   PULPO_ANDROID_CERTIFICATE_FINGERPRINTS: z.string().default('').refine((value) => { try { androidCertificateFingerprints(value); return true } catch { return false } }, 'Use comma-separated SHA-256 signing certificate fingerprints'),
   INSTANCE_NAME: z.string().trim().min(1).default('Pulpo'),
@@ -107,6 +112,9 @@ export function parseConfig(environment: NodeJS.ProcessEnv): Config {
     if (missing.length > 0) {
       throw new Error(`Billing is enabled but required configuration is missing: ${missing.join(', ')}`)
     }
+  }
+  if (config.PULPO_CLIENT_IP_MODE !== 'direct' && !config.PULPO_TRUSTED_PROXY_CIDRS.trim()) {
+    throw new Error('PULPO_TRUSTED_PROXY_CIDRS is required when forwarded or Cloudflare client IP detection is enabled')
   }
   return config
 }

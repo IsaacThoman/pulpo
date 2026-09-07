@@ -1,3 +1,4 @@
+import { handleSessionConnectionError } from '@/lib/session-revocation'
 import { bindWebShelfSocket } from '@/lib/local-first/shelf'
 import { useComposerSyncPreference } from '@/stores/composer-sync-preference'
 import { bindWebComposerSocket } from '@/lib/local-first/composer-sync'
@@ -107,6 +108,7 @@ export function ChatDataBridge() {
       withCredentials: !isDesktopRuntime(),
       auth: { composerSyncEnabled: useComposerSyncPreference.getState().enabled, ...(isDesktopRuntime() ? { sessionToken: runtimeSessionToken() } : {}) },
     })
+    socket.on('connect_error', (error) => { void handleSessionConnectionError(error) })
     const unbindShelf = bindWebShelfSocket(userId, socket)
     const unbindComposer = bindWebComposerSocket(userId, socket)
     socketRef.current = socket

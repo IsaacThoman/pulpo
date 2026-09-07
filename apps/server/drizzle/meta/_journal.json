@@ -453,8 +453,15 @@
     {
       "idx": 64,
       "version": "7",
-      "when": 1788746542023,
-      "tag": "0064_majestic_genesis",
+      "when": 1788744907454,
+      "tag": "0064_first_stranger",
+      "breakpoints": true
+    },
+    {
+      "idx": 65,
+      "version": "7",
+      "when": 1788751153442,
+      "tag": "0065_restore_uploads",
       "breakpoints": true
     }
   ]

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { AlertTriangle, Pencil, Plus, RefreshCw, Search, ShieldOff, Trash2 } from 'lucide-react'
+import { AlertTriangle, Monitor, Pencil, Plus, RefreshCw, Search, ShieldOff, Trash2 } from 'lucide-react'
+import { DeviceSessionListView } from '@/components/settings/DeviceSettings'
 import { useUsage } from '@/stores/usage'
 import { formatBalance, formatDate, timeAgo } from '@/lib/format'
 import type { MonitorUser } from '@/lib/types'
@@ -52,6 +53,7 @@ export function AdminUsersPage() {
   const [query, setQuery] = useState('')
   const [addOpen, setAddOpen] = useState(false)
   const [editUser, setEditUser] = useState<MonitorUser | null>(null)
+  const [devicesUser, setDevicesUser] = useState<MonitorUser | null>(null)
   const [promoteUser, setPromoteUser] = useState<MonitorUser | null>(null)
   const [resetTwoFactorUser, setResetTwoFactorUser] = useState<MonitorUser | null>(null)
   const [twoFactorCode, setTwoFactorCode] = useState('')
@@ -101,6 +103,9 @@ export function AdminUsersPage() {
 
   return (
     <div className="space-y-4">
+      <Dialog open={Boolean(devicesUser)} onOpenChange={(open) => { if (!open) setDevicesUser(null) }}>
+        <DialogContent className="max-h-[85dvh] overflow-y-auto sm:max-w-xl"><DialogHeader><DialogTitle>{ui('Devices')}</DialogTitle><DialogDescription>{devicesUser?.email}</DialogDescription></DialogHeader>{devicesUser && <DeviceSessionListView key={devicesUser.id} userId={devicesUser.id} />}</DialogContent>
+      </Dialog>
       <div className="flex items-center gap-2">
         <h2 className="text-lg font-semibold">{ui("Users")}</h2>
         <div className="flex-1" />
@@ -178,6 +183,7 @@ export function AdminUsersPage() {
                   <td className="px-3 py-2 text-muted-foreground">{formatDate(u.joinedAt)}</td>
                   <td className="px-3 py-2">
                     <div className="flex justify-end gap-1">
+                      <Button size="icon-sm" variant="ghost" title={ui('Devices')} aria-label={ui('View devices for {{email}}', { email: u.email })} onClick={() => setDevicesUser(u)}><Monitor className="size-3.5" /></Button>
                       {billingEnabled && billingByUser.get(u.id)?.hold && <Button
                         size="icon-sm"
                         variant="ghost"

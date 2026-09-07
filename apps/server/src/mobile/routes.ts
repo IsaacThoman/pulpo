@@ -88,14 +88,14 @@ export async function registerMobileRoutes(app: FastifyInstance): Promise<void> 
       throw unauthorized('Invalid email or password')
     }
     await requireLoginSecondFactor(row.user.id, input.twoFactorCode)
-    const session = await createNativeSession(row.user.id, input.deviceLabel, request)
+    const session = await createNativeSession(row.user.id, input.deviceLabel, request, { appType: input.appType, platform: input.platform })
     return { user: serializeUser(row.user), session }
   })
 
   app.post('/api/mobile/auth/setup', async (request, reply) => {
     const input = nativeSetupInputSchema.parse(request.body)
     const user = await createInitialAdmin(input)
-    const session = await createNativeSession(user.id, input.deviceLabel, request)
+    const session = await createNativeSession(user.id, input.deviceLabel, request, { appType: input.appType, platform: input.platform })
     reply.code(201)
     return { user, session }
   })
@@ -116,7 +116,7 @@ export async function registerMobileRoutes(app: FastifyInstance): Promise<void> 
       response: input.response,
       flows: ['native-authentication'],
     })
-    const session = await createNativeSession(user.id, input.deviceLabel, request)
+    const session = await createNativeSession(user.id, input.deviceLabel, request, { appType: input.appType, platform: input.platform })
     return { user: serializeUser(user), session }
   })
 
@@ -151,7 +151,7 @@ export async function registerMobileRoutes(app: FastifyInstance): Promise<void> 
   }, async (request) => {
     const input = mobilePasskeyCodeExchangeInputSchema.parse(request.body)
     const user = await exchangeMobilePasskeyAuthCode(input.code, input.codeVerifier)
-    const session = await createNativeSession(user.id, input.deviceLabel, request)
+    const session = await createNativeSession(user.id, input.deviceLabel, request, { appType: input.appType, platform: input.platform })
     return { user: serializeUser(user), session }
   })
 
@@ -188,7 +188,7 @@ export async function registerMobileRoutes(app: FastifyInstance): Promise<void> 
       await insertNewAccountPreferences(tx, userId, auth)
     })
     const [created] = await db.select().from(users).where(eq(users.id, userId)).limit(1)
-    const session = await createNativeSession(userId, input.deviceLabel, request)
+    const session = await createNativeSession(userId, input.deviceLabel, request, { appType: input.appType, platform: input.platform })
     reply.code(201)
     return { user: serializeUser(created!), session }
   })
