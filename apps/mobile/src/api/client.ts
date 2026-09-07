@@ -1,3 +1,4 @@
+import { protectTranscriptRequest } from '../data/transcriptResidency'
 import type { MobileConfig, NativeAuthResponse, PasskeyAuthenticationResponse, PasskeyCeremony, PasskeyList, PasskeyRegistrationResponse, PasskeySummary, TwoFactorEnrollment, TwoFactorRecoveryCodes, TwoFactorStatus, User } from '@pulpo/contracts'
 import type { MobileModel, ServerChat, ServerDeletedChat, ServerFolder } from '../types'
 
@@ -50,6 +51,11 @@ interface RequestOptions extends Omit<RequestInit, 'body'> {
 }
 
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  const release = protectTranscriptRequest(path, options.method ?? 'GET')
+  try { return await performApiRequest<T>(path, options) } finally { release() }
+}
+
+async function performApiRequest<T>(path: string, options: RequestOptions): Promise<T> {
   const headers = new Headers(options.headers)
   if (options.body !== undefined) headers.set('content-type', 'application/json')
   if (options.idempotencyKey) headers.set('idempotency-key', options.idempotencyKey)
@@ -57,6 +63,7 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? 15_000)
   const abort = () => controller.abort()
+  if (options.signal?.aborted) controller.abort()
   options.signal?.addEventListener('abort', abort, { once: true })
   let response: Response
   try {
@@ -164,7 +171,7 @@ export const mobileApi = {
   trashAllChats: () => apiRequest<void>('/api/chats', { method: 'DELETE' }),
   deletedChats: () => apiRequest<{ data: ServerDeletedChat[] }>('/api/chats/deleted'),
   emptyTrash: () => apiRequest<void>('/api/chats/deleted', { method: 'DELETE' }),
-  chat: (id: string) => apiRequest<ServerChat>(`/api/chats/${id}?format=compact&scope=active`),
+  chat: (id: string, signal?: AbortSignal) => apiRequest<ServerChat>(`/api/chats/${id}?format=compact&scope=active`, { signal }),
   models: () => apiRequest<{ agentAvailable: boolean; data: MobileModel[] }>('/api/models'),
   folders: () => apiRequest<{ data: ServerFolder[] }>('/api/folders'),
   settings: () => apiRequest<{ values: Record<string, unknown>; updatedAt: string | null }>('/api/settings'),

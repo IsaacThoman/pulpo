@@ -1,0 +1,391 @@
+{
+  "date": "2026-09-07T02:18:37.215Z",
+  "platform": "android",
+  "osVersion": 36,
+  "reactNative": {
+    "minor": 86,
+    "prerelease": null,
+    "patch": 2,
+    "major": 0
+  },
+  "hermes": true,
+  "dev": false,
+  "sourceCommit": "675eb022 + fix-mobile-performance working tree",
+  "method": "Current functions in a freshly built Release native app; synthetic function and residency benchmarks.",
+  "projection": [
+    {
+      "turns": 10,
+      "medianMs": 0.09,
+      "p95Ms": 0.29,
+      "samplesMs": [
+        0.1,
+        0.29,
+        0.08,
+        0.1,
+        0.1,
+        0.09,
+        0.12,
+        0.08,
+        0.09,
+        0.08,
+        0.09,
+        0.09,
+        0.08,
+        0.08,
+        0.08
+      ]
+    },
+    {
+      "turns": 100,
+      "medianMs": 0.5,
+      "p95Ms": 1.13,
+      "samplesMs": [
+        0.23,
+        0.23,
+        0.21,
+        0.26,
+        0.29,
+        0.36,
+        0.41,
+        0.5,
+        0.74,
+        0.84,
+        0.85,
+        1.13,
+        0.81,
+        0.82,
+        0.81
+      ]
+    },
+    {
+      "turns": 250,
+      "medianMs": 0.9,
+      "p95Ms": 2.24,
+      "samplesMs": [
+        0.85,
+        0.66,
+        0.87,
+        0.9,
+        0.87,
+        1.23,
+        1.34,
+        1.62,
+        1.24,
+        1.86,
+        1.74,
+        2.24,
+        0.57,
+        0.49,
+        0.46
+      ]
+    },
+    {
+      "turns": 500,
+      "medianMs": 0.89,
+      "p95Ms": 2.23,
+      "samplesMs": [
+        0.78,
+        0.78,
+        0.88,
+        0.77,
+        0.95,
+        0.78,
+        0.75,
+        0.76,
+        1,
+        0.89,
+        1.25,
+        1.13,
+        1.53,
+        1.63,
+        2.23
+      ]
+    },
+    {
+      "turns": 1000,
+      "medianMs": 2.45,
+      "p95Ms": 6.75,
+      "samplesMs": [
+        4.32,
+        2.06,
+        2.1,
+        2.45,
+        3.34,
+        4.02,
+        3.98,
+        6.75,
+        6.66,
+        1.71,
+        1.64,
+        1.67,
+        2.59,
+        1.89,
+        2.39
+      ]
+    }
+  ],
+  "snapshotHydration": [
+    {
+      "turns": 100,
+      "notifications": 1,
+      "medianMs": 0.11,
+      "p95Ms": 0.15,
+      "samplesMs": [
+        0.09,
+        0.09,
+        0.13,
+        0.12,
+        0.12,
+        0.13,
+        0.12,
+        0.13,
+        0.1,
+        0.1,
+        0.09,
+        0.11,
+        0.09,
+        0.11,
+        0.15
+      ]
+    },
+    {
+      "turns": 500,
+      "notifications": 1,
+      "medianMs": 0.32,
+      "p95Ms": 0.67,
+      "samplesMs": [
+        0.25,
+        0.28,
+        0.32,
+        0.32,
+        0.47,
+        0.43,
+        0.66,
+        0.66,
+        0.67,
+        0.57,
+        0.4,
+        0.24,
+        0.23,
+        0.23,
+        0.24
+      ]
+    },
+    {
+      "turns": 1000,
+      "notifications": 1,
+      "medianMs": 0.5,
+      "p95Ms": 0.94,
+      "samplesMs": [
+        0.4,
+        0.41,
+        0.43,
+        0.61,
+        0.41,
+        0.42,
+        0.46,
+        0.61,
+        0.47,
+        0.5,
+        0.66,
+        0.52,
+        0.7,
+        0.57,
+        0.94
+      ]
+    }
+  ],
+  "residencyCountsAfter20ChatCycles": [
+    6,
+    6,
+    6
+  ],
+  "runtimeMemoryAfterCycles": [
+    {
+      "js_VMExperiments": 0,
+      "js_numGCs": 23,
+      "js_gcCPUTime": 0.04768499999999999,
+      "js_gcTime": 0.05092571000000001,
+      "js_totalAllocatedBytes": 82996448,
+      "js_allocatedBytes": 20400256,
+      "js_heapSize": 29360128,
+      "js_mallocSizeEstimate": 0,
+      "js_vaSize": 29360128,
+      "js_externalBytes": 800442,
+      "js_markStackOverflows": 0
+    },
+    {
+      "js_VMExperiments": 0,
+      "js_numGCs": 30,
+      "js_gcCPUTime": 0.05206099999999999,
+      "js_gcTime": 0.055647543000000015,
+      "js_totalAllocatedBytes": 103457744,
+      "js_allocatedBytes": 22169160,
+      "js_heapSize": 29360128,
+      "js_mallocSizeEstimate": 0,
+      "js_vaSize": 29360128,
+      "js_externalBytes": 0,
+      "js_markStackOverflows": 0
+    },
+    {
+      "js_VMExperiments": 0,
+      "js_numGCs": 37,
+      "js_gcCPUTime": 0.063465,
+      "js_gcTime": 0.06697121000000002,
+      "js_totalAllocatedBytes": 123996224,
+      "js_allocatedBytes": 17615384,
+      "js_heapSize": 33554432,
+      "js_mallocSizeEstimate": 0,
+      "js_vaSize": 33554432,
+      "js_externalBytes": 0,
+      "js_markStackOverflows": 0
+    }
+  ],
+  "retainedSnapshotsAfter20Chats": 600,
+  "cache": [
+    {
+      "count": 1,
+      "payloadBytes": 490402,
+      "metadataRead": {
+        "medianMs": 1.97,
+        "p95Ms": 13.41,
+        "samplesMs": [
+          13.41,
+          2.03,
+          1.83,
+          1.97,
+          1.91
+        ]
+      },
+      "targetedRead": {
+        "medianMs": 6.79,
+        "p95Ms": 9.66,
+        "samplesMs": [
+          6.6,
+          6.44,
+          8.81,
+          6.79,
+          5.66,
+          6.03,
+          9.66,
+          6.25,
+          7.33,
+          8.85
+        ]
+      },
+      "markOpenedAndTrim": {
+        "medianMs": 6.76,
+        "p95Ms": 9.7,
+        "samplesMs": [
+          5.38,
+          4.99,
+          6.76,
+          6.22,
+          9.7,
+          8.84,
+          6.1,
+          6.52,
+          8.07,
+          8.41
+        ]
+      },
+      "tinyReadBehindTrimMs": 9.09
+    },
+    {
+      "count": 10,
+      "payloadBytes": 4904020,
+      "metadataRead": {
+        "medianMs": 3.36,
+        "p95Ms": 4.73,
+        "samplesMs": [
+          2.69,
+          2.69,
+          3.36,
+          4.35,
+          4.73
+        ]
+      },
+      "targetedRead": {
+        "medianMs": 6.21,
+        "p95Ms": 20.71,
+        "samplesMs": [
+          5.75,
+          8.41,
+          5.82,
+          6.21,
+          7.19,
+          20.71,
+          4.54,
+          4.99,
+          4.25,
+          8.73
+        ]
+      },
+      "markOpenedAndTrim": {
+        "medianMs": 8.29,
+        "p95Ms": 13.72,
+        "samplesMs": [
+          13.72,
+          12.23,
+          10.7,
+          9.43,
+          4.98,
+          4.41,
+          5.39,
+          5.9,
+          6.76,
+          8.29
+        ]
+      },
+      "tinyReadBehindTrimMs": 7.4
+    },
+    {
+      "count": 45,
+      "payloadBytes": 22092625,
+      "metadataRead": {
+        "medianMs": 6.55,
+        "p95Ms": 8.24,
+        "samplesMs": [
+          5.52,
+          6.37,
+          6.55,
+          7.13,
+          8.24
+        ]
+      },
+      "targetedRead": {
+        "medianMs": 4.41,
+        "p95Ms": 5.26,
+        "samplesMs": [
+          4.92,
+          5.2,
+          4.41,
+          5.26,
+          4.37,
+          3.63,
+          3.58,
+          5.15,
+          3.39,
+          3.43
+        ]
+      },
+      "markOpenedAndTrim": {
+        "medianMs": 8.35,
+        "p95Ms": 12.06,
+        "samplesMs": [
+          8.15,
+          7.85,
+          8.73,
+          8.45,
+          8.09,
+          8.78,
+          8.33,
+          12.06,
+          8.35,
+          8.29
+        ]
+      },
+      "tinyReadBehindTrimMs": 10.41
+    }
+  ]
+}

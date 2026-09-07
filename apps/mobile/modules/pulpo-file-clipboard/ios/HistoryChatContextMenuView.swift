@@ -5,6 +5,7 @@ public final class HistoryChatContextMenuView: ExpoView, UIContextMenuInteractio
   let onAction = EventDispatcher()
   let onChatPress = EventDispatcher()
   let onPreviewRequest = EventDispatcher()
+  let onPreviewEnd = EventDispatcher()
 
   private var pendingAction: String?
   private var pinned = false
@@ -167,6 +168,7 @@ public final class HistoryChatContextMenuView: ExpoView, UIContextMenuInteractio
     let finish = { [weak self] in
       guard let self else { return }
       self.activePreviewController = nil
+      self.onPreviewEnd()
       if let action = self.pendingAction {
         self.pendingAction = nil
         self.onAction(["action": action])

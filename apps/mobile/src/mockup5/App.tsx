@@ -1,3 +1,4 @@
+import { protectTranscript } from '../data/transcriptResidency';
 import { initialActivityTiming } from '@pulpo/client-core';
 import { mobileShelf, durableShelfAttachments, shelfComposerAttachments } from '../features/chat/shelf';
 import { useAppTheme } from './src/theme';
@@ -5418,6 +5419,9 @@ const HistoryChatRow = memo(function HistoryChatRow({ active, chat, expirationMe
 }) {
   const { styles } = useChatStyles();
   const { fontScale } = useWindowDimensions();
+  const previewLease = useRef<(() => void) | null>(null);
+  useEffect(() => () => { previewLease.current?.(); previewLease.current = null; }, [chat.id]);
+  const endPreview = () => { previewLease.current?.(); previewLease.current = null; };
   const largeAndroidText = Platform.OS === 'android' && fontScale >= 1.5;
   const expirationAction = expirationMenuAction?.kind ?? 'hidden';
   const rowContent = <>
@@ -5446,7 +5450,13 @@ const HistoryChatRow = memo(function HistoryChatRow({ active, chat, expirationMe
       previewMetadata={`${chat.section} · ${chat.time}`}
       onAction={(action) => onChatAction(chat, action)}
       onPress={() => onSelectChat(chat)}
-      onPreviewRequest={() => onPreviewRequest(chat)}
+      onPreviewRequest={() => {
+        endPreview();
+        const namespace = usePrototypeStore.getState().productionNamespace;
+        if (namespace) previewLease.current = protectTranscript(namespace, chat.id);
+        onPreviewRequest(chat);
+      }}
+      onPreviewEnd={endPreview}
       style={styles.chatContextMenuHost}
     >
       <View pointerEvents="none" style={[styles.chatRow, active && styles.chatRowActive]}>

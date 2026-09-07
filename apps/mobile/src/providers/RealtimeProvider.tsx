@@ -179,12 +179,15 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
       void flushCursors().catch(() => undefined)
         .then(() => queueCursorWrite(() => deleteResponseCursor(namespace, responseId)))
     }
-    const applySnapshot = (snapshot: ResponseSnapshot) => {
-      useRealtimeStore.getState().receiveSnapshot(snapshot)
+    const finishSnapshot = (snapshot: ResponseSnapshot) => {
       flushEventBatches(snapshot.responseId)
       const current = useRealtimeStore.getState().snapshots[snapshot.responseId]
       if (current && isTerminalSnapshot(current)) finishCursor(snapshot.responseId)
       else if (current) rememberCursor(snapshot.responseId, current.sequence)
+    }
+    const applySnapshot = (snapshot: ResponseSnapshot) => {
+      useRealtimeStore.getState().receiveSnapshot(snapshot)
+      finishSnapshot(snapshot)
     }
     const invalidateScope = (scope: SyncResult['invalidate'][number], activeChatId?: string) => {
       for (const queryKey of stateInvalidationQueryKeys(scope, namespace, activeChatId)) {
@@ -218,7 +221,8 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
     }
     const applySync = (result: SyncResult, activeChatId?: string) => {
       stateRevision.current = Math.max(stateRevision.current, result.accountRevision)
-      for (const snapshot of result.snapshots) applySnapshot(snapshot)
+      useRealtimeStore.getState().receiveSnapshots(result.snapshots)
+      for (const snapshot of result.snapshots) finishSnapshot(snapshot)
       for (const events of groupResponseEvents(result.events)) {
         for (const event of events) queueEvent(event)
         flushEventBatches(events[0]?.responseId)
