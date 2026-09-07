@@ -1799,9 +1799,10 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
       finish(true);
       return;
     }
-    // Keep keyboard/layout ownership with the drawer until it finishes closing.
+    // Existing-chat selection defers mounting until closure. Ordinary closure
+    // (including New Chat) hands layout/focus back now, before autofocus runs.
+    if (open || !onFinished) setPanelOpen(open);
     if (open) {
-      setPanelOpen(true);
       setComposerFocusSuppressed(false);
       Keyboard.dismiss();
     }
@@ -5684,14 +5685,18 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
   const searchActiveProgress = useSharedValue(searchActive ? 1 : 0);
   const nativeSearchRef = useRef<SwiftUITextFieldRef>(null);
   const materialSearchRef = useRef<{ blur: () => Promise<void> }>(null);
-  const dismissSearch = useCallback(() => {
-    Keyboard.dismiss();
+  const blurSearch = useCallback(() => {
     void nativeSearchRef.current?.blur();
     void materialSearchRef.current?.blur();
   }, []);
+  const dismissSearch = useCallback(() => {
+    Keyboard.dismiss();
+    blurSearch();
+  }, [blurSearch]);
   useEffect(() => {
-    if (!drawerOpen) dismissSearch();
-  }, [dismissSearch, drawerOpen]);
+    // Closing history must not dismiss a keyboard now owned by the composer.
+    if (!drawerOpen) blurSearch();
+  }, [blurSearch, drawerOpen]);
   useEffect(() => {
     // The composer keyboard must not collapse controls in the persistent sidebar.
     searchActiveProgress.value = withTiming(searchActive ? 1 : 0, { duration: 180 });

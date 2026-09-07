@@ -351,3 +351,29 @@ and completion timing remain variable under simulator automation, as the short
 chat illustrates. These measurements verify the removed pre-animation dependency,
 not improved total load latency or physical-device frame pacing. Raw artifacts
 remain outside Git.
+
+## New Chat keyboard ownership
+
+The existing-chat transition optimization had also delayed `panelOpen = false`
+for ordinary drawer closure. New Chat still requested autofocus after two frames,
+so the composer keyboard opened while keyboard layout remained frozen. At spring
+completion, history became hidden and its cleanup called the global
+`Keyboard.dismiss()`, stealing the composer's new focus.
+
+Ordinary closure, including New Chat, now transfers keyboard/layout ownership
+immediately, matching dev. Existing-chat selection still defers its transcript
+mount until completion. History's hide cleanup only blurs its own search field;
+explicit search-dismiss actions retain keyboard dismissal. This avoids a late
+global dismissal of a keyboard owned by the composer.
+
+`testNewChatKeepsComposerFocused` reproduced the missing keyboard on the prior
+Release fixture. It exercises both drawer and header New Chat actions, typing
+without tapping the input, the input's position above the keyboard, and starting
+from the unsaved-chat landing. Raw XCTest artifacts remain outside Git.
+
+The final native test passed all three entry points on the iPhone 17 Pro / iOS
+26.5 Release shell with the updated application bundle. The three existing
+drawer/search, cached-selection, and content-placeholder XCTest cases also
+passed. Mobile type checking, lint, all 458 mobile tests, and both production
+exports passed. Physical
+iPhone/Android validation has not been repeated for this focus change.

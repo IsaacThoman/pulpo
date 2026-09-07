@@ -40,6 +40,11 @@ hides the previous transcript and intermediate
 spinner, reveals the loaded transcript, handles selecting the same chat again,
 and switches through an empty chat.
 
+`testNewChatKeepsComposerFocused` opens New Chat from the drawer and header,
+waits beyond drawer completion, and types without tapping the composer. It also
+starts from the unsaved-chat landing, and checks that the keyboard remains
+visible and the input stays above it.
+
 The UI fixture also writes `Documents/ui-preparation-timings.json` for prepared
 requests. It records the selected chat at request start and elapsed transfer/gate
 times, allowing verification that I/O begins before selection commits. These

@@ -1,5 +1,42 @@
 import XCTest
 final class PerformanceUITests: XCTestCase {
+  func testNewChatKeepsComposerFocused() {
+    continueAfterFailure = false
+    let app = XCUIApplication(bundleIdentifier: "com.isaacthoman.pulpo")
+    // Isolate each entry point so prior keyboard/draft state cannot mask failure.
+    for source in ["drawer", "header", "unsaved"] {
+      app.launch()
+      XCTAssertTrue(app.buttons["Open chats"].waitForExistence(timeout: 30))
+      if source != "unsaved" {
+        app.buttons["Open chats"].tap()
+        let row = app.staticTexts["Performance chat 2"].firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 5))
+        row.tap()
+        let transcript = app.descendants(matching: .any).matching(identifier: "chat-transcript-00000000-0000-4000-8000-000000000101").firstMatch
+        XCTAssertTrue(transcript.waitForExistence(timeout: 10))
+      }
+      if source == "header" {
+        app.buttons["New chat"].tap()
+      } else {
+        app.buttons["Open chats"].tap()
+        app.buttons["New Chat"].tap()
+      }
+      XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+      // Catch a late drawer-completion cleanup dismissing newly acquired focus.
+      Thread.sleep(forTimeInterval: 1)
+      XCTAssertTrue(app.keyboards.firstMatch.exists)
+      let input = app.textViews.firstMatch
+      XCTAssertTrue(input.isHittable, app.debugDescription)
+      XCTAssertLessThanOrEqual(input.frame.maxY, app.keyboards.firstMatch.frame.minY + 2)
+      // Do not tap the composer: typing must use the automatic focus.
+      let marker = "Autofocus " + source
+      app.typeText(marker)
+      XCTAssertTrue((input.value as? String)?.contains(marker) == true)
+      XCTAssertTrue(app.keyboards.firstMatch.exists)
+      app.terminate()
+    }
+  }
+
   func testSelectedChatCover() {
     continueAfterFailure = false
     let app = XCUIApplication(bundleIdentifier: "com.isaacthoman.pulpo")
