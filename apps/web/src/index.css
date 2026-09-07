@@ -245,6 +245,34 @@ html[data-desktop="true"] .desktop-sidebar-collapsed .chat-header::before {
   animation: fade-in-up 0.25s ease-out both;
 }
 
+.composer-tray-content {
+  overflow: hidden;
+}
+
+.composer-tray-content[data-state='open'] {
+  animation: composer-tray-open 200ms ease-out;
+}
+
+.composer-tray-content[data-state='closed'] {
+  animation: composer-tray-close 200ms ease-out;
+}
+
+@keyframes composer-tray-open {
+  from { height: 0; opacity: 0; }
+  to { height: var(--radix-collapsible-content-height); opacity: 1; }
+}
+
+@keyframes composer-tray-close {
+  from { height: var(--radix-collapsible-content-height); opacity: 1; }
+  to { height: 0; opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .composer-tray-content[data-state] {
+    animation: none;
+  }
+}
+
 .chat-landing-badge-transition {
   opacity: 0;
   transform: translateY(6px) scale(0.98);
