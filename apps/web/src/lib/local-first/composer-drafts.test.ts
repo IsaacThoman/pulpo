@@ -58,3 +58,11 @@ describe('web composer drafts', () => {
     await expect(loadComposerDraft('user-1', 'chat-2')).resolves.toBeNull()
   })
 })
+
+
+it('keeps temporary drafts out of the IndexedDB store shared by browser tabs', async () => {
+  await saveComposerDraft('user-1', 'temporary:new', { content: 'private draft', attachments: [] })
+  expect(state.rows.size).toBe(0)
+  state.rows.set('account:user-1:temporary:new', { content: 'another tab private draft', attachments: [] })
+  expect(await loadComposerDraft('user-1', 'temporary:new')).toBeNull()
+})

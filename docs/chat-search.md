@@ -2,6 +2,8 @@
 
 `search_chats` searches eligible conversations owned by the current user, excluding the current chat, temporary chats, and deleted, purging, or expired chats. Memories must be enabled both globally and for the user. Historical content remains untrusted reference material.
 
+Temporary chats cannot access account memory: neither generation path injects MEMORY.md or recalled chat history, and agents have no `search_chats`, `read_chat`, or `update_memory` tools. Retrieval checks the calling chat as well as candidate chats, and agent profile writes verify the source response's chat. Retries do not reuse memory-bearing system prompts, recall items, or memory-tool exchanges when memory is disallowed. Existing facts already included in the conversation transcript are not retroactively removed.
+
 Explicit search accepts plain text. It removes conversational filler and deduplicates up to 32 query terms. The text search gathers partial matches with OR, requires up to two matching terms in a passage, and ranks query coverage before repetition. Titles are searched separately and boosted, including when no embedding generation is available. Operators such as quotes, OR, and minus signs have no special search syntax in explicit queries.
 
 The best passage from each conversation is selected before each retrieval source's candidate limit. Title, text, and semantic evidence are combined by chat. Explicit search defaults to the balanced moderate semantic threshold, independently of the automatic-recall preference; automatic recall retains its configured stricter evidence gates and conjunctive text query. These thresholds are heuristics, not confidence probabilities. Results are candidates for verification with `read_chat`.
