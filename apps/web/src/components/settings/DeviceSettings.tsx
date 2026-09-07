@@ -7,6 +7,7 @@ import { formatDateTime, timeAgo } from '@/lib/format'
 import { useAuth } from '@/stores/auth'
 import { ui } from '@/i18n/ui'
 import { Button } from '@/components/ui/button'
+import { Separator } from '@/components/ui/separator'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 
 const platforms = { ios: 'iOS', android: 'Android', windows: 'Windows', macos: 'macOS', linux: 'Linux', unknown: 'Unknown platform' }
@@ -88,9 +89,9 @@ export function DeviceSessionListView({ userId }: { userId?: string }) {
 }
 
 export function DeviceSettings() {
-  const [open, setOpen] = useState(false)
-  return <>
-    <div className="flex items-center justify-between gap-4 py-3"><div><div className="text-sm font-medium">{ui('Devices')}</div><p className="text-xs text-muted-foreground">{ui('Review and sign out your authenticated devices.')}</p></div><Button variant="outline" size="sm" onClick={() => setOpen(true)}><Monitor />{ui('Manage devices')}</Button></div>
-    <Dialog open={open} onOpenChange={setOpen}><DialogContent className="max-h-[85dvh] overflow-y-auto sm:max-w-xl"><DialogHeader><DialogTitle>{ui('Devices')}</DialogTitle><DialogDescription>{ui('Manage your signed-in sessions.')}</DialogDescription></DialogHeader>{open && <DeviceSessionListView />}</DialogContent></Dialog>
-  </>
+  return <div>
+    <h2 className="text-base font-semibold">{ui('Devices')}</h2>
+    <Separator className="my-3" />
+    <DeviceSessionListView />
+  </div>
 }

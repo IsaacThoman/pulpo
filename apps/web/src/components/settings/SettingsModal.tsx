@@ -11,6 +11,7 @@ import {
   CreditCard,
   Info,
   KeyRound,
+  Laptop,
   Loader2,
   Copy,
   ExternalLink,
@@ -77,6 +78,7 @@ const SECTION_CONFIG = {
   general: { labelKey: 'settings.sections.general', icon: SlidersHorizontal },
   profile: { labelKey: 'settings.sections.profile', icon: User },
   security: { labelKey: 'settings.sections.security', icon: ShieldCheck },
+  devices: { labelKey: 'settings.sections.devices', icon: Laptop },
   connections: { labelKey: 'settings.sections.connections', icon: Plug },
   personalization: { labelKey: 'settings.sections.personalization', icon: Sparkles },
   interface: { labelKey: 'settings.sections.interface', icon: Monitor },
@@ -885,7 +887,6 @@ export function SettingsModal({
                   <PasswordSettings />
                   <PasskeySettings />
                   <TwoFactorSettings />
-                  <DeviceSettings />
                   <DeleteAccountSettings />
                   <Separator className="my-3" />
                   <Row label={ui("Sign out")} hint="End this session on this device.">
@@ -893,6 +894,8 @@ export function SettingsModal({
                   </Row>
                 </div>
               )}
+
+              {section === 'devices' && <DeviceSettings />}
 
               {section === 'personalization' && (
                 <div>

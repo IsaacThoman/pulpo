@@ -129,6 +129,6 @@ or explicit proxy addresses. The development nginx configuration already forward
 request headers; production routes reach the API through Traefik directly.
 
 Missing, malformed, or untrusted headers fall back to the TCP peer. Confirm the
-configuration by signing in through the tunnel and checking **Security → Devices**
+configuration by signing in through the tunnel and checking **Settings → Devices**
 against the visitor's public IP. Test separate visitors to verify that rate limits
 are no longer shared under the tunnel/proxy IP. No IP geolocation is performed.

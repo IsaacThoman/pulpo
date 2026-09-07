@@ -34,11 +34,12 @@ async function click(label: string) {
   await act(async () => button!.click())
 }
 describe('device management', () => {
-  it('loads only when opened from settings and displays device/IP details', async () => {
+  it('displays device/IP details directly in the settings section', async () => {
     await act(async () => root.render(<QueryClientProvider client={queryClient}><DeviceSettings /></QueryClientProvider>))
-    expect(mocks.request).not.toHaveBeenCalled()
-    await click('Manage devices')
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)) })
+    expect(mocks.request).toHaveBeenCalledWith('/api/me/sessions')
+    expect(document.querySelector('h2')?.textContent).toBe('Devices')
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
     expect(document.body.textContent).toContain('This device')
     expect(document.body.textContent).toContain('Latest IP: 198.51.100.2')
     expect(document.body.textContent).toContain('Sign-in IP: 198.51.100.1')
