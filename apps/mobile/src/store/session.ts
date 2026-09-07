@@ -1,3 +1,4 @@
+import { clearShortcutsSession, syncShortcutsSession } from '../shortcuts/native'
 import { clearMobileShelf } from '../features/chat/shelf-registry'
 import { clearMobileComposerSync } from '../features/chat/composerSync'
 import { Appearance, Platform } from 'react-native'
@@ -8,7 +9,7 @@ import * as SecureStore from 'expo-secure-store'
 import { create } from 'zustand'
 import { normalizeInstanceUrl } from '@pulpo/client-core'
 import type { MobileConfig, User } from '@pulpo/contracts'
-import { ApiError, apiOrigin, configureApi, isNetworkError, mobileApi } from '../api/client'
+import { ApiError, configureApi, isNetworkError, mobileApi } from '../api/client'
 import {
   canUseNativePasskeys,
   NativePasskeyError,
@@ -233,6 +234,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 
   logout: async (localOnly = false) => {
     const { user, instanceUrl, token } = get()
+    clearShortcutsSession()
     if (token && !localOnly) await mobileApi.logout().catch(() => undefined)
     // Revoked sessions must disappear from memory even if local storage fails.
     configureApi({ instanceUrl, token: null, onUnauthorized: () => { void get().handleUnauthorized() } })
@@ -255,16 +257,26 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   },
 
   refreshSession: async () => {
+    const { token, instanceUrl } = get()
     const { user } = await mobileApi.me()
-    await get().setUser(user)
-    set({ status: user.role === 'pending' ? 'pending' : 'authenticated', error: null })
+    if (get().token !== token || get().instanceUrl !== instanceUrl) return
+    await persistAccount(instanceUrl, user)
+    if (get().token !== token || get().instanceUrl !== instanceUrl) return
+    set({ user, status: user.role === 'pending' ? 'pending' : 'authenticated', error: null })
   },
 
   switchInstance: async (value) => {
     const previous = get()
     const instanceUrl = normalizeInstanceUrl(value, allowLocalhost())
     configureApi({ instanceUrl, token: null })
-    const config = await mobileApi.config()
+    let config: MobileConfig
+    try {
+      config = await mobileApi.config()
+    } catch (error) {
+      configureApi({ instanceUrl: previous.instanceUrl, token: previous.token, onUnauthorized: () => { void get().handleUnauthorized() } })
+      throw error
+    }
+    clearShortcutsSession()
     if (previous.token) {
       configureApi({ instanceUrl: previous.instanceUrl, token: previous.token })
       await mobileApi.logout().catch(() => undefined)
@@ -292,16 +304,25 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   },
 
   handleUnauthorized: async () => {
-    await Promise.all([
+    clearShortcutsSession()
+    // Stop authenticated work immediately, even if platform storage is unavailable.
+    configureApi({ instanceUrl: get().instanceUrl, token: null })
+    set({ token: null, user: null, status: 'anonymous', error: 'Your session expired. Sign in again.' })
+    Appearance.setColorScheme('unspecified')
+    await Promise.allSettled([
       SecureStore.deleteItemAsync(SESSION_TOKEN_KEY),
       setValue(GLOBAL_NAMESPACE, ACTIVE_SESSION_NAMESPACE_KEY, null),
     ])
-    configureApi({ instanceUrl: apiOrigin(), token: null })
-    set({ token: null, user: null, status: 'anonymous', error: 'Your session expired. Sign in again.' })
-    Appearance.setColorScheme('unspecified')
   },
 }))
 
 function deviceMetadata() {
   return { platform: Platform.OS === 'ios' ? 'ios' as const : Platform.OS === 'android' ? 'android' as const : 'unknown' as const }
 }
+
+// Synchronous native bridge: account transitions cannot race a queued React effect.
+useSessionStore.subscribe((state, previous) => {
+  if (state.status !== previous.status || state.token !== previous.token
+    || state.instanceUrl !== previous.instanceUrl || state.user?.id !== previous.user?.id
+    || state.user?.blocked !== previous.user?.blocked) syncShortcutsSession(state)
+})

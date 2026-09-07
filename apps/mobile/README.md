@@ -12,6 +12,13 @@ Generated `ios/` and `android/` projects are intentionally ignored. Continuous
 Native Generation recreates them from `app.config.ts` and the installed config
 plugins.
 
+## Apple Shortcuts
+
+The iOS app supports Siri and eight composable Shortcuts actions for asking
+questions, starting and continuing chats, finding conversations, choosing models,
+returning replies, and opening the app. See [Apple Shortcuts](SHORTCUTS.md) for
+workflow examples, privacy behavior, and native validation instructions.
+
 ## Local development
 
 From the repository root, install dependencies and start the supported local
@@ -27,7 +34,9 @@ Choose an iOS 26 simulator from Expo CLI. The iOS simulator reaches the host's
 Compose gateway through `localhost`. The development build permits local HTTP;
 production instance switching accepts HTTPS only.
 
-Only the bearer session token is placed in platform secure storage through SecureStore.
+The bearer session token is placed in platform secure storage through SecureStore.
+Apple Shortcuts uses a separate app-private, device-only Keychain session snapshot
+that is cleared with the main session.
 The active instance, preferences, cached queries, drafts, cursors, search index,
 outbox, and attachment metadata are stored in namespaced SQLite tables. Cached
 attachment bytes use the app cache and are evicted by the configured LRU quota.
@@ -80,6 +89,22 @@ Platform UI lives in `src/platform/MaterialUI.android.tsx`. Android-only view
 implementations use Metro's `.android.tsx` resolution, leaving the SwiftUI
 implementations available to iOS. Keep business logic, server operations, cache,
 drafts, and queue state shared between platforms.
+
+### Dictation
+
+When the instance administrator enables Dictation and configures its Groq key,
+the chat composer shows a microphone on iOS and Android. Tap to record, then tap
+Stop dictation to insert the transcript at the cursor. Selected text is replaced;
+if the draft changed in the meantime, the transcript is appended to the latest
+text. Review or edit the result and send it manually. Recording stops after
+90 seconds. Dictation also works while editing messages and queued messages.
+
+Microphone permission is requested on first use. Cancellation, leaving the draft,
+or backgrounding the app discards the recording. Audio is temporary, never queued
+for offline delivery, and removed after the attempt. Instance dictation billing
+applies just as on web. Older servers without the capability flag hide the control.
+Adding the native audio module requires rebuilding the app, not just updating its
+JavaScript bundle. See `e2e/dictation-validation.md` for local acceptance testing.
 
 ## Configuration and validation
 

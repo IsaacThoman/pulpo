@@ -950,7 +950,7 @@ export function Sidebar({
         'flex h-full shrink-0 select-none flex-col overflow-hidden border-r border-sidebar-border bg-sidebar motion-reduce:transition-none',
         mobile
           ? cn(
-              'fixed inset-y-0 left-0 z-40 w-[min(82vw,320px)] shadow-2xl',
+              'mobile-sidebar fixed inset-y-0 left-0 z-40 w-[min(82vw,320px)] shadow-2xl',
               transitions && 'transition-transform duration-200 ease-out'
             )
           : cn(
@@ -962,7 +962,7 @@ export function Sidebar({
         !mobile && (collapsed ? 'desktop-collapsed-sidebar w-[52px]' : 'w-[264px]')
       )}
     >
-      {!mobile && (
+      {!mobile && isDesktopRuntime() && (
         <div
           aria-hidden="true"
           className={cn(

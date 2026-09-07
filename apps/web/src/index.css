@@ -125,8 +125,8 @@ body {
   pointer-events: none;
   background: linear-gradient(
     to bottom,
-    color-mix(in oklab, var(--background) 80%, transparent) 0%,
-    color-mix(in oklab, var(--background) 0%, transparent) 100%
+    color-mix(in oklab, var(--chat-header-background, var(--background)) 80%, transparent) 0%,
+    color-mix(in oklab, var(--chat-header-background, var(--background)) 0%, transparent) 100%
   );
 }
 
@@ -149,7 +149,7 @@ html[data-desktop="true"] .desktop-sidebar-collapsed .chat-header::before {
     display: flex;
   }
 
-  .app-main > div > header {
+  html:not([data-desktop="true"]) .app-main > div > header {
     padding-left: 3rem;
   }
 }
@@ -341,16 +341,16 @@ html[data-desktop-os="win32"] .desktop-sidebar-titlebar {
   right: 138px;
 }
 
-html[data-desktop="true"] {
-  --desktop-temporary-chat-background: color-mix(
+:root {
+  --temporary-chat-background: color-mix(
     in oklab,
     var(--color-violet-100) 50%,
     var(--background)
   );
 }
 
-html.dark[data-desktop="true"] {
-  --desktop-temporary-chat-background: color-mix(
+html.dark {
+  --temporary-chat-background: color-mix(
     in oklab,
     var(--color-violet-950) 15%,
     var(--background)
@@ -391,11 +391,12 @@ html[data-desktop-os="win32"] .desktop-main-titlebar-active .app-main > div > he
 }
 
 html[data-desktop="true"] .desktop-titlebar[data-temporary-chat="true"] {
-  background: var(--desktop-temporary-chat-background);
+  background: var(--temporary-chat-background);
 }
 
-html[data-desktop="true"] [data-desktop-temporary-chat="true"] {
-  background: var(--desktop-temporary-chat-background);
+[data-desktop-temporary-chat="true"] {
+  --chat-header-background: var(--temporary-chat-background);
+  background: var(--temporary-chat-background);
 }
 
 html[data-desktop="true"] .desktop-sidebar-titlebar {
@@ -581,4 +582,116 @@ html[data-desktop="true"] button,
 html[data-desktop="true"] input,
 html[data-desktop="true"] a {
   -webkit-app-region: no-drag;
+}
+
+/* Keep the collapsed desktop title bar when the sidebar becomes a drawer. */
+@media (width < 750px) {
+  html[data-desktop="true"] .desktop-shell {
+    padding-top: 38px;
+  }
+
+  html[data-desktop="true"] .mobile-sidebar-opener {
+    position: fixed;
+    top: 46px;
+    left: 8px;
+    z-index: 43;
+  }
+
+  html[data-desktop="true"] .mobile-sidebar-backdrop,
+  html[data-desktop="true"] .mobile-sidebar {
+    top: 38px;
+    height: calc(100% - 38px);
+  }
+
+  html[data-desktop="true"] .mobile-sidebar-backdrop {
+    z-index: 44;
+  }
+
+  html[data-desktop="true"] .mobile-sidebar-backdrop::after {
+    position: absolute;
+    top: 0;
+    right: 0;
+    left: 0;
+    height: 1px;
+    background: var(--sidebar);
+    border-top: 1px solid var(--sidebar-border);
+    content: '';
+    pointer-events: none;
+  }
+
+  html[data-desktop="true"] .mobile-sidebar {
+    z-index: 45;
+    overflow: visible;
+    border-right-width: 0;
+  }
+
+  html[data-desktop="true"] .mobile-sidebar::before {
+    position: absolute;
+    top: 0;
+    left: calc(100% - 1px);
+    width: 16px;
+    height: 16px;
+    background: radial-gradient(
+      circle at 100% 100%,
+      transparent calc(1rem - 1px),
+      var(--sidebar-border) calc(1rem - 1px),
+      var(--sidebar-border) 1rem,
+      var(--sidebar) 1rem
+    ), radial-gradient(
+      circle at 100% 100%,
+      transparent calc(1rem - 1px),
+      var(--sidebar) calc(1rem - 1px)
+    );
+    content: '';
+    pointer-events: none;
+  }
+
+  html[data-desktop="true"] .mobile-sidebar::after {
+    position: absolute;
+    top: 16px;
+    right: 0;
+    bottom: 0;
+    border-right: 1px solid var(--sidebar-border);
+    content: '';
+    pointer-events: none;
+  }
+
+  html[data-desktop="true"] .mobile-sidebar[aria-hidden="true"]::before {
+    visibility: hidden;
+  }
+
+  html[data-desktop="true"] .desktop-model-titlebar-slot[data-compact="true"] {
+    left: 12px;
+    height: 38px;
+    /* Reserve two chat actions and at least 40px of draggable space. */
+    max-width: calc(100vw - 148px);
+  }
+
+  html[data-desktop-os="darwin"] .desktop-model-titlebar-slot[data-compact="true"] {
+    left: 84px;
+    max-width: calc(100vw - 220px);
+  }
+
+  html[data-desktop-os="win32"] .desktop-model-titlebar-slot[data-compact="true"] {
+    max-width: calc(100vw - 286px);
+  }
+
+  html[data-desktop="true"] .desktop-actions-titlebar-slot[data-compact="true"] {
+    height: 38px;
+  }
+
+  html[data-desktop="true"] .desktop-model-titlebar-slot[data-compact="true"] .model-selector-set-default {
+    top: 100%;
+    left: 8px;
+    transform: none;
+    animation: none;
+  }
+
+  html[data-desktop="true"] .desktop-sidebar-titlebar[data-compact="true"] .desktop-sidebar-titlebar-collapsed::before {
+    display: none;
+  }
+
+  html[data-desktop="true"] .desktop-sidebar-titlebar[data-compact="true"] .desktop-sidebar-titlebar-collapsed::after {
+    left: 0;
+  }
 }

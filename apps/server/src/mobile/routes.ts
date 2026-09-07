@@ -16,7 +16,7 @@ import { applicationSettings, passwordCredentials, users } from '../database/sch
 import { getConfig } from '../config.js'
 import { AppError, unauthorized } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
-import { parseAuthSettings } from '../settings/application-settings.js'
+import { parseAuthSettings, parseDictationSettings } from '../settings/application-settings.js'
 import { newUserStorageLimit } from '../billing/storage-entitlements.js'
 import { insertNewAccountPreferences } from '../settings/new-account-defaults.js'
 import {
@@ -44,12 +44,15 @@ export async function registerMobileRoutes(app: FastifyInstance): Promise<void> 
 
   app.get('/api/mobile/config', async () => {
     const config = getConfig()
-    const [[existingUser], [setting]] = await Promise.all([
+    const [[existingUser], [setting], [dictationSetting]] = await Promise.all([
       db.select({ id: users.id }).from(users).limit(1),
       db.select({ value: applicationSettings.value }).from(applicationSettings)
         .where(eq(applicationSettings.key, 'auth')).limit(1),
+      db.select({ value: applicationSettings.value }).from(applicationSettings)
+        .where(eq(applicationSettings.key, 'dictation')).limit(1),
     ])
     const auth = parseAuthSettings(setting?.value)
+    const dictation = parseDictationSettings(dictationSetting?.value)
     return mobileConfigSchema.parse({
       mobileApiVersion: 1,
       instance: { name: config.INSTANCE_NAME, version: config.PULPO_VERSION, publicUrl: config.PUBLIC_URL },
@@ -64,6 +67,7 @@ export async function registerMobileRoutes(app: FastifyInstance): Promise<void> 
       },
       limits: { maxAttachmentBytes: auth.maxAttachmentBytes },
       capabilities: {
+        dictation: dictation.enabled && Boolean(dictation.encryptedGroqApiKey),
         bearerSessions: true,
         realtime: true,
         chatDuplication: true,

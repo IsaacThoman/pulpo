@@ -3,10 +3,13 @@ import type { User } from '@pulpo/contracts'
 
 const mocks = vi.hoisted(() => ({
   values: new Map<string, unknown>(),
+  syncShortcuts: vi.fn(),
+  clearShortcuts: vi.fn(),
   token: 'session-token' as string | null,
   config: vi.fn(),
   me: vi.fn(),
   login: vi.fn(),
+  signup: vi.fn(),
   passkeyOptions: vi.fn(),
   verifyPasskey: vi.fn(),
   exchangeBrowserPasskey: vi.fn(),
@@ -17,6 +20,8 @@ const mocks = vi.hoisted(() => ({
   clearNamespace: vi.fn(async () => []),
   deleteToken: vi.fn(async () => undefined),
 }))
+
+vi.mock('../shortcuts/native', () => ({ syncShortcutsSession: mocks.syncShortcuts, clearShortcutsSession: mocks.clearShortcuts }))
 
 vi.mock('react-native', () => ({ Appearance: { setColorScheme: vi.fn() }, Platform: { OS: 'ios' } }))
 vi.mock('expo-device', () => ({ deviceName: 'Test iPhone', modelName: 'iPhone' }))
@@ -60,7 +65,7 @@ vi.mock('../api/client', () => {
       passkeyOptions: mocks.passkeyOptions,
       verifyPasskey: mocks.verifyPasskey,
       exchangeBrowserPasskey: mocks.exchangeBrowserPasskey,
-      signup: vi.fn(),
+      signup: mocks.signup,
       logout: vi.fn(async () => undefined),
     },
   }
@@ -104,6 +109,7 @@ beforeEach(() => {
   mocks.config.mockReset().mockResolvedValue(null)
   mocks.me.mockReset()
   mocks.login.mockReset()
+  mocks.signup.mockReset()
   mocks.passkeyOptions.mockReset()
   mocks.verifyPasskey.mockReset()
   mocks.exchangeBrowserPasskey.mockReset()
@@ -117,6 +123,8 @@ beforeEach(() => {
     status: 'hydrating', instanceUrl, token: null, user: null, config: null, error: null,
   })
   mocks.values.set('global:instanceUrl', instanceUrl)
+  mocks.syncShortcuts.mockClear()
+  mocks.clearShortcuts.mockClear()
 })
 
 describe('local-first session hydration', () => {
@@ -189,6 +197,8 @@ describe('local-first session hydration', () => {
 
     expect(mocks.values.get('global:activeSessionNamespace')).toBeNull()
     expect(useSessionStore.getState()).toMatchObject({ status: 'anonymous', token: null, user: null })
+    expect(mocks.clearShortcuts).toHaveBeenCalled()
+    expect(mocks.syncShortcuts).toHaveBeenLastCalledWith(expect.objectContaining({ token: null, user: null, status: 'anonymous' }))
   })
 })
 
@@ -251,8 +261,61 @@ describe('local sign-out after account deletion', () => {
     mocks.deleteToken.mockRejectedValueOnce(new Error('Secure storage unavailable'))
     await expect(useSessionStore.getState().logout(true)).rejects.toThrow('Secure storage unavailable')
     expect(useSessionStore.getState()).toMatchObject({ status: 'anonymous', token: null, user: null })
+    expect(mocks.clearShortcuts).toHaveBeenCalled()
+    expect(mocks.syncShortcuts).toHaveBeenLastCalledWith(expect.objectContaining({ token: null, user: null, status: 'anonymous' }))
     expect(mocks.configureApi).toHaveBeenCalledWith(expect.objectContaining({ token: null }))
     expect(mocks.clearNamespace).toHaveBeenCalledWith(`${instanceUrl}|deleted-user`)
     expect(mocks.values.get('global:activeSessionNamespace')).toBeNull()
+  })
+})
+
+describe('session transition failures', () => {
+  it('restores API credentials when server discovery fails', async () => {
+    useSessionStore.setState({ status: 'authenticated', token: 'existing-token', user: user('existing') })
+    mocks.config.mockRejectedValueOnce(new TypeError('Network request failed'))
+    await expect(useSessionStore.getState().switchInstance('https://unreachable.test')).rejects.toThrow()
+    expect(mocks.configureApi).toHaveBeenLastCalledWith(expect.objectContaining({ instanceUrl, token: 'existing-token', onUnauthorized: expect.any(Function) }))
+    expect(useSessionStore.getState()).toMatchObject({ status: 'authenticated', instanceUrl, token: 'existing-token' })
+    expect(mocks.clearShortcuts).not.toHaveBeenCalled()
+  })
+
+  it('ignores approval refresh after signing out', async () => {
+    useSessionStore.setState({ status: 'pending', token: 'pending-token', user: { ...user('pending'), role: 'pending' } })
+    const pending = deferred<{ user: User }>()
+    mocks.me.mockReturnValue(pending.promise)
+    const refresh = useSessionStore.getState().refreshSession()
+    await useSessionStore.getState().logout(true)
+    pending.resolve({ user: user('pending') })
+    await refresh
+    expect(useSessionStore.getState()).toMatchObject({ status: 'anonymous', user: null, token: null })
+  })
+
+  it('clears expired credentials from memory even if secure storage fails', async () => {
+    useSessionStore.setState({ status: 'authenticated', token: 'expired', user: user('expired') })
+    mocks.deleteToken.mockRejectedValueOnce(new Error('Secure storage unavailable'))
+    await useSessionStore.getState().handleUnauthorized().catch(() => undefined)
+    expect(useSessionStore.getState()).toMatchObject({ status: 'anonymous', user: null, token: null })
+    expect(mocks.clearShortcuts).toHaveBeenCalled()
+    expect(mocks.syncShortcuts).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'anonymous', token: null }))
+  })
+})
+
+
+describe('signup and approval', () => {
+  it.each(['pending', 'user'] as const)('persists a %s signup and normalizes submitted identity', async (role) => {
+    const signedUp = { ...user('signup'), role }
+    mocks.signup.mockResolvedValue({ user: signedUp, session: { token: 'signup-token' } })
+    await useSessionStore.getState().signup(' New User ', ' NEW_USER ', ' member@pulpo.test ', 'password')
+    expect(mocks.signup).toHaveBeenCalledWith('New User', 'new_user', 'member@pulpo.test', 'password', 'Test iPhone', { platform: 'ios' })
+    expect(useSessionStore.getState()).toMatchObject({ status: role === 'pending' ? 'pending' : 'authenticated', token: 'signup-token', user: signedUp })
+    expect(mocks.token).toBe('signup-token')
+  })
+
+  it('refreshes approval without replacing the native session token', async () => {
+    const pending = { ...user('signup'), role: 'pending' as const }
+    useSessionStore.setState({ status: 'pending', user: pending, token: 'signup-token' })
+    mocks.me.mockResolvedValue({ user: { ...pending, role: 'user' } })
+    await useSessionStore.getState().refreshSession()
+    expect(useSessionStore.getState()).toMatchObject({ status: 'authenticated', token: 'signup-token', user: { role: 'user' } })
   })
 })

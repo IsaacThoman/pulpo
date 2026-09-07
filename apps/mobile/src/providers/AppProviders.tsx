@@ -1,6 +1,7 @@
+import { listenForShortcutLinks } from '../shortcuts/inbox'
 import { MaterialOverlays } from '../platform/MaterialUI'
 import { useEffect, useMemo } from 'react'
-import { AppState, Keyboard, View } from 'react-native'
+import { AppState, Keyboard, Linking, View } from 'react-native'
 import { QueryClient, QueryClientProvider, focusManager } from '@tanstack/react-query'
 import * as SplashScreen from 'expo-splash-screen'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
@@ -44,6 +45,7 @@ function KeyboardStateReconciler({ children }: { children: React.ReactNode }) {
 }
 
 function Bootstrap({ children }: { children: React.ReactNode }) {
+  useEffect(() => listenForShortcutLinks(Linking), [])
   const hydrateSession = useSessionStore((state) => state.hydrate)
   const sessionStatus = useSessionStore((state) => state.status)
   const hydratePreferences = usePreferencesStore((state) => state.hydrate)

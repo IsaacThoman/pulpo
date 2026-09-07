@@ -4,7 +4,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const mocks = vi.hoisted(() => ({
   createInitialAdmin: vi.fn(),
   createNativeSession: vi.fn(),
+  select: vi.fn(),
 }))
+
+vi.mock('../database/client.js', () => ({ db: { select: mocks.select } }))
 
 vi.mock('../auth/initial-admin.js', () => ({ createInitialAdmin: mocks.createInitialAdmin }))
 vi.mock('../auth/service.js', () => ({
@@ -17,6 +20,28 @@ vi.mock('../auth/service.js', () => ({
 }))
 
 import { registerMobileRoutes } from './routes.js'
+
+describe('mobile dictation capability', () => {
+  it.each([
+    [undefined, false],
+    [{ enabled: false, encryptedGroqApiKey: 'configured' }, false],
+    [{ enabled: true, encryptedGroqApiKey: null }, false],
+    [{ enabled: true, encryptedGroqApiKey: 'configured' }, true],
+  ])('advertises dictation only when configured and enabled (%j)', async (settings, enabled) => {
+    const values = [[{ id: 'user' }], [{ value: {} }], settings ? [{ value: settings }] : []]
+    mocks.select.mockImplementation(() => {
+      const rows = values.shift()
+      const chain = { from: () => chain, where: () => chain, limit: async () => rows }
+      return chain
+    })
+    let handler!: () => Promise<unknown>
+    await registerMobileRoutes({
+      get: (path: string, callback: () => Promise<unknown>) => { if (path === '/api/mobile/config') handler = callback },
+      post: vi.fn(),
+    } as unknown as FastifyInstance)
+    expect(await handler()).toMatchObject({ capabilities: { dictation: enabled } })
+  })
+})
 
 type Handler = (request: FastifyRequest, reply: FastifyReply) => Promise<unknown>
 

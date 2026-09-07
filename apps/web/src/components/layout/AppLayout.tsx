@@ -34,7 +34,8 @@ export function AppLayout() {
   const setDesktopSidebarVisible = useDesktopChrome((state) => state.setDesktopSidebarVisible)
   const location = useLocation()
   const adminChatView = location.pathname.startsWith('/admin/chats/')
-  const sidebarCollapsed = collapsed || searchHasQuery
+  const sidebarCollapsed = mobile || collapsed || searchHasQuery
+  const desktopTitleBarVisible = isDesktopRuntime() && !adminChatView
   const mainUsesDesktopTitleBar = !mobile && !sidebarCollapsed
   const previousPathRef = useRef(location.pathname)
   const doubleShiftRef = useRef<DoubleShiftState>({ lastPressAt: null })
@@ -119,10 +120,9 @@ export function AppLayout() {
   }, [doubleShiftSearch])
 
   useLayoutEffect(() => {
-    const desktopSidebarVisible = isDesktopRuntime() && !mobile
-    setDesktopSidebarVisible(desktopSidebarVisible)
+    setDesktopSidebarVisible(desktopTitleBarVisible)
     return () => setDesktopSidebarVisible(false)
-  }, [mobile, setDesktopSidebarVisible])
+  }, [desktopTitleBarVisible, setDesktopSidebarVisible])
 
   useEffect(() => {
     if (!mobileOpen) return
@@ -140,21 +140,22 @@ export function AppLayout() {
         <SettingsBridge />
         <DesktopSidebarTitleBar
           collapsed={sidebarCollapsed}
+          compact={mobile}
           transitions={sidebarTransitions}
-          visible={!mobile && !adminChatView}
+          visible={desktopTitleBarVisible}
           animationSpeed={animationSpeed}
         />
         <div
           className={cn(
             'app-layout-frame relative flex h-full overflow-hidden',
             mainUsesDesktopTitleBar && 'desktop-main-titlebar-active',
-            !mobile && !adminChatView && sidebarCollapsed && 'desktop-sidebar-collapsed',
+            !adminChatView && sidebarCollapsed && 'desktop-sidebar-collapsed',
           )}
         >
           <BannerBar />
           {!adminChatView && <button
-            className="mobile-sidebar-opener absolute left-2 top-2 z-20 size-8 cursor-pointer items-center justify-center rounded-lg hover:bg-accent"
-            onClick={() => setMobileOpen(true)}
+            className="mobile-sidebar-opener absolute left-2 top-2 z-[21] size-8 cursor-pointer items-center justify-center rounded-lg hover:bg-accent"
+            onClick={() => setMobileOpen((open) => !open)}
             aria-label={ui("Open sidebar")}
             aria-expanded={mobileOpen}
           >
@@ -162,7 +163,7 @@ export function AppLayout() {
           </button>}
           {!adminChatView && mobile && (
             <button
-              className={`fixed inset-0 z-30 bg-black/55 transition-opacity duration-200 ${
+              className={`mobile-sidebar-backdrop fixed inset-0 z-30 bg-black/55 transition-opacity duration-200 ${
                 mobileOpen ? 'opacity-100' : 'pointer-events-none opacity-0'
               }`}
               onClick={() => setMobileOpen(false)}

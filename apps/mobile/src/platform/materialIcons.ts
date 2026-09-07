@@ -57,6 +57,7 @@ const icons: Record<string, ImageSourcePropType> = {
   'lock': require('../../assets/material/lock.xml'),
   'logout': require('../../assets/material/logout.xml'),
   'mail': require('../../assets/material/mail.xml'),
+  'mic': require('../../assets/material/mic.xml'),
   'menu': require('../../assets/material/menu.xml'),
   'more_horiz': require('../../assets/material/more_horiz.xml'),
   'movie': require('../../assets/material/movie.xml'),
