@@ -5,7 +5,8 @@ import {
   cacheChats,
   pendingOutbox,
   cacheOpenedChat,
-  cachedChats,
+  cachedChatSummaries,
+  cachedChat,
   getValue,
   markCachedChatOpened,
   setValue,
@@ -42,7 +43,7 @@ export function chatsQuery(namespace: string, localChatLimit = 50) {
         })
         return visible
       } catch (error) {
-        const cached = persistableChats(await cachedChats(namespace)).filter((chat) => !chat.deletedAt)
+        const cached = persistableChats(await cachedChatSummaries(namespace)).filter((chat) => !chat.deletedAt)
         if (cached.length) return cached
         throw error
       }
@@ -84,7 +85,7 @@ export function deletedChatsQuery(namespace: string, localChatLimit = 50) {
         })
         return normalized
       } catch (error) {
-        const cached = (await cachedChats(namespace)).filter((chat) => Boolean(chat.deletedAt))
+        const cached = (await cachedChatSummaries(namespace)).filter((chat) => Boolean(chat.deletedAt))
         if (cached.length) return cached
         throw error
       }
@@ -95,21 +96,35 @@ export function deletedChatsQuery(namespace: string, localChatLimit = 50) {
 export function chatQuery(namespace: string, id: string, localChatLimit = 50) {
   return queryOptions({
     queryKey: queryKeys.chat(namespace, id),
-    queryFn: async ({ client }) => {
-      const cachedPromise = cachedChats(namespace).then((chats) => (
-        persistableChats(chats).find((candidate) => candidate.id === id)
-      )).catch(() => undefined)
+    gcTime: 5 * 60 * 1_000,
+    queryFn: async ({ client, signal }) => {
+      const key = queryKeys.chat(namespace, id)
+      const query = client.getQueryCache().find({ queryKey: key, exact: true })
+      const revision = query?.state.dataUpdateCount
+      const resident = client.getQueryData<ServerChat>(key)
+      const local = resident?.responses ? Promise.resolve(resident) : cachedChat(namespace, id)
+      const cachedPromise = local.then(async (chat) => {
+        // Local hydration must not roll back a mutation, a newer request, or an account change.
+        if (chat?.responses && !signal.aborted && query === client.getQueryCache().find({ queryKey: key, exact: true })
+          && query?.state.dataUpdateCount === revision && !client.getQueryData(key)) {
+          client.setQueryData(key, chat, { updatedAt: 0 })
+        }
+        return chat
+      }).catch(() => undefined)
       try {
-        const [incoming, persisted] = await Promise.all([mobileApi.chat(id), cachedPromise])
+        const [incoming, persisted] = await Promise.all([mobileApi.chat(id, signal), cachedPromise])
+        if (signal.aborted) throw new Error('Chat request cancelled')
         const memory = client.getQueryData<ServerChat>(queryKeys.chat(namespace, id))
         const cached = memory ? mergeCachedChat(persisted ?? null, memory) : persisted
         const chat = mergeCachedChat(cached ?? null, incoming)
         chat.queuedMessages = reconcileQueuedMessages(incoming.queuedMessages ?? [], cached?.queuedMessages ?? [],
           new Set((await pendingOutbox(namespace)).map((row) => row.id)))
+        if (signal.aborted) throw new Error('Chat request cancelled')
         if (!chat.temporary) enqueueCacheWrite(namespace, () => cacheOpenedChat(namespace, chat, localChatLimit))
         return chat
       } catch (error) {
-        const chat = await cachedPromise
+        if (signal.aborted) throw new Error('Chat request cancelled', { cause: error })
+        const chat = client.getQueryData<ServerChat>(key) ?? await cachedPromise
         if (chat?.responses) {
           enqueueCacheWrite(namespace, () => markCachedChatOpened(namespace, id, localChatLimit))
           return chat

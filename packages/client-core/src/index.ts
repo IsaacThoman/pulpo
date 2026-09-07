@@ -125,8 +125,7 @@ export function mergeRevisionInvalidation(
   }
 }
 
-export function lineageFromLeaf<T extends ChatTreeNode>(nodes: T[], leafId: string | null): T[] {
-  const byId = new Map(nodes.map((node) => [node.id, node]))
+export function lineageFromLeaf<T extends ChatTreeNode>(nodes: T[], leafId: string | null, byId: ReadonlyMap<string, T> = new Map(nodes.map((node) => [node.id, node]))): T[] {
   const lineage: T[] = []
   const seen = new Set<string>()
   let cursor = leafId
@@ -134,10 +133,10 @@ export function lineageFromLeaf<T extends ChatTreeNode>(nodes: T[], leafId: stri
     seen.add(cursor)
     const node = byId.get(cursor)
     if (!node) break
-    lineage.unshift(node)
+    lineage.push(node)
     cursor = node.parentResponseId
   }
-  return lineage
+  return lineage.reverse()
 }
 
 export function newestDescendantId<T extends ChatTreeNode>(nodes: T[], selectedId: string): string {

@@ -2,8 +2,9 @@ import type { CreateQueuedMessageInput, UpdateQueuedMessageInput } from '@pulpo/
 import type { QueryClient } from '@tanstack/react-query'
 import * as Crypto from 'expo-crypto'
 import { apiRequest, isNetworkError } from '../../api/client'
-import { cacheOpenedChat, pendingOutbox } from '../../data/database'
+import { cacheChats, pendingOutbox } from '../../data/database'
 import { queueOfflineMutation } from '../../data/mutations'
+import { withoutCachedChatDetails } from '../../data/cache'
 import { queryKeys } from '../../data/queries'
 import { enqueueCacheWrite, flushCacheWrites } from '../../data/writeBehind'
 import type { MobileQueuedMessage, ServerChat } from '../../types'
@@ -15,7 +16,7 @@ export function setChatQueue(client: QueryClient, namespace: string, chatId: str
   client.setQueryData<ServerChat>(queryKeys.chat(namespace, chatId), (chat) => {
     if (!chat) return chat
     const next = { ...chat, queuedMessages: update(chat.queuedMessages ?? []) }
-    if (!next.temporary) enqueueCacheWrite(namespace, () => cacheOpenedChat(namespace, next))
+    if (!next.temporary) enqueueCacheWrite(namespace, () => cacheChats(namespace, [withoutCachedChatDetails(next)]))
     return next
   })
 }

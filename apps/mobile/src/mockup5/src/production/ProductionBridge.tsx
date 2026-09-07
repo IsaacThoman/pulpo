@@ -1,14 +1,17 @@
-import { useEffect, useMemo, useRef } from 'react'
-import { useQuery, type QueryClient } from '@tanstack/react-query'
+import { startTranscriptResidency } from '../../../providers/transcriptResidency'
+import { resetTranscriptResidency } from '../../../data/transcriptResidency'
+import { projectResidentChat, clearChatProjectors } from '../../../features/chat/projectorCache'
+import { useLayoutEffect, useEffect, useMemo, useRef } from 'react'
+import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { idSchema } from '@pulpo/contracts'
 import { hydrateEmbeddedResponseSnapshot, LatestValueQueue } from '@pulpo/client-core'
 import { useShallow } from 'zustand/react/shallow'
-import { cacheNamespace, cachedChats, completeOutboxEntity, getValue, pruneCachedChatScope } from '../../../data/database'
+import { cacheNamespace, cachedChatSummaries, completeOutboxEntity, getValue, pruneCachedChatScope } from '../../../data/database'
 import { enqueueCacheWrite } from '../../../data/writeBehind'
 import { chatQuery, chatsQuery, deletedChatsQuery, foldersQuery, modelsQuery, queryKeys, type ModelCatalog } from '../../../data/queries'
 import { ApiError, isNetworkError, mobileApi } from '../../../api/client'
 import { queueOfflineMutation } from '../../../data/mutations'
-import { projectChat, type DisplayMessage } from '../../../features/chat/projection'
+import { type DisplayMessage } from '../../../features/chat/projection'
 import { createFolder, deleteFolder, permanentlyDeleteChat, restoreChat, trashChat, updateChat, updateFolder } from '../../../features/chat/api'
 import { useRealtimeStore, subscribeToChat, subscribeToResponse } from '../../../providers/realtimeStore'
 import { preferencePatchForServer, preferencesFromServer, usePreferencesStore } from '../../../store/preferences'
@@ -44,7 +47,10 @@ function mapAttachment(attachment: DisplayMessage['attachments'][number]): Proto
   }
 }
 
+const mappedMessages = new WeakMap<DisplayMessage, PrototypeMessage>()
 function mapMessage(message: DisplayMessage): PrototypeMessage {
+  const existing = mappedMessages.get(message)
+  if (existing) return existing
   const activity: ActivityStep[] = [
     ...(message.reasoning ? [{
       id: `${message.id}:reasoning`, kind: 'reasoning' as const, title: 'Reasoned about the request',
@@ -63,7 +69,7 @@ function mapMessage(message: DisplayMessage): PrototypeMessage {
     : message.status === 'failed' ? 'failed'
       : message.status === 'cancelled' || message.status === 'incomplete' ? 'stopped'
         : message.status === 'queued' ? 'queued' : 'streaming'
-  return {
+  const mapped: PrototypeMessage = {
     id: message.id,
     role: message.role,
     text: message.text,
@@ -86,6 +92,8 @@ function mapMessage(message: DisplayMessage): PrototypeMessage {
     })) : undefined,
     activeBranch: message.branch.index,
   }
+  mappedMessages.set(message, mapped)
+  return mapped
 }
 
 function mapChat(chat: ServerChat, messages: PrototypeMessage[] = [], detailLoaded = false): PrototypeChat {
@@ -109,8 +117,9 @@ function mapChat(chat: ServerChat, messages: PrototypeMessage[] = [], detailLoad
 }
 
 let scopeHydrationToken = 0
-
 function clearProductionScopeState(): void {
+  resetTranscriptResidency()
+  clearChatProjectors()
   clearPendingOptimisticResponses()
   clearOptimisticBranchSelections()
   usePrototypeStore.setState({
@@ -181,18 +190,13 @@ export async function hydrateProductionScope(namespace: string): Promise<void> {
   })
 
   const chatHydration = Promise.all([
-    cachedChats(namespace).catch(() => []),
+    cachedChatSummaries(namespace).catch(() => []),
     getValue<ServerFolder[]>(namespace, 'folders').catch(() => null),
   ]).then(([localChats, localFolders]) => {
     if (token !== scopeHydrationToken) return
-    const liveSnapshots = useRealtimeStore.getState().snapshots
     usePrototypeStore.setState((state) => state.productionNamespace === namespace ? {
       productionScopeReady: true,
-      chats: localChats.filter((chat) => !chat.temporary).map((chat) => mapChat(
-        chat,
-        chat.responses ? projectChat(chat, liveSnapshots).map(mapMessage) : [],
-        Boolean(chat.responses),
-      )),
+      chats: localChats.filter((chat) => !chat.temporary).map((chat) => mapChat(chat)),
       folders: (localFolders ?? []).map((folder) => ({ id: folder.id, name: folder.name, expanded: true })),
     } : state)
   })
@@ -212,19 +216,28 @@ export async function hydrateProductionChatPreview(
   if (current.productionNamespace !== namespace) return
   if (current.chats.find((chat) => chat.id === chatId)?.detailLoaded) return
 
-  const detail = await queryClient.fetchQuery(chatQuery(namespace, chatId, localChatLimit))
-  for (const response of detail.responses ?? []) {
-    if (response.detailAvailable === false) continue
-    useRealtimeStore.getState().receiveSnapshot(hydrateEmbeddedResponseSnapshot(response.snapshot, response.output))
+  const token = scopeHydrationToken
+  const publish = () => {
+    if (token !== scopeHydrationToken || usePrototypeStore.getState().productionNamespace !== namespace) return
+    const detail = queryClient.getQueryData<ServerChat>(queryKeys.chat(namespace, chatId))
+    if (!detail?.responses) return
+    useRealtimeStore.getState().receiveSnapshots(detail.responses.filter((response) => response.detailAvailable !== false)
+      .map((response) => hydrateEmbeddedResponseSnapshot(response.snapshot, response.output)))
+    const projected = projectResidentChat(detail, useRealtimeStore.getState().snapshots).map(mapMessage)
+    usePrototypeStore.setState((state) => ({
+      chats: state.chats.map((chat) => chat.id === chatId
+        ? mapChat(detail, reuseProjectedMessages(chat.messages, projected), true) : chat),
+    }))
   }
-  const projected = projectChat(detail, useRealtimeStore.getState().snapshots).map(mapMessage)
-  usePrototypeStore.setState((state) => ({
-    chats: state.productionNamespace === namespace
-      ? state.chats.map((chat) => chat.id === chatId
-        ? mapChat(detail, reuseProjectedMessages(chat.messages, projected), true)
-        : chat)
-      : state.chats,
-  }))
+  const unsubscribe = queryClient.getQueryCache().subscribe((event) => {
+    if (event.type === 'updated' && event.query.queryKey[0] === 'chat'
+      && event.query.queryKey[1] === namespace && event.query.queryKey[2] === chatId) publish()
+  })
+  try {
+    await queryClient.fetchQuery(chatQuery(namespace, chatId, localChatLimit))
+    publish()
+  } finally { unsubscribe() }
+
 }
 
 async function offlineCapableMutation<T>(input: {
@@ -306,6 +319,15 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
   const enabled = scopeOwned
     && productionScopeReady
   const pickerEnabled = scopeOwned && modelPickerScopeReady
+  const queryClient = useQueryClient()
+  const residency = useRef<ReturnType<typeof startTranscriptResidency> | null>(null)
+  useLayoutEffect(() => {
+    if (!scopeOwned) return
+    const owner = startTranscriptResidency(queryClient, namespace)
+    residency.current = owner
+    return () => { owner.dispose(); if (residency.current === owner) residency.current = null }
+  }, [namespace, queryClient, scopeOwned])
+  useLayoutEffect(() => { residency.current?.activate(activeChatId) }, [activeChatId, namespace, queryClient, scopeOwned])
   const activeChatIsServerAddressable = Boolean(activeChatId && idSchema.safeParse(activeChatId).success)
   const serverHydrated = useRef(false)
   const chats = useQuery({ ...chatsQuery(namespace, preferences.localChatLimit), enabled })
@@ -479,12 +501,10 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
   }, [chats.data, deleted.data, namespace, preferences.localChatLimit])
 
   useEffect(() => {
-    if (!detail.data) return
-    for (const response of detail.data.responses ?? []) {
-      if (response.detailAvailable === false) continue
-      useRealtimeStore.getState().receiveSnapshot(hydrateEmbeddedResponseSnapshot(response.snapshot, response.output))
-    }
-  }, [detail.data])
+    if (!detail.data || usePrototypeStore.getState().productionNamespace !== namespace) return
+    useRealtimeStore.getState().receiveSnapshots((detail.data.responses ?? []).filter((response) => response.detailAvailable !== false)
+      .map((response) => hydrateEmbeddedResponseSnapshot(response.snapshot, response.output)))
+  }, [detail.data, namespace])
 
   useEffect(() => {
     if (!activeChatId || !(detail.error instanceof ApiError)) return
@@ -497,8 +517,8 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
   }, [activeChatId, detail.error])
 
   useEffect(() => {
-    if (!reconciledDetail) return
-    const projected = projectChat(reconciledDetail, snapshots).map(mapMessage)
+    if (!reconciledDetail || usePrototypeStore.getState().productionNamespace !== namespace) return
+    const projected = projectResidentChat(reconciledDetail, snapshots).map(mapMessage)
     usePrototypeStore.setState((state) => ({
       chats: state.productionNamespace === namespace ? state.chats.map((chat) => chat.id === reconciledDetail.id
         ? mapChat(reconciledDetail, reuseProjectedMessages(chat.messages, projected), true)

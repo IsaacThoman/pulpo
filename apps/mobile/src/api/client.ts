@@ -1,4 +1,5 @@
 import { dataProfileHeaders, dataProfileGeneration, dataProfileResourceUrl } from '@pulpo/client-core'
+import { protectTranscriptRequest } from '../data/transcriptResidency'
 import type { NativeDevice, DeviceSessionList, MobileConfig, NativeAuthResponse, PasskeyAuthenticationResponse, PasskeyCeremony, PasskeyList, PasskeyRegistrationResponse, PasskeySummary, TwoFactorEnrollment, TwoFactorRecoveryCodes, TwoFactorStatus, User } from '@pulpo/contracts'
 import type { MobileModel, ServerChat, ServerDeletedChat, ServerFolder } from '../types'
 
@@ -47,11 +48,18 @@ interface RequestOptions extends Omit<RequestInit, 'body'> {
   idempotencyKey?: string
   timeoutMs?: number
   /** Security forms can reject a current password while the bearer session is valid. */
+  beforeDecode?: () => Promise<void>
   verifySessionOnUnauthorized?: boolean
 }
 
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  const release = protectTranscriptRequest(path, options.method ?? 'GET')
+  try { return await performApiRequest<T>(path, options) } finally { release() }
+}
+
+async function performApiRequest<T>(path: string, options: RequestOptions): Promise<T> {
   const generation = dataProfileGeneration()
+  const { beforeDecode, ...requestOptions } = options
   const headers = new Headers(options.headers)
   for (const [key, value] of Object.entries(dataProfileHeaders())) if (!headers.has(key)) headers.set(key, value)
   if (options.body !== undefined) headers.set('content-type', 'application/json')
@@ -60,16 +68,18 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? 15_000)
   const abort = () => controller.abort()
+  if (options.signal?.aborted) controller.abort()
   options.signal?.addEventListener('abort', abort, { once: true })
   let response: Response
   try {
     response = await fetch(`${instanceUrl}${path}`, {
-      ...options,
+      ...requestOptions,
       headers,
       signal: controller.signal,
       body: options.body === undefined ? undefined : JSON.stringify(options.body),
     })
   } catch (error) {
+    options.signal?.removeEventListener('abort', abort)
     if (generation !== dataProfileGeneration()) throw new ApiError(409, 'profile_changed', 'Profile changed')
     if (controller.signal.aborted && !options.signal?.aborted) {
       throw new ApiError(408, 'request_timeout', 'The Pulpo instance did not respond in time.')
@@ -77,11 +87,28 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
     throw error
   } finally {
     clearTimeout(timeout)
-    options.signal?.removeEventListener('abort', abort)
+    if (!beforeDecode) options.signal?.removeEventListener('abort', abort)
   }
-  if (generation !== dataProfileGeneration()) throw new ApiError(409, 'profile_changed', 'Profile changed')
-  if (response.status === 204) return undefined as T
-  const body = await response.json().catch(() => undefined) as {
+  if (generation !== dataProfileGeneration()) {
+    options.signal?.removeEventListener('abort', abort)
+    throw new ApiError(409, 'profile_changed', 'Profile changed')
+  }
+  if (response.status === 204) {
+    options.signal?.removeEventListener('abort', abort)
+    return undefined as T
+  }
+  let decoded: unknown
+  if (beforeDecode) {
+    // Download the body during the slide; JSON parsing waits for completion.
+    try {
+      const text = await response.text()
+      await beforeDecode()
+      if (generation !== dataProfileGeneration()) throw new ApiError(409, 'profile_changed', 'Profile changed')
+      if (options.signal?.aborted) throw new Error('Chat request cancelled')
+      try { decoded = JSON.parse(text) } catch { decoded = undefined }
+    } finally { options.signal?.removeEventListener('abort', abort) }
+  } else decoded = await response.json().catch(() => undefined)
+  const body = decoded as {
     error?: { message?: string; code?: string }
   } | undefined
   if (generation !== dataProfileGeneration()) throw new ApiError(409, 'profile_changed', 'Profile changed')
@@ -173,7 +200,7 @@ export const mobileApi = {
   trashAllChats: () => apiRequest<void>('/api/chats', { method: 'DELETE' }),
   deletedChats: () => apiRequest<{ data: ServerDeletedChat[] }>('/api/chats/deleted'),
   emptyTrash: () => apiRequest<void>('/api/chats/deleted', { method: 'DELETE' }),
-  chat: (id: string) => apiRequest<ServerChat>(`/api/chats/${id}?format=compact&scope=active`),
+  chat: (id: string, signal?: AbortSignal, beforeDecode?: () => Promise<void>) => apiRequest<ServerChat>(`/api/chats/${id}?format=compact&scope=active`, { signal, beforeDecode }),
   models: () => apiRequest<{ agentAvailable: boolean; data: MobileModel[] }>('/api/models'),
   folders: () => apiRequest<{ data: ServerFolder[] }>('/api/folders'),
   settings: () => apiRequest<{ values: Record<string, unknown>; updatedAt: string | null }>('/api/settings'),

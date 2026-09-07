@@ -6,7 +6,7 @@ const tails = new Map<string, Promise<void>>()
  * Keep SQLite writes ordered per account without putting them on the network
  * response path. A failed cache write never blocks the next reconciliation.
  */
-export function enqueueCacheWrite(namespace: string, write: CacheWrite): void {
+export function enqueueCacheWrite(namespace: string, write: CacheWrite): Promise<void> {
   const previous = tails.get(namespace) ?? Promise.resolve()
   const current = previous.catch(() => undefined).then(write)
   tails.set(namespace, current)
@@ -17,6 +17,7 @@ export function enqueueCacheWrite(namespace: string, write: CacheWrite): void {
     cleanup()
     console.warn('Pulpo cache write failed', error instanceof Error ? error.message : error)
   })
+  return current
 }
 
 /** Test/lifecycle hook for waiting until a namespace is durable. */
