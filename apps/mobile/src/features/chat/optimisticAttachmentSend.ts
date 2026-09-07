@@ -67,7 +67,8 @@ export function readyTranscriptAttachments(
   return attachments.map((attachment) => ({
     id: attachment.serverId,
     name: attachment.name,
-    uri: attachment.uri,
+    // Imported originals are released after send; previews use the uploaded cache.
+    uri: attachment.localId.startsWith('import:') ? '' : attachment.uri,
     mimeType: attachment.mimeType,
     sizeBytes: attachment.size ?? 0,
     kind: attachment.kind,
