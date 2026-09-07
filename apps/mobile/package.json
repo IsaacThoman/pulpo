@@ -11,7 +11,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "export": "expo export --platform all",
-    "android": "expo run:android"
+    "android": "expo run:android",
+    "test:shortcuts:native": "swift test --package-path modules/pulpo-shortcuts"
   },
   "dependencies": {
     "@expo/ui": "~57.0.9",
