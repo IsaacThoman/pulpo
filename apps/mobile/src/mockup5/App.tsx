@@ -3531,6 +3531,69 @@ function SuggestedPromptButton({ label, accessible, onPress, temporary = false }
 
 const EMPTY_MOBILE_QUEUE: MobileQueuedMessage[] = [];
 
+function ComposerQueueSection({ title, subject, collapsed, onToggle, failed = false, children }: {
+  title: string;
+  subject: string;
+  collapsed: boolean;
+  onToggle: () => void;
+  failed?: boolean;
+  children: ReactNode;
+}) {
+  const { styles, COLORS } = useChatStyles();
+  const { reduceMotion } = useAccessibilityPreferences();
+  const progress = useSharedValue(collapsed ? 0 : 1);
+  const contentHeight = useSharedValue(0);
+
+  useEffect(() => {
+    const target = collapsed ? 0 : 1;
+    progress.set(reduceMotion ? target : withSpring(target, {
+      damping: 24,
+      stiffness: 260,
+      mass: 0.8,
+      overshootClamping: true,
+    }));
+  }, [collapsed, progress, reduceMotion]);
+
+  const revealStyle = useAnimatedStyle(() => ({ height: contentHeight.value * progress.value }));
+  const contentStyle = useAnimatedStyle(() => ({ opacity: progress.value }));
+  const chevronStyle = useAnimatedStyle(() => ({ transform: [{ rotate: `${180 * progress.value}deg` }] }));
+
+  return (
+    <View style={styles.composerQueue}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`${collapsed ? 'Expand' : 'Collapse'} ${subject}`}
+        accessibilityState={{ expanded: !collapsed }}
+        onPress={() => { Haptics.selectionAsync(); onToggle(); }}
+        style={styles.composerQueueHeader}
+      >
+        <Text style={styles.composerQueueTitle}>{title}</Text>
+        <View style={styles.composerQueueDisclosure}>
+          {failed && <Icon name="exclamationmark.circle" size={13} color={COLORS.critical} />}
+          <Reanimated.View style={chevronStyle}>
+            <Icon name="chevron.up" size={11} color={COLORS.muted} />
+          </Reanimated.View>
+        </View>
+      </Pressable>
+      <Reanimated.View
+        accessibilityElementsHidden={collapsed}
+        importantForAccessibility={collapsed ? 'no-hide-descendants' : 'auto'}
+        pointerEvents={collapsed ? 'none' : 'auto'}
+        style={[styles.composerQueueClip, revealStyle]}
+      >
+        {/* Measure at full height so native tables keep their scroll position and
+            row layout while the surrounding composer expands or contracts. */}
+        <Reanimated.View
+          onLayout={({ nativeEvent: { layout } }) => { contentHeight.set(layout.height); }}
+          style={[styles.composerQueueContent, contentStyle]}
+        >
+          {children}
+        </Reanimated.View>
+      </Reanimated.View>
+    </View>
+  );
+}
+
 function ChatView({
   messages, queuedMessages, chatId, chatLoaded, draftNamespace, keyboardLayoutEnabled, model, models, prototypeModel, presetSelections: defaultPresetSelections, input, composerInputRef, composerFocusSuppressed, composerFocusRequest, onChangeInput, onSend, assistantStatus,
   onEdit, onRegenerate, onActivateBranch, onOpenChat, onStop, onTogglePanel, onOpenModelPicker, onSelectModel, onNewChat, onSaveTemporary, persistentSidebar, sidebarVisible, temporary, autoExpire, expirationPeriod, showAutoExpirationControl, expired, savingTemporary, onTemporaryChange, onAutoExpirationChange,
@@ -5001,13 +5064,11 @@ function ChatView({
               surfaceStyle={temporaryComposerAnimatedStyle}
               tintColor={temporary ? colorScheme === 'dark' ? 'rgba(88,28,135,0.32)' : 'rgba(175,82,222,0.16)' : undefined}
             >
-              {showShelf && shelfRows.length > 0 && <View style={styles.composerQueue}>
-                <Pressable accessibilityRole="button" accessibilityLabel={shelfCollapsed ? 'Expand shelved drafts' : 'Collapse shelved drafts'} accessibilityState={{ expanded: !shelfCollapsed }}
-                  onPress={() => { Haptics.selectionAsync(); setShelfCollapsed((value) => !value); }} style={styles.composerQueueHeader}>
-                  <Text style={styles.composerQueueTitle}>Shelved · {shelfRows.length}</Text>
-                  <Icon name={shelfCollapsed ? 'chevron.up' : 'chevron.down'} size={11} color={COLORS.muted} />
-                </Pressable>
-                {!shelfCollapsed && <QueuedMessagesView maxHeight={Math.min(200, windowHeight * 0.25)} style={styles.composerQueueRows}
+              {showShelf && shelfRows.length > 0 && <ComposerQueueSection
+                title={`Shelved · ${shelfRows.length}`} subject="shelved drafts" collapsed={shelfCollapsed}
+                onToggle={() => setShelfCollapsed((value) => !value)}
+              >
+                <QueuedMessagesView maxHeight={Math.min(200, windowHeight * 0.25)} style={styles.composerQueueRows}
                   rows={shelfRows.map((row) => ({ id: row.id, kind: 'shelf', content: row.content.slice(0, 200) || 'Attachments',
                     detail: [row.attachments.map((a) => a.name).join(', '), row.error || (row.status === 'uploading' ? 'Uploading…' : row.status === 'pending' ? 'Waiting to sync' : '')].filter(Boolean).join(' · '),
                     status: row.status ?? '', isEditing: false, canEdit: !shelfBusy && !sending, canDelete: !shelfBusy && !sending, canReorder: !shelfBusy && !sending,
@@ -5018,27 +5079,15 @@ function ChatView({
                     else if (action.action === 'delete') void runShelfAction(() => shelf!.delete(action.id));
                     else if (action.action === 'retry') void runShelfAction(() => shelf!.retry());
                     else if (action.targetMessageId && action.edge) void runShelfAction(() => shelf!.reorder(action.id, action.targetMessageId!, action.edge!));
-                  }} />}
-              </View>}
+                  }} />
+              </ComposerQueueSection>}
               {showShelf && shelfError && <Text accessibilityRole="alert" style={styles.attachmentErrorText}>{shelfError}</Text>}
               {queuedMessages.length > 0 && (
-                <View style={styles.composerQueue}>
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel={queueCollapsed ? 'Expand queued messages' : 'Collapse queued messages'}
-                    accessibilityState={{ expanded: !queueCollapsed }}
-                    onPress={() => { Haptics.selectionAsync(); setQueueCollapsed((value) => !value); }}
-                    style={styles.composerQueueHeader}
-                  >
-                    <Text style={styles.composerQueueTitle}>Queued</Text>
-                    <View style={styles.composerQueueDisclosure}>
-                      {queuedMessages.some((item) => item.status === 'failed' || item.localFailure) && (
-                        <Icon name="exclamationmark.circle" size={13} color={COLORS.critical} />
-                      )}
-                      <Icon name={queueCollapsed ? 'chevron.up' : 'chevron.down'} size={11} color={COLORS.muted} />
-                    </View>
-                  </Pressable>
-                  {!queueCollapsed && (
+                <ComposerQueueSection
+                  title="Queued" subject="queued messages" collapsed={queueCollapsed}
+                  onToggle={() => setQueueCollapsed((value) => !value)}
+                  failed={queuedMessages.some((item) => item.status === 'failed' || Boolean(item.localFailure))}
+                >
                     <QueuedMessagesView
                       maxHeight={Math.min(200, windowHeight * 0.25)}
                       style={styles.composerQueueRows}
@@ -5076,8 +5125,7 @@ function ChatView({
                         }
                       }}
                     />
-                  )}
-                </View>
+                </ComposerQueueSection>
               )}
               {messageEdit ? (
                 <View style={styles.messageEditBanner}>
@@ -5905,6 +5953,8 @@ function createChatStyles(COLORS: ChatColors) { return StyleSheet.create({
   composerQueueTitle: { color: COLORS.muted, fontSize: 12, fontWeight: '500' },
   composerQueueDisclosure: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   composerQueueRows: { marginBottom: 6 },
+  composerQueueClip: { overflow: 'hidden' },
+  composerQueueContent: { position: 'absolute', top: 0, left: 0, right: 0 },
   composerWrap: { paddingTop: 6 },
   composer: { minHeight: 108, borderRadius: 28, paddingTop: 8, paddingHorizontal: 10, paddingBottom: 4 },
   messageEditBanner: { flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 6, paddingBottom: 8 },
