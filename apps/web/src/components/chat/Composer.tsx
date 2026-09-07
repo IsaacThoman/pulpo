@@ -1,4 +1,5 @@
 import { ShelvedDrafts } from './ShelvedDrafts'
+import { ComposerTray } from './ComposerTray'
 import { webShelf, shelfDraftAttachments } from '@/lib/local-first/shelf'
 import type { ShelfAttachment } from '@pulpo/client-core'
 import { useComposerSync } from './use-composer-sync'
@@ -160,6 +161,7 @@ export function Composer({
   const [dragging, setDragging] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [queueError, setQueueError] = useState<string | null>(null)
+  const [queueCollapsed, setQueueCollapsed] = useState(false)
   const [dictationError, setDictationError] = useState<string | null>(null)
   const [dictationState, setDictationState] = useState<'idle' | 'recording' | 'transcribing'>('idle')
   const [editingQueueId, setEditingQueueId] = useState<string | null>(null)
@@ -914,10 +916,11 @@ export function Composer({
         onRetry={() => { void runShelfAction(() => shelf!.retry()) }} />}
       {showShelf && shelfError && <p role="alert" className="px-3 py-2 text-xs text-destructive">{shelfError}</p>}
       {queuedMessages.length > 0 && (
-        <div className={cn(
-          '-mb-3 max-h-48 overflow-y-auto border border-b-0 bg-card px-2 pt-2 pb-4 shadow-sm',
-          messageEdit ? 'rounded-none' : 'rounded-t-2xl',
-        )}>
+        <ComposerTray label={ui('Queued messages')} title={ui('Queued')}
+          icon={<CornerDownRight aria-hidden="true" className="size-3.5" />}
+          count={queuedMessages.length} collapsed={queueCollapsed}
+          onCollapse={() => setQueueCollapsed((value) => !value)}
+          className={messageEdit ? 'rounded-none' : undefined}>
           {queuedMessages.map((message) => {
             const editing = editingQueueId === message.id
             const anotherEditing = queuedMessages.some((item) => item.status === 'editing' && item.id !== message.id)
@@ -1020,7 +1023,7 @@ export function Composer({
               </div>
             )
           })}
-        </div>
+        </ComposerTray>
       )}
       <div
         className={cn(
