@@ -125,8 +125,8 @@ body {
   pointer-events: none;
   background: linear-gradient(
     to bottom,
-    color-mix(in oklab, var(--background) 80%, transparent) 0%,
-    color-mix(in oklab, var(--background) 0%, transparent) 100%
+    color-mix(in oklab, var(--chat-header-background, var(--background)) 80%, transparent) 0%,
+    color-mix(in oklab, var(--chat-header-background, var(--background)) 0%, transparent) 100%
   );
 }
 
@@ -341,16 +341,16 @@ html[data-desktop-os="win32"] .desktop-sidebar-titlebar {
   right: 138px;
 }
 
-html[data-desktop="true"] {
-  --desktop-temporary-chat-background: color-mix(
+:root {
+  --temporary-chat-background: color-mix(
     in oklab,
     var(--color-violet-100) 50%,
     var(--background)
   );
 }
 
-html.dark[data-desktop="true"] {
-  --desktop-temporary-chat-background: color-mix(
+html.dark {
+  --temporary-chat-background: color-mix(
     in oklab,
     var(--color-violet-950) 15%,
     var(--background)
@@ -391,11 +391,12 @@ html[data-desktop-os="win32"] .desktop-main-titlebar-active .app-main > div > he
 }
 
 html[data-desktop="true"] .desktop-titlebar[data-temporary-chat="true"] {
-  background: var(--desktop-temporary-chat-background);
+  background: var(--temporary-chat-background);
 }
 
-html[data-desktop="true"] [data-desktop-temporary-chat="true"] {
-  background: var(--desktop-temporary-chat-background);
+[data-desktop-temporary-chat="true"] {
+  --chat-header-background: var(--temporary-chat-background);
+  background: var(--temporary-chat-background);
 }
 
 html[data-desktop="true"] .desktop-sidebar-titlebar {

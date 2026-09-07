@@ -3,6 +3,8 @@ import type { User } from '@pulpo/contracts'
 
 const mocks = vi.hoisted(() => ({
   values: new Map<string, unknown>(),
+  syncShortcuts: vi.fn(),
+  clearShortcuts: vi.fn(),
   token: 'session-token' as string | null,
   config: vi.fn(),
   me: vi.fn(),
@@ -18,6 +20,8 @@ const mocks = vi.hoisted(() => ({
   clearNamespace: vi.fn(async () => []),
   deleteToken: vi.fn(async () => undefined),
 }))
+
+vi.mock('../shortcuts/native', () => ({ syncShortcutsSession: mocks.syncShortcuts, clearShortcutsSession: mocks.clearShortcuts }))
 
 vi.mock('react-native', () => ({ Appearance: { setColorScheme: vi.fn() }, Platform: { OS: 'ios' } }))
 vi.mock('expo-device', () => ({ deviceName: 'Test iPhone', modelName: 'iPhone' }))
@@ -119,6 +123,8 @@ beforeEach(() => {
     status: 'hydrating', instanceUrl, token: null, user: null, config: null, error: null,
   })
   mocks.values.set('global:instanceUrl', instanceUrl)
+  mocks.syncShortcuts.mockClear()
+  mocks.clearShortcuts.mockClear()
 })
 
 describe('local-first session hydration', () => {
@@ -191,6 +197,8 @@ describe('local-first session hydration', () => {
 
     expect(mocks.values.get('global:activeSessionNamespace')).toBeNull()
     expect(useSessionStore.getState()).toMatchObject({ status: 'anonymous', token: null, user: null })
+    expect(mocks.clearShortcuts).toHaveBeenCalled()
+    expect(mocks.syncShortcuts).toHaveBeenLastCalledWith(expect.objectContaining({ token: null, user: null, status: 'anonymous' }))
   })
 })
 
@@ -253,6 +261,8 @@ describe('local sign-out after account deletion', () => {
     mocks.deleteToken.mockRejectedValueOnce(new Error('Secure storage unavailable'))
     await expect(useSessionStore.getState().logout(true)).rejects.toThrow('Secure storage unavailable')
     expect(useSessionStore.getState()).toMatchObject({ status: 'anonymous', token: null, user: null })
+    expect(mocks.clearShortcuts).toHaveBeenCalled()
+    expect(mocks.syncShortcuts).toHaveBeenLastCalledWith(expect.objectContaining({ token: null, user: null, status: 'anonymous' }))
     expect(mocks.configureApi).toHaveBeenCalledWith(expect.objectContaining({ token: null }))
     expect(mocks.clearNamespace).toHaveBeenCalledWith(`${instanceUrl}|deleted-user`)
     expect(mocks.values.get('global:activeSessionNamespace')).toBeNull()
@@ -266,6 +276,7 @@ describe('session transition failures', () => {
     await expect(useSessionStore.getState().switchInstance('https://unreachable.test')).rejects.toThrow()
     expect(mocks.configureApi).toHaveBeenLastCalledWith(expect.objectContaining({ instanceUrl, token: 'existing-token', onUnauthorized: expect.any(Function) }))
     expect(useSessionStore.getState()).toMatchObject({ status: 'authenticated', instanceUrl, token: 'existing-token' })
+    expect(mocks.clearShortcuts).not.toHaveBeenCalled()
   })
 
   it('ignores approval refresh after signing out', async () => {
@@ -284,6 +295,8 @@ describe('session transition failures', () => {
     mocks.deleteToken.mockRejectedValueOnce(new Error('Secure storage unavailable'))
     await useSessionStore.getState().handleUnauthorized().catch(() => undefined)
     expect(useSessionStore.getState()).toMatchObject({ status: 'anonymous', user: null, token: null })
+    expect(mocks.clearShortcuts).toHaveBeenCalled()
+    expect(mocks.syncShortcuts).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'anonymous', token: null }))
   })
 })
 

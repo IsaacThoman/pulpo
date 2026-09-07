@@ -12,6 +12,13 @@ Generated `ios/` and `android/` projects are intentionally ignored. Continuous
 Native Generation recreates them from `app.config.ts` and the installed config
 plugins.
 
+## Apple Shortcuts
+
+The iOS app supports Siri and eight composable Shortcuts actions for asking
+questions, starting and continuing chats, finding conversations, choosing models,
+returning replies, and opening the app. See [Apple Shortcuts](SHORTCUTS.md) for
+workflow examples, privacy behavior, and native validation instructions.
+
 ## Local development
 
 From the repository root, install dependencies and start the supported local
@@ -27,7 +34,9 @@ Choose an iOS 26 simulator from Expo CLI. The iOS simulator reaches the host's
 Compose gateway through `localhost`. The development build permits local HTTP;
 production instance switching accepts HTTPS only.
 
-Only the bearer session token is placed in platform secure storage through SecureStore.
+The bearer session token is placed in platform secure storage through SecureStore.
+Apple Shortcuts uses a separate app-private, device-only Keychain session snapshot
+that is cleared with the main session.
 The active instance, preferences, cached queries, drafts, cursors, search index,
 outbox, and attachment metadata are stored in namespaced SQLite tables. Cached
 attachment bytes use the app cache and are evicted by the configured LRU quota.
