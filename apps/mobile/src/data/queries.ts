@@ -93,7 +93,7 @@ export function deletedChatsQuery(namespace: string, localChatLimit = 50) {
   })
 }
 
-export function chatQuery(namespace: string, id: string, localChatLimit = 50) {
+export function chatQuery(namespace: string, id: string, localChatLimit = 50, beforeDecode?: (signal: AbortSignal) => Promise<void>) {
   return queryOptions({
     queryKey: queryKeys.chat(namespace, id),
     gcTime: 5 * 60 * 1_000,
@@ -101,7 +101,11 @@ export function chatQuery(namespace: string, id: string, localChatLimit = 50) {
       const key = queryKeys.chat(namespace, id)
       const query = client.getQueryCache().find({ queryKey: key, exact: true })
       const revision = query?.state.dataUpdateCount
-      const cachedPromise = cachedChat(namespace, id).then((chat) => {
+      const resident = client.getQueryData<ServerChat>(key)
+      const ready = beforeDecode ? () => beforeDecode(signal) : undefined
+      const local = resident?.responses ? Promise.resolve(resident) : cachedChat(namespace, id, ready)
+      const cachedPromise = local.then(async (chat) => {
+        await ready?.()
         // Local hydration must not roll back a mutation, a newer request, or an account change.
         if (chat?.responses && !signal.aborted && query === client.getQueryCache().find({ queryKey: key, exact: true })
           && query?.state.dataUpdateCount === revision && !client.getQueryData(key)) {
@@ -110,7 +114,8 @@ export function chatQuery(namespace: string, id: string, localChatLimit = 50) {
         return chat
       }).catch(() => undefined)
       try {
-        const [incoming, persisted] = await Promise.all([mobileApi.chat(id, signal), cachedPromise])
+        const [incoming, persisted] = await Promise.all([mobileApi.chat(id, signal, ready), cachedPromise])
+        await ready?.()
         if (signal.aborted) throw new Error('Chat request cancelled')
         const memory = client.getQueryData<ServerChat>(queryKeys.chat(namespace, id))
         const cached = memory ? mergeCachedChat(persisted ?? null, memory) : persisted
@@ -121,6 +126,7 @@ export function chatQuery(namespace: string, id: string, localChatLimit = 50) {
         if (!chat.temporary) enqueueCacheWrite(namespace, () => cacheOpenedChat(namespace, chat, localChatLimit))
         return chat
       } catch (error) {
+        await ready?.()
         if (signal.aborted) throw new Error('Chat request cancelled', { cause: error })
         const chat = client.getQueryData<ServerChat>(key) ?? await cachedPromise
         if (chat?.responses) {

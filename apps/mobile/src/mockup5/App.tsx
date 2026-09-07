@@ -1,3 +1,4 @@
+import { prepareChatSelection } from '../data/prepareChat';
 import { createDrawerTransition } from '../features/chat/drawerTransition';
 import { protectTranscript } from '../data/transcriptResidency';
 import { DevicesScreen } from '../components/Devices';
@@ -16,7 +17,7 @@ import { mobileComposerSync } from '../features/chat/composerSync';
 import { useComposerSync } from '../features/chat/useComposerSync';
 import { temporaryChatColors } from '../features/chat/temporaryColors';
 import { submitComposerDraft } from '../features/chat/composerSubmission';
-import type { ComposerState } from '@pulpo/contracts';
+import { idSchema, type ComposerState } from '@pulpo/contracts';
 import {
   createContext,
   forwardRef,
@@ -1607,6 +1608,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   const [drawerTransition] = useState(createDrawerTransition);
   const [openingChat, setOpeningChat] = useState<HistoryChatSummary | null>(null);
   const pendingChatSlide = useRef<(() => void) | null>(null);
+  const chatPreparation = useRef<ReturnType<typeof prepareChatSelection> | null>(null);
   const revealChatFrame = useRef<number | null>(null);
   const [wideSidebarVisible, setWideSidebarVisible] = useState(true);
   const [modelSheet, setModelSheet] = useState(false);
@@ -1724,6 +1726,8 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     if (!requestedChatId || !storedChats.some((chat) => chat.id === requestedChatId && chat.deletedAt === null)) return;
     drawerTransition.cancel();
     pendingChatSlide.current = null;
+    chatPreparation.current?.cancel();
+    chatPreparation.current = null;
     setOpeningChat(null);
     cancelAnimation(slideX);
     slideX.value = 0;
@@ -1750,12 +1754,16 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   const interruptDrawerTransition = useCallback(() => {
     drawerTransition.cancel();
     pendingChatSlide.current = null;
+    chatPreparation.current?.cancel();
+    chatPreparation.current = null;
     setOpeningChat(null);
     setComposerFocusSuppressed(false);
   }, [drawerTransition]);
 
   useLayoutEffect(() => {
     pendingChatSlide.current = null;
+    chatPreparation.current?.cancel();
+    chatPreparation.current = null;
     setOpeningChat(null);
     cancelAnimation(slideX);
     slideX.value = 0;
@@ -1764,6 +1772,8 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     return () => {
       drawerTransition.cancel();
       pendingChatSlide.current = null;
+      chatPreparation.current?.cancel();
+      chatPreparation.current = null;
       if (revealChatFrame.current !== null) cancelAnimationFrame(revealChatFrame.current);
     };
   }, [drawerTransition, productionInstanceUrl, productionUserId, persistentSidebar, slideX]);
@@ -1771,6 +1781,8 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   const animatePanel = useCallback((open: boolean, velocity = 0, onFinished?: () => void) => {
     if (open || !onFinished) {
       pendingChatSlide.current = null;
+      chatPreparation.current?.cancel();
+      chatPreparation.current = null;
       setOpeningChat(null);
     }
     const finish = drawerTransition.begin(() => {
@@ -2055,17 +2067,24 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   }, [activeChatId, discardStoredChat, productionInstanceUrl, productionUserId, queryClient]);
 
   const selectChat = useCallback((chat: HistoryChatSummary) => {
+    drawerTransition.cancel();
     if (thinkingTimer.current) clearTimeout(thinkingTimer.current);
     thinkingTimer.current = null;
     setComposerFocusSuppressed(true);
     dismissComposer();
+    chatPreparation.current?.cancel();
+    chatPreparation.current = productionUserId && idSchema.safeParse(chat.id).success
+      ? prepareChatSelection(queryClient, cacheNamespace(productionInstanceUrl, productionUserId), chat.id, usePreferencesStore.getState().localChatLimit)
+      : null;
     // Hide only the message area before starting the slide. Keep the old
     // transcript mounted until the spring finishes, preserving the chat chrome.
     pendingChatSlide.current = () => animatePanel(false, 0, () => {
       const session = useSessionStore.getState();
-      if (session.instanceUrl !== productionInstanceUrl || session.user?.id !== productionUserId) { setOpeningChat(null); return; }
+      if (session.instanceUrl !== productionInstanceUrl || session.user?.id !== productionUserId) { chatPreparation.current?.cancel(); chatPreparation.current = null; setOpeningChat(null); return; }
       const selected = usePrototypeStore.getState().chats.find((item) => item.id === chat.id && item.deletedAt === null);
-      if (!selected) { setOpeningChat(null); return; }
+      if (!selected) { chatPreparation.current?.cancel(); chatPreparation.current = null; setOpeningChat(null); return; }
+      chatPreparation.current?.finish();
+      chatPreparation.current = null;
       abandonActiveTemporaryChat();
       composerFollowsDefaultModel.current = false;
       setActiveChatId(selected.id);
@@ -2076,7 +2095,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
       finishExistingChatTransition();
     });
     setOpeningChat({ ...chat });
-  }, [abandonActiveTemporaryChat, animatePanel, dismissComposer, finishExistingChatTransition, productionInstanceUrl, productionUserId]);
+  }, [abandonActiveTemporaryChat, animatePanel, dismissComposer, drawerTransition, finishExistingChatTransition, productionInstanceUrl, productionUserId, queryClient]);
 
   useLayoutEffect(() => {
     const start = pendingChatSlide.current;

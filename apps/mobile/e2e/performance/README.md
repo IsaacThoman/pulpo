@@ -40,6 +40,12 @@ hides the previous transcript and intermediate
 spinner, reveals the loaded transcript, handles selecting the same chat again,
 and switches through an empty chat.
 
+The UI fixture also writes `Documents/ui-preparation-timings.json` for prepared
+requests. It records the selected chat at request start and elapsed transfer/gate
+times, allowing verification that I/O begins before selection commits. These
+synthetic timings are not native frame-rate measurements; keep the output outside
+Git with other run artifacts.
+
 Build current native dependencies first (`expo prebuild`, `pod install`, then
 Release Xcode/Gradle builds). Keep the normal build intact. Export a harness from
 `apps/mobile`, for example:

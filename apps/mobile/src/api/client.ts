@@ -47,6 +47,7 @@ interface RequestOptions extends Omit<RequestInit, 'body'> {
   idempotencyKey?: string
   timeoutMs?: number
   /** Security forms can reject a current password while the bearer session is valid. */
+  beforeDecode?: () => Promise<void>
   verifySessionOnUnauthorized?: boolean
 }
 
@@ -56,6 +57,7 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
 }
 
 async function performApiRequest<T>(path: string, options: RequestOptions): Promise<T> {
+  const { beforeDecode, ...requestOptions } = options
   const headers = new Headers(options.headers)
   if (options.body !== undefined) headers.set('content-type', 'application/json')
   if (options.idempotencyKey) headers.set('idempotency-key', options.idempotencyKey)
@@ -68,22 +70,36 @@ async function performApiRequest<T>(path: string, options: RequestOptions): Prom
   let response: Response
   try {
     response = await fetch(`${instanceUrl}${path}`, {
-      ...options,
+      ...requestOptions,
       headers,
       signal: controller.signal,
       body: options.body === undefined ? undefined : JSON.stringify(options.body),
     })
   } catch (error) {
+    options.signal?.removeEventListener('abort', abort)
     if (controller.signal.aborted && !options.signal?.aborted) {
       throw new ApiError(408, 'request_timeout', 'The Pulpo instance did not respond in time.')
     }
     throw error
   } finally {
     clearTimeout(timeout)
-    options.signal?.removeEventListener('abort', abort)
+    if (!beforeDecode) options.signal?.removeEventListener('abort', abort)
   }
-  if (response.status === 204) return undefined as T
-  const body = await response.json().catch(() => undefined) as {
+  if (response.status === 204) {
+    options.signal?.removeEventListener('abort', abort)
+    return undefined as T
+  }
+  let decoded: unknown
+  if (beforeDecode) {
+    // Download the body during the slide; JSON parsing waits for completion.
+    try {
+      const text = await response.text()
+      await beforeDecode()
+      if (options.signal?.aborted) throw new Error('Chat request cancelled')
+      try { decoded = JSON.parse(text) } catch { decoded = undefined }
+    } finally { options.signal?.removeEventListener('abort', abort) }
+  } else decoded = await response.json().catch(() => undefined)
+  const body = decoded as {
     error?: { message?: string; code?: string }
   } | undefined
   if (!response.ok) {
@@ -174,7 +190,7 @@ export const mobileApi = {
   trashAllChats: () => apiRequest<void>('/api/chats', { method: 'DELETE' }),
   deletedChats: () => apiRequest<{ data: ServerDeletedChat[] }>('/api/chats/deleted'),
   emptyTrash: () => apiRequest<void>('/api/chats/deleted', { method: 'DELETE' }),
-  chat: (id: string, signal?: AbortSignal) => apiRequest<ServerChat>(`/api/chats/${id}?format=compact&scope=active`, { signal }),
+  chat: (id: string, signal?: AbortSignal, beforeDecode?: () => Promise<void>) => apiRequest<ServerChat>(`/api/chats/${id}?format=compact&scope=active`, { signal, beforeDecode }),
   models: () => apiRequest<{ agentAvailable: boolean; data: MobileModel[] }>('/api/models'),
   folders: () => apiRequest<{ data: ServerFolder[] }>('/api/folders'),
   settings: () => apiRequest<{ values: Record<string, unknown>; updatedAt: string | null }>('/api/settings'),

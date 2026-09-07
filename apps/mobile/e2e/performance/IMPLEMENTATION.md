@@ -209,3 +209,36 @@ picker and composer remain visible and hittable and that the skeleton sits
 between them. Native visual inspection confirmed the normal chat controls and
 composer during loading. Raw recordings, screenshots, and test logs remain
 outside Git. Physical-device frame timing was not measured in this check.
+
+## Overlap I/O with drawer closure
+
+Chat selection now starts its targeted SQLite read and network request on the
+press. A per-selection gate delays JSON decoding, query publication, snapshot
+hydration, projection, persistence, and native transcript mounting until the
+closing spring completes. Response bodies can download as text while the gate is
+closed. SQLite releases its operation queue before waiting, so outbox and required
+writes continue. Resident detail skips the disk read and remains immediately
+available to the existing selection path.
+
+Preparing a chat pins it in the residency coordinator. Interruption releases the
+pin and cancels an unobserved owned request; requests already serving another
+consumer are reused. A newly attached observer can adopt preparation. Replacement
+selections invalidate the previous completion immediately, and scope changes or
+unmounts cancel outstanding preparation. Cancellation remains connected during
+response-body transfer and prevents stale parsing/publication or auth handling.
+
+This overlaps I/O waiting, not unbounded JavaScript or native layout work. It does
+not eliminate the selected list's mount time or establish a physical-device
+frame-rate guarantee.
+
+Validation: 457 mobile tests, mobile type checking, lint, and both production
+exports passed. Regression tests cover transfer before decode, queued writes
+proceeding while decode is paused, resident reuse, cancellation during body
+transfer, namespace isolation, observer adoption, optimistic edits surviving
+cancellation, and replacement requests retaining ownership. All three iOS
+Release-shell UI cases passed: 5,000-chat drawer/search, slow uncached/empty/same
+chat selection with visible header/composer, and repeated long/cached selection.
+Fixture request records confirmed that destination transfers began while the
+previous chat was still selected. The final cancellation guards were validated
+by automated tests; native frame timing and tap-to-content latency were not
+quantified. No raw run artifacts were added to Git.

@@ -35,8 +35,17 @@ for (let i = chats.length; i < historyCount; i++) {
 const model = { id: 'fixture', name: 'Fixture model', description: 'Synthetic local test', executionMode: 'stream', maxOutputTokens: 4096, agentEnabled: false, tags: [], logo: null, iconLight: null, iconDark: null, provider: { id: 'fixture', name: 'Fixture' }, lab: null, presets: [] } as MobileModel
 configureApi({ instanceUrl: origin, token: null })
 mobileApi.chats = async () => ({ data: chats.map(withoutCachedChatDetails) })
-mobileApi.chat = async (id) => {
+const preparationTimings: Array<{ id: string; selectedAtStart: string | null; transferMs: number; releaseMs: number }> = []
+mobileApi.chat = async (id, _signal, beforeDecode) => {
+  const started = performance.now()
+  const selectedAtStart = activeChatSubscription() ?? null
   await new Promise((resolve) => setTimeout(resolve, id === coldChatId ? 5000 : 1000))
+  const transferMs = performance.now() - started
+  await beforeDecode?.()
+  if (beforeDecode) {
+    preparationTimings.push({ id, selectedAtStart, transferMs, releaseMs: performance.now() - started })
+    new File(Paths.document, 'ui-preparation-timings.json').write(JSON.stringify(preparationTimings))
+  }
   return chats.find((chat) => chat.id === id)!
 }
 mobileApi.deletedChats = async () => ({ data: [] })

@@ -122,6 +122,22 @@ describe('split transcript cache', () => {
     expect(db.prepare('SELECT count(*) AS count FROM chat_details').get()).toEqual({ count: 0 })
   })
 
+  it('releases the SQLite queue while transcript decoding waits for the transition', async () => {
+    const api = await import('./database')
+    await api.cacheOpenedChat('n', chat())
+    let release!: () => void
+    const ready = new Promise<void>((resolve) => { release = resolve })
+    const beforeDecode = vi.fn(() => ready)
+    let completed = false
+    const read = api.cachedChat('n', 'a', beforeDecode).then((value) => { completed = true; return value })
+    await vi.waitFor(() => expect(beforeDecode).toHaveBeenCalledOnce())
+    await api.setValue('n', 'required-write', { saved: true })
+    expect(await api.getValue('n', 'required-write')).toEqual({ saved: true })
+    expect(completed).toBe(false)
+    release()
+    expect((await read)?.responses).toEqual([])
+  })
+
   it('retains exact byte boundaries and evicts the oldest document beyond the aggregate quota', async () => {
     const api = await import('./database')
     const limit = 5 * 1024 * 1024

@@ -394,17 +394,18 @@ export async function cachedChatSummaries(namespace: string): Promise<ServerChat
   })
 }
 
-export async function cachedChat(namespace: string, chatId: string): Promise<ServerChat | undefined> {
-  return withDatabase(async (database) => {
-    const row = await database.getFirstAsync<{ summary: string; detail: string | null }>(
-      `SELECT c.payload AS summary, d.payload AS detail FROM chat_cache c
-       LEFT JOIN chat_details d ON d.namespace = c.namespace AND d.chat_id = c.chat_id
-       WHERE c.namespace = ? AND c.chat_id = ?`, namespace, chatId,
-    )
-    if (!row) return undefined
-    const chat = mergeCachedChat(row.detail ? JSON.parse(row.detail) : null, JSON.parse(row.summary))
-    return chat.temporary ? undefined : chat
-  })
+export async function cachedChat(namespace: string, chatId: string, beforeDecode?: () => Promise<void>): Promise<ServerChat | undefined> {
+  const row = await withDatabase((database) => database.getFirstAsync<{ summary: string; detail: string | null }>(
+    `SELECT c.payload AS summary, d.payload AS detail FROM chat_cache c
+     LEFT JOIN chat_details d ON d.namespace = c.namespace AND d.chat_id = c.chat_id
+     WHERE c.namespace = ? AND c.chat_id = ?`, namespace, chatId,
+  ))
+  // Release the ordered SQLite queue before waiting for a native transition.
+  // Outbox and durability writes must remain free to proceed.
+  await beforeDecode?.()
+  if (!row) return undefined
+  const chat = mergeCachedChat(row.detail ? JSON.parse(row.detail) : null, JSON.parse(row.summary))
+  return chat.temporary ? undefined : chat
 }
 
 export async function cachedChatBytes(namespace: string, chatId: string): Promise<number | undefined> {

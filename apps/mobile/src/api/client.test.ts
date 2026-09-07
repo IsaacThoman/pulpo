@@ -1,6 +1,54 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ApiError, apiRequest, apiUrl, configureApi, isNetworkError, mobileApi, nativeAuthorizationHeaders } from './client'
 
+describe('chat transfer during navigation', () => {
+  afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); configureApi({ instanceUrl: 'https://pulpo.baby', token: null }) })
+  it('downloads the response before allowing JSON decoding', async () => {
+    const payload = '{"id":"prepared-chat","responses":[]}'
+    const text = vi.fn().mockResolvedValue(payload)
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ status: 200, ok: true, text }))
+    const parse = vi.spyOn(JSON, 'parse')
+    let release!: () => void
+    const ready = new Promise<void>((resolve) => { release = resolve })
+    const request = mobileApi.chat('prepared-chat', undefined, () => ready)
+    await vi.waitFor(() => expect(text).toHaveBeenCalledOnce())
+    expect(parse.mock.calls.some(([input]) => input === payload)).toBe(false)
+    release()
+    await expect(request).resolves.toEqual({ id: 'prepared-chat', responses: [] })
+    expect(parse).toHaveBeenCalledWith(payload)
+  })
+  it('does not process a stale authentication response after cancellation', async () => {
+    const unauthorized = vi.fn()
+    configureApi({ instanceUrl: 'https://old.example', token: 'old', onUnauthorized: unauthorized })
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json({ error: { code: 'unauthorized' } }, { status: 401 })))
+    const controller = new AbortController()
+    let release!: () => void
+    const ready = new Promise<void>((resolve) => { release = resolve })
+    const request = mobileApi.chat('a', controller.signal, () => ready)
+    controller.abort(); release()
+    await expect(request).rejects.toThrow('cancelled')
+    expect(unauthorized).not.toHaveBeenCalled()
+  })
+  it('keeps cancellation connected while the response body is downloading', async () => {
+    let bodySignal: AbortSignal | undefined
+    const text = vi.fn(() => new Promise<string>((_resolve, reject) => {
+      bodySignal!.addEventListener('abort', () => reject(new Error('body cancelled')), { once: true })
+    }))
+    vi.stubGlobal('fetch', vi.fn(async (_url, options) => {
+      bodySignal = options.signal
+      return { status: 200, ok: true, text }
+    }))
+    const controller = new AbortController()
+    const ready = vi.fn().mockResolvedValue(undefined)
+    const request = mobileApi.chat('a', controller.signal, ready)
+    await vi.waitFor(() => expect(text).toHaveBeenCalledOnce())
+    controller.abort()
+    await expect(request).rejects.toThrow('body cancelled')
+    expect(bodySignal!.aborted).toBe(true)
+    expect(ready).not.toHaveBeenCalled()
+  })
+})
+
 describe('attachment URL resolution', () => {
   afterEach(() => configureApi({ instanceUrl: 'https://pulpo.baby', token: null }))
 
