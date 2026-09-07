@@ -1,6 +1,7 @@
 import { Type } from '@earendil-works/pi-ai'
 import type { AgentTool } from '@earendil-works/pi-agent-core'
 import { and, eq, gt, isNull, ne, or, sql } from 'drizzle-orm'
+import { chatCanAccessMemory } from '../chats/memory-policy.js'
 import { db } from '../database/client.js'
 import { chats } from '../database/schema.js'
 import { truncateUtf8 } from '../agent/output.js'
@@ -146,6 +147,7 @@ export async function readEpisodicChatPage(input: {
   signal?: AbortSignal
 }): Promise<EpisodicTranscriptPage | null> {
   input.signal?.throwIfAborted()
+  if (!await chatCanAccessMemory(input.userId, input.currentChatId)) return null
   const [settings, memoryEnabled] = await Promise.all([
     readEpisodicMemorySettings(),
     userMemoryIsEnabled(input.userId),

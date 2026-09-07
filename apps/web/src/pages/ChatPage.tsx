@@ -230,7 +230,7 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
 
   const applyComposerControls = (state: ComposerState) => {
     if (state.model && models.some((model) => model.id === state.model!.id)) selectModel(state.model.id)
-    if (!chatId) { setTemporary(state.temporary); setSyncedAutoExpire(state.autoExpire) }
+    if (!chatId) { setSyncedAutoExpire(state.autoExpire) }
   }
 
   useEffect(() => {
@@ -487,7 +487,7 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
               chatWidth === 'narrow' ? 'max-w-5xl' : 'max-w-[min(100%,90rem)]'
             )}
           >
-            <Composer syncEnabled={!adminMode} onSyncControls={applyComposerControls} key="new" chatId={null} modelId={modelId} temporary={temporaryMode} autoExpire={effectiveNewChatAutoExpire} />
+            <Composer syncEnabled={!adminMode} onSyncControls={applyComposerControls} key={temporaryMode ? "temporary:new" : "new"} chatId={null} modelId={modelId} temporary={temporaryMode} autoExpire={effectiveNewChatAutoExpire} />
           </div>
         </>
       ) : (
@@ -522,7 +522,7 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
               <Composer
                 syncEnabled={!adminMode}
                 onSyncControls={applyComposerControls}
-                key={chat.id}
+                key={`${chat.temporary ? "temporary:" : ""}${chat.id}`}
                 chatId={chat.id}
                 modelId={modelId}
                 temporary={chat.temporary}

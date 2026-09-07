@@ -1,3 +1,4 @@
+import { localComposerDraftId } from '@pulpo/client-core'
 import { ShelvedDrafts } from './ShelvedDrafts'
 import { ComposerTray } from './ComposerTray'
 import { webShelf, shelfDraftAttachments } from '@/lib/local-first/shelf'
@@ -59,7 +60,6 @@ import { dictationFilename, insertDictationText, preferredDictationMimeType } fr
 import { isDesktopRuntime } from '@/lib/runtime'
 import { ui, uit } from '@/i18n/ui'
 import {
-  NEW_CHAT_DRAFT_ID,
   deleteComposerDraft,
   loadComposerDraft,
   rememberRuntimeComposerDraft,
@@ -150,7 +150,7 @@ export function Composer({
   activeShelf.current = showShelf ? shelf : null
   useEffect(() => { shelfMounted.current = true; return () => { shelfMounted.current = false } }, [])
   useEffect(() => { if (shelf) void shelf.hydrate().then(() => shelf.sync()).catch(() => undefined) }, [shelf])
-  const draftId = chatId ?? NEW_CHAT_DRAFT_ID
+  const draftId = localComposerDraftId(chatId, temporary)
   // The composer is keyed by chat. Capture its starting draft once: consulting
   // the mutable cache on every render can restart hydration after a remote
   // clear, before the debounced disk save has removed the old draft.

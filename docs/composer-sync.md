@@ -8,6 +8,12 @@ Successful submissions clear matching text and attachment IDs, preserving change
 
 On mobile, submission owns the optimistic clear for its original draft scope, text, and attachment selection. Preparation, queue acceptance, or failure cannot clear or restore over a newer draft or a different chat. Empty runtime drafts remain cached so a quick chat switch cannot hydrate stale disk content before the asynchronous save finishes. Acceptance does not delete the current local draft.
 
+## Temporary mode
+
+Temporary mode is local to each client. Temporary composers neither publish drafts nor apply incoming shared drafts, and the temporary toggle is excluded from shared field patches. Their local text and attachments use separate in-memory draft slots so returning to a normal composer cannot import a temporary draft. Upload completions for those slots do not update shared drafts.
+
+The server rejects reads and writes for temporary chats and rejects entire writes that enable temporary mode, including older clients. A legacy temporary `new` draft is cleared before it can be returned, and temporary realtime snapshots and pending client checkpoints are not replayed. Normal composer synchronization resumes when the client returns to a normal draft.
+
 ## Account opt-out
 
 Interface settings include **Sync composer drafts**, enabled by default. This is an account preference, propagated through the same settings synchronization as other preferences. Web, desktop, and mobile honor it. Turning it off stops draft reads, writes, and realtime delivery; normal messages and local draft saving continue. Existing server drafts remain.
@@ -22,4 +28,4 @@ Turning sync back on resumes the shared server draft. Pending updates from befor
 2. Deploy the server, then updated clients. Existing clients can continue using their local drafts; updated clients tolerate servers without composer socket handlers by retaining local pending state.
 3. Check two signed-in clients on the same account: type in an existing chat and the new-chat composer, change controls, upload a file, send, and background/resume mobile. Confirm an offline conflict adopts the server draft without a recovery prompt.
 
-The socket protocol adds `composer.read`, `composer.write`, and `composer.changed`. It uses normal authenticated account rooms and rejects administrative chat-access sessions. Attachment IDs must refer to accessible, ready uploads owned by the account; metadata is loaded from the server. Chat deletion/expiration clears draft content and references; temporary new-chat drafts use the existing 48-hour lifetime and maintenance cleanup.
+The socket protocol adds `composer.read`, `composer.write`, and `composer.changed`. It uses normal authenticated account rooms and rejects administrative chat-access sessions. Attachment IDs must refer to accessible, ready uploads owned by the account; metadata is loaded from the server. Chat deletion/expiration clears draft content and references.

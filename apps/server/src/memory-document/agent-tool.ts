@@ -2,6 +2,7 @@ import { Type } from '@earendil-works/pi-ai'
 import type { AgentTool } from '@earendil-works/pi-agent-core'
 import {
   applyMemoryDocumentEdits,
+  assertAgentMemoryAccess,
   type MemoryDocumentEdit,
   MemoryDocumentError,
   readMemoryDocument,
@@ -34,9 +35,11 @@ export function createMemoryDocumentTool(input: {
   userId: string
   responseId: string
   onOperationStarted?: (operationId: string) => void | Promise<void>
+  authorize?: typeof assertAgentMemoryAccess
   read?: typeof readMemoryDocument
   update?: typeof updateMemoryDocument
 }): AgentTool {
+  const authorize = input.authorize ?? assertAgentMemoryAccess
   const read = input.read ?? readMemoryDocument
   const update = input.update ?? updateMemoryDocument
   return {
@@ -69,6 +72,7 @@ export function createMemoryDocumentTool(input: {
       if (typeof args.summary !== 'string' || !args.summary.trim()) throw new Error('summary is required')
       if (!Array.isArray(args.edits)) throw new Error('edits must be an array')
       const edits = args.edits.map(parseEdit)
+      await authorize(input.userId, input.responseId)
       let current = await read(input.userId)
       let updated
       for (let attempt = 1; attempt <= UPDATE_MEMORY_MAX_ATTEMPTS; attempt += 1) {
