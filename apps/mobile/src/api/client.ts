@@ -58,8 +58,12 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
 
 async function performApiRequest<T>(path: string, options: RequestOptions): Promise<T> {
   const { beforeDecode, ...requestOptions } = options
+  const requestOrigin = instanceUrl
+  const requestToken = sessionToken
   const headers = new Headers(options.headers)
-  if (options.body !== undefined) headers.set('content-type', 'application/json')
+  const multipart = typeof FormData !== 'undefined' && options.body instanceof FormData
+  if (multipart) headers.delete('content-type')
+  else if (options.body !== undefined) headers.set('content-type', 'application/json')
   if (options.idempotencyKey) headers.set('idempotency-key', options.idempotencyKey)
   if (options.auth !== false && sessionToken) headers.set('authorization', `Bearer ${sessionToken}`)
   const controller = new AbortController()
@@ -68,13 +72,22 @@ async function performApiRequest<T>(path: string, options: RequestOptions): Prom
   if (options.signal?.aborted) controller.abort()
   options.signal?.addEventListener('abort', abort, { once: true })
   let response: Response
+  let bodyText: string | undefined
+  let body: { error?: { message?: string; code?: string } } | undefined
   try {
-    response = await fetch(`${instanceUrl}${path}`, {
+    response = await fetch(`${requestOrigin}${path}`, {
       ...requestOptions,
       headers,
       signal: controller.signal,
-      body: options.body === undefined ? undefined : JSON.stringify(options.body),
+      body: multipart ? options.body as FormData : options.body === undefined ? undefined : JSON.stringify(options.body),
     })
+    if (response.status !== 204) {
+      if (beforeDecode) bodyText = await response.text()
+      else body = await response.json().catch((error) => {
+        if (controller.signal.aborted) throw error
+        return undefined
+      })
+    }
   } catch (error) {
     options.signal?.removeEventListener('abort', abort)
     if (controller.signal.aborted && !options.signal?.aborted) {
@@ -89,21 +102,16 @@ async function performApiRequest<T>(path: string, options: RequestOptions): Prom
     options.signal?.removeEventListener('abort', abort)
     return undefined as T
   }
-  let decoded: unknown
   if (beforeDecode) {
     // Download the body during the slide; JSON parsing waits for completion.
     try {
-      const text = await response.text()
       await beforeDecode()
       if (options.signal?.aborted) throw new Error('Chat request cancelled')
-      try { decoded = JSON.parse(text) } catch { decoded = undefined }
+      try { body = JSON.parse(bodyText!) } catch { body = undefined }
     } finally { options.signal?.removeEventListener('abort', abort) }
-  } else decoded = await response.json().catch(() => undefined)
-  const body = decoded as {
-    error?: { message?: string; code?: string }
-  } | undefined
+  }
   if (!response.ok) {
-    if (response.status === 401 && options.auth !== false) {
+    if (response.status === 401 && options.auth !== false && requestToken === sessionToken && requestOrigin === instanceUrl && !options.signal?.aborted) {
       if (options.verifySessionOnUnauthorized) {
         // Let the session endpoint decide whether to sign out. Keep credential
         // errors (and temporary verification network failures) in the form.

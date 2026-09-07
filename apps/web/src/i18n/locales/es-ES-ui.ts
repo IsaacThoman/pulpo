@@ -585,7 +585,7 @@ const esUi: Record<string, string> = {
   "Enable Pi agent mode": "Habilitar el modo de agente Pi",
   "Enable retry on failure": "Habilitar reintento en caso de fallo",
   "Fallback attempts": "Intentos del modelo alternativo",
-  "Enable web dictation": "Habilitar dictado web",
+  "Enable dictation": "Habilitar dictado",
   "Enable web search": "Habilitar búsqueda web",
   "Enabled": "Activado",
   "Enabled · {{0}} recovery codes remaining": "Habilitado · {{0}} códigos de recuperación restantes",
