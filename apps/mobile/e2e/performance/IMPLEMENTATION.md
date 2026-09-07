@@ -184,3 +184,29 @@ simulator shell and a fresh production-mode fixture bundle: five large-history
 swipe/selection cycles with search, and two alternations between the 1,000-turn
 and short transcripts with the keyboard dismissed. No raw run artifacts were
 added to Git.
+
+## Destination presentation during chat selection
+
+Deferring selection kept the previous transcript visible during the closing
+slide, followed by the existing loading spinner. Selection now commits a light
+cover with the destination title before starting the spring. The previous chat
+stays mounted but hidden, including from accessibility and pointer input. After
+selection commits, the cover remains until the destination's native transcript
+layout is ready (or its loaded empty state has committed), then reveals it on the
+next frame. This keeps transcript work after the slide without presenting the
+previous chat or an intermediate spinner.
+
+Reveal callbacks belong to a specific selection; replacement selections and
+scope changes invalidate them. The measured transcript identity prevents a
+previous chat's viewport measurement from revealing a newly selected transcript
+early. Reopening the drawer or navigating elsewhere cancels pending presentation.
+
+Mobile type checking, lint, and 446 mobile tests passed. The iPhone 17 Pro /
+iOS 26.5 Release shell with a fresh production-mode fixture bundle passed the
+5,000-chat drawer/search test and repeated long/local/resident selection test.
+The new destination-cover test passed a five-second uncached load, same-chat
+reselection, and an empty-chat round trip. A native screenshot confirmed the
+destination title and placeholder without the previous conversation. Selection
+tests were rerun after the final measurement-reset change. These checks verify
+presentation and interaction; they do not quantify physical-device frame timing.
+Screenshots and raw test results remain outside Git.

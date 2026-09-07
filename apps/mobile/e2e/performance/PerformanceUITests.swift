@@ -1,5 +1,45 @@
 import XCTest
 final class PerformanceUITests: XCTestCase {
+  func testSelectedChatCover() {
+    continueAfterFailure = false
+    let app = XCUIApplication(bundleIdentifier: "com.isaacthoman.pulpo")
+    app.launch()
+    // Export with EXPO_PUBLIC_PERF_COLD_CHAT=1: chat 3 has no offline
+    // document and its network response takes five seconds.
+    XCTAssertTrue(app.buttons["Open chats"].waitForExistence(timeout: 30))
+    app.buttons["Open chats"].tap()
+    app.staticTexts["Performance chat 2"].firstMatch.tap()
+    let previous = app.descendants(matching: .any).matching(identifier: "chat-transcript-00000000-0000-4000-8000-000000000101").firstMatch
+    XCTAssertTrue(previous.waitForExistence(timeout: 10))
+    app.buttons["Open chats"].tap()
+    app.staticTexts["Performance chat 3"].firstMatch.tap()
+    let cover = app.descendants(matching: .any).matching(identifier: "chat-opening-00000000-0000-4000-8000-000000000102").firstMatch
+    XCTAssertTrue(cover.waitForExistence(timeout: 2))
+    XCTAssertFalse(previous.exists)
+    XCTAssertFalse(app.descendants(matching: .any).matching(identifier: "Loading conversation").firstMatch.exists)
+    let shot = XCTAttachment(screenshot: app.screenshot())
+    shot.name = "selected-chat-loading-cover"; shot.lifetime = .keepAlways; add(shot)
+    let selected = app.descendants(matching: .any).matching(identifier: "chat-transcript-00000000-0000-4000-8000-000000000102").firstMatch
+    XCTAssertTrue(selected.waitForExistence(timeout: 10))
+    XCTAssertFalse(cover.exists)
+    // Reselecting an already measured transcript must not leave a stuck cover.
+    app.buttons["Open chats"].tap()
+    app.staticTexts["Performance chat 3"].firstMatch.tap()
+    XCTAssertTrue(selected.waitForExistence(timeout: 5))
+    XCTAssertFalse(cover.exists)
+    // Loaded empty chats have no list layout callback. Returning from one
+    // must also wait for the next transcript's own measurement.
+    app.buttons["Open chats"].tap()
+    app.staticTexts["Performance chat 4"].firstMatch.tap()
+    let emptyCover = app.descendants(matching: .any).matching(identifier: "chat-opening-00000000-0000-4000-8000-000000000103").firstMatch
+    let revealed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: emptyCover)
+    XCTAssertEqual(XCTWaiter.wait(for: [revealed], timeout: 5), .completed)
+    XCTAssertFalse(selected.exists)
+    app.buttons["Open chats"].tap()
+    app.staticTexts["Performance chat 3"].firstMatch.tap()
+    XCTAssertTrue(selected.waitForExistence(timeout: 5))
+    XCTAssertFalse(cover.exists)
+  }
   func testSelectLongAndCachedChats() {
     continueAfterFailure = false
     let app = XCUIApplication(bundleIdentifier: "com.isaacthoman.pulpo")

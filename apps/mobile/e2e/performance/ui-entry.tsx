@@ -18,13 +18,15 @@ import { fixture } from './fixture'
 const origin = 'https://127.0.0.1:1'
 const user = { id: '00000000-0000-4000-8000-000000000001', name: 'Performance fixture', email: 'fixture@example.invalid', role: 'user', stateRevision: 0 } as User
 const namespace = cacheNamespace(origin, user.id)
+const coverFixture = process.env.EXPO_PUBLIC_PERF_COLD_CHAT === '1'
 const chats: ServerChat[] = Array.from({ length: 20 }, (_, i) => ({
-  ...fixture(i === 0 ? 1000 : i === 1 ? 1 : 100, 256, `00000000-0000-4000-8000-${String(i + 100).padStart(12, '0')}`),
+  ...fixture(i === 0 ? 1000 : i === 1 ? 1 : i === 3 && coverFixture ? 0 : 100, 256, `00000000-0000-4000-8000-${String(i + 100).padStart(12, '0')}`),
   title: i === 0 ? 'Performance 1000 turns' : `Performance chat ${i + 1}`,
   sortOrder: i,
 }))
 // Exercise large accounts without retaining thousands of synthetic transcripts.
 const historyCount = Number(process.env.EXPO_PUBLIC_PERF_HISTORY_COUNT ?? 20)
+const coldChatId = coverFixture ? chats[2]!.id : null
 for (let i = chats.length; i < historyCount; i++) {
   chats.push({ ...withoutCachedChatDetails(chats[1]!),
     id: `00000000-0000-4000-8000-${String(i + 100).padStart(12, '0')}`,
@@ -34,7 +36,7 @@ const model = { id: 'fixture', name: 'Fixture model', description: 'Synthetic lo
 configureApi({ instanceUrl: origin, token: null })
 mobileApi.chats = async () => ({ data: chats.map(withoutCachedChatDetails) })
 mobileApi.chat = async (id) => {
-  await new Promise((resolve) => setTimeout(resolve, 1000))
+  await new Promise((resolve) => setTimeout(resolve, id === coldChatId ? 5000 : 1000))
   return chats.find((chat) => chat.id === id)!
 }
 mobileApi.deletedChats = async () => ({ data: [] })
@@ -63,7 +65,7 @@ async function seed() {
   short.responses![0]!.output = output
   short.responses![0]!.snapshot = { ...short.responses![0]!.snapshot, output }
   await recordCachedAttachment(namespace, attachment.id, picture.uri, picture.size, 10 * 1024 * 1024)
-  await cacheChats(namespace, chats)
+  await cacheChats(namespace, chats.map((chat) => chat.id === coldChatId ? withoutCachedChatDetails(chat) : chat))
   await setValue(namespace, 'model-catalog', { data: [model], agentAvailable: false })
 }
 export default function FixtureApp() {

@@ -1605,6 +1605,9 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   const wideSidebarGestureStart = useSharedValue(1);
   const [panelOpen, setPanelOpen] = useState(false);
   const [drawerTransition] = useState(createDrawerTransition);
+  const [openingChat, setOpeningChat] = useState<HistoryChatSummary | null>(null);
+  const pendingChatSlide = useRef<(() => void) | null>(null);
+  const revealChatFrame = useRef<number | null>(null);
   const [wideSidebarVisible, setWideSidebarVisible] = useState(true);
   const [modelSheet, setModelSheet] = useState(false);
   const composerInputRef = useRef<TextInput>(null);
@@ -1720,6 +1723,8 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     const requestedChatId = route.params?.chatId;
     if (!requestedChatId || !storedChats.some((chat) => chat.id === requestedChatId && chat.deletedAt === null)) return;
     drawerTransition.cancel();
+    pendingChatSlide.current = null;
+    setOpeningChat(null);
     cancelAnimation(slideX);
     slideX.value = 0;
     setPanelOpen(false);
@@ -1744,18 +1749,30 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
 
   const interruptDrawerTransition = useCallback(() => {
     drawerTransition.cancel();
+    pendingChatSlide.current = null;
+    setOpeningChat(null);
     setComposerFocusSuppressed(false);
   }, [drawerTransition]);
 
   useLayoutEffect(() => {
+    pendingChatSlide.current = null;
+    setOpeningChat(null);
     cancelAnimation(slideX);
     slideX.value = 0;
     setPanelOpen(false);
     setComposerFocusSuppressed(false);
-    return () => drawerTransition.cancel();
+    return () => {
+      drawerTransition.cancel();
+      pendingChatSlide.current = null;
+      if (revealChatFrame.current !== null) cancelAnimationFrame(revealChatFrame.current);
+    };
   }, [drawerTransition, productionInstanceUrl, productionUserId, persistentSidebar, slideX]);
 
   const animatePanel = useCallback((open: boolean, velocity = 0, onFinished?: () => void) => {
+    if (open || !onFinished) {
+      pendingChatSlide.current = null;
+      setOpeningChat(null);
+    }
     const finish = drawerTransition.begin(() => {
       setPanelOpen(open);
       setComposerFocusSuppressed(false);
@@ -2042,13 +2059,13 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     thinkingTimer.current = null;
     setComposerFocusSuppressed(true);
     dismissComposer();
-    // Fetching, projection, and mounting the keyed transcript list must not
-    // compete with the native slide. Cached and offline chats take this path too.
-    animatePanel(false, 0, () => {
+    // Commit the destination cover before starting the slide. Keep the old
+    // transcript mounted underneath until the spring finishes, but never show it.
+    pendingChatSlide.current = () => animatePanel(false, 0, () => {
       const session = useSessionStore.getState();
-      if (session.instanceUrl !== productionInstanceUrl || session.user?.id !== productionUserId) return;
+      if (session.instanceUrl !== productionInstanceUrl || session.user?.id !== productionUserId) { setOpeningChat(null); return; }
       const selected = usePrototypeStore.getState().chats.find((item) => item.id === chat.id && item.deletedAt === null);
-      if (!selected) return;
+      if (!selected) { setOpeningChat(null); return; }
       abandonActiveTemporaryChat();
       composerFollowsDefaultModel.current = false;
       setActiveChatId(selected.id);
@@ -2058,7 +2075,24 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
       setComposerFocusRequest({ revision: composerFocusRevision.current, target: 'content' });
       finishExistingChatTransition();
     });
+    setOpeningChat({ ...chat });
   }, [abandonActiveTemporaryChat, animatePanel, dismissComposer, finishExistingChatTransition, productionInstanceUrl, productionUserId]);
+
+  useLayoutEffect(() => {
+    const start = pendingChatSlide.current;
+    pendingChatSlide.current = null;
+    start?.();
+  }, [openingChat]);
+
+  const revealSelectedChat = useCallback((chatId: string) => {
+    if (!openingChat || openingChat.id !== chatId || activeChatId !== chatId) return;
+    if (revealChatFrame.current !== null) cancelAnimationFrame(revealChatFrame.current);
+    // Native layout is ready. Reveal on the next frame, guarding replacement selections.
+    revealChatFrame.current = requestAnimationFrame(() => {
+      revealChatFrame.current = null;
+      setOpeningChat((current) => current === openingChat ? null : current);
+    });
+  }, [activeChatId, openingChat]);
 
   const openRecalledChat = useCallback((chatId: string) => {
     const source = historyChats.find((chat) => chat.id === chatId);
@@ -2548,12 +2582,13 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
           collapsable={false}
           style={[persistentSidebar ? styles.persistentMainView : styles.mainView, mainAnimatedStyle]}
         >
-          <View collapsable={false} style={styles.flex} importantForAccessibility={!persistentSidebar && panelOpen ? 'no-hide-descendants' : 'auto'} accessibilityElementsHidden={!persistentSidebar && panelOpen}>
+          <View collapsable={false} style={[styles.flex, openingChat && { opacity: 0 }]} pointerEvents={openingChat ? 'none' : 'auto'} importantForAccessibility={openingChat || (!persistentSidebar && panelOpen) ? 'no-hide-descendants' : 'auto'} accessibilityElementsHidden={Boolean(openingChat || (!persistentSidebar && panelOpen))}>
           <ChatView
             messages={messages}
             queuedMessages={activePrototypeChat?.queuedMessages ?? EMPTY_MOBILE_QUEUE}
             chatId={activeChat?.id ?? null}
             chatLoaded={activePrototypeChat?.detailLoaded !== false}
+            onTranscriptReady={revealSelectedChat}
             draftNamespace={productionUserId ? cacheNamespace(productionInstanceUrl, productionUserId) : null}
             keyboardLayoutEnabled={!panelOpen}
             model={selectedModel}
@@ -2600,6 +2635,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
           {!persistentSidebar && panelOpen && (
             <Pressable accessibilityLabel="Close chats" accessibilityRole="button" style={StyleSheet.absoluteFill} onPress={() => animatePanel(false)} />
           )}
+          {openingChat ? <ChatOpeningCover chat={openingChat} onOpenChats={togglePanel} /> : null}
         </Reanimated.View>
 
         <ModelSheet
@@ -2615,6 +2651,25 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
       </View>
     </GestureDetector>
   );
+}
+
+function ChatOpeningCover({ chat, onOpenChats }: { chat: HistoryChatSummary; onOpenChats: () => void }) {
+  const { styles } = useChatStyles();
+  const insets = useSafeAreaInsets();
+  return <View testID={`chat-opening-${chat.id}`} style={styles.chatOpeningCover}>
+    <View style={{ paddingTop: insets.top }}>
+      <AppHeader edgeAligned>
+        <RoundButton icon="line.3.horizontal" accessibilityLabel="Open chats" onPress={onOpenChats} />
+        <Text numberOfLines={1} style={styles.chatOpeningTitle}>{chat.title}</Text>
+        <View style={{ width: 52 }} />
+      </AppHeader>
+    </View>
+    <View accessibilityRole="progressbar" accessibilityLabel={`Opening ${chat.title}`} style={styles.chatOpeningPlaceholder}>
+      <View accessible={false} style={[styles.chatOpeningLine, { width: '58%' }]} />
+      <View accessible={false} style={styles.chatOpeningLine} />
+      <View accessible={false} style={[styles.chatOpeningLine, { width: '82%' }]} />
+    </View>
+  </View>;
 }
 
 type MessageAction = 'copy' | 'share' | 'reply' | 'edit' | 'regenerate' | 'delete';
@@ -3643,13 +3698,14 @@ function ComposerQueueSection({ title, subject, collapsed, onToggle, failed = fa
 }
 
 function ChatView({
-  messages, queuedMessages, chatId, chatLoaded, draftNamespace, keyboardLayoutEnabled, model, models, prototypeModel, presetSelections: defaultPresetSelections, input, composerInputRef, composerFocusSuppressed, composerFocusRequest, onChangeInput, onSend, assistantStatus,
+  messages, queuedMessages, chatId, chatLoaded, onTranscriptReady, draftNamespace, keyboardLayoutEnabled, model, models, prototypeModel, presetSelections: defaultPresetSelections, input, composerInputRef, composerFocusSuppressed, composerFocusRequest, onChangeInput, onSend, assistantStatus,
   onEdit, onRegenerate, onActivateBranch, onOpenChat, onStop, onTogglePanel, onOpenModelPicker, onSelectModel, onNewChat, onSaveTemporary, persistentSidebar, sidebarVisible, temporary, autoExpire, expirationPeriod, showAutoExpirationControl, expired, savingTemporary, onTemporaryChange, onAutoExpirationChange,
 }: {
   messages: Message[];
   queuedMessages: MobileQueuedMessage[];
   chatId: string | null;
   chatLoaded: boolean;
+  onTranscriptReady: (chatId: string) => void;
   draftNamespace: string | null;
   keyboardLayoutEnabled: boolean;
   model: Model;
@@ -3707,6 +3763,10 @@ function ChatView({
   const readerInteracting = useRef(false);
   const chatTailPending = useRef(true);
   const chatViewportHeight = useRef(0);
+  const measuredTranscriptId = useRef<string | null>(null);
+  useLayoutEffect(() => {
+    measuredTranscriptId.current = null;
+  }, [chatId, draftNamespace]);
   const pendingFollowFrame = useRef<number | null>(null);
   const tailSettleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const submittedTurnFollowRevision = useRef(0);
@@ -4854,6 +4914,11 @@ function ChatView({
     transform: [{ translateX: interpolate(headerExpansionProgress.value, [0, 1], [22, 0]) }],
   });
   const loadingExistingChat = Boolean(chatId && isEmptyConversation && !chatLoaded);
+  useEffect(() => {
+    // Empty chats have no transcript list to emit a native layout event.
+    if (chatId && chatLoaded && messages.length === 0) onTranscriptReady(chatId);
+    else if (chatId && chatLoaded && measuredTranscriptId.current === chatId) onTranscriptReady(chatId);
+  }, [chatId, chatLoaded, messages.length, onTranscriptReady]);
   const hasPendingAssistant = messages.some((message) => message.role === 'assistant' && (message.status === 'queued' || message.status === 'streaming'));
   const attachmentPolicy = attachmentSendPolicy(attachments, { editing: Boolean(messageEdit) });
   const canSend = Boolean(model.id)
@@ -5076,6 +5141,8 @@ function ChatView({
           onContentSizeChange={handleContentSizeChange}
           onLayout={(event) => {
             chatViewportHeight.current = event.nativeEvent.layout.height;
+            measuredTranscriptId.current = chatId;
+            if (chatId && chatLoaded) onTranscriptReady(chatId);
             keyboardBlankSpace.value = chatKeyboardBlankSpace(
               chatViewportHeight.current,
               measuredContentHeight.current,
@@ -5852,6 +5919,10 @@ function createChatStyles(COLORS: ChatColors) { return StyleSheet.create({
   },
   persistentMainView: { flex: 1, minWidth: 0, overflow: 'hidden', backgroundColor: COLORS.background },
   chatRoot: { flex: 1, backgroundColor: COLORS.background },
+  chatOpeningCover: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, backgroundColor: COLORS.background, zIndex: 3 },
+  chatOpeningTitle: { flex: 1, color: COLORS.text, fontSize: 16, fontWeight: '600', textAlign: 'center' },
+  chatOpeningPlaceholder: { marginHorizontal: 24, marginTop: 36, gap: 14 },
+  chatOpeningLine: { height: 12, borderRadius: 6, backgroundColor: COLORS.lineSoft },
   chatHeaderOverlay: { position: Platform.OS === 'android' ? 'relative' : 'absolute', zIndex: 2, top: 0, left: 0, right: 0 },
   appHeader: { width: '100%', maxWidth: CHAT_CONTENT_MAX, alignSelf: 'center', height: 64, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
   appHeaderEdgeAligned: { maxWidth: '100%' },

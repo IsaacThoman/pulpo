@@ -33,6 +33,12 @@ twice, checks the selected transcript's native test identifier, and verifies the
 keyboard stays dismissed. This covers initial local hydration and resident detail
 selection after drawer closure; it does not measure physical-device frame timing.
 
+Set `EXPO_PUBLIC_PERF_COLD_CHAT=1` to omit chat 3's offline document, delay its
+network response by five seconds, and make chat 4 empty. `testSelectedChatCover` checks that selection
+shows the destination placeholder, hides the previous transcript and intermediate
+spinner, reveals the loaded transcript, handles selecting the same chat again,
+and switches through an empty chat.
+
 Build current native dependencies first (`expo prebuild`, `pod install`, then
 Release Xcode/Gradle builds). Keep the normal build intact. Export a harness from
 `apps/mobile`, for example:
@@ -83,7 +89,7 @@ coverage, and native/device limitations.
 
 ## Focused iOS UI tests
 
-`PerformanceUITests.swift` contains the three native checks. After installing the
+`PerformanceUITests.swift` contains the native interaction checks. After installing the
 UI fixture on a disposable simulator, run `create-ui-test-project.rb` with Ruby's
 `xcodeproj` gem (available with CocoaPods), then run `xcodebuild test` against the
 generated `Performance.xcodeproj` / `PerformanceUITests` scheme and that explicit
