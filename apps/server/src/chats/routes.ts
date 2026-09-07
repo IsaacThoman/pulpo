@@ -1,3 +1,4 @@
+import { profileEq, profileInArray } from '../profiles/context.js'
 import { and, asc, desc, eq, inArray, isNotNull, isNull, ne, sql } from 'drizzle-orm'
 import { createHash } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
@@ -54,16 +55,16 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       .select()
       .from(chats)
       .where(and(
-        eq(chats.userId, user.id), isNull(chats.deletedAt), eq(chats.temporary, false), accessibleChatCondition(),
+        profileEq(chats.userId, user.id), isNull(chats.deletedAt), profileEq(chats.temporary, false), accessibleChatCondition(),
       ))
       .orderBy(desc(chats.updatedAt))
     const inFlight = rows.length
       ? await db.select({ id: responses.id, chatId: responses.chatId })
         .from(responses)
         .where(and(
-          eq(responses.userId, user.id),
-          inArray(responses.chatId, rows.map((chat) => chat.id)),
-          inArray(responses.status, ['queued', 'in_progress']),
+          profileEq(responses.userId, user.id),
+          profileInArray(responses.chatId, rows.map((chat) => chat.id)),
+          profileInArray(responses.status, ['queued', 'in_progress']),
         ))
       : []
     const responseIdsByChat = new Map<string, string[]>()
@@ -89,10 +90,10 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       modelId: chats.modelId,
       deletedAt: chats.deletedAt,
     }).from(chats).where(and(
-      eq(chats.userId, user.id),
+      profileEq(chats.userId, user.id),
       isNotNull(chats.deletedAt),
       isNull(chats.purgeStartedAt),
-      eq(chats.temporary, false),
+      profileEq(chats.temporary, false),
     )).orderBy(desc(chats.deletedAt))
     return {
       data: rows.map((row) => ({
@@ -109,11 +110,11 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     const result = await db
       .selectDistinct({ chat: chats })
       .from(chats)
-      .leftJoin(responses, eq(responses.chatId, chats.id))
+      .leftJoin(responses, profileEq(responses.chatId, chats.id))
       .where(and(
-        eq(chats.userId, user.id),
+        profileEq(chats.userId, user.id),
         isNull(chats.deletedAt),
-        eq(chats.temporary, false),
+        profileEq(chats.temporary, false),
         accessibleChatCondition(),
         sql`to_tsvector('simple', coalesce(${chats.title}, '') || ' ' || coalesce(${responses.input}::text, '') || ' ' || coalesce(${responses.output}::text, ''))
           @@ plainto_tsquery('simple', ${query})`,
@@ -125,11 +126,11 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/api/chats/export', async (request, reply) => {
     const user = requireUser(request)
-    const chatRows = await db.select().from(chats).where(and(eq(chats.userId, user.id), eq(chats.temporary, false)))
+    const chatRows = await db.select().from(chats).where(and(profileEq(chats.userId, user.id), profileEq(chats.temporary, false)))
     const responseRows = chatRows.length
       ? await db.select().from(responses).where(and(
-        eq(responses.userId, user.id),
-        inArray(responses.chatId, chatRows.map((chat) => chat.id)),
+        profileEq(responses.userId, user.id),
+        profileInArray(responses.chatId, chatRows.map((chat) => chat.id)),
       ))
       : []
     return reply.type('application/json').header('content-disposition', 'attachment; filename="pulpo-chats.json"')
@@ -152,7 +153,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
         const chatValue = (wrapped.chat && typeof wrapped.chat === 'object' ? wrapped.chat : wrapped) as Record<string, unknown>
         const sourceChatId = String(wrapped.id ?? chatValue.id ?? '') || createHash('sha256').update(JSON.stringify(chatValue)).digest('hex')
         const fingerprint = createHash('sha256').update(JSON.stringify(chatValue)).digest('hex')
-        const [existing] = await tx.select().from(chatImportSources).where(and(eq(chatImportSources.userId, user.id), eq(chatImportSources.source, 'pulpo'), eq(chatImportSources.sourceChatId, sourceChatId))).limit(1)
+        const [existing] = await tx.select().from(chatImportSources).where(and(profileEq(chatImportSources.userId, user.id), profileEq(chatImportSources.source, 'pulpo'), profileEq(chatImportSources.sourceChatId, sourceChatId))).limit(1)
         if (existing) { duplicates += 1; continue }
         const chatId = newId()
         const source = chatValue
@@ -173,7 +174,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
           await tx.insert(responses).values({ id: ids.get(String(response.id))!, chatId, userId: user.id, modelId: responseModel, actualModelId: responseModel, parentResponseId: ids.get(String(response.parentResponseId ?? response.parent_response_id ?? '')) ?? null, previousResponseId: ids.get(String(response.previousResponseId ?? response.previous_response_id ?? '')) ?? null, userMessageId, branchReason: String(response.branchReason ?? response.branch_reason ?? 'message'), status: (['queued', 'in_progress', 'completed', 'failed', 'cancelled', 'incomplete'].includes(String(response.status)) ? response.status : 'completed') as typeof responses.$inferInsert.status, input: response.input ?? [], output: response.output ?? [], usage: response.usage, error: response.error, metadata, createdAt: response.createdAt ? new Date(String(response.createdAt)) : new Date(), completedAt: response.completedAt ? new Date(String(response.completedAt)) : null })
         }
         const active = ids.get(String(source.activeResponseId ?? source.active_response_id ?? '')) ?? [...ids.values()].at(-1)
-        if (active) await tx.update(chats).set({ activeResponseId: active, activeBranchLeafId: active }).where(eq(chats.id, chatId))
+        if (active) await tx.update(chats).set({ activeResponseId: active, activeBranchLeafId: active }).where(profileEq(chats.id, chatId))
         await tx.insert(chatImportSources).values({ userId: user.id, source: 'pulpo', sourceChatId, chatId, fingerprint })
         imported += 1
       }
@@ -185,7 +186,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
 
   app.delete('/api/chats', async (request, reply) => {
     const user = requireUser(request)
-    const active = await db.select({ id: chats.id }).from(chats).where(and(eq(chats.userId, user.id), isNull(chats.deletedAt)))
+    const active = await db.select({ id: chats.id }).from(chats).where(and(profileEq(chats.userId, user.id), isNull(chats.deletedAt)))
     const ids = active.map((chat) => chat.id)
     const now = new Date()
     const retention = await getTrashRetention(user.id)
@@ -194,7 +195,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       expiresAt: null,
       purgeStartedAt: retention === 'instant' ? now : null,
       updatedAt: now,
-    }).where(and(eq(chats.userId, user.id), isNull(chats.deletedAt)))
+    }).where(and(profileEq(chats.userId, user.id), isNull(chats.deletedAt)))
     await cancelChatWork(ids)
     if (retention === 'instant' && ids.length) {
       await maintenanceQueue.add('purge-chats', { type: 'purge-chats', payload: { userId: user.id } }, {
@@ -209,7 +210,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
   app.delete('/api/chats/deleted', async (request, reply) => {
     const user = requireUser(request)
     const deleted = await db.select({ id: chats.id }).from(chats).where(and(
-      eq(chats.userId, user.id), isNotNull(chats.deletedAt), isNull(chats.purgeStartedAt),
+      profileEq(chats.userId, user.id), isNotNull(chats.deletedAt), isNull(chats.purgeStartedAt),
     ))
     const deleting = await markChatsForPurge(deleted.map((chat) => chat.id), user.id)
     if (deleting) {
@@ -243,7 +244,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       updatedAt: createdAt,
     }).onConflictDoNothing().returning()
     if (!created) {
-      const [existing] = await db.select().from(chats).where(and(eq(chats.id, id), eq(chats.userId, user.id))).limit(1)
+      const [existing] = await db.select().from(chats).where(and(profileEq(chats.id, id), profileEq(chats.userId, user.id))).limit(1)
       if (!existing) throw new AppError(409, 'chat_id_conflict', 'Chat identifier is already in use')
       return existing
     }
@@ -285,7 +286,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     let chat = inserted
     if (!chat) {
       const [existing] = await db.select().from(chats).where(and(
-        eq(chats.id, input.chat.clientId), eq(chats.userId, user.id), isNull(chats.deletedAt),
+        profileEq(chats.id, input.chat.clientId), profileEq(chats.userId, user.id), isNull(chats.deletedAt),
       )).limit(1)
       if (!existing) throw new AppError(409, 'chat_id_conflict', 'Chat identifier is already in use')
       chat = existing
@@ -303,19 +304,19 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       if (inserted && !chat.temporary && chat.expiresAt) {
         await scheduleNormalChatExpiry({ chatId: chat.id, userId: user.id, expiresAt: chat.expiresAt })
       }
-      const [updatedChat] = await db.select().from(chats).where(eq(chats.id, chat.id)).limit(1)
+      const [updatedChat] = await db.select().from(chats).where(profileEq(chats.id, chat.id)).limit(1)
       reply.code(202)
       return { chat: updatedChat ?? chat, response: toSnapshot(response) }
     } catch (error) {
       if (inserted) {
         if (input.response.attachmentIds.length) {
           await db.update(attachments).set({ chatId: null, updatedAt: new Date() }).where(and(
-            eq(attachments.userId, user.id),
-            eq(attachments.chatId, inserted.id),
-            inArray(attachments.id, input.response.attachmentIds),
+            profileEq(attachments.userId, user.id),
+            profileEq(attachments.chatId, inserted.id),
+            profileInArray(attachments.id, input.response.attachmentIds),
           ))
         }
-        await db.delete(chats).where(and(eq(chats.id, inserted.id), eq(chats.userId, user.id)))
+        await db.delete(chats).where(and(profileEq(chats.id, inserted.id), profileEq(chats.userId, user.id)))
       }
       throw error
     }
@@ -326,8 +327,8 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     const { id } = request.params as { id: string }
     const now = new Date()
     const [current] = await db.select().from(chats).where(and(
-      eq(chats.id, id),
-      eq(chats.userId, user.id),
+      profileEq(chats.id, id),
+      profileEq(chats.userId, user.id),
     )).limit(1)
     if (!current) throw notFound('Chat')
     if (temporaryChatIsExpired(current, now)) {
@@ -342,17 +343,17 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       expiresAt: null,
       updatedAt: now,
     }).where(and(
-      eq(chats.id, id),
-      eq(chats.userId, user.id),
-      eq(chats.temporary, true),
+      profileEq(chats.id, id),
+      profileEq(chats.userId, user.id),
+      profileEq(chats.temporary, true),
       isNull(chats.deletedAt),
       isNull(chats.purgeStartedAt),
       accessibleChatCondition(now),
     )).returning()
     if (!updated) {
       const [afterRace] = await db.select().from(chats).where(and(
-        eq(chats.id, id),
-        eq(chats.userId, user.id),
+        profileEq(chats.id, id),
+        profileEq(chats.userId, user.id),
       )).limit(1)
       if (afterRace && temporaryChatIsExpired(afterRace, new Date())) {
         throw new AppError(410, 'temporary_chat_expired', 'This temporary chat has expired and cannot be recovered')
@@ -368,16 +369,16 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
     const [source] = await db.select().from(chats).where(and(
-      eq(chats.id, id),
-      eq(chats.userId, user.id),
+      profileEq(chats.id, id),
+      profileEq(chats.userId, user.id),
       isNull(chats.deletedAt),
-      eq(chats.temporary, false),
+      profileEq(chats.temporary, false),
       accessibleChatCondition(),
     )).limit(1)
     if (!source) throw notFound('Chat')
     const sourceResponses = await db.select().from(responses).where(and(
-      eq(responses.chatId, id),
-      eq(responses.userId, user.id),
+      profileEq(responses.chatId, id),
+      profileEq(responses.userId, user.id),
       isNull(responses.deletedAt),
     )).orderBy(asc(responses.createdAt), asc(responses.id))
     const chatId = newId()
@@ -433,18 +434,18 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       throw new AppError(400, 'validation_error', 'Chat order cannot contain duplicates')
     }
     const existing = await db.select({ id: chats.id }).from(chats).where(and(
-      eq(chats.userId, user.id),
+      profileEq(chats.userId, user.id),
       isNull(chats.deletedAt),
-      eq(chats.temporary, false),
+      profileEq(chats.temporary, false),
       accessibleChatCondition(),
-      inArray(chats.id, chatIds),
+      profileInArray(chats.id, chatIds),
     ))
     if (existing.length !== chatIds.length) throw notFound('Chat')
     await db.transaction(async (tx) => {
       for (const [sortOrder, chatId] of chatIds.entries()) {
         await tx.update(chats)
           .set({ sortOrder })
-          .where(and(eq(chats.id, chatId), eq(chats.userId, user.id), eq(chats.temporary, false)))
+          .where(and(profileEq(chats.id, chatId), profileEq(chats.userId, user.id), profileEq(chats.temporary, false)))
       }
     })
     await bumpRevision(user.id)
@@ -459,20 +460,20 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     const activeScope = query.scope === 'active'
     const now = new Date()
     const [chat] = await db.select().from(chats).where(and(
-      eq(chats.id, id),
-      eq(chats.userId, user.id),
+      profileEq(chats.id, id),
+      profileEq(chats.userId, user.id),
       request.adminChatAccess ? undefined : isNull(chats.deletedAt),
       accessibleChatCondition(now),
     )).limit(1)
     if (!chat) {
       const [owned] = await db.select({ temporary: chats.temporary, expiresAt: chats.expiresAt })
-        .from(chats).where(and(eq(chats.id, id), eq(chats.userId, user.id), isNull(chats.deletedAt))).limit(1)
+        .from(chats).where(and(profileEq(chats.id, id), profileEq(chats.userId, user.id), isNull(chats.deletedAt))).limit(1)
       if (owned && temporaryChatIsExpired(owned, now)) {
         throw new AppError(410, 'temporary_chat_expired', 'This temporary chat has expired and cannot be recovered')
       }
       if (user.role === 'admin' && !request.adminChatAccess) {
         const [foreign] = await db.select({ id: chats.id }).from(chats).where(and(
-          eq(chats.id, id),
+          profileEq(chats.id, id),
           ne(chats.userId, user.id),
           isNull(chats.purgeStartedAt),
           accessibleChatCondition(now),
@@ -494,7 +495,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     }
     const allTurns = await db.select()
       .from(responses)
-      .where(and(eq(responses.chatId, id), isNull(responses.deletedAt)))
+      .where(and(profileEq(responses.chatId, id), isNull(responses.deletedAt)))
       .orderBy(asc(responses.createdAt), asc(responses.id))
     const costRows = allTurns.length ? await db.select({
       responseId: usageEvents.responseId,
@@ -516,9 +517,9 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       mimeType: attachments.mimeType,
       sizeBytes: attachments.sizeBytes,
     }).from(attachments).where(and(
-      eq(attachments.userId, user.id),
-      eq(attachments.status, 'ready'),
-      inArray(attachments.id, referencedAttachmentIds),
+      profileEq(attachments.userId, user.id),
+      profileEq(attachments.status, 'ready'),
+      profileInArray(attachments.id, referencedAttachmentIds),
     )) : []
     const queue = await listQueuedMessages(id, user.id)
     return {
@@ -551,7 +552,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       expiresAt,
       updatedAt: now,
     }).where(and(
-      eq(chats.id, id), eq(chats.userId, user.id), eq(chats.temporary, false),
+      profileEq(chats.id, id), profileEq(chats.userId, user.id), profileEq(chats.temporary, false),
       isNull(chats.deletedAt), isNull(chats.purgeStartedAt), accessibleChatCondition(now),
     )).returning()
     if (!updated) throw notFound('Chat')
@@ -573,9 +574,9 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       expiresAt: null,
       purgeStartedAt: retention === 'instant' ? now : null,
       updatedAt: now,
-    }).where(and(eq(chats.id, id), eq(chats.userId, user.id), isNull(chats.deletedAt))).returning({ id: chats.id })
+    }).where(and(profileEq(chats.id, id), profileEq(chats.userId, user.id), isNull(chats.deletedAt))).returning({ id: chats.id })
     if (!result.length) throw notFound('Chat')
-    await db.delete(queuedMessages).where(and(eq(queuedMessages.chatId, id), eq(queuedMessages.userId, user.id)))
+    await db.delete(queuedMessages).where(and(profileEq(queuedMessages.chatId, id), profileEq(queuedMessages.userId, user.id)))
     await cancelChatWork([id])
     if (retention === 'instant') {
       await maintenanceQueue.add('purge-chats', { type: 'purge-chats', payload: { userId: user.id } }, {
@@ -591,9 +592,9 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
     const [recovered] = await db.update(chats).set({ deletedAt: null, expiresAt: null, updatedAt: new Date() }).where(and(
-      eq(chats.id, id),
-      eq(chats.userId, user.id),
-      eq(chats.temporary, false),
+      profileEq(chats.id, id),
+      profileEq(chats.userId, user.id),
+      profileEq(chats.temporary, false),
       isNotNull(chats.deletedAt),
       isNull(chats.purgeStartedAt),
     )).returning()
@@ -622,9 +623,9 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     const input = createChatResponseSchema.parse(request.body)
     if (input.parentResponseId) {
       const [parent] = await db.select({ id: responses.id }).from(responses).where(and(
-        eq(responses.id, input.parentResponseId),
-        eq(responses.chatId, id),
-        eq(responses.userId, user.id),
+        profileEq(responses.id, input.parentResponseId),
+        profileEq(responses.chatId, id),
+        profileEq(responses.userId, user.id),
         isNull(responses.deletedAt),
       )).limit(1)
       if (!parent) throw new AppError(400, 'invalid_parent_response', 'The selected parent response is unavailable')
@@ -685,10 +686,10 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
     const [row] = await db.select({ response: responses }).from(responses)
-      .innerJoin(chats, eq(chats.id, responses.chatId))
+      .innerJoin(chats, profileEq(chats.id, responses.chatId))
       .where(and(
-        eq(responses.id, id),
-        eq(responses.userId, user.id),
+        profileEq(responses.id, id),
+        profileEq(responses.userId, user.id),
         isNull(responses.deletedAt),
         isNull(chats.deletedAt),
         accessibleChatCondition(),
@@ -701,10 +702,10 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
     const [row] = await db.select({ response: responses }).from(responses)
-      .innerJoin(chats, eq(chats.id, responses.chatId))
+      .innerJoin(chats, profileEq(chats.id, responses.chatId))
       .where(and(
-        eq(responses.id, id),
-        eq(responses.userId, user.id),
+        profileEq(responses.id, id),
+        profileEq(responses.userId, user.id),
         isNull(responses.deletedAt),
         isNull(chats.deletedAt),
         accessibleChatCondition(),
@@ -713,11 +714,11 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     if (!response) throw notFound('Response')
     if (!['queued', 'in_progress'].includes(response.status)) return toSnapshot(response)
     await requestCancellation(id)
-    await db.update(responses).set({ status: 'cancelled', completedAt: new Date(), updatedAt: new Date() }).where(eq(responses.id, id))
-    await db.update(workspaceLeases).set({ status: 'released', capacityState: null, releasedAt: new Date(), error: 'Generation cancelled while waiting for capacity', updatedAt: new Date() }).where(and(eq(workspaceLeases.responseId, id), eq(workspaceLeases.status, 'provisioning')))
+    await db.update(responses).set({ status: 'cancelled', completedAt: new Date(), updatedAt: new Date() }).where(profileEq(responses.id, id))
+    await db.update(workspaceLeases).set({ status: 'released', capacityState: null, releasedAt: new Date(), error: 'Generation cancelled while waiting for capacity', updatedAt: new Date() }).where(and(profileEq(workspaceLeases.responseId, id), profileEq(workspaceLeases.status, 'provisioning')))
     const [log] = await db.update(requestLogs).set({ status: 'cancelled', errorCategory: 'cancellation', completedAt: new Date(), updatedAt: new Date() }).where(eq(requestLogs.responseId, id)).returning({ id: requestLogs.id })
     if (log) await publishAdminUsage(log.id, true)
-    const [cancelled] = await db.select().from(responses).where(eq(responses.id, id)).limit(1)
+    const [cancelled] = await db.select().from(responses).where(profileEq(responses.id, id)).limit(1)
     await advanceMessageQueue(response.chatId)
     return toSnapshot(cancelled!)
   })
@@ -726,10 +727,10 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
     const [row] = await db.select({ response: responses }).from(responses)
-      .innerJoin(chats, eq(chats.id, responses.chatId))
+      .innerJoin(chats, profileEq(chats.id, responses.chatId))
       .where(and(
-        eq(responses.id, id),
-        eq(responses.userId, user.id),
+        profileEq(responses.id, id),
+        profileEq(responses.userId, user.id),
         isNull(responses.deletedAt),
         isNull(chats.deletedAt),
         accessibleChatCondition(),
@@ -737,13 +738,13 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     const response = row?.response
     if (!response) throw notFound('Response')
     if (!response.agentMode || !['queued', 'in_progress'].includes(response.status)) throw new AppError(409, 'agent_not_waiting', 'This response cannot continue without agent tools')
-    const [waitingLease] = await db.select({ id: workspaceLeases.id, createdAt: workspaceLeases.createdAt }).from(workspaceLeases).where(and(eq(workspaceLeases.responseId, id), eq(workspaceLeases.status, 'provisioning'), inArray(workspaceLeases.capacityState, ['waiting', 'claiming']))).limit(1)
+    const [waitingLease] = await db.select({ id: workspaceLeases.id, createdAt: workspaceLeases.createdAt }).from(workspaceLeases).where(and(profileEq(workspaceLeases.responseId, id), profileEq(workspaceLeases.status, 'provisioning'), profileInArray(workspaceLeases.capacityState, ['waiting', 'claiming']))).limit(1)
     if (!waitingLease) throw new AppError(409, 'agent_not_waiting', 'This response is not waiting for workspace capacity')
     if (!workspaceContinueWithoutAgentIsAvailable(waitingLease.createdAt)) {
       throw new AppError(409, 'agent_wait_required', 'Continue without agent tools is available after 15 seconds of waiting for workspace capacity')
     }
-    await db.update(responses).set({ agentCapacityAction: 'continue_without_agent', updatedAt: new Date() }).where(eq(responses.id, id))
-    const [updated] = await db.select().from(responses).where(eq(responses.id, id)).limit(1)
+    await db.update(responses).set({ agentCapacityAction: 'continue_without_agent', updatedAt: new Date() }).where(profileEq(responses.id, id))
+    const [updated] = await db.select().from(responses).where(profileEq(responses.id, id)).limit(1)
     return toSnapshot(updated!)
   })
 
@@ -752,12 +753,12 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     if (request.adminChatAccess) {
       return {
         data: await db.select({ id: folders.id, name: folders.name })
-          .from(folders).where(eq(folders.userId, user.id)).orderBy(asc(folders.sortOrder), asc(folders.createdAt)),
+          .from(folders).where(profileEq(folders.userId, user.id)).orderBy(asc(folders.sortOrder), asc(folders.createdAt)),
       }
     }
     return {
       data: await db.select().from(folders)
-        .where(eq(folders.userId, user.id))
+        .where(profileEq(folders.userId, user.id))
         .orderBy(asc(folders.sortOrder), asc(folders.createdAt)),
     }
   })
@@ -770,7 +771,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     const id = body.clientId ?? newId()
     const [sortRow] = await db.select({
       nextSortOrder: sql<number>`coalesce(max(${folders.sortOrder}), -1)::int + 1`,
-    }).from(folders).where(eq(folders.userId, user.id))
+    }).from(folders).where(profileEq(folders.userId, user.id))
     const [created] = await db.insert(folders).values({
       id,
       userId: user.id,
@@ -778,7 +779,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       sortOrder: sortRow?.nextSortOrder ?? 0,
     }).onConflictDoNothing().returning()
     if (!created) {
-      const [existing] = await db.select().from(folders).where(and(eq(folders.id, id), eq(folders.userId, user.id))).limit(1)
+      const [existing] = await db.select().from(folders).where(and(profileEq(folders.id, id), profileEq(folders.userId, user.id))).limit(1)
       if (!existing) throw new AppError(409, 'folder_id_conflict', 'Folder identifier is already in use')
       return existing
     }
@@ -797,7 +798,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     if (new Set(folderIds).size !== folderIds.length) {
       throw new AppError(400, 'validation_error', 'Folder order cannot contain duplicates')
     }
-    const existing = await db.select({ id: folders.id }).from(folders).where(eq(folders.userId, user.id))
+    const existing = await db.select({ id: folders.id }).from(folders).where(profileEq(folders.userId, user.id))
     const existingIds = new Set(existing.map((folder) => folder.id))
     if (folderIds.length !== existingIds.size || folderIds.some((folderId) => !existingIds.has(folderId))) {
       throw new AppError(400, 'validation_error', 'Folder order must contain every folder exactly once')
@@ -806,7 +807,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       for (const [sortOrder, folderId] of folderIds.entries()) {
         await tx.update(folders)
           .set({ sortOrder, updatedAt: new Date() })
-          .where(and(eq(folders.id, folderId), eq(folders.userId, user.id)))
+          .where(and(profileEq(folders.id, folderId), profileEq(folders.userId, user.id)))
       }
     })
     await bumpRevision(user.id, undefined, ['folders'])
@@ -824,7 +825,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       pinned: patch.pinned,
       sortOrder: typeof patch.sortOrder === 'number' ? patch.sortOrder : undefined,
       updatedAt: new Date(),
-    }).where(and(eq(folders.id, id), eq(folders.userId, user.id))).returning()
+    }).where(and(profileEq(folders.id, id), profileEq(folders.userId, user.id))).returning()
     if (!updated) throw notFound('Folder')
     await bumpRevision(user.id, undefined, ['folders'])
     return updated
@@ -834,8 +835,8 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
     await db.transaction(async (tx) => {
-      await tx.update(chats).set({ folderId: null }).where(and(eq(chats.userId, user.id), eq(chats.folderId, id)))
-      const deleted = await tx.delete(folders).where(and(eq(folders.id, id), eq(folders.userId, user.id))).returning({ id: folders.id })
+      await tx.update(chats).set({ folderId: null }).where(and(profileEq(chats.userId, user.id), profileEq(chats.folderId, id)))
+      const deleted = await tx.delete(folders).where(and(profileEq(folders.id, id), profileEq(folders.userId, user.id))).returning({ id: folders.id })
       if (!deleted.length) throw notFound('Folder')
     })
     await bumpRevision(user.id, undefined, ['folders', 'chats'])

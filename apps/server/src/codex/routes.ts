@@ -1,3 +1,4 @@
+import { profileEq, profileInArray } from '../profiles/context.js'
 import { and, eq, inArray, like } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
@@ -84,25 +85,25 @@ export async function registerCodexRoutes(app: FastifyInstance): Promise<void> {
   app.delete('/api/account/providers/codex', async (request, reply) => {
     const user = requireUser(request)
     const activeResponses = await db.select({ id: responses.id }).from(responses).where(and(
-      eq(responses.userId, user.id), inArray(responses.status, ['queued', 'in_progress']), like(responses.modelId, `${CODEX_MODEL_PREFIX}%`),
+      profileEq(responses.userId, user.id), profileInArray(responses.status, ['queued', 'in_progress']), like(responses.modelId, `${CODEX_MODEL_PREFIX}%`),
     ))
     await Promise.all(activeResponses.map(({ id }) => requestCancellation(id)))
     await new UserCredentialStore(user.id).delete(CODEX_PI_PROVIDER_ID)
     await db.transaction(async (tx) => {
       const now = new Date()
       await tx.update(responses).set({ status: 'cancelled', completedAt: now, updatedAt: now }).where(and(
-        eq(responses.userId, user.id), inArray(responses.status, ['queued', 'in_progress']), like(responses.modelId, `${CODEX_MODEL_PREFIX}%`),
+        profileEq(responses.userId, user.id), profileInArray(responses.status, ['queued', 'in_progress']), like(responses.modelId, `${CODEX_MODEL_PREFIX}%`),
       ))
       await tx.update(queuedMessages).set({ status: 'cancelled', error: 'Codex connection removed', updatedAt: now }).where(and(
-        eq(queuedMessages.userId, user.id), inArray(queuedMessages.status, ['editing', 'pending', 'dispatching']),
+        profileEq(queuedMessages.userId, user.id), profileInArray(queuedMessages.status, ['editing', 'pending', 'dispatching']),
         like(queuedMessages.modelId, `${CODEX_MODEL_PREFIX}%`),
       ))
       await tx.update(codexLoginAttempts).set({ status: 'cancelled', error: null, updatedAt: now }).where(and(
         eq(codexLoginAttempts.userId, user.id), inArray(codexLoginAttempts.status, activeAttemptStatuses),
       ))
-      const [preferences] = await tx.select({ values: userPreferences.values }).from(userPreferences)
-        .where(eq(userPreferences.userId, user.id)).limit(1)
-      if (preferences) {
+      const profilePreferences = await tx.select().from(userPreferences)
+        .where(profileEq(userPreferences.userId, user.id))
+      for (const preferences of profilePreferences) {
         let values = preferences.values
         let changed = false
         const modelIds = (await tx.select({ id: models.id }).from(models)
@@ -113,7 +114,7 @@ export async function registerCodexRoutes(app: FastifyInstance): Promise<void> {
           values = result.value
           changed ||= result.changed
         }
-        if (changed) await tx.update(userPreferences).set({ values, updatedAt: now }).where(eq(userPreferences.userId, user.id))
+        if (changed) await tx.update(userPreferences).set({ values, updatedAt: now }).where(and(eq(userPreferences.userId, user.id), eq(userPreferences.profileId, preferences.profileId)))
       }
     })
     reply.code(204).send()

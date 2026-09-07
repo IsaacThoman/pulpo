@@ -1,3 +1,4 @@
+import { profileEq } from '../profiles/context.js'
 import { createHash } from 'node:crypto'
 import { and, eq, sql } from 'drizzle-orm'
 import {
@@ -68,7 +69,7 @@ function publicOcr(value: ReturnType<typeof parseOcrSettings>) {
 
 export async function loadManagementSettings(userId: string, database: typeof db = db): Promise<ManagementSettingsDocument> {
   const [[preferenceRow], [profile], settingRows] = await Promise.all([
-    database.select().from(userPreferences).where(eq(userPreferences.userId, userId)).limit(1),
+    database.select().from(userPreferences).where(profileEq(userPreferences.userId, userId)).limit(1),
     database.select({
       username: users.username,
       profileColor: users.profileColor,
@@ -212,7 +213,7 @@ export async function applyManagementSettings(
     }
     if (mode !== 'instance') {
       await tx.insert(userPreferences).values({ userId, values: account })
-        .onConflictDoUpdate({ target: userPreferences.userId, set: { values: account, updatedAt: new Date() } })
+        .onConflictDoUpdate({ target: [userPreferences.userId, userPreferences.profileId], set: { values: account, updatedAt: new Date() } })
       const [revision] = await tx.update(users).set({
         username: account.username,
         profileColor: account.profileColor,

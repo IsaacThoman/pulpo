@@ -1,10 +1,13 @@
+import { deleteProfileData, resumeProfileDeletions } from './profiles/deletion.js'
+import { withProfile } from './profiles/context.js'
+import { profileEq, profileInArray } from './profiles/context.js'
 import { deleteAccountData, resumeAccountDeletions } from './account/deletion.js'
 import { createServer } from 'node:http'
 import { checkReadiness } from './runtime-health.js'
 import { queryClient } from './database/client.js'
 import { redis } from './redis.js'
 import { Worker } from 'bullmq'
-import { and, inArray, isNull, eq } from 'drizzle-orm'
+import { and, isNull, eq } from 'drizzle-orm'
 import { getConfig } from './config.js'
 import { db } from './database/client.js'
 import { applicationSettings, chats, responses } from './database/schema.js'
@@ -43,10 +46,10 @@ const generationWorker = new Worker<GenerationJob>('generation', async (job) => 
   try {
     await processGeneration(job.data.responseId)
   } finally {
-    const [response] = await db.select({ chatId: responses.chatId, userId: responses.userId, status: responses.status })
-      .from(responses).where(eq(responses.id, job.data.responseId)).limit(1)
+    const [response] = await db.select({ chatId: responses.chatId, userId: responses.userId, status: responses.status, profileId: responses.profileId })
+      .from(responses).where(profileEq(responses.id, job.data.responseId)).limit(1)
     if (response && isTerminalResponseStatus(response.status)) {
-      await advanceMessageQueue(response.chatId)
+      await withProfile(response, () => advanceMessageQueue(response.chatId))
       if (response.status === 'completed') await scheduleChatIndex(response.chatId, response.userId, 'response-completed')
     }
   }
@@ -76,13 +79,16 @@ concurrencyRefreshInterval.unref()
 const maintenanceWorker = new Worker<MaintenanceJob>('maintenance', async (job) => {
   if (job.data.type === 'export') await createExport(String(job.data.payload?.exportId))
   if (job.data.type === 'delete-account') await deleteAccountData(String(job.data.payload?.userId))
-  if (job.data.type === 'cleanup') { await resumeAccountDeletions(); await runCleanup() }
+  if (job.data.type === 'delete-profile') await deleteProfileData(String(job.data.payload?.profileId))
+  if (job.data.type === 'cleanup') { await resumeProfileDeletions(); await resumeAccountDeletions(); await runCleanup() }
   if (job.data.type === 'backup-schedule') await runOffsiteBackupSchedule()
   if (job.data.type === 'scrub-response-binary-context') await scrubPersistedResponseBinaryContext()
   if (job.data.type === 'purge-chats') {
     const userId = typeof job.data.payload?.userId === 'string' ? job.data.payload.userId : undefined
-    await markExpiredChatsForPurge(new Date(), userId)
-    await purgePendingChats(userId)
+    await withProfile(userId && typeof job.data.payload?.profileId === 'string' ? { userId, profileId: job.data.payload.profileId } : undefined, async () => {
+      await markExpiredChatsForPurge(new Date(), userId)
+      await purgePendingChats(userId)
+    })
   }
   if (job.data.type === 'expire-temporary-chat') {
     const chatId = typeof job.data.payload?.chatId === 'string' ? job.data.payload.chatId : ''
@@ -158,8 +164,8 @@ maintenanceWorker.on('failed', (job, error) => {
 const recoverable = await db
   .select({ id: responses.id })
   .from(responses)
-  .innerJoin(chats, eq(chats.id, responses.chatId))
-  .where(and(inArray(responses.status, ['queued', 'in_progress']), isNull(chats.deletedAt), accessibleChatCondition()))
+  .innerJoin(chats, profileEq(chats.id, responses.chatId))
+  .where(and(profileInArray(responses.status, ['queued', 'in_progress']), isNull(chats.deletedAt), accessibleChatCondition()))
 for (const response of recoverable) {
   const existing = await generationQueue.getJob(response.id)
   if (!existing) await generationQueue.add('recover', { responseId: response.id }, { jobId: response.id })

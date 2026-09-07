@@ -1,4 +1,6 @@
-import { and, asc, eq, inArray, isNull, ne, notInArray, or, gt, sql } from 'drizzle-orm'
+import { withProfile } from '../profiles/context.js'
+import { profileEq, profileInArray } from '../profiles/context.js'
+import { and, asc, eq, isNull, ne, notInArray, or, gt, sql } from 'drizzle-orm'
 import type { EpisodicMemoryProfile } from '@pulpo/contracts'
 import { db } from '../database/client.js'
 import {
@@ -38,7 +40,7 @@ export class EpisodicUserMemoryDisabledError extends Error {
 
 function eligibleChatCondition(now = new Date()) {
   return and(
-    eq(chats.temporary, false),
+    profileEq(chats.temporary, false),
     isNull(chats.deletedAt),
     isNull(chats.purgeStartedAt),
     or(isNull(chats.expiresAt), gt(chats.expiresAt, now)),
@@ -49,7 +51,7 @@ export async function userMemoryIsEnabled(userId: string): Promise<boolean> {
   const [owner] = await db.select({ deleting: users.deletionRequestedAt }).from(users).where(eq(users.id, userId)).limit(1)
   if (!owner || owner.deleting) return false
   const [preference] = await db.select({ values: userPreferences.values }).from(userPreferences)
-    .where(eq(userPreferences.userId, userId)).limit(1)
+    .where(profileEq(userPreferences.userId, userId)).limit(1)
   return (preference?.values as { memoryEnabled?: unknown } | undefined)?.memoryEnabled === true
 }
 
@@ -70,8 +72,8 @@ async function embedChatRows(generation: Generation, client: OllamaClient, chatI
   const profile = EPISODIC_MEMORY_PROFILES[generation.profile as EpisodicMemoryProfile]
   const pending = await db.select({ id: chatTurnEmbeddings.id, text: chatTurnEmbeddings.chunkText })
     .from(chatTurnEmbeddings).where(and(
-      eq(chatTurnEmbeddings.generationId, generation.id),
-      eq(chatTurnEmbeddings.chatId, chatId),
+      profileEq(chatTurnEmbeddings.generationId, generation.id),
+      profileEq(chatTurnEmbeddings.chatId, chatId),
       ne(chatTurnEmbeddings.status, 'ready'),
     ))
   for (let offset = 0; offset < pending.length; offset += EMBEDDING_BATCH_SIZE) {
@@ -90,7 +92,7 @@ async function embedChatRows(generation: Generation, client: OllamaClient, chatI
         for (let index = 0; index < batch.length; index += 1) {
           await tx.update(chatTurnEmbeddings).set({
             embedding: vectors[index]!, status: 'ready', error: null, indexedAt: new Date(), updatedAt: new Date(),
-          }).where(eq(chatTurnEmbeddings.id, batch[index]!.id))
+          }).where(profileEq(chatTurnEmbeddings.id, batch[index]!.id))
         }
       })
       recordEpisodicMemoryMetric({ metric: 'indexing', durationMs: performance.now() - indexingStarted, items: batch.length })
@@ -98,7 +100,7 @@ async function embedChatRows(generation: Generation, client: OllamaClient, chatI
       recordEpisodicMemoryMetric({ metric: 'indexing', durationMs: performance.now() - indexingStarted, items: batch.length, error: true })
       await db.update(chatTurnEmbeddings).set({
         status: 'failed', error: error instanceof Error ? error.message : String(error), updatedAt: new Date(),
-      }).where(inArray(chatTurnEmbeddings.id, batch.map((row) => row.id)))
+      }).where(profileInArray(chatTurnEmbeddings.id, batch.map((row) => row.id)))
       throw error
     }
   }
@@ -111,42 +113,42 @@ export async function reconcileChatGeneration(
   client = new OllamaClient(),
 ): Promise<number> {
   const [[chat], memoryEnabled] = await Promise.all([
-    db.select().from(chats).where(and(eq(chats.id, chatId), eq(chats.userId, userId), eligibleChatCondition())).limit(1),
+    db.select().from(chats).where(and(profileEq(chats.id, chatId), profileEq(chats.userId, userId), eligibleChatCondition())).limit(1),
     userMemoryIsEnabled(userId),
   ])
   if (!chat || !memoryEnabled) {
-    await db.delete(chatTurnEmbeddings).where(and(eq(chatTurnEmbeddings.chatId, chatId), eq(chatTurnEmbeddings.userId, userId)))
+    await db.delete(chatTurnEmbeddings).where(and(profileEq(chatTurnEmbeddings.chatId, chatId), profileEq(chatTurnEmbeddings.userId, userId)))
     return 0
   }
   const turns = await db.select().from(responses).where(and(
-    eq(responses.chatId, chatId),
-    eq(responses.userId, userId),
+    profileEq(responses.chatId, chatId),
+    profileEq(responses.userId, userId),
     isNull(responses.deletedAt),
   )).orderBy(asc(responses.createdAt), asc(responses.id))
   const chunks = activeLineagePassages(chat, turns)
   const expectedIds = chunks.map((chunk) => chunk.responseId)
   if (expectedIds.length) {
     await db.delete(chatTurnEmbeddings).where(and(
-      eq(chatTurnEmbeddings.generationId, generation.id),
-      eq(chatTurnEmbeddings.chatId, chatId),
+      profileEq(chatTurnEmbeddings.generationId, generation.id),
+      profileEq(chatTurnEmbeddings.chatId, chatId),
       notInArray(chatTurnEmbeddings.responseId, expectedIds),
     ))
   } else {
     await db.delete(chatTurnEmbeddings).where(and(
-      eq(chatTurnEmbeddings.generationId, generation.id),
-      eq(chatTurnEmbeddings.chatId, chatId),
+      profileEq(chatTurnEmbeddings.generationId, generation.id),
+      profileEq(chatTurnEmbeddings.chatId, chatId),
     ))
     return 0
   }
 
   const existing = await db.select().from(chatTurnEmbeddings).where(and(
-    eq(chatTurnEmbeddings.generationId, generation.id),
-    eq(chatTurnEmbeddings.chatId, chatId),
+    profileEq(chatTurnEmbeddings.generationId, generation.id),
+    profileEq(chatTurnEmbeddings.chatId, chatId),
   ))
   const passageKey = (row: { responseId: string; chunkIndex: number }) => `${row.responseId}:${row.chunkIndex}`
   const expectedPassages = new Set(chunks.map(passageKey))
   const obsolete = existing.filter((row) => !expectedPassages.has(passageKey(row)))
-  if (obsolete.length) await db.delete(chatTurnEmbeddings).where(inArray(chatTurnEmbeddings.id, obsolete.map((row) => row.id)))
+  if (obsolete.length) await db.delete(chatTurnEmbeddings).where(profileInArray(chatTurnEmbeddings.id, obsolete.map((row) => row.id)))
   const byResponse = new Map(existing.map((row) => [passageKey(row), row]))
   for (const chunk of chunks) {
     const current = byResponse.get(passageKey(chunk))
@@ -163,7 +165,7 @@ export async function reconcileChatGeneration(
         status: current.contentHash === chunk.contentHash && current.embedding ? 'ready' : 'pending',
         error: null,
         updatedAt: new Date(),
-      }).where(eq(chatTurnEmbeddings.id, current.id))
+      }).where(profileEq(chatTurnEmbeddings.id, current.id))
     }
   }
   await embedChatRows(generation, client, chatId, userId)
@@ -171,7 +173,7 @@ export async function reconcileChatGeneration(
 }
 
 export async function deleteUserEpisodicMemory(userId: string): Promise<void> {
-  await db.delete(chatTurnEmbeddings).where(eq(chatTurnEmbeddings.userId, userId))
+  await db.delete(chatTurnEmbeddings).where(profileEq(chatTurnEmbeddings.userId, userId))
 }
 
 export async function reconcileUserGeneration(
@@ -183,18 +185,18 @@ export async function reconcileUserGeneration(
     await deleteUserEpisodicMemory(userId)
     return 0
   }
-  const eligible = await db.select({ id: chats.id }).from(chats).where(and(eq(chats.userId, userId), eligibleChatCondition()))
+  const eligible = await db.select({ id: chats.id }).from(chats).where(and(profileEq(chats.userId, userId), eligibleChatCondition()))
   const eligibleIds = eligible.map((chat) => chat.id)
   if (eligibleIds.length) {
     await db.delete(chatTurnEmbeddings).where(and(
-      eq(chatTurnEmbeddings.generationId, generation.id),
-      eq(chatTurnEmbeddings.userId, userId),
+      profileEq(chatTurnEmbeddings.generationId, generation.id),
+      profileEq(chatTurnEmbeddings.userId, userId),
       notInArray(chatTurnEmbeddings.chatId, eligibleIds),
     ))
   } else {
     await db.delete(chatTurnEmbeddings).where(and(
-      eq(chatTurnEmbeddings.generationId, generation.id),
-      eq(chatTurnEmbeddings.userId, userId),
+      profileEq(chatTurnEmbeddings.generationId, generation.id),
+      profileEq(chatTurnEmbeddings.userId, userId),
     ))
   }
   let count = 0
@@ -205,15 +207,15 @@ export async function reconcileUserGeneration(
   return count
 }
 
-async function enabledUserIds(): Promise<string[]> {
-  const rows = await db.select({ userId: userPreferences.userId }).from(userPreferences)
+async function enabledProfiles(): Promise<Array<{ userId: string; profileId: string }>> {
+  const rows = await db.select({ userId: userPreferences.userId, profileId: userPreferences.profileId }).from(userPreferences)
     .where(sql`${userPreferences.values}->>'memoryEnabled' = 'true'`)
-  return rows.map((row) => row.userId)
+  return rows
 }
 
 async function updateProgress(generationId: string): Promise<{ total: number; ready: number; failed: number }> {
   const rows = await db.select({ status: chatTurnEmbeddings.status }).from(chatTurnEmbeddings)
-    .where(eq(chatTurnEmbeddings.generationId, generationId))
+    .where(profileEq(chatTurnEmbeddings.generationId, generationId))
   const statuses = rows.map((row) => row.status)
   const progress = {
     total: statuses.length,
@@ -230,22 +232,23 @@ async function updateProgress(generationId: string): Promise<{ total: number; re
 }
 
 async function reconciliationPass(generation: Generation, client: OllamaClient): Promise<void> {
-  const userIds = await enabledUserIds()
-  if (userIds.length) {
+  const profiles = await enabledProfiles()
+  const profileIds = profiles.map((profile) => profile.profileId)
+  if (profileIds.length) {
     await db.delete(chatTurnEmbeddings).where(and(
-      eq(chatTurnEmbeddings.generationId, generation.id),
-      notInArray(chatTurnEmbeddings.userId, userIds),
+      profileEq(chatTurnEmbeddings.generationId, generation.id),
+      notInArray(chatTurnEmbeddings.profileId, profileIds),
     ))
   } else {
-    await db.delete(chatTurnEmbeddings).where(eq(chatTurnEmbeddings.generationId, generation.id))
+    await db.delete(chatTurnEmbeddings).where(profileEq(chatTurnEmbeddings.generationId, generation.id))
   }
-  for (const userId of userIds) {
+  for (const profile of profiles) {
     await assertBuildIsCurrent(generation)
     try {
-      await reconcileUserGeneration(generation, userId, client)
+      await withProfile(profile, () => reconcileUserGeneration(generation, profile.userId, client))
     } catch (error) {
       if (!(error instanceof EpisodicUserMemoryDisabledError)) throw error
-      await deleteUserEpisodicMemory(userId)
+      await withProfile(profile, () => deleteUserEpisodicMemory(profile.userId))
     }
     await updateProgress(generation.id)
   }

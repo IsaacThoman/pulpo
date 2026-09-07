@@ -1,3 +1,4 @@
+import { registerDataProfileRoutes, registerProfileContext } from './profiles/service.js'
 import { registerShelfRoutes } from './shelf/routes.js'
 import { registerAccountDeletionRoutes } from './account/routes.js'
 import { registerDeviceSessionRoutes } from './auth/device-routes.js'
@@ -49,6 +50,7 @@ export async function buildApp() {
     requestIdHeader: 'x-request-id',
   })
 
+  registerProfileContext(app)
   app.decorateRequest('requestReceivedAt', null)
   app.addHook('onRequest', async (request) => {
     request.requestReceivedAt = new Date()
@@ -141,6 +143,7 @@ export async function buildApp() {
   await registerDeviceSessionRoutes(app)
   await registerAccountDeletionRoutes(app)
   await registerProfileRoutes(app)
+  await registerDataProfileRoutes(app)
   await registerCodexRoutes(app)
   await registerFriendRoutes(app)
   await registerPoolRoutes(app)

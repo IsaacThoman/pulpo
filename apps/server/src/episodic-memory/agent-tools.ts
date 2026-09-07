@@ -1,6 +1,7 @@
+import { profileEq } from '../profiles/context.js'
 import { Type } from '@earendil-works/pi-ai'
 import type { AgentTool } from '@earendil-works/pi-agent-core'
-import { and, eq, gt, isNull, ne, or, sql } from 'drizzle-orm'
+import { and, gt, isNull, ne, or, sql } from 'drizzle-orm'
 import { chatCanAccessMemory } from '../chats/memory-policy.js'
 import { db } from '../database/client.js'
 import { chats } from '../database/schema.js'
@@ -158,10 +159,10 @@ export async function readEpisodicChatPage(input: {
   const now = new Date()
   const [chat] = await db.select({ id: chats.id, title: chats.title, updatedAt: chats.updatedAt, leafId: chats.activeBranchLeafId, fallbackLeafId: chats.activeResponseId })
     .from(chats).where(and(
-      eq(chats.id, input.chatId),
-      eq(chats.userId, input.userId),
+      profileEq(chats.id, input.chatId),
+      profileEq(chats.userId, input.userId),
       ne(chats.id, input.currentChatId),
-      eq(chats.temporary, false),
+      profileEq(chats.temporary, false),
       isNull(chats.deletedAt),
       isNull(chats.purgeStartedAt),
       or(isNull(chats.expiresAt), gt(chats.expiresAt, now)),

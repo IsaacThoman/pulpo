@@ -1,7 +1,8 @@
-import { and, desc, eq, inArray } from 'drizzle-orm'
+import { withProfile } from '../profiles/context.js'
+import { and, desc, eq, inArray, isNull } from 'drizzle-orm'
 import type { EmbeddingJob } from '../jobs.js'
 import { db } from '../database/client.js'
-import { auditEvents, episodicMemoryGenerations } from '../database/schema.js'
+import { auditEvents, dataProfiles, chats, episodicMemoryGenerations } from '../database/schema.js'
 import { newId } from '../lib/ids.js'
 import { readEpisodicMemorySettings } from './settings.js'
 import { EPISODIC_MEMORY_PROFILES } from './profiles.js'
@@ -21,6 +22,17 @@ import {
 } from './indexer.js'
 
 export async function processEmbeddingJob(job: EmbeddingJob): Promise<void> {
+  if (job.type === 'reconcile') return processProfileEmbeddingJob(job)
+  if (job.type === 'index-chat') {
+    const [chat] = await db.select({ userId: chats.userId, profileId: chats.profileId }).from(chats).where(eq(chats.id, job.chatId))
+    if (chat) await withProfile(chat, () => processProfileEmbeddingJob(job))
+    return
+  }
+  const profiles = await db.select().from(dataProfiles).where(and(eq(dataProfiles.userId, job.userId), isNull(dataProfiles.deletionRequestedAt), job.profileId ? eq(dataProfiles.id, job.profileId) : undefined))
+  for (const profile of profiles) await withProfile({ userId: profile.userId, profileId: profile.id }, () => processProfileEmbeddingJob(job))
+}
+
+async function processProfileEmbeddingJob(job: EmbeddingJob): Promise<void> {
   if (job.type === 'delete-user') {
     await deleteUserEpisodicMemory(job.userId)
     return

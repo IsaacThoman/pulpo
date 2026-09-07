@@ -1,3 +1,4 @@
+import { DataProfileSwitcher } from '../components/DataProfileSwitcher';
 import { ToolImagePreview } from '../components/ToolImagePreview';
 import { localComposerDraftId } from '@pulpo/client-core';
 import { DevicesScreen } from '../components/Devices';
@@ -1013,23 +1014,8 @@ function SentAttachmentPreview({ attachment, group, onPreviewFile, onPreviewImag
   );
 }
 
-const PULPO_MARK_SOURCE = require('./assets/pulpo-smiley.png') as ImageSourcePropType;
 
-function PulpoMark({ size = 40 }: { size?: number }) {
-  const { styles } = useChatStyles();
-  return (
-    <Image
-      accessibilityIgnoresInvertColors
-      accessibilityLabel="Pulpo"
-      source={PULPO_MARK_SOURCE}
-      style={[styles.pulpoMark, { width: size, height: size, borderRadius: size / 2 }]}
-    />
-  );
-}
-
-type GlassProps = Omit<ComponentProps<typeof GlassView>, 'isInteractive'> & {
-  interactive?: boolean;
-};
+type GlassProps = Omit<ComponentProps<typeof GlassView>, 'isInteractive'> & { interactive?: boolean };
 
 function Glass({ children, style, interactive = false, tintColor, ...props }: GlassProps) {
   const { styles, COLORS } = useChatStyles();
@@ -5658,10 +5644,7 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
     <View style={styles.panelRoot}>
       <SafeAreaView style={styles.flex} edges={['top']}>
         <AppHeader>
-          <View style={styles.profileChip}>
-            <PulpoMark size={38} />
-            <Text style={styles.profileName}>Pulpo</Text>
-          </View>
+          <DataProfileSwitcher />
           <RoundButton icon="gearshape" accessibilityLabel="Settings" onPress={() => { dismissSearch(); onOpenSettings(); }} />
         </AppHeader>
 

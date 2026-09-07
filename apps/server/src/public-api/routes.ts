@@ -1,3 +1,4 @@
+import { profileEq } from '../profiles/context.js'
 import { and, eq, isNull, ne } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { db } from '../database/client.js'
@@ -32,11 +33,11 @@ function publicModel(model: typeof models.$inferSelect) {
 async function accessibleResponse(userId: string, responseId: string) {
   const [result] = await db.select({ response: responses })
     .from(responses)
-    .innerJoin(chats, eq(chats.id, responses.chatId))
+    .innerJoin(chats, profileEq(chats.id, responses.chatId))
     .where(and(
-      eq(responses.id, responseId),
-      eq(responses.userId, userId),
-      eq(responses.publiclyStored, true),
+      profileEq(responses.id, responseId),
+      profileEq(responses.userId, userId),
+      profileEq(responses.publiclyStored, true),
       isNull(chats.deletedAt),
       accessibleChatCondition(),
     ))

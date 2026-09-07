@@ -1,3 +1,4 @@
+import { profileEq } from '../profiles/context.js'
 import { and, eq, ne, sql } from 'drizzle-orm'
 import { db } from '../database/client.js'
 import { chats, users } from '../database/schema.js'
@@ -13,8 +14,8 @@ export async function persistGeneratedChatTitle(input: {
       title: input.title,
       updatedAt: new Date(),
     }).where(and(
-      eq(chats.id, input.chatId),
-      eq(chats.userId, input.userId),
+      profileEq(chats.id, input.chatId),
+      profileEq(chats.userId, input.userId),
       ne(chats.title, input.title),
     )).returning({
       chatId: chats.id,

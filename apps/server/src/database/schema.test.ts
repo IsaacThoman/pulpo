@@ -135,7 +135,7 @@ describe('user-owned operational records', () => {
     const index = config.indexes.find((item) => item.config.name === 'responses_user_scope_idempotency_unique')
     expect(index?.config.unique).toBe(true)
     expect(index?.config.columns.map((column) => 'name' in column ? column.name : undefined))
-      .toEqual(['user_id', 'idempotency_scope', 'idempotency_key'])
+      .toEqual(['user_id', 'profile_id', 'idempotency_scope', 'idempotency_key'])
   })
 
   it('backfills public response retention without changing accounting records', () => {
@@ -227,14 +227,14 @@ describe('user-owned operational records', () => {
       'chat_turn_embeddings_user_generation_idx',
       'chat_turn_embeddings_search_idx',
     ]))
-    expect(chatConfig.foreignKeys.every((foreignKey) => foreignKey.onDelete === 'cascade')).toBe(true)
+    expect(chatConfig.foreignKeys.filter((foreignKey) => !foreignKey.getName().includes('profile_id')).every((foreignKey) => foreignKey.onDelete === 'cascade')).toBe(true)
   })
 
   it('stores one bounded versioned memory document per user', () => {
     const documentConfig = getTableConfig(userMemoryDocuments)
     const revisionConfig = getTableConfig(userMemoryDocumentRevisions)
-    expect(documentConfig.primaryKeys).toHaveLength(0)
-    expect(documentConfig.columns.find((column) => column.name === 'user_id')?.primary).toBe(true)
+    expect(documentConfig.primaryKeys[0]!.columns.map((column) => column.name)).toEqual(['user_id', 'profile_id'])
+    expect(documentConfig.columns.find((column) => column.name === 'profile_id')?.notNull).toBe(true)
     expect(documentConfig.checks.map((constraint) => constraint.name)).toEqual(expect.arrayContaining([
       'user_memory_documents_content_length_check',
       'user_memory_documents_revision_check',

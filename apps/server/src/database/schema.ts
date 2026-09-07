@@ -1,3 +1,4 @@
+import { profileInsertDefault } from '../profiles/context.js'
 import { sql } from 'drizzle-orm'
 import {
   bigint,
@@ -67,6 +68,23 @@ export const users = pgTable('users', {
   index('users_name_trgm_idx').using('gin', sql`lower(${table.name}) gin_trgm_ops`),
   check('users_invite_code_quota_check', sql`${table.inviteCodeQuota} >= 0`),
 ])
+
+/** Private data profiles are distinct from the account's public identity. */
+export const dataProfiles = pgTable('data_profiles', {
+  id: uuid('id').primaryKey(),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  color: text('color').notNull().default('#6366f1'),
+  isDefault: boolean('is_default').notNull().default(false),
+  deletionRequestedAt: timestamp('deletion_requested_at', { withTimezone: true }),
+  deletionError: text('deletion_error'),
+  ...timestamps,
+}, (table) => [
+  uniqueIndex('data_profiles_default_unique').on(table.userId).where(sql`${table.isDefault} = true`),
+  uniqueIndex('data_profiles_owner_unique').on(table.userId, table.id),
+])
+
+const profileColumn = () => uuid('profile_id').notNull().references(() => dataProfiles.id).$defaultFn(profileInsertDefault)
 
 export const friendships = pgTable('friendships', {
   id: uuid('id').primaryKey(),
@@ -245,10 +263,11 @@ export const passwordResetTokens = pgTable('password_reset_tokens', {
 })
 
 export const userPreferences = pgTable('user_preferences', {
-  userId: uuid('user_id').primaryKey().references(() => users.id, { onDelete: 'cascade' }),
+  profileId: profileColumn(),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   values: jsonb('values').notNull().default({}),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-})
+}, (table) => [primaryKey({ columns: [table.userId, table.profileId] })])
 
 export const auditEvents = pgTable('audit_events', {
   id: uuid('id').primaryKey(),
@@ -426,6 +445,7 @@ export const providerHealthChecks = pgTable('provider_health_checks', {
 
 export const folders = pgTable('folders', {
   id: uuid('id').primaryKey(),
+  profileId: profileColumn(),
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   name: text('name').notNull(),
   pinned: boolean('pinned').notNull().default(false),
@@ -435,6 +455,7 @@ export const folders = pgTable('folders', {
 
 export const chats = pgTable('chats', {
   id: uuid('id').primaryKey(),
+  profileId: profileColumn(),
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   folderId: uuid('folder_id').references(() => folders.id, { onDelete: 'set null' }),
   title: text('title').notNull().default('New chat'),
@@ -458,6 +479,7 @@ export const chats = pgTable('chats', {
 export const responses = pgTable('responses', {
   id: uuid('id').primaryKey(),
   chatId: uuid('chat_id').notNull().references(() => chats.id, { onDelete: 'cascade' }),
+  profileId: profileColumn(),
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   modelId: text('model_id').notNull().references(() => models.id),
   actualModelId: text('actual_model_id').references(() => models.id),
@@ -495,12 +517,13 @@ export const responses = pgTable('responses', {
   ...timestamps,
 }, (table) => [
   index('responses_chat_created_idx').on(table.chatId, table.createdAt),
-  uniqueIndex('responses_user_scope_idempotency_unique').on(table.userId, table.idempotencyScope, table.idempotencyKey),
+  uniqueIndex('responses_user_scope_idempotency_unique').on(table.userId, table.profileId, table.idempotencyScope, table.idempotencyKey),
 ])
 
 export const queuedMessages = pgTable('queued_messages', {
   id: uuid('id').primaryKey(),
   chatId: uuid('chat_id').notNull().references(() => chats.id, { onDelete: 'cascade' }),
+  profileId: profileColumn(),
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   billingUserId: uuid('billing_user_id').references(() => users.id, { onDelete: 'set null' }),
   actorUserId: uuid('actor_user_id').references(() => users.id, { onDelete: 'set null' }),
@@ -542,6 +565,7 @@ export const responseContentParts = pgTable('response_content_parts', {
 export const chatShares = pgTable('chat_shares', {
   id: uuid('id').primaryKey(),
   chatId: uuid('chat_id').notNull().references(() => chats.id, { onDelete: 'cascade' }),
+  profileId: profileColumn(),
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   tokenHash: text('token_hash').notNull(),
   expiresAt: timestamp('expires_at', { withTimezone: true }),
@@ -551,6 +575,7 @@ export const chatShares = pgTable('chat_shares', {
 
 export const attachments = pgTable('attachments', {
   id: uuid('id').primaryKey(),
+  profileId: profileColumn(),
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   chatId: uuid('chat_id').references(() => chats.id, { onDelete: 'cascade' }),
   shelvedAt: timestamp('shelved_at', { withTimezone: true }),
@@ -576,6 +601,7 @@ export const workspaceLeases = pgTable('workspace_leases', {
   id: uuid('id').primaryKey(),
   chatId: uuid('chat_id').notNull().references(() => chats.id, { onDelete: 'cascade' }),
   responseId: uuid('response_id').references(() => responses.id, { onDelete: 'set null' }),
+  profileId: profileColumn(),
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   controllerLeaseId: text('controller_lease_id'),
   status: workspaceLeaseStatusEnum('status').notNull().default('provisioning'),
@@ -718,6 +744,7 @@ export const ocrCacheEntries = pgTable('ocr_cache_entries', {
 }, (table) => [index('ocr_cache_expiry_idx').on(table.expiresAt)])
 
 export const chatImportSources = pgTable('chat_import_sources', {
+  profileId: profileColumn(),
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   source: text('source').notNull(),
   sourceChatId: text('source_chat_id').notNull(),
@@ -725,7 +752,7 @@ export const chatImportSources = pgTable('chat_import_sources', {
   fingerprint: text('fingerprint'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
-  primaryKey({ columns: [table.userId, table.source, table.sourceChatId] }),
+  primaryKey({ columns: [table.userId, table.profileId, table.source, table.sourceChatId] }),
   index('chat_import_fingerprint_idx').on(table.userId, table.source, table.fingerprint),
 ])
 
@@ -772,7 +799,8 @@ export const backupJobs = pgTable('backup_jobs', {
 ])
 
 export const userMemoryDocuments = pgTable('user_memory_documents', {
-  userId: uuid('user_id').primaryKey().references(() => users.id, { onDelete: 'cascade' }),
+  profileId: profileColumn(),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   content: text('content').notNull().default(''),
   revision: integer('revision').notNull().default(0),
   lastEditor: text('last_editor').notNull().default('user'),
@@ -780,6 +808,7 @@ export const userMemoryDocuments = pgTable('user_memory_documents', {
   sourceResponseId: uuid('source_response_id').references(() => responses.id, { onDelete: 'set null' }),
   ...timestamps,
 }, (table) => [
+  primaryKey({ columns: [table.userId, table.profileId] }),
   check('user_memory_documents_content_length_check', sql`char_length(${table.content}) <= 16000`),
   check('user_memory_documents_revision_check', sql`${table.revision} >= 0`),
   check('user_memory_documents_editor_check', sql`${table.lastEditor} in ('user', 'agent')`),
@@ -787,6 +816,7 @@ export const userMemoryDocuments = pgTable('user_memory_documents', {
 
 export const userMemoryDocumentRevisions = pgTable('user_memory_document_revisions', {
   id: uuid('id').primaryKey(),
+  profileId: profileColumn(),
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   revision: integer('revision').notNull(),
   content: text('content').notNull(),
@@ -796,7 +826,7 @@ export const userMemoryDocumentRevisions = pgTable('user_memory_document_revisio
   versionCreatedAt: timestamp('version_created_at', { withTimezone: true }).notNull(),
   supersededAt: timestamp('superseded_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
-  uniqueIndex('user_memory_document_revisions_user_revision_unique').on(table.userId, table.revision),
+  uniqueIndex('user_memory_document_revisions_user_revision_unique').on(table.userId, table.profileId, table.revision),
   index('user_memory_document_revisions_user_superseded_idx').on(table.userId, table.supersededAt),
   check('user_memory_document_revisions_content_length_check', sql`char_length(${table.content}) <= 16000`),
   check('user_memory_document_revisions_revision_check', sql`${table.revision} >= 0`),
@@ -834,6 +864,7 @@ export const episodicMemoryGenerations = pgTable('episodic_memory_generations', 
 export const chatTurnEmbeddings = pgTable('chat_turn_embeddings', {
   id: uuid('id').primaryKey(),
   generationId: uuid('generation_id').notNull().references(() => episodicMemoryGenerations.id, { onDelete: 'cascade' }),
+  profileId: profileColumn(),
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   chatId: uuid('chat_id').notNull().references(() => chats.id, { onDelete: 'cascade' }),
   responseId: uuid('response_id').notNull().references(() => responses.id, { onDelete: 'cascade' }),
@@ -1156,6 +1187,7 @@ export const exportJobs = pgTable('export_jobs', {
 })
 
 export const idempotencyRecords = pgTable('idempotency_records', {
+  profileId: profileColumn(),
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   key: text('key').notNull(),
   operation: text('operation').notNull(),
@@ -1163,11 +1195,12 @@ export const idempotencyRecords = pgTable('idempotency_records', {
   responseBody: jsonb('response_body').notNull(),
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-}, (table) => [primaryKey({ columns: [table.userId, table.key, table.operation] })])
+}, (table) => [primaryKey({ columns: [table.userId, table.profileId, table.key, table.operation] })])
 
 // Retain the original columns for databases that received the earlier draft schema.
 export const composerDrafts = pgTable('composer_drafts', {
   id: uuid('id').primaryKey(),
+  profileId: profileColumn(),
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   chatId: uuid('chat_id').references(() => chats.id, { onDelete: 'cascade' }),
   draftId: text('scope').notNull(),
@@ -1184,7 +1217,7 @@ export const composerDrafts = pgTable('composer_drafts', {
   expiresAt: timestamp('expires_at', { withTimezone: true }),
   ...timestamps,
 }, (table) => [
-  uniqueIndex('composer_drafts_user_scope_unique').on(table.userId, table.draftId),
+  uniqueIndex('composer_drafts_user_scope_unique').on(table.userId, table.profileId, table.draftId),
   check('composer_drafts_scope_check', sql`(${table.draftId} = 'new' and ${table.chatId} is null) or (${table.chatId} is not null and ${table.draftId} = ${table.chatId}::text)`),
   check('composer_drafts_content_length_check', sql`char_length(${table.content}) <= 1000000`),
   check('composer_drafts_revision_check', sql`${table.revision} >= 0`),
@@ -1199,6 +1232,7 @@ export const composerDraftAttachments = pgTable('composer_draft_attachments', {
 // Keep consumed IDs as tombstones: an offline retry must never recreate a draft.
 export const shelvedDrafts = pgTable('shelved_drafts', {
   id: uuid('id').primaryKey(),
+  profileId: profileColumn(),
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   content: text('content').notNull(),
   attachmentData: jsonb('attachment_data').$type<import('@pulpo/contracts').ShelvedDraft['attachments']>().notNull().default([]),
@@ -1214,6 +1248,7 @@ export const shelvedDraftAttachments = pgTable('shelved_draft_attachments', {
 }, (table) => [primaryKey({ columns: [table.draftId, table.attachmentId] }), index('shelf_attachment_reference').on(table.attachmentId)]);
 
 export const shelfOperations = pgTable('shelf_operations', {
+  profileId: profileColumn(),
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   operationId: uuid('operation_id').notNull(),
-}, (table) => [primaryKey({ columns: [table.userId, table.operationId] })]);
+}, (table) => [primaryKey({ columns: [table.userId, table.profileId, table.operationId] })]);

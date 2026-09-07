@@ -33,7 +33,7 @@ beforeEach(() => {
     content: 'Question', modelId: 'model-1', presetSelections: {}, attachmentIds: [], agentMode: false,
     status: 'pending', requestReceivedAt: new Date('2026-09-06T12:00:00Z'), createdAt: new Date('2026-09-06T12:00:02Z'),
   }
-  mocks.selects = [[{ id: 'chat-1' }], [], [mocks.claim], [], [{ activeResponseId: null }], []]
+  mocks.selects = [[{ userId: 'user-1', profileId: 'personal' }], [{ id: 'chat-1' }], [], [mocks.claim], [], [{ activeResponseId: null }], []]
 })
 
 describe('queued response timing', () => {
@@ -47,7 +47,7 @@ describe('queued response timing', () => {
     expect(mocks.createResponse).toHaveBeenCalledWith(expect.objectContaining({ requestReceivedAt: mocks.claim.createdAt }))
   })
   it('does not reset timing when a response already exists after a dispatch retry', async () => {
-    mocks.selects[3] = [{ id: 'response-1' }]
+    mocks.selects[4] = [{ id: 'response-1' }]
     await advanceMessageQueue('chat-1')
     expect(mocks.createResponse).not.toHaveBeenCalled()
   })

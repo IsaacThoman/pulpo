@@ -240,9 +240,14 @@ async function offlineCapableMutation<T>(input: {
       // A newer whole-value setting mutation supersedes any older queued value.
       await completeOutboxEntity(input.namespace, input.entityKey)
     }
+    const { instanceUrl, user } = useSessionStore.getState()
+    if (!user || cacheNamespace(instanceUrl, user.id) !== input.namespace) {
+      await queueOfflineMutation(input)
+      return undefined
+    }
     return await input.request()
   } catch (error) {
-    if (!isNetworkError(error)) throw error
+    if (!isNetworkError(error) && !(error instanceof ApiError && error.code === 'profile_changed')) throw error
     await queueOfflineMutation(input)
     return undefined
   }

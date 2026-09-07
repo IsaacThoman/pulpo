@@ -1,3 +1,4 @@
+import { profileEq } from '../profiles/context.js'
 import { and, desc, eq, gt, isNotNull, isNull, ne, or, sql } from 'drizzle-orm'
 import type { EpisodicMemoryProfile, EpisodicMemoryRecallMode } from '@pulpo/contracts'
 import { chatCanAccessMemory } from '../chats/memory-policy.js'
@@ -187,16 +188,16 @@ export async function searchEpisodicChats(input: {
   const mode = input.mode ?? (explicit ? 'balanced' : settings.recallMode)
   const limit = Math.max(1, Math.min(11, Math.floor(input.limit ?? 5)))
   const eligibleChat = and(
-    eq(chats.userId, input.userId),
+    profileEq(chats.userId, input.userId),
     input.currentChatId ? ne(chats.id, input.currentChatId) : undefined,
-    eq(chats.temporary, false),
+    profileEq(chats.temporary, false),
     isNull(chats.deletedAt),
     isNull(chats.purgeStartedAt),
     or(isNull(chats.expiresAt), gt(chats.expiresAt, new Date())),
   )
   const common = and(
-    generation ? eq(chatTurnEmbeddings.generationId, generation.id) : sql`false`,
-    eq(chatTurnEmbeddings.userId, input.userId),
+    generation ? profileEq(chatTurnEmbeddings.generationId, generation.id) : sql`false`,
+    profileEq(chatTurnEmbeddings.userId, input.userId),
     eligibleChat,
   )
   // Tokenize as data rather than passing agent-generated operators through. OR
@@ -225,7 +226,7 @@ export async function searchEpisodicChats(input: {
       if (input.onDiagnostics) {
         const [[pending], [unindexed]] = await Promise.all([
           db.select({ id: chatTurnEmbeddings.id }).from(chatTurnEmbeddings)
-            .innerJoin(chats, eq(chats.id, chatTurnEmbeddings.chatId))
+            .innerJoin(chats, profileEq(chats.id, chatTurnEmbeddings.chatId))
             .where(and(common, or(ne(chatTurnEmbeddings.status, 'ready'), isNull(chatTurnEmbeddings.embedding)))).limit(1),
           db.select({ id: chats.id }).from(chats).where(and(
             eligibleChat, isNotNull(leafId),
@@ -246,7 +247,7 @@ export async function searchEpisodicChats(input: {
         text: chatTurnEmbeddings.chunkText,
         lexicalScore: lexicalRankExpression.as('lexical_score'),
         coverage: bodyCoverage.as('coverage'),
-      }).from(chatTurnEmbeddings).innerJoin(chats, eq(chats.id, chatTurnEmbeddings.chatId)).where(and(
+      }).from(chatTurnEmbeddings).innerJoin(chats, profileEq(chats.id, chatTurnEmbeddings.chatId)).where(and(
         common,
         sql`${bodyVector} @@ ${textQuery}`,
         explicit ? sql`${bodyCoverage} >= ${Math.min(2, terms.length)}` : undefined,
@@ -292,8 +293,8 @@ export async function searchEpisodicChats(input: {
       text: chatTurnEmbeddings.chunkText,
       lexicalScore: sql<number>`0`.as('lexical_score'),
       semanticSimilarity: sql<number>`1 - (${distance})`.as('semantic_similarity'),
-    }).from(chatTurnEmbeddings).innerJoin(chats, eq(chats.id, chatTurnEmbeddings.chatId))
-      .where(and(common, eq(chatTurnEmbeddings.status, 'ready'), isNotNull(chatTurnEmbeddings.embedding)))
+    }).from(chatTurnEmbeddings).innerJoin(chats, profileEq(chats.id, chatTurnEmbeddings.chatId))
+      .where(and(common, profileEq(chatTurnEmbeddings.status, 'ready'), isNotNull(chatTurnEmbeddings.embedding)))
       .orderBy(chatTurnEmbeddings.chatId, distance, chatTurnEmbeddings.id).as('semantic_matches')
     semanticRows = await db.select().from(matches).orderBy(desc(matches.semanticSimilarity), matches.chatId).limit(CHAT_CANDIDATE_LIMIT)
     diagnostics.semantic = 'available'

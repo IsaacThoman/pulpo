@@ -95,3 +95,25 @@ describe('device metadata on native authentication', () => {
     }
   })
 })
+
+
+describe('profile request isolation', () => {
+  it('discards late profile responses while keeping bearer authentication shared', async () => {
+    const { configureDataProfile } = await import('@pulpo/client-core')
+    let finish!: (response: Response) => void
+    const fetchMock = vi.fn((_input: string, _init?: RequestInit) => new Promise<Response>((resolve) => { finish = resolve }))
+    vi.stubGlobal('fetch', fetchMock)
+    configureApi({ instanceUrl: 'https://pulpo.test', token: 'shared-session' })
+    configureDataProfile({ instance: 'https://pulpo.test', userId: 'owner', profileId: 'personal' })
+    const pending = apiRequest('/api/chats')
+    const headers = new Headers(fetchMock.mock.calls[0]?.[1]?.headers)
+    expect(headers.get('X-Pulpo-Profile-Id')).toBe('personal')
+    expect(headers.get('authorization')).toBe('Bearer shared-session')
+    configureDataProfile({ instance: 'https://pulpo.test', userId: 'owner', profileId: 'work' })
+    finish(new Response(JSON.stringify({ data: ['private'] })))
+    await expect(pending).rejects.toMatchObject({ code: 'profile_changed' })
+    configureDataProfile(undefined)
+    configureApi({ instanceUrl: 'https://pulpo.baby', token: null })
+    vi.unstubAllGlobals()
+  })
+})

@@ -1,3 +1,4 @@
+import { profileEq } from '../profiles/context.js'
 import { createHash, randomInt } from 'node:crypto'
 import { createReadStream } from 'node:fs'
 import { mkdtemp, rm, stat } from 'node:fs/promises'
@@ -90,7 +91,7 @@ export async function createFullBackup(jobId: string, finalAttempt = true): Prom
         avatarBlobRows: await tx.select({ objectKey: users.avatarObjectKey }).from(users).where(sql`${users.avatarObjectKey} is not null`),
         iconRows: await tx.select().from(catalogIcons),
         temporaryQueuedAttachmentRows: await tx.select({ attachmentIds: queuedMessages.attachmentIds })
-          .from(queuedMessages).innerJoin(chats, eq(chats.id, queuedMessages.chatId)).where(eq(chats.temporary, true)),
+          .from(queuedMessages).innerJoin(chats, profileEq(chats.id, queuedMessages.chatId)).where(profileEq(chats.temporary, true)),
       }
     }, { isolationLevel: 'repeatable read', accessMode: 'read only' })
     const { database, attachmentBlobs } = projectFullBackup(rawDatabase as FullBackupDatabase, {
@@ -205,6 +206,10 @@ export async function restoreFullBackup(jobId: string): Promise<void> {
       await db.update(backupJobs).set({ progress: 5 + Math.round(((index + 1) / Math.max(manifest.blobs.length, 1)) * 35), updatedAt: new Date() }).where(eq(backupJobs.id, jobId))
     }
     async function* compatibleRows(table: FullBackupTable): AsyncGenerator<RestoreRow> {
+      if (table === 'data_profiles' && !tables.has(table)) {
+        for await (const user of restoreRows(tables.get('users'))) yield { id: user.id, user_id: user.id, name: 'Personal', color: '#6366f1', is_default: true, deletion_requested_at: null, deletion_error: null, created_at: user.created_at, updated_at: user.updated_at }
+        return
+      }
       for await (const row of restoreRows(tables.get(table))) {
         const data: Record<string, RestoreRow[]> = { [table]: [row], application_settings: settings }
         if (table === 'users' && !(typeof row.username === 'string' && row.username.trim())) {
@@ -248,6 +253,7 @@ export async function restoreFullBackup(jobId: string): Promise<void> {
     ]
     importStarted = true
     await db.transaction(async (tx) => {
+      await tx.execute(sql`select set_config('pulpo.restoring_profiles', 'true', true)`)
       await tx.delete(backupJobs).where(ne(backupJobs.id, jobId))
       await tx.execute(sql.raw(`truncate table ${[...FULL_BACKUP_TABLES].reverse().join(', ')} restart identity cascade`))
       for (const [index, table] of FULL_BACKUP_TABLES.entries()) {

@@ -1,3 +1,4 @@
+import { profileEq } from '../profiles/context.js'
 import { and, eq, gte, gt, inArray, isNull, lte, or, sql } from 'drizzle-orm'
 import type { ResponseUsage } from '@pulpo/contracts'
 import { db } from '../database/client.js'
@@ -134,7 +135,7 @@ export async function reserveBudget(input: {
       balanceReservedMicros: allocation.balanceMicros,
     })
     if (funding.size) await tx.insert(budgetReservationFunders).values([...funding].map(([userId, reservedMicros]) => ({ reservationId, userId, reservedMicros })))
-    await tx.update(responses).set({ pricingVersionId: input.pricing.id }).where(eq(responses.id, input.responseId))
+    await tx.update(responses).set({ pricingVersionId: input.pricing.id }).where(profileEq(responses.id, input.responseId))
   })
   return amount
 }
@@ -248,7 +249,7 @@ export async function settleBudget(input: {
       friendChanges: [],
       poolChanges: [],
     }
-    const [response] = await tx.select().from(responses).where(eq(responses.id, input.responseId)).limit(1)
+    const [response] = await tx.select().from(responses).where(profileEq(responses.id, input.responseId)).limit(1)
     const [pricing] = response?.pricingVersionId
       ? await tx.select().from(modelPricingVersions).where(eq(modelPricingVersions.id, response.pricingVersionId)).limit(1)
       : []

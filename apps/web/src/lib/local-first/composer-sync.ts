@@ -82,3 +82,8 @@ export function clearWebComposerSync(): void {
 useComposerSyncPreference.subscribe((state, previous) => {
   if (!state.enabled || state.generation !== previous.generation) clearWebComposerSync()
 })
+
+export async function pauseWebComposerSync(): Promise<void> {
+  await Promise.all([...coordinators.values()].map((sync) => sync.pause()))
+  clearWebComposerSync()
+}

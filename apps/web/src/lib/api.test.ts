@@ -73,3 +73,21 @@ describe('desktop resource transport', () => {
     expect(unauthorized).not.toHaveBeenCalled()
   })
 })
+
+describe('profile response guards', () => {
+  it('sends the selected profile and rejects a response that finishes after switching', async () => {
+    const { configureDataProfile } = await import('@pulpo/client-core')
+    const { apiRequest } = await import('./api')
+    let finish!: (response: Response) => void
+    const pending = new Promise<Response>((resolve) => { finish = resolve })
+    const fetchMock = vi.fn((_input: string, _init?: RequestInit) => pending)
+    vi.stubGlobal('fetch', fetchMock)
+    configureDataProfile({ instance: 'https://pulpo.test', userId: 'owner', profileId: 'personal' })
+    const request = apiRequest('/api/chats')
+    expect(new Headers(fetchMock.mock.calls[0]?.[1]?.headers).get('X-Pulpo-Profile-Id')).toBe('personal')
+    configureDataProfile({ instance: 'https://pulpo.test', userId: 'owner', profileId: 'work' })
+    finish(new Response(JSON.stringify({ data: ['private'] })))
+    await expect(request).rejects.toMatchObject({ code: 'profile_changed' })
+    configureDataProfile(undefined)
+  })
+})

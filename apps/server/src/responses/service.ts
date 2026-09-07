@@ -1,4 +1,5 @@
-import { and, eq, inArray, isNull, or, sql } from 'drizzle-orm'
+import { profileEq, profileInArray } from '../profiles/context.js'
+import { and, eq, isNull, or, sql } from 'drizzle-orm'
 import type { ChatPreset, CreateChatResponseInput, ResponseSnapshot } from '@pulpo/contracts'
 import { db } from '../database/client.js'
 import { applicationSettings, attachments, chats, modelPresetChoices, modelPresets, models, requestLogs, responses, userProviderCredentials } from '../database/schema.js'
@@ -85,11 +86,11 @@ export async function createResponse(options: CreateResponseOptions) {
     const [existing] = await db
       .select({ response: responses })
       .from(responses)
-      .innerJoin(chats, eq(chats.id, responses.chatId))
+      .innerJoin(chats, profileEq(chats.id, responses.chatId))
       .where(and(
-        eq(responses.userId, options.ownerUserId),
-        eq(responses.idempotencyScope, idempotencyScope),
-        eq(responses.idempotencyKey, options.idempotencyKey),
+        profileEq(responses.userId, options.ownerUserId),
+        profileEq(responses.idempotencyScope, idempotencyScope),
+        profileEq(responses.idempotencyKey, options.idempotencyKey),
         isNull(chats.deletedAt),
         accessibleChatCondition(),
       ))
@@ -110,8 +111,8 @@ export async function createResponse(options: CreateResponseOptions) {
     .select()
     .from(chats)
     .where(and(
-      eq(chats.id, options.chatId),
-      eq(chats.userId, options.ownerUserId),
+      profileEq(chats.id, options.chatId),
+      profileEq(chats.userId, options.ownerUserId),
       isNull(chats.deletedAt),
       accessibleChatCondition(now),
     ))
@@ -119,7 +120,7 @@ export async function createResponse(options: CreateResponseOptions) {
   if (!chat) {
     const [owned] = await db.select({ temporary: chats.temporary, expiresAt: chats.expiresAt })
       .from(chats)
-      .where(and(eq(chats.id, options.chatId), eq(chats.userId, options.ownerUserId), isNull(chats.deletedAt)))
+      .where(and(profileEq(chats.id, options.chatId), profileEq(chats.userId, options.ownerUserId), isNull(chats.deletedAt)))
       .limit(1)
     if (owned && temporaryChatIsExpired(owned, now)) {
       throw new AppError(410, 'temporary_chat_expired', 'This temporary chat has expired and cannot be recovered')
@@ -168,7 +169,7 @@ export async function createResponse(options: CreateResponseOptions) {
   }
   const requestedId = options.input.clientId
   if (requestedId) {
-    const [existingById] = await db.select().from(responses).where(eq(responses.id, requestedId)).limit(1)
+    const [existingById] = await db.select().from(responses).where(profileEq(responses.id, requestedId)).limit(1)
     if (existingById) {
       if (existingById.userId !== options.ownerUserId || existingById.chatId !== options.chatId) {
         throw new AppError(409, 'response_id_conflict', 'Response id is already in use')
@@ -178,7 +179,7 @@ export async function createResponse(options: CreateResponseOptions) {
   }
   const id = requestedId ?? newId()
   const [previous] = chat.activeResponseId
-    ? await db.select({ id: responses.id }).from(responses).where(eq(responses.id, chat.activeResponseId)).limit(1)
+    ? await db.select({ id: responses.id }).from(responses).where(profileEq(responses.id, chat.activeResponseId)).limit(1)
     : []
   const parentResponseId = options.parentResponseId === undefined ? previous?.id ?? null : options.parentResponseId
   const previousActiveResponseId = previous?.id ?? null
@@ -189,18 +190,18 @@ export async function createResponse(options: CreateResponseOptions) {
   ])]
   if (attachmentIds.length) {
     const ownedAttachments = await db.select().from(attachments).where(and(
-      eq(attachments.userId, options.ownerUserId),
-      eq(attachments.status, 'ready'),
-      inArray(attachments.id, attachmentIds),
-      or(isNull(attachments.chatId), eq(attachments.chatId, chat.id)),
+      profileEq(attachments.userId, options.ownerUserId),
+      profileEq(attachments.status, 'ready'),
+      profileInArray(attachments.id, attachmentIds),
+      or(isNull(attachments.chatId), profileEq(attachments.chatId, chat.id)),
     ))
     if (ownedAttachments.length !== attachmentIds.length) throw new AppError(400, 'attachment_not_ready', 'One or more attachments are unavailable')
     if (!options.input.agentMode && attachmentsRequireAgentMode(ownedAttachments)) {
       throw new AppError(400, 'attachment_requires_agent', 'Non-image attachments require Agent mode')
     }
     await db.update(attachments).set({ chatId: chat.id, updatedAt: new Date() }).where(and(
-      eq(attachments.userId, options.ownerUserId),
-      inArray(attachments.id, attachmentIds),
+      profileEq(attachments.userId, options.ownerUserId),
+      profileInArray(attachments.id, attachmentIds),
       isNull(attachments.chatId),
       isNull(attachments.shelvedAt),
     ))
@@ -267,7 +268,7 @@ export async function createResponse(options: CreateResponseOptions) {
       updatedAt: acceptedAt,
       expiresAt: temporaryChatExpiryValue(nextExpiresAt),
     }).where(and(
-      eq(chats.id, chat.id),
+      profileEq(chats.id, chat.id),
       isNull(chats.deletedAt),
       isNull(chats.purgeStartedAt),
       accessibleChatCondition(acceptedAt),
@@ -288,16 +289,16 @@ export async function createResponse(options: CreateResponseOptions) {
     }
   } catch (error) {
     await releaseBudget(id)
-    await db.delete(responses).where(eq(responses.id, id))
+    await db.delete(responses).where(profileEq(responses.id, id))
     await db.update(chats).set({
       activeResponseId: previousActiveResponseId,
       activeBranchLeafId: previousActiveResponseId,
       updatedAt: new Date(),
       expiresAt: temporaryChatExpiryValue(chat.expiresAt),
-    }).where(and(eq(chats.id, chat.id), eq(chats.activeResponseId, id)))
+    }).where(and(profileEq(chats.id, chat.id), profileEq(chats.activeResponseId, id)))
     throw error
   }
-  const [created] = await db.select().from(responses).where(eq(responses.id, id)).limit(1)
+  const [created] = await db.select().from(responses).where(profileEq(responses.id, id)).limit(1)
   return created!
 }
 

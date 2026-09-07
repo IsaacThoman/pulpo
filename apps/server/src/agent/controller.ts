@@ -1,4 +1,5 @@
-import { and, asc, eq, inArray, isNotNull, lte, or } from 'drizzle-orm'
+import { profileEq, profileInArray } from '../profiles/context.js'
+import { and, asc, eq, isNotNull, lte, or } from 'drizzle-orm'
 import { parseAgentSettings } from '../settings/application-settings.js'
 import { applicationSettings, attachments, responses, workspaceLeases } from '../database/schema.js'
 import { db } from '../database/client.js'
@@ -65,9 +66,9 @@ export class WorkspaceManager {
 
   async ensureLease(signal?: AbortSignal): Promise<string> {
     if (this.controllerLeaseId) return this.controllerLeaseId
-    let [existing] = await db.select().from(workspaceLeases).where(and(eq(workspaceLeases.chatId, this.chatId), inArray(workspaceLeases.status, ['provisioning', 'ready']))).limit(1)
+    let [existing] = await db.select().from(workspaceLeases).where(and(profileEq(workspaceLeases.chatId, this.chatId), profileInArray(workspaceLeases.status, ['provisioning', 'ready']))).limit(1)
     if (existing?.status === 'ready' && (!existing.controllerLeaseId || (existing.hardExpiresAt && existing.hardExpiresAt <= new Date()) || (existing.expiresAt && existing.expiresAt <= new Date()))) {
-      await db.update(workspaceLeases).set({ status: 'expired', error: 'Workspace lease expired before reuse', updatedAt: new Date() }).where(eq(workspaceLeases.id, existing.id))
+      await db.update(workspaceLeases).set({ status: 'expired', error: 'Workspace lease expired before reuse', updatedAt: new Date() }).where(profileEq(workspaceLeases.id, existing.id))
       existing = undefined
     }
     if (existing?.controllerLeaseId && existing.status === 'ready' && (!existing.hardExpiresAt || existing.hardExpiresAt > new Date()) && (!existing.expiresAt || existing.expiresAt > new Date())) {
@@ -81,34 +82,34 @@ export class WorkspaceManager {
       const id = existing?.id ?? newId()
       if (!existing) {
         await db.insert(workspaceLeases).values({ id, responseId: this.responseId, chatId: this.chatId, userId: this.userId, imageDigest: settings.imageDigest, status: 'provisioning', capacityState: 'waiting' }).onConflictDoNothing()
-        ;[existing] = await db.select().from(workspaceLeases).where(and(eq(workspaceLeases.chatId, this.chatId), inArray(workspaceLeases.status, ['provisioning', 'ready']))).limit(1)
+        ;[existing] = await db.select().from(workspaceLeases).where(and(profileEq(workspaceLeases.chatId, this.chatId), profileInArray(workspaceLeases.status, ['provisioning', 'ready']))).limit(1)
       }
       if (!existing) throw new Error('Unable to create workspace queue record')
       const queueLease = existing
       this.localLeaseId = queueLease.id
       if (queueLease.status === 'provisioning' && queueLease.capacityState !== 'waiting' && (!queueLease.responseId || queueLease.responseId === this.responseId)) {
-        await db.update(workspaceLeases).set({ responseId: this.responseId, capacityState: 'waiting', updatedAt: new Date() }).where(eq(workspaceLeases.id, queueLease.id))
+        await db.update(workspaceLeases).set({ responseId: this.responseId, capacityState: 'waiting', updatedAt: new Date() }).where(profileEq(workspaceLeases.id, queueLease.id))
       }
       const deadline = queueLease.createdAt.getTime() + settings.workspaceWaitTimeoutSeconds * 1000
       const continueWithoutAgentAvailableAt = workspaceContinueWithoutAgentAvailableAt(queueLease.createdAt).toISOString()
       let lastPosition = -1
       while (!this.controllerLeaseId) {
         if (signal?.aborted) {
-          await db.update(workspaceLeases).set({ status: 'released', capacityState: null, releasedAt: new Date(), error: 'Response stopped while waiting for workspace capacity', updatedAt: new Date() }).where(and(eq(workspaceLeases.id, queueLease.id), eq(workspaceLeases.status, 'provisioning')))
+          await db.update(workspaceLeases).set({ status: 'released', capacityState: null, releasedAt: new Date(), error: 'Response stopped while waiting for workspace capacity', updatedAt: new Date() }).where(and(profileEq(workspaceLeases.id, queueLease.id), profileEq(workspaceLeases.status, 'provisioning')))
           throw signal.reason ?? new Error('Generation cancelled')
         }
-        const [responseState] = await db.select({ status: responses.status, action: responses.agentCapacityAction }).from(responses).where(eq(responses.id, this.responseId)).limit(1)
+        const [responseState] = await db.select({ status: responses.status, action: responses.agentCapacityAction }).from(responses).where(profileEq(responses.id, this.responseId)).limit(1)
         if (!responseState || responseState.status === 'cancelled') {
-          await db.update(workspaceLeases).set({ status: 'released', capacityState: null, releasedAt: new Date(), error: 'Response cancelled while waiting for workspace capacity', updatedAt: new Date() }).where(and(eq(workspaceLeases.id, queueLease.id), eq(workspaceLeases.status, 'provisioning')))
+          await db.update(workspaceLeases).set({ status: 'released', capacityState: null, releasedAt: new Date(), error: 'Response cancelled while waiting for workspace capacity', updatedAt: new Date() }).where(and(profileEq(workspaceLeases.id, queueLease.id), profileEq(workspaceLeases.status, 'provisioning')))
           throw new Error('Generation cancelled')
         }
         if (responseState.action === 'continue_without_agent') {
           this.toolsDisabled = true
-          await db.update(workspaceLeases).set({ status: 'released', capacityState: null, releasedAt: new Date(), error: 'User continued without agent tools', updatedAt: new Date() }).where(and(eq(workspaceLeases.id, queueLease.id), eq(workspaceLeases.status, 'provisioning')))
+          await db.update(workspaceLeases).set({ status: 'released', capacityState: null, releasedAt: new Date(), error: 'User continued without agent tools', updatedAt: new Date() }).where(and(profileEq(workspaceLeases.id, queueLease.id), profileEq(workspaceLeases.status, 'provisioning')))
           await this.onLeaseEvent?.('continuing_without_agent')
           throw new Error('Workspace tool skipped because the user chose to continue without agent tools')
         }
-        const [current] = await db.select().from(workspaceLeases).where(eq(workspaceLeases.id, queueLease.id)).limit(1)
+        const [current] = await db.select().from(workspaceLeases).where(profileEq(workspaceLeases.id, queueLease.id)).limit(1)
         if (current?.status === 'ready' && current.controllerLeaseId) {
           this.controllerLeaseId = current.controllerLeaseId
           await this.onLeaseEvent?.('ready', { reused: current.responseId !== this.responseId })
@@ -116,13 +117,13 @@ export class WorkspaceManager {
         }
         if (Date.now() >= deadline) {
           const message = `No workspace became available within ${settings.workspaceWaitTimeoutSeconds} seconds`
-          await db.update(workspaceLeases).set({ status: 'failed', capacityState: null, error: message, updatedAt: new Date() }).where(eq(workspaceLeases.id, queueLease.id))
+          await db.update(workspaceLeases).set({ status: 'failed', capacityState: null, error: message, updatedAt: new Date() }).where(profileEq(workspaceLeases.id, queueLease.id))
           await this.onLeaseEvent?.('unavailable', { error: message })
           throw new Error(message)
         }
         const queued = await db.select({ id: workspaceLeases.id }).from(workspaceLeases)
-          .innerJoin(responses, eq(workspaceLeases.responseId, responses.id))
-          .where(and(eq(workspaceLeases.status, 'provisioning'), inArray(workspaceLeases.capacityState, ['waiting', 'claiming']), inArray(responses.status, ['queued', 'in_progress'])))
+          .innerJoin(responses, profileEq(workspaceLeases.responseId, responses.id))
+          .where(and(profileEq(workspaceLeases.status, 'provisioning'), profileInArray(workspaceLeases.capacityState, ['waiting', 'claiming']), profileInArray(responses.status, ['queued', 'in_progress'])))
           .orderBy(asc(workspaceLeases.createdAt), asc(workspaceLeases.id))
         const position = workspaceQueuePosition(queued.map((entry) => entry.id), queueLease.id)
         if (position !== lastPosition) {
@@ -131,7 +132,7 @@ export class WorkspaceManager {
         }
         if (position !== 1) { await wait(1_000); continue }
         const [claimedQueueRow] = await db.update(workspaceLeases).set({ capacityState: 'claiming', updatedAt: new Date() })
-          .where(and(eq(workspaceLeases.id, queueLease.id), eq(workspaceLeases.status, 'provisioning'), eq(workspaceLeases.capacityState, 'waiting'))).returning({ id: workspaceLeases.id })
+          .where(and(profileEq(workspaceLeases.id, queueLease.id), profileEq(workspaceLeases.status, 'provisioning'), profileEq(workspaceLeases.capacityState, 'waiting'))).returning({ id: workspaceLeases.id })
         if (!claimedQueueRow) { await wait(500); continue }
         try {
           const attempt = await attemptWorkspaceLease({
@@ -152,16 +153,16 @@ export class WorkspaceManager {
           })
           this.capacityReservationsSupported = attempt.capacityReservationsSupported
           if (attempt.kind === 'waiting') {
-            await db.update(workspaceLeases).set({ capacityState: 'waiting', error: null, updatedAt: new Date() }).where(eq(workspaceLeases.id, queueLease.id))
+            await db.update(workspaceLeases).set({ capacityState: 'waiting', error: null, updatedAt: new Date() }).where(profileEq(workspaceLeases.id, queueLease.id))
             if (attempt.publicStateChanged) await this.onLeaseEvent?.('waiting', { position: 1, waitTimeoutSeconds: settings.workspaceWaitTimeoutSeconds, continueWithoutAgentAvailableAt })
             await wait(1_000)
             continue
           }
           const now = new Date(); this.controllerLeaseId = attempt.leaseId
-          await db.update(workspaceLeases).set({ controllerLeaseId: attempt.leaseId, status: 'ready', capacityState: null, claimedAt: now, lastUsedAt: now, hardExpiresAt: new Date(now.getTime() + settings.hardTimeoutSeconds * 1000), expiresAt: new Date(now.getTime() + settings.idleTimeoutSeconds * 1000), updatedAt: now }).where(eq(workspaceLeases.id, queueLease.id))
+          await db.update(workspaceLeases).set({ controllerLeaseId: attempt.leaseId, status: 'ready', capacityState: null, claimedAt: now, lastUsedAt: now, hardExpiresAt: new Date(now.getTime() + settings.hardTimeoutSeconds * 1000), expiresAt: new Date(now.getTime() + settings.idleTimeoutSeconds * 1000), updatedAt: now }).where(profileEq(workspaceLeases.id, queueLease.id))
           await this.onLeaseEvent?.('ready', { reused: false })
         } catch (error) {
-          await db.update(workspaceLeases).set({ status: 'failed', capacityState: null, error: error instanceof Error ? error.message : String(error), updatedAt: new Date() }).where(eq(workspaceLeases.id, queueLease.id))
+          await db.update(workspaceLeases).set({ status: 'failed', capacityState: null, error: error instanceof Error ? error.message : String(error), updatedAt: new Date() }).where(profileEq(workspaceLeases.id, queueLease.id))
           await this.onLeaseEvent?.('unavailable', { error: error instanceof Error ? error.message : String(error) })
           throw error
         }
@@ -174,9 +175,9 @@ export class WorkspaceManager {
   private async stageAttachments(): Promise<void> {
     if (!this.controllerLeaseId) return
     const rows = await db.select().from(attachments).where(and(
-      eq(attachments.userId, this.userId),
-      eq(attachments.chatId, this.chatId),
-      eq(attachments.status, 'ready'),
+      profileEq(attachments.userId, this.userId),
+      profileEq(attachments.chatId, this.chatId),
+      profileEq(attachments.status, 'ready'),
     )).orderBy(asc(attachments.createdAt), asc(attachments.id))
     for (const attachment of rows) {
       const path = restoredAttachmentWorkspacePath(attachment)
@@ -204,7 +205,7 @@ export class WorkspaceManager {
     try { response = await this.request(`/v1/leases/${leaseId}/v1/operations`, init) } catch (error) {
       if (signal?.aborted) { await this.cancel(operationId); throw error }
       if (!(error instanceof Error) || !error.message.includes('(404)')) throw error
-      if (this.localLeaseId) await db.update(workspaceLeases).set({ status: 'expired', error: 'Controller lease expired', updatedAt: new Date() }).where(eq(workspaceLeases.id, this.localLeaseId))
+      if (this.localLeaseId) await db.update(workspaceLeases).set({ status: 'expired', error: 'Controller lease expired', updatedAt: new Date() }).where(profileEq(workspaceLeases.id, this.localLeaseId))
       await this.onLeaseEvent?.('expired')
       this.localLeaseId = undefined; this.controllerLeaseId = undefined; this.staged = false
       leaseId = await this.ensureLease(signal)
@@ -220,7 +221,7 @@ export class WorkspaceManager {
       operation = await (await this.request(`/v1/leases/${leaseId}/v1/operations/${operationId}`, { signal })).json() as WorkspaceOperation
     }
     if (operation.output !== previousOutput) onUpdate?.(operation.output)
-    if (this.localLeaseId) { const now = new Date(); await db.update(workspaceLeases).set({ lastUsedAt: now, expiresAt: new Date(now.getTime() + this.idleTimeoutMs), updatedAt: now }).where(eq(workspaceLeases.id, this.localLeaseId)) }
+    if (this.localLeaseId) { const now = new Date(); await db.update(workspaceLeases).set({ lastUsedAt: now, expiresAt: new Date(now.getTime() + this.idleTimeoutMs), updatedAt: now }).where(profileEq(workspaceLeases.id, this.localLeaseId)) }
     if (operation.status === 'failed') throw new Error(operation.error ?? `${type} failed`)
     return operation
   }
@@ -233,7 +234,7 @@ export class WorkspaceManager {
       response = await this.request(`/v1/leases/${leaseId}/v1/images?path=${encodeURIComponent(path)}`, { signal })
     } catch (error) {
       if (signal?.aborted || !(error instanceof ControllerRequestError) || error.status !== 404) throw error
-      if (this.localLeaseId) await db.update(workspaceLeases).set({ status: 'expired', error: 'Controller lease expired', updatedAt: new Date() }).where(eq(workspaceLeases.id, this.localLeaseId))
+      if (this.localLeaseId) await db.update(workspaceLeases).set({ status: 'expired', error: 'Controller lease expired', updatedAt: new Date() }).where(profileEq(workspaceLeases.id, this.localLeaseId))
       await this.onLeaseEvent?.('expired')
       this.localLeaseId = undefined; this.controllerLeaseId = undefined; this.staged = false
       leaseId = await this.ensureLease(signal)
@@ -246,7 +247,7 @@ export class WorkspaceManager {
     if (!mimeType) throw new Error('File is not a supported PNG, JPEG, GIF, or WebP image')
     if (this.localLeaseId) {
       const now = new Date()
-      await db.update(workspaceLeases).set({ lastUsedAt: now, expiresAt: new Date(now.getTime() + this.idleTimeoutMs), updatedAt: now }).where(eq(workspaceLeases.id, this.localLeaseId))
+      await db.update(workspaceLeases).set({ lastUsedAt: now, expiresAt: new Date(now.getTime() + this.idleTimeoutMs), updatedAt: now }).where(profileEq(workspaceLeases.id, this.localLeaseId))
     }
     return { data: Buffer.from(bytes).toString('base64'), mimeType, sizeBytes: bytes.byteLength }
   }
@@ -259,7 +260,7 @@ export class WorkspaceManager {
       response = await this.request(`/v1/leases/${leaseId}/v1/files?path=${encodeURIComponent(path)}`, { signal })
     } catch (error) {
       if (signal?.aborted || !(error instanceof ControllerRequestError) || error.status !== 404) throw error
-      if (this.localLeaseId) await db.update(workspaceLeases).set({ status: 'expired', error: 'Controller lease expired', updatedAt: new Date() }).where(eq(workspaceLeases.id, this.localLeaseId))
+      if (this.localLeaseId) await db.update(workspaceLeases).set({ status: 'expired', error: 'Controller lease expired', updatedAt: new Date() }).where(profileEq(workspaceLeases.id, this.localLeaseId))
       await this.onLeaseEvent?.('expired')
       this.localLeaseId = undefined; this.controllerLeaseId = undefined; this.staged = false
       leaseId = await this.ensureLease(signal)
@@ -270,7 +271,7 @@ export class WorkspaceManager {
     if (data.byteLength > MAX_EXPORT_FILE_BYTES) throw new Error(`File exceeds the ${MAX_EXPORT_FILE_BYTES} byte limit`)
     if (this.localLeaseId) {
       const now = new Date()
-      await db.update(workspaceLeases).set({ lastUsedAt: now, expiresAt: new Date(now.getTime() + this.idleTimeoutMs), updatedAt: now }).where(eq(workspaceLeases.id, this.localLeaseId))
+      await db.update(workspaceLeases).set({ lastUsedAt: now, expiresAt: new Date(now.getTime() + this.idleTimeoutMs), updatedAt: now }).where(profileEq(workspaceLeases.id, this.localLeaseId))
     }
     return { data, sizeBytes: data.byteLength }
   }
@@ -286,13 +287,13 @@ export class WorkspaceManager {
 }
 
 export async function releaseWorkspaceForChat(chatId: string): Promise<void> {
-  const [lease] = await db.select().from(workspaceLeases).where(and(eq(workspaceLeases.chatId, chatId), inArray(workspaceLeases.status, ['provisioning', 'ready']))).limit(1)
+  const [lease] = await db.select().from(workspaceLeases).where(and(profileEq(workspaceLeases.chatId, chatId), profileInArray(workspaceLeases.status, ['provisioning', 'ready']))).limit(1)
   if (!lease) return
   const config = getConfig()
   if (lease.controllerLeaseId && config.WORKSPACE_CONTROLLER_URL && config.WORKSPACE_CONTROLLER_TOKEN) {
     await workspaceControllerRequest(`/v1/leases/${lease.controllerLeaseId}`, { method: 'DELETE', signal: AbortSignal.timeout(10_000) }).catch(() => undefined)
   }
-  await db.update(workspaceLeases).set({ status: 'released', capacityState: null, releasedAt: new Date(), updatedAt: new Date() }).where(eq(workspaceLeases.id, lease.id))
+  await db.update(workspaceLeases).set({ status: 'released', capacityState: null, releasedAt: new Date(), updatedAt: new Date() }).where(profileEq(workspaceLeases.id, lease.id))
 }
 
 /** Mark DB leases expired when timers elapsed or the controller no longer holds them. */
@@ -301,7 +302,7 @@ export async function reconcileWorkspaceLeases(): Promise<void> {
   await db.update(workspaceLeases).set({
     status: 'expired', capacityState: null, error: 'Workspace lease expired', updatedAt: now,
   }).where(and(
-    eq(workspaceLeases.status, 'ready'),
+    profileEq(workspaceLeases.status, 'ready'),
     or(
       and(isNotNull(workspaceLeases.expiresAt), lte(workspaceLeases.expiresAt, now)),
       and(isNotNull(workspaceLeases.hardExpiresAt), lte(workspaceLeases.hardExpiresAt, now)),
@@ -316,12 +317,12 @@ export async function reconcileWorkspaceLeases(): Promise<void> {
     const body = await response.json() as { leases?: Array<{ id: string }> }
     const active = new Set((body.leases ?? []).map((lease) => lease.id))
     const ready = await db.select({ id: workspaceLeases.id, controllerLeaseId: workspaceLeases.controllerLeaseId })
-      .from(workspaceLeases).where(eq(workspaceLeases.status, 'ready'))
+      .from(workspaceLeases).where(profileEq(workspaceLeases.status, 'ready'))
     const stale = ready.filter((row) => !row.controllerLeaseId || !active.has(row.controllerLeaseId)).map((row) => row.id)
     if (!stale.length) return
     await db.update(workspaceLeases).set({
       status: 'expired', capacityState: null, error: 'Controller lease no longer active', updatedAt: now,
-    }).where(inArray(workspaceLeases.id, stale))
+    }).where(profileInArray(workspaceLeases.id, stale))
   } catch {
     // Controller unreachable: keep time-based expiry only so a blip does not wipe live rows.
   }

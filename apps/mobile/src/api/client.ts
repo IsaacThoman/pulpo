@@ -1,3 +1,4 @@
+import { dataProfileHeaders, dataProfileGeneration, dataProfileResourceUrl } from '@pulpo/client-core'
 import type { NativeDevice, DeviceSessionList, MobileConfig, NativeAuthResponse, PasskeyAuthenticationResponse, PasskeyCeremony, PasskeyList, PasskeyRegistrationResponse, PasskeySummary, TwoFactorEnrollment, TwoFactorRecoveryCodes, TwoFactorStatus, User } from '@pulpo/contracts'
 import type { MobileModel, ServerChat, ServerDeletedChat, ServerFolder } from '../types'
 
@@ -32,12 +33,12 @@ export function apiOrigin(): string {
 }
 
 export function apiUrl(url: string): string {
-  return new URL(url, `${instanceUrl}/`).toString()
+  return new URL(dataProfileResourceUrl(url, instanceUrl), `${instanceUrl}/`).toString()
 }
 
 export function nativeAuthorizationHeaders(url?: string): Record<string, string> {
   if (!sessionToken || (url && new URL(apiUrl(url)).origin !== new URL(instanceUrl).origin)) return {}
-  return { authorization: `Bearer ${sessionToken}` }
+  return { authorization: `Bearer ${sessionToken}`, ...dataProfileHeaders() }
 }
 
 interface RequestOptions extends Omit<RequestInit, 'body'> {
@@ -50,7 +51,9 @@ interface RequestOptions extends Omit<RequestInit, 'body'> {
 }
 
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  const generation = dataProfileGeneration()
   const headers = new Headers(options.headers)
+  for (const [key, value] of Object.entries(dataProfileHeaders())) if (!headers.has(key)) headers.set(key, value)
   if (options.body !== undefined) headers.set('content-type', 'application/json')
   if (options.idempotencyKey) headers.set('idempotency-key', options.idempotencyKey)
   if (options.auth !== false && sessionToken) headers.set('authorization', `Bearer ${sessionToken}`)
@@ -67,6 +70,7 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
       body: options.body === undefined ? undefined : JSON.stringify(options.body),
     })
   } catch (error) {
+    if (generation !== dataProfileGeneration()) throw new ApiError(409, 'profile_changed', 'Profile changed')
     if (controller.signal.aborted && !options.signal?.aborted) {
       throw new ApiError(408, 'request_timeout', 'The Pulpo instance did not respond in time.')
     }
@@ -75,10 +79,12 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
     clearTimeout(timeout)
     options.signal?.removeEventListener('abort', abort)
   }
+  if (generation !== dataProfileGeneration()) throw new ApiError(409, 'profile_changed', 'Profile changed')
   if (response.status === 204) return undefined as T
   const body = await response.json().catch(() => undefined) as {
     error?: { message?: string; code?: string }
   } | undefined
+  if (generation !== dataProfileGeneration()) throw new ApiError(409, 'profile_changed', 'Profile changed')
   if (!response.ok) {
     if (response.status === 401 && options.auth !== false) {
       if (options.verifySessionOnUnauthorized) {

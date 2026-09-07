@@ -1,3 +1,4 @@
+import { dataProfileGeneration } from '@pulpo/client-core'
 import type { QueryClient } from '@tanstack/react-query'
 import type { MobileQueuedMessage, ServerChat } from '../types'
 import { queryKeys } from './queries'
@@ -9,10 +10,12 @@ import { readyOutboxPrefix } from './schema'
 const activeReplays = new Map<string, Promise<{ replayed: number; rejected: number }>>()
 
 async function performReplay(namespace: string, client?: QueryClient): Promise<{ replayed: number; rejected: number }> {
+  const generation = dataProfileGeneration()
   const rows = readyOutboxPrefix(await pendingOutbox(namespace), Date.now())
   let replayed = 0
   let rejected = 0
   for (const row of rows) {
+    if (generation !== dataProfileGeneration()) break
     try {
       const result = await apiRequest<{ queuedMessage?: MobileQueuedMessage | null }>(row.path, {
         method: row.method,
@@ -23,6 +26,7 @@ async function performReplay(namespace: string, client?: QueryClient): Promise<{
       await completeOutbox(row.id)
       replayed += 1
     } catch (error) {
+      if (error instanceof ApiError && error.code === 'profile_changed') break
       if (error instanceof ApiError && error.status >= 400 && error.status < 500 && error.status !== 408 && error.status !== 429) {
         if (row.entityKey.startsWith('queued-message:')) await settleQueuedSubmission(namespace, row.id, row.path, null, error.message, client)
         await completeOutbox(row.id)

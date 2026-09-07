@@ -1,4 +1,6 @@
-import { eq, sql } from 'drizzle-orm'
+import { currentProfile } from '../profiles/context.js'
+import { profileEq } from '../profiles/context.js'
+import { sql } from 'drizzle-orm'
 import { eventHasAssistantReplyText, hasAssistantReplyText, type ResponseEvent, type ResponseSnapshot, type StateInvalidationScope } from '@pulpo/contracts'
 import { db } from '../database/client.js'
 import { responses } from '../database/schema.js'
@@ -11,7 +13,7 @@ const eventKey = (responseId: string) => `pulpo:response:${responseId}:events`
 async function recordFirstReplyTextAt(responseId: string, emittedAt: string): Promise<string> {
   const [row] = await db.update(responses).set({
     firstReplyTextAt: sql`coalesce(${responses.firstReplyTextAt}, ${emittedAt}::timestamptz)`,
-  }).where(eq(responses.id, responseId)).returning({ firstReplyTextAt: responses.firstReplyTextAt })
+  }).where(profileEq(responses.id, responseId)).returning({ firstReplyTextAt: responses.firstReplyTextAt })
   return row?.firstReplyTextAt?.toISOString() ?? emittedAt
 }
 
@@ -71,7 +73,7 @@ export async function publishStateChange(input: {
   chatId?: string
   scopes?: StateInvalidationScope[]
 }): Promise<void> {
-  await redis.publish('pulpo:state-changes', JSON.stringify(input))
+  await redis.publish('pulpo:state-changes', JSON.stringify({ ...input, ...(currentProfile() ? { profileId: currentProfile()!.profileId } : {}) }))
 }
 
 export async function publishSessionRevocation(userId: string): Promise<void> {

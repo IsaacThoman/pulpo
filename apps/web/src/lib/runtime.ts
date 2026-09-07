@@ -1,3 +1,4 @@
+import { dataProfileSuffix, dataProfileResourceUrl, dataProfileScope } from '@pulpo/client-core'
 import type { NativeDevice } from '@pulpo/contracts'
 import { normalizeInstanceUrl } from '@pulpo/client-core'
 
@@ -82,8 +83,9 @@ export function runtimeApiUrl(path: string): string {
 }
 
 export function runtimeResourceUrl(url: string): string {
-  if (!isDesktopRuntime()) return url
-  return new URL(url, `${instanceUrl}/`).toString()
+  const scoped = dataProfileScope() ? dataProfileResourceUrl(url, isDesktopRuntime() ? instanceUrl : window.location.origin) : url
+  if (!isDesktopRuntime()) return scoped
+  return new URL(scoped, `${instanceUrl}/`).toString()
 }
 
 export function runtimeUrlTargetsInstance(url: string): boolean {
@@ -99,7 +101,7 @@ export function runtimeAuthorizationHeaders(url: string): Record<string, string>
 }
 
 export function runtimeAccountKey(userId: string): string {
-  return isDesktopRuntime() ? `${new URL(instanceUrl).origin}|${userId}` : userId
+  return (isDesktopRuntime() ? `${new URL(instanceUrl).origin}|${userId}` : userId) + dataProfileSuffix(userId)
 }
 
 export function runtimeProfileKey(): string {

@@ -1,3 +1,4 @@
+import { currentProfile } from '../profiles/context.js'
 import { embeddingQueue } from '../jobs.js'
 
 function reportSchedulingFailure(scope: 'chat' | 'user', id: string, reason: string, error: unknown): void {
@@ -25,7 +26,7 @@ export async function scheduleChatIndex(chatId: string, userId: string, reason: 
 
 export async function scheduleUserIndex(userId: string, reason: string): Promise<void> {
   try {
-    await embeddingQueue.add('index-user', { type: 'index-user', userId }, {
+    await embeddingQueue.add('index-user', { type: 'index-user', userId, profileId: currentProfile()?.profileId }, {
       jobId: `index-user-${userId}-${Date.now()}`,
     })
   } catch (error) {

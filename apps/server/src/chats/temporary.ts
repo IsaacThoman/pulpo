@@ -1,4 +1,5 @@
-import { and, eq, gt, isNull, or, sql } from 'drizzle-orm'
+import { profileEq } from '../profiles/context.js'
+import { and, gt, isNull, or, sql } from 'drizzle-orm'
 import { chats } from '../database/schema.js'
 import { maintenanceQueue } from '../jobs.js'
 
@@ -18,7 +19,7 @@ export function temporaryChatIsExpired(
 export function accessibleChatCondition(now = new Date()) {
   return or(
     gt(chats.expiresAt, now),
-    and(eq(chats.temporary, false), isNull(chats.expiresAt)),
+    and(profileEq(chats.temporary, false), isNull(chats.expiresAt)),
   )
 }
 

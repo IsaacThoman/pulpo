@@ -1,3 +1,4 @@
+import { dataProfileScope } from '@pulpo/client-core'
 import { handleSessionConnectionError } from '@/lib/session-revocation'
 import { bindWebShelfSocket } from '@/lib/local-first/shelf'
 import { useComposerSyncPreference } from '@/stores/composer-sync-preference'
@@ -106,9 +107,9 @@ export function ChatDataBridge() {
     const socket: PulpoSocket = io(isDesktopRuntime() ? runtimeInstanceUrl() : undefined, {
       path: '/socket.io',
       withCredentials: !isDesktopRuntime(),
-      auth: { composerSyncEnabled: useComposerSyncPreference.getState().enabled, ...(isDesktopRuntime() ? { sessionToken: runtimeSessionToken() } : {}) },
+      auth: { profileId: dataProfileScope()?.profileId, composerSyncEnabled: useComposerSyncPreference.getState().enabled, ...(isDesktopRuntime() ? { sessionToken: runtimeSessionToken() } : {}) },
     })
-    socket.on('connect_error', (error) => { void handleSessionConnectionError(error) })
+    socket.on('connect_error', (error) => { if (/profile/i.test(error.message)) void import('@/stores/profiles').then(({ useProfiles }) => useProfiles.getState().refresh()).catch(() => undefined); void handleSessionConnectionError(error) })
     const unbindShelf = bindWebShelfSocket(userId, socket)
     const unbindComposer = bindWebComposerSocket(userId, socket)
     socketRef.current = socket
@@ -277,6 +278,7 @@ export function ChatDataBridge() {
       queueRevisionInvalidation({ revision, chatId: changedChatId })
     })
     socket.on('account.revision', ({ revision, scopes }) => {
+      if (scopes?.includes('profiles')) void import('@/stores/profiles').then(({ useProfiles }) => useProfiles.getState().refresh()).catch(() => undefined)
       queueRevisionInvalidation({ revision, scopes })
     })
     const wake = () => { if (document.visibilityState === 'visible') syncScheduler.request() }

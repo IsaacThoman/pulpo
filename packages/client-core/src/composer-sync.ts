@@ -94,6 +94,15 @@ export class ComposerSync {
     this.generation++
     for (const entry of this.entries.values()) entry.ready = false
   }
+  async pause(): Promise<void> {
+    this.disconnect()
+    for (const entry of this.entries.values()) {
+      if (entry.timer) clearTimeout(entry.timer)
+      await entry.loaded
+      this.notify(entry, false)
+      await entry.saved
+    }
+  }
   dispose(): void {
     this.disposed = true
     this.disconnect()

@@ -1,3 +1,4 @@
+export * from './data-profile.js'
 import {
   DEFAULT_MAX_ATTACHMENT_BYTES,
   applyResponseEventToSnapshot,
@@ -366,6 +367,8 @@ export interface ManagementRequestOptions extends Omit<RequestInit, 'body'> {
 }
 
 export class PulpoManagementClient {
+  private profileId: string | undefined
+  setProfile(profileId: string | undefined): void { this.profileId = profileId }
   private token: string | null
 
   constructor(
@@ -384,6 +387,7 @@ export class PulpoManagementClient {
     const headers = new Headers(options.headers)
     if (options.body !== undefined) headers.set('content-type', 'application/json')
     if (this.token) headers.set('authorization', `Bearer ${this.token}`)
+    if (this.profileId) headers.set('X-Pulpo-Profile-Id', this.profileId)
     const response = await this.fetchImpl(new URL(path, `${this.baseUrl.replace(/\/+$/, '')}/`), {
       ...options,
       headers,
@@ -419,6 +423,7 @@ export class PulpoManagementClient {
     form.append('file', new Blob([copy], { type: input.contentType }), input.filename)
     const headers = new Headers()
     if (this.token) headers.set('authorization', `Bearer ${this.token}`)
+    if (this.profileId) headers.set('X-Pulpo-Profile-Id', this.profileId)
     const response = await this.fetchImpl(new URL(path, `${this.baseUrl.replace(/\/+$/, '')}/`), {
       method: 'POST',
       headers,
@@ -442,6 +447,7 @@ export class PulpoManagementClient {
   async download(path: string, timeoutMs = 300_000): Promise<{ bytes: Uint8Array; contentType: string | null; filename: string | null }> {
     const headers = new Headers()
     if (this.token) headers.set('authorization', `Bearer ${this.token}`)
+    if (this.profileId) headers.set('X-Pulpo-Profile-Id', this.profileId)
     const response = await this.fetchImpl(new URL(path, `${this.baseUrl.replace(/\/+$/, '')}/`), {
       headers,
       signal: AbortSignal.timeout(timeoutMs),

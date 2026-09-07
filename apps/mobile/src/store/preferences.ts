@@ -1,3 +1,4 @@
+import { dataProfileScope } from '@pulpo/client-core'
 import { Appearance } from 'react-native'
 import { create } from 'zustand'
 import { LatestValueQueue } from '@pulpo/client-core'
@@ -31,10 +32,16 @@ type StoredPreferences = Partial<Preferences> & {
   pendingServerPreferenceKeys?: Array<keyof Preferences>
 }
 
-const preferencePersistence = new LatestValueQueue<'global', StoredPreferences, void>()
+const preferencePersistence = new LatestValueQueue<string, StoredPreferences, void>()
+
+function preferencesNamespace(): string {
+  const scope = dataProfileScope()
+  return scope ? `${new URL(scope.instance).origin}|${scope.userId}|preferences:${scope.profileId}` : 'global'
+}
 
 function persistPreferences(snapshot: StoredPreferences): Promise<void> {
-  return preferencePersistence.enqueue('global', snapshot, (latest) => setValue('global', 'preferences', latest))
+  const namespace = preferencesNamespace()
+  return preferencePersistence.enqueue(namespace, snapshot, (latest) => setValue(namespace, 'preferences', latest))
 }
 
 function persistedSnapshot(state: PreferenceState): StoredPreferences {
@@ -90,7 +97,12 @@ export const usePreferencesStore = create<PreferenceState>((set, get) => ({
   pendingServerPreferenceKeys: [],
   hydrate: async () => {
     try {
-      const stored = await getValue<StoredPreferences>('global', 'preferences')
+      let stored = await getValue<StoredPreferences>(preferencesNamespace(), 'preferences')
+      const scope = dataProfileScope()
+      if (!stored && scope?.profileId === scope?.userId) {
+        stored = await getValue<StoredPreferences>('global', 'preferences')
+        if (stored) await setValue(preferencesNamespace(), 'preferences', stored)
+      }
       const preferences = {
         ...defaults,
         ...stored,

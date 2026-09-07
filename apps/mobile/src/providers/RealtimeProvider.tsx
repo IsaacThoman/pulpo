@@ -1,3 +1,5 @@
+import { dataProfileScope } from '@pulpo/client-core'
+import { useDataProfiles } from '../store/profiles'
 import { bindMobileShelfSocket } from '../features/chat/shelf'
 import { createOutboxScheduler } from '../data/outboxScheduler'
 import { subscribeToOutboxChanges } from '../data/outboxNotifications'
@@ -84,7 +86,7 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
     const socket = io(apiOrigin(), {
       path: '/socket.io',
       transports: ['websocket'],
-      auth: { sessionToken: token },
+      auth: { sessionToken: token, profileId: dataProfileScope()?.profileId },
       autoConnect: false,
       reconnection: true,
       reconnectionDelayMax: 5_000,
@@ -293,6 +295,7 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
     })
     socket.on('connect_error', (error) => {
       if (disposed) return
+      if (/profile/i.test(error.message)) void useDataProfiles.getState().refresh().catch(() => undefined)
       if (error.message === 'unauthorized') {
         void mobileApi.me().catch(() => undefined)
         return
@@ -315,6 +318,7 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
       queueRevisionInvalidation({ chatId, revision })
     })
     socket.on('account.revision', ({ revision, scopes }) => {
+      if (scopes?.includes('profiles')) void useDataProfiles.getState().refresh().catch(() => undefined)
       queueRevisionInvalidation({ revision, scopes })
     })
     const appState = AppState.addEventListener('change', (state) => {

@@ -8,7 +8,7 @@ import { clearRuntimeComposerDrafts } from '@/lib/local-first/composer-drafts'
 import { queryClient } from '@/lib/query-client'
 import { DEFAULT_MAX_ATTACHMENT_BYTES, type MobileConfig, type NativeAuthResponse, type PasskeyCeremony } from '@pulpo/contracts'
 import { authenticateWithPasskey, passkeyErrorMessage } from '@/lib/passkeys'
-import { normalizeInstanceUrl } from '@pulpo/client-core'
+import { configureDataProfile, normalizeInstanceUrl } from '@pulpo/client-core'
 import { authenticateDesktopPasskey, DesktopPasskeyCancelledError } from '@/lib/desktop-passkeys'
 import {
   clearDesktopSession,
@@ -390,6 +390,7 @@ export const useAuth = create<AuthState>()((set, get) => ({
       clearWebComposerSync()
       await clearLocalUserData(userId)
     }
+    configureDataProfile(undefined)
   },
 
   switchInstance: async (value) => {

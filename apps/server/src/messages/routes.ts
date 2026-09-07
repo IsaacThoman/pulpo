@@ -1,3 +1,4 @@
+import { profileEq, profileInArray } from '../profiles/context.js'
 import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
@@ -21,10 +22,10 @@ async function ownedResponse(userId: string, id: string) {
   const responseId = id.endsWith(':input') ? id.slice(0, -6) : id
   const now = new Date()
   const [row] = await db.select({ response: responses }).from(responses)
-    .innerJoin(chats, eq(chats.id, responses.chatId))
+    .innerJoin(chats, profileEq(chats.id, responses.chatId))
     .where(and(
-      eq(responses.id, responseId),
-      eq(responses.userId, userId),
+      profileEq(responses.id, responseId),
+      profileEq(responses.userId, userId),
       isNull(responses.deletedAt),
       isNull(chats.deletedAt),
       accessibleChatCondition(now),
@@ -32,8 +33,8 @@ async function ownedResponse(userId: string, id: string) {
   if (row) return row.response
   const [owned] = await db.select({ temporary: chats.temporary, expiresAt: chats.expiresAt })
     .from(responses)
-    .innerJoin(chats, eq(chats.id, responses.chatId))
-    .where(and(eq(responses.id, responseId), eq(responses.userId, userId), isNull(chats.deletedAt)))
+    .innerJoin(chats, profileEq(chats.id, responses.chatId))
+    .where(and(profileEq(responses.id, responseId), profileEq(responses.userId, userId), isNull(chats.deletedAt)))
     .limit(1)
   if (owned && temporaryChatIsExpired(owned, now)) {
     throw new AppError(410, 'temporary_chat_expired', 'This temporary chat has expired and cannot be recovered')
@@ -43,9 +44,9 @@ async function ownedResponse(userId: string, id: string) {
 
 async function bumpRevision(userId: string, chatId: string): Promise<void> {
   const [permanent] = await db.select({ id: chats.id }).from(chats).where(and(
-    eq(chats.id, chatId),
-    eq(chats.userId, userId),
-    eq(chats.temporary, false),
+    profileEq(chats.id, chatId),
+    profileEq(chats.userId, userId),
+    profileEq(chats.temporary, false),
     isNull(chats.deletedAt),
   )).limit(1)
   if (!permanent) return
@@ -168,8 +169,8 @@ export async function registerMessageRoutes(app: FastifyInstance): Promise<void>
     }
     if (idempotencyKey) {
       const [existing] = await db.select().from(responses).where(and(
-        eq(responses.userId, user.id),
-        eq(responses.idempotencyKey, idempotencyKey),
+        profileEq(responses.userId, user.id),
+        profileEq(responses.idempotencyKey, idempotencyKey),
       )).limit(1)
       if (existing) {
         reply.code(201)
@@ -198,8 +199,8 @@ export async function registerMessageRoutes(app: FastifyInstance): Promise<void>
         activeBranchLeafId: createdId,
         updatedAt: createdAt,
       }).where(and(
-        eq(chats.id, original.chatId),
-        eq(chats.userId, user.id),
+        profileEq(chats.id, original.chatId),
+        profileEq(chats.userId, user.id),
         isNull(chats.deletedAt),
         accessibleChatCondition(createdAt),
       )).returning({ id: chats.id })
@@ -209,7 +210,7 @@ export async function registerMessageRoutes(app: FastifyInstance): Promise<void>
     })
     await bumpRevision(user.id, original.chatId)
     await scheduleChatIndex(original.chatId, user.id, 'assistant-message-edit')
-    const [created] = await db.select().from(responses).where(eq(responses.id, createdId)).limit(1)
+    const [created] = await db.select().from(responses).where(profileEq(responses.id, createdId)).limit(1)
     if (!created) throw new AppError(500, 'assistant_edit_failed', 'The edited response could not be saved')
     reply.code(201)
     return { response: toSnapshot(created) }
@@ -220,8 +221,8 @@ export async function registerMessageRoutes(app: FastifyInstance): Promise<void>
     const { id } = request.params as { id: string }
     const selected = await ownedResponse(user.id, id)
     const turns = await db.select().from(responses).where(and(
-      eq(responses.chatId, selected.chatId),
-      eq(responses.userId, user.id),
+      profileEq(responses.chatId, selected.chatId),
+      profileEq(responses.userId, user.id),
       isNull(responses.deletedAt),
     )).orderBy(asc(responses.createdAt), asc(responses.id))
     const costRows = turns.length ? await db.select({
@@ -241,8 +242,8 @@ export async function registerMessageRoutes(app: FastifyInstance): Promise<void>
     const now = new Date()
     const [updatedChat] = await db.update(chats).set({ activeResponseId: leafId, activeBranchLeafId: leafId, updatedAt: now })
       .where(and(
-        eq(chats.id, selected.chatId),
-        eq(chats.userId, user.id),
+        profileEq(chats.id, selected.chatId),
+        profileEq(chats.userId, user.id),
         isNull(chats.deletedAt),
         accessibleChatCondition(now),
       )).returning({ id: chats.id })
@@ -258,20 +259,20 @@ export async function registerMessageRoutes(app: FastifyInstance): Promise<void>
     const user = requireUser(request)
     const { id } = request.params as { id: string }
     const original = await ownedResponse(user.id, id)
-    const [chat] = await db.select().from(chats).where(and(eq(chats.id, original.chatId), eq(chats.userId, user.id))).limit(1)
-    const turns = await db.select().from(responses).where(and(eq(responses.chatId, original.chatId), eq(responses.userId, user.id), isNull(responses.deletedAt))).orderBy(asc(responses.createdAt), asc(responses.id))
+    const [chat] = await db.select().from(chats).where(and(profileEq(chats.id, original.chatId), profileEq(chats.userId, user.id))).limit(1)
+    const turns = await db.select().from(responses).where(and(profileEq(responses.chatId, original.chatId), profileEq(responses.userId, user.id), isNull(responses.deletedAt))).orderBy(asc(responses.createdAt), asc(responses.id))
     const deleting = cascadeDeletionIds(turns, original, id.endsWith(':input'))
     const now = new Date()
     if (deleting.size) {
       await Promise.all(turns.filter((turn) => deleting.has(turn.id) && ['queued', 'in_progress'].includes(turn.status)).map((turn) => requestCancellation(turn.id)))
-      await db.update(responses).set({ deletedAt: now, updatedAt: now }).where(inArray(responses.id, [...deleting]))
+      await db.update(responses).set({ deletedAt: now, updatedAt: now }).where(profileInArray(responses.id, [...deleting]))
     }
     const remaining = turns.filter((turn) => !deleting.has(turn.id))
     const currentLeaf = chat?.activeBranchLeafId ?? chat?.activeResponseId ?? null
     const leafId = currentLeaf && !deleting.has(currentLeaf) ? currentLeaf : remaining.at(-1)?.id ?? null
     await db.update(chats).set({ activeResponseId: leafId, activeBranchLeafId: leafId, updatedAt: now }).where(and(
-      eq(chats.id, original.chatId),
-      eq(chats.userId, user.id),
+      profileEq(chats.id, original.chatId),
+      profileEq(chats.userId, user.id),
       isNull(chats.deletedAt),
       accessibleChatCondition(now),
     ))

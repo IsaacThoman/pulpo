@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm'
+import { profileEq } from '../profiles/context.js'
 import { db } from '../database/client.js'
 import { userPreferences } from '../database/schema.js'
 import { maintenanceQueue } from '../jobs.js'
@@ -26,7 +26,7 @@ export function automaticChatExpiresAt(value: AutomaticChatExpiration, now = new
 
 export async function getAutomaticChatExpiration(userId: string): Promise<AutomaticChatExpiration> {
   const [row] = await db.select({ values: userPreferences.values }).from(userPreferences)
-    .where(eq(userPreferences.userId, userId)).limit(1)
+    .where(profileEq(userPreferences.userId, userId)).limit(1)
   return parseAutomaticChatExpiration(
     (row?.values as Record<string, unknown> | undefined)?.automaticChatExpiration,
   )

@@ -1,5 +1,5 @@
 export const FULL_BACKUP_TABLES = [
-  'users', 'friendships', 'user_blocks', 'password_credentials', 'user_totp_credentials', 'two_factor_recovery_codes', 'user_preferences', 'audit_events',
+  'users', 'data_profiles', 'friendships', 'user_blocks', 'password_credentials', 'user_totp_credentials', 'two_factor_recovery_codes', 'user_preferences', 'audit_events',
   'catalog_icons', 'labs', 'provider_connections',
   'models', 'model_pricing_versions', 'model_presets', 'model_preset_choices', 'folders', 'chats', 'responses',
   'response_items', 'response_content_parts', 'chat_shares', 'attachments', 'user_memory_documents', 'user_memory_document_revisions',
@@ -18,12 +18,13 @@ export type FullBackupTable = typeof FULL_BACKUP_TABLES[number]
  */
 export const FULL_BACKUP_EXPLICIT_COLUMNS: Partial<Record<FullBackupTable, readonly string[]>> = {
   chat_turn_embeddings: [
-    'id', 'generation_id', 'user_id', 'chat_id', 'response_id', 'chunk_index', 'content_hash', 'chunk_text',
+    'id', 'generation_id', 'user_id', 'profile_id', 'chat_id', 'response_id', 'chunk_index', 'content_hash', 'chunk_text',
     'embedding', 'status', 'error', 'indexed_at', 'created_at', 'updated_at',
   ],
 }
 
 export const OPTIONAL_TABLES_IN_LEGACY_BACKUPS: readonly FullBackupTable[] = [
+  'data_profiles',
   'user_memory_documents',
   'user_memory_document_revisions',
   'episodic_memory_generations',
@@ -37,6 +38,9 @@ export const OPTIONAL_TABLES_IN_LEGACY_BACKUPS: readonly FullBackupTable[] = [
  * a later migration adds a required column to an existing backup table.
  */
 export function applyFullBackupCompatibilityDefaults(database: Record<string, Array<Record<string, unknown>>>): void {
+  for (const table of ['attachments', 'chat_import_sources', 'chat_shares', 'chat_turn_embeddings', 'chats', 'composer_drafts', 'folders', 'idempotency_records', 'queued_messages', 'responses', 'shelf_operations', 'shelved_drafts', 'user_memory_document_revisions', 'user_memory_documents', 'user_preferences', 'workspace_leases']) {
+    for (const row of database[table] ?? []) row.profile_id ??= row.user_id
+  }
   for (const user of database.users ?? []) {
     user.profile_color ??= null
     user.avatar_object_key ??= null

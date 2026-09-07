@@ -1,3 +1,4 @@
+import { profileEq, profileInArray } from '../profiles/context.js'
 import { Agent, type AgentMessage } from '@earendil-works/pi-agent-core'
 import { openAIResponsesApi } from '@earendil-works/pi-ai/api/openai-responses.lazy'
 import type { Api, AssistantMessage, Context, Model } from '@earendil-works/pi-ai'
@@ -95,7 +96,7 @@ async function finalizeUnhandledAgentFailure(responseId: string, error: unknown)
   const [state] = await db.select({ response: responses, requestLog: requestLogs })
     .from(responses)
     .leftJoin(requestLogs, eq(requestLogs.responseId, responses.id))
-    .where(eq(responses.id, responseId))
+    .where(profileEq(responses.id, responseId))
     .limit(1)
   if (!state || ['completed', 'failed', 'cancelled', 'incomplete'].includes(state.response.status)) return
 
@@ -108,7 +109,7 @@ async function finalizeUnhandledAgentFailure(responseId: string, error: unknown)
       error: { message, category },
       completedAt,
       updatedAt: completedAt,
-    }).where(eq(responses.id, responseId))
+    }).where(profileEq(responses.id, responseId))
     await tx.update(agentRuns).set({
       status: 'failed',
       error: message,
@@ -127,7 +128,7 @@ async function finalizeUnhandledAgentFailure(responseId: string, error: unknown)
     }
   })
   await releaseBudget(responseId)
-  const [terminal] = await db.select().from(responses).where(eq(responses.id, responseId)).limit(1)
+  const [terminal] = await db.select().from(responses).where(profileEq(responses.id, responseId)).limit(1)
   if (terminal) await publishSnapshot(toSnapshot(terminal))
   if (state.requestLog) await publishAdminUsage(state.requestLog.id, true)
 }
@@ -145,15 +146,15 @@ async function runAgentGeneration(responseId: string): Promise<void> {
   const startedAt = Date.now()
   const config = getConfig()
   const [record] = await db.select({ response: responses, model: models, provider: providerConnections })
-    .from(responses).innerJoin(models, eq(responses.modelId, models.id)).innerJoin(providerConnections, eq(models.providerConnectionId, providerConnections.id))
-    .where(eq(responses.id, responseId)).limit(1)
+    .from(responses).innerJoin(models, profileEq(responses.modelId, models.id)).innerJoin(providerConnections, eq(models.providerConnectionId, providerConnections.id))
+    .where(profileEq(responses.id, responseId)).limit(1)
   if (!record || !record.response.agentMode || ['completed', 'cancelled'].includes(record.response.status)) return
   const [settingsRow, webToolsRow, personalizationRow, preferencesRow, episodicMemorySettings] = await Promise.all([
     db.select().from(applicationSettings).where(eq(applicationSettings.key, 'agent')).limit(1).then((rows) => rows[0]),
     db.select().from(applicationSettings).where(eq(applicationSettings.key, 'webTools')).limit(1).then((rows) => rows[0]),
     db.select().from(applicationSettings).where(eq(applicationSettings.key, 'personalization')).limit(1).then((rows) => rows[0]),
     db.select({ values: userPreferences.values }).from(userPreferences)
-      .where(eq(userPreferences.userId, record.response.userId)).limit(1).then((rows) => rows[0]),
+      .where(profileEq(userPreferences.userId, record.response.userId)).limit(1).then((rows) => rows[0]),
     readEpisodicMemorySettings(),
   ])
   const settings = parseAgentSettings(settingsRow?.value)
@@ -164,7 +165,7 @@ async function runAgentGeneration(responseId: string): Promise<void> {
     preferenceValues,
   )
   const [chatState] = await db.select({ temporary: chats.temporary }).from(chats)
-    .where(eq(chats.id, record.response.chatId)).limit(1)
+    .where(profileEq(chats.id, record.response.chatId)).limit(1)
   const memory = await loadGenerationMemory({
     chat: chatState,
     memoryEnabled: preferenceValues.memoryEnabled,
@@ -184,7 +185,7 @@ async function runAgentGeneration(responseId: string): Promise<void> {
   const currentAgentSystemPrompt = [baseAgentSystemPrompt, recallContext].filter(Boolean).join('\n\n')
   if (!settings.enabled || !record.model.agentEnabled) throw new Error('Agent mode is no longer available')
   const allHistory = await db.select().from(responses).where(and(
-    eq(responses.chatId, record.response.chatId),
+    profileEq(responses.chatId, record.response.chatId),
     isNull(responses.deletedAt),
   )).orderBy(asc(responses.createdAt), asc(responses.id))
   const lineage = lineageFromLeaf(allHistory, record.response.parentResponseId)
@@ -196,7 +197,7 @@ async function runAgentGeneration(responseId: string): Promise<void> {
   const historyAttachmentIds = [...new Set(lineage.flatMap((response) => responseUserAttachmentIds(response.input)))]
   const historyAttachments = historyAttachmentIds.length
     ? await db.select({ id: attachments.id, originalName: attachments.originalName, mimeType: attachments.mimeType, sizeBytes: attachments.sizeBytes })
-      .from(attachments).where(and(eq(attachments.userId, record.response.userId), inArray(attachments.id, historyAttachmentIds), eq(attachments.status, 'ready')))
+      .from(attachments).where(and(profileEq(attachments.userId, record.response.userId), profileInArray(attachments.id, historyAttachmentIds), profileEq(attachments.status, 'ready')))
     : []
   const parentMessages = resolveAgentParentMessages(
     lineage,
@@ -234,7 +235,7 @@ async function runAgentGeneration(responseId: string): Promise<void> {
       objectKey: attachments.objectKey,
       checksum: attachments.checksum,
     })
-      .from(attachments).where(and(eq(attachments.userId, record.response.userId), inArray(attachments.id, attachmentIds), eq(attachments.status, 'ready')))
+      .from(attachments).where(and(profileEq(attachments.userId, record.response.userId), profileInArray(attachments.id, attachmentIds), profileEq(attachments.status, 'ready')))
     : []
   const attachmentsById = new Map(attachmentRows.map((attachment) => [attachment.id, attachment]))
   const attachedFiles = attachmentIds.flatMap((id) => {
@@ -273,7 +274,7 @@ async function runAgentGeneration(responseId: string): Promise<void> {
   let activeIndex = initialRuntime.index; let active = runtimes[activeIndex]!
   if (initialRuntime.stickyUsed) {
     const pricing = await getActivePricing(active.model.id)
-    await db.update(responses).set({ actualModelId: active.model.id, pricingVersionId: pricing.id }).where(eq(responses.id, responseId))
+    await db.update(responses).set({ actualModelId: active.model.id, pricingVersionId: pricing.id }).where(profileEq(responses.id, responseId))
     await db.update(requestLogs).set({ stickyFallbackUsed: true, fallbackUsed: true, currentModelId: active.model.id, updatedAt: new Date() }).where(eq(requestLogs.id, requestLog.id))
     await publishAdminUsage(requestLog.id, true)
   }
@@ -333,7 +334,7 @@ async function runAgentGeneration(responseId: string): Promise<void> {
     return item?.type === 'pulpo_tool' && typeof item.id === 'string' ? [[item.id, { ...item }]] : []
   }))
   const generatedAttachmentRows = await db.select().from(attachments).where(and(
-    eq(attachments.sourceResponseId, responseId), inArray(attachments.origin, ['assistant', 'tool_preview']), eq(attachments.status, 'ready'),
+    profileEq(attachments.sourceResponseId, responseId), profileInArray(attachments.origin, ['assistant', 'tool_preview']), profileEq(attachments.status, 'ready'),
   ))
   const attachmentItems = new Map<string, AttachmentTimelineItem>(generatedAttachmentRows.flatMap((attachment) => (
     attachment.origin === 'assistant' && attachment.sourceToolCallId ? [[attachment.sourceToolCallId, {
@@ -384,7 +385,7 @@ async function runAgentGeneration(responseId: string): Promise<void> {
       lastSequence: streamProjection.sequence,
       startedAt: record.response.startedAt ?? new Date(),
       updatedAt: new Date(),
-    }).where(eq(responses.id, responseId))
+    }).where(profileEq(responses.id, responseId))
   }
   let agent!: Agent
   const activateFallbackRuntime = async (fromIndex: number): Promise<boolean> => {
@@ -395,7 +396,7 @@ async function runAgentGeneration(responseId: string): Promise<void> {
     currentRetryAttempt = 1
     if (agent) agent.state.model = active.piModel
     const pricing = await getActivePricing(active.model.id)
-    await db.update(responses).set({ actualModelId: active.model.id, pricingVersionId: pricing.id }).where(eq(responses.id, responseId))
+    await db.update(responses).set({ actualModelId: active.model.id, pricingVersionId: pricing.id }).where(profileEq(responses.id, responseId))
     await db.update(requestLogs).set({
       fallbackUsed: true,
       stickyFallbackUsed: resolved.stickyUsed ? true : undefined,
@@ -428,8 +429,8 @@ async function runAgentGeneration(responseId: string): Promise<void> {
       })
       checkpoint = selectAgentResponseCheckpoint(streamProjection, { terminal: true, output: terminalOutput })
     }
-    await db.update(responses).set({ status: terminal ?? 'in_progress', output: checkpoint.output, usage, error: errorMessage ? { message: errorMessage } : undefined, lastSequence: checkpoint.sequence, completedAt: terminal ? new Date() : undefined, updatedAt: new Date() }).where(eq(responses.id, responseId))
-    const [updated] = await db.select().from(responses).where(eq(responses.id, responseId)).limit(1)
+    await db.update(responses).set({ status: terminal ?? 'in_progress', output: checkpoint.output, usage, error: errorMessage ? { message: errorMessage } : undefined, lastSequence: checkpoint.sequence, completedAt: terminal ? new Date() : undefined, updatedAt: new Date() }).where(profileEq(responses.id, responseId))
+    const [updated] = await db.select().from(responses).where(profileEq(responses.id, responseId)).limit(1)
     if (updated) await publishSnapshot(toSnapshot(updated))
     lastSnapshotAt = Date.now()
   }
@@ -626,7 +627,7 @@ async function runAgentGeneration(responseId: string): Promise<void> {
   })
   const attachFile = async (operationId: string, path: string, name: string | undefined, signal?: AbortSignal) => {
     const [existing] = await db.select().from(attachments).where(and(
-      eq(attachments.sourceResponseId, responseId), eq(attachments.sourceToolCallId, operationId), eq(attachments.status, 'ready'),
+      profileEq(attachments.sourceResponseId, responseId), profileEq(attachments.sourceToolCallId, operationId), profileEq(attachments.status, 'ready'),
     )).limit(1)
     const stored = existing
       ? { id: existing.id, name: existing.originalName, mimeType: existing.mimeType, sizeBytes: existing.sizeBytes }
@@ -800,7 +801,7 @@ async function runAgentGeneration(responseId: string): Promise<void> {
       turnPricing.set(modelTurns, pricing)
       turnRetryAttempts.set(modelTurns, currentRetryAttempt)
       await db.insert(generationAttempts).values({ id: attemptId, requestLogId: requestLog.id, modelId: active.model.id, upstreamModelId: active.model.upstreamModelId, source: 'agent', purpose: 'generation', fallbackFromModelId: activeIndex ? runtimes[activeIndex - 1]!.model.id : null, retryAttempt: currentRetryAttempt, turnNumber: modelTurns, status: 'in_progress' })
-      await db.update(responses).set({ actualModelId: active.model.id, pricingVersionId: pricing.id }).where(eq(responses.id, responseId))
+      await db.update(responses).set({ actualModelId: active.model.id, pricingVersionId: pricing.id }).where(profileEq(responses.id, responseId))
       await db.update(requestLogs).set({ status: 'in_progress', currentModelId: active.model.id, currentRetryAttempt, currentTurnNumber: modelTurns, fallbackUsed: activeIndex > 0, updatedAt: new Date() }).where(eq(requestLogs.id, requestLog.id))
     } else if (event.type === 'message_update') {
       const update = event.assistantMessageEvent
@@ -944,7 +945,7 @@ async function runAgentGeneration(responseId: string): Promise<void> {
     }
     await persistRunContext(event.type !== 'message_update' && event.type !== 'tool_execution_update')
   })
-  await db.update(responses).set({ status: 'in_progress', startedAt: new Date(), updatedAt: new Date() }).where(eq(responses.id, responseId))
+  await db.update(responses).set({ status: 'in_progress', startedAt: new Date(), updatedAt: new Date() }).where(profileEq(responses.id, responseId))
   try {
     await emit('pulpo.agent.started', { runId })
     const initialPrompt = buildAgentUserPrompt(record.response.input, attachedFiles) || 'How can I help?'
@@ -1034,11 +1035,11 @@ async function runAgentGeneration(responseId: string): Promise<void> {
     const cancelled = await isCancellationRequested(responseId)
     if (cancelled) throw new Error('Generation cancelled')
     await snapshot('completed')
-    const [completed] = await db.select().from(responses).where(eq(responses.id, responseId)).limit(1)
+    const [completed] = await db.select().from(responses).where(profileEq(responses.id, responseId)).limit(1)
     if (completed) await persistResponseItems(responseId, completed.output as unknown[])
     await db.update(agentRuns).set({ status: 'completed', context: { systemPrompt: agentSystemPrompt, messages: messagesForPersistence(agent.state.messages), billingTurns }, modelTurns, toolCalls, completedAt: new Date(), updatedAt: new Date() }).where(eq(agentRuns.id, runId))
     const finalResponder = lastResponder ?? { runtime: active, pricing: await getActivePricing(active.model.id) }
-    await db.update(responses).set({ actualModelId: finalResponder.runtime.model.id, pricingVersionId: finalResponder.pricing.id }).where(eq(responses.id, responseId))
+    await db.update(responses).set({ actualModelId: finalResponder.runtime.model.id, pricingVersionId: finalResponder.pricing.id }).where(profileEq(responses.id, responseId))
     const postTaskCostMicros = await runPostResponseTasks(record, finalResponder.runtime, completed?.output as unknown[] ?? [], requestLog.id).catch(async (error) => {
       if (finalResponder.runtime.codex && codexErrorRequiresReauthentication(error)) {
         await markCodexReauthenticationRequired(record.response.userId, 'Your Codex connection needs to be renewed.')
@@ -1096,7 +1097,7 @@ async function runAgentGeneration(responseId: string): Promise<void> {
     await snapshot(status, errorMessage)
     await db.update(agentRuns).set({ status, error: errorMessage, context: { systemPrompt: agentSystemPrompt, messages: messagesForPersistence(agent.state.messages), billingTurns }, completedAt: new Date(), updatedAt: new Date() }).where(eq(agentRuns.id, runId))
     const finalResponder = lastResponder ?? { runtime: active, pricing: await getActivePricing(active.model.id) }
-    await db.update(responses).set({ actualModelId: finalResponder.runtime.model.id, pricingVersionId: finalResponder.pricing.id }).where(eq(responses.id, responseId))
+    await db.update(responses).set({ actualModelId: finalResponder.runtime.model.id, pricingVersionId: finalResponder.pricing.id }).where(profileEq(responses.id, responseId))
     workspaceCostMicros = workspaceReadyAtMs !== undefined && settings.billWorkspaces
       ? workspaceUsageMicros(Date.now() - workspaceReadyAtMs, settings.workspacePricePerMinuteMicros)
       : 0

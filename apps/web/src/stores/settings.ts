@@ -1,5 +1,6 @@
+import { profileStorage } from '@/lib/profile-storage'
 import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
+import { persist, createJSONStorage } from 'zustand/middleware'
 import type { SidebarPins } from '@pulpo/contracts'
 import {
   applyAnimationSpeed,
@@ -108,7 +109,7 @@ export const useSettings = create<SettingsState>()(
         set((s) => ({ agentModes: { ...s.agentModes, [modelId]: enabled } })),
     }),
     {
-      name: 'pulpo-settings',
+      name: 'pulpo-settings', storage: createJSONStorage(() => profileStorage),
       merge: (persisted, current) => {
         const saved = persisted as Partial<SettingsState>
         return {

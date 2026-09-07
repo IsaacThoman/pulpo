@@ -1,3 +1,4 @@
+import { profileStorage } from '@/lib/profile-storage'
 import { create } from 'zustand'
 import { createJSONStorage, persist } from 'zustand/middleware'
 import { useSettings } from './settings'
@@ -8,7 +9,7 @@ export const useComposerSyncPreference = create<{
   generation: string
 }>()(persist(() => ({ enabled: useSettings.getState().composerSyncEnabled, generation: '' }), {
   name: 'pulpo-composer-sync-epoch',
-  storage: createJSONStorage(() => window.localStorage),
+  storage: createJSONStorage(() => profileStorage),
   partialize: ({ generation }) => ({ generation }),
 }))
 

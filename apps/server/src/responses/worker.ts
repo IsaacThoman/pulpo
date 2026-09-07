@@ -1,6 +1,8 @@
+import { withProfile } from '../profiles/context.js'
+import { profileEq, profileInArray } from '../profiles/context.js'
 import OpenAI, { toFile } from 'openai'
 import type { AssistantMessage, Context, Message, ThinkingLevel } from '@earendil-works/pi-ai'
-import { and, asc, eq, inArray, isNull, ne, sql } from 'drizzle-orm'
+import { and, asc, eq, isNull, ne, sql } from 'drizzle-orm'
 import { applyResponseEventToSnapshot, type CompactionItem, type RecallItem, type ResponseEvent, type ResponseUsage } from '@pulpo/contracts'
 import { db } from '../database/client.js'
 import {
@@ -169,8 +171,8 @@ async function prepareInputFiles(client: OpenAI, userId: string, input: unknown[
         continue
       }
       const [attachment] = await db.select().from(attachments).where(and(
-        eq(attachments.id, filePart.attachment_id),
-        eq(attachments.userId, userId),
+        profileEq(attachments.id, filePart.attachment_id),
+        profileEq(attachments.userId, userId),
       )).limit(1)
       if (!attachment || attachment.status !== 'ready') throw new Error('Attachment is unavailable')
       const bytes = await getBlobStore().get(attachment.objectKey)
@@ -189,8 +191,8 @@ async function prepareInputFiles(client: OpenAI, userId: string, input: unknown[
         })
         fileId = uploaded.id
         await db.update(attachments).set({ openaiFileId: fileId, updatedAt: new Date() }).where(and(
-          eq(attachments.id, attachment.id),
-          eq(attachments.userId, userId),
+          profileEq(attachments.id, attachment.id),
+          profileEq(attachments.userId, userId),
         ))
       }
       content.push({ type: 'input_file', file_id: fileId })
@@ -212,7 +214,7 @@ async function contextualInput(
   onBilledCost: (costMicros: number) => void,
 ): Promise<{ input: unknown[]; compactionItems: CompactionItem[] }> {
   const [[preferences], [personalizationRow]] = publicApi ? [[], []] : await Promise.all([
-    db.select().from(userPreferences).where(eq(userPreferences.userId, record.response.userId)).limit(1),
+    db.select().from(userPreferences).where(profileEq(userPreferences.userId, record.response.userId)).limit(1),
     db.select({ value: applicationSettings.value }).from(applicationSettings)
       .where(eq(applicationSettings.key, 'personalization')).limit(1),
   ])
@@ -265,8 +267,8 @@ async function contextualInput(
   })
   if (!compacted.item && existingItem) {
     const updatedAt = new Date()
-    await db.update(responses).set({ output: recallItem ? [recallItem] : [], updatedAt }).where(eq(responses.id, record.response.id))
-    const [updated] = await db.select().from(responses).where(eq(responses.id, record.response.id)).limit(1)
+    await db.update(responses).set({ output: recallItem ? [recallItem] : [], updatedAt }).where(profileEq(responses.id, record.response.id))
+    const [updated] = await db.select().from(responses).where(profileEq(responses.id, record.response.id)).limit(1)
     if (updated) await publishSnapshot(toSnapshot(updated))
   }
   return { input: [...context, ...compacted.conversation, ...(record.response.input as unknown[])], compactionItems: compacted.item ? [compacted.item] : [] }
@@ -301,7 +303,7 @@ async function codexCurrentUserMessage(response: typeof responses.$inferSelect):
   const attachmentIds = responseAttachmentIds(response.input)
   if (attachmentIds.length) {
     const rows = await db.select().from(attachments).where(and(
-      eq(attachments.userId, response.userId), inArray(attachments.id, attachmentIds), eq(attachments.status, 'ready'),
+      profileEq(attachments.userId, response.userId), profileInArray(attachments.id, attachmentIds), profileEq(attachments.status, 'ready'),
     ))
     for (const attachment of rows) {
       if (!attachment.mimeType.startsWith('image/')) continue
@@ -319,7 +321,7 @@ async function processCodexGenerationAttempt(
   const responseId = record.response.id
   const publishResponseEvent = createResponseEventPublisher(record.response)
   const allHistory = await db.select().from(responses).where(and(
-    eq(responses.chatId, record.response.chatId), ne(responses.id, responseId), isNull(responses.deletedAt),
+    profileEq(responses.chatId, record.response.chatId), ne(responses.id, responseId), isNull(responses.deletedAt),
   )).orderBy(asc(responses.createdAt), asc(responses.id))
   const byId = new Map(allHistory.map((turn) => [turn.id, turn]))
   const lineage: typeof allHistory = []
@@ -434,7 +436,7 @@ async function processCodexGenerationAttempt(
     { id: messageId, type: 'message', role: 'assistant', status: 'in_progress', content: [{ type: 'output_text', text, annotations: [] }] },
   ]
   await db.update(responses).set({ status: 'in_progress', startedAt: record.response.startedAt ?? new Date(), output: output(), updatedAt: new Date() })
-    .where(eq(responses.id, responseId))
+    .where(profileEq(responses.id, responseId))
   try {
     const stream = codex.streamSimple(piModel, context, {
       reasoning: agentThinkingLevel(record.response.parameters as Record<string, unknown>) as ThinkingLevel,
@@ -462,8 +464,8 @@ async function processCodexGenerationAttempt(
       } else if (event.type === 'done') finalMessage = event.message
       else if (event.type === 'error') throw new Error(event.error.errorMessage ?? 'Codex generation failed')
       if (Date.now() - lastSnapshot > 250) {
-        await db.update(responses).set({ output: output(), lastSequence: sequence, updatedAt: new Date() }).where(eq(responses.id, responseId))
-        const [snapshot] = await db.select().from(responses).where(eq(responses.id, responseId)).limit(1)
+        await db.update(responses).set({ output: output(), lastSequence: sequence, updatedAt: new Date() }).where(profileEq(responses.id, responseId))
+        const [snapshot] = await db.select().from(responses).where(profileEq(responses.id, responseId)).limit(1)
         if (snapshot) await publishSnapshot(toSnapshot(snapshot))
         lastSnapshot = Date.now()
       }
@@ -481,7 +483,7 @@ async function processCodexGenerationAttempt(
       status: finalMessage.stopReason === 'length' ? 'incomplete' : 'completed', output: terminalOutput, usage,
       incompleteDetails: finalMessage.stopReason === 'length' ? { reason: 'max_output_tokens' } : null,
       lastSequence: sequence, openaiResponseId: finalMessage.responseId ?? null, completedAt, updatedAt: completedAt,
-    }).where(eq(responses.id, responseId))
+    }).where(profileEq(responses.id, responseId))
     const [requestLog] = await db.select({ id: requestLogs.id }).from(requestLogs).where(eq(requestLogs.responseId, responseId)).limit(1)
     let additionalCostMicros = 0
     if (requestLog) {
@@ -501,15 +503,15 @@ async function processCodexGenerationAttempt(
       additionalCostMicros,
       inferenceReferenceCostMicros: codexInferenceReferenceCostMicros(piModel, usage),
     })
-    const [snapshot] = await db.select().from(responses).where(eq(responses.id, responseId)).limit(1)
+    const [snapshot] = await db.select().from(responses).where(profileEq(responses.id, responseId)).limit(1)
     if (snapshot) await publishSnapshot(toSnapshot(snapshot))
   } catch (error) {
     if (controller.signal.aborted || await isCancellationRequested(responseId)) {
       const completedAt = new Date()
       await db.update(responses).set({ status: 'cancelled', output: output(), lastSequence: sequence, completedAt, updatedAt: completedAt })
-        .where(eq(responses.id, responseId))
+        .where(profileEq(responses.id, responseId))
       await releaseBudget(responseId)
-      const [snapshot] = await db.select().from(responses).where(eq(responses.id, responseId)).limit(1)
+      const [snapshot] = await db.select().from(responses).where(profileEq(responses.id, responseId)).limit(1)
       if (snapshot) await publishSnapshot(toSnapshot(snapshot))
       return
     }
@@ -533,7 +535,7 @@ async function processGenerationAttempt(
     .from(responses)
     .innerJoin(models, eq(models.id, modelId))
     .innerJoin(providerConnections, eq(models.providerConnectionId, providerConnections.id))
-    .where(eq(responses.id, responseId))
+    .where(profileEq(responses.id, responseId))
     .limit(1)
   if (!record || ['completed', 'cancelled'].includes(record.response.status)) return
   const publishResponseEvent = createResponseEventPublisher(record.response)
@@ -555,7 +557,7 @@ async function processGenerationAttempt(
       ['pulpo_recall', 'pulpo_compaction'].includes((item as { type?: string }).type ?? '')
     ))
     const recoveryInclude = responseIncludeParameter(record.response.parameters)
-    await db.update(responses).set({ status: 'in_progress', error: null, completedAt: null, updatedAt: new Date() }).where(eq(responses.id, responseId))
+    await db.update(responses).set({ status: 'in_progress', error: null, completedAt: null, updatedAt: new Date() }).where(profileEq(responses.id, responseId))
     try {
       try {
         const resumed = await client.responses.retrieve(openaiResponseId, {
@@ -580,7 +582,7 @@ async function processGenerationAttempt(
             lastSequence: localSequence,
             upstreamSequence: Number(upstream.sequence_number ?? record.response.upstreamSequence),
             updatedAt: new Date(),
-          }).where(eq(responses.id, responseId))
+          }).where(profileEq(responses.id, responseId))
         }
       } catch {
         // Retrieval polling below is the authoritative fallback when stream resumption is unavailable.
@@ -588,7 +590,7 @@ async function processGenerationAttempt(
       for (let attempt = 0; attempt < 1_800; attempt += 1) {
         if (await isCancellationRequested(responseId)) {
           await client.responses.cancel(openaiResponseId).catch(() => undefined)
-          await db.update(responses).set({ status: 'cancelled', completedAt: new Date(), updatedAt: new Date() }).where(eq(responses.id, responseId))
+          await db.update(responses).set({ status: 'cancelled', completedAt: new Date(), updatedAt: new Date() }).where(profileEq(responses.id, responseId))
           await releaseBudget(responseId)
           return
         }
@@ -619,7 +621,7 @@ async function processGenerationAttempt(
           error: outputError
             ? { message: outputError }
             : recovered.error ? { message: recovered.error.message, code: recovered.error.code } : null,
-        }).where(eq(responses.id, responseId))
+        }).where(profileEq(responses.id, responseId))
         let additionalCostMicros = 0
         if (status === 'completed') {
           const [requestLog] = await db.select({ id: requestLogs.id }).from(requestLogs).where(eq(requestLogs.responseId, responseId)).limit(1)
@@ -628,7 +630,7 @@ async function processGenerationAttempt(
         if (usage.totalTokens > 0 || additionalCostMicros > 0) {
           await settleWithSidecars({ responseId, usage, latencyMs: Date.now() - startedAt, providerCostMicros, additionalCostMicros })
         } else await releaseBudget(responseId)
-        const [snapshot] = await db.select().from(responses).where(eq(responses.id, responseId)).limit(1)
+        const [snapshot] = await db.select().from(responses).where(profileEq(responses.id, responseId)).limit(1)
         if (snapshot) await publishSnapshot(toSnapshot(snapshot))
         return
       }
@@ -638,7 +640,7 @@ async function processGenerationAttempt(
       await db.update(responses).set({
         status: 'failed', error: { message: error instanceof Error ? error.message : 'Recovery failed' },
         completedAt: new Date(), updatedAt: new Date(),
-      }).where(eq(responses.id, responseId))
+      }).where(profileEq(responses.id, responseId))
       await releaseBudget(responseId)
       throw error
     }
@@ -646,7 +648,7 @@ async function processGenerationAttempt(
   const allHistory = await db
     .select()
     .from(responses)
-    .where(and(eq(responses.chatId, record.response.chatId), ne(responses.id, responseId), isNull(responses.deletedAt)))
+    .where(and(profileEq(responses.chatId, record.response.chatId), ne(responses.id, responseId), isNull(responses.deletedAt)))
     .orderBy(asc(responses.createdAt), asc(responses.id))
   const byId = new Map(allHistory.map((turn) => [turn.id, turn]))
   const history: typeof allHistory = []
@@ -667,7 +669,7 @@ async function processGenerationAttempt(
   }).from(requestLogs).where(eq(requestLogs.responseId, responseId)).limit(1)
   if (!requestLog) throw new Error('Request log is missing')
   const [chatState] = await db.select({ temporary: chats.temporary }).from(chats)
-    .where(eq(chats.id, record.response.chatId)).limit(1)
+    .where(profileEq(chats.id, record.response.chatId)).limit(1)
   let sidecarCostMicros = 0
   const imageInterceptor = await createModelImageInterceptor(requestLog.id, {
     allowCache: !chatState?.temporary,
@@ -677,7 +679,7 @@ async function processGenerationAttempt(
   let sequence = record.response.lastSequence
   const publicApi = Boolean(requestLog.apiKeyId)
   const [memoryPreferences] = publicApi ? [] : await db.select({ values: userPreferences.values }).from(userPreferences)
-    .where(eq(userPreferences.userId, record.response.userId)).limit(1)
+    .where(profileEq(userPreferences.userId, record.response.userId)).limit(1)
   const memory = await loadGenerationMemory({
     chat: chatState,
     memoryEnabled: (memoryPreferences?.values as { memoryEnabled?: unknown } | undefined)?.memoryEnabled,
@@ -700,7 +702,7 @@ async function processGenerationAttempt(
       lastSequence: sequence,
       startedAt: record.response.startedAt ?? new Date(emittedAt),
       updatedAt: new Date(emittedAt),
-    }).where(eq(responses.id, responseId))
+    }).where(profileEq(responses.id, responseId))
   }
   const contextual = await contextualInput(client, record, history, requestLog.id, recallItem, memory.memoryContext, publicApi, async (item) => {
     sequence += 1
@@ -714,8 +716,8 @@ async function processGenerationAttempt(
       lastSequence: sequence,
       startedAt: record.response.startedAt ?? updatedAt,
       updatedAt,
-    }).where(eq(responses.id, responseId))
-    const [updated] = await db.select().from(responses).where(eq(responses.id, responseId)).limit(1)
+    }).where(profileEq(responses.id, responseId))
+    const [updated] = await db.select().from(responses).where(profileEq(responses.id, responseId)).limit(1)
     if (updated) await publishSnapshot(toSnapshot(updated))
   }, (costMicros) => { sidecarCostMicros += costMicros })
   const input = await prepareInputFiles(client, record.response.userId, contextual.input, record.model, imageInterceptor)
@@ -749,7 +751,7 @@ async function processGenerationAttempt(
   const controller = new AbortController()
   const firstToken = firstTokenTimeout(controller, record.model.firstTokenTimeoutEnabled ? record.model.firstTokenTimeoutSeconds * 1000 : undefined)
   try {
-    await db.update(responses).set({ status: 'in_progress', error: null, completedAt: null, startedAt: new Date(), updatedAt: new Date() }).where(eq(responses.id, responseId))
+    await db.update(responses).set({ status: 'in_progress', error: null, completedAt: null, startedAt: new Date(), updatedAt: new Date() }).where(profileEq(responses.id, responseId))
     const parameters = resolveModelParameters(record.model, record.response.parameters, {
       publicApi: Boolean(requestLog.apiKeyId),
     })
@@ -802,7 +804,7 @@ async function processGenerationAttempt(
       } | undefined
       if (upstreamResponse?.id) {
         upstreamResponseId = upstreamResponse.id
-        await db.update(responses).set({ openaiResponseId: upstreamResponse.id }).where(eq(responses.id, responseId))
+        await db.update(responses).set({ openaiResponseId: upstreamResponse.id }).where(profileEq(responses.id, responseId))
       }
       output = upstreamResponse?.output ? [...contextItems, ...upstreamResponse.output] : accumulateEventOutput(output, event)
       outputStarted ||= firstToken.observe(upstream.type, upstream, output)
@@ -834,8 +836,8 @@ async function processGenerationAttempt(
           lastSequence: sequence,
           upstreamSequence: Number(upstream.sequence_number ?? record.response.upstreamSequence),
           updatedAt: new Date(),
-        }).where(eq(responses.id, responseId))
-        const [updated] = await db.select().from(responses).where(eq(responses.id, responseId)).limit(1)
+        }).where(profileEq(responses.id, responseId))
+        const [updated] = await db.select().from(responses).where(profileEq(responses.id, responseId)).limit(1)
         if (updated) await publishSnapshot(toSnapshot(updated))
       }
     }
@@ -860,7 +862,7 @@ async function processGenerationAttempt(
       lastSequence: sequence,
       completedAt,
       updatedAt: completedAt,
-    }).where(eq(responses.id, responseId))
+    }).where(profileEq(responses.id, responseId))
     const postTaskCostMicros = terminalStatus === 'completed' ? await runPostResponseTasks(record, record, output, requestLog.id).catch((error) => {
       console.warn(JSON.stringify({ level: 'warn', service: 'pulpo-worker', event: 'post_response_tasks.failed', responseId, error: error instanceof Error ? error.message : String(error) }))
       return 0
@@ -872,8 +874,8 @@ async function processGenerationAttempt(
       providerCostMicros,
       additionalCostMicros: sidecarCostMicros + postTaskCostMicros,
     })
-    await db.update(chats).set({ updatedAt: completedAt }).where(eq(chats.id, record.response.chatId))
-    const [completed] = await db.select().from(responses).where(eq(responses.id, responseId)).limit(1)
+    await db.update(chats).set({ updatedAt: completedAt }).where(profileEq(chats.id, record.response.chatId))
+    const [completed] = await db.select().from(responses).where(profileEq(responses.id, responseId)).limit(1)
     if (completed) await publishSnapshot(toSnapshot(completed))
   } catch (caughtError) {
     firstToken.clear()
@@ -887,7 +889,7 @@ async function processGenerationAttempt(
       lastSequence: sequence,
       completedAt: cancelled || !options.willRetry ? completedAt : null,
       updatedAt: completedAt,
-    }).where(eq(responses.id, responseId))
+    }).where(profileEq(responses.id, responseId))
     if (cancelled || !options.willRetry) {
       await settleWithSidecars({
         responseId,
@@ -896,7 +898,7 @@ async function processGenerationAttempt(
         providerCostMicros,
         additionalCostMicros: sidecarCostMicros,
       })
-      const [terminal] = await db.select().from(responses).where(eq(responses.id, responseId)).limit(1)
+      const [terminal] = await db.select().from(responses).where(profileEq(responses.id, responseId)).limit(1)
       if (terminal) await publishSnapshot(toSnapshot(terminal))
     }
     if (!cancelled) throw new GenerationAttemptError(error instanceof Error ? error.message : 'Generation failed', outputStarted, error)
@@ -904,6 +906,12 @@ async function processGenerationAttempt(
 }
 
 export async function processGeneration(responseId: string): Promise<void> {
+  const [row] = await db.select({ userId: responses.userId, profileId: responses.profileId }).from(responses).where(profileEq(responses.id, responseId)).limit(1)
+  if (!row) return
+  return withProfile(row, () => processProfileGeneration(responseId))
+}
+
+async function processProfileGeneration(responseId: string): Promise<void> {
   const [base] = await db.select({
     response: responses,
     model: models,
@@ -913,15 +921,15 @@ export async function processGeneration(responseId: string): Promise<void> {
     chatExpiresAt: chats.expiresAt,
   })
     .from(responses)
-    .innerJoin(chats, eq(chats.id, responses.chatId))
-    .innerJoin(models, eq(responses.modelId, models.id))
+    .innerJoin(chats, profileEq(chats.id, responses.chatId))
+    .innerJoin(models, profileEq(responses.modelId, models.id))
     .innerJoin(requestLogs, eq(requestLogs.responseId, responses.id))
-    .where(eq(responses.id, responseId)).limit(1)
+    .where(profileEq(responses.id, responseId)).limit(1)
   if (!base || ['completed', 'cancelled'].includes(base.response.status)) return
   const chatRetention = { temporary: base.chatTemporary, expiresAt: base.chatExpiresAt }
   if (base.chatDeletedAt || temporaryChatIsExpired(chatRetention) || normalChatIsExpired(chatRetention)) {
     const now = new Date()
-    await db.update(responses).set({ status: 'cancelled', completedAt: now, updatedAt: now }).where(eq(responses.id, responseId))
+    await db.update(responses).set({ status: 'cancelled', completedAt: now, updatedAt: now }).where(profileEq(responses.id, responseId))
     await releaseBudget(responseId)
     return
   }
@@ -957,9 +965,9 @@ export async function processGeneration(responseId: string): Promise<void> {
       await publishAdminUsage(base.log.id, true)
       try {
         const actualPricing = await getActivePricing(model.id)
-        await db.update(responses).set({ pricingVersionId: actualPricing.id, actualModelId: model.id }).where(eq(responses.id, responseId))
+        await db.update(responses).set({ pricingVersionId: actualPricing.id, actualModelId: model.id }).where(profileEq(responses.id, responseId))
         await processGenerationAttempt(responseId, model.id, { willRetry: true })
-        const [completed] = await db.select().from(responses).where(eq(responses.id, responseId)).limit(1)
+        const [completed] = await db.select().from(responses).where(profileEq(responses.id, responseId)).limit(1)
         const usage = completed?.usage as ResponseUsage | null
         const durationMs = Date.now() - (base.log.startedAt ?? base.log.createdAt).getTime()
         const [costRow] = await db.execute<{ cost: string }>(sql`select coalesce(sum(cost_micros), 0)::text as cost from usage_events where response_id = ${responseId}`)
@@ -970,7 +978,7 @@ export async function processGeneration(responseId: string): Promise<void> {
             outputTokens: usage?.outputTokens ?? 0, reasoningTokens: usage?.reasoningTokens ?? 0,
             costMicros: Number(costRow?.cost ?? 0), completedAt: new Date(),
           }).where(eq(generationAttempts.id, attemptId))
-          await tx.update(responses).set({ actualModelId: model!.id }).where(eq(responses.id, responseId))
+          await tx.update(responses).set({ actualModelId: model!.id }).where(profileEq(responses.id, responseId))
           await tx.update(requestLogs).set({
             status: completed?.status ?? 'completed', actualModelId: model!.id, currentModelId: model!.id,
             inputTokens: usage?.inputTokens ?? 0, cachedInputTokens: usage?.cachedInputTokens ?? 0, cacheWriteTokens: usage?.cacheWriteTokens ?? 0,
@@ -1011,11 +1019,11 @@ export async function processGeneration(responseId: string): Promise<void> {
   const category = classifyGenerationError(lastError)
   const completedAt = new Date()
   await db.transaction(async (tx) => {
-    await tx.update(responses).set({ status: 'failed', error: { message, category }, completedAt, updatedAt: completedAt }).where(eq(responses.id, responseId))
+    await tx.update(responses).set({ status: 'failed', error: { message, category }, completedAt, updatedAt: completedAt }).where(profileEq(responses.id, responseId))
     await tx.update(requestLogs).set({ status: 'failed', errorCategory: category, errorMessage: message, durationMs: Date.now() - (base.log.startedAt ?? base.log.createdAt).getTime(), completedAt, updatedAt: completedAt }).where(eq(requestLogs.id, base.log.id))
   })
   await releaseBudget(responseId)
-  const [terminal] = await db.select().from(responses).where(eq(responses.id, responseId)).limit(1)
+  const [terminal] = await db.select().from(responses).where(profileEq(responses.id, responseId)).limit(1)
   if (terminal) await publishSnapshot(toSnapshot(terminal))
   await publishAdminUsage(base.log.id, true)
 }

@@ -1,4 +1,5 @@
-import { and, eq, isNull } from 'drizzle-orm'
+import { profileEq } from '../profiles/context.js'
+import { and, isNull } from 'drizzle-orm'
 import type { FastifyReply } from 'fastify'
 import { db } from '../database/client.js'
 import { chats, responses } from '../database/schema.js'
@@ -28,11 +29,11 @@ async function findIdempotentResponse(input: {
   if (!input.idempotencyKey) return undefined
   const [result] = await db.select({ response: responses })
     .from(responses)
-    .innerJoin(chats, eq(chats.id, responses.chatId))
+    .innerJoin(chats, profileEq(chats.id, responses.chatId))
     .where(and(
-      eq(responses.userId, input.key.userId),
-      eq(responses.idempotencyScope, publicIdempotencyScope(input.key.id, input.protocol)),
-      eq(responses.idempotencyKey, input.idempotencyKey),
+      profileEq(responses.userId, input.key.userId),
+      profileEq(responses.idempotencyScope, publicIdempotencyScope(input.key.id, input.protocol)),
+      profileEq(responses.idempotencyKey, input.idempotencyKey),
       isNull(chats.deletedAt),
       accessibleChatCondition(),
     ))
@@ -46,7 +47,7 @@ async function findIdempotentResponse(input: {
 
 export async function waitForTerminalResponse(responseId: string) {
   for (let attempt = 0; attempt < 1_800; attempt += 1) {
-    const [row] = await db.select().from(responses).where(eq(responses.id, responseId)).limit(1)
+    const [row] = await db.select().from(responses).where(profileEq(responses.id, responseId)).limit(1)
     if (!row) throw notFound('Response')
     if (!['queued', 'in_progress'].includes(row.status)) return row
     await new Promise((resolve) => setTimeout(resolve, 200))
@@ -81,7 +82,7 @@ async function streamGeneration(
   const finish = async () => {
     if (finalizing) return
     finalizing = true
-    const [current] = await db.select().from(responses).where(eq(responses.id, row.id)).limit(1)
+    const [current] = await db.select().from(responses).where(profileEq(responses.id, row.id)).limit(1)
     if (current) for (const payload of projector.finish(current)) write(payload)
     if (!reply.raw.writableEnded) reply.raw.write('data: [DONE]\n\n')
     close()
@@ -114,7 +115,7 @@ async function streamGeneration(
     for (const message of batch) await handle(message.channel, message.parsed)
   }
   replaying = false
-  const [current] = await db.select().from(responses).where(eq(responses.id, row.id)).limit(1)
+  const [current] = await db.select().from(responses).where(profileEq(responses.id, row.id)).limit(1)
   if (current && !['queued', 'in_progress'].includes(current.status)) await finish()
 }
 
@@ -166,9 +167,9 @@ export async function executePublicGeneration(input: {
         rawInput: input.request.rawInput,
         parameters,
       })
-      if (created.chatId !== chatId) await db.delete(chats).where(eq(chats.id, chatId))
+      if (created.chatId !== chatId) await db.delete(chats).where(profileEq(chats.id, chatId))
     } catch (error) {
-      await db.delete(chats).where(eq(chats.id, chatId))
+      await db.delete(chats).where(profileEq(chats.id, chatId))
       const raced = await findIdempotentResponse({
         key: input.key,
         protocol: input.request.protocol,

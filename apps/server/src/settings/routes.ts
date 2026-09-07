@@ -1,3 +1,5 @@
+import { currentProfile } from '../profiles/context.js'
+import { profileEq } from '../profiles/context.js'
 import { eq, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
@@ -28,7 +30,7 @@ export async function registerSettingsRoutes(app: FastifyInstance): Promise<void
   app.get('/api/settings', async (request) => {
     const user = requireUser(request)
     const [[row], [authSetting], [personalizationSetting]] = await Promise.all([
-      db.select().from(userPreferences).where(eq(userPreferences.userId, user.id)).limit(1),
+      db.select().from(userPreferences).where(profileEq(userPreferences.userId, user.id)).limit(1),
       db.select({ value: applicationSettings.value })
         .from(applicationSettings)
         .where(eq(applicationSettings.key, 'auth'))
@@ -81,7 +83,7 @@ export async function registerSettingsRoutes(app: FastifyInstance): Promise<void
       // Share the management-settings lock so a stale full-document apply can
       // never overwrite a concurrent account PATCH.
       await tx.execute(sql`select pg_advisory_xact_lock(1886747744)`)
-      const [existing] = await tx.select().from(userPreferences).where(eq(userPreferences.userId, user.id)).limit(1)
+      const [existing] = await tx.select().from(userPreferences).where(profileEq(userPreferences.userId, user.id)).limit(1)
       previousTrashRetention = parseTrashRetention((existing?.values as Record<string, unknown> | undefined)?.trashRetention)
       previousMemoryEnabled = (existing?.values as { memoryEnabled?: unknown } | undefined)?.memoryEnabled === true
       const insertValues = preferencesWithModelDefaults(patch)
@@ -89,7 +91,7 @@ export async function registerSettingsRoutes(app: FastifyInstance): Promise<void
       const patchJson = JSON.stringify(patch)
       ;[saved] = await tx.insert(userPreferences).values({ userId: user.id, values: insertValues })
         .onConflictDoUpdate({
-          target: userPreferences.userId,
+          target: [userPreferences.userId, userPreferences.profileId],
           set: {
             // One SQL expression prevents concurrent PATCH requests from losing unrelated fields.
             values: sql`${defaults}::jsonb || ${userPreferences.values} || ${patchJson}::jsonb`,
@@ -103,7 +105,7 @@ export async function registerSettingsRoutes(app: FastifyInstance): Promise<void
     })
     if (stateRevision !== undefined) await publishStateChange({ userId: user.id, revision: stateRevision })
     if ('trashRetention' in patch && parseTrashRetention(patch.trashRetention) !== previousTrashRetention) {
-      await maintenanceQueue.add('purge-chats', { type: 'purge-chats', payload: { userId: user.id } }, {
+      await maintenanceQueue.add('purge-chats', { type: 'purge-chats', payload: { userId: user.id, profileId: currentProfile()?.profileId } }, {
         jobId: `purge-chats-settings-${user.id}-${Date.now()}`,
       })
     }
@@ -111,7 +113,7 @@ export async function registerSettingsRoutes(app: FastifyInstance): Promise<void
       const enabled = patch.memoryEnabled === true
       if (!enabled) {
         const jobs = await embeddingQueue.getJobs(['waiting', 'delayed', 'prioritized'])
-        await Promise.all(jobs.filter((job) => 'userId' in job.data && job.data.userId === user.id).map((job) => job.remove()))
+        await Promise.all(jobs.filter((job) => 'userId' in job.data && job.data.userId === user.id && 'profileId' in job.data && job.data.profileId === currentProfile()?.profileId).map((job) => job.remove()))
         await deleteUserEpisodicMemory(user.id)
       } else {
         await scheduleUserIndex(user.id, 'memory-consent-enabled')
