@@ -32,6 +32,25 @@ The active instance, preferences, cached queries, drafts, cursors, search index,
 outbox, and attachment metadata are stored in namespaced SQLite tables. Cached
 attachment bytes use the app cache and are evicted by the configured LRU quota.
 
+### Open in Pulpo on iOS
+
+Pulpo registers as an alternate document viewer for all regular file types,
+including images. Select Pulpo from a source app's **Open in…** or compatible
+file share menu. It opens the New Chat page and appends the file to the existing
+composer without sending a message. Text, attachments, and settings already in
+that draft remain intact; importing from an existing chat leaves its draft saved.
+
+The native importer coordinates file access, keeps original bytes and filenames,
+and stages a private copy while login and draft hydration finish. Files use the
+normal six-attachment limit, instance upload size limit, previews, and retries.
+Unknown extensions are accepted as generic files; folders and empty files are
+rejected. Pending imports are isolated from account changes.
+
+This uses iOS document opening, not a Share Extension. Availability and multiple
+file delivery depend on the source app. Plain text and website shares are not
+handled. A new native build is required for the document registration and local
+Expo module to take effect.
+
 ### Android development
 
 Install Android Studio, an Android 17 / API 37 system image, SDK Platform 37,

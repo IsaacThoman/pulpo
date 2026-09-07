@@ -40,8 +40,9 @@ export function startComposerAutoFocus({
 
 /**
  * Apply the focus intent that accompanied a chat navigation. Existing chats
- * leave the transcript active without a keyboard, while a new chat waits for
- * the drawer transition before focusing the composer.
+ * leave the transcript active without a keyboard. New chats focus after two
+ * layout frames; callers must hand keyboard layout back before requesting focus,
+ * rather than waiting for the drawer animation's completion.
  */
 export function startComposerFocusTransition({
   blur,

@@ -166,12 +166,11 @@ function resolvedResponseSnapshot(
 }
 
 function branchVariants(
-  responses: ServerResponse[],
+  byId: ReadonlyMap<string, ServerResponse>,
   ids: string[],
   role: 'user' | 'assistant',
   liveSnapshots: Record<string, ResponseSnapshot>,
 ): DisplayBranch[] {
-  const byId = new Map(responses.map((response) => [response.id, response]))
   return ids.flatMap((id) => {
     const response = byId.get(id)
     if (!response) return []
@@ -184,49 +183,93 @@ function branchVariants(
   })
 }
 
-export function projectChat(chat: ServerChat, liveSnapshots: Record<string, ResponseSnapshot>): DisplayMessage[] {
-  const responses = chat.responses ?? []
-  const selected = lineageFromLeaf(responses, chat.activeBranchLeafId ?? chat.activeResponseId ?? responses.at(-1)?.id ?? null)
-  const attachmentById = new Map((chat.attachments ?? []).map((attachment) => [attachment.id, attachment]))
-  return selected.flatMap((response): DisplayMessage[] => {
-    const snapshot = resolvedResponseSnapshot(response, liveSnapshots)
-    const output = snapshot.output
-    const status = snapshot.status
-    const error = snapshot.error
-    const inputAttachments = inputAttachmentIds(response.input).flatMap((id) => {
-      const attachment = attachmentById.get(id)
-      return attachment ? [{
-        id: attachment.id, name: attachment.originalName, mimeType: attachment.mimeType,
-        sizeBytes: attachment.sizeBytes, generated: false,
-      }] : []
+/** One instance per resident chat. All dependencies are immutable server/store values. */
+export function createChatProjector() {
+  let previousResponses: ServerResponse[] | undefined
+  let byId = new Map<string, ServerResponse>()
+  let previousLeaf: string | null | undefined
+  let selected: ServerResponse[] = []
+  let previousMessages: DisplayMessage[] = []
+  const cache = new Map<string, { dependencies: unknown[]; userDependencies: unknown[]; assistantDependencies: unknown[]; messages: DisplayMessage[] }>()
+  const inputIds = new WeakMap<ServerResponse, string[]>()
+  return (chat: ServerChat, liveSnapshots: Record<string, ResponseSnapshot>): DisplayMessage[] => {
+    const responses = chat.responses ?? []
+    const leaf = chat.activeBranchLeafId ?? chat.activeResponseId ?? responses.at(-1)?.id ?? null
+    const changedGraph = responses !== previousResponses
+    if (changedGraph) {
+      byId = new Map(responses.map((response) => [response.id, response]))
+      for (const id of cache.keys()) if (!byId.has(id)) cache.delete(id)
+      previousResponses = responses
+    }
+    if (changedGraph || leaf !== previousLeaf) {
+      selected = lineageFromLeaf(responses, leaf, byId)
+      previousLeaf = leaf
+    }
+    const attachmentById = new Map((chat.attachments ?? []).map((attachment) => [attachment.id, attachment]))
+    const messages = selected.flatMap((response): DisplayMessage[] => {
+      let ids = inputIds.get(response)
+      if (!ids) { ids = inputAttachmentIds(response.input); inputIds.set(response, ids) }
+      const userDependencies: unknown[] = [response, ...ids.map((id) => attachmentById.get(id))]
+      for (const id of response.branches.user.ids) userDependencies.push(byId.get(id))
+      const assistantDependencies: unknown[] = [response, liveSnapshots[response.id]]
+      for (const id of response.branches.assistant.ids) assistantDependencies.push(byId.get(id), liveSnapshots[id])
+      const dependencies = [...userDependencies, ...assistantDependencies]
+      const existing = cache.get(response.id)
+      if (existing && existing.dependencies.length === dependencies.length
+        && dependencies.every((value, index) => value === existing.dependencies[index])) return existing.messages
+      const snapshot = resolvedResponseSnapshot(response, liveSnapshots)
+      const output = snapshot.output
+      const status = snapshot.status
+      const error = snapshot.error
+      const inputAttachments = ids.flatMap((id) => {
+        const attachment = attachmentById.get(id)
+        return attachment ? [{
+          id: attachment.id, name: attachment.originalName, mimeType: attachment.mimeType,
+          sizeBytes: attachment.sizeBytes, generated: false,
+        }] : []
+      })
+      const errorMessage = error && typeof error === 'object' && 'message' in error
+        ? String((error as { message?: unknown }).message ?? '') : undefined
+      const projected: DisplayMessage[] = [{
+        id: `${response.id}:input`, responseId: response.id, role: 'user', text: inputText(response.input),
+        modelId: response.displayModelId ?? response.modelId, status: 'completed', createdAt: response.createdAt,
+        attachments: inputAttachments, activity: [], branch: {
+          ...response.branches.user,
+          variants: branchVariants(byId, response.branches.user.ids, 'user', liveSnapshots),
+        }, agentMode: response.agentMode,
+        outputItems: [],
+      }, {
+        id: response.id, responseId: response.id, role: 'assistant', text: outputText(output), reasoning: reasoningText(output),
+        modelId: response.displayModelId ?? response.modelId, status, createdAt: response.createdAt,
+        requestReceivedAt: snapshot.requestReceivedAt,
+        firstReplyTextAt: snapshot.firstReplyTextAt,
+        initialResponseDurationMs: initialResponseDurationMs(snapshot, ['queued', 'in_progress'].includes(status) ? undefined : response.completedAt ?? snapshot.updatedAt),
+        latencyMs: response.completedAt
+          ? Math.max(0, Date.parse(response.completedAt) - Date.parse(response.createdAt))
+          : undefined,
+        attachments: generatedAttachments(output), activity: activities(output), branch: {
+          ...response.branches.assistant,
+          variants: branchVariants(byId, response.branches.assistant.ids, 'assistant', liveSnapshots),
+        },
+        error: errorMessage, agentMode: response.agentMode, usage: response.usage,
+        outputItems: output,
+      }]
+      if (existing && userDependencies.length === existing.userDependencies.length
+        && userDependencies.every((value, index) => value === existing.userDependencies[index])) projected[0] = existing.messages[0]!
+      if (existing && assistantDependencies.length === existing.assistantDependencies.length
+        && assistantDependencies.every((value, index) => value === existing.assistantDependencies[index])) projected[1] = existing.messages[1]!
+      cache.set(response.id, { dependencies, userDependencies, assistantDependencies, messages: projected })
+      return projected
     })
-    const errorMessage = error && typeof error === 'object' && 'message' in error
-      ? String((error as { message?: unknown }).message ?? '') : undefined
-    return [{
-      id: `${response.id}:input`, responseId: response.id, role: 'user', text: inputText(response.input),
-      modelId: response.displayModelId ?? response.modelId, status: 'completed', createdAt: response.createdAt,
-      attachments: inputAttachments, activity: [], branch: {
-        ...response.branches.user,
-        variants: branchVariants(responses, response.branches.user.ids, 'user', liveSnapshots),
-      }, agentMode: response.agentMode,
-      outputItems: [],
-    }, {
-      id: response.id, responseId: response.id, role: 'assistant', text: outputText(output), reasoning: reasoningText(output),
-      modelId: response.displayModelId ?? response.modelId, status, createdAt: response.createdAt,
-      requestReceivedAt: snapshot.requestReceivedAt,
-      firstReplyTextAt: snapshot.firstReplyTextAt,
-      initialResponseDurationMs: initialResponseDurationMs(snapshot, ['queued', 'in_progress'].includes(status) ? undefined : response.completedAt ?? snapshot.updatedAt),
-      latencyMs: response.completedAt
-        ? Math.max(0, Date.parse(response.completedAt) - Date.parse(response.createdAt))
-        : undefined,
-      attachments: generatedAttachments(output), activity: activities(output), branch: {
-        ...response.branches.assistant,
-        variants: branchVariants(responses, response.branches.assistant.ids, 'assistant', liveSnapshots),
-      },
-      error: errorMessage, agentMode: response.agentMode, usage: response.usage,
-      outputItems: output,
-    }]
-  })
+    if (messages.length === previousMessages.length && messages.every((message, index) => message === previousMessages[index])) return previousMessages
+    previousMessages = messages
+    return messages
+  }
+}
+
+/** Stateless entry for one-off projections; live transcripts use a scoped projector. */
+export function projectChat(chat: ServerChat, liveSnapshots: Record<string, ResponseSnapshot>): DisplayMessage[] {
+  return createChatProjector()(chat, liveSnapshots)
 }
 
 export function metadataForAttachment(attachment: ServerAttachment): DisplayAttachment {

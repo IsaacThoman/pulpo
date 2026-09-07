@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { ResponseSnapshot } from '@pulpo/contracts'
 import type { ServerChat, ServerResponse } from '../../types'
-import { projectChat } from './projection'
+import { createChatProjector, projectChat } from './projection'
 
 function response(input: {
   id: string
@@ -200,5 +200,53 @@ describe('initial wait projection', () => {
       expect(message.requestReceivedAt).toBe(requestReceivedAt)
       expect(message.firstReplyTextAt).toBe(firstReplyTextAt)
     }
+  })
+})
+
+
+describe('scoped incremental projection', () => {
+  function fixture() {
+    const a = response({ id: 'a', text: 'First', output: 'Answer one', branchIds: ['a'], branchIndex: 0 })
+    const b = { ...response({ id: 'b', text: 'Second', output: 'Answer two', branchIds: ['b'], branchIndex: 0 }), parentResponseId: 'a' }
+    return { id: 'chat', responses: [a, b], activeBranchLeafId: 'b', attachments: [] } as unknown as ServerChat
+  }
+  it('reuses historical messages and the whole result for unchanged inputs', () => {
+    const chat = fixture()
+    const project = createChatProjector()
+    const before = project(chat, {})
+    expect(project(chat, {})).toBe(before)
+    const last = chat.responses![1]!
+    const live = { ...last.snapshot, output: [{ type: 'message', content: [{ text: 'Streaming' }] }], sequence: 10, status: 'in_progress' as const }
+    const after = project(chat, { b: live })
+    expect(after[0]).toBe(before[0])
+    expect(after[1]).toBe(before[1])
+    expect(after[2]).toBe(before[2])
+    expect(after[3]?.text).toBe('Streaming')
+    expect(project(chat, { b: live })).toBe(after)
+  })
+  it('invalidates branch previews when another variant changes, and respects deletion and selection', () => {
+    const chat = fixture()
+    chat.responses![0]!.branches.assistant.ids = ['a', 'b']
+    const project = createChatProjector()
+    const before = project(chat, {})
+    const b = chat.responses![1]!
+    const live = { ...b.snapshot, output: [{ type: 'message', content: [{ text: 'New variant' }] }], sequence: 10, status: 'completed' as const }
+    const after = project(chat, { b: live })
+    expect(after[1]).not.toBe(before[1])
+    expect(after[1]?.branch.variants[1]?.text).toBe('New variant')
+    expect(project({ ...chat, activeBranchLeafId: 'a' }, { b: live })).toHaveLength(2)
+    const deleted = project({ ...chat, responses: [chat.responses![0]!], activeBranchLeafId: 'a' }, {})
+    expect(deleted[1]?.branch.variants.map((entry) => entry.id)).toEqual(['a'])
+  })
+  it('invalidates only messages referencing changed attachments', () => {
+    const chat = fixture()
+    chat.responses![0]!.input = [{ role: 'user', content: [{ type: 'input_file', attachment_id: 'file' }] }]
+    chat.attachments = [{ id: 'file', originalName: 'old', mimeType: 'text/plain', sizeBytes: 1 }]
+    const project = createChatProjector()
+    const before = project(chat, {})
+    const after = project({ ...chat, attachments: [{ ...chat.attachments[0]!, originalName: 'renamed' }] }, {})
+    expect(after[0]?.attachments[0]?.name).toBe('renamed')
+    expect(after[1]).toBe(before[1])
+    expect(after[2]).toBe(before[2])
   })
 })

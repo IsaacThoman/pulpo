@@ -3,6 +3,7 @@ import * as SQLite from 'expo-sqlite'
 import {
   MOBILE_DATABASE_VERSION,
   MOBILE_SCHEMA,
+  MIGRATE_CHAT_DETAILS_V4,
   attachmentEvictionPlan,
   cacheNamespace,
   orderOutbox,
@@ -16,9 +17,9 @@ import {
   cachedChatDetailIdsToEvict,
   cachedChatIdsToRemove,
   mergeCachedChat,
-  utf8ByteLength,
   withoutCachedChatDetails,
 } from './cache'
+import { trackTranscriptWrite } from './transcriptResidency'
 import { createOperationQueue } from './operationQueue'
 
 let databasePromise: Promise<SQLite.SQLiteDatabase> | undefined
@@ -31,14 +32,13 @@ export async function mobileDatabase(): Promise<SQLite.SQLiteDatabase> {
       'SELECT version FROM migrations WHERE version = ?', MOBILE_DATABASE_VERSION,
     )
     if (!current) {
-      const namespaces = await database.getAllAsync<{ namespace: string }>('SELECT DISTINCT namespace FROM chat_cache')
+      await database.withTransactionAsync(async () => {
+        await database.execAsync(MIGRATE_CHAT_DETAILS_V4)
+        await database.runAsync('INSERT INTO migrations(version, applied_at) VALUES (?, ?)', MOBILE_DATABASE_VERSION, Date.now())
+      })
+      const namespaces = await database.getAllAsync<{ namespace: string }>('SELECT DISTINCT namespace FROM chat_details')
       for (const { namespace } of namespaces) await trimOpenedChatDetailsInDatabase(database, namespace, 50)
     }
-    await database.runAsync(
-      'INSERT OR IGNORE INTO migrations(version, applied_at) VALUES (?, ?)',
-      MOBILE_DATABASE_VERSION,
-      Date.now(),
-    )
     return database
   })
   return databasePromise
@@ -215,94 +215,98 @@ function searchableText(chat: ServerChat): string {
 
 async function cacheChatsInDatabase(database: SQLite.SQLiteDatabase, namespace: string, chats: ServerChat[]): Promise<void> {
   await database.withTransactionAsync(async () => {
+    // Account refreshes can contain thousands of unchanged summaries. Read their
+    // metadata in two batches instead of two native SQLite round trips per row.
+    const ids = chats.length > 1 ? JSON.stringify(chats.map((chat) => chat.id)) : undefined
+    const summaries = ids ? new Map((await database.getAllAsync<{ chat_id: string; payload: string }>(
+      'SELECT chat_id, payload FROM chat_cache WHERE namespace = ? AND chat_id IN (SELECT value FROM json_each(?))', namespace, ids,
+    )).map((row) => [row.chat_id, row])) : undefined
+    const titles = ids ? new Map((await database.getAllAsync<{ chat_id: string; title: string }>(
+      'SELECT chat_id, title FROM chat_fts WHERE namespace = ? AND chat_id IN (SELECT value FROM json_each(?))', namespace, ids,
+    )).map((row) => [row.chat_id, row])) : undefined
     for (const chat of chats) {
       if (chat.temporary) {
         await database.runAsync('DELETE FROM chat_cache WHERE namespace = ? AND chat_id = ?', namespace, chat.id)
         await database.runAsync('DELETE FROM chat_access WHERE namespace = ? AND chat_id = ?', namespace, chat.id)
         await database.runAsync('DELETE FROM chat_fts WHERE namespace = ? AND chat_id = ?', namespace, chat.id)
+        summaries?.delete(chat.id); titles?.delete(chat.id)
         continue
       }
-      const current = await database.getFirstAsync<{ payload: string }>(
+      const current = summaries ? summaries.get(chat.id) : await database.getFirstAsync<{ payload: string }>(
         'SELECT payload FROM chat_cache WHERE namespace = ? AND chat_id = ?', namespace, chat.id,
       )
-      const merged = mergeCachedChat(current ? JSON.parse(current.payload) as ServerChat : null, chat)
-      const mergedPayload = JSON.stringify(merged)
-      const stored = Object.hasOwn(merged, 'responses') && utf8ByteLength(mergedPayload) > MAX_CACHED_CHAT_DETAIL_BYTES
-        ? withoutCachedChatDetails(merged)
-        : merged
-      await database.runAsync(
+      const summary = withoutCachedChatDetails(mergeCachedChat(current ? JSON.parse(current.payload) : null, chat))
+      const summaryPayload = JSON.stringify(summary)
+      if (summaryPayload !== current?.payload) await database.runAsync(
         `INSERT INTO chat_cache(namespace, chat_id, payload, updated_at) VALUES (?, ?, ?, ?)
          ON CONFLICT(namespace, chat_id) DO UPDATE SET payload = excluded.payload, updated_at = excluded.updated_at`,
-        namespace, chat.id, JSON.stringify(stored), Date.parse(stored.updatedAt) || Date.now(),
+        namespace, chat.id, summaryPayload, Date.parse(summary.updatedAt) || Date.now(),
       )
-      await database.runAsync('DELETE FROM chat_fts WHERE namespace = ? AND chat_id = ?', namespace, chat.id)
-      await database.runAsync(
-        'INSERT INTO chat_fts(namespace, chat_id, title, body) VALUES (?, ?, ?, ?)',
-        namespace, chat.id, stored.title, Object.hasOwn(stored, 'responses') ? searchableText(stored) : '',
-      )
+      summaries?.set(chat.id, { chat_id: chat.id, payload: summaryPayload })
+      let body: string | undefined
+      if (chat.responses !== undefined) {
+        const detail = await database.getFirstAsync<{ payload: string }>(
+          'SELECT payload FROM chat_details WHERE namespace = ? AND chat_id = ?', namespace, chat.id,
+        )
+        const existingDetail = detail ? JSON.parse(detail.payload) as ServerChat : null
+        const merged = mergeCachedChat(existingDetail, chat)
+        // Summary metadata is authoritative in chat_cache. Keep its old copy in
+        // an existing document so renames and queue updates cannot rewrite bodies.
+        const payload = JSON.stringify(existingDetail
+          ? { ...existingDetail, responses: merged.responses, attachments: merged.attachments }
+          : merged)
+        if (payload !== detail?.payload) {
+          const size = await database.getFirstAsync<{ bytes: number }>('SELECT length(CAST(? AS BLOB)) AS bytes', payload)
+          if (size!.bytes > MAX_CACHED_CHAT_DETAIL_BYTES) {
+            await database.runAsync('DELETE FROM chat_details WHERE namespace = ? AND chat_id = ?', namespace, chat.id)
+            await database.runAsync('DELETE FROM chat_access WHERE namespace = ? AND chat_id = ?', namespace, chat.id)
+            body = ''
+          } else {
+            await database.runAsync(`INSERT INTO chat_details(namespace, chat_id, payload, payload_bytes) VALUES (?, ?, ?, ?)
+              ON CONFLICT(namespace, chat_id) DO UPDATE SET payload = excluded.payload, payload_bytes = excluded.payload_bytes`,
+            namespace, chat.id, payload, size!.bytes)
+            body = searchableText(merged)
+          }
+        }
+      }
+      const indexed = titles ? titles.get(chat.id) : await database.getFirstAsync<{ title: string }>('SELECT title FROM chat_fts WHERE namespace = ? AND chat_id = ?', namespace, chat.id)
+      if (!indexed) await database.runAsync('INSERT INTO chat_fts(namespace, chat_id, title, body) VALUES (?, ?, ?, ?)', namespace, chat.id, summary.title, body ?? '')
+      else if (body !== undefined) await database.runAsync('UPDATE chat_fts SET title = ?, body = ? WHERE namespace = ? AND chat_id = ?', summary.title, body, namespace, chat.id)
+      else if (indexed.title !== summary.title) await database.runAsync('UPDATE chat_fts SET title = ? WHERE namespace = ? AND chat_id = ?', summary.title, namespace, chat.id)
+      titles?.set(chat.id, { chat_id: chat.id, title: summary.title })
     }
   })
 }
 
-export async function cacheChats(namespace: string, chats: ServerChat[]): Promise<void> {
-  await withDatabase((database) => cacheChatsInDatabase(database, namespace, chats))
+export function cacheChats(namespace: string, chats: ServerChat[]): Promise<void> {
+  const pending = withDatabase((database) => cacheChatsInDatabase(database, namespace, chats))
+  for (const chat of chats) trackTranscriptWrite(namespace, chat.id, chat.responses ? 'detail' : 'summary', pending)
+  return pending
 }
 
-async function trimOpenedChatDetailsInDatabase(
-  database: SQLite.SQLiteDatabase,
-  namespace: string,
-  limit: number,
-): Promise<void> {
-  const cacheRows = await database.getAllAsync<{ chat_id: string; payload: string; updated_at: number }>(
-    'SELECT chat_id, payload, updated_at FROM chat_cache WHERE namespace = ?', namespace,
+async function trimOpenedChatDetailsInDatabase(database: SQLite.SQLiteDatabase, namespace: string, limit: number): Promise<void> {
+  const records = await database.getAllAsync<{ chatId: string; openedAt: number; payloadBytes: number }>(
+    `SELECT d.chat_id AS chatId, COALESCE(a.opened_at, c.updated_at) AS openedAt, d.payload_bytes AS payloadBytes
+     FROM chat_details d JOIN chat_cache c ON c.namespace = d.namespace AND c.chat_id = d.chat_id
+     LEFT JOIN chat_access a ON a.namespace = d.namespace AND a.chat_id = d.chat_id WHERE d.namespace = ?`, namespace,
   )
-  const accessRows = await database.getAllAsync<{ chat_id: string; opened_at: number }>(
-    'SELECT chat_id, opened_at FROM chat_access WHERE namespace = ?', namespace,
-  )
-  const openedAt = new Map(accessRows.map((row) => [row.chat_id, row.opened_at]))
-  const detailed = cacheRows.flatMap((row) => {
-    const chat = JSON.parse(row.payload) as ServerChat
-    return Object.hasOwn(chat, 'responses')
-      ? [{ ...row, chat, openedAt: openedAt.get(row.chat_id) ?? row.updated_at }]
-      : []
-  }).sort((left, right) => right.openedAt - left.openedAt || left.chat_id.localeCompare(right.chat_id))
-  const evictedIds = new Set(cachedChatDetailIdsToEvict(detailed.map((row) => ({
-    chatId: row.chat_id,
-    openedAt: row.openedAt,
-    payloadBytes: utf8ByteLength(row.payload),
-  })), limit))
-  const keep = detailed.filter((row) => !evictedIds.has(row.chat_id))
-  const evict = detailed.filter((row) => evictedIds.has(row.chat_id))
+  const evicted = cachedChatDetailIdsToEvict(records, limit)
+  if (!evicted.length) return
   await database.withTransactionAsync(async () => {
-    for (const row of keep) {
-      await database.runAsync(
-        `INSERT INTO chat_access(namespace, chat_id, opened_at) VALUES (?, ?, ?)
-         ON CONFLICT(namespace, chat_id) DO UPDATE SET opened_at = excluded.opened_at`,
-        namespace, row.chat_id, row.openedAt,
-      )
-    }
-    for (const row of evict) {
-      const summary = withoutCachedChatDetails(row.chat)
-      await database.runAsync(
-        'UPDATE chat_cache SET payload = ? WHERE namespace = ? AND chat_id = ?',
-        JSON.stringify(summary), namespace, row.chat_id,
-      )
-      await database.runAsync('DELETE FROM chat_access WHERE namespace = ? AND chat_id = ?', namespace, row.chat_id)
-      await database.runAsync('DELETE FROM chat_fts WHERE namespace = ? AND chat_id = ?', namespace, row.chat_id)
-      await database.runAsync(
-        'INSERT INTO chat_fts(namespace, chat_id, title, body) VALUES (?, ?, ?, ?)',
-        namespace, row.chat_id, summary.title, '',
-      )
+    for (const id of evicted) {
+      await database.runAsync('DELETE FROM chat_details WHERE namespace = ? AND chat_id = ?', namespace, id)
+      await database.runAsync('DELETE FROM chat_access WHERE namespace = ? AND chat_id = ?', namespace, id)
+      await database.runAsync("UPDATE chat_fts SET body = '' WHERE namespace = ? AND chat_id = ?", namespace, id)
     }
   })
 }
 
-export async function cacheOpenedChat(
+export function cacheOpenedChat(
   namespace: string,
   chat: ServerChat,
   limit = 50,
 ): Promise<void> {
-  await withDatabase(async (database) => {
+  const pending = withDatabase(async (database) => {
     await cacheChatsInDatabase(database, namespace, [chat])
     if (chat.temporary) return
     await database.runAsync(
@@ -312,6 +316,8 @@ export async function cacheOpenedChat(
     )
     await trimOpenedChatDetailsInDatabase(database, namespace, limit)
   })
+  trackTranscriptWrite(namespace, chat.id, 'detail', pending)
+  return pending
 }
 
 export async function markCachedChatOpened(namespace: string, chatId: string, limit = 50): Promise<void> {
@@ -374,28 +380,52 @@ export function pruneCachedChatScope(
   return reconcileCachedChatScopeInternal(namespace, chats, scope, limit, false)
 }
 
-export async function trimCachedChats(namespace: string, limit: number): Promise<void> {
-  await withDatabase((database) => trimOpenedChatDetailsInDatabase(database, namespace, limit))
+const maintenance = new Map<string, { limit: number; promise: Promise<void> }>()
+
+export function trimCachedChats(namespace: string, limit: number): Promise<void> {
+  const existing = maintenance.get(namespace)
+  if (existing) { existing.limit = limit; return existing.promise }
+  const entry = { limit, promise: Promise.resolve() }
+  entry.promise = withDatabase(async (database) => {
+    let applied: number
+    do {
+      applied = entry.limit
+      await trimOpenedChatDetailsInDatabase(database, namespace, applied)
+    } while (applied !== entry.limit)
+  })
+  maintenance.set(namespace, entry)
+  const cleanup = () => { if (maintenance.get(namespace) === entry) maintenance.delete(namespace) }
+  void entry.promise.then(cleanup, cleanup)
+  return entry.promise
 }
 
-export async function cachedChats(namespace: string): Promise<ServerChat[]> {
+export async function cachedChatSummaries(namespace: string): Promise<ServerChat[]> {
   return withDatabase(async (database) => {
     const rows = await database.getAllAsync<{ payload: string }>(
       'SELECT payload FROM chat_cache WHERE namespace = ? ORDER BY updated_at DESC', namespace,
     )
-    const parsed = rows.map((row) => JSON.parse(row.payload) as ServerChat)
-    const temporaryIds = parsed.filter((chat) => chat.temporary).map((chat) => chat.id)
-    if (temporaryIds.length) {
-      await database.withTransactionAsync(async () => {
-        for (const chatId of temporaryIds) {
-          await database.runAsync('DELETE FROM chat_cache WHERE namespace = ? AND chat_id = ?', namespace, chatId)
-          await database.runAsync('DELETE FROM chat_access WHERE namespace = ? AND chat_id = ?', namespace, chatId)
-          await database.runAsync('DELETE FROM chat_fts WHERE namespace = ? AND chat_id = ?', namespace, chatId)
-        }
-      })
-    }
-    return parsed.filter((chat) => !chat.temporary)
+    return rows.map((row) => JSON.parse(row.payload) as ServerChat).filter((chat) => !chat.temporary)
   })
+}
+
+export async function cachedChat(namespace: string, chatId: string, beforeDecode?: () => Promise<void>): Promise<ServerChat | undefined> {
+  const row = await withDatabase((database) => database.getFirstAsync<{ summary: string; detail: string | null }>(
+    `SELECT c.payload AS summary, d.payload AS detail FROM chat_cache c
+     LEFT JOIN chat_details d ON d.namespace = c.namespace AND d.chat_id = c.chat_id
+     WHERE c.namespace = ? AND c.chat_id = ?`, namespace, chatId,
+  ))
+  // Release the ordered SQLite queue before waiting for a native transition.
+  // Outbox and durability writes must remain free to proceed.
+  await beforeDecode?.()
+  if (!row) return undefined
+  const chat = mergeCachedChat(row.detail ? JSON.parse(row.detail) : null, JSON.parse(row.summary))
+  return chat.temporary ? undefined : chat
+}
+
+export async function cachedChatBytes(namespace: string, chatId: string): Promise<number | undefined> {
+  return withDatabase(async (database) => (await database.getFirstAsync<{ payload_bytes: number }>(
+    'SELECT payload_bytes FROM chat_details WHERE namespace = ? AND chat_id = ?', namespace, chatId,
+  ))?.payload_bytes)
 }
 
 export async function searchCachedChats(namespace: string, query: string): Promise<string[]> {

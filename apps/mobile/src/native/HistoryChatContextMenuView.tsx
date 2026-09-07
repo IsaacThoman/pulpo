@@ -37,6 +37,7 @@ type HistoryChatContextMenuNativeProps = ViewProps & {
   onAction: (event: ActionEvent) => void
   onChatPress: (event: PressEvent) => void
   onPreviewRequest: (event: PressEvent) => void
+  onPreviewEnd: (event: PressEvent) => void
 }
 
 const HistoryChatContextMenuNativeView =
@@ -48,17 +49,19 @@ const HistoryChatContextMenuNativeView =
 
 export type HistoryChatContextMenuViewProps = Omit<
   ComponentProps<typeof HistoryChatContextMenuNativeView>,
-  'onAction' | 'onChatPress' | 'onPreviewRequest'
+  'onAction' | 'onChatPress' | 'onPreviewRequest' | 'onPreviewEnd'
 > & {
   onAction: (action: HistoryChatContextMenuAction) => void
   onPress: () => void
   onPreviewRequest: () => void
+  onPreviewEnd: () => void
 }
 
 export function HistoryChatContextMenuView({
   onAction,
   onPress,
   onPreviewRequest,
+  onPreviewEnd,
   ...props
 }: HistoryChatContextMenuViewProps) {
   return (
@@ -67,6 +70,7 @@ export function HistoryChatContextMenuView({
       onAction={(event) => onAction(event.nativeEvent.action)}
       onChatPress={() => onPress()}
       onPreviewRequest={() => onPreviewRequest()}
+      onPreviewEnd={() => onPreviewEnd()}
     />
   )
 }

@@ -43,6 +43,13 @@ const config: ExpoConfig = {
     associatedDomains: ['applinks:pulpo.baby', ...passkeyDomains.map((domain) => `webcredentials:${domain}`)],
     infoPlist: {
       CFBundleDisplayName: 'Pulpo',
+      CFBundleDocumentTypes: [{
+        CFBundleTypeName: 'Files and images',
+        CFBundleTypeRole: 'Viewer',
+        LSHandlerRank: 'Alternate',
+        LSItemContentTypes: ['public.data', 'public.content', 'public.image'],
+      }],
+      LSSupportsOpeningDocumentsInPlace: false,
       ITSAppUsesNonExemptEncryption: false,
       NSCameraUsageDescription: 'Allow Pulpo to take photos to attach to your chats.',
       NSPhotoLibraryUsageDescription: 'Allow Pulpo to attach photos to your chats.',

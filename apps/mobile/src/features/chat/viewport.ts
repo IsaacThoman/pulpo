@@ -4,6 +4,8 @@ export type ChatViewportMetrics = {
   offsetY: number
   contentHeight: number
   viewportHeight: number
+  inverted?: boolean
+  insetTop?: number
 }
 
 /** Let unused viewport space absorb the keyboard before moving short transcripts. */
@@ -23,6 +25,7 @@ export function isNearChatBottom(
   metrics: ChatViewportMetrics,
   threshold = CHAT_BOTTOM_FOLLOW_THRESHOLD,
 ): boolean {
+  if (metrics.inverted) return metrics.offsetY + (metrics.insetTop ?? 0) <= threshold
   if (metrics.contentHeight <= metrics.viewportHeight) return true
   return metrics.offsetY + metrics.viewportHeight >= metrics.contentHeight - threshold
 }

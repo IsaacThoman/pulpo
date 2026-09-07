@@ -1,0 +1,70 @@
+import { beforeEach, expect, it, vi } from 'vitest'
+import { TranscriptResidency, registerTranscriptResidency, resetTranscriptResidency, trackTranscriptWrite, transcriptWriteProtected } from './transcriptResidency'
+beforeEach(resetTranscriptResidency)
+function manager(extra: Partial<ConstructorParameters<typeof TranscriptResidency>[0]> = {}) {
+  const evict = vi.fn()
+  const residency = new TranscriptResidency({ protected: () => false, settle: async () => {}, evict, ...extra })
+  return { residency, evict }
+}
+it('keeps five inactive transcripts plus selected and pinned work within the inactive byte budget', async () => {
+  const { residency, evict } = manager()
+  residency.activate('active')
+  const release = residency.pin('preview')
+  for (const id of ['active', 'preview', ...Array.from({ length: 20 }, (_, i) => String(i))]) residency.register(id, 1024, [])
+  await residency.sweep()
+  expect(residency.size).toBe(7)
+  expect(evict.mock.calls.map(([id]) => id)).not.toContain('active')
+  expect(evict.mock.calls.map(([id]) => id)).not.toContain('preview')
+  release(); await residency.sweep()
+  expect(residency.size).toBe(6)
+  residency.dispose()
+})
+it('enforces bytes as well as count and defers expired protected transcripts', async () => {
+  const { residency, evict } = manager()
+  for (let i = 0; i < 5; i++) residency.register(String(i), 4 * 1024 * 1024, [])
+  residency.activate('0'); residency.expire('0')
+  await residency.sweep(); expect(residency.size).toBe(3)
+  residency.activate(null); await residency.sweep()
+  expect(residency.size).toBe(2)
+  expect(evict.mock.calls.map(([id]) => id)).toContain('0')
+  residency.dispose()
+})
+it('rechecks ownership and activity after asynchronous durability waits', async () => {
+  let finish!: () => void
+  const gate = new Promise<void>((resolve) => { finish = resolve })
+  const { residency, evict } = manager({ maxCount: 0, settle: () => gate })
+  residency.register('chat', 10, [])
+  const sweeping = residency.sweep()
+  residency.activate('chat'); finish(); await sweeping
+  expect(evict).not.toHaveBeenCalled()
+  residency.activate(null); residency.dispose(); await residency.sweep()
+  expect(evict).not.toHaveBeenCalled()
+})
+it('does not revive an expired or evicted document when byte metadata arrives late', async () => {
+  const { residency, evict } = manager()
+  residency.register('chat', 100, [])
+  residency.expire('chat')
+  residency.updateBytes('chat', 10)
+  await residency.sweep()
+  expect(evict).toHaveBeenCalledOnce()
+  residency.updateBytes('chat', 5)
+  await residency.sweep()
+  expect(residency.size).toBe(0)
+  residency.dispose()
+})
+it('preserves pending and failed writes until that document is saved successfully', async () => {
+  const { residency, evict } = manager({ maxCount: 0, protected: (id) => transcriptWriteProtected('n', id) })
+  const unregister = registerTranscriptResidency('n', residency)
+  residency.register('chat', 1, [])
+  let reject!: (error: Error) => void
+  const pending = new Promise<void>((_, fail) => { reject = fail })
+  trackTranscriptWrite('n', 'chat', 'detail', pending)
+  await residency.sweep(); expect(evict).not.toHaveBeenCalled()
+  reject(new Error('disk full')); await pending.catch(() => {})
+  await residency.sweep(); expect(evict).not.toHaveBeenCalled()
+  trackTranscriptWrite('n', 'chat', 'summary', Promise.resolve())
+  await Promise.resolve(); await residency.sweep(); expect(evict).not.toHaveBeenCalled()
+  trackTranscriptWrite('n', 'chat', 'detail', Promise.resolve())
+  await Promise.resolve(); await residency.sweep(); expect(evict).toHaveBeenCalledOnce()
+  unregister()
+})

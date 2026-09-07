@@ -65,7 +65,7 @@ public final class PulpoFileClipboardModule: Module {
     }
 
     View(HistoryChatContextMenuView.self) {
-      Events("onAction", "onChatPress", "onPreviewRequest")
+      Events("onAction", "onChatPress", "onPreviewRequest", "onPreviewEnd")
 
       Prop("pinned") { (view, value: Bool) in
         view.setPinned(value)

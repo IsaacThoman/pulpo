@@ -19,6 +19,8 @@ interface RealtimeState {
   setSyncError: (message: string | null) => void
   receiveEvent: (event: ResponseEvent) => void
   receiveEvents: (events: ResponseEvent[]) => void
+  receiveSnapshots: (snapshots: ResponseSnapshot[]) => void
+  removeSnapshots: (responseIds: readonly string[]) => void
   receiveSnapshot: (snapshot: ResponseSnapshot) => void
   removeSnapshot: (responseId: string) => void
   resetSnapshots: () => void
@@ -47,6 +49,26 @@ export const useRealtimeStore = create<RealtimeState>((set) => {
     }
     return { snapshots }
   }
+  const receiveSnapshots = (incoming: ResponseSnapshot[]) => set((state) => {
+    let snapshots = state.snapshots
+    for (const snapshot of incoming) {
+      const current = snapshots[snapshot.responseId]
+      const merged = current ? mergeResponseSnapshots(current, snapshot) : snapshot
+      if (merged === current) continue
+      if (snapshots === state.snapshots) snapshots = { ...state.snapshots }
+      snapshots[snapshot.responseId] = merged
+    }
+    return snapshots === state.snapshots ? state : { snapshots }
+  })
+  const removeSnapshots = (ids: readonly string[]) => set((state) => {
+    let snapshots = state.snapshots
+    for (const id of ids) {
+      if (!snapshots[id]) continue
+      if (snapshots === state.snapshots) snapshots = { ...state.snapshots }
+      delete snapshots[id]
+    }
+    return snapshots === state.snapshots ? state : { snapshots }
+  })
   return {
     connected: false,
     connectionPhase: 'idle',
@@ -59,18 +81,10 @@ export const useRealtimeStore = create<RealtimeState>((set) => {
     setSyncError: (syncError) => set({ syncError }),
     receiveEvent: (event) => set((state) => applyEvents(state, [event])),
     receiveEvents: (events) => set((state) => applyEvents(state, events)),
-    receiveSnapshot: (snapshot) => set((state) => {
-      const current = state.snapshots[snapshot.responseId]
-      const merged = current ? mergeResponseSnapshots(current, snapshot) : snapshot
-      if (merged === current) return state
-      return { snapshots: { ...state.snapshots, [snapshot.responseId]: merged } }
-    }),
-    removeSnapshot: (responseId) => set((state) => {
-      if (!state.snapshots[responseId]) return state
-      const snapshots = { ...state.snapshots }
-      delete snapshots[responseId]
-      return { snapshots }
-    }),
+    receiveSnapshot: (snapshot) => receiveSnapshots([snapshot]),
+    receiveSnapshots,
+    removeSnapshot: (responseId) => removeSnapshots([responseId]),
+    removeSnapshots,
     resetSnapshots: () => set({ snapshots: {} }),
   }
 })

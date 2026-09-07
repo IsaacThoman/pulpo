@@ -17,6 +17,14 @@ describe('chat viewport following', () => {
     expect(isNearChatBottom({ offsetY: 900, contentHeight: 2000, viewportHeight: 700 })).toBe(false)
   })
 
+  it('measures bottom-anchored transcripts from the native keyboard inset', () => {
+    const metrics = { inverted: true, contentHeight: 10000, viewportHeight: 800, insetTop: 300 }
+    expect(isNearChatBottom({ ...metrics, offsetY: -300 })).toBe(true)
+    expect(isNearChatBottom({ ...metrics, offsetY: -250 })).toBe(true)
+    expect(isNearChatBottom({ ...metrics, offsetY: 0 })).toBe(false)
+    expect(isNearChatBottom({ ...metrics, insetTop: 0, offsetY: 110 })).toBe(false)
+  })
+
   it('pauses following as soon as a drag or momentum sequence begins', () => {
     expect(shouldFollowChatContent(true, true)).toBe(false)
     expect(shouldFollowChatContent(true, false)).toBe(true)
