@@ -4,7 +4,7 @@ import type { ShelfMutation, ShelfSnapshot } from '@pulpo/contracts'
 import { ShelfSync, emptyShelf, type ShelfCheckpoint, type ShelfHandoff, type ShelfPorts } from './shelf.js'
 
 const instances: ShelfSync[] = []
-afterEach(() => { instances.splice(0).forEach((shelf) => shelf.dispose()) })
+afterEach(() => { instances.splice(0).forEach((shelf) => shelf.dispose()); vi.useRealTimers() })
 function fixture() {
   let disk: ShelfCheckpoint = emptyShelf()
   let composer: ShelfHandoff['after'] = { content: '', attachments: [] }
@@ -44,6 +44,80 @@ function fixture() {
 }
 
 describe('durable shelf transfers', () => {
+  it('shows pending status after two seconds per draft without resetting on refresh', async () => {
+    vi.useFakeTimers()
+    const f = fixture()
+    await f.shelf.shelve('first', [])
+    await f.shelf.sync()
+    const listener = vi.fn()
+    f.shelf.subscribe(listener)
+    expect(f.shelf.getSnapshot()[0]).toMatchObject({ status: 'pending', showPendingStatus: false })
+    await vi.advanceTimersByTimeAsync(1_000)
+    await f.shelf.shelve('second', [])
+    await f.shelf.sync()
+    await f.shelf.hydrate()
+    await vi.advanceTimersByTimeAsync(999)
+    expect(f.shelf.getSnapshot().map((row) => row.showPendingStatus)).toEqual([false, false])
+    listener.mockClear()
+    await vi.advanceTimersByTimeAsync(1)
+    expect(f.shelf.getSnapshot().map((row) => row.showPendingStatus)).toEqual([false, true])
+    expect(listener).toHaveBeenCalledOnce()
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(f.shelf.getSnapshot().map((row) => row.showPendingStatus)).toEqual([true, true])
+    f.online()
+    await f.shelf.sync()
+    expect(f.shelf.getSnapshot().every((row) => !row.status && !row.showPendingStatus)).toBe(true)
+  })
+  it('never flashes pending status for a fast sync or a removed draft', async () => {
+    vi.useFakeTimers()
+    const f = fixture()
+    const published: boolean[] = []
+    f.shelf.subscribe(() => published.push(f.shelf.getSnapshot().some((row) => Boolean(row.showPendingStatus))))
+    const removed = await f.shelf.shelve('remove me', [])
+    await f.shelf.sync()
+    await vi.advanceTimersByTimeAsync(500)
+    await f.shelf.delete(removed)
+    await f.shelf.shelve('sync me', [])
+    await f.shelf.sync()
+    await vi.advanceTimersByTimeAsync(500)
+    f.online()
+    await f.shelf.sync()
+    await vi.advanceTimersByTimeAsync(3_000)
+    expect(f.shelf.getSnapshot().map((row) => row.content)).toEqual(['sync me'])
+    expect(published).not.toContain(true)
+    expect(vi.getTimerCount()).toBe(0)
+  })
+  it('shows uploads and errors immediately, then gives retries a fresh delay', async () => {
+    vi.useFakeTimers()
+    const f = fixture()
+    const statuses: Array<string | undefined> = []
+    f.shelf.subscribe(() => statuses.push(f.shelf.getSnapshot()[0]?.status))
+    await f.shelf.shelve('file', [{ localId: 'a', name: 'image.png', mimeType: 'image/png', size: 3, source: 'durable://image' }])
+    await f.shelf.sync()
+    f.online(); f.failUpload()
+    await f.shelf.sync()
+    expect(statuses).toContain('uploading')
+    expect(f.shelf.getSnapshot()[0]).toMatchObject({ status: 'failed', error: 'Upload rejected' })
+    expect(f.shelf.getSnapshot()[0]?.showPendingStatus).toBeUndefined()
+    f.ports.read = async () => { throw new Error('offline') }
+    await f.shelf.retry()
+    await f.shelf.sync()
+    expect(f.shelf.getSnapshot()[0]).toMatchObject({ status: 'pending', showPendingStatus: false })
+    await vi.advanceTimersByTimeAsync(2_000)
+    expect(f.shelf.getSnapshot()[0]?.showPendingStatus).toBe(true)
+  })
+  it('cancels pending status notifications when disposed', async () => {
+    vi.useFakeTimers()
+    const f = fixture()
+    await f.shelf.shelve('pending', [])
+    await f.shelf.sync()
+    const listener = vi.fn()
+    f.shelf.subscribe(listener)
+    f.shelf.dispose()
+    await vi.advanceTimersByTimeAsync(2_001)
+    expect(listener).not.toHaveBeenCalled()
+    expect(vi.getTimerCount()).toBe(0)
+  })
   it('keeps retrying connectivity after an explicit offline refresh', async () => {
     vi.useFakeTimers()
     try {

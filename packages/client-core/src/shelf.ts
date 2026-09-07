@@ -16,6 +16,8 @@ export interface LocalShelvedDraft {
   content: string
   attachments: ShelfAttachment[]
   status?: 'pending' | 'uploading' | 'failed'
+  /** Display-only: this draft has stayed pending for at least two seconds. */
+  showPendingStatus?: boolean
   error?: string
 }
 type LocalAction =
@@ -81,6 +83,8 @@ export class ShelfSync {
   private uploadingDraftId?: string
   private stopped = false
   private retryTimer?: ReturnType<typeof setTimeout>
+  private pendingStatusTimer?: ReturnType<typeof setTimeout>
+  private pendingSince = new Map<string, number>()
   private refreshAgain = false
   private rows: LocalShelvedDraft[] = []
   constructor(private ports: ShelfPorts) {}
@@ -89,7 +93,25 @@ export class ShelfSync {
   private publish(checkpoint: ShelfCheckpoint): void {
     if (this.stopped) return
     this.checkpoint = checkpoint
-    this.rows = shelfView(checkpoint).map((row) => row.id === this.uploadingDraftId && !row.error ? { ...row, status: 'uploading' } : row)
+    if (this.pendingStatusTimer) clearTimeout(this.pendingStatusTimer)
+    this.pendingStatusTimer = undefined
+    const now = Date.now()
+    const pendingSince = new Map<string, number>()
+    let nextStatusDelay = Infinity
+    this.rows = shelfView(checkpoint).map((row) => {
+      if (row.id === this.uploadingDraftId && !row.error) return { ...row, status: 'uploading' }
+      if (row.status !== 'pending') return row
+      const since = this.pendingSince.get(row.id) ?? now
+      pendingSince.set(row.id, since)
+      const remaining = 2_000 - (now - since)
+      if (remaining > 0) nextStatusDelay = Math.min(nextStatusDelay, remaining)
+      return { ...row, showPendingStatus: remaining <= 0 }
+    })
+    this.pendingSince = pendingSince
+    if (Number.isFinite(nextStatusDelay)) {
+      this.pendingStatusTimer = setTimeout(() => this.publish(this.checkpoint), nextStatusDelay)
+      ;(this.pendingStatusTimer as unknown as { unref?: () => void }).unref?.()
+    }
     for (const listener of this.listeners) listener()
   }
   async hydrate(): Promise<void> { await this.ports.lock(async () => this.publish(await this.ports.load() ?? emptyShelf())) }
@@ -201,7 +223,10 @@ export class ShelfSync {
             attachment.id = id
           }
         }
-        this.uploadingDraftId = undefined
+        if (this.uploadingDraftId) {
+          this.uploadingDraftId = undefined
+          this.publish(this.checkpoint)
+        }
         const wireDraft = draft ? { id: draft.id, content: draft.content, attachmentIds: draft.attachments.map((a) => a.id!) } : undefined
         const wire: ShelfMutation['action'] = action.type === 'save' ? { type: 'save', draft: wireDraft! }
           : action.type === 'restore' ? { type: 'restore', id: action.id, replacement: wireDraft } : action
@@ -236,7 +261,13 @@ export class ShelfSync {
       }
     }
   }
-  dispose(): void { this.stopped = true; if (this.retryTimer) clearTimeout(this.retryTimer); this.listeners.clear() }
+  dispose(): void {
+    this.stopped = true
+    if (this.retryTimer) clearTimeout(this.retryTimer)
+    if (this.pendingStatusTimer) clearTimeout(this.pendingStatusTimer)
+    this.pendingSince.clear()
+    this.listeners.clear()
+  }
 }
 
 function operationDraft(op: ShelfOperation): LocalShelvedDraft | undefined { return op.action.type === "save" ? op.action.draft : op.action.type === "restore" ? op.action.replacement : undefined }

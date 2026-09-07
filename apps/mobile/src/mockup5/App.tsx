@@ -5009,7 +5009,7 @@ function ChatView({
                 </Pressable>
                 {!shelfCollapsed && <QueuedMessagesView maxHeight={Math.min(200, windowHeight * 0.25)} style={styles.composerQueueRows}
                   rows={shelfRows.map((row) => ({ id: row.id, kind: 'shelf', content: row.content.slice(0, 200) || 'Attachments',
-                    detail: [row.attachments.map((a) => a.name).join(', '), row.error || (row.status === 'uploading' ? 'Uploading…' : row.status === 'pending' ? 'Waiting to sync' : '')].filter(Boolean).join(' · '),
+                    detail: [row.attachments.map((a) => a.name).join(', '), row.error || (row.status === 'uploading' ? 'Uploading…' : row.showPendingStatus ? 'Waiting to sync' : '')].filter(Boolean).join(' · '),
                     status: row.status ?? '', isEditing: false, canEdit: !shelfBusy && !sending, canDelete: !shelfBusy && !sending, canReorder: !shelfBusy && !sending,
                     canRetry: row.status === 'failed' && !shelfBusy,
                   }))}
