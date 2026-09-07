@@ -79,6 +79,10 @@ jobs:
       - name: Validate production deployment ordering
         run: python3 .github/scripts/deploy-production_test.py
 
+      - name: Validate stable iPhone deployment
+        if: matrix.name == 'Test'
+        run: python3 apps/mobile/scripts/deploy-iphone_test.py
+
   chat-search:
     name: Chat search / PostgreSQL
     if: >-

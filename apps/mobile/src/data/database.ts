@@ -184,6 +184,7 @@ export async function removeCachedAttachment(namespace: string, attachmentId: st
 }
 
 export async function saveDraft(namespace: string, chatId: string, body: string, attachments: unknown[]): Promise<void> {
+  if (chatId.startsWith('temporary:')) return
   await withDatabase(async (database) => {
     if (!body && attachments.length === 0) {
       await database.runAsync('DELETE FROM drafts WHERE namespace = ? AND chat_id = ?', namespace, chatId)
@@ -198,6 +199,7 @@ export async function saveDraft(namespace: string, chatId: string, body: string,
 }
 
 export async function loadDraft<T>(namespace: string, chatId: string): Promise<{ body: string; attachments: T[] } | null> {
+  if (chatId.startsWith('temporary:')) return null
   return withDatabase(async (database) => {
     const row = await database.getFirstAsync<{ body: string; attachments: string }>(
       'SELECT body, attachments FROM drafts WHERE namespace = ? AND chat_id = ?', namespace, chatId,

@@ -21,7 +21,7 @@ afterEach(async () => {
   coordinator.current?.dispose()
 })
 
-async function fixture(remoteModel: ComposerState['model']) {
+async function fixture(remoteModel: ComposerState['model'], readGate?: Promise<void>) {
   const localModel = { id: 'model', presets: { effort: 'medium' } }
   const initial: ComposerSnapshot = {
     draftId: 'new', revision: 1, clearedRevision: 0, mutationId: null,
@@ -35,7 +35,7 @@ async function fixture(remoteModel: ComposerState['model']) {
   const sync = new ComposerSync({ load: async () => null, save: async () => {} }, 'test')
   coordinator.current = sync
   sync.connect({
-    read: async (draftId) => ({ ok: true, snapshot: snapshotFor(draftId) }),
+    read: async (draftId) => { await readGate; return { ok: true, snapshot: snapshotFor(draftId) } },
     write: async (input) => {
       writes.push(input)
       let snapshot = snapshotFor(input.draftId)
@@ -82,6 +82,16 @@ async function fixture(remoteModel: ComposerState['model']) {
 }
 
 describe('mobile composer submission', () => {
+  it('does not admit external imports until the initial shared draft is restored', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    const f = await fixture({ id: 'model', presets: {} }, gate)
+    expect(f.controls().ready).toBe(false)
+    await act(async () => { release(); await gate })
+    expect(f.controls().ready).toBe(true)
+    expect(f.state().content).toBe('shared draft')
+  })
+
   it('keeps attachment-only submissions hidden until acceptance', async () => {
     const f = await fixture({ id: 'model', presets: { effort: 'medium' } })
     await f.change({ content: '', attachments: [{ id: 'image', name: 'photo.png', mimeType: 'image/png', size: 123 }] })
@@ -161,5 +171,30 @@ describe('mobile composer submission', () => {
     expect(f.writes.some((write) => write.draftId === 'new' && write.clear)).toBe(true)
     await f.render('new')
     expect(f.state().content).toBe('')
+  })
+})
+
+
+describe('mobile temporary composer isolation', () => {
+  it('keeps temporary state local and ignores remote drafts until normal mode resumes', async () => {
+    const f = await fixture({ id: 'model', presets: { effort: 'medium' } })
+    const before = f.writes.length
+    await f.change({ temporary: true })
+    expect(f.controls().sync).toBeNull()
+    await f.change({ content: 'private mobile draft', agentMode: false,
+      attachments: [{ id: 'private', name: 'secret', mimeType: 'text/plain', size: 1 }] })
+    await f.echo({ content: 'normal remote draft', temporary: false })
+    await act(async () => { await f.sync.flush('new') })
+    expect(f.state()).toMatchObject({ temporary: true, content: 'private mobile draft', agentMode: false })
+    expect(f.writes).toHaveLength(before)
+    await f.change({ temporary: false })
+    expect(f.state().content).toBe('normal remote draft')
+    expect(f.writes.some((write) => write.patch.content === 'private mobile draft')).toBe(false)
+  })
+
+  it('ignores temporary drafts broadcast by older clients', async () => {
+    const f = await fixture({ id: 'model', presets: { effort: 'medium' } })
+    await f.echo({ temporary: true, content: 'private legacy draft' })
+    expect(f.state()).toMatchObject({ temporary: false, content: 'shared draft' })
   })
 })

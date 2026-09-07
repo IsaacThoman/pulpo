@@ -1,4 +1,4 @@
-import type { CompactionItem, RecallItem } from '@pulpo/contracts'
+import type { CompactionItem, RecallItem, ToolImagePreview } from '@pulpo/contracts'
 import { recalledChatLabel } from './recall-label'
 
 export type ToolItem = {
@@ -8,6 +8,7 @@ export type ToolItem = {
   status?: string
   arguments?: unknown
   output?: string
+  imagePreview?: ToolImagePreview
   isError?: boolean
   startedAt?: string
   durationMs?: number

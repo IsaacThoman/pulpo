@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { AgentMessage } from '@earendil-works/pi-agent-core'
-import { resolveAgentParentMessages, systemPromptFromAgentContext, type AgentHistoryResponse } from './history.js'
+import { resolveAgentParentMessages, systemPromptFromAgentContext, withoutMemoryToolMessages, type AgentHistoryResponse } from './history.js'
 
 const now = new Date('2026-08-08T12:00:00.000Z')
 
@@ -109,4 +109,26 @@ describe('Agent parent history', () => {
     expect(text(resolved)).toContain('keep checkpoint')
     expect(text(resolved)).toContain('answer empty')
   })
+})
+
+
+it('removes memory calls and results from resumed checkpoints while preserving other history', () => {
+  const messages = [
+    { role: 'user', content: 'Search my chats', timestamp: 1 },
+    { role: 'assistant', content: [
+      { type: 'toolCall', id: 'memory', name: 'search_chats', arguments: { query: 'private project' } },
+      { type: 'toolCall', id: 'workspace', name: 'bash', arguments: { command: 'pwd' } },
+    ] },
+    { role: 'toolResult', toolCallId: 'memory', toolName: 'search_chats', content: [{ type: 'text', text: 'Captain Violet secret' }] },
+    { role: 'toolResult', toolCallId: 'workspace', toolName: 'bash', content: [{ type: 'text', text: '/workspace' }] },
+    { role: 'assistant', content: [{ type: 'toolCall', id: 'read', name: 'read_chat', arguments: {} }] },
+    { role: 'toolResult', toolCallId: 'read', toolName: 'read_chat', content: [{ type: 'text', text: 'secret transcript' }] },
+    { role: 'assistant', content: [{ type: 'toolCall', id: 'write', name: 'update_memory', arguments: {} }] },
+    { role: 'toolResult', toolCallId: 'write', toolName: 'update_memory', content: [{ type: 'text', text: 'saved secret' }] },
+  ] as AgentMessage[]
+  const filtered = withoutMemoryToolMessages(messages)
+  expect(filtered).toHaveLength(3)
+  expect(JSON.stringify(filtered)).not.toMatch(/Captain Violet|secret|search_chats|read_chat|update_memory/)
+  expect(JSON.stringify(filtered)).toContain('/workspace')
+  expect(JSON.stringify(messages)).toContain('Captain Violet')
 })

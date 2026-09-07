@@ -45,8 +45,8 @@ import { backgroundRequestParameter, promptCacheKeyParameter, responseIncludePar
 import { browserChatOutputError, generationOutputHasStarted } from './output-text.js'
 import { firstTokenTimeout } from './first-token-timeout.js'
 import { responseAttachmentIds, responseInputText } from '../messages/input.js'
-import { recalledChatContext, recallItemFromOutput, retrieveAutomaticRecall } from '../episodic-memory/automatic-recall.js'
-import { memoryDocumentContext, readMemoryDocument } from '../memory-document/service.js'
+import { recalledChatContext } from '../episodic-memory/automatic-recall.js'
+import { loadGenerationMemory } from './memory-context.js'
 import {
   GenerationAttemptError,
   MAX_MODEL_CHAIN_LENGTH,
@@ -206,6 +206,7 @@ async function contextualInput(
   history: Array<typeof responses.$inferSelect>,
   requestLogId: string,
   recallItem: RecallItem | null,
+  memoryContext: string,
   publicApi: boolean,
   onCompactionUpdate: (item: CompactionItem) => Promise<void>,
   onBilledCost: (costMicros: number) => void,
@@ -217,9 +218,6 @@ async function contextualInput(
   ])
   const values = (preferences?.values ?? {}) as { customInstructions?: string; memoryEnabled?: boolean; instructionPresetSelections?: unknown }
   const customInstructions = publicApi ? '' : composeCustomInstructions(parsePersonalizationSettings(personalizationRow?.value), values)
-  const memoryContext = values.memoryEnabled
-    ? memoryDocumentContext(await readMemoryDocument(record.response.userId))
-    : ''
   const context: unknown[] = []
   if (record.model.systemPrompt.trim()) context.push({ role: 'developer', content: record.model.systemPrompt.trim() })
   if (customInstructions) context.push({ role: 'developer', content: `User-provided custom instructions:\n${customInstructions}` })
@@ -678,15 +676,21 @@ async function processGenerationAttempt(
   })
   let sequence = record.response.lastSequence
   const publicApi = Boolean(requestLog.apiKeyId)
-  const existingRecallItem = publicApi ? null : recallItemFromOutput(record.response.output, responseId)
-  const recallItem = publicApi ? null : existingRecallItem ?? await retrieveAutomaticRecall({
+  const [memoryPreferences] = publicApi ? [] : await db.select({ values: userPreferences.values }).from(userPreferences)
+    .where(eq(userPreferences.userId, record.response.userId)).limit(1)
+  const memory = await loadGenerationMemory({
+    chat: chatState,
+    memoryEnabled: (memoryPreferences?.values as { memoryEnabled?: unknown } | undefined)?.memoryEnabled,
+    publicApi,
     responseId,
     userId: record.response.userId,
     currentChatId: record.response.chatId,
     query: responseInputText(record.response.input),
+    output: record.response.output,
   })
+  const { recallItem } = memory
   const recallItems = recallItem ? [recallItem] : []
-  if (recallItem && !existingRecallItem) {
+  if (recallItem && !memory.reusedRecall) {
     sequence += 1
     const emittedAt = new Date().toISOString()
     await publishResponseEvent({ responseId, sequence, type: 'pulpo.recall.completed', payload: recallItem, emittedAt })
@@ -698,7 +702,7 @@ async function processGenerationAttempt(
       updatedAt: new Date(emittedAt),
     }).where(eq(responses.id, responseId))
   }
-  const contextual = await contextualInput(client, record, history, requestLog.id, recallItem, publicApi, async (item) => {
+  const contextual = await contextualInput(client, record, history, requestLog.id, recallItem, memory.memoryContext, publicApi, async (item) => {
     sequence += 1
     const emittedAt = new Date().toISOString()
     const publicItem = sanitizeOutputForClient([item])[0]

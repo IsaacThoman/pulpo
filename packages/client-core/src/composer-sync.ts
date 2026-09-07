@@ -29,8 +29,18 @@ function equal(a: unknown, b: unknown): boolean {
   const keys = Object.keys(left)
   return keys.length === Object.keys(right).length && keys.every((key) => Object.hasOwn(right, key) && equal(left[key], right[key]))
 }
+/** Temporary drafts use a separate local slot and never enter the sync protocol. */
+export function localComposerDraftId(chatId: string | null | undefined, temporary: boolean): string {
+  return `${temporary ? 'temporary:' : ''}${chatId ?? 'new'}`
+}
+
+function sharedPatch(patch: Partial<ComposerState>): Partial<ComposerState> {
+  const { temporary: _temporary, ...shared } = patch
+  return shared
+}
+
 export function composerPatch(before: ComposerState, after: ComposerState): Partial<ComposerState> {
-  return Object.fromEntries((Object.keys(after) as (keyof ComposerState)[]).filter((key) => !equal(before[key], after[key])).map((key) => [key, after[key]]))
+  return Object.fromEntries((Object.keys(after) as (keyof ComposerState)[]).filter((key) => key !== 'temporary' && !equal(before[key], after[key])).map((key) => [key, after[key]]))
 }
 
 /** Submission clears consume message content, while leaving composer controls intact. */
@@ -48,21 +58,22 @@ export class ComposerSync {
   constructor(private persistence: ComposerPersistence, private clientId: string) {}
 
   async open(draftId: string, initial: ComposerState, listener: (checkpoint: ComposerCheckpoint) => void): Promise<() => void> {
+    if (initial.temporary || draftId.startsWith('temporary:')) return () => undefined
     let entry = this.entries.get(draftId)
     if (!entry) {
       entry = { snapshot: { draftId, revision: 0, clearedRevision: 0, mutationId: null, state: emptyComposerState() }, pending: {}, listeners: new Set(), ready: false, saved: Promise.resolve() }
       this.entries.set(draftId, entry)
       entry.loaded = this.persistence.load(draftId).catch(() => null).then((saved) => {
-        if (saved) {
+        if (saved && !saved.snapshot.state.temporary && !saved.pending.temporary) {
           // Read supported fields only; old checkpoints may still contain retired recovery copies.
-          entry!.shelfContent = saved.shelfContent
+          entry!.shelfContent = saved.shelfContent?.temporary ? undefined : saved.shelfContent
           entry!.snapshot = saved.snapshot
-          entry!.pending = saved.pending
+          entry!.pending = sharedPatch(saved.pending)
           entry!.unacknowledgedMutationId = saved.unacknowledgedMutationId
           entry!.clearRevision = saved.clearRevision
-          entry!.submissions = saved.submissions ?? (saved.submission ? [saved.submission] : [])
+          entry!.submissions = (saved.submissions ?? (saved.submission ? [saved.submission] : [])).filter((receipt) => !receipt.state.temporary)
         }
-        else if (initial.content || initial.attachments.length || initial.model) entry!.pending = { ...initial }
+        else if (!saved && (initial.content || initial.attachments.length || initial.model)) entry!.pending = sharedPatch(initial)
       })
     }
     await entry.loaded
@@ -112,7 +123,7 @@ export class ComposerSync {
     await entry.writing
     try {
       const result = await this.transport?.read(entry.snapshot.draftId)
-      if (generation !== this.generation || !result?.ok) return
+      if (generation !== this.generation || !result?.ok || result.snapshot.state.temporary) return
       if (result.snapshot.revision !== entry.snapshot.revision && Object.keys(entry.pending).length) {
         // An acknowledgement can disappear after the server commits our partial
         // draft. That exact mutation is safe to rebase; another writer still wins.
@@ -134,6 +145,7 @@ export class ComposerSync {
     } catch { /* Preserve pending writes until reconnect. */ }
   }
   receive(snapshot: ComposerSnapshot, preservePending = false): void {
+    if (snapshot.state.temporary) return
     const entry = this.entries.get(snapshot.draftId)
     if (!entry) return
     if (!entry.ready) { if (this.transport) void this.reconcile(entry); return }
@@ -152,6 +164,8 @@ export class ComposerSync {
     if (!current.some((item) => item.id === attachment.id)) this.edit(draftId, { attachments: [...current, attachment] })
   }
   edit(draftId: string, patch: Partial<ComposerState>): void {
+    if (patch.temporary) return
+    patch = sharedPatch(patch)
     const entry = this.entries.get(draftId)
     if (!entry || !Object.keys(patch).length) return
     entry.pending = { ...entry.pending, ...patch }
@@ -180,6 +194,7 @@ export class ComposerSync {
         const result = await this.transport!.write(input)
         if (generation !== this.generation) { entry.pending = { ...patch, ...entry.pending }; return }
         if (!result.ok) throw new Error(result.error)
+        if (result.snapshot.state.temporary) throw new Error('temporary_composer_disabled')
         entry.unacknowledgedMutationId = undefined
         if (result.conflict) {
           if (result.snapshot.clearedRevision > previous.clearedRevision) {
@@ -201,6 +216,7 @@ export class ComposerSync {
   }
   /** Protect explicit shelf restores from the automatic draft conflict policy. */
   replaceShelfContent(draftId: string, state: ComposerState): void {
+    if (state.temporary) return
     const entry = this.entries.get(draftId)
     if (!entry) return
     entry.shelfContent = state
@@ -219,11 +235,13 @@ export class ComposerSync {
     return !entry || sameComposerContent({ ...entry.snapshot.state, ...entry.inflight, ...entry.pending }, submitted)
   }
   async prepareSubmission(draftId: string, submitted: ComposerState): Promise<number | null> {
+    if (submitted.temporary) return null
     const revision = await this.flush(draftId)
     const entry = this.entries.get(draftId)
     return revision !== null && entry && equal(entry.snapshot.state, submitted) ? revision : null
   }
   async completeSubmission(draftId: string, submitted: ComposerState, revision?: number): Promise<void> {
+    if (submitted.temporary) return
     const entry = this.entries.get(draftId)
     if (!entry) return
     entry.submissions = [...(entry.submissions ?? []), { state: submitted, revision }]
@@ -270,7 +288,7 @@ export class ComposerSync {
     try {
       const result = await this.transport.write({ draftId, baseRevision: revision, mutationId: `${this.clientId}:${++this.sequence}`, patch: {}, clear: true })
       if (generation !== this.generation) return 'pending'
-      if (result.ok) {
+      if (result.ok && !result.snapshot.state.temporary) {
         entry.clearRevision = undefined
         this.receive(result.snapshot, !result.conflict)
         this.notify(entry)

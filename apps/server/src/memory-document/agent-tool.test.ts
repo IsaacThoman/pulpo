@@ -22,6 +22,7 @@ describe('update_memory Agent tool', () => {
       updatedAt: new Date(),
     }))
     const tool = createMemoryDocumentTool({
+      authorize: vi.fn().mockResolvedValue(undefined),
       userId: 'user',
       responseId: 'response',
       onOperationStarted: started,
@@ -63,6 +64,7 @@ describe('update_memory Agent tool', () => {
         updatedAt: new Date(),
       }))
     const tool = createMemoryDocumentTool({
+      authorize: vi.fn().mockResolvedValue(undefined),
       userId: 'user', responseId: 'response', read, update,
     })
     const result = await tool.execute('operation', {
@@ -95,6 +97,7 @@ describe('update_memory Agent tool', () => {
       updatedAt: new Date(),
     }))
     const tool = createMemoryDocumentTool({
+      authorize: vi.fn().mockResolvedValue(undefined),
       userId: 'user', responseId: 'response', read: vi.fn(async () => document), update,
     })
     await tool.execute('operation', {
@@ -103,4 +106,17 @@ describe('update_memory Agent tool', () => {
     }, new AbortController().signal)
     expect(update).toHaveBeenCalledWith(expect.objectContaining({ content: expect.stringContaining('- Building Pulpo') }))
   })
+})
+
+it('rejects a stale memory tool before reading or writing a temporary chat memory', async () => {
+  const read = vi.fn()
+  const update = vi.fn()
+  const authorize = vi.fn().mockRejectedValue(new MemoryDocumentError('memory_access_denied', 'Memory is unavailable for this response'))
+  const tool = createMemoryDocumentTool({ userId: 'user', responseId: 'temporary-response', authorize, read, update })
+  await expect(tool.execute('operation', {
+    summary: 'Remember temporary secret', edits: [{ operation: 'append', text: 'secret' }],
+  }, new AbortController().signal)).rejects.toMatchObject({ code: 'memory_access_denied' })
+  expect(authorize).toHaveBeenCalledWith('user', 'temporary-response')
+  expect(read).not.toHaveBeenCalled()
+  expect(update).not.toHaveBeenCalled()
 })

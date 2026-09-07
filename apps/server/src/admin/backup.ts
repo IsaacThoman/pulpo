@@ -1,11 +1,9 @@
-import { createHash } from 'node:crypto'
+import { createHash, randomInt } from 'node:crypto'
 import { createReadStream } from 'node:fs'
 import { mkdtemp, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { gunzipSync } from 'node:zlib'
-import tar from 'tar-stream'
-import { eq, ne, sql } from 'drizzle-orm'
+import { and, eq, ne, sql } from 'drizzle-orm'
 import { db } from '../database/client.js'
 import { attachments, backupJobs, catalogIcons, chats, queuedMessages, users } from '../database/schema.js'
 import { getBlobStore } from '../storage/index.js'
@@ -20,20 +18,16 @@ import {
   OPTIONAL_TABLES_IN_LEGACY_BACKUPS,
   type FullBackupTable,
 } from './backup-format.js'
-import { checksumMatches, writeBackupArchive, type BackupArchiveEntry } from './backup-archive.js'
+import { writeBackupArchive, type BackupArchiveEntry } from './backup-archive.js'
 import { projectFullBackup, type FullBackupDatabase } from './backup-projection.js'
 import { B2BackupStore } from './b2-backup-store.js'
 import { ageRecipientDetails, readStoredBackupSettings, resolveBackupSettings } from './backup-settings.js'
 import { createAgeEncryptionStream } from './backup-encryption.js'
+import { extractRestoreArchive, readSmallRestoreTable, restoreBatches, restoreRows, splitRestoreDatabase, type RestoreRow } from './restore-archive.js'
+import { finishRestoreUpload, openRestoreUpload } from './restore-uploads.js'
 
 const json = (value: unknown) => JSON.stringify(value, (_, item) => typeof item === 'bigint' ? item.toString() : item)
 const checksum = (value: Uint8Array) => createHash('sha256').update(value).digest('hex')
-async function untarBytes(value: Uint8Array): Promise<Map<string, Uint8Array>> {
-  const extract = tar.extract(); const files = new Map<string, Uint8Array>()
-  const done = new Promise<void>((resolve, reject) => { extract.on('finish', resolve); extract.on('error', reject) })
-  extract.on('entry', (header, stream, next) => { const chunks: Buffer[] = []; stream.on('data', (chunk) => chunks.push(Buffer.from(chunk))); stream.on('end', () => { files.set(header.name, Buffer.concat(chunks)); next() }); stream.resume() })
-  extract.end(gunzipSync(value)); await done; return files
-}
 
 export async function createFullBackup(jobId: string, finalAttempt = true): Promise<void> {
   const [job] = await db.select().from(backupJobs).where(eq(backupJobs.id, jobId)).limit(1)
@@ -113,8 +107,11 @@ export async function createFullBackup(jobId: string, finalAttempt = true): Prom
     ]
     async function* archiveEntries(): AsyncGenerator<BackupArchiveEntry> {
       const blobs: Array<{ entry: string; objectKey: string; checksum: string }> = []
+      const includedKeys = new Set<string>()
       yield { name: 'database.json', body: Buffer.from(json(database)) }
       for (const [index, blob] of blobRows.entries()) {
+        if (includedKeys.has(blob.objectKey)) continue
+        includedKeys.add(blob.objectKey)
         const body = await getBlobStore().get(blob.objectKey)
         const entry = `blobs/${Buffer.from(blob.objectKey).toString('base64url')}`
         blobs.push({ entry, objectKey: blob.objectKey, checksum: blob.checksum ?? checksum(body) })
@@ -161,46 +158,83 @@ export async function createFullBackup(jobId: string, finalAttempt = true): Prom
 
 export async function restoreFullBackup(jobId: string): Promise<void> {
   const [job] = await db.select().from(backupJobs).where(eq(backupJobs.id, jobId)).limit(1)
-  if (!job?.objectKey) return
+  if (!job || job.status === 'completed') return
   await db.update(backupJobs).set({ status: 'in_progress', progress: 1, updatedAt: new Date() }).where(eq(backupJobs.id, jobId))
   const stagedKeys: string[] = []
+  let directory: string | undefined
+  let committed = false
+  let importStarted = false
   try {
-    const archive = await getBlobStore().get(job.objectKey)
-    if (job.archiveSizeBytes !== null && archive.byteLength !== job.archiveSizeBytes) throw new Error('Backup archive size mismatch')
-    if (job.archiveChecksum && !checksumMatches(archive, job.archiveChecksum)) throw new Error('Backup archive checksum failed')
-    const files = await untarBytes(archive)
-    const manifest = JSON.parse(Buffer.from(files.get('manifest.json') ?? []).toString()) as { format: string; version: number; blobs: Array<{ entry: string; objectKey: string; checksum: string }> }
-    const database = JSON.parse(Buffer.from(files.get('database.json') ?? []).toString()) as Record<string, Array<Record<string, unknown>>>
-    if (manifest.format !== 'pulpo-instance-backup' || manifest.version !== 1) throw new Error('Unsupported backup manifest')
-    const restoredAdmin = (database.users ?? []).find((user) => user.role === 'admin')
-    if (!restoredAdmin) throw new Error('Backup must contain at least one administrator')
-    const restoredAdminId = String(restoredAdmin.id ?? '')
-    if (!restoredAdminId) throw new Error('Backup administrator is missing an id')
-    // Backups created before management tokens were introduced remain valid;
-    // they restore with no automation credentials.
-    database.management_tokens ??= []
-    database.catalog_icons ??= []
-    // Older backups predate optional per-user two-factor authentication.
-    database.user_totp_credentials ??= []
-    database.two_factor_recovery_codes ??= []
-    database.friendships ??= []
-    database.user_blocks ??= []
-    for (const table of OPTIONAL_TABLES_IN_LEGACY_BACKUPS) database[table] ??= []
-    fillMissingUsernames(database.users ?? [])
-    applyFullBackupCompatibilityDefaults(database)
-    for (const table of FULL_BACKUP_TABLES) if (!Array.isArray(database[table])) throw new Error(`Backup is missing ${table}`)
+    directory = await mkdtemp(join(tmpdir(), 'pulpo-restore-'))
+    const source = job.objectKey ? await getBlobStore().getStream(job.objectKey) : await openRestoreUpload(jobId)
+    const { files, manifest, databasePath } = await extractRestoreArchive(source, directory, {
+      size: job.archiveSizeBytes, checksum: job.archiveChecksum,
+    })
+    const tables = await splitRestoreDatabase(databasePath, directory)
+    const optional = new Set<string>([
+      'management_tokens', 'catalog_icons', 'user_totp_credentials', 'two_factor_recovery_codes',
+      'friendships', 'user_blocks', ...OPTIONAL_TABLES_IN_LEGACY_BACKUPS,
+    ])
+    for (const table of FULL_BACKUP_TABLES) if (!tables.has(table) && !optional.has(table)) throw new Error(`Backup is missing ${table}`)
+    const usernames = new Set<string>()
+    let restoredAdminId: string | undefined
+    for await (const user of restoreRows(tables.get('users'))) {
+      if (user.role === 'admin' && typeof user.id === 'string') restoredAdminId ??= user.id
+      if (typeof user.username === 'string' && user.username.trim()) usernames.add(user.username.trim().toLowerCase())
+    }
+    if (!restoredAdminId) throw new Error('Backup must contain at least one administrator')
+    const settings = await readSmallRestoreTable(tables.get('application_settings'))
+    // Keep reference IDs/decisions only; detailed payloads stay on disk. This
+    // preserves legacy logging defaults across separately streamed tables.
+    const ocrPayloadLogs = new Set<string>()
+    for await (const row of restoreRows(tables.get('ocr_attempts'))) {
+      if (typeof row.request_log_id === 'string' && (row.request_payload != null || row.response_payload != null)) ocrPayloadLogs.add(row.request_log_id)
+    }
+    const logCapture = new Map<string, boolean>()
+    const blobKeys = new Map<string, string>()
     for (const [index, blob] of manifest.blobs.entries()) {
-      const body = files.get(blob.entry); if (!body || !checksumMatches(body, blob.checksum)) throw new Error(`Blob checksum failed: ${blob.objectKey}`)
-      const staged = `restored/${jobId}/${Buffer.from(blob.objectKey).toString('base64url')}`
-      await getBlobStore().put(staged, body, { contentType: 'application/octet-stream', contentLength: body.byteLength }); stagedKeys.push(staged)
-      for (const attachment of database.attachments ?? []) if (attachment.object_key === blob.objectKey) attachment.object_key = staged
-      for (const user of database.users ?? []) if (user.avatar_object_key === blob.objectKey) user.avatar_object_key = staged
-      for (const icon of database.catalog_icons ?? []) {
-        for (const field of ['original_object_key', 'monochrome_light_object_key', 'monochrome_dark_object_key']) {
-          if (icon[field] === blob.objectKey) icon[field] = staged
-        }
-      }
+      const file = files.get(blob.entry)!
+      // Bound the filename even when the source key came from a previous
+      // restore. Encoding the entire key grows it on every backup/restore cycle.
+      const staged = `restored/${jobId}/${createHash('sha256').update(blob.objectKey).digest('hex')}`
+      // Record before writing so even an interrupted/partially successful put
+      // is included in rollback cleanup.
+      stagedKeys.push(staged)
+      await getBlobStore().putStream(staged, createReadStream(file.path), { contentType: 'application/octet-stream', contentLength: file.size })
+      blobKeys.set(blob.objectKey, staged)
       await db.update(backupJobs).set({ progress: 5 + Math.round(((index + 1) / Math.max(manifest.blobs.length, 1)) * 35), updatedAt: new Date() }).where(eq(backupJobs.id, jobId))
+    }
+    async function* compatibleRows(table: FullBackupTable): AsyncGenerator<RestoreRow> {
+      for await (const row of restoreRows(tables.get(table))) {
+        const data: Record<string, RestoreRow[]> = { [table]: [row], application_settings: settings }
+        if (table === 'users' && !(typeof row.username === 'string' && row.username.trim())) {
+          fillMissingUsernames([row], () => {
+            let number: number
+            do number = randomInt(1, 2_147_483_647)
+            while (usernames.has(`pulpo${number}`))
+            return number
+          })
+          usernames.add(String(row.username))
+        }
+        if (table === 'request_logs') {
+          data.ocr_attempts = ocrPayloadLogs.has(String(row.id)) ? [{ request_log_id: row.id, request_payload: true }] : []
+        }
+        applyFullBackupCompatibilityDefaults(data)
+        if (table === 'request_logs') logCapture.set(String(row.id), row.capture_detailed_payloads === true)
+        if (table === 'ocr_attempts' && logCapture.get(String(row.request_log_id)) === false) {
+          row.request_payload = null; row.response_payload = null
+        }
+        const blobFields = table === 'users' ? ['avatar_object_key'] : table === 'attachments' ? ['object_key']
+          : table === 'catalog_icons' ? ['original_object_key', 'monochrome_light_object_key', 'monochrome_dark_object_key'] : []
+        for (const field of blobFields) {
+          if (row[field] == null) continue
+          const replacement = blobKeys.get(String(row[field]))
+          if (!replacement && table === 'attachments' && row.status !== 'ready') continue
+          if (!replacement) throw new Error(`Backup is missing a blob referenced by ${table}`)
+          row[field] = replacement
+        }
+        yield row
+      }
     }
     const oldAttachmentBlobs = await db.select({ key: attachments.objectKey }).from(attachments)
     const oldAvatarBlobs = await db.select({ key: users.avatarObjectKey }).from(users).where(sql`${users.avatarObjectKey} is not null`)
@@ -209,43 +243,51 @@ export async function restoreFullBackup(jobId: string): Promise<void> {
       ...oldAttachmentBlobs,
       ...oldAvatarBlobs.map((avatar) => ({ key: avatar.key! })),
       ...oldIconRows.flatMap((icon) => [
-        { key: icon.originalObjectKey },
-        { key: icon.monochromeLightObjectKey },
-        { key: icon.monochromeDarkObjectKey },
+        { key: icon.originalObjectKey }, { key: icon.monochromeLightObjectKey }, { key: icon.monochromeDarkObjectKey },
       ]),
     ]
+    importStarted = true
     await db.transaction(async (tx) => {
       await tx.delete(backupJobs).where(ne(backupJobs.id, jobId))
       await tx.execute(sql.raw(`truncate table ${[...FULL_BACKUP_TABLES].reverse().join(', ')} restart identity cascade`))
       for (const [index, table] of FULL_BACKUP_TABLES.entries()) {
-        const rows = database[table]!
-        if (rows.length) await insertBackupRows(tx, table, rows)
+        for await (const batch of restoreBatches(compatibleRows(table))) await insertBackupRows(tx, table, batch)
         if (table === 'users') {
-          // Truncating users cascades to backup_jobs. Recreate the active job
-          // under an administrator from the restored dataset so progress
-          // updates do not block on the transaction's backup_jobs lock and the
-          // completed restore remains visible after the temporary admin is gone.
-          await tx.insert(backupJobs).values({
-            ...job,
-            userId: restoredAdminId,
-            status: 'in_progress',
-            progress: 40,
-            error: null,
-            updatedAt: new Date(),
-          })
+          await tx.insert(backupJobs).values({ ...job, userId: restoredAdminId!, status: 'in_progress', progress: 40, error: null, updatedAt: new Date() })
         }
         await tx.update(backupJobs).set({ progress: 40 + Math.round(((index + 1) / FULL_BACKUP_TABLES.length) * 55), updatedAt: new Date() }).where(eq(backupJobs.id, jobId))
       }
+      // Persist the completion marker with the imported data. A worker crash
+      // after COMMIT must not cause BullMQ to import the same backup again.
+      await tx.update(backupJobs).set({ status: 'completed', progress: 100, completedAt: new Date(), expiresAt: new Date(Date.now() + 7 * 86_400_000), updatedAt: new Date() }).where(eq(backupJobs.id, jobId))
     })
-    // BullMQ shares this Redis database. FLUSHDB removes the active restore job
-    // before the worker can acknowledge it, leaving the queue in an error state.
-    // Only invalidate application state derived from the replaced database.
+    committed = true
+    // BullMQ shares Redis; preserve the active queue job when invalidating caches.
     await deleteRedisKeysByPattern(redis, 'pulpo:*')
-    for (const blob of oldBlobs) await getBlobStore().delete(blob.key).catch(() => undefined)
+    const restoredKeys = new Set(stagedKeys)
+    for (const blob of oldBlobs) if (!restoredKeys.has(blob.key)) await getBlobStore().delete(blob.key).catch(() => undefined)
     await db.update(backupJobs).set({ status: 'completed', progress: 100, expiresAt: new Date(Date.now() + 7 * 86_400_000), updatedAt: new Date() }).where(eq(backupJobs.id, jobId))
   } catch (error) {
-    for (const key of stagedKeys) await getBlobStore().delete(key).catch(() => undefined)
-    await db.update(backupJobs).set({ status: 'failed', error: error instanceof Error ? error.message : 'Restore failed', expiresAt: new Date(Date.now() + 7 * 86_400_000), updatedAt: new Date() }).where(eq(backupJobs.id, jobId)); throw error
+    // Once committed, the new database owns these blobs. A cache/cleanup error
+    // must never remove the successfully restored attachments.
+    let safeToRemoveStaged = !importStarted
+    if (importStarted && !committed) {
+      try {
+        const [persisted] = await db.select({ status: backupJobs.status }).from(backupJobs).where(eq(backupJobs.id, jobId))
+        committed = persisted?.status === 'completed'
+        safeToRemoveStaged = Boolean(persisted && !committed)
+      } catch { /* An unknown COMMIT outcome must retain potentially live blobs. */ }
+    }
+    if (!committed && safeToRemoveStaged) for (const key of stagedKeys) await getBlobStore().delete(key).catch(() => undefined)
+    await db.update(backupJobs).set({
+      status: committed ? 'completed' : 'failed', progress: committed ? 100 : undefined,
+      error: committed ? 'Data restored, but post-restore cleanup failed' : error instanceof Error ? error.message : 'Restore failed',
+      expiresAt: new Date(Date.now() + 7 * 86_400_000), updatedAt: new Date(),
+    }).where(committed ? eq(backupJobs.id, jobId) : and(eq(backupJobs.id, jobId), ne(backupJobs.status, 'completed')))
+    throw error
+  } finally {
+    if (directory) await rm(directory, { recursive: true, force: true }).catch(() => undefined)
+    if (!job.objectKey) await finishRestoreUpload(jobId).catch(() => undefined)
   }
 }
 

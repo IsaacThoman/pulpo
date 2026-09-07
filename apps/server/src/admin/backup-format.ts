@@ -18,7 +18,7 @@ export type FullBackupTable = typeof FULL_BACKUP_TABLES[number]
  */
 export const FULL_BACKUP_EXPLICIT_COLUMNS: Partial<Record<FullBackupTable, readonly string[]>> = {
   chat_turn_embeddings: [
-    'id', 'generation_id', 'user_id', 'chat_id', 'response_id', 'content_hash', 'chunk_text',
+    'id', 'generation_id', 'user_id', 'chat_id', 'response_id', 'chunk_index', 'content_hash', 'chunk_text',
     'embedding', 'status', 'error', 'indexed_at', 'created_at', 'updated_at',
   ],
 }
@@ -43,6 +43,9 @@ export function applyFullBackupCompatibilityDefaults(database: Record<string, Ar
     user.avatar_version ??= 0
   }
   for (const provider of database.provider_connections ?? []) provider.tool_result_image_mode ??= 'native'
+  // Pre-chunking search indexes are version 1 and contain one chunk per turn.
+  for (const generation of database.episodic_memory_generations ?? []) generation.index_version ??= 1
+  for (const chunk of database.chat_turn_embeddings ?? []) chunk.chunk_index ??= 0
   for (const response of database.responses ?? []) {
     response.metadata ??= {}
     response.idempotency_scope ??= 'default'

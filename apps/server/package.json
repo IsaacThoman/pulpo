@@ -13,6 +13,7 @@
     "db:migrate": "tsx src/database/migrate.ts",
     "smoke:episodic-memory": "tsx scripts/episodic-memory-smoke.ts",
     "test": "vitest run",
+    "test:restore-memory": "node --max-old-space-size=96 --import tsx scripts/restore-memory-smoke.ts",
     "test:episodic-search": "PULPO_SEARCH_POSTGRES_TEST=1 vitest run src/episodic-memory/retrieval.postgres.test.ts"
   },
   "dependencies": {
@@ -46,6 +47,7 @@
     "qrcode": "^1.5.4",
     "sharp": "^0.35.3",
     "socket.io": "^4.8.1",
+    "stream-json": "^1.9.1",
     "stripe": "^22.5.0",
     "tar-stream": "^3.2.0",
     "undici": "^8.9.0",
@@ -56,6 +58,7 @@
     "@types/node": "^24.2.1",
     "@types/nodemailer": "^6.4.17",
     "@types/qrcode": "^1.5.6",
+    "@types/stream-json": "^1.7.8",
     "@types/tar-stream": "^3.1.4",
     "drizzle-kit": "^0.31.4",
     "socket.io-client": "^4.8.3",

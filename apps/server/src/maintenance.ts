@@ -13,6 +13,7 @@ import { sanitizeContextForStorage } from './responses/public-output.js'
 import { persistResponseItems } from './responses/storage.js'
 import { parseBackupSettings, parseWebToolsSettings, publicWebToolsSettings } from './settings/application-settings.js'
 import { purgeExpiredMemoryDocumentRevisions } from './memory-document/service.js'
+import { cleanupRestoreUploads } from './admin/restore-uploads.js'
 import { deleteExpiredBackupObjects } from './admin/backup-retention.js'
 import { deleteUnlockedOffsiteBackups } from './admin/backup-scheduler.js'
 import { backupSettingsForExport } from './admin/backup-settings.js'
@@ -137,6 +138,7 @@ export async function runCleanup(): Promise<void> {
   const deletedBackupIds = await deleteExpiredBackupObjects(expiredBackups, (key) => getBlobStore().delete(key))
   if (deletedBackupIds.length) await db.delete(backupJobs).where(inArray(backupJobs.id, deletedBackupIds))
   await deleteUnlockedOffsiteBackups(now)
+  await cleanupRestoreUploads()
   await reconcileWorkspaceLeases()
   await purgePendingChats()
 }

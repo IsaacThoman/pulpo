@@ -1,4 +1,5 @@
 import type { ResponseSnapshot } from '@pulpo/contracts'
+import { buildAgentOutput, type ToolTimelineItem } from './timeline.js'
 import { describe, expect, it } from 'vitest'
 import { projectNextAgentResponseEvent, selectAgentResponseCheckpoint } from './streaming-snapshot.js'
 
@@ -25,6 +26,27 @@ function outputText(output: unknown[]): string | undefined {
 }
 
 describe('agent streaming snapshots', () => {
+  it('preserves nested image previews through completion, reload, and terminal reconstruction', () => {
+    const imagePreview = { attachmentId: responseId, name: 'chart.webp', mimeType: 'image/webp', sizeBytes: 80 }
+    const queued = projectNextAgentResponseEvent(snapshot(), {
+      type: 'pulpo.agent.tool.queued', emittedAt: '2026-08-14T12:00:01.000Z',
+      payload: { id: 'tool-1', type: 'pulpo_tool', tool: 'view_image', arguments: { path: '/tmp/chart.png' }, output: '', status: 'queued' },
+    })
+    const completed = projectNextAgentResponseEvent(queued.projection, {
+      type: 'pulpo.agent.tool.completed', emittedAt: '2026-08-14T12:00:02.000Z',
+      payload: { id: 'tool-1', output: 'Viewed chart.png', isError: false, imagePreview },
+    })
+    const restored = JSON.parse(JSON.stringify(completed.projection)) as ResponseSnapshot
+    expect(restored.output).toEqual([expect.objectContaining({ type: 'pulpo_tool', imagePreview, status: 'completed' })])
+    const item = restored.output[0] as ToolTimelineItem
+    const terminal = buildAgentOutput({
+      messages: [{ role: 'assistant', content: [{ type: 'toolCall', id: item.id, name: 'view_image', arguments: item.arguments }] } as never],
+      skipMessageCount: 0, toolItems: new Map([[item.id, item]]), terminal: true,
+    })
+    expect(selectAgentResponseCheckpoint(restored, { terminal: true, output: terminal }).output).toEqual(restored.output)
+    expect(terminal).toHaveLength(1)
+  })
+
   it('checkpoints only text represented by its event sequence', () => {
     const mutableUpstreamMessage = { text: 'Sp' }
     const first = projectNextAgentResponseEvent(snapshot(), {

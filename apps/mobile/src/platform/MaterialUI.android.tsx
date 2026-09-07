@@ -101,7 +101,6 @@ const EMPTY_SECTIONS: MenuSection[] = [];
 export function MaterialMenu({ label, icon, actions = EMPTY_ACTIONS, sections = EMPTY_SECTIONS, text, compact, image, centered }: MenuProps) {
   const [expanded, setExpanded] = useState(false);
   const [submenu, setSubmenu] = useState<Action['submenu']>();
-  const { width: windowWidth } = useWindowDimensions();
   const colors = useMaterialColors();
   const dismiss = () => { setExpanded(false); setSubmenu(undefined); };
   const select = (action: Action) => {
@@ -116,10 +115,10 @@ export function MaterialMenu({ label, icon, actions = EMPTY_ACTIONS, sections = 
   // The host bounds long labels, but the native button wraps its contents.
   // Reserve the chevron inside the label's intrinsic width: Row weight would
   // stretch short labels, while an unweighted Row could push the chevron out.
-  // Compact composer menus leave 144 dp for the three icon buttons and
-  // 40 dp for the composer's outer spacing, inner padding, and row gaps.
-  const triggerWidth = text ? compact ? Math.min(200, Math.max(48, windowWidth - 184)) : 230 : 48;
-  return <Host style={{ width: triggerWidth, maxWidth: '100%', height: 48 }} ignoreSafeAreaKeyboardInsets><DropdownMenu expanded={expanded} onDismissRequest={dismiss} modifiers={text ? [wrapContentWidth(centered ? 'centerHorizontally' : 'start')] : undefined}>
+  // Let compact labels shrink to the actual row space as composer actions
+  // appear (for example, Shelve), keeping every icon button at its full size.
+  const triggerWidth = text ? compact ? 200 : 230 : 48;
+  return <Host style={{ width: triggerWidth, maxWidth: '100%', height: 48, flexShrink: text && compact ? 1 : 0 }} ignoreSafeAreaKeyboardInsets><DropdownMenu expanded={expanded} onDismissRequest={dismiss} modifiers={text ? [wrapContentWidth(centered ? 'centerHorizontally' : 'start')] : undefined}>
     <DropdownMenu.Trigger>{text ? <TextButton onClick={() => setExpanded(true)} modifiers={[height(48)]}>
       {image ? <><Icon source={image} tint={null} size={24} /><Spacer modifiers={[width(8)]} /></> : null}
       <Box contentAlignment="centerEnd">

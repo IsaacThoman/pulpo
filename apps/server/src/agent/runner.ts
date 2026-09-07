@@ -1,7 +1,7 @@
 import { Agent, type AgentMessage } from '@earendil-works/pi-agent-core'
 import { openAIResponsesApi } from '@earendil-works/pi-ai/api/openai-responses.lazy'
 import type { Api, AssistantMessage, Context, Model } from '@earendil-works/pi-ai'
-import type { CompactionItem, RecallItem, ResponseSnapshot } from '@pulpo/contracts'
+import { toolImagePreviewSchema, type ToolImagePreview, type CompactionItem, type RecallItem, type ResponseSnapshot } from '@pulpo/contracts'
 import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm'
 import { db } from '../database/client.js'
 import { agentRuns, applicationSettings, attachments, chats, generationAttempts, models, providerConnections, requestLogs, responses, toolExecutions, userPreferences } from '../database/schema.js'
@@ -24,6 +24,7 @@ import { truncateUtf8 } from './output.js'
 import { buildAgentOutput, type ToolTimelineItem } from './timeline.js'
 import { messagesForPersistence } from './context.js'
 import { basename } from 'node:path'
+import { storeToolImagePreview } from '../attachments/tool-image-preview.js'
 import { storeGeneratedAttachment } from '../attachments/generated.js'
 import type { AttachmentTimelineItem } from './timeline.js'
 import { KagiClient } from './kagi.js'
@@ -48,12 +49,10 @@ import { agentSnapshotIsDue } from './snapshot-policy.js'
 import { lineageFromLeaf } from '../messages/branching.js'
 import { responseUserAttachmentIds } from '../messages/input.js'
 import { responseInputText } from '../messages/input.js'
-import { createEpisodicMemoryTools } from '../episodic-memory/agent-tools.js'
+import { createGenerationMemoryTools } from './memory-tools.js'
 import { readEpisodicMemorySettings } from '../episodic-memory/settings.js'
-import { recalledChatContext, recallItemFromOutput, retrieveAutomaticRecall } from '../episodic-memory/automatic-recall.js'
-import { memoryDocumentContext, readMemoryDocument } from '../memory-document/service.js'
-import { createMemoryDocumentTool } from '../memory-document/agent-tool.js'
-import { messagesFromAgentContext, resolveAgentParentMessages, systemPromptFromAgentContext } from './history.js'
+import { generationSystemPrompt, loadGenerationMemory } from '../responses/memory-context.js'
+import { messagesFromAgentContext, resolveAgentParentMessages, systemPromptFromAgentContext, withoutMemoryToolMessages } from './history.js'
 import { agentSamplingParameters, resolveAgentModelParameters } from './model-parameters.js'
 import { redis } from '../redis.js'
 import {
@@ -164,18 +163,18 @@ async function runAgentGeneration(responseId: string): Promise<void> {
     parsePersonalizationSettings(personalizationRow?.value),
     preferenceValues,
   )
-  const memoryDocument = preferenceValues.memoryEnabled
-    ? await readMemoryDocument(record.response.userId)
-    : null
-  const memoryContext = memoryDocument ? memoryDocumentContext(memoryDocument) : ''
-  const existingRecallItem = recallItemFromOutput(record.response.output, responseId)
-  const recallItem = existingRecallItem ?? await retrieveAutomaticRecall({
+  const [chatState] = await db.select({ temporary: chats.temporary }).from(chats)
+    .where(eq(chats.id, record.response.chatId)).limit(1)
+  const memory = await loadGenerationMemory({
+    chat: chatState,
+    memoryEnabled: preferenceValues.memoryEnabled,
     responseId,
     userId: record.response.userId,
     currentChatId: record.response.chatId,
     query: responseInputText(record.response.input),
+    output: record.response.output,
   })
-  const recallContext = recalledChatContext(recallItem)
+  const { memoryContext, recallContext, recallItem } = memory
   const baseAgentSystemPrompt = buildAgentSystemPrompt(
     record.model.systemPrompt,
     record.model.agentInstructions,
@@ -206,14 +205,13 @@ async function runAgentGeneration(responseId: string): Promise<void> {
   )
   const [existingRun] = await db.select().from(agentRuns).where(eq(agentRuns.responseId, responseId)).limit(1)
   const runId = existingRun?.id ?? newId()
-  const agentSystemPrompt = systemPromptFromAgentContext(existingRun?.context) ?? currentAgentSystemPrompt
+  const agentSystemPrompt = generationSystemPrompt(memory.enabled, currentAgentSystemPrompt, systemPromptFromAgentContext(existingRun?.context))
   let resumedMessages = existingRun ? messagesFromAgentContext(existingRun.context) : parentMessages
+  if (!memory.enabled) resumedMessages = withoutMemoryToolMessages(resumedMessages)
   await db.insert(agentRuns).values({ id: runId, responseId, status: 'running', context: { systemPrompt: agentSystemPrompt, messages: resumedMessages }, startedAt: new Date() }).onConflictDoUpdate({ target: agentRuns.responseId, set: { status: 'running', updatedAt: new Date() } })
   const [requestLog] = await db.select().from(requestLogs).where(eq(requestLogs.responseId, responseId)).limit(1)
   if (!requestLog) throw new Error('Request log is missing')
   const detailedPayloadsEnabled = detailedPayloadCaptureIsActive(requestLog)
-  const [chatState] = await db.select({ temporary: chats.temporary }).from(chats)
-    .where(eq(chats.id, record.response.chatId)).limit(1)
   let sidecarCostMicros = 0
   const imageInterceptor = await createModelImageInterceptor(requestLog.id, {
     allowCache: !chatState?.temporary,
@@ -330,16 +328,28 @@ async function runAgentGeneration(responseId: string): Promise<void> {
   const turnRetryAttempts = new Map<number, number>()
   let currentRetryAttempt = 1
   let lastResponder: { runtime: RuntimeModel; pricing: ActivePricing } | undefined
-  const toolItems = new Map<string, ToolTimelineItem>()
+  const toolItems = new Map<string, ToolTimelineItem>((record.response.output as unknown[]).flatMap((raw) => {
+    const item = raw as ToolTimelineItem | null
+    return item?.type === 'pulpo_tool' && typeof item.id === 'string' ? [[item.id, { ...item }]] : []
+  }))
   const generatedAttachmentRows = await db.select().from(attachments).where(and(
-    eq(attachments.sourceResponseId, responseId), eq(attachments.origin, 'assistant'), eq(attachments.status, 'ready'),
+    eq(attachments.sourceResponseId, responseId), inArray(attachments.origin, ['assistant', 'tool_preview']), eq(attachments.status, 'ready'),
   ))
   const attachmentItems = new Map<string, AttachmentTimelineItem>(generatedAttachmentRows.flatMap((attachment) => (
-    attachment.sourceToolCallId ? [[attachment.sourceToolCallId, {
+    attachment.origin === 'assistant' && attachment.sourceToolCallId ? [[attachment.sourceToolCallId, {
       type: 'pulpo_attachment' as const, attachment_id: attachment.id, name: attachment.originalName,
       mime_type: attachment.mimeType, size_bytes: attachment.sizeBytes, status: 'completed' as const,
     }] as const] : []
   )))
+  const imagePreviews = new Map<string, ToolImagePreview>(generatedAttachmentRows.flatMap((attachment) => (
+    attachment.origin === 'tool_preview' && attachment.sourceToolCallId ? [[attachment.sourceToolCallId, {
+      attachmentId: attachment.id, name: attachment.originalName, mimeType: 'image/webp' as const, sizeBytes: attachment.sizeBytes,
+    }]] : []
+  )))
+  for (const [id, imagePreview] of imagePreviews) {
+    const item = toolItems.get(id)
+    if (item?.tool === 'view_image') item.imagePreview = imagePreview
+  }
   const compactionItems: CompactionItem[] = (record.response.output as unknown[]).filter((raw): raw is CompactionItem => (
     (raw as { type?: string }).type === 'pulpo_compaction'
   ))
@@ -366,7 +376,7 @@ async function runAgentGeneration(responseId: string): Promise<void> {
     emissionQueue = emission
     return emission
   }
-  if (recallItem && !existingRecallItem) {
+  if (recallItem && !memory.reusedRecall) {
     await emit('pulpo.recall.completed', recallItem)
     await db.update(responses).set({
       status: 'in_progress',
@@ -605,21 +615,15 @@ async function runAgentGeneration(responseId: string): Promise<void> {
     onProviderAttempts: (operationId, execution) => { webProviderExecutions.set(operationId, execution) },
     reserveBillableCost: (amountMicros) => extendBudgetReservationFixedCost(responseId, amountMicros),
   })
-  const episodicMemoryTools = episodicMemorySettings.enabled && preferenceValues.memoryEnabled === true
-    ? createEpisodicMemoryTools({
-        userId: record.response.userId,
-        currentChatId: record.response.chatId,
-        maxOutputBytes: settings.maxToolOutputBytes,
-        onOperationStarted: markToolStarted,
-      })
-    : []
-  const memoryDocumentTools = preferenceValues.memoryEnabled === true
-      ? [createMemoryDocumentTool({
-        userId: record.response.userId,
-        responseId,
-        onOperationStarted: markToolStarted,
-      })]
-    : []
+  const memoryTools = createGenerationMemoryTools({
+    memoryEnabled: memory.enabled,
+    episodicMemoryEnabled: episodicMemorySettings.enabled,
+    userId: record.response.userId,
+    responseId,
+    currentChatId: record.response.chatId,
+    maxOutputBytes: settings.maxToolOutputBytes,
+    onOperationStarted: markToolStarted,
+  })
   const attachFile = async (operationId: string, path: string, name: string | undefined, signal?: AbortSignal) => {
     const [existing] = await db.select().from(attachments).where(and(
       eq(attachments.sourceResponseId, responseId), eq(attachments.sourceToolCallId, operationId), eq(attachments.status, 'ready'),
@@ -656,10 +660,17 @@ async function runAgentGeneration(responseId: string): Promise<void> {
       systemPrompt: agentSystemPrompt,
       model: active.piModel,
       tools: [
-        ...createWorkspaceTools(manager, settings.commandTimeoutSeconds * 1000, markToolStarted, attachFile),
+        ...createWorkspaceTools(manager, settings.commandTimeoutSeconds * 1000, markToolStarted, attachFile, async (toolCallId, path, data) => {
+          const existing = imagePreviews.get(toolCallId)
+          if (existing) return existing
+          const preview = await storeToolImagePreview({
+            responseId, toolCallId, userId: record.response.userId, chatId: record.response.chatId, path, data,
+          })
+          imagePreviews.set(toolCallId, preview)
+          return preview
+        }),
         ...configuredWebTools,
-        ...episodicMemoryTools,
-        ...memoryDocumentTools,
+        ...memoryTools,
       ],
       messages: resumedMessages,
       thinkingLevel: initialParameters.reasoning,
@@ -903,6 +914,9 @@ async function runAgentGeneration(responseId: string): Promise<void> {
     } else if (event.type === 'tool_execution_end') {
       const output = truncateUtf8(toolResultText(event.result), settings.maxToolOutputBytes)
       const details = toolResultDetails(event.result)
+      const imagePreview = event.toolName === 'view_image' && !event.isError
+        ? toolImagePreviewSchema.safeParse(details.imagePreview).data
+        : undefined
       const providerExecution = webProviderExecutions.get(event.toolCallId)
       const providerCostMicros = nonNegativeMicros(details.providerCostMicros ?? providerExecution?.providerCostMicros)
       const billedCostMicros = event.isError ? 0 : nonNegativeMicros(details.billedCostMicros)
@@ -910,7 +924,7 @@ async function runAgentGeneration(responseId: string): Promise<void> {
       const item = toolItems.get(event.toolCallId)
       if (item) {
         const durationMs = item.startedAt ? Math.max(0, Date.now() - Date.parse(item.startedAt)) : undefined
-        Object.assign(item, { output, status: event.isError ? 'failed' : 'completed', isError: event.isError, ...(durationMs !== undefined ? { durationMs } : {}) })
+        Object.assign(item, { ...(imagePreview ? { imagePreview } : {}), output, status: event.isError ? 'failed' : 'completed', isError: event.isError, ...(durationMs !== undefined ? { durationMs } : {}) })
       }
       await db.update(toolExecutions).set({
         workspaceLeaseId: manager.leaseId,
@@ -924,7 +938,7 @@ async function runAgentGeneration(responseId: string): Promise<void> {
         updatedAt: new Date(),
       }).where(and(eq(toolExecutions.agentRunId, runId), eq(toolExecutions.operationId, event.toolCallId)))
       webProviderExecutions.delete(event.toolCallId)
-      await emit('pulpo.agent.tool.completed', { id: event.toolCallId, output, isError: event.isError, durationMs: item?.durationMs })
+      await emit('pulpo.agent.tool.completed', { id: event.toolCallId, output, isError: event.isError, durationMs: item?.durationMs, ...(imagePreview ? { imagePreview } : {}) })
       if (manager.continuedWithoutAgent) agent.state.tools = []
       await snapshotIfDue()
     }

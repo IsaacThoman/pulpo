@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, render, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { emptyComposerState, type ComposerSnapshot, type ComposerWrite } from '@pulpo/contracts'
@@ -26,7 +26,7 @@ vi.mock('@/lib/local-first/database', async (importOriginal) => {
 const { Composer } = await import('./Composer')
 const { useAuth } = await import('@/stores/auth')
 const { useSettings } = await import('@/stores/settings')
-const { clearRuntimeComposerDrafts, rememberRuntimeComposerDraft, saveComposerDraft } = await import('@/lib/local-first/composer-drafts')
+const { clearRuntimeComposerDrafts, rememberRuntimeComposerDraft, runtimeComposerDraft, saveComposerDraft } = await import('@/lib/local-first/composer-drafts')
 const { useComposerSyncPreference } = await import('@/stores/composer-sync-preference')
 
 beforeEach(() => {
@@ -66,4 +66,29 @@ it.each([false, true])('does not reload a persisted sent draft after a remote cl
   await act(async () => { await vi.advanceTimersByTimeAsync(150) })
   expect(input.value).toBe('')
   expect(write).not.toHaveBeenCalled()
+})
+
+
+it('keeps temporary drafts in a separate local slot when switching back to normal mode', async () => {
+  const state = { ...emptyComposerState(), content: 'normal shared draft', model: { id: 'model', presets: {} } }
+  const snapshot: ComposerSnapshot = { draftId: 'new', state, revision: 1, clearedRevision: 0, mutationId: null }
+  const read = vi.fn(async () => ({ ok: true as const, snapshot }))
+  const write = vi.fn(async () => ({ ok: true as const, snapshot }))
+  fixture.sync = new ComposerSync({ load: async () => null, save: async () => {} }, 'web')
+  fixture.sync.connect({ read, write })
+  const composer = (temporary: boolean) => <MemoryRouter><TooltipProvider>
+    <Composer key={temporary ? 'temporary:new' : 'new'} chatId={null} modelId="model" temporary={temporary} />
+  </TooltipProvider></MemoryRouter>
+  const view = render(composer(true))
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
+  fireEvent.change(view.getByRole('textbox'), { target: { value: 'private local draft' } })
+  await waitFor(() => expect(runtimeComposerDraft('account', 'temporary:new')).toMatchObject({ content: 'private local draft' }))
+  expect(fixture.rows.has('account:temporary:new')).toBe(false)
+  expect(read).not.toHaveBeenCalled()
+  expect(write).not.toHaveBeenCalled()
+  view.rerender(composer(false))
+  await waitFor(() => expect((view.getByRole('textbox') as HTMLTextAreaElement).value).toBe('normal shared draft'))
+  expect(write).not.toHaveBeenCalled()
+  view.rerender(composer(true))
+  await waitFor(() => expect((view.getByRole('textbox') as HTMLTextAreaElement).value).toBe('private local draft'))
 })

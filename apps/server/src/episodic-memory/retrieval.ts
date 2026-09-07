@@ -1,5 +1,6 @@
 import { and, desc, eq, gt, isNotNull, isNull, ne, or, sql } from 'drizzle-orm'
 import type { EpisodicMemoryProfile, EpisodicMemoryRecallMode } from '@pulpo/contracts'
+import { chatCanAccessMemory } from '../chats/memory-policy.js'
 import { db } from '../database/client.js'
 import { chats, chatTurnEmbeddings, episodicMemoryGenerations } from '../database/schema.js'
 import { CHAT_INDEX_VERSION } from './chunks.js'
@@ -160,7 +161,8 @@ export async function searchEpisodicChats(input: {
     return results
   }
   if (!query) return finish([])
-  if (!await userMemoryIsEnabled(input.userId)) {
+  if ((input.currentChatId && !await chatCanAccessMemory(input.userId, input.currentChatId))
+    || !await userMemoryIsEnabled(input.userId)) {
     diagnostics.availability = 'disabled'
     return finish([])
   }

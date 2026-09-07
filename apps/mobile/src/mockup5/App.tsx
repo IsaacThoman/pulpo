@@ -3,6 +3,11 @@ import { hasChatSelectionObserver, recordChatSelection, hasTranscriptPositionObs
 import { prepareChatSelection } from '../data/prepareChat';
 import { createDrawerTransition } from '../features/chat/drawerTransition';
 import { protectTranscript } from '../data/transcriptResidency';
+import { incomingFiles, releaseImportedFile } from '../native/incomingFiles';
+import { useIncomingFileImport } from '../features/chat/useIncomingFileImport';
+import { incomingFileAttachment } from '../features/chat/incomingFileAttachment';
+import { ToolImagePreview } from '../components/ToolImagePreview';
+import { localComposerDraftId } from '@pulpo/client-core';
 import { DevicesScreen } from '../components/Devices';
 import { initialActivityTiming } from '@pulpo/client-core';
 import { mobileShelf, durableShelfAttachments, shelfComposerAttachments } from '../features/chat/shelf';
@@ -119,7 +124,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { useNetworkOffline } from '../providers/useNetworkOffline';
 import { StatusBar } from 'expo-status-bar';
 import { SymbolView } from '../platform/SymbolView';
-import { DarkTheme as NavigationDarkTheme, DefaultTheme as NavigationLightTheme, NavigationContainer } from '@react-navigation/native';
+import { DarkTheme as NavigationDarkTheme, DefaultTheme as NavigationLightTheme, NavigationContainer, useIsFocused } from '@react-navigation/native';
 import { createNativeStackNavigator, type NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useQueryClient } from '@tanstack/react-query';
 import { workspaceContinueWithoutAgentAvailableAtMs } from '@pulpo/contracts';
@@ -1324,14 +1329,12 @@ function AndroidTemporaryChatHeaderControl(props: TemporaryChatHeaderControlProp
         label={props.leadingAction === 'save' ? props.saving ? 'Saving chat' : 'Save chat' : props.expirationEnabled ? 'Disable automatic expiration' : 'Enable automatic expiration'}
         disabled={!visible || (props.leadingAction === 'save' && (props.saving || props.saveDisabled))}
         color={props.leadingAction === 'expiration' && props.expirationEnabled ? '#14B8A6' : undefined}
-        selected={props.leadingAction === 'expiration' && props.expirationEnabled}
         onPress={props.leadingAction === 'save' ? props.onSave : props.onToggleExpiration} />
     </Reanimated.View>
     <MaterialIconButton icon={props.trailingAction === 'ghost' ? 'ghost' : 'square.and.pencil'}
       label={props.trailingAction === 'ghost' ? props.active ? 'Disable temporary chat' : 'Enable temporary chat' : props.active ? 'New temporary chat' : 'New chat'}
-      color={props.active ? temporaryColors.onControl : undefined}
-      containerColor={props.active ? temporaryColors.control : undefined}
-      selected={props.active} onPress={props.trailingAction === 'ghost' ? props.onToggleTemporary : props.onNewChat} />
+      color={props.active ? temporaryColors.accent : undefined}
+      onPress={props.trailingAction === 'ghost' ? props.onToggleTemporary : props.onNewChat} />
   </View>;
 }
 
@@ -1594,6 +1597,9 @@ function PrototypeRoot() {
 }
 
 function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParamList, 'Chat'>) {
+  const isFocused = useIsFocused();
+  const pendingImports = useSyncExternalStore(incomingFiles.subscribe, incomingFiles.getSnapshot);
+  const navigatedImport = useRef<string | null>(null);
   const { styles } = useChatStyles();
   const queryClient = useQueryClient();
   const productionInstanceUrl = useSessionStore((state) => state.instanceUrl);
@@ -2077,8 +2083,10 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     discardStoredChat(chat.id);
     if (!productionUserId) return;
     const namespace = cacheNamespace(productionInstanceUrl, productionUserId);
-    deleteCachedComposerDraft(composerDraftScope(namespace, chat.id));
-    void saveDraft(namespace, chat.id, '', []);
+    for (const draftId of [chat.id, localComposerDraftId(chat.id, true)]) {
+      deleteCachedComposerDraft(composerDraftScope(namespace, draftId));
+      void saveDraft(namespace, draftId, '', []);
+    }
     discardOptimisticChat(namespace, chat.id);
     queryClient.removeQueries({ queryKey: queryKeys.chat(namespace, chat.id), exact: true });
     for (const message of chat.messages) {
@@ -2186,6 +2194,21 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     composerFollowsDefaultModel.current = true;
     setSelectedModelId(reconcileComposerModelId(prototypeModels, '', defaultModelId, true));
   }, [abandonActiveTemporaryChat, defaultModelId, interruptDrawerTransition, prototypeModels]);
+
+  useEffect(() => {
+    if (!productionScopeReady || !productionUserId) return;
+    const namespace = cacheNamespace(productionInstanceUrl, productionUserId);
+    const incoming = pendingImports.find((item) => item.namespace === namespace);
+    if (!incoming || navigatedImport.current === incoming.id) return;
+    navigatedImport.current = incoming.id;
+    navigation.popTo('Chat', { chatId: undefined });
+    if (activeChatId) newChat();
+    setModelSheet(false);
+    animatePanel(false);
+    setComposerFocusSuppressed(false);
+    composerFocusRevision.current += 1;
+    setComposerFocusRequest({ revision: composerFocusRevision.current, target: 'composer' });
+  }, [activeChatId, animatePanel, navigation, newChat, pendingImports, productionInstanceUrl, productionScopeReady, productionUserId]);
 
   const newChatFromHistory = useCallback(() => {
     newChat();
@@ -2656,6 +2679,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
         >
           <View collapsable={false} style={styles.flex} importantForAccessibility={!persistentSidebar && panelOpen ? 'no-hide-descendants' : 'auto'} accessibilityElementsHidden={!persistentSidebar && panelOpen}>
           <ChatView
+            acceptIncomingFiles={!activeChatId && productionScopeReady && isFocused}
             messages={messages}
             queuedMessages={activePrototypeChat?.queuedMessages ?? EMPTY_MOBILE_QUEUE}
             chatId={activeChat?.id ?? null}
@@ -3092,7 +3116,7 @@ const ToolStepRow = memo(function ToolStepRow({ step }: { step: Extract<Timeline
   const [open, setOpen] = useState(false);
   const failed = step.tool.status === 'failed' || step.tool.isError;
   const running = step.tool.status === 'running';
-  const hasBody = step.tool.arguments !== undefined || Boolean(step.tool.output);
+  const hasBody = step.tool.arguments !== undefined || Boolean(step.tool.output) || Boolean(step.tool.imagePreview);
   const details = useMemo(() => [
     step.tool.arguments === undefined ? '' : typeof step.tool.arguments === 'string' ? step.tool.arguments : JSON.stringify(step.tool.arguments, null, 2),
     step.tool.output ?? '',
@@ -3118,6 +3142,7 @@ const ToolStepRow = memo(function ToolStepRow({ step }: { step: Extract<Timeline
         {seconds !== null && <Text style={styles.workToolDuration}>{seconds}s</Text>}
         {hasBody && <Icon name={open ? 'chevron.down' : 'chevron.right'} size={10} color={COLORS.dim} weight="semibold" />}
       </Pressable>
+      <ToolImagePreview preview={step.tool.imagePreview} expanded={open} mutedColor={COLORS.muted} />
       {open && details ? (
         <ScrollView nestedScrollEnabled style={styles.workDetailScroller}>
           <Text selectable style={styles.workDetail}>{details}</Text>
@@ -3752,9 +3777,10 @@ function ComposerQueueSection({ title, subject, collapsed, onToggle, failed = fa
 }
 
 function ChatView({
-  messages, queuedMessages, chatId, chatLoaded, onTranscriptReady, openingChatId, draftNamespace, keyboardLayoutEnabled, transcriptTransitionActive, model, models, prototypeModel, presetSelections: defaultPresetSelections, input, composerInputRef, composerFocusSuppressed, composerFocusRequest, onChangeInput, onSend, assistantStatus,
+  acceptIncomingFiles, messages, queuedMessages, chatId, chatLoaded, onTranscriptReady, openingChatId, draftNamespace, keyboardLayoutEnabled, transcriptTransitionActive, model, models, prototypeModel, presetSelections: defaultPresetSelections, input, composerInputRef, composerFocusSuppressed, composerFocusRequest, onChangeInput, onSend, assistantStatus,
   onEdit, onRegenerate, onActivateBranch, onOpenChat, onStop, onTogglePanel, onOpenModelPicker, onSelectModel, onNewChat, onSaveTemporary, persistentSidebar, sidebarVisible, temporary, autoExpire, expirationPeriod, showAutoExpirationControl, expired, savingTemporary, onTemporaryChange, onAutoExpirationChange,
 }: {
+  acceptIncomingFiles: boolean;
   messages: Message[];
   queuedMessages: MobileQueuedMessage[];
   chatId: string | null;
@@ -4114,7 +4140,7 @@ function ChatView({
   }), []);
 
   useEffect(() => {
-    const draftId = chatId ?? NEW_CHAT_DRAFT_ID;
+    const draftId = localComposerDraftId(chatId, temporary);
     const scope = `${draftNamespace ?? 'local'}\u0000${draftId}`;
     const previous = activeDraftRef.current;
     if (previous?.scope === scope) return;
@@ -4173,7 +4199,7 @@ function ChatView({
         setHydratedComposerScope(scope);
       }
     });
-  }, [activeDraftSnapshot, chatId, draftNamespace, onChangeInput, placeComposerCursorAtEnd, setAttachments]);
+  }, [activeDraftSnapshot, chatId, temporary, draftNamespace, onChangeInput, placeComposerCursorAtEnd, setAttachments]);
 
   const sharedComposerState: ComposerState = {
     content: preservedComposerRef.current?.input ?? input,
@@ -4183,9 +4209,9 @@ function ChatView({
     model: { id: model.id, presets: presetSelections },
     agentMode: preservedComposerRef.current?.agentEnabled ?? agentEnabled, temporary, autoExpire,
   };
-  const { sync: composerSync, skipNextEdit } = useComposerSync(
-    draftNamespace, chatId ?? NEW_CHAT_DRAFT_ID, sharedComposerState,
-    hydratedComposerScope === `${draftNamespace ?? 'local'}\u0000${chatId ?? NEW_CHAT_DRAFT_ID}`,
+  const { sync: composerSync, ready: composerSyncReady, skipNextEdit } = useComposerSync(
+    draftNamespace, localComposerDraftId(chatId, temporary), sharedComposerState,
+    hydratedComposerScope === `${draftNamespace ?? 'local'}\u0000${localComposerDraftId(chatId, temporary)}`,
     Boolean(messageEdit || shelfBusy),
     (remote) => {
       const current = preservedComposerRef.current?.attachments ?? attachmentsRef.current;
@@ -4217,7 +4243,6 @@ function ChatView({
           if (selected && selected.id !== model.id) onSelectModel(selected);
         }
         if (!chatId) {
-          if (remote.temporary !== temporary) onTemporaryChange(remote.temporary);
           if (remote.autoExpire !== autoExpire) onAutoExpirationChange(remote.autoExpire);
         }
       }
@@ -4441,7 +4466,7 @@ function ChatView({
       attempt: 0,
       managed: true,
     }));
-    const result = selectAttachmentBatch(attachments, coordinated);
+    const result = selectAttachmentBatch(attachmentsRef.current, coordinated);
     if (result.accepted.length) {
       setAttachments((current) => [...current, ...result.accepted].slice(0, MAX_COMPOSER_ATTACHMENTS));
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -4452,7 +4477,28 @@ function ChatView({
         `You can attach up to ${MAX_COMPOSER_ATTACHMENTS} items. ${result.overflowCount} ${result.overflowCount === 1 ? 'item was' : 'items were'} not added.`,
       );
     }
-  }, [attachments, setAttachments]);
+    return result.accepted;
+  }, [setAttachments]);
+
+  useIncomingFileImport(incomingFiles, {
+    namespace: draftNamespace,
+    ready: acceptIncomingFiles && composerSyncReady && !chatId && !messageEdit && !sending && !shelfBusy
+      && hydratedComposerScope === `${draftNamespace ?? 'local'}\u0000${localComposerDraftId(chatId, temporary)}`,
+    report: (message) => Alert.alert('Couldn’t import file', message),
+    accept: (item) => {
+      const prepared = incomingFileAttachment(item, attachmentsRef.current,
+        useSessionStore.getState().config?.limits.maxAttachmentBytes);
+      if (prepared.error) {
+        Alert.alert('Couldn’t import file', prepared.error);
+        return { accepted: false, saved: Promise.resolve() };
+      }
+      if (prepared.attachment) addAttachments([prepared.attachment]);
+      const identity = activeDraftRef.current!;
+      const snapshot = activeDraftSnapshot();
+      cacheComposerDraft(identity.scope, snapshot);
+      return { accepted: true, saved: saveDraft(identity.namespace!, identity.draftId, snapshot.body, snapshot.attachments) };
+    },
+  });
 
   const pickPhotos = useCallback(async () => {
     try {
@@ -4623,7 +4669,10 @@ function ChatView({
     if (identity) cacheComposerDraft(identity.scope, { body: after.content, attachments: next });
     // Invalidate the old upload owner. Any late completion cleans up its own
     // reservation; the shelf owns durable copies and its own upload attempts.
-    for (const a of old) { latestAttachmentsRef.current.delete(a.localId); attachmentDraftOwnersRef.current.delete(a.localId); }
+    for (const a of old) {
+      if (a.localId.startsWith('import:')) releaseImportedFile(a.uri);
+      latestAttachmentsRef.current.delete(a.localId); attachmentDraftOwnersRef.current.delete(a.localId);
+    }
     skipNextEdit();
     inputRef.current = after.content; onChangeInput(after.content); setAttachments(next);
     composerSync?.replaceShelfContent('new', { ...sharedComposerState, content: after.content,
@@ -4645,7 +4694,7 @@ function ChatView({
       attachments: draft.attachments.map((item) => item.localId === attachment.localId ? attachment : item),
     };
     cacheComposerDraft(owner.scope, updated);
-    if (owner.namespace && attachment.state === 'ready' && attachment.serverId) {
+    if (owner.namespace && !owner.draftId.startsWith('temporary:') && attachment.state === 'ready' && attachment.serverId) {
       mobileComposerSync(owner.namespace)?.attachToInactiveDraft(owner.draftId, { id: attachment.serverId, name: attachment.name, mimeType: attachment.mimeType, size: attachment.size ?? 0 });
     }
     if (owner.namespace) void saveDraft(owner.namespace, owner.draftId, updated.body, updated.attachments);
@@ -4657,6 +4706,13 @@ function ChatView({
     const active = activeUploadsRef.current.get(current.localId);
     if (active?.attempt === current.attempt) return active.promise;
 
+    const uploadNamespace = draftNamespace;
+    const assertUploadSession = async () => {
+      const session = useSessionStore.getState();
+      if (!session.user || session.status !== 'authenticated' || cacheNamespace(session.instanceUrl, session.user.id) !== uploadNamespace) {
+        throw new Error('The attachment session ended.');
+      }
+    };
     const attempted = startUploadAttempt(current);
     latestAttachmentsRef.current.set(attempted.localId, attempted);
     setAttachments((values) => values.map((item) => item.localId === attempted.localId ? attempted : item));
@@ -4670,7 +4726,7 @@ function ChatView({
           mimeType: attempted.mimeType,
           sizeBytes: attempted.size ?? 0,
           state: 'uploading',
-        }, null);
+        }, null, assertUploadSession);
         const settled = settleUploadSuccess({
           attempted,
           current: latestAttachmentsRef.current.get(attempted.localId),
@@ -4709,7 +4765,7 @@ function ChatView({
     })();
     activeUploadsRef.current.set(attempted.localId, { attempt: attempted.attempt, promise });
     return promise;
-  }, [persistInactiveDraftAttachment, setAttachments]);
+  }, [draftNamespace, persistInactiveDraftAttachment, setAttachments]);
 
   useEffect(() => {
     for (const attachment of attachments) {
@@ -4727,6 +4783,7 @@ function ChatView({
       const target = current.find((attachment) => attachment.localId === localId);
       const cleanupId = target && cleanupServerIdOnRemoval(target, messageEdit?.originalAttachmentIds);
       if (cleanupId) void deleteUnreferencedAttachment(cleanupId).catch(() => undefined);
+      if (target?.localId.startsWith('import:')) releaseImportedFile(target.uri);
       latestAttachmentsRef.current.delete(localId);
       attachmentDraftOwnersRef.current.delete(localId);
       return current.filter((attachment) => attachment.localId !== localId);
@@ -4834,6 +4891,7 @@ function ChatView({
         ? cachedComposerDraft<ComposerAttachment>(submittedDraftIdentity.scope)?.attachments ?? [] : [];
       for (const attachment of submittedDraft.attachments) {
         if ([...attachmentsRef.current, ...retainedAttachments].some((item) => item.localId === attachment.localId)) continue;
+        if (attachment.localId.startsWith('import:')) releaseImportedFile(attachment.uri);
         latestAttachmentsRef.current.delete(attachment.localId);
         activeUploadsRef.current.delete(attachment.localId);
         attachmentDraftOwnersRef.current.delete(attachment.localId);
@@ -5478,6 +5536,8 @@ function ChatView({
                 <View style={styles.flex} />
                 {Platform.OS === 'ios' ? (
                   <>
+                    {showShelf && Boolean(input.trim() || attachments.length) && <NativeComposerIconButton label="Shelve draft" systemImage="archivebox"
+                      disabled={shelfBusy || sending} onPress={() => { void transferShelf(); }} />}
                     <SwiftUIHost ignoreSafeArea="keyboard" style={styles.nativeAgentHost}>
                       <SwiftUIButton
                         onPress={() => {
@@ -5500,8 +5560,6 @@ function ChatView({
                         </SwiftUIRNHostView>
                       </SwiftUIButton>
                     </SwiftUIHost>
-                    {showShelf && <NativeComposerIconButton label="Shelve draft" systemImage="archivebox"
-                      disabled={shelfBusy || sending || (!input.trim() && !attachments.length)} onPress={() => { void transferShelf(); }} />}
                     <NativeComposerIconButton
                       disabled={shelfBusy || composerAction === 'submit' && !canSend}
                       label={composerAction === 'stop' ? 'Stop generating' : messageEdit ? queueEditRef.current ? 'Save queued message' : 'Save and resend message' : 'Send message'}
@@ -5512,8 +5570,8 @@ function ChatView({
                   </>
                 ) : (
                   <>
-                    <MaterialIconButton label={activeAgentEnabled ? 'Turn off Agent mode' : 'Turn on Agent mode'} icon="bot" color={activeAgentEnabled ? nativeAgentTint : undefined} selected={activeAgentEnabled} disabled={!canUseAgent} onPress={toggleAgent} />
-                    {showShelf && <MaterialIconButton label="Shelve draft" icon="archivebox" disabled={shelfBusy || sending || (!input.trim() && !attachments.length)} onPress={() => { void transferShelf(); }} />}
+                    {showShelf && Boolean(input.trim() || attachments.length) && <MaterialIconButton label="Shelve draft" icon="archivebox" disabled={shelfBusy || sending} onPress={() => { void transferShelf(); }} />}
+                    <MaterialIconButton label={activeAgentEnabled ? 'Turn off Agent mode' : 'Turn on Agent mode'} icon="bot" color={activeAgentEnabled ? nativeAgentTint : undefined} disabled={!canUseAgent} onPress={toggleAgent} />
                     <MaterialIconButton label={composerAction === 'stop' ? 'Stop generating' : messageEdit ? queueEditRef.current ? 'Save queued message' : 'Save and resend message' : 'Send message'} icon={composerAction === 'stop' ? 'stop.fill' : 'arrow.up'} prominent disabled={shelfBusy || composerAction === 'submit' && !canSend} onPress={() => composerAction === 'stop' ? onStop() : submitMessage()} />
                   </>
                 )}

@@ -493,3 +493,15 @@ adapter adds no independent strong transcript owner.
 
 The user requested leaving the concurrent iPhone deployment alone. This final
 viewport update is not deployed to either physical device.
+
+### Sync with dev
+
+Merged dev `5fd556dd` after the performance fix (`1b650950`). The two conflicts
+were imports and ChatView props; the resolution retains the file-import hooks,
+Android icon fixes, and the performance selection/viewport behavior. The merged
+source passes 505 mobile tests, 82 client-core tests, 78 contracts tests, mobile
+type checking, changed-file lint, and both production exports.
+
+The native performance runs above predate this sync. A fresh native Release
+rebuild including dev's new file-import module was not performed for this merge.
+The connected devices and the other task's deployment remain untouched.

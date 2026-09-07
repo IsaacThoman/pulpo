@@ -13,6 +13,10 @@ const uploading: StagedAttachment = {
 }
 
 describe('optimistic attachment sends', () => {
+  it('uses the uploaded cache for imported files after their originals are released', () => {
+    expect(readyTranscriptAttachments([{ ...uploading, localId: 'import:uuid', state: 'ready', serverId: 'server-image' }])[0])
+      .toMatchObject({ uri: '', id: 'server-image', mimeType: 'image/heic' })
+  })
   it('creates stable new-chat, response, and input IDs before dispatch', () => {
     const ids = ['response-id', 'chat-id']
     expect(createOptimisticSendIdentity({

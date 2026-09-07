@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { composerPatch, sameComposerContent } from '@pulpo/client-core'
 import type { ComposerState } from '@pulpo/contracts'
 import { usePreferencesStore } from '../../store/preferences'
@@ -15,7 +15,8 @@ export function useComposerSync(userId: string | null, draftId: string, state: C
   const skippingEdit = useRef(false)
   const hiddenSubmission = useRef<ComposerState | null>(null)
   const opened = useRef<string | null>(null)
-  const sync = enabled && userId ? mobileComposerSync(userId) : null
+  const sync = enabled && !state.temporary && userId ? mobileComposerSync(userId) : null
+  const [initialized, setInitialized] = useState<{ identity: string; sync: typeof sync } | null>(null)
   useEffect(() => {
     if (!sync || !hydrated) return
     let disposed = false
@@ -26,7 +27,7 @@ export function useComposerSync(userId: string | null, draftId: string, state: C
     skippingEdit.current = false
     hiddenSubmission.current = null
     void sync.open(draftId, latest.current.state, (checkpoint) => {
-      if (disposed || !usePreferencesStore.getState().composerSyncEnabled || latest.current.identity !== identity) return
+      if (disposed || latest.current.state.temporary || !usePreferencesStore.getState().composerSyncEnabled || latest.current.identity !== identity) return
       opened.current = identity
       let remote = { ...checkpoint.snapshot.state, ...checkpoint.pending }
       // An optimistic clear is local until acceptance. Coordinator notifications
@@ -44,7 +45,10 @@ export function useComposerSync(userId: string | null, draftId: string, state: C
       if (Object.keys(composerPatch(latest.current.state, display)).length) {
         latest.current.apply(display)
       }
-    }).then((cleanup) => { if (disposed) cleanup(); else close = cleanup })
+    }).then((cleanup) => {
+      if (disposed) cleanup()
+      else { close = cleanup; setInitialized({ identity, sync }) }
+    })
     return () => { disposed = true; opened.current = null; close?.() }
   }, [sync, draftId, hydrated, identity])
   useLayoutEffect(() => {
@@ -64,5 +68,9 @@ export function useComposerSync(userId: string | null, draftId: string, state: C
     baseline.current = state
     sync.edit(draftId, patch)
   })
-  return { sync, skipNextEdit: () => { hiddenSubmission.current = latest.current.state; skippingEdit.current = true } }
+  return {
+    sync,
+    ready: hydrated && (!sync || (initialized?.identity === identity && initialized.sync === sync)),
+    skipNextEdit: () => { hiddenSubmission.current = latest.current.state; skippingEdit.current = true },
+  }
 }
