@@ -3940,6 +3940,10 @@ function ChatView({
   const latestAttachmentsRef = useRef(new Map<string, ComposerAttachment>());
   const activeUploadsRef = useRef(new Map<string, { attempt: number; promise: Promise<PreparedAttachment | null> }>());
   const activeDraftRef = useRef<ComposerDraftIdentity | null>(null);
+  const [handoffBusy, setHandoffBusy] = useState(false);
+  const handoffBusyRef = useRef(false);
+  const handoffIdentityRef = useRef('');
+  handoffIdentityRef.current = `${draftNamespace ?? 'local'}\u0000${localComposerDraftId(chatId, temporary)}`;
   const attachmentDraftOwnersRef = useRef(new Map<string, ComposerDraftIdentity>());
   const nativeImagePreviewPendingRef = useRef(false);
   const draftOwnerRef = useRef(`draft:${Crypto.randomUUID()}`);
@@ -4276,11 +4280,14 @@ function ChatView({
     model: { id: model.id, presets: presetSelections },
     agentMode: preservedComposerRef.current?.agentEnabled ?? agentEnabled, temporary, autoExpire,
   };
+  const currentComposerState = useRef(sharedComposerState);
+  currentComposerState.current = sharedComposerState;
   const { sync: composerSync, ready: composerSyncReady, skipNextEdit } = useComposerSync(
     draftNamespace, localComposerDraftId(chatId, temporary), sharedComposerState,
-    hydratedComposerScope === `${draftNamespace ?? 'local'}\u0000${localComposerDraftId(chatId, temporary)}`,
+    !handoffBusy && hydratedComposerScope === `${draftNamespace ?? 'local'}\u0000${localComposerDraftId(chatId, temporary)}`,
     Boolean(messageEdit || shelfBusy),
     (remote) => {
+      if (handoffBusyRef.current) return;
       const current = preservedComposerRef.current?.attachments ?? attachmentsRef.current;
       const byId = new Map(current.map((a) => [a.serverId, a]));
       const next: ComposerAttachment[] = [
@@ -4317,15 +4324,15 @@ function ChatView({
 
   useEffect(() => {
     const active = activeDraftRef.current;
-    if (!active || hydratedDraftScopeRef.current !== active.scope || messageEdit) return;
+    if (!active || hydratedDraftScopeRef.current !== active.scope || messageEdit || handoffBusy) return;
     const draft = { body: inputRef.current, attachments: [...attachmentsRef.current] };
     cacheComposerDraft(active.scope, draft);
     if (!active.namespace) return;
     const timeout = setTimeout(() => {
-      void saveDraft(active.namespace!, active.draftId, draft.body, draft.attachments);
+      if (!handoffBusyRef.current && activeDraftRef.current === active) void saveDraft(active.namespace!, active.draftId, draft.body, draft.attachments);
     }, 150);
     return () => clearTimeout(timeout);
-  }, [attachments, input, messageEdit]);
+  }, [attachments, handoffBusy, input, messageEdit]);
 
   useEffect(() => {
     if (messageEditChatIdRef.current === chatId) return;
@@ -4752,6 +4759,57 @@ function ChatView({
     }
   });
 
+  const toggleTemporary = async () => {
+    if (chatId || messages.length || handoffBusyRef.current) return;
+    if (sendingRef.current || messageEdit || shelfBusyRef.current || isDictationBusy()
+      || hydratedDraftScopeRef.current !== activeDraftRef.current?.scope) return;
+    const previous = activeDraftRef.current!;
+    const identity = handoffIdentityRef.current;
+    const nextId = localComposerDraftId(null, !temporary);
+    const destination = { namespace: draftNamespace, draftId: nextId, scope: `${draftNamespace ?? 'local'}\u0000${nextId}` };
+    const draft = activeDraftSnapshot();
+    handoffBusyRef.current = true; setHandoffBusy(true);
+    cacheComposerDraft(destination.scope, draft);
+    // Move upload ownership before any asynchronous work can settle an upload.
+    activeDraftRef.current = destination;
+    for (const attachment of attachmentsRef.current) attachmentDraftOwnersRef.current.set(attachment.localId, destination);
+    try {
+      const coordinator = draftNamespace ? mobileComposerSync(draftNamespace) : null;
+      const moveLocal = async () => {
+        if (draftNamespace) {
+          await saveDraft(draftNamespace, nextId, draft.body, draft.attachments);
+          await saveDraft(draftNamespace, previous.draftId, '', []);
+        }
+        cacheComposerDraft(previous.scope, { body: '', attachments: [] });
+        cacheComposerDraft(destination.scope, draft);
+      };
+      if (!temporary && coordinator) await coordinator.takeTemporary('new', moveLocal);
+      else await moveLocal();
+      if (!shelfMounted.current || handoffIdentityRef.current !== identity) return;
+      if (temporary) await coordinator?.returnFromTemporary('new', {
+        ...currentComposerState.current, content: draft.body, temporary: false,
+        attachments: draft.attachments.map((a) => latestAttachmentsRef.current.get(a.localId) ?? a).filter((a) => a.state === 'ready' && a.serverId)
+          .map((a) => ({ id: a.serverId!, name: a.name, mimeType: a.mimeType, size: a.size ?? 0 })),
+      });
+      if (!shelfMounted.current || handoffIdentityRef.current !== identity) return;
+      draftLoadRevisionRef.current += 1;
+      hydratedDraftScopeRef.current = destination.scope;
+      setHydratedComposerScope(destination.scope);
+      onTemporaryChange(!temporary);
+      Haptics.selectionAsync();
+    } catch (error) {
+      cacheComposerDraft(previous.scope, draft);
+      if (shelfMounted.current && handoffIdentityRef.current === identity) {
+        activeDraftRef.current = previous;
+        for (const attachment of attachmentsRef.current) attachmentDraftOwnersRef.current.set(attachment.localId, previous);
+        Alert.alert('Couldn’t change temporary mode', error instanceof Error ? error.message : 'Please try again.');
+      }
+    } finally {
+      handoffBusyRef.current = false;
+      if (shelfMounted.current) setHandoffBusy(false);
+    }
+  };
+
   const persistInactiveDraftAttachment = useCallback((attachment: ComposerAttachment) => {
     const owner = attachmentDraftOwnersRef.current.get(attachment.localId);
     if (!owner || owner.scope === activeDraftRef.current?.scope) return;
@@ -4860,7 +4918,7 @@ function ChatView({
   }, [messageEdit, setAttachments]);
 
   const submitMessage = async () => {
-    if (sendingRef.current || isDictationBusy()) return;
+    if (handoffBusyRef.current || sendingRef.current || isDictationBusy()) return;
     const sendPolicy = attachmentSendPolicy(attachments, { editing: Boolean(messageEdit) });
     if (!sendPolicy.allowed) {
       Alert.alert(
@@ -5295,10 +5353,7 @@ function ChatView({
                 onAutoExpirationChange(!autoExpire);
                 Haptics.selectionAsync();
               }}
-              onToggleTemporary={() => {
-                onTemporaryChange(!temporary);
-                Haptics.selectionAsync();
-              }}
+              onToggleTemporary={() => { void toggleTemporary(); }}
               onNewChat={onNewChat}
               onSave={onSaveTemporary}
               saveDisabled={expired}
@@ -5560,7 +5615,7 @@ function ChatView({
                 ref={composerInputRef}
                 accessibilityLabel="Message"
                 disableFullscreenUI
-                editable={!shelfBusy && !composerFocusSuppressed && !(messageEdit && sending)}
+                editable={!handoffBusy && !shelfBusy && !composerFocusSuppressed && !(messageEdit && sending)}
                 maxFontSizeMultiplier={1.6}
                 multiline
                 maxLength={1_000_000}
