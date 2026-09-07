@@ -1,3 +1,4 @@
+import { createDrawerTransition } from '../features/chat/drawerTransition';
 import { protectTranscript } from '../data/transcriptResidency';
 import { DevicesScreen } from '../components/Devices';
 import { initialActivityTiming } from '@pulpo/client-core';
@@ -1603,6 +1604,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   const wideSidebarProgress = useSharedValue(1);
   const wideSidebarGestureStart = useSharedValue(1);
   const [panelOpen, setPanelOpen] = useState(false);
+  const [drawerTransition] = useState(createDrawerTransition);
   const [wideSidebarVisible, setWideSidebarVisible] = useState(true);
   const [modelSheet, setModelSheet] = useState(false);
   const composerInputRef = useRef<TextInput>(null);
@@ -1717,13 +1719,18 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   useEffect(() => {
     const requestedChatId = route.params?.chatId;
     if (!requestedChatId || !storedChats.some((chat) => chat.id === requestedChatId && chat.deletedAt === null)) return;
+    drawerTransition.cancel();
+    cancelAnimation(slideX);
+    slideX.value = 0;
+    setPanelOpen(false);
+    setComposerFocusSuppressed(false);
     composerFollowsDefaultModel.current = false;
     setActiveChatId(requestedChatId);
     const requestedChat = storedChats.find((chat) => chat.id === requestedChatId);
     if (requestedChat?.modelId) setSelectedModelId(requestedChat.modelId);
     setAssistantStatus('idle');
     navigation.setParams({ chatId: undefined });
-  }, [navigation, route.params?.chatId, storedChats]);
+  }, [drawerTransition, navigation, route.params?.chatId, slideX, storedChats]);
 
   const dismissComposer = useCallback(() => {
     composerInputRef.current?.blur();
@@ -1735,18 +1742,40 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     setComposerFocusSuppressed(false);
   }, [dismissComposer]);
 
+  const interruptDrawerTransition = useCallback(() => {
+    drawerTransition.cancel();
+    setComposerFocusSuppressed(false);
+  }, [drawerTransition]);
+
+  useLayoutEffect(() => {
+    cancelAnimation(slideX);
+    slideX.value = 0;
+    setPanelOpen(false);
+    setComposerFocusSuppressed(false);
+    return () => drawerTransition.cancel();
+  }, [drawerTransition, productionInstanceUrl, productionUserId, persistentSidebar, slideX]);
+
   const animatePanel = useCallback((open: boolean, velocity = 0, onFinished?: () => void) => {
-    if (persistentSidebar) {
+    const finish = drawerTransition.begin(() => {
+      setPanelOpen(open);
+      setComposerFocusSuppressed(false);
       onFinished?.();
+    });
+    if (persistentSidebar) {
+      finish(true);
       return;
     }
-    setPanelOpen(open);
-    if (open) Keyboard.dismiss();
+    // Keep keyboard/layout ownership with the drawer until it finishes closing.
+    if (open) {
+      setPanelOpen(true);
+      setComposerFocusSuppressed(false);
+      Keyboard.dismiss();
+    }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     const target = open ? openOffset : 0;
     if (reduceMotion) {
       slideX.value = target;
-      onFinished?.();
+      finish(true);
       return;
     }
     slideX.value = withSpring(target, {
@@ -1756,9 +1785,9 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
       mass: 0.9,
       overshootClamping: true,
     }, (finished) => {
-      if (finished && onFinished) runOnJS(onFinished)();
+      runOnJS(finish)(finished === true);
     });
-  }, [openOffset, persistentSidebar, reduceMotion, slideX]);
+  }, [drawerTransition, openOffset, persistentSidebar, reduceMotion, slideX]);
 
   useEffect(() => {
     if (Platform.OS !== 'android' || !panelOpen) return;
@@ -1825,6 +1854,8 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     .activeOffsetX(10)
     .failOffsetY([-12, 12])
     .onStart(() => {
+      cancelAnimation(slideX);
+      runOnJS(interruptDrawerTransition)();
       gestureStartX.value = slideX.value;
       runOnJS(dismissKeyboard)();
     })
@@ -1834,6 +1865,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     .onEnd((event) => settlePanelGesture(event.velocityX)), [
       dismissKeyboard,
       gestureStartX,
+      interruptDrawerTransition,
       openOffset,
       panelOpen,
       persistentSidebar,
@@ -1846,6 +1878,8 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     .activeOffsetX([-10, 10])
     .failOffsetY([-12, 12])
     .onStart(() => {
+      cancelAnimation(slideX);
+      runOnJS(interruptDrawerTransition)();
       gestureStartX.value = slideX.value;
     })
     .onUpdate((event) => {
@@ -1853,6 +1887,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     })
     .onEnd((event) => settlePanelGesture(event.velocityX)), [
       gestureStartX,
+      interruptDrawerTransition,
       openOffset,
       panelOpen,
       persistentSidebar,
@@ -2007,15 +2042,23 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     thinkingTimer.current = null;
     setComposerFocusSuppressed(true);
     dismissComposer();
-    abandonActiveTemporaryChat();
-    composerFollowsDefaultModel.current = false;
-    setActiveChatId(chat.id);
-    setSelectedModelId(chat.modelId);
-    setAssistantStatus('idle');
-    composerFocusRevision.current += 1;
-    setComposerFocusRequest({ revision: composerFocusRevision.current, target: 'content' });
-    animatePanel(false, 0, finishExistingChatTransition);
-  }, [abandonActiveTemporaryChat, animatePanel, dismissComposer, finishExistingChatTransition]);
+    // Fetching, projection, and mounting the keyed transcript list must not
+    // compete with the native slide. Cached and offline chats take this path too.
+    animatePanel(false, 0, () => {
+      const session = useSessionStore.getState();
+      if (session.instanceUrl !== productionInstanceUrl || session.user?.id !== productionUserId) return;
+      const selected = usePrototypeStore.getState().chats.find((item) => item.id === chat.id && item.deletedAt === null);
+      if (!selected) return;
+      abandonActiveTemporaryChat();
+      composerFollowsDefaultModel.current = false;
+      setActiveChatId(selected.id);
+      setSelectedModelId(selected.modelId);
+      setAssistantStatus('idle');
+      composerFocusRevision.current += 1;
+      setComposerFocusRequest({ revision: composerFocusRevision.current, target: 'content' });
+      finishExistingChatTransition();
+    });
+  }, [abandonActiveTemporaryChat, animatePanel, dismissComposer, finishExistingChatTransition, productionInstanceUrl, productionUserId]);
 
   const openRecalledChat = useCallback((chatId: string) => {
     const source = historyChats.find((chat) => chat.id === chatId);
@@ -2027,6 +2070,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   }, [historyChats, selectChat]);
 
   const newChat = useCallback((temporaryByDefault = false) => {
+    interruptDrawerTransition();
     if (thinkingTimer.current) clearTimeout(thinkingTimer.current);
     thinkingTimer.current = null;
     abandonActiveTemporaryChat();
@@ -2035,7 +2079,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     setNewChatTemporary(temporaryByDefault);
     composerFollowsDefaultModel.current = true;
     setSelectedModelId(reconcileComposerModelId(prototypeModels, '', defaultModelId, true));
-  }, [abandonActiveTemporaryChat, defaultModelId, prototypeModels]);
+  }, [abandonActiveTemporaryChat, defaultModelId, interruptDrawerTransition, prototypeModels]);
 
   const newChatFromHistory = useCallback(() => {
     newChat();
@@ -2046,10 +2090,11 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   }, [animatePanel, newChat]);
 
   const openSettingsFromHistory = useCallback(() => {
+    animatePanel(false);
     abandonActiveTemporaryChat();
     Keyboard.dismiss();
     navigation.navigate('Settings');
-  }, [abandonActiveTemporaryChat, navigation]);
+  }, [abandonActiveTemporaryChat, animatePanel, navigation]);
 
   const saveActiveTemporaryChat = useCallback(async () => {
     if (!activeChatId || savingTemporaryChatId) return;
@@ -5019,6 +5064,7 @@ function ChatView({
           keyboardDismissMode="interactive"
           keyboardShouldPersistTaps="handled"
           key={chatId ?? 'unsaved-chat'}
+          testID={`chat-transcript-${chatId ?? 'unsaved-chat'}`}
           keyExtractor={(message) => message.id}
           ListFooterComponent={assistantStatus === 'thinking' && !hasPendingAssistant ? (
             <View accessibilityLiveRegion="polite" style={[styles.assistantRow, styles.transcriptColumn]}>
@@ -5287,7 +5333,8 @@ function ChatView({
 function NativeDrawerSearch({ value, focused, onChange, onFocusChange, fieldRef }: { value: string; focused: boolean; onChange: (value: string) => void; onFocusChange: (focused: boolean) => void; fieldRef: RefObject<SwiftUITextFieldRef | null> }) {
   const { styles } = useChatStyles();
   const nativeValue = useNativeState(value);
-  useEffect(() => { if (nativeValue.get() !== value) nativeValue.set(value); }, [nativeValue, value]);
+  // Native owns edits. Echoing the asynchronous filter value back can replace
+  // newer keystrokes; the clear button below writes the binding explicitly.
 
   if (!focused && value.length === 0) {
     return <SwiftUIHost style={styles.nativeDrawerSearchHost}>

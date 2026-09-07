@@ -1,5 +1,25 @@
 import XCTest
 final class PerformanceUITests: XCTestCase {
+  func testSelectLongAndCachedChats() {
+    continueAfterFailure = false
+    let app = XCUIApplication(bundleIdentifier: "com.isaacthoman.pulpo")
+    app.launch()
+    // The second pass reopens resident transcripts. The first uses local disk
+    // detail while the fixture deliberately delays network revalidation.
+    for _ in 0..<2 {
+      for (title, suffix) in [("Performance 1000 turns", "000000000100"), ("Performance chat 2", "000000000101")] {
+        let open = app.buttons["Open chats"]
+        XCTAssertTrue(open.waitForExistence(timeout: 30))
+        open.tap()
+        let row = app.staticTexts[title].firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 5))
+        row.tap()
+        let transcript = app.descendants(matching: .any).matching(identifier: "chat-transcript-00000000-0000-4000-8000-\(suffix)").firstMatch
+        XCTAssertTrue(transcript.waitForExistence(timeout: 10))
+        XCTAssertFalse(app.keyboards.firstMatch.exists)
+      }
+    }
+  }
   func testLargeHistorySwipe() {
     continueAfterFailure = false
     let app = XCUIApplication(bundleIdentifier: "com.isaacthoman.pulpo")
@@ -20,7 +40,8 @@ final class PerformanceUITests: XCTestCase {
     let search = app.textFields.firstMatch
     XCTAssertTrue(search.waitForExistence(timeout: 3))
     search.tap(); search.typeText("Performance chat 5000")
-    XCTAssertTrue(app.staticTexts["Performance chat 5000"].firstMatch.waitForExistence(timeout: 5))
+    XCTAssertEqual(search.value as? String, "Performance chat 5000")
+    XCTAssertTrue(app.staticTexts["Performance chat 5000"].firstMatch.waitForExistence(timeout: 5), app.debugDescription)
   }
   func testPreviewAndResume() {
     continueAfterFailure = false

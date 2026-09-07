@@ -155,3 +155,32 @@ fixture bundle. Raw screenshots/logs remain outside Git.
 Regression coverage includes 5,000-chat projection, unchanged transcript updates,
 ordering, removal/reinsertion, visibility, folders, expiry, and date boundaries.
 Mobile type checking, repository lint, and all 441 mobile tests passed.
+
+## Chat-selection slide follow-up
+
+Selecting a history row changed the active chat before starting the closing
+spring. That started transcript hydration/projection and remounted the keyed
+message list during the slide, including native Markdown and composer layout.
+Selection now commits from the spring's successful completion callback. The
+drawer retains keyboard/layout ownership until it closes; reduced motion and
+persistent sidebars commit immediately.
+
+A completion owner rejects callbacks from interrupted springs, superseded
+selections, scope changes, and unmounts. New gestures and other navigation cancel
+pending selection. The selected chat and account are rechecked at completion,
+and temporary-chat cleanup is deferred until the selection actually commits.
+This removes a known overlap of layout work and animation; physical-device frame
+timing has not been quantified. Lint, mobile type checking, and 446 mobile tests
+passed, including completion and cancellation regression coverage.
+
+The 5,000-chat UI check also reproduced dropped search characters: a delayed
+React filter update was written back over newer native text (the field contained
+`Perfance chat 5000` after typing `Performance chat 5000`). The native search
+binding now owns edits; only the explicit clear action writes it from JavaScript.
+The UI test checks both the exact typed value and the resulting chat.
+
+Both final XCTest cases passed on iPhone 17 Pro / iOS 26.5 using the Release
+simulator shell and a fresh production-mode fixture bundle: five large-history
+swipe/selection cycles with search, and two alternations between the 1,000-turn
+and short transcripts with the keyboard dismissed. No raw run artifacts were
+added to Git.

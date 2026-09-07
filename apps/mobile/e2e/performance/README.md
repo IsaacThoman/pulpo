@@ -28,6 +28,11 @@ chats contain summaries only. The case repeats swipe-open/chat-selection cycles
 and searches for the 5,000th chat. It checks interaction correctness, not frame
 latency; keep any screenshots and result bundles outside the repository.
 
+`testSelectLongAndCachedChats` alternates between the 1,000-turn and short chats
+twice, checks the selected transcript's native test identifier, and verifies the
+keyboard stays dismissed. This covers initial local hydration and resident detail
+selection after drawer closure; it does not measure physical-device frame timing.
+
 Build current native dependencies first (`expo prebuild`, `pod install`, then
 Release Xcode/Gradle builds). Keep the normal build intact. Export a harness from
 `apps/mobile`, for example:
