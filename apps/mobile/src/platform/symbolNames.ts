@@ -9,6 +9,7 @@ export const materialSymbolNames: Record<string, string> = {
   "line.3.horizontal": "menu",
   "gearshape": "settings",
   "plus": "add",
+  "mic": "mic",
   "square.and.pencil": "edit_square",
   "pencil": "edit",
   "arrow.up": "arrow_upward",

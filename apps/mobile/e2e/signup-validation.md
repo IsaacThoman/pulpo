@@ -79,3 +79,9 @@ check passed, changed JavaScript/TypeScript files passed oxlint with warnings
 denied, and `git diff --check` passed. The server acceptance script passed all
 its checks. New regression tests failed on the original implementation before
 the corresponding fixes were applied.
+
+After merging current `dev` for PR integration, **550 mobile tests passed across
+83 files**; TypeScript and changed-file oxlint also passed. The API conflict was
+resolved preserving dictation multipart uploads and cancellation checks alongside
+the session-expiry callback capture. The simulator results above precede this
+integration merge.
