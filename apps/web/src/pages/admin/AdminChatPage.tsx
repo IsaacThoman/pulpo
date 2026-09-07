@@ -1,3 +1,4 @@
+import { handleSessionConnectionError } from '@/lib/session-revocation'
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { io, type Socket } from 'socket.io-client'
@@ -159,6 +160,7 @@ export function AdminChatPage() {
       path: '/socket.io', withCredentials: !isDesktopRuntime(),
       auth: { ...(isDesktopRuntime() ? { sessionToken: runtimeSessionToken() } : {}), adminChatAccessToken: grant.accessToken },
     })
+    socket.on('connect_error', (error) => { void handleSessionConnectionError(error) })
     socketRef.current = socket
     socket.on('connect', () => socket.emit('chat.subscribe', { chatId }))
     socket.on('response.event', (event) => { useChat.getState().applyResponseEvents([event]) })

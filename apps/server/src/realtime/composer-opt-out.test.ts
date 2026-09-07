@@ -27,7 +27,7 @@ function connect(auth = {}, adminChatAccess: unknown = null) {
   const handlers = new Map<string, (...args: any[]) => unknown>()
   const rooms = new Set(['composer:user']) // Recovered sockets can restore previous rooms.
   const socket = {
-    data: { user: { id: 'user' }, adminChatAccess, composerSyncEnabled: true },
+    data: { user: { id: 'user' }, actorUser: { id: 'user' }, adminChatAccess, composerSyncEnabled: true },
     handshake: { auth },
     join: (room: string) => rooms.add(room), leave: (room: string) => rooms.delete(room),
     on: (event: string, callback: (...args: any[]) => unknown) => handlers.set(event, callback),

@@ -116,7 +116,7 @@ export async function registerManagementRoutes(app: FastifyInstance): Promise<vo
         throw unauthorized('Invalid email or password')
       }
       await requireLoginSecondFactor(row.user.id, input.twoFactorCode)
-      return { user: serializeUser(row.user), session: await createNativeSession(row.user.id, input.deviceLabel, request) }
+      return { user: serializeUser(row.user), session: await createNativeSession(row.user.id, input.deviceLabel, request, { appType: input.appType, platform: input.platform }) }
     })
 
     management.post('/api/management/v1/auth/logout', async (request, reply) => {

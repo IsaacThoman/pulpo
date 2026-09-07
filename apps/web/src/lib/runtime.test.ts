@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   configureDesktopRuntime,
+  desktopDevice,
   runtimeAccountKey,
   runtimeApiUrl,
   runtimeAuthorizationHeaders,
@@ -49,5 +50,16 @@ describe('desktop runtime transport', () => {
     installDesktopWindow()
     configureDesktopRuntime({ instanceUrl: 'https://one.example', token: null })
     expect(runtimeAccountKey('user-1')).toBe('https://one.example|user-1')
+  })
+})
+
+describe('desktop device metadata', () => {
+  it.each([
+    ['darwin', 'macos', 'Pulpo for Mac'],
+    ['win32', 'windows', 'Pulpo for Windows'],
+    ['linux', 'linux', 'Pulpo for Linux'],
+  ])('reports %s accurately', (os, platform, deviceLabel) => {
+    Object.defineProperty(globalThis, 'window', { configurable: true, value: { pulpoDesktop: { platform: 'desktop', os } } })
+    expect(desktopDevice()).toEqual({ appType: 'desktop', platform, deviceLabel })
   })
 })

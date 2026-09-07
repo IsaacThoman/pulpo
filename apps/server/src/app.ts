@@ -1,5 +1,7 @@
 import { registerShelfRoutes } from './shelf/routes.js'
 import { registerAccountDeletionRoutes } from './account/routes.js'
+import { registerDeviceSessionRoutes } from './auth/device-routes.js'
+import { resolveClientIp } from './lib/client-ip.js'
 import Fastify from 'fastify'
 import cookie from '@fastify/cookie'
 import cors from '@fastify/cors'
@@ -70,7 +72,7 @@ export async function buildApp() {
     origin: (origin, callback) => callback(null, !origin || isAllowedOrigin(origin, config)),
     credentials: true,
   })
-  await app.register(rateLimit, { max: 300, timeWindow: '1 minute' })
+  await app.register(rateLimit, { max: 300, timeWindow: '1 minute', keyGenerator: (request) => resolveClientIp(request.raw, config) ?? request.ip })
   await app.register(multipart, { limits: { fileSize: 20 * 1024 * 1024 * 1024, files: 1 } })
 
   app.decorateRequest('user', null)
@@ -136,6 +138,7 @@ export async function buildApp() {
   await ensureBootstrapPreset()
   await registerMobileRoutes(app)
   await registerAuthRoutes(app)
+  await registerDeviceSessionRoutes(app)
   await registerAccountDeletionRoutes(app)
   await registerProfileRoutes(app)
   await registerCodexRoutes(app)

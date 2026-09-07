@@ -1,3 +1,4 @@
+import { resolveClientIp } from '../lib/client-ip.js'
 import { accessComposer } from '../composer/service.js'
 import { composerDraftIdSchema, composerWriteSchema, type ComposerAck, type ComposerSnapshot } from '@pulpo/contracts'
 import type { Server as HttpServer } from 'node:http'
@@ -115,7 +116,7 @@ export async function createSocketServer(httpServer: HttpServer) {
         socket.handshake.headers.cookie,
         config.SESSION_COOKIE_NAME,
       )
-      const user = await authenticateSessionToken(token)
+      const user = await authenticateSessionToken(token, resolveClientIp(socket.request, config))
       if (!user || user.role === 'pending') return next(new Error('unauthorized'))
       const accessToken = socket.handshake.auth.adminChatAccessToken
       const access = typeof accessToken === 'string'
@@ -133,6 +134,7 @@ export async function createSocketServer(httpServer: HttpServer) {
 
   io.on('connection', (socket) => {
     const user = socket.data.user
+    void socket.join(`session-actor:${socket.data.actorUser.id}`)
     const adminChatAccess = socket.data.adminChatAccess
     socket.data.composerSyncEnabled = !adminChatAccess && socket.handshake.auth.composerSyncEnabled !== false
     if (socket.data.composerSyncEnabled) void socket.join(`composer:${user.id}`)
@@ -302,7 +304,7 @@ export async function createSocketServer(httpServer: HttpServer) {
       })
     } else if (channel === 'pulpo:session-revocations') {
       const event = JSON.parse(message) as { userId: string }
-      const room = io.of('/').adapter.rooms.get(`user:${event.userId}`)
+      const room = io.of('/').adapter.rooms.get(`session-actor:${event.userId}`)
       for (const socketId of room ?? []) {
         // Closing the transport is reconnectable. The preserved session succeeds;
         // sockets using one of the deleted sessions fail the authentication middleware.

@@ -468,7 +468,7 @@ export class PulpoManagementClient {
   }
 
   login(email: string, password: string, deviceLabel = 'Pulpo CLI', twoFactorCode?: string): Promise<NativeAuthResponse> {
-    return this.request('/api/management/v1/auth/login', { method: 'POST', body: { email, password, deviceLabel, twoFactorCode } })
+    return this.request('/api/management/v1/auth/login', { method: 'POST', body: { email, password, deviceLabel, twoFactorCode, appType: 'cli' } })
   }
 
   logout(): Promise<void> {

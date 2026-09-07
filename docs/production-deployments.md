@@ -85,3 +85,50 @@ the legacy application before starting the infrastructure application. For rollb
 stop the replacement infrastructure before bringing the saved legacy Compose
 stack back up. Never remove its volumes. Keep the legacy resource stopped with
 automatic deployment disabled after cutover.
+
+## Client IPs behind Cloudflare Tunnel
+
+Device sessions show the original sign-in IP and the latest IP observed on an
+authenticated HTTP request or Socket.IO handshake. Existing sessions retain their
+old sign-in address; historical proxy addresses cannot be reconstructed. The
+latest address appears after the session next contacts the upgraded server.
+
+Client IP detection is configured with server environment variables and takes
+effect after restart. These variables also control the HTTP rate-limit key; they
+do not enable trust of forwarded host or protocol headers.
+
+- `PULPO_CLIENT_IP_MODE=direct` (default): ignore forwarded headers and use the TCP peer.
+- `PULPO_CLIENT_IP_MODE=forwarded`: resolve `X-Forwarded-For` from the nearest proxy
+  outward, stopping at the first address outside the trusted proxy list.
+- `PULPO_CLIENT_IP_MODE=cloudflare`: use `CF-Connecting-IP` only when the TCP peer
+  is trusted. Cloudflare Pseudo IPv4 overwrite is supported through its
+  `CF-Connecting-IPv6` header.
+- `PULPO_TRUSTED_PROXY_CIDRS`: comma-separated explicit IP addresses or CIDRs.
+  Required in either proxy mode. Empty entries, aliases, hop counts, and blanket
+  `/0` trust are rejected at startup.
+
+For a tunnel connected directly to an API on the same host, an example is:
+
+```dotenv
+PULPO_CLIENT_IP_MODE=cloudflare
+PULPO_TRUSTED_PROXY_CIDRS=127.0.0.1/32,::1/128
+```
+
+For `Cloudflare Tunnel → Traefik/nginx → API`, configure the actual address(es)
+or dedicated ingress subnet of the proxy that connects to the API, rather than
+Cloudflare's public edge ranges. For example, if the immediate reverse proxy has
+address `172.30.0.5`, use `PULPO_TRUSTED_PROXY_CIDRS=172.30.0.5/32`. This is an
+illustration, not an address to copy without checking your network. In forwarded
+mode include every trusted intermediary needed to resolve the original visitor.
+
+Keep the API private and make the trusted ingress reachable only through the
+intended tunnel path. A trusted proxy must preserve Cloudflare's IP headers from
+the tunnel and strip them on any alternate untrusted ingress. Trusting a Docker
+subnet also trusts every container on that subnet, so prefer a dedicated network
+or explicit proxy addresses. The development nginx configuration already forwards
+request headers; production routes reach the API through Traefik directly.
+
+Missing, malformed, or untrusted headers fall back to the TCP peer. Confirm the
+configuration by signing in through the tunnel and checking **Security → Devices**
+against the visitor's public IP. Test separate visitors to verify that rate limits
+are no longer shared under the tunnel/proxy IP. No IP geolocation is performed.
