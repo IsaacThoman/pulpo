@@ -72,7 +72,7 @@ on the disposable simulator when checking the initial prompt.
 Run `node apps/mobile/e2e/dictation-native-config.mjs` to check the resolved
 microphone permissions (including interactions between config plugins).
 
-Automated checks passed: contracts (78), client-core (84), mobile (492), affected
+Automated checks passed: contracts (78), client-core (84), mobile (541), affected
 server dictation/mobile routes (16), and web dictation (2). Mobile typechecking,
 repository lint, the full repository build, iOS/Android exports, resolved native
 config checks, and `git diff --check` passed.
@@ -115,3 +115,8 @@ server handling were exercised with a controlled provider response. Android 17
 emulator startup was unstable; the completed Android run used Android 16.
 Physical-device deployment and merging are outside this validation.
 Raw screenshots, recordings, build logs, and generated projects stay outside Git.
+
+Toolbar follow-up: shelf is first, followed by attachments, chat presets, and
+Agent mode; dictation and send stay right-aligned. The compact iPhone layout was
+checked in the simulator. After reconciling the latest dev performance changes,
+all 541 mobile tests, typechecking, and lint passed.

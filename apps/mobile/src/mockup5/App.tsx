@@ -5525,6 +5525,9 @@ function ChatView({
                 value={input}
               />
               <View style={styles.composerBar}>
+                {showShelf && Boolean(input.trim() || attachments.length) && (Platform.OS === 'ios'
+                  ? <NativeComposerIconButton label="Shelve draft" systemImage="archivebox" disabled={shelfBusy || sending || dictationBusy} onPress={() => { void transferShelf(); }} />
+                  : <MaterialIconButton label="Shelve draft" icon="archivebox" disabled={shelfBusy || sending || dictationBusy} onPress={() => { void transferShelf(); }} />)}
                 {Platform.OS === 'ios' ? (
                   <NativeAttachmentMenu onTakePhoto={takePhoto} onPickFiles={pickFiles} onPickPhotos={pickPhotos} />
                 ) : (
@@ -5570,50 +5573,46 @@ function ChatView({
                     })),
                   }))} />
                 ))}
+                {Platform.OS === 'ios' ? (
+                  <SwiftUIHost ignoreSafeArea="keyboard" style={styles.nativeAgentHost}>
+                    <SwiftUIButton
+                      onPress={() => {
+                        toggleAgent();
+                      }}
+                      modifiers={[
+                        buttonStyle(activeAgentEnabled ? 'glassProminent' : 'glass'),
+                        buttonBorderShape('circle'),
+                        controlSize('regular'),
+                        tint(nativeAgentTint),
+                        swiftUIDisabled(!canUseAgent),
+                        swiftUIAccessibilityLabel('Agent mode'),
+                        swiftUIAccessibilityHint(!agentAvailable ? 'Unavailable on this Pulpo instance.' : !model.agentEnabled ? 'Unavailable for this model.' : activeAgentEnabled ? 'On. Double tap to turn off.' : 'Off. Double tap to turn on.'),
+                      ]}
+                    >
+                      <SwiftUIRNHostView matchContents>
+                        <View pointerEvents="none" style={styles.nativeAgentIcon}>
+                          <Bot color={nativeAgentForeground} size={13} strokeWidth={2} />
+                        </View>
+                      </SwiftUIRNHostView>
+                    </SwiftUIButton>
+                  </SwiftUIHost>
+                ) : (
+                  <MaterialIconButton label={activeAgentEnabled ? 'Turn off Agent mode' : 'Turn on Agent mode'} icon="bot" color={activeAgentEnabled ? nativeAgentTint : undefined} disabled={!canUseAgent} onPress={toggleAgent} />
+                )}
                 <View style={styles.flex} />
                 {dictationEnabled && (Platform.OS === 'ios'
                   ? <NativeComposerIconButton label={dictationLabel} systemImage={dictation.phase === 'recording' ? 'stop.fill' : 'mic'} prominent={dictation.phase === 'recording'} disabled={dictationDisabled} onPress={dictation.phase === 'recording' ? dictation.stop : dictation.start} />
                   : <MaterialIconButton label={dictationLabel} icon={dictation.phase === 'recording' ? 'stop.fill' : 'mic'} selected={dictation.phase === 'recording'} disabled={dictationDisabled} onPress={dictation.phase === 'recording' ? dictation.stop : dictation.start} />)}
                 {Platform.OS === 'ios' ? (
-                  <>
-                    {showShelf && Boolean(input.trim() || attachments.length) && <NativeComposerIconButton label="Shelve draft" systemImage="archivebox"
-                      disabled={shelfBusy || sending || dictationBusy} onPress={() => { void transferShelf(); }} />}
-                    <SwiftUIHost ignoreSafeArea="keyboard" style={styles.nativeAgentHost}>
-                      <SwiftUIButton
-                        onPress={() => {
-                          toggleAgent();
-                        }}
-                        modifiers={[
-                          buttonStyle(activeAgentEnabled ? 'glassProminent' : 'glass'),
-                          buttonBorderShape('circle'),
-                          controlSize('regular'),
-                          tint(nativeAgentTint),
-                          swiftUIDisabled(!canUseAgent),
-                          swiftUIAccessibilityLabel('Agent mode'),
-                          swiftUIAccessibilityHint(!agentAvailable ? 'Unavailable on this Pulpo instance.' : !model.agentEnabled ? 'Unavailable for this model.' : activeAgentEnabled ? 'On. Double tap to turn off.' : 'Off. Double tap to turn on.'),
-                        ]}
-                      >
-                        <SwiftUIRNHostView matchContents>
-                          <View pointerEvents="none" style={styles.nativeAgentIcon}>
-                            <Bot color={nativeAgentForeground} size={13} strokeWidth={2} />
-                          </View>
-                        </SwiftUIRNHostView>
-                      </SwiftUIButton>
-                    </SwiftUIHost>
-                    <NativeComposerIconButton
-                      disabled={dictationBusy || shelfBusy || composerAction === 'submit' && !canSend}
-                      label={composerAction === 'stop' ? 'Stop generating' : messageEdit ? queueEditRef.current ? 'Save queued message' : 'Save and resend message' : 'Send message'}
-                      onPress={() => composerAction === 'stop' ? onStop() : submitMessage()}
-                      prominent
-                      systemImage={composerAction === 'stop' ? 'stop.fill' : 'arrow.up'}
-                    />
-                  </>
+                  <NativeComposerIconButton
+                    disabled={dictationBusy || shelfBusy || composerAction === 'submit' && !canSend}
+                    label={composerAction === 'stop' ? 'Stop generating' : messageEdit ? queueEditRef.current ? 'Save queued message' : 'Save and resend message' : 'Send message'}
+                    onPress={() => composerAction === 'stop' ? onStop() : submitMessage()}
+                    prominent
+                    systemImage={composerAction === 'stop' ? 'stop.fill' : 'arrow.up'}
+                  />
                 ) : (
-                  <>
-                    {showShelf && Boolean(input.trim() || attachments.length) && <MaterialIconButton label="Shelve draft" icon="archivebox" disabled={shelfBusy || sending || dictationBusy} onPress={() => { void transferShelf(); }} />}
-                    <MaterialIconButton label={activeAgentEnabled ? 'Turn off Agent mode' : 'Turn on Agent mode'} icon="bot" color={activeAgentEnabled ? nativeAgentTint : undefined} disabled={!canUseAgent} onPress={toggleAgent} />
-                    <MaterialIconButton label={composerAction === 'stop' ? 'Stop generating' : messageEdit ? queueEditRef.current ? 'Save queued message' : 'Save and resend message' : 'Send message'} icon={composerAction === 'stop' ? 'stop.fill' : 'arrow.up'} prominent disabled={dictationBusy || shelfBusy || composerAction === 'submit' && !canSend} onPress={() => composerAction === 'stop' ? onStop() : submitMessage()} />
-                  </>
+                  <MaterialIconButton label={composerAction === 'stop' ? 'Stop generating' : messageEdit ? queueEditRef.current ? 'Save queued message' : 'Save and resend message' : 'Send message'} icon={composerAction === 'stop' ? 'stop.fill' : 'arrow.up'} prominent disabled={dictationBusy || shelfBusy || composerAction === 'submit' && !canSend} onPress={() => composerAction === 'stop' ? onStop() : submitMessage()} />
                 )}
               </View>
             </ComposerSurface>
