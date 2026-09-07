@@ -1,8 +1,15 @@
+import { INITIAL_TRANSCRIPT_ROWS, hasLargeInitialMessage, transcriptListMessages, usesBottomAnchoredTranscript } from '../features/chat/transcriptWindow';
+import { hasChatSelectionObserver, recordChatSelection, hasTranscriptPositionObserver, recordTranscriptPosition } from '../features/chat/selectionTiming';
+import { prepareChatSelection } from '../data/prepareChat';
+import { createDrawerTransition } from '../features/chat/drawerTransition';
+import { protectTranscript } from '../data/transcriptResidency';
 import { incomingFiles, releaseImportedFile } from '../native/incomingFiles';
 import { useIncomingFileImport } from '../features/chat/useIncomingFileImport';
 import { incomingFileAttachment } from '../features/chat/incomingFileAttachment';
 import { useShortcutInbox } from '../shortcuts/inbox';
 import { shortcutsScope } from '../shortcuts/native';
+import { useDictation } from '../features/chat/useDictation';
+import { setComposerSelection } from '../features/chat/composerSelection';
 import { ToolImagePreview } from '../components/ToolImagePreview';
 import { localComposerDraftId } from '@pulpo/client-core';
 import { DevicesScreen } from '../components/Devices';
@@ -21,11 +28,12 @@ import { mobileComposerSync } from '../features/chat/composerSync';
 import { useComposerSync } from '../features/chat/useComposerSync';
 import { temporaryChatColors } from '../features/chat/temporaryColors';
 import { submitComposerDraft } from '../features/chat/composerSubmission';
-import type { ComposerState } from '@pulpo/contracts';
+import { idSchema, type ComposerState } from '@pulpo/contracts';
 import {
   createContext,
   forwardRef,
   memo,
+  startTransition,
   useCallback,
   useContext,
   useEffect,
@@ -154,6 +162,7 @@ import Reanimated, {
   LinearTransition,
   runOnJS,
   type SharedValue,
+  useAnimatedReaction,
   useAnimatedStyle,
   useSharedValue,
   withDelay,
@@ -241,8 +250,8 @@ import {
   historyChatSections,
   historyChatSummary,
   resolveHistoryChatExpiryMenuAction,
-  reuseHistoryChatSummaries,
-  visibleHistoryChats,
+  createHistoryProjector,
+  historyFolderItems,
   type HistoryChatExpiryMenuAction,
   type HistoryChatSummary,
 } from '../features/chat/history';
@@ -284,6 +293,8 @@ const CHAT_COMPOSER_BOTTOM_PADDING = 156;
 const CHAT_COMPOSER_MESSAGE_GAP = 12;
 
 type ChatScrollViewProps = ScrollViewProps & {
+  inverted?: boolean;
+  onContentInsetChange?: (insets: { top: number }) => void;
   composerPadding: SharedValue<number>;
   blankSpace: SharedValue<number>;
   freezeKeyboardLayout: boolean;
@@ -1606,10 +1617,24 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   const openOffset = drawerWidth;
 
   const slideX = useSharedValue(0);
+  const measuredMotion = useSharedValue<{ chatId: string; origin: number } | null>(null);
+  useAnimatedReaction(() => measuredMotion.value ? slideX.value : null, (offset) => {
+    const sample = measuredMotion.value;
+    if (sample && offset !== null && Math.abs(offset - sample.origin) > 0.5) {
+      measuredMotion.value = null;
+      runOnJS(recordChatSelection)(sample.chatId, 'motionStart', undefined, Date.now());
+    }
+  });
   const gestureStartX = useSharedValue(0);
   const wideSidebarProgress = useSharedValue(1);
   const wideSidebarGestureStart = useSharedValue(1);
   const [panelOpen, setPanelOpen] = useState(false);
+  const [drawerTransition] = useState(createDrawerTransition);
+  const [openingChat, setOpeningChat] = useState<HistoryChatSummary | null>(null);
+  const pendingChatSlide = useRef<(() => void) | null>(null);
+  const chatPreparation = useRef<ReturnType<typeof prepareChatSelection> | null>(null);
+  const timedSelection = useRef<string | null>(null);
+  const revealChatFrame = useRef<number | null>(null);
   const [wideSidebarVisible, setWideSidebarVisible] = useState(true);
   const [modelSheet, setModelSheet] = useState(false);
   const composerInputRef = useRef<TextInput>(null);
@@ -1664,7 +1689,12 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   const thinkingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const activeResponseId = useRef<string | null>(null);
   const activeResponseSubscription = useRef<(() => void) | null>(null);
-  const previousHistoryChats = useRef<HistoryChatSummary[]>([]);
+  const projectHistory = useMemo(() => {
+    // Discard cached summary ownership when the account or instance changes.
+    void productionInstanceUrl;
+    void productionUserId;
+    return createHistoryProjector();
+  }, [productionInstanceUrl, productionUserId]);
   const pendingTemporaryStart = useRef<{
     chatId: string;
     promise: ReturnType<typeof startServerChat>;
@@ -1719,13 +1749,22 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   useEffect(() => {
     const requestedChatId = route.params?.chatId;
     if (!requestedChatId || !storedChats.some((chat) => chat.id === requestedChatId && chat.deletedAt === null)) return;
+    drawerTransition.cancel();
+    pendingChatSlide.current = null;
+    chatPreparation.current?.cancel();
+    chatPreparation.current = null;
+    setOpeningChat(null);
+    cancelAnimation(slideX);
+    slideX.value = 0;
+    setPanelOpen(false);
+    setComposerFocusSuppressed(false);
     composerFollowsDefaultModel.current = false;
     setActiveChatId(requestedChatId);
     const requestedChat = storedChats.find((chat) => chat.id === requestedChatId);
     if (requestedChat?.modelId) setSelectedModelId(requestedChat.modelId);
     setAssistantStatus('idle');
     navigation.setParams({ chatId: undefined });
-  }, [navigation, route.params?.chatId, storedChats]);
+  }, [drawerTransition, navigation, route.params?.chatId, slideX, storedChats]);
 
   const dismissComposer = useCallback(() => {
     composerInputRef.current?.blur();
@@ -1737,18 +1776,66 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     setComposerFocusSuppressed(false);
   }, [dismissComposer]);
 
+  const interruptDrawerTransition = useCallback(() => {
+    drawerTransition.cancel();
+    pendingChatSlide.current = null;
+    chatPreparation.current?.cancel();
+    chatPreparation.current = null;
+    setOpeningChat(null);
+    setComposerFocusSuppressed(false);
+  }, [drawerTransition]);
+
+  useLayoutEffect(() => {
+    pendingChatSlide.current = null;
+    chatPreparation.current?.cancel();
+    chatPreparation.current = null;
+    setOpeningChat(null);
+    cancelAnimation(slideX);
+    slideX.value = 0;
+    setPanelOpen(false);
+    setComposerFocusSuppressed(false);
+    return () => {
+      drawerTransition.cancel();
+      pendingChatSlide.current = null;
+      chatPreparation.current?.cancel();
+      chatPreparation.current = null;
+      if (revealChatFrame.current !== null) cancelAnimationFrame(revealChatFrame.current);
+    };
+  }, [drawerTransition, productionInstanceUrl, productionUserId, persistentSidebar, slideX]);
+
   const animatePanel = useCallback((open: boolean, velocity = 0, onFinished?: () => void) => {
-    if (persistentSidebar) {
+    if (open || !onFinished) {
+      pendingChatSlide.current = null;
+      chatPreparation.current?.cancel();
+      chatPreparation.current = null;
+      setOpeningChat(null);
+    }
+    const timedChat = !open && onFinished ? timedSelection.current : null;
+    const measure = hasChatSelectionObserver();
+    if (timedChat && measure) measuredMotion.value = { chatId: timedChat, origin: slideX.value };
+    if (timedChat) recordChatSelection(timedChat, 'slideStart');
+    const finish = drawerTransition.begin(() => {
+      if (timedChat) recordChatSelection(timedChat, 'slideEnd');
+      setPanelOpen(open);
+      setComposerFocusSuppressed(false);
       onFinished?.();
+    });
+    if (persistentSidebar) {
+      finish(true);
       return;
     }
-    setPanelOpen(open);
-    if (open) Keyboard.dismiss();
+    // Existing-chat selection retains drawer keyboard ownership until closure. Ordinary closure
+    // (including New Chat) hands layout/focus back now, before autofocus runs.
+    if (open || !onFinished) setPanelOpen(open);
+    if (open) {
+      setComposerFocusSuppressed(false);
+      Keyboard.dismiss();
+    }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     const target = open ? openOffset : 0;
     if (reduceMotion) {
       slideX.value = target;
-      onFinished?.();
+      finish(true);
       return;
     }
     slideX.value = withSpring(target, {
@@ -1758,9 +1845,10 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
       mass: 0.9,
       overshootClamping: true,
     }, (finished) => {
-      if (finished && onFinished) runOnJS(onFinished)();
+      if (timedChat && measure && finished) runOnJS(recordChatSelection)(timedChat, 'motionEnd', undefined, Date.now());
+      runOnJS(finish)(finished === true);
     });
-  }, [openOffset, persistentSidebar, reduceMotion, slideX]);
+  }, [drawerTransition, measuredMotion, openOffset, persistentSidebar, reduceMotion, slideX]);
 
   useEffect(() => {
     if (Platform.OS !== 'android' || !panelOpen) return;
@@ -1827,6 +1915,8 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     .activeOffsetX(10)
     .failOffsetY([-12, 12])
     .onStart(() => {
+      cancelAnimation(slideX);
+      runOnJS(interruptDrawerTransition)();
       gestureStartX.value = slideX.value;
       runOnJS(dismissKeyboard)();
     })
@@ -1836,6 +1926,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     .onEnd((event) => settlePanelGesture(event.velocityX)), [
       dismissKeyboard,
       gestureStartX,
+      interruptDrawerTransition,
       openOffset,
       panelOpen,
       persistentSidebar,
@@ -1848,6 +1939,8 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     .activeOffsetX([-10, 10])
     .failOffsetY([-12, 12])
     .onStart(() => {
+      cancelAnimation(slideX);
+      runOnJS(interruptDrawerTransition)();
       gestureStartX.value = slideX.value;
     })
     .onUpdate((event) => {
@@ -1855,6 +1948,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     })
     .onEnd((event) => settlePanelGesture(event.velocityX)), [
       gestureStartX,
+      interruptDrawerTransition,
       openOffset,
       panelOpen,
       persistentSidebar,
@@ -1937,7 +2031,9 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     };
   }, [compactDrawerCorners, openOffset, persistentSidebar, reduceMotion]);
   const panelAnimatedStyle = useAnimatedStyle(() => ({
-    display: (persistentSidebar ? wideSidebarProgress.value : slideX.value) === 0 ? 'none' : 'flex',
+    // Keep the virtualized list measured before the first swipe frame.
+    // Interaction and accessibility are gated on the enclosing view.
+    opacity: (persistentSidebar ? wideSidebarProgress.value : slideX.value) === 0 ? 0 : 1,
     transform: [{ translateX: persistentSidebar ? 0 : reduceMotion ? 0 : interpolate(slideX.value, [0, openOffset], [-36, 0]) }],
   }), [openOffset, persistentSidebar, reduceMotion, wideSidebarProgress]);
   const sidebarFrameAnimatedStyle = useAnimatedStyle(() => ({
@@ -1956,20 +2052,13 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     }],
   }), [persistentSidebar, wideSidebarProgress]);
   const historyVisible = persistentSidebar ? wideSidebarVisible : panelOpen;
-  const historyChats = useMemo(() => {
-    const now = Date.now();
-    const projected = visibleHistoryChats(storedChats).map((chat) => historyChatSummary(chat, now));
-    return reuseHistoryChatSummaries(previousHistoryChats.current, projected);
-  }, [storedChats]);
+  const historyChats = useMemo(() => projectHistory(storedChats), [projectHistory, storedChats]);
   const loadHistoryPreview = useCallback((chatId: string) => {
     if (!productionUserId) return;
     const namespace = cacheNamespace(productionInstanceUrl, productionUserId);
     const localChatLimit = usePrototypeStore.getState().preferences.localChatLimit;
     void hydrateProductionChatPreview(queryClient, namespace, chatId, localChatLimit).catch(() => undefined);
   }, [productionInstanceUrl, productionUserId, queryClient]);
-  useEffect(() => {
-    previousHistoryChats.current = historyChats;
-  }, [historyChats]);
   const activePrototypeChat = useMemo(() => storedChats.find((chat) => chat.id === activeChatId && chat.deletedAt === null) ?? null, [activeChatId, storedChats]);
   const activeChat = useMemo(() => activePrototypeChat ? prototypeChatToLegacy(activePrototypeChat) : null, [activePrototypeChat]);
   const chatAutoExpire = activePrototypeChat
@@ -2012,19 +2101,82 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   }, [activeChatId, discardStoredChat, productionInstanceUrl, productionUserId, queryClient]);
 
   const selectChat = useCallback((chat: HistoryChatSummary) => {
+    timedSelection.current = chat.id;
+    recordChatSelection(chat.id, 'tap', usePrototypeStore.getState().chats.find((item) => item.id === chat.id)?.detailLoaded === true);
+    drawerTransition.cancel();
     if (thinkingTimer.current) clearTimeout(thinkingTimer.current);
     thinkingTimer.current = null;
     setComposerFocusSuppressed(true);
     dismissComposer();
-    abandonActiveTemporaryChat();
-    composerFollowsDefaultModel.current = false;
-    setActiveChatId(chat.id);
-    setSelectedModelId(chat.modelId);
-    setAssistantStatus('idle');
-    composerFocusRevision.current += 1;
-    setComposerFocusRequest({ revision: composerFocusRevision.current, target: 'content' });
-    animatePanel(false, 0, finishExistingChatTransition);
-  }, [abandonActiveTemporaryChat, animatePanel, dismissComposer, finishExistingChatTransition]);
+    chatPreparation.current?.cancel();
+    chatPreparation.current = productionUserId && idSchema.safeParse(chat.id).success
+      ? prepareChatSelection(queryClient, cacheNamespace(productionInstanceUrl, productionUserId), chat.id, usePreferencesStore.getState().localChatLimit)
+      : null;
+    // Commit the content cover first, then start native movement before asking
+    // React to mount the destination's bounded initial viewport.
+    pendingChatSlide.current = () => {
+      // Removing an already mounted huge Markdown tree can stall UIKit too.
+      // Retain that tree under the cover until the spring completes.
+      const previous = usePrototypeStore.getState().chats.find((item) => item.id === activeChatId);
+      const deferReplacement = activeChatId !== chat.id && hasLargeInitialMessage(previous?.messages ?? []);
+      const activate = () => {
+        const session = useSessionStore.getState();
+        if (session.instanceUrl !== productionInstanceUrl || session.user?.id !== productionUserId) {
+          chatPreparation.current?.cancel();
+          chatPreparation.current = null;
+          setOpeningChat(null);
+          return;
+        }
+        const selected = usePrototypeStore.getState().chats.find((item) => item.id === chat.id && item.deletedAt === null);
+        if (!selected) {
+          chatPreparation.current?.cancel();
+          chatPreparation.current = null;
+          setOpeningChat(null);
+          return;
+        }
+        abandonActiveTemporaryChat();
+        composerFollowsDefaultModel.current = false;
+        recordChatSelection(selected.id, 'activate');
+        startTransition(() => {
+          setActiveChatId(selected.id);
+          setSelectedModelId(selected.modelId);
+          setAssistantStatus('idle');
+          composerFocusRevision.current += 1;
+          setComposerFocusRequest({ revision: composerFocusRevision.current, target: 'content' });
+        });
+      };
+      animatePanel(false, 0, () => {
+        if (deferReplacement) activate();
+        else {
+          chatPreparation.current?.finish();
+          chatPreparation.current = null;
+        }
+        finishExistingChatTransition();
+      });
+      if (!deferReplacement) activate();
+    };
+    setOpeningChat({ ...chat });
+  }, [abandonActiveTemporaryChat, activeChatId, animatePanel, dismissComposer, drawerTransition, finishExistingChatTransition, productionInstanceUrl, productionUserId, queryClient]);
+
+  useLayoutEffect(() => {
+    const start = pendingChatSlide.current;
+    pendingChatSlide.current = null;
+    start?.();
+  }, [openingChat]);
+
+  const revealSelectedChat = useCallback((chatId: string) => {
+    if (!openingChat || openingChat.id !== chatId || activeChatId !== chatId) return;
+    if (revealChatFrame.current !== null) cancelAnimationFrame(revealChatFrame.current);
+    const preparation = chatPreparation.current;
+    // Native layout is ready. Reveal on the next frame, guarding replacement selections.
+    revealChatFrame.current = requestAnimationFrame(() => {
+      revealChatFrame.current = null;
+      preparation?.finish();
+      if (chatPreparation.current === preparation) chatPreparation.current = null;
+      recordChatSelection(chatId, 'contentReady');
+      setOpeningChat((current) => current === openingChat ? null : current);
+    });
+  }, [activeChatId, openingChat]);
 
   const openRecalledChat = useCallback((chatId: string) => {
     const source = historyChats.find((chat) => chat.id === chatId);
@@ -2036,6 +2188,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   }, [historyChats, selectChat]);
 
   const newChat = useCallback((temporaryByDefault = false) => {
+    interruptDrawerTransition();
     if (thinkingTimer.current) clearTimeout(thinkingTimer.current);
     thinkingTimer.current = null;
     abandonActiveTemporaryChat();
@@ -2044,7 +2197,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     setNewChatTemporary(temporaryByDefault);
     composerFollowsDefaultModel.current = true;
     setSelectedModelId(reconcileComposerModelId(prototypeModels, '', defaultModelId, true));
-  }, [abandonActiveTemporaryChat, defaultModelId, prototypeModels]);
+  }, [abandonActiveTemporaryChat, defaultModelId, interruptDrawerTransition, prototypeModels]);
 
   useEffect(() => {
     if (!productionScopeReady || !productionUserId) return;
@@ -2061,8 +2214,8 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     setComposerFocusRequest({ revision: composerFocusRevision.current, target: 'composer' });
   }, [activeChatId, animatePanel, navigation, newChat, pendingImports, productionInstanceUrl, productionScopeReady, productionUserId]);
   const shortcutDestination = useShortcutInbox((state) => state.pending[0]);
-  const shortcutActions = useRef({ animatePanel, dismissComposer, finishExistingChatTransition, navigation, newChat, abandonActiveTemporaryChat });
-  shortcutActions.current = { animatePanel, dismissComposer, finishExistingChatTransition, navigation, newChat, abandonActiveTemporaryChat };
+  const shortcutActions = useRef({ animatePanel, dismissComposer, finishExistingChatTransition, interruptDrawerTransition, navigation, newChat, abandonActiveTemporaryChat });
+  shortcutActions.current = { animatePanel, dismissComposer, finishExistingChatTransition, interruptDrawerTransition, navigation, newChat, abandonActiveTemporaryChat };
   useEffect(() => {
     const destination = shortcutDestination;
     if (!destination || !productionScopeReady) return;
@@ -2079,6 +2232,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
           const namespace = cacheNamespace(owner.instanceUrl, owner.user!.id);
           queryClient.setQueryData(queryKeys.chat(namespace, chat.id), chat);
           queryClient.setQueryData<ServerChat[]>(queryKeys.chats(namespace), (chats = []) => [chat, ...chats.filter((item) => item.id !== chat.id)]);
+          shortcutActions.current.interruptDrawerTransition();
           shortcutActions.current.abandonActiveTemporaryChat();
           shortcutActions.current.navigation.popTo('Chat', { chatId: chat.id });
           setActiveChatId(chat.id);
@@ -2116,10 +2270,11 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   }, [animatePanel, newChat]);
 
   const openSettingsFromHistory = useCallback(() => {
+    animatePanel(false);
     abandonActiveTemporaryChat();
     Keyboard.dismiss();
     navigation.navigate('Settings');
-  }, [abandonActiveTemporaryChat, navigation]);
+  }, [abandonActiveTemporaryChat, animatePanel, navigation]);
 
   const saveActiveTemporaryChat = useCallback(async () => {
     if (!activeChatId || savingTemporaryChatId) return;
@@ -2580,8 +2735,11 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
             queuedMessages={activePrototypeChat?.queuedMessages ?? EMPTY_MOBILE_QUEUE}
             chatId={activeChat?.id ?? null}
             chatLoaded={activePrototypeChat?.detailLoaded !== false}
+            onTranscriptReady={revealSelectedChat}
+            openingChatId={openingChat?.id ?? null}
             draftNamespace={productionUserId ? cacheNamespace(productionInstanceUrl, productionUserId) : null}
             keyboardLayoutEnabled={!panelOpen}
+            transcriptTransitionActive={panelOpen && !persistentSidebar && !reduceMotion}
             model={selectedModel}
             models={availableModels}
             prototypeModel={selectedPrototypeModel}
@@ -3670,7 +3828,7 @@ function ComposerQueueSection({ title, subject, collapsed, onToggle, failed = fa
 }
 
 function ChatView({
-  acceptIncomingFiles, messages, queuedMessages, chatId, chatLoaded, draftNamespace, keyboardLayoutEnabled, model, models, prototypeModel, presetSelections: defaultPresetSelections, input, composerInputRef, composerFocusSuppressed, composerFocusRequest, onChangeInput, onSend, assistantStatus,
+  acceptIncomingFiles, messages, queuedMessages, chatId, chatLoaded, onTranscriptReady, openingChatId, draftNamespace, keyboardLayoutEnabled, transcriptTransitionActive, model, models, prototypeModel, presetSelections: defaultPresetSelections, input, composerInputRef, composerFocusSuppressed, composerFocusRequest, onChangeInput, onSend, assistantStatus,
   onEdit, onRegenerate, onActivateBranch, onOpenChat, onStop, onTogglePanel, onOpenModelPicker, onSelectModel, onNewChat, onSaveTemporary, persistentSidebar, sidebarVisible, temporary, autoExpire, expirationPeriod, showAutoExpirationControl, expired, savingTemporary, onTemporaryChange, onAutoExpirationChange,
 }: {
   acceptIncomingFiles: boolean;
@@ -3678,6 +3836,9 @@ function ChatView({
   queuedMessages: MobileQueuedMessage[];
   chatId: string | null;
   chatLoaded: boolean;
+  onTranscriptReady: (chatId: string) => void;
+  transcriptTransitionActive: boolean;
+  openingChatId: string | null;
   draftNamespace: string | null;
   keyboardLayoutEnabled: boolean;
   model: Model;
@@ -3730,15 +3891,45 @@ function ChatView({
   const accessibilityLayout = fontScale >= 1.6;
   const scrollLanding = accessibilityLayout || (Platform.OS === 'android' && windowHeight < 650);
   const listRef = useRef<FlatList<Message>>(null);
+  const latestRowRef = useRef<View>(null);
+  const latestMessageId = messages.at(-1)?.id;
+  useEffect(() => {
+    if (!chatId || !chatLoaded || !hasTranscriptPositionObserver()) return;
+    const end = Date.now() + 5000;
+    let frame = 0;
+    let cancelled = false;
+    const sample = () => {
+      if (cancelled || Date.now() > end) return;
+      latestRowRef.current?.measureInWindow((_x, y, _width, height) => {
+        if (!cancelled && height > 0) recordTranscriptPosition({ chatId, kind: 'measure', at: Date.now(), bottom: y + height });
+      });
+      frame = requestAnimationFrame(sample);
+    };
+    frame = requestAnimationFrame(sample);
+    return () => { cancelled = true; cancelAnimationFrame(frame); };
+  }, [chatId, chatLoaded]);
   const isNearBottom = useRef(true);
   const shouldAutoFollow = useRef(true);
   const readerInteracting = useRef(false);
+  const [maintainReaderAnchor, setMaintainReaderAnchor] = useState(false);
+  const transcriptTopInset = useRef(0);
+  const updateTranscriptInset = useCallback((insets: { top: number }) => { transcriptTopInset.current = insets.top; }, []);
   const chatTailPending = useRef(true);
   const chatViewportHeight = useRef(0);
+  const measuredTranscriptId = useRef<string | null>(null);
+  useLayoutEffect(() => {
+    measuredTranscriptId.current = null;
+  }, [chatId, draftNamespace]);
   const pendingFollowFrame = useRef<number | null>(null);
   const tailSettleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const submittedTurnFollowRevision = useRef(0);
   const measuredContentHeight = useRef(0);
+  // Latest-first list coordinates keep the tail at offset zero. Virtualizing
+  // older rows then changes only the far end, never the visible row's origin.
+  // Short conversations retain their top-aligned layout and keyboard behavior.
+  const bottomAnchored = usesBottomAnchoredTranscript(messages);
+  const visibleMessages = useMemo(() => transcriptListMessages(messages), [messages]);
+
   const keyboardBlankSpace = useSharedValue(0);
   const composerPadding = useSharedValue(0);
   const preferredAgentMode = usePreferencesStore((state) => state.agentModes[model.id] ?? true);
@@ -3793,7 +3984,8 @@ function ChatView({
     agentEnabled: boolean;
   } | null>(null);
   const inputRef = useRef(input);
-  const inputSelectionRef = useRef({ start: input.length, end: input.length });
+  const [inputSelection, setInputSelection] = useState({ start: input.length, end: input.length });
+  const inputSelectionRef = useRef(inputSelection);
   const hydratedDraftScopeRef = useRef<string | null>(null);
   const [hydratedComposerScope, setHydratedComposerScope] = useState<string | null>(null);
   const draftLoadRevisionRef = useRef(0);
@@ -3823,17 +4015,34 @@ function ChatView({
     syncError,
   });
   inputRef.current = input;
+  const composerScreenFocused = useIsFocused();
+  const dictationEnabled = useSessionStore((state) => state.status === 'authenticated' && state.config?.capabilities.dictation === true);
+  const dictationToken = useSessionStore((state) => state.token);
+  const dictationInstance = useSessionStore((state) => state.instanceUrl);
+  const dictation = useDictation({
+    identity: JSON.stringify([dictationInstance, dictationToken, draftNamespace, localComposerDraftId(chatId, temporary), messageEdit?.message.id, composerFocusRequest.revision]),
+    enabled: dictationEnabled && !expired && composerScreenFocused,
+    canStart: !networkOffline && !sending && !queueBusy && !shelfBusy && !composerFocusSuppressed
+      && hydratedComposerScope === `${draftNamespace ?? 'local'}\u0000${localComposerDraftId(chatId, temporary)}`,
+    read: () => ({ text: inputRef.current, selection: inputSelectionRef.current }),
+    apply: (value, cursor) => {
+      inputRef.current = value;
+      setComposerSelection(setInputSelection, inputSelectionRef, { start: cursor, end: cursor });
+      onChangeInput(value);
+    },
+  });
+  const { busy: dictationBusy, isBusy: isDictationBusy } = dictation;
+  const dictationLabel = dictation.phase === 'recording' ? 'Stop dictation' : dictation.phase === 'transcribing' ? 'Transcribing…' : 'Dictate';
+  const dictationDisabled = dictationBusy ? dictation.phase !== 'recording'
+    : !composerScreenFocused || networkOffline || sending || queueBusy || shelfBusy || expired || composerFocusSuppressed
+      || hydratedComposerScope !== `${draftNamespace ?? 'local'}\u0000${localComposerDraftId(chatId, temporary)}`;
 
   // Draft hydration owns the selection only. Navigation intent owns focus so
   // a new chat becoming persisted cannot reopen the keyboard after sending.
   const placeComposerCursorAtEnd = useCallback((body: string) => {
-    requestAnimationFrame(() => {
-      const composer = composerInputRef.current;
-      if (!composer) return;
-      const end = body.length;
-      composer.setNativeProps({ selection: { start: end, end } });
-    });
-  }, [composerInputRef]);
+    const end = body.length;
+    setComposerSelection(setInputSelection, inputSelectionRef, { start: end, end });
+  }, []);
   const showPromptSuggestions = usePrototypeStore((state) => state.preferences.showPromptSuggestions);
   const isEmptyConversation = messages.length === 0;
   const suggestions = useMemo(
@@ -3858,12 +4067,14 @@ function ChatView({
   const renderChatScrollComponent = useCallback((props: ScrollViewProps) => (
     <ChatScrollView
       {...props}
+      inverted={bottomAnchored}
+      onContentInsetChange={updateTranscriptInset}
       blankSpace={keyboardBlankSpace}
       composerPadding={composerPadding}
       freezeKeyboardLayout={!keyboardLayoutEnabled}
       keyboardOffset={keyboardSafeAreaOffset}
     />
-  ), [composerPadding, keyboardBlankSpace, keyboardLayoutEnabled, keyboardSafeAreaOffset]);
+  ), [bottomAnchored, composerPadding, keyboardBlankSpace, keyboardLayoutEnabled, keyboardSafeAreaOffset, updateTranscriptInset]);
   const emptyStateAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{
       translateY: Platform.OS === 'android'
@@ -3965,10 +4176,11 @@ function ChatView({
     if (!preserved) return;
     draftOwnerRef.current = preserved.attachments[0]?.ownerId ?? `draft:${Crypto.randomUUID()}`;
     onChangeInput(preserved.input);
+    placeComposerCursorAtEnd(preserved.input);
     setAttachments(restoreLatestDraft(preserved.attachments, latestAttachmentsRef.current));
     setAgentEnabled(preserved.agentEnabled);
     requestAnimationFrame(() => composerInputRef.current?.focus());
-  }, [composerInputRef, onChangeInput, onSelectModel, setAttachments]);
+  }, [composerInputRef, onChangeInput, onSelectModel, placeComposerCursorAtEnd, setAttachments]);
 
   const cleanupEditUploads = useCallback((session: MessageEditSession, values: ComposerAttachment[]) => {
     for (const attachment of values) {
@@ -3979,7 +4191,7 @@ function ChatView({
   }, []);
 
   const cancelMessageEdit = useCallback(async () => {
-    if (!messageEdit || sending || queueBusy) return;
+    if (!messageEdit || sending || queueBusy || isDictationBusy()) return;
     const queueEdit = queueEditRef.current;
     if (queueEdit) {
       setQueueBusy(true);
@@ -3990,7 +4202,7 @@ function ChatView({
     cleanupEditUploads(messageEdit, attachments);
     restoreComposer();
     Haptics.selectionAsync();
-  }, [attachments, cleanupEditUploads, messageEdit, restoreComposer, sending, queueBusy, queueClient]);
+  }, [attachments, cleanupEditUploads, messageEdit, restoreComposer, sending, queueBusy, queueClient, isDictationBusy]);
 
   const activeDraftSnapshot = useCallback(() => ({
     body: preservedComposerRef.current?.input ?? inputRef.current,
@@ -4085,14 +4297,13 @@ function ChatView({
       if (preservedComposerRef.current) {
         preservedComposerRef.current = { input: remote.content, attachments: next, agentEnabled: remote.agentMode };
       } else {
-        const selection = inputSelectionRef.current;
+        const previousSelection = inputSelectionRef.current;
+        const selection = composerInputRef.current?.isFocused()
+          ? { start: Math.min(previousSelection.start, remote.content.length), end: Math.min(previousSelection.end, remote.content.length) }
+          : { start: remote.content.length, end: remote.content.length };
+        setComposerSelection(setInputSelection, inputSelectionRef, selection);
         inputRef.current = remote.content;
         onChangeInput(remote.content);
-        requestAnimationFrame(() => {
-          if (composerInputRef.current?.isFocused()) composerInputRef.current.setNativeProps({ selection: {
-            start: Math.min(selection.start, remote.content.length), end: Math.min(selection.end, remote.content.length),
-          } });
-        });
         setAttachments(next);
         setAgentEnabled(remote.agentMode);
         if (remote.model) {
@@ -4132,13 +4343,14 @@ function ChatView({
   }, [attachments, chatId, cleanupEditUploads, messageEdit, queueClient]);
 
   const beginMessageEdit = useCallback((message: Message) => {
-    if (messageEdit || sending) return;
+    if (messageEdit || sending || isDictationBusy()) return;
     preservedComposerRef.current = { input, attachments, agentEnabled };
     const editOwnerId = `edit:${message.id}:${Crypto.randomUUID()}`;
     draftOwnerRef.current = editOwnerId;
     const existing = message.attachments ?? [];
     setMessageEdit({ message, originalAttachmentIds: new Set(existing.map((attachment) => attachment.id)) });
     onChangeInput(message.text);
+    placeComposerCursorAtEnd(message.text);
     setAttachments(existing.map((attachment) => ({
       ...attachment,
       localId: `sent:${message.id}:${attachment.id}`,
@@ -4150,10 +4362,10 @@ function ChatView({
     })));
     requestAnimationFrame(() => composerInputRef.current?.focus());
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-  }, [agentEnabled, attachments, composerInputRef, input, messageEdit, onChangeInput, sending, setAttachments]);
+  }, [agentEnabled, attachments, composerInputRef, input, messageEdit, onChangeInput, placeComposerCursorAtEnd, sending, setAttachments, isDictationBusy]);
 
   const runQueueAction = async (operation: () => Promise<void>) => {
-    if (queueBusy || sending) return;
+    if (queueBusy || sending || isDictationBusy()) return;
     setQueueBusy(true);
     try { await operation(); }
     catch (error) { Alert.alert('Couldn’t update queue', error instanceof Error ? error.message : 'Please try again.'); }
@@ -4195,12 +4407,13 @@ function ChatView({
   }, [queueClient]);
 
   const handleMessageEditAction = useCallback((message: Message, content: string) => {
+    if (isDictationBusy()) return;
     if (message.role === 'user') {
       beginMessageEdit(message);
       return;
     }
     void onEdit(message, content);
-  }, [beginMessageEdit, onEdit]);
+  }, [beginMessageEdit, onEdit, isDictationBusy]);
 
   const resolvePreviewImageUri = useCallback(async (item: AttachmentImagePreviewItem): Promise<string> => {
     const source = previewSource({ ...item, kind: 'image' });
@@ -4480,6 +4693,7 @@ function ChatView({
     // assistant row. Hold this intent across keyboard/layout scroll events
     // until their final measured content height has settled.
     readerInteracting.current = false;
+    setMaintainReaderAnchor(false);
     isNearBottom.current = true;
     shouldAutoFollow.current = true;
     chatTailPending.current = true;
@@ -4499,12 +4713,13 @@ function ChatView({
     }
     isNearBottom.current = snapshot.nearBottom;
     shouldAutoFollow.current = snapshot.autoFollow;
+    setMaintainReaderAnchor(!snapshot.autoFollow);
     readerInteracting.current = snapshot.readerInteracting;
     chatTailPending.current = snapshot.tailPending;
   }, []);
 
   const runShelfAction = async (action: () => Promise<void>) => {
-    if (!showShelf || shelfBusyRef.current || sending || hydratedDraftScopeRef.current !== activeDraftRef.current?.scope) return;
+    if (!showShelf || shelfBusyRef.current || sending || isDictationBusy() || hydratedDraftScopeRef.current !== activeDraftRef.current?.scope) return;
     shelfBusyRef.current = true; setShelfBusy(true); setShelfError(null);
     try { await action(); } catch (error) { setShelfError(error instanceof Error ? error.message : 'Could not save draft'); }
     finally { shelfBusyRef.current = false; setShelfBusy(false); }
@@ -4648,7 +4863,7 @@ function ChatView({
   }, [messageEdit, setAttachments]);
 
   const submitMessage = async () => {
-    if (sendingRef.current) return;
+    if (sendingRef.current || isDictationBusy()) return;
     const sendPolicy = attachmentSendPolicy(attachments, { editing: Boolean(messageEdit) });
     if (!sendPolicy.allowed) {
       Alert.alert(
@@ -4762,6 +4977,7 @@ function ChatView({
   };
 
   const submitSuggestion = useCallback((message: string) => {
+    if (isDictationBusy()) return;
     const followSnapshot = armSubmittedTurnFollow();
     void onSend(message, [], { presetSelections, agentEnabled: activeAgentEnabled, temporary, autoExpire }).then((accepted) => {
       if (!accepted) restoreSubmittedTurnFollow(followSnapshot);
@@ -4769,14 +4985,16 @@ function ChatView({
       restoreSubmittedTurnFollow(followSnapshot);
       Alert.alert('Couldn’t send message', error instanceof Error ? error.message : undefined);
     });
-  }, [activeAgentEnabled, armSubmittedTurnFollow, autoExpire, onSend, presetSelections, restoreSubmittedTurnFollow, temporary]);
+  }, [activeAgentEnabled, armSubmittedTurnFollow, autoExpire, onSend, presetSelections, restoreSubmittedTurnFollow, temporary, isDictationBusy]);
 
   const nativeAgentTint = colorScheme === 'dark' ? '#BF5AF2' : '#AF52DE';
   const nativeAgentForeground = activeAgentEnabled ? '#ffffff' : colorScheme === 'dark' ? '#f2f2f7' : '#1c1c1e';
 
   const updateBottomProximity = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+    const { contentOffset, contentInset, contentSize, layoutMeasurement } = event.nativeEvent;
     const nearBottom = isNearChatBottom({
+      inverted: bottomAnchored,
+      insetTop: contentInset.top,
       offsetY: contentOffset.y,
       contentHeight: contentSize.height,
       viewportHeight: layoutMeasurement.height,
@@ -4788,8 +5006,9 @@ function ChatView({
     if (chatTailPending.current) {
       return;
     }
-    if (!readerInteracting.current) shouldAutoFollow.current = nearBottom;
-  }, []);
+    // Native measurement and anchor adjustments also emit scroll events. Only
+    // an actual gesture ending may rearm following after the reader takes over.
+  }, [bottomAnchored]);
 
   const cancelPendingFollow = useCallback(() => {
     if (pendingFollowFrame.current === null) return;
@@ -4807,8 +5026,8 @@ function ChatView({
     // scrollToEnd relies on VirtualizedList's last-cell estimate, which can be
     // stale for one very tall native Markdown row. The measured content height
     // is clamped by the native scroll view and reliably reaches the real tail.
-    listRef.current?.scrollToOffset({ animated, offset: measuredContentHeight.current });
-  }, []);
+    listRef.current?.scrollToOffset({ animated, offset: bottomAnchored ? -transcriptTopInset.current : measuredContentHeight.current });
+  }, [bottomAnchored]);
 
   const scheduleTailSettle = useCallback(() => {
     cancelTailSettle();
@@ -4826,22 +5045,31 @@ function ChatView({
   }, [cancelTailSettle, scrollToMeasuredTail]);
 
   const beginReaderInteraction = useCallback(() => {
+    if (chatId && hasTranscriptPositionObserver()) recordTranscriptPosition({ chatId, at: Date.now(), kind: 'readerStart' });
     submittedTurnFollowRevision.current += 1;
     readerInteracting.current = true;
+    setMaintainReaderAnchor(true);
     chatTailPending.current = false;
     shouldAutoFollow.current = false;
     cancelPendingFollow();
     cancelTailSettle();
-  }, [cancelPendingFollow, cancelTailSettle]);
+  }, [cancelPendingFollow, cancelTailSettle, chatId]);
 
   const endReaderInteraction = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    // Native layout/keyboard adjustments can emit an end event without a drag.
+    if (!readerInteracting.current) return;
+    if (chatId && hasTranscriptPositionObserver()) recordTranscriptPosition({ chatId, at: Date.now(), kind: 'readerEnd' });
     readerInteracting.current = false;
     updateBottomProximity(event);
     shouldAutoFollow.current = isNearBottom.current;
-  }, [updateBottomProximity]);
+    setMaintainReaderAnchor(!isNearBottom.current);
+  }, [chatId, updateBottomProximity]);
 
   const followContentIfNeeded = useCallback(() => {
     const establishingChatTail = chatTailPending.current;
+    // Native anchoring owns long transcripts. Explicit sends can request the
+    // tail, but row measurement must never launch competing scroll corrections.
+    if (bottomAnchored && !establishingChatTail) return;
     if (!shouldFollowChatContent(
       shouldAutoFollow.current && isNearBottom.current,
       readerInteracting.current,
@@ -4856,27 +5084,30 @@ function ChatView({
       )) return;
       scrollToMeasuredTail(chatTailPending.current ? false : assistantStatus === 'idle');
     });
-  }, [assistantStatus, scrollToMeasuredTail]);
+  }, [assistantStatus, bottomAnchored, scrollToMeasuredTail]);
 
   const handleContentSizeChange = useCallback((_width: number, height: number) => {
     measuredContentHeight.current = height;
     keyboardBlankSpace.value = chatKeyboardBlankSpace(chatViewportHeight.current, height);
     followContentIfNeeded();
+    if (chatId && chatLoaded && measuredTranscriptId.current === chatId) onTranscriptReady(chatId);
     if (!chatTailPending.current) return;
     scheduleTailSettle();
-  }, [followContentIfNeeded, keyboardBlankSpace, scheduleTailSettle]);
+  }, [chatId, chatLoaded, followContentIfNeeded, keyboardBlankSpace, onTranscriptReady, scheduleTailSettle]);
 
   useEffect(() => {
     submittedTurnFollowRevision.current += 1;
     isNearBottom.current = true;
     shouldAutoFollow.current = true;
     readerInteracting.current = false;
-    chatTailPending.current = true;
+    chatTailPending.current = !bottomAnchored;
+    setMaintainReaderAnchor(false);
     measuredContentHeight.current = 0;
     keyboardBlankSpace.value = 0;
     cancelPendingFollow();
-    scheduleTailSettle();
-  }, [cancelPendingFollow, chatId, keyboardBlankSpace, scheduleTailSettle]);
+    cancelTailSettle();
+    if (!bottomAnchored) scheduleTailSettle();
+  }, [bottomAnchored, cancelPendingFollow, cancelTailSettle, chatId, draftNamespace, keyboardBlankSpace, scheduleTailSettle]);
 
   useEffect(() => () => {
     cancelPendingFollow();
@@ -4884,7 +5115,7 @@ function ChatView({
   }, [cancelPendingFollow, cancelTailSettle]);
 
   const renderMessage = useCallback(({ item }: { item: Message }) => (
-    <View style={styles.transcriptColumn}>
+    <View ref={item.id === latestMessageId ? latestRowRef : undefined} testID={`chat-message-${item.id}`} style={styles.transcriptColumn}>
       <MessageRow
         message={item}
         model={responseModel(item, models, model)}
@@ -4897,10 +5128,10 @@ function ChatView({
           : onActivateBranch}
         onOpenChat={onOpenChat}
         sideRail={assistantSideRail}
-        editingLocked={Boolean(messageEdit)}
+        editingLocked={Boolean(messageEdit) || dictationBusy}
       />
     </View>
-  ), [assistantSideRail, expired, handleMessageEditAction, messageEdit, model, models, onActivateBranch, onOpenChat, onRegenerate, openFilePreview, openImageViewer, styles.transcriptColumn]);
+  ), [assistantSideRail, expired, handleMessageEditAction, latestMessageId, messageEdit, dictationBusy, model, models, onActivateBranch, onOpenChat, onRegenerate, openFilePreview, openImageViewer, styles.transcriptColumn]);
 
   const empty = isEmptyConversation && assistantStatus === 'idle';
   const headerAction = resolveChatHeaderAction(chatId, messages.length, temporary);
@@ -4914,11 +5145,24 @@ function ChatView({
     transform: [{ translateX: interpolate(headerExpansionProgress.value, [0, 1], [22, 0]) }],
   });
   const loadingExistingChat = Boolean(chatId && isEmptyConversation && !chatLoaded);
+  useEffect(() => {
+    // Empty chats have no transcript list to emit a native layout event.
+    if (chatId && chatLoaded && messages.length === 0) onTranscriptReady(chatId);
+    else if (chatId && chatLoaded && measuredTranscriptId.current === chatId && measuredContentHeight.current > 0) onTranscriptReady(chatId);
+  }, [chatId, chatLoaded, messages.length, onTranscriptReady]);
   const hasPendingAssistant = messages.some((message) => message.role === 'assistant' && (message.status === 'queued' || message.status === 'streaming'));
+  const pendingAssistantContent = assistantStatus === 'thinking' && !hasPendingAssistant ? (
+    <View accessibilityLiveRegion="polite" style={[styles.assistantRow, styles.transcriptColumn]}>
+      <AssistantFrame model={model} sideRail={assistantSideRail} time="now">
+        <ResponsePendingIndicator />
+      </AssistantFrame>
+    </View>
+  ) : null;
   const attachmentPolicy = attachmentSendPolicy(attachments, { editing: Boolean(messageEdit) });
   const canSend = Boolean(model.id)
     && (input.trim().length > 0 || attachments.length > 0)
     && !sending
+    && !dictationBusy
     && !queueBusy
     && !expired
     && !(attachments.some((attachment) => attachment.kind === 'file') && (!activeAgentEnabled || !canUseAgent))
@@ -5081,6 +5325,13 @@ function ChatView({
 
       </View>
 
+      <View style={styles.flex}>
+      <View
+        style={[styles.flex, openingChatId ? { opacity: 0 } : null]}
+        pointerEvents={openingChatId ? 'none' : 'auto'}
+        importantForAccessibility={openingChatId ? 'no-hide-descendants' : 'auto'}
+        accessibilityElementsHidden={Boolean(openingChatId)}
+      >
       {loadingExistingChat ? (
         <View
           accessibilityLabel="Loading conversation"
@@ -5109,32 +5360,40 @@ function ChatView({
             {emptyLandingContent}
           </View>
         )
-      ) : (
+      ) : transcriptTransitionActive && openingChatId === chatId
+        && measuredTranscriptId.current !== chatId && hasLargeInitialMessage(messages) ? null : (
         /* Keep Android Compose hosts attached as follow-up rows are inserted and scrolled
          * into view; clipping can leave the pending loader blank. List virtualization
          * still bounds the rendered window. */
         <FlatList
           alwaysBounceVertical
           bounces
-          contentContainerStyle={[styles.conversation, { paddingHorizontal: horizontalPadding, paddingTop: Platform.OS === 'android' ? 16 : headerOverlayHeight + 16 }]}
+          contentContainerStyle={[styles.conversation, {
+            paddingHorizontal: horizontalPadding,
+            paddingTop: bottomAnchored ? CHAT_COMPOSER_BOTTOM_PADDING : Platform.OS === 'android' ? 16 : headerOverlayHeight + 16,
+            paddingBottom: bottomAnchored ? Platform.OS === 'android' ? 16 : headerOverlayHeight + 16 : CHAT_COMPOSER_BOTTOM_PADDING,
+          }]}
           contentInsetAdjustmentBehavior="never"
-          data={messages}
+          data={visibleMessages}
+          inverted={bottomAnchored}
+          maintainVisibleContentPosition={bottomAnchored && maintainReaderAnchor ? { minIndexForVisible: 0 } : undefined}
+          maxToRenderPerBatch={1}
+          updateCellsBatchingPeriod={32}
+          windowSize={3}
           removeClippedSubviews={Platform.OS === 'android' ? false : undefined}
-          initialNumToRender={10}
+          initialNumToRender={INITIAL_TRANSCRIPT_ROWS}
           keyboardDismissMode="interactive"
           keyboardShouldPersistTaps="handled"
-          key={chatId ?? 'unsaved-chat'}
+          key={`${draftNamespace}:${chatId ?? 'unsaved-chat'}:${bottomAnchored}`}
+          testID={`chat-transcript-${chatId ?? 'unsaved-chat'}`}
           keyExtractor={(message) => message.id}
-          ListFooterComponent={assistantStatus === 'thinking' && !hasPendingAssistant ? (
-            <View accessibilityLiveRegion="polite" style={[styles.assistantRow, styles.transcriptColumn]}>
-              <AssistantFrame model={model} sideRail={assistantSideRail} time="now">
-                <ResponsePendingIndicator />
-              </AssistantFrame>
-            </View>
-          ) : null}
+          ListHeaderComponent={bottomAnchored ? pendingAssistantContent : null}
+          ListFooterComponent={bottomAnchored ? null : pendingAssistantContent}
           onContentSizeChange={handleContentSizeChange}
           onLayout={(event) => {
             chatViewportHeight.current = event.nativeEvent.layout.height;
+            measuredTranscriptId.current = chatId;
+            if (chatId && chatLoaded && measuredContentHeight.current > 0) onTranscriptReady(chatId);
             keyboardBlankSpace.value = chatKeyboardBlankSpace(
               chatViewportHeight.current,
               measuredContentHeight.current,
@@ -5154,6 +5413,26 @@ function ChatView({
           style={styles.flex}
         />
       )}
+
+      </View>
+      {openingChatId ? (
+        <View
+          testID={`chat-opening-${openingChatId}`}
+          accessibilityRole="progressbar"
+          accessibilityLabel="Loading messages"
+          pointerEvents="none"
+          style={[styles.chatOpeningPlaceholder, {
+            top: Platform.OS === 'android' ? 36 : headerOverlayHeight + 36,
+            left: horizontalPadding,
+            right: horizontalPadding,
+          }]}
+        >
+          <View accessible={false} style={[styles.chatOpeningLine, { width: '58%' }]} />
+          <View accessible={false} style={styles.chatOpeningLine} />
+          <View accessible={false} style={[styles.chatOpeningLine, { width: '82%' }]} />
+        </View>
+      ) : null}
+      </View>
 
       <KeyboardStickyView enabled={keyboardLayoutEnabled} offset={keyboardOffset} style={styles.composerSticky}>
         {Platform.OS === 'android' && <Reanimated.View pointerEvents="none" style={[StyleSheet.absoluteFill, temporarySurfaceAnimatedStyle]} />}
@@ -5179,8 +5458,8 @@ function ChatView({
                 <QueuedMessagesView maxHeight={Math.min(200, windowHeight * 0.25)} style={styles.composerQueueRows}
                   rows={shelfRows.map((row) => ({ id: row.id, kind: 'shelf', content: row.content.slice(0, 200) || 'Attachments',
                     detail: [row.attachments.map((a) => a.name).join(', '), row.error || (row.status === 'uploading' ? 'Uploading…' : row.showPendingStatus ? 'Waiting to sync' : '')].filter(Boolean).join(' · '),
-                    status: row.status ?? '', isEditing: false, canEdit: !shelfBusy && !sending, canDelete: !shelfBusy && !sending, canReorder: !shelfBusy && !sending,
-                    canRetry: row.status === 'failed' && !shelfBusy,
+                    status: row.status ?? '', isEditing: false, canEdit: !shelfBusy && !sending && !dictationBusy, canDelete: !shelfBusy && !sending && !dictationBusy, canReorder: !shelfBusy && !sending && !dictationBusy,
+                    canRetry: row.status === 'failed' && !shelfBusy && !sending && !dictationBusy,
                   }))}
                   onAction={({ nativeEvent: action }) => {
                     if (action.action === 'edit') void transferShelf(action.id);
@@ -5201,7 +5480,7 @@ function ChatView({
                       style={styles.composerQueueRows}
                       rows={queuedMessages.map((item) => {
                         const isEditing = queueEditRef.current?.id === item.id;
-                        const locked = queueBusy || sending || item.status === 'dispatching' || Boolean(item.pendingSubmissionId && !item.localFailure) || expired;
+                        const locked = dictationBusy || queueBusy || sending || item.status === 'dispatching' || Boolean(item.pendingSubmissionId && !item.localFailure) || expired;
                         return {
                           id: item.id,
                           content: isEditing ? 'Editing queued message…' : item.content || 'Attachments',
@@ -5215,7 +5494,7 @@ function ChatView({
                       })}
                       onAction={({ nativeEvent: action }) => {
                         const item = queuedMessages.find((candidate) => candidate.id === action.id);
-                        if (!item || queueBusy || sending || expired || item.status === 'dispatching' || (item.pendingSubmissionId && !item.localFailure)) return;
+                        if (!item || isDictationBusy() || queueBusy || sending || expired || item.status === 'dispatching' || (item.pendingSubmissionId && !item.localFailure)) return;
                         if (messageEdit) {
                           if (action.action === 'edit' && queueEditRef.current?.id === item.id) void cancelMessageEdit();
                           return;
@@ -5239,7 +5518,7 @@ function ChatView({
                 <View style={styles.messageEditBanner}>
                   <Icon name="pencil" size={12} color={COLORS.muted} />
                   <Text style={styles.messageEditBannerText}>{queueEditRef.current ? 'Editing queued message' : 'Editing message'}</Text>
-                  <Pressable accessibilityLabel="Cancel message edit" accessibilityRole="button" disabled={sending} onPress={cancelMessageEdit}>
+                  <Pressable accessibilityLabel="Cancel message edit" accessibilityRole="button" disabled={sending || dictationBusy} onPress={cancelMessageEdit}>
                     <Text style={styles.messageEditCancel}>Cancel</Text>
                   </Pressable>
                 </View>
@@ -5264,6 +5543,18 @@ function ChatView({
                   {!canUseAgent ? 'Choose an Agent-capable model or remove non-image files.' : 'Turn on Agent mode to use non-image files.'}
                 </Text>
               ) : null}
+              {dictationBusy && (
+                <View style={styles.messageEditBanner}>
+                  {dictation.phase !== 'recording' && <ActivityIndicator size="small" />}
+                  <Text accessibilityLiveRegion="polite" style={styles.messageEditBannerText}>
+                    {dictation.phase === 'recording' ? `Recording · ${dictation.seconds}s / 90s` : dictation.phase === 'transcribing' ? 'Transcribing…' : dictation.phase === 'cancelling' ? 'Cancelling…' : 'Preparing microphone…'}
+                  </Text>
+                  <Pressable accessibilityLabel="Cancel dictation" accessibilityRole="button" onPress={dictation.cancel} style={{ minHeight: 44, justifyContent: 'center' }}>
+                    <Text style={styles.messageEditCancel}>Cancel</Text>
+                  </Pressable>
+                </View>
+              )}
+              {dictation.error && <Text accessibilityRole="alert" style={styles.attachmentErrorText}>{dictation.error}</Text>}
               <TextInput
                 ref={composerInputRef}
                 accessibilityLabel="Message"
@@ -5275,7 +5566,8 @@ function ChatView({
                 onFocus={() => { setQueueCollapsed(true); setShelfCollapsed(true); }}
                 onBlur={() => { setQueueCollapsed(false); setShelfCollapsed(false); }}
                 onChangeText={(value) => { inputRef.current = value; onChangeInput(value); }}
-                onSelectionChange={(event) => { inputSelectionRef.current = event.nativeEvent.selection; }}
+                selection={{ start: Math.min(inputSelection.start, input.length), end: Math.min(inputSelection.end, input.length) }}
+                onSelectionChange={(event) => { setComposerSelection(setInputSelection, inputSelectionRef, event.nativeEvent.selection); }}
                 placeholder={attachments.length > 0 ? 'Add a caption…' : messageEdit ? 'Edit message…' : temporary ? 'Temporary message…' : 'Message…'}
                 placeholderTextColor={COLORS.muted}
                 style={styles.input}
@@ -5327,47 +5619,49 @@ function ChatView({
                     })),
                   }))} />
                 ))}
-                <View style={styles.flex} />
                 {Platform.OS === 'ios' ? (
-                  <>
-                    {showShelf && Boolean(input.trim() || attachments.length) && <NativeComposerIconButton label="Shelve draft" systemImage="archivebox"
-                      disabled={shelfBusy || sending} onPress={() => { void transferShelf(); }} />}
-                    <SwiftUIHost ignoreSafeArea="keyboard" style={styles.nativeAgentHost}>
-                      <SwiftUIButton
-                        onPress={() => {
-                          toggleAgent();
-                        }}
-                        modifiers={[
-                          buttonStyle(activeAgentEnabled ? 'glassProminent' : 'glass'),
-                          buttonBorderShape('circle'),
-                          controlSize('regular'),
-                          tint(nativeAgentTint),
-                          swiftUIDisabled(!canUseAgent),
-                          swiftUIAccessibilityLabel('Agent mode'),
-                          swiftUIAccessibilityHint(!agentAvailable ? 'Unavailable on this Pulpo instance.' : !model.agentEnabled ? 'Unavailable for this model.' : activeAgentEnabled ? 'On. Double tap to turn off.' : 'Off. Double tap to turn on.'),
-                        ]}
-                      >
-                        <SwiftUIRNHostView matchContents>
-                          <View pointerEvents="none" style={styles.nativeAgentIcon}>
-                            <Bot color={nativeAgentForeground} size={13} strokeWidth={2} />
-                          </View>
-                        </SwiftUIRNHostView>
-                      </SwiftUIButton>
-                    </SwiftUIHost>
-                    <NativeComposerIconButton
-                      disabled={shelfBusy || composerAction === 'submit' && !canSend}
-                      label={composerAction === 'stop' ? 'Stop generating' : messageEdit ? queueEditRef.current ? 'Save queued message' : 'Save and resend message' : 'Send message'}
-                      onPress={() => composerAction === 'stop' ? onStop() : submitMessage()}
-                      prominent
-                      systemImage={composerAction === 'stop' ? 'stop.fill' : 'arrow.up'}
-                    />
-                  </>
+                  <SwiftUIHost ignoreSafeArea="keyboard" style={styles.nativeAgentHost}>
+                    <SwiftUIButton
+                      onPress={() => {
+                        toggleAgent();
+                      }}
+                      modifiers={[
+                        buttonStyle(activeAgentEnabled ? 'glassProminent' : 'glass'),
+                        buttonBorderShape('circle'),
+                        controlSize('regular'),
+                        tint(nativeAgentTint),
+                        swiftUIDisabled(!canUseAgent),
+                        swiftUIAccessibilityLabel('Agent mode'),
+                        swiftUIAccessibilityHint(!agentAvailable ? 'Unavailable on this Pulpo instance.' : !model.agentEnabled ? 'Unavailable for this model.' : activeAgentEnabled ? 'On. Double tap to turn off.' : 'Off. Double tap to turn on.'),
+                      ]}
+                    >
+                      <SwiftUIRNHostView matchContents>
+                        <View pointerEvents="none" style={styles.nativeAgentIcon}>
+                          <Bot color={nativeAgentForeground} size={13} strokeWidth={2} />
+                        </View>
+                      </SwiftUIRNHostView>
+                    </SwiftUIButton>
+                  </SwiftUIHost>
                 ) : (
-                  <>
-                    {showShelf && Boolean(input.trim() || attachments.length) && <MaterialIconButton label="Shelve draft" icon="archivebox" disabled={shelfBusy || sending} onPress={() => { void transferShelf(); }} />}
-                    <MaterialIconButton label={activeAgentEnabled ? 'Turn off Agent mode' : 'Turn on Agent mode'} icon="bot" color={activeAgentEnabled ? nativeAgentTint : undefined} disabled={!canUseAgent} onPress={toggleAgent} />
-                    <MaterialIconButton label={composerAction === 'stop' ? 'Stop generating' : messageEdit ? queueEditRef.current ? 'Save queued message' : 'Save and resend message' : 'Send message'} icon={composerAction === 'stop' ? 'stop.fill' : 'arrow.up'} prominent disabled={shelfBusy || composerAction === 'submit' && !canSend} onPress={() => composerAction === 'stop' ? onStop() : submitMessage()} />
-                  </>
+                  <MaterialIconButton label={activeAgentEnabled ? 'Turn off Agent mode' : 'Turn on Agent mode'} icon="bot" color={activeAgentEnabled ? nativeAgentTint : undefined} disabled={!canUseAgent} onPress={toggleAgent} />
+                )}
+                <View style={styles.flex} />
+                {showShelf && Boolean(input.trim() || attachments.length) && (Platform.OS === 'ios'
+                  ? <NativeComposerIconButton label="Shelve draft" systemImage="archivebox" disabled={shelfBusy || sending || dictationBusy} onPress={() => { void transferShelf(); }} />
+                  : <MaterialIconButton label="Shelve draft" icon="archivebox" disabled={shelfBusy || sending || dictationBusy} onPress={() => { void transferShelf(); }} />)}
+                {dictationEnabled && (Platform.OS === 'ios'
+                  ? <NativeComposerIconButton label={dictationLabel} systemImage={dictation.phase === 'recording' ? 'stop.fill' : 'mic'} prominent={dictation.phase === 'recording'} disabled={dictationDisabled} onPress={dictation.phase === 'recording' ? dictation.stop : dictation.start} />
+                  : <MaterialIconButton label={dictationLabel} icon={dictation.phase === 'recording' ? 'stop.fill' : 'mic'} selected={dictation.phase === 'recording'} disabled={dictationDisabled} onPress={dictation.phase === 'recording' ? dictation.stop : dictation.start} />)}
+                {Platform.OS === 'ios' ? (
+                  <NativeComposerIconButton
+                    disabled={dictationBusy || shelfBusy || composerAction === 'submit' && !canSend}
+                    label={composerAction === 'stop' ? 'Stop generating' : messageEdit ? queueEditRef.current ? 'Save queued message' : 'Save and resend message' : 'Send message'}
+                    onPress={() => composerAction === 'stop' ? onStop() : submitMessage()}
+                    prominent
+                    systemImage={composerAction === 'stop' ? 'stop.fill' : 'arrow.up'}
+                  />
+                ) : (
+                  <MaterialIconButton label={composerAction === 'stop' ? 'Stop generating' : messageEdit ? queueEditRef.current ? 'Save queued message' : 'Save and resend message' : 'Send message'} icon={composerAction === 'stop' ? 'stop.fill' : 'arrow.up'} prominent disabled={dictationBusy || shelfBusy || composerAction === 'submit' && !canSend} onPress={() => composerAction === 'stop' ? onStop() : submitMessage()} />
                 )}
               </View>
             </ComposerSurface>
@@ -5392,7 +5686,8 @@ function ChatView({
 function NativeDrawerSearch({ value, focused, onChange, onFocusChange, fieldRef }: { value: string; focused: boolean; onChange: (value: string) => void; onFocusChange: (focused: boolean) => void; fieldRef: RefObject<SwiftUITextFieldRef | null> }) {
   const { styles } = useChatStyles();
   const nativeValue = useNativeState(value);
-  useEffect(() => { if (nativeValue.get() !== value) nativeValue.set(value); }, [nativeValue, value]);
+  // Native owns edits. Echoing the asynchronous filter value back can replace
+  // newer keystrokes; the clear button below writes the binding explicitly.
 
   if (!focused && value.length === 0) {
     return <SwiftUIHost style={styles.nativeDrawerSearchHost}>
@@ -5526,6 +5821,9 @@ const HistoryChatRow = memo(function HistoryChatRow({ active, chat, expirationMe
 }) {
   const { styles } = useChatStyles();
   const { fontScale } = useWindowDimensions();
+  const previewLease = useRef<(() => void) | null>(null);
+  useEffect(() => () => { previewLease.current?.(); previewLease.current = null; }, [chat.id]);
+  const endPreview = () => { previewLease.current?.(); previewLease.current = null; };
   const largeAndroidText = Platform.OS === 'android' && fontScale >= 1.5;
   const expirationAction = expirationMenuAction?.kind ?? 'hidden';
   const rowContent = <>
@@ -5554,7 +5852,13 @@ const HistoryChatRow = memo(function HistoryChatRow({ active, chat, expirationMe
       previewMetadata={`${chat.section} · ${chat.time}`}
       onAction={(action) => onChatAction(chat, action)}
       onPress={() => onSelectChat(chat)}
-      onPreviewRequest={() => onPreviewRequest(chat)}
+      onPreviewRequest={() => {
+        endPreview();
+        const namespace = usePrototypeStore.getState().productionNamespace;
+        if (namespace) previewLease.current = protectTranscript(namespace, chat.id);
+        onPreviewRequest(chat);
+      }}
+      onPreviewEnd={endPreview}
       style={styles.chatContextMenuHost}
     >
       <View pointerEvents="none" style={[styles.chatRow, active && styles.chatRowActive]}>
@@ -5597,6 +5901,7 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
   const automaticChatExpiration = usePrototypeStore((state) => state.preferences.automaticChatExpiration);
   const models = usePrototypeStore((state) => state.models);
   const previewChats = usePrototypeStore((state) => state.chats);
+  const previewChatsById = useMemo(() => new Map(previewChats.map((chat) => [chat.id, chat])), [previewChats]);
   const themePreference = usePrototypeStore((state) => state.preferences.theme);
   const appearance = useColorScheme();
   const isDark = themePreference === 'dark' || (themePreference === 'system' && appearance !== 'light');
@@ -5622,25 +5927,23 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
     setHideNewChatButton(KeyboardController.isVisible());
     return () => subscriptions.forEach((subscription) => subscription.remove());
   }, []);
-  const folderItems = useMemo(() => {
-    return folders.map((folder) => ({
-      id: folder.id,
-      name: folder.name,
-      chats: chats.filter((chat) => chat.folderId === folder.id),
-    }));
-  }, [chats, folders]);
+  const folderItems = useMemo(() => historyFolderItems(folders, chats), [chats, folders]);
   const searchActive = searchFocused || search.length > 0;
   const searchActiveProgress = useSharedValue(searchActive ? 1 : 0);
   const nativeSearchRef = useRef<SwiftUITextFieldRef>(null);
   const materialSearchRef = useRef<{ blur: () => Promise<void> }>(null);
-  const dismissSearch = useCallback(() => {
-    Keyboard.dismiss();
+  const blurSearch = useCallback(() => {
     void nativeSearchRef.current?.blur();
     void materialSearchRef.current?.blur();
   }, []);
+  const dismissSearch = useCallback(() => {
+    Keyboard.dismiss();
+    blurSearch();
+  }, [blurSearch]);
   useEffect(() => {
-    if (!drawerOpen) dismissSearch();
-  }, [dismissSearch, drawerOpen]);
+    // Closing history must not dismiss a keyboard now owned by the composer.
+    if (!drawerOpen) blurSearch();
+  }, [blurSearch, drawerOpen]);
   useEffect(() => {
     // The composer keyboard must not collapse controls in the persistent sidebar.
     searchActiveProgress.value = withTiming(searchActive ? 1 : 0, { duration: 180 });
@@ -5655,7 +5958,10 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
     };
   });
   const filtered = useMemo(
-    () => chats.filter((chat) => chat.title.toLowerCase().includes(search.toLowerCase())),
+    () => {
+      const query = search.toLowerCase();
+      return query ? chats.filter((chat) => chat.title.toLowerCase().includes(query)) : chats;
+    },
     [chats, search],
   );
   const sections = useMemo(() => {
@@ -5729,8 +6035,9 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
     onSelectChat(chat);
   }, [dismissSearch, onSelectChat]);
 
+  const requestHistoryPreview = useCallback((chat: HistoryChatSummary) => onPreviewRequest(chat.id), [onPreviewRequest]);
   const renderHistoryChat = useCallback(({ item }: { item: HistoryChatSummary }) => {
-    const source = previewChats.find((chat) => chat.id === item.id);
+    const source = previewChatsById.get(item.id);
     const previewText = source?.detailLoaded === false
       ? 'Loading preview…'
       : source?.messages.at(-1)?.text || DEFAULT_HISTORY_PREVIEW;
@@ -5753,10 +6060,10 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
       removeChatLabel={removeChatLabel}
       onChatAction={runChatAction}
       onOpenActions={showChatActions}
-      onPreviewRequest={(chat) => onPreviewRequest(chat.id)}
+      onPreviewRequest={requestHistoryPreview}
       onSelectChat={selectHistoryChat}
     />;
-  }, [activeChatId, automaticChatExpiration, isDark, models, onPreviewRequest, previewChats, removeChatLabel, runChatAction, selectHistoryChat, showChatActions]);
+  }, [activeChatId, automaticChatExpiration, isDark, models, requestHistoryPreview, previewChatsById, removeChatLabel, runChatAction, selectHistoryChat, showChatActions]);
 
   return (
     <View style={styles.panelRoot}>
@@ -5902,6 +6209,8 @@ function createChatStyles(COLORS: ChatColors) { return StyleSheet.create({
   },
   persistentMainView: { flex: 1, minWidth: 0, overflow: 'hidden', backgroundColor: COLORS.background },
   chatRoot: { flex: 1, backgroundColor: COLORS.background },
+  chatOpeningPlaceholder: { position: 'absolute', gap: 14 },
+  chatOpeningLine: { height: 12, borderRadius: 6, backgroundColor: COLORS.lineSoft },
   chatHeaderOverlay: { position: Platform.OS === 'android' ? 'relative' : 'absolute', zIndex: 2, top: 0, left: 0, right: 0 },
   appHeader: { width: '100%', maxWidth: CHAT_CONTENT_MAX, alignSelf: 'center', height: 64, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
   appHeaderEdgeAligned: { maxWidth: '100%' },

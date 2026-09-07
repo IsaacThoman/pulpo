@@ -1,0 +1,390 @@
+{
+  "date": "2026-09-07T02:19:27.168Z",
+  "platform": "ios",
+  "osVersion": "26.5",
+  "reactNative": {
+    "major": 0,
+    "minor": 86,
+    "patch": 2
+  },
+  "hermes": true,
+  "dev": false,
+  "sourceCommit": "675eb022 + fix-mobile-performance working tree",
+  "method": "Current functions in a freshly built Release native app; synthetic function and residency benchmarks.",
+  "projection": [
+    {
+      "turns": 10,
+      "medianMs": 0.15,
+      "p95Ms": 0.19,
+      "samplesMs": [
+        0.07,
+        0.06,
+        0.06,
+        0.04,
+        0.07,
+        0.14,
+        0.16,
+        0.19,
+        0.16,
+        0.16,
+        0.18,
+        0.15,
+        0.15,
+        0.17,
+        0.15
+      ]
+    },
+    {
+      "turns": 100,
+      "medianMs": 0.76,
+      "p95Ms": 2.06,
+      "samplesMs": [
+        0.57,
+        0.61,
+        0.59,
+        0.59,
+        0.54,
+        0.57,
+        1.03,
+        0.78,
+        1.22,
+        0.98,
+        0.76,
+        2.06,
+        1.25,
+        1.34,
+        0.75
+      ]
+    },
+    {
+      "turns": 250,
+      "medianMs": 1.23,
+      "p95Ms": 6.85,
+      "samplesMs": [
+        3.98,
+        1.07,
+        1.21,
+        1.29,
+        1.2,
+        1.32,
+        1.19,
+        1.22,
+        1.28,
+        1.24,
+        1.2,
+        1.27,
+        6.85,
+        1.15,
+        1.23
+      ]
+    },
+    {
+      "turns": 500,
+      "medianMs": 2.78,
+      "p95Ms": 4.8,
+      "samplesMs": [
+        4.27,
+        2.39,
+        2.33,
+        3.64,
+        4.36,
+        3.94,
+        2.78,
+        4.62,
+        4.05,
+        4.8,
+        2.27,
+        2.11,
+        2.15,
+        2.42,
+        2.4
+      ]
+    },
+    {
+      "turns": 1000,
+      "medianMs": 5.15,
+      "p95Ms": 7.97,
+      "samplesMs": [
+        3.48,
+        4.23,
+        5.07,
+        5.15,
+        5.15,
+        5.22,
+        5.04,
+        5.39,
+        4.35,
+        4.67,
+        7.97,
+        7.49,
+        7.55,
+        5.99,
+        4.93
+      ]
+    }
+  ],
+  "snapshotHydration": [
+    {
+      "turns": 100,
+      "notifications": 1,
+      "medianMs": 0.29,
+      "p95Ms": 0.33,
+      "samplesMs": [
+        0.31,
+        0.18,
+        0.18,
+        0.33,
+        0.28,
+        0.29,
+        0.31,
+        0.28,
+        0.29,
+        0.18,
+        0.28,
+        0.29,
+        0.31,
+        0.29,
+        0.19
+      ]
+    },
+    {
+      "turns": 500,
+      "notifications": 1,
+      "medianMs": 0.77,
+      "p95Ms": 1.03,
+      "samplesMs": [
+        0.45,
+        0.49,
+        0.84,
+        1.03,
+        0.77,
+        0.64,
+        0.62,
+        0.98,
+        0.66,
+        1,
+        1.02,
+        1.01,
+        0.5,
+        0.6,
+        0.94
+      ]
+    },
+    {
+      "turns": 1000,
+      "notifications": 1,
+      "medianMs": 1.22,
+      "p95Ms": 1.93,
+      "samplesMs": [
+        0.98,
+        1.04,
+        1.22,
+        1.53,
+        0.98,
+        0.95,
+        1.2,
+        1.93,
+        1.61,
+        1.2,
+        1.22,
+        0.87,
+        1.34,
+        1.49,
+        1.45
+      ]
+    }
+  ],
+  "residencyCountsAfter20ChatCycles": [
+    6,
+    6,
+    6
+  ],
+  "runtimeMemoryAfterCycles": [
+    {
+      "js_VMExperiments": 0,
+      "js_numGCs": 35,
+      "js_gcCPUTime": 0.039885000000000004,
+      "js_gcTime": 0.03939941999999999,
+      "js_totalAllocatedBytes": 126479192,
+      "js_allocatedBytes": 31110584,
+      "js_heapSize": 41943040,
+      "js_mallocSizeEstimate": 0,
+      "js_vaSize": 41943040,
+      "js_externalBytes": 266814,
+      "js_markStackOverflows": 0
+    },
+    {
+      "js_VMExperiments": 0,
+      "js_numGCs": 44,
+      "js_gcCPUTime": 0.04744700000000001,
+      "js_gcTime": 0.046866210999999984,
+      "js_totalAllocatedBytes": 160747800,
+      "js_allocatedBytes": 38921992,
+      "js_heapSize": 41943040,
+      "js_mallocSizeEstimate": 0,
+      "js_vaSize": 41943040,
+      "js_externalBytes": 266814,
+      "js_markStackOverflows": 0
+    },
+    {
+      "js_VMExperiments": 0,
+      "js_numGCs": 55,
+      "js_gcCPUTime": 0.05983100000000001,
+      "js_gcTime": 0.059000417999999985,
+      "js_totalAllocatedBytes": 195166800,
+      "js_allocatedBytes": 30861864,
+      "js_heapSize": 41943040,
+      "js_mallocSizeEstimate": 0,
+      "js_vaSize": 41943040,
+      "js_externalBytes": 0,
+      "js_markStackOverflows": 0
+    }
+  ],
+  "retainedSnapshotsAfter20Chats": 600,
+  "cache": [
+    {
+      "count": 1,
+      "payloadBytes": 490402,
+      "metadataRead": {
+        "medianMs": 1.05,
+        "p95Ms": 1.63,
+        "samplesMs": [
+          0.82,
+          0.9,
+          1.05,
+          1.63,
+          1.44
+        ]
+      },
+      "targetedRead": {
+        "medianMs": 5.04,
+        "p95Ms": 6.78,
+        "samplesMs": [
+          4.68,
+          5.34,
+          4.74,
+          4.89,
+          5.42,
+          6.78,
+          4.48,
+          6.76,
+          4.13,
+          5.04
+        ]
+      },
+      "markOpenedAndTrim": {
+        "medianMs": 0.82,
+        "p95Ms": 2.28,
+        "samplesMs": [
+          2.28,
+          1.44,
+          1.29,
+          0.82,
+          0.69,
+          0.73,
+          0.67,
+          0.65,
+          0.81,
+          0.9
+        ]
+      },
+      "tinyReadBehindTrimMs": 0.82
+    },
+    {
+      "count": 10,
+      "payloadBytes": 4904020,
+      "metadataRead": {
+        "medianMs": 1.38,
+        "p95Ms": 3.59,
+        "samplesMs": [
+          1.11,
+          1.38,
+          1.27,
+          1.65,
+          3.59
+        ]
+      },
+      "targetedRead": {
+        "medianMs": 6.92,
+        "p95Ms": 9.47,
+        "samplesMs": [
+          9.47,
+          3.92,
+          6.92,
+          8.56,
+          6.54,
+          5.18,
+          7.03,
+          7.06,
+          6.52,
+          6.46
+        ]
+      },
+      "markOpenedAndTrim": {
+        "medianMs": 6,
+        "p95Ms": 6.59,
+        "samplesMs": [
+          5.18,
+          6.39,
+          5,
+          6.23,
+          6.59,
+          5.04,
+          6.47,
+          6,
+          5.9,
+          5.46
+        ]
+      },
+      "tinyReadBehindTrimMs": 5.29
+    },
+    {
+      "count": 45,
+      "payloadBytes": 22092625,
+      "metadataRead": {
+        "medianMs": 5.27,
+        "p95Ms": 12.61,
+        "samplesMs": [
+          4.54,
+          4.88,
+          5.27,
+          7.3,
+          12.61
+        ]
+      },
+      "targetedRead": {
+        "medianMs": 6.44,
+        "p95Ms": 7.43,
+        "samplesMs": [
+          4.13,
+          6.44,
+          5.97,
+          7.43,
+          6.11,
+          6.96,
+          6.76,
+          4.87,
+          5.87,
+          6.96
+        ]
+      },
+      "markOpenedAndTrim": {
+        "medianMs": 13.56,
+        "p95Ms": 17.16,
+        "samplesMs": [
+          6.81,
+          9.72,
+          13.16,
+          15.65,
+          17.16,
+          11.9,
+          13.56,
+          12.8,
+          15.73,
+          14.11
+        ]
+      },
+      "tinyReadBehindTrimMs": 5
+    }
+  ]
+}

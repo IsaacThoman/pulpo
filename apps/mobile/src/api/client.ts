@@ -1,3 +1,4 @@
+import { protectTranscriptRequest } from '../data/transcriptResidency'
 import type { NativeDevice, DeviceSessionList, MobileConfig, NativeAuthResponse, PasskeyAuthenticationResponse, PasskeyCeremony, PasskeyList, PasskeyRegistrationResponse, PasskeySummary, TwoFactorEnrollment, TwoFactorRecoveryCodes, TwoFactorStatus, User } from '@pulpo/contracts'
 import type { MobileModel, ServerChat, ServerDeletedChat, ServerFolder } from '../types'
 
@@ -46,41 +47,71 @@ interface RequestOptions extends Omit<RequestInit, 'body'> {
   idempotencyKey?: string
   timeoutMs?: number
   /** Security forms can reject a current password while the bearer session is valid. */
+  beforeDecode?: () => Promise<void>
   verifySessionOnUnauthorized?: boolean
 }
 
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  const release = protectTranscriptRequest(path, options.method ?? 'GET')
+  try { return await performApiRequest<T>(path, options) } finally { release() }
+}
+
+async function performApiRequest<T>(path: string, options: RequestOptions): Promise<T> {
+  const { beforeDecode, ...requestOptions } = options
+  const requestOrigin = instanceUrl
+  const requestToken = sessionToken
   const headers = new Headers(options.headers)
-  if (options.body !== undefined) headers.set('content-type', 'application/json')
+  const multipart = typeof FormData !== 'undefined' && options.body instanceof FormData
+  if (multipart) headers.delete('content-type')
+  else if (options.body !== undefined) headers.set('content-type', 'application/json')
   if (options.idempotencyKey) headers.set('idempotency-key', options.idempotencyKey)
   if (options.auth !== false && sessionToken) headers.set('authorization', `Bearer ${sessionToken}`)
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? 15_000)
   const abort = () => controller.abort()
+  if (options.signal?.aborted) controller.abort()
   options.signal?.addEventListener('abort', abort, { once: true })
   let response: Response
+  let bodyText: string | undefined
+  let body: { error?: { message?: string; code?: string } } | undefined
   try {
-    response = await fetch(`${instanceUrl}${path}`, {
-      ...options,
+    response = await fetch(`${requestOrigin}${path}`, {
+      ...requestOptions,
       headers,
       signal: controller.signal,
-      body: options.body === undefined ? undefined : JSON.stringify(options.body),
+      body: multipart ? options.body as FormData : options.body === undefined ? undefined : JSON.stringify(options.body),
     })
+    if (response.status !== 204) {
+      if (beforeDecode) bodyText = await response.text()
+      else body = await response.json().catch((error) => {
+        if (controller.signal.aborted) throw error
+        return undefined
+      })
+    }
   } catch (error) {
+    options.signal?.removeEventListener('abort', abort)
     if (controller.signal.aborted && !options.signal?.aborted) {
       throw new ApiError(408, 'request_timeout', 'The Pulpo instance did not respond in time.')
     }
     throw error
   } finally {
     clearTimeout(timeout)
-    options.signal?.removeEventListener('abort', abort)
+    if (!beforeDecode) options.signal?.removeEventListener('abort', abort)
   }
-  if (response.status === 204) return undefined as T
-  const body = await response.json().catch(() => undefined) as {
-    error?: { message?: string; code?: string }
-  } | undefined
+  if (response.status === 204) {
+    options.signal?.removeEventListener('abort', abort)
+    return undefined as T
+  }
+  if (beforeDecode) {
+    // Download the body during the slide; JSON parsing waits for completion.
+    try {
+      await beforeDecode()
+      if (options.signal?.aborted) throw new Error('Chat request cancelled')
+      try { body = JSON.parse(bodyText!) } catch { body = undefined }
+    } finally { options.signal?.removeEventListener('abort', abort) }
+  }
   if (!response.ok) {
-    if (response.status === 401 && options.auth !== false) {
+    if (response.status === 401 && options.auth !== false && requestToken === sessionToken && requestOrigin === instanceUrl && !options.signal?.aborted) {
       if (options.verifySessionOnUnauthorized) {
         // Let the session endpoint decide whether to sign out. Keep credential
         // errors (and temporary verification network failures) in the form.
@@ -167,7 +198,7 @@ export const mobileApi = {
   trashAllChats: () => apiRequest<void>('/api/chats', { method: 'DELETE' }),
   deletedChats: () => apiRequest<{ data: ServerDeletedChat[] }>('/api/chats/deleted'),
   emptyTrash: () => apiRequest<void>('/api/chats/deleted', { method: 'DELETE' }),
-  chat: (id: string) => apiRequest<ServerChat>(`/api/chats/${id}?format=compact&scope=active`),
+  chat: (id: string, signal?: AbortSignal, beforeDecode?: () => Promise<void>) => apiRequest<ServerChat>(`/api/chats/${id}?format=compact&scope=active`, { signal, beforeDecode }),
   models: () => apiRequest<{ agentAvailable: boolean; data: MobileModel[] }>('/api/models'),
   folders: () => apiRequest<{ data: ServerFolder[] }>('/api/folders'),
   settings: () => apiRequest<{ values: Record<string, unknown>; updatedAt: string | null }>('/api/settings'),

@@ -386,7 +386,7 @@ describe('shared contracts', () => {
       },
     })).toMatchObject({
       limits: { maxAttachmentBytes: 25 * 1024 * 1024 },
-      capabilities: { twoFactorAuth: false, passkeys: false },
+      capabilities: { dictation: false, twoFactorAuth: false, passkeys: false },
     })
   })
 

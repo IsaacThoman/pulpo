@@ -3,7 +3,7 @@ vi.mock('expo-crypto', async () => ({ randomUUID: (await import('node:crypto')).
 import type { MobileModel, ServerChat, ServerFolder } from '../../../types'
 
 const mocks = vi.hoisted(() => ({
-  cachedChats: vi.fn(),
+  cachedChatSummaries: vi.fn(),
   getValue: vi.fn(),
   preferences: {
     synchronizedOwnerNamespace: null as string | null,
@@ -15,7 +15,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('../../../data/database', () => ({
   cacheNamespace: (instanceUrl: string, userId: string) => `${instanceUrl}|${userId}`,
-  cachedChats: mocks.cachedChats,
+  cachedChatSummaries: mocks.cachedChatSummaries,
   completeOutboxEntity: vi.fn(async () => undefined),
   getValue: mocks.getValue,
   pruneCachedChatScope: vi.fn(async () => undefined),
@@ -27,17 +27,17 @@ vi.mock('../../../data/queries', () => ({
   deletedChatsQuery: vi.fn(() => ({})),
   foldersQuery: vi.fn(() => ({})),
   modelsQuery: vi.fn(() => ({})),
-  queryKeys: { settings: (namespace: string) => ['settings', namespace] },
+  queryKeys: { chat: (namespace: string, id: string) => ['chat', namespace, id], settings: (namespace: string) => ['settings', namespace] },
 }))
 vi.mock('../../../api/client', () => ({ isNetworkError: () => false, mobileApi: {} }))
 vi.mock('../../../data/mutations', () => ({ queueOfflineMutation: vi.fn() }))
-vi.mock('../../../features/chat/projection', () => ({ projectChat: vi.fn(() => []) }))
+vi.mock('../../../features/chat/projection', () => ({ createChatProjector: () => vi.fn(() => []) }))
 vi.mock('../../../features/chat/api', () => ({
   createFolder: vi.fn(), deleteFolder: vi.fn(), permanentlyDeleteChat: vi.fn(), restoreChat: vi.fn(),
   trashChat: vi.fn(), updateChat: vi.fn(), updateFolder: vi.fn(),
 }))
 vi.mock('../../../providers/realtimeStore', () => {
-  const store = Object.assign(vi.fn(), { getState: () => ({ snapshots: {} }) })
+  const store = Object.assign(vi.fn(), { getState: () => ({ snapshots: {}, receiveSnapshots: vi.fn() }) })
   return { subscribeToChat: vi.fn(), subscribeToResponse: vi.fn(), useRealtimeStore: store }
 })
 vi.mock('../../../store/preferences', () => {
@@ -88,7 +88,7 @@ function model(id: string): MobileModel {
 }
 
 beforeEach(() => {
-  mocks.cachedChats.mockReset().mockResolvedValue([])
+  mocks.cachedChatSummaries.mockReset().mockResolvedValue([])
   mocks.getValue.mockReset().mockResolvedValue(null)
   mocks.preferences.synchronizedOwnerNamespace = null
   mocks.preferences.favoriteModelIds = []
@@ -119,7 +119,7 @@ describe('production scope hydration', () => {
       id: 'folder-1', name: 'Work', pinned: false, sortOrder: 0,
       createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z',
     }
-    mocks.cachedChats.mockReturnValue(pendingChats.promise)
+    mocks.cachedChatSummaries.mockReturnValue(pendingChats.promise)
     mocks.getValue.mockImplementation(async (_namespace: string, key: string) => {
       if (key === 'folders') return [cachedFolder]
       if (key === 'model-catalog') return { agentAvailable: true, data: [model('cached')] }
@@ -152,7 +152,7 @@ describe('production scope hydration', () => {
   it('ignores a stale account hydration after a newer namespace takes ownership', async () => {
     const firstChats = deferred<ServerChat[]>()
     const firstCatalog = deferred<{ agentAvailable: boolean; data: MobileModel[] }>()
-    mocks.cachedChats
+    mocks.cachedChatSummaries
       .mockReturnValueOnce(firstChats.promise)
       .mockResolvedValueOnce([chat('chat-b', 'Current account')])
     mocks.getValue.mockImplementation(async (namespace: string, key: string) => {
@@ -173,7 +173,7 @@ describe('production scope hydration', () => {
   })
 
   it('marks an empty scope ready after local database failures so networking can continue', async () => {
-    mocks.cachedChats.mockRejectedValue(new Error('database unavailable'))
+    mocks.cachedChatSummaries.mockRejectedValue(new Error('database unavailable'))
     mocks.getValue.mockRejectedValue(new Error('database unavailable'))
 
     await hydrateProductionScope('instance|user-a')
@@ -185,7 +185,7 @@ describe('production scope hydration', () => {
   })
 
   it('does not restore temporary chats from a legacy local cache', async () => {
-    mocks.cachedChats.mockResolvedValue([
+    mocks.cachedChatSummaries.mockResolvedValue([
       chat('saved', 'Saved chat'),
       { ...chat('temporary', 'Temporary chat'), temporary: true },
     ])
@@ -210,7 +210,7 @@ describe('chat preview hydration', () => {
     })
     const fetchQuery = vi.fn().mockResolvedValue({ ...summary, responses: [], attachments: [] })
 
-    await hydrateProductionChatPreview({ fetchQuery } as never, 'instance|user-a', 'chat-a', 25)
+    await hydrateProductionChatPreview({ fetchQuery, getQueryData: () => ({ ...summary, responses: [], attachments: [] }), getQueryCache: () => ({ subscribe: () => () => {} }) } as never, 'instance|user-a', 'chat-a', 25)
 
     expect(fetchQuery).toHaveBeenCalledOnce()
     expect(usePrototypeStore.getState().chats[0]).toMatchObject({ id: 'chat-a', detailLoaded: true })
@@ -229,7 +229,7 @@ describe('chat preview hydration', () => {
     })
     const fetchQuery = vi.fn()
 
-    await hydrateProductionChatPreview({ fetchQuery } as never, 'instance|user-a', 'chat-a', 25)
+    await hydrateProductionChatPreview({ fetchQuery, getQueryData: () => ({ ...summary, responses: [], attachments: [] }), getQueryCache: () => ({ subscribe: () => () => {} }) } as never, 'instance|user-a', 'chat-a', 25)
 
     expect(fetchQuery).not.toHaveBeenCalled()
   })

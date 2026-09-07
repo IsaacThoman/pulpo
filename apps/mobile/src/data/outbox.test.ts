@@ -3,7 +3,7 @@ import { QueryClient } from '@tanstack/react-query'
 import type { ServerChat, MobileQueuedMessage } from '../types'
 const mocks = vi.hoisted(() => ({ request: vi.fn(), complete: vi.fn(), fail: vi.fn(), pending: vi.fn(), cached: vi.fn(), cache: vi.fn() }))
 vi.mock('../api/client', () => ({ apiRequest: mocks.request, ApiError: class ApiError extends Error { constructor(public status: number, public code: string, message: string) { super(message) } } }))
-vi.mock('./database', () => ({ completeOutbox: mocks.complete, failOutbox: mocks.fail, pendingOutbox: mocks.pending, cachedChats: mocks.cached, cacheOpenedChat: mocks.cache }))
+vi.mock('./database', () => ({ completeOutbox: mocks.complete, failOutbox: mocks.fail, pendingOutbox: mocks.pending, cachedChat: mocks.cached, cacheChats: mocks.cache }))
 vi.mock('./queries', () => ({ queryKeys: { chat: (namespace: string, id: string) => ['chat', namespace, id] } }))
 import { replayOutbox } from './outbox'
 import { ApiError } from '../api/client'
@@ -17,7 +17,7 @@ beforeEach(() => {
   client = new QueryClient()
   const chat = { id: 'chat', temporary: false, queuedMessages: [pending] } as ServerChat
   client.setQueryData(key, chat)
-  mocks.cached.mockResolvedValue([chat])
+  mocks.cached.mockResolvedValue(chat)
   mocks.pending.mockResolvedValue([row])
   mocks.cache.mockResolvedValue(undefined)
   mocks.complete.mockResolvedValue(undefined)

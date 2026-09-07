@@ -77,3 +77,14 @@ Physical-device Siri voice recognition, lock-screen authentication prompts, Acti
 button invocation, and hardware background time limits were not exercised. Slow
 responses, account/server mismatch, and temporary-chat semantics are covered by
 the native tests and real API acceptance rather than every combination in the UI.
+
+## Dev synchronization — September 7, 2026
+
+Merged dev through `92d02b49`, retaining the dictation imports alongside Shortcuts.
+Shortcut chat navigation now cancels pending drawer/chat preparation using the
+new transition interruption helper before activating its destination.
+
+Validation after the merge: 567 mobile tests across 85 files, 16 native Swift
+tests, mobile typecheck, repository lint, and production iOS/Android exports all
+passed. The full native simulator build and UI acceptance above predate this
+merge; they were not repeated for this synchronization.

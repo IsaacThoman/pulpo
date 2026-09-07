@@ -4,7 +4,7 @@ import type { MobileQueuedMessage, ServerChat } from '../../types'
 const mocks = vi.hoisted(() => ({ request: vi.fn(), offline: vi.fn(), pending: vi.fn(), cache: vi.fn() }))
 vi.mock('expo-crypto', () => ({ randomUUID: () => 'submission-1' }))
 vi.mock('../../api/client', () => ({ apiRequest: mocks.request, isNetworkError: (error: unknown) => error instanceof TypeError }))
-vi.mock('../../data/database', () => ({ cacheOpenedChat: mocks.cache, pendingOutbox: mocks.pending }))
+vi.mock('../../data/database', () => ({ cacheChats: mocks.cache, pendingOutbox: mocks.pending }))
 vi.mock('../../data/mutations', () => ({ queueOfflineMutation: mocks.offline }))
 vi.mock('../../data/queries', () => ({ queryKeys: { chat: (namespace: string, id: string) => ['chat', namespace, id] } }))
 import { enqueueMessage, mutateQueuedMessage } from './messageQueue'
