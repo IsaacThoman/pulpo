@@ -1,4 +1,4 @@
-import type { MobileConfig, NativeAuthResponse, PasskeyAuthenticationResponse, PasskeyCeremony, PasskeyList, PasskeyRegistrationResponse, PasskeySummary, TwoFactorEnrollment, TwoFactorRecoveryCodes, TwoFactorStatus, User } from '@pulpo/contracts'
+import type { NativeDevice, DeviceSessionList, MobileConfig, NativeAuthResponse, PasskeyAuthenticationResponse, PasskeyCeremony, PasskeyList, PasskeyRegistrationResponse, PasskeySummary, TwoFactorEnrollment, TwoFactorRecoveryCodes, TwoFactorStatus, User } from '@pulpo/contracts'
 import type { MobileModel, ServerChat, ServerDeletedChat, ServerFolder } from '../types'
 
 export class ApiError extends Error {
@@ -98,23 +98,26 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
 }
 
 export const mobileApi = {
+  sessions: () => apiRequest<DeviceSessionList>('/api/me/sessions'),
+  revokeSession: (id: string) => apiRequest<void>(`/api/me/sessions/${id}`, { method: 'DELETE' }),
+  revokeOtherSessions: () => apiRequest<void>('/api/me/sessions/revoke-others', { method: 'POST' }),
   config: () => apiRequest<MobileConfig>('/api/mobile/config', { auth: false }),
-  login: (email: string, password: string, deviceLabel: string, twoFactorCode?: string) =>
+  login: (email: string, password: string, deviceLabel: string, twoFactorCode?: string, device: Pick<NativeDevice, 'appType' | 'platform'> = {}) =>
     apiRequest<NativeAuthResponse>('/api/mobile/auth/login', {
-      method: 'POST', auth: false, body: { email, password, deviceLabel, twoFactorCode },
+      method: 'POST', auth: false, body: { email, password, deviceLabel, twoFactorCode, appType: 'mobile', ...device },
     }),
-  signup: (name: string, username: string, email: string, password: string, deviceLabel: string) =>
+  signup: (name: string, username: string, email: string, password: string, deviceLabel: string, device: Pick<NativeDevice, 'appType' | 'platform'> = {}) =>
     apiRequest<NativeAuthResponse>('/api/mobile/auth/signup', {
-      method: 'POST', auth: false, body: { name, username, email, password, deviceLabel },
+      method: 'POST', auth: false, body: { name, username, email, password, deviceLabel, appType: 'mobile', ...device },
     }),
   passkeyOptions: () => apiRequest<PasskeyCeremony>('/api/mobile/auth/passkey/options', { method: 'POST', auth: false }),
-  verifyPasskey: (ceremonyToken: string, response: PasskeyAuthenticationResponse, deviceLabel: string) =>
+  verifyPasskey: (ceremonyToken: string, response: PasskeyAuthenticationResponse, deviceLabel: string, device: Pick<NativeDevice, 'appType' | 'platform'> = {}) =>
     apiRequest<NativeAuthResponse>('/api/mobile/auth/passkey/verify', {
-      method: 'POST', auth: false, body: { ceremonyToken, response, deviceLabel },
+      method: 'POST', auth: false, body: { ceremonyToken, response, deviceLabel, appType: 'mobile', ...device },
     }),
-  exchangeBrowserPasskey: (code: string, codeVerifier: string, deviceLabel: string) =>
+  exchangeBrowserPasskey: (code: string, codeVerifier: string, deviceLabel: string, device: Pick<NativeDevice, 'appType' | 'platform'> = {}) =>
     apiRequest<NativeAuthResponse>('/api/mobile/auth/passkey/browser/exchange', {
-      method: 'POST', auth: false, body: { code, codeVerifier, deviceLabel },
+      method: 'POST', auth: false, body: { code, codeVerifier, deviceLabel, appType: 'mobile', ...device },
     }),
   logout: () => apiRequest<void>('/api/mobile/auth/logout', { method: 'POST' }),
   me: () => apiRequest<{ user: User }>('/api/mobile/me'),

@@ -78,3 +78,20 @@ describe('security form authentication errors', () => {
     expect(onUnauthorized).toHaveBeenCalledOnce()
   })
 })
+
+describe('device metadata on native authentication', () => {
+  afterEach(() => vi.unstubAllGlobals())
+  it.each(['ios', 'android'] as const)('sends %s metadata on password, signup, and both passkey flows', async (platform) => {
+    const fetchMock = vi.fn(async () => Response.json({ user: {}, session: {} }))
+    vi.stubGlobal('fetch', fetchMock)
+    const device = { platform }
+    await mobileApi.login('me@example.test', 'password', 'My phone', undefined, device)
+    await mobileApi.signup('Me', 'member', 'me@example.test', 'password', 'My phone', device)
+    await mobileApi.verifyPasskey('ceremony', { id: 'key' } as never, 'My phone', device)
+    await mobileApi.exchangeBrowserPasskey('code', 'verifier', 'My phone', device)
+    expect(fetchMock).toHaveBeenCalledTimes(4)
+    for (const call of fetchMock.mock.calls as unknown as Array<[string, RequestInit]>) {
+      expect(JSON.parse(call[1].body as string)).toMatchObject({ deviceLabel: 'My phone', appType: 'mobile', platform })
+    }
+  })
+})

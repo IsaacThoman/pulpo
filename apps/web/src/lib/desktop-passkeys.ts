@@ -1,3 +1,4 @@
+import { desktopDevice } from './runtime'
 import { apiRequest } from './api'
 import { onDesktopProtocolUrl, openExternalUrl, runtimeInstanceUrl } from './runtime'
 import type { NativeAuthResponse } from '@pulpo/contracts'
@@ -59,7 +60,7 @@ export async function authenticateDesktopPasskey(): Promise<NativeAuthResponse> 
   const code = parameters.get('code')
   if (!code || code.length < 32) throw new Error(ui("The passkey authorization code was missing."))
   return apiRequest<NativeAuthResponse>('/api/mobile/auth/passkey/browser/exchange', {
-    method: 'POST', body: { code, codeVerifier: request.verifier, deviceLabel: 'Pulpo for Mac' },
+    method: 'POST', body: { code, codeVerifier: request.verifier, ...desktopDevice() },
   })
 }
 

@@ -193,6 +193,7 @@ const esES = {
       general: 'General',
       profile: 'Perfil',
       security: 'Seguridad',
+      devices: 'Dispositivos',
       connections: 'Conexiones',
       personalization: 'Personalización',
       interface: 'Interfaz',

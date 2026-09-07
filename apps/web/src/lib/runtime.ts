@@ -1,3 +1,4 @@
+import type { NativeDevice } from '@pulpo/contracts'
 import { normalizeInstanceUrl } from '@pulpo/client-core'
 
 export interface DesktopStoredSession {
@@ -124,4 +125,11 @@ export async function clearDesktopSession(): Promise<void> {
 
 export function onDesktopProtocolUrl(listener: (url: string) => void): () => void {
   return window.pulpoDesktop?.onProtocolUrl(listener) ?? (() => undefined)
+}
+
+export function desktopDevice(): NativeDevice {
+  const os = typeof window !== 'undefined' ? window.pulpoDesktop?.os : undefined
+  const platform = os === 'darwin' ? 'macos' : os === 'win32' ? 'windows' : os === 'linux' ? 'linux' : 'unknown'
+  const name = { macos: 'Mac', windows: 'Windows', linux: 'Linux', unknown: 'Desktop' }[platform]
+  return { deviceLabel: `Pulpo for ${name}`, appType: 'desktop', platform }
 }
