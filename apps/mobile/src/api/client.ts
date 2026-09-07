@@ -57,6 +57,7 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
 }
 
 async function performApiRequest<T>(path: string, options: RequestOptions): Promise<T> {
+  const requestUnauthorizedHandler = unauthorizedHandler
   const { beforeDecode, ...requestOptions } = options
   const requestOrigin = instanceUrl
   const requestToken = sessionToken
@@ -116,7 +117,7 @@ async function performApiRequest<T>(path: string, options: RequestOptions): Prom
         // Let the session endpoint decide whether to sign out. Keep credential
         // errors (and temporary verification network failures) in the form.
         await apiRequest('/api/mobile/me').catch(() => undefined)
-      } else unauthorizedHandler?.()
+      } else requestUnauthorizedHandler?.()
     }
     throw new ApiError(
       response.status,

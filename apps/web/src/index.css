@@ -149,7 +149,7 @@ html[data-desktop="true"] .desktop-sidebar-collapsed .chat-header::before {
     display: flex;
   }
 
-  .app-main > div > header {
+  html:not([data-desktop="true"]) .app-main > div > header {
     padding-left: 3rem;
   }
 }
@@ -581,4 +581,71 @@ html[data-desktop="true"] button,
 html[data-desktop="true"] input,
 html[data-desktop="true"] a {
   -webkit-app-region: no-drag;
+}
+
+/* Keep the collapsed desktop title bar when the sidebar becomes a drawer. */
+@media (width < 750px) {
+  html[data-desktop="true"] .desktop-shell {
+    padding-top: 38px;
+  }
+
+  html[data-desktop="true"] .mobile-sidebar-opener {
+    position: fixed;
+    top: 3px;
+    left: 12px;
+    z-index: 43;
+  }
+
+  html[data-desktop-os="darwin"] .mobile-sidebar-opener {
+    left: 84px;
+  }
+
+  html[data-desktop="true"] .mobile-sidebar-backdrop,
+  html[data-desktop="true"] .mobile-sidebar {
+    top: 38px;
+    height: calc(100% - 38px);
+  }
+
+  html[data-desktop="true"] .mobile-sidebar-backdrop {
+    z-index: 44;
+  }
+
+  html[data-desktop="true"] .mobile-sidebar {
+    z-index: 45;
+  }
+
+  html[data-desktop="true"] .desktop-model-titlebar-slot[data-compact="true"] {
+    left: 52px;
+    height: 38px;
+    /* Reserve two chat actions and at least 40px of draggable space. */
+    max-width: calc(100vw - 188px);
+  }
+
+  html[data-desktop-os="darwin"] .desktop-model-titlebar-slot[data-compact="true"] {
+    left: 124px;
+    max-width: calc(100vw - 260px);
+  }
+
+  html[data-desktop-os="win32"] .desktop-model-titlebar-slot[data-compact="true"] {
+    max-width: calc(100vw - 326px);
+  }
+
+  html[data-desktop="true"] .desktop-actions-titlebar-slot[data-compact="true"] {
+    height: 38px;
+  }
+
+  html[data-desktop="true"] .desktop-model-titlebar-slot[data-compact="true"] .model-selector-set-default {
+    top: 100%;
+    left: 8px;
+    transform: none;
+    animation: none;
+  }
+
+  html[data-desktop="true"] .desktop-sidebar-titlebar[data-compact="true"] .desktop-sidebar-titlebar-collapsed::before {
+    display: none;
+  }
+
+  html[data-desktop="true"] .desktop-sidebar-titlebar[data-compact="true"] .desktop-sidebar-titlebar-collapsed::after {
+    left: 0;
+  }
 }

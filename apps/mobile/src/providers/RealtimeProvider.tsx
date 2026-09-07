@@ -60,6 +60,7 @@ async function realtimeClientId(namespace: string): Promise<string> {
 }
 
 export function RealtimeProvider({ children }: { children: React.ReactNode }) {
+  const sessionStatus = useSessionStore((state) => state.status)
   const token = useSessionStore((state) => state.token)
   const userId = useSessionStore((state) => state.user?.id)
   const userStateRevision = useSessionStore((state) => state.user?.stateRevision ?? 0)
@@ -80,7 +81,14 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
   }, [namespace, userStateRevision])
 
   useEffect(() => {
-    if (!token || !userId || !namespace) return
+    // Pending accounts cannot open realtime. Approval keeps the same token and
+    // user ID, so session status must also drive the socket lifecycle.
+    if (sessionStatus !== 'authenticated' || !token || !userId || !namespace) {
+      useRealtimeStore.getState().setConnectionPhase('idle')
+      useRealtimeStore.getState().setSyncError(null)
+      return
+    }
+    useRealtimeStore.getState().setSyncError(null)
     const socket = io(apiOrigin(), {
       path: '/socket.io',
       transports: ['websocket'],
@@ -275,6 +283,7 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
         }
         void flushOutbox()
       } catch (error) {
+        if (disposed) return
         useRealtimeStore.getState().setSyncError(error instanceof Error ? error.message : 'Realtime sync failed.')
       }
     }
@@ -364,8 +373,9 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
       unbindComposer()
       unregisterSocket()
       useRealtimeStore.getState().setConnectionPhase('idle')
+      useRealtimeStore.getState().setSyncError(null)
     }
-  }, [instanceUrl, namespace, queryClient, token, userId])
+  }, [instanceUrl, namespace, queryClient, sessionStatus, token, userId])
 
   return children
 }

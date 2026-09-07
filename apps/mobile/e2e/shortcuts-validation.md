@@ -109,3 +109,9 @@ Agent request payloads and capability failures were exercised with the native
 URLProtocol transport fixture; a live agent workspace/tool execution was not run
 for this toggle change. The mobile app's existing agent request endpoints and
 server enforcement are reused.
+
+The Agent-toggle follow-up also incorporates dev through `34e59935`. The session
+recovery merge preserves native credentials when new-server discovery fails and
+clears them immediately on unauthorized sessions, including secure-storage failure.
+Added assertions for both cases and isolated the native mocks between tests.
+After this merge, all 576 mobile tests, mobile typecheck, and repository lint pass.
