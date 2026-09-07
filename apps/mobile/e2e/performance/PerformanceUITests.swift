@@ -153,6 +153,61 @@ final class PerformanceUITests: XCTestCase {
     }
   }
 
+  // Export with EXPO_PUBLIC_PERF_COLD_CHAT=1. The placeholder must occupy
+  // the same centered column as the transcript at every live pane width.
+  func testChatCoverLandscapeSidebar() throws {
+    try XCTSkipUnless(UIDevice.current.userInterfaceIdiom == .pad, "Requires an iPad sidebar")
+    checkChatCoverColumn(orientation: .landscapeLeft, hideSidebar: false)
+  }
+
+  func testChatCoverLandscapeFullWidth() throws {
+    try XCTSkipUnless(UIDevice.current.userInterfaceIdiom == .pad, "Requires an iPad sidebar")
+    checkChatCoverColumn(orientation: .landscapeLeft, hideSidebar: true)
+  }
+
+  func testChatCoverPortrait() {
+    checkChatCoverColumn(orientation: .portrait, hideSidebar: false)
+  }
+
+  private func checkChatCoverColumn(orientation: UIDeviceOrientation, hideSidebar: Bool) {
+    continueAfterFailure = false
+    XCUIDevice.shared.orientation = orientation
+    defer { XCUIDevice.shared.orientation = .portrait }
+    let app = XCUIApplication(bundleIdentifier: "com.isaacthoman.pulpo")
+    app.launch()
+    let coldChat = app.staticTexts["Performance chat 3"].firstMatch
+    if app.frame.width < 800 {
+      let openChats = app.buttons["Open chats"]
+      XCTAssertTrue(openChats.waitForExistence(timeout: 30))
+      openChats.tap()
+    }
+    XCTAssertTrue(coldChat.waitForExistence(timeout: 30))
+    coldChat.tap()
+    if hideSidebar { app.buttons["Hide chats sidebar"].tap() }
+    let cover = app.descendants(matching: .any).matching(identifier: "chat-opening-00000000-0000-4000-8000-000000000102").firstMatch
+    XCTAssertTrue(cover.waitForExistence(timeout: 2))
+    let coverFrame = cover.frame
+    let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+    shot.name = "chat-cover-\(orientation.rawValue)-sidebar-hidden-\(hideSidebar)"
+    shot.lifetime = .keepAlways
+    add(shot)
+    let width = app.frame.width
+    let sidebarWidth: CGFloat = width >= 800 && !hideSidebar ? 300 : 0
+    let padding: CGFloat = width <= 699 ? 18 : width < 800 ? 24 : 28
+    let columnWidth = min(840, width - sidebarWidth - 2 * padding)
+    print("CHAT_COVER window=\(width) sidebar=\(sidebarWidth) frame=\(coverFrame) expectedWidth=\(columnWidth)")
+    XCTAssertEqual(coverFrame.width, columnWidth, accuracy: 1)
+    XCTAssertEqual(coverFrame.midX, sidebarWidth + (width - sidebarWidth) / 2, accuracy: 1)
+    let selected = app.descendants(matching: .any).matching(identifier: "chat-transcript-00000000-0000-4000-8000-000000000102").firstMatch
+    XCTAssertTrue(selected.waitForExistence(timeout: 10))
+    XCTAssertFalse(cover.exists)
+    let row = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH %@", "chat-message-")).firstMatch
+    XCTAssertTrue(row.exists)
+    XCTAssertEqual(row.frame.width, coverFrame.width, accuracy: 1)
+    XCTAssertEqual(row.frame.minX, coverFrame.minX, accuracy: 1)
+    app.terminate()
+  }
+
   func testSelectedChatCover() {
     continueAfterFailure = false
     let app = XCUIApplication(bundleIdentifier: "com.isaacthoman.pulpo")

@@ -5417,19 +5417,23 @@ function ChatView({
       </View>
       {openingChatId ? (
         <View
-          testID={`chat-opening-${openingChatId}`}
-          accessibilityRole="progressbar"
-          accessibilityLabel="Loading messages"
           pointerEvents="none"
-          style={[styles.chatOpeningPlaceholder, {
+          style={[styles.chatOpeningOverlay, {
             top: Platform.OS === 'android' ? 36 : headerOverlayHeight + 36,
             left: horizontalPadding,
             right: horizontalPadding,
           }]}
         >
-          <View accessible={false} style={[styles.chatOpeningLine, { width: '58%' }]} />
-          <View accessible={false} style={styles.chatOpeningLine} />
-          <View accessible={false} style={[styles.chatOpeningLine, { width: '82%' }]} />
+          <View
+            testID={`chat-opening-${openingChatId}`}
+            accessibilityRole="progressbar"
+            accessibilityLabel="Loading messages"
+            style={[styles.transcriptColumn, styles.chatOpeningPlaceholder]}
+          >
+            <View accessible={false} style={[styles.chatOpeningLine, { width: '58%' }]} />
+            <View accessible={false} style={styles.chatOpeningLine} />
+            <View accessible={false} style={[styles.chatOpeningLine, { width: '82%' }]} />
+          </View>
         </View>
       ) : null}
       </View>
@@ -6209,7 +6213,8 @@ function createChatStyles(COLORS: ChatColors) { return StyleSheet.create({
   },
   persistentMainView: { flex: 1, minWidth: 0, overflow: 'hidden', backgroundColor: COLORS.background },
   chatRoot: { flex: 1, backgroundColor: COLORS.background },
-  chatOpeningPlaceholder: { position: 'absolute', gap: 14 },
+  chatOpeningOverlay: { position: 'absolute' },
+  chatOpeningPlaceholder: { gap: 14 },
   chatOpeningLine: { height: 12, borderRadius: 6, backgroundColor: COLORS.lineSoft },
   chatHeaderOverlay: { position: Platform.OS === 'android' ? 'relative' : 'absolute', zIndex: 2, top: 0, left: 0, right: 0 },
   appHeader: { width: '100%', maxWidth: CHAT_CONTENT_MAX, alignSelf: 'center', height: 64, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
