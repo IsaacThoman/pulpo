@@ -154,7 +154,7 @@ export function AppLayout() {
         >
           <BannerBar />
           {!adminChatView && <button
-            className="mobile-sidebar-opener absolute left-2 top-2 z-20 size-8 cursor-pointer items-center justify-center rounded-lg hover:bg-accent"
+            className="mobile-sidebar-opener absolute left-2 top-2 z-[21] size-8 cursor-pointer items-center justify-center rounded-lg hover:bg-accent"
             onClick={() => setMobileOpen((open) => !open)}
             aria-label={ui("Open sidebar")}
             aria-expanded={mobileOpen}
