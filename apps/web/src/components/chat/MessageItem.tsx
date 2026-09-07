@@ -757,7 +757,7 @@ export const MessageItem = memo(function MessageItem({
             </div>
           ) : (
             <>
-              {initialActivity.index === -1 && initialDurationMs !== undefined && (
+              {showReasoning && initialActivity.index === -1 && initialDurationMs !== undefined && (
                 <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
                   <Brain className="size-3.5 shrink-0" />
                   {ui('Thought for {{duration}}', { duration: formatSecondsLabel(initialDurationMs) })}

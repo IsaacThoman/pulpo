@@ -223,6 +223,7 @@ describe('show reasoning preference', () => {
       message={assistant({
         done: !streaming,
         content: 'Answer',
+        initialResponseDurationMs: 10_000,
         outputItems: [
           { type: 'pulpo_workspace', state: 'ready' },
           { type: 'reasoning', status: 'completed', summary: [{ text: 'Private summary' }] },
@@ -239,7 +240,7 @@ describe('show reasoning preference', () => {
     expect(container.textContent).toContain('Extra work details')
     act(() => useSettings.setState({ showReasoning: false }))
     expect(container.textContent).toContain('Answer')
-    for (const hidden of ['Worked', 'Private summary', 'Started workspace', 'Tool output', 'Extra work details']) {
+    for (const hidden of ['Worked', 'Thought', 'Private summary', 'Started workspace', 'Tool output', 'Extra work details']) {
       expect(container.textContent).not.toContain(hidden)
     }
     act(() => useSettings.setState({ showReasoning: true }))
@@ -270,7 +271,7 @@ describe('show reasoning preference', () => {
     const { MessageItem } = await import('./MessageItem')
     const { container } = render(<MessageItem
       chat={chat}
-      message={assistant({ content: 'Answer', reasoning: 'Private summary', error: 'Generation failed' })}
+      message={assistant({ content: 'Answer', reasoning: 'Private summary', error: 'Generation failed', initialResponseDurationMs: 8_000 })}
       streaming={false}
       activeModelId="model-1"
     />)
@@ -654,13 +655,13 @@ describe('initial server receipt timing', () => {
     expect(markup).not.toContain('Worked for 3 seconds')
   })
 
-  it.each([true, false])('shows a compact wait label with reasoning visibility %s', async (showReasoning) => {
+  it.each([true, false])('respects reasoning visibility %s for a compact wait label', async (showReasoning) => {
     useSettings.setState({ showReasoning })
     const { MessageItem } = await import('./MessageItem')
-    const markup = renderToStaticMarkup(<MessageItem chat={chat} activeModelId="model-1" streaming={false}
+    const { container } = render(<MessageItem chat={chat} activeModelId="model-1" streaming={false}
       message={assistant({ content: 'Reply', initialResponseDurationMs: 10_000 })} />)
-    expect(markup).toContain('Thought for 10 seconds')
-    expect(markup).toContain('Reply')
+    expect(container.textContent?.includes('Thought for 10 seconds')).toBe(showReasoning)
+    expect(container.textContent).toContain('Reply')
   })
 
   it('retains errors alongside the initial wait when no reply was emitted', async () => {
