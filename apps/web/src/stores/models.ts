@@ -1,5 +1,6 @@
+import { profileStorage } from '@/lib/profile-storage'
 import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
+import { persist, createJSONStorage } from 'zustand/middleware'
 import { appendMissingOrder, reorderList, resolveOrder } from '@/lib/model-order'
 export const CATALOG_PROVIDERS: string[] = []
 
@@ -51,7 +52,7 @@ export const useModels = create<ModelsState>()(
         }),
     }),
     {
-      name: 'pulpo-models',
+      name: 'pulpo-models', storage: createJSONStorage(() => profileStorage),
       partialize: (state) => ({
         ownerUserId: state.ownerUserId,
         favoriteModelIds: state.favoriteModelIds,

@@ -1,3 +1,4 @@
+import { dataProfileSuffix } from '@pulpo/client-core'
 export const MOBILE_DATABASE_VERSION = 4
 
 export const MOBILE_SCHEMA = `
@@ -83,7 +84,7 @@ CREATE INDEX IF NOT EXISTS attachment_cache_lru ON attachment_cache(namespace, l
 `
 
 export function cacheNamespace(instanceUrl: string, userId: string): string {
-  return `${new URL(instanceUrl).origin}|${userId}`
+  return `${new URL(instanceUrl).origin}|${userId}${dataProfileSuffix(userId)}`
 }
 
 export interface OutboxRecord {

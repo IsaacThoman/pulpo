@@ -1,3 +1,4 @@
+import { dataProfileGeneration } from '@pulpo/client-core'
 import { apiRequest, ApiError, isNetworkError } from '@/lib/api'
 import { localAccountKey, localDb, type OutboxMutation } from './database'
 
@@ -23,6 +24,7 @@ export async function enqueueMutation(
 }
 
 async function runOutbox(userId: string): Promise<string[]> {
+  const generation = dataProfileGeneration()
   if (!navigator.onLine) return []
   const settledPaths: string[] = []
   const accountKey = localAccountKey(userId)
@@ -31,6 +33,7 @@ async function runOutbox(userId: string): Promise<string[]> {
     .between([accountKey, DexieMinKey], [accountKey, Date.now()])
     .sortBy('createdAt')
   for (const mutation of due) {
+    if (generation !== dataProfileGeneration()) break
     try {
       await apiRequest(mutation.path, {
         method: mutation.method,
@@ -40,6 +43,7 @@ async function runOutbox(userId: string): Promise<string[]> {
       await localDb.outbox.delete(mutation.id)
       settledPaths.push(mutation.path)
     } catch (error) {
+      if (error instanceof ApiError && error.code === 'profile_changed') break
       if (error instanceof ApiError && error.status < 500) {
         await localDb.outbox.delete(mutation.id)
         settledPaths.push(mutation.path)

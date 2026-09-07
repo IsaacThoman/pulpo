@@ -1,4 +1,5 @@
-import { and, desc, eq, gt, gte, isNull, lt, or, sql } from 'drizzle-orm'
+import { profileEq } from '../profiles/context.js'
+import { and, desc, gt, gte, isNull, lt, or, sql } from 'drizzle-orm'
 import { db } from '../database/client.js'
 import { chats, responses, userMemoryDocumentRevisions, userMemoryDocuments } from '../database/schema.js'
 import { chatAllowsMemory } from '../chats/memory-policy.js'
@@ -102,7 +103,7 @@ ${document.content}
 }
 
 export async function readMemoryDocument(userId: string): Promise<MemoryDocumentSnapshot> {
-  const [row] = await db.select().from(userMemoryDocuments).where(eq(userMemoryDocuments.userId, userId)).limit(1)
+  const [row] = await db.select().from(userMemoryDocuments).where(profileEq(userMemoryDocuments.userId, userId)).limit(1)
   return row ? {
     content: row.content,
     revision: row.revision,
@@ -126,7 +127,7 @@ export async function listMemoryDocumentRevisions(userId: string, now = new Date
     versionCreatedAt: userMemoryDocumentRevisions.versionCreatedAt,
     supersededAt: userMemoryDocumentRevisions.supersededAt,
   }).from(userMemoryDocumentRevisions).where(and(
-    eq(userMemoryDocumentRevisions.userId, userId),
+    profileEq(userMemoryDocumentRevisions.userId, userId),
     gte(userMemoryDocumentRevisions.supersededAt, retainedAfter),
   )).orderBy(desc(userMemoryDocumentRevisions.supersededAt)).limit(MEMORY_DOCUMENT_REVISION_LIMIT)
 }
@@ -139,9 +140,9 @@ export async function assertAgentMemoryAccess(
 ): Promise<void> {
   if (!responseId) throw new MemoryDocumentError('memory_access_denied', 'Memory is unavailable for this response')
   const [chat] = await executor.select({ temporary: chats.temporary }).from(responses)
-    .innerJoin(chats, eq(chats.id, responses.chatId))
+    .innerJoin(chats, profileEq(chats.id, responses.chatId))
     .where(and(
-      eq(responses.id, responseId), eq(responses.userId, userId), eq(chats.userId, userId),
+      profileEq(responses.id, responseId), profileEq(responses.userId, userId), profileEq(chats.userId, userId),
       isNull(responses.deletedAt), isNull(chats.deletedAt), isNull(chats.purgeStartedAt),
       or(isNull(chats.expiresAt), gt(chats.expiresAt, new Date())),
     )).limit(1)
@@ -162,7 +163,7 @@ export async function updateMemoryDocument(input: {
     await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${input.userId}, 0))`)
     if (input.editor === 'agent') await assertAgentMemoryAccess(input.userId, input.sourceResponseId, tx)
     const [current] = await tx.select().from(userMemoryDocuments)
-      .where(eq(userMemoryDocuments.userId, input.userId)).limit(1)
+      .where(profileEq(userMemoryDocuments.userId, input.userId)).limit(1)
     const currentRevision = current?.revision ?? 0
     if (currentRevision !== input.expectedRevision) {
       throw new MemoryDocumentError('memory_document_conflict', 'MEMORY.md changed; refresh and try again', currentRevision)
@@ -191,7 +192,7 @@ export async function updateMemoryDocument(input: {
         editSummary: summary,
         sourceResponseId: input.sourceResponseId ?? null,
         updatedAt: now,
-      }).where(eq(userMemoryDocuments.userId, input.userId))
+      }).where(profileEq(userMemoryDocuments.userId, input.userId))
     } else {
       await tx.insert(userMemoryDocuments).values({
         userId: input.userId,
@@ -222,8 +223,8 @@ export async function restoreMemoryDocumentRevision(input: {
 }): Promise<MemoryDocumentSnapshot> {
   const retainedAfter = new Date(Date.now() - MEMORY_DOCUMENT_REVISION_RETENTION_MS)
   const [revision] = await db.select().from(userMemoryDocumentRevisions).where(and(
-    eq(userMemoryDocumentRevisions.id, input.revisionId),
-    eq(userMemoryDocumentRevisions.userId, input.userId),
+    profileEq(userMemoryDocumentRevisions.id, input.revisionId),
+    profileEq(userMemoryDocumentRevisions.userId, input.userId),
     gte(userMemoryDocumentRevisions.supersededAt, retainedAfter),
   )).limit(1)
   if (!revision) throw new MemoryDocumentError('memory_document_revision_not_found', 'Memory revision is unavailable')

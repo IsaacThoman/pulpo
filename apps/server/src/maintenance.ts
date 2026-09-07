@@ -1,3 +1,4 @@
+import { profileEq, profileInArray } from './profiles/context.js'
 import { expireComposerDrafts } from './composer/service.js'
 import { and, asc, eq, gt, inArray, lt, lte, sql } from 'drizzle-orm'
 import { reconcileWorkspaceLeases } from './agent/controller.js'
@@ -32,7 +33,7 @@ export async function scrubPersistedResponseBinaryContext(): Promise<{ scanned: 
     const rows = await db.select({ id: responses.id, output: responses.output })
       .from(responses)
       .where(and(
-        inArray(responses.status, ['completed', 'failed', 'cancelled', 'incomplete']),
+        profileInArray(responses.status, ['completed', 'failed', 'cancelled', 'incomplete']),
         binaryCandidate,
         cursor ? gt(responses.id, cursor) : undefined,
       ))
@@ -45,7 +46,7 @@ export async function scrubPersistedResponseBinaryContext(): Promise<{ scanned: 
       if (JSON.stringify(output) === JSON.stringify(row.output)) continue
       // Rebuild projections first so a partial failure leaves the source row eligible for a retry.
       await persistResponseItems(row.id, output)
-      await db.update(responses).set({ output, updatedAt: new Date() }).where(eq(responses.id, row.id))
+      await db.update(responses).set({ output, updatedAt: new Date() }).where(profileEq(responses.id, row.id))
       updated += 1
     }
     cursor = rows.at(-1)?.id
@@ -116,9 +117,9 @@ export async function runCleanup(): Promise<void> {
   await expireComposerDrafts()
   const now = new Date()
   const abandonedBefore = new Date(now.getTime() - 24 * 86_400_000)
-  const abandoned = await db.select().from(attachments).where(and(eq(attachments.status, 'pending'), lt(attachments.createdAt, abandonedBefore)))
+  const abandoned = await db.select().from(attachments).where(and(profileEq(attachments.status, 'pending'), lt(attachments.createdAt, abandonedBefore)))
   for (const attachment of abandoned) await getBlobStore().delete(attachment.objectKey).catch(() => undefined)
-  if (abandoned.length) await db.update(attachments).set({ status: 'deleted', updatedAt: now }).where(inArray(attachments.id, abandoned.map((row) => row.id)))
+  if (abandoned.length) await db.update(attachments).set({ status: 'deleted', updatedAt: now }).where(profileInArray(attachments.id, abandoned.map((row) => row.id)))
   await expireNormalChats(now)
   await markExpiredChatsForPurge(now)
   await db.delete(sessions).where(lt(sessions.expiresAt, now))

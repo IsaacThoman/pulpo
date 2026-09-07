@@ -1,3 +1,4 @@
+import { ProfileSwitcher } from './ProfileSwitcher'
 import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
 import { useTranslation } from '@/i18n/useAppTranslation'
 import { useNavigate, useParams } from 'react-router-dom'
@@ -57,7 +58,6 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
-import { ProfileAvatar } from '@/components/ProfileAvatar'
 import { apiRequest } from '@/lib/api'
 import { toggleSidebarPin, type SidebarPinKey } from '@/lib/sidebar-pins'
 import { newChatLocationState } from '@/lib/new-chat-navigation'
@@ -1175,35 +1175,8 @@ export function Sidebar({
 
       {/* user footer */}
       <div className="border-t border-sidebar-border p-2">
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button
-              className="relative flex h-10 w-full cursor-pointer items-center gap-2 overflow-hidden rounded-lg text-left hover:bg-sidebar-accent"
-            >
-              <span className="flex size-8 shrink-0 items-center justify-center">
-                <ProfileAvatar name={user?.name ?? 'Pulpo user'} avatarUrl={user?.avatarUrl} className="size-7" fallbackClassName="text-[11px]" />
-              </span>
-              <div
-                className={cn(
-                  'min-w-0 flex-1 whitespace-nowrap transition-[opacity,transform] ease-[cubic-bezier(0.4,0,0.2,1)]',
-                  !sidebarPins.friends && pendingSocialCount ? 'pr-8' : 'pr-2',
-                  sidebarTextTransition
-                )}
-              >
-                <div className="truncate text-sm font-medium">{user?.name ?? t('sidebar.signedOut')}</div>
-                <div className="truncate text-xs text-muted-foreground">{user?.username ? uit`@${user.username}` : ''}</div>
-              </div>
-              {!sidebarPins.friends && Boolean(pendingSocialCount) && (
-                <span className={cn(
-                  'absolute grid min-w-3.5 place-items-center rounded-full bg-primary px-1 text-[9px] leading-3.5 text-primary-foreground',
-                  collapsed ? 'right-0 top-0' : 'right-2 top-1/2 -translate-y-1/2',
-                )}>
-                  {pendingSocialCount > 99 ? '99+' : pendingSocialCount}
-                </span>
-              )}
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent side="top" align="start" className="w-56">
+        <ProfileSwitcher collapsed={collapsed} textTransition={sidebarTextTransition} notificationCount={sidebarPins.friends ? 0 : pendingSocialCount}>
+          <div className="px-2 py-1.5 text-xs text-muted-foreground">{user?.name}</div>
             {accountNavItem('usage', t('sidebar.usage'), '/usage', <BarChart3 />)}
             {accountNavItem('friends', t('sidebar.friends'), '/friends', <UsersRound />, pendingSocialCount)}
             {apiKeysEnabled && accountNavItem('apiKeys', t('sidebar.apiKeys'), '/api-keys', <KeyRound />)}
@@ -1233,8 +1206,7 @@ export function Sidebar({
               <LogOut />
               {t('sidebar.signOut')}
             </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        </ProfileSwitcher>
       </div>
 
       <Dialog open={newFolderOpen} onOpenChange={setNewFolderOpen}>

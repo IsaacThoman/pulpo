@@ -1,3 +1,4 @@
+import { dataProfileScope } from '@pulpo/client-core'
 import Dexie, { type EntityTable } from 'dexie'
 import type { PersistedClient, Persister } from '@tanstack/react-query-persist-client'
 import { retainedChatQueryHashes } from './chat-cache-policy'
@@ -6,7 +7,12 @@ import { chatDataPrefix, restoreQueryCache, splitQueryCache, type StoredQueryCli
 import { runtimeAccountKey, runtimeInstanceUrl, isDesktopRuntime } from '../runtime'
 
 const DEFAULT_MAX_LOCAL_CHATS = 50
+let profilePersistencePaused = false
+export function pauseProfilePersistence(paused: boolean): void { profilePersistencePaused = paused }
+
 function queryCacheKey(): string {
+  const scope = dataProfileScope()
+  if (scope) return `query-cache-v2:${scope.instance}:${scope.userId}:${scope.profileId}`
   return isDesktopRuntime() ? `query-cache-v2:${runtimeInstanceUrl()}` : 'query-cache-v2'
 }
 
@@ -156,12 +162,18 @@ export function flushQueryPersistence(): Promise<void> {
 
 export const indexedDbPersister: Persister = {
   persistClient: (client) => {
-    // Capture the instance before deferring the write.
+    if (profilePersistencePaused) return
+    // Capture the instance and profile before deferring the write.
     persistenceQueue.schedule({ key: queryCacheKey(), client })
   },
   restoreClient: async () => {
     const key = queryCacheKey()
-    const row = await localDb.kv.get(key) ?? await localDb.kv.get(key.replace('query-cache-v2', 'query-cache-v1'))
+    let row = await localDb.kv.get(key) ?? await localDb.kv.get(key.replace('query-cache-v2', 'query-cache-v1'))
+    const scope = dataProfileScope()
+    if (!row && scope?.profileId === scope?.userId) {
+      const legacy = isDesktopRuntime() ? `query-cache-v2:${runtimeInstanceUrl()}` : 'query-cache-v2'
+      row = await localDb.kv.get(legacy) ?? await localDb.kv.get(legacy.replace('v2', 'v1'))
+    }
     if (!row) return undefined
     const client = row.value as StoredQueryClient
     const keys = Object.values(client.chatDataKeys ?? {})
@@ -193,3 +205,20 @@ export async function clearLocalUserData(userId: string): Promise<void> {
 }
 
 export const localChatLimit = DEFAULT_MAX_LOCAL_CHATS
+
+/** Remove one retired profile without disturbing the newly active query cache. */
+export async function clearProfileLocalData(scope: { instance: string; userId: string; profileId: string }): Promise<void> {
+  const base = isDesktopRuntime() ? `${scope.instance}|${scope.userId}` : scope.userId
+  const accountKey = `${base}${scope.profileId === scope.userId ? '' : `|profile:${scope.profileId}`}`
+  const cacheKey = `query-cache-v2:${scope.instance}:${scope.userId}:${scope.profileId}`
+  await localDb.transaction('rw', localDb.outbox, localDb.drafts, localDb.attachmentBlobs, localDb.kv, async () => {
+    await localDb.kv.where('key').startsWith(`composer-sync:${accountKey}:`).delete()
+    await localDb.kv.bulkDelete([`shelf:${accountKey}`, `profile-uploads:${accountKey}`, cacheKey])
+    await localDb.kv.where('key').startsWith(chatDataPrefix(cacheKey)).delete()
+    await localDb.outbox.where('userId').equals(accountKey).delete()
+    await localDb.drafts.where('userId').equals(accountKey).delete()
+    await localDb.attachmentBlobs.where('userId').equals(accountKey).delete()
+  })
+  const suffix = `:${scope.instance}:${scope.userId}:${scope.profileId}`
+  for (const key of Object.keys(localStorage)) if (key.endsWith(suffix)) localStorage.removeItem(key)
+}

@@ -51,6 +51,7 @@ async function proxyResponse(app: FastifyInstance, request: FastifyRequest, targ
     url: targetUrl,
     payload: request.body as object | string | Buffer | undefined,
     headers: {
+      ...(request.headers['x-pulpo-profile-id'] ? { 'x-pulpo-profile-id': String(request.headers['x-pulpo-profile-id']) } : {}),
       ...(request.headers['idempotency-key'] ? { 'idempotency-key': String(request.headers['idempotency-key']) } : {}),
       ...(request.headers['content-type'] ? { 'content-type': String(request.headers['content-type']) } : {}),
     },

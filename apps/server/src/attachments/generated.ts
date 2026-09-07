@@ -1,6 +1,7 @@
+import { profileEq } from '../profiles/context.js'
 import { basename, extname } from 'node:path'
 import { createHash } from 'node:crypto'
-import { and, eq } from 'drizzle-orm'
+import { and } from 'drizzle-orm'
 import { db } from '../database/client.js'
 import { attachments } from '../database/schema.js'
 import { newId } from '../lib/ids.js'
@@ -56,15 +57,15 @@ export async function storeGeneratedAttachment(input: {
 }): Promise<GeneratedAttachment> {
   const { name, mimeType } = generatedAttachmentMetadata(input.path, input.requestedName, input.data)
   const [existing] = await db.select().from(attachments).where(and(
-    eq(attachments.sourceResponseId, input.responseId),
-    eq(attachments.sourceToolCallId, input.toolCallId),
+    profileEq(attachments.sourceResponseId, input.responseId),
+    profileEq(attachments.sourceToolCallId, input.toolCallId),
   )).limit(1)
   if (existing?.status === 'ready') return { id: existing.id, name: existing.originalName, mimeType: existing.mimeType, sizeBytes: existing.sizeBytes }
   const reusablePending = existing?.status === 'pending'
     && existing.originalName === name
     && existing.mimeType === mimeType
     && existing.sizeBytes === input.data.byteLength
-  if (existing && !reusablePending) await db.delete(attachments).where(eq(attachments.id, existing.id))
+  if (existing && !reusablePending) await db.delete(attachments).where(profileEq(attachments.id, existing.id))
 
   const id = reusablePending ? existing.id : newId()
   const objectKey = `users/${input.userId}/attachments/${id}`
@@ -79,11 +80,11 @@ export async function storeGeneratedAttachment(input: {
       contentType: mimeType, contentLength: input.data.byteLength,
       contentDisposition: `attachment; filename*=UTF-8''${encodeURIComponent(name)}`,
     })
-    await db.update(attachments).set({ status: 'ready', workspacePath: input.path, checksum, updatedAt: new Date() }).where(eq(attachments.id, id))
+    await db.update(attachments).set({ status: 'ready', workspacePath: input.path, checksum, updatedAt: new Date() }).where(profileEq(attachments.id, id))
     return { id, name, mimeType, sizeBytes: attachment.sizeBytes }
   } catch (error) {
     await getBlobStore().delete(objectKey).catch(() => undefined)
-    await db.update(attachments).set({ status: 'failed', error: error instanceof Error ? error.message : String(error), updatedAt: new Date() }).where(eq(attachments.id, id))
+    await db.update(attachments).set({ status: 'failed', error: error instanceof Error ? error.message : String(error), updatedAt: new Date() }).where(profileEq(attachments.id, id))
     throw error
   }
 }

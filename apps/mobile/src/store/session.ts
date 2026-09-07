@@ -6,7 +6,7 @@ import { File } from 'expo-file-system'
 import { clearComposerDraftCacheNamespace } from '../features/chat/composerDraftCache'
 import * as SecureStore from 'expo-secure-store'
 import { create } from 'zustand'
-import { normalizeInstanceUrl } from '@pulpo/client-core'
+import { configureDataProfile, normalizeInstanceUrl } from '@pulpo/client-core'
 import type { MobileConfig, User } from '@pulpo/contracts'
 import { ApiError, apiOrigin, configureApi, isNetworkError, mobileApi } from '../api/client'
 import {
@@ -62,7 +62,7 @@ async function rememberActiveNamespace(namespace: string): Promise<void> {
 }
 
 async function persistAccount(instanceUrl: string, user: User): Promise<void> {
-  const namespace = cacheNamespace(instanceUrl, user.id)
+  const namespace = `${new URL(instanceUrl).origin}|${user.id}`
   await Promise.all([
     setValue(GLOBAL_NAMESPACE, 'instanceUrl', instanceUrl),
     setValue(namespace, 'user', user),
@@ -82,7 +82,7 @@ async function cachedAccount(instanceUrl: string): Promise<{ namespace: string; 
   const preferredNamespace = await getValue<string>(GLOBAL_NAMESPACE, ACTIVE_SESSION_NAMESPACE_KEY)
   if (preferredNamespace?.startsWith(`${expectedOrigin}|`)) {
     const user = await getValue<User>(preferredNamespace, 'user')
-    if (user && cacheNamespace(instanceUrl, user.id) === preferredNamespace) {
+    if (user && `${new URL(instanceUrl).origin}|${user.id}` === preferredNamespace) {
       return { namespace: preferredNamespace, user }
     }
   }
@@ -92,7 +92,7 @@ async function cachedAccount(instanceUrl: string): Promise<{ namespace: string; 
     .filter((namespace) => namespace.startsWith(`${expectedOrigin}|`))
     .map(async (namespace) => ({ namespace, user: await getValue<User>(namespace, 'user') }))))
     .filter((candidate): candidate is { namespace: string; user: User } => Boolean(
-      candidate.user && cacheNamespace(instanceUrl, candidate.user.id) === candidate.namespace,
+      candidate.user && `${new URL(instanceUrl).origin}|${candidate.user.id}` === candidate.namespace,
     ))
   return candidates.length === 1 ? candidates[0]! : null
 }
@@ -242,13 +242,14 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       setValue(GLOBAL_NAMESPACE, ACTIVE_SESSION_NAMESPACE_KEY, null),
       (async () => {
         if (!user) return
-        const namespace = cacheNamespace(instanceUrl, user.id)
+        const namespace = `${new URL(instanceUrl).origin}|${user.id}`
         clearComposerDraftCacheNamespace(namespace)
         clearMobileShelf(namespace)
         clearMobileComposerSync(namespace)
         removeCachedFiles(await clearNamespace(namespace))
       })(),
     ])
+    configureDataProfile(undefined)
     const failure = cleanup.find((result) => result.status === 'rejected')
     if (failure?.status === 'rejected') throw failure.reason
 

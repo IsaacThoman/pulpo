@@ -82,6 +82,7 @@ const COMMAND_CAPABILITIES: Record<string, string> = {
 }
 
 interface GlobalOptions {
+  profile?: string
   context?: string
   url?: string
   json?: boolean
@@ -200,6 +201,7 @@ async function clientFor(command: Command, authenticated = true): Promise<{
     new PulpoManagementClient(url, token, transport)
   ))
   const client = createClient(connection.url, authenticated ? connection.token : null, fetchImpl)
+  if (options.profile) client.setProfile(options.profile)
   const info = await client.info()
   if (info.managementApiVersion !== 1) throw new Error(`Unsupported management API version ${info.managementApiVersion}`)
   let topLevel = command
@@ -320,6 +322,7 @@ export function createProgram(io: CliIo = processIo, dependencies: CliDependenci
     .name('pulpo')
     .description('Manage a Pulpo instance')
     .version(CLI_VERSION)
+    .option('--profile <id>', 'select a private data profile')
     .option('--context <name>', 'named Pulpo context')
     .option('--url <url>', 'override the Pulpo instance URL')
     .option('--json', 'emit stable JSON on stdout')

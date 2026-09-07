@@ -204,3 +204,54 @@ describe('device metadata on native authentication', () => {
     }
   })
 })
+
+
+describe('profile request isolation', () => {
+  it('discards a downloaded chat when its deferred decode resumes in another profile', async () => {
+    const { configureDataProfile } = await import('@pulpo/client-core')
+    let resume!: () => void
+    const beforeDecode = vi.fn(() => new Promise<void>((resolve) => { resume = resolve }))
+    const controller = new AbortController()
+    const removeListener = vi.spyOn(controller.signal, 'removeEventListener')
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ data: ['personal chat'] })))
+    configureDataProfile({ instance: 'https://pulpo.test', userId: 'owner', profileId: 'personal' })
+    try {
+      const pending = apiRequest('/api/chats/chat', { beforeDecode, signal: controller.signal })
+      await vi.waitFor(() => expect(beforeDecode).toHaveBeenCalledOnce())
+      configureDataProfile({ instance: 'https://pulpo.test', userId: 'owner', profileId: 'work' })
+      resume()
+      await expect(pending).rejects.toMatchObject({ code: 'profile_changed' })
+      expect(removeListener).toHaveBeenCalledWith('abort', expect.any(Function))
+    } finally {
+      configureDataProfile(undefined)
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it.each(['json', 'multipart'])('discards late %s profile responses while keeping bearer authentication shared', async (format) => {
+    const { configureDataProfile } = await import('@pulpo/client-core')
+    let finish!: (response: Response) => void
+    const fetchMock = vi.fn((_input: string, _init?: RequestInit) => new Promise<Response>((resolve) => { finish = resolve }))
+    vi.stubGlobal('fetch', fetchMock)
+    configureApi({ instanceUrl: 'https://pulpo.test', token: 'shared-session' })
+    configureDataProfile({ instance: 'https://pulpo.test', userId: 'owner', profileId: 'personal' })
+    const form = new FormData()
+    form.append('file', new Blob(['audio'], { type: 'audio/mp4' }), 'dictation.m4a')
+    const pending = format === 'multipart'
+      ? apiRequest('/api/dictation/transcriptions', { method: 'POST', body: form })
+      : apiRequest('/api/chats')
+    const headers = new Headers(fetchMock.mock.calls[0]?.[1]?.headers)
+    if (format === 'multipart') {
+      expect(fetchMock.mock.calls[0]?.[1]?.body).toBe(form)
+      expect(headers.has('content-type')).toBe(false)
+    }
+    expect(headers.get('X-Pulpo-Profile-Id')).toBe('personal')
+    expect(headers.get('authorization')).toBe('Bearer shared-session')
+    configureDataProfile({ instance: 'https://pulpo.test', userId: 'owner', profileId: 'work' })
+    finish(new Response(JSON.stringify({ data: ['private'] })))
+    await expect(pending).rejects.toMatchObject({ code: 'profile_changed' })
+    configureDataProfile(undefined)
+    configureApi({ instanceUrl: 'https://pulpo.baby', token: null })
+    vi.unstubAllGlobals()
+  })
+})

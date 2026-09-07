@@ -1,3 +1,4 @@
+import { dataProfileHeaders, dataProfileGeneration, dataProfileResourceUrl } from '@pulpo/client-core'
 import { protectTranscriptRequest } from '../data/transcriptResidency'
 import type { NativeDevice, DeviceSessionList, MobileConfig, NativeAuthResponse, PasskeyAuthenticationResponse, PasskeyCeremony, PasskeyList, PasskeyRegistrationResponse, PasskeySummary, TwoFactorEnrollment, TwoFactorRecoveryCodes, TwoFactorStatus, User } from '@pulpo/contracts'
 import type { MobileModel, ServerChat, ServerDeletedChat, ServerFolder } from '../types'
@@ -33,12 +34,12 @@ export function apiOrigin(): string {
 }
 
 export function apiUrl(url: string): string {
-  return new URL(url, `${instanceUrl}/`).toString()
+  return new URL(dataProfileResourceUrl(url, instanceUrl), `${instanceUrl}/`).toString()
 }
 
 export function nativeAuthorizationHeaders(url?: string): Record<string, string> {
   if (!sessionToken || (url && new URL(apiUrl(url)).origin !== new URL(instanceUrl).origin)) return {}
-  return { authorization: `Bearer ${sessionToken}` }
+  return { authorization: `Bearer ${sessionToken}`, ...dataProfileHeaders() }
 }
 
 interface RequestOptions extends Omit<RequestInit, 'body'> {
@@ -57,10 +58,12 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
 }
 
 async function performApiRequest<T>(path: string, options: RequestOptions): Promise<T> {
+  const generation = dataProfileGeneration()
   const { beforeDecode, ...requestOptions } = options
   const requestOrigin = instanceUrl
   const requestToken = sessionToken
   const headers = new Headers(options.headers)
+  for (const [key, value] of Object.entries(dataProfileHeaders())) if (!headers.has(key)) headers.set(key, value)
   const multipart = typeof FormData !== 'undefined' && options.body instanceof FormData
   if (multipart) headers.delete('content-type')
   else if (options.body !== undefined) headers.set('content-type', 'application/json')
@@ -90,6 +93,7 @@ async function performApiRequest<T>(path: string, options: RequestOptions): Prom
     }
   } catch (error) {
     options.signal?.removeEventListener('abort', abort)
+    if (generation !== dataProfileGeneration()) throw new ApiError(409, 'profile_changed', 'Profile changed')
     if (controller.signal.aborted && !options.signal?.aborted) {
       throw new ApiError(408, 'request_timeout', 'The Pulpo instance did not respond in time.')
     }
@@ -97,6 +101,10 @@ async function performApiRequest<T>(path: string, options: RequestOptions): Prom
   } finally {
     clearTimeout(timeout)
     if (!beforeDecode) options.signal?.removeEventListener('abort', abort)
+  }
+  if (generation !== dataProfileGeneration()) {
+    options.signal?.removeEventListener('abort', abort)
+    throw new ApiError(409, 'profile_changed', 'Profile changed')
   }
   if (response.status === 204) {
     options.signal?.removeEventListener('abort', abort)
@@ -106,10 +114,12 @@ async function performApiRequest<T>(path: string, options: RequestOptions): Prom
     // Download the body during the slide; JSON parsing waits for completion.
     try {
       await beforeDecode()
+      if (generation !== dataProfileGeneration()) throw new ApiError(409, 'profile_changed', 'Profile changed')
       if (options.signal?.aborted) throw new Error('Chat request cancelled')
       try { body = JSON.parse(bodyText!) } catch { body = undefined }
     } finally { options.signal?.removeEventListener('abort', abort) }
   }
+  if (generation !== dataProfileGeneration()) throw new ApiError(409, 'profile_changed', 'Profile changed')
   if (!response.ok) {
     if (response.status === 401 && options.auth !== false && requestToken === sessionToken && requestOrigin === instanceUrl && !options.signal?.aborted) {
       if (options.verifySessionOnUnauthorized) {

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { modelPreferencesSchema } from '@pulpo/contracts'
-import { LatestValueQueue } from '@pulpo/client-core'
+import { dataProfileGeneration, LatestValueQueue } from '@pulpo/client-core'
 import { apiRequest, ApiError, isNetworkError } from '@/lib/api'
 import { enforceAttachmentQuota } from '@/lib/local-first/attachment-cache'
 import { enqueueMutation } from '@/lib/local-first/outbox'
@@ -42,15 +42,18 @@ function sameSetting(left: unknown, right: unknown): boolean {
   return JSON.stringify(left) === JSON.stringify(right)
 }
 
-async function persistSettings(userId: string, body: Record<string, unknown>): Promise<boolean> {
-  const id = `settings-preferences:${localAccountKey(userId)}`
+async function persistSettings(accountKey: string, body: Record<string, unknown>, generation: number, kind = 'preferences'): Promise<boolean> {
+  const id = `settings-${kind}:${accountKey}`
+  // Checkpoint before any request so switching/offline retries retain the original scope.
+  await enqueueMutation({ id, userId: accountKey, method: 'PATCH', path: '/api/settings', body })
+  if (generation !== dataProfileGeneration()) return false
   try {
     await apiRequest('/api/settings', { method: 'PATCH', body })
     await localDb.outbox.delete(id)
     return true
   } catch (error) {
+    if (error instanceof ApiError && error.code === 'profile_changed') return false
     if (!(isNetworkError(error) || (error instanceof ApiError && error.status >= 500))) throw error
-    await enqueueMutation({ id, userId, method: 'PATCH', path: '/api/settings', body })
     return false
   }
 }
@@ -63,24 +66,6 @@ function modelPreferencesSnapshot() {
   }
 }
 
-async function persistModelPreferences(userId: string, body: ReturnType<typeof modelPreferencesSnapshot>): Promise<boolean> {
-  const id = `settings-model-preferences:${localAccountKey(userId)}`
-  try {
-    await apiRequest('/api/settings', { method: 'PATCH', body })
-    await localDb.outbox.delete(id)
-    return true
-  } catch (error) {
-    if (!(isNetworkError(error) || (error instanceof ApiError && error.status >= 500))) throw error
-    await enqueueMutation({
-      id,
-      userId,
-      method: 'PATCH',
-      path: '/api/settings',
-      body,
-    })
-    return false
-  }
-}
 
 export function SettingsBridge() {
   const userId = useAuth((state) => state.user?.id)
@@ -96,7 +81,15 @@ export function SettingsBridge() {
     queryKey: ['settings', userId],
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
-    queryFn: () => apiRequest<SettingsDocument>('/api/settings'),
+    queryFn: async () => {
+      const generation = dataProfileGeneration()
+      const accountKey = localAccountKey(userId!)
+      const remote = await apiRequest<SettingsDocument>('/api/settings')
+      const pending = await localDb.outbox.where('userId').equals(accountKey).toArray()
+      if (generation !== dataProfileGeneration()) throw new ApiError(409, 'profile_changed', 'Profile changed')
+      for (const mutation of pending) if (mutation.path === '/api/settings' && mutation.body) Object.assign(remote.values, mutation.body)
+      return remote
+    },
     enabled: Boolean(networkReady && userId),
   })
 
@@ -170,6 +163,8 @@ export function SettingsBridge() {
 
   useEffect(() => {
     if (!userId) return
+    const generation = dataProfileGeneration()
+    const accountKey = localAccountKey(userId)
     let timer: number | undefined
     const pendingKeys = dirtyKeys.current
     const unsubscribe = useSettings.subscribe((state, previous) => {
@@ -180,8 +175,8 @@ export function SettingsBridge() {
       window.clearTimeout(timer)
       timer = window.setTimeout(() => {
         const body = settingsSnapshot(pendingKeys)
-        void settingsMutations.enqueue(userId, body, (latest) => persistSettings(userId, latest)).then(async (saved) => {
-          if (!saved) return
+        void settingsMutations.enqueue(accountKey, body, (latest) => persistSettings(accountKey, latest, generation)).then(async (saved) => {
+          if (!saved || generation !== dataProfileGeneration()) return
           const current = useSettings.getState()
           for (const key of [...pendingKeys]) {
             if (sameSetting(current[key], body[key])) pendingKeys.delete(key)
@@ -194,6 +189,7 @@ export function SettingsBridge() {
     return () => {
       unsubscribe()
       window.clearTimeout(timer)
+      if (pendingKeys.size) void persistSettings(accountKey, settingsSnapshot(pendingKeys), generation).catch(() => undefined)
       hydrated.current = false
       pendingKeys.clear()
     }
@@ -201,6 +197,8 @@ export function SettingsBridge() {
 
   useEffect(() => {
     if (!userId) return
+    const generation = dataProfileGeneration()
+    const accountKey = localAccountKey(userId)
     let timer: number | undefined
     const unsubscribe = useModels.subscribe((state, previous) => {
       if (!modelsHydrated.current || applyingRemote.current || state.ownerUserId !== userId) return
@@ -209,9 +207,9 @@ export function SettingsBridge() {
       window.clearTimeout(timer)
       timer = window.setTimeout(() => {
         const body = modelPreferencesSnapshot()
-        void modelPreferenceMutations.enqueue(userId, body, (latest) => persistModelPreferences(userId, latest)).then((saved) => {
+        void modelPreferenceMutations.enqueue(accountKey, body, (latest) => persistSettings(accountKey, latest, generation, 'model-preferences')).then((saved) => {
           const current = modelPreferencesSnapshot()
-          if (saved && JSON.stringify(current) === JSON.stringify(body)) {
+          if (saved && generation === dataProfileGeneration() && JSON.stringify(current) === JSON.stringify(body)) {
             modelsDirty.current = false
             void refetch()
           }
@@ -221,6 +219,7 @@ export function SettingsBridge() {
     return () => {
       unsubscribe()
       window.clearTimeout(timer)
+      if (modelsDirty.current) void persistSettings(accountKey, modelPreferencesSnapshot(), generation, 'model-preferences').catch(() => undefined)
       modelsHydrated.current = false
       modelsDirty.current = false
     }

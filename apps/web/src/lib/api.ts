@@ -1,3 +1,4 @@
+import { dataProfileHeaders, dataProfileGeneration } from '@pulpo/client-core'
 import { adminChatAccessHeaders } from '@/features/admin-chat/access'
 
 export interface ApiErrorBody {
@@ -33,18 +34,27 @@ export interface ApiRequestOptions extends Omit<RequestInit, 'body'> {
   idempotencyKey?: string
 }
 
-export function authenticatedFetch(input: string, init: RequestInit = {}): Promise<Response> {
+export async function authenticatedFetch(input: string, init: RequestInit = {}): Promise<Response> {
+  const generation = dataProfileGeneration()
   const headers = new Headers(init.headers)
   for (const [key, value] of Object.entries(adminChatAccessHeaders(input))) headers.set(key, value)
   for (const [key, value] of Object.entries(runtimeAuthorizationHeaders(input))) headers.set(key, value)
-  return fetch(runtimeApiUrl(input), {
+  const target = runtimeApiUrl(input)
+  if (input.startsWith('/') || runtimeUrlTargetsInstance(input)) for (const [key, value] of Object.entries(dataProfileHeaders())) if (!headers.has(key)) headers.set(key, value)
+  const response = await fetch(target, {
     ...init,
     headers,
     credentials: isDesktopRuntime() ? 'omit' : input.startsWith('/api/') ? 'include' : init.credentials,
+  }).catch((error) => {
+    if (generation !== dataProfileGeneration()) throw new ApiError(409, 'profile_changed', 'Profile changed')
+    throw error
   })
+  if (generation !== dataProfileGeneration()) throw new ApiError(409, 'profile_changed', 'Profile changed')
+  return response
 }
 
 export async function apiRequest<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {
+  const generation = dataProfileGeneration()
   const headers = new Headers(options.headers)
   const formBody = typeof FormData !== 'undefined' && options.body instanceof FormData
   if (options.body !== undefined && !formBody) headers.set('content-type', 'application/json')
@@ -59,6 +69,7 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
   })
   if (response.status === 204) return undefined as T
   const body = await response.json().catch(() => undefined) as ApiErrorBody | undefined
+  if (generation !== dataProfileGeneration()) throw new ApiError(409, 'profile_changed', 'Profile changed')
   if (!response.ok) {
     if (response.status === 401 && isDesktopRuntime()) desktopUnauthorized()
     throw new ApiError(
@@ -72,9 +83,11 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
 }
 
 export async function fetchApiBlob(input: string, init: RequestInit = {}): Promise<Blob> {
+  const generation = dataProfileGeneration()
   const targetsInstance = runtimeUrlTargetsInstance(input)
   const response = await authenticatedFetch(input, init)
   if (response.status === 401 && isDesktopRuntime() && targetsInstance) desktopUnauthorized()
+  if (generation !== dataProfileGeneration()) throw new ApiError(409, 'profile_changed', 'Profile changed')
   if (!response.ok) {
     const body = await response.clone().json().catch(() => undefined) as ApiErrorBody | undefined
     throw new ApiError(
@@ -84,7 +97,9 @@ export async function fetchApiBlob(input: string, init: RequestInit = {}): Promi
       body,
     )
   }
-  return response.blob()
+  const blob = await response.blob()
+  if (generation !== dataProfileGeneration()) throw new ApiError(409, 'profile_changed', 'Profile changed')
+  return blob
 }
 
 export function apiDownloadUrl(path: string): string {

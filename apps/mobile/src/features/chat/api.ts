@@ -1,9 +1,9 @@
 import { Directory, File, Paths } from 'expo-file-system'
 import * as Crypto from 'expo-crypto'
 import * as Sharing from 'expo-sharing'
-import { attachmentValidationError } from '@pulpo/client-core'
+import { dataProfileGeneration, attachmentValidationError } from '@pulpo/client-core'
 import type { ResponseSnapshot } from '@pulpo/contracts'
-import { apiOrigin, apiRequest, apiUrl, isNetworkError, nativeAuthorizationHeaders } from '../../api/client'
+import { ApiError, apiOrigin, apiRequest, apiUrl, isNetworkError, nativeAuthorizationHeaders } from '../../api/client'
 import { cacheNamespace, cachedAttachmentUri, recordCachedAttachment, removeCachedAttachment } from '../../data/database'
 import { queueOfflineMutation } from '../../data/mutations'
 import type { AttachmentDraft, BranchActivationResult, ServerAttachment, ServerChat, ServerFolder } from '../../types'
@@ -298,7 +298,12 @@ export async function shareChat(id: string): Promise<string> {
 }
 
 export async function uploadAttachment(draft: AttachmentDraft, chatId: string | null, assertSession: () => Promise<void> = async () => {}): Promise<ServerAttachment> {
-  await assertSession()
+  const generation = dataProfileGeneration()
+  const assertProfileSession = async () => {
+    await assertSession()
+    if (generation !== dataProfileGeneration()) throw new ApiError(409, 'profile_changed', 'Profile changed')
+  }
+  await assertProfileSession()
   const maxAttachmentBytes = useSessionStore.getState().config?.limits?.maxAttachmentBytes
   const validation = attachmentValidationError(
     { name: draft.name, mimeType: draft.mimeType, sizeBytes: draft.sizeBytes },
@@ -314,7 +319,7 @@ export async function uploadAttachment(draft: AttachmentDraft, chatId: string | 
     body: { chatId, originalName: draft.name, mimeType: draft.mimeType, sizeBytes: draft.sizeBytes },
   })
   try {
-    await assertSession()
+    await assertProfileSession()
     const file = new File(draft.uri)
     const uploadUrl = apiUrl(reservation.uploadUrl)
     const result = await file.upload(uploadUrl, {
@@ -323,7 +328,7 @@ export async function uploadAttachment(draft: AttachmentDraft, chatId: string | 
       headers: { ...reservation.uploadHeaders, ...nativeAuthorizationHeaders(uploadUrl) },
     })
     if (result.status < 200 || result.status >= 300) throw new Error(`Upload failed (${result.status})`)
-    await assertSession()
+    await assertProfileSession()
     const confirmed = await apiRequest<ServerAttachment>(`/api/attachments/${reservation.attachment.id}/confirm`, { method: 'POST' })
     await cacheUploadedAttachment(
       confirmed.id,
@@ -335,7 +340,7 @@ export async function uploadAttachment(draft: AttachmentDraft, chatId: string | 
     // Reservations are created before transferring bytes. Failed attempts are
     // never referenced by a message, so reclaim them before a retry reserves a
     // replacement. Cleanup is best-effort so the original actionable error wins.
-    await assertSession().then(() => deleteUnreferencedAttachment(reservation.attachment.id)).catch(() => undefined)
+    await assertProfileSession().then(() => deleteUnreferencedAttachment(reservation.attachment.id)).catch(() => undefined)
     throw error
   }
 }
@@ -374,11 +379,12 @@ async function recordDownloadedAttachment(namespace: string, id: string, file: F
 export async function cacheUploadedAttachment(id: string, name: string, sourceUri: string): Promise<void> {
   const { instanceUrl, user } = useSessionStore.getState()
   if (!user) return
+  const namespace = cacheNamespace(instanceUrl, user.id)
   const source = new File(sourceUri)
   if (!source.exists) return
   const destination = attachmentCacheDestination(id, name)
   if (source.uri !== destination.uri) await source.copy(destination, { overwrite: true })
-  await recordDownloadedAttachment(cacheNamespace(instanceUrl, user.id), id, destination)
+  await recordDownloadedAttachment(namespace, id, destination)
 }
 
 const activeAttachmentDownloads = new Map<string, Promise<File>>()

@@ -72,6 +72,34 @@ describe('incoming file ownership', () => {
     expect(f.deps.release).toHaveBeenCalledWith(file)
   })
 
+  it('retains an in-flight import in its original profile across switching and restart', async () => {
+    const f = fixture()
+    let complete!: (file: ImportedFile) => void
+    f.deps.copy.mockImplementation(() => new Promise((resolve) => { complete = resolve }))
+    await f.queue.setIdentity('instance|alice')
+    const copying = f.queue.enqueue('file:///personal')
+    await vi.waitFor(() => expect(complete).toBeDefined())
+    await f.queue.setIdentity('instance|alice|profile:work')
+    complete(file)
+    await copying
+    expect(f.queue.getSnapshot()[0]).toMatchObject({ namespace: 'instance|alice', file })
+    expect(f.deps.release).not.toHaveBeenCalled()
+    const restored = fixture(f.disk())
+    await restored.queue.setIdentity('instance|alice|profile:work')
+    expect(restored.queue.getSnapshot()[0]?.namespace).toBe('instance|alice')
+    await restored.queue.setIdentity('instance|alice')
+    expect(restored.queue.getSnapshot()[0]?.file).toEqual(file)
+  })
+
+  it('releases imports from a deleted profile while retaining other profiles', async () => {
+    const f = fixture()
+    await f.queue.setIdentity('instance|alice|profile:work')
+    await f.queue.enqueue('file:///work')
+    await f.queue.setIdentity('instance|alice', new Set(['instance|alice']))
+    expect(f.queue.getSnapshot()).toEqual([])
+    expect(f.deps.release).toHaveBeenCalledWith(file)
+  })
+
   it('releases a late native copy if logout occurred during copying', async () => {
     const f = fixture()
     let complete!: (file: ImportedFile) => void

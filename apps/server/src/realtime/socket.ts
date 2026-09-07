@@ -1,8 +1,11 @@
+import { currentProfile, withProfile } from '../profiles/context.js'
+import { resolveProfile } from '../profiles/service.js'
+import { profileEq, profileInArray } from '../profiles/context.js'
 import { resolveClientIp } from '../lib/client-ip.js'
 import { accessComposer } from '../composer/service.js'
 import { composerDraftIdSchema, composerWriteSchema, type ComposerAck, type ComposerSnapshot } from '@pulpo/contracts'
 import type { Server as HttpServer } from 'node:http'
-import { and, eq, inArray, isNull } from 'drizzle-orm'
+import { and, eq, isNull } from 'drizzle-orm'
 import { Server } from 'socket.io'
 import { createAdapter } from '@socket.io/redis-streams-adapter'
 import type {
@@ -24,6 +27,7 @@ import { toSnapshot } from '../responses/service.js'
 import { accessibleChatCondition } from '../chats/temporary.js'
 
 interface SocketData {
+  profileId: string
   composerSyncEnabled: boolean
   user: AuthenticatedUser
   actorUser: AuthenticatedUser
@@ -40,6 +44,7 @@ export const FULL_STATE_INVALIDATION_SCOPES: StateInvalidationScope[] = [
   'pool',
   'billing',
   'shelved-drafts',
+  'profiles',
 ]
 
 export function cookieValue(header: string | undefined, name: string): string | undefined {
@@ -83,7 +88,7 @@ function snapshotPreview(snapshot: ResponseSnapshot): string {
 }
 
 async function composerAccountEnabled(userId: string): Promise<boolean> {
-  const [preferences] = await db.select({ values: userPreferences.values }).from(userPreferences).where(eq(userPreferences.userId, userId)).limit(1)
+  const [preferences] = await db.select({ values: userPreferences.values }).from(userPreferences).where(profileEq(userPreferences.userId, userId)).limit(1)
   return (preferences?.values as { composerSyncEnabled?: unknown } | undefined)?.composerSyncEnabled !== false
 }
 
@@ -105,9 +110,12 @@ export async function createSocketServer(httpServer: HttpServer) {
     adapter: createAdapter(adapterRedis),
   })
 
-  const broadcastComposer = async (userId: string, snapshot: ComposerSnapshot) => {
+  const broadcastComposer = async (userId: string, snapshot: ComposerSnapshot, profileId = currentProfile()?.profileId) => {
+    if (!profileId) return
+    return withProfile({ userId, profileId }, async () => {
     if (snapshot.state?.temporary) return
-    if (await composerAccountEnabled(userId)) io.to(`composer:${userId}`).emit('composer.changed', snapshot)
+    if (await composerAccountEnabled(userId)) io.to(`composer:${userId}:${profileId}`).emit('composer.changed', snapshot)
+    })
   }
 
   io.use(async (socket, next) => {
@@ -125,6 +133,12 @@ export async function createSocketServer(httpServer: HttpServer) {
         : null
       if (accessToken && !access) return next(new Error('admin_chat_access_invalid'))
       socket.data.user = access?.ownerUser ?? user
+      let profileId = socket.handshake.auth.profileId
+      if (access) {
+        const [chat] = await db.select({ profileId: chats.profileId }).from(chats).where(eq(chats.id, access.chatId))
+        profileId = chat?.profileId
+      }
+      socket.data.profileId = (await resolveProfile(socket.data.user.id, profileId)).profileId
       socket.data.actorUser = user
       socket.data.adminChatAccess = access
       next()
@@ -135,18 +149,26 @@ export async function createSocketServer(httpServer: HttpServer) {
 
   io.on('connection', (socket) => {
     const user = socket.data.user
+    const profileId = socket.data.profileId
+    // Every listener gets its own async context and revalidates deletion.
+    // Recovery can restore rooms from a previous handshake; never retain those subscriptions.
+    for (const room of socket.rooms) if (/^(?:profile|composer|chat|response):/.test(room)) void socket.leave(room)
+    const originalOn = socket.on.bind(socket)
+    socket.on = ((event: string, listener: (...args: unknown[]) => unknown) => originalOn(event as never, ((...args: unknown[]) => {
+      return resolveProfile(user.id, profileId).then((scope) => withProfile(scope, () => listener(...args))).catch(() => socket.disconnect(true))
+    }) as never)) as typeof socket.on
     void socket.join(`session-actor:${socket.data.actorUser.id}`)
     const adminChatAccess = socket.data.adminChatAccess
     socket.data.composerSyncEnabled = !adminChatAccess && socket.handshake.auth.composerSyncEnabled !== false
-    if (socket.data.composerSyncEnabled) void socket.join(`composer:${user.id}`)
-    else void socket.leave(`composer:${user.id}`)
+    if (socket.data.composerSyncEnabled) void socket.join(`composer:${user.id}:${profileId}`)
+    else void socket.leave(`composer:${user.id}:${profileId}`)
     socket.on('composer.configure', (input) => {
       if (adminChatAccess || typeof input?.enabled !== 'boolean') return
       socket.data.composerSyncEnabled = input.enabled
-      if (input.enabled) void socket.join(`composer:${user.id}`)
-      else void socket.leave(`composer:${user.id}`)
+      if (input.enabled) void socket.join(`composer:${user.id}:${profileId}`)
+      else void socket.leave(`composer:${user.id}:${profileId}`)
     })
-    if (!adminChatAccess) void socket.join(`user:${user.id}`)
+    if (!adminChatAccess) { void socket.join(`user:${user.id}`); void socket.join(`profile:${profileId}`) }
 
     const composerTask = async (raw: unknown, ack: (result: ComposerAck) => void, writing: boolean) => {
       if (typeof ack !== 'function') return
@@ -172,11 +194,11 @@ export async function createSocketServer(httpServer: HttpServer) {
         const responseIds = Object.keys(input.responseCursors)
         const owned = responseIds.length
           ? await db.select({ response: responses }).from(responses)
-            .innerJoin(chats, eq(chats.id, responses.chatId))
+            .innerJoin(chats, profileEq(chats.id, responses.chatId))
             .where(and(
-              eq(responses.userId, user.id),
-              inArray(responses.id, responseIds),
-              adminChatAccess ? eq(chats.id, adminChatAccess.chatId) : undefined,
+              profileEq(responses.userId, user.id),
+              profileInArray(responses.id, responseIds),
+              adminChatAccess ? profileEq(chats.id, adminChatAccess.chatId) : undefined,
               isNull(chats.deletedAt),
               accessibleChatCondition(),
             )).then((rows) => rows.map((row) => row.response))
@@ -204,9 +226,9 @@ export async function createSocketServer(httpServer: HttpServer) {
       if (!chatId) return
       runSocketTask('chat.subscribe', async () => {
         const [owned] = await db.select({ id: chats.id }).from(chats).where(and(
-          eq(chats.id, chatId),
-          adminChatAccess ? eq(chats.id, adminChatAccess.chatId) : undefined,
-          eq(chats.userId, user.id),
+          profileEq(chats.id, chatId),
+          adminChatAccess ? profileEq(chats.id, adminChatAccess.chatId) : undefined,
+          profileEq(chats.userId, user.id),
           isNull(chats.deletedAt),
           accessibleChatCondition(),
         )).limit(1)
@@ -222,11 +244,11 @@ export async function createSocketServer(httpServer: HttpServer) {
       if (!responseId || !Number.isSafeInteger(afterSequence) || afterSequence < 0) return
       runSocketTask('response.subscribe', async () => {
         const [row] = await db.select({ response: responses }).from(responses)
-          .innerJoin(chats, eq(chats.id, responses.chatId))
+          .innerJoin(chats, profileEq(chats.id, responses.chatId))
           .where(and(
-            eq(responses.id, responseId),
-            eq(responses.userId, user.id),
-            adminChatAccess ? eq(chats.id, adminChatAccess.chatId) : undefined,
+            profileEq(responses.id, responseId),
+            profileEq(responses.userId, user.id),
+            adminChatAccess ? profileEq(chats.id, adminChatAccess.chatId) : undefined,
             isNull(chats.deletedAt),
             accessibleChatCondition(),
           )).limit(1)
@@ -262,12 +284,12 @@ export async function createSocketServer(httpServer: HttpServer) {
     socket.on('admin.usage.unsubscribe', () => void socket.leave('admin:usage'))
   })
 
-  const responseOwners = new Map<string, Promise<{ userId: string; chatId: string } | undefined>>()
+  const responseOwners = new Map<string, Promise<{ userId: string; chatId: string; profileId: string } | undefined>>()
   const ownerFor = async (responseId: string) => {
     const cached = responseOwners.get(responseId)
     if (cached) return cached
-    const pending = db.select({ userId: responses.userId, chatId: responses.chatId })
-      .from(responses).where(eq(responses.id, responseId)).limit(1)
+    const pending = db.select({ userId: responses.userId, chatId: responses.chatId, profileId: responses.profileId })
+      .from(responses).where(profileEq(responses.id, responseId)).limit(1)
       .then((rows) => rows[0])
       .catch((error) => {
         responseOwners.delete(responseId)
@@ -281,24 +303,24 @@ export async function createSocketServer(httpServer: HttpServer) {
   subscriber.on('message', (channel: string, message: string) => {
     if (channel === 'pulpo:composer-changes') {
       const change = JSON.parse(message)
-      runSocketTask('composer.changed', () => broadcastComposer(change.userId, change.snapshot))
+      runSocketTask('composer.changed', () => broadcastComposer(change.userId, change.snapshot, change.profileId))
     } else if (channel === 'pulpo:admin-usage') {
       io.to('admin:usage').emit('admin.usage.upsert', JSON.parse(message))
     } else if (channel === 'pulpo:response-events') {
       const event = JSON.parse(message) as { responseId: string }
       void ownerFor(event.responseId).then((owner) => {
         let rooms = io.to(`response:${event.responseId}`)
-        if (owner) rooms = rooms.to(`chat:${owner.chatId}`).to(`user:${owner.userId}`)
+        if (owner) rooms = rooms.to(`chat:${owner.chatId}`).to(`profile:${owner.profileId}`)
         rooms.emit('response.event', event as never)
       })
     } else if (channel === 'pulpo:response-snapshots') {
       const snapshot = JSON.parse(message) as ResponseSnapshot
       void ownerFor(snapshot.responseId).then((owner) => {
         let rooms = io.to(`response:${snapshot.responseId}`)
-        if (owner) rooms = rooms.to(`chat:${owner.chatId}`).to(`user:${owner.userId}`)
+        if (owner) rooms = rooms.to(`chat:${owner.chatId}`).to(`profile:${owner.profileId}`)
         rooms.emit('response.snapshot', snapshot)
         if (owner && snapshot.status === 'completed') {
-          io.to(`user:${owner.userId}`).emit('response.completed', {
+          io.to(`profile:${owner.profileId}`).emit('response.completed', {
             responseId: snapshot.responseId, chatId: owner.chatId, preview: snapshotPreview(snapshot),
           })
         }
@@ -315,15 +337,24 @@ export async function createSocketServer(httpServer: HttpServer) {
       const change = JSON.parse(message) as {
         userId: string
         revision: number
+        profileId?: string
         chatId?: string
         scopes?: StateInvalidationScope[]
       }
-      io.to(`user:${change.userId}`).emit('account.revision', {
+      const room = change.profileId ? `profile:${change.profileId}` : `user:${change.userId}`
+      io.to(room).emit('account.revision', {
         revision: change.revision,
         ...(change.scopes?.length ? { scopes: change.scopes } : {}),
       })
-      if (change.chatId) void accessComposer(change.userId, change.chatId).then((result) => { if (result.ok) return broadcastComposer(change.userId, result.snapshot) }).catch(() => undefined)
-      if (change.chatId) io.to(`user:${change.userId}`).to(`chat:${change.chatId}`).emit('chat.changed', { chatId: change.chatId, revision: change.revision })
+      if (change.scopes?.includes('profiles')) runSocketTask('profiles.changed', async () => {
+        const sockets = await io.in(`user:${change.userId}`).fetchSockets()
+        await Promise.all(sockets.map(async (socket) => {
+          try { await resolveProfile(change.userId, socket.data.profileId) }
+          catch { socket.disconnect(true) }
+        }))
+      })
+      if (change.chatId && change.profileId) void withProfile({ userId: change.userId, profileId: change.profileId }, () => accessComposer(change.userId, change.chatId!)).then((result) => { if (result.ok) return broadcastComposer(change.userId, result.snapshot, change.profileId) }).catch(() => undefined)
+      if (change.chatId) io.to(room).to(`chat:${change.chatId}`).emit('chat.changed', { chatId: change.chatId, revision: change.revision })
     }
   })
 

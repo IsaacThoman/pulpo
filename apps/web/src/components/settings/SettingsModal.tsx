@@ -1,3 +1,4 @@
+import { ProfilesSettings } from './ProfilesSettings'
 import { DeleteAccountSettings } from './DeleteAccountSettings'
 import { DeviceSettings } from './DeviceSettings'
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
@@ -24,6 +25,7 @@ import {
   Sun,
   Trash2,
   User,
+  UsersRound,
 } from 'lucide-react'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
@@ -77,6 +79,7 @@ const Markdown = lazy(() => import('@/components/chat/Markdown').then((module) =
 const SECTION_CONFIG = {
   general: { labelKey: 'settings.sections.general', icon: SlidersHorizontal },
   profile: { labelKey: 'settings.sections.profile', icon: User },
+  profiles: { labelKey: 'settings.sections.profiles', icon: UsersRound },
   security: { labelKey: 'settings.sections.security', icon: ShieldCheck },
   devices: { labelKey: 'settings.sections.devices', icon: Laptop },
   connections: { labelKey: 'settings.sections.connections', icon: Plug },
@@ -639,7 +642,7 @@ export function SettingsModal({
           {/* nav */}
           <div className="flex w-full shrink-0 flex-col border-b bg-muted/30 p-2 sm:w-52 sm:border-r sm:border-b-0 sm:p-3">
             <div className="px-2 pb-1.5 pr-8 text-sm font-semibold sm:pb-2 sm:pr-2">{t('settings.title')}</div>
-            <div className="settings-section-nav flex gap-1 overflow-x-auto pb-0.5 sm:block sm:space-y-0.5 sm:overflow-visible sm:pb-0">
+            <div className="settings-section-nav flex gap-1 overflow-x-auto pb-0.5 sm:block sm:space-y-0.5 sm:min-h-0 sm:overflow-y-auto sm:pb-0">
               {sections.filter((sec) => (
                 (sec.id !== 'api' || useAuth.getState().apiKeysEnabled)
                 && (sec.id !== 'billing' || billingEnabled)
@@ -676,6 +679,7 @@ export function SettingsModal({
           {/* content */}
           <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto">
             <div className="p-4 sm:p-6">
+              {section === 'profiles' && <ProfilesSettings />}
               {section === 'trash' && (
                 <div className="min-w-0">
                   <h2 className="text-base font-semibold">{ui("Trash")}</h2>

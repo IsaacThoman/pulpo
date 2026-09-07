@@ -10,15 +10,15 @@ export interface CodexLoginJob {
 }
 
 export interface MaintenanceJob {
-  type: 'delete-account' | 'cleanup' | 'backup-schedule' | 'scrub-response-binary-context' | 'purge-chats' | 'expire-temporary-chat' | 'expire-normal-chat' | 'rollup' | 'export' | 'backup' | 'restore' | 'billing-reconcile'
+  type: 'delete-profile' | 'delete-account' | 'cleanup' | 'backup-schedule' | 'scrub-response-binary-context' | 'purge-chats' | 'expire-temporary-chat' | 'expire-normal-chat' | 'rollup' | 'export' | 'backup' | 'restore' | 'billing-reconcile'
   payload?: Record<string, unknown>
 }
 
 export type EmbeddingJob =
   | { type: 'reconcile'; force?: boolean }
   | { type: 'index-chat'; chatId: string; userId: string }
-  | { type: 'index-user'; userId: string }
-  | { type: 'delete-user'; userId: string }
+  | { type: 'index-user'; userId: string; profileId?: string }
+  | { type: 'delete-user'; userId: string; profileId?: string }
 
 const connection = { url: getConfig().REDIS_URL }
 

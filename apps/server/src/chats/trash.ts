@@ -1,4 +1,6 @@
-import { and, eq, inArray, isNotNull, isNull, lte, sql } from 'drizzle-orm'
+import { withProfile } from '../profiles/context.js'
+import { profileEq, profileInArray } from '../profiles/context.js'
+import { and, eq, isNotNull, isNull, lte, sql } from 'drizzle-orm'
 import { db } from '../database/client.js'
 import { attachments, chats, queuedMessages, responses, userPreferences, users } from '../database/schema.js'
 import { getBlobStore } from '../storage/index.js'
@@ -46,11 +48,11 @@ export function normalChatExpiryCondition(
   expectedExpiresAt?: Date,
 ) {
   return and(
-    eq(chats.id, chatId),
-    eq(chats.userId, userId),
-    eq(chats.temporary, false),
+    profileEq(chats.id, chatId),
+    profileEq(chats.userId, userId),
+    profileEq(chats.temporary, false),
     lte(chats.expiresAt, now),
-    expectedExpiresAt ? eq(chats.expiresAt, expectedExpiresAt) : undefined,
+    expectedExpiresAt ? profileEq(chats.expiresAt, expectedExpiresAt) : undefined,
     isNull(chats.deletedAt),
     isNull(chats.purgeStartedAt),
   )
@@ -58,15 +60,15 @@ export function normalChatExpiryCondition(
 
 export async function getTrashRetention(userId: string): Promise<TrashRetention> {
   const [row] = await db.select({ values: userPreferences.values }).from(userPreferences)
-    .where(eq(userPreferences.userId, userId)).limit(1)
+    .where(profileEq(userPreferences.userId, userId)).limit(1)
   return parseTrashRetention((row?.values as Record<string, unknown> | undefined)?.trashRetention)
 }
 
 export async function cancelChatWork(chatIds: string[]): Promise<void> {
   if (!chatIds.length) return
   const active = await db.select({ id: responses.id }).from(responses).where(and(
-    inArray(responses.chatId, chatIds),
-    inArray(responses.status, ['queued', 'in_progress']),
+    profileInArray(responses.chatId, chatIds),
+    profileInArray(responses.status, ['queued', 'in_progress']),
   ))
   await Promise.all(active.map((response) => requestCancellation(response.id)))
   await Promise.all(chatIds.map((chatId) => releaseWorkspaceForChat(chatId)))
@@ -79,10 +81,10 @@ export async function markChatsForPurge(chatIds: string[], userId?: string): Pro
     purgeStartedAt: now,
     updatedAt: now,
   }).where(and(
-    inArray(chats.id, chatIds),
+    profileInArray(chats.id, chatIds),
     isNotNull(chats.deletedAt),
     isNull(chats.purgeStartedAt),
-    userId ? eq(chats.userId, userId) : undefined,
+    userId ? profileEq(chats.userId, userId) : undefined,
   )).returning({ id: chats.id })
   return marked.length
 }
@@ -94,11 +96,11 @@ export async function markExpiredChatsForPurge(now = new Date(), userId?: string
     deletedAt: chats.deletedAt,
     preferences: userPreferences.values,
   }).from(chats)
-    .leftJoin(userPreferences, eq(userPreferences.userId, chats.userId))
+    .leftJoin(userPreferences, and(profileEq(userPreferences.userId, chats.userId), eq(userPreferences.profileId, chats.profileId)))
     .where(and(
       isNotNull(chats.deletedAt),
       isNull(chats.purgeStartedAt),
-      userId ? eq(chats.userId, userId) : undefined,
+      userId ? profileEq(chats.userId, userId) : undefined,
     ))
   const expired = deletedRows.filter((row) => {
     if (!row.deletedAt) return false
@@ -107,10 +109,10 @@ export async function markExpiredChatsForPurge(now = new Date(), userId?: string
   }).map((row) => row.id)
 
   const temporaryRows = await db.select({ id: chats.id }).from(chats).where(and(
-    eq(chats.temporary, true),
+    profileEq(chats.temporary, true),
     lte(chats.expiresAt, now),
     isNull(chats.purgeStartedAt),
-    userId ? eq(chats.userId, userId) : undefined,
+    userId ? profileEq(chats.userId, userId) : undefined,
   ))
   const normalCount = await markChatsForPurge(expired, userId)
   if (!temporaryRows.length) return normalCount
@@ -119,9 +121,9 @@ export async function markExpiredChatsForPurge(now = new Date(), userId?: string
     purgeStartedAt: now,
     updatedAt: now,
   }).where(and(
-    inArray(chats.id, temporaryRows.map((row) => row.id)),
+    profileInArray(chats.id, temporaryRows.map((row) => row.id)),
     isNull(chats.purgeStartedAt),
-    userId ? eq(chats.userId, userId) : undefined,
+    userId ? profileEq(chats.userId, userId) : undefined,
   )).returning({ id: chats.id })
   return normalCount + markedTemporary.length
 }
@@ -132,9 +134,9 @@ export async function expireTemporaryChat(chatId: string, userId: string, now = 
     purgeStartedAt: now,
     updatedAt: now,
   }).where(and(
-    eq(chats.id, chatId),
-    eq(chats.userId, userId),
-    eq(chats.temporary, true),
+    profileEq(chats.id, chatId),
+    profileEq(chats.userId, userId),
+    profileEq(chats.temporary, true),
     lte(chats.expiresAt, now),
     isNull(chats.deletedAt),
     isNull(chats.purgeStartedAt),
@@ -154,13 +156,15 @@ export async function expireNormalChat(
   now = new Date(),
   expectedExpiresAt?: Date,
 ): Promise<boolean> {
-  const retention = await getTrashRetention(userId)
+  const [owner] = await db.select({ userId: chats.userId, profileId: chats.profileId }).from(chats).where(and(profileEq(chats.id, chatId), profileEq(chats.userId, userId)))
+  if (!owner) return false
+  const retention = await withProfile(owner, () => getTrashRetention(userId))
   const [marked] = await db.update(chats).set(expiredChatTrashValues(now, retention))
     .where(normalChatExpiryCondition(chatId, userId, now, expectedExpiresAt))
     .returning({ id: chats.id })
   if (!marked) return false
   const cleanup = await Promise.allSettled([
-    db.delete(queuedMessages).where(and(eq(queuedMessages.chatId, chatId), eq(queuedMessages.userId, userId))),
+    db.delete(queuedMessages).where(and(profileEq(queuedMessages.chatId, chatId), profileEq(queuedMessages.userId, userId))),
     cancelChatWork([chatId]),
   ])
   await publishExpiredChat(userId, chatId)
@@ -172,11 +176,11 @@ export async function expireNormalChat(
 
 export async function expireNormalChats(now = new Date(), userId?: string): Promise<number> {
   const expired = await db.select({ id: chats.id, userId: chats.userId }).from(chats).where(and(
-    eq(chats.temporary, false),
+    profileEq(chats.temporary, false),
     lte(chats.expiresAt, now),
     isNull(chats.deletedAt),
     isNull(chats.purgeStartedAt),
-    userId ? eq(chats.userId, userId) : undefined,
+    userId ? profileEq(chats.userId, userId) : undefined,
   ))
   let count = 0
   for (const chat of expired) {
@@ -189,21 +193,21 @@ export async function purgePendingChats(userId?: string): Promise<number> {
   const pending = await db.select({ id: chats.id, temporary: chats.temporary }).from(chats).where(and(
     isNotNull(chats.purgeStartedAt),
     sql`exists (select 1 from ${users} where ${users.id} = ${chats.userId} and ${users.deletionRequestedAt} is null)`,
-    userId ? eq(chats.userId, userId) : undefined,
+    userId ? profileEq(chats.userId, userId) : undefined,
   ))
   let purged = 0
   let firstError: unknown
   for (const row of pending) {
     try {
       const responseRows = await db.select({ id: responses.id, status: responses.status }).from(responses)
-        .where(eq(responses.chatId, row.id))
+        .where(profileEq(responses.chatId, row.id))
       await Promise.all(responseRows.filter((response) => ['queued', 'in_progress'].includes(response.status))
         .map((response) => requestCancellation(response.id)))
       await releaseWorkspaceForChat(row.id)
       const files = await db.select({ objectKey: attachments.objectKey }).from(attachments)
-        .where(eq(attachments.chatId, row.id))
+        .where(profileEq(attachments.chatId, row.id))
       await Promise.all(files.map((file) => getBlobStore().delete(file.objectKey)))
-      await db.delete(chats).where(and(eq(chats.id, row.id), isNotNull(chats.purgeStartedAt)))
+      await db.delete(chats).where(and(profileEq(chats.id, row.id), isNotNull(chats.purgeStartedAt)))
       purged += 1
     } catch (error) {
       firstError ??= error

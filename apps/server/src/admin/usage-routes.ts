@@ -1,3 +1,4 @@
+import { profileEq, profileInArray } from '../profiles/context.js'
 import { and, asc, desc, eq, gt, gte, inArray, lt, or, sql, type SQL } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
@@ -191,7 +192,7 @@ export async function registerAdminUsageRoutes(app: FastifyInstance): Promise<vo
     requireAdmin(request)
     const { leaseId } = z.object({ leaseId: z.string().uuid() }).parse(request.params)
     const [lease] = await db.select().from(workspaceLeases)
-      .where(and(eq(workspaceLeases.controllerLeaseId, leaseId), inArray(workspaceLeases.status, ['provisioning', 'ready']))).limit(1)
+      .where(and(profileEq(workspaceLeases.controllerLeaseId, leaseId), profileInArray(workspaceLeases.status, ['provisioning', 'ready']))).limit(1)
     if (!lease) throw notFound('Active workspace lease')
 
     const config = getConfig()
@@ -210,7 +211,7 @@ export async function registerAdminUsageRoutes(app: FastifyInstance): Promise<vo
 
     const now = new Date()
     await db.update(workspaceLeases).set({ status: 'released', capacityState: null, releasedAt: now, updatedAt: now })
-      .where(and(eq(workspaceLeases.id, lease.id), inArray(workspaceLeases.status, ['provisioning', 'ready'])))
+      .where(and(profileEq(workspaceLeases.id, lease.id), profileInArray(workspaceLeases.status, ['provisioning', 'ready'])))
     return { status: 'released' }
   })
 
@@ -223,9 +224,9 @@ export async function registerAdminUsageRoutes(app: FastifyInstance): Promise<vo
       chat: { id: chats.id, title: chats.title },
       response: { id: responses.id, modelId: responses.modelId, status: responses.status },
     }).from(workspaceLeases)
-      .innerJoin(users, eq(workspaceLeases.userId, users.id))
-      .innerJoin(chats, eq(workspaceLeases.chatId, chats.id))
-      .leftJoin(responses, eq(workspaceLeases.responseId, responses.id))
+      .innerJoin(users, profileEq(workspaceLeases.userId, users.id))
+      .innerJoin(chats, profileEq(workspaceLeases.chatId, chats.id))
+      .leftJoin(responses, profileEq(workspaceLeases.responseId, responses.id))
       .orderBy(desc(workspaceLeases.createdAt)).limit(200)
     const leaseIds = rows.map((row) => row.lease.id)
     const runs = leaseIds.length ? await db.select().from(agentRuns).where(inArray(agentRuns.workspaceLeaseId, leaseIds)).orderBy(desc(agentRuns.createdAt)) : []

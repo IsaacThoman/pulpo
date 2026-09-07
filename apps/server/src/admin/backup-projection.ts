@@ -29,6 +29,7 @@ type TemporaryDataPolicy =
  */
 export const FULL_BACKUP_TEMPORARY_DATA_POLICY = {
   users: 'preserve',
+  data_profiles: 'preserve',
   friendships: 'preserve',
   user_blocks: 'preserve',
   password_credentials: 'preserve',

@@ -1,3 +1,5 @@
+import { dataProfileGeneration } from '@pulpo/client-core'
+import { localAccountKey, localDb } from '@/lib/local-first/database'
 import { localComposerDraftId } from '@pulpo/client-core'
 import type { ComposerState } from '@pulpo/contracts'
 import { webComposerSync } from '@/lib/local-first/composer-sync'
@@ -184,10 +186,12 @@ function referencedChatIds(localId: string): string[] {
 }
 
 function scheduleChat(chatId: string): void {
-  queueMicrotask(() => void processChat(chatId))
+  const generation = dataProfileGeneration()
+  queueMicrotask(() => { if (generation === dataProfileGeneration()) void processChat(chatId) })
 }
 
 async function uploadRecord(localId: string, attempt: number): Promise<void> {
+  const generation = dataProfileGeneration()
   const initial = useUploadOutbox.getState().uploads[localId]
   if (!initial?.file || initial.attempt !== attempt) return
   const file = initial.file
@@ -213,6 +217,7 @@ async function uploadRecord(localId: string, attempt: number): Promise<void> {
         sizeBytes: file.size,
       },
     })
+    if (generation !== dataProfileGeneration()) return
     reservedId = created.attachment.id
     const current = useUploadOutbox.getState().uploads[localId]
     if (!current || current.attempt !== attempt) {
@@ -229,8 +234,10 @@ async function uploadRecord(localId: string, attempt: number): Promise<void> {
       headers: created.uploadHeaders,
       credentials: created.uploadUrl.startsWith('/api/') ? 'include' : 'omit',
     })
+    if (generation !== dataProfileGeneration()) return
     if (!upload.ok) throw new Error(`Upload failed (${upload.status})`)
     const confirmed = await apiRequest<{ mimeType: string }>(`/api/attachments/${reservedId}/confirm`, { method: 'POST' })
+    if (generation !== dataProfileGeneration()) return
     const latest = useUploadOutbox.getState().uploads[localId]
     if (!latest || latest.attempt !== attempt) {
       deleteRemoteAttachment(reservedId)
@@ -245,6 +252,7 @@ async function uploadRecord(localId: string, attempt: number): Promise<void> {
         sizeBytes: file.size,
       }, file, useSettings.getState().localAttachmentCacheMb).catch(() => false)
     }
+    if (generation !== dataProfileGeneration()) return
     useUploadOutbox.setState((state) => ({
       uploads: {
         ...state.uploads,
@@ -260,6 +268,7 @@ async function uploadRecord(localId: string, attempt: number): Promise<void> {
     const completed = useUploadOutbox.getState().uploads[localId]
     if (completed) persistDraftUpload(completed)
   } catch (error) {
+    if (generation !== dataProfileGeneration()) return
     const current = useUploadOutbox.getState().uploads[localId]
     if (!current || current.attempt !== attempt) return
     useUploadOutbox.setState((state) => ({
@@ -306,10 +315,11 @@ function restrictionMessage(submission: PendingSubmission, records: UploadRecord
 const processingChats = new Set<string>()
 
 async function processChat(chatId: string): Promise<void> {
+  const generation = dataProfileGeneration()
   if (processingChats.has(chatId)) return
   processingChats.add(chatId)
   try {
-    while (true) {
+    while (generation === dataProfileGeneration()) {
       const state = useUploadOutbox.getState()
       const submission = state.submissions.find((item) => item.chatId === chatId)
       if (!submission || submission.status === 'recovery' || submission.status === 'dispatching') return
@@ -368,7 +378,8 @@ async function processChat(chatId: string): Promise<void> {
         }))
         useUploadOutbox.getState().consumeUploads(submission.attachmentIds)
         await waitForResponseDispatch(submission.responseId).then(async () => {
-          const draft = submission.composerDraft
+          if (generation !== dataProfileGeneration()) return
+        const draft = submission.composerDraft
           if (draft) await webComposerSync(draft.userId)?.completeSubmission(draft.draftId, draft.state, draft.revision)
         }).catch(() => undefined)
         continue
@@ -382,6 +393,7 @@ async function processChat(chatId: string): Promise<void> {
           attachmentIds: attachments.map((attachment) => attachment.id),
           agentMode: submission.agentMode,
         }, attachments, submission.responseId)
+        if (generation !== dataProfileGeneration()) return
         const draft = submission.composerDraft
         if (draft) await webComposerSync(draft.userId)?.completeSubmission(draft.draftId, draft.state, draft.revision)
         useUploadOutbox.setState((current) => ({
@@ -389,12 +401,13 @@ async function processChat(chatId: string): Promise<void> {
         }))
         useUploadOutbox.getState().consumeUploads(submission.attachmentIds)
       } catch (error) {
+        if (generation !== dataProfileGeneration()) return
         recoverSubmission(submission, error instanceof Error ? error.message : 'Unable to queue message')
         return
       }
     }
   } finally {
-    processingChats.delete(chatId)
+    if (generation === dataProfileGeneration()) processingChats.delete(chatId)
   }
 }
 
@@ -632,3 +645,24 @@ export const useUploadOutbox = create<UploadOutboxState>()((set, get) => ({
   releaseDraftUploads: (localIds) => releaseRecords(localIds, false),
   consumeUploads: (localIds) => releaseRecords(localIds, true),
 }))
+
+/** Persist File objects with IndexedDB's structured clone before replacing UI state. */
+export async function checkpointProfileUploads(userId: string): Promise<void> {
+  const state = useUploadOutbox.getState()
+  await localDb.kv.put({ key: `profile-uploads:${localAccountKey(userId)}`, value: {
+    uploads: Object.fromEntries(Object.entries(state.uploads).filter(([, record]) => !record.temporary)),
+    submissions: state.submissions.filter((submission) => !submission.temporary),
+    preservedDrafts: state.preservedDrafts,
+  }, updatedAt: Date.now() })
+}
+export async function restoreProfileUploads(userId: string): Promise<void> {
+  const row = await localDb.kv.get(`profile-uploads:${localAccountKey(userId)}`)
+  const saved = row?.value as Pick<UploadOutboxState, 'uploads' | 'submissions' | 'preservedDrafts'> | undefined
+  processingChats.clear()
+  const uploads = Object.fromEntries(Object.entries(saved?.uploads ?? {}).map(([id, upload]) => [id, {
+    ...upload, previewUrl: upload.file && isSupportedImageFile(upload.file) ? URL.createObjectURL(upload.file) : null,
+  }]))
+  useUploadOutbox.setState({ uploads, submissions: saved?.submissions ?? [], preservedDrafts: saved?.preservedDrafts ?? {} })
+  for (const upload of Object.values(uploads)) if (upload.status === 'uploading') useUploadOutbox.getState().retryUpload(upload.localId)
+  for (const submission of saved?.submissions ?? []) scheduleChat(submission.chatId)
+}

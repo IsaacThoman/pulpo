@@ -1,3 +1,5 @@
+import { dataProfileGeneration } from '@pulpo/client-core'
+import { profileStorageKey } from '@/lib/profile-storage'
 import { create } from 'zustand'
 import { replaceEqualDeep } from '@tanstack/react-query'
 import {
@@ -38,7 +40,7 @@ const FOLDER_EXPANDED_KEY = 'pulpo-folder-expanded'
 
 function loadFolderExpanded(): Record<string, boolean> {
   try {
-    const raw = localStorage.getItem(FOLDER_EXPANDED_KEY)
+    const raw = localStorage.getItem(profileStorageKey(FOLDER_EXPANDED_KEY))
     if (!raw) return {}
     const parsed = JSON.parse(raw) as unknown
     if (!parsed || typeof parsed !== 'object') return {}
@@ -52,7 +54,7 @@ function loadFolderExpanded(): Record<string, boolean> {
 
 function saveFolderExpanded(map: Record<string, boolean>) {
   try {
-    localStorage.setItem(FOLDER_EXPANDED_KEY, JSON.stringify(map))
+    localStorage.setItem(profileStorageKey(FOLDER_EXPANDED_KEY), JSON.stringify(map))
   } catch {
     // ignore quota / private mode
   }
@@ -814,8 +816,12 @@ export function waitForResponseDispatch(responseId: string): Promise<void> {
 }
 
 function enqueueChatMutation<T>(chatId: string, operation: () => Promise<T>): Promise<T> {
+  const generation = dataProfileGeneration()
   const previous = chatMutationTails.get(chatId) ?? Promise.resolve()
-  const result = previous.catch(() => undefined).then(operation)
+  const result = previous.catch(() => undefined).then(() => {
+    if (generation !== dataProfileGeneration()) throw new ApiError(409, 'profile_changed', 'Profile changed')
+    return operation()
+  })
   chatMutationTails.set(chatId, result)
   void result.finally(() => {
     if (chatMutationTails.get(chatId) === result) chatMutationTails.delete(chatId)

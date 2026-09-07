@@ -1,3 +1,4 @@
+import { ProfileBoundary } from './ProfileBoundary'
 import { MaterialOverlays } from '../platform/MaterialUI'
 import { useEffect, useMemo } from 'react'
 import { AppState, Keyboard, View } from 'react-native'
@@ -95,7 +96,7 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
       <KeyboardStateReconciler>
         <SafeAreaProvider>
           <QueryClientProvider client={queryClient}>
-            <ConnectivityProvider><Bootstrap><RealtimeProvider>{children}<MaterialOverlays /></RealtimeProvider></Bootstrap></ConnectivityProvider>
+            <ConnectivityProvider><Bootstrap><ProfileBoundary><RealtimeProvider>{children}<MaterialOverlays /></RealtimeProvider></ProfileBoundary></Bootstrap></ConnectivityProvider>
           </QueryClientProvider>
         </SafeAreaProvider>
       </KeyboardStateReconciler>

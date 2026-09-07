@@ -1,3 +1,4 @@
+import { profileEq } from '../profiles/context.js'
 import { and, eq, isNull } from 'drizzle-orm'
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import { z } from 'zod'
@@ -79,13 +80,13 @@ async function chatIdForScopedRequest(request: FastifyRequest): Promise<string |
 
   const messageId = resourceId(pathname, '/api/messages')?.replace(/:input$/, '')
   if (messageId) {
-    const [row] = await db.select({ chatId: responses.chatId }).from(responses).where(eq(responses.id, messageId)).limit(1)
+    const [row] = await db.select({ chatId: responses.chatId }).from(responses).where(profileEq(responses.id, messageId)).limit(1)
     return row?.chatId ?? null
   }
 
   const responseId = resourceId(pathname, '/api/responses')
   if (responseId) {
-    const [row] = await db.select({ chatId: responses.chatId }).from(responses).where(eq(responses.id, responseId)).limit(1)
+    const [row] = await db.select({ chatId: responses.chatId }).from(responses).where(profileEq(responses.id, responseId)).limit(1)
     return row?.chatId ?? null
   }
 
@@ -95,14 +96,14 @@ async function chatIdForScopedRequest(request: FastifyRequest): Promise<string |
   }
   const attachmentId = resourceId(pathname, '/api/attachments')
   if (attachmentId && !['usage', 'local-upload', 'local-download'].includes(attachmentId)) {
-    const [row] = await db.select({ chatId: attachments.chatId }).from(attachments).where(eq(attachments.id, attachmentId)).limit(1)
+    const [row] = await db.select({ chatId: attachments.chatId }).from(attachments).where(profileEq(attachments.id, attachmentId)).limit(1)
     return row?.chatId ?? null
   }
   const uploadKey = resourceId(pathname, '/api/attachments/local-upload')
   const downloadKey = resourceId(pathname, '/api/attachments/local-download')
   const objectKey = uploadKey ?? downloadKey
   if (objectKey) {
-    const [row] = await db.select({ chatId: attachments.chatId }).from(attachments).where(eq(attachments.objectKey, objectKey)).limit(1)
+    const [row] = await db.select({ chatId: attachments.chatId }).from(attachments).where(profileEq(attachments.objectKey, objectKey)).limit(1)
     return row?.chatId ?? null
   }
 
@@ -116,7 +117,7 @@ async function chatIdForScopedRequest(request: FastifyRequest): Promise<string |
   }
   const shareId = resourceId(pathname, '/api/chat-shares')
   if (shareId) {
-    const [row] = await db.select({ chatId: chatShares.chatId }).from(chatShares).where(eq(chatShares.id, shareId)).limit(1)
+    const [row] = await db.select({ chatId: chatShares.chatId }).from(chatShares).where(profileEq(chatShares.id, shareId)).limit(1)
     return row?.chatId ?? null
   }
 
@@ -159,7 +160,7 @@ export async function resolveAdminChatSocketAccess(
   if (!grant || grant.actorUserId !== actor.id || new Date(grant.expiresAt) <= new Date()) return null
   const [owner] = await db.select().from(users).where(eq(users.id, grant.ownerUserId)).limit(1)
   const [chat] = await db.select({ id: chats.id }).from(chats).where(and(
-    eq(chats.id, grant.chatId), eq(chats.userId, grant.ownerUserId), isNull(chats.purgeStartedAt), accessibleChatCondition(),
+    profileEq(chats.id, grant.chatId), profileEq(chats.userId, grant.ownerUserId), isNull(chats.purgeStartedAt), accessibleChatCondition(),
   )).limit(1)
   if (!owner || !chat) return null
   return {
@@ -200,7 +201,7 @@ export async function registerAdminChatAccess(app: FastifyInstance): Promise<voi
     }
     const [row] = await db.select({ chat: chats, owner: users }).from(chats)
       .innerJoin(users, eq(users.id, chats.userId)).where(and(
-        eq(chats.id, chatId), isNull(chats.purgeStartedAt), accessibleChatCondition(),
+        profileEq(chats.id, chatId), isNull(chats.purgeStartedAt), accessibleChatCondition(),
       )).limit(1)
     if (!row) {
       await audit({ actorUserId: admin.id, action: 'chat.admin_access.denied', chatId, metadata: { reason: 'chat_not_found' } })

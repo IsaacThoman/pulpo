@@ -1,4 +1,5 @@
-import { and, eq, inArray, isNotNull, isNull, ne, sql } from 'drizzle-orm'
+import { profileEq, profileInArray } from '../profiles/context.js'
+import { and, eq, isNotNull, isNull, ne, sql } from 'drizzle-orm'
 import { db } from '../database/client.js'
 import { apiKeys, applicationSettings, auditEvents, attachments, backupJobs, budgetReservationFunders, budgetReservations, chats, chatShares, exportJobs, managementTokens, poolInvitations, poolMembers, pools, queuedMessages, responses, sessions, users, workspaceLeases } from '../database/schema.js'
 import { AppError } from '../lib/errors.js'
@@ -46,9 +47,9 @@ export async function acceptAccountDeletion(userId: string): Promise<void> {
     await tx.delete(sessions).where(eq(sessions.userId, userId))
     await tx.update(apiKeys).set({ status: 'disabled', disabledAt: now }).where(eq(apiKeys.userId, userId))
     await tx.update(managementTokens).set({ revokedAt: now }).where(eq(managementTokens.userId, userId))
-    await tx.update(chatShares).set({ revokedAt: now }).where(eq(chatShares.userId, userId))
-    await tx.update(chats).set({ deletedAt: now, updatedAt: now }).where(eq(chats.userId, userId))
-    await tx.delete(queuedMessages).where(eq(queuedMessages.userId, userId))
+    await tx.update(chatShares).set({ revokedAt: now }).where(profileEq(chatShares.userId, userId))
+    await tx.update(chats).set({ deletedAt: now, updatedAt: now }).where(profileEq(chats.userId, userId))
+    await tx.delete(queuedMessages).where(profileEq(queuedMessages.userId, userId))
     await tx.update(poolMembers).set({ leftAt: now }).where(and(eq(poolMembers.userId, userId), isNull(poolMembers.leftAt)))
     await tx.update(poolInvitations).set({ status: 'canceled', respondedAt: now, updatedAt: now }).where(and(eq(poolInvitations.inviteeUserId, userId), eq(poolInvitations.status, 'pending')))
     const dissolved = membership ? await dissolveSingletonPool(tx, membership.pool.id) : []
@@ -73,13 +74,13 @@ export async function deleteAccountData(userId: string): Promise<void> {
   const [user] = await db.select().from(users).where(eq(users.id, userId))
   if (!user?.deletionRequestedAt) return
   try {
-    const responseRows = await db.select().from(responses).where(eq(responses.userId, userId))
+    const responseRows = await db.select().from(responses).where(profileEq(responses.userId, userId))
     for (const response of responseRows) {
       if (['queued', 'in_progress'].includes(response.status)) {
         await requestCancellation(response.id)
         if (response.status === 'queued') {
           const claimed = await db.update(responses).set({ status: 'cancelled', completedAt: new Date(), updatedAt: new Date() })
-            .where(and(eq(responses.id, response.id), eq(responses.status, 'queued'))).returning({ id: responses.id })
+            .where(and(profileEq(responses.id, response.id), profileEq(responses.status, 'queued'))).returning({ id: responses.id })
           if (claimed.length) await releaseBudget(response.id)
         }
       }
@@ -89,13 +90,13 @@ export async function deleteAccountData(userId: string): Promise<void> {
     }
     await cancelAccountBilling(userId)
     const [running] = await db.select({ id: responses.id }).from(responses)
-      .where(and(eq(responses.userId, userId), inArray(responses.status, ['queued', 'in_progress']))).limit(1)
+      .where(and(profileEq(responses.userId, userId), profileInArray(responses.status, ['queued', 'in_progress']))).limit(1)
     if (running) throw new Error('Waiting for running requests to stop.')
     const [funding] = await db.select({ id: budgetReservations.id }).from(budgetReservationFunders)
       .innerJoin(budgetReservations, eq(budgetReservations.id, budgetReservationFunders.reservationId))
       .where(and(eq(budgetReservationFunders.userId, userId), eq(budgetReservations.status, 'pending'))).limit(1)
     if (funding) throw new Error('Waiting for existing Pool contributions to settle.')
-    const leases = await db.select().from(workspaceLeases).where(eq(workspaceLeases.userId, userId))
+    const leases = await db.select().from(workspaceLeases).where(profileEq(workspaceLeases.userId, userId))
     for (const lease of leases) {
       if (lease.controllerLeaseId) {
         const result = await workspaceControllerRequest(`/v1/leases/${lease.controllerLeaseId}`, { method: 'DELETE', signal: AbortSignal.timeout(10_000) })
@@ -106,7 +107,7 @@ export async function deleteAccountData(userId: string): Promise<void> {
     if (Date.now() - user.deletionRequestedAt.getTime() < 16 * 60_000) {
       throw new Error('Waiting for outstanding upload URLs to expire before final cleanup.')
     }
-    const files = await db.select({ key: attachments.objectKey }).from(attachments).where(eq(attachments.userId, userId))
+    const files = await db.select({ key: attachments.objectKey }).from(attachments).where(profileEq(attachments.userId, userId))
     const exports = await db.select().from(exportJobs).where(eq(exportJobs.userId, userId))
     const keys = new Set<string>(files.map((file) => file.key))
     if (user.avatarObjectKey) keys.add(user.avatarObjectKey)

@@ -1,3 +1,4 @@
+import { currentProfile, profileEq } from '../profiles/context.js'
 import { and, asc, desc, eq, gt, inArray, isNull, or } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
@@ -23,10 +24,10 @@ export async function registerShareRoutes(app: FastifyInstance): Promise<void> {
     const user = requireUser(request)
     const scopedChatId = request.adminChatAccess?.chatId
     return { data: await db.select({ share: chatShares, title: chats.title }).from(chatShares)
-      .innerJoin(chats, eq(chats.id, chatShares.chatId))
+      .innerJoin(chats, profileEq(chats.id, chatShares.chatId))
       .where(and(
-        eq(chatShares.userId, user.id),
-        scopedChatId ? eq(chatShares.chatId, scopedChatId) : undefined,
+        profileEq(chatShares.userId, user.id),
+        scopedChatId ? profileEq(chatShares.chatId, scopedChatId) : undefined,
         isNull(chats.deletedAt),
         accessibleChatCondition(),
       )).orderBy(desc(chatShares.createdAt)) }
@@ -36,15 +37,15 @@ export async function registerShareRoutes(app: FastifyInstance): Promise<void> {
     const user = requireUser(request)
     const input = z.object({ chatId: z.uuid(), expiresAt: z.iso.datetime().nullable().default(null) }).parse(request.body)
     const idempotencyKey = request.headers['idempotency-key'] as string | undefined
-    const redisKey = idempotencyKey ? `pulpo:idempotency:share:${user.id}:${idempotencyKey}` : null
+    const redisKey = idempotencyKey ? `pulpo:idempotency:share:${user.id}:${currentProfile()?.profileId ?? user.id}:${idempotencyKey}` : null
     if (redisKey) {
       const cached = await redis.get(redisKey)
       if (cached) { reply.code(201); return JSON.parse(decryptSecret(cached, getConfig().ENCRYPTION_KEY)) }
     }
     const [chat] = await db.select({ id: chats.id }).from(chats).where(and(
-      eq(chats.id, input.chatId),
-      eq(chats.userId, user.id),
-      eq(chats.temporary, false),
+      profileEq(chats.id, input.chatId),
+      profileEq(chats.userId, user.id),
+      profileEq(chats.temporary, false),
       isNull(chats.deletedAt),
       accessibleChatCondition(),
     )).limit(1)
@@ -64,7 +65,7 @@ export async function registerShareRoutes(app: FastifyInstance): Promise<void> {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
     const revoked = await db.update(chatShares).set({ revokedAt: new Date() })
-      .where(and(eq(chatShares.id, id), eq(chatShares.userId, user.id))).returning({ id: chatShares.id })
+      .where(and(profileEq(chatShares.id, id), profileEq(chatShares.userId, user.id))).returning({ id: chatShares.id })
     if (!revoked.length) throw notFound('Share')
     reply.code(204).send()
   })
@@ -73,9 +74,9 @@ export async function registerShareRoutes(app: FastifyInstance): Promise<void> {
     const { token } = request.params as { token: string }
     const now = new Date()
     const [row] = await db.select({ share: chatShares, chat: chats }).from(chatShares)
-      .innerJoin(chats, eq(chats.id, chatShares.chatId))
+      .innerJoin(chats, profileEq(chats.id, chatShares.chatId))
       .where(and(
-        eq(chatShares.tokenHash, hashToken(token)),
+        profileEq(chatShares.tokenHash, hashToken(token)),
         isNull(chatShares.revokedAt),
         isNull(chats.deletedAt),
         accessibleChatCondition(now),
@@ -83,7 +84,7 @@ export async function registerShareRoutes(app: FastifyInstance): Promise<void> {
       ))
       .limit(1)
     if (!row) throw new AppError(404, 'share_not_found', 'This share does not exist or has expired')
-    const allTurns = await db.select().from(responses).where(and(eq(responses.chatId, row.chat.id), isNull(responses.deletedAt))).orderBy(asc(responses.createdAt), asc(responses.id))
+    const allTurns = await db.select().from(responses).where(and(profileEq(responses.chatId, row.chat.id), isNull(responses.deletedAt))).orderBy(asc(responses.createdAt), asc(responses.id))
     const turns = lineageFromLeaf(
       allTurns,
       row.chat.activeBranchLeafId ?? row.chat.activeResponseId ?? allTurns.at(-1)?.id ?? null,

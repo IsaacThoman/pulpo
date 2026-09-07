@@ -1,5 +1,6 @@
+import { profileStorage } from '@/lib/profile-storage'
 import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
+import { persist, createJSONStorage } from 'zustand/middleware'
 import type { ChatPreset, ChatPresetChoice, Model } from '@/lib/types'
 
 export interface ChatOptions {
@@ -19,7 +20,7 @@ export const useModelConfig = create<ModelConfigState>()(
       setOptions: (modelId, options) =>
         set((s) => ({ overrides: { ...s.overrides, [modelId]: options } })),
     }),
-    { name: 'pulpo-model-config' }
+    { name: 'pulpo-model-config', storage: createJSONStorage(() => profileStorage) }
   )
 )
 

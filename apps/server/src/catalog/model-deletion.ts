@@ -1,3 +1,4 @@
+import { profileEq, profileInArray } from '../profiles/context.js'
 import { and, eq, inArray, or, sql } from 'drizzle-orm'
 import { db } from '../database/client.js'
 import {
@@ -63,16 +64,16 @@ export async function deleteCatalogModel(modelId: string, actorUserId: string): 
     if (!model) throw notFound('Model')
 
     const [activeResponse] = await tx.select({ id: responses.id }).from(responses).where(and(
-      inArray(responses.status, ['queued', 'in_progress']),
-      or(eq(responses.modelId, modelId), eq(responses.actualModelId, modelId)),
+      profileInArray(responses.status, ['queued', 'in_progress']),
+      or(profileEq(responses.modelId, modelId), profileEq(responses.actualModelId, modelId)),
     )).limit(1)
     const [activeAttempt] = await tx.select({ id: generationAttempts.id }).from(generationAttempts).where(and(
       eq(generationAttempts.status, 'in_progress'),
       or(eq(generationAttempts.modelId, modelId), eq(generationAttempts.fallbackFromModelId, modelId)),
     )).limit(1)
     const [queuedMessage] = await tx.select({ id: queuedMessages.id }).from(queuedMessages).where(and(
-      eq(queuedMessages.modelId, modelId),
-      inArray(queuedMessages.status, ['editing', 'pending', 'dispatching']),
+      profileEq(queuedMessages.modelId, modelId),
+      profileInArray(queuedMessages.status, ['editing', 'pending', 'dispatching']),
     )).limit(1)
     if (activeResponse || activeAttempt || queuedMessage) {
       throw new AppError(409, 'model_active', 'Wait for active and queued work to finish before deleting this model')
@@ -82,14 +83,14 @@ export async function deleteCatalogModel(modelId: string, actorUserId: string): 
       .where(eq(modelPricingVersions.modelId, modelId))
     const pricingVersionIds = pricingVersions.map((version) => version.id)
     if (pricingVersionIds.length) {
-      await tx.update(responses).set({ pricingVersionId: null }).where(inArray(responses.pricingVersionId, pricingVersionIds))
+      await tx.update(responses).set({ pricingVersionId: null }).where(profileInArray(responses.pricingVersionId, pricingVersionIds))
       await tx.update(usageEvents).set({ pricingVersionId: null }).where(inArray(usageEvents.pricingVersionId, pricingVersionIds))
     }
 
-    await tx.update(chats).set({ modelId: UNKNOWN_MODEL_ID }).where(eq(chats.modelId, modelId))
-    await tx.update(responses).set({ modelId: UNKNOWN_MODEL_ID }).where(eq(responses.modelId, modelId))
-    await tx.update(responses).set({ actualModelId: UNKNOWN_MODEL_ID }).where(eq(responses.actualModelId, modelId))
-    await tx.update(queuedMessages).set({ modelId: UNKNOWN_MODEL_ID }).where(eq(queuedMessages.modelId, modelId))
+    await tx.update(chats).set({ modelId: UNKNOWN_MODEL_ID }).where(profileEq(chats.modelId, modelId))
+    await tx.update(responses).set({ modelId: UNKNOWN_MODEL_ID }).where(profileEq(responses.modelId, modelId))
+    await tx.update(responses).set({ actualModelId: UNKNOWN_MODEL_ID }).where(profileEq(responses.actualModelId, modelId))
+    await tx.update(queuedMessages).set({ modelId: UNKNOWN_MODEL_ID }).where(profileEq(queuedMessages.modelId, modelId))
     await tx.update(requestLogs).set({ requestedModelId: UNKNOWN_MODEL_ID }).where(eq(requestLogs.requestedModelId, modelId))
     await tx.update(requestLogs).set({ actualModelId: UNKNOWN_MODEL_ID }).where(eq(requestLogs.actualModelId, modelId))
     await tx.update(requestLogs).set({ currentModelId: UNKNOWN_MODEL_ID }).where(eq(requestLogs.currentModelId, modelId))
@@ -116,7 +117,7 @@ export async function deleteCatalogModel(modelId: string, actorUserId: string): 
       const replacement = removeDeletedModelPreferences(preference.values, modelId)
       if (replacement.changed) {
         await tx.update(userPreferences).set({ values: replacement.value, updatedAt: new Date() })
-          .where(eq(userPreferences.userId, preference.userId))
+          .where(and(profileEq(userPreferences.userId, preference.userId), eq(userPreferences.profileId, preference.profileId)))
       }
     }
 

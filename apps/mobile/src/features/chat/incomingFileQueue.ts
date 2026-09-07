@@ -14,6 +14,7 @@ export class IncomingFileQueue {
   private items: IncomingFile[] = []
   private listeners = new Set<() => void>()
   private identity: string | null | undefined
+  private validNamespaces?: ReadonlySet<string>
   private loading?: Promise<void>
   private write = createOperationQueue()
 
@@ -50,15 +51,18 @@ export class IncomingFileQueue {
     const identity = this.identity
     if (identity === undefined) return
     this.items = this.items.flatMap((item) => {
-      if (item.namespace && item.namespace !== identity) {
+      // Switching profiles suspends delivery; changing accounts releases private files.
+      if (item.namespace && (item.namespace.split('|profile:')[0] !== identity?.split('|profile:')[0]
+        || (this.validNamespaces && !this.validNamespaces.has(item.namespace)))) {
         if (item.file) this.deps.release(item.file)
         return []
       }
       return [{ ...item, namespace: item.namespace ?? identity }]
     })
   }
-  async setIdentity(namespace: string | null | undefined) {
+  async setIdentity(namespace: string | null | undefined, validNamespaces?: ReadonlySet<string>) {
     this.identity = namespace
+    this.validNamespaces = validNamespaces
     this.reconcileIdentity()
     this.publish()
     await this.hydrate()

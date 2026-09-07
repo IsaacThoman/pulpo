@@ -1,3 +1,6 @@
+import { dataProfiles } from '../database/schema.js'
+import { currentProfile } from '../profiles/context.js'
+import { profileEq } from '../profiles/context.js'
 import { shelfAttachmentIsLive } from '../shelf/routes.js'
 import { composerAttachmentIsLive } from '../composer/service.js'
 import { and, eq, isNull, or } from 'drizzle-orm'
@@ -42,11 +45,11 @@ export async function registerAttachmentRoutes(app: FastifyInstance): Promise<vo
 
   const readyAttachment = async (userId: string, id: string) => {
     const [result] = await db.select({ attachment: attachments }).from(attachments)
-      .leftJoin(chats, eq(chats.id, attachments.chatId))
+      .leftJoin(chats, profileEq(chats.id, attachments.chatId))
       .where(and(
-        eq(attachments.id, id),
-        eq(attachments.userId, userId),
-        eq(attachments.status, 'ready'),
+        profileEq(attachments.id, id),
+        profileEq(attachments.userId, userId),
+        profileEq(attachments.status, 'ready'),
         accessibleAttachmentCondition(),
       )).limit(1)
     return result?.attachment
@@ -65,8 +68,8 @@ export async function registerAttachmentRoutes(app: FastifyInstance): Promise<vo
     }).parse(request.body)
     if (input.chatId) {
       const [chat] = await db.select({ id: chats.id }).from(chats).where(and(
-        eq(chats.id, input.chatId),
-        eq(chats.userId, user.id),
+        profileEq(chats.id, input.chatId),
+        profileEq(chats.userId, user.id),
         isNull(chats.deletedAt),
         accessibleChatCondition(),
       )).limit(1)
@@ -80,6 +83,11 @@ export async function registerAttachmentRoutes(app: FastifyInstance): Promise<vo
       // Do not mint upload URLs after deletion starts; acceptance waits for this short lock.
       const [owner] = await tx.select({ deleting: users.deletionRequestedAt }).from(users).where(eq(users.id, user.id)).for('share')
       if (!owner || owner.deleting) throw new AppError(403, 'account_deleting', 'Account deletion has started')
+      const scope = currentProfile()
+      if (scope) {
+        const [profile] = await tx.select({ deleting: dataProfiles.deletionRequestedAt }).from(dataProfiles).where(eq(dataProfiles.id, scope.profileId)).for('share')
+        if (!profile || profile.deleting) throw new AppError(404, 'profile_unavailable', 'This profile is no longer available')
+      }
       return getBlobStore().createUploadUrl(objectKey, { contentType: input.mimeType, contentLength: input.sizeBytes }, 900)
     })
     reply.code(201)
@@ -91,11 +99,11 @@ export async function registerAttachmentRoutes(app: FastifyInstance): Promise<vo
     if (getConfig().STORAGE_DRIVER !== 'local') throw notFound('Upload')
     const { key } = request.params as { key: string }
     const [result] = await db.select({ attachment: attachments }).from(attachments)
-      .leftJoin(chats, eq(chats.id, attachments.chatId))
+      .leftJoin(chats, profileEq(chats.id, attachments.chatId))
       .where(and(
-        eq(attachments.objectKey, key),
-        eq(attachments.userId, user.id),
-        eq(attachments.status, 'pending'),
+        profileEq(attachments.objectKey, key),
+        profileEq(attachments.userId, user.id),
+        profileEq(attachments.status, 'pending'),
         accessibleAttachmentCondition(),
       )).limit(1)
     const attachment = result?.attachment
@@ -131,10 +139,10 @@ export async function registerAttachmentRoutes(app: FastifyInstance): Promise<vo
     const user = requireUser(request)
     const { id } = request.params as { id: string }
     const [result] = await db.select({ attachment: attachments }).from(attachments)
-      .leftJoin(chats, eq(chats.id, attachments.chatId))
+      .leftJoin(chats, profileEq(chats.id, attachments.chatId))
       .where(and(
-        eq(attachments.id, id),
-        eq(attachments.userId, user.id),
+        profileEq(attachments.id, id),
+        profileEq(attachments.userId, user.id),
         accessibleAttachmentCondition(),
       )).limit(1)
     const attachment = result?.attachment
@@ -143,10 +151,10 @@ export async function registerAttachmentRoutes(app: FastifyInstance): Promise<vo
       const inspected = await inspectAttachmentStream(await getBlobStore().getStream(attachment.objectKey), attachment.sizeBytes)
       const checksum = inspected.checksum
       const mimeType = canonicalUploadedMimeType(attachment.mimeType, inspected.prefix)
-      const [ready] = await db.update(attachments).set({ status: 'ready', checksum, mimeType, updatedAt: new Date() }).where(eq(attachments.id, id)).returning()
+      const [ready] = await db.update(attachments).set({ status: 'ready', checksum, mimeType, updatedAt: new Date() }).where(profileEq(attachments.id, id)).returning()
       return ready
     } catch (cause) {
-      await db.update(attachments).set({ status: 'failed', error: cause instanceof Error ? cause.message : 'Validation failed', updatedAt: new Date() }).where(eq(attachments.id, id))
+      await db.update(attachments).set({ status: 'failed', error: cause instanceof Error ? cause.message : 'Validation failed', updatedAt: new Date() }).where(profileEq(attachments.id, id))
       throw new AppError(400, 'attachment_validation_failed', 'Attachment validation failed')
     }
   })
@@ -181,11 +189,11 @@ export async function registerAttachmentRoutes(app: FastifyInstance): Promise<vo
     if (getConfig().STORAGE_DRIVER !== 'local') throw notFound('Download')
     const { key } = request.params as { key: string }
     const [result] = await db.select({ attachment: attachments }).from(attachments)
-      .leftJoin(chats, eq(chats.id, attachments.chatId))
+      .leftJoin(chats, profileEq(chats.id, attachments.chatId))
       .where(and(
-        eq(attachments.objectKey, key),
-        eq(attachments.userId, user.id),
-        eq(attachments.status, 'ready'),
+        profileEq(attachments.objectKey, key),
+        profileEq(attachments.userId, user.id),
+        profileEq(attachments.status, 'ready'),
         accessibleAttachmentCondition(),
       )).limit(1)
     const attachment = result?.attachment
@@ -198,17 +206,17 @@ export async function registerAttachmentRoutes(app: FastifyInstance): Promise<vo
     const user = requireUser(request)
     const { id } = request.params as { id: string }
     await db.transaction(async (tx) => {
-      const [attachment] = await tx.select().from(attachments).where(and(eq(attachments.id, id), eq(attachments.userId, user.id))).limit(1).for('update')
+      const [attachment] = await tx.select().from(attachments).where(and(profileEq(attachments.id, id), profileEq(attachments.userId, user.id))).limit(1).for('update')
       if (!attachment) throw notFound('Attachment')
       if (attachment.origin !== 'user') {
         throw new AppError(409, 'attachment_in_use', 'Generated attachments cannot be removed this way')
       }
       const responseRows = await tx.select({ input: responses.input }).from(responses).where(and(
-        eq(responses.userId, user.id),
+        profileEq(responses.userId, user.id),
         isNull(responses.deletedAt),
       ))
       const queueRows = await tx.select({ attachmentIds: queuedMessages.attachmentIds }).from(queuedMessages).where(
-        eq(queuedMessages.userId, user.id),
+        profileEq(queuedMessages.userId, user.id),
       )
       const referenced = attachmentReferenceIsLive(
         id,
@@ -217,7 +225,7 @@ export async function registerAttachmentRoutes(app: FastifyInstance): Promise<vo
       )
       if (referenced || await composerAttachmentIsLive(user.id, id, tx) || await shelfAttachmentIsLive(user.id, id, tx)) throw new AppError(409, 'attachment_in_use', 'Attachment is still used by a message')
       await getBlobStore().delete(attachment.objectKey)
-      await tx.update(attachments).set({ status: 'deleted', updatedAt: new Date() }).where(eq(attachments.id, id))
+      await tx.update(attachments).set({ status: 'deleted', updatedAt: new Date() }).where(profileEq(attachments.id, id))
     })
     reply.code(204).send()
   })

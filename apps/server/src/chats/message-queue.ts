@@ -1,4 +1,5 @@
-import { and, asc, eq, inArray, isNull, max, ne, sql } from 'drizzle-orm'
+import { profileEq, profileInArray, withProfile } from '../profiles/context.js'
+import { and, asc, eq, isNull, max, ne, sql } from 'drizzle-orm'
 import type { CreateQueuedMessageInput, QueuedMessage, ReorderQueuedMessageInput, UpdateQueuedMessageInput } from '@pulpo/contracts'
 import { db } from '../database/client.js'
 import { applicationSettings, attachments, chats, models, queuedMessages, responses, users } from '../database/schema.js'
@@ -31,9 +32,9 @@ async function validateQueueInput(userId: string, chatId: string, input: CreateQ
 
   const attachmentRows = input.attachmentIds.length
     ? await db.select({ id: attachments.id, mimeType: attachments.mimeType }).from(attachments).where(and(
-        eq(attachments.userId, userId),
-        eq(attachments.status, 'ready'),
-        inArray(attachments.id, input.attachmentIds),
+        profileEq(attachments.userId, userId),
+        profileEq(attachments.status, 'ready'),
+        profileInArray(attachments.id, input.attachmentIds),
       ))
     : []
   if (attachmentRows.length !== new Set(input.attachmentIds).size) {
@@ -52,8 +53,8 @@ async function validateQueueInput(userId: string, chatId: string, input: CreateQ
 
 async function assertAccessibleChat(userId: string, chatId: string): Promise<void> {
   const [chat] = await db.select({ id: chats.id }).from(chats).where(and(
-    eq(chats.id, chatId),
-    eq(chats.userId, userId),
+    profileEq(chats.id, chatId),
+    profileEq(chats.userId, userId),
     isNull(chats.deletedAt),
     accessibleChatCondition(),
   )).limit(1)
@@ -62,8 +63,8 @@ async function assertAccessibleChat(userId: string, chatId: string): Promise<voi
 
 export async function listQueuedMessages(chatId: string, userId: string): Promise<QueuedMessage[]> {
   const rows = await db.select().from(queuedMessages).where(and(
-    eq(queuedMessages.chatId, chatId),
-    eq(queuedMessages.userId, userId),
+    profileEq(queuedMessages.chatId, chatId),
+    profileEq(queuedMessages.userId, userId),
   )).orderBy(asc(queuedMessages.position), asc(queuedMessages.id))
   const attachmentIds = [...new Set(rows.flatMap((row) => row.attachmentIds))]
   const attachmentRows = attachmentIds.length ? await db.select({
@@ -72,9 +73,9 @@ export async function listQueuedMessages(chatId: string, userId: string): Promis
     mimeType: attachments.mimeType,
     sizeBytes: attachments.sizeBytes,
   }).from(attachments).where(and(
-    eq(attachments.userId, userId),
-    eq(attachments.status, 'ready'),
-    inArray(attachments.id, attachmentIds),
+    profileEq(attachments.userId, userId),
+    profileEq(attachments.status, 'ready'),
+    profileInArray(attachments.id, attachmentIds),
   )) : []
   const byId = new Map(attachmentRows.map((attachment) => [attachment.id, attachment]))
   return rows.map((row) => ({
@@ -113,16 +114,16 @@ export async function createQueuedMessage(
   await db.transaction(async (tx) => {
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`pulpo-message-queue:${chatId}`}))`)
     const [chat] = await tx.select({ id: chats.id }).from(chats).where(and(
-      eq(chats.id, chatId), eq(chats.userId, userId), isNull(chats.deletedAt), accessibleChatCondition(),
+      profileEq(chats.id, chatId), profileEq(chats.userId, userId), isNull(chats.deletedAt), accessibleChatCondition(),
     )).limit(1)
     if (!chat) throw notFound('Chat')
     // The queue and its dispatched response share a stable client identity so a
     // retry is safe even after the queue row has been consumed.
     if (input.clientId) {
       const [queued] = await tx.select({ chatId: queuedMessages.chatId, userId: queuedMessages.userId })
-        .from(queuedMessages).where(eq(queuedMessages.id, id)).limit(1)
+        .from(queuedMessages).where(profileEq(queuedMessages.id, id)).limit(1)
       const [dispatched] = await tx.select({ chatId: responses.chatId, userId: responses.userId })
-        .from(responses).where(eq(responses.id, id)).limit(1)
+        .from(responses).where(profileEq(responses.id, id)).limit(1)
       const existing = queued ?? dispatched
       if (existing) {
         if (existing.chatId !== chatId || existing.userId !== userId) throw new AppError(409, 'submission_conflict', 'Submission ID is already in use')
@@ -130,7 +131,7 @@ export async function createQueuedMessage(
       }
     }
     const [positionRow] = await tx.select({ value: max(queuedMessages.position) })
-      .from(queuedMessages).where(eq(queuedMessages.chatId, chatId))
+      .from(queuedMessages).where(profileEq(queuedMessages.chatId, chatId))
     await tx.insert(queuedMessages).values({
       id,
       chatId,
@@ -173,26 +174,26 @@ export async function updateQueuedMessage(
   await db.transaction(async (tx) => {
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`pulpo-message-queue:${chatId}`}))`)
     const [chat] = await tx.select({ id: chats.id }).from(chats).where(and(
-      eq(chats.id, chatId), eq(chats.userId, userId), isNull(chats.deletedAt), accessibleChatCondition(),
+      profileEq(chats.id, chatId), profileEq(chats.userId, userId), isNull(chats.deletedAt), accessibleChatCondition(),
     )).limit(1)
     if (!chat) throw notFound('Chat')
     const [current] = await tx.select().from(queuedMessages).where(and(
-      eq(queuedMessages.id, id), eq(queuedMessages.chatId, chatId), eq(queuedMessages.userId, userId),
+      profileEq(queuedMessages.id, id), profileEq(queuedMessages.chatId, chatId), profileEq(queuedMessages.userId, userId),
     )).limit(1)
     if (!current) throw notFound('Queued message')
     if (current.status === 'dispatching') throw new AppError(409, 'queued_message_dispatching', 'This message is already being sent')
     if (input.action === 'begin_edit') {
       const [other] = await tx.select({ id: queuedMessages.id }).from(queuedMessages).where(and(
-        eq(queuedMessages.chatId, chatId),
-        eq(queuedMessages.status, 'editing'),
+        profileEq(queuedMessages.chatId, chatId),
+        profileEq(queuedMessages.status, 'editing'),
         ne(queuedMessages.id, id),
       )).limit(1)
       if (other) throw new AppError(409, 'queued_message_editing', 'Another queued message is already being edited')
       await tx.update(queuedMessages).set({ status: 'editing', error: null, updatedAt: new Date() })
-        .where(eq(queuedMessages.id, id))
+        .where(profileEq(queuedMessages.id, id))
     } else if (input.action === 'cancel_edit') {
       await tx.update(queuedMessages).set({ status: 'pending', error: null, updatedAt: new Date() })
-        .where(eq(queuedMessages.id, id))
+        .where(profileEq(queuedMessages.id, id))
     } else {
       await tx.update(queuedMessages).set({
         content: input.input,
@@ -205,7 +206,7 @@ export async function updateQueuedMessage(
         status: 'pending',
         error: null,
         updatedAt: new Date(),
-      }).where(eq(queuedMessages.id, id))
+      }).where(profileEq(queuedMessages.id, id))
     }
   })
   await bumpQueueRevision(userId, chatId)
@@ -218,15 +219,15 @@ export async function deleteQueuedMessage(userId: string, chatId: string, id: st
   await db.transaction(async (tx) => {
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`pulpo-message-queue:${chatId}`}))`)
     const [chat] = await tx.select({ id: chats.id }).from(chats).where(and(
-      eq(chats.id, chatId), eq(chats.userId, userId), isNull(chats.deletedAt), accessibleChatCondition(),
+      profileEq(chats.id, chatId), profileEq(chats.userId, userId), isNull(chats.deletedAt), accessibleChatCondition(),
     )).limit(1)
     if (!chat) throw notFound('Chat')
     const [current] = await tx.select({ status: queuedMessages.status }).from(queuedMessages).where(and(
-      eq(queuedMessages.id, id), eq(queuedMessages.chatId, chatId), eq(queuedMessages.userId, userId),
+      profileEq(queuedMessages.id, id), profileEq(queuedMessages.chatId, chatId), profileEq(queuedMessages.userId, userId),
     )).limit(1)
     if (!current) throw notFound('Queued message')
     if (current.status === 'dispatching') throw new AppError(409, 'queued_message_dispatching', 'This message is already being sent')
-    await tx.delete(queuedMessages).where(eq(queuedMessages.id, id))
+    await tx.delete(queuedMessages).where(profileEq(queuedMessages.id, id))
   })
   await bumpQueueRevision(userId, chatId)
   await advanceMessageQueue(chatId)
@@ -243,7 +244,7 @@ export async function reorderQueuedMessage(
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`pulpo-message-queue:${chatId}`}))`)
     const rows = await tx.select({ id: queuedMessages.id, status: queuedMessages.status })
       .from(queuedMessages).where(and(
-        eq(queuedMessages.chatId, chatId), eq(queuedMessages.userId, userId),
+        profileEq(queuedMessages.chatId, chatId), profileEq(queuedMessages.userId, userId),
       )).orderBy(asc(queuedMessages.position), asc(queuedMessages.id))
     const moving = rows.find((row) => row.id === id)
     const target = rows.find((row) => row.id === input.targetMessageId)
@@ -257,10 +258,10 @@ export async function reorderQueuedMessage(
 
     // Use unique temporary positions while reassigning the queue's persisted order.
     for (const [index, messageId] of reorderedIds.entries()) {
-      await tx.update(queuedMessages).set({ position: -(index + 1) }).where(eq(queuedMessages.id, messageId))
+      await tx.update(queuedMessages).set({ position: -(index + 1) }).where(profileEq(queuedMessages.id, messageId))
     }
     for (const [position, messageId] of reorderedIds.entries()) {
-      await tx.update(queuedMessages).set({ position }).where(eq(queuedMessages.id, messageId))
+      await tx.update(queuedMessages).set({ position }).where(profileEq(queuedMessages.id, messageId))
     }
   })
   await bumpQueueRevision(userId, chatId)
@@ -268,35 +269,40 @@ export async function reorderQueuedMessage(
 }
 
 export async function advanceMessageQueue(chatId: string): Promise<void> {
+  const [owner] = await db.select({ userId: chats.userId, profileId: chats.profileId }).from(chats).where(profileEq(chats.id, chatId)).limit(1)
+  if (owner) await withProfile(owner, () => advanceProfileMessageQueue(chatId))
+}
+
+async function advanceProfileMessageQueue(chatId: string): Promise<void> {
   const claim = await db.transaction(async (tx): Promise<QueueRow | null> => {
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`pulpo-message-queue:${chatId}`}))`)
     const [chat] = await tx.select().from(chats).where(and(
-      eq(chats.id, chatId), isNull(chats.deletedAt), accessibleChatCondition(),
+      profileEq(chats.id, chatId), isNull(chats.deletedAt), accessibleChatCondition(),
     )).limit(1)
     if (!chat) return null
     const [active] = await tx.select({ id: responses.id }).from(responses).where(and(
-      eq(responses.chatId, chatId),
-      inArray(responses.status, ['queued', 'in_progress']),
+      profileEq(responses.chatId, chatId),
+      profileInArray(responses.status, ['queued', 'in_progress']),
       isNull(responses.deletedAt),
     )).limit(1)
     if (active) return null
     const [head] = await tx.select().from(queuedMessages)
-      .where(eq(queuedMessages.chatId, chatId))
+      .where(profileEq(queuedMessages.chatId, chatId))
       .orderBy(asc(queuedMessages.position), asc(queuedMessages.id)).limit(1)
     if (!head) return null
     if (!canPromoteQueueHead(head.status as QueuedMessage['status'])) return null
     const [claimed] = await tx.update(queuedMessages).set({
       status: 'dispatching', error: null, updatedAt: new Date(),
-    }).where(eq(queuedMessages.id, head.id)).returning()
+    }).where(profileEq(queuedMessages.id, head.id)).returning()
     return claimed ?? null
   })
   if (!claim) return
 
   try {
-    const [existing] = await db.select().from(responses).where(eq(responses.id, claim.dispatchResponseId)).limit(1)
+    const [existing] = await db.select().from(responses).where(profileEq(responses.id, claim.dispatchResponseId)).limit(1)
     if (!existing) {
       const [chat] = await db.select({ activeBranchLeafId: chats.activeBranchLeafId, activeResponseId: chats.activeResponseId })
-        .from(chats).where(eq(chats.id, chatId)).limit(1)
+        .from(chats).where(profileEq(chats.id, chatId)).limit(1)
       await createResponse({
         requestReceivedAt: claim.requestReceivedAt ?? claim.createdAt,
         ownerUserId: claim.userId,
@@ -314,13 +320,13 @@ export async function advanceMessageQueue(chatId: string): Promise<void> {
         },
       })
     }
-    await db.delete(queuedMessages).where(eq(queuedMessages.id, claim.id))
+    await db.delete(queuedMessages).where(profileEq(queuedMessages.id, claim.id))
   } catch (error) {
     await db.update(queuedMessages).set({
       status: 'failed',
       error: error instanceof AppError ? error.message : 'Unable to start this queued message',
       updatedAt: new Date(),
-    }).where(eq(queuedMessages.id, claim.id))
+    }).where(profileEq(queuedMessages.id, claim.id))
   }
   await bumpQueueRevision(claim.userId, chatId)
 }
@@ -330,13 +336,13 @@ export async function recoverMessageQueues(): Promise<void> {
   for (const row of rows) {
     const cleaned = await db.transaction(async (tx): Promise<boolean> => {
       await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`pulpo-message-queue:${row.chatId}`}))`)
-      const [head] = await tx.select().from(queuedMessages).where(eq(queuedMessages.chatId, row.chatId))
+      const [head] = await tx.select().from(queuedMessages).where(profileEq(queuedMessages.chatId, row.chatId))
         .orderBy(asc(queuedMessages.position), asc(queuedMessages.id)).limit(1)
       if (head?.status !== 'dispatching') return false
       const [existing] = await tx.select({ id: responses.id }).from(responses)
-        .where(eq(responses.id, head.dispatchResponseId)).limit(1)
-      if (existing) await tx.delete(queuedMessages).where(eq(queuedMessages.id, head.id))
-      else await tx.update(queuedMessages).set({ status: 'pending', updatedAt: new Date() }).where(eq(queuedMessages.id, head.id))
+        .where(profileEq(responses.id, head.dispatchResponseId)).limit(1)
+      if (existing) await tx.delete(queuedMessages).where(profileEq(queuedMessages.id, head.id))
+      else await tx.update(queuedMessages).set({ status: 'pending', updatedAt: new Date() }).where(profileEq(queuedMessages.id, head.id))
       return true
     })
     if (cleaned) await bumpQueueRevision(row.userId, row.chatId)
