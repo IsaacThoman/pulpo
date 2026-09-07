@@ -194,7 +194,9 @@ export async function restoreFullBackup(jobId: string): Promise<void> {
     const blobKeys = new Map<string, string>()
     for (const [index, blob] of manifest.blobs.entries()) {
       const file = files.get(blob.entry)!
-      const staged = `restored/${jobId}/${Buffer.from(blob.objectKey).toString('base64url')}`
+      // Bound the filename even when the source key came from a previous
+      // restore. Encoding the entire key grows it on every backup/restore cycle.
+      const staged = `restored/${jobId}/${createHash('sha256').update(blob.objectKey).digest('hex')}`
       // Record before writing so even an interrupted/partially successful put
       // is included in rollback cleanup.
       stagedKeys.push(staged)

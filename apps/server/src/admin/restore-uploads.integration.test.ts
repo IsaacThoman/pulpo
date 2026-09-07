@@ -169,7 +169,7 @@ describe.skipIf(!enabled)('restore uploads with PostgreSQL and filesystem storag
     await completeRestoreUpload(session.id, userId)
     await expect(restoreFullBackup(session.id)).rejects.toThrow()
     expect((await db.select().from(users))[0]).toMatchObject({ id: userId, name: 'Original', avatarObjectKey: null })
-    await expect(context.store!.get(`restored/${session.id}/${Buffer.from('new-avatar').toString('base64url')}`)).rejects.toThrow()
+    await expect(context.store!.get(`restored/${session.id}/${checksum(Buffer.from('new-avatar'))}`)).rejects.toThrow()
     expect((await readRestoreUpload(session.id, userId)).job?.status).toBe('failed')
   })
   it('round-trips a real backup through chunks and streams, reassigning the job to the restored admin', async () => {
@@ -215,4 +215,30 @@ describe.skipIf(!enabled)('restore uploads with PostgreSQL and filesystem storag
     expect(Buffer.from(await context.store!.get(restored!.avatarObjectKey!)).toString()).toBe('avatar')
     expect((await readRestoreUpload(session.id, userId)).job?.status).toBe('completed')
   })
+  it('restores long object keys and repeated backups without growing filenames', async () => {
+    const otherUser = randomUUID()
+    await db.insert(users).values({ id: otherUser, name: 'Other', email: 'other@example.test', username: 'other' })
+    const avatars = new Map([[userId, Buffer.from('first avatar')], [otherUser, Buffer.from('second avatar')]])
+    for (const [id, body] of avatars) {
+      const key = `restored/${randomUUID()}/${'a'.repeat(200)}${id}`
+      await context.store!.put(key, body, { contentType: 'image/png' })
+      await db.update(users).set({ avatarObjectKey: key }).where(eq(users.id, id))
+    }
+    for (let round = 0; round < 3; round++) {
+      const backupId = randomUUID()
+      await db.insert(backupJobs).values({ id: backupId, userId, operation: 'backup' })
+      await createFullBackup(backupId)
+      const [backup] = await db.select().from(backupJobs).where(eq(backupJobs.id, backupId))
+      const session = await upload(await context.store!.get(backup!.objectKey!))
+      await completeRestoreUpload(session.id, userId)
+      await restoreFullBackup(session.id)
+      const restored = await db.select().from(users)
+      expect(new Set(restored.map((user) => user.avatarObjectKey)).size).toBe(2)
+      for (const user of restored) {
+        expect(user.avatarObjectKey).toMatch(new RegExp(`^restored/${session.id}/[a-f0-9]{64}$`))
+        expect(await context.store!.get(user.avatarObjectKey!)).toEqual(avatars.get(user.id))
+      }
+      expect((await readRestoreUpload(session.id, userId)).job?.status).toBe('completed')
+    }
+  }, 30_000)
 })
