@@ -7,7 +7,7 @@ import Fastify, { type FastifyError, type FastifyInstance } from 'fastify'
 import multipart from '@fastify/multipart'
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { db, queryClient } from '../database/client.js'
-import { attachments, backupJobs, restoreUploads, users } from '../database/schema.js'
+import { attachments, backupJobs, chats, chatTurnEmbeddings, episodicMemoryGenerations, models, providerConnections, responses, restoreUploads, users } from '../database/schema.js'
 import { LocalBlobStore } from '../storage/local.js'
 import { AppError } from '../lib/errors.js'
 import { FULL_BACKUP_TABLES } from './backup-format.js'
@@ -241,4 +241,38 @@ describe.skipIf(!enabled)('restore uploads with PostgreSQL and filesystem storag
       expect((await readRestoreUpload(session.id, userId)).job?.status).toBe('completed')
     }
   }, 30_000)
+  it.each([true, false])('restores search indexes from a legacy=%s backup', async (legacy) => {
+    const providerId = randomUUID(), chatId = randomUUID(), responseId = randomUUID(), generationId = randomUUID()
+    await db.insert(providerConnections).values({ id: providerId, name: 'Test', encryptedApiKey: 'test' })
+    await db.insert(models).values({ id: 'test-model', providerConnectionId: providerId, upstreamModelId: 'test', name: 'Test', contextWindow: 1024, maxOutputTokens: 100 })
+    await db.insert(chats).values({ id: chatId, userId, modelId: 'test-model' })
+    await db.insert(responses).values({ id: responseId, userId, chatId, modelId: 'test-model', input: [], status: 'completed' })
+    await db.insert(episodicMemoryGenerations).values({ id: generationId, profile: 'embeddinggemma', model: 'test', dimension: 768, indexVersion: legacy ? 1 : 2 })
+    for (const chunkIndex of legacy ? [0] : [0, 1]) {
+      await db.insert(chatTurnEmbeddings).values({ id: randomUUID(), generationId, userId, chatId, responseId, chunkIndex, contentHash: `hash-${chunkIndex}`, chunkText: `search chunk ${chunkIndex}` })
+    }
+    const backupId = randomUUID()
+    await db.insert(backupJobs).values({ id: backupId, userId, operation: 'backup' })
+    await createFullBackup(backupId)
+    const [backup] = await db.select().from(backupJobs).where(eq(backupJobs.id, backupId))
+    let archive = await context.store!.get(backup!.objectKey!)
+    if (legacy) {
+      const database: Record<string, Record<string, unknown>[]> = {}
+      for (const table of FULL_BACKUP_TABLES) database[table] = [...await db.execute(sql.raw(`select * from ${table}`))]
+      for (const row of database.episodic_memory_generations!) delete row.index_version
+      for (const row of database.chat_turn_embeddings!) { delete row.chunk_index; delete row.search_vector }
+      await writeBackupArchive(join(directory, 'legacy-search.tar.gz'), (async function* () {
+        yield { name: 'database.json', body: Buffer.from(JSON.stringify(database)) }
+        yield { name: 'manifest.json', body: Buffer.from(JSON.stringify({ format: 'pulpo-instance-backup', version: 1, blobs: [] })) }
+      })())
+      archive = await context.store!.get('legacy-search.tar.gz')
+    }
+    const session = await upload(archive)
+    await completeRestoreUpload(session.id, userId)
+    await restoreFullBackup(session.id)
+    expect((await db.select().from(episodicMemoryGenerations))[0]?.indexVersion).toBe(legacy ? 1 : 2)
+    const chunks = await db.select().from(chatTurnEmbeddings).orderBy(chatTurnEmbeddings.chunkIndex)
+    expect(chunks.map((row) => row.chunkIndex)).toEqual(legacy ? [0] : [0, 1])
+    expect(chunks.every((row) => String(row.searchVector).includes('search'))).toBe(true)
+  })
 })
