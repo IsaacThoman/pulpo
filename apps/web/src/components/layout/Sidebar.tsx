@@ -962,6 +962,16 @@ export function Sidebar({
         !mobile && (collapsed ? 'desktop-collapsed-sidebar w-[52px]' : 'w-[264px]')
       )}
     >
+      {!mobile && isDesktopRuntime() && (
+        <div
+          aria-hidden="true"
+          className={cn(
+            'desktop-sidebar-added-border pointer-events-none absolute right-0 top-0 h-4 border-r border-sidebar-border motion-reduce:transition-none',
+            transitions && 'transition-opacity duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]',
+            collapsed ? 'opacity-0' : 'opacity-100',
+          )}
+        />
+      )}
       {/* header */}
       <div className="flex items-center gap-1 p-2">
         <Tooltip
