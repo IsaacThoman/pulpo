@@ -90,6 +90,81 @@ final class ShortcutsCoreTests: XCTestCase {
     _ = try await api().start(prompt: " Hello ", modelEntityID: session().entityID(model), temporary: true)
     XCTAssertEqual(posts, 1)
   }
+  func modelCatalog(agentAvailable: Bool = true, agentEnabled: Bool? = true) -> Data {
+    let capability = agentEnabled.map { ",\"agentEnabled\":\($0)" } ?? ""
+    return data("{\"agentAvailable\":\(agentAvailable),\"data\":[{\"id\":\"\(model)\",\"name\":\"Model\",\"provider\":{\"name\":\"Provider\"}\(capability)}]}")
+  }
+  func testAgentStartSendsExplicitModeForSavedAndTemporaryChats() async throws {
+    for temporary in [false, true] {
+      var posts = 0
+      StubProtocol.handler = { request in
+        if request.url!.path == "/api/models" { return (200, self.modelCatalog()) }
+        if request.url!.path == "/api/settings" { return (200, self.data(#"{"values":{}}"#)) }
+        XCTAssertEqual(request.url!.path, "/api/chats/start")
+        let body = try self.body(request)
+        let response = body["response"] as! [String: Any]
+        XCTAssertEqual(response["agentMode"] as? Bool, true)
+        XCTAssertEqual(response["clientId"] as? String, request.value(forHTTPHeaderField: "Idempotency-Key"))
+        XCTAssertEqual((body["chat"] as! [String: Any])["temporary"] as? Bool, temporary)
+        posts += 1
+        return (202, self.data("{\"chat\":\(self.chatJSON()),\"response\":{\"responseId\":\"\(self.response)\",\"status\":\"queued\",\"output\":[]}}"))
+      }
+      _ = try await api().start(prompt: "Agent task", modelEntityID: session().entityID(model), temporary: temporary, agentMode: true)
+      XCTAssertEqual(posts, 1)
+    }
+  }
+  func testAgentContinueUsesChatModelAndActiveBranch() async throws {
+    var posts = 0
+    StubProtocol.handler = { request in
+      if request.url!.path == "/api/models" { return (200, self.modelCatalog()) }
+      if request.httpMethod != "POST" { return (200, self.data(self.chatJSON())) }
+      let body = try self.body(request)
+      XCTAssertEqual(body["agentMode"] as? Bool, true)
+      XCTAssertEqual(body["modelId"] as? String, self.model)
+      XCTAssertEqual(body["parentResponseId"] as? String, self.response)
+      XCTAssertEqual(body["clientId"] as? String, request.value(forHTTPHeaderField: "Idempotency-Key"))
+      posts += 1
+      return (202, self.data("{\"response\":{\"responseId\":\"\(self.response)\",\"status\":\"queued\",\"output\":[]}}"))
+    }
+    _ = try await api().continueChat(session().entityID(chat), prompt: "Agent follow-up", agentMode: true)
+    XCTAssertEqual(posts, 1)
+  }
+  func testUnsupportedAgentModeNeverSubmitsOrFallsBack() async throws {
+    let cases: [(Data, String)] = [
+      (modelCatalog(agentAvailable: false), "server"),
+      (modelCatalog(agentEnabled: false), "model"),
+      (modelCatalog(agentEnabled: nil), "model"),
+      (data(String(data: modelCatalog(), encoding: .utf8)!.replacingOccurrences(of: "\"agentAvailable\":true,", with: "")), "server"),
+      (data(#"{"agentAvailable":true,"data":[]}"#), "no longer available"),
+    ]
+    for (catalog, errorText) in cases {
+      for continuing in [false, true] {
+        StubProtocol.handler = { request in
+          XCTAssertEqual(request.httpMethod, "GET", "Unsupported Agent mode must not create chats or responses")
+          if request.url!.path == "/api/models" { return (200, catalog) }
+          return (200, self.data(self.chatJSON()))
+        }
+        do {
+          if continuing { _ = try await api().continueChat(session().entityID(chat), prompt: "Task", agentMode: true) }
+          else { _ = try await api().start(prompt: "Task", modelEntityID: session().entityID(model), agentMode: true) }
+          XCTFail("Expected capability failure")
+        } catch { XCTAssertTrue(error.localizedDescription.contains(errorText), error.localizedDescription) }
+      }
+    }
+  }
+  func testServerStillRejectsAgentModeIfCapabilityChangesAfterPreflight() async throws {
+    var posts = 0
+    StubProtocol.handler = { request in
+      if request.url!.path == "/api/models" { return (200, self.modelCatalog()) }
+      if request.httpMethod != "POST" { return (200, self.data(self.chatJSON())) }
+      posts += 1
+      XCTAssertEqual(try self.body(request)["agentMode"] as? Bool, true)
+      return (503, self.data(#"{"error":{"message":"Agent mode is not enabled"}}"#))
+    }
+    do { _ = try await api().continueChat(session().entityID(chat), prompt: "Task", agentMode: true); XCTFail("Expected failure") }
+    catch { XCTAssertEqual(error.localizedDescription, "Agent mode is not enabled") }
+    XCTAssertEqual(posts, 1, "Do not retry with Agent mode disabled")
+  }
   func testSavedChatsHonorAccountExpirationPreference() async throws {
     StubProtocol.handler = { request in
       switch request.url!.path {
@@ -109,6 +184,7 @@ final class ShortcutsCoreTests: XCTestCase {
       let body = try self.body(request)
       XCTAssertEqual(body["parentResponseId"] as? String, self.response)
       XCTAssertEqual(body["modelId"] as? String, self.model)
+      XCTAssertEqual(body["agentMode"] as? Bool, false)
       XCTAssertEqual(request.url!.path, "/api/chats/\(self.chat)/responses")
       return (202, self.data("{\"response\":{\"responseId\":\"\(self.response)\",\"status\":\"queued\",\"output\":[]}}"))
     }

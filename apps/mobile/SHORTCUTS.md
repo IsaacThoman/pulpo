@@ -14,9 +14,9 @@ such as “Ask Pulpo” and “New chat in Pulpo.”
 
 | Action | Inputs | Output / behavior |
 | --- | --- | --- |
-| Ask Pulpo | Prompt, Model, Temporary Chat | Sends a prompt, waits for completion, and returns the text reply; Siri can speak it. |
-| Start Chat in Pulpo | Prompt, Model | Sends a prompt and immediately returns a saved Chat while the reply runs on the server. |
-| Continue Chat in Pulpo | Chat, Prompt | Sends on the active branch using that chat's model; returns the completed text reply. Rejects chats with active replies or queued messages. |
+| Ask Pulpo | Prompt, Model, Temporary Chat, Agent Mode | Sends a prompt, waits for completion, and returns the text reply; Siri can speak it. |
+| Start Chat in Pulpo | Prompt, Model, Agent Mode | Sends a prompt and immediately returns a saved Chat while the reply runs on the server. |
+| Continue Chat in Pulpo | Chat, Prompt, Agent Mode | Sends on the active branch using that chat's model; returns the completed text reply. Rejects chats with active replies or queued messages. |
 | Get Reply from Pulpo | Chat | Returns the completed text on the active branch without sending anything. Reports unfinished/failed/cancelled replies. |
 | Find Chats in Pulpo | Search, Limit (1–50) | Searches saved titles and contents, newest first. Empty Search returns recent chats. Temporary, deleted, and expired chats are excluded. |
 | Get Models from Pulpo | None | Returns available Models, including their Name and Provider properties. |
@@ -31,9 +31,15 @@ item, such as Find Chats, use the account currently signed in to Pulpo.
 
 Prompts use normal billing and the selected model's server defaults. Saved chats
 honor the account's server-synchronized new-chat auto-expiration preference. These
-actions send text with Agent mode off; they do not inherit the open composer's
-attachments, draft, or personal generation controls. Text results include the
-assistant's final messages and refusals, excluding reasoning and tool output.
+actions accept text prompts and offer an **Agent Mode** toggle in each action's
+expanded options. It defaults to off, including in existing shortcuts. Turn it on
+to use the server's agent tools. Both the server and selected model must support
+Agent mode; unsupported configurations report an error before sending, without
+silently falling back. Continue checks the existing chat's model. Each action uses
+its own toggle rather than inheriting the app's or previous reply's Agent setting.
+The open composer's attachments, draft, and personal generation controls are not
+inherited. Text results include the assistant's final messages and refusals,
+excluding reasoning and tool output.
 
 ## Useful workflows
 
@@ -46,6 +52,9 @@ assistant's final messages and refusals, excluding reasoning and tool output.
   themselves fetch its webpage.
 - **Long-running model:** Text → Start Chat in Pulpo → Open Chat in Pulpo. The
   returned Chat can also feed Get Reply in a later step after completion.
+- **Agent task:** Start Chat with Agent Mode enabled → Open Chat. The agent keeps
+  working on the server; use Get Reply after it finishes. Ask and Continue support
+  the same toggle, subject to the reply wait limit below.
 - **Continue a project:** Find Chats (search for your project) → Choose from
   List → Continue Chat → Show Result.
 - **Choose the model each time:** Get Models → Choose from List → Ask Pulpo.

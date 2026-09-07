@@ -61,10 +61,11 @@ struct AskPulpoIntent: AppIntent {
   @Parameter(title: "Prompt", description: "Text from typing, dictation, the clipboard, a share sheet, or a previous action.", inputOptions: String.IntentInputOptions(multiline: true)) var prompt: String
   @Parameter(title: "Model") var model: PulpoModelEntity
   @Parameter(title: "Temporary Chat", description: "Exclude this conversation from saved history, search, and recall. The server's temporary-chat expiration still applies.", default: false) var temporary: Bool
-  static var parameterSummary: some ParameterSummary { Summary("Ask \(\.$model) about \(\.$prompt)") { \.$temporary } }
+  @Parameter(title: "Agent Mode", description: "Use agent tools when supported by your server and model. Agent tasks can take longer; use Start Chat and Open Chat for long-running work.", default: false) var agentMode: Bool
+  static var parameterSummary: some ParameterSummary { Summary("Ask \(\.$model) about \(\.$prompt)") { \.$temporary; \.$agentMode } }
   func perform() async throws -> some IntentResult & ReturnsValue<String> & ProvidesDialog {
     let api = try ShortcutsAPI.current()
-    let (_, snapshot) = try await api.start(prompt: prompt, modelEntityID: model.id, temporary: temporary)
+    let (_, snapshot) = try await api.start(prompt: prompt, modelEntityID: model.id, temporary: temporary, agentMode: agentMode)
     let reply = try await api.waitForReply(snapshot)
     return .result(value: reply, dialog: "\(reply)")
   }
@@ -76,10 +77,11 @@ struct StartPulpoChatIntent: AppIntent {
   static let authenticationPolicy: IntentAuthenticationPolicy = .requiresAuthentication
   @Parameter(title: "Prompt", inputOptions: String.IntentInputOptions(multiline: true)) var prompt: String
   @Parameter(title: "Model") var model: PulpoModelEntity
-  static var parameterSummary: some ParameterSummary { Summary("Start a chat with \(\.$model) about \(\.$prompt)") }
+  @Parameter(title: "Agent Mode", description: "Use agent tools when supported by your server and model. Agent tasks can take longer; use Start Chat and Open Chat for long-running work.", default: false) var agentMode: Bool
+  static var parameterSummary: some ParameterSummary { Summary("Start a chat with \(\.$model) about \(\.$prompt)") { \.$agentMode } }
   func perform() async throws -> some IntentResult & ReturnsValue<PulpoChatEntity> {
     let api = try ShortcutsAPI.current()
-    let (chat, _) = try await api.start(prompt: prompt, modelEntityID: model.id)
+    let (chat, _) = try await api.start(prompt: prompt, modelEntityID: model.id, agentMode: agentMode)
     return .result(value: PulpoChatEntity(chat, session: api.session))
   }
 }
@@ -90,10 +92,11 @@ struct ContinuePulpoChatIntent: AppIntent {
   static let authenticationPolicy: IntentAuthenticationPolicy = .requiresAuthentication
   @Parameter(title: "Chat") var chat: PulpoChatEntity
   @Parameter(title: "Prompt", inputOptions: String.IntentInputOptions(multiline: true)) var prompt: String
-  static var parameterSummary: some ParameterSummary { Summary("Send \(\.$prompt) to \(\.$chat)") }
+  @Parameter(title: "Agent Mode", description: "Use agent tools when supported by your server and model. Agent tasks can take longer; use Start Chat and Open Chat for long-running work.", default: false) var agentMode: Bool
+  static var parameterSummary: some ParameterSummary { Summary("Send \(\.$prompt) to \(\.$chat)") { \.$agentMode } }
   func perform() async throws -> some IntentResult & ReturnsValue<String> & ProvidesDialog {
     let api = try ShortcutsAPI.current()
-    let snapshot = try await api.continueChat(chat.id, prompt: prompt)
+    let snapshot = try await api.continueChat(chat.id, prompt: prompt, agentMode: agentMode)
     let reply = try await api.waitForReply(snapshot)
     return .result(value: reply, dialog: "\(reply)")
   }

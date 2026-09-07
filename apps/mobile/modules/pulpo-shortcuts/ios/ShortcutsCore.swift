@@ -114,6 +114,7 @@ public struct ShortcutModel: Decodable, Sendable {
   public let id: String
   public let name: String
   public let provider: Provider
+  public let agentEnabled: Bool?
   public struct Provider: Decodable, Sendable { public let name: String }
 }
 public struct ShortcutChat: Decodable, Sendable {
@@ -183,6 +184,7 @@ public final class ShortcutsAPI: Sendable {
   deinit { transport.invalidateAndCancel() }
   public static func current() throws -> ShortcutsAPI { try ShortcutsAPI(session: ShortcutSessionStore.load()) }
   private struct List<T: Decodable>: Decodable { let data: [T] }
+  private struct ModelCatalog: Decodable { let data: [ShortcutModel]; let agentAvailable: Bool? }
   private struct Response: Decodable { let response: ShortcutSnapshot }
   private struct Settings: Decodable {
     let values: Values
@@ -222,8 +224,22 @@ public final class ShortcutsAPI: Sendable {
     return try JSONDecoder().decode(T.self, from: data)
   }
   public func models() async throws -> [ShortcutModel] {
-    let result: List<ShortcutModel> = try await request("/api/models")
+    let result: ModelCatalog = try await request("/api/models")
     return result.data
+  }
+  private func validateModel(_ modelID: String, agentMode: Bool) async throws {
+    let catalog: ModelCatalog = try await request("/api/models")
+    guard let model = catalog.data.first(where: { $0.id == modelID }) else {
+      throw ShortcutFailure("This model is no longer available. Select another model.")
+    }
+    if agentMode {
+      guard catalog.agentAvailable == true else {
+        throw ShortcutFailure("Agent mode is unavailable on this Pulpo server. Turn off Agent Mode in this action or enable it on the server.")
+      }
+      guard model.agentEnabled == true else {
+        throw ShortcutFailure("This model does not support Agent mode. Choose an Agent-capable model or turn off Agent Mode in this action.")
+      }
+    }
   }
   public func chats(query: String = "", limit: Int = 20) async throws -> [ShortcutChat] {
     let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -241,10 +257,10 @@ public final class ShortcutsAPI: Sendable {
     guard !result.temporary else { throw ShortcutFailure("Temporary chats are not available as saved Shortcuts items.") }
     return result
   }
-  public func start(prompt: String, modelEntityID: String, temporary: Bool = false) async throws -> (ShortcutChat, ShortcutSnapshot) {
+  public func start(prompt: String, modelEntityID: String, temporary: Bool = false, agentMode: Bool = false) async throws -> (ShortcutChat, ShortcutSnapshot) {
     let text = try Self.prompt(prompt)
     let modelID = try session.resourceID(modelEntityID)
-    guard try await models().contains(where: { $0.id == modelID }) else { throw ShortcutFailure("This model is no longer available. Select another model.") }
+    try await validateModel(modelID, agentMode: agentMode)
     let autoExpire: Bool
     if temporary { autoExpire = false }
     else {
@@ -254,19 +270,20 @@ public final class ShortcutsAPI: Sendable {
     let responseID = UUID().uuidString.lowercased()
     let result: Started = try await request("/api/chats/start", body: [
       "chat": ["clientId": UUID().uuidString.lowercased(), "modelId": modelID, "title": String(text.prefix(80)), "temporary": temporary, "autoExpire": autoExpire],
-      "response": ["clientId": responseID, "input": text, "modelId": modelID, "parentResponseId": NSNull(), "agentMode": false, "attachmentIds": [], "presetSelections": [:]]
+      "response": ["clientId": responseID, "input": text, "modelId": modelID, "parentResponseId": NSNull(), "agentMode": agentMode, "attachmentIds": [], "presetSelections": [:]]
     ], idempotencyKey: responseID)
     return (result.chat, result.response)
   }
-  public func continueChat(_ entityID: String, prompt: String) async throws -> ShortcutSnapshot {
+  public func continueChat(_ entityID: String, prompt: String, agentMode: Bool = false) async throws -> ShortcutSnapshot {
     let text = try Self.prompt(prompt)
     let selected = try await chat(entityID)
     guard !selected.busy else { throw ShortcutFailure("This chat is still responding or has queued messages. Wait for it to finish before continuing.") }
+    if agentMode { try await validateModel(selected.modelId, agentMode: true) }
     let responseID = UUID().uuidString.lowercased()
     let result: Response = try await request("/api/chats/\(selected.id)/responses", body: [
       "clientId": responseID, "input": text, "modelId": selected.modelId,
       "parentResponseId": (selected.activeBranchLeafId ?? selected.activeResponseId) as Any? ?? NSNull(),
-      "agentMode": false, "attachmentIds": [], "presetSelections": [:]
+      "agentMode": agentMode, "attachmentIds": [], "presetSelections": [:]
     ], idempotencyKey: responseID)
     return result.response
   }

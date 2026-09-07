@@ -88,3 +88,24 @@ Validation after the merge: 567 mobile tests across 85 files, 16 native Swift
 tests, mobile typecheck, repository lint, and production iOS/Android exports all
 passed. The full native simulator build and UI acceptance above predate this
 merge; they were not repeated for this synchronization.
+
+## Agent Mode toggle — September 7, 2026
+
+Ask, Start Chat, and Continue Chat now expose an Agent Mode boolean, defaulting
+to off. The native client checks the catalog's server and model capabilities
+before submitting an enabled request. Continue validates its saved chat's model.
+Server errors remain authoritative; unsupported requests are never retried with
+Agent mode off. Existing shortcuts and explicit-off actions preserve their behavior.
+
+- 20 native tests passed, including enabled saved/temporary starts, enabled branch
+  continuation, default-off payloads, missing/disabled server or model capabilities,
+  removed models, and a server rejection after a successful capability check.
+- 567 mobile tests, mobile typecheck, and repository lint passed.
+- Compiled the current App Intents and core in the simulator harness. Xcode's
+  extracted metadata confirms an Agent Mode boolean with default false in the
+  expanded options of all three actions.
+
+Agent request payloads and capability failures were exercised with the native
+URLProtocol transport fixture; a live agent workspace/tool execution was not run
+for this toggle change. The mobile app's existing agent request endpoints and
+server enforcement are reused.
