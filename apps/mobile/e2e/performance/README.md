@@ -35,7 +35,8 @@ selection after drawer closure; it does not measure physical-device frame timing
 
 Set `EXPO_PUBLIC_PERF_COLD_CHAT=1` to omit chat 3's offline document, delay its
 network response by five seconds, and make chat 4 empty. `testSelectedChatCover` checks that selection
-shows the destination placeholder, hides the previous transcript and intermediate
+shows a message-area placeholder with the normal header and composer visible,
+hides the previous transcript and intermediate
 spinner, reveals the loaded transcript, handles selecting the same chat again,
 and switches through an empty chat.
 

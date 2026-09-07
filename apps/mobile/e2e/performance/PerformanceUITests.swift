@@ -15,6 +15,12 @@ final class PerformanceUITests: XCTestCase {
     app.staticTexts["Performance chat 3"].firstMatch.tap()
     let cover = app.descendants(matching: .any).matching(identifier: "chat-opening-00000000-0000-4000-8000-000000000102").firstMatch
     XCTAssertTrue(cover.waitForExistence(timeout: 2))
+    let model = app.buttons["Model, Fixture model"]
+    let composer = app.textViews.firstMatch
+    XCTAssertTrue(model.isHittable)
+    XCTAssertTrue(composer.isHittable, app.debugDescription)
+    XCTAssertGreaterThan(cover.frame.minY, model.frame.maxY)
+    XCTAssertLessThan(cover.frame.maxY, composer.frame.minY)
     XCTAssertFalse(previous.exists)
     XCTAssertFalse(app.descendants(matching: .any).matching(identifier: "Loading conversation").firstMatch.exists)
     let shot = XCTAttachment(screenshot: app.screenshot())
