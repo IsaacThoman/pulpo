@@ -1,3 +1,4 @@
+import { localComposerDraftId } from '@pulpo/client-core';
 import { DevicesScreen } from '../components/Devices';
 import { initialActivityTiming } from '@pulpo/client-core';
 import { mobileShelf, durableShelfAttachments, shelfComposerAttachments } from '../features/chat/shelf';
@@ -1990,8 +1991,10 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     discardStoredChat(chat.id);
     if (!productionUserId) return;
     const namespace = cacheNamespace(productionInstanceUrl, productionUserId);
-    deleteCachedComposerDraft(composerDraftScope(namespace, chat.id));
-    void saveDraft(namespace, chat.id, '', []);
+    for (const draftId of [chat.id, localComposerDraftId(chat.id, true)]) {
+      deleteCachedComposerDraft(composerDraftScope(namespace, draftId));
+      void saveDraft(namespace, draftId, '', []);
+    }
     discardOptimisticChat(namespace, chat.id);
     queryClient.removeQueries({ queryKey: queryKeys.chat(namespace, chat.id), exact: true });
     for (const message of chat.messages) {
@@ -3924,7 +3927,7 @@ function ChatView({
   }), []);
 
   useEffect(() => {
-    const draftId = chatId ?? NEW_CHAT_DRAFT_ID;
+    const draftId = localComposerDraftId(chatId, temporary);
     const scope = `${draftNamespace ?? 'local'}\u0000${draftId}`;
     const previous = activeDraftRef.current;
     if (previous?.scope === scope) return;
@@ -3983,7 +3986,7 @@ function ChatView({
         setHydratedComposerScope(scope);
       }
     });
-  }, [activeDraftSnapshot, chatId, draftNamespace, onChangeInput, placeComposerCursorAtEnd, setAttachments]);
+  }, [activeDraftSnapshot, chatId, temporary, draftNamespace, onChangeInput, placeComposerCursorAtEnd, setAttachments]);
 
   const sharedComposerState: ComposerState = {
     content: preservedComposerRef.current?.input ?? input,
@@ -3994,8 +3997,8 @@ function ChatView({
     agentMode: preservedComposerRef.current?.agentEnabled ?? agentEnabled, temporary, autoExpire,
   };
   const { sync: composerSync, skipNextEdit } = useComposerSync(
-    draftNamespace, chatId ?? NEW_CHAT_DRAFT_ID, sharedComposerState,
-    hydratedComposerScope === `${draftNamespace ?? 'local'}\u0000${chatId ?? NEW_CHAT_DRAFT_ID}`,
+    draftNamespace, localComposerDraftId(chatId, temporary), sharedComposerState,
+    hydratedComposerScope === `${draftNamespace ?? 'local'}\u0000${localComposerDraftId(chatId, temporary)}`,
     Boolean(messageEdit || shelfBusy),
     (remote) => {
       const current = preservedComposerRef.current?.attachments ?? attachmentsRef.current;
@@ -4027,7 +4030,6 @@ function ChatView({
           if (selected && selected.id !== model.id) onSelectModel(selected);
         }
         if (!chatId) {
-          if (remote.temporary !== temporary) onTemporaryChange(remote.temporary);
           if (remote.autoExpire !== autoExpire) onAutoExpirationChange(remote.autoExpire);
         }
       }
@@ -4453,7 +4455,7 @@ function ChatView({
       attachments: draft.attachments.map((item) => item.localId === attachment.localId ? attachment : item),
     };
     cacheComposerDraft(owner.scope, updated);
-    if (owner.namespace && attachment.state === 'ready' && attachment.serverId) {
+    if (owner.namespace && !owner.draftId.startsWith('temporary:') && attachment.state === 'ready' && attachment.serverId) {
       mobileComposerSync(owner.namespace)?.attachToInactiveDraft(owner.draftId, { id: attachment.serverId, name: attachment.name, mimeType: attachment.mimeType, size: attachment.size ?? 0 });
     }
     if (owner.namespace) void saveDraft(owner.namespace, owner.draftId, updated.body, updated.attachments);

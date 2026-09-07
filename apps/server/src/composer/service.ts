@@ -4,7 +4,7 @@ import { and, eq, inArray, isNull, or, sql, lte } from 'drizzle-orm'
 import { emptyComposerState, type ComposerAck, type ComposerSnapshot, type ComposerWrite } from '@pulpo/contracts'
 import { db } from '../database/client.js'
 import { attachments, chats, composerDrafts, composerDraftAttachments } from '../database/schema.js'
-import { accessibleChatCondition, TEMPORARY_CHAT_TTL_MS } from '../chats/temporary.js'
+import { accessibleChatCondition } from '../chats/temporary.js'
 
 type DraftRow = typeof composerDrafts.$inferSelect
 function snapshot(row: DraftRow): ComposerSnapshot {
@@ -13,10 +13,12 @@ function snapshot(row: DraftRow): ComposerSnapshot {
 
 /** Row locking plus revision checks works across API replicas, without trusting client clocks. */
 export async function accessComposer(userId: string, draftId: string, write?: ComposerWrite, database: Pick<typeof db, 'transaction'> = db): Promise<ComposerAck> {
+  if (write?.patch.temporary) return { ok: false, error: 'temporary_composer_disabled' }
   return database.transaction(async (tx) => {
     let chatExpiry: Date | null = null
     if (draftId !== 'new') {
       const [chat] = await tx.select().from(chats).where(and(eq(chats.id, draftId), eq(chats.userId, userId), isNull(chats.deletedAt), accessibleChatCondition())).for('share')
+      if (chat?.temporary) return { ok: false, error: 'temporary_composer_disabled' }
       if (!chat) {
         if (!write) {
           const [cleared] = await tx.select().from(composerDrafts).where(and(eq(composerDrafts.userId, userId), eq(composerDrafts.draftId, draftId)))
@@ -28,13 +30,14 @@ export async function accessComposer(userId: string, draftId: string, write?: Co
     }
     await tx.insert(composerDrafts).values({ id: randomUUID(), userId, draftId, chatId: draftId === 'new' ? null : draftId, modelId: '', editorId: '', revision: 0, state: emptyComposerState() }).onConflictDoNothing()
     let [row] = await tx.select().from(composerDrafts).where(and(eq(composerDrafts.userId, userId), eq(composerDrafts.draftId, draftId))).for('update')
-    if (row!.expiresAt && row!.expiresAt <= new Date()) {
+    if (row!.state.temporary || (row!.expiresAt && row!.expiresAt <= new Date())) {
       ;[row] = await tx.update(composerDrafts).set({ content: '', state: emptyComposerState(), revision: row!.revision + 1, clearedRevision: row!.revision + 1, mutationId: null, expiresAt: null }).where(and(eq(composerDrafts.userId, userId), eq(composerDrafts.draftId, draftId))).returning()
     }
     if (row!.revision > 0 && row!.revision === row!.clearedRevision) await tx.delete(composerDraftAttachments).where(eq(composerDraftAttachments.draftId, row!.id))
     if (!write || write.mutationId === row!.mutationId) return { ok: true, snapshot: snapshot(row!) }
     if (write.baseRevision !== row!.revision) return { ok: true, conflict: true, snapshot: snapshot(row!) }
     const patch = { ...write.patch }
+    delete patch.temporary
     if (patch.attachments?.length) {
       const ids = [...new Set(patch.attachments.map((a) => a.id))]
       const owned = await tx.select({ attachment: attachments }).from(attachments).leftJoin(chats, eq(chats.id, attachments.chatId)).where(and(
@@ -50,9 +53,7 @@ export async function accessComposer(userId: string, draftId: string, write?: Co
     }
     const revision = row!.revision + 1
     const state = write.clear ? { ...row!.state, content: '', attachments: [] } : { ...row!.state, ...patch }
-    const expiresAt = draftId === 'new'
-      ? state.temporary ? row!.expiresAt ?? new Date(Date.now() + TEMPORARY_CHAT_TTL_MS) : null
-      : chatExpiry
+    const expiresAt = draftId === 'new' ? null : chatExpiry
     const [updated] = await tx.update(composerDrafts).set({
       state, content: state.content, modelId: state.model?.id ?? '', presetSelections: state.model?.presets ?? {}, agentMode: state.agentMode, autoExpire: state.autoExpire, revision, clearedRevision: write.clear ? revision : row!.clearedRevision,
       mutationId: write.mutationId, expiresAt: write.clear ? null : expiresAt, updatedAt: new Date(),

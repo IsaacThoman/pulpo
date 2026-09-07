@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { emptyComposerState, type ComposerAck, type ComposerSnapshot, type ComposerState, type ComposerWrite } from '@pulpo/contracts'
-import { ComposerSync, composerPatch, type ComposerCheckpoint } from './composer-sync.js'
+import { ComposerSync, composerPatch, localComposerDraftId, type ComposerCheckpoint } from './composer-sync.js'
 
 const state = (content = ''): ComposerState => ({ ...emptyComposerState(), content })
 function fixture() {
@@ -398,4 +398,93 @@ describe('explicit shelf restore recovery', () => {
     expect(f.snapshot().state).toEqual({ ...initial, content: 'after' })
     a.sync.dispose()
   })
+})
+
+
+describe('temporary draft protocol isolation', () => {
+  it('uses separate local draft slots without sharing the mode bit', () => {
+    expect(localComposerDraftId(null, false)).toBe('new')
+    expect(localComposerDraftId(null, true)).toBe('temporary:new')
+    expect(localComposerDraftId('chat', true)).toBe('temporary:chat')
+    expect(composerPatch(state(), { ...state(), temporary: true })).toEqual({})
+  })
+
+  it('never loads or publishes temporary initial drafts', async () => {
+    const f = fixture(), a = f.client('a')
+    await a.open({ ...state('private initial'), temporary: true })
+    expect(a.listener).not.toHaveBeenCalled()
+    expect(a.save).not.toHaveBeenCalled()
+    expect(f.writes).toEqual([])
+    a.sync.dispose()
+  })
+
+  it('rejects whole temporary edits and excludes the mode field from normal writes', async () => {
+    const f = fixture(), a = f.client('a')
+    await a.open(state('normal'))
+    a.sync.edit('new', { temporary: true, content: 'secret' })
+    await a.sync.flush('new')
+    expect(f.snapshot().state.content).toBe('normal')
+    a.sync.edit('new', { temporary: false, content: 'normal edit' })
+    await a.sync.flush('new')
+    expect(f.writes.every((write) => !Object.hasOwn(write.patch, 'temporary'))).toBe(true)
+    a.sync.dispose()
+  })
+
+  it.each(['snapshot', 'pending'] as const)('retires legacy temporary %s checkpoints without replaying their content', async (field) => {
+    const f = fixture()
+    const saved: ComposerCheckpoint = {
+      snapshot: { ...f.snapshot(), state: { ...state('private snapshot'), temporary: field === 'snapshot' } },
+      pending: { content: 'private pending', temporary: field === 'pending' },
+      submissions: [{ state: { ...state('private receipt'), temporary: true } }],
+      shelfContent: state('private shelf recovery'),
+    }
+    const recover = vi.fn()
+    const a = f.client('a', saved, recover)
+    await a.open(state('private local draft'))
+    expect(f.writes).toEqual([])
+    expect(JSON.stringify(a.listener.mock.lastCall)).not.toContain('private')
+    expect(recover).not.toHaveBeenCalled()
+    a.sync.dispose()
+  })
+
+  it('ignores temporary snapshots from older servers and clients', async () => {
+    const f = fixture(), a = f.client('a')
+    await a.open()
+    a.listener.mockClear()
+    a.sync.receive({ ...f.snapshot(), revision: 100, state: { ...state('private remote'), temporary: true } })
+    expect(a.listener).not.toHaveBeenCalled()
+    a.sync.dispose()
+  })
+})
+
+
+it('does not apply a temporary snapshot returned in a write acknowledgement', async () => {
+  const f = fixture(), a = f.client('a')
+  await a.open()
+  const write = vi.fn(async (): Promise<ComposerAck> => ({ ok: true, conflict: true,
+    snapshot: { ...f.snapshot(), revision: 99, state: { ...state('private conflict'), temporary: true } },
+  }))
+  a.sync.connect({ ...f.transport, write })
+  await a.sync.open('new', state(), () => {})
+  a.sync.edit('new', { content: 'normal edit' })
+  await a.sync.flush('new')
+  expect(write).toHaveBeenCalledOnce()
+  expect(JSON.stringify(a.listener.mock.calls)).not.toContain('private conflict')
+  a.sync.dispose()
+})
+
+
+it('does not share or clear a normal draft through temporary submission or shelf callbacks', async () => {
+  const f = fixture(), a = f.client('a')
+  await a.open(state('normal draft'))
+  const before = f.writes.length
+  const temporary = { ...state('private callback'), temporary: true }
+  expect(await a.sync.prepareSubmission('new', temporary)).toBeNull()
+  await a.sync.completeSubmission('new', temporary)
+  a.sync.replaceShelfContent('new', temporary)
+  await a.sync.flush('new')
+  expect(f.writes).toHaveLength(before)
+  expect(f.snapshot().state.content).toBe('normal draft')
+  expect(JSON.stringify(a.saved())).not.toContain('private callback')
+  a.sync.dispose()
 })

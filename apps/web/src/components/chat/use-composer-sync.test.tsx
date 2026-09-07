@@ -101,3 +101,41 @@ describe('composer view binding', () => {
     a.unmount()
   })
 })
+
+
+describe('temporary composer isolation', () => {
+  it('does not publish the temporary toggle, text, attachments, or controls, and ignores incoming edits', async () => {
+    const view = renderHook(useDraft)
+    await act(async () => { await registry.sync!.flush('new') })
+    const before = writes
+    await act(async () => view.result.current.setState((state) => ({ ...state, temporary: true })))
+    expect(view.result.current.sync).toBeNull()
+    await act(async () => view.result.current.setState((state) => ({
+      ...state, content: 'private draft', agentMode: false, model: { id: 'private-model', presets: {} },
+      attachments: [{ id: 'private-file', name: 'secret', mimeType: 'text/plain', size: 1 }],
+    })))
+    await act(async () => {
+      registry.sync!.receive({ ...snapshot, revision: 10, state: { ...emptyComposerState(), content: 'remote normal draft' } })
+      await registry.sync!.flush('new')
+    })
+    expect(writes).toBe(before)
+    expect(view.result.current.state).toMatchObject({ temporary: true, content: 'private draft', model: { id: 'private-model' } })
+    view.unmount()
+  })
+
+  it('does not open a shared draft when mounted in temporary mode', async () => {
+    const open = vi.spyOn(registry.sync!, 'open')
+    const view = renderHook(() => useComposerSync('account', 'new', { ...emptyComposerState(), temporary: true }, true, false, vi.fn()))
+    expect(view.result.current.sync).toBeNull()
+    expect(open).not.toHaveBeenCalled()
+    view.unmount()
+  })
+
+  it('does not apply a remote temporary toggle or its content', async () => {
+    const view = renderHook(useDraft)
+    await act(async () => { await registry.sync!.flush('new') })
+    await act(async () => registry.sync!.receive({ ...snapshot, revision: 10, state: { ...emptyComposerState(), temporary: true, content: 'old-client private draft' } }))
+    expect(view.result.current.state).toMatchObject({ temporary: false, content: '' })
+    view.unmount()
+  })
+})
