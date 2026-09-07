@@ -10,6 +10,16 @@ export { CHAT_PRESET_ICON_NAMES } from './chat-preset-icons.generated.js'
 
 export const idSchema = z.uuid()
 export const isoDateSchema = z.iso.datetime()
+
+/** Durable display metadata for an image inspected by an agent tool. */
+export const toolImagePreviewSchema = z.object({
+  attachmentId: idSchema,
+  name: z.string(),
+  mimeType: z.literal('image/webp'),
+  sizeBytes: z.number().int().nonnegative(),
+})
+export type ToolImagePreview = z.infer<typeof toolImagePreviewSchema>
+
 export const DEFAULT_MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
 export const MAX_CONFIGURABLE_ATTACHMENT_BYTES = 1_000 * 1024 * 1024
 export const WORKSPACE_CONTINUE_WITHOUT_AGENT_DELAY_MS = 15_000

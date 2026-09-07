@@ -735,6 +735,8 @@ const esUi: Record<string, string> = {
   "Loading friends…": "Cargando amigos...",
   "Loading MEMORY.md…": "Cargando MEMORY.md…",
   "Loading Pool…": "Cargando Pool...",
+  "Image preview unavailable": "Vista previa de imagen no disponible",
+  "Loading image preview": "Cargando vista previa de imagen",
   "Loading preview…": "Cargando vista previa…",
   "Markdown preview": "Vista previa de Markdown",
   "Loading Pulpo…": "Cargando Pulpo...",

@@ -1,5 +1,5 @@
 import type { AgentMessage } from '@earendil-works/pi-agent-core'
-import type { CompactionItem, RecallItem } from '@pulpo/contracts'
+import type { CompactionItem, RecallItem, ToolImagePreview } from '@pulpo/contracts'
 
 export type ToolTimelineItem = {
   id: string
@@ -8,6 +8,7 @@ export type ToolTimelineItem = {
   arguments: unknown
   status: string
   output: string
+  imagePreview?: ToolImagePreview
   isError?: boolean
   startedAt?: string
   durationMs?: number

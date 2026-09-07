@@ -51,6 +51,7 @@ export async function storeGeneratedAttachment(input: {
   chatId: string
   path: string
   requestedName?: string
+  origin?: 'assistant' | 'tool_preview'
   data: Uint8Array
 }): Promise<GeneratedAttachment> {
   const { name, mimeType } = generatedAttachmentMetadata(input.path, input.requestedName, input.data)
@@ -69,7 +70,7 @@ export async function storeGeneratedAttachment(input: {
   const objectKey = `users/${input.userId}/attachments/${id}`
   const attachment = reusablePending ? existing : await reserveAttachment({
     id, userId: input.userId, chatId: input.chatId, objectKey, originalName: name, mimeType,
-    sizeBytes: input.data.byteLength, origin: 'assistant', workspacePath: input.path,
+    sizeBytes: input.data.byteLength, origin: input.origin ?? 'assistant', workspacePath: input.path,
     sourceResponseId: input.responseId, sourceToolCallId: input.toolCallId,
   })
   try {
