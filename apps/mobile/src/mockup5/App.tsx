@@ -5702,9 +5702,9 @@ function ChatView({
                   <MaterialIconButton label={activeAgentEnabled ? 'Turn off Agent mode' : 'Turn on Agent mode'} icon="bot" color={activeAgentEnabled ? nativeAgentTint : undefined} disabled={!canUseAgent} onPress={toggleAgent} />
                 )}
                 <View style={styles.flex} />
-                {showShelf && Boolean(input.trim() || attachments.length) && (Platform.OS === 'ios'
-                  ? <NativeComposerIconButton label="Shelve draft" systemImage="archivebox" disabled={shelfBusy || sending || dictationBusy} onPress={() => { void transferShelf(); }} />
-                  : <MaterialIconButton label="Shelve draft" icon="archivebox" disabled={shelfBusy || sending || dictationBusy} onPress={() => { void transferShelf(); }} />)}
+                {showShelf && (Platform.OS === 'ios'
+                  ? <NativeComposerIconButton label="Shelve draft" systemImage="archivebox" disabled={!(input.trim() || attachments.length) || shelfBusy || sending || dictationBusy} onPress={() => { void transferShelf(); }} />
+                  : <MaterialIconButton label="Shelve draft" icon="archivebox" disabled={!(input.trim() || attachments.length) || shelfBusy || sending || dictationBusy} onPress={() => { void transferShelf(); }} />)}
                 {dictationEnabled && (Platform.OS === 'ios'
                   ? <NativeComposerIconButton label={dictationLabel} systemImage={dictation.phase === 'recording' ? 'stop.fill' : 'mic'} prominent={dictation.phase === 'recording'} disabled={dictationDisabled} onPress={dictation.phase === 'recording' ? dictation.stop : dictation.start} />
                   : <MaterialIconButton label={dictationLabel} icon={dictation.phase === 'recording' ? 'stop.fill' : 'mic'} selected={dictation.phase === 'recording'} disabled={dictationDisabled} onPress={dictation.phase === 'recording' ? dictation.stop : dictation.start} />)}
