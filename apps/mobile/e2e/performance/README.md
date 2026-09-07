@@ -31,7 +31,7 @@ latency; keep any screenshots and result bundles outside the repository.
 `testSelectLongAndCachedChats` alternates between the 1,000-turn and short chats
 twice, checks the selected transcript's native test identifier, and verifies the
 keyboard stays dismissed. This covers initial local hydration and resident detail
-selection before drawer closure; it does not measure physical-device frame timing.
+selection after drawer closure; it does not measure physical-device frame timing.
 
 Set `EXPO_PUBLIC_PERF_COLD_CHAT=1` to omit chat 3's offline document, delay its
 network response by five seconds, and make chat 4 empty. `testSelectedChatCover` checks that selection

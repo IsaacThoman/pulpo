@@ -158,8 +158,8 @@ Mobile type checking, repository lint, and all 441 mobile tests passed.
 
 ## Chat-selection slide follow-up
 
-Historical implementation; the cached fast path below supersedes unconditional
-selection after the slide.
+The later cached-first experiment was reverted after physical-device feedback
+identified delayed animation starts; see the final follow-up below.
 
 Selecting a history row changed the active chat before starting the closing
 spring. That started transcript hydration/projection and remounted the keyed
@@ -194,9 +194,8 @@ Selection hides only the message area before starting the closing spring. The
 existing header, model picker, chat controls, and composer stay mounted and
 visible. A small skeleton in the message area replaces the old transcript while
 the destination loads; there is no replacement header or full-screen cover.
-For uncached selections, the hidden transcript remains mounted until the spring
-completes. Cached selections prepare the destination viewport before movement,
-as described below.
+The hidden transcript remains mounted until the spring completes for both cached
+and uncached selections, keeping destination mounting out of the animation.
 
 After selection commits, the placeholder remains until the destination's native
 transcript layout is ready (or its loaded empty state has committed), then reveals
@@ -215,9 +214,6 @@ composer during loading. Raw recordings, screenshots, and test logs remain
 outside Git. Physical-device frame timing was not measured in this check.
 
 ## Overlap I/O with drawer closure
-
-The initial overlap implementation described here deferred cached selection too;
-the following cached fast path removes that latency regression.
 
 Chat selection now starts its targeted SQLite read and network request on the
 press. A per-selection gate delays JSON decoding, query publication, snapshot
@@ -250,7 +246,11 @@ previous chat was still selected. The final cancellation guards were validated
 by automated tests; native frame timing and tap-to-content latency were not
 quantified. No raw run artifacts were added to Git.
 
-## Restore cached selection latency
+## Cached-first experiment (superseded)
+
+This experiment shipped in `64f02f6e` and was subsequently reverted because it
+delayed animation start. These measurements describe that experiment, not the
+current interaction path.
 
 The unconditional completion gate added a full closing spring before selecting
 even an already projected chat. Resident chats now activate in the tap's React
@@ -306,3 +306,48 @@ outliers. JavaScript completion notifications can lag the actual native spring,
 and simulator/XCTest overhead is included. This does not establish that device
 animation is stutter-free; physical iPhone/Android validation remains necessary.
 Raw timelines, frame samples, screenshots, and result bundles remain outside Git.
+
+## Start every selection slide without waiting for transcript layout
+
+Physical iPhone feedback exposed the cached-first tradeoff: its 50 ms limit only
+bounded the disk lookup, while native transcript layout and the next-frame reveal
+could delay animation indefinitely. Faster content-ready markers did not mean
+faster visual response to the tap.
+
+Cached and uncached selections now share the immediate placeholder-commit/slide
+path. Neither local readiness nor destination layout controls animation start.
+The existing content-only placeholder hides the old transcript while the header
+and composer remain visible. Native list mounting and decode/publication remain
+after the closing spring, preserving the prior separation from movement. Disk
+and network I/O still start on the press, resident query detail skips SQLite,
+and the batched summary metadata improvement remains intact.
+
+The cache lookup timer, native-ready slide callback, and separate local decode
+gate were removed with their obsolete tests. Request cancellation, stale-scope
+guards, observer adoption, optimistic-state preservation, and reduced-motion /
+persistent-sidebar completion remain covered by the surviving tests.
+
+This fixes animation-start latency; it does not make native Markdown mounting
+free or retain the cached-first experiment's content-ready timings. Subsequent
+performance comparisons must report both tap-to-slide scheduling and content
+readiness, not content readiness alone.
+
+All 458 current mobile tests, mobile type checking, repository lint, and both
+iOS/Android production exports passed.
+The same Release simulator shell passed the three focused XCTest cases with
+5,000 summaries, including repeated resident selection, delayed uncached loading,
+same-chat reselection, empty chats, and exact-text drawer search.
+
+| Warmed selection | Cached-first slide scheduling | Current slide scheduling | Current content-ready |
+| --- | ---: | ---: | ---: |
+| 1,000-turn transcript | 123.3 ms | 13.2 ms | 497.2 ms |
+| One-turn transcript | 115.7 ms | 30.1 ms | 969.0 ms |
+
+The first disk-backed selections scheduled movement at 12.4/24.7 ms. Each cell
+is one sample from the alternating-chat fixture on iPhone 17 Pro / iOS 26.5,
+with frame sampling disabled. Slide scheduling is the JavaScript call that starts
+the spring, not a photon-level measurement of its first visible frame. Content
+and completion timing remain variable under simulator automation, as the short
+chat illustrates. These measurements verify the removed pre-animation dependency,
+not improved total load latency or physical-device frame pacing. Raw artifacts
+remain outside Git.
