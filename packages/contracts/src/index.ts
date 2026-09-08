@@ -1751,7 +1751,13 @@ export interface ClientToServerEvents {
   'admin.usage.unsubscribe': () => void
 }
 
+export interface ChatStartedEvent {
+  chatId: string
+  responseId: string
+}
+
 export interface ServerToClientEvents {
+  'chat.started': (event: ChatStartedEvent) => void
   'composer.changed': (snapshot: ComposerSnapshot) => void
   'response.event': (event: ResponseEvent) => void
   'response.snapshot': (snapshot: ResponseSnapshot) => void

@@ -47,7 +47,7 @@ beforeEach(() => {
   useRealtimeStore.setState({ connectionPhase: 'idle', connected: false, syncError: null })
   container = document.createElement('div'); root = createRoot(container)
 })
-afterEach(async () => { await act(async () => root.unmount()); vi.useRealTimers() })
+afterEach(async () => { await act(async () => root.unmount()); vi.useRealTimers(); vi.restoreAllMocks() })
 async function mount() { await act(async () => root.render(<RealtimeProvider><span>App</span></RealtimeProvider>)) }
 
 describe('realtime session lifecycle', () => {
@@ -73,4 +73,23 @@ describe('realtime session lifecycle', () => {
     expect(sockets[0]!.disconnect).toHaveBeenCalledOnce()
     expect(useRealtimeStore.getState()).toMatchObject({ connectionPhase: 'idle', syncError: null })
   })
+})
+
+
+it('forwards chat starts with the instance/account scope and drops disconnected or disposed delivery', async () => {
+  const { mobileChatStarted } = await import('../features/chat/chatStarted')
+  const receive = vi.spyOn(mobileChatStarted, 'receive')
+  session.setState({ status: 'authenticated', user: { id: 'new-user', role: 'user', stateRevision: 0 } })
+  await mount()
+  const socket = sockets[0]!
+  const event = { chatId: 'new-chat', responseId: 'response' }
+  socket.fire('chat.started', event)
+  expect(receive).not.toHaveBeenCalled()
+  socket.connected = true
+  socket.fire('chat.started', event)
+  expect(receive).toHaveBeenCalledWith('https://pulpo.test|new-user', event)
+  receive.mockClear()
+  await act(async () => session.setState({ status: 'anonymous', token: null }))
+  socket.fire('chat.started', event)
+  expect(receive).not.toHaveBeenCalled()
 })

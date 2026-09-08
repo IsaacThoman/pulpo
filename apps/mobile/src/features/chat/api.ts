@@ -1,3 +1,4 @@
+import { mobileChatStarted } from './chatStarted'
 import { Directory, File, Paths } from 'expo-file-system'
 import * as Crypto from 'expo-crypto'
 import * as Sharing from 'expo-sharing'
@@ -144,6 +145,8 @@ export async function startChat(input: {
   attachmentIds?: string[]
   agentMode?: boolean
 }): Promise<{ chat: ServerChat; response: ResponseSnapshot }> {
+  const session = useSessionStore.getState()
+  if (session.user) mobileChatStarted.ignoreLocal(cacheNamespace(session.instanceUrl, session.user.id), input.chatId)
   const now = new Date().toISOString()
   const queued: ResponseSnapshot = {
     responseId: input.responseId,

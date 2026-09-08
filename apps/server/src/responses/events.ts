@@ -1,5 +1,5 @@
 import { eq, sql } from 'drizzle-orm'
-import { eventHasAssistantReplyText, hasAssistantReplyText, type ResponseEvent, type ResponseSnapshot, type StateInvalidationScope } from '@pulpo/contracts'
+import { eventHasAssistantReplyText, hasAssistantReplyText, type ChatStartedEvent, type ResponseEvent, type ResponseSnapshot, type StateInvalidationScope } from '@pulpo/contracts'
 import { db } from '../database/client.js'
 import { responses } from '../database/schema.js'
 import { redis } from '../redis.js'
@@ -72,6 +72,10 @@ export async function publishStateChange(input: {
   scopes?: StateInvalidationScope[]
 }): Promise<void> {
   await redis.publish('pulpo:state-changes', JSON.stringify(input))
+}
+
+export async function publishChatStarted(userId: string, event: ChatStartedEvent): Promise<void> {
+  await redis.publish('pulpo:chat-started', JSON.stringify({ userId, ...event }))
 }
 
 export async function publishSessionRevocation(userId: string): Promise<void> {
