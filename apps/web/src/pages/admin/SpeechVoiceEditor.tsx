@@ -1,4 +1,4 @@
-import { useId, useState } from 'react'
+import { useId, useState, type ReactNode } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
 import { OPENAI_SPEECH_PRESET, type SpeechModel } from '@pulpo/contracts'
 import { Button } from '@/components/ui/button'
@@ -7,7 +7,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { ui } from '@/i18n/ui'
 import { speechVoiceIssues, type VoiceSettings } from './speech-voice-validation'
 
-export function SpeechVoiceEditor({ value, onChange }: { value: VoiceSettings; onChange: (value: VoiceSettings) => void }) {
+export function SpeechVoiceEditor({ value, onChange, renderPreview }: { value: VoiceSettings; onChange: (value: VoiceSettings) => void; renderPreview?: (index: number) => ReactNode }) {
   const id = useId()
   const [bulk, setBulk] = useState('')
   const [bulkError, setBulkError] = useState('')
@@ -37,6 +37,7 @@ export function SpeechVoiceEditor({ value, onChange }: { value: VoiceSettings; o
   }
   return <fieldset className="min-w-0 space-y-3">
     <legend className="text-sm font-medium">{ui('Voices')}</legend>
+    {renderPreview && <p className="text-xs text-muted-foreground">{ui('Each voice can have an optional MP3 or WAV preview, up to 30 seconds and 5 MiB.')}</p>}
     <div className="space-y-2">
       <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_3rem_2.25rem] gap-2 text-xs text-muted-foreground" aria-hidden="true">
         <span>{ui('Voice ID')}</span><span>{ui('Display name')}</span><span className="text-center">{ui('Default')}</span><span />
@@ -54,6 +55,7 @@ export function SpeechVoiceEditor({ value, onChange }: { value: VoiceSettings; o
           <input type="radio" name={`${id}-default`} className="size-4 appearance-none rounded-full border border-muted-foreground! bg-transparent checked:border-primary! checked:bg-primary checked:shadow-[inset_0_0_0_3px_var(--background)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:opacity-40" aria-label={ui('Use voice {{number}} as default', { number: index + 1 })} disabled={Boolean(issues.rows[index]?.id)} checked={Boolean(defaultVoice) && !issues.rows[index]?.id && voice.id.trim() === defaultVoice} onChange={() => onChange({ ...value, defaultVoice: voice.id.trim() })} />
         </label>
         <Button type="button" variant="ghost" size="icon" aria-label={ui('Remove voice {{number}}', { number: index + 1 })} onClick={() => onChange({ voices: voices.filter((_, i) => i !== index), defaultVoice: voice.id.trim() === defaultVoice ? '' : defaultVoice })}><Trash2 className="size-4" /></Button>
+        {renderPreview && <div className="col-span-4 pb-2">{renderPreview(index)}</div>}
       </div>)}
     </div>
     {issues.selection && <p role="status" className="text-xs text-destructive">{issues.selection}</p>}

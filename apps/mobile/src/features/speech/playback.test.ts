@@ -16,7 +16,7 @@ vi.mock('expo-crypto', () => ({ randomUUID: () => '11111111-1111-4111-8111-11111
 vi.mock('../../api/client', () => ({ apiRequest: mocks.request, apiUrl: (url: string) => `https://instance.example${url}`, nativeAuthorizationHeaders: () => ({ authorization: 'Bearer session' }) }))
 vi.mock('../../store/preferences', () => ({ usePreferencesStore: { getState: () => ({ speech: mocks.preferences }) } }))
 vi.mock('../../store/session', () => ({ useSessionStore: { subscribe: (fn: typeof mocks.onSession) => { mocks.onSession = fn } } }))
-import { speechPlayback, readAloud, previewSpeechModel } from './playback'
+import { speechPlayback, readAloud, previewSpeechVoice } from './playback'
 const tick = () => new Promise(resolve => setTimeout(resolve, 0))
 beforeEach(() => {
   speechPlayback.stop(); vi.clearAllMocks(); mocks.appState = 'active'
@@ -25,8 +25,8 @@ beforeEach(() => {
 })
 describe('native speech lifecycle', () => {
   it('previews uploaded samples without generating speech and stops on background', async () => {
-    const run = previewSpeechModel('speech'); await tick()
-    expect(fetch).toHaveBeenCalledWith('https://instance.example/api/speech-models/speech/preview', expect.objectContaining({ headers: { authorization: 'Bearer session' } }))
+    const run = previewSpeechVoice('speech', 'coral'); await tick()
+    expect(fetch).toHaveBeenCalledWith('https://instance.example/api/speech-models/speech/voices/coral/preview', expect.objectContaining({ headers: { authorization: 'Bearer session' } }))
     expect(mocks.request).not.toHaveBeenCalled(); expect(mocks.play).toHaveBeenCalledOnce()
     mocks.onAppState?.('background'); await run
     expect(mocks.remove).toHaveBeenCalledOnce(); expect(mocks.deleteFile).toHaveBeenCalledOnce()

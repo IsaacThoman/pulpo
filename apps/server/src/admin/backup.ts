@@ -89,7 +89,7 @@ export async function createFullBackup(jobId: string, finalAttempt = true): Prom
         database,
         avatarBlobRows: await tx.select({ objectKey: users.avatarObjectKey }).from(users).where(sql`${users.avatarObjectKey} is not null`),
         iconRows: await tx.select().from(catalogIcons),
-        speechBlobRows: await tx.select({ objectKey: speechModels.previewObjectKey, checksum: speechModels.previewChecksum }).from(speechModels).where(sql`${speechModels.previewObjectKey} is not null`),
+        speechBlobRows: (await tx.select({ previews: speechModels.voicePreviews }).from(speechModels)).flatMap(row => row.previews),
         temporaryQueuedAttachmentRows: await tx.select({ attachmentIds: queuedMessages.attachmentIds })
           .from(queuedMessages).innerJoin(chats, eq(chats.id, queuedMessages.chatId)).where(eq(chats.temporary, true)),
       }
@@ -235,13 +235,20 @@ export async function restoreFullBackup(jobId: string): Promise<void> {
           if (!replacement) throw new Error(`Backup is missing a blob referenced by ${table}`)
           row[field] = replacement
         }
+        if (table === 'speech_models') {
+          for (const clip of row.voice_previews as Array<{ objectKey: string }>) {
+            const replacement = blobKeys.get(clip.objectKey)
+            if (!replacement) throw new Error('Backup is missing a speech voice preview blob')
+            clip.objectKey = replacement
+          }
+        }
         yield row
       }
     }
     const oldAttachmentBlobs = await db.select({ key: attachments.objectKey }).from(attachments)
     const oldAvatarBlobs = await db.select({ key: users.avatarObjectKey }).from(users).where(sql`${users.avatarObjectKey} is not null`)
     const oldIconRows = await db.select().from(catalogIcons)
-    const oldSpeechBlobs = await db.select({ key: speechModels.previewObjectKey }).from(speechModels).where(sql`${speechModels.previewObjectKey} is not null`)
+    const oldSpeechBlobs = (await db.select({ previews: speechModels.voicePreviews }).from(speechModels)).flatMap(row => row.previews.map(clip => ({ key: clip.objectKey })))
     const oldBlobs = [
       ...oldAttachmentBlobs,
       ...oldSpeechBlobs.map(row => ({ key: row.key! })),

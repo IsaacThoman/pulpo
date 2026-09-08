@@ -24,22 +24,23 @@ export async function cleanupSpeechPreview(key: string | null | undefined, reque
   if (key) await getBlobStore().delete(key).catch(() => request.log.warn('Speech preview cleanup failed'))
 }
 export async function registerSpeechPreviewRoutes(app: FastifyInstance) {
-  app.get('/api/speech-models/:id/preview', async (request, reply) => {
+  app.get('/api/speech-models/:id/voices/:voiceId/preview', async (request, reply) => {
     const user = requireUser(request)
-    const { id } = request.params as { id: string }
+    const { id, voiceId } = request.params as { id: string; voiceId: string }
     const [row] = await db.select({ model: speechModels, enabled: providerConnections.enabled }).from(speechModels)
       .innerJoin(providerConnections, eq(providerConnections.id, speechModels.providerConnectionId)).where(eq(speechModels.id, id)).limit(1)
-    if (!row?.model.previewObjectKey || (user.role !== 'admin' && (!row.enabled || !row.model.config.enabled))) throw notFound('Speech preview')
-    const contentType = row.model.previewContentType
+    const preview = row?.model.voicePreviews.find(clip => clip.voiceId === voiceId)
+    if (!row || !preview || !row.model.config.voices.some(voice => voice.id === voiceId) || (user.role !== 'admin' && (!row.enabled || !row.model.config.enabled))) throw notFound('Speech preview')
+    const contentType = preview.contentType
     if (contentType !== 'audio/mpeg' && contentType !== 'audio/wav') throw notFound('Speech preview')
     return reply.header('cache-control', 'no-store').header('x-content-type-options', 'nosniff').type(contentType)
-      .send(Buffer.from(await getBlobStore().get(row.model.previewObjectKey)))
+      .send(Buffer.from(await getBlobStore().get(preview.objectKey)))
   })
-  app.post('/api/admin/speech-models/:id/preview', { bodyLimit: MAX_PREVIEW_BYTES + 65536 }, async (request, reply) => {
+  app.post('/api/admin/speech-models/:id/voices/:voiceId/preview', { bodyLimit: MAX_PREVIEW_BYTES + 65536 }, async (request, reply) => {
     const admin = requireAdmin(request)
-    const { id } = request.params as { id: string }
+    const { id, voiceId } = request.params as { id: string; voiceId: string }
     const [model] = await db.select().from(speechModels).where(eq(speechModels.id, id)).limit(1)
-    if (!model) throw notFound('Speech model')
+    if (!model?.config.voices.some(voice => voice.id === voiceId)) throw notFound('Speech voice')
     let bytes: Buffer
     try {
       const file = await request.file({ limits: { fileSize: MAX_PREVIEW_BYTES, files: 1, fields: 0, parts: 1 } })
@@ -57,24 +58,24 @@ export async function registerSpeechPreviewRoutes(app: FastifyInstance) {
       await getBlobStore().put(key, bytes, { contentType, contentLength: bytes.length })
       oldKey = await db.transaction(async tx => {
         const [current] = await tx.select().from(speechModels).where(eq(speechModels.id, id)).for('update')
-        if (!current) throw notFound('Speech model')
-        await tx.update(speechModels).set({ previewObjectKey: key, previewContentType: contentType, previewChecksum: createHash('sha256').update(bytes).digest('hex'), updatedAt: new Date() }).where(eq(speechModels.id, id))
-        await tx.insert(auditEvents).values({ id: newId(), actorUserId: admin.id, action: 'speech_preview.updated', targetType: 'speech_model', targetId: id })
-        return current.previewObjectKey
+        if (!current?.config.voices.some(voice => voice.id === voiceId)) throw notFound('Speech voice')
+        await tx.update(speechModels).set({ voicePreviews: [...current.voicePreviews.filter(clip => clip.voiceId !== voiceId), { voiceId, objectKey: key, contentType, checksum: createHash('sha256').update(bytes).digest('hex') }], updatedAt: new Date() }).where(eq(speechModels.id, id))
+        await tx.insert(auditEvents).values({ id: newId(), actorUserId: admin.id, action: 'speech_preview.updated', targetType: 'speech_model', targetId: id, metadata: { voiceId } })
+        return current.voicePreviews.find(clip => clip.voiceId === voiceId)?.objectKey ?? null
       })
     } catch (error) { await cleanupSpeechPreview(key, request); throw error }
     await cleanupSpeechPreview(oldKey, request)
     return reply.code(201).send({ previewAvailable: true })
   })
-  app.delete('/api/admin/speech-models/:id/preview', async (request, reply) => {
+  app.delete('/api/admin/speech-models/:id/voices/:voiceId/preview', async (request, reply) => {
     const admin = requireAdmin(request)
-    const { id } = request.params as { id: string }
+    const { id, voiceId } = request.params as { id: string; voiceId: string }
     const oldKey = await db.transaction(async tx => {
       const [current] = await tx.select().from(speechModels).where(eq(speechModels.id, id)).for('update')
       if (!current) throw notFound('Speech model')
-      await tx.update(speechModels).set({ previewObjectKey: null, previewContentType: null, previewChecksum: null, updatedAt: new Date() }).where(eq(speechModels.id, id))
-      await tx.insert(auditEvents).values({ id: newId(), actorUserId: admin.id, action: 'speech_preview.deleted', targetType: 'speech_model', targetId: id })
-      return current.previewObjectKey
+      await tx.update(speechModels).set({ voicePreviews: current.voicePreviews.filter(clip => clip.voiceId !== voiceId), updatedAt: new Date() }).where(eq(speechModels.id, id))
+      await tx.insert(auditEvents).values({ id: newId(), actorUserId: admin.id, action: 'speech_preview.deleted', targetType: 'speech_model', targetId: id, metadata: { voiceId } })
+      return current.voicePreviews.find(clip => clip.voiceId === voiceId)?.objectKey ?? null
     })
     await cleanupSpeechPreview(oldKey, request)
     return reply.code(204).send()

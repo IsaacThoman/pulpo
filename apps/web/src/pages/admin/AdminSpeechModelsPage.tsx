@@ -1,10 +1,10 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
-import { Loader2, Play, Square, Trash2 } from 'lucide-react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 import { OPENAI_SPEECH_PRESET, speechModelSchema, type SpeechModel, type SpeechModelCatalogEntry } from '@pulpo/contracts'
-import { previewSpeechFile, previewSpeechModel, speechPlayback } from '@/features/speech/playback'
+import { speechPlayback } from '@/features/speech/playback'
 import { apiRequest } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { SpeechVoicePreview } from './SpeechVoicePreview'
 import { SpeechVoiceEditor } from './SpeechVoiceEditor'
 import { speechVoiceIssues } from './speech-voice-validation'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -14,11 +14,8 @@ export function AdminSpeechModelsPage() {
   const [models, setModels] = useState<SpeechModelCatalogEntry[]>([])
   const [providers, setProviders] = useState<Array<{ id: string; name: string }>>([])
   const [draft, setDraft] = useState<SpeechModelCatalogEntry | null>(null)
-  const [previewFile, setPreviewFile] = useState<File | null>(null)
-  const previewInput = useRef<HTMLInputElement>(null)
-  const [removePreview, setRemovePreview] = useState(false)
   const playback = useSyncExternalStore(speechPlayback.subscribe, speechPlayback.getSnapshot, speechPlayback.getSnapshot)
-  const previewing = Boolean(playback.key?.startsWith('preview:'))
+  const [previewChanges, setPreviewChanges] = useState<Record<string, File | null>>({})
   useEffect(() => () => { if (speechPlayback.getSnapshot().key?.startsWith('preview:')) speechPlayback.stop() }, [])
   const [editing, setEditing] = useState(false)
   const [error, setError] = useState('')
@@ -30,7 +27,7 @@ export function AdminSpeechModelsPage() {
   useEffect(() => { void load().catch(error => setError(error.message)) }, [])
   const open = (model?: SpeechModelCatalogEntry) => {
     const next = model ?? { ...OPENAI_SPEECH_PRESET, id: '', providerConnectionId: providers[0]?.id ?? '' }
-    speechPlayback.stop(); setPreviewFile(null); setRemovePreview(false)
+    speechPlayback.stop(); setPreviewChanges({})
     setDraft(next); setEditing(Boolean(model)); setError('')
   }
   const field = (key: keyof SpeechModel, value: unknown) => setDraft(current => current ? { ...current, [key]: value } : current)
@@ -44,10 +41,14 @@ export function AdminSpeechModelsPage() {
       const model = speechModelSchema.parse(draft)
       await apiRequest(editing ? `/api/admin/speech-models/${model.id}` : '/api/admin/speech-models', { method: editing ? 'PATCH' : 'POST', body: model })
       setEditing(true)
-      if (previewFile) {
-        const body = new FormData(); body.append('file', previewFile)
-        await apiRequest(`/api/admin/speech-models/${model.id}/preview`, { method: 'POST', body })
-      } else if (removePreview) await apiRequest(`/api/admin/speech-models/${model.id}/preview`, { method: 'DELETE' })
+      for (const voice of model.voices) {
+        const change = previewChanges[voice.id]
+        const path = `/api/admin/speech-models/${model.id}/voices/${encodeURIComponent(voice.id)}/preview`
+        if (change) {
+          const body = new FormData(); body.append('file', change)
+          await apiRequest(path, { method: 'POST', body })
+        } else if (change === null) await apiRequest(path, { method: 'DELETE' })
+      }
       await load(); speechPlayback.stop(); setDraft(null)
     } catch (error) { setError(error instanceof Error ? error.message : 'Unable to save speech model') }
     finally { setSaving(false) }
@@ -60,27 +61,16 @@ export function AdminSpeechModelsPage() {
       {text('id', 'ID')}{text('name', 'Display name')}
       <label className="block text-sm">{ui('Provider')}<select aria-label={ui('Provider')} className="mt-1 w-full rounded border bg-background p-2" value={draft.providerConnectionId} onChange={e => field('providerConnectionId', e.target.value)}>{providers.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
       {text('upstreamModelId', 'Upstream model ID')}{toggle('enabled', 'Enabled')}{number('sortOrder', 'Sort order')}
-      <SpeechVoiceEditor value={draft} onChange={value => setDraft(current => current ? { ...current, ...value } : current)} />
-      <fieldset className="min-w-0 space-y-2 rounded-lg border p-3">
-        <legend className="px-1 text-sm font-medium">{ui('Preview clip (optional)')}</legend>
-        <p className="text-xs text-muted-foreground">{ui('Upload an MP3 or WAV sample, up to 30 seconds and 5 MiB. Users can play it for free before choosing this model.')}</p>
-        <Button variant="outline" size="sm" disabled={saving} onClick={() => previewInput.current?.click()}>{ui(previewFile || (draft.previewAvailable && !removePreview) ? 'Replace preview' : 'Upload preview clip')}</Button>
-        <input ref={previewInput} className="hidden" type="file" aria-label={ui('Upload preview clip')} accept="audio/mpeg,audio/wav,.mp3,.wav" disabled={saving} onChange={event => {
-          const file = event.target.files?.[0]; event.target.value = ''
-          if (!file) return
-          if (file.size > 5 * 1024 * 1024) { setError(ui('Preview clips may be at most 5 MiB')); return }
-          speechPlayback.stop(); setPreviewFile(file); setRemovePreview(false); setError('')
-        }} />
-        {(previewFile || (draft.previewAvailable && !removePreview)) && <div className="flex flex-wrap items-center gap-2">
-          <span className="min-w-0 flex-1 break-words text-xs text-muted-foreground">{previewFile?.name ?? ui('Preview clip uploaded')}</span>
-          <Button variant="outline" size="sm" onClick={() => { if (previewing) speechPlayback.stop(); else if (previewFile) void previewSpeechFile(previewFile); else void previewSpeechModel(draft.id) }}>
-            {previewing ? playback.phase === 'loading' ? <Loader2 className="size-4 animate-spin" /> : <Square className="size-4" /> : <Play className="size-4" />}{ui(previewing ? 'Stop preview' : 'Play preview')}
-          </Button>
-          <Button variant="ghost" size="sm" disabled={saving} onClick={() => { speechPlayback.stop(); setPreviewFile(null); setRemovePreview(true) }}><Trash2 className="size-4" />{ui('Remove preview')}</Button>
-        </div>}
-        {removePreview && draft.previewAvailable && <p className="text-xs text-muted-foreground">{ui('The preview will be removed when you save.')}</p>}
-        {playback.error && <p role="alert" className="text-sm text-destructive">{playback.error}</p>}
-      </fieldset>
+      <SpeechVoiceEditor value={draft} onChange={value => {
+        speechPlayback.stop()
+        setDraft(current => current ? { ...current, ...value, voices: value.voices.map(voice => ({ ...voice,
+          previewAvailable: models.find(model => model.id === current.id)?.voices.some(saved => saved.id === voice.id && saved.previewAvailable) ?? false,
+        })) } : current)
+      }} renderPreview={index => {
+        const voice = draft.voices[index]!
+        return <SpeechVoicePreview modelId={draft.id} voiceId={voice.id.trim()} label={voice.label || voice.id} available={Boolean(voice.previewAvailable)} change={previewChanges[voice.id.trim()]} disabled={saving || Boolean(speechVoiceIssues(draft).rows[index]?.id)} onChange={change => setPreviewChanges(current => ({ ...current, [voice.id.trim()]: change }))} onError={setError} />
+      }} />
+      {playback.error && <p role="alert" className="text-sm text-destructive">{playback.error}</p>}
       {toggle('supportsInstructions', 'Supports instructions')}{toggle('supportsSpeed', 'Supports speed')}
       {draft.supportsSpeed && <div className="grid grid-cols-2 gap-3">{number('speedMin', 'Minimum speed')}{number('speedMax', 'Maximum speed')}</div>}
       <div className="grid grid-cols-2 gap-3">{number('maxInputCharacters', 'Maximum input characters')}{number('maxInputTokens', 'Token limit (blank for none)')}</div>

@@ -5,7 +5,6 @@ describe('settings dialog sections', () => {
   it('keeps profile, security, and devices separate and in the expected navigation order', () => {
     expect(SETTINGS_SECTION_IDS).toEqual([
       'general',
-      'speech',
       'profile',
       'security',
       'devices',

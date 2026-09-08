@@ -14,9 +14,9 @@ import { chargeMeteredUsage } from '../accounting/service.js'
 import { generateSpeech, speechCost } from './provider.js'
 import { cleanupSpeechPreview, registerSpeechPreviewRoutes } from './preview.js'
 
-export function publicSpeechModel(model: SpeechModel, previewAvailable = false): PublicSpeechModel {
+export function publicSpeechModel(model: SpeechModel, previews: Array<{ voiceId: string }> = []): PublicSpeechModel {
   const { providerConnectionId: _provider, upstreamModelId: _upstream, ...value } = model
-  return { ...value, previewAvailable }
+  return { ...value, voices: value.voices.map(voice => ({ ...voice, previewAvailable: previews.some(clip => clip.voiceId === voice.id) })) }
 }
 export function validateSpeechInput(model: SpeechModel, input: ReturnType<typeof speechRequestSchema.parse>) {
   if (!model.voices.some(voice => voice.id === input.voice)) throw new AppError(400, 'speech_voice_invalid', 'Choose an available speech voice')
@@ -28,12 +28,12 @@ export async function registerSpeechRoutes(app: FastifyInstance) {
   await registerSpeechPreviewRoutes(app)
   app.get('/api/admin/speech-models', async request => {
     requireAdmin(request)
-    return { data: (await db.select().from(speechModels)).map(row => ({ ...row.config, previewAvailable: Boolean(row.previewObjectKey) })).sort((a,b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name)) }
+    return { data: (await db.select().from(speechModels)).map(row => ({ ...row.config, voices: row.config.voices.map(voice => ({ ...voice, previewAvailable: row.voicePreviews.some(clip => clip.voiceId === voice.id) })) })).sort((a,b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name)) }
   })
   app.get('/api/speech-models', async request => {
     requireUser(request)
-    const rows = await db.select({ config: speechModels.config, enabled: providerConnections.enabled, previewObjectKey: speechModels.previewObjectKey }).from(speechModels).innerJoin(providerConnections, eq(providerConnections.id, speechModels.providerConnectionId))
-    return { data: rows.filter(row => row.enabled && row.config.enabled).map(row => publicSpeechModel(row.config, Boolean(row.previewObjectKey))).sort((a,b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name)) }
+    const rows = await db.select({ config: speechModels.config, enabled: providerConnections.enabled, voicePreviews: speechModels.voicePreviews }).from(speechModels).innerJoin(providerConnections, eq(providerConnections.id, speechModels.providerConnectionId))
+    return { data: rows.filter(row => row.enabled && row.config.enabled).map(row => publicSpeechModel(row.config, row.voicePreviews)).sort((a,b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name)) }
   })
   const save = async (request: Parameters<typeof requireAdmin>[0], create: boolean) => {
     const admin = requireAdmin(request)
@@ -42,16 +42,22 @@ export async function registerSpeechRoutes(app: FastifyInstance) {
     const [provider] = await db.select().from(providerConnections).where(eq(providerConnections.id, model.providerConnectionId)).limit(1)
     if (!provider || !provider.encryptedApiKey) throw new AppError(400, 'speech_provider_invalid', 'Choose a provider with an API key')
     await assertSafeProviderUrl(provider.baseUrl)
+    const removedKeys: string[] = []
     await db.transaction(async tx => {
       if (create) {
         const rows = await tx.insert(speechModels).values({ id: model.id, providerConnectionId: model.providerConnectionId, config: model }).onConflictDoNothing().returning()
         if (!rows.length) throw new AppError(409, 'speech_model_exists', 'This speech model ID already exists')
       } else {
-        const rows = await tx.update(speechModels).set({ config: model, providerConnectionId: model.providerConnectionId, updatedAt: new Date() }).where(eq(speechModels.id, model.id)).returning()
+        const [current] = await tx.select().from(speechModels).where(eq(speechModels.id, model.id)).for('update')
+        if (!current) throw new AppError(404, 'speech_model_missing', 'Speech model not found')
+        const retained = current.voicePreviews.filter(clip => model.voices.some(voice => voice.id === clip.voiceId))
+        removedKeys.push(...current.voicePreviews.filter(clip => !retained.includes(clip)).map(clip => clip.objectKey))
+        const rows = await tx.update(speechModels).set({ config: model, voicePreviews: retained, providerConnectionId: model.providerConnectionId, updatedAt: new Date() }).where(eq(speechModels.id, model.id)).returning()
         if (!rows.length) throw new AppError(404, 'speech_model_missing', 'Speech model not found')
       }
       await tx.insert(auditEvents).values({ id: newId(), actorUserId: admin.id, action: create ? 'speech_model.created' : 'speech_model.updated', targetType: 'speech_model', targetId: model.id })
     })
+    for (const key of removedKeys) await cleanupSpeechPreview(key, request)
     return model
   }
   app.post('/api/admin/speech-models', async (request, reply) => reply.code(201).send(await save(request, true)))
@@ -63,7 +69,7 @@ export async function registerSpeechRoutes(app: FastifyInstance) {
       await tx.insert(auditEvents).values({ id: newId(), actorUserId: admin.id, action: 'speech_model.deleted', targetType: 'speech_model', targetId: id })
       return model
     })
-    await cleanupSpeechPreview(deleted?.previewObjectKey, request)
+    for (const clip of deleted?.voicePreviews ?? []) await cleanupSpeechPreview(clip.objectKey, request)
     return reply.code(204).send()
   })
   app.post('/api/speech', { bodyLimit: 96 * 1024, config: { rateLimit: { max: 40, timeWindow: '1 minute' } } }, async (request, reply) => {

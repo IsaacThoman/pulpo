@@ -21,10 +21,10 @@ export async function readAloud(key: string, markdown: string) {
   await speechPlayback.start(key, async signal => {
     if (AppState.currentState !== 'active') throw new Error('Open the app to read aloud')
     const preferences = usePreferencesStore.getState().speech
-    if (!preferences.modelId) throw new Error('Choose a speech model in Settings → Speech')
+    if (!preferences.modelId) throw new Error('Choose a speech model in Settings → Interface → Speech')
     const { data } = await apiRequest<{ data: PublicSpeechModel[] }>('/api/speech-models', { signal })
     const selected = data.find(model => model.id === preferences.modelId)
-    if (!selected) throw new Error('Your speech model is unavailable. Choose another in Settings → Speech')
+    if (!selected) throw new Error('Your speech model is unavailable. Choose another in Settings → Interface → Speech')
     model = selected; settings = preferences.models[model.id]
     instructions = model.supportsInstructions ? settings?.instructions ?? '' : ''
     const chunks = speechChunks(speechText(markdown), model, instructions)
@@ -46,11 +46,11 @@ useSessionStore.subscribe((state, previous) => {
   if (state.user?.id !== previous.user?.id || state.instanceUrl !== previous.instanceUrl || state.token !== previous.token) speechPlayback.stop()
 })
 
-export function previewSpeechModel(modelId: string) {
-  return speechPlayback.start(`preview:${modelId}`, ['preview'], async (_, signal) => {
+export function previewSpeechVoice(modelId: string, voiceId: string) {
+  return speechPlayback.start(`preview:${modelId}:${voiceId}`, ['preview'], async (_, signal) => {
     if (AppState.currentState !== 'active') throw new Error('Open the app to preview speech')
     await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true, shouldPlayInBackground: false })
-    const response = await fetch(apiUrl(`/api/speech-models/${encodeURIComponent(modelId)}/preview`), { signal, headers: nativeAuthorizationHeaders() })
+    const response = await fetch(apiUrl(`/api/speech-models/${encodeURIComponent(modelId)}/voices/${encodeURIComponent(voiceId)}/preview`), { signal, headers: nativeAuthorizationHeaders() })
     if (!response.ok) throw new Error('This preview is unavailable')
     const bytes = new Uint8Array(await response.arrayBuffer())
     return nativeSpeechAudio(bytes, response.headers.get('content-type')?.includes('wav') ? 'wav' : 'mp3', signal)

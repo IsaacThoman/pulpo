@@ -91,3 +91,13 @@ describe('full backup format', () => {
     expect(database.request_logs[0]!.capture_detailed_payloads).toBe(true)
   })
 })
+
+it('restores old model samples as default-voice previews and preserves separate voice clips', () => {
+  const legacy = { config: { defaultVoice: 'coral' }, preview_object_key: 'old.wav', preview_content_type: 'audio/wav', preview_checksum: 'checksum' }
+  const current = { config: { defaultVoice: 'coral' }, voice_previews: [{ voiceId: 'alloy', objectKey: 'alloy.wav' }, { voiceId: 'coral', objectKey: 'coral.wav' }] }
+  const database = { speech_models: [legacy, current, { config: { defaultVoice: 'coral' } }] }
+  applyFullBackupCompatibilityDefaults(database)
+  expect(database.speech_models[0]).toMatchObject({ preview_object_key: null, voice_previews: [{ voiceId: 'coral', objectKey: 'old.wav', contentType: 'audio/wav', checksum: 'checksum' }] })
+  expect(database.speech_models[1]).toMatchObject({ voice_previews: current.voice_previews })
+  expect(database.speech_models[2]).toMatchObject({ voice_previews: [] })
+})

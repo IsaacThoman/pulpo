@@ -15,10 +15,10 @@ export async function readAloud(key: string, markdown: string) {
   let instructions = ''
   await speechPlayback.start(key, async signal => {
     const preferences = useSettings.getState().speech
-    if (!preferences.modelId) throw new Error('Choose a speech model in Settings → Speech')
+    if (!preferences.modelId) throw new Error('Choose a speech model in Settings → Interface → Speech')
     const { data } = await apiRequest<{ data: PublicSpeechModel[] }>('/api/speech-models', { signal })
     const selected = data.find(model => model.id === preferences.modelId)
-    if (!selected) throw new Error('Your speech model is unavailable. Choose another in Settings → Speech')
+    if (!selected) throw new Error('Your speech model is unavailable. Choose another in Settings → Interface → Speech')
     model = selected; settings = preferences.models[model.id]
     instructions = model.supportsInstructions ? settings?.instructions ?? '' : ''
     const chunks = speechChunks(speechText(markdown), model, instructions)
@@ -36,14 +36,14 @@ document.addEventListener('visibilitychange', () => { if (document.hidden) speec
 useAuth.subscribe((state, previous) => { if (state.user?.id !== previous.user?.id) speechPlayback.stop() })
 useChat.subscribe((state, previous) => { if (state.activeChatId !== previous.activeChatId) speechPlayback.stop() })
 
-export function previewSpeechModel(modelId: string) {
-  return speechPlayback.start(`preview:${modelId}`, ['preview'], async (_, signal) => {
+export function previewSpeechVoice(modelId: string, voiceId: string) {
+  return speechPlayback.start(`preview:${modelId}:${voiceId}`, ['preview'], async (_, signal) => {
     if (document.hidden) throw new Error('Open the app to preview speech')
-    return browserSpeechAudio(await fetchApiBlob(`/api/speech-models/${encodeURIComponent(modelId)}/preview`, { signal }))
+    return browserSpeechAudio(await fetchApiBlob(`/api/speech-models/${encodeURIComponent(modelId)}/voices/${encodeURIComponent(voiceId)}/preview`, { signal }))
   })
 }
-export function previewSpeechFile(file: File) {
-  return speechPlayback.start('preview:upload', ['preview'], async () => {
+export function previewSpeechFile(file: File, key = 'preview:upload') {
+  return speechPlayback.start(key, ['preview'], async () => {
     if (document.hidden) throw new Error('Open the app to preview speech')
     return browserSpeechAudio(file)
   })
