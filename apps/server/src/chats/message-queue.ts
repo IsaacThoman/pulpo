@@ -138,6 +138,7 @@ export async function createQueuedMessage(
       billingUserId: attribution.billingUserId,
       actorUserId: attribution.actorUserId,
       content: input.input,
+      timeZone: input.timeZone ?? null,
       modelId: input.modelId,
       presetSelections: input.presetSelections,
       agentMode: input.agentMode,
@@ -196,6 +197,7 @@ export async function updateQueuedMessage(
     } else {
       await tx.update(queuedMessages).set({
         content: input.input,
+        timeZone: input.timeZone ?? null,
         modelId: input.modelId,
         presetSelections: input.presetSelections,
         agentMode: input.agentMode,
@@ -307,6 +309,7 @@ export async function advanceMessageQueue(chatId: string): Promise<void> {
         input: {
           clientId: claim.dispatchResponseId,
           input: claim.content,
+          timeZone: claim.timeZone ?? undefined,
           modelId: claim.modelId,
           presetSelections: claim.presetSelections,
           attachmentIds: claim.attachmentIds,

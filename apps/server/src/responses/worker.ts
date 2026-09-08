@@ -66,6 +66,7 @@ import { codexErrorRequiresReauthentication, createCodexModels, markCodexReauthe
 import { codexInferenceReferenceCostMicros } from '../codex/reference-cost.js'
 import { agentThinkingLevel } from '../agent/model-parameters.js'
 import { estimateInputTokens } from '../accounting/pricing.js'
+import { generationTimeContext, TIME_CONTEXT_INSTRUCTIONS, withGenerationTimeContext } from './time-context.js'
 
 type UpstreamEvent = { type: string; [key: string]: unknown }
 
@@ -210,6 +211,7 @@ async function contextualInput(
   recallItem: RecallItem | null,
   memoryContext: string,
   publicApi: boolean,
+  startedAt: number,
   onCompactionUpdate: (item: CompactionItem) => Promise<void>,
   onBilledCost: (costMicros: number) => void,
 ): Promise<{ input: unknown[]; compactionItems: CompactionItem[] }> {
@@ -226,6 +228,11 @@ async function contextualInput(
   if (memoryContext) context.push({ role: 'developer', content: memoryContext })
   const recallContext = recalledChatContext(recallItem)
   if (recallContext) context.push({ role: 'developer', content: recallContext })
+  const timeContext = publicApi ? '' : generationTimeContext(record.response, startedAt)
+  if (timeContext) {
+    context.push({ role: 'developer', content: TIME_CONTEXT_INSTRUCTIONS })
+    context.push({ role: 'developer', content: timeContext })
+  }
   const existingItem = (record.response.output as unknown[]).find((raw): raw is CompactionItem => {
     const item = raw as Partial<CompactionItem>
     return item.type === 'pulpo_compaction' && item.phase === 'pre_response'
@@ -367,7 +374,10 @@ async function processCodexGenerationAttempt(
   }
   const currentMessage = await codexCurrentUserMessage(record.response)
   const messages = [...(priorSummaryMessage ? [priorSummaryMessage] : []), ...exchanges.flatMap((exchange) => exchange.messages), currentMessage]
-  const context: Context = { systemPrompt: record.model.systemPrompt.trim() || undefined, messages }
+  const context: Context = {
+    systemPrompt: withGenerationTimeContext(record.model.systemPrompt, record.response, startedAt) || undefined,
+    messages,
+  }
   const codex = createCodexModels(record.response.userId)
   const piModel = codex.getModel('openai-codex', record.model.upstreamModelId)
   if (!piModel) throw new Error('The pinned Pi Codex catalog no longer contains this model')
@@ -704,7 +714,7 @@ async function processGenerationAttempt(
       updatedAt: new Date(emittedAt),
     }).where(eq(responses.id, responseId))
   }
-  const contextual = await contextualInput(client, record, history, requestLog.id, recallItem, memory.memoryContext, publicApi, async (item) => {
+  const contextual = await contextualInput(client, record, history, requestLog.id, recallItem, memory.memoryContext, publicApi, startedAt, async (item) => {
     sequence += 1
     const emittedAt = new Date().toISOString()
     const publicItem = sanitizeOutputForClient([item])[0]

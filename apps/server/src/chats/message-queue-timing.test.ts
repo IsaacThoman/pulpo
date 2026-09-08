@@ -30,7 +30,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   mocks.claim = {
     id: 'queued-1', dispatchResponseId: 'response-1', userId: 'user-1', chatId: 'chat-1',
-    content: 'Question', modelId: 'model-1', presetSelections: {}, attachmentIds: [], agentMode: false,
+    timeZone: 'America/New_York', content: 'Question', modelId: 'model-1', presetSelections: {}, attachmentIds: [], agentMode: false,
     status: 'pending', requestReceivedAt: new Date('2026-09-06T12:00:00Z'), createdAt: new Date('2026-09-06T12:00:02Z'),
   }
   mocks.selects = [[{ id: 'chat-1' }], [], [mocks.claim], [], [{ activeResponseId: null }], []]
@@ -40,6 +40,13 @@ describe('queued response timing', () => {
   it('retains original server receipt through delayed dispatch', async () => {
     await advanceMessageQueue('chat-1')
     expect(mocks.createResponse).toHaveBeenCalledWith(expect.objectContaining({ requestReceivedAt: mocks.claim.requestReceivedAt }))
+  })
+  it('carries only the timezone into a delayed generation request', async () => {
+    await advanceMessageQueue('chat-1')
+    const options = mocks.createResponse.mock.calls[0]![0]
+    expect(options.input.timeZone).toBe('America/New_York')
+    expect(options.input).not.toHaveProperty('localDate')
+    expect(options.input).not.toHaveProperty('timeContext')
   })
   it('uses creation time for a queue entry predating the timing migration', async () => {
     mocks.claim.requestReceivedAt = null

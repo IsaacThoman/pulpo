@@ -128,6 +128,7 @@ describe('chat queue store', () => {
     expect(useChat.getState().chats[0]?.queuedMessages).toHaveLength(1)
     await vi.waitFor(() => expect(requests).toHaveLength(1))
     expect(requests[0]).toMatchObject({ path: `/api/chats/${chatId}/queued-messages`, method: 'POST' })
+    expect(requests[0]!.body).toHaveProperty('timeZone', Intl.DateTimeFormat().resolvedOptions().timeZone)
     requests[0]!.resolve({ queuedMessage: queued() })
     await pending
 
@@ -148,6 +149,7 @@ describe('chat queue store', () => {
     })
     await vi.waitFor(() => expect(requests).toHaveLength(1))
     const saved = queued({ content: 'edited prompt', presetSelections: { effort: 'high' } })
+    expect(requests[0]!.body).toHaveProperty('timeZone', Intl.DateTimeFormat().resolvedOptions().timeZone)
     requests[0]!.resolve({ queuedMessage: saved })
     await pending
 

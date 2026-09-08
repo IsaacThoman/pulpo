@@ -220,6 +220,7 @@ export async function createResponse(options: CreateResponseOptions) {
     id,
     chatId: chat.id,
     requestReceivedAt: options.requestReceivedAt ?? now,
+    timeZone: options.apiKeyId ? null : options.input.timeZone ?? null,
     userId: options.ownerUserId,
     modelId: model.id,
     previousResponseId: parentResponseId,
