@@ -1,3 +1,4 @@
+import { speechPlayback } from '../speech/state'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { AppState, Platform } from 'react-native'
 import { AudioModule, RecordingPresets, setAudioModeAsync } from 'expo-audio'
@@ -83,6 +84,7 @@ export function useDictation(input: {
   }, [controller])
   const isBusy = useCallback(() => controller.busy, [controller])
   const start = () => {
+    speechPlayback.stop()
     if (!latest.current.enabled || !latest.current.canStart || controller.busy) return
     const original = latest.current.read()
     const identity = latest.current.identity

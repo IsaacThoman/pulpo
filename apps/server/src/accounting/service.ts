@@ -172,7 +172,7 @@ export async function chargeMeteredUsage(input: {
       availableMicros: availableAccountBalanceMicros({ balanceMicros: row.balanceMicros, pendingBalanceMicros: pendingByUser.get(row.id) ?? 0 }),
     }))
     const funding = allocatePoolBalanceMicros({ amountMicros: allocation.balanceMicros, callerUserId: input.userId, balances })
-    if (allocation.balanceMicros > 0 && !funding.size) throw new AppError(402, 'insufficient_balance', 'Insufficient balance for dictation')
+    if (allocation.balanceMicros > 0 && !funding.size) throw new AppError(402, 'insufficient_balance', 'Insufficient balance for metered usage')
 
     const ownChanges: Array<{ userId: string; revision: number }> = []
     for (const fundingUser of lockedUsers) {

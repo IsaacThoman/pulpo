@@ -1,6 +1,6 @@
 export const FULL_BACKUP_TABLES = [
   'users', 'friendships', 'user_blocks', 'password_credentials', 'user_totp_credentials', 'two_factor_recovery_codes', 'user_preferences', 'audit_events',
-  'catalog_icons', 'labs', 'provider_connections',
+  'catalog_icons', 'labs', 'provider_connections', 'speech_models', 'speech_requests',
   'models', 'model_pricing_versions', 'model_presets', 'model_preset_choices', 'folders', 'chats', 'responses',
   'response_items', 'response_content_parts', 'chat_shares', 'attachments', 'user_memory_documents', 'user_memory_document_revisions',
   'episodic_memory_generations', 'chat_turn_embeddings', 'episodic_memory_metric_buckets',
@@ -24,6 +24,7 @@ export const FULL_BACKUP_EXPLICIT_COLUMNS: Partial<Record<FullBackupTable, reado
 }
 
 export const OPTIONAL_TABLES_IN_LEGACY_BACKUPS: readonly FullBackupTable[] = [
+  'speech_models', 'speech_requests',
   'user_memory_documents',
   'user_memory_document_revisions',
   'episodic_memory_generations',

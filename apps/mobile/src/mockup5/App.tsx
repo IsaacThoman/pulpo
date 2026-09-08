@@ -1,3 +1,5 @@
+import { speechPlayback, readAloud } from '../features/speech/playback';
+import { speechText } from '@pulpo/client-core';
 import { INITIAL_TRANSCRIPT_ROWS, hasLargeInitialMessage, transcriptListMessages, usesBottomAnchoredTranscript } from '../features/chat/transcriptWindow';
 import { hasChatSelectionObserver, recordChatSelection, hasTranscriptPositionObserver, recordTranscriptPosition } from '../features/chat/selectionTiming';
 import { prepareChatSelection } from '../data/prepareChat';
@@ -1579,7 +1581,7 @@ function PrototypeRoot() {
   // input can then mount and auto-focus against a clean keyboard state.
   if (authKeyboardHandoffPending) return <AuthExperience key="auth" />;
   return (
-    <NavigationContainer theme={navigationTheme}>
+    <NavigationContainer theme={navigationTheme} onStateChange={() => speechPlayback.stop()}>
       <RootStack.Navigator
         initialRouteName="Chat"
         screenOptions={{ animation: 'default', contentStyle: { backgroundColor: isDark ? '#000000' : '#F5F5F7' }, headerShown: false, headerShadowVisible: false }}
@@ -1684,6 +1686,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   );
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const remoteStartedChatId = useRef<string | null>(null);
+  useEffect(() => { speechPlayback.stop(); return speechPlayback.stop; }, [activeChatId]);
   const [newChatTemporary, setNewChatTemporary] = useState(false);
   const [savingTemporaryChatId, setSavingTemporaryChatId] = useState<string | null>(null);
   const [input, setInput] = useState('');
@@ -2836,6 +2839,7 @@ function useMessageActionRunner({ message, onEdit, onRegenerate }: {
   }, [instanceUrl, message.chatId, queryClient, userId]);
 
   return useCallback((action: MessageAction) => {
+    if (['edit', 'delete', 'regenerate'].includes(action)) speechPlayback.stop();
     if (action === 'copy') {
       void copyText(message.text, 'Message copied');
       return;
@@ -2910,6 +2914,13 @@ function MessageContextMenu({
   children: ReactNode;
 }) {
   const { styles } = useChatStyles();
+  const speechState = useSyncExternalStore(speechPlayback.subscribe, speechPlayback.getSnapshot);
+  const speechKey = `${message.chatId ?? ''}:${message.id}`;
+  const speaking = speechState.key === speechKey;
+  const canSpeak = Boolean(speechText(message.text)) && (message.role === 'user' || !message.status || ['completed', 'complete', 'failed', 'stopped'].includes(message.status));
+  useEffect(() => () => { if (speechPlayback.getSnapshot().key === speechKey) speechPlayback.stop(); }, [speechKey, message.text]);
+  const speak = () => { void readAloud(speechKey, message.text).then(() => { const error = speechPlayback.getSnapshot().error; if (error) Alert.alert('Read aloud', error); }).catch(error => Alert.alert('Read aloud', error.message)); };
+  const speechLabel = speaking ? (speechState.phase === 'loading' ? 'Stop preparing speech' : 'Stop reading') : 'Read aloud';
   const runAction = useMessageActionRunner({ message, onEdit, onRegenerate });
   const previewText = message.text.length > 2_000
     ? `${message.text.slice(0, 1_999)}…`
@@ -2925,6 +2936,7 @@ function MessageContextMenu({
         { label: 'Reply', icon: 'arrowshape.turn.up.left', onPress: () => runAction('reply') },
         { label: message.role === 'user' ? 'Edit message' : 'Edit response', icon: 'pencil', onPress: () => runAction('edit') },
         ...(message.role === 'assistant' ? [{ label: 'Regenerate response', icon: 'arrow.clockwise', onPress: () => runAction('regenerate') }] : []),
+        ...(canSpeak ? [{ label: speechLabel, icon: speaking ? 'stop.fill' : 'speaker.wave.2', onPress: speak }] : []),
         { label: 'Delete message', icon: 'trash', destructive: true, onPress: () => runAction('delete') },
       ]}
       style={message.role === 'user' ? styles.userMessageContextHost : styles.assistantMessageContextHost}
@@ -2953,6 +2965,7 @@ function MessageContextMenu({
               <SwiftUIButton label="Edit response" systemImage="pencil" onPress={() => runAction('edit')} />
               <SwiftUIButton label="Regenerate response" systemImage="arrow.clockwise" onPress={() => runAction('regenerate')} />
             </>}
+          {canSpeak && <SwiftUIButton label={speechLabel} systemImage={speaking ? 'stop.fill' : 'speaker.wave.2'} onPress={speak} />}
           <SwiftUIButton label="Delete message" role="destructive" systemImage="trash" onPress={() => runAction('delete')} />
         </>
       )}

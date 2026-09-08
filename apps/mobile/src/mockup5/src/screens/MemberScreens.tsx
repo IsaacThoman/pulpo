@@ -1,3 +1,4 @@
+import { SpeechSettings } from '../../../features/speech/SpeechSettings';
 import { MaterialToggleRow } from '../../../platform/MaterialUI';
 import { showActions } from '../../../platform/materialActions';
 import { useSubpageBack } from '../../../platform/useSubpageBack';
@@ -280,6 +281,7 @@ type SettingsDestination = SettingsSection | 'trash';
 
 const settingsSections: { id: SettingsDestination; title: string; detail: string; icon: string }[] = [
   { id: 'general', title: 'General', detail: 'Theme and appearance', icon: 'slider.horizontal.3' },
+  { id: 'speech', title: 'Speech', detail: 'Read aloud, model, voice, and speed', icon: 'speaker.wave.2' },
   { id: 'interface', title: 'Interface', detail: 'Reasoning, haptics, and offline storage', icon: 'rectangle.3.group' },
   { id: 'data', title: 'Data Controls', detail: 'Storage and deletion', icon: 'externaldrive' },
   { id: 'trash', title: 'Trash', detail: 'Retention, restore, permanent deletion', icon: 'trash' },
@@ -288,11 +290,11 @@ const settingsSections: { id: SettingsDestination; title: string; detail: string
 export function MemberSettingsScreen({ navigation }: NativeStackScreenProps<RootStackParamList, 'Settings'>) {
   const theme = useAppTheme(); const session = usePrototypeStore((state) => state.session); const instance = usePrototypeStore((state) => state.instance);
   const open = (section: SettingsDestination) => section === 'trash' ? navigation.navigate('Trash') : navigation.navigate('SettingsDetail', { section });
-  if (Platform.OS === 'ios') return <SwiftUIHost modifiers={[tint(theme.blue)]} style={styles.flex}><SwiftUIForm><SwiftUISection><SwiftUIButton modifiers={[buttonStyle('plain'), foregroundStyle('primary')]} onPress={() => navigation.navigate('Account')}><SwiftUIHStack spacing={12} modifiers={[contentShape(shapes.rectangle())]}><SwiftUIRNHostView matchContents><ProfileAvatar size={42} /></SwiftUIRNHostView><SwiftUIVStack alignment="leading" spacing={2}><SwiftUIText modifiers={[font({ textStyle: 'headline' })]}>{session.user?.name ?? 'Pulpo Member'}</SwiftUIText><SwiftUIText modifiers={[font({ textStyle: 'footnote' }), foregroundStyle('secondary')]}>{session.user?.email ?? ''}</SwiftUIText></SwiftUIVStack><SwiftUISpacer /><SwiftUIImage systemName="chevron.right" size={11} color={theme.tertiary} /></SwiftUIHStack></SwiftUIButton></SwiftUISection><SwiftUISection title="Preferences">{settingsSections.slice(0, 2).map((section) => <NativeSettingsLink key={section.id} icon={section.icon} title={section.title} detail={section.detail} onPress={() => open(section.id)} />)}</SwiftUISection><SwiftUISection title="Data and support">{settingsSections.slice(2).map((section) => <NativeSettingsLink key={section.id} icon={section.icon} title={section.title} detail={section.detail} onPress={() => open(section.id)} />)}</SwiftUISection></SwiftUIForm></SwiftUIHost>;
+  if (Platform.OS === 'ios') return <SwiftUIHost modifiers={[tint(theme.blue)]} style={styles.flex}><SwiftUIForm><SwiftUISection><SwiftUIButton modifiers={[buttonStyle('plain'), foregroundStyle('primary')]} onPress={() => navigation.navigate('Account')}><SwiftUIHStack spacing={12} modifiers={[contentShape(shapes.rectangle())]}><SwiftUIRNHostView matchContents><ProfileAvatar size={42} /></SwiftUIRNHostView><SwiftUIVStack alignment="leading" spacing={2}><SwiftUIText modifiers={[font({ textStyle: 'headline' })]}>{session.user?.name ?? 'Pulpo Member'}</SwiftUIText><SwiftUIText modifiers={[font({ textStyle: 'footnote' }), foregroundStyle('secondary')]}>{session.user?.email ?? ''}</SwiftUIText></SwiftUIVStack><SwiftUISpacer /><SwiftUIImage systemName="chevron.right" size={11} color={theme.tertiary} /></SwiftUIHStack></SwiftUIButton></SwiftUISection><SwiftUISection title="Preferences">{settingsSections.slice(0, 3).map((section) => <NativeSettingsLink key={section.id} icon={section.icon} title={section.title} detail={section.detail} onPress={() => open(section.id)} />)}</SwiftUISection><SwiftUISection title="Data and support">{settingsSections.slice(3).map((section) => <NativeSettingsLink key={section.id} icon={section.icon} title={section.title} detail={section.detail} onPress={() => open(section.id)} />)}</SwiftUISection></SwiftUIForm></SwiftUIHost>;
   return <Screen><PageHeader title="Settings" subtitle={new URL(instance.url).hostname} onBack={() => navigation.goBack()} />
     <Pressable accessibilityRole="button" accessibilityLabel="Account" onPress={() => navigation.navigate('Account')}><Card style={styles.profileCard}><ProfileAvatar size={48} /><View style={styles.flex}><Text style={[styles.profileName, { color: theme.text }]}>{session.user?.name ?? 'Pulpo Member'}</Text><Text style={[styles.profileEmail, { color: theme.secondary }]}>{session.user?.email}</Text></View></Card></Pressable>
-    <SectionTitle>Preferences</SectionTitle><Card>{settingsSections.slice(0, 2).map((section, index) => <ListRow key={section.id} icon={section.icon} title={section.title} detail={section.detail} last={index === 1} onPress={() => open(section.id)} />)}</Card>
-    <SectionTitle>Data and support</SectionTitle><Card>{settingsSections.slice(2).map((section, index, list) => <ListRow key={section.id} icon={section.icon} title={section.title} detail={section.detail} last={index === list.length - 1} onPress={() => open(section.id)} />)}</Card>
+    <SectionTitle>Preferences</SectionTitle><Card>{settingsSections.slice(0, 3).map((section, index) => <ListRow key={section.id} icon={section.icon} title={section.title} detail={section.detail} last={index === 2} onPress={() => open(section.id)} />)}</Card>
+    <SectionTitle>Data and support</SectionTitle><Card>{settingsSections.slice(3).map((section, index, list) => <ListRow key={section.id} icon={section.icon} title={section.title} detail={section.detail} last={index === list.length - 1} onPress={() => open(section.id)} />)}</Card>
   </Screen>;
 }
 
@@ -300,7 +302,7 @@ function NativeSettingsLink({ icon, title, detail, onPress }: { icon: string; ti
   return <SwiftUIButton modifiers={[buttonStyle('plain'), foregroundStyle('primary')]} onPress={onPress}><SwiftUIHStack spacing={12} modifiers={[contentShape(shapes.rectangle())]}><SwiftUIImage systemName={icon as never} size={17} modifiers={[frame({ width: 22, height: 22 })]} /><SwiftUIVStack alignment="leading" spacing={2}><SwiftUIText modifiers={[font({ textStyle: 'subheadline', weight: 'medium' }), lineLimit(1)]}>{title}</SwiftUIText><SwiftUIText modifiers={[font({ textStyle: 'footnote' }), foregroundStyle('secondary'), lineLimit(1)]}>{detail}</SwiftUIText></SwiftUIVStack><SwiftUISpacer /><SwiftUIImage systemName="chevron.right" size={11} /></SwiftUIHStack></SwiftUIButton>;
 }
 
-const settingTitles: Record<SettingsSection, string> = { general: 'General', interface: 'Interface', data: 'Data Controls' };
+const settingTitles: Record<SettingsSection, string> = { speech: 'Speech', general: 'General', interface: 'Interface', data: 'Data Controls' };
 
 function NativeChoiceRow<T extends string>({ title, value, options, onChange, icon }: { title: string; value: T; options: readonly { value: T; label: string }[]; onChange: (value: T) => void; icon?: string }) {
   const selected = options.find((option) => option.value === value)?.label ?? value;
@@ -342,6 +344,7 @@ export function SettingsDetailScreen({ navigation, route }: NativeStackScreenPro
   useLayoutEffect(() => {
     if (Platform.OS === 'ios') navigation.setOptions({ title: settingTitles[section] });
   }, [navigation, section]);
+  if (section === 'speech') return <SpeechSettings onBack={() => navigation.goBack()} />;
   if (Platform.OS === 'ios') return <SwiftUIHost key={section === 'data' ? storageLabel : section} modifiers={[tint(theme.blue)]} style={styles.flex}><SwiftUIForm>
     {section === 'general' && <>
       <SwiftUISection title="Appearance">

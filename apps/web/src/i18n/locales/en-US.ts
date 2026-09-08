@@ -184,6 +184,7 @@ const enUS = {
   settings: {
     title: 'Settings',
     sections: {
+      speech: 'Speech',
       general: 'General',
       profile: 'Profile',
       security: 'Security',

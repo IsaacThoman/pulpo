@@ -16,7 +16,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@pulpo/contracts": "0.1.0"
+    "@pulpo/contracts": "0.1.0",
+    "marked": "^15.0.12"
   },
   "devDependencies": {
     "typescript": "~6.0.2",

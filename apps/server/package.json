@@ -40,6 +40,7 @@
     "drizzle-orm": "^0.45.2",
     "fastify": "^5.4.0",
     "ioredis": "^5.7.0",
+    "music-metadata": "^11.15.0",
     "nodemailer": "^9.0.3",
     "openai": "^7.3.0",
     "otpauth": "^9.5.1",

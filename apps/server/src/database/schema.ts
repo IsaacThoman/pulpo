@@ -1217,3 +1217,17 @@ export const shelfOperations = pgTable('shelf_operations', {
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   operationId: uuid('operation_id').notNull(),
 }, (table) => [primaryKey({ columns: [table.userId, table.operationId] })]);
+
+export const speechModels = pgTable('speech_models', {
+  id: text('id').primaryKey(),
+  providerConnectionId: uuid('provider_connection_id').notNull().references(() => providerConnections.id, { onDelete: 'restrict' }),
+  config: jsonb('config').notNull().$type<import('@pulpo/contracts').SpeechModel>(),
+  ...timestamps,
+})
+
+// No speech text or audio is retained. A permanent claim prevents generation replay.
+export const speechRequests = pgTable('speech_requests', {
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  requestId: uuid('request_id').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, table => [primaryKey({ columns: [table.userId, table.requestId] })])

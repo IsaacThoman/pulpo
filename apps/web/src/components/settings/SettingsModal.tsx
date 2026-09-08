@@ -1,3 +1,4 @@
+import { SpeechSettings } from '@/features/speech/SpeechSettings'
 import { DeleteAccountSettings } from './DeleteAccountSettings'
 import { DeviceSettings } from './DeviceSettings'
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
@@ -75,6 +76,7 @@ import { ui, uit } from '@/i18n/ui'
 const Markdown = lazy(() => import('@/components/chat/Markdown').then((module) => ({ default: module.Markdown })))
 
 const SECTION_CONFIG = {
+  speech: { labelKey: 'settings.sections.speech', icon: SlidersHorizontal },
   general: { labelKey: 'settings.sections.general', icon: SlidersHorizontal },
   profile: { labelKey: 'settings.sections.profile', icon: User },
   security: { labelKey: 'settings.sections.security', icon: ShieldCheck },
@@ -779,6 +781,7 @@ export function SettingsModal({
                 </div>
               )}
 
+              {section === 'speech' && <SpeechSettings />}
               {section === 'connections' && <CodexConnectionSettings active={open && section === 'connections'} />}
 
               {section === 'profile' && (
