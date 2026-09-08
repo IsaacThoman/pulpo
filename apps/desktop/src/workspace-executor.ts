@@ -119,6 +119,7 @@ export class WorkspaceExecutor {
       const parameters = operation.type === 'bash' ? shellArguments(process.platform, String(args.command ?? '')) : operation.type === 'find' ? ['--files', '--glob', String(args.pattern ?? '*'), target] : ['--line-number', '--no-heading', '--', String(args.pattern ?? ''), target]
       await new Promise<void>((resolveDone, reject) => {
         const child = spawn(command, parameters, { cwd: resolve(args.cwd), env: commandEnvironment(process.env), detached: process.platform !== 'win32', windowsHide: true })
+        child.stdin?.end() // Commands are noninteractive; PowerShell otherwise waits for pipe EOF.
         this.children.set(operation.id, child)
         let output = Buffer.alloc(0)
         const collect = (chunk: Buffer) => { if (output.length < 50 * 1024) output = Buffer.concat([output, chunk]).subarray(0, 50 * 1024); result.output = output.toString('utf8') }

@@ -43,7 +43,7 @@ import { authenticateSession } from '../auth/service.js'
 import { registerWorkspaceRoutes } from './routes.js'
 import { registerWorkspaceGateway } from './gateway.js'
 import { RoutedWorkspaceManager, WorkspacePaused } from './backend.js'
-import { validateWorkspace } from './service.js'
+import { claimWorkspaceExpiry, validateWorkspace } from './service.js'
 import { workspaceCanResume } from './resume.js'
 import { redis } from '../redis.js'
 
@@ -249,6 +249,18 @@ describe.skipIf(!enabled)('computer workspace transport and recovery with Postgr
     expect(fake.turn).toBe(1)
     expect(log!.costMicros).toBe(18)
   }, 10000)
+  it('serializes deadline expiry with a concurrent Keep waiting action', async () => {
+    const id = randomUUID()
+    await db.insert(responses).values({ id, chatId, userId: ownerId, modelId: 'workspace-test', status: 'in_progress', agentMode: true, workspace: selection(), input: [], workspaceWait: { generation: 0, reason: 'unresponsive', workspace: selection(), mayHaveStarted: false, startedAt: new Date(Date.now() - 901000).toISOString(), deadline: new Date(Date.now() - 1000).toISOString() } })
+    const [renewal, expired] = await Promise.all([
+      app.inject({ method: 'POST', url: `/api/responses/${id}/workspace-recovery`, headers: auth, payload: { generation: 0, action: 'wait' } }),
+      claimWorkspaceExpiry(id, 0),
+    ])
+    const [row] = await db.select().from(responses).where(eq(responses.id, id))
+    expect(renewal.statusCode).toBe(expired ? 409 : 200)
+    expect(row!.status).toBe(expired ? 'failed' : 'in_progress')
+    if (!expired) expect(Date.parse(row!.workspaceWait!.deadline)).toBeGreaterThan(Date.now())
+  })
   it('revokes execution authorization when the enabling session ends', async () => {
     await db.delete(sessions).where(eq(sessions.id, sessionId))
     await expect(validateWorkspace(ownerId, selection())).rejects.toThrow()

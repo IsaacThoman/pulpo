@@ -1,3 +1,4 @@
+import { claimWorkspaceExpiry } from '../workspaces/service.js'
 import { retireWorkspaceOperations } from '../workspaces/cancellation.js'
 import { RoutedWorkspaceManager, WorkspacePaused } from '../workspaces/backend.js'
 import { workspaceCanResume } from '../workspaces/resume.js'
@@ -987,7 +988,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
   agent.subscribe(handleAgentEvent)
   await db.update(responses).set({ status: 'in_progress', startedAt: new Date(), updatedAt: new Date() }).where(eq(responses.id, responseId))
   try {
-    if (record.response.workspaceWait && Date.parse(record.response.workspaceWait.deadline) <= Date.now()) throw new Error('Workspace waiting deadline expired. Retry or choose another workspace.')
+    if (record.response.workspaceWait && Date.parse(record.response.workspaceWait.deadline) <= Date.now() && await claimWorkspaceExpiry(responseId, record.response.workspaceGeneration)) throw new Error('Workspace waiting deadline expired. Retry or choose another workspace.')
     await emit('pulpo.agent.started', { runId })
     const initialPrompt = buildAgentUserPrompt(record.response.input, attachedFiles) || 'How can I help?'
     const promptImages = await loadAgentPromptImages(attachedFiles)

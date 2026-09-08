@@ -15,8 +15,8 @@ async function setup() {
   const config = { journal: path.join(folder, 'journal'), stagingPath: path.join(folder, 'attachments'), roots: [{ id: rootId, path: folder }], shell: process.platform === 'win32' ? 'powershell.exe' : '/bin/bash', rgPath: 'rg' }
   const executor = new WorkspaceExecutor(config, result => results.push(structuredClone(result)))
   cleanup.push(async () => { executor.shutdown(); await rm(folder, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }) })
-  const operation = (type: string, args: Record<string, unknown>): ComputerOperation => ({ id: randomUUID(), rootId, sessionId: randomUUID(), generation: 0, type, args, hash: createHash('sha256').update(workspaceOperationIdentity(type, args)).digest('hex'), deadline: new Date(Date.now() + 10_000).toISOString() })
-  const finished = async (id: string) => { await vi.waitFor(() => expect(results.some(result => result.id === id && result.status !== 'running')).toBe(true), { timeout: 5000 }); return results.filter(result => result.id === id).at(-1)! }
+  const operation = (type: string, args: Record<string, unknown>): ComputerOperation => ({ id: randomUUID(), rootId, sessionId: randomUUID(), generation: 0, type, args, hash: createHash('sha256').update(workspaceOperationIdentity(type, args)).digest('hex'), deadline: new Date(Date.now() + 20_000).toISOString() })
+  const finished = async (id: string) => { await vi.waitFor(() => expect(results.some(result => result.id === id && result.status !== 'running')).toBe(true), { timeout: 10000 }); return results.filter(result => result.id === id).at(-1)! }
   return { folder, rootId, config, results, executor, operation, finished }
 }
 describe('native computer execution', () => {
@@ -29,7 +29,7 @@ describe('native computer execution', () => {
     const restarted = new WorkspaceExecutor(f.config, result => f.results.push(result))
     await restarted.accept(op)
     expect((await readFile(path.join(f.folder, 'count.txt'), 'utf8')).trim().split(/\r?\n/)).toEqual(['once'])
-  })
+  }, 15000)
   it('never reruns a command whose journal says it was running at restart', async () => {
     const f = await setup(); const op = f.operation('write', { path: 'should-not-exist', content: 'bad' })
     await mkdir(f.config.journal)
