@@ -1,4 +1,5 @@
 import XCTest
+import Security
 @testable import PulpoShortcutsCore
 
 private final class StubProtocol: URLProtocol {
@@ -31,10 +32,10 @@ final class ShortcutsCoreTests: XCTestCase {
   let chat = "00000000-0000-4000-8000-000000000002"
   let response = "00000000-0000-4000-8000-000000000003"
   func session(_ user: String = "user") throws -> ShortcutSession { try ShortcutSession(origin: "https://pulpo.test", userID: user, token: "test-token") }
-  func api(assertCurrent: @escaping @Sendable (ShortcutSession) throws -> Void = { _ in }) throws -> ShortcutsAPI {
+  func api(access: ShortcutAccess = .unlocked, assertCurrent: @escaping @Sendable (ShortcutSession) throws -> Void = { _ in }) throws -> ShortcutsAPI {
     let config = URLSessionConfiguration.ephemeral
     config.protocolClasses = [StubProtocol.self]
-    return try ShortcutsAPI(session: session(), transport: URLSession(configuration: config), assertCurrent: assertCurrent)
+    return try ShortcutsAPI(session: session(), transport: URLSession(configuration: config), access: access, assertCurrent: assertCurrent)
   }
   func data(_ value: String) -> Data { Data(value.utf8) }
   func snapshot(_ status: String = "completed", output: String = #"[{"type":"message","content":[{"type":"output_text","text":"Hello"}]}]"#) throws -> ShortcutSnapshot {
@@ -49,6 +50,71 @@ final class ShortcutsCoreTests: XCTestCase {
     var bytes = Data(); var buffer = [UInt8](repeating: 0, count: 4096)
     while stream.hasBytesAvailable { let n = stream.read(&buffer, maxLength: buffer.count); if n <= 0 { break }; bytes.append(buffer, count: n) }
     return try JSONSerialization.jsonObject(with: bytes) as! [String: Any]
+  }
+  func testAccessLevelsKeepSeparateDeviceOnlyKeychainRecords() {
+    XCTAssertNotEqual(ShortcutAccess.unlocked.account, ShortcutAccess.basicAutomation.account)
+    XCTAssertEqual(ShortcutAccess.unlocked.account, "active-session", "Keep existing sessions compatible")
+    XCTAssertEqual(ShortcutAccess.unlocked.accessibility, kSecAttrAccessibleWhenUnlockedThisDeviceOnly)
+    XCTAssertEqual(ShortcutAccess.basicAutomation.accessibility, kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly)
+  }
+  func testBasicAutomationRejectsHistoryAndAgentActionsBeforeNetworkAccess() async throws {
+    StubProtocol.handler = { _ in XCTFail("Restricted automation must not contact the server"); return (500, Data()) }
+    let api = try api(access: .basicAutomation)
+    let id = try session().entityID(chat)
+    for operation in 0..<6 {
+      do {
+        switch operation {
+        case 0: _ = try await api.chats()
+        case 1: _ = try await api.chat(id)
+        case 2: _ = try await api.latestReply(id)
+        case 3: _ = try await api.continueChat(id, prompt: "Follow up")
+        case 4: _ = try await api.start(prompt: "Task", modelEntityID: session().entityID(model), agentMode: true)
+        default: _ = try await api.start(prompt: "Task", modelEntityID: session().entityID(model), temporary: true, agentMode: true)
+        }
+        XCTFail("Expected unlock requirement")
+      } catch { XCTAssertTrue(error.localizedDescription.contains("Unlock your device")) }
+    }
+  }
+  func testBasicAutomationCanListModelsStartAndPollNewReplies() async throws {
+    var posts = 0
+    StubProtocol.handler = { request in
+      switch request.url!.path {
+      case "/api/models": return (200, self.modelCatalog())
+      case "/api/settings": return (200, self.data(#"{"values":{"newChatAutoExpire":true}}"#))
+      case "/api/chats/start":
+        posts += 1
+        let body = try self.body(request)
+        XCTAssertEqual((body["response"] as! [String: Any])["agentMode"] as? Bool, false)
+        return (202, self.data("{\"chat\":\(self.chatJSON()),\"response\":{\"responseId\":\"\(self.response)\",\"status\":\"queued\",\"output\":[]}}"))
+      case "/api/responses/\(self.response)":
+        return (200, self.data("{\"responseId\":\"\(self.response)\",\"status\":\"completed\",\"output\":[{\"type\":\"message\",\"content\":[{\"type\":\"output_text\",\"text\":\"Done\"}]}]}"))
+      default: XCTFail("Unexpected endpoint: \(request.url!.path)"); return (500, Data())
+      }
+    }
+    let api = try api(access: .basicAutomation)
+    let models = try await api.models()
+    XCTAssertFalse(models.isEmpty)
+    for temporary in [false, true] {
+      let (_, started) = try await api.start(prompt: "Hello", modelEntityID: session().entityID(model), temporary: temporary)
+      let reply = try await api.waitForReply(started, pollNanoseconds: 1)
+      XCTAssertEqual(reply, "Done")
+    }
+    XCTAssertEqual(posts, 2)
+  }
+  func testBasicAutomationDiscardsRevokedInFlightReply() async throws {
+    final class State: @unchecked Sendable { var revoked = false }
+    let state = State()
+    StubProtocol.handler = { _ in
+      state.revoked = true
+      return (200, self.data("{\"responseId\":\"\(self.response)\",\"status\":\"completed\",\"output\":[]}"))
+    }
+    let api = try api(access: .basicAutomation, assertCurrent: { _ in
+      if state.revoked { throw ShortcutFailure("Signed out") }
+    })
+    do {
+      _ = try await api.waitForReply(snapshot("queued"), pollNanoseconds: 1)
+      XCTFail("Revoked sessions must not return replies")
+    } catch { XCTAssertEqual(error.localizedDescription, "Signed out") }
   }
   func testOriginValidationAndAccountBinding() throws {
     for origin in ["https://user:secret@pulpo.test", "file:///tmp", "https://pulpo.test/path", "https://pulpo.test?token=secret"] {
