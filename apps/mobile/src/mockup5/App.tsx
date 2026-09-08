@@ -5503,7 +5503,7 @@ function ChatView({
         >
             <ComposerSurface
               interactive
-              style={[styles.composer, Platform.OS === 'android' && { borderRadius: 24 }]}
+              style={[styles.composer, showShelf && styles.composerWithShelf, Platform.OS === 'android' && { borderRadius: 24 }]}
               surfaceStyle={temporaryComposerAnimatedStyle}
               tintColor={temporary ? colorScheme === 'dark' ? 'rgba(88,28,135,0.32)' : 'rgba(175,82,222,0.16)' : undefined}
             >
@@ -5611,7 +5611,7 @@ function ChatView({
                 </View>
               )}
               {dictation.error && <Text accessibilityRole="alert" style={styles.attachmentErrorText}>{dictation.error}</Text>}
-              <View style={[styles.composerInputRow, showShelf && styles.composerShelfInputRow]}>
+              <View style={styles.composerInputRow}>
                 <TextInput
                   ref={composerInputRef}
                   accessibilityLabel="Message"
@@ -6433,6 +6433,7 @@ function createChatStyles(COLORS: ChatColors) { return StyleSheet.create({
   composerQueueContent: { position: 'absolute', top: 0, left: 0, right: 0 },
   composerWrap: { paddingTop: 6 },
   composer: { minHeight: 108, borderRadius: 28, paddingTop: 8, paddingHorizontal: 10, paddingBottom: 4 },
+  composerWithShelf: { minHeight: 0 },
   messageEditBanner: { flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 6, paddingBottom: 8 },
   messageEditBannerText: { flex: 1, color: COLORS.text, fontSize: 12, fontWeight: '600' },
   messageEditCancel: { color: COLORS.muted, fontSize: 12, fontWeight: '600', paddingHorizontal: 4, paddingVertical: 2 },
@@ -6456,8 +6457,7 @@ function createChatStyles(COLORS: ChatColors) { return StyleSheet.create({
   attachmentRetryText: { color: '#ffffff', fontSize: 10.5, fontWeight: '700' },
   input: { minHeight: 30, maxHeight: 120, color: COLORS.text, fontSize: 16, lineHeight: 22, paddingHorizontal: 5, paddingTop: 0 },
   composerInputRow: { flexDirection: 'row', alignItems: 'flex-end' },
-  composerShelfInputRow: { marginTop: 'auto' },
-  composerTextInput: { flex: 1, minWidth: 0 },
+  composerTextInput: { flex: 1, minWidth: 0, alignSelf: 'flex-start' },
   composerBar: { flexDirection: 'row', alignItems: 'center', marginTop: 'auto', gap: 1 },
   // Match the horizontal center spacing: iOS hosts are 36 wide but 44 tall.
   composerShelfBar: { marginTop: Platform.OS === 'ios' ? 36 + 1 - 44 : 1 },
