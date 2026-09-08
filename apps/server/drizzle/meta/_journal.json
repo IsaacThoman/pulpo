@@ -474,8 +474,29 @@
     {
       "idx": 67,
       "version": "7",
-      "when": 1788891345619,
-      "tag": "0067_cultured_paibok",
+      "when": 1788888695298,
+      "tag": "0067_speech_models",
+      "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "7",
+      "when": 1788888695299,
+      "tag": "0068_speech_previews",
+      "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "7",
+      "when": 1788888695300,
+      "tag": "0069_speech_voice_previews",
+      "breakpoints": true
+    },
+    {
+      "idx": 70,
+      "version": "7",
+      "when": 1788904076769,
+      "tag": "0070_computer_workspaces",
       "breakpoints": true
     }
   ]

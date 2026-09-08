@@ -1,5 +1,6 @@
 import { resolveWorkspace, type WorkspaceSelection } from '@pulpo/contracts'
 import { WorkspacePicker } from './WorkspacePicker'
+import { speechPlayback } from '@/features/speech/state'
 import { localComposerDraftId } from '@pulpo/client-core'
 import { ShelvedDrafts } from './ShelvedDrafts'
 import { ComposerTray } from './ComposerTray'
@@ -505,6 +506,7 @@ export function Composer({
   }, [])
 
   const startDictation = useCallback(async () => {
+    speechPlayback.stop()
     setDictationError(null)
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
       setDictationError(ui("This browser does not support microphone recording"))

@@ -140,6 +140,7 @@ export interface PrototypeFolder {
 }
 
 export interface AppPreferences {
+  speech: import('@pulpo/contracts').SpeechPreferences;
   theme: ThemePreference;
   textSize: TextSizePreference;
   sendWithEnter: boolean;

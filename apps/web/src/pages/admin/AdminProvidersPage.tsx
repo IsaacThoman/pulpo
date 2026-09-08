@@ -71,13 +71,14 @@ export function AdminProvidersPage() {
   const [revealOpen, setRevealOpen] = useState(false)
 
   const load = async () => {
-    const [providerResponse, modelResponse] = await Promise.all([
+    const [providerResponse, modelResponse, speechResponse] = await Promise.all([
       apiRequest<{ data: Omit<AdminProvider, 'modelCount'>[] }>('/api/admin/providers'),
       apiRequest<{ data: Array<{ providerConnectionId: string }> }>('/api/admin/models'),
+      apiRequest<{ data: Array<{ providerConnectionId: string }> }>('/api/admin/speech-models'),
     ])
     setProviders(providerResponse.data.map((provider) => ({
       ...provider,
-      modelCount: modelResponse.data.filter((model) => model.providerConnectionId === provider.id).length,
+      modelCount: [...modelResponse.data, ...speechResponse.data].filter((model) => model.providerConnectionId === provider.id).length,
     })))
   }
 

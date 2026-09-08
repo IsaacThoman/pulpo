@@ -12,6 +12,7 @@ import {
   modelPresets,
   models,
   providerConnections,
+  speechModels,
   providerHealthChecks,
   providerUpstreamModels,
   applicationSettings,
@@ -402,7 +403,8 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
     const { id } = request.params as { id: string }
     if (id === INTERNAL_PROVIDER_ID || isManagedProviderId(id)) throw notFound('Provider')
     const used = await db.select({ id: models.id }).from(models).where(eq(models.providerConnectionId, id)).limit(1)
-    if (used.length) throw new AppError(409, 'provider_in_use', 'Delete or move this provider’s models first')
+    const speechUsed = await db.select({ id: speechModels.id }).from(speechModels).where(eq(speechModels.providerConnectionId, id)).limit(1)
+    if (used.length || speechUsed.length) throw new AppError(409, 'provider_in_use', 'Delete or move this provider’s models first')
     const deleted = await db.delete(providerConnections).where(eq(providerConnections.id, id)).returning({ id: providerConnections.id })
     if (!deleted.length) throw notFound('Provider')
     reply.code(204).send()

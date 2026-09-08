@@ -1,5 +1,7 @@
 import { workspaceSelectionSchema, workspaceWaitSchema } from './workspaces.js'
 export * from './workspaces.js'
+import { speechPreferencesSchema } from './speech.js'
+export * from './speech.js'
 import { eventHasAssistantReplyText } from './response-timing.js'
 export * from './avatar-crop.js'
 export * from './response-timing.js'
@@ -1376,6 +1378,7 @@ export const animationSpeedSchema = z.number()
   .default(DEFAULT_ANIMATION_SPEED)
 
 export const managementAccountSettingsSchema = z.object({
+  speech: speechPreferencesSchema,
   theme: z.enum(['light', 'dark', 'system']).default('system'),
   language: z.string().min(1).max(32).default('en-US'),
   composerSyncEnabled: z.boolean().default(true),
