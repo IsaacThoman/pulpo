@@ -15,13 +15,13 @@ struct PulpoModelEntity: AppEntity {
 }
 struct PulpoModelQuery: EntityStringQuery {
   func entities(for identifiers: [String]) async throws -> [PulpoModelEntity] {
-    let api = try ShortcutsAPI.current()
+    let api = try ShortcutsAPI.current(access: .basicAutomation)
     for id in identifiers { _ = try api.session.resourceID(id) }
     let models = try await api.models().map { PulpoModelEntity($0, session: api.session) }
     return identifiers.compactMap { id in models.first { $0.id == id } }
   }
   func suggestedEntities() async throws -> [PulpoModelEntity] {
-    let api = try ShortcutsAPI.current()
+    let api = try ShortcutsAPI.current(access: .basicAutomation)
     return try await api.models().map { PulpoModelEntity($0, session: api.session) }
   }
   func entities(matching string: String) async throws -> [PulpoModelEntity] {
@@ -56,15 +56,15 @@ struct PulpoChatQuery: EntityStringQuery {
 
 struct AskPulpoIntent: AppIntent {
   static let title: LocalizedStringResource = "Ask Pulpo"
-  static let description = IntentDescription("Send a prompt to a selected model and return the text reply. Uses your signed-in Pulpo account and normal model billing. For slow models, use Start Chat followed later by Get Reply. Requires an unlocked device and an internet connection.", categoryName: "Chat", resultValueName: "Reply")
-  static let authenticationPolicy: IntentAuthenticationPolicy = .requiresAuthentication
+  static let description = IntentDescription("Send a prompt to a selected model and return the text reply. Uses your signed-in Pulpo account and normal model billing. For slow models, use Start Chat followed later by Get Reply. Works while locked after the first unlock following a restart. Agent Mode requires an unlocked device. Requires an internet connection.", categoryName: "Chat", resultValueName: "Reply")
+  static let authenticationPolicy: IntentAuthenticationPolicy = .alwaysAllowed
   @Parameter(title: "Prompt", description: "Text from typing, dictation, the clipboard, a share sheet, or a previous action.", inputOptions: String.IntentInputOptions(multiline: true)) var prompt: String
   @Parameter(title: "Model") var model: PulpoModelEntity
   @Parameter(title: "Temporary Chat", description: "Exclude this conversation from saved history, search, and recall. The server's temporary-chat expiration still applies.", default: false) var temporary: Bool
   @Parameter(title: "Agent Mode", description: "Use agent tools when supported by your server and model. Agent tasks can take longer; use Start Chat and Open Chat for long-running work.", default: false) var agentMode: Bool
   static var parameterSummary: some ParameterSummary { Summary("Ask \(\.$model) about \(\.$prompt)") { \.$temporary; \.$agentMode } }
   func perform() async throws -> some IntentResult & ReturnsValue<String> & ProvidesDialog {
-    let api = try ShortcutsAPI.current()
+    let api = try ShortcutsAPI.current(access: agentMode ? .unlocked : .basicAutomation)
     let (_, snapshot) = try await api.start(prompt: prompt, modelEntityID: model.id, temporary: temporary, agentMode: agentMode)
     let reply = try await api.waitForReply(snapshot)
     return .result(value: reply, dialog: "\(reply)")
@@ -73,14 +73,14 @@ struct AskPulpoIntent: AppIntent {
 
 struct StartPulpoChatIntent: AppIntent {
   static let title: LocalizedStringResource = "Start Chat in Pulpo"
-  static let description = IntentDescription("Send a prompt and immediately return the new saved chat, while its reply continues on the server. Connect this to Open Chat, or use Get Reply later. Uses normal model billing.", categoryName: "Chat", resultValueName: "Chat")
-  static let authenticationPolicy: IntentAuthenticationPolicy = .requiresAuthentication
+  static let description = IntentDescription("Send a prompt and immediately return the new saved chat, while its reply continues on the server. Connect this to Open Chat, or use Get Reply later. Uses normal model billing. Works while locked after the first unlock following a restart. Agent Mode requires an unlocked device.", categoryName: "Chat", resultValueName: "Chat")
+  static let authenticationPolicy: IntentAuthenticationPolicy = .alwaysAllowed
   @Parameter(title: "Prompt", inputOptions: String.IntentInputOptions(multiline: true)) var prompt: String
   @Parameter(title: "Model") var model: PulpoModelEntity
   @Parameter(title: "Agent Mode", description: "Use agent tools when supported by your server and model. Agent tasks can take longer; use Start Chat and Open Chat for long-running work.", default: false) var agentMode: Bool
   static var parameterSummary: some ParameterSummary { Summary("Start a chat with \(\.$model) about \(\.$prompt)") { \.$agentMode } }
   func perform() async throws -> some IntentResult & ReturnsValue<PulpoChatEntity> {
-    let api = try ShortcutsAPI.current()
+    let api = try ShortcutsAPI.current(access: agentMode ? .unlocked : .basicAutomation)
     let (chat, _) = try await api.start(prompt: prompt, modelEntityID: model.id, agentMode: agentMode)
     return .result(value: PulpoChatEntity(chat, session: api.session))
   }
@@ -129,7 +129,7 @@ struct FindPulpoChatsIntent: AppIntent {
 struct GetPulpoModelsIntent: AppIntent {
   static let title: LocalizedStringResource = "Get Models from Pulpo"
   static let description = IntentDescription("Return the models available to your signed-in account. Use Choose from List to select a model for Ask Pulpo or Start Chat.", categoryName: "Find", resultValueName: "Models")
-  static let authenticationPolicy: IntentAuthenticationPolicy = .requiresAuthentication
+  static let authenticationPolicy: IntentAuthenticationPolicy = .alwaysAllowed
   func perform() async throws -> some IntentResult & ReturnsValue<[PulpoModelEntity]> {
     .result(value: try await PulpoModelQuery().suggestedEntities())
   }

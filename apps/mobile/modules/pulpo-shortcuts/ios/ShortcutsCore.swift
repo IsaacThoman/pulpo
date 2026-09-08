@@ -60,53 +60,79 @@ public struct ShortcutSession: Codable, Equatable, Sendable {
   }
 }
 
+// Basic automation can create non-agent chats and read their new replies, but
+// cannot resolve saved chats or invoke agent tools. All other callers default
+// to the original unlocked-only session, including entity resolution.
+public enum ShortcutAccess: CaseIterable, Sendable {
+  case unlocked
+  case basicAutomation
+
+  var account: String { self == .unlocked ? "active-session" : "basic-automation-session" }
+  var accessibility: CFString {
+    self == .unlocked ? kSecAttrAccessibleWhenUnlockedThisDeviceOnly : kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+  }
+  func requireUnlockedAccess() throws {
+    guard self == .unlocked else { throw ShortcutFailure("Unlock your device and run this action again to access saved chats or use Agent Mode.") }
+  }
+}
+
 // The app and intents run in the same application sandbox. Credentials never go
 // into defaults, entities, URLs, or an App Group. Locking serializes JS sign-out
 // with native credential reads; every network request revalidates its session.
 public enum ShortcutSessionStore {
   private static let lock = NSLock()
   private static var unavailable = false
-  private static let key: [String: Any] = [
+  private static func key(_ access: ShortcutAccess) -> [String: Any] { [
     kSecClass as String: kSecClassGenericPassword,
     kSecAttrService as String: "com.isaacthoman.pulpo.shortcuts",
-    kSecAttrAccount as String: "active-session",
-  ]
+    kSecAttrAccount as String: access.account,
+  ] }
   public static var enabled: Bool { !UserDefaults.standard.bool(forKey: "pulpo.shortcuts.disabled") }
   public static func setEnabled(_ enabled: Bool) { UserDefaults.standard.set(!enabled, forKey: "pulpo.shortcuts.disabled") }
   public static func save(_ session: ShortcutSession?) throws {
     lock.lock(); defer { lock.unlock() }
     unavailable = true
     UserDefaults.standard.set(true, forKey: "pulpo.shortcuts.sessionUnavailable")
-    if let session {
-      let data = try JSONEncoder().encode(session)
-      let attributes: [String: Any] = [kSecValueData as String: data, kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly]
-      var status = SecItemUpdate(key as CFDictionary, attributes as CFDictionary)
-      if status == errSecItemNotFound {
-        status = SecItemAdd(key.merging(attributes) { _, new in new } as CFDictionary, nil)
+    // Keep the existing unlocked-only record for sensitive actions. The second
+    // record enables basic automation after first unlock. Any partial update or
+    // deletion keeps BOTH paths unavailable until a complete sync succeeds.
+    let data = try session.map { try JSONEncoder().encode($0) }
+    for access in ShortcutAccess.allCases {
+      let key = key(access)
+      if let data {
+        let attributes: [String: Any] = [kSecValueData as String: data, kSecAttrAccessible as String: access.accessibility]
+        var status = SecItemUpdate(key as CFDictionary, attributes as CFDictionary)
+        if status == errSecItemNotFound {
+          status = SecItemAdd(key.merging(attributes) { _, new in new } as CFDictionary, nil)
+        }
+        guard status == errSecSuccess else { throw ShortcutFailure("Unlock your device and reopen Pulpo to enable Shortcuts.") }
+      } else {
+        let status = SecItemDelete(key as CFDictionary)
+        guard status == errSecSuccess || status == errSecItemNotFound else { throw ShortcutFailure("Could not clear the Shortcuts session. Unlock your device and try again.") }
       }
-      guard status == errSecSuccess else { throw ShortcutFailure("Unlock your device and reopen Pulpo to enable Shortcuts.") }
-    } else {
-      let status = SecItemDelete(key as CFDictionary)
-      guard status == errSecSuccess || status == errSecItemNotFound else { throw ShortcutFailure("Could not clear the Shortcuts session. Unlock your device and try again.") }
     }
     unavailable = false
     UserDefaults.standard.set(false, forKey: "pulpo.shortcuts.sessionUnavailable")
   }
-  public static func load() throws -> ShortcutSession {
+  public static func load(access: ShortcutAccess = .unlocked) throws -> ShortcutSession {
     lock.lock(); defer { lock.unlock() }
     guard enabled else { throw ShortcutFailure("Enable Apple Shortcuts in Pulpo Settings first.") }
     guard !unavailable, !UserDefaults.standard.bool(forKey: "pulpo.shortcuts.sessionUnavailable") else { throw ShortcutFailure("Open Pulpo and sign in again.") }
     var result: CFTypeRef?
-    let query = key.merging([kSecReturnData as String: true, kSecMatchLimit as String: kSecMatchLimitOne]) { _, new in new }
-    guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
+    let query = key(access).merging([kSecReturnData as String: true, kSecMatchLimit as String: kSecMatchLimitOne]) { _, new in new }
+    let status = SecItemCopyMatching(query as CFDictionary, &result)
+    if status == errSecInteractionNotAllowed {
+      throw ShortcutFailure("Unlock your device and run this action again.")
+    }
+    guard status == errSecSuccess,
           let data = result as? Data, let session = try? JSONDecoder().decode(ShortcutSession.self, from: data) else {
       throw ShortcutFailure("Unlock your device, open Pulpo, and sign in before running this shortcut.")
     }
     // Revalidate decoded origins, including the release-build HTTPS requirement.
     return try ShortcutSession(origin: session.origin, userID: session.userID, token: session.token)
   }
-  public static func assertCurrent(_ session: ShortcutSession) throws {
-    guard try load() == session else { throw ShortcutFailure("Your Pulpo account changed. Run the shortcut again.") }
+  public static func assertCurrent(_ session: ShortcutSession, access: ShortcutAccess = .unlocked) throws {
+    guard try load(access: access) == session else { throw ShortcutFailure("Your Pulpo account changed. Run the shortcut again.") }
   }
 }
 
@@ -171,18 +197,22 @@ private final class NoRedirects: NSObject, URLSessionTaskDelegate, @unchecked Se
 public final class ShortcutsAPI: Sendable {
   public let session: ShortcutSession
   private let transport: URLSession
+  private let access: ShortcutAccess
   private let assertCurrent: @Sendable (ShortcutSession) throws -> Void
-  public init(session: ShortcutSession, transport: URLSession? = nil, assertCurrent: @escaping @Sendable (ShortcutSession) throws -> Void = { try ShortcutSessionStore.assertCurrent($0) }) {
+  public init(session: ShortcutSession, transport: URLSession? = nil, access: ShortcutAccess = .unlocked, assertCurrent: (@Sendable (ShortcutSession) throws -> Void)? = nil) {
     self.session = session
+    self.access = access
     let config = URLSessionConfiguration.ephemeral
     config.timeoutIntervalForRequest = 15
     config.timeoutIntervalForResource = 20
     config.httpShouldSetCookies = false
     self.transport = transport ?? URLSession(configuration: config, delegate: NoRedirects(), delegateQueue: nil)
-    self.assertCurrent = assertCurrent
+    self.assertCurrent = assertCurrent ?? { try ShortcutSessionStore.assertCurrent($0, access: access) }
   }
   deinit { transport.invalidateAndCancel() }
-  public static func current() throws -> ShortcutsAPI { try ShortcutsAPI(session: ShortcutSessionStore.load()) }
+  public static func current(access: ShortcutAccess = .unlocked) throws -> ShortcutsAPI {
+    try ShortcutsAPI(session: ShortcutSessionStore.load(access: access), access: access)
+  }
   private struct List<T: Decodable>: Decodable { let data: [T] }
   private struct ModelCatalog: Decodable { let data: [ShortcutModel]; let agentAvailable: Bool? }
   private struct Response: Decodable { let response: ShortcutSnapshot }
@@ -192,7 +222,7 @@ public final class ShortcutsAPI: Sendable {
   }
   private struct Started: Decodable { let chat: ShortcutChat; let response: ShortcutSnapshot }
   private struct APIError: Decodable { let error: ShortcutSnapshot.Failure? }
-  public func request<T: Decodable>(_ path: String, body: [String: Any]? = nil, idempotencyKey: String? = nil) async throws -> T {
+  private func request<T: Decodable>(_ path: String, body: [String: Any]? = nil, idempotencyKey: String? = nil) async throws -> T {
     try Task.checkCancellation()
     try assertCurrent(session)
     guard path.hasPrefix("/api/"), let url = URL(string: session.origin + path) else { throw ShortcutFailure("Invalid Pulpo request.") }
@@ -242,6 +272,7 @@ public final class ShortcutsAPI: Sendable {
     }
   }
   public func chats(query: String = "", limit: Int = 20) async throws -> [ShortcutChat] {
+    try access.requireUnlockedAccess()
     let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
     var components = URLComponents()
     components.queryItems = [URLQueryItem(name: "q", value: String(trimmed.prefix(200)))]
@@ -251,6 +282,7 @@ public final class ShortcutsAPI: Sendable {
     return Array(result.data.filter { !$0.temporary }.prefix(max(1, min(limit, 50))))
   }
   public func chat(_ entityID: String) async throws -> ShortcutChat {
+    try access.requireUnlockedAccess()
     let id = try session.resourceID(entityID)
     guard UUID(uuidString: id) != nil else { throw ShortcutFailure("This chat is no longer available. Select another chat.") }
     let result: ShortcutChat = try await request("/api/chats/\(id)?format=compact&scope=active")
@@ -258,6 +290,7 @@ public final class ShortcutsAPI: Sendable {
     return result
   }
   public func start(prompt: String, modelEntityID: String, temporary: Bool = false, agentMode: Bool = false) async throws -> (ShortcutChat, ShortcutSnapshot) {
+    if agentMode { try access.requireUnlockedAccess() }
     let text = try Self.prompt(prompt)
     let modelID = try session.resourceID(modelEntityID)
     try await validateModel(modelID, agentMode: agentMode)
