@@ -86,7 +86,7 @@ export class WorkspaceExecutor {
     if (this.executing.has(id)) return // A filesystem operation already in progress must report its actual outcome.
     operation.result.status = 'cancelled'; await this.save(id); this.report(operation.result)
   }
-  shutdown() { this.accepting = false; for (const child of this.children.values()) stopProcess(child) }
+  shutdown() { this.accepting = false; for (const [id, child] of this.children) { this.cancellationRequested.add(id); stopProcess(child) } }
   private async execute(operation: ComputerOperation, root: string, result: ComputerOperationResult) {
     const staging = path.join(this.config.stagingPath, operation.sessionId)
     const resolve = (value: unknown) => {

@@ -69,11 +69,11 @@ describe('native computer execution', () => {
     expect(f.results.at(-1)?.error).toBe('Operation identity conflict')
     expect(await readFile(path.join(f.folder, 'file'), 'utf8')).toBe('first')
   })
-  it('reports healthy silent commands and cancels their process group', async () => {
+  it.each(['cancel', 'shutdown'] as const)('reports healthy silent commands and stops their process group on %s', async action => {
     const f = await setup(); const op = f.operation('bash', { command: process.platform === 'win32' ? 'Start-Sleep -Seconds 30' : 'sleep 30' })
     await f.executor.accept(op); await new Promise(resolve => setTimeout(resolve, 100)); f.executor.heartbeat()
     expect(f.results.at(-1)?.status).toBe('running')
-    await f.executor.cancel(op.id)
+    if (action === 'cancel') await f.executor.cancel(op.id); else f.executor.shutdown()
     expect((await f.finished(op.id)).status).toBe('cancelled')
   })
   it('keeps retrying a completed result when an older running heartbeat is acknowledged late', async () => {
