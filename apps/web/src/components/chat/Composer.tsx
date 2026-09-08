@@ -1137,41 +1137,49 @@ export function Composer({
           </div>
         )}
 
-        <textarea
-          ref={ref}
-          readOnly={handoffBusy || shelfBusy}
-          value={value}
-          onChange={(e) => {
-            setValue(e.target.value)
-            autosize()
-          }}
-          onKeyDown={(e) => {
-            if (e.key === 'Escape' && messageEdit && !e.nativeEvent.isComposing) {
-              e.preventDefault()
-              cancelMessageEdit()
-              return
-            }
-            if (e.key === 'Escape' && editingQueueId && !e.nativeEvent.isComposing) {
-              e.preventDefault()
-              void beginQueueEdit(editingQueueId)
-              return
-            }
-            if (shouldSubmitComposerKey({
-              key: e.key,
-              metaKey: e.metaKey,
-              ctrlKey: e.ctrlKey,
-              shiftKey: e.shiftKey,
-              isComposing: e.nativeEvent.isComposing,
-            }, sendWithEnter)) {
-              e.preventDefault()
-              void submit()
-            }
-          }}
-          onPaste={onPaste}
-          rows={1}
-          placeholder={attachments.length ? t('chat.addCaption') : temporary ? t('chat.temporaryMessage') : t('chat.message')}
-          className="max-h-[220px] w-full resize-none select-text bg-transparent px-4 pt-3.5 text-[15px] leading-6 outline-none placeholder:select-none placeholder:text-muted-foreground"
-        />
+        <div className="flex items-end pr-2.5">
+          <textarea
+            ref={ref}
+            readOnly={handoffBusy || shelfBusy}
+            value={value}
+            onChange={(e) => {
+              setValue(e.target.value)
+              autosize()
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape' && messageEdit && !e.nativeEvent.isComposing) {
+                e.preventDefault()
+                cancelMessageEdit()
+                return
+              }
+              if (e.key === 'Escape' && editingQueueId && !e.nativeEvent.isComposing) {
+                e.preventDefault()
+                void beginQueueEdit(editingQueueId)
+                return
+              }
+              if (shouldSubmitComposerKey({
+                key: e.key,
+                metaKey: e.metaKey,
+                ctrlKey: e.ctrlKey,
+                shiftKey: e.shiftKey,
+                isComposing: e.nativeEvent.isComposing,
+              }, sendWithEnter)) {
+                e.preventDefault()
+                void submit()
+              }
+            }}
+            onPaste={onPaste}
+            rows={1}
+            placeholder={attachments.length ? t('chat.addCaption') : temporary ? t('chat.temporaryMessage') : t('chat.message')}
+            className="max-h-[220px] min-w-0 flex-1 resize-none select-text bg-transparent px-4 pt-3.5 text-[15px] leading-6 outline-none placeholder:select-none placeholder:text-muted-foreground"
+          />
+          {showShelf && <Tooltip><TooltipTrigger asChild><button type="button"
+            disabled={!hasDraft || shelfBusy || submitting || dictationState !== 'idle' || !draftHydrated}
+            onClick={() => { void transferShelf() }} aria-label={ui('Shelve draft')}
+            className="mb-1 flex size-8 shrink-0 items-center justify-center rounded-full text-muted-foreground enabled:hover:bg-accent enabled:hover:text-foreground disabled:opacity-40">
+            {shelfBusy ? <Loader2 className="size-4 animate-spin" /> : <Archive className="size-4" />}
+          </button></TooltipTrigger><TooltipContent>{ui('Shelve draft')}</TooltipContent></Tooltip>}
+        </div>
         <div className="flex min-w-0 select-none items-center gap-1 px-2.5 pb-2.5">
           <input
             ref={fileInputRef}
@@ -1260,13 +1268,6 @@ export function Composer({
           </button>
 
           <div className="flex-1" />
-
-          {showShelf && <Tooltip><TooltipTrigger asChild><button type="button"
-            disabled={!hasDraft || shelfBusy || submitting || dictationState !== 'idle' || !draftHydrated}
-            onClick={() => { void transferShelf() }} aria-label={ui('Shelve draft')}
-            className="flex size-8 shrink-0 items-center justify-center rounded-full text-muted-foreground enabled:hover:bg-accent enabled:hover:text-foreground disabled:opacity-40">
-            {shelfBusy ? <Loader2 className="size-4 animate-spin" /> : <Archive className="size-4" />}
-          </button></TooltipTrigger><TooltipContent>{ui('Shelve draft')}</TooltipContent></Tooltip>}
 
           {dictationEnabled && <Tooltip>
             <TooltipTrigger asChild>
