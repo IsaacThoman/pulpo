@@ -253,3 +253,16 @@ describe('response regeneration', () => {
     }))
   })
 })
+
+describe('generation timezone requests', () => {
+  const snapshot = { responseId: 'response-1', status: 'queued', sequence: 0, output: [], usage: null, error: null, updatedAt: '2026-09-08T01:15:00Z' }
+  it.each(['start', 'send', 'edit', 'regenerate'] as const)('includes the device timezone for %s', async (kind) => {
+    mocks.apiRequest.mockResolvedValueOnce({ chat: {}, response: snapshot })
+    if (kind === 'start') await startChat({ chatId: 'chat-1', responseId: 'response-1', content: 'hello', modelId: 'model-1', title: 'Chat' })
+    if (kind === 'send') await sendMessage({ chatId: 'chat-1', clientId: 'response-1', content: 'hello', modelId: 'model-1' })
+    if (kind === 'edit') await editMessage({ id: 'response-1:input', content: 'edited' })
+    if (kind === 'regenerate') await regenerateResponse('response-1')
+    const body = mocks.apiRequest.mock.calls[0]![1].body
+    expect(kind === 'start' ? body.response : body).toHaveProperty('timeZone', Intl.DateTimeFormat().resolvedOptions().timeZone)
+  })
+})

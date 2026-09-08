@@ -11,6 +11,7 @@ import {
   type UpdateQueuedMessageInput,
 } from '@pulpo/contracts'
 import {
+  deviceTimeZone,
   hydrateEmbeddedResponseSnapshot,
   mergeCachedResponseDetails,
   responseLineageDetailsAvailable,
@@ -1496,6 +1497,7 @@ export const useChat = create<ChatState>()((set, get) => ({
 
     const dispatch = (async () => {
       const responseBody = {
+        timeZone: deviceTimeZone(),
         clientId: responseId,
         parentResponseId,
         input: content,
@@ -1619,6 +1621,7 @@ export const useChat = create<ChatState>()((set, get) => ({
   },
 
   enqueueMessage: async (chatId, input, messageAttachments, stagedQueueId) => {
+    input = { ...input, timeZone: deviceTimeZone() }
     const now = new Date().toISOString()
     const currentQueue = get().chats.find((chat) => chat.id === chatId)?.queuedMessages ?? []
     const staged = stagedQueueId
@@ -1681,6 +1684,7 @@ export const useChat = create<ChatState>()((set, get) => ({
   },
 
   updateQueuedMessage: async (chatId, messageId, input, messageAttachments = []) => {
+    if (input.action === 'save_edit') input = { ...input, timeZone: deviceTimeZone() }
     const previous = get().chats.find((chat) => chat.id === chatId)?.queuedMessages ?? []
     const updatedAt = new Date().toISOString()
     set((state) => ({
@@ -1804,6 +1808,7 @@ export const useChat = create<ChatState>()((set, get) => ({
       ?? branchSelectionIntents.select(chatId, responseId).version
     if (optimistic) get().setDetailedChat(optimistic.chat)
     void enqueueChatMutation(chatId, () => optimisticRequest('POST', `/api/messages/${messageId}/regenerate`, {
+      timeZone: deviceTimeZone(),
       clientId: responseId,
       modelId,
       presetSelections: generation.selections,
@@ -1851,6 +1856,7 @@ export const useChat = create<ChatState>()((set, get) => ({
     if (optimistic) get().setDetailedChat(optimistic.chat)
     try {
       const selection = {
+        timeZone: deviceTimeZone(),
         clientId: responseId,
         modelId,
         presetSelections: generation.selections,

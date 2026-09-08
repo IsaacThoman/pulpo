@@ -435,6 +435,7 @@ describe('chat store branching integration', () => {
       })
       const body = requests[2]!.body as { response?: Record<string, unknown> } & Record<string, unknown>
       const submitted = kind === 'existing' ? body : body.response!
+      expect(submitted.timeZone).toBe(Intl.DateTimeFormat().resolvedOptions().timeZone)
       expect(submitted).toMatchObject({
         modelId: 'cheaper-model', input: 'one prompt', attachmentIds: [attachmentId], agentMode: true,
         parentResponseId: kind === 'existing' ? responseAId : null,
@@ -810,6 +811,7 @@ describe('chat store branching integration', () => {
 
     await vi.waitFor(() => expect(requests).toHaveLength(4))
     expect(requests[3]!.path).toContain(`/api/messages/${responseBId}/regenerate`)
+    expect(requests[3]!.body).toHaveProperty('timeZone', Intl.DateTimeFormat().resolvedOptions().timeZone)
     requests[3]!.resolve({ response: responseCStreaming.snapshot })
     await vi.waitFor(() => expect(requests).toHaveLength(5))
 
