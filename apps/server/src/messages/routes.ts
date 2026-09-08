@@ -1,3 +1,4 @@
+import { workspaceSelectionSchema } from '@pulpo/contracts'
 import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
@@ -75,6 +76,7 @@ const generationSelectionSchema = z.object({
   clientId: idSchema.optional(),
   modelId: z.string().trim().min(1).optional(),
   presetSelections: z.record(z.string(), z.string()).optional(),
+  workspace: workspaceSelectionSchema.optional(),
   agentMode: z.boolean().optional(),
 })
 
@@ -105,6 +107,7 @@ export async function registerMessageRoutes(app: FastifyInstance): Promise<void>
         executionMode: generation.executionMode,
         presetSelections: generation.presetSelections,
         attachmentIds,
+        workspace: generation.workspace,
         agentMode: generation.agentMode,
       },
     })
@@ -125,6 +128,7 @@ export async function registerMessageRoutes(app: FastifyInstance): Promise<void>
       modelId: selectedModelId,
       presetSelections,
       attachmentIds: selectedAttachmentIds,
+      workspace: selectedWorkspace,
       agentMode: selectedAgentMode,
     } = editMessageSchema.parse(request.body)
     const idempotencyKey = request.headers['idempotency-key'] as string | undefined
@@ -134,6 +138,7 @@ export async function registerMessageRoutes(app: FastifyInstance): Promise<void>
       const generation = resolveBranchGenerationSettings(original, {
         modelId: selectedModelId,
         presetSelections,
+        workspace: selectedWorkspace,
         agentMode: selectedAgentMode,
       })
       if (!content && attachmentIds.length === 0) {
@@ -156,7 +161,8 @@ export async function registerMessageRoutes(app: FastifyInstance): Promise<void>
           executionMode: generation.executionMode,
           presetSelections: generation.presetSelections,
           attachmentIds,
-          agentMode: generation.agentMode,
+          workspace: generation.workspace,
+        agentMode: generation.agentMode,
         },
       })
       await bumpRevision(user.id, original.chatId)

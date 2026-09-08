@@ -1,0 +1,31 @@
+name: Computer workspace hosts
+on:
+  pull_request:
+    branches: [dev]
+    paths:
+      - 'apps/desktop/**'
+      - 'packages/workspace-daemon/**'
+      - 'packages/contracts/**'
+      - 'package-lock.json'
+      - '.github/workflows/computer-workspaces.yml'
+permissions:
+  contents: read
+jobs:
+  native-execution:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run build -w @pulpo/contracts
+      - run: npm run test -w @pulpo/desktop -- src/workspace-executor.test.ts
+      - run: npm run package -w @pulpo/desktop
+      - run: npx electron scripts/smoke-workspace-package.cjs
+        working-directory: apps/desktop

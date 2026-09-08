@@ -1,9 +1,11 @@
+import type { WorkspaceSelection } from '@pulpo/contracts'
 export type AssistantEditSource = {
   modelId: string
   pricingVersionId: string | null
   parentResponseId: string | null
   userMessageId: string | null
   executionMode: 'stream' | 'background'
+  workspace?: WorkspaceSelection | null
   agentMode: boolean
   input: unknown
   instructions: string | null
@@ -20,6 +22,7 @@ export function assistantEditInheritedValues(original: AssistantEditSource) {
     parentResponseId: original.parentResponseId,
     userMessageId: original.userMessageId,
     executionMode: original.executionMode,
+    workspace: original.workspace,
     agentMode: original.agentMode,
     input: original.input,
     instructions: original.instructions,

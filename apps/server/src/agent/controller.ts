@@ -38,6 +38,7 @@ export interface WorkspaceFile {
 const wait = (milliseconds: number) => new Promise((resolve) => setTimeout(resolve, milliseconds))
 
 export class WorkspaceManager {
+  onHeartbeat?: () => void
   private controllerLeaseId?: string
   private localLeaseId?: string
   private staged = false
@@ -60,6 +61,7 @@ export class WorkspaceManager {
       headers: init.headers,
     })
     if (!response.ok) throw new ControllerRequestError(response.status, await response.text())
+    this.onHeartbeat?.()
     return response
   }
 
@@ -94,6 +96,7 @@ export class WorkspaceManager {
       let lastPosition = -1
       while (!this.controllerLeaseId) {
         if (signal?.aborted) {
+          if (signal.reason?.name === 'WorkspacePaused') throw signal.reason
           await db.update(workspaceLeases).set({ status: 'released', capacityState: null, releasedAt: new Date(), error: 'Response stopped while waiting for workspace capacity', updatedAt: new Date() }).where(and(eq(workspaceLeases.id, queueLease.id), eq(workspaceLeases.status, 'provisioning')))
           throw signal.reason ?? new Error('Generation cancelled')
         }
@@ -161,6 +164,7 @@ export class WorkspaceManager {
           await db.update(workspaceLeases).set({ controllerLeaseId: attempt.leaseId, status: 'ready', capacityState: null, claimedAt: now, lastUsedAt: now, hardExpiresAt: new Date(now.getTime() + settings.hardTimeoutSeconds * 1000), expiresAt: new Date(now.getTime() + settings.idleTimeoutSeconds * 1000), updatedAt: now }).where(eq(workspaceLeases.id, queueLease.id))
           await this.onLeaseEvent?.('ready', { reused: false })
         } catch (error) {
+          if (signal?.reason?.name === 'WorkspacePaused') { await db.update(workspaceLeases).set({ capacityState: 'waiting' }).where(eq(workspaceLeases.id, queueLease.id)); throw signal.reason }
           await db.update(workspaceLeases).set({ status: 'failed', capacityState: null, error: error instanceof Error ? error.message : String(error), updatedAt: new Date() }).where(eq(workspaceLeases.id, queueLease.id))
           await this.onLeaseEvent?.('unavailable', { error: error instanceof Error ? error.message : String(error) })
           throw error
@@ -197,27 +201,32 @@ export class WorkspaceManager {
     signal?: AbortSignal,
     onUpdate?: (output: string) => void,
     onStarted?: () => void | Promise<void>,
+    reconcileOnly = false,
   ): Promise<WorkspaceOperation> {
     let leaseId = await this.ensureLease(signal)
     const init = { method: 'POST', signal, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: operationId, type, args }) }
     let response: Response
-    try { response = await this.request(`/v1/leases/${leaseId}/v1/operations`, init) } catch (error) {
-      if (signal?.aborted) { await this.cancel(operationId); throw error }
-      if (!(error instanceof Error) || !error.message.includes('(404)')) throw error
-      if (this.localLeaseId) await db.update(workspaceLeases).set({ status: 'expired', error: 'Controller lease expired', updatedAt: new Date() }).where(eq(workspaceLeases.id, this.localLeaseId))
-      await this.onLeaseEvent?.('expired')
-      this.localLeaseId = undefined; this.controllerLeaseId = undefined; this.staged = false
-      leaseId = await this.ensureLease(signal)
-      response = await this.request(`/v1/leases/${leaseId}/v1/operations`, init)
+    try { response = reconcileOnly
+      ? await this.request(`/v1/leases/${leaseId}/v1/operations/${operationId}`, { signal })
+      : await this.request(`/v1/leases/${leaseId}/v1/operations`, init)
+    } catch (error) {
+      if (signal?.aborted) { if (signal.reason?.name !== 'WorkspacePaused') await this.cancel(operationId); throw error }
+      throw new Error('Workspace operation outcome is unknown after connection or lease loss', { cause: error })
     }
     await onStarted?.()
     let operation = await response.json() as WorkspaceOperation
     let previousOutput = ''
     while (operation.status === 'running') {
-      if (signal?.aborted) { await this.cancel(operationId); throw signal.reason ?? new Error('Operation cancelled') }
+      if (signal?.aborted) { if (signal.reason?.name !== 'WorkspacePaused') await this.cancel(operationId); throw signal.reason ?? new Error('Operation cancelled') }
       if (operation.output !== previousOutput) { previousOutput = operation.output; onUpdate?.(operation.output) }
       await new Promise((resolve) => setTimeout(resolve, 250))
-      operation = await (await this.request(`/v1/leases/${leaseId}/v1/operations/${operationId}`, { signal })).json() as WorkspaceOperation
+      try {
+        operation = await (await this.request(`/v1/leases/${leaseId}/v1/operations/${operationId}`, { signal })).json() as WorkspaceOperation
+      } catch (error) {
+        if (signal?.aborted) throw error
+        // Keep reconciling the same command; the backend liveness deadline pauses the worker.
+        if (error instanceof ControllerRequestError && error.status === 404) throw new Error('Workspace operation outcome is unknown after lease loss', { cause: error })
+      }
     }
     if (operation.output !== previousOutput) onUpdate?.(operation.output)
     if (this.localLeaseId) { const now = new Date(); await db.update(workspaceLeases).set({ lastUsedAt: now, expiresAt: new Date(now.getTime() + this.idleTimeoutMs), updatedAt: now }).where(eq(workspaceLeases.id, this.localLeaseId)) }
@@ -277,7 +286,7 @@ export class WorkspaceManager {
 
   async cancel(operationId: string): Promise<void> {
     if (!this.controllerLeaseId) return
-    await this.request(`/v1/leases/${this.controllerLeaseId}/v1/operations/${operationId}/cancel`, { method: 'POST' }).catch(() => undefined)
+    await this.request(`/v1/leases/${this.controllerLeaseId}/v1/operations/${operationId}/cancel`, { method: 'POST', signal: AbortSignal.timeout(2000) }).catch(() => undefined)
   }
 
   get leaseId(): string | undefined { return this.localLeaseId }

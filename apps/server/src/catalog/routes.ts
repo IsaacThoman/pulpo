@@ -179,7 +179,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
     const iconRows = await db.select().from(catalogIcons)
     const iconById = new Map(iconRows.map((icon) => [icon.id, icon]))
     const customIcon = (id: string | null) => id && iconById.has(id) ? catalogIconUrls(iconById.get(id)!) : null
-    const agentAvailable = parseAgentSettings(agentRow?.value).enabled && Boolean(getConfig().WORKSPACE_CONTROLLER_URL && getConfig().WORKSPACE_CONTROLLER_TOKEN)
+    const agentAvailable = parseAgentSettings(agentRow?.value).enabled
     return { codexEnabled: codexAvailable, agentAvailable, data: await Promise.all(rows.map(async ({ model, pricing, lab, provider }) => ({
       id: model.id,
       upstreamModelId: model.upstreamModelId,

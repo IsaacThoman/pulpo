@@ -46,6 +46,8 @@ export function projectedMessageUnchanged(left: PrototypeMessage, right: Prototy
     && left.createdAt === right.createdAt && left.latencyMs === right.latencyMs && left.modelId === right.modelId
     && left.status === right.status && left.error === right.error && left.meta === right.meta
     && left.feedback === right.feedback && left.activeBranch === right.activeBranch
+    && JSON.stringify(left.workspace) === JSON.stringify(right.workspace)
+    && JSON.stringify(left.workspaceWait) === JSON.stringify(right.workspaceWait)
     && left.agentMode === right.agentMode
     && sameAttachments(left.attachments, right.attachments)
     && sameActivity(left.activity, right.activity)

@@ -1,3 +1,5 @@
+import { validateWorkspace } from '../workspaces/service.js'
+import { resolveWorkspace } from '@pulpo/contracts'
 import { and, asc, eq, inArray, isNull, max, ne, sql } from 'drizzle-orm'
 import type { CreateQueuedMessageInput, QueuedMessage, ReorderQueuedMessageInput, UpdateQueuedMessageInput } from '@pulpo/contracts'
 import { db } from '../database/client.js'
@@ -22,6 +24,8 @@ async function bumpQueueRevision(userId: string, chatId: string): Promise<void> 
 }
 
 async function validateQueueInput(userId: string, chatId: string, input: CreateQueuedMessageInput): Promise<void> {
+  input.workspace = await validateWorkspace(userId, input.workspace, input.agentMode)
+  input.agentMode = input.workspace.kind !== 'none'
   await assertAccessibleChat(userId, chatId)
 
   const generation = await resolveResponseGeneration(input.modelId, input.presetSelections)
@@ -83,6 +87,7 @@ export async function listQueuedMessages(chatId: string, userId: string): Promis
     content: row.content,
     modelId: row.modelId,
     presetSelections: row.presetSelections,
+    workspace: resolveWorkspace(row.workspace, row.agentMode),
     agentMode: row.agentMode,
     position: row.position,
     status: row.status as QueuedMessage['status'],
@@ -141,7 +146,8 @@ export async function createQueuedMessage(
       timeZone: input.timeZone ?? null,
       modelId: input.modelId,
       presetSelections: input.presetSelections,
-      agentMode: input.agentMode,
+      workspace: resolveWorkspace(input.workspace, input.agentMode),
+    agentMode: input.agentMode,
       attachmentIds: [...new Set(input.attachmentIds)],
       position: nextQueuePosition(positionRow?.value),
       dispatchResponseId: input.clientId ?? newId(),
@@ -168,7 +174,8 @@ export async function updateQueuedMessage(
       modelId: input.modelId,
       presetSelections: input.presetSelections,
       attachmentIds: input.attachmentIds,
-      agentMode: input.agentMode,
+      workspace: resolveWorkspace(input.workspace, input.agentMode),
+    agentMode: input.agentMode,
     })
   }
   await db.transaction(async (tx) => {
@@ -200,7 +207,8 @@ export async function updateQueuedMessage(
         timeZone: input.timeZone ?? null,
         modelId: input.modelId,
         presetSelections: input.presetSelections,
-        agentMode: input.agentMode,
+        workspace: resolveWorkspace(input.workspace, input.agentMode),
+    agentMode: input.agentMode,
         attachmentIds: [...new Set(input.attachmentIds)],
         billingUserId: attribution.billingUserId ?? userId,
         actorUserId: attribution.actorUserId ?? null,
@@ -313,7 +321,8 @@ export async function advanceMessageQueue(chatId: string): Promise<void> {
           modelId: claim.modelId,
           presetSelections: claim.presetSelections,
           attachmentIds: claim.attachmentIds,
-          agentMode: claim.agentMode,
+          workspace: resolveWorkspace(claim.workspace, claim.agentMode),
+    agentMode: claim.agentMode,
         },
       })
     }

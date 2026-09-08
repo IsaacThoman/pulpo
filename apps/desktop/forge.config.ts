@@ -1,3 +1,4 @@
+import { rgPath } from '@vscode/ripgrep'
 import type { ForgeConfig } from '@electron-forge/shared-types'
 import { MakerDMG } from '@electron-forge/maker-dmg'
 import { MakerSquirrel, type MakerSquirrelConfig } from '@electron-forge/maker-squirrel'
@@ -20,6 +21,7 @@ function requiredEnvironment(name: string): string {
 const config: ForgeConfig = {
   packagerConfig: {
     asar: true,
+    extraResource: ['assets', rgPath],
     name: 'Pulpo',
     executableName: 'Pulpo',
     icon: process.platform === 'win32'
@@ -75,6 +77,7 @@ const config: ForgeConfig = {
   ],
   plugins: [new VitePlugin({
     build: [
+      { entry: 'src/workspace-host-worker.ts', config: 'vite.main.config.mjs', target: 'main' },
       { entry: 'src/main.ts', config: 'vite.main.config.mjs', target: 'main' },
       { entry: 'src/preload.ts', config: 'vite.preload.config.mjs', target: 'preload' },
     ],

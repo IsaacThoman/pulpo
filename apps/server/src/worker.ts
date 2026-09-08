@@ -1,7 +1,8 @@
+import { resumeWorkspaceResponses } from './workspaces/resume.js'
 import { deleteAccountData, resumeAccountDeletions } from './account/deletion.js'
 import { createServer } from 'node:http'
 import { checkReadiness } from './runtime-health.js'
-import { queryClient } from './database/client.js'
+import { queryClient, agentLockClient } from './database/client.js'
 import { redis } from './redis.js'
 import { Worker } from 'bullmq'
 import { and, inArray, isNull, eq } from 'drizzle-orm'
@@ -167,6 +168,9 @@ for (const response of recoverable) {
 await recoverMessageQueues()
 if ((await readEpisodicMemorySettings()).enabled) await enqueueEpisodicReconciliation()
 
+const workspaceResumeTimer = setInterval(() => { void resumeWorkspaceResponses().catch(error => console.error('Workspace recovery failed', error)) }, 5000)
+workspaceResumeTimer.unref()
+
 const workers = [generationWorker, codexLoginWorker, embeddingWorker, maintenanceWorker]
 await Promise.all(workers.map((worker) => worker.waitUntilReady()))
 let stopping = false
@@ -192,11 +196,13 @@ const shutdown = async (signal: string) => {
   if (stopping) return
   stopping = true
   console.info(JSON.stringify({ level: 'info', service: 'pulpo-worker', event: 'worker.stopping', signal }))
+  clearInterval(workspaceResumeTimer)
   clearInterval(concurrencyRefreshInterval)
   healthServer.close()
   // Stop all consumers from taking more jobs immediately, then drain them
   // together. Sequential close could keep accepting work during shutdown.
   await Promise.all(workers.map((worker) => worker.close()))
+  await agentLockClient.end()
   process.exit(0)
 }
 

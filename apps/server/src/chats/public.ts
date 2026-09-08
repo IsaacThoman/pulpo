@@ -1,3 +1,4 @@
+import type { WorkspaceSelection, WorkspaceWait } from '@pulpo/contracts'
 import type { EmbeddedResponseSnapshot, ResponseSnapshot } from '@pulpo/contracts'
 import type { chats, responses } from '../database/schema.js'
 import { lineageFromLeaf, metadataForTurn } from '../messages/branching.js'
@@ -26,6 +27,8 @@ export interface PublicChatResponse {
   error: unknown
   createdAt: string
   completedAt: string | null
+  workspace?: WorkspaceSelection
+  workspaceWait?: WorkspaceWait | null
   agentMode: boolean
   snapshot: ResponseSnapshot | EmbeddedResponseSnapshot
   branches: ReturnType<typeof metadataForTurn>
@@ -57,6 +60,8 @@ export function toPublicChatResponse(
     error: snapshot.error,
     createdAt: response.createdAt.toISOString(),
     completedAt: response.completedAt?.toISOString() ?? null,
+    workspace: response.workspace ?? undefined,
+    workspaceWait: response.workspaceWait,
     agentMode: response.agentMode,
     snapshot: options.compact ? snapshotMarker : snapshot,
     branches: metadataForTurn(allTurns, response),

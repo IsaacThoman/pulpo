@@ -21,3 +21,8 @@ const queryClient = config.DATABASE_URL
 
 export const db = drizzle(queryClient, { schema })
 export { queryClient }
+
+// Long-lived agent ownership locks must not occupy connections needed by queries/transactions.
+export const agentLockClient = config.DATABASE_URL
+  ? postgres(config.DATABASE_URL, { ...queryOptions, max: 10 })
+  : postgres({ ...queryOptions, max: 10, host: config.POSTGRES_HOST, port: config.POSTGRES_PORT, username: config.POSTGRES_USER, password: config.POSTGRES_PASSWORD, database: config.POSTGRES_DATABASE })

@@ -1,3 +1,5 @@
+import { validateWorkspace } from '../workspaces/service.js'
+import { resolveWorkspace } from '@pulpo/contracts'
 import { and, eq, inArray, isNull, or, sql } from 'drizzle-orm'
 import type { ChatPreset, CreateChatResponseInput, ResponseSnapshot } from '@pulpo/contracts'
 import { db } from '../database/client.js'
@@ -81,6 +83,10 @@ export async function resolveResponseGeneration(modelId: string, presetSelection
 }
 
 export async function createResponse(options: CreateResponseOptions) {
+  const workspace = await validateWorkspace(options.ownerUserId, options.input.workspace, options.input.agentMode)
+  if (workspace.kind === 'computer' && options.actorUserId) throw new AppError(403, 'computer_owner_required', 'Computer execution requires the owning account')
+  options = { ...options, input: { ...options.input, workspace, agentMode: workspace.kind !== 'none' } }
+
   const idempotencyScope = options.idempotencyScope ?? 'default'
   if (options.idempotencyKey) {
     const [existing] = await db
@@ -228,6 +234,7 @@ export async function createResponse(options: CreateResponseOptions) {
     userMessageId: options.userMessageId ?? newId(),
     branchReason: options.branchReason ?? 'message',
     executionMode,
+    workspace,
     agentMode: options.input.agentMode,
     input: storedInput,
     presetSelections: resolved.selections,
@@ -306,6 +313,9 @@ export async function createResponse(options: CreateResponseOptions) {
 
 export function toSnapshot(response: typeof responses.$inferSelect): ResponseSnapshot {
   return {
+    workspace: resolveWorkspace(response.workspace, response.agentMode),
+    workspaceWait: response.workspaceWait,
+    workspaceGeneration: response.workspaceGeneration,
     responseId: response.id,
     requestReceivedAt: response.requestReceivedAt?.toISOString() ?? null,
     firstReplyTextAt: response.firstReplyTextAt?.toISOString() ?? null,

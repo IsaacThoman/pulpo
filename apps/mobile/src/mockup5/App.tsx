@@ -1,3 +1,6 @@
+import { useComputerWorkspace } from '../features/chat/useComputerWorkspace'
+import { resolveWorkspace, type WorkspaceSelection } from '@pulpo/contracts'
+import { WorkspacePicker, WorkspaceRecovery } from '../features/chat/WorkspaceControls'
 import { INITIAL_TRANSCRIPT_ROWS, hasLargeInitialMessage, transcriptListMessages, usesBottomAnchoredTranscript } from '../features/chat/transcriptWindow';
 import { hasChatSelectionObserver, recordChatSelection, hasTranscriptPositionObserver, recordTranscriptPosition } from '../features/chat/selectionTiming';
 import { prepareChatSelection } from '../data/prepareChat';
@@ -133,7 +136,6 @@ import { createNativeStackNavigator, type NativeStackScreenProps } from '@react-
 import { useQueryClient } from '@tanstack/react-query';
 import { workspaceContinueWithoutAgentAvailableAtMs } from '@pulpo/contracts';
 import {
-  Bot,
   Brain,
   Ghost,
   History,
@@ -569,10 +571,11 @@ type Message = {
   error?: string;
   branches?: ResponseBranch[];
   activeBranch?: number;
+  workspace?: WorkspaceSelection;
   agentMode?: boolean;
 };
 type Chat = { id: string; title: string; modelId: string; time: string; section: string; messages: Message[] };
-type SendOptions = { presetSelections: GenerationSelections; agentEnabled: boolean; temporary: boolean; autoExpire: boolean };
+type SendOptions = { workspace?: WorkspaceSelection; presetSelections: GenerationSelections; agentEnabled: boolean; temporary: boolean; autoExpire: boolean };
 type PrepareAttachments = () => Promise<PreparedAttachment[]>;
 
 function automaticExpirationDeadline(preference: 'disabled' | '24h' | '7d', now = Date.now()): number | null {
@@ -654,6 +657,7 @@ function prototypeMessageToLegacy(message: PrototypeMessage, chatId: string, cha
     status: message.status,
     branches: message.branches,
     activeBranch: message.activeBranch,
+    workspace: message.workspace,
     agentMode: message.agentMode,
   };
   legacyMessageCache.set(message, { chatId, chatModelId, value });
@@ -2399,6 +2403,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
       await enqueueMessage(queryClient, cacheNamespace(productionInstanceUrl, productionUserId), activeChat.id, {
         input: trimmed, modelId: selectedModel.id, presetSelections: options?.presetSelections ?? presetSelections,
         attachmentIds: prepared.map((item) => item.serverId),
+        workspace: options?.workspace,
         agentMode: Boolean(options?.agentEnabled && agentAvailable && selectedPrototypeModel?.agentEnabled),
       }, prepared.map((item) => ({ id: item.serverId, name: item.name, mimeType: item.mimeType, sizeBytes: item.size ?? 0 })), activePrototypeChat?.temporary ?? false);
       return true;
@@ -2416,6 +2421,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     const { chatId: key, responseId, inputMessageId, title } = identity;
     const modelId = selectedModel.id;
     const parentResponseId = activePrototypeChat?.messages.filter((message) => message.role === 'assistant').at(-1)?.id ?? null;
+    const workspace = options?.workspace;
     const agentMode = Boolean(options?.agentEnabled && agentAvailable && selectedPrototypeModel?.agentEnabled);
     const selections = options?.presetSelections ?? presetSelections;
     const initialExpiresAt = options?.temporary
@@ -2458,6 +2464,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
       modelId,
       status: 'queued',
       outputItems: [],
+      workspace,
       agentMode,
     });
     activeResponseId.current = responseId;
@@ -2486,7 +2493,8 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
           temporary: options?.temporary ?? false,
           expiresAt: initialExpiresAt === null ? null : new Date(initialExpiresAt).toISOString(),
           presetSelections: selections,
-          agentMode,
+          workspace,
+      agentMode,
           attachments: prepared.map((attachment) => ({
             id: attachment.serverId,
             name: attachment.name,
@@ -2509,7 +2517,8 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
           title,
           presetSelections: selections,
           attachmentIds: prepared.map((attachment) => attachment.serverId),
-          agentMode,
+          workspace,
+      agentMode,
         });
         if (options?.temporary) pendingTemporaryStart.current = { chatId: key, promise: startPromise };
         let started: Awaited<typeof startPromise>;
@@ -2531,7 +2540,8 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
           parentResponseId,
           presetSelections: selections,
           attachmentIds: prepared.map((attachment) => attachment.serverId),
-          agentMode,
+          workspace,
+      agentMode,
           temporary: activePrototypeChat?.temporary ?? false,
         });
       }
@@ -2607,7 +2617,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     setAssistantStatus('thinking');
     if (optimistic) trackActiveResponse(optimistic.snapshot);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Soft);
-    void regenerateServerResponse(message.id, modelId, selections, responseId, agentMode).then((response) => {
+    void regenerateServerResponse(message.id, modelId, selections, responseId, agentMode, message.workspace).then((response) => {
       const responseActive = trackActiveResponse(response);
       setAssistantStatus(responseActive ? (response.status === 'queued' ? 'thinking' : 'streaming') : 'idle');
       void queryClient.invalidateQueries({ queryKey: queryKeys.chats(namespace) });
@@ -2627,6 +2637,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     content: string,
     attachments: PreparedAttachment[] = [],
     agentMode = Boolean(message.agentMode),
+    workspace = message.workspace,
   ): Promise<boolean> => {
     const chatId = message.chatId ?? activeChatId;
     if (!chatId || !productionUserId || (message.role !== 'user' && effectiveAssistantStatus !== 'idle')) return false;
@@ -2667,6 +2678,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
         modelId,
         presetSelections: selections,
         attachmentIds: message.role === 'user' ? attachments.map((attachment) => attachment.serverId) : undefined,
+        workspace: message.role === 'user' ? workspace : undefined,
         agentMode: message.role === 'user' ? agentMode : undefined,
         clientId: responseId,
       });
@@ -3446,6 +3458,8 @@ const MessageRow = memo(function MessageRow({
   const { showReasoning } = useAppPreferences();
   const branches = message.branches ?? [];
   const branchIndex = message.activeBranch ?? 0;
+  const snapshotWorkspaceWait = useRealtimeStore(state => state.snapshots[message.id]?.workspaceWait);
+  const workspaceWait = snapshotWorkspaceWait === undefined ? message.workspaceWait : snapshotWorkspaceWait;
   const [capacityPending, setCapacityPending] = useState(false);
   const [streamingFallbackDurationMs, setStreamingFallbackDurationMs] = useState<number>();
   const streaming = message.status === 'streaming' || message.status === 'queued';
@@ -3589,7 +3603,8 @@ const MessageRow = memo(function MessageRow({
             )}
             {message.error && timeline.length > 0 && <View style={styles.responseError}><Icon name="exclamationmark.triangle" size={15} color={COLORS.critical} /><Text style={styles.responseErrorText}>{message.error}</Text><Pressable accessibilityRole="button" onPress={() => onRegenerate(message)}><Text style={styles.tryAgainText}>Try again</Text></Pressable></View>}
             {!message.error && message.status === 'stopped' && <MessageContextMenu message={message} model={model} onEdit={onEdit} onRegenerate={onRegenerate}><View style={styles.responseError}><Icon name="stop.circle" size={15} color={COLORS.muted} /><Text style={styles.responseErrorText}>Response stopped before completion.</Text><Pressable accessibilityRole="button" onPress={() => onRegenerate(message)}><Text style={styles.tryAgainText}>Try again</Text></Pressable></View></MessageContextMenu>}
-            {message.agentMode && streaming && capacityWorkspace?.state === 'waiting' && canContinueWithoutAgent && (
+            {streaming && workspaceWait && <WorkspaceRecovery responseId={message.id} wait={workspaceWait} />}
+            {message.agentMode && streaming && !workspaceWait && capacityWorkspace?.state === 'waiting' && canContinueWithoutAgent && (
               <Pressable
                 accessibilityRole="button"
                 disabled={capacityPending}
@@ -3886,7 +3901,7 @@ function ChatView({
   onRemoteChatStarted: (chatId: string) => void;
   onSend: (value?: string, attachments?: ComposerAttachment[], options?: SendOptions, prepareAttachments?: PrepareAttachments) => Promise<boolean>;
   assistantStatus: 'idle' | 'thinking' | 'streaming';
-  onEdit: (message: Message, content: string, attachments?: PreparedAttachment[], agentMode?: boolean) => Promise<boolean>;
+  onEdit: (message: Message, content: string, attachments?: PreparedAttachment[], agentMode?: boolean, workspace?: WorkspaceSelection) => Promise<boolean>;
   onRegenerate: (message: Message) => void;
   onActivateBranch: (message: Message, branchId: string) => Promise<void>;
   onOpenChat: (chatId: string) => void;
@@ -3970,7 +3985,9 @@ function ChatView({
   const agentAvailable = usePrototypeStore((state) => state.agentAvailable);
   const canUseAgent = agentAvailable && model.agentEnabled;
   const [agentEnabled, setAgentEnabled] = useState(() => preferredAgentMode && canUseAgent);
-  const activeAgentEnabled = canUseAgent && agentEnabled;
+  const { workspace, setWorkspace } = useComputerWorkspace(chatId, preferredAgentMode);
+  const submittedWorkspace = useMemo<WorkspaceSelection>(() => canUseAgent ? workspace : { kind: 'none' }, [canUseAgent, workspace]);
+  const activeAgentEnabled = submittedWorkspace.kind !== 'none';
   const [attachments, setAttachmentState] = useState<ComposerAttachment[]>([]);
   const attachmentUploadError = attachments.find((attachment) => attachment.state === 'failed')?.error;
   const attachmentsRef = useRef<ComposerAttachment[]>([]);
@@ -4019,6 +4036,7 @@ function ChatView({
   const preservedComposerRef = useRef<{
     input: string;
     attachments: ComposerAttachment[];
+    workspace: WorkspaceSelection;
     agentEnabled: boolean;
   } | null>(null);
   const inputRef = useRef(input);
@@ -4203,13 +4221,6 @@ function ChatView({
       });
   }, [expirationBadgeProgress, landingBadge?.kind, reduceMotion]);
 
-  const toggleAgent = useCallback(() => {
-    if (!canUseAgent) return;
-    const next = !activeAgentEnabled;
-    setAgentEnabled(next);
-    Haptics.selectionAsync();
-  }, [activeAgentEnabled, canUseAgent]);
-
   const restoreComposer = useCallback(() => {
     const preserved = preservedComposerRef.current;
     preservedComposerRef.current = null;
@@ -4223,8 +4234,9 @@ function ChatView({
     placeComposerCursorAtEnd(preserved.input);
     setAttachments(restoreLatestDraft(preserved.attachments, latestAttachmentsRef.current));
     setAgentEnabled(preserved.agentEnabled);
+    setWorkspace(preserved.workspace);
     requestAnimationFrame(() => composerInputRef.current?.focus());
-  }, [composerInputRef, onChangeInput, onSelectModel, placeComposerCursorAtEnd, setAttachments]);
+  }, [composerInputRef, onChangeInput, onSelectModel, placeComposerCursorAtEnd, setAttachments, setWorkspace]);
 
   const cleanupEditUploads = useCallback((session: MessageEditSession, values: ComposerAttachment[]) => {
     for (const attachment of values) {
@@ -4313,7 +4325,7 @@ function ChatView({
         setHydratedComposerScope(scope);
       }
     });
-  }, [activeDraftSnapshot, chatId, temporary, draftNamespace, onChangeInput, placeComposerCursorAtEnd, setAttachments]);
+  }, [activeDraftSnapshot, chatId, temporary, draftNamespace, onChangeInput, placeComposerCursorAtEnd, setAttachments, setWorkspace]);
 
   const sharedComposerState: ComposerState = {
     content: preservedComposerRef.current?.input ?? input,
@@ -4321,7 +4333,7 @@ function ChatView({
       .filter((a) => a.state === 'ready' && a.serverId)
       .map((a) => ({ id: a.serverId!, name: a.name, mimeType: a.mimeType, size: a.size ?? 0 })),
     model: { id: model.id, presets: presetSelections },
-    agentMode: preservedComposerRef.current?.agentEnabled ?? agentEnabled, temporary, autoExpire,
+    workspace: preservedComposerRef.current?.workspace ?? workspace, agentMode: (preservedComposerRef.current?.workspace ?? workspace).kind !== 'none', temporary, autoExpire,
   };
   const currentComposerState = useRef(sharedComposerState);
   currentComposerState.current = sharedComposerState;
@@ -4342,7 +4354,7 @@ function ChatView({
         })),
       ];
       if (preservedComposerRef.current) {
-        preservedComposerRef.current = { input: remote.content, attachments: next, agentEnabled: remote.agentMode };
+        preservedComposerRef.current = { input: remote.content, attachments: next, workspace: resolveWorkspace(remote.workspace, remote.agentMode), agentEnabled: remote.agentMode };
       } else {
         const previousSelection = inputSelectionRef.current;
         const selection = composerInputRef.current?.isFocused()
@@ -4353,6 +4365,7 @@ function ChatView({
         onChangeInput(remote.content);
         setAttachments(next);
         setAgentEnabled(remote.agentMode);
+        setWorkspace(resolveWorkspace(remote.workspace, remote.agentMode));
         if (remote.model) {
           setDraftPresets((current) => ({ ...current, [remote.model!.id]: remote.model!.presets }));
           const selected = models.find((candidate) => candidate.id === remote.model!.id);
@@ -4391,7 +4404,8 @@ function ChatView({
 
   const beginMessageEdit = useCallback((message: Message) => {
     if (messageEdit || sending || isDictationBusy()) return;
-    preservedComposerRef.current = { input, attachments, agentEnabled };
+    preservedComposerRef.current = { input, attachments, agentEnabled, workspace };
+    setWorkspace(resolveWorkspace(message.workspace, message.agentMode));
     const editOwnerId = `edit:${message.id}:${Crypto.randomUUID()}`;
     draftOwnerRef.current = editOwnerId;
     const existing = message.attachments ?? [];
@@ -4409,7 +4423,7 @@ function ChatView({
     })));
     requestAnimationFrame(() => composerInputRef.current?.focus());
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-  }, [agentEnabled, attachments, composerInputRef, input, messageEdit, onChangeInput, placeComposerCursorAtEnd, sending, setAttachments, isDictationBusy]);
+  }, [agentEnabled, attachments, composerInputRef, input, messageEdit, onChangeInput, placeComposerCursorAtEnd, sending, setAttachments, isDictationBusy, workspace, setWorkspace]);
 
   const runQueueAction = async (operation: () => Promise<void>) => {
     if (queueBusy || sending || isDictationBusy()) return;
@@ -4438,6 +4452,7 @@ function ChatView({
       onSelectModel(selected);
       setDraftPresets((current) => ({ ...current, [selected.id]: selected.id === item.modelId ? item.presetSelections : {} }));
       setAgentEnabled(item.agentMode);
+      setWorkspace(resolveWorkspace(item.workspace, item.agentMode));
     });
   };
 
@@ -4996,7 +5011,7 @@ function ChatView({
         if (queueEdit) {
           await mutateQueuedMessage(queueClient, queueEdit.namespace, queueEdit.chatId, queueEdit.id, {
             action: 'save_edit', input: submittedDraft.input.trim(), modelId: model.id, presetSelections,
-            agentMode: activeAgentEnabled, attachmentIds: (prepared as PreparedAttachment[]).map((item) => item.serverId),
+            workspace: submittedWorkspace, agentMode: activeAgentEnabled, attachmentIds: (prepared as PreparedAttachment[]).map((item) => item.serverId),
           }, (prepared as PreparedAttachment[]).map((item) => ({ id: item.serverId, name: item.name, mimeType: item.mimeType, sizeBytes: item.size ?? 0 })));
           if (queueEditRef.current === queueEdit && messageEditChatIdRef.current === queueEdit.chatId) restoreComposer();
           return;
@@ -5006,6 +5021,7 @@ function ChatView({
           submittedDraft.input.trim(),
           prepared as PreparedAttachment[],
           activeAgentEnabled,
+          submittedWorkspace,
         );
         if (accepted) {
           for (const attachment of submittedDraft.attachments) latestAttachmentsRef.current.delete(attachment.localId);
@@ -5024,7 +5040,7 @@ function ChatView({
           return onSend(
             submittedDraft.input,
             submittedDraft.attachments,
-            { presetSelections, agentEnabled: activeAgentEnabled, temporary, autoExpire },
+            { workspace: submittedWorkspace, presetSelections, agentEnabled: activeAgentEnabled, temporary, autoExpire },
             async () => {
               const prepared = await Promise.all(submittedDraft.attachments.map(uploadOne));
               if (prepared.some((attachment) => attachment === null)) {
@@ -5077,16 +5093,14 @@ function ChatView({
   const submitSuggestion = useCallback((message: string) => {
     if (isDictationBusy()) return;
     const followSnapshot = armSubmittedTurnFollow();
-    void onSend(message, [], { presetSelections, agentEnabled: activeAgentEnabled, temporary, autoExpire }).then((accepted) => {
+    void onSend(message, [], { workspace: submittedWorkspace, presetSelections, agentEnabled: activeAgentEnabled, temporary, autoExpire }).then((accepted) => {
       if (!accepted) restoreSubmittedTurnFollow(followSnapshot);
     }).catch((error) => {
       restoreSubmittedTurnFollow(followSnapshot);
       Alert.alert('Couldn’t send message', error instanceof Error ? error.message : undefined);
     });
-  }, [activeAgentEnabled, armSubmittedTurnFollow, autoExpire, onSend, presetSelections, restoreSubmittedTurnFollow, temporary, isDictationBusy]);
+  }, [submittedWorkspace, activeAgentEnabled, armSubmittedTurnFollow, autoExpire, onSend, presetSelections, restoreSubmittedTurnFollow, temporary, isDictationBusy]);
 
-  const nativeAgentTint = colorScheme === 'dark' ? '#BF5AF2' : '#AF52DE';
-  const nativeAgentForeground = activeAgentEnabled ? '#ffffff' : colorScheme === 'dark' ? '#f2f2f7' : '#1c1c1e';
 
   const updateBottomProximity = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const { contentOffset, contentInset, contentSize, layoutMeasurement } = event.nativeEvent;
@@ -5724,32 +5738,7 @@ function ChatView({
                     })),
                   }))} />
                 ))}
-                {Platform.OS === 'ios' ? (
-                  <SwiftUIHost ignoreSafeArea="keyboard" style={styles.nativeAgentHost}>
-                    <SwiftUIButton
-                      onPress={() => {
-                        toggleAgent();
-                      }}
-                      modifiers={[
-                        buttonStyle(activeAgentEnabled ? 'glassProminent' : 'glass'),
-                        buttonBorderShape('circle'),
-                        controlSize('regular'),
-                        tint(nativeAgentTint),
-                        swiftUIDisabled(!canUseAgent),
-                        swiftUIAccessibilityLabel('Agent mode'),
-                        swiftUIAccessibilityHint(!agentAvailable ? 'Unavailable on this Pulpo instance.' : !model.agentEnabled ? 'Unavailable for this model.' : activeAgentEnabled ? 'On. Double tap to turn off.' : 'Off. Double tap to turn on.'),
-                      ]}
-                    >
-                      <SwiftUIRNHostView matchContents>
-                        <View pointerEvents="none" style={styles.nativeAgentIcon}>
-                          <Bot color={nativeAgentForeground} size={13} strokeWidth={2} />
-                        </View>
-                      </SwiftUIRNHostView>
-                    </SwiftUIButton>
-                  </SwiftUIHost>
-                ) : (
-                  <MaterialIconButton label={activeAgentEnabled ? 'Turn off Agent mode' : 'Turn on Agent mode'} icon="bot" color={activeAgentEnabled ? nativeAgentTint : undefined} disabled={!canUseAgent} onPress={toggleAgent} />
-                )}
+                <WorkspacePicker value={workspace} onChange={value => { setWorkspace(value); setAgentEnabled(value.kind !== 'none') }} disabled={!canUseAgent} />
                 <View style={styles.flex} />
                 {dictationEnabled && (Platform.OS === 'ios'
                   ? <NativeComposerIconButton label={dictationLabel} systemImage={dictation.phase === 'recording' ? 'stop.fill' : 'mic'} prominent={dictation.phase === 'recording'} disabled={dictationDisabled} onPress={dictation.phase === 'recording' ? dictation.stop : dictation.start} />

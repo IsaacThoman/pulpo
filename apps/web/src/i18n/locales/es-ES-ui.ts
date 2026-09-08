@@ -1,4 +1,6 @@
 const esUi: Record<string, string> = {
+  "Online": "En línea",
+  "Offline": "Sin conexión",
   "Interrupted uploads resume when you select the same file again. Keep this page open during upload. Inactive uploads expire after 24 hours.": "Las cargas interrumpidas se reanudan al seleccionar el mismo archivo. Mantén esta página abierta durante la carga. Las cargas inactivas caducan después de 24 horas.",
   "Select this file to resume its upload.": "Selecciona este archivo para reanudar su carga.",
   "Discard upload": "Descartar carga",
@@ -1368,6 +1370,20 @@ const esUi: Record<string, string> = {
   "bytes": "bytes",
   "deleted": "eliminada",
   "SHA-256": "SHA-256",
+  "No workspace": "Sin espacio de trabajo",
+  "Computer unavailable": "Ordenador no disponible",
+  "Keep waiting": "Seguir esperando",
+  "Switch workspace": "Cambiar espacio de trabajo",
+  "Continue without workspace": "Continuar sin espacio de trabajo",
+  "Confirm switch": "Confirmar cambio",
+  "Confirm continue without workspace": "Confirmar continuación sin espacio de trabajo",
+  "Computer workspaces": "Espacios de trabajo en ordenadores",
+  "Disable hosting on this computer": "Desactivar este ordenador como espacio de trabajo",
+  "Use this computer as a workspace": "Usar este ordenador como espacio de trabajo",
+  "Waiting for workspace capacity.": "Esperando disponibilidad de un espacio de trabajo.",
+  "The workspace has not responded for 30 seconds.": "El espacio de trabajo no ha respondido durante 30 segundos.",
+  "The old command may still run. Local files will stay on that computer. Pulpo will continue without replaying the command.": "El comando anterior podría seguir ejecutándose. Los archivos locales permanecerán en ese ordenador. Pulpo continuará sin repetir el comando.",
+  "Enable hosting in the Pulpo desktop app to use a computer’s files and tools from any of your devices.": "Activa el ordenador en la aplicación de escritorio de Pulpo para usar sus archivos y herramientas desde cualquiera de tus dispositivos.",
 }
 
 export default esUi

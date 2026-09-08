@@ -32,7 +32,7 @@ export async function enqueueMessage(client: QueryClient, namespace: string, cha
   const queue = client.getQueryData<ServerChat>(key)?.queuedMessages ?? []
   const optimistic: MobileQueuedMessage = {
     id, pendingSubmissionId: id, chatId, content: input.input, modelId: input.modelId,
-    presetSelections: input.presetSelections, agentMode: input.agentMode, attachments,
+    workspace: input.workspace, presetSelections: input.presetSelections, agentMode: input.agentMode, attachments,
     position: Math.max(-1, ...queue.map((item) => item.position)) + 1,
     status: 'pending', error: null, createdAt: now, updatedAt: now,
   }
@@ -93,7 +93,8 @@ export async function mutateQueuedMessage(client: QueryClient, namespace: string
       : items.map((item) => item.id !== id ? item : {
         ...item, status: action.action === 'begin_edit' ? 'editing' : 'pending', error: null,
         ...(action.action === 'save_edit' ? { content: action.input, modelId: action.modelId, presetSelections: action.presetSelections,
-          agentMode: action.agentMode, attachments: attachments ?? item.attachments } : {}),
+          workspace: action.workspace ?? undefined,
+                agentMode: action.agentMode, attachments: attachments ?? item.attachments } : {}),
       }))
   try {
     const result = await apiRequest<{ queuedMessage?: MobileQueuedMessage | null; queuedMessages?: MobileQueuedMessage[] }>(

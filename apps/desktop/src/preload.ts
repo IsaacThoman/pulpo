@@ -19,6 +19,11 @@ const api: PulpoDesktopApi = {
     store: (session) => ipcRenderer.invoke('desktop:session:store', session) as Promise<void>,
     clear: () => ipcRenderer.invoke('desktop:session:clear') as Promise<void>,
   },
+  workspace: {
+    status: () => ipcRenderer.invoke('desktop:workspace:status'),
+    enable: () => ipcRenderer.invoke('desktop:workspace:enable'),
+    disable: () => ipcRenderer.invoke('desktop:workspace:disable'),
+  },
   openExternal: (url) => ipcRenderer.invoke('desktop:open-external', url) as Promise<void>,
   onProtocolUrl: (listener) => {
     const handler = (_event: Electron.IpcRendererEvent, url: string) => listener(url)

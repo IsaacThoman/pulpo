@@ -1,3 +1,4 @@
+vi.mock('../workspaces/gateway.js', () => ({ registerWorkspaceGateway: vi.fn() }))
 import { createServer } from 'node:http'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { emptyComposerState } from '@pulpo/contracts'

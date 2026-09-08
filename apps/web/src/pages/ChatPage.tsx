@@ -281,6 +281,8 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
   const beginMessageEdit = useCallback((message: Message) => {
     setMessageEdit({
       messageId: message.id,
+      workspace: message.workspace,
+      agentMode: message.agentMode,
       content: message.content,
       attachments: message.attachments ?? [],
     })

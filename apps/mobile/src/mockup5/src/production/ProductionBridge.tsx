@@ -84,6 +84,8 @@ function mapMessage(message: DisplayMessage): PrototypeMessage {
     status,
     error: message.error,
     outputItems: message.outputItems,
+    workspace: message.workspace,
+    workspaceWait: message.workspaceWait,
     agentMode: message.agentMode,
     meta: message.usage ? `${message.usage.inputTokens.toLocaleString()}→${message.usage.outputTokens.toLocaleString()} tok` : undefined,
     branches: message.branch.variants.length > 1 ? message.branch.variants.map((branch) => ({

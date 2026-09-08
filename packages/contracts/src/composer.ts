@@ -1,3 +1,4 @@
+import { workspaceSelectionSchema } from './workspaces.js'
 import { z } from 'zod'
 
 export const composerDraftIdSchema = z.union([z.literal('new'), z.uuid()])
@@ -8,6 +9,7 @@ export const composerStateSchema = z.object({
   content: z.string().max(1_000_000),
   attachments: z.array(composerAttachmentSchema).max(100),
   model: z.object({ id: z.string().max(256), presets: z.record(z.string().max(256), z.string().max(256)) }).nullable(),
+  workspace: workspaceSelectionSchema.optional(),
   agentMode: z.boolean(), temporary: z.boolean(), autoExpire: z.boolean(),
 })
 export const composerSnapshotSchema = z.object({

@@ -1,3 +1,9 @@
+import { retireWorkspaceOperations } from '../workspaces/cancellation.js'
+import { RoutedWorkspaceManager, WorkspacePaused } from '../workspaces/backend.js'
+import { workspaceCanResume } from '../workspaces/resume.js'
+import { resolveWorkspace } from '@pulpo/contracts'
+import { agentLockClient } from '../database/client.js'
+import type { AgentEvent } from '@earendil-works/pi-agent-core'
 import { Agent, type AgentMessage } from '@earendil-works/pi-agent-core'
 import { openAIResponsesApi } from '@earendil-works/pi-ai/api/openai-responses.lazy'
 import type { Api, AssistantMessage, Context, Model } from '@earendil-works/pi-ai'
@@ -14,7 +20,6 @@ import { isCancellationRequested, createResponseEventPublisher, publishSnapshot 
 import { toSnapshot } from '../responses/service.js'
 import { persistResponseItems } from '../responses/storage.js'
 import { extendBudgetReservationFixedCost, getActivePricing, releaseBudget, resizeBudgetReservation, settleBudget } from '../accounting/service.js'
-import { WorkspaceManager } from './controller.js'
 import { createWorkspaceTools } from './tools.js'
 import { publishAdminUsage } from '../admin/usage-events.js'
 import { buildAgentSystemPrompt, buildAgentUserPrompt } from './policy.js'
@@ -134,12 +139,18 @@ async function finalizeUnhandledAgentFailure(responseId: string, error: unknown)
 }
 
 export async function processAgentGeneration(responseId: string, codexAllowed: boolean): Promise<void> {
+  const connection = await agentLockClient.reserve()
   try {
-    await runAgentGeneration(responseId, codexAllowed)
-  } catch (error) {
-    await finalizeUnhandledAgentFailure(responseId, error)
-    throw error
-  }
+    const [lock] = await connection`select pg_try_advisory_lock(hashtext(${`agent-run:${responseId}`})) as acquired`
+    if (!lock?.acquired) return
+    try {
+      if (!await workspaceCanResume(responseId)) return
+      await runAgentGeneration(responseId, codexAllowed)
+    } catch (error) {
+      await finalizeUnhandledAgentFailure(responseId, error)
+      throw error
+    } finally { await connection`select pg_advisory_unlock(hashtext(${`agent-run:${responseId}`}))` }
+  } finally { connection.release() }
 }
 
 async function runAgentGeneration(responseId: string, codexAllowed: boolean): Promise<void> {
@@ -148,7 +159,8 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
   const [record] = await db.select({ response: responses, model: models, provider: providerConnections })
     .from(responses).innerJoin(models, eq(responses.modelId, models.id)).innerJoin(providerConnections, eq(models.providerConnectionId, providerConnections.id))
     .where(eq(responses.id, responseId)).limit(1)
-  if (!record || !record.response.agentMode || ['completed', 'cancelled'].includes(record.response.status)) return
+  if (!record || !record.response.agentMode || ['completed', 'cancelled', 'failed'].includes(record.response.status)) return
+  const selection = resolveWorkspace(record.response.workspace, record.response.agentMode)
   const [settingsRow, webToolsRow, personalizationRow, preferencesRow, episodicMemorySettings] = await Promise.all([
     db.select().from(applicationSettings).where(eq(applicationSettings.key, 'agent')).limit(1).then((rows) => rows[0]),
     db.select().from(applicationSettings).where(eq(applicationSettings.key, 'webTools')).limit(1).then((rows) => rows[0]),
@@ -361,7 +373,8 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
   let workspaceItem: Record<string, unknown> | undefined
   let workspaceStartedAtMs: number | undefined
   let workspaceReadyAtMs: number | undefined
-  let workspaceHoldMicrosAmount = 0
+  let workspaceHoldMicrosAmount = Number((existingRun?.context as { workspaceHoldMicros?: number } | undefined)?.workspaceHoldMicros ?? 0)
+  const priorWorkspaceCostMicros = Number((existingRun?.context as { workspaceCostMicros?: number } | undefined)?.workspaceCostMicros ?? 0)
   let workspaceCostMicros = 0
   let skipMessageCount = parentMessages.length
   const archivedDisplayMessages: AgentMessage[] = []
@@ -554,16 +567,16 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
     skipMessageCount = compactedMessages.length
     return true
   }
-  let manager!: WorkspaceManager
-  manager = new WorkspaceManager(responseId, record.response.chatId, record.response.userId, async (state, details = {}) => {
+  let manager!: RoutedWorkspaceManager
+  manager = new RoutedWorkspaceManager(responseId, record.response.chatId, record.response.userId, selection, record.response.workspaceGeneration, settings.workspaceWaitTimeoutSeconds, async (state, details = {}) => {
     if ((state === 'waiting' || state === 'provisioning') && workspaceStartedAtMs === undefined) {
       workspaceStartedAtMs = Date.now()
     }
-    if (state === 'ready' && settings.billWorkspaces && workspaceReadyAtMs === undefined) {
+    if (state === 'ready' && selection.kind === 'pulpo' && settings.billWorkspaces && workspaceReadyAtMs === undefined) {
       const hold = workspaceHoldMicros(settings.responseTimeoutSeconds, settings.workspacePricePerMinuteMicros)
       if (hold > 0) {
         try {
-          await extendBudgetReservationFixedCost(responseId, hold)
+          if (!workspaceHoldMicrosAmount) await extendBudgetReservationFixedCost(responseId, hold)
           workspaceHoldMicrosAmount = hold
           workspaceReadyAtMs = Date.now()
         } catch (error) {
@@ -591,6 +604,15 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
     await emit(`pulpo.agent.workspace.${state}`, workspaceItem)
     await snapshotIfDue()
   })
+  const savedGeneration = (existingRun?.context as { workspaceGeneration?: number } | undefined)?.workspaceGeneration
+  if (selection.kind !== 'pulpo' || savedGeneration !== record.response.workspaceGeneration) agentSystemPrompt = currentAgentSystemPrompt
+  if (selection.kind !== 'pulpo') {
+    agentSystemPrompt = agentSystemPrompt.replace(/Work in a disposable Ubuntu Linux workspace rooted at \/workspace\./, '').replace('You may use passwordless sudo.', '')
+    agentSystemPrompt += selection.kind === 'computer' ? '\n\n' + await manager.environment() : '\nNo workspace is selected. Tools are disabled. Continue from the conversation without claiming new file or command changes.'
+  }
+  if (savedGeneration !== undefined && savedGeneration !== record.response.workspaceGeneration) {
+    agentSystemPrompt += '\nThe user explicitly switched workspaces. Previous files may be absent. An abandoned command may still run on the old workspace. Never repeat its side effects without an explicit user request. Inspect the new environment before proceeding.'
+  }
   const markToolStarted = async (operationId: string) => {
     const item = toolItems.get(operationId)
     if (!item || item.startedAt) return
@@ -634,7 +656,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
     )).limit(1)
     const stored = existing
       ? { id: existing.id, name: existing.originalName, mimeType: existing.mimeType, sizeBytes: existing.sizeBytes }
-      : await manager.exportFile(path, signal, () => markToolStarted(operationId)).then((file) => storeGeneratedAttachment({
+      : await manager.exportFile(path, signal, () => markToolStarted(operationId), operationId).then((file) => storeGeneratedAttachment({
         responseId, toolCallId: operationId, userId: record.response.userId, chatId: record.response.chatId,
         path, requestedName: name ?? basename(path), data: file.data,
       }))
@@ -651,7 +673,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
   const abortTimer = setTimeout(() => {
     agentAbortReason ??= 'response_timeout'
     agent.abort()
-  }, settings.responseTimeoutSeconds * 1000)
+  }, Math.max(1, settings.responseTimeoutSeconds * 1000 - (existingRun?.activeRuntimeMs ?? 0)))
   const cancellationTimer = setInterval(() => void isCancellationRequested(responseId).then((cancelled) => {
     if (!cancelled) return
     agentAbortReason ??= 'cancellation'
@@ -664,7 +686,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
       systemPrompt: agentSystemPrompt,
       model: active.piModel,
       tools: [
-        ...createWorkspaceTools(manager, settings.commandTimeoutSeconds * 1000, markToolStarted, attachFile, async (toolCallId, path, data) => {
+        ...(selection.kind === 'none' ? [] : createWorkspaceTools(manager, settings.commandTimeoutSeconds * 1000, markToolStarted, attachFile, async (toolCallId, path, data) => {
           const existing = imagePreviews.get(toolCallId)
           if (existing) return existing
           const preview = await storeToolImagePreview({
@@ -672,9 +694,9 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
           })
           imagePreviews.set(toolCallId, preview)
           return preview
-        }),
-        ...configuredWebTools,
-        ...memoryTools,
+        })),
+        ...(selection.kind === 'none' ? [] : configuredWebTools),
+        ...(selection.kind === 'none' ? [] : memoryTools),
       ],
       messages: resumedMessages,
       thinkingLevel: initialParameters.reasoning,
@@ -763,25 +785,28 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
         apiKey: active.apiKey,
       })
     },
+    shouldStopAfterTurn: () => manager.paused || agentAbortReason !== undefined,
     toolExecution: 'sequential',
     beforeToolCall: async () => {
       if (manager.continuedWithoutAgent) return { block: true, reason: 'Agent tools were disabled at the user’s request' }
       return toolCalls >= settings.maxToolCalls ? { block: true, reason: `Tool call limit (${settings.maxToolCalls}) reached` } : undefined
     },
   })
+  manager.setPauseHandler(() => agent.abort())
+  let pendingCheckpoint: AgentMessage[] | undefined
   let lastRunPersistAt = 0
   const persistRunContext = async (force = false) => {
     if (!force && Date.now() - lastRunPersistAt < 500) return
     lastRunPersistAt = Date.now()
     await db.update(agentRuns).set({
       workspaceLeaseId: manager.leaseId,
-      context: { systemPrompt: agentSystemPrompt, messages: messagesForPersistence(agent.state.messages), billingTurns },
+      context: { systemPrompt: agentSystemPrompt, messages: messagesForPersistence(manager.paused && pendingCheckpoint ? pendingCheckpoint : agent.state.messages), billingTurns, workspaceGeneration: record.response.workspaceGeneration, suspended: manager.paused, workspaceHoldMicros: workspaceHoldMicrosAmount, workspaceCostMicros: priorWorkspaceCostMicros + (workspaceReadyAtMs !== undefined ? workspaceUsageMicros(Date.now() - workspaceReadyAtMs, settings.workspacePricePerMinuteMicros) : 0) },
       modelTurns,
       toolCalls,
       updatedAt: new Date(),
     }).where(eq(agentRuns.id, runId))
   }
-  agent.subscribe(async (event) => {
+  const handleAgentEvent = async (event: AgentEvent) => {
     if (event.type === 'turn_start') {
       modelTurns += 1
       if (modelTurns > settings.maxModelTurns) {
@@ -897,7 +922,8 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
       }
       await snapshotIfDue()
     } else if (event.type === 'tool_execution_start') {
-      toolCalls += 1
+      pendingCheckpoint = [...agent.state.messages]
+      if (!toolItems.has(event.toolCallId)) toolCalls += 1
       const item: ToolTimelineItem = {
         id: event.toolCallId,
         type: 'pulpo_tool',
@@ -916,6 +942,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
       await emit('pulpo.agent.tool.delta', { id: event.toolCallId, delta })
       await snapshotIfDue()
     } else if (event.type === 'tool_execution_end') {
+      if (manager.paused) return
       const output = truncateUtf8(toolResultText(event.result), settings.maxToolOutputBytes)
       const details = toolResultDetails(event.result)
       const imagePreview = event.toolName === 'view_image' && !event.isError
@@ -947,9 +974,11 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
       await snapshotIfDue()
     }
     await persistRunContext(event.type !== 'message_update' && event.type !== 'tool_execution_update')
-  })
+  }
+  agent.subscribe(handleAgentEvent)
   await db.update(responses).set({ status: 'in_progress', startedAt: new Date(), updatedAt: new Date() }).where(eq(responses.id, responseId))
   try {
+    if (record.response.workspaceWait && Date.parse(record.response.workspaceWait.deadline) <= Date.now()) throw new Error('Workspace waiting deadline expired. Retry or choose another workspace.')
     await emit('pulpo.agent.started', { runId })
     const initialPrompt = buildAgentUserPrompt(record.response.input, attachedFiles) || 'How can I help?'
     const promptImages = await loadAgentPromptImages(attachedFiles)
@@ -971,8 +1000,33 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
       agent.state.model = active.piModel
       skipMessageCount = resumedMessages.length
     }
+    if (existingRun) {
+      const latestAssistant = [...agent.state.messages].reverse().find(message => message.role === 'assistant')
+      if (latestAssistant?.role === 'assistant') {
+        const results = new Set(agent.state.messages.filter(message => message.role === 'toolResult').map(message => message.role === 'toolResult' ? message.toolCallId : ''))
+        for (const call of latestAssistant.content) {
+          if (call.type !== 'toolCall' || results.has(call.id)) continue
+          await handleAgentEvent({ type: 'tool_execution_start', toolCallId: call.id, toolName: call.name, args: call.arguments })
+          const tool = agent.state.tools.find(tool => tool.name === call.name)
+          let result; let isError = savedGeneration !== undefined && savedGeneration !== record.response.workspaceGeneration || !tool
+          try {
+            result = savedGeneration !== undefined && savedGeneration !== record.response.workspaceGeneration
+              ? { content: [{ type: 'text' as const, text: 'The user switched workspaces. This operation was abandoned; its outcome may be unknown. Do not repeat it without an explicit user request.' }], details: {} }
+              : tool ? await tool.execute(call.id, call.arguments, undefined) : { content: [{ type: 'text' as const, text: 'Workspace tools are disabled.' }], details: {} }
+          } catch (error) {
+            if (manager.paused) throw new WorkspacePaused()
+            isError = true; result = { content: [{ type: 'text' as const, text: error instanceof Error ? error.message : String(error) }], details: {} }
+          }
+          await handleAgentEvent({ type: 'tool_execution_end', toolCallId: call.id, toolName: call.name, result, isError })
+          agent.state.messages.push({ role: 'toolResult', toolCallId: call.id, toolName: call.name, content: result.content, details: result.details, isError, timestamp: Date.now() })
+          await persistRunContext(true)
+        }
+      }
+      await db.update(responses).set({ workspaceWait: null }).where(and(eq(responses.id, responseId), eq(responses.workspaceGeneration, record.response.workspaceGeneration)))
+    }
     if (existingRun && resumedMessages.length > parentMessages.length) await agent.continue()
     else await agent.prompt(initialMessage)
+    if (manager.paused) throw new WorkspacePaused()
     let last = agent.state.messages.at(-1)
     let overflowRetried = false
     const refreshTimeContext = () => {
@@ -1047,7 +1101,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
     await snapshot('completed')
     const [completed] = await db.select().from(responses).where(eq(responses.id, responseId)).limit(1)
     if (completed) await persistResponseItems(responseId, completed.output as unknown[])
-    await db.update(agentRuns).set({ status: 'completed', context: { systemPrompt: agentSystemPrompt, messages: messagesForPersistence(agent.state.messages), billingTurns }, modelTurns, toolCalls, completedAt: new Date(), updatedAt: new Date() }).where(eq(agentRuns.id, runId))
+    await db.update(agentRuns).set({ status: 'completed', context: { systemPrompt: agentSystemPrompt, messages: messagesForPersistence(manager.paused && pendingCheckpoint ? pendingCheckpoint : agent.state.messages), billingTurns, workspaceGeneration: record.response.workspaceGeneration, suspended: manager.paused, workspaceHoldMicros: workspaceHoldMicrosAmount, workspaceCostMicros: priorWorkspaceCostMicros + (workspaceReadyAtMs !== undefined ? workspaceUsageMicros(Date.now() - workspaceReadyAtMs, settings.workspacePricePerMinuteMicros) : 0) }, modelTurns, toolCalls, completedAt: new Date(), updatedAt: new Date() }).where(eq(agentRuns.id, runId))
     const finalResponder = lastResponder ?? { runtime: active, pricing: await getActivePricing(active.model.id) }
     await db.update(responses).set({ actualModelId: finalResponder.runtime.model.id, pricingVersionId: finalResponder.pricing.id }).where(eq(responses.id, responseId))
     const postTaskCostMicros = await runPostResponseTasks(record, finalResponder.runtime, completed?.output as unknown[] ?? [], requestLog.id).catch(async (error) => {
@@ -1060,9 +1114,9 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
       }))
       return 0
     })
-    workspaceCostMicros = workspaceReadyAtMs !== undefined && settings.billWorkspaces
+    workspaceCostMicros = priorWorkspaceCostMicros + (workspaceReadyAtMs !== undefined && selection.kind === 'pulpo' && settings.billWorkspaces
       ? workspaceUsageMicros(Date.now() - workspaceReadyAtMs, settings.workspacePricePerMinuteMicros)
-      : 0
+      : 0)
     const settlement = agentSettlementAmounts({
       totalTokens: usage.totalTokens,
       generationCostMicros: accruedCostMicros,
@@ -1089,6 +1143,14 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
     }
     await publishAdminUsage(requestLog.id, true)
   } catch (error) {
+    if (manager.paused && !await isCancellationRequested(responseId)) {
+      await persistRunContext(true)
+      await db.update(agentRuns).set({ activeRuntimeMs: (existingRun?.activeRuntimeMs ?? 0) + Date.now() - startedAt }).where(eq(agentRuns.id, runId))
+      await snapshot()
+      const [waiting] = await db.select().from(responses).where(eq(responses.id, responseId)).limit(1)
+      if (waiting) await publishSnapshot(toSnapshot(waiting))
+      return
+    }
     const errorMessage = active.codex ? safeCodexErrorMessage(error) : error instanceof Error ? error.message : String(error)
     if (active.codex) {
       agent.state.messages = agent.state.messages.map((message) => (
@@ -1102,15 +1164,16 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
     if (active.codex && codexErrorRequiresReauthentication(error)) {
       await markCodexReauthenticationRequired(record.response.userId, 'Your Codex connection needs to be renewed.')
     }
+    await retireWorkspaceOperations(responseId, record.response.workspaceGeneration)
     const cancelled = await isCancellationRequested(responseId)
     const status = cancelled ? 'cancelled' : 'failed'
     await snapshot(status, errorMessage)
-    await db.update(agentRuns).set({ status, error: errorMessage, context: { systemPrompt: agentSystemPrompt, messages: messagesForPersistence(agent.state.messages), billingTurns }, completedAt: new Date(), updatedAt: new Date() }).where(eq(agentRuns.id, runId))
+    await db.update(agentRuns).set({ status, error: errorMessage, context: { systemPrompt: agentSystemPrompt, messages: messagesForPersistence(manager.paused && pendingCheckpoint ? pendingCheckpoint : agent.state.messages), billingTurns, workspaceGeneration: record.response.workspaceGeneration, suspended: manager.paused, workspaceHoldMicros: workspaceHoldMicrosAmount, workspaceCostMicros: priorWorkspaceCostMicros + (workspaceReadyAtMs !== undefined ? workspaceUsageMicros(Date.now() - workspaceReadyAtMs, settings.workspacePricePerMinuteMicros) : 0) }, completedAt: new Date(), updatedAt: new Date() }).where(eq(agentRuns.id, runId))
     const finalResponder = lastResponder ?? { runtime: active, pricing: await getActivePricing(active.model.id) }
     await db.update(responses).set({ actualModelId: finalResponder.runtime.model.id, pricingVersionId: finalResponder.pricing.id }).where(eq(responses.id, responseId))
-    workspaceCostMicros = workspaceReadyAtMs !== undefined && settings.billWorkspaces
+    workspaceCostMicros = priorWorkspaceCostMicros + (workspaceReadyAtMs !== undefined && selection.kind === 'pulpo' && settings.billWorkspaces
       ? workspaceUsageMicros(Date.now() - workspaceReadyAtMs, settings.workspacePricePerMinuteMicros)
-      : 0
+      : 0)
     const settlement = agentSettlementAmounts({
       totalTokens: usage.totalTokens,
       generationCostMicros: accruedCostMicros,

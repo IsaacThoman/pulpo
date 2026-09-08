@@ -10,6 +10,7 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 vi.hoisted(() => {
   Object.defineProperty(window, 'matchMedia', { configurable: true, value: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }) })
 })
+vi.mock('./WorkspacePicker', () => ({ WorkspacePicker: () => null }))
 const fixture = vi.hoisted(() => ({ sync: null as ComposerSync | null, rows: new Map<string, unknown>() }))
 vi.mock('@/lib/local-first/composer-sync', () => ({ webComposerSync: () => fixture.sync, clearWebComposerSync() {} }))
 vi.mock('@/lib/local-first/database', async (importOriginal) => {

@@ -1,3 +1,5 @@
+import { workspaceSelectionSchema, workspaceWaitSchema } from './workspaces.js'
+export * from './workspaces.js'
 import { eventHasAssistantReplyText } from './response-timing.js'
 export * from './avatar-crop.js'
 export * from './response-timing.js'
@@ -518,6 +520,9 @@ export const recallItemSchema = z.object({
 export type RecallItem = z.infer<typeof recallItemSchema>
 
 export const responseSnapshotSchema = z.object({
+  workspace: workspaceSelectionSchema.optional(),
+  workspaceWait: workspaceWaitSchema.nullable().optional(),
+  workspaceGeneration: z.number().int().optional(),
   requestReceivedAt: isoDateSchema.nullable().optional(),
   firstReplyTextAt: isoDateSchema.nullable().optional(),
   responseId: idSchema,
@@ -1649,6 +1654,7 @@ export const createChatResponseSchema = z.object({
   maxOutputTokens: z.number().int().positive().optional(),
   presetSelections: z.record(z.string(), z.string()).default({}),
   attachmentIds: attachmentIdListSchema.default([]),
+  workspace: workspaceSelectionSchema.optional(),
   agentMode: z.boolean().default(false),
 }).refine((value) => value.input.length > 0 || value.attachmentIds.length > 0, {
   message: 'Message must include text or attachments',
@@ -1663,6 +1669,7 @@ export const editMessageSchema = z.object({
   modelId: z.string().trim().min(1).optional(),
   presetSelections: z.record(z.string(), z.string()).optional(),
   attachmentIds: attachmentIdListSchema.optional(),
+  workspace: workspaceSelectionSchema.optional(),
   agentMode: z.boolean().optional(),
 })
 export type EditMessageInput = z.infer<typeof editMessageSchema>
@@ -1684,6 +1691,7 @@ export const queuedMessageSchema = z.object({
   content: z.string(),
   modelId: z.string(),
   presetSelections: z.record(z.string(), z.string()),
+  workspace: workspaceSelectionSchema.optional(),
   agentMode: z.boolean(),
   position: z.number().int().nonnegative(),
   status: queuedMessageStatusSchema,
@@ -1701,6 +1709,7 @@ export const createQueuedMessageSchema = z.object({
   modelId: z.string().min(1),
   presetSelections: z.record(z.string(), z.string()).default({}),
   attachmentIds: attachmentIdListSchema.default([]),
+  workspace: workspaceSelectionSchema.optional(),
   agentMode: z.boolean().default(false),
 }).refine((value) => value.input.length > 0 || value.attachmentIds.length > 0, {
   message: 'Message must include text or attachments',
@@ -1718,7 +1727,8 @@ export const updateQueuedMessageSchema = z.discriminatedUnion('action', [
     modelId: z.string().min(1),
     presetSelections: z.record(z.string(), z.string()).default({}),
     attachmentIds: attachmentIdListSchema.default([]),
-    agentMode: z.boolean().default(false),
+    workspace: workspaceSelectionSchema.optional(),
+  agentMode: z.boolean().default(false),
   }).refine((value) => value.input.length > 0 || value.attachmentIds.length > 0, {
     message: 'Message must include text or attachments',
     path: ['input'],

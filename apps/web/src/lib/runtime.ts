@@ -15,6 +15,11 @@ interface DesktopApi {
     store(session: DesktopStoredSession): Promise<void>
     clear(): Promise<void>
   }
+  workspace: {
+    status(): Promise<{ enabled: boolean; online: boolean; name?: string; folder?: string }>
+    enable(): Promise<{ enabled: boolean; online: boolean; name?: string; folder?: string }>
+    disable(): Promise<{ enabled: boolean; online: boolean; name?: string; folder?: string }>
+  }
   openExternal(url: string): Promise<void>
   onProtocolUrl(listener: (url: string) => void): () => void
   onCommand(listener: (command: 'new-chat' | 'settings') => void): () => void

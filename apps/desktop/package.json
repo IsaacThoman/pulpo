@@ -29,8 +29,10 @@
     "vitest": "^3.2.7"
   },
   "dependencies": {
+    "@vscode/ripgrep": "^1.18.0",
     "electron-log": "^5.4.4",
     "electron-squirrel-startup": "1.0.1",
+    "socket.io-client": "^4.8.3",
     "update-electron-app": "3.3.0"
   }
 }

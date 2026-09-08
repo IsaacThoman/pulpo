@@ -1,3 +1,4 @@
+import { ComputerSettings } from './ComputerSettings'
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Monitor, RefreshCw, Smartphone } from 'lucide-react'
@@ -92,6 +93,7 @@ export function DeviceSettings() {
   return <div>
     <h2 className="text-base font-semibold">{ui('Devices')}</h2>
     <Separator className="my-3" />
+    <ComputerSettings />
     <DeviceSessionListView />
   </div>
 }

@@ -1,3 +1,4 @@
+import type { WorkspaceSelection, WorkspaceWait } from '@pulpo/contracts'
 import { initialResponseDurationMs } from '@pulpo/contracts'
 import { hydrateEmbeddedResponseSnapshot, lineageFromLeaf } from '@pulpo/client-core'
 import { mergeResponseSnapshots, type ResponseSnapshot } from '@pulpo/contracts'
@@ -45,6 +46,8 @@ export interface DisplayMessage {
   activity: ActivityItem[]
   branch: { ids: string[]; index: number; variants: DisplayBranch[] }
   error?: string
+  workspace?: WorkspaceSelection
+  workspaceWait?: WorkspaceWait | null
   agentMode: boolean
   usage?: { inputTokens: number; outputTokens: number } | null
   outputItems: unknown[]
@@ -236,7 +239,7 @@ export function createChatProjector() {
         attachments: inputAttachments, activity: [], branch: {
           ...response.branches.user,
           variants: branchVariants(byId, response.branches.user.ids, 'user', liveSnapshots),
-        }, agentMode: response.agentMode,
+        }, workspace: snapshot.workspace ?? response.workspace, workspaceWait: snapshot.workspaceWait, agentMode: response.agentMode,
         outputItems: [],
       }, {
         id: response.id, responseId: response.id, role: 'assistant', text: outputText(output), reasoning: reasoningText(output),
@@ -251,7 +254,7 @@ export function createChatProjector() {
           ...response.branches.assistant,
           variants: branchVariants(byId, response.branches.assistant.ids, 'assistant', liveSnapshots),
         },
-        error: errorMessage, agentMode: response.agentMode, usage: response.usage,
+        workspace: snapshot.workspace ?? response.workspace, workspaceWait: snapshot.workspaceWait, error: errorMessage, agentMode: response.agentMode, usage: response.usage,
         outputItems: output,
       }]
       if (existing && userDependencies.length === existing.userDependencies.length

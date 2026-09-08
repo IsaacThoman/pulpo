@@ -1,3 +1,4 @@
+import type { WorkspaceSelection, WorkspaceWait } from '@pulpo/contracts'
 import type { ChatPreset, QueuedMessage, EmbeddedResponseSnapshot, ResponseSnapshot, User } from '@pulpo/contracts'
 
 export type { User }
@@ -83,6 +84,8 @@ export interface ServerResponse {
   input: unknown[]
   output: unknown[]
   presetSelections: Record<string, string>
+  workspace?: WorkspaceSelection
+  workspaceWait?: WorkspaceWait | null
   agentMode: boolean
   usage: { inputTokens: number; outputTokens: number } | null
   error: { message?: string } | null

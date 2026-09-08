@@ -1,3 +1,4 @@
+import { registerWorkspaceRoutes } from './workspaces/routes.js'
 import { registerShelfRoutes } from './shelf/routes.js'
 import { registerAccountDeletionRoutes } from './account/routes.js'
 import { registerDeviceSessionRoutes } from './auth/device-routes.js'
@@ -139,6 +140,7 @@ export async function buildApp() {
   await registerMobileRoutes(app)
   await registerAuthRoutes(app)
   await registerDeviceSessionRoutes(app)
+  await registerWorkspaceRoutes(app)
   await registerAccountDeletionRoutes(app)
   await registerProfileRoutes(app)
   await registerCodexRoutes(app)

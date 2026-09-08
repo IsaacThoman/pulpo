@@ -1,3 +1,4 @@
+import { workspaceOperations } from '../database/schema.js'
 import { eq, sql } from 'drizzle-orm'
 import { eventHasAssistantReplyText, hasAssistantReplyText, type ChatStartedEvent, type ResponseEvent, type ResponseSnapshot, type StateInvalidationScope } from '@pulpo/contracts'
 import { db } from '../database/client.js'
@@ -84,6 +85,7 @@ export async function publishSessionRevocation(userId: string): Promise<void> {
 
 export async function requestCancellation(responseId: string): Promise<void> {
   await redis.set(`pulpo:response:${responseId}:cancel`, '1', 'EX', 3_600)
+  await db.update(workspaceOperations).set({ cancelRequested: true }).where(eq(workspaceOperations.responseId, responseId))
 }
 
 export async function isCancellationRequested(responseId: string): Promise<boolean> {

@@ -1,3 +1,4 @@
+import { WorkspaceRecovery } from './WorkspaceRecovery'
 import { ToolImagePreview } from './ToolImagePreview'
 import { initialActivityTiming } from '@pulpo/client-core'
 import { memo, useEffect, useMemo, useState } from 'react'
@@ -405,6 +406,7 @@ function ActivityBlock({
   onStop,
   onContinue,
   capacityPending,
+  recoveryVisible,
   onOpenChat,
 }: {
   steps: ActivityStep[]
@@ -416,6 +418,7 @@ function ActivityBlock({
   onStop: (id: string) => void
   onContinue: (id: string) => void
   capacityPending: boolean
+  recoveryVisible?: boolean
   onOpenChat: (chatId: string) => void
 }) {
   const workspace = steps.find((step): step is WorkspaceStep => step.kind === 'workspace')?.workspace
@@ -447,7 +450,7 @@ function ActivityBlock({
     return () => window.clearTimeout(timer)
   }, [isWaiting, workspaceActionsAvailableAt])
 
-  const needsWorkspaceActions = isWaiting && showWorkspaceActions
+  const needsWorkspaceActions = isWaiting && showWorkspaceActions && !recoveryVisible
   const hasTools = tools.length > 0
   const hasWorkspace = Boolean(workspace)
   const hasOtherActivity = hasReasoning || hasTools || hasWorkspace
@@ -757,6 +760,7 @@ export const MessageItem = memo(function MessageItem({
             </div>
           ) : (
             <>
+              {streaming && message.workspaceWait && <WorkspaceRecovery responseId={message.id} wait={message.workspaceWait} />}
               {timeline.map((segment, index) => {
                 if (segment.kind === 'activity') {
                   activityOrdinal += 1
@@ -785,6 +789,7 @@ export const MessageItem = memo(function MessageItem({
                         void continueWithoutAgent(id).catch(() => setCapacityActionPending(false))
                       }}
                       capacityPending={capacityActionPending}
+                      recoveryVisible={!!message.workspaceWait}
                       onOpenChat={onOpenChat}
                     />
                   )

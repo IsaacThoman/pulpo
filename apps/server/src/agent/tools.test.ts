@@ -70,7 +70,7 @@ describe('agent workspace tools', () => {
     expect(tool).toBeDefined()
     const result = await tool!.execute('call-1', { path: '/tmp/chart.png' })
 
-    expect(viewImage).toHaveBeenCalledWith('/tmp/chart.png', undefined, expect.any(Function))
+    expect(viewImage).toHaveBeenCalledWith('/tmp/chart.png', undefined, expect.any(Function), 'call-1')
     expect(result.content).toEqual([
       { type: 'text', text: 'Viewed /tmp/chart.png (image/png, 123 bytes)' },
       { type: 'image', data: 'base64-pixels', mimeType: 'image/png' },

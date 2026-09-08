@@ -470,6 +470,13 @@
       "when": 1788877944220,
       "tag": "0066_chat_time_zone",
       "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1788891345619,
+      "tag": "0067_cultured_paibok",
+      "breakpoints": true
     }
   ]
 }

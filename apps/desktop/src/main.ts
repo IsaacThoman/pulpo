@@ -1,3 +1,5 @@
+import { hostStatus, onHostChanged, enableHosting, disableHosting, restoreHosting, stopHosting } from './workspace-host'
+import { Tray, nativeImage } from 'electron'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import squirrelStartup from 'electron-squirrel-startup'
@@ -40,6 +42,8 @@ const developmentUrl = typeof MAIN_WINDOW_VITE_DEV_SERVER_URL === 'string'
 const rendererOrigin = developmentUrl ? new URL(developmentUrl).origin : DESKTOP_ORIGIN
 const pendingProtocolUrls: string[] = []
 let mainWindow: BrowserWindow | null = null
+let hostTray: Tray | undefined
+let quitting = false
 let rendererReady = false
 let desktopUpdater: DesktopUpdater | null = null
 
@@ -187,16 +191,23 @@ function validStoredSession(value: unknown): DesktopStoredSession {
 }
 
 function registerIpc(): void {
+  ipcMain.handle('desktop:workspace:status', event => { assertTrustedSender(event); return hostStatus() })
+  ipcMain.handle('desktop:workspace:enable', event => { assertTrustedSender(event); return enableHosting() })
+  ipcMain.handle('desktop:workspace:disable', event => { assertTrustedSender(event); return disableHosting() })
   ipcMain.handle('desktop:session:load', async (event) => {
     assertTrustedSender(event)
     return loadStoredSession()
   })
   ipcMain.handle('desktop:session:store', async (event, value: unknown) => {
     assertTrustedSender(event)
-    await storeSession(validStoredSession(value))
+    const next = validStoredSession(value)
+    const previous = await loadStoredSession()
+    if (previous && (previous.token !== next.token || previous.instanceUrl !== next.instanceUrl)) await disableHosting()
+    await storeSession(next)
   })
   ipcMain.handle('desktop:session:clear', async (event) => {
     assertTrustedSender(event)
+    await disableHosting()
     await clearStoredSession()
   })
   ipcMain.handle('desktop:open-external', async (event, value: unknown) => {
@@ -341,7 +352,7 @@ async function createMainWindow(): Promise<void> {
   })
   window.webContents.on('did-start-loading', () => { rendererReady = false })
   window.once('ready-to-show', () => window.show())
-  window.on('close', () => { void saveWindowState(window) })
+  window.on('close', event => { void saveWindowState(window); if (!quitting && hostStatus().enabled) { event.preventDefault(); window.hide() } })
   const publishMaximizedState = () => window.webContents.send('desktop:window:maximized-changed', window.isMaximized())
   window.on('maximize', publishMaximizedState)
   window.on('unmaximize', publishMaximizedState)
@@ -379,6 +390,22 @@ if (hasSingleInstanceLock) {
     configureSession()
     initializeDesktopUpdater()
     registerIpc()
+    const updateHostTray = () => {
+      if (!hostStatus().enabled) { hostTray?.destroy(); hostTray = undefined; return }
+      if (!hostTray) {
+        const icon = nativeImage.createFromPath(path.join(app.isPackaged ? process.resourcesPath : app.getAppPath(), 'assets', 'tray.png')).resize({ width: 18, height: 18 })
+        hostTray = new Tray(icon)
+      }
+      hostTray.setToolTip(hostStatus().online ? 'Pulpo workspace online' : 'Pulpo workspace offline')
+      hostTray.setContextMenu(Menu.buildFromTemplate([
+        { label: hostStatus().online ? 'Workspace online' : 'Workspace offline', enabled: false },
+        { label: 'Open Pulpo', click: () => { mainWindow?.show(); mainWindow?.focus() } },
+        { label: 'Disable hosting', click: () => { void disableHosting() } },
+        { label: 'Quit Pulpo', click: () => app.quit() },
+      ]))
+    }
+    onHostChanged(updateHostTray)
+    await restoreHosting()
     updateApplicationMenu()
     await createMainWindow()
     desktopUpdater?.start()
@@ -392,7 +419,13 @@ if (hasSingleInstanceLock) {
     app.quit()
   })
 
+  app.on('before-quit', event => {
+    if (quitting || !hostStatus().enabled) return
+    event.preventDefault(); quitting = true; stopHosting(); setTimeout(() => app.quit(), 2000)
+  })
+
   app.on('window-all-closed', () => {
+    if (hostStatus().enabled) return
     if (process.platform !== 'darwin') app.quit()
   })
 }

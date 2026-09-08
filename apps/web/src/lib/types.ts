@@ -1,3 +1,4 @@
+import type { WorkspaceSelection, WorkspaceWait } from '@pulpo/contracts'
 import type {
   ChatPreset,
   QueuedMessage as ServerQueuedMessage,
@@ -82,6 +83,8 @@ export interface Message {
   branch?: { ids: string[]; index: number }
   error?: string
   outputItems?: unknown[]
+  workspace?: WorkspaceSelection
+  workspaceWait?: WorkspaceWait | null
   agentMode?: boolean
   done: boolean
 }

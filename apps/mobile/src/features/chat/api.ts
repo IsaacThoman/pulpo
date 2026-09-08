@@ -1,3 +1,4 @@
+import type { WorkspaceSelection, WorkspaceWait } from '@pulpo/contracts'
 import { deviceTimeZone } from '@pulpo/client-core'
 import { mobileChatStarted } from './chatStarted'
 import { Directory, File, Paths } from 'expo-file-system'
@@ -88,6 +89,8 @@ export async function sendMessage(input: {
   parentResponseId?: string | null
   presetSelections?: Record<string, string>
   attachmentIds?: string[]
+  workspace?: WorkspaceSelection
+  workspaceWait?: WorkspaceWait | null
   agentMode?: boolean
   temporary?: boolean
 }): Promise<ResponseSnapshot> {
@@ -109,7 +112,8 @@ export async function sendMessage(input: {
     modelId: input.modelId,
     presetSelections: input.presetSelections ?? {},
     attachmentIds: input.attachmentIds ?? [],
-    agentMode: input.agentMode ?? false,
+    workspace: input.workspace,
+    agentMode: input.workspace ? input.workspace.kind !== 'none' : input.agentMode ?? false,
   }
   try {
     const result = await apiRequest<{ response: ResponseSnapshot }>(path, {
@@ -145,6 +149,8 @@ export async function startChat(input: {
   autoExpire?: boolean
   presetSelections?: Record<string, string>
   attachmentIds?: string[]
+  workspace?: WorkspaceSelection
+  workspaceWait?: WorkspaceWait | null
   agentMode?: boolean
 }): Promise<{ chat: ServerChat; response: ResponseSnapshot }> {
   const session = useSessionStore.getState()
@@ -176,7 +182,8 @@ export async function startChat(input: {
       modelId: input.modelId,
       presetSelections: input.presetSelections ?? {},
       attachmentIds: input.attachmentIds ?? [],
-      agentMode: input.agentMode ?? false,
+      workspace: input.workspace,
+    agentMode: input.workspace ? input.workspace.kind !== 'none' : input.agentMode ?? false,
     },
   }
   try {
@@ -237,11 +244,12 @@ export async function regenerateResponse(
   presetSelections?: Record<string, string>,
   clientId?: string,
   agentMode?: boolean,
+  workspace?: WorkspaceSelection,
 ): Promise<ResponseSnapshot> {
   const responseId = clientId ?? Crypto.randomUUID()
   const result = await apiRequest<{ response: ResponseSnapshot }>(`/api/messages/${id}/regenerate`, {
     method: 'POST', idempotencyKey: responseId,
-    body: { clientId: responseId, modelId, presetSelections, agentMode, timeZone: deviceTimeZone() },
+    body: { clientId: responseId, modelId, presetSelections, workspace, agentMode, timeZone: deviceTimeZone() },
   })
   useRealtimeStore.getState().receiveSnapshot(result.response)
   return result.response
@@ -253,6 +261,8 @@ export async function editMessage(input: {
   modelId?: string
   presetSelections?: Record<string, string>
   attachmentIds?: string[]
+  workspace?: WorkspaceSelection
+  workspaceWait?: WorkspaceWait | null
   agentMode?: boolean
   clientId?: string
 }): Promise<ResponseSnapshot> {
@@ -266,6 +276,8 @@ export async function editMessage(input: {
       modelId: input.modelId,
       presetSelections: input.presetSelections,
       attachmentIds: input.attachmentIds,
+      workspace: input.workspace ?? undefined,
+
       agentMode: input.agentMode,
     },
   })

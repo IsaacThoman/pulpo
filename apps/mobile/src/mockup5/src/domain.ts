@@ -1,3 +1,4 @@
+import type { WorkspaceSelection, WorkspaceWait } from '@pulpo/contracts'
 import type { MobileQueuedMessage } from '../../types';
 export type ThemePreference = 'system' | 'light' | 'dark';
 export type TextSizePreference = 'default' | 'large' | 'extra-large';
@@ -108,6 +109,8 @@ export interface PrototypeMessage {
   meta?: string;
   feedback?: 'good' | 'bad' | null;
   outputItems?: unknown[];
+  workspace?: WorkspaceSelection
+  workspaceWait?: WorkspaceWait | null
   agentMode?: boolean;
 }
 

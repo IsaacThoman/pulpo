@@ -1,3 +1,4 @@
+import type { WorkspaceSelection, WorkspaceWait } from '@pulpo/contracts'
 import { create } from 'zustand'
 import { webChatStarted } from '@/lib/chat-started'
 import { replaceEqualDeep } from '@tanstack/react-query'
@@ -81,6 +82,8 @@ export interface ServerResponse {
   error: { message?: string } | null
   createdAt: string
   completedAt: string | null
+  workspace?: WorkspaceSelection
+  workspaceWait?: WorkspaceWait | null
   agentMode?: boolean
   snapshot: ResponseSnapshot | EmbeddedResponseSnapshot
   branches: {
@@ -138,6 +141,8 @@ interface PendingQueuedMessageInput extends Omit<PendingMessageInput, 'chatId'> 
   chatId: string
   responseId: string
   presetSelections: Record<string, string>
+  workspace?: WorkspaceSelection
+  workspaceWait?: WorkspaceWait | null
   agentMode: boolean
 }
 
@@ -145,6 +150,8 @@ interface StagedSendOptions {
   targetChatId: string
   responseId: string
   presetSelections: Record<string, string>
+  workspace?: WorkspaceSelection
+  workspaceWait?: WorkspaceWait | null
   agentMode: boolean
 }
 
@@ -223,6 +230,8 @@ interface ChatState {
     content: string
     modelId: string
     attachments: Attachment[]
+    workspace?: WorkspaceSelection
+    workspaceWait?: WorkspaceWait | null
     agentMode: boolean
   }) => Promise<void>
   editAssistantMessage: (chatId: string, messageId: string, content: string) => void
@@ -344,6 +353,8 @@ function messagesFromResponses(responses: ServerResponse[], attachmentRows: Serv
       {
         id: `${response.id}:input`, role: 'user' as const, content: inputText(response.input),
         timestamp, done: true, branch: response.branches.user, attachments: messageAttachments,
+        workspace: response.workspace ?? undefined,
+        workspaceWait: response.snapshot?.workspaceWait ?? response.workspaceWait,
         agentMode: response.agentMode,
       },
       {
@@ -365,6 +376,8 @@ function messagesFromResponses(responses: ServerResponse[], attachmentRows: Serv
           ? Math.max(0, Date.parse(response.completedAt) - timestamp)
           : undefined,
         error: response.error?.message,
+        workspace: response.workspace ?? undefined,
+        workspaceWait: response.snapshot?.workspaceWait ?? response.workspaceWait,
         agentMode: response.agentMode,
         outputItems: response.output,
         attachments: attachmentsFromOutput(response.output, attachments),
@@ -622,6 +635,8 @@ function cacheOptimisticBranch(input: {
   presetSelections: Record<string, string>
   editedInput?: string
   editedAttachments?: Attachment[]
+  workspace?: WorkspaceSelection
+  workspaceWait?: WorkspaceWait | null
   agentMode?: boolean
 }): { chat: ServerChat; selectionVersion: number } | undefined {
   const existing = queryClient.getQueryData<ServerChat>(chatKey(input.chatId))
@@ -778,6 +793,8 @@ function persistResponseSnapshot(chatId: string, snapshot: ResponseSnapshot): vo
         const done = !['queued', 'in_progress'].includes(merged.status)
         return {
           ...response,
+          workspace: merged.workspace,
+          workspaceWait: merged.workspaceWait,
           status: merged.status,
           output: merged.output,
           usage: merged.usage,
@@ -1007,6 +1024,8 @@ export const useChat = create<ChatState>()((set, get) => ({
             if (message.id !== snapshot.responseId) return message
             return {
               ...message,
+              workspace: snapshot.workspace ?? message.workspace,
+              workspaceWait: snapshot.workspaceWait,
               requestReceivedAt: snapshot.requestReceivedAt,
               firstReplyTextAt: snapshot.firstReplyTextAt,
               initialResponseDurationMs: initialResponseDurationMs(snapshot, !inFlight ? snapshot.updatedAt : undefined),
@@ -1369,6 +1388,8 @@ export const useChat = create<ChatState>()((set, get) => ({
       content: input.content,
       modelId: input.modelId,
       presetSelections: input.presetSelections,
+      workspace: input.workspace ?? undefined,
+
       agentMode: input.agentMode,
       position: Math.max(-1, ...currentQueue.map((message) => message.position)) + 1,
       status: 'pending',
@@ -1426,7 +1447,8 @@ export const useChat = create<ChatState>()((set, get) => ({
       staged?.presetSelections ?? useSettings.getState().generation[modelId],
       modelId,
     )
-    const agentMode = staged?.agentMode ?? currentAgentMode(modelId)
+    const workspace = staged?.workspace
+    const agentMode = workspace ? workspace.kind !== 'none' : staged?.agentMode ?? currentAgentMode(modelId)
     const userMessage: Message = {
       id: `${responseId}:input`,
       role: 'user',
@@ -1438,6 +1460,7 @@ export const useChat = create<ChatState>()((set, get) => ({
     const assistantMessage: Message = {
       id: responseId, role: 'assistant', content: '', modelId,
       timestamp: timestamp + 1, done: false, presetSelections: generation.selections,
+      workspace,
       agentMode,
     }
     set((state) => {
@@ -1504,7 +1527,8 @@ export const useChat = create<ChatState>()((set, get) => ({
         modelId,
         presetSelections: generation.selections,
         attachmentIds: attachments.map((attachment) => attachment.id),
-        agentMode,
+        workspace,
+      agentMode,
       }
       const path = chatId ? `/api/chats/${id}/responses` : '/api/chats/start'
       const body = chatId ? responseBody : {
@@ -1633,6 +1657,8 @@ export const useChat = create<ChatState>()((set, get) => ({
       content: input.input,
       modelId: input.modelId,
       presetSelections: input.presetSelections,
+      workspace: input.workspace ?? undefined,
+
       agentMode: input.agentMode,
       position: staged?.position ?? Math.max(-1, ...currentQueue.map((message) => message.position)) + 1,
       status: 'pending',
@@ -1699,6 +1725,8 @@ export const useChat = create<ChatState>()((set, get) => ({
             content: input.input,
             modelId: input.modelId,
             presetSelections: input.presetSelections,
+            workspace: input.workspace ?? undefined,
+
             agentMode: input.agentMode,
             attachments: messageAttachments.map((attachment) => ({
               id: attachment.id,
@@ -1793,7 +1821,8 @@ export const useChat = create<ChatState>()((set, get) => ({
       useSettings.getState().generation[modelId],
       modelId,
     )
-    const agentMode = currentAgentMode(modelId)
+    const workspace = get().chats.find(chat => chat.id === chatId)?.messages.find(message => message.id === messageId)?.workspace
+    const agentMode = workspace ? workspace.kind !== 'none' : currentAgentMode(modelId)
     const responseId = crypto.randomUUID()
     const optimistic = cacheOptimisticBranch({
       chatId,
@@ -1802,6 +1831,7 @@ export const useChat = create<ChatState>()((set, get) => ({
       modelId: generation.effectiveModelId || modelId,
       displayModelId: modelId,
       presetSelections: generation.selections,
+      workspace,
       agentMode,
     })
     const selectionVersion = optimistic?.selectionVersion
@@ -1812,6 +1842,7 @@ export const useChat = create<ChatState>()((set, get) => ({
       clientId: responseId,
       modelId,
       presetSelections: generation.selections,
+      workspace,
       agentMode,
     }, { queueOffline: !get().chats.some((chat) => chat.id === chatId && chat.temporary) })).then((result) => {
       if (result === undefined) return
@@ -1828,7 +1859,7 @@ export const useChat = create<ChatState>()((set, get) => ({
       if (expired) get().markTemporaryExpired(chatId)
     })
   },
-  editUserMessage: async ({ chatId, messageId, content, modelId, attachments: editedAttachments, agentMode }) => {
+  editUserMessage: async ({ chatId, messageId, content, modelId, attachments: editedAttachments, agentMode, workspace }) => {
     const generation = resolveGeneration(
       chatOptionsFor(getCatalogModel(modelId), useModelConfig.getState().overrides),
       useSettings.getState().generation[modelId],
@@ -1849,6 +1880,7 @@ export const useChat = create<ChatState>()((set, get) => ({
       presetSelections: generation.selections,
       editedInput: content,
       editedAttachments,
+      workspace,
       agentMode,
     })
     const selectionVersion = optimistic?.selectionVersion
@@ -1861,7 +1893,8 @@ export const useChat = create<ChatState>()((set, get) => ({
         modelId,
         presetSelections: generation.selections,
         attachmentIds: editedAttachments.map((attachment) => attachment.id),
-        agentMode,
+        workspace,
+      agentMode,
       }
       const responseBody = { ...selection, input: content, parentResponseId: source?.parentResponseId ?? null }
       const startChat = rejectedSend?.startChat

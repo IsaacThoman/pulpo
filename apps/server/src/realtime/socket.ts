@@ -1,3 +1,4 @@
+import { registerWorkspaceGateway } from '../workspaces/gateway.js'
 import { resolveClientIp } from '../lib/client-ip.js'
 import { accessComposer } from '../composer/service.js'
 import { composerDraftIdSchema, composerWriteSchema, type ComposerAck, type ComposerSnapshot } from '@pulpo/contracts'
@@ -94,7 +95,7 @@ export async function createSocketServer(httpServer: HttpServer) {
   const subscriber = createRedis()
   const io = new Server<ClientToServerEvents, ServerToClientEvents, Record<string, never>, SocketData>(httpServer, {
     path: '/socket.io',
-    maxHttpBufferSize: 4_100_000,
+    maxHttpBufferSize: 40_000_000,
     cors: {
       origin: (origin, callback) => callback(null, !origin || isAllowedOrigin(origin, config)),
       credentials: true,
@@ -105,6 +106,8 @@ export async function createSocketServer(httpServer: HttpServer) {
     },
     adapter: createAdapter(adapterRedis),
   })
+
+  registerWorkspaceGateway(io)
 
   const broadcastComposer = async (userId: string, snapshot: ComposerSnapshot) => {
     if (snapshot.state?.temporary) return

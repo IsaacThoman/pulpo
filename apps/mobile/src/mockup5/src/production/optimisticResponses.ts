@@ -1,3 +1,4 @@
+import type { WorkspaceSelection, WorkspaceWait } from '@pulpo/contracts'
 import { mergeResponseSnapshots, type ResponseSnapshot } from '@pulpo/contracts'
 import { hydrateEmbeddedResponseSnapshot } from '@pulpo/client-core'
 import type { QueryClient } from '@tanstack/react-query'
@@ -33,6 +34,8 @@ interface CacheOptimisticTurnInput {
   temporary: boolean
   expiresAt?: string | null
   presetSelections: Record<string, string>
+  workspace?: WorkspaceSelection
+  workspaceWait?: WorkspaceWait | null
   agentMode: boolean
   attachments: OptimisticAttachment[]
   createdAt: number
@@ -49,6 +52,8 @@ interface CacheOptimisticBranchInput {
   editedInput?: string
   editedOutput?: string
   editedAttachments?: OptimisticAttachment[]
+  workspace?: WorkspaceSelection
+  workspaceWait?: WorkspaceWait | null
   agentMode?: boolean
   createdAt: number
 }
@@ -173,6 +178,8 @@ export function cacheOptimisticTurn(input: CacheOptimisticTurnInput): void {
     }],
     output: [],
     presetSelections: input.presetSelections,
+    workspace: input.workspace ?? undefined,
+    workspaceWait: input.workspaceWait,
     agentMode: input.agentMode,
     usage: null,
     error: null,

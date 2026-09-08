@@ -1,3 +1,5 @@
+import { resolveWorkspace, type WorkspaceSelection } from '@pulpo/contracts'
+import { WorkspacePicker } from './WorkspacePicker'
 import { localComposerDraftId } from '@pulpo/client-core'
 import { ShelvedDrafts } from './ShelvedDrafts'
 import { ComposerTray } from './ComposerTray'
@@ -14,7 +16,6 @@ import {
   Archive,
   AlertCircle,
   ArrowUp,
-  Bot,
   Check,
   ChevronDown,
   CornerDownRight,
@@ -72,6 +73,8 @@ import {
 } from '@/lib/local-first/composer-drafts'
 
 export interface ComposerMessageEdit {
+  workspace?: WorkspaceSelection
+  agentMode?: boolean
   messageId: string
   content: string
   attachments: Attachment[]
@@ -183,7 +186,7 @@ export function Composer({
   const valueRef = useRef(value)
   const attachmentIdsRef = useRef(attachmentIds)
   const uploadsRef = useRef<Record<string, UploadRecord>>({})
-  const preservedDraftRef = useRef<{ value: string; attachmentIds: string[] } | null>(null)
+  const preservedDraftRef = useRef<{ value: string; attachmentIds: string[]; workspace?: WorkspaceSelection } | null>(null)
   const activeRecoveryIdRef = useRef<string | null>(null)
   const activeMessageEditIdRef = useRef<string | null>(null)
   const queueDragIdRef = useRef<string | null>(null)
@@ -235,9 +238,18 @@ export function Composer({
   const [draftPresets, setDraftPresets] = useState<Record<string, Record<string, string>>>({})
   const setPresetChoice = (id: string, preset: string, choice: string) => setDraftPresets((current) => ({ ...current, [id]: { ...generation[id], ...current[id], [preset]: choice } }))
   const defaultAgentMode = useSettings((s) => s.agentModes[modelId] ?? true)
-  const [draftAgentMode, setDraftAgentMode] = useState<boolean | null>(null)
-  const agentModeEnabled = draftAgentMode ?? defaultAgentMode
-  const setAgentMode = (_id: string, enabled: boolean) => setDraftAgentMode(enabled)
+  const [, setDraftAgentMode] = useState<boolean | null>(null)
+  const workspaceKey = `pulpo-workspace:${userId}:${chatId ?? 'new'}`
+  const initialAgentMode = useRef(defaultAgentMode)
+  const [workspace, setWorkspace] = useState<WorkspaceSelection>(() => {
+    try { return JSON.parse(localStorage.getItem(workspaceKey) ?? 'null') ?? resolveWorkspace(undefined, defaultAgentMode) } catch { return resolveWorkspace(undefined, defaultAgentMode) }
+  })
+  useEffect(() => {
+    try { setWorkspace(JSON.parse(localStorage.getItem(workspaceKey) ?? 'null') ?? resolveWorkspace(undefined, initialAgentMode.current)) } catch { setWorkspace(resolveWorkspace(undefined, initialAgentMode.current)) }
+  }, [workspaceKey])
+  const changeWorkspace = (value: WorkspaceSelection) => { setWorkspace(value); setDraftAgentMode(value.kind !== 'none'); localStorage.setItem(workspaceKey, JSON.stringify(value)) }
+  const agentModeEnabled = workspace.kind !== 'none'
+  const setAgentMode = (_id: string, enabled: boolean) => changeWorkspace(resolveWorkspace(undefined, enabled))
   const agentAvailable = useCatalog((s) => s.agentAvailable)
   const agentCapable = Boolean(getCatalogModel(modelId).agentEnabled)
   const canUseAgent = agentAvailable && agentCapable
@@ -250,8 +262,8 @@ export function Composer({
   const selections = resolveSelections(options, draftPresets[modelId] ?? generation[modelId])
   const activePresets = options.presets.filter((p) => p.choices.length > 0)
 
-  const [editAgentMode, setEditAgentMode] = useState(false)
-  const activeAgentMode = messageEdit ? editAgentMode : agentModeEnabled
+  const setEditAgentMode = (enabled: boolean) => setWorkspace(resolveWorkspace(undefined, enabled))
+  const activeAgentMode = agentModeEnabled
   const attachments = attachmentIds.map((id) => uploads[id]).filter((item): item is UploadRecord => Boolean(item))
   const uploading = attachments.some((a) => a.status === 'uploading')
   const uploadFailed = attachments.some((a) => a.status === 'error')
@@ -289,7 +301,7 @@ export function Composer({
     attachments: (preservedDraftRef.current?.attachmentIds ?? attachmentIds).map((id) => uploads[id])
       .filter((a): a is UploadRecord & { id: string } => Boolean(a?.id && a.status === 'ready'))
       .map((a) => ({ id: a.id, name: a.name, mimeType: a.mimeType, size: a.size })),
-    model: { id: modelId, presets: selections }, agentMode: agentModeEnabled, temporary, autoExpire,
+    model: { id: modelId, presets: selections }, workspace: preservedDraftRef.current?.workspace ?? workspace, agentMode: (preservedDraftRef.current?.workspace ?? workspace).kind !== 'none', temporary, autoExpire,
   }
   const currentComposerState = useRef(sharedComposerState)
   currentComposerState.current = sharedComposerState
@@ -300,7 +312,7 @@ export function Composer({
     const currentByServerId = new Map(currentIds.map((id) => [uploadsRef.current[id]?.id, id]))
     const remoteIds = remote.attachments.map((a) => currentByServerId.get(a.id) ?? addExistingAttachments([{ ...a, type: isSupportedImageMime(a.mimeType) ? 'image' : 'file' }], { chatId, temporary })[0]!)
     const ids = [...pending, ...remoteIds]
-    if (preservedDraftRef.current) preservedDraftRef.current = { value: remote.content, attachmentIds: ids }
+    if (preservedDraftRef.current) preservedDraftRef.current = { value: remote.content, attachmentIds: ids, workspace: resolveWorkspace(remote.workspace, remote.agentMode) }
     else if (!recovery) {
       const selection = ref.current && document.activeElement === ref.current
         ? { start: ref.current.selectionStart, end: ref.current.selectionEnd } : null
@@ -318,6 +330,7 @@ export function Composer({
     if (!editingExisting && !recovery) {
       if (remote.model) setDraftPresets((current) => ({ ...current, [remote.model!.id]: remote.model!.presets }))
       setDraftAgentMode(remote.agentMode)
+      changeWorkspace(resolveWorkspace(remote.workspace, remote.agentMode))
       onSyncControls?.(remote)
     }
   }, Boolean(editingExisting || recovery))
@@ -630,6 +643,7 @@ export function Composer({
     if (!preserved) return
     const preservedIds = new Set(preserved.attachmentIds)
     releaseDraftUploads(attachmentIds.filter((id) => !preservedIds.has(id)))
+    if (preserved.workspace) setWorkspace(preserved.workspace)
     setValue(preserved.value)
     setAttachmentIds(preserved.attachmentIds)
     requestAnimationFrame(autosize)
@@ -637,17 +651,17 @@ export function Composer({
 
   useEffect(() => {
     if (!messageEdit || editingQueueId || activeMessageEditIdRef.current === messageEdit.messageId) return
-    preservedDraftRef.current = { value, attachmentIds }
+    preservedDraftRef.current = { value, attachmentIds, workspace }
     activeMessageEditIdRef.current = messageEdit.messageId
     setValue(messageEdit.content)
-    setEditAgentMode(agentModeEnabled)
+    setWorkspace(resolveWorkspace(messageEdit.workspace, messageEdit.agentMode ?? agentModeEnabled))
     setQueueError(null)
     setAttachmentIds(addExistingAttachments(messageEdit.attachments, { chatId, temporary }))
     requestAnimationFrame(() => {
       autosize()
       ref.current?.focus()
     })
-  }, [addExistingAttachments, agentModeEnabled, attachmentIds, autosize, chatId, editingQueueId, messageEdit, temporary, value])
+  }, [addExistingAttachments, agentModeEnabled, attachmentIds, autosize, chatId, editingQueueId, messageEdit, temporary, value, workspace])
 
   const cancelMessageEdit = useCallback(() => {
     if (!messageEdit) return
@@ -667,8 +681,9 @@ export function Composer({
 
   useEffect(() => {
     if (recovery && !activeRecoveryIdRef.current && !messageEdit && !editingQueueId) {
-      preserveComposerDraft(recovery.chatId, { value, attachmentIds })
+      preserveComposerDraft(recovery.chatId, { value, attachmentIds, workspace })
       activeRecoveryIdRef.current = recovery.id
+      setWorkspace(resolveWorkspace(recovery.workspace, recovery.agentMode))
       setValue(recovery.content)
       setAttachmentIds(recovery.attachmentIds)
       setQueueError(null)
@@ -683,10 +698,11 @@ export function Composer({
     if (!chatId) return
     const preserved = takePreservedComposerDraft(chatId)
     if (!preserved) return
+    if (preserved.workspace) setWorkspace(preserved.workspace)
     setValue(preserved.value)
     setAttachmentIds(preserved.attachmentIds)
     requestAnimationFrame(autosize)
-  }, [attachmentIds, autosize, chatId, editingQueueId, messageEdit, preserveComposerDraft, recovery, takePreservedComposerDraft, value])
+  }, [attachmentIds, autosize, chatId, editingQueueId, messageEdit, preserveComposerDraft, recovery, takePreservedComposerDraft, value, workspace])
 
   const queuePayload = () => readyAttachments.map((attachment) => ({
     id: attachment.id!,
@@ -706,6 +722,7 @@ export function Composer({
       modelId,
       presetSelections: selections,
       attachmentIds: payload.map((attachment) => attachment.id),
+      workspace: canUseAgent ? workspace : { kind: 'none' as const },
       agentMode: activeAgentMode && canUseAgent,
     }
     setQueueError(null)
@@ -718,7 +735,8 @@ export function Composer({
           content: text,
           modelId,
           attachments: payload,
-          agentMode: activeAgentMode && canUseAgent,
+          workspace: canUseAgent ? workspace : { kind: 'none' as const },
+      agentMode: activeAgentMode && canUseAgent,
         })
         consumeUploads(attachmentIds)
         restorePreservedDraft()
@@ -748,7 +766,8 @@ export function Composer({
         content: text,
         modelId,
         presetSelections: selections,
-        agentMode: activeAgentMode && canUseAgent,
+        workspace: canUseAgent ? workspace : { kind: 'none' as const },
+      agentMode: activeAgentMode && canUseAgent,
         attachmentIds,
       })
       clearDraft(false)
@@ -763,6 +782,7 @@ export function Composer({
       content: text,
       modelId,
       presetSelections: selections,
+      workspace: canUseAgent ? workspace : { kind: 'none' as const },
       agentMode: activeAgentMode && canUseAgent,
       temporary,
       autoExpire,
@@ -836,9 +856,10 @@ export function Composer({
     setQueueError(null)
     try {
       await updateQueuedMessage(chatId, messageId, { action: 'begin_edit' })
-      preservedDraftRef.current = { value, attachmentIds }
+      preservedDraftRef.current = { value, attachmentIds, workspace }
       setEditingQueueId(messageId)
       setValue(message.content)
+      setWorkspace(resolveWorkspace(message.workspace, message.agentMode))
       setAttachmentIds(addExistingAttachments(message.attachments.map((attachment) => ({
         id: attachment.id,
         name: attachment.name,
@@ -1257,21 +1278,7 @@ export function Composer({
             </DropdownMenu>
           )}
 
-          <button
-            type="button"
-            disabled={!canUseAgent}
-            onClick={() => {
-              if (!canUseAgent) return
-              if (messageEdit) setEditAgentMode((value) => !value)
-              else setAgentMode(modelId, !agentModeEnabled)
-            }}
-            aria-label={activeAgentMode && canUseAgent ? t('chat.disableAgent') : t('chat.enableAgent')}
-            aria-pressed={activeAgentMode && canUseAgent}
-            className={cn('flex h-8 shrink-0 cursor-pointer items-center gap-1.5 rounded-full px-2.5 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-40', activeAgentMode && canUseAgent ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-accent hover:text-foreground')}
-          >
-            <Bot className="size-4" />
-            <span>{t('chat.agent')}</span>
-          </button>
+          <WorkspacePicker value={workspace} onChange={changeWorkspace} disabled={!canUseAgent} />
 
           <div className="flex-1" />
 

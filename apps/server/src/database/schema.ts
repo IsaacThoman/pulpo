@@ -1,3 +1,4 @@
+import type { WorkspaceSelection, WorkspaceWait, ComputerRegistration, ComputerOperationResult } from '@pulpo/contracts'
 import { sql } from 'drizzle-orm'
 import {
   bigint,
@@ -471,8 +472,11 @@ export const responses = pgTable('responses', {
   branchReason: text('branch_reason').notNull().default('message'),
   status: responseStatusEnum('status').notNull().default('queued'),
   executionMode: executionModeEnum('execution_mode').notNull().default('stream'),
+  workspace: jsonb('workspace').$type<WorkspaceSelection>(),
   agentMode: boolean('agent_mode').notNull().default(false),
   agentCapacityAction: text('agent_capacity_action'),
+  workspaceGeneration: integer('workspace_generation').notNull().default(0),
+  workspaceWait: jsonb('workspace_wait').$type<WorkspaceWait>(),
   input: jsonb('input').notNull(),
   instructions: text('instructions'),
   presetSelections: jsonb('preset_selections').notNull().default({}),
@@ -509,6 +513,7 @@ export const queuedMessages = pgTable('queued_messages', {
   content: text('content').notNull().default(''),
   modelId: text('model_id').notNull().references(() => models.id),
   presetSelections: jsonb('preset_selections').$type<Record<string, string>>().notNull().default({}),
+  workspace: jsonb('workspace').$type<WorkspaceSelection>(),
   agentMode: boolean('agent_mode').notNull().default(false),
   attachmentIds: jsonb('attachment_ids').$type<string[]>().notNull().default([]),
   position: integer('position').notNull(),
@@ -598,6 +603,7 @@ export const agentRuns = pgTable('agent_runs', {
   workspaceLeaseId: uuid('workspace_lease_id').references(() => workspaceLeases.id, { onDelete: 'set null' }),
   status: agentRunStatusEnum('status').notNull().default('queued'),
   context: jsonb('context').notNull().default({}),
+  activeRuntimeMs: bigint('active_runtime_ms', { mode: 'number' }).notNull().default(0),
   modelTurns: integer('model_turns').notNull().default(0),
   toolCalls: integer('tool_calls').notNull().default(0),
   error: text('error'),
@@ -1176,6 +1182,7 @@ export const composerDrafts = pgTable('composer_drafts', {
   content: text('content').notNull().default(''),
   modelId: text('model_id').notNull(),
   presetSelections: jsonb('preset_selections').notNull().default({}),
+  workspace: jsonb('workspace').$type<WorkspaceSelection>(),
   agentMode: boolean('agent_mode').notNull().default(false),
   autoExpire: boolean('auto_expire'),
   editorId: text('editor_id').notNull(),
@@ -1219,3 +1226,34 @@ export const shelfOperations = pgTable('shelf_operations', {
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   operationId: uuid('operation_id').notNull(),
 }, (table) => [primaryKey({ columns: [table.userId, table.operationId] })]);
+
+export const workspaceComputers = pgTable('workspace_computers', {
+  id: uuid('id').primaryKey(),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  sessionId: uuid('session_id').references(() => sessions.id, { onDelete: 'set null' }),
+  tokenHash: text('token_hash').notNull(),
+  connectionId: text('connection_id'),
+  registration: jsonb('registration').$type<ComputerRegistration>().notNull(),
+  lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
+  revokedAt: timestamp('revoked_at', { withTimezone: true }),
+  ...timestamps,
+}, table => [uniqueIndex('workspace_computers_token_unique').on(table.tokenHash)])
+
+export const workspaceOperations = pgTable('workspace_operations', {
+  id: uuid('id').primaryKey(),
+  responseId: uuid('response_id').notNull().references(() => responses.id, { onDelete: 'cascade' }),
+  deviceId: uuid('device_id').notNull().references(() => workspaceComputers.id, { onDelete: 'cascade' }),
+  rootId: uuid('root_id').notNull(),
+  operationId: text('operation_id').notNull(),
+  generation: integer('generation').notNull(),
+  type: text('type').notNull(),
+  arguments: jsonb('arguments').$type<Record<string, unknown>>().notNull(),
+  hash: text('hash').notNull(),
+  result: jsonb('result').$type<ComputerOperationResult>(),
+  lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
+  dispatchedAt: timestamp('dispatched_at', { withTimezone: true }),
+  deadline: timestamp('deadline', { withTimezone: true }).notNull(),
+  retiredAt: timestamp('retired_at', { withTimezone: true }),
+  cancelRequested: boolean('cancel_requested').notNull().default(false),
+  ...timestamps,
+}, table => [uniqueIndex('workspace_operations_response_operation_unique').on(table.responseId, table.generation, table.operationId), index('workspace_operations_device_idx').on(table.deviceId)])

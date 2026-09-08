@@ -15,6 +15,7 @@ describe('branch generation settings', () => {
       agentMode: true,
     })).toEqual({
       executionMode: undefined,
+      workspace: { kind: 'pulpo' },
       presetSelections: { reasoning: 'high', verbosity: 'long' },
       agentMode: true,
     })

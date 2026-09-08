@@ -1,3 +1,4 @@
+import type { WorkspaceSelection, WorkspaceWait } from '@pulpo/contracts'
 import { localComposerDraftId } from '@pulpo/client-core'
 import type { ComposerState } from '@pulpo/contracts'
 import { webComposerSync } from '@/lib/local-first/composer-sync'
@@ -46,6 +47,8 @@ export interface PendingSubmission {
   content: string
   modelId: string
   presetSelections: Record<string, string>
+  workspace?: WorkspaceSelection
+  workspaceWait?: WorkspaceWait | null
   agentMode: boolean
   temporary: boolean
   autoExpire: boolean
@@ -67,6 +70,8 @@ interface SubmissionDraft {
   content: string
   modelId: string
   presetSelections: Record<string, string>
+  workspace?: WorkspaceSelection
+  workspaceWait?: WorkspaceWait | null
   agentMode: boolean
   temporary: boolean
   autoExpire: boolean
@@ -74,6 +79,7 @@ interface SubmissionDraft {
 }
 
 export interface PreservedComposerDraft {
+  workspace?: WorkspaceSelection
   value: string
   attachmentIds: string[]
 }
@@ -141,6 +147,8 @@ function renderSubmissionSurface(submission: PendingSubmission, records: UploadR
     content: submission.content,
     modelId: submission.modelId,
     presetSelections: submission.presetSelections,
+    workspace: submission.workspace ?? undefined,
+
     agentMode: submission.agentMode,
     attachments,
     temporary: submission.temporary,
@@ -361,6 +369,8 @@ async function processChat(chatId: string): Promise<void> {
             targetChatId: chatId,
             responseId: submission.responseId,
             presetSelections: submission.presetSelections,
+            workspace: submission.workspace ?? undefined,
+
             agentMode: submission.agentMode,
           },
         )
@@ -381,6 +391,8 @@ async function processChat(chatId: string): Promise<void> {
           modelId: submission.modelId,
           presetSelections: submission.presetSelections,
           attachmentIds: attachments.map((attachment) => attachment.id),
+          workspace: submission.workspace ?? undefined,
+
           agentMode: submission.agentMode,
         }, attachments, submission.responseId)
         const draft = submission.composerDraft
@@ -544,6 +556,8 @@ export const useUploadOutbox = create<UploadOutboxState>()((set, get) => ({
       content: draft.content,
       modelId: draft.modelId,
       presetSelections: draft.presetSelections,
+      workspace: draft.workspace ?? undefined,
+
       agentMode: draft.agentMode,
       temporary: draft.temporary,
       autoExpire: draft.autoExpire,
@@ -567,6 +581,8 @@ export const useUploadOutbox = create<UploadOutboxState>()((set, get) => ({
       content: draft.content,
       modelId: draft.modelId,
       presetSelections: draft.presetSelections,
+      workspace: draft.workspace ?? undefined,
+
       agentMode: draft.agentMode,
       attachmentIds: draft.attachmentIds,
       status: 'waiting' as const,
