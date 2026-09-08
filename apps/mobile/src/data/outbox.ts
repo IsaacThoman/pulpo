@@ -1,3 +1,4 @@
+import { mobileChatStarted } from '../features/chat/chatStarted'
 import type { QueryClient } from '@tanstack/react-query'
 import type { MobileQueuedMessage, ServerChat } from '../types'
 import { queryKeys } from './queries'
@@ -15,9 +16,11 @@ async function performReplay(namespace: string, client?: QueryClient): Promise<{
   let rejected = 0
   for (const row of rows) {
     try {
+      const body = row.body ? JSON.parse(row.body) : undefined
+      if (row.path === '/api/chats/start' && body?.chat?.clientId) mobileChatStarted.ignoreLocal(namespace, body.chat.clientId)
       const result = await apiRequest<{ queuedMessage?: MobileQueuedMessage | null }>(row.path, {
         method: row.method,
-        body: row.body ? JSON.parse(row.body) : undefined,
+        body,
         idempotencyKey: row.id,
       })
       if (row.entityKey.startsWith('queued-message:')) await settleQueuedSubmission(namespace, row.id, row.path, result.queuedMessage ?? null, undefined, client)

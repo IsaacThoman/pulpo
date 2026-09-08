@@ -1,3 +1,4 @@
+import { webChatStarted } from '../chat-started'
 import { apiRequest, ApiError, isNetworkError } from '@/lib/api'
 import { localAccountKey, localDb, type OutboxMutation } from './database'
 
@@ -32,6 +33,10 @@ async function runOutbox(userId: string): Promise<string[]> {
     .sortBy('createdAt')
   for (const mutation of due) {
     try {
+      if (mutation.path === '/api/chats/start') {
+        const body = mutation.body as { chat?: { clientId?: string } } | undefined
+        if (body?.chat?.clientId) webChatStarted.ignoreLocal(accountKey, body.chat.clientId)
+      }
       await apiRequest(mutation.path, {
         method: mutation.method,
         body: mutation.body,

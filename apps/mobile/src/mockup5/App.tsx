@@ -194,6 +194,7 @@ import { modelSubtitle, reconcileComposerModelId, resolveDisplayModel } from './
 import { useSessionStore } from '../store/session';
 import type { ServerChat } from '../types';
 import { apiRequest, ApiError } from '../api/client';
+import { useFollowStartedChat } from '../features/chat/useFollowStartedChat';
 import { clearProductionScope, hydrateProductionChatPreview, hydrateProductionScope, ProductionBridge } from './src/production/ProductionBridge';
 import { productionActions, runProductionAction } from './src/production/productionActions';
 import { applyConfirmedMessageDeletion, cacheOptimisticBranch, cacheOptimisticTurn, discardOptimisticChat, rejectOptimisticTurn } from './src/production/optimisticResponses';
@@ -1682,6 +1683,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     [generationPreferences, selectedModel.id, selectedPrototypeModel],
   );
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
+  const remoteStartedChatId = useRef<string | null>(null);
   const [newChatTemporary, setNewChatTemporary] = useState(false);
   const [savingTemporaryChatId, setSavingTemporaryChatId] = useState<string | null>(null);
   const [input, setInput] = useState('');
@@ -2061,6 +2063,19 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   }, [productionInstanceUrl, productionUserId, queryClient]);
   const activePrototypeChat = useMemo(() => storedChats.find((chat) => chat.id === activeChatId && chat.deletedAt === null) ?? null, [activeChatId, storedChats]);
   const activeChat = useMemo(() => activePrototypeChat ? prototypeChatToLegacy(activePrototypeChat) : null, [activePrototypeChat]);
+  useEffect(() => {
+    if (!activePrototypeChat || remoteStartedChatId.current !== activePrototypeChat.id) return;
+    remoteStartedChatId.current = null;
+    setSelectedModelId(activePrototypeChat.modelId);
+  }, [activePrototypeChat]);
+  const openStartedChat = useCallback((chatId: string) => {
+    composerFollowsDefaultModel.current = false;
+    remoteStartedChatId.current = chatId;
+    setActiveChatId(chatId);
+    setAssistantStatus('idle');
+    // Keep the mounted TextInput and keyboard focused. ProductionBridge loads
+    // and subscribes to the selected chat while its composer changes draft scope.
+  }, []);
   const chatAutoExpire = activePrototypeChat
     ? activePrototypeChat.expiresAt != null
     : automaticChatExpiration !== 'disabled' && newChatAutoExpire;
@@ -2355,6 +2370,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     options?: SendOptions,
     prepareAttachments?: PrepareAttachments,
   ): Promise<boolean> => {
+    if (activeChatId && remoteStartedChatId.current === activeChatId && !activeChat) return false;
     const trimmed = value.trim();
     if ((!trimmed && attachments.length === 0) || !selectedModel.id) return false;
     if (activeChat && shouldQueueMessage(effectiveAssistantStatus !== 'idle', activePrototypeChat?.queuedMessages?.length ?? 0)) {
@@ -2733,8 +2749,8 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
             acceptIncomingFiles={!activeChatId && productionScopeReady && isFocused}
             messages={messages}
             queuedMessages={activePrototypeChat?.queuedMessages ?? EMPTY_MOBILE_QUEUE}
-            chatId={activeChat?.id ?? null}
-            chatLoaded={activePrototypeChat?.detailLoaded !== false}
+            chatId={activeChat?.id ?? (remoteStartedChatId.current === activeChatId ? activeChatId : null)}
+            chatLoaded={Boolean(activePrototypeChat && activePrototypeChat.detailLoaded !== false)}
             onTranscriptReady={revealSelectedChat}
             openingChatId={openingChat?.id ?? null}
             draftNamespace={productionUserId ? cacheNamespace(productionInstanceUrl, productionUserId) : null}
@@ -2751,6 +2767,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
             onChangeInput={setInput}
             onSelectPreset={selectPreset}
             onSend={sendMessage}
+            onRemoteChatStarted={openStartedChat}
             onStop={stopGeneration}
             assistantStatus={effectiveAssistantStatus}
             onRegenerate={regenerateMessage}
@@ -3825,7 +3842,7 @@ function ComposerQueueSection({ title, subject, collapsed, onToggle, failed = fa
 }
 
 function ChatView({
-  acceptIncomingFiles, messages, queuedMessages, chatId, chatLoaded, onTranscriptReady, openingChatId, draftNamespace, keyboardLayoutEnabled, transcriptTransitionActive, model, models, prototypeModel, presetSelections: defaultPresetSelections, input, composerInputRef, composerFocusSuppressed, composerFocusRequest, onChangeInput, onSend, assistantStatus,
+  acceptIncomingFiles, messages, queuedMessages, chatId, chatLoaded, onTranscriptReady, openingChatId, draftNamespace, keyboardLayoutEnabled, transcriptTransitionActive, model, models, prototypeModel, presetSelections: defaultPresetSelections, input, composerInputRef, composerFocusSuppressed, composerFocusRequest, onChangeInput, onSend, onRemoteChatStarted, assistantStatus,
   onEdit, onRegenerate, onActivateBranch, onOpenChat, onStop, onTogglePanel, onOpenModelPicker, onSelectModel, onNewChat, onSaveTemporary, persistentSidebar, sidebarVisible, temporary, autoExpire, expirationPeriod, showAutoExpirationControl, expired, savingTemporary, onTemporaryChange, onAutoExpirationChange,
 }: {
   acceptIncomingFiles: boolean;
@@ -3847,6 +3864,7 @@ function ChatView({
   composerFocusSuppressed: boolean;
   composerFocusRequest: { revision: number; target: 'composer' | 'content' };
   onChangeInput: (value: string) => void;
+  onRemoteChatStarted: (chatId: string) => void;
   onSend: (value?: string, attachments?: ComposerAttachment[], options?: SendOptions, prepareAttachments?: PrepareAttachments) => Promise<boolean>;
   assistantStatus: 'idle' | 'thinking' | 'streaming';
   onEdit: (message: Message, content: string, attachments?: PreparedAttachment[], agentMode?: boolean) => Promise<boolean>;
@@ -4033,6 +4051,12 @@ function ChatView({
     },
   });
   const { busy: dictationBusy, isBusy: isDictationBusy } = dictation;
+  useFollowStartedChat({
+    namespace: draftNamespace, chatId, textarea: composerInputRef, temporary,
+    screenFocused: composerScreenFocused && keyboardLayoutEnabled && !composerFocusSuppressed,
+    busy: () => sendingRef.current || handoffBusyRef.current || shelfBusyRef.current || isDictationBusy(),
+    open: onRemoteChatStarted,
+  });
   const dictationLabel = dictation.phase === 'recording' ? 'Stop dictation' : dictation.phase === 'transcribing' ? 'Transcribing…' : 'Dictate';
   const dictationDisabled = dictationBusy ? dictation.phase !== 'recording'
     : !composerScreenFocused || networkOffline || sending || queueBusy || shelfBusy || expired || composerFocusSuppressed
@@ -4918,7 +4942,7 @@ function ChatView({
   }, [messageEdit, setAttachments]);
 
   const submitMessage = async () => {
-    if (handoffBusyRef.current || sendingRef.current || isDictationBusy()) return;
+    if ((chatId && !chatLoaded) || handoffBusyRef.current || sendingRef.current || isDictationBusy()) return;
     const sendPolicy = attachmentSendPolicy(attachments, { editing: Boolean(messageEdit) });
     if (!sendPolicy.allowed) {
       Alert.alert(
@@ -5215,6 +5239,7 @@ function ChatView({
   ) : null;
   const attachmentPolicy = attachmentSendPolicy(attachments, { editing: Boolean(messageEdit) });
   const canSend = Boolean(model.id)
+    && (!chatId || chatLoaded)
     && (input.trim().length > 0 || attachments.length > 0)
     && !sending
     && !dictationBusy

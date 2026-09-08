@@ -55,7 +55,7 @@ vi.mock('./optimisticBranches', () => ({
   clearOptimisticBranchSelections: vi.fn(), reconcileOptimisticBranchSelection: vi.fn((_namespace, chat) => chat),
 }))
 
-import { hydrateProductionChatPreview, hydrateProductionScope } from './ProductionBridge'
+import { hydrateProductionChatPreview, hydrateProductionScope, mergeProductionChatDetail } from './ProductionBridge'
 import { mergeServerFolders } from './folderMetadata'
 import { createInitialState } from '../initialState'
 import { usePrototypeStore } from '../store/prototypeStore'
@@ -99,6 +99,17 @@ beforeEach(() => {
     productionNamespace: null, productionScopeReady: false, modelPickerScopeReady: false,
     modelCatalogReady: false, agentAvailable: false,
   })
+})
+
+it('loads a remotely started transcript before its summary without duplicating it or losing other chats', () => {
+  const detail = { ...chat('remote', 'Remote chat'), responses: [] }
+  const loaded = mergeProductionChatDetail([], detail, [])
+  expect(loaded).toMatchObject([{ id: 'remote', modelId: 'model-1', detailLoaded: true }])
+  expect(mergeProductionChatDetail(loaded, detail, [])).toHaveLength(1)
+  const staleSummary = mergeProductionChatDetail([], chat('older', 'Older chat'), [])
+  const restored = mergeProductionChatDetail(staleSummary, detail, [])
+  expect(restored.map((row) => row.id)).toEqual(['remote', 'older'])
+  expect(restored[0]?.detailLoaded).toBe(true)
 })
 
 describe('production scope hydration', () => {
