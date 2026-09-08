@@ -50,6 +50,7 @@ interface PublicAuthSettings {
   maxAttachmentBytes: number
   billingEnabled: boolean
   inviteCodesEnabled: boolean
+  codexEnabled: boolean
   dictationEnabled: boolean
 }
 type AuthResult = { ok: true } | { ok: false; error: string }
@@ -67,11 +68,13 @@ interface AuthState {
   maxAttachmentBytes: number
   billingEnabled: boolean
   inviteCodesEnabled: boolean
+  codexEnabled: boolean
   dictationEnabled: boolean
   instanceUrl: string
   instanceName: string
   instanceReady: boolean
   instanceError: string
+  refreshSettings: () => Promise<void>
   bootstrap: () => Promise<void>
   login: (email: string, password: string, twoFactorCode?: string) => Promise<LoginResult>
   passkeyLogin: (useBrowserAutofill?: boolean) => Promise<AuthResult>
@@ -127,11 +130,19 @@ export const useAuth = create<AuthState>()((set, get) => ({
   maxAttachmentBytes: DEFAULT_MAX_ATTACHMENT_BYTES,
   billingEnabled: false,
   inviteCodesEnabled: false,
+  codexEnabled: false,
   dictationEnabled: false,
   instanceUrl: runtimeInstanceUrl(),
   instanceName: 'Pulpo',
   instanceReady: !isDesktopRuntime(),
   instanceError: '',
+
+  refreshSettings: async () => {
+    const version = bootstrapVersion
+    const settings = await apiRequest<PublicAuthSettings>('/api/auth/settings').catch(() => null)
+    if (version !== bootstrapVersion) return
+    set({ ...(settings ?? {}), codexEnabled: settings?.codexEnabled === true })
+  },
 
   bootstrap: () => {
     if (!get().checkingSession) return Promise.resolve()
@@ -185,6 +196,7 @@ export const useAuth = create<AuthState>()((set, get) => ({
           maxAttachmentBytes: config.limits.maxAttachmentBytes,
           billingEnabled: false,
           inviteCodesEnabled: config.auth.inviteCodesEnabled,
+          codexEnabled: false,
           dictationEnabled: false,
         }
         if (!stored) {
@@ -196,7 +208,7 @@ export const useAuth = create<AuthState>()((set, get) => ({
             instanceName: config.instance.name,
             instanceReady: true,
             instanceError: '',
-            ...publicSettings,
+            ...publicSettings, codexEnabled: publicSettings.codexEnabled === true,
           })
           return
         }
@@ -212,7 +224,7 @@ export const useAuth = create<AuthState>()((set, get) => ({
             instanceName: config.instance.name,
             instanceReady: true,
             instanceError: '',
-            ...publicSettings,
+            ...publicSettings, codexEnabled: publicSettings.codexEnabled === true,
           })
         } else {
           const error = authResult?.error
@@ -220,7 +232,7 @@ export const useAuth = create<AuthState>()((set, get) => ({
             await clearDesktopSession()
             configureDesktopRuntime({ instanceUrl, token: null, onUnauthorized: () => { void get().handleDesktopUnauthorized() } })
             cacheProfile(null)
-            set({ user: null, checkingSession: false, setupRequired: config.setupRequired, instanceUrl, instanceName: config.instance.name, instanceReady: true, ...publicSettings })
+            set({ user: null, checkingSession: false, setupRequired: config.setupRequired, instanceUrl, instanceName: config.instance.name, instanceReady: true, ...publicSettings, codexEnabled: publicSettings.codexEnabled === true })
           } else {
             set({
               user: readCachedProfile(),
@@ -230,7 +242,7 @@ export const useAuth = create<AuthState>()((set, get) => ({
               instanceName: config.instance.name,
               instanceReady: false,
               instanceError: error instanceof Error ? error.message : 'Could not validate the saved session.',
-              ...publicSettings,
+              ...publicSettings, codexEnabled: publicSettings.codexEnabled === true,
             })
           }
         }
@@ -254,6 +266,7 @@ export const useAuth = create<AuthState>()((set, get) => ({
         maxAttachmentBytes: get().maxAttachmentBytes,
         billingEnabled: get().billingEnabled,
         inviteCodesEnabled: get().inviteCodesEnabled,
+        codexEnabled: false,
         dictationEnabled: get().dictationEnabled,
       }
       try {
@@ -261,16 +274,16 @@ export const useAuth = create<AuthState>()((set, get) => ({
         const response = authResult.value
         const user = normalizeUser(response.user)
         cacheProfile(user)
-        set({ user, checkingSession: false, setupRequired: setupStatus?.required ?? false, ...publicSettings })
+        set({ user, checkingSession: false, setupRequired: setupStatus?.required ?? false, ...publicSettings, codexEnabled: publicSettings.codexEnabled === true })
       } catch (error) {
         if (error instanceof ApiError && error.status === 401) {
           cacheProfile(null)
-          set({ user: null, checkingSession: false, setupRequired: setupStatus?.required ?? false, ...publicSettings })
+          set({ user: null, checkingSession: false, setupRequired: setupStatus?.required ?? false, ...publicSettings, codexEnabled: publicSettings.codexEnabled === true })
           return
         }
         // A cached profile may render offline data, while every server mutation
         // remains protected by the HTTP-only session once connectivity returns.
-        set({ checkingSession: false, setupRequired: setupStatus?.required ?? get().setupRequired, ...publicSettings })
+        set({ checkingSession: false, setupRequired: setupStatus?.required ?? get().setupRequired, ...publicSettings, codexEnabled: publicSettings.codexEnabled === true })
       }
     })()
     bootstrapPromise = request
@@ -400,7 +413,7 @@ export const useAuth = create<AuthState>()((set, get) => ({
     const allowLocalhost = ['localhost', '127.0.0.1'].includes(window.location.hostname)
     const instanceUrl = normalizeInstanceUrl(value, allowLocalhost)
     configureDesktopRuntime({ instanceUrl, token: null, onUnauthorized: () => { void get().handleDesktopUnauthorized() } })
-    set({ checkingSession: true, instanceUrl, instanceReady: false, instanceError: '', user: null })
+    set({ checkingSession: true, instanceUrl, instanceReady: false, instanceError: '', user: null, codexEnabled: false })
     try {
       const [config, authSettings] = await Promise.all([
         apiRequest<MobileConfig>('/api/mobile/config'),
@@ -418,9 +431,10 @@ export const useAuth = create<AuthState>()((set, get) => ({
         maxAttachmentBytes: config.limits.maxAttachmentBytes,
         billingEnabled: false,
         inviteCodesEnabled: config.auth.inviteCodesEnabled,
+        codexEnabled: false,
         dictationEnabled: false,
       }
-      set({ checkingSession: false, setupRequired: config.setupRequired, instanceUrl, instanceName: config.instance.name, instanceReady: true, instanceError: '', ...settings })
+      set({ checkingSession: false, setupRequired: config.setupRequired, instanceUrl, instanceName: config.instance.name, instanceReady: true, instanceError: '', ...settings, codexEnabled: settings.codexEnabled === true })
       window.location.reload()
     } catch (error) {
       set({ checkingSession: false, instanceReady: false, instanceError: error instanceof Error ? error.message : 'Could not connect to this Pulpo instance.' })

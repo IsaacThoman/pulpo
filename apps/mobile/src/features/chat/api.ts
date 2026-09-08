@@ -1,3 +1,5 @@
+import { deviceTimeZone } from '@pulpo/client-core'
+import { mobileChatStarted } from './chatStarted'
 import { Directory, File, Paths } from 'expo-file-system'
 import * as Crypto from 'expo-crypto'
 import * as Sharing from 'expo-sharing'
@@ -100,6 +102,7 @@ export async function sendMessage(input: {
   // 202 acknowledgement, leaving mobile unable to apply the first deltas.
   useRealtimeStore.getState().receiveSnapshot(queued)
   const body = {
+    timeZone: deviceTimeZone(),
     clientId: responseId,
     parentResponseId: input.parentResponseId,
     input: input.content,
@@ -144,6 +147,8 @@ export async function startChat(input: {
   attachmentIds?: string[]
   agentMode?: boolean
 }): Promise<{ chat: ServerChat; response: ResponseSnapshot }> {
+  const session = useSessionStore.getState()
+  if (session.user) mobileChatStarted.ignoreLocal(cacheNamespace(session.instanceUrl, session.user.id), input.chatId)
   const now = new Date().toISOString()
   const queued: ResponseSnapshot = {
     responseId: input.responseId,
@@ -164,6 +169,7 @@ export async function startChat(input: {
       autoExpire: input.autoExpire ?? false,
     },
     response: {
+      timeZone: deviceTimeZone(),
       clientId: input.responseId,
       parentResponseId: null,
       input: input.content,
@@ -235,7 +241,7 @@ export async function regenerateResponse(
   const responseId = clientId ?? Crypto.randomUUID()
   const result = await apiRequest<{ response: ResponseSnapshot }>(`/api/messages/${id}/regenerate`, {
     method: 'POST', idempotencyKey: responseId,
-    body: { clientId: responseId, modelId, presetSelections, agentMode },
+    body: { clientId: responseId, modelId, presetSelections, agentMode, timeZone: deviceTimeZone() },
   })
   useRealtimeStore.getState().receiveSnapshot(result.response)
   return result.response
@@ -254,6 +260,7 @@ export async function editMessage(input: {
   const result = await apiRequest<{ response: ResponseSnapshot }>(`/api/messages/${input.id}`, {
     method: 'PATCH', idempotencyKey: responseId,
     body: {
+      timeZone: deviceTimeZone(),
       clientId: responseId,
       content: input.content,
       modelId: input.modelId,

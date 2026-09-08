@@ -7,6 +7,7 @@ import { AppState } from 'react-native'
 import * as Crypto from 'expo-crypto'
 import { useQueryClient } from '@tanstack/react-query'
 import { io } from 'socket.io-client'
+import { mobileChatStarted } from '../features/chat/chatStarted'
 import {
   type ResponseEvent,
   type ResponseSnapshot,
@@ -320,6 +321,9 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
     })
     socket.on('response.event', queueEvent)
     socket.on('response.snapshot', applySnapshot)
+    socket.on('chat.started', (event) => {
+      if (!disposed && socket.connected && appStateValue === 'active') mobileChatStarted.receive(namespace, event)
+    })
     socket.on('response.completed', ({ chatId }) => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.chat(namespace, chatId) })
       void queryClient.invalidateQueries({ queryKey: queryKeys.chats(namespace) })

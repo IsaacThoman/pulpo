@@ -1239,6 +1239,10 @@ export const accountDeletionInputSchema = z.object({
 })
 export type AccountDeletionInput = z.infer<typeof accountDeletionInputSchema>
 
+export const codexSettingsSchema = z.object({
+  enabled: z.boolean().default(false),
+})
+
 export const authSettingsSchema = z.object({
   accountDeletionEnabled: z.boolean().default(true),
   signupEnabled: z.boolean().default(true),
@@ -1624,7 +1628,19 @@ const attachmentIdListSchema = z.array(idSchema).refine(
   { message: 'Attachment ids must be unique' },
 )
 
+/** IANA timezone names only; numeric offsets do not track daylight saving changes. */
+export const timeZoneSchema = z.string().trim().min(1).max(100).refine((value) => {
+  if (/^[+-]/.test(value)) return false
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: value }).format()
+    return true
+  } catch {
+    return false
+  }
+}, 'Invalid time zone')
+
 export const createChatResponseSchema = z.object({
+  timeZone: timeZoneSchema.optional(),
   clientId: idSchema.optional(),
   parentResponseId: idSchema.nullable().optional(),
   input: z.string().trim().max(1_000_000).default(''),
@@ -1641,6 +1657,7 @@ export const createChatResponseSchema = z.object({
 export type CreateChatResponseInput = z.infer<typeof createChatResponseSchema>
 
 export const editMessageSchema = z.object({
+  timeZone: timeZoneSchema.optional(),
   clientId: idSchema.optional(),
   content: z.string().trim().max(1_000_000),
   modelId: z.string().trim().min(1).optional(),
@@ -1678,6 +1695,7 @@ export const queuedMessageSchema = z.object({
 export type QueuedMessage = z.infer<typeof queuedMessageSchema>
 
 export const createQueuedMessageSchema = z.object({
+  timeZone: timeZoneSchema.optional(),
   clientId: idSchema.optional(),
   input: z.string().trim().max(1_000_000).default(''),
   modelId: z.string().min(1),
@@ -1695,6 +1713,7 @@ export const updateQueuedMessageSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('cancel_edit') }),
   z.object({
     action: z.literal('save_edit'),
+    timeZone: timeZoneSchema.optional(),
     input: z.string().trim().max(1_000_000).default(''),
     modelId: z.string().min(1),
     presetSelections: z.record(z.string(), z.string()).default({}),
@@ -1751,7 +1770,13 @@ export interface ClientToServerEvents {
   'admin.usage.unsubscribe': () => void
 }
 
+export interface ChatStartedEvent {
+  chatId: string
+  responseId: string
+}
+
 export interface ServerToClientEvents {
+  'chat.started': (event: ChatStartedEvent) => void
   'composer.changed': (snapshot: ComposerSnapshot) => void
   'response.event': (event: ResponseEvent) => void
   'response.snapshot': (snapshot: ResponseSnapshot) => void

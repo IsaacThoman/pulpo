@@ -1,3 +1,4 @@
+import { deviceTimeZone } from '@pulpo/client-core'
 import type { CreateQueuedMessageInput, UpdateQueuedMessageInput } from '@pulpo/contracts'
 import type { QueryClient } from '@tanstack/react-query'
 import * as Crypto from 'expo-crypto'
@@ -24,7 +25,7 @@ export function setChatQueue(client: QueryClient, namespace: string, chatId: str
 export async function enqueueMessage(client: QueryClient, namespace: string, chatId: string, input: CreateQueuedMessageInput,
   attachments: MobileQueuedMessage['attachments'], temporary: boolean): Promise<void> {
   const id = Crypto.randomUUID()
-  input = { ...input, clientId: id }
+  input = { ...input, clientId: id, timeZone: deviceTimeZone() }
   const now = new Date().toISOString()
   const key = queryKeys.chat(namespace, chatId)
   await client.cancelQueries({ queryKey: key })
@@ -70,6 +71,7 @@ export async function enqueueMessage(client: QueryClient, namespace: string, cha
 export async function mutateQueuedMessage(client: QueryClient, namespace: string, chatId: string, id: string,
   action: UpdateQueuedMessageInput | { action: 'delete' } | { action: 'reorder'; targetMessageId: string; edge: 'before' | 'after' },
   attachments?: MobileQueuedMessage['attachments']): Promise<void> {
+  if (action.action === 'save_edit') action = { ...action, timeZone: deviceTimeZone() }
   const key = queryKeys.chat(namespace, chatId)
   await client.cancelQueries({ queryKey: key })
   const previous = client.getQueryData<ServerChat>(key)?.queuedMessages ?? []

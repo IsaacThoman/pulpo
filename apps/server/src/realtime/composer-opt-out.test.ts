@@ -5,13 +5,15 @@ import { emptyComposerState } from '@pulpo/contracts'
 const mocks = vi.hoisted(() => ({
   connection: null as null | ((socket: unknown) => void),
   message: null as null | ((channel: string, message: string) => void),
-  enabled: true, access: vi.fn(), to: vi.fn(), emit: vi.fn(),
+  enabled: true, access: vi.fn(), to: vi.fn(), emit: vi.fn(), local: vi.fn(), volatile: vi.fn(),
 }))
 vi.mock('../database/client.js', () => ({ db: { select: () => ({ from: () => ({ where: () => ({ limit: async () => [{ values: { composerSyncEnabled: mocks.enabled } }] }) }) }) } }))
 vi.mock('socket.io', () => ({ Server: class {
   use() {}
   on(event: string, callback: (socket: unknown) => void) { if (event === 'connection') mocks.connection = callback }
   to(room: string) { mocks.to(room); return this }
+  get local() { mocks.local(); return this }
+  get volatile() { mocks.volatile(); return this }
   emit(...args: unknown[]) { mocks.emit(...args) }
 } }))
 vi.mock('@socket.io/redis-streams-adapter', () => ({ createAdapter: vi.fn() }))
@@ -42,6 +44,19 @@ beforeEach(async () => {
   mocks.access.mockResolvedValue({ ok: true, snapshot: { draftId: 'new', revision: 1, clearedRevision: 0, mutationId: null, state: emptyComposerState() } })
 })
 describe('composer socket opt-out', () => {
+  it('delivers chat starts only to the owning composer room without persisting recovery packets', async () => {
+    mocks.message!('pulpo:chat-started', JSON.stringify({ userId: 'owner', chatId: 'chat', responseId: 'response' }))
+    await vi.waitFor(() => expect(mocks.emit).toHaveBeenCalledWith('chat.started', { chatId: 'chat', responseId: 'response' }))
+    expect(mocks.to.mock.calls).toEqual([['composer:owner']])
+    expect(mocks.local).toHaveBeenCalledOnce()
+    expect(mocks.volatile).toHaveBeenCalledOnce()
+  })
+  it('suppresses chat starts when the account has opted out', async () => {
+    mocks.enabled = false
+    mocks.message!('pulpo:chat-started', JSON.stringify({ userId: 'owner', chatId: 'chat', responseId: 'response' }))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(mocks.emit).not.toHaveBeenCalled()
+  })
   it('enforces account opt-out even for older clients and suppresses broadcasts', async () => {
     mocks.enabled = false
     const client = connect(), ack = vi.fn()

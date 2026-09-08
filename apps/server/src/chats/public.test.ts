@@ -28,7 +28,7 @@ describe('public chat DTOs', () => {
     const row = {
       id: '00000000-0000-4000-8000-000000000002',
       chatId: '00000000-0000-4000-8000-000000000001', userId: 'private-user',
-      modelId: 'model-1', actualModelId: 'model-actual', origin: 'web', pricingVersionId: 'private-pricing',
+      modelId: 'model-1', actualModelId: 'model-actual', origin: 'web', timeZone: 'America/New_York', pricingVersionId: 'private-pricing',
       openaiResponseId: 'private-provider-id', previousResponseId: null, parentResponseId: null,
       userMessageId: '00000000-0000-4000-8000-000000000003', branchReason: 'message', status: 'completed' as const,
       executionMode: 'stream' as const, agentMode: true, agentCapacityAction: null,
@@ -54,7 +54,7 @@ describe('public chat DTOs', () => {
       subscriptionCoveredMicros: 3_000,
     })
     for (const field of [
-      'chatId', 'userId', 'origin', 'pricingVersionId', 'openaiResponseId', 'branchReason',
+      'chatId', 'userId', 'origin', 'timeZone', 'pricingVersionId', 'openaiResponseId', 'branchReason',
       'executionMode', 'agentCapacityAction', 'instructions', 'parameters', 'lastSequence',
       'upstreamSequence', 'idempotencyKey', 'publiclyStored', 'startedAt', 'deletedAt', 'updatedAt',
     ]) expect(result).not.toHaveProperty(field)
@@ -64,7 +64,7 @@ describe('public chat DTOs', () => {
     const row = {
       id: '00000000-0000-4000-8000-000000000002',
       chatId: '00000000-0000-4000-8000-000000000001', userId: 'private-user',
-      modelId: 'model-1', actualModelId: null, origin: 'web', pricingVersionId: null,
+      modelId: 'model-1', actualModelId: null, origin: 'web', timeZone: 'America/New_York', pricingVersionId: null,
       openaiResponseId: null, previousResponseId: null, parentResponseId: null,
       userMessageId: null, branchReason: 'message', status: 'completed' as const,
       executionMode: 'stream' as const, agentMode: false, agentCapacityAction: null,
@@ -87,7 +87,7 @@ describe('public chat DTOs', () => {
     const row = {
       id: '00000000-0000-4000-8000-000000000002',
       chatId: '00000000-0000-4000-8000-000000000001', userId: 'private-user',
-      modelId: 'model-1', actualModelId: null, origin: 'web', pricingVersionId: null,
+      modelId: 'model-1', actualModelId: null, origin: 'web', timeZone: 'America/New_York', pricingVersionId: null,
       openaiResponseId: null, previousResponseId: null, parentResponseId: null,
       userMessageId: '00000000-0000-4000-8000-000000000003', branchReason: 'message', status: 'completed' as const,
       executionMode: 'stream' as const, agentMode: false, agentCapacityAction: null,
@@ -112,7 +112,7 @@ describe('public chat DTOs', () => {
     const rows = [0, 1, 2].map((index) => ({
       id: `00000000-0000-4000-8000-00000000000${index + 2}`,
       chatId: '00000000-0000-4000-8000-000000000001', userId: 'private-user',
-      modelId: 'model-1', actualModelId: null, origin: 'web', pricingVersionId: null,
+      modelId: 'model-1', actualModelId: null, origin: 'web', timeZone: 'America/New_York', pricingVersionId: null,
       openaiResponseId: null, previousResponseId: null, parentResponseId: null,
       userMessageId: `00000000-0000-4000-8000-00000000001${index}`, branchReason: 'message',
       status: 'completed' as const, executionMode: 'stream' as const, agentMode: true,
@@ -141,7 +141,7 @@ describe('public chat DTOs', () => {
     const rows = [0, 1].map((index) => ({
       id: `00000000-0000-4000-8000-00000000000${index + 2}`,
       chatId: '00000000-0000-4000-8000-000000000001', userId: 'private-user',
-      modelId: 'model-1', actualModelId: null, origin: 'web', pricingVersionId: null,
+      modelId: 'model-1', actualModelId: null, origin: 'web', timeZone: 'America/New_York', pricingVersionId: null,
       openaiResponseId: null, previousResponseId: null, parentResponseId: null,
       userMessageId: `00000000-0000-4000-8000-00000000001${index}`, branchReason: 'message',
       status: 'completed' as const, executionMode: 'stream' as const, agentMode: false,

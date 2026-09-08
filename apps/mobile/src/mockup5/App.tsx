@@ -194,6 +194,7 @@ import { modelSubtitle, reconcileComposerModelId, resolveDisplayModel } from './
 import { useSessionStore } from '../store/session';
 import type { ServerChat } from '../types';
 import { apiRequest, ApiError } from '../api/client';
+import { useFollowStartedChat } from '../features/chat/useFollowStartedChat';
 import { clearProductionScope, hydrateProductionChatPreview, hydrateProductionScope, ProductionBridge } from './src/production/ProductionBridge';
 import { productionActions, runProductionAction } from './src/production/productionActions';
 import { applyConfirmedMessageDeletion, cacheOptimisticBranch, cacheOptimisticTurn, discardOptimisticChat, rejectOptimisticTurn } from './src/production/optimisticResponses';
@@ -720,7 +721,7 @@ function NativeComposerIconButton({
   const prominentTint = colorScheme === 'dark' ? '#f2f2f7' : '#1c1c1e';
   const prominentForeground = colorScheme === 'dark' || disabled ? '#1c1c1e' : '#ffffff';
   return (
-    <SwiftUIHost ignoreSafeArea="keyboard" style={styles.nativeComposerCircleHost}>
+    <SwiftUIHost ignoreSafeArea="keyboard" style={styles.nativeComposerActionHost}>
       <SwiftUIButton
         label={label}
         onPress={onPress}
@@ -736,6 +737,25 @@ function NativeComposerIconButton({
           swiftUIAccessibilityLabel(label),
         ]}
       />
+    </SwiftUIHost>
+  );
+}
+
+function NativeComposerShelfButton({ disabled, onPress }: { disabled: boolean; onPress: () => void }) {
+  const { styles } = useChatStyles();
+  return (
+    <SwiftUIHost ignoreSafeArea="keyboard" style={styles.nativeComposerShelfHost}>
+      <SwiftUIButton onPress={onPress} modifiers={[
+        buttonStyle('plain'),
+        foregroundStyle('secondary'),
+        swiftUIDisabled(disabled),
+        swiftUIAccessibilityLabel('Shelve draft'),
+      ]}>
+        <SwiftUIImage systemName="archivebox" size={18} modifiers={[
+          frame({ width: 44, height: 44 }),
+          contentShape(shapes.rectangle()),
+        ]} />
+      </SwiftUIButton>
     </SwiftUIHost>
   );
 }
@@ -1682,6 +1702,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     [generationPreferences, selectedModel.id, selectedPrototypeModel],
   );
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
+  const remoteStartedChatId = useRef<string | null>(null);
   const [newChatTemporary, setNewChatTemporary] = useState(false);
   const [savingTemporaryChatId, setSavingTemporaryChatId] = useState<string | null>(null);
   const [input, setInput] = useState('');
@@ -2061,6 +2082,19 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   }, [productionInstanceUrl, productionUserId, queryClient]);
   const activePrototypeChat = useMemo(() => storedChats.find((chat) => chat.id === activeChatId && chat.deletedAt === null) ?? null, [activeChatId, storedChats]);
   const activeChat = useMemo(() => activePrototypeChat ? prototypeChatToLegacy(activePrototypeChat) : null, [activePrototypeChat]);
+  useEffect(() => {
+    if (!activePrototypeChat || remoteStartedChatId.current !== activePrototypeChat.id) return;
+    remoteStartedChatId.current = null;
+    setSelectedModelId(activePrototypeChat.modelId);
+  }, [activePrototypeChat]);
+  const openStartedChat = useCallback((chatId: string) => {
+    composerFollowsDefaultModel.current = false;
+    remoteStartedChatId.current = chatId;
+    setActiveChatId(chatId);
+    setAssistantStatus('idle');
+    // Keep the mounted TextInput and keyboard focused. ProductionBridge loads
+    // and subscribes to the selected chat while its composer changes draft scope.
+  }, []);
   const chatAutoExpire = activePrototypeChat
     ? activePrototypeChat.expiresAt != null
     : automaticChatExpiration !== 'disabled' && newChatAutoExpire;
@@ -2355,6 +2389,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     options?: SendOptions,
     prepareAttachments?: PrepareAttachments,
   ): Promise<boolean> => {
+    if (activeChatId && remoteStartedChatId.current === activeChatId && !activeChat) return false;
     const trimmed = value.trim();
     if ((!trimmed && attachments.length === 0) || !selectedModel.id) return false;
     if (activeChat && shouldQueueMessage(effectiveAssistantStatus !== 'idle', activePrototypeChat?.queuedMessages?.length ?? 0)) {
@@ -2733,8 +2768,8 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
             acceptIncomingFiles={!activeChatId && productionScopeReady && isFocused}
             messages={messages}
             queuedMessages={activePrototypeChat?.queuedMessages ?? EMPTY_MOBILE_QUEUE}
-            chatId={activeChat?.id ?? null}
-            chatLoaded={activePrototypeChat?.detailLoaded !== false}
+            chatId={activeChat?.id ?? (remoteStartedChatId.current === activeChatId ? activeChatId : null)}
+            chatLoaded={Boolean(activePrototypeChat && activePrototypeChat.detailLoaded !== false)}
             onTranscriptReady={revealSelectedChat}
             openingChatId={openingChat?.id ?? null}
             draftNamespace={productionUserId ? cacheNamespace(productionInstanceUrl, productionUserId) : null}
@@ -2751,6 +2786,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
             onChangeInput={setInput}
             onSelectPreset={selectPreset}
             onSend={sendMessage}
+            onRemoteChatStarted={openStartedChat}
             onStop={stopGeneration}
             assistantStatus={effectiveAssistantStatus}
             onRegenerate={regenerateMessage}
@@ -3825,7 +3861,7 @@ function ComposerQueueSection({ title, subject, collapsed, onToggle, failed = fa
 }
 
 function ChatView({
-  acceptIncomingFiles, messages, queuedMessages, chatId, chatLoaded, onTranscriptReady, openingChatId, draftNamespace, keyboardLayoutEnabled, transcriptTransitionActive, model, models, prototypeModel, presetSelections: defaultPresetSelections, input, composerInputRef, composerFocusSuppressed, composerFocusRequest, onChangeInput, onSend, assistantStatus,
+  acceptIncomingFiles, messages, queuedMessages, chatId, chatLoaded, onTranscriptReady, openingChatId, draftNamespace, keyboardLayoutEnabled, transcriptTransitionActive, model, models, prototypeModel, presetSelections: defaultPresetSelections, input, composerInputRef, composerFocusSuppressed, composerFocusRequest, onChangeInput, onSend, onRemoteChatStarted, assistantStatus,
   onEdit, onRegenerate, onActivateBranch, onOpenChat, onStop, onTogglePanel, onOpenModelPicker, onSelectModel, onNewChat, onSaveTemporary, persistentSidebar, sidebarVisible, temporary, autoExpire, expirationPeriod, showAutoExpirationControl, expired, savingTemporary, onTemporaryChange, onAutoExpirationChange,
 }: {
   acceptIncomingFiles: boolean;
@@ -3847,6 +3883,7 @@ function ChatView({
   composerFocusSuppressed: boolean;
   composerFocusRequest: { revision: number; target: 'composer' | 'content' };
   onChangeInput: (value: string) => void;
+  onRemoteChatStarted: (chatId: string) => void;
   onSend: (value?: string, attachments?: ComposerAttachment[], options?: SendOptions, prepareAttachments?: PrepareAttachments) => Promise<boolean>;
   assistantStatus: 'idle' | 'thinking' | 'streaming';
   onEdit: (message: Message, content: string, attachments?: PreparedAttachment[], agentMode?: boolean) => Promise<boolean>;
@@ -4033,6 +4070,12 @@ function ChatView({
     },
   });
   const { busy: dictationBusy, isBusy: isDictationBusy } = dictation;
+  useFollowStartedChat({
+    namespace: draftNamespace, chatId, textarea: composerInputRef, temporary,
+    screenFocused: composerScreenFocused && keyboardLayoutEnabled && !composerFocusSuppressed,
+    busy: () => sendingRef.current || handoffBusyRef.current || shelfBusyRef.current || isDictationBusy(),
+    open: onRemoteChatStarted,
+  });
   const dictationLabel = dictation.phase === 'recording' ? 'Stop dictation' : dictation.phase === 'transcribing' ? 'Transcribing…' : 'Dictate';
   const dictationDisabled = dictationBusy ? dictation.phase !== 'recording'
     : !composerScreenFocused || networkOffline || sending || queueBusy || shelfBusy || expired || composerFocusSuppressed
@@ -4918,7 +4961,7 @@ function ChatView({
   }, [messageEdit, setAttachments]);
 
   const submitMessage = async () => {
-    if (handoffBusyRef.current || sendingRef.current || isDictationBusy()) return;
+    if ((chatId && !chatLoaded) || handoffBusyRef.current || sendingRef.current || isDictationBusy()) return;
     const sendPolicy = attachmentSendPolicy(attachments, { editing: Boolean(messageEdit) });
     if (!sendPolicy.allowed) {
       Alert.alert(
@@ -5215,6 +5258,7 @@ function ChatView({
   ) : null;
   const attachmentPolicy = attachmentSendPolicy(attachments, { editing: Boolean(messageEdit) });
   const canSend = Boolean(model.id)
+    && (!chatId || chatLoaded)
     && (input.trim().length > 0 || attachments.length > 0)
     && !sending
     && !dictationBusy
@@ -5611,25 +5655,30 @@ function ChatView({
                 </View>
               )}
               {dictation.error && <Text accessibilityRole="alert" style={styles.attachmentErrorText}>{dictation.error}</Text>}
-              <TextInput
-                ref={composerInputRef}
-                accessibilityLabel="Message"
-                disableFullscreenUI
-                editable={!handoffBusy && !shelfBusy && !composerFocusSuppressed && !(messageEdit && sending)}
-                maxFontSizeMultiplier={1.6}
-                multiline
-                maxLength={1_000_000}
-                onFocus={() => { setQueueCollapsed(true); setShelfCollapsed(true); }}
-                onBlur={() => { setQueueCollapsed(false); setShelfCollapsed(false); }}
-                onChangeText={(value) => { inputRef.current = value; onChangeInput(value); }}
-                selection={{ start: Math.min(inputSelection.start, input.length), end: Math.min(inputSelection.end, input.length) }}
-                onSelectionChange={(event) => { setComposerSelection(setInputSelection, inputSelectionRef, event.nativeEvent.selection); }}
-                placeholder={attachments.length > 0 ? 'Add a caption…' : messageEdit ? 'Edit message…' : temporary ? 'Temporary message…' : 'Message…'}
-                placeholderTextColor={COLORS.muted}
-                style={styles.input}
-                value={input}
-              />
-              <View style={styles.composerBar}>
+              <View style={[styles.composerInputRow, showShelf && styles.composerShelfInputRow]}>
+                <TextInput
+                  ref={composerInputRef}
+                  accessibilityLabel="Message"
+                  disableFullscreenUI
+                  editable={!handoffBusy && !shelfBusy && !composerFocusSuppressed && !(messageEdit && sending)}
+                  maxFontSizeMultiplier={1.6}
+                  multiline
+                  maxLength={1_000_000}
+                  onFocus={() => { setQueueCollapsed(true); setShelfCollapsed(true); }}
+                  onBlur={() => { setQueueCollapsed(false); setShelfCollapsed(false); }}
+                  onChangeText={(value) => { inputRef.current = value; onChangeInput(value); }}
+                  selection={{ start: Math.min(inputSelection.start, input.length), end: Math.min(inputSelection.end, input.length) }}
+                  onSelectionChange={(event) => { setComposerSelection(setInputSelection, inputSelectionRef, event.nativeEvent.selection); }}
+                  placeholder={attachments.length > 0 ? 'Add a caption…' : messageEdit ? 'Edit message…' : temporary ? 'Temporary message…' : 'Message…'}
+                  placeholderTextColor={COLORS.muted}
+                  style={[styles.input, styles.composerTextInput]}
+                  value={input}
+                />
+                {showShelf && (Platform.OS === 'ios'
+                  ? <NativeComposerShelfButton disabled={!(input.trim() || attachments.length) || shelfBusy || sending || dictationBusy} onPress={() => { void transferShelf(); }} />
+                  : <MaterialIconButton label="Shelve draft" icon="archivebox" disabled={!(input.trim() || attachments.length) || shelfBusy || sending || dictationBusy} onPress={() => { void transferShelf(); }} />)}
+              </View>
+              <View style={[styles.composerBar, showShelf && styles.composerShelfBar]}>
                 {Platform.OS === 'ios' ? (
                   <NativeAttachmentMenu onTakePhoto={takePhoto} onPickFiles={pickFiles} onPickPhotos={pickPhotos} />
                 ) : (
@@ -5702,9 +5751,6 @@ function ChatView({
                   <MaterialIconButton label={activeAgentEnabled ? 'Turn off Agent mode' : 'Turn on Agent mode'} icon="bot" color={activeAgentEnabled ? nativeAgentTint : undefined} disabled={!canUseAgent} onPress={toggleAgent} />
                 )}
                 <View style={styles.flex} />
-                {showShelf && (Platform.OS === 'ios'
-                  ? <NativeComposerIconButton label="Shelve draft" systemImage="archivebox" disabled={!(input.trim() || attachments.length) || shelfBusy || sending || dictationBusy} onPress={() => { void transferShelf(); }} />
-                  : <MaterialIconButton label="Shelve draft" icon="archivebox" disabled={!(input.trim() || attachments.length) || shelfBusy || sending || dictationBusy} onPress={() => { void transferShelf(); }} />)}
                 {dictationEnabled && (Platform.OS === 'ios'
                   ? <NativeComposerIconButton label={dictationLabel} systemImage={dictation.phase === 'recording' ? 'stop.fill' : 'mic'} prominent={dictation.phase === 'recording'} disabled={dictationDisabled} onPress={dictation.phase === 'recording' ? dictation.stop : dictation.start} />
                   : <MaterialIconButton label={dictationLabel} icon={dictation.phase === 'recording' ? 'stop.fill' : 'mic'} selected={dictation.phase === 'recording'} disabled={dictationDisabled} onPress={dictation.phase === 'recording' ? dictation.stop : dictation.start} />)}
@@ -6453,9 +6499,17 @@ function createChatStyles(COLORS: ChatColors) { return StyleSheet.create({
   attachmentRetryOverlay: { position: 'absolute', left: 6, right: 6, bottom: 4, minHeight: 24, borderRadius: 9, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, backgroundColor: 'rgba(196,43,37,0.92)', paddingHorizontal: 7 },
   attachmentRetryText: { color: '#ffffff', fontSize: 10.5, fontWeight: '700' },
   input: { minHeight: 30, maxHeight: 120, color: COLORS.text, fontSize: 16, lineHeight: 22, paddingHorizontal: 5, paddingTop: 0 },
+  composerInputRow: { flexDirection: 'row', alignItems: 'flex-end' },
+  composerShelfInputRow: { flexGrow: 1 },
+  composerTextInput: { flex: 1, minWidth: 0, alignSelf: 'flex-start' },
   composerBar: { flexDirection: 'row', alignItems: 'center', marginTop: 'auto', gap: 1 },
+  // Preserve composer row measurements while Shelve occupies the top-right corner.
+  composerShelfBar: { marginTop: Platform.OS === 'ios' ? 36 + 1 - 44 : 1 },
   composerCircle: { width: 44, height: 44, borderRadius: 22, backgroundColor: COLORS.fillStrong, alignItems: 'center', justifyContent: 'center' },
   nativeComposerCircleHost: { width: 44, height: 44 },
+  nativeComposerActionHost: { width: 36, height: 44 },
+  // Align the small glyph with the first text line while retaining a 44-point hit area.
+  nativeComposerShelfHost: { width: 44, height: 44, marginRight: -4, alignSelf: 'flex-start', transform: [{ translateY: -8 }] },
   agentCircle: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
   agentCircleActive: { backgroundColor: '#AF52DE' },
   nativeAgentHost: { width: 44, height: 44 },

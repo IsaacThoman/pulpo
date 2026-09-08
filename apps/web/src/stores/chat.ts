@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { webChatStarted } from '@/lib/chat-started'
 import { replaceEqualDeep } from '@tanstack/react-query'
 import {
   initialResponseDurationMs,
@@ -10,6 +11,7 @@ import {
   type UpdateQueuedMessageInput,
 } from '@pulpo/contracts'
 import {
+  deviceTimeZone,
   hydrateEmbeddedResponseSnapshot,
   mergeCachedResponseDetails,
   responseLineageDetailsAvailable,
@@ -17,7 +19,7 @@ import {
 import type { Attachment, Chat, Folder, Message, QueuedMessage } from '@/lib/types'
 import { apiRequest, ApiError, isNetworkError } from '@/lib/api'
 import { enqueueMutation } from '@/lib/local-first/outbox'
-import { flushQueryPersistence } from '@/lib/local-first/database'
+import { localAccountKey, flushQueryPersistence } from '@/lib/local-first/database'
 import { queryClient } from '@/lib/query-client'
 import { chatOptionsFor, resolveGeneration, useModelConfig } from '@/stores/modelConfig'
 import { useSettings } from '@/stores/settings'
@@ -1411,6 +1413,7 @@ export const useChat = create<ChatState>()((set, get) => ({
     const userId = currentUserId()
     if (!userId) return chatId ?? ''
     const id = staged?.targetChatId ?? chatId ?? crypto.randomUUID()
+    if (!chatId) webChatStarted.ignoreLocal(localAccountKey(userId), id)
     const responseId = staged?.responseId ?? crypto.randomUUID()
     const timestamp = Date.now()
     const newChatExpiresAt = !chatId && !temporary && autoExpire ? automaticExpirationDeadline(timestamp) : null
@@ -1494,6 +1497,7 @@ export const useChat = create<ChatState>()((set, get) => ({
 
     const dispatch = (async () => {
       const responseBody = {
+        timeZone: deviceTimeZone(),
         clientId: responseId,
         parentResponseId,
         input: content,
@@ -1617,6 +1621,7 @@ export const useChat = create<ChatState>()((set, get) => ({
   },
 
   enqueueMessage: async (chatId, input, messageAttachments, stagedQueueId) => {
+    input = { ...input, timeZone: deviceTimeZone() }
     const now = new Date().toISOString()
     const currentQueue = get().chats.find((chat) => chat.id === chatId)?.queuedMessages ?? []
     const staged = stagedQueueId
@@ -1679,6 +1684,7 @@ export const useChat = create<ChatState>()((set, get) => ({
   },
 
   updateQueuedMessage: async (chatId, messageId, input, messageAttachments = []) => {
+    if (input.action === 'save_edit') input = { ...input, timeZone: deviceTimeZone() }
     const previous = get().chats.find((chat) => chat.id === chatId)?.queuedMessages ?? []
     const updatedAt = new Date().toISOString()
     set((state) => ({
@@ -1802,6 +1808,7 @@ export const useChat = create<ChatState>()((set, get) => ({
       ?? branchSelectionIntents.select(chatId, responseId).version
     if (optimistic) get().setDetailedChat(optimistic.chat)
     void enqueueChatMutation(chatId, () => optimisticRequest('POST', `/api/messages/${messageId}/regenerate`, {
+      timeZone: deviceTimeZone(),
       clientId: responseId,
       modelId,
       presetSelections: generation.selections,
@@ -1849,6 +1856,7 @@ export const useChat = create<ChatState>()((set, get) => ({
     if (optimistic) get().setDetailedChat(optimistic.chat)
     try {
       const selection = {
+        timeZone: deviceTimeZone(),
         clientId: responseId,
         modelId,
         presetSelections: generation.selections,
@@ -1857,6 +1865,8 @@ export const useChat = create<ChatState>()((set, get) => ({
       }
       const responseBody = { ...selection, input: content, parentResponseId: source?.parentResponseId ?? null }
       const startChat = rejectedSend?.startChat
+      const userId = currentUserId()
+      if (startChat && userId) webChatStarted.ignoreLocal(localAccountKey(userId), chatId)
       const path = rejectedSend
         ? startChat ? '/api/chats/start' : `/api/chats/${chatId}/responses`
         : `/api/messages/${messageId}`

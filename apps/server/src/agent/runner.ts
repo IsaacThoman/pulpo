@@ -52,6 +52,7 @@ import { responseInputText } from '../messages/input.js'
 import { createGenerationMemoryTools } from './memory-tools.js'
 import { readEpisodicMemorySettings } from '../episodic-memory/settings.js'
 import { generationSystemPrompt, loadGenerationMemory } from '../responses/memory-context.js'
+import { withGenerationTimeContext } from '../responses/time-context.js'
 import { messagesFromAgentContext, resolveAgentParentMessages, systemPromptFromAgentContext, withoutMemoryToolMessages } from './history.js'
 import { agentSamplingParameters, resolveAgentModelParameters } from './model-parameters.js'
 import { redis } from '../redis.js'
@@ -132,16 +133,16 @@ async function finalizeUnhandledAgentFailure(responseId: string, error: unknown)
   if (state.requestLog) await publishAdminUsage(state.requestLog.id, true)
 }
 
-export async function processAgentGeneration(responseId: string): Promise<void> {
+export async function processAgentGeneration(responseId: string, codexAllowed: boolean): Promise<void> {
   try {
-    await runAgentGeneration(responseId)
+    await runAgentGeneration(responseId, codexAllowed)
   } catch (error) {
     await finalizeUnhandledAgentFailure(responseId, error)
     throw error
   }
 }
 
-async function runAgentGeneration(responseId: string): Promise<void> {
+async function runAgentGeneration(responseId: string, codexAllowed: boolean): Promise<void> {
   const startedAt = Date.now()
   const config = getConfig()
   const [record] = await db.select({ response: responses, model: models, provider: providerConnections })
@@ -205,7 +206,10 @@ async function runAgentGeneration(responseId: string): Promise<void> {
   )
   const [existingRun] = await db.select().from(agentRuns).where(eq(agentRuns.responseId, responseId)).limit(1)
   const runId = existingRun?.id ?? newId()
-  const agentSystemPrompt = generationSystemPrompt(memory.enabled, currentAgentSystemPrompt, systemPromptFromAgentContext(existingRun?.context))
+  let agentSystemPrompt = withGenerationTimeContext(
+    generationSystemPrompt(memory.enabled, currentAgentSystemPrompt, systemPromptFromAgentContext(existingRun?.context)),
+    record.response, startedAt,
+  )
   let resumedMessages = existingRun ? messagesFromAgentContext(existingRun.context) : parentMessages
   if (!memory.enabled) resumedMessages = withoutMemoryToolMessages(resumedMessages)
   await db.insert(agentRuns).values({ id: runId, responseId, status: 'running', context: { systemPrompt: agentSystemPrompt, messages: resumedMessages }, startedAt: new Date() }).onConflictDoUpdate({ target: agentRuns.responseId, set: { status: 'running', updatedAt: new Date() } })
@@ -259,7 +263,7 @@ async function runAgentGeneration(responseId: string): Promise<void> {
   const visited = new Set([record.model.id]); let fallbackId = record.model.fallbackModelId
   while (fallbackId && runtimes.length < MAX_MODEL_CHAIN_LENGTH && !visited.has(fallbackId)) {
     const [next] = await db.select({ model: models, provider: providerConnections }).from(models).innerJoin(providerConnections, eq(models.providerConnectionId, providerConnections.id)).where(and(eq(models.id, fallbackId), eq(models.enabled, true))).limit(1)
-    if (!next) break
+    if (!next || !codexAllowed && next.provider.id === CODEX_PROVIDER_ID) break
     visited.add(next.model.id); runtimes.push(runtime(next.model, next.provider)); fallbackId = next.model.fallbackModelId
   }
   const resolveStickyRuntimeIndex = async (startingIndex: number): Promise<{ index: number; stickyUsed: boolean }> => {
@@ -971,6 +975,10 @@ async function runAgentGeneration(responseId: string): Promise<void> {
     else await agent.prompt(initialMessage)
     let last = agent.state.messages.at(-1)
     let overflowRetried = false
+    const refreshTimeContext = () => {
+      agentSystemPrompt = withGenerationTimeContext(agentSystemPrompt, record.response, Date.now())
+      agent.state.systemPrompt = agentSystemPrompt
+    }
     while (last?.role === 'assistant' && (last.stopReason === 'error' || last.stopReason === 'aborted')) {
       const failedTurnNumber = modelTurns
       const failedRuntime = turnRuntime.get(failedTurnNumber) ?? { runtime: active, index: activeIndex }
@@ -997,6 +1005,7 @@ async function runAgentGeneration(responseId: string): Promise<void> {
           break
         }
         overflowRetried = true
+        refreshTimeContext()
         await agent.continue()
         last = agent.state.messages.at(-1)
         continue
@@ -1018,6 +1027,7 @@ async function runAgentGeneration(responseId: string): Promise<void> {
         currentRetryAttempt = retryAttempt
         agent.state.messages = agent.state.messages.slice(0, -1)
         await db.update(requestLogs).set({ retryCount: sql`${requestLogs.retryCount} + 1`, updatedAt: new Date() }).where(eq(requestLogs.id, requestLog.id))
+        refreshTimeContext()
         await agent.continue()
         last = agent.state.messages.at(-1)
         continue
@@ -1027,6 +1037,7 @@ async function runAgentGeneration(responseId: string): Promise<void> {
       await markModelSticky(redis, failedRuntime.runtime.model, classifyGenerationError(new Error(last.errorMessage || 'Agent model turn failed')))
       agent.state.messages = agent.state.messages.slice(0, -1)
       if (!await activateFallbackRuntime(failedRuntime.index)) break
+      refreshTimeContext()
       await agent.continue()
       last = agent.state.messages.at(-1)
     }
