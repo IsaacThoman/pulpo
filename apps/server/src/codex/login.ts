@@ -1,16 +1,24 @@
-import type { AuthEvent, AuthPrompt } from '@earendil-works/pi-ai'
-import { and, eq, inArray } from 'drizzle-orm'
+import { InMemoryCredentialStore, type AuthEvent, type AuthPrompt, type Credential } from '@earendil-works/pi-ai'
+import { and, eq, inArray, sql } from 'drizzle-orm'
 import { db } from '../database/client.js'
 import { codexLoginAttempts, userProviderCredentials } from '../database/schema.js'
 import type { CodexLoginJob } from '../jobs.js'
 import { CODEX_PI_PROVIDER_ID } from './constants.js'
-import { codexPlanType, createCodexModels, isSupportedCodexPlan, UserCredentialStore } from './credential-store.js'
+import { codexPlanType, createCodexModels, isSupportedCodexPlan } from './credential-store.js'
+import { codexEnabled, lockCodexPolicy } from './policy.js'
+import { getConfig } from '../config.js'
+import { encryptSecret } from '../lib/crypto.js'
 
 const TERMINAL = new Set(['completed', 'failed', 'cancelled', 'expired'])
 
 export async function processCodexLogin(data: CodexLoginJob): Promise<void> {
   const [attempt] = await db.select().from(codexLoginAttempts).where(eq(codexLoginAttempts.id, data.attemptId)).limit(1)
   if (!attempt || TERMINAL.has(attempt.status)) return
+  if (!await codexEnabled()) {
+    await db.update(codexLoginAttempts).set({ status: 'cancelled', error: null, updatedAt: new Date() })
+      .where(and(eq(codexLoginAttempts.id, data.attemptId), inArray(codexLoginAttempts.status, ['queued', 'waiting'])))
+    return
+  }
   const controller = new AbortController()
   let expired = false
   let deviceCodePersistenceFailed = false
@@ -25,7 +33,7 @@ export async function processCodexLogin(data: CodexLoginJob): Promise<void> {
   }, 1_000)
   cancellationPoll.unref()
 
-  const models = createCodexModels(attempt.userId)
+  const models = createCodexModels(attempt.userId, new InMemoryCredentialStore())
   try {
     const credential = await models.login(CODEX_PI_PROVIDER_ID, 'oauth', {
       signal: controller.signal,
@@ -50,27 +58,7 @@ export async function processCodexLogin(data: CodexLoginJob): Promise<void> {
       },
     })
     await deviceCodePersistence
-    const [currentAttempt] = await db.select({ status: codexLoginAttempts.status, expiresAt: codexLoginAttempts.expiresAt })
-      .from(codexLoginAttempts).where(eq(codexLoginAttempts.id, data.attemptId)).limit(1)
-    if (!currentAttempt || currentAttempt.status === 'cancelled' || currentAttempt.expiresAt && currentAttempt.expiresAt <= new Date()) {
-      await new UserCredentialStore(attempt.userId).deleteIfMatches(CODEX_PI_PROVIDER_ID, credential)
-      if (currentAttempt?.status !== 'cancelled') await db.update(codexLoginAttempts).set({
-        status: 'expired', error: 'The device code expired. Start a new connection attempt.', updatedAt: new Date(),
-      }).where(eq(codexLoginAttempts.id, data.attemptId))
-      return
-    }
-    const planType = codexPlanType(credential)
-    if (!isSupportedCodexPlan(planType)) {
-      await new UserCredentialStore(attempt.userId).deleteIfMatches(CODEX_PI_PROVIDER_ID, credential)
-      await db.update(codexLoginAttempts).set({
-        status: 'failed', error: 'This Codex connection requires a ChatGPT Plus or Pro plan.', updatedAt: new Date(),
-      }).where(eq(codexLoginAttempts.id, data.attemptId))
-      return
-    }
-    await db.update(userProviderCredentials).set({ planType, status: 'connected', lastError: null, updatedAt: new Date() })
-      .where(and(eq(userProviderCredentials.userId, attempt.userId), eq(userProviderCredentials.providerId, CODEX_PI_PROVIDER_ID)))
-    await db.update(codexLoginAttempts).set({ status: 'completed', error: null, updatedAt: new Date() })
-      .where(and(eq(codexLoginAttempts.id, data.attemptId), inArray(codexLoginAttempts.status, ['queued', 'waiting'])))
+    await completeCodexLogin(data.attemptId, credential)
   } catch {
     const aborted = controller.signal.aborted
     const [current] = await db.select({ status: codexLoginAttempts.status }).from(codexLoginAttempts)
@@ -87,4 +75,40 @@ export async function processCodexLogin(data: CodexLoginJob): Promise<void> {
   } finally {
     clearInterval(cancellationPoll)
   }
+}
+
+// Pi stores login results in memory. Only this transaction may persist them, so
+// disabling or cancelling sign-in cannot overwrite a previously connected account.
+export async function completeCodexLogin(attemptId: string, credential: Credential): Promise<void> {
+  await db.transaction(async (tx) => {
+    await lockCodexPolicy(tx)
+    const [attempt] = await tx.select().from(codexLoginAttempts)
+      .where(eq(codexLoginAttempts.id, attemptId)).for('update').limit(1)
+    if (!attempt || TERMINAL.has(attempt.status)) return
+    const now = new Date()
+    const enabled = await codexEnabled(tx)
+    const expired = Boolean(attempt.expiresAt && attempt.expiresAt <= now)
+    const planType = codexPlanType(credential)
+    if (!enabled || expired || !isSupportedCodexPlan(planType)) {
+      await tx.update(codexLoginAttempts).set({
+        status: !enabled ? 'cancelled' : expired ? 'expired' : 'failed',
+        error: !enabled ? null : expired ? 'The device code expired. Start a new connection attempt.'
+          : 'This Codex connection requires a ChatGPT Plus or Pro plan.',
+        updatedAt: now,
+      }).where(eq(codexLoginAttempts.id, attemptId))
+      return
+    }
+    // Serialize against refresh/disconnect without holding this lock during OAuth.
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`provider-credential:${attempt.userId}:${CODEX_PI_PROVIDER_ID}`}))`)
+    const encryptedCredential = encryptSecret(JSON.stringify(credential), getConfig().ENCRYPTION_KEY)
+    await tx.insert(userProviderCredentials).values({
+      userId: attempt.userId, providerId: CODEX_PI_PROVIDER_ID, encryptedCredential,
+      planType, status: 'connected', lastError: null, connectedAt: now, updatedAt: now,
+    }).onConflictDoUpdate({
+      target: [userProviderCredentials.userId, userProviderCredentials.providerId],
+      set: { encryptedCredential, planType, status: 'connected', lastError: null, updatedAt: now },
+    })
+    await tx.update(codexLoginAttempts).set({ status: 'completed', error: null, updatedAt: now })
+      .where(eq(codexLoginAttempts.id, attemptId))
+  })
 }

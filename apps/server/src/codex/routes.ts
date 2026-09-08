@@ -10,6 +10,7 @@ import { notFound } from '../lib/errors.js'
 import { requestCancellation } from '../responses/events.js'
 import { removeDeletedModelPreferences } from '../catalog/model-deletion.js'
 import { CODEX_MODEL_PREFIX, CODEX_PI_PROVIDER_ID } from './constants.js'
+import { lockCodexPolicy, requireCodexEnabled } from './policy.js'
 import { UserCredentialStore } from './credential-store.js'
 
 const activeAttemptStatuses = ['queued', 'waiting']
@@ -39,11 +40,15 @@ export async function registerCodexRoutes(app: FastifyInstance): Promise<void> {
 
   app.post('/api/account/providers/codex/login', async (request, reply) => {
     const user = requireUser(request)
-    await db.update(codexLoginAttempts).set({ status: 'cancelled', updatedAt: new Date() }).where(and(
-      eq(codexLoginAttempts.userId, user.id), inArray(codexLoginAttempts.status, activeAttemptStatuses),
-    ))
     const attemptId = newId()
-    await db.insert(codexLoginAttempts).values({ id: attemptId, userId: user.id, status: 'queued' })
+    await db.transaction(async (tx) => {
+      await lockCodexPolicy(tx)
+      await requireCodexEnabled(tx)
+      await tx.update(codexLoginAttempts).set({ status: 'cancelled', updatedAt: new Date() }).where(and(
+        eq(codexLoginAttempts.userId, user.id), inArray(codexLoginAttempts.status, activeAttemptStatuses),
+      ))
+      await tx.insert(codexLoginAttempts).values({ id: attemptId, userId: user.id, status: 'queued' })
+    })
     await codexLoginQueue.add('login', { attemptId }, { jobId: attemptId })
     reply.code(202)
     return { attemptId }
