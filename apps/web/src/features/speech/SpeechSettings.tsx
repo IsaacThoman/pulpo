@@ -44,7 +44,8 @@ export function SpeechSettings() {
             const selected = (settings.voice ?? model.defaultVoice) === voice.id
             const active = playback.key === `preview:${model.id}:${voice.id}`
             return <div key={voice.id} className={cn('flex items-center gap-2 rounded-md px-3 transition-colors hover:bg-muted/50 focus-within:ring-2 focus-within:ring-ring', selected && 'bg-muted')}>
-              <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 py-3">
+              {/* Anchor the hidden radio to its row so focus scrolls the list, not the dialog. */}
+              <label className="relative flex min-w-0 flex-1 cursor-pointer items-center gap-3 py-3">
                 <input className="sr-only" type="radio" name="speech-voice" aria-label={voice.label} checked={selected} onChange={() => { speechPlayback.stop(); update({ voice: voice.id }) }} />
                 <span className="min-w-0 flex-1 break-words text-sm font-medium">{voice.label}</span>
                 {selected && <Check className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />}
