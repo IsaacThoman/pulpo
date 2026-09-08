@@ -1,3 +1,4 @@
+import { resolveWorkspace } from '@pulpo/contracts'
 import type { WorkspaceSelection, WorkspaceWait } from '@pulpo/contracts'
 import { mergeResponseSnapshots, type ResponseSnapshot } from '@pulpo/contracts'
 import { hydrateEmbeddedResponseSnapshot } from '@pulpo/client-core'
@@ -290,6 +291,8 @@ export function cacheOptimisticBranch(input: CacheOptimisticBranchInput): Server
       user: { ids: [input.responseId], index: 0 },
       assistant: { ids: [input.responseId], index: 0 },
     },
+    workspace: input.workspace ?? (input.agentMode === undefined ? source.workspace : resolveWorkspace(undefined, input.agentMode)),
+    workspaceWait: null,
     agentMode: input.agentMode ?? source.agentMode,
   }
   pendingResponses.set(pendingKey(input.namespace, input.responseId), {

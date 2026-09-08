@@ -2602,7 +2602,9 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     if (!chatId || !productionUserId || effectiveAssistantStatus !== 'idle') return;
     const modelId = selectedModel.id;
     const selections = { ...presetSelections };
-    const agentMode = Boolean((usePreferencesStore.getState().agentModes[modelId] ?? true) && agentAvailable && selectedPrototypeModel?.agentEnabled);
+    const workspace: WorkspaceSelection = agentAvailable && selectedPrototypeModel?.agentEnabled
+      ? resolveWorkspace(message.workspace, usePreferencesStore.getState().agentModes[modelId] ?? true) : { kind: 'none' };
+    const agentMode = workspace.kind !== 'none';
     const namespace = cacheNamespace(productionInstanceUrl, productionUserId);
     const responseId = Crypto.randomUUID();
     const optimistic = cacheOptimisticBranch({
@@ -2613,13 +2615,13 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
       responseId,
       modelId,
       presetSelections: selections,
-      agentMode,
+      workspace, agentMode,
       createdAt: Date.now(),
     });
     setAssistantStatus('thinking');
     if (optimistic) trackActiveResponse(optimistic.snapshot);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Soft);
-    void regenerateServerResponse(message.id, modelId, selections, responseId, agentMode, message.workspace).then((response) => {
+    void regenerateServerResponse(message.id, modelId, selections, responseId, agentMode, workspace).then((response) => {
       const responseActive = trackActiveResponse(response);
       setAssistantStatus(responseActive ? (response.status === 'queued' ? 'thinking' : 'streaming') : 'idle');
       void queryClient.invalidateQueries({ queryKey: queryKeys.chats(namespace) });
@@ -2664,7 +2666,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
           mimeType: attachment.mimeType,
           sizeBytes: attachment.size ?? 0,
         })),
-        agentMode,
+        workspace, agentMode,
       } : {}),
       createdAt: Date.now(),
     });

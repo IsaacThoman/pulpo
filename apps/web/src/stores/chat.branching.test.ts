@@ -666,6 +666,26 @@ describe('chat store branching integration', () => {
     })
   })
 
+  it.each([true, false])('preserves a computer on regeneration only when the model supports workspaces (%s)', async (capable) => {
+    const computer = { kind: 'computer' as const, deviceId: '00000000-0000-4000-8000-000000000090', rootId: '00000000-0000-4000-8000-000000000091' }
+    const initial = detail(responseAId, [{ ...response(responseAId, 'completed'), workspace: computer, agentMode: true }])
+    queryClient.setQueryData(['chat', userId, chatId], initial)
+    useChat.getState().setDetailedChat(initial)
+    useCatalog.setState({ models: [{ ...testModel, agentEnabled: capable }] })
+    useChat.getState().regenerate(chatId, responseAId, 'test-model')
+    const optimistic = queryClient.getQueryData<ServerChat>(['chat', userId, chatId])!
+    const branch = optimistic.responses!.find(row => row.id === optimistic.activeBranchLeafId)!
+    const expected = capable ? computer : { kind: 'none' }
+    expect(branch.workspace).toEqual(expected)
+    await vi.waitFor(() => expect(requests).toHaveLength(1))
+    expect(requests[0]!.body).toMatchObject({ workspace: expected, agentMode: capable })
+    requests[0]!.resolve({ response: branch.snapshot })
+    const completed = { ...response(branch.id, 'completed'), workspace: capable ? computer : { kind: 'none' as const }, agentMode: capable }
+    useChat.getState().applyResponseSnapshot(completed.snapshot)
+    useChat.getState().setDetailedChat(detail(branch.id, [initial.responses![0]!, completed]))
+    await new Promise(resolve => setTimeout(resolve, 0))
+  })
+
   it('regenerates with the Agent and preset state selected when the action starts', async () => {
     const responseA = {
       ...response(responseAId, 'completed'),

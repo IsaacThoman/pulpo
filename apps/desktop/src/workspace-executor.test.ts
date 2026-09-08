@@ -16,7 +16,7 @@ async function setup() {
   const executor = new WorkspaceExecutor(config, result => results.push(structuredClone(result)))
   cleanup.push(async () => { executor.shutdown(); await rm(folder, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }) })
   const operation = (type: string, args: Record<string, unknown>): ComputerOperation => ({ id: randomUUID(), rootId, sessionId: randomUUID(), generation: 0, type, args, hash: createHash('sha256').update(workspaceOperationIdentity(type, args)).digest('hex'), deadline: new Date(Date.now() + 20_000).toISOString() })
-  const finished = async (id: string) => { await vi.waitFor(() => expect(results.some(result => result.id === id && result.status !== 'running')).toBe(true), { timeout: 10000 }); return results.filter(result => result.id === id).at(-1)! }
+  const finished = async (id: string) => { await vi.waitFor(() => expect(results.find(result => result.id === id && result.status !== 'running'), JSON.stringify(results.filter(result => result.id === id))).toBeDefined(), { timeout: 25000 }); return results.filter(result => result.id === id).at(-1)! }
   return { folder, rootId, config, results, executor, operation, finished }
 }
 describe('native computer execution', () => {
@@ -24,12 +24,14 @@ describe('native computer execution', () => {
     const f = await setup()
     const command = process.platform === 'win32' ? "Add-Content count.txt 'once'" : "printf 'once\n' >> count.txt"
     const op = f.operation('bash', { command })
-    await f.executor.accept(op); expect((await f.finished(op.id)).status).toBe('completed')
+    await f.executor.accept(op)
+    const completed = await f.finished(op.id)
+    expect(completed, JSON.stringify(completed)).toMatchObject({ status: 'completed', exitCode: 0 })
     await f.executor.accept(op)
     const restarted = new WorkspaceExecutor(f.config, result => f.results.push(result))
     await restarted.accept(op)
     expect((await readFile(path.join(f.folder, 'count.txt'), 'utf8')).trim().split(/\r?\n/)).toEqual(['once'])
-  }, 15000)
+  }, 30000)
   it('never reruns a command whose journal says it was running at restart', async () => {
     const f = await setup(); const op = f.operation('write', { path: 'should-not-exist', content: 'bad' })
     await mkdir(f.config.journal)

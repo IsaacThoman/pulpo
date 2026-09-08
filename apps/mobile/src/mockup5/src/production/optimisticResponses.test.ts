@@ -232,10 +232,13 @@ describe('optimistic response reconciliation', () => {
       sourceResponseId: 'response-1',
       responseId: 'response-2',
       modelId: 'model-1',
+      workspace: { kind: 'computer', deviceId: 'registered-computer', rootId: 'chosen-folder' },
+      agentMode: true,
       presetSelections: {},
       createdAt: Date.parse('2026-08-04T00:00:02.000Z'),
     })
 
+    expect(branch?.workspace).toEqual({ kind: 'computer', deviceId: 'registered-computer', rootId: 'chosen-folder' })
     expect(branch?.branches.assistant.ids).toEqual(['response-2'])
     const optimistic = queryClient.getQueryData<ServerChat>(chatKey('chat-1'))
     expect(optimistic?.activeBranchLeafId).toBe('response-2')

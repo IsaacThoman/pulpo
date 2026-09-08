@@ -1,3 +1,4 @@
+import { resolveWorkspace } from '@pulpo/contracts'
 import type { WorkspaceSelection, WorkspaceWait } from '@pulpo/contracts'
 import { create } from 'zustand'
 import { webChatStarted } from '@/lib/chat-started'
@@ -669,6 +670,8 @@ function cacheOptimisticBranch(input: {
     },
     branches: { user: { ids: [input.responseId], index: 0 }, assistant: { ids: [input.responseId], index: 0 } },
     userMessageId: input.editedInput === undefined ? source.userMessageId : crypto.randomUUID(),
+    workspace: input.workspace ?? (input.agentMode === undefined ? source.workspace : resolveWorkspace(undefined, input.agentMode)),
+    workspaceWait: null,
     agentMode: input.agentMode ?? source.agentMode,
   }
   const attachmentRows = (input.editedAttachments ?? []).map((attachment) => ({
@@ -1821,8 +1824,10 @@ export const useChat = create<ChatState>()((set, get) => ({
       useSettings.getState().generation[modelId],
       modelId,
     )
-    const workspace = get().chats.find(chat => chat.id === chatId)?.messages.find(message => message.id === messageId)?.workspace
-    const agentMode = workspace ? workspace.kind !== 'none' : currentAgentMode(modelId)
+    const sourceWorkspace = get().chats.find(chat => chat.id === chatId)?.messages.find(message => message.id === messageId)?.workspace
+    const workspace: WorkspaceSelection = useCatalog.getState().agentAvailable && getCatalogModel(generation.effectiveModelId || modelId).agentEnabled
+      ? resolveWorkspace(sourceWorkspace, currentAgentMode(modelId)) : { kind: 'none' }
+    const agentMode = workspace.kind !== 'none'
     const responseId = crypto.randomUUID()
     const optimistic = cacheOptimisticBranch({
       chatId,

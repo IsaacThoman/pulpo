@@ -8,7 +8,7 @@ import type { ComputerOperation, ComputerOperationResult } from '@pulpo/contract
 
 export interface ExecutorConfig { journal: string; stagingPath: string; roots: Array<{ id: string; path: string }>; shell: string; rgPath: string }
 export function commandEnvironment(source: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  const allowed = ['PATH', 'HOME', 'USERPROFILE', 'SYSTEMROOT', 'SystemRoot', 'COMSPEC', 'TEMP', 'TMP', 'TMPDIR', 'LANG', 'LC_ALL', 'USER', 'USERNAME', 'APPDATA', 'LOCALAPPDATA', 'PATHEXT']
+  const allowed = ['PATH', 'HOME', 'USERPROFILE', 'SYSTEMROOT', 'SystemRoot', 'COMSPEC', 'TEMP', 'TMP', 'TMPDIR', 'LANG', 'LC_ALL', 'USER', 'USERNAME', 'APPDATA', 'LOCALAPPDATA', 'PATHEXT', 'PSModulePath', 'WINDIR', 'windir', 'HOMEDRIVE', 'HOMEPATH', 'ProgramFiles', 'ProgramFiles(x86)', 'ProgramW6432', 'CommonProgramFiles', 'CommonProgramFiles(x86)', 'CommonProgramW6432', 'COMPUTERNAME', 'PUBLIC', 'ALLUSERSPROFILE', 'NUMBER_OF_PROCESSORS', 'PROCESSOR_ARCHITECTURE', 'OS']
   return Object.fromEntries(allowed.flatMap(key => source[key] === undefined ? [] : [[key, source[key]]]))
 }
 export function shellArguments(platform: string, command: string): string[] {
