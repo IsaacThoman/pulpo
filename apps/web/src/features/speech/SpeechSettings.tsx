@@ -46,7 +46,8 @@ export function SpeechSettings() {
     {model && settings && <>
       <div className="min-w-0 space-y-2">
         <label id="speech-voice-label" className="text-sm font-medium">{ui('Voice')}</label>
-        <Popover open={openVoiceModel === model.id} onOpenChange={open => { if (open) setOpenVoiceModel(model.id); else closeVoices() }}>
+        {/* Give the portaled list its own scroll lock inside the modal settings dialog. */}
+        <Popover modal open={openVoiceModel === model.id} onOpenChange={open => { if (open) setOpenVoiceModel(model.id); else closeVoices() }}>
           <PopoverTrigger asChild>
             <Button variant="outline" aria-labelledby="speech-voice-label speech-selected-voice" className="h-9 w-full justify-between gap-2 px-3 font-normal">
               <span id="speech-selected-voice" className="truncate">{model.voices.find(voice => voice.id === (settings.voice ?? model.defaultVoice))?.label ?? ui('Selected voice unavailable')}</span>

@@ -4,6 +4,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { OPENAI_SPEECH_PRESET } from '@pulpo/contracts'
 import { SpeechSettings } from './SpeechSettings'
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { useSettings } from '@/stores/settings'
 import { speechPlayback, previewSpeechVoice } from './playback'
 vi.hoisted(() => { Object.defineProperty(window, 'matchMedia', { value: () => ({ matches: false, addEventListener() {} }), configurable: true }) })
@@ -17,16 +18,36 @@ vi.mock('./playback', async () => ({
   ] }),
 }))
 afterEach(() => { cleanup(); speechPlayback.stop(); vi.clearAllMocks() })
+it('allows wheel and touch scrolling inside the voice popup in a modal dialog', async () => {
+  useSettings.setState({ speech: { modelId: 'first', models: {} } })
+  render(<QueryClientProvider client={new QueryClient()}><Dialog open><DialogContent aria-describedby={undefined}><DialogTitle>Settings</DialogTitle><SpeechSettings /></DialogContent></Dialog></QueryClientProvider>)
+  fireEvent.click(await screen.findByRole('button', { name: 'Voice Coral' }))
+  const list = screen.getByRole('radiogroup')
+  const popup = list.closest('[data-slot="popover-content"]') as HTMLElement
+  popup.style.overflowY = 'auto'
+  Object.defineProperties(popup, { scrollHeight: { value: 640 }, clientHeight: { value: 320 } })
+  const wheel = new WheelEvent('wheel', { bubbles: true, cancelable: true, deltaY: 100 })
+  fireEvent(list, wheel)
+  expect(wheel.defaultPrevented).toBe(false)
+  fireEvent.touchStart(list, { changedTouches: [{ clientX: 0, clientY: 200 }] })
+  const touch = new Event('touchmove', { bubbles: true, cancelable: true })
+  Object.assign(touch, { touches: [{ clientX: 0, clientY: 100 }], changedTouches: [{ clientX: 0, clientY: 100 }] })
+  fireEvent(list, touch)
+  expect(touch.defaultPrevented).toBe(false)
+  const outsideWheel = new WheelEvent('wheel', { bubbles: true, cancelable: true, deltaY: 100 })
+  fireEvent(document.body, outsideWheel)
+  expect(outsideWheel.defaultPrevented).toBe(true)
+})
 it('uses a model dropdown and lets users preview each voice without selecting it', async () => {
   useSettings.setState({ speech: { modelId: 'first', models: { first: { voice: 'alloy', instructions: 'Calm', speed: 1.2 } } } })
   render(<QueryClientProvider client={new QueryClient()}><SpeechSettings /></QueryClientProvider>)
   const trigger = await screen.findByRole('button', { name: 'Voice Alloy' })
   expect(trigger.getAttribute('aria-expanded')).toBe('false')
   expect(screen.queryByRole('radio')).toBeNull()
+  expect(screen.getByRole('combobox', { name: 'Model' }).textContent).toBe('First model')
   fireEvent.click(trigger)
   expect(document.activeElement).toBe(screen.getByRole('radio', { name: 'Alloy' }))
   fireEvent.click(screen.getByRole('button', { name: 'Preview Coral' }))
-  expect(screen.getByRole('combobox', { name: 'Model' }).textContent).toBe('First model')
   expect(previewSpeechVoice).toHaveBeenCalledWith('first', 'coral')
   expect(useSettings.getState().speech.models.first?.voice).toBe('alloy')
   expect(screen.queryByRole('button', { name: 'Preview Alloy' })).toBeNull()

@@ -49,6 +49,17 @@ Repeated the full web Settings → Interface check against an isolated local API
 
 ## Automated validation
 
+### Dropdown scroll regression follow-up
+
+The earlier compact-picker QA exercised selection and programmatic focus scrolling but missed actual wheel/touch input. The settings dialog's scroll lock blocked those events because the non-modal popover was portaled outside the dialog. The voice popover now owns a nested modal scroll lock, permitting scrolling inside its list while retaining the background lock.
+
+- Reproduced in the full app: a 280px wheel gesture left the list at `scrollTop = 0` despite 628px of content in a 318px viewport. After the fix the same gesture moved it to 280px, and further scrolling reached the 310px bottom boundary.
+- At 390px width, wheel gestures reached both ends. A Chromium-emulated touch swipe moved the list from 310px to 60px. The outer settings dialog stayed at zero.
+- Selection, arrow/Enter navigation, Escape/focus return, independent preview playback, and dismissal with preview cleanup still worked.
+- A regression test renders Speech settings inside the real modal Dialog and asserts wheel/touch events are allowed through for its scrollable popover. It failed before the fix and passed afterward. All 48 targeted web tests, the web production build, and workspace lint passed. Physical touch-device validation remains unperformed.
+
+### Initial full-feature checks
+
 - Shared speech: 7 tests passed.
 - Web settings, admin voice editor, and message actions: 45 tests passed.
 - Server speech, previews, backup compatibility/projection, and preferences: 37 tests passed.
