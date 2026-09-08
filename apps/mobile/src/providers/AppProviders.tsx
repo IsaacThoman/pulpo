@@ -16,6 +16,7 @@ import { purgeLegacyPrototypeSnapshots } from '../mockup5/src/store/prototypeSto
 import { RealtimeProvider } from './RealtimeProvider'
 import { ConnectivityProvider } from './ConnectivityProvider'
 import { startKeyboardStateReconciliation } from './keyboardStateReconciliation'
+import { runWhenAppActive } from './runWhenAppActive'
 
 void SplashScreen.preventAutoHideAsync()
 
@@ -52,14 +53,14 @@ function Bootstrap({ children }: { children: React.ReactNode }) {
   const preferencesHydrated = usePreferencesStore((state) => state.hydrated)
   const theme = useAppTheme()
 
-  useEffect(() => {
+  useEffect(() => runWhenAppActive(AppState, () => {
     void Promise.allSettled([hydrateSession(), hydratePreferences(), purgeLegacyPrototypeSnapshots()]).then(() => {
       if (useSessionStore.getState().status === 'hydrating') {
         useSessionStore.setState({ status: 'anonymous', error: 'Could not finish loading the app.' })
       }
       if (!usePreferencesStore.getState().hydrated) usePreferencesStore.setState({ hydrated: true })
     })
-  }, [hydratePreferences, hydrateSession])
+  }), [hydratePreferences, hydrateSession])
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (state) => {

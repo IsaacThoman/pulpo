@@ -6,8 +6,27 @@ New Chat, Find Chats, and Open Chat. Open Pulpo and sign in once before using th
 This requires a native build; Expo Go and Android do not expose Apple actions.
 
 Build workflows in Apple’s Shortcuts app using the Pulpo actions. Actions require
-an unlocked device, the signed-in account, and an internet connection. Siri can
-use phrases such as “Ask Pulpo” and “New chat in Pulpo.”
+the signed-in account and an internet connection. Siri can use phrases such as
+“Ask Pulpo” and “New chat in Pulpo.”
+
+## Device lock behavior
+
+Ask Pulpo and Start Chat with **Agent Mode off**, plus Get Models, can run while
+the device is locked after its first unlock following a restart. Open Pulpo once
+after updating to sync the session for background automation. Siri and automation
+permissions configured in iOS still apply. These actions can spend account credit,
+and Ask can return or speak the reply to the newly submitted prompt while locked.
+
+Find Chats, Get Reply, Continue Chat, Open Chat, and New Chat retain authentication
+and unlocked-device access. Saved-chat parameter lookups also require an unlocked
+device, including lookups performed before an action runs. Get Reply still needs
+an unlock even when its input comes from a preceding Start Chat action.
+
+Ask and Start Chat with **Agent Mode on** require an unlocked device. Because
+Apple's authentication policy is static for the entire action, these two actions
+report an unlock-and-retry error when Agent Mode is enabled while locked; they do
+not silently turn Agent Mode off or submit a request. The unlock requirement also
+continues to apply to Agent Mode in Continue Chat.
 
 ## Actions
 
@@ -79,12 +98,20 @@ server branch behavior; Continue targets the branch it read before submission.
 ## Native implementation and validation
 
 `modules/pulpo-shortcuts/ios` is an app-local Expo module. The native client uses
-an app-private Keychain session snapshot, accessible only while unlocked and
-only on this device. Sign-out, unauthorized sessions, pending/blocked accounts,
-and instance changes clear or replace it synchronously. A failed Keychain update
-marks Shortcuts unavailable, including across relaunches. Credentials are never
-stored in defaults, entity identifiers, URLs, shared containers, or test logs.
-Only the disabled/unavailable flags use UserDefaults.
+two app-private, device-only Keychain session snapshots: the original
+`WhenUnlockedThisDeviceOnly` record for sensitive actions and a separate
+`AfterFirstUnlockThisDeviceOnly` record for basic automation. The latter contains
+the same bearer token; its action restrictions are enforced by the native client,
+not by a separate server permission scope. Basic automation cannot query saved
+chats or send agent requests. Every request revalidates the appropriate record
+before sending and after receiving a response. Sign-out, unauthorized sessions,
+pending/blocked accounts, and instance changes clear or replace both records
+synchronously. A failed Keychain update marks both access paths unavailable,
+including across relaunches. Credentials are never stored in defaults, entity
+identifiers, URLs, shared containers, or test logs.
+Only the disabled/unavailable flags use UserDefaults. Foreground app bootstrap
+waits for an active app state, so a cold background launch cannot mistake the
+locked main SecureStore token for sign-out and revoke the automation session.
 
 The config plugin copies `intents/PulpoAppIntents.swift` into the generated app's
 main target so Xcode extracts App Intents metadata and Siri phrases. Do not move
@@ -120,6 +147,13 @@ fixture, and verify all eight actions under Shortcuts → Pulpo. Exercise an Ask
 result, Start Chat → Open Chat, Find → Choose → Continue, temporary questions,
 long-running responses, disabled access, sign-out, and account-scoped links.
 Check new/open chat navigation both with the app running and after termination.
+
+On a physical device, verify basic Ask, Start Chat, and Get Models while locked,
+then verify history actions, saved-chat parameter lookups, and Agent Mode refuse
+locked execution. Unlock and rerun the same actions successfully. Reboot and
+check basic automation is unavailable until the first unlock. Confirm sign-out
+and account switching revoke both access paths, including an in-flight reply.
+Simulator and macOS unit tests do not validate physical-device lock behavior.
 
 Simulator builds need Xcode's simulated Keychain entitlements and a development
 signature carrying the app's team identity to execute App Shortcuts. An unsigned
