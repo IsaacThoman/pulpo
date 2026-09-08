@@ -1,6 +1,6 @@
 {
-  "id": "fa96fe42-3ec1-4d5e-bb95-13234012ab7d",
-  "prevId": "415087df-de3d-44b5-9b43-ee7c48fe0ad7",
+  "id": "415087df-de3d-44b5-9b43-ee7c48fe0ad7",
+  "prevId": "bd872e2f-2c1a-453e-8a03-91615a59bbf8",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -6793,6 +6793,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "time_zone": {
+          "name": "time_zone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -7736,6 +7742,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "time_zone": {
+          "name": "time_zone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -8338,24 +8350,6 @@
           "type": "jsonb",
           "primaryKey": false,
           "notNull": true
-        },
-        "preview_object_key": {
-          "name": "preview_object_key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "preview_content_type": {
-          "name": "preview_content_type",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "preview_checksum": {
-          "name": "preview_checksum",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
         },
         "created_at": {
           "name": "created_at",

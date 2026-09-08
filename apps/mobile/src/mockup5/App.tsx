@@ -723,7 +723,7 @@ function NativeComposerIconButton({
   const prominentTint = colorScheme === 'dark' ? '#f2f2f7' : '#1c1c1e';
   const prominentForeground = colorScheme === 'dark' || disabled ? '#1c1c1e' : '#ffffff';
   return (
-    <SwiftUIHost ignoreSafeArea="keyboard" style={styles.nativeComposerCircleHost}>
+    <SwiftUIHost ignoreSafeArea="keyboard" style={styles.nativeComposerActionHost}>
       <SwiftUIButton
         label={label}
         onPress={onPress}
@@ -739,6 +739,25 @@ function NativeComposerIconButton({
           swiftUIAccessibilityLabel(label),
         ]}
       />
+    </SwiftUIHost>
+  );
+}
+
+function NativeComposerShelfButton({ disabled, onPress }: { disabled: boolean; onPress: () => void }) {
+  const { styles } = useChatStyles();
+  return (
+    <SwiftUIHost ignoreSafeArea="keyboard" style={styles.nativeComposerShelfHost}>
+      <SwiftUIButton onPress={onPress} modifiers={[
+        buttonStyle('plain'),
+        foregroundStyle('secondary'),
+        swiftUIDisabled(disabled),
+        swiftUIAccessibilityLabel('Shelve draft'),
+      ]}>
+        <SwiftUIImage systemName="archivebox" size={18} modifiers={[
+          frame({ width: 44, height: 44 }),
+          contentShape(shapes.rectangle()),
+        ]} />
+      </SwiftUIButton>
     </SwiftUIHost>
   );
 }
@@ -5649,25 +5668,30 @@ function ChatView({
                 </View>
               )}
               {dictation.error && <Text accessibilityRole="alert" style={styles.attachmentErrorText}>{dictation.error}</Text>}
-              <TextInput
-                ref={composerInputRef}
-                accessibilityLabel="Message"
-                disableFullscreenUI
-                editable={!handoffBusy && !shelfBusy && !composerFocusSuppressed && !(messageEdit && sending)}
-                maxFontSizeMultiplier={1.6}
-                multiline
-                maxLength={1_000_000}
-                onFocus={() => { setQueueCollapsed(true); setShelfCollapsed(true); }}
-                onBlur={() => { setQueueCollapsed(false); setShelfCollapsed(false); }}
-                onChangeText={(value) => { inputRef.current = value; onChangeInput(value); }}
-                selection={{ start: Math.min(inputSelection.start, input.length), end: Math.min(inputSelection.end, input.length) }}
-                onSelectionChange={(event) => { setComposerSelection(setInputSelection, inputSelectionRef, event.nativeEvent.selection); }}
-                placeholder={attachments.length > 0 ? 'Add a caption…' : messageEdit ? 'Edit message…' : temporary ? 'Temporary message…' : 'Message…'}
-                placeholderTextColor={COLORS.muted}
-                style={styles.input}
-                value={input}
-              />
-              <View style={styles.composerBar}>
+              <View style={[styles.composerInputRow, showShelf && styles.composerShelfInputRow]}>
+                <TextInput
+                  ref={composerInputRef}
+                  accessibilityLabel="Message"
+                  disableFullscreenUI
+                  editable={!handoffBusy && !shelfBusy && !composerFocusSuppressed && !(messageEdit && sending)}
+                  maxFontSizeMultiplier={1.6}
+                  multiline
+                  maxLength={1_000_000}
+                  onFocus={() => { setQueueCollapsed(true); setShelfCollapsed(true); }}
+                  onBlur={() => { setQueueCollapsed(false); setShelfCollapsed(false); }}
+                  onChangeText={(value) => { inputRef.current = value; onChangeInput(value); }}
+                  selection={{ start: Math.min(inputSelection.start, input.length), end: Math.min(inputSelection.end, input.length) }}
+                  onSelectionChange={(event) => { setComposerSelection(setInputSelection, inputSelectionRef, event.nativeEvent.selection); }}
+                  placeholder={attachments.length > 0 ? 'Add a caption…' : messageEdit ? 'Edit message…' : temporary ? 'Temporary message…' : 'Message…'}
+                  placeholderTextColor={COLORS.muted}
+                  style={[styles.input, styles.composerTextInput]}
+                  value={input}
+                />
+                {showShelf && (Platform.OS === 'ios'
+                  ? <NativeComposerShelfButton disabled={!(input.trim() || attachments.length) || shelfBusy || sending || dictationBusy} onPress={() => { void transferShelf(); }} />
+                  : <MaterialIconButton label="Shelve draft" icon="archivebox" disabled={!(input.trim() || attachments.length) || shelfBusy || sending || dictationBusy} onPress={() => { void transferShelf(); }} />)}
+              </View>
+              <View style={[styles.composerBar, showShelf && styles.composerShelfBar]}>
                 {Platform.OS === 'ios' ? (
                   <NativeAttachmentMenu onTakePhoto={takePhoto} onPickFiles={pickFiles} onPickPhotos={pickPhotos} />
                 ) : (
@@ -5740,9 +5764,6 @@ function ChatView({
                   <MaterialIconButton label={activeAgentEnabled ? 'Turn off Agent mode' : 'Turn on Agent mode'} icon="bot" color={activeAgentEnabled ? nativeAgentTint : undefined} disabled={!canUseAgent} onPress={toggleAgent} />
                 )}
                 <View style={styles.flex} />
-                {showShelf && (Platform.OS === 'ios'
-                  ? <NativeComposerIconButton label="Shelve draft" systemImage="archivebox" disabled={!(input.trim() || attachments.length) || shelfBusy || sending || dictationBusy} onPress={() => { void transferShelf(); }} />
-                  : <MaterialIconButton label="Shelve draft" icon="archivebox" disabled={!(input.trim() || attachments.length) || shelfBusy || sending || dictationBusy} onPress={() => { void transferShelf(); }} />)}
                 {dictationEnabled && (Platform.OS === 'ios'
                   ? <NativeComposerIconButton label={dictationLabel} systemImage={dictation.phase === 'recording' ? 'stop.fill' : 'mic'} prominent={dictation.phase === 'recording'} disabled={dictationDisabled} onPress={dictation.phase === 'recording' ? dictation.stop : dictation.start} />
                   : <MaterialIconButton label={dictationLabel} icon={dictation.phase === 'recording' ? 'stop.fill' : 'mic'} selected={dictation.phase === 'recording'} disabled={dictationDisabled} onPress={dictation.phase === 'recording' ? dictation.stop : dictation.start} />)}
@@ -6491,9 +6512,17 @@ function createChatStyles(COLORS: ChatColors) { return StyleSheet.create({
   attachmentRetryOverlay: { position: 'absolute', left: 6, right: 6, bottom: 4, minHeight: 24, borderRadius: 9, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, backgroundColor: 'rgba(196,43,37,0.92)', paddingHorizontal: 7 },
   attachmentRetryText: { color: '#ffffff', fontSize: 10.5, fontWeight: '700' },
   input: { minHeight: 30, maxHeight: 120, color: COLORS.text, fontSize: 16, lineHeight: 22, paddingHorizontal: 5, paddingTop: 0 },
+  composerInputRow: { flexDirection: 'row', alignItems: 'flex-end' },
+  composerShelfInputRow: { flexGrow: 1 },
+  composerTextInput: { flex: 1, minWidth: 0, alignSelf: 'flex-start' },
   composerBar: { flexDirection: 'row', alignItems: 'center', marginTop: 'auto', gap: 1 },
+  // Preserve composer row measurements while Shelve occupies the top-right corner.
+  composerShelfBar: { marginTop: Platform.OS === 'ios' ? 36 + 1 - 44 : 1 },
   composerCircle: { width: 44, height: 44, borderRadius: 22, backgroundColor: COLORS.fillStrong, alignItems: 'center', justifyContent: 'center' },
   nativeComposerCircleHost: { width: 44, height: 44 },
+  nativeComposerActionHost: { width: 36, height: 44 },
+  // Align the small glyph with the first text line while retaining a 44-point hit area.
+  nativeComposerShelfHost: { width: 44, height: 44, marginRight: -4, alignSelf: 'flex-start', transform: [{ translateY: -8 }] },
   agentCircle: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
   agentCircleActive: { backgroundColor: '#AF52DE' },
   nativeAgentHost: { width: 44, height: 44 },

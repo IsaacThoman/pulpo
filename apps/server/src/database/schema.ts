@@ -456,6 +456,7 @@ export const chats = pgTable('chats', {
 ])
 
 export const responses = pgTable('responses', {
+  timeZone: text('time_zone'),
   id: uuid('id').primaryKey(),
   chatId: uuid('chat_id').notNull().references(() => chats.id, { onDelete: 'cascade' }),
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
@@ -499,6 +500,7 @@ export const responses = pgTable('responses', {
 ])
 
 export const queuedMessages = pgTable('queued_messages', {
+  timeZone: text('time_zone'),
   id: uuid('id').primaryKey(),
   chatId: uuid('chat_id').notNull().references(() => chats.id, { onDelete: 'cascade' }),
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),

@@ -74,10 +74,11 @@ describe('mobile queue operations', () => {
     await vi.waitFor(() => expect(mocks.request).toHaveBeenCalled())
     expect(queue()[0]).toMatchObject({ pendingSubmissionId: 'submission-1', attachments, content: 'Next' })
     expect(client.getQueryData<ServerChat>(key)!.responses).toEqual([])
+    expect(mocks.request.mock.calls[0]![1].body).toHaveProperty('timeZone', Intl.DateTimeFormat().resolvedOptions().timeZone)
     resolve({ queuedMessage: queued('server', { attachments }) })
     await pending
     expect(queue()).toEqual([queued('server', { attachments })])
-    expect(mocks.request.mock.calls[0]![1]).toMatchObject({ body: { ...input, clientId: 'submission-1' }, idempotencyKey: 'submission-1' })
+    expect(mocks.request.mock.calls[0]![1]).toMatchObject({ body: { ...input, clientId: 'submission-1', timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone }, idempotencyKey: 'submission-1' })
   })
   it('removes the optimistic item when the server already dispatched it', async () => {
     mocks.request.mockResolvedValue({ queuedMessage: null })
@@ -88,7 +89,8 @@ describe('mobile queue operations', () => {
     mocks.request.mockRejectedValue(new TypeError('offline'))
     await enqueueMessage(client, 'account', 'chat', input, attachments, false)
     await flushCacheWrites('account')
-    expect(mocks.offline).toHaveBeenCalledWith(expect.objectContaining({ idempotencyKey: 'submission-1', body: { ...input, clientId: 'submission-1' } }))
+    expect(mocks.offline.mock.calls[0]![0].body).toHaveProperty('timeZone', Intl.DateTimeFormat().resolvedOptions().timeZone)
+    expect(mocks.offline).toHaveBeenCalledWith(expect.objectContaining({ idempotencyKey: 'submission-1', body: { ...input, clientId: 'submission-1', timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone } }))
     expect(queue()[0]?.pendingSubmissionId).toBe('submission-1')
     expect(mocks.cache).toHaveBeenCalled()
   })
@@ -110,7 +112,7 @@ describe('mobile queue operations', () => {
     mocks.request.mockResolvedValue({ queuedMessage: saved })
     await mutateQueuedMessage(client, 'account', 'chat', 'one', { action: 'save_edit', ...input }, attachments)
     expect(queue()).toEqual([saved])
-    expect(mocks.request).toHaveBeenCalledWith('/api/chats/chat/queued-messages/one', { method: 'PATCH', body: { action: 'save_edit', ...input } })
+    expect(mocks.request).toHaveBeenCalledWith('/api/chats/chat/queued-messages/one', { method: 'PATCH', body: { action: 'save_edit', ...input, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone } })
   })
   it('rolls back edit locks and reorder failures', async () => {
     const previous = [queued(), queued('two', { position: 1 })]
