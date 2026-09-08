@@ -46,7 +46,8 @@ describe('resumable browser restore uploads', () => {
     session.parts[0] = { size: 8, checksum: await checksum(backup.slice(0, 8)) }
     await uploadRestoreBackup(backup, 'admin', options(), transport)
     expect(transport).toHaveBeenCalledTimes(2)
-    expect(transport.mock.calls.map((call) => (call as unknown as string[])[0])).toEqual([
+    // Concurrent chunks can finish hashing and reach the transport in either order.
+    expect(transport.mock.calls.map((call) => (call as unknown as string[])[0]).sort()).toEqual([
       `/api/admin/restore/uploads/${session.id}/parts/1`, `/api/admin/restore/uploads/${session.id}/parts/2`,
     ])
     const id = session.id
