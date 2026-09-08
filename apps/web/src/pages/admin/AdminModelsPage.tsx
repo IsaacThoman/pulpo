@@ -95,6 +95,7 @@ const empty = (providerConnectionId = '', labId: string | null = null): AdminMod
 
 export function AdminModelsPage() {
   const [models, setModels] = useState<AdminModel[]>([])
+  const codexEnabled = useCatalog((state) => state.codexEnabled)
   const [codexModels, setCodexModels] = useState<ManagedCodexModelSettings[]>([])
   const [providers, setProviders] = useState<Provider[]>([])
   const [labs, setLabs] = useState<Lab[]>([])
@@ -223,7 +224,7 @@ export function AdminModelsPage() {
         ))}
       </div>
 
-      <ManagedCodexModelsSection models={codexModels} onEdit={(model) => setCodexDraft({ ...model })} />
+      {codexEnabled && <ManagedCodexModelsSection models={codexModels} onEdit={(model) => setCodexDraft({ ...model })} />}
 
       <Dialog open={!!draft} onOpenChange={(open) => !open && setDraft(null)}>
         <DialogContent className="flex h-[720px] max-h-[90vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
@@ -260,7 +261,7 @@ export function AdminModelsPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={!!codexDraft} onOpenChange={(open) => !open && setCodexDraft(null)}>
+      <Dialog open={codexEnabled && !!codexDraft} onOpenChange={(open) => !open && setCodexDraft(null)}>
         <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-lg">
           <DialogHeader className="border-b px-6 py-4">
             <DialogTitle className="flex items-center gap-2.5">

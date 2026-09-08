@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import {
   agentSettingsSchema,
+  codexSettingsSchema,
   authSettingsSchema,
   backupIntervalHoursSchema,
   dictationSettingsSchema,
@@ -18,6 +19,13 @@ import {
 } from '@pulpo/contracts'
 
 export { authSettingsSchema, DEFAULT_MAX_ATTACHMENT_BYTES, DEFAULT_SUGGESTED_PROMPTS, DEFAULT_TITLE_PROMPT, interfaceSettingsSchema, loggingSettingsSchema, personalizationSettingsSchema }
+
+export { codexSettingsSchema }
+
+export function parseCodexSettings(value: unknown): z.infer<typeof codexSettingsSchema> {
+  const parsed = codexSettingsSchema.safeParse(value)
+  return parsed.success ? parsed.data : codexSettingsSchema.parse({})
+}
 
 export const DEFAULT_BALANCE_MICROS = 5_000_000
 export const DEFAULT_STORAGE_LIMIT_BYTES = 5_000 * 1024 * 1024

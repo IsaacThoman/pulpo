@@ -1,4 +1,5 @@
 import { SpeechSettings } from '@/features/speech/SpeechSettings'
+import { refreshInstanceFeatures } from '@/lib/instance-features'
 import { DeleteAccountSettings } from './DeleteAccountSettings'
 import { DeviceSettings } from './DeviceSettings'
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
@@ -341,6 +342,7 @@ export function SettingsModal({
   const user = useAuth((a) => a.user)
   const logout = useAuth((a) => a.logout)
   const billingEnabled = useAuth((a) => a.billingEnabled)
+  const codexEnabled = useAuth((a) => a.codexEnabled)
   const replaceUser = useAuth((a) => a.replaceUser)
   const navigate = useNavigate()
   const [memoryDocument, setMemoryDocument] = useState<MemoryDocument | null>(null)
@@ -400,6 +402,10 @@ export function SettingsModal({
   }, [open, user])
 
   useEffect(() => { if (!open) setProfileMessage('') }, [open])
+  useEffect(() => { if (open) void refreshInstanceFeatures() }, [open])
+  useEffect(() => {
+    if (!codexEnabled && section === 'connections') setSection('general')
+  }, [codexEnabled, section])
 
   useEffect(() => () => { if (avatarCandidate) URL.revokeObjectURL(avatarCandidate.url) }, [avatarCandidate])
 
@@ -645,6 +651,7 @@ export function SettingsModal({
               {sections.filter((sec) => (
                 (sec.id !== 'api' || useAuth.getState().apiKeysEnabled)
                 && (sec.id !== 'billing' || billingEnabled)
+                && (sec.id !== 'connections' || codexEnabled)
               )).map((sec) => (
                 <button
                   key={sec.id}
@@ -782,7 +789,7 @@ export function SettingsModal({
               )}
 
               {section === 'speech' && <SpeechSettings />}
-              {section === 'connections' && <CodexConnectionSettings active={open && section === 'connections'} />}
+              {section === 'connections' && codexEnabled && <CodexConnectionSettings active={open && section === 'connections'} />}
 
               {section === 'profile' && (
                 <div>

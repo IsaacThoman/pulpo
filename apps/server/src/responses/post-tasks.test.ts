@@ -1,5 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { CODEX_PROVIDER_ID } from '../codex/constants.js'
 import type { CatalogModelRuntime } from './catalog-model-runtime.js'
+
+const policy = vi.hoisted(() => ({ enabled: false, selected: null as unknown }))
+vi.mock('../codex/policy.js', () => ({ codexEnabled: async () => policy.enabled }))
+vi.mock('./catalog-model-runtime.js', async (original) => ({
+  ...await original<typeof import('./catalog-model-runtime.js')>(),
+  resolveAvailableCatalogModel: async () => policy.selected,
+}))
 
 const persistGeneratedChatTitle = vi.hoisted(() => vi.fn(async () => true))
 
@@ -9,6 +17,7 @@ import {
   persistGeneratedTitleResult,
   retryInvalidTitleOutput,
   runPostResponseTasks,
+  resolvePostTaskRuntime,
   selectPostTaskRuntime,
   TitleOutputValidationError,
   validateGeneratedTitleResponse,
@@ -37,6 +46,22 @@ describe('post-response task model selection', () => {
   it('falls back to the completed response model when the selection is unavailable', () => {
     const current = runtime('completed-fallback-model')
     expect(selectPostTaskRuntime(current, null)).toBe(current)
+  })
+
+  it('avoids a configured Codex title model while disabled and restores it when enabled', async () => {
+    const current = runtime('ordinary')
+    const selected = { ...runtime('codex:test'), provider: { id: CODEX_PROVIDER_ID } } as CatalogModelRuntime
+    policy.selected = selected
+    policy.enabled = false
+    expect(await resolvePostTaskRuntime('codex:test', current)).toBe(current)
+    policy.enabled = true
+    expect(await resolvePostTaskRuntime('codex:test', current)).toBe(selected)
+  })
+
+  it('lets a running Codex response finish title tasks using its current model', async () => {
+    policy.enabled = false
+    const current = { ...runtime('codex:test'), provider: { id: CODEX_PROVIDER_ID } } as CatalogModelRuntime
+    expect(await resolvePostTaskRuntime('current', current)).toBe(current)
   })
 
   it('persists a parsed generated title through the realtime-aware helper', async () => {

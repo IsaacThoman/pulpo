@@ -1,3 +1,4 @@
+import { refreshInstanceFeatures } from '@/lib/instance-features'
 import { lazy, Suspense, useEffect, type ReactNode } from 'react'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { RequireAuth } from '@/components/auth/RequireAuth'
@@ -69,7 +70,21 @@ export default function App() {
   const checkingSession = useAuth((state) => state.checkingSession)
   const instanceReady = useAuth((state) => state.instanceReady)
   const user = useAuth((state) => state.user)
+  const userId = user?.id
   useEffect(() => { void bootstrap() }, [bootstrap])
+  useEffect(() => {
+    if (checkingSession || !instanceReady || !userId) return
+    const refresh = () => { if (document.visibilityState === 'visible') void refreshInstanceFeatures() }
+    refresh()
+    window.addEventListener('focus', refresh)
+    window.addEventListener('online', refresh)
+    document.addEventListener('visibilitychange', refresh)
+    return () => {
+      window.removeEventListener('focus', refresh)
+      window.removeEventListener('online', refresh)
+      document.removeEventListener('visibilitychange', refresh)
+    }
+  }, [checkingSession, instanceReady, userId])
 
   const startupSurface = desktopStartupSurface({
     desktop: isDesktopRuntime(),
