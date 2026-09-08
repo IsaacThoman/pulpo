@@ -720,7 +720,7 @@ function NativeComposerIconButton({
   const prominentTint = colorScheme === 'dark' ? '#f2f2f7' : '#1c1c1e';
   const prominentForeground = colorScheme === 'dark' || disabled ? '#1c1c1e' : '#ffffff';
   return (
-    <SwiftUIHost ignoreSafeArea="keyboard" style={styles.nativeComposerCircleHost}>
+    <SwiftUIHost ignoreSafeArea="keyboard" style={styles.nativeComposerActionHost}>
       <SwiftUIButton
         label={label}
         onPress={onPress}
@@ -6456,6 +6456,7 @@ function createChatStyles(COLORS: ChatColors) { return StyleSheet.create({
   composerBar: { flexDirection: 'row', alignItems: 'center', marginTop: 'auto', gap: 1 },
   composerCircle: { width: 44, height: 44, borderRadius: 22, backgroundColor: COLORS.fillStrong, alignItems: 'center', justifyContent: 'center' },
   nativeComposerCircleHost: { width: 44, height: 44 },
+  nativeComposerActionHost: { width: 36, height: 44 },
   agentCircle: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
   agentCircleActive: { backgroundColor: '#AF52DE' },
   nativeAgentHost: { width: 44, height: 44 },
