@@ -24,8 +24,8 @@ describe('workspace controls', () => {
   it('offers offline computers and preserves the selected working folder', async () => {
     const changed = vi.fn()
     render(wrap(<WorkspacePicker value={{ kind: 'pulpo' }} onChange={changed} />))
-    await screen.findByRole('option', { name: 'MacBook · /projects · Offline' })
-    fireEvent.change(screen.getByRole('combobox', { name: 'Workspace' }), { target: { value: JSON.stringify(wait.workspace) } })
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Workspace, Pulpo' }), { key: 'ArrowDown' })
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'MacBook · /projects · Offline' }))
     expect(changed).toHaveBeenCalledWith(wait.workspace)
   })
   it('requires explicit acknowledgment before leaving an uncertain command', async () => {

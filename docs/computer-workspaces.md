@@ -30,7 +30,7 @@ Attachments are staged under a dedicated response directory in application data.
 
 ## Rollout
 
-Apply additive migration 0067 and update all API and generation workers before releasing updated clients. No existing selection requires a backfill. Older clients continue sending booleans and never advertise computer hosting. The Socket.IO transport accepts bounded base64 file transfers up to 40 MB; infrastructure must allow the existing WebSocket route. Do not expose desktop hosts directly to inbound network traffic.
+Apply additive migration 0070 (after the speech migrations on `dev`) and update all API and generation workers before releasing updated clients. Existing PR preview databases recognize the original workspace migration by checksum, preserving registered computers while applying the intervening speech migrations. No existing selection requires a backfill. Older clients continue sending booleans and never advertise computer hosting. The Socket.IO transport accepts bounded base64 file transfers up to 40 MB; infrastructure must allow the existing WebSocket route. Do not expose desktop hosts directly to inbound network traffic.
 
 ## Validation
 

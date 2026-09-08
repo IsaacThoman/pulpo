@@ -20,6 +20,11 @@ export async function recoverRenumberedRestoreMigration(client: Sql, migrationsF
   return recoverRenumberedMigration(client, migrationsFolder, new Set([1788746542023]), '_restore_uploads', 'restore')
 }
 
+export async function recoverRenumberedWorkspaceMigration(client: Sql, migrationsFolder: string): Promise<boolean> {
+  // The workspace PR preview applied this unchanged DDL before speech joined dev.
+  return recoverRenumberedMigration(client, migrationsFolder, new Set([1788891345619]), '_computer_workspaces', 'workspace')
+}
+
 export async function recoverRenumberedSpeechMigrations(client: Sql, migrationsFolder: string): Promise<boolean> {
   // Speech previews predate dev's time-zone migration on persistent PR databases.
   // Recover each unchanged DDL checksum in order, preserving catalog and clips.

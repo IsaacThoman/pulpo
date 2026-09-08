@@ -6,7 +6,7 @@ import { drizzle } from 'drizzle-orm/postgres-js'
 import { migrate } from 'drizzle-orm/postgres-js/migrator'
 import postgres from 'postgres'
 import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { recoverRenumberedShelfMigration, recoverRenumberedSpeechMigrations } from './migration-recovery.js'
+import { recoverRenumberedShelfMigration, recoverRenumberedSpeechMigrations, recoverRenumberedWorkspaceMigration } from './migration-recovery.js'
 
 const enabled = process.env.PULPO_MIGRATION_POSTGRES_TEST === '1'
 if (enabled && new URL(process.env.DATABASE_URL ?? 'http://invalid').pathname !== '/pulpo_migration_test') {
@@ -65,6 +65,25 @@ describe.skipIf(!enabled)('renumbered shelf migration recovery on PostgreSQL', (
     expect(await client!`select * from shelved_draft_attachments where draft_id = ${draftId}`).toHaveLength(1)
     const before = await client!`select * from drizzle.__drizzle_migrations order by id`
     expect(await recoverRenumberedShelfMigration(client!, folder)).toBe(false)
+    await migrate(drizzle(client!), { migrationsFolder: folder })
+    expect(await client!`select * from drizzle.__drizzle_migrations order by id`).toEqual(before)
+  })
+
+  it('preserves registered computers when workspaces move after the speech migrations', async () => {
+    const workspace = journal.entries.find(entry => entry.tag.endsWith('_computer_workspaces'))!
+    const legacy = fixture([...journal.entries.filter(entry => entry.idx <= 66), { ...workspace, idx: 67, when: 1788891345619 }])
+    await migrate(drizzle(client!), { migrationsFolder: legacy })
+    const userId = randomUUID(), deviceId = randomUUID()
+    await client!`insert into users (id, email, name, username) values (${userId}, ${`${userId}@example.test`}, 'Migration test', ${userId})`
+    await client!`insert into workspace_computers (id, user_id, token_hash, registration) values (${deviceId}, ${userId}, 'test-hash', '{"name":"Keep this computer"}')`
+    expect(await recoverRenumberedWorkspaceMigration(client!, folder)).toBe(true)
+    await migrate(drizzle(client!), { migrationsFolder: folder })
+    const [computer] = await client!`select registration from workspace_computers where id = ${deviceId}`
+    expect(computer!.registration.name).toBe('Keep this computer')
+    const [speech] = await client!`select to_regclass('speech_models') as present`
+    expect(speech!.present).toBe('speech_models')
+    const before = await client!`select * from drizzle.__drizzle_migrations order by id`
+    expect(await recoverRenumberedWorkspaceMigration(client!, folder)).toBe(false)
     await migrate(drizzle(client!), { migrationsFolder: folder })
     expect(await client!`select * from drizzle.__drizzle_migrations order by id`).toEqual(before)
   })

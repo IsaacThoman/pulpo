@@ -3,6 +3,7 @@ import { useChat } from '@/stores/chat'
 import { useState, useEffect } from 'react'
 import type { WorkspaceSelection, WorkspaceWait, ResponseSnapshot } from '@pulpo/contracts'
 import { apiRequest } from '@/lib/api'
+import { Button } from '@/components/ui/button'
 import { WorkspacePicker } from './WorkspacePicker'
 
 export function WorkspaceRecovery({ responseId, wait }: { responseId: string; wait: WorkspaceWait }) {
@@ -25,11 +26,11 @@ export function WorkspaceRecovery({ responseId, wait }: { responseId: string; wa
   if (wait.reason === 'capacity' && now < Date.parse(wait.startedAt) + 15_000) return null
   return <div role="status" className="my-3 space-y-2 rounded-lg border p-3 text-sm">
     <p>{wait.reason === 'capacity' ? ui('Waiting for workspace capacity.') : ui('The workspace has not responded for 30 seconds.')}</p>
-    {confirm ? <><p>{ui('The old command may still run. Local files will stay on that computer. Pulpo will continue without replaying the command.')}</p><button disabled={pending} onClick={() => void recover(confirm, true)}>{confirm === 'switch' ? ui('Confirm switch') : ui('Confirm continue without workspace')}</button><button className="ml-3" onClick={() => setConfirm(null)}>{ui('Cancel')}</button></> : <div className="flex flex-wrap items-center gap-3">
-      <button disabled={pending} onClick={() => void recover('wait')}>{ui('Keep waiting')}</button>
+    {confirm ? <><p>{ui('The old command may still run. Local files will stay on that computer. Pulpo will continue without replaying the command.')}</p><Button size="sm" variant="outline" disabled={pending} onClick={() => void recover(confirm, true)}>{confirm === 'switch' ? ui('Confirm switch') : ui('Confirm continue without workspace')}</Button><Button size="sm" variant="outline" className="ml-3" onClick={() => setConfirm(null)}>{ui('Cancel')}</Button></> : <div className="flex flex-wrap items-center gap-3">
+      <Button size="sm" variant="outline" disabled={pending} onClick={() => void recover('wait')}>{ui('Keep waiting')}</Button>
       <WorkspacePicker value={target} onChange={setTarget} disabled={pending} />
-      <button disabled={pending} onClick={() => void recover('switch')}>{ui('Switch workspace')}</button>
-      <button disabled={pending} onClick={() => void recover('none')}>{ui('Continue without workspace')}</button>
+      <Button size="sm" variant="outline" disabled={pending} onClick={() => void recover('switch')}>{ui('Switch workspace')}</Button>
+      <Button size="sm" variant="outline" disabled={pending} onClick={() => void recover('none')}>{ui('Continue without workspace')}</Button>
     </div>}
     {error && <p role="alert">{error}</p>}
   </div>
