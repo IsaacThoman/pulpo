@@ -1,7 +1,7 @@
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import { ActivityIndicator, Pressable, Text, TextInput, View } from 'react-native'
 import { useQuery } from '@tanstack/react-query'
-import { speechPriceLabel, type PublicSpeechModel } from '@pulpo/contracts'
+import type { PublicSpeechModel } from '@pulpo/contracts'
 import { apiRequest } from '../../api/client'
 import { usePreferencesStore } from '../../store/preferences'
 import { useSessionStore } from '../../store/session'
@@ -39,7 +39,6 @@ export function SpeechSettings({ onBack }: { onBack: () => void }) {
         return <View key={option.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 12, paddingHorizontal: 12, backgroundColor: selected ? theme.fillStrong : theme.elevated }}>
           <Pressable accessibilityRole="radio" accessibilityState={{ checked: selected }} onPress={() => { speechPlayback.stop(); setPreference('speech', { ...preferences, modelId: option.id }) }} style={{ flex: 1, paddingVertical: 14 }}>
             <Text style={{ ...textStyle, fontWeight: '600' }}>{option.name}{selected ? ' ✓' : ''}</Text>
-            <Text style={{ color: theme.secondary, fontSize: 12, marginTop: 4 }}>{speechPriceLabel(option)}</Text>
           </Pressable>
           {option.previewAvailable && <View>
             <GlassIconButton icon={active ? 'stop.fill' : 'play.fill'} label={active ? 'Stop preview' : `Preview ${option.name}`} onPress={() => { void previewSpeechModel(option.id) }} />
@@ -47,7 +46,7 @@ export function SpeechSettings({ onBack }: { onBack: () => void }) {
           </View>}
         </View>
       })}
-      <Text style={{ color: theme.secondary, fontSize: 12 }}>Previews are uploaded samples. Free to play.</Text>
+      <Text style={{ color: theme.secondary, fontSize: 12 }}>Previews are uploaded samples.</Text>
       {playback.error && <Text accessibilityRole="alert" style={{ color: theme.text }}>{playback.error}</Text>}
     </View>
     {catalog.data?.data.length === 0 && <Text style={textStyle}>An admin must configure a speech model first.</Text>}
@@ -56,7 +55,6 @@ export function SpeechSettings({ onBack }: { onBack: () => void }) {
       {picker === 'voice' && model.voices.map(voice => <Pressable key={voice.id} accessibilityRole="button" onPress={() => { update({ voice: voice.id }); setPicker(null) }}><Text style={fieldStyle}>{voice.label}</Text></Pressable>)}
       {model.supportsInstructions && <View style={{ gap: 8 }}><Text style={textStyle}>Instructions</Text><TextInput accessibilityLabel="Speech instructions" style={fieldStyle} multiline maxLength={4096} value={settings.instructions} onChangeText={instructions => update({ instructions })} placeholder="Speak in a calm, friendly tone." placeholderTextColor={theme.secondary} /></View>}
       {model.supportsSpeed && <View style={{ gap: 8 }}><Text style={textStyle}>Speed: {settings.speed}×</Text><View style={{ flexDirection: 'row', gap: 20 }}><Pressable accessibilityRole="button" accessibilityLabel="Decrease speech speed" onPress={() => update({ speed: Math.max(model.speedMin, Math.round((settings.speed - 0.1) * 100) / 100) })}><Text style={fieldStyle}>−</Text></Pressable><Pressable accessibilityRole="button" accessibilityLabel="Increase speech speed" onPress={() => update({ speed: Math.min(model.speedMax, Math.round((settings.speed + 0.1) * 100) / 100) })}><Text style={fieldStyle}>+</Text></Pressable></View></View>}
-      <Text style={{ color: theme.secondary }}>Charges apply to generated audio, including a prepared next chunk when playback stops.</Text>
     </>}
   </View></Screen>
 }

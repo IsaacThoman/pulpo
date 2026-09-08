@@ -1,5 +1,4 @@
 import { useQuery } from '@tanstack/react-query'
-import { speechPriceLabel } from '@pulpo/contracts'
 import { useSettings } from '@/stores/settings'
 import { useAuth } from '@/stores/auth'
 import { Input } from '@/components/ui/input'
@@ -33,7 +32,7 @@ export function SpeechSettings() {
           return <div key={option.id} className={cn('flex items-center gap-2 rounded-md px-3 transition-colors hover:bg-muted/50 focus-within:ring-2 focus-within:ring-ring', selected && 'bg-muted')}>
             <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 py-3">
               <input className="sr-only" type="radio" name="speech-model" aria-label={option.name} checked={selected} onChange={() => { speechPlayback.stop(); set('speech', { ...preferences, modelId: option.id }) }} />
-              <span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium">{option.name}</span><span className="mt-1 block text-xs text-muted-foreground">{speechPriceLabel(option)}</span></span>
+              <span className="min-w-0 flex-1 truncate text-sm font-medium">{option.name}</span>
               {selected && <Check className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />}
             </label>
             {option.previewAvailable && <Button variant="outline" size="icon" className="shrink-0 rounded-full" aria-label={active ? ui('Stop preview') : ui('Preview {{name}}', { name: option.name })} aria-pressed={active} onClick={() => void previewSpeechModel(option.id)}>
@@ -42,7 +41,7 @@ export function SpeechSettings() {
           </div>
         })}
       </div>
-      <p className="text-xs text-muted-foreground">{ui('Previews are uploaded samples. Free to play.')}</p>
+      <p className="text-xs text-muted-foreground">{ui('Previews are uploaded samples.')}</p>
       {playback.error && <p role="alert" className="text-sm text-destructive">{playback.error}</p>}
     </fieldset>
     {catalog.data?.data.length === 0 && <p className="text-sm">{ui('An admin must configure a speech model first.')}</p>}
@@ -53,7 +52,6 @@ export function SpeechSettings() {
       </select></label>
       {model.supportsInstructions && <label className="block text-sm">{ui('Instructions')}<Textarea className="mt-2" value={settings.instructions} maxLength={4096} placeholder={ui('Speak in a calm, friendly tone.')} onChange={event => update({ instructions: event.target.value })} /></label>}
       {model.supportsSpeed && <label className="block text-sm">{ui('Speed')}<Input className="mt-2" type="number" min={model.speedMin} max={model.speedMax} step="0.05" value={settings.speed} onChange={event => { const speed = Number(event.target.value); if (speed >= model.speedMin && speed <= model.speedMax) update({ speed }) }} /></label>}
-      <p className="text-xs text-muted-foreground">{ui('Charges apply to generated audio, including a prepared next chunk when playback stops.')}</p>
     </>}
   </div>
 }
