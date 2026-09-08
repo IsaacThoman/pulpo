@@ -8,6 +8,8 @@ Acceptance is irreversible. Sessions, API keys, management tokens, shared links,
 
 Final cleanup waits at least 16 minutes for previously signed upload URLs to expire. Background cleanup can take longer when external services fail or existing requests are still settling. This is not a recovery period. Instance backups and payment-provider records retain their existing retention policies.
 
+Administrators use **Users → Delete** to start the same cleanup workflow for another account, including when self-service deletion is disabled. The API returns `202` after acceptance and records the acting administrator in the audit event. Repeated requests while cleanup is pending are safe. Pool owners with other members must still transfer ownership first; administrators cannot delete themselves through this endpoint. The Users screen displays request failures and keeps accepted accounts visible with deletion progress until cleanup finishes.
+
 The admin Users screen shows deletion progress and the most recent cleanup error. `users.deletion_requested_at` is the durable work marker; `users.deletion_error` stores the latest pending condition or failure. The worker retries jobs and the regular 15-minute maintenance sweep resumes outstanding requests, including after queue outages or restarts. Audit events record acceptance and completion without copying profile details. Restoring an old instance backup can restore historical account data; the operator's backup restoration procedure must account for later deletions.
 
 ## Rollout and verification
