@@ -21,6 +21,7 @@ describe('production preference mapping', () => {
       generation: { 'model-a': { reasoning: 'high', style: 'concise' } },
       agentModes: { 'model-a': false, 'model-b': true },
     })).toEqual({
+      speech: { modelId: null, models: {} },
       composerSyncEnabled: true, showPromptSuggestions: true,
       theme: 'dark', attachmentCacheMb: 96, localChatLimit: 50,
       trashRetention: '7d', automaticChatExpiration: '24h', newChatAutoExpire: false, memoryEnabled: true,
@@ -47,7 +48,7 @@ describe('production preference mapping', () => {
   })
 
   it('clears synchronized model preferences when older servers omit them', () => {
-    expect(preferencesFromServer({})).toEqual({ composerSyncEnabled: true, showPromptSuggestions: true, favoriteModelIds: [], providerOrder: [], generation: {}, agentModes: {} })
+    expect(preferencesFromServer({})).toEqual({ speech: { modelId: null, models: {} }, composerSyncEnabled: true, showPromptSuggestions: true, favoriteModelIds: [], providerOrder: [], generation: {}, agentModes: {} })
   })
 
   it('filters malformed generation preferences from server settings', () => {
@@ -67,4 +68,11 @@ describe('production preference mapping', () => {
     }).agentModes).toEqual({ valid: false, enabled: true })
     expect(preferencesFromServer({ agentModes: ['invalid'] }).agentModes).toEqual({})
   })
+})
+
+it('round-trips speech preferences across clients and clears malformed legacy values', () => {
+  const speech = { modelId: 'tts', models: { tts: { voice: 'coral', instructions: 'Calm', speed: 1.2 } } }
+  expect(preferencesFromServer({ speech }).speech).toEqual(speech)
+  expect(preferencePatchForServer('speech', speech)).toEqual({ speech })
+  expect(preferencesFromServer({ speech: { models: { tts: { speed: 9 } } } }).speech).toEqual({ modelId: null, models: {} })
 })

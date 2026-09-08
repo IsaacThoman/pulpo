@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -12,6 +12,8 @@ import {
   managementAccountSettingsDocumentSchema,
   managementInstanceSettingsDocumentSchema,
   managementSettingsDocumentSchema,
+  OPENAI_SPEECH_PRESET,
+  speechModelSchema,
 } from '@pulpo/contracts'
 import {
   addContext,
@@ -71,6 +73,7 @@ const COMMAND_CAPABILITIES: Record<string, string> = {
   lab: 'catalog',
   icon: 'catalogIcons',
   model: 'catalog',
+  'speech-model': 'speechModels',
   user: 'users',
   usage: 'usage',
   audit: 'audit',
@@ -562,6 +565,46 @@ export function createProgram(io: CliIo = processIo, dependencies: CliDependenci
     const { client } = await clientFor(command)
     emit(io, command, await client.request(`/api/management/v1/providers/${encodeURIComponent(id)}/models/refresh`, { method: 'POST' }))
   })
+
+  const speechModel = registerFileCrud(program, io, {
+    name: 'speech-model', pluralPath: '/api/management/v1/speech-models',
+    preflightBody: body => speechModelSchema.parse(body),
+  }).description('Manage speech models, voices, capabilities, and billing (update requires a full model file)')
+  speechModel.command('preset <id>').requiredOption('--provider <id>', 'existing provider connection ID')
+    .description('Print an editable GPT-4o mini TTS model document without creating it')
+    .action((id, options) => {
+      writeOutput(io, speechModelSchema.parse({ ...OPENAI_SPEECH_PRESET, id, providerConnectionId: options.provider }), true)
+    })
+  const speechPreview = speechModel.command('preview').description('Manage each voice’s optional MP3/WAV preview')
+  const speechPreviewPath = (id: string, voice: string) => `/api/management/v1/speech-models/${encodeURIComponent(id)}/voices/${encodeURIComponent(voice)}/preview`
+  speechPreview.command('upload <id> <voice> <path>').description('Upload or replace a voice preview (up to 30 seconds and 5 MiB)')
+    .action(async (id, voice, path, _options, command) => {
+      const filename = basename(path)
+      const extension = filename.split('.').at(-1)?.toLowerCase()
+      const contentType = extension === 'mp3' ? 'audio/mpeg' : extension === 'wav' ? 'audio/wav' : null
+      if (!contentType) throw new Error('Speech previews must be MP3 or WAV files')
+      const file = await stat(path)
+      if (!file.isFile() || !file.size || file.size > 5 * 1024 * 1024) throw new Error('Speech previews must be nonempty files of at most 5 MiB')
+      const bytes = new Uint8Array(await readFile(path))
+      if (!bytes.length || bytes.length > 5 * 1024 * 1024) throw new Error('Speech previews must be nonempty and at most 5 MiB')
+      const { client } = await clientFor(command)
+      emit(io, command, await client.upload(speechPreviewPath(id, voice), { bytes, filename, contentType }))
+    })
+  speechPreview.command('download <id> <voice>').requiredOption('-o, --output <path>', 'destination audio file')
+    .action(async (id, voice, options, command) => {
+      const { client } = await clientFor(command)
+      const result = await client.download(speechPreviewPath(id, voice))
+      await writeFile(options.output, result.bytes, { mode: 0o600 })
+      emit(io, command, { id, voice, output: options.output })
+    })
+  speechPreview.command('delete <id> <voice>').description('Remove a voice preview without deleting its voice')
+    .action(async (id, voice, _options, command) => {
+      const options = globalOptions(command)
+      await confirmExact(io, `${id}/${voice}`, Boolean(options.yes), Boolean(options.json))
+      const { client } = await clientFor(command)
+      await client.request(speechPreviewPath(id, voice), { method: 'DELETE' })
+      emit(io, command, { id, voice, deleted: true })
+    })
 
   const lab = registerFileCrud(program, io, { name: 'lab', pluralPath: '/api/management/v1/labs' })
   lab.command('order-models <id>').requiredOption('-f, --file <path>').action(async (id, options, command) => {

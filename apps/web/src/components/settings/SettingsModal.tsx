@@ -1,3 +1,4 @@
+import { SpeechSettings } from '@/features/speech/SpeechSettings'
 import { refreshInstanceFeatures } from '@/lib/instance-features'
 import { DeleteAccountSettings } from './DeleteAccountSettings'
 import { DeviceSettings } from './DeviceSettings'
@@ -1072,6 +1073,8 @@ export function SettingsModal({
                       <span className="text-xs text-muted-foreground">{ui("MB")}</span>
                     </div>
                   </Row>
+                  <Separator className="my-5" />
+                  <SpeechSettings />
                 </div>
               )}
 

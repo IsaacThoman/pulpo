@@ -20,6 +20,20 @@ export async function recoverRenumberedRestoreMigration(client: Sql, migrationsF
   return recoverRenumberedMigration(client, migrationsFolder, new Set([1788746542023]), '_restore_uploads', 'restore')
 }
 
+export async function recoverRenumberedSpeechMigrations(client: Sql, migrationsFolder: string): Promise<boolean> {
+  // Speech previews predate dev's time-zone migration on persistent PR databases.
+  // Recover each unchanged DDL checksum in order, preserving catalog and clips.
+  let recovered = false
+  for (const [timestamp, suffix] of [
+    [1788846946049, '_speech_models'],
+    [1788876504966, '_speech_previews'],
+    [1788887924483, '_speech_voice_previews'],
+  ] as const) {
+    if (await recoverRenumberedMigration(client, migrationsFolder, new Set([timestamp]), suffix, 'speech')) recovered = true
+  }
+  return recovered
+}
+
 async function recoverRenumberedMigration(
   client: Sql, migrationsFolder: string, legacyTimestamps: Set<number>, suffix: string, label: string,
 ): Promise<boolean> {

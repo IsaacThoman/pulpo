@@ -15,6 +15,7 @@ export function createInitialState(): PersistedPrototypeState {
     chats: [],
     folders: [],
     preferences: {
+      speech: { modelId: null, models: {} },
       theme: 'system',
       textSize: 'default',
       sendWithEnter: true,

@@ -1,3 +1,4 @@
+import { speechPreferencesSchema } from '@pulpo/contracts'
 import { Appearance } from 'react-native'
 import { create } from 'zustand'
 import { LatestValueQueue } from '@pulpo/client-core'
@@ -94,6 +95,7 @@ export const usePreferencesStore = create<PreferenceState>((set, get) => ({
       const preferences = {
         ...defaults,
         ...stored,
+        speech: speechPreferencesSchema.catch({ modelId: null, models: {} }).parse(stored?.speech),
         localChatLimit: Math.min(defaults.localChatLimit, stored?.localChatLimit ?? defaults.localChatLimit),
       }
       Appearance.setColorScheme(preferences.theme === 'system' ? 'unspecified' : preferences.theme)

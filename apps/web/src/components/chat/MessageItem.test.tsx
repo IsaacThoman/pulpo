@@ -728,3 +728,21 @@ describe('view_image tool details', () => {
     expect(container.querySelector('pre')?.textContent).toContain('/tmp/chart.png')
   })
 })
+
+describe('read aloud actions', () => {
+  it('adds read aloud immediately after regenerate and supports user messages', async () => {
+    const { MessageItem } = await import('./MessageItem')
+    const result = render(<TooltipProvider><MessageItem chat={chat} message={assistant({ content: 'Hello' })} streaming={false} activeModelId="model-1" /></TooltipProvider>)
+    const labels = [...result.container.querySelectorAll('button[aria-label]')].map(button => button.getAttribute('aria-label'))
+    expect(labels.indexOf('Read aloud')).toBe(labels.indexOf('Regenerate') + 1)
+    result.rerender(<TooltipProvider><MessageItem chat={chat} message={user({ content: 'Read my prompt' })} streaming={false} activeModelId="model-1" /></TooltipProvider>)
+    expect(result.getByRole('button', { name: 'Read aloud' })).toBeTruthy()
+  })
+  it('does not offer speech for streaming or code-only assistant messages', async () => {
+    const { MessageItem } = await import('./MessageItem')
+    for (const message of [assistant({ content: 'Still writing', done: false }), assistant({ content: '```js\nsecret()\n```' })]) {
+      const result = render(<TooltipProvider><MessageItem chat={chat} message={message} streaming={!message.done} activeModelId="model-1" /></TooltipProvider>)
+      expect(result.queryByRole('button', { name: 'Read aloud' })).toBeNull(); result.unmount()
+    }
+  })
+})

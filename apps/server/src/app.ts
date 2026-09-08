@@ -1,3 +1,4 @@
+import { registerSpeechRoutes } from './speech/routes.js'
 import { registerShelfRoutes } from './shelf/routes.js'
 import { registerAccountDeletionRoutes } from './account/routes.js'
 import { registerDeviceSessionRoutes } from './auth/device-routes.js'
@@ -161,6 +162,7 @@ export async function buildApp() {
   await registerBillingRoutes(app)
   await registerMessageRoutes(app)
   await registerAttachmentRoutes(app)
+  await registerSpeechRoutes(app)
   await registerDictationRoutes(app)
   await registerPublicApiRoutes(app)
   await registerManagementRoutes(app)
