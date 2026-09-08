@@ -43,11 +43,11 @@ export function SpeechVoiceEditor({ value, onChange }: { value: VoiceSettings; o
       </div>
       {voices.map((voice, index) => <div key={index} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_3rem_2.25rem] items-start gap-2">
         <div className="min-w-0">
-          <Input aria-label={ui('Voice ID {{number}}', { number: index + 1 })} aria-invalid={Boolean(issues.rows[index]?.id)} aria-describedby={issues.rows[index]?.id ? `${id}-${index}-id` : undefined} value={voice.id} placeholder="coral" onChange={event => update(index, { id: event.target.value })} />
+          <Input aria-label={ui('Voice ID {{number}}', { number: index + 1 })} aria-invalid={Boolean(issues.rows[index]?.id)} aria-describedby={issues.rows[index]?.id ? `${id}-${index}-id` : undefined} value={voice.id} placeholder={ui('Voice ID')} onChange={event => update(index, { id: event.target.value })} />
           {issues.rows[index]?.id && <p id={`${id}-${index}-id`} className="mt-1 text-xs text-destructive">{issues.rows[index].id}</p>}
         </div>
         <div className="min-w-0">
-          <Input aria-label={ui('Voice display name {{number}}', { number: index + 1 })} aria-invalid={Boolean(issues.rows[index]?.label)} aria-describedby={issues.rows[index]?.label ? `${id}-${index}-label` : undefined} value={voice.label} placeholder="Coral" onChange={event => update(index, { label: event.target.value })} />
+          <Input aria-label={ui('Voice display name {{number}}', { number: index + 1 })} aria-invalid={Boolean(issues.rows[index]?.label)} aria-describedby={issues.rows[index]?.label ? `${id}-${index}-label` : undefined} value={voice.label} placeholder={ui('Display name')} onChange={event => update(index, { label: event.target.value })} />
           {issues.rows[index]?.label && <p id={`${id}-${index}-label`} className="mt-1 text-xs text-destructive">{issues.rows[index].label}</p>}
         </div>
         <label className="flex h-9 cursor-pointer items-center justify-center">

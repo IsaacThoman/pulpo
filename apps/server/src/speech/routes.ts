@@ -12,10 +12,11 @@ import { getConfig } from '../config.js'
 import { newId } from '../lib/ids.js'
 import { chargeMeteredUsage } from '../accounting/service.js'
 import { generateSpeech, speechCost } from './provider.js'
+import { cleanupSpeechPreview, registerSpeechPreviewRoutes } from './preview.js'
 
-export function publicSpeechModel(model: SpeechModel): PublicSpeechModel {
+export function publicSpeechModel(model: SpeechModel, previewAvailable = false): PublicSpeechModel {
   const { providerConnectionId: _provider, upstreamModelId: _upstream, ...value } = model
-  return value
+  return { ...value, previewAvailable }
 }
 export function validateSpeechInput(model: SpeechModel, input: ReturnType<typeof speechRequestSchema.parse>) {
   if (!model.voices.some(voice => voice.id === input.voice)) throw new AppError(400, 'speech_voice_invalid', 'Choose an available speech voice')
@@ -24,14 +25,15 @@ export function validateSpeechInput(model: SpeechModel, input: ReturnType<typeof
   if (!input.input.trim() || Array.from(input.input).length > model.maxInputCharacters || (model.maxInputTokens !== null && speechBytes(input.input) + speechBytes(input.instructions ?? '') > model.maxInputTokens)) throw new AppError(400, 'speech_input_limit', 'Speech input exceeds this model’s limits')
 }
 export async function registerSpeechRoutes(app: FastifyInstance) {
+  await registerSpeechPreviewRoutes(app)
   app.get('/api/admin/speech-models', async request => {
     requireAdmin(request)
-    return { data: (await db.select().from(speechModels)).map(row => row.config).sort((a,b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name)) }
+    return { data: (await db.select().from(speechModels)).map(row => ({ ...row.config, previewAvailable: Boolean(row.previewObjectKey) })).sort((a,b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name)) }
   })
   app.get('/api/speech-models', async request => {
     requireUser(request)
-    const rows = await db.select({ config: speechModels.config, enabled: providerConnections.enabled }).from(speechModels).innerJoin(providerConnections, eq(providerConnections.id, speechModels.providerConnectionId))
-    return { data: rows.filter(row => row.enabled && row.config.enabled).map(row => publicSpeechModel(row.config)).sort((a,b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name)) }
+    const rows = await db.select({ config: speechModels.config, enabled: providerConnections.enabled, previewObjectKey: speechModels.previewObjectKey }).from(speechModels).innerJoin(providerConnections, eq(providerConnections.id, speechModels.providerConnectionId))
+    return { data: rows.filter(row => row.enabled && row.config.enabled).map(row => publicSpeechModel(row.config, Boolean(row.previewObjectKey))).sort((a,b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name)) }
   })
   const save = async (request: Parameters<typeof requireAdmin>[0], create: boolean) => {
     const admin = requireAdmin(request)
@@ -56,10 +58,12 @@ export async function registerSpeechRoutes(app: FastifyInstance) {
   app.patch('/api/admin/speech-models/:id', request => save(request, false))
   app.delete('/api/admin/speech-models/:id', async (request, reply) => {
     const admin = requireAdmin(request); const { id } = request.params as { id: string }
-    await db.transaction(async tx => {
-      await tx.delete(speechModels).where(eq(speechModels.id, id))
+    const deleted = await db.transaction(async tx => {
+      const [model] = await tx.delete(speechModels).where(eq(speechModels.id, id)).returning()
       await tx.insert(auditEvents).values({ id: newId(), actorUserId: admin.id, action: 'speech_model.deleted', targetType: 'speech_model', targetId: id })
+      return model
     })
+    await cleanupSpeechPreview(deleted?.previewObjectKey, request)
     return reply.code(204).send()
   })
   app.post('/api/speech', { bodyLimit: 96 * 1024, config: { rateLimit: { max: 40, timeWindow: '1 minute' } } }, async (request, reply) => {

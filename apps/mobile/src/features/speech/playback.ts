@@ -38,29 +38,43 @@ export async function readAloud(key: string, markdown: string) {
     }) })
     if (!response.ok) { const body = await response.json().catch(() => null); throw new Error(body?.error?.message ?? 'Speech generation failed') }
     const bytes = new Uint8Array(await response.arrayBuffer())
-    if (signal.aborted) throw new Error('Cancelled')
-    const file = new File(directory, `${randomUUID()}.${model.responseFormat}`)
-    file.write(bytes)
-    let player: ReturnType<typeof createAudioPlayer>
-    try { player = createAudioPlayer(file.uri) } catch (error) { file.delete(); throw error }
-    let disposed = false
-    return {
-      dispose: () => { if (disposed) return; disposed = true; player.remove(); if (file.exists) file.delete() },
-      play: (signal: AbortSignal) => new Promise<void>((resolve, reject) => {
-        const subscription = player.addListener('playbackStatusUpdate', status => {
-          if (status.didJustFinish) { cleanup(); resolve() }
-          else if (status.playbackState === 'error') { cleanup(); reject(new Error('Unable to play speech audio')) }
-        })
-        const cleanup = () => { subscription.remove(); signal.removeEventListener('abort', abort) }
-        const abort = () => { player.pause(); cleanup(); resolve() }
-        if (signal.aborted) { abort(); return }
-        signal.addEventListener('abort', abort, { once: true })
-        try { player.play() } catch (error) { cleanup(); reject(error) }
-      }),
-    }
+    return nativeSpeechAudio(bytes, model.responseFormat, signal)
   })
 }
 AppState.addEventListener('change', state => { if (state !== 'active') speechPlayback.stop() })
 useSessionStore.subscribe((state, previous) => {
   if (state.user?.id !== previous.user?.id || state.instanceUrl !== previous.instanceUrl || state.token !== previous.token) speechPlayback.stop()
 })
+
+export function previewSpeechModel(modelId: string) {
+  return speechPlayback.start(`preview:${modelId}`, ['preview'], async (_, signal) => {
+    if (AppState.currentState !== 'active') throw new Error('Open the app to preview speech')
+    await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true, shouldPlayInBackground: false })
+    const response = await fetch(apiUrl(`/api/speech-models/${encodeURIComponent(modelId)}/preview`), { signal, headers: nativeAuthorizationHeaders() })
+    if (!response.ok) throw new Error('This preview is unavailable')
+    const bytes = new Uint8Array(await response.arrayBuffer())
+    return nativeSpeechAudio(bytes, response.headers.get('content-type')?.includes('wav') ? 'wav' : 'mp3', signal)
+  })
+}
+function nativeSpeechAudio(bytes: Uint8Array, format: string, signal: AbortSignal) {
+  if (signal.aborted) throw new Error('Cancelled')
+  const file = new File(directory, `${randomUUID()}.${format}`)
+  file.write(bytes)
+  let player: ReturnType<typeof createAudioPlayer>
+  try { player = createAudioPlayer(file.uri) } catch (error) { file.delete(); throw error }
+  let disposed = false
+  return {
+    dispose: () => { if (disposed) return; disposed = true; player.remove(); if (file.exists) file.delete() },
+    play: (signal: AbortSignal) => new Promise<void>((resolve, reject) => {
+      const subscription = player.addListener('playbackStatusUpdate', status => {
+        if (status.didJustFinish) { cleanup(); resolve() }
+        else if (status.playbackState === 'error') { cleanup(); reject(new Error('Unable to play speech audio')) }
+      })
+      const cleanup = () => { subscription.remove(); signal.removeEventListener('abort', abort) }
+      const abort = () => { player.pause(); cleanup(); resolve() }
+      if (signal.aborted) { abort(); return }
+      signal.addEventListener('abort', abort, { once: true })
+      try { player.play() } catch (error) { cleanup(); reject(error) }
+    }),
+  }
+}

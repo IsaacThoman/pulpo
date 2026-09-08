@@ -6,9 +6,10 @@ import { AdminSpeechModelsPage } from './AdminSpeechModelsPage'
 import { apiRequest } from '@/lib/api'
 
 vi.mock('@/lib/api', () => ({ apiRequest: vi.fn() }))
+vi.mock('@/features/speech/playback', async () => ({ speechPlayback: new (await import('@pulpo/client-core')).SpeechPlayback(), previewSpeechFile: vi.fn(), previewSpeechModel: vi.fn() }))
 vi.mock('@/i18n/ui', () => ({ ui: (text: string, values?: Record<string, unknown>) => text.replace(/{{(\w+)}}/g, (_, key) => String(values?.[key] ?? '')) }))
 const model = { ...OPENAI_SPEECH_PRESET, id: 'speech', providerConnectionId: '11111111-1111-4111-8111-111111111111',
-  voices: [{ id: 'coral', label: 'Warm voice' }, { id: 'custom', label: 'Custom voice' }], defaultVoice: 'coral' }
+  voices: [{ id: 'coral', label: 'Warm voice' }, { id: 'custom', label: 'Custom voice' }], defaultVoice: 'coral', previewAvailable: true }
 beforeEach(() => {
   vi.mocked(apiRequest).mockReset().mockImplementation(async path => path === '/api/admin/providers'
     ? { data: [{ id: model.providerConnectionId, name: 'Provider' }] }
@@ -16,6 +17,24 @@ beforeEach(() => {
 })
 afterEach(cleanup)
 const edit = async () => { render(<AdminSpeechModelsPage />); fireEvent.click(await screen.findByRole('button', { name: 'Edit' })) }
+
+it('uploads the optional clip after saving the model and removes it only on save', async () => {
+  await edit()
+  fireEvent.change(screen.getByLabelText('Upload preview clip'), { target: { files: [new File(['sample'], 'sample.wav', { type: 'audio/wav' })] } })
+  fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+  await waitFor(() => expect(apiRequest).toHaveBeenCalledWith('/api/admin/speech-models/speech/preview', expect.objectContaining({ method: 'POST', body: expect.any(FormData) })))
+  const calls = vi.mocked(apiRequest).mock.calls
+  const saveIndex = calls.findIndex(([path, options]) => path === '/api/admin/speech-models/speech' && options?.method === 'PATCH')
+  const uploadIndex = calls.findIndex(([path]) => path.endsWith('/preview'))
+  expect(uploadIndex).toBeGreaterThan(saveIndex)
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Remove preview' }))
+  expect(apiRequest).not.toHaveBeenCalledWith('/api/admin/speech-models/speech/preview', { method: 'DELETE' })
+  fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+  await waitFor(() => expect(apiRequest).toHaveBeenCalledWith('/api/admin/speech-models/speech/preview', { method: 'DELETE' }))
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+})
 
 it('keeps the selected default when renamed and requires a replacement after removal', async () => {
   await edit()

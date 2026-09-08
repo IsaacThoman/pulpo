@@ -40,7 +40,8 @@ export const speechModelSchema = z.object({
   if (model.billUsers && model.billingUnit === 'tokens' && !model.supportsSse) ctx.addIssue({ code: 'custom', path: ['supportsSse'], message: 'Token billing requires speech SSE usage' })
 })
 export type SpeechModel = z.infer<typeof speechModelSchema>
-export type PublicSpeechModel = Omit<SpeechModel, 'providerConnectionId' | 'upstreamModelId'>
+export type SpeechModelCatalogEntry = SpeechModel & { previewAvailable?: boolean }
+export type PublicSpeechModel = Omit<SpeechModelCatalogEntry, 'providerConnectionId' | 'upstreamModelId'>
 export const speechRequestSchema = z.object({
   requestId: z.string().uuid(),
   modelId: z.string().min(1).max(120),

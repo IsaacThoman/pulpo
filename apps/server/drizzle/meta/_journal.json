@@ -470,6 +470,13 @@
       "when": 1788846946049,
       "tag": "0066_speech_models",
       "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1788876504966,
+      "tag": "0067_speech_previews",
+      "breakpoints": true
     }
   ]
 }

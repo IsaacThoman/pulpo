@@ -1222,6 +1222,9 @@ export const speechModels = pgTable('speech_models', {
   id: text('id').primaryKey(),
   providerConnectionId: uuid('provider_connection_id').notNull().references(() => providerConnections.id, { onDelete: 'restrict' }),
   config: jsonb('config').notNull().$type<import('@pulpo/contracts').SpeechModel>(),
+  previewObjectKey: text('preview_object_key'),
+  previewContentType: text('preview_content_type'),
+  previewChecksum: text('preview_checksum'),
   ...timestamps,
 })
 

@@ -16,7 +16,7 @@ import { publicSpeechModel, registerSpeechRoutes, validateSpeechInput } from './
 const model = speechModelSchema.parse({ ...OPENAI_SPEECH_PRESET, id: 'speech', providerConnectionId: '11111111-1111-4111-8111-111111111111', enabled: true, billUsers: true })
 const request = { requestId: '22222222-2222-4222-8222-222222222222', modelId: 'speech', input: 'Hello', voice: 'coral', instructions: 'Calm', speed: 1 }
 beforeEach(() => {
-  mocks.rows = [{ config: model, enabled: true, provider: { id: 'p', baseUrl: 'https://provider.example/v1', encryptedApiKey: 'encrypted-secret', enabled: true, requestTimeoutMs: 1000 } }]
+  mocks.rows = [{ config: model, enabled: true, previewObjectKey: 'secret-storage-key', provider: { id: 'p', baseUrl: 'https://provider.example/v1', encryptedApiKey: 'encrypted-secret', enabled: true, requestTimeoutMs: 1000 } }]
   mocks.claims = [{}]; mocks.admin = true; mocks.user = true
   mocks.generate.mockReset().mockResolvedValue({ audio: Buffer.from('audio'), durationSeconds: 1, usage: { input_tokens: 10, output_tokens: 50 } })
   mocks.charge.mockReset().mockResolvedValue(undefined)
@@ -29,6 +29,7 @@ describe('speech routes', () => {
     expect(response.statusCode).toBe(200)
     expect(response.body).not.toMatch(/providerConnectionId|upstreamModelId|secret|baseUrl/)
     expect(response.json().data[0].id).toBe('speech')
+    expect(response.json().data[0].previewAvailable).toBe(true)
     mocks.rows = [{ config: { ...model, enabled: false }, enabled: true }, { config: model, enabled: false }]
     expect((await server.inject('/api/speech-models')).json().data).toEqual([])
     await server.close()
