@@ -63,3 +63,23 @@ it('does not restore a stale bootstrap session after logout', async () => {
   expect(useAuth.getState().user).toBeNull()
   expect(localStorage.getItem('pulpo-profile')).toBeNull()
 })
+
+
+it('defaults Codex off when an older server omits the feature flag', async () => {
+  useAuth.setState({ codexEnabled: true })
+  const pending = useAuth.getState().bootstrap()
+  respond()
+  await pending
+  expect(useAuth.getState().codexEnabled).toBe(false)
+})
+
+it('refreshes the Codex policy and fails closed when settings cannot be read', async () => {
+  const refresh = useAuth.getState().refreshSettings()
+  requests[0]!.resolve({ codexEnabled: true })
+  await refresh
+  expect(useAuth.getState().codexEnabled).toBe(true)
+  const unavailable = useAuth.getState().refreshSettings()
+  requests[1]!.reject(new TypeError('Offline'))
+  await unavailable
+  expect(useAuth.getState().codexEnabled).toBe(false)
+})

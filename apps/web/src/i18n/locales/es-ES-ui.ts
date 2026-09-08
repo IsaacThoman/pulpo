@@ -92,6 +92,8 @@ const esUi: Record<string, string> = {
   "Reconnect Codex": "Volver a conectar Codex",
   "Connect Codex": "Conectar Codex",
   "Codex": "Codex",
+  "Enable Codex connection": "Activar la conexión con Codex",
+  "Allow users to connect their Codex subscription. Disabling hides Codex and blocks new use. Existing connections are retained and running responses may finish.": "Permite a los usuarios conectar su suscripción a Codex. Al desactivarlo, se oculta Codex y se bloquean nuevos usos. Se conservan las conexiones existentes y las respuestas en curso pueden terminar.",
   "Codex context management": "Gestión de contexto de Codex",
   "Managed": "Gestionado",
   "Managed Codex models": "Modelos Codex gestionados",

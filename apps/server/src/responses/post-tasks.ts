@@ -6,6 +6,7 @@ import { DEFAULT_TITLE_PROMPT, parseInterfaceSettings } from '../settings/applic
 import { parseGeneratedTitle, selectTitleHistory } from './title-generation.js'
 import { trackBilledInternalModelCall } from './model-calls.js'
 import { createCatalogModelClient, resolveAvailableCatalogModel, type CatalogModelRuntime } from './catalog-model-runtime.js'
+import { codexEnabled } from '../codex/policy.js'
 import { CODEX_PROVIDER_ID } from '../codex/constants.js'
 import { createCodexModels } from '../codex/credential-store.js'
 
@@ -77,7 +78,9 @@ export async function resolvePostTaskRuntime(
   current: CatalogModelRuntime,
 ): Promise<CatalogModelRuntime> {
   if (selectedModelId === 'current') return current
-  return selectPostTaskRuntime(current, await resolveAvailableCatalogModel(selectedModelId))
+  const selected = await resolveAvailableCatalogModel(selectedModelId)
+  if (selected?.provider.id === CODEX_PROVIDER_ID && current.provider.id !== CODEX_PROVIDER_ID && !await codexEnabled()) return current
+  return selectPostTaskRuntime(current, selected)
 }
 
 export function selectPostTaskRuntime(

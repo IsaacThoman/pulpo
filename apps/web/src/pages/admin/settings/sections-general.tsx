@@ -12,6 +12,7 @@ import {
 } from '@/components/admin/kit'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { refreshInstanceFeatures } from '@/lib/instance-features'
 import { useAuth } from '@/stores/auth'
 import { apiRequest } from '@/lib/api'
 import { modelOptionLabel, useAvailableModels } from './use-available-models'
@@ -67,6 +68,7 @@ function useAdminSetting<T>(key: string, initial: T) {
 }
 
 export function GeneralSection() {
+  const [codex, setCodex, saveCodex] = useAdminSetting('codex', { enabled: false })
   const [publicUrl, setPublicUrl] = useState(location.origin)
   useEffect(() => {
     void apiRequest<{ instance: { publicUrl: string } }>('/api/management/v1/info')
@@ -84,6 +86,14 @@ export function GeneralSection() {
       <Section title={ui("General")}>
         <TextField label={ui("Public URL")} hint="Managed by the PUBLIC_URL deployment setting." value={publicUrl} mono disabled />
       </Section>
+      <Section title={ui("Connections")}>
+        <Toggle label={ui("Enable Codex connection")} hint={ui("Allow users to connect their Codex subscription. Disabling hides Codex and blocks new use. Existing connections are retained and running responses may finish.")} checked={codex.enabled} onChange={(enabled) => setCodex({ enabled })} />
+      </Section>
+      <SaveBar onSave={async () => {
+        await saveCodex()
+        useAuth.setState({ codexEnabled: codex.enabled })
+        await refreshInstanceFeatures(true)
+      }} />
     </div>
   )
 }
