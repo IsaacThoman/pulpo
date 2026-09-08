@@ -67,6 +67,33 @@ The earlier compact-picker QA exercised selection and programmatic focus scrolli
 - PostgreSQL speech accounting: 3 tests passed.
 - Web production build and workspace lint passed.
 
+## CLI management follow-up
+
+Speech catalog CRUD is available through `pulpo speech-model`, with an offline
+editable preset and per-voice `preview upload/download/delete` commands. The
+management API advertises `speechModels` and enforces current administrator role
+plus `catalog:read`/`catalog:write`. Multipart uploads and audio downloads reuse
+the web feature's validation, storage, audit, and cleanup handlers.
+
+The built CLI was exercised against a fresh isolated PostgreSQL/Redis/API
+instance using real scoped management tokens:
+
+- Created a model from its CLI preset, listed/read it, and updated all three
+  billing configurations. Catalog output did not expose the provider key.
+- Uploaded separate Coral and Alloy samples, downloaded identical bytes,
+  replaced Coral, and removed only Coral's clip. A read-only token downloaded
+  audio but could not upload it; noninteractive deletion required `--yes`.
+- Invalid audio and unknown voices were rejected. A provider referenced by a
+  speech model could not be deleted. A disabled model remained manageable by
+  its administrator.
+- Set/read account speech preferences through CLI management settings. Model
+  disable/deletion preserved the saved model/voice selection. Deleting the model
+  made its remaining sample unavailable.
+- All 20 CLI tests and 19 server speech/management tests passed, including
+  unauthenticated/non-admin/incorrect-scope denials, multipart byte preservation,
+  URL encoding, file-size validation, and old-server capability detection. CLI
+  and server builds and workspace lint passed. No additional migration is needed.
+
 ## Validation limits
 
 The browser automation runtime does not mark a page hidden when another automated tab becomes active. Dispatching a visibility change with a hidden document stopped playback, but actual browser backgrounding remains a manual check. Native lifecycle/component tests passed; physical iOS/Android locking, native dictation interaction, and real external speech provider synthesis were not exercised in this run.

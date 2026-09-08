@@ -20,7 +20,7 @@ describe('Pulpo CLI command surface', () => {
   it('exposes the operator command groups and omits restore', () => {
     const program = createProgram({ stdin: new PassThrough() as never, stdout: new PassThrough(), stderr: new PassThrough() })
     expect(program.commands.map((command) => command.name())).toEqual(expect.arrayContaining([
-      'context', 'auth', 'token', 'instance', 'settings', 'provider', 'lab', 'icon', 'model', 'user',
+      'context', 'auth', 'token', 'instance', 'settings', 'provider', 'lab', 'icon', 'model', 'speech-model', 'user',
       'usage', 'audit', 'workspace', 'banner', 'job', 'export', 'backup',
     ]))
     expect(commandNames(program, 'settings')).toEqual(expect.arrayContaining(['get', 'set', 'edit', 'schema', 'export', 'diff', 'apply']))
@@ -30,6 +30,8 @@ describe('Pulpo CLI command surface', () => {
     ]))
     expect(commandNames(program, 'model')).toContain('icons')
     expect(commandNames(program, 'model')).toContain('test')
+    expect(commandNames(program, 'speech-model')).toEqual(expect.arrayContaining(['list', 'get', 'create', 'update', 'delete', 'preset', 'preview']))
+    expect(nestedCommandNames(program, 'speech-model', 'preview')).toEqual(['upload', 'download', 'delete'])
     expect(commandNames(program, 'icon')).toEqual(expect.arrayContaining(['list', 'get', 'upload', 'update', 'delete']))
     expect(commandNames(program, 'backup')).not.toContain('restore')
     expect(commandNames(program, 'user')).toEqual(expect.arrayContaining([

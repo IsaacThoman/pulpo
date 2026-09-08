@@ -24,6 +24,7 @@ import { applyManagementSettings, loadManagementSettings, planManagementSettings
 import { readCatalogIconUpload } from '../catalog/icon-routes.js'
 import { createCatalogIcon, deleteCatalogIcon, listCatalogIcons, updateCatalogIcon } from '../catalog/icon-service.js'
 import { getBlobStore } from '../storage/index.js'
+import { deleteSpeechPreview, downloadSpeechPreview, MAX_PREVIEW_BYTES, uploadSpeechPreview } from '../speech/preview.js'
 
 function serializeToken(row: typeof managementTokens.$inferSelect) {
   return {
@@ -102,7 +103,7 @@ export async function registerManagementRoutes(app: FastifyInstance): Promise<vo
           workspaceControllerConfigured: Boolean(config.WORKSPACE_CONTROLLER_URL && config.WORKSPACE_CONTROLLER_TOKEN),
         },
         capabilities: [
-          'settings', 'managementTokens', 'catalog', 'catalogIcons', 'users', 'usage', 'audit', 'workspaces', 'banners', 'exports', 'backups', 'operations', 'twoFactor',
+          'settings', 'managementTokens', 'catalog', 'catalogIcons', 'speechModels', 'users', 'usage', 'audit', 'workspaces', 'banners', 'exports', 'backups', 'operations', 'twoFactor',
         ],
       }
     })
@@ -333,6 +334,21 @@ export async function registerManagementRoutes(app: FastifyInstance): Promise<vo
       }
     })
 
+    // Handle multipart uploads directly; JSON proxying would discard the file stream.
+    const speechPreviewPath = '/api/management/v1/speech-models/:id/voices/:voiceId/preview'
+    management.get(speechPreviewPath, async (request, reply) => {
+      requireManagementScope(request, 'catalog:read', { admin: true })
+      return downloadSpeechPreview(request, reply)
+    })
+    management.post(speechPreviewPath, { bodyLimit: MAX_PREVIEW_BYTES + 65536 }, async (request, reply) => {
+      requireManagementScope(request, 'catalog:write', { admin: true })
+      return uploadSpeechPreview(request, reply)
+    })
+    management.delete(speechPreviewPath, async (request, reply) => {
+      requireManagementScope(request, 'catalog:write', { admin: true })
+      return deleteSpeechPreview(request, reply)
+    })
+    registerProxy(management, app, '/api/management/v1/speech-models', '/api/admin/speech-models', 'catalog:read', 'catalog:write')
     registerProxy(management, app, '/api/management/v1/providers', '/api/admin/providers', 'catalog:read', 'catalog:write')
     registerProxy(management, app, '/api/management/v1/labs', '/api/admin/labs', 'catalog:read', 'catalog:write')
     registerProxy(management, app, '/api/management/v1/models', '/api/admin/models', 'catalog:read', 'catalog:write')
