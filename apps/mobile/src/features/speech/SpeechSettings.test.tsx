@@ -8,8 +8,9 @@ const mocks = vi.hoisted(() => ({ platform: 'android', preview: vi.fn(), speech:
 vi.mock('react-native', () => ({
   Platform: { get OS() { return mocks.platform } },
   View: ({ children }: { children: ReactNode }) => createElement('div', null, children),
+  ScrollView: ({ children }: { children: ReactNode }) => createElement('div', null, children),
   Text: ({ children }: { children: ReactNode }) => createElement('span', null, children),
-  Pressable: ({ children, onPress, accessibilityRole, accessibilityLabel, accessibilityState }: { children: ReactNode; onPress: () => void; accessibilityRole: string; accessibilityLabel?: string; accessibilityState?: { checked: boolean } }) => createElement('button', { role: accessibilityRole, 'aria-label': accessibilityLabel, 'aria-checked': accessibilityState?.checked, onClick: onPress }, children),
+  Pressable: ({ children, onPress, accessibilityRole, accessibilityLabel, accessibilityState }: { children: ReactNode; onPress: () => void; accessibilityRole: string; accessibilityLabel?: string; accessibilityState?: { checked?: boolean; expanded?: boolean } }) => createElement('button', { role: accessibilityRole, 'aria-label': accessibilityLabel, 'aria-checked': accessibilityState?.checked, 'aria-expanded': accessibilityState?.expanded, onClick: onPress }, children),
   TextInput: () => null, ActivityIndicator: () => null,
 }))
 vi.mock('@expo/ui/swift-ui', () => ({
@@ -25,6 +26,7 @@ vi.mock('../../mockup5/src/components/PrototypeUI', () => ({
   GlassIconButton: ({ label, onPress }: { label: string; onPress: () => void }) => createElement('button', { 'aria-label': label, onClick: onPress }, label),
 }))
 vi.mock('../../mockup5/src/theme', () => ({ useAppTheme: () => ({}) }))
+vi.mock('../../platform/SymbolView', () => ({ SymbolView: () => null }))
 vi.mock('../../store/preferences', () => ({ usePreferencesStore: (selector: (state: unknown) => unknown) => selector({ speech: mocks.speech }) }))
 vi.mock('../../mockup5/src/store/prototypeStore', () => ({ usePrototypeStore: (selector: (state: unknown) => unknown) => selector({ setPreference: mocks.set }) }))
 vi.mock('../../store/session', () => ({ useSessionStore: (selector: (state: unknown) => unknown) => selector({ user: { id: 'user' }, instanceUrl: 'test' }) }))
@@ -49,12 +51,24 @@ it.each(['ios', 'android'])('keeps %s model selection separate from voice select
   })
   await act(async () => { await new Promise(resolve => setTimeout(resolve, 20)) })
   expect(container.querySelector('summary')?.textContent).toBe('First model')
+  const trigger = container.querySelector('[aria-label="Voice: Coral"]') as HTMLButtonElement
+  expect(trigger.getAttribute('aria-expanded')).toBe('false')
+  expect(container.querySelectorAll('[role=radio]')).toHaveLength(0)
+  await act(async () => trigger.click())
   expect(container.querySelectorAll('[role=radio]')).toHaveLength(2)
   await act(async () => { (container.querySelector('[aria-label="Preview Coral"]') as HTMLButtonElement).click() })
   expect(mocks.preview).toHaveBeenCalledWith('first', 'coral'); expect(mocks.set).not.toHaveBeenCalled()
   expect(container.querySelector('[aria-label="Preview Alloy"]')).toBeNull()
   await act(async () => { (container.querySelector('[role=radio][aria-label="Alloy"]') as HTMLButtonElement).click() })
   expect(mocks.set).toHaveBeenLastCalledWith('speech', { modelId: 'first', models: { first: { voice: 'alloy', instructions: '', speed: 1 } } })
+  expect(container.querySelectorAll('[role=radio]')).toHaveLength(0)
+  expect(trigger.getAttribute('aria-expanded')).toBe('false')
+  await act(async () => trigger.click())
+  let preview: Promise<void> | undefined
+  await act(async () => { preview = speechPlayback.start('preview:first:coral', ['clip'], async () => ({ dispose() {}, play: signal => new Promise(resolve => signal.addEventListener('abort', () => resolve())) })) })
+  await act(async () => trigger.click()); await preview
+  expect(speechPlayback.getSnapshot().phase).toBe('idle')
+  expect(container.querySelectorAll('[role=radio]')).toHaveLength(0)
   await act(async () => { [...container.querySelectorAll('button')].find(button => button.textContent === 'Second model')!.click() })
   expect(mocks.set).toHaveBeenLastCalledWith('speech', { modelId: 'second', models: {} })
   let run: Promise<void> | undefined

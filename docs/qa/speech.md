@@ -35,6 +35,18 @@ All 13 voices were selected at both widths after the fix. Keyboard navigation pa
 
 The shared-client suite covers cancellation races, chunk boundaries, and playback sequencing. Database-backed accounting tests passed for insufficient funds with rollback, subscription allocation, and pool funding.
 
+## Compact voice selector follow-up
+
+The voice selector now shows only the selected voice until opened. Web uses Pulpo's existing popover; mobile expands a bounded, scrollable list. Selecting a voice collapses the list, while each optional preview button remains independent. Closing the picker stops its active preview. The model remains a separate dropdown.
+
+Repeated the full web Settings → Interface check against an isolated local API:
+
+- Selected all 13 voices at 390px and 1100px widths in both light and dark themes (52 selections). Each selection updated the collapsed row; the outer dialog stayed at `scrollTop = 0` with no horizontal overflow.
+- Reopening the popup focused and revealed the selected voice, including Cedar at the end of the list. Arrow keys and Home/End navigated without closing it; Enter selected, Escape dismissed and restored trigger focus, and clicking Instructions dismissed it.
+- Uploaded a WAV preview for Coral. Playback kept the popup open and Alloy selected. Dismissing the popup returned playback to idle.
+- Web settings/admin/message tests: 47 passed. Mobile settings/playback/preferences tests: 15 passed, including collapsed state, independent previews, selection, and preview cleanup on both platform branches.
+- Web production build, mobile typecheck, and workspace lint passed. No server schema or migration changes were required. Physical native UI validation remains unperformed.
+
 ## Automated validation
 
 - Shared speech: 7 tests passed.
