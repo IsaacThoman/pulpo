@@ -708,19 +708,21 @@ function NativeComposerIconButton({
   onPress,
   disabled = false,
   prominent = false,
+  style,
 }: {
   label: string;
   systemImage: NativeButtonSystemImage;
   onPress: () => void;
   disabled?: boolean;
   prominent?: boolean;
+  style?: ComponentProps<typeof SwiftUIHost>['style'];
 }) {
   const { styles } = useChatStyles();
   const colorScheme = useColorScheme();
   const prominentTint = colorScheme === 'dark' ? '#f2f2f7' : '#1c1c1e';
   const prominentForeground = colorScheme === 'dark' || disabled ? '#1c1c1e' : '#ffffff';
   return (
-    <SwiftUIHost ignoreSafeArea="keyboard" style={styles.nativeComposerActionHost}>
+    <SwiftUIHost ignoreSafeArea="keyboard" style={[styles.nativeComposerActionHost, style]}>
       <SwiftUIButton
         label={label}
         onPress={onPress}
@@ -5631,7 +5633,7 @@ function ChatView({
                   value={input}
                 />
                 {showShelf && (Platform.OS === 'ios'
-                  ? <NativeComposerIconButton label="Shelve draft" systemImage="archivebox" disabled={!(input.trim() || attachments.length) || shelfBusy || sending || dictationBusy} onPress={() => { void transferShelf(); }} />
+                  ? <NativeComposerIconButton label="Shelve draft" systemImage="archivebox" style={styles.nativeComposerShelfHost} disabled={!(input.trim() || attachments.length) || shelfBusy || sending || dictationBusy} onPress={() => { void transferShelf(); }} />
                   : <MaterialIconButton label="Shelve draft" icon="archivebox" disabled={!(input.trim() || attachments.length) || shelfBusy || sending || dictationBusy} onPress={() => { void transferShelf(); }} />)}
               </View>
               <View style={[styles.composerBar, showShelf && styles.composerShelfBar]}>
@@ -6459,11 +6461,13 @@ function createChatStyles(COLORS: ChatColors) { return StyleSheet.create({
   composerShelfInputRow: { flexGrow: 1 },
   composerTextInput: { flex: 1, minWidth: 0, alignSelf: 'flex-start' },
   composerBar: { flexDirection: 'row', alignItems: 'center', marginTop: 'auto', gap: 1 },
-  // Match the horizontal center spacing: iOS hosts are 36 wide but 44 tall.
+  // Keep the original row measurements; offset Shelve independently below.
   composerShelfBar: { marginTop: Platform.OS === 'ios' ? 36 + 1 - 44 : 1 },
   composerCircle: { width: 44, height: 44, borderRadius: 22, backgroundColor: COLORS.fillStrong, alignItems: 'center', justifyContent: 'center' },
   nativeComposerCircleHost: { width: 44, height: 44 },
   nativeComposerActionHost: { width: 36, height: 44 },
+  // Increase Shelve-to-Send center spacing from 37 to 46 without resizing the composer.
+  nativeComposerShelfHost: { transform: [{ translateY: -9 }] },
   agentCircle: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
   agentCircleActive: { backgroundColor: '#AF52DE' },
   nativeAgentHost: { width: 44, height: 44 },
