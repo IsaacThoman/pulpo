@@ -5611,7 +5611,7 @@ function ChatView({
                 </View>
               )}
               {dictation.error && <Text accessibilityRole="alert" style={styles.attachmentErrorText}>{dictation.error}</Text>}
-              <View style={styles.composerInputRow}>
+              <View style={[styles.composerInputRow, showShelf && styles.composerShelfInputRow]}>
                 <TextInput
                   ref={composerInputRef}
                   accessibilityLabel="Message"
@@ -5634,7 +5634,7 @@ function ChatView({
                   ? <NativeComposerIconButton label="Shelve draft" systemImage="archivebox" disabled={!(input.trim() || attachments.length) || shelfBusy || sending || dictationBusy} onPress={() => { void transferShelf(); }} />
                   : <MaterialIconButton label="Shelve draft" icon="archivebox" disabled={!(input.trim() || attachments.length) || shelfBusy || sending || dictationBusy} onPress={() => { void transferShelf(); }} />)}
               </View>
-              <View style={styles.composerBar}>
+              <View style={[styles.composerBar, showShelf && styles.composerShelfBar]}>
                 {Platform.OS === 'ios' ? (
                   <NativeAttachmentMenu onTakePhoto={takePhoto} onPickFiles={pickFiles} onPickPhotos={pickPhotos} />
                 ) : (
@@ -6456,8 +6456,11 @@ function createChatStyles(COLORS: ChatColors) { return StyleSheet.create({
   attachmentRetryText: { color: '#ffffff', fontSize: 10.5, fontWeight: '700' },
   input: { minHeight: 30, maxHeight: 120, color: COLORS.text, fontSize: 16, lineHeight: 22, paddingHorizontal: 5, paddingTop: 0 },
   composerInputRow: { flexDirection: 'row', alignItems: 'flex-end' },
+  composerShelfInputRow: { marginTop: 'auto' },
   composerTextInput: { flex: 1, minWidth: 0 },
   composerBar: { flexDirection: 'row', alignItems: 'center', marginTop: 'auto', gap: 1 },
+  // Match the horizontal center spacing: iOS hosts are 36 wide but 44 tall.
+  composerShelfBar: { marginTop: Platform.OS === 'ios' ? 36 + 1 - 44 : 1 },
   composerCircle: { width: 44, height: 44, borderRadius: 22, backgroundColor: COLORS.fillStrong, alignItems: 'center', justifyContent: 'center' },
   nativeComposerCircleHost: { width: 44, height: 44 },
   nativeComposerActionHost: { width: 36, height: 44 },
