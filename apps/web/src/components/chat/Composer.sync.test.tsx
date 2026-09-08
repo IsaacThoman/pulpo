@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react'
 import { createRef, useState } from 'react'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { emptyComposerState, type ComposerSnapshot, type ComposerWrite } from '@pulpo/contracts'
 import { ComposerSync } from '@pulpo/client-core'
@@ -33,13 +33,13 @@ const { useComposerSyncPreference } = await import('@/stores/composer-sync-prefe
 
 beforeEach(() => {
   useAuth.setState({ user: { id: 'account' } as NonNullable<ReturnType<typeof useAuth.getState>['user']> })
-  useSettings.setState({ agentModes: { model: false } })
+  useSettings.setState({ composerSyncEnabled: true, agentModes: { model: false } })
   useComposerSyncPreference.setState({ enabled: true, generation: '' })
   useUploadOutbox.setState({ uploads: {}, submissions: [] })
   fixture.rows.clear()
   clearRuntimeComposerDrafts('account')
 })
-afterEach(() => { cleanup(); fixture.sync?.dispose(); vi.useRealTimers() })
+afterEach(() => { cleanup(); fixture.sync?.dispose(); vi.useRealTimers(); vi.restoreAllMocks() })
 
 it.each([false, true])('does not reload a persisted sent draft after a remote clear (runtime cache: %s)', async (runtimeCached) => {
   const draftId = '11111111-1111-4111-8111-111111111111'
@@ -155,4 +155,38 @@ it.each([true, false])('moves the actual composer and upload ownership through t
     expect(snapshot.state.autoExpire).toBe(true)
   } else expect(write).not.toHaveBeenCalled()
   peer.dispose()
+})
+
+
+it('follows a remote start with focus and preserves remaining text and uploads in the new draft', async () => {
+  const { webChatStarted } = await import('@/lib/chat-started')
+  fixture.sync = null
+  vi.spyOn(document, 'hasFocus').mockReturnValue(true)
+  vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible')
+  const chatId = '22222222-2222-4222-8222-222222222222'
+  const pending = { localId: 'remaining-upload', name: 'remaining.txt', size: 1, mimeType: 'text/plain', status: 'uploading' as const }
+  useUploadOutbox.setState({ uploads: {
+    [pending.localId]: { ...pending, chatId: null, temporary: false, previewUrl: null, managed: true, attempt: 0 },
+  } })
+  rememberRuntimeComposerDraft('account', 'new', { content: 'remaining edits', attachmentIds: [pending.localId], attachments: [pending] })
+  rememberRuntimeComposerDraft('account', chatId, { content: 'destination draft', attachmentIds: [], attachments: [] })
+  let path = '', navigate!: ReturnType<typeof useNavigate>
+  function Chat() {
+    path = useLocation().pathname
+    navigate = useNavigate()
+    const id = path === '/' ? null : path.slice(3)
+    return <TooltipProvider><Composer key={id ?? 'new'} chatId={id} modelId="model" /></TooltipProvider>
+  }
+  const view = render(<MemoryRouter><Chat /></MemoryRouter>)
+  await waitFor(() => expect((view.getByRole('textbox') as HTMLTextAreaElement).value).toBe('remaining edits'))
+  view.getByRole('textbox').focus()
+  await act(async () => webChatStarted.receive('account', { chatId, responseId: 'remote-response' }))
+  expect(path).toBe(`/c/${chatId}`)
+  expect((view.getByRole('textbox') as HTMLTextAreaElement).value).toBe('destination draft')
+  expect(document.activeElement).toBe(view.getByRole('textbox'))
+  expect(runtimeComposerDraft('account', 'new')).toMatchObject({ content: 'remaining edits', attachmentIds: [pending.localId] })
+  expect(useUploadOutbox.getState().uploads[pending.localId]?.chatId).toBeNull()
+  await act(async () => navigate('/'))
+  expect((view.getByRole('textbox') as HTMLTextAreaElement).value).toBe('remaining edits')
+  expect(view.getAllByText('remaining.txt').length).toBeGreaterThan(0)
 })

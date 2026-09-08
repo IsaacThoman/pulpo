@@ -4,6 +4,7 @@ import { ComposerTray } from './ComposerTray'
 import { webShelf, shelfDraftAttachments } from '@/lib/local-first/shelf'
 import type { ShelfAttachment } from '@pulpo/client-core'
 import { useComposerSync } from './use-composer-sync'
+import { useFollowStartedChat } from './use-follow-started-chat'
 import { webComposerSync } from '@/lib/local-first/composer-sync'
 import type { ComposerState } from '@pulpo/contracts'
 import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, useSyncExternalStore, type Ref, type DragEvent as ReactDragEvent } from 'react'
@@ -372,6 +373,11 @@ export function Composer({
     const end = el.value.length
     el.setSelectionRange(end, end)
   }, [])
+
+  useFollowStartedChat({
+    userId, chatId, textarea: ref, syncEnabled, temporary,
+    busy: () => submitting || handoffBusyRef.current || shelfBusyRef.current || dictationState !== 'idle',
+  })
 
   useEffect(() => {
     focusAtEnd()

@@ -8,7 +8,7 @@ import { billingUserForRequest, requireUser } from '../auth/service.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import { createResponse, toSnapshot } from '../responses/service.js'
-import { publishStateChange, requestCancellation } from '../responses/events.js'
+import { publishChatStarted, publishStateChange, requestCancellation } from '../responses/events.js'
 import { publishAdminUsage } from '../admin/usage-events.js'
 import { maintenanceQueue } from '../jobs.js'
 import { cancelChatWork, getTrashRetention, markChatsForPurge, purgeAtFor } from './trash.js'
@@ -304,8 +304,14 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
         await scheduleNormalChatExpiry({ chatId: chat.id, userId: user.id, expiresAt: chat.expiresAt })
       }
       const [updatedChat] = await db.select().from(chats).where(eq(chats.id, chat.id)).limit(1)
+      const result = { chat: updatedChat ?? chat, response: toSnapshot(response) }
+      if (inserted && !chat.temporary) {
+        // Navigation is best effort; a notification failure cannot undo an accepted send.
+        await publishChatStarted(user.id, { chatId: chat.id, responseId: response.id })
+          .catch((error) => request.log.warn({ err: error, chatId: chat.id }, 'Unable to notify clients of chat start'))
+      }
       reply.code(202)
-      return { chat: updatedChat ?? chat, response: toSnapshot(response) }
+      return result
     } catch (error) {
       if (inserted) {
         if (input.response.attachmentIds.length) {

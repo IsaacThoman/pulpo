@@ -31,7 +31,7 @@ vi.mock('@/lib/local-first/composer-sync', () => ({ bindWebComposerSocket: () =>
 vi.mock('@/lib/local-first/shelf', () => ({ bindWebShelfSocket: () => () => {} }))
 vi.mock('@/stores/composer-sync-preference', () => ({ useComposerSyncPreference: { getState: () => ({ enabled: false }) } }))
 vi.mock('@/lib/local-first/outbox', () => ({ flushOutbox: mocks.flushOutbox }))
-vi.mock('@/lib/local-first/database', () => ({ localDb: { responseCursors: {
+vi.mock('@/lib/local-first/database', () => ({ localAccountKey: (id: string) => id, localDb: { responseCursors: {
   where: () => ({ equals: () => ({ toArray: async () => [{ responseId: 'response-a', sequence: 10 }] }) }),
   get: async () => ({ sequence: 10 }), bulkPut: vi.fn(), delete: vi.fn(),
 } } }))
@@ -96,4 +96,23 @@ it('does not run scheduled synchronization after unmount or while disconnected',
   cleanup()
   await vi.advanceTimersByTimeAsync(120)
   expect(mocks.socket.emitWithAck).not.toHaveBeenCalled()
+})
+
+
+it('forwards live chat starts only within the active socket lifetime and account', async () => {
+  const { webChatStarted } = await import('@/lib/chat-started')
+  const receive = vi.spyOn(webChatStarted, 'receive')
+  await mountBridge()
+  const started = mocks.listeners.get('chat.started')!
+  const event = { chatId: 'new-chat', responseId: 'response' }
+  started(event)
+  expect(receive).toHaveBeenCalledWith('user', event)
+  receive.mockClear()
+  mocks.socket.connected = false
+  started(event)
+  expect(receive).not.toHaveBeenCalled()
+  cleanup()
+  mocks.socket.connected = true
+  started(event)
+  expect(receive).not.toHaveBeenCalled()
 })

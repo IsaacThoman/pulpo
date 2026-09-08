@@ -6,6 +6,7 @@ import { and, eq, inArray, isNull } from 'drizzle-orm'
 import { Server } from 'socket.io'
 import { createAdapter } from '@socket.io/redis-streams-adapter'
 import type {
+  ChatStartedEvent,
   ClientToServerEvents,
   ResponseSnapshot,
   ServerToClientEvents,
@@ -277,11 +278,20 @@ export async function createSocketServer(httpServer: HttpServer) {
     return pending
   }
 
-  await subscriber.subscribe('pulpo:composer-changes', 'pulpo:response-events', 'pulpo:response-snapshots', 'pulpo:state-changes', 'pulpo:session-revocations', 'pulpo:admin-usage')
+  await subscriber.subscribe('pulpo:chat-started', 'pulpo:composer-changes', 'pulpo:response-events', 'pulpo:response-snapshots', 'pulpo:state-changes', 'pulpo:session-revocations', 'pulpo:admin-usage')
   subscriber.on('message', (channel: string, message: string) => {
     if (channel === 'pulpo:composer-changes') {
       const change = JSON.parse(message)
       runSocketTask('composer.changed', () => broadcastComposer(change.userId, change.snapshot))
+    } else if (channel === 'pulpo:chat-started') {
+      const event = JSON.parse(message) as ChatStartedEvent & { userId: string }
+      runSocketTask('chat.started', async () => {
+        if (await composerAccountEnabled(event.userId)) {
+          // Every instance subscribes to this Redis channel. Local delivery
+          // bypasses the adapter's durable stream and connection recovery replay.
+          io.to(`composer:${event.userId}`).local.volatile.emit('chat.started', { chatId: event.chatId, responseId: event.responseId })
+        }
+      })
     } else if (channel === 'pulpo:admin-usage') {
       io.to('admin:usage').emit('admin.usage.upsert', JSON.parse(message))
     } else if (channel === 'pulpo:response-events') {
