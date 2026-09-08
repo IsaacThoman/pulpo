@@ -59,6 +59,8 @@ export function AdminUsersPage() {
   const [twoFactorCode, setTwoFactorCode] = useState('')
   const [twoFactorError, setTwoFactorError] = useState<string | null>(null)
   const [resettingTwoFactor, setResettingTwoFactor] = useState(false)
+  const [deletingUserId, setDeletingUserId] = useState<string | null>(null)
+  const [deletionError, setDeletionError] = useState<string | null>(null)
   const currentUserId = useAuth((state) => state.user?.id)
   const billingEnabled = useAuth((state) => state.billingEnabled)
   const loadAdmin = useUsage((s) => s.loadAdmin)
@@ -73,6 +75,20 @@ export function AdminUsersPage() {
   const patchUser = async (id: string, patch: Record<string, unknown>) => {
     await apiRequest(`/api/admin/users/${id}`, { method: 'PATCH', body: patch })
     await loadAdmin()
+  }
+
+  const deleteUser = async (user: MonitorUser) => {
+    if (!confirm(`Delete ${user.email}? Access will end immediately. Permanent cleanup takes at least 16 minutes. This cannot be undone.`)) return
+    setDeletingUserId(user.id)
+    setDeletionError(null)
+    try {
+      await apiRequest(`/api/admin/users/${user.id}`, { method: 'DELETE' })
+      await loadAdmin()
+    } catch (error) {
+      setDeletionError(`${user.email}: ${error instanceof Error ? error.message : ui('Could not delete account.')}`)
+    } finally {
+      setDeletingUserId(null)
+    }
   }
 
   const filtered = users.filter(
@@ -103,6 +119,7 @@ export function AdminUsersPage() {
 
   return (
     <div className="space-y-4">
+      {deletionError && <p role="alert" className="text-sm text-destructive">{deletionError}</p>}
       <Dialog open={Boolean(devicesUser)} onOpenChange={(open) => { if (!open) setDevicesUser(null) }}>
         <DialogContent className="max-h-[85dvh] overflow-y-auto sm:max-w-xl"><DialogHeader><DialogTitle>{ui('Devices')}</DialogTitle><DialogDescription>{devicesUser?.email}</DialogDescription></DialogHeader>{devicesUser && <DeviceSessionListView key={devicesUser.id} userId={devicesUser.id} />}</DialogContent>
       </Dialog>
@@ -218,11 +235,8 @@ export function AdminUsersPage() {
                         variant="ghost"
                         title={ui("Delete")}
                         className="hover:text-destructive"
-                        onClick={() => {
-                          if (confirm(`Delete ${u.email}? This cannot be undone.`)) {
-                            void apiRequest(`/api/admin/users/${u.id}`, { method: 'DELETE' }).then(loadAdmin)
-                          }
-                        }}
+                        disabled={deletingUserId !== null || Boolean(u.deletionRequestedAt) || u.id === currentUserId}
+                        onClick={() => { void deleteUser(u) }}
                       >
                         <Trash2 className="size-3.5" />
                       </Button>
