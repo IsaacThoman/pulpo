@@ -1,4 +1,4 @@
-import { lockAccountAdministration } from '../account/deletion.js'
+import { acceptAccountDeletion, lockAccountAdministration } from '../account/deletion.js'
 import { and, desc, eq, isNull, ne, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
@@ -212,14 +212,8 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
     const admin = requireAdmin(request)
     const { id } = request.params as { id: string }
     if (id === admin.id) throw new AppError(409, 'cannot_delete_self', 'You cannot delete your own account')
-    const deleted = await db.transaction(async (tx) => {
-      await lockAccountAdministration(tx)
-      const [target] = await tx.select().from(users).where(eq(users.id, id))
-      if (target?.deletionRequestedAt) throw new AppError(409, 'account_deleting', 'Account cleanup is already in progress')
-      return tx.delete(users).where(eq(users.id, id)).returning({ id: users.id })
-    })
-    if (!deleted.length) throw notFound('User')
-    reply.code(204).send()
+    await acceptAccountDeletion(id, { requestedByAdminId: admin.id })
+    return reply.code(202).send({ status: 'deletion_requested' })
   })
 
   app.get('/api/admin/audit-events', async (request) => {

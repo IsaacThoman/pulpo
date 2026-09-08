@@ -26,6 +26,7 @@ import { AppError } from '../lib/errors.js'
 import { acceptAccountDeletion, deleteAccountData, resumeAccountDeletions } from './deletion.js'
 import { processStripeWebhookEvent } from '../billing/webhooks.js'
 import { registerAccountDeletionRoutes } from './routes.js'
+import { registerAdminRoutes } from '../admin/routes.js'
 
 // Run only against an explicitly selected, disposable migrated database.
 const enabled = process.env.PULPO_ACCOUNT_DELETION_TESTS === 'true'
@@ -36,6 +37,16 @@ async function addUser(id = userId, role: 'user' | 'admin' | 'pending' = 'user')
 }
 async function ageDeletion() {
   await db.update(users).set({ deletionRequestedAt: new Date(Date.now() - 17 * 60_000) }).where(eq(users.id, userId))
+}
+
+async function adminDelete(targetId = userId, actorId = otherId) {
+  const app = Fastify()
+  const [actor] = await db.select().from(users).where(eq(users.id, actorId))
+  app.addHook('onRequest', async (request) => { Object.assign(request, { user: actor }) })
+  await registerAdminRoutes(app)
+  try {
+    return await app.inject({ method: 'DELETE', url: `/api/admin/users/${targetId}` })
+  } finally { await app.close() }
 }
 
 describe.skipIf(!enabled)('account deletion with PostgreSQL', () => {
@@ -76,6 +87,68 @@ describe.skipIf(!enabled)('account deletion with PostgreSQL', () => {
     await db.insert(applicationSettings).values({ key: 'auth', value: { accountDeletionEnabled: false } })
     await expect(acceptAccountDeletion(userId)).rejects.toMatchObject({ code: 'account_deletion_disabled' })
     expect((await db.select().from(users))[0]?.deletionRequestedAt).toBeNull()
+  })
+
+  it.each(['pending', 'settled'] as const)('admin deletion cleans up %s funder references through the worker', async (status) => {
+    await addUser(otherId, 'admin')
+    await db.insert(applicationSettings).values({ key: 'auth', value: { accountDeletionEnabled: false } })
+    await db.insert(sessions).values({ id: randomUUID(), userId, tokenHash: hashToken('admin-deletion-session'), expiresAt: new Date(Date.now() + 100_000) })
+    const chatId = randomUUID(), responseId = randomUUID(), reservationId = randomUUID()
+    await db.insert(chats).values({ id: chatId, userId: otherId, modelId: 'test-model' })
+    await db.insert(responses).values({ id: responseId, userId: otherId, chatId, modelId: 'test-model', input: [], status: 'completed' })
+    await db.insert(budgetReservations).values({ id: reservationId, userId: otherId, responseId, amountMicros: 100, balanceReservedMicros: 100, status })
+    await db.insert(budgetReservationFunders).values({ reservationId, userId, reservedMicros: 100 })
+    // Reproduce the production failure from the former direct-delete endpoint.
+    await expect(db.delete(users).where(eq(users.id, userId))).rejects.toMatchObject({
+      cause: { code: '23503', constraint_name: 'budget_reservation_funders_user_id_users_id_fk' },
+    })
+    const accepted = await adminDelete()
+    expect(accepted.statusCode).toBe(202)
+    expect(accepted.json()).toEqual({ status: 'deletion_requested' })
+    const [target] = await db.select().from(users).where(eq(users.id, userId))
+    expect(target?.blocked).toBe(true)
+    expect(target?.deletionRequestedAt).toBeInstanceOf(Date)
+    expect(await db.select().from(sessions).where(eq(sessions.userId, userId))).toHaveLength(0)
+    expect(mocks.enqueue).toHaveBeenCalledWith('delete-account', { type: 'delete-account', payload: { userId } }, expect.any(Object))
+    expect((await adminDelete()).statusCode).toBe(202)
+    const events = await db.select().from(auditEvents).where(eq(auditEvents.action, 'account.deletion.requested'))
+    expect(events).toHaveLength(1)
+    expect(events[0]?.actorUserId).toBe(otherId)
+    await ageDeletion()
+    if (status === 'pending') {
+      await expect(deleteAccountData(userId)).rejects.toThrow('Waiting for existing Pool contributions')
+      expect(await db.select().from(budgetReservationFunders)).toHaveLength(1)
+    }
+    await db.update(budgetReservations).set({ status: 'settled', settledAmountMicros: 80 }).where(eq(budgetReservations.id, reservationId))
+    await deleteAccountData(userId)
+    expect(await db.select().from(users).where(eq(users.id, userId))).toHaveLength(0)
+    expect(await db.select().from(budgetReservationFunders)).toHaveLength(0)
+    expect((await db.select().from(budgetReservations))[0]?.settledAmountMicros).toBe(80)
+    expect(await db.select().from(responses)).toHaveLength(1)
+    expect(mocks.cancelBilling).toHaveBeenCalledWith(userId)
+  })
+
+  it('requires an administrator and rejects self-deletion and missing targets', async () => {
+    expect((await adminDelete()).statusCode).toBe(401)
+    await addUser(otherId)
+    expect((await adminDelete()).statusCode).toBe(403)
+    await db.update(users).set({ role: 'admin' }).where(eq(users.id, otherId))
+    expect((await adminDelete(otherId)).statusCode).toBe(409)
+    expect((await adminDelete(randomUUID())).statusCode).toBe(404)
+    expect((await db.select().from(users).where(eq(users.id, userId)))[0]?.deletionRequestedAt).toBeNull()
+    expect(mocks.enqueue).not.toHaveBeenCalled()
+  })
+
+  it('requires Pool ownership transfer for admin deletion', async () => {
+    await addUser(otherId, 'admin')
+    const poolId = randomUUID()
+    await db.insert(pools).values({ id: poolId, ownerUserId: userId })
+    await db.insert(poolMembers).values([userId, otherId].map((id) => ({ id: randomUUID(), poolId, userId: id })))
+    const response = await adminDelete()
+    expect(response.statusCode).toBe(409)
+    expect(response.json().message).toContain('Transfer Pool ownership')
+    expect((await db.select().from(users).where(eq(users.id, userId)))[0]?.deletionRequestedAt).toBeNull()
+    expect(mocks.enqueue).not.toHaveBeenCalled()
   })
 
   it('allows at most one of two administrators to delete concurrently', async () => {
