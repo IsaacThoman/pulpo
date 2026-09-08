@@ -5,7 +5,7 @@ import { useTranslation } from '@/i18n/useAppTranslation'
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { Ghost, Hourglass, Loader2, Save, SquarePen } from 'lucide-react'
 import { useChat } from '@/stores/chat'
-import { getCatalogModel, useCatalog } from '@/stores/catalog'
+import { filterCodexModels, getCatalogModel, useCatalog } from '@/stores/catalog'
 import { ModelSelector } from '@/components/chat/ModelSelector'
 import { Composer, type ComposerMessageEdit } from '@/components/chat/Composer'
 import { ExpiryCountdown } from '@/components/chat/ExpiryCountdown'
@@ -157,6 +157,7 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
   const instanceReady = useAuth((s) => s.instanceReady)
   const userRole = useAuth((s) => s.user?.role)
   const networkReady = !isDesktopRuntime() || instanceReady
+  const codexEnabled = useAuth((state) => state.codexEnabled)
   const models = useCatalog((state) => state.models)
   const routeModelId = params.get('model')
   const navigationState = location.state as NewChatLocationState | null
@@ -222,6 +223,12 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
     const next = resolveDefaultModelId(models, defaultModelId)
     if (next && next !== modelId) setModelId(next)
   }, [chatId, defaultModelId, modelId, models, routeModelId])
+
+  useEffect(() => {
+    if (!codexEnabled && modelId.startsWith('codex:')) {
+      setModelId(resolveDefaultModelId(filterCodexModels(models, false), defaultModelId))
+    }
+  }, [codexEnabled, defaultModelId, modelId, models])
 
   const selectModel = (id: string) => {
     shouldApplyDefaultRef.current = false

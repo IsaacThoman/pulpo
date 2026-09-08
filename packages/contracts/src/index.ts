@@ -1239,6 +1239,10 @@ export const accountDeletionInputSchema = z.object({
 })
 export type AccountDeletionInput = z.infer<typeof accountDeletionInputSchema>
 
+export const codexSettingsSchema = z.object({
+  enabled: z.boolean().default(false),
+})
+
 export const authSettingsSchema = z.object({
   accountDeletionEnabled: z.boolean().default(true),
   signupEnabled: z.boolean().default(true),

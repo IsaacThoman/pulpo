@@ -132,8 +132,8 @@ export class UserCredentialStore implements CredentialStore {
   }
 }
 
-export function createCodexModels(userId: string): MutableModels {
-  const result = createModels({ credentials: new UserCredentialStore(userId) })
+export function createCodexModels(userId: string, credentials: CredentialStore = new UserCredentialStore(userId)): MutableModels {
+  const result = createModels({ credentials })
   result.setProvider(openaiCodexProvider())
   return result
 }

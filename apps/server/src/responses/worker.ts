@@ -59,6 +59,8 @@ import {
   markModelSticky,
   primaryModelAttemptLimit,
 } from './fallback-policy.js'
+import { codexEnabled, codexDisabledError } from '../codex/policy.js'
+import { startCodexGeneration } from '../codex/generation-policy.js'
 import { CODEX_PROVIDER_ID } from '../codex/constants.js'
 import { codexErrorRequiresReauthentication, createCodexModels, markCodexReauthenticationRequired, redactedCodexError } from '../codex/credential-store.js'
 import { codexInferenceReferenceCostMicros } from '../codex/reference-cost.js'
@@ -917,7 +919,8 @@ export async function processGeneration(responseId: string): Promise<void> {
     .innerJoin(models, eq(responses.modelId, models.id))
     .innerJoin(requestLogs, eq(requestLogs.responseId, responses.id))
     .where(eq(responses.id, responseId)).limit(1)
-  if (!base || ['completed', 'cancelled'].includes(base.response.status)) return
+  if (!base || ['completed', 'cancelled', 'failed'].includes(base.response.status)) return
+  const failureLog = base.log
   const chatRetention = { temporary: base.chatTemporary, expiresAt: base.chatExpiresAt }
   if (base.chatDeletedAt || temporaryChatIsExpired(chatRetention) || normalChatIsExpired(chatRetention)) {
     const now = new Date()
@@ -925,8 +928,16 @@ export async function processGeneration(responseId: string): Promise<void> {
     await releaseBudget(responseId)
     return
   }
+  const codexAllowed = base.model.providerConnectionId === CODEX_PROVIDER_ID
+    ? await startCodexGeneration(responseId)
+    : await codexEnabled()
+  if (codexAllowed === null) return
+  if (!codexAllowed && base.model.providerConnectionId === CODEX_PROVIDER_ID) {
+    await failGeneration(codexDisabledError())
+    return
+  }
   if (base.response.agentMode) {
-    await processAgentGeneration(responseId)
+    await processAgentGeneration(responseId, codexAllowed)
     return
   }
   const detailedPayloadsEnabled = detailedPayloadCaptureIsActive(base.log)
@@ -938,6 +949,10 @@ export async function processGeneration(responseId: string): Promise<void> {
   const visited = new Set<string>()
 
   while (model && visited.size < MAX_MODEL_CHAIN_LENGTH && !visited.has(model.id)) {
+    if (!codexAllowed && model.providerConnectionId === CODEX_PROVIDER_ID) {
+      lastError = codexDisabledError()
+      break
+    }
     visited.add(model.id)
     if (await isModelSticky(redis, model.id) && model.fallbackModelId) {
       const source = model
@@ -1007,15 +1022,19 @@ export async function processGeneration(responseId: string): Promise<void> {
     await publishAdminUsage(base.log.id, true)
   }
 
-  const message = lastError instanceof Error ? lastError.message : 'Generation failed'
-  const category = classifyGenerationError(lastError)
-  const completedAt = new Date()
-  await db.transaction(async (tx) => {
-    await tx.update(responses).set({ status: 'failed', error: { message, category }, completedAt, updatedAt: completedAt }).where(eq(responses.id, responseId))
-    await tx.update(requestLogs).set({ status: 'failed', errorCategory: category, errorMessage: message, durationMs: Date.now() - (base.log.startedAt ?? base.log.createdAt).getTime(), completedAt, updatedAt: completedAt }).where(eq(requestLogs.id, base.log.id))
-  })
-  await releaseBudget(responseId)
-  const [terminal] = await db.select().from(responses).where(eq(responses.id, responseId)).limit(1)
-  if (terminal) await publishSnapshot(toSnapshot(terminal))
-  await publishAdminUsage(base.log.id, true)
+  await failGeneration(lastError)
+
+  async function failGeneration(error: unknown): Promise<void> {
+    const message = error instanceof Error ? error.message : 'Generation failed'
+    const category = classifyGenerationError(error)
+    const completedAt = new Date()
+    await db.transaction(async (tx) => {
+      await tx.update(responses).set({ status: 'failed', error: { message, category, ...(error instanceof Error && 'code' in error ? { code: error.code } : {}) }, completedAt, updatedAt: completedAt }).where(eq(responses.id, responseId))
+      await tx.update(requestLogs).set({ status: 'failed', errorCategory: category, errorMessage: message, durationMs: Date.now() - (failureLog.startedAt ?? failureLog.createdAt).getTime(), completedAt, updatedAt: completedAt }).where(eq(requestLogs.id, failureLog.id))
+    })
+    await releaseBudget(responseId)
+    const [terminal] = await db.select().from(responses).where(eq(responses.id, responseId)).limit(1)
+    if (terminal) await publishSnapshot(toSnapshot(terminal))
+    await publishAdminUsage(failureLog.id, true)
+  }
 }

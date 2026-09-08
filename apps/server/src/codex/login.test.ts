@@ -37,18 +37,26 @@ function lazyUpdate(values: Record<string, unknown>) {
   }
 }
 
-vi.mock('../database/client.js', () => ({
-  db: {
+vi.mock('./policy.js', () => ({ codexEnabled: async () => true, lockCodexPolicy: vi.fn() }))
+vi.mock('../config.js', () => ({ getConfig: () => ({ ENCRYPTION_KEY: 'test' }) }))
+vi.mock('../lib/crypto.js', () => ({ encryptSecret: () => 'encrypted' }))
+
+vi.mock('../database/client.js', () => {
+  const db = {
     select: () => ({
       from: () => ({
-        where: () => ({ limit: async () => [{ ...state.attempt }] }),
+        where: () => ({ limit: async () => [{ ...state.attempt }], for: () => ({ limit: async () => [{ ...state.attempt }] }) }),
       }),
     }),
+    transaction: async <T>(fn: (tx: unknown) => Promise<T>) => fn(db),
+    execute: vi.fn(),
+    insert: () => ({ values: () => ({ onConflictDoUpdate: vi.fn() }) }),
     update: () => ({
       set: (values: Record<string, unknown>) => ({ where: () => lazyUpdate(values) }),
     }),
-  },
-}))
+  }
+  return { db }
+})
 
 vi.mock('./credential-store.js', () => ({
   codexPlanType: () => 'plus',

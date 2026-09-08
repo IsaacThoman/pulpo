@@ -132,16 +132,16 @@ async function finalizeUnhandledAgentFailure(responseId: string, error: unknown)
   if (state.requestLog) await publishAdminUsage(state.requestLog.id, true)
 }
 
-export async function processAgentGeneration(responseId: string): Promise<void> {
+export async function processAgentGeneration(responseId: string, codexAllowed: boolean): Promise<void> {
   try {
-    await runAgentGeneration(responseId)
+    await runAgentGeneration(responseId, codexAllowed)
   } catch (error) {
     await finalizeUnhandledAgentFailure(responseId, error)
     throw error
   }
 }
 
-async function runAgentGeneration(responseId: string): Promise<void> {
+async function runAgentGeneration(responseId: string, codexAllowed: boolean): Promise<void> {
   const startedAt = Date.now()
   const config = getConfig()
   const [record] = await db.select({ response: responses, model: models, provider: providerConnections })
@@ -259,7 +259,7 @@ async function runAgentGeneration(responseId: string): Promise<void> {
   const visited = new Set([record.model.id]); let fallbackId = record.model.fallbackModelId
   while (fallbackId && runtimes.length < MAX_MODEL_CHAIN_LENGTH && !visited.has(fallbackId)) {
     const [next] = await db.select({ model: models, provider: providerConnections }).from(models).innerJoin(providerConnections, eq(models.providerConnectionId, providerConnections.id)).where(and(eq(models.id, fallbackId), eq(models.enabled, true))).limit(1)
-    if (!next) break
+    if (!next || !codexAllowed && next.provider.id === CODEX_PROVIDER_ID) break
     visited.add(next.model.id); runtimes.push(runtime(next.model, next.provider)); fallbackId = next.model.fallbackModelId
   }
   const resolveStickyRuntimeIndex = async (startingIndex: number): Promise<{ index: number; stickyUsed: boolean }> => {
