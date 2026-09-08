@@ -614,6 +614,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
     agentSystemPrompt += '\nThe user explicitly switched workspaces. Previous files may be absent. An abandoned command may still run on the old workspace. Never repeat its side effects without an explicit user request. Inspect the new environment before proceeding.'
   }
   const markToolStarted = async (operationId: string) => {
+    if (activeRuntimeStartedAt === undefined) armRuntimeDeadline()
     const item = toolItems.get(operationId)
     if (!item || item.startedAt) return
     const startedAt = new Date()
@@ -658,7 +659,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
       ? { id: existing.id, name: existing.originalName, mimeType: existing.mimeType, sizeBytes: existing.sizeBytes }
       : await manager.exportFile(path, signal, () => markToolStarted(operationId), operationId).then((file) => storeGeneratedAttachment({
         responseId, toolCallId: operationId, userId: record.response.userId, chatId: record.response.chatId,
-        path, requestedName: name ?? basename(path), data: file.data,
+        path, requestedName: name ?? basename(path.replaceAll('\\', '/')), data: file.data,
       }))
     const item: AttachmentTimelineItem = {
       type: 'pulpo_attachment', attachment_id: stored.id, name: stored.name,
@@ -670,10 +671,17 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
     return stored
   }
   let agentAbortReason: 'response_timeout' | 'cancellation' | 'turn_limit' | undefined
-  const abortTimer = setTimeout(() => {
-    agentAbortReason ??= 'response_timeout'
-    agent.abort()
-  }, Math.max(1, settings.responseTimeoutSeconds * 1000 - (existingRun?.activeRuntimeMs ?? 0)))
+  let activeRuntimeStartedAt: number | undefined = record.response.workspaceWait ? undefined : startedAt
+  let abortTimer: ReturnType<typeof setTimeout> | undefined
+  const activeRuntimeMs = () => (existingRun?.activeRuntimeMs ?? 0) + (activeRuntimeStartedAt === undefined ? 0 : Date.now() - activeRuntimeStartedAt)
+  const armRuntimeDeadline = () => {
+    activeRuntimeStartedAt ??= Date.now()
+    abortTimer = setTimeout(() => {
+      agentAbortReason ??= 'response_timeout'
+      agent.abort()
+    }, Math.max(1, settings.responseTimeoutSeconds * 1000 - activeRuntimeMs()))
+  }
+  if (activeRuntimeStartedAt !== undefined) armRuntimeDeadline()
   const cancellationTimer = setInterval(() => void isCancellationRequested(responseId).then((cancelled) => {
     if (!cancelled) return
     agentAbortReason ??= 'cancellation'
@@ -800,6 +808,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
     lastRunPersistAt = Date.now()
     await db.update(agentRuns).set({
       workspaceLeaseId: manager.leaseId,
+      activeRuntimeMs: activeRuntimeMs(),
       context: { systemPrompt: agentSystemPrompt, messages: messagesForPersistence(manager.paused && pendingCheckpoint ? pendingCheckpoint : agent.state.messages), billingTurns, workspaceGeneration: record.response.workspaceGeneration, suspended: manager.paused, workspaceHoldMicros: workspaceHoldMicrosAmount, workspaceCostMicros: priorWorkspaceCostMicros + (workspaceReadyAtMs !== undefined ? workspaceUsageMicros(Date.now() - workspaceReadyAtMs, settings.workspacePricePerMinuteMicros) : 0) },
       modelTurns,
       toolCalls,
@@ -1024,6 +1033,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
       }
       await db.update(responses).set({ workspaceWait: null }).where(and(eq(responses.id, responseId), eq(responses.workspaceGeneration, record.response.workspaceGeneration)))
     }
+    if (activeRuntimeStartedAt === undefined) armRuntimeDeadline()
     if (existingRun && resumedMessages.length > parentMessages.length) await agent.continue()
     else await agent.prompt(initialMessage)
     if (manager.paused) throw new WorkspacePaused()
@@ -1145,7 +1155,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
   } catch (error) {
     if (manager.paused && !await isCancellationRequested(responseId)) {
       await persistRunContext(true)
-      await db.update(agentRuns).set({ activeRuntimeMs: (existingRun?.activeRuntimeMs ?? 0) + Date.now() - startedAt }).where(eq(agentRuns.id, runId))
+      await db.update(agentRuns).set({ activeRuntimeMs: activeRuntimeMs() }).where(eq(agentRuns.id, runId))
       await snapshot()
       const [waiting] = await db.select().from(responses).where(eq(responses.id, responseId)).limit(1)
       if (waiting) await publishSnapshot(toSnapshot(waiting))

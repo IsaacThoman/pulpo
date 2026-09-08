@@ -1,7 +1,7 @@
 import { redis } from '../redis.js'
 import { randomUUID } from 'node:crypto'
 import { and, eq, inArray, isNull, or, sql, lte } from 'drizzle-orm'
-import { emptyComposerState, type ComposerAck, type ComposerSnapshot, type ComposerWrite } from '@pulpo/contracts'
+import { resolveWorkspace, emptyComposerState, type ComposerAck, type ComposerSnapshot, type ComposerWrite } from '@pulpo/contracts'
 import { db } from '../database/client.js'
 import { attachments, chats, composerDrafts, composerDraftAttachments } from '../database/schema.js'
 import { accessibleChatCondition } from '../chats/temporary.js'
@@ -37,6 +37,10 @@ export async function accessComposer(userId: string, draftId: string, write?: Co
     if (!write || write.mutationId === row!.mutationId) return { ok: true, snapshot: snapshot(row!) }
     if (write.baseRevision !== row!.revision) return { ok: true, conflict: true, snapshot: snapshot(row!) }
     const patch = { ...write.patch }
+    if (patch.workspace !== undefined || patch.agentMode !== undefined) {
+      patch.workspace = resolveWorkspace(patch.workspace, patch.agentMode)
+      patch.agentMode = patch.workspace.kind !== 'none'
+    }
     delete patch.temporary
     if (patch.attachments?.length) {
       const ids = [...new Set(patch.attachments.map((a) => a.id))]
@@ -55,7 +59,7 @@ export async function accessComposer(userId: string, draftId: string, write?: Co
     const state = write.clear ? { ...row!.state, content: '', attachments: [] } : { ...row!.state, ...patch }
     const expiresAt = draftId === 'new' ? null : chatExpiry
     const [updated] = await tx.update(composerDrafts).set({
-      state, content: state.content, modelId: state.model?.id ?? '', presetSelections: state.model?.presets ?? {}, agentMode: state.agentMode, autoExpire: state.autoExpire, revision, clearedRevision: write.clear ? revision : row!.clearedRevision,
+      state, workspace: state.workspace ?? null, content: state.content, modelId: state.model?.id ?? '', presetSelections: state.model?.presets ?? {}, agentMode: state.agentMode, autoExpire: state.autoExpire, revision, clearedRevision: write.clear ? revision : row!.clearedRevision,
       mutationId: write.mutationId, expiresAt: write.clear ? null : expiresAt, updatedAt: new Date(),
     }).where(and(eq(composerDrafts.userId, userId), eq(composerDrafts.draftId, draftId))).returning()
     await tx.delete(composerDraftAttachments).where(eq(composerDraftAttachments.draftId, row!.id))

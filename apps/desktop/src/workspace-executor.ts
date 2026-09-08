@@ -76,7 +76,7 @@ export class WorkspaceExecutor {
     this.queues.set(root.id, next)
     void next.catch(() => this.report({ ...result, status: 'unknown', error: 'Unable to persist command result' }))
   }
-  acknowledge(id: string) { const result = this.operations.get(id)?.result; if (result && result.status !== 'running') this.acknowledged.add(id) }
+  acknowledge(id: string, status: ComputerOperationResult['status']) { const result = this.operations.get(id)?.result; if (status !== 'running' && result?.status === status) this.acknowledged.add(id) }
   heartbeat() { for (const { result } of this.operations.values()) if (!this.acknowledged.has(result.id)) this.report(result) }
   async cancel(id: string) {
     const operation = this.operations.get(id)

@@ -14,9 +14,9 @@ async function setup() {
   const rootId = randomUUID(); const results: ComputerOperationResult[] = []
   const config = { journal: path.join(folder, 'journal'), stagingPath: path.join(folder, 'attachments'), roots: [{ id: rootId, path: folder }], shell: process.platform === 'win32' ? 'powershell.exe' : '/bin/bash', rgPath: 'rg' }
   const executor = new WorkspaceExecutor(config, result => results.push(structuredClone(result)))
-  cleanup.push(async () => { executor.shutdown(); await rm(folder, { recursive: true, force: true }) })
+  cleanup.push(async () => { executor.shutdown(); await rm(folder, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }) })
   const operation = (type: string, args: Record<string, unknown>): ComputerOperation => ({ id: randomUUID(), rootId, sessionId: randomUUID(), generation: 0, type, args, hash: createHash('sha256').update(workspaceOperationIdentity(type, args)).digest('hex'), deadline: new Date(Date.now() + 10_000).toISOString() })
-  const finished = async (id: string) => { await vi.waitFor(() => expect(results.some(result => result.id === id && result.status !== 'running')).toBe(true)); return results.filter(result => result.id === id).at(-1)! }
+  const finished = async (id: string) => { await vi.waitFor(() => expect(results.some(result => result.id === id && result.status !== 'running')).toBe(true), { timeout: 5000 }); return results.filter(result => result.id === id).at(-1)! }
   return { folder, rootId, config, results, executor, operation, finished }
 }
 describe('native computer execution', () => {
@@ -73,6 +73,15 @@ describe('native computer execution', () => {
     expect(f.results.at(-1)?.status).toBe('running')
     await f.executor.cancel(op.id)
     expect((await f.finished(op.id)).status).toBe('cancelled')
+  })
+  it('keeps retrying a completed result when an older running heartbeat is acknowledged late', async () => {
+    const f = await setup(); const op = f.operation('write', { path: 'late-ack', content: 'done' })
+    await f.executor.accept(op); await f.finished(op.id)
+    f.executor.acknowledge(op.id, 'running')
+    const count = f.results.length; f.executor.heartbeat()
+    expect(f.results.length).toBe(count + 1)
+    f.executor.acknowledge(op.id, 'completed'); f.executor.heartbeat()
+    expect(f.results.length).toBe(count + 1)
   })
   it('keeps credentials out of child environments and chooses native shell arguments', () => {
     expect(commandEnvironment({ PATH: '/bin', HOME: '/tmp', PULPO_TOKEN: 'secret', OPENAI_API_KEY: 'secret' })).toEqual({ PATH: '/bin', HOME: '/tmp' })

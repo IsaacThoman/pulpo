@@ -11,7 +11,7 @@ port.on('message', ({ data }) => {
   if (input.type === 'stop') { stop?.(); return }
   if (input.type !== 'start' || executor) return
   const socket = io(`${input.instanceUrl}/workspaces`, { auth: { token: input.token }, transports: ['websocket'], autoConnect: false, reconnection: true })
-  executor = new WorkspaceExecutor(input.config, result => { if (socket.connected) socket.emit('result', result, (ack: { ok?: boolean }) => { if (ack?.ok) executor?.acknowledge(result.id) }) })
+  executor = new WorkspaceExecutor(input.config, result => { const status = result.status; if (socket.connected) socket.emit('result', result, (ack: { ok?: boolean }) => { if (ack?.ok) executor?.acknowledge(result.id, status) }) })
   let polling = false
   const poll = () => {
     executor?.heartbeat()

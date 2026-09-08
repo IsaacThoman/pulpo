@@ -1,3 +1,4 @@
+import { accessComposer } from '../composer/service.js'
 import { advanceMessageQueue } from '../chats/message-queue.js'
 import { queuedMessages } from '../database/schema.js'
 import { mkdtemp, rm, readFile } from 'node:fs/promises'
@@ -89,6 +90,15 @@ describe.skipIf(!enabled)('computer workspace transport and recovery with Postgr
     const list = await app.inject({ method: 'GET', url: '/api/me/computers', headers: auth })
     expect(list.json().computers[0].id).toBe(device.id)
     expect(JSON.stringify(list.json())).not.toContain(device.token)
+  })
+  it('synchronizes explicit choices and converts legacy composer toggle updates', async () => {
+    const initial = await accessComposer(ownerId, 'new', { draftId: 'new', baseRevision: 0, mutationId: randomUUID(), patch: { workspace: selection(), agentMode: false } })
+    expect(initial).toMatchObject({ ok: true, snapshot: { state: { workspace: selection(), agentMode: true } } })
+    expect(await accessComposer(ownerId, 'new')).toMatchObject({ ok: true, snapshot: { state: { workspace: selection() } } })
+    for (const [index, agentMode] of [false, true].entries()) {
+      const result = await accessComposer(ownerId, 'new', { draftId: 'new', baseRevision: index + 1, mutationId: randomUUID(), patch: { agentMode } })
+      expect(result).toMatchObject({ ok: true, snapshot: { state: { workspace: { kind: agentMode ? 'pulpo' : 'none' }, agentMode } } })
+    }
   })
   it('dispatches a persisted operation and reconciles status through the device namespace', async () => {
     const manager = new RoutedWorkspaceManager(responseId, chatId, ownerId, selection(), 0, 900)

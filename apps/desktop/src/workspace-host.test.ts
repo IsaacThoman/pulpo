@@ -19,7 +19,7 @@ beforeEach(async () => {
   vi.stubGlobal('fetch', fake.request); vi.stubGlobal('PULPO_DEVELOPMENT_RG_PATH', '/bundled/rg')
 })
 afterEach(async () => { vi.unstubAllGlobals(); await rm(fake.folder, { recursive: true, force: true }) })
-describe('desktop hosting consent and lifecycle', () => {
+describe.skipIf(!['darwin', 'win32'].includes(process.platform))('desktop hosting consent and lifecycle', () => {
   it('requires native consent, a folder, and secure storage before registering a device', async () => {
     const host = await import('./workspace-host')
     fake.secure = false; await expect(host.enableHosting()).rejects.toThrow('secure credential storage')
@@ -44,4 +44,10 @@ describe('desktop hosting consent and lifecycle', () => {
     expect(fake.request.mock.calls.at(-1)?.[1].method).toBe('DELETE')
     await expect(readFile(path.join(fake.folder, 'workspace-host.json'))).rejects.toThrow()
   })
+})
+
+it.skipIf(['darwin', 'win32'].includes(process.platform))('rejects unsupported hosting platforms', async () => {
+  const host = await import('./workspace-host')
+  await expect(host.enableHosting()).rejects.toThrow('supports macOS and Windows')
+  expect(fake.request).not.toHaveBeenCalled()
 })

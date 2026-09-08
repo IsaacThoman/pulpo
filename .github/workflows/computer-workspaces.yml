@@ -25,7 +25,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build -w @pulpo/contracts
-      - run: npm run test -w @pulpo/desktop -- src/workspace-executor.test.ts
+      - run: npm run build -w @pulpo/client-core
+      - run: npm run test -w @pulpo/desktop -- src/workspace-executor.test.ts src/workspace-host.test.ts
       - run: npm run package -w @pulpo/desktop
       - run: npx electron scripts/smoke-workspace-package.cjs
         working-directory: apps/desktop

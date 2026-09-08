@@ -1,5 +1,5 @@
 import { useComputerWorkspace } from '../features/chat/useComputerWorkspace'
-import { resolveWorkspace, type WorkspaceSelection } from '@pulpo/contracts'
+import { resolveWorkspace, type WorkspaceSelection, type WorkspaceWait } from '@pulpo/contracts'
 import { WorkspacePicker, WorkspaceRecovery } from '../features/chat/WorkspaceControls'
 import { INITIAL_TRANSCRIPT_ROWS, hasLargeInitialMessage, transcriptListMessages, usesBottomAnchoredTranscript } from '../features/chat/transcriptWindow';
 import { hasChatSelectionObserver, recordChatSelection, hasTranscriptPositionObserver, recordTranscriptPosition } from '../features/chat/selectionTiming';
@@ -572,6 +572,7 @@ type Message = {
   branches?: ResponseBranch[];
   activeBranch?: number;
   workspace?: WorkspaceSelection;
+  workspaceWait?: WorkspaceWait | null;
   agentMode?: boolean;
 };
 type Chat = { id: string; title: string; modelId: string; time: string; section: string; messages: Message[] };
@@ -658,6 +659,7 @@ function prototypeMessageToLegacy(message: PrototypeMessage, chatId: string, cha
     branches: message.branches,
     activeBranch: message.activeBranch,
     workspace: message.workspace,
+    workspaceWait: message.workspaceWait,
     agentMode: message.agentMode,
   };
   legacyMessageCache.set(message, { chatId, chatModelId, value });
