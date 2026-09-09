@@ -881,7 +881,6 @@ jobs:
       COOLIFY_APP_UUID: ${{ vars.COOLIFY_PULPO_DEV_APP_UUID }}
       COOLIFY_WORKER_APP_UUID: ${{ vars.COOLIFY_PULPO_DEV_WORKER_APP_UUID }}
       COOLIFY_WEB_APP_UUID: ${{ vars.COOLIFY_PULPO_DEV_WEB_APP_UUID }}
-      DEPLOYMENT_ENVIRONMENT: development
       DEVELOPMENT_URL: ${{ vars.PULPO_DEVELOPMENT_URL }}
     steps:
       - name: Check out repository

@@ -19,12 +19,28 @@ VOLUMES = {'postgres-data', 'redis-data', 'ollama-models', 'object-data',
 
 
 def docker(*args):
-    return subprocess.check_output(['docker', *args], text=True).strip()
+    return subprocess.check_output(['docker', *args], text=True, stderr=subprocess.STDOUT).strip()
 
 
 def inspect_all(kind):
     ids = docker(*(('ps', '-aq') if kind == 'container' else ('volume', 'ls', '-q'))).splitlines()
-    return json.loads(docker(*(('inspect',) if kind == 'container' else ('volume', 'inspect')), *ids)) if ids else []
+    if not ids:
+        return []
+    command = ['docker', *(('inspect',) if kind == 'container' else ('volume', 'inspect')), *ids]
+    result = subprocess.run(command, capture_output=True, text=True)
+    # Native Coolify teardown may remove objects between listing and inspection.
+    if result.returncode and any('no such' not in line.lower() for line in result.stderr.splitlines()):
+        raise subprocess.CalledProcessError(result.returncode, command, output=result.stderr)
+    return json.loads(result.stdout)
+
+
+
+def remove_if_present(*args):
+    try:
+        docker(*args)
+    except subprocess.CalledProcessError as exc:
+        if not any(message in (exc.output or '').lower() for message in ['no such container', 'no such volume']):
+            raise
 
 
 def volume_pr(name, parent):
@@ -147,10 +163,10 @@ def sweep(args):
             if not closed_pr(github_pr(args.repository, number), number, args.repository, args.grace_seconds):
                 continue
             for c in current['containers']:
-                docker('rm', '-f', '-v', c['Id'])  # immutable IDs prevent replacement-name races
+                remove_if_present('rm', '-f', '-v', c['Id'])  # immutable IDs prevent replacement-name races
             for v in current['volumes']:
                 # Never force volume deletion. Docker rejects a concurrently attached volume.
-                docker('volume', 'rm', v['Name'])
+                remove_if_present('volume', 'rm', v['Name'])
             forget_preview(args.parent, number)
             print(f'Cleaned PR #{number}', flush=True)
         except (ValueError, subprocess.CalledProcessError, urllib.error.URLError) as exc:

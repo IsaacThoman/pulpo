@@ -68,6 +68,15 @@ class CleanupSafetyTests(unittest.TestCase):
         p = pull(); p['head']['repo'] = None; variants.append(p)
         for p in variants: self.assertFalse(cleanup.closed_pr(p, 529, REPO, 300))
 
+    @patch('cleanup.docker', side_effect=cleanup.subprocess.CalledProcessError(1, ['docker'], output='Error: No such container: gone'))
+    def test_native_cleanup_race_is_idempotent(self, _docker):
+        cleanup.remove_if_present('rm', '-f', 'gone')
+
+    @patch('cleanup.docker', side_effect=cleanup.subprocess.CalledProcessError(1, ['docker'], output='volume is in use'))
+    def test_concurrent_attachment_is_not_ignored(self, _docker):
+        with self.assertRaises(cleanup.subprocess.CalledProcessError):
+            cleanup.remove_if_present('volume', 'rm', 'still-attached')
+
     def test_grace_period(self):
         self.assertFalse(cleanup.closed_pr(pull(), 529, REPO, 300, datetime(2026, 9, 1, 0, 1, tzinfo=timezone.utc)))
         self.assertTrue(cleanup.closed_pr(pull(), 529, REPO, 300, datetime(2026, 9, 1, 0, 6, tzinfo=timezone.utc)))
