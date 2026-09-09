@@ -72,7 +72,7 @@ Upload limits are Pulpo's own bounds:
 | Asset | Accepted inputs | Maximum upload | Decoded duration |
 | --- | --- | --- | --- |
 | Cloning reference | MP3, WAV, M4A/AAC, FLAC, Ogg/Opus | 10 MiB | 3–30 seconds |
-| Watermark | MP3, WAV, M4A/AAC, FLAC, Ogg/Opus | 10 MiB | Greater than zero, at most 30 seconds |
+| Watermark | MP3, WAV, M4A/AAC, FLAC, Ogg/Opus | 10 MiB | Greater than zero, at most 2 minutes |
 | Separately uploaded user preview | MP3, WAV | 5 MiB | Greater than zero, at most 30 seconds |
 
 Actual decoding validates reference/watermark content; filenames and MIME types

@@ -13,8 +13,13 @@ describe('real speech audio processing', () => {
     const reference = await normalizeSpeechAsset(speechTestWav(3), 'clone', signal())
     expect(reference.durationSeconds).toBeCloseTo(3, 2)
     await expect(normalizeSpeechAsset(speechTestWav(2), 'clone', signal())).rejects.toMatchObject({ code: 'speech_asset_invalid' })
-    await expect(normalizeSpeechAsset(speechTestWav(31), 'watermark', signal())).rejects.toMatchObject({ code: 'speech_asset_invalid' })
+    await expect(normalizeSpeechAsset(speechTestWav(31), 'clone', signal())).rejects.toMatchObject({ code: 'speech_asset_invalid' })
     await expect(normalizeSpeechAsset(Buffer.from('#EXTM3U\nfile:///etc/passwd'), 'clone', signal())).rejects.toMatchObject({ code: 'speech_asset_invalid' })
+  })
+  it('accepts a full two-minute watermark and rejects longer clips without truncating them', async () => {
+    const watermark = await normalizeSpeechAsset(speechTestWav(120), 'watermark', signal())
+    expect(watermark.durationSeconds).toBeCloseTo(120, 2)
+    await expect(normalizeSpeechAsset(speechTestWav(120.1), 'watermark', signal())).rejects.toMatchObject({ code: 'speech_asset_invalid', message: expect.stringContaining('up to 2 minutes') })
   })
   it('decodes every advertised upload format', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'speech-formats-'))
