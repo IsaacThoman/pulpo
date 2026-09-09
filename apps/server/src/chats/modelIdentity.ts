@@ -18,5 +18,6 @@ export function responseDisplayModelId(response: {
   actualModelId?: string | null
   metadata?: Record<string, string> | null
 }): string {
-  return response.metadata?.importedModelId ?? response.actualModelId ?? response.modelId
+  // Fallback execution must not replace the model identity shown in chat.
+  return response.metadata?.importedModelId ?? response.modelId
 }
