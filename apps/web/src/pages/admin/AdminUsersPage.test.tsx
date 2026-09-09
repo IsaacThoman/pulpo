@@ -1,14 +1,20 @@
 // @vitest-environment jsdom
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
+import { fireEvent } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { MonitorUser } from '@/lib/types'
 
-const mocks = vi.hoisted(() => ({ request: vi.fn(), load: vi.fn(), users: [] as MonitorUser[] }))
+const mocks = vi.hoisted(() => ({
+  request: vi.fn(), load: vi.fn(), users: [] as MonitorUser[], billingEnabled: false,
+  billingUsers: [] as { userId: string; plan: 'baby' | 'eight' | 'fat'; weeklyLimitMicros: number; fiveHourLimitMicros: number }[],
+}))
 vi.mock('@/lib/api', () => ({ apiRequest: mocks.request }))
 vi.mock('@/stores/usage', () => ({ useUsage: (select: (state: unknown) => unknown) => select({ users: mocks.users, loadAdmin: mocks.load }) }))
-vi.mock('@/stores/auth', () => ({ useAuth: (select: (state: unknown) => unknown) => select({ user: { id: 'admin' }, billingEnabled: false }) }))
-vi.mock('@tanstack/react-query', () => ({ useQuery: () => ({ data: undefined }) }))
+vi.mock('@/stores/auth', () => ({ useAuth: (select: (state: unknown) => unknown) => select({ user: { id: 'admin' }, billingEnabled: mocks.billingEnabled }) }))
+vi.mock('@tanstack/react-query', () => ({ useQuery: () => ({ data: { data: mocks.billingUsers.map((row) => ({
+  ...row, subscriptionPlan: row.plan, weeklySpentMicros: 0, fiveHourSpentMicros: 0, storageLimitBytes: 0,
+})) } }) }))
 vi.mock('@/components/settings/DeviceSettings', () => ({ DeviceSessionListView: () => null }))
 vi.mock('@/components/ProfileAvatar', () => ({ ProfileAvatar: () => null }))
 vi.mock('@/i18n/ui', () => ({ ui: (text: string) => text, activeLocale: () => 'en-US' }))
@@ -19,6 +25,8 @@ let root: Root
 let container: HTMLDivElement
 beforeEach(() => {
   vi.resetAllMocks()
+  mocks.billingEnabled = false
+  mocks.billingUsers = []
   mocks.users = [{ id: 'target', name: 'Test', username: 'test', email: 'test@example.test', role: 'user', balance: 0, joinedAt: 0, blocked: false, avatarUrl: null, profileColor: null }]
   mocks.load.mockResolvedValue(undefined)
   container = document.createElement('div')
@@ -33,6 +41,100 @@ afterEach(async () => {
 })
 const deleteButton = () => container.querySelector<HTMLButtonElement>('button[title="Delete"]')!
 const mount = async () => { await act(async () => root.render(<AdminUsersPage />)) }
+
+describe('admin user sorting', () => {
+  beforeEach(() => {
+    const user = mocks.users[0]
+    mocks.users = [
+      { ...user, id: 'a', name: 'Zed', username: 'zed', email: 'alpha@example.test', role: 'user', balance: 100, storageBytes: 2, joinedAt: 300, lastActiveAt: 100, inviteCodeQuota: 10 },
+      { ...user, id: 'b', name: 'alice', username: 'alice', email: 'zeta@example.test', role: 'admin', balance: 2, storageBytes: 100, joinedAt: 100, lastActiveAt: 300, inviteCodeQuota: 2 },
+      { ...user, id: 'c', name: 'Bob', username: 'bob', email: 'beta@example.test', role: 'pending', balance: 10, storageBytes: 10, joinedAt: 200, lastActiveAt: 200, inviteCodeQuota: 100 },
+    ]
+  })
+
+  const emails = () => Array.from(container.querySelectorAll('tbody tr'), (row) => row.children[3].textContent)
+  const header = (label: string) => Array.from(container.querySelectorAll<HTMLButtonElement>('thead button')).find((button) => button.textContent === label)!
+  const sortBy = async (label: string) => { await act(async () => header(label).click()) }
+  const enableBilling = () => {
+    mocks.billingEnabled = true
+    mocks.billingUsers = [
+      { userId: 'a', plan: 'fat', weeklyLimitMicros: 2, fiveHourLimitMicros: 100 },
+      { userId: 'b', plan: 'baby', weeklyLimitMicros: 100, fiveHourLimitMicros: 10 },
+      { userId: 'c', plan: 'eight', weeklyLimitMicros: 10, fiveHourLimitMicros: 2 },
+    ]
+  }
+
+  it.each([
+    ['Role', ['zeta', 'beta', 'alpha']],
+    ['Display name', ['zeta', 'beta', 'alpha']],
+    ['Last active', ['alpha', 'beta', 'zeta']],
+    ['Email', ['alpha', 'beta', 'zeta']],
+    ['Plan', ['zeta', 'beta', 'alpha']],
+    ['Weekly limit', ['alpha', 'beta', 'zeta']],
+    ['5-hour limit', ['beta', 'zeta', 'alpha']],
+    ['Invites', ['zeta', 'alpha', 'beta']],
+    ['Balance', ['zeta', 'beta', 'alpha']],
+    ['File storage', ['alpha', 'beta', 'zeta']],
+    ['Created', ['zeta', 'beta', 'alpha']],
+  ])('sorts %s in both directions without changing store order', async (label, order) => {
+    enableBilling()
+    await mount()
+    const expected = order.map((name) => `${name}@example.test`)
+    await sortBy(label)
+    expect(emails()).toEqual(expected)
+    expect(header(label).closest('th')?.getAttribute('aria-sort')).toBe('ascending')
+    await sortBy(label)
+    expect(emails()).toEqual([...expected].reverse())
+    expect(header(label).closest('th')?.getAttribute('aria-sort')).toBe('descending')
+    expect(mocks.users.map((user) => user.id)).toEqual(['a', 'b', 'c'])
+  })
+
+  it('preserves sorting while searching and updates the active column', async () => {
+    await mount()
+    expect(container.querySelectorAll('thead button')).toHaveLength(7)
+    await sortBy('Balance')
+    await act(async () => fireEvent.change(container.querySelector('input')!, { target: { value: 'eta' } }))
+    expect(emails()).toEqual(['zeta@example.test', 'beta@example.test'])
+    await sortBy('Email')
+    expect(emails()).toEqual(['beta@example.test', 'zeta@example.test'])
+    expect(header('Balance').closest('th')?.hasAttribute('aria-sort')).toBe(false)
+    await act(async () => fireEvent.change(container.querySelector('input')!, { target: { value: '' } }))
+    expect(emails()).toEqual(['alpha@example.test', 'beta@example.test', 'zeta@example.test'])
+  })
+
+  it('keeps users who have never been active last in both directions', async () => {
+    mocks.users[0].lastActiveAt = null
+    await mount()
+    await sortBy('Last active')
+    expect(emails()).toEqual(['beta@example.test', 'zeta@example.test', 'alpha@example.test'])
+    await sortBy('Last active')
+    expect(emails()).toEqual(['zeta@example.test', 'beta@example.test', 'alpha@example.test'])
+  })
+
+  it('keeps missing billing data last and reorders when it arrives', async () => {
+    enableBilling()
+    const delayed = mocks.billingUsers.pop()!
+    await mount()
+    await sortBy('Plan')
+    expect(emails()).toEqual(['zeta@example.test', 'alpha@example.test', 'beta@example.test'])
+    await sortBy('Plan')
+    expect(emails()).toEqual(['alpha@example.test', 'zeta@example.test', 'beta@example.test'])
+    mocks.billingUsers.push(delayed)
+    await mount()
+    expect(emails()).toEqual(['alpha@example.test', 'beta@example.test', 'zeta@example.test'])
+  })
+
+  it('preserves row order for equal values and handles an empty table', async () => {
+    mocks.users.forEach((user) => { user.balance = 0 })
+    await mount()
+    await sortBy('Balance')
+    await sortBy('Balance')
+    expect(emails()).toEqual(['alpha@example.test', 'zeta@example.test', 'beta@example.test'])
+    mocks.users = []
+    await mount()
+    expect(emails()).toEqual([])
+  })
+})
 
 describe('admin account deletion', () => {
   it('shows API errors with the affected account and allows retry', async () => {

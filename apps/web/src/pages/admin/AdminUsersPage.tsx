@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { AlertTriangle, Monitor, Pencil, Plus, RefreshCw, Search, ShieldOff, Trash2 } from 'lucide-react'
+import { AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown, Monitor, Pencil, Plus, RefreshCw, Search, ShieldOff, Trash2 } from 'lucide-react'
 import { DeviceSessionListView } from '@/components/settings/DeviceSettings'
 import { useUsage } from '@/stores/usage'
 import { formatBalance, formatDate, timeAgo } from '@/lib/format'
@@ -48,9 +48,28 @@ interface AdminBillingUser {
   hold: { holdAt: string; holdReason: string | null; holdReference: string | null } | null
 }
 
+type UserSortKey = 'role' | 'name' | 'lastActiveAt' | 'email' | 'plan' | 'weeklyLimit' | 'fiveHourLimit' | 'invites' | 'balance' | 'storage' | 'joinedAt'
+
+function userSortValue(user: MonitorUser, billing: AdminBillingUser | undefined, key: UserSortKey): string | number | null {
+  switch (key) {
+    case 'role': return ui(user.role)
+    case 'name': return user.name
+    case 'email': return user.email
+    case 'lastActiveAt': return user.lastActiveAt ?? null
+    case 'joinedAt': return user.joinedAt
+    case 'plan': return billing ? { baby: 0, eight: 1, fat: 2 }[billing.plan] : null
+    case 'weeklyLimit': return billing?.weeklyLimitMicros ?? null
+    case 'fiveHourLimit': return billing?.fiveHourLimitMicros ?? null
+    case 'invites': return user.inviteCodeQuota ?? 0
+    case 'balance': return user.balance
+    case 'storage': return user.storageBytes ?? 0
+  }
+}
+
 export function AdminUsersPage() {
   const users = useUsage((s) => s.users)
   const [query, setQuery] = useState('')
+  const [sort, setSort] = useState<{ key: UserSortKey; direction: 'ascending' | 'descending' } | null>(null)
   const [addOpen, setAddOpen] = useState(false)
   const [editUser, setEditUser] = useState<MonitorUser | null>(null)
   const [devicesUser, setDevicesUser] = useState<MonitorUser | null>(null)
@@ -97,6 +116,34 @@ export function AdminUsersPage() {
       u.username.toLowerCase().includes(query.replace(/^@/, '').toLowerCase()) ||
       u.email.toLowerCase().includes(query.toLowerCase())
   )
+  if (sort) {
+    const collator = new Intl.Collator(activeLocale(), { sensitivity: 'base', numeric: true })
+    filtered.sort((a, b) => {
+      const left = userSortValue(a, billingByUser.get(a.id), sort.key)
+      const right = userSortValue(b, billingByUser.get(b.id), sort.key)
+      // Keep unavailable billing data and users who have never been active last in either direction.
+      if (left === null) return right === null ? 0 : 1
+      if (right === null) return -1
+      const comparison = typeof left === 'number' && typeof right === 'number'
+        ? left - right
+        : collator.compare(String(left), String(right))
+      return sort.direction === 'ascending' ? comparison : -comparison
+    })
+  }
+
+  const sortHeader = (key: UserSortKey, label: string, numeric = false) => {
+    const direction = sort?.key === key ? sort.direction : undefined
+    const Icon = direction === 'ascending' ? ArrowUp : direction === 'descending' ? ArrowDown : ArrowUpDown
+    return <th scope="col" aria-sort={direction} className={`px-3 py-2${numeric ? ' text-right' : ''}`}>
+      <button
+        type="button"
+        className={`inline-flex items-center gap-1 rounded-sm hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring${numeric ? ' justify-end' : ''}`}
+        onClick={() => setSort({ key, direction: direction === 'ascending' ? 'descending' : 'ascending' })}
+      >
+        {label}<Icon aria-hidden="true" className="size-3.5 shrink-0" />
+      </button>
+    </th>
+  }
   const adminTwoFactorEnabled = users.find((user) => user.id === currentUserId)?.twoFactorEnabled ?? false
 
   const resetTwoFactor = async () => {
@@ -145,17 +192,17 @@ export function AdminUsersPage() {
           <table className="data-table min-w-max">
             <thead>
               <tr className="border-b">
-                <th className="px-3 py-2">{ui("Role")}</th>
-                <th className="px-3 py-2">{ui("Display name")}</th>
-                <th className="px-3 py-2">{ui("Last active")}</th>
-                <th className="px-3 py-2">{ui("Email")}</th>
-                {billingEnabled && <th className="px-3 py-2">{ui("Plan")}</th>}
-                {billingEnabled && <th className="px-3 py-2 text-right">{ui("Weekly limit")}</th>}
-                {billingEnabled && <th className="px-3 py-2 text-right">{ui("5-hour limit")}</th>}
-                {billingEnabled && <th className="px-3 py-2 text-right">{ui("Invites")}</th>}
-                <th className="px-3 py-2 text-right">{ui("Balance")}</th>
-                <th className="px-3 py-2 text-right">{ui("File storage")}</th>
-                <th className="px-3 py-2">{ui("Created")}</th>
+                {sortHeader('role', ui('Role'))}
+                {sortHeader('name', ui('Display name'))}
+                {sortHeader('lastActiveAt', ui('Last active'))}
+                {sortHeader('email', ui('Email'))}
+                {billingEnabled && sortHeader('plan', ui('Plan'))}
+                {billingEnabled && sortHeader('weeklyLimit', ui('Weekly limit'), true)}
+                {billingEnabled && sortHeader('fiveHourLimit', ui('5-hour limit'), true)}
+                {billingEnabled && sortHeader('invites', ui('Invites'), true)}
+                {sortHeader('balance', ui('Balance'), true)}
+                {sortHeader('storage', ui('File storage'), true)}
+                {sortHeader('joinedAt', ui('Created'))}
                 <th className="px-3 py-2 text-right">{ui("Actions")}</th>
               </tr>
             </thead>
