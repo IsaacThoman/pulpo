@@ -92,7 +92,7 @@ jobs:
         run: python3 apps/mobile/scripts/deploy-iphone_test.py
 
   chat-search:
-    name: Chat search / PostgreSQL
+    name: Database integration tests
     if: >-
       github.event_name != 'pull_request' ||
       github.event.action != 'closed'
