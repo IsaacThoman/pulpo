@@ -5121,7 +5121,7 @@ function ChatView({
 
   const nativeAgentTint = colorScheme === 'dark' ? '#BF5AF2' : '#AF52DE';
   const nativeAgentForeground = activeAgentEnabled ? '#ffffff' : colorScheme === 'dark' ? '#f2f2f7' : '#1c1c1e';
-  const agentLabel = activeAgentEnabled ? 'Pulpo Small' : 'Disabled';
+  const agentLabel = activeAgentEnabled ? 'Pulpo Agent' : 'Disabled';
   const AgentIcon = activeAgentEnabled ? Bot : BotOff;
 
   const updateBottomProximity = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
@@ -5791,7 +5791,7 @@ function ChatView({
                         {[true, false].map((enabled) => (
                           <SwiftUILabel
                             key={String(enabled)}
-                            title={enabled ? 'Pulpo Small' : 'Disabled'}
+                            title={enabled ? 'Pulpo Agent' : 'Disabled'}
                             icon={<SwiftUIImage assetName={enabled ? 'LucideBot' : 'LucideBotOff'} modifiers={[resizable(), frame({ width: 20, height: 20 })]} />}
                             modifiers={[tag(enabled ? 'small' : 'disabled')]}
                           />
@@ -5801,7 +5801,7 @@ function ChatView({
                   </SwiftUIHost>
                 ) : (
                   <MaterialMenu label={`Agent options, ${agentLabel}`} icon={activeAgentEnabled ? 'bot' : 'bot-off'} color={activeAgentEnabled ? nativeAgentTint : undefined} disabled={!canUseAgent} actions={[
-                    { label: 'Pulpo Small', icon: 'bot', selected: activeAgentEnabled, onPress: () => selectAgent(true) },
+                    { label: 'Pulpo Agent', icon: 'bot', selected: activeAgentEnabled, onPress: () => selectAgent(true) },
                     { label: 'Disabled', icon: 'bot-off', selected: !activeAgentEnabled, onPress: () => selectAgent(false) },
                   ]} />
                 )}

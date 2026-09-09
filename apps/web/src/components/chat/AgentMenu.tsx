@@ -9,7 +9,7 @@ export function AgentMenu({ enabled, disabled, onSelect }: {
 }) {
   const { t } = useTranslation()
   const active = enabled && !disabled
-  const label = active ? 'Pulpo Small' : t('chat.agentDisabled')
+  const label = active ? 'Pulpo Agent' : t('chat.agentDisabled')
   const Icon = active ? Bot : BotOff
   return (
     <DropdownMenu>
@@ -39,7 +39,7 @@ export function AgentMenu({ enabled, disabled, onSelect }: {
             >
               <span className="flex items-center gap-1.5">
                 <ChoiceIcon className="size-4 opacity-70" />
-                {value ? 'Pulpo Small' : t('chat.agentDisabled')}
+                {value ? 'Pulpo Agent' : t('chat.agentDisabled')}
               </span>
               {active === value && <Check className="size-3.5" />}
             </DropdownMenuItem>
