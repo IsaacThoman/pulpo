@@ -3810,9 +3810,12 @@ function SuggestedPromptButton({ label, accessible, onPress, temporary = false }
 
 const EMPTY_MOBILE_QUEUE: MobileQueuedMessage[] = [];
 
-function ComposerQueueSection({ title, subject, collapsed, onToggle, failed = false, children }: {
+const COMPOSER_SECTION_SPRING = { damping: 24, stiffness: 260, mass: 0.8, overshootClamping: true };
+
+function ComposerQueueSection({ title, subject, visible, collapsed, onToggle, failed = false, children }: {
   title: string;
   subject: string;
+  visible: boolean;
   collapsed: boolean;
   onToggle: () => void;
   failed?: boolean;
@@ -3821,25 +3824,39 @@ function ComposerQueueSection({ title, subject, collapsed, onToggle, failed = fa
   const { styles, COLORS } = useChatStyles();
   const { reduceMotion } = useAccessibilityPreferences();
   const progress = useSharedValue(collapsed ? 0 : 1);
+  const headerHeight = useSharedValue(0);
   const contentHeight = useSharedValue(0);
+  const dividerWidth = StyleSheet.hairlineWidth;
 
   useEffect(() => {
     const target = collapsed ? 0 : 1;
-    progress.set(reduceMotion ? target : withSpring(target, {
-      damping: 24,
-      stiffness: 260,
-      mass: 0.8,
-      overshootClamping: true,
-    }));
+    progress.set(reduceMotion ? target : withSpring(target, COMPOSER_SECTION_SPRING));
   }, [collapsed, progress, reduceMotion]);
 
-  const revealStyle = useAnimatedStyle(() => ({ height: contentHeight.value * progress.value }));
+  // Animate the complete section, including its first/last row and header.
+  // The enclosing glass surface follows the height without remounting the input.
+  const sectionStyle = useAnimatedStyle(() => {
+    const height = visible ? headerHeight.value + (collapsed ? 0 : contentHeight.value) + dividerWidth : 0;
+    const marginBottom = visible ? 10 : 0;
+    return {
+      height: reduceMotion ? height : withSpring(height, COMPOSER_SECTION_SPRING),
+      marginBottom: reduceMotion ? marginBottom : withSpring(marginBottom, COMPOSER_SECTION_SPRING),
+      borderBottomWidth: visible ? dividerWidth : 0,
+    };
+  });
+  const revealStyle = useAnimatedStyle(() => ({ height: contentHeight.value }));
   const contentStyle = useAnimatedStyle(() => ({ opacity: progress.value }));
   const chevronStyle = useAnimatedStyle(() => ({ transform: [{ rotate: `${180 * progress.value}deg` }] }));
 
   return (
-    <View style={styles.composerQueue}>
+    <Reanimated.View
+      accessibilityElementsHidden={!visible}
+      importantForAccessibility={visible ? 'auto' : 'no-hide-descendants'}
+      pointerEvents={visible ? 'auto' : 'none'}
+      style={[styles.composerQueue, styles.composerQueueClip, sectionStyle]}
+    >
       <Pressable
+        onLayout={({ nativeEvent: { layout } }) => { headerHeight.set(layout.height); }}
         accessibilityRole="button"
         accessibilityLabel={`${collapsed ? 'Expand' : 'Collapse'} ${subject}`}
         accessibilityState={{ expanded: !collapsed }}
@@ -3869,7 +3886,7 @@ function ComposerQueueSection({ title, subject, collapsed, onToggle, failed = fa
           {children}
         </Reanimated.View>
       </Reanimated.View>
-    </View>
+    </Reanimated.View>
   );
 }
 
@@ -5564,7 +5581,8 @@ function ChatView({
               surfaceStyle={temporaryComposerAnimatedStyle}
               tintColor={temporary ? colorScheme === 'dark' ? 'rgba(88,28,135,0.32)' : 'rgba(175,82,222,0.16)' : undefined}
             >
-              {showShelf && shelfRows.length > 0 && <ComposerQueueSection
+              {showShelf && <ComposerQueueSection
+                visible={shelfRows.length > 0}
                 title={`Shelved · ${shelfRows.length}`} subject="shelved drafts" collapsed={shelfCollapsed}
                 onToggle={() => setShelfCollapsed((value) => !value)}
               >
@@ -5582,8 +5600,8 @@ function ChatView({
                   }} />
               </ComposerQueueSection>}
               {showShelf && shelfError && <Text accessibilityRole="alert" style={styles.attachmentErrorText}>{shelfError}</Text>}
-              {queuedMessages.length > 0 && (
                 <ComposerQueueSection
+                  visible={queuedMessages.length > 0}
                   title="Queued" subject="queued messages" collapsed={queueCollapsed}
                   onToggle={() => setQueueCollapsed((value) => !value)}
                   failed={queuedMessages.some((item) => item.status === 'failed' || Boolean(item.localFailure))}
@@ -5626,7 +5644,6 @@ function ChatView({
                       }}
                     />
                 </ComposerQueueSection>
-              )}
               {messageEdit ? (
                 <View style={styles.messageEditBanner}>
                   <Icon name="pencil" size={12} color={COLORS.muted} />
@@ -5673,7 +5690,8 @@ function ChatView({
                   ref={composerInputRef}
                   accessibilityLabel="Message"
                   disableFullscreenUI
-                  editable={!handoffBusy && !shelfBusy && !composerFocusSuppressed && !(messageEdit && sending)}
+                  // Keep focus during shelf actions; transferShelf checks for edits before replacing content.
+                  editable={!handoffBusy && !composerFocusSuppressed && !(messageEdit && sending)}
                   maxFontSizeMultiplier={1.6}
                   multiline
                   maxLength={1_000_000}
