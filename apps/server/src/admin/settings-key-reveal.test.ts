@@ -5,6 +5,8 @@ const mocks = vi.hoisted(() => ({
   row: undefined as { value: unknown } | undefined,
   audits: [] as Array<Record<string, unknown>>,
   requireSecretRevealAuth: vi.fn(),
+  decryptSecret: vi.fn(),
+  routeOptions: new Map<string, unknown>(),
 }))
 
 vi.mock('../database/client.js', () => ({
@@ -26,10 +28,7 @@ vi.mock('../auth/service.js', () => ({
 vi.mock('../auth/sensitive-action.js', () => ({ requireSecretRevealAuth: mocks.requireSecretRevealAuth }))
 vi.mock('../config.js', () => ({ getConfig: () => ({ ENCRYPTION_KEY: 'encryption-key' }) }))
 vi.mock('../lib/crypto.js', () => ({
-  decryptSecret: (value: string) => ({
-    'encrypted-kagi': 'kagi-secret',
-    'encrypted-firecrawl': 'firecrawl-secret',
-  })[value] ?? 'unexpected',
+  decryptSecret: mocks.decryptSecret,
   encryptSecret: vi.fn(),
 }))
 vi.mock('../jobs.js', () => ({ maintenanceQueue: { add: vi.fn() } }))
@@ -42,6 +41,7 @@ async function settingsHandlers(): Promise<Map<string, Handler>> {
   const handlers = new Map<string, Handler>()
   const route = (method: string) => (url: string, ...args: unknown[]) => {
     handlers.set(`${method} ${url}`, args.at(-1) as Handler)
+    mocks.routeOptions.set(`${method} ${url}`, args.length > 1 ? args[0] : undefined)
   }
   const app = {
     get: route('GET'), post: route('POST'), put: route('PUT'), patch: route('PATCH'), delete: route('DELETE'),
@@ -72,6 +72,9 @@ describe('admin web-tool key reveal', () => {
     mocks.row = { value: { encryptedKagiApiKey: 'encrypted-kagi', encryptedFirecrawlApiKey: 'encrypted-firecrawl' } }
     mocks.audits = []
     mocks.requireSecretRevealAuth.mockReset().mockResolvedValue(undefined)
+    mocks.decryptSecret.mockReset().mockImplementation((value: string) => ({
+      'encrypted-kagi': 'kagi-secret', 'encrypted-firecrawl': 'firecrawl-secret',
+    })[value])
   })
 
   it('requires an administrator', async () => {
@@ -113,5 +116,69 @@ describe('admin web-tool key reveal', () => {
       action: 'settings.web_tools.api_key.reveal_denied', targetType: 'web_tool_provider', targetId: 'firecrawl',
     })
     expect(JSON.stringify(mocks.audits)).not.toContain('654321')
+  })
+})
+
+describe.each([
+  { key: 'dictation', path: 'dictation/api-key', field: 'encryptedGroqApiKey' },
+  { key: 'backups', path: 'backups/application-key', field: 'encryptedApplicationKey' },
+])('admin $key key reveal', ({ key, path, field }) => {
+  const route = `POST /api/admin/settings/${path}/reveal`
+
+  beforeEach(() => {
+    mocks.row = { value: { [field]: 'encrypted-secret' } }
+    mocks.audits = []
+    mocks.requireSecretRevealAuth.mockReset().mockResolvedValue(undefined)
+    mocks.decryptSecret.mockReset().mockReturnValue('saved-secret')
+  })
+
+  it('requires an administrator before accessing the secret', async () => {
+    const handler = (await settingsHandlers()).get(route)!
+    await expect(handler(request('kagi', undefined, 'user'), reply())).rejects.toThrow('Administrator')
+    expect(mocks.requireSecretRevealAuth).not.toHaveBeenCalled()
+    expect(mocks.decryptSecret).not.toHaveBeenCalled()
+  })
+
+  it.each([undefined, { value: {} }, { value: { [field]: null } }])('rejects missing saved keys', async (row) => {
+    mocks.row = row
+    const handler = (await settingsHandlers()).get(route)!
+    await expect(handler(request('kagi'), reply())).rejects.toMatchObject({ statusCode: 404 })
+    expect(mocks.requireSecretRevealAuth).not.toHaveBeenCalled()
+    expect(mocks.decryptSecret).not.toHaveBeenCalled()
+  })
+
+  it.each([{ verificationCode: '123456' }, { currentPassword: 'current-password' }])('authenticates before decrypting, disables caching, and audits without secrets', async (credentials) => {
+    const handler = (await settingsHandlers()).get(route)!
+    const response = reply()
+    await expect(handler(request('kagi', credentials), response)).resolves.toEqual({ apiKey: 'saved-secret' })
+    expect(mocks.requireSecretRevealAuth).toHaveBeenCalledWith(
+      '11111111-1111-4111-8111-111111111111', credentials.currentPassword, credentials.verificationCode,
+    )
+    expect(mocks.decryptSecret).toHaveBeenCalledWith('encrypted-secret', 'encryption-key')
+    expect(mocks.requireSecretRevealAuth.mock.invocationCallOrder[0]).toBeLessThan(mocks.decryptSecret.mock.invocationCallOrder[0]!)
+    expect(response.header).toHaveBeenCalledWith('cache-control', 'no-store')
+    expect(mocks.audits).toEqual([{
+      id: expect.any(String), actorUserId: '11111111-1111-4111-8111-111111111111',
+      action: `settings.${key}.api_key.reveal`, targetType: 'application', targetId: key,
+    }])
+    expect(mocks.routeOptions.get(route)).toEqual({ config: { rateLimit: { max: 10, timeWindow: '5 minutes' } } })
+  })
+
+  it('never decrypts after denied authentication and audits without credentials', async () => {
+    mocks.requireSecretRevealAuth.mockRejectedValue(new Error('Invalid verification code'))
+    const handler = (await settingsHandlers()).get(route)!
+    await expect(handler(request('kagi', { verificationCode: '654321' }), reply())).rejects.toThrow('Invalid verification code')
+    expect(mocks.decryptSecret).not.toHaveBeenCalled()
+    expect(mocks.audits).toEqual([{
+      id: expect.any(String), actorUserId: '11111111-1111-4111-8111-111111111111',
+      action: `settings.${key}.api_key.reveal_denied`, targetType: 'application', targetId: key,
+    }])
+  })
+
+  it('rejects malformed credentials before decrypting', async () => {
+    const handler = (await settingsHandlers()).get(route)!
+    await expect(handler(request('kagi', { verificationCode: 123456 }), reply())).rejects.toThrow()
+    expect(mocks.requireSecretRevealAuth).not.toHaveBeenCalled()
+    expect(mocks.decryptSecret).not.toHaveBeenCalled()
   })
 })
