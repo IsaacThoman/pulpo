@@ -42,7 +42,7 @@ export function speechChunks(text: string, model: Pick<PublicSpeechModel, 'maxIn
   return result
 }
 
-export interface SpeechAudio { dispose(): void; play(signal: AbortSignal): Promise<void> }
+export interface SpeechAudio { durationSeconds?: number; dispose(): void; play(signal: AbortSignal): Promise<void> }
 export type SpeechPlaybackState = { key: string | null; phase: 'idle' | 'loading' | 'playing'; error: string | null }
 export class SpeechPlayback {
   private state: SpeechPlaybackState = { key: null, phase: 'idle', error: null }
@@ -52,15 +52,17 @@ export class SpeechPlayback {
   getSnapshot = () => this.state
   private update(state: SpeechPlaybackState) { this.state = state; for (const listener of this.listeners) listener() }
   stop = () => { this.active?.abort(); this.active = undefined; this.update({ key: null, phase: 'idle', error: null }) }
-  async start(key: string, chunks: string[] | ((signal: AbortSignal) => Promise<string[]>), generate: (input: string, signal: AbortSignal) => Promise<SpeechAudio>) {
+  async start(key: string, chunks: string[] | ((signal: AbortSignal) => Promise<string[]>), generate: (input: string, signal: AbortSignal, offsetSeconds: number) => Promise<SpeechAudio>) {
     if (this.state.key === key) { this.stop(); return }
     this.stop()
     const active = new AbortController(); this.active = active
     const { signal } = active
     this.update({ key, phase: 'loading', error: null })
     const owned = new Set<SpeechAudio>()
+    let offsetSeconds = 0
     const prepare = async (text: string) => {
-      const audio = await generate(text, signal)
+      const audio = await generate(text, signal, offsetSeconds)
+      if (audio.durationSeconds && Number.isFinite(audio.durationSeconds) && audio.durationSeconds > 0) offsetSeconds += audio.durationSeconds
       if (signal.aborted) { audio.dispose(); throw new Error('Cancelled') }
       owned.add(audio); return audio
     }

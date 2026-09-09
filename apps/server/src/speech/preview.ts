@@ -8,6 +8,7 @@ import { requireAdmin, requireUser } from '../auth/service.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import { getBlobStore } from '../storage/index.js'
+import { applyVoiceWatermark } from './assets.js'
 
 export const MAX_PREVIEW_BYTES = 5 * 1024 * 1024
 export async function validateSpeechPreview(bytes: Buffer) {
@@ -32,8 +33,13 @@ export async function downloadSpeechPreview(request: FastifyRequest, reply: Fast
   if (!row || !preview || !row.model.config.voices.some(voice => voice.id === voiceId) || (user.role !== 'admin' && (!row.enabled || !row.model.config.enabled))) throw notFound('Speech preview')
   const contentType = preview.contentType
   if (contentType !== 'audio/mpeg' && contentType !== 'audio/wav') throw notFound('Speech preview')
-  return reply.header('cache-control', 'no-store').header('x-content-type-options', 'nosniff').type(contentType)
-    .send(Buffer.from(await getBlobStore().get(preview.objectKey)))
+  const controller = new AbortController()
+  const close = () => { if (!reply.raw.writableFinished) controller.abort() }
+  reply.raw.on('close', close)
+  try {
+    const audio = await applyVoiceWatermark(Buffer.from(await getBlobStore().get(preview.objectKey)), row.model, voiceId, contentType === 'audio/wav' ? 'wav' : 'mp3', 0, AbortSignal.any([controller.signal, AbortSignal.timeout(120_000)]))
+    return reply.header('cache-control', 'no-store').header('x-content-type-options', 'nosniff').type(contentType).send(audio)
+  } finally { reply.raw.off('close', close) }
 }
 
 export async function uploadSpeechPreview(request: FastifyRequest, reply: FastifyReply) {

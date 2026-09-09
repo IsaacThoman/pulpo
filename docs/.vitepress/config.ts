@@ -6,6 +6,7 @@ const sidebar = [
     items: [
       { text: 'Welcome', link: '/' },
       { text: 'Encrypted backups', link: '/backups' },
+      { text: 'Speech and cloned voices', link: '/speech' },
     ],
   },
   {

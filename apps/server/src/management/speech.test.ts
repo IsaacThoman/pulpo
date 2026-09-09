@@ -13,12 +13,14 @@ let role: 'admin' | 'user' | null
 let scopes: ManagementScope[]
 let server: ReturnType<typeof Fastify>
 const previewPath = '/api/management/v1/speech-models/test/voices/custom%2Fvoice/preview'
+const assetPaths = ['clone', 'watermark', 'clone/repair', 'test'].map(suffix => `/api/management/v1/speech-models/test/voices/custom%2Fvoice/${suffix}`)
+const discoveryPaths = ['/api/management/v1/speech-models/test/provider-voices', '/api/management/v1/speech-models/test/provider-voices/custom/sample', '/api/management/v1/speech-models/cleanup', '/api/management/v1/speech-models/cleanup/00000000-0000-4000-8000-000000000001/retry']
 beforeEach(async () => {
   vi.clearAllMocks(); role = 'admin'; scopes = ['catalog:read', 'catalog:write']
   server = Fastify()
   await server.register(multipart)
-  server.addHook('onRequest', async (request: FastifyRequest) => {
-    // Simulate an already authenticated management token; exercise the real scope/role guard.
+  server.addHook('preHandler', async (request: FastifyRequest) => {
+    // Authentication runs in preHandler. A guard in onRequest would incorrectly reject tokens.
     request.user = role ? { id: 'admin', role, blocked: false } as FastifyRequest['user'] : null
     request.managementTokenId = role ? 'token' : null
     request.managementScopes = scopes
@@ -47,7 +49,7 @@ it('advertises speech management and forwards authorized catalog operations', as
 it('requires authentication, current admin role, and the matching catalog scope', async () => {
   for (const identity of [{ role: null, scopes: [] }, { role: 'user', scopes: ['catalog:read', 'catalog:write'] }, { role: 'admin', scopes: ['account:read'] }] as const) {
     role = identity.role; scopes = [...identity.scopes]
-    for (const url of ['/api/management/v1/speech-models', previewPath]) {
+    for (const url of ['/api/management/v1/speech-models', previewPath, ...assetPaths, ...discoveryPaths]) {
       for (const method of ['GET', 'POST', 'PATCH', 'DELETE'] as const) {
         const response = await server.inject({ method, url })
         expect(response.statusCode, `${identity.role} ${method} ${url}`).toBe(role ? 403 : 401)
@@ -62,7 +64,7 @@ it('allows reads with read-only scope but blocks catalog and preview writes', as
   const response = await server.inject(previewPath)
   expect(response.headers['content-type']).toBe('audio/wav')
   expect(response.rawPayload).toEqual(Buffer.from('audio'))
-  for (const url of ['/api/management/v1/speech-models', previewPath]) {
+  for (const url of ['/api/management/v1/speech-models', previewPath, ...assetPaths, ...discoveryPaths]) {
     for (const method of ['POST', 'PATCH', 'DELETE'] as const) expect((await server.inject({ method, url })).statusCode).toBe(403)
   }
 })

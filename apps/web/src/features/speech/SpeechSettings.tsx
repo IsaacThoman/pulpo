@@ -96,7 +96,7 @@ export function SpeechSettings() {
           </div>
           </PopoverContent>
         </Popover>
-        {playback.error && <p role="alert" className="text-sm text-destructive">{playback.error}</p>}
+        {playback.error && <p role="alert" className="text-sm text-destructive">{ui(playback.error)}</p>}
       </div>
       {model.supportsInstructions && <label className="block text-sm">{ui('Instructions')}<Textarea className="mt-2" value={settings.instructions} maxLength={SPEECH_MAX_INSTRUCTIONS_LENGTH} placeholder={ui('Speak in a calm, friendly tone.')} onChange={event => update({ instructions: event.target.value })} /></label>}
       {model.supportsSpeed && <label className="block text-sm">{ui('Speed')}<Input className="mt-2" type="number" min={model.speedMin} max={model.speedMax} step="0.05" value={settings.speed} onChange={event => { const speed = Number(event.target.value); if (speed >= model.speedMin && speed <= model.speedMax) update({ speed }) }} /></label>}

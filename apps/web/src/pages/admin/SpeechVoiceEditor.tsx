@@ -7,7 +7,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { ui } from '@/i18n/ui'
 import { speechVoiceIssues, type VoiceSettings } from './speech-voice-validation'
 
-export function SpeechVoiceEditor({ value, onChange, renderPreview }: { value: VoiceSettings; onChange: (value: VoiceSettings) => void; renderPreview?: (index: number) => ReactNode }) {
+export function SpeechVoiceEditor({ value, onChange, renderPreview, mistral = false }: { value: VoiceSettings; onChange: (value: VoiceSettings) => void; renderPreview?: (index: number) => ReactNode; mistral?: boolean }) {
   const id = useId()
   const [bulk, setBulk] = useState('')
   const [bulkError, setBulkError] = useState('')
@@ -15,7 +15,7 @@ export function SpeechVoiceEditor({ value, onChange, renderPreview }: { value: V
   const issues = speechVoiceIssues(value)
   const update = (index: number, patch: Partial<SpeechModel['voices'][number]>) => {
     const wasDefault = Boolean(defaultVoice) && voices[index]?.id.trim() === defaultVoice
-    onChange({ voices: voices.map((voice, i) => i === index ? { ...voice, ...patch } : voice),
+    onChange({ ...value, voices: voices.map((voice, i) => i === index ? { ...voice, ...patch } : voice),
       defaultVoice: wasDefault && patch.id !== undefined ? patch.id.trim() : defaultVoice })
   }
   const loadPreset = () => {
@@ -44,7 +44,7 @@ export function SpeechVoiceEditor({ value, onChange, renderPreview }: { value: V
       </div>
       {voices.map((voice, index) => <div key={index} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_3rem_2.25rem] items-start gap-2">
         <div className="min-w-0">
-          <Input aria-label={ui('Voice ID {{number}}', { number: index + 1 })} aria-invalid={Boolean(issues.rows[index]?.id)} aria-describedby={issues.rows[index]?.id ? `${id}-${index}-id` : undefined} value={voice.id} placeholder={ui('Voice ID')} onChange={event => update(index, { id: event.target.value })} />
+          <Input disabled={voice.kind === 'cloned'} aria-label={ui('Voice ID {{number}}', { number: index + 1 })} aria-invalid={Boolean(issues.rows[index]?.id)} aria-describedby={issues.rows[index]?.id ? `${id}-${index}-id` : undefined} value={voice.id} placeholder={ui('Voice ID')} onChange={event => update(index, { id: event.target.value })} />
           {issues.rows[index]?.id && <p id={`${id}-${index}-id`} className="mt-1 text-xs text-destructive">{issues.rows[index].id}</p>}
         </div>
         <div className="min-w-0">
@@ -54,16 +54,16 @@ export function SpeechVoiceEditor({ value, onChange, renderPreview }: { value: V
         <label className="flex h-9 cursor-pointer items-center justify-center">
           <input type="radio" name={`${id}-default`} className="size-4 appearance-none rounded-full border border-muted-foreground! bg-transparent checked:border-primary! checked:bg-primary checked:shadow-[inset_0_0_0_3px_var(--background)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:opacity-40" aria-label={ui('Use voice {{number}} as default', { number: index + 1 })} disabled={Boolean(issues.rows[index]?.id)} checked={Boolean(defaultVoice) && !issues.rows[index]?.id && voice.id.trim() === defaultVoice} onChange={() => onChange({ ...value, defaultVoice: voice.id.trim() })} />
         </label>
-        <Button type="button" variant="ghost" size="icon" aria-label={ui('Remove voice {{number}}', { number: index + 1 })} onClick={() => onChange({ voices: voices.filter((_, i) => i !== index), defaultVoice: voice.id.trim() === defaultVoice ? '' : defaultVoice })}><Trash2 className="size-4" /></Button>
+        <Button type="button" variant="ghost" size="icon" aria-label={ui('Remove voice {{number}}', { number: index + 1 })} onClick={() => onChange({ ...value, voices: voices.filter((_, i) => i !== index), defaultVoice: voice.id.trim() === defaultVoice ? '' : defaultVoice })}><Trash2 className="size-4" /></Button>
         {renderPreview && <div className="col-span-4 pb-2">{renderPreview(index)}</div>}
       </div>)}
     </div>
     {issues.selection && <p role="status" className="text-xs text-destructive">{issues.selection}</p>}
     <div className="flex flex-wrap gap-2">
       <Button type="button" variant="outline" size="sm" disabled={voices.length >= 200} onClick={() => onChange({ ...value, voices: [...voices, { id: '', label: '' }] })}><Plus className="size-4" />{ui('Add voice')}</Button>
-      <Button type="button" variant="outline" size="sm" onClick={loadPreset}>{ui('Load preset voices')}</Button>
+      {!mistral && <Button type="button" variant="outline" size="sm" onClick={loadPreset}>{ui('Load preset voices')}</Button>}
     </div>
-    <p className="text-xs text-muted-foreground">{ui('The GPT-4o mini TTS preset adds missing voices and keeps your existing names.')}</p>
+    {!mistral && <p className="text-xs text-muted-foreground">{ui('The GPT-4o mini TTS preset adds missing voices and keeps your existing names.')}</p>}
     <details className="rounded-md border p-3">
       <summary className="cursor-pointer text-sm">{ui('Bulk paste')}</summary>
       <div className="mt-3 space-y-2">

@@ -1,6 +1,7 @@
 import { parseBuffer } from 'music-metadata'
 import type { SpeechModel, SpeechRequest } from '@pulpo/contracts'
 import { AppError } from '../lib/errors.js'
+import { decodeSpeechBase64, mistralRequest } from './mistral.js'
 
 const MAX_AUDIO_BYTES = 24 * 1024 * 1024
 const fail = () => new AppError(502, 'speech_provider_error', 'Speech provider returned invalid audio or usage')
@@ -12,9 +13,17 @@ function requireTokenUsage(usage: SpeechUsage | undefined): asserts usage is Spe
 }
 export async function generateSpeech(options: {
   baseUrl: string; apiKey: string; organizationId?: string | null; projectId?: string | null;
-  model: SpeechModel; input: SpeechRequest; signal: AbortSignal;
+  model: SpeechModel; input: SpeechRequest; signal: AbortSignal; upstreamVoiceId?: string;
 }, fetcher: typeof fetch = fetch) {
   const { model, input, signal } = options
+  if (model.adapter === 'mistral') {
+    const response = await mistralRequest(options, '/audio/speech', 'POST', {
+      model: model.upstreamModelId, input: input.input, voice_id: options.upstreamVoiceId ?? input.voice,
+      response_format: model.responseFormat, stream: false,
+    }, fetcher)
+    const audio = decodeSpeechBase64(response && typeof response === 'object' && 'audio_data' in response ? response.audio_data : undefined)
+    return { audio, durationSeconds: await speechAudioDuration(audio, model.responseFormat), usage: undefined }
+  }
   const response = await fetcher(`${options.baseUrl.replace(/\/+$/, '')}/audio/speech`, {
     method: 'POST', signal, redirect: 'error',
     headers: { 'content-type': 'application/json', authorization: `Bearer ${options.apiKey}`,
@@ -65,12 +74,19 @@ export async function generateSpeech(options: {
     if (model.billUsers && model.billingUnit === 'tokens') requireTokenUsage(usage)
     const audio = Buffer.concat(pieces)
     if (!audio.length) throw fail()
-    const metadata = await parseBuffer(audio, { mimeType: model.responseFormat === 'mp3' ? 'audio/mpeg' : 'audio/wav' }, { duration: true })
-    if (metadata.format.container !== (model.responseFormat === 'wav' ? 'WAVE' : 'MPEG')) throw fail()
-    const durationSeconds = metadata.format.duration
-    if (!durationSeconds || !Number.isFinite(durationSeconds) || durationSeconds <= 0 || durationSeconds > 1800) throw fail()
+    const durationSeconds = await speechAudioDuration(audio, model.responseFormat)
     return { audio, durationSeconds, usage }
   } finally { await reader.cancel().catch(() => {}); reader.releaseLock() }
+}
+
+export async function speechAudioDuration(audio: Buffer, format: 'mp3' | 'wav'): Promise<number> {
+  try {
+    const metadata = await parseBuffer(audio, { mimeType: format === 'mp3' ? 'audio/mpeg' : 'audio/wav' }, { duration: true })
+    if (metadata.format.container !== (format === 'wav' ? 'WAVE' : 'MPEG')) throw fail()
+    const duration = metadata.format.duration
+    if (!duration || !Number.isFinite(duration) || duration <= 0 || duration > 1800) throw fail()
+    return duration
+  } catch { throw fail() }
 }
 
 export function speechCost(model: SpeechModel, input: string, durationSeconds: number, usage?: SpeechUsage): number {

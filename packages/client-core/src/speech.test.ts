@@ -75,3 +75,15 @@ describe('speech playback', () => {
     expect(player.getSnapshot().error).toBe('autoplay blocked'); expect(audio.dispose).toHaveBeenCalledOnce()
   })
 })
+
+it('carries generated duration through prefetch to keep watermark phase across chunks', async () => {
+  const player = new SpeechPlayback(); const offsets: number[] = []; const durations = [1.25, 2, 0.5]
+  await player.start('voice', ['a', 'b', 'c'], async (_, _signal, offset) => {
+    offsets.push(offset)
+    return { durationSeconds: durations[offsets.length - 1], dispose() {}, play: async () => {} }
+  })
+  expect(offsets).toEqual([0, 1.25, 3.25])
+  offsets.length = 0
+  await player.start('legacy', ['a', 'b'], async (_, _signal, offset) => { offsets.push(offset); return { dispose() {}, play: async () => {} } })
+  expect(offsets).toEqual([0, 0])
+})

@@ -17,6 +17,7 @@ COPY apps/server apps/server
 RUN npm run build -w @pulpo/contracts && npm run build -w @pulpo/client-core && npm run build -w @pulpo/server
 
 FROM node:22-bookworm-slim AS runtime
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 ENV NODE_ENV=production
 COPY package.json package-lock.json ./
