@@ -1,8 +1,9 @@
 # Production deployments
 
 Production uses a persistent Coolify infrastructure application and three independent
-Dockerfile applications. Local Compose and development/PR previews keep using
-`compose.yaml`.
+Dockerfile applications. Persistent development follows the same separation; see
+[development deployments](development-deployments.md). Local Compose and disposable
+PR previews use `compose.yaml`.
 
 | Resource | Configuration | Health | Shutdown budget |
 | --- | --- | --- | --- |

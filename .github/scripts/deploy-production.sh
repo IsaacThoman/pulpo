@@ -4,11 +4,11 @@ set -euo pipefail
 commit_sha="${1:?release commit SHA is required}"
 : "${COOLIFY_URL:?Coolify URL is required}"
 : "${COOLIFY_TOKEN:?Coolify API token is required}"
-: "${COOLIFY_APP_UUID:?production API UUID is required}"
-: "${COOLIFY_WORKER_APP_UUID:?production worker UUID is required}"
-: "${COOLIFY_WEB_APP_UUID:?production web UUID is required}"
+: "${COOLIFY_APP_UUID:?API UUID is required}"
+: "${COOLIFY_WORKER_APP_UUID:?worker UUID is required}"
+: "${COOLIFY_WEB_APP_UUID:?web UUID is required}"
 if [[ "$COOLIFY_APP_UUID" == "$COOLIFY_WORKER_APP_UUID" || "$COOLIFY_APP_UUID" == "$COOLIFY_WEB_APP_UUID" || "$COOLIFY_WORKER_APP_UUID" == "$COOLIFY_WEB_APP_UUID" ]]; then
-  echo 'Production API, worker, and web must be separate Coolify applications.' >&2
+  echo 'API, worker, and web must be separate Coolify applications.' >&2
   exit 1
 fi
 
@@ -19,7 +19,7 @@ if [[ "$coolify_api_url" != */api/v1 ]]; then coolify_api_url="$coolify_api_url/
 for application_uuid in "$COOLIFY_APP_UUID" "$COOLIFY_WORKER_APP_UUID" "$COOLIFY_WEB_APP_UUID"; do
   coolify app get "$application_uuid" --format json | \
     jq -e '.build_pack == "dockerfile" and .health_check_enabled == true' >/dev/null || {
-      echo "Production application $application_uuid must use Dockerfile deployment with health checks." >&2
+      echo "Application $application_uuid must use Dockerfile deployment with health checks." >&2
       exit 1
     }
   # The CLI masks even non-secret boolean values. Read through the API and
@@ -28,7 +28,7 @@ for application_uuid in "$COOLIFY_APP_UUID" "$COOLIFY_WORKER_APP_UUID" "$COOLIFY
     --header "Authorization: Bearer $COOLIFY_TOKEN" \
     "$coolify_api_url/applications/$application_uuid/envs" | \
     jq -e '[.[] | select(.key == "COMPOSE_REMOVE_ORPHANS" and .is_preview != true)] | length > 0 and all(.value == "false" or .value == "0")' >/dev/null || {
-      echo "Set COMPOSE_REMOVE_ORPHANS=false on production application $application_uuid before deploying." >&2
+      echo "Set COMPOSE_REMOVE_ORPHANS=false on application $application_uuid before deploying." >&2
       exit 1
     }
 done

@@ -76,6 +76,10 @@ jobs:
         if: matrix.name == 'Build'
         run: bash .github/scripts/validate-coolify-deployment-boundaries.sh
 
+      - name: Test preview cleanup safety
+        if: matrix.name == 'Test'
+        run: python3 -m unittest discover -s infra/preview-maintenance -p 'test_*.py'
+
       - name: Validate production deployment ordering
         run: python3 .github/scripts/deploy-production_test.py
 
@@ -742,10 +746,8 @@ jobs:
 
   deploy-preview:
     name: Deploy Coolify preview
-    # Never use the production application as a preview parent. Coolify preview
-    # cleanup is application-scoped and can remove the parent's live containers.
-    # Changes promoted from dev to main are already exercised by the persistent
-    # development deployment.
+    # Persistent development and production must never be preview parents.
+    # The preview-only parent owns disposable PR stacks, with no base deployment.
     if: >-
       github.event_name == 'pull_request' &&
       github.event.action != 'closed' &&
@@ -758,7 +760,7 @@ jobs:
     env:
       COOLIFY_URL: ${{ vars.COOLIFY_URL }}
       COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
-      COOLIFY_APP_UUID: ${{ vars.COOLIFY_PULPO_DEV_APP_UUID }}
+      COOLIFY_APP_UUID: ${{ vars.COOLIFY_PULPO_PREVIEW_APP_UUID }}
       PULL_REQUEST_ID: ${{ github.event.pull_request.number }}
       PULL_REQUEST_SHA: ${{ github.event.pull_request.head.sha }}
       PULL_REQUEST_BASE_SHA: ${{ github.event.pull_request.base.sha }}
@@ -834,7 +836,9 @@ jobs:
     env:
       COOLIFY_URL: ${{ vars.COOLIFY_URL }}
       COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
-      COOLIFY_APP_UUID: ${{ vars.COOLIFY_PULPO_DEV_APP_UUID }}
+      COOLIFY_APP_UUID: ${{ vars.COOLIFY_PULPO_PREVIEW_APP_UUID }}
+      COOLIFY_PREVIEW_MAINTENANCE_APP_UUID: ${{ vars.COOLIFY_PULPO_PREVIEW_MAINTENANCE_APP_UUID }}
+      COOLIFY_PREVIEW_MAINTENANCE_TASK_UUID: ${{ vars.COOLIFY_PULPO_PREVIEW_MAINTENANCE_TASK_UUID }}
       PULL_REQUEST_ID: ${{ github.event.pull_request.number }}
     steps:
       - name: Check out repository
@@ -857,6 +861,10 @@ jobs:
             exit 1
           fi
 
+      - name: Reconcile closed preview containers and volumes
+        if: always()
+        run: python3 .github/scripts/run-preview-maintenance.py
+
   deploy-development:
     name: Deploy Coolify development
     if: >-
@@ -871,6 +879,8 @@ jobs:
       COOLIFY_URL: ${{ vars.COOLIFY_URL }}
       COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
       COOLIFY_APP_UUID: ${{ vars.COOLIFY_PULPO_DEV_APP_UUID }}
+      COOLIFY_WORKER_APP_UUID: ${{ vars.COOLIFY_PULPO_DEV_WORKER_APP_UUID }}
+      COOLIFY_WEB_APP_UUID: ${{ vars.COOLIFY_PULPO_DEV_WEB_APP_UUID }}
       DEVELOPMENT_URL: ${{ vars.PULPO_DEVELOPMENT_URL }}
     steps:
       - name: Check out repository
@@ -879,12 +889,8 @@ jobs:
       - name: Set up Coolify CLI
         run: bash .github/scripts/setup-coolify.sh
 
-      - name: Deploy validated development commit
-        id: deploy
-        run: bash .github/scripts/deploy-coolify-commit.sh "${GITHUB_SHA}"
-
-      - name: Wait for healthy development deployment
-        run: bash .github/scripts/wait-coolify-deployment.sh "${{ steps.deploy.outputs.deployment_uuid }}"
+      - name: Migrate and roll out development API, worker, and web
+        run: bash .github/scripts/deploy-production.sh "${GITHUB_SHA}"
 
       - name: Validate development edge health
         run: bash .github/scripts/wait-http-health.sh "${DEVELOPMENT_URL%/}/health" development 90 2
