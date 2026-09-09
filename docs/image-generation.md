@@ -38,8 +38,8 @@ Generation and reasoning options remain at provider defaults.
 
 ## User settings and tool inputs
 
-On web and desktop, open **Settings → Interface → Image generation**. On mobile,
-open **Settings → Interface → Image generation**. Choose a model and enable image
+On web and desktop, open **Settings → Agent → Image generation**. On mobile,
+open **Settings → Agent → Image generation**. Choose a model and enable image
 generation; the setting and selected model sync with the account. New and existing
 accounts default to `{ "enabled": false, "modelId": null }`. An unavailable
 selection is retained, and another provider is never selected automatically.

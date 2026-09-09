@@ -60,4 +60,11 @@ captures and logs are excluded from the commit.
 No live Azure or Meta calls were made: test credentials were not supplied or
 present in the environment. Before enabling a deployment, run one text generation
 and one follow-up attachment edit for each provider, then verify the saved image
-and configured user charge. There was no deployment or merge as part of this work.
+and configured user charge. No deployment or merge of this PR into `dev` was performed.
+
+## Agent settings category follow-up
+
+Moved image generation under Settings → Agent on web, desktop, and mobile and
+merged the latest `dev` into the feature branch. The affected web settings,
+localization, and chat preset suites passed (91 tests); mobile image settings
+passed (2 tests). Web build, mobile typecheck, and repository lint passed.

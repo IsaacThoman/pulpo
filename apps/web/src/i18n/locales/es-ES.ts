@@ -190,6 +190,7 @@ const esES = {
   settings: {
     title: 'Ajustes',
     sections: {
+      agent: 'Agente',
       speech: 'Voz',
       general: 'General',
       profile: 'Perfil',
