@@ -127,6 +127,7 @@ export function Composer({
   onMessageEditComplete,
   onEditStateChange,
   temporaryControlRef,
+  suggestionControlRef,
   onTemporaryChange,
 }: {
   chatId: string | null
@@ -140,6 +141,7 @@ export function Composer({
   onMessageEditComplete?: (result: 'saved' | 'cancelled') => void
   onEditStateChange?: (active: boolean) => void
   temporaryControlRef?: Ref<{ toggle: () => Promise<void> }>
+  suggestionControlRef?: Ref<{ submit: (message: string) => void }>
   onTemporaryChange?: (temporary: boolean) => void
 }) {
   const { t } = useTranslation()
@@ -233,10 +235,20 @@ export function Composer({
   const overrides = useModelConfig((s) => s.overrides)
   const generation = useSettings((s) => s.generation)
   const sendWithEnter = useSettings((s) => s.sendWithEnter)
-  const [draftPresets, setDraftPresets] = useState<Record<string, Record<string, string>>>({})
+  // Starting a chat remounts the composer. Seed its controls from the submitted
+  // turn (including uploads still waiting in the outbox), before draft sync opens
+  // the new chat's independent slot. An existing synced draft still takes priority.
+  const [initialControls] = useState(() => {
+    if (!chatId) return undefined
+    return useUploadOutbox.getState().submissions.findLast((item) => item.chatId === chatId && item.modelId === modelId)
+      ?? useChat.getState().chats.find((chat) => chat.id === chatId)?.messages.findLast((message) => message.role === 'assistant' && message.modelId === modelId)
+  })
+  const [draftPresets, setDraftPresets] = useState<Record<string, Record<string, string>>>(() => (
+    initialControls?.presetSelections ? { [modelId]: initialControls.presetSelections } : {}
+  ))
   const setPresetChoice = (id: string, preset: string, choice: string) => setDraftPresets((current) => ({ ...current, [id]: { ...generation[id], ...current[id], [preset]: choice } }))
   const defaultAgentMode = useSettings((s) => s.agentModes[modelId] ?? true)
-  const [draftAgentMode, setDraftAgentMode] = useState<boolean | null>(null)
+  const [draftAgentMode, setDraftAgentMode] = useState<boolean | null>(initialControls?.agentMode ?? null)
   const agentModeEnabled = draftAgentMode ?? defaultAgentMode
   const setAgentMode = (_id: string, enabled: boolean) => setDraftAgentMode(enabled)
   const agentAvailable = useCatalog((s) => s.agentAvailable)
@@ -698,6 +710,34 @@ export function Composer({
     size: attachment.size,
   }))
 
+  const stageMessage = (text: string, ids: string[], submittedState?: ComposerState, revision?: number) => {
+    const staged = stageSubmission({
+      composerDraft: userId && composerSync && submittedState ? { userId, draftId, state: submittedState, revision } : undefined,
+      chatId,
+      content: text,
+      modelId,
+      presetSelections: selections,
+      agentMode: activeAgentMode && canUseAgent,
+      temporary,
+      autoExpire,
+      attachmentIds: ids,
+    })
+    if (!chatId && staged.chatId && !temporary) navigate(`/c/${staged.chatId}`)
+  }
+
+  const suggestionSubmitted = useRef(false)
+  useImperativeHandle(suggestionControlRef, () => ({
+    submit: (message: string) => {
+      if (chatId || !modelId || !message.trim() || !desktopCanMutate || !draftHydrated
+        || handoffBusyRef.current || shelfBusyRef.current || submitting || editingExisting || recovery
+        || dictationState !== 'idle' || suggestionSubmitted.current) return
+      suggestionSubmitted.current = true
+      // Suggestions send only their own text. Keep any typed draft and uploads
+      // in the new-chat slot, and do not issue a sync clear for that draft.
+      stageMessage(message.trim(), [])
+    },
+  }))
+
   const submit = async () => {
     const text = value.trim()
     if (!canSend) return
@@ -759,18 +799,7 @@ export function Composer({
     setSubmitting(true)
     const submittedRevision = await composerSync?.prepareSubmission(draftId, sharedComposerState)
     setSubmitting(false)
-    const staged = stageSubmission({
-      composerDraft: userId && composerSync ? { userId, draftId, state: sharedComposerState, revision: submittedRevision ?? undefined } : undefined,
-      chatId,
-      content: text,
-      modelId,
-      presetSelections: selections,
-      agentMode: activeAgentMode && canUseAgent,
-      temporary,
-      autoExpire,
-      attachmentIds,
-    })
-    if (!chatId && staged.chatId && !temporary) navigate(`/c/${staged.chatId}`)
+    stageMessage(text, attachmentIds, sharedComposerState, submittedRevision ?? undefined)
     if (valueRef.current === value && attachmentIdsRef.current === attachmentIds) {
       skipNextEdit()
       clearDraft(false)
