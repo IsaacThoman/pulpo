@@ -92,6 +92,7 @@ import {
   Image as SwiftUIImage,
   Label as SwiftUILabel,
   Menu as SwiftUIMenu,
+  Picker as SwiftUIPicker,
   RNHostView as SwiftUIRNHostView,
   Section as SwiftUISection,
   Spacer as SwiftUISpacer,
@@ -115,9 +116,12 @@ import {
   glassEffect as swiftUIGlassEffect,
   labelStyle,
   menuActionDismissBehavior,
+  menuOrder,
   padding,
+  pickerStyle,
   resizable,
   shapes,
+  tag,
   textFieldStyle,
   tint,
 } from '@expo/ui/swift-ui/modifiers';
@@ -136,6 +140,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { workspaceContinueWithoutAgentAvailableAtMs } from '@pulpo/contracts';
 import {
   Bot,
+  BotOff,
   Brain,
   Ghost,
   History,
@@ -4233,9 +4238,8 @@ function ChatView({
       });
   }, [expirationBadgeProgress, landingBadge?.kind, reduceMotion]);
 
-  const toggleAgent = useCallback(() => {
-    if (!canUseAgent) return;
-    const next = !activeAgentEnabled;
+  const selectAgent = useCallback((next: boolean) => {
+    if (!canUseAgent || next === activeAgentEnabled) return;
     setAgentEnabled(next);
     Haptics.selectionAsync();
   }, [activeAgentEnabled, canUseAgent]);
@@ -5117,6 +5121,8 @@ function ChatView({
 
   const nativeAgentTint = colorScheme === 'dark' ? '#BF5AF2' : '#AF52DE';
   const nativeAgentForeground = activeAgentEnabled ? '#ffffff' : colorScheme === 'dark' ? '#f2f2f7' : '#1c1c1e';
+  const agentLabel = activeAgentEnabled ? 'Pulpo Small' : 'Disabled';
+  const AgentIcon = activeAgentEnabled ? Bot : BotOff;
 
   const updateBottomProximity = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const { contentOffset, contentInset, contentSize, layoutMeasurement } = event.nativeEvent;
@@ -5757,29 +5763,47 @@ function ChatView({
                 ))}
                 {Platform.OS === 'ios' ? (
                   <SwiftUIHost ignoreSafeArea="keyboard" style={styles.nativeAgentHost}>
-                    <SwiftUIButton
-                      onPress={() => {
-                        toggleAgent();
-                      }}
+                    <SwiftUIMenu
+                      label={(
+                        <SwiftUIRNHostView matchContents>
+                          <View pointerEvents="none" style={styles.nativeAgentIcon}>
+                            <AgentIcon color={nativeAgentForeground} size={13} strokeWidth={2} />
+                          </View>
+                        </SwiftUIRNHostView>
+                      )}
                       modifiers={[
                         buttonStyle(activeAgentEnabled ? 'glassProminent' : 'glass'),
                         buttonBorderShape('circle'),
                         controlSize('regular'),
                         tint(nativeAgentTint),
+                        menuOrder('fixed'),
                         swiftUIDisabled(!canUseAgent),
-                        swiftUIAccessibilityLabel('Agent mode'),
-                        swiftUIAccessibilityHint(!agentAvailable ? 'Unavailable on this Pulpo instance.' : !model.agentEnabled ? 'Unavailable for this model.' : activeAgentEnabled ? 'On. Double tap to turn off.' : 'Off. Double tap to turn on.'),
+                        swiftUIAccessibilityLabel(`Agent options, ${agentLabel}`),
+                        swiftUIAccessibilityHint(!agentAvailable ? 'Unavailable on this Pulpo instance.' : !model.agentEnabled ? 'Unavailable for this model.' : 'Opens agent choices'),
                       ]}
                     >
-                      <SwiftUIRNHostView matchContents>
-                        <View pointerEvents="none" style={styles.nativeAgentIcon}>
-                          <Bot color={nativeAgentForeground} size={13} strokeWidth={2} />
-                        </View>
-                      </SwiftUIRNHostView>
-                    </SwiftUIButton>
+                      <SwiftUIPicker
+                        label="Agent"
+                        selection={activeAgentEnabled ? 'small' : 'disabled'}
+                        onSelectionChange={(selection: string) => selectAgent(selection === 'small')}
+                        modifiers={[pickerStyle('inline')]}
+                      >
+                        {[true, false].map((enabled) => (
+                          <SwiftUILabel
+                            key={String(enabled)}
+                            title={enabled ? 'Pulpo Small' : 'Disabled'}
+                            icon={<SwiftUIImage assetName={enabled ? 'LucideBot' : 'LucideBotOff'} modifiers={[resizable(), frame({ width: 20, height: 20 })]} />}
+                            modifiers={[tag(enabled ? 'small' : 'disabled')]}
+                          />
+                        ))}
+                      </SwiftUIPicker>
+                    </SwiftUIMenu>
                   </SwiftUIHost>
                 ) : (
-                  <MaterialIconButton label={activeAgentEnabled ? 'Turn off Agent mode' : 'Turn on Agent mode'} icon="bot" color={activeAgentEnabled ? nativeAgentTint : undefined} disabled={!canUseAgent} onPress={toggleAgent} />
+                  <MaterialMenu label={`Agent options, ${agentLabel}`} icon={activeAgentEnabled ? 'bot' : 'bot-off'} color={activeAgentEnabled ? nativeAgentTint : undefined} disabled={!canUseAgent} actions={[
+                    { label: 'Pulpo Small', icon: 'bot', selected: activeAgentEnabled, onPress: () => selectAgent(true) },
+                    { label: 'Disabled', icon: 'bot-off', selected: !activeAgentEnabled, onPress: () => selectAgent(false) },
+                  ]} />
                 )}
                 <View style={styles.flex} />
                 {dictationEnabled && (Platform.OS === 'ios'
