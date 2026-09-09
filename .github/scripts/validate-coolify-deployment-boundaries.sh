@@ -25,12 +25,12 @@ require_preview_boundary() {
     echo "${job} must be limited to pull requests targeting dev." >&2
     return 1
   }
-  grep -Fq 'COOLIFY_APP_UUID: ${{ vars.COOLIFY_PULPO_DEV_APP_UUID }}' <<< "${block}" || {
-    echo "${job} must use only the development Coolify application." >&2
+  grep -Fq 'COOLIFY_APP_UUID: ${{ vars.COOLIFY_PULPO_PREVIEW_APP_UUID }}' <<< "${block}" || {
+    echo "${job} must use only the dedicated preview Coolify application." >&2
     return 1
   }
-  if grep -Fq 'COOLIFY_PULPO_APP_UUID' <<< "${block}"; then
-    echo "${job} must never reference the production Coolify application." >&2
+  if grep -Eq 'COOLIFY_PULPO_(DEV_)?(APP|WORKER_APP|WEB_APP)_UUID' <<< "${block}"; then
+    echo "${job} must never reference a persistent Coolify application." >&2
     return 1
   fi
 }
@@ -38,4 +38,4 @@ require_preview_boundary() {
 require_preview_boundary deploy-preview
 require_preview_boundary cleanup-preview
 
-echo 'Coolify preview deploy and cleanup jobs are isolated from production.'
+echo 'Coolify preview deploy and cleanup jobs are isolated from persistent development and production.'
