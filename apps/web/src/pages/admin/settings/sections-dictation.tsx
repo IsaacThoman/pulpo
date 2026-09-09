@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { AlertCircle } from 'lucide-react'
 import { NumField, SaveBar, SecretField, Section, Toggle } from '@/components/admin/kit'
+import { SensitiveRevealDialog } from '@/components/admin/SensitiveRevealDialog'
+import { useSavedSecret } from '@/components/admin/useSavedSecret'
 import { apiRequest } from '@/lib/api'
 import { useAuth } from '@/stores/auth'
 import { ui } from '@/i18n/ui'
@@ -15,7 +17,7 @@ interface DictationSettingsResponse {
 export function DictationSection() {
   const [enabled, setEnabled] = useState(false)
   const [hasApiKey, setHasApiKey] = useState(false)
-  const [groqApiKey, setGroqApiKey] = useState('')
+  const groqApiKey = useSavedSecret(hasApiKey, '/api/admin/settings/dictation/api-key/reveal')
   const [billUsers, setBillUsers] = useState(false)
   const [pricePerMinuteMicros, setPricePerMinuteMicros] = useState(10_000)
 
@@ -28,7 +30,7 @@ export function DictationSection() {
     })
   }, [])
 
-  const keyAvailable = hasApiKey || Boolean(groqApiKey.trim())
+  const keyAvailable = hasApiKey || Boolean(groqApiKey.value.trim())
   return <div>
     <Section title={ui("Dictation")} hint="Transcribe microphone recordings on the server with Groq Whisper Large v3 Turbo. Audio is not retained by Pulpo.">
       <Toggle
@@ -49,26 +51,28 @@ export function DictationSection() {
         suffix="USD"
       />}
     </Section>
-    <Section title={ui("Groq")} hint="The API key is encrypted on the Pulpo server and is never sent to the browser.">
+    <Section title={ui("Groq")} hint={ui("The API key is encrypted on the Pulpo server. Confirm your identity to reveal the saved key.")}>
       <SecretField
         label={ui("Groq API key")}
         hint={hasApiKey ? 'Configured — leave blank to keep' : 'Required before dictation can be enabled'}
-        value={groqApiKey}
-        onChange={setGroqApiKey}
-        configured={hasApiKey}
+        {...groqApiKey.fieldProps}
       />
     </Section>
     <SaveBar onSave={async () => {
       if (enabled && !keyAvailable) throw new Error(ui("Configure a Groq API key before enabling dictation"))
       const saved = await apiRequest<DictationSettingsResponse>('/api/admin/settings/dictation', {
-        method: 'PATCH', body: { enabled, billUsers, pricePerMinuteMicros, ...(groqApiKey.trim() ? { groqApiKey: groqApiKey.trim() } : {}) },
+        method: 'PATCH', body: { enabled, billUsers, pricePerMinuteMicros, ...(groqApiKey.replacement.trim() ? { groqApiKey: groqApiKey.replacement.trim() } : {}) },
       })
       setEnabled(saved.enabled)
       setHasApiKey(saved.hasApiKey)
-      setGroqApiKey('')
+      groqApiKey.reset()
       setBillUsers(saved.billUsers)
       setPricePerMinuteMicros(saved.pricePerMinuteMicros)
       useAuth.setState({ dictationEnabled: saved.enabled && saved.hasApiKey })
     }} />
+    <SensitiveRevealDialog
+      {...groqApiKey.dialogProps}
+      description={ui("Groq API keys are sensitive. Confirm your identity before revealing this saved key.")}
+    />
   </div>
 }
