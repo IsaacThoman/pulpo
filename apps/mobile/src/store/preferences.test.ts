@@ -21,7 +21,7 @@ describe('production preference mapping', () => {
       generation: { 'model-a': { reasoning: 'high', style: 'concise' } },
       agentModes: { 'model-a': false, 'model-b': true },
     })).toEqual({
-      speech: { modelId: null, models: {} },
+      imageGeneration: { enabled: false, modelId: null }, speech: { modelId: null, models: {} },
       composerSyncEnabled: true, showPromptSuggestions: true,
       theme: 'dark', attachmentCacheMb: 96, localChatLimit: 50,
       trashRetention: '7d', automaticChatExpiration: '24h', newChatAutoExpire: false, memoryEnabled: true,
@@ -48,7 +48,7 @@ describe('production preference mapping', () => {
   })
 
   it('clears synchronized model preferences when older servers omit them', () => {
-    expect(preferencesFromServer({})).toEqual({ speech: { modelId: null, models: {} }, composerSyncEnabled: true, showPromptSuggestions: true, favoriteModelIds: [], providerOrder: [], generation: {}, agentModes: {} })
+    expect(preferencesFromServer({})).toEqual({ imageGeneration: { enabled: false, modelId: null }, speech: { modelId: null, models: {} }, composerSyncEnabled: true, showPromptSuggestions: true, favoriteModelIds: [], providerOrder: [], generation: {}, agentModes: {} })
   })
 
   it('filters malformed generation preferences from server settings', () => {
@@ -75,4 +75,11 @@ it('round-trips speech preferences across clients and clears malformed legacy va
   expect(preferencesFromServer({ speech }).speech).toEqual(speech)
   expect(preferencePatchForServer('speech', speech)).toEqual({ speech })
   expect(preferencesFromServer({ speech: { models: { tts: { speed: 9 } } } }).speech).toEqual({ modelId: null, models: {} })
+})
+
+it('round-trips image opt-in and preserves unavailable model IDs', () => {
+  const imageGeneration = { enabled: true, modelId: 'retired-image' }
+  expect(preferencesFromServer({ imageGeneration }).imageGeneration).toEqual(imageGeneration)
+  expect(preferencePatchForServer('imageGeneration', imageGeneration)).toEqual({ imageGeneration })
+  expect(preferencesFromServer({ imageGeneration: { enabled: 'yes' } }).imageGeneration).toEqual({ enabled: false, modelId: null })
 })

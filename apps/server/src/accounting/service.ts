@@ -459,7 +459,7 @@ export async function extendBudgetReservationFixedCost(responseId: string, addit
       reservationFiveHourPeriodStart: reservation.fiveHourPeriodStart,
       currentFiveHourPeriodStart: entitlements.fiveHourPeriodStart,
     })
-    await replaceReservationFunding(tx, reservation, allocation.balanceMicros, 'Insufficient balance for the requested web tool')
+    await replaceReservationFunding(tx, reservation, allocation.balanceMicros, 'Insufficient balance for the requested agent tool')
     await tx.update(budgetReservations).set({
       amountMicros: amount,
       weeklyReservedMicros: allocation.weeklyMicros,

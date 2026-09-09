@@ -178,6 +178,7 @@ export async function hydrateProductionScope(namespace: string): Promise<void> {
         agentAvailable: catalog?.agentAvailable ?? false,
         preferences: {
           ...state.preferences,
+          imageGeneration: preferences.imageGeneration,
           speech: preferences.speech,
           theme: preferences.theme,
           textSize: preferences.textSize,
@@ -296,6 +297,7 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
   // Keep composer-only changes (notably per-model preset selections) from
   // rebuilding the model catalogue and every native model control.
   const preferences = usePreferencesStore(useShallow((state) => ({
+    imageGeneration: state.imageGeneration,
     speech: state.speech,
     theme: state.theme,
     textSize: state.textSize,
@@ -451,6 +453,7 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
       return {
         preferences: {
           ...state.preferences,
+          imageGeneration: preferences.imageGeneration,
           speech: preferences.speech,
           theme: preferences.theme,
           textSize: preferences.textSize,

@@ -1250,3 +1250,22 @@ export const speechResourceCleanup = pgTable('speech_resource_cleanup', {
   error: text('error'),
   ...timestamps,
 })
+
+export const imageModels = pgTable('image_models', {
+  id: text('id').primaryKey(),
+  providerConnectionId: uuid('provider_connection_id').notNull().references(() => providerConnections.id, { onDelete: 'restrict' }),
+  config: jsonb('config').notNull().$type<import('@pulpo/contracts').ImageModel>(),
+  ...timestamps,
+})
+
+// A durable claim survives worker restarts. An uncertain request must never be replayed upstream.
+export const imageGenerationRequests = pgTable('image_generation_requests', {
+  responseId: uuid('response_id').notNull().references(() => responses.id, { onDelete: 'cascade' }),
+  operationId: text('operation_id').notNull(),
+  status: text('status').notNull().default('claimed'),
+  model: jsonb('model').notNull().$type<import('@pulpo/contracts').ImageModel>(),
+  attachmentId: uuid('attachment_id').references(() => attachments.id, { onDelete: 'set null' }),
+  result: jsonb('result').$type<import('../image-generation/provider.js').ImageResultMetadata>(),
+  billedCostMicros: bigint('billed_cost_micros', { mode: 'number' }).notNull().default(0),
+  ...timestamps,
+}, table => [primaryKey({ columns: [table.responseId, table.operationId] })])

@@ -1,10 +1,11 @@
-import { speechPreferencesSchema, type SpeechPreferences } from '@pulpo/contracts'
+import { imageGenerationPreferencesSchema, type ImageGenerationPreferences, speechPreferencesSchema, type SpeechPreferences } from '@pulpo/contracts'
 export type ThemePreference = 'system' | 'light' | 'dark'
 export type TextSizePreference = 'default' | 'large' | 'extra-large'
 export type TrashRetentionPreference = 'instant' | '24h' | '7d' | '30d' | '90d' | 'indefinite'
 export type AutomaticChatExpirationPreference = 'disabled' | '24h' | '7d'
 
 export interface Preferences {
+  imageGeneration: ImageGenerationPreferences
   speech: SpeechPreferences
   theme: ThemePreference
   textSize: TextSizePreference
@@ -30,6 +31,7 @@ export interface Preferences {
 }
 
 export const defaultPreferences: Preferences = {
+  imageGeneration: imageGenerationPreferencesSchema.parse(undefined),
   speech: speechPreferencesSchema.parse(undefined),
   theme: 'system', textSize: 'default', streamResponses: true, showPromptSuggestions: true, showReasoning: true, memoryEnabled: false,
   haptics: true, composerSyncEnabled: true, sendWithEnter: true, attachmentCacheMb: 256, localChatLimit: 50,
@@ -42,6 +44,7 @@ const automaticChatExpirationValues: AutomaticChatExpirationPreference[] = ['dis
 
 export function preferencesFromServer(values: Record<string, unknown>): Partial<Preferences> {
   const result: Partial<Preferences> = {
+    imageGeneration: imageGenerationPreferencesSchema.catch({ enabled: false, modelId: null }).parse(values.imageGeneration),
     speech: speechPreferencesSchema.catch({ modelId: null, models: {} }).parse(values.speech),
     favoriteModelIds: validOrderedIds(values.favoriteModelIds),
     providerOrder: validOrderedIds(values.providerOrder),
@@ -97,7 +100,7 @@ function validAgentModes(value: unknown): Preferences['agentModes'] {
 
 export function serverPreferenceKey(key: keyof Preferences): string | null {
   return key === 'attachmentCacheMb' ? 'localAttachmentCacheMb'
-    : ['speech', 'composerSyncEnabled', 'theme', 'sendWithEnter', 'streamResponses', 'showPromptSuggestions', 'showReasoning', 'memoryEnabled', 'localChatLimit', 'trashRetention', 'automaticChatExpiration', 'newChatAutoExpire', 'defaultModelId', 'favoriteModelIds', 'providerOrder', 'generation', 'agentModes'].includes(key)
+    : ['imageGeneration', 'speech', 'composerSyncEnabled', 'theme', 'sendWithEnter', 'streamResponses', 'showPromptSuggestions', 'showReasoning', 'memoryEnabled', 'localChatLimit', 'trashRetention', 'automaticChatExpiration', 'newChatAutoExpire', 'defaultModelId', 'favoriteModelIds', 'providerOrder', 'generation', 'agentModes'].includes(key)
       ? key
       : null
 }

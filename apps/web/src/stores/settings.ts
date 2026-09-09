@@ -1,4 +1,4 @@
-import { speechPreferencesSchema, type SpeechPreferences } from '@pulpo/contracts'
+import { imageGenerationPreferencesSchema, type ImageGenerationPreferences, speechPreferencesSchema, type SpeechPreferences } from '@pulpo/contracts'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { SidebarPins } from '@pulpo/contracts'
@@ -22,6 +22,7 @@ export type AutomaticChatExpiration = 'disabled' | '24h' | '7d'
 export type GenerationPrefs = Record<string, string>
 
 export interface SettingsState {
+  imageGeneration: ImageGenerationPreferences
   speech: SpeechPreferences
   ownerUserId: string | null
   theme: Theme
@@ -60,6 +61,7 @@ export interface SettingsState {
 }
 
 export const DEFAULT_SETTINGS = {
+  imageGeneration: imageGenerationPreferencesSchema.parse(undefined),
   speech: speechPreferencesSchema.parse(undefined),
   theme: 'system' as Theme,
   language: 'en-US' as Language,
@@ -117,6 +119,7 @@ export const useSettings = create<SettingsState>()(
         return {
           ...current,
           ...saved,
+          imageGeneration: imageGenerationPreferencesSchema.catch({ enabled: false, modelId: null }).parse(saved.imageGeneration),
           speech: speechPreferencesSchema.catch({ modelId: null, models: {} }).parse(saved.speech),
           language: normalizeLanguage(saved.language),
           animationSpeed: normalizeAnimationSpeed(saved.animationSpeed),

@@ -190,6 +190,21 @@ export class WorkspaceManager {
     this.staged = true
   }
 
+  /** Copy a new generated attachment into an existing lease without provisioning one. */
+  async stageGeneratedAttachment(attachmentId: string, signal?: AbortSignal): Promise<void> {
+    if (!this.controllerLeaseId) { this.staged = false; return }
+    const [attachment] = await db.select().from(attachments).where(and(
+      eq(attachments.id, attachmentId), eq(attachments.userId, this.userId),
+      eq(attachments.chatId, this.chatId), eq(attachments.status, 'ready'),
+    )).limit(1)
+    if (!attachment) throw new Error('Generated attachment is unavailable')
+    await this.request(`/v1/leases/${this.controllerLeaseId}/v1/files?path=${encodeURIComponent(restoredAttachmentWorkspacePath(attachment))}`, {
+      method: 'PUT', signal,
+      headers: { 'content-type': attachment.mimeType, 'content-length': String(attachment.sizeBytes) },
+      body: await getBlobStore().getStream(attachment.objectKey), duplex: 'half',
+    })
+  }
+
   async execute(
     operationId: string,
     type: string,

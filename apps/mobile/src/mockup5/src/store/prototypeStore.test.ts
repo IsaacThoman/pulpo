@@ -193,3 +193,13 @@ describe('prototype store', () => {
   });
 
 });
+
+it('persists image generation through the production preference bridge', async () => {
+  const persistPreference = vi.fn(async () => undefined)
+  configureProductionActions({ setPreference: persistPreference })
+  const imageGeneration = { enabled: true, modelId: 'muse' }
+  usePrototypeStore.getState().setPreference('imageGeneration', imageGeneration)
+  await Promise.resolve()
+  expect(persistPreference).toHaveBeenCalledWith('imageGeneration', imageGeneration)
+  expect(usePrototypeStore.getState().preferences.imageGeneration).toEqual(imageGeneration)
+})

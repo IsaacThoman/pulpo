@@ -1,3 +1,4 @@
+import { ImageGenerationSettings } from '@/features/image-generation/ImageGenerationSettings'
 import { SpeechSettings } from '@/features/speech/SpeechSettings'
 import { refreshInstanceFeatures } from '@/lib/instance-features'
 import { DeleteAccountSettings } from './DeleteAccountSettings'
@@ -1075,6 +1076,8 @@ export function SettingsModal({
                   </Row>
                   <Separator className="my-5" />
                   <SpeechSettings />
+                  <Separator className="my-5" />
+                  <ImageGenerationSettings />
                 </div>
               )}
 

@@ -6,7 +6,7 @@ describe('agentSettlementAmounts', () => {
     expect(agentSettlementAmounts({
       totalTokens: 0,
       generationCostMicros: 0,
-      webToolCostMicros: 25_000,
+      toolCostMicros: 25_000,
       sidecarCostMicros: 0,
       workspaceCostMicros: 50_000,
     })).toEqual({
@@ -20,7 +20,7 @@ describe('agentSettlementAmounts', () => {
     expect(agentSettlementAmounts({
       totalTokens: 100,
       generationCostMicros: 0,
-      webToolCostMicros: 0,
+      toolCostMicros: 0,
       sidecarCostMicros: 0,
       workspaceCostMicros: 0,
     }).shouldSettle).toBe(true)
