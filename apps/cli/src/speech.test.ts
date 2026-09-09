@@ -86,3 +86,16 @@ it('reports older servers without speech management support', async () => {
   await expect(run(['speech-model', 'list'])).rejects.toThrow('speechModels')
   expect(request).not.toHaveBeenCalled()
 })
+
+it('prints the Voxtral draft preset and manages cloned voices and watermark assets', async () => {
+  expect(await run(['speech-model', 'preset', 'voxtral', '--provider', model.providerConnectionId, '--adapter', 'mistral'])).toMatchObject({ adapter: 'mistral', voices: [], enabled: false, supportsSse: false })
+  const file = join(directory, 'voice.m4a'); await writeFile(file, new Uint8Array([1, 2, 3]))
+  await run(['speech-model', 'clone', 'upload', 'voxtral', 'voice', file])
+  expect(upload).toHaveBeenLastCalledWith('/api/management/v1/speech-models/voxtral/voices/voice/clone', expect.objectContaining({ filename: 'voice.m4a', timeoutMs: 120_000 }))
+  await run(['speech-model', 'clone', 'repair', 'voxtral', 'voice'])
+  expect(request).toHaveBeenLastCalledWith('/api/management/v1/speech-models/voxtral/voices/voice/clone/repair', { method: 'POST', timeoutMs: 120_000 })
+  await run(['speech-model', 'watermark', 'upload', 'voxtral', 'voice', file])
+  expect(upload).toHaveBeenLastCalledWith('/api/management/v1/speech-models/voxtral/voices/voice/watermark', expect.anything())
+  await run(['speech-model', 'test-voice', 'voxtral', 'voice', '-o', join(directory, 'preview.wav'), '--text', 'Hello', '--save-preview'])
+  expect(download).toHaveBeenLastCalledWith('/api/management/v1/speech-models/voxtral/voices/voice/test', 120_000, { method: 'POST', body: { input: 'Hello', savePreview: true } })
+})

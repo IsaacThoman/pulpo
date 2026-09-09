@@ -65,6 +65,10 @@ jobs:
       - name: Install dependencies
         run: npm clean-install
 
+      - name: Install speech audio tools
+        if: matrix.name == 'Test'
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
       - name: ${{ matrix.name }}
         run: ${{ matrix.command }}
 
@@ -139,6 +143,31 @@ jobs:
         run: npm run test -w @pulpo/server -- src/account
       - name: Create disposable migration recovery database
         run: node --input-type=module -e 'import postgres from "postgres"; const sql = postgres(process.env.DATABASE_URL); await sql.unsafe("CREATE DATABASE pulpo_migration_test"); await sql.end();'
+      - name: Install speech audio tools
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - name: Create disposable speech database
+        run: node --input-type=module -e 'import postgres from "postgres"; const sql = postgres(process.env.DATABASE_URL); await sql.unsafe("CREATE DATABASE pulpo_speech_test"); await sql.end();'
+      - name: Apply speech test migrations
+        env:
+          DATABASE_URL: postgres://postgres:search-test@localhost:5432/pulpo_speech_test
+        run: npm run db:migrate -w @pulpo/server
+      - name: Test speech assets and accounting against PostgreSQL
+        env:
+          DATABASE_URL: postgres://postgres:search-test@localhost:5432/pulpo_speech_test
+          PULPO_SPEECH_POSTGRES_TEST: '1'
+        run: npm run test -w @pulpo/server -- src/speech/assets.postgres.test.ts src/speech/billing.postgres.test.ts
+      - name: Create disposable speech backup database
+        run: node --input-type=module -e 'import postgres from "postgres"; const sql = postgres(process.env.DATABASE_URL); await sql.unsafe("CREATE DATABASE pulpo_speech_backup_test"); await sql.end();'
+      - name: Apply speech backup test migrations
+        env:
+          DATABASE_URL: postgres://postgres:search-test@localhost:5432/pulpo_speech_backup_test
+        run: npm run db:migrate -w @pulpo/server
+      - name: Test speech backup and legacy restore against PostgreSQL
+        env:
+          DATABASE_URL: postgres://postgres:search-test@localhost:5432/pulpo_speech_backup_test
+          PULPO_SPEECH_BACKUP_POSTGRES_TEST: '1'
+        run: npm run test -w @pulpo/server -- src/speech/backup.postgres.test.ts
+
       - name: Test persistent preview migration recovery
         env:
           DATABASE_URL: postgres://postgres:search-test@localhost:5432/pulpo_migration_test

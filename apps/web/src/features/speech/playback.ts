@@ -1,6 +1,6 @@
 import { speechChunks, speechText } from '@pulpo/client-core'
-import type { PublicSpeechModel } from '@pulpo/contracts'
-import { apiRequest, fetchApiBlob } from '@/lib/api'
+import { SPEECH_DURATION_HEADER, type PublicSpeechModel } from '@pulpo/contracts'
+import { apiRequest, fetchApiBlob, fetchApiBlobResponse } from '@/lib/api'
 import { useSettings } from '@/stores/settings'
 import { useAuth } from '@/stores/auth'
 import { useChat } from '@/stores/chat'
@@ -24,12 +24,12 @@ export async function readAloud(key: string, markdown: string) {
     const chunks = speechChunks(speechText(markdown), model, instructions)
     if (!chunks.length) throw new Error('This message has no readable text')
     return chunks
-  }, async (input, signal) => {
-    const blob = await fetchApiBlob('/api/speech', { method: 'POST', signal, headers: { 'content-type': 'application/json' }, body: JSON.stringify({
-      requestId: crypto.randomUUID(), modelId: model.id, input, voice: settings?.voice ?? model.defaultVoice,
+  }, async (input, signal, offsetSeconds) => {
+    const response = await fetchApiBlobResponse('/api/speech', { method: 'POST', signal, headers: { 'content-type': 'application/json' }, body: JSON.stringify({
+      requestId: crypto.randomUUID(), modelId: model.id, input, playbackOffsetSeconds: offsetSeconds, voice: settings?.voice ?? model.defaultVoice,
       ...(model.supportsInstructions ? { instructions } : {}), ...(model.supportsSpeed ? { speed: settings?.speed ?? 1 } : {}),
     }) })
-    return browserSpeechAudio(blob)
+    return { ...browserSpeechAudio(await response.blob()), durationSeconds: Number(response.headers.get(SPEECH_DURATION_HEADER)) }
   })
 }
 document.addEventListener('visibilitychange', () => { if (document.hidden) speechPlayback.stop() })
@@ -48,7 +48,7 @@ export function previewSpeechFile(file: File, key = 'preview:upload') {
     return browserSpeechAudio(file)
   })
 }
-function browserSpeechAudio(blob: Blob) {
+export function browserSpeechAudio(blob: Blob) {
   const url = URL.createObjectURL(blob)
   const audio = new Audio(url)
   return {

@@ -18,6 +18,7 @@ import { hashToken, randomToken } from '../lib/crypto.js'
 import { AppError, notFound, unauthorized } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import { createRedis } from '../redis.js'
+import { registerSpeechAssetRoutes } from '../speech/assets.js'
 import { workspaceControllerRequest } from '../agent/controller-http.js'
 import { authenticateManagementToken, requireInteractiveSession, requireManagementScope } from './auth.js'
 import { applyManagementSettings, loadManagementSettings, planManagementSettings } from './settings.js'
@@ -332,6 +333,11 @@ export async function registerManagementRoutes(app: FastifyInstance): Promise<vo
         url: `${publicUrl}/reset-password?token=${encodeURIComponent(result.token)}`,
         expiresAt: result.expiresAt,
       }
+    })
+
+    await management.register(async assets => {
+      assets.addHook('preHandler', async request => { requireManagementScope(request, request.method === 'GET' || request.method === 'HEAD' ? 'catalog:read' : 'catalog:write', { admin: true }) })
+      await registerSpeechAssetRoutes(assets, '/api/management/v1/speech-models')
     })
 
     // Handle multipart uploads directly; JSON proxying would discard the file stream.

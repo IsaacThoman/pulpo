@@ -3,7 +3,7 @@ import { createAudioPlayer, setAudioModeAsync } from 'expo-audio'
 import { File, Paths, Directory } from 'expo-file-system'
 import { randomUUID } from 'expo-crypto'
 import { speechChunks, speechText } from '@pulpo/client-core'
-import type { PublicSpeechModel } from '@pulpo/contracts'
+import { SPEECH_DURATION_HEADER, type PublicSpeechModel } from '@pulpo/contracts'
 import { apiRequest, apiUrl, nativeAuthorizationHeaders } from '../../api/client'
 import { usePreferencesStore } from '../../store/preferences'
 import { useSessionStore } from '../../store/session'
@@ -31,14 +31,14 @@ export async function readAloud(key: string, markdown: string) {
     if (!chunks.length) throw new Error('This message has no readable text')
     await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true, shouldPlayInBackground: false })
     return chunks
-  }, async (input, signal) => {
+  }, async (input, signal, offsetSeconds) => {
     const response = await fetch(apiUrl('/api/speech'), { method: 'POST', signal, headers: { ...nativeAuthorizationHeaders(), 'content-type': 'application/json' }, body: JSON.stringify({
-      requestId: randomUUID(), modelId: model.id, input, voice: settings?.voice ?? model.defaultVoice,
+      requestId: randomUUID(), modelId: model.id, input, playbackOffsetSeconds: offsetSeconds, voice: settings?.voice ?? model.defaultVoice,
       ...(model.supportsInstructions ? { instructions } : {}), ...(model.supportsSpeed ? { speed: settings?.speed ?? 1 } : {}),
     }) })
     if (!response.ok) { const body = await response.json().catch(() => null); throw new Error(body?.error?.message ?? 'Speech generation failed') }
     const bytes = new Uint8Array(await response.arrayBuffer())
-    return nativeSpeechAudio(bytes, model.responseFormat, signal)
+    return { ...nativeSpeechAudio(bytes, model.responseFormat, signal), durationSeconds: Number(response.headers.get(SPEECH_DURATION_HEADER)) }
   })
 }
 AppState.addEventListener('change', state => { if (state !== 'active') speechPlayback.stop() })

@@ -132,3 +132,12 @@ role. Tokens are shown only once when created and only work below
 Deleting a model permanently reassigns its historical chats and usage to the
 hidden `unknown model` placeholder while retaining recorded token and cost
 totals. Active or queued model work must finish before deletion can proceed.
+
+### Voxtral, cloned voices, and watermarks
+
+Use `speech-model preset --adapter mistral` for the Voxtral preset. The
+`provider-voices`, `provider-sample`, `clone`, `watermark`, `test-voice`, and
+`cleanup` subcommands manage provider discovery, private reference uploads,
+repair, looping watermark settings, synthesized previews, and retryable cleanup.
+See [the speech administration guide](../../docs/speech.md) for complete commands,
+upload limits, billing behavior, and FFmpeg setup.

@@ -29,3 +29,12 @@ describe('speech contracts', () => {
     expect(speechRequestSchema.safeParse({ requestId: '22222222-2222-4222-8222-222222222222', modelId: 'm', input: 'Hello', voice: 'coral', apiKey: 'client-key' }).success).toBe(false)
   })
 })
+
+it('supports empty disabled Voxtral drafts but rejects unsupported controls and enabled empty models', async () => {
+  const { VOXTRAL_SPEECH_PRESET } = await import('./speech.js')
+  const draft = { ...VOXTRAL_SPEECH_PRESET, id: model.id, providerConnectionId: model.providerConnectionId }
+  expect(speechModelSchema.parse(draft).voices).toEqual([])
+  expect(speechModelSchema.safeParse({ ...draft, enabled: true }).success).toBe(false)
+  for (const patch of [{ supportsSse: true }, { supportsSpeed: true }, { supportsInstructions: true }, { billUsers: true, billingUnit: 'tokens' }]) expect(speechModelSchema.safeParse({ ...draft, ...patch }).success).toBe(false)
+  expect(speechModelSchema.parse({ ...model, adapter: undefined }).adapter).toBe('openai')
+})

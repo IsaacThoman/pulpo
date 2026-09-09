@@ -41,6 +41,7 @@ export const FULL_BACKUP_TEMPORARY_DATA_POLICY = {
   provider_connections: 'preserve',
   speech_models: 'preserve',
   speech_requests: 'preserve',
+  speech_resource_cleanup: 'preserve',
   models: 'preserve',
   model_pricing_versions: 'preserve',
   model_presets: 'preserve',

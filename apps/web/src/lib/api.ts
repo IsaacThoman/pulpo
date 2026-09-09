@@ -71,7 +71,7 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
   return body as T
 }
 
-export async function fetchApiBlob(input: string, init: RequestInit = {}): Promise<Blob> {
+export async function fetchApiBlobResponse(input: string, init: RequestInit = {}): Promise<Response> {
   const targetsInstance = runtimeUrlTargetsInstance(input)
   const response = await authenticatedFetch(input, init)
   if (response.status === 401 && isDesktopRuntime() && targetsInstance) desktopUnauthorized()
@@ -84,7 +84,11 @@ export async function fetchApiBlob(input: string, init: RequestInit = {}): Promi
       body,
     )
   }
-  return response.blob()
+  return response
+}
+
+export async function fetchApiBlob(input: string, init: RequestInit = {}): Promise<Blob> {
+  return (await fetchApiBlobResponse(input, init)).blob()
 }
 
 export function apiDownloadUrl(path: string): string {

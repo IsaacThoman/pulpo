@@ -1224,6 +1224,7 @@ export const speechModels = pgTable('speech_models', {
   id: text('id').primaryKey(),
   providerConnectionId: uuid('provider_connection_id').notNull().references(() => providerConnections.id, { onDelete: 'restrict' }),
   config: jsonb('config').notNull().$type<import('@pulpo/contracts').SpeechModel>(),
+  voiceAssets: jsonb('voice_assets').notNull().default([]).$type<import('../speech/asset-types.js').SpeechVoiceAssets[]>(),
   voicePreviews: jsonb('voice_previews').notNull().default([]).$type<Array<{ voiceId: string; objectKey: string; contentType: string; checksum: string }>>(),
   previewObjectKey: text('preview_object_key'),
   previewContentType: text('preview_content_type'),
@@ -1237,3 +1238,15 @@ export const speechRequests = pgTable('speech_requests', {
   requestId: uuid('request_id').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, table => [primaryKey({ columns: [table.userId, table.requestId] })])
+
+// Durable cleanup also holds staged uploads until publication commits.
+export const speechResourceCleanup = pgTable('speech_resource_cleanup', {
+  id: uuid('id').primaryKey(),
+  providerConnectionId: uuid('provider_connection_id').references(() => providerConnections.id, { onDelete: 'restrict' }),
+  upstreamVoiceId: text('upstream_voice_id'),
+  slug: text('slug'),
+  objectKeys: jsonb('object_keys').notNull().default([]).$type<string[]>(),
+  readyAt: timestamp('ready_at', { withTimezone: true }).notNull().defaultNow(),
+  error: text('error'),
+  ...timestamps,
+})

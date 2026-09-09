@@ -39,6 +39,16 @@ describe('native speech lifecycle', () => {
     mocks.status?.({ didJustFinish: true }); await run
     expect(mocks.remove).toHaveBeenCalledOnce(); expect(mocks.deleteFile).toHaveBeenCalledOnce()
   })
+  it('carries generated duration into the prefetched watermark offset', async () => {
+    mocks.request.mockResolvedValue({ data: [{ id: 'speech', voices: [{ id: 'coral', label: 'Coral' }], defaultVoice: 'coral', supportsInstructions: false, supportsSpeed: false, maxInputCharacters: 6, maxInputTokens: null }] })
+    vi.mocked(fetch).mockImplementation(async () => new Response(new Uint8Array([1, 2, 3]), { headers: { 'x-speech-duration-seconds': '2.75' } }))
+    const run = readAloud('chat:message', 'Hello world again')
+    await tick(); await tick()
+    expect(vi.mocked(fetch).mock.calls.map(call => JSON.parse(String(call[1]?.body)).playbackOffsetSeconds)).toEqual([0, 2.75])
+    speechPlayback.stop(); await run
+    expect(fetch).toHaveBeenCalledTimes(2)
+    expect(mocks.deleteFile).toHaveBeenCalledTimes(2)
+  })
   it('stops immediately on background and account changes', async () => {
     const run = readAloud('chat:message', 'Hello'); await tick()
     mocks.onAppState?.('background'); await run
