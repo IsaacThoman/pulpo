@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { CloudUpload, Download, RefreshCw, ShieldCheck, Trash2 } from 'lucide-react'
 import { Field, NumField, SaveBar, SecretField, Section, SelectField, TextField, Toggle } from '@/components/admin/kit'
+import { SensitiveRevealDialog } from '@/components/admin/SensitiveRevealDialog'
+import { useSavedSecret } from '@/components/admin/useSavedSecret'
 import { Button } from '@/components/ui/button'
 import { apiRequest, downloadApiFile } from '@/lib/api'
 import { ui } from '@/i18n/ui'
@@ -24,21 +26,21 @@ async function requestExport(type: 'config' | 'chats' | 'users' | 'usage'): Prom
   throw new Error(ui("Export is still processing"))
 }
 
-const EMPTY_BACKUP_FORM: BackupForm = {
+const EMPTY_BACKUP_FORM: Omit<BackupForm, 'applicationKey'> = {
   enabled: false,
   endpoint: '',
   bucket: '',
   prefix: 'pulpo',
   keyId: '',
-  applicationKey: '',
   recipient: '',
   intervalHours: 24,
   retentionDays: 30,
 }
 
 function OffsiteBackupSection() {
-  const [form, setForm] = useState<BackupForm>(EMPTY_BACKUP_FORM)
+  const [form, setForm] = useState(EMPTY_BACKUP_FORM)
   const [settings, setSettings] = useState<PublicBackupSettings | null>(null)
+  const applicationKey = useSavedSecret(Boolean(settings?.applicationKeyConfigured), '/api/admin/settings/backups/application-key/reveal')
   const [jobs, setJobs] = useState<BackupJob[]>([])
   const [message, setMessage] = useState('')
   const [working, setWorking] = useState(false)
@@ -57,7 +59,6 @@ function OffsiteBackupSection() {
         bucket: next.bucket,
         prefix: next.prefix || 'pulpo',
         keyId: next.keyId,
-        applicationKey: '',
         recipient: next.recipient,
         intervalHours: next.intervalHours,
         retentionDays: next.retentionDays,
@@ -73,12 +74,13 @@ function OffsiteBackupSection() {
     return () => window.clearInterval(timer)
   }, [load])
 
-  const update = <K extends keyof BackupForm>(key: K, value: BackupForm[K]) => setForm((current) => ({ ...current, [key]: value }))
+  const update = <K extends keyof typeof form>(key: K, value: typeof form[K]) => setForm((current) => ({ ...current, [key]: value }))
+  const settingsPayload = () => backupSettingsPayload({ ...form, applicationKey: applicationKey.replacement })
 
   const test = async () => {
     setWorking(true); setMessage('Testing Backblaze access and Object Lock…')
     try {
-      await apiRequest('/api/admin/settings/backups/test', { method: 'POST', body: backupSettingsPayload(form) })
+      await apiRequest('/api/admin/settings/backups/test', { method: 'POST', body: settingsPayload() })
       setMessage('Connection, upload, read, delete, and Object Lock checks passed.')
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Connection test failed')
@@ -86,8 +88,8 @@ function OffsiteBackupSection() {
   }
 
   const save = async () => {
-    const next = await apiRequest<PublicBackupSettings>('/api/admin/settings/backups', { method: 'PUT', body: backupSettingsPayload(form) })
-    setSettings(next); setForm((current) => ({ ...current, applicationKey: '' })); setMessage('Backup settings saved.'); await load()
+    const next = await apiRequest<PublicBackupSettings>('/api/admin/settings/backups', { method: 'PUT', body: settingsPayload() })
+    setSettings(next); applicationKey.reset(); setMessage('Backup settings saved.'); await load()
   }
 
   const runNow = async () => {
@@ -100,7 +102,7 @@ function OffsiteBackupSection() {
   const remove = async () => {
     if (!window.confirm('Remove the saved B2 credentials and schedule? Existing locked backups remain in Backblaze.')) return
     await apiRequest('/api/admin/settings/backups', { method: 'DELETE' })
-    hydrated.current = false; setForm(EMPTY_BACKUP_FORM); setSettings(null); setJobs([]); setMessage('Backup configuration removed.')
+    hydrated.current = false; applicationKey.reset(); setForm(EMPTY_BACKUP_FORM); setSettings(null); setJobs([]); setMessage('Backup configuration removed.')
   }
 
   const healthLabel = settings?.health === 'healthy' ? 'Healthy'
@@ -118,7 +120,7 @@ function OffsiteBackupSection() {
       <TextField label={ui('Bucket')} value={form.bucket} onChange={(value) => update('bucket', value)} mono />
       <TextField label={ui('File prefix')} value={form.prefix} onChange={(value) => update('prefix', value)} mono />
       <TextField label={ui('Application key ID')} value={form.keyId} onChange={(value) => update('keyId', value)} mono />
-      <SecretField label={ui('Application key')} hint={settings?.applicationKeyConfigured ? 'Leave blank to keep the saved key.' : undefined} value={form.applicationKey} onChange={(value) => update('applicationKey', value)} configured={settings?.applicationKeyConfigured} />
+      <SecretField label={ui('Application key')} hint={settings?.applicationKeyConfigured ? 'Leave blank to keep the saved key.' : undefined} {...applicationKey.fieldProps} />
       <TextField label={ui('age recipient')} hint="Paste age1… or age1pq1…; never paste AGE-SECRET-KEY…" value={form.recipient} onChange={(value) => update('recipient', value)} mono />
       <SelectField label={ui('Backup interval')} value={String(form.intervalHours)} onChange={(value) => update('intervalHours', Number(value) as 6 | 12 | 24)} options={[
         { value: '6', label: ui('Every 6 hours') }, { value: '12', label: ui('Every 12 hours') }, { value: '24', label: ui('Every 24 hours') },
@@ -138,6 +140,10 @@ function OffsiteBackupSection() {
       {message && <div className="text-xs text-muted-foreground">{message}</div>}
     </Section>
     <SaveBar onSave={save} />
+    <SensitiveRevealDialog
+      {...applicationKey.dialogProps}
+      description={ui('Backblaze application keys are sensitive. Confirm your identity before revealing this saved key.')}
+    />
 
     <Section title={ui('Offsite backup history')} hint="Recipient fingerprints identify which offline private identity is required for recovery.">
       {jobs.length === 0 ? <div className="text-xs text-muted-foreground">{ui('No offsite backups yet.')}</div> : jobs.map((job) => <div key={job.id} className="flex items-center justify-between gap-4">
