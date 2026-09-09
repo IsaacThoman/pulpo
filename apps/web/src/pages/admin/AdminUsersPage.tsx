@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { z } from 'zod'
 import { AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown, Monitor, Pencil, Plus, RefreshCw, Search, ShieldOff, Trash2 } from 'lucide-react'
 import { DeviceSessionListView } from '@/components/settings/DeviceSettings'
 import { useUsage } from '@/stores/usage'
@@ -7,6 +8,7 @@ import { formatBalance, formatDate, timeAgo } from '@/lib/format'
 import type { MonitorUser } from '@/lib/types'
 import { Button } from '@/components/ui/button'
 import { apiRequest } from '@/lib/api'
+import { runtimeAccountKey } from '@/lib/runtime'
 import { useAuth } from '@/stores/auth'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -48,7 +50,22 @@ interface AdminBillingUser {
   hold: { holdAt: string; holdReason: string | null; holdReference: string | null } | null
 }
 
-type UserSortKey = 'role' | 'name' | 'lastActiveAt' | 'email' | 'plan' | 'weeklyLimit' | 'fiveHourLimit' | 'invites' | 'balance' | 'storage' | 'joinedAt'
+const usersViewSchema = z.object({
+  query: z.string().catch(''),
+  sort: z.object({
+    key: z.enum(['role', 'name', 'lastActiveAt', 'email', 'plan', 'weeklyLimit', 'fiveHourLimit', 'invites', 'balance', 'storage', 'joinedAt']),
+    direction: z.enum(['ascending', 'descending']),
+  }).nullable().catch(null),
+})
+type UsersView = z.infer<typeof usersViewSchema>
+type UserSortKey = NonNullable<UsersView['sort']>['key']
+
+function readUsersView(storageKey: string | null): UsersView {
+  try {
+    if (storageKey) return usersViewSchema.parse(JSON.parse(localStorage.getItem(storageKey) ?? '{}'))
+  } catch { /* Invalid or unavailable storage falls back to the default view. */ }
+  return { query: '', sort: null }
+}
 
 function userSortValue(user: MonitorUser, billing: AdminBillingUser | undefined, key: UserSortKey): string | number | null {
   switch (key) {
@@ -67,9 +84,20 @@ function userSortValue(user: MonitorUser, billing: AdminBillingUser | undefined,
 }
 
 export function AdminUsersPage() {
+  const userId = useAuth((state) => state.user?.id)
+  const storageKey = userId ? `pulpo-admin-users-view:${runtimeAccountKey(userId)}` : null
+  return <AdminUsersTable key={storageKey} storageKey={storageKey} />
+}
+
+function AdminUsersTable({ storageKey }: { storageKey: string | null }) {
   const users = useUsage((s) => s.users)
-  const [query, setQuery] = useState('')
-  const [sort, setSort] = useState<{ key: UserSortKey; direction: 'ascending' | 'descending' } | null>(null)
+  const [{ query, sort }, setView] = useState(() => readUsersView(storageKey))
+  useEffect(() => {
+    if (!storageKey) return
+    try {
+      localStorage.setItem(storageKey, JSON.stringify({ query, sort }))
+    } catch { /* The table still works when browser storage is unavailable. */ }
+  }, [storageKey, query, sort])
   const [addOpen, setAddOpen] = useState(false)
   const [editUser, setEditUser] = useState<MonitorUser | null>(null)
   const [devicesUser, setDevicesUser] = useState<MonitorUser | null>(null)
@@ -138,7 +166,7 @@ export function AdminUsersPage() {
       <button
         type="button"
         className={`inline-flex items-center gap-1 rounded-sm hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring${numeric ? ' justify-end' : ''}`}
-        onClick={() => setSort({ key, direction: direction === 'ascending' ? 'descending' : 'ascending' })}
+        onClick={() => setView((view) => ({ ...view, sort: { key, direction: direction === 'ascending' ? 'descending' : 'ascending' } }))}
       >
         {label}<Icon aria-hidden="true" className="size-3.5 shrink-0" />
       </button>
@@ -180,7 +208,7 @@ export function AdminUsersPage() {
             className="w-52 pl-8"
             placeholder={ui("Search…")}
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={(e) => setView((view) => ({ ...view, query: e.target.value }))}
           />
         </div>
         <Button size="sm" onClick={() => setAddOpen(true)}>

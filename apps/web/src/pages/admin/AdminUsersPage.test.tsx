@@ -6,12 +6,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { MonitorUser } from '@/lib/types'
 
 const mocks = vi.hoisted(() => ({
-  request: vi.fn(), load: vi.fn(), users: [] as MonitorUser[], billingEnabled: false,
+  request: vi.fn(), load: vi.fn(), users: [] as MonitorUser[], billingEnabled: false, adminId: 'admin', instance: '',
   billingUsers: [] as { userId: string; plan: 'baby' | 'eight' | 'fat'; weeklyLimitMicros: number; fiveHourLimitMicros: number }[],
 }))
 vi.mock('@/lib/api', () => ({ apiRequest: mocks.request }))
 vi.mock('@/stores/usage', () => ({ useUsage: (select: (state: unknown) => unknown) => select({ users: mocks.users, loadAdmin: mocks.load }) }))
-vi.mock('@/stores/auth', () => ({ useAuth: (select: (state: unknown) => unknown) => select({ user: { id: 'admin' }, billingEnabled: mocks.billingEnabled }) }))
+vi.mock('@/stores/auth', () => ({ useAuth: (select: (state: unknown) => unknown) => select({ user: { id: mocks.adminId }, billingEnabled: mocks.billingEnabled }) }))
+vi.mock('@/lib/runtime', () => ({ runtimeAccountKey: (userId: string) => `${mocks.instance}${userId}` }))
 vi.mock('@tanstack/react-query', () => ({ useQuery: () => ({ data: { data: mocks.billingUsers.map((row) => ({
   ...row, subscriptionPlan: row.plan, weeklySpentMicros: 0, fiveHourSpentMicros: 0, storageLimitBytes: 0,
 })) } }) }))
@@ -25,6 +26,13 @@ let root: Root
 let container: HTMLDivElement
 beforeEach(() => {
   vi.resetAllMocks()
+  const saved = new Map<string, string>()
+  vi.stubGlobal('localStorage', {
+    getItem: (key: string) => saved.get(key) ?? null,
+    setItem: (key: string, value: string) => { saved.set(key, value) },
+  })
+  mocks.adminId = 'admin'
+  mocks.instance = ''
   mocks.billingEnabled = false
   mocks.billingUsers = []
   mocks.users = [{ id: 'target', name: 'Test', username: 'test', email: 'test@example.test', role: 'user', balance: 0, joinedAt: 0, blocked: false, avatarUrl: null, profileColor: null }]
@@ -38,6 +46,7 @@ afterEach(async () => {
   await act(async () => root.unmount())
   container.remove()
   vi.restoreAllMocks()
+  vi.unstubAllGlobals()
 })
 const deleteButton = () => container.querySelector<HTMLButtonElement>('button[title="Delete"]')!
 const mount = async () => { await act(async () => root.render(<AdminUsersPage />)) }
@@ -133,6 +142,73 @@ describe('admin user sorting', () => {
     mocks.users = []
     await mount()
     expect(emails()).toEqual([])
+  })
+
+  it('restores the search and sort direction on a fresh mount, including a cleared search', async () => {
+    await mount()
+    await sortBy('Balance')
+    await sortBy('Balance')
+    await act(async () => fireEvent.change(container.querySelector('input')!, { target: { value: 'eta' } }))
+    await act(async () => root.unmount())
+    root = createRoot(container)
+    await mount()
+    expect(container.querySelector('input')?.value).toBe('eta')
+    expect(header('Balance').closest('th')?.getAttribute('aria-sort')).toBe('descending')
+    expect(emails()).toEqual(['beta@example.test', 'zeta@example.test'])
+
+    await act(async () => fireEvent.change(container.querySelector('input')!, { target: { value: '' } }))
+    await act(async () => root.unmount())
+    root = createRoot(container)
+    await mount()
+    expect(container.querySelector('input')?.value).toBe('')
+    expect(emails()).toEqual(['alpha@example.test', 'beta@example.test', 'zeta@example.test'])
+  })
+
+  it('keeps saved views separate when the admin or instance changes', async () => {
+    await mount()
+    await sortBy('Balance')
+    await act(async () => fireEvent.change(container.querySelector('input')!, { target: { value: 'eta' } }))
+    mocks.adminId = 'another-admin'
+    await mount()
+    expect(container.querySelector('input')?.value).toBe('')
+    expect(container.querySelector('th[aria-sort]')).toBeNull()
+    await sortBy('Email')
+
+    mocks.adminId = 'admin'
+    mocks.instance = 'https://another-instance.test|'
+    await mount()
+    expect(container.querySelector('input')?.value).toBe('')
+    expect(container.querySelector('th[aria-sort]')).toBeNull()
+
+    mocks.instance = ''
+    await mount()
+    expect(container.querySelector('input')?.value).toBe('eta')
+    expect(header('Balance').closest('th')?.getAttribute('aria-sort')).toBe('ascending')
+    expect(emails()).toEqual(['zeta@example.test', 'beta@example.test'])
+  })
+
+  it.each([
+    'invalid json',
+    'null',
+    JSON.stringify({ query: 123, sort: { key: 'unknown', direction: 'ascending' } }),
+    JSON.stringify({ query: '', sort: { key: 'balance', direction: 'invalid' } }),
+  ])('uses defaults for invalid saved view %s', async (saved) => {
+    localStorage.setItem('pulpo-admin-users-view:admin', saved)
+    await mount()
+    expect(container.querySelector('input')?.value).toBe('')
+    expect(container.querySelector('th[aria-sort]')).toBeNull()
+    expect(emails()).toEqual(['alpha@example.test', 'zeta@example.test', 'beta@example.test'])
+    await sortBy('Balance')
+    expect(emails()).toEqual(['zeta@example.test', 'beta@example.test', 'alpha@example.test'])
+  })
+
+  it('keeps sorting and searching usable when storage is unavailable', async () => {
+    vi.spyOn(localStorage, 'getItem').mockImplementation(() => { throw new Error('Storage blocked') })
+    vi.spyOn(localStorage, 'setItem').mockImplementation(() => { throw new Error('Storage blocked') })
+    await mount()
+    await sortBy('Balance')
+    await act(async () => fireEvent.change(container.querySelector('input')!, { target: { value: 'eta' } }))
+    expect(emails()).toEqual(['zeta@example.test', 'beta@example.test'])
   })
 })
 
