@@ -1,3 +1,4 @@
+import { ImageGenerationSettings } from '@/features/image-generation/ImageGenerationSettings'
 import { SpeechSettings } from '@/features/speech/SpeechSettings'
 import { refreshInstanceFeatures } from '@/lib/instance-features'
 import { DeleteAccountSettings } from './DeleteAccountSettings'
@@ -9,6 +10,7 @@ import { useQuery } from '@tanstack/react-query'
 import type { InstructionPreset } from '@pulpo/contracts'
 import {
   Database,
+  Bot,
   Camera,
   CreditCard,
   Info,
@@ -84,6 +86,7 @@ const SECTION_CONFIG = {
   connections: { labelKey: 'settings.sections.connections', icon: Plug },
   personalization: { labelKey: 'settings.sections.personalization', icon: Sparkles },
   interface: { labelKey: 'settings.sections.interface', icon: Monitor },
+  agent: { labelKey: 'settings.sections.agent', icon: Bot },
   billing: { labelKey: 'settings.sections.billing', icon: CreditCard },
   api: { labelKey: 'settings.sections.api', icon: KeyRound },
   data: { labelKey: 'settings.sections.data', icon: Database },
@@ -1075,6 +1078,14 @@ export function SettingsModal({
                   </Row>
                   <Separator className="my-5" />
                   <SpeechSettings />
+                </div>
+              )}
+
+              {section === 'agent' && (
+                <div>
+                  <h2 className="text-base font-semibold">{ui('Agent')}</h2>
+                  <Separator className="my-3" />
+                  <ImageGenerationSettings />
                 </div>
               )}
 

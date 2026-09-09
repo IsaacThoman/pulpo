@@ -32,6 +32,8 @@ beforeEach(async () => {
     return reply.code(201).send({ voice: (request.params as { voiceId: string }).voiceId, bytes: (await file!.toBuffer()).toString() })
   })
   mocks.remove.mockImplementation((_request: FastifyRequest, reply: FastifyReply) => reply.code(204).send())
+  server.all('/api/admin/image-models', mocks.catalog)
+  server.all('/api/admin/image-models/*', mocks.catalog)
   server.all('/api/admin/speech-models', mocks.catalog)
   server.all('/api/admin/speech-models/*', mocks.catalog)
   await registerManagementRoutes(server)
@@ -77,4 +79,16 @@ it('preserves multipart bytes and decoded voice IDs instead of JSON-proxying upl
   expect((await server.inject({ method: 'DELETE', url: previewPath })).statusCode).toBe(204)
   expect(mocks.remove).toHaveBeenCalledOnce()
   expect((await server.inject(previewPath)).statusCode).toBe(403)
+})
+
+it('advertises image models and enforces catalog scopes on their management routes', async () => {
+  expect((await server.inject('/api/management/v1/info')).json().capabilities).toContain('imageModels')
+  expect((await server.inject('/api/management/v1/image-models')).statusCode).toBe(200)
+  const body = { id: 'image', adapter: 'meta-muse' }
+  expect((await server.inject({ method: 'POST', url: '/api/management/v1/image-models', payload: body })).json()).toMatchObject({ body })
+  scopes = ['catalog:read']
+  expect((await server.inject({ method: 'PATCH', url: '/api/management/v1/image-models/image', payload: body })).statusCode).toBe(403)
+  expect((await server.inject({ method: 'DELETE', url: '/api/management/v1/image-models/image' })).statusCode).toBe(403)
+  role = 'user'
+  expect((await server.inject('/api/management/v1/image-models')).statusCode).toBe(403)
 })

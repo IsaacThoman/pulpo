@@ -137,6 +137,7 @@ export interface PrototypeFolder {
 }
 
 export interface AppPreferences {
+  imageGeneration: import('@pulpo/contracts').ImageGenerationPreferences;
   speech: import('@pulpo/contracts').SpeechPreferences;
   theme: ThemePreference;
   textSize: TextSizePreference;

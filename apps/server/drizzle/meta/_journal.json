@@ -498,6 +498,13 @@
       "when": 1788928396449,
       "tag": "0070_speech_voice_assets",
       "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "7",
+      "when": 1788972718461,
+      "tag": "0071_image_generation",
+      "breakpoints": true
     }
   ]
 }

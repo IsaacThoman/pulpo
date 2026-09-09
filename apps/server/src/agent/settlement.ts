@@ -7,12 +7,12 @@ export interface AgentSettlementAmounts {
 export function agentSettlementAmounts(input: {
   totalTokens: number
   generationCostMicros: number
-  webToolCostMicros: number
+  toolCostMicros: number
   sidecarCostMicros: number
   postTaskCostMicros?: number
   workspaceCostMicros: number
 }): AgentSettlementAmounts {
-  const costMicrosOverride = Math.max(0, input.generationCostMicros) + Math.max(0, input.webToolCostMicros)
+  const costMicrosOverride = Math.max(0, input.generationCostMicros) + Math.max(0, input.toolCostMicros)
   const additionalCostMicros = Math.max(0, input.sidecarCostMicros)
     + Math.max(0, input.postTaskCostMicros ?? 0)
     + Math.max(0, input.workspaceCostMicros)

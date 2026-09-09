@@ -104,7 +104,7 @@ export async function registerManagementRoutes(app: FastifyInstance): Promise<vo
           workspaceControllerConfigured: Boolean(config.WORKSPACE_CONTROLLER_URL && config.WORKSPACE_CONTROLLER_TOKEN),
         },
         capabilities: [
-          'settings', 'managementTokens', 'catalog', 'catalogIcons', 'speechModels', 'users', 'usage', 'audit', 'workspaces', 'banners', 'exports', 'backups', 'operations', 'twoFactor',
+          'settings', 'managementTokens', 'catalog', 'catalogIcons', 'speechModels', 'imageModels', 'users', 'usage', 'audit', 'workspaces', 'banners', 'exports', 'backups', 'operations', 'twoFactor',
         ],
       }
     })
@@ -354,6 +354,7 @@ export async function registerManagementRoutes(app: FastifyInstance): Promise<vo
       requireManagementScope(request, 'catalog:write', { admin: true })
       return deleteSpeechPreview(request, reply)
     })
+    registerProxy(management, app, '/api/management/v1/image-models', '/api/admin/image-models', 'catalog:read', 'catalog:write')
     registerProxy(management, app, '/api/management/v1/speech-models', '/api/admin/speech-models', 'catalog:read', 'catalog:write')
     registerProxy(management, app, '/api/management/v1/providers', '/api/admin/providers', 'catalog:read', 'catalog:write')
     registerProxy(management, app, '/api/management/v1/labs', '/api/admin/labs', 'catalog:read', 'catalog:write')

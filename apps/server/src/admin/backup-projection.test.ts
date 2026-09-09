@@ -175,3 +175,16 @@ describe('temporary chat backup projection', () => {
     }
   })
 })
+
+it('preserves image model configuration and removes temporary-chat image request metadata', () => {
+  const model = { id: 'image', provider_connection_id: 'provider', config: { enabled: false } }
+  const request = { response_id: 'saved-response', operation_id: 'image-call', result: { imageItem: { id: 'image' } } }
+  const source = databaseWith({
+    chats: [{ id: 'saved', temporary: false }, { id: 'temporary', temporary: true }],
+    responses: [{ id: 'saved-response', chat_id: 'saved' }, { id: 'temporary-response', chat_id: 'temporary' }],
+    image_models: [model], image_generation_requests: [request, { ...request, response_id: 'temporary-response' }],
+  })
+  const projected = projectFullBackup(source)
+  expect(projected.database.image_models).toEqual([model])
+  expect(projected.database.image_generation_requests).toEqual([request])
+})

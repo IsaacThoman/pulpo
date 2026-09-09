@@ -26,6 +26,7 @@ describe('full backup format', () => {
 
   it('accepts full backups created before episodic memory was introduced', () => {
     expect(OPTIONAL_TABLES_IN_LEGACY_BACKUPS).toEqual([
+      'image_models', 'image_generation_requests',
       'speech_models', 'speech_requests', 'speech_resource_cleanup',
       'user_memory_documents',
       'user_memory_document_revisions',

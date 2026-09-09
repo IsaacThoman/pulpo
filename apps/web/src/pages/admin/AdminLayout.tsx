@@ -7,6 +7,7 @@ import { ui } from '@/i18n/ui'
 const TABS = [
   { to: '/admin/users', label: "Users", end: false },
   { to: '/admin/chats', label: "Chats", end: false },
+  { to: '/admin/image-models', label: "Image models", end: false },
   { to: '/admin/speech-models', label: "Speech models", end: false },
   { to: '/admin/providers', label: "Providers", end: false },
   { to: '/admin/labs', label: "Labs", end: false },

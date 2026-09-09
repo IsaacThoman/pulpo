@@ -11,7 +11,8 @@ const preview = { attachmentId: 'preview-1', name: 'chart.png.webp', mimeType: '
 afterEach(() => { cleanup(); mocks.load.mockReset() })
 
 describe('tool image preview', () => {
-  it('loads only on expansion and renders a thumbnail without a viewer', () => {
+  it.each(['image/webp', 'image/png'] as const)('loads a %s result only on expansion and renders a thumbnail without a viewer', mimeType => {
+    const preview = { attachmentId: 'preview-1', name: 'generated-image.png', mimeType, sizeBytes: 80 }
     mocks.load.mockReturnValue({ url: '/thumbnail.webp', loading: false })
     const view = render(<ToolImagePreview preview={preview} expanded={false} />)
     expect(mocks.load).not.toHaveBeenCalled()

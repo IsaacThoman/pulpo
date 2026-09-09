@@ -21,6 +21,7 @@ describe('toolActivityPresentation', () => {
   it.each([
     ['read', 'Reading a file…', icons.FileText],
     ['view_image', 'Viewing an image…', icons.Image],
+    ['generate_image', 'Generating an image…', icons.Image],
     ['bash', 'Running bash…', icons.Terminal],
     ['write', 'Writing a file…', icons.FilePlus],
     ['edit', 'Editing a file…', icons.FilePenLine],

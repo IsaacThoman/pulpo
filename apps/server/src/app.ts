@@ -1,3 +1,4 @@
+import { registerImageGenerationRoutes } from './image-generation/routes.js'
 import { registerSpeechRoutes } from './speech/routes.js'
 import { registerShelfRoutes } from './shelf/routes.js'
 import { registerAccountDeletionRoutes } from './account/routes.js'
@@ -164,6 +165,7 @@ export async function buildApp() {
   await registerMessageRoutes(app)
   await registerAttachmentRoutes(app)
   await registerSpeechRoutes(app)
+  await registerImageGenerationRoutes(app)
   await registerDictationRoutes(app)
   await registerPublicApiRoutes(app)
   await registerManagementRoutes(app)

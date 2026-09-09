@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { act, createElement } from 'react'
+import type { ToolImagePreview as Preview } from '@pulpo/contracts'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -24,7 +25,7 @@ afterEach(async () => {
   container?.remove()
   mocks.download.mockReset()
 })
-async function render(expanded: boolean, metadata: typeof preview | undefined = preview) {
+async function render(expanded: boolean, metadata: Preview | undefined = preview) {
   if (!root) {
     container = document.createElement('div')
     document.body.append(container)
@@ -35,11 +36,12 @@ async function render(expanded: boolean, metadata: typeof preview | undefined = 
 afterEach(() => { root = undefined })
 
 describe('mobile tool image preview', () => {
-  it('downloads only on expansion and displays a contained noninteractive thumbnail', async () => {
+  it.each(['image/webp', 'image/png'] as const)('downloads a %s result only on expansion and displays a contained noninteractive thumbnail', async mimeType => {
+    const preview = { attachmentId: 'preview-1', name: 'generated-image.png', mimeType, sizeBytes: 80 }
     mocks.download.mockResolvedValue({ uri: 'file:///thumbnail.webp' })
     await render(false)
     expect(mocks.download).not.toHaveBeenCalled()
-    await render(true)
+    await render(true, preview)
     expect(mocks.download).toHaveBeenCalledWith(preview.attachmentId)
     const image = container.querySelector('img')!
     expect(image.alt).toBe(preview.name)
