@@ -6,6 +6,7 @@ import { useUsage } from '@/stores/usage'
 import { formatBalance, formatDate, timeAgo } from '@/lib/format'
 import type { MonitorUser } from '@/lib/types'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
 import { apiRequest } from '@/lib/api'
 import { useAuth } from '@/stores/auth'
 import { Input } from '@/components/ui/input'
@@ -125,6 +126,7 @@ export function AdminUsersPage() {
       </Dialog>
       <div className="flex items-center gap-2">
         <h2 className="text-lg font-semibold">{ui("Users")}</h2>
+        <Badge variant="secondary">{users.length.toLocaleString(activeLocale())}</Badge>
         <div className="flex-1" />
         <div className="relative">
           <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
