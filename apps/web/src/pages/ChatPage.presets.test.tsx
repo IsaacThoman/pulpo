@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import 'fake-indexeddb/auto'
+import { Profiler } from 'react'
 import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
@@ -46,6 +47,7 @@ const model: Model = {
   ],
 }
 const requests: { path: string; body: Record<string, unknown> }[] = []
+const renderedControls: string[] = []
 const snapshots = new Map<string, ComposerSnapshot>()
 const write = vi.fn(async (input: ComposerWrite) => {
   const prior = snapshots.get(input.draftId)!
@@ -72,6 +74,7 @@ beforeEach(async () => {
   clearRuntimeComposerDrafts(userId)
   queryClient.clear()
   requests.length = 0
+  renderedControls.length = 0
   snapshots.clear()
   write.mockClear()
   fixture.sync = null
@@ -95,10 +98,13 @@ function enableSync() {
   }, write })
 }
 function renderChat(path = '/') {
-  return render(<MemoryRouter initialEntries={[path]}><TooltipProvider><Routes>
+  return render(<Profiler id="chat" onRender={() => {
+    const label = document.querySelector('button[aria-label="Generation options"]')?.textContent
+    if (label) renderedControls.push(label)
+  }}><MemoryRouter initialEntries={[path]}><TooltipProvider><Routes>
     <Route path="/" element={<ChatPage />} />
     <Route path="/c/:chatId" element={<ChatPage />} />
-  </Routes></TooltipProvider></MemoryRouter>)
+  </Routes></TooltipProvider></MemoryRouter></Profiler>)
 }
 async function selectControls(view: ReturnType<typeof renderChat>) {
   for (const choice of ['Low', 'Fast']) {
@@ -117,6 +123,10 @@ function expectControls(view: ReturnType<typeof renderChat>) {
   expect(useSettings.getState().agentModes[model.id]).toBe(true)
 }
 
+function expectNoPresetFlash() {
+  expect(renderedControls.filter((label) => !label.includes('Low') || !label.includes('Fast'))).toEqual([])
+}
+
 it.each([
   { syncEnabled: false, temporary: false },
   { syncEnabled: true, temporary: false },
@@ -131,6 +141,7 @@ it.each([
   }
   await selectControls(view)
   fireEvent.change(view.getByRole('textbox'), { target: { value: 'hello' } })
+  renderedControls.length = 0
   const landingInput = view.getByRole('textbox')
   fireEvent.keyDown(landingInput, { key: 'Enter' })
   await waitFor(() => expect(requests.some((request) => request.path.endsWith('/api/chats/start'))).toBe(true))
@@ -138,6 +149,7 @@ it.each([
   const start = requests.find((request) => request.path.endsWith('/api/chats/start'))!
   expect(start.body.response).toMatchObject({ input: 'hello', presetSelections: selected, agentMode: false })
   expectControls(view)
+  expectNoPresetFlash()
   const chatId = useChat.getState().activeChatId!
   await waitFor(() => expect(useChat.getState().chats.find((chat) => chat.id === chatId)?.provisional).toBe(false))
   if (syncEnabled) await waitFor(() => expect(snapshots.get(chatId)?.state.model?.presets).toEqual(selected))
@@ -167,6 +179,7 @@ it.each([false, true])('uses selected controls for suggestions and preserves the
   if (temporary) await view.findByRole('button', { name: /disable temporary/i })
   await selectControls(view)
   fireEvent.change(view.getByRole('textbox'), { target: { value: 'keep this draft' } })
+  renderedControls.length = 0
   const landingInput = view.getByRole('textbox')
   fireEvent.click(view.getByRole('button', { name: 'Try a suggestion' }))
   await waitFor(() => expect(requests.some((request) => request.path.endsWith('/api/chats/start'))).toBe(true))
@@ -175,6 +188,7 @@ it.each([false, true])('uses selected controls for suggestions and preserves the
   expect(start.body.response).toMatchObject({ input: 'suggested message', presetSelections: selected, agentMode: false, attachmentIds: [] })
   expect(start.body.chat).toMatchObject({ temporary })
   expectControls(view)
+  expectNoPresetFlash()
   expect(runtimeComposerDraft(userId, temporary ? 'temporary:new' : 'new')?.content).toBe('keep this draft')
   expect(runtimeComposerDraft(userId, temporary ? 'temporary:new' : 'new')?.attachmentIds).toEqual(['pending'])
   expect(write.mock.calls.some(([input]) => input.clear)).toBe(false)
@@ -191,11 +205,13 @@ it('seeds the started composer before a pending upload is dispatched', async () 
   const view = renderChat()
   await view.findByRole('button', { name: 'Try a suggestion' })
   await selectControls(view)
+  renderedControls.length = 0
   const landingInput = view.getByRole('textbox')
   fireEvent.keyDown(landingInput, { key: 'Enter' })
   await waitFor(() => expect(view.getByRole('textbox')).not.toBe(landingInput))
   expect(useUploadOutbox.getState().submissions[0]?.presetSelections).toEqual(selected)
   expectControls(view)
+  expectNoPresetFlash()
   expect(requests.some((request) => request.path.endsWith('/api/chats/start'))).toBe(false)
 })
 
@@ -213,4 +229,27 @@ it('gives an existing synced draft priority over the last submitted controls', a
   expect(label).toContain('Auto')
   expect(view.getByRole('button', { name: /disable agent/i }).getAttribute('aria-pressed')).toBe('true')
   expect(snapshots.get(chatId)?.state.model?.presets).toEqual(defaults)
+})
+
+it.each(['send', 'suggestion'])('does not flash defaults when older summaries finish after chat creation (%s)', async (action) => {
+  const view = renderChat()
+  await view.findByRole('button', { name: 'Try a suggestion' })
+  await selectControls(view)
+  fireEvent.change(view.getByRole('textbox'), { target: { value: 'hello' } })
+  const landingInput = view.getByRole('textbox')
+  fireEvent.click(view.getByRole('button', { name: action === 'send' ? 'Send message' : 'Try a suggestion' }))
+  await waitFor(() => expect(view.getByRole('textbox')).not.toBe(landingInput))
+  const chatId = useChat.getState().activeChatId!
+  await waitFor(() => expect(useChat.getState().chats.find((chat) => chat.id === chatId)?.provisional).toBe(false))
+  const detail = queryClient.getQueryData<import('@/stores/chat').ServerChat>(['chat', userId, chatId])!
+  const startedInput = view.getByRole('textbox')
+  fireEvent.change(startedInput, { target: { value: 'next unsent message' } })
+  renderedControls.length = 0
+  // The request started before POST /chats/start, so it cannot contain this chat.
+  act(() => useChat.getState().replaceSummaries([]))
+  // The chat detail refresh arrives afterward and brings the selected turn back.
+  act(() => useChat.getState().setDetailedChat(detail))
+  expect(view.getByRole('textbox')).toBe(startedInput)
+  expect((startedInput as HTMLTextAreaElement).value).toBe('next unsent message')
+  expectNoPresetFlash()
 })

@@ -428,6 +428,7 @@ function toChat(
       : row.expiresAt === null ? null : Date.parse(row.expiresAt),
     expired: current?.expired ?? false,
     provisional: current?.provisional,
+    awaitingSummary: current?.awaitingSummary,
   }
 }
 
@@ -872,12 +873,15 @@ export const useChat = create<ChatState>()((set, get) => ({
   responseChatIds: {},
 
   replaceSummaries: (rows) => set((state) => {
-    const serverChats = rows.map((row) => toChat(row, state.chats.find((chat) => chat.id === row.id), state.responseSequences, state.streamingIds))
+    const serverChats = rows.map((row) => ({
+      ...toChat(row, state.chats.find((chat) => chat.id === row.id), state.responseSequences, state.streamingIds),
+      awaitingSummary: false,
+    }))
     const activeTemporary = state.activeTemporaryChatId
       ? state.chats.find((chat) => chat.id === state.activeTemporaryChatId && chat.temporary)
       : undefined
     const localOnly = state.chats.filter((chat) => (
-      (chat.provisional || chat.id === activeTemporary?.id)
+      (chat.provisional || chat.awaitingSummary || chat.id === activeTemporary?.id)
       && !serverChats.some((serverChat) => serverChat.id === chat.id)
     ))
     const chats = [...localOnly, ...serverChats]
@@ -1349,6 +1353,7 @@ export const useChat = create<ChatState>()((set, get) => ({
             expiresAt: input.temporary ? timestamp + 48 * 60 * 60 * 1_000 : newChatExpiresAt,
             expired: false,
             provisional: true,
+            awaitingSummary: !input.temporary,
           }
       return {
         chats: existing ? state.chats.map((chat) => chat.id === id ? updated : chat) : [updated, ...state.chats],
@@ -1467,10 +1472,11 @@ export const useChat = create<ChatState>()((set, get) => ({
           temporary,
           expiresAt: temporary ? timestamp + 48 * 60 * 60 * 1_000 : newChatExpiresAt,
           expired: false,
-          // Keep a new chat in the local summary list until /api/chats/start
-          // completes. A concurrent summaries refresh can otherwise discard it
-          // before the server has persisted the chat.
+          // Request completion enables follow-up responses. List visibility has
+          // a separate acknowledgement: an older summaries request can finish
+          // after /api/chats/start and still omit this chat.
           provisional: true,
+          awaitingSummary: !temporary,
         }
       return {
         chats: existing ? state.chats.map((chat) => chat.id === id ? updated : chat) : [updated, ...state.chats],

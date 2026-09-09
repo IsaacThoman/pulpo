@@ -104,6 +104,8 @@ export interface Chat {
   shareId?: string
   /** Client-only chat created before its first response is persisted. */
   provisional?: boolean
+  /** Keep a locally started chat until a summaries response acknowledges it. */
+  awaitingSummary?: boolean
 }
 
 export interface Folder {
