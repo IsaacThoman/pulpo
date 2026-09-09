@@ -22,7 +22,6 @@ const esUi: Record<string, string> = {
   "Image models could not be loaded.": "No se pudieron cargar los modelos de imágenes.",
   "Image model": "Modelo de imágenes",
   "Enable image generation": "Activar la generación de imágenes",
-  "Let the agent generate and edit images in your conversations. Agent mode must be enabled.": "Permite que el agente genere y edite imágenes en tus conversaciones. El modo Agente debe estar activado.",
   "Image generation": "Generación de imágenes",
   "Choose one audio file up to 10 MiB": "Elige un solo archivo de audio de hasta 10 MiB",
   "Choose an audio clip": "Elige un archivo de audio",

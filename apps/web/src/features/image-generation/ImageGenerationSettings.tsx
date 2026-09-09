@@ -15,7 +15,6 @@ export function ImageGenerationSettings() {
   const catalog = useQuery({ queryKey: ['image-models', userId], queryFn: () => apiRequest<{ data: PublicImageModel[] }>('/api/image-models') })
   const model = catalog.data?.data.find(entry => entry.id === preferences.modelId)
   return <div className="space-y-5">
-    <div><h3 className="text-sm font-semibold">{ui('Image generation')}</h3><p className="mt-1 text-sm text-muted-foreground">{ui('Let the agent generate and edit images in your conversations. Agent mode must be enabled.')}</p></div>
     <div className="flex items-center justify-between gap-4"><label htmlFor="image-generation-enabled" className="text-sm font-medium">{ui('Enable image generation')}</label><Switch id="image-generation-enabled" checked={preferences.enabled} disabled={!model && !preferences.enabled} onCheckedChange={enabled => set('imageGeneration', { ...preferences, enabled })} /></div>
     <div className="space-y-2"><label id="image-model-label" className="text-sm font-medium">{ui('Image model')}</label>
       <Select value={model?.id ?? ''} onValueChange={modelId => set('imageGeneration', { ...preferences, modelId })}>
