@@ -24,14 +24,14 @@ describe('public chat DTOs', () => {
     expect(result).not.toHaveProperty('purgeStartedAt')
   })
 
-  it('does not expose internal response persistence fields', () => {
+  it.each([false, true])('preserves the original model identity and hides internal fields (agentMode: %s)', (agentMode) => {
     const row = {
       id: '00000000-0000-4000-8000-000000000002',
       chatId: '00000000-0000-4000-8000-000000000001', userId: 'private-user',
       modelId: 'model-1', actualModelId: 'model-actual', origin: 'web', timeZone: 'America/New_York', pricingVersionId: 'private-pricing',
       openaiResponseId: 'private-provider-id', previousResponseId: null, parentResponseId: null,
       userMessageId: '00000000-0000-4000-8000-000000000003', branchReason: 'message', status: 'completed' as const,
-      executionMode: 'stream' as const, agentMode: true, agentCapacityAction: null,
+      executionMode: 'stream' as const, agentMode, agentCapacityAction: null,
       input: [{ role: 'user', content: 'hello' }], instructions: 'private instructions',
       presetSelections: {}, parameters: { private: true },
       output: [{ type: 'message', content: [{ type: 'output_text', text: 'answer' }] }],
@@ -46,18 +46,22 @@ describe('public chat DTOs', () => {
 
     expect(result).toMatchObject({
       id: row.id,
-      displayModelId: 'model-actual',
-      agentMode: true,
+      displayModelId: 'model-1',
+      agentMode,
       snapshot: expect.objectContaining({ requestReceivedAt: date.toISOString(), firstReplyTextAt: date.toISOString() }),
       costMicros: 4_200,
       inferenceReferenceCostMicros: 38_500,
       subscriptionCoveredMicros: 3_000,
     })
     for (const field of [
-      'chatId', 'userId', 'origin', 'timeZone', 'pricingVersionId', 'openaiResponseId', 'branchReason',
+      'chatId', 'userId', 'origin', 'timeZone', 'actualModelId', 'pricingVersionId', 'openaiResponseId', 'branchReason',
       'executionMode', 'agentCapacityAction', 'instructions', 'parameters', 'lastSequence',
       'upstreamSequence', 'idempotencyKey', 'publiclyStored', 'startedAt', 'deletedAt', 'updatedAt',
     ]) expect(result).not.toHaveProperty(field)
+
+    expect(toPublicChatResponse(row, [row], { compact: true }).displayModelId).toBe('model-1')
+    expect(toPublicChatResponseStub(row, [row]).displayModelId).toBe('model-1')
+    expect(row.actualModelId).toBe('model-actual')
   })
 
   it('sends output once in compact history while retaining the legacy shape', () => {
