@@ -111,14 +111,15 @@ async function selectControls(view: ReturnType<typeof renderChat>) {
     fireEvent.keyDown(view.getByRole('button', { name: 'Generation options' }), { key: 'ArrowDown' })
     fireEvent.click(await view.findByRole('menuitem', { name: choice }))
   }
-  fireEvent.click(view.getByRole('button', { name: /disable agent/i }))
+  fireEvent.keyDown(view.getByRole('button', { name: 'Agent options, Pulpo Agent' }), { key: 'ArrowDown' })
+  fireEvent.click(await view.findByRole('menuitemradio', { name: 'Disabled' }))
   await waitFor(() => expect(view.getByRole('button', { name: 'Generation options' }).textContent).toContain('Low'))
 }
 function expectControls(view: ReturnType<typeof renderChat>) {
   const label = view.getByRole('button', { name: 'Generation options' }).textContent
   expect(label).toContain('Low')
   expect(label).toContain('Fast')
-  expect(view.getByRole('button', { name: /enable agent/i }).getAttribute('aria-pressed')).toBe('false')
+  expect(view.getByRole('button', { name: 'Agent options, Disabled' }).textContent).toContain('Disabled')
   expect(useSettings.getState().generation[model.id]).toEqual(defaults)
   expect(useSettings.getState().agentModes[model.id]).toBe(true)
 }
@@ -227,7 +228,7 @@ it('gives an existing synced draft priority over the last submitted controls', a
   const label = view.getByRole('button', { name: 'Generation options' }).textContent
   expect(label).toContain('Medium')
   expect(label).toContain('Auto')
-  expect(view.getByRole('button', { name: /disable agent/i }).getAttribute('aria-pressed')).toBe('true')
+  expect(view.getByRole('button', { name: 'Agent options, Pulpo Agent' }).textContent).toContain('Pulpo Agent')
   expect(snapshots.get(chatId)?.state.model?.presets).toEqual(defaults)
 })
 

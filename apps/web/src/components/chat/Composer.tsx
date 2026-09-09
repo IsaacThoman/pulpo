@@ -15,7 +15,6 @@ import {
   Archive,
   AlertCircle,
   ArrowUp,
-  Bot,
   Check,
   ChevronDown,
   CornerDownRight,
@@ -43,6 +42,7 @@ import { useSettings } from '@/stores/settings'
 import { chatOptionsFor, resolveSelections, useModelConfig } from '@/stores/modelConfig'
 import { getCatalogModel, useCatalog } from '@/stores/catalog'
 import { PresetIcon } from '@/components/chat/PresetIcon'
+import { AgentMenu } from '@/components/chat/AgentMenu'
 import { PendingAttachmentChip } from '@/components/chat/AttachmentImage'
 import { cn } from '@/lib/utils'
 import { downloadAttachment } from '@/lib/local-first/attachment-cache'
@@ -1288,21 +1288,15 @@ export function Composer({
             </DropdownMenu>
           )}
 
-          <button
-            type="button"
+          <AgentMenu
+            enabled={activeAgentMode}
             disabled={!canUseAgent}
-            onClick={() => {
+            onSelect={(enabled) => {
               if (!canUseAgent) return
-              if (messageEdit) setEditAgentMode((value) => !value)
-              else setAgentMode(modelId, !agentModeEnabled)
+              if (messageEdit) setEditAgentMode(enabled)
+              else setAgentMode(modelId, enabled)
             }}
-            aria-label={activeAgentMode && canUseAgent ? t('chat.disableAgent') : t('chat.enableAgent')}
-            aria-pressed={activeAgentMode && canUseAgent}
-            className={cn('flex h-8 shrink-0 cursor-pointer items-center gap-1.5 rounded-full px-2.5 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-40', activeAgentMode && canUseAgent ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-accent hover:text-foreground')}
-          >
-            <Bot className="size-4" />
-            <span>{t('chat.agent')}</span>
-          </button>
+          />
 
           <div className="flex-1" />
 

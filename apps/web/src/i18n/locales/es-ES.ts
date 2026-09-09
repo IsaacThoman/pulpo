@@ -92,6 +92,8 @@ const esES = {
     addCaption: 'Añade una descripción…',
     addFavorite: 'Añadir a favoritos',
     agent: 'Agente',
+    agentDisabled: 'Desactivado',
+    agentOptions: 'Opciones de agente, {{selection}}',
     attachFiles: 'Adjuntar archivos',
     dictate: 'Dictar',
     disableAgent: 'Desactivar modo agente',
