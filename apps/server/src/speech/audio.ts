@@ -44,18 +44,19 @@ async function withAudioFiles<T>(signal: AbortSignal, run: (directory: string, s
 const inputOptions = ['-protocol_whitelist', 'file,pipe', '-format_whitelist', 'mp3,wav,mov,aac,flac,ogg']
 export async function normalizeSpeechAsset(bytes: Buffer, kind: 'clone' | 'watermark', signal: AbortSignal) {
   if (!bytes.length || bytes.length > SPEECH_ASSET_MAX_BYTES) throw new AppError(413, 'speech_asset_size', 'Choose a nonempty audio clip up to 10 MiB')
+  const maxDurationSeconds = kind === 'clone' ? 30 : 120
   try {
     return await withAudioFiles(signal, async (directory, bounded) => {
       const source = join(directory, 'source'); await writeFile(source, bytes, { mode: 0o600 })
       // Decode rather than trusting filenames, MIME types, or declared duration.
-      const output = await ffmpeg([...inputOptions, '-i', source, '-map', '0:a:0', '-vn', '-t', '31', '-ar', '24000', '-ac', '1', '-c:a', 'pcm_s16le', '-f', 'wav', 'pipe:1'], bounded)
+      const output = await ffmpeg([...inputOptions, '-i', source, '-map', '0:a:0', '-vn', '-t', String(maxDurationSeconds + 1), '-ar', '24000', '-ac', '1', '-c:a', 'pcm_s16le', '-f', 'wav', 'pipe:1'], bounded)
       const durationSeconds = await speechAudioDuration(output, 'wav')
-      if (durationSeconds > 30 || (kind === 'clone' && durationSeconds < 3)) throw new Error('Duration outside range')
+      if (durationSeconds > maxDurationSeconds || (kind === 'clone' && durationSeconds < 3)) throw new Error('Duration outside range')
       return { audio: output, durationSeconds, contentType: 'audio/wav' as const }
     })
   } catch (error) {
     if (signal.aborted || error instanceof AppError && error.statusCode === 503) throw error
-    throw new AppError(400, 'speech_asset_invalid', kind === 'clone' ? 'Choose valid MP3, WAV, M4A/AAC, FLAC or Ogg/Opus audio lasting 3–30 seconds. FFmpeg must be installed on the server.' : 'Choose valid MP3, WAV, M4A/AAC, FLAC or Ogg/Opus audio up to 30 seconds. FFmpeg must be installed on the server.')
+    throw new AppError(400, 'speech_asset_invalid', kind === 'clone' ? 'Choose valid MP3, WAV, M4A/AAC, FLAC or Ogg/Opus audio lasting 3–30 seconds. FFmpeg must be installed on the server.' : 'Choose valid MP3, WAV, M4A/AAC, FLAC or Ogg/Opus audio up to 2 minutes. FFmpeg must be installed on the server.')
   }
 }
 export async function mixSpeechWatermark(audio: Buffer, watermark: Buffer, options: { format: 'mp3' | 'wav'; volume: number; offsetSeconds: number; signal: AbortSignal }) {
