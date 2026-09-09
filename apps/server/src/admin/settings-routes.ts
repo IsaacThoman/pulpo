@@ -287,6 +287,39 @@ export async function registerAdminSettingsRoutes(app: FastifyInstance): Promise
     return publicDictationSettings(value)
   })
 
+  for (const secret of [
+    { key: 'dictation', path: 'dictation/api-key', encryptedKey: (value: unknown) => parseDictationSettings(value).encryptedGroqApiKey },
+    { key: 'backups', path: 'backups/application-key', encryptedKey: (value: unknown) => parseBackupSettings(value).encryptedApplicationKey },
+  ]) {
+    app.post(`/api/admin/settings/${secret.path}/reveal`, {
+      config: { rateLimit: { max: 10, timeWindow: '5 minutes' } },
+    }, async (request, reply) => {
+      const admin = requireAdmin(request)
+      const input = secretRevealInputSchema.parse(request.body)
+      const [row] = await db.select().from(applicationSettings).where(eq(applicationSettings.key, secret.key)).limit(1)
+      const encryptedApiKey = secret.encryptedKey(row?.value)
+      if (!encryptedApiKey) throw notFound('API key')
+
+      try {
+        await requireSecretRevealAuth(admin.id, input.currentPassword, input.verificationCode)
+      } catch (cause) {
+        await db.insert(auditEvents).values({
+          id: newId(), actorUserId: admin.id, action: `settings.${secret.key}.api_key.reveal_denied`,
+          targetType: 'application', targetId: secret.key,
+        })
+        throw cause
+      }
+
+      const apiKey = decryptSecret(encryptedApiKey, getConfig().ENCRYPTION_KEY)
+      await db.insert(auditEvents).values({
+        id: newId(), actorUserId: admin.id, action: `settings.${secret.key}.api_key.reveal`,
+        targetType: 'application', targetId: secret.key,
+      })
+      reply.header('cache-control', 'no-store')
+      return { apiKey }
+    })
+  }
+
   app.post('/api/admin/settings/web-tools/:provider/api-key/reveal', {
     config: { rateLimit: { max: 10, timeWindow: '5 minutes' } },
   }, async (request, reply) => {
