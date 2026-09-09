@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
-import { speechModelSchema, speechRequestSchema, type SpeechModel, type PublicSpeechModel } from '@pulpo/contracts'
+import { SPEECH_REQUEST_BODY_LIMIT, speechModelSchema, speechRequestSchema, type SpeechModel, type PublicSpeechModel } from '@pulpo/contracts'
 import { speechBytes } from '@pulpo/client-core'
 import { requireAdmin, requireUser } from '../auth/service.js'
 import { db } from '../database/client.js'
@@ -72,7 +72,7 @@ export async function registerSpeechRoutes(app: FastifyInstance) {
     for (const clip of deleted?.voicePreviews ?? []) await cleanupSpeechPreview(clip.objectKey, request)
     return reply.code(204).send()
   })
-  app.post('/api/speech', { bodyLimit: 96 * 1024, config: { rateLimit: { max: 40, timeWindow: '1 minute' } } }, async (request, reply) => {
+  app.post('/api/speech', { bodyLimit: SPEECH_REQUEST_BODY_LIMIT, config: { rateLimit: { max: 40, timeWindow: '1 minute' } } }, async (request, reply) => {
     const user = requireUser(request)
     const input = speechRequestSchema.parse(request.body)
     const [row] = await db.select({ config: speechModels.config, provider: providerConnections }).from(speechModels).innerJoin(providerConnections, eq(providerConnections.id, speechModels.providerConnectionId)).where(eq(speechModels.id, input.modelId)).limit(1)
