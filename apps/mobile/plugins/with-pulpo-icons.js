@@ -3,6 +3,8 @@ const path = require('node:path')
 const { withDangerousMod } = require('@expo/config-plugins')
 
 const ICON_SETS = [
+  'LucideBot.imageset',
+  'LucideBotOff.imageset',
   'FavoriteStar.imageset',
   'FavoriteStarWhite.imageset',
   'LucideFlaskConical.imageset',

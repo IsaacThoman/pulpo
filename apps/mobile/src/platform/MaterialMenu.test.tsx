@@ -17,7 +17,7 @@ vi.mock('@expo/ui/jetpack-compose', async () => {
   })
   return {
     Host: Container, Box: Container, Column: Container, Text: ({ children }: { children: ReactNode }) => createElement('span', null, children),
-    Icon: ({ contentDescription }: { contentDescription?: string }) => createElement('span', null, contentDescription),
+    Icon: ({ contentDescription, source, tint }: { contentDescription?: string; source: string; tint?: string }) => createElement('span', { 'data-icon': source, 'data-tint': tint }, contentDescription),
     Spacer: () => null, HorizontalDivider: () => createElement('hr'), TextButton: Button, IconButton: Button,
     DropdownMenu: Dropdown, DropdownMenuItem: Object.assign(Button, { Text: Container, LeadingIcon: Container, TrailingIcon: Container }),
     useMaterialColors: () => ({}),
@@ -34,6 +34,36 @@ async function click(label: string) {
   await act(async () => target!.click())
 }
 describe('native Android menu interactions', () => {
+  it('opens agent choices without selecting, then dispatches the choice and closes', async () => {
+    const enable = vi.fn(), disable = vi.fn()
+    await act(async () => root.render(<MaterialMenu label="Agent options, Pulpo Agent" icon="bot" color="#AF52DE" actions={[
+      { label: 'Pulpo Agent', icon: 'bot', selected: true, onPress: enable },
+      { label: 'Disabled', icon: 'bot-off', onPress: disable },
+    ]} />))
+    expect(container.querySelector('[data-icon=bot]')?.getAttribute('data-tint')).toBe('#AF52DE')
+    await click('Agent options, Pulpo Agent')
+    expect(enable).not.toHaveBeenCalled(); expect(disable).not.toHaveBeenCalled()
+    const choices = container.querySelectorAll('[role=menu] button')
+    expect(choices[0]!.querySelector('[data-icon=checkmark]')).not.toBeNull()
+    expect(choices[1]!.querySelector('[data-icon=bot-off]')).not.toBeNull()
+    await click('Disabled')
+    expect(disable).toHaveBeenCalledOnce(); expect(enable).not.toHaveBeenCalled()
+    expect(container.querySelector('[role=menu]')).toBeNull()
+  })
+  it('disables the trigger and dismisses an open menu when availability changes', async () => {
+    const select = vi.fn()
+    const menu = (disabled: boolean) => <MaterialMenu label="Agent options, Disabled" icon="bot-off" disabled={disabled} actions={[{ label: 'Pulpo Agent', onPress: select }]} />
+    await act(async () => root.render(menu(false)))
+    await click('Agent options, Disabled')
+    expect(container.querySelector('[role=menu]')).not.toBeNull()
+    await act(async () => root.render(menu(true)))
+    expect(container.querySelector('[role=menu]')).toBeNull()
+    expect(container.querySelector('button')!.disabled).toBe(true)
+    await click('Agent options, Disabled')
+    expect(select).not.toHaveBeenCalled()
+    await act(async () => root.render(menu(false)))
+    expect(container.querySelector('[role=menu]')).toBeNull()
+  })
   it('preserves preset sections and dispatches identical choice labels to their own preset', async () => {
     const reasoning = vi.fn(), verbosity = vi.fn()
     await act(async () => root.render(<MaterialMenu label="Options" text="High · High" icon="chevron.down" sections={[

@@ -98,12 +98,14 @@ export function MaterialRow({ title, detail, detailLines, value, image, icon, de
 
 const EMPTY_ACTIONS: Action[] = [];
 const EMPTY_SECTIONS: MenuSection[] = [];
-export function MaterialMenu({ label, icon, actions = EMPTY_ACTIONS, sections = EMPTY_SECTIONS, text, compact, image, centered }: MenuProps) {
+export function MaterialMenu({ label, icon, actions = EMPTY_ACTIONS, sections = EMPTY_SECTIONS, text, compact, image, centered, disabled, color }: MenuProps) {
   const [expanded, setExpanded] = useState(false);
   const [submenu, setSubmenu] = useState<Action['submenu']>();
   const colors = useMaterialColors();
   const dismiss = () => { setExpanded(false); setSubmenu(undefined); };
+  useEffect(() => { if (disabled) { setExpanded(false); setSubmenu(undefined); } }, [disabled]);
   const select = (action: Action) => {
+    if (disabled || action.disabled) return;
     if (action.submenu) { setSubmenu(action.submenu); return; }
     if (action.keepOpen) setSubmenu(undefined);
     else dismiss();
@@ -118,14 +120,14 @@ export function MaterialMenu({ label, icon, actions = EMPTY_ACTIONS, sections = 
   // Let compact labels shrink to the actual row space as composer actions
   // appear (for example, Shelve), keeping every icon button at its full size.
   const triggerWidth = text ? compact ? 200 : 230 : 48;
-  return <Host style={{ width: triggerWidth, maxWidth: '100%', height: 48, flexShrink: text && compact ? 1 : 0 }} ignoreSafeAreaKeyboardInsets><DropdownMenu expanded={expanded} onDismissRequest={dismiss} modifiers={text ? [wrapContentWidth(centered ? 'centerHorizontally' : 'start')] : undefined}>
-    <DropdownMenu.Trigger>{text ? <TextButton onClick={() => setExpanded(true)} modifiers={[height(48)]}>
+  return <Host style={{ width: triggerWidth, maxWidth: '100%', height: 48, flexShrink: text && compact ? 1 : 0 }} ignoreSafeAreaKeyboardInsets><DropdownMenu expanded={expanded && !disabled} onDismissRequest={dismiss} modifiers={text ? [wrapContentWidth(centered ? 'centerHorizontally' : 'start')] : undefined}>
+    <DropdownMenu.Trigger>{text ? <TextButton enabled={!disabled} onClick={() => setExpanded(true)} modifiers={[height(48)]}>
       {image ? <><Icon source={image} tint={null} size={24} /><Spacer modifiers={[width(8)]} /></> : null}
       <Box contentAlignment="centerEnd">
         <Text style={{ typography: 'titleMedium' }} maxLines={1} overflow="ellipsis" modifiers={[padding(0, 0, 26, 0)]}>{text}</Text>
         <Icon source={materialIcon(icon)} size={18} contentDescription={label} />
       </Box>
-    </TextButton> : <IconButton colors={{ contentColor: colors.onSurface }} onClick={() => setExpanded(true)}><Icon source={materialIcon(icon)} size={24} contentDescription={label} /></IconButton>}</DropdownMenu.Trigger>
+    </TextButton> : <IconButton enabled={!disabled} colors={{ contentColor: colors.onSurface, disabledContentColor: colors.outline }} onClick={() => setExpanded(true)}><Icon source={materialIcon(icon)} size={24} contentDescription={label} tint={disabled ? undefined : materialTint(color, colors)} /></IconButton>}</DropdownMenu.Trigger>
     <DropdownMenu.Items>{groups.map((group, index) => <Fragment key={group.id}>
       {index > 0 ? <HorizontalDivider modifiers={[padding(0, 8, 0, 8)]} /> : null}
       {group.title ? <Text color={colors.onSurfaceVariant} style={{ typography: 'labelLarge' }} modifiers={[padding(16, 8, 16, 8)]}>{group.title}</Text> : null}
