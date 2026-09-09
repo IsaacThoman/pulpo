@@ -17,9 +17,9 @@ describe('importedModelIdentity', () => {
 })
 
 describe('responseDisplayModelId', () => {
-  it('uses the model that actually produced a forwarded response', () => {
-    expect(responseDisplayModelId({ modelId: 'requested-model', actualModelId: 'forwarded-model' }))
-      .toBe('forwarded-model')
+  it('keeps the original model identity when a fallback produces the response', () => {
+    expect(responseDisplayModelId({ modelId: 'glm-5.3-flash', actualModelId: 'glm-5.3-flash-fireworks' }))
+      .toBe('glm-5.3-flash')
   })
 
   it('falls back to the stored model for responses without execution metadata', () => {

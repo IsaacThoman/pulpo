@@ -1,10 +1,17 @@
 import { z } from 'zod'
 
+// Transport bounds, independent of an upstream model's advertised limits.
+// String lengths here use UTF-16 code units, matching Zod's string validation.
+export const SPEECH_REQUEST_MAX_INPUT_LENGTH = 16_384
+export const SPEECH_MAX_INSTRUCTIONS_LENGTH = 4_096
+// JSON can escape each code unit as six bytes (for example, control characters).
+export const SPEECH_REQUEST_BODY_LIMIT = 6 * (SPEECH_REQUEST_MAX_INPUT_LENGTH + SPEECH_MAX_INSTRUCTIONS_LENGTH + 200 + 120) + 1024
+
 export const speechPreferencesSchema = z.object({
   modelId: z.string().max(120).nullable().default(null),
   models: z.record(z.string().max(120), z.object({
     voice: z.string().max(200).optional(),
-    instructions: z.string().max(4096).default(''),
+    instructions: z.string().max(SPEECH_MAX_INSTRUCTIONS_LENGTH).default(''),
     speed: z.number().min(0.25).max(4).default(1),
   })).default({}),
 }).default(() => ({ modelId: null, models: {} }))
@@ -24,8 +31,8 @@ export const speechModelSchema = z.object({
   supportsSpeed: z.boolean().default(false),
   speedMin: z.number().min(0.25).max(1).default(0.25),
   speedMax: z.number().min(1).max(4).default(4),
-  maxInputCharacters: z.number().int().min(64).max(4096).default(4096),
-  maxInputTokens: z.number().int().min(64).max(32000).nullable().default(null),
+  maxInputCharacters: z.number().int().positive().default(4096),
+  maxInputTokens: z.number().int().positive().nullable().default(null),
   responseFormat: z.enum(['mp3', 'wav']).default('mp3'),
   supportsSse: z.boolean().default(false),
   billUsers: z.boolean().default(false),
@@ -45,9 +52,9 @@ export type PublicSpeechModel = Omit<SpeechModelCatalogEntry, 'providerConnectio
 export const speechRequestSchema = z.object({
   requestId: z.string().uuid(),
   modelId: z.string().min(1).max(120),
-  input: z.string().min(1).max(16384),
+  input: z.string().min(1).max(SPEECH_REQUEST_MAX_INPUT_LENGTH),
   voice: z.string().min(1).max(200),
-  instructions: z.string().max(4096).optional(),
+  instructions: z.string().max(SPEECH_MAX_INSTRUCTIONS_LENGTH).optional(),
   speed: z.number().min(0.25).max(4).optional(),
 }).strict()
 export type SpeechRequest = z.infer<typeof speechRequestSchema>

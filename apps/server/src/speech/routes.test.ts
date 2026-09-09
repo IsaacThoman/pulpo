@@ -1,6 +1,7 @@
 import Fastify from 'fastify'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { OPENAI_SPEECH_PRESET, speechModelSchema } from '@pulpo/contracts'
+import { speechChunks } from '@pulpo/client-core'
 const mocks = vi.hoisted(() => ({ rows: [] as unknown[], claims: [] as unknown[], admin: true, user: true, generate: vi.fn(), charge: vi.fn() }))
 vi.mock('../database/client.js', () => {
   const query = () => { const chain: Record<string, unknown> = {}; for (const name of ['from', 'innerJoin', 'where']) chain[name] = () => chain; chain.limit = async () => mocks.rows; chain.then = (resolve: (value: unknown[]) => void) => Promise.resolve(mocks.rows).then(resolve); return chain }
@@ -23,6 +24,20 @@ beforeEach(() => {
 })
 async function app() { const server = Fastify(); await registerSpeechRoutes(server); return server }
 describe('speech routes', () => {
+  it.each(['x', '👋', '\u0001'])('accepts every large client chunk of %s, including escaped JSON', async character => {
+    const server = await app()
+    const largerModel = speechModelSchema.parse({ ...model, maxInputCharacters: 100_000, maxInputTokens: null, billUsers: false })
+    mocks.rows = [{ config: largerModel, provider: { baseUrl: 'https://provider.example/v1', encryptedApiKey: 'secret', enabled: true, requestTimeoutMs: 1000 } }]
+    const instructions = '\u0001'.repeat(4096)
+    const chunks = speechChunks(character.repeat(20_000), largerModel, instructions)
+    for (const input of chunks) {
+      mocks.claims = [{}]
+      const response = await server.inject({ method: 'POST', url: '/api/speech', payload: { ...request, input, instructions } })
+      expect(response.statusCode, response.body).toBe(200)
+      expect(mocks.generate).toHaveBeenLastCalledWith(expect.objectContaining({ input: expect.objectContaining({ input }) }))
+    }
+    await server.close()
+  })
   it('exposes only enabled public models and never provider credentials', async () => {
     const server = await app()
     const response = await server.inject('/api/speech-models')

@@ -94,6 +94,29 @@ instance using real scoped management tokens:
   URL encoding, file-size validation, and old-server capability detection. CLI
   and server builds and workspace lint passed. No additional migration is needed.
 
+## Configurable input limits follow-up
+
+Speech model character and token limits now accept positive safe integers instead
+of imposing the preset's 4,096-character ceiling, a 32,000-token ceiling, or a
+64-unit minimum. The preset remains unchanged. Both clients split at the smaller
+of the model limits and the API's 16,384 UTF-16-code-unit input bound, preserving
+Unicode code points. The route's byte allowance accommodates JSON escaping of all
+bounded request fields. The 4,096-code-unit instructions limit remains shared
+between preferences, generation requests, and web/mobile inputs.
+
+Regression coverage includes saving 100,000-character/64,000-token models through
+the admin editor and CLI, readable validation errors and correction, large ASCII,
+emoji, CJK and escaped-control chunks, real Fastify request parsing with a mocked
+provider, and usable one-to-three-byte remaining token budgets. Chunk construction
+also avoids repeatedly copying the entire remaining message.
+
+Validation: 67 targeted tests passed across contracts, client core, CLI, server,
+web and mobile; three database-backed billing tests were skipped. Contracts,
+client core, CLI, web and server builds, mobile typecheck, and workspace lint
+passed. Web tests on Node 26 used `NODE_OPTIONS=--no-experimental-webstorage` so
+jsdom supplies localStorage. No external speech generation or physical-device
+playback was performed for this follow-up.
+
 ## Validation limits
 
 The browser automation runtime does not mark a page hidden when another automated tab becomes active. Dispatching a visibility change with a hidden document stopped playback, but actual browser backgrounding remains a manual check. Native lifecycle/component tests passed; physical iOS/Android locking, native dictation interaction, and real external speech provider synthesis were not exercised in this run.

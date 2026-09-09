@@ -1,5 +1,5 @@
 import { Lexer, type Token } from 'marked'
-import type { PublicSpeechModel } from '@pulpo/contracts'
+import { SPEECH_REQUEST_MAX_INPUT_LENGTH, type PublicSpeechModel } from '@pulpo/contracts'
 
 /** Only visible message markdown enters speech; callers never pass reasoning or tools. */
 export function speechText(markdown: string): string {
@@ -20,20 +20,24 @@ export function speechBytes(text: string): number {
 }
 export function speechChunks(text: string, model: Pick<PublicSpeechModel, 'maxInputCharacters' | 'maxInputTokens'>, instructions = ''): string[] {
   const byteLimit = model.maxInputTokens === null ? Infinity : model.maxInputTokens - speechBytes(instructions)
-  if (byteLimit < 4) throw new Error('Speech instructions are too long for this model')
+  if (byteLimit < 1) throw new Error('Speech instructions are too long for this model')
   const result: string[] = []
-  let rest = Array.from(text.trim())
-  while (rest.length) {
-    let count = 0, bytes = 0, boundary = 0
-    while (count < rest.length && count < model.maxInputCharacters && bytes + speechBytes(rest[count]!) <= byteLimit) {
-      const c = rest[count++]!; bytes += speechBytes(c)
+  const characters = Array.from(text.trim())
+  let offset = 0
+  while (offset < characters.length) {
+    let count = 0, bytes = 0, units = 0, boundary = 0
+    while (offset + count < characters.length && count < model.maxInputCharacters) {
+      const c = characters[offset + count]!
+      const size = speechBytes(c)
+      if (bytes + size > byteLimit || units + c.length > SPEECH_REQUEST_MAX_INPUT_LENGTH) break
+      count++; bytes += size; units += c.length
       if (/[\s.!?。！？]/u.test(c)) boundary = count
     }
-    if (!count) throw new Error('Speech input limit is too small')
-    if (count < rest.length && boundary > count / 2) count = boundary
-    const chunk = rest.slice(0, count).join('').trim()
+    if (!count) throw new Error('Speech input limit is too small for this text and its instructions')
+    if (offset + count < characters.length && boundary > count / 2) count = boundary
+    const chunk = characters.slice(offset, offset + count).join('').trim()
     if (chunk) result.push(chunk)
-    rest = rest.slice(count)
+    offset += count
   }
   return result
 }
