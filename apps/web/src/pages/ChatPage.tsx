@@ -163,6 +163,7 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
   const navigationState = location.state as NewChatLocationState | null
   const carriedModelId = navigationState?.selectedModelId
   const temporaryComposerRef = useRef<{ toggle: () => Promise<void> } | null>(null)
+  const suggestionComposerRef = useRef<{ submit: (message: string) => void } | null>(null)
   const [temporary, setTemporary] = useState(false)
   const [savingTemporary, setSavingTemporary] = useState(false)
   const [temporaryError, setTemporaryError] = useState<string | null>(null)
@@ -301,8 +302,7 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
   )
 
   const sendSuggestion = (s: string) => {
-    const id = useChat.getState().sendMessage(null, s, modelId, [], temporary, effectiveNewChatAutoExpire)
-    if (!temporary) navigate(`/c/${id}`)
+    suggestionComposerRef.current?.submit(s)
   }
 
   const handleTemporaryControl = async () => {
@@ -496,7 +496,7 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
               chatWidth === 'narrow' ? 'max-w-5xl' : 'max-w-[min(100%,90rem)]'
             )}
           >
-            <Composer syncEnabled={!adminMode} onSyncControls={applyComposerControls} key="new" temporaryControlRef={temporaryComposerRef} onTemporaryChange={setTemporary} chatId={null} modelId={modelId} temporary={temporaryMode} autoExpire={effectiveNewChatAutoExpire} />
+            <Composer syncEnabled={!adminMode} onSyncControls={applyComposerControls} key="new" temporaryControlRef={temporaryComposerRef} suggestionControlRef={suggestionComposerRef} onTemporaryChange={setTemporary} chatId={null} modelId={modelId} temporary={temporaryMode} autoExpire={effectiveNewChatAutoExpire} />
           </div>
         </>
       ) : (
