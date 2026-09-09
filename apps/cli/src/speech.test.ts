@@ -42,7 +42,7 @@ it('lists, reads, creates, updates, and deletes full model configurations', asyn
   expect(await run(['speech-model', 'get', 'tts'])).toEqual(model)
   const file = join(directory, 'model.json')
   for (const billingUnit of ['tokens', 'characters', 'duration'] as const) {
-    const desired = { ...model, enabled: true, billingUnit, billUsers: true, inputPriceMicros: 12, outputPriceMicros: 34, characterPriceMicros: 56, minutePriceMicros: 78, sortOrder: 3 }
+    const desired = { ...model, enabled: true, maxInputCharacters: 100_000, maxInputTokens: 64_000, billingUnit, billUsers: true, inputPriceMicros: 12, outputPriceMicros: 34, characterPriceMicros: 56, minutePriceMicros: 78, sortOrder: 3 }
     await writeFile(file, JSON.stringify(desired))
     await run(['speech-model', 'create', '--file', file])
     expect(request).toHaveBeenLastCalledWith('/api/management/v1/speech-models', { method: 'POST', body: desired })

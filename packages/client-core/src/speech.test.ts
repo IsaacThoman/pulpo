@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import { SPEECH_REQUEST_MAX_INPUT_LENGTH, speechRequestSchema } from '@pulpo/contracts'
 import { SpeechPlayback, speechBytes, speechChunks, speechText, type SpeechAudio } from './speech.js'
 const tick = () => new Promise(resolve => setTimeout(resolve, 0))
 function deferred<T>() { let resolve!: (value: T) => void; let reject!: (error: Error) => void; const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no }); return { promise, resolve, reject } }
@@ -20,6 +21,22 @@ describe('speech text', () => {
     expect(chunks.join(' ').replace(/\s/g, '')).toBe(input.replace(/\s/g, ''))
     for (const chunk of chunks) { expect(Array.from(chunk).length).toBeLessThanOrEqual(40); expect(speechBytes(chunk) + 4).toBeLessThanOrEqual(35); expect(chunk).not.toContain('\ufffd') }
     expect(() => speechChunks('Hello', { maxInputCharacters: 40, maxInputTokens: 4 }, 'long')).toThrow()
+  })
+  it.each(['x', '👋', '界', '\u0001'])('keeps large %s chunks within the request schema without losing text', character => {
+    const input = character.repeat(40_000)
+    const chunks = speechChunks(input, { maxInputCharacters: 100_000, maxInputTokens: null })
+    expect(chunks.join('')).toBe(input)
+    expect(chunks[0]!.length).toBe(SPEECH_REQUEST_MAX_INPUT_LENGTH)
+    for (const chunk of chunks) {
+      expect(chunk).not.toContain('\ufffd')
+      expect(speechRequestSchema.safeParse({ requestId: '22222222-2222-4222-8222-222222222222', modelId: 'speech', voice: 'coral', input: chunk }).success).toBe(true)
+    }
+  })
+  it('uses larger provider limits and small remaining token budgets', () => {
+    expect(speechChunks('x'.repeat(10_000), { maxInputCharacters: 8192, maxInputTokens: null }).map(chunk => chunk.length)).toEqual([8192, 1808])
+    expect(speechChunks('abc', { maxInputCharacters: 1, maxInputTokens: 5 }, 'calm')).toEqual(['a', 'b', 'c'])
+    expect(speechChunks('世界', { maxInputCharacters: 10, maxInputTokens: 7 }, 'calm')).toEqual(['世', '界'])
+    expect(() => speechChunks('👋', { maxInputCharacters: 10, maxInputTokens: 7 }, 'calm')).toThrow('too small')
   })
 })
 describe('speech playback', () => {

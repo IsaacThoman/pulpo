@@ -18,6 +18,32 @@ beforeEach(() => {
 afterEach(cleanup)
 const edit = async () => { render(<AdminSpeechModelsPage />); fireEvent.click(await screen.findByRole('button', { name: 'Edit' })) }
 
+it('saves provider limits above the preset ceilings and permits no token limit', async () => {
+  await edit()
+  fireEvent.change(screen.getByLabelText('Maximum input characters'), { target: { value: '100000' } })
+  fireEvent.change(screen.getByLabelText('Token limit (blank for none)'), { target: { value: '64000' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+  await waitFor(() => expect(apiRequest).toHaveBeenCalledWith('/api/admin/speech-models/speech', expect.objectContaining({ body: expect.objectContaining({ maxInputCharacters: 100000, maxInputTokens: 64000 }) })))
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
+  fireEvent.change(screen.getByLabelText('Token limit (blank for none)'), { target: { value: '' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+  await waitFor(() => expect(apiRequest).toHaveBeenCalledWith('/api/admin/speech-models/speech', expect.objectContaining({ body: expect.objectContaining({ maxInputTokens: null }) })))
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+})
+
+it.each(['0', '-1', '1.001'])('shows a readable field error for invalid limit %s and allows correction', async value => {
+  await edit()
+  fireEvent.change(screen.getByLabelText('Maximum input characters'), { target: { value } })
+  fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+  await waitFor(() => expect(screen.getAllByRole('alert').every(alert => alert.textContent === 'Maximum input characters: Enter a positive whole number.')).toBe(true))
+  expect(apiRequest).not.toHaveBeenCalledWith('/api/admin/speech-models/speech', expect.anything())
+  expect(screen.getByRole('button', { name: 'Save' }).hasAttribute('disabled')).toBe(false)
+  fireEvent.change(screen.getByLabelText('Maximum input characters'), { target: { value: '8192' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+})
+
 it('uploads the optional clip after saving the model and removes it only on save', async () => {
   await edit()
   fireEvent.change(screen.getByLabelText('Preview file for Warm voice'), { target: { files: [new File(['sample'], 'sample.wav', { type: 'audio/wav' })] } })

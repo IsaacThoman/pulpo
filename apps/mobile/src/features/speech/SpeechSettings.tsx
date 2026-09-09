@@ -1,7 +1,7 @@
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import { ActivityIndicator, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native'
 import { useQuery } from '@tanstack/react-query'
-import type { PublicSpeechModel } from '@pulpo/contracts'
+import { SPEECH_MAX_INSTRUCTIONS_LENGTH, type PublicSpeechModel } from '@pulpo/contracts'
 import { apiRequest } from '../../api/client'
 import { usePreferencesStore } from '../../store/preferences'
 import { useSessionStore } from '../../store/session'
@@ -70,7 +70,7 @@ export function SpeechSettings({ onBack }: { onBack: () => void }) {
         </ScrollView>}
         {playback.error && <Text accessibilityRole="alert" style={{ color: theme.text }}>{playback.error}</Text>}
       </View>
-      {model.supportsInstructions && <View style={{ gap: 8 }}><Text style={textStyle}>Instructions</Text><TextInput accessibilityLabel="Speech instructions" style={fieldStyle} multiline maxLength={4096} value={settings.instructions} onChangeText={instructions => update({ instructions })} placeholder="Speak in a calm, friendly tone." placeholderTextColor={theme.secondary} /></View>}
+      {model.supportsInstructions && <View style={{ gap: 8 }}><Text style={textStyle}>Instructions</Text><TextInput accessibilityLabel="Speech instructions" style={fieldStyle} multiline maxLength={SPEECH_MAX_INSTRUCTIONS_LENGTH} value={settings.instructions} onChangeText={instructions => update({ instructions })} placeholder="Speak in a calm, friendly tone." placeholderTextColor={theme.secondary} /></View>}
       {model.supportsSpeed && <View style={{ gap: 8 }}><Text style={textStyle}>Speed: {settings.speed}×</Text><View style={{ flexDirection: 'row', gap: 20 }}><Pressable accessibilityRole="button" accessibilityLabel="Decrease speech speed" onPress={() => update({ speed: Math.max(model.speedMin, Math.round((settings.speed - 0.1) * 100) / 100) })}><Text style={fieldStyle}>−</Text></Pressable><Pressable accessibilityRole="button" accessibilityLabel="Increase speech speed" onPress={() => update({ speed: Math.min(model.speedMax, Math.round((settings.speed + 0.1) * 100) / 100) })}><Text style={fieldStyle}>+</Text></Pressable></View></View>}
     </>}
   </View></Screen>
