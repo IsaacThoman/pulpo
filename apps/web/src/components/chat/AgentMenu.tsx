@@ -18,7 +18,7 @@ export function AgentMenu({ enabled, disabled, onSelect }: {
           type="button"
           disabled={disabled}
           aria-label={t('chat.agentOptions', { selection: label })}
-          className="group/agent-options flex h-8 shrink-0 cursor-pointer items-center gap-1.5 rounded-full px-2.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+          className="group/agent-options flex h-8 shrink-0 cursor-pointer items-center gap-1.5 rounded-full px-2.5 text-xs text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-ring/50 focus-visible:ring-[3px] disabled:cursor-not-allowed disabled:opacity-40"
         >
           <Icon className="size-4" />
           <span>{label}</span>

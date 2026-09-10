@@ -1244,7 +1244,7 @@ export function Composer({
               <DropdownMenuTrigger asChild>
                 <button
                   type="button"
-                  className="group/generation-options flex h-8 min-w-0 cursor-pointer items-center gap-1.5 overflow-hidden rounded-full px-2.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                  className="group/generation-options flex h-8 min-w-0 cursor-pointer items-center gap-1.5 overflow-hidden rounded-full px-2.5 text-xs text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-ring/50 focus-visible:ring-[3px]"
                   aria-label={t('chat.generationOptions')}
                 >
                   {activePresets.map((preset, i) => {
