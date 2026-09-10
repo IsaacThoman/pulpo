@@ -3810,6 +3810,7 @@ function SuggestedPromptButton({ label, accessible, onPress, temporary = false }
 
 const EMPTY_MOBILE_QUEUE: MobileQueuedMessage[] = [];
 
+const COMPOSER_MAX_FONT_SIZE_MULTIPLIER = 1.6;
 const COMPOSER_SECTION_SPRING = { damping: 24, stiffness: 260, mass: 0.8, overshootClamping: true };
 
 function ComposerQueueSection({ title, subject, visible, collapsed, onToggle, failed = false, children }: {
@@ -5695,7 +5696,7 @@ function ChatView({
                   disableFullscreenUI
                   // Keep focus during shelf actions; transferShelf checks for edits before replacing content.
                   editable={!handoffBusy && !composerFocusSuppressed && !(messageEdit && sending)}
-                  maxFontSizeMultiplier={1.6}
+                  maxFontSizeMultiplier={COMPOSER_MAX_FONT_SIZE_MULTIPLIER}
                   multiline
                   maxLength={1_000_000}
                   onFocus={() => { setQueueCollapsed(true); setShelfCollapsed(true); }}
@@ -5705,7 +5706,11 @@ function ChatView({
                   onSelectionChange={(event) => { setComposerSelection(setInputSelection, inputSelectionRef, event.nativeEvent.selection); }}
                   placeholder={attachments.length > 0 ? 'Add a caption…' : messageEdit ? 'Edit message…' : temporary ? 'Temporary message…' : 'Message…'}
                   placeholderTextColor={COLORS.muted}
-                  style={[styles.input, styles.composerTextInput]}
+                  // iOS multiline measurement can retain the previous draft's height after a clear.
+                  // Derive the reset from the controlled value so synced clears work too, without remounting.
+                  style={[styles.input, styles.composerTextInput, Platform.OS === 'ios' && input.length === 0 && {
+                    height: Math.max(styles.input.minHeight, Math.ceil(styles.input.lineHeight * Math.min(fontScale, COMPOSER_MAX_FONT_SIZE_MULTIPLIER))),
+                  }]}
                   value={input}
                 />
                 {showShelf && (Platform.OS === 'ios'
