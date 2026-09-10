@@ -35,6 +35,13 @@ public final class PulpoFileClipboardModule: Module {
       }
     }
 
+    View(AgentModeMenuView.self) {
+      Events("onSelectionChange")
+      Prop("configuration") { (view, value: AgentModeMenuConfiguration) in
+        view.configure(value)
+      }
+    }
+
     View(TemporaryChatHeaderView.self) {
       Events("onToggleExpiration", "onToggleTemporary", "onSave", "onNewChat")
 
