@@ -15,7 +15,9 @@ concurrency:
   # lock. A queued run refreshes main again in the release job below.
   # Main also shares the manual Android workflow's lock for the entire release,
   # keeping version-code allocation and Google Play uploads in the same order.
-  group: ${{ github.ref == 'refs/heads/main' && 'android-google-play' || format('ci-release-{0}', github.event.pull_request.number || github.ref) }}
+  # Merged PR close events also use refs/heads/main. Keep every PR event in its
+  # own group so closing a PR cannot cancel the main release triggered by its merge.
+  group: ${{ github.event_name == 'pull_request' && format('ci-release-{0}', github.event.pull_request.number) || (github.ref == 'refs/heads/main' && 'android-google-play' || format('ci-release-{0}', github.ref)) }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
