@@ -76,6 +76,7 @@ function registerProxy(
     const contentType = response.headers['content-type']
     const disposition = response.headers['content-disposition']
     if (contentType) reply.header('content-type', contentType)
+    if (response.headers['cache-control']) reply.header('cache-control', response.headers['cache-control'])
     if (disposition) reply.header('content-disposition', disposition)
     if (response.statusCode === 204) return reply.send()
     return reply.send(response.rawPayload)
@@ -104,7 +105,7 @@ export async function registerManagementRoutes(app: FastifyInstance): Promise<vo
           workspaceControllerConfigured: Boolean(config.WORKSPACE_CONTROLLER_URL && config.WORKSPACE_CONTROLLER_TOKEN),
         },
         capabilities: [
-          'settings', 'managementTokens', 'catalog', 'catalogIcons', 'speechModels', 'imageModels', 'users', 'usage', 'audit', 'workspaces', 'banners', 'exports', 'backups', 'operations', 'twoFactor',
+          'settings', 'managementTokens', 'catalog', 'catalogIcons', 'speechModels', 'imageModels', 'users', 'usage', 'detailedPayloads', 'audit', 'workspaces', 'banners', 'exports', 'backups', 'operations', 'twoFactor',
         ],
       }
     })

@@ -24,6 +24,7 @@ describe('Pulpo CLI command surface', () => {
       'usage', 'audit', 'workspace', 'banner', 'job', 'export', 'backup',
     ]))
     expect(commandNames(program, 'settings')).toEqual(expect.arrayContaining(['get', 'set', 'edit', 'schema', 'export', 'diff', 'apply']))
+    expect(commandNames(program, 'usage')).toContain('payloads')
     expect(commandNames(program, 'auth')).toContain('2fa')
     expect(nestedCommandNames(program, 'auth', '2fa')).toEqual(expect.arrayContaining([
       'status', 'setup', 'confirm', 'regenerate-recovery-codes', 'disable',
