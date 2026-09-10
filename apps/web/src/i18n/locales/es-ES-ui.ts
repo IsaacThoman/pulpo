@@ -1,4 +1,6 @@
 const esUi: Record<string, string> = {
+  "OpenAI Images": "Imágenes de OpenAI",
+  "Use https://api.openai.com/v1 and an OpenAI API key with access to GPT Image models.": "Usa https://api.openai.com/v1 y una clave API de OpenAI con acceso a los modelos GPT Image.",
   "Unable to save image model": "No se pudo guardar el modelo de imágenes",
   "Loading models…": "Cargando modelos…",
   "Generating an image…": "Generando una imagen…",
