@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import 'fake-indexeddb/auto'
 import { Profiler } from 'react'
-import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, waitFor, within } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { ComposerSync } from '@pulpo/client-core'
@@ -127,6 +127,55 @@ function expectControls(view: ReturnType<typeof renderChat>) {
 function expectNoPresetFlash() {
   expect(renderedControls.filter((label) => !label.includes('Low') || !label.includes('Fast'))).toEqual([])
 }
+
+it.each([
+  { picker: 'presets', existing: false }, { picker: 'presets', existing: true },
+  { picker: 'agent', existing: false }, { picker: 'agent', existing: true },
+  { picker: 'model', existing: false }, { picker: 'model', existing: true },
+])('returns focus and preserves the draft selection after choosing $picker (existing chat: $existing)', async ({ picker, existing }) => {
+  useCatalog.setState({ models: [model, { ...model, id: 'other-model', name: 'Other Model' }] })
+  const chatId = existing ? useChat.getState().sendMessage(null, 'previous turn', model.id, [], false, false, {
+    targetChatId: crypto.randomUUID(), responseId: crypto.randomUUID(), presetSelections: defaults, agentMode: true,
+  }) : null
+  const view = renderChat(chatId ? `/c/${chatId}` : '/')
+  const composer = view.getByRole('textbox') as HTMLTextAreaElement
+  await waitFor(() => expect(document.activeElement).toBe(composer))
+  fireEvent.change(composer, { target: { value: 'keep typing here' } })
+  composer.setSelectionRange(5, 11)
+
+  // Select a new value, then reselect it; both should return to the same caret.
+  for (const repeat of [false, true]) {
+    const trigger = view.getByRole('button', { name: picker === 'presets' ? 'Generation options'
+      : picker === 'agent' ? `Agent options, ${repeat ? 'Disabled' : 'Pulpo Agent'}`
+      : repeat ? 'Other Model' : 'Test Model' })
+    fireEvent.keyDown(trigger, { key: 'ArrowDown' })
+    const menu = await view.findByRole('menu')
+    if (picker === 'model') {
+      fireEvent.change(within(menu).getByRole('textbox'), { target: { value: 'Other Model' } })
+      fireEvent.click(within(menu).getByText('Other Model'))
+    } else {
+      const choice = within(menu).getByRole(picker === 'agent' ? 'menuitemradio' : 'menuitem', {
+        name: picker === 'agent' ? 'Disabled' : 'Low',
+      })
+      if (repeat) {
+        act(() => choice.focus())
+        fireEvent.keyDown(choice, { key: 'Enter' })
+      } else {
+        fireEvent.pointerDown(choice, { pointerType: 'mouse' })
+        fireEvent.click(choice)
+      }
+    }
+    await waitFor(() => expect(document.activeElement).toBe(composer))
+    expect(composer.value).toBe('keep typing here')
+    expect([composer.selectionStart, composer.selectionEnd]).toEqual([5, 11])
+    expect(view.queryByRole('menu')).toBeNull()
+
+    // Dismissing a reopened picker should restore its trigger, not reuse the selection.
+    fireEvent.keyDown(trigger, { key: 'ArrowDown' })
+    fireEvent.keyDown(await view.findByRole('menu'), { key: 'Escape' })
+    await waitFor(() => expect(document.activeElement).toBe(trigger))
+  }
+})
 
 it.each([
   { syncEnabled: false, temporary: false },

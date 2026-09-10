@@ -3,13 +3,14 @@ import { useTranslation } from '@/i18n/useAppTranslation'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { useMenuTriggerFocus } from './use-menu-trigger-focus'
 
-export function AgentMenu({ enabled, disabled, onSelect }: {
+export function AgentMenu({ enabled, disabled, onSelect, onSelectClose }: {
   enabled: boolean
   disabled: boolean
   onSelect: (enabled: boolean) => void
+  onSelectClose?: () => void
 }) {
   const { t } = useTranslation()
-  const menuFocus = useMenuTriggerFocus()
+  const menuFocus = useMenuTriggerFocus(onSelectClose)
   const active = enabled && !disabled
   const label = active ? 'Pulpo Agent' : t('chat.agentDisabled')
   const Icon = active ? Bot : BotOff
@@ -37,7 +38,11 @@ export function AgentMenu({ enabled, disabled, onSelect }: {
               role="menuitemradio"
               aria-checked={active === value}
               disabled={disabled}
-              onSelect={() => { if (!disabled && value !== active) onSelect(value) }}
+              onSelect={() => {
+                if (disabled) return
+                menuFocus.onSelect()
+                if (value !== active) onSelect(value)
+              }}
               className="justify-between"
             >
               <span className="flex items-center gap-1.5">
