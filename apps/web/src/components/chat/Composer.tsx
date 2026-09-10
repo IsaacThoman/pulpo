@@ -6,6 +6,7 @@ import { webShelf, shelfDraftAttachments } from '@/lib/local-first/shelf'
 import type { ShelfAttachment } from '@pulpo/client-core'
 import { useComposerSync } from './use-composer-sync'
 import { useFollowStartedChat } from './use-follow-started-chat'
+import { useMenuTriggerFocus } from './use-menu-trigger-focus'
 import { webComposerSync } from '@/lib/local-first/composer-sync'
 import type { ComposerState } from '@pulpo/contracts'
 import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, useSyncExternalStore, type Ref, type DragEvent as ReactDragEvent } from 'react'
@@ -145,6 +146,7 @@ export function Composer({
   onTemporaryChange?: (temporary: boolean) => void
 }) {
   const { t } = useTranslation()
+  const presetMenuFocus = useMenuTriggerFocus()
   const navigate = useNavigate()
   const userId = useAuth((s) => s.user?.id)
   const shelf = userId ? webShelf(userId) : null
@@ -1243,8 +1245,9 @@ export function Composer({
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button
+                  {...presetMenuFocus.triggerProps}
                   type="button"
-                  className="group/generation-options flex h-8 min-w-0 cursor-pointer items-center gap-1.5 overflow-hidden rounded-full px-2.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                  className="group/generation-options flex h-8 min-w-0 cursor-pointer items-center gap-1.5 overflow-hidden rounded-full px-2.5 text-xs text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-ring/50 focus-visible:ring-[3px] data-[pointer-focus]:focus-visible:ring-0"
                   aria-label={t('chat.generationOptions')}
                 >
                   {activePresets.map((preset, i) => {
@@ -1261,7 +1264,7 @@ export function Composer({
                   <ChevronDown className="size-3 shrink-0 rotate-180 opacity-60 transition-transform duration-200 group-data-[state=open]/generation-options:rotate-0 motion-reduce:transition-none" />
                 </button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" side="top" className="w-48">
+              <DropdownMenuContent {...presetMenuFocus.contentProps} align="start" side="top" className="w-48">
                 {activePresets.map((preset, i) => (
                   <div key={preset.id}>
                     {i > 0 && <DropdownMenuSeparator />}

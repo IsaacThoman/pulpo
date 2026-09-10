@@ -58,3 +58,34 @@ it('shows Disabled and cannot open when agent mode is unavailable', () => {
   expect(screen.queryByRole('menu')).toBeNull()
   expect(onSelect).not.toHaveBeenCalled()
 })
+
+it.each(['mouse', 'touch'])('restores focus without a ring after a %s selection, then allows keyboard focus', async (pointerType) => {
+  render(<AgentMenu enabled disabled={false} onSelect={vi.fn()} />)
+  const trigger = screen.getByRole('button')
+  // Switch input methods while the menu is open.
+  fireEvent.keyDown(trigger, { key: 'Enter' })
+  const choice = await screen.findByRole('menuitemradio', { name: 'Disabled' })
+  fireEvent.pointerDown(choice, { pointerType })
+  fireEvent.click(choice)
+  await waitFor(() => expect(document.activeElement).toBe(trigger))
+  expect(trigger.dataset.pointerFocus).toBe('true')
+
+  fireEvent.keyDown(trigger, { key: 'Enter' })
+  const first = await screen.findByRole('menuitemradio', { name: 'Pulpo Agent' })
+  fireEvent.keyDown(first, { key: 'Escape' })
+  await waitFor(() => expect(document.activeElement).toBe(trigger))
+  expect(trigger.dataset.pointerFocus).toBeUndefined()
+})
+
+it('clears pointer focus suppression when leaving the trigger', async () => {
+  render(<AgentMenu enabled disabled={false} onSelect={vi.fn()} />)
+  const trigger = screen.getByRole('button')
+  fireEvent.keyDown(trigger, { key: 'Enter' })
+  const choice = await screen.findByRole('menuitemradio', { name: 'Disabled' })
+  fireEvent.pointerDown(choice)
+  fireEvent.click(choice)
+  await waitFor(() => expect(document.activeElement).toBe(trigger))
+  expect(trigger.dataset.pointerFocus).toBe('true')
+  fireEvent.blur(trigger)
+  expect(trigger.dataset.pointerFocus).toBeUndefined()
+})

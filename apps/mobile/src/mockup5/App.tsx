@@ -22,6 +22,7 @@ import { MaterialSearchField, MaterialSuggestionButton, MaterialNavigationRow, M
 import type { MenuAnchor } from '../platform/MaterialUI.types';
 import { promptText, selectText, showActions } from '../platform/materialActions';
 import { QueuedMessagesView } from '../native/QueuedMessagesView';
+import { AgentModeMenuView } from '../native/AgentModeMenuView';
 import { openAttachmentFile } from '../native/openFile';
 import { shareLocalFile } from '../native/shareFile';
 import { enqueueMessage, mutateQueuedMessage, shouldQueueMessage } from '../features/chat/messageQueue';
@@ -92,7 +93,6 @@ import {
   Image as SwiftUIImage,
   Label as SwiftUILabel,
   Menu as SwiftUIMenu,
-  Picker as SwiftUIPicker,
   RNHostView as SwiftUIRNHostView,
   Section as SwiftUISection,
   Spacer as SwiftUISpacer,
@@ -116,12 +116,9 @@ import {
   glassEffect as swiftUIGlassEffect,
   labelStyle,
   menuActionDismissBehavior,
-  menuOrder,
   padding,
-  pickerStyle,
   resizable,
   shapes,
-  tag,
   textFieldStyle,
   tint,
 } from '@expo/ui/swift-ui/modifiers';
@@ -139,8 +136,6 @@ import { createNativeStackNavigator, type NativeStackScreenProps } from '@react-
 import { useQueryClient } from '@tanstack/react-query';
 import { workspaceContinueWithoutAgentAvailableAtMs } from '@pulpo/contracts';
 import {
-  Bot,
-  BotOff,
   Brain,
   Ghost,
   History,
@@ -4004,7 +3999,11 @@ function ChatView({
   const preferredAgentMode = usePreferencesStore((state) => state.agentModes[model.id] ?? true);
   const agentAvailable = usePrototypeStore((state) => state.agentAvailable);
   const canUseAgent = agentAvailable && model.agentEnabled;
-  const [agentEnabled, setAgentEnabled] = useState(() => preferredAgentMode && canUseAgent);
+  const [agentSelection, setAgentSelection] = useState(() => ({ enabled: preferredAgentMode && canUseAgent, revision: 0 }));
+  const agentEnabled = agentSelection.enabled;
+  const setAgentEnabled = useCallback((enabled: boolean) => {
+    setAgentSelection((current) => current.enabled === enabled ? current : { ...current, enabled });
+  }, []);
   const activeAgentEnabled = canUseAgent && agentEnabled;
   const [attachments, setAttachmentState] = useState<ComposerAttachment[]>([]);
   const attachmentUploadError = attachments.find((attachment) => attachment.state === 'failed')?.error;
@@ -4218,7 +4217,7 @@ function ChatView({
 
   useEffect(() => {
     setAgentEnabled(preferredAgentMode && canUseAgent);
-  }, [canUseAgent, preferredAgentMode]);
+  }, [canUseAgent, preferredAgentMode, setAgentEnabled]);
 
   useEffect(() => {
     const target = temporary ? 1 : 0;
@@ -4242,7 +4241,7 @@ function ChatView({
     if (!canUseAgent || next === activeAgentEnabled) return;
     setAgentEnabled(next);
     Haptics.selectionAsync();
-  }, [activeAgentEnabled, canUseAgent]);
+  }, [activeAgentEnabled, canUseAgent, setAgentEnabled]);
 
   const restoreComposer = useCallback(() => {
     const preserved = preservedComposerRef.current;
@@ -4258,7 +4257,7 @@ function ChatView({
     setAttachments(restoreLatestDraft(preserved.attachments, latestAttachmentsRef.current));
     setAgentEnabled(preserved.agentEnabled);
     requestAnimationFrame(() => composerInputRef.current?.focus());
-  }, [composerInputRef, onChangeInput, onSelectModel, placeComposerCursorAtEnd, setAttachments]);
+  }, [composerInputRef, onChangeInput, onSelectModel, placeComposerCursorAtEnd, setAgentEnabled, setAttachments]);
 
   const cleanupEditUploads = useCallback((session: MessageEditSession, values: ComposerAttachment[]) => {
     for (const attachment of values) {
@@ -5120,9 +5119,7 @@ function ChatView({
   }, [activeAgentEnabled, armSubmittedTurnFollow, autoExpire, onSend, presetSelections, restoreSubmittedTurnFollow, temporary, isDictationBusy]);
 
   const nativeAgentTint = colorScheme === 'dark' ? '#BF5AF2' : '#AF52DE';
-  const nativeAgentForeground = activeAgentEnabled ? '#ffffff' : colorScheme === 'dark' ? '#f2f2f7' : '#1c1c1e';
   const agentLabel = activeAgentEnabled ? 'Pulpo Agent' : 'Disabled';
-  const AgentIcon = activeAgentEnabled ? Bot : BotOff;
 
   const updateBottomProximity = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const { contentOffset, contentInset, contentSize, layoutMeasurement } = event.nativeEvent;
@@ -5762,43 +5759,15 @@ function ChatView({
                   }))} />
                 ))}
                 {Platform.OS === 'ios' ? (
-                  <SwiftUIHost ignoreSafeArea="keyboard" style={styles.nativeAgentHost}>
-                    <SwiftUIMenu
-                      label={(
-                        <SwiftUIRNHostView matchContents>
-                          <View pointerEvents="none" style={styles.nativeAgentIcon}>
-                            <AgentIcon color={nativeAgentForeground} size={13} strokeWidth={2} />
-                          </View>
-                        </SwiftUIRNHostView>
-                      )}
-                      modifiers={[
-                        buttonStyle(activeAgentEnabled ? 'glassProminent' : 'glass'),
-                        buttonBorderShape('circle'),
-                        controlSize('regular'),
-                        tint(nativeAgentTint),
-                        menuOrder('fixed'),
-                        swiftUIDisabled(!canUseAgent),
-                        swiftUIAccessibilityLabel(`Agent options, ${agentLabel}`),
-                        swiftUIAccessibilityHint(!agentAvailable ? 'Unavailable on this Pulpo instance.' : !model.agentEnabled ? 'Unavailable for this model.' : 'Opens agent choices'),
-                      ]}
-                    >
-                      <SwiftUIPicker
-                        label="Agent"
-                        selection={activeAgentEnabled ? 'small' : 'disabled'}
-                        onSelectionChange={(selection: string) => selectAgent(selection === 'small')}
-                        modifiers={[pickerStyle('inline')]}
-                      >
-                        {[true, false].map((enabled) => (
-                          <SwiftUILabel
-                            key={String(enabled)}
-                            title={enabled ? 'Pulpo Agent' : 'Disabled'}
-                            icon={<SwiftUIImage assetName={enabled ? 'LucideBot' : 'LucideBotOff'} modifiers={[resizable(), frame({ width: 20, height: 20 })]} />}
-                            modifiers={[tag(enabled ? 'small' : 'disabled')]}
-                          />
-                        ))}
-                      </SwiftUIPicker>
-                    </SwiftUIMenu>
-                  </SwiftUIHost>
+                  <AgentModeMenuView
+                    key={JSON.stringify([draftNamespace, chatId, temporary, model.id, messageEdit?.message.id, queueEditRef.current?.id])}
+                    style={styles.nativeAgentHost}
+                    enabled={activeAgentEnabled}
+                    revision={agentSelection.revision}
+                    available={canUseAgent}
+                    hint={!agentAvailable ? 'Unavailable on this Pulpo instance.' : !model.agentEnabled ? 'Unavailable for this model.' : 'Opens agent choices'}
+                    onSelectionChange={setAgentSelection}
+                  />
                 ) : (
                   <MaterialMenu label={`Agent options, ${agentLabel}`} icon={activeAgentEnabled ? 'bot' : 'bot-off'} color={activeAgentEnabled ? nativeAgentTint : undefined} disabled={!canUseAgent} actions={[
                     { label: 'Pulpo Agent', icon: 'bot', selected: activeAgentEnabled, onPress: () => selectAgent(true) },
@@ -6568,7 +6537,6 @@ function createChatStyles(COLORS: ChatColors) { return StyleSheet.create({
   agentCircle: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
   agentCircleActive: { backgroundColor: '#AF52DE' },
   nativeAgentHost: { width: 44, height: 44 },
-  nativeAgentIcon: { width: 16, height: 16, alignItems: 'center', justifyContent: 'center' },
   effortPill: { minHeight: 44, borderRadius: 22, paddingHorizontal: 10, paddingVertical: 7, alignItems: 'center', justifyContent: 'center' },
   effortMenuHost: { minHeight: 44, justifyContent: 'center' },
   effortText: { color: COLORS.muted, fontSize: 12.5, fontWeight: '500' },
