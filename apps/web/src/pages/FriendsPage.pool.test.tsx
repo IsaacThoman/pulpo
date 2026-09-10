@@ -84,7 +84,7 @@ describe('combined Friends and Pool page', () => {
   it('creates the first pool only after balance disclosure confirmation', async () => {
     summary.pool = null
     await mount()
-    expect(screen.queryByRole('region', { name: 'Pool', exact: true })).toBeNull()
+    expect(screen.queryByRole('region', { name: 'Pool' })).toBeNull()
     await menu('Bob'); await choose('Invite to Pool')
     const dialog = await screen.findByRole('dialog')
     expect(within(dialog).getByText('$5.00')).toBeTruthy()
@@ -146,7 +146,7 @@ describe('combined Friends and Pool page', () => {
     await waitFor(() => expect((screen.getByRole('button', { name: 'Leave Pool' }) as HTMLButtonElement).disabled).toBe(false))
     fireEvent.click(screen.getByRole('button', { name: 'Leave Pool' }))
     await waitFor(() => expect(within(friendsRegion()).getByText('Alice')).toBeTruthy())
-    expect(screen.queryByRole('region', { name: 'Pool', exact: true })).toBeNull()
+    expect(screen.queryByRole('region', { name: 'Pool' })).toBeNull()
     expect(writes().map(([path]) => path)).toEqual(['/api/pools/owner', '/api/pools/members/me'])
   })
 
@@ -173,7 +173,7 @@ describe('combined Friends and Pool page', () => {
     summary.pool = null
     summary.incomingInvitations = [{ ...invitation('me'), inviter: profile('Alice') }]
     await mount()
-    expect(screen.queryByRole('region', { name: 'Pool', exact: true })).toBeNull()
+    expect(screen.queryByRole('region', { name: 'Pool' })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Join' }))
     expect(await screen.findByRole('dialog')).toBeTruthy()
     expect(writes()).toHaveLength(0)
