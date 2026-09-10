@@ -252,9 +252,8 @@ export function FriendsPage() {
     if (!confirm(uit`Remove ${profile.displayName} from your friends?`)) return
     void act(`unfriend:${profile.id}`, () => apiRequest(`/api/friends/${profile.id}`, { method: 'DELETE' }), uit`${profile.displayName} was removed from your friends.`)
   }
-  const friendActions = (profile: FriendProfile, separateBlock = true) => <>
+  const friendActions = (profile: FriendProfile) => <>
     <DropdownMenuItem disabled={actionIds.size > 0} onClick={() => removeFriend(profile)}>{ui("Remove friend")}</DropdownMenuItem>
-    {separateBlock && <DropdownMenuSeparator />}
     <DropdownMenuItem disabled={actionIds.size > 0} variant="destructive" onClick={() => block(profile)}>{ui("Block")}</DropdownMenuItem>
   </>
   const data = listQuery.data
@@ -344,7 +343,7 @@ export function FriendsPage() {
             inviteTarget={inviteTarget}
             inviteTriggerRef={inviteTriggerRef}
             onInviteClose={() => setInviteTarget(null)}
-            friendActions={(profile) => friendActions(profile, false)}
+            friendActions={friendActions}
           />}
           {data && <>
             {friends.length > 0 ? <Section title={ui("Friends")} count={friends.length}>
@@ -352,10 +351,9 @@ export function FriendsPage() {
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild><Button size="icon-sm" variant="ghost" disabled={actionIds.size > 0} onFocus={(event) => { inviteTriggerRef.current = event.currentTarget }} aria-label={uit`More options for ${connection.profile.displayName}`}><MoreHorizontal /></Button></DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
-                    {canInvite && !pendingIds.has(connection.profile.id) && <>
+                    {canInvite && !pendingIds.has(connection.profile.id) &&
                       <DropdownMenuItem disabled={poolFull || actionIds.size > 0} onSelect={() => setInviteTarget(connection.profile)}>{poolFull ? ui("Pool full") : ui("Invite to Pool")}</DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                    </>}
+                    }
                     {friendActions(connection.profile)}
                   </DropdownMenuContent>
                 </DropdownMenu>
