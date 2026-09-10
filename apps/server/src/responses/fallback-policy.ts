@@ -102,6 +102,8 @@ export function classifyGenerationError(error: unknown): GenerationErrorCategory
     || code.includes('resource_exhausted')
   ) return 'rate_limit'
   if (message.includes('timeout') || message.includes('timed out') || message.includes('abort')) return 'timeout'
+  // Baseten's TCP payload budget is a provider size limit, not an account budget.
+  if (message.includes('request exceeds tcp payload budget')) return 'provider_http'
   if (message.includes('budget') || message.includes('balance')) return 'budget'
   if (message.includes('validation') || message.includes('invalid')) return 'validation'
   if (/\b5\d\d\b/.test(message) || message.includes('fetch') || message.includes('network') || message.includes('connect')) return 'provider_http'
