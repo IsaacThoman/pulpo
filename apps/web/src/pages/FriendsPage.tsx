@@ -200,7 +200,7 @@ export function FriendsPage() {
     void act(
       `request:${result.profile.id}`,
       () => apiRequest<{ requestId: string; status: 'pending' | 'accepted' }>('/api/friends/requests', { method: 'POST', body: { userId: result.profile.id } }),
-      `Friend request sent to ${result.profile.displayName}.`,
+      '',
       (response) => updateSearchResult(result.profile.id, {
         relationship: response.status === 'accepted' ? 'friends' : 'outgoing',
         requestId: response.requestId,
