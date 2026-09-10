@@ -13,6 +13,7 @@ import { fillMissingUsernames } from '../profile/username.js'
 import { markExpiredChatsForPurge, purgePendingChats } from '../chats/trash.js'
 import {
   applyFullBackupCompatibilityDefaults,
+  scrubFullBackupDetailedPayloads,
   FULL_BACKUP_EXPLICIT_COLUMNS,
   FULL_BACKUP_TABLES,
   OPTIONAL_TABLES_IN_LEGACY_BACKUPS,
@@ -97,6 +98,7 @@ export async function createFullBackup(jobId: string, finalAttempt = true): Prom
     const { database, attachmentBlobs } = projectFullBackup(rawDatabase as FullBackupDatabase, {
       temporaryQueuedAttachmentIds: temporaryQueuedAttachmentRows.flatMap((row) => row.attachmentIds),
     })
+    scrubFullBackupDetailedPayloads(database)
     const blobRows = [
       ...attachmentBlobs,
       ...speechBlobRows.map(row => ({ objectKey: row.objectKey!, checksum: row.checksum })),
