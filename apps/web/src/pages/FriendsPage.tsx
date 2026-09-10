@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import type { FriendConnection, FriendProfile, FriendSearchResponse, FriendSearchResult, FriendsList } from '@pulpo/contracts'
+import type { FriendConnection, FriendProfile, FriendSearchResponse, FriendSearchResult, FriendsList, PoolSummary } from '@pulpo/contracts'
 import { Check, ChevronDown, ChevronRight, Copy, LoaderCircle, MoreHorizontal, Search, UserRoundPlus, UsersRound } from 'lucide-react'
 import { ApiError, apiRequest, isNetworkError } from '@/lib/api'
-import { friendSearchHighlight, nextFriendSearchIndex, normalizedFriendSearchQuery, shouldSearchFriends } from '@/lib/friend-search'
+import { nextFriendSearchIndex, normalizedFriendSearchQuery, shouldSearchFriends } from '@/lib/friend-search'
 import { friendRequestAge } from '@/lib/friends'
 import { queryClient } from '@/lib/query-client'
 import { useAuth } from '@/stores/auth'
@@ -16,9 +16,9 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
-import { ProfileAvatar } from '@/components/ProfileAvatar'
+import { ProfileIdentity } from '@/components/FriendIdentity'
+import { PoolSection } from '@/components/PoolSection'
 import { InviteCodesCard } from '@/components/InviteCodesCard'
-import { FriendsTabs } from '@/components/FriendsTabs'
 import { ui, uit } from '@/i18n/ui'
 
 export function FriendsHandle({ username }: { username: string }) {
@@ -43,32 +43,6 @@ export function FriendsHandle({ username }: { username: string }) {
       </button>
       <span className="sr-only" aria-live="polite">{copied ? ui("Handle copied") : ''}</span>
     </p>
-  )
-}
-
-function HighlightedText({ value, query }: { value: string; query: string }) {
-  return friendSearchHighlight(value, query).map((part, index) => part.match
-    ? <mark key={index} className="bg-transparent font-semibold text-foreground">{part.text}</mark>
-    : <span key={index}>{part.text}</span>)
-}
-
-function ProfileIdentity({ profile, detail, query, matchedOn }: {
-  profile: FriendProfile
-  detail?: string
-  query?: string
-  matchedOn?: FriendSearchResult['matchedOn']
-}) {
-  return (
-    <div className="flex min-w-0 items-center gap-3">
-      <ProfileAvatar name={profile.displayName} avatarUrl={profile.avatarUrl} className="size-10" fallbackClassName="text-xs" />
-      <div className="min-w-0">
-        <div className="truncate text-sm font-medium">{query && matchedOn === 'displayName' ? <HighlightedText value={profile.displayName} query={query} /> : profile.displayName}</div>
-        <div className="flex min-w-0 items-center gap-1.5 truncate text-xs text-muted-foreground">
-          {profile.username && <span className="truncate">@{query && matchedOn === 'username' ? <HighlightedText value={profile.username} query={query} /> : profile.username}</span>}
-          {detail && <><span aria-hidden="true">·</span><span className="shrink-0">{detail}</span></>}
-        </div>
-      </div>
-    </div>
   )
 }
 
@@ -121,6 +95,16 @@ export function FriendsPage() {
   const [actionMessage, setActionMessage] = useState('')
   const [outgoingOpen, setOutgoingOpen] = useState(false)
   const [blockedOpen, setBlockedOpen] = useState(false)
+  const [inviteTarget, setInviteTarget] = useState<FriendProfile | null>(null)
+  const inviteTriggerRef = useRef<HTMLButtonElement | null>(null)
+  const activeActions = useRef(new Set<string>())
+  const poolQuery = useQuery({
+    queryKey: ['pool', userId],
+    queryFn: () => apiRequest<PoolSummary>('/api/pools/me'),
+    enabled: Boolean(userId),
+    staleTime: 0,
+    refetchOnWindowFocus: 'always',
+  })
   const searchQuery = useMemo(() => normalizedFriendSearchQuery(searchInput), [searchInput])
   const searchReady = shouldSearchFriends(searchInput)
   const listQuery = useQuery({
@@ -180,10 +164,14 @@ export function FriendsPage() {
       queryClient.invalidateQueries({ queryKey: ['friends', userId] }),
       queryClient.invalidateQueries({ queryKey: ['friends-pending-count'] }),
       queryClient.invalidateQueries({ queryKey: ['friends-usage'] }),
+      ...['pool', 'pool-pending-count', 'pool-usage', 'usage', 'billing'].map((key) =>
+        queryClient.invalidateQueries({ queryKey: [key, userId] })),
     ])
   }
 
   const act = async <T,>(key: string, operation: () => Promise<T>, message: string, onSuccess?: (result: T) => void) => {
+    if (activeActions.current.has(key)) return
+    activeActions.current.add(key)
     setActionIds((current) => new Set(current).add(key))
     setActionError('')
     setActionMessage('')
@@ -195,6 +183,7 @@ export function FriendsPage() {
     } catch (cause) {
       setActionError(cause instanceof Error ? cause.message : 'Could not update friends')
     } finally {
+      activeActions.current.delete(key)
       setActionIds((current) => {
         const next = new Set(current)
         next.delete(key)
@@ -253,16 +242,31 @@ export function FriendsPage() {
   }
 
   const block = (profile: FriendProfile) => {
-    if (!confirm(`Block ${profile.displayName}? Any friendship or pending request will be removed.`)) return
-    void act(`block:${profile.id}`, () => apiRequest('/api/friends/blocks', { method: 'POST', body: { userId: profile.id } }), `${profile.displayName} was blocked.`, () => {
+    if (!confirm(uit`Block ${profile.displayName}? Any friendship or pending request will be removed.`)) return
+    void act(`block:${profile.id}`, () => apiRequest('/api/friends/blocks', { method: 'POST', body: { userId: profile.id } }), uit`${profile.displayName} was blocked.`, () => {
       setSearchResults((results) => results.filter((result) => result.profile.id !== profile.id))
     })
   }
 
+  const removeFriend = (profile: FriendProfile) => {
+    if (!confirm(uit`Remove ${profile.displayName} from your friends?`)) return
+    void act(`unfriend:${profile.id}`, () => apiRequest(`/api/friends/${profile.id}`, { method: 'DELETE' }), uit`${profile.displayName} was removed from your friends.`)
+  }
+  const friendActions = (profile: FriendProfile) => <>
+    <DropdownMenuItem disabled={actionIds.size > 0} onClick={() => removeFriend(profile)}>{ui("Remove friend")}</DropdownMenuItem>
+    <DropdownMenuSeparator />
+    <DropdownMenuItem disabled={actionIds.size > 0} variant="destructive" onClick={() => block(profile)}>{ui("Block")}</DropdownMenuItem>
+  </>
   const data = listQuery.data
+  const pool = poolQuery.data?.pool
+  const memberIds = new Set(pool?.members.map((member) => member.profile.id))
+  const pendingIds = new Set(pool?.pendingInvitations.map((invite) => invite.invitee.id))
+  const friends = (data?.friends ?? []).filter((friend) => !memberIds.has(friend.profile.id))
+  const canInvite = poolQuery.isSuccess && (!pool || pool.ownerUserId === userId)
+  const poolFull = Boolean(pool && pool.members.length + pool.pendingInvitations.length >= 6)
   return (
     <div className="flex h-full flex-col">
-      <FriendsTabs />
+      <header className="flex h-12 shrink-0 items-center border-b px-5"><h1 className="text-sm font-semibold">{ui("Friends")}</h1></header>
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto w-full max-w-3xl space-y-5 px-5 py-6">
           <div>
@@ -316,46 +320,60 @@ export function FriendsPage() {
 
           {listQuery.isLoading ? <div className="rounded-xl border py-16 text-center text-sm text-muted-foreground">{ui("Loading friends…")}</div>
             : listQuery.error ? <div className="rounded-xl border py-12 text-center"><p className="text-sm text-muted-foreground">{listQuery.error.message}</p><Button className="mt-3" size="sm" variant="outline" onClick={() => void listQuery.refetch()}>{ui("Try again")}</Button></div>
-              : data && <div className="space-y-5">
-                {data.incoming.length > 0 && <Section title={ui("Friend requests")} count={data.incoming.length}>
-                  {data.incoming.map((connection) => <ConnectionRow key={connection.requestId} connection={connection} detail={`Requested ${friendRequestAge(connection.requestedAt)}`} actions={<>
-                    <Button size="sm" disabled={actionIds.has(`accept:${connection.requestId}`)} onClick={() => void act(`accept:${connection.requestId}`, () => apiRequest(`/api/friends/requests/${connection.requestId}/accept`, { method: 'POST' }), `${connection.profile.displayName} is now your friend.`)}>{actionIds.has(`accept:${connection.requestId}`) ? ui("Accepting…") : ui("Accept")}</Button>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild><Button size="icon-sm" variant="ghost" aria-label={uit`More options for ${connection.profile.displayName}`}><MoreHorizontal /></Button></DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => void act(`decline:${connection.requestId}`, () => apiRequest(`/api/friends/requests/${connection.requestId}`, { method: 'DELETE' }), `Request from ${connection.profile.displayName} declined.`)}>{ui("Decline request")}</DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem variant="destructive" onClick={() => block(connection.profile)}>{ui("Block")}</DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </>} />)}
-                </Section>}
+              : null}
+          {data && data.incoming.length > 0 && <Section title={ui("Friend requests")} count={data.incoming.length}>
+            {data.incoming.map((connection) => <ConnectionRow key={connection.requestId} connection={connection} detail={`Requested ${friendRequestAge(connection.requestedAt)}`} actions={<>
+              <Button size="sm" disabled={actionIds.has(`accept:${connection.requestId}`)} onClick={() => void act(`accept:${connection.requestId}`, () => apiRequest(`/api/friends/requests/${connection.requestId}/accept`, { method: 'POST' }), `${connection.profile.displayName} is now your friend.`)}>{actionIds.has(`accept:${connection.requestId}`) ? ui("Accepting…") : ui("Accept")}</Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild><Button size="icon-sm" variant="ghost" aria-label={uit`More options for ${connection.profile.displayName}`}><MoreHorizontal /></Button></DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={() => void act(`decline:${connection.requestId}`, () => apiRequest(`/api/friends/requests/${connection.requestId}`, { method: 'DELETE' }), `Request from ${connection.profile.displayName} declined.`)}>{ui("Decline request")}</DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem variant="destructive" onClick={() => block(connection.profile)}>{ui("Block")}</DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </>} />)}
+          </Section>}
 
-                {data.friends.length > 0 ? <Section title={ui("Friends")} count={data.friends.length}>
-                  {data.friends.map((connection) => <ConnectionRow key={connection.requestId} connection={connection} actions={<>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild><Button size="icon-sm" variant="ghost" aria-label={uit`More options for ${connection.profile.displayName}`}><MoreHorizontal /></Button></DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => { if (confirm(`Remove ${connection.profile.displayName} from your friends?`)) void act(`unfriend:${connection.profile.id}`, () => apiRequest(`/api/friends/${connection.profile.id}`, { method: 'DELETE' }), `${connection.profile.displayName} was removed from your friends.`) }}>{ui("Remove friend")}</DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem variant="destructive" onClick={() => block(connection.profile)}>{ui("Block")}</DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </>} />)}
-                </Section> : <div className="rounded-xl border px-6 py-10 text-center">
-                  <UsersRound className="mx-auto size-6 text-muted-foreground" />
-                  <h2 className="mt-3 text-sm font-medium">{ui("Add friends")}</h2>
-                  <p className="mt-1 text-xs text-muted-foreground">{ui("Find someone by their name or Pulpo username.")}</p>
-                </div>}
+          {userId && <PoolSection
+            query={poolQuery}
+            currentUserId={userId}
+            friends={data?.friends ?? []}
+            busy={actionIds.size > 0}
+            act={act}
+            inviteTarget={inviteTarget}
+            inviteTriggerRef={inviteTriggerRef}
+            onInviteClose={() => setInviteTarget(null)}
+            friendActions={friendActions}
+          />}
+          {data && <>
+            {friends.length > 0 ? <Section title={ui("Friends")} count={friends.length}>
+              {friends.map((connection) => <ConnectionRow key={connection.requestId} connection={connection} detail={pendingIds.has(connection.profile.id) ? ui("Invitation sent") : undefined} actions={
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild><Button size="icon-sm" variant="ghost" disabled={actionIds.size > 0} onFocus={(event) => { inviteTriggerRef.current = event.currentTarget }} aria-label={uit`More options for ${connection.profile.displayName}`}><MoreHorizontal /></Button></DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    {canInvite && !pendingIds.has(connection.profile.id) && <>
+                      <DropdownMenuItem disabled={poolFull || actionIds.size > 0} onSelect={() => setInviteTarget(connection.profile)}>{poolFull ? ui("Pool full") : ui("Invite to Pool")}</DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                    </>}
+                    {friendActions(connection.profile)}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              } />)}
+            </Section> : data.friends.length > 0 ? <Section title={ui("Friends")} count={0} empty={ui("All your friends are in your Pool.")}>{null}</Section> : <div className="rounded-xl border px-6 py-10 text-center">
+              <UsersRound className="mx-auto size-6 text-muted-foreground" />
+              <h2 className="mt-3 text-sm font-medium">{ui("Add friends")}</h2>
+              <p className="mt-1 text-xs text-muted-foreground">{ui("Find someone by their name or Pulpo username.")}</p>
+            </div>}
 
-                {data.outgoing.length > 0 && <CollapsibleSection title={ui("Sent requests")} count={data.outgoing.length} open={outgoingOpen} onToggle={() => setOutgoingOpen((value) => !value)}>
-                  {data.outgoing.map((connection) => <ConnectionRow key={connection.requestId} connection={connection} detail={`Sent ${friendRequestAge(connection.requestedAt)}`} actions={<Button size="sm" variant="ghost" disabled={actionIds.has(`cancel:${connection.requestId}`)} onClick={() => void act(`cancel:${connection.requestId}`, () => apiRequest(`/api/friends/requests/${connection.requestId}`, { method: 'DELETE' }), `Request to ${connection.profile.displayName} canceled.`)}>{actionIds.has(`cancel:${connection.requestId}`) ? ui("Canceling…") : ui("Cancel")}</Button>} />)}
-                </CollapsibleSection>}
+            {data.outgoing.length > 0 && <CollapsibleSection title={ui("Sent requests")} count={data.outgoing.length} open={outgoingOpen} onToggle={() => setOutgoingOpen((value) => !value)}>
+              {data.outgoing.map((connection) => <ConnectionRow key={connection.requestId} connection={connection} detail={`Sent ${friendRequestAge(connection.requestedAt)}`} actions={<Button size="sm" variant="ghost" disabled={actionIds.has(`cancel:${connection.requestId}`)} onClick={() => void act(`cancel:${connection.requestId}`, () => apiRequest(`/api/friends/requests/${connection.requestId}`, { method: 'DELETE' }), `Request to ${connection.profile.displayName} canceled.`)}>{actionIds.has(`cancel:${connection.requestId}`) ? ui("Canceling…") : ui("Cancel")}</Button>} />)}
+            </CollapsibleSection>}
 
-                {data.blocked.length > 0 && <CollapsibleSection title={ui("Blocked users")} count={data.blocked.length} open={blockedOpen} onToggle={() => setBlockedOpen((value) => !value)}>
-                  {data.blocked.map((profile) => <div key={profile.id} className="flex items-center justify-between gap-3 px-4 py-3"><ProfileIdentity profile={profile} /><Button size="sm" variant="outline" disabled={actionIds.has(`unblock:${profile.id}`)} onClick={() => void act(`unblock:${profile.id}`, () => apiRequest(`/api/friends/blocks/${profile.id}`, { method: 'DELETE' }), `${profile.displayName} was unblocked.`)}>{actionIds.has(`unblock:${profile.id}`) ? ui("Unblocking…") : ui("Unblock")}</Button></div>)}
-                </CollapsibleSection>}
-              </div>}
+            {data.blocked.length > 0 && <CollapsibleSection title={ui("Blocked users")} count={data.blocked.length} open={blockedOpen} onToggle={() => setBlockedOpen((value) => !value)}>
+              {data.blocked.map((profile) => <div key={profile.id} className="flex items-center justify-between gap-3 px-4 py-3"><ProfileIdentity profile={profile} /><Button size="sm" variant="outline" disabled={actionIds.has(`unblock:${profile.id}`)} onClick={() => void act(`unblock:${profile.id}`, () => apiRequest(`/api/friends/blocks/${profile.id}`, { method: 'DELETE' }), `${profile.displayName} was unblocked.`)}>{actionIds.has(`unblock:${profile.id}`) ? ui("Unblocking…") : ui("Unblock")}</Button></div>)}
+            </CollapsibleSection>}
+          </>}
         </div>
       </div>
     </div>

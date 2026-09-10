@@ -293,7 +293,7 @@ export function LeaderboardPage({ scope = 'friends' }: { scope?: 'friends' | 'po
         {!hasRankingParticipants ? (
           <div className="flex h-[250px] flex-col items-center justify-center gap-3 text-xs text-muted-foreground">
             <span>{instanceMode ? ui("No settled usage in this period") : scope === 'pool' ? ui("Add Pool members to compare usage") : ui("Add friends to compare usage")}</span>
-            {!instanceMode && <Button asChild size="sm" variant="outline"><Link to={scope === 'pool' ? '/friends/pool' : '/friends'}>{scope === 'pool' ? ui("Manage Pool") : ui("Find friends")}</Link></Button>}
+            {!instanceMode && <Button asChild size="sm" variant="outline"><Link to="/friends">{scope === 'pool' ? ui("Manage Pool") : ui("Find friends")}</Link></Button>}
           </div>
         ) : (
           <div className="h-[250px]">
