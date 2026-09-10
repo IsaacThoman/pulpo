@@ -15,17 +15,21 @@ import { cn } from '@/lib/utils'
 import { useSettings } from '@/stores/settings'
 import { ui } from '@/i18n/ui'
 import { CODEX_LAB_ID } from '@/lib/catalog-model'
+import { useMenuTriggerFocus } from './use-menu-trigger-focus'
 
 type DragKind = 'model' | 'provider'
 
 export function ModelSelector({
   value,
   onChange,
+  onSelectClose,
 }: {
   value: string
   onChange: (id: string) => void
+  onSelectClose?: () => void
 }) {
   const { t } = useTranslation()
+  const menuFocus = useMenuTriggerFocus(onSelectClose)
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [provider, setProvider] = useState<string | null>(null) // null = favorites
@@ -83,6 +87,7 @@ export function ModelSelector({
   }, [confirmReset])
 
   const pick = (id: string) => {
+    menuFocus.onSelect()
     onChange(id)
     setOpen(false)
     setQuery('')
@@ -142,7 +147,7 @@ export function ModelSelector({
           />
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-[300px] select-none p-0">
+      <DropdownMenuContent {...menuFocus.contentProps} align="start" className="w-[300px] select-none p-0">
         {/* search */}
         <div className="flex items-center gap-2 border-b px-3">
           <Search className="size-4 text-muted-foreground" />

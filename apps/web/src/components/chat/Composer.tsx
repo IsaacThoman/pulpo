@@ -129,6 +129,7 @@ export function Composer({
   onEditStateChange,
   temporaryControlRef,
   suggestionControlRef,
+  focusControlRef,
   onTemporaryChange,
 }: {
   chatId: string | null
@@ -143,10 +144,10 @@ export function Composer({
   onEditStateChange?: (active: boolean) => void
   temporaryControlRef?: Ref<{ toggle: () => Promise<void> }>
   suggestionControlRef?: Ref<{ submit: (message: string) => void }>
+  focusControlRef?: Ref<{ focus: () => void }>
   onTemporaryChange?: (temporary: boolean) => void
 }) {
   const { t } = useTranslation()
-  const presetMenuFocus = useMenuTriggerFocus()
   const navigate = useNavigate()
   const userId = useAuth((s) => s.user?.id)
   const shelf = userId ? webShelf(userId) : null
@@ -184,6 +185,9 @@ export function Composer({
   const [queueDragId, setQueueDragId] = useState<string | null>(null)
   const [queueDrop, setQueueDrop] = useState<{ id: string; edge: 'before' | 'after' } | null>(null)
   const ref = useRef<HTMLTextAreaElement>(null)
+  const focusComposer = useCallback(() => ref.current?.focus({ preventScroll: true }), [])
+  const presetMenuFocus = useMenuTriggerFocus(focusComposer)
+  useImperativeHandle(focusControlRef, () => ({ focus: focusComposer }), [focusComposer])
   const fileInputRef = useRef<HTMLInputElement>(null)
   const valueRef = useRef(value)
   const attachmentIdsRef = useRef(attachmentIds)
@@ -1276,7 +1280,10 @@ export function Composer({
                     {preset.choices.map((choice) => (
                       <DropdownMenuItem
                         key={choice.id}
-                        onClick={() => setPresetChoice(modelId, preset.id, choice.id)}
+                        onSelect={() => {
+                          presetMenuFocus.onSelect()
+                          setPresetChoice(modelId, preset.id, choice.id)
+                        }}
                         className="justify-between"
                       >
                         <span className="flex items-center gap-1.5">
@@ -1293,6 +1300,7 @@ export function Composer({
           )}
 
           <AgentMenu
+            onSelectClose={focusComposer}
             enabled={activeAgentMode}
             disabled={!canUseAgent}
             onSelect={(enabled) => {
