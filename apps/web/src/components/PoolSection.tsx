@@ -90,7 +90,8 @@ export function PoolSection({ query, currentUserId, friends, busy, act, inviteTa
         const friend = friendIds.has(member.profile.id)
         return <div key={member.profile.id} className="flex items-center justify-between gap-3 px-4 py-3">
           <div className="flex min-w-0 items-center gap-2">
-            <ProfileIdentity profile={member.profile} detail={self ? ui('You') : undefined} />
+            <ProfileIdentity profile={member.profile} />
+            {self && <span className="shrink-0 text-xs text-muted-foreground">{ui('You')}</span>}
             {member.owner && <Crown className="size-3.5 shrink-0 text-amber-500" aria-label={ui('Pool owner')} />}
           </div>
           <div className="flex shrink-0 items-center gap-2">
