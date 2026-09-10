@@ -39,7 +39,7 @@ afterEach(async () => { cleanup(); queryClient.clear(); vi.restoreAllMocks(); aw
 async function mount() {
   render(<QueryClientProvider client={queryClient}><FriendsPage /></QueryClientProvider>)
   await screen.findAllByText('Bob')
-  await waitFor(() => expect(screen.queryByText('Loading Pool…')).toBeNull())
+  await waitFor(() => expect(queryClient.getQueryState(['pool', 'me'])?.fetchStatus).toBe('idle'))
 }
 function poolRegion() { return screen.getByRole('region', { name: 'Pool' }) }
 function friendsRegion() { return screen.getByRole('heading', { name: 'Friends', level: 2 }).closest('section')! }
@@ -84,7 +84,7 @@ describe('combined Friends and Pool page', () => {
   it('creates the first pool only after balance disclosure confirmation', async () => {
     summary.pool = null
     await mount()
-    expect(screen.getByText('Choose Invite to Pool from a friend’s menu to start a Pool.')).toBeTruthy()
+    expect(screen.queryByRole('region', { name: 'Pool', exact: true })).toBeNull()
     await menu('Bob'); await choose('Invite to Pool')
     const dialog = await screen.findByRole('dialog')
     expect(within(dialog).getByText('$5.00')).toBeTruthy()
@@ -96,6 +96,7 @@ describe('combined Friends and Pool page', () => {
     mutation = () => { summary.pool = { id: 'pool', ownerUserId: 'me', members: [member('me')], pendingInvitations: [invitation('Bob')], pooledBalanceMicros: 5_000_000 }; return {} }
     fireEvent.click(await screen.findByRole('button', { name: 'Invite and share' }))
     await screen.findByText('Invitation sent')
+    expect(within(poolRegion()).getByText('Myself')).toBeTruthy()
     expect(writes()).toEqual([['/api/pools/invitations', { method: 'POST', body: { userId: 'Bob', balanceDisclosureAccepted: true } }]])
   })
 
@@ -145,6 +146,7 @@ describe('combined Friends and Pool page', () => {
     await waitFor(() => expect((screen.getByRole('button', { name: 'Leave Pool' }) as HTMLButtonElement).disabled).toBe(false))
     fireEvent.click(screen.getByRole('button', { name: 'Leave Pool' }))
     await waitFor(() => expect(within(friendsRegion()).getByText('Alice')).toBeTruthy())
+    expect(screen.queryByRole('region', { name: 'Pool', exact: true })).toBeNull()
     expect(writes().map(([path]) => path)).toEqual(['/api/pools/owner', '/api/pools/members/me'])
   })
 
@@ -171,6 +173,7 @@ describe('combined Friends and Pool page', () => {
     summary.pool = null
     summary.incomingInvitations = [{ ...invitation('me'), inviter: profile('Alice') }]
     await mount()
+    expect(screen.queryByRole('region', { name: 'Pool', exact: true })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Join' }))
     expect(await screen.findByRole('dialog')).toBeTruthy()
     expect(writes()).toHaveLength(0)
@@ -210,7 +213,7 @@ describe('combined Friends and Pool page', () => {
     expect(screen.queryByRole('menuitem', { name: 'Invite to Pool' })).toBeNull()
     fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' })
     mocks.request.mockImplementation(request)
-    fireEvent.click(within(poolRegion()).getByRole('button', { name: 'Try again' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
     await waitFor(() => expect(within(poolRegion()).getByText('Alice')).toBeTruthy())
   })
 

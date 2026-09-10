@@ -1,7 +1,7 @@
 import { useRef, useState, type ReactNode, type RefObject } from 'react'
 import type { UseQueryResult } from '@tanstack/react-query'
 import type { FriendConnection, FriendProfile, PoolInvitation, PoolSummary } from '@pulpo/contracts'
-import { Crown, LoaderCircle, MoreHorizontal } from 'lucide-react'
+import { Crown, MoreHorizontal } from 'lucide-react'
 import { apiRequest } from '@/lib/api'
 import { formatBalance } from '@/lib/format'
 import { ProfileIdentity } from '@/components/FriendIdentity'
@@ -73,74 +73,68 @@ export function PoolSection({ query, currentUserId, friends, busy, act, inviteTa
       </div>)}</div>
     </section>}
 
-    <section ref={sectionRef} tabIndex={-1} className="overflow-hidden rounded-xl border" aria-label={ui('Pool')}>
+    {query.error && <div role="alert" className="px-4 py-6 text-center"><p className="text-sm text-destructive">{query.error.message}</p><Button className="mt-3" size="sm" variant="outline" onClick={() => void query.refetch()}>{ui('Try again')}</Button></div>}
+    {pool && <section ref={sectionRef} tabIndex={-1} className="overflow-hidden rounded-xl border" aria-label={ui('Pool')}>
       <div className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3">
         <div>
           <h2 className="text-sm font-medium">{ui('Pool')}</h2>
-          {pool && <p className="mt-1 text-xs text-muted-foreground">{uit`${pool.members.length} of 6 members`}{pool.pendingInvitations.length > 0 && <> · {uit`${pool.pendingInvitations.length} pending`}</>}</p>}
+          <p className="mt-1 text-xs text-muted-foreground">{uit`${pool.members.length} of 6 members`}{pool.pendingInvitations.length > 0 && <> · {uit`${pool.pendingInvitations.length} pending`}</>}</p>
         </div>
-        {pool && <div className="text-right">
+        <div className="text-right">
           <div className="text-xs text-muted-foreground">{ui('Pool balance')}</div>
           <div className="text-lg font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">{formatBalance(pool.pooledBalanceMicros / 1_000_000)}</div>
-        </div>}
+        </div>
       </div>
-      {query.error && <div className="px-4 py-6 text-center"><p className="text-sm text-destructive">{query.error.message}</p><Button className="mt-3" size="sm" variant="outline" onClick={() => void query.refetch()}>{ui('Try again')}</Button></div>}
-      {query.isLoading ? <div className="flex items-center justify-center gap-2 px-4 py-8 text-sm text-muted-foreground"><LoaderCircle className="size-4 animate-spin" />{ui('Loading Pool…')}</div>
-          : pool ? <>
-            <div className="divide-y">{pool.members.map((member) => {
-              const self = member.profile.id === currentUserId
-              const friend = friendIds.has(member.profile.id)
-              return <div key={member.profile.id} className="flex items-center justify-between gap-3 px-4 py-3">
-                <div className="flex min-w-0 items-center gap-2">
-                  <ProfileIdentity profile={member.profile} detail={self ? ui('You') : undefined} />
-                  {member.owner && <Crown className="size-3.5 shrink-0 text-amber-500" aria-label={ui('Pool owner')} />}
-                </div>
-                <div className="flex shrink-0 items-center gap-2">
-                  <div className="text-right">
-                    <div className="text-sm font-medium tabular-nums">{formatBalance(member.contributionBalanceMicros / 1_000_000)}</div>
-                    {member.reservedMicros > 0 && <div className="text-xs text-muted-foreground">{formatBalance(member.reservedMicros / 1_000_000)} {ui('reserved')}</div>}
-                  </div>
-                  {!self && (isOwner || friend) && <DropdownMenu>
-                    <DropdownMenuTrigger asChild><Button size="icon-sm" variant="ghost" disabled={busy} aria-label={uit`More options for ${member.profile.displayName}`}><MoreHorizontal /></Button></DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      {isOwner && <>
-                        <DropdownMenuItem onClick={() => void act(`owner:${member.profile.id}`, () => apiRequest('/api/pools/owner', { method: 'PATCH', body: { userId: member.profile.id } }), uit`${member.profile.displayName} is now the Pool owner.`)}>{ui('Make owner')}</DropdownMenuItem>
-                        <DropdownMenuItem variant="destructive" onClick={() => {
-                          if (confirm(uit`Remove ${member.profile.displayName} from the Pool? Existing reserved charges may still settle against their account.`)) {
-                            void act(`remove-pool:${member.profile.id}`, () => apiRequest(`/api/pools/members/${member.profile.id}`, { method: 'DELETE' }), uit`${member.profile.displayName} left the Pool.`)
-                          }
-                        }}>{ui('Remove from Pool')}</DropdownMenuItem>
-                        {friend && <DropdownMenuSeparator />}
-                      </>}
-                      {friend && friendActions(member.profile)}
-                    </DropdownMenuContent>
-                  </DropdownMenu>}
-                </div>
-              </div>
-            })}</div>
-            {isOwner && pool.pendingInvitations.length > 0 && <div className="border-t">
-              <div className="px-4 py-3">
-                <h3 className="text-sm font-medium">{ui('Pending invitations')}</h3>
-                <p className="mt-1 text-xs text-muted-foreground">{ui('Pending invitations reserve a Pool seat.')}</p>
-              </div>
-              <div className="divide-y">{pool.pendingInvitations.map((invitation) => <div key={invitation.id} className="flex items-center justify-between gap-3 px-4 py-3">
-                <ProfileIdentity profile={invitation.invitee} />
-                <Button size="sm" variant="ghost" disabled={busy} onClick={() => void act(`cancel-pool:${invitation.id}`, () => apiRequest(`/api/pools/invitations/${invitation.id}`, { method: 'DELETE' }), ui('Invitation canceled.'))}>{ui('Cancel')}</Button>
-              </div>)}</div>
-            </div>}
-            <div className="flex flex-wrap items-center gap-3 border-t px-4 py-3">
-              <Button size="sm" variant="outline" disabled={busy || mustTransfer} aria-describedby={mustTransfer ? 'pool-leave-help' : undefined} onClick={() => {
-                if (confirm(ui('Leave this Pool? Existing reserved charges may still settle against your account.'))) {
-                  void act('leave-pool', () => apiRequest(`/api/pools/members/${currentUserId}`, { method: 'DELETE' }), ui('You left the Pool.'))
-                }
-              }}>{ui('Leave Pool')}</Button>
-              {mustTransfer && <p id="pool-leave-help" className="text-xs text-muted-foreground">{ui('Transfer ownership before leaving this Pool.')}</p>}
+      <div className="divide-y">{pool.members.map((member) => {
+        const self = member.profile.id === currentUserId
+        const friend = friendIds.has(member.profile.id)
+        return <div key={member.profile.id} className="flex items-center justify-between gap-3 px-4 py-3">
+          <div className="flex min-w-0 items-center gap-2">
+            <ProfileIdentity profile={member.profile} detail={self ? ui('You') : undefined} />
+            {member.owner && <Crown className="size-3.5 shrink-0 text-amber-500" aria-label={ui('Pool owner')} />}
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <div className="text-right">
+              <div className="text-sm font-medium tabular-nums">{formatBalance(member.contributionBalanceMicros / 1_000_000)}</div>
+              {member.reservedMicros > 0 && <div className="text-xs text-muted-foreground">{formatBalance(member.reservedMicros / 1_000_000)} {ui('reserved')}</div>}
             </div>
-          </> : query.data ? <div className="px-4 py-5 text-sm text-muted-foreground">
-            <p>{ui('Share credits with up to five friends.')}</p>
-            <p className="mt-1 text-xs">{friends.length ? ui('Choose Invite to Pool from a friend’s menu to start a Pool.') : ui('Add a friend first to create a Pool.')}</p>
-          </div> : null}
-    </section>
+            {!self && (isOwner || friend) && <DropdownMenu>
+              <DropdownMenuTrigger asChild><Button size="icon-sm" variant="ghost" disabled={busy} aria-label={uit`More options for ${member.profile.displayName}`}><MoreHorizontal /></Button></DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                {isOwner && <>
+                  <DropdownMenuItem onClick={() => void act(`owner:${member.profile.id}`, () => apiRequest('/api/pools/owner', { method: 'PATCH', body: { userId: member.profile.id } }), uit`${member.profile.displayName} is now the Pool owner.`)}>{ui('Make owner')}</DropdownMenuItem>
+                  <DropdownMenuItem variant="destructive" onClick={() => {
+                    if (confirm(uit`Remove ${member.profile.displayName} from the Pool? Existing reserved charges may still settle against their account.`)) {
+                      void act(`remove-pool:${member.profile.id}`, () => apiRequest(`/api/pools/members/${member.profile.id}`, { method: 'DELETE' }), uit`${member.profile.displayName} left the Pool.`)
+                    }
+                  }}>{ui('Remove from Pool')}</DropdownMenuItem>
+                  {friend && <DropdownMenuSeparator />}
+                </>}
+                {friend && friendActions(member.profile)}
+              </DropdownMenuContent>
+            </DropdownMenu>}
+          </div>
+        </div>
+      })}</div>
+      {isOwner && pool.pendingInvitations.length > 0 && <div className="border-t">
+        <div className="px-4 py-3">
+          <h3 className="text-sm font-medium">{ui('Pending invitations')}</h3>
+          <p className="mt-1 text-xs text-muted-foreground">{ui('Pending invitations reserve a Pool seat.')}</p>
+        </div>
+        <div className="divide-y">{pool.pendingInvitations.map((invitation) => <div key={invitation.id} className="flex items-center justify-between gap-3 px-4 py-3">
+          <ProfileIdentity profile={invitation.invitee} />
+          <Button size="sm" variant="ghost" disabled={busy} onClick={() => void act(`cancel-pool:${invitation.id}`, () => apiRequest(`/api/pools/invitations/${invitation.id}`, { method: 'DELETE' }), ui('Invitation canceled.'))}>{ui('Cancel')}</Button>
+        </div>)}</div>
+      </div>}
+      <div className="flex flex-wrap items-center gap-3 border-t px-4 py-3">
+        <Button size="sm" variant="outline" disabled={busy || mustTransfer} aria-describedby={mustTransfer ? 'pool-leave-help' : undefined} onClick={() => {
+          if (confirm(ui('Leave this Pool? Existing reserved charges may still settle against your account.'))) {
+            void act('leave-pool', () => apiRequest(`/api/pools/members/${currentUserId}`, { method: 'DELETE' }), ui('You left the Pool.'))
+          }
+        }}>{ui('Leave Pool')}</Button>
+        {mustTransfer && <p id="pool-leave-help" className="text-xs text-muted-foreground">{ui('Transfer ownership before leaving this Pool.')}</p>}
+      </div>
+    </section>}
 
     <Dialog open={Boolean(inviteTarget)} onOpenChange={(open) => { if (!open) onInviteClose() }}>
       <DialogContent onCloseAutoFocus={(event) => { event.preventDefault(); restoreFocus(inviteTriggerRef.current) }}>

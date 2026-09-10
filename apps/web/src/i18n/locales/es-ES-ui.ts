@@ -19,8 +19,6 @@ const esUi: Record<string, string> = {
   "Leave this Pool? Existing reserved charges may still settle against your account.": "¿Salir de este fondo? Los cargos reservados existentes aún pueden liquidarse en tu cuenta.",
   "You left the Pool.": "Has salido del fondo.",
   "Transfer ownership before leaving this Pool.": "Transfiere la propiedad antes de salir de este fondo.",
-  "Share credits with up to five friends.": "Comparte créditos con hasta cinco amigos.",
-  "Choose Invite to Pool from a friend’s menu to start a Pool.": "Elige Invitar al fondo en el menú de un amigo para crear un fondo.",
   "Inviting {{0}} makes your current balance available for every Pool member to view and spend.": "Al invitar a {{0}}, todos los miembros del fondo podrán ver y gastar tu saldo actual.",
   "Unable to save image model": "No se pudo guardar el modelo de imágenes",
   "Loading models…": "Cargando modelos…",
