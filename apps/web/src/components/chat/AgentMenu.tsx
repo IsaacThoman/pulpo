@@ -1,6 +1,7 @@
 import { Bot, BotOff, Check, ChevronDown } from 'lucide-react'
 import { useTranslation } from '@/i18n/useAppTranslation'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { useMenuTriggerFocus } from './use-menu-trigger-focus'
 
 export function AgentMenu({ enabled, disabled, onSelect }: {
   enabled: boolean
@@ -8,6 +9,7 @@ export function AgentMenu({ enabled, disabled, onSelect }: {
   onSelect: (enabled: boolean) => void
 }) {
   const { t } = useTranslation()
+  const menuFocus = useMenuTriggerFocus()
   const active = enabled && !disabled
   const label = active ? 'Pulpo Agent' : t('chat.agentDisabled')
   const Icon = active ? Bot : BotOff
@@ -15,17 +17,18 @@ export function AgentMenu({ enabled, disabled, onSelect }: {
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <button
+          {...menuFocus.triggerProps}
           type="button"
           disabled={disabled}
           aria-label={t('chat.agentOptions', { selection: label })}
-          className="group/agent-options flex h-8 shrink-0 cursor-pointer items-center gap-1.5 rounded-full px-2.5 text-xs text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-ring/50 focus-visible:ring-[3px] disabled:cursor-not-allowed disabled:opacity-40"
+          className="group/agent-options flex h-8 shrink-0 cursor-pointer items-center gap-1.5 rounded-full px-2.5 text-xs text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-ring/50 focus-visible:ring-[3px] data-[pointer-focus]:focus-visible:ring-0 disabled:cursor-not-allowed disabled:opacity-40"
         >
           <Icon className="size-4" />
           <span>{label}</span>
           <ChevronDown className="size-3 shrink-0 rotate-180 opacity-60 transition-transform duration-200 group-data-[state=open]/agent-options:rotate-0 motion-reduce:transition-none" />
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" side="top" className="w-48">
+      <DropdownMenuContent {...menuFocus.contentProps} align="start" side="top" className="w-48">
         {[true, false].map((value) => {
           const ChoiceIcon = value ? Bot : BotOff
           return (
