@@ -244,11 +244,12 @@ export async function createResponse(options: CreateResponseOptions) {
     await tx.execute(sql`select pg_advisory_xact_lock(1886747744)`)
     const [loggingRow] = await tx.select().from(applicationSettings).where(eq(applicationSettings.key, 'logging')).limit(1)
     const logging = parseLoggingSettings(loggingRow?.value)
-    const policy = detailedPayloadPolicy(logging)
+    const collectedAt = new Date()
+    const policy = detailedPayloadPolicy(logging, collectedAt)
     await tx.insert(requestLogs).values({
       id: requestLogId, responseId: id, userId: options.ownerUserId, actorUserId: options.actorUserId, apiKeyId: options.apiKeyId,
       origin: options.actorUserId ? 'admin_chat' : options.apiKeyId ? 'api' : 'web', requestedModelId: options.input.modelId, currentModelId: model.id,
-      ...policy,
+      ...policy, createdAt: collectedAt, updatedAt: collectedAt,
       requestPayload: policy.captureDetailedPayloads ? { input: storedInput, parameters: { ...(options.parameters ?? {}), ...resolved.parameters }, presetSelections: resolved.selections } : null,
     })
   })

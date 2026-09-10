@@ -47,3 +47,9 @@ export const embeddingQueue = new Queue<EmbeddingJob>('episodic-memory', {
     removeOnFail: 5_000,
   },
 })
+
+// Keep payload expiry independent of long-running backups and other maintenance.
+export const payloadRetentionQueue = new Queue('payload-retention', {
+  connection,
+  defaultJobOptions: { attempts: 3, backoff: { type: 'exponential', delay: 1_000 }, removeOnComplete: 100, removeOnFail: 100 },
+})

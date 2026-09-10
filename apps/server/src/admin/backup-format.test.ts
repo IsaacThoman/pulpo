@@ -68,6 +68,27 @@ describe('full backup format', () => {
     expect(database.ocr_attempts[0]).toMatchObject({ request_payload: null, response_payload: null })
   })
 
+  it.each(['90d', 'indefinite'])('does not revive expired backup bodies under %s retention', (payloadRetention) => {
+    const database = {
+      request_logs: [{ id: 'log', created_at: new Date().toISOString(), capture_detailed_payloads: true, payload_expires_at: new Date(Date.now() - 1).toISOString(), request_payload: { secret: true } }],
+      ocr_attempts: [{ request_log_id: 'log', response_payload: { secret: true } }],
+      application_settings: [{ key: 'logging', value: { logDetailedPayloads: true, payloadRetention } }],
+    }
+    applyFullBackupCompatibilityDefaults(database)
+    expect(database.request_logs[0]).toMatchObject({ capture_detailed_payloads: false, request_payload: null, response_payload: null })
+    expect(database.ocr_attempts[0]).toMatchObject({ request_payload: null, response_payload: null })
+  })
+
+  it('preserves an earlier stored deadline when restoring a retained payload', () => {
+    const expires = new Date(Date.now() + 3600_000).toISOString()
+    const database = {
+      request_logs: [{ id: 'log', created_at: new Date().toISOString(), capture_detailed_payloads: true, payload_expires_at: expires }],
+      application_settings: [{ key: 'logging', value: { logDetailedPayloads: true, payloadRetention: '90d' } }],
+    }
+    applyFullBackupCompatibilityDefaults(database)
+    expect(database.request_logs[0]!.payload_expires_at).toBe(expires)
+  })
+
   it('preserves values already stored in a newer backup', () => {
     const database = {
       users: [{ avatar_version: 7 }],
