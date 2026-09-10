@@ -12,6 +12,8 @@ import {
   modelPresets,
   models,
   providerConnections,
+  speechModels,
+  imageModels,
   providerHealthChecks,
   providerUpstreamModels,
   applicationSettings,
@@ -28,6 +30,7 @@ import { INTERNAL_LAB_ID, INTERNAL_PROVIDER_ID, UNKNOWN_MODEL_ID } from './defau
 import { deleteCatalogModel } from './model-deletion.js'
 import { parseAgentSettings } from '../settings/application-settings.js'
 import { catalogIconUrls, requireCatalogIcon } from './icon-service.js'
+import { codexEnabled } from '../codex/policy.js'
 import { CODEX_LAB_ID, CODEX_PI_PROVIDER_ID, CODEX_PROVIDER_ID, isCodexModelId, isManagedLabId, isManagedProviderId } from '../codex/constants.js'
 import {
   COMPACTION_MIN_THRESHOLD_TOKENS,
@@ -155,6 +158,7 @@ async function replacePresets(tx: Parameters<Parameters<typeof db.transaction>[0
 export async function registerCatalogRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/models', async (request) => {
     const user = requireUser(request)
+    const codexAvailable = await codexEnabled()
     const [codexCredential] = await db.select({ status: userProviderCredentials.status })
       .from(userProviderCredentials).where(and(
         eq(userProviderCredentials.userId, user.id), eq(userProviderCredentials.providerId, CODEX_PI_PROVIDER_ID),
@@ -170,7 +174,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
       .innerJoin(providerConnections, eq(models.providerConnectionId, providerConnections.id))
       .where(and(
         eq(models.enabled, true), eq(models.visible, true),
-        codexCredential?.status === 'connected' ? undefined : ne(models.providerConnectionId, CODEX_PROVIDER_ID),
+        codexAvailable && codexCredential?.status === 'connected' ? undefined : ne(models.providerConnectionId, CODEX_PROVIDER_ID),
       ))
       .orderBy(asc(models.sortOrder), asc(models.createdAt))
     const [agentRow] = await db.select().from(applicationSettings).where(eq(applicationSettings.key, 'agent')).limit(1)
@@ -178,7 +182,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
     const iconById = new Map(iconRows.map((icon) => [icon.id, icon]))
     const customIcon = (id: string | null) => id && iconById.has(id) ? catalogIconUrls(iconById.get(id)!) : null
     const agentAvailable = parseAgentSettings(agentRow?.value).enabled && Boolean(getConfig().WORKSPACE_CONTROLLER_URL && getConfig().WORKSPACE_CONTROLLER_TOKEN)
-    return { agentAvailable, data: await Promise.all(rows.map(async ({ model, pricing, lab, provider }) => ({
+    return { codexEnabled: codexAvailable, agentAvailable, data: await Promise.all(rows.map(async ({ model, pricing, lab, provider }) => ({
       id: model.id,
       upstreamModelId: model.upstreamModelId,
       name: model.name,
@@ -400,7 +404,9 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
     const { id } = request.params as { id: string }
     if (id === INTERNAL_PROVIDER_ID || isManagedProviderId(id)) throw notFound('Provider')
     const used = await db.select({ id: models.id }).from(models).where(eq(models.providerConnectionId, id)).limit(1)
-    if (used.length) throw new AppError(409, 'provider_in_use', 'Delete or move this provider’s models first')
+    const speechUsed = await db.select({ id: speechModels.id }).from(speechModels).where(eq(speechModels.providerConnectionId, id)).limit(1)
+    const imageUsed = await db.select({ id: imageModels.id }).from(imageModels).where(eq(imageModels.providerConnectionId, id)).limit(1)
+    if (used.length || speechUsed.length || imageUsed.length) throw new AppError(409, 'provider_in_use', 'Delete or move this provider’s models first')
     const deleted = await db.delete(providerConnections).where(eq(providerConnections.id, id)).returning({ id: providerConnections.id })
     if (!deleted.length) throw notFound('Provider')
     reply.code(204).send()

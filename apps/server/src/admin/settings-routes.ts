@@ -13,12 +13,12 @@ import { agentSettingsSchema, backupSettingsTestInputSchema, backupSettingsUpdat
 import { requireAdmin } from '../auth/service.js'
 import { requireSecretRevealAuth } from '../auth/sensitive-action.js'
 import { db } from '../database/client.js'
-import { applicationSettings, auditEvents, backupJobs, banners, exportJobs, models, users } from '../database/schema.js'
+import { applicationSettings, auditEvents, backupJobs, banners, codexLoginAttempts, exportJobs, models, users } from '../database/schema.js'
 import { maintenanceQueue } from '../jobs.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import { getBlobStore } from '../storage/index.js'
-import { authSettingsSchema, interfaceSettingsSchema, loggingSettingsSchema, ocrSettingsSchema, parseBackupSettings, parseBillingSettings, parseDictationSettings, parseInterfaceSettings, parseOcrSettings, parseWebToolsSettings, publicDictationSettings, publicWebToolsSettings, storedDictationSettingsSchema, storedWebToolsSettingsSchema } from '../settings/application-settings.js'
+import { codexSettingsSchema, authSettingsSchema, interfaceSettingsSchema, loggingSettingsSchema, ocrSettingsSchema, parseBackupSettings, parseBillingSettings, parseDictationSettings, parseInterfaceSettings, parseOcrSettings, parseWebToolsSettings, publicDictationSettings, publicWebToolsSettings, storedDictationSettingsSchema, storedWebToolsSettingsSchema } from '../settings/application-settings.js'
 import { decryptSecret, encryptSecret } from '../lib/crypto.js'
 import { getConfig } from '../config.js'
 import { workspaceControllerRequest } from '../agent/controller-http.js'
@@ -134,6 +134,7 @@ export async function registerAdminSettingsRoutes(app: FastifyInstance): Promise
       }
       values.auth = authSettings
     }
+    if (values.codex !== undefined) values.codex = codexSettingsSchema.parse(values.codex)
     if (values.logging !== undefined) {
       loggingSettings = loggingSettingsSchema.parse(values.logging)
       values.logging = loggingSettings
@@ -162,6 +163,10 @@ export async function registerAdminSettingsRoutes(app: FastifyInstance): Promise
       for (const [key, value] of Object.entries(values)) {
         await tx.insert(applicationSettings).values({ key, value, updatedBy: admin.id })
           .onConflictDoUpdate({ target: applicationSettings.key, set: { value, updatedBy: admin.id, updatedAt: new Date() } })
+      }
+      if (values.codex !== undefined && !codexSettingsSchema.parse(values.codex).enabled) {
+        await tx.update(codexLoginAttempts).set({ status: 'cancelled', error: null, updatedAt: new Date() })
+          .where(inArray(codexLoginAttempts.status, ['queued', 'waiting']))
       }
       if (loggingSettings) {
         await reconcileDetailedPayloadRetention((query) => tx.execute(query), loggingSettings)
@@ -281,6 +286,39 @@ export async function registerAdminSettingsRoutes(app: FastifyInstance): Promise
     })
     return publicDictationSettings(value)
   })
+
+  for (const secret of [
+    { key: 'dictation', path: 'dictation/api-key', encryptedKey: (value: unknown) => parseDictationSettings(value).encryptedGroqApiKey },
+    { key: 'backups', path: 'backups/application-key', encryptedKey: (value: unknown) => parseBackupSettings(value).encryptedApplicationKey },
+  ]) {
+    app.post(`/api/admin/settings/${secret.path}/reveal`, {
+      config: { rateLimit: { max: 10, timeWindow: '5 minutes' } },
+    }, async (request, reply) => {
+      const admin = requireAdmin(request)
+      const input = secretRevealInputSchema.parse(request.body)
+      const [row] = await db.select().from(applicationSettings).where(eq(applicationSettings.key, secret.key)).limit(1)
+      const encryptedApiKey = secret.encryptedKey(row?.value)
+      if (!encryptedApiKey) throw notFound('API key')
+
+      try {
+        await requireSecretRevealAuth(admin.id, input.currentPassword, input.verificationCode)
+      } catch (cause) {
+        await db.insert(auditEvents).values({
+          id: newId(), actorUserId: admin.id, action: `settings.${secret.key}.api_key.reveal_denied`,
+          targetType: 'application', targetId: secret.key,
+        })
+        throw cause
+      }
+
+      const apiKey = decryptSecret(encryptedApiKey, getConfig().ENCRYPTION_KEY)
+      await db.insert(auditEvents).values({
+        id: newId(), actorUserId: admin.id, action: `settings.${secret.key}.api_key.reveal`,
+        targetType: 'application', targetId: secret.key,
+      })
+      reply.header('cache-control', 'no-store')
+      return { apiKey }
+    })
+  }
 
   app.post('/api/admin/settings/web-tools/:provider/api-key/reveal', {
     config: { rateLimit: { max: 10, timeWindow: '5 minutes' } },

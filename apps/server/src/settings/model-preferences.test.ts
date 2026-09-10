@@ -4,7 +4,7 @@ import { normalizedPreferencePatch, preferencesWithModelDefaults } from './model
 describe('account model preferences', () => {
   it('adds clean defaults to older preference records', () => {
     expect(preferencesWithModelDefaults({ theme: 'dark' })).toEqual({
-      theme: 'dark', animationSpeed: 1, automaticChatExpiration: '24h', newChatAutoExpire: false,
+      imageGeneration: { enabled: false, modelId: null }, speech: { modelId: null, models: {} }, theme: 'dark', animationSpeed: 1, automaticChatExpiration: '24h', newChatAutoExpire: false,
       sidebarPins: { usage: false, billing: false, friends: false, apiKeys: false },
       agentModes: {}, instructionPresetSelections: {}, favoriteModelIds: [], providerOrder: [],
     })
@@ -85,4 +85,12 @@ describe('instruction preset account preferences', () => {
       .toEqual({ instructionPresetSelections: { casual: true } })
     expect(() => normalizedPreferencePatch({ instructionPresetSelections: { casual: 'true' } })).toThrow()
   })
+})
+
+it('normalizes image generation settings without losing unavailable model selections', () => {
+  const imageGeneration = { enabled: true, modelId: 'retired-image' }
+  expect(preferencesWithModelDefaults({ imageGeneration }).imageGeneration).toEqual(imageGeneration)
+  expect(normalizedPreferencePatch({ imageGeneration })).toEqual({ imageGeneration })
+  expect(preferencesWithModelDefaults({ imageGeneration: { enabled: 'yes' } }).imageGeneration).toEqual({ enabled: false, modelId: null })
+  expect(() => normalizedPreferencePatch({ imageGeneration: { enabled: 'yes' } })).toThrow()
 })

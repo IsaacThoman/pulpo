@@ -5,7 +5,7 @@ import { useTranslation } from '@/i18n/useAppTranslation'
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { Ghost, Hourglass, Loader2, Save, SquarePen } from 'lucide-react'
 import { useChat } from '@/stores/chat'
-import { getCatalogModel, useCatalog } from '@/stores/catalog'
+import { filterCodexModels, getCatalogModel, useCatalog } from '@/stores/catalog'
 import { ModelSelector } from '@/components/chat/ModelSelector'
 import { Composer, type ComposerMessageEdit } from '@/components/chat/Composer'
 import { ExpiryCountdown } from '@/components/chat/ExpiryCountdown'
@@ -157,11 +157,13 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
   const instanceReady = useAuth((s) => s.instanceReady)
   const userRole = useAuth((s) => s.user?.role)
   const networkReady = !isDesktopRuntime() || instanceReady
+  const codexEnabled = useAuth((state) => state.codexEnabled)
   const models = useCatalog((state) => state.models)
   const routeModelId = params.get('model')
   const navigationState = location.state as NewChatLocationState | null
   const carriedModelId = navigationState?.selectedModelId
   const temporaryComposerRef = useRef<{ toggle: () => Promise<void> } | null>(null)
+  const suggestionComposerRef = useRef<{ submit: (message: string) => void } | null>(null)
   const [temporary, setTemporary] = useState(false)
   const [savingTemporary, setSavingTemporary] = useState(false)
   const [temporaryError, setTemporaryError] = useState<string | null>(null)
@@ -222,6 +224,12 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
     const next = resolveDefaultModelId(models, defaultModelId)
     if (next && next !== modelId) setModelId(next)
   }, [chatId, defaultModelId, modelId, models, routeModelId])
+
+  useEffect(() => {
+    if (!codexEnabled && modelId.startsWith('codex:')) {
+      setModelId(resolveDefaultModelId(filterCodexModels(models, false), defaultModelId))
+    }
+  }, [codexEnabled, defaultModelId, modelId, models])
 
   const selectModel = (id: string) => {
     shouldApplyDefaultRef.current = false
@@ -294,8 +302,7 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
   )
 
   const sendSuggestion = (s: string) => {
-    const id = useChat.getState().sendMessage(null, s, modelId, [], temporary, effectiveNewChatAutoExpire)
-    if (!temporary) navigate(`/c/${id}`)
+    suggestionComposerRef.current?.submit(s)
   }
 
   const handleTemporaryControl = async () => {
@@ -489,7 +496,7 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
               chatWidth === 'narrow' ? 'max-w-5xl' : 'max-w-[min(100%,90rem)]'
             )}
           >
-            <Composer syncEnabled={!adminMode} onSyncControls={applyComposerControls} key="new" temporaryControlRef={temporaryComposerRef} onTemporaryChange={setTemporary} chatId={null} modelId={modelId} temporary={temporaryMode} autoExpire={effectiveNewChatAutoExpire} />
+            <Composer syncEnabled={!adminMode} onSyncControls={applyComposerControls} key="new" temporaryControlRef={temporaryComposerRef} suggestionControlRef={suggestionComposerRef} onTemporaryChange={setTemporary} chatId={null} modelId={modelId} temporary={temporaryMode} autoExpire={effectiveNewChatAutoExpire} />
           </div>
         </>
       ) : (

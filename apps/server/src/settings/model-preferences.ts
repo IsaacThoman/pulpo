@@ -1,4 +1,6 @@
 import {
+  imageGenerationPreferencesSchema,
+  speechPreferencesSchema,
   agentModesSchema,
   animationSpeedSchema,
   automaticChatExpirationSchema,
@@ -17,6 +19,8 @@ export function preferencesWithModelDefaults(values?: Record<string, unknown>): 
   const parsedInstructionPresetSelections = instructionPresetSelectionsSchema.safeParse(values?.instructionPresetSelections)
   return {
     ...values,
+    imageGeneration: imageGenerationPreferencesSchema.catch({ enabled: false, modelId: null }).parse(values?.imageGeneration),
+    speech: speechPreferencesSchema.catch({ modelId: null, models: {} }).parse(values?.speech),
     animationSpeed: parsedAnimationSpeed.success ? parsedAnimationSpeed.data : animationSpeedSchema.parse(undefined),
     automaticChatExpiration: parsedAutomaticChatExpiration.success ? parsedAutomaticChatExpiration.data : '24h',
     newChatAutoExpire: parsedNewChatAutoExpire.success ? parsedNewChatAutoExpire.data : false,
@@ -43,6 +47,8 @@ export function normalizedPreferencePatch(patch: Record<string, unknown>): Recor
     : undefined
   return {
     ...patch,
+    ...('imageGeneration' in patch ? { imageGeneration: imageGenerationPreferencesSchema.parse(patch.imageGeneration) } : {}),
+    ...('speech' in patch ? { speech: speechPreferencesSchema.parse(patch.speech) } : {}),
     ...(animationSpeed === undefined ? {} : { animationSpeed }),
     ...modelPatch,
     ...(sidebarPins === undefined ? {} : { sidebarPins }),

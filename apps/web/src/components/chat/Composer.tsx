@@ -1,9 +1,11 @@
+import { speechPlayback } from '@/features/speech/state'
 import { localComposerDraftId } from '@pulpo/client-core'
 import { ShelvedDrafts } from './ShelvedDrafts'
 import { ComposerTray } from './ComposerTray'
 import { webShelf, shelfDraftAttachments } from '@/lib/local-first/shelf'
 import type { ShelfAttachment } from '@pulpo/client-core'
 import { useComposerSync } from './use-composer-sync'
+import { useFollowStartedChat } from './use-follow-started-chat'
 import { webComposerSync } from '@/lib/local-first/composer-sync'
 import type { ComposerState } from '@pulpo/contracts'
 import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, useSyncExternalStore, type Ref, type DragEvent as ReactDragEvent } from 'react'
@@ -13,7 +15,6 @@ import {
   Archive,
   AlertCircle,
   ArrowUp,
-  Bot,
   Check,
   ChevronDown,
   CornerDownRight,
@@ -41,6 +42,7 @@ import { useSettings } from '@/stores/settings'
 import { chatOptionsFor, resolveSelections, useModelConfig } from '@/stores/modelConfig'
 import { getCatalogModel, useCatalog } from '@/stores/catalog'
 import { PresetIcon } from '@/components/chat/PresetIcon'
+import { AgentMenu } from '@/components/chat/AgentMenu'
 import { PendingAttachmentChip } from '@/components/chat/AttachmentImage'
 import { cn } from '@/lib/utils'
 import { downloadAttachment } from '@/lib/local-first/attachment-cache'
@@ -125,6 +127,7 @@ export function Composer({
   onMessageEditComplete,
   onEditStateChange,
   temporaryControlRef,
+  suggestionControlRef,
   onTemporaryChange,
 }: {
   chatId: string | null
@@ -138,6 +141,7 @@ export function Composer({
   onMessageEditComplete?: (result: 'saved' | 'cancelled') => void
   onEditStateChange?: (active: boolean) => void
   temporaryControlRef?: Ref<{ toggle: () => Promise<void> }>
+  suggestionControlRef?: Ref<{ submit: (message: string) => void }>
   onTemporaryChange?: (temporary: boolean) => void
 }) {
   const { t } = useTranslation()
@@ -231,10 +235,20 @@ export function Composer({
   const overrides = useModelConfig((s) => s.overrides)
   const generation = useSettings((s) => s.generation)
   const sendWithEnter = useSettings((s) => s.sendWithEnter)
-  const [draftPresets, setDraftPresets] = useState<Record<string, Record<string, string>>>({})
+  // Starting a chat remounts the composer. Seed its controls from the submitted
+  // turn (including uploads still waiting in the outbox), before draft sync opens
+  // the new chat's independent slot. An existing synced draft still takes priority.
+  const [initialControls] = useState(() => {
+    if (!chatId) return undefined
+    return useUploadOutbox.getState().submissions.findLast((item) => item.chatId === chatId && item.modelId === modelId)
+      ?? useChat.getState().chats.find((chat) => chat.id === chatId)?.messages.findLast((message) => message.role === 'assistant' && message.modelId === modelId)
+  })
+  const [draftPresets, setDraftPresets] = useState<Record<string, Record<string, string>>>(() => (
+    initialControls?.presetSelections ? { [modelId]: initialControls.presetSelections } : {}
+  ))
   const setPresetChoice = (id: string, preset: string, choice: string) => setDraftPresets((current) => ({ ...current, [id]: { ...generation[id], ...current[id], [preset]: choice } }))
   const defaultAgentMode = useSettings((s) => s.agentModes[modelId] ?? true)
-  const [draftAgentMode, setDraftAgentMode] = useState<boolean | null>(null)
+  const [draftAgentMode, setDraftAgentMode] = useState<boolean | null>(initialControls?.agentMode ?? null)
   const agentModeEnabled = draftAgentMode ?? defaultAgentMode
   const setAgentMode = (_id: string, enabled: boolean) => setDraftAgentMode(enabled)
   const agentAvailable = useCatalog((s) => s.agentAvailable)
@@ -373,6 +387,11 @@ export function Composer({
     el.setSelectionRange(end, end)
   }, [])
 
+  useFollowStartedChat({
+    userId, chatId, textarea: ref, syncEnabled, temporary,
+    busy: () => submitting || handoffBusyRef.current || shelfBusyRef.current || dictationState !== 'idle',
+  })
+
   useEffect(() => {
     focusAtEnd()
   }, [chatId, focusAtEnd])
@@ -486,6 +505,7 @@ export function Composer({
   }, [])
 
   const startDictation = useCallback(async () => {
+    speechPlayback.stop()
     setDictationError(null)
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
       setDictationError(ui("This browser does not support microphone recording"))
@@ -690,6 +710,34 @@ export function Composer({
     size: attachment.size,
   }))
 
+  const stageMessage = (text: string, ids: string[], submittedState?: ComposerState, revision?: number) => {
+    const staged = stageSubmission({
+      composerDraft: userId && composerSync && submittedState ? { userId, draftId, state: submittedState, revision } : undefined,
+      chatId,
+      content: text,
+      modelId,
+      presetSelections: selections,
+      agentMode: activeAgentMode && canUseAgent,
+      temporary,
+      autoExpire,
+      attachmentIds: ids,
+    })
+    if (!chatId && staged.chatId && !temporary) navigate(`/c/${staged.chatId}`)
+  }
+
+  const suggestionSubmitted = useRef(false)
+  useImperativeHandle(suggestionControlRef, () => ({
+    submit: (message: string) => {
+      if (chatId || !modelId || !message.trim() || !desktopCanMutate || !draftHydrated
+        || handoffBusyRef.current || shelfBusyRef.current || submitting || editingExisting || recovery
+        || dictationState !== 'idle' || suggestionSubmitted.current) return
+      suggestionSubmitted.current = true
+      // Suggestions send only their own text. Keep any typed draft and uploads
+      // in the new-chat slot, and do not issue a sync clear for that draft.
+      stageMessage(message.trim(), [])
+    },
+  }))
+
   const submit = async () => {
     const text = value.trim()
     if (!canSend) return
@@ -751,18 +799,7 @@ export function Composer({
     setSubmitting(true)
     const submittedRevision = await composerSync?.prepareSubmission(draftId, sharedComposerState)
     setSubmitting(false)
-    const staged = stageSubmission({
-      composerDraft: userId && composerSync ? { userId, draftId, state: sharedComposerState, revision: submittedRevision ?? undefined } : undefined,
-      chatId,
-      content: text,
-      modelId,
-      presetSelections: selections,
-      agentMode: activeAgentMode && canUseAgent,
-      temporary,
-      autoExpire,
-      attachmentIds,
-    })
-    if (!chatId && staged.chatId && !temporary) navigate(`/c/${staged.chatId}`)
+    stageMessage(text, attachmentIds, sharedComposerState, submittedRevision ?? undefined)
     if (valueRef.current === value && attachmentIdsRef.current === attachmentIds) {
       skipNextEdit()
       clearDraft(false)
@@ -1137,41 +1174,49 @@ export function Composer({
           </div>
         )}
 
-        <textarea
-          ref={ref}
-          readOnly={handoffBusy || shelfBusy}
-          value={value}
-          onChange={(e) => {
-            setValue(e.target.value)
-            autosize()
-          }}
-          onKeyDown={(e) => {
-            if (e.key === 'Escape' && messageEdit && !e.nativeEvent.isComposing) {
-              e.preventDefault()
-              cancelMessageEdit()
-              return
-            }
-            if (e.key === 'Escape' && editingQueueId && !e.nativeEvent.isComposing) {
-              e.preventDefault()
-              void beginQueueEdit(editingQueueId)
-              return
-            }
-            if (shouldSubmitComposerKey({
-              key: e.key,
-              metaKey: e.metaKey,
-              ctrlKey: e.ctrlKey,
-              shiftKey: e.shiftKey,
-              isComposing: e.nativeEvent.isComposing,
-            }, sendWithEnter)) {
-              e.preventDefault()
-              void submit()
-            }
-          }}
-          onPaste={onPaste}
-          rows={1}
-          placeholder={attachments.length ? t('chat.addCaption') : temporary ? t('chat.temporaryMessage') : t('chat.message')}
-          className="max-h-[220px] w-full resize-none select-text bg-transparent px-4 pt-3.5 text-[15px] leading-6 outline-none placeholder:select-none placeholder:text-muted-foreground"
-        />
+        <div className="flex items-end pr-2.5">
+          <textarea
+            ref={ref}
+            readOnly={handoffBusy || shelfBusy}
+            value={value}
+            onChange={(e) => {
+              setValue(e.target.value)
+              autosize()
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape' && messageEdit && !e.nativeEvent.isComposing) {
+                e.preventDefault()
+                cancelMessageEdit()
+                return
+              }
+              if (e.key === 'Escape' && editingQueueId && !e.nativeEvent.isComposing) {
+                e.preventDefault()
+                void beginQueueEdit(editingQueueId)
+                return
+              }
+              if (shouldSubmitComposerKey({
+                key: e.key,
+                metaKey: e.metaKey,
+                ctrlKey: e.ctrlKey,
+                shiftKey: e.shiftKey,
+                isComposing: e.nativeEvent.isComposing,
+              }, sendWithEnter)) {
+                e.preventDefault()
+                void submit()
+              }
+            }}
+            onPaste={onPaste}
+            rows={1}
+            placeholder={attachments.length ? t('chat.addCaption') : temporary ? t('chat.temporaryMessage') : t('chat.message')}
+            className="max-h-[220px] min-w-0 flex-1 resize-none select-text bg-transparent px-4 pt-3.5 text-[15px] leading-6 outline-none placeholder:select-none placeholder:text-muted-foreground"
+          />
+          {showShelf && <Tooltip><TooltipTrigger asChild><button type="button"
+            disabled={!hasDraft || shelfBusy || submitting || dictationState !== 'idle' || !draftHydrated}
+            onClick={() => { void transferShelf() }} aria-label={ui('Shelve draft')}
+            className="mb-1 flex size-8 shrink-0 items-center justify-center rounded-full text-muted-foreground enabled:hover:bg-accent enabled:hover:text-foreground disabled:opacity-40">
+            {shelfBusy ? <Loader2 className="size-4 animate-spin" /> : <Archive className="size-4" />}
+          </button></TooltipTrigger><TooltipContent>{ui('Shelve draft')}</TooltipContent></Tooltip>}
+        </div>
         <div className="flex min-w-0 select-none items-center gap-1 px-2.5 pb-2.5">
           <input
             ref={fileInputRef}
@@ -1243,30 +1288,17 @@ export function Composer({
             </DropdownMenu>
           )}
 
-          <button
-            type="button"
+          <AgentMenu
+            enabled={activeAgentMode}
             disabled={!canUseAgent}
-            onClick={() => {
+            onSelect={(enabled) => {
               if (!canUseAgent) return
-              if (messageEdit) setEditAgentMode((value) => !value)
-              else setAgentMode(modelId, !agentModeEnabled)
+              if (messageEdit) setEditAgentMode(enabled)
+              else setAgentMode(modelId, enabled)
             }}
-            aria-label={activeAgentMode && canUseAgent ? t('chat.disableAgent') : t('chat.enableAgent')}
-            aria-pressed={activeAgentMode && canUseAgent}
-            className={cn('flex h-8 shrink-0 cursor-pointer items-center gap-1.5 rounded-full px-2.5 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-40', activeAgentMode && canUseAgent ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-accent hover:text-foreground')}
-          >
-            <Bot className="size-4" />
-            <span>{t('chat.agent')}</span>
-          </button>
+          />
 
           <div className="flex-1" />
-
-          {showShelf && <Tooltip><TooltipTrigger asChild><button type="button"
-            disabled={!hasDraft || shelfBusy || submitting || dictationState !== 'idle' || !draftHydrated}
-            onClick={() => { void transferShelf() }} aria-label={ui('Shelve draft')}
-            className="flex size-8 shrink-0 items-center justify-center rounded-full text-muted-foreground enabled:hover:bg-accent enabled:hover:text-foreground disabled:opacity-40">
-            {shelfBusy ? <Loader2 className="size-4 animate-spin" /> : <Archive className="size-4" />}
-          </button></TooltipTrigger><TooltipContent>{ui('Shelve draft')}</TooltipContent></Tooltip>}
 
           {dictationEnabled && <Tooltip>
             <TooltipTrigger asChild>

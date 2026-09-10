@@ -194,7 +194,7 @@ export function AppLayout() {
             </Suspense>
           </main>
         </div>
-        {searchOpen && <Suspense fallback={<div role="status" className="fixed inset-x-0 top-1/4 z-50 text-center">{ui("Loading…")}</div>}>
+        {searchOpen && <Suspense fallback={null}>
           <SearchModal
             open={searchOpen}
             onClose={() => {

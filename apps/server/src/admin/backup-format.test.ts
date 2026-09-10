@@ -26,6 +26,8 @@ describe('full backup format', () => {
 
   it('accepts full backups created before episodic memory was introduced', () => {
     expect(OPTIONAL_TABLES_IN_LEGACY_BACKUPS).toEqual([
+      'image_models', 'image_generation_requests',
+      'speech_models', 'speech_requests', 'speech_resource_cleanup',
       'user_memory_documents',
       'user_memory_document_revisions',
       'episodic_memory_generations',
@@ -89,4 +91,14 @@ describe('full backup format', () => {
     expect(database.chat_turn_embeddings[0]!.chunk_index).toBe(3)
     expect(database.request_logs[0]!.capture_detailed_payloads).toBe(true)
   })
+})
+
+it('restores old model samples as default-voice previews and preserves separate voice clips', () => {
+  const legacy = { config: { defaultVoice: 'coral' }, preview_object_key: 'old.wav', preview_content_type: 'audio/wav', preview_checksum: 'checksum' }
+  const current = { config: { defaultVoice: 'coral' }, voice_previews: [{ voiceId: 'alloy', objectKey: 'alloy.wav' }, { voiceId: 'coral', objectKey: 'coral.wav' }] }
+  const database = { speech_models: [legacy, current, { config: { defaultVoice: 'coral' } }] }
+  applyFullBackupCompatibilityDefaults(database)
+  expect(database.speech_models[0]).toMatchObject({ preview_object_key: null, voice_previews: [{ voiceId: 'coral', objectKey: 'old.wav', contentType: 'audio/wav', checksum: 'checksum' }] })
+  expect(database.speech_models[1]).toMatchObject({ voice_previews: current.voice_previews })
+  expect(database.speech_models[2]).toMatchObject({ voice_previews: [] })
 })

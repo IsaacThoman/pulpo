@@ -1,4 +1,5 @@
 import { handleSessionConnectionError } from '@/lib/session-revocation'
+import { webChatStarted } from '@/lib/chat-started'
 import { bindWebShelfSocket } from '@/lib/local-first/shelf'
 import { useComposerSyncPreference } from '@/stores/composer-sync-preference'
 import { bindWebComposerSocket } from '@/lib/local-first/composer-sync'
@@ -15,7 +16,7 @@ import type {
 } from '@pulpo/contracts'
 import { mergeRevisionInvalidation, type RevisionInvalidationBatch } from '@pulpo/client-core'
 import { apiRequest, ApiError } from '@/lib/api'
-import { localDb } from '@/lib/local-first/database'
+import { localAccountKey, localDb } from '@/lib/local-first/database'
 import { flushOutbox } from '@/lib/local-first/outbox'
 import { queryClient } from '@/lib/query-client'
 import { useAuth } from '@/stores/auth'
@@ -118,6 +119,7 @@ export function ChatDataBridge() {
     let cursorTimer: number | undefined
     let revisionTimer: number | undefined
     let disposed = false
+    const accountScope = localAccountKey(userId)
     const pendingQueryKeys = new Map<string, string[]>()
     let pendingRevision: RevisionInvalidationBatch | undefined
     const pendingEvents = new Map<string, ResponseEvent[]>()
@@ -273,6 +275,9 @@ export function ChatDataBridge() {
     socket.on('connect', syncScheduler.request)
     socket.on('response.event', queueEvent)
     socket.on('response.snapshot', applyLiveSnapshot)
+    socket.on('chat.started', (event) => {
+      if (!disposed && socket.connected) webChatStarted.receive(accountScope, event)
+    })
     socket.on('chat.changed', ({ chatId: changedChatId, revision }) => {
       queueRevisionInvalidation({ revision, chatId: changedChatId })
     })

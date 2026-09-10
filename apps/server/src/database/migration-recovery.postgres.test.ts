@@ -6,7 +6,7 @@ import { drizzle } from 'drizzle-orm/postgres-js'
 import { migrate } from 'drizzle-orm/postgres-js/migrator'
 import postgres from 'postgres'
 import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { recoverRenumberedShelfMigration } from './migration-recovery.js'
+import { recoverRenumberedShelfMigration, recoverRenumberedSpeechMigrations } from './migration-recovery.js'
 
 const enabled = process.env.PULPO_MIGRATION_POSTGRES_TEST === '1'
 if (enabled && new URL(process.env.DATABASE_URL ?? 'http://invalid').pathname !== '/pulpo_migration_test') {
@@ -74,6 +74,28 @@ describe.skipIf(!enabled)('renumbered shelf migration recovery on PostgreSQL', (
     await migrate(drizzle(client!), { migrationsFolder: folder })
     expect(await recoverRenumberedShelfMigration(client!, folder)).toBe(false)
     expect(await searchColumnExists()).toBe(true)
+  })
+
+  it.each([1, 2, 3])('recovers %s legacy speech migrations while retaining clips and applying time zones', async count => {
+    const timestamps = [1788846946049, 1788876504966, 1788887924483]
+    const speech = journal.entries.filter(entry => /_speech_(models|previews|voice_previews)$/.test(entry.tag))
+    const legacy = fixture([...journal.entries.filter(entry => entry.idx <= 65), ...speech.slice(0, count).map((entry, index) => ({ ...entry, when: timestamps[index]! }))])
+    await migrate(drizzle(client!), { migrationsFolder: legacy })
+    const providerId = randomUUID()
+    await client!`insert into provider_connections (id, name, encrypted_api_key) values (${providerId}, 'Speech fixture', 'fixture')`
+    await client!`insert into speech_models (id, provider_connection_id, config) values ('preserve', ${providerId}, '{"defaultVoice":"coral"}')`
+    if (count === 2) await client!`update speech_models set preview_object_key = 'keep.wav', preview_content_type = 'audio/wav', preview_checksum = 'checksum'`
+    if (count === 3) await client!`update speech_models set voice_previews = '[{"voiceId":"coral","objectKey":"keep.wav","contentType":"audio/wav","checksum":"checksum"}]'`
+    expect(await recoverRenumberedSpeechMigrations(client!, folder)).toBe(true)
+    await migrate(drizzle(client!), { migrationsFolder: folder })
+    const [model] = await client!`select * from speech_models where id = 'preserve'`
+    expect(model!.config).toEqual({ defaultVoice: 'coral' })
+    expect(model!.voice_previews).toEqual(count === 1 ? [] : [{ voiceId: 'coral', objectKey: 'keep.wav', contentType: 'audio/wav', checksum: 'checksum' }])
+    expect(await client!`select column_name from information_schema.columns where table_name in ('queued_messages', 'responses') and column_name = 'time_zone'`).toHaveLength(2)
+    const before = await client!`select * from drizzle.__drizzle_migrations order by id`
+    expect(await recoverRenumberedSpeechMigrations(client!, folder)).toBe(false)
+    await migrate(drizzle(client!), { migrationsFolder: folder })
+    expect(await client!`select * from drizzle.__drizzle_migrations order by id`).toEqual(before)
   })
 
   it('rolls back both skipped schema changes and journal entries if recovery fails', async () => {

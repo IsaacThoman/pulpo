@@ -1,8 +1,8 @@
 export const FULL_BACKUP_TABLES = [
   'users', 'friendships', 'user_blocks', 'password_credentials', 'user_totp_credentials', 'two_factor_recovery_codes', 'user_preferences', 'audit_events',
-  'catalog_icons', 'labs', 'provider_connections',
+  'catalog_icons', 'labs', 'provider_connections', 'image_models', 'speech_models', 'speech_requests', 'speech_resource_cleanup',
   'models', 'model_pricing_versions', 'model_presets', 'model_preset_choices', 'folders', 'chats', 'responses',
-  'response_items', 'response_content_parts', 'chat_shares', 'attachments', 'user_memory_documents', 'user_memory_document_revisions',
+  'response_items', 'response_content_parts', 'chat_shares', 'attachments', 'image_generation_requests', 'user_memory_documents', 'user_memory_document_revisions',
   'episodic_memory_generations', 'chat_turn_embeddings', 'episodic_memory_metric_buckets',
   'api_keys', 'management_tokens', 'api_key_model_permissions', 'credit_ledger', 'usage_events', 'daily_usage_rollups', 'application_settings',
   'banners', 'request_logs', 'generation_attempts', 'ocr_attempts', 'ocr_cache_entries', 'chat_import_sources',
@@ -24,6 +24,8 @@ export const FULL_BACKUP_EXPLICIT_COLUMNS: Partial<Record<FullBackupTable, reado
 }
 
 export const OPTIONAL_TABLES_IN_LEGACY_BACKUPS: readonly FullBackupTable[] = [
+  'image_models', 'image_generation_requests',
+  'speech_models', 'speech_requests', 'speech_resource_cleanup',
   'user_memory_documents',
   'user_memory_document_revisions',
   'episodic_memory_generations',
@@ -37,6 +39,15 @@ export const OPTIONAL_TABLES_IN_LEGACY_BACKUPS: readonly FullBackupTable[] = [
  * a later migration adds a required column to an existing backup table.
  */
 export function applyFullBackupCompatibilityDefaults(database: Record<string, Array<Record<string, unknown>>>): void {
+  for (const job of database.speech_resource_cleanup ?? []) job.object_keys = []
+  for (const model of database.speech_models ?? []) {
+    model.voice_assets ??= []
+    model.voice_previews ??= model.preview_object_key ? [{
+      voiceId: (model.config as { defaultVoice: string }).defaultVoice,
+      objectKey: model.preview_object_key, contentType: model.preview_content_type, checksum: model.preview_checksum,
+    }] : []
+    model.preview_object_key = null; model.preview_content_type = null; model.preview_checksum = null
+  }
   for (const user of database.users ?? []) {
     user.profile_color ??= null
     user.avatar_object_key ??= null

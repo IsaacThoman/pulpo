@@ -1,7 +1,7 @@
 import { and, eq, inArray, isNotNull, isNull, ne, sql } from 'drizzle-orm'
 import { db } from '../database/client.js'
 import { apiKeys, applicationSettings, auditEvents, attachments, backupJobs, budgetReservationFunders, budgetReservations, chats, chatShares, exportJobs, managementTokens, poolInvitations, poolMembers, pools, queuedMessages, responses, sessions, users, workspaceLeases } from '../database/schema.js'
-import { AppError } from '../lib/errors.js'
+import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import { parseAuthSettings } from '../settings/application-settings.js'
 import { activePoolMembers, activePoolMembership, dissolveSingletonPool, publishPoolChanges } from '../pools/service.js'
@@ -20,17 +20,19 @@ export async function lockAccountAdministration(tx: Transaction): Promise<void> 
   await tx.execute(sql`select pg_advisory_xact_lock(hashtext('account-administration'))`)
 }
 
-export async function acceptAccountDeletion(userId: string): Promise<void> {
+// Only authenticated admin routes may supply requestedByAdminId.
+export async function acceptAccountDeletion(userId: string, options: { requestedByAdminId?: string } = {}): Promise<void> {
   const peers = await db.transaction(async (tx) => {
     await lockAccountAdministration(tx)
     const [setting] = await tx.select().from(applicationSettings).where(eq(applicationSettings.key, 'auth'))
-    if (!parseAuthSettings(setting?.value).accountDeletionEnabled) {
+    if (!options.requestedByAdminId && !parseAuthSettings(setting?.value).accountDeletionEnabled) {
       throw new AppError(403, 'account_deletion_disabled', 'Account deletion is disabled by the instance administrator.')
     }
     const membership = await activePoolMembership(tx, userId)
     if (membership) await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`pool:${membership.pool.id}`}))`)
     const [user] = await tx.select().from(users).where(eq(users.id, userId)).for('update')
-    if (!user || user.deletionRequestedAt) return []
+    if (!user) throw notFound('User')
+    if (user.deletionRequestedAt) return []
     if (user.role === 'admin' && !user.blocked) {
       const [other] = await tx.select({ id: users.id }).from(users).where(and(
         ne(users.id, userId), eq(users.role, 'admin'), eq(users.blocked, false), isNull(users.deletionRequestedAt),
@@ -52,7 +54,7 @@ export async function acceptAccountDeletion(userId: string): Promise<void> {
     await tx.update(poolMembers).set({ leftAt: now }).where(and(eq(poolMembers.userId, userId), isNull(poolMembers.leftAt)))
     await tx.update(poolInvitations).set({ status: 'canceled', respondedAt: now, updatedAt: now }).where(and(eq(poolInvitations.inviteeUserId, userId), eq(poolInvitations.status, 'pending')))
     const dissolved = membership ? await dissolveSingletonPool(tx, membership.pool.id) : []
-    await tx.insert(auditEvents).values({ id: newId(), action: 'account.deletion.requested', targetType: 'user', targetId: userId })
+    await tx.insert(auditEvents).values({ id: newId(), actorUserId: options.requestedByAdminId, action: 'account.deletion.requested', targetType: 'user', targetId: userId })
     return [...new Set([...members.map((row) => row.user.id), ...dissolved])].filter((id) => id !== userId)
   })
   // Acceptance is durable even when Redis is unavailable. Periodic maintenance recovers it.

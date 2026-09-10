@@ -273,7 +273,7 @@ describe('chat store branching integration', () => {
     ).toBe(true))
   })
 
-  it('preserves a new chat across a summaries refresh until creation completes', async () => {
+  it('preserves a new chat until summaries acknowledge it, including after creation completes', async () => {
     const id = useChat.getState().sendMessage(null, 'new chat prompt', 'test-model')
 
     expect(useChat.getState().chats.find((chat) => chat.id === id)).toMatchObject({
@@ -288,6 +288,19 @@ describe('chat store branching integration', () => {
     await vi.waitFor(() => expect(
       useChat.getState().chats.find((chat) => chat.id === id)?.provisional,
     ).toBe(false))
+
+    const server = queryClient.getQueryData<ServerChat>(['chat', userId, id])!
+    useChat.getState().setDetailedChat(server)
+    useChat.getState().replaceSummaries([])
+    expect(useChat.getState().chats.find((chat) => chat.id === id)).toMatchObject({
+      provisional: false, awaitingSummary: true,
+    })
+
+    useChat.getState().replaceSummaries([server])
+    expect(useChat.getState().chats.find((chat) => chat.id === id)?.awaitingSummary).toBe(false)
+    // Once acknowledged, a later omission can represent a real remote deletion.
+    useChat.getState().replaceSummaries([])
+    expect(useChat.getState().chats.some((chat) => chat.id === id)).toBe(false)
   })
 
   it('optimistically toggles an existing deadline and rolls back a rejected change', async () => {
@@ -435,6 +448,7 @@ describe('chat store branching integration', () => {
       })
       const body = requests[2]!.body as { response?: Record<string, unknown> } & Record<string, unknown>
       const submitted = kind === 'existing' ? body : body.response!
+      expect(submitted.timeZone).toBe(Intl.DateTimeFormat().resolvedOptions().timeZone)
       expect(submitted).toMatchObject({
         modelId: 'cheaper-model', input: 'one prompt', attachmentIds: [attachmentId], agentMode: true,
         parentResponseId: kind === 'existing' ? responseAId : null,
@@ -810,6 +824,7 @@ describe('chat store branching integration', () => {
 
     await vi.waitFor(() => expect(requests).toHaveLength(4))
     expect(requests[3]!.path).toContain(`/api/messages/${responseBId}/regenerate`)
+    expect(requests[3]!.body).toHaveProperty('timeZone', Intl.DateTimeFormat().resolvedOptions().timeZone)
     requests[3]!.resolve({ response: responseCStreaming.snapshot })
     await vi.waitFor(() => expect(requests).toHaveLength(5))
 

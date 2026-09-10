@@ -1,7 +1,7 @@
 import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
-import { editMessageSchema, idSchema } from '@pulpo/contracts'
+import { editMessageSchema, idSchema, timeZoneSchema } from '@pulpo/contracts'
 import { billingUserForRequest, requireUser } from '../auth/service.js'
 import { db } from '../database/client.js'
 import { chats, requestLogs, responses, usageEvents, users } from '../database/schema.js'
@@ -71,6 +71,7 @@ function editedOutput(content: string): unknown[] {
 }
 
 const generationSelectionSchema = z.object({
+  timeZone: timeZoneSchema.optional(),
   clientId: idSchema.optional(),
   modelId: z.string().trim().min(1).optional(),
   presetSelections: z.record(z.string(), z.string()).optional(),
@@ -99,6 +100,7 @@ export async function registerMessageRoutes(app: FastifyInstance): Promise<void>
       idempotencyKey: request.headers['idempotency-key'] as string | undefined,
       input: {
         clientId: selection.clientId,
+        timeZone: selection.timeZone,
         input: responseInputText(original.input), modelId,
         executionMode: generation.executionMode,
         presetSelections: generation.presetSelections,
@@ -117,6 +119,7 @@ export async function registerMessageRoutes(app: FastifyInstance): Promise<void>
     const { id } = request.params as { id: string }
     const original = await ownedResponse(user.id, id)
     const {
+      timeZone,
       clientId,
       content,
       modelId: selectedModelId,
@@ -148,6 +151,7 @@ export async function registerMessageRoutes(app: FastifyInstance): Promise<void>
         idempotencyKey,
         input: {
           clientId,
+          timeZone,
           input: content, modelId,
           executionMode: generation.executionMode,
           presetSelections: generation.presetSelections,

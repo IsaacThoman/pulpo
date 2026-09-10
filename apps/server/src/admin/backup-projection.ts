@@ -7,6 +7,7 @@ type TemporaryDataPolicy =
   | 'preserve'
   | 'chat'
   | 'response'
+  | 'response-reference'
   | 'response-item'
   | 'response-content-part'
   | 'chat-reference'
@@ -39,6 +40,11 @@ export const FULL_BACKUP_TEMPORARY_DATA_POLICY = {
   catalog_icons: 'preserve',
   labs: 'preserve',
   provider_connections: 'preserve',
+  image_models: 'preserve',
+  image_generation_requests: 'response-reference',
+  speech_models: 'preserve',
+  speech_requests: 'preserve',
+  speech_resource_cleanup: 'preserve',
   models: 'preserve',
   model_pricing_versions: 'preserve',
   model_presets: 'preserve',
@@ -136,6 +142,7 @@ export function projectFullBackup(database: FullBackupDatabase, options: FullBac
       case 'preserve': projected[table] = [...rows]; break
       case 'chat': projected[table] = rows.filter((row) => !temporaryChatIds.has(String(row.id))); break
       case 'response': projected[table] = rows.filter((row) => !temporaryResponseIds.has(String(row.id))); break
+      case 'response-reference': projected[table] = references(rows, 'response_id', temporaryResponseIds); break
       case 'response-item': projected[table] = rows.filter((row) => !temporaryResponseItemIds.has(String(row.id))); break
       case 'response-content-part': projected[table] = references(rows, 'response_item_id', temporaryResponseItemIds); break
       case 'chat-reference': projected[table] = references(rows, 'chat_id', temporaryChatIds); break

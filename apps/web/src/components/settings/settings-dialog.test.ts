@@ -11,6 +11,7 @@ describe('settings dialog sections', () => {
       'connections',
       'personalization',
       'interface',
+      'agent',
       'billing',
       'api',
       'data',

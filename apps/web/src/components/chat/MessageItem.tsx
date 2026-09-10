@@ -1,3 +1,7 @@
+import { useSyncExternalStore } from 'react'
+import { SpeechButton } from '@/features/speech/SpeechButton'
+import { ActionButton } from './ActionButton'
+import { speechPlayback } from '@/features/speech/state'
 import { ToolImagePreview } from './ToolImagePreview'
 import { initialActivityTiming } from '@pulpo/client-core'
 import { memo, useEffect, useMemo, useState } from 'react'
@@ -51,35 +55,6 @@ import { writeClipboardText } from '@/lib/clipboard'
 import { ui, activeLocale } from '@/i18n/ui'
 import { toolActivityPresentation } from './tool-activity-presentation'
 import { UsageCostBreakdown } from '@/components/usage/UsageCostBreakdown'
-
-function ActionButton({
-  label,
-  onClick,
-  active,
-  disabled,
-  children,
-}: {
-  label: string
-  onClick?: () => void
-  active?: boolean
-  disabled?: boolean
-  children: React.ReactNode
-}) {
-  return (
-    <button
-      title={label}
-      aria-label={label}
-      onClick={onClick}
-      disabled={disabled}
-      className={cn(
-        'flex size-7 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:cursor-default disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-muted-foreground',
-        active && 'text-foreground'
-      )}
-    >
-      {children}
-    </button>
-  )
-}
 
 function CopyButton({ text }: { text: string }) {
   const { t } = useTranslation()
@@ -578,6 +553,8 @@ export const MessageItem = memo(function MessageItem({
   composerEditActive?: boolean
   onOpenChat?: (chatId: string) => void
 }) {
+  const speechState = useSyncExternalStore(speechPlayback.subscribe, speechPlayback.getSnapshot, speechPlayback.getSnapshot)
+  const speechActive = speechState.key === `${chat.id}:${message.id}`
   const { t } = useTranslation()
   const regenerate = useChat((state) => state.regenerate)
   const editAssistantMessage = useChat((state) => state.editAssistantMessage)
@@ -676,8 +653,8 @@ export const MessageItem = memo(function MessageItem({
           {message.content ? <Markdown content={message.content} /> : null}
         </div>
         <div className="flex items-center gap-1">
-            <div className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
-              {message.content ? <CopyButton text={message.content} /> : null}
+            <div className={cn("flex items-center gap-0.5 transition-opacity group-hover:opacity-100 focus-within:opacity-100", speechActive ? "opacity-100" : "opacity-0")}>
+              {message.content ? <><CopyButton text={message.content} /><SpeechButton messageKey={`${chat.id}:${message.id}`} text={message.content} /></> : null}
               {!chat.expired && (
                 <>
                   <ActionButton
@@ -687,6 +664,7 @@ export const MessageItem = memo(function MessageItem({
                         returnSubmissionToComposer(message.pendingSubmissionId)
                         return
                       }
+                      speechPlayback.stop()
                       onEditUserMessage(message)
                     }}
                     disabled={composerEditActive}
@@ -839,24 +817,26 @@ export const MessageItem = memo(function MessageItem({
           <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-1">
             {!chat.expired && <BranchControls chatId={chat.id} branch={message.branch} />}
             {message.done && (
-              <div className="flex min-w-0 flex-wrap items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+              <div className={cn("flex min-w-0 flex-wrap items-center gap-0.5 transition-opacity group-hover:opacity-100 focus-within:opacity-100", speechActive ? "opacity-100" : "opacity-0")}>
                 <CopyButton text={message.content} />
                 {!chat.expired && (
                   <>
                     <ActionButton
                       label={t('chat.editResponse')}
                       onClick={() => {
+                        speechPlayback.stop()
                         setDraft(message.content)
                         setEditing(true)
                       }}
                     >
                       <Pencil className="size-3.5" />
                     </ActionButton>
-                    <ActionButton label={t('chat.regenerate')} onClick={() => regenerate(chat.id, message.id, activeModelId)}>
+                    <ActionButton label={t('chat.regenerate')} onClick={() => { speechPlayback.stop(); regenerate(chat.id, message.id, activeModelId) }}>
                       <RefreshCw className="size-3.5" />
                     </ActionButton>
                   </>
                 )}
+                <SpeechButton messageKey={`${chat.id}:${message.id}`} text={message.content} />
                 {(message.tokensIn !== undefined || (showResponseCost && message.cost !== undefined)) && (
                   <span className="min-w-0 break-words text-[11px] text-muted-foreground sm:ml-1">
                     {message.tokensIn !== undefined &&

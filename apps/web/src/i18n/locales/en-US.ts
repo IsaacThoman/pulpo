@@ -86,6 +86,8 @@ const enUS = {
     addCaption: 'Add a caption…',
     addFavorite: 'Add to favorites',
     agent: 'Agent',
+    agentDisabled: 'Disabled',
+    agentOptions: 'Agent options, {{selection}}',
     attachFiles: 'Attach files',
     dictate: 'Dictate',
     disableAgent: 'Disable agent mode',
@@ -184,6 +186,8 @@ const enUS = {
   settings: {
     title: 'Settings',
     sections: {
+      agent: 'Agent',
+      speech: 'Speech',
       general: 'General',
       profile: 'Profile',
       security: 'Security',

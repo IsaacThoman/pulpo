@@ -463,6 +463,48 @@
       "when": 1788751153442,
       "tag": "0065_restore_uploads",
       "breakpoints": true
+    },
+    {
+      "idx": 66,
+      "version": "7",
+      "when": 1788877944220,
+      "tag": "0066_chat_time_zone",
+      "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1788888695298,
+      "tag": "0067_speech_models",
+      "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "7",
+      "when": 1788888695299,
+      "tag": "0068_speech_previews",
+      "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "7",
+      "when": 1788888695300,
+      "tag": "0069_speech_voice_previews",
+      "breakpoints": true
+    },
+    {
+      "idx": 70,
+      "version": "7",
+      "when": 1788928396449,
+      "tag": "0070_speech_voice_assets",
+      "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "7",
+      "when": 1788972718461,
+      "tag": "0071_image_generation",
+      "breakpoints": true
     }
   ]
 }

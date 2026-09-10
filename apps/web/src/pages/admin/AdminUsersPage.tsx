@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { AlertTriangle, Monitor, Pencil, Plus, RefreshCw, Search, ShieldOff, Trash2 } from 'lucide-react'
+import { z } from 'zod'
+import { AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown, Monitor, Pencil, Plus, RefreshCw, Search, ShieldOff, Trash2 } from 'lucide-react'
 import { DeviceSessionListView } from '@/components/settings/DeviceSettings'
 import { useUsage } from '@/stores/usage'
 import { formatBalance, formatDate, timeAgo } from '@/lib/format'
 import type { MonitorUser } from '@/lib/types'
 import { Button } from '@/components/ui/button'
 import { apiRequest } from '@/lib/api'
+import { runtimeAccountKey } from '@/lib/runtime'
 import { useAuth } from '@/stores/auth'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -48,9 +50,54 @@ interface AdminBillingUser {
   hold: { holdAt: string; holdReason: string | null; holdReference: string | null } | null
 }
 
+const usersViewSchema = z.object({
+  query: z.string().catch(''),
+  sort: z.object({
+    key: z.enum(['role', 'name', 'lastActiveAt', 'email', 'plan', 'weeklyLimit', 'fiveHourLimit', 'invites', 'balance', 'storage', 'joinedAt']),
+    direction: z.enum(['ascending', 'descending']),
+  }).nullable().catch(null),
+})
+type UsersView = z.infer<typeof usersViewSchema>
+type UserSortKey = NonNullable<UsersView['sort']>['key']
+
+function readUsersView(storageKey: string | null): UsersView {
+  try {
+    if (storageKey) return usersViewSchema.parse(JSON.parse(localStorage.getItem(storageKey) ?? '{}'))
+  } catch { /* Invalid or unavailable storage falls back to the default view. */ }
+  return { query: '', sort: null }
+}
+
+function userSortValue(user: MonitorUser, billing: AdminBillingUser | undefined, key: UserSortKey): string | number | null {
+  switch (key) {
+    case 'role': return ui(user.role)
+    case 'name': return user.name
+    case 'email': return user.email
+    case 'lastActiveAt': return user.lastActiveAt ?? null
+    case 'joinedAt': return user.joinedAt
+    case 'plan': return billing ? { baby: 0, eight: 1, fat: 2 }[billing.plan] : null
+    case 'weeklyLimit': return billing?.weeklyLimitMicros ?? null
+    case 'fiveHourLimit': return billing?.fiveHourLimitMicros ?? null
+    case 'invites': return user.inviteCodeQuota ?? 0
+    case 'balance': return user.balance
+    case 'storage': return user.storageBytes ?? 0
+  }
+}
+
 export function AdminUsersPage() {
+  const userId = useAuth((state) => state.user?.id)
+  const storageKey = userId ? `pulpo-admin-users-view:${runtimeAccountKey(userId)}` : null
+  return <AdminUsersTable key={storageKey} storageKey={storageKey} />
+}
+
+function AdminUsersTable({ storageKey }: { storageKey: string | null }) {
   const users = useUsage((s) => s.users)
-  const [query, setQuery] = useState('')
+  const [{ query, sort }, setView] = useState(() => readUsersView(storageKey))
+  useEffect(() => {
+    if (!storageKey) return
+    try {
+      localStorage.setItem(storageKey, JSON.stringify({ query, sort }))
+    } catch { /* The table still works when browser storage is unavailable. */ }
+  }, [storageKey, query, sort])
   const [addOpen, setAddOpen] = useState(false)
   const [editUser, setEditUser] = useState<MonitorUser | null>(null)
   const [devicesUser, setDevicesUser] = useState<MonitorUser | null>(null)
@@ -59,6 +106,8 @@ export function AdminUsersPage() {
   const [twoFactorCode, setTwoFactorCode] = useState('')
   const [twoFactorError, setTwoFactorError] = useState<string | null>(null)
   const [resettingTwoFactor, setResettingTwoFactor] = useState(false)
+  const [deletingUserId, setDeletingUserId] = useState<string | null>(null)
+  const [deletionError, setDeletionError] = useState<string | null>(null)
   const currentUserId = useAuth((state) => state.user?.id)
   const billingEnabled = useAuth((state) => state.billingEnabled)
   const loadAdmin = useUsage((s) => s.loadAdmin)
@@ -75,12 +124,54 @@ export function AdminUsersPage() {
     await loadAdmin()
   }
 
+  const deleteUser = async (user: MonitorUser) => {
+    if (!confirm(`Delete ${user.email}? Access will end immediately. Permanent cleanup takes at least 16 minutes. This cannot be undone.`)) return
+    setDeletingUserId(user.id)
+    setDeletionError(null)
+    try {
+      await apiRequest(`/api/admin/users/${user.id}`, { method: 'DELETE' })
+      await loadAdmin()
+    } catch (error) {
+      setDeletionError(`${user.email}: ${error instanceof Error ? error.message : ui('Could not delete account.')}`)
+    } finally {
+      setDeletingUserId(null)
+    }
+  }
+
   const filtered = users.filter(
     (u) =>
       u.name.toLowerCase().includes(query.toLowerCase()) ||
       u.username.toLowerCase().includes(query.replace(/^@/, '').toLowerCase()) ||
       u.email.toLowerCase().includes(query.toLowerCase())
   )
+  if (sort) {
+    const collator = new Intl.Collator(activeLocale(), { sensitivity: 'base', numeric: true })
+    filtered.sort((a, b) => {
+      const left = userSortValue(a, billingByUser.get(a.id), sort.key)
+      const right = userSortValue(b, billingByUser.get(b.id), sort.key)
+      // Keep unavailable billing data and users who have never been active last in either direction.
+      if (left === null) return right === null ? 0 : 1
+      if (right === null) return -1
+      const comparison = typeof left === 'number' && typeof right === 'number'
+        ? left - right
+        : collator.compare(String(left), String(right))
+      return sort.direction === 'ascending' ? comparison : -comparison
+    })
+  }
+
+  const sortHeader = (key: UserSortKey, label: string, numeric = false) => {
+    const direction = sort?.key === key ? sort.direction : undefined
+    const Icon = direction === 'ascending' ? ArrowUp : direction === 'descending' ? ArrowDown : ArrowUpDown
+    return <th scope="col" aria-sort={direction} className={`px-3 py-2${numeric ? ' text-right' : ''}`}>
+      <button
+        type="button"
+        className={`inline-flex items-center gap-1 rounded-sm hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring${numeric ? ' justify-end' : ''}`}
+        onClick={() => setView((view) => ({ ...view, sort: { key, direction: direction === 'ascending' ? 'descending' : 'ascending' } }))}
+      >
+        {label}<Icon aria-hidden="true" className="size-3.5 shrink-0" />
+      </button>
+    </th>
+  }
   const adminTwoFactorEnabled = users.find((user) => user.id === currentUserId)?.twoFactorEnabled ?? false
 
   const resetTwoFactor = async () => {
@@ -103,11 +194,13 @@ export function AdminUsersPage() {
 
   return (
     <div className="space-y-4">
+      {deletionError && <p role="alert" className="text-sm text-destructive">{deletionError}</p>}
       <Dialog open={Boolean(devicesUser)} onOpenChange={(open) => { if (!open) setDevicesUser(null) }}>
         <DialogContent className="max-h-[85dvh] overflow-y-auto sm:max-w-xl"><DialogHeader><DialogTitle>{ui('Devices')}</DialogTitle><DialogDescription>{devicesUser?.email}</DialogDescription></DialogHeader>{devicesUser && <DeviceSessionListView key={devicesUser.id} userId={devicesUser.id} />}</DialogContent>
       </Dialog>
       <div className="flex items-center gap-2">
         <h2 className="text-lg font-semibold">{ui("Users")}</h2>
+        <span className="text-lg text-muted-foreground">{users.length.toLocaleString(activeLocale())}</span>
         <div className="flex-1" />
         <div className="relative">
           <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
@@ -115,7 +208,7 @@ export function AdminUsersPage() {
             className="w-52 pl-8"
             placeholder={ui("Search…")}
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={(e) => setView((view) => ({ ...view, query: e.target.value }))}
           />
         </div>
         <Button size="sm" onClick={() => setAddOpen(true)}>
@@ -127,17 +220,17 @@ export function AdminUsersPage() {
           <table className="data-table min-w-max">
             <thead>
               <tr className="border-b">
-                <th className="px-3 py-2">{ui("Role")}</th>
-                <th className="px-3 py-2">{ui("Display name")}</th>
-                <th className="px-3 py-2">{ui("Last active")}</th>
-                <th className="px-3 py-2">{ui("Email")}</th>
-                {billingEnabled && <th className="px-3 py-2">{ui("Plan")}</th>}
-                {billingEnabled && <th className="px-3 py-2 text-right">{ui("Weekly limit")}</th>}
-                {billingEnabled && <th className="px-3 py-2 text-right">{ui("5-hour limit")}</th>}
-                {billingEnabled && <th className="px-3 py-2 text-right">{ui("Invites")}</th>}
-                <th className="px-3 py-2 text-right">{ui("Balance")}</th>
-                <th className="px-3 py-2 text-right">{ui("File storage")}</th>
-                <th className="px-3 py-2">{ui("Created")}</th>
+                {sortHeader('role', ui('Role'))}
+                {sortHeader('name', ui('Display name'))}
+                {sortHeader('lastActiveAt', ui('Last active'))}
+                {sortHeader('email', ui('Email'))}
+                {billingEnabled && sortHeader('plan', ui('Plan'))}
+                {billingEnabled && sortHeader('weeklyLimit', ui('Weekly limit'), true)}
+                {billingEnabled && sortHeader('fiveHourLimit', ui('5-hour limit'), true)}
+                {billingEnabled && sortHeader('invites', ui('Invites'), true)}
+                {sortHeader('balance', ui('Balance'), true)}
+                {sortHeader('storage', ui('File storage'), true)}
+                {sortHeader('joinedAt', ui('Created'))}
                 <th className="px-3 py-2 text-right">{ui("Actions")}</th>
               </tr>
             </thead>
@@ -218,11 +311,8 @@ export function AdminUsersPage() {
                         variant="ghost"
                         title={ui("Delete")}
                         className="hover:text-destructive"
-                        onClick={() => {
-                          if (confirm(`Delete ${u.email}? This cannot be undone.`)) {
-                            void apiRequest(`/api/admin/users/${u.id}`, { method: 'DELETE' }).then(loadAdmin)
-                          }
-                        }}
+                        disabled={deletingUserId !== null || Boolean(u.deletionRequestedAt) || u.id === currentUserId}
+                        onClick={() => { void deleteUser(u) }}
                       >
                         <Trash2 className="size-3.5" />
                       </Button>

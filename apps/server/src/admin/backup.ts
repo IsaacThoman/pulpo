@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { and, eq, ne, sql } from 'drizzle-orm'
 import { db } from '../database/client.js'
-import { attachments, backupJobs, catalogIcons, chats, queuedMessages, users } from '../database/schema.js'
+import { attachments, backupJobs, catalogIcons, chats, queuedMessages, speechModels, users } from '../database/schema.js'
 import { getBlobStore } from '../storage/index.js'
 import { deleteRedisKeysByPattern } from '../redis-keys.js'
 import { redis } from '../redis.js'
@@ -78,7 +78,7 @@ export async function createFullBackup(jobId: string, finalAttempt = true): Prom
     }
     temporaryDirectory = await mkdtemp(join(tmpdir(), 'pulpo-backup-'))
     const archivePath = join(temporaryDirectory, `${job.id}.tar.gz`)
-    const { database: rawDatabase, avatarBlobRows, iconRows, temporaryQueuedAttachmentRows } = await db.transaction(async (tx) => {
+    const { database: rawDatabase, avatarBlobRows, iconRows, speechBlobRows, temporaryQueuedAttachmentRows } = await db.transaction(async (tx) => {
       const database: Record<string, unknown[]> = {}
       for (const [index, table] of FULL_BACKUP_TABLES.entries()) {
         const columns = FULL_BACKUP_EXPLICIT_COLUMNS[table]
@@ -89,6 +89,7 @@ export async function createFullBackup(jobId: string, finalAttempt = true): Prom
         database,
         avatarBlobRows: await tx.select({ objectKey: users.avatarObjectKey }).from(users).where(sql`${users.avatarObjectKey} is not null`),
         iconRows: await tx.select().from(catalogIcons),
+        speechBlobRows: (await tx.select({ previews: speechModels.voicePreviews, assets: speechModels.voiceAssets }).from(speechModels)).flatMap(row => [...row.previews, ...row.assets.flatMap(asset => [asset.clone, asset.watermark].filter((blob): blob is NonNullable<typeof blob> => Boolean(blob)))]),
         temporaryQueuedAttachmentRows: await tx.select({ attachmentIds: queuedMessages.attachmentIds })
           .from(queuedMessages).innerJoin(chats, eq(chats.id, queuedMessages.chatId)).where(eq(chats.temporary, true)),
       }
@@ -98,6 +99,7 @@ export async function createFullBackup(jobId: string, finalAttempt = true): Prom
     })
     const blobRows = [
       ...attachmentBlobs,
+      ...speechBlobRows.map(row => ({ objectKey: row.objectKey!, checksum: row.checksum })),
       ...avatarBlobRows.map((avatar) => ({ objectKey: avatar.objectKey!, checksum: null })),
       ...iconRows.flatMap((icon) => [
         { objectKey: icon.originalObjectKey, checksum: icon.originalChecksum },
@@ -225,7 +227,7 @@ export async function restoreFullBackup(jobId: string): Promise<void> {
           row.request_payload = null; row.response_payload = null
         }
         const blobFields = table === 'users' ? ['avatar_object_key'] : table === 'attachments' ? ['object_key']
-          : table === 'catalog_icons' ? ['original_object_key', 'monochrome_light_object_key', 'monochrome_dark_object_key'] : []
+          : table === 'speech_models' ? ['preview_object_key'] : table === 'catalog_icons' ? ['original_object_key', 'monochrome_light_object_key', 'monochrome_dark_object_key'] : []
         for (const field of blobFields) {
           if (row[field] == null) continue
           const replacement = blobKeys.get(String(row[field]))
@@ -233,14 +235,24 @@ export async function restoreFullBackup(jobId: string): Promise<void> {
           if (!replacement) throw new Error(`Backup is missing a blob referenced by ${table}`)
           row[field] = replacement
         }
+        if (table === 'speech_models') {
+          const assets = row.voice_assets as Array<{ clone?: { objectKey: string }; watermark?: { objectKey: string } }>
+          for (const clip of [...row.voice_previews as Array<{ objectKey: string }>, ...assets.flatMap(asset => [asset.clone, asset.watermark].filter((blob): blob is NonNullable<typeof blob> => Boolean(blob)))]) {
+            const replacement = blobKeys.get(clip.objectKey)
+            if (!replacement) throw new Error('Backup is missing a speech voice preview blob')
+            clip.objectKey = replacement
+          }
+        }
         yield row
       }
     }
     const oldAttachmentBlobs = await db.select({ key: attachments.objectKey }).from(attachments)
     const oldAvatarBlobs = await db.select({ key: users.avatarObjectKey }).from(users).where(sql`${users.avatarObjectKey} is not null`)
     const oldIconRows = await db.select().from(catalogIcons)
+    const oldSpeechBlobs = (await db.select({ previews: speechModels.voicePreviews, assets: speechModels.voiceAssets }).from(speechModels)).flatMap(row => [...row.previews, ...row.assets.flatMap(asset => [asset.clone, asset.watermark].filter((blob): blob is NonNullable<typeof blob> => Boolean(blob)))].map(clip => ({ key: clip.objectKey })))
     const oldBlobs = [
       ...oldAttachmentBlobs,
+      ...oldSpeechBlobs.map(row => ({ key: row.key! })),
       ...oldAvatarBlobs.map((avatar) => ({ key: avatar.key! })),
       ...oldIconRows.flatMap((icon) => [
         { key: icon.originalObjectKey }, { key: icon.monochromeLightObjectKey }, { key: icon.monochromeDarkObjectKey },

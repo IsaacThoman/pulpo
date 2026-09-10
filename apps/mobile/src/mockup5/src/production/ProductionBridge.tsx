@@ -116,6 +116,14 @@ function mapChat(chat: ServerChat, messages: PrototypeMessage[] = [], detailLoad
   }
 }
 
+// oxlint-disable-next-line react/only-export-components -- shared detail projection for realtime navigation
+export function mergeProductionChatDetail(current: PrototypeChat[], detail: ServerChat, projected: PrototypeMessage[]): PrototypeChat[] {
+  const previous = current.find((chat) => chat.id === detail.id)
+  const incoming = mapChat(detail, reuseProjectedMessages(previous?.messages ?? [], projected), true)
+  // A remotely started chat can load before its account summary refresh arrives.
+  return previous ? current.map((chat) => chat.id === detail.id ? incoming : chat) : [incoming, ...current]
+}
+
 let scopeHydrationToken = 0
 function clearProductionScopeState(): void {
   resetTranscriptResidency()
@@ -170,6 +178,8 @@ export async function hydrateProductionScope(namespace: string): Promise<void> {
         agentAvailable: catalog?.agentAvailable ?? false,
         preferences: {
           ...state.preferences,
+          imageGeneration: preferences.imageGeneration,
+          speech: preferences.speech,
           theme: preferences.theme,
           textSize: preferences.textSize,
           streamResponses: preferences.streamResponses,
@@ -287,6 +297,8 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
   // Keep composer-only changes (notably per-model preset selections) from
   // rebuilding the model catalogue and every native model control.
   const preferences = usePreferencesStore(useShallow((state) => ({
+    imageGeneration: state.imageGeneration,
+    speech: state.speech,
     theme: state.theme,
     textSize: state.textSize,
     streamResponses: state.streamResponses,
@@ -441,6 +453,8 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
       return {
         preferences: {
           ...state.preferences,
+          imageGeneration: preferences.imageGeneration,
+          speech: preferences.speech,
           theme: preferences.theme,
           textSize: preferences.textSize,
           streamResponses: preferences.streamResponses,
@@ -515,9 +529,7 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
     if (!reconciledDetail || usePrototypeStore.getState().productionNamespace !== namespace) return
     const projected = projectResidentChat(reconciledDetail, snapshots).map(mapMessage)
     usePrototypeStore.setState((state) => ({
-      chats: state.productionNamespace === namespace ? state.chats.map((chat) => chat.id === reconciledDetail.id
-        ? mapChat(reconciledDetail, reuseProjectedMessages(chat.messages, projected), true)
-        : chat) : state.chats,
+      chats: state.productionNamespace === namespace ? mergeProductionChatDetail(state.chats, reconciledDetail, projected) : state.chats,
     }))
   }, [namespace, reconciledDetail, snapshots])
 

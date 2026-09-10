@@ -6,6 +6,10 @@ The server stores independent field patches under a monotonically increasing rev
 
 Successful submissions clear matching text and attachment IDs, preserving changes to model, presets, and other composer controls. The submitting composer keeps that content hidden from sync notifications while awaiting acceptance; new local or remote content remains editable. Cleared revisions remain as tombstones. Pending edits and outstanding conditional clears use the existing account-scoped local databases. Draft writes do not change chat ordering or account revision.
 
+On web and desktop, a started chat initializes its composer presets and Agent mode from its pending submission or latest assistant turn for the selected model. This carries controls across the new-chat composer remount, including temporary chats and starts waiting for uploads, without changing account defaults. An existing synced draft takes priority over this initial state. Suggested prompts use the composer's current controls and the same upload-outbox submission path; they send only the suggestion text and leave unsent draft text and attachments in the new-chat slot.
+
+When another device successfully starts a normal chat, a visible web, desktop, or mobile client follows that chat if its new-chat text input is focused and composer sync is enabled. Focus and the mobile keyboard stay with the composer. Any remaining unsent edits and attachments stay in the `new` draft slot; the opened chat uses its own draft. Temporary composers, local submissions, background clients, and unfocused inputs do not follow. This uses a live-only `chat.started` event: reconnects, retries, and ordinary chat updates never replay navigation.
+
 On mobile, submission owns the optimistic clear for its original draft scope, text, and attachment selection. Preparation, queue acceptance, or failure cannot clear or restore over a newer draft or a different chat. Empty runtime drafts remain cached so a quick chat switch cannot hydrate stale disk content before the asynchronous save finishes. Acceptance does not delete the current local draft.
 
 ## Temporary mode

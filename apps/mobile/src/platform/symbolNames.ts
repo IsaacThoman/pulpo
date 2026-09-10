@@ -6,6 +6,8 @@ export type AppSymbolViewProps = Omit<SymbolViewProps, 'name'> & { name: SymbolV
 
 // SF Symbols used by iOS map to Material Symbols on Android.
 export const materialSymbolNames: Record<string, string> = {
+  "play.fill": "play_arrow",
+  "speaker.wave.2": "volume_up",
   "line.3.horizontal": "menu",
   "gearshape": "settings",
   "plus": "add",
@@ -120,7 +122,8 @@ export const materialSymbolNames: Record<string, string> = {
   "arrow.turn.up.left": "reply",
   "arrow.triangle.branch": "fork_right",
   "ghost": "ghost_outline",
-  "bot": "smart_toy",
+  "bot": "bot",
+  "bot-off": "bot-off",
   "chevron.up.chevron.down": "unfold_more",
   "circle": "radio_button_unchecked",
   "checkmark.seal": "verified",

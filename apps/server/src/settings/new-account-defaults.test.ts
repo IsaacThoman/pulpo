@@ -6,6 +6,7 @@ describe('new-account model defaults', () => {
   it('builds an empty account preference snapshot for legacy settings', () => {
     const settings = parseAuthSettings({ signupEnabled: false })
     expect(newAccountPreferenceValues(settings)).toEqual({
+      imageGeneration: { enabled: false, modelId: null }, speech: { modelId: null, models: {} },
       defaultModelId: null,
       animationSpeed: 1,
       agentModes: {},
@@ -26,6 +27,7 @@ describe('new-account model defaults', () => {
       },
     })
     expect(newAccountPreferenceValues(settings)).toEqual({
+      imageGeneration: { enabled: false, modelId: null }, speech: { modelId: null, models: {} },
       defaultModelId: 'model-a',
       animationSpeed: 1,
       agentModes: {},

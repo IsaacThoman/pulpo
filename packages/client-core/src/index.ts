@@ -22,6 +22,7 @@ import {
 } from '@pulpo/contracts'
 
 export { normalizeMathDelimiters, type MathDelimiterOptions } from './markdown.js'
+export { deviceTimeZone } from './time-zone.js'
 
 /** Serialize writes per key and retain only the newest value queued behind an active request. */
 export class LatestValueQueue<Key, Value, Result> {
@@ -438,11 +439,13 @@ export class PulpoManagementClient {
     return body as T
   }
 
-  async download(path: string, timeoutMs = 300_000): Promise<{ bytes: Uint8Array; contentType: string | null; filename: string | null }> {
+  async download(path: string, timeoutMs = 300_000, options?: { method: 'POST'; body: unknown }): Promise<{ bytes: Uint8Array; contentType: string | null; filename: string | null }> {
     const headers = new Headers()
+    if (options) headers.set('content-type', 'application/json')
     if (this.token) headers.set('authorization', `Bearer ${this.token}`)
     const response = await this.fetchImpl(new URL(path, `${this.baseUrl.replace(/\/+$/, '')}/`), {
       headers,
+      ...(options ? { method: options.method, body: JSON.stringify(options.body) } : {}),
       signal: AbortSignal.timeout(timeoutMs),
     })
     if (!response.ok) {
@@ -560,8 +563,11 @@ export class PulpoManagementClient {
 }
 
 export * from "./composer-sync.js"
+export * from './chat-started.js'
 
 export { initialActivityTiming } from './activity-timing.js'
 export * from "./shelf.js"
 
 export { insertDictationText } from './dictation.js'
+
+export * from "./speech.js"

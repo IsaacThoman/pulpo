@@ -1,3 +1,6 @@
+import { ImageGenerationSettings } from '@/features/image-generation/ImageGenerationSettings'
+import { SpeechSettings } from '@/features/speech/SpeechSettings'
+import { refreshInstanceFeatures } from '@/lib/instance-features'
 import { DeleteAccountSettings } from './DeleteAccountSettings'
 import { DeviceSettings } from './DeviceSettings'
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
@@ -7,6 +10,7 @@ import { useQuery } from '@tanstack/react-query'
 import type { InstructionPreset } from '@pulpo/contracts'
 import {
   Database,
+  Bot,
   Camera,
   CreditCard,
   Info,
@@ -82,6 +86,7 @@ const SECTION_CONFIG = {
   connections: { labelKey: 'settings.sections.connections', icon: Plug },
   personalization: { labelKey: 'settings.sections.personalization', icon: Sparkles },
   interface: { labelKey: 'settings.sections.interface', icon: Monitor },
+  agent: { labelKey: 'settings.sections.agent', icon: Bot },
   billing: { labelKey: 'settings.sections.billing', icon: CreditCard },
   api: { labelKey: 'settings.sections.api', icon: KeyRound },
   data: { labelKey: 'settings.sections.data', icon: Database },
@@ -339,6 +344,7 @@ export function SettingsModal({
   const user = useAuth((a) => a.user)
   const logout = useAuth((a) => a.logout)
   const billingEnabled = useAuth((a) => a.billingEnabled)
+  const codexEnabled = useAuth((a) => a.codexEnabled)
   const replaceUser = useAuth((a) => a.replaceUser)
   const navigate = useNavigate()
   const [memoryDocument, setMemoryDocument] = useState<MemoryDocument | null>(null)
@@ -398,6 +404,10 @@ export function SettingsModal({
   }, [open, user])
 
   useEffect(() => { if (!open) setProfileMessage('') }, [open])
+  useEffect(() => { if (open) void refreshInstanceFeatures() }, [open])
+  useEffect(() => {
+    if (!codexEnabled && section === 'connections') setSection('general')
+  }, [codexEnabled, section])
 
   useEffect(() => () => { if (avatarCandidate) URL.revokeObjectURL(avatarCandidate.url) }, [avatarCandidate])
 
@@ -643,6 +653,7 @@ export function SettingsModal({
               {sections.filter((sec) => (
                 (sec.id !== 'api' || useAuth.getState().apiKeysEnabled)
                 && (sec.id !== 'billing' || billingEnabled)
+                && (sec.id !== 'connections' || codexEnabled)
               )).map((sec) => (
                 <button
                   key={sec.id}
@@ -779,7 +790,7 @@ export function SettingsModal({
                 </div>
               )}
 
-              {section === 'connections' && <CodexConnectionSettings active={open && section === 'connections'} />}
+              {section === 'connections' && codexEnabled && <CodexConnectionSettings active={open && section === 'connections'} />}
 
               {section === 'profile' && (
                 <div>
@@ -1065,6 +1076,16 @@ export function SettingsModal({
                       <span className="text-xs text-muted-foreground">{ui("MB")}</span>
                     </div>
                   </Row>
+                  <Separator className="my-5" />
+                  <SpeechSettings />
+                </div>
+              )}
+
+              {section === 'agent' && (
+                <div>
+                  <h2 className="text-base font-semibold">{ui('Agent')}</h2>
+                  <Separator className="my-3" />
+                  <ImageGenerationSettings />
                 </div>
               )}
 

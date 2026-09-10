@@ -13,7 +13,9 @@ permissions:
 concurrency:
   # Serialize main releases without cancelling the run that currently owns the
   # lock. A queued run refreshes main again in the release job below.
-  group: ci-release-${{ github.event.pull_request.number || github.ref }}
+  # Main also shares the manual Android workflow's lock for the entire release,
+  # keeping version-code allocation and Google Play uploads in the same order.
+  group: ${{ github.ref == 'refs/heads/main' && 'android-google-play' || format('ci-release-{0}', github.event.pull_request.number || github.ref) }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
@@ -65,6 +67,10 @@ jobs:
       - name: Install dependencies
         run: npm clean-install
 
+      - name: Install speech audio tools
+        if: matrix.name == 'Test'
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
       - name: ${{ matrix.name }}
         run: ${{ matrix.command }}
 
@@ -76,6 +82,10 @@ jobs:
         if: matrix.name == 'Build'
         run: bash .github/scripts/validate-coolify-deployment-boundaries.sh
 
+      - name: Test preview cleanup safety
+        if: matrix.name == 'Test'
+        run: python3 -m unittest discover -s infra/preview-maintenance -p 'test_*.py'
+
       - name: Validate production deployment ordering
         run: python3 .github/scripts/deploy-production_test.py
 
@@ -84,7 +94,7 @@ jobs:
         run: python3 apps/mobile/scripts/deploy-iphone_test.py
 
   chat-search:
-    name: Chat search / PostgreSQL
+    name: Database integration tests
     if: >-
       github.event_name != 'pull_request' ||
       github.event.action != 'closed'
@@ -120,8 +130,46 @@ jobs:
         run: npm run db:migrate -w @pulpo/server
       - name: Test chat retrieval against PostgreSQL
         run: npm run test:episodic-search -w @pulpo/server
+      - name: Create disposable account deletion database
+        run: node --input-type=module -e 'import postgres from "postgres"; const sql = postgres(process.env.DATABASE_URL); await sql.unsafe("CREATE DATABASE pulpo_account_test"); await sql.end();'
+      - name: Apply account deletion test migrations
+        env:
+          DATABASE_URL: postgres://postgres:search-test@localhost:5432/pulpo_account_test
+        run: npm run db:migrate -w @pulpo/server
+      - name: Build account deletion test dependencies
+        run: npm run build -w @pulpo/client-core
+      - name: Test account deletion against PostgreSQL
+        env:
+          DATABASE_URL: postgres://postgres:search-test@localhost:5432/pulpo_account_test
+          PULPO_ACCOUNT_DELETION_TESTS: 'true'
+        run: npm run test -w @pulpo/server -- src/account
       - name: Create disposable migration recovery database
         run: node --input-type=module -e 'import postgres from "postgres"; const sql = postgres(process.env.DATABASE_URL); await sql.unsafe("CREATE DATABASE pulpo_migration_test"); await sql.end();'
+      - name: Install speech audio tools
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - name: Create disposable speech database
+        run: node --input-type=module -e 'import postgres from "postgres"; const sql = postgres(process.env.DATABASE_URL); await sql.unsafe("CREATE DATABASE pulpo_speech_test"); await sql.end();'
+      - name: Apply speech test migrations
+        env:
+          DATABASE_URL: postgres://postgres:search-test@localhost:5432/pulpo_speech_test
+        run: npm run db:migrate -w @pulpo/server
+      - name: Test speech assets and accounting against PostgreSQL
+        env:
+          DATABASE_URL: postgres://postgres:search-test@localhost:5432/pulpo_speech_test
+          PULPO_SPEECH_POSTGRES_TEST: '1'
+        run: npm run test -w @pulpo/server -- src/speech/assets.postgres.test.ts src/speech/billing.postgres.test.ts
+      - name: Create disposable speech backup database
+        run: node --input-type=module -e 'import postgres from "postgres"; const sql = postgres(process.env.DATABASE_URL); await sql.unsafe("CREATE DATABASE pulpo_speech_backup_test"); await sql.end();'
+      - name: Apply speech backup test migrations
+        env:
+          DATABASE_URL: postgres://postgres:search-test@localhost:5432/pulpo_speech_backup_test
+        run: npm run db:migrate -w @pulpo/server
+      - name: Test speech backup and legacy restore against PostgreSQL
+        env:
+          DATABASE_URL: postgres://postgres:search-test@localhost:5432/pulpo_speech_backup_test
+          PULPO_SPEECH_BACKUP_POSTGRES_TEST: '1'
+        run: npm run test -w @pulpo/server -- src/speech/backup.postgres.test.ts
+
       - name: Test persistent preview migration recovery
         env:
           DATABASE_URL: postgres://postgres:search-test@localhost:5432/pulpo_migration_test
@@ -729,10 +777,8 @@ jobs:
 
   deploy-preview:
     name: Deploy Coolify preview
-    # Never use the production application as a preview parent. Coolify preview
-    # cleanup is application-scoped and can remove the parent's live containers.
-    # Changes promoted from dev to main are already exercised by the persistent
-    # development deployment.
+    # Persistent development and production must never be preview parents.
+    # The preview-only parent owns disposable PR stacks, with no base deployment.
     if: >-
       github.event_name == 'pull_request' &&
       github.event.action != 'closed' &&
@@ -745,7 +791,7 @@ jobs:
     env:
       COOLIFY_URL: ${{ vars.COOLIFY_URL }}
       COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
-      COOLIFY_APP_UUID: ${{ vars.COOLIFY_PULPO_DEV_APP_UUID }}
+      COOLIFY_APP_UUID: ${{ vars.COOLIFY_PULPO_PREVIEW_APP_UUID }}
       PULL_REQUEST_ID: ${{ github.event.pull_request.number }}
       PULL_REQUEST_SHA: ${{ github.event.pull_request.head.sha }}
       PULL_REQUEST_BASE_SHA: ${{ github.event.pull_request.base.sha }}
@@ -821,7 +867,9 @@ jobs:
     env:
       COOLIFY_URL: ${{ vars.COOLIFY_URL }}
       COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
-      COOLIFY_APP_UUID: ${{ vars.COOLIFY_PULPO_DEV_APP_UUID }}
+      COOLIFY_APP_UUID: ${{ vars.COOLIFY_PULPO_PREVIEW_APP_UUID }}
+      COOLIFY_PREVIEW_MAINTENANCE_APP_UUID: ${{ vars.COOLIFY_PULPO_PREVIEW_MAINTENANCE_APP_UUID }}
+      COOLIFY_PREVIEW_MAINTENANCE_TASK_UUID: ${{ vars.COOLIFY_PULPO_PREVIEW_MAINTENANCE_TASK_UUID }}
       PULL_REQUEST_ID: ${{ github.event.pull_request.number }}
     steps:
       - name: Check out repository
@@ -844,6 +892,10 @@ jobs:
             exit 1
           fi
 
+      - name: Reconcile closed preview containers and volumes
+        if: always()
+        run: python3 .github/scripts/run-preview-maintenance.py
+
   deploy-development:
     name: Deploy Coolify development
     if: >-
@@ -858,6 +910,8 @@ jobs:
       COOLIFY_URL: ${{ vars.COOLIFY_URL }}
       COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
       COOLIFY_APP_UUID: ${{ vars.COOLIFY_PULPO_DEV_APP_UUID }}
+      COOLIFY_WORKER_APP_UUID: ${{ vars.COOLIFY_PULPO_DEV_WORKER_APP_UUID }}
+      COOLIFY_WEB_APP_UUID: ${{ vars.COOLIFY_PULPO_DEV_WEB_APP_UUID }}
       DEVELOPMENT_URL: ${{ vars.PULPO_DEVELOPMENT_URL }}
     steps:
       - name: Check out repository
@@ -866,12 +920,8 @@ jobs:
       - name: Set up Coolify CLI
         run: bash .github/scripts/setup-coolify.sh
 
-      - name: Deploy validated development commit
-        id: deploy
-        run: bash .github/scripts/deploy-coolify-commit.sh "${GITHUB_SHA}"
-
-      - name: Wait for healthy development deployment
-        run: bash .github/scripts/wait-coolify-deployment.sh "${{ steps.deploy.outputs.deployment_uuid }}"
+      - name: Migrate and roll out development API, worker, and web
+        run: bash .github/scripts/deploy-production.sh "${GITHUB_SHA}"
 
       - name: Validate development edge health
         run: bash .github/scripts/wait-http-health.sh "${DEVELOPMENT_URL%/}/health" development 90 2
@@ -911,22 +961,199 @@ jobs:
       - name: Validate production edge health
         run: bash .github/scripts/wait-http-health.sh "${PRODUCTION_URL%/}/health" production 90 2
 
-  google-play:
-    name: Release Android to GitHub and Google Play
+  # Keep these jobs at the top level so Actions displays their names without a
+  # reusable-workflow prefix. android-release.yml retains the manual entry point.
+  android-build:
+    name: Build signed Android bundle and APK
     if: >-
       github.event_name == 'push' &&
       github.ref == 'refs/heads/main' &&
       needs.release.outputs.version != ''
     needs: release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    environment: google-play
+    outputs:
+      version_code: ${{ steps.version.outputs.code }}
+    env:
+      CI: 1
+      EXPO_NO_TELEMETRY: 1
+      EXPO_PUBLIC_DEFAULT_INSTANCE_URL: https://pulpo.baby
+      PULPO_ANDROID_PASSKEY_DOMAINS: ${{ vars.PULPO_ANDROID_PASSKEY_DOMAINS }}
+    steps:
+      - name: Check out release tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: v${{ needs.release.outputs.version }}
+
+      - name: Validate release inputs and set Android version
+        id: version
+        env:
+          RELEASE_VERSION: ${{ needs.release.outputs.version }}
+          RELEASE_STATUS: ${{ vars.ANDROID_RELEASE_STATUS || 'completed' }}
+          UPLOAD_RELEASE: 'true'
+          PUBLISH_GITHUB: 'true'
+        run: |
+          set -euo pipefail
+          if [[ ! "${RELEASE_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo 'Version must use major.minor.patch.' >&2
+            exit 1
+          fi
+          if [[ "${RELEASE_STATUS}" != draft && "${RELEASE_STATUS}" != completed ]]; then
+            echo 'Release status must be draft or completed.' >&2
+            exit 1
+          fi
+          if [[ "${UPLOAD_RELEASE}" == true &&
+                "${GITHUB_REF}" != refs/heads/main &&
+                "${GITHUB_REF}" != "refs/tags/v${RELEASE_VERSION}" ]]; then
+            echo 'Google Play uploads require main or a release tag matching the app version (v<version>).' >&2
+            echo 'Leave upload unchecked to build downloadable artifacts from another branch.' >&2
+            exit 1
+          fi
+          if [[ "${PUBLISH_GITHUB}" == true ]]; then
+            git fetch --no-tags origin "refs/tags/v${RELEASE_VERSION}"
+            if [[ "$(git rev-parse HEAD)" != "$(git rev-parse 'FETCH_HEAD^{commit}')" ]]; then
+              echo 'GitHub publishing requires the exact commit tagged v<version>.' >&2
+              exit 1
+            fi
+          fi
+          # Seconds since 2024 keep codes increasing on retries and well below
+          # Google Play's 2,100,000,000 limit. All Android runs share one lock.
+          version_code="$(( $(date -u +%s) - 1704067200 ))"
+          if (( version_code <= 0 || version_code > 2100000000 )); then
+            echo 'Android version code is outside the Google Play range.' >&2
+            exit 1
+          fi
+          {
+            echo "PULPO_APP_VERSION=${RELEASE_VERSION}"
+            echo "PULPO_ANDROID_VERSION_CODE=${version_code}"
+          } >> "${GITHUB_ENV}"
+          echo "code=${version_code}" >> "${GITHUB_OUTPUT}"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.18.1
+          cache: npm
+
+      - name: Set up Java
+        uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6.0.0
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Install Android SDK packages
+        run: |
+          set -euo pipefail
+          "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" \
+            'platforms;android-37.0' 'build-tools;37.0.0' 'platform-tools'
+
+      - name: Install dependencies
+        run: npm clean-install
+
+      - name: Build mobile workspace dependencies
+        run: |
+          npm run build -w @pulpo/contracts
+          npm run build -w @pulpo/client-core
+
+      - name: Generate the native Android project
+        working-directory: apps/mobile
+        run: npx expo prebuild --platform android --clean --no-install
+
+      # As with TestFlight, signing credentials are only exposed after npm and
+      # Expo lifecycle scripts finish. The temporary keystore is never cached.
+      - name: Build and verify signed app bundle and APK
+        env:
+          ANDROID_UPLOAD_KEYSTORE_BASE64: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_BASE64 }}
+          ANDROID_UPLOAD_STORE_PASSWORD: ${{ secrets.ANDROID_UPLOAD_STORE_PASSWORD }}
+          ANDROID_UPLOAD_KEY_ALIAS: ${{ secrets.ANDROID_UPLOAD_KEY_ALIAS }}
+          ANDROID_UPLOAD_KEY_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEY_PASSWORD }}
+        run: bash apps/mobile/scripts/build-android-release.sh
+
+      - name: Save Android app bundle
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: Pulpo-${{ needs.release.outputs.version }}-Android-${{ env.PULPO_ANDROID_VERSION_CODE }}
+          path: apps/mobile/android/app/build/outputs/bundle/release/app-release.aab
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Prepare APK release asset
+        env:
+          RELEASE_VERSION: ${{ needs.release.outputs.version }}
+        run: |
+          set -euo pipefail
+          mkdir android-release
+          cp apps/mobile/android/app/build/outputs/apk/release/app-release.apk \
+            "android-release/Pulpo-${RELEASE_VERSION}-Android.apk"
+          cd android-release
+          sha256sum "Pulpo-${RELEASE_VERSION}-Android.apk" > "Pulpo-${RELEASE_VERSION}-Android.apk.sha256"
+
+      - name: Save Android APK
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: android-apk-${{ needs.release.outputs.version }}-${{ env.PULPO_ANDROID_VERSION_CODE }}
+          path: android-release/*
+          if-no-files-found: error
+          retention-days: 30
+
+  android-github-publish:
+    name: Publish Android APK to GitHub Release
+    needs: [release, android-build]
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
-    uses: ./.github/workflows/android-release.yml
-    with:
-      version: ${{ needs.release.outputs.version }}
-      upload: true
-      publish_github: true
-      release_status: ${{ vars.ANDROID_RELEASE_STATUS || 'completed' }}
-    secrets: inherit
+    steps:
+      - name: Download signed APK
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: android-apk-${{ needs.release.outputs.version }}-${{ needs.android-build.outputs.version_code }}
+          path: android-release
+
+      - name: Attach APK and checksum to GitHub Release
+        working-directory: android-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ needs.release.outputs.version }}
+        run: |
+          set -euo pipefail
+          sha256sum --check "Pulpo-${RELEASE_VERSION}-Android.apk.sha256"
+          gh release upload "v${RELEASE_VERSION}" \
+            "Pulpo-${RELEASE_VERSION}-Android.apk" \
+            "Pulpo-${RELEASE_VERSION}-Android.apk.sha256" \
+            --clobber --repo "${GITHUB_REPOSITORY}"
+
+  android-play-upload:
+    name: Upload Android bundle to Google Play
+    needs: [release, android-build]
+    runs-on: ubuntu-24.04
+    environment: google-play
+    steps:
+      - name: Download signed app bundle
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: Pulpo-${{ needs.release.outputs.version }}-Android-${{ needs.android-build.outputs.version_code }}
+          path: android-bundle
+
+      - name: Validate Google Play credentials
+        env:
+          GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${GOOGLE_PLAY_SERVICE_ACCOUNT_JSON}" ]]; then
+            echo 'Configure GOOGLE_PLAY_SERVICE_ACCOUNT_JSON in the google-play environment.' >&2
+            exit 1
+          fi
+
+      - name: Upload to Google Play internal testing
+        uses: r0adkll/upload-google-play@e738b9dd8f2476ea806d921b64aacd24f34515a5 # v1.1.5
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: com.isaacthoman.pulpo
+          releaseFiles: android-bundle/app-release.aab
+          releaseName: ${{ needs.release.outputs.version }} (${{ needs.android-build.outputs.version_code }})
+          tracks: internal
+          status: ${{ vars.ANDROID_RELEASE_STATUS || 'completed' }}
 
   testflight:
     name: Build and submit iOS to TestFlight

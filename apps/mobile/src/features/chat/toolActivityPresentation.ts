@@ -20,6 +20,7 @@ type ToolActivityPresentation = {
 
 const presentations: Record<string, ToolActivityPresentation> = {
   read: { icon: FileText, label: 'Reading a file…' },
+  generate_image: { icon: Image, label: 'Generating an image…' },
   view_image: { icon: Image, label: 'Viewing an image…' },
   bash: { icon: Terminal, label: 'Running bash…' },
   write: { icon: FilePlus, label: 'Writing a file…' },

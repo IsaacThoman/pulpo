@@ -1,3 +1,4 @@
+import { refreshInstanceFeatures } from '@/lib/instance-features'
 import { lazy, Suspense, useEffect, type ReactNode } from 'react'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { RequireAuth } from '@/components/auth/RequireAuth'
@@ -23,6 +24,8 @@ const ApiKeysPage = lazy(() => import('@/pages/ApiKeysPage').then((module) => ({
 const BillingPage = lazy(() => import('@/pages/BillingPage').then((module) => ({ default: module.BillingPage })))
 const AdminLayout = lazy(() => import('@/pages/admin/AdminLayout').then((module) => ({ default: module.AdminLayout })))
 const AdminUsersPage = lazy(() => import('@/pages/admin/AdminUsersPage').then((module) => ({ default: module.AdminUsersPage })))
+const AdminImageModelsPage = lazy(() => import('@/pages/admin/AdminImageModelsPage').then(module => ({ default: module.AdminImageModelsPage })))
+const AdminSpeechModelsPage = lazy(() => import('@/pages/admin/AdminSpeechModelsPage').then(module => ({ default: module.AdminSpeechModelsPage })))
 const AdminProvidersPage = lazy(() => import('@/pages/admin/AdminProvidersPage').then((module) => ({ default: module.AdminProvidersPage })))
 const AdminLabsPage = lazy(() => import('@/pages/admin/AdminLabsPage').then((module) => ({ default: module.AdminLabsPage })))
 const AdminIconsPage = lazy(() => import('@/pages/admin/AdminIconsPage').then((module) => ({ default: module.AdminIconsPage })))
@@ -68,7 +71,21 @@ export default function App() {
   const checkingSession = useAuth((state) => state.checkingSession)
   const instanceReady = useAuth((state) => state.instanceReady)
   const user = useAuth((state) => state.user)
+  const userId = user?.id
   useEffect(() => { void bootstrap() }, [bootstrap])
+  useEffect(() => {
+    if (checkingSession || !instanceReady || !userId) return
+    const refresh = () => { if (document.visibilityState === 'visible') void refreshInstanceFeatures() }
+    refresh()
+    window.addEventListener('focus', refresh)
+    window.addEventListener('online', refresh)
+    document.addEventListener('visibilitychange', refresh)
+    return () => {
+      window.removeEventListener('focus', refresh)
+      window.removeEventListener('online', refresh)
+      document.removeEventListener('visibilitychange', refresh)
+    }
+  }, [checkingSession, instanceReady, userId])
 
   const startupSurface = desktopStartupSurface({
     desktop: isDesktopRuntime(),
@@ -123,6 +140,8 @@ export default function App() {
                 <Route path="users" element={<LocalizedRoute><AdminUsersPage /></LocalizedRoute>} />
                 <Route path="chats" element={<LocalizedRoute><AdminChatsPage /></LocalizedRoute>} />
                 <Route path="chats/:chatId" element={<LocalizedRoute><AdminChatPage /></LocalizedRoute>} />
+                <Route path="image-models" element={<LocalizedRoute><AdminImageModelsPage /></LocalizedRoute>} />
+                <Route path="speech-models" element={<LocalizedRoute><AdminSpeechModelsPage /></LocalizedRoute>} />
                 <Route path="providers" element={<LocalizedRoute><AdminProvidersPage /></LocalizedRoute>} />
                 <Route path="labs" element={<LocalizedRoute><AdminLabsPage /></LocalizedRoute>} />
                 <Route path="icons" element={<LocalizedRoute><AdminIconsPage /></LocalizedRoute>} />

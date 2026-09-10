@@ -1,3 +1,5 @@
+import { registerImageGenerationRoutes } from './image-generation/routes.js'
+import { registerSpeechRoutes } from './speech/routes.js'
 import { registerShelfRoutes } from './shelf/routes.js'
 import { registerAccountDeletionRoutes } from './account/routes.js'
 import { registerDeviceSessionRoutes } from './auth/device-routes.js'
@@ -71,6 +73,7 @@ export async function buildApp() {
   await app.register(cors, {
     origin: (origin, callback) => callback(null, !origin || isAllowedOrigin(origin, config)),
     credentials: true,
+    exposedHeaders: ['x-speech-duration-seconds'],
   })
   await app.register(rateLimit, { max: 300, timeWindow: '1 minute', keyGenerator: (request) => resolveClientIp(request.raw, config) ?? request.ip })
   await app.register(multipart, { limits: { fileSize: 20 * 1024 * 1024 * 1024, files: 1 } })
@@ -161,6 +164,8 @@ export async function buildApp() {
   await registerBillingRoutes(app)
   await registerMessageRoutes(app)
   await registerAttachmentRoutes(app)
+  await registerSpeechRoutes(app)
+  await registerImageGenerationRoutes(app)
   await registerDictationRoutes(app)
   await registerPublicApiRoutes(app)
   await registerManagementRoutes(app)

@@ -1,3 +1,5 @@
+import { createImageGenerationTools } from '../image-generation/tool.js'
+import { selectedImageModel, executeImageGeneration, recoverSavedImageGenerations } from '../image-generation/service.js'
 import { Agent, type AgentMessage } from '@earendil-works/pi-agent-core'
 import { openAIResponsesApi } from '@earendil-works/pi-ai/api/openai-responses.lazy'
 import type { Api, AssistantMessage, Context, Model } from '@earendil-works/pi-ai'
@@ -52,6 +54,7 @@ import { responseInputText } from '../messages/input.js'
 import { createGenerationMemoryTools } from './memory-tools.js'
 import { readEpisodicMemorySettings } from '../episodic-memory/settings.js'
 import { generationSystemPrompt, loadGenerationMemory } from '../responses/memory-context.js'
+import { withGenerationTimeContext } from '../responses/time-context.js'
 import { messagesFromAgentContext, resolveAgentParentMessages, systemPromptFromAgentContext, withoutMemoryToolMessages } from './history.js'
 import { agentSamplingParameters, resolveAgentModelParameters } from './model-parameters.js'
 import { redis } from '../redis.js'
@@ -132,16 +135,16 @@ async function finalizeUnhandledAgentFailure(responseId: string, error: unknown)
   if (state.requestLog) await publishAdminUsage(state.requestLog.id, true)
 }
 
-export async function processAgentGeneration(responseId: string): Promise<void> {
+export async function processAgentGeneration(responseId: string, codexAllowed: boolean): Promise<void> {
   try {
-    await runAgentGeneration(responseId)
+    await runAgentGeneration(responseId, codexAllowed)
   } catch (error) {
     await finalizeUnhandledAgentFailure(responseId, error)
     throw error
   }
 }
 
-async function runAgentGeneration(responseId: string): Promise<void> {
+async function runAgentGeneration(responseId: string, codexAllowed: boolean): Promise<void> {
   const startedAt = Date.now()
   const config = getConfig()
   const [record] = await db.select({ response: responses, model: models, provider: providerConnections })
@@ -205,7 +208,10 @@ async function runAgentGeneration(responseId: string): Promise<void> {
   )
   const [existingRun] = await db.select().from(agentRuns).where(eq(agentRuns.responseId, responseId)).limit(1)
   const runId = existingRun?.id ?? newId()
-  const agentSystemPrompt = generationSystemPrompt(memory.enabled, currentAgentSystemPrompt, systemPromptFromAgentContext(existingRun?.context))
+  let agentSystemPrompt = withGenerationTimeContext(
+    generationSystemPrompt(memory.enabled, currentAgentSystemPrompt, systemPromptFromAgentContext(existingRun?.context)),
+    record.response, startedAt,
+  )
   let resumedMessages = existingRun ? messagesFromAgentContext(existingRun.context) : parentMessages
   if (!memory.enabled) resumedMessages = withoutMemoryToolMessages(resumedMessages)
   await db.insert(agentRuns).values({ id: runId, responseId, status: 'running', context: { systemPrompt: agentSystemPrompt, messages: resumedMessages }, startedAt: new Date() }).onConflictDoUpdate({ target: agentRuns.responseId, set: { status: 'running', updatedAt: new Date() } })
@@ -259,7 +265,7 @@ async function runAgentGeneration(responseId: string): Promise<void> {
   const visited = new Set([record.model.id]); let fallbackId = record.model.fallbackModelId
   while (fallbackId && runtimes.length < MAX_MODEL_CHAIN_LENGTH && !visited.has(fallbackId)) {
     const [next] = await db.select({ model: models, provider: providerConnections }).from(models).innerJoin(providerConnections, eq(models.providerConnectionId, providerConnections.id)).where(and(eq(models.id, fallbackId), eq(models.enabled, true))).limit(1)
-    if (!next) break
+    if (!next || !codexAllowed && next.provider.id === CODEX_PROVIDER_ID) break
     visited.add(next.model.id); runtimes.push(runtime(next.model, next.provider)); fallbackId = next.model.fallbackModelId
   }
   const resolveStickyRuntimeIndex = async (startingIndex: number): Promise<{ index: number; stickyUsed: boolean }> => {
@@ -284,11 +290,12 @@ async function runAgentGeneration(responseId: string): Promise<void> {
   let streamProjection: ResponseSnapshot = toSnapshot(record.response)
   let modelTurns = existingRun?.modelTurns ?? 0; let toolCalls = existingRun?.toolCalls ?? 0
   let usage = persistedUsage ?? emptyUsage
-  const [[previousModelCost], [previousWebToolCost], previousModelTurns] = await Promise.all([
+  await recoverSavedImageGenerations(responseId, runId)
+  const [[previousModelCost], [previousToolCost], previousModelTurns] = await Promise.all([
     db.select({ total: sql<number>`coalesce(sum(${generationAttempts.costMicros}), 0)::bigint` })
       .from(generationAttempts).where(and(eq(generationAttempts.requestLogId, requestLog.id), eq(generationAttempts.source, 'agent'))),
     db.select({ total: sql<number>`coalesce(sum(${toolExecutions.billedCostMicros}), 0)::bigint` })
-      .from(toolExecutions).where(and(eq(toolExecutions.agentRunId, runId), eq(toolExecutions.status, 'completed'))),
+      .from(toolExecutions).where(eq(toolExecutions.agentRunId, runId)),
     db.select({
       modelId: generationAttempts.modelId,
       inputTokens: generationAttempts.inputTokens,
@@ -302,7 +309,7 @@ async function runAgentGeneration(responseId: string): Promise<void> {
     )),
   ])
   let accruedCostMicros = Number(previousModelCost?.total ?? 0)
-  let accruedWebToolCostMicros = Number(previousWebToolCost?.total ?? 0)
+  let accruedToolCostMicros = Number(previousToolCost?.total ?? 0)
   let inferenceReferenceCostMicros = previousModelTurns.reduce((total, turn) => {
     const turnModel = runtimes.find((candidate) => candidate.model.id === turn.modelId)
     if (!turnModel?.codex) return total
@@ -349,6 +356,13 @@ async function runAgentGeneration(responseId: string): Promise<void> {
   for (const [id, imagePreview] of imagePreviews) {
     const item = toolItems.get(id)
     if (item?.tool === 'view_image') item.imagePreview = imagePreview
+  }
+  for (const attachment of generatedAttachmentRows) {
+    const item = attachment.sourceToolCallId ? toolItems.get(attachment.sourceToolCallId) : undefined
+    if (attachment.origin !== 'assistant' || item?.tool !== 'generate_image') continue
+    item.imagePreview = toolImagePreviewSchema.safeParse({
+      attachmentId: attachment.id, name: attachment.originalName, mimeType: attachment.mimeType, sizeBytes: attachment.sizeBytes,
+    }).data
   }
   const compactionItems: CompactionItem[] = (record.response.output as unknown[]).filter((raw): raw is CompactionItem => (
     (raw as { type?: string }).type === 'pulpo_compaction'
@@ -615,6 +629,30 @@ async function runAgentGeneration(responseId: string): Promise<void> {
     onProviderAttempts: (operationId, execution) => { webProviderExecutions.set(operationId, execution) },
     reserveBillableCost: (amountMicros) => extendBudgetReservationFixedCost(responseId, amountMicros),
   })
+  const imageTools = createImageGenerationTools({
+    available: Boolean(await selectedImageModel(record.response.userId)),
+    onStarted: markToolStarted,
+    execute: (operationId, args, signal) => executeImageGeneration({
+      operationId, args, signal, userId: record.response.userId, chatId: record.response.chatId,
+      responseId, runId, manager, reserveCost: micros => micros > 0 ? extendBudgetReservationFixedCost(responseId, micros) : Promise.resolve(),
+    }),
+    onAttachment: async (operationId, result) => {
+      const stored = result.attachment
+      const item: AttachmentTimelineItem = {
+        type: 'pulpo_attachment', attachment_id: stored.id, name: stored.name,
+        mime_type: stored.mimeType, size_bytes: stored.sizeBytes, status: 'completed',
+      }
+      attachmentItems.set(operationId, item)
+      await emit('pulpo.agent.attachment.created', item)
+      await snapshotIfDue()
+    },
+  })
+  const readToolCost = async () => {
+    await recoverSavedImageGenerations(responseId, runId)
+    const [row] = await db.select({ total: sql<number>`coalesce(sum(${toolExecutions.billedCostMicros}), 0)::bigint` })
+      .from(toolExecutions).where(eq(toolExecutions.agentRunId, runId))
+    return Number(row?.total ?? 0)
+  }
   const memoryTools = createGenerationMemoryTools({
     memoryEnabled: memory.enabled,
     episodicMemoryEnabled: episodicMemorySettings.enabled,
@@ -670,6 +708,7 @@ async function runAgentGeneration(responseId: string): Promise<void> {
           return preview
         }),
         ...configuredWebTools,
+        ...imageTools,
         ...memoryTools,
       ],
       messages: resumedMessages,
@@ -710,6 +749,9 @@ async function runAgentGeneration(responseId: string): Promise<void> {
         preparedContext as Context,
         active.provider.toolResultImageMode as ToolResultImageMode,
       ) as typeof preparedContext
+      if (preparedContext.tools?.some(tool => tool.name === 'generate_image') && !await selectedImageModel(record.response.userId)) {
+        preparedContext = { ...preparedContext, tools: preparedContext.tools.filter(tool => tool.name !== 'generate_image') }
+      }
       const hardContextLimit = effectiveAgentCompactionThreshold(Number.MAX_SAFE_INTEGER, active.model.contextWindow)
       if (estimateAgentContextTokens(preparedContext as Context) > hardContextLimit) {
         throw new Error('Agent context remains above the model context window after compaction')
@@ -786,7 +828,7 @@ async function runAgentGeneration(responseId: string): Promise<void> {
       }
       if (modelTurns > 1) await resizeBudgetReservation({
         responseId,
-        accruedCostMicros: accruedCostMicros + accruedWebToolCostMicros + sidecarCostMicros + workspaceHoldMicrosAmount,
+        accruedCostMicros: accruedCostMicros + accruedToolCostMicros + sidecarCostMicros + workspaceHoldMicrosAmount,
         requestInput: agent.state.messages,
         maxOutputTokens: active.model.maxOutputTokens,
         pricing: await getActivePricing(active.model.id),
@@ -869,7 +911,7 @@ async function runAgentGeneration(responseId: string): Promise<void> {
         cacheWriteTokens: usage.cacheWriteTokens,
         outputTokens: usage.outputTokens,
         reasoningTokens: usage.reasoningTokens,
-        costMicros: accruedCostMicros + accruedWebToolCostMicros,
+        costMicros: accruedCostMicros + accruedToolCostMicros,
         eventCount: sql`${requestLogs.eventCount} + 1`,
         updatedAt: new Date(),
       }).where(eq(requestLogs.id, requestLog.id))
@@ -914,13 +956,12 @@ async function runAgentGeneration(responseId: string): Promise<void> {
     } else if (event.type === 'tool_execution_end') {
       const output = truncateUtf8(toolResultText(event.result), settings.maxToolOutputBytes)
       const details = toolResultDetails(event.result)
-      const imagePreview = event.toolName === 'view_image' && !event.isError
+      const imagePreview = ['view_image', 'generate_image'].includes(event.toolName) && !event.isError
         ? toolImagePreviewSchema.safeParse(details.imagePreview).data
         : undefined
       const providerExecution = webProviderExecutions.get(event.toolCallId)
       const providerCostMicros = nonNegativeMicros(details.providerCostMicros ?? providerExecution?.providerCostMicros)
       const billedCostMicros = event.isError ? 0 : nonNegativeMicros(details.billedCostMicros)
-      accruedWebToolCostMicros += billedCostMicros
       const item = toolItems.get(event.toolCallId)
       if (item) {
         const durationMs = item.startedAt ? Math.max(0, Date.now() - Date.parse(item.startedAt)) : undefined
@@ -931,12 +972,13 @@ async function runAgentGeneration(responseId: string): Promise<void> {
         status: event.isError ? 'failed' : 'completed',
         output,
         provider: typeof details.provider === 'string' ? details.provider : providerExecution?.provider,
-        providerAttempts: Array.isArray(details.providerAttempts) ? details.providerAttempts : providerExecution?.attempts ?? [],
+        ...(event.toolName === 'generate_image' ? {} : { providerAttempts: Array.isArray(details.providerAttempts) ? details.providerAttempts : providerExecution?.attempts ?? [] }),
         providerCostMicros,
-        billedCostMicros,
+        ...(event.toolName === 'generate_image' ? {} : { billedCostMicros }),
         completedAt: new Date(),
         updatedAt: new Date(),
       }).where(and(eq(toolExecutions.agentRunId, runId), eq(toolExecutions.operationId, event.toolCallId)))
+      accruedToolCostMicros = await readToolCost()
       webProviderExecutions.delete(event.toolCallId)
       await emit('pulpo.agent.tool.completed', { id: event.toolCallId, output, isError: event.isError, durationMs: item?.durationMs, ...(imagePreview ? { imagePreview } : {}) })
       if (manager.continuedWithoutAgent) agent.state.tools = []
@@ -971,6 +1013,10 @@ async function runAgentGeneration(responseId: string): Promise<void> {
     else await agent.prompt(initialMessage)
     let last = agent.state.messages.at(-1)
     let overflowRetried = false
+    const refreshTimeContext = () => {
+      agentSystemPrompt = withGenerationTimeContext(agentSystemPrompt, record.response, Date.now())
+      agent.state.systemPrompt = agentSystemPrompt
+    }
     while (last?.role === 'assistant' && (last.stopReason === 'error' || last.stopReason === 'aborted')) {
       const failedTurnNumber = modelTurns
       const failedRuntime = turnRuntime.get(failedTurnNumber) ?? { runtime: active, index: activeIndex }
@@ -997,6 +1043,7 @@ async function runAgentGeneration(responseId: string): Promise<void> {
           break
         }
         overflowRetried = true
+        refreshTimeContext()
         await agent.continue()
         last = agent.state.messages.at(-1)
         continue
@@ -1018,6 +1065,7 @@ async function runAgentGeneration(responseId: string): Promise<void> {
         currentRetryAttempt = retryAttempt
         agent.state.messages = agent.state.messages.slice(0, -1)
         await db.update(requestLogs).set({ retryCount: sql`${requestLogs.retryCount} + 1`, updatedAt: new Date() }).where(eq(requestLogs.id, requestLog.id))
+        refreshTimeContext()
         await agent.continue()
         last = agent.state.messages.at(-1)
         continue
@@ -1027,6 +1075,7 @@ async function runAgentGeneration(responseId: string): Promise<void> {
       await markModelSticky(redis, failedRuntime.runtime.model, classifyGenerationError(new Error(last.errorMessage || 'Agent model turn failed')))
       agent.state.messages = agent.state.messages.slice(0, -1)
       if (!await activateFallbackRuntime(failedRuntime.index)) break
+      refreshTimeContext()
       await agent.continue()
       last = agent.state.messages.at(-1)
     }
@@ -1052,10 +1101,11 @@ async function runAgentGeneration(responseId: string): Promise<void> {
     workspaceCostMicros = workspaceReadyAtMs !== undefined && settings.billWorkspaces
       ? workspaceUsageMicros(Date.now() - workspaceReadyAtMs, settings.workspacePricePerMinuteMicros)
       : 0
+    accruedToolCostMicros = await readToolCost()
     const settlement = agentSettlementAmounts({
       totalTokens: usage.totalTokens,
       generationCostMicros: accruedCostMicros,
-      webToolCostMicros: accruedWebToolCostMicros,
+      toolCostMicros: accruedToolCostMicros,
       sidecarCostMicros,
       postTaskCostMicros,
       workspaceCostMicros,
@@ -1100,10 +1150,11 @@ async function runAgentGeneration(responseId: string): Promise<void> {
     workspaceCostMicros = workspaceReadyAtMs !== undefined && settings.billWorkspaces
       ? workspaceUsageMicros(Date.now() - workspaceReadyAtMs, settings.workspacePricePerMinuteMicros)
       : 0
+    accruedToolCostMicros = await readToolCost()
     const settlement = agentSettlementAmounts({
       totalTokens: usage.totalTokens,
       generationCostMicros: accruedCostMicros,
-      webToolCostMicros: accruedWebToolCostMicros,
+      toolCostMicros: accruedToolCostMicros,
       sidecarCostMicros,
       workspaceCostMicros,
     })

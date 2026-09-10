@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -12,6 +12,8 @@ import {
   managementAccountSettingsDocumentSchema,
   managementInstanceSettingsDocumentSchema,
   managementSettingsDocumentSchema,
+  OPENAI_SPEECH_PRESET, VOXTRAL_SPEECH_PRESET, SPEECH_ASSET_MAX_BYTES,
+  speechModelSchema,
 } from '@pulpo/contracts'
 import {
   addContext,
@@ -71,6 +73,7 @@ const COMMAND_CAPABILITIES: Record<string, string> = {
   lab: 'catalog',
   icon: 'catalogIcons',
   model: 'catalog',
+  'speech-model': 'speechModels',
   user: 'users',
   usage: 'usage',
   audit: 'audit',
@@ -561,6 +564,95 @@ export function createProgram(io: CliIo = processIo, dependencies: CliDependenci
   provider.command('refresh <id>').action(async (id, _options, command) => {
     const { client } = await clientFor(command)
     emit(io, command, await client.request(`/api/management/v1/providers/${encodeURIComponent(id)}/models/refresh`, { method: 'POST' }))
+  })
+
+  const speechModel = registerFileCrud(program, io, {
+    name: 'speech-model', pluralPath: '/api/management/v1/speech-models',
+    preflightBody: body => speechModelSchema.parse(body),
+  }).description('Manage speech models, voices, capabilities, and billing (update requires a full model file)')
+  speechModel.command('preset <id>').requiredOption('--provider <id>', 'existing provider connection ID').option('--adapter <adapter>', 'openai or mistral', 'openai')
+    .description('Print an editable OpenAI or Voxtral model document without creating it')
+    .action((id, options) => {
+      writeOutput(io, speechModelSchema.parse({ ...(z.enum(['openai', 'mistral']).parse(options.adapter) === 'mistral' ? VOXTRAL_SPEECH_PRESET : OPENAI_SPEECH_PRESET), id, providerConnectionId: options.provider }), true)
+    })
+  const speechPreview = speechModel.command('preview').description('Manage each voice’s optional MP3/WAV preview')
+  const speechPreviewPath = (id: string, voice: string) => `/api/management/v1/speech-models/${encodeURIComponent(id)}/voices/${encodeURIComponent(voice)}/preview`
+  speechPreview.command('upload <id> <voice> <path>').description('Upload or replace a voice preview (up to 30 seconds and 5 MiB)')
+    .action(async (id, voice, path, _options, command) => {
+      const filename = basename(path)
+      const extension = filename.split('.').at(-1)?.toLowerCase()
+      const contentType = extension === 'mp3' ? 'audio/mpeg' : extension === 'wav' ? 'audio/wav' : null
+      if (!contentType) throw new Error('Speech previews must be MP3 or WAV files')
+      const file = await stat(path)
+      if (!file.isFile() || !file.size || file.size > 5 * 1024 * 1024) throw new Error('Speech previews must be nonempty files of at most 5 MiB')
+      const bytes = new Uint8Array(await readFile(path))
+      if (!bytes.length || bytes.length > 5 * 1024 * 1024) throw new Error('Speech previews must be nonempty and at most 5 MiB')
+      const { client } = await clientFor(command)
+      emit(io, command, await client.upload(speechPreviewPath(id, voice), { bytes, filename, contentType }))
+    })
+  speechPreview.command('download <id> <voice>').requiredOption('-o, --output <path>', 'destination audio file')
+    .action(async (id, voice, options, command) => {
+      const { client } = await clientFor(command)
+      const result = await client.download(speechPreviewPath(id, voice))
+      await writeFile(options.output, result.bytes, { mode: 0o600 })
+      emit(io, command, { id, voice, output: options.output })
+    })
+  speechPreview.command('delete <id> <voice>').description('Remove a voice preview without deleting its voice')
+    .action(async (id, voice, _options, command) => {
+      const options = globalOptions(command)
+      await confirmExact(io, `${id}/${voice}`, Boolean(options.yes), Boolean(options.json))
+      const { client } = await clientFor(command)
+      await client.request(speechPreviewPath(id, voice), { method: 'DELETE' })
+      emit(io, command, { id, voice, deleted: true })
+    })
+
+  const voicePath = (id: string, voice: string) => `/api/management/v1/speech-models/${encodeURIComponent(id)}/voices/${encodeURIComponent(voice)}`
+  speechModel.command('provider-voices <id>').action(async (id, _options, command) => {
+    const { client } = await clientFor(command)
+    emit(io, command, await client.request(`/api/management/v1/speech-models/${encodeURIComponent(id)}/provider-voices`))
+  })
+  speechModel.command('provider-sample <id> <voice>').requiredOption('-o, --output <path>').action(async (id, voice, options, command) => {
+    const { client } = await clientFor(command)
+    const result = await client.download(`/api/management/v1/speech-models/${encodeURIComponent(id)}/provider-voices/${encodeURIComponent(voice)}/sample`)
+    await writeFile(options.output, result.bytes, { mode: 0o600 }); emit(io, command, { output: options.output })
+  })
+  for (const kind of ['clone', 'watermark'] as const) {
+    const group = speechModel.command(kind).description(`Manage private per-voice ${kind} audio`)
+    group.command('upload <id> <voice> <path>').action(async (id, voice, path, _options, command) => {
+      const filename = basename(path)
+      if (!/\.(mp3|wav|m4a|aac|flac|ogg|opus)$/i.test(filename)) throw new Error('Choose MP3, WAV, M4A/AAC, FLAC or Ogg/Opus audio')
+      const info = await stat(path)
+      if (!info.isFile() || !info.size || info.size > SPEECH_ASSET_MAX_BYTES) throw new Error('Choose a nonempty audio clip up to 10 MiB')
+      const bytes = new Uint8Array(await readFile(path))
+      if (!bytes.length || bytes.length > SPEECH_ASSET_MAX_BYTES) throw new Error('Choose a nonempty audio clip up to 10 MiB')
+      const { client } = await clientFor(command)
+      emit(io, command, await client.upload(`${voicePath(id, voice)}/${kind}`, { bytes, filename, contentType: 'application/octet-stream', timeoutMs: 120_000 }))
+    })
+    group.command('download <id> <voice>').requiredOption('-o, --output <path>').action(async (id, voice, options, command) => {
+      const { client } = await clientFor(command); const result = await client.download(`${voicePath(id, voice)}/${kind}`)
+      await writeFile(options.output, result.bytes, { mode: 0o600 }); emit(io, command, { output: options.output })
+    })
+    if (kind === 'clone') group.command('repair <id> <voice>').action(async (id, voice, _options, command) => {
+      const { client } = await clientFor(command); emit(io, command, await client.request(`${voicePath(id, voice)}/clone/repair`, { method: 'POST', timeoutMs: 120_000 }))
+    })
+    else {
+      group.command('configure <id> <voice>').requiredOption('-f, --file <path>', 'JSON with enabled and volume (0.01–1)').action(async (id, voice, options, command) => {
+        const { client } = await clientFor(command); emit(io, command, await client.request(`${voicePath(id, voice)}/watermark`, { method: 'PATCH', body: await jsonFile(options.file) }))
+      })
+      group.command('delete <id> <voice>').action(async (id, voice, _options, command) => {
+        await confirmExact(io, `${id}/${voice}`, Boolean(globalOptions(command).yes), Boolean(globalOptions(command).json))
+        const { client } = await clientFor(command); await client.request(`${voicePath(id, voice)}/watermark`, { method: 'DELETE' }); emit(io, command, { deleted: true })
+      })
+    }
+  }
+  speechModel.command('test-voice <id> <voice>').requiredOption('-o, --output <path>').option('--text <text>', 'text to synthesize', 'Hello. This is a sample of my voice.').option('--save-preview', 'save generated speech as the user preview').action(async (id, voice, options, command) => {
+    const { client } = await clientFor(command)
+    const result = await client.download(`${voicePath(id, voice)}/test`, 120_000, { method: 'POST', body: { input: options.text, savePreview: Boolean(options.savePreview) } })
+    await writeFile(options.output, result.bytes, { mode: 0o600 }); emit(io, command, { output: options.output })
+  })
+  speechModel.command('cleanup').option('--retry <id>', 'retry a cleanup record').action(async (options, command) => {
+    const { client } = await clientFor(command)
+    emit(io, command, await client.request(`/api/management/v1/speech-models/cleanup${options.retry ? `/${encodeURIComponent(options.retry)}/retry` : ''}`, { method: options.retry ? 'POST' : 'GET' }))
   })
 
   const lab = registerFileCrud(program, io, { name: 'lab', pluralPath: '/api/management/v1/labs' })
