@@ -106,6 +106,37 @@ errors remain on stderr, and noninteractive destructive commands require
 `--yes`. Add `--verbose` to print method, path, status, and timing diagnostics
 without printing authorization headers or request bodies.
 
+### Detailed payloads
+
+```sh
+pulpo usage requests --range 7d --model model-id --limit 20 --json
+pulpo usage requests --range 7d --limit 20 --cursor '2026-09-09T12:00:00.000Z' --json
+pulpo usage payloads MODEL_CALL_ID
+pulpo usage payloads REQUEST_LOG_ID --json
+pulpo settings get instance.logging
+pulpo settings set instance.logging.payloadRetention 24h --yes
+pulpo settings set instance.logging.logDetailedPayloads true --yes
+```
+
+`usage requests` returns model-call IDs, parent request-log IDs, and `nextCursor`.
+Keep the same filters on subsequent pages. Ranges are `24h` (default), `7d`,
+`30d`, `90d`, and `all`; additional filters include `--status`, `--origin`, and
+`--identity` (user or API key ID).
+
+`usage payloads` prints untruncated, indented JSON in both human and machine modes.
+It includes the parent request/response bodies, agent turn arrays when captured,
+and OCR attempts. Bodies cover the parent request, potentially including multiple
+model calls or retries. `available`, `captureActive`, `payloadExpiresAt`, and
+`unavailableReason` distinguish retained data, expiry, capture disabled/cleared,
+and bodies not yet captured. Expired bodies return null, even before cleanup runs.
+`usage request ID` remains the metadata view.
+
+Viewing payloads requires a current administrator with `usage:read` and a server
+advertising `detailedPayloads`. Logging settings require `instance:read` and
+`instance:write`. Capture defaults to off; enable it before the request you want to
+inspect. Retention choices are `1h`, `24h`, `7d`, `30d`, `90d`, and `indefinite`.
+Bodies may contain sensitive prompts, outputs, tool data, and OCR images.
+
 Configuration precedence is command-line options, then `PULPO_CONTEXT` /
 `PULPO_URL` / `PULPO_TOKEN`, then the current stored context. Context metadata
 lives in the platform config directory. Session tokens use Keychain on macOS or

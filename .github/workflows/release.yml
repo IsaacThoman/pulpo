@@ -160,6 +160,10 @@ jobs:
           DATABASE_URL: postgres://postgres:search-test@localhost:5432/pulpo_speech_test
           PULPO_SPEECH_POSTGRES_TEST: '1'
         run: npm run test -w @pulpo/server -- src/speech/assets.postgres.test.ts src/speech/billing.postgres.test.ts
+      - name: Verify detailed payload retention in PostgreSQL
+        env:
+          PULPO_PAYLOAD_TEST_DATABASE_URL: postgres://postgres:search-test@localhost:5432/pulpo_search_test
+        run: npm run test -w @pulpo/server -- src/logging/detailed-payload-retention.postgres.test.ts
       - name: Create disposable speech backup database
         run: node --input-type=module -e 'import postgres from "postgres"; const sql = postgres(process.env.DATABASE_URL); await sql.unsafe("CREATE DATABASE pulpo_speech_backup_test"); await sql.end();'
       - name: Apply speech backup test migrations
@@ -218,6 +222,7 @@ jobs:
     name: Desktop / Windows / ${{ matrix.arch }} package check
     if: github.event_name != 'pull_request'
     runs-on: windows-2025
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -344,6 +349,7 @@ jobs:
       needs.release.outputs.version != ''
     needs: release
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: ${{ matrix.platform == 'Windows' && 60 || 360 }}
     environment:
       name: desktop-release
     permissions:
@@ -545,6 +551,7 @@ jobs:
 
       - name: Install Artifact Signing client tools
         if: matrix.platform == 'Windows'
+        timeout-minutes: 15
         shell: pwsh
         env:
           AZURE_ARTIFACT_SIGNING_ENDPOINT: ${{ vars.AZURE_ARTIFACT_SIGNING_ENDPOINT }}
@@ -553,19 +560,36 @@ jobs:
         run: |
           $ProgressPreference = 'SilentlyContinue'
           $installerPath = Join-Path $env:RUNNER_TEMP 'ArtifactSigningClientTools.msi'
+          $installerLog = Join-Path $env:RUNNER_TEMP 'ArtifactSigningClientTools-install.log'
           $installerUri = 'https://download.microsoft.com/download/70ad2c3b-761f-4aa9-a9de-e7405aa2b4c1/ArtifactSigningClientTools.msi'
-          Invoke-WebRequest -Uri $installerUri -OutFile $installerPath
+          Write-Host 'Downloading Artifact Signing client tools...'
+          Invoke-WebRequest -Uri $installerUri -OutFile $installerPath -ConnectionTimeoutSeconds 120 -OperationTimeoutSeconds 120
 
+          Write-Host 'Validating the Microsoft installer signature...'
           $installerSignature = Get-AuthenticodeSignature $installerPath
           if ($installerSignature.Status -ne 'Valid' -or $installerSignature.SignerCertificate.Subject -notlike '*Microsoft Corporation*') {
             throw "Artifact Signing client installer signature is not valid and issued to Microsoft."
           }
 
-          $installer = Start-Process msiexec.exe -Wait -PassThru -ArgumentList @('/i', $installerPath, '/quiet', '/norestart')
+          Write-Host 'Installing Artifact Signing client tools (five-minute limit)...'
+          # Bound the MSI process wait and retain diagnostic output if it stalls.
+          $installer = Start-Process msiexec.exe -PassThru -ArgumentList @('/i', "`"$installerPath`"", '/quiet', '/norestart', '/L*V!', "`"$installerLog`"")
+          if (!$installer.WaitForExit(300000)) {
+            Stop-Process -Id $installer.Id -Force -ErrorAction SilentlyContinue
+            if (Test-Path $installerLog) {
+              Get-Content $installerLog -Tail 100
+            }
+            throw 'Artifact Signing client installer timed out after five minutes.'
+          }
+          $installer.Refresh()
           if ($installer.ExitCode -ne 0) {
+            if (Test-Path $installerLog) {
+              Get-Content $installerLog -Tail 100
+            }
             throw "Artifact Signing client installer exited with code $($installer.ExitCode)."
           }
 
+          Write-Host 'Locating the installed Artifact Signing Dlib and Windows SDK SignTool...'
           $toolDirectory = Join-Path $env:SystemDrive 'pulpo-artifact-signing'
           New-Item -ItemType Directory -Force -Path $toolDirectory | Out-Null
 
@@ -625,6 +649,7 @@ jobs:
           ) | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
           Remove-Item $installerPath -Force
+          Write-Host 'Artifact Signing client tools are ready.'
 
       - name: Build signed Squirrel.Windows artifacts
         if: matrix.platform == 'Windows'
