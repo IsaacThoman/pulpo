@@ -274,6 +274,8 @@ export const providerConnections = pgTable('provider_connections', {
   cacheIsolationMode: text('cache_isolation_mode').notNull().default('none'),
   cacheIsolationScope: text('cache_isolation_scope').notNull().default('user'),
   toolResultImageMode: text('tool_result_image_mode').notNull().default('native'),
+  convertImagesToWebp: boolean('convert_images_to_webp').notNull().default(false),
+  webpQuality: integer('webp_quality').notNull().default(80),
   enabled: boolean('enabled').notNull().default(true),
   lastHealthStatus: text('last_health_status'),
   lastHealthAt: timestamp('last_health_at', { withTimezone: true }),
