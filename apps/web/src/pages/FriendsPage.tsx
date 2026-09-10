@@ -252,9 +252,9 @@ export function FriendsPage() {
     if (!confirm(uit`Remove ${profile.displayName} from your friends?`)) return
     void act(`unfriend:${profile.id}`, () => apiRequest(`/api/friends/${profile.id}`, { method: 'DELETE' }), uit`${profile.displayName} was removed from your friends.`)
   }
-  const friendActions = (profile: FriendProfile) => <>
+  const friendActions = (profile: FriendProfile, separateBlock = true) => <>
     <DropdownMenuItem disabled={actionIds.size > 0} onClick={() => removeFriend(profile)}>{ui("Remove friend")}</DropdownMenuItem>
-    <DropdownMenuSeparator />
+    {separateBlock && <DropdownMenuSeparator />}
     <DropdownMenuItem disabled={actionIds.size > 0} variant="destructive" onClick={() => block(profile)}>{ui("Block")}</DropdownMenuItem>
   </>
   const data = listQuery.data
@@ -344,7 +344,7 @@ export function FriendsPage() {
             inviteTarget={inviteTarget}
             inviteTriggerRef={inviteTriggerRef}
             onInviteClose={() => setInviteTarget(null)}
-            friendActions={friendActions}
+            friendActions={(profile) => friendActions(profile, false)}
           />}
           {data && <>
             {friends.length > 0 ? <Section title={ui("Friends")} count={friends.length}>

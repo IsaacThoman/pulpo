@@ -103,7 +103,7 @@ export function PoolSection({ query, currentUserId, friends, busy, act, inviteTa
               <DropdownMenuContent align="end">
                 {isOwner && <>
                   <DropdownMenuItem onClick={() => void act(`owner:${member.profile.id}`, () => apiRequest('/api/pools/owner', { method: 'PATCH', body: { userId: member.profile.id } }), uit`${member.profile.displayName} is now the Pool owner.`)}>{ui('Make owner')}</DropdownMenuItem>
-                  <DropdownMenuItem variant="destructive" onClick={() => {
+                  <DropdownMenuItem onClick={() => {
                     if (confirm(uit`Remove ${member.profile.displayName} from the Pool? Existing reserved charges may still settle against their account.`)) {
                       void act(`remove-pool:${member.profile.id}`, () => apiRequest(`/api/pools/members/${member.profile.id}`, { method: 'DELETE' }), uit`${member.profile.displayName} left the Pool.`)
                     }
