@@ -13,6 +13,7 @@ import { getConfig } from '../config.js'
 import { profileAvatarUrl } from '../profile/service.js'
 import { decodeUsageCursor, encodeUsageCursor, resolveUsageModelAlias } from '../usage/public.js'
 import { eligibleUsageFilters, loadUsageActivity, loadUsageModelAliases, usageQuerySchema, usageRecordsQuerySchema, usageSince } from '../usage/routes.js'
+import { registerAdminUsagePayloadRoutes } from './usage-payloads.js'
 
 const querySchema = z.object({
   range: z.enum(['24h', '7d', '30d', '90d', 'all']).default('24h'),
@@ -44,6 +45,7 @@ function filters(input: z.infer<typeof querySchema>, includeCursor = false): SQL
 }
 
 export async function registerAdminUsageRoutes(app: FastifyInstance): Promise<void> {
+  registerAdminUsagePayloadRoutes(app)
   app.get('/api/admin/usage/leaderboard', async (request) => {
     requireAdmin(request)
     const query = usageQuerySchema.parse(request.query)
