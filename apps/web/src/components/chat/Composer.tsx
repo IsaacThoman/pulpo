@@ -569,6 +569,7 @@ export function Composer({
     const ids = addUploadFiles(incoming, { chatId, temporary })
     setAttachmentIds((current) => [...current, ...ids])
     if (fileInputRef.current) fileInputRef.current.value = ''
+    ref.current?.focus()
   }, [addUploadFiles, chatId, temporary])
 
   const addFiles = useCallback((list: FileList | File[] | DataTransferItemList | null | undefined) => {
