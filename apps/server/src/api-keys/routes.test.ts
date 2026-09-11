@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('../database/client.js', () => ({
   db: {
+    async transaction(run: (tx: unknown) => Promise<unknown>) { return run(this) },
     update: vi.fn(() => ({
       set: vi.fn((values: Record<string, unknown>) => {
         mocks.updateValues = values

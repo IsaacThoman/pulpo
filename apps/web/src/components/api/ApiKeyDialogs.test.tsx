@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { ApiKeyModelsDialog, RenameApiKeyDialog } from './ApiKeyDialogs'
+import { ApiKeyModelsDialog } from './ApiKeyDialogs'
 import { useApiKeys } from '@/stores/apiKeys'
 import { apiRequest } from '@/lib/api'
 import type { ApiKey } from '@/lib/types'
@@ -21,39 +21,6 @@ beforeEach(() => {
   Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: clipboard.mockResolvedValue(undefined) } })
 })
 afterEach(cleanup)
-
-it('renames a key on submit and preserves its other settings', async () => {
-  vi.mocked(apiRequest).mockResolvedValue({ id: apiKey.id, name: 'Work scripts' })
-  render(<RenameApiKeyDialog apiKey={apiKey} onClose={onClose} />)
-  expect((screen.getByRole('button', { name: 'Save' }) as HTMLButtonElement).disabled).toBe(true)
-  fireEvent.change(screen.getByLabelText('Name'), { target: { value: '  Work scripts  ' } })
-  fireEvent.submit(screen.getByLabelText('Name').closest('form')!)
-  await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1))
-  expect(apiRequest).toHaveBeenCalledWith('/api/api-keys/key-1', { method: 'PATCH', body: { name: 'Work scripts' } })
-  expect(useApiKeys.getState().keys).toEqual([{ ...apiKey, name: 'Work scripts' }])
-})
-
-it('validates empty names and retains the original name on failure so saving can be retried', async () => {
-  vi.mocked(apiRequest).mockRejectedValueOnce(new Error('Offline')).mockResolvedValueOnce({ id: apiKey.id, name: 'Work' })
-  render(<RenameApiKeyDialog apiKey={apiKey} onClose={onClose} />)
-  fireEvent.change(screen.getByLabelText('Name'), { target: { value: '   ' } })
-  expect((screen.getByRole('button', { name: 'Save' }) as HTMLButtonElement).disabled).toBe(true)
-  fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Work' } })
-  fireEvent.click(screen.getByRole('button', { name: 'Save' }))
-  expect(await screen.findByRole('alert')).toBeTruthy()
-  expect(useApiKeys.getState().keys).toEqual([apiKey])
-  expect(onClose).not.toHaveBeenCalled()
-  fireEvent.click(screen.getByRole('button', { name: 'Save' }))
-  await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1))
-})
-
-it('does not save a cancelled rename', () => {
-  render(<RenameApiKeyDialog apiKey={apiKey} onClose={onClose} />)
-  fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Work' } })
-  fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
-  expect(onClose).toHaveBeenCalledTimes(1)
-  expect(apiRequest).not.toHaveBeenCalled()
-})
 
 it('shows friendly names and copyable API IDs, searches both, and explains disabled keys', async () => {
   vi.mocked(apiRequest).mockResolvedValue({ data: [{ id: 'model-uuid-1', name: 'Friendly One' }, { id: 'model-uuid-2', name: 'Friendly Two' }] })

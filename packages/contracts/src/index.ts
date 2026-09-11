@@ -1596,9 +1596,13 @@ export const createApiKeySchema = z.object({
 
 export const updateApiKeySchema = z.object({
   name: createApiKeySchema.shape.name.optional(),
+  scopes: createApiKeySchema.shape.scopes.optional(),
+  allowedModels: createApiKeySchema.shape.allowedModels.removeDefault().optional(),
+  monthlyBudgetMicros: createApiKeySchema.shape.monthlyBudgetMicros.removeDefault().optional(),
+  lifetimeBudgetMicros: createApiKeySchema.shape.lifetimeBudgetMicros.removeDefault().optional(),
   enabled: z.boolean().optional(),
-}).refine((input) => input.name !== undefined || input.enabled !== undefined, {
-  message: 'Provide a name or enabled state',
+}).refine((input) => Object.values(input).some((value) => value !== undefined), {
+  message: 'Provide at least one API key setting',
 })
 
 export const chatSummarySchema = z.object({

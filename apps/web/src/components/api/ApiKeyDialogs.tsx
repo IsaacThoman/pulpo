@@ -2,59 +2,12 @@ import { useEffect, useState } from 'react'
 import { Check, Copy, Search } from 'lucide-react'
 import { apiRequest } from '@/lib/api'
 import type { ApiKey } from '@/lib/types'
-import { useApiKeys } from '@/stores/apiKeys'
 import { ui, uit } from '@/i18n/ui'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog'
-
-export function RenameApiKeyDialog({ apiKey, onClose }: { apiKey: ApiKey; onClose: () => void }) {
-  const renameKey = useApiKeys((state) => state.renameKey)
-  const [name, setName] = useState(apiKey.name)
-  const [saving, setSaving] = useState(false)
-  const [failed, setFailed] = useState(false)
-  const canSave = name.trim().length > 0 && name.trim().length <= 120 && name.trim() !== apiKey.name
-
-  const save = async () => {
-    if (saving || !canSave) return
-    setSaving(true)
-    setFailed(false)
-    try {
-      await renameKey(apiKey.id, name.trim())
-      onClose()
-    } catch {
-      setFailed(true)
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  return (
-    <Dialog open onOpenChange={(open) => { if (!open && !saving) onClose() }}>
-      <DialogContent className="sm:max-w-md" showCloseButton={!saving}>
-        <DialogHeader>
-          <DialogTitle>{ui('Rename API key')}</DialogTitle>
-          <DialogDescription className="break-words">{apiKey.name}</DialogDescription>
-        </DialogHeader>
-        <form className="space-y-4" onSubmit={(event) => { event.preventDefault(); void save() }}>
-          <div className="space-y-1.5">
-            <Label htmlFor="rename-key-name">{ui('Name')}</Label>
-            <Input id="rename-key-name" value={name} maxLength={120} autoFocus disabled={saving}
-              onChange={(event) => setName(event.target.value)} />
-          </div>
-          {failed && <p role="alert" className="text-sm text-destructive">{ui('Could not rename this key. Please try again.')}</p>}
-          <DialogFooter>
-            <Button type="button" variant="outline" disabled={saving} onClick={onClose}>{ui('Cancel')}</Button>
-            <Button type="submit" disabled={saving || !canSave}>{saving ? ui('Saving…') : ui('Save')}</Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
-  )
-}
 
 type ApiKeyModel = { id: string; name: string }
 

@@ -15,6 +15,8 @@ export function CheckboxRow({
   return (
     <label className="flex cursor-pointer items-center gap-2.5 rounded-md px-1 py-1 text-sm hover:bg-accent/60">
       <button
+        type="button"
+        aria-label={label}
         role="checkbox"
         aria-checked={checked}
         onClick={(e) => {

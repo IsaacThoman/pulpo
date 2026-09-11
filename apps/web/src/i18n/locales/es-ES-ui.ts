@@ -1,7 +1,8 @@
 const esUi: Record<string, string> = {
-  "Rename": "Cambiar nombre",
-  "Rename API key": "Cambiar nombre de la clave API",
-  "Could not rename this key. Please try again.": "No se pudo cambiar el nombre de esta clave. Inténtalo de nuevo.",
+  "Edit API key": "Editar clave API",
+  "Update this key’s name, access, and spending limits.": "Actualiza el nombre, el acceso y los límites de gasto de esta clave.",
+  "Enter a positive spending limit, or leave it blank for no limit.": "Introduce un límite de gasto positivo o déjalo en blanco para no aplicar ningún límite.",
+  "Could not save this key. Please try again.": "No se pudo guardar esta clave. Inténtalo de nuevo.",
   "View models": "Ver modelos",
   "View models for {{0}}": "Ver modelos de {{0}}",
   "Models available to “{{0}}”. Use the API ID in the model field of your requests.": "Modelos disponibles para «{{0}}». Usa el ID de API en el campo model de tus solicitudes.",

@@ -151,6 +151,16 @@ describe('shared contracts', () => {
     }
   })
 
+  it('supports partial API key settings without defaulting omitted permissions or budgets', () => {
+    expect(updateApiKeySchema.parse({ scopes: ['models'] })).toEqual({ scopes: ['models'] })
+    expect(updateApiKeySchema.parse({ allowedModels: [] })).toEqual({ allowedModels: [] })
+    expect(updateApiKeySchema.parse({ monthlyBudgetMicros: null })).toEqual({ monthlyBudgetMicros: null })
+    expect(updateApiKeySchema.parse({ lifetimeBudgetMicros: 1 })).toEqual({ lifetimeBudgetMicros: 1 })
+    for (const input of [{ scopes: [] }, { scopes: ['admin'] }, { monthlyBudgetMicros: 0 }, { lifetimeBudgetMicros: -1 }, { monthlyBudgetMicros: 1.2 }]) {
+      expect(updateApiKeySchema.safeParse(input).success).toBe(false)
+    }
+  })
+
   it('defaults provider image conversion off and validates WebP quality', () => {
     expect(createProviderSchema.parse({ name: 'Provider', apiKey: 'secret' })).toMatchObject({ convertImagesToWebp: false, webpQuality: 80 })
     expect(updateProviderSchema.parse({ convertImagesToWebp: true, webpQuality: 75 })).toEqual({ convertImagesToWebp: true, webpQuality: 75 })

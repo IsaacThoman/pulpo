@@ -6,21 +6,27 @@ const mocks = vi.hoisted(() => ({
   rows: [] as unknown[][],
   conditions: vi.fn(),
   update: vi.fn(),
+  delete: vi.fn(),
+  insert: vi.fn(),
   returning: vi.fn(),
   requireUser: vi.fn(),
 }))
 vi.mock('../database/client.js', () => ({
   db: {
+    async transaction(run: (tx: unknown) => Promise<unknown>) { return run(this) },
     select: () => ({
       from: () => {
         const rows = mocks.rows.shift() ?? []
         const result = Object.assign(Promise.resolve(rows), {
           limit: async () => rows,
           orderBy: async () => rows,
+          for: async () => rows,
         })
         return Object.assign(result, { where: (condition: unknown) => { mocks.conditions(condition); return result }, innerJoin() { return this } })
       },
     }),
+    delete: () => ({ where: mocks.delete }),
+    insert: () => ({ values: mocks.insert }),
     update: () => ({ set: (values: unknown) => {
       mocks.update(values)
       return { where: (condition: unknown) => {
@@ -57,6 +63,52 @@ beforeEach(() => {
 })
 
 describe('API key updates', () => {
+  it('updates scopes and limits together with a deduplicated replacement permission set', async () => {
+    const input = { name: 'Work', scopes: ['responses'], allowedModels: ['model-2', 'model-2'], monthlyBudgetMicros: 12_340_000, lifetimeBudgetMicros: null }
+    expect(await (await handler('PATCH', '/api/api-keys/:id'))(request(input))).toEqual({ id: 'key-1', ...input })
+    expect(mocks.update).toHaveBeenCalledWith({ name: 'Work', scopes: ['responses'], monthlyBudgetMicros: 12_340_000, lifetimeBudgetMicros: null })
+    expect(condition(0).params).toEqual(['key-1', 'owner-1'])
+    expect(mocks.delete).toHaveBeenCalledTimes(1)
+    expect(new PgDialect().sqlToQuery(mocks.delete.mock.calls[0]![0]).params).toEqual(['key-1'])
+    expect(mocks.insert).toHaveBeenCalledWith([{ apiKeyId: 'key-1', modelId: 'model-2' }])
+  })
+
+  it('locks an owned key for model-only edits and clears permissions to restore all-model access', async () => {
+    mocks.rows = [[{ id: 'key-1' }]]
+    await (await handler('PATCH', '/api/api-keys/:id'))(request({ allowedModels: [] }))
+    expect(condition(0).params).toEqual(['key-1', 'owner-1'])
+    expect(mocks.update).not.toHaveBeenCalled()
+    expect(mocks.delete).toHaveBeenCalledTimes(1)
+    expect(mocks.insert).not.toHaveBeenCalled()
+  })
+
+  it('keeps model restrictions unchanged when only a spending limit is supplied', async () => {
+    await (await handler('PATCH', '/api/api-keys/:id'))(request({ monthlyBudgetMicros: null }))
+    expect(mocks.update).toHaveBeenCalledWith({ monthlyBudgetMicros: null })
+    expect(mocks.delete).not.toHaveBeenCalled()
+    expect(mocks.insert).not.toHaveBeenCalled()
+  })
+
+  it('rejects invalid settings and Codex assignments before any writes', async () => {
+    const patch = await handler('PATCH', '/api/api-keys/:id')
+    for (const input of [{ scopes: [] }, { scopes: ['admin'] }, { monthlyBudgetMicros: 0 }, { lifetimeBudgetMicros: -1 }]) {
+      await expect(patch(request(input))).rejects.toThrow()
+    }
+    await expect(patch(request({ allowedModels: ['codex:test'] }))).rejects.toMatchObject({ statusCode: 400, code: 'codex_ui_only' })
+    expect(mocks.update).not.toHaveBeenCalled()
+    expect(mocks.delete).not.toHaveBeenCalled()
+  })
+
+  it('never changes permissions for unowned keys or after a failed key update', async () => {
+    const patch = await handler('PATCH', '/api/api-keys/:id')
+    mocks.rows = [[]]
+    await expect(patch(request({ allowedModels: [] }))).rejects.toMatchObject({ statusCode: 404 })
+    mocks.returning.mockRejectedValueOnce(new Error('Write failed'))
+    await expect(patch(request({ name: 'Work', allowedModels: ['model-2'] }))).rejects.toThrow('Write failed')
+    expect(mocks.delete).not.toHaveBeenCalled()
+    expect(mocks.insert).not.toHaveBeenCalled()
+  })
+
   it('renames only the owned key without changing status, secret or permissions', async () => {
     const result = await (await handler('PATCH', '/api/api-keys/:id'))(request({ name: '  Work scripts  ' }))
     expect(result).toEqual({ id: 'key-1', name: 'Work scripts' })
