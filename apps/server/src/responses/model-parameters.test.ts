@@ -5,8 +5,8 @@ describe('model request parameters', () => {
   it('identifies the exact unsupported public parameter before queueing', () => {
     expect(unsupportedPublicModelParameter(
       { allowedParameters: ['temperature'] },
-      { instructions: 'safe protocol field', include: ['reasoning.encrypted_content'], temperature: 0.2, tools: [] },
-    )).toBe('tools')
+      { instructions: 'safe protocol field', include: ['reasoning.encrypted_content'], temperature: 0.2, service_tier: 'priority' },
+    )).toBe('service_tier')
     expect(unsupportedPublicModelParameter(
       { allowedParameters: ['temperature', 'tools'] },
       { instructions: 'safe protocol field', temperature: 0.2, tools: [] },
@@ -52,20 +52,31 @@ describe('model request parameters', () => {
     })
   })
 
-  it('only forwards model-supported tool protocol fields', () => {
+  it('accepts and forwards public tool protocol fields with an empty model allowlist', () => {
     const tools = [{ type: 'function', name: 'bash', description: 'Run a command', parameters: { type: 'object' } }]
+    const parameters = { tools, tool_choice: 'auto', parallel_tool_calls: false }
+
+    expect(unsupportedPublicModelParameter({ allowedParameters: [] }, parameters)).toBeUndefined()
 
     expect(resolveModelParameters({
-      allowedParameters: ['tools', 'tool_choice'],
+      allowedParameters: [],
       defaultParameters: {},
     }, {
-      tools,
-      tool_choice: 'auto',
+      ...parameters,
       temperature: 0.2,
-    }, { publicApi: true })).toEqual({
-      tools,
-      tool_choice: 'auto',
-    })
+    }, { publicApi: true })).toEqual(parameters)
+  })
+
+  it('preserves client tools and choices when resolving a fallback model', () => {
+    const parameters = {
+      tools: [{ type: 'function', name: 'read', parameters: { type: 'object' }, strict: false }],
+      tool_choice: { type: 'function', name: 'read' },
+      parallel_tool_calls: true,
+    }
+    for (const allowedParameters of [[], ['reasoning'], ['tools', 'tool_choice']]) {
+      expect(resolveModelParameters({ allowedParameters, defaultParameters: {} }, parameters, { publicApi: true }))
+        .toEqual(parameters)
+    }
   })
 
   it('forwards public protocol fields while keeping model behavior allowlisted', () => {
@@ -92,6 +103,7 @@ describe('model request parameters', () => {
     }, {
       tools: [{ type: 'function', name: 'bash' }],
       tool_choice: 'required',
+      parallel_tool_calls: true,
     })).toEqual({})
   })
 })

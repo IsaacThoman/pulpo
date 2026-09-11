@@ -1,5 +1,11 @@
 const RESERVED_PARAMETERS = new Set(['model', 'input', 'stream', 'store', 'metadata'])
 export const PUBLIC_API_PROTOCOL_PARAMETERS = new Set([
+  // External clients execute these function tools themselves. They are part of
+  // the API conversation, independent of the catalog's model tuning allowlist.
+  'tools',
+  'tool_choice',
+  'parallel_tool_calls',
+  'max_output_tokens',
   'include',
   'instructions',
   'prompt_cache_key',
