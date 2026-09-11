@@ -716,7 +716,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
     },
     prepareNextTurnWithContext: async ({ context, toolResults }) => {
       const thresholdTokens = compactionThreshold()
-      let preparedContext = await interceptAgentContextImages(context, active.model, imageInterceptor)
+      let preparedContext = await interceptAgentContextImages(context, active.model, imageInterceptor, active.provider)
       preparedContext = adaptToolResultImagesForProvider(
         preparedContext as Context,
         active.provider.toolResultImageMode as ToolResultImageMode,
@@ -744,7 +744,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
         chatId: record.response.chatId,
         runId,
       })
-      let preparedContext = await interceptAgentContextImages(context, active.model, imageInterceptor)
+      let preparedContext = await interceptAgentContextImages(context, active.model, imageInterceptor, active.provider)
       preparedContext = adaptToolResultImagesForProvider(
         preparedContext as Context,
         active.provider.toolResultImageMode as ToolResultImageMode,

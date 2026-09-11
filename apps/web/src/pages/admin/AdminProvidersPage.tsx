@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Activity, Eye, EyeOff, Pencil, Plus, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
@@ -26,6 +27,8 @@ interface AdminProvider {
   cacheIsolationMode: CacheIsolationMode
   cacheIsolationScope: CacheScope
   toolResultImageMode: ToolResultImageMode
+  convertImagesToWebp: boolean
+  webpQuality: number
   lastHealthStatus?: string | null
 }
 import {
@@ -49,6 +52,8 @@ type Draft = {
   cacheIsolationMode: CacheIsolationMode
   cacheIsolationScope: CacheScope
   toolResultImageMode: ToolResultImageMode
+  convertImagesToWebp: boolean
+  webpQuality: string
 }
 
 const emptyDraft = (): Draft => ({
@@ -62,6 +67,8 @@ const emptyDraft = (): Draft => ({
   cacheIsolationMode: 'none',
   cacheIsolationScope: 'user',
   toolResultImageMode: 'native',
+  convertImagesToWebp: false,
+  webpQuality: '80',
 })
 
 export function AdminProvidersPage() {
@@ -104,6 +111,8 @@ export function AdminProvidersPage() {
       cacheIsolationMode: p.cacheIsolationMode,
       cacheIsolationScope: p.cacheIsolationScope,
       toolResultImageMode: p.toolResultImageMode,
+      convertImagesToWebp: p.convertImagesToWebp ?? false,
+      webpQuality: String(p.webpQuality ?? 80),
     })
   }
 
@@ -141,8 +150,11 @@ export function AdminProvidersPage() {
     setDraft(hideProviderApiKey(draft))
   }
 
+  const quality = Number(draft?.webpQuality)
+  const qualityValid = Number.isInteger(quality) && quality >= 1 && quality <= 100
+
   const save = async () => {
-    if (!draft?.name.trim() || !draft.baseUrl.trim()) return
+    if (!draft?.name.trim() || !draft.baseUrl.trim() || (draft.convertImagesToWebp && !qualityValid)) return
     if (draft.id) {
       await apiRequest(`/api/admin/providers/${draft.id}`, {
         method: 'PATCH', body: {
@@ -152,6 +164,8 @@ export function AdminProvidersPage() {
           cacheIsolationMode: draft.cacheIsolationMode,
           cacheIsolationScope: draft.cacheIsolationScope,
           toolResultImageMode: draft.toolResultImageMode,
+          convertImagesToWebp: draft.convertImagesToWebp,
+          webpQuality: qualityValid ? quality : 80,
           ...providerApiKeyPatch(draft),
         },
       })
@@ -164,6 +178,8 @@ export function AdminProvidersPage() {
           cacheIsolationMode: draft.cacheIsolationMode,
           cacheIsolationScope: draft.cacheIsolationScope,
           toolResultImageMode: draft.toolResultImageMode,
+          convertImagesToWebp: draft.convertImagesToWebp,
+          webpQuality: qualityValid ? quality : 80,
         },
       })
     }
@@ -266,7 +282,7 @@ export function AdminProvidersPage() {
       </Card>
 
       <Dialog open={!!draft} onOpenChange={(v) => !v && closeEditor()}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>{draft?.id ? ui("Edit provider") : ui("Add provider")}</DialogTitle>
           </DialogHeader>
@@ -341,6 +357,20 @@ export function AdminProvidersPage() {
                 </Select>
                 <p className="text-xs text-muted-foreground">{ui("Use user-message compatibility only for providers that reject images returned by tools.")}</p>
               </div>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <Label htmlFor="prov-webp">{ui("Convert images to WebP")}</Label>
+                  <Switch id="prov-webp" checked={draft.convertImagesToWebp} onCheckedChange={(convertImagesToWebp) => setDraft({ ...draft, convertImagesToWebp })} />
+                </div>
+                <p className="text-xs text-muted-foreground">{ui("Compress uploaded and tool images before sending them to this provider. Original files and image dimensions are preserved. Enable only if the provider supports WebP.")}</p>
+                {draft.convertImagesToWebp && (
+                  <div className="space-y-1.5">
+                    <Label htmlFor="prov-webp-quality">{ui("WebP quality")}</Label>
+                    <Input id="prov-webp-quality" type="number" min={1} max={100} step={1} value={draft.webpQuality} aria-invalid={!qualityValid} aria-describedby="prov-webp-quality-help" onChange={(e) => setDraft({ ...draft, webpQuality: e.target.value })} />
+                    <p id="prov-webp-quality-help" className="text-xs text-muted-foreground">{ui("Enter a whole number from 1 to 100. Higher quality retains more detail and produces larger files. Default: 80.")}</p>
+                  </div>
+                )}
+              </div>
               <div className="space-y-1.5">
                 <Label htmlFor="prov-url">{ui("Provider base URL")}</Label>
                 <Input
@@ -380,7 +410,7 @@ export function AdminProvidersPage() {
             <Button variant="outline" onClick={closeEditor}> {ui("Cancel")} </Button>
             <Button
               onClick={() => void save()}
-              disabled={!draft?.name.trim() || !draft.baseUrl.trim()}
+              disabled={!draft?.name.trim() || !draft.baseUrl.trim() || (draft.convertImagesToWebp && !qualityValid)}
             >
               {draft?.id ? ui("Save") : ui("Create")}
             </Button>

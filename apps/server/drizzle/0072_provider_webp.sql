@@ -1,0 +1,2 @@
+ALTER TABLE "provider_connections" ADD COLUMN "convert_images_to_webp" boolean DEFAULT false NOT NULL;--> statement-breakpoint
+ALTER TABLE "provider_connections" ADD COLUMN "webp_quality" integer DEFAULT 80 NOT NULL;

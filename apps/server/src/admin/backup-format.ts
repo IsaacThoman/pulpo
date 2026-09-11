@@ -53,7 +53,11 @@ export function applyFullBackupCompatibilityDefaults(database: Record<string, Ar
     user.avatar_object_key ??= null
     user.avatar_version ??= 0
   }
-  for (const provider of database.provider_connections ?? []) provider.tool_result_image_mode ??= 'native'
+  for (const provider of database.provider_connections ?? []) {
+    provider.tool_result_image_mode ??= 'native'
+    provider.convert_images_to_webp ??= false
+    provider.webp_quality ??= 80
+  }
   // Pre-chunking search indexes are version 1 and contain one chunk per turn.
   for (const generation of database.episodic_memory_generations ?? []) generation.index_version ??= 1
   for (const chunk of database.chat_turn_embeddings ?? []) chunk.chunk_index ??= 0
