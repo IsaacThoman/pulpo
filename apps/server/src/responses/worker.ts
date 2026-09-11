@@ -41,7 +41,7 @@ import { temporaryChatIsExpired } from '../chats/temporary.js'
 import { normalChatIsExpired } from '../chats/expiration.js'
 import { activeDetailedPayloadCondition, detailedPayloadCaptureIsActive } from '../logging/detailed-payload-retention.js'
 import { resolveModelParameters } from './model-parameters.js'
-import { backgroundRequestParameter, promptCacheKeyParameter, responseIncludeParameter } from './upstream-request.js'
+import { backgroundRequestParameter, promptCacheKeyParameter, publicOutputTokenLimit, responseIncludeParameter } from './upstream-request.js'
 import { browserChatOutputError, generationOutputHasStarted } from './output-text.js'
 import { firstTokenTimeout } from './first-token-timeout.js'
 import { responseAttachmentIds, responseInputText } from '../messages/input.js'
@@ -773,6 +773,7 @@ async function processGenerationAttempt(
     })
     const upstreamPayload = {
       ...(parameters as Record<string, never>),
+      ...(requestLog.apiKeyId ? publicOutputTokenLimit(record.model.maxOutputTokens, parameters) : {}),
       ...promptCacheKeyParameter(requestLog.apiKeyId ? parameters : {}, cacheOptions.promptCacheKey),
       model: record.model.upstreamModelId,
       input: input as never,
