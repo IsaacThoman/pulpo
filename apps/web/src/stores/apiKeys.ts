@@ -34,12 +34,23 @@ function fromServer(key: ServerApiKey): ApiKey {
   }
 }
 
+export type ApiKeySettings = Pick<ApiKey, 'name' | 'scopes' | 'allowedModels' | 'monthlyBudget' | 'totalBudget'>
+
+function settingsBody(input: ApiKeySettings) {
+  return {
+    name: input.name.trim(), scopes: input.scopes, allowedModels: input.allowedModels,
+    monthlyBudgetMicros: input.monthlyBudget === null ? null : Math.round(input.monthlyBudget * 1_000_000),
+    lifetimeBudgetMicros: input.totalBudget === null ? null : Math.round(input.totalBudget * 1_000_000),
+  }
+}
+
 interface ApiKeysState {
   keys: ApiKey[]
   loading: boolean
   load: () => Promise<void>
-  createKey: (input: Pick<ApiKey, 'name' | 'scopes' | 'allowedModels' | 'monthlyBudget' | 'totalBudget'>) => Promise<{ key: ApiKey; secret: string }>
+  createKey: (input: ApiKeySettings) => Promise<{ key: ApiKey; secret: string }>
   setKeyEnabled: (id: string, enabled: boolean) => Promise<void>
+  updateKey: (id: string, input: ApiKeySettings) => Promise<void>
   deleteKey: (id: string) => Promise<void>
 }
 
@@ -58,16 +69,19 @@ export const useApiKeys = create<ApiKeysState>()((set, get) => ({
   createKey: async (input) => {
     const response = await apiRequest<{ id: string; prefix: string; secret: string }>('/api/api-keys', {
       method: 'POST',
-      body: {
-        name: input.name,
-        scopes: input.scopes,
-        allowedModels: input.allowedModels,
-        monthlyBudgetMicros: input.monthlyBudget === null ? null : Math.round(input.monthlyBudget * 1_000_000),
-        lifetimeBudgetMicros: input.totalBudget === null ? null : Math.round(input.totalBudget * 1_000_000),
-      },
+      body: settingsBody(input),
     })
     await get().load()
     return { key: get().keys.find((key) => key.id === response.id)!, secret: response.secret }
+  },
+  updateKey: async (id, input) => {
+    const body = settingsBody(input)
+    await apiRequest(`/api/api-keys/${id}`, { method: 'PATCH', body })
+    set((state) => ({ keys: state.keys.map((key) => key.id === id ? {
+      ...key, ...input, name: body.name,
+      monthlyBudget: body.monthlyBudgetMicros === null ? null : body.monthlyBudgetMicros / 1_000_000,
+      totalBudget: body.lifetimeBudgetMicros === null ? null : body.lifetimeBudgetMicros / 1_000_000,
+    } : key) }))
   },
   setKeyEnabled: async (id, enabled) => {
     const previousKeys = get().keys

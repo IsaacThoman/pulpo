@@ -6,6 +6,7 @@ import {
   Eye,
   EyeOff,
   MoreHorizontal,
+  Pencil,
   Plus,
   Search,
   Terminal,
@@ -20,9 +21,9 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { CheckboxRow, Snippet } from '@/components/api/misc'
+import { Snippet } from '@/components/api/misc'
+import { ApiKeyModelsDialog } from '@/components/api/ApiKeyDialogs'
 import { runtimeInstanceUrl } from '@/lib/runtime'
 import {
   Collapsible,
@@ -44,15 +45,10 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { ModelIcon } from '@/components/ModelIcon'
+import { ApiKeySettingsDialog } from '@/components/api/ApiKeySettingsDialog'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/stores/auth'
 import { ui, uit } from '@/i18n/ui'
-
-const ALL_SCOPES = [
-  { id: 'responses', label: "Inference" },
-  { id: 'models', label: "List models" },
-] as const
 
 const API_BASE_URL = `${runtimeInstanceUrl()}/v1`
 
@@ -139,7 +135,6 @@ function LimitCell({ k }: { k: ApiKey }) {
 export function ApiKeysPage() {
   const apiKeysEnabled = useAuth((state) => state.apiKeysEnabled)
   const keys = useApiKeys((s) => s.keys)
-  const createKey = useApiKeys((s) => s.createKey)
   const setKeyEnabled = useApiKeys((s) => s.setKeyEnabled)
   const deleteKey = useApiKeys((s) => s.deleteKey)
   const load = useApiKeys((s) => s.load)
@@ -147,21 +142,15 @@ export function ApiKeysPage() {
 
   const [query, setQuery] = useState('')
   const [createOpen, setCreateOpen] = useState(false)
-  const [name, setName] = useState('')
-  const [scopes, setScopes] = useState<string[]>(['responses', 'models'])
-  const [allModels, setAllModels] = useState(true)
-  const [selectedModels, setSelectedModels] = useState<string[]>([])
-  const [monthlyBudget, setMonthlyBudget] = useState('')
-  const [totalBudget, setTotalBudget] = useState('')
   const [secret, setSecret] = useState<string | null>(null)
   const [revealed, setRevealed] = useState(false)
   const [copied, setCopied] = useState(false)
   const [confirmDisable, setConfirmDisable] = useState<ApiKey | null>(null)
   const [usageDocsOpen, setUsageDocsOpen] = useState(false)
+  const [editTarget, setEditTarget] = useState<ApiKey | null>(null)
+  const [modelsTarget, setModelsTarget] = useState<ApiKey | null>(null)
 
   useEffect(() => { void load() }, [load])
-
-  const selectableModels = models.filter((m) => m.enabled)
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -171,45 +160,11 @@ export function ApiKeysPage() {
     )
   }, [keys, query])
 
-  const resetCreateForm = () => {
-    setName('')
-    setMonthlyBudget('')
-    setTotalBudget('')
-    setAllModels(true)
-    setSelectedModels([])
-    setScopes(['responses', 'models'])
-  }
-
-  const toggleModel = (id: string, on: boolean) => {
-    setAllModels(false)
-    setSelectedModels((cur) => {
-      if (on) return cur.includes(id) ? cur : [...cur, id]
-      return cur.filter((x) => x !== id)
-    })
-  }
-
-  const submit = async () => {
-    const { secret } = await createKey({
-      name: name.trim() || 'untitled key',
-      scopes: scopes as ApiKey['scopes'],
-      allowedModels: allModels ? [] : selectedModels,
-      monthlyBudget: monthlyBudget ? parseFloat(monthlyBudget) : null,
-      totalBudget: totalBudget ? parseFloat(totalBudget) : null,
-    })
-    setSecret(secret)
-    setRevealed(false)
-    setCopied(false)
-    setCreateOpen(false)
-    resetCreateForm()
-  }
-
   const modelLabel = (ids: string[]) => {
     if (ids.length === 0) return ui("All models")
     if (ids.length === 1) return models.find((m) => m.id === ids[0])?.name ?? '1 model'
     return `${ids.length} models`
   }
-
-  const canCreate = scopes.length > 0 && (allModels || selectedModels.length > 0)
 
   const keyActions = (key: ApiKey) => (
     <DropdownMenu>
@@ -219,6 +174,12 @@ export function ApiKeysPage() {
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-40">
+        <DropdownMenuItem onClick={() => setEditTarget(key)}>
+          <Pencil /> {ui('Edit')}
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => setModelsTarget(key)}>
+          <Eye /> {ui('View models')}
+        </DropdownMenuItem>
         <DropdownMenuItem
           onClick={() => navigator.clipboard?.writeText(key.prefix).catch(() => {})}
         >
@@ -287,7 +248,9 @@ export function ApiKeysPage() {
               <dl className="mt-4 grid grid-cols-2 gap-x-3 gap-y-4 text-sm">
                 <div className="min-w-0">
                   <dt className="text-xs text-muted-foreground">{ui("Models")}</dt>
-                  <dd className="mt-1 truncate">{modelLabel(key.allowedModels)}</dd>
+                  <dd className="mt-1 truncate">
+                    <button className="cursor-pointer text-left underline decoration-dotted underline-offset-4 hover:text-foreground" aria-label={uit`View models for ${key.name}`} onClick={() => setModelsTarget(key)}>{modelLabel(key.allowedModels)}</button>
+                  </dd>
                   <dd className="truncate text-[11px] text-muted-foreground/80">{key.scopes.map(scopeLabel).join(' · ')}</dd>
                 </div>
                 <div>
@@ -356,7 +319,7 @@ export function ApiKeysPage() {
                     </div>
                   </td>
                   <td className="px-3 py-2 text-muted-foreground">
-                    <span title={modelLabel(k.allowedModels)}>{modelLabel(k.allowedModels)}</span>
+                    <button className="cursor-pointer text-left underline decoration-dotted underline-offset-4 hover:text-foreground" aria-label={uit`View models for ${k.name}`} onClick={() => setModelsTarget(k)}>{modelLabel(k.allowedModels)}</button>
                     <div className="mt-0.5 flex flex-wrap gap-1">
                       {k.scopes.slice(0, 2).map((s) => (
                         <span key={s} className="text-[11px] text-muted-foreground/80">
@@ -443,149 +406,16 @@ export function ApiKeysPage() {
         </Collapsible>
       </div>
 
-      {/* create dialog */}
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>{ui("Create API key")}</DialogTitle>
-            <DialogDescription> {ui("The secret is shown exactly once. Store it somewhere safe.")} </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="key-name">{ui("Name")}</Label>
-              <Input
-                id="key-name"
-                placeholder={ui("e.g. laptop scripts")}
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                autoFocus
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label>{ui("Scopes")}</Label>
-              <div className="space-y-1">
-                {ALL_SCOPES.map((s) => (
-                  <CheckboxRow
-                    key={s.id}
-                    label={ui(s.label)}
-                    checked={scopes.includes(s.id)}
-                    onChange={(v) =>
-                      setScopes((cur) => (v ? [...cur, s.id] : cur.filter((x) => x !== s.id)))
-                    }
-                  />
-                ))}
-              </div>
-            </div>
-            <div className="space-y-1.5">
-              <Label>{ui("Model access")}</Label>
-              <p className="text-xs text-muted-foreground"> {ui("Restrict this key to specific models, or allow every model.")} </p>
-              <div className="max-h-52 space-y-0.5 overflow-y-auto rounded-lg border p-1.5">
-                <CheckboxRow
-                  label={ui("All models")}
-                  checked={allModels}
-                  onChange={(v) => {
-                    setAllModels(v)
-                    if (v) setSelectedModels([])
-                  }}
-                />
-                <div className="mx-1 my-1 h-px bg-border" />
-                {selectableModels.map((m) => {
-                  const checked = !allModels && selectedModels.includes(m.id)
-                  return (
-                    <label
-                      key={m.id}
-                      className="flex cursor-pointer items-center gap-2.5 rounded-md px-1 py-1.5 text-sm hover:bg-accent/60"
-                    >
-                      <button
-                        type="button"
-                        role="checkbox"
-                        aria-checked={checked}
-                        onClick={(e) => {
-                          e.preventDefault()
-                          toggleModel(m.id, !checked)
-                        }}
-                        className={cn(
-                          'flex size-4 shrink-0 cursor-pointer items-center justify-center rounded border transition-colors',
-                          checked
-                            ? 'border-primary bg-primary text-primary-foreground'
-                            : 'border-input bg-transparent'
-                        )}
-                      >
-                        {checked && <Check className="size-3" />}
-                      </button>
-                      <ModelIcon model={m} className="size-4" boxed={false} />
-                      <span className="min-w-0 flex-1 truncate">{m.name}</span>
-                      <span className="text-[11px] text-muted-foreground">{m.provider}</span>
-                    </label>
-                  )
-                })}
-              </div>
-              {!allModels && selectedModels.length === 0 && (
-                <p className="text-xs text-destructive"> {ui("Select at least one model, or choose All models.")} </p>
-              )}
-              {!allModels && selectedModels.length > 0 && (
-                <div className="flex flex-wrap gap-1 pt-0.5">
-                  {selectedModels.map((id) => {
-                    const m = models.find((x) => x.id === id)
-                    if (!m) return null
-                    return (
-                      <Badge key={id} variant="secondary" className="gap-1 font-normal">
-                        <ModelIcon model={m} className="size-3" boxed={false} />
-                        {m.name}
-                        <button
-                          type="button"
-                          className="ml-0.5 cursor-pointer opacity-60 hover:opacity-100"
-                          onClick={() => toggleModel(id, false)}
-                          aria-label={uit`Remove ${m.name}`}
-                        >
-                          ×
-                        </button>
-                      </Badge>
-                    )
-                  })}
-                </div>
-              )}
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label htmlFor="key-budget-monthly">{ui("Monthly limit")}</Label>
-                <div className="flex items-center gap-2">
-                  <span className="text-sm text-muted-foreground">$</span>
-                  <Input
-                    id="key-budget-monthly"
-                    type="number"
-                    min="0"
-                    step="1"
-                    placeholder={ui("none")}
-                    value={monthlyBudget}
-                    onChange={(e) => setMonthlyBudget(e.target.value)}
-                  />
-                </div>
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="key-budget-total">{ui("All-time limit")}</Label>
-                <div className="flex items-center gap-2">
-                  <span className="text-sm text-muted-foreground">$</span>
-                  <Input
-                    id="key-budget-total"
-                    type="number"
-                    min="0"
-                    step="1"
-                    placeholder={ui("none")}
-                    value={totalBudget}
-                    onChange={(e) => setTotalBudget(e.target.value)}
-                  />
-                </div>
-              </div>
-            </div>
-            <p className="text-xs text-muted-foreground"> {ui("Monthly resets each billing period. All-time is a lifetime cap for this key.")} </p>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setCreateOpen(false)}> {ui("Cancel")} </Button>
-            <Button onClick={submit} disabled={!canCreate}> {ui("Create")} </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {modelsTarget && <ApiKeyModelsDialog key={modelsTarget.id} apiKey={modelsTarget} onClose={() => setModelsTarget(null)} />}
+
+      {(createOpen || editTarget) && (
+        <ApiKeySettingsDialog
+          key={editTarget?.id ?? 'create'}
+          apiKey={editTarget ?? undefined}
+          onClose={() => { setCreateOpen(false); setEditTarget(null) }}
+          onCreated={(value) => { setSecret(value); setRevealed(false); setCopied(false) }}
+        />
+      )}
 
       {/* secret reveal */}
       <Dialog open={!!secret} onOpenChange={(v) => !v && setSecret(null)}>
