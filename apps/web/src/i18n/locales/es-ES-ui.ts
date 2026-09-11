@@ -1,4 +1,6 @@
 const esUi: Record<string, string> = {
+  "OpenAI Images": "Imágenes de OpenAI",
+  "Use https://api.openai.com/v1 and an OpenAI API key with access to GPT Image models.": "Usa https://api.openai.com/v1 y una clave API de OpenAI con acceso a los modelos GPT Image.",
   "Maximum images in a prompt": "Máximo de imágenes en una solicitud",
   "Enable Agent mode before sending these attachments.": "Activa el modo agente antes de enviar estos archivos adjuntos.",
   "Switch to an Agent-capable model or reduce these attachments.": "Cambia a un modelo compatible con el modo agente o reduce estos archivos adjuntos.",

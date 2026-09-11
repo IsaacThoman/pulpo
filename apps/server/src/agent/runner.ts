@@ -631,7 +631,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
     reserveBillableCost: (amountMicros) => extendBudgetReservationFixedCost(responseId, amountMicros),
   })
   const imageTools = createImageGenerationTools({
-    available: Boolean(await selectedImageModel(record.response.userId)),
+    model: (await selectedImageModel(record.response.userId))?.model ?? null,
     onStarted: markToolStarted,
     execute: (operationId, args, signal) => executeImageGeneration({
       operationId, args, signal, userId: record.response.userId, chatId: record.response.chatId,

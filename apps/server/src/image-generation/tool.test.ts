@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { META_MUSE_IMAGE_PRESET } from '@pulpo/contracts'
+import { META_MUSE_IMAGE_PRESET, IMAGE_MODEL_PRESETS, type ImageModel } from '@pulpo/contracts'
 import { createImageGenerationTools } from './tool.js'
 import { ImageGenerationError } from './provider.js'
 import { messagesForPersistence } from '../agent/context.js'
@@ -12,16 +12,22 @@ const fixture = {
   model: { ...META_MUSE_IMAGE_PRESET, id: 'muse', providerConnectionId: '11111111-1111-4111-8111-111111111111' },
 }
 describe('generate_image tool', () => {
+  it.each<[ImageModel['adapter'], number, boolean]>([['azure-mai', 1, false], ['meta-muse', 4, true], ['openai-images', 4, true]])('describes and limits references for %s', (adapter, maxItems, webp) => {
+    const tool = createImageGenerationTools({ model: { ...fixture.model, ...IMAGE_MODEL_PRESETS[adapter] }, execute: vi.fn(), onStarted: vi.fn(), onAttachment: vi.fn() })[0]!
+    expect(tool.parameters).toMatchObject({ properties: { referenceImages: { maxItems } } })
+    expect(tool.description).toContain(`up to ${maxItems} reference`)
+    expect(tool.description.includes('webp')).toBe(webp)
+  })
   it('is absent when unavailable and excludes model/credential overrides from its schema', () => {
     const callbacks = { execute: vi.fn(), onStarted: vi.fn(), onAttachment: vi.fn() }
-    expect(createImageGenerationTools({ available: false, ...callbacks })).toEqual([])
-    const tool = createImageGenerationTools({ available: true, ...callbacks })[0]!
+    expect(createImageGenerationTools({ model: null, ...callbacks })).toEqual([])
+    const tool = createImageGenerationTools({ model: fixture.model, ...callbacks })[0]!
     expect(Object.keys((tool.parameters as unknown as { properties: object }).properties)).toEqual(['prompt', 'referenceImages', 'filename'])
     expect(tool.parameters).toMatchObject({ additionalProperties: false })
   })
   it('publishes its attachment and keeps bytes only in model-facing image content', async () => {
     const onAttachment = vi.fn(), onStarted = vi.fn(), execute = vi.fn().mockResolvedValue(fixture)
-    const tool = createImageGenerationTools({ available: true, execute, onStarted, onAttachment })[0]!
+    const tool = createImageGenerationTools({ model: fixture.model, execute, onStarted, onAttachment })[0]!
     const result = await tool.execute('call', { prompt: 'A fox' }, undefined)
     expect(onStarted).toHaveBeenCalledExactlyOnceWith('call'); expect(onAttachment).toHaveBeenCalledWith('call', fixture)
     expect(JSON.stringify(result.details)).not.toContain(fixture.previewData)
@@ -36,7 +42,7 @@ describe('generate_image tool', () => {
   })
   it('rejects malicious arguments and sanitizes unexpected execution failures', async () => {
     const execute = vi.fn().mockRejectedValue(new Error('secret provider key'))
-    const tool = createImageGenerationTools({ available: true, execute, onStarted: vi.fn(), onAttachment: vi.fn() })[0]!
+    const tool = createImageGenerationTools({ model: fixture.model, execute, onStarted: vi.fn(), onAttachment: vi.fn() })[0]!
     await expect(tool.execute('call', { prompt: 'Fox', modelId: 'override' }, undefined)).rejects.toThrow('Invalid image generation arguments')
     expect(execute).not.toHaveBeenCalled()
     await expect(tool.execute('call', { prompt: 'Fox' }, undefined)).rejects.toThrow('Image generation failed')
