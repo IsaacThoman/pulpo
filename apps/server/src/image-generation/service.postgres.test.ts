@@ -5,7 +5,7 @@ import sharp from 'sharp'
 import { and, eq, sql } from 'drizzle-orm'
 import { beforeAll, beforeEach, afterAll, describe, expect, it, vi } from 'vitest'
 import { ZodError } from 'zod'
-import { META_MUSE_IMAGE_PRESET, type ImageModel } from '@pulpo/contracts'
+import { META_MUSE_IMAGE_PRESET, OPENAI_IMAGE_PRESET, type ImageModel } from '@pulpo/contracts'
 const mocks = vi.hoisted(() => ({ blobs: new Map<string, Uint8Array>(), writeFails: false }))
 vi.mock('../storage/index.js', () => ({ getBlobStore: () => ({
   get: async (key: string) => { const value = mocks.blobs.get(key); if (!value) throw new Error('Missing blob'); return value },
@@ -61,7 +61,7 @@ describe.skipIf(!enabled)('image generation persistence and authorization', () =
     role = 'admin'; mocks.writeFails = false; exportFile.mockReset(); stageGeneratedAttachment.mockReset().mockResolvedValue(undefined)
     await db.delete(imageModels).where(eq(imageModels.id, config.id))
     await db.insert(imageModels).values({ id: config.id, providerConnectionId: providerId, config })
-    await db.update(providerConnections).set({ enabled: true }).where(eq(providerConnections.id, providerId))
+    await db.update(providerConnections).set({ enabled: true, baseUrl: 'https://api.meta.ai/v1' }).where(eq(providerConnections.id, providerId))
     await db.update(users).set({ storageLimitBytes: 100_000_000 }).where(eq(users.id, userId))
     await preference()
     fetcher = vi.fn<typeof fetch>().mockImplementation(async () => Response.json({ id: 'response-id', status: 'completed', output: [{ type: 'image_generation_call', id: 'image-item', status: 'completed', result: image.toString('base64') }], usage: { input_tokens: 5, output_tokens: 10, total_tokens: 15 } }))
@@ -82,7 +82,7 @@ describe.skipIf(!enabled)('image generation persistence and authorization', () =
       await preference(settings[0], settings[1])
       const selected = await selectedImageModel(userId)
       expect(selected).toBeNull()
-      expect(createImageGenerationTools({ available: Boolean(selected), execute: vi.fn(), onStarted: vi.fn(), onAttachment: vi.fn() })).toEqual([])
+      expect(createImageGenerationTools({ model: selected?.model ?? null, execute: vi.fn(), onStarted: vi.fn(), onAttachment: vi.fn() })).toEqual([])
       await expect(executeImageGeneration(input)).rejects.toThrow('Enable image generation')
     }
     await preference(); await db.update(providerConnections).set({ enabled: false }).where(eq(providerConnections.id, providerId))
@@ -106,6 +106,29 @@ describe.skipIf(!enabled)('image generation persistence and authorization', () =
     await executeImageGeneration({ ...edit, args: { prompt: 'Make it blue', referenceImages: [{ attachmentId: result.attachment.id }] } })
     const request = JSON.parse(String(fetcher.mock.calls[1]![1]!.body))
     expect(request).toMatchObject({ store: false, input: [{ id: 'image-item', type: 'image_generation_call', result: image.toString('base64') }, { role: 'user' }] })
+    expect(exportFile).not.toHaveBeenCalled()
+  })
+  it('creates an OpenAI catalog entry, saves and bills once, and edits a saved attachment', async () => {
+    await db.update(providerConnections).set({ baseUrl: 'https://api.openai.com/v1' }).where(eq(providerConnections.id, providerId))
+    await db.delete(imageModels).where(eq(imageModels.id, config.id))
+    const openai = { ...config, ...OPENAI_IMAGE_PRESET, enabled: true, billUsers: true, imagePriceMicros: 20_000 }
+    const created = await server.inject({ method: 'POST', url: '/api/admin/image-models', payload: openai })
+    expect(created.statusCode).toBe(201)
+    expect((await server.inject('/api/image-models')).json().data).toEqual([expect.objectContaining({ id: config.id, adapter: 'openai-images' })])
+    expect((await selectedImageModel(userId))?.model.adapter).toBe('openai-images')
+    fetcher.mockImplementation(async () => Response.json({ data: [{ b64_json: image.toString('base64') }], usage: { input_tokens: 5, output_tokens: 10, total_tokens: 15 } }))
+    const input = await turn()
+    const result = await executeImageGeneration(input)
+    expect(result.billedCostMicros).toBe(20_000)
+    expect(input.reserveCost).toHaveBeenCalledExactlyOnceWith(20_000)
+    expect((await executeImageGeneration(input)).attachment.id).toBe(result.attachment.id)
+    expect(fetcher).toHaveBeenCalledOnce()
+    const [charge] = await db.select().from(toolExecutions).where(eq(toolExecutions.operationId, input.operationId))
+    expect(charge).toMatchObject({ billedCostMicros: 20_000, providerAttempts: [{ provider: 'openai-images', usage: { inputTokens: 5, outputTokens: 10, totalTokens: 15 } }] })
+    await executeImageGeneration({ ...await turn(), args: { prompt: 'Make it blue', referenceImages: [{ attachmentId: result.attachment.id }] } })
+    expect(fetcher.mock.calls[1]![0]).toBe('https://api.openai.com/v1/images/edits')
+    const form = fetcher.mock.calls[1]![1]!.body as FormData
+    expect(Buffer.from(await (form.get('image[]') as Blob).arrayBuffer())).toEqual(image)
     expect(exportFile).not.toHaveBeenCalled()
   })
   it('never replays a failed or uncertain request, and rejects concurrent duplicates', async () => {
