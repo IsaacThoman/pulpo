@@ -8,6 +8,8 @@ export * from './response-timing.js'
 import type { ComposerAck, ComposerSnapshot, ComposerWrite } from './composer.js'
 export * from './composer.js'
 import { z } from 'zod'
+import { DEFAULT_MAX_INLINE_IMAGES, MAX_CONFIGURABLE_INLINE_IMAGES, MAX_MESSAGE_ATTACHMENTS } from './attachment-limits.js'
+export * from './attachment-limits.js'
 import { CHAT_PRESET_ICON_NAMES } from './chat-preset-icons.generated.js'
 
 export { CHAT_PRESET_ICON_NAMES } from './chat-preset-icons.generated.js'
@@ -137,8 +139,9 @@ export const mobileConfigSchema = z.object({
         inviteCodesEnabled: z.boolean().optional().default(false),
       }),
   limits: z.object({
+    maxInlineImages: z.number().int().min(0).max(MAX_CONFIGURABLE_INLINE_IMAGES).default(DEFAULT_MAX_INLINE_IMAGES),
     maxAttachmentBytes: z.number().int().nonnegative().max(MAX_CONFIGURABLE_ATTACHMENT_BYTES),
-  }).default({ maxAttachmentBytes: DEFAULT_MAX_ATTACHMENT_BYTES }),
+  }).default({ maxAttachmentBytes: DEFAULT_MAX_ATTACHMENT_BYTES, maxInlineImages: DEFAULT_MAX_INLINE_IMAGES }),
   capabilities: z.object({
     bearerSessions: z.literal(true),
     realtime: z.literal(true),
@@ -1257,6 +1260,7 @@ export const authSettingsSchema = z.object({
   defaultBalanceMicros: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).default(5_000_000),
   defaultStorageLimitBytes: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).default(5_000 * 1024 * 1024),
   maxAttachmentBytes: z.number().int().nonnegative().max(MAX_CONFIGURABLE_ATTACHMENT_BYTES).default(DEFAULT_MAX_ATTACHMENT_BYTES),
+  maxInlineImages: z.number().int().min(0).max(MAX_CONFIGURABLE_INLINE_IMAGES).default(DEFAULT_MAX_INLINE_IMAGES),
   pendingDetails: z.boolean().default(true),
   adminEmail: z.union([z.literal(''), z.email()]).default(''),
   pendingMessage: z.string().max(2_000).default('Your account is pending approval. An admin will review it shortly.'),
@@ -1633,7 +1637,7 @@ export const updateChatSchema = z.object({
 })
 export type UpdateChatInput = z.infer<typeof updateChatSchema>
 
-const attachmentIdListSchema = z.array(idSchema).refine(
+const attachmentIdListSchema = z.array(idSchema).max(MAX_MESSAGE_ATTACHMENTS).refine(
   (ids) => new Set(ids).size === ids.length,
   { message: 'Attachment ids must be unique' },
 )

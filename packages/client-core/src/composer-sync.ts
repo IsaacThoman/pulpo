@@ -1,4 +1,5 @@
 import { emptyComposerState, type ComposerAck, type ComposerSnapshot, type ComposerState, type ComposerWrite } from '@pulpo/contracts'
+import { LatestValueQueue } from './latest-value-queue.js'
 
 export interface ComposerCheckpoint {
   snapshot: ComposerSnapshot
@@ -59,6 +60,7 @@ export class ComposerSync {
   private generation = 0
   private disposed = false
   private sequence = 0
+  private saves = new LatestValueQueue<string, ComposerCheckpoint, void>()
   constructor(private persistence: ComposerPersistence, private clientId: string) {}
 
   async open(draftId: string, initial: ComposerState, listener: (checkpoint: ComposerCheckpoint) => void): Promise<() => void> {
@@ -123,7 +125,8 @@ export class ComposerSync {
     if (this.disposed) return Promise.resolve()
     const checkpoint = this.checkpoint(entry)
     // Serialize storage writes so a slow write cannot restore an earlier revision.
-    const saved = entry.saved.then(() => this.disposed ? undefined : this.persistence.save(entry.snapshot.draftId, checkpoint))
+    const saved = this.saves.enqueue(entry.snapshot.draftId, checkpoint,
+      (latest) => this.disposed ? Promise.resolve() : this.persistence.save(entry.snapshot.draftId, latest))
     // Background saves remain best effort; explicit handoffs await the result.
     entry.saved = saved.catch(() => undefined)
     if (publish) for (const listener of entry.listeners) listener(checkpoint)
@@ -214,9 +217,9 @@ export class ComposerSync {
     if (!entry || entry.detached || !Object.keys(patch).length) return
     entry.pending = { ...entry.pending, ...patch }
     this.notify(entry)
-    if (Object.keys(patch).some((key) => key !== 'content')) { void this.flush(draftId); return }
+    if (Object.keys(patch).some((key) => key !== 'content' && key !== 'attachments')) { void this.flush(draftId); return }
     // Throttle with a trailing flush, rather than waiting for typing to stop.
-    if (!entry.timer) entry.timer = setTimeout(() => { entry.timer = undefined; void this.flush(draftId) }, 150)
+    if (!entry.timer) entry.timer = setTimeout(() => { entry.timer = undefined; void this.flush(draftId) }, patch.attachments ? 250 : 150)
   }
   async flush(draftId: string): Promise<number | null> {
     const entry = this.entries.get(draftId)

@@ -1,3 +1,4 @@
+import { imageBatchNeedsWorkspace, DEFAULT_MAX_INLINE_IMAGES } from '@pulpo/contracts'
 import { detectImageMime } from '../agent/images.js'
 
 const CONFIRMED_IMAGE_MIME_TYPES = new Set([
@@ -18,6 +19,7 @@ export function isConfirmedRasterImage(mimeType: string): boolean {
   return CONFIRMED_IMAGE_MIME_TYPES.has(mimeType.toLowerCase())
 }
 
-export function attachmentsRequireAgentMode(rows: Array<{ mimeType: string }>): boolean {
+export function attachmentsRequireAgentMode(rows: Array<{ mimeType: string; sizeBytes?: number }>, maxInlineImages = DEFAULT_MAX_INLINE_IMAGES): boolean {
   return rows.some((row) => !isConfirmedRasterImage(row.mimeType))
+    || imageBatchNeedsWorkspace(rows.filter((row) => isConfirmedRasterImage(row.mimeType)), maxInlineImages)
 }

@@ -4,6 +4,7 @@ import { apiRequest } from '@/lib/api'
 import { useAuth } from '@/stores/auth'
 import { runtimeAccountKey } from '@/lib/runtime'
 import { useRuntimeImageUrl } from '@/lib/runtime-resource'
+import { loadAttachmentThumbnail } from '@/lib/attachment-thumbnails'
 
 export function useAttachmentPreviewUrl(
   attachmentId: string | undefined,
@@ -26,22 +27,20 @@ export function useAttachmentPreviewUrl(
   useEffect(() => {
     if (!requestKey || !attachmentId || !userId) return
     let cancelled = false
+    const controller = new AbortController()
     setResolved({ key: requestKey, source: null, loading: true })
 
     void (async () => {
       try {
+        if (variant === 'thumbnail') {
+          const blob = await loadAttachmentThumbnail(runtimeAccountKey(userId), attachmentId, controller.signal)
+          if (!cancelled) setResolved({ key: requestKey, source: blob, loading: false })
+          return
+        }
         const cached = await getCachedAttachment(userId, attachmentId)
         if (cancelled) return
         if (cached) {
           setResolved({ key: requestKey, source: cached.blob, loading: false })
-          return
-        }
-        if (variant === 'thumbnail') {
-          setResolved({
-            key: requestKey,
-            source: `/api/attachments/${attachmentId}/thumbnail`,
-            loading: false,
-          })
           return
         }
         const { url: remote } = await apiRequest<{ url: string }>(`/api/attachments/${attachmentId}/download`)
@@ -54,6 +53,7 @@ export function useAttachmentPreviewUrl(
 
     return () => {
       cancelled = true
+      controller.abort()
     }
   }, [attachmentId, requestKey, userId, variant])
 
@@ -64,4 +64,3 @@ export function useAttachmentPreviewUrl(
     loading: Boolean(requestKey && (!current || current.loading || image.loading)),
   }
 }
-
