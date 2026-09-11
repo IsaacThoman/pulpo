@@ -840,6 +840,8 @@ export const createProviderSchema = z.object({
   cacheIsolationMode: providerCacheIsolationModeSchema.default('none'),
   cacheIsolationScope: providerCacheScopeSchema.default('user'),
   toolResultImageMode: providerToolResultImageModeSchema.default('native'),
+  convertImagesToWebp: z.boolean().default(false),
+  webpQuality: z.number().int().min(1).max(100).default(80),
 })
 
 export const updateProviderSchema = z.object({
@@ -854,6 +856,8 @@ export const updateProviderSchema = z.object({
   cacheIsolationMode: providerCacheIsolationModeSchema.optional(),
   cacheIsolationScope: providerCacheScopeSchema.optional(),
   toolResultImageMode: providerToolResultImageModeSchema.optional(),
+  convertImagesToWebp: z.boolean().optional(),
+  webpQuality: z.number().int().min(1).max(100).optional(),
   enabled: z.boolean().optional(),
 })
 
