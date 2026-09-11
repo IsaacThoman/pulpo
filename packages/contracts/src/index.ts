@@ -1595,7 +1595,10 @@ export const createApiKeySchema = z.object({
 })
 
 export const updateApiKeySchema = z.object({
-  enabled: z.boolean(),
+  name: createApiKeySchema.shape.name.optional(),
+  enabled: z.boolean().optional(),
+}).refine((input) => input.name !== undefined || input.enabled !== undefined, {
+  message: 'Provide a name or enabled state',
 })
 
 export const chatSummarySchema = z.object({

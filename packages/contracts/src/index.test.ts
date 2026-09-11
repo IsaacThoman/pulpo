@@ -140,10 +140,15 @@ describe('shared contracts', () => {
     expect(episodicMemoryStatisticsSchema.safeParse({ ...statistics, range: '90d' }).success).toBe(false)
   })
 
-  it('requires an explicit API key enabled state', () => {
+  it('accepts API key names and enabled states without defaulting omitted fields', () => {
     expect(updateApiKeySchema.parse({ enabled: true })).toEqual({ enabled: true })
     expect(updateApiKeySchema.parse({ enabled: false })).toEqual({ enabled: false })
     expect(updateApiKeySchema.safeParse({}).success).toBe(false)
+    expect(updateApiKeySchema.parse({ name: '  Laptop  ' })).toEqual({ name: 'Laptop' })
+    expect(updateApiKeySchema.parse({ name: 'Laptop', enabled: false })).toEqual({ name: 'Laptop', enabled: false })
+    for (const name of ['', '   ', 'a'.repeat(121)]) {
+      expect(updateApiKeySchema.safeParse({ name }).success).toBe(false)
+    }
   })
 
   it('defaults provider image conversion off and validates WebP quality', () => {

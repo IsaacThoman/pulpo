@@ -40,6 +40,7 @@ interface ApiKeysState {
   load: () => Promise<void>
   createKey: (input: Pick<ApiKey, 'name' | 'scopes' | 'allowedModels' | 'monthlyBudget' | 'totalBudget'>) => Promise<{ key: ApiKey; secret: string }>
   setKeyEnabled: (id: string, enabled: boolean) => Promise<void>
+  renameKey: (id: string, name: string) => Promise<void>
   deleteKey: (id: string) => Promise<void>
 }
 
@@ -68,6 +69,12 @@ export const useApiKeys = create<ApiKeysState>()((set, get) => ({
     })
     await get().load()
     return { key: get().keys.find((key) => key.id === response.id)!, secret: response.secret }
+  },
+  renameKey: async (id, name) => {
+    const response = await apiRequest<{ id: string; name: string }>(`/api/api-keys/${id}`, {
+      method: 'PATCH', body: { name },
+    })
+    set((state) => ({ keys: state.keys.map((key) => key.id === id ? { ...key, name: response.name } : key) }))
   },
   setKeyEnabled: async (id, enabled) => {
     const previousKeys = get().keys

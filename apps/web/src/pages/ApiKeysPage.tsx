@@ -6,6 +6,7 @@ import {
   Eye,
   EyeOff,
   MoreHorizontal,
+  Pencil,
   Plus,
   Search,
   Terminal,
@@ -13,7 +14,7 @@ import {
   TriangleAlert,
 } from 'lucide-react'
 import { useApiKeys } from '@/stores/apiKeys'
-import { useCatalog } from '@/stores/catalog'
+import { filterCodexModels, useCatalog } from '@/stores/catalog'
 import { formatCost, maskKey, timeAgo } from '@/lib/format'
 import type { ApiKey } from '@/lib/types'
 import { Button } from '@/components/ui/button'
@@ -23,6 +24,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { CheckboxRow, Snippet } from '@/components/api/misc'
+import { ApiKeyModelsDialog, RenameApiKeyDialog } from '@/components/api/ApiKeyDialogs'
 import { runtimeInstanceUrl } from '@/lib/runtime'
 import {
   Collapsible,
@@ -158,10 +160,12 @@ export function ApiKeysPage() {
   const [copied, setCopied] = useState(false)
   const [confirmDisable, setConfirmDisable] = useState<ApiKey | null>(null)
   const [usageDocsOpen, setUsageDocsOpen] = useState(false)
+  const [renameTarget, setRenameTarget] = useState<ApiKey | null>(null)
+  const [modelsTarget, setModelsTarget] = useState<ApiKey | null>(null)
 
   useEffect(() => { void load() }, [load])
 
-  const selectableModels = models.filter((m) => m.enabled)
+  const selectableModels = filterCodexModels(models, false).filter((m) => m.enabled)
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -219,6 +223,12 @@ export function ApiKeysPage() {
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-40">
+        <DropdownMenuItem onClick={() => setRenameTarget(key)}>
+          <Pencil /> {ui('Rename')}
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => setModelsTarget(key)}>
+          <Eye /> {ui('View models')}
+        </DropdownMenuItem>
         <DropdownMenuItem
           onClick={() => navigator.clipboard?.writeText(key.prefix).catch(() => {})}
         >
@@ -287,7 +297,9 @@ export function ApiKeysPage() {
               <dl className="mt-4 grid grid-cols-2 gap-x-3 gap-y-4 text-sm">
                 <div className="min-w-0">
                   <dt className="text-xs text-muted-foreground">{ui("Models")}</dt>
-                  <dd className="mt-1 truncate">{modelLabel(key.allowedModels)}</dd>
+                  <dd className="mt-1 truncate">
+                    <button className="cursor-pointer text-left underline decoration-dotted underline-offset-4 hover:text-foreground" aria-label={uit`View models for ${key.name}`} onClick={() => setModelsTarget(key)}>{modelLabel(key.allowedModels)}</button>
+                  </dd>
                   <dd className="truncate text-[11px] text-muted-foreground/80">{key.scopes.map(scopeLabel).join(' · ')}</dd>
                 </div>
                 <div>
@@ -356,7 +368,7 @@ export function ApiKeysPage() {
                     </div>
                   </td>
                   <td className="px-3 py-2 text-muted-foreground">
-                    <span title={modelLabel(k.allowedModels)}>{modelLabel(k.allowedModels)}</span>
+                    <button className="cursor-pointer text-left underline decoration-dotted underline-offset-4 hover:text-foreground" aria-label={uit`View models for ${k.name}`} onClick={() => setModelsTarget(k)}>{modelLabel(k.allowedModels)}</button>
                     <div className="mt-0.5 flex flex-wrap gap-1">
                       {k.scopes.slice(0, 2).map((s) => (
                         <span key={s} className="text-[11px] text-muted-foreground/80">
@@ -442,6 +454,9 @@ export function ApiKeysPage() {
           </Card>
         </Collapsible>
       </div>
+
+      {renameTarget && <RenameApiKeyDialog key={renameTarget.id} apiKey={renameTarget} onClose={() => setRenameTarget(null)} />}
+      {modelsTarget && <ApiKeyModelsDialog key={modelsTarget.id} apiKey={modelsTarget} onClose={() => setModelsTarget(null)} />}
 
       {/* create dialog */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
