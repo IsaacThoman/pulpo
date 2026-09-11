@@ -1,5 +1,7 @@
+import { AttachmentWindow } from './AttachmentWindow'
+import { attachmentBatchRequiresAgent } from '@/lib/attachments'
 import { speechPlayback } from '@/features/speech/state'
-import { localComposerDraftId } from '@pulpo/client-core'
+import { localComposerDraftId, mergePendingAttachments } from '@pulpo/client-core'
 import { ShelvedDrafts } from './ShelvedDrafts'
 import { ComposerTray } from './ComposerTray'
 import { webShelf, shelfDraftAttachments } from '@/lib/local-first/shelf'
@@ -8,7 +10,7 @@ import { useComposerSync } from './use-composer-sync'
 import { useFollowStartedChat } from './use-follow-started-chat'
 import { useMenuTriggerFocus } from './use-menu-trigger-focus'
 import { webComposerSync } from '@/lib/local-first/composer-sync'
-import type { ComposerState } from '@pulpo/contracts'
+import { MAX_MESSAGE_ATTACHMENTS, type ComposerState } from '@pulpo/contracts'
 import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, useSyncExternalStore, type Ref, type DragEvent as ReactDragEvent } from 'react'
 import { useTranslation } from '@/i18n/useAppTranslation'
 import { useNavigate } from 'react-router-dom'
@@ -93,7 +95,7 @@ function persistedDraftAttachments(
     mimeType: item.mimeType,
     status: item.status,
     error: item.error,
-    file: item.file,
+    file: item.status === 'ready' ? undefined : item.file,
   }))
 }
 
@@ -129,6 +131,7 @@ export function Composer({
   onEditStateChange,
   temporaryControlRef,
   suggestionControlRef,
+  focusControlRef,
   onTemporaryChange,
 }: {
   chatId: string | null
@@ -143,10 +146,10 @@ export function Composer({
   onEditStateChange?: (active: boolean) => void
   temporaryControlRef?: Ref<{ toggle: () => Promise<void> }>
   suggestionControlRef?: Ref<{ submit: (message: string) => void }>
+  focusControlRef?: Ref<{ focus: () => void }>
   onTemporaryChange?: (temporary: boolean) => void
 }) {
   const { t } = useTranslation()
-  const presetMenuFocus = useMenuTriggerFocus()
   const navigate = useNavigate()
   const userId = useAuth((s) => s.user?.id)
   const shelf = userId ? webShelf(userId) : null
@@ -156,6 +159,7 @@ export function Composer({
   const shelfMounted = useRef(true)
   const [shelfCollapsed, setShelfCollapsed] = useState(false)
   const [shelfError, setShelfError] = useState<string | null>(null)
+  const [attachmentSelectionError, setAttachmentSelectionError] = useState<string | null>(null)
   const showShelf = !chatId && !temporary && Boolean(shelf) && !messageEdit
   const activeShelf = useRef(shelf)
   activeShelf.current = showShelf ? shelf : null
@@ -184,6 +188,9 @@ export function Composer({
   const [queueDragId, setQueueDragId] = useState<string | null>(null)
   const [queueDrop, setQueueDrop] = useState<{ id: string; edge: 'before' | 'after' } | null>(null)
   const ref = useRef<HTMLTextAreaElement>(null)
+  const focusComposer = useCallback(() => ref.current?.focus({ preventScroll: true }), [])
+  const presetMenuFocus = useMenuTriggerFocus(focusComposer)
+  useImperativeHandle(focusControlRef, () => ({ focus: focusComposer }), [focusComposer])
   const fileInputRef = useRef<HTMLInputElement>(null)
   const valueRef = useRef(value)
   const attachmentIdsRef = useRef(attachmentIds)
@@ -271,7 +278,8 @@ export function Composer({
   const uploading = attachments.some((a) => a.status === 'uploading')
   const uploadFailed = attachments.some((a) => a.status === 'error')
   const attachmentUploadError = attachments.find((a) => a.status === 'error')?.error
-  const hasNonImage = attachments.some((a) => !isSupportedImageMime(a.mimeType))
+  const maxInlineImages = useAuth((state) => state.maxInlineImages)
+  const hasNonImage = attachmentBatchRequiresAgent(attachments, maxInlineImages)
   const attachmentRestriction = nonImageAttachmentRestriction({
     hasNonImage,
     agentModeEnabled: activeAgentMode,
@@ -311,10 +319,11 @@ export function Composer({
   const { sync: composerSync, skipNextEdit } = useComposerSync(syncEnabled ? userId : undefined, draftId, sharedComposerState, draftHydrated && !handoffBusy, Boolean(editingExisting || recovery || submitting || shelfBusy), (remote) => {
     if (handoffBusyRef.current) return
     const currentIds = preservedDraftRef.current?.attachmentIds ?? attachmentIdsRef.current
-    const pending = currentIds.filter((id) => uploadsRef.current[id] && uploadsRef.current[id].status !== 'ready')
-    const currentByServerId = new Map(currentIds.map((id) => [uploadsRef.current[id]?.id, id]))
+    const liveUploads = useUploadOutbox.getState().uploads
+    const currentByServerId = new Map(currentIds.map((id) => [liveUploads[id]?.id, id]))
     const remoteIds = remote.attachments.map((a) => currentByServerId.get(a.id) ?? addExistingAttachments([{ ...a, type: isSupportedImageMime(a.mimeType) ? 'image' : 'file' }], { chatId, temporary })[0]!)
-    const ids = [...pending, ...remoteIds]
+    const ids = mergePendingAttachments(currentIds, remoteIds, (id) => id,
+      (id) => Boolean(liveUploads[id] && liveUploads[id].status !== 'ready'))
     if (preservedDraftRef.current) preservedDraftRef.current = { value: remote.content, attachmentIds: ids }
     else if (!recovery) {
       const selection = ref.current && document.activeElement === ref.current
@@ -566,9 +575,15 @@ export function Composer({
 
   const uploadFiles = useCallback((incoming: File[]) => {
     if (!incoming.length) return
-    const ids = addUploadFiles(incoming, { chatId, temporary })
+    const remaining = Math.max(0, MAX_MESSAGE_ATTACHMENTS - attachmentIdsRef.current.length)
+    setAttachmentSelectionError(incoming.length > remaining
+      ? `You can attach up to ${MAX_MESSAGE_ATTACHMENTS} files. ${incoming.length - remaining} files were not added.`
+      : null)
+    const ids = addUploadFiles(incoming.slice(0, remaining), { chatId, temporary })
+    attachmentIdsRef.current = [...attachmentIdsRef.current, ...ids]
     setAttachmentIds((current) => [...current, ...ids])
     if (fileInputRef.current) fileInputRef.current.value = ''
+    ref.current?.focus()
   }, [addUploadFiles, chatId, temporary])
 
   const addFiles = useCallback((list: FileList | File[] | DataTransferItemList | null | undefined) => {
@@ -968,13 +983,19 @@ export function Composer({
           </div>
         </div>
       )}
+      {attachmentSelectionError && (
+        <div role="status" className="flex items-center gap-2 px-3 pb-2 text-xs text-amber-700 dark:text-amber-300">
+          <AlertCircle className="size-4 shrink-0" aria-hidden="true" />
+          <span>{attachmentSelectionError}</span>
+        </div>
+      )}
       {attachmentRestriction && (
         <div role="status" className="flex items-center gap-2 px-3 pb-2 text-xs text-amber-700 dark:text-amber-300">
           <AlertCircle className="size-4 shrink-0" aria-hidden="true" />
           <span className="min-w-0 flex-1 [overflow-wrap:anywhere]">
-            {attachmentRestriction === 'enable_agent' && 'Non-image files require Agent mode.'}
-            {attachmentRestriction === 'model_not_capable' && 'Switch to an Agent-capable model or remove non-image files.'}
-            {attachmentRestriction === 'agent_unavailable' && 'Agent mode is unavailable. Remove non-image files to send.'}
+            {attachmentRestriction === 'enable_agent' && 'These attachments require Agent mode (file type, image count, or image size).'}
+            {attachmentRestriction === 'model_not_capable' && 'Switch to an Agent-capable model or reduce these attachments.'}
+            {attachmentRestriction === 'agent_unavailable' && 'Agent mode is unavailable. Reduce these attachments to send.'}
           </span>
           {attachmentRestriction === 'enable_agent' && (
             <button
@@ -1090,7 +1111,7 @@ export function Composer({
                   )}
                   {message.attachments.length > 0 && !editing && (
                     <div className="flex min-w-0 flex-col gap-0.5 text-xs text-muted-foreground">
-                      {message.attachments.map((attachment) => {
+                      {message.attachments.slice(0, 3).map((attachment) => {
                         const upload = attachment.localUploadId ? uploads[attachment.localUploadId] : undefined
                         const uploadStatus = upload?.status
                         return (
@@ -1112,6 +1133,7 @@ export function Composer({
                           </span>
                         )
                       })}
+                      {message.attachments.length > 3 && <span>{uit`${message.attachments.length - 3} more files`}</span>}
                     </div>
                   )}
                   {message.error && <p role="alert" className="truncate text-xs text-destructive">{message.error}</p>}
@@ -1152,8 +1174,8 @@ export function Composer({
       >
         {attachments.length > 0 && (
           <div className="space-y-2 px-3 pt-3">
-            <div className="flex flex-wrap gap-2">
-              {attachments.map((attachment) => (
+            <AttachmentWindow items={attachments}>{(visible) => <div className="flex max-h-48 flex-wrap gap-2 overflow-y-auto">
+              {visible.map((attachment) => (
                 <PendingAttachmentChip
                   key={attachment.localId}
                   name={attachment.name}
@@ -1171,7 +1193,7 @@ export function Composer({
                   onRemove={() => removeAttachment(attachment.localId)}
                 />
               ))}
-            </div>
+            </div>}</AttachmentWindow>
             {attachmentUploadError && <p role="alert" className="px-1 text-xs text-destructive">{attachmentUploadError}</p>}
           </div>
         )}
@@ -1275,7 +1297,10 @@ export function Composer({
                     {preset.choices.map((choice) => (
                       <DropdownMenuItem
                         key={choice.id}
-                        onClick={() => setPresetChoice(modelId, preset.id, choice.id)}
+                        onSelect={() => {
+                          presetMenuFocus.onSelect()
+                          setPresetChoice(modelId, preset.id, choice.id)
+                        }}
                         className="justify-between"
                       >
                         <span className="flex items-center gap-1.5">
@@ -1292,6 +1317,7 @@ export function Composer({
           )}
 
           <AgentMenu
+            onSelectClose={focusComposer}
             enabled={activeAgentMode}
             disabled={!canUseAgent}
             onSelect={(enabled) => {

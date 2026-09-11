@@ -39,6 +39,10 @@ Enable automatic backups and save. Pulpo queues the first backup immediately. Th
 
 Changing the recipient or retention applies only to future backups. Disabling or removing the Pulpo configuration does not delete locked Backblaze objects.
 
+Backup creation writes database JSON one row at a time to private temporary disk, then streams that file into the compressed archive. Allow temporary disk space for both the uncompressed database JSON and the compressed archive; both are removed after success or failure. The worker still loads and filters the database snapshot in memory and buffers each attachment individually, so it needs enough RAM for those steps. Row serialization avoids Node's limit on the length of a single database-wide JSON string without changing the backup format.
+
+Run `npm run test:backup-memory -w @pulpo/server` to verify database serialization, archive creation, and streaming restore with over 512 MiB of database JSON, a 96 MiB JavaScript heap, and a 320 MiB peak-RSS budget. This checks the serialization/archive path, not database-query memory usage.
+
 ## Recover an instance
 
 Download the `.tar.gz.age` file from Pulpo or directly from the B2 bucket. Decrypt it on the trusted computer that holds the private identity:

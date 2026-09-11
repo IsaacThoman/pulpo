@@ -1,3 +1,4 @@
+import { imageBatchNeedsWorkspace, DEFAULT_MAX_INLINE_IMAGES } from '@pulpo/contracts';
 import { speechPlayback, readAloud } from '../features/speech/playback';
 import { speechText } from '@pulpo/client-core';
 import { INITIAL_TRANSCRIPT_ROWS, hasLargeInitialMessage, transcriptListMessages, usesBottomAnchoredTranscript } from '../features/chat/transcriptWindow';
@@ -13,7 +14,7 @@ import { shortcutsScope } from '../shortcuts/native';
 import { useDictation } from '../features/chat/useDictation';
 import { setComposerSelection } from '../features/chat/composerSelection';
 import { ToolImagePreview } from '../components/ToolImagePreview';
-import { localComposerDraftId } from '@pulpo/client-core';
+import { localComposerDraftId, mergePendingAttachments } from '@pulpo/client-core';
 import { DevicesScreen } from '../components/Devices';
 import { initialActivityTiming } from '@pulpo/client-core';
 import { mobileShelf, durableShelfAttachments, shelfComposerAttachments } from '../features/chat/shelf';
@@ -861,15 +862,19 @@ function AttachmentStrip({ attachments, onPreviewFile, onPreviewImage, onRemove,
   }, [onPreviewImage]);
   if (attachments.length === 0) return null;
   return (
-    <ScrollView
+    <FlatList
       accessibilityLabel={`${attachments.length} of ${MAX_COMPOSER_ATTACHMENTS} attachments`}
       keyboardShouldPersistTaps="handled"
       horizontal
       contentContainerStyle={styles.attachmentStripContent}
       showsHorizontalScrollIndicator={false}
       style={styles.attachmentStrip}
-    >
-      {attachments.map((attachment, index) => (
+      data={attachments}
+      initialNumToRender={4}
+      maxToRenderPerBatch={4}
+      windowSize={3}
+      keyExtractor={(attachment) => attachment.localId}
+      renderItem={({ item: attachment, index }) => (
         <View key={attachment.localId} style={styles.attachmentFrame}>
           <Pressable
             accessibilityLabel={`Preview ${attachment.name}`}
@@ -886,7 +891,7 @@ function AttachmentStrip({ attachments, onPreviewFile, onPreviewImage, onRemove,
             ]}
           >
             {attachment.kind === 'image' ? (
-              attachment.uri
+              attachment.uri && !attachment.serverId
                 ? <Image
                     accessibilityLabel={attachment.name}
                     nativeID={`pulpo-attachment-preview-${attachment.localId}`}
@@ -943,9 +948,25 @@ function AttachmentStrip({ attachments, onPreviewFile, onPreviewImage, onRemove,
             </Pressable>
           ) : null}
         </View>
-      ))}
-    </ScrollView>
+      )}
+    />
   );
+}
+
+function SentAttachmentWindow({ attachments, children, assistant = false }: { attachments: Attachment[]; assistant?: boolean; children: (visible: Attachment[]) => ReactNode }) {
+  const { styles, COLORS } = useChatStyles();
+  const [page, setPage] = useState(0);
+  const size = 12;
+  const last = Math.max(0, Math.ceil(attachments.length / size) - 1);
+  const current = Math.min(page, last);
+  return <View>
+    {attachments.length > size && <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 8 }}>
+      <Pressable accessibilityRole="button" accessibilityLabel="Previous attachment page" disabled={current === 0} onPress={() => setPage(current - 1)}><Text style={{ color: current === 0 ? COLORS.muted : COLORS.accent }}>Previous</Text></Pressable>
+      <Text style={{ color: COLORS.muted, fontSize: 12 }}>{current * size + 1}–{Math.min(attachments.length, (current + 1) * size)} of {attachments.length}</Text>
+      <Pressable accessibilityRole="button" accessibilityLabel="Next attachment page" disabled={current === last} onPress={() => setPage(current + 1)}><Text style={{ color: current === last ? COLORS.muted : COLORS.accent }}>Next</Text></Pressable>
+    </View>}
+    <View style={[styles.sentAttachments, assistant && styles.assistantAttachments]}>{children(attachments.slice(current * size, (current + 1) * size))}</View>
+  </View>;
 }
 
 function SentAttachmentPreview({ attachment, group, onPreviewFile, onPreviewImages }: {
@@ -3060,7 +3081,9 @@ function ResolvedAttachmentImage({ attachment, onResolved, sourceNativeId, varia
   variant: 'message' | 'preview' | 'composer';
 }) {
   const { styles, COLORS } = useChatStyles();
-  const [uri, setUri] = useState(attachment.uri);
+  const inlineUri = variant === 'preview' || (attachment.state && attachment.state !== 'ready') ? attachment.uri : undefined;
+  const thumbnailId = 'serverId' in attachment && typeof attachment.serverId === 'string' ? attachment.serverId : attachment.id;
+  const [uri, setUri] = useState(inlineUri);
   const [failed, setFailed] = useState(false);
   const [previewSize, setPreviewSize] = useState(() => fitAttachmentPreviewSize(0, 0));
   const style = variant === 'preview'
@@ -3068,13 +3091,13 @@ function ResolvedAttachmentImage({ attachment, onResolved, sourceNativeId, varia
     : variant === 'composer' ? styles.attachmentImage : styles.sentAttachmentImage;
 
   useEffect(() => {
-    setUri(attachment.uri);
+    setUri(inlineUri);
     setFailed(false);
     if (variant === 'preview') setPreviewSize(fitAttachmentPreviewSize(0, 0));
-    if (attachment.uri) return;
+    if (inlineUri) return;
     let cancelled = false;
     const resolve = variant === 'message' || variant === 'composer'
-      ? downloadAttachmentThumbnail(attachment.id)
+      ? downloadAttachmentThumbnail(thumbnailId)
       : downloadAttachment(attachment.id, attachment.name);
     void resolve.then((file) => {
       if (!cancelled) setUri(file.uri);
@@ -3082,7 +3105,7 @@ function ResolvedAttachmentImage({ attachment, onResolved, sourceNativeId, varia
       if (!cancelled) setFailed(true);
     });
     return () => { cancelled = true; };
-  }, [attachment.id, attachment.name, attachment.uri, variant]);
+  }, [attachment.id, attachment.name, inlineUri, thumbnailId, variant]);
 
   useEffect(() => {
     if (variant !== 'preview' || !uri) return;
@@ -3518,8 +3541,8 @@ const MessageRow = memo(function MessageRow({
       {message.role === 'user' ? (
         <View style={styles.userMessageContent}>
           {message.attachments && message.attachments.length > 0 && (
-            <View style={styles.sentAttachments}>
-              {message.attachments.map((attachment) => (
+            <SentAttachmentWindow attachments={message.attachments}>{(visible) => <>
+              {visible.map((attachment) => (
                 <SentAttachmentContextMenu attachment={attachment} key={attachment.id} message={message} onEdit={onEdit} onRegenerate={onRegenerate}>
                   <SentAttachmentPreview
                     attachment={attachment}
@@ -3529,7 +3552,7 @@ const MessageRow = memo(function MessageRow({
                   />
                 </SentAttachmentContextMenu>
               ))}
-            </View>
+            </>}</SentAttachmentWindow>
           )}
           {message.text.length > 0 && (
             <MessageContextMenu message={message} model={model} onEdit={onEdit} onRegenerate={onRegenerate}>
@@ -3587,8 +3610,8 @@ const MessageRow = memo(function MessageRow({
               </View>;
             })}
             {message.attachments && message.attachments.length > 0 && (
-              <View style={[styles.sentAttachments, styles.assistantAttachments]}>
-                {message.attachments.map((attachment) => (
+              <SentAttachmentWindow attachments={message.attachments} assistant>{(visible) => <>
+                {visible.map((attachment) => (
                   <SentAttachmentContextMenu attachment={attachment} key={attachment.id} message={message} onEdit={onEdit} onRegenerate={onRegenerate}>
                     <SentAttachmentPreview
                       attachment={attachment}
@@ -3598,7 +3621,7 @@ const MessageRow = memo(function MessageRow({
                     />
                   </SentAttachmentContextMenu>
                 ))}
-              </View>
+              </>}</SentAttachmentWindow>
             )}
             {message.error && timeline.length > 0 && <View style={styles.responseError}><Icon name="exclamationmark.triangle" size={15} color={COLORS.critical} /><Text style={styles.responseErrorText}>{message.error}</Text><Pressable accessibilityRole="button" onPress={() => onRegenerate(message)}><Text style={styles.tryAgainText}>Try again</Text></Pressable></View>}
             {!message.error && message.status === 'stopped' && <MessageContextMenu message={message} model={model} onEdit={onEdit} onRegenerate={onRegenerate}><View style={styles.responseError}><Icon name="stop.circle" size={15} color={COLORS.muted} /><Text style={styles.responseErrorText}>Response stopped before completion.</Text><Pressable accessibilityRole="button" onPress={() => onRegenerate(message)}><Text style={styles.tryAgainText}>Try again</Text></Pressable></View></MessageContextMenu>}
@@ -3810,6 +3833,7 @@ function SuggestedPromptButton({ label, accessible, onPress, temporary = false }
 
 const EMPTY_MOBILE_QUEUE: MobileQueuedMessage[] = [];
 
+const COMPOSER_MAX_FONT_SIZE_MULTIPLIER = 1.6;
 const COMPOSER_SECTION_SPRING = { damping: 24, stiffness: 260, mass: 0.8, overshootClamping: true };
 
 function ComposerQueueSection({ title, subject, visible, collapsed, onToggle, failed = false, children }: {
@@ -3999,6 +4023,7 @@ function ChatView({
   const preferredAgentMode = usePreferencesStore((state) => state.agentModes[model.id] ?? true);
   const agentAvailable = usePrototypeStore((state) => state.agentAvailable);
   const canUseAgent = agentAvailable && model.agentEnabled;
+  const maxInlineImages = useSessionStore((state) => state.config?.limits.maxInlineImages ?? DEFAULT_MAX_INLINE_IMAGES);
   const [agentSelection, setAgentSelection] = useState(() => ({ enabled: preferredAgentMode && canUseAgent, revision: 0 }));
   const agentEnabled = agentSelection.enabled;
   const setAgentEnabled = useCallback((enabled: boolean) => {
@@ -4006,6 +4031,8 @@ function ChatView({
   }, []);
   const activeAgentEnabled = canUseAgent && agentEnabled;
   const [attachments, setAttachmentState] = useState<ComposerAttachment[]>([]);
+  const attachmentsRequireAgent = attachments.some((attachment) => attachment.kind === 'file')
+    || imageBatchNeedsWorkspace(attachments.filter((attachment) => attachment.kind !== 'file').map((attachment) => ({ sizeBytes: attachment.size })), maxInlineImages);
   const attachmentUploadError = attachments.find((attachment) => attachment.state === 'failed')?.error;
   const attachmentsRef = useRef<ComposerAttachment[]>([]);
   const latestAttachmentsRef = useRef(new Map<string, ComposerAttachment>());
@@ -4366,14 +4393,12 @@ function ChatView({
       if (handoffBusyRef.current) return;
       const current = preservedComposerRef.current?.attachments ?? attachmentsRef.current;
       const byId = new Map(current.map((a) => [a.serverId, a]));
-      const next: ComposerAttachment[] = [
-        ...current.filter((a) => a.state !== 'ready'),
-        ...remote.attachments.map((a): ComposerAttachment => byId.get(a.id) ?? ({
+      const remoteAttachments = remote.attachments.map((a): ComposerAttachment => byId.get(a.id) ?? ({
           id: a.id, serverId: a.id, localId: `remote:${a.id}`, ownerId: draftOwnerRef.current,
           name: a.name, mimeType: a.mimeType, size: a.size, uri: '',
           kind: a.mimeType.startsWith('image/') ? 'image' : 'file', state: 'ready', managed: false, attempt: 0,
-        })),
-      ];
+        }));
+      const next = mergePendingAttachments(current, remoteAttachments, (item) => item.localId, (item) => item.state !== 'ready');
       if (preservedComposerRef.current) {
         preservedComposerRef.current = { input: remote.content, attachments: next, agentEnabled: remote.agentMode };
       } else {
@@ -4508,7 +4533,8 @@ function ChatView({
     const preview = imagePreviewGroup(group, selected.id);
     if (!preview) return;
     Haptics.selectionAsync();
-    if (!supportsNativeImageGallery) {
+    // The native gallery eagerly resolves every original; use the existing virtualized viewer for bulk groups.
+    if (!supportsNativeImageGallery || preview.items.length > 5) {
       Keyboard.dismiss();
       setImageViewer({ attachments: preview.items, initialIndex: preview.initialIndex, origin });
       return;
@@ -4995,6 +5021,10 @@ function ChatView({
 
   const submitMessage = async () => {
     if ((chatId && !chatLoaded) || handoffBusyRef.current || sendingRef.current || isDictationBusy()) return;
+    if (attachmentsRequireAgent && !activeAgentEnabled) {
+      Alert.alert('Agent mode required', 'Enable Agent mode or reduce these attachments before sending.');
+      return;
+    }
     const sendPolicy = attachmentSendPolicy(attachments, { editing: Boolean(messageEdit) });
     if (!sendPolicy.allowed) {
       Alert.alert(
@@ -5297,7 +5327,7 @@ function ChatView({
     && !dictationBusy
     && !queueBusy
     && !expired
-    && !(attachments.some((attachment) => attachment.kind === 'file') && (!activeAgentEnabled || !canUseAgent))
+    && !(attachmentsRequireAgent && (!activeAgentEnabled || !canUseAgent))
     && attachmentPolicy.allowed;
   const composerAction = composerGenerationAction(assistantStatus, Boolean(messageEdit), Boolean(input.trim() || attachments.length));
 
@@ -5671,9 +5701,9 @@ function ChatView({
                   {attachmentUploadError}
                 </Text>
               ) : null}
-              {attachments.some((attachment) => attachment.kind === 'file') && (!activeAgentEnabled || !canUseAgent) ? (
+              {attachmentsRequireAgent && (!activeAgentEnabled || !canUseAgent) ? (
                 <Text accessibilityRole="alert" style={styles.attachmentRestrictionText}>
-                  {!canUseAgent ? 'Choose an Agent-capable model or remove non-image files.' : 'Turn on Agent mode to use non-image files.'}
+                  {!canUseAgent ? 'Choose an Agent-capable model or reduce these attachments.' : 'Turn on Agent mode to use these attachments (file type, image count, or image size).'}
                 </Text>
               ) : null}
               {dictationBusy && (
@@ -5695,7 +5725,7 @@ function ChatView({
                   disableFullscreenUI
                   // Keep focus during shelf actions; transferShelf checks for edits before replacing content.
                   editable={!handoffBusy && !composerFocusSuppressed && !(messageEdit && sending)}
-                  maxFontSizeMultiplier={1.6}
+                  maxFontSizeMultiplier={COMPOSER_MAX_FONT_SIZE_MULTIPLIER}
                   multiline
                   maxLength={1_000_000}
                   onFocus={() => { setQueueCollapsed(true); setShelfCollapsed(true); }}
@@ -5705,7 +5735,11 @@ function ChatView({
                   onSelectionChange={(event) => { setComposerSelection(setInputSelection, inputSelectionRef, event.nativeEvent.selection); }}
                   placeholder={attachments.length > 0 ? 'Add a caption…' : messageEdit ? 'Edit message…' : temporary ? 'Temporary message…' : 'Message…'}
                   placeholderTextColor={COLORS.muted}
-                  style={[styles.input, styles.composerTextInput]}
+                  // iOS multiline measurement can retain the previous draft's height after a clear.
+                  // Derive the reset from the controlled value so synced clears work too, without remounting.
+                  style={[styles.input, styles.composerTextInput, Platform.OS === 'ios' && input.length === 0 && {
+                    height: Math.max(styles.input.minHeight, Math.ceil(styles.input.lineHeight * Math.min(fontScale, COMPOSER_MAX_FONT_SIZE_MULTIPLIER))),
+                  }]}
                   value={input}
                 />
                 {showShelf && (Platform.OS === 'ios'

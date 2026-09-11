@@ -43,10 +43,10 @@ describe('detailed payload retention', () => {
 
     execute.mockClear()
     await reconcileDetailedPayloadRetention(execute, { logDetailedPayloads: true, payloadRetention: 'indefinite' }, createdAt)
-    expect(execute).toHaveBeenCalledTimes(1)
+    expect(execute).toHaveBeenCalledTimes(3)
 
     execute.mockClear()
     await reconcileDetailedPayloadRetention(execute, { logDetailedPayloads: true, payloadRetention: '1h' }, createdAt)
-    expect(execute).toHaveBeenCalledTimes(3)
+    expect(execute).toHaveBeenCalledTimes(5)
   })
 })

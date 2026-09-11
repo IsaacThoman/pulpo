@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { MAX_MESSAGE_ATTACHMENTS } from './attachment-limits.js'
 
 export const composerDraftIdSchema = z.union([z.literal('new'), z.uuid()])
 export const composerAttachmentSchema = z.object({
@@ -6,7 +7,7 @@ export const composerAttachmentSchema = z.object({
 })
 export const composerStateSchema = z.object({
   content: z.string().max(1_000_000),
-  attachments: z.array(composerAttachmentSchema).max(100),
+  attachments: z.array(composerAttachmentSchema).max(MAX_MESSAGE_ATTACHMENTS),
   model: z.object({ id: z.string().max(256), presets: z.record(z.string().max(256), z.string().max(256)) }).nullable(),
   agentMode: z.boolean(), temporary: z.boolean(), autoExpire: z.boolean(),
 })

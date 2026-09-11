@@ -10,7 +10,7 @@ import { agentRuns, applicationSettings, attachments, chats, generationAttempts,
 import { decryptSecret } from '../lib/crypto.js'
 import { getConfig } from '../config.js'
 import { newId } from '../lib/ids.js'
-import { parseAgentSettings, parsePersonalizationSettings, parseWebToolsSettings } from '../settings/application-settings.js'
+import { parseAgentSettings, parseAuthSettings, parsePersonalizationSettings, parseWebToolsSettings } from '../settings/application-settings.js'
 import { composeCustomInstructions } from '../settings/instruction-presets.js'
 import { isCancellationRequested, createResponseEventPublisher, publishSnapshot } from '../responses/events.js'
 import { toSnapshot } from '../responses/service.js'
@@ -151,13 +151,14 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
     .from(responses).innerJoin(models, eq(responses.modelId, models.id)).innerJoin(providerConnections, eq(models.providerConnectionId, providerConnections.id))
     .where(eq(responses.id, responseId)).limit(1)
   if (!record || !record.response.agentMode || ['completed', 'cancelled'].includes(record.response.status)) return
-  const [settingsRow, webToolsRow, personalizationRow, preferencesRow, episodicMemorySettings] = await Promise.all([
+  const [settingsRow, webToolsRow, personalizationRow, preferencesRow, episodicMemorySettings, attachmentSettingsRow] = await Promise.all([
     db.select().from(applicationSettings).where(eq(applicationSettings.key, 'agent')).limit(1).then((rows) => rows[0]),
     db.select().from(applicationSettings).where(eq(applicationSettings.key, 'webTools')).limit(1).then((rows) => rows[0]),
     db.select().from(applicationSettings).where(eq(applicationSettings.key, 'personalization')).limit(1).then((rows) => rows[0]),
     db.select({ values: userPreferences.values }).from(userPreferences)
       .where(eq(userPreferences.userId, record.response.userId)).limit(1).then((rows) => rows[0]),
     readEpisodicMemorySettings(),
+    db.select().from(applicationSettings).where(eq(applicationSettings.key, 'auth')).limit(1).then((rows) => rows[0]),
   ])
   const settings = parseAgentSettings(settingsRow?.value)
   const webToolsSettings = parseWebToolsSettings(webToolsRow?.value)
@@ -716,7 +717,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
     },
     prepareNextTurnWithContext: async ({ context, toolResults }) => {
       const thresholdTokens = compactionThreshold()
-      let preparedContext = await interceptAgentContextImages(context, active.model, imageInterceptor)
+      let preparedContext = await interceptAgentContextImages(context, active.model, imageInterceptor, active.provider)
       preparedContext = adaptToolResultImagesForProvider(
         preparedContext as Context,
         active.provider.toolResultImageMode as ToolResultImageMode,
@@ -744,7 +745,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
         chatId: record.response.chatId,
         runId,
       })
-      let preparedContext = await interceptAgentContextImages(context, active.model, imageInterceptor)
+      let preparedContext = await interceptAgentContextImages(context, active.model, imageInterceptor, active.provider)
       preparedContext = adaptToolResultImagesForProvider(
         preparedContext as Context,
         active.provider.toolResultImageMode as ToolResultImageMode,
@@ -990,7 +991,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
   try {
     await emit('pulpo.agent.started', { runId })
     const initialPrompt = buildAgentUserPrompt(record.response.input, attachedFiles) || 'How can I help?'
-    const promptImages = await loadAgentPromptImages(attachedFiles)
+    const promptImages = await loadAgentPromptImages(attachedFiles, undefined, parseAuthSettings(attachmentSettingsRow?.value).maxInlineImages)
     const initialMessage: AgentMessage = {
       role: 'user',
       content: [{ type: 'text', text: initialPrompt }, ...promptImages],

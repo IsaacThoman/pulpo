@@ -15,7 +15,9 @@ concurrency:
   # lock. A queued run refreshes main again in the release job below.
   # Main also shares the manual Android workflow's lock for the entire release,
   # keeping version-code allocation and Google Play uploads in the same order.
-  group: ${{ github.ref == 'refs/heads/main' && 'android-google-play' || format('ci-release-{0}', github.event.pull_request.number || github.ref) }}
+  # Merged PR close events also use refs/heads/main. Keep every PR event in its
+  # own group so closing a PR cannot cancel the main release triggered by its merge.
+  group: ${{ github.event_name == 'pull_request' && format('ci-release-{0}', github.event.pull_request.number) || (github.ref == 'refs/heads/main' && 'android-google-play' || format('ci-release-{0}', github.ref)) }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
@@ -85,6 +87,10 @@ jobs:
       - name: Test preview cleanup safety
         if: matrix.name == 'Test'
         run: python3 -m unittest discover -s infra/preview-maintenance -p 'test_*.py'
+
+      - name: Verify large backup serialization and restore with a constrained heap
+        if: matrix.name == 'Test'
+        run: npm run test:backup-memory -w @pulpo/server
 
       - name: Validate production deployment ordering
         run: python3 .github/scripts/deploy-production_test.py
@@ -158,6 +164,10 @@ jobs:
           DATABASE_URL: postgres://postgres:search-test@localhost:5432/pulpo_speech_test
           PULPO_SPEECH_POSTGRES_TEST: '1'
         run: npm run test -w @pulpo/server -- src/speech/assets.postgres.test.ts src/speech/billing.postgres.test.ts
+      - name: Verify detailed payload retention in PostgreSQL
+        env:
+          PULPO_PAYLOAD_TEST_DATABASE_URL: postgres://postgres:search-test@localhost:5432/pulpo_search_test
+        run: npm run test -w @pulpo/server -- src/logging/detailed-payload-retention.postgres.test.ts
       - name: Create disposable speech backup database
         run: node --input-type=module -e 'import postgres from "postgres"; const sql = postgres(process.env.DATABASE_URL); await sql.unsafe("CREATE DATABASE pulpo_speech_backup_test"); await sql.end();'
       - name: Apply speech backup test migrations
@@ -216,6 +226,7 @@ jobs:
     name: Desktop / Windows / ${{ matrix.arch }} package check
     if: github.event_name != 'pull_request'
     runs-on: windows-2025
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -342,10 +353,11 @@ jobs:
       needs.release.outputs.version != ''
     needs: release
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: ${{ matrix.platform == 'Windows' && 60 || 360 }}
     environment:
       name: desktop-release
     permissions:
-      contents: read
+      contents: write
       id-token: write
     strategy:
       fail-fast: false
@@ -543,6 +555,7 @@ jobs:
 
       - name: Install Artifact Signing client tools
         if: matrix.platform == 'Windows'
+        timeout-minutes: 15
         shell: pwsh
         env:
           AZURE_ARTIFACT_SIGNING_ENDPOINT: ${{ vars.AZURE_ARTIFACT_SIGNING_ENDPOINT }}
@@ -551,19 +564,36 @@ jobs:
         run: |
           $ProgressPreference = 'SilentlyContinue'
           $installerPath = Join-Path $env:RUNNER_TEMP 'ArtifactSigningClientTools.msi'
+          $installerLog = Join-Path $env:RUNNER_TEMP 'ArtifactSigningClientTools-install.log'
           $installerUri = 'https://download.microsoft.com/download/70ad2c3b-761f-4aa9-a9de-e7405aa2b4c1/ArtifactSigningClientTools.msi'
-          Invoke-WebRequest -Uri $installerUri -OutFile $installerPath
+          Write-Host 'Downloading Artifact Signing client tools...'
+          Invoke-WebRequest -Uri $installerUri -OutFile $installerPath -ConnectionTimeoutSeconds 120 -OperationTimeoutSeconds 120
 
+          Write-Host 'Validating the Microsoft installer signature...'
           $installerSignature = Get-AuthenticodeSignature $installerPath
           if ($installerSignature.Status -ne 'Valid' -or $installerSignature.SignerCertificate.Subject -notlike '*Microsoft Corporation*') {
             throw "Artifact Signing client installer signature is not valid and issued to Microsoft."
           }
 
-          $installer = Start-Process msiexec.exe -Wait -PassThru -ArgumentList @('/i', $installerPath, '/quiet', '/norestart')
+          Write-Host 'Installing Artifact Signing client tools (five-minute limit)...'
+          # Bound the MSI process wait and retain diagnostic output if it stalls.
+          $installer = Start-Process msiexec.exe -PassThru -ArgumentList @('/i', "`"$installerPath`"", '/quiet', '/norestart', '/L*V!', "`"$installerLog`"")
+          if (!$installer.WaitForExit(300000)) {
+            Stop-Process -Id $installer.Id -Force -ErrorAction SilentlyContinue
+            if (Test-Path $installerLog) {
+              Get-Content $installerLog -Tail 100
+            }
+            throw 'Artifact Signing client installer timed out after five minutes.'
+          }
+          $installer.Refresh()
           if ($installer.ExitCode -ne 0) {
+            if (Test-Path $installerLog) {
+              Get-Content $installerLog -Tail 100
+            }
             throw "Artifact Signing client installer exited with code $($installer.ExitCode)."
           }
 
+          Write-Host 'Locating the installed Artifact Signing Dlib and Windows SDK SignTool...'
           $toolDirectory = Join-Path $env:SystemDrive 'pulpo-artifact-signing'
           New-Item -ItemType Directory -Force -Path $toolDirectory | Out-Null
 
@@ -623,6 +653,7 @@ jobs:
           ) | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
           Remove-Item $installerPath -Force
+          Write-Host 'Artifact Signing client tools are ready.'
 
       - name: Build signed Squirrel.Windows artifacts
         if: matrix.platform == 'Windows'
@@ -712,68 +743,16 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  desktop-publish:
-    name: Publish desktop artifacts
-    if: >-
-      needs.release.outputs.version != ''
-    needs: [release, desktop-build]
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: write
-    steps:
-      - name: Download desktop artifacts
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          pattern: desktop-*
-          path: desktop-artifacts
-          merge-multiple: true
-
-      - name: Attach artifacts to GitHub Release
+      # Each matrix leg publishes only its own verified assets. A failed sibling
+      # must not withhold successful platforms from the GitHub release.
+      - name: Attach platform artifacts to GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_VERSION: ${{ needs.release.outputs.version }}
-        run: |
-          set -euo pipefail
-          mapfile -d '' artifacts < <(find desktop-artifacts -type f \( \
-            -name '*.zip' -o \
-            -name '*.dmg' -o \
-            -name '*Setup.exe' -o \
-            -name '*-full.nupkg' -o \
-            -name 'RELEASES*' \
-          \) -print0)
-          if (( ${#artifacts[@]} != 12 )); then
-            echo "Expected two ZIPs, two DMGs, four Setup EXEs, two full NUPKGs, and two RELEASES manifests; found ${#artifacts[@]}." >&2
-            exit 1
-          fi
-          zip_count="$(find desktop-artifacts -type f -name '*.zip' | wc -l | tr -d ' ')"
-          dmg_count="$(find desktop-artifacts -type f -name '*.dmg' | wc -l | tr -d ' ')"
-          setup_count="$(find desktop-artifacts -type f -name '*Setup.exe' | wc -l | tr -d ' ')"
-          package_count="$(find desktop-artifacts -type f -name '*-full.nupkg' | wc -l | tr -d ' ')"
-          manifest_count="$(find desktop-artifacts -type f -name 'RELEASES*' | wc -l | tr -d ' ')"
-          if [[ "${zip_count}:${dmg_count}:${setup_count}:${package_count}:${manifest_count}" != '2:2:4:2:2' ]]; then
-            echo "Unexpected release artifact mix (ZIP: ${zip_count}, DMG: ${dmg_count}, Setup: ${setup_count}, NUPKG: ${package_count}, RELEASES: ${manifest_count})." >&2
-            exit 1
-          fi
-          for expected in \
-            "Pulpo-darwin-arm64-${RELEASE_VERSION}.zip" \
-            "Pulpo-darwin-x64-${RELEASE_VERSION}.zip" \
-            "Pulpo-${RELEASE_VERSION}-macOS-arm64.dmg" \
-            "Pulpo-${RELEASE_VERSION}-macOS-x64.dmg" \
-            Setup.exe \
-            Pulpo-win32-arm64-Setup.exe \
-            "Pulpo-${RELEASE_VERSION}-Windows-x64-Setup.exe" \
-            "Pulpo-${RELEASE_VERSION}-Windows-arm64-Setup.exe" \
-            "Pulpo-${RELEASE_VERSION}-full.nupkg" \
-            "Pulpo-win32-arm64-${RELEASE_VERSION}-full.nupkg" \
-            RELEASES \
-            RELEASES-win32-arm64; do
-            match_count="$(find desktop-artifacts -type f -name "${expected}" | wc -l | tr -d ' ')"
-            if [[ "${match_count}" != '1' ]]; then
-              echo "Expected exactly one release artifact named ${expected}; found ${match_count}." >&2
-              exit 1
-            fi
-          done
-          gh release upload "v${RELEASE_VERSION}" "${artifacts[@]}" --clobber --repo "${GITHUB_REPOSITORY}"
+          DESKTOP_PLATFORM: ${{ matrix.platform }}
+          DESKTOP_ARCH: ${{ matrix.arch }}
+          DESKTOP_ARTIFACT_DIRECTORY: ${{ matrix.platform == 'macOS' && 'apps/desktop/out/make' || format('apps/desktop/out/release/windows/{0}', matrix.arch) }}
+        run: node apps/desktop/scripts/publish-artifacts.mjs
 
   deploy-preview:
     name: Deploy Coolify preview

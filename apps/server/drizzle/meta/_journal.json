@@ -505,6 +505,13 @@
       "when": 1788972718461,
       "tag": "0071_image_generation",
       "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1789080990564,
+      "tag": "0072_provider_webp",
+      "breakpoints": true
     }
   ]
 }

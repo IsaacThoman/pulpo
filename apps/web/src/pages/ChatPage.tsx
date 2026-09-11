@@ -164,6 +164,8 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
   const carriedModelId = navigationState?.selectedModelId
   const temporaryComposerRef = useRef<{ toggle: () => Promise<void> } | null>(null)
   const suggestionComposerRef = useRef<{ submit: (message: string) => void } | null>(null)
+  const focusComposerRef = useRef<{ focus: () => void } | null>(null)
+  const focusComposer = () => focusComposerRef.current?.focus()
   const [temporary, setTemporary] = useState(false)
   const [savingTemporary, setSavingTemporary] = useState(false)
   const [temporaryError, setTemporaryError] = useState<string | null>(null)
@@ -380,10 +382,10 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
       <header className="chat-header relative z-20 flex h-12 min-w-0 shrink-0 items-center gap-1 px-3">
         {desktopSidebarVisible ? (
           <DesktopModelTitleBarSlot>
-            <ModelSelector value={modelId} onChange={selectModel} />
+            <ModelSelector value={modelId} onChange={selectModel} onSelectClose={focusComposer} />
           </DesktopModelTitleBarSlot>
         ) : (
-          <ModelSelector value={modelId} onChange={selectModel} />
+          <ModelSelector value={modelId} onChange={selectModel} onSelectClose={focusComposer} />
         )}
         <div className="flex-1" />
         <ChatHeaderActions desktop={desktopSidebarVisible}>
@@ -496,7 +498,7 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
               chatWidth === 'narrow' ? 'max-w-5xl' : 'max-w-[min(100%,90rem)]'
             )}
           >
-            <Composer syncEnabled={!adminMode} onSyncControls={applyComposerControls} key="new" temporaryControlRef={temporaryComposerRef} suggestionControlRef={suggestionComposerRef} onTemporaryChange={setTemporary} chatId={null} modelId={modelId} temporary={temporaryMode} autoExpire={effectiveNewChatAutoExpire} />
+            <Composer syncEnabled={!adminMode} onSyncControls={applyComposerControls} key="new" temporaryControlRef={temporaryComposerRef} suggestionControlRef={suggestionComposerRef} focusControlRef={focusComposerRef} onTemporaryChange={setTemporary} chatId={null} modelId={modelId} temporary={temporaryMode} autoExpire={effectiveNewChatAutoExpire} />
           </div>
         </>
       ) : (
@@ -529,6 +531,7 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
               <div role="status" className="rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive"> {ui("This temporary chat has expired and cannot be recovered. Its existing transcript is available only until you leave this page.")} </div>
             ) : (
               <Composer
+                focusControlRef={focusComposerRef}
                 syncEnabled={!adminMode}
                 onSyncControls={applyComposerControls}
                 key={`${chat.temporary ? "temporary:" : ""}${chat.id}`}

@@ -22,6 +22,12 @@ describe('canonicalUploadedMimeType', () => {
 })
 
 describe('attachmentsRequireAgentMode', () => {
+  it('requires Agent mode for image counts and sizes above the prompt limits', () => {
+    const images = Array.from({ length: 6 }, () => ({ mimeType: 'image/png', sizeBytes: 100 }))
+    expect(attachmentsRequireAgentMode(images)).toBe(true)
+    expect(attachmentsRequireAgentMode(images, 6)).toBe(false)
+    expect(attachmentsRequireAgentMode([{ mimeType: 'image/png', sizeBytes: 26 * 1024 * 1024 }])).toBe(true)
+  })
   it('allows only confirmed raster image MIME types without Agent mode', () => {
     expect(isConfirmedRasterImage('image/jpeg')).toBe(true)
     expect(attachmentsRequireAgentMode([{ mimeType: 'image/png' }, { mimeType: 'image/gif' }])).toBe(false)

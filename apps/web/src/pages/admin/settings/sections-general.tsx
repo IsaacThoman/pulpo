@@ -17,7 +17,7 @@ import { useAuth } from '@/stores/auth'
 import { apiRequest } from '@/lib/api'
 import { modelOptionLabel, useAvailableModels } from './use-available-models'
 import { NewAccountModelDefaultsFields } from './new-account-model-defaults'
-import { DEFAULT_MAX_ATTACHMENT_BYTES, MAX_CONFIGURABLE_ATTACHMENT_BYTES } from '@pulpo/contracts'
+import { DEFAULT_MAX_INLINE_IMAGES, MAX_CONFIGURABLE_INLINE_IMAGES, DEFAULT_MAX_ATTACHMENT_BYTES, MAX_CONFIGURABLE_ATTACHMENT_BYTES } from '@pulpo/contracts'
 import { ui } from '@/i18n/ui'
 
 const DEFAULT_SUGGESTED_PROMPTS = [
@@ -107,6 +107,7 @@ export function AuthenticationSection() {
     defaultBalanceMicros: 5_000_000,
     defaultStorageLimitBytes: 5_000 * 1024 * 1024,
     maxAttachmentBytes: DEFAULT_MAX_ATTACHMENT_BYTES,
+    maxInlineImages: DEFAULT_MAX_INLINE_IMAGES,
     pendingDetails: auth.pendingDetails,
     adminEmail: auth.adminEmail,
     pendingMessage: auth.pendingMessage,
@@ -158,6 +159,15 @@ export function AuthenticationSection() {
           step={5}
           suffix="MiB"
         />
+        <NumField
+          label={ui("Maximum images in a prompt")}
+          hint="Above this count, Agent mode inspects images from workspace files as needed. Image batches above 25 MiB also require Agent mode. Set to 0 to always use workspace files."
+          value={t.maxInlineImages}
+          onChange={(value) => s('maxInlineImages', Math.round(value))}
+          min={0}
+          max={MAX_CONFIGURABLE_INLINE_IMAGES}
+          step={1}
+        />
         <SelectField label={ui("Default user role")} hint="Role assigned to future public signups." value={t.defaultSignupRole} onChange={(v) => s('defaultSignupRole', v as 'pending' | 'user')} options={[{ value: 'pending', label: ui("Pending approval") }, { value: 'user', label: ui("User") }]} />
         <Toggle label={ui("Enable API keys")} hint="Suspends API-key creation and authentication without deleting existing keys." checked={t.apiKeysEnabled} onChange={(v) => s('apiKeysEnabled', v)} />
       </Section>
@@ -189,7 +199,7 @@ export function AuthenticationSection() {
         onChange={(value) => s('newAccountModelDefaults', value)}
       />
 
-      <SaveBar onSave={async () => { await save(); auth.setSignupEnabled(t.signupEnabled); useAuth.setState({ pendingDetails: t.pendingDetails, adminEmail: t.adminEmail, pendingMessage: t.pendingMessage, apiKeysEnabled: t.apiKeysEnabled, maxAttachmentBytes: t.maxAttachmentBytes }) }} />
+      <SaveBar onSave={async () => { await save(); auth.setSignupEnabled(t.signupEnabled); useAuth.setState({ pendingDetails: t.pendingDetails, adminEmail: t.adminEmail, pendingMessage: t.pendingMessage, apiKeysEnabled: t.apiKeysEnabled, maxAttachmentBytes: t.maxAttachmentBytes, maxInlineImages: t.maxInlineImages }) }} />
     </div>
   )
 }

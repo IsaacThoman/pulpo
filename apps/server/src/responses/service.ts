@@ -1,3 +1,4 @@
+import { MAX_MESSAGE_ATTACHMENTS } from '@pulpo/contracts'
 import { and, eq, inArray, isNull, or, sql } from 'drizzle-orm'
 import type { ChatPreset, CreateChatResponseInput, ResponseSnapshot } from '@pulpo/contracts'
 import { db } from '../database/client.js'
@@ -6,7 +7,7 @@ import { getActivePricing, releaseBudget, reserveBudget } from '../accounting/se
 import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import { generationQueue } from '../jobs.js'
-import { parseAgentSettings, parseLoggingSettings } from '../settings/application-settings.js'
+import { parseAgentSettings, parseAuthSettings, parseLoggingSettings } from '../settings/application-settings.js'
 import { publishAdminUsage } from '../admin/usage-events.js'
 import { PresetResolutionError, resolvePresetActions, type PresetResolutionModel } from './presets.js'
 import { attachmentsRequireAgentMode } from '../attachments/policy.js'
@@ -189,6 +190,7 @@ export async function createResponse(options: CreateResponseOptions) {
     ...options.input.attachmentIds,
     ...responseAttachmentIds(options.rawInput),
   ])]
+  if (attachmentIds.length > MAX_MESSAGE_ATTACHMENTS) throw new AppError(400, 'attachment_count_exceeded', `Messages support up to ${MAX_MESSAGE_ATTACHMENTS} attachments`)
   if (attachmentIds.length) {
     const ownedAttachments = await db.select().from(attachments).where(and(
       eq(attachments.userId, options.ownerUserId),
@@ -197,8 +199,9 @@ export async function createResponse(options: CreateResponseOptions) {
       or(isNull(attachments.chatId), eq(attachments.chatId, chat.id)),
     ))
     if (ownedAttachments.length !== attachmentIds.length) throw new AppError(400, 'attachment_not_ready', 'One or more attachments are unavailable')
-    if (!options.input.agentMode && attachmentsRequireAgentMode(ownedAttachments)) {
-      throw new AppError(400, 'attachment_requires_agent', 'Non-image attachments require Agent mode')
+    const [attachmentSettings] = await db.select().from(applicationSettings).where(eq(applicationSettings.key, 'auth')).limit(1)
+    if (!options.input.agentMode && attachmentsRequireAgentMode(ownedAttachments, parseAuthSettings(attachmentSettings?.value).maxInlineImages)) {
+      throw new AppError(400, 'attachment_requires_agent', 'These attachments require Agent mode: non-image files, large images, or too many images for a prompt')
     }
     await db.update(attachments).set({ chatId: chat.id, updatedAt: new Date() }).where(and(
       eq(attachments.userId, options.ownerUserId),
@@ -244,11 +247,12 @@ export async function createResponse(options: CreateResponseOptions) {
     await tx.execute(sql`select pg_advisory_xact_lock(1886747744)`)
     const [loggingRow] = await tx.select().from(applicationSettings).where(eq(applicationSettings.key, 'logging')).limit(1)
     const logging = parseLoggingSettings(loggingRow?.value)
-    const policy = detailedPayloadPolicy(logging)
+    const collectedAt = new Date()
+    const policy = detailedPayloadPolicy(logging, collectedAt)
     await tx.insert(requestLogs).values({
       id: requestLogId, responseId: id, userId: options.ownerUserId, actorUserId: options.actorUserId, apiKeyId: options.apiKeyId,
       origin: options.actorUserId ? 'admin_chat' : options.apiKeyId ? 'api' : 'web', requestedModelId: options.input.modelId, currentModelId: model.id,
-      ...policy,
+      ...policy, createdAt: collectedAt, updatedAt: collectedAt,
       requestPayload: policy.captureDetailedPayloads ? { input: storedInput, parameters: { ...(options.parameters ?? {}), ...resolved.parameters }, presetSelections: resolved.selections } : null,
     })
   })

@@ -53,7 +53,11 @@ export function applyFullBackupCompatibilityDefaults(database: Record<string, Ar
     user.avatar_object_key ??= null
     user.avatar_version ??= 0
   }
-  for (const provider of database.provider_connections ?? []) provider.tool_result_image_mode ??= 'native'
+  for (const provider of database.provider_connections ?? []) {
+    provider.tool_result_image_mode ??= 'native'
+    provider.convert_images_to_webp ??= false
+    provider.webp_quality ??= 80
+  }
   // Pre-chunking search indexes are version 1 and contain one chunk per turn.
   for (const generation of database.episodic_memory_generations ?? []) generation.index_version ??= 1
   for (const chunk of database.chat_turn_embeddings ?? []) chunk.chunk_index ??= 0
@@ -66,6 +70,11 @@ export function applyFullBackupCompatibilityDefaults(database: Record<string, Ar
     event.five_hour_cost_micros ??= 0
     event.inference_reference_cost_micros ??= 0
   }
+  scrubFullBackupDetailedPayloads(database)
+}
+
+/** Enforce payload deadlines on both new snapshots and restored archives. */
+export function scrubFullBackupDetailedPayloads(database: Record<string, Array<Record<string, unknown>>>): void {
   const loggingRow = (database.application_settings ?? []).find((row) => row.key === 'logging')
   const logging = loggingRow?.value && typeof loggingRow.value === 'object'
     ? loggingRow.value as Record<string, unknown>
@@ -94,13 +103,18 @@ export function applyFullBackupCompatibilityDefaults(database: Record<string, Ar
       || attempts.some((attempt) => attempt.request_payload != null || attempt.response_payload != null)
     let capture = log.capture_detailed_payloads === true
       || (log.capture_detailed_payloads == null && loggingEnabled && hasPayload)
+    // Never extend a stored deadline or revive expired bodies on restore.
+    const storedExpiry = log.payload_expires_at == null ? null : new Date(String(log.payload_expires_at)).getTime()
+    if (storedExpiry !== null && (!Number.isFinite(storedExpiry) || storedExpiry <= now)) capture = false
     if (capture && retention !== 'indefinite') {
       const createdAt = new Date(String(log.created_at)).getTime()
       const durationMs = retentionDurationMs[retention] ?? retentionDurationMs['7d']!
-      if (Number.isFinite(createdAt)) log.payload_expires_at = new Date(createdAt + durationMs).toISOString()
+      if (Number.isFinite(createdAt)) {
+        log.payload_expires_at = new Date(Math.min(createdAt + durationMs, storedExpiry ?? Infinity)).toISOString()
+      } else if (storedExpiry === null) capture = false
       const expiresAt = new Date(String(log.payload_expires_at)).getTime()
       if (Number.isFinite(expiresAt) && expiresAt <= now) capture = false
-    } else if (capture) log.payload_expires_at = null
+    } else if (capture && storedExpiry === null) log.payload_expires_at = null
     if (!loggingEnabled || !capture) {
       capture = false
       log.request_payload = null

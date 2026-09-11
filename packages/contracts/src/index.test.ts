@@ -146,6 +146,17 @@ describe('shared contracts', () => {
     expect(updateApiKeySchema.safeParse({}).success).toBe(false)
   })
 
+  it('defaults provider image conversion off and validates WebP quality', () => {
+    expect(createProviderSchema.parse({ name: 'Provider', apiKey: 'secret' })).toMatchObject({ convertImagesToWebp: false, webpQuality: 80 })
+    expect(updateProviderSchema.parse({ convertImagesToWebp: true, webpQuality: 75 })).toEqual({ convertImagesToWebp: true, webpQuality: 75 })
+    expect(updateProviderSchema.parse({ name: 'Renamed' })).not.toHaveProperty('convertImagesToWebp')
+    for (const webpQuality of [0, 101, 80.5, '80', null]) {
+      expect(updateProviderSchema.safeParse({ webpQuality }).success).toBe(false)
+      expect(createProviderSchema.safeParse({ name: 'Provider', apiKey: 'secret', webpQuality }).success).toBe(false)
+    }
+    for (const webpQuality of [1, 100]) expect(updateProviderSchema.safeParse({ webpQuality }).success).toBe(true)
+  })
+
   it('validates semantic provider cache configuration', () => {
     expect(createProviderSchema.parse({
       name: 'Fireworks',
