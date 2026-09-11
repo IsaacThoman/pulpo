@@ -5,6 +5,7 @@ import { emptyComposerState, type ComposerAck, type ComposerSnapshot, type Compo
 import { db } from '../database/client.js'
 import { attachments, chats, composerDrafts, composerDraftAttachments } from '../database/schema.js'
 import { accessibleChatCondition } from '../chats/temporary.js'
+import { composerAttachmentDelta } from './attachment-delta.js'
 
 type DraftRow = typeof composerDrafts.$inferSelect
 function snapshot(row: DraftRow): ComposerSnapshot {
@@ -40,13 +41,16 @@ export async function accessComposer(userId: string, draftId: string, write?: Co
     delete patch.temporary
     if (patch.attachments?.length) {
       const ids = [...new Set(patch.attachments.map((a) => a.id))]
-      const owned = await tx.select({ attachment: attachments }).from(attachments).leftJoin(chats, eq(chats.id, attachments.chatId)).where(and(
-        inArray(attachments.id, ids), eq(attachments.userId, userId), eq(attachments.status, 'ready'),
+      const existing = new Map(row!.state.attachments.map((item) => [item.id, item]))
+      const added = ids.filter((id) => !existing.has(id))
+      const owned = added.length ? await tx.select({ attachment: attachments }).from(attachments).leftJoin(chats, eq(chats.id, attachments.chatId)).where(and(
+        inArray(attachments.id, added), eq(attachments.userId, userId), eq(attachments.status, 'ready'),
         or(isNull(attachments.chatId), and(isNull(chats.deletedAt), accessibleChatCondition())),
-      )).for('share', { of: attachments })
-      if (owned.length !== ids.length) return { ok: false, error: 'attachment_unavailable' }
+      )).for('share', { of: attachments }) : []
+      if (owned.length !== added.length) return { ok: false, error: 'attachment_unavailable' }
       const byId = new Map(owned.map(({ attachment }) => [attachment.id, attachment]))
       patch.attachments = ids.map((id) => {
+        if (existing.has(id)) return existing.get(id)!
         const a = byId.get(id)!
         return { id, name: a.originalName, mimeType: a.mimeType, size: a.sizeBytes }
       })
@@ -58,8 +62,11 @@ export async function accessComposer(userId: string, draftId: string, write?: Co
       state, content: state.content, modelId: state.model?.id ?? '', presetSelections: state.model?.presets ?? {}, agentMode: state.agentMode, autoExpire: state.autoExpire, revision, clearedRevision: write.clear ? revision : row!.clearedRevision,
       mutationId: write.mutationId, expiresAt: write.clear ? null : expiresAt, updatedAt: new Date(),
     }).where(and(eq(composerDrafts.userId, userId), eq(composerDrafts.draftId, draftId))).returning()
-    await tx.delete(composerDraftAttachments).where(eq(composerDraftAttachments.draftId, row!.id))
-    if (state.attachments.length) await tx.insert(composerDraftAttachments).values(state.attachments.map((a, position) => ({ draftId: row!.id, attachmentId: a.id, position })))
+    const delta = composerAttachmentDelta(row!.state.attachments, state.attachments)
+    if (delta.remove.length) await tx.delete(composerDraftAttachments).where(and(
+      eq(composerDraftAttachments.draftId, row!.id), inArray(composerDraftAttachments.attachmentId, delta.remove),
+    ))
+    if (delta.insert.length) await tx.insert(composerDraftAttachments).values(delta.insert.map((item) => ({ draftId: row!.id, ...item })))
     return { ok: true, snapshot: snapshot(updated!) }
   })
 }

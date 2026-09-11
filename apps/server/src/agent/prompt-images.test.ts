@@ -3,6 +3,14 @@ import { describe, expect, it, vi } from 'vitest'
 import { loadAgentPromptImages, type AgentPromptImageAttachment } from './prompt-images.js'
 
 describe('agent prompt images', () => {
+  it('leaves large batches and large images in the workspace without reading their bytes', async () => {
+    const read = vi.fn()
+    const image = { id: 'id', originalName: 'photo.png', mimeType: 'image/png', objectKey: 'key', checksum: null, sizeBytes: 1 }
+    expect(await loadAgentPromptImages(Array.from({ length: 500 }, () => image), read)).toEqual([])
+    expect(await loadAgentPromptImages([image, image], read, 1)).toEqual([])
+    expect(await loadAgentPromptImages([{ ...image, sizeBytes: 1_000 * 1024 * 1024 }], read)).toEqual([])
+    expect(read).not.toHaveBeenCalled()
+  })
   it('loads only images in attachment order and normalizes their orientation', async () => {
     const rotated = await sharp({
       create: { width: 120, height: 80, channels: 3, background: '#2563eb' },

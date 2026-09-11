@@ -60,10 +60,10 @@ describe('importing into a hydrated new-chat composer', () => {
   it('handles rapid imports against the current composer count and releases overflow', async () => {
     const f = await fixture()
     await f.render(true)
-    await f.enqueue('1', '2', '3', '4', '5', '6', '7')
-    expect(f.draft.attachments).toHaveLength(6)
+    await f.enqueue(...Array.from({ length: 501 }, (_, index) => String(index)))
+    expect(f.draft.attachments).toHaveLength(500)
     expect(f.release).toHaveBeenCalledTimes(2)
-    expect(f.report).toHaveBeenCalledWith('You can attach up to 6 items.')
+    expect(f.report).toHaveBeenCalledWith('You can attach up to 500 items.')
   })
 
   it('keeps the import queued until the draft save succeeds', async () => {

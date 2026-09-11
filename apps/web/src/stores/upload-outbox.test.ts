@@ -387,3 +387,18 @@ describe('upload outbox', () => {
     expect(useUploadOutbox.getState().uploads.newer).toBeUndefined()
   })
 })
+
+
+it('recovers a confirmed reservation after a stale pending checkpoint without uploading another copy', async () => {
+  const ids = useUploadOutbox.getState().restoreDraftAttachments([{
+    localId: 'recovered', serverId: 'confirmed-before-reload', name: 'recovered.txt', size: 4,
+    mimeType: 'text/plain', status: 'uploading', file: new Blob(['test']),
+  }], { chatId, temporary: true })
+  expect(ids).toEqual(['recovered'])
+  await vi.waitFor(() => expect(requests).toHaveLength(1))
+  expect(requests[0]!.path).toBe('/api/attachments/confirmed-before-reload/confirm')
+  requests[0]!.resolve({ mimeType: 'text/plain' })
+  await vi.waitFor(() => expect(useUploadOutbox.getState().uploads.recovered?.status).toBe('ready'))
+  expect(useUploadOutbox.getState().uploads.recovered?.id).toBe('confirmed-before-reload')
+  expect(requests).toHaveLength(1)
+})

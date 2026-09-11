@@ -290,6 +290,7 @@ async function proxy(lease: Lease, request: IncomingMessage, pathname: string, s
     headers: {
       authorization: `Bearer ${lease.daemonToken}`,
       'content-type': request.headers['content-type'] ?? 'application/json',
+      ...(request.headers['x-pulpo-file-checksum'] ? { 'x-pulpo-file-checksum': String(request.headers['x-pulpo-file-checksum']) } : {}),
       ...(request.headers['content-length'] ? { 'content-length': request.headers['content-length'] } : {}),
     },
     ...(hasBody ? { body: request, duplex: 'half' as const } : {}),
