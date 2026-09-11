@@ -88,6 +88,10 @@ jobs:
         if: matrix.name == 'Test'
         run: python3 -m unittest discover -s infra/preview-maintenance -p 'test_*.py'
 
+      - name: Verify large backup serialization and restore with a constrained heap
+        if: matrix.name == 'Test'
+        run: npm run test:backup-memory -w @pulpo/server
+
       - name: Validate production deployment ordering
         run: python3 .github/scripts/deploy-production_test.py
 

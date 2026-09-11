@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { readFile, rm, mkdtemp } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { Readable } from 'node:stream'
 import { gunzipSync } from 'node:zlib'
 import tar from 'tar-stream'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -37,7 +38,7 @@ describe('backup archive', () => {
     temporaryDirectories.push(directory)
     const path = join(directory, 'backup.tar.gz')
     async function* entries(): AsyncGenerator<BackupArchiveEntry> {
-      yield { name: 'database.json', body: Buffer.from('{"users":[]}') }
+      yield { name: 'database.json', body: Readable.from(['{"users":', '[]}']), sizeBytes: 12 }
       yield { name: 'blobs/example', body: Buffer.from('attachment') }
       yield { name: 'manifest.json', body: Buffer.from('{"version":1}') }
     }
@@ -75,5 +76,36 @@ describe('backup archive', () => {
     }
 
     await expect(writeBackupArchive(path, entries())).rejects.toThrow('blob unavailable')
+  })
+
+  it('propagates input stream errors and closes the source', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'pulpo-backup-test-'))
+    temporaryDirectories.push(directory)
+    const source = Readable.from((async function* () { yield 'start'; throw new Error('source unavailable') })())
+    async function* entries(): AsyncGenerator<BackupArchiveEntry> {
+      yield { name: 'database.json', body: source, sizeBytes: 20 }
+    }
+    await expect(writeBackupArchive(join(directory, 'backup.tar.gz'), entries())).rejects.toThrow('source unavailable')
+    expect(source.destroyed).toBe(true)
+  })
+
+  it.each([2, 20])('rejects an entry whose declared size is %i but actual size is 5', async (sizeBytes) => {
+    const directory = await mkdtemp(join(tmpdir(), 'pulpo-backup-test-'))
+    temporaryDirectories.push(directory)
+    async function* entries(): AsyncGenerator<BackupArchiveEntry> {
+      yield { name: 'database.json', body: Readable.from(['12345']), sizeBytes }
+    }
+    await expect(writeBackupArchive(join(directory, 'backup.tar.gz'), entries())).rejects.toThrow(/size mismatch/i)
+  })
+
+  it('aborts a stalled input stream when archive output fails', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'pulpo-backup-test-'))
+    temporaryDirectories.push(directory)
+    const source = new Readable({ read() { /* Wait indefinitely for input. */ } })
+    async function* entries(): AsyncGenerator<BackupArchiveEntry> {
+      yield { name: 'database.json', body: source, sizeBytes: 20 }
+    }
+    await expect(writeBackupArchive(directory, entries())).rejects.toMatchObject({ code: 'EEXIST' })
+    expect(source.destroyed).toBe(true)
   })
 })
