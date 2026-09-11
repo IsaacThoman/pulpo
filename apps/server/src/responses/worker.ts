@@ -32,7 +32,7 @@ import { runPostResponseTasks } from './post-tasks.js'
 import { EMPTY_USAGE, providerReportedCostMicros, trackBilledInternalModelCall } from './model-calls.js'
 import { providerCacheRequestOptions } from './provider-cache.js'
 import { createModelImageInterceptor, interceptOpenAIInputImages, type ModelImageInterceptor } from './image-ocr.js'
-import { modelImageRendition } from './model-image.js'
+import { modelImageRendition, type ProviderImageOptions } from './model-image.js'
 import { sanitizeContextForStorage, sanitizeOutputForClient } from './public-output.js'
 import { COMPACTION_PROMPT, compactConversation, retainedEntries } from './compaction.js'
 import { shouldCompactContext } from './compaction-policy.js'
@@ -155,9 +155,9 @@ async function persistItems(responseId: string, output: unknown[]): Promise<void
   })
 }
 
-async function prepareInputFiles(client: OpenAI, userId: string, input: unknown[], model: typeof models.$inferSelect, interceptor: ModelImageInterceptor): Promise<unknown[]> {
+async function prepareInputFiles(client: OpenAI, userId: string, input: unknown[], model: typeof models.$inferSelect, interceptor: ModelImageInterceptor, provider: ProviderImageOptions): Promise<unknown[]> {
   const prepared: unknown[] = []
-  const normalizedInput = await interceptOpenAIInputImages(input, model, interceptor)
+  const normalizedInput = await interceptOpenAIInputImages(input, model, interceptor, provider)
   for (const item of normalizedInput) {
     const typed = item as { content?: unknown[] }
     if (!Array.isArray(typed.content)) {
@@ -179,8 +179,9 @@ async function prepareInputFiles(client: OpenAI, userId: string, input: unknown[
       const bytes = await getBlobStore().get(attachment.objectKey)
       if (attachment.mimeType.startsWith('image/')) {
         const rendition = await modelImageRendition(bytes, attachment.mimeType, attachment.checksum)
-        const dataUrl = `data:${rendition.mimeType};base64,${rendition.data.toString('base64')}`
         const text = await interceptor.intercept(model, { data: rendition.data, mimeType: rendition.mimeType, label: attachment.originalName, attachmentId: attachment.id, sourceChecksum: attachment.checksum })
+        const outgoing = text === null ? await modelImageRendition(bytes, attachment.mimeType, attachment.checksum, provider) : rendition
+        const dataUrl = `data:${outgoing.mimeType};base64,${outgoing.data.toString('base64')}`
         content.push(text === null ? { type: 'input_image', image_url: dataUrl } : { type: 'input_text', text })
         continue
       }
@@ -730,7 +731,7 @@ async function processGenerationAttempt(
     const [updated] = await db.select().from(responses).where(eq(responses.id, responseId)).limit(1)
     if (updated) await publishSnapshot(toSnapshot(updated))
   }, (costMicros) => { sidecarCostMicros += costMicros })
-  const input = await prepareInputFiles(client, record.response.userId, contextual.input, record.model, imageInterceptor)
+  const input = await prepareInputFiles(client, record.response.userId, contextual.input, record.model, imageInterceptor, record.provider)
   const contextItems: unknown[] = [...recallItems, ...contextual.compactionItems]
   let output: unknown[] = [...contextItems]
   let outputStarted = generationOutputHasStarted(output)
