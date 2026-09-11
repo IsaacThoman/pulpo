@@ -324,7 +324,9 @@ export async function registerAdminUsageRoutes(app: FastifyInstance): Promise<vo
   app.get('/api/admin/usage/requests', async (request) => {
     requireAdmin(request)
     const input = querySchema.parse(request.query)
-    const rows = await db.select({ call: generationAttempts, log: requestLogs, user: { id: users.id, name: users.name, email: users.email }, apiKey: { id: apiKeys.id, name: apiKeys.name, prefix: apiKeys.prefix }, modelName: models.name })
+    // Captured agent payloads can be large and repeat across every model turn.
+    // Keep them out of the usage list query, which only needs request metadata.
+    const rows = await db.select({ call: generationAttempts, log: { id: requestLogs.id, responseId: requestLogs.responseId, stickyFallbackUsed: requestLogs.stickyFallbackUsed, ocrStatus: requestLogs.ocrStatus }, user: { id: users.id, name: users.name, email: users.email }, apiKey: { id: apiKeys.id, name: apiKeys.name, prefix: apiKeys.prefix }, modelName: models.name })
       .from(generationAttempts).innerJoin(requestLogs, eq(generationAttempts.requestLogId, requestLogs.id)).innerJoin(users, eq(requestLogs.userId, users.id)).leftJoin(apiKeys, eq(requestLogs.apiKeyId, apiKeys.id)).leftJoin(models, eq(generationAttempts.modelId, models.id))
       .where(and(...filters(input, true))).orderBy(desc(generationAttempts.startedAt)).limit(input.limit + 1)
     const page = rows.slice(0, input.limit).map(({ call, log, ...relations }) => ({
