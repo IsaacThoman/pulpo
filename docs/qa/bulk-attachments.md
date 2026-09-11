@@ -19,6 +19,7 @@ Validated September 10–11, 2026 on macOS with an isolated PostgreSQL 17 + pgve
 - Contracts: 98 tests; shared client core: 121 tests.
 - Server attachment/composer/prompt/staging checks: 45 tests; workspace controller: 18 tests.
 - Web production build, server/controller/daemon TypeScript builds, mobile typecheck, and repository lint passed.
+- A fresh Debug iOS simulator build succeeded for the iPhone 17 Pro / iOS 26.5 target. Simulator interaction was not verified: the Mac locked during the run and the UI tool could not unlock it.
 - The host runs Node 26. Web tests used `NODE_OPTIONS=--no-experimental-webstorage` so jsdom supplies browser storage; Node's experimental global otherwise shadows it. Tests initially timed out while an unrestricted native build saturated the host; they passed after limiting build and test parallelism.
 
 ## Reproduction and limits
