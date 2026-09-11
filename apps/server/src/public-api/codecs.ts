@@ -699,6 +699,9 @@ export class ChatCompletionStreamProjector extends CompletionStreamProjector {
     if (event.type === 'response.output_text.delta' && typeof payload.delta === 'string') {
       this.ensureRole(output)
       output.push(this.chunk({ content: payload.delta }))
+    } else if (event.type === 'response.refusal.delta' && typeof payload.delta === 'string') {
+      this.ensureRole(output)
+      output.push(this.chunk({ refusal: payload.delta }))
     } else if (event.type === 'response.output_item.added') {
       const item = record(payload.item)
       if (item?.type === 'function_call' && typeof item.name === 'string') {
