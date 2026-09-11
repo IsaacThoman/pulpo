@@ -1,10 +1,11 @@
+import { attachmentBatchRequiresAgent } from '@/lib/attachments'
 import { localComposerDraftId } from '@pulpo/client-core'
 import type { ComposerState } from '@pulpo/contracts'
 import { webComposerSync } from '@/lib/local-first/composer-sync'
 import { create } from 'zustand'
-import { attachmentValidationError } from '@pulpo/client-core'
+import { attachmentValidationError, createUploadQueue, retryBusyUpload } from '@pulpo/client-core'
 import type { Attachment } from '@/lib/types'
-import { apiRequest, authenticatedFetch } from '@/lib/api'
+import { ApiError, apiRequest, authenticatedFetch } from '@/lib/api'
 import { attachmentUploadErrorMessage } from '@/lib/attachment-upload-error'
 import { isSupportedImageFile, isSupportedImageMime, nonImageAttachmentRestriction } from '@/lib/attachments'
 import { cacheAttachmentBlob } from '@/lib/local-first/attachment-cache'
@@ -174,7 +175,7 @@ function persistDraftUpload(record: UploadRecord): void {
     mimeType: record.mimeType,
     status: record.status,
     error: record.error,
-    file: record.file,
+    file: record.status === 'ready' ? undefined : record.file,
   }).catch(() => undefined)
 }
 
@@ -188,50 +189,78 @@ function scheduleChat(chatId: string): void {
   queueMicrotask(() => void processChat(chatId))
 }
 
-async function uploadRecord(localId: string, attempt: number): Promise<void> {
+const enqueueUpload = createUploadQueue()
+
+function uploadRecord(localId: string, attempt: number): Promise<void> {
+  return enqueueUpload(() => performUploadRecord(localId, attempt))
+}
+
+async function performUploadRecord(localId: string, attempt: number): Promise<void> {
   const initial = useUploadOutbox.getState().uploads[localId]
   if (!initial?.file || initial.attempt !== attempt) return
   const file = initial.file
-  let reservedId: string | undefined
+  let reservedId: string | undefined = initial.id
   try {
-    const validation = attachmentValidationError({
-      name: file.name,
-      mimeType: file.type || 'application/octet-stream',
-      sizeBytes: file.size,
-    }, useAuth.getState().maxAttachmentBytes)
-    if (validation) throw new Error(validation)
-
-    const created = await apiRequest<{
-      attachment: { id: string }
-      uploadUrl: string
-      uploadHeaders: Record<string, string>
-    }>('/api/attachments', {
-      method: 'POST',
-      body: {
-        chatId: uploadChatId(initial),
-        originalName: file.name,
+    // A reload can outlive confirmation but precede its local checkpoint.
+    // Recover the same reservation before considering a new upload.
+    let confirmed: { mimeType: string } | undefined
+    if (reservedId) {
+      try { confirmed = await retryBusyUpload(() => apiRequest<{ mimeType: string }>(`/api/attachments/${reservedId}/confirm`, { method: 'POST' })) }
+      catch (error) {
+        if (!(error instanceof ApiError) || ![400, 404, 409].includes(error.status)) throw error
+        deleteRemoteAttachment(reservedId)
+        reservedId = undefined
+      }
+    }
+    if (!confirmed) {
+      const validation = attachmentValidationError({
+        name: file.name,
         mimeType: file.type || 'application/octet-stream',
         sizeBytes: file.size,
-      },
-    })
-    reservedId = created.attachment.id
-    const current = useUploadOutbox.getState().uploads[localId]
-    if (!current || current.attempt !== attempt) {
-      deleteRemoteAttachment(reservedId)
-      return
-    }
-    useUploadOutbox.setState((state) => ({
-      uploads: { ...state.uploads, [localId]: { ...state.uploads[localId]!, id: reservedId } },
-    }))
+      }, useAuth.getState().maxAttachmentBytes)
+      if (validation) throw new Error(validation)
 
-    const upload = await authenticatedFetch(created.uploadUrl, {
-      method: 'PUT',
-      body: file,
-      headers: created.uploadHeaders,
-      credentials: created.uploadUrl.startsWith('/api/') ? 'include' : 'omit',
-    })
-    if (!upload.ok) throw new Error(`Upload failed (${upload.status})`)
-    const confirmed = await apiRequest<{ mimeType: string }>(`/api/attachments/${reservedId}/confirm`, { method: 'POST' })
+      const created = await apiRequest<{
+        attachment: { id: string }
+        uploadUrl: string
+        uploadHeaders: Record<string, string>
+      }>('/api/attachments', {
+        method: 'POST',
+        body: {
+          chatId: uploadChatId(initial),
+          originalName: file.name,
+          mimeType: file.type || 'application/octet-stream',
+          sizeBytes: file.size,
+        },
+      })
+      reservedId = created.attachment.id
+      const current = useUploadOutbox.getState().uploads[localId]
+      if (!current || current.attempt !== attempt) {
+        deleteRemoteAttachment(reservedId)
+        return
+      }
+      useUploadOutbox.setState((state) => ({
+        uploads: { ...state.uploads, [localId]: { ...state.uploads[localId]!, id: reservedId } },
+      }))
+
+      persistDraftUpload(useUploadOutbox.getState().uploads[localId]!)
+      const upload = await retryBusyUpload(async () => {
+        const response = await authenticatedFetch(created.uploadUrl, {
+          method: 'PUT',
+          body: file,
+          headers: created.uploadHeaders,
+          credentials: created.uploadUrl.startsWith('/api/') ? 'include' : 'omit',
+        })
+        if (response.status === 503) {
+          await response.body?.cancel()
+          throw Object.assign(new Error('Attachment processing is busy'), { status: 503 })
+        }
+        return response
+      })
+      if (!upload.ok) throw new Error(`Upload failed (${upload.status})`)
+      confirmed = await retryBusyUpload(() => apiRequest<{ mimeType: string }>(`/api/attachments/${reservedId}/confirm`, { method: 'POST' }))
+    }
+    if (!reservedId) throw new Error('Attachment reservation is unavailable')
     const latest = useUploadOutbox.getState().uploads[localId]
     if (!latest || latest.attempt !== attempt) {
       deleteRemoteAttachment(reservedId)
@@ -290,7 +319,7 @@ function recoverSubmission(submission: PendingSubmission, message?: string): voi
 }
 
 function restrictionMessage(submission: PendingSubmission, records: UploadRecord[]): string | null {
-  const hasNonImage = records.some((record) => !isSupportedImageMime(record.mimeType))
+  const hasNonImage = attachmentBatchRequiresAgent(records, useAuth.getState().maxInlineImages)
   const model = getCatalogModel(submission.modelId)
   const restriction = nonImageAttachmentRestriction({
     hasNonImage,
@@ -298,9 +327,9 @@ function restrictionMessage(submission: PendingSubmission, records: UploadRecord
     agentAvailable: useCatalog.getState().agentAvailable,
     agentCapable: Boolean(model.agentEnabled),
   })
-  if (restriction === 'enable_agent') return ui("Enable Agent mode before sending this non-image attachment.")
-  if (restriction === 'model_not_capable') return ui("Switch to an Agent-capable model or remove the non-image attachment.")
-  if (restriction === 'agent_unavailable') return ui("Agent mode is unavailable. Remove the non-image attachment to continue.")
+  if (restriction === 'enable_agent') return ui("Enable Agent mode before sending these attachments.")
+  if (restriction === 'model_not_capable') return ui("Switch to an Agent-capable model or reduce these attachments.")
+  if (restriction === 'agent_unavailable') return ui("Agent mode is unavailable. Reduce these attachments to continue.")
   return null
 }
 
@@ -480,7 +509,7 @@ export const useUploadOutbox = create<UploadOutboxState>()((set, get) => ({
       const ready = Boolean(attachment.serverId) && attachment.status === 'ready'
       return {
         localId: attachment.localId,
-        id: ready ? attachment.serverId : undefined,
+        id: attachment.serverId,
         name: attachment.name,
         size: attachment.size,
         mimeType: attachment.mimeType,
@@ -499,8 +528,6 @@ export const useUploadOutbox = create<UploadOutboxState>()((set, get) => ({
     }))
     for (const record of records) {
       if (record.status === 'uploading') {
-        const stale = attachments.find((attachment) => attachment.localId === record.localId)?.serverId
-        if (stale) deleteRemoteAttachment(stale)
         void uploadRecord(record.localId, record.attempt)
       }
     }

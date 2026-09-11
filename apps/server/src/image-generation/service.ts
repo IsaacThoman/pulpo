@@ -1,6 +1,6 @@
 import { basename, extname } from 'node:path'
 import { and, eq, inArray } from 'drizzle-orm'
-import { imageGenerationPreferencesSchema, imageModelSchema, IMAGE_GENERATION_MAX_BYTES, type ImageGenerationInput, type ImageModel } from '@pulpo/contracts'
+import { imageGenerationPreferencesSchema, imageModelSchema, IMAGE_GENERATION_MAX_BYTES, IMAGE_PROVIDER_CAPABILITIES, type ImageGenerationInput, type ImageModel } from '@pulpo/contracts'
 import { db } from '../database/client.js'
 import { attachments, imageGenerationRequests, imageModels, providerConnections, toolExecutions, userPreferences } from '../database/schema.js'
 import { getBlobStore } from '../storage/index.js'
@@ -32,7 +32,7 @@ async function attachmentReference(attachment: typeof attachments.$inferSelect, 
   const data = await getBlobStore().get(attachment.objectKey)
   const mimeType = await validateImageBytes(data)
   const [prior] = await db.select().from(imageGenerationRequests).where(and(eq(imageGenerationRequests.attachmentId, attachment.id), eq(imageGenerationRequests.status, 'completed'))).limit(1)
-  const compatible = prior?.model.adapter === 'meta-muse' && model.adapter === 'meta-muse'
+  const compatible = IMAGE_PROVIDER_CAPABILITIES[model.adapter].supportsImageItemReplay && prior?.model.adapter === model.adapter
     && prior.model.providerConnectionId === model.providerConnectionId && prior.model.upstreamModelId === model.upstreamModelId
   return { data, mimeType, ...(compatible && prior.result?.imageItem ? { priorImageItem: prior.result.imageItem } : {}) }
 }

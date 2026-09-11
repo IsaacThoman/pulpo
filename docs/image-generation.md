@@ -10,10 +10,16 @@ same encrypted provider connections as chat and speech. Apply migration
    For Azure, use the Foundry resource root, such as
    `https://YOUR-RESOURCE.services.ai.azure.com`, or that URL plus `/mai/v1`.
    For Meta, use `https://api.meta.ai/v1`.
-2. Add an image model. Choose **Azure MAI** or **Meta Muse** to populate a disabled
-   preset. Set a stable local ID, display name, provider, and sort order.
+   For OpenAI, use `https://api.openai.com/v1` and an OpenAI API key with access
+   to GPT Image models. An existing OpenAI chat or speech connection can be reused.
+2. Add an image model. Choose **Azure MAI**, **Meta Muse**, or **OpenAI Images**
+   to populate a disabled preset. Set a stable local ID, display name, provider,
+   and sort order.
 3. For MAI-Image-2.6-Flash, enter your deployed model's **deployment name**.
    For Muse, use the upstream model ID `muse-image-1.0`.
+   OpenAI defaults to `gpt-image-2.5-flare`; the upstream model ID is editable,
+   for example to use `gpt-image-2.5-sunburst`. This adapter targets GPT Image
+   models that support generation and editing, not legacy DALL-E models.
 4. Optionally enable **Bill users for images** and set a USD price per image.
    This is the Pulpo user charge; it is not automatically synchronized with the
    provider's pricing. Billing is disabled by default.
@@ -35,6 +41,22 @@ It sends `/v1/responses` requests with `store: false`, extracts
 bytes locally for follow-up edits. It does not depend on a provider-held
 conversation. Pulpo accepts up to four PNG, JPEG, or WebP references for Muse.
 Generation and reasoning options remain at provider defaults.
+
+The OpenAI adapter follows the [OpenAI Image API](https://developers.openai.com/api/docs/guides/image-generation):
+JSON generations at `/v1/images/generations`, multipart edits at
+`/v1/images/edits`, and bearer authentication. Pulpo requests one 1024 × 1024 PNG
+with quality left at the provider default. Edits upload up to four PNG, JPEG,
+or WebP references using `image[]`, including saved attachments from earlier
+turns. No Responses API conversation or additional text model is required.
+Returned token usage is saved as operation metadata; user billing remains the
+configured flat charge per saved image, independent of upstream token costs.
+
+All three adapters share the agent tool, encrypted provider connections,
+timeouts, image validation, attachment storage, and billing/recovery flow.
+Provider capabilities determine input formats, reference limits, and whether
+prior image items can be replayed. The tool advertises the selected provider's
+reference limits. Adding OpenAI requires no database migration or changes to
+existing Azure and Meta entries; admins must explicitly add and enable it.
 
 ## User settings and tool inputs
 

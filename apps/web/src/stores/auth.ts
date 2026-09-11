@@ -6,7 +6,7 @@ import { apiRequest, ApiError } from '@/lib/api'
 import { clearLocalUserData } from '@/lib/local-first/database'
 import { clearRuntimeComposerDrafts } from '@/lib/local-first/composer-drafts'
 import { queryClient } from '@/lib/query-client'
-import { DEFAULT_MAX_ATTACHMENT_BYTES, type MobileConfig, type NativeAuthResponse, type PasskeyCeremony } from '@pulpo/contracts'
+import { DEFAULT_MAX_INLINE_IMAGES, DEFAULT_MAX_ATTACHMENT_BYTES, type MobileConfig, type NativeAuthResponse, type PasskeyCeremony } from '@pulpo/contracts'
 import { authenticateWithPasskey, passkeyErrorMessage } from '@/lib/passkeys'
 import { normalizeInstanceUrl } from '@pulpo/client-core'
 import { authenticateDesktopPasskey, DesktopPasskeyCancelledError } from '@/lib/desktop-passkeys'
@@ -47,6 +47,7 @@ interface PublicAuthSettings {
   adminEmail: string
   pendingMessage: string
   apiKeysEnabled: boolean
+  maxInlineImages: number
   maxAttachmentBytes: number
   billingEnabled: boolean
   inviteCodesEnabled: boolean
@@ -65,6 +66,7 @@ interface AuthState {
   adminEmail: string
   pendingMessage: string
   apiKeysEnabled: boolean
+  maxInlineImages: number
   maxAttachmentBytes: number
   billingEnabled: boolean
   inviteCodesEnabled: boolean
@@ -127,6 +129,7 @@ export const useAuth = create<AuthState>()((set, get) => ({
   adminEmail: '',
   pendingMessage: 'Your account is pending approval. An admin will review it shortly.',
   apiKeysEnabled: true,
+  maxInlineImages: DEFAULT_MAX_INLINE_IMAGES,
   maxAttachmentBytes: DEFAULT_MAX_ATTACHMENT_BYTES,
   billingEnabled: false,
   inviteCodesEnabled: false,
@@ -194,6 +197,7 @@ export const useAuth = create<AuthState>()((set, get) => ({
           pendingMessage: config.auth.pendingMessage,
           apiKeysEnabled: true,
           maxAttachmentBytes: config.limits.maxAttachmentBytes,
+          maxInlineImages: config.limits.maxInlineImages ?? DEFAULT_MAX_INLINE_IMAGES,
           billingEnabled: false,
           inviteCodesEnabled: config.auth.inviteCodesEnabled,
           codexEnabled: false,
@@ -264,6 +268,7 @@ export const useAuth = create<AuthState>()((set, get) => ({
         pendingMessage: get().pendingMessage,
         apiKeysEnabled: get().apiKeysEnabled,
         maxAttachmentBytes: get().maxAttachmentBytes,
+        maxInlineImages: get().maxInlineImages,
         billingEnabled: get().billingEnabled,
         inviteCodesEnabled: get().inviteCodesEnabled,
         codexEnabled: false,
@@ -429,6 +434,7 @@ export const useAuth = create<AuthState>()((set, get) => ({
         pendingMessage: config.auth.pendingMessage,
         apiKeysEnabled: true,
         maxAttachmentBytes: config.limits.maxAttachmentBytes,
+        maxInlineImages: config.limits.maxInlineImages ?? DEFAULT_MAX_INLINE_IMAGES,
         billingEnabled: false,
         inviteCodesEnabled: config.auth.inviteCodesEnabled,
         codexEnabled: false,

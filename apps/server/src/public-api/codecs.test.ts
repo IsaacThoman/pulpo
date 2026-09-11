@@ -224,6 +224,18 @@ describe('public response serialization', () => {
 })
 
 describe('completion streaming projections', () => {
+  it('preserves refusal deltas instead of returning an empty successful stream', () => {
+    const projector = new ChatCompletionStreamProjector(responseRow(), false)
+    const chunks = [
+      ...projector.project(event(1, 'response.refusal.delta', { delta: 'I cannot ' })),
+      ...projector.project(event(2, 'response.refusal.delta', { delta: 'help with that.' })),
+      ...projector.project(event(3, 'response.completed', { response: { status: 'completed' } })),
+    ] as Array<{ choices: Array<{ delta: { role?: string; refusal?: string }; finish_reason: string | null }> }>
+    expect(chunks[0]!.choices[0]!.delta.role).toBe('assistant')
+    expect(chunks.map(chunk => chunk.choices[0]!.delta.refusal ?? '').join('')).toBe('I cannot help with that.')
+    expect(chunks.at(-1)!.choices[0]!.finish_reason).toBe('stop')
+    expect(projector.finish(responseRow())).toEqual([])
+  })
   it('projects Responses events with Pulpo identity and a single terminal event', () => {
     const projector = new ResponsesStreamProjector(responseRow())
     expect(projector.project(event(1, 'response.created', {
