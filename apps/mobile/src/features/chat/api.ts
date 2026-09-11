@@ -1,9 +1,10 @@
+import { fetch as expoFetch } from 'expo/fetch'
 import { deviceTimeZone } from '@pulpo/client-core'
 import { mobileChatStarted } from './chatStarted'
 import { Directory, File, Paths } from 'expo-file-system'
 import * as Crypto from 'expo-crypto'
 import * as Sharing from 'expo-sharing'
-import { attachmentValidationError } from '@pulpo/client-core'
+import { attachmentValidationError, createUploadQueue, retryBusyUpload } from '@pulpo/client-core'
 import type { ResponseSnapshot } from '@pulpo/contracts'
 import { apiOrigin, apiRequest, apiUrl, isNetworkError, nativeAuthorizationHeaders } from '../../api/client'
 import { cacheNamespace, cachedAttachmentUri, recordCachedAttachment, removeCachedAttachment } from '../../data/database'
@@ -304,7 +305,13 @@ export async function shareChat(id: string): Promise<string> {
   return `${apiOrigin()}/share/${result.token}`
 }
 
-export async function uploadAttachment(draft: AttachmentDraft, chatId: string | null, assertSession: () => Promise<void> = async () => {}): Promise<ServerAttachment> {
+const enqueueUpload = createUploadQueue()
+
+export function uploadAttachment(draft: AttachmentDraft, chatId: string | null, assertSession: () => Promise<void> = async () => {}): Promise<ServerAttachment> {
+  return enqueueUpload(() => performAttachmentUpload(draft, chatId, assertSession))
+}
+
+async function performAttachmentUpload(draft: AttachmentDraft, chatId: string | null, assertSession: () => Promise<void>): Promise<ServerAttachment> {
   await assertSession()
   const maxAttachmentBytes = useSessionStore.getState().config?.limits?.maxAttachmentBytes
   const validation = attachmentValidationError(
@@ -324,14 +331,19 @@ export async function uploadAttachment(draft: AttachmentDraft, chatId: string | 
     await assertSession()
     const file = new File(draft.uri)
     const uploadUrl = apiUrl(reservation.uploadUrl)
-    const result = await file.upload(uploadUrl, {
-      httpMethod: 'PUT',
-      mimeType: draft.mimeType,
-      headers: { ...reservation.uploadHeaders, ...nativeAuthorizationHeaders(uploadUrl) },
+    const result = await retryBusyUpload(async () => {
+      await assertSession()
+      const response = await file.upload(uploadUrl, {
+        httpMethod: 'PUT',
+        mimeType: draft.mimeType,
+        headers: { ...reservation.uploadHeaders, ...nativeAuthorizationHeaders(uploadUrl) },
+      })
+      if (response.status === 503) throw Object.assign(new Error('Attachment processing is busy'), { status: 503 })
+      return response
     })
     if (result.status < 200 || result.status >= 300) throw new Error(`Upload failed (${result.status})`)
     await assertSession()
-    const confirmed = await apiRequest<ServerAttachment>(`/api/attachments/${reservation.attachment.id}/confirm`, { method: 'POST' })
+    const confirmed = await retryBusyUpload(() => apiRequest<ServerAttachment>(`/api/attachments/${reservation.attachment.id}/confirm`, { method: 'POST' }))
     await cacheUploadedAttachment(
       confirmed.id,
       confirmed.originalName || draft.name,
@@ -388,6 +400,7 @@ export async function cacheUploadedAttachment(id: string, name: string, sourceUr
   await recordDownloadedAttachment(cacheNamespace(instanceUrl, user.id), id, destination)
 }
 
+const enqueueDownload = createUploadQueue(2)
 const activeAttachmentDownloads = new Map<string, Promise<File>>()
 const activeAttachmentThumbnails = new Map<string, Promise<File>>()
 
@@ -395,7 +408,7 @@ export function downloadAttachment(id: string, name: string): Promise<File> {
   const key = `${apiOrigin()}:${id}`
   const existing = activeAttachmentDownloads.get(key)
   if (existing) return existing
-  const pending = downloadAttachmentOnce(id, name)
+  const pending = enqueueDownload(() => downloadAttachmentOnce(id, name))
   activeAttachmentDownloads.set(key, pending)
   void pending.then(
     () => activeAttachmentDownloads.delete(key),
@@ -432,19 +445,33 @@ async function downloadAttachmentOnce(id: string, name: string): Promise<File> {
   return file
 }
 
+const enqueueThumbnail = createUploadQueue(2)
+
 export function downloadAttachmentThumbnail(id: string): Promise<File> {
-  const key = `${apiOrigin()}:${id}`
+  const { instanceUrl, user } = useSessionStore.getState()
+  const namespace = user ? cacheNamespace(instanceUrl, user.id) : null
+  const key = `${namespace}:${id}`
   const existing = activeAttachmentThumbnails.get(key)
   if (existing) return existing
-  const pending = (async () => {
-    const destination = new File(Paths.cache, safeAttachmentFilename(`${id}-thumbnail.webp`))
+  const pending = enqueueThumbnail(async () => {
+    const owner = useSessionStore.getState()
+    if (!namespace || !owner.user || cacheNamespace(owner.instanceUrl, owner.user.id) !== namespace) throw new Error('The attachment session ended.')
+    const cacheKey = await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, key)
+    const destination = new File(Paths.cache, `${cacheKey}-thumbnail.webp`)
     if (destination.exists) return destination
     const url = apiUrl(`/api/attachments/${id}/thumbnail`)
-    return File.downloadFileAsync(url, destination, {
-      idempotent: true,
-      headers: nativeAuthorizationHeaders(url),
+    const response = await retryBusyUpload(async () => {
+      const current = useSessionStore.getState()
+      if (!current.user || cacheNamespace(current.instanceUrl, current.user.id) !== namespace) throw new Error('The attachment session ended.')
+      const result = await expoFetch(url, { headers: nativeAuthorizationHeaders(url) })
+      if (!result.ok) throw Object.assign(new Error(`Image preview failed (${result.status})`), { status: result.status })
+      return result
     })
-  })()
+    const bytes = new Uint8Array(await response.arrayBuffer())
+    destination.write(bytes)
+    await recordDownloadedAttachment(namespace, `thumbnail:${id}`, destination)
+    return destination
+  })
   activeAttachmentThumbnails.set(key, pending)
   void pending.then(
     () => activeAttachmentThumbnails.delete(key),

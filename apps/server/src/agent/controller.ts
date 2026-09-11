@@ -1,3 +1,4 @@
+import { stageWorkspaceAttachments } from './stage-attachments.js'
 import { and, asc, eq, inArray, isNotNull, lte, or } from 'drizzle-orm'
 import { parseAgentSettings } from '../settings/application-settings.js'
 import { applicationSettings, attachments, responses, workspaceLeases } from '../database/schema.js'
@@ -178,15 +179,9 @@ export class WorkspaceManager {
       eq(attachments.chatId, this.chatId),
       eq(attachments.status, 'ready'),
     )).orderBy(asc(attachments.createdAt), asc(attachments.id))
-    for (const attachment of rows) {
-      const path = restoredAttachmentWorkspacePath(attachment)
-      await this.request(`/v1/leases/${this.controllerLeaseId}/v1/files?path=${encodeURIComponent(path)}`, {
-        method: 'PUT',
-        headers: { 'content-type': attachment.mimeType, 'content-length': String(attachment.sizeBytes) },
-        body: await getBlobStore().getStream(attachment.objectKey),
-        duplex: 'half',
-      })
-    }
+    await stageWorkspaceAttachments(rows.map((attachment) => ({ ...attachment, path: restoredAttachmentWorkspacePath(attachment) })),
+      (path, init) => this.request(`/v1/leases/${this.controllerLeaseId}${path}`, init),
+      (key) => getBlobStore().getStream(key))
     this.staged = true
   }
 

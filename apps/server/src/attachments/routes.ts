@@ -1,3 +1,5 @@
+import { ThumbnailCache } from './thumbnail-cache.js'
+import { attachmentRateLimit, withAttachmentCapacity } from './capacity.js'
 import { shelfAttachmentIsLive } from '../shelf/routes.js'
 import { composerAttachmentIsLive } from '../composer/service.js'
 import { and, eq, isNull, or } from 'drizzle-orm'
@@ -57,7 +59,7 @@ export async function registerAttachmentRoutes(app: FastifyInstance): Promise<vo
     return getStorageUsage(user.id)
   })
 
-  app.post('/api/attachments', async (request, reply) => {
+  app.post('/api/attachments', { config: attachmentRateLimit }, async (request, reply) => {
     const user = requireUser(request)
     const input = z.object({
       chatId: z.uuid().nullable().default(null), originalName: z.string().trim().min(1).max(255),
@@ -86,7 +88,7 @@ export async function registerAttachmentRoutes(app: FastifyInstance): Promise<vo
     return { attachment: created, uploadUrl, uploadHeaders: { 'content-type': attachmentUploadContentType(storageDriver, input.mimeType) } }
   })
 
-  app.put('/api/attachments/local-upload/:key', async (request, reply) => {
+  app.put('/api/attachments/local-upload/:key', { config: attachmentRateLimit }, withAttachmentCapacity(16, async (request, reply) => {
     const user = requireUser(request)
     if (getConfig().STORAGE_DRIVER !== 'local') throw notFound('Upload')
     const { key } = request.params as { key: string }
@@ -125,9 +127,9 @@ export async function registerAttachmentRoutes(app: FastifyInstance): Promise<vo
       throw new AppError(403, 'account_deleting', 'Account deletion has started')
     }
     reply.code(204).send()
-  })
+  }))
 
-  app.post('/api/attachments/:id/confirm', async (request) => {
+  app.post('/api/attachments/:id/confirm', { config: attachmentRateLimit }, withAttachmentCapacity(8, async (request) => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
     const [result] = await db.select({ attachment: attachments }).from(attachments)
@@ -139,6 +141,8 @@ export async function registerAttachmentRoutes(app: FastifyInstance): Promise<vo
       )).limit(1)
     const attachment = result?.attachment
     if (!attachment) throw notFound('Attachment')
+    if (attachment.status === 'ready') return attachment
+    if (attachment.status !== 'pending') throw new AppError(409, 'attachment_not_pending', 'Attachment is not awaiting upload')
     try {
       const inspected = await inspectAttachmentStream(await getBlobStore().getStream(attachment.objectKey), attachment.sizeBytes)
       const checksum = inspected.checksum
@@ -149,9 +153,9 @@ export async function registerAttachmentRoutes(app: FastifyInstance): Promise<vo
       await db.update(attachments).set({ status: 'failed', error: cause instanceof Error ? cause.message : 'Validation failed', updatedAt: new Date() }).where(eq(attachments.id, id))
       throw new AppError(400, 'attachment_validation_failed', 'Attachment validation failed')
     }
-  })
+  }))
 
-  app.get('/api/attachments/:id/download', async (request) => {
+  app.get('/api/attachments/:id/download', { config: attachmentRateLimit }, async (request) => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
     const attachment = await readyAttachment(user.id, id)
@@ -159,7 +163,8 @@ export async function registerAttachmentRoutes(app: FastifyInstance): Promise<vo
     return { url: await getBlobStore().createDownloadUrl(attachment.objectKey, 300) }
   })
 
-  app.get('/api/attachments/:id/thumbnail', async (request, reply) => {
+  const thumbnails = new ThumbnailCache()
+  app.get('/api/attachments/:id/thumbnail', { config: attachmentRateLimit }, async (request, reply) => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
     const attachment = await readyAttachment(user.id, id)
@@ -168,15 +173,17 @@ export async function registerAttachmentRoutes(app: FastifyInstance): Promise<vo
     reply.header('cache-control', 'private, max-age=31536000, immutable').header('etag', etag)
     if (request.headers['if-none-match'] === etag) return reply.code(304).send()
     try {
-      const thumbnail = await createAttachmentThumbnail(await getBlobStore().getStream(attachment.objectKey))
+      const thumbnail = await thumbnails.get(`${user.id}:${attachment.id}:${etag}`,
+        async () => createAttachmentThumbnail(await getBlobStore().getStream(attachment.objectKey)))
       return reply.type('image/webp').send(thumbnail)
     } catch (cause) {
+      if (cause instanceof AppError && cause.statusCode === 503) { reply.header('retry-after', '2'); throw cause }
       request.log.warn({ err: cause, attachmentId: attachment.id }, 'Attachment thumbnail failed')
       throw new AppError(422, 'attachment_thumbnail_failed', 'Image preview could not be generated')
     }
   })
 
-  app.get('/api/attachments/local-download/:key', async (request, reply) => {
+  app.get('/api/attachments/local-download/:key', { config: attachmentRateLimit }, async (request, reply) => {
     const user = requireUser(request)
     if (getConfig().STORAGE_DRIVER !== 'local') throw notFound('Download')
     const { key } = request.params as { key: string }
@@ -194,7 +201,7 @@ export async function registerAttachmentRoutes(app: FastifyInstance): Promise<vo
     return reply.send(await getBlobStore().getStream(key))
   })
 
-  app.delete('/api/attachments/:id', async (request, reply) => {
+  app.delete('/api/attachments/:id', { config: attachmentRateLimit }, async (request, reply) => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
     await db.transaction(async (tx) => {

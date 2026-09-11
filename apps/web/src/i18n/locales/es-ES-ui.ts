@@ -1,4 +1,13 @@
 const esUi: Record<string, string> = {
+  "Maximum images in a prompt": "Máximo de imágenes en una solicitud",
+  "Enable Agent mode before sending these attachments.": "Activa el modo agente antes de enviar estos archivos adjuntos.",
+  "Switch to an Agent-capable model or reduce these attachments.": "Cambia a un modelo compatible con el modo agente o reduce estos archivos adjuntos.",
+  "Agent mode is unavailable. Reduce these attachments to continue.": "El modo agente no está disponible. Reduce estos archivos adjuntos para continuar.",
+  "Attachment pages": "Páginas de archivos adjuntos",
+  "Previous": "Anterior",
+  "Next": "Siguiente",
+  "{{0}}–{{1}} of {{2}} files": "{{0}}–{{1}} de {{2}} archivos",
+  "{{0}} more files": "{{0}} archivos más",
   "Unable to save image model": "No se pudo guardar el modelo de imágenes",
   "Loading models…": "Cargando modelos…",
   "Generating an image…": "Generando una imagen…",

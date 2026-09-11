@@ -1,3 +1,4 @@
+import { imageBatchNeedsWorkspace, DEFAULT_MAX_INLINE_IMAGES } from '@pulpo/contracts'
 import type { ImageContent } from '@earendil-works/pi-ai'
 import { getBlobStore } from '../storage/index.js'
 import { modelImageRendition } from '../responses/model-image.js'
@@ -14,6 +15,7 @@ export interface AgentPromptImageAttachment {
   mimeType: string
   objectKey: string
   checksum: string | null
+  sizeBytes?: number
 }
 
 type ReadAttachment = (objectKey: string) => Promise<Uint8Array>
@@ -21,7 +23,10 @@ type ReadAttachment = (objectKey: string) => Promise<Uint8Array>
 export async function loadAgentPromptImages(
   attachments: readonly AgentPromptImageAttachment[],
   readAttachment: ReadAttachment = (objectKey) => getBlobStore().get(objectKey),
+  maxInlineImages = DEFAULT_MAX_INLINE_IMAGES,
 ): Promise<AgentPromptImage[]> {
+  const imageAttachments = attachments.filter((attachment) => attachment.mimeType.startsWith('image/'))
+  if (imageBatchNeedsWorkspace(imageAttachments, maxInlineImages)) return []
   const images: AgentPromptImage[] = []
   for (const attachment of attachments) {
     if (!attachment.mimeType.startsWith('image/')) continue

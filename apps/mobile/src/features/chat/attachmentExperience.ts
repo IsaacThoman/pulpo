@@ -1,4 +1,6 @@
-export const MAX_COMPOSER_ATTACHMENTS = 6
+import { MAX_MESSAGE_ATTACHMENTS } from '@pulpo/contracts'
+
+export const MAX_COMPOSER_ATTACHMENTS = MAX_MESSAGE_ATTACHMENTS
 
 export type AttachmentVisualKind =
   | 'image'
