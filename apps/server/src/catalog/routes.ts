@@ -1,7 +1,7 @@
 import { and, asc, eq, isNull, ne, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
-import { chatPresetsSchema, modelPromptCachingSchema, createModelSchema, createProviderSchema, secretRevealInputSchema, updateProviderSchema, type ChatPreset } from '@pulpo/contracts'
+import { chatPresetsSchema, createModelSchema, createProviderSchema, secretRevealInputSchema, updateProviderSchema, type ChatPreset } from '@pulpo/contracts'
 import { db } from '../database/client.js'
 import {
   auditEvents,
@@ -602,7 +602,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
         agentEnabled: input.agentEnabled,
         agentInstructions: input.agentInstructions,
         defaultParameters: input.defaultParameters,
-        promptCaching: input.promptCaching,
+        promptCachingEnabled: input.promptCachingEnabled,
         interceptImagesWithOcr: input.interceptImagesWithOcr,
         contextWindow: input.contextWindow,
         maxOutputTokens: input.maxOutputTokens,
@@ -652,7 +652,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
     if (body.customIconId !== undefined && body.customIconId !== null) {
       await requireCatalogIcon(z.uuid().parse(body.customIconId))
     }
-    const promptCaching = modelPromptCachingSchema.optional().parse(body.promptCaching)
+    const promptCachingEnabled = createModelSchema.shape.promptCachingEnabled.removeDefault().optional().parse(body.promptCachingEnabled)
     const compactionPatch = z.object({
       compactionEnabled: z.boolean().optional(),
       compactionThresholdTokens: z.number().int().min(2_000).max(1_000_000).optional(),
@@ -685,7 +685,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
       agentEnabled: typeof body.agentEnabled === 'boolean' ? body.agentEnabled : undefined,
       agentInstructions: typeof body.agentInstructions === 'string' ? body.agentInstructions : undefined,
       defaultParameters: body.defaultParameters && typeof body.defaultParameters === 'object' ? body.defaultParameters : undefined,
-      promptCaching,
+      promptCachingEnabled,
       interceptImagesWithOcr: typeof body.interceptImagesWithOcr === 'boolean' ? body.interceptImagesWithOcr : undefined,
       contextWindow: typeof body.contextWindow === 'number' ? body.contextWindow : undefined,
       maxOutputTokens: typeof body.maxOutputTokens === 'number' ? body.maxOutputTokens : undefined,

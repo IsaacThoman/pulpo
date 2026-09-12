@@ -35,22 +35,22 @@ function mockTransport(cachedTokens: number, cacheWriteTokens: number) {
 }
 
 describe('OpenRouter cache controls on the wire', () => {
-  it.each(['auto', 'enabled', 'disabled'] as const)('sends chat caching mode %s through the OpenAI Responses client', async (mode) => {
+  it.each([true, false])('sends chat caching mode %s through the OpenAI Responses client', async (mode) => {
     const transport = mockTransport(0, 4800)
     const client = new OpenAI({ apiKey: 'test', baseURL, fetch: transport.fetch })
     const stream = await client.responses.create({
-      ...providerPromptCacheParameters(baseURL, model.id, mode, { cache_control: { type: 'ephemeral' } }),
+      ...providerPromptCacheParameters(mode, { cache_control: { type: 'ephemeral' } }),
       model: model.id, input: 'Hello', stream: true, store: false,
     })
     for await (const event of stream) {
       expect(event.type).toBe('response.completed')
     }
-    expect(transport.payloads[0]?.cache_control).toEqual(mode === 'disabled' ? undefined : { type: 'ephemeral' })
+    expect(transport.payloads[0]?.cache_control).toEqual(!mode ? undefined : { type: 'ephemeral' })
   })
 
-  it.each(['auto', 'enabled', 'disabled'] as const)('preserves agent cache mode %s and usage after a tool result', async (mode) => {
-    const read = mode === 'disabled' ? 0 : 4800
-    const written = mode === 'disabled' ? 0 : 100
+  it.each([true, false])('preserves agent cache mode %s and usage after a tool result', async (mode) => {
+    const read = !mode ? 0 : 4800
+    const written = !mode ? 0 : 100
     const transport = mockTransport(read, written)
     const context: Context = {
       systemPrompt: 'Use tools to investigate.',
@@ -66,9 +66,9 @@ describe('OpenRouter cache controls on the wire', () => {
     }
     const result = await openAIResponsesApi().streamSimple(model, context, {
       apiKey: 'test', fetch: transport.fetch,
-      samplingParams: agentSamplingParameters(baseURL, providerPromptCacheParameters(baseURL, model.id, mode, { cache_control: { type: 'ephemeral' } })),
+      samplingParams: agentSamplingParameters(baseURL, providerPromptCacheParameters(mode, { cache_control: { type: 'ephemeral' } })),
     }).result()
-    expect(transport.payloads[0]?.cache_control).toEqual(mode === 'disabled' ? undefined : { type: 'ephemeral' })
+    expect(transport.payloads[0]?.cache_control).toEqual(!mode ? undefined : { type: 'ephemeral' })
     expect(result.stopReason).toBe('stop')
     expect(result.usage).toMatchObject({ input: 5000 - read - written, cacheRead: read, cacheWrite: written, totalTokens: 5010 })
     expect(transport.payloads[0]).toMatchObject({

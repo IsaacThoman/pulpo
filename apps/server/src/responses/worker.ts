@@ -772,7 +772,7 @@ async function processGenerationAttempt(
       runId: record.response.id,
     })
     const upstreamPayload = {
-      ...providerPromptCacheParameters(record.provider.baseUrl, record.model.upstreamModelId, record.model.promptCaching, parameters),
+      ...providerPromptCacheParameters(record.model.promptCachingEnabled, parameters),
       ...(requestLog.apiKeyId ? publicOutputTokenLimit(record.model.maxOutputTokens, parameters) : {}),
       ...promptCacheKeyParameter(requestLog.apiKeyId ? parameters : {}, cacheOptions.promptCacheKey),
       model: record.model.upstreamModelId,

@@ -4,43 +4,23 @@ import { providerCacheRequestOptions, providerPromptCacheParameters } from './pr
 const identity = { userId: 'user-1', chatId: 'chat-1', runId: 'run-1' }
 
 describe('provider prompt caching', () => {
-  it('supports explicit opt-in for a compatible custom proxy and model alias', () => {
-    expect(providerPromptCacheParameters('https://proxy.example/v1', 'my-claude', 'enabled'))
-      .toEqual({ cache_control: { type: 'ephemeral' } })
+  it('does not opt in by default', () => {
+    expect(providerPromptCacheParameters()).toEqual({})
   })
 
-  it.each(['auto', 'enabled'] as const)('preserves explicit TTL and unrelated parameters in %s mode', (mode) => {
+  it('adds the opt-in when enabled', () => {
+    expect(providerPromptCacheParameters(true)).toEqual({ cache_control: { type: 'ephemeral' } })
+  })
+
+  it('preserves explicit TTL and unrelated parameters when enabled', () => {
     const parameters = { cache_control: { type: 'ephemeral', ttl: '1h' }, temperature: 0.5 }
-    expect(providerPromptCacheParameters('https://openrouter.ai/api/v1', 'anthropic/claude-sonnet-4.6', mode, parameters))
-      .toEqual(parameters)
+    expect(providerPromptCacheParameters(true, parameters)).toEqual(parameters)
   })
 
-  it('removes even a custom top-level opt-in when disabled without mutating parameters', () => {
+  it('removes a custom top-level opt-in when disabled without mutating parameters', () => {
     const parameters = { cache_control: { type: 'ephemeral' }, temperature: 0.5, prompt_cache_key: 'chat:1' }
-    expect(providerPromptCacheParameters('https://openrouter.ai/api/v1', 'anthropic/claude-sonnet-4.6', 'disabled', parameters))
-      .toEqual({ temperature: 0.5, prompt_cache_key: 'chat:1' })
+    expect(providerPromptCacheParameters(false, parameters)).toEqual({ temperature: 0.5, prompt_cache_key: 'chat:1' })
     expect(parameters.cache_control).toEqual({ type: 'ephemeral' })
-  })
-
-  it.each([
-    'anthropic/claude-sonnet-4.6',
-    'anthropic/claude-opus-4.6',
-    'anthropic/claude-sonnet-4.6:beta',
-    '~anthropic/claude-sonnet-latest',
-  ])('enables automatic caching for OpenRouter model %s', (model) => {
-    expect(providerPromptCacheParameters('https://openrouter.ai/api/v1', model))
-      .toEqual({ cache_control: { type: 'ephemeral' } })
-  })
-
-  it.each([
-    ['https://api.openai.com/v1', 'anthropic/claude-sonnet-4.6'],
-    ['https://proxy.example/v1', 'anthropic/claude-sonnet-4.6'],
-    ['https://openrouter.ai.example/api/v1', 'anthropic/claude-sonnet-4.6'],
-    ['invalid', 'anthropic/claude-sonnet-4.6'],
-    ['https://openrouter.ai/api/v1', 'openai/gpt-5.4'],
-    ['https://openrouter.ai/api/v1', 'google/gemini-2.5-pro'],
-  ])('does not add Claude cache controls for %s and %s', (url, model) => {
-    expect(providerPromptCacheParameters(url, model)).toEqual({})
   })
 })
 

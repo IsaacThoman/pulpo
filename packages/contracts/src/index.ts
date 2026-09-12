@@ -922,9 +922,6 @@ export type ChatPreset = z.infer<typeof chatPresetSchema>
 
 export const UNKNOWN_MODEL_ID = 'pulpo-unknown-model'
 
-export const modelPromptCachingSchema = z.enum(['auto', 'enabled', 'disabled'])
-export type ModelPromptCaching = z.infer<typeof modelPromptCachingSchema>
-
 export const createModelSchema = z.object({
   id: z.string().regex(/^[a-z0-9][a-z0-9._-]{0,119}$/),
   providerConnectionId: idSchema,
@@ -940,7 +937,7 @@ export const createModelSchema = z.object({
   agentEnabled: z.boolean().default(false),
   agentInstructions: z.string().max(100_000).default(''),
   defaultParameters: z.record(z.string(), z.unknown()).default({}),
-  promptCaching: modelPromptCachingSchema.default('auto'),
+  promptCachingEnabled: z.boolean().default(false),
   interceptImagesWithOcr: z.boolean().default(false),
   contextWindow: z.number().int().positive(),
   maxOutputTokens: z.number().int().positive(),

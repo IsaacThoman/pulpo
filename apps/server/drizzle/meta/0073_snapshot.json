@@ -5558,13 +5558,6 @@
           "notNull": true,
           "default": "'{}'::jsonb"
         },
-        "prompt_caching": {
-          "name": "prompt_caching",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'auto'"
-        },
         "intercept_images_with_ocr": {
           "name": "intercept_images_with_ocr",
           "type": "boolean",
@@ -5721,6 +5714,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "prompt_caching_enabled": {
+          "name": "prompt_caching_enabled",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         }
       },
       "indexes": {},

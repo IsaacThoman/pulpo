@@ -27,7 +27,6 @@ import {
   mobileConfigSchema,
   modelPreferencesPatchSchema,
   modelPreferencesSchema,
-  modelPromptCachingSchema,
   personalizationSettingsSchema,
   nativeLoginInputSchema,
   nativeSetupInputSchema,
@@ -56,16 +55,18 @@ import {
 } from './index.js'
 
 describe('model prompt caching settings', () => {
-  it('defaults new models to auto and validates admin updates', () => {
-    const create = createModelSchema.pick({ promptCaching: true })
-    expect(create.parse({})).toEqual({ promptCaching: 'auto' })
-    for (const mode of ['auto', 'enabled', 'disabled']) {
-      expect(create.parse({ promptCaching: mode })).toEqual({ promptCaching: mode })
-      expect(modelPromptCachingSchema.optional().parse(mode)).toBe(mode)
+  it('defaults to disabled and only accepts an explicit boolean', () => {
+    const create = createModelSchema.pick({ promptCachingEnabled: true })
+    const update = createModelSchema.shape.promptCachingEnabled.removeDefault().optional()
+    expect(create.parse({})).toEqual({ promptCachingEnabled: false })
+    for (const enabled of [true, false]) {
+      expect(create.parse({ promptCachingEnabled: enabled })).toEqual({ promptCachingEnabled: enabled })
+      expect(update.parse(enabled)).toBe(enabled)
     }
-    expect(modelPromptCachingSchema.optional().parse(undefined)).toBeUndefined()
-    expect(() => modelPromptCachingSchema.parse('always')).toThrow()
-    expect(() => modelPromptCachingSchema.parse(null)).toThrow()
+    expect(update.parse(undefined)).toBeUndefined()
+    for (const invalid of ['auto', 'enabled', 'disabled', null]) {
+      expect(() => update.parse(invalid)).toThrow()
+    }
   })
 })
 
