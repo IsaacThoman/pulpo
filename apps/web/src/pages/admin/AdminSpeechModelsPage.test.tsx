@@ -13,7 +13,7 @@ const model = { ...OPENAI_SPEECH_PRESET, id: 'speech', providerConnectionId: '11
 beforeEach(() => {
   vi.mocked(apiRequest).mockReset().mockImplementation(async path => path === '/api/admin/providers'
     ? { data: [{ id: model.providerConnectionId, name: 'Provider' }] }
-    : { data: [model] })
+    : path === '/api/admin/settings/speech' ? { modelId: null } : { data: [model] })
 })
 afterEach(cleanup)
 const edit = async () => { render(<AdminSpeechModelsPage />); fireEvent.click(await screen.findByRole('button', { name: 'Edit' })) }

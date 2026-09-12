@@ -1,7 +1,7 @@
 import { useEffect, useSyncExternalStore } from 'react'
 import { ActivityIndicator, Platform, Pressable, Text, TextInput, View } from 'react-native'
 import { useQuery } from '@tanstack/react-query'
-import { SPEECH_MAX_INSTRUCTIONS_LENGTH, type PublicSpeechModel } from '@pulpo/contracts'
+import { SPEECH_MAX_INSTRUCTIONS_LENGTH, type SpeechCatalog } from '@pulpo/contracts'
 import { apiRequest } from '../../api/client'
 import { usePreferencesStore } from '../../store/preferences'
 import { useSessionStore } from '../../store/session'
@@ -20,8 +20,8 @@ export function SpeechSettings({ onBack }: { onBack: () => void }) {
   const setPreference = usePrototypeStore(s => s.setPreference)
   const instanceUrl = useSessionStore(s => s.instanceUrl)
   const userId = useSessionStore(s => s.user?.id)
-  const catalog = useQuery({ queryKey: ['speech-models', instanceUrl, userId], queryFn: () => apiRequest<{ data: PublicSpeechModel[] }>('/api/speech-models') })
-  const model = catalog.data?.data.find(m => m.id === preferences.modelId)
+  const catalog = useQuery({ queryKey: ['speech-models', instanceUrl, userId], queryFn: () => apiRequest<SpeechCatalog>('/api/speech-models') })
+  const model = catalog.data?.data.find(m => m.id === (preferences.modelId ?? catalog.data?.defaultModelId))
   const settings = model ? preferences.models[model.id] ?? { instructions: '', speed: 1 } : undefined
   const update = (patch: object) => { if (model) setPreference('speech', { ...preferences, models: { ...preferences.models, [model.id]: { ...settings!, ...patch } } }) }
   const textStyle = { color: theme.text, fontSize: 16 }
@@ -33,11 +33,12 @@ export function SpeechSettings({ onBack }: { onBack: () => void }) {
       <Text style={textStyle}>Model</Text>
       {catalog.isLoading ? <ActivityIndicator color={theme.secondary} /> : <SpeechPicker
         label="Model"
-        value={model?.id}
-        placeholder={preferences.modelId ? 'Selected model unavailable' : 'Choose a model'}
-        options={catalog.data?.data.map(option => ({ id: option.id, label: option.name })) ?? []}
-        onChange={modelId => { speechPlayback.stop(); setPreference('speech', { ...preferences, modelId }) }}
+        value={preferences.modelId ?? '@default'}
+        placeholder="Selected model unavailable"
+        options={[{ id: '@default', label: 'Use admin default' }, ...(catalog.data?.data.map(option => ({ id: option.id, label: option.name })) ?? [])]}
+        onChange={modelId => { speechPlayback.stop(); setPreference('speech', { ...preferences, modelId: modelId === '@default' ? null : modelId }) }}
       />}
+      {!preferences.modelId && <Text style={{ color: theme.secondary }}>{model ? `Admin default: ${model.name}` : 'No admin default is available. Choose a speech model to read aloud.'}</Text>}
     </View>
     {catalog.data?.data.length === 0 && <Text style={textStyle}>An admin must configure a speech model first.</Text>}
     {model && settings && <>
@@ -57,6 +58,7 @@ export function SpeechSettings({ onBack }: { onBack: () => void }) {
           {playback.phase === 'loading' && <ActivityIndicator color={theme.secondary} />}
           <Text style={textStyle}>{model.voices.find(voice => playback.key === `preview:${model.id}:${voice.id}`)?.label}</Text>
         </View>}
+        {settings.voice !== undefined && <Pressable accessibilityRole="button" onPress={() => { speechPlayback.stop(); update({ voice: undefined }) }}><Text style={textStyle}>Use default voice</Text></Pressable>}
         {playback.error && <Text accessibilityRole="alert" style={{ color: theme.text }}>{playback.error}</Text>}
       </View>
       {model.supportsInstructions && <View style={{ gap: 8 }}><Text style={textStyle}>Instructions</Text><TextInput accessibilityLabel="Speech instructions" style={fieldStyle} multiline maxLength={SPEECH_MAX_INSTRUCTIONS_LENGTH} value={settings.instructions} onChangeText={instructions => update({ instructions })} placeholder="Speak in a calm, friendly tone." placeholderTextColor={theme.secondary} /></View>}

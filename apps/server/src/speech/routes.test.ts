@@ -2,11 +2,12 @@ import Fastify from 'fastify'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { OPENAI_SPEECH_PRESET, speechModelSchema } from '@pulpo/contracts'
 import { speechChunks } from '@pulpo/client-core'
-const mocks = vi.hoisted(() => ({ rows: [] as unknown[], claims: [] as unknown[], admin: true, user: true, generate: vi.fn(), charge: vi.fn() }))
+const mocks = vi.hoisted(() => ({ defaultModelId: null as string | null, rows: [] as unknown[], claims: [] as unknown[], admin: true, user: true, generate: vi.fn(), charge: vi.fn() }))
 vi.mock('../database/client.js', () => {
   const query = () => { const chain: Record<string, unknown> = {}; for (const name of ['from', 'innerJoin', 'where']) chain[name] = () => chain; chain.limit = async () => mocks.rows; chain.then = (resolve: (value: unknown[]) => void) => Promise.resolve(mocks.rows).then(resolve); return chain }
   return { db: { select: query, insert: () => ({ values: () => ({ onConflictDoNothing: () => ({ returning: async () => mocks.claims.splice(0) }) }) }) } }
 })
+vi.mock('./defaults.js', () => ({ registerSpeechDefaultsRoutes: vi.fn(), readSpeechDefaults: async () => ({ modelId: mocks.defaultModelId }) }))
 vi.mock('../auth/service.js', () => ({ requireUser: () => { if (!mocks.user) throw new Error('unauthorized'); return { id: 'u' } }, requireAdmin: () => { if (!mocks.admin) throw new Error('forbidden'); return { id: 'a' } } }))
 vi.mock('../lib/url-security.js', () => ({ assertSafeProviderUrl: vi.fn() }))
 vi.mock('../lib/crypto.js', () => ({ decryptSecret: () => 'secret' }))
@@ -18,6 +19,7 @@ const model = speechModelSchema.parse({ ...OPENAI_SPEECH_PRESET, id: 'speech', p
 const request = { requestId: '22222222-2222-4222-8222-222222222222', modelId: 'speech', input: 'Hello', voice: 'coral', instructions: 'Calm', speed: 1 }
 beforeEach(() => {
   mocks.rows = [{ config: model, enabled: true, voicePreviews: [{ voiceId: 'coral', objectKey: 'secret-storage-key' }], provider: { id: 'p', baseUrl: 'https://provider.example/v1', encryptedApiKey: 'encrypted-secret', enabled: true, requestTimeoutMs: 1000 } }]
+  mocks.defaultModelId = null
   mocks.claims = [{}]; mocks.admin = true; mocks.user = true
   mocks.generate.mockReset().mockResolvedValue({ audio: Buffer.from('audio'), durationSeconds: 1, usage: { input_tokens: 10, output_tokens: 50 } })
   mocks.charge.mockReset().mockResolvedValue(undefined)
@@ -47,6 +49,17 @@ describe('speech routes', () => {
     expect(response.json().data[0].voices.find((voice: { id: string }) => voice.id === 'coral').previewAvailable).toBe(true)
     mocks.rows = [{ config: { ...model, enabled: false }, enabled: true }, { config: model, enabled: false }]
     expect((await server.inject('/api/speech-models')).json().data).toEqual([])
+    await server.close()
+  })
+  it('publishes only an available configured default without changing catalog order', async () => {
+    const server = await app()
+    expect((await server.inject('/api/speech-models')).json().defaultModelId).toBeNull()
+    mocks.defaultModelId = 'speech'
+    expect((await server.inject('/api/speech-models')).json().defaultModelId).toBe('speech')
+    for (const rows of [[], [{ config: { ...model, enabled: false }, enabled: true }], [{ config: model, enabled: false }]]) {
+      mocks.rows = rows
+      expect((await server.inject('/api/speech-models')).json().defaultModelId).toBeNull()
+    }
     await server.close()
   })
   it('requires account and admin authentication', async () => {

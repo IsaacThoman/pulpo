@@ -3,7 +3,7 @@ import { createAudioPlayer, setAudioModeAsync } from 'expo-audio'
 import { File, Paths, Directory } from 'expo-file-system'
 import { randomUUID } from 'expo-crypto'
 import { speechChunks, speechText } from '@pulpo/client-core'
-import { SPEECH_DURATION_HEADER, type PublicSpeechModel } from '@pulpo/contracts'
+import { SPEECH_DURATION_HEADER, type PublicSpeechModel, type SpeechCatalog } from '@pulpo/contracts'
 import { apiRequest, apiUrl, nativeAuthorizationHeaders } from '../../api/client'
 import { usePreferencesStore } from '../../store/preferences'
 import { useSessionStore } from '../../store/session'
@@ -21,9 +21,10 @@ export async function readAloud(key: string, markdown: string) {
   await speechPlayback.start(key, async signal => {
     if (AppState.currentState !== 'active') throw new Error('Open the app to read aloud')
     const preferences = usePreferencesStore.getState().speech
-    if (!preferences.modelId) throw new Error('Choose a speech model in Settings → Interface → Speech')
-    const { data } = await apiRequest<{ data: PublicSpeechModel[] }>('/api/speech-models', { signal })
-    const selected = data.find(model => model.id === preferences.modelId)
+    const { data, defaultModelId } = await apiRequest<SpeechCatalog>('/api/speech-models', { signal })
+    const modelId = preferences.modelId ?? defaultModelId
+    if (!modelId) throw new Error('Choose a speech model in Settings → Interface → Speech')
+    const selected = data.find(model => model.id === modelId)
     if (!selected) throw new Error('Your speech model is unavailable. Choose another in Settings → Interface → Speech')
     model = selected; settings = preferences.models[model.id]
     instructions = model.supportsInstructions ? settings?.instructions ?? '' : ''

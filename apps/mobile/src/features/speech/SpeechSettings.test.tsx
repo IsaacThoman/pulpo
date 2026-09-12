@@ -42,7 +42,7 @@ vi.mock('../../data/database', () => ({
   setValue: async (namespace: string, key: string, value: unknown) => { mocks.saved.set(`${namespace}:${key}`, value) },
 }))
 vi.mock('../../store/session', () => ({ useSessionStore: (selector: (state: unknown) => unknown) => selector({ user: { id: 'user' }, instanceUrl: 'test' }) }))
-vi.mock('../../api/client', () => ({ apiRequest: async () => ({ data: [
+vi.mock('../../api/client', () => ({ apiRequest: async () => ({ defaultModelId: 'first', data: [
   { id: 'first', name: 'First model', defaultVoice: 'coral', voices: [{ id: 'coral', label: 'Coral', previewAvailable: true }, { id: 'alloy', label: 'Alloy' }] },
   { id: 'second', name: 'Second model', defaultVoice: 'other', voices: [{ id: 'other', label: 'Other' }] },
 ] }) }))
@@ -98,7 +98,7 @@ async function startPreview() {
 it.each(['ios', 'android'])('persists %s model and voice choices, updates native selections, and restores them after hydration', async platform => {
   mocks.platform = platform
   await render()
-  expect(container.textContent).toContain('Choose a model')
+  expect(container.textContent).toContain('Use admin default')
   await choose('Model', 'first', 'First model')
   selected('Model', 'first', 'First model'); selected('Voice', 'coral', 'Coral')
   expect(persist).toHaveBeenCalledWith('speech', { modelId: 'first', models: {} })
@@ -146,4 +146,31 @@ it.each(['ios', 'android'])('lets %s replace unavailable models and voices witho
   await choose('Voice', 'coral', 'Coral')
   selected('Voice', 'coral', 'Coral')
   expect(usePreferencesStore.getState().speech.models.first).toEqual({ voice: 'coral', instructions: 'Calm', speed: 1.2 })
+})
+
+it.each(['ios', 'android'])('inherits defaults and persists returning to them with %s native pickers', async platform => {
+  mocks.platform = platform
+  await render()
+  selected('Model', '@default', 'Use admin default'); selected('Voice', 'coral', 'Coral')
+  expect(container.textContent).toContain('Admin default: First model')
+  expect(persist).not.toHaveBeenCalled()
+  expect(usePreferencesStore.getState().speech).toEqual({ modelId: null, models: {} })
+  await choose('Voice', 'alloy', 'Alloy')
+  expect(usePreferencesStore.getState().speech).toEqual({ modelId: null, models: { first: { voice: 'alloy', instructions: '', speed: 1 } } })
+  await startPreview(); await click('Use default voice')
+  expect(speechPlayback.getSnapshot().phase).toBe('idle')
+  selected('Voice', 'coral', 'Coral')
+  expect(usePreferencesStore.getState().speech.models.first?.voice).toBeUndefined()
+  await choose('Model', 'second', 'Second model')
+  await startPreview(); await choose('Model', '@default', 'Use admin default')
+  expect(speechPlayback.getSnapshot().phase).toBe('idle')
+  selected('Model', '@default', 'Use admin default'); selected('Voice', 'coral', 'Coral')
+  expect(persist).toHaveBeenLastCalledWith('speech', { modelId: null, models: { first: { voice: undefined, instructions: '', speed: 1 } } })
+  await act(async () => {
+    usePreferencesStore.setState({ speech: { modelId: 'second', models: {} } })
+    await usePreferencesStore.getState().hydrate()
+  })
+  expect(usePreferencesStore.getState().speech.modelId).toBeNull()
+  expect(usePreferencesStore.getState().speech.models.first?.voice).toBeUndefined()
+  selected('Model', '@default', 'Use admin default'); selected('Voice', 'coral', 'Coral')
 })
