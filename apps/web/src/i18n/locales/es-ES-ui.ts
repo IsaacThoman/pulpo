@@ -1,4 +1,8 @@
 const esUi: Record<string, string> = {
+  "Auto": "Auto",
+  "Prompt caching": "Caché de instrucciones",
+  "Auto enables five-minute prompt caching for Claude through OpenRouter. Enabled requests it on compatible endpoints, including custom proxies. Applies to chat and agent turns.": "Auto activa la caché de instrucciones de cinco minutos para Claude a través de OpenRouter. Activado la solicita en endpoints compatibles, incluidos los proxies personalizados. Se aplica a los turnos de chat y agente.",
+  "Disabled removes the top-level cache opt-in, including custom parameters. It cannot turn off caching performed automatically by the provider.": "Desactivado elimina la solicitud de caché de nivel superior, incluidos los parámetros personalizados. No puede desactivar la caché que el proveedor realiza automáticamente.",
   "Edit API key": "Editar clave API",
   "Update this key’s name, access, and spending limits.": "Actualiza el nombre, el acceso y los límites de gasto de esta clave.",
   "Enter a positive spending limit, or leave it blank for no limit.": "Introduce un límite de gasto positivo o déjalo en blanco para no aplicar ningún límite.",

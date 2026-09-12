@@ -27,6 +27,7 @@ import {
   mobileConfigSchema,
   modelPreferencesPatchSchema,
   modelPreferencesSchema,
+  modelPromptCachingSchema,
   personalizationSettingsSchema,
   nativeLoginInputSchema,
   nativeSetupInputSchema,
@@ -53,6 +54,20 @@ import {
   type ResponseEvent,
   type ResponseSnapshot,
 } from './index.js'
+
+describe('model prompt caching settings', () => {
+  it('defaults new models to auto and validates admin updates', () => {
+    const create = createModelSchema.pick({ promptCaching: true })
+    expect(create.parse({})).toEqual({ promptCaching: 'auto' })
+    for (const mode of ['auto', 'enabled', 'disabled']) {
+      expect(create.parse({ promptCaching: mode })).toEqual({ promptCaching: mode })
+      expect(modelPromptCachingSchema.optional().parse(mode)).toBe(mode)
+    }
+    expect(modelPromptCachingSchema.optional().parse(undefined)).toBeUndefined()
+    expect(() => modelPromptCachingSchema.parse('always')).toThrow()
+    expect(() => modelPromptCachingSchema.parse(null)).toThrow()
+  })
+})
 
 describe('workspace continue timing', () => {
   it('prefers the server eligibility timestamp', () => {

@@ -770,11 +770,10 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
       const streamOptions = {
           ...options,
           reasoning: resolvedParameters.reasoning,
-          samplingParams: agentSamplingParameters(active.provider.baseUrl, {
-            ...providerPromptCacheParameters(active.provider.baseUrl, active.model.upstreamModelId),
+          samplingParams: agentSamplingParameters(active.provider.baseUrl, providerPromptCacheParameters(active.provider.baseUrl, active.model.upstreamModelId, active.model.promptCaching, {
             ...options?.samplingParams,
             ...resolvedParameters.parameters,
-          }),
+          })),
           maxTokens: active.model.maxOutputTokens,
           timeoutMs: active.provider.requestTimeoutMs,
           maxRetries: 0,

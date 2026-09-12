@@ -359,6 +359,7 @@ export const models = pgTable('models', {
   agentEnabled: boolean('agent_enabled').notNull().default(false),
   agentInstructions: text('agent_instructions').notNull().default(''),
   defaultParameters: jsonb('default_parameters').notNull().default({}),
+  promptCaching: text('prompt_caching').$type<import('@pulpo/contracts').ModelPromptCaching>().notNull().default('auto'),
   interceptImagesWithOcr: boolean('intercept_images_with_ocr').notNull().default(false),
   contextWindow: integer('context_window').notNull(),
   maxOutputTokens: integer('max_output_tokens').notNull(),

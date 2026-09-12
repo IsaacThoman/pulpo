@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { chatPresetsSchema, type ChatPreset, type ChatPresetAction, type ChatPresetChoice, type ChatPresetIcon } from '@pulpo/contracts'
+import { chatPresetsSchema, type ModelPromptCaching, type ChatPreset, type ChatPresetAction, type ChatPresetChoice, type ChatPresetIcon } from '@pulpo/contracts'
 import { ArrowDown, ArrowUp, Check, ChevronsUpDown, ChevronRight, Copy, Pencil, Plus, Search, Trash2 } from 'lucide-react'
 import { apiRequest } from '@/lib/api'
 import { formatNumber } from '@/lib/format'
@@ -53,6 +53,7 @@ interface AdminModel {
   agentEnabled: boolean
   agentInstructions: string
   defaultParameters: Record<string, unknown>
+  promptCaching: ModelPromptCaching
   interceptImagesWithOcr: boolean
   contextWindow: number
   maxOutputTokens: number
@@ -86,7 +87,7 @@ const empty = (providerConnectionId = '', labId: string | null = null): AdminMod
   id: '', providerConnectionId, labId, upstreamModelId: '', name: '', description: '', enabled: true, visible: true, logo: null, customIconId: null, systemPrompt: '', agentEnabled: false, agentInstructions: '', defaultParameters: {}, interceptImagesWithOcr: false,
   contextWindow: 128_000, maxOutputTokens: 16_384, executionMode: 'stream', tags: [], allowedParameters: [],
   compactionEnabled: true, compactionThresholdTokens: 100_000, compactionRetainedTurns: 4,
-  useProviderCost: false,
+  useProviderCost: false, promptCaching: 'auto',
   inputPriceMicros: 0, cachedInputPriceMicros: 0, cacheWritePriceMicros: 0, outputPriceMicros: 0, perRequestPriceMicros: 0,
   presets: [],
   fallbackModelId: null, maxRetries: 0, retryDelaySeconds: 1, stickyFallbackSeconds: 0,
@@ -513,6 +514,22 @@ function ModelEditorBody({
             value={draft.upstreamModelId}
             onChange={(upstreamModelId) => setDraft({ ...draft, upstreamModelId })}
           />
+        </Field>
+        <Field label={ui("Prompt caching")}>
+          <Select value={draft.promptCaching ?? 'auto'} onValueChange={(promptCaching: ModelPromptCaching) => setDraft({ ...draft, promptCaching })}>
+            <SelectTrigger className="w-full" aria-label={ui("Prompt caching")}><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="auto">{ui("Auto")}</SelectItem>
+              <SelectItem value="enabled">{ui("Enabled")}</SelectItem>
+              <SelectItem value="disabled">{ui("Disabled")}</SelectItem>
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">
+            {ui("Auto enables five-minute prompt caching for Claude through OpenRouter. Enabled requests it on compatible endpoints, including custom proxies. Applies to chat and agent turns.")}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            {ui("Disabled removes the top-level cache opt-in, including custom parameters. It cannot turn off caching performed automatically by the provider.")}
+          </p>
         </Field>
         <div className="grid grid-cols-2 gap-3">
           <Field label={ui("Execution")}>

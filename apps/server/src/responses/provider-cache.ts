@@ -1,4 +1,5 @@
 import type { providerConnections } from '../database/schema.js'
+import type { ModelPromptCaching } from '@pulpo/contracts'
 
 type Provider = typeof providerConnections.$inferSelect
 
@@ -18,17 +19,26 @@ export type ProviderCacheRequestOptions = {
 export function providerPromptCacheParameters(
   baseUrl: string,
   upstreamModelId: string,
-): { cache_control?: { type: 'ephemeral' } } {
+  mode: ModelPromptCaching = 'auto',
+  parameters: Record<string, unknown> = {},
+): Record<string, unknown> {
+  if (mode === 'disabled') {
+    const result = { ...parameters }
+    delete result.cache_control
+    return result
+  }
+  // Enabled lets admins opt compatible custom proxies and model aliases in.
+  if (mode === 'enabled') return { cache_control: { type: 'ephemeral' }, ...parameters }
   try {
-    if (new URL(baseUrl).hostname !== 'openrouter.ai') return {}
+    if (new URL(baseUrl).hostname !== 'openrouter.ai') return parameters
   } catch {
-    return {}
+    return parameters
   }
   // Include OpenRouter's dynamic model aliases and provider/variant suffixes.
-  if (!/^~?anthropic\/claude-/i.test(upstreamModelId)) return {}
+  if (!/^~?anthropic\/claude-/i.test(upstreamModelId)) return parameters
   // The default five-minute cache advances with the conversation, including tool results.
   // https://openrouter.ai/docs/guides/best-practices/prompt-caching#anthropic-claude
-  return { cache_control: { type: 'ephemeral' } }
+  return { cache_control: { type: 'ephemeral' }, ...parameters }
 }
 
 function scopedKey(scope: string, identity: ProviderCacheIdentity): string {

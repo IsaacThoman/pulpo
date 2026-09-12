@@ -4,6 +4,24 @@ import { providerCacheRequestOptions, providerPromptCacheParameters } from './pr
 const identity = { userId: 'user-1', chatId: 'chat-1', runId: 'run-1' }
 
 describe('provider prompt caching', () => {
+  it('supports explicit opt-in for a compatible custom proxy and model alias', () => {
+    expect(providerPromptCacheParameters('https://proxy.example/v1', 'my-claude', 'enabled'))
+      .toEqual({ cache_control: { type: 'ephemeral' } })
+  })
+
+  it.each(['auto', 'enabled'] as const)('preserves explicit TTL and unrelated parameters in %s mode', (mode) => {
+    const parameters = { cache_control: { type: 'ephemeral', ttl: '1h' }, temperature: 0.5 }
+    expect(providerPromptCacheParameters('https://openrouter.ai/api/v1', 'anthropic/claude-sonnet-4.6', mode, parameters))
+      .toEqual(parameters)
+  })
+
+  it('removes even a custom top-level opt-in when disabled without mutating parameters', () => {
+    const parameters = { cache_control: { type: 'ephemeral' }, temperature: 0.5, prompt_cache_key: 'chat:1' }
+    expect(providerPromptCacheParameters('https://openrouter.ai/api/v1', 'anthropic/claude-sonnet-4.6', 'disabled', parameters))
+      .toEqual({ temperature: 0.5, prompt_cache_key: 'chat:1' })
+    expect(parameters.cache_control).toEqual({ type: 'ephemeral' })
+  })
+
   it.each([
     'anthropic/claude-sonnet-4.6',
     'anthropic/claude-opus-4.6',
