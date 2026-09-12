@@ -30,7 +30,7 @@ import { composeCustomInstructions } from '../settings/instruction-presets.js'
 import { processAgentGeneration } from '../agent/runner.js'
 import { runPostResponseTasks } from './post-tasks.js'
 import { EMPTY_USAGE, providerReportedCostMicros, trackBilledInternalModelCall } from './model-calls.js'
-import { providerCacheRequestOptions } from './provider-cache.js'
+import { providerCacheRequestOptions, providerPromptCacheParameters } from './provider-cache.js'
 import { createModelImageInterceptor, interceptOpenAIInputImages, type ModelImageInterceptor } from './image-ocr.js'
 import { modelImageRendition, type ProviderImageOptions } from './model-image.js'
 import { sanitizeContextForStorage, sanitizeOutputForClient } from './public-output.js'
@@ -772,7 +772,7 @@ async function processGenerationAttempt(
       runId: record.response.id,
     })
     const upstreamPayload = {
-      ...(parameters as Record<string, never>),
+      ...providerPromptCacheParameters(record.model.promptCachingEnabled, parameters),
       ...(requestLog.apiKeyId ? publicOutputTokenLimit(record.model.maxOutputTokens, parameters) : {}),
       ...promptCacheKeyParameter(requestLog.apiKeyId ? parameters : {}, cacheOptions.promptCacheKey),
       model: record.model.upstreamModelId,
