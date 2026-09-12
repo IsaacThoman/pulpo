@@ -14,6 +14,23 @@ export type ProviderCacheRequestOptions = {
   headers?: Record<string, string>
 }
 
+/** Claude requires an explicit opt-in, including on OpenRouter's Responses API. */
+export function providerPromptCacheParameters(
+  baseUrl: string,
+  upstreamModelId: string,
+): { cache_control?: { type: 'ephemeral' } } {
+  try {
+    if (new URL(baseUrl).hostname !== 'openrouter.ai') return {}
+  } catch {
+    return {}
+  }
+  // Include OpenRouter's dynamic model aliases and provider/variant suffixes.
+  if (!/^~?anthropic\/claude-/i.test(upstreamModelId)) return {}
+  // The default five-minute cache advances with the conversation, including tool results.
+  // https://openrouter.ai/docs/guides/best-practices/prompt-caching#anthropic-claude
+  return { cache_control: { type: 'ephemeral' } }
+}
+
 function scopedKey(scope: string, identity: ProviderCacheIdentity): string {
   if (scope === 'user') return `user:${identity.userId}`
   if (scope === 'agent_run') return `run:${identity.runId}`

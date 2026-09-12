@@ -1,7 +1,30 @@
 import { describe, expect, it } from 'vitest'
-import { providerCacheRequestOptions } from './provider-cache.js'
+import { providerCacheRequestOptions, providerPromptCacheParameters } from './provider-cache.js'
 
 const identity = { userId: 'user-1', chatId: 'chat-1', runId: 'run-1' }
+
+describe('provider prompt caching', () => {
+  it.each([
+    'anthropic/claude-sonnet-4.6',
+    'anthropic/claude-opus-4.6',
+    'anthropic/claude-sonnet-4.6:beta',
+    '~anthropic/claude-sonnet-latest',
+  ])('enables automatic caching for OpenRouter model %s', (model) => {
+    expect(providerPromptCacheParameters('https://openrouter.ai/api/v1', model))
+      .toEqual({ cache_control: { type: 'ephemeral' } })
+  })
+
+  it.each([
+    ['https://api.openai.com/v1', 'anthropic/claude-sonnet-4.6'],
+    ['https://proxy.example/v1', 'anthropic/claude-sonnet-4.6'],
+    ['https://openrouter.ai.example/api/v1', 'anthropic/claude-sonnet-4.6'],
+    ['invalid', 'anthropic/claude-sonnet-4.6'],
+    ['https://openrouter.ai/api/v1', 'openai/gpt-5.4'],
+    ['https://openrouter.ai/api/v1', 'google/gemini-2.5-pro'],
+  ])('does not add Claude cache controls for %s and %s', (url, model) => {
+    expect(providerPromptCacheParameters(url, model)).toEqual({})
+  })
+})
 
 describe('provider cache request options', () => {
   it('maps OpenAI affinity to the Responses prompt cache key', () => {

@@ -46,7 +46,7 @@ import { isInsufficientBalanceError, trackBilledInternalModelCall } from '../res
 import { createCatalogModelClient } from '../responses/catalog-model-runtime.js'
 import { effectiveAgentCompactionThreshold, estimateAgentContextTokens, shouldRetryContextOverflow } from './context-budget.js'
 import { sanitizeContextForStorage, sanitizeOutputForClient } from '../responses/public-output.js'
-import { providerCacheRequestOptions } from '../responses/provider-cache.js'
+import { providerCacheRequestOptions, providerPromptCacheParameters } from '../responses/provider-cache.js'
 import { agentSnapshotIsDue } from './snapshot-policy.js'
 import { lineageFromLeaf } from '../messages/branching.js'
 import { responseUserAttachmentIds } from '../messages/input.js'
@@ -771,6 +771,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
           ...options,
           reasoning: resolvedParameters.reasoning,
           samplingParams: agentSamplingParameters(active.provider.baseUrl, {
+            ...providerPromptCacheParameters(active.provider.baseUrl, active.model.upstreamModelId),
             ...options?.samplingParams,
             ...resolvedParameters.parameters,
           }),
