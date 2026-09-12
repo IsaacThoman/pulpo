@@ -4,7 +4,7 @@ import { act, createElement, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
-const mocks = vi.hoisted(() => ({ platform: 'android', preview: vi.fn(), speech: { modelId: 'first', models: {} as Record<string, { voice?: string; instructions: string; speed: number }> }, set: vi.fn() }))
+const mocks = vi.hoisted(() => ({ platform: 'android', preview: vi.fn(), speech: { modelId: 'first' as string | null, models: {} as Record<string, { voice?: string; instructions: string; speed: number }> }, set: vi.fn() }))
 vi.mock('react-native', () => ({
   Platform: { get OS() { return mocks.platform } },
   View: ({ children }: { children: ReactNode }) => createElement('div', null, children),
@@ -30,7 +30,7 @@ vi.mock('../../platform/SymbolView', () => ({ SymbolView: () => null }))
 vi.mock('../../store/preferences', () => ({ usePreferencesStore: (selector: (state: unknown) => unknown) => selector({ speech: mocks.speech }) }))
 vi.mock('../../mockup5/src/store/prototypeStore', () => ({ usePrototypeStore: (selector: (state: unknown) => unknown) => selector({ setPreference: mocks.set }) }))
 vi.mock('../../store/session', () => ({ useSessionStore: (selector: (state: unknown) => unknown) => selector({ user: { id: 'user' }, instanceUrl: 'test' }) }))
-vi.mock('../../api/client', () => ({ apiRequest: async () => ({ data: [
+vi.mock('../../api/client', () => ({ apiRequest: async () => ({ defaultModelId: 'first', data: [
   { id: 'first', name: 'First model', defaultVoice: 'coral', voices: [{ id: 'coral', label: 'Coral', previewAvailable: true }, { id: 'alloy', label: 'Alloy' }] },
   { id: 'second', name: 'Second model', defaultVoice: 'other', voices: [{ id: 'other', label: 'Other' }] },
 ] }) }))
@@ -76,4 +76,28 @@ it.each(['ios', 'android'])('keeps %s model selection separate from voice select
   await act(async () => root.unmount()); await run
   expect(speechPlayback.getSnapshot().phase).toBe('idle')
   client.clear(); container.remove()
+})
+
+it.each(['ios', 'android'])('shows inherited defaults and allows returning to them on %s', async platform => {
+  mocks.platform = platform
+  mocks.speech = { modelId: null, models: { first: { voice: 'alloy', instructions: 'Calm', speed: 1.2 } } }
+  const container = document.createElement('div'); document.body.append(container)
+  const root = createRoot(container)
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  await act(async () => {
+    root.render(<QueryClientProvider client={client}><SpeechSettings onBack={() => {}} /></QueryClientProvider>)
+    await new Promise(resolve => setTimeout(resolve, 20))
+  })
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 20)) })
+  expect(container.querySelector('summary')?.textContent).toBe('Use admin default')
+  expect(container.textContent).toContain('Admin default: First model')
+  expect(container.querySelector('[aria-label="Voice: Alloy"]')).toBeTruthy()
+  expect(mocks.set).not.toHaveBeenCalled()
+  await act(async () => { [...container.querySelectorAll('button')].find(button => button.textContent === 'Use default voice')!.click() })
+  expect(mocks.set).toHaveBeenLastCalledWith('speech', { modelId: null, models: { first: { voice: undefined, instructions: 'Calm', speed: 1.2 } } })
+  await act(async () => { [...container.querySelectorAll('button')].find(button => button.textContent === 'Use admin default')!.click() })
+  expect(mocks.set).toHaveBeenLastCalledWith('speech', { ...mocks.speech, modelId: null })
+  await act(async () => root.unmount())
+  client.clear(); container.remove()
+  mocks.speech = { modelId: 'first', models: {} }
 })

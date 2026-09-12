@@ -12,7 +12,7 @@ Element.prototype.scrollIntoView = vi.fn()
 vi.mock('@/stores/auth', () => ({ useAuth: (selector: (state: unknown) => unknown) => selector({ user: { id: 'user' } }) }))
 vi.mock('./playback', async () => ({
   speechPlayback: new (await import('@pulpo/client-core')).SpeechPlayback(), previewSpeechVoice: vi.fn(),
-  speechCatalog: async () => ({ data: [
+  speechCatalog: async () => ({ defaultModelId: 'first', data: [
     { ...OPENAI_SPEECH_PRESET, id: 'first', name: 'First model', voices: [{ id: 'coral', label: 'Coral', previewAvailable: true }, { id: 'alloy', label: 'Alloy' }] },
     { ...OPENAI_SPEECH_PRESET, id: 'second', name: 'Second model' },
   ] }),
@@ -96,4 +96,20 @@ it('stops an active preview when leaving settings and preserves unavailable sele
   const run = speechPlayback.start('preview:first', ['clip'], async () => ({ dispose() {}, play: signal => new Promise(resolve => signal.addEventListener('abort', () => resolve())) }))
   view.unmount(); await run
   expect(speechPlayback.getSnapshot().phase).toBe('idle')
+})
+
+it('shows inherited defaults without persisting them and can clear a voice override', async () => {
+  useSettings.setState({ speech: { modelId: null, models: {} } })
+  render(<QueryClientProvider client={new QueryClient()}><SpeechSettings /></QueryClientProvider>)
+  expect(await screen.findByText('Admin default: First model')).toBeTruthy()
+  expect(screen.getByRole('combobox', { name: 'Model' }).textContent).toBe('Use admin default')
+  expect(screen.getByRole('button', { name: 'Voice Coral' })).toBeTruthy()
+  expect(useSettings.getState().speech).toEqual({ modelId: null, models: {} })
+  fireEvent.click(screen.getByRole('button', { name: 'Voice Coral' }))
+  fireEvent.click(screen.getByRole('radio', { name: 'Alloy' }))
+  expect(useSettings.getState().speech.modelId).toBeNull()
+  expect(useSettings.getState().speech.models.first?.voice).toBe('alloy')
+  fireEvent.click(screen.getByRole('button', { name: 'Use default voice' }))
+  expect(useSettings.getState().speech.models.first?.voice).toBeUndefined()
+  expect(screen.getByRole('button', { name: 'Voice Coral' })).toBeTruthy()
 })
