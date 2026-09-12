@@ -14,6 +14,17 @@ export type ProviderCacheRequestOptions = {
   headers?: Record<string, string>
 }
 
+/** Request explicit caching only when the admin enables it for a compatible model. */
+export function providerPromptCacheParameters(
+  enabled = false,
+  parameters: Record<string, unknown> = {},
+): Record<string, unknown> {
+  if (enabled) return { cache_control: { type: 'ephemeral' }, ...parameters }
+  const result = { ...parameters }
+  delete result.cache_control
+  return result
+}
+
 function scopedKey(scope: string, identity: ProviderCacheIdentity): string {
   if (scope === 'user') return `user:${identity.userId}`
   if (scope === 'agent_run') return `run:${identity.runId}`
