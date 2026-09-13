@@ -19,7 +19,7 @@ import { formatBalance, formatDate } from '@/lib/format'
 import { creditCentsFromInput } from '@/lib/billing-pricing'
 import { apiRequest } from '@/lib/api'
 import { openExternalUrl } from '@/lib/runtime'
-import { billingPlanName, fetchBillingSummary, managedBillingPlan, planChoiceDisabled, planChoiceLabel, type BillingPlan } from '@/lib/billing'
+import { billingPlanName, fetchBillingSummary, managedBillingPlan, paymentStatusLabel, planChoiceDisabled, planChoiceLabel, type BillingPlan } from '@/lib/billing'
 import { queryClient } from '@/lib/query-client'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
@@ -236,11 +236,11 @@ export function BillingPage() {
             </div>
           )}
 
-          <div className="grid gap-8 lg:grid-cols-2 lg:gap-0 lg:divide-x">
+          <div className="grid items-start gap-8 lg:grid-cols-2 lg:gap-0 lg:divide-x">
             <PaymentOption
               icon={<Wallet className="size-4" />}
               title={ui("Pay as you go")}
-              description={ui("Buy credits once and spend them as you use Pulpo. Nothing renews, and unused credits stay on your account.")}
+              description={ui("Buy credits that never expire.")}
               className="lg:pr-8"
             >
               <div>
@@ -257,7 +257,7 @@ export function BillingPage() {
                   </div>
                 )}
               </div>
-              <div className="mt-auto flex flex-wrap gap-2 pt-1">
+              <div className="flex flex-wrap gap-2 pt-1">
                 <Button variant={subscribed ? 'outline' : 'default'} onClick={() => { resetTopUp(); setTopUpOpen(true) }}><Plus />{ui("Add credits")}</Button>
               </div>
             </PaymentOption>
@@ -266,7 +266,7 @@ export function BillingPage() {
               icon={<RefreshCw className="size-4" />}
               title={ui("Subscribe monthly")}
               badge={<PlanBadge plan={currentPlan} overridden={summary?.planOverridden ?? false} pastDue={summary?.subscription?.status === 'past_due'} />}
-              description={ui("A fixed monthly price for high usage limits that reset on their own, plus credits added to your balance every month.")}
+              description={ui("High usage limits and credits every month.")}
               className="border-t pt-8 lg:border-t-0 lg:pt-0 lg:pl-8"
             >
               <div>
@@ -282,7 +282,7 @@ export function BillingPage() {
                   ))}
                 </ul>
               )}
-              <div className="mt-auto flex flex-wrap gap-2 pt-1">
+              <div className="flex flex-wrap gap-2 pt-1">
                 <Button variant={subscribed ? 'outline' : 'default'} disabled={!summary || submitting} onClick={() => setPlanOpen(true)}>
                   {subscribed ? ui("Manage plan") : ui("Compare plans")}
                 </Button>
@@ -302,7 +302,7 @@ export function BillingPage() {
                   <div className="flex min-w-0 items-center gap-3"><ReceiptText className="size-4 shrink-0 text-muted-foreground" /><div className="truncate font-medium">{payment.kind === 'credits' ? uit`${formatBalance((payment.requestedCreditCents ?? 0) / 100)} credit top-up` : uit`${billingPlanName(payment.plan ?? 'baby')} subscription`}</div></div>
                   <div className="text-muted-foreground">{formatDate(Date.parse(payment.createdAt))}</div>
                   <div className="font-medium tabular-nums sm:text-right">{formatBalance(payment.amountCents / 100)}</div>
-                  <div className="sm:text-right"><Badge variant={payment.status === 'refunded' ? 'destructive' : 'outline'}>{payment.status}</Badge></div>
+                  <div className="text-muted-foreground sm:text-right">{paymentStatusLabel(payment.status)}</div>
                 </div>
               ))}</div> : <div className="px-4 py-10 text-center text-sm text-muted-foreground">{ui("No payments yet.")}</div>}
             </div>
