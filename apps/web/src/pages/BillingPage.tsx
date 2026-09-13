@@ -257,7 +257,7 @@ export function BillingPage() {
                 </ul>
               )}
               <div className="flex flex-wrap gap-2 pt-1">
-                <Button variant={subscribed ? 'outline' : 'default'} disabled={!summary || submitting} onClick={() => setPlanOpen(true)}>
+                <Button variant="default" disabled={!summary || submitting} onClick={() => setPlanOpen(true)}>
                   {subscribed ? ui("Manage plan") : ui("Compare plans")}
                 </Button>
                 {subscribed && <Button variant="ghost" onClick={() => void openPortal()} disabled={submitting}><CreditCard />{ui("Billing portal")}</Button>}
@@ -284,7 +284,7 @@ export function BillingPage() {
                 )}
               </div>
               <div className="flex flex-wrap gap-2 pt-1">
-                <Button variant={subscribed ? 'outline' : 'default'} onClick={() => { resetTopUp(); setTopUpOpen(true) }}><Plus />{ui("Add credits")}</Button>
+                <Button variant="default" onClick={() => { resetTopUp(); setTopUpOpen(true) }}><Plus />{ui("Add credits")}</Button>
               </div>
             </PaymentOption>
           </div>
