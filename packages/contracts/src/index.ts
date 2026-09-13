@@ -937,6 +937,7 @@ export const createModelSchema = z.object({
   agentEnabled: z.boolean().default(false),
   agentInstructions: z.string().max(100_000).default(''),
   defaultParameters: z.record(z.string(), z.unknown()).default({}),
+  promptCachingEnabled: z.boolean().default(false),
   interceptImagesWithOcr: z.boolean().default(false),
   contextWindow: z.number().int().positive(),
   maxOutputTokens: z.number().int().positive(),

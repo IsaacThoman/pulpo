@@ -203,3 +203,23 @@ it('persists image generation through the production preference bridge', async (
   expect(persistPreference).toHaveBeenCalledWith('imageGeneration', imageGeneration)
   expect(usePrototypeStore.getState().preferences.imageGeneration).toEqual(imageGeneration)
 })
+
+it('persists speech models and per-model voice settings through the production bridge', () => {
+  const persistPreference = vi.fn(async () => undefined)
+  configureProductionActions({ setPreference: persistPreference })
+  const speech = { modelId: 'tts', models: { tts: { voice: 'coral', instructions: 'Calm', speed: 1.2 } } }
+  usePrototypeStore.getState().setPreference('speech', speech)
+  expect(persistPreference).toHaveBeenCalledWith('speech', speech)
+  expect(usePrototypeStore.getState().preferences.speech).toEqual(speech)
+})
+
+it('restores speech preferences in both stores when persistence fails', async () => {
+  const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+  configureProductionActions({ setPreference: async () => { throw new Error('Speech preference rejected') } })
+  const previous = usePrototypeStore.getState().preferences.speech
+  usePrototypeStore.getState().setPreference('speech', { modelId: 'tts', models: {} })
+  await vi.waitFor(() => expect(usePrototypeStore.getState().preferences.speech).toEqual(previous))
+  expect(setPreference).toHaveBeenCalledWith('speech', previous)
+  expect(useRealtimeStore.getState().syncError).toBe('Speech preference rejected')
+  warning.mockRestore()
+})

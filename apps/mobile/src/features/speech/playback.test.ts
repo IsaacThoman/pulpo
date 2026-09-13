@@ -1,10 +1,11 @@
+import type { SpeechPreferences } from '@pulpo/contracts'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 const mocks = vi.hoisted(() => ({
   appState: 'active', onAppState: undefined as undefined | ((state: string) => void),
   onSession: undefined as undefined | ((state: unknown, previous: unknown) => void),
   status: undefined as undefined | ((status: { didJustFinish?: boolean; playbackState?: string }) => void),
   play: vi.fn(), pause: vi.fn(), remove: vi.fn(), deleteFile: vi.fn(), write: vi.fn(), audioMode: vi.fn(),
-  preferences: { modelId: 'speech', models: {} }, request: vi.fn(),
+  preferences: { modelId: 'speech', models: {} } as SpeechPreferences, request: vi.fn(),
 }))
 vi.mock('react-native', () => ({ AppState: { get currentState() { return mocks.appState }, addEventListener: (_event: string, fn: typeof mocks.onAppState) => { mocks.onAppState = fn } } }))
 vi.mock('expo-audio', () => ({ setAudioModeAsync: mocks.audioMode, createAudioPlayer: () => ({ play: mocks.play, pause: mocks.pause, remove: mocks.remove, addListener: (_event: string, listener: typeof mocks.status) => { mocks.status = listener; return { remove: vi.fn() } } }) }))
@@ -19,6 +20,7 @@ vi.mock('../../store/session', () => ({ useSessionStore: { subscribe: (fn: typeo
 import { speechPlayback, readAloud, previewSpeechVoice } from './playback'
 const tick = () => new Promise(resolve => setTimeout(resolve, 0))
 beforeEach(() => {
+  mocks.preferences = { modelId: 'speech', models: {} }
   speechPlayback.stop(); vi.clearAllMocks(); mocks.appState = 'active'
   mocks.request.mockResolvedValue({ data: [{ id: 'speech', voices: [{ id: 'coral', label: 'Coral' }], defaultVoice: 'coral', responseFormat: 'wav', supportsInstructions: false, supportsSpeed: false, maxInputCharacters: 4096, maxInputTokens: null }] })
   vi.stubGlobal('fetch', vi.fn(async () => new Response(new Uint8Array([1, 2, 3]))))
@@ -66,4 +68,39 @@ describe('native speech lifecycle', () => {
     mocks.appState = 'background'; await readAloud('chat:message', 'Hello')
     expect(fetch).not.toHaveBeenCalled(); expect(mocks.play).not.toHaveBeenCalled()
   })
+})
+
+it('uses current admin defaults without saving them as user preferences', async () => {
+  mocks.preferences.modelId = null
+  const catalog = await mocks.request()
+  mocks.request.mockResolvedValue({ ...catalog, defaultModelId: 'speech' })
+  const run = readAloud('default', 'Hello')
+  await tick(); await tick()
+  expect(fetch).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ body: expect.any(String) }))
+  expect(JSON.parse(String(vi.mocked(fetch).mock.calls[0]![1]?.body))).toMatchObject({ modelId: 'speech', voice: 'coral' })
+  expect(mocks.preferences).toEqual({ modelId: null, models: {} })
+  speechPlayback.stop(); await run
+})
+it('preserves explicit model and voice choices over admin defaults', async () => {
+  mocks.preferences.models['speech'] = { voice: 'custom', instructions: '', speed: 1 }
+  const catalog = await mocks.request()
+  mocks.request.mockResolvedValue({ ...catalog, defaultModelId: 'another-model' })
+  const run = readAloud('explicit', 'Hello')
+  await tick(); await tick()
+  expect(JSON.parse(String(vi.mocked(fetch).mock.calls[0]![1]?.body))).toMatchObject({ modelId: 'speech', voice: 'custom' })
+  speechPlayback.stop(); await run
+})
+it('does not replace an unavailable explicit choice with the admin default', async () => {
+  mocks.preferences.modelId = 'removed'
+  const catalog = await mocks.request()
+  mocks.request.mockResolvedValue({ ...catalog, defaultModelId: 'speech' })
+  await readAloud('removed', 'Hello')
+  expect(fetch).not.toHaveBeenCalled()
+  expect(speechPlayback.getSnapshot().error).toContain('unavailable')
+})
+it('asks for a model when neither user nor admin has chosen one', async () => {
+  mocks.preferences.modelId = null
+  await readAloud('missing', 'Hello')
+  expect(fetch).not.toHaveBeenCalled()
+  expect(speechPlayback.getSnapshot().error).toContain('Choose a speech model')
 })

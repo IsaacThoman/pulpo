@@ -1,7 +1,28 @@
 import { describe, expect, it } from 'vitest'
-import { providerCacheRequestOptions } from './provider-cache.js'
+import { providerCacheRequestOptions, providerPromptCacheParameters } from './provider-cache.js'
 
 const identity = { userId: 'user-1', chatId: 'chat-1', runId: 'run-1' }
+
+describe('provider prompt caching', () => {
+  it('does not opt in by default', () => {
+    expect(providerPromptCacheParameters()).toEqual({})
+  })
+
+  it('adds the opt-in when enabled', () => {
+    expect(providerPromptCacheParameters(true)).toEqual({ cache_control: { type: 'ephemeral' } })
+  })
+
+  it('preserves explicit TTL and unrelated parameters when enabled', () => {
+    const parameters = { cache_control: { type: 'ephemeral', ttl: '1h' }, temperature: 0.5 }
+    expect(providerPromptCacheParameters(true, parameters)).toEqual(parameters)
+  })
+
+  it('removes a custom top-level opt-in when disabled without mutating parameters', () => {
+    const parameters = { cache_control: { type: 'ephemeral' }, temperature: 0.5, prompt_cache_key: 'chat:1' }
+    expect(providerPromptCacheParameters(false, parameters)).toEqual({ temperature: 0.5, prompt_cache_key: 'chat:1' })
+    expect(parameters.cache_control).toEqual({ type: 'ephemeral' })
+  })
+})
 
 describe('provider cache request options', () => {
   it('maps OpenAI affinity to the Responses prompt cache key', () => {

@@ -53,6 +53,7 @@ interface AdminModel {
   agentEnabled: boolean
   agentInstructions: string
   defaultParameters: Record<string, unknown>
+  promptCachingEnabled: boolean
   interceptImagesWithOcr: boolean
   contextWindow: number
   maxOutputTokens: number
@@ -86,7 +87,7 @@ const empty = (providerConnectionId = '', labId: string | null = null): AdminMod
   id: '', providerConnectionId, labId, upstreamModelId: '', name: '', description: '', enabled: true, visible: true, logo: null, customIconId: null, systemPrompt: '', agentEnabled: false, agentInstructions: '', defaultParameters: {}, interceptImagesWithOcr: false,
   contextWindow: 128_000, maxOutputTokens: 16_384, executionMode: 'stream', tags: [], allowedParameters: [],
   compactionEnabled: true, compactionThresholdTokens: 100_000, compactionRetainedTurns: 4,
-  useProviderCost: false,
+  useProviderCost: false, promptCachingEnabled: false,
   inputPriceMicros: 0, cachedInputPriceMicros: 0, cacheWritePriceMicros: 0, outputPriceMicros: 0, perRequestPriceMicros: 0,
   presets: [],
   fallbackModelId: null, maxRetries: 0, retryDelaySeconds: 1, stickyFallbackSeconds: 0,
@@ -514,6 +515,12 @@ function ModelEditorBody({
             onChange={(upstreamModelId) => setDraft({ ...draft, upstreamModelId })}
           />
         </Field>
+        <ToggleRow
+          label={ui("Explicit prompt caching")}
+          description={ui("Request five-minute prompt caching on compatible endpoints, such as Claude through OpenRouter. Applies to chat and agent turns. Off does not disable provider-managed automatic caching.")}
+          checked={draft.promptCachingEnabled ?? false}
+          onChange={(promptCachingEnabled) => setDraft({ ...draft, promptCachingEnabled })}
+        />
         <div className="grid grid-cols-2 gap-3">
           <Field label={ui("Execution")}>
             <Select value={draft.executionMode} onValueChange={(executionMode: 'stream' | 'background') => setDraft({ ...draft, executionMode })}>

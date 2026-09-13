@@ -512,6 +512,13 @@
       "when": 1789080990564,
       "tag": "0072_provider_webp",
       "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1789243979522,
+      "tag": "0073_model_prompt_caching",
+      "breakpoints": true
     }
   ]
 }
