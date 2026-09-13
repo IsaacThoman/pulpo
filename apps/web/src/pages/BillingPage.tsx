@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
@@ -6,9 +6,11 @@ import {
   ArrowLeft,
   Check,
   CreditCard,
+  Info,
   Loader2,
   Plus,
   ReceiptText,
+  RefreshCw,
   ShieldCheck,
   WalletCards,
   UsersRound,
@@ -42,6 +44,25 @@ const CREDIT_AMOUNTS = [10, 25, 50, 100] as const
 
 function SectionHeading({ title, description }: { title: string; description: string }) {
   return <div><h2 className="text-sm font-semibold">{title}</h2><p className="mt-0.5 text-xs text-muted-foreground">{description}</p></div>
+}
+
+export function BillingOptionCard({ icon, eyebrow, title, description, actions, children }: {
+  icon: ReactNode
+  eyebrow: string
+  title: string
+  description: string
+  actions: ReactNode
+  children: ReactNode
+}) {
+  return (
+    <div className="flex flex-col rounded-xl border bg-card p-5">
+      <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">{icon}{eyebrow}</div>
+      <h3 className="mt-2 text-lg font-semibold tracking-tight">{title}</h3>
+      <p className="mt-1 text-sm text-muted-foreground">{description}</p>
+      <div className="mt-5 flex-1 border-t pt-5">{children}</div>
+      <div className="mt-5 flex flex-wrap items-center gap-3">{actions}</div>
+    </div>
+  )
 }
 
 function newCheckoutKey(): string {
@@ -187,23 +208,25 @@ export function BillingPage() {
   }
 
   const managedPlan = summary ? managedBillingPlan(summary) : 'baby'
-  const subscriptionSubtitle = !summary
-    ? 'Free · Pay as you go'
-    : summary.subscription?.status === 'past_due'
-      ? `Payment past due${summary.subscription.currentPeriodEnd ? ` · ${summary.planOverridden ? 'billing period' : 'access'} through ${formatDate(Date.parse(summary.subscription.currentPeriodEnd))}` : ''}`
-      : !summary.subscription
-        ? 'Free · Pay as you go'
-      : summary.subscription?.cancelAtPeriodEnd
-        ? `$${managedPlan === 'fat' ? 24 : 8}/month${summary.subscription.currentPeriodEnd ? ` · ends ${formatDate(Date.parse(summary.subscription.currentPeriodEnd))}` : ''}`
-        : `$${managedPlan === 'fat' ? 24 : 8}/month${summary.subscription?.currentPeriodEnd ? ` · renews ${formatDate(Date.parse(summary.subscription.currentPeriodEnd))}` : ''}`
+  const subscription = summary?.subscription ?? null
+  const periodEnd = subscription?.currentPeriodEnd ? formatDate(Date.parse(subscription.currentPeriodEnd)) : null
+  const monthlyPrice = `$${managedPlan === 'fat' ? 24 : 8}`
+  const subscriptionSubtitle = !summary || !subscription
+    ? summary?.planOverridden ? ui("Plan benefits granted by an instance admin") : ui("No active subscription")
+    : subscription.status === 'past_due'
+      ? !periodEnd ? ui("Payment past due")
+        : summary.planOverridden ? uit`Payment past due · billing period through ${periodEnd}` : uit`Payment past due · access through ${periodEnd}`
+      : subscription.cancelAtPeriodEnd
+        ? periodEnd ? uit`${monthlyPrice}/month · ends ${periodEnd}` : uit`${monthlyPrice}/month`
+        : periodEnd ? uit`${monthlyPrice}/month · renews ${periodEnd}` : uit`${monthlyPrice}/month`
 
   return (
     <div className="flex h-full flex-col">
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto w-full max-w-5xl space-y-8 px-5 py-6 sm:px-6 sm:py-8">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-            <div><h2 className="text-xl font-semibold tracking-tight">{ui("Billing")}</h2><p className="mt-1 text-sm text-muted-foreground">{ui("Add usage credits, manage your plan, and view payment history.")}</p></div>
-            <Button onClick={() => { resetTopUp(); setTopUpOpen(true) }}><Plus />{ui("Add credits")}</Button>
+          <div>
+            <h2 className="text-xl font-semibold tracking-tight">{ui("Billing")}</h2>
+            <p className="mt-1 max-w-2xl text-sm text-muted-foreground">{ui("Subscribe to a monthly plan, buy credits and pay as you go, or do both.")}</p>
           </div>
 
           {checkoutReturned && (
@@ -232,27 +255,57 @@ export function BillingPage() {
             </div>
           )}
 
-          <div className="grid gap-6 lg:grid-cols-5 lg:gap-0 lg:divide-x">
-            <div className="py-1 lg:col-span-3 lg:pr-6">
-              <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground"><WalletCards className="size-4" />{ui("Account balance")}</div>
-              <div className="mt-3 text-3xl font-semibold tracking-tight text-emerald-600 dark:text-emerald-400">
-                {availableAccountBalanceMicros === undefined ? '—' : formatBalance(availableAccountBalanceMicros / 1_000_000)}
-              </div>
-              <p className="mt-2 max-w-md text-xs text-muted-foreground">{ui("Credits are used for chats, API calls, and other metered model usage.")}</p>
-              {summary && summary.balancePendingMicros > 0 && <p className="mt-1 text-xs text-muted-foreground">{formatBalance(summary.balancePendingMicros / 1_000_000)} {ui("reserved")}</p>}
-              {summary?.availablePoolBalanceMicros !== null && summary?.availablePoolBalanceMicros !== undefined && <div className="mt-6 border-t pt-5"><div className="flex items-center gap-2 text-xs font-medium text-muted-foreground"><UsersRound className="size-4" />{ui("Pool balance")}</div><div className="mt-2 text-2xl font-semibold tracking-tight text-emerald-600 dark:text-emerald-400">{formatBalance(summary.availablePoolBalanceMicros / 1_000_000)}</div><p className="mt-1 text-xs text-muted-foreground">{ui("The combined account balances available to your Pool.")}</p>{summary.poolBalancePendingMicros !== null && summary.poolBalancePendingMicros > 0 && <p className="mt-1 text-xs text-muted-foreground">{formatBalance(summary.poolBalancePendingMicros / 1_000_000)} {ui("reserved")}</p>}</div>}
+          <section className="space-y-4">
+            <SectionHeading title={ui("Two ways to pay")} description={ui("Both options work on the same account, so you can use either one or combine them.")} />
+            <div className="grid gap-4 lg:grid-cols-2">
+              <BillingOptionCard
+                icon={<RefreshCw className="size-4" />}
+                eyebrow={ui("Option 1 · Subscribe")}
+                title={ui("Monthly plan")}
+                description={ui("A flat monthly price for high usage limits that reset every week and every five hours, plus platform credits added each month.")}
+                actions={<>
+                  <Button variant={subscription ? 'outline' : 'default'} size="sm" disabled={!summary || submitting} onClick={() => setPlanOpen(true)}>
+                    {subscription ? ui("Manage plan") : ui("Choose a plan")}
+                  </Button>
+                  {!subscription && <span className="text-xs text-muted-foreground">{ui("From $8/month · cancel any time")}</span>}
+                </>}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div><div className="text-sm font-semibold">{billingPlanName(summary?.plan ?? 'baby')}</div><div className="mt-1 text-sm text-muted-foreground">{subscriptionSubtitle}</div></div>
+                  <PlanBadge plan={summary?.plan ?? 'baby'} overridden={summary?.planOverridden ?? false} />
+                </div>
+                {summary?.weekly || summary?.fiveHour
+                  ? <SubscriptionUsageBars className="mt-4" weekly={summary?.weekly ?? null} fiveHour={summary?.fiveHour ?? null} />
+                  : <ul className="mt-4 space-y-2 text-sm">
+                    {[ui("High weekly and 5-hour usage limits"), ui("Platform credits added every month"), ui("Higher workspace and file limits")].map((benefit) => (
+                      <li key={benefit} className="flex items-start gap-2"><Check className="mt-0.5 size-4 shrink-0 text-emerald-600 dark:text-emerald-400" />{benefit}</li>
+                    ))}
+                  </ul>}
+              </BillingOptionCard>
+
+              <BillingOptionCard
+                icon={<WalletCards className="size-4" />}
+                eyebrow={ui("Option 2 · Pay as you go")}
+                title={ui("Credits")}
+                description={ui("Buy credits whenever you need them, with no subscription required. Chats, API calls, and other metered model usage are deducted from your balance.")}
+                actions={<>
+                  <Button size="sm" onClick={() => { resetTopUp(); setTopUpOpen(true) }}><Plus />{ui("Add credits")}</Button>
+                  <span className="text-xs text-muted-foreground">{ui("$5–$500 per purchase · one-time, never auto-renews")}</span>
+                </>}
+              >
+                <div className="text-xs font-medium text-muted-foreground">{ui("Available balance")}</div>
+                <div className="mt-1.5 text-3xl font-semibold tracking-tight text-emerald-600 dark:text-emerald-400">
+                  {availableAccountBalanceMicros === undefined ? '—' : formatBalance(availableAccountBalanceMicros / 1_000_000)}
+                </div>
+                {summary && summary.balancePendingMicros > 0 && <p className="mt-1 text-xs text-muted-foreground">{formatBalance(summary.balancePendingMicros / 1_000_000)} {ui("reserved")}</p>}
+                {summary?.availablePoolBalanceMicros !== null && summary?.availablePoolBalanceMicros !== undefined && <div className="mt-4 border-t pt-4"><div className="flex items-center gap-2 text-xs font-medium text-muted-foreground"><UsersRound className="size-4" />{ui("Pool balance")}</div><div className="mt-1.5 text-xl font-semibold tracking-tight text-emerald-600 dark:text-emerald-400">{formatBalance(summary.availablePoolBalanceMicros / 1_000_000)}</div><p className="mt-1 text-xs text-muted-foreground">{ui("The combined account balances available to your Pool.")}</p>{summary.poolBalancePendingMicros !== null && summary.poolBalancePendingMicros > 0 && <p className="mt-1 text-xs text-muted-foreground">{formatBalance(summary.poolBalancePendingMicros / 1_000_000)} {ui("reserved")}</p>}</div>}
+              </BillingOptionCard>
             </div>
-            <div className="py-1 lg:col-span-2 lg:pl-6">
-              <div className="flex items-start justify-between gap-3">
-                <div><div className="text-sm font-semibold">{billingPlanName(summary?.plan ?? 'baby')}</div><div className="mt-1 text-sm text-muted-foreground">{subscriptionSubtitle}</div></div>
-                <PlanBadge plan={summary?.plan ?? 'baby'} overridden={summary?.planOverridden ?? false} />
-              </div>
-              <SubscriptionUsageBars className="mt-4" weekly={summary?.weekly ?? null} fiveHour={summary?.fiveHour ?? null} />
-              <Button className="mt-4" variant={summary?.subscription ? 'outline' : 'default'} size="sm" disabled={!summary || submitting} onClick={() => setPlanOpen(true)}>
-                {summary?.subscription ? ui("Manage plan") : ui("Compare plans")}
-              </Button>
+            <div className="flex items-start gap-3 rounded-lg bg-muted/40 px-4 py-3 text-xs text-muted-foreground">
+              <Info className="mt-0.5 size-4 shrink-0" />
+              <p>{ui("Using both? Usage within your plan's limits is included with your subscription. Once a limit is reached, usage is paid from your credit balance until the limit resets.")}</p>
             </div>
-          </div>
+          </section>
 
           <section className="space-y-3">
             <div className="flex items-end justify-between gap-3"><SectionHeading title={ui("Payment history")} description={ui("Credit purchases and subscription invoices.")} />{summary?.subscription && <Button size="sm" variant="outline" onClick={() => void openPortal()} disabled={submitting}><CreditCard />{ui("Billing portal")}</Button>}</div>
