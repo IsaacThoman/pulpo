@@ -35,15 +35,13 @@ export function SpeechSettings() {
     {catalog.isError && <p role="alert">{ui('Speech models could not be loaded.')} <button onClick={() => void catalog.refetch()}>{ui('Retry')}</button></p>}
     <div className="space-y-2">
       <label id="speech-model-label" className="text-sm font-medium">{ui('Model')}</label>
-      <Select value={preferences.modelId ?? '@default'} onValueChange={modelId => { closeVoices(); speechPlayback.stop(); set('speech', { ...preferences, modelId: modelId === '@default' ? null : modelId }) }} disabled={catalog.isLoading}>
+      <Select value={preferences.modelId ?? model?.id ?? ''} onValueChange={modelId => { closeVoices(); speechPlayback.stop(); set('speech', { ...preferences, modelId }) }} disabled={catalog.isLoading}>
         <SelectTrigger aria-labelledby="speech-model-label" className="w-full"><SelectValue placeholder={ui(catalog.isLoading ? 'Loading…' : 'Choose a speech model')} /></SelectTrigger>
         <SelectContent>
-          <SelectItem value="@default">{ui('Use admin default')}</SelectItem>
           {preferences.modelId && !model && <SelectItem value={preferences.modelId} disabled>{ui('Selected model unavailable')}</SelectItem>}
           {catalog.data?.data.map(option => <SelectItem key={option.id} value={option.id}>{option.name}</SelectItem>)}
         </SelectContent>
       </Select>
-      {!preferences.modelId && <p className="text-xs text-muted-foreground">{model ? ui('Admin default: {{name}}', { name: model.name }) : ui('No admin default is available. Choose a speech model to read aloud.')}</p>}
     </div>
     {catalog.data?.data.length === 0 && <p className="text-sm">{ui('An admin must configure a speech model first.')}</p>}
     {model && settings && <>
