@@ -240,7 +240,6 @@ export function BillingPage() {
             <PaymentOption
               icon={<Wallet className="size-4" />}
               title={ui("Pay as you go")}
-              description={ui("Buy credits that never expire.")}
               className="lg:pr-8"
             >
               <div>
@@ -266,7 +265,6 @@ export function BillingPage() {
               icon={<RefreshCw className="size-4" />}
               title={ui("Subscribe monthly")}
               badge={<PlanBadge plan={currentPlan} overridden={summary?.planOverridden ?? false} pastDue={summary?.subscription?.status === 'past_due'} />}
-              description={ui("High usage limits and credits every month.")}
               className="border-t pt-8 lg:border-t-0 lg:pt-0 lg:pl-8"
             >
               <div>
@@ -349,7 +347,7 @@ export function BillingPage() {
   )
 }
 
-function PaymentOption({ icon, title, badge, description, className, children }: { icon: ReactNode; title: string; badge?: ReactNode; description: string; className?: string; children: ReactNode }) {
+function PaymentOption({ icon, title, badge, className, children }: { icon: ReactNode; title: string; badge?: ReactNode; className?: string; children: ReactNode }) {
   return (
     <section aria-label={title} className={cn('flex flex-col gap-5', className)}>
       <div className="flex items-start justify-between gap-3">
@@ -359,7 +357,6 @@ function PaymentOption({ icon, title, badge, description, className, children }:
         </div>
         {badge && <div className="shrink-0">{badge}</div>}
       </div>
-      <p className="text-sm text-muted-foreground">{description}</p>
       {children}
     </section>
   )
