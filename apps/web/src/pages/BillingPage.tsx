@@ -238,34 +238,10 @@ export function BillingPage() {
 
           <div className="grid items-start gap-8 lg:grid-cols-2 lg:gap-0 lg:divide-x">
             <PaymentOption
-              icon={<Wallet className="size-4" />}
-              title={ui("Pay as you go")}
-              className="lg:pr-8"
-            >
-              <div>
-                <div className="text-xs font-medium text-muted-foreground">{ui("Credit balance")}</div>
-                <div className="mt-1 text-3xl font-semibold tracking-tight text-emerald-600 dark:text-emerald-400">
-                  {availableAccountBalanceMicros === undefined ? '—' : formatBalance(availableAccountBalanceMicros / 1_000_000)}
-                </div>
-                {summary && summary.balancePendingMicros > 0 && <p className="mt-1 text-xs text-muted-foreground">{formatBalance(summary.balancePendingMicros / 1_000_000)} {ui("reserved")}</p>}
-                {summary?.availablePoolBalanceMicros !== null && summary?.availablePoolBalanceMicros !== undefined && (
-                  <div className="mt-4">
-                    <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground"><UsersRound className="size-3.5" />{ui("Pool balance")}</div>
-                    <div className="mt-1 text-lg font-semibold tracking-tight text-emerald-600 dark:text-emerald-400">{formatBalance(summary.availablePoolBalanceMicros / 1_000_000)}</div>
-                    <p className="mt-0.5 text-xs text-muted-foreground">{ui("The combined account balances available to your Pool.")}{summary.poolBalancePendingMicros !== null && summary.poolBalancePendingMicros > 0 && <> {formatBalance(summary.poolBalancePendingMicros / 1_000_000)} {ui("reserved")}.</>}</p>
-                  </div>
-                )}
-              </div>
-              <div className="flex flex-wrap gap-2 pt-1">
-                <Button variant={subscribed ? 'outline' : 'default'} onClick={() => { resetTopUp(); setTopUpOpen(true) }}><Plus />{ui("Add credits")}</Button>
-              </div>
-            </PaymentOption>
-
-            <PaymentOption
               icon={<RefreshCw className="size-4" />}
               title={ui("Subscribe monthly")}
               badge={<PlanBadge plan={currentPlan} overridden={summary?.planOverridden ?? false} pastDue={summary?.subscription?.status === 'past_due'} />}
-              className="border-t pt-8 lg:border-t-0 lg:pt-0 lg:pl-8"
+              className="lg:pr-8"
             >
               <div>
                 <div className="text-xs font-medium text-muted-foreground">{ui("Your plan")}</div>
@@ -285,6 +261,30 @@ export function BillingPage() {
                   {subscribed ? ui("Manage plan") : ui("Compare plans")}
                 </Button>
                 {subscribed && <Button variant="ghost" onClick={() => void openPortal()} disabled={submitting}><CreditCard />{ui("Billing portal")}</Button>}
+              </div>
+            </PaymentOption>
+
+            <PaymentOption
+              icon={<Wallet className="size-4" />}
+              title={ui("Pay as you go")}
+              className="border-t pt-8 lg:border-t-0 lg:pt-0 lg:pl-8"
+            >
+              <div>
+                <div className="text-xs font-medium text-muted-foreground">{ui("Credit balance")}</div>
+                <div className="mt-1 text-3xl font-semibold tracking-tight text-emerald-600 dark:text-emerald-400">
+                  {availableAccountBalanceMicros === undefined ? '—' : formatBalance(availableAccountBalanceMicros / 1_000_000)}
+                </div>
+                {summary && summary.balancePendingMicros > 0 && <p className="mt-1 text-xs text-muted-foreground">{formatBalance(summary.balancePendingMicros / 1_000_000)} {ui("reserved")}</p>}
+                {summary?.availablePoolBalanceMicros !== null && summary?.availablePoolBalanceMicros !== undefined && (
+                  <div className="mt-4">
+                    <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground"><UsersRound className="size-3.5" />{ui("Pool balance")}</div>
+                    <div className="mt-1 text-lg font-semibold tracking-tight text-emerald-600 dark:text-emerald-400">{formatBalance(summary.availablePoolBalanceMicros / 1_000_000)}</div>
+                    <p className="mt-0.5 text-xs text-muted-foreground">{ui("The combined account balances available to your Pool.")}{summary.poolBalancePendingMicros !== null && summary.poolBalancePendingMicros > 0 && <> {formatBalance(summary.poolBalancePendingMicros / 1_000_000)} {ui("reserved")}.</>}</p>
+                  </div>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-2 pt-1">
+                <Button variant={subscribed ? 'outline' : 'default'} onClick={() => { resetTopUp(); setTopUpOpen(true) }}><Plus />{ui("Add credits")}</Button>
               </div>
             </PaymentOption>
           </div>
