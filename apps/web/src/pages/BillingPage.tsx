@@ -357,8 +357,8 @@ function PaymentOption({ icon, title, badge, description, className, children }:
   return (
     <section aria-label={title} className={cn('flex flex-col gap-5', className)}>
       <div className="flex items-start justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-3">
-          <div className="grid size-9 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground" aria-hidden>{icon}</div>
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="shrink-0 text-muted-foreground" aria-hidden>{icon}</span>
           <h3 className="text-base font-semibold">{title}</h3>
         </div>
         <div className="shrink-0">{badge}</div>
