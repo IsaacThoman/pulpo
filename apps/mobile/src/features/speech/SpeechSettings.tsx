@@ -1,5 +1,7 @@
-import { useEffect, useSyncExternalStore } from 'react'
-import { ActivityIndicator, Platform, Pressable, Text, TextInput, View } from 'react-native'
+import { useEffect, useState, useSyncExternalStore } from 'react'
+import { ActivityIndicator, Platform, Text, View } from 'react-native'
+import { Button, HStack, LabeledContent, ProgressView, Section, Stepper, Text as NativeText, TextField, useNativeState } from '@expo/ui/swift-ui'
+import { accessibilityLabel, accessibilityValue, foregroundStyle, textFieldStyle } from '@expo/ui/swift-ui/modifiers'
 import { useQuery } from '@tanstack/react-query'
 import { SPEECH_MAX_INSTRUCTIONS_LENGTH, type SpeechCatalog } from '@pulpo/contracts'
 import { apiRequest } from '../../api/client'
@@ -7,12 +9,23 @@ import { usePreferencesStore } from '../../store/preferences'
 import { useSessionStore } from '../../store/session'
 import { usePrototypeStore } from '../../mockup5/src/store/prototypeStore'
 import { useAppTheme } from '../../mockup5/src/theme'
-import { Screen, PageHeader, GlassIconButton } from '../../mockup5/src/components/PrototypeUI'
-
+import { Card, Field, GlassIconButton, ListRow, SectionTitle } from '../../mockup5/src/components/PrototypeUI'
+import { MaterialButton, MaterialIconButton } from '../../platform/MaterialUI'
 import { SpeechPicker } from './SpeechPicker'
 import { previewSpeechVoice, speechPlayback } from './playback'
 
-export function SpeechSettings({ onBack }: { onBack: () => void }) {
+function SpeechInstructions({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  const text = useNativeState(value)
+  const [focused, setFocused] = useState(false)
+  // Native text can advance ahead of React during typing; only apply external
+  // values when editing ends so delayed renders cannot overwrite newer input.
+  useEffect(() => { if (!focused && text.get() !== value) text.set(value) }, [focused, text, value])
+  return <TextField text={text} onFocusChange={setFocused} onTextChange={onChange} axis="vertical" maxLength={SPEECH_MAX_INSTRUCTIONS_LENGTH}
+    placeholder="Speak in a calm, friendly tone." modifiers={[textFieldStyle('plain'), accessibilityLabel('Speech instructions')]} />
+}
+
+/** Sections embedded in the Personalization form (iOS) or settings screen (Android). */
+export function SpeechSettings() {
   const theme = useAppTheme()
   const playback = useSyncExternalStore(speechPlayback.subscribe, speechPlayback.getSnapshot)
   useEffect(() => () => { if (speechPlayback.getSnapshot().key?.startsWith('preview:')) speechPlayback.stop() }, [])
@@ -24,44 +37,57 @@ export function SpeechSettings({ onBack }: { onBack: () => void }) {
   const model = catalog.data?.data.find(m => m.id === (preferences.modelId ?? catalog.data?.defaultModelId))
   const settings = model ? preferences.models[model.id] ?? { instructions: '', speed: 1 } : undefined
   const update = (patch: object) => { if (model) setPreference('speech', { ...preferences, models: { ...preferences.models, [model.id]: { ...settings!, ...patch } } }) }
-  const textStyle = { color: theme.text, fontSize: 16 }
-  const fieldStyle = { color: theme.text, backgroundColor: theme.fillStrong, borderRadius: 10, padding: 12, minHeight: 48 }
-  return <Screen>{Platform.OS !== 'ios' && <PageHeader title="Speech" onBack={onBack} />}<View style={{ gap: 18 }}>
-    <Text style={{ color: theme.secondary }}>Read messages aloud with an AI-generated voice.</Text>
-    {catalog.isError && <Pressable onPress={() => void catalog.refetch()}><Text style={textStyle}>Speech models could not be loaded. Tap to retry.</Text></Pressable>}
-    <View style={{ gap: 8 }}>
-      <Text style={textStyle}>Model</Text>
-      {catalog.isLoading ? <ActivityIndicator color={theme.secondary} /> : <SpeechPicker
-        label="Model"
-        value={preferences.modelId ?? model?.id}
-        placeholder={preferences.modelId ? 'Selected model unavailable' : 'Choose a model'}
-        options={catalog.data?.data.map(option => ({ id: option.id, label: option.name })) ?? []}
-        onChange={modelId => { speechPlayback.stop(); setPreference('speech', { ...preferences, modelId }) }}
-      />}
-    </View>
-    {catalog.data?.data.length === 0 && <Text style={textStyle}>An admin must configure a speech model first.</Text>}
-    {model && settings && <>
-      <View style={{ gap: 8 }}>
-        <Text style={textStyle}>Voice</Text>
-        <SpeechPicker
-          key={model.id}
-          label="Voice"
-          value={settings.voice ?? model.defaultVoice}
-          placeholder="Selected voice unavailable"
-          options={model.voices}
-          onChange={voice => { speechPlayback.stop(); update({ voice }) }}
-          onPreview={voice => { void previewSpeechVoice(model.id, voice) }}
-        />
-        {playback.key?.startsWith(`preview:${model.id}:`) && playback.phase !== 'idle' && <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          <GlassIconButton icon="stop.fill" label="Stop preview" onPress={() => speechPlayback.stop()} />
-          {playback.phase === 'loading' && <ActivityIndicator color={theme.secondary} />}
-          <Text style={textStyle}>{model.voices.find(voice => playback.key === `preview:${model.id}:${voice.id}`)?.label}</Text>
-        </View>}
-        {settings.voice !== undefined && <Pressable accessibilityRole="button" onPress={() => { speechPlayback.stop(); update({ voice: undefined }) }}><Text style={textStyle}>Use default voice</Text></Pressable>}
-        {playback.error && <Text accessibilityRole="alert" style={{ color: theme.text }}>{playback.error}</Text>}
-      </View>
-      {model.supportsInstructions && <View style={{ gap: 8 }}><Text style={textStyle}>Instructions</Text><TextInput accessibilityLabel="Speech instructions" style={fieldStyle} multiline maxLength={SPEECH_MAX_INSTRUCTIONS_LENGTH} value={settings.instructions} onChangeText={instructions => update({ instructions })} placeholder="Speak in a calm, friendly tone." placeholderTextColor={theme.secondary} /></View>}
-      {model.supportsSpeed && <View style={{ gap: 8 }}><Text style={textStyle}>Speed: {settings.speed}×</Text><View style={{ flexDirection: 'row', gap: 20 }}><Pressable accessibilityRole="button" accessibilityLabel="Decrease speech speed" onPress={() => update({ speed: Math.max(model.speedMin, Math.round((settings.speed - 0.1) * 100) / 100) })}><Text style={fieldStyle}>−</Text></Pressable><Pressable accessibilityRole="button" accessibilityLabel="Increase speech speed" onPress={() => update({ speed: Math.min(model.speedMax, Math.round((settings.speed + 0.1) * 100) / 100) })}><Text style={fieldStyle}>+</Text></Pressable></View></View>}
-    </>}
-  </View></Screen>
+  const changeSpeed = (speed: number) => { if (model) update({ speed: Math.max(model.speedMin, Math.min(model.speedMax, Math.round(speed * 100) / 100)) }) }
+  const resetVoice = () => { speechPlayback.stop(); update({ voice: undefined }) }
+  const previewing = playback.key?.startsWith(`preview:${model?.id}:`) && playback.phase !== 'idle'
+  const previewLabel = model?.voices.find(voice => playback.key === `preview:${model.id}:${voice.id}`)?.label
+  const modelPicker = <SpeechPicker label="Model" value={preferences.modelId ?? model?.id}
+    placeholder={preferences.modelId ? 'Selected model unavailable' : 'Choose a model'}
+    options={catalog.data?.data.map(option => ({ id: option.id, label: option.name })) ?? []}
+    onChange={modelId => { speechPlayback.stop(); setPreference('speech', { ...preferences, modelId }) }} />
+  const voicePicker = model && settings && <SpeechPicker key={model.id} label="Voice" value={settings.voice ?? model.defaultVoice}
+    placeholder="Selected voice unavailable" options={model.voices}
+    onChange={voice => { speechPlayback.stop(); update({ voice }) }} onPreview={voice => { void previewSpeechVoice(model.id, voice) }} />
+
+  if (Platform.OS === 'ios') return <>
+    <Section title="Speech" footer={<NativeText modifiers={[foregroundStyle('secondary')]}>Read messages aloud with an AI-generated voice.</NativeText>}>
+      {catalog.isError ? <Button label="Speech models could not be loaded. Tap to retry." onPress={() => void catalog.refetch()} />
+        : catalog.isLoading ? <LabeledContent label="Model"><ProgressView /></LabeledContent> : modelPicker}
+      {catalog.data?.data.length === 0 && <NativeText modifiers={[foregroundStyle('secondary')]}>An admin must configure a speech model first.</NativeText>}
+      {voicePicker}
+      {previewing && <HStack spacing={8}>
+        <Button label="Stop preview" systemImage="stop.fill" onPress={() => speechPlayback.stop()} />
+        {playback.phase === 'loading' && <ProgressView />}
+        <NativeText modifiers={[foregroundStyle('secondary')]}>{previewLabel}</NativeText>
+      </HStack>}
+      {settings?.voice !== undefined && <Button label="Use default voice" onPress={resetVoice} />}
+      {playback.error && <NativeText>{playback.error}</NativeText>}
+      {/* Expo's SwiftUI stepper stores integers; use hundredths for decimal speeds. */}
+      {model?.supportsSpeed && settings && <Stepper label={`Speed: ${settings.speed}×`} value={Math.round(settings.speed * 100)} step={10} min={Math.ceil(model.speedMin * 100)} max={Math.floor(model.speedMax * 100)} onValueChange={value => changeSpeed(value / 100)} modifiers={[accessibilityValue(`${settings.speed}×`)]} />}
+    </Section>
+    {model?.supportsInstructions && settings && <Section title="Speech instructions">
+      <SpeechInstructions key={model.id} value={settings.instructions} onChange={instructions => update({ instructions })} />
+    </Section>}
+  </>
+
+  return <>
+    <SectionTitle>Speech</SectionTitle>
+    <Card>
+      {catalog.isError ? <MaterialButton label="Speech models could not be loaded. Tap to retry." variant="secondary" onPress={() => void catalog.refetch()} />
+        : <ListRow title="Model">{catalog.isLoading ? <ActivityIndicator color={theme.secondary} /> : modelPicker}</ListRow>}
+      {catalog.data?.data.length === 0 && <ListRow title="An admin must configure a speech model first." last />}
+      {voicePicker && <ListRow title="Voice" last={!model?.supportsSpeed}>{voicePicker}</ListRow>}
+      {previewing && <ListRow title={previewLabel ?? 'Voice preview'}><GlassIconButton icon="stop.fill" label="Stop preview" onPress={() => speechPlayback.stop()} />{playback.phase === 'loading' && <ActivityIndicator color={theme.secondary} />}</ListRow>}
+      {settings?.voice !== undefined && <ListRow title="Use default voice" onPress={resetVoice} />}
+      {playback.error && <Text accessibilityRole="alert" style={{ color: theme.text, padding: 16 }}>{playback.error}</Text>}
+      {model?.supportsSpeed && settings && <ListRow title="Speed" value={`${settings.speed}×`} last>
+        <View style={{ flexDirection: 'row' }}>
+          <MaterialIconButton icon="remove" label="Decrease speech speed" disabled={settings.speed <= model.speedMin} onPress={() => changeSpeed(settings.speed - 0.1)} />
+          <MaterialIconButton icon="plus" label="Increase speech speed" disabled={settings.speed >= model.speedMax} onPress={() => changeSpeed(settings.speed + 0.1)} />
+        </View>
+      </ListRow>}
+    </Card>
+    <Text style={{ color: theme.secondary, paddingHorizontal: 16 }}>Read messages aloud with an AI-generated voice.</Text>
+    {model?.supportsInstructions && settings && <><SectionTitle>Speech instructions</SectionTitle><Field accessibilityLabel="Speech instructions" multiline maxLength={SPEECH_MAX_INSTRUCTIONS_LENGTH} value={settings.instructions} onChangeText={instructions => update({ instructions })} placeholder="Speak in a calm, friendly tone." /></>}
+  </>
 }
