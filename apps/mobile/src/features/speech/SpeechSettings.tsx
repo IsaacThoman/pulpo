@@ -33,12 +33,11 @@ export function SpeechSettings({ onBack }: { onBack: () => void }) {
       <Text style={textStyle}>Model</Text>
       {catalog.isLoading ? <ActivityIndicator color={theme.secondary} /> : <SpeechPicker
         label="Model"
-        value={preferences.modelId ?? '@default'}
-        placeholder="Selected model unavailable"
-        options={[{ id: '@default', label: 'Use admin default' }, ...(catalog.data?.data.map(option => ({ id: option.id, label: option.name })) ?? [])]}
-        onChange={modelId => { speechPlayback.stop(); setPreference('speech', { ...preferences, modelId: modelId === '@default' ? null : modelId }) }}
+        value={preferences.modelId ?? model?.id}
+        placeholder={preferences.modelId ? 'Selected model unavailable' : 'Choose a model'}
+        options={catalog.data?.data.map(option => ({ id: option.id, label: option.name })) ?? []}
+        onChange={modelId => { speechPlayback.stop(); setPreference('speech', { ...preferences, modelId }) }}
       />}
-      {!preferences.modelId && <Text style={{ color: theme.secondary }}>{model ? `Admin default: ${model.name}` : 'No admin default is available. Choose a speech model to read aloud.'}</Text>}
     </View>
     {catalog.data?.data.length === 0 && <Text style={textStyle}>An admin must configure a speech model first.</Text>}
     {model && settings && <>

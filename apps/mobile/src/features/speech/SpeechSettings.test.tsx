@@ -98,7 +98,8 @@ async function startPreview() {
 it.each(['ios', 'android'])('persists %s model and voice choices, updates native selections, and restores them after hydration', async platform => {
   mocks.platform = platform
   await render()
-  expect(container.textContent).toContain('Use admin default')
+  selected('Model', 'first', 'First model')
+  expect(container.textContent).not.toContain('Use admin default')
   await choose('Model', 'first', 'First model')
   selected('Model', 'first', 'First model'); selected('Voice', 'coral', 'Coral')
   expect(persist).toHaveBeenCalledWith('speech', { modelId: 'first', models: {} })
@@ -148,11 +149,12 @@ it.each(['ios', 'android'])('lets %s replace unavailable models and voices witho
   expect(usePreferencesStore.getState().speech.models.first).toEqual({ voice: 'coral', instructions: 'Calm', speed: 1.2 })
 })
 
-it.each(['ios', 'android'])('inherits defaults and persists returning to them with %s native pickers', async platform => {
+it.each(['ios', 'android'])('selects the actual admin default and persists explicit choices with %s native pickers', async platform => {
   mocks.platform = platform
   await render()
-  selected('Model', '@default', 'Use admin default'); selected('Voice', 'coral', 'Coral')
-  expect(container.textContent).toContain('Admin default: First model')
+  selected('Model', 'first', 'First model'); selected('Voice', 'coral', 'Coral')
+  expect(container.textContent).not.toContain('Use admin default')
+  expect(container.textContent).not.toContain('Admin default: First model')
   expect(persist).not.toHaveBeenCalled()
   expect(usePreferencesStore.getState().speech).toEqual({ modelId: null, models: {} })
   await choose('Voice', 'alloy', 'Alloy')
@@ -162,15 +164,15 @@ it.each(['ios', 'android'])('inherits defaults and persists returning to them wi
   selected('Voice', 'coral', 'Coral')
   expect(usePreferencesStore.getState().speech.models.first?.voice).toBeUndefined()
   await choose('Model', 'second', 'Second model')
-  await startPreview(); await choose('Model', '@default', 'Use admin default')
+  await startPreview(); await choose('Model', 'first', 'First model')
   expect(speechPlayback.getSnapshot().phase).toBe('idle')
-  selected('Model', '@default', 'Use admin default'); selected('Voice', 'coral', 'Coral')
-  expect(persist).toHaveBeenLastCalledWith('speech', { modelId: null, models: { first: { voice: undefined, instructions: '', speed: 1 } } })
+  selected('Model', 'first', 'First model'); selected('Voice', 'coral', 'Coral')
+  expect(persist).toHaveBeenLastCalledWith('speech', { modelId: 'first', models: { first: { voice: undefined, instructions: '', speed: 1 } } })
   await act(async () => {
     usePreferencesStore.setState({ speech: { modelId: 'second', models: {} } })
     await usePreferencesStore.getState().hydrate()
   })
-  expect(usePreferencesStore.getState().speech.modelId).toBeNull()
+  expect(usePreferencesStore.getState().speech.modelId).toBe('first')
   expect(usePreferencesStore.getState().speech.models.first?.voice).toBeUndefined()
-  selected('Model', '@default', 'Use admin default'); selected('Voice', 'coral', 'Coral')
+  selected('Model', 'first', 'First model'); selected('Voice', 'coral', 'Coral')
 })
