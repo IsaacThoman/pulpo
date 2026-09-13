@@ -1609,8 +1609,6 @@ const esUi: Record<string, string> = {
   "Credits added every month": "Créditos añadidos cada mes",
   "Buy credits once and spend them as you use Pulpo. Nothing renews, and unused credits stay on your account.": "Compra créditos una vez y gástalos a medida que usas Pulpo. Nada se renueva y los créditos sin usar se quedan en tu cuenta.",
   "Credit balance": "Saldo de créditos",
-  "Usage comes out of your plan's limits first. Credits cover anything beyond them.": "El uso se descuenta primero de los límites de tu plan. Los créditos cubren todo lo que los supere.",
-  "Without a plan, chats, API calls, and other metered usage are paid from this balance.": "Sin un plan, los chats, las llamadas a la API y otros usos medidos se pagan con este saldo.",
   "Not subscribed": "Sin suscripción",
 }
 

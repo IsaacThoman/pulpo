@@ -257,9 +257,6 @@ export function BillingPage() {
                   </div>
                 )}
               </div>
-              <p className="text-sm text-muted-foreground">{subscribed
-                ? ui("Usage comes out of your plan's limits first. Credits cover anything beyond them.")
-                : ui("Without a plan, chats, API calls, and other metered usage are paid from this balance.")}</p>
               <div className="mt-auto flex flex-wrap gap-2 pt-1">
                 <Button variant={subscribed ? 'outline' : 'default'} onClick={() => { resetTopUp(); setTopUpOpen(true) }}><Plus />{ui("Add credits")}</Button>
               </div>
