@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { requireAdmin } from '../auth/service.js'
 import { db } from '../database/client.js'
 import { agentRuns, apiKeys, applicationSettings, chats, generationAttempts, models, ocrAttempts, requestLogs, responses, toolExecutions, usageEvents, users, workspaceLeases } from '../database/schema.js'
+import { detailedPayloadCaptureIsActive } from '../logging/detailed-payload-retention.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { reconcileWorkspaceLeases } from '../agent/controller.js'
 import { workspaceControllerRequest } from '../agent/controller-http.js'
@@ -12,6 +13,7 @@ import { getConfig } from '../config.js'
 import { profileAvatarUrl } from '../profile/service.js'
 import { decodeUsageCursor, encodeUsageCursor, resolveUsageModelAlias } from '../usage/public.js'
 import { eligibleUsageFilters, loadUsageActivity, loadUsageModelAliases, usageQuerySchema, usageRecordsQuerySchema, usageSince } from '../usage/routes.js'
+import { registerAdminUsagePayloadRoutes } from './usage-payloads.js'
 
 const querySchema = z.object({
   range: z.enum(['24h', '7d', '30d', '90d', 'all']).default('24h'),
@@ -43,6 +45,7 @@ function filters(input: z.infer<typeof querySchema>, includeCursor = false): SQL
 }
 
 export async function registerAdminUsageRoutes(app: FastifyInstance): Promise<void> {
+  registerAdminUsagePayloadRoutes(app)
   app.get('/api/admin/usage/leaderboard', async (request) => {
     requireAdmin(request)
     const query = usageQuerySchema.parse(request.query)
@@ -321,7 +324,9 @@ export async function registerAdminUsageRoutes(app: FastifyInstance): Promise<vo
   app.get('/api/admin/usage/requests', async (request) => {
     requireAdmin(request)
     const input = querySchema.parse(request.query)
-    const rows = await db.select({ call: generationAttempts, log: requestLogs, user: { id: users.id, name: users.name, email: users.email }, apiKey: { id: apiKeys.id, name: apiKeys.name, prefix: apiKeys.prefix }, modelName: models.name })
+    // Captured agent payloads can be large and repeat across every model turn.
+    // Keep them out of the usage list query, which only needs request metadata.
+    const rows = await db.select({ call: generationAttempts, log: { id: requestLogs.id, responseId: requestLogs.responseId, stickyFallbackUsed: requestLogs.stickyFallbackUsed, ocrStatus: requestLogs.ocrStatus }, user: { id: users.id, name: users.name, email: users.email }, apiKey: { id: apiKeys.id, name: apiKeys.name, prefix: apiKeys.prefix }, modelName: models.name })
       .from(generationAttempts).innerJoin(requestLogs, eq(generationAttempts.requestLogId, requestLogs.id)).innerJoin(users, eq(requestLogs.userId, users.id)).leftJoin(apiKeys, eq(requestLogs.apiKeyId, apiKeys.id)).leftJoin(models, eq(generationAttempts.modelId, models.id))
       .where(and(...filters(input, true))).orderBy(desc(generationAttempts.startedAt)).limit(input.limit + 1)
     const page = rows.slice(0, input.limit).map(({ call, log, ...relations }) => ({
@@ -349,6 +354,6 @@ export async function registerAdminUsageRoutes(app: FastifyInstance): Promise<vo
     const ocr = await db.select().from(ocrAttempts).where(eq(ocrAttempts.requestLogId, call.requestLogId)).orderBy(asc(ocrAttempts.createdAt))
     const [agentRun] = log ? await db.select().from(agentRuns).where(eq(agentRuns.responseId, log.responseId)).limit(1) : []
     const tools = agentRun ? await db.select().from(toolExecutions).where(eq(toolExecutions.agentRunId, agentRun.id)).orderBy(asc(toolExecutions.createdAt)) : []
-    return { call, request: log ? { ...log, requestPayload: undefined, responsePayload: undefined } : null, ocrAttempts: ocr, toolExecutions: tools }
+    return { call, request: log ? { ...log, requestPayload: undefined, responsePayload: undefined } : null, ocrAttempts: ocr.map((attempt) => log && detailedPayloadCaptureIsActive(log) ? attempt : { ...attempt, requestPayload: null, responsePayload: null }), toolExecutions: tools }
   })
 }

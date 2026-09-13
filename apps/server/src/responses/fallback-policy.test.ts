@@ -20,6 +20,15 @@ const policy = {
   slowStickyMinCompletionSeconds: 15,
 }
 
+const payloadBudgetMessage = `OpenAI API error (400): ${JSON.stringify({
+  code: '400',
+  message: JSON.stringify({
+    error: 'Request exceeds TCP payload budget',
+    message: 'Request payload is 259.2 MiB — 3.2 MiB over the 256.0 MiB budget. Images account for 100% of the payload.',
+  }),
+  type: 'Bad Request',
+})}`
+
 describe('shared model fallback policy', () => {
   it('uses the global sticky key and configured TTL', async () => {
     const store = {
@@ -61,6 +70,25 @@ describe('shared model fallback policy', () => {
     expect(canFallbackAfterGenerationError(new Error('invalid reasoning effort'))).toBe(false)
     expect(canFallbackAfterGenerationError(new Error('Generation cancelled'))).toBe(false)
   })
+
+  it('allows fallback for provider TCP payload budgets, including wrapped Responses errors', () => {
+    for (const message of ['Request exceeds TCP payload budget', payloadBudgetMessage]) {
+      const error = new Error(message)
+      expect(classifyGenerationError(error)).toBe('provider_http')
+      expect(canFallbackAfterGenerationError(error)).toBe(true)
+      expect(canFallbackAfterGenerationError(new GenerationAttemptError(message, false, error))).toBe(true)
+      expect(canFallbackAfterGenerationError(new GenerationAttemptError(message, true, error))).toBe(false)
+      expect(canFallbackAfterGenerationError(error, true)).toBe(false)
+    }
+  })
+
+  it.each(['Usage exceeded the reserved budget', 'Insufficient balance', 'Request exceeds account budget'])(
+    'keeps financial failures non-retryable: %s', (message) => {
+      const error = new Error(message)
+      expect(classifyGenerationError(error)).toBe('budget')
+      expect(canFallbackAfterGenerationError(error)).toBe(false)
+    },
+  )
 
   it('protects attempts once output has started', () => {
     expect(canFallbackAfterGenerationError(new GenerationAttemptError('timeout', true))).toBe(false)

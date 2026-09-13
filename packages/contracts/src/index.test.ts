@@ -54,6 +54,22 @@ import {
   type ResponseSnapshot,
 } from './index.js'
 
+describe('model prompt caching settings', () => {
+  it('defaults to disabled and only accepts an explicit boolean', () => {
+    const create = createModelSchema.pick({ promptCachingEnabled: true })
+    const update = createModelSchema.shape.promptCachingEnabled.removeDefault().optional()
+    expect(create.parse({})).toEqual({ promptCachingEnabled: false })
+    for (const enabled of [true, false]) {
+      expect(create.parse({ promptCachingEnabled: enabled })).toEqual({ promptCachingEnabled: enabled })
+      expect(update.parse(enabled)).toBe(enabled)
+    }
+    expect(update.parse(undefined)).toBeUndefined()
+    for (const invalid of ['auto', 'enabled', 'disabled', null]) {
+      expect(() => update.parse(invalid)).toThrow()
+    }
+  })
+})
+
 describe('workspace continue timing', () => {
   it('prefers the server eligibility timestamp', () => {
     expect(workspaceContinueWithoutAgentAvailableAtMs({
@@ -140,10 +156,36 @@ describe('shared contracts', () => {
     expect(episodicMemoryStatisticsSchema.safeParse({ ...statistics, range: '90d' }).success).toBe(false)
   })
 
-  it('requires an explicit API key enabled state', () => {
+  it('accepts API key names and enabled states without defaulting omitted fields', () => {
     expect(updateApiKeySchema.parse({ enabled: true })).toEqual({ enabled: true })
     expect(updateApiKeySchema.parse({ enabled: false })).toEqual({ enabled: false })
     expect(updateApiKeySchema.safeParse({}).success).toBe(false)
+    expect(updateApiKeySchema.parse({ name: '  Laptop  ' })).toEqual({ name: 'Laptop' })
+    expect(updateApiKeySchema.parse({ name: 'Laptop', enabled: false })).toEqual({ name: 'Laptop', enabled: false })
+    for (const name of ['', '   ', 'a'.repeat(121)]) {
+      expect(updateApiKeySchema.safeParse({ name }).success).toBe(false)
+    }
+  })
+
+  it('supports partial API key settings without defaulting omitted permissions or budgets', () => {
+    expect(updateApiKeySchema.parse({ scopes: ['models'] })).toEqual({ scopes: ['models'] })
+    expect(updateApiKeySchema.parse({ allowedModels: [] })).toEqual({ allowedModels: [] })
+    expect(updateApiKeySchema.parse({ monthlyBudgetMicros: null })).toEqual({ monthlyBudgetMicros: null })
+    expect(updateApiKeySchema.parse({ lifetimeBudgetMicros: 1 })).toEqual({ lifetimeBudgetMicros: 1 })
+    for (const input of [{ scopes: [] }, { scopes: ['admin'] }, { monthlyBudgetMicros: 0 }, { lifetimeBudgetMicros: -1 }, { monthlyBudgetMicros: 1.2 }]) {
+      expect(updateApiKeySchema.safeParse(input).success).toBe(false)
+    }
+  })
+
+  it('defaults provider image conversion off and validates WebP quality', () => {
+    expect(createProviderSchema.parse({ name: 'Provider', apiKey: 'secret' })).toMatchObject({ convertImagesToWebp: false, webpQuality: 80 })
+    expect(updateProviderSchema.parse({ convertImagesToWebp: true, webpQuality: 75 })).toEqual({ convertImagesToWebp: true, webpQuality: 75 })
+    expect(updateProviderSchema.parse({ name: 'Renamed' })).not.toHaveProperty('convertImagesToWebp')
+    for (const webpQuality of [0, 101, 80.5, '80', null]) {
+      expect(updateProviderSchema.safeParse({ webpQuality }).success).toBe(false)
+      expect(createProviderSchema.safeParse({ name: 'Provider', apiKey: 'secret', webpQuality }).success).toBe(false)
+    }
+    for (const webpQuality of [1, 100]) expect(updateProviderSchema.safeParse({ webpQuality }).success).toBe(true)
   })
 
   it('validates semantic provider cache configuration', () => {

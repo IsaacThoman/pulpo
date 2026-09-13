@@ -16,6 +16,13 @@ export interface SpeechProviderVoice { id: string; name: string; languages: stri
 // JSON can escape each code unit as six bytes (for example, control characters).
 export const SPEECH_REQUEST_BODY_LIMIT = 6 * (SPEECH_REQUEST_MAX_INPUT_LENGTH + SPEECH_MAX_INSTRUCTIONS_LENGTH + 200 + 120) + 1024
 
+export const speechDefaultsSchema = z.object({
+  modelId: z.string().regex(/^[a-z0-9][a-z0-9._-]{0,119}$/).nullable().default(null),
+})
+export type SpeechDefaults = z.infer<typeof speechDefaultsSchema>
+// Optional for clients connected to servers predating instance speech defaults.
+export interface SpeechCatalog { data: PublicSpeechModel[]; defaultModelId?: string | null }
+
 export const speechPreferencesSchema = z.object({
   modelId: z.string().max(120).nullable().default(null),
   models: z.record(z.string().max(120), z.object({

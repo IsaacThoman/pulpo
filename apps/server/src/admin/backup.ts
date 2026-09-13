@@ -13,12 +13,14 @@ import { fillMissingUsernames } from '../profile/username.js'
 import { markExpiredChatsForPurge, purgePendingChats } from '../chats/trash.js'
 import {
   applyFullBackupCompatibilityDefaults,
+  scrubFullBackupDetailedPayloads,
   FULL_BACKUP_EXPLICIT_COLUMNS,
   FULL_BACKUP_TABLES,
   OPTIONAL_TABLES_IN_LEGACY_BACKUPS,
   type FullBackupTable,
 } from './backup-format.js'
 import { writeBackupArchive, type BackupArchiveEntry } from './backup-archive.js'
+import { writeBackupDatabase } from './backup-database.js'
 import { projectFullBackup, type FullBackupDatabase } from './backup-projection.js'
 import { B2BackupStore } from './b2-backup-store.js'
 import { ageRecipientDetails, readStoredBackupSettings, resolveBackupSettings } from './backup-settings.js'
@@ -97,6 +99,10 @@ export async function createFullBackup(jobId: string, finalAttempt = true): Prom
     const { database, attachmentBlobs } = projectFullBackup(rawDatabase as FullBackupDatabase, {
       temporaryQueuedAttachmentIds: temporaryQueuedAttachmentRows.flatMap((row) => row.attachmentIds),
     })
+    scrubFullBackupDetailedPayloads(database)
+    const databasePath = join(temporaryDirectory, 'database.json')
+    await writeBackupDatabase(databasePath, database)
+    const databaseSize = (await stat(databasePath)).size
     const blobRows = [
       ...attachmentBlobs,
       ...speechBlobRows.map(row => ({ objectKey: row.objectKey!, checksum: row.checksum })),
@@ -110,7 +116,7 @@ export async function createFullBackup(jobId: string, finalAttempt = true): Prom
     async function* archiveEntries(): AsyncGenerator<BackupArchiveEntry> {
       const blobs: Array<{ entry: string; objectKey: string; checksum: string }> = []
       const includedKeys = new Set<string>()
-      yield { name: 'database.json', body: Buffer.from(json(database)) }
+      yield { name: 'database.json', body: createReadStream(databasePath), sizeBytes: databaseSize }
       for (const [index, blob] of blobRows.entries()) {
         if (includedKeys.has(blob.objectKey)) continue
         includedKeys.add(blob.objectKey)

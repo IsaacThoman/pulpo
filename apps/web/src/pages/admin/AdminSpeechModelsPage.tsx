@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { SpeechVoicePreview } from './SpeechVoicePreview'
 import { MistralVoiceDiscovery, SpeechVoiceAssetsEditor } from './SpeechVoiceAssetsEditor'
+import { SpeechDefaultsEditor } from './SpeechDefaultsEditor'
 import { SpeechVoiceEditor } from './SpeechVoiceEditor'
 import { speechVoiceIssues } from './speech-voice-validation'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -88,6 +89,7 @@ export function AdminSpeechModelsPage() {
   return <div className="space-y-5"><div className="flex items-center justify-between"><h1 className="text-2xl font-semibold">{ui('Speech models')}</h1><Button onClick={() => open()}>{ui('Add speech model')}</Button></div>
     <p className="text-sm text-muted-foreground">{ui('Configure voices and playback models using your provider connections. New entries start with editable OpenAI defaults and are disabled until enabled.')}</p>
     {error && <p role="alert" className="whitespace-pre-line text-sm text-destructive">{ui(error)}</p>}
+    <SpeechDefaultsEditor models={models} />
     {cleanupJobs.length > 0 && <details className="rounded-md border p-3"><summary>{ui('Speech resource cleanup')}</summary>{cleanupJobs.map(job => <div key={job.id} className="flex items-center justify-between gap-2 py-2 text-sm"><span>{ui(job.error ?? 'Staged audio upload; cleanup becomes available after ten minutes.')}</span><Button variant="outline" size="sm" disabled={new Date(job.readyAt) > new Date()} onClick={() => void apiRequest(`/api/admin/speech-models/cleanup/${job.id}/retry`, { method: 'POST' }).then(load).catch(error => setError(error.message))}>{ui('Retry cleanup')}</Button></div>)}</details>}
     {models.map(model => <div key={model.id} className="flex items-center justify-between rounded-lg border p-4"><div><div className="font-medium">{model.name}</div><div className="text-xs text-muted-foreground">{providers.find(p => p.id === model.providerConnectionId)?.name} · {model.enabled ? ui('Enabled') : ui('Disabled')}</div></div><div className="flex gap-2"><Button variant="outline" onClick={() => open(model)}>{ui('Edit')}</Button><Button variant="ghost" onClick={() => { if (confirm(ui('Delete this speech model?'))) void apiRequest(`/api/admin/speech-models/${model.id}`, { method: 'DELETE' }).then(load).catch(error => setError(error.message)) }}>{ui('Delete')}</Button></div></div>)}
     <Dialog open={Boolean(draft)} onOpenChange={open => { if (!open && !saving) { speechPlayback.stop(); setDraft(null) } }}><DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl"><DialogHeader><DialogTitle>{ui(editing ? 'Edit speech model' : 'Add speech model')}</DialogTitle></DialogHeader>{draft && <div className="space-y-4">

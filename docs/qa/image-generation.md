@@ -1,5 +1,27 @@
 # Image generation validation
 
+## OpenAI Images addition — September 10, 2026
+
+- Full application build, repository lint, and documentation build passed.
+- Contracts: 96 tests passed. Web: 625 tests passed. Server: 964 tests passed;
+  opt-in database suites were skipped in the regular server run.
+- All 12 image persistence/authorization tests passed separately against a fresh,
+  migrated disposable PostgreSQL database. OpenAI coverage creates a catalog
+  entry, records token usage and the configured charge, reuses saved results
+  without another upstream call, and uploads a saved attachment for editing.
+- Provider tests cover OpenAI bearer authentication, JSON generations, multipart
+  edits with PNG/JPEG/WebP references, custom model IDs and base paths, reference
+  limits, missing/malformed/multiple image results, and sanitized HTTP failures.
+  Existing Azure and Muse tests continue to pass after the adapter refactor.
+- Browser checks used the actual admin and image settings components with fixture
+  API responses: creating and selecting an OpenAI model, enabling generation,
+  and desktop light / 390-pixel dark dialog layouts. No horizontal overflow was
+  observed. Temporary harnesses and raw screenshots were removed.
+- Upstream HTTP was mocked; no paid live OpenAI, Azure, or Meta generation was
+  performed. A live generation and follow-up edit remain deployment validation.
+
+## Original Azure and Meta implementation
+
 Validated locally on September 9, 2026. Configuration and operator instructions
 are in [Agent image generation](../image-generation.md).
 

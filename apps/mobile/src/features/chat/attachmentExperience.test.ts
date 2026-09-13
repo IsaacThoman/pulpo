@@ -10,6 +10,12 @@ import {
 } from './attachmentExperience'
 
 describe('attachment experience', () => {
+  it('accepts hundreds of files and reports overflow above 500', () => {
+    const incoming = Array.from({ length: 501 }, (_, index) => ({ uri: `file-${index}` }))
+    const result = selectAttachmentBatch([], incoming)
+    expect(result.accepted).toHaveLength(500)
+    expect(result.overflowCount).toBe(1)
+  })
   it('classifies generic MIME types by filename', () => {
     expect(attachmentVisualKind('photo.JPG', 'application/octet-stream')).toBe('image')
     expect(attachmentVisualKind('report.pdf', 'application/octet-stream')).toBe('pdf')
@@ -45,7 +51,7 @@ describe('attachment experience', () => {
     const current = [{ uri: 'one' }, { uri: 'two' }]
     const result = selectAttachmentBatch(current, [
       { uri: 'two' }, { uri: 'three' }, { uri: 'four' }, { uri: 'five' }, { uri: 'six' }, { uri: 'seven' },
-    ])
+    ], 6)
     expect(result.accepted.map((item) => item.uri)).toEqual(['three', 'four', 'five', 'six'])
     expect(result.duplicateCount).toBe(1)
     expect(result.overflowCount).toBe(1)

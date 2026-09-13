@@ -1,3 +1,5 @@
+import { AttachmentWindow } from './AttachmentWindow'
+import { useAttachmentVisibility } from './use-attachment-visibility'
 import { useState } from 'react'
 import {
   AlertCircle,
@@ -89,7 +91,12 @@ function performAttachmentDownload(attachment: Attachment): void {
   }, useSettings.getState().localAttachmentCacheMb)
 }
 
-export function MessageAttachmentList({
+export function MessageAttachmentList(props: { attachments: Attachment[]; align?: 'start' | 'end' }) {
+  if (!props.attachments.length) return null
+  return <AttachmentWindow items={props.attachments}>{(visible) => <MessageAttachmentPage {...props} attachments={visible} />}</AttachmentWindow>
+}
+
+function MessageAttachmentPage({
   attachments,
   align = 'end',
 }: {
@@ -224,9 +231,10 @@ function MessageFilePreview({ attachment }: { attachment: Attachment }) {
 }
 
 function MessageImagePreview({ attachment }: { attachment: Attachment }) {
+  const visibility = useAttachmentVisibility()
   const { url, loading } = useAttachmentPreviewUrl(
     attachment.id,
-    true,
+    visibility.visible,
     isSupportedImageMime(attachment.mimeType) ? 'thumbnail' : 'full',
   )
   const [previewOpen, setPreviewOpen] = useState(false)
@@ -235,6 +243,7 @@ function MessageImagePreview({ attachment }: { attachment: Attachment }) {
   return (
     <>
       <figure
+        ref={visibility.ref}
         title={attachment.name}
         className="group/attachment relative w-[min(19rem,100%)] max-w-full overflow-hidden rounded-2xl border bg-background/75 shadow-sm"
       >
@@ -246,6 +255,7 @@ function MessageImagePreview({ attachment }: { attachment: Attachment }) {
         >
           {url ? (
             <img
+              decoding="async"
               src={url}
               alt={attachment.name}
               className="mx-auto block max-h-72 min-h-28 w-full object-contain transition-transform duration-300 group-hover/attachment:scale-[1.01]"
@@ -310,12 +320,13 @@ export function PendingAttachmentChip({
   onRemove?: () => void
 }) {
   const kind = attachmentKind(name, mimeType)
+  const visibility = useAttachmentVisibility()
   const remotePreview = useAttachmentPreviewUrl(
     attachmentId,
-    kind === 'image' && !previewUrl,
+    kind === 'image' && visibility.visible && Boolean(attachmentId) && !uploading,
     isSupportedImageMime(mimeType) ? 'thumbnail' : 'full',
   )
-  const resolvedPreviewUrl = previewUrl ?? remotePreview.url
+  const resolvedPreviewUrl = visibility.visible ? (attachmentId && !uploading ? remotePreview.url : previewUrl ?? null) : null
   const [previewOpen, setPreviewOpen] = useState(false)
   const attachment: Attachment = {
     id: attachmentId ?? `local:${name}`,
@@ -403,6 +414,7 @@ export function PendingAttachmentChip({
   return (
     <>
       <div
+        ref={visibility.ref}
         className={cn(
           'group/attachment relative size-24 overflow-hidden rounded-2xl border bg-muted/30 shadow-sm',
           error && 'border-destructive/50',
@@ -476,7 +488,7 @@ function PendingImageContent({
     <>
       <span className="block size-full">
         {url ? (
-          <img src={url} alt={name} className="size-full object-cover" draggable={false} />
+          <img decoding="async" src={url} alt={name} className="size-full object-cover" draggable={false} />
         ) : (
           <span className="flex size-full flex-col items-center justify-center gap-1 p-1 text-muted-foreground">
             <ImageIcon className="size-5" />

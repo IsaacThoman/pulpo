@@ -1,5 +1,5 @@
 import argon2 from 'argon2'
-import { and, eq, gte, sql } from 'drizzle-orm'
+import { and, asc, eq, gte, ne, sql } from 'drizzle-orm'
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import { createApiKeySchema, updateApiKeySchema } from '@pulpo/contracts'
 import { db } from '../database/client.js'
@@ -14,7 +14,7 @@ import { getConfig } from '../config.js'
 import { parseAuthSettings } from '../settings/application-settings.js'
 import { modelPermissionAllows } from './model-permissions.js'
 import { apiKeyOwnerCanSpend } from './access.js'
-import { isCodexModelId } from '../codex/constants.js'
+import { CODEX_PROVIDER_ID, isCodexModelId } from '../codex/constants.js'
 
 async function assertApiKeysEnabled(): Promise<void> {
   const [setting] = await db.select().from(applicationSettings).where(eq(applicationSettings.key, 'auth')).limit(1)
@@ -99,6 +99,19 @@ export async function registerApiKeyRoutes(app: FastifyInstance): Promise<void> 
     })) }
   })
 
+  app.get('/api/api-keys/:id/models', async (request) => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    const [key] = await db.select({ id: apiKeys.id }).from(apiKeys)
+      .where(and(eq(apiKeys.id, id), eq(apiKeys.userId, user.id))).limit(1)
+    if (!key) throw new AppError(404, 'not_found', 'API key not found')
+    // Match the public model catalog and its fallback/preset permission rules.
+    const rows = await db.select({ id: models.id, name: models.name }).from(models).where(and(
+      eq(models.enabled, true), eq(models.visible, true), ne(models.providerConnectionId, CODEX_PROVIDER_ID),
+    )).orderBy(asc(models.sortOrder), asc(models.createdAt))
+    return { data: await filterApiKeyAllowedModels(key.id, rows) }
+  })
+
   app.post('/api/api-keys', async (request, reply) => {
     const user = requireUser(request)
     await assertApiKeysEnabled()
@@ -142,14 +155,30 @@ export async function registerApiKeyRoutes(app: FastifyInstance): Promise<void> 
   app.patch('/api/api-keys/:id', async (request) => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
-    const { enabled } = updateApiKeySchema.parse(request.body)
-    const result = await db
-      .update(apiKeys)
-      .set({ status: enabled ? 'active' : 'disabled', disabledAt: enabled ? null : new Date() })
-      .where(and(eq(apiKeys.id, id), eq(apiKeys.userId, user.id)))
-      .returning({ id: apiKeys.id })
-    if (!result.length) throw new AppError(404, 'not_found', 'API key not found')
-    return { id, enabled }
+    const input = updateApiKeySchema.parse(request.body)
+    const { allowedModels, enabled, ...settings } = input
+    if (allowedModels?.some(isCodexModelId)) {
+      throw new AppError(400, 'codex_ui_only', 'Codex subscription models cannot be assigned to Pulpo API keys')
+    }
+    await db.transaction(async (tx) => {
+      const values = {
+        ...settings,
+        ...(enabled !== undefined ? { status: enabled ? 'active' as const : 'disabled' as const, disabledAt: enabled ? null : new Date() } : {}),
+      }
+      const ownedKey = and(eq(apiKeys.id, id), eq(apiKeys.userId, user.id))
+      // Lock the owned key before replacing permissions, including model-only edits.
+      const result = Object.values(values).some((value) => value !== undefined)
+        ? await tx.update(apiKeys).set(values).where(ownedKey).returning({ id: apiKeys.id })
+        : await tx.select({ id: apiKeys.id }).from(apiKeys).where(ownedKey).for('update')
+      if (!result.length) throw new AppError(404, 'not_found', 'API key not found')
+      if (allowedModels !== undefined) {
+        await tx.delete(apiKeyModelPermissions).where(eq(apiKeyModelPermissions.apiKeyId, id))
+        if (allowedModels.length > 0) {
+          await tx.insert(apiKeyModelPermissions).values([...new Set(allowedModels)].map((modelId) => ({ apiKeyId: id, modelId })))
+        }
+      }
+    })
+    return { id, ...input }
   })
 
   app.delete('/api/api-keys/:id', async (request, reply) => {

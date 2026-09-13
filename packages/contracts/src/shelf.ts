@@ -1,9 +1,10 @@
 import { z } from 'zod'
+import { MAX_MESSAGE_ATTACHMENTS } from './attachment-limits.js'
 import { composerAttachmentSchema } from './composer.js'
 
 export const shelfContentSchema = z.object({
   content: z.string().max(1_000_000),
-  attachmentIds: z.array(z.uuid()).max(100),
+  attachmentIds: z.array(z.uuid()).max(MAX_MESSAGE_ATTACHMENTS),
 })
 export const shelvedDraftSchema = z.object({
   id: z.uuid(), content: z.string(), attachments: z.array(composerAttachmentSchema),

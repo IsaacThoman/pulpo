@@ -88,6 +88,10 @@ jobs:
         if: matrix.name == 'Test'
         run: python3 -m unittest discover -s infra/preview-maintenance -p 'test_*.py'
 
+      - name: Verify large backup serialization and restore with a constrained heap
+        if: matrix.name == 'Test'
+        run: npm run test:backup-memory -w @pulpo/server
+
       - name: Validate production deployment ordering
         run: python3 .github/scripts/deploy-production_test.py
 
@@ -160,6 +164,10 @@ jobs:
           DATABASE_URL: postgres://postgres:search-test@localhost:5432/pulpo_speech_test
           PULPO_SPEECH_POSTGRES_TEST: '1'
         run: npm run test -w @pulpo/server -- src/speech/assets.postgres.test.ts src/speech/billing.postgres.test.ts
+      - name: Verify detailed payload retention in PostgreSQL
+        env:
+          PULPO_PAYLOAD_TEST_DATABASE_URL: postgres://postgres:search-test@localhost:5432/pulpo_search_test
+        run: npm run test -w @pulpo/server -- src/logging/detailed-payload-retention.postgres.test.ts
       - name: Create disposable speech backup database
         run: node --input-type=module -e 'import postgres from "postgres"; const sql = postgres(process.env.DATABASE_URL); await sql.unsafe("CREATE DATABASE pulpo_speech_backup_test"); await sql.end();'
       - name: Apply speech backup test migrations
@@ -214,10 +222,33 @@ jobs:
           "${smoke_dir}/node_modules/.bin/pulpo" --version
           "${smoke_dir}/node_modules/.bin/pulpo" --json settings schema >/dev/null
 
+  windows-signing-tools-check:
+    name: Windows signing tools
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.action != 'closed'
+    runs-on: windows-2025
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up .NET 8 for Windows signing
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '8.0.x'
+          architecture: x64
+
+      - name: Prepare Windows signing tools
+        timeout-minutes: 10
+        shell: pwsh
+        run: ./.github/scripts/setup-windows-signing.ps1
+
   desktop-windows-check:
     name: Desktop / Windows / ${{ matrix.arch }} package check
     if: github.event_name != 'pull_request'
     runs-on: windows-2025
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -298,7 +329,7 @@ jobs:
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'push' && github.ref == 'refs/heads/main')
-    needs: [checks, chat-search, cli-package, desktop-windows-check]
+    needs: [checks, chat-search, cli-package, desktop-windows-check, windows-signing-tools-check]
     runs-on: ubuntu-24.04
     outputs:
       version: ${{ steps.release.outputs.version }}
@@ -344,6 +375,7 @@ jobs:
       needs.release.outputs.version != ''
     needs: release
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: ${{ matrix.platform == 'Windows' && 60 || 360 }}
     environment:
       name: desktop-release
     permissions:
@@ -543,7 +575,20 @@ jobs:
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Install Artifact Signing client tools
+      - name: Set up .NET 8 for Windows signing
+        if: matrix.platform == 'Windows'
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '8.0.x'
+          architecture: x64
+
+      - name: Prepare Windows signing tools
+        if: matrix.platform == 'Windows'
+        timeout-minutes: 10
+        shell: pwsh
+        run: ./.github/scripts/setup-windows-signing.ps1
+
+      - name: Configure Artifact Signing metadata
         if: matrix.platform == 'Windows'
         shell: pwsh
         env:
@@ -551,54 +596,7 @@ jobs:
           AZURE_ARTIFACT_SIGNING_ACCOUNT: ${{ vars.AZURE_ARTIFACT_SIGNING_ACCOUNT }}
           AZURE_CERTIFICATE_PROFILE: ${{ vars.AZURE_CERTIFICATE_PROFILE }}
         run: |
-          $ProgressPreference = 'SilentlyContinue'
-          $installerPath = Join-Path $env:RUNNER_TEMP 'ArtifactSigningClientTools.msi'
-          $installerUri = 'https://download.microsoft.com/download/70ad2c3b-761f-4aa9-a9de-e7405aa2b4c1/ArtifactSigningClientTools.msi'
-          Invoke-WebRequest -Uri $installerUri -OutFile $installerPath
-
-          $installerSignature = Get-AuthenticodeSignature $installerPath
-          if ($installerSignature.Status -ne 'Valid' -or $installerSignature.SignerCertificate.Subject -notlike '*Microsoft Corporation*') {
-            throw "Artifact Signing client installer signature is not valid and issued to Microsoft."
-          }
-
-          $installer = Start-Process msiexec.exe -Wait -PassThru -ArgumentList @('/i', $installerPath, '/quiet', '/norestart')
-          if ($installer.ExitCode -ne 0) {
-            throw "Artifact Signing client installer exited with code $($installer.ExitCode)."
-          }
-
-          $toolDirectory = Join-Path $env:SystemDrive 'pulpo-artifact-signing'
-          New-Item -ItemType Directory -Force -Path $toolDirectory | Out-Null
-
-          $dlibCandidates = @(
-            (Join-Path ${env:ProgramFiles(x86)} 'Microsoft/ArtifactSigningClientTools/bin/Azure.CodeSigning.Dlib.dll'),
-            (Join-Path $env:LOCALAPPDATA 'Microsoft/MicrosoftArtifactSigningClientTools/Azure.CodeSigning.Dlib.dll')
-          )
-          $installedDlib = $dlibCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
-          if (!$installedDlib) {
-            $installedDlib = Get-ChildItem -Path ${env:ProgramFiles(x86)}, $env:LOCALAPPDATA -Recurse -File -Filter 'Azure.CodeSigning.Dlib.dll' -ErrorAction SilentlyContinue |
-              Select-Object -ExpandProperty FullName -First 1
-          }
-          if (!$installedDlib) {
-            throw 'The Artifact Signing Dlib was not installed.'
-          }
-
-          $installedSignTool = Get-ChildItem -Path (Join-Path ${env:ProgramFiles(x86)} 'Windows Kits/10/bin') -Recurse -File -Filter 'signtool.exe' -ErrorAction SilentlyContinue |
-            Where-Object { $_.FullName -match '\\x64\\signtool\.exe$' } |
-            Sort-Object FullName -Descending |
-            Select-Object -ExpandProperty FullName -First 1
-          if (!$installedSignTool) {
-            throw 'A compatible x64 SignTool was not installed.'
-          }
-
-          Copy-Item -Path (Join-Path (Split-Path $installedDlib) '*') -Destination $toolDirectory -Recurse -Force
-          Copy-Item -Path $installedSignTool -Destination (Join-Path $toolDirectory 'signtool.exe') -Force
-
-          $signToolPath = Join-Path $toolDirectory 'signtool.exe'
-          $dlibPath = Join-Path $toolDirectory 'Azure.CodeSigning.Dlib.dll'
-          if (!(Test-Path $signToolPath) -or !(Test-Path $dlibPath)) {
-            throw 'The installed Artifact Signing client tools are incomplete.'
-          }
-
+          $toolDirectory = Split-Path $env:AZURE_CODE_SIGNING_DLIB
           $metadataPath = Join-Path $toolDirectory 'metadata.json'
           @{
             Endpoint = $env:AZURE_ARTIFACT_SIGNING_ENDPOINT
@@ -619,12 +617,8 @@ jobs:
           } | ConvertTo-Json -Depth 3 | Set-Content -Encoding utf8 $metadataPath
 
           @(
-            "WINDOWS_SIGNTOOL_PATH=$signToolPath",
-            "AZURE_CODE_SIGNING_DLIB=$dlibPath",
             "AZURE_ARTIFACT_SIGNING_METADATA=$metadataPath"
           ) | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-
-          Remove-Item $installerPath -Force
 
       - name: Build signed Squirrel.Windows artifacts
         if: matrix.platform == 'Windows'

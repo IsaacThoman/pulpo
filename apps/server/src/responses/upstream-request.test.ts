@@ -1,5 +1,20 @@
 import { describe, expect, it } from 'vitest'
-import { backgroundRequestParameter, promptCacheKeyParameter, responseIncludeParameter } from './upstream-request.js'
+import { backgroundRequestParameter, promptCacheKeyParameter, publicOutputTokenLimit, responseIncludeParameter } from './upstream-request.js'
+
+describe('publicOutputTokenLimit', () => {
+  it('preserves an admitted client limit through retries and higher-capacity fallbacks', () => {
+    expect(publicOutputTokenLimit(16_384, { max_output_tokens: 37 })).toEqual({ max_output_tokens: 37 })
+    expect(publicOutputTokenLimit(32_768, { max_output_tokens: 16_384 })).toEqual({ max_output_tokens: 16_384 })
+  })
+
+  it('caps an admitted limit to a smaller fallback model', () => {
+    expect(publicOutputTokenLimit(2_048, { max_output_tokens: 16_384 })).toEqual({ max_output_tokens: 2_048 })
+  })
+
+  it.each([undefined, null, 0, -1, 1.5, '37'])('uses the catalog ceiling for old or malformed persisted limits: %s', (max_output_tokens) => {
+    expect(publicOutputTokenLimit(16_384, { max_output_tokens })).toEqual({ max_output_tokens: 16_384 })
+  })
+})
 
 describe('backgroundRequestParameter', () => {
   it('omits the background parameter for streaming execution', () => {

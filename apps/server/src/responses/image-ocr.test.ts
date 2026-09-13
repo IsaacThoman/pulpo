@@ -158,4 +158,40 @@ describe('model-bound image OCR adapters', () => {
     expect(aggregateOcrStatus('completed', 'failed')).toBe('failed')
     expect(aggregateOcrStatus('failed', 'completed')).toBe('failed')
   })
+
+  it('uses the active provider encoding for tool and attached images without altering history or OCR inputs', async () => {
+    const source = await sharp({ create: { width: 60, height: 40, channels: 3, background: '#c12345' } }).png().toBuffer()
+    const part = { type: 'image', data: source.toString('base64'), mimeType: 'image/png' }
+    const context = { messages: [
+      { role: 'user', content: [{ ...part, attachmentId: 'attachment-1', sourceChecksum: 'adapter-fixture' }] },
+      { role: 'toolResult', toolName: 'view_image', content: [part] },
+    ] }
+    const intercept = vi.fn().mockResolvedValue(null)
+    const compressed = await interceptAgentContextImages(context, disabledModel, { intercept }, { convertImagesToWebp: true, webpQuality: 75 })
+    for (const message of compressed.messages) {
+      const image = message.content[0]!
+      expect(image.mimeType).toBe('image/webp')
+      expect(await sharp(Buffer.from(image.data, 'base64')).metadata()).toMatchObject({ format: 'webp', width: 60, height: 40 })
+    }
+    expect(intercept).toHaveBeenCalledWith(disabledModel, expect.objectContaining({ data: source, mimeType: 'image/png' }))
+    const fallback = await interceptAgentContextImages(context, disabledModel, { intercept }, { convertImagesToWebp: false })
+    expect(fallback.messages[1]!.content[0]).toEqual(part)
+    expect(context.messages[1]!.content[0]).toEqual(part)
+  })
+
+  it('converts embedded image data while preserving detail, remote URLs, and OCR replacement', async () => {
+    const source = await sharp({ create: { width: 20, height: 10, channels: 3, background: '#abcdef' } }).jpeg().toBuffer()
+    const input = [{ role: 'user', content: [
+      { type: 'input_image', image_url: `data:image/jpeg;base64,${source.toString('base64')}`, detail: 'high' },
+      { type: 'input_image', image_url: 'https://example.com/image.png', detail: 'auto' },
+    ] }]
+    const provider = { convertImagesToWebp: true, webpQuality: 80 }
+    const result = await interceptOpenAIInputImages(input, disabledModel, { intercept: vi.fn().mockResolvedValue(null) }, provider) as typeof input
+    expect(result[0]!.content[0]).toMatchObject({ detail: 'high', image_url: expect.stringMatching(/^data:image\/webp;base64,/) })
+    expect(result[0]!.content[1]).toEqual(input[0]!.content[1])
+    expect(input[0]!.content[0]!.image_url).toMatch(/^data:image\/jpeg;/)
+    const ocr = await interceptOpenAIInputImages(input, enabledModel, { intercept: vi.fn().mockResolvedValue('extracted text') }, provider) as typeof input
+    expect(ocr[0]!.content[0]).toEqual({ type: 'input_text', text: 'extracted text' })
+  })
+
 })

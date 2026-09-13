@@ -4,11 +4,12 @@ import { checkReadiness } from './runtime-health.js'
 import { queryClient } from './database/client.js'
 import { redis } from './redis.js'
 import { Worker } from 'bullmq'
-import { and, inArray, isNull, eq } from 'drizzle-orm'
+import { and, inArray, isNull, eq, sql } from 'drizzle-orm'
 import { getConfig } from './config.js'
 import { db } from './database/client.js'
 import { applicationSettings, chats, responses } from './database/schema.js'
-import { generationQueue, maintenanceQueue, type CodexLoginJob, type EmbeddingJob, type GenerationJob, type MaintenanceJob } from './jobs.js'
+import { generationQueue, maintenanceQueue, payloadRetentionQueue, type CodexLoginJob, type EmbeddingJob, type GenerationJob, type MaintenanceJob } from './jobs.js'
+import { purgeExpiredDetailedPayloads } from './logging/detailed-payload-retention.js'
 import { processGeneration } from './responses/worker.js'
 import { createExport, rebuildDailyRollups, runCleanup, scrubPersistedResponseBinaryContext } from './maintenance.js'
 import { createFullBackup, restoreFullBackup } from './admin/backup.js'
@@ -73,6 +74,18 @@ const concurrencyRefreshInterval = setInterval(() => {
 }, 15_000)
 concurrencyRefreshInterval.unref()
 
+const payloadRetentionWorker = new Worker('payload-retention', async () => {
+  await db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(1886747744)`)
+    await purgeExpiredDetailedPayloads((query) => tx.execute(query))
+  })
+}, { connection: { url: config.REDIS_URL }, concurrency: 1 })
+payloadRetentionWorker.on('failed', (job, error) => {
+  console.error(JSON.stringify({
+    level: 'error', service: 'pulpo-worker', event: 'payload_retention.failed', jobId: job?.id, error: error.message,
+  }))
+})
+
 const maintenanceWorker = new Worker<MaintenanceJob>('maintenance', async (job) => {
   if (job.data.type === 'export') await createExport(String(job.data.payload?.exportId))
   if (job.data.type === 'delete-account') await deleteAccountData(String(job.data.payload?.userId))
@@ -117,6 +130,8 @@ const codexLoginWorker = new Worker<CodexLoginJob>('codex-login', async (job) =>
   await processCodexLogin(job.data)
 }, { connection: { url: config.REDIS_URL }, concurrency: 10 })
 
+await payloadRetentionQueue.upsertJobScheduler('expire-payloads', { every: 60 * 1_000 }, { name: 'expire-payloads' })
+await payloadRetentionQueue.add('startup-expiry', {})
 await maintenanceQueue.upsertJobScheduler('payload-cleanup', { every: 15 * 60 * 1_000 }, { name: 'cleanup', data: { type: 'cleanup' } })
 await maintenanceQueue.upsertJobScheduler('offsite-backup-schedule', { every: 60 * 1_000 }, { name: 'backup-schedule', data: { type: 'backup-schedule' } })
 await maintenanceQueue.upsertJobScheduler('daily-rollup', { pattern: '15 2 * * *' }, { name: 'rollup', data: { type: 'rollup' } })
@@ -167,7 +182,7 @@ for (const response of recoverable) {
 await recoverMessageQueues()
 if ((await readEpisodicMemorySettings()).enabled) await enqueueEpisodicReconciliation()
 
-const workers = [generationWorker, codexLoginWorker, embeddingWorker, maintenanceWorker]
+const workers = [generationWorker, codexLoginWorker, embeddingWorker, maintenanceWorker, payloadRetentionWorker]
 await Promise.all(workers.map((worker) => worker.waitUntilReady()))
 let stopping = false
 // Private health endpoint used by Docker/Coolify, never routed publicly.

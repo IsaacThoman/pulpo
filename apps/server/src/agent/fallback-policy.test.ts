@@ -76,6 +76,19 @@ describe('Agent fallback policy', () => {
     expect(canFallbackAgentTurn({ message: overloaded, outputStarted: false, cancellationRequested: false, contextRetryAttempted: false })).toBe(true)
   })
 
+  it('advances to the configured fallback after a TCP payload budget rejection', () => {
+    const message = failed([], 'OpenAI API error (400): Request exceeds TCP payload budget')
+    const chain = [{ fallbackModelId: 'backup', maxRetries: 3 }, { fallbackModelId: null, maxRetries: 0 }]
+    const input = { message, outputStarted: false, cancellationRequested: false, contextRetryAttempted: false }
+
+    expect(nextAgentRetryAttempt({ ...input, currentAttempt: 1, maxAttempts: agentModelAttemptLimit(chain, 0) })).toBeUndefined()
+    expect(canFallbackAgentTurn(input)).toBe(true)
+    expect(nextAgentRetryAttempt({ ...input, currentAttempt: 1, maxAttempts: agentModelAttemptLimit(chain, 1) })).toBe(2)
+    expect(canFallbackAgentTurn({ ...input, outputStarted: true })).toBe(false)
+    expect(canFallbackAgentTurn({ ...input, cancellationRequested: true })).toBe(false)
+    expect(canFallbackAgentTurn({ ...input, contextRetryAttempted: true })).toBe(false)
+  })
+
   it('protects both text and reasoning output', () => {
     const text = failed([{ type: 'text', text: 'partial' }])
     const reasoning = failed([{ type: 'thinking', thinking: 'partial' }])

@@ -1,3 +1,4 @@
+import { LatestValueQueue } from '@pulpo/client-core'
 import { localAccountKey, localDb, type DraftRow } from './database'
 
 export const NEW_CHAT_DRAFT_ID = 'new'
@@ -68,13 +69,9 @@ export async function loadComposerDraft(userId: string, chatId: string): Promise
   }
 }
 
-const draftWrites = new Map<string, Promise<void>>()
+const draftWrites = new LatestValueQueue<string, () => Promise<void>, void>()
 function serializeDraftWrite(userId: string, chatId: string, write: () => Promise<void>): Promise<void> {
-  const key = draftScope(userId, chatId)
-  const operation = (draftWrites.get(key) ?? Promise.resolve()).catch(() => undefined).then(write)
-  draftWrites.set(key, operation)
-  void operation.finally(() => { if (draftWrites.get(key) === operation) draftWrites.delete(key) }).catch(() => undefined)
-  return operation
+  return draftWrites.enqueue(draftScope(userId, chatId), write, (latest) => latest())
 }
 
 export function saveComposerDraft(userId: string, chatId: string, draft: PersistedComposerDraft): Promise<void> {

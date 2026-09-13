@@ -1,0 +1,1 @@
+ALTER TABLE "models" ADD COLUMN "prompt_caching_enabled" boolean DEFAULT false NOT NULL;

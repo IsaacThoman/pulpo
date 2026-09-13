@@ -1,5 +1,15 @@
 import type { ExecutionMode } from '@pulpo/contracts'
 
+/** Respect a public client's limit, including when a fallback has a lower ceiling. */
+export function publicOutputTokenLimit(modelMaxOutputTokens: number, parameters: Record<string, unknown>): { max_output_tokens: number } {
+  const requested = parameters.max_output_tokens
+  return {
+    max_output_tokens: typeof requested === 'number' && Number.isInteger(requested) && requested > 0
+      ? Math.min(requested, modelMaxOutputTokens)
+      : modelMaxOutputTokens,
+  }
+}
+
 /** Only send the optional background flag when asynchronous execution is requested. */
 export function backgroundRequestParameter(executionMode: ExecutionMode): { background: true } | Record<string, never> {
   return executionMode === 'background' ? { background: true } : {}

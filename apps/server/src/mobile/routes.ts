@@ -65,7 +65,7 @@ export async function registerMobileRoutes(app: FastifyInstance): Promise<void> 
         pendingMessage: auth.pendingMessage,
         inviteCodesEnabled: getConfig().PULPO_BILLING_ENABLED && auth.inviteCodesEnabled,
       },
-      limits: { maxAttachmentBytes: auth.maxAttachmentBytes },
+      limits: { maxAttachmentBytes: auth.maxAttachmentBytes, maxInlineImages: auth.maxInlineImages },
       capabilities: {
         dictation: dictation.enabled && Boolean(dictation.encryptedGroqApiKey),
         bearerSessions: true,

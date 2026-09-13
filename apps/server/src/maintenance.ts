@@ -1,11 +1,11 @@
 import { expireComposerDrafts } from './composer/service.js'
-import { and, asc, eq, gt, inArray, lt, lte, sql } from 'drizzle-orm'
+import { and, asc, eq, gt, inArray, lt, sql } from 'drizzle-orm'
 import { reconcileWorkspaceLeases } from './agent/controller.js'
 import { db } from './database/client.js'
 import {
   applicationSettings, attachments, backupJobs, chats, dailyUsageRollups, exportJobs, idempotencyRecords,
   passwordResetTokens, responses, sessions, usageEvents, users,
-  requestLogs, ocrAttempts, ocrCacheEntries,
+  ocrCacheEntries,
 } from './database/schema.js'
 import { getBlobStore } from './storage/index.js'
 import { expireNormalChats, markExpiredChatsForPurge, purgePendingChats } from './chats/trash.js'
@@ -124,11 +124,6 @@ export async function runCleanup(): Promise<void> {
   await db.delete(sessions).where(lt(sessions.expiresAt, now))
   await db.delete(passwordResetTokens).where(lt(passwordResetTokens.expiresAt, now))
   await db.delete(idempotencyRecords).where(lt(idempotencyRecords.expiresAt, now))
-  await db.update(requestLogs).set({ captureDetailedPayloads: false, requestPayload: null, responsePayload: null, updatedAt: now }).where(lte(requestLogs.payloadExpiresAt, now))
-  await db.update(ocrAttempts).set({ requestPayload: null, responsePayload: null, updatedAt: now }).where(inArray(
-    ocrAttempts.requestLogId,
-    db.select({ id: requestLogs.id }).from(requestLogs).where(lte(requestLogs.payloadExpiresAt, now)),
-  ))
   await db.delete(ocrCacheEntries).where(lt(ocrCacheEntries.expiresAt, now))
   await purgeExpiredMemoryDocumentRevisions(now)
   const expiredExports = await db.select().from(exportJobs).where(lt(exportJobs.expiresAt, now))

@@ -671,3 +671,20 @@ it('pauses writes during local storage transfer and rolls back if the local move
   expect(f.snapshot().state.content).toBe('pending typing')
   a.sync.dispose()
 })
+
+
+it('coalesces 500 upload completions into one attachment write and flushes before submission', async () => {
+  const f = fixture(), a = f.client('bulk')
+  await a.open()
+  f.writes.length = 0
+  const attachments: ComposerState['attachments'] = []
+  for (let index = 0; index < 500; index++) {
+    attachments.push({ id: `file-${index}`, name: `File ${index}`, mimeType: 'text/plain', size: 1 })
+    a.sync.edit('new', { attachments: [...attachments] })
+  }
+  expect(f.writes).toHaveLength(0)
+  await a.sync.flush('new')
+  expect(f.writes).toHaveLength(1)
+  expect(f.snapshot().state.attachments).toHaveLength(500)
+  a.sync.dispose()
+})

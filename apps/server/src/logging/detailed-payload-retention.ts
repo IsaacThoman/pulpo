@@ -41,7 +41,7 @@ export function detailedPayloadCaptureIsActive(
     && (policy.payloadExpiresAt === null || policy.payloadExpiresAt.getTime() > now.getTime())
 }
 
-export function activeDetailedPayloadCondition(requestLogId: string, now = new Date()): SQL {
+export function activeDetailedPayloadCondition(requestLogId: string, now: Date | SQL = sql`clock_timestamp()`): SQL {
   return and(
     eq(requestLogs.id, requestLogId),
     eq(requestLogs.captureDetailedPayloads, true),
@@ -50,6 +50,29 @@ export function activeDetailedPayloadCondition(requestLogId: string, now = new D
 }
 
 type ExecuteSql = (query: SQL) => Promise<unknown>
+
+/** Clear bodies atomically with their OCR children; callers supply a transaction. */
+export async function purgeExpiredDetailedPayloads(execute: ExecuteSql, now = new Date()): Promise<void> {
+  await execute(sql`
+    update request_logs
+    set capture_detailed_payloads = false,
+        request_payload = null,
+        response_payload = null,
+        updated_at = ${now.toISOString()}
+    where payload_expires_at <= ${now.toISOString()}
+      and (capture_detailed_payloads = true or request_payload is not null or response_payload is not null)
+  `)
+  await execute(sql`
+    update ocr_attempts as ocr
+    set request_payload = null,
+        response_payload = null,
+        updated_at = ${now.toISOString()}
+    from request_logs as log
+    where ocr.request_log_id = log.id
+      and (log.capture_detailed_payloads = false or log.payload_expires_at <= ${now.toISOString()})
+      and (ocr.request_payload is not null or ocr.response_payload is not null)
+  `)
+}
 
 /**
  * Applies the current retention policy to payloads that are still retained.
@@ -68,7 +91,7 @@ export async function reconcileDetailedPayloadRetention(
           request_payload = null,
           response_payload = null,
           payload_expires_at = null,
-          updated_at = ${now}
+          updated_at = ${now.toISOString()}
       where capture_detailed_payloads = true
          or request_payload is not null
          or response_payload is not null
@@ -77,17 +100,20 @@ export async function reconcileDetailedPayloadRetention(
       update ocr_attempts
       set request_payload = null,
           response_payload = null,
-          updated_at = ${now}
+          updated_at = ${now.toISOString()}
       where request_payload is not null or response_payload is not null
     `)
     return
   }
 
+  // Expiry is irreversible, including between scheduled cleanup runs.
+  await purgeExpiredDetailedPayloads(execute, now)
+
   if (logging.payloadRetention === 'indefinite') {
     await execute(sql`
       update request_logs
       set payload_expires_at = null,
-          updated_at = ${now}
+          updated_at = ${now.toISOString()}
       where capture_detailed_payloads = true
         and payload_expires_at is not null
     `)
@@ -98,26 +124,8 @@ export async function reconcileDetailedPayloadRetention(
   await execute(sql`
     update request_logs
     set payload_expires_at = created_at + make_interval(secs => ${durationSeconds}),
-        updated_at = ${now}
+        updated_at = ${now.toISOString()}
     where capture_detailed_payloads = true
   `)
-  await execute(sql`
-    update request_logs
-    set capture_detailed_payloads = false,
-        request_payload = null,
-        response_payload = null,
-        updated_at = ${now}
-    where capture_detailed_payloads = true
-      and payload_expires_at <= ${now}
-  `)
-  await execute(sql`
-    update ocr_attempts as ocr
-    set request_payload = null,
-        response_payload = null,
-        updated_at = ${now}
-    from request_logs as log
-    where ocr.request_log_id = log.id
-      and log.capture_detailed_payloads = false
-      and (ocr.request_payload is not null or ocr.response_payload is not null)
-  `)
+  await purgeExpiredDetailedPayloads(execute, now)
 }

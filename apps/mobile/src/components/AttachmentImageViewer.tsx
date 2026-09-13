@@ -505,7 +505,9 @@ export function AttachmentImageViewer({
             decelerationRate="fast"
             getItemLayout={getItemLayout}
             horizontal
-            initialNumToRender={items.length}
+            initialNumToRender={3}
+            maxToRenderPerBatch={3}
+            initialScrollIndex={Math.min(initialIndex, Math.max(0, items.length - 1))}
             keyExtractor={(item) => item.id}
             onLayout={handleListLayout}
             onMomentumScrollEnd={handleScrollEnd}

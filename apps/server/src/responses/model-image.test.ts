@@ -60,4 +60,47 @@ describe('model image renditions', () => {
     expect(rendition.normalized).toBe(false)
     expect(rendition.data).toEqual(source)
   })
+
+  it('converts to WebP with full dimensions, alpha, and EXIF orientation intact', async () => {
+    const source = await sharp({ create: { width: 120, height: 80, channels: 4, background: '#ff000080' } })
+      .png().withMetadata({ orientation: 6 }).toBuffer()
+    const rendition = await modelImageRendition(source, 'image/png', undefined, { convertImagesToWebp: true, webpQuality: 80 })
+    expect(rendition.mimeType).toBe('image/webp')
+    expect(await sharp(rendition.data).metadata()).toMatchObject({ format: 'webp', width: 80, height: 120, hasAlpha: true })
+    expect((await sharp(rendition.data).metadata()).orientation).toBeUndefined()
+    expect((await sharp(source).metadata()).orientation).toBe(6)
+  })
+
+  it('separates cached originals and quality variants and coalesces identical conversions', async () => {
+    const pixels = Buffer.from(Array.from({ length: 64 * 64 * 3 }, (_, i) => (i * 37 + Math.floor(i / 17)) % 256))
+    const source = await sharp(pixels, { raw: { width: 64, height: 64, channels: 3 } }).png().toBuffer()
+    const [low, high, repeated, original] = await Promise.all([
+      modelImageRendition(source, 'image/png', 'quality-fixture', { convertImagesToWebp: true, webpQuality: 30 }),
+      modelImageRendition(source, 'image/png', 'quality-fixture', { convertImagesToWebp: true, webpQuality: 90 }),
+      modelImageRendition(source, 'image/png', 'quality-fixture', { convertImagesToWebp: true, webpQuality: 30 }),
+      modelImageRendition(source, 'image/png', 'quality-fixture'),
+    ])
+    expect(low).toBe(repeated)
+    expect(low.data.length).toBeLessThan(high.data.length)
+    expect(original.data).toEqual(source)
+    expect(original.mimeType).toBe('image/png')
+    const defaults = await modelImageRendition(source, 'image/png', 'quality-fixture', { convertImagesToWebp: true })
+    expect(defaults).toBe(await modelImageRendition(source, 'image/png', 'quality-fixture', { convertImagesToWebp: true, webpQuality: 80 }))
+  })
+
+  it('preserves animation when converting GIF to WebP', async () => {
+    const pixels = Buffer.from([...Array(8 * 8).fill([255, 0, 0]).flat(), ...Array(8 * 8).fill([0, 0, 255]).flat()])
+    const source = await sharp(pixels, { raw: { width: 8, height: 16, channels: 3, pageHeight: 8 } })
+      .gif({ delay: [100, 200], loop: 2 }).toBuffer()
+    const rendition = await modelImageRendition(source, 'image/gif', undefined, { convertImagesToWebp: true })
+    expect(rendition.mimeType).toBe('image/webp')
+    expect(await sharp(rendition.data, { animated: true }).metadata()).toMatchObject({ pages: 2, pageHeight: 8, delay: [100, 200], loop: 2 })
+  })
+
+  it('passes malformed images through when WebP conversion cannot decode them', async () => {
+    const source = Buffer.from('invalid png')
+    expect(await modelImageRendition(source, 'image/png', undefined, { convertImagesToWebp: true }))
+      .toEqual({ data: source, mimeType: 'image/png', normalized: false })
+  })
+
 })

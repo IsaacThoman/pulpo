@@ -773,9 +773,36 @@ export function createProgram(io: CliIo = processIo, dependencies: CliDependenci
   usage.command('summary').action(async (_options, command) => {
     const { client } = await clientFor(command); emit(io, command, await client.request('/api/management/v1/usage/summary'))
   })
-  usage.command('requests').action(async (_options, command) => {
-    const { client } = await clientFor(command); emit(io, command, await client.request('/api/management/v1/usage/requests'))
-  })
+  usage.command('requests')
+    .description('List model calls with request-log IDs and a pagination cursor')
+    .addOption(new Option('--range <range>', 'time range').choices(['24h', '7d', '30d', '90d', 'all']).default('24h'))
+    .option('--limit <count>', 'page size (1-100)', '50')
+    .option('--cursor <timestamp>', 'nextCursor from the previous page')
+    .option('--status <statuses>', 'comma-separated model-call statuses')
+    .option('--origin <origin>', 'call source')
+    .option('--model <id>', 'catalog or upstream model ID')
+    .option('--identity <id>', 'user or API key ID')
+    .action(async (options, command) => {
+      const limit = z.coerce.number().int().min(1).max(100).parse(options.limit)
+      if (options.cursor) z.iso.datetime({ offset: true }).parse(options.cursor)
+      const query = new URLSearchParams({ range: options.range, limit: String(limit) })
+      for (const key of ['cursor', 'status', 'origin', 'model', 'identity']) {
+        if (options[key]) query.set(key, options[key])
+      }
+      const { client } = await clientFor(command)
+      emit(io, command, await client.request(`/api/management/v1/usage/requests?${query}`))
+    })
+  usage.command('payloads <id>')
+    .description('View retained request, response, and OCR bodies by model-call or request-log ID')
+    .action(async (id, _options, command) => {
+      const { client, info } = await clientFor(command)
+      if (!info.capabilities.includes('detailedPayloads')) {
+        throw new Error('The selected Pulpo instance does not advertise the detailedPayloads capability; update the server to view payloads')
+      }
+      const payloads = await client.request(`/api/management/v1/usage/requests/${encodeURIComponent(id)}/payloads`)
+      // Pretty JSON preserves nested bodies and avoids an unreadably wide table.
+      writeOutput(io, payloads, true)
+    })
   usage.command('request <id>').action(async (id, _options, command) => {
     const { client } = await clientFor(command); emit(io, command, await client.request(`/api/management/v1/usage/requests/${encodeURIComponent(id)}`))
   })

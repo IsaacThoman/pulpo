@@ -1,3 +1,4 @@
+import { imageBatchNeedsWorkspace, DEFAULT_MAX_INLINE_IMAGES } from '@pulpo/contracts'
 const IMAGE_MIME_TYPES = new Set([
   'image/png',
   'image/jpeg',
@@ -183,4 +184,13 @@ export function formatBytes(bytes: number): string {
   const value = bytes / 1024 ** exponent
 
   return `${value.toFixed(value < 10 ? 1 : 0)} ${units[exponent - 1]}`
+}
+
+export function attachmentBatchRequiresAgent(
+  attachments: readonly { mimeType: string; size?: number }[],
+  maxInlineImages = DEFAULT_MAX_INLINE_IMAGES,
+): boolean {
+  return attachments.some((attachment) => !isSupportedImageMime(attachment.mimeType))
+    || imageBatchNeedsWorkspace(attachments.filter((attachment) => isSupportedImageMime(attachment.mimeType))
+      .map((attachment) => ({ sizeBytes: attachment.size })), maxInlineImages)
 }

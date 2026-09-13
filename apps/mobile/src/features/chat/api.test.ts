@@ -2,6 +2,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   apiRequest: vi.fn(),
+  thumbnailFetch: vi.fn(),
+  fileWrite: vi.fn(),
+  thumbnailExists: false,
   queueOfflineMutation: vi.fn(),
   removeSnapshot: vi.fn(),
   receiveSnapshot: vi.fn(),
@@ -27,10 +30,11 @@ vi.mock('expo-file-system', () => {
       create = mocks.directoryCreate
     },
     File: class {
-      exists = true
+      get exists() { return this.uri.endsWith('-thumbnail.webp') ? mocks.thumbnailExists : true }
       size = 8
       uri: string
       constructor(...parts: Array<string | { uri: string }>) { this.uri = joinUri(parts) }
+      write = mocks.fileWrite
       copy = mocks.fileCopy
       delete = mocks.fileDelete
       upload = mocks.fileUpload
@@ -38,7 +42,8 @@ vi.mock('expo-file-system', () => {
     Paths: { cache: { uri: 'file:///cache' } },
   }
 })
-vi.mock('expo-crypto', () => ({ randomUUID: () => 'generated-id' }))
+vi.mock('expo-crypto', () => ({ randomUUID: () => 'generated-id', CryptoDigestAlgorithm: { SHA256: 'sha256' }, digestStringAsync: async (_algorithm: string, key: string) => key }))
+vi.mock('expo/fetch', () => ({ fetch: mocks.thumbnailFetch }))
 vi.mock('expo-sharing', () => ({}))
 vi.mock('../../api/client', () => ({
   apiOrigin: () => 'https://example.com',
@@ -68,7 +73,7 @@ vi.mock('../../store/session', () => ({
   useSessionStore: { getState: () => ({ instanceUrl: 'https://example.com', user: { id: 'user-1' } }) },
 }))
 
-import { cacheUploadedAttachment, deleteUnreferencedAttachment, editMessage, persistChat, regenerateResponse, safeAttachmentFilename, sendMessage, startChat, uploadAttachment } from './api'
+import { downloadAttachmentThumbnail, cacheUploadedAttachment, deleteUnreferencedAttachment, editMessage, persistChat, regenerateResponse, safeAttachmentFilename, sendMessage, startChat, uploadAttachment } from './api'
 
 beforeEach(() => {
   mocks.apiRequest.mockReset().mockRejectedValue(new TypeError('offline'))
@@ -264,5 +269,29 @@ describe('generation timezone requests', () => {
     if (kind === 'regenerate') await regenerateResponse('response-1')
     const body = mocks.apiRequest.mock.calls[0]![1].body
     expect(kind === 'start' ? body.response : body).toHaveProperty('timeZone', Intl.DateTimeFormat().resolvedOptions().timeZone)
+  })
+})
+
+
+describe('thumbnail downloads', () => {
+  it('bounds 500 native previews to two transfers, deduplicates, and accounts for disk cache', async () => {
+    let active = 0, peak = 0
+    mocks.thumbnailExists = false
+    mocks.thumbnailFetch.mockImplementation(async () => {
+      peak = Math.max(peak, ++active)
+      await Promise.resolve()
+      active--
+      return { ok: true, arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer }
+    })
+    const first = downloadAttachmentThumbnail('thumbnail-0')
+    expect(downloadAttachmentThumbnail('thumbnail-0')).toBe(first)
+    await Promise.all([first, ...Array.from({ length: 499 }, (_, index) => downloadAttachmentThumbnail(`thumbnail-${index + 1}`))])
+    expect(peak).toBe(2)
+    expect(mocks.thumbnailFetch).toHaveBeenCalledTimes(500)
+    expect(mocks.fileWrite).toHaveBeenCalledTimes(500)
+    expect(mocks.recordCachedAttachment).toHaveBeenCalledTimes(500)
+    mocks.thumbnailExists = true
+    await downloadAttachmentThumbnail('thumbnail-0')
+    expect(mocks.thumbnailFetch).toHaveBeenCalledTimes(500)
   })
 })

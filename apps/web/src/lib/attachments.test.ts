@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  attachmentBatchRequiresAgent,
   attachmentKind,
   attachmentTypeLabel,
   collectUploadFiles,
@@ -9,6 +10,12 @@ import {
 } from './attachments'
 
 describe('attachment presentation', () => {
+  it('requires Agent mode above the configured image count or image byte budget', () => {
+    const images = Array.from({ length: 6 }, () => ({ mimeType: 'image/png', size: 1 }))
+    expect(attachmentBatchRequiresAgent(images)).toBe(true)
+    expect(attachmentBatchRequiresAgent(images, 6)).toBe(false)
+    expect(attachmentBatchRequiresAgent([{ mimeType: 'image/png', size: 26 * 1024 * 1024 }])).toBe(true)
+  })
   it.each([
     ['photo.png', 'image/png', 'image'],
     ['brief.pdf', 'application/octet-stream', 'pdf'],

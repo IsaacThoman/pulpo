@@ -10,7 +10,7 @@ import { detailedPayloadCaptureIsActive } from '../logging/detailed-payload-rete
 
 export const OCR_MAX_OUTPUT_TOKENS = 4_096
 import { createCatalogModelClient, resolveAvailableCatalogModel, resolveLegacyOcrCatalogModel, type CatalogModelRuntime } from './catalog-model-runtime.js'
-import { modelImageRendition } from './model-image.js'
+import { modelImageRendition, type ProviderImageOptions } from './model-image.js'
 
 export type OcrModel = Pick<typeof models.$inferSelect, 'id' | 'interceptImagesWithOcr'>
 
@@ -80,7 +80,8 @@ export async function createModelImageInterceptor(
         providerId = runtime.provider.id
         attemptModelId = runtime.model.id
         providerFingerprint = `${runtime.model.id}:${runtime.provider.id}:${runtime.model.upstreamModelId}`
-        cacheChecksum = createHash('sha256').update(providerFingerprint).update(image.data).digest('hex')
+        const providerImage = await modelImageRendition(image.data, image.mimeType, image.sourceChecksum, runtime.provider)
+        cacheChecksum = createHash('sha256').update(providerFingerprint).update(providerImage.data).digest('hex')
         const cacheEnabled = settings.cacheEnabled && options.allowCache !== false
         const [cached] = cacheEnabled
           ? await db.select().from(ocrCacheEntries).where(and(eq(ocrCacheEntries.checksum, cacheChecksum), gt(ocrCacheEntries.expiresAt, new Date()))).limit(1)
@@ -88,7 +89,7 @@ export async function createModelImageInterceptor(
         let text = cached?.text
         let rawResponse: unknown
         if (!text) {
-          const encoded = dataUrl(image)
+          const encoded = dataUrl(providerImage)
           const ocrInput = [{ role: 'user' as const, content: [{ type: 'input_image' as const, image_url: encoded, detail: 'auto' as const }] }]
           const maxOutputTokens = Math.min(OCR_MAX_OUTPUT_TOKENS, runtime.model.maxOutputTokens)
           if (!options.responseId) throw new Error('OCR billing requires a response id')
@@ -140,7 +141,7 @@ export async function createModelImageInterceptor(
             modelId: runtime.model.id,
             status: 'completed',
             cached: Boolean(cached),
-            requestPayload: captureDetailedPayloads ? { model: runtime.model.upstreamModelId, input: dataUrl(image) } : null,
+            requestPayload: captureDetailedPayloads ? { model: runtime.model.upstreamModelId, input: dataUrl(providerImage) } : null,
             responsePayload: captureDetailedPayloads ? rawResponse : null,
             durationMs: Date.now() - started,
           })
@@ -179,6 +180,7 @@ export async function interceptOpenAIInputImages(
   input: unknown[],
   model: OcrModel,
   interceptor: ModelImageInterceptor,
+  provider: ProviderImageOptions = {},
 ): Promise<unknown[]> {
   const transformed: unknown[] = []
   for (const item of input) {
@@ -209,8 +211,11 @@ export async function interceptOpenAIInputImages(
       }
       const rendition = await modelImageRendition(parsed.data, parsed.mimeType)
       const text = await interceptor.intercept(model, { ...rendition, label: 'embedded image' })
+      const outgoing = text === null
+        ? await modelImageRendition(parsed.data, parsed.mimeType, undefined, provider)
+        : rendition
       content.push(text === null
-        ? { ...image, image_url: dataUrl(rendition) }
+        ? { ...image, image_url: dataUrl(outgoing) }
         : { type: 'input_text', text })
     }
     transformed.push({ ...typed, content })
@@ -229,6 +234,7 @@ export async function interceptAgentContextImages<T>(
   context: T,
   model: OcrModel,
   interceptor: ModelImageInterceptor,
+  provider: ProviderImageOptions = {},
 ): Promise<T> {
   if (!context || typeof context !== 'object') return context
   const typed = context as Record<string, unknown>
@@ -271,8 +277,11 @@ export async function interceptAgentContextImages<T>(
         attachmentId: typeof image.attachmentId === 'string' ? image.attachmentId : undefined,
         sourceChecksum,
       })
+      const outgoing = text === null
+        ? await modelImageRendition(Buffer.from(image.data, 'base64'), image.mimeType, sourceChecksum, provider)
+        : rendition
       content.push(text === null
-        ? { type: 'image', data: rendition.data.toString('base64'), mimeType: rendition.mimeType }
+        ? { type: 'image', data: outgoing.data.toString('base64'), mimeType: outgoing.mimeType }
         : { type: 'text', text })
     }
     messages.push({ ...record, content })

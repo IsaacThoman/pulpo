@@ -15,6 +15,7 @@ import { generateSpeech, speechCost } from './provider.js'
 import { cleanupSpeechPreview, registerSpeechPreviewRoutes } from './preview.js'
 import { applyVoiceWatermark, registerSpeechAssetRoutes } from './assets.js'
 import { lockSpeechResources, queueSpeechCleanup, retrySpeechCleanup } from './resources.js'
+import { readSpeechDefaults, registerSpeechDefaultsRoutes } from './defaults.js'
 import type { SpeechVoiceAssets } from './asset-types.js'
 
 export function publicSpeechModel(model: SpeechModel, previews: Array<{ voiceId: string }> = []): PublicSpeechModel {
@@ -35,6 +36,7 @@ export function validateSpeechInput(model: SpeechModel, input: ReturnType<typeof
   if (!input.input.trim() || Array.from(input.input).length > model.maxInputCharacters || (model.maxInputTokens !== null && speechBytes(input.input) + speechBytes(input.instructions ?? '') > model.maxInputTokens)) throw new AppError(400, 'speech_input_limit', 'Speech input exceeds this model’s limits')
 }
 export async function registerSpeechRoutes(app: FastifyInstance) {
+  registerSpeechDefaultsRoutes(app)
   await registerSpeechPreviewRoutes(app)
   await registerSpeechAssetRoutes(app)
   app.get('/api/admin/speech-models', async request => {
@@ -44,7 +46,9 @@ export async function registerSpeechRoutes(app: FastifyInstance) {
   app.get('/api/speech-models', async request => {
     requireUser(request)
     const rows = await db.select({ config: speechModels.config, enabled: providerConnections.enabled, voicePreviews: speechModels.voicePreviews }).from(speechModels).innerJoin(providerConnections, eq(providerConnections.id, speechModels.providerConnectionId))
-    return { data: rows.filter(row => row.enabled && row.config.enabled).map(row => publicSpeechModel(row.config, row.voicePreviews)).sort((a,b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name)) }
+    const data = rows.filter(row => row.enabled && row.config.enabled).map(row => publicSpeechModel(row.config, row.voicePreviews)).sort((a,b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name))
+    const defaults = await readSpeechDefaults()
+    return { data, defaultModelId: data.some(model => model.id === defaults.modelId) ? defaults.modelId : null }
   })
   const save = async (request: Parameters<typeof requireAdmin>[0], create: boolean) => {
     const admin = requireAdmin(request)
