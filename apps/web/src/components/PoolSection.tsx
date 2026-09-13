@@ -47,7 +47,7 @@ export function PoolSection({ query, currentUserId, friends, busy, act, inviteTa
     onInviteClose()
     void act(`invite:${target.id}`, () => apiRequest('/api/pools/invitations', {
       method: 'POST', body: { userId: target.id, balanceDisclosureAccepted: true },
-    }), uit`Invitation sent to ${target.displayName}.`)
+    }), '')
   }
   const join = () => {
     if (!joinTarget || pool || busy || !query.isSuccess || !incoming.some((invite) => invite.id === joinTarget.id)) return
