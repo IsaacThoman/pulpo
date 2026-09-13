@@ -207,7 +207,7 @@ export function BillingPage() {
         <div className="mx-auto w-full max-w-5xl space-y-8 px-5 py-6 sm:px-6 sm:py-8">
           <div>
             <h2 className="text-xl font-semibold tracking-tight">{ui("Billing")}</h2>
-            <p className="mt-1 max-w-2xl text-sm text-muted-foreground">{ui("There are two ways to pay for usage: subscribe to a monthly plan, or buy credits and pay as you go. You can use either one or both.")}</p>
+            <p className="mt-1 max-w-2xl text-sm text-muted-foreground">{ui("There are two ways to pay for usage: buy credits and pay as you go, or subscribe to a monthly plan. You can use either one or both.")}</p>
           </div>
 
           {checkoutReturned && (
@@ -236,23 +236,47 @@ export function BillingPage() {
             </div>
           )}
 
-          <div className="grid gap-4 lg:grid-cols-2">
-            <PaymentOptionCard
-              step="1"
+          <div className="grid gap-8 lg:grid-cols-2 lg:gap-0 lg:divide-x">
+            <PaymentOption
+              icon={<Wallet className="size-4" />}
+              title={ui("Pay as you go")}
+              badge={<Badge variant="outline">{ui("No renewal")}</Badge>}
+              description={ui("Buy credits once and spend them as you use Pulpo. Nothing renews, and unused credits stay on your account.")}
+              className="lg:pr-8"
+            >
+              <div>
+                <div className="text-xs font-medium text-muted-foreground">{ui("Credit balance")}</div>
+                <div className="mt-1 text-3xl font-semibold tracking-tight text-emerald-600 dark:text-emerald-400">
+                  {availableAccountBalanceMicros === undefined ? '—' : formatBalance(availableAccountBalanceMicros / 1_000_000)}
+                </div>
+                {summary && summary.balancePendingMicros > 0 && <p className="mt-1 text-xs text-muted-foreground">{formatBalance(summary.balancePendingMicros / 1_000_000)} {ui("reserved")}</p>}
+                {summary?.availablePoolBalanceMicros !== null && summary?.availablePoolBalanceMicros !== undefined && (
+                  <div className="mt-4">
+                    <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground"><UsersRound className="size-3.5" />{ui("Pool balance")}</div>
+                    <div className="mt-1 text-lg font-semibold tracking-tight text-emerald-600 dark:text-emerald-400">{formatBalance(summary.availablePoolBalanceMicros / 1_000_000)}</div>
+                    <p className="mt-0.5 text-xs text-muted-foreground">{ui("The combined account balances available to your Pool.")}{summary.poolBalancePendingMicros !== null && summary.poolBalancePendingMicros > 0 && <> {formatBalance(summary.poolBalancePendingMicros / 1_000_000)} {ui("reserved")}.</>}</p>
+                  </div>
+                )}
+              </div>
+              <p className="text-sm text-muted-foreground">{subscribed
+                ? ui("Usage comes out of your plan's limits first. Credits cover anything beyond them.")
+                : ui("Without a plan, chats, API calls, and other metered usage are paid from this balance.")}</p>
+              <div className="mt-auto flex flex-wrap gap-2 pt-1">
+                <Button variant={subscribed ? 'outline' : 'default'} onClick={() => { resetTopUp(); setTopUpOpen(true) }}><Plus />{ui("Add credits")}</Button>
+              </div>
+            </PaymentOption>
+
+            <PaymentOption
               icon={<RefreshCw className="size-4" />}
-              eyebrow={ui("Option 1")}
               title={ui("Subscribe monthly")}
               badge={<PlanBadge plan={currentPlan} overridden={summary?.planOverridden ?? false} pastDue={summary?.subscription?.status === 'past_due'} />}
               description={ui("A fixed monthly price for high usage limits that reset on their own, plus credits added to your balance every month.")}
+              className="border-t pt-8 lg:border-t-0 lg:pt-0 lg:pl-8"
             >
-              <div className="rounded-lg border bg-muted/30 px-4 py-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="text-xs font-medium text-muted-foreground">{ui("Your plan")}</div>
-                    <div className="mt-0.5 text-base font-semibold">{billingPlanName(currentPlan)}</div>
-                    <div className="mt-0.5 text-sm text-muted-foreground">{subscriptionSubtitle}</div>
-                  </div>
-                </div>
+              <div>
+                <div className="text-xs font-medium text-muted-foreground">{ui("Your plan")}</div>
+                <div className="mt-1 text-base font-semibold">{billingPlanName(currentPlan)}</div>
+                <div className="mt-0.5 text-sm text-muted-foreground">{subscriptionSubtitle}</div>
                 <SubscriptionUsageBars className="mt-4" weekly={summary?.weekly ?? null} fiveHour={summary?.fiveHour ?? null} />
               </div>
               {!subscribed && (
@@ -268,37 +292,7 @@ export function BillingPage() {
                 </Button>
                 {subscribed && <Button variant="ghost" onClick={() => void openPortal()} disabled={submitting}><CreditCard />{ui("Billing portal")}</Button>}
               </div>
-            </PaymentOptionCard>
-
-            <PaymentOptionCard
-              step="2"
-              icon={<Wallet className="size-4" />}
-              eyebrow={ui("Option 2")}
-              title={ui("Pay as you go")}
-              badge={<Badge variant="outline">{ui("No renewal")}</Badge>}
-              description={ui("Buy credits once and spend them as you use Pulpo. Nothing renews, and unused credits stay on your account.")}
-            >
-              <div className="rounded-lg border bg-muted/30 px-4 py-3">
-                <div className="text-xs font-medium text-muted-foreground">{ui("Credit balance")}</div>
-                <div className="mt-1 text-3xl font-semibold tracking-tight text-emerald-600 dark:text-emerald-400">
-                  {availableAccountBalanceMicros === undefined ? '—' : formatBalance(availableAccountBalanceMicros / 1_000_000)}
-                </div>
-                {summary && summary.balancePendingMicros > 0 && <p className="mt-1 text-xs text-muted-foreground">{formatBalance(summary.balancePendingMicros / 1_000_000)} {ui("reserved")}</p>}
-                {summary?.availablePoolBalanceMicros !== null && summary?.availablePoolBalanceMicros !== undefined && (
-                  <div className="mt-3 border-t pt-3">
-                    <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground"><UsersRound className="size-3.5" />{ui("Pool balance")}</div>
-                    <div className="mt-1 text-lg font-semibold tracking-tight text-emerald-600 dark:text-emerald-400">{formatBalance(summary.availablePoolBalanceMicros / 1_000_000)}</div>
-                    <p className="mt-0.5 text-xs text-muted-foreground">{ui("The combined account balances available to your Pool.")}{summary.poolBalancePendingMicros !== null && summary.poolBalancePendingMicros > 0 && <> {formatBalance(summary.poolBalancePendingMicros / 1_000_000)} {ui("reserved")}.</>}</p>
-                  </div>
-                )}
-              </div>
-              <p className="text-sm text-muted-foreground">{subscribed
-                ? ui("Usage comes out of your plan's limits first. Credits cover anything beyond them.")
-                : ui("Without a plan, chats, API calls, and other metered usage are paid from this balance.")}</p>
-              <div className="mt-auto flex flex-wrap gap-2 pt-1">
-                <Button variant={subscribed ? 'outline' : 'default'} onClick={() => { resetTopUp(); setTopUpOpen(true) }}><Plus />{ui("Add credits")}</Button>
-              </div>
-            </PaymentOptionCard>
+            </PaymentOption>
           </div>
 
           {planError && !planOpen && <p className="text-sm text-destructive">{planError}</p>}
@@ -359,16 +353,13 @@ export function BillingPage() {
   )
 }
 
-function PaymentOptionCard({ step, icon, eyebrow, title, badge, description, children }: { step: string; icon: ReactNode; eyebrow: string; title: string; badge: ReactNode; description: string; children: ReactNode }) {
+function PaymentOption({ icon, title, badge, description, className, children }: { icon: ReactNode; title: string; badge: ReactNode; description: string; className?: string; children: ReactNode }) {
   return (
-    <section aria-label={`${eyebrow}: ${title}`} className="flex flex-col gap-4 rounded-xl border bg-card p-5 shadow-sm">
+    <section aria-label={title} className={cn('flex flex-col gap-5', className)}>
       <div className="flex items-start justify-between gap-3">
-        <div className="flex min-w-0 items-start gap-3">
+        <div className="flex min-w-0 items-center gap-3">
           <div className="grid size-9 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground" aria-hidden>{icon}</div>
-          <div className="min-w-0">
-            <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground"><span className="sr-only">{step}. </span>{eyebrow}</div>
-            <h3 className="mt-0.5 text-base font-semibold">{title}</h3>
-          </div>
+          <h3 className="text-base font-semibold">{title}</h3>
         </div>
         <div className="shrink-0">{badge}</div>
       </div>
