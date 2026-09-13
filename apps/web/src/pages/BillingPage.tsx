@@ -240,7 +240,6 @@ export function BillingPage() {
             <PaymentOption
               icon={<Wallet className="size-4" />}
               title={ui("Pay as you go")}
-              badge={<Badge variant="outline">{ui("No renewal")}</Badge>}
               description={ui("Buy credits once and spend them as you use Pulpo. Nothing renews, and unused credits stay on your account.")}
               className="lg:pr-8"
             >
@@ -353,7 +352,7 @@ export function BillingPage() {
   )
 }
 
-function PaymentOption({ icon, title, badge, description, className, children }: { icon: ReactNode; title: string; badge: ReactNode; description: string; className?: string; children: ReactNode }) {
+function PaymentOption({ icon, title, badge, description, className, children }: { icon: ReactNode; title: string; badge?: ReactNode; description: string; className?: string; children: ReactNode }) {
   return (
     <section aria-label={title} className={cn('flex flex-col gap-5', className)}>
       <div className="flex items-start justify-between gap-3">
@@ -361,7 +360,7 @@ function PaymentOption({ icon, title, badge, description, className, children }:
           <span className="shrink-0 text-muted-foreground" aria-hidden>{icon}</span>
           <h3 className="text-base font-semibold">{title}</h3>
         </div>
-        <div className="shrink-0">{badge}</div>
+        {badge && <div className="shrink-0">{badge}</div>}
       </div>
       <p className="text-sm text-muted-foreground">{description}</p>
       {children}
