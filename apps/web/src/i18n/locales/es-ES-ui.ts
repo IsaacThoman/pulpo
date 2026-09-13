@@ -1599,6 +1599,22 @@ const esUi: Record<string, string> = {
   "The API key is encrypted on the Pulpo server. Confirm your identity to reveal the saved key.": "La clave API está cifrada en el servidor de Pulpo. Confirma tu identidad para mostrar la clave guardada.",
   "Groq API keys are sensitive. Confirm your identity before revealing this saved key.": "Las claves API de Groq son confidenciales. Confirma tu identidad antes de mostrar esta clave guardada.",
   "Backblaze application keys are sensitive. Confirm your identity before revealing this saved key.": "Las claves de aplicación de Backblaze son confidenciales. Confirma tu identidad antes de mostrar esta clave guardada.",
+  "There are two ways to pay for usage: subscribe to a monthly plan, or buy credits and pay as you go. You can use either one or both.": "Hay dos formas de pagar el uso: suscribirte a un plan mensual o comprar créditos y pagar por uso. Puedes usar una de las dos o ambas.",
+  "Option 1": "Opción 1",
+  "Option 2": "Opción 2",
+  "Subscribe monthly": "Suscripción mensual",
+  "A fixed monthly price for high usage limits that reset on their own, plus credits added to your balance every month.": "Un precio mensual fijo por límites de uso altos que se reinician solos, más créditos añadidos a tu saldo cada mes.",
+  "Your plan": "Tu plan",
+  "Free · No subscription": "Gratis · Sin suscripción",
+  "Plans from $8/month": "Planes desde $8/mes",
+  "High usage limits included": "Límites de uso altos incluidos",
+  "Credits added every month": "Créditos añadidos cada mes",
+  "No renewal": "Sin renovación",
+  "Buy credits once and spend them as you use Pulpo. Nothing renews, and unused credits stay on your account.": "Compra créditos una vez y gástalos a medida que usas Pulpo. Nada se renueva y los créditos sin usar se quedan en tu cuenta.",
+  "Credit balance": "Saldo de créditos",
+  "Usage comes out of your plan's limits first. Credits cover anything beyond them.": "El uso se descuenta primero de los límites de tu plan. Los créditos cubren todo lo que los supere.",
+  "Without a plan, chats, API calls, and other metered usage are paid from this balance.": "Sin un plan, los chats, las llamadas a la API y otros usos medidos se pagan con este saldo.",
+  "Not subscribed": "Sin suscripción",
 }
 
 export default esUi

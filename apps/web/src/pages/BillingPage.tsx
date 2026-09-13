@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
@@ -9,8 +9,9 @@ import {
   Loader2,
   Plus,
   ReceiptText,
+  RefreshCw,
   ShieldCheck,
-  WalletCards,
+  Wallet,
   UsersRound,
 } from 'lucide-react'
 import { useAuth } from '@/stores/auth'
@@ -188,22 +189,25 @@ export function BillingPage() {
 
   const managedPlan = summary ? managedBillingPlan(summary) : 'baby'
   const subscriptionSubtitle = !summary
-    ? 'Free · Pay as you go'
+    ? ui("Free · No subscription")
     : summary.subscription?.status === 'past_due'
       ? `Payment past due${summary.subscription.currentPeriodEnd ? ` · ${summary.planOverridden ? 'billing period' : 'access'} through ${formatDate(Date.parse(summary.subscription.currentPeriodEnd))}` : ''}`
       : !summary.subscription
-        ? 'Free · Pay as you go'
+        ? ui("Free · No subscription")
       : summary.subscription?.cancelAtPeriodEnd
         ? `$${managedPlan === 'fat' ? 24 : 8}/month${summary.subscription.currentPeriodEnd ? ` · ends ${formatDate(Date.parse(summary.subscription.currentPeriodEnd))}` : ''}`
         : `$${managedPlan === 'fat' ? 24 : 8}/month${summary.subscription?.currentPeriodEnd ? ` · renews ${formatDate(Date.parse(summary.subscription.currentPeriodEnd))}` : ''}`
+
+  const subscribed = Boolean(summary?.subscription)
+  const currentPlan = summary?.plan ?? 'baby'
 
   return (
     <div className="flex h-full flex-col">
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto w-full max-w-5xl space-y-8 px-5 py-6 sm:px-6 sm:py-8">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-            <div><h2 className="text-xl font-semibold tracking-tight">{ui("Billing")}</h2><p className="mt-1 text-sm text-muted-foreground">{ui("Add usage credits, manage your plan, and view payment history.")}</p></div>
-            <Button onClick={() => { resetTopUp(); setTopUpOpen(true) }}><Plus />{ui("Add credits")}</Button>
+          <div>
+            <h2 className="text-xl font-semibold tracking-tight">{ui("Billing")}</h2>
+            <p className="mt-1 max-w-2xl text-sm text-muted-foreground">{ui("There are two ways to pay for usage: subscribe to a monthly plan, or buy credits and pay as you go. You can use either one or both.")}</p>
           </div>
 
           {checkoutReturned && (
@@ -232,30 +236,75 @@ export function BillingPage() {
             </div>
           )}
 
-          <div className="grid gap-6 lg:grid-cols-5 lg:gap-0 lg:divide-x">
-            <div className="py-1 lg:col-span-3 lg:pr-6">
-              <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground"><WalletCards className="size-4" />{ui("Account balance")}</div>
-              <div className="mt-3 text-3xl font-semibold tracking-tight text-emerald-600 dark:text-emerald-400">
-                {availableAccountBalanceMicros === undefined ? '—' : formatBalance(availableAccountBalanceMicros / 1_000_000)}
+          <div className="grid gap-4 lg:grid-cols-2">
+            <PaymentOptionCard
+              step="1"
+              icon={<RefreshCw className="size-4" />}
+              eyebrow={ui("Option 1")}
+              title={ui("Subscribe monthly")}
+              badge={<PlanBadge plan={currentPlan} overridden={summary?.planOverridden ?? false} pastDue={summary?.subscription?.status === 'past_due'} />}
+              description={ui("A fixed monthly price for high usage limits that reset on their own, plus credits added to your balance every month.")}
+            >
+              <div className="rounded-lg border bg-muted/30 px-4 py-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-xs font-medium text-muted-foreground">{ui("Your plan")}</div>
+                    <div className="mt-0.5 text-base font-semibold">{billingPlanName(currentPlan)}</div>
+                    <div className="mt-0.5 text-sm text-muted-foreground">{subscriptionSubtitle}</div>
+                  </div>
+                </div>
+                <SubscriptionUsageBars className="mt-4" weekly={summary?.weekly ?? null} fiveHour={summary?.fiveHour ?? null} />
               </div>
-              <p className="mt-2 max-w-md text-xs text-muted-foreground">{ui("Credits are used for chats, API calls, and other metered model usage.")}</p>
-              {summary && summary.balancePendingMicros > 0 && <p className="mt-1 text-xs text-muted-foreground">{formatBalance(summary.balancePendingMicros / 1_000_000)} {ui("reserved")}</p>}
-              {summary?.availablePoolBalanceMicros !== null && summary?.availablePoolBalanceMicros !== undefined && <div className="mt-6 border-t pt-5"><div className="flex items-center gap-2 text-xs font-medium text-muted-foreground"><UsersRound className="size-4" />{ui("Pool balance")}</div><div className="mt-2 text-2xl font-semibold tracking-tight text-emerald-600 dark:text-emerald-400">{formatBalance(summary.availablePoolBalanceMicros / 1_000_000)}</div><p className="mt-1 text-xs text-muted-foreground">{ui("The combined account balances available to your Pool.")}</p>{summary.poolBalancePendingMicros !== null && summary.poolBalancePendingMicros > 0 && <p className="mt-1 text-xs text-muted-foreground">{formatBalance(summary.poolBalancePendingMicros / 1_000_000)} {ui("reserved")}</p>}</div>}
-            </div>
-            <div className="py-1 lg:col-span-2 lg:pl-6">
-              <div className="flex items-start justify-between gap-3">
-                <div><div className="text-sm font-semibold">{billingPlanName(summary?.plan ?? 'baby')}</div><div className="mt-1 text-sm text-muted-foreground">{subscriptionSubtitle}</div></div>
-                <PlanBadge plan={summary?.plan ?? 'baby'} overridden={summary?.planOverridden ?? false} />
+              {!subscribed && (
+                <ul className="space-y-2 text-sm">
+                  {[ui("Plans from $8/month"), ui("High usage limits included"), ui("Credits added every month"), ui("Cancel any time")].map((benefit) => (
+                    <li key={benefit} className="flex items-start gap-2"><Check className="mt-0.5 size-4 shrink-0 text-emerald-600 dark:text-emerald-400" />{benefit}</li>
+                  ))}
+                </ul>
+              )}
+              <div className="mt-auto flex flex-wrap gap-2 pt-1">
+                <Button variant={subscribed ? 'outline' : 'default'} disabled={!summary || submitting} onClick={() => setPlanOpen(true)}>
+                  {subscribed ? ui("Manage plan") : ui("Compare plans")}
+                </Button>
+                {subscribed && <Button variant="ghost" onClick={() => void openPortal()} disabled={submitting}><CreditCard />{ui("Billing portal")}</Button>}
               </div>
-              <SubscriptionUsageBars className="mt-4" weekly={summary?.weekly ?? null} fiveHour={summary?.fiveHour ?? null} />
-              <Button className="mt-4" variant={summary?.subscription ? 'outline' : 'default'} size="sm" disabled={!summary || submitting} onClick={() => setPlanOpen(true)}>
-                {summary?.subscription ? ui("Manage plan") : ui("Compare plans")}
-              </Button>
-            </div>
+            </PaymentOptionCard>
+
+            <PaymentOptionCard
+              step="2"
+              icon={<Wallet className="size-4" />}
+              eyebrow={ui("Option 2")}
+              title={ui("Pay as you go")}
+              badge={<Badge variant="outline">{ui("No renewal")}</Badge>}
+              description={ui("Buy credits once and spend them as you use Pulpo. Nothing renews, and unused credits stay on your account.")}
+            >
+              <div className="rounded-lg border bg-muted/30 px-4 py-3">
+                <div className="text-xs font-medium text-muted-foreground">{ui("Credit balance")}</div>
+                <div className="mt-1 text-3xl font-semibold tracking-tight text-emerald-600 dark:text-emerald-400">
+                  {availableAccountBalanceMicros === undefined ? '—' : formatBalance(availableAccountBalanceMicros / 1_000_000)}
+                </div>
+                {summary && summary.balancePendingMicros > 0 && <p className="mt-1 text-xs text-muted-foreground">{formatBalance(summary.balancePendingMicros / 1_000_000)} {ui("reserved")}</p>}
+                {summary?.availablePoolBalanceMicros !== null && summary?.availablePoolBalanceMicros !== undefined && (
+                  <div className="mt-3 border-t pt-3">
+                    <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground"><UsersRound className="size-3.5" />{ui("Pool balance")}</div>
+                    <div className="mt-1 text-lg font-semibold tracking-tight text-emerald-600 dark:text-emerald-400">{formatBalance(summary.availablePoolBalanceMicros / 1_000_000)}</div>
+                    <p className="mt-0.5 text-xs text-muted-foreground">{ui("The combined account balances available to your Pool.")}{summary.poolBalancePendingMicros !== null && summary.poolBalancePendingMicros > 0 && <> {formatBalance(summary.poolBalancePendingMicros / 1_000_000)} {ui("reserved")}.</>}</p>
+                  </div>
+                )}
+              </div>
+              <p className="text-sm text-muted-foreground">{subscribed
+                ? ui("Usage comes out of your plan's limits first. Credits cover anything beyond them.")
+                : ui("Without a plan, chats, API calls, and other metered usage are paid from this balance.")}</p>
+              <div className="mt-auto flex flex-wrap gap-2 pt-1">
+                <Button variant={subscribed ? 'outline' : 'default'} onClick={() => { resetTopUp(); setTopUpOpen(true) }}><Plus />{ui("Add credits")}</Button>
+              </div>
+            </PaymentOptionCard>
           </div>
 
+          {planError && !planOpen && <p className="text-sm text-destructive">{planError}</p>}
+
           <section className="space-y-3">
-            <div className="flex items-end justify-between gap-3"><SectionHeading title={ui("Payment history")} description={ui("Credit purchases and subscription invoices.")} />{summary?.subscription && <Button size="sm" variant="outline" onClick={() => void openPortal()} disabled={submitting}><CreditCard />{ui("Billing portal")}</Button>}</div>
+            <div className="flex items-end justify-between gap-3"><SectionHeading title={ui("Payment history")} description={ui("Credit purchases and subscription invoices.")} /></div>
             <div className="overflow-hidden rounded-xl border">
               <div className="hidden grid-cols-[minmax(0,1fr)_140px_100px_90px] border-b px-4 py-2.5 text-xs text-muted-foreground sm:grid"><div>{ui("Description")}</div><div>{ui("Date")}</div><div className="text-right">{ui("Amount")}</div><div className="text-right">{ui("Status")}</div></div>
               {summary?.payments.length ? <div className="divide-y">{summary.payments.map((payment) => (
@@ -310,12 +359,33 @@ export function BillingPage() {
   )
 }
 
+function PaymentOptionCard({ step, icon, eyebrow, title, badge, description, children }: { step: string; icon: ReactNode; eyebrow: string; title: string; badge: ReactNode; description: string; children: ReactNode }) {
+  return (
+    <section aria-label={`${eyebrow}: ${title}`} className="flex flex-col gap-4 rounded-xl border bg-card p-5 shadow-sm">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex min-w-0 items-start gap-3">
+          <div className="grid size-9 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground" aria-hidden>{icon}</div>
+          <div className="min-w-0">
+            <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground"><span className="sr-only">{step}. </span>{eyebrow}</div>
+            <h3 className="mt-0.5 text-base font-semibold">{title}</h3>
+          </div>
+        </div>
+        <div className="shrink-0">{badge}</div>
+      </div>
+      <p className="text-sm text-muted-foreground">{description}</p>
+      {children}
+    </section>
+  )
+}
+
 function Quote({ credits, fee, charge }: { credits: number; fee: number; charge: number }) {
   return <div className="space-y-2 rounded-lg bg-muted/50 p-4 text-sm"><div className="flex justify-between gap-4"><span className="text-muted-foreground">{ui("Credits added")}</span><span className="tabular-nums">{formatBalance(credits)}</span></div><div className="flex justify-between gap-4"><span className="text-muted-foreground">{ui("Platform fee")}</span><span className="tabular-nums">{formatBalance(fee)}</span></div><Separator className="my-2" /><div className="flex justify-between gap-4 font-medium"><span>{ui("Total before tax")}</span><span className="tabular-nums">{formatBalance(charge)}</span></div></div>
 }
 
-function PlanBadge({ plan, overridden }: { plan: BillingPlan; overridden: boolean }) {
-  const badge = <Badge tabIndex={overridden ? 0 : undefined} variant={plan === 'baby' ? 'outline' : 'secondary'} className={plan === 'fat' ? 'border-pink-500/25 bg-pink-500/15 text-pink-700 dark:text-pink-300' : plan === 'eight' ? 'border-yellow-500/25 bg-yellow-500/15 text-yellow-700 dark:text-yellow-300' : undefined}>{overridden ? ui("Admin granted") : plan === 'baby' ? ui("Current plan") : ui("Active")}</Badge>
+function PlanBadge({ plan, overridden, pastDue }: { plan: BillingPlan; overridden: boolean; pastDue: boolean }) {
+  const badge = pastDue && !overridden
+    ? <Badge variant="destructive">{ui("Past due")}</Badge>
+    : <Badge tabIndex={overridden ? 0 : undefined} variant={plan === 'baby' ? 'outline' : 'secondary'} className={plan === 'fat' ? 'border-pink-500/25 bg-pink-500/15 text-pink-700 dark:text-pink-300' : plan === 'eight' ? 'border-yellow-500/25 bg-yellow-500/15 text-yellow-700 dark:text-yellow-300' : undefined}>{overridden ? ui("Admin granted") : plan === 'baby' ? ui("Not subscribed") : ui("Active")}</Badge>
   if (!overridden) return badge
   return (
     <Tooltip>
