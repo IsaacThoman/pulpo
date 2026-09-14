@@ -173,8 +173,23 @@ try {
       }
       const [log] = await db.select().from(schema.requestLogs).where(eq(schema.requestLogs.responseId, saved.id))
       assert.equal(log!.captureDetailedPayloads, capture)
-      if (capture) assert.deepEqual((log!.requestPayload as Json).input, saved.input)
-      else { assert.equal(log!.requestPayload, null); assert.equal(log!.responsePayload, null) }
+      assert.equal(log!.requestPayload, null); assert.equal(log!.responsePayload, null)
+      const attempts = await db.select().from(schema.providerDiagnostics).where(eq(schema.providerDiagnostics.requestLogId, log!.id))
+      assert.equal(attempts.length, 1)
+      const attempt = attempts[0]!
+      assert.equal(attempt.captureDetailedPayloads, capture)
+      assert.equal(attempt.providerId, providerId)
+      assert.equal(attempt.status, 'completed')
+      assert.equal((attempt.metadata as Json).httpStatus, 200)
+      if (capture) {
+        const request = attempt.requestPayload as { fidelity: string; body: Json }
+        const response = attempt.responsePayload as { fidelity: string; body: Json[] }
+        assert.equal(request.fidelity, 'exact')
+        assert.deepEqual(request.body.input, upstreamInput)
+        assert.equal(response.fidelity, 'reconstructed')
+        const completed = response.body.find(event => event.type === 'response.completed')!.response
+        assert.equal(textOf(completed as OpenAI.Responses.Response), unusualText)
+      } else { assert.equal(attempt.requestPayload, null); assert.equal(attempt.responsePayload, null) }
       const retrieved = await client.responses.retrieve(saved.id)
       assert.equal(textOf(retrieved), unusualText)
       // Exact retry reuses the stored response and never contacts the provider twice.
