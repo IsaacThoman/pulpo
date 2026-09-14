@@ -43,9 +43,28 @@ it.each(['ios', 'android'])('shows token pricing and persists model selection an
 })
 it.each(['ios', 'android'])('retains unavailable selections and permits opt-out on %s', async platform => {
   mocks.platform = platform; mocks.preferences = { enabled: true, modelId: 'retired' }
-  mocks.api.mockResolvedValue({ data: [] }); mount()
-  await screen.findByText('An admin must configure an image model first.')
+  mocks.api.mockResolvedValue({ data: [{ ...META_MUSE_IMAGE_PRESET, id: 'muse' }], defaultModelId: 'muse' }); mount()
+  await screen.findByText('Your selected image model is unavailable. Choose another model to generate images.')
   expect(mocks.set).not.toHaveBeenCalled()
   fireEvent.click(screen.getByText('Enable image generation'))
   expect(mocks.set).toHaveBeenCalledWith('imageGeneration', { enabled: false, modelId: 'retired' })
+})
+
+it.each(['ios', 'android'])('uses the admin default without persisting a selection or opting in on %s', async platform => {
+  mocks.platform = platform; mocks.preferences = { enabled: false, modelId: null }
+  mocks.api.mockResolvedValue({ data: [{ ...META_MUSE_IMAGE_PRESET, id: 'muse', enabled: true }], defaultModelId: 'muse' })
+  mount()
+  await screen.findByText('Free to use')
+  expect((screen.getByLabelText('Image model') as HTMLSelectElement).value).toBe('muse')
+  expect(mocks.set).not.toHaveBeenCalled()
+  fireEvent.click(screen.getByText('Enable image generation'))
+  expect(mocks.set).toHaveBeenCalledWith('imageGeneration', { enabled: true, modelId: null })
+})
+it.each(['ios', 'android'])('preserves explicit choices over the admin default on %s', async platform => {
+  mocks.platform = platform; mocks.preferences = { enabled: false, modelId: 'chosen' }
+  mocks.api.mockResolvedValue({ data: [{ ...META_MUSE_IMAGE_PRESET, id: 'muse' }, { ...META_MUSE_IMAGE_PRESET, id: 'chosen', name: 'My model' }], defaultModelId: 'muse' })
+  mount()
+  await screen.findByText('Free to use')
+  expect((screen.getByLabelText('Image model') as HTMLSelectElement).value).toBe('chosen')
+  expect(mocks.set).not.toHaveBeenCalled()
 })

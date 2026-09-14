@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { imagePriceLabel, type PublicImageModel } from '@pulpo/contracts'
+import { imagePriceLabel, type ImageCatalog } from '@pulpo/contracts'
 import { useSettings } from '@/stores/settings'
 import { useAuth } from '@/stores/auth'
 import { apiRequest } from '@/lib/api'
@@ -12,8 +12,8 @@ export function ImageGenerationSettings() {
   const preferences = useSettings(s => s.imageGeneration)
   const set = useSettings(s => s.set)
   const userId = useAuth(s => s.user?.id)
-  const catalog = useQuery({ queryKey: ['image-models', userId], queryFn: () => apiRequest<{ data: PublicImageModel[] }>('/api/image-models') })
-  const model = catalog.data?.data.find(entry => entry.id === preferences.modelId)
+  const catalog = useQuery({ queryKey: ['image-models', userId], queryFn: () => apiRequest<ImageCatalog>('/api/image-models') })
+  const model = catalog.data?.data.find(entry => entry.id === (preferences.modelId ?? catalog.data?.defaultModelId))
   return <div className="space-y-5">
     <div className="flex items-center justify-between gap-4"><label htmlFor="image-generation-enabled" className="text-sm font-medium">{ui('Enable image generation')}</label><Switch id="image-generation-enabled" checked={preferences.enabled} disabled={!model && !preferences.enabled} onCheckedChange={enabled => set('imageGeneration', { ...preferences, enabled })} /></div>
     <div className="space-y-2"><label id="image-model-label" className="text-sm font-medium">{ui('Image model')}</label>

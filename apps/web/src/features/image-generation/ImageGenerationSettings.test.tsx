@@ -51,3 +51,23 @@ it('shows token rates instead of a per-image charge', async () => {
   expect(await screen.findByText('$2 / 1M Input tokens · $0.5 / 1M Cached input tokens · $10 / 1M Output tokens')).toBeTruthy()
   expect(screen.queryByText(/\/ image$/)).toBeNull()
 })
+
+it('selects the admin default without persisting it or enabling generation', async () => {
+  mocks.api.mockResolvedValue({ data: [{ ...META_MUSE_IMAGE_PRESET, id: 'muse', enabled: true }], defaultModelId: 'muse' })
+  useSettings.setState({ imageGeneration: { enabled: false, modelId: null } })
+  mount()
+  expect(await screen.findByText('Muse Image')).toBeTruthy()
+  expect(screen.getByRole('switch').hasAttribute('disabled')).toBe(false)
+  expect(useSettings.getState().imageGeneration).toEqual({ enabled: false, modelId: null })
+  fireEvent.click(screen.getByRole('switch'))
+  expect(useSettings.getState().imageGeneration).toEqual({ enabled: true, modelId: null })
+})
+it.each(['chosen', 'retired'])('preserves an explicit %s selection over the admin default', async modelId => {
+  mocks.api.mockResolvedValue({ data: [{ ...META_MUSE_IMAGE_PRESET, id: 'muse', name: 'Admin default' }, { ...META_MUSE_IMAGE_PRESET, id: 'chosen', name: 'My model' }], defaultModelId: 'muse' })
+  useSettings.setState({ imageGeneration: { enabled: false, modelId } })
+  mount()
+  await waitFor(() => expect(mocks.api).toHaveBeenCalled())
+  expect(await screen.findByText(modelId === 'chosen' ? 'My model' : 'Your selected image model is unavailable. Choose another model to generate images.')).toBeTruthy()
+  expect(screen.queryByText('Admin default')).toBeNull()
+  expect(useSettings.getState().imageGeneration.modelId).toBe(modelId)
+})
