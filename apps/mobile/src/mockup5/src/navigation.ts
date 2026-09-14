@@ -10,6 +10,7 @@ export type RootStackParamList = {
   TwoFactor: undefined;
   Passkeys: undefined;
   Devices: undefined;
+  Computers: undefined;
   InstanceDetails: undefined;
   SettingsDetail: { section: SettingsSection };
   Trash: undefined;

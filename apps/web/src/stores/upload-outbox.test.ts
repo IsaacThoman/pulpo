@@ -402,3 +402,18 @@ it('recovers a confirmed reservation after a stale pending checkpoint without up
   expect(useUploadOutbox.getState().uploads.recovered?.id).toBe('confirmed-before-reload')
   expect(requests).toHaveLength(1)
 })
+
+it('keeps the destination selected at Send while uploads finish', async () => {
+  const { useWorkspaceSelection } = await import('./workspace-selection')
+  useUploadOutbox.setState({ uploads: { file: upload('file', 'uploading') } })
+  const workspace = { kind: 'computer' as const, computerId: 'computer-a' }
+  useUploadOutbox.getState().stageSubmission({ ...draft(['file'], 'continue here'), agentMode: true, workspace })
+  useWorkspaceSelection.getState().select(chatId, { kind: 'computer', computerId: 'computer-b' })
+  useUploadOutbox.setState({ uploads: { file: upload('file', 'ready') } })
+  const processing = processUploadOutboxChat(chatId)
+  await vi.waitFor(() => expect(requests).toHaveLength(1))
+  expect(requests[0]?.body).toMatchObject({ workspace })
+  requests[0]!.resolve({ response: { id: 'response', status: 'queued', chatId } })
+  await processing
+  expect(useWorkspaceSelection.getState().selections[chatId]).toEqual({ kind: 'computer', computerId: 'computer-b' })
+})

@@ -34,6 +34,20 @@ export async function recoverRenumberedSpeechMigrations(client: Sql, migrationsF
   return recovered
 }
 
+export async function recoverRenumberedComputerMigrations(client: Sql, migrationsFolder: string): Promise<boolean> {
+  // Persistent computer previews applied these before dev's lossless storage
+  // migration. Recognize the original SQL hashes without recreating their data.
+  let recovered = false
+  for (const [timestamp, suffix] of [
+    [1789358695128, '_agent_computers'],
+    [1789361962169, '_queued_workspace'],
+    [1789367266064, '_computer_security'],
+  ] as const) {
+    if (await recoverRenumberedMigration(client, migrationsFolder, new Set([timestamp]), suffix, 'computer')) recovered = true
+  }
+  return recovered
+}
+
 async function recoverRenumberedMigration(
   client: Sql, migrationsFolder: string, legacyTimestamps: Set<number>, suffix: string, label: string,
 ): Promise<boolean> {

@@ -1,3 +1,5 @@
+import type { DesktopComputerState, DesktopComputerUpdate } from '@pulpo/contracts'
+
 export interface DesktopStoredSession {
   instanceUrl: string
   token: string
@@ -19,6 +21,13 @@ export interface PulpoDesktopApi {
   onProtocolUrl: (listener: (url: string) => void) => () => void
   onCommand: (listener: (command: DesktopCommand) => void) => () => void
   appInfo: () => Promise<{ name: string; version: string; packaged: boolean }>
+  computer: {
+    getState: () => Promise<DesktopComputerState>
+    update: (patch: DesktopComputerUpdate) => Promise<DesktopComputerState>
+    createPairingCode: () => Promise<{ code: string; expiresAt: string }>
+    chooseFolder: () => Promise<string | null>
+    onStateChanged: (listener: (state: DesktopComputerState) => void) => () => void
+  }
   windowControls: {
     minimize: () => Promise<void>
     toggleMaximize: () => Promise<boolean>

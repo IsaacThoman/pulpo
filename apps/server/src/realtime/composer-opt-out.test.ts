@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
 }))
 vi.mock('../database/client.js', () => ({ db: { select: () => ({ from: () => ({ where: () => ({ limit: async () => [{ values: { composerSyncEnabled: mocks.enabled } }] }) }) }) } }))
 vi.mock('socket.io', () => ({ Server: class {
+  of() { return { use() {}, on() {} } }
   use() {}
   on(event: string, callback: (socket: unknown) => void) { if (event === 'connection') mocks.connection = callback }
   to(room: string) { mocks.to(room); return this }

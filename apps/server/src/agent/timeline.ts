@@ -1,5 +1,5 @@
 import type { AgentMessage } from '@earendil-works/pi-agent-core'
-import type { CompactionItem, RecallItem, ToolImagePreview } from '@pulpo/contracts'
+import type { CompactionItem, RecallItem, ToolApprovalItem, ToolImagePreview } from '@pulpo/contracts'
 
 export type ToolTimelineItem = {
   id: string
@@ -107,6 +107,7 @@ export function buildAgentOutput(options: {
   workspaceItem?: Record<string, unknown>
   compactionItems?: CompactionItem[]
   recallItems?: RecallItem[]
+  approvalItems?: ToolApprovalItem[]
   /** Model-turn durations keyed by 1-based assistant turn index in this run. */
   turnDurationsMs?: Map<number, number>
   /** Last message is still streaming (use in_progress status). */
@@ -121,6 +122,7 @@ export function buildAgentOutput(options: {
     workspaceItem,
     compactionItems = [],
     recallItems = [],
+    approvalItems = [],
     turnDurationsMs,
     streaming = false,
     terminal = false,
@@ -178,5 +180,14 @@ export function buildAgentOutput(options: {
     }
   }
 
-  return output
+  // Keep approval outcomes next to their tools in the final, persisted transcript.
+  const remainingApprovals = new Map(approvalItems.map((item) => [item.id, item]))
+  const withApprovals = output.flatMap((item) => {
+    const tool = item as { type?: string; id?: string }
+    if (tool.type !== 'pulpo_tool') return [item]
+    const approvals = [...remainingApprovals.values()].filter((approval) => approval.tool_call_id === tool.id)
+    for (const approval of approvals) remainingApprovals.delete(approval.id)
+    return [item, ...approvals]
+  })
+  return [...withApprovals, ...remainingApprovals.values()]
 }

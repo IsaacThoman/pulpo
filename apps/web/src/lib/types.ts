@@ -102,6 +102,8 @@ export interface Chat {
   expiresAt: number | null
   expired: boolean
   shareId?: string
+  /** Computer the chat's agent runs on; null means the cloud sandbox. Fixed by the first agent response. */
+  workspaceComputerId?: string | null
   /** Client-only chat created before its first response is persisted. */
   provisional?: boolean
   /** Keep a locally started chat until a summaries response acknowledges it. */

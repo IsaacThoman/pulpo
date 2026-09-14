@@ -16,7 +16,9 @@ import type {
 import { idSchema, syncRequestSchema } from '@pulpo/contracts'
 import { createRedis } from '../redis.js'
 import { getConfig, isAllowedOrigin } from '../config.js'
-import { authenticateSessionToken, type AdminChatAccessContext, type AuthenticatedUser } from '../auth/service.js'
+import { authenticateSessionTokenWithSession, type AdminChatAccessContext, type AuthenticatedUser } from '../auth/service.js'
+import { registerComputerNamespace } from './computer-namespace.js'
+import type { Server as SocketServer } from 'socket.io'
 import { resolveAdminChatSocketAccess } from '../admin/chat-access.js'
 import { db } from '../database/client.js'
 import { chats, responses, users, userPreferences } from '../database/schema.js'
@@ -28,6 +30,8 @@ interface SocketData {
   composerSyncEnabled: boolean
   user: AuthenticatedUser
   actorUser: AuthenticatedUser
+  /** Device session that presented the token; lets the server address one device. */
+  sessionId: string | null
   adminChatAccess: AdminChatAccessContext | null
 }
 
@@ -41,6 +45,7 @@ export const FULL_STATE_INVALIDATION_SCOPES: StateInvalidationScope[] = [
   'pool',
   'billing',
   'shelved-drafts',
+  'computers',
 ]
 
 export function cookieValue(header: string | undefined, name: string): string | undefined {
@@ -92,6 +97,7 @@ export async function createSocketServer(httpServer: HttpServer) {
   const config = getConfig()
   const adapterRedis = createRedis()
   const subscriber = createRedis()
+  const computerSubscriber = createRedis()
   const io = new Server<ClientToServerEvents, ServerToClientEvents, Record<string, never>, SocketData>(httpServer, {
     path: '/socket.io',
     maxHttpBufferSize: 4_100_000,
@@ -105,6 +111,7 @@ export async function createSocketServer(httpServer: HttpServer) {
     },
     adapter: createAdapter(adapterRedis),
   })
+  registerComputerNamespace(io as unknown as SocketServer, computerSubscriber)
 
   const broadcastComposer = async (userId: string, snapshot: ComposerSnapshot) => {
     if (snapshot.state?.temporary) return
@@ -118,7 +125,8 @@ export async function createSocketServer(httpServer: HttpServer) {
         socket.handshake.headers.cookie,
         config.SESSION_COOKIE_NAME,
       )
-      const user = await authenticateSessionToken(token, resolveClientIp(socket.request, config))
+      const authenticated = await authenticateSessionTokenWithSession(token, resolveClientIp(socket.request, config))
+      const user = authenticated?.user
       if (!user || user.role === 'pending') return next(new Error('unauthorized'))
       const accessToken = socket.handshake.auth.adminChatAccessToken
       const access = typeof accessToken === 'string'
@@ -127,6 +135,7 @@ export async function createSocketServer(httpServer: HttpServer) {
       if (accessToken && !access) return next(new Error('admin_chat_access_invalid'))
       socket.data.user = access?.ownerUser ?? user
       socket.data.actorUser = user
+      socket.data.sessionId = authenticated?.sessionId ?? null
       socket.data.adminChatAccess = access
       next()
     } catch (error) {
@@ -340,6 +349,7 @@ export async function createSocketServer(httpServer: HttpServer) {
   httpServer.once('close', () => {
     adapterRedis.disconnect()
     subscriber.disconnect()
+    computerSubscriber.disconnect()
   })
   return io
 }

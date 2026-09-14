@@ -6,7 +6,8 @@ import { db } from '../database/client.js'
 import { getConfig } from '../config.js'
 import { getBlobStore } from '../storage/index.js'
 import { newId } from '../lib/ids.js'
-import { restoredAttachmentWorkspacePath } from './policy.js'
+import { restoredAttachmentWorkspacePath, SANDBOX_WORKSPACE_DESCRIPTOR } from './policy.js'
+import type { AgentWorkspace, WorkspaceLeaseListener } from './workspace.js'
 import { workspaceContinueWithoutAgentAvailableAt, workspaceQueuePosition } from './capacity.js'
 import { workspaceControllerRequest } from './controller-http.js'
 import type { RequestInit } from 'undici'
@@ -38,7 +39,8 @@ export interface WorkspaceFile {
 
 const wait = (milliseconds: number) => new Promise((resolve) => setTimeout(resolve, milliseconds))
 
-export class WorkspaceManager {
+export class WorkspaceManager implements AgentWorkspace {
+  readonly descriptor = SANDBOX_WORKSPACE_DESCRIPTOR
   private controllerLeaseId?: string
   private localLeaseId?: string
   private staged = false
@@ -50,8 +52,12 @@ export class WorkspaceManager {
     private readonly responseId: string,
     private readonly chatId: string,
     private readonly userId: string,
-    private readonly onLeaseEvent?: (state: 'waiting' | 'provisioning' | 'ready' | 'expired' | 'unavailable' | 'continuing_without_agent', details?: Record<string, unknown>) => Promise<void>,
+    private readonly onLeaseEvent?: WorkspaceLeaseListener,
   ) {}
+
+  async ensureReady(signal?: AbortSignal): Promise<void> {
+    await this.ensureLease(signal)
+  }
 
   private async request(path: string, init: RequestInit = {}): Promise<Response> {
     const config = getConfig()
@@ -66,7 +72,8 @@ export class WorkspaceManager {
 
   async ensureLease(signal?: AbortSignal): Promise<string> {
     if (this.controllerLeaseId) return this.controllerLeaseId
-    let [existing] = await db.select().from(workspaceLeases).where(and(eq(workspaceLeases.chatId, this.chatId), inArray(workspaceLeases.status, ['provisioning', 'ready']))).limit(1)
+    await releaseWorkspaceForChat(this.chatId, { computerId: null })
+    let [existing] = await db.select().from(workspaceLeases).where(and(eq(workspaceLeases.chatId, this.chatId), eq(workspaceLeases.kind, 'sandbox'), inArray(workspaceLeases.status, ['provisioning', 'ready']))).limit(1)
     if (existing?.status === 'ready' && (!existing.controllerLeaseId || (existing.hardExpiresAt && existing.hardExpiresAt <= new Date()) || (existing.expiresAt && existing.expiresAt <= new Date()))) {
       await db.update(workspaceLeases).set({ status: 'expired', error: 'Workspace lease expired before reuse', updatedAt: new Date() }).where(eq(workspaceLeases.id, existing.id))
       existing = undefined
@@ -82,7 +89,7 @@ export class WorkspaceManager {
       const id = existing?.id ?? newId()
       if (!existing) {
         await db.insert(workspaceLeases).values({ id, responseId: this.responseId, chatId: this.chatId, userId: this.userId, imageDigest: settings.imageDigest, status: 'provisioning', capacityState: 'waiting' }).onConflictDoNothing()
-        ;[existing] = await db.select().from(workspaceLeases).where(and(eq(workspaceLeases.chatId, this.chatId), inArray(workspaceLeases.status, ['provisioning', 'ready']))).limit(1)
+        ;[existing] = await db.select().from(workspaceLeases).where(and(eq(workspaceLeases.chatId, this.chatId), eq(workspaceLeases.kind, 'sandbox'), inArray(workspaceLeases.status, ['provisioning', 'ready']))).limit(1)
       }
       if (!existing) throw new Error('Unable to create workspace queue record')
       const queueLease = existing
@@ -295,11 +302,12 @@ export class WorkspaceManager {
   disableTools(): void { this.toolsDisabled = true }
 }
 
-export async function releaseWorkspaceForChat(chatId: string): Promise<void> {
+export async function releaseWorkspaceForChat(chatId: string, keep?: { computerId: string | null }): Promise<void> {
   const [lease] = await db.select().from(workspaceLeases).where(and(eq(workspaceLeases.chatId, chatId), inArray(workspaceLeases.status, ['provisioning', 'ready']))).limit(1)
   if (!lease) return
+  if (keep && (keep.computerId === null ? lease.kind === 'sandbox' : lease.kind === 'computer' && lease.computerId === keep.computerId)) return
   const config = getConfig()
-  if (lease.controllerLeaseId && config.WORKSPACE_CONTROLLER_URL && config.WORKSPACE_CONTROLLER_TOKEN) {
+  if (lease.kind === 'sandbox' && lease.controllerLeaseId && config.WORKSPACE_CONTROLLER_URL && config.WORKSPACE_CONTROLLER_TOKEN) {
     await workspaceControllerRequest(`/v1/leases/${lease.controllerLeaseId}`, { method: 'DELETE', signal: AbortSignal.timeout(10_000) }).catch(() => undefined)
   }
   await db.update(workspaceLeases).set({ status: 'released', capacityState: null, releasedAt: new Date(), updatedAt: new Date() }).where(eq(workspaceLeases.id, lease.id))
@@ -326,7 +334,7 @@ export async function reconcileWorkspaceLeases(): Promise<void> {
     const body = await response.json() as { leases?: Array<{ id: string }> }
     const active = new Set((body.leases ?? []).map((lease) => lease.id))
     const ready = await db.select({ id: workspaceLeases.id, controllerLeaseId: workspaceLeases.controllerLeaseId })
-      .from(workspaceLeases).where(eq(workspaceLeases.status, 'ready'))
+      .from(workspaceLeases).where(and(eq(workspaceLeases.status, 'ready'), eq(workspaceLeases.kind, 'sandbox')))
     const stale = ready.filter((row) => !row.controllerLeaseId || !active.has(row.controllerLeaseId)).map((row) => row.id)
     if (!stale.length) return
     await db.update(workspaceLeases).set({

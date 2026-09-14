@@ -188,6 +188,11 @@ export function runWithAuthenticatedUser<T>(user: AuthenticatedUser, operation: 
 }
 
 export async function authenticateSessionToken(token: string | undefined, ip?: string | null): Promise<AuthenticatedUser | null> {
+  return (await authenticateSessionTokenWithSession(token, ip))?.user ?? null
+}
+
+/** Like authenticateSessionToken, but also identifies which device session presented the token. */
+export async function authenticateSessionTokenWithSession(token: string | undefined, ip?: string | null): Promise<{ user: AuthenticatedUser; sessionId: string } | null> {
   if (!token) return null
   const [row] = await db
     .select({ session: sessions, user: users })
@@ -197,7 +202,7 @@ export async function authenticateSessionToken(token: string | undefined, ip?: s
     .limit(1)
   if (!row || row.user.blocked) return null
   await db.update(sessions).set({ lastSeenAt: new Date(), ...(ip ? { latestIpAddress: ip } : {}) }).where(eq(sessions.id, row.session.id))
-  return serializeUser(row.user)
+  return { user: serializeUser(row.user), sessionId: row.session.id }
 }
 
 export function requireUser(request: FastifyRequest): AuthenticatedUser {

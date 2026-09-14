@@ -1,4 +1,7 @@
+import type { WorkspaceSelection } from '@pulpo/contracts'
 import { create } from 'zustand'
+import { effectiveWorkspaceSelection } from '@/lib/computers'
+import { useWorkspaceSelection, workspaceSelectionFor } from '@/stores/workspace-selection'
 import { webChatStarted } from '@/lib/chat-started'
 import { replaceEqualDeep } from '@tanstack/react-query'
 import {
@@ -112,6 +115,7 @@ export interface ServerChat {
   updatedAt: string
   activeResponseId: string | null
   activeBranchLeafId: string | null
+  workspaceComputerId?: string | null
   inFlightResponseIds?: string[]
   attachments?: ServerAttachment[]
   responses?: ServerResponse[]
@@ -124,6 +128,7 @@ interface BranchActivationResult {
 }
 
 interface PendingMessageInput {
+  workspace?: WorkspaceSelection
   chatId: string | null
   responseId?: string
   content: string
@@ -142,6 +147,7 @@ interface PendingQueuedMessageInput extends Omit<PendingMessageInput, 'chatId'> 
 }
 
 interface StagedSendOptions {
+  workspace?: WorkspaceSelection
   targetChatId: string
   responseId: string
   presetSelections: Record<string, string>
@@ -224,6 +230,7 @@ interface ChatState {
     modelId: string
     attachments: Attachment[]
     agentMode: boolean
+    workspace?: WorkspaceSelection
   }) => Promise<void>
   editAssistantMessage: (chatId: string, messageId: string, content: string) => void
   deleteUserMessage: (chatId: string, messageId: string) => void
@@ -427,6 +434,7 @@ function toChat(
       ? current?.expiresAt ?? null
       : row.expiresAt === null ? null : Date.parse(row.expiresAt),
     expired: current?.expired ?? false,
+    workspaceComputerId: row.workspaceComputerId === undefined ? current?.workspaceComputerId ?? null : row.workspaceComputerId,
     provisional: current?.provisional,
     awaitingSummary: current?.awaitingSummary,
   }
@@ -1311,6 +1319,7 @@ export const useChat = create<ChatState>()((set, get) => ({
 
   stagePendingMessage: (input) => {
     const id = input.chatId ?? crypto.randomUUID()
+    if (!input.chatId && input.workspace) useWorkspaceSelection.getState().select(id, input.workspace)
     const responseId = input.responseId ?? crypto.randomUUID()
     const timestamp = input.createdAt ?? Date.now()
     const newChatExpiresAt = !input.chatId && !input.temporary && input.autoExpire
@@ -1375,6 +1384,7 @@ export const useChat = create<ChatState>()((set, get) => ({
       modelId: input.modelId,
       presetSelections: input.presetSelections,
       agentMode: input.agentMode,
+      workspace: input.workspace,
       position: Math.max(-1, ...currentQueue.map((message) => message.position)) + 1,
       status: 'pending',
       error: null,
@@ -1432,6 +1442,10 @@ export const useChat = create<ChatState>()((set, get) => ({
       modelId,
     )
     const agentMode = staged?.agentMode ?? currentAgentMode(modelId)
+    const workspace = agentMode
+      ? effectiveWorkspaceSelection(staged?.workspace ?? workspaceSelectionFor(chatId ?? null), currentChat?.workspaceComputerId === undefined ? cachedChat?.workspaceComputerId : currentChat.workspaceComputerId)
+      : undefined
+    if (workspace && !chatId && !workspaceSelectionFor(id)) useWorkspaceSelection.getState().select(id, workspace)
     const userMessage: Message = {
       id: `${responseId}:input`,
       role: 'user',
@@ -1511,6 +1525,7 @@ export const useChat = create<ChatState>()((set, get) => ({
         presetSelections: generation.selections,
         attachmentIds: attachments.map((attachment) => attachment.id),
         agentMode,
+        ...(workspace ? { workspace } : {}),
       }
       const path = chatId ? `/api/chats/${id}/responses` : '/api/chats/start'
       const body = chatId ? responseBody : {
@@ -1640,6 +1655,7 @@ export const useChat = create<ChatState>()((set, get) => ({
       modelId: input.modelId,
       presetSelections: input.presetSelections,
       agentMode: input.agentMode,
+      workspace: input.workspace,
       position: staged?.position ?? Math.max(-1, ...currentQueue.map((message) => message.position)) + 1,
       status: 'pending',
       error: null,
@@ -1706,6 +1722,7 @@ export const useChat = create<ChatState>()((set, get) => ({
             modelId: input.modelId,
             presetSelections: input.presetSelections,
             agentMode: input.agentMode,
+            workspace: input.workspace,
             attachments: messageAttachments.map((attachment) => ({
               id: attachment.id,
               name: attachment.name,
@@ -1800,6 +1817,7 @@ export const useChat = create<ChatState>()((set, get) => ({
       modelId,
     )
     const agentMode = currentAgentMode(modelId)
+    const workspace = agentMode ? effectiveWorkspaceSelection(workspaceSelectionFor(chatId), get().chats.find((chat) => chat.id === chatId)?.workspaceComputerId) : undefined
     const responseId = crypto.randomUUID()
     const optimistic = cacheOptimisticBranch({
       chatId,
@@ -1819,6 +1837,7 @@ export const useChat = create<ChatState>()((set, get) => ({
       modelId,
       presetSelections: generation.selections,
       agentMode,
+      workspace,
     }, { queueOffline: !get().chats.some((chat) => chat.id === chatId && chat.temporary) })).then((result) => {
       if (result === undefined) return
       branchSelectionIntents.clear(chatId, selectionVersion)
@@ -1834,7 +1853,7 @@ export const useChat = create<ChatState>()((set, get) => ({
       if (expired) get().markTemporaryExpired(chatId)
     })
   },
-  editUserMessage: async ({ chatId, messageId, content, modelId, attachments: editedAttachments, agentMode }) => {
+  editUserMessage: async ({ chatId, messageId, content, modelId, attachments: editedAttachments, agentMode, workspace }) => {
     const generation = resolveGeneration(
       chatOptionsFor(getCatalogModel(modelId), useModelConfig.getState().overrides),
       useSettings.getState().generation[modelId],
@@ -1868,6 +1887,7 @@ export const useChat = create<ChatState>()((set, get) => ({
         presetSelections: generation.selections,
         attachmentIds: editedAttachments.map((attachment) => attachment.id),
         agentMode,
+        workspace,
       }
       const responseBody = { ...selection, input: content, parentResponseId: source?.parentResponseId ?? null }
       const startChat = rejectedSend?.startChat

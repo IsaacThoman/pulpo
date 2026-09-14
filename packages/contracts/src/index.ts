@@ -11,6 +11,8 @@ import { z } from 'zod'
 import { DEFAULT_MAX_INLINE_IMAGES, MAX_CONFIGURABLE_INLINE_IMAGES, MAX_MESSAGE_ATTACHMENTS } from './attachment-limits.js'
 export * from './attachment-limits.js'
 import { CHAT_PRESET_ICON_NAMES } from './chat-preset-icons.generated.js'
+import { workspaceSelectionSchema } from './computers.js'
+export * from './computers.js'
 
 export { CHAT_PRESET_ICON_NAMES } from './chat-preset-icons.generated.js'
 
@@ -658,6 +660,9 @@ function applyAgentEventOutput(output: unknown[], event: ResponseEvent): unknown
   if (event.type.startsWith('pulpo.agent.workspace.')) {
     return upsertOutputItem(output, (item) => item.type === 'pulpo_workspace', payload)
   }
+  if (event.type.startsWith('pulpo.agent.approval.') && typeof payload.id === 'string') {
+    return upsertOutputItem(output, (item) => item.type === 'pulpo_approval' && item.id === payload.id, payload)
+  }
   if (event.type === 'pulpo.compaction.updated' && typeof payload.id === 'string') {
     return upsertOutputItem(output, (item) => item.id === payload.id, payload)
   }
@@ -1020,6 +1025,8 @@ export const agentSettingsSchema = z.object({
   maxToolOutputBytes: z.number().int().min(1_024).max(10_000_000).default(100_000),
   billWorkspaces: z.boolean().default(false),
   workspacePricePerMinuteMicros: z.number().int().min(0).max(1_000_000_000).default(10_000),
+  /** Allow users to run the agent on their own computers through the desktop app. */
+  computersEnabled: z.boolean().default(true),
 })
 export type AgentSettings = z.infer<typeof agentSettingsSchema>
 
@@ -1617,6 +1624,8 @@ export const chatSummarySchema = z.object({
   expiresAt: isoDateSchema.nullable().optional(),
   updatedAt: isoDateSchema,
   activeResponseId: idSchema.nullable(),
+  /** Computer this chat's agent runs on; null or absent means the cloud sandbox. */
+  workspaceComputerId: idSchema.nullable().optional(),
   inFlightResponseIds: z.array(idSchema).default([]),
 })
 export type ChatSummary = z.infer<typeof chatSummarySchema>
@@ -1672,6 +1681,7 @@ export const createChatResponseSchema = z.object({
   presetSelections: z.record(z.string(), z.string()).default({}),
   attachmentIds: attachmentIdListSchema.default([]),
   agentMode: z.boolean().default(false),
+  workspace: workspaceSelectionSchema.optional(),
 }).refine((value) => value.input.length > 0 || value.attachmentIds.length > 0, {
   message: 'Message must include text or attachments',
   path: ['input'],
@@ -1686,6 +1696,7 @@ export const editMessageSchema = z.object({
   presetSelections: z.record(z.string(), z.string()).optional(),
   attachmentIds: attachmentIdListSchema.optional(),
   agentMode: z.boolean().optional(),
+  workspace: workspaceSelectionSchema.optional(),
 })
 export type EditMessageInput = z.infer<typeof editMessageSchema>
 
@@ -1707,6 +1718,7 @@ export const queuedMessageSchema = z.object({
   modelId: z.string(),
   presetSelections: z.record(z.string(), z.string()),
   agentMode: z.boolean(),
+  workspace: workspaceSelectionSchema.optional(),
   position: z.number().int().nonnegative(),
   status: queuedMessageStatusSchema,
   error: z.string().nullable(),
@@ -1724,6 +1736,7 @@ export const createQueuedMessageSchema = z.object({
   presetSelections: z.record(z.string(), z.string()).default({}),
   attachmentIds: attachmentIdListSchema.default([]),
   agentMode: z.boolean().default(false),
+  workspace: workspaceSelectionSchema.optional(),
 }).refine((value) => value.input.length > 0 || value.attachmentIds.length > 0, {
   message: 'Message must include text or attachments',
   path: ['input'],
@@ -1741,6 +1754,7 @@ export const updateQueuedMessageSchema = z.discriminatedUnion('action', [
     presetSelections: z.record(z.string(), z.string()).default({}),
     attachmentIds: attachmentIdListSchema.default([]),
     agentMode: z.boolean().default(false),
+    workspace: workspaceSelectionSchema.optional(),
   }).refine((value) => value.input.length > 0 || value.attachmentIds.length > 0, {
     message: 'Message must include text or attachments',
     path: ['input'],
@@ -1768,7 +1782,7 @@ export const syncRequestSchema = z.object({
 })
 export type SyncRequest = z.infer<typeof syncRequestSchema>
 
-export const stateInvalidationScopeSchema = z.enum(['chats', 'folders', 'models', 'usage', 'settings', 'friends', 'pool', 'billing', 'shelved-drafts'])
+export const stateInvalidationScopeSchema = z.enum(['chats', 'folders', 'models', 'usage', 'settings', 'friends', 'pool', 'billing', 'shelved-drafts', 'computers'])
 export type StateInvalidationScope = z.infer<typeof stateInvalidationScopeSchema>
 
 export const syncResultSchema = z.object({

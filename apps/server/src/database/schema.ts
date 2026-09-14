@@ -1,3 +1,4 @@
+import type { WorkspaceSelection } from '@pulpo/contracts'
 import { losslessJson, losslessText } from './lossless-json.js'
 import { sql } from 'drizzle-orm'
 import {
@@ -207,6 +208,51 @@ export const sessions = pgTable('sessions', {
   ipAddress: text('ip_address'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [uniqueIndex('sessions_token_hash_unique').on(table.tokenHash), index('sessions_user_idx').on(table.userId)])
+
+/** A user's own computer, registered by the desktop app, that the agent may operate on instead of a sandbox. */
+export const agentComputers = pgTable('agent_computers', {
+  id: uuid('id').primaryKey(),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  credentialHash: text('credential_hash'),
+  ownerSessionId: uuid('owner_session_id').references(() => sessions.id, { onDelete: 'set null' }),
+  name: text('name').notNull(),
+  os: text('os').notNull(),
+  arch: text('arch').notNull().default(''),
+  appVersion: text('app_version').notNull().default(''),
+  accessMode: text('access_mode').notNull().default('folder'),
+  rootPath: text('root_path').notNull(),
+  attachmentsDir: text('attachments_dir').notNull(),
+  homeDir: text('home_dir').notNull().default(''),
+  shell: text('shell').notNull().default('bash'),
+  approvalPolicy: text('approval_policy').notNull().default('default'),
+  allowRemote: boolean('allow_remote').notNull().default(false),
+  enabled: boolean('enabled').notNull().default(true),
+  lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
+  revokedAt: timestamp('revoked_at', { withTimezone: true }),
+  ...timestamps,
+}, (table) => [
+  index('agent_computers_user_idx').on(table.userId),
+  check('agent_computers_os_check', sql`${table.os} in ('macos', 'windows', 'linux')`),
+  check('agent_computers_access_mode_check', sql`${table.accessMode} in ('folder', 'full')`),
+  check('agent_computers_approval_policy_check', sql`${table.approvalPolicy} in ('default', 'bash-only', 'never')`),
+])
+
+/** Grants a non-owner device session permission to select a computer as its workspace. */
+export const agentComputerPairings = pgTable('agent_computer_pairings', {
+  id: uuid('id').primaryKey(),
+  computerId: uuid('computer_id').notNull().references(() => agentComputers.id, { onDelete: 'cascade' }),
+  deviceSessionId: uuid('device_session_id').notNull().references(() => sessions.id, { onDelete: 'cascade' }),
+  status: text('status').notNull().default('pending'),
+  requestedIp: text('requested_ip'),
+  requestedAt: timestamp('requested_at', { withTimezone: true }).notNull().defaultNow(),
+  decidedAt: timestamp('decided_at', { withTimezone: true }),
+  decidedBySessionId: uuid('decided_by_session_id').references(() => sessions.id, { onDelete: 'set null' }),
+  ...timestamps,
+}, (table) => [
+  uniqueIndex('agent_computer_pairings_active_unique').on(table.computerId, table.deviceSessionId).where(sql`${table.status} in ('pending', 'approved')`),
+  index('agent_computer_pairings_session_idx').on(table.deviceSessionId),
+  check('agent_computer_pairings_status_check', sql`${table.status} in ('pending', 'approved', 'denied', 'revoked')`),
+])
 
 export const passkeyCeremonies = pgTable('passkey_ceremonies', {
   tokenHash: text('token_hash').primaryKey(),
@@ -448,6 +494,8 @@ export const chats = pgTable('chats', {
   temporary: boolean('temporary').notNull().default(false),
   activeBranchLeafId: uuid('active_branch_leaf_id'),
   activeResponseId: uuid('active_response_id'),
+  /** Sticky agent workspace: null means the cloud sandbox. Set by the first agent response in the chat. */
+  workspaceComputerId: uuid('workspace_computer_id').references(() => agentComputers.id, { onDelete: 'set null' }),
   expiresAt: timestamp('expires_at', { withTimezone: true }),
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
   purgeStartedAt: timestamp('purge_started_at', { withTimezone: true }),
@@ -477,6 +525,8 @@ export const responses = pgTable('responses', {
   executionMode: executionModeEnum('execution_mode').notNull().default('stream'),
   agentMode: boolean('agent_mode').notNull().default(false),
   agentCapacityAction: text('agent_capacity_action'),
+  requesterSessionId: uuid('requester_session_id').references(() => sessions.id, { onDelete: 'set null' }),
+  workspaceComputerId: uuid('workspace_computer_id').references(() => agentComputers.id, { onDelete: 'set null' }),
   input: losslessJson('input').notNull(),
   instructions: losslessText('instructions'),
   presetSelections: jsonb('preset_selections').notNull().default({}),
@@ -504,6 +554,8 @@ export const responses = pgTable('responses', {
 ])
 
 export const queuedMessages = pgTable('queued_messages', {
+  workspace: jsonb('workspace').$type<WorkspaceSelection>(),
+  requesterSessionId: uuid('requester_session_id').references(() => sessions.id, { onDelete: 'set null' }),
   timeZone: text('time_zone'),
   id: uuid('id').primaryKey(),
   chatId: uuid('chat_id').notNull().references(() => chats.id, { onDelete: 'cascade' }),
@@ -584,9 +636,11 @@ export const workspaceLeases = pgTable('workspace_leases', {
   responseId: uuid('response_id').references(() => responses.id, { onDelete: 'set null' }),
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   controllerLeaseId: text('controller_lease_id'),
+  kind: text('kind').notNull().default('sandbox'),
+  computerId: uuid('computer_id').references(() => agentComputers.id, { onDelete: 'set null' }),
   status: workspaceLeaseStatusEnum('status').notNull().default('provisioning'),
   capacityState: text('capacity_state'),
-  imageDigest: text('image_digest').notNull(),
+  imageDigest: text('image_digest'),
   error: text('error'),
   claimedAt: timestamp('claimed_at', { withTimezone: true }),
   lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
@@ -629,6 +683,30 @@ export const toolExecutions = pgTable('tool_executions', {
   completedAt: timestamp('completed_at', { withTimezone: true }),
   ...timestamps,
 }, (table) => [uniqueIndex('tool_executions_operation_unique').on(table.operationId), index('tool_executions_run_idx').on(table.agentRunId, table.createdAt)])
+
+/** A pending user decision before the agent runs a gated tool on a real computer. */
+export const agentToolApprovals = pgTable('agent_tool_approvals', {
+  id: uuid('id').primaryKey(),
+  responseId: uuid('response_id').notNull().references(() => responses.id, { onDelete: 'cascade' }),
+  agentRunId: uuid('agent_run_id').references(() => agentRuns.id, { onDelete: 'cascade' }),
+  computerId: uuid('computer_id').notNull().references(() => agentComputers.id, { onDelete: 'cascade' }),
+  operationId: text('operation_id').notNull(),
+  kind: text('kind').notNull(),
+  summary: text('summary').notNull().default(''),
+  actionDigest: text('action_digest'),
+  status: text('status').notNull().default('pending'),
+  decidedBySessionId: uuid('decided_by_session_id').references(() => sessions.id, { onDelete: 'set null' }),
+  decidedVia: text('decided_via'),
+  decidedAt: timestamp('decided_at', { withTimezone: true }),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  ...timestamps,
+}, (table) => [
+  uniqueIndex('agent_tool_approvals_operation_unique').on(table.operationId),
+  index('agent_tool_approvals_response_idx').on(table.responseId),
+  index('agent_tool_approvals_computer_status_idx').on(table.computerId, table.status),
+  check('agent_tool_approvals_kind_check', sql`${table.kind} in ('bash', 'write', 'edit')`),
+  check('agent_tool_approvals_status_check', sql`${table.status} in ('pending', 'approved', 'denied', 'expired', 'cancelled')`),
+])
 
 export const requestLogs = pgTable('request_logs', {
   id: uuid('id').primaryKey(),

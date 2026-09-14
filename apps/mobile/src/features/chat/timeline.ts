@@ -1,4 +1,4 @@
-import type { CompactionItem, RecallItem, ToolImagePreview } from '@pulpo/contracts'
+import type { CompactionItem, ComputerAccessMode, ComputerOs, RecallItem, ToolApprovalItem, ToolImagePreview } from '@pulpo/contracts'
 import { recalledChatLabel } from './recall-label'
 
 export type ToolItem = {
@@ -17,6 +17,10 @@ export type ToolItem = {
 export type WorkspaceItem = {
   type: 'pulpo_workspace'
   state?: string
+  kind?: 'sandbox' | 'computer'
+  computerName?: string
+  os?: ComputerOs
+  accessMode?: ComputerAccessMode
   position?: number
   error?: string
   startedAt?: string
@@ -30,6 +34,7 @@ export type TimelineStep =
   | { kind: 'workspace'; workspace: WorkspaceItem }
   | { kind: 'compaction'; compaction: CompactionItem }
   | { kind: 'recall'; recall: RecallItem }
+  | { kind: 'approval'; approval: ToolApprovalItem }
 
 export type TimelineSegment =
   | { kind: 'activity'; steps: TimelineStep[]; active: boolean }
@@ -56,7 +61,7 @@ export function timelineActivityIsActive(
 export function completedActivityLabel(steps: TimelineStep[], durationMs?: number): string {
   const recall = steps.find((step) => step.kind === 'recall')
   const hasReasoning = steps.some((step) => step.kind === 'reasoning' && Boolean(step.text))
-  const worked = steps.some((step) => step.kind === 'tool' || step.kind === 'workspace')
+  const worked = steps.some((step) => step.kind === 'tool' || step.kind === 'workspace' || step.kind === 'approval')
   if (recall?.kind === 'recall' && !hasReasoning && !worked) {
     return recalledChatLabel(recall.recall.sources.length)
   }
@@ -75,6 +80,31 @@ type LegacyMessageTimelineInput = {
 
 export function workspaceIsActive(state?: string): boolean {
   return state === 'waiting' || state === 'provisioning'
+}
+
+export function approvalIsPending(approval: ToolApprovalItem, now = Date.now()): boolean {
+  return approval.status === 'pending' && Date.parse(approval.expires_at) > now
+}
+
+/** Disclosure label for a workspace step; computers name the machine instead of the sandbox. */
+export function workspaceLabel(item: WorkspaceItem): string {
+  if (item.kind === 'computer') {
+    const name = item.computerName ?? 'your computer'
+    if (item.state === 'waiting' || item.state === 'provisioning') return `Connecting to ${name}…`
+    if (item.state === 'expired') return `${name} disconnected`
+    if (item.state === 'unavailable') return `${name} unavailable`
+    if (item.state === 'continuing_without_agent') return 'Continuing without agent tools'
+    return `Working on ${name}`
+  }
+  if (item.state === 'waiting') {
+    return `Waiting for workspace${typeof item.position === 'number' ? ` · queue #${item.position}` : ''}`
+  }
+  if (item.state === 'provisioning') return 'Starting workspace…'
+  if (item.state === 'continuing_without_agent') return 'Continuing without agent tools'
+  if (item.state === 'expired') return 'Workspace expired'
+  if (item.state === 'unavailable') return 'Workspace unavailable'
+  if (item.state === 'ready' || item.state === 'running') return 'Started workspace'
+  return 'Workspace'
 }
 
 /**
@@ -176,6 +206,13 @@ export function buildMessageTimeline(output: unknown[], showReasoning: boolean):
       if (tool.status === 'running') activity.active = true
       continue
     }
+    if (value.type === 'pulpo_approval') {
+      activity ??= { kind: 'activity', steps: [], active: false }
+      const approval = item as ToolApprovalItem
+      activity.steps.push({ kind: 'approval', approval })
+      if (approvalIsPending(approval)) activity.active = true
+      continue
+    }
     if (value.type === 'message') {
       const text = textFromParts(value.content)
       if (!text.trim()) continue
@@ -196,13 +233,17 @@ export function buildMessageTimeline(output: unknown[], showReasoning: boolean):
       segments.unshift({ kind: 'activity', steps: [{ kind: 'workspace', workspace }], active: workspaceIsActive(workspace.state) })
     }
   }
-  // The preference controls the entire work disclosure, including workspace-only activity.
-  return showReasoning ? segments : segments.filter((segment) => segment.kind === 'text')
+  // Decisions remain actionable even when work details are hidden.
+  return showReasoning ? segments : segments.flatMap((segment): TimelineSegment[] => {
+    if (segment.kind === 'text') return [segment]
+    const steps = segment.steps.filter((step) => step.kind === 'approval' && approvalIsPending(step.approval))
+    return steps.length ? [{ kind: 'activity', steps, active: true }] : []
+  })
 }
 
 export function activityDurationMs(steps: TimelineStep[]): number | undefined {
   const durations = steps.flatMap((step) => {
-    if (step.kind === 'recall') return []
+    if (step.kind === 'recall' || step.kind === 'approval') return []
     if (step.kind === 'reasoning') return step.durationMs === undefined ? [] : [step.durationMs]
     const duration = step.kind === 'tool'
       ? step.tool.durationMs

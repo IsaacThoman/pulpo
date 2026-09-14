@@ -143,6 +143,20 @@ jobs:
         run: npm run build -w @pulpo/contracts
       - name: Apply database migrations
         run: npm run db:migrate -w @pulpo/server
+      - name: Create disposable computer security database
+        run: node --input-type=module -e 'import postgres from "postgres"; const sql = postgres(process.env.DATABASE_URL); await sql.unsafe("CREATE DATABASE pulpo_computers_test"); await sql.end();'
+      - name: Apply computer security test migrations
+        env:
+          DATABASE_URL: postgres://postgres:search-test@localhost:5432/pulpo_computers_test
+        run: npm run db:migrate -w @pulpo/server
+      - name: Build computer security test dependencies
+        run: npm run build -w @pulpo/workspace-daemon && npm run build -w @pulpo/client-core
+      - name: Test computer security against PostgreSQL and Redis
+        env:
+          DATABASE_URL: postgres://postgres:search-test@localhost:5432/pulpo_computers_test
+          REDIS_URL: redis://localhost:6379
+          PULPO_COMPUTER_SECURITY_TESTS: 'true'
+        run: npm run test -w @pulpo/server -- src/agent/computer/security.integration.test.ts
       - name: Test chat retrieval against PostgreSQL
         run: npm run test:episodic-search -w @pulpo/server
       - name: Create disposable account deletion database

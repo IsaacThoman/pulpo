@@ -34,6 +34,11 @@ export function SettingsDialogProvider({
   return createElement(SettingsDialogContext.Provider, { value: controller }, children)
 }
 
+/** Like useSettingsDialog, but usable from components that may render outside the provider. */
+export function useOptionalSettingsDialog(): SettingsDialogController | null {
+  return useContext(SettingsDialogContext)
+}
+
 export function useSettingsDialog(): SettingsDialogController {
   const controller = useContext(SettingsDialogContext)
   if (!controller) throw new Error('useSettingsDialog must be used within SettingsDialogProvider')

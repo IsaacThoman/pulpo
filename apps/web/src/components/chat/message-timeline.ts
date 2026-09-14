@@ -1,4 +1,4 @@
-import type { CompactionItem, RecallItem, ToolImagePreview } from '@pulpo/contracts'
+import type { CompactionItem, RecallItem, ToolApprovalItem, ToolImagePreview } from '@pulpo/contracts'
 
 export type ToolItem = {
   type: 'pulpo_tool'
@@ -16,6 +16,11 @@ export type ToolItem = {
 export type WorkspaceItem = {
   type: 'pulpo_workspace'
   state?: string
+  /** Sandbox unless the run targets one of the user's computers. */
+  kind?: 'sandbox' | 'computer'
+  computerName?: string
+  os?: string
+  accessMode?: string
   position?: number
   error?: string
   startedAt?: string
@@ -50,7 +55,16 @@ export type RecallStep = {
   recall: RecallItem
 }
 
-export type ActivityStep = ReasoningStep | ToolStep | WorkspaceStep | CompactionStep | RecallStep
+export type ApprovalStep = {
+  kind: 'approval'
+  approval: ToolApprovalItem
+}
+
+export type ActivityStep = ReasoningStep | ToolStep | WorkspaceStep | CompactionStep | RecallStep | ApprovalStep
+
+export function approvalIsPending(approval: ToolApprovalItem): boolean {
+  return approval.status === 'pending' && Date.parse(approval.expires_at) > Date.now()
+}
 
 export type ActivitySegment = {
   kind: 'activity'
@@ -98,7 +112,7 @@ function activityHasContent(steps: ActivityStep[]): boolean {
 function insertWorkspaceStep(steps: ActivityStep[], workspace: WorkspaceItem): ActivityStep[] {
   if (steps.some((step) => step.kind === 'workspace')) return steps
   const step: WorkspaceStep = { kind: 'workspace', workspace }
-  const firstTool = steps.findIndex((entry) => entry.kind === 'tool')
+  const firstTool = steps.findIndex((entry) => entry.kind === 'tool' || entry.kind === 'approval')
   if (firstTool === -1) return [step, ...steps]
   return [...steps.slice(0, firstTool), step, ...steps.slice(firstTool)]
 }
@@ -164,6 +178,13 @@ export function buildTimeline(outputItems: unknown[], showReasoning: boolean): T
       if (tool.status === 'running') activity.active = true
       continue
     }
+    if (type === 'pulpo_approval') {
+      if (!activity) activity = { kind: 'activity', steps: [], active: false }
+      const approval = item as ToolApprovalItem
+      activity.steps.push({ kind: 'approval', approval })
+      if (approvalIsPending(approval)) activity.active = true
+      continue
+    }
     if (type === 'message') {
       const text = messageTextFromItem(item)
       if (!text.trim()) continue
@@ -192,6 +213,11 @@ export function buildTimeline(outputItems: unknown[], showReasoning: boolean): T
     }
   }
 
-  // The preference controls the entire work disclosure, including workspace-only activity.
-  return showReasoning ? segments : segments.filter((segment) => segment.kind === 'text')
+  // Approval controls remain available even when work details are hidden.
+  if (showReasoning) return segments
+  return segments.flatMap((segment): TimelineSegment[] => {
+    if (segment.kind === 'text') return [segment]
+    const steps = segment.steps.filter((step): step is ApprovalStep => step.kind === 'approval' && approvalIsPending(step.approval))
+    return steps.length ? [{ kind: 'activity', steps, active: steps.some((step) => approvalIsPending(step.approval)) }] : []
+  })
 }

@@ -2,6 +2,7 @@ import { MAX_MESSAGE_ATTACHMENTS } from '@pulpo/contracts'
 import { and, eq, inArray, isNull, or, sql } from 'drizzle-orm'
 import type { ChatPreset, CreateChatResponseInput, ResponseSnapshot } from '@pulpo/contracts'
 import { db } from '../database/client.js'
+import { resolveWorkspaceComputer } from './workspace-selection.js'
 import { applicationSettings, attachments, chats, modelPresetChoices, modelPresets, models, requestLogs, responses, userProviderCredentials } from '../database/schema.js'
 import { getActivePricing, releaseBudget, reserveBudget } from '../accounting/service.js'
 import { AppError, notFound } from '../lib/errors.js'
@@ -48,6 +49,8 @@ export interface CreateResponseOptions {
   parentResponseId?: string | null
   userMessageId?: string
   branchReason?: 'message' | 'regenerate' | 'user_edit'
+  /** Device session of the caller; required to select a computer as the workspace. */
+  requesterSessionId?: string | null
 }
 
 async function loadPresetModel(modelId: string): Promise<PresetResolutionModel | undefined> {
@@ -151,11 +154,14 @@ export async function createResponse(options: CreateResponseOptions) {
     const rejected = unsupportedPublicModelParameter(model, options.parameters)
     if (rejected) throw new AppError(400, 'parameter_not_allowed', `Parameter ${rejected} is not available for this model`, 'invalid_request_error', rejected)
   }
+  let workspaceComputerId: string | null = null
   if (options.input.agentMode) {
     if (options.apiKeyId) throw new AppError(400, 'agent_web_only', 'Agent mode is only available in Pulpo web chat')
     const [agentRow] = await db.select().from(applicationSettings).where(eq(applicationSettings.key, 'agent')).limit(1)
-    if (!parseAgentSettings(agentRow?.value).enabled) throw new AppError(503, 'agent_unavailable', 'Agent mode is not enabled')
+    const agentSettings = parseAgentSettings(agentRow?.value)
+    if (!agentSettings.enabled) throw new AppError(503, 'agent_unavailable', 'Agent mode is not enabled')
     if (!model.agentEnabled) throw new AppError(400, 'model_not_agent_capable', 'The selected model is not enabled for agent mode')
+    workspaceComputerId = await resolveWorkspaceComputer({ ...options, requested: options.input.workspace, previousComputerId: chat.workspaceComputerId, computersEnabled: agentSettings.computersEnabled })
   }
   const parameters: Record<string, unknown> = { ...(options.parameters ?? {}), ...resolved.parameters }
   const maxOutputTokens = options.apiKeyId
@@ -242,6 +248,8 @@ export async function createResponse(options: CreateResponseOptions) {
     branchReason: options.branchReason ?? 'message',
     executionMode,
     agentMode: options.input.agentMode,
+    workspaceComputerId,
+    requesterSessionId: options.requesterSessionId ?? null,
     input: storedInput,
     presetSelections: resolved.selections,
     parameters,
@@ -252,6 +260,9 @@ export async function createResponse(options: CreateResponseOptions) {
     idempotencyFingerprint: options.idempotencyFingerprint,
     origin: options.actorUserId ? 'admin_chat' : options.apiKeyId ? 'api' : 'web',
   })
+  if (options.input.agentMode && workspaceComputerId !== chat.workspaceComputerId) {
+    await db.update(chats).set({ workspaceComputerId, updatedAt: new Date() }).where(eq(chats.id, chat.id))
+  }
   const requestLogId = newId()
   await db.transaction(async (tx) => {
     await tx.execute(sql`select pg_advisory_xact_lock(1886747744)`)

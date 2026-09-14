@@ -59,3 +59,12 @@ describe('queued response timing', () => {
     expect(mocks.createResponse).not.toHaveBeenCalled()
   })
 })
+
+it('dispatches to the saved destination with the originating device session', async () => {
+  mocks.claim.agentMode = true
+  mocks.claim.workspace = { kind: 'computer', computerId: 'computer-a' }
+  mocks.claim.requesterSessionId = 'session-a'
+  mocks.selects[4] = [{ activeResponseId: null, workspaceComputerId: 'computer-b' }]
+  await advanceMessageQueue('chat-1')
+  expect(mocks.createResponse).toHaveBeenCalledWith(expect.objectContaining({ requesterSessionId: 'session-a', input: expect.objectContaining({ workspace: mocks.claim.workspace }) }))
+})

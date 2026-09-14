@@ -109,6 +109,7 @@ function mapChat(chat: ServerChat, messages: PrototypeMessage[] = [], detailLoad
     expiresAt: chat.expiresAt ? Date.parse(chat.expiresAt) : null,
     expired: false,
     detailLoaded: detailLoaded || chat.responses !== undefined,
+    workspaceComputerId: chat.workspaceComputerId ?? null,
     messages,
     queuedMessages: chat.queuedMessages,
     deletedAt: chat.deletedAt ? Date.parse(chat.deletedAt) : null,

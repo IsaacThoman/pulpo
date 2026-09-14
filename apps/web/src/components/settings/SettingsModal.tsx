@@ -3,6 +3,7 @@ import { SpeechSettings } from '@/features/speech/SpeechSettings'
 import { refreshInstanceFeatures } from '@/lib/instance-features'
 import { DeleteAccountSettings } from './DeleteAccountSettings'
 import { DeviceSettings } from './DeviceSettings'
+import { SettingsRow as Row } from './SettingsRow'
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { useTranslation } from '@/i18n/useAppTranslation'
 import { useNavigate } from 'react-router-dom'
@@ -150,18 +151,6 @@ function trashDeletesLabel(iso: string | null, now = Date.now()): string {
   if (hours < 24) return `Deletes in ${hours}h`
   const days = Math.ceil(ms / 86_400_000)
   return `Deletes in ${days}d`
-}
-
-function Row({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
-  return (
-    <div className="flex min-w-0 flex-col items-stretch gap-2 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-      <div className="min-w-0 flex-1">
-        <div className="text-sm font-medium">{label}</div>
-        {hint && <div className="mt-0.5 text-xs text-muted-foreground">{hint}</div>}
-      </div>
-      <div className="min-w-0 self-start sm:shrink-0 sm:self-auto">{children}</div>
-    </div>
-  )
 }
 
 function ThemePicker() {

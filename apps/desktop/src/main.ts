@@ -1,3 +1,4 @@
+import os from 'node:os'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import squirrelStartup from 'electron-squirrel-startup'
@@ -31,6 +32,8 @@ import { loadWindowState, MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH, saveWindowState }
 import { DesktopUpdater, type ManualUpdateCheckResult } from './updater'
 import { desktopUpdatesSupported } from './update-support'
 import { prepareDesktopDownload } from './downloads'
+import { ComputerAgent } from './computer/agent'
+import { publishComputerState, registerComputerIpc } from './computer/ipc'
 
 const WINDOWS_APP_USER_MODEL_ID = 'com.squirrel.Pulpo.Pulpo'
 
@@ -42,6 +45,7 @@ const pendingProtocolUrls: string[] = []
 let mainWindow: BrowserWindow | null = null
 let rendererReady = false
 let desktopUpdater: DesktopUpdater | null = null
+let computerAgent: ComputerAgent | null = null
 
 log.initialize({ preload: false })
 
@@ -194,10 +198,12 @@ function registerIpc(): void {
   ipcMain.handle('desktop:session:store', async (event, value: unknown) => {
     assertTrustedSender(event)
     await storeSession(validStoredSession(value))
+    void computerAgent?.sessionChanged().catch((error) => log.error('Computer agent session refresh failed', error))
   })
   ipcMain.handle('desktop:session:clear', async (event) => {
     assertTrustedSender(event)
     await clearStoredSession()
+    void computerAgent?.sessionChanged().catch((error) => log.error('Computer agent session refresh failed', error))
   })
   ipcMain.handle('desktop:open-external', async (event, value: unknown) => {
     assertTrustedSender(event)
@@ -221,6 +227,37 @@ function registerIpc(): void {
     trustedWindow(event).close()
   })
   ipcMain.handle('desktop:window:is-maximized', (event) => trustedWindow(event).isMaximized())
+}
+
+/** ripgrep ships as a native binary; packaged builds keep it outside the asar so it can be spawned. */
+async function resolveRipgrepPath(): Promise<string | undefined> {
+  try {
+    const { rgPath } = await import('@vscode/ripgrep')
+    return typeof rgPath === 'string' ? rgPath.replace(`${path.sep}app.asar${path.sep}`, `${path.sep}app.asar.unpacked${path.sep}`) : undefined
+  } catch (error) {
+    log.warn('ripgrep is unavailable; the agent will use the built-in search fallback', error)
+    return undefined
+  }
+}
+
+async function initializeComputerAgent(): Promise<void> {
+  computerAgent = new ComputerAgent({
+    userDataDir: app.getPath('userData'),
+    homeDir: os.homedir(),
+    hostname: os.hostname(),
+    platform: process.platform,
+    arch: process.arch,
+    appVersion: app.getVersion(),
+    rgPath: await resolveRipgrepPath(),
+    loadSession: async () => {
+      const stored = await loadStoredSession()
+      return stored ? { instanceUrl: stored.instanceUrl, token: stored.token } : null
+    },
+    onStateChange: (state) => publishComputerState(() => mainWindow, state),
+    log,
+  })
+  registerComputerIpc({ agent: computerAgent, assertTrustedSender, getWindow: () => mainWindow })
+  await computerAgent.start()
 }
 
 function deliverProtocolUrl(value: string): void {
@@ -379,6 +416,7 @@ if (hasSingleInstanceLock) {
     configureSession()
     initializeDesktopUpdater()
     registerIpc()
+    await initializeComputerAgent()
     updateApplicationMenu()
     await createMainWindow()
     desktopUpdater?.start()
@@ -394,5 +432,9 @@ if (hasSingleInstanceLock) {
 
   app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') app.quit()
+  })
+
+  app.on('before-quit', () => {
+    void computerAgent?.stop().catch(() => undefined)
   })
 }

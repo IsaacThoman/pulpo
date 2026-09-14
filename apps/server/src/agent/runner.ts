@@ -3,7 +3,7 @@ import { selectedImageModel, executeImageGeneration, recoverSavedImageGeneration
 import { Agent, type AgentMessage } from '@earendil-works/pi-agent-core'
 import { openAIResponsesApi } from '@earendil-works/pi-ai/api/openai-responses.lazy'
 import type { Api, AssistantMessage, Context, Model } from '@earendil-works/pi-ai'
-import { toolImagePreviewSchema, type ToolImagePreview, type CompactionItem, type RecallItem, type ResponseSnapshot } from '@pulpo/contracts'
+import { toolImagePreviewSchema, type ToolImagePreview, type CompactionItem, type RecallItem, type ToolApprovalItem, type ResponseSnapshot } from '@pulpo/contracts'
 import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm'
 import { db } from '../database/client.js'
 import { agentRuns, applicationSettings, attachments, chats, generationAttempts, models, providerConnections, requestLogs, responses, toolExecutions, userPreferences } from '../database/schema.js'
@@ -17,9 +17,12 @@ import { toSnapshot } from '../responses/service.js'
 import { persistResponseItems } from '../responses/storage.js'
 import { extendBudgetReservationFixedCost, getActivePricing, releaseBudget, resizeBudgetReservation, settleBudget } from '../accounting/service.js'
 import { WorkspaceManager } from './controller.js'
+import { ComputerWorkspace } from './computer/workspace.js'
+import { computerDescriptor, loadComputer } from './computer/registry.js'
+import type { AgentWorkspace, WorkspaceLeaseState } from './workspace.js'
 import { createWorkspaceTools } from './tools.js'
 import { publishAdminUsage } from '../admin/usage-events.js'
-import { buildAgentSystemPrompt, buildAgentUserPrompt } from './policy.js'
+import { buildAgentSystemPrompt, buildAgentUserPrompt, buildWorkspaceAttachmentContext, SANDBOX_WORKSPACE_DESCRIPTOR } from './policy.js'
 import { runPostResponseTasks } from '../responses/post-tasks.js'
 import { calculateCostMicros, workspaceHoldMicros, workspaceUsageMicros } from '../accounting/pricing.js'
 import { truncateUtf8 } from './output.js'
@@ -161,6 +164,9 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
     db.select().from(applicationSettings).where(eq(applicationSettings.key, 'auth')).limit(1).then((rows) => rows[0]),
   ])
   const settings = parseAgentSettings(settingsRow?.value)
+  const computerRow = record.response.workspaceComputerId ? await loadComputer(record.response.workspaceComputerId) : undefined
+  if (record.response.workspaceComputerId && (!computerRow || computerRow.revokedAt)) throw new Error('The computer selected for this response is no longer available')
+  const workspaceDescriptor = computerRow ? computerDescriptor(computerRow, record.response.chatId) : SANDBOX_WORKSPACE_DESCRIPTOR
   const webToolsSettings = parseWebToolsSettings(webToolsRow?.value)
   const preferenceValues = (preferencesRow?.values ?? {}) as Record<string, unknown>
   const customInstructions = composeCustomInstructions(
@@ -184,8 +190,13 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
     record.model.agentInstructions,
     customInstructions,
     memoryContext,
+    workspaceDescriptor,
   )
-  const currentAgentSystemPrompt = [baseAgentSystemPrompt, recallContext].filter(Boolean).join('\n\n')
+  const workspaceAttachments = await db.select({
+    id: attachments.id, originalName: attachments.originalName, mimeType: attachments.mimeType,
+    sizeBytes: attachments.sizeBytes, origin: attachments.origin, workspacePath: attachments.workspacePath,
+  }).from(attachments).where(and(eq(attachments.userId, record.response.userId), eq(attachments.chatId, record.response.chatId), eq(attachments.status, 'ready')))
+  const currentAgentSystemPrompt = [baseAgentSystemPrompt, recallContext, buildWorkspaceAttachmentContext(workspaceAttachments, workspaceDescriptor)].filter(Boolean).join('\n\n')
   if (!settings.enabled || !record.model.agentEnabled) throw new Error('Agent mode is no longer available')
   const allHistory = await db.select().from(responses).where(and(
     eq(responses.chatId, record.response.chatId),
@@ -206,6 +217,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
     lineage,
     new Map(runContexts.map((run) => [run.responseId, run.context])),
     new Map(historyAttachments.map((attachment) => [attachment.id, attachment])),
+    workspaceDescriptor,
   )
   const [existingRun] = await db.select().from(agentRuns).where(eq(agentRuns.responseId, responseId)).limit(1)
   const runId = existingRun?.id ?? newId()
@@ -437,6 +449,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
         workspaceItem,
         compactionItems,
         recallItems,
+        approvalItems: streamProjection.output.filter((item): item is ToolApprovalItem => (item as { type?: string }).type === 'pulpo_approval'),
         turnDurationsMs,
         streaming: false,
         terminal: true,
@@ -565,12 +578,12 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
     skipMessageCount = compactedMessages.length
     return true
   }
-  let manager!: WorkspaceManager
-  manager = new WorkspaceManager(responseId, record.response.chatId, record.response.userId, async (state, details = {}) => {
+  let manager!: AgentWorkspace
+  const onLeaseEvent = async (state: WorkspaceLeaseState, details: Record<string, unknown> = {}) => {
     if ((state === 'waiting' || state === 'provisioning') && workspaceStartedAtMs === undefined) {
       workspaceStartedAtMs = Date.now()
     }
-    if (state === 'ready' && settings.billWorkspaces && workspaceReadyAtMs === undefined) {
+    if (state === 'ready' && settings.billWorkspaces && workspaceReadyAtMs === undefined && details.kind !== 'computer') {
       const hold = workspaceHoldMicros(settings.responseTimeoutSeconds, settings.workspacePricePerMinuteMicros)
       if (hold > 0) {
         try {
@@ -601,7 +614,16 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
     }
     await emit(`pulpo.agent.workspace.${state}`, workspaceItem)
     await snapshotIfDue()
-  })
+  }
+  manager = computerRow
+    ? new ComputerWorkspace({
+      responseId, chatId: record.response.chatId, userId: record.response.userId, requesterSessionId: record.response.requesterSessionId, agentRunId: runId, computer: computerRow, onLeaseEvent,
+      onApprovalEvent: async (state, item) => {
+        await emit(`pulpo.agent.approval.${state}`, item)
+        await snapshotIfDue()
+      },
+    })
+    : new WorkspaceManager(responseId, record.response.chatId, record.response.userId, onLeaseEvent)
   const markToolStarted = async (operationId: string) => {
     const item = toolItems.get(operationId)
     if (!item || item.startedAt) return
@@ -990,7 +1012,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
   await db.update(responses).set({ status: 'in_progress', startedAt: new Date(), updatedAt: new Date() }).where(eq(responses.id, responseId))
   try {
     await emit('pulpo.agent.started', { runId })
-    const initialPrompt = buildAgentUserPrompt(record.response.input, attachedFiles) || 'How can I help?'
+    const initialPrompt = buildAgentUserPrompt(record.response.input, attachedFiles, workspaceDescriptor) || 'How can I help?'
     const promptImages = await loadAgentPromptImages(attachedFiles, undefined, parseAuthSettings(attachmentSettingsRow?.value).maxInlineImages)
     const initialMessage: AgentMessage = {
       role: 'user',

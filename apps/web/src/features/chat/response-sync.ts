@@ -22,6 +22,9 @@ export function stateInvalidationQueryKeys(scope: StateInvalidationScope, userId
   if (scope === 'pool') {
     return [['pool', userId], ['pool-pending-count', userId], ['pool-usage', userId]]
   }
+  if (scope === 'computers') {
+    return [['agent-computers', userId], ['agent-pairings', userId]]
+  }
   return [[scope, userId]]
 }
 

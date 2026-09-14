@@ -1,5 +1,6 @@
+import { resolveWorkspaceComputer } from '../responses/workspace-selection.js'
 import { and, asc, eq, inArray, isNull, max, ne, sql } from 'drizzle-orm'
-import type { CreateQueuedMessageInput, QueuedMessage, ReorderQueuedMessageInput, UpdateQueuedMessageInput } from '@pulpo/contracts'
+import type { CreateQueuedMessageInput, QueuedMessage, ReorderQueuedMessageInput, UpdateQueuedMessageInput, WorkspaceSelection } from '@pulpo/contracts'
 import { db } from '../database/client.js'
 import { applicationSettings, attachments, chats, models, queuedMessages, responses, users } from '../database/schema.js'
 import { AppError, notFound } from '../lib/errors.js'
@@ -11,6 +12,8 @@ import { attachmentsRequireAgentMode } from '../attachments/policy.js'
 import { accessibleChatCondition } from './temporary.js'
 import { canPromoteQueueHead, nextQueuePosition, reorderQueueIds } from './message-queue-policy.js'
 
+type QueueAttribution = { billingUserId?: string; actorUserId?: string | null; requesterSessionId?: string | null; requestReceivedAt?: Date | null }
+
 type QueueRow = typeof queuedMessages.$inferSelect
 
 async function bumpQueueRevision(userId: string, chatId: string): Promise<void> {
@@ -21,8 +24,8 @@ async function bumpQueueRevision(userId: string, chatId: string): Promise<void> 
   if (updated) await publishStateChange({ userId, revision: updated.revision, chatId })
 }
 
-async function validateQueueInput(userId: string, chatId: string, input: CreateQueuedMessageInput): Promise<void> {
-  await assertAccessibleChat(userId, chatId)
+async function validateQueueInput(userId: string, chatId: string, input: CreateQueuedMessageInput, attribution: QueueAttribution): Promise<WorkspaceSelection | undefined> {
+  const chat = await assertAccessibleChat(userId, chatId)
 
   const generation = await resolveResponseGeneration(input.modelId, input.presetSelections)
   const [model] = await db.select({ id: models.id, agentEnabled: models.agentEnabled })
@@ -46,18 +49,22 @@ async function validateQueueInput(userId: string, chatId: string, input: CreateQ
     if (!model.agentEnabled) throw new AppError(400, 'model_not_agent_capable', 'The selected model is not enabled for agent mode')
     const [agentRow] = await db.select({ value: applicationSettings.value })
       .from(applicationSettings).where(eq(applicationSettings.key, 'agent')).limit(1)
-    if (!parseAgentSettings(agentRow?.value).enabled) throw new AppError(503, 'agent_unavailable', 'Agent mode is not enabled')
+    const settings = parseAgentSettings(agentRow?.value)
+    if (!settings.enabled) throw new AppError(503, 'agent_unavailable', 'Agent mode is not enabled')
+    const computerId = await resolveWorkspaceComputer({ ...attribution, ownerUserId: userId, requested: input.workspace, previousComputerId: chat.workspaceComputerId ?? null, computersEnabled: settings.computersEnabled })
+    return computerId ? { kind: 'computer', computerId } : { kind: 'sandbox' }
   }
 }
 
-async function assertAccessibleChat(userId: string, chatId: string): Promise<void> {
-  const [chat] = await db.select({ id: chats.id }).from(chats).where(and(
+async function assertAccessibleChat(userId: string, chatId: string) {
+  const [chat] = await db.select({ id: chats.id, workspaceComputerId: chats.workspaceComputerId }).from(chats).where(and(
     eq(chats.id, chatId),
     eq(chats.userId, userId),
     isNull(chats.deletedAt),
     accessibleChatCondition(),
   )).limit(1)
   if (!chat) throw notFound('Chat')
+  return chat
 }
 
 export async function listQueuedMessages(chatId: string, userId: string): Promise<QueuedMessage[]> {
@@ -84,6 +91,7 @@ export async function listQueuedMessages(chatId: string, userId: string): Promis
     modelId: row.modelId,
     presetSelections: row.presetSelections,
     agentMode: row.agentMode,
+    ...(row.workspace ? { workspace: row.workspace } : {}),
     position: row.position,
     status: row.status as QueuedMessage['status'],
     error: row.error,
@@ -105,10 +113,10 @@ export async function createQueuedMessage(
   userId: string,
   chatId: string,
   input: CreateQueuedMessageInput,
-  attribution: { billingUserId?: string; actorUserId?: string | null; requestReceivedAt?: Date | null } = {},
+  attribution: QueueAttribution = {},
 ): Promise<{ queuedMessage: QueuedMessage | null }> {
   const requestReceivedAt = attribution.requestReceivedAt ?? new Date()
-  await validateQueueInput(userId, chatId, input)
+  const workspace = await validateQueueInput(userId, chatId, input, attribution)
   const id = input.clientId ?? newId()
   await db.transaction(async (tx) => {
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`pulpo-message-queue:${chatId}`}))`)
@@ -142,6 +150,8 @@ export async function createQueuedMessage(
       modelId: input.modelId,
       presetSelections: input.presetSelections,
       agentMode: input.agentMode,
+      workspace: workspace ?? null,
+      requesterSessionId: attribution.requesterSessionId ?? null,
       attachmentIds: [...new Set(input.attachmentIds)],
       position: nextQueuePosition(positionRow?.value),
       dispatchResponseId: input.clientId ?? newId(),
@@ -159,17 +169,19 @@ export async function updateQueuedMessage(
   chatId: string,
   id: string,
   input: UpdateQueuedMessageInput,
-  attribution: { billingUserId?: string; actorUserId?: string | null } = {},
+  attribution: QueueAttribution = {},
 ): Promise<QueuedMessage | null> {
   await assertAccessibleChat(userId, chatId)
+  let workspace: WorkspaceSelection | undefined
   if (input.action === 'save_edit') {
-    await validateQueueInput(userId, chatId, {
+    workspace = await validateQueueInput(userId, chatId, {
       input: input.input,
       modelId: input.modelId,
       presetSelections: input.presetSelections,
       attachmentIds: input.attachmentIds,
       agentMode: input.agentMode,
-    })
+      workspace: input.workspace,
+    }, attribution)
   }
   await db.transaction(async (tx) => {
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`pulpo-message-queue:${chatId}`}))`)
@@ -201,6 +213,8 @@ export async function updateQueuedMessage(
         modelId: input.modelId,
         presetSelections: input.presetSelections,
         agentMode: input.agentMode,
+        workspace: workspace ?? null,
+        requesterSessionId: attribution.requesterSessionId ?? null,
         attachmentIds: [...new Set(input.attachmentIds)],
         billingUserId: attribution.billingUserId ?? userId,
         actorUserId: attribution.actorUserId ?? null,
@@ -304,6 +318,7 @@ export async function advanceMessageQueue(chatId: string): Promise<void> {
         ownerUserId: claim.userId,
         billingUserId: claim.billingUserId ?? claim.userId,
         actorUserId: claim.actorUserId,
+        requesterSessionId: claim.requesterSessionId,
         chatId,
         parentResponseId: chat?.activeBranchLeafId ?? chat?.activeResponseId ?? null,
         input: {
@@ -314,6 +329,7 @@ export async function advanceMessageQueue(chatId: string): Promise<void> {
           presetSelections: claim.presetSelections,
           attachmentIds: claim.attachmentIds,
           agentMode: claim.agentMode,
+          workspace: claim.workspace ?? { kind: 'sandbox' },
         },
       })
     }

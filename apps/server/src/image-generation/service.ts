@@ -13,7 +13,7 @@ import { storeGeneratedAttachment, generatedAttachmentMetadata, type GeneratedAt
 import { getStorageUsage } from '../attachments/storage-quota.js'
 import { createAttachmentThumbnail } from '../attachments/thumbnail.js'
 import { restoredAttachmentWorkspacePath, attachmentWorkspacePath } from '../agent/policy.js'
-import type { WorkspaceManager } from '../agent/controller.js'
+import type { AgentWorkspace } from '../agent/workspace.js'
 import { imageCost, imageReservation } from './pricing.js'
 import { generateImage, validateImageBytes, validateImageRequest, type ImageReference, type ImageResultMetadata } from './provider.js'
 import { readImageDefaults } from './defaults.js'
@@ -41,13 +41,13 @@ async function attachmentReference(attachment: typeof attachments.$inferSelect, 
   return { data, mimeType, ...(compatible && prior.result?.imageItem ? { priorImageItem: prior.result.imageItem } : {}) }
 }
 
-export async function resolveImageReferences(input: ImageGenerationInput, userId: string, chatId: string, model: ImageModel, manager: WorkspaceManager, signal?: AbortSignal): Promise<ImageReference[]> {
+export async function resolveImageReferences(input: ImageGenerationInput, userId: string, chatId: string, model: ImageModel, manager: AgentWorkspace, signal?: AbortSignal): Promise<ImageReference[]> {
   const references: ImageReference[] = []
   for (const reference of input.referenceImages ?? []) {
     signal?.throwIfAborted()
     // Existing attachments can be read without provisioning a workspace.
     const rows = await db.select().from(attachments).where(and(eq(attachments.userId, userId), eq(attachments.chatId, chatId), eq(attachments.status, 'ready'), ...('attachmentId' in reference ? [eq(attachments.id, reference.attachmentId)] : [])))
-    const attachment = 'attachmentId' in reference ? rows[0] : rows.find(row => restoredAttachmentWorkspacePath(row) === reference.path || attachmentWorkspacePath(row.originalName, row.id) === reference.path)
+    const attachment = 'attachmentId' in reference ? rows[0] : rows.find(row => restoredAttachmentWorkspacePath(row, manager.descriptor) === reference.path || attachmentWorkspacePath(row.originalName, row.id, manager.descriptor) === reference.path)
     if (attachment) references.push(await attachmentReference(attachment, model))
     else if ('attachmentId' in reference) throw new AppError(404, 'image_reference_missing', 'Reference image is not available in this chat')
     else {
@@ -98,7 +98,7 @@ export async function recoverSavedImageGenerations(responseId: string, runId: st
 
 export async function executeImageGeneration(input: {
   userId: string; chatId: string; responseId: string; runId: string; operationId: string; args: ImageGenerationInput
-  manager: WorkspaceManager; signal?: AbortSignal; reserveCost: (micros: number) => Promise<void>
+  manager: AgentWorkspace; signal?: AbortSignal; reserveCost: (micros: number) => Promise<void>
 }): Promise<ImageExecutionResult> {
   const selection = await selectedImageModel(input.userId)
   if (!selection) throw unavailable()
@@ -108,7 +108,7 @@ export async function executeImageGeneration(input: {
     if (!claim.result) throw new AppError(409, 'image_request_uncertain', 'This image request was interrupted; submit a new request to try again')
     const billedCostMicros = await recordSavedImage(claim, attachment.id, input.runId)
     const data = await getBlobStore().get(attachment.objectKey)
-    const path = restoredAttachmentWorkspacePath(attachment)
+    const path = restoredAttachmentWorkspacePath(attachment, input.manager.descriptor)
     let text = claim.result.text
     try { await input.manager.stageGeneratedAttachment(attachment.id, input.signal) }
     catch { text += '\nWorkspace copy is unavailable; use the attachment ID for subsequent image edits.' }

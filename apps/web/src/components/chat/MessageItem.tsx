@@ -22,8 +22,13 @@ import {
   Minimize2,
   History,
   ExternalLink,
+  Laptop,
+  ShieldCheck,
+  ShieldQuestion,
+  ShieldX,
 } from 'lucide-react'
-import { workspaceContinueWithoutAgentAvailableAtMs, type CompactionItem, type RecallItem } from '@pulpo/contracts'
+import { workspaceContinueWithoutAgentAvailableAtMs, type CompactionItem, type RecallItem, type ToolApprovalItem } from '@pulpo/contracts'
+import { decideToolApproval } from '@/lib/computers'
 import type { Chat, Message } from '@/lib/types'
 import { hasMultipleBranches } from '@/lib/message-branches'
 import { getCatalogModel } from '@/stores/catalog'
@@ -37,8 +42,10 @@ import { MessageAttachmentList } from './AttachmentImage'
 import { activityDurationMs } from './activity-timing'
 import { canSubmitMessageEdit } from './message-edit'
 import {
+  approvalIsPending,
   buildTimeline,
   workspaceIsActive,
+  type ApprovalStep,
   type ActivitySegment,
   type ActivityStep,
   type ReasoningStep,
@@ -259,6 +266,14 @@ function workspaceIsFailed(state?: string) {
 }
 
 function workspaceLabel(item: WorkspaceItem): string {
+  if (item.kind === 'computer') {
+    const name = item.computerName ?? ui('your computer')
+    if (item.state === 'waiting' || item.state === 'provisioning') return ui('Connecting to {{name}}…', { name })
+    if (item.state === 'expired') return ui('{{name}} disconnected', { name })
+    if (item.state === 'unavailable') return ui('{{name}} unavailable', { name })
+    if (item.state === 'continuing_without_agent') return ui("Continuing without agent tools")
+    return ui('Working on {{name}}', { name })
+  }
   if (item.state === 'waiting') {
     return typeof item.position === 'number'
       ? ui('Waiting for workspace · queue #{{position}}', { position: item.position })
@@ -288,6 +303,8 @@ function WorkspaceStepRow({ workspace }: { workspace: WorkspaceItem }) {
           <Loader2 className="size-3 shrink-0 animate-spin" />
         ) : failed ? (
           <XCircle className="size-3 shrink-0 text-destructive" />
+        ) : workspace.kind === 'computer' ? (
+          <Laptop className="size-3 shrink-0" />
         ) : (
           <Server className="size-3 shrink-0" />
         )}
@@ -370,6 +387,72 @@ function RecallStepRow({
   )
 }
 
+function approvalKindLabel(approval: ToolApprovalItem): string {
+  if (approval.kind === 'bash') return ui('Run a command on {{name}}', { name: approval.computer_name })
+  if (approval.kind === 'write') return ui('Create or overwrite a file on {{name}}', { name: approval.computer_name })
+  return ui('Edit a file on {{name}}', { name: approval.computer_name })
+}
+
+function approvalStatusLabel(approval: ToolApprovalItem): string {
+  const via = approval.decided_via === 'desktop' ? ui('on the computer') : ui('in chat')
+  if (approval.status === 'approved') return ui('Approved {{via}}', { via })
+  if (approval.status === 'denied') return ui('Denied {{via}}', { via })
+  if (approval.status === 'expired' || (approval.status === 'pending' && !approvalIsPending(approval))) return ui('No decision in time; not run')
+  if (approval.status === 'cancelled') return ui('Cancelled')
+  return ui('Waiting for your approval')
+}
+
+function useCountdown(deadline: number, active: boolean): number {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    if (!active) return
+    const timer = window.setInterval(() => setNow(Date.now()), 1_000)
+    return () => window.clearInterval(timer)
+  }, [active])
+  return Math.max(0, deadline - now)
+}
+
+function ApprovalStepRow({ approval }: { approval: ToolApprovalItem }) {
+  const pending = approvalIsPending(approval)
+  const remainingMs = useCountdown(Date.parse(approval.expires_at), pending)
+  const [busy, setBusy] = useState<'approve' | 'deny' | null>(null)
+  const [error, setError] = useState('')
+  const decide = async (approved: boolean) => {
+    setBusy(approved ? 'approve' : 'deny')
+    setError('')
+    try {
+      await decideToolApproval(approval.id, approved)
+    } catch (next) {
+      setError(next instanceof Error ? next.message : ui('Could not record your decision.'))
+    } finally {
+      setBusy(null)
+    }
+  }
+  const Icon = pending ? ShieldQuestion : approval.status === 'approved' ? ShieldCheck : ShieldX
+  const minutes = Math.floor(remainingMs / 60_000)
+  const seconds = Math.floor((remainingMs % 60_000) / 1_000)
+  return (
+    <div className="space-y-1.5" data-testid="approval-step">
+      <div className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
+        <Icon className={cn('size-3 shrink-0', pending ? 'text-amber-500' : approval.status === 'approved' ? 'text-emerald-500' : 'text-destructive')} />
+        <span className="min-w-0 flex-1">{approvalKindLabel(approval)}</span>
+        <span className="shrink-0 text-[11px]">
+          {pending ? ui('Expires in {{time}}', { time: `${minutes}:${String(seconds).padStart(2, '0')}` }) : approvalStatusLabel(approval)}
+        </span>
+      </div>
+      <pre className="max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-md border bg-muted/40 px-2 py-1.5 font-mono text-[12px] leading-5">{approval.summary}</pre>
+      {pending && (
+        <div className="flex flex-wrap items-center gap-2">
+          <Button size="sm" disabled={busy !== null} onClick={() => void decide(true)}>{busy === 'approve' ? ui('Approving…') : ui('Approve')}</Button>
+          <Button size="sm" variant="outline" disabled={busy !== null} onClick={() => void decide(false)}>{busy === 'deny' ? ui('Denying…') : ui('Deny')}</Button>
+          <span className="text-[11px] text-muted-foreground">{ui('Runs with your permissions on {{name}}.', { name: approval.computer_name })}</span>
+        </div>
+      )}
+      {error && <div role="alert" className="text-[12px] text-destructive">{error}</div>}
+    </div>
+  )
+}
+
 function ActivityBlock({
   steps,
   active,
@@ -394,6 +477,11 @@ function ActivityBlock({
   onOpenChat: (chatId: string) => void
 }) {
   const workspace = steps.find((step): step is WorkspaceStep => step.kind === 'workspace')?.workspace
+  const showDetails = useSettings((state) => state.showReasoning)
+  const approvalSteps = steps.filter((step): step is ApprovalStep => step.kind === 'approval' && approvalIsPending(step.approval))
+  const workSteps = steps.filter((step) => step.kind !== 'approval' || !approvalIsPending(step.approval))
+  const pendingApproval = steps.find((step): step is ApprovalStep => step.kind === 'approval' && approvalIsPending(step.approval))?.approval
+  useCountdown(pendingApproval ? Date.parse(pendingApproval.expires_at) : 0, Boolean(pendingApproval))
   const compaction = steps.find((step) => step.kind === 'compaction')?.compaction
   const recall = steps.find((step) => step.kind === 'recall')?.recall
   const tools = steps.flatMap((step) => (step.kind === 'tool' ? [step.tool] : []))
@@ -435,6 +523,7 @@ function ActivityBlock({
     if (compaction?.status === 'in_progress') return ui("Compacting context…")
     if (compaction?.status === 'failed') return ui("Context compaction failed")
     if (compaction) return ui("Compacted context")
+    if (pendingApproval) return ui('Waiting for your approval…')
     if (workspace && workspaceBusy) return workspaceLabel(workspace)
     if (workspaceFailed && workspace) return workspaceLabel(workspace)
     if (workspace?.state === 'continuing_without_agent' && !hasTools && !hasReasoning && !active) {
@@ -462,8 +551,11 @@ function ActivityBlock({
     if (compaction?.status === 'in_progress') return <Loader2 className="size-3.5 shrink-0 animate-spin" />
     if (compaction?.status === 'failed') return <XCircle className="size-3.5 shrink-0 text-destructive" />
     if (compaction) return <Minimize2 className="size-3.5 shrink-0" />
+    if (pendingApproval) return <ShieldQuestion className="size-3.5 shrink-0 animate-pulse text-amber-500" />
     if (workspace && workspaceBusy) {
-      return <Server className="size-3.5 shrink-0 animate-pulse" />
+      return workspace.kind === 'computer'
+        ? <Laptop className="size-3.5 shrink-0 animate-pulse" />
+        : <Server className="size-3.5 shrink-0 animate-pulse" />
     }
     if (workspaceFailed) return <XCircle className="size-3.5 shrink-0 text-destructive" />
     if (runningTool) {
@@ -487,7 +579,7 @@ function ActivityBlock({
 
   return (
     <div className="space-y-1.5">
-      <Collapsible open={open} onOpenChange={setOpen} className="min-w-0">
+      {showDetails && workSteps.length > 0 && <Collapsible open={open} onOpenChange={setOpen} className="min-w-0">
         <CollapsibleTrigger className="flex max-w-full min-w-0 cursor-pointer items-center gap-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground">
           {triggerIcon}
           <span className="min-w-0 truncate">{label}</span>
@@ -495,7 +587,7 @@ function ActivityBlock({
         </CollapsibleTrigger>
         <CollapsibleContent>
           <div className="mt-1 space-y-1.5 border-l-2 border-muted py-0.5 pl-2.5">
-            {steps.map((step, index) => {
+            {workSteps.map((step, index) => {
               if (step.kind === 'reasoning') {
                 return <ReasoningStepRow key={`reasoning:${index}`} step={step} />
               }
@@ -504,6 +596,9 @@ function ActivityBlock({
               }
               if (step.kind === 'compaction') {
                 return <CompactionStepRow key={step.compaction.id} item={step.compaction} />
+              }
+              if (step.kind === 'approval') {
+                return <ApprovalStepRow key={step.approval.id} approval={step.approval} />
               }
               if (step.kind === 'recall') {
                 return <RecallStepRow key={step.recall.id} item={step.recall} onOpenChat={onOpenChat} />
@@ -520,7 +615,8 @@ function ActivityBlock({
             ) : null}
           </div>
         </CollapsibleContent>
-      </Collapsible>
+      </Collapsible>}
+      {approvalSteps.map((step) => <ApprovalStepRow key={step.approval.id} approval={step.approval} />)}
       {needsWorkspaceActions && (
         <div className="flex flex-wrap gap-2">
           <Button size="sm" variant="outline" onClick={() => onStop(messageId)}> {ui("Cancel generation")} </Button>
@@ -689,7 +785,7 @@ export const MessageItem = memo(function MessageItem({
   const outputItems = message.outputItems ?? []
   const otherItems = outputItems.filter((item) => {
     const type = (item as { type?: string }).type
-    return type && !['message', 'reasoning', 'pulpo_tool', 'pulpo_workspace', 'pulpo_attachment', 'pulpo_compaction', 'pulpo_recall'].includes(type)
+    return type && !['message', 'reasoning', 'pulpo_tool', 'pulpo_workspace', 'pulpo_attachment', 'pulpo_compaction', 'pulpo_recall', 'pulpo_approval'].includes(type)
   })
   const lastActivityIndex = activitySegments.length - 1
   const hasVisibleBody = timeline.length > 0 || Boolean(message.error)

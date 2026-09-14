@@ -7,6 +7,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { ComposerSync } from '@pulpo/client-core'
 import { emptyComposerState, type ComposerSnapshot, type ComposerWrite } from '@pulpo/contracts'
 import type { Model } from '@/lib/types'
+import { QueryClientProvider } from '@tanstack/react-query'
 import { TooltipProvider } from '@/components/ui/tooltip'
 
 vi.hoisted(() => {
@@ -67,6 +68,7 @@ beforeEach(async () => {
     if (path.endsWith('/api/interface/suggested-prompts')) return new Response(JSON.stringify({
       enabled: true, count: 1, prompts: [{ id: 'suggestion', label: 'Try a suggestion', message: 'suggested message' }],
     }))
+    if (path.endsWith('/api/agent/computers')) return new Response(JSON.stringify({ computers: [], enabled: true }))
     requests.push({ path, body: typeof init?.body === 'string' ? JSON.parse(init.body) : {} })
     return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } })
   })
@@ -101,10 +103,10 @@ function renderChat(path = '/') {
   return render(<Profiler id="chat" onRender={() => {
     const label = document.querySelector('button[aria-label="Generation options"]')?.textContent
     if (label) renderedControls.push(label)
-  }}><MemoryRouter initialEntries={[path]}><TooltipProvider><Routes>
+  }}><MemoryRouter initialEntries={[path]}><QueryClientProvider client={queryClient}><TooltipProvider><Routes>
     <Route path="/" element={<ChatPage />} />
     <Route path="/c/:chatId" element={<ChatPage />} />
-  </Routes></TooltipProvider></MemoryRouter></Profiler>)
+  </Routes></TooltipProvider></QueryClientProvider></MemoryRouter></Profiler>)
 }
 async function selectControls(view: ReturnType<typeof renderChat>) {
   for (const choice of ['Low', 'Fast']) {

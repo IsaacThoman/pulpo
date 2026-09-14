@@ -9,6 +9,7 @@ import { ui } from '@/i18n/ui'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { ComputerSettings } from './ComputerSettings'
 
 const platforms = { ios: 'iOS', android: 'Android', windows: 'Windows', macos: 'macOS', linux: 'Linux', unknown: 'Unknown platform' }
 const apps = { web: 'Web', mobile: 'Mobile app', desktop: 'Desktop app', cli: 'CLI', unknown: 'Unknown app' }
@@ -92,6 +93,13 @@ export function DeviceSettings() {
   return <div>
     <h2 className="text-base font-semibold">{ui('Devices')}</h2>
     <Separator className="my-3" />
-    <DeviceSessionListView />
+    <section aria-labelledby="signed-in-devices-heading">
+      <h3 id="signed-in-devices-heading" className="mb-3 text-sm font-semibold">{ui('Signed-in devices')}</h3>
+      <DeviceSessionListView />
+    </section>
+    <section aria-labelledby="agent-computers-heading" className="mt-8">
+      <h3 id="agent-computers-heading" className="mb-3 text-sm font-semibold">{ui('Agent computers')}</h3>
+      <ComputerSettings />
+    </section>
   </div>
 }

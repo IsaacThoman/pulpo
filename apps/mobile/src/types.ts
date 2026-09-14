@@ -39,6 +39,8 @@ export interface ServerChat {
   expiresAt?: string | null
   activeResponseId: string | null
   activeBranchLeafId?: string | null
+  /** Computer this chat's agent runs on; null or absent means the cloud sandbox. */
+  workspaceComputerId?: string | null
   createdAt: string
   updatedAt: string
   deletedAt?: string | null
