@@ -5,6 +5,7 @@ import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { emptyComposerState, type ComposerSnapshot, type ComposerWrite } from '@pulpo/contracts'
 import { ComposerSync } from '@pulpo/client-core'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { TooltipProvider } from '@/components/ui/tooltip'
 
 vi.hoisted(() => {
@@ -31,7 +32,10 @@ const { useSettings } = await import('@/stores/settings')
 const { clearRuntimeComposerDrafts, rememberRuntimeComposerDraft, runtimeComposerDraft, saveComposerDraft } = await import('@/lib/local-first/composer-drafts')
 const { useComposerSyncPreference } = await import('@/stores/composer-sync-preference')
 
+const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+
 beforeEach(() => {
+  queryClient.clear()
   useAuth.setState({ user: { id: 'account' } as NonNullable<ReturnType<typeof useAuth.getState>['user']> })
   useSettings.setState({ composerSyncEnabled: true, agentModes: { model: false } })
   useComposerSyncPreference.setState({ enabled: true, generation: '' })
@@ -54,7 +58,7 @@ it.each([false, true])('does not reload a persisted sent draft after a remote cl
   fixture.sync.connect({ read: async () => ({ ok: true, snapshot }), write })
   await saveComposerDraft('account', draftId, { content: state.content, attachments: [] })
   if (runtimeCached) rememberRuntimeComposerDraft('account', draftId, { content: state.content, attachments: [], attachmentIds: [] })
-  const composer = (centered = false) => <MemoryRouter><TooltipProvider><Composer chatId={draftId} modelId="model" centered={centered} /></TooltipProvider></MemoryRouter>
+  const composer = (centered = false) => <MemoryRouter><QueryClientProvider client={queryClient}><TooltipProvider><Composer chatId={draftId} modelId="model" centered={centered} /></TooltipProvider></QueryClientProvider></MemoryRouter>
   const view = render(composer())
   const input = view.getByRole('textbox') as HTMLTextAreaElement
   await waitFor(() => expect(input.value).toBe(state.content))
@@ -79,9 +83,9 @@ it('keeps temporary drafts in a separate local slot when switching back to norma
   const write = vi.fn(async () => ({ ok: true as const, snapshot }))
   fixture.sync = new ComposerSync({ load: async () => null, save: async () => {} }, 'web')
   fixture.sync.connect({ read, write })
-  const composer = (temporary: boolean) => <MemoryRouter><TooltipProvider>
+  const composer = (temporary: boolean) => <MemoryRouter><QueryClientProvider client={queryClient}><TooltipProvider>
     <Composer chatId={null} modelId="model" temporary={temporary} />
-  </TooltipProvider></MemoryRouter>
+  </TooltipProvider></QueryClientProvider></MemoryRouter>
   const view = render(composer(true))
   await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
   fireEvent.change(view.getByRole('textbox'), { target: { value: 'private local draft' } })
@@ -123,8 +127,8 @@ it.each([true, false])('moves the actual composer and upload ownership through t
   const control = createRef<{ toggle: () => Promise<void> }>()
   function Draft() {
     const [temporary, setTemporary] = useState(false)
-    return <MemoryRouter><TooltipProvider><Composer chatId={null} modelId="model" autoExpire temporary={temporary}
-      temporaryControlRef={control} onTemporaryChange={setTemporary} syncEnabled={syncEnabled} /></TooltipProvider></MemoryRouter>
+    return <MemoryRouter><QueryClientProvider client={queryClient}><TooltipProvider><Composer chatId={null} modelId="model" autoExpire temporary={temporary}
+      temporaryControlRef={control} onTemporaryChange={setTemporary} syncEnabled={syncEnabled} /></TooltipProvider></QueryClientProvider></MemoryRouter>
   }
   const view = render(<Draft />)
   const input = view.getByRole('textbox') as HTMLTextAreaElement
@@ -175,7 +179,7 @@ it('follows a remote start with focus and preserves remaining text and uploads i
     path = useLocation().pathname
     navigate = useNavigate()
     const id = path === '/' ? null : path.slice(3)
-    return <TooltipProvider><Composer key={id ?? 'new'} chatId={id} modelId="model" /></TooltipProvider>
+    return <QueryClientProvider client={queryClient}><TooltipProvider><Composer key={id ?? 'new'} chatId={id} modelId="model" /></TooltipProvider></QueryClientProvider>
   }
   const view = render(<MemoryRouter><Chat /></MemoryRouter>)
   await waitFor(() => expect((view.getByRole('textbox') as HTMLTextAreaElement).value).toBe('remaining edits'))

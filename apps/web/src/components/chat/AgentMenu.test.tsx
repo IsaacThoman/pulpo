@@ -4,6 +4,10 @@ import { useState } from 'react'
 import { afterEach, expect, it, vi } from 'vitest'
 import { AgentMenu } from './AgentMenu'
 
+vi.hoisted(() => {
+  Object.defineProperty(window, 'matchMedia', { configurable: true, value: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }) })
+})
+
 afterEach(cleanup)
 
 it.each([true, false])('opens without changing mode and explicitly selects the other option (enabled: %s)', async (initial) => {
