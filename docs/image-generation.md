@@ -87,7 +87,11 @@ existing Azure and Meta entries; admins must explicitly add and enable it.
 On web and desktop, open **Settings → Agent → Image generation**. On mobile,
 open **Settings → Personalization → Image generation**. Choose a model and enable image
 generation; the setting and selected model sync with the account. New and existing
-accounts default to `{ "enabled": false, "modelId": null }`. An unavailable
+accounts default to `{ "enabled": false, "modelId": null }`. Admins can set or clear a
+**Default image model** in **Admin → Image models**, just like speech defaults.
+When no personal model is selected, web, mobile, and the server use this default.
+Users must still enable image generation. Personal choices take precedence, and
+users following the default pick up later admin changes. An unavailable
 selection is retained, and another provider is never selected automatically.
 
 Agent mode must also be enabled. Only opted-in accounts with an available selected

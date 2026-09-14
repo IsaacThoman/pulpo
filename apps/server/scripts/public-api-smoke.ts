@@ -1,3 +1,4 @@
+import { unusualText, windowsToolOutput } from '../src/database/fixtures/windows-tool-output.js'
 /** Full API/queue/worker compatibility checks against disposable PostgreSQL and Redis. */
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
@@ -133,6 +134,79 @@ const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [{ role: 
 const textOf = (response: OpenAI.Responses.Response) => response.output.filter(item => item.type === 'message').flatMap(item => item.content).filter(part => part.type === 'output_text').map(part => part.text).join('')
 
 try {
+  for (const capture of [false, true]) for (const protocol of ['chat/completions', 'responses', 'completions']) for (const stream of [false, true]) {
+    await check(`lossless Windows output: ${protocol}, stream=${stream}, logging=${capture}`, async () => {
+      await db.insert(schema.applicationSettings).values({ key: 'logging', value: { logDetailedPayloads: capture, payloadRetention: '7d' } })
+        .onConflictDoUpdate({ target: schema.applicationSettings.key, set: { value: { logDetailedPayloads: capture, payloadRetention: '7d' } } })
+      fixture = () => ({ output: [message(unusualText)] })
+      const body = protocol === 'chat/completions'
+        ? { model, stream, messages: [
+          { role: 'user', content: 'Inspect partitions' },
+          { role: 'assistant', content: null, tool_calls: [{ id: 'call_windows', type: 'function', function: { name: 'bash', arguments: '{}' } }] },
+          { role: 'tool', tool_call_id: 'call_windows', content: unusualText },
+        ] }
+        : protocol === 'responses'
+          ? { model, stream, input: unusualText, instructions: unusualText, metadata: { ['key\0']: unusualText } }
+          : { model, stream, prompt: unusualText }
+      const idempotencyKey = randomUUID()
+      const headers = { authorization: `Bearer ${key.secret}`, 'content-type': 'application/json', 'idempotency-key': idempotencyKey }
+      const response = await fetch(`${base}/v1/${protocol}`, { method: 'POST', headers, body: JSON.stringify(body) })
+      assert.equal(response.status, 200)
+      const wire = await response.text()
+      const events = stream ? wire.split('\n\n').filter(part => part.startsWith('data: ') && part !== 'data: [DONE]')
+        .map(part => JSON.parse(part.slice(6)) as Json) : [JSON.parse(wire) as Json]
+      const outputText = protocol === 'responses'
+        ? stream ? events.filter(event => event.type === 'response.output_text.delta').map(event => event.delta).join('')
+          : textOf(events[0] as unknown as OpenAI.Responses.Response)
+        : stream ? events.flatMap(event => records(event.choices)).map(choice => protocol === 'completions' ? choice.text : (choice.delta as Json)?.content ?? '').join('')
+          : protocol === 'completions' ? records(events[0]!.choices)[0]!.text : (records(events[0]!.choices)[0]!.message as Json).content
+      assert.equal(outputText, unusualText)
+      const upstreamInput = upstreamRequests[0]!.input
+      if (protocol === 'chat/completions') assert.equal(records(upstreamInput).find(item => item.type === 'function_call_output')!.output, unusualText)
+      else assert.deepEqual(upstreamInput, [{ role: 'user', content: unusualText }])
+      const [saved] = await db.select().from(schema.responses).where(eq(schema.responses.idempotencyKey, idempotencyKey))
+      assert(saved); assert.equal(saved.status, 'completed')
+      assert.equal(textOf({ output: saved.output } as OpenAI.Responses.Response), unusualText)
+      if (protocol === 'responses') {
+        assert.deepEqual(saved.metadata, { ['key\0']: unusualText })
+        assert.equal((saved.parameters as Json).instructions, unusualText)
+      }
+      const [log] = await db.select().from(schema.requestLogs).where(eq(schema.requestLogs.responseId, saved.id))
+      assert.equal(log!.captureDetailedPayloads, capture)
+      if (capture) assert.deepEqual((log!.requestPayload as Json).input, saved.input)
+      else { assert.equal(log!.requestPayload, null); assert.equal(log!.responsePayload, null) }
+      const retrieved = await client.responses.retrieve(saved.id)
+      assert.equal(textOf(retrieved), unusualText)
+      // Exact retry reuses the stored response and never contacts the provider twice.
+      const retry = await fetch(`${base}/v1/${protocol}`, { method: 'POST', headers, body: JSON.stringify(body) })
+      assert.equal(retry.status, 200); await retry.text()
+      assert.equal(upstreamRequests.length, 1)
+      if (!stream && !capture && protocol === 'responses') {
+        // Make one fixture discoverable through app search and export.
+        await db.update(schema.chats).set({ temporary: false, expiresAt: null }).where(eq(schema.chats.id, saved.chatId))
+        const found = await fetch(`${base}/api/chats/search?q=PartitionNumber`, { headers: { cookie } }).then(result => result.json()) as { data: { id: string }[] }
+        assert(found.data.some(chat => chat.id === saved.chatId))
+        const exported = await fetch(`${base}/api/chats/export`, { headers: { cookie } }).then(result => result.text())
+        assert(exported.includes(JSON.stringify(windowsToolOutput).slice(1, -1)))
+        const imported = await fetch(`${base}/api/chats/import`, { method: 'POST', headers: { cookie, 'content-type': 'application/json' }, body: JSON.stringify({ source: 'pulpo', data: JSON.parse(exported) }) })
+        assert.equal(imported.status, 200)
+        assert((await imported.json() as { imported: number }).imported >= 1)
+        const matching = await db.select().from(schema.responses).where(eq(schema.responses.userId, saved.userId))
+        const [source] = await db.select().from(schema.chatImportSources).where(eq(schema.chatImportSources.sourceChatId, saved.chatId))
+        const restored = matching.find(row => row.chatId === source?.chatId)
+        assert(restored); assert.deepEqual(restored.input, saved.input); assert.deepEqual(restored.output, saved.output)
+        assert.deepEqual(restored.parameters, saved.parameters); assert.equal(restored.instructions, saved.instructions)
+      }
+    })
+  }
+  await check('unsupported Unicode model identifiers fail before creating records', async () => {
+    for (const model of ['bad\0model', 'bad\ud800']) {
+      const response = await fetch(`${base}/v1/responses`, { method: 'POST', headers: { authorization: `Bearer ${key.secret}`, 'content-type': 'application/json' }, body: JSON.stringify({ model, input: 'Hi' }) })
+      assert.equal(response.status, 400)
+      assert.equal((await response.json() as { error: { param: string } }).error.param, 'model')
+    }
+    assert.equal(upstreamRequests.length, 0)
+  })
   await check('models discovery and detail', async () => {
     assert((await client.models.list()).data.some(item => item.id === model))
     assert.equal((await client.models.retrieve(model)).id, model)

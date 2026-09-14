@@ -1,3 +1,4 @@
+import { assertPublicIdentifier } from './identifiers.js'
 import { and, eq, isNull, ne } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { db } from '../database/client.js'
@@ -30,6 +31,7 @@ function publicModel(model: typeof models.$inferSelect) {
 }
 
 async function accessibleResponse(userId: string, responseId: string) {
+  assertPublicIdentifier(responseId, 'id')
   const [result] = await db.select({ response: responses })
     .from(responses)
     .innerJoin(chats, eq(chats.id, responses.chatId))
@@ -61,6 +63,7 @@ export async function registerPublicApiRoutes(app: FastifyInstance): Promise<voi
   app.get('/v1/models/:model', async (request) => {
     const key = await authenticateApiKey(request, 'models')
     const { model: modelId } = request.params as { model: string }
+    assertPublicIdentifier(modelId, 'model')
     const [model] = await db.select().from(models).where(and(
       eq(models.id, modelId),
       eq(models.enabled, true),

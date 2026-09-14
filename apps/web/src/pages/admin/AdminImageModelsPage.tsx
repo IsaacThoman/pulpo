@@ -4,6 +4,7 @@ import { apiRequest } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { ImageDefaultsEditor } from './ImageDefaultsEditor'
 import { ui } from '@/i18n/ui'
 
 const providerCopy: Record<ImageModel['adapter'], { label: string; help: string; modelLabel: string }> = {
@@ -40,6 +41,7 @@ export function AdminImageModelsPage() {
   return <div className="space-y-5">
     <div className="flex items-center justify-between gap-3"><h1 className="text-2xl font-semibold">{ui('Image models')}</h1><Button onClick={() => open()}>{ui('Add image model')}</Button></div>
     <p className="text-sm text-muted-foreground">{ui('Configure image generation using your provider connections. Users choose a model and enable image generation in Settings.')}</p>
+    <ImageDefaultsEditor models={models} />
     {error && !draft && <p role="alert" className="text-sm text-destructive">{ui(error)}</p>}
     {models.map(model => <div key={model.id} className="flex items-center justify-between gap-3 rounded-lg border p-4"><div className="min-w-0"><div className="font-medium">{model.name}</div><div className="break-words text-xs text-muted-foreground">{providers.find(provider => provider.id === model.providerConnectionId)?.name} · {ui(model.enabled ? 'Enabled' : 'Disabled')} · {imagePriceLabel(model, ui)}</div></div><div className="flex gap-2"><Button variant="outline" onClick={() => open(model)}>{ui('Edit')}</Button><Button variant="ghost" onClick={() => { if (confirm(ui('Delete this image model?'))) void apiRequest(`/api/admin/image-models/${model.id}`, { method: 'DELETE' }).then(load).catch(error => setError(error.message)) }}>{ui('Delete')}</Button></div></div>)}
     <Dialog open={Boolean(draft)} onOpenChange={open => { if (!open && !saving) setDraft(null) }}><DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl"><DialogHeader><DialogTitle>{ui(editing ? 'Edit image model' : 'Add image model')}</DialogTitle></DialogHeader>{draft && <div className="space-y-4">
