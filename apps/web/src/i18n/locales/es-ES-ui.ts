@@ -1605,6 +1605,16 @@ const esUi: Record<string, string> = {
   "The API key is encrypted on the Pulpo server. Confirm your identity to reveal the saved key.": "La clave API está cifrada en el servidor de Pulpo. Confirma tu identidad para mostrar la clave guardada.",
   "Groq API keys are sensitive. Confirm your identity before revealing this saved key.": "Las claves API de Groq son confidenciales. Confirma tu identidad antes de mostrar esta clave guardada.",
   "Backblaze application keys are sensitive. Confirm your identity before revealing this saved key.": "Las claves de aplicación de Backblaze son confidenciales. Confirma tu identidad antes de mostrar esta clave guardada.",
+  "There are two ways to pay for usage: buy credits and pay as you go, or subscribe to a monthly plan. You can use either one or both.": "Hay dos formas de pagar el uso: comprar créditos y pagar por uso, o suscribirte a un plan mensual. Puedes usar una de las dos o ambas.",
+  "Subscribe monthly": "Suscripción mensual",
+  "Your plan": "Tu plan",
+  "Free · No subscription": "Gratis · Sin suscripción",
+  "Plans from $8/month": "Planes desde $8/mes",
+  "High usage limits included": "Límites de uso altos incluidos",
+  "Credits added every month": "Créditos añadidos cada mes",
+  "Paid": "Pagado",
+  "Credit balance": "Saldo de créditos",
+  "Not subscribed": "Sin suscripción",
 }
 
 export default esUi

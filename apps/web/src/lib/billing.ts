@@ -67,6 +67,14 @@ export function pendingBillingPlan(summary: Pick<BillingSummary, 'subscription'>
   return pending && pending !== summary.subscription?.plan ? pending : null
 }
 
+export function paymentStatusLabel(status: string): string {
+  switch (status) {
+    case 'paid': return ui("Paid")
+    case 'refunded': return ui("Refunded")
+    default: return ui("Unknown")
+  }
+}
+
 export function planChoiceLabel(
   plan: BillingPlan,
   current: BillingPlan,
