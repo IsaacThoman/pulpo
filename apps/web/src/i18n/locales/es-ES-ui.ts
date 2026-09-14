@@ -10,6 +10,9 @@ const esUi: Record<string, string> = {
   "On {{name}}, open Settings → Devices → Agent computers → This computer and generate a pairing code.": "En {{name}}, abre Ajustes → Dispositivos → Ordenadores del agente → Este ordenador y genera un código de vinculación.",
   "Computers running the Pulpo desktop app can be chosen as the agent workspace. Other devices pair using a code generated on that computer.": "Los ordenadores con la aplicación de escritorio de Pulpo pueden usarse como espacio de trabajo del agente. Los demás dispositivos se vinculan mediante un código generado en ese ordenador.",
   "ABC234": "ABC234",
+  "Default image model": "Modelo de imagen predeterminado",
+  "Used when a user has not chosen an image model. Users’ own model choices take precedence. Users must still enable image generation in Settings.": "Se usa cuando el usuario no ha elegido un modelo de imagen. Las elecciones de los usuarios tienen prioridad. Los usuarios deben activar la generación de imágenes en Configuración.",
+  "Unable to save image defaults": "No se pudo guardar el modelo de imagen predeterminado",
 
   "Image billing unit": "Unidad de facturación de imágenes",
   "Per image": "Por imagen",

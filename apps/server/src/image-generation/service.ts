@@ -16,15 +16,18 @@ import { restoredAttachmentWorkspacePath, attachmentWorkspacePath } from '../age
 import type { AgentWorkspace } from '../agent/workspace.js'
 import { imageCost, imageReservation } from './pricing.js'
 import { generateImage, validateImageBytes, validateImageRequest, type ImageReference, type ImageResultMetadata } from './provider.js'
+import { readImageDefaults } from './defaults.js'
 
 const unavailable = () => new AppError(400, 'image_generation_unavailable', 'Enable image generation and choose an available model in Settings')
 export async function selectedImageModel(userId: string) {
   const [preferences] = await db.select({ values: userPreferences.values }).from(userPreferences).where(eq(userPreferences.userId, userId)).limit(1)
   const values = preferences?.values as Record<string, unknown> | undefined
   const preference = imageGenerationPreferencesSchema.catch({ enabled: false, modelId: null }).parse(values?.imageGeneration)
-  if (!preference.enabled || !preference.modelId) return null
+  if (!preference.enabled) return null
+  const modelId = preference.modelId ?? (await readImageDefaults()).modelId
+  if (!modelId) return null
   const [row] = await db.select({ config: imageModels.config, provider: providerConnections }).from(imageModels)
-    .innerJoin(providerConnections, eq(imageModels.providerConnectionId, providerConnections.id)).where(eq(imageModels.id, preference.modelId)).limit(1)
+    .innerJoin(providerConnections, eq(imageModels.providerConnectionId, providerConnections.id)).where(eq(imageModels.id, modelId)).limit(1)
   return row?.config.enabled && row.provider.enabled && row.provider.encryptedApiKey ? { model: imageModelSchema.parse(row.config), provider: row.provider } : null
 }
 

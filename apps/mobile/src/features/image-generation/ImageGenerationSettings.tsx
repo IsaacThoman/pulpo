@@ -2,7 +2,7 @@ import { Platform, Text } from 'react-native'
 import { Button, Section, Text as NativeText, Toggle } from '@expo/ui/swift-ui'
 import { disabled, foregroundStyle } from '@expo/ui/swift-ui/modifiers'
 import { useQuery } from '@tanstack/react-query'
-import { imagePriceLabel, type PublicImageModel } from '@pulpo/contracts'
+import { imagePriceLabel, type ImageCatalog } from '@pulpo/contracts'
 import { apiRequest } from '../../api/client'
 import { usePreferencesStore } from '../../store/preferences'
 import { useSessionStore } from '../../store/session'
@@ -18,8 +18,8 @@ export function ImageGenerationSettings() {
   const setPreference = usePrototypeStore(s => s.setPreference)
   const instanceUrl = useSessionStore(s => s.instanceUrl)
   const userId = useSessionStore(s => s.user?.id)
-  const catalog = useQuery({ queryKey: ['image-models', instanceUrl, userId], queryFn: () => apiRequest<{ data: PublicImageModel[] }>('/api/image-models') })
-  const model = catalog.data?.data.find(entry => entry.id === preferences.modelId)
+  const catalog = useQuery({ queryKey: ['image-models', instanceUrl, userId], queryFn: () => apiRequest<ImageCatalog>('/api/image-models') })
+  const model = catalog.data?.data.find(entry => entry.id === (preferences.modelId ?? catalog.data?.defaultModelId))
   const changeEnabled = (enabled: boolean) => { if (model || !enabled) setPreference('imageGeneration', { ...preferences, enabled }) }
   const picker = <ModelPicker label="Image model" value={model?.id} placeholder={catalog.isLoading ? 'Loading models…' : preferences.modelId ? 'Selected model unavailable' : 'Choose a model'}
     options={catalog.data?.data.map(entry => ({ id: entry.id, label: entry.name })) ?? []}
