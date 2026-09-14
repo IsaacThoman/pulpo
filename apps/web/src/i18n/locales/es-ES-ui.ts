@@ -1659,7 +1659,7 @@ const esUi: Record<string, string> = {
   "Change…": "Cambiar…",
   "Choose…": "Elegir…",
   "Ask before": "Pedir permiso antes de",
-  "Approvals appear here and in the chat. Reads never need approval.": "Las aprobaciones aparecen aquí y en el chat. Las lecturas nunca necesitan aprobación.",
+  "Approve or deny requests in the chat. Reads never need approval.": "Aprueba o deniega las solicitudes en el chat. Las lecturas nunca necesitan aprobación.",
   "Commands and file changes": "Comandos y cambios en archivos",
   "Commands only": "Solo comandos",
   "Never ask": "No preguntar nunca",

@@ -119,7 +119,7 @@ export function ThisComputerCard() {
             <Button size="sm" variant="outline" disabled={busy} onClick={() => void chooseFolder()}>{state.rootPath ? ui('Change…') : ui('Choose…')}</Button>
           </Row>
         )}
-        <Row label={ui('Ask before')} hint={ui('Approvals appear here and in the chat. Reads never need approval.')}>
+        <Row label={ui('Ask before')} hint={ui('Approve or deny requests in the chat. Reads never need approval.')}>
           <Select value={state.approvalPolicy} disabled={busy} onValueChange={(approvalPolicy) => void update({ approvalPolicy: approvalPolicy as DesktopComputerState['approvalPolicy'] })}>
             <SelectTrigger className="h-8 w-48 text-sm"><SelectValue /></SelectTrigger>
             <SelectContent>

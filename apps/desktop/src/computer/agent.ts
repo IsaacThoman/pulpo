@@ -20,7 +20,6 @@ export interface ComputerPromptHandle {
 }
 
 export interface ComputerPrompts {
-  approval(approval: ToolApproval): ComputerPromptHandle
   pairing(pairing: ComputerPairing): ComputerPromptHandle
 }
 
@@ -69,7 +68,7 @@ const failure = (error: string, code: Extract<ComputerReply, { ok: false }>['cod
 /**
  * Runs in the Electron main process. Owns the `/computer` socket, executes relayed operations
  * through the daemon core, and gates approval-protected operations on a decision the user made
- * either natively here or in the chat UI.
+ * in the chat UI.
  */
 export class ComputerAgent {
   private config!: ComputerConfig
@@ -81,7 +80,7 @@ export class ComputerAgent {
   private error: string | null = null
   private readonly approvedIds = new Set<string>()
   private readonly approvalWaiters = new Map<string, Array<(approved: boolean) => void>>()
-  private readonly openApprovals = new Map<string, ComputerPromptHandle>()
+  private readonly pendingApprovals = new Set<string>()
   private readonly openPairings = new Map<string, ComputerPromptHandle>()
   private readonly transfers = new Map<string, FileTransfer>()
   private readonly log: ComputerAgentLogger
@@ -105,7 +104,7 @@ export class ComputerAgent {
       os: computerOsFor(this.options.platform),
       hostname: this.options.hostname,
       homeDir: this.options.homeDir,
-      pendingApprovals: this.openApprovals.size,
+      pendingApprovals: this.pendingApprovals.size,
       pendingPairings: this.openPairings.size,
     }
   }
@@ -224,7 +223,7 @@ export class ComputerAgent {
     socket.on('computer.request', (request, ack) => {
       void this.handleRequest(request).then(ack, (error) => ack(failure(error instanceof Error ? error.message : String(error))))
     })
-    socket.on('computer.approval.requested', (approval) => this.promptApproval(approval))
+    socket.on('computer.approval.requested', (approval) => this.trackApproval(approval))
     socket.on('computer.approval.decided', ({ approvalId, status }) => this.resolveApproval(approvalId, status === 'approved'))
     socket.on('computer.pairing.requested', (pairing) => this.promptPairing(pairing))
     socket.on('computer.pairing.decided', ({ pairingId }) => {
@@ -235,8 +234,7 @@ export class ComputerAgent {
     socket.on('computer.revoked', ({ reason }) => {
       void (async () => {
         await this.runtime?.runner.cancelAll()
-        for (const handle of this.openApprovals.values()) handle.dismiss()
-        this.openApprovals.clear()
+        this.pendingApprovals.clear()
         if (reason === 'disabled' || reason === 'deleted') {
           this.config = { ...this.config, enabled: false }
           await saveComputerConfig(this.options.userDataDir, this.config)
@@ -281,8 +279,7 @@ export class ComputerAgent {
     await saveComputerConfig(this.options.userDataDir, next)
     if (previous.enabled && !next.enabled) {
       await this.runtime?.runner.cancelAll()
-      for (const handle of this.openApprovals.values()) handle.dismiss()
-      this.openApprovals.clear()
+      this.pendingApprovals.clear()
     }
     await this.refresh()
     return this.state
@@ -296,35 +293,20 @@ export class ComputerAgent {
   async stop(): Promise<void> {
     await this.runtime?.runner.cancelAll()
     await this.disconnect()
-    for (const handle of [...this.openApprovals.values(), ...this.openPairings.values()]) handle.dismiss()
-    this.openApprovals.clear()
+    for (const handle of this.openPairings.values()) handle.dismiss()
+    this.pendingApprovals.clear()
     this.openPairings.clear()
   }
 
-  private promptApproval(approval: ToolApproval): void {
-    if (this.openApprovals.has(approval.id)) return
-    const handle = this.options.prompts.approval(approval)
-    this.openApprovals.set(approval.id, handle)
+  private trackApproval(approval: ToolApproval): void {
+    if (this.pendingApprovals.has(approval.id)) return
+    this.pendingApprovals.add(approval.id)
     this.publish()
-    void handle.decision.then((approved) => {
-      if (this.openApprovals.get(approval.id) !== handle) return
-      this.openApprovals.delete(approval.id)
-      this.publish()
-      if (approved) this.resolveApproval(approval.id, true)
-      this.socket?.emit('computer.approval.decide', { approvalId: approval.id, approved }, (result) => {
-        if (!result.ok) this.log.warn('approval decision rejected', result.error)
-      })
-    }).catch((error) => this.log.error('approval prompt failed', error))
   }
 
   private resolveApproval(approvalId: string, approved: boolean): void {
     if (approved) this.approvedIds.add(approvalId)
-    const open = this.openApprovals.get(approvalId)
-    if (open) {
-      open.dismiss()
-      this.openApprovals.delete(approvalId)
-      this.publish()
-    }
+    if (this.pendingApprovals.delete(approvalId)) this.publish()
     for (const resolve of this.approvalWaiters.get(approvalId) ?? []) resolve(approved)
     this.approvalWaiters.delete(approvalId)
   }

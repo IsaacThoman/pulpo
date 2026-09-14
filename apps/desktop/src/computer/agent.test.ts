@@ -4,8 +4,16 @@ import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promi
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import type { ComputerOperationSnapshot, ComputerReply, ComputerRequest, ToolApproval } from '@pulpo/contracts'
-import { ComputerAgent, type ComputerPromptHandle, type ComputerSocket } from './agent'
+import { ComputerAgent, type ComputerSocket } from './agent'
+import { createNativeComputerPrompts } from './prompts'
 import { saveComputerConfig, defaultComputerConfig } from './config-store'
+
+const { showMessageBox } = vi.hoisted(() => ({ showMessageBox: vi.fn() }))
+vi.mock('electron', () => ({
+  BrowserWindow: class {},
+  Notification: class { static isSupported() { return false } },
+  dialog: { showMessageBox },
+}))
 
 const posixOnly = process.platform === 'win32' ? describe.skip : describe
 
@@ -24,10 +32,6 @@ class FakeSocket extends EventEmitter {
   disconnect(): this { this.disconnected = true; return this }
 }
 
-function prompt(decision: Promise<boolean>): ComputerPromptHandle {
-  return { decision, dismiss: vi.fn() }
-}
-
 async function settled(agent: ComputerAgent, id: string): Promise<ComputerOperationSnapshot> {
   for (let attempt = 0; attempt < 400; attempt += 1) {
     const reply = await agent.handleRequest({ kind: 'operation.status', id }) as ComputerReply<'operation.status'>
@@ -41,7 +45,6 @@ posixOnly('ComputerAgent', () => {
   let directory = ''
   let root = ''
   let socket: FakeSocket
-  let approvalPrompts: Array<{ approval: ToolApproval; resolve: (value: boolean) => void }> = []
   let agent: ComputerAgent
 
   beforeEach(async () => {
@@ -51,14 +54,11 @@ posixOnly('ComputerAgent', () => {
     await writeFile(join(directory, 'outside.txt'), 'secret')
     await saveComputerConfig(directory, { ...defaultComputerConfig('studio'), enabled: true, rootPath: root })
     socket = new FakeSocket()
-    approvalPrompts = []
+    showMessageBox.mockReset()
     agent = new ComputerAgent({
       userDataDir: directory, homeDir: directory, hostname: 'studio', platform: process.platform, arch: 'arm64', appVersion: '0.0.0-test',
       loadSession: async () => ({ instanceUrl: 'https://pulpo.test', token: 'x'.repeat(40) }),
-      prompts: {
-        approval: (approval) => prompt(new Promise((resolve) => approvalPrompts.push({ approval, resolve }))),
-        pairing: () => prompt(Promise.resolve(false)),
-      },
+      prompts: createNativeComputerPrompts(() => null),
       connect: () => socket as unknown as ComputerSocket,
       log: { info() {}, warn() {}, error() {} },
       approvalGraceMs: 50,
@@ -85,22 +85,39 @@ posixOnly('ComputerAgent', () => {
     expect((await agent.handleRequest({ kind: 'operation.status', id: 'op-bash' })).ok && (await agent.handleRequest({ kind: 'operation.status', id: 'op-bash' }) as { result: unknown }).result).toBeNull()
   })
 
-  it('runs a gated operation once the user approves it natively and reports the decision', async () => {
+  it('waits for approval in chat without opening a native dialog or deciding locally', async () => {
     const approval: ToolApproval = {
       id: '11111111-1111-4111-8111-111111111111', responseId: '22222222-2222-4222-8222-222222222222', chatId: '33333333-3333-4333-8333-333333333333',
       computerId: agent.state.computerId, computerName: 'studio', toolCallId: 'op-write', kind: 'write', summary: 'notes.txt', status: 'pending',
       expiresAt: new Date(Date.now() + 60_000).toISOString(), decidedAt: null, decidedVia: null, createdAt: new Date().toISOString(),
     }
     socket.emit('computer.approval.requested', approval)
-    expect(approvalPrompts).toHaveLength(1)
+    socket.emit('computer.approval.requested', approval)
+    expect(showMessageBox).not.toHaveBeenCalled()
     expect(agent.state.pendingApprovals).toBe(1)
-    approvalPrompts[0]!.resolve(true)
-    await vi.waitFor(() => expect(socket.emitted.some((entry) => entry.event === 'computer.approval.decide')).toBe(true))
+    const refused = await agent.handleRequest({ kind: 'operation.start', id: 'op-write', type: 'write', args: { path: 'notes.txt', content: 'written' }, approvalId: approval.id })
+    expect(refused).toMatchObject({ ok: false, code: 'approval_required' })
+    await expect(readFile(join(root, 'notes.txt'))).rejects.toMatchObject({ code: 'ENOENT' })
+    expect(socket.emitted.some((entry) => entry.event === 'computer.approval.decide')).toBe(false)
+    socket.emit('computer.approval.decided', { approvalId: approval.id, status: 'approved' })
     const started = await agent.handleRequest({ kind: 'operation.start', id: 'op-write', type: 'write', args: { path: 'notes.txt', content: 'written' }, approvalId: approval.id })
     expect(started.ok).toBe(true)
     await settled(agent, 'op-write')
     expect(await readFile(join(root, 'notes.txt'), 'utf8')).toBe('written')
     expect(agent.state.pendingApprovals).toBe(0)
+  })
+
+  it.each(['denied', 'expired', 'cancelled'])('does not execute when the chat approval is %s', async (status) => {
+    const approvalId = '44444444-4444-4444-8444-444444444444'
+    socket.emit('computer.approval.requested', { id: approvalId })
+    expect(agent.state.pendingApprovals).toBe(1)
+    const pending = agent.handleRequest({ kind: 'operation.start', id: 'op-refused', type: 'write', args: { path: 'refused.txt', content: 'must not be written' }, approvalId })
+    socket.emit('computer.approval.decided', { approvalId, status })
+    expect(await pending).toMatchObject({ ok: false, code: 'approval_required' })
+    expect(agent.state.pendingApprovals).toBe(0)
+    expect(showMessageBox).not.toHaveBeenCalled()
+    expect(socket.emitted.some((entry) => entry.event === 'computer.approval.decide')).toBe(false)
+    await expect(readFile(join(root, 'refused.txt'))).rejects.toMatchObject({ code: 'ENOENT' })
   })
 
   it('accepts an approval decided from the chat that arrives just after the operation request', async () => {

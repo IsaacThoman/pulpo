@@ -1,5 +1,4 @@
 import { BrowserWindow, Notification, dialog } from 'electron'
-import type { ToolApproval } from '@pulpo/contracts'
 import type { ComputerPromptHandle, ComputerPrompts } from './agent'
 
 function focusWindow(window: BrowserWindow | null): void {
@@ -15,15 +14,7 @@ function notifyIfHidden(window: BrowserWindow | null, title: string, body: strin
   new Notification({ title, body, silent: false }).show()
 }
 
-function approvalMessage(approval: ToolApproval): { message: string; detail: string } {
-  if (approval.kind === 'bash') {
-    return { message: `The agent wants to run a command on ${approval.computerName}`, detail: approval.summary }
-  }
-  const verb = approval.kind === 'write' ? 'create or overwrite' : 'edit'
-  return { message: `The agent wants to ${verb} a file on ${approval.computerName}`, detail: approval.summary }
-}
-
-/** Native dialogs shown by the main process. Each returns a handle so a decision made elsewhere can close it. */
+/** Native device-pairing dialogs. Tool approvals are handled in the chat UI. */
 export function createNativeComputerPrompts(getWindow: () => BrowserWindow | null): ComputerPrompts {
   const show = (title: string, message: string, detail: string, buttons: [string, string]): ComputerPromptHandle => {
     const controller = new AbortController()
@@ -40,10 +31,6 @@ export function createNativeComputerPrompts(getWindow: () => BrowserWindow | nul
     }
   }
   return {
-    approval(approval) {
-      const { message, detail } = approvalMessage(approval)
-      return show('Pulpo agent approval', message, `${detail}\n\nApproving runs it now with your permissions. You can also decide from the chat.`, ['Approve', 'Deny'])
-    },
     pairing(pairing) {
       const where = pairing.requestedIp ? ` from ${pairing.requestedIp}` : ''
       return show(
