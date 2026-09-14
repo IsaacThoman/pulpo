@@ -83,7 +83,12 @@ export async function loadBillingEntitlements(
   const fiveHourCutoff = new Date(now.getTime() - FIVE_HOURS_MS)
   const [[account], subscriptions, [setting], [period], [pendingBalance], [activeFiveHourPeriod], [activePendingFiveHour]] = await Promise.all([
     tx.select().from(billingAccounts).where(eq(billingAccounts.userId, userId)).limit(1),
-    tx.select({ plan: billingSubscriptions.plan, status: billingSubscriptions.status, paidThrough: billingSubscriptions.paidThrough })
+    tx.select({
+      plan: billingSubscriptions.plan,
+      paidPlan: billingSubscriptions.paidPlan,
+      status: billingSubscriptions.status,
+      paidThrough: billingSubscriptions.paidThrough,
+    })
       .from(billingSubscriptions).where(eq(billingSubscriptions.userId, userId)),
     tx.select({ value: applicationSettings.value }).from(applicationSettings).where(eq(applicationSettings.key, 'billing')).limit(1),
     tx.select({ spentMicros: weeklyUsagePeriods.spentMicros }).from(weeklyUsagePeriods)

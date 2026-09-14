@@ -1,12 +1,49 @@
-import { describe, expect, it } from 'vitest'
-import { managedBillingPlan, planChoiceDisabled, planChoiceLabel } from './billing'
+import { afterEach, describe, expect, it } from 'vitest'
+import i18n from '@/i18n'
+import { managedBillingPlan, paymentStatusLabel, pendingBillingPlan, planChoiceDisabled, planChoiceLabel } from './billing'
+
+describe('payment status labels', () => {
+  afterEach(async () => {
+    await i18n.changeLanguage('en-US')
+  })
+
+  it('updates payment history labels when the language changes', async () => {
+    expect(paymentStatusLabel('paid')).toBe('Paid')
+    expect(paymentStatusLabel('refunded')).toBe('Refunded')
+
+    await i18n.changeLanguage('es-ES')
+    expect(paymentStatusLabel('paid')).toBe('Pagado')
+    expect(paymentStatusLabel('refunded')).toBe('Reembolsado')
+    expect(paymentStatusLabel('unexpected_api_status')).toBe('Desconocido')
+
+    await i18n.changeLanguage('en-US')
+    expect(paymentStatusLabel('paid')).toBe('Paid')
+    expect(paymentStatusLabel('unexpected_api_status')).toBe('Unknown')
+  })
+})
 
 describe('plan comparison choices', () => {
   it('uses only the Stripe subscription for plan-management state', () => {
     expect(managedBillingPlan({ subscription: null })).toBe('baby')
     expect(managedBillingPlan({ subscription: {
-      plan: 'eight', status: 'active', cancelAtPeriodEnd: false, currentPeriodEnd: null,
+      plan: 'eight', pendingPlan: null, status: 'active', cancelAtPeriodEnd: false, currentPeriodEnd: null,
     } })).toBe('eight')
+  })
+
+  it('keeps the paid plan current while a downgrade waits for renewal', () => {
+    const summary = { subscription: {
+      plan: 'fat' as const, pendingPlan: 'eight' as const, status: 'active', cancelAtPeriodEnd: false, currentPeriodEnd: null,
+    } }
+    expect(managedBillingPlan(summary)).toBe('fat')
+    expect(pendingBillingPlan(summary)).toBe('eight')
+    expect(pendingBillingPlan({ subscription: { ...summary.subscription, pendingPlan: null } })).toBeNull()
+    expect(planChoiceLabel('fat', 'fat', false, 'eight')).toBe('Keep $24/month')
+    expect(planChoiceDisabled('fat', 'fat', false, 'eight')).toBe(false)
+    expect(planChoiceLabel('eight', 'fat', false, 'eight')).toBe('Switches at renewal')
+    expect(planChoiceDisabled('eight', 'fat', false, 'eight')).toBe(true)
+    expect(planChoiceLabel('baby', 'fat', false, 'eight')).toBe('Cancel plan')
+    expect(planChoiceLabel('eight', 'fat', true, 'eight')).toBe('Renew for $8/month')
+    expect(planChoiceDisabled('eight', 'fat', true, 'eight')).toBe(false)
   })
 
   it('lets paid users upgrade, downgrade, or switch to Baby', () => {

@@ -34,7 +34,7 @@ async function main() {
     })
   }
 
-  for (const workspace of ['@pulpo/contracts', '@pulpo/client-core']) {
+  for (const workspace of ['@pulpo/contracts', '@pulpo/client-core', '@pulpo/workspace-daemon']) {
     const buildCode = await runNpm(['run', 'build', '--workspace', workspace])
     if (buildCode !== 0) return buildCode
   }

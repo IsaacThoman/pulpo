@@ -25,6 +25,16 @@ Do not reuse test resource IDs in live mode.
 
 Configure the Stripe Billing Portal to allow customers to update payment methods, view invoices, and cancel subscriptions at the end of the billing period. Disable portal plan switching; Pulpo owns Eight/Fat plan changes and their proration behavior.
 
+## Plan changes
+
+Monthly platform credits are granted in full when a subscription invoice is paid, so plan changes must not refund the current period:
+
+- **Upgrade (Eight to Fat)** is immediate. Stripe invoices the prorated difference and the upgrade only completes once that invoice is paid. No additional credits are granted mid-cycle.
+- **Downgrade (Fat to Eight)** switches the Stripe price with `proration_behavior: none`. Stripe issues no credit and the next renewal bills $8. Pulpo records the plan covered by the last paid invoice (`billing_subscriptions.paid_plan`) and keeps Fat benefits until the paid period ends. Switching back to Fat before renewal is free because the period was already paid at the Fat price.
+- **Cancel** sets `cancel_at_period_end`; the paid plan stays in effect until the period ends.
+
+The portal must not offer plan switching, because a portal downgrade would bypass this proration rule.
+
 ## Webhook endpoint
 
 Create a webhook destination for:

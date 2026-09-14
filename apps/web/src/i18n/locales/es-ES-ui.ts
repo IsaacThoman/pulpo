@@ -776,6 +776,10 @@ const esUi: Record<string, string> = {
   "Display name": "Nombre para mostrar",
   "Done": "Listo",
   "Downgrade to $8/month": "Bajar a $ 8/mes",
+  "Keep $24/month": "Mantener $ 24/mes",
+  "Switches at renewal": "Cambia en la renovación",
+  "switches to {{plan}} on {{date}}": "cambia a {{plan}} el {{date}}",
+  "switches to {{plan}} at renewal": "cambia a {{plan}} en la renovación",
   "Download": "Descargar",
   "Download {{0}}": "Descargar {{0}}",
   "Downloaded attachment cache": "Caché de archivos adjuntos descargados",
@@ -1679,6 +1683,16 @@ const esUi: Record<string, string> = {
   "Turn on “This computer” above to make it available to the agent.": "Activa “Este ordenador” arriba para ponerlo a disposición del agente.",
   "No computers yet. Open the Pulpo desktop app on a computer and turn on “This computer” in its settings.": "Todavía no hay ordenadores. Abre la aplicación de escritorio de Pulpo en un ordenador y activa “Este ordenador” en sus ajustes.",
   "Allow agent on personal computers": "Permitir el agente en ordenadores personales",
+  "There are two ways to pay for usage: buy credits and pay as you go, or subscribe to a monthly plan. You can use either one or both.": "Hay dos formas de pagar el uso: comprar créditos y pagar por uso, o suscribirte a un plan mensual. Puedes usar una de las dos o ambas.",
+  "Subscribe monthly": "Suscripción mensual",
+  "Your plan": "Tu plan",
+  "Free · No subscription": "Gratis · Sin suscripción",
+  "Plans from $8/month": "Planes desde $8/mes",
+  "High usage limits included": "Límites de uso altos incluidos",
+  "Credits added every month": "Créditos añadidos cada mes",
+  "Paid": "Pagado",
+  "Credit balance": "Saldo de créditos",
+  "Not subscribed": "Sin suscripción",
 }
 
 export default esUi

@@ -30,7 +30,14 @@ export function SpeechSettings() {
   const settings = model ? preferences.models[model.id] ?? { instructions: '', speed: 1 } : undefined
   const update = (patch: object) => { if (model) set('speech', { ...preferences, models: { ...preferences.models, [model.id]: { ...settings!, ...patch } } }) }
   return <div className="space-y-5">
-    <h3 className="text-lg font-semibold">{ui('Speech')}</h3>
+    <div className="space-y-1.5">
+      <h3 className="text-lg font-semibold">{ui('Speech')}</h3>
+      {model && settings?.voice !== undefined && <button
+        type="button"
+        className="block cursor-pointer text-xs text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline"
+        onClick={() => { closeVoices(); speechPlayback.stop(); update({ voice: undefined }) }}
+      >{ui('Use default voice')}</button>}
+    </div>
     <p className="text-sm text-muted-foreground">{ui('Read messages aloud with an AI-generated voice.')}</p>
     {catalog.isError && <p role="alert">{ui('Speech models could not be loaded.')} <button onClick={() => void catalog.refetch()}>{ui('Retry')}</button></p>}
     <div className="space-y-2">
@@ -96,7 +103,6 @@ export function SpeechSettings() {
           </div>
           </PopoverContent>
         </Popover>
-        {settings.voice !== undefined && <Button variant="ghost" size="sm" onClick={() => { closeVoices(); speechPlayback.stop(); update({ voice: undefined }) }}>{ui('Use default voice')}</Button>}
         {playback.error && <p role="alert" className="text-sm text-destructive">{ui(playback.error)}</p>}
       </div>
       {model.supportsInstructions && <label className="block text-sm">{ui('Instructions')}<Textarea className="mt-2" value={settings.instructions} maxLength={SPEECH_MAX_INSTRUCTIONS_LENGTH} placeholder={ui('Speak in a calm, friendly tone.')} onChange={event => update({ instructions: event.target.value })} /></label>}
