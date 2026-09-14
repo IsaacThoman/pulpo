@@ -19,7 +19,8 @@ function requiredEnvironment(name: string): string {
 
 const config: ForgeConfig = {
   packagerConfig: {
-    asar: true,
+    // ripgrep is spawned as a child process, which cannot run from inside the asar archive.
+    asar: { unpack: '**/node_modules/@vscode/ripgrep*/**' },
     name: 'Pulpo',
     executableName: 'Pulpo',
     icon: process.platform === 'win32'
@@ -32,6 +33,10 @@ const config: ForgeConfig = {
         LSMinimumSystemVersion: '13.0',
         NSAppTransportSecurity: { NSAllowsArbitraryLoads: false },
         NSMicrophoneUsageDescription: 'Allow Pulpo to use the microphone for dictation.',
+        NSDesktopFolderUsageDescription: 'Allow the Pulpo agent to work in folders you choose on this computer.',
+        NSDocumentsFolderUsageDescription: 'Allow the Pulpo agent to work in folders you choose on this computer.',
+        NSDownloadsFolderUsageDescription: 'Allow the Pulpo agent to work in folders you choose on this computer.',
+        NSRemovableVolumesUsageDescription: 'Allow the Pulpo agent to work in folders you choose on external drives.',
         CFBundleURLTypes: [{
           CFBundleURLName: 'Pulpo authentication',
           CFBundleURLSchemes: ['pulpo'],

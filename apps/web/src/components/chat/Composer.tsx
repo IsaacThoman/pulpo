@@ -46,6 +46,10 @@ import { chatOptionsFor, resolveSelections, useModelConfig } from '@/stores/mode
 import { getCatalogModel, useCatalog } from '@/stores/catalog'
 import { PresetIcon } from '@/components/chat/PresetIcon'
 import { AgentMenu } from '@/components/chat/AgentMenu'
+import { effectiveWorkspaceSelection, useAgentComputers } from '@/lib/computers'
+import { NEW_CHAT_WORKSPACE_KEY, useWorkspaceSelection } from '@/stores/workspace-selection'
+import { useOptionalSettingsDialog } from '@/components/settings/settings-dialog'
+import type { WorkspaceSelection } from '@pulpo/contracts'
 import { PendingAttachmentChip } from '@/components/chat/AttachmentImage'
 import { cn } from '@/lib/utils'
 import { downloadAttachment } from '@/lib/local-first/attachment-cache'
@@ -263,6 +267,18 @@ export function Composer({
   const agentAvailable = useCatalog((s) => s.agentAvailable)
   const agentCapable = Boolean(getCatalogModel(modelId).agentEnabled)
   const canUseAgent = agentAvailable && agentCapable
+  const chatWorkspaceComputerId = useChat((s) => (chatId ? s.chats.find((chat) => chat.id === chatId)?.workspaceComputerId ?? null : null))
+  const chatHasAgentTurns = useChat((s) => (chatId ? s.chats.find((chat) => chat.id === chatId)?.messages.some((message) => message.role === 'assistant' && message.agentMode) ?? false : false))
+  const workspaceLocked = Boolean(chatWorkspaceComputerId) || chatHasAgentTurns
+  const workspaceSelectionKey = chatId ?? NEW_CHAT_WORKSPACE_KEY
+  const storedWorkspaceSelection = useWorkspaceSelection((s) => s.selections[workspaceSelectionKey] ?? null)
+  const selectWorkspace = useWorkspaceSelection((s) => s.select)
+  const computersQuery = useAgentComputers({ enabled: canUseAgent })
+  const computers = computersQuery.data?.computers ?? []
+  const workspaceSelection: WorkspaceSelection = chatWorkspaceComputerId
+    ? { kind: 'computer', computerId: chatWorkspaceComputerId }
+    : workspaceLocked ? { kind: 'sandbox' } : effectiveWorkspaceSelection(storedWorkspaceSelection, computers)
+  const settingsDialog = useOptionalSettingsDialog()
   const dictationEnabled = useAuth((s) => s.dictationEnabled)
   const instanceReady = useAuth((s) => s.instanceReady)
   const desktopCanMutate = !isDesktopRuntime() || instanceReady
@@ -1324,6 +1340,14 @@ export function Composer({
               if (!canUseAgent) return
               if (messageEdit) setEditAgentMode(enabled)
               else setAgentMode(modelId, enabled)
+            }}
+            workspace={{
+              selection: workspaceSelection,
+              computers,
+              locked: workspaceLocked,
+              lockedComputerId: chatWorkspaceComputerId,
+              onSelectWorkspace: (selection) => selectWorkspace(workspaceSelectionKey, selection),
+              ...(settingsDialog ? { onManageComputers: () => settingsDialog.openSettings('agent') } : {}),
             }}
           />
 

@@ -2,7 +2,7 @@ import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { editMessageSchema, idSchema, timeZoneSchema } from '@pulpo/contracts'
-import { billingUserForRequest, requireUser } from '../auth/service.js'
+import { billingUserForRequest, currentSessionId, requireUser } from '../auth/service.js'
 import { db } from '../database/client.js'
 import { chats, requestLogs, responses, usageEvents, users } from '../database/schema.js'
 import { AppError, notFound } from '../lib/errors.js'
@@ -126,6 +126,7 @@ export async function registerMessageRoutes(app: FastifyInstance): Promise<void>
       presetSelections,
       attachmentIds: selectedAttachmentIds,
       agentMode: selectedAgentMode,
+      workspace: selectedWorkspace,
     } = editMessageSchema.parse(request.body)
     const idempotencyKey = request.headers['idempotency-key'] as string | undefined
     if (id.endsWith(':input')) {
@@ -157,7 +158,9 @@ export async function registerMessageRoutes(app: FastifyInstance): Promise<void>
           presetSelections: generation.presetSelections,
           attachmentIds,
           agentMode: generation.agentMode,
+          workspace: selectedWorkspace,
         },
+        requesterSessionId: selectedWorkspace?.kind === 'computer' && !request.adminChatAccess ? await currentSessionId(request, user.id) : undefined,
       })
       await bumpRevision(user.id, original.chatId)
       await scheduleChatIndex(original.chatId, user.id, 'user-message-edit')

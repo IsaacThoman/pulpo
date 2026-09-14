@@ -1,4 +1,4 @@
-import type { NativeDevice } from '@pulpo/contracts'
+import type { DesktopComputerState, DesktopComputerUpdate, NativeDevice } from '@pulpo/contracts'
 import { normalizeInstanceUrl } from '@pulpo/client-core'
 
 export interface DesktopStoredSession {
@@ -19,6 +19,13 @@ interface DesktopApi {
   onProtocolUrl(listener: (url: string) => void): () => void
   onCommand(listener: (command: 'new-chat' | 'settings') => void): () => void
   appInfo(): Promise<{ name: string; version: string; packaged: boolean }>
+  /** Present on desktop builds that can share this computer with the agent. */
+  computer?: {
+    getState(): Promise<DesktopComputerState>
+    update(patch: DesktopComputerUpdate): Promise<DesktopComputerState>
+    chooseFolder(): Promise<string | null>
+    onStateChanged(listener: (state: DesktopComputerState) => void): () => void
+  }
   windowControls: {
     minimize(): Promise<void>
     toggleMaximize(): Promise<boolean>
@@ -125,6 +132,11 @@ export async function clearDesktopSession(): Promise<void> {
 
 export function onDesktopProtocolUrl(listener: (url: string) => void): () => void {
   return window.pulpoDesktop?.onProtocolUrl(listener) ?? (() => undefined)
+}
+
+/** The local computer agent bridge, when running inside a desktop build that has it. */
+export function desktopComputerApi(): NonNullable<DesktopApi['computer']> | null {
+  return (typeof window !== 'undefined' && window.pulpoDesktop?.computer) || null
 }
 
 export function desktopDevice(): NativeDevice {

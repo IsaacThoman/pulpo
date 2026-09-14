@@ -27,6 +27,7 @@ const defaults: AgentSettings = {
   idleTimeoutSeconds: 1800, hardTimeoutSeconds: 14400, workspaceWaitTimeoutSeconds: 900, maxModelTurns: 30, maxToolCalls: 100,
   responseTimeoutSeconds: 1800, commandTimeoutSeconds: 600, maxToolOutputBytes: 100000,
   billWorkspaces: false, workspacePricePerMinuteMicros: 10_000,
+  computersEnabled: true,
 }
 
 const webDefaults: WebToolsForm = {
@@ -170,6 +171,7 @@ export function AgentSection() {
         <label className="space-y-1 text-xs"><span>{ui("Retained tool output (bytes)")}</span>{number('maxToolOutputBytes', 1024)}</label>
       </div>
       <Toggle label={ui("Bill users for agent workspaces")} hint="Charges from lease ready until the response ends. Queue wait is free." checked={value.billWorkspaces} onChange={(billWorkspaces) => setValue({ ...value, billWorkspaces })} />
+      <Toggle label={ui("Allow agent on personal computers")} hint="Lets users run the agent on their own computer through the desktop app instead of a cloud sandbox. Computers are never billed as workspaces." checked={value.computersEnabled} onChange={(computersEnabled) => setValue({ ...value, computersEnabled })} />
       {value.billWorkspaces && <NumField label={ui("Price per workspace minute")} value={value.workspacePricePerMinuteMicros / 1_000_000} onChange={(usd) => setValue({ ...value, workspacePricePerMinuteMicros: Math.round(usd * 1_000_000) })} min={0} step={0.001} decimals={4} suffix="USD" />}
       <div className="flex items-center gap-2 text-sm">
         {health.healthy ? <CheckCircle2 className="size-4 text-emerald-600" /> : <AlertCircle className="size-4 text-amber-600" />}

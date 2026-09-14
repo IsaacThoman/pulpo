@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
+import type { DesktopComputerState, DesktopComputerUpdate } from '@pulpo/contracts'
 import type {
   DesktopCommand,
   DesktopOperatingSystem,
@@ -31,6 +32,16 @@ const api: PulpoDesktopApi = {
     return () => ipcRenderer.removeListener('desktop:command', handler)
   },
   appInfo: () => ipcRenderer.invoke('desktop:app-info') as Promise<{ name: string; version: string; packaged: boolean }>,
+  computer: {
+    getState: () => ipcRenderer.invoke('desktop:computer:get-state') as Promise<DesktopComputerState>,
+    update: (patch: DesktopComputerUpdate) => ipcRenderer.invoke('desktop:computer:update', patch) as Promise<DesktopComputerState>,
+    chooseFolder: () => ipcRenderer.invoke('desktop:computer:choose-folder') as Promise<string | null>,
+    onStateChanged: (listener) => {
+      const handler = (_event: Electron.IpcRendererEvent, state: DesktopComputerState) => listener(state)
+      ipcRenderer.on('desktop:computer:state-changed', handler)
+      return () => ipcRenderer.removeListener('desktop:computer:state-changed', handler)
+    },
+  },
   windowControls: {
     minimize: () => ipcRenderer.invoke('desktop:window:minimize') as Promise<void>,
     toggleMaximize: () => ipcRenderer.invoke('desktop:window:toggle-maximize') as Promise<boolean>,

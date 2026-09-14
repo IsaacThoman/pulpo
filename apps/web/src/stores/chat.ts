@@ -1,4 +1,6 @@
 import { create } from 'zustand'
+import { agentComputersQueryKey, effectiveWorkspaceSelection, type AgentComputerListResponse } from '@/lib/computers'
+import { workspaceSelectionFor } from '@/stores/workspace-selection'
 import { webChatStarted } from '@/lib/chat-started'
 import { replaceEqualDeep } from '@tanstack/react-query'
 import {
@@ -112,6 +114,7 @@ export interface ServerChat {
   updatedAt: string
   activeResponseId: string | null
   activeBranchLeafId: string | null
+  workspaceComputerId?: string | null
   inFlightResponseIds?: string[]
   attachments?: ServerAttachment[]
   responses?: ServerResponse[]
@@ -427,6 +430,7 @@ function toChat(
       ? current?.expiresAt ?? null
       : row.expiresAt === null ? null : Date.parse(row.expiresAt),
     expired: current?.expired ?? false,
+    workspaceComputerId: row.workspaceComputerId ?? current?.workspaceComputerId ?? null,
     provisional: current?.provisional,
     awaitingSummary: current?.awaitingSummary,
   }
@@ -1432,6 +1436,9 @@ export const useChat = create<ChatState>()((set, get) => ({
       modelId,
     )
     const agentMode = staged?.agentMode ?? currentAgentMode(modelId)
+    const workspace = agentMode
+      ? effectiveWorkspaceSelection(workspaceSelectionFor(chatId ?? null), queryClient.getQueryData<AgentComputerListResponse>(agentComputersQueryKey(userId))?.computers)
+      : undefined
     const userMessage: Message = {
       id: `${responseId}:input`,
       role: 'user',
@@ -1511,6 +1518,7 @@ export const useChat = create<ChatState>()((set, get) => ({
         presetSelections: generation.selections,
         attachmentIds: attachments.map((attachment) => attachment.id),
         agentMode,
+        ...(workspace ? { workspace } : {}),
       }
       const path = chatId ? `/api/chats/${id}/responses` : '/api/chats/start'
       const body = chatId ? responseBody : {

@@ -5,7 +5,7 @@ import { Directory, File, Paths } from 'expo-file-system'
 import * as Crypto from 'expo-crypto'
 import * as Sharing from 'expo-sharing'
 import { attachmentValidationError, createUploadQueue, retryBusyUpload } from '@pulpo/client-core'
-import type { ResponseSnapshot } from '@pulpo/contracts'
+import type { AgentComputer, ComputerPairing, ResponseSnapshot, WorkspaceSelection } from '@pulpo/contracts'
 import { apiOrigin, apiRequest, apiUrl, isNetworkError, nativeAuthorizationHeaders } from '../../api/client'
 import { cacheNamespace, cachedAttachmentUri, recordCachedAttachment, removeCachedAttachment } from '../../data/database'
 import { queueOfflineMutation } from '../../data/mutations'
@@ -90,6 +90,7 @@ export async function sendMessage(input: {
   presetSelections?: Record<string, string>
   attachmentIds?: string[]
   agentMode?: boolean
+  workspace?: WorkspaceSelection
   temporary?: boolean
 }): Promise<ResponseSnapshot> {
   const responseId = input.clientId ?? Crypto.randomUUID()
@@ -111,6 +112,7 @@ export async function sendMessage(input: {
     presetSelections: input.presetSelections ?? {},
     attachmentIds: input.attachmentIds ?? [],
     agentMode: input.agentMode ?? false,
+    ...(input.workspace ? { workspace: input.workspace } : {}),
   }
   try {
     const result = await apiRequest<{ response: ResponseSnapshot }>(path, {
@@ -147,6 +149,7 @@ export async function startChat(input: {
   presetSelections?: Record<string, string>
   attachmentIds?: string[]
   agentMode?: boolean
+  workspace?: WorkspaceSelection
 }): Promise<{ chat: ServerChat; response: ResponseSnapshot }> {
   const session = useSessionStore.getState()
   if (session.user) mobileChatStarted.ignoreLocal(cacheNamespace(session.instanceUrl, session.user.id), input.chatId)
@@ -178,6 +181,7 @@ export async function startChat(input: {
       presetSelections: input.presetSelections ?? {},
       attachmentIds: input.attachmentIds ?? [],
       agentMode: input.agentMode ?? false,
+      ...(input.workspace ? { workspace: input.workspace } : {}),
     },
   }
   try {
@@ -296,6 +300,26 @@ export async function continueWithoutAgent(id: string): Promise<ResponseSnapshot
   const snapshot = await apiRequest<ResponseSnapshot>(`/api/responses/${id}/continue-without-agent`, { method: 'POST' })
   useRealtimeStore.getState().receiveSnapshot(snapshot)
   return snapshot
+}
+
+export async function listAgentComputers(): Promise<{ computers: AgentComputer[]; enabled: boolean }> {
+  return apiRequest('/api/agent/computers')
+}
+
+export async function listComputerPairings(): Promise<{ pairings: ComputerPairing[] }> {
+  return apiRequest('/api/agent/pairings')
+}
+
+export async function requestComputerPairing(computerId: string): Promise<{ pairing: ComputerPairing }> {
+  return apiRequest(`/api/agent/computers/${computerId}/pairings`, { method: 'POST' })
+}
+
+export async function revokeComputerPairing(computerId: string, pairingId: string): Promise<void> {
+  await apiRequest(`/api/agent/computers/${computerId}/pairings/${pairingId}`, { method: 'DELETE' })
+}
+
+export async function decideToolApproval(approvalId: string, approved: boolean): Promise<{ approval: { id: string; status: string } }> {
+  return apiRequest(`/api/agent/approvals/${approvalId}/${approved ? 'approve' : 'deny'}`, { method: 'POST' })
 }
 
 export async function shareChat(id: string): Promise<string> {

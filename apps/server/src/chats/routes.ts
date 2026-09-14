@@ -1,10 +1,10 @@
 import { and, asc, desc, eq, inArray, isNotNull, isNull, ne, sql } from 'drizzle-orm'
 import { createHash } from 'node:crypto'
-import type { FastifyInstance } from 'fastify'
+import type { FastifyInstance, FastifyRequest } from 'fastify'
 import { createChatResponseSchema, createChatSchema, createQueuedMessageSchema, reorderQueuedMessageSchema, startChatSchema, updateChatSchema, updateQueuedMessageSchema, type StateInvalidationScope } from '@pulpo/contracts'
 import { db } from '../database/client.js'
 import { attachments, chatImportSources, chats, folders, models, queuedMessages, requestLogs, responses, usageEvents, users, workspaceLeases } from '../database/schema.js'
-import { billingUserForRequest, requireUser } from '../auth/service.js'
+import { billingUserForRequest, currentSessionId, requireUser } from '../auth/service.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import { createResponse, toSnapshot } from '../responses/service.js'
@@ -37,6 +37,12 @@ async function requestedNormalChatExpiry(userId: string, enabled: boolean, now: 
     throw new AppError(400, 'automatic_chat_expiration_disabled', 'Choose an automatic chat expiration period in Data controls')
   }
   return expiresAt
+}
+
+/** Selecting a computer needs the caller's device session so pairing can be enforced. */
+async function requesterSessionIdFor(request: FastifyRequest, userId: string, workspace: { kind: string } | undefined): Promise<string | undefined> {
+  if (workspace?.kind !== 'computer' || request.adminChatAccess) return undefined
+  return currentSessionId(request, userId)
 }
 
 export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
@@ -298,6 +304,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
         input: input.response,
         parentResponseId: null,
         idempotencyKey: request.headers['idempotency-key'] as string | undefined,
+        requesterSessionId: await requesterSessionIdFor(request, user.id, input.response.workspace),
       })
       if (!chat.temporary) await bumpRevision(user.id, chat.id)
       if (inserted && !chat.temporary && chat.expiresAt) {
@@ -644,6 +651,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       input,
       parentResponseId: input.parentResponseId,
       idempotencyKey: request.headers['idempotency-key'] as string | undefined,
+      requesterSessionId: await requesterSessionIdFor(request, user.id, input.workspace),
     })
     await bumpRevision(user.id, id)
     reply.code(202)

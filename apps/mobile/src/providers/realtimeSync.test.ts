@@ -61,5 +61,8 @@ describe('mobile realtime sync helpers', () => {
     expect(stateInvalidationQueryKeys('folders', 'instance|user')).toEqual([
       ['folders', 'instance|user'],
     ])
+    expect(stateInvalidationQueryKeys('computers', 'instance|user')).toEqual([
+      ['agent-computers', 'instance|user'],
+    ])
   })
 })

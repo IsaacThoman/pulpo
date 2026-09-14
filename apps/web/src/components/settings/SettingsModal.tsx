@@ -3,6 +3,7 @@ import { SpeechSettings } from '@/features/speech/SpeechSettings'
 import { refreshInstanceFeatures } from '@/lib/instance-features'
 import { DeleteAccountSettings } from './DeleteAccountSettings'
 import { DeviceSettings } from './DeviceSettings'
+import { ComputerSettings } from './ComputerSettings'
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { useTranslation } from '@/i18n/useAppTranslation'
 import { useNavigate } from 'react-router-dom'
@@ -1085,6 +1086,8 @@ export function SettingsModal({
                 <div>
                   <h2 className="text-base font-semibold">{ui('Agent')}</h2>
                   <Separator className="my-3" />
+                  <ComputerSettings />
+                  <Separator className="my-4" />
                   <ImageGenerationSettings />
                 </div>
               )}

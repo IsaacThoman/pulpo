@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { recalledChatLabel } from './recall-label'
-import { buildLegacyMessageTimeline, buildMessageTimeline, completedActivityLabel, timelineActivityIsActive } from './timeline'
+import { activityDurationMs, approvalIsPending, buildLegacyMessageTimeline, buildMessageTimeline, completedActivityLabel, timelineActivityIsActive, workspaceLabel } from './timeline'
 
 describe('buildMessageTimeline', () => {
   it('ignores empty active reasoning while ordinary answer text streams', () => {
@@ -151,6 +151,50 @@ describe('buildMessageTimeline', () => {
       { kind: 'text', text: 'Final answer' },
     ])
     expect(buildMessageTimeline(output, true)).toEqual(visible)
+  })
+
+  it('keeps a pending approval inside the current work and marks it active', () => {
+    const approval = {
+      id: '00000000-0000-4000-8000-00000000000a', type: 'pulpo_approval', tool_call_id: 'call-1', kind: 'bash',
+      summary: 'rm -rf build', status: 'pending', computer_name: 'Studio Mac',
+      expires_at: new Date(Date.now() + 60_000).toISOString(),
+    }
+    const timeline = buildMessageTimeline([
+      { type: 'reasoning', status: 'completed', summary: [{ text: 'Cleaning build output' }], durationMs: 400 },
+      { type: 'pulpo_tool', id: 'tool-1', tool: 'shell', status: 'running' },
+      approval,
+    ], true)
+
+    expect(timeline).toMatchObject([{
+      kind: 'activity', active: true,
+      steps: [{ kind: 'reasoning' }, { kind: 'tool', tool: { id: 'tool-1' } }, { kind: 'approval', approval: { id: approval.id } }],
+    }])
+    const activity = timeline[0]
+    if (activity?.kind !== 'activity') throw new Error('Expected approval activity')
+    expect(approvalIsPending(approval as never)).toBe(true)
+    expect(activityDurationMs(activity.steps)).toBe(400)
+    expect(completedActivityLabel([activity.steps[2]!])).toBe('Worked')
+    expect(buildMessageTimeline([approval], false)).toEqual([])
+  })
+
+  it('does not keep work active for approvals that were decided or timed out', () => {
+    const base = {
+      id: '00000000-0000-4000-8000-00000000000b', type: 'pulpo_approval', tool_call_id: 'call-2', kind: 'write',
+      summary: 'notes.md', computer_name: 'Studio Mac',
+    }
+    const decided = buildMessageTimeline([{ ...base, status: 'approved', expires_at: new Date(Date.now() + 60_000).toISOString(), decided_via: 'desktop' }], true)
+    const expired = buildMessageTimeline([{ ...base, status: 'pending', expires_at: new Date(Date.now() - 1_000).toISOString() }], true)
+    expect(decided).toMatchObject([{ kind: 'activity', active: false, steps: [{ kind: 'approval' }] }])
+    expect(expired).toMatchObject([{ kind: 'activity', active: false }])
+  })
+
+  it('labels computer workspaces by machine name', () => {
+    expect(workspaceLabel({ type: 'pulpo_workspace', kind: 'computer', computerName: 'Studio Mac', state: 'provisioning' })).toBe('Connecting to Studio Mac…')
+    expect(workspaceLabel({ type: 'pulpo_workspace', kind: 'computer', computerName: 'Studio Mac', state: 'ready' })).toBe('Working on Studio Mac')
+    expect(workspaceLabel({ type: 'pulpo_workspace', kind: 'computer', computerName: 'Studio Mac', state: 'expired' })).toBe('Studio Mac disconnected')
+    expect(workspaceLabel({ type: 'pulpo_workspace', kind: 'computer', computerName: 'Studio Mac', state: 'unavailable' })).toBe('Studio Mac unavailable')
+    expect(workspaceLabel({ type: 'pulpo_workspace', state: 'waiting', position: 2 })).toBe('Waiting for workspace · queue #2')
+    expect(workspaceLabel({ type: 'pulpo_workspace', state: 'ready' })).toBe('Started workspace')
   })
 
   it('preserves context compaction as its own activity between assistant turns', () => {

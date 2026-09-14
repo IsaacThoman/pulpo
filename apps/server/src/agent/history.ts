@@ -1,7 +1,8 @@
 import type { AgentMessage } from '@earendil-works/pi-agent-core'
 import type { AssistantMessage } from '@earendil-works/pi-ai'
 import { responseUserAttachmentIds } from '../messages/input.js'
-import { buildAgentUserPrompt, type AgentAttachment } from './policy.js'
+import { buildAgentUserPrompt, SANDBOX_WORKSPACE_DESCRIPTOR, type AgentAttachment } from './policy.js'
+import type { WorkspaceDescriptor } from '@pulpo/contracts'
 import { assistantOutputText } from '../responses/output-text.js'
 
 export type AgentHistoryResponse = {
@@ -34,12 +35,13 @@ function timestamp(value: Date | string | null | undefined): number {
 function replayedTurn(
   response: AgentHistoryResponse,
   attachmentsById: ReadonlyMap<string, AgentAttachment>,
+  descriptor: WorkspaceDescriptor,
 ): AgentMessage[] {
   const attachedFiles = responseUserAttachmentIds(response.input).flatMap((id) => {
     const attachment = attachmentsById.get(id)
     return attachment ? [attachment] : []
   })
-  const prompt = buildAgentUserPrompt(response.input, attachedFiles) || 'How can I help?'
+  const prompt = buildAgentUserPrompt(response.input, attachedFiles, descriptor) || 'How can I help?'
   const messages: AgentMessage[] = [{
     role: 'user',
     content: prompt,
@@ -77,6 +79,7 @@ export function resolveAgentParentMessages(
   lineage: AgentHistoryResponse[],
   contextsByResponseId: ReadonlyMap<string, unknown>,
   attachmentsById: ReadonlyMap<string, AgentAttachment> = new Map(),
+  descriptor: WorkspaceDescriptor = SANDBOX_WORKSPACE_DESCRIPTOR,
 ): AgentMessage[] {
   let checkpointIndex = -1
   for (let index = lineage.length - 1; index >= 0; index -= 1) {
@@ -90,7 +93,7 @@ export function resolveAgentParentMessages(
     : []
   return [
     ...inherited,
-    ...lineage.slice(checkpointIndex + 1).flatMap((response) => replayedTurn(response, attachmentsById)),
+    ...lineage.slice(checkpointIndex + 1).flatMap((response) => replayedTurn(response, attachmentsById, descriptor)),
   ]
 }
 

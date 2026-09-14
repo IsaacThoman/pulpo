@@ -124,6 +124,7 @@ export function toPublicChat(chat: ChatRow) {
     temporary: chat.temporary,
     activeResponseId: chat.activeResponseId,
     activeBranchLeafId: chat.activeBranchLeafId,
+    workspaceComputerId: chat.workspaceComputerId,
     expiresAt: chat.expiresAt?.toISOString() ?? null,
     createdAt: chat.createdAt.toISOString(),
     updatedAt: chat.updatedAt.toISOString(),

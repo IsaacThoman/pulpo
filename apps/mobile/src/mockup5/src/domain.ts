@@ -124,6 +124,8 @@ export interface PrototypeChat {
   expired?: boolean;
   /** False while a server chat only has list metadata and its transcript is loading. */
   detailLoaded?: boolean;
+  /** Computer the agent works on for this chat; null means the cloud sandbox. Sticky once the first agent turn is sent. */
+  workspaceComputerId?: string | null;
   queuedMessages?: MobileQueuedMessage[];
   messages: PrototypeMessage[];
   deletedAt: number | null;

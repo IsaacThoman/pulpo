@@ -1,0 +1,6 @@
+export { createPathPolicy, isWithinRoot, platformForProcess, type PathPlatform, type PathPolicy, type PathPolicyOptions } from './path-policy.js'
+export { defaultShellFor, killTree, resolvePowerShellExecutable, shellSpawnSpec, spawnShell, type ShellKind, type ShellSpawnSpec } from './shell.js'
+export { globToRegExp, runSearch, type SearchRequest, type SearchResult, type SearchType } from './search.js'
+export { StagedFiles, assertRegularFileWithin, writeStreamToFile, type WriteStreamToFileOptions } from './files.js'
+export { OperationRunner, type Operation, type OperationRunnerOptions, type OperationStatus, type OperationType } from './operations.js'
+export { readTextFile, parseReadArguments, READ_MAX_LINE_LIMIT, READ_MAX_OUTPUT_BYTES, type ReadArguments, type ReadResult, type ReadResultDetails } from '../read.js'

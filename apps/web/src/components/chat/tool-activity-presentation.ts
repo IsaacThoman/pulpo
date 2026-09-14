@@ -24,6 +24,7 @@ const presentations: Record<string, ToolActivityPresentation> = {
   generate_image: { icon: Image, label: 'Generating an image…' },
   view_image: { icon: Image, label: 'Viewing an image…' },
   bash: { icon: Terminal, label: 'Running bash…' },
+  shell: { icon: Terminal, label: 'Running a command…' },
   write: { icon: FilePlus, label: 'Writing a file…' },
   edit: { icon: FilePenLine, label: 'Editing a file…' },
   ls: { icon: List, label: 'Listing files…' },

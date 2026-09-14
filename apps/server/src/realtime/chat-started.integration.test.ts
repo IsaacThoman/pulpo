@@ -12,7 +12,10 @@ vi.mock('../redis.js', () => ({ createRedis: () => ({
 }) }))
 vi.mock('../database/client.js', () => ({ db: { select: () => ({ from: () => ({ where: () => ({ limit: async () => [{ values: { composerSyncEnabled: true } }] }) }) }) } }))
 vi.mock('../config.js', () => ({ getConfig: () => ({}), isAllowedOrigin: () => true }))
-vi.mock('../auth/service.js', () => ({ authenticateSessionToken: async (token: string) => ({ id: token?.split(':')[0], role: 'user' }) }))
+vi.mock('../auth/service.js', () => ({
+  authenticateSessionToken: async (token: string) => ({ id: token?.split(':')[0], role: 'user' }),
+  authenticateSessionTokenWithSession: async (token: string) => ({ user: { id: token?.split(':')[0], role: 'user' }, sessionId: `session-${token?.split(':')[0]}` }),
+}))
 vi.mock('../lib/client-ip.js', () => ({ resolveClientIp: () => '127.0.0.1' }))
 vi.mock('../composer/service.js', () => ({ accessComposer: vi.fn() }))
 vi.mock('../responses/service.js', () => ({ toSnapshot: vi.fn() }))

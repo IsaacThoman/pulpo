@@ -209,4 +209,20 @@ describe('buildTimeline', () => {
     expect(activity.steps).toEqual([{ kind: 'compaction', compaction }])
     expect(activityDurationMs(activity.steps)).toBe(500)
   })
+  it('keeps approval prompts inside the tool activity and marks it live while pending', () => {
+    const future = new Date(Date.now() + 60_000).toISOString()
+    const approval = { id: '11111111-1111-4111-8111-111111111111', type: 'pulpo_approval', tool_call_id: 'call_1', kind: 'bash', summary: 'ls', status: 'pending', computer_name: 'Studio', expires_at: future }
+    const output = [
+      { type: 'pulpo_workspace', state: 'ready', kind: 'computer', computerName: 'Studio' },
+      approval,
+      { type: 'pulpo_tool', id: 'call_1', tool: 'shell', status: 'running' },
+    ]
+    const [activity] = buildTimeline(output, true) as ActivitySegment[]
+    expect(activity?.kind).toBe('activity')
+    expect(activity?.steps.map((step) => step.kind)).toEqual(['workspace', 'approval', 'tool'])
+    expect(activity?.active).toBe(true)
+    const decided = buildTimeline([{ ...approval, status: 'denied' }, { type: 'pulpo_tool', id: 'call_1', tool: 'shell', status: 'failed' }], true) as ActivitySegment[]
+    expect(decided[0]?.active).toBe(false)
+    expect(activityDurationMs(decided[0]!.steps)).toBeUndefined()
+  })
 })

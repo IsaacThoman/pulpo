@@ -16,6 +16,7 @@ import { setComposerSelection } from '../features/chat/composerSelection';
 import { ToolImagePreview } from '../components/ToolImagePreview';
 import { localComposerDraftId, mergePendingAttachments } from '@pulpo/client-core';
 import { DevicesScreen } from '../components/Devices';
+import { ComputersScreen } from '../components/Computers';
 import { initialActivityTiming } from '@pulpo/client-core';
 import { mobileShelf, durableShelfAttachments, shelfComposerAttachments } from '../features/chat/shelf';
 import { useAppTheme } from './src/theme';
@@ -134,16 +135,20 @@ import { StatusBar } from 'expo-status-bar';
 import { SymbolView } from '../platform/SymbolView';
 import { DarkTheme as NavigationDarkTheme, DefaultTheme as NavigationLightTheme, NavigationContainer, useIsFocused } from '@react-navigation/native';
 import { createNativeStackNavigator, type NativeStackScreenProps } from '@react-navigation/native-stack';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { workspaceContinueWithoutAgentAvailableAtMs } from '@pulpo/contracts';
 import {
   Brain,
   Ghost,
   History,
   Hourglass,
+  Laptop,
   Loader2,
   Minimize2,
   Server,
+  ShieldCheck,
+  ShieldQuestion,
+  ShieldX,
   Wrench,
   XCircle,
 } from 'lucide-react-native';
@@ -205,7 +210,7 @@ import { activateOptimisticBranch } from './src/production/optimisticBranches';
 import { cacheNamespace, cacheOpenedChat, deleteResponseCursor, loadDraft, saveDraft } from '../data/database';
 import { queryKeys } from '../data/queries';
 import { enqueueCacheWrite } from '../data/writeBehind';
-import { activateBranch as activateServerBranch, cancelResponse, continueWithoutAgent, deleteMessageCascade as deleteServerMessage, deleteUnreferencedAttachment, downloadAttachment, downloadAttachmentThumbnail, duplicateChat as duplicateServerChat, editMessage as editServerMessage, persistChat as persistServerChat, regenerateResponse as regenerateServerResponse, sendMessage as sendServerMessage, shareAttachment as shareServerAttachment, shareChat as shareServerChat, startChat as startServerChat, uploadAttachment } from '../features/chat/api';
+import { activateBranch as activateServerBranch, cancelResponse, continueWithoutAgent, decideToolApproval, listAgentComputers, requestComputerPairing, deleteMessageCascade as deleteServerMessage, deleteUnreferencedAttachment, downloadAttachment, downloadAttachmentThumbnail, duplicateChat as duplicateServerChat, editMessage as editServerMessage, persistChat as persistServerChat, regenerateResponse as regenerateServerResponse, sendMessage as sendServerMessage, shareAttachment as shareServerAttachment, shareChat as shareServerChat, startChat as startServerChat, uploadAttachment } from '../features/chat/api';
 import { attachmentUploadErrorMessage } from '../features/chat/attachmentUploadError';
 import { subscribeToResponse, useRealtimeStore } from '../providers/realtimeStore';
 import { shouldShowConnectionBanner } from '../providers/realtimeConnection';
@@ -259,7 +264,9 @@ import {
   type HistoryChatExpiryMenuAction,
   type HistoryChatSummary,
 } from '../features/chat/history';
-import { activityDurationMs, buildLegacyMessageTimeline, buildMessageTimeline, completedActivityLabel, timelineActivityIsActive, workspaceIsActive, type TimelineStep } from '../features/chat/timeline';
+import { activityDurationMs, approvalIsPending, buildLegacyMessageTimeline, buildMessageTimeline, completedActivityLabel, timelineActivityIsActive, workspaceIsActive, workspaceLabel, type TimelineStep } from '../features/chat/timeline';
+import type { WorkspaceSelection } from '@pulpo/contracts';
+import { SANDBOX_WORKSPACE, effectiveWorkspaceSelection, workspaceChoices, workspaceMenuLabel } from '../features/chat/workspacePicker';
 import { toolActivityPresentation } from '../features/chat/toolActivityPresentation';
 import { chatLandingKeyboardTranslation, chatKeyboardBlankSpace, isNearChatBottom, resolveKeyboardLayoutProgress, shouldFollowChatContent } from '../features/chat/viewport';
 import {
@@ -575,7 +582,7 @@ type Message = {
   agentMode?: boolean;
 };
 type Chat = { id: string; title: string; modelId: string; time: string; section: string; messages: Message[] };
-type SendOptions = { presetSelections: GenerationSelections; agentEnabled: boolean; temporary: boolean; autoExpire: boolean };
+type SendOptions = { presetSelections: GenerationSelections; agentEnabled: boolean; temporary: boolean; autoExpire: boolean; workspace?: WorkspaceSelection };
 type PrepareAttachments = () => Promise<PreparedAttachment[]>;
 
 function automaticExpirationDeadline(preference: 'disabled' | '24h' | '7d', now = Date.now()): number | null {
@@ -1634,6 +1641,7 @@ function PrototypeRoot() {
         <RootStack.Screen name="DeleteAccount" component={DeleteAccountScreen} options={{ headerShown: false }} />
         <RootStack.Screen name="TwoFactor" component={TwoFactorScreen} options={{ headerShown: false }} />
         <RootStack.Screen name="Devices" component={DevicesScreen} options={{ headerShown: false }} />
+        <RootStack.Screen name="Computers" component={ComputersScreen} options={{ headerShown: false }} />
         <RootStack.Screen name="Passkeys" component={PasskeysScreen} options={{ headerShown: false }} />
         <RootStack.Screen name="InstanceDetails" component={InstanceDetailsScreen} options={{ headerShown: Platform.OS === 'ios', title: 'Pulpo Instance', headerBackTitle: 'Account' }} />
         <RootStack.Screen name="SettingsDetail" component={SettingsDetailScreen} options={{ headerShown: Platform.OS === 'ios', headerBackTitle: 'Settings' }} />
@@ -2441,6 +2449,8 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     const modelId = selectedModel.id;
     const parentResponseId = activePrototypeChat?.messages.filter((message) => message.role === 'assistant').at(-1)?.id ?? null;
     const agentMode = Boolean(options?.agentEnabled && agentAvailable && selectedPrototypeModel?.agentEnabled);
+    // The server locks the workspace to the chat on its first agent turn; later turns inherit it.
+    const workspace = agentMode && !activePrototypeChat?.workspaceComputerId ? options?.workspace : undefined;
     const selections = options?.presetSelections ?? presetSelections;
     const initialExpiresAt = options?.temporary
       ? timestamp + 48 * 60 * 60 * 1_000
@@ -2534,6 +2544,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
           presetSelections: selections,
           attachmentIds: prepared.map((attachment) => attachment.serverId),
           agentMode,
+          workspace,
         });
         if (options?.temporary) pendingTemporaryStart.current = { chatId: key, promise: startPromise };
         let started: Awaited<typeof startPromise>;
@@ -2556,6 +2567,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
           presetSelections: selections,
           attachmentIds: prepared.map((attachment) => attachment.serverId),
           agentMode,
+          workspace,
           temporary: activePrototypeChat?.temporary ?? false,
         });
       }
@@ -2794,6 +2806,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
             queuedMessages={activePrototypeChat?.queuedMessages ?? EMPTY_MOBILE_QUEUE}
             chatId={activeChat?.id ?? (remoteStartedChatId.current === activeChatId ? activeChatId : null)}
             chatLoaded={Boolean(activePrototypeChat && activePrototypeChat.detailLoaded !== false)}
+            workspaceComputerId={activePrototypeChat?.workspaceComputerId ?? null}
             onTranscriptReady={revealSelectedChat}
             openingChatId={openingChat?.id ?? null}
             draftNamespace={productionUserId ? cacheNamespace(productionInstanceUrl, productionUserId) : null}
@@ -3147,10 +3160,12 @@ function WorkTriggerIcon({ steps, active }: { steps: TimelineStep[]; active: boo
     if (compaction.compaction.status === 'failed') return <XCircle color={COLORS.critical} size={14} />;
     return <Minimize2 color={COLORS.muted} size={14} />;
   }
+  if (steps.some((step) => step.kind === 'approval' && approvalIsPending(step.approval))) return <ShieldQuestion color={COLORS.warning} size={14} />;
   const workspace = steps.find((step) => step.kind === 'workspace');
+  const WorkspaceIcon = workspace?.kind === 'workspace' && workspace.workspace.kind === 'computer' ? Laptop : Server;
   if (workspace?.kind === 'workspace') {
     if (['expired', 'unavailable'].includes(workspace.workspace.state ?? '')) return <XCircle color={COLORS.critical} size={14} />;
-    if (workspaceIsActive(workspace.workspace.state)) return <Server color={COLORS.muted} size={14} />;
+    if (workspaceIsActive(workspace.workspace.state)) return <WorkspaceIcon color={COLORS.muted} size={14} />;
   }
   const tools = steps.filter((step) => step.kind === 'tool');
   const runningTool = tools.find((step) => step.tool.status === 'running');
@@ -3162,7 +3177,7 @@ function WorkTriggerIcon({ steps, active }: { steps: TimelineStep[]; active: boo
   if (active) return <Brain color={COLORS.muted} size={14} />;
   if (steps.some((step) => step.kind === 'recall')) return <History color={COLORS.muted} size={14} />;
   if (tools.length > 0) return <Wrench color={COLORS.muted} size={14} />;
-  if (workspace && !steps.some((step) => step.kind === 'reasoning' && step.text)) return <Server color={COLORS.muted} size={14} />;
+  if (workspace && !steps.some((step) => step.kind === 'reasoning' && step.text)) return <WorkspaceIcon color={COLORS.muted} size={14} />;
   return <Brain color={COLORS.muted} size={14} />;
 }
 
@@ -3207,11 +3222,10 @@ function workLabel(steps: TimelineStep[], active: boolean, durationMs?: number):
     if (compaction.compaction.status === 'failed') return 'Context compaction failed';
     return 'Compacted context';
   }
+  if (steps.some((step) => step.kind === 'approval' && approvalIsPending(step.approval))) return 'Waiting for your approval…';
   const workspace = steps.find((step) => step.kind === 'workspace');
   if (workspace?.kind === 'workspace') {
-    if (workspace.workspace.state === 'waiting') return `Waiting for workspace${typeof workspace.workspace.position === 'number' ? ` · queue #${workspace.workspace.position}` : ''}`;
-    if (workspace.workspace.state === 'provisioning') return 'Starting workspace…';
-    if (['expired', 'unavailable'].includes(workspace.workspace.state ?? '')) return `Workspace ${workspace.workspace.state}`;
+    if (workspaceIsActive(workspace.workspace.state) || ['expired', 'unavailable'].includes(workspace.workspace.state ?? '')) return workspaceLabel(workspace.workspace);
   }
   const runningTool = steps.find((step) => step.kind === 'tool' && step.tool.status === 'running');
   if (runningTool?.kind === 'tool') return toolActivityPresentation(runningTool.tool.tool).label;
@@ -3227,7 +3241,7 @@ function toolStepSummary(step: Extract<TimelineStep, { kind: 'tool' }>['tool']):
   const command = typeof record.command === 'string' ? record.command : undefined;
   const pattern = typeof record.pattern === 'string' ? record.pattern : undefined;
   const query = typeof record.query === 'string' ? record.query : undefined;
-  if (step.tool === 'bash' && command) {
+  if ((step.tool === 'bash' || step.tool === 'shell') && command) {
     const oneLine = command.replace(/\s+/g, ' ').trim();
     return oneLine.length > 72 ? `${oneLine.slice(0, 72)}…` : oneLine;
   }
@@ -3327,6 +3341,69 @@ function RecallStepContent({ step, onOpenChat }: {
   })}</View>;
 }
 
+function approvalKindLabel(approval: Extract<TimelineStep, { kind: 'approval' }>['approval']): string {
+  if (approval.kind === 'bash') return `Run a command on ${approval.computer_name}`;
+  if (approval.kind === 'write') return `Create or overwrite a file on ${approval.computer_name}`;
+  return `Edit a file on ${approval.computer_name}`;
+}
+
+function approvalStatusLabel(approval: Extract<TimelineStep, { kind: 'approval' }>['approval']): string {
+  const via = approval.decided_via === 'desktop' ? 'on the computer' : 'in chat';
+  if (approval.status === 'approved') return `Approved ${via}`;
+  if (approval.status === 'denied') return `Denied ${via}`;
+  if (approval.status === 'expired') return 'No decision in time; not run';
+  if (approval.status === 'cancelled') return 'Cancelled';
+  return 'Waiting for your approval';
+}
+
+function ApprovalStepRow({ step }: { step: Extract<TimelineStep, { kind: 'approval' }> }) {
+  const { styles, COLORS } = useChatStyles();
+  const approval = step.approval;
+  const expired = useDeadlineReached(Date.parse(approval.expires_at), approval.status === 'pending');
+  const pending = approval.status === 'pending' && !expired;
+  const [busy, setBusy] = useState<'approve' | 'deny' | null>(null);
+  const decide = (approved: boolean) => {
+    setBusy(approved ? 'approve' : 'deny');
+    void decideToolApproval(approval.id, approved)
+      .catch((error) => Alert.alert('Couldn’t record your decision', error instanceof Error ? error.message : undefined))
+      .finally(() => setBusy(null));
+  };
+  const StatusIcon = pending ? ShieldQuestion : approval.status === 'approved' ? ShieldCheck : ShieldX;
+  const statusColor = pending ? COLORS.warning : approval.status === 'approved' ? COLORS.positive : COLORS.critical;
+  return (
+    <View style={styles.workStep}>
+      <View style={styles.workRow}>
+        <StatusIcon color={statusColor} size={13} />
+        <Text style={styles.approvalTitle}>{approvalKindLabel(approval)}</Text>
+      </View>
+      <ScrollView nestedScrollEnabled style={styles.workDetailScroller}>
+        <Text selectable style={styles.workDetail}>{approval.summary}</Text>
+      </ScrollView>
+      {pending ? (
+        <View style={styles.approvalActions}>
+          <Pressable
+            accessibilityRole="button"
+            disabled={busy !== null}
+            onPress={() => decide(true)}
+            style={({ pressed }) => [styles.continueButton, styles.approvalButton, pressed && styles.navRowPressed]}
+          >
+            <Text style={styles.continueButtonText}>{busy === 'approve' ? 'Approving…' : 'Approve'}</Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            disabled={busy !== null}
+            onPress={() => decide(false)}
+            style={({ pressed }) => [styles.continueButton, styles.approvalButton, pressed && styles.navRowPressed]}
+          >
+            <Text style={[styles.continueButtonText, { color: COLORS.critical }]}>{busy === 'deny' ? 'Denying…' : 'Deny'}</Text>
+          </Pressable>
+        </View>
+      ) : null}
+      <Text style={styles.approvalStatus}>{pending ? `Runs with your permissions on ${approval.computer_name}.` : expired && approval.status === 'pending' ? 'No decision in time; not run' : approvalStatusLabel(approval)}</Text>
+    </View>
+  );
+}
+
 function WorkBlock({ steps, active, durationMs, initialWork, onOpenChat }: {
   steps: TimelineStep[];
   active: boolean;
@@ -3335,7 +3412,10 @@ function WorkBlock({ steps, active, durationMs, initialWork, onOpenChat }: {
   onOpenChat: (chatId: string) => void;
 }) {
   const { styles, COLORS } = useChatStyles();
-  const [open, setOpen] = useState(false);
+  const pendingApproval = steps.some((step) => step.kind === 'approval' && approvalIsPending(step.approval));
+  const [open, setOpen] = useState(pendingApproval);
+  // Surface a new approval prompt without waiting for a tap; the user must act on it.
+  useEffect(() => { if (pendingApproval) setOpen(true); }, [pendingApproval]);
   if (steps.length === 0 && durationMs === undefined) return null;
   const failed = steps.some((step) => (step.kind === 'compaction' && step.compaction.status === 'failed')
     || (step.kind === 'workspace' && ['expired', 'unavailable'].includes(step.workspace.state ?? '')));
@@ -3365,9 +3445,15 @@ function WorkBlock({ steps, active, durationMs, initialWork, onOpenChat }: {
               return <SafeMarkdown selectable={Platform.OS !== 'android'} compact key={`reasoning:${index}`} streaming={step.active}>{step.text || (step.active ? 'Thinking…' : '')}</SafeMarkdown>;
             }
             if (step.kind === 'workspace') {
-              const detail = step.workspace.error ?? step.workspace.state?.replaceAll('_', ' ') ?? 'Workspace';
               const failed = ['expired', 'unavailable'].includes(step.workspace.state ?? '');
-              return <View key={`workspace:${index}`} style={styles.workRow}>{failed ? <XCircle color={COLORS.critical} size={13} /> : <Server color={COLORS.muted} size={13} />}<Text style={styles.workRowText}>{detail}</Text></View>;
+              const WorkspaceIcon = step.workspace.kind === 'computer' ? Laptop : Server;
+              return <View key={`workspace:${index}`} style={styles.workStep}>
+                <View style={styles.workRow}>{failed ? <XCircle color={COLORS.critical} size={13} /> : <WorkspaceIcon color={COLORS.muted} size={13} />}<Text style={[styles.workRowText, step.workspace.kind === 'computer' && styles.workRowTextPlain]}>{workspaceLabel(step.workspace)}</Text></View>
+                {step.workspace.error ? <Text style={styles.approvalError}>{step.workspace.error}</Text> : null}
+              </View>;
+            }
+            if (step.kind === 'approval') {
+              return <ApprovalStepRow key={step.approval.id} step={step} />;
             }
             if (step.kind === 'compaction') {
               return <CompactionStepContent key={step.compaction.id} step={step} />;
@@ -3384,7 +3470,7 @@ function WorkBlock({ steps, active, durationMs, initialWork, onOpenChat }: {
 }
 
 function otherOutputItems(outputItems?: unknown[]): Array<Record<string, unknown>> {
-  const known = new Set(['message', 'reasoning', 'pulpo_tool', 'pulpo_workspace', 'pulpo_attachment', 'pulpo_compaction', 'pulpo_recall']);
+  const known = new Set(['message', 'reasoning', 'pulpo_tool', 'pulpo_workspace', 'pulpo_attachment', 'pulpo_compaction', 'pulpo_recall', 'pulpo_approval']);
   return (outputItems ?? []).filter((item): item is Record<string, unknown> => {
     const type = (item as { type?: unknown }).type;
     return typeof type === 'string' && !known.has(type);
@@ -3915,7 +4001,7 @@ function ComposerQueueSection({ title, subject, visible, collapsed, onToggle, fa
 }
 
 function ChatView({
-  acceptIncomingFiles, messages, queuedMessages, chatId, chatLoaded, onTranscriptReady, openingChatId, draftNamespace, keyboardLayoutEnabled, transcriptTransitionActive, model, models, prototypeModel, presetSelections: defaultPresetSelections, input, composerInputRef, composerFocusSuppressed, composerFocusRequest, onChangeInput, onSend, onRemoteChatStarted, assistantStatus,
+  acceptIncomingFiles, messages, queuedMessages, chatId, chatLoaded, workspaceComputerId, onTranscriptReady, openingChatId, draftNamespace, keyboardLayoutEnabled, transcriptTransitionActive, model, models, prototypeModel, presetSelections: defaultPresetSelections, input, composerInputRef, composerFocusSuppressed, composerFocusRequest, onChangeInput, onSend, onRemoteChatStarted, assistantStatus,
   onEdit, onRegenerate, onActivateBranch, onOpenChat, onStop, onTogglePanel, onOpenModelPicker, onSelectModel, onNewChat, onSaveTemporary, persistentSidebar, sidebarVisible, temporary, autoExpire, expirationPeriod, showAutoExpirationControl, expired, savingTemporary, onTemporaryChange, onAutoExpirationChange,
 }: {
   acceptIncomingFiles: boolean;
@@ -3923,6 +4009,8 @@ function ChatView({
   queuedMessages: MobileQueuedMessage[];
   chatId: string | null;
   chatLoaded: boolean;
+  /** Computer the open chat is locked to, or null for the sandbox / a new chat. */
+  workspaceComputerId: string | null;
   onTranscriptReady: (chatId: string) => void;
   transcriptTransitionActive: boolean;
   openingChatId: string | null;
@@ -4030,6 +4118,35 @@ function ChatView({
     setAgentSelection((current) => current.enabled === enabled ? current : { ...current, enabled });
   }, []);
   const activeAgentEnabled = canUseAgent && agentEnabled;
+  // Workspace choice per composed chat ('new' before the first turn). The server
+  // locks it on the first agent turn and reports it back as workspaceComputerId.
+  const [workspaceSelections, setWorkspaceSelections] = useState<Record<string, WorkspaceSelection>>({});
+  const workspaceKey = chatId ?? 'new';
+  const workspaceSelection = workspaceSelections[workspaceKey] ?? SANDBOX_WORKSPACE;
+  const computersQuery = useQuery({
+    queryKey: queryKeys.agentComputers(draftNamespace ?? 'local'),
+    queryFn: listAgentComputers,
+    enabled: activeAgentEnabled && Boolean(draftNamespace),
+    staleTime: 15_000,
+  });
+  const agentComputers = computersQuery.data?.computers;
+  const workspaceMenuChoices = useMemo(() => (
+    agentComputers?.length || workspaceComputerId ? workspaceChoices(agentComputers ?? [], workspaceSelection, workspaceComputerId) : []
+  ), [agentComputers, workspaceComputerId, workspaceSelection]);
+  const showWorkspaceMenu = activeAgentEnabled && workspaceMenuChoices.length > 0;
+  const sendWorkspace = activeAgentEnabled && !workspaceComputerId ? effectiveWorkspaceSelection(workspaceSelection, agentComputers) : undefined;
+  const chooseWorkspace = useCallback((choice: ReturnType<typeof workspaceChoices>[number]) => {
+    if (choice.action === 'select') {
+      setWorkspaceSelections((current) => ({ ...current, [workspaceKey]: choice.selection }));
+      Haptics.selectionAsync();
+      return;
+    }
+    if (choice.action !== 'pair') return;
+    void requestComputerPairing(choice.id).then(({ pairing }) => {
+      void computersQuery.refetch();
+      if (pairing.status === 'pending') Alert.alert('Pairing requested', `Approve this device on ${choice.label} to use it as a workspace.`);
+    }).catch((error) => Alert.alert('Couldn’t request pairing', error instanceof Error ? error.message : undefined));
+  }, [computersQuery, workspaceKey]);
   const [attachments, setAttachmentState] = useState<ComposerAttachment[]>([]);
   const attachmentsRequireAgent = attachments.some((attachment) => attachment.kind === 'file')
     || imageBatchNeedsWorkspace(attachments.filter((attachment) => attachment.kind !== 'file').map((attachment) => ({ sizeBytes: attachment.size })), maxInlineImages);
@@ -5087,7 +5204,7 @@ function ChatView({
           return onSend(
             submittedDraft.input,
             submittedDraft.attachments,
-            { presetSelections, agentEnabled: activeAgentEnabled, temporary, autoExpire },
+            { presetSelections, agentEnabled: activeAgentEnabled, temporary, autoExpire, workspace: sendWorkspace },
             async () => {
               const prepared = await Promise.all(submittedDraft.attachments.map(uploadOne));
               if (prepared.some((attachment) => attachment === null)) {
@@ -5140,13 +5257,13 @@ function ChatView({
   const submitSuggestion = useCallback((message: string) => {
     if (isDictationBusy()) return;
     const followSnapshot = armSubmittedTurnFollow();
-    void onSend(message, [], { presetSelections, agentEnabled: activeAgentEnabled, temporary, autoExpire }).then((accepted) => {
+    void onSend(message, [], { presetSelections, agentEnabled: activeAgentEnabled, temporary, autoExpire, workspace: sendWorkspace }).then((accepted) => {
       if (!accepted) restoreSubmittedTurnFollow(followSnapshot);
     }).catch((error) => {
       restoreSubmittedTurnFollow(followSnapshot);
       Alert.alert('Couldn’t send message', error instanceof Error ? error.message : undefined);
     });
-  }, [activeAgentEnabled, armSubmittedTurnFollow, autoExpire, onSend, presetSelections, restoreSubmittedTurnFollow, temporary, isDictationBusy]);
+  }, [activeAgentEnabled, armSubmittedTurnFollow, autoExpire, onSend, presetSelections, restoreSubmittedTurnFollow, sendWorkspace, temporary, isDictationBusy]);
 
   const nativeAgentTint = colorScheme === 'dark' ? '#BF5AF2' : '#AF52DE';
   const agentLabel = activeAgentEnabled ? 'Pulpo Agent' : 'Disabled';
@@ -5808,6 +5925,39 @@ function ChatView({
                     { label: 'Disabled', icon: 'bot-off', selected: !activeAgentEnabled, onPress: () => selectAgent(false) },
                   ]} />
                 )}
+                {showWorkspaceMenu && (Platform.OS === 'ios' ? (
+                  <SwiftUIHost ignoreSafeArea="keyboard" matchContents style={styles.workspaceMenuHost}>
+                    <SwiftUIMenu
+                      label={workspaceMenuLabel(workspaceMenuChoices)}
+                      modifiers={[
+                        buttonStyle('glass'),
+                        buttonBorderShape('capsule'),
+                        controlSize('regular'),
+                        swiftUIAccessibilityLabel(`Workspace, ${workspaceMenuLabel(workspaceMenuChoices)}`),
+                        swiftUIAccessibilityHint(workspaceComputerId ? 'This chat already runs on this computer' : 'Choose where the agent works'),
+                        swiftUIDisabled(Boolean(workspaceComputerId)),
+                      ]}
+                    >
+                      <SwiftUISection title="Workspace">
+                        {workspaceMenuChoices.map((choice) => (
+                          <SwiftUIButton
+                            key={choice.id}
+                            label={`${choice.label} · ${choice.detail}`}
+                            systemImage={choice.selected ? 'checkmark' : choice.action === 'pair' ? 'link.badge.plus' : choice.id === 'sandbox' ? 'cloud' : 'laptopcomputer'}
+                            modifiers={choice.action === null && !choice.selected ? [swiftUIDisabled(true)] : undefined}
+                            onPress={() => chooseWorkspace(choice)}
+                          />
+                        ))}
+                      </SwiftUISection>
+                    </SwiftUIMenu>
+                  </SwiftUIHost>
+                ) : (
+                  <MaterialMenu label={`Workspace, ${workspaceMenuLabel(workspaceMenuChoices)}`} text={workspaceMenuLabel(workspaceMenuChoices)} compact icon="chevron.down" disabled={Boolean(workspaceComputerId)} actions={workspaceMenuChoices.map((choice) => ({
+                    id: choice.id, label: choice.action === 'pair' ? `Pair ${choice.label}` : choice.label, detail: choice.detail,
+                    selected: choice.selected, disabled: choice.action === null && !choice.selected,
+                    onPress: () => chooseWorkspace(choice),
+                  }))} />
+                ))}
                 <View style={styles.flex} />
                 {dictationEnabled && (Platform.OS === 'ios'
                   ? <NativeComposerIconButton label={dictationLabel} systemImage={dictation.phase === 'recording' ? 'stop.fill' : 'mic'} prominent={dictation.phase === 'recording'} disabled={dictationDisabled} onPress={dictation.phase === 'recording' ? dictation.stop : dictation.start} />
@@ -6474,6 +6624,13 @@ function createChatStyles(COLORS: ChatColors) { return StyleSheet.create({
   workBlockCollapsed: { marginBottom: -4 },
   workRow: { flexDirection: 'row', alignItems: 'center', gap: 7, minHeight: 22 },
   workRowText: { color: COLORS.muted, fontSize: 12.5, lineHeight: 18, flex: 1, textTransform: 'capitalize' },
+  workRowTextPlain: { textTransform: 'none' },
+  approvalTitle: { color: COLORS.textSoft, fontSize: 12.5, lineHeight: 18, fontWeight: '600', flex: 1 },
+  approvalActions: { flexDirection: 'row', gap: 8 },
+  approvalButton: { flex: 1, alignSelf: 'auto', marginTop: 0 },
+  approvalStatus: { color: COLORS.muted, fontSize: 11, lineHeight: 15 },
+  approvalError: { color: COLORS.critical, fontSize: 12, lineHeight: 17 },
+  workspaceMenuHost: { minHeight: 44, justifyContent: 'center', maxWidth: 180 },
   workRowTitle: { color: COLORS.textSoft, fontSize: 12.5, lineHeight: 18, fontWeight: '600', flex: 1 },
   workStep: { gap: 5 },
   compactionDetail: { gap: 12 },

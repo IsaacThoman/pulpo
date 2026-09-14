@@ -5,6 +5,7 @@ import { db } from '../database/client.js'
 import { auditEvents, sessions } from '../database/schema.js'
 import { newId } from '../lib/ids.js'
 import { publishSessionRevocation } from '../responses/events.js'
+import { detachComputersFromSessions } from '../agent/computer/registry.js'
 
 type Session = typeof sessions.$inferSelect
 
@@ -45,6 +46,9 @@ export async function revokeDeviceSessions(actorId: string, userId: string, inpu
   const filters: SQL[] = [eq(sessions.userId, userId)]
   if (input.kind === 'one') filters.push(eq(sessions.id, input.sessionId))
   if (input.kind === 'others') filters.push(ne(sessions.id, input.currentId))
+  const doomed = await db.select({ id: sessions.id }).from(sessions).where(and(...filters))
+  // Computers owned by these sessions go offline and drop their pairings before the rows disappear.
+  await detachComputersFromSessions(doomed.map((row) => row.id))
   const ids = await db.transaction(async (tx) => {
     const deleted = await tx.delete(sessions).where(and(...filters)).returning({ id: sessions.id })
     const sessionIds = deleted.map((row) => row.id)
