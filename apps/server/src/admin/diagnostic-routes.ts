@@ -3,9 +3,9 @@ import { z } from 'zod'
 import type { FastifyInstance } from 'fastify'
 import { requireAdmin } from '../auth/service.js'
 import { db } from '../database/client.js'
-import { generationAttempts, providerDiagnostics } from '../database/schema.js'
+import { generationAttempts, providerDiagnostics, diagnosticPolicy } from '../database/schema.js'
 import { notFound } from '../lib/errors.js'
-import { detailedPayloadCaptureIsActive } from '../logging/detailed-payload-retention.js'
+import { diagnosticPayloadAvailability } from '../logging/diagnostic-policy.js'
 import { retentionHealth } from '../logging/retention-health.js'
 
 const metadataColumns = {
@@ -38,11 +38,12 @@ export function registerDiagnosticRoutes(app: FastifyInstance) {
     requireAdmin(request); reply.header('Cache-Control', 'no-store')
     const { id } = z.object({ id: z.uuid() }).parse(request.params)
     return db.transaction(async tx => {
+      const [policy] = await tx.select().from(diagnosticPolicy).where(eq(diagnosticPolicy.id, 1)).for('share').limit(1)
       const [row] = await tx.select().from(providerDiagnostics).where(eq(providerDiagnostics.id, id)).for('share').limit(1)
       if (!row) throw notFound('Provider attempt')
-      const active = detailedPayloadCaptureIsActive(row)
+      const { active, expiresAt } = diagnosticPayloadAvailability(row, policy)
       return { id, available: active && (row.requestPayload != null || row.responsePayload != null),
-        payloadExpiresAt: row.payloadExpiresAt, unavailableReason: active ? null : row.payloadExpiresAt && row.payloadExpiresAt <= new Date() ? 'expired' : 'not_captured_or_cleared',
+        payloadExpiresAt: expiresAt, unavailableReason: active ? null : expiresAt <= new Date() ? 'expired' : 'not_captured_or_cleared',
         requestPayload: active ? row.requestPayload : null, responsePayload: active ? row.responsePayload : null }
     })
   })

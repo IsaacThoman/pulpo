@@ -670,6 +670,7 @@ export const requestLogs = pgTable('request_logs', {
   index('request_logs_created_idx').on(table.createdAt),
   index('request_logs_status_idx').on(table.status),
   index('request_logs_payload_expiry_idx').on(table.payloadExpiresAt),
+  index('request_logs_retained_idx').on(table.payloadExpiresAt, table.id).where(sql`${table.captureDetailedPayloads} or ${table.requestPayload} is not null or ${table.responsePayload} is not null`),
 ])
 
 export const generationAttempts = pgTable('generation_attempts', {
@@ -713,7 +714,7 @@ export const ocrAttempts = pgTable('ocr_attempts', {
   responsePayload: losslessJson('response_payload'),
   durationMs: integer('duration_ms'),
   ...timestamps,
-})
+}, (table) => [index('ocr_attempts_retained_idx').on(table.requestLogId, table.id).where(sql`${table.requestPayload} is not null or ${table.responsePayload} is not null`)])
 
 export const ocrCacheEntries = pgTable('ocr_cache_entries', {
   checksum: text('checksum').primaryKey(),
@@ -1282,6 +1283,7 @@ export const imageGenerationRequests = pgTable('image_generation_requests', {
 // Diagnostic copies have their own lifetime; conversation records remain authoritative.
 export const providerDiagnostics = pgTable('provider_diagnostics', {
   id: uuid('id').primaryKey(),
+  payloadEpoch: bigint('payload_epoch', { mode: 'number' }).notNull().default(0),
   requestLogId: uuid('request_log_id').references(() => requestLogs.id, { onDelete: 'cascade' }),
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   modelCallId: uuid('model_call_id'),
@@ -1301,4 +1303,14 @@ export const providerDiagnostics = pgTable('provider_diagnostics', {
   ...timestamps,
 }, table => [index('provider_diagnostics_log_idx').on(table.requestLogId, table.createdAt),
   index('provider_diagnostics_expiry_idx').on(table.payloadExpiresAt),
+  index('provider_diagnostics_retained_idx').on(table.payloadExpiresAt, table.id).where(sql`${table.requestPayload} is not null or ${table.responsePayload} is not null`),
+  index('provider_diagnostics_epoch_idx').on(table.payloadEpoch, table.id).where(sql`${table.requestPayload} is not null or ${table.responsePayload} is not null`),
   index('provider_diagnostics_created_idx').on(table.createdAt)])
+
+export const diagnosticPolicy = pgTable('diagnostic_policy', {
+  id: integer('id').primaryKey().default(1),
+  epoch: bigint('epoch', { mode: 'number' }).notNull().default(0),
+  enabled: boolean('enabled').notNull().default(false),
+  retentionSeconds: integer('retention_seconds'),
+  expiredBefore: timestamp('expired_before', { withTimezone: true }),
+}, table => [check('diagnostic_policy_id_check', sql`${table.id} = 1`)])

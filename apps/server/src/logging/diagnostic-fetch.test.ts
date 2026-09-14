@@ -2,10 +2,11 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 const mocks = vi.hoisted(() => ({ begin: vi.fn(), update: vi.fn(), write: vi.fn() }))
 vi.mock('./provider-diagnostics.js', () => ({ beginDiagnostic: mocks.begin, updateDiagnostic: mocks.update, writeDiagnosticPayload: mocks.write,
+  observeDiagnostic: (fn: () => unknown) => { try { return fn() } catch { return undefined } },
   diagnosticContext: new AsyncLocalStorage(), diagnosticFailure: () => ({ failureStage: 'transport' }) }))
 import { diagnosticFetch } from './diagnostic-fetch.js'
 import { diagnosticPayload, MAX_DIAGNOSTIC_BYTES, parseDiagnosticBody } from './diagnostic-sanitizer.js'
-beforeEach(() => { vi.clearAllMocks(); mocks.begin.mockResolvedValue({ id: 'attempt', capture: true }); mocks.update.mockResolvedValue(undefined); mocks.write.mockResolvedValue(undefined) })
+beforeEach(() => { vi.clearAllMocks(); mocks.begin.mockReturnValue({ id: 'attempt', capture: true }); mocks.update.mockReturnValue(undefined); mocks.write.mockReturnValue(undefined) })
 const context = { purpose: 'image_edit', userId: 'user', providerId: 'provider', modelId: 'image' }
 
 describe('provider diagnostics', () => {
@@ -14,24 +15,24 @@ describe('provider diagnostics', () => {
     const fetch = diagnosticFetch(context, vi.fn().mockResolvedValue(Response.json(body, { status: 400, headers: { 'x-request-id': 'req-123', 'retry-after': '3' } })))
     const response = await fetch('https://provider.test/v1/images/edits?api_key=SECRET_VALUE', { method: 'POST', headers: { Authorization: 'Bearer SECRET_VALUE' }, body: JSON.stringify({ prompt: 'hat', api_key: 'SECRET_VALUE' }) })
     await response.body?.cancel()
-    expect(mocks.update).toHaveBeenCalledWith('attempt', expect.objectContaining({ httpStatus: 400, providerRequestId: 'req-123', retryAfter: '3' }))
-    expect(mocks.update).toHaveBeenCalledWith('attempt', expect.objectContaining({ errorCode: 'invalid_image', errorParameter: 'image', failureStage: 'provider' }), 'failed')
+    expect(mocks.update).toHaveBeenCalledWith(expect.objectContaining({ id: 'attempt' }), expect.objectContaining({ httpStatus: 400, providerRequestId: 'req-123', retryAfter: '3' }))
+    expect(mocks.update).toHaveBeenCalledWith(expect.objectContaining({ id: 'attempt' }), expect.objectContaining({ errorCode: 'invalid_image', errorParameter: 'image', failureStage: 'provider' }), 'failed')
     expect(JSON.stringify([mocks.update.mock.calls, mocks.write.mock.calls])).not.toContain('SECRET_VALUE')
   })
   it('captures metadata but no request or response bodies when logging is off', async () => {
-    mocks.begin.mockResolvedValue({ id: 'off', capture: false })
+    mocks.begin.mockReturnValue({ id: 'off', capture: false })
     const fetch = diagnosticFetch(context, vi.fn().mockResolvedValue(Response.json({ error: { code: 'bad_input', message: 'Invalid image' } }, { status: 400 })))
     await fetch('https://provider.test', { body: JSON.stringify({ prompt: 'private' }), method: 'POST' })
     expect(mocks.write).not.toHaveBeenCalled()
-    expect(mocks.update).toHaveBeenCalledWith('off', expect.objectContaining({ errorCode: 'bad_input' }), 'failed')
+    expect(mocks.update).toHaveBeenCalledWith(expect.objectContaining({ id: 'off' }), expect.objectContaining({ errorCode: 'bad_input' }), 'failed')
   })
   it('preserves successful stream bytes, records first-token time and redacts image data', async () => {
     const text = 'data: {"type":"response.output_text.delta","delta":"hello"}\n\ndata: {"b64_json":"AAAA","usage":{"output_tokens":1}}\n\n'
     const fetch = diagnosticFetch(context, vi.fn().mockResolvedValue(new Response(text, { headers: { 'content-type': 'text/event-stream' } })))
     const response = await fetch('https://provider.test')
     expect(await response.text()).toBe(text)
-    expect(mocks.update).toHaveBeenCalledWith('attempt', expect.objectContaining({ firstTokenMs: expect.any(Number) }), 'completed')
-    expect(mocks.write).toHaveBeenCalledWith('attempt', 'responsePayload', expect.objectContaining({ fidelity: 'reconstructed' }))
+    expect(mocks.update).toHaveBeenCalledWith(expect.objectContaining({ id: 'attempt' }), expect.objectContaining({ firstTokenMs: expect.any(Number) }), 'completed')
+    expect(mocks.write).toHaveBeenCalledWith(expect.objectContaining({ id: 'attempt' }), 'responsePayload', expect.objectContaining({ fidelity: 'reconstructed' }))
     expect(JSON.stringify(mocks.write.mock.calls)).not.toContain('AAAA')
   })
   it('records cancellation without draining an unbounded stream', async () => {
@@ -41,7 +42,7 @@ describe('provider diagnostics', () => {
     const response = await fetch('https://provider.test')
     const reader = response.body!.getReader(); await reader.read(); await reader.cancel()
     expect(cancel).toHaveBeenCalledOnce()
-    expect(mocks.update).toHaveBeenCalledWith('attempt', expect.objectContaining({ failureStage: 'cancelled' }), 'cancelled')
+    expect(mocks.update).toHaveBeenCalledWith(expect.objectContaining({ id: 'attempt' }), expect.objectContaining({ failureStage: 'cancelled' }), 'cancelled')
   })
   it('bounds capture and omits multipart binary data', async () => {
     const form = new FormData(); form.set('prompt', 'edit'); form.set('image[]', new Blob(['binary-private'], { type: 'image/jpeg' }), 'private-name.jpg')
@@ -49,7 +50,7 @@ describe('provider diagnostics', () => {
     await (await fetch('https://provider.test', { method: 'POST', body: form })).text()
     expect(JSON.stringify(mocks.write.mock.calls)).not.toContain('binary-private')
     expect(JSON.stringify(mocks.write.mock.calls)).not.toContain('private-name.jpg')
-    expect(mocks.write).toHaveBeenCalledWith('attempt', 'responsePayload', expect.objectContaining({ fidelity: 'truncated' }))
+    expect(mocks.write).toHaveBeenCalledWith(expect.objectContaining({ id: 'attempt' }), 'responsePayload', expect.objectContaining({ fidelity: 'truncated' }))
     expect(JSON.stringify(mocks.write.mock.calls).length).toBeLessThan(MAX_DIAGNOSTIC_BYTES + 2000)
   })
   it('labels changes accurately and removes signed URLs and media', () => {
@@ -59,12 +60,12 @@ describe('provider diagnostics', () => {
     expect(parseDiagnosticBody('{"b64_json":"' + 'A'.repeat(MAX_DIAGNOSTIC_BYTES), 'application/json', true)).toEqual({ fidelity: 'truncated', body: '[body exceeded capture limit]' })
   })
   it('retains a provider stream failure even when payload capture is disabled', async () => {
-    mocks.begin.mockResolvedValue({ id: 'off', capture: false })
+    mocks.begin.mockReturnValue({ id: 'off', capture: false })
     const body = 'data: {"type":"response.failed","response":{"error":{"code":"server_error","message":"Stream failed"}}}\n\n'
     const fetch = diagnosticFetch(context, vi.fn().mockResolvedValue(new Response(body, { headers: { 'content-type': 'text/event-stream' } })))
     expect(await (await fetch('https://provider.test')).text()).toBe(body)
     expect(mocks.write).not.toHaveBeenCalled()
-    expect(mocks.update).toHaveBeenCalledWith('off', expect.objectContaining({ failureStage: 'provider_stream', errorCode: 'server_error' }), 'failed')
+    expect(mocks.update).toHaveBeenCalledWith(expect.objectContaining({ id: 'off' }), expect.objectContaining({ failureStage: 'provider_stream', errorCode: 'server_error' }), 'failed')
   })
   it('bounds serialized JSON and omits short binary content blocks', () => {
     const payload = diagnosticPayload({ text: '\u0001'.repeat(MAX_DIAGNOSTIC_BYTES / 2) })
@@ -72,6 +73,28 @@ describe('provider diagnostics', () => {
     expect(Buffer.byteLength(JSON.stringify(payload.body))).toBeLessThanOrEqual(MAX_DIAGNOSTIC_BYTES)
     expect(diagnosticPayload({ type: 'image', data: 'AAAA' }).body).toEqual({ type: 'image', data: '[media omitted]' })
     expect(diagnosticPayload({ type: 'image_generation_call', result: 'AAAA' }).body).toEqual({ type: 'image_generation_call', result: '[media omitted]' })
+  })
+
+  it.each(['begin', 'update', 'write'] as const)('does not fail successful bytes when %s throws', async step => {
+    mocks[step].mockImplementation(() => { throw new Error('diagnostics unavailable') })
+    const body = 'data: {"type":"response.output_text.delta","delta":"hello"}\n\n'
+    const base = vi.fn().mockResolvedValue(new Response(body, { headers: { 'content-type': 'text/event-stream' } }))
+    const fetch = diagnosticFetch(context, base)
+    expect(await (await fetch('https://provider.test', { method: 'POST', body: '{}' })).text()).toBe(body)
+    expect(base).toHaveBeenCalledOnce()
+  })
+  it('preserves the original transport error when failure bookkeeping throws', async () => {
+    mocks.update.mockImplementation(() => { throw new Error('database failure') })
+    const original = new Error('provider disconnected')
+    await expect(diagnosticFetch(context, vi.fn().mockRejectedValue(original))('https://provider.test')).rejects.toBe(original)
+  })
+  it('keeps cancellation successful when final bookkeeping throws', async () => {
+    mocks.update.mockImplementation(() => { throw new Error('database failure') })
+    const cancel = vi.fn()
+    const source = new ReadableStream({ pull(c) { c.enqueue(new TextEncoder().encode('hello')) }, cancel })
+    const response = await diagnosticFetch(context, vi.fn().mockResolvedValue(new Response(source)))('https://provider.test')
+    await expect(response.body!.cancel()).resolves.toBeUndefined()
+    expect(cancel).toHaveBeenCalledOnce()
   })
 
 })

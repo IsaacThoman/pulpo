@@ -71,6 +71,7 @@ export const FULL_BACKUP_TEMPORARY_DATA_POLICY = {
   banners: 'preserve',
   request_logs: 'request-log',
   generation_attempts: 'generation-attempt',
+  diagnostic_policy: 'preserve',
   provider_diagnostics: 'generation-attempt',
   ocr_attempts: 'ocr-attempt',
   ocr_cache_entries: 'ocr-cache',

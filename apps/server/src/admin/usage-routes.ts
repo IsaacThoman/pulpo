@@ -356,6 +356,6 @@ export async function registerAdminUsageRoutes(app: FastifyInstance): Promise<vo
     const ocr = await db.select().from(ocrAttempts).where(eq(ocrAttempts.requestLogId, call.requestLogId)).orderBy(asc(ocrAttempts.createdAt))
     const [agentRun] = log ? await db.select().from(agentRuns).where(eq(agentRuns.responseId, log.responseId)).limit(1) : []
     const tools = agentRun ? await db.select().from(toolExecutions).where(eq(toolExecutions.agentRunId, agentRun.id)).orderBy(asc(toolExecutions.createdAt)) : []
-    return { call, request: log ? { ...log, requestPayload: undefined, responsePayload: undefined } : null, ocrAttempts: ocr.map((attempt) => log && detailedPayloadCaptureIsActive(log) ? attempt : { ...attempt, requestPayload: null, responsePayload: null }), toolExecutions: tools.map(tool => log && detailedPayloadCaptureIsActive(log) ? tool : { ...tool, arguments: {}, output: null }) }
+    return { call, request: log ? { ...log, requestPayload: undefined, responsePayload: undefined } : null, ocrAttempts: ocr.map((attempt) => log && detailedPayloadCaptureIsActive(log) ? attempt : { ...attempt, requestPayload: null, responsePayload: null }), toolExecutions: tools }
   })
 }

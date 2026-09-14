@@ -334,6 +334,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
   const turnPricing = new Map<number, ActivePricing>()
   const turnProviderCosts = new Map<number, () => Promise<number | undefined>>()
   const turnRequestPayloads = new Map<number, unknown>()
+  const turnFirstTokenMs = new Map<number, number>()
   const turnRetryAttempts = new Map<number, number>()
   let currentRetryAttempt = 1
   let lastResponder: { runtime: RuntimeModel; pricing: ActivePricing } | undefined
@@ -635,6 +636,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
     model: (await selectedImageModel(record.response.userId))?.model ?? null,
     onStarted: markToolStarted,
     execute: (operationId, args, signal) => executeImageGeneration({
+      requestLogId: requestLog.id,
       operationId, args, signal, userId: record.response.userId, chatId: record.response.chatId,
       responseId, runId, manager, reserveCost: micros => micros > 0 ? extendBudgetReservationFixedCost(responseId, micros) : Promise.resolve(),
     }),
@@ -851,9 +853,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
       const substantiveOutput = agentStreamEventHasSubstantiveOutput(update)
       if (substantiveOutput) {
         firstTokenTimeout?.clear()
-        if (!turnOutputStarted.has(modelTurns)) {
-          await db.update(generationAttempts).set({ firstTokenMs: Date.now() - (modelTurnStartedAt.get(modelTurns) ?? Date.now()) }).where(eq(generationAttempts.id, turnAttemptIds.get(modelTurns)!))
-        }
+        if (!turnOutputStarted.has(modelTurns)) turnFirstTokenMs.set(modelTurns, Date.now() - (modelTurnStartedAt.get(modelTurns) ?? Date.now()))
         turnOutputStarted.add(modelTurns)
       }
       if (update.type === 'text_delta') await emit('response.output_text.delta', {
@@ -876,7 +876,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
       firstTokenTimeout?.clear()
       const message = event.message as AssistantMessage
       const completedTurnNumber = modelTurns
-      if (active.codex) await recordReconstructedDiagnostic({ requestLogId: requestLog.id, modelCallId: turnAttemptIds.get(modelTurns), purpose: 'generation', providerId: active.provider.id, modelId: active.model.id, upstreamModelId: active.model.upstreamModelId }, turnRequestPayloads.get(modelTurns), message, { turnNumber: modelTurns }, message.stopReason === 'error' ? 'failed' : 'completed')
+      if (active.codex) await recordReconstructedDiagnostic({ requestLogId: requestLog.id, modelCallId: turnAttemptIds.get(modelTurns), purpose: 'generation', providerId: active.provider.id, modelId: active.model.id, upstreamModelId: active.model.upstreamModelId }, turnRequestPayloads.get(modelTurns), message, { turnNumber: modelTurns, firstTokenMs: turnFirstTokenMs.get(modelTurns) }, message.stopReason === 'error' ? 'failed' : 'completed')
       turnRequestPayloads.delete(completedTurnNumber)
       const completedRuntime = turnRuntime.get(completedTurnNumber) ?? { runtime: active, index: activeIndex }
       const turnUsage = { inputTokens: message.usage.input + message.usage.cacheRead + message.usage.cacheWrite, cachedInputTokens: message.usage.cacheRead, cacheWriteTokens: message.usage.cacheWrite, outputTokens: message.usage.output, reasoningTokens: message.usage.reasoning ?? 0, totalTokens: message.usage.totalTokens }

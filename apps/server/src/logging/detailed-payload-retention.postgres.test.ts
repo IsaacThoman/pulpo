@@ -37,7 +37,9 @@ describe.skipIf(!url)('detailed payload retention in PostgreSQL', () => {
     await client`alter table request_logs add column response_id text`
     await client`create temporary table agent_runs (id text primary key, response_id text)`
     await client`create temporary table tool_executions (id text primary key, agent_run_id text, arguments text, output text, updated_at timestamptz)`
-    await client`create temporary table provider_diagnostics (id text primary key, retention_started_at timestamptz, created_at timestamptz, updated_at timestamptz, capture_detailed_payloads boolean, payload_expires_at timestamptz, request_payload text, response_payload text)`
+    await client`create temporary table diagnostic_policy(id integer primary key, enabled boolean, epoch bigint, retention_seconds integer, expired_before timestamptz)`
+    await client`insert into diagnostic_policy values (1,true,0,86400,null)`
+    await client`create temporary table provider_diagnostics (id text primary key, payload_epoch bigint default 0, retention_started_at timestamptz, created_at timestamptz, updated_at timestamptz, capture_detailed_payloads boolean, payload_expires_at timestamptz, request_payload text, response_payload text)`
     await client`create temporary table ocr_attempts (id text primary key, request_log_id text references request_logs(id), updated_at timestamptz, request_payload jsonb, response_payload jsonb)`
   })
   beforeEach(async () => { await client`truncate ocr_attempts, request_logs, provider_diagnostics` })

@@ -1,4 +1,5 @@
-import { retentionHealth } from './logging/retention-health.js'
+import { refreshDiagnosticPolicy, closeDiagnostics } from './logging/provider-diagnostics.js'
+import { retentionHealth, sampleRetentionBacklog } from './logging/retention-health.js'
 import { safeErrorMessage } from './database/errors.js'
 import { deleteAccountData, resumeAccountDeletions } from './account/deletion.js'
 import { createServer } from 'node:http'
@@ -28,6 +29,7 @@ import { processCodexLogin } from './codex/login.js'
 import { reconcileOffsiteBackupJobs, runOffsiteBackupSchedule } from './admin/backup-scheduler.js'
 
 const config = getConfig()
+await refreshDiagnosticPolicy()
 const readGenerationConcurrency = async (): Promise<number> => {
   const [row] = await db.select({ value: applicationSettings.value })
     .from(applicationSettings)
@@ -77,16 +79,16 @@ const concurrencyRefreshInterval = setInterval(() => {
 concurrencyRefreshInterval.unref()
 
 const payloadRetentionWorker = new Worker('payload-retention', async () => {
-  await db.transaction(async (tx) => {
-    await tx.execute(sql`select pg_advisory_xact_lock(1886747744)`)
-    const result = await purgeExpiredDetailedPayloads((query) => tx.execute(query))
-    await tx.execute(sql`insert into application_settings (key, value) values ('diagnosticCleanup', ${JSON.stringify({ lastSuccessAt: new Date().toISOString(), clearedRecords: result.clearedRecords, consecutiveFailures: 0 })}::jsonb)
-      on conflict (key) do update set value = application_settings.value || excluded.value, updated_at = now()`)
-
+  const { result, backlog } = await db.transaction(async tx => {
+    await tx.execute(sql`set local statement_timeout = '5s'`)
+    const result = await purgeExpiredDetailedPayloads(query => tx.execute(query))
+    const backlog = await sampleRetentionBacklog(query => tx.execute(query))
+    return { result, backlog }
   })
+  await db.execute(sql`insert into application_settings (key, value) values ('diagnosticCleanup', ${JSON.stringify({ ...result, ...backlog, lastSuccessAt: new Date().toISOString(), consecutiveFailures: 0 })}::jsonb)
+    on conflict (key) do update set value = application_settings.value || excluded.value || jsonb_build_object('previousOverdueRecords', coalesce((application_settings.value->>'overdueRecords')::int, 0)), updated_at = now()`)
   const health = await retentionHealth()
   if (health.alert) console.error(JSON.stringify({ level: 'error', event: 'payload_retention.alert', ...health }))
-  await db.execute(sql`update application_settings set value = value || ${JSON.stringify({ lastOverdueRecords: health.overdueRecords })}::jsonb where key = 'diagnosticCleanup'`)
 }, { connection: { url: config.REDIS_URL }, concurrency: 1 })
 payloadRetentionWorker.on('failed', (job, error) => {
   void db.execute(sql`insert into application_settings (key, value) values ('diagnosticCleanup', ${JSON.stringify({ lastFailureAt: new Date().toISOString(), consecutiveFailures: 1 })}::jsonb)
@@ -223,6 +225,7 @@ const shutdown = async (signal: string) => {
   // Stop all consumers from taking more jobs immediately, then drain them
   // together. Sequential close could keep accepting work during shutdown.
   await Promise.all(workers.map((worker) => worker.close()))
+  await closeDiagnostics()
   process.exit(0)
 }
 

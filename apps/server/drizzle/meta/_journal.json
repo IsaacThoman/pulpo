@@ -540,6 +540,13 @@
       "when": 1789423825338,
       "tag": "0076_provider_diagnostics",
       "breakpoints": true
+    },
+    {
+      "idx": 77,
+      "version": "7",
+      "when": 1789429417723,
+      "tag": "0077_diagnostic_writer_policy",
+      "breakpoints": true
     }
   ]
 }

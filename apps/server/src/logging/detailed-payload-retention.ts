@@ -51,44 +51,48 @@ export function activeDetailedPayloadCondition(requestLogId: string, now: Date |
 
 type ExecuteSql = (query: SQL) => Promise<unknown>
 
-/** Clear bodies atomically with their OCR children; callers supply a transaction. */
-export async function purgeExpiredDetailedPayloads(execute: ExecuteSql, now = new Date()): Promise<{ clearedRecords: number }> {
+export const PAYLOAD_CLEANUP_BATCH_SIZE = 500
+
+/** Bounded maintenance statements; never acquire the global settings lock. */
+export async function purgeExpiredDetailedPayloads(execute: ExecuteSql, now = new Date(), includeProviders = true): Promise<{ clearedRecords: number; deletedRecords: number }> {
   const requests = await execute(sql`
-    update request_logs
-    set capture_detailed_payloads = false,
-        request_payload = null,
-        response_payload = null,
-        updated_at = ${now.toISOString()}
-    where (payload_expires_at <= ${now.toISOString()} or capture_detailed_payloads = false)
-      and (capture_detailed_payloads = true or request_payload is not null or response_payload is not null)
+    update request_logs set capture_detailed_payloads = false, request_payload = null, response_payload = null, updated_at = ${now.toISOString()}
+    where id in (select id from request_logs where (payload_expires_at <= ${now.toISOString()} or capture_detailed_payloads = false)
+      and (capture_detailed_payloads or request_payload is not null or response_payload is not null)
+      order by payload_expires_at, id limit ${PAYLOAD_CLEANUP_BATCH_SIZE} for update skip locked)
     returning id
   `)
   const ocr = await execute(sql`
-    update ocr_attempts as ocr
-    set request_payload = null,
-        response_payload = null,
-        updated_at = ${now.toISOString()}
-    from request_logs as log
-    where ocr.request_log_id = log.id
-      and (log.capture_detailed_payloads = false or log.payload_expires_at <= ${now.toISOString()})
-      and (ocr.request_payload is not null or ocr.response_payload is not null)
-    returning ocr.id
-  `)
-  const diagnostics = await execute(sql`
-    update provider_diagnostics set capture_detailed_payloads = false, request_payload = null, response_payload = null, updated_at = ${now.toISOString()}
-    where (payload_expires_at <= ${now.toISOString()} or capture_detailed_payloads = false)
-      and (capture_detailed_payloads = true or request_payload is not null or response_payload is not null)
+    update ocr_attempts set request_payload = null, response_payload = null, updated_at = ${now.toISOString()}
+    where id in (select o.id from ocr_attempts o join request_logs log on log.id = o.request_log_id
+      where (not log.capture_detailed_payloads or log.payload_expires_at <= ${now.toISOString()})
+      and (o.request_payload is not null or o.response_payload is not null)
+      limit ${PAYLOAD_CLEANUP_BATCH_SIZE} for update of o skip locked)
     returning id
   `)
-  const tools = await execute(sql`
-    update tool_executions as tool set arguments = '{}', output = null, updated_at = ${now.toISOString()}
-    from agent_runs run, request_logs log
-    where tool.agent_run_id = run.id and run.response_id = log.response_id
-      and (not log.capture_detailed_payloads or log.payload_expires_at <= ${now.toISOString()})
-      and (tool.arguments <> '{}' or tool.output is not null)
-    returning tool.id
-  `)
-  return { clearedRecords: [requests, ocr, diagnostics, tools].reduce<number>((n, rows) => n + (Array.isArray(rows) ? rows.length : 0), 0) }
+  const diagnostics = includeProviders ? await execute(sql`
+    update provider_diagnostics set capture_detailed_payloads = false, request_payload = null, response_payload = null, updated_at = ${now.toISOString()}
+    where id in (select d.id from provider_diagnostics d cross join diagnostic_policy p
+      where (d.request_payload is not null or d.response_payload is not null)
+      and (not p.enabled or not d.capture_detailed_payloads or d.payload_epoch <> p.epoch or d.retention_started_at <= p.expired_before
+        or least(d.payload_expires_at, d.retention_started_at + make_interval(secs => p.retention_seconds), d.created_at + interval '90 days') <= ${now.toISOString()})
+      limit ${PAYLOAD_CLEANUP_BATCH_SIZE} for update of d skip locked)
+    returning id
+  `) : []
+  const deleted = includeProviders ? await execute(sql`delete from provider_diagnostics where id in (
+    select id from provider_diagnostics where created_at <= ${now.toISOString()}::timestamptz - interval '90 days'
+    order by created_at limit ${PAYLOAD_CLEANUP_BATCH_SIZE} for update skip locked) returning id`) : []
+  return { clearedRecords: [requests, ocr, diagnostics].reduce<number>((n, rows) => n + (Array.isArray(rows) ? rows.length : 0), 0),
+    deletedRecords: Array.isArray(deleted) ? deleted.length : 0 }
+}
+
+/** Only this small row is shared with the background writer, never the global advisory lock. */
+async function synchronizeDiagnosticPolicy(execute: ExecuteSql, logging: DetailedPayloadLoggingSettings) {
+  const seconds = logging.payloadRetention === 'indefinite' ? null : retentionMs[logging.payloadRetention] / 1000
+  await execute(sql`update diagnostic_policy set enabled = ${logging.logDetailedPayloads}, retention_seconds = ${seconds},
+    epoch = epoch + ${logging.logDetailedPayloads ? 0 : 1},
+    expired_before = greatest(expired_before, case when enabled then clock_timestamp() - make_interval(secs => retention_seconds) end,
+      case when ${logging.logDetailedPayloads} then clock_timestamp() - make_interval(secs => ${seconds}) end) where id = 1`)
 }
 
 /**
@@ -120,14 +124,13 @@ export async function reconcileDetailedPayloadRetention(
           updated_at = ${now.toISOString()}
       where request_payload is not null or response_payload is not null
     `)
-    await execute(sql`update provider_diagnostics set capture_detailed_payloads = false, request_payload = null, response_payload = null, payload_expires_at = null, updated_at = ${now.toISOString()}
-      where capture_detailed_payloads = true or request_payload is not null or response_payload is not null`)
-    await purgeExpiredDetailedPayloads(execute, now)
+    await purgeExpiredDetailedPayloads(execute, now, false)
+    await synchronizeDiagnosticPolicy(execute, logging)
     return
   }
 
   // Expiry is irreversible, including between scheduled cleanup runs.
-  await purgeExpiredDetailedPayloads(execute, now)
+  await purgeExpiredDetailedPayloads(execute, now, false)
 
   if (logging.payloadRetention === 'indefinite') {
     await execute(sql`
@@ -135,9 +138,9 @@ export async function reconcileDetailedPayloadRetention(
       set payload_expires_at = null,
           updated_at = ${now.toISOString()}
       where capture_detailed_payloads = true
-        and payload_expires_at is not null
+        and payload_expires_at > ${now.toISOString()}
     `)
-    await execute(sql`update provider_diagnostics set payload_expires_at = null, updated_at = ${now.toISOString()} where capture_detailed_payloads = true and payload_expires_at is not null`)
+    await synchronizeDiagnosticPolicy(execute, logging)
     return
   }
 
@@ -146,8 +149,8 @@ export async function reconcileDetailedPayloadRetention(
     update request_logs
     set payload_expires_at = created_at + make_interval(secs => ${durationSeconds}),
         updated_at = ${now.toISOString()}
-    where capture_detailed_payloads = true
+    where capture_detailed_payloads = true and (payload_expires_at is null or payload_expires_at > ${now.toISOString()})
   `)
-  await execute(sql`update provider_diagnostics set payload_expires_at = retention_started_at + make_interval(secs => ${durationSeconds}), updated_at = ${now.toISOString()} where capture_detailed_payloads = true`)
-  await purgeExpiredDetailedPayloads(execute, now)
+  await synchronizeDiagnosticPolicy(execute, logging)
+  await purgeExpiredDetailedPayloads(execute, now, false)
 }

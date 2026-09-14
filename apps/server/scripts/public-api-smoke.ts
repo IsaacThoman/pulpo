@@ -16,6 +16,8 @@ if (new URL(process.env.DATABASE_URL ?? 'http://invalid').pathname !== '/pulpo_p
   throw new Error('Use a migrated disposable database named pulpo_public_api_test and a dedicated Redis instance with database /15')
 }
 process.env.LOG_LEVEL = 'silent'
+const { refreshDiagnosticPolicy, flushDiagnostics, closeDiagnostics } = await import('../src/logging/provider-diagnostics.js')
+const { reconcileDetailedPayloadRetention } = await import('../src/logging/detailed-payload-retention.js')
 const { db, queryClient } = await import('../src/database/client.js')
 const schema = await import('../src/database/schema.js')
 const { encryptSecret } = await import('../src/lib/crypto.js')
@@ -138,6 +140,8 @@ try {
     await check(`lossless Windows output: ${protocol}, stream=${stream}, logging=${capture}`, async () => {
       await db.insert(schema.applicationSettings).values({ key: 'logging', value: { logDetailedPayloads: capture, payloadRetention: '7d' } })
         .onConflictDoUpdate({ target: schema.applicationSettings.key, set: { value: { logDetailedPayloads: capture, payloadRetention: '7d' } } })
+      await db.transaction(tx => reconcileDetailedPayloadRetention(query => tx.execute(query), { logDetailedPayloads: capture, payloadRetention: '7d' }))
+      await refreshDiagnosticPolicy()
       fixture = () => ({ output: [message(unusualText)] })
       const body = protocol === 'chat/completions'
         ? { model, stream, messages: [
@@ -174,6 +178,7 @@ try {
       const [log] = await db.select().from(schema.requestLogs).where(eq(schema.requestLogs.responseId, saved.id))
       assert.equal(log!.captureDetailedPayloads, capture)
       assert.equal(log!.requestPayload, null); assert.equal(log!.responsePayload, null)
+      await flushDiagnostics()
       const attempts = await db.select().from(schema.providerDiagnostics).where(eq(schema.providerDiagnostics.requestLogId, log!.id))
       assert.equal(attempts.length, 1)
       const attempt = attempts[0]!
@@ -441,7 +446,7 @@ try {
   await app.close()
   await Promise.all(Object.values(queues).map(queue => queue.close()))
   await redis.quit()
-  await queryClient.end()
+  await closeDiagnostics(); await queryClient.end()
   upstream.closeAllConnections(); upstream.close()
 }
 console.log(`\n${passed} passed; ${failures.length} failed${process.env.OPENCODE_BIN ? '' : '; OpenCode not run (set OPENCODE_BIN)'}`)

@@ -25,9 +25,10 @@ describe('diagnostic inspection', () => {
     { captureDetailedPayloads: false, payloadExpiresAt: null, retained: false },
     { captureDetailedPayloads: true, payloadExpiresAt: null, retained: true },
   ])('gates bodies before cleanup for $captureDetailedPayloads / $payloadExpiresAt', async ({ retained, ...policy }) => {
-    const row = { id, ...policy, requestPayload: { body: 'private request' }, responsePayload: { body: 'private result' } }
+    const row = { id, ...policy, payloadEpoch: 0, createdAt: new Date(), retentionStartedAt: new Date(), requestPayload: { body: 'private request' }, responsePayload: { body: 'private result' } }
     const query = { from: () => query, where: () => query, for: () => query, limit: async () => [row] }
-    mocks.select.mockReturnValue(query)
+    const policyQuery = { from: () => policyQuery, where: () => policyQuery, for: () => policyQuery, limit: async () => [{ enabled: true, epoch: 0, retentionSeconds: null }] }
+    mocks.select.mockReturnValueOnce(policyQuery).mockReturnValue(query)
     const response = await appFor('admin').inject(`/api/admin/usage/diagnostics/${id}/payloads`)
     expect(response.statusCode).toBe(200); expect(response.headers['cache-control']).toBe('no-store')
     expect(response.json()).toMatchObject({ available: retained, requestPayload: retained ? row.requestPayload : null, responsePayload: retained ? row.responsePayload : null })
@@ -38,7 +39,7 @@ describe('diagnostic inspection', () => {
     { state: { lastSuccessAt: new Date(0).toISOString() }, overdue: '0', oldest: null, alert: 'five minutes' },
     { state: { lastSuccessAt: new Date().toISOString(), lastOverdueRecords: 1 }, overdue: '2', oldest: new Date(0).toISOString(), alert: 'backlog is growing' },
   ])('reports cleanup health $alert', async ({ alert, ...row }) => {
-    mocks.execute.mockResolvedValue([row])
+    mocks.execute.mockResolvedValue([{ state: { ...row.state, overdueRecords: row.overdue, oldestOverdueAt: row.oldest, previousOverdueRecords: 'lastOverdueRecords' in row.state ? row.state.lastOverdueRecords : 0 } }])
     const response = await appFor('admin').inject('/api/admin/usage/diagnostics/retention')
     expect(response.statusCode).toBe(200)
     if (alert) expect(response.json().alert).toContain(alert)

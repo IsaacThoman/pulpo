@@ -1,3 +1,4 @@
+import { refreshDiagnosticPolicy, flushDiagnostics, closeDiagnostics } from '../logging/provider-diagnostics.js'
 import { randomUUID } from 'node:crypto'
 import { Readable } from 'node:stream'
 import Fastify, { type FastifyRequest, type FastifyInstance } from 'fastify'
@@ -61,6 +62,7 @@ describe.skipIf(!enabled)('image generation persistence and authorization', () =
   })
   beforeEach(async () => {
     await db.update(budgetReservations).set({ status: 'released' }).where(eq(budgetReservations.userId, userId))
+    await refreshDiagnosticPolicy()
     role = 'admin'; mocks.writeFails = false; exportFile.mockReset(); stageGeneratedAttachment.mockReset().mockResolvedValue(undefined)
     await db.delete(imageModels).where(eq(imageModels.id, config.id))
     await db.insert(imageModels).values({ id: config.id, providerConnectionId: providerId, config })
@@ -71,6 +73,7 @@ describe.skipIf(!enabled)('image generation persistence and authorization', () =
     vi.stubGlobal('fetch', fetcher)
   })
   afterAll(async () => {
+    await closeDiagnostics()
     vi.unstubAllGlobals(); await server?.close()
     await db.delete(chats).where(eq(chats.id, chatId))
     await db.delete(usageEvents).where(eq(usageEvents.userId, userId))
@@ -97,6 +100,7 @@ describe.skipIf(!enabled)('image generation persistence and authorization', () =
     const input = await turn()
     fetcher.mockResolvedValue(Response.json({ error: { code: 'invalid_image', message: 'Unsupported reference format' } }, { status: 400, headers: { 'x-request-id': 'req-image-failed' } }))
     await expect(executeImageGeneration(input)).rejects.toThrow()
+    await flushDiagnostics()
     const [diagnostic] = await db.select().from(providerDiagnostics).where(eq(providerDiagnostics.operationId, input.operationId))
     expect(diagnostic).toMatchObject({ status: 'failed', providerId, modelId: config.id, requestPayload: null, responsePayload: null, metadata: { httpStatus: 400, errorCode: 'invalid_image', providerRequestId: 'req-image-failed' } })
     const [tool] = await db.select().from(toolExecutions).where(eq(toolExecutions.operationId, input.operationId))

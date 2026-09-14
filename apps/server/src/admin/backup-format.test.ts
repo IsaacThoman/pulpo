@@ -26,7 +26,7 @@ describe('full backup format', () => {
 
   it('accepts full backups created before episodic memory was introduced', () => {
     expect(OPTIONAL_TABLES_IN_LEGACY_BACKUPS).toEqual([
-      'provider_diagnostics', 'image_models', 'image_generation_requests',
+      'diagnostic_policy', 'provider_diagnostics', 'image_models', 'image_generation_requests',
       'speech_models', 'speech_requests', 'speech_resource_cleanup',
       'user_memory_documents',
       'user_memory_document_revisions',
@@ -124,7 +124,7 @@ it('restores old model samples as default-voice previews and preserves separate 
   expect(database.speech_models[2]).toMatchObject({ voice_previews: [] })
 })
 
- it('scrubs provider and tool diagnostics without changing conversation content or billing', () => {
+ it('scrubs provider diagnostics while preserving historical tools, conversation content and billing', () => {
    const database = {
      request_logs: [{ id: 'log', response_id: 'response', capture_detailed_payloads: true, payload_expires_at: new Date(0).toISOString() }],
      provider_diagnostics: [{ id: 'attempt', request_log_id: 'log', created_at: new Date().toISOString(), retention_started_at: new Date(0).toISOString(), capture_detailed_payloads: true, payload_expires_at: new Date(0).toISOString(), request_payload: { prompt: 'secret' }, metadata: { httpStatus: 400 } }],
@@ -135,6 +135,18 @@ it('restores old model samples as default-voice previews and preserves separate 
    }
    applyFullBackupCompatibilityDefaults(database)
    expect(database.provider_diagnostics[0]).toMatchObject({ capture_detailed_payloads: false, request_payload: null, response_payload: null, metadata: { httpStatus: 400 } })
-   expect(database.tool_executions[0]).toMatchObject({ arguments: {}, output: null, billed_cost_micros: 42 })
+   expect(database.tool_executions[0]).toMatchObject({ arguments: { prompt: 'secret' }, output: 'private', billed_cost_micros: 42 })
    expect(database.responses[0]).toMatchObject({ output: 'conversation' })
  })
+
+it('scrubs stale provider epochs while preserving old tool bodies with logging disabled', () => {
+  const database = {
+    diagnostic_policy: [{ epoch: 2 }],
+    provider_diagnostics: [{ payload_epoch: 1, created_at: new Date().toISOString(), capture_detailed_payloads: true, payload_expires_at: new Date(Date.now() + 3600000).toISOString(), request_payload: 'private' }],
+    tool_executions: [{ arguments: { command: 'historical' }, output: 'historical output' }],
+    application_settings: [{ key: 'logging', value: { logDetailedPayloads: false, payloadRetention: '7d' } }],
+  }
+  applyFullBackupCompatibilityDefaults(database)
+  expect(database.provider_diagnostics[0]).toMatchObject({ request_payload: null, capture_detailed_payloads: false })
+  expect(database.tool_executions[0]).toEqual({ arguments: { command: 'historical' }, output: 'historical output' })
+})

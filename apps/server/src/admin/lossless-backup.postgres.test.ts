@@ -87,6 +87,6 @@ it.skipIf(!enabled)('preserves conversation, tools, context and OCR through full
   await purgeExpiredDetailedPayloads(query => db.execute(query))
   expect((await db.select().from(requestLogs))[0]).toMatchObject({ requestPayload: null, responsePayload: null })
   expect((await db.select().from(ocrAttempts))[0]).toMatchObject({ requestPayload: null, responsePayload: null })
-  expect((await db.select().from(toolExecutions))[0]).toMatchObject({ arguments: {}, output: null, error: unusualText, providerAttempts: [unusualPayload] })
+  expect((await db.select().from(toolExecutions))[0]).toMatchObject({ arguments: unusualPayload, output: unusualText, error: unusualText, providerAttempts: [unusualPayload] })
   expect((await db.select().from(providerDiagnostics))[0]).toMatchObject({ requestPayload: null, responsePayload: null, metadata: { httpStatus: 200 } })
 }, 30_000)

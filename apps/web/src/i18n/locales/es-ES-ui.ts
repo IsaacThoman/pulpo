@@ -1,4 +1,10 @@
 const esUi: Record<string, string> = {
+  "Provider and tool diagnostics are retained for 90 days. Billing records and chat history follow their existing retention policies.": "Los diagnósticos de proveedores y herramientas se conservan durante 90 días. Los registros de facturación y el historial de chat mantienen sus políticas de retención actuales.",
+  "Diagnostic payloads may contain prompts, responses, reasoning, and tool inputs/output. Turning logging off makes these copies unavailable immediately; cleanup removes them in batches. Historical tool records and existing backups are preserved. Chat history, attachments, and saved agent context have separate lifetimes.": "Los datos de diagnóstico pueden contener instrucciones, respuestas, razonamiento y entradas o salidas de herramientas. Al desactivar el registro, estas copias dejan de estar disponibles de inmediato y la limpieza las elimina por lotes. Se conservan los registros históricos de herramientas y las copias de seguridad existentes. El historial de chat, los archivos adjuntos y el contexto guardado del agente tienen plazos de conservación independientes.",
+  "Expired bodies become unavailable immediately. Cleanup runs every minute in bounded batches. Counts come from the last cleanup snapshot.": "Los datos vencidos dejan de estar disponibles de inmediato. La limpieza se ejecuta cada minuto en lotes de tamaño limitado. Los recuentos corresponden a la última medición de limpieza.",
+  "Cleanup snapshot": "Última medición de limpieza",
+  "Diagnostic rows deleted": "Filas de diagnóstico eliminadas",
+
   "Operational metadata, errors, timing, token counts, cost, retry, fallback, and OCR state are always retained.": "Los metadatos operativos, errores, tiempos, recuentos de tokens, costes, reintentos, alternativas y el estado de OCR siempre se conservan.",
   "Provider and tool attempts": "Intentos de proveedores y herramientas",
   "No diagnostic attempts recorded.": "No hay intentos de diagnóstico registrados.",
