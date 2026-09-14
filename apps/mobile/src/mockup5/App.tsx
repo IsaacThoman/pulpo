@@ -25,6 +25,7 @@ import type { MenuAnchor } from '../platform/MaterialUI.types';
 import { promptText, selectText, showActions } from '../platform/materialActions';
 import { QueuedMessagesView } from '../native/QueuedMessagesView';
 import { AgentModeMenuView } from '../native/AgentModeMenuView';
+import { StatusBarGradientView } from '../native/StatusBarGradientView';
 import { openAttachmentFile } from '../native/openFile';
 import { shareLocalFile } from '../native/shareFile';
 import { enqueueMessage, mutateQueuedMessage, shouldQueueMessage } from '../features/chat/messageQueue';
@@ -5534,6 +5535,9 @@ function ChatView({
         pointerEvents="box-none"
         style={[styles.chatHeaderOverlay, { paddingTop: insets.top }]}
       >
+        {Platform.OS === 'ios' && (
+          <StatusBarGradientView style={{ position: 'absolute', top: 0, left: 0, right: 0, height: insets.top + 16 }} />
+        )}
         {/* Header */}
         <AppHeader edgeAligned>
           <RoundButton

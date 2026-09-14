@@ -28,6 +28,8 @@ public final class PulpoFileClipboardModule: Module {
     }
     .runOnQueue(DispatchQueue.main)
 
+    View(StatusBarGradientView.self) {}
+
     View(QueuedMessagesView.self) {
       Events("onAction", "onContentHeightChange")
       Prop("rows") { (view, value: [QueuedMessageRow]) in
