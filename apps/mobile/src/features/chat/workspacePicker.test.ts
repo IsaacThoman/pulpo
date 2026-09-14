@@ -12,7 +12,7 @@ const unpaired: AgentComputer = { ...base, id: '00000000-0000-4000-8000-00000000
 
 describe('workspaceChoices', () => {
   it('offers the sandbox first and marks selectable computers', () => {
-    const choices = workspaceChoices([base, unpaired], { kind: 'sandbox' }, null)
+    const choices = workspaceChoices([base, unpaired], { kind: 'sandbox' })
     expect(choices.map((choice) => [choice.label, choice.action, choice.selected])).toEqual([
       ['Cloud sandbox', 'select', true],
       ['Studio Mac', 'select', false],
@@ -22,12 +22,12 @@ describe('workspaceChoices', () => {
     expect(choices[2]!.detail).toBe('Windows · Pair this device')
   })
 
-  it('locks a chat to the computer it already runs on', () => {
-    const choices = workspaceChoices([base, unpaired], { kind: 'sandbox' }, base.id)
-    expect(choices).toHaveLength(1)
-    expect(choices[0]).toMatchObject({ id: base.id, selected: true, action: null })
+  it('allows follow-ups to switch to another computer or the sandbox', () => {
+    const selection = { kind: 'computer' as const, computerId: base.id }
+    const choices = workspaceChoices([base, { ...base, id: 'other', name: 'Other' }], selection)
+    expect(choices.map((choice) => [choice.action, choice.selected])).toEqual([['select', false], ['select', true], ['select', false]])
     expect(workspaceMenuLabel(choices)).toBe('Studio Mac')
-    expect(workspaceChoices([], { kind: 'sandbox' }, unpaired.id)[0]).toMatchObject({ selected: true, action: null })
+    expect(workspaceChoices([], selection)[1]).toMatchObject({ selected: true, action: null })
   })
 
   it('describes why a computer is unavailable', () => {
@@ -38,10 +38,11 @@ describe('workspaceChoices', () => {
     expect(computerHint({ ...base, accessMode: 'full' })).toBe('Full access')
   })
 
-  it('falls back to the sandbox when the chosen computer stopped being selectable', () => {
+  it('inherits the last choice without silently rerouting unavailable computers', () => {
     const selection = { kind: 'computer' as const, computerId: base.id }
-    expect(effectiveWorkspaceSelection(selection, [base])).toEqual(selection)
-    expect(effectiveWorkspaceSelection(selection, [{ ...base, selectable: false }])).toEqual({ kind: 'sandbox' })
-    expect(effectiveWorkspaceSelection(undefined, [base])).toEqual({ kind: 'sandbox' })
+    expect(effectiveWorkspaceSelection(selection, null)).toEqual(selection)
+    expect(effectiveWorkspaceSelection(undefined, base.id)).toEqual(selection)
+    expect(effectiveWorkspaceSelection({ kind: 'sandbox' }, base.id)).toEqual({ kind: 'sandbox' })
+    expect(effectiveWorkspaceSelection(undefined, null)).toEqual({ kind: 'sandbox' })
   })
 })

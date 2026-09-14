@@ -266,7 +266,7 @@ import {
 } from '../features/chat/history';
 import { activityDurationMs, approvalIsPending, buildLegacyMessageTimeline, buildMessageTimeline, completedActivityLabel, timelineActivityIsActive, workspaceIsActive, workspaceLabel, type TimelineStep } from '../features/chat/timeline';
 import type { WorkspaceSelection } from '@pulpo/contracts';
-import { SANDBOX_WORKSPACE, effectiveWorkspaceSelection, workspaceChoices, workspaceMenuLabel } from '../features/chat/workspacePicker';
+import { effectiveWorkspaceSelection, workspaceChoices, workspaceMenuLabel } from '../features/chat/workspacePicker';
 import { toolActivityPresentation } from '../features/chat/toolActivityPresentation';
 import { chatLandingKeyboardTranslation, chatKeyboardBlankSpace, isNearChatBottom, resolveKeyboardLayoutProgress, shouldFollowChatContent } from '../features/chat/viewport';
 import {
@@ -2432,6 +2432,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
         input: trimmed, modelId: selectedModel.id, presetSelections: options?.presetSelections ?? presetSelections,
         attachmentIds: prepared.map((item) => item.serverId),
         agentMode: Boolean(options?.agentEnabled && agentAvailable && selectedPrototypeModel?.agentEnabled),
+        workspace: options?.agentEnabled ? options.workspace : undefined,
       }, prepared.map((item) => ({ id: item.serverId, name: item.name, mimeType: item.mimeType, sizeBytes: item.size ?? 0 })), activePrototypeChat?.temporary ?? false);
       return true;
     }
@@ -2449,8 +2450,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     const modelId = selectedModel.id;
     const parentResponseId = activePrototypeChat?.messages.filter((message) => message.role === 'assistant').at(-1)?.id ?? null;
     const agentMode = Boolean(options?.agentEnabled && agentAvailable && selectedPrototypeModel?.agentEnabled);
-    // The server locks the workspace to the chat on its first agent turn; later turns inherit it.
-    const workspace = agentMode && !activePrototypeChat?.workspaceComputerId ? options?.workspace : undefined;
+    const workspace = agentMode ? options?.workspace : undefined;
     const selections = options?.presetSelections ?? presetSelections;
     const initialExpiresAt = options?.temporary
       ? timestamp + 48 * 60 * 60 * 1_000
@@ -2467,6 +2467,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
         folderId: null,
         temporary: options?.temporary ?? false,
         expiresAt: initialExpiresAt,
+        workspaceComputerId: workspace?.kind === 'computer' ? workspace.computerId : null,
         deletedAt: null,
         purgeAt: null,
         messages: [],
@@ -2663,6 +2664,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     content: string,
     attachments: PreparedAttachment[] = [],
     agentMode = Boolean(message.agentMode),
+    workspace?: WorkspaceSelection,
   ): Promise<boolean> => {
     const chatId = message.chatId ?? activeChatId;
     if (!chatId || !productionUserId || (message.role !== 'user' && effectiveAssistantStatus !== 'idle')) return false;
@@ -2704,6 +2706,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
         presetSelections: selections,
         attachmentIds: message.role === 'user' ? attachments.map((attachment) => attachment.serverId) : undefined,
         agentMode: message.role === 'user' ? agentMode : undefined,
+        workspace: message.role === 'user' && agentMode ? workspace : undefined,
         clientId: responseId,
       });
       const responseActive = trackActiveResponse(response);
@@ -4028,7 +4031,7 @@ function ChatView({
   onRemoteChatStarted: (chatId: string) => void;
   onSend: (value?: string, attachments?: ComposerAttachment[], options?: SendOptions, prepareAttachments?: PrepareAttachments) => Promise<boolean>;
   assistantStatus: 'idle' | 'thinking' | 'streaming';
-  onEdit: (message: Message, content: string, attachments?: PreparedAttachment[], agentMode?: boolean) => Promise<boolean>;
+  onEdit: (message: Message, content: string, attachments?: PreparedAttachment[], agentMode?: boolean, workspace?: WorkspaceSelection) => Promise<boolean>;
   onRegenerate: (message: Message) => void;
   onActivateBranch: (message: Message, branchId: string) => Promise<void>;
   onOpenChat: (chatId: string) => void;
@@ -4118,11 +4121,10 @@ function ChatView({
     setAgentSelection((current) => current.enabled === enabled ? current : { ...current, enabled });
   }, []);
   const activeAgentEnabled = canUseAgent && agentEnabled;
-  // Workspace choice per composed chat ('new' before the first turn). The server
-  // locks it on the first agent turn and reports it back as workspaceComputerId.
+  // Each follow-up inherits the last workspace unless the composer selects another.
   const [workspaceSelections, setWorkspaceSelections] = useState<Record<string, WorkspaceSelection>>({});
   const workspaceKey = chatId ?? 'new';
-  const workspaceSelection = workspaceSelections[workspaceKey] ?? SANDBOX_WORKSPACE;
+  const workspaceSelection = effectiveWorkspaceSelection(workspaceSelections[workspaceKey], workspaceComputerId);
   const computersQuery = useQuery({
     queryKey: queryKeys.agentComputers(draftNamespace ?? 'local'),
     queryFn: listAgentComputers,
@@ -4131,10 +4133,10 @@ function ChatView({
   });
   const agentComputers = computersQuery.data?.computers;
   const workspaceMenuChoices = useMemo(() => (
-    agentComputers?.length || workspaceComputerId ? workspaceChoices(agentComputers ?? [], workspaceSelection, workspaceComputerId) : []
-  ), [agentComputers, workspaceComputerId, workspaceSelection]);
+    agentComputers?.length || workspaceSelection.kind === 'computer' ? workspaceChoices(agentComputers ?? [], workspaceSelection) : []
+  ), [agentComputers, workspaceSelection]);
   const showWorkspaceMenu = activeAgentEnabled && workspaceMenuChoices.length > 0;
-  const sendWorkspace = activeAgentEnabled && !workspaceComputerId ? effectiveWorkspaceSelection(workspaceSelection, agentComputers) : undefined;
+  const sendWorkspace = activeAgentEnabled ? workspaceSelection : undefined;
   const chooseWorkspace = useCallback((choice: ReturnType<typeof workspaceChoices>[number]) => {
     if (choice.action === 'select') {
       setWorkspaceSelections((current) => ({ ...current, [workspaceKey]: choice.selection }));
@@ -4613,6 +4615,7 @@ function ChatView({
       onSelectModel(selected);
       setDraftPresets((current) => ({ ...current, [selected.id]: selected.id === item.modelId ? item.presetSelections : {} }));
       setAgentEnabled(item.agentMode);
+      if (item.workspace) setWorkspaceSelections((current) => ({ ...current, [workspaceKey]: item.workspace! }));
     });
   };
 
@@ -5176,7 +5179,7 @@ function ChatView({
         if (queueEdit) {
           await mutateQueuedMessage(queueClient, queueEdit.namespace, queueEdit.chatId, queueEdit.id, {
             action: 'save_edit', input: submittedDraft.input.trim(), modelId: model.id, presetSelections,
-            agentMode: activeAgentEnabled, attachmentIds: (prepared as PreparedAttachment[]).map((item) => item.serverId),
+            agentMode: activeAgentEnabled, workspace: sendWorkspace, attachmentIds: (prepared as PreparedAttachment[]).map((item) => item.serverId),
           }, (prepared as PreparedAttachment[]).map((item) => ({ id: item.serverId, name: item.name, mimeType: item.mimeType, sizeBytes: item.size ?? 0 })));
           if (queueEditRef.current === queueEdit && messageEditChatIdRef.current === queueEdit.chatId) restoreComposer();
           return;
@@ -5186,6 +5189,7 @@ function ChatView({
           submittedDraft.input.trim(),
           prepared as PreparedAttachment[],
           activeAgentEnabled,
+          sendWorkspace,
         );
         if (accepted) {
           for (const attachment of submittedDraft.attachments) latestAttachmentsRef.current.delete(attachment.localId);
@@ -5934,8 +5938,7 @@ function ChatView({
                         buttonBorderShape('capsule'),
                         controlSize('regular'),
                         swiftUIAccessibilityLabel(`Workspace, ${workspaceMenuLabel(workspaceMenuChoices)}`),
-                        swiftUIAccessibilityHint(workspaceComputerId ? 'This chat already runs on this computer' : 'Choose where the agent works'),
-                        swiftUIDisabled(Boolean(workspaceComputerId)),
+                        swiftUIAccessibilityHint('Choose where the agent works for the next message'),
                       ]}
                     >
                       <SwiftUISection title="Workspace">
@@ -5952,7 +5955,7 @@ function ChatView({
                     </SwiftUIMenu>
                   </SwiftUIHost>
                 ) : (
-                  <MaterialMenu label={`Workspace, ${workspaceMenuLabel(workspaceMenuChoices)}`} text={workspaceMenuLabel(workspaceMenuChoices)} compact icon="chevron.down" disabled={Boolean(workspaceComputerId)} actions={workspaceMenuChoices.map((choice) => ({
+                  <MaterialMenu label={`Workspace, ${workspaceMenuLabel(workspaceMenuChoices)}`} text={workspaceMenuLabel(workspaceMenuChoices)} compact icon="chevron.down" actions={workspaceMenuChoices.map((choice) => ({
                     id: choice.id, label: choice.action === 'pair' ? `Pair ${choice.label}` : choice.label, detail: choice.detail,
                     selected: choice.selected, disabled: choice.action === null && !choice.selected,
                     onPress: () => chooseWorkspace(choice),

@@ -258,6 +258,7 @@ export async function editMessage(input: {
   modelId?: string
   presetSelections?: Record<string, string>
   attachmentIds?: string[]
+  workspace?: WorkspaceSelection
   agentMode?: boolean
   clientId?: string
 }): Promise<ResponseSnapshot> {
@@ -272,6 +273,7 @@ export async function editMessage(input: {
       presetSelections: input.presetSelections,
       attachmentIds: input.attachmentIds,
       agentMode: input.agentMode,
+      workspace: input.workspace,
     },
   })
   useRealtimeStore.getState().receiveSnapshot(result.response)

@@ -66,21 +66,16 @@ export function decideToolApproval(approvalId: string, approved: boolean): Promi
   return apiRequest(`/api/agent/approvals/${approvalId}/${approved ? 'approve' : 'deny'}`, { method: 'POST' })
 }
 
-/**
- * The workspace a send should actually request. A computer that is no longer selectable
- * (offline, disabled, unpaired) falls back to the sandbox rather than failing the send.
- */
-export function effectiveWorkspaceSelection(selection: WorkspaceSelection | null, computers: readonly AgentComputer[] | undefined): WorkspaceSelection {
-  if (!selection || selection.kind === 'sandbox') return { kind: 'sandbox' }
-  const computer = computers?.find((entry) => entry.id === selection.computerId)
-  return computer?.selectable ? selection : { kind: 'sandbox' }
+/** Preserve an explicit choice; otherwise continue on the last selected workspace. */
+export function effectiveWorkspaceSelection(selection: WorkspaceSelection | null, previousComputerId?: string | null): WorkspaceSelection {
+  return selection ?? (previousComputerId ? { kind: 'computer', computerId: previousComputerId } : { kind: 'sandbox' })
 }
 
 /** Trigger label for the composer's agent menu. */
 export function workspaceMenuLabel(selection: WorkspaceSelection, computers: readonly AgentComputer[]): string {
   if (selection.kind === 'computer') {
     const computer = computers.find((entry) => entry.id === selection.computerId)
-    return computer ? `Pulpo Agent · ${computer.name}` : 'Pulpo Agent'
+    return `Pulpo Agent · ${computer?.name ?? 'Your computer'}`
   }
   return 'Pulpo Agent'
 }

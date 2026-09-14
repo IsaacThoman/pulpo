@@ -93,3 +93,12 @@ it('clears pointer focus suppression when leaving the trigger', async () => {
   fireEvent.blur(trigger)
   expect(trigger.dataset.pointerFocus).toBeUndefined()
 })
+
+it.each(['Cloud sandbox', 'Other Mac'])('lets a computer chat select %s for its next message', async (label) => {
+  const onSelectWorkspace = vi.fn()
+  const computer = { id: 'mac-a', name: 'Studio Mac', os: 'macos', arch: 'arm64', appVersion: '1', accessMode: 'folder', rootPath: '/project', approvalPolicy: 'default', allowRemote: true, enabled: true, online: true, isOwnedByThisDevice: true, pairing: null, selectable: true, lastSeenAt: null, createdAt: '' } as const
+  render(<AgentMenu enabled disabled={false} onSelect={vi.fn()} workspace={{ selection: { kind: 'computer', computerId: computer.id }, computers: [computer, { ...computer, id: 'mac-b', name: 'Other Mac' }], onSelectWorkspace }} />)
+  fireEvent.keyDown(screen.getByRole('button'), { key: 'Enter' })
+  fireEvent.click(await screen.findByRole('menuitemradio', { name: new RegExp(label) }))
+  expect(onSelectWorkspace).toHaveBeenCalledWith(label === 'Cloud sandbox' ? { kind: 'sandbox' } : { kind: 'computer', computerId: 'mac-b' })
+})

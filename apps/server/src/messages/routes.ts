@@ -1,7 +1,7 @@
 import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
-import { editMessageSchema, idSchema, timeZoneSchema } from '@pulpo/contracts'
+import { editMessageSchema, idSchema, timeZoneSchema, workspaceSelectionSchema } from '@pulpo/contracts'
 import { billingUserForRequest, currentSessionId, requireUser } from '../auth/service.js'
 import { db } from '../database/client.js'
 import { chats, requestLogs, responses, usageEvents, users } from '../database/schema.js'
@@ -76,6 +76,7 @@ const generationSelectionSchema = z.object({
   modelId: z.string().trim().min(1).optional(),
   presetSelections: z.record(z.string(), z.string()).optional(),
   agentMode: z.boolean().optional(),
+  workspace: workspaceSelectionSchema.optional(),
 })
 
 export async function registerMessageRoutes(app: FastifyInstance): Promise<void> {
@@ -97,6 +98,7 @@ export async function registerMessageRoutes(app: FastifyInstance): Promise<void>
       parentResponseId: original.parentResponseId,
       userMessageId: original.userMessageId ?? undefined,
       branchReason: 'regenerate',
+      requesterSessionId: generation.agentMode && selection.workspace?.kind !== 'sandbox' && !request.adminChatAccess ? await currentSessionId(request, user.id) : undefined,
       idempotencyKey: request.headers['idempotency-key'] as string | undefined,
       input: {
         clientId: selection.clientId,
@@ -106,6 +108,7 @@ export async function registerMessageRoutes(app: FastifyInstance): Promise<void>
         presetSelections: generation.presetSelections,
         attachmentIds,
         agentMode: generation.agentMode,
+        workspace: selection.workspace,
       },
     })
     await bumpRevision(user.id, original.chatId)
@@ -160,7 +163,7 @@ export async function registerMessageRoutes(app: FastifyInstance): Promise<void>
           agentMode: generation.agentMode,
           workspace: selectedWorkspace,
         },
-        requesterSessionId: selectedWorkspace?.kind === 'computer' && !request.adminChatAccess ? await currentSessionId(request, user.id) : undefined,
+        requesterSessionId: generation.agentMode && selectedWorkspace?.kind !== 'sandbox' && !request.adminChatAccess ? await currentSessionId(request, user.id) : undefined,
       })
       await bumpRevision(user.id, original.chatId)
       await scheduleChatIndex(original.chatId, user.id, 'user-message-edit')

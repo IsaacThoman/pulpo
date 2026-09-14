@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { attachmentWorkspacePath, buildAgentSystemPrompt, buildAgentUserPrompt, restoredAttachmentWorkspacePath } from './policy.js'
+import { attachmentWorkspacePath, buildWorkspaceAttachmentContext, buildAgentSystemPrompt, buildAgentUserPrompt, restoredAttachmentWorkspacePath } from './policy.js'
 
 describe('agent policy', () => {
   it('keeps the Pulpo harness first and appends configured instructions', () => {
@@ -89,4 +89,14 @@ describe('agent policy', () => {
     expect(prompt.startsWith('[Pulpo attachment context]')).toBe(true)
     expect(prompt).toContain('/workspace/abcdefgh-image.png')
   })
+})
+
+it('remaps saved cloud deliverables for a computer, then back to a fresh sandbox', () => {
+  const computer = { kind: 'computer' as const, computerId: 'mac', computerName: 'Mac', os: 'macos' as const, accessMode: 'folder' as const, root: '/Users/me/project', attachmentsDir: '/Users/me/Pulpo/attachments', homeDir: '/Users/me', shell: 'bash' as const, approvalPolicy: 'default' as const }
+  const file = { id: '12345678-abcd', originalName: 'report.txt', origin: 'assistant', workspacePath: '/workspace/output/report.txt', mimeType: 'text/plain', sizeBytes: 20 }
+  const prompt = buildWorkspaceAttachmentContext([file], computer)
+  expect(prompt).toContain('/Users/me/Pulpo/attachments/12345678-report.txt')
+  expect(prompt).not.toContain('/workspace/output/report.txt')
+  expect(prompt).toContain('Earlier tool results and paths may belong to a different computer')
+  expect(buildWorkspaceAttachmentContext([{ ...file, workspacePath: '/Users/me/project/report.txt' }], { kind: 'sandbox' })).toContain('/workspace/12345678-report.txt')
 })

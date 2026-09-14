@@ -1,3 +1,4 @@
+import type { WorkspaceSelection } from '@pulpo/contracts'
 import { attachmentBatchRequiresAgent } from '@/lib/attachments'
 import { localComposerDraftId } from '@pulpo/client-core'
 import type { ComposerState } from '@pulpo/contracts'
@@ -48,6 +49,7 @@ export interface PendingSubmission {
   modelId: string
   presetSelections: Record<string, string>
   agentMode: boolean
+  workspace?: WorkspaceSelection
   temporary: boolean
   autoExpire: boolean
   attachmentIds: string[]
@@ -69,12 +71,14 @@ interface SubmissionDraft {
   modelId: string
   presetSelections: Record<string, string>
   agentMode: boolean
+  workspace?: WorkspaceSelection
   temporary: boolean
   autoExpire: boolean
   attachmentIds: string[]
 }
 
 export interface PreservedComposerDraft {
+  workspace?: WorkspaceSelection
   value: string
   attachmentIds: string[]
 }
@@ -143,6 +147,7 @@ function renderSubmissionSurface(submission: PendingSubmission, records: UploadR
     modelId: submission.modelId,
     presetSelections: submission.presetSelections,
     agentMode: submission.agentMode,
+    workspace: submission.workspace,
     attachments,
     temporary: submission.temporary,
     autoExpire: submission.autoExpire,
@@ -391,6 +396,7 @@ async function processChat(chatId: string): Promise<void> {
             responseId: submission.responseId,
             presetSelections: submission.presetSelections,
             agentMode: submission.agentMode,
+            workspace: submission.workspace,
           },
         )
         useUploadOutbox.setState((current) => ({
@@ -411,6 +417,7 @@ async function processChat(chatId: string): Promise<void> {
           presetSelections: submission.presetSelections,
           attachmentIds: attachments.map((attachment) => attachment.id),
           agentMode: submission.agentMode,
+          workspace: submission.workspace,
         }, attachments, submission.responseId)
         const draft = submission.composerDraft
         if (draft) await webComposerSync(draft.userId)?.completeSubmission(draft.draftId, draft.state, draft.revision)
@@ -557,6 +564,7 @@ export const useUploadOutbox = create<UploadOutboxState>()((set, get) => ({
           responseId,
           content: draft.content,
           modelId: draft.modelId,
+          workspace: draft.workspace,
           attachments: records.map(pendingAttachment),
           temporary: draft.temporary,
           autoExpire: draft.autoExpire,
@@ -572,6 +580,7 @@ export const useUploadOutbox = create<UploadOutboxState>()((set, get) => ({
       modelId: draft.modelId,
       presetSelections: draft.presetSelections,
       agentMode: draft.agentMode,
+      workspace: draft.workspace,
       temporary: draft.temporary,
       autoExpire: draft.autoExpire,
       attachmentIds: draft.attachmentIds,
@@ -595,6 +604,7 @@ export const useUploadOutbox = create<UploadOutboxState>()((set, get) => ({
       modelId: draft.modelId,
       presetSelections: draft.presetSelections,
       agentMode: draft.agentMode,
+      workspace: draft.workspace,
       attachmentIds: draft.attachmentIds,
       status: 'waiting' as const,
       recoveryError: undefined,

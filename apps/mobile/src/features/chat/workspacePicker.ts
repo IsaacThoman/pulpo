@@ -31,53 +31,28 @@ export function computerCanPair(computer: AgentComputer): boolean {
     && (!computer.pairing || computer.pairing.status === 'revoked' || computer.pairing.status === 'denied')
 }
 
-/**
- * Menu rows for the composer's workspace picker. A chat that already ran on a
- * computer is locked to it: every row is informational and only that computer
- * shows as selected.
- */
-export function workspaceChoices(
-  computers: readonly AgentComputer[],
-  selection: WorkspaceSelection,
-  lockedComputerId: string | null,
-): WorkspaceChoice[] {
-  const selectedComputerId = lockedComputerId ?? (selection.kind === 'computer' ? selection.computerId : null)
-  const rows: WorkspaceChoice[] = computers.map((computer) => {
-    const computerSelection: WorkspaceSelection = { kind: 'computer', computerId: computer.id }
-    return {
-      id: computer.id,
-      label: computer.name,
-      detail: `${computerOsLabel(computer.os)} · ${computerHint(computer)}`,
-      selected: selectedComputerId === computer.id,
-      action: lockedComputerId ? null : computer.selectable ? 'select' : computerCanPair(computer) ? 'pair' : null,
-      selection: computerSelection,
-    }
+/** Follow-up messages can select any available workspace. */
+export function workspaceChoices(computers: readonly AgentComputer[], selection: WorkspaceSelection): WorkspaceChoice[] {
+  const selectedComputerId = selection.kind === 'computer' ? selection.computerId : null
+  const rows: WorkspaceChoice[] = computers.map((computer) => ({
+    id: computer.id, label: computer.name, detail: `${computerOsLabel(computer.os)} · ${computerHint(computer)}`,
+    selected: selectedComputerId === computer.id,
+    action: computer.selectable ? 'select' : computerCanPair(computer) ? 'pair' : null,
+    selection: { kind: 'computer', computerId: computer.id },
+  }))
+  if (selectedComputerId && !rows.some((row) => row.id === selectedComputerId)) rows.push({
+    id: selectedComputerId, label: 'Your computer', detail: 'This computer is not available right now',
+    selected: true, action: null, selection,
   })
-  // A locked chat only lists its own computer, which may be gone from the current list.
-  if (lockedComputerId && !rows.some((row) => row.id === lockedComputerId)) {
-    return [{
-      id: lockedComputerId, label: 'Your computer', detail: 'This chat runs on a computer that is not listed right now',
-      selected: true, action: null, selection: { kind: 'computer', computerId: lockedComputerId },
-    }]
-  }
-  if (lockedComputerId) return rows.filter((row) => row.id === lockedComputerId)
   return [{
     id: 'sandbox', label: SANDBOX_WORKSPACE_LABEL, detail: 'Runs in an isolated cloud workspace',
     selected: selectedComputerId === null, action: 'select', selection: SANDBOX_WORKSPACE,
   }, ...rows]
 }
 
-/**
- * The workspace a send should request. A computer that is no longer selectable
- * (offline, disabled, unpaired) falls back to the sandbox rather than failing the send.
- */
-export function effectiveWorkspaceSelection(
-  selection: WorkspaceSelection | undefined,
-  computers: readonly AgentComputer[] | undefined,
-): WorkspaceSelection {
-  if (!selection || selection.kind === 'sandbox') return SANDBOX_WORKSPACE
-  const computer = computers?.find((entry) => entry.id === selection.computerId)
-  return computer?.selectable ? selection : SANDBOX_WORKSPACE
+/** Keep the selected destination even when its availability changes. */
+export function effectiveWorkspaceSelection(selection: WorkspaceSelection | undefined, previousComputerId?: string | null): WorkspaceSelection {
+  return selection ?? (previousComputerId ? { kind: 'computer', computerId: previousComputerId } : SANDBOX_WORKSPACE)
 }
 
 export function workspaceMenuLabel(choices: readonly WorkspaceChoice[]): string {

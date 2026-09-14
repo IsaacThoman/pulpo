@@ -1,4 +1,4 @@
-import { Bot, BotOff, Check, ChevronDown, Cloud, Laptop, Lock, Settings2 } from 'lucide-react'
+import { Bot, BotOff, Check, ChevronDown, Cloud, Laptop, Settings2 } from 'lucide-react'
 import { computerOsLabel, type AgentComputer, type WorkspaceSelection } from '@pulpo/contracts'
 import { workspaceMenuLabel } from '@/lib/computers'
 import { useTranslation } from '@/i18n/useAppTranslation'
@@ -10,9 +10,6 @@ export interface AgentMenuWorkspaceProps {
   /** Current workspace choice for the next agent message. */
   selection: WorkspaceSelection
   computers: readonly AgentComputer[]
-  /** The chat already committed to a workspace; show it but do not allow switching. */
-  lockedComputerId?: string | null
-  locked?: boolean
   onSelectWorkspace: (selection: WorkspaceSelection) => void
   onManageComputers?: () => void
 }
@@ -32,8 +29,7 @@ export function AgentMenu({ enabled, disabled, onSelect, onSelectClose, workspac
   const onComputer = active && selection.kind === 'computer'
   const label = active ? workspaceMenuLabel(selection, computers) : t('chat.agentDisabled')
   const Icon = active ? (onComputer ? Laptop : Bot) : BotOff
-  const showWorkspaces = Boolean(workspace) && (computers.length > 0 || Boolean(workspace?.lockedComputerId))
-  const lockedComputer = workspace?.lockedComputerId ? computers.find((entry) => entry.id === workspace.lockedComputerId) : undefined
+  const showWorkspaces = Boolean(workspace) && (computers.length > 0 || selection.kind === 'computer')
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -71,7 +67,7 @@ export function AgentMenu({ enabled, disabled, onSelect, onSelectClose, workspac
             <DropdownMenuItem
               role="menuitemradio"
               aria-checked={active && selection.kind === 'sandbox'}
-              disabled={disabled || (workspace?.locked && Boolean(workspace.lockedComputerId))}
+              disabled={disabled}
               onSelect={() => {
                 if (disabled) return
                 menuFocus.onSelect()
@@ -89,10 +85,9 @@ export function AgentMenu({ enabled, disabled, onSelect, onSelectClose, workspac
               </span>
               {active && selection.kind === 'sandbox' && <Check className="size-3.5 shrink-0" />}
             </DropdownMenuItem>
-            {(lockedComputer && !computers.some((entry) => entry.id === lockedComputer.id) ? [...computers, lockedComputer] : computers).map((computer) => {
+            {computers.map((computer) => {
               const chosen = active && selection.kind === 'computer' && selection.computerId === computer.id
-              const lockedHere = workspace?.locked && workspace.lockedComputerId === computer.id
-              const unavailable = !computer.selectable && !lockedHere
+              const unavailable = !computer.selectable
               const hint = !computer.enabled ? ui('Turned off')
                 : !computer.online ? ui('Offline')
                 : computer.isOwnedByThisDevice ? (computer.accessMode === 'folder' ? ui('This device · folder access') : ui('This device · full access'))
@@ -104,7 +99,7 @@ export function AgentMenu({ enabled, disabled, onSelect, onSelectClose, workspac
                   key={computer.id}
                   role="menuitemradio"
                   aria-checked={chosen}
-                  disabled={disabled || unavailable || (workspace?.locked && !lockedHere)}
+                  disabled={disabled || unavailable}
                   onSelect={() => {
                     if (disabled || unavailable) return
                     menuFocus.onSelect()
@@ -121,13 +116,9 @@ export function AgentMenu({ enabled, disabled, onSelect, onSelectClose, workspac
                     </span>
                   </span>
                   {chosen && <Check className="size-3.5 shrink-0" />}
-                  {lockedHere && !chosen && <Lock className="size-3.5 shrink-0 opacity-60" />}
                 </DropdownMenuItem>
               )
             })}
-            {workspace?.locked && (
-              <div className="px-2 py-1.5 text-[11px] leading-4 text-muted-foreground">{ui('This chat stays on the workspace it started with. Start a new chat to switch.')}</div>
-            )}
             {workspace?.onManageComputers && (
               <>
                 <DropdownMenuSeparator />

@@ -11,7 +11,7 @@ import { getBlobStore } from '../../storage/index.js'
 import { newId } from '../../lib/ids.js'
 import { AppError } from '../../lib/errors.js'
 import { parseAgentSettings } from '../../settings/application-settings.js'
-import type { WorkspaceFile, WorkspaceImage, WorkspaceOperation } from '../controller.js'
+import { releaseWorkspaceForChat, type WorkspaceFile, type WorkspaceImage, type WorkspaceOperation } from '../controller.js'
 import { detectImageMime } from '../images.js'
 import { restoredAttachmentWorkspacePath } from '../policy.js'
 import type { AgentWorkspace, WorkspaceLeaseListener } from '../workspace.js'
@@ -79,13 +79,11 @@ export class ComputerWorkspace implements AgentWorkspace {
     }
     const [settingsRow] = await db.select().from(applicationSettings).where(eq(applicationSettings.key, 'agent')).limit(1)
     this.idleTimeoutMs = parseAgentSettings(settingsRow?.value).idleTimeoutSeconds * 1000
+    await releaseWorkspaceForChat(this.options.chatId, { computerId: this.computerId })
     const [existing] = await db.select().from(workspaceLeases).where(and(
       eq(workspaceLeases.chatId, this.options.chatId), eq(workspaceLeases.kind, 'computer'), eq(workspaceLeases.status, 'ready'),
     )).limit(1)
     const now = new Date()
-    // A chat never mixes workspaces, but an abandoned sandbox lease would block the partial unique index.
-    await db.update(workspaceLeases).set({ status: 'released', releasedAt: now, updatedAt: now })
-      .where(and(eq(workspaceLeases.chatId, this.options.chatId), eq(workspaceLeases.kind, 'sandbox'), inArray(workspaceLeases.status, ['provisioning', 'ready'])))
     if (existing && existing.computerId === this.computerId) {
       this.localLeaseId = existing.id
       await db.update(workspaceLeases).set({ lastUsedAt: now, expiresAt: new Date(now.getTime() + this.idleTimeoutMs), updatedAt: now }).where(eq(workspaceLeases.id, existing.id))
@@ -101,8 +99,8 @@ export class ComputerWorkspace implements AgentWorkspace {
       )).limit(1)
       this.localLeaseId = lease?.id ?? id
     }
-    this.ready = true
     if (!this.staged) await this.stageAttachments(signal)
+    this.ready = true
     await this.options.onLeaseEvent?.('ready', this.leaseDetails({ reused: Boolean(existing && existing.computerId === this.computerId) }))
   }
 

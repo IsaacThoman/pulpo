@@ -1,3 +1,4 @@
+import type { WorkspaceSelection } from '@pulpo/contracts'
 import { sql } from 'drizzle-orm'
 import {
   bigint,
@@ -550,6 +551,8 @@ export const responses = pgTable('responses', {
 ])
 
 export const queuedMessages = pgTable('queued_messages', {
+  workspace: jsonb('workspace').$type<WorkspaceSelection>(),
+  requesterSessionId: uuid('requester_session_id').references(() => sessions.id, { onDelete: 'set null' }),
   timeZone: text('time_zone'),
   id: uuid('id').primaryKey(),
   chatId: uuid('chat_id').notNull().references(() => chats.id, { onDelete: 'cascade' }),

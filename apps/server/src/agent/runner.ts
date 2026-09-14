@@ -22,7 +22,7 @@ import { computerDescriptor, loadComputer } from './computer/registry.js'
 import type { AgentWorkspace, WorkspaceLeaseState } from './workspace.js'
 import { createWorkspaceTools } from './tools.js'
 import { publishAdminUsage } from '../admin/usage-events.js'
-import { buildAgentSystemPrompt, buildAgentUserPrompt, SANDBOX_WORKSPACE_DESCRIPTOR } from './policy.js'
+import { buildAgentSystemPrompt, buildAgentUserPrompt, buildWorkspaceAttachmentContext, SANDBOX_WORKSPACE_DESCRIPTOR } from './policy.js'
 import { runPostResponseTasks } from '../responses/post-tasks.js'
 import { calculateCostMicros, workspaceHoldMicros, workspaceUsageMicros } from '../accounting/pricing.js'
 import { truncateUtf8 } from './output.js'
@@ -165,7 +165,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
   ])
   const settings = parseAgentSettings(settingsRow?.value)
   const computerRow = record.response.workspaceComputerId ? await loadComputer(record.response.workspaceComputerId) : undefined
-  if (record.response.workspaceComputerId && (!computerRow || computerRow.revokedAt)) throw new Error('The computer selected for this chat is no longer available')
+  if (record.response.workspaceComputerId && (!computerRow || computerRow.revokedAt)) throw new Error('The computer selected for this response is no longer available')
   const workspaceDescriptor = computerRow ? computerDescriptor(computerRow) : SANDBOX_WORKSPACE_DESCRIPTOR
   const webToolsSettings = parseWebToolsSettings(webToolsRow?.value)
   const preferenceValues = (preferencesRow?.values ?? {}) as Record<string, unknown>
@@ -192,7 +192,11 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
     memoryContext,
     workspaceDescriptor,
   )
-  const currentAgentSystemPrompt = [baseAgentSystemPrompt, recallContext].filter(Boolean).join('\n\n')
+  const workspaceAttachments = await db.select({
+    id: attachments.id, originalName: attachments.originalName, mimeType: attachments.mimeType,
+    sizeBytes: attachments.sizeBytes, origin: attachments.origin, workspacePath: attachments.workspacePath,
+  }).from(attachments).where(and(eq(attachments.userId, record.response.userId), eq(attachments.chatId, record.response.chatId), eq(attachments.status, 'ready')))
+  const currentAgentSystemPrompt = [baseAgentSystemPrompt, recallContext, buildWorkspaceAttachmentContext(workspaceAttachments, workspaceDescriptor)].filter(Boolean).join('\n\n')
   if (!settings.enabled || !record.model.agentEnabled) throw new Error('Agent mode is no longer available')
   const allHistory = await db.select().from(responses).where(and(
     eq(responses.chatId, record.response.chatId),

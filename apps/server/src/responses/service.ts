@@ -2,7 +2,7 @@ import { MAX_MESSAGE_ATTACHMENTS } from '@pulpo/contracts'
 import { and, eq, inArray, isNull, or, sql } from 'drizzle-orm'
 import type { ChatPreset, CreateChatResponseInput, ResponseSnapshot } from '@pulpo/contracts'
 import { db } from '../database/client.js'
-import { assertComputerUsable } from '../agent/computer/registry.js'
+import { resolveWorkspaceComputer } from './workspace-selection.js'
 import { applicationSettings, attachments, chats, modelPresetChoices, modelPresets, models, requestLogs, responses, userProviderCredentials } from '../database/schema.js'
 import { getActivePricing, releaseBudget, reserveBudget } from '../accounting/service.js'
 import { AppError, notFound } from '../lib/errors.js'
@@ -85,33 +85,6 @@ export async function resolveResponseGeneration(modelId: string, presetSelection
   }
 }
 
-/**
- * Decide where an agent response runs. The first agent response fixes the chat's workspace; later
- * responses inherit it, and an explicit conflicting selection is refused so a chat never mixes places.
- */
-async function resolveWorkspaceComputer(chat: { id: string; workspaceComputerId: string | null }, options: CreateResponseOptions, computersEnabled: boolean): Promise<string | null> {
-  const requested = options.input.workspace
-  if (!requested) return chat.workspaceComputerId
-  if (requested.kind === 'sandbox') {
-    if (chat.workspaceComputerId) throw new AppError(409, 'chat_workspace_locked', 'This chat already runs on a computer. Start a new chat to use the cloud sandbox.')
-    return null
-  }
-  if (chat.workspaceComputerId && chat.workspaceComputerId !== requested.computerId) {
-    throw new AppError(409, 'chat_workspace_locked', 'This chat is already bound to a different computer. Start a new chat to switch.')
-  }
-  if (!computersEnabled) throw new AppError(403, 'computers_disabled', 'Running the agent on personal computers is turned off for this instance')
-  if (options.apiKeyId || options.actorUserId || !options.requesterSessionId) {
-    throw new AppError(403, 'computer_session_required', 'Computers can only be selected from a signed-in Pulpo device')
-  }
-  if (!chat.workspaceComputerId) {
-    const [priorAgentResponse] = await db.select({ id: responses.id }).from(responses)
-      .where(and(eq(responses.chatId, chat.id), eq(responses.agentMode, true), isNull(responses.deletedAt))).limit(1)
-    if (priorAgentResponse) throw new AppError(409, 'chat_workspace_locked', 'This chat already used the cloud sandbox. Start a new chat to work on a computer.')
-  }
-  await assertComputerUsable(options.ownerUserId, options.requesterSessionId, requested.computerId)
-  return requested.computerId
-}
-
 export async function createResponse(options: CreateResponseOptions) {
   const idempotencyScope = options.idempotencyScope ?? 'default'
   if (options.idempotencyKey) {
@@ -188,7 +161,7 @@ export async function createResponse(options: CreateResponseOptions) {
     const agentSettings = parseAgentSettings(agentRow?.value)
     if (!agentSettings.enabled) throw new AppError(503, 'agent_unavailable', 'Agent mode is not enabled')
     if (!model.agentEnabled) throw new AppError(400, 'model_not_agent_capable', 'The selected model is not enabled for agent mode')
-    workspaceComputerId = await resolveWorkspaceComputer(chat, options, agentSettings.computersEnabled)
+    workspaceComputerId = await resolveWorkspaceComputer({ ...options, requested: options.input.workspace, previousComputerId: chat.workspaceComputerId, computersEnabled: agentSettings.computersEnabled })
   }
   const parameters: Record<string, unknown> = { ...(options.parameters ?? {}), ...resolved.parameters }
   const maxOutputTokens = options.apiKeyId
@@ -286,8 +259,8 @@ export async function createResponse(options: CreateResponseOptions) {
     idempotencyFingerprint: options.idempotencyFingerprint,
     origin: options.actorUserId ? 'admin_chat' : options.apiKeyId ? 'api' : 'web',
   })
-  if (workspaceComputerId && !chat.workspaceComputerId) {
-    await db.update(chats).set({ workspaceComputerId, updatedAt: new Date() }).where(and(eq(chats.id, chat.id), isNull(chats.workspaceComputerId)))
+  if (options.input.agentMode && workspaceComputerId !== chat.workspaceComputerId) {
+    await db.update(chats).set({ workspaceComputerId, updatedAt: new Date() }).where(eq(chats.id, chat.id))
   }
   const requestLogId = newId()
   await db.transaction(async (tx) => {

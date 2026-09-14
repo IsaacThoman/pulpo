@@ -5,7 +5,7 @@ The Pulpo agent normally runs inside a disposable cloud sandbox. With the deskto
 ## What the user sees
 
 - **Desktop app → Settings → Agent → This computer.** An opt-in switch, a name, an access mode (one folder or the whole computer), a folder chooser, an approval policy, and an "Allow other devices" switch. The card also shows the live connection state.
-- **Composer agent menu.** Once a computer is online, the agent menu lists "Cloud sandbox" plus each computer with its OS and access hint. The first agent message in a chat fixes that chat's workspace; the menu then shows it as locked and a new chat is needed to switch.
+- **Composer agent menu.** Once a computer is online, the agent menu lists "Cloud sandbox" plus each computer with its OS and access hint. Each follow-up can select any available computer or the cloud sandbox. The last choice is the default, and queued messages retain the destination selected when sent.
 - **Approvals.** When the agent wants to run a command or change a file on a computer, a `pulpo_approval` item appears in the chat timeline with Approve/Deny buttons and a five-minute countdown. Approvals are handled only in the chat UI, without a duplicate native dialog. A denial or timeout fails that tool call with a message the model can see.
 - **Pairing.** Other devices signed into the same account (phone, browser, another desktop) see the computer but must request pairing. The owning desktop shows a native prompt naming the device and its IP. Pairings are listed and revocable from any device; the owner can turn remote access off entirely.
 - **Timeline.** The workspace step reads "Working on <name>" instead of "Started workspace", and "<name> disconnected" if the desktop goes away mid-run.
@@ -21,7 +21,7 @@ worker (BullMQ)  --Redis pub/sub-->  API replica holding the socket  --Socket.IO
 - **Workspace abstraction.** `apps/server/src/agent/workspace.ts` defines `AgentWorkspace`. The sandbox `WorkspaceManager` and `ComputerWorkspace` (`apps/server/src/agent/computer/workspace.ts`) both implement it. The runner picks one from `responses.workspace_computer_id`. A `WorkspaceDescriptor` drives the system prompt (`policy.ts`), tool copy (`tools.ts`), attachment paths, and timeline labels. Sandbox text is unchanged.
 - **Execution core.** `packages/workspace-daemon/src/core` holds the transport-agnostic runner (path policy, shell selection, search with a ripgrep fallback, journaled idempotent operations). The container daemon (`src/index.ts`) and the desktop agent share it. Windows uses PowerShell (`pwsh` when present) and `taskkill /T`; POSIX uses `bash -lc` in a detached process group.
 - **Data model.** `agent_computers`, `agent_computer_pairings`, `agent_tool_approvals`, plus `chats.workspace_computer_id`, `responses.workspace_computer_id`, and `workspace_leases.kind/computer_id` (migration `0075_agent_computers`).
-- **Selection rules.** `responses/service.ts` resolves the workspace: explicit selection, else the chat's sticky computer, else the sandbox. Selecting a computer requires a signed-in device session (API keys and admin chat access are refused), the admin flag `agent.computersEnabled`, and either owning the computer or holding an approved pairing while remote access is on. Conflicting selections return `409 chat_workspace_locked`.
+- **Selection rules.** `responses/service.ts` resolves the workspace: explicit selection, else the chat's last selected computer, else the sandbox. Selecting a computer requires a signed-in device session (API keys and admin chat access are refused), the admin flag `agent.computersEnabled`, and either owning the computer or holding an approved pairing while remote access is on. Authorization is checked again on every response, including inherited and queued selections. Unavailable computers fail explicitly instead of silently rerouting to the cloud.
 
 ## Security model
 
@@ -50,3 +50,9 @@ worker (BullMQ)  --Redis pub/sub-->  API replica holding the socket  --Socket.IO
 6. Ask for a read outside the folder: refused in folder mode, allowed in full mode.
 7. Stop the response during `sleep 60`: the process is killed. Quit the desktop mid-command: the tool fails with "went offline".
 8. From a browser on the same account, request pairing; approve on the desktop; the browser can then select the computer.
+
+## Switching and saved files
+
+Each response keeps its own destination. Switching releases the previous active lease and restores all ready chat attachments and saved deliverables into the chosen workspace on its first tool call. Arbitrary files in a previous working directory are not copied. The model receives a current manifest so paths from an earlier computer or expired sandbox do not override restored paths.
+
+Computer attachments live under Electron’s `userData/agent-workspace/attachments` directory (normally `~/Library/Application Support/Pulpo/agent-workspace/attachments` on macOS), separate from the configured working root. Names use the first eight attachment-ID characters and a sanitized filename. This is persistent app storage, not an OS temporary folder; files are transferred in chunks with size and SHA-256 verification.

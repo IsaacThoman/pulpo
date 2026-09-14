@@ -533,6 +533,13 @@
       "when": 1789358695128,
       "tag": "0075_agent_computers",
       "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "7",
+      "when": 1789361962169,
+      "tag": "0076_queued_workspace",
+      "breakpoints": true
     }
   ]
 }

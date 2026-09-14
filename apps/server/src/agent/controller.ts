@@ -72,6 +72,7 @@ export class WorkspaceManager implements AgentWorkspace {
 
   async ensureLease(signal?: AbortSignal): Promise<string> {
     if (this.controllerLeaseId) return this.controllerLeaseId
+    await releaseWorkspaceForChat(this.chatId, { computerId: null })
     let [existing] = await db.select().from(workspaceLeases).where(and(eq(workspaceLeases.chatId, this.chatId), eq(workspaceLeases.kind, 'sandbox'), inArray(workspaceLeases.status, ['provisioning', 'ready']))).limit(1)
     if (existing?.status === 'ready' && (!existing.controllerLeaseId || (existing.hardExpiresAt && existing.hardExpiresAt <= new Date()) || (existing.expiresAt && existing.expiresAt <= new Date()))) {
       await db.update(workspaceLeases).set({ status: 'expired', error: 'Workspace lease expired before reuse', updatedAt: new Date() }).where(eq(workspaceLeases.id, existing.id))
@@ -301,9 +302,10 @@ export class WorkspaceManager implements AgentWorkspace {
   disableTools(): void { this.toolsDisabled = true }
 }
 
-export async function releaseWorkspaceForChat(chatId: string): Promise<void> {
+export async function releaseWorkspaceForChat(chatId: string, keep?: { computerId: string | null }): Promise<void> {
   const [lease] = await db.select().from(workspaceLeases).where(and(eq(workspaceLeases.chatId, chatId), inArray(workspaceLeases.status, ['provisioning', 'ready']))).limit(1)
   if (!lease) return
+  if (keep && (keep.computerId === null ? lease.kind === 'sandbox' : lease.kind === 'computer' && lease.computerId === keep.computerId)) return
   const config = getConfig()
   if (lease.kind === 'sandbox' && lease.controllerLeaseId && config.WORKSPACE_CONTROLLER_URL && config.WORKSPACE_CONTROLLER_TOKEN) {
     await workspaceControllerRequest(`/v1/leases/${lease.controllerLeaseId}`, { method: 'DELETE', signal: AbortSignal.timeout(10_000) }).catch(() => undefined)

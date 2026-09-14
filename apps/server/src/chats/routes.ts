@@ -40,8 +40,8 @@ async function requestedNormalChatExpiry(userId: string, enabled: boolean, now: 
 }
 
 /** Selecting a computer needs the caller's device session so pairing can be enforced. */
-async function requesterSessionIdFor(request: FastifyRequest, userId: string, workspace: { kind: string } | undefined): Promise<string | undefined> {
-  if (workspace?.kind !== 'computer' || request.adminChatAccess) return undefined
+async function requesterSessionIdFor(request: FastifyRequest, userId: string, workspace: { kind: string } | undefined, agentMode: boolean): Promise<string | undefined> {
+  if (!agentMode || workspace?.kind === 'sandbox' || request.adminChatAccess) return undefined
   return currentSessionId(request, userId)
 }
 
@@ -304,7 +304,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
         input: input.response,
         parentResponseId: null,
         idempotencyKey: request.headers['idempotency-key'] as string | undefined,
-        requesterSessionId: await requesterSessionIdFor(request, user.id, input.response.workspace),
+        requesterSessionId: await requesterSessionIdFor(request, user.id, input.response.workspace, input.response.agentMode),
       })
       if (!chat.temporary) await bumpRevision(user.id, chat.id)
       if (inserted && !chat.temporary && chat.expiresAt) {
@@ -651,7 +651,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       input,
       parentResponseId: input.parentResponseId,
       idempotencyKey: request.headers['idempotency-key'] as string | undefined,
-      requesterSessionId: await requesterSessionIdFor(request, user.id, input.workspace),
+      requesterSessionId: await requesterSessionIdFor(request, user.id, input.workspace, input.agentMode),
     })
     await bumpRevision(user.id, id)
     reply.code(202)
@@ -663,6 +663,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     const { id } = request.params as { id: string }
     const input = createQueuedMessageSchema.parse(request.body)
     const result = await createQueuedMessage(user.id, id, input, {
+      requesterSessionId: await requesterSessionIdFor(request, user.id, input.workspace, input.agentMode),
       requestReceivedAt: request.requestReceivedAt,
       billingUserId: billingUserForRequest(request).id,
       actorUserId: request.adminChatAccess?.actorUser.id,
@@ -676,6 +677,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     const { id, messageId } = request.params as { id: string; messageId: string }
     const input = updateQueuedMessageSchema.parse(request.body)
     return { queuedMessage: await updateQueuedMessage(user.id, id, messageId, input, {
+      requesterSessionId: input.action === 'save_edit' ? await requesterSessionIdFor(request, user.id, input.workspace, input.agentMode) : undefined,
       billingUserId: billingUserForRequest(request).id,
       actorUserId: request.adminChatAccess?.actorUser.id,
     }) }
