@@ -93,13 +93,13 @@ export function DeviceSettings() {
   return <div>
     <h2 className="text-base font-semibold">{ui('Devices')}</h2>
     <Separator className="my-3" />
-    <section aria-labelledby="agent-computers-heading">
-      <h3 id="agent-computers-heading" className="mb-3 text-sm font-semibold">{ui('Agent computers')}</h3>
-      <ComputerSettings />
-    </section>
-    <section aria-labelledby="signed-in-devices-heading" className="mt-8">
+    <section aria-labelledby="signed-in-devices-heading">
       <h3 id="signed-in-devices-heading" className="mb-3 text-sm font-semibold">{ui('Signed-in devices')}</h3>
       <DeviceSessionListView />
+    </section>
+    <section aria-labelledby="agent-computers-heading" className="mt-8">
+      <h3 id="agent-computers-heading" className="mb-3 text-sm font-semibold">{ui('Agent computers')}</h3>
+      <ComputerSettings />
     </section>
   </div>
 }

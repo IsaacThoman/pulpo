@@ -39,7 +39,7 @@ describe('device management', () => {
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)) })
     expect(mocks.request).toHaveBeenCalledWith('/api/me/sessions')
     expect(document.querySelector('h2')?.textContent).toBe('Devices')
-    expect(Array.from(document.querySelectorAll('h3'), (heading) => heading.textContent)).toEqual(['Agent computers', 'Signed-in devices'])
+    expect(Array.from(document.querySelectorAll('h3'), (heading) => heading.textContent)).toEqual(['Signed-in devices', 'Agent computers'])
     expect(document.querySelector('[role="dialog"]')).toBeNull()
     expect(document.body.textContent).toContain('This device')
     expect(document.body.textContent).toContain('Latest IP: 198.51.100.2')
