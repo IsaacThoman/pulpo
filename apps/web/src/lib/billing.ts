@@ -59,6 +59,14 @@ export function billingPlanName(plan: BillingPlan): string {
   return 'Pulpo Baby'
 }
 
+export function paymentStatusLabel(status: string): string {
+  switch (status) {
+    case 'paid': return ui("Paid")
+    case 'refunded': return ui("Refunded")
+    default: return ui("Unknown")
+  }
+}
+
 export function planChoiceLabel(plan: BillingPlan, current: BillingPlan, cancelAtPeriodEnd: boolean): string {
   if (plan === 'baby') return cancelAtPeriodEnd || current === 'baby' ? 'Current plan' : 'Cancel plan'
   if (plan === current) return cancelAtPeriodEnd ? `Renew for $${plan === 'eight' ? 8 : 24}/month` : 'Current plan'
