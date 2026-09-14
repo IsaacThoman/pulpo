@@ -27,7 +27,7 @@ export function Section({
   danger?: boolean
 }) {
   return (
-    <section className="mb-7">
+    <section className="@container mb-7">
       <h3
         className={cn(
           'text-sm font-semibold',
@@ -55,12 +55,12 @@ export function Field({
   indent?: boolean
 }) {
   return (
-    <div className={cn('flex items-center justify-between gap-6', indent && 'pl-4')}>
-      <div className="min-w-0">
+    <div className={cn('flex min-w-0 flex-col items-stretch gap-2 @xl:flex-row @xl:items-center @xl:justify-between @xl:gap-6', indent && 'pl-4')}>
+      <div className="min-w-0 wrap-anywhere">
         <div className="text-sm">{label}</div>
         {hint && <div className="mt-0.5 text-xs text-muted-foreground">{hint}</div>}
       </div>
-      <div className="shrink-0">{children}</div>
+      <div className="min-w-0 max-w-full self-start @xl:shrink-0 @xl:self-auto [&_input]:max-w-full [&_[data-slot=select-trigger]]:max-w-full">{children}</div>
     </div>
   )
 }

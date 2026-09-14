@@ -130,7 +130,7 @@ function OffsiteBackupSection() {
         <span className="text-xs tabular-nums">{settings?.nextRunAt ? formatDateTime(Date.parse(settings.nextRunAt)) : '—'}</span>
       </Field>
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button variant="outline" size="sm" disabled={working} onClick={() => void test()}><ShieldCheck />{ui('Test connection')}</Button>
           <Button variant="outline" size="sm" disabled={working || !settings?.applicationKeyConfigured} onClick={() => void runNow()}><CloudUpload />{ui('Run now')}</Button>
           {settings?.applicationKeyConfigured && !settings.enabled && <Button variant="ghost" size="sm" onClick={() => void remove()}><Trash2 />{ui('Remove')}</Button>}

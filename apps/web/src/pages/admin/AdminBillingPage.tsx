@@ -233,7 +233,7 @@ export function AdminBillingPage() {
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-1 sm:grid-cols-3 lg:grid-cols-6 lg:gap-0 lg:divide-x">
+      <div className="stat-grid stat-strip lg:gap-0 lg:[--stat-divider-width:1px]">
         {stats.map((stat) => (
           <div key={stat.label} className="p-3 lg:first:pl-0 lg:last:pr-0">
             <div className="mb-1 text-xs text-muted-foreground">{stat.label}</div>
@@ -262,7 +262,7 @@ export function AdminBillingPage() {
             </ResponsiveContainer>
           </div>
         )}
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-5 sm:gap-0 sm:divide-x">
+        <div className="stat-grid stat-strip gap-2 sm:gap-0 sm:[--stat-divider-width:1px]">
           {breakdown.map((row) => (
             <div key={row.label} className="py-3 sm:px-4 sm:first:pl-0 sm:last:pr-0">
               <div className="text-xs text-muted-foreground">{row.label}</div>
