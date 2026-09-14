@@ -10,7 +10,7 @@ import { newId } from '../lib/ids.js'
 import { imageProviderEndpoint, ImageGenerationError } from './provider.js'
 
 export function publicImageModel(model: ImageModel): PublicImageModel {
-  const { providerConnectionId: _provider, upstreamModelId: _upstream, ...value } = model
+  const { providerConnectionId: _provider, upstreamModelId: _upstream, ...value } = imageModelSchema.parse(model)
   return value
 }
 const sort = <T extends { sortOrder: number; name: string }>(models: T[]) => models.sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name))
@@ -18,7 +18,7 @@ const sort = <T extends { sortOrder: number; name: string }>(models: T[]) => mod
 export async function registerImageGenerationRoutes(app: FastifyInstance) {
   app.get('/api/admin/image-models', async request => {
     requireAdmin(request)
-    return { data: sort((await db.select().from(imageModels)).map(row => row.config)) }
+    return { data: sort((await db.select().from(imageModels)).map(row => imageModelSchema.parse(row.config))) }
   })
   app.get('/api/image-models', async request => {
     requireUser(request)

@@ -177,8 +177,8 @@ describe('temporary chat backup projection', () => {
 })
 
 it('preserves image model configuration and removes temporary-chat image request metadata', () => {
-  const model = { id: 'image', provider_connection_id: 'provider', config: { enabled: false } }
-  const request = { response_id: 'saved-response', operation_id: 'image-call', result: { imageItem: { id: 'image' } } }
+  const model = { id: 'image', provider_connection_id: 'provider', config: { enabled: false, billingUnit: 'tokens', reservationMicros: 100, tokenPrices: { input: 5000000, imageOutput: 30000000 } } }
+  const request = { response_id: 'saved-response', operation_id: 'image-call', model: model.config, result: { imageItem: { id: 'image' }, usage: { inputTokens: 10, outputTokens: 20, totalTokens: 30, inputDetails: { textTokens: 10, imageTokens: 0 } } } }
   const source = databaseWith({
     chats: [{ id: 'saved', temporary: false }, { id: 'temporary', temporary: true }],
     responses: [{ id: 'saved-response', chat_id: 'saved' }, { id: 'temporary-response', chat_id: 'temporary' }],
