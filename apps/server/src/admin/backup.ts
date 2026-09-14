@@ -200,6 +200,8 @@ export async function restoreFullBackup(jobId: string): Promise<void> {
       if (typeof row.request_log_id === 'string' && (row.request_payload != null || row.response_payload != null)) ocrPayloadLogs.add(row.request_log_id)
     }
     const logCapture = new Map<string, boolean>()
+    const responseCapture = new Map<string, RestoreRow>()
+    const runResponses = new Map<string, string>()
     const blobKeys = new Map<string, string>()
     for (const [index, blob] of manifest.blobs.entries()) {
       const file = files.get(blob.entry)!
@@ -228,9 +230,22 @@ export async function restoreFullBackup(jobId: string): Promise<void> {
         if (table === 'request_logs') {
           data.ocr_attempts = ocrPayloadLogs.has(String(row.id)) ? [{ request_log_id: row.id, request_payload: true }] : []
         }
-        // Legacy tool diagnostic copies are omitted on restore; response/agent context retains conversation content.
+        if (table === 'agent_runs') runResponses.set(String(row.id), String(row.response_id))
+        if (table === 'tool_executions') {
+          const responseId = runResponses.get(String(row.agent_run_id))
+          const policy = responseId ? responseCapture.get(responseId) : undefined
+          // Supply only the parent's retention metadata; bodies remain streamed from disk.
+          data.request_logs = policy ? [{ ...policy }] : []
+          data.agent_runs = [{ id: row.agent_run_id, response_id: responseId }]
+        }
         applyFullBackupCompatibilityDefaults(data)
-        if (table === 'request_logs') logCapture.set(String(row.id), row.capture_detailed_payloads === true)
+        if (table === 'request_logs') {
+          logCapture.set(String(row.id), row.capture_detailed_payloads === true)
+          if (typeof row.response_id === 'string') responseCapture.set(row.response_id, {
+            id: row.id, response_id: row.response_id, created_at: row.created_at,
+            capture_detailed_payloads: row.capture_detailed_payloads, payload_expires_at: row.payload_expires_at,
+          })
+        }
         if (table === 'ocr_attempts' && logCapture.get(String(row.request_log_id)) === false) {
           row.request_payload = null; row.response_payload = null
         }

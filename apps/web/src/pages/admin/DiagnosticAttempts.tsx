@@ -17,7 +17,7 @@ export function DiagnosticAttempts({ requestId }: { requestId?: string }) {
   useEffect(() => { void load() }, [load])
   return <div className="space-y-3 text-sm">
     <div className="flex items-center justify-between gap-3"><span className="font-medium">{ui('Provider and tool attempts')}</span><Button variant="outline" size="sm" onClick={() => void load()}>{ui('Refresh')}</Button></div>
-    {error && <p role="alert" className="text-destructive">{error}</p>}
+    {error && <p role="alert" className="text-destructive">{ui(error)}</p>}
     {!rows.length && !error && <p className="text-xs text-muted-foreground">{ui('No diagnostic attempts recorded.')}</p>}
     {rows.map(row => <details key={row.id} className="rounded-lg border p-3">
       <summary className="cursor-pointer text-xs">{new Date(row.createdAt).toLocaleString()} · {row.purpose.replaceAll('_', ' ')} · {row.modelId ?? 'tool'} · {row.status}</summary>

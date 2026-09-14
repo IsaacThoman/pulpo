@@ -17,7 +17,7 @@ vi.mock('../storage/index.js', () => ({ getBlobStore: () => ({
 vi.mock('../redis.js', () => ({ redis: {} }))
 vi.mock('../redis-keys.js', () => ({ deleteRedisKeysByPattern: vi.fn() }))
 import { db, queryClient } from '../database/client.js'
-import { agentRuns, applicationSettings, backupJobs, chats, generationAttempts, models, ocrAttempts, ocrCacheEntries, providerConnections, requestLogs, responseContentParts, responseItems, responses, toolExecutions, users, workspaceLeases } from '../database/schema.js'
+import { agentRuns, applicationSettings, backupJobs, chats, generationAttempts, models, ocrAttempts, ocrCacheEntries, providerDiagnostics, providerConnections, requestLogs, responseContentParts, responseItems, responses, toolExecutions, users, workspaceLeases } from '../database/schema.js'
 import { unusualPayload, unusualText } from '../database/fixtures/windows-tool-output.js'
 import { createFullBackup, restoreFullBackup } from './backup.js'
 import { FULL_BACKUP_TABLES } from './backup-format.js'
@@ -40,6 +40,7 @@ it.skipIf(!enabled)('preserves conversation, tools, context and OCR through full
   await persistResponseItems(responseId, output)
   await db.insert(applicationSettings).values({ key: 'logging', value: { logDetailedPayloads: true, payloadRetention: '7d' } })
   await db.insert(requestLogs).values({ id: logId, responseId, userId, requestedModelId: 'fixture', requestPayload: unusualPayload, responsePayload: output, errorMessage: unusualText, captureDetailedPayloads: true, payloadExpiresAt: new Date(Date.now() + 86_400_000) })
+  await db.insert(providerDiagnostics).values({ id: randomUUID(), requestLogId: logId, userId, purpose: 'tool', requestPayload: { fidelity: 'reconstructed', body: unusualPayload }, responsePayload: { fidelity: 'reconstructed', body: unusualText }, metadata: { httpStatus: 200 }, captureDetailedPayloads: true, payloadExpiresAt: new Date(Date.now() + 86_400_000) })
   await db.insert(generationAttempts).values({ id: randomUUID(), requestLogId: logId, modelId: 'fixture', errorMessage: unusualText })
   await db.insert(ocrAttempts).values({ id: randomUUID(), requestLogId: logId, requestPayload: unusualPayload, responsePayload: unusualPayload, errorMessage: unusualText })
   await db.insert(ocrCacheEntries).values({ checksum: 'fixture', providerFingerprint: 'fixture', text: unusualText, expiresAt: new Date(Date.now() + 86_400_000) })
@@ -80,8 +81,12 @@ it.skipIf(!enabled)('preserves conversation, tools, context and OCR through full
   expect((await db.select().from(requestLogs))[0]).toMatchObject({ requestPayload: unusualPayload, responsePayload: output, errorMessage: unusualText })
   expect((await db.select().from(ocrAttempts))[0]).toMatchObject({ requestPayload: unusualPayload, responsePayload: unusualPayload, errorMessage: unusualText })
   expect((await db.select().from(generationAttempts))[0]?.errorMessage).toBe(unusualText)
+  expect((await db.select().from(providerDiagnostics))[0]).toMatchObject({ requestPayload: { fidelity: 'reconstructed', body: unusualPayload }, responsePayload: { fidelity: 'reconstructed', body: unusualText }, metadata: { httpStatus: 200 } })
   await db.update(requestLogs).set({ payloadExpiresAt: new Date(0) })
+  await db.update(providerDiagnostics).set({ payloadExpiresAt: new Date(0) })
   await purgeExpiredDetailedPayloads(query => db.execute(query))
   expect((await db.select().from(requestLogs))[0]).toMatchObject({ requestPayload: null, responsePayload: null })
   expect((await db.select().from(ocrAttempts))[0]).toMatchObject({ requestPayload: null, responsePayload: null })
+  expect((await db.select().from(toolExecutions))[0]).toMatchObject({ arguments: {}, output: null, error: unusualText, providerAttempts: [unusualPayload] })
+  expect((await db.select().from(providerDiagnostics))[0]).toMatchObject({ requestPayload: null, responsePayload: null, metadata: { httpStatus: 200 } })
 }, 30_000)
