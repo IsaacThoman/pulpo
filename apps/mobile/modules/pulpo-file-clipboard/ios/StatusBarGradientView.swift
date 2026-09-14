@@ -37,7 +37,7 @@ public final class StatusBarGradientView: ExpoView {
     let background = UIColor.systemBackground.resolvedColor(with: traitCollection)
     CATransaction.begin()
     CATransaction.setDisableActions(true)
-    gradient.colors = [background.cgColor, background.withAlphaComponent(0).cgColor]
+    gradient.colors = [background.withAlphaComponent(0.7).cgColor, background.withAlphaComponent(0).cgColor]
     CATransaction.commit()
   }
 }
