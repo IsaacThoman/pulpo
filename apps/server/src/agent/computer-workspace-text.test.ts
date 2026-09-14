@@ -6,11 +6,11 @@ import type { AgentWorkspace } from './workspace.js'
 
 const mac: ComputerWorkspaceDescriptor = {
   kind: 'computer', computerId: '11111111-1111-4111-8111-111111111111', computerName: 'Studio', os: 'macos', accessMode: 'folder',
-  root: '/Users/me/projects/site', attachmentsDir: '/Users/me/Library/Application Support/Pulpo/agent-workspace/attachments', homeDir: '/Users/me',
+  root: '/Users/me/projects/site', attachmentsDir: '/Users/me/Library/Application Support/Pulpo/agent-workspace/chats/chat-id/attachments', homeDir: '/Users/me',
   shell: 'bash', approvalPolicy: 'default',
 }
 const windows: ComputerWorkspaceDescriptor = {
-  ...mac, computerName: 'Office PC', os: 'windows', accessMode: 'full', root: 'C:\\Users\\me', attachmentsDir: 'C:\\Users\\me\\AppData\\Roaming\\Pulpo\\agent-workspace\\attachments', homeDir: 'C:\\Users\\me', shell: 'powershell',
+  ...mac, computerName: 'Office PC', os: 'windows', accessMode: 'full', root: 'C:\\Users\\me', attachmentsDir: 'C:\\Users\\me\\AppData\\Roaming\\Pulpo\\agent-workspace\\chats\\chat-id\\attachments', homeDir: 'C:\\Users\\me', shell: 'powershell',
 }
 
 describe('computer workspace prompt', () => {
@@ -43,14 +43,14 @@ describe('computer workspace prompt', () => {
   })
 
   it('stages attachments under the computer attachments directory with native separators', () => {
-    expect(attachmentWorkspacePath('report.pdf', 'abcdef12-3456', mac)).toBe(`${mac.attachmentsDir}/abcdef12-report.pdf`)
-    expect(attachmentWorkspacePath('report.pdf', 'abcdef12-3456', windows)).toBe(`${windows.attachmentsDir}\\abcdef12-report.pdf`)
+    expect(attachmentWorkspacePath('report.pdf', 'abcdef12-3456', mac)).toBe(`${mac.attachmentsDir}/abcdef12-3456-report.pdf`)
+    expect(attachmentWorkspacePath('report.pdf', 'abcdef12-3456', windows)).toBe(`${windows.attachmentsDir}\\abcdef12-3456-report.pdf`)
     expect(attachmentWorkspacePath('report.pdf', 'abcdef12-3456')).toBe('/workspace/abcdef12-report.pdf')
     const generated = { id: 'ffffffff-0000', originalName: 'chart.png', origin: 'assistant', workspacePath: `${mac.attachmentsDir}/chart.png` }
     expect(restoredAttachmentWorkspacePath(generated, mac)).toBe(`${mac.attachmentsDir}/chart.png`)
-    expect(restoredAttachmentWorkspacePath({ ...generated, workspacePath: '/etc/passwd' }, mac)).toBe(`${mac.attachmentsDir}/ffffffff-chart.png`)
+    expect(restoredAttachmentWorkspacePath({ ...generated, workspacePath: '/etc/passwd' }, mac)).toBe(`${mac.attachmentsDir}/ffffffff-0000-chart.png`)
     expect(buildAgentUserPrompt([{ role: 'user', content: 'look' }], [{ id: 'abcdef12-3456', originalName: 'a.txt', mimeType: 'text/plain', sizeBytes: 3 }], windows))
-      .toContain(`path=${JSON.stringify(`${windows.attachmentsDir}\\abcdef12-a.txt`)}`)
+      .toContain(`path=${JSON.stringify(`${windows.attachmentsDir}\\abcdef12-3456-a.txt`)}`)
   })
 })
 
