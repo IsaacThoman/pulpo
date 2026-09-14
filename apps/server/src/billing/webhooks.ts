@@ -14,7 +14,7 @@ import {
 import { newId } from '../lib/ids.js'
 import { poolPeerIds } from '../pools/service.js'
 import { publishStateChange } from '../responses/events.js'
-import { PLAN_MONTHLY_CREDIT_MICROS } from './plans.js'
+import { PLAN_MONTHLY_CREDIT_MICROS, type PaidBillingPlan } from './plans.js'
 import { getStripeClient, planForPriceId } from './stripe.js'
 import { refreshStorageLimit } from './storage-entitlements.js'
 
@@ -341,6 +341,23 @@ function invoicePriceId(invoice: Stripe.Invoice, subscription?: Stripe.Subscript
     })?.pricing?.price_details?.price)
 }
 
+/**
+ * The plan a paid invoice bought for the current period: the plan price with a positive
+ * charge. An upgrade invoice also carries a negative line crediting the old price, so the
+ * sign matters. Falls back to the plan derived from the subscription.
+ */
+export function paidPlanForInvoice(
+  lines: Array<{ amount: number; priceId: string | null }>,
+  fallback: PaidBillingPlan,
+): PaidBillingPlan {
+  const charged = lines.find((line) => line.amount > 0 && planForPriceId(line.priceId) !== null)
+  return planForPriceId(charged?.priceId) ?? fallback
+}
+
+export function shouldRecordPaidPlan(existingPaidPlanAt: Date | null, invoicePaidAt: Date): boolean {
+  return existingPaidPlanAt === null || invoicePaidAt >= existingPaidPlanAt
+}
+
 async function applyPaidInvoice(
   tx: Transaction,
   invoice: Stripe.Invoice,
@@ -396,11 +413,21 @@ async function applyPaidInvoice(
     .where(eq(billingOrders.stripePaymentId, invoice.id)).for('update')
   if (!order) throw new Error(`Failed to store Stripe invoice ${invoice.id}`)
   const paidThrough = subscription ? subscriptionPeriod(subscription).end : unixDate(invoice.period_end)
+  const invoicePaidAt = unixDate(invoice.status_transitions.paid_at) ?? eventAt
   const [existingSubscription] = await tx.select().from(billingSubscriptions)
     .where(eq(billingSubscriptions.stripeSubscriptionId, subscriptionId)).for('update')
   if (existingSubscription) {
+    // Reconciliation replays invoices newest-first, so only a newer invoice may move the paid plan.
+    const recordPaidPlan = shouldRecordPaidPlan(existingSubscription.paidPlanAt, invoicePaidAt)
     await tx.update(billingSubscriptions).set({
       paidThrough: maxDate(existingSubscription.paidThrough, paidThrough),
+      ...(recordPaidPlan ? {
+        paidPlan: paidPlanForInvoice(
+          invoice.lines.data.map((line) => ({ amount: line.amount, priceId: idOf(line.pricing?.price_details?.price) })),
+          plan,
+        ),
+        paidPlanAt: invoicePaidAt,
+      } : {}),
       updatedAt: new Date(),
     }).where(eq(billingSubscriptions.stripeSubscriptionId, subscriptionId))
   }

@@ -15,6 +15,8 @@ import {
   chargeCentsForCredits,
   MAX_TOP_UP_CENTS,
   MIN_TOP_UP_CENTS,
+  subscriptionPaidPlan,
+  subscriptionPendingPlan,
 } from './plans.js'
 import {
   changeSubscription,
@@ -44,12 +46,12 @@ export function resolvedCheckoutStatus(
   return checkoutStatus ?? null
 }
 
-export function selectSummarySubscription<T extends { plan: string; status: string }>(
+export function selectSummarySubscription<T extends { plan: string; paidPlan?: string | null; status: string }>(
   subscriptions: T[],
   entitlementPlan: string,
 ): T | null {
   const actionable = subscriptions.filter((item) => item.status === 'active' || item.status === 'past_due')
-  return actionable.find((item) => item.plan === entitlementPlan)
+  return actionable.find((item) => subscriptionPaidPlan(item) === entitlementPlan)
     ?? actionable[0]
     ?? null
 }
@@ -138,7 +140,9 @@ export async function registerBillingRoutes(app: FastifyInstance): Promise<void>
       } : null,
       onHold: entitlements.onHold,
       subscription: subscription ? {
-        plan: subscription.plan === 'fat' ? 'fat' : 'eight',
+        // The plan whose benefits apply now; `pendingPlan` is the price the next renewal bills.
+        plan: subscriptionPaidPlan(subscription) === 'fat' ? 'fat' : 'eight',
+        pendingPlan: subscriptionPendingPlan(subscription),
         status: subscription.status,
         cancelAtPeriodEnd: subscription.cancelAtPeriodEnd,
         currentPeriodEnd: subscription.currentPeriodEnd?.toISOString() ?? null,
