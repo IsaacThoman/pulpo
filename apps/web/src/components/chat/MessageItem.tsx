@@ -397,7 +397,7 @@ function approvalStatusLabel(approval: ToolApprovalItem): string {
   const via = approval.decided_via === 'desktop' ? ui('on the computer') : ui('in chat')
   if (approval.status === 'approved') return ui('Approved {{via}}', { via })
   if (approval.status === 'denied') return ui('Denied {{via}}', { via })
-  if (approval.status === 'expired') return ui('No decision in time; not run')
+  if (approval.status === 'expired' || (approval.status === 'pending' && !approvalIsPending(approval))) return ui('No decision in time; not run')
   if (approval.status === 'cancelled') return ui('Cancelled')
   return ui('Waiting for your approval')
 }
@@ -477,7 +477,10 @@ function ActivityBlock({
   onOpenChat: (chatId: string) => void
 }) {
   const workspace = steps.find((step): step is WorkspaceStep => step.kind === 'workspace')?.workspace
+  const approvalSteps = steps.filter((step): step is ApprovalStep => step.kind === 'approval')
+  const workSteps = steps.filter((step) => step.kind !== 'approval')
   const pendingApproval = steps.find((step): step is ApprovalStep => step.kind === 'approval' && approvalIsPending(step.approval))?.approval
+  useCountdown(pendingApproval ? Date.parse(pendingApproval.expires_at) : 0, Boolean(pendingApproval))
   const compaction = steps.find((step) => step.kind === 'compaction')?.compaction
   const recall = steps.find((step) => step.kind === 'recall')?.recall
   const tools = steps.flatMap((step) => (step.kind === 'tool' ? [step.tool] : []))
@@ -490,7 +493,6 @@ function ActivityBlock({
     isWaiting && workspaceActionsAvailableAt !== undefined && Date.now() >= workspaceActionsAvailableAt
   ))
   const [open, setOpen] = useState(false)
-  useEffect(() => { if (pendingApproval) setOpen(true) }, [pendingApproval])
 
   useEffect(() => {
     if (!isWaiting || workspaceActionsAvailableAt === undefined) {
@@ -576,7 +578,7 @@ function ActivityBlock({
 
   return (
     <div className="space-y-1.5">
-      <Collapsible open={open} onOpenChange={setOpen} className="min-w-0">
+      {workSteps.length > 0 && <Collapsible open={open} onOpenChange={setOpen} className="min-w-0">
         <CollapsibleTrigger className="flex max-w-full min-w-0 cursor-pointer items-center gap-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground">
           {triggerIcon}
           <span className="min-w-0 truncate">{label}</span>
@@ -584,7 +586,7 @@ function ActivityBlock({
         </CollapsibleTrigger>
         <CollapsibleContent>
           <div className="mt-1 space-y-1.5 border-l-2 border-muted py-0.5 pl-2.5">
-            {steps.map((step, index) => {
+            {workSteps.map((step, index) => {
               if (step.kind === 'reasoning') {
                 return <ReasoningStepRow key={`reasoning:${index}`} step={step} />
               }
@@ -596,9 +598,6 @@ function ActivityBlock({
               }
               if (step.kind === 'recall') {
                 return <RecallStepRow key={step.recall.id} item={step.recall} onOpenChat={onOpenChat} />
-              }
-              if (step.kind === 'approval') {
-                return <ApprovalStepRow key={step.approval.id} approval={step.approval} />
               }
               return (
                 <ActivityToolRow
@@ -612,7 +611,8 @@ function ActivityBlock({
             ) : null}
           </div>
         </CollapsibleContent>
-      </Collapsible>
+      </Collapsible>}
+      {approvalSteps.map((step) => <ApprovalStepRow key={step.approval.id} approval={step.approval} />)}
       {needsWorkspaceActions && (
         <div className="flex flex-wrap gap-2">
           <Button size="sm" variant="outline" onClick={() => onStop(messageId)}> {ui("Cancel generation")} </Button>
@@ -781,7 +781,7 @@ export const MessageItem = memo(function MessageItem({
   const outputItems = message.outputItems ?? []
   const otherItems = outputItems.filter((item) => {
     const type = (item as { type?: string }).type
-    return type && !['message', 'reasoning', 'pulpo_tool', 'pulpo_workspace', 'pulpo_attachment', 'pulpo_compaction', 'pulpo_recall'].includes(type)
+    return type && !['message', 'reasoning', 'pulpo_tool', 'pulpo_workspace', 'pulpo_attachment', 'pulpo_compaction', 'pulpo_recall', 'pulpo_approval'].includes(type)
   })
   const lastActivityIndex = activitySegments.length - 1
   const hasVisibleBody = timeline.length > 0 || Boolean(message.error)

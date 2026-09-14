@@ -3,7 +3,7 @@ import { selectedImageModel, executeImageGeneration, recoverSavedImageGeneration
 import { Agent, type AgentMessage } from '@earendil-works/pi-agent-core'
 import { openAIResponsesApi } from '@earendil-works/pi-ai/api/openai-responses.lazy'
 import type { Api, AssistantMessage, Context, Model } from '@earendil-works/pi-ai'
-import { toolImagePreviewSchema, type ToolImagePreview, type CompactionItem, type RecallItem, type ResponseSnapshot } from '@pulpo/contracts'
+import { toolImagePreviewSchema, type ToolImagePreview, type CompactionItem, type RecallItem, type ToolApprovalItem, type ResponseSnapshot } from '@pulpo/contracts'
 import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm'
 import { db } from '../database/client.js'
 import { agentRuns, applicationSettings, attachments, chats, generationAttempts, models, providerConnections, requestLogs, responses, toolExecutions, userPreferences } from '../database/schema.js'
@@ -445,6 +445,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
         workspaceItem,
         compactionItems,
         recallItems,
+        approvalItems: streamProjection.output.filter((item): item is ToolApprovalItem => (item as { type?: string }).type === 'pulpo_approval'),
         turnDurationsMs,
         streaming: false,
         terminal: true,

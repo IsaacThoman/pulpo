@@ -71,6 +71,20 @@ describe('buildAgentOutput', () => {
     expect((output[5] as { content: Array<{ text: string }> }).content[0]?.text).toBe('Done.')
   })
 
+  it.each(['approved', 'denied', 'expired', 'cancelled'] as const)('preserves %s approval outcomes beside their tools in terminal output', (status) => {
+    const approval = {
+      id: 'approval-1', type: 'pulpo_approval' as const, tool_call_id: 'write-1', kind: 'write' as const,
+      summary: '/project/notes.txt', status, computer_name: 'Studio', expires_at: new Date(0).toISOString(),
+    }
+    const tool: ToolTimelineItem = { id: 'write-1', type: 'pulpo_tool', tool: 'write', arguments: {}, status: status === 'approved' ? 'completed' : 'failed', output: '' }
+    const output = buildAgentOutput({
+      messages: [{ role: 'assistant', content: [{ type: 'toolCall', id: 'write-1', name: 'write', arguments: {} }, { type: 'text', text: 'Done.' }] } as never],
+      skipMessageCount: 0, toolItems: new Map([['write-1', tool]]), approvalItems: [approval], terminal: true,
+    })
+    expect(output).toMatchObject([tool, approval, { type: 'message' }])
+    expect(buildAgentOutput({ messages: [], skipMessageCount: 0, toolItems: new Map(), approvalItems: [approval], terminal: true })).toEqual([approval])
+  })
+
   it('skips inherited parent messages and marks the streaming tail', () => {
     const output = buildAgentOutput({
       skipMessageCount: 1,

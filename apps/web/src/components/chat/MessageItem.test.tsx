@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { act, cleanup, fireEvent, render } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react'
 import type { Chat, Message } from '@/lib/types'
 import i18n from '@/i18n'
 import { TooltipProvider } from '@/components/ui/tooltip'
@@ -29,7 +29,7 @@ Object.defineProperty(window, 'localStorage', {
 
 const { useSettings } = await import('@/stores/settings')
 
-afterEach(cleanup)
+afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks() })
 beforeEach(() => useSettings.setState({ showReasoning: true }))
 
 const chat: Chat = {
@@ -744,5 +744,62 @@ describe('read aloud actions', () => {
       const result = render(<TooltipProvider><MessageItem chat={chat} message={message} streaming={!message.done} activeModelId="model-1" /></TooltipProvider>)
       expect(result.queryByRole('button', { name: 'Read aloud' })).toBeNull(); result.unmount()
     }
+  })
+})
+
+
+describe('computer approvals', () => {
+  const approval = {
+    id: 'approval-1', type: 'pulpo_approval', tool_call_id: 'write-1', kind: 'write',
+    summary: '/project/notes.txt', status: 'pending', computer_name: 'Studio',
+    expires_at: new Date('2030-01-01T00:05:00Z').toISOString(),
+  }
+  const tool = { id: 'write-1', type: 'pulpo_tool', tool: 'write', status: 'running', arguments: { path: '/project/notes.txt' } }
+
+  it.each([true, false])('shows approval controls outside work details with reasoning visibility %s', async (showReasoning) => {
+    useSettings.setState({ showReasoning })
+    const { MessageItem } = await import('./MessageItem')
+    const view = render(<MessageItem chat={chat} message={assistant({ done: false, outputItems: [tool, approval] })} streaming activeModelId="model-1" />)
+    const card = view.getByTestId('approval-step')
+    expect(view.getByRole('button', { name: 'Approve', exact: true })).toBeDefined()
+    expect(view.getByRole('button', { name: 'Deny', exact: true })).toBeDefined()
+    expect(card.closest('[data-slot="collapsible-content"]')).toBeNull()
+    expect(view.container.querySelector('details')).toBeNull()
+    expect(view.container.textContent).not.toContain('pulpo approval')
+    if (showReasoning) {
+      const trigger = view.getByRole('button', { name: 'Waiting for your approval…' })
+      fireEvent.click(trigger)
+      fireEvent.click(trigger)
+      expect(view.getByRole('button', { name: 'Approve', exact: true })).toBeDefined()
+    }
+  })
+
+  it('shows an expired request without offering approval or a raw item', async () => {
+    const { MessageItem } = await import('./MessageItem')
+    const view = render(<MessageItem chat={chat} message={assistant({ done: false, outputItems: [tool, { ...approval, expires_at: new Date(0).toISOString() }] })} streaming activeModelId="model-1" />)
+    expect(view.getByText('No decision in time; not run')).toBeDefined()
+    expect(view.queryByRole('button', { name: 'Approve', exact: true })).toBeNull()
+    expect(view.container.querySelector('details')).toBeNull()
+  })
+
+  it('removes actions and waiting labels when the deadline passes without a server update', async () => {
+    const { MessageItem } = await import('./MessageItem')
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2030-01-01T00:04:59Z'))
+    const view = render(<MessageItem chat={chat} message={assistant({ done: false, outputItems: [tool, approval] })} streaming activeModelId="model-1" />)
+    expect(view.getByRole('button', { name: 'Approve', exact: true })).toBeDefined()
+    await act(async () => { await vi.advanceTimersByTimeAsync(1_000) })
+    expect(view.queryByRole('button', { name: 'Approve', exact: true })).toBeNull()
+    expect(view.queryByText('Waiting for your approval…')).toBeNull()
+    expect(view.getByText('No decision in time; not run')).toBeDefined()
+  })
+
+  it.each([true, false])('submits the chat decision from the visible card (approve: %s)', async (approved) => {
+    const computers = await import('@/lib/computers')
+    const decide = vi.spyOn(computers, 'decideToolApproval').mockResolvedValue({ approval: { id: approval.id, status: approved ? 'approved' : 'denied' } })
+    const { MessageItem } = await import('./MessageItem')
+    const view = render(<MessageItem chat={chat} message={assistant({ done: false, outputItems: [tool, approval] })} streaming activeModelId="model-1" />)
+    fireEvent.click(view.getByRole('button', { name: approved ? 'Approve' : 'Deny', exact: true }))
+    await waitFor(() => expect(decide).toHaveBeenCalledExactlyOnceWith(approval.id, approved))
   })
 })

@@ -213,6 +213,11 @@ export function buildTimeline(outputItems: unknown[], showReasoning: boolean): T
     }
   }
 
-  // The preference controls the entire work disclosure, including workspace-only activity.
-  return showReasoning ? segments : segments.filter((segment) => segment.kind === 'text')
+  // Approval controls remain available even when work details are hidden.
+  if (showReasoning) return segments
+  return segments.flatMap((segment): TimelineSegment[] => {
+    if (segment.kind === 'text') return [segment]
+    const steps = segment.steps.filter((step) => step.kind === 'approval')
+    return steps.length ? [{ kind: 'activity', steps, active: steps.some((step) => approvalIsPending(step.approval)) }] : []
+  })
 }
