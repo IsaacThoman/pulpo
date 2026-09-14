@@ -1,3 +1,4 @@
+import { assertPublicIdentifier } from './identifiers.js'
 import { z } from 'zod'
 import type { ResponseEvent } from '@pulpo/contracts'
 import { responses } from '../database/schema.js'
@@ -253,6 +254,7 @@ export function parseChatCompletionRequest(raw: unknown): PublicGenerationReques
   acceptNoop(source, 'modalities', (value) => value == null || (Array.isArray(value) && value.length === 1 && value[0] === 'text'), ignored)
   acceptNoop(source, 'web_search_options', (value) => value == null, ignored)
   const input = chatRequestSchema.parse(source)
+  assertPublicIdentifier(input.model, 'model')
   if (input.max_completion_tokens !== undefined && input.max_tokens !== undefined) {
     throw new AppError(400, 'parameter_conflict', 'Specify only one of max_completion_tokens or max_tokens', 'invalid_request_error', 'max_completion_tokens')
   }
@@ -320,6 +322,7 @@ export function parseCompletionRequest(raw: unknown): PublicGenerationRequest {
   acceptNoop(source, 'seed', (value) => value == null, ignored)
   if (Array.isArray(source.prompt)) unsupported('prompt', 'Prompt arrays and token arrays are not supported')
   const input = completionRequestSchema.parse(source)
+  assertPublicIdentifier(input.model, 'model')
   if (input.n !== undefined && input.n !== 1) unsupported('n', 'Only n=1 is supported')
   return {
     protocol: 'completions', model: input.model, rawInput: input.prompt, displayInput: input.prompt,
@@ -415,6 +418,7 @@ export function parseResponsesRequest(raw: unknown): PublicGenerationRequest {
   acceptNoop(source, 'previous_response_id', (value) => value == null, ignored)
   acceptNoop(source, 'prompt', (value) => value == null, ignored)
   const input = responsesRequestSchema.parse(source)
+  assertPublicIdentifier(input.model, 'model')
   if (input.stream && input.background) throw new AppError(400, 'parameter_conflict', 'Streaming background responses are not supported', 'invalid_request_error', 'background')
   rejectDeferredResponseParts(input.input)
   const tools = responsesTools(input.tools)

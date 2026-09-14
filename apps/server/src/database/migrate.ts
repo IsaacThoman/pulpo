@@ -1,3 +1,4 @@
+import { assertLosslessStorageCutover } from './lossless-cutover.js'
 import { migrate } from 'drizzle-orm/postgres-js/migrator'
 import { db, queryClient } from './client.js'
 import { recoverRenumberedRestoreMigration, recoverRenumberedShelfMigration, recoverRenumberedSpeechMigrations } from './migration-recovery.js'
@@ -10,6 +11,7 @@ try {
   await lock`set lock_timeout = '5min'`
   await lock`select pg_advisory_lock(hashtext('pulpo:database-migrations'))`
   try {
+    await assertLosslessStorageCutover(queryClient)
     const migrationsFolder = new URL('../../drizzle', import.meta.url).pathname
     if (await recoverRenumberedShelfMigration(queryClient, migrationsFolder)) console.info('Recovered renumbered shelf migration and intervening migrations')
     if (await recoverRenumberedRestoreMigration(queryClient, migrationsFolder)) console.info('Recovered renumbered restore migration and intervening migrations')

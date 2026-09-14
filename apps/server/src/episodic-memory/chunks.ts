@@ -4,6 +4,11 @@ import { lineageFromLeaf } from '../messages/branching.js'
 import { responseInputText } from '../messages/input.js'
 import { assistantOutputText } from '../responses/output-text.js'
 
+// Search passages are derivatives. Authoritative messages retain their exact contents.
+function searchableText(value: string): string {
+  return Buffer.from(value, 'utf8').toString('utf8').replaceAll('\0', '␀')
+}
+
 const MAX_TURN_CHARACTERS = 7_000
 export const CHAT_INDEX_VERSION = 2
 export const PASSAGE_CHARACTERS = 2_400
@@ -28,7 +33,7 @@ export function chatTurnPassages(response: Parameters<typeof chatTurnChunk>[0]):
     ['Assistant', assistantOutputText(response.output)],
   ] as const
   const normalized = sections.map(([role, value]) => {
-    const text = value.replace(/\s+/g, ' ').trim()
+    const text = searchableText(value).replace(/\s+/g, ' ').trim()
     return text ? `${role}: ${text}` : ''
   }).filter(Boolean).join('\n\n')
   const passages: ChatTurnPassage[] = []
@@ -38,7 +43,7 @@ export function chatTurnPassages(response: Parameters<typeof chatTurnChunk>[0]):
       const boundary = normalized.lastIndexOf(' ', end)
       if (boundary > start + PASSAGE_CHARACTERS / 2) end = boundary
     }
-    const text = normalized.slice(start, end).trim()
+    const text = searchableText(normalized.slice(start, end)).trim()
     passages.push({ responseId: response.id, chunkIndex: passages.length, text, contentHash: contentHash(text) })
     if (end === normalized.length) break
     start = end - PASSAGE_OVERLAP
@@ -55,9 +60,9 @@ export function activeLineagePassages(
 }
 
 function bounded(value: string, limit: number): string {
-  const trimmed = value.replace(/\s+/g, ' ').trim()
+  const trimmed = searchableText(value).replace(/\s+/g, ' ').trim()
   if (trimmed.length <= limit) return trimmed
-  return `${trimmed.slice(0, limit - 1).trimEnd()}…`
+  return `${searchableText(trimmed.slice(0, limit - 1)).trimEnd()}…`
 }
 
 export function chatTurnChunk(response: Pick<typeof responses.$inferSelect, 'id' | 'input' | 'output' | 'status'>): ChatTurnChunk | null {

@@ -1,3 +1,4 @@
+import { assertPublicIdentifier } from './identifiers.js'
 import { and, eq, isNull } from 'drizzle-orm'
 import type { FastifyReply } from 'fastify'
 import { db } from '../database/client.js'
@@ -124,6 +125,7 @@ export async function executePublicGeneration(input: {
   request: PublicGenerationRequest
   idempotencyKey?: string
 }) {
+  if (input.idempotencyKey) assertPublicIdentifier(input.idempotencyKey, 'idempotency-key')
   const fingerprint = publicRequestFingerprint(input.request.fingerprintValue)
   const parameters = namespacePublicRequestIdentifiers(input.request.parameters, input.key.id)
   const existing = await findIdempotentResponse({

@@ -1,3 +1,4 @@
+import { safeErrorMessage } from './database/errors.js'
 import { deleteAccountData, resumeAccountDeletions } from './account/deletion.js'
 import { createServer } from 'node:http'
 import { checkReadiness } from './runtime-health.js'
@@ -68,7 +69,7 @@ const concurrencyRefreshInterval = setInterval(() => {
   }).catch((error: unknown) => {
     console.error(JSON.stringify({
       level: 'error', service: 'pulpo-worker', event: 'worker.concurrency_refresh_failed',
-      error: error instanceof Error ? error.message : String(error),
+      error: safeErrorMessage(error),
     }))
   })
 }, 15_000)
@@ -82,7 +83,7 @@ const payloadRetentionWorker = new Worker('payload-retention', async () => {
 }, { connection: { url: config.REDIS_URL }, concurrency: 1 })
 payloadRetentionWorker.on('failed', (job, error) => {
   console.error(JSON.stringify({
-    level: 'error', service: 'pulpo-worker', event: 'payload_retention.failed', jobId: job?.id, error: error.message,
+    level: 'error', service: 'pulpo-worker', event: 'payload_retention.failed', jobId: job?.id, error: safeErrorMessage(error),
   }))
 })
 
@@ -151,7 +152,7 @@ await reconcileOffsiteBackupJobs()
 generationWorker.on('failed', (job, error) => {
   console.error(JSON.stringify({
     level: 'error', service: 'pulpo-worker', event: 'generation.failed',
-    responseId: job?.data.responseId, error: error.message,
+    responseId: job?.data.responseId, error: safeErrorMessage(error),
   }))
 })
 
@@ -166,7 +167,7 @@ maintenanceWorker.on('failed', (job, error) => {
   if (job?.data.type !== 'backup') return
   console.error(JSON.stringify({
     level: 'error', service: 'pulpo-worker', event: 'backup.failed', jobId: job.data.payload?.jobId,
-    attempt: job.attemptsMade, error: error.message,
+    attempt: job.attemptsMade, error: safeErrorMessage(error),
   }))
 })
 
