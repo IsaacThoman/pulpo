@@ -133,3 +133,60 @@ Missing, malformed, or untrusted headers fall back to the TCP peer. Confirm the
 configuration by signing in through the tunnel and checking **Settings → Devices**
 against the visitor's public IP. Test separate visitors to verify that rate limits
 are no longer shared under the tunnel/proxy IP. No IP geolocation is performed.
+
+## Lossless conversation storage cutover (migration 0075)
+
+Migration `0075_lossless_conversation_storage` changes conversation payload columns
+from JSONB to serialized JSON in PostgreSQL `text`. Arbitrary tool output can
+contain NULs or unpaired UTF-16 surrogates; parsing those payloads as JSONB rejects
+otherwise accepted API requests. Application code encodes on write and decodes on
+read, so clients and providers receive the original string values. Tool/OCR text
+columns use JSON string serialization as well. Operational identifiers remain
+ordinary text/UUIDs. Search passages are display-safe derivatives; they are not
+used to replace authoritative conversation content.
+
+This migration **requires a maintenance window**. The current automated rolling
+API → worker → web deployment must not apply it while old instances are serving.
+Before any migration or migration-recovery operation, the migration runner checks
+for the old `responses.input` JSONB column. On an existing installation it exits
+without changing the schema unless `PULPO_LOSSLESS_STORAGE_CUTOVER=1` is explicitly
+provided to that migration invocation. Fresh databases need no acknowledgement;
+subsequent starts after the conversion do not need it either. This guard applies
+to development as well as production. A normal deployment encountering the guard
+fails before replacing the running API and before deploying workers.
+
+For each existing environment:
+
+1. Pin the API and worker release to the same tested commit. Prepare images before
+   the maintenance window when possible. Prevent concurrent automatic deployments
+   for the duration of the cutover.
+2. Block new HTTP and Socket.IO traffic at ingress, then drain and stop every API
+   and worker instance, including overlapping containers. Allow active workers to
+   finish within their configured shutdown budget; verify that no old consumers
+   or database writers remain before proceeding. If draining fails, stop here.
+3. Take a verified PostgreSQL backup while writers are stopped. Retain the old
+   release identifiers and existing object volumes. Redis queues must remain
+   intact so accepted, pending jobs can resume on the new worker.
+4. Run the new release's migration command once with
+   `PULPO_LOSSLESS_STORAGE_CUTOVER=1`. The acknowledgement confirms the prior steps;
+   it does not itself stop traffic, drain workers, or create a backup. Remove it
+   after the migration succeeds. Drizzle applies the conversion and its journal
+   entry transactionally under the existing migration lock.
+5. Start the new API and worker from the pinned commit, then update the web app.
+   Verify `/ready`, worker readiness, and generation/retrieval of a synthetic tool
+   result containing `\u0000`, confirming the original character round-trips.
+   Reopen ingress only after those checks pass.
+
+If the migration fails, its transaction rolls back; verify the database schema
+before restoring service with old binaries. If migration succeeded but startup or
+verification fails, keep ingress closed and repair the new release. **Do not
+restart old binaries against the converted schema.** Reverting the schema requires
+restoring the pre-cutover database backup while all writers remain stopped, with
+queue reconciliation before old workers resume. Do not discard accepted queue
+jobs automatically.
+
+Full instance backups retain their version-1 logical representation. The backup
+adapter decodes serialized storage columns before archiving and encodes them before
+raw SQL restore; legacy archives remain supported. New archives containing NULs
+require a release with lossless storage to restore. Detailed-payload retention and
+temporary-chat exclusions apply before encoding and are unchanged.

@@ -1,3 +1,4 @@
+import { databaseErrorDetails } from './database/errors.js'
 import { registerImageGenerationRoutes } from './image-generation/routes.js'
 import { registerSpeechRoutes } from './speech/routes.js'
 import { registerShelfRoutes } from './shelf/routes.js'
@@ -128,7 +129,8 @@ export async function buildApp() {
         param: null,
       } })
     }
-    request.log.error({ err: error }, 'Unhandled request error')
+    const databaseError = databaseErrorDetails(error)
+    request.log.error(databaseError ? { databaseError } : { err: error }, 'Unhandled request error')
     return reply.code(500).send({ error: {
       message: 'Internal server error',
       type: 'server_error',

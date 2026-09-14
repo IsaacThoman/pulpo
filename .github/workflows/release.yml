@@ -122,6 +122,11 @@ jobs:
         image: redis:7-alpine
         ports:
           - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
     env:
       DATABASE_URL: postgres://postgres:search-test@localhost:5432/pulpo_search_test
     steps:
@@ -197,6 +202,29 @@ jobs:
           DATABASE_URL: postgres://postgres:search-test@localhost:5432/pulpo_speech_backup_test
           PULPO_SPEECH_BACKUP_POSTGRES_TEST: '1'
         run: npm run test -w @pulpo/server -- src/speech/backup.postgres.test.ts
+
+      - name: Create disposable lossless storage databases
+        run: node --input-type=module -e 'import postgres from "postgres"; const sql = postgres(process.env.DATABASE_URL); for (const name of ["pulpo_lossless_test", "pulpo_lossless_backup_test", "pulpo_public_api_test"]) await sql.unsafe("CREATE DATABASE " + name); await sql.end();'
+      - name: Test lossless storage migration and cutover guard
+        env:
+          DATABASE_URL: postgres://postgres:search-test@localhost:5432/pulpo_lossless_test
+          PULPO_LOSSLESS_POSTGRES_TEST: '1'
+        run: npm run test -w @pulpo/server -- src/database/lossless-storage.postgres.test.ts
+      - name: Migrate and test lossless conversation backup and restore
+        env:
+          DATABASE_URL: postgres://postgres:search-test@localhost:5432/pulpo_lossless_backup_test
+          PULPO_LOSSLESS_BACKUP_POSTGRES_TEST: '1'
+        run: |
+          npm run db:migrate -w @pulpo/server
+          npm run test -w @pulpo/server -- src/admin/lossless-backup.postgres.test.ts
+      - name: Verify public API Unicode through PostgreSQL, Redis and a local provider
+        env:
+          DATABASE_URL: postgres://postgres:search-test@localhost:5432/pulpo_public_api_test
+          REDIS_URL: redis://localhost:6379/15
+          ALLOW_PRIVATE_PROVIDER_URLS: 'true'
+        run: |
+          npm run db:migrate -w @pulpo/server
+          npm run test:public-api -w @pulpo/server
 
       - name: Test persistent preview migration recovery
         env:

@@ -6,7 +6,7 @@ import { drizzle } from 'drizzle-orm/postgres-js'
 import { migrate } from 'drizzle-orm/postgres-js/migrator'
 import postgres from 'postgres'
 import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { recoverRenumberedShelfMigration, recoverRenumberedSpeechMigrations } from './migration-recovery.js'
+import { recoverRenumberedComputerMigrations, recoverRenumberedShelfMigration, recoverRenumberedSpeechMigrations } from './migration-recovery.js'
 
 const enabled = process.env.PULPO_MIGRATION_POSTGRES_TEST === '1'
 if (enabled && new URL(process.env.DATABASE_URL ?? 'http://invalid').pathname !== '/pulpo_migration_test') {
@@ -106,6 +106,29 @@ describe.skipIf(!enabled)('renumbered shelf migration recovery on PostgreSQL', (
     const before = await client!`select * from drizzle.__drizzle_migrations order by id`
     await expect(recoverRenumberedShelfMigration(client!, broken)).rejects.toThrow('missing_recovery_test_column')
     expect(await searchColumnExists()).toBe(false)
+    expect(await client!`select * from drizzle.__drizzle_migrations order by id`).toEqual(before)
+  })
+
+  it.each([1, 2, 3])('recovers %s legacy computer migrations without losing registrations', async count => {
+    const timestamps = [1789358695128, 1789361962169, 1789367266064]
+    const computers = journal.entries.filter(entry => /_(agent_computers|queued_workspace|computer_security)$/.test(entry.tag))
+    const legacy = fixture([...journal.entries.filter(entry => entry.idx <= 74), ...computers.slice(0, count).map((entry, index) => ({ ...entry, when: timestamps[index]! }))])
+    await migrate(drizzle(client!), { migrationsFolder: legacy })
+    const userId = randomUUID(), computerId = randomUUID()
+    await client!`insert into users (id, email, name, username) values (${userId}, ${`${userId}@example.test`}, 'Computer migration', ${userId})`
+    await client!`insert into agent_computers (id, user_id, name, os, root_path, attachments_dir) values (${computerId}, ${userId}, 'Keep this computer', 'macos', '/project', '/attachments')`
+    if (count === 3) await client!`update agent_computers set credential_hash = 'preserve-credential' where id = ${computerId}`
+
+    expect(await recoverRenumberedComputerMigrations(client!, folder)).toBe(true)
+    await migrate(drizzle(client!), { migrationsFolder: folder })
+    const [saved] = await client!`select name, credential_hash from agent_computers where id = ${computerId}`
+    expect(saved).toMatchObject({ name: 'Keep this computer', credential_hash: count === 3 ? 'preserve-credential' : null })
+    const [input] = await client!`select data_type from information_schema.columns where table_name = 'responses' and column_name = 'input'`
+    expect(input!.data_type).toBe('text')
+    expect(await client!`select column_name from information_schema.columns where table_name = 'responses' and column_name = 'requester_session_id'`).toHaveLength(1)
+    const before = await client!`select * from drizzle.__drizzle_migrations order by id`
+    expect(await recoverRenumberedComputerMigrations(client!, folder)).toBe(false)
+    await migrate(drizzle(client!), { migrationsFolder: folder })
     expect(await client!`select * from drizzle.__drizzle_migrations order by id`).toEqual(before)
   })
 

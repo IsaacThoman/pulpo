@@ -530,22 +530,29 @@
     {
       "idx": 75,
       "version": "7",
-      "when": 1789358695128,
-      "tag": "0075_agent_computers",
+      "when": 1789415565603,
+      "tag": "0075_lossless_conversation_storage",
       "breakpoints": true
     },
     {
       "idx": 76,
       "version": "7",
-      "when": 1789361962169,
-      "tag": "0076_queued_workspace",
+      "when": 1789415565604,
+      "tag": "0076_agent_computers",
       "breakpoints": true
     },
     {
       "idx": 77,
       "version": "7",
-      "when": 1789367266064,
-      "tag": "0077_computer_security",
+      "when": 1789415565605,
+      "tag": "0077_queued_workspace",
+      "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "7",
+      "when": 1789415565606,
+      "tag": "0078_computer_security",
       "breakpoints": true
     }
   ]

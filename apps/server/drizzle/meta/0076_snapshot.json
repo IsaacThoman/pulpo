@@ -1,6 +1,6 @@
 {
-  "id": "d7165a99-7052-430a-83b4-248169502843",
-  "prevId": "122151c7-0ed7-4cb2-b3c5-f6d181b5aca5",
+  "id": "122151c7-0ed7-4cb2-b3c5-f6d181b5aca5",
+  "prevId": "b04d4f97-10a9-4f49-9d93-c809ab057059",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -389,10 +389,10 @@
         },
         "context": {
           "name": "context",
-          "type": "jsonb",
+          "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'{}'::jsonb"
+          "default": "'{}'"
         },
         "model_turns": {
           "name": "model_turns",
@@ -6436,13 +6436,13 @@
         },
         "request_payload": {
           "name": "request_payload",
-          "type": "jsonb",
+          "type": "text",
           "primaryKey": false,
           "notNull": false
         },
         "response_payload": {
           "name": "response_payload",
-          "type": "jsonb",
+          "type": "text",
           "primaryKey": false,
           "notNull": false
         },
@@ -7474,18 +7474,6 @@
       "name": "queued_messages",
       "schema": "",
       "columns": {
-        "workspace": {
-          "name": "workspace",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "requester_session_id": {
-          "name": "requester_session_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
         "time_zone": {
           "name": "time_zone",
           "type": "text",
@@ -7653,19 +7641,6 @@
         }
       },
       "foreignKeys": {
-        "queued_messages_requester_session_id_sessions_id_fk": {
-          "name": "queued_messages_requester_session_id_sessions_id_fk",
-          "tableFrom": "queued_messages",
-          "tableTo": "sessions",
-          "columnsFrom": [
-            "requester_session_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
         "queued_messages_chat_id_chats_id_fk": {
           "name": "queued_messages_chat_id_chats_id_fk",
           "tableFrom": "queued_messages",
@@ -7921,13 +7896,13 @@
         },
         "request_payload": {
           "name": "request_payload",
-          "type": "jsonb",
+          "type": "text",
           "primaryKey": false,
           "notNull": false
         },
         "response_payload": {
           "name": "response_payload",
-          "type": "jsonb",
+          "type": "text",
           "primaryKey": false,
           "notNull": false
         },
@@ -8162,7 +8137,7 @@
         },
         "payload": {
           "name": "payload",
-          "type": "jsonb",
+          "type": "text",
           "primaryKey": false,
           "notNull": true
         }
@@ -8259,7 +8234,7 @@
         },
         "payload": {
           "name": "payload",
-          "type": "jsonb",
+          "type": "text",
           "primaryKey": false,
           "notNull": true
         }
@@ -8429,7 +8404,7 @@
         },
         "input": {
           "name": "input",
-          "type": "jsonb",
+          "type": "text",
           "primaryKey": false,
           "notNull": true
         },
@@ -8448,17 +8423,17 @@
         },
         "parameters": {
           "name": "parameters",
-          "type": "jsonb",
+          "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'{}'::jsonb"
+          "default": "'{}'"
         },
         "metadata": {
           "name": "metadata",
-          "type": "jsonb",
+          "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'{}'::jsonb"
+          "default": "'{}'"
         },
         "publicly_stored": {
           "name": "publicly_stored",
@@ -8469,10 +8444,10 @@
         },
         "output": {
           "name": "output",
-          "type": "jsonb",
+          "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'[]'::jsonb"
+          "default": "'[]'"
         },
         "usage": {
           "name": "usage",
@@ -8482,13 +8457,13 @@
         },
         "error": {
           "name": "error",
-          "type": "jsonb",
+          "type": "text",
           "primaryKey": false,
           "notNull": false
         },
         "incomplete_details": {
           "name": "incomplete_details",
-          "type": "jsonb",
+          "type": "text",
           "primaryKey": false,
           "notNull": false
         },
@@ -9428,10 +9403,10 @@
         },
         "arguments": {
           "name": "arguments",
-          "type": "jsonb",
+          "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'{}'::jsonb"
+          "default": "'{}'"
         },
         "status": {
           "name": "status",
@@ -9467,10 +9442,10 @@
         },
         "provider_attempts": {
           "name": "provider_attempts",
-          "type": "jsonb",
+          "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'[]'::jsonb"
+          "default": "'[]'"
         },
         "provider_cost_micros": {
           "name": "provider_cost_micros",

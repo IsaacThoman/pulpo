@@ -1,6 +1,6 @@
 {
-  "id": "d7165a99-7052-430a-83b4-248169502843",
-  "prevId": "122151c7-0ed7-4cb2-b3c5-f6d181b5aca5",
+  "id": "a76a3065-bfc2-4f86-8d49-01efc77e5292",
+  "prevId": "d7165a99-7052-430a-83b4-248169502843",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -179,6 +179,12 @@
           "type": "uuid",
           "primaryKey": false,
           "notNull": true
+        },
+        "credential_hash": {
+          "name": "credential_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         },
         "owner_session_id": {
           "name": "owner_session_id",
@@ -538,6 +544,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": "''"
+        },
+        "action_digest": {
+          "name": "action_digest",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         },
         "status": {
           "name": "status",
@@ -8421,6 +8433,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "requester_session_id": {
+          "name": "requester_session_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "workspace_computer_id": {
           "name": "workspace_computer_id",
           "type": "uuid",
@@ -8684,6 +8702,19 @@
             "id"
           ],
           "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "responses_requester_session_id_sessions_id_fk": {
+          "name": "responses_requester_session_id_sessions_id_fk",
+          "tableFrom": "responses",
+          "tableTo": "sessions",
+          "columnsFrom": [
+            "requester_session_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
           "onUpdate": "no action"
         },
         "responses_workspace_computer_id_agent_computers_id_fk": {

@@ -121,6 +121,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
         isNull(chats.deletedAt),
         eq(chats.temporary, false),
         accessibleChatCondition(),
+        // Search serialized payload text directly; casting back to jsonb rejects valid NUL escapes.
         sql`to_tsvector('simple', coalesce(${chats.title}, '') || ' ' || coalesce(${responses.input}::text, '') || ' ' || coalesce(${responses.output}::text, ''))
           @@ plainto_tsquery('simple', ${query})`,
       ))
@@ -176,7 +177,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
           const { modelId: responseModel, metadata } = importedModelIdentity(sourceResponseModel, enabledIds, sourceMetadata)
           const sourceUserMessageId = String(response.userMessageId ?? response.user_message_id ?? response.id)
           const userMessageId = userVariantIds.get(sourceUserMessageId) ?? newId(); userVariantIds.set(sourceUserMessageId, userMessageId)
-          await tx.insert(responses).values({ id: ids.get(String(response.id))!, chatId, userId: user.id, modelId: responseModel, actualModelId: responseModel, parentResponseId: ids.get(String(response.parentResponseId ?? response.parent_response_id ?? '')) ?? null, previousResponseId: ids.get(String(response.previousResponseId ?? response.previous_response_id ?? '')) ?? null, userMessageId, branchReason: String(response.branchReason ?? response.branch_reason ?? 'message'), status: (['queued', 'in_progress', 'completed', 'failed', 'cancelled', 'incomplete'].includes(String(response.status)) ? response.status : 'completed') as typeof responses.$inferInsert.status, input: response.input ?? [], output: response.output ?? [], usage: response.usage, error: response.error, metadata, createdAt: response.createdAt ? new Date(String(response.createdAt)) : new Date(), completedAt: response.completedAt ? new Date(String(response.completedAt)) : null })
+          await tx.insert(responses).values({ id: ids.get(String(response.id))!, chatId, userId: user.id, modelId: responseModel, actualModelId: responseModel, parentResponseId: ids.get(String(response.parentResponseId ?? response.parent_response_id ?? '')) ?? null, previousResponseId: ids.get(String(response.previousResponseId ?? response.previous_response_id ?? '')) ?? null, userMessageId, branchReason: String(response.branchReason ?? response.branch_reason ?? 'message'), status: (['queued', 'in_progress', 'completed', 'failed', 'cancelled', 'incomplete'].includes(String(response.status)) ? response.status : 'completed') as typeof responses.$inferInsert.status, input: response.input ?? [], instructions: typeof response.instructions === 'string' ? response.instructions : null, parameters: response.parameters ?? {}, output: response.output ?? [], usage: response.usage, error: response.error, metadata, createdAt: response.createdAt ? new Date(String(response.createdAt)) : new Date(), completedAt: response.completedAt ? new Date(String(response.completedAt)) : null })
         }
         const active = ids.get(String(source.activeResponseId ?? source.active_response_id ?? '')) ?? [...ids.values()].at(-1)
         if (active) await tx.update(chats).set({ activeResponseId: active, activeBranchLeafId: active }).where(eq(chats.id, chatId))

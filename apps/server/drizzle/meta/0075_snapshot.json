@@ -1,362 +1,9 @@
 {
-  "id": "122151c7-0ed7-4cb2-b3c5-f6d181b5aca5",
+  "id": "b04d4f97-10a9-4f49-9d93-c809ab057059",
   "prevId": "f5aed9a6-2d31-4de9-861b-209c2ecb6eb7",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
-    "public.agent_computer_pairings": {
-      "name": "agent_computer_pairings",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "computer_id": {
-          "name": "computer_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "device_session_id": {
-          "name": "device_session_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'pending'"
-        },
-        "requested_ip": {
-          "name": "requested_ip",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "requested_at": {
-          "name": "requested_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "decided_at": {
-          "name": "decided_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "decided_by_session_id": {
-          "name": "decided_by_session_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "agent_computer_pairings_active_unique": {
-          "name": "agent_computer_pairings_active_unique",
-          "columns": [
-            {
-              "expression": "computer_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "device_session_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"agent_computer_pairings\".\"status\" in ('pending', 'approved')",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "agent_computer_pairings_session_idx": {
-          "name": "agent_computer_pairings_session_idx",
-          "columns": [
-            {
-              "expression": "device_session_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "agent_computer_pairings_computer_id_agent_computers_id_fk": {
-          "name": "agent_computer_pairings_computer_id_agent_computers_id_fk",
-          "tableFrom": "agent_computer_pairings",
-          "tableTo": "agent_computers",
-          "columnsFrom": [
-            "computer_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "agent_computer_pairings_device_session_id_sessions_id_fk": {
-          "name": "agent_computer_pairings_device_session_id_sessions_id_fk",
-          "tableFrom": "agent_computer_pairings",
-          "tableTo": "sessions",
-          "columnsFrom": [
-            "device_session_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "agent_computer_pairings_decided_by_session_id_sessions_id_fk": {
-          "name": "agent_computer_pairings_decided_by_session_id_sessions_id_fk",
-          "tableFrom": "agent_computer_pairings",
-          "tableTo": "sessions",
-          "columnsFrom": [
-            "decided_by_session_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "agent_computer_pairings_status_check": {
-          "name": "agent_computer_pairings_status_check",
-          "value": "\"agent_computer_pairings\".\"status\" in ('pending', 'approved', 'denied', 'revoked')"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.agent_computers": {
-      "name": "agent_computers",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "owner_session_id": {
-          "name": "owner_session_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "os": {
-          "name": "os",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "arch": {
-          "name": "arch",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "''"
-        },
-        "app_version": {
-          "name": "app_version",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "''"
-        },
-        "access_mode": {
-          "name": "access_mode",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'folder'"
-        },
-        "root_path": {
-          "name": "root_path",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "attachments_dir": {
-          "name": "attachments_dir",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "home_dir": {
-          "name": "home_dir",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "''"
-        },
-        "shell": {
-          "name": "shell",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'bash'"
-        },
-        "approval_policy": {
-          "name": "approval_policy",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'default'"
-        },
-        "allow_remote": {
-          "name": "allow_remote",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "enabled": {
-          "name": "enabled",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": true
-        },
-        "last_seen_at": {
-          "name": "last_seen_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "revoked_at": {
-          "name": "revoked_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "agent_computers_user_idx": {
-          "name": "agent_computers_user_idx",
-          "columns": [
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "agent_computers_user_id_users_id_fk": {
-          "name": "agent_computers_user_id_users_id_fk",
-          "tableFrom": "agent_computers",
-          "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "agent_computers_owner_session_id_sessions_id_fk": {
-          "name": "agent_computers_owner_session_id_sessions_id_fk",
-          "tableFrom": "agent_computers",
-          "tableTo": "sessions",
-          "columnsFrom": [
-            "owner_session_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "agent_computers_os_check": {
-          "name": "agent_computers_os_check",
-          "value": "\"agent_computers\".\"os\" in ('macos', 'windows', 'linux')"
-        },
-        "agent_computers_access_mode_check": {
-          "name": "agent_computers_access_mode_check",
-          "value": "\"agent_computers\".\"access_mode\" in ('folder', 'full')"
-        },
-        "agent_computers_approval_policy_check": {
-          "name": "agent_computers_approval_policy_check",
-          "value": "\"agent_computers\".\"approval_policy\" in ('default', 'bash-only', 'never')"
-        }
-      },
-      "isRLSEnabled": false
-    },
     "public.agent_runs": {
       "name": "agent_runs",
       "schema": "",
@@ -389,10 +36,10 @@
         },
         "context": {
           "name": "context",
-          "type": "jsonb",
+          "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'{}'::jsonb"
+          "default": "'{}'"
         },
         "model_turns": {
           "name": "model_turns",
@@ -490,221 +137,6 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.agent_tool_approvals": {
-      "name": "agent_tool_approvals",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "response_id": {
-          "name": "response_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "agent_run_id": {
-          "name": "agent_run_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "computer_id": {
-          "name": "computer_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "operation_id": {
-          "name": "operation_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "kind": {
-          "name": "kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "summary": {
-          "name": "summary",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "''"
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'pending'"
-        },
-        "decided_by_session_id": {
-          "name": "decided_by_session_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "decided_via": {
-          "name": "decided_via",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "decided_at": {
-          "name": "decided_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "expires_at": {
-          "name": "expires_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "agent_tool_approvals_operation_unique": {
-          "name": "agent_tool_approvals_operation_unique",
-          "columns": [
-            {
-              "expression": "operation_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "agent_tool_approvals_response_idx": {
-          "name": "agent_tool_approvals_response_idx",
-          "columns": [
-            {
-              "expression": "response_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "agent_tool_approvals_computer_status_idx": {
-          "name": "agent_tool_approvals_computer_status_idx",
-          "columns": [
-            {
-              "expression": "computer_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "status",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "agent_tool_approvals_response_id_responses_id_fk": {
-          "name": "agent_tool_approvals_response_id_responses_id_fk",
-          "tableFrom": "agent_tool_approvals",
-          "tableTo": "responses",
-          "columnsFrom": [
-            "response_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "agent_tool_approvals_agent_run_id_agent_runs_id_fk": {
-          "name": "agent_tool_approvals_agent_run_id_agent_runs_id_fk",
-          "tableFrom": "agent_tool_approvals",
-          "tableTo": "agent_runs",
-          "columnsFrom": [
-            "agent_run_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "agent_tool_approvals_computer_id_agent_computers_id_fk": {
-          "name": "agent_tool_approvals_computer_id_agent_computers_id_fk",
-          "tableFrom": "agent_tool_approvals",
-          "tableTo": "agent_computers",
-          "columnsFrom": [
-            "computer_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "agent_tool_approvals_decided_by_session_id_sessions_id_fk": {
-          "name": "agent_tool_approvals_decided_by_session_id_sessions_id_fk",
-          "tableFrom": "agent_tool_approvals",
-          "tableTo": "sessions",
-          "columnsFrom": [
-            "decided_by_session_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "agent_tool_approvals_kind_check": {
-          "name": "agent_tool_approvals_kind_check",
-          "value": "\"agent_tool_approvals\".\"kind\" in ('bash', 'write', 'edit')"
-        },
-        "agent_tool_approvals_status_check": {
-          "name": "agent_tool_approvals_status_check",
-          "value": "\"agent_tool_approvals\".\"status\" in ('pending', 'approved', 'denied', 'expired', 'cancelled')"
-        }
-      },
       "isRLSEnabled": false
     },
     "public.api_key_model_permissions": {
@@ -3298,12 +2730,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "workspace_computer_id": {
-          "name": "workspace_computer_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
         "expires_at": {
           "name": "expires_at",
           "type": "timestamp with time zone",
@@ -3429,19 +2855,6 @@
             "id"
           ],
           "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "chats_workspace_computer_id_agent_computers_id_fk": {
-          "name": "chats_workspace_computer_id_agent_computers_id_fk",
-          "tableFrom": "chats",
-          "tableTo": "agent_computers",
-          "columnsFrom": [
-            "workspace_computer_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
           "onUpdate": "no action"
         }
       },
@@ -6436,13 +5849,13 @@
         },
         "request_payload": {
           "name": "request_payload",
-          "type": "jsonb",
+          "type": "text",
           "primaryKey": false,
           "notNull": false
         },
         "response_payload": {
           "name": "response_payload",
-          "type": "jsonb",
+          "type": "text",
           "primaryKey": false,
           "notNull": false
         },
@@ -7896,13 +7309,13 @@
         },
         "request_payload": {
           "name": "request_payload",
-          "type": "jsonb",
+          "type": "text",
           "primaryKey": false,
           "notNull": false
         },
         "response_payload": {
           "name": "response_payload",
-          "type": "jsonb",
+          "type": "text",
           "primaryKey": false,
           "notNull": false
         },
@@ -8137,7 +7550,7 @@
         },
         "payload": {
           "name": "payload",
-          "type": "jsonb",
+          "type": "text",
           "primaryKey": false,
           "notNull": true
         }
@@ -8234,7 +7647,7 @@
         },
         "payload": {
           "name": "payload",
-          "type": "jsonb",
+          "type": "text",
           "primaryKey": false,
           "notNull": true
         }
@@ -8396,15 +7809,9 @@
           "primaryKey": false,
           "notNull": false
         },
-        "workspace_computer_id": {
-          "name": "workspace_computer_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
         "input": {
           "name": "input",
-          "type": "jsonb",
+          "type": "text",
           "primaryKey": false,
           "notNull": true
         },
@@ -8423,17 +7830,17 @@
         },
         "parameters": {
           "name": "parameters",
-          "type": "jsonb",
+          "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'{}'::jsonb"
+          "default": "'{}'"
         },
         "metadata": {
           "name": "metadata",
-          "type": "jsonb",
+          "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'{}'::jsonb"
+          "default": "'{}'"
         },
         "publicly_stored": {
           "name": "publicly_stored",
@@ -8444,10 +7851,10 @@
         },
         "output": {
           "name": "output",
-          "type": "jsonb",
+          "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'[]'::jsonb"
+          "default": "'[]'"
         },
         "usage": {
           "name": "usage",
@@ -8457,13 +7864,13 @@
         },
         "error": {
           "name": "error",
-          "type": "jsonb",
+          "type": "text",
           "primaryKey": false,
           "notNull": false
         },
         "incomplete_details": {
           "name": "incomplete_details",
-          "type": "jsonb",
+          "type": "text",
           "primaryKey": false,
           "notNull": false
         },
@@ -8659,19 +8066,6 @@
             "id"
           ],
           "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "responses_workspace_computer_id_agent_computers_id_fk": {
-          "name": "responses_workspace_computer_id_agent_computers_id_fk",
-          "tableFrom": "responses",
-          "tableTo": "agent_computers",
-          "columnsFrom": [
-            "workspace_computer_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
           "onUpdate": "no action"
         }
       },
@@ -9403,10 +8797,10 @@
         },
         "arguments": {
           "name": "arguments",
-          "type": "jsonb",
+          "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'{}'::jsonb"
+          "default": "'{}'"
         },
         "status": {
           "name": "status",
@@ -9442,10 +8836,10 @@
         },
         "provider_attempts": {
           "name": "provider_attempts",
-          "type": "jsonb",
+          "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'[]'::jsonb"
+          "default": "'[]'"
         },
         "provider_cost_micros": {
           "name": "provider_cost_micros",
@@ -10967,19 +10361,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "kind": {
-          "name": "kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'sandbox'"
-        },
-        "computer_id": {
-          "name": "computer_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
         "status": {
           "name": "status",
           "type": "workspace_lease_status",
@@ -10998,7 +10379,7 @@
           "name": "image_digest",
           "type": "text",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "error": {
           "name": "error",
@@ -11143,19 +10524,6 @@
             "id"
           ],
           "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "workspace_leases_computer_id_agent_computers_id_fk": {
-          "name": "workspace_leases_computer_id_agent_computers_id_fk",
-          "tableFrom": "workspace_leases",
-          "tableTo": "agent_computers",
-          "columnsFrom": [
-            "computer_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
           "onUpdate": "no action"
         }
       },

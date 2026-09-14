@@ -27,7 +27,7 @@ export async function scrubPersistedResponseBinaryContext(): Promise<{ scanned: 
   while (true) {
     const binaryCandidate = sql<boolean>`(
       ${responses.output}::text like '%data:image/%'
-      or (${responses.output}::text like '%"type": "image"%' and ${responses.output}::text like '%"data":%')
+      or (${responses.output}::text like '%"type"%"image"%' and ${responses.output}::text like '%"data":%')
     )`
     const rows = await db.select({ id: responses.id, output: responses.output })
       .from(responses)
