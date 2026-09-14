@@ -126,14 +126,14 @@ export function PersonalPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-end justify-between gap-4">
+      <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-end sm:justify-between">
         <div>
           <div className="text-lg font-medium wrap-anywhere">{me.name}</div>
           <div className="mt-0.5 text-xs text-muted-foreground wrap-anywhere">
             {me.email} {ui("· Joined")} {formatDate(me.joinedAt)}
           </div>
         </div>
-        <div className="flex min-w-0 flex-wrap items-end gap-4 sm:gap-6">
+        <div className="flex min-w-0 flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-end sm:gap-6">
           <SubscriptionUsageBars
             compact
             className="w-full sm:w-60 sm:border-r sm:pr-6"

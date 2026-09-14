@@ -181,8 +181,8 @@ export function AdminModelsPage() {
       <div className="space-y-2">
         {filtered.map((model) => (
           <Card key={model.id} className={cn('shadow-none', !model.enabled && 'opacity-55')}>
-            <CardContent className="flex flex-wrap items-center gap-3 px-4 py-3">
-              <div className="flex min-w-0 flex-[1_1_16rem] items-center gap-3">
+            <CardContent className="flex flex-wrap items-center gap-4 px-4 py-3">
+              <div className="flex min-w-0 flex-[1_1_16rem] items-center gap-4">
                 <AiLogo
                   icon={model.logo ?? labs.find((lab) => lab.id === model.labId)?.logo ?? 'pulpo'}
                   customIcon={effectiveModelCustomIcon(model, labs, customIcons)}
@@ -199,7 +199,7 @@ export function AdminModelsPage() {
                     {model.description || model.upstreamModelId} · {formatNumber(model.contextWindow)} {ui("ctx")} </div>
                 </div>
               </div>
-              <div className="ml-auto flex shrink-0 items-center gap-1">
+              <div className="ml-auto flex shrink-0 items-center gap-4">
                 <Button size="icon-sm" variant="ghost" title={ui("Edit")} onClick={() => { setCreating(false); setDraft({ ...model }) }}>
                   <Pencil className="size-4" />
                 </Button>
@@ -356,8 +356,8 @@ export function ManagedCodexModelsSection({
       <p className="text-xs text-muted-foreground">{ui("Catalog details are managed by Pulpo. Administrators can tune context compaction for each model.")}</p>
       {models.map((model) => (
         <Card key={model.id} className="shadow-none">
-          <CardContent className="flex flex-wrap items-center gap-3 px-4 py-3">
-            <div className="flex min-w-0 flex-[1_1_16rem] items-center gap-3">
+          <CardContent className="flex flex-wrap items-center gap-4 px-4 py-3">
+            <div className="flex min-w-0 flex-[1_1_16rem] items-center gap-4">
               <AiLogo icon="codex" className="size-8 shrink-0 rounded-[4px]" />
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">

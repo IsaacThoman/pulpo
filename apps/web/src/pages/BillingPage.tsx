@@ -208,10 +208,10 @@ export function BillingPage() {
 
   return (
     <div className="flex h-full flex-col">
-      <header className="flex h-12 shrink-0 items-center border-b px-5"><h1 className="text-sm font-semibold">{ui("Billing")}</h1></header>
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto w-full max-w-5xl space-y-8 px-5 py-6 sm:px-6 sm:py-8">
+        <div className="mobile-page-content mx-auto w-full max-w-5xl space-y-8 px-5 py-6 sm:px-6 sm:py-8">
           <div>
+            <h2 className="text-xl font-semibold tracking-tight">{ui("Billing")}</h2>
             <p className="mt-1 max-w-2xl text-sm text-muted-foreground">{ui("There are two ways to pay for usage: buy credits and pay as you go, or subscribe to a monthly plan. You can use either one or both.")}</p>
           </div>
 

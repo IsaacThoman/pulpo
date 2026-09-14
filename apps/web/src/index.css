@@ -145,6 +145,11 @@ html[data-desktop="true"] .desktop-sidebar-collapsed .chat-header::before {
 }
 
 @media (width < 750px) {
+  /* These pages keep their original in-content title; clear the drawer button. */
+  .mobile-page-content {
+    padding-top: 3rem;
+  }
+
   .mobile-sidebar-opener {
     display: flex;
   }
@@ -190,16 +195,36 @@ html[data-desktop="true"] .desktop-sidebar-collapsed .chat-header::before {
   white-space: nowrap;
 }
 
-/* Respond to the space left by sidebars and panels, not viewport breakpoints. */
-.stat-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 9rem), 1fr));
-  gap: 0.25rem;
-}
+/* Keep the original stat strip treatment, but size columns to the space
+   remaining beside the sidebar. Utilities retain control of gaps/padding. */
+@layer components {
+  .stat-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 9rem), 1fr));
+    gap: 0.25rem;
+  }
 
-.stat-grid > * {
-  min-width: 0;
-  overflow-wrap: anywhere;
+  .stat-grid > * {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .stat-strip {
+    overflow: hidden;
+  }
+
+  .stat-strip > * {
+    position: relative;
+  }
+
+  /* Clip the separator at each row's left edge, including wrapped rows. */
+  .stat-strip > *::before {
+    content: '';
+    position: absolute;
+    inset-block: 0;
+    left: -1px;
+    border-left: var(--stat-divider-width, 0px) solid var(--border);
+  }
 }
 
 /* Shared compact treatment for app-owned data tables. */

@@ -5,11 +5,15 @@ Audit date: 2026-09-14. Target: web layouts, including the space left beside the
 ## Fixes
 
 - Personal and public recent usage now use a single intrinsically sized table with sticky headers inside a keyboard-focusable scroll region. Dates, token counts, costs, and balances retain their own columns; horizontal scrolling moves headings and rows together.
-- Usage, billing, request, workspace, and memory statistics reflow according to their container width. Large values can wrap without painting over adjacent values.
+- Usage and billing stat strips reflow according to their container width while retaining their original dividers, edge padding, and gaps. Request, workspace, and memory cards keep their original columns and spacing; large values can wrap without painting over adjacent values.
 - Usage and admin navigation remain scrollable; admin settings switch to horizontal navigation before the content becomes cramped.
 - Admin form controls stack in narrow sections. User search, model actions, memory controls, and backup actions wrap as needed. Long model names and IDs remain contained.
-- Billing and API keys use the existing page-header pattern, reserving room for the mobile sidebar button. Plan comparison stays stacked at tablet widths.
+- Billing and API keys retain their original in-content headings and desktop spacing. Only narrow screens gain top clearance for the mobile sidebar button. Plan comparison stays stacked at tablet widths.
 - Shared dialogs fit short viewports; search results retain their own scroll area. Popovers, selects, and dropdowns stay within phone widths. The managed-model dialog remains scrollable.
+
+## Visual-preservation follow-up
+
+The first audit incorrectly removed usage/billing stat dividers, changed edge padding and card-grid gaps, tightened model-action spacing, and replaced Billing/API Keys headings with fixed headers. These unintended design changes have been reversed. Small-screen wrapping/scrolling remains; wide layouts retain the original treatment. The admin settings sidebar now switches based on available content width rather than an unnecessarily late viewport breakpoint.
 
 ## Browser coverage
 
@@ -40,7 +44,7 @@ npx playwright install chromium
 npm run test:responsive -w @pulpo/web
 ```
 
-The browser check starts and closes its own Vite server and requires no database or credentials. It covers 48 combinations of viewport width, English/Spanish, and optional user/balance columns. Spanish cases also use dark mode. Assertions cover cell/header geometry, container overflow, large statistics, fixed-width form controls, sticky headers after scrolling both axes, pagination, a 320×360 dialog, and a wide popover. The original usage implementation fails the regression check.
+The browser check starts and closes its own Vite server and requires no database or credentials. It covers 48 combinations of viewport width, English/Spanish, and optional user/balance columns. Spanish cases also use dark mode. Assertions cover cell/header geometry, container overflow, large statistics, fixed-width form controls, sticky headers after scrolling both axes, pagination, a 320×360 dialog, and a wide popover. The original usage implementation fails the regression check. A desktop visual-parity assertion also compares the usage strip against its original five-column geometry, zero gap, 12px padding with flush outer edges, and 1px category dividers.
 
 Additional validation: web production build, all 707 web unit/component tests, and repository lint. On Node 26, run the unit suite with `NODE_OPTIONS=--no-experimental-webstorage` to avoid Node's experimental global storage interfering with the existing jsdom/Zustand tests.
 

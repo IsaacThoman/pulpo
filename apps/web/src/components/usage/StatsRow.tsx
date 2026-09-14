@@ -23,9 +23,9 @@ export function StatsRow({ calls, tokens, cost, inferenceReferenceCost = 0 }: {
     },
   ]
   return (
-    <div className="stat-grid">
+    <div className="stat-grid stat-strip md:gap-0 md:[--stat-divider-width:1px]">
       {stats.map((s) => (
-        <div key={s.label} className="p-3">
+        <div key={s.label} className="p-3 md:first:pl-0 md:last:pr-0">
           <div className="mb-1 flex items-center gap-1 text-xs text-muted-foreground">
             {s.label}
             {s.info && (

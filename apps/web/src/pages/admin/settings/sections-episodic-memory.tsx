@@ -181,7 +181,7 @@ export function EpisodicStatisticsPanel({
       </select>
     </div>
 
-    <div className="stat-grid gap-2">
+    <div className="grid grid-cols-2 gap-2 lg:grid-cols-6 [&>*]:min-w-0 [&>*]:wrap-anywhere">
       <StatisticCard icon={<Clock3 />} label={ui('P95 recall overhead')} value={latency(summary.recall.latency.p95Ms)} />
       <StatisticCard icon={<Activity />} label={ui('Recall rate')} value={percentage(summary.recall.recallRate)} />
       <StatisticCard icon={<Gauge />} label={ui('Fallback rate')} value={percentage(summary.retrieval.fallbackRate)} />
