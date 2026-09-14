@@ -1,8 +1,10 @@
+import sharp from 'sharp'
+import { diagnosticFetch } from '../logging/diagnostic-fetch.js'
 import { basename, extname } from 'node:path'
 import { and, eq, inArray } from 'drizzle-orm'
 import { imageGenerationPreferencesSchema, imageModelSchema, IMAGE_GENERATION_MAX_BYTES, IMAGE_PROVIDER_CAPABILITIES, type ImageGenerationInput, type ImageModel } from '@pulpo/contracts'
 import { db } from '../database/client.js'
-import { attachments, imageGenerationRequests, imageModels, providerConnections, toolExecutions, userPreferences } from '../database/schema.js'
+import { attachments, imageGenerationRequests, imageModels, providerConnections, toolExecutions, userPreferences, requestLogs } from '../database/schema.js'
 import { getBlobStore } from '../storage/index.js'
 import { decryptSecret } from '../lib/crypto.js'
 import { getConfig } from '../config.js'
@@ -131,6 +133,7 @@ export async function executeImageGeneration(input: {
   input.signal?.throwIfAborted()
   const claims = await db.insert(imageGenerationRequests).values({ responseId: input.responseId, operationId: input.operationId, model }).onConflictDoNothing().returning()
   if (!claims.length) throw new AppError(409, 'image_request_duplicate', 'This image request is already running')
+  let providerSucceeded = false
   try {
     const reservedMicros = imageReservation(model)
     await input.reserveCost(reservedMicros)
@@ -138,7 +141,11 @@ export async function executeImageGeneration(input: {
     const current = await selectedImageModel(input.userId)
     if (!current || current.model.id !== model.id || JSON.stringify(current.model) !== JSON.stringify(model) || current.provider.updatedAt.getTime() !== provider.updatedAt.getTime()) throw unavailable()
     const signal = AbortSignal.any([...(input.signal ? [input.signal] : []), AbortSignal.timeout(provider.requestTimeoutMs)])
-    const result = await generateImage({ model, baseUrl: provider.baseUrl, apiKey: decryptSecret(provider.encryptedApiKey, getConfig().ENCRYPTION_KEY), prompt: input.args.prompt, references, signal })
+    const [log] = await db.select({ id: requestLogs.id }).from(requestLogs).where(eq(requestLogs.responseId, input.responseId)).limit(1)
+    const referenceMetadata = await Promise.all(references.map(async reference => { const m = await sharp(reference.data).metadata(); return { mimeType: reference.mimeType, sizeBytes: reference.data.length, width: m.width, height: m.height } }))
+    const fetch = diagnosticFetch({ purpose: references.length ? 'image_edit' : 'image_generation', userId: input.userId, requestLogId: log?.id, operationId: input.operationId, providerId: provider.id, modelId: model.id, upstreamModelId: model.upstreamModelId, metadata: { references: referenceMetadata, billingUnit: model.billingUnit } })
+    const result = await generateImage({ fetch, model, baseUrl: provider.baseUrl, apiKey: decryptSecret(provider.encryptedApiKey, getConfig().ENCRYPTION_KEY), prompt: input.args.prompt, references, signal })
+    providerSucceeded = true
     const { data, mimeType, ...metadata } = result
     await db.update(imageGenerationRequests).set({ result: metadata, updatedAt: new Date() }).where(condition)
     const actualMicros = imageCost(model, metadata.usage)
@@ -153,6 +160,7 @@ export async function executeImageGeneration(input: {
     const [attachment] = await db.select().from(attachments).where(eq(attachments.id, stored.id)).limit(1)
     return await finish({ ...claims[0]!, result: metadata }, attachment!)
   } catch (error) {
+    if (!providerSucceeded) await db.update(toolExecutions).set({ provider: model.adapter, providerAttempts: [{ provider: model.adapter, providerId: provider.id, modelId: model.id, upstreamModelId: model.upstreamModelId, outcome: 'failed' }], updatedAt: new Date() }).where(and(eq(toolExecutions.agentRunId, input.runId), eq(toolExecutions.operationId, input.operationId)))
     await db.update(imageGenerationRequests).set({ status: 'failed', updatedAt: new Date() }).where(and(condition, inArray(imageGenerationRequests.status, ['claimed', 'failed'])))
     throw error
   }

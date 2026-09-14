@@ -263,7 +263,7 @@ export async function createResponse(options: CreateResponseOptions) {
       id: requestLogId, responseId: id, userId: options.ownerUserId, actorUserId: options.actorUserId, apiKeyId: options.apiKeyId,
       origin: options.actorUserId ? 'admin_chat' : options.apiKeyId ? 'api' : 'web', requestedModelId: options.input.modelId, currentModelId: model.id,
       ...policy, createdAt: collectedAt, updatedAt: collectedAt,
-      requestPayload: policy.captureDetailedPayloads ? { input: storedInput, parameters, presetSelections: resolved.selections } : null,
+      requestPayload: null, // Detailed bodies are captured per provider attempt.
     })
   })
   await publishAdminUsage(requestLogId, true)

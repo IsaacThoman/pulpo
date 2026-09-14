@@ -22,6 +22,7 @@ export const losslessText = customType<{ data: string; driverData: string }>({
 
 /** Raw SQL backup/restore bypasses column codecs. Keep this registry in sync with schema. */
 export const LOSSLESS_PAYLOAD_COLUMNS: Record<string, readonly string[]> = {
+  provider_diagnostics: ['request_payload', 'response_payload'],
   responses: ['input', 'instructions', 'parameters', 'metadata', 'output', 'error', 'incomplete_details'],
   response_items: ['payload'],
   response_content_parts: ['payload'],

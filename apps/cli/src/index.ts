@@ -803,6 +803,22 @@ export function createProgram(io: CliIo = processIo, dependencies: CliDependenci
       // Pretty JSON preserves nested bodies and avoids an unreadably wide table.
       writeOutput(io, payloads, true)
     })
+  usage.command('diagnostics [requestId]')
+    .description('List provider/tool attempts, optionally for a model call or request log')
+    .action(async (requestId, _options, command) => {
+      const { client } = await clientFor(command)
+      writeOutput(io, await client.request(requestId ? `/api/management/v1/usage/requests/${encodeURIComponent(requestId)}/diagnostics` : '/api/management/v1/usage/diagnostics'), true)
+    })
+  usage.command('diagnostic-payloads <id>')
+    .description('Inspect retained payloads and capture fidelity for one diagnostic attempt')
+    .action(async (id, _options, command) => {
+      const { client } = await clientFor(command)
+      writeOutput(io, await client.request(`/api/management/v1/usage/diagnostics/${encodeURIComponent(id)}/payloads`), true)
+    })
+  usage.command('retention-status').action(async (_options, command) => {
+    const { client } = await clientFor(command)
+    writeOutput(io, await client.request('/api/management/v1/usage/diagnostics/retention'), true)
+  })
   usage.command('request <id>').action(async (id, _options, command) => {
     const { client } = await clientFor(command); emit(io, command, await client.request(`/api/management/v1/usage/requests/${encodeURIComponent(id)}`))
   })

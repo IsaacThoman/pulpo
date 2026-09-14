@@ -1,3 +1,4 @@
+import { withDiagnosticContext, recordReconstructedDiagnostic } from '../logging/provider-diagnostics.js'
 import { eq } from 'drizzle-orm'
 import type { ResponseUsage } from '@pulpo/contracts'
 import { calculateCostMicros, calculateReservationMicros, type Pricing } from '../accounting/pricing.js'
@@ -51,6 +52,7 @@ export async function trackInternalModelCall<T extends { usage?: unknown; id?: s
   purpose: 'compaction' | 'ocr' | 'title' | 'memory'
   retryAttempt?: number
   pricing?: Pricing
+  requestInput?: unknown
   invoke: () => Promise<T>
 }): Promise<T> {
   const id = newId()
@@ -64,8 +66,11 @@ export async function trackInternalModelCall<T extends { usage?: unknown; id?: s
     purpose: input.purpose,
     retryAttempt: input.retryAttempt ?? 1,
   })
+  const observation = { seen: false }
+  const context = { requestLogId: input.requestLogId, modelCallId: id, purpose: input.purpose, modelId: input.modelId, upstreamModelId: input.upstreamModelId, observation, metadata: { retryAttempt: input.retryAttempt ?? 1 } }
   try {
-    const result = await input.invoke()
+    const result = await withDiagnosticContext(context, input.invoke)
+    if (!observation.seen) await recordReconstructedDiagnostic(context, input.requestInput, result, {}, 'completed')
     const usage = modelCallUsage(result.usage)
     await db.update(generationAttempts).set({
       status: 'completed',
@@ -81,6 +86,7 @@ export async function trackInternalModelCall<T extends { usage?: unknown; id?: s
     }).where(eq(generationAttempts.id, id))
     return result
   } catch (error) {
+    if (!observation.seen) await recordReconstructedDiagnostic(context, input.requestInput, { error: error instanceof Error ? error.message : String(error) }, { failureStage: 'application' }, 'failed')
     await db.update(generationAttempts).set({
       status: 'failed',
       errorCategory: classifyGenerationError(error),
@@ -141,6 +147,7 @@ export async function trackBilledInternalModelCall<T extends { usage?: unknown; 
     retryAttempt: input.retryAttempt,
     pricing,
     invoke: input.invoke,
+    requestInput: input.requestInput,
   })
   return { result, costMicros: calculateCostMicros(modelCallUsage(result.usage), pricing) }
 }

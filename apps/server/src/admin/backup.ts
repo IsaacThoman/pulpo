@@ -228,6 +228,7 @@ export async function restoreFullBackup(jobId: string): Promise<void> {
         if (table === 'request_logs') {
           data.ocr_attempts = ocrPayloadLogs.has(String(row.id)) ? [{ request_log_id: row.id, request_payload: true }] : []
         }
+        // Legacy tool diagnostic copies are omitted on restore; response/agent context retains conversation content.
         applyFullBackupCompatibilityDefaults(data)
         if (table === 'request_logs') logCapture.set(String(row.id), row.capture_detailed_payloads === true)
         if (table === 'ocr_attempts' && logCapture.get(String(row.request_log_id)) === false) {

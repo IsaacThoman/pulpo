@@ -1278,3 +1278,27 @@ export const imageGenerationRequests = pgTable('image_generation_requests', {
   billedCostMicros: bigint('billed_cost_micros', { mode: 'number' }).notNull().default(0),
   ...timestamps,
 }, table => [primaryKey({ columns: [table.responseId, table.operationId] })])
+
+// Diagnostic copies have their own lifetime; conversation records remain authoritative.
+export const providerDiagnostics = pgTable('provider_diagnostics', {
+  id: uuid('id').primaryKey(),
+  requestLogId: uuid('request_log_id').references(() => requestLogs.id, { onDelete: 'cascade' }),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  modelCallId: uuid('model_call_id'),
+  operationId: text('operation_id'),
+  purpose: text('purpose').notNull(),
+  providerId: text('provider_id'),
+  modelId: text('model_id'),
+  upstreamModelId: text('upstream_model_id'),
+  status: text('status').notNull().default('in_progress'),
+  metadata: jsonb('metadata').notNull().default({}),
+  requestPayload: losslessJson('request_payload'),
+  responsePayload: losslessJson('response_payload'),
+  captureDetailedPayloads: boolean('capture_detailed_payloads').notNull().default(false),
+  payloadExpiresAt: timestamp('payload_expires_at', { withTimezone: true }),
+  retentionStartedAt: timestamp('retention_started_at', { withTimezone: true }).notNull().defaultNow(),
+  completedAt: timestamp('completed_at', { withTimezone: true }),
+  ...timestamps,
+}, table => [index('provider_diagnostics_log_idx').on(table.requestLogId, table.createdAt),
+  index('provider_diagnostics_expiry_idx').on(table.payloadExpiresAt),
+  index('provider_diagnostics_created_idx').on(table.createdAt)])

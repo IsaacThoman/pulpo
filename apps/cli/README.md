@@ -172,3 +172,7 @@ Use `speech-model preset --adapter mistral` for the Voxtral preset. The
 repair, looping watermark settings, synthesized previews, and retryable cleanup.
 See [the speech administration guide](../../docs/speech.md) for complete commands,
 upload limits, billing behavior, and FFmpeg setup.
+
+Provider attempts and payload cleanup status are available through `pulpo usage diagnostics`,
+`pulpo usage diagnostic-payloads <id>`, and `pulpo usage retention-status`.
+See [diagnostic logging and retention](../../docs/diagnostic-logging.md) for capture fidelity and expiry behavior.

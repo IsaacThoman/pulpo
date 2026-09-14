@@ -52,17 +52,18 @@ export function activeDetailedPayloadCondition(requestLogId: string, now: Date |
 type ExecuteSql = (query: SQL) => Promise<unknown>
 
 /** Clear bodies atomically with their OCR children; callers supply a transaction. */
-export async function purgeExpiredDetailedPayloads(execute: ExecuteSql, now = new Date()): Promise<void> {
-  await execute(sql`
+export async function purgeExpiredDetailedPayloads(execute: ExecuteSql, now = new Date()): Promise<{ clearedRecords: number }> {
+  const requests = await execute(sql`
     update request_logs
     set capture_detailed_payloads = false,
         request_payload = null,
         response_payload = null,
         updated_at = ${now.toISOString()}
-    where payload_expires_at <= ${now.toISOString()}
+    where (payload_expires_at <= ${now.toISOString()} or capture_detailed_payloads = false)
       and (capture_detailed_payloads = true or request_payload is not null or response_payload is not null)
+    returning id
   `)
-  await execute(sql`
+  const ocr = await execute(sql`
     update ocr_attempts as ocr
     set request_payload = null,
         response_payload = null,
@@ -71,7 +72,23 @@ export async function purgeExpiredDetailedPayloads(execute: ExecuteSql, now = ne
     where ocr.request_log_id = log.id
       and (log.capture_detailed_payloads = false or log.payload_expires_at <= ${now.toISOString()})
       and (ocr.request_payload is not null or ocr.response_payload is not null)
+    returning ocr.id
   `)
+  const diagnostics = await execute(sql`
+    update provider_diagnostics set capture_detailed_payloads = false, request_payload = null, response_payload = null, updated_at = ${now.toISOString()}
+    where (payload_expires_at <= ${now.toISOString()} or capture_detailed_payloads = false)
+      and (capture_detailed_payloads = true or request_payload is not null or response_payload is not null)
+    returning id
+  `)
+  const tools = await execute(sql`
+    update tool_executions as tool set arguments = '{}', output = null, updated_at = ${now.toISOString()}
+    from agent_runs run, request_logs log
+    where tool.agent_run_id = run.id and run.response_id = log.response_id
+      and (not log.capture_detailed_payloads or log.payload_expires_at <= ${now.toISOString()})
+      and (tool.arguments <> '{}' or tool.output is not null)
+    returning tool.id
+  `)
+  return { clearedRecords: [requests, ocr, diagnostics, tools].reduce<number>((n, rows) => n + (Array.isArray(rows) ? rows.length : 0), 0) }
 }
 
 /**
@@ -103,6 +120,9 @@ export async function reconcileDetailedPayloadRetention(
           updated_at = ${now.toISOString()}
       where request_payload is not null or response_payload is not null
     `)
+    await execute(sql`update provider_diagnostics set capture_detailed_payloads = false, request_payload = null, response_payload = null, payload_expires_at = null, updated_at = ${now.toISOString()}
+      where capture_detailed_payloads = true or request_payload is not null or response_payload is not null`)
+    await purgeExpiredDetailedPayloads(execute, now)
     return
   }
 
@@ -117,6 +137,7 @@ export async function reconcileDetailedPayloadRetention(
       where capture_detailed_payloads = true
         and payload_expires_at is not null
     `)
+    await execute(sql`update provider_diagnostics set payload_expires_at = null, updated_at = ${now.toISOString()} where capture_detailed_payloads = true and payload_expires_at is not null`)
     return
   }
 
@@ -127,5 +148,6 @@ export async function reconcileDetailedPayloadRetention(
         updated_at = ${now.toISOString()}
     where capture_detailed_payloads = true
   `)
+  await execute(sql`update provider_diagnostics set payload_expires_at = retention_started_at + make_interval(secs => ${durationSeconds}), updated_at = ${now.toISOString()} where capture_detailed_payloads = true`)
   await purgeExpiredDetailedPayloads(execute, now)
 }

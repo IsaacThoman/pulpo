@@ -6,7 +6,7 @@ export const FULL_BACKUP_TABLES = [
   'episodic_memory_generations', 'chat_turn_embeddings', 'episodic_memory_metric_buckets',
   'api_keys', 'management_tokens', 'api_key_model_permissions', 'credit_ledger', 'usage_events', 'daily_usage_rollups', 'application_settings',
   'banners', 'request_logs', 'generation_attempts', 'ocr_attempts', 'ocr_cache_entries', 'chat_import_sources',
-  'workspace_leases', 'agent_runs', 'tool_executions',
+  'workspace_leases', 'agent_runs', 'tool_executions', 'provider_diagnostics',
 ] as const
 
 export type FullBackupTable = typeof FULL_BACKUP_TABLES[number]
@@ -24,7 +24,7 @@ export const FULL_BACKUP_EXPLICIT_COLUMNS: Partial<Record<FullBackupTable, reado
 }
 
 export const OPTIONAL_TABLES_IN_LEGACY_BACKUPS: readonly FullBackupTable[] = [
-  'image_models', 'image_generation_requests',
+  'provider_diagnostics', 'image_models', 'image_generation_requests',
   'speech_models', 'speech_requests', 'speech_resource_cleanup',
   'user_memory_documents',
   'user_memory_document_revisions',
@@ -97,7 +97,7 @@ export function scrubFullBackupDetailedPayloads(database: Record<string, Array<R
     ocrByRequestLog.set(requestLogId, attempts)
   }
   const now = Date.now()
-  for (const log of database.request_logs ?? []) {
+  for (const log of [...database.request_logs ?? [], ...database.provider_diagnostics ?? []]) {
     const attempts = typeof log.id === 'string' ? ocrByRequestLog.get(log.id) ?? [] : []
     const hasPayload = log.request_payload != null || log.response_payload != null
       || attempts.some((attempt) => attempt.request_payload != null || attempt.response_payload != null)
@@ -107,7 +107,7 @@ export function scrubFullBackupDetailedPayloads(database: Record<string, Array<R
     const storedExpiry = log.payload_expires_at == null ? null : new Date(String(log.payload_expires_at)).getTime()
     if (storedExpiry !== null && (!Number.isFinite(storedExpiry) || storedExpiry <= now)) capture = false
     if (capture && retention !== 'indefinite') {
-      const createdAt = new Date(String(log.created_at)).getTime()
+      const createdAt = new Date(String(log.retention_started_at ?? log.created_at)).getTime()
       const durationMs = retentionDurationMs[retention] ?? retentionDurationMs['7d']!
       if (Number.isFinite(createdAt)) {
         log.payload_expires_at = new Date(Math.min(createdAt + durationMs, storedExpiry ?? Infinity)).toISOString()
@@ -125,5 +125,10 @@ export function scrubFullBackupDetailedPayloads(database: Record<string, Array<R
       }
     }
     log.capture_detailed_payloads = capture
+  }
+  const activeResponses = new Set((database.request_logs ?? []).filter(log => log.capture_detailed_payloads === true).map(log => log.response_id))
+  const activeRuns = new Set((database.agent_runs ?? []).filter(run => activeResponses.has(run.response_id)).map(run => run.id))
+  for (const tool of database.tool_executions ?? []) {
+    if (!activeRuns.has(tool.agent_run_id)) { tool.arguments = {}; tool.output = null }
   }
 }

@@ -1,3 +1,4 @@
+import { retentionHealth } from './logging/retention-health.js'
 import { safeErrorMessage } from './database/errors.js'
 import { deleteAccountData, resumeAccountDeletions } from './account/deletion.js'
 import { createServer } from 'node:http'
@@ -78,10 +79,19 @@ concurrencyRefreshInterval.unref()
 const payloadRetentionWorker = new Worker('payload-retention', async () => {
   await db.transaction(async (tx) => {
     await tx.execute(sql`select pg_advisory_xact_lock(1886747744)`)
-    await purgeExpiredDetailedPayloads((query) => tx.execute(query))
+    const result = await purgeExpiredDetailedPayloads((query) => tx.execute(query))
+    await tx.execute(sql`insert into application_settings (key, value) values ('diagnosticCleanup', ${JSON.stringify({ lastSuccessAt: new Date().toISOString(), clearedRecords: result.clearedRecords, consecutiveFailures: 0 })}::jsonb)
+      on conflict (key) do update set value = application_settings.value || excluded.value, updated_at = now()`)
+
   })
+  const health = await retentionHealth()
+  if (health.alert) console.error(JSON.stringify({ level: 'error', event: 'payload_retention.alert', ...health }))
+  await db.execute(sql`update application_settings set value = value || ${JSON.stringify({ lastOverdueRecords: health.overdueRecords })}::jsonb where key = 'diagnosticCleanup'`)
 }, { connection: { url: config.REDIS_URL }, concurrency: 1 })
 payloadRetentionWorker.on('failed', (job, error) => {
+  void db.execute(sql`insert into application_settings (key, value) values ('diagnosticCleanup', ${JSON.stringify({ lastFailureAt: new Date().toISOString(), consecutiveFailures: 1 })}::jsonb)
+    on conflict (key) do update set value = application_settings.value || excluded.value || jsonb_build_object('consecutiveFailures', coalesce((application_settings.value->>'consecutiveFailures')::int, 0) + 1), updated_at = now()`)
+    .catch(() => undefined)
   console.error(JSON.stringify({
     level: 'error', service: 'pulpo-worker', event: 'payload_retention.failed', jobId: job?.id, error: safeErrorMessage(error),
   }))

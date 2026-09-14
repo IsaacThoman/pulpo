@@ -1,3 +1,5 @@
+import { diagnosticFetch } from '../logging/diagnostic-fetch.js'
+import { withDiagnosticContext, recordReconstructedDiagnostic } from '../logging/provider-diagnostics.js'
 import { safeErrorMessage } from '../database/errors.js'
 import OpenAI, { toFile } from 'openai'
 import type { AssistantMessage, Context, Message, ThinkingLevel } from '@earendil-works/pi-ai'
@@ -40,7 +42,6 @@ import { shouldCompactContext } from './compaction-policy.js'
 import { splitCodexConversationExchanges, type CodexConversationExchange } from './codex-compaction.js'
 import { temporaryChatIsExpired } from '../chats/temporary.js'
 import { normalChatIsExpired } from '../chats/expiration.js'
-import { activeDetailedPayloadCondition, detailedPayloadCaptureIsActive } from '../logging/detailed-payload-retention.js'
 import { resolveModelParameters } from './model-parameters.js'
 import { backgroundRequestParameter, promptCacheKeyParameter, publicOutputTokenLimit, responseIncludeParameter } from './upstream-request.js'
 import { browserChatOutputError, generationOutputHasStarted } from './output-text.js'
@@ -557,6 +558,7 @@ async function processGenerationAttempt(
   }
   const config = getConfig()
   const client = new OpenAI({
+    fetch: diagnosticFetch({ purpose: 'generation', userId: record.response.userId, providerId: record.provider.id, modelId: record.model.id, upstreamModelId: record.model.upstreamModelId }),
     apiKey: decryptSecret(record.provider.encryptedApiKey, config.ENCRYPTION_KEY),
     baseURL: record.provider.baseUrl,
     organization: record.provider.organizationId ?? undefined,
@@ -782,10 +784,6 @@ async function processGenerationAttempt(
       ...backgroundRequestParameter(record.response.executionMode),
       store: false as const,
     }
-    if (detailedPayloadCaptureIsActive(requestLog)) {
-      await db.update(requestLogs).set({ requestPayload: upstreamPayload, updatedAt: new Date() })
-        .where(activeDetailedPayloadCondition(requestLog.id))
-    }
     const stream = await client.responses.create(upstreamPayload, {
       signal: controller.signal,
       headers: cacheOptions.headers,
@@ -953,7 +951,6 @@ export async function processGeneration(responseId: string): Promise<void> {
     await processAgentGeneration(responseId, codexAllowed)
     return
   }
-  const detailedPayloadsEnabled = detailedPayloadCaptureIsActive(base.log)
   let model: typeof models.$inferSelect | undefined = base.model
   let fallbackFrom: string | null = null
   let attemptLimit = primaryModelAttemptLimit(base.model)
@@ -986,8 +983,9 @@ export async function processGeneration(responseId: string): Promise<void> {
       try {
         const actualPricing = await getActivePricing(model.id)
         await db.update(responses).set({ pricingVersionId: actualPricing.id, actualModelId: model.id }).where(eq(responses.id, responseId))
-        await processGenerationAttempt(responseId, model.id, { willRetry: true })
+        await withDiagnosticContext({ requestLogId: base.log.id, modelCallId: attemptId, purpose: 'generation', metadata: { retryAttempt: attempt + 1, fallbackFromModelId: fallbackFrom } }, () => processGenerationAttempt(responseId, model!.id, { willRetry: true }))
         const [completed] = await db.select().from(responses).where(eq(responses.id, responseId)).limit(1)
+        if (model.providerConnectionId === CODEX_PROVIDER_ID) await recordReconstructedDiagnostic({ requestLogId: base.log.id, modelCallId: attemptId, purpose: 'generation', providerId: CODEX_PROVIDER_ID, modelId: model.id, upstreamModelId: model.upstreamModelId }, { input: base.response.input, parameters: base.response.parameters }, { output: completed?.output, usage: completed?.usage }, { retryAttempt: attempt + 1 }, completed?.status ?? 'completed')
         const usage = completed?.usage as ResponseUsage | null
         const durationMs = Date.now() - (base.log.startedAt ?? base.log.createdAt).getTime()
         const [costRow] = await db.execute<{ cost: string }>(sql`select coalesce(sum(cost_micros), 0)::text as cost from usage_events where response_id = ${responseId}`)
@@ -1008,14 +1006,11 @@ export async function processGeneration(responseId: string): Promise<void> {
             completedAt: new Date(), updatedAt: new Date(),
           }).where(eq(requestLogs.id, base.log.id))
         })
-        if (detailedPayloadsEnabled) {
-          await db.update(requestLogs).set({ responsePayload: { output: completed?.output ?? [], usage }, updatedAt: new Date() })
-            .where(activeDetailedPayloadCondition(base.log.id))
-        }
         if (isSlowCompletion(model, durationMs, usage?.outputTokens ?? 0)) await markModelSticky(redis, model, 'slow_completion')
         await publishAdminUsage(base.log.id, true)
         return
       } catch (error) {
+        if (model.providerConnectionId === CODEX_PROVIDER_ID) await recordReconstructedDiagnostic({ requestLogId: base.log.id, modelCallId: attemptId, purpose: 'generation', providerId: CODEX_PROVIDER_ID, modelId: model.id, upstreamModelId: model.upstreamModelId }, { input: base.response.input }, { error: safeErrorMessage(error) }, { failureStage: 'application', retryAttempt: attempt + 1 }, 'failed')
         lastError = error
         const category = classifyGenerationError(error)
         await db.update(generationAttempts).set({ status: 'failed', errorCategory: category, errorMessage: safeErrorMessage(error), durationMs: Date.now() - attemptStarted, completedAt: new Date() }).where(eq(generationAttempts.id, attemptId))
