@@ -7,7 +7,7 @@ const esUi: Record<string, string> = {
   "New code": "Nuevo código",
   "Generate code": "Generar código",
   "Enter a pairing code from {{name}}": "Introduce un código de vinculación de {{name}}",
-  "On {{name}}, open Settings → Agent → This computer and generate a pairing code.": "En {{name}}, abre Ajustes → Agente → Este ordenador y genera un código de vinculación.",
+  "On {{name}}, open Settings → Devices → Agent computers → This computer and generate a pairing code.": "En {{name}}, abre Ajustes → Dispositivos → Ordenadores del agente → Este ordenador y genera un código de vinculación.",
   "Computers running the Pulpo desktop app can be chosen as the agent workspace. Other devices pair using a code generated on that computer.": "Los ordenadores con la aplicación de escritorio de Pulpo pueden usarse como espacio de trabajo del agente. Los demás dispositivos se vinculan mediante un código generado en ese ordenador.",
   "ABC234": "ABC234",
 
@@ -1729,7 +1729,10 @@ const esUi: Record<string, string> = {
   "File access": "Acceso a archivos",
   "Ask for approval": "Pedir aprobación",
   "Let paired devices on your account run agent tasks on this computer.": "Permite que los dispositivos vinculados de tu cuenta ejecuten tareas del agente en este ordenador.",
-  "On your other device, open Settings → Agent (web or desktop) or Account → Computers (mobile), then choose Pair. Codes work once and expire after five minutes.": "En tu otro dispositivo, abre Ajustes → Agente (web o escritorio) o Cuenta → Ordenadores (móvil) y elige Vincular. Los códigos son de un solo uso y caducan a los cinco minutos.",
+  "On your other device, open Settings → Devices (web or desktop) or Account → Computers (mobile), then choose Pair. Codes work once and expire after five minutes.": "En tu otro dispositivo, abre Ajustes → Dispositivos (web o escritorio) o Cuenta → Ordenadores (móvil) y elige Vincular. Los códigos son de un solo uso y caducan a los cinco minutos.",
+  "Agent computers": "Ordenadores del agente",
+  "Signed-in devices": "Dispositivos con sesión iniciada",
+  "Available computers": "Ordenadores disponibles",
 }
 
 export default esUi

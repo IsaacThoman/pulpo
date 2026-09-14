@@ -4,8 +4,8 @@ The Pulpo agent normally runs inside a disposable cloud sandbox. With the deskto
 
 ## What the user sees
 
-- **Desktop app → Settings → Agent → This computer.** An opt-in switch, a name, an access mode (one folder or the whole computer), a folder chooser, an approval policy, and an "Allow other devices" switch. The card also shows the live connection state.
-- **Composer agent menu.** Once a computer is online, the agent menu lists "Cloud sandbox" plus each computer with its OS and access hint. Each follow-up can select any available computer or the cloud sandbox. The last choice is the default, and queued messages retain the destination selected when sent.
+- **Desktop app → Settings → Devices → Agent computers → This computer.** An opt-in switch, a name, an access mode (one folder or the whole computer), a folder chooser, an approval policy, and an "Allow other devices" switch. The settings also show the live connection state. Agent computers and signed-in device sessions have separate sections on the Devices page.
+- **Composer agent menu.** “Manage computers…” opens Settings → Devices, including before the first computer is registered. Once a computer is online, the agent menu lists "Cloud sandbox" plus each computer with its OS and access hint. Each follow-up can select any available computer or the cloud sandbox. The last choice is the default, and queued messages retain the destination selected when sent.
 - **Approvals.** When the agent wants to run a command or change a file on a computer, a `pulpo_approval` item appears in the chat timeline with Approve/Deny buttons and a five-minute countdown. Approvals are handled only in the chat UI, without a duplicate native dialog. A denial or timeout fails that tool call with a message the model can see.
 - **Pairing.** Other devices signed into the same account (phone, browser, another desktop) enter a six-character alphanumeric code generated in the owning desktop’s settings. Codes expire after five minutes, work once, and have per-computer and per-account attempt limits. No native pairing prompt is shown. Either side can revoke its pairing; the owner can turn remote access off entirely.
 - **Timeline.** The workspace step reads "Working on <name>" instead of "Started workspace", and "<name> disconnected" if the desktop goes away mid-run.
@@ -50,7 +50,7 @@ worker (BullMQ)  --Redis pub/sub-->  API replica holding the socket  --Socket.IO
 5. Deny from chat, approve from chat, and let one expire; each outcome is visible in the transcript.
 6. Ask for a read outside the folder: refused in folder mode, allowed in full mode.
 7. Stop the response during `sleep 60`: the process is killed. Quit the desktop mid-command: the tool fails with "went offline".
-8. Generate a pairing code in desktop settings. Enter it in Computers settings on a browser or phone signed into the same account, then select the computer. Verify reuse and expired codes are refused.
+8. Generate a pairing code in desktop settings. Enter it under Settings → Devices → Agent computers on web/desktop or Account → Computers on mobile, signed into the same account, then select the computer. Verify reuse and expired codes are refused.
 
 ## Switching and saved files
 

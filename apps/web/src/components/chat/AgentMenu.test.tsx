@@ -10,6 +10,19 @@ vi.hoisted(() => {
 
 afterEach(cleanup)
 
+it('opens computer setup before the first computer is registered without changing the workspace', async () => {
+  const onManageComputers = vi.fn()
+  const onSelectWorkspace = vi.fn()
+  const onSelect = vi.fn()
+  render(<AgentMenu enabled disabled={false} onSelect={onSelect} workspace={{ selection: { kind: 'sandbox' }, computers: [], onSelectWorkspace, onManageComputers }} />)
+  fireEvent.keyDown(screen.getByRole('button'), { key: 'Enter' })
+  fireEvent.click(await screen.findByRole('menuitem', { name: 'Manage computers…' }))
+  expect(onManageComputers).toHaveBeenCalledOnce()
+  expect(onSelectWorkspace).not.toHaveBeenCalled()
+  expect(onSelect).not.toHaveBeenCalled()
+  await waitFor(() => expect(screen.queryByRole('menu')).toBeNull())
+})
+
 it.each([true, false])('opens without changing mode and explicitly selects the other option (enabled: %s)', async (initial) => {
   const onSelect = vi.fn()
   function ComposerControl() {

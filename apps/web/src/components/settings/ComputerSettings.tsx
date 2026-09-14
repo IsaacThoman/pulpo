@@ -123,7 +123,7 @@ export function ThisComputerSettings() {
       <Row label={ui('Allow other devices')} hint={ui('Let paired devices on your account run agent tasks on this computer.')}>
         <Switch checked={state.allowRemote} disabled={busy} aria-label={ui('Allow other devices')} onCheckedChange={(allowRemote) => void update({ allowRemote })} />
       </Row>
-      {state.enabled && state.allowRemote && <Row label={ui('Pair a device')} hint={ui('On your other device, open Settings → Agent (web or desktop) or Account → Computers (mobile), then choose Pair. Codes work once and expire after five minutes.')}>
+      {state.enabled && state.allowRemote && <Row label={ui('Pair a device')} hint={ui('On your other device, open Settings → Devices (web or desktop) or Account → Computers (mobile), then choose Pair. Codes work once and expire after five minutes.')}>
         <div className="space-y-2 text-right">
           {pairingCode && <output aria-label={ui('Pairing code')} className="block font-mono text-xl tracking-widest">{pairingCode.code}</output>}
           <Button size="sm" variant="outline" disabled={busy || state.status !== 'online'} onClick={() => {
@@ -177,7 +177,7 @@ function ComputerRow({ computer, pairings, onChanged }: { computer: AgentCompute
         </div>
       </div>
       {canRequest && enteringCode && <form className="mt-3 space-y-2" onSubmit={(event) => { event.preventDefault(); void run(async () => { await requestComputerPairing(computer.id, code); setEnteringCode(false); setCode('') }) }}>
-        <p className="text-xs text-muted-foreground">{ui('On {{name}}, open Settings → Agent → This computer and generate a pairing code.', { name: computer.name })}</p>
+        <p className="text-xs text-muted-foreground">{ui('On {{name}}, open Settings → Devices → Agent computers → This computer and generate a pairing code.', { name: computer.name })}</p>
         <div className="flex gap-2">
           <Input autoFocus aria-label={ui('Pairing code')} placeholder={ui('ABC234')} autoComplete="off" autoCapitalize="characters" spellCheck={false} maxLength={6} value={code} onChange={(event) => setCode(event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))} className="max-w-40 font-mono tracking-widest" />
           <Button size="sm" disabled={busy || code.length !== 6} type="submit">{ui('Connect')}</Button>
@@ -216,7 +216,7 @@ export function ComputerSettings() {
       {isDesktopRuntime() && !featureDisabled && <ThisComputerSettings />}
       <div>
         <div className="flex items-center justify-between gap-2">
-          <h3 className="text-sm font-medium">{ui('Computers')}</h3>
+          <h4 className="text-sm font-medium">{ui('Available computers')}</h4>
           <Button variant="outline" size="sm" disabled={computersQuery.isFetching} onClick={() => void invalidate()}>
             {computersQuery.isFetching ? <Loader2 className="animate-spin" /> : <RefreshCw />}{ui('Refresh')}
           </Button>

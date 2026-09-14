@@ -1350,7 +1350,7 @@ export function Composer({
               selection: workspaceSelection,
               computers,
               onSelectWorkspace: (selection) => selectWorkspace(workspaceSelectionKey, selection),
-              ...(settingsDialog ? { onManageComputers: () => settingsDialog.openSettings('agent') } : {}),
+              ...(settingsDialog ? { onManageComputers: () => settingsDialog.openSettings('devices') } : {}),
             }}
           />
 

@@ -119,14 +119,6 @@ export function AgentMenu({ enabled, disabled, onSelect, onSelectClose, workspac
                 </DropdownMenuItem>
               )
             })}
-            {workspace?.onManageComputers && (
-              <>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onSelect={() => { menuFocus.onSelect(); workspace.onManageComputers?.() }}>
-                  <Settings2 className="size-4 opacity-70" />{ui('Manage computers…')}
-                </DropdownMenuItem>
-              </>
-            )}
           </>
         ) : [true, false].map((value) => {
           const ChoiceIcon = value ? Bot : BotOff
@@ -151,6 +143,14 @@ export function AgentMenu({ enabled, disabled, onSelect, onSelectClose, workspac
             </DropdownMenuItem>
           )
         })}
+        {workspace?.onManageComputers && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onSelect={() => { menuFocus.onSelect(); workspace.onManageComputers?.() }}>
+              <Settings2 className="size-4 opacity-70" />{ui('Manage computers…')}
+            </DropdownMenuItem>
+          </>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   )

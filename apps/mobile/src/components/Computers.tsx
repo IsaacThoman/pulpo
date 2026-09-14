@@ -97,7 +97,7 @@ export function PairComputerDialog({ computer, onClose, onPaired }: { computer: 
     <View style={{ flex: 1, justifyContent: 'center', padding: 24, backgroundColor: 'rgba(0,0,0,0.5)' }}>
       <View style={{ backgroundColor: theme.elevated, padding: 20, borderRadius: 16, gap: 12 }}>
         <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 20, fontWeight: '600' }}>Pair {computer?.name}</Text>
-        <Text style={{ color: theme.secondary }}>On that computer, open Settings → Agent → This computer and generate a pairing code. Enter it here within five minutes.</Text>
+        <Text style={{ color: theme.secondary }}>On that computer, open Settings → Devices → Agent computers → This computer and generate a pairing code. Enter it here within five minutes.</Text>
         <TextInput accessibilityLabel="Pairing code" autoFocus autoCapitalize="characters" autoCorrect={false} maxLength={6} value={code} onChangeText={(value) => setCode(value.toUpperCase().replace(/[^A-Z0-9]/g, ''))} placeholder="ABC234" placeholderTextColor={theme.tertiary} style={{ color: theme.text, borderColor: theme.separator, borderWidth: 1, borderRadius: 8, padding: 12, fontSize: 24, letterSpacing: 4 }} onSubmitEditing={() => void connect()} />
         {error ? <Text accessibilityRole="alert" style={{ color: theme.red }}>{error}</Text> : null}
         <Button title={busy ? 'Connecting…' : 'Connect'} disabled={busy || code.length !== 6} onPress={() => void connect()} />
