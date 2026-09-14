@@ -3,7 +3,7 @@ import { formatUsd } from '@/lib/format'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { activeLocale, ui } from '@/i18n/ui'
 
-/** Flat divide-x stat strip: calls, tokens, spend, avg/call, estimated water — no cards. */
+/** Stats reflow to fit their container, including beside an open sidebar. */
 export function StatsRow({ calls, tokens, cost, inferenceReferenceCost = 0 }: {
   calls: number
   tokens: number
@@ -23,16 +23,16 @@ export function StatsRow({ calls, tokens, cost, inferenceReferenceCost = 0 }: {
     },
   ]
   return (
-    <div className="grid grid-cols-2 gap-1 sm:grid-cols-5 md:gap-0 md:divide-x">
+    <div className="stat-grid">
       {stats.map((s) => (
-        <div key={s.label} className="p-3 md:first:pl-0 md:last:pr-0">
+        <div key={s.label} className="p-3">
           <div className="mb-1 flex items-center gap-1 text-xs text-muted-foreground">
             {s.label}
             {s.info && (
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <Info className="size-3 cursor-help" />
+                    <Info className="size-3 shrink-0 cursor-help" />
                   </TooltipTrigger>
                   <TooltipContent>
                     <p className="max-w-[300px]">{s.info}</p>

@@ -208,10 +208,10 @@ export function BillingPage() {
 
   return (
     <div className="flex h-full flex-col">
+      <header className="flex h-12 shrink-0 items-center border-b px-5"><h1 className="text-sm font-semibold">{ui("Billing")}</h1></header>
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto w-full max-w-5xl space-y-8 px-5 py-6 sm:px-6 sm:py-8">
           <div>
-            <h2 className="text-xl font-semibold tracking-tight">{ui("Billing")}</h2>
             <p className="mt-1 max-w-2xl text-sm text-muted-foreground">{ui("There are two ways to pay for usage: buy credits and pay as you go, or subscribe to a monthly plan. You can use either one or both.")}</p>
           </div>
 
@@ -340,7 +340,7 @@ export function BillingPage() {
       <Dialog open={planOpen} onOpenChange={(open) => { setPlanOpen(open); if (!open) setPlanError('') }}>
         <DialogContent className="sm:max-w-5xl">
           <DialogHeader><DialogTitle>{ui("Compare plans")}</DialogTitle></DialogHeader>
-          <div className="grid gap-6 py-2 sm:grid-cols-3 sm:gap-0 sm:divide-x">
+          <div className="grid gap-6 py-2 md:grid-cols-3 md:gap-0 md:divide-x">
             <PlanColumn plan="baby" current={managedPlan} pendingPlan={pendingPlan} cancelAtPeriodEnd={summary?.subscription?.cancelAtPeriodEnd ?? false} benefits={[ui("Pay as you go"), ui("Share platform credits with your pool"), ui("Free and source-available")]} onChoose={() => void changePlan('baby')} disabled={submitting} />
             <PlanColumn plan="eight" current={managedPlan} pendingPlan={pendingPlan} cancelAtPeriodEnd={summary?.subscription?.cancelAtPeriodEnd ?? false} benefits={[ui("Everything in Pulpo Baby"), ui("High usage limits"), ui("Higher workspace and file limits"), ui("$1 accumulating platform credits added each month"), ui("Cancel any time")]} onChoose={() => void changePlan('eight')} disabled={submitting} />
             <PlanColumn plan="fat" current={managedPlan} pendingPlan={pendingPlan} cancelAtPeriodEnd={summary?.subscription?.cancelAtPeriodEnd ?? false} benefits={[ui("Everything in Pulpo Eight"), ui("Highest usage limits"), ui("Highest workspace and file limits"), ui("$16 accumulating platform credits added each month")]} onChoose={() => void changePlan('fat')} disabled={submitting} />
@@ -386,7 +386,7 @@ function PlanBadge({ plan, overridden, pastDue }: { plan: BillingPlan; overridde
 
 function PlanColumn({ plan, current, pendingPlan, cancelAtPeriodEnd, benefits, onChoose, disabled }: { plan: BillingPlan; current: BillingPlan; pendingPlan: BillingPlan | null; cancelAtPeriodEnd: boolean; benefits: string[]; onChoose: () => void; disabled: boolean }) {
   const price = plan === 'baby' ? null : plan === 'eight' ? 8 : 24
-  return <div className={cn('flex flex-col', plan === 'baby' ? 'sm:pr-5' : plan === 'eight' ? 'sm:px-5' : 'sm:pl-5')}>
+  return <div className={cn('flex flex-col', plan === 'baby' ? 'md:pr-5' : plan === 'eight' ? 'md:px-5' : 'md:pl-5')}>
     <div className="flex items-center gap-2"><img src="/pulpo-smiley.png" alt="" className="size-7" /><Badge variant={plan === 'baby' ? 'outline' : 'secondary'} className={plan === 'eight' ? 'border-yellow-500/25 bg-yellow-500/15 text-yellow-700 dark:text-yellow-300' : plan === 'fat' ? 'border-pink-500/25 bg-pink-500/15 text-pink-700 dark:text-pink-300' : undefined}>{billingPlanName(plan)}</Badge></div>
     <div className="mt-4 text-2xl font-semibold">{price === null ? ui("Free") : <>${price} <span className="text-sm font-normal text-muted-foreground">{ui("/ month")}</span></>}</div>
     <div className="mt-5 flex-1 space-y-3 text-sm">{benefits.map((benefit) => <div key={benefit} className="flex items-start gap-2"><Check className="mt-0.5 size-4 shrink-0 text-emerald-600 dark:text-emerald-400" />{benefit}</div>)}</div>

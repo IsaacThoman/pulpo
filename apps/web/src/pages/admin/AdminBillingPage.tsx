@@ -233,9 +233,9 @@ export function AdminBillingPage() {
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-1 sm:grid-cols-3 lg:grid-cols-6 lg:gap-0 lg:divide-x">
+      <div className="stat-grid">
         {stats.map((stat) => (
-          <div key={stat.label} className="p-3 lg:first:pl-0 lg:last:pr-0">
+          <div key={stat.label} className="p-3">
             <div className="mb-1 text-xs text-muted-foreground">{stat.label}</div>
             <div className={`text-lg font-medium tabular-nums ${stat.alert ? 'text-destructive' : ''}`}>{stat.value}</div>
           </div>
@@ -262,9 +262,9 @@ export function AdminBillingPage() {
             </ResponsiveContainer>
           </div>
         )}
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-5 sm:gap-0 sm:divide-x">
+        <div className="stat-grid">
           {breakdown.map((row) => (
-            <div key={row.label} className="py-3 sm:px-4 sm:first:pl-0 sm:last:pr-0">
+            <div key={row.label} className="p-3">
               <div className="text-xs text-muted-foreground">{row.label}</div>
               <div className="mt-1 text-sm font-medium tabular-nums">{row.value}</div>
             </div>

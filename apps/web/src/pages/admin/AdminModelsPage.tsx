@@ -181,45 +181,49 @@ export function AdminModelsPage() {
       <div className="space-y-2">
         {filtered.map((model) => (
           <Card key={model.id} className={cn('shadow-none', !model.enabled && 'opacity-55')}>
-            <CardContent className="flex items-center gap-4 px-4 py-3">
-              <AiLogo
-                icon={model.logo ?? labs.find((lab) => lab.id === model.labId)?.logo ?? 'pulpo'}
-                customIcon={effectiveModelCustomIcon(model, labs, customIcons)}
-                className="size-8 rounded-[4px]"
-              />
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <span className="font-medium">{model.name}</span>
-                  <Badge variant="outline" className="font-normal">{model.id}</Badge>
-                  <Badge variant="secondary" className="font-normal">{model.executionMode}</Badge>
-                  {!model.visible && <Badge variant="secondary" className="font-normal">{ui("hidden")}</Badge>}
+            <CardContent className="flex flex-wrap items-center gap-3 px-4 py-3">
+              <div className="flex min-w-0 flex-[1_1_16rem] items-center gap-3">
+                <AiLogo
+                  icon={model.logo ?? labs.find((lab) => lab.id === model.labId)?.logo ?? 'pulpo'}
+                  customIcon={effectiveModelCustomIcon(model, labs, customIcons)}
+                  className="size-8 shrink-0 rounded-[4px]"
+                />
+                <div className="min-w-0 flex-1">
+                  <div className="flex min-w-0 flex-wrap items-center gap-2">
+                    <span className="font-medium wrap-anywhere">{model.name}</span>
+                    <Badge variant="outline" className="max-w-full font-normal"><span className="truncate" title={model.id}>{model.id}</span></Badge>
+                    <Badge variant="secondary" className="font-normal">{model.executionMode}</Badge>
+                    {!model.visible && <Badge variant="secondary" className="font-normal">{ui("hidden")}</Badge>}
+                  </div>
+                  <div className="mt-0.5 truncate text-xs text-muted-foreground">
+                    {model.description || model.upstreamModelId} · {formatNumber(model.contextWindow)} {ui("ctx")} </div>
                 </div>
-                <div className="mt-0.5 truncate text-xs text-muted-foreground">
-                  {model.description || model.upstreamModelId} · {formatNumber(model.contextWindow)} {ui("ctx")} </div>
               </div>
-              <Button size="icon-sm" variant="ghost" title={ui("Edit")} onClick={() => { setCreating(false); setDraft({ ...model }) }}>
-                <Pencil className="size-4" />
-              </Button>
-              <Button size="icon-sm" variant="ghost" title={ui("Clone")} onClick={() => { setCreating(true); setDraft({ ...model, id: `${model.id}-copy`, name: `${model.name} copy` }) }}>
-                <Copy className="size-4" />
-              </Button>
-              <Button
-                size="icon-sm"
-                variant="ghost"
-                className="hover:text-destructive"
-                title={ui("Delete")}
-                onClick={() => {
-                  if (confirm(`Delete ${model.name}? Historical references will be permanently reassigned to “unknown model”.`)) {
-                    void apiRequest(`/api/admin/models/${model.id}`, { method: 'DELETE' }).then(() => Promise.all([load(), useCatalog.getState().load()]))
-                  }
-                }}
-              >
-                <Trash2 className="size-4" />
-              </Button>
-              <Switch
-                checked={model.enabled}
-                onCheckedChange={(enabled) => void apiRequest(`/api/admin/models/${model.id}`, { method: 'PATCH', body: { enabled } }).then(() => Promise.all([load(), useCatalog.getState().load()]))}
-              />
+              <div className="ml-auto flex shrink-0 items-center gap-1">
+                <Button size="icon-sm" variant="ghost" title={ui("Edit")} onClick={() => { setCreating(false); setDraft({ ...model }) }}>
+                  <Pencil className="size-4" />
+                </Button>
+                <Button size="icon-sm" variant="ghost" title={ui("Clone")} onClick={() => { setCreating(true); setDraft({ ...model, id: `${model.id}-copy`, name: `${model.name} copy` }) }}>
+                  <Copy className="size-4" />
+                </Button>
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  className="hover:text-destructive"
+                  title={ui("Delete")}
+                  onClick={() => {
+                    if (confirm(`Delete ${model.name}? Historical references will be permanently reassigned to “unknown model”.`)) {
+                      void apiRequest(`/api/admin/models/${model.id}`, { method: 'DELETE' }).then(() => Promise.all([load(), useCatalog.getState().load()]))
+                    }
+                  }}
+                >
+                  <Trash2 className="size-4" />
+                </Button>
+                <Switch
+                  checked={model.enabled}
+                  onCheckedChange={(enabled) => void apiRequest(`/api/admin/models/${model.id}`, { method: 'PATCH', body: { enabled } }).then(() => Promise.all([load(), useCatalog.getState().load()]))}
+                />
+              </div>
             </CardContent>
           </Card>
         ))}
@@ -230,7 +234,7 @@ export function AdminModelsPage() {
       <Dialog open={!!draft} onOpenChange={(open) => !open && setDraft(null)}>
         <DialogContent className="flex h-[720px] max-h-[90vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
           <DialogHeader className="shrink-0 border-b px-6 py-4">
-            <DialogTitle className="flex items-center gap-2.5">
+            <DialogTitle className="flex flex-wrap items-center gap-2.5 pr-5">
               {draft && <AiLogo icon={draft.logo ?? labs.find((lab) => lab.id === draft.labId)?.logo ?? 'pulpo'} customIcon={effectiveModelCustomIcon(draft, labs, customIcons)} className="size-6 rounded-[3px]" />}
               {creating ? ui("New model") : ui("Edit model")}
               {draft?.id && <Badge variant="outline" className="font-mono font-normal">{draft.id}</Badge>}
@@ -263,9 +267,9 @@ export function AdminModelsPage() {
       </Dialog>
 
       <Dialog open={codexEnabled && !!codexDraft} onOpenChange={(open) => !open && setCodexDraft(null)}>
-        <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-lg">
+        <DialogContent className="gap-0 overflow-y-auto p-0 sm:max-w-lg">
           <DialogHeader className="border-b px-6 py-4">
-            <DialogTitle className="flex items-center gap-2.5">
+            <DialogTitle className="flex flex-wrap items-center gap-2.5 pr-5">
               <AiLogo icon="codex" className="size-6 rounded-[3px]" />
               {ui("Codex context management")}
               <Badge variant="secondary" className="font-normal">{ui("Managed")}</Badge>
@@ -352,18 +356,20 @@ export function ManagedCodexModelsSection({
       <p className="text-xs text-muted-foreground">{ui("Catalog details are managed by Pulpo. Administrators can tune context compaction for each model.")}</p>
       {models.map((model) => (
         <Card key={model.id} className="shadow-none">
-          <CardContent className="flex items-center gap-4 px-4 py-3">
-            <AiLogo icon="codex" className="size-8 rounded-[4px]" />
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2">
-                <span className="font-medium">{model.name}</span>
-                <Badge variant="outline" className="font-normal">{ui("Managed")}</Badge>
-              </div>
-              <div className="mt-0.5 truncate text-xs text-muted-foreground">
-                {formatNumber(model.contextWindow)} {ui("ctx")} · {ui("compacts at")} {formatNumber(model.compactionThresholdTokens)} · {ui("keeps")} {model.compactionRetainedTurns} {ui("exchanges")}
+          <CardContent className="flex flex-wrap items-center gap-3 px-4 py-3">
+            <div className="flex min-w-0 flex-[1_1_16rem] items-center gap-3">
+              <AiLogo icon="codex" className="size-8 shrink-0 rounded-[4px]" />
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-medium wrap-anywhere">{model.name}</span>
+                  <Badge variant="outline" className="font-normal">{ui("Managed")}</Badge>
+                </div>
+                <div className="mt-0.5 truncate text-xs text-muted-foreground">
+                  {formatNumber(model.contextWindow)} {ui("ctx")} · {ui("compacts at")} {formatNumber(model.compactionThresholdTokens)} · {ui("keeps")} {model.compactionRetainedTurns} {ui("exchanges")}
+                </div>
               </div>
             </div>
-            <Button size="sm" variant="outline" onClick={() => onEdit(model)}><Pencil className="size-3.5" /> {ui("Context settings")}</Button>
+            <Button className="ml-auto" size="sm" variant="outline" onClick={() => onEdit(model)}><Pencil className="size-3.5" /> {ui("Context settings")}</Button>
           </CardContent>
         </Card>
       ))}

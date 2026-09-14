@@ -199,14 +199,15 @@ export function ApiKeysPage() {
   if (!apiKeysEnabled) return <div className="grid h-full place-items-center p-8"><div className="max-w-md rounded-xl border p-6 text-center"><TriangleAlert className="mx-auto size-8 text-amber-500" /><h1 className="mt-3 text-lg font-semibold">{ui("API keys are disabled")}</h1><p className="mt-2 text-sm text-muted-foreground">{ui("The administrator has suspended API-key authentication. Existing keys remain stored and can be used again if the policy is re-enabled.")}</p></div></div>
 
   return (
-    <ScrollArea className="h-full">
+    <div className="flex h-full flex-col">
+      <header className="flex h-12 shrink-0 items-center border-b px-5"><h1 className="text-sm font-semibold">{ui("API Keys")}</h1></header>
+    <ScrollArea className="min-h-0 flex-1">
       <div className="mx-auto max-w-5xl space-y-5 px-6 py-8">
         {/* header */}
         <div className="flex items-start gap-3">
           <div className="min-w-0 flex-1">
-            <h1 className="text-xl font-semibold tracking-tight">{ui("API Keys")}</h1>
             <p className="mt-1 text-sm text-muted-foreground"> {ui("Create and manage OpenAI-compatible keys.")}{' '}
-              <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">
+              <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs wrap-anywhere">
                 {API_BASE_URL}
               </code>
             </p>
@@ -474,5 +475,6 @@ export function ApiKeysPage() {
         </DialogContent>
       </Dialog>
     </ScrollArea>
+    </div>
   )
 }

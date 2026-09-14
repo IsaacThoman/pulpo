@@ -258,12 +258,12 @@ export function LeaderboardPage({ scope = 'friends' }: { scope?: 'friends' | 'po
     <div className="space-y-6">
       {instanceMode ? <div>
         <div className="text-lg font-medium">{ui("Instance leaderboard")}</div>
-        <div className="mt-0.5 text-xs text-muted-foreground">
+        <div className="mt-0.5 text-xs text-muted-foreground wrap-anywhere">
           {circleUsageQuery.isLoading ? ui("Loading active participants…") : uit`${users.length.toLocaleString(activeLocale())} active users with settled usage in this period`}
         </div>
       </div> : <div>
-        <div className="text-lg font-medium">{me.name}</div>
-        <div className="mt-0.5 text-xs text-muted-foreground">
+        <div className="text-lg font-medium wrap-anywhere">{me.name}</div>
+        <div className="mt-0.5 text-xs text-muted-foreground wrap-anywhere">
           {me.email} {ui("· Joined")} {formatDate(me.joinedAt)}
         </div>
       </div>}
@@ -352,7 +352,7 @@ export function LeaderboardPage({ scope = 'friends' }: { scope?: 'friends' | 'po
             modelNames={{ other: 'Other' }}
           />
           <div className="grid gap-4 lg:grid-cols-3">
-            <div className="lg:col-span-2">
+            <div className="min-w-0 lg:col-span-2">
               <PublicRecentUsagePanel
                 records={records}
                 nextCursor={nextCursor}

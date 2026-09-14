@@ -90,20 +90,20 @@ export function EpisodicMemorySection() {
         checked={status.settings.enabled}
         onChange={(enabled) => setStatus({ ...status, settings: { ...status.settings, enabled } })}
       />
-      <label className="flex items-start justify-between gap-6 text-sm">
+      <label className="flex min-w-0 flex-col items-start gap-2 text-sm @xl:flex-row @xl:justify-between @xl:gap-6">
         <span><span className="block">{ui('Embedding model')}</span><span className="mt-0.5 block text-xs text-muted-foreground">{ui('Curated local models only. A model change builds a parallel index before switching.')}</span></span>
         <select
-          className="h-9 w-64 rounded-md border bg-background px-3 text-sm"
+          className="h-9 w-64 max-w-full shrink-0 rounded-md border bg-background px-3 text-sm"
           value={status.settings.profile}
           onChange={(event) => setStatus({ ...status, settings: { ...status.settings, profile: event.target.value as EpisodicMemoryProfile } })}
         >
           {status.profiles.map((profile) => <option key={profile.id} value={profile.id}>{uit`${profile.label} · ${profile.dimension}d · ~${bytes(profile.approximateSizeBytes)}`}</option>)}
         </select>
       </label>
-      <label className="flex items-start justify-between gap-6 text-sm">
+      <label className="flex min-w-0 flex-col items-start gap-2 text-sm @xl:flex-row @xl:justify-between @xl:gap-6">
         <span><span className="block">{ui('Automatic recall mode')}</span><span className="mt-0.5 block text-xs text-muted-foreground">{ui('Balanced is the default; conservative abstains more often and eager recalls more broadly.')}</span></span>
         <select
-          className="h-9 w-48 rounded-md border bg-background px-3 text-sm capitalize"
+          className="h-9 w-48 max-w-full shrink-0 rounded-md border bg-background px-3 text-sm capitalize"
           value={status.settings.recallMode}
           onChange={(event) => setStatus({ ...status, settings: { ...status.settings, recallMode: event.target.value as EpisodicMemoryRecallMode } })}
         >
@@ -132,7 +132,7 @@ export function EpisodicMemorySection() {
         {generation.status === 'indexing' && <div>{uit`${generation.completedItems} / ${generation.totalItems} items · ${generation.failedItems} failed`}</div>}
         {generation.error && <div className="text-destructive">{generation.error}</div>}
       </div>}
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         <Button type="button" variant="outline" disabled={busy || !status.settings.enabled} onClick={() => void action('rebuild')}><RotateCcw />{ui('Rebuild index')}</Button>
         <Button type="button" variant="outline" disabled={busy || !status.buildingGeneration} onClick={() => void action('cancel')}><Square />{ui('Cancel build')}</Button>
       </div>
@@ -181,7 +181,7 @@ export function EpisodicStatisticsPanel({
       </select>
     </div>
 
-    <div className="grid grid-cols-2 gap-2 lg:grid-cols-6">
+    <div className="stat-grid gap-2">
       <StatisticCard icon={<Clock3 />} label={ui('P95 recall overhead')} value={latency(summary.recall.latency.p95Ms)} />
       <StatisticCard icon={<Activity />} label={ui('Recall rate')} value={percentage(summary.recall.recallRate)} />
       <StatisticCard icon={<Gauge />} label={ui('Fallback rate')} value={percentage(summary.retrieval.fallbackRate)} />

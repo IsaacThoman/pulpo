@@ -50,14 +50,14 @@ export function AdminSettingsPage() {
   const CurrentSection = current.component
 
   return (
-    <div className="flex gap-6">
-      <nav className="w-44 shrink-0 space-y-0.5">
+    <div className="flex min-w-0 flex-col gap-6 xl:flex-row">
+      <nav className="settings-section-nav flex min-w-0 shrink-0 gap-1 overflow-x-auto xl:block xl:w-44 xl:space-y-0.5">
         {sections.map((s) => (
           <button
             key={s.id}
             onClick={() => setActive(s.id)}
             className={cn(
-              'flex w-full cursor-pointer items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm transition-colors',
+              'flex shrink-0 cursor-pointer whitespace-nowrap xl:w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm transition-colors',
               active === s.id
                 ? 'bg-accent font-medium'
                 : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground'

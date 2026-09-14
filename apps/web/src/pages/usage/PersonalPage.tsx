@@ -126,14 +126,14 @@ export function PersonalPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+      <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <div className="text-lg font-medium">{me.name}</div>
-          <div className="mt-0.5 text-xs text-muted-foreground">
+          <div className="text-lg font-medium wrap-anywhere">{me.name}</div>
+          <div className="mt-0.5 text-xs text-muted-foreground wrap-anywhere">
             {me.email} {ui("· Joined")} {formatDate(me.joinedAt)}
           </div>
         </div>
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:gap-6">
+        <div className="flex min-w-0 flex-wrap items-end gap-4 sm:gap-6">
           <SubscriptionUsageBars
             compact
             className="w-full sm:w-60 sm:border-r sm:pr-6"
@@ -155,7 +155,7 @@ export function PersonalPage() {
 
       <section>
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <span className="flex items-center gap-2 text-xs font-medium">
               <Clock className="size-3" /> {ui("Usage overview")} </span>
             <div className="h-4 w-px bg-border" />
@@ -187,7 +187,7 @@ export function PersonalPage() {
             periodDayCount={periodDays(range, activity?.summary.firstUsedAt ? Date.parse(activity.summary.firstUsedAt) : null)}
           />
           <div className="grid gap-4 lg:grid-cols-3">
-            <div className="lg:col-span-2">
+            <div className="min-w-0 lg:col-span-2">
               <RecentUsagePanel
                 records={records}
                 showBalance
