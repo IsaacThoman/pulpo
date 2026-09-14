@@ -9,19 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Separator } from '@/components/ui/separator'
-
-function Row({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
-  return (
-    <div className="flex items-start justify-between gap-6 py-2">
-      <div className="min-w-0">
-        <div className="text-sm">{label}</div>
-        {hint && <div className="mt-0.5 text-xs leading-5 text-muted-foreground">{hint}</div>}
-      </div>
-      <div className="shrink-0">{children}</div>
-    </div>
-  )
-}
+import { SettingsRow as Row } from './SettingsRow'
 
 function statusLabel(state: DesktopComputerState): string {
   if (state.status === 'online') return ui('Connected')
@@ -79,76 +67,70 @@ export function ThisComputerSettings() {
 
   return (
     <div>
-      <div className="flex items-start gap-3">
-        <Laptop className="mt-0.5 size-5 shrink-0 text-muted-foreground" />
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-sm font-medium">{ui('This computer')}</span>
-            <span className={`rounded px-1.5 py-0.5 text-xs ${state.status === 'online' ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400' : state.status === 'error' ? 'bg-destructive/10 text-destructive' : 'bg-accent text-muted-foreground'}`}>{statusLabel(state)}</span>
-          </div>
-          <p className="mt-1 text-xs leading-5 text-muted-foreground">
-            {ui('Let the agent read and change files and run commands on this Mac, PC, or Linux machine instead of a cloud sandbox. Everything runs as you, with your permissions, and changes are permanent.')}
-          </p>
-          {state.error && <p role="alert" className="mt-2 flex items-start gap-1.5 text-xs text-destructive"><AlertTriangle className="mt-0.5 size-3.5 shrink-0" />{state.error}</p>}
-          {error && <p role="alert" className="mt-2 text-xs text-destructive">{error}</p>}
-        </div>
+      <Row label={<span className="flex flex-wrap items-center gap-2">
+        {ui('This computer')}
+        <span className={`rounded px-1.5 py-0.5 text-xs font-normal ${state.status === 'online' ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400' : state.status === 'error' ? 'bg-destructive/10 text-destructive' : 'bg-accent text-muted-foreground'}`}>{statusLabel(state)}</span>
+      </span>} hint={<>
+        {ui('Use this computer for agent tasks. Choose it from the workspace menu when sending a message. Tasks run with your permissions and changes to files are permanent.')}
+        {!state.enabled && state.accessMode === 'folder' && !state.rootPath && <p className="mt-2">{ui('Choose a folder below to turn this computer on.')}</p>}
+        {state.error && <p role="alert" className="mt-2 flex items-start gap-1.5 text-destructive"><AlertTriangle className="mt-0.5 size-3.5 shrink-0" />{state.error}</p>}
+        {error && <p role="alert" className="mt-2 text-destructive">{error}</p>}
+      </>}>
         <Switch
           checked={state.enabled}
           disabled={busy || (!state.enabled && state.accessMode === 'folder' && !state.rootPath)}
           aria-label={ui('Share this computer with the agent')}
           onCheckedChange={(enabled) => void update({ enabled })}
         />
-      </div>
-      <Separator className="my-3" />
-      <div className="divide-y">
-        <Row label={ui('Name')} hint={ui('Shown in the workspace picker on all your devices.')}>
-          <Input
-            className="h-8 w-48 text-sm"
-            value={nameDraft ?? state.name}
-            disabled={busy}
-            onChange={(event) => setNameDraft(event.target.value)}
-            onBlur={() => { if (nameDraft !== null && nameDraft.trim() && nameDraft.trim() !== state.name) void update({ name: nameDraft.trim() }); setNameDraft(null) }}
-          />
+      </Row>
+      <Row label={ui('Computer name')} hint={ui('Shown in the workspace menu on your devices.')}>
+        <Input
+          aria-label={ui('Computer name')}
+          className="w-48"
+          value={nameDraft ?? state.name}
+          disabled={busy}
+          onChange={(event) => setNameDraft(event.target.value)}
+          onBlur={() => { if (nameDraft !== null && nameDraft.trim() && nameDraft.trim() !== state.name) void update({ name: nameDraft.trim() }); setNameDraft(null) }}
+        />
+      </Row>
+      <Row label={ui('File access')} hint={state.accessMode === 'folder'
+        ? ui('File tools are limited to the chosen folder. Shell commands start there but are not sandboxed by the operating system.')
+        : ui('The agent can reach anything your user account can. Prefer folder access unless you need the whole machine.')}
+      >
+        <Select value={state.accessMode} disabled={busy} onValueChange={(accessMode) => void update({ accessMode: accessMode as DesktopComputerState['accessMode'] })}>
+          <SelectTrigger aria-label={ui('File access')} className="w-48"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="folder">{ui('One folder')}</SelectItem>
+            <SelectItem value="full">{ui('Whole computer')}</SelectItem>
+          </SelectContent>
+        </Select>
+      </Row>
+      {state.accessMode === 'folder' && (
+        <Row label={ui('Folder')} hint={<span className="break-all">{state.rootPath ?? ui('No folder chosen yet.')}</span>}>
+          <Button size="sm" variant="outline" disabled={busy} onClick={() => void chooseFolder()}>{state.rootPath ? ui('Change…') : ui('Choose…')}</Button>
         </Row>
-        <Row label={ui('Access')} hint={state.accessMode === 'folder'
-          ? ui('File tools are limited to the chosen folder. Shell commands start there but are not sandboxed by the operating system.')
-          : ui('The agent can reach anything your user account can. Prefer folder access unless you need the whole machine.')}
-        >
-          <Select value={state.accessMode} disabled={busy} onValueChange={(accessMode) => void update({ accessMode: accessMode as DesktopComputerState['accessMode'] })}>
-            <SelectTrigger className="h-8 w-48 text-sm"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="folder">{ui('One folder')}</SelectItem>
-              <SelectItem value="full">{ui('Whole computer')}</SelectItem>
-            </SelectContent>
-          </Select>
-        </Row>
-        {state.accessMode === 'folder' && (
-          <Row label={ui('Folder')} hint={state.rootPath ?? ui('No folder chosen yet.')}>
-            <Button size="sm" variant="outline" disabled={busy} onClick={() => void chooseFolder()}>{state.rootPath ? ui('Change…') : ui('Choose…')}</Button>
-          </Row>
-        )}
-        <Row label={ui('Ask before')} hint={ui('Approve or deny requests in the chat. Reads never need approval.')}>
-          <Select value={state.approvalPolicy} disabled={busy} onValueChange={(approvalPolicy) => void update({ approvalPolicy: approvalPolicy as DesktopComputerState['approvalPolicy'] })}>
-            <SelectTrigger className="h-8 w-48 text-sm"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="default">{ui('Commands and file changes')}</SelectItem>
-              <SelectItem value="bash-only">{ui('Commands only')}</SelectItem>
-              <SelectItem value="never">{ui('Never ask')}</SelectItem>
-            </SelectContent>
-          </Select>
-        </Row>
-        <Row label={ui('Allow other devices')} hint={ui('Pair your phone or browser by entering a code generated on this computer.')}>
-          <Switch checked={state.allowRemote} disabled={busy} aria-label={ui('Allow other devices')} onCheckedChange={(allowRemote) => void update({ allowRemote })} />
-        </Row>
-        {state.enabled && state.allowRemote && <Row label={ui('Pair a device')} hint={ui('Generate a code here, then enter it in Computers settings on your other device. Each code works once and expires after five minutes.')}>
-          <div className="space-y-2 text-right">
-            {pairingCode && <output aria-label={ui('Pairing code')} className="block font-mono text-xl tracking-widest">{pairingCode.code}</output>}
-            <Button size="sm" variant="outline" disabled={busy || state.status !== 'online'} onClick={() => {
-              setBusy(true); setError(''); void api.createPairingCode().then(setPairingCode).catch((next: unknown) => setError(next instanceof Error ? next.message : ui('Could not generate a code.'))).finally(() => setBusy(false))
-            }}>{pairingCode ? ui('New code') : ui('Generate code')}</Button>
-          </div>
-        </Row>}
-      </div>
+      )}
+      <Row label={ui('Ask for approval')} hint={ui('Approve or deny requests in the chat. Reads never need approval.')}>
+        <Select value={state.approvalPolicy} disabled={busy} onValueChange={(approvalPolicy) => void update({ approvalPolicy: approvalPolicy as DesktopComputerState['approvalPolicy'] })}>
+          <SelectTrigger aria-label={ui('Ask for approval')} className="w-60"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="default">{ui('Commands and file changes')}</SelectItem>
+            <SelectItem value="bash-only">{ui('Commands only')}</SelectItem>
+            <SelectItem value="never">{ui('Never ask')}</SelectItem>
+          </SelectContent>
+        </Select>
+      </Row>
+      <Row label={ui('Allow other devices')} hint={ui('Let paired devices on your account run agent tasks on this computer.')}>
+        <Switch checked={state.allowRemote} disabled={busy} aria-label={ui('Allow other devices')} onCheckedChange={(allowRemote) => void update({ allowRemote })} />
+      </Row>
+      {state.enabled && state.allowRemote && <Row label={ui('Pair a device')} hint={ui('On your other device, open Settings → Agent (web or desktop) or Account → Computers (mobile), then choose Pair. Codes work once and expire after five minutes.')}>
+        <div className="space-y-2 text-right">
+          {pairingCode && <output aria-label={ui('Pairing code')} className="block font-mono text-xl tracking-widest">{pairingCode.code}</output>}
+          <Button size="sm" variant="outline" disabled={busy || state.status !== 'online'} onClick={() => {
+            setBusy(true); setError(''); void api.createPairingCode().then(setPairingCode).catch((next: unknown) => setError(next instanceof Error ? next.message : ui('Could not generate a code.'))).finally(() => setBusy(false))
+          }}>{pairingCode ? ui('New code') : ui('Generate code')}</Button>
+        </div>
+      </Row>}
     </div>
   )
 }

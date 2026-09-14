@@ -1722,6 +1722,14 @@ const esUi: Record<string, string> = {
   "Paid": "Pagado",
   "Credit balance": "Saldo de créditos",
   "Not subscribed": "Sin suscripción",
+  "Use this computer for agent tasks. Choose it from the workspace menu when sending a message. Tasks run with your permissions and changes to files are permanent.": "Usa este ordenador para las tareas del agente. Selecciónalo en el menú de espacios de trabajo al enviar un mensaje. Las tareas se ejecutan con tus permisos y los cambios en los archivos son permanentes.",
+  "Choose a folder below to turn this computer on.": "Elige una carpeta abajo para activar este ordenador.",
+  "Computer name": "Nombre del ordenador",
+  "Shown in the workspace menu on your devices.": "Se muestra en el menú de espacios de trabajo de tus dispositivos.",
+  "File access": "Acceso a archivos",
+  "Ask for approval": "Pedir aprobación",
+  "Let paired devices on your account run agent tasks on this computer.": "Permite que los dispositivos vinculados de tu cuenta ejecuten tareas del agente en este ordenador.",
+  "On your other device, open Settings → Agent (web or desktop) or Account → Computers (mobile), then choose Pair. Codes work once and expire after five minutes.": "En tu otro dispositivo, abre Ajustes → Agente (web o escritorio) o Cuenta → Ordenadores (móvil) y elige Vincular. Los códigos son de un solo uso y caducan a los cinco minutos.",
 }
 
 export default esUi
