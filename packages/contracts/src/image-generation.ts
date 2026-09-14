@@ -6,6 +6,13 @@ export const imageGenerationPreferencesSchema = z.object({
 }).default(() => ({ enabled: false, modelId: null }))
 export type ImageGenerationPreferences = z.infer<typeof imageGenerationPreferencesSchema>
 
+export const imageDefaultsSchema = z.object({
+  modelId: z.string().regex(/^[a-z0-9][a-z0-9._-]{0,119}$/).nullable().default(null),
+})
+export type ImageDefaults = z.infer<typeof imageDefaultsSchema>
+// Optional for clients connected to servers predating instance image defaults.
+export interface ImageCatalog { data: PublicImageModel[]; defaultModelId?: string | null }
+
 const price = z.number().int().min(0).max(1_000_000_000_000)
 /** Microdollars per million tokens; null means the administrator has not entered a rate. */
 export const imageTokenPricesSchema = z.object({

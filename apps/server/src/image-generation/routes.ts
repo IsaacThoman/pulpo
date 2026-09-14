@@ -7,6 +7,7 @@ import { auditEvents, imageModels, providerConnections } from '../database/schem
 import { AppError } from '../lib/errors.js'
 import { assertSafeProviderUrl } from '../lib/url-security.js'
 import { newId } from '../lib/ids.js'
+import { readImageDefaults, registerImageDefaultsRoutes } from './defaults.js'
 import { imageProviderEndpoint, ImageGenerationError } from './provider.js'
 
 export function publicImageModel(model: ImageModel): PublicImageModel {
@@ -16,6 +17,7 @@ export function publicImageModel(model: ImageModel): PublicImageModel {
 const sort = <T extends { sortOrder: number; name: string }>(models: T[]) => models.sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name))
 
 export async function registerImageGenerationRoutes(app: FastifyInstance) {
+  registerImageDefaultsRoutes(app)
   app.get('/api/admin/image-models', async request => {
     requireAdmin(request)
     return { data: sort((await db.select().from(imageModels)).map(row => imageModelSchema.parse(row.config))) }
@@ -24,7 +26,9 @@ export async function registerImageGenerationRoutes(app: FastifyInstance) {
     requireUser(request)
     const rows = await db.select({ config: imageModels.config, enabled: providerConnections.enabled }).from(imageModels)
       .innerJoin(providerConnections, eq(imageModels.providerConnectionId, providerConnections.id))
-    return { data: sort(rows.filter(row => row.enabled && row.config.enabled).map(row => publicImageModel(row.config))) }
+    const data = sort(rows.filter(row => row.enabled && row.config.enabled).map(row => publicImageModel(row.config)))
+    const defaults = await readImageDefaults()
+    return { data, defaultModelId: data.some(model => model.id === defaults.modelId) ? defaults.modelId : null }
   })
   const save = async (request: Parameters<typeof requireAdmin>[0], create: boolean) => {
     const admin = requireAdmin(request)

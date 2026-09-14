@@ -1,4 +1,8 @@
 const esUi: Record<string, string> = {
+  "Default image model": "Modelo de imagen predeterminado",
+  "Used when a user has not chosen an image model. Users’ own model choices take precedence. Users must still enable image generation in Settings.": "Se usa cuando el usuario no ha elegido un modelo de imagen. Las elecciones de los usuarios tienen prioridad. Los usuarios deben activar la generación de imágenes en Configuración.",
+  "Unable to save image defaults": "No se pudo guardar el modelo de imagen predeterminado",
+
   "Image billing unit": "Unidad de facturación de imágenes",
   "Per image": "Por imagen",
   "Per token": "Por token",
