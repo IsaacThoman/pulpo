@@ -777,12 +777,15 @@ describe('computer approvals', () => {
   it('shows an expired request without offering approval or a raw item', async () => {
     const { MessageItem } = await import('./MessageItem')
     const view = render(<MessageItem chat={chat} message={assistant({ done: false, outputItems: [tool, { ...approval, expires_at: new Date(0).toISOString() }] })} streaming activeModelId="model-1" />)
-    expect(view.getByText('No decision in time; not run')).toBeDefined()
+    expect(view.queryByText('No decision in time; not run')).toBeNull()
+    fireEvent.click(view.getByRole('button', { name: 'Writing a file…' }))
+    expect(view.getByText('No decision in time; not run').closest('[data-slot="collapsible-content"]')).not.toBeNull()
     expect(view.queryByRole('button', { name: 'Approve' })).toBeNull()
     expect(view.container.querySelector('details')).toBeNull()
   })
 
-  it('removes actions and waiting labels when the deadline passes without a server update', async () => {
+  it.each([true, false])('hides a timed-out prompt without a server update (work details: %s)', async (showReasoning) => {
+    useSettings.setState({ showReasoning })
     const { MessageItem } = await import('./MessageItem')
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2030-01-01T00:04:59Z'))
@@ -791,7 +794,38 @@ describe('computer approvals', () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(1_000) })
     expect(view.queryByRole('button', { name: 'Approve' })).toBeNull()
     expect(view.queryByText('Waiting for your approval…')).toBeNull()
-    expect(view.getByText('No decision in time; not run')).toBeDefined()
+    expect(view.queryByText('No decision in time; not run')).toBeNull()
+    if (showReasoning) {
+      fireEvent.click(view.getByRole('button', { name: 'Writing a file…' }))
+      expect(view.getByText('No decision in time; not run').closest('[data-slot="collapsible-content"]')).not.toBeNull()
+    } else {
+      expect(view.queryByTestId('approval-step')).toBeNull()
+    }
+  })
+
+  it.each(['approved', 'denied', 'expired', 'cancelled'])('keeps %s approvals inside collapsed work details', async (status) => {
+    const { MessageItem } = await import('./MessageItem')
+    const message = assistant({ done: true, outputItems: [{ ...tool, status: 'completed' }, { ...approval, status }] })
+    const view = render(<MessageItem chat={chat} message={message} streaming={false} activeModelId="model-1" />)
+    expect(view.queryByTestId('approval-step')).toBeNull()
+    const trigger = view.getByRole('button', { name: /^Worked/ })
+    fireEvent.click(trigger)
+    expect(view.getByTestId('approval-step').closest('[data-slot="collapsible-content"]')).not.toBeNull()
+    expect(view.queryByRole('button', { name: 'Approve' })).toBeNull()
+    fireEvent.click(trigger)
+    expect(view.queryByTestId('approval-step')).toBeNull()
+    act(() => useSettings.setState({ showReasoning: false }))
+    expect(view.queryByTestId('approval-step')).toBeNull()
+    expect(view.queryByRole('button', { name: /^Worked/ })).toBeNull()
+  })
+
+  it('moves an approval into work history when the decision arrives', async () => {
+    const { MessageItem } = await import('./MessageItem')
+    const props = { chat, streaming: true, activeModelId: 'model-1' }
+    const view = render(<MessageItem {...props} message={assistant({ done: false, outputItems: [tool, approval] })} />)
+    expect(view.getByRole('button', { name: 'Approve' })).toBeDefined()
+    view.rerender(<MessageItem {...props} message={assistant({ done: false, outputItems: [tool, { ...approval, status: 'approved' }] })} />)
+    expect(view.queryByTestId('approval-step')).toBeNull()
   })
 
   it.each([true, false])('submits the chat decision from the visible card (approve: %s)', async (approved) => {

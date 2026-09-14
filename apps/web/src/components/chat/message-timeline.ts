@@ -217,7 +217,7 @@ export function buildTimeline(outputItems: unknown[], showReasoning: boolean): T
   if (showReasoning) return segments
   return segments.flatMap((segment): TimelineSegment[] => {
     if (segment.kind === 'text') return [segment]
-    const steps = segment.steps.filter((step) => step.kind === 'approval')
+    const steps = segment.steps.filter((step): step is ApprovalStep => step.kind === 'approval' && approvalIsPending(step.approval))
     return steps.length ? [{ kind: 'activity', steps, active: steps.some((step) => approvalIsPending(step.approval)) }] : []
   })
 }

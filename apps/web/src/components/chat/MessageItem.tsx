@@ -477,8 +477,9 @@ function ActivityBlock({
   onOpenChat: (chatId: string) => void
 }) {
   const workspace = steps.find((step): step is WorkspaceStep => step.kind === 'workspace')?.workspace
-  const approvalSteps = steps.filter((step): step is ApprovalStep => step.kind === 'approval')
-  const workSteps = steps.filter((step) => step.kind !== 'approval')
+  const showDetails = useSettings((state) => state.showReasoning)
+  const approvalSteps = steps.filter((step): step is ApprovalStep => step.kind === 'approval' && approvalIsPending(step.approval))
+  const workSteps = steps.filter((step) => step.kind !== 'approval' || !approvalIsPending(step.approval))
   const pendingApproval = steps.find((step): step is ApprovalStep => step.kind === 'approval' && approvalIsPending(step.approval))?.approval
   useCountdown(pendingApproval ? Date.parse(pendingApproval.expires_at) : 0, Boolean(pendingApproval))
   const compaction = steps.find((step) => step.kind === 'compaction')?.compaction
@@ -578,7 +579,7 @@ function ActivityBlock({
 
   return (
     <div className="space-y-1.5">
-      {workSteps.length > 0 && <Collapsible open={open} onOpenChange={setOpen} className="min-w-0">
+      {showDetails && workSteps.length > 0 && <Collapsible open={open} onOpenChange={setOpen} className="min-w-0">
         <CollapsibleTrigger className="flex max-w-full min-w-0 cursor-pointer items-center gap-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground">
           {triggerIcon}
           <span className="min-w-0 truncate">{label}</span>
@@ -595,6 +596,9 @@ function ActivityBlock({
               }
               if (step.kind === 'compaction') {
                 return <CompactionStepRow key={step.compaction.id} item={step.compaction} />
+              }
+              if (step.kind === 'approval') {
+                return <ApprovalStepRow key={step.approval.id} approval={step.approval} />
               }
               if (step.kind === 'recall') {
                 return <RecallStepRow key={step.recall.id} item={step.recall} onOpenChat={onOpenChat} />
