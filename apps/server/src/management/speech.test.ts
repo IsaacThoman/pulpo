@@ -84,7 +84,7 @@ it('preserves multipart bytes and decoded voice IDs instead of JSON-proxying upl
 it('advertises image models and enforces catalog scopes on their management routes', async () => {
   expect((await server.inject('/api/management/v1/info')).json().capabilities).toContain('imageModels')
   expect((await server.inject('/api/management/v1/image-models')).statusCode).toBe(200)
-  const body = { id: 'image', adapter: 'meta-muse' }
+  const body = { id: 'image', adapter: 'meta-muse', billingUnit: 'tokens', reservationMicros: 100, tokenPrices: { input: 2000000, cachedInput: 500000, output: 10000000 } }
   expect((await server.inject({ method: 'POST', url: '/api/management/v1/image-models', payload: body })).json()).toMatchObject({ body })
   scopes = ['catalog:read']
   expect((await server.inject({ method: 'PATCH', url: '/api/management/v1/image-models/image', payload: body })).statusCode).toBe(403)
