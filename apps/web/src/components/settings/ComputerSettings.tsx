@@ -31,8 +31,8 @@ function statusLabel(state: DesktopComputerState): string {
   return ui('Off')
 }
 
-/** Desktop-only card that configures how the agent may use this machine. */
-export function ThisComputerCard() {
+/** Desktop-only settings for how the agent may use this machine. */
+export function ThisComputerSettings() {
   const api = desktopComputerApi()
   const [state, setState] = useState<DesktopComputerState | null>(null)
   const [busy, setBusy] = useState(false)
@@ -78,7 +78,7 @@ export function ThisComputerCard() {
   }
 
   return (
-    <div className="rounded-lg border p-4">
+    <div>
       <div className="flex items-start gap-3">
         <Laptop className="mt-0.5 size-5 shrink-0 text-muted-foreground" />
         <div className="min-w-0 flex-1">
@@ -231,7 +231,7 @@ export function ComputerSettings() {
   const featureDisabled = computersQuery.data?.enabled === false
   return (
     <div className="space-y-4">
-      {isDesktopRuntime() && !featureDisabled && <ThisComputerCard />}
+      {isDesktopRuntime() && !featureDisabled && <ThisComputerSettings />}
       <div>
         <div className="flex items-center justify-between gap-2">
           <h3 className="text-sm font-medium">{ui('Computers')}</h3>
