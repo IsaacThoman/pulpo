@@ -1,6 +1,7 @@
 import sharp from 'sharp'
 import { IMAGE_GENERATION_MAX_BYTES, IMAGE_PROVIDER_CAPABILITIES, type ImageModel } from '@pulpo/contracts'
 import { detectImageMime } from '../agent/images.js'
+import { parseImageUsage, type ImageUsage } from './pricing.js'
 
 export class ImageGenerationError extends Error {}
 
@@ -8,7 +9,7 @@ export interface ImageResultMetadata {
   text: string
   upstreamResponseId?: string
   imageItem?: { id: string; type: 'image_generation_call'; status: 'completed' }
-  usage?: { inputTokens: number; outputTokens: number; totalTokens: number }
+  usage?: ImageUsage
 }
 export interface ImageReference {
   data: Uint8Array
@@ -68,16 +69,10 @@ interface ImageAdapter {
   result: (payload: Record<string, unknown>) => { base64: unknown; metadata: ImageResultMetadata }
 }
 
-function imageUsage(value: unknown): ImageResultMetadata['usage'] {
-  const usage = object(value)
-  const tokenCount = (count: unknown) => typeof count === 'number' && Number.isSafeInteger(count) && count >= 0 ? count : 0
-  return { inputTokens: tokenCount(usage.input_tokens), outputTokens: tokenCount(usage.output_tokens), totalTokens: tokenCount(usage.total_tokens) }
-}
-
 function imagesResult(payload: Record<string, unknown>) {
   const images = Array.isArray(payload.data) ? payload.data : []
   if (images.length !== 1) throw new ImageGenerationError('Image provider did not return one generated image')
-  return { base64: object(images[0]).b64_json, metadata: { text: '', ...(payload.usage ? { usage: imageUsage(payload.usage) } : {}) } }
+  return { base64: object(images[0]).b64_json, metadata: { text: '', ...(payload.usage ? { usage: parseImageUsage(payload.usage) } : {}) } }
 }
 
 function imageForm(input: ImageRequest, imageField: string): FormData {
@@ -141,7 +136,7 @@ const adapters: Record<ImageModel['adapter'], ImageAdapter> = {
         text: output.filter(item => item.type === 'message').flatMap(item => Array.isArray(item.content) ? item.content.map(object).filter(part => part.type === 'output_text').map(part => typeof part.text === 'string' ? part.text : '') : []).join('\n').slice(0, 8000),
         ...(typeof payload.id === 'string' ? { upstreamResponseId: payload.id } : {}),
         ...(typeof item.id === 'string' ? { imageItem: { id: item.id, type: 'image_generation_call', status: 'completed' } } : {}),
-        usage: imageUsage(payload.usage),
+        usage: parseImageUsage(payload.usage),
       } }
     },
   },

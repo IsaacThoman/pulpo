@@ -14,6 +14,7 @@ import { getStorageUsage } from '../attachments/storage-quota.js'
 import { createAttachmentThumbnail } from '../attachments/thumbnail.js'
 import { restoredAttachmentWorkspacePath, attachmentWorkspacePath } from '../agent/policy.js'
 import type { AgentWorkspace } from '../agent/workspace.js'
+import { imageCost, imageReservation } from './pricing.js'
 import { generateImage, validateImageBytes, validateImageRequest, type ImageReference, type ImageResultMetadata } from './provider.js'
 
 const unavailable = () => new AppError(400, 'image_generation_unavailable', 'Enable image generation and choose an available model in Settings')
@@ -69,12 +70,12 @@ export interface ImageExecutionResult {
 }
 
 async function recordSavedImage(claim: typeof imageGenerationRequests.$inferSelect, attachmentId: string, runId: string) {
-  const billedCostMicros = claim.model.billUsers ? claim.model.imagePriceMicros : 0
+  const billedCostMicros = imageCost(claim.model, claim.result?.usage)
   await db.transaction(async tx => {
     await tx.update(imageGenerationRequests).set({ status: 'completed', attachmentId, billedCostMicros, updatedAt: new Date() })
       .where(and(eq(imageGenerationRequests.responseId, claim.responseId), eq(imageGenerationRequests.operationId, claim.operationId)))
     await tx.update(toolExecutions).set({ status: 'completed', provider: claim.model.adapter, billedCostMicros,
-      providerAttempts: [{ provider: claim.model.adapter, modelId: claim.model.id, upstreamModelId: claim.model.upstreamModelId, providerId: claim.model.providerConnectionId, outcome: 'success', usage: claim.result?.usage, imagePriceMicros: claim.model.imagePriceMicros, requestId: claim.result?.upstreamResponseId }],
+      providerAttempts: [{ provider: claim.model.adapter, modelId: claim.model.id, upstreamModelId: claim.model.upstreamModelId, providerId: claim.model.providerConnectionId, outcome: 'success', usage: claim.result?.usage, imagePriceMicros: claim.model.imagePriceMicros, billingUnit: claim.model.billingUnit ?? 'images', tokenPrices: claim.model.tokenPrices, requestId: claim.result?.upstreamResponseId }],
       completedAt: new Date(), updatedAt: new Date(),
     }).where(and(eq(toolExecutions.agentRunId, runId), eq(toolExecutions.operationId, claim.operationId)))
   })
@@ -110,7 +111,7 @@ export async function executeImageGeneration(input: {
     catch { text += '\nWorkspace copy is unavailable; use the attachment ID for subsequent image edits.' }
     return {
       attachment: { id: attachment.id, name: attachment.originalName, mimeType: attachment.mimeType, sizeBytes: attachment.sizeBytes },
-      path, previewData: (await createAttachmentThumbnail(data)).toString('base64'), metadata: { ...claim.result, text }, billedCostMicros, model: claim.model,
+      path, previewData: (await createAttachmentThumbnail(data)).toString('base64'), metadata: { ...claim.result, text }, billedCostMicros, model: imageModelSchema.parse(claim.model),
     }
   }
   const [existing] = await db.select().from(imageGenerationRequests).where(condition).limit(1)
@@ -128,7 +129,8 @@ export async function executeImageGeneration(input: {
   const claims = await db.insert(imageGenerationRequests).values({ responseId: input.responseId, operationId: input.operationId, model }).onConflictDoNothing().returning()
   if (!claims.length) throw new AppError(409, 'image_request_duplicate', 'This image request is already running')
   try {
-    await input.reserveCost(model.billUsers ? model.imagePriceMicros : 0)
+    const reservedMicros = imageReservation(model)
+    await input.reserveCost(reservedMicros)
     // Settings or provider availability may have changed while inputs were loading.
     const current = await selectedImageModel(input.userId)
     if (!current || current.model.id !== model.id || JSON.stringify(current.model) !== JSON.stringify(model) || current.provider.updatedAt.getTime() !== provider.updatedAt.getTime()) throw unavailable()
@@ -136,6 +138,9 @@ export async function executeImageGeneration(input: {
     const result = await generateImage({ model, baseUrl: provider.baseUrl, apiKey: decryptSecret(provider.encryptedApiKey, getConfig().ENCRYPTION_KEY), prompt: input.args.prompt, references, signal })
     const { data, mimeType, ...metadata } = result
     await db.update(imageGenerationRequests).set({ result: metadata, updatedAt: new Date() }).where(condition)
+    const actualMicros = imageCost(model, metadata.usage)
+    if (actualMicros > reservedMicros) await input.reserveCost(actualMicros - reservedMicros)
+    input.signal?.throwIfAborted()
     const extension = mimeType === 'image/jpeg' ? '.jpg' : mimeType === 'image/webp' ? '.webp' : '.png'
     const requested = basename(input.args.filename ?? 'generated-image')
     const rawName = `${requested.slice(0, requested.length - extname(requested).length).slice(0, 180) || 'generated-image'}${extension}`
