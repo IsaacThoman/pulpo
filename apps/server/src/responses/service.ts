@@ -249,6 +249,7 @@ export async function createResponse(options: CreateResponseOptions) {
     executionMode,
     agentMode: options.input.agentMode,
     workspaceComputerId,
+    requesterSessionId: options.requesterSessionId ?? null,
     input: storedInput,
     presetSelections: resolved.selections,
     parameters,

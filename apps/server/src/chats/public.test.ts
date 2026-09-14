@@ -15,7 +15,7 @@ describe('public chat DTOs', () => {
       id: '00000000-0000-4000-8000-000000000001', userId: 'private-user', folderId: null,
       title: 'Chat', modelId: 'model-1', pinned: false, sortOrder: 0, temporary: false,
       activeBranchLeafId: null, activeResponseId: null, expiresAt: null, deletedAt: null,
-      purgeStartedAt: null, workspaceComputerId: null, createdAt: date, updatedAt: date,
+      purgeStartedAt: null, workspaceComputerId: null, requesterSessionId: null, createdAt: date, updatedAt: date,
     }
     const result = toPublicChat(row)
     expect(result).toMatchObject({ id: row.id, title: 'Chat', createdAt: date.toISOString() })
@@ -31,7 +31,7 @@ describe('public chat DTOs', () => {
       modelId: 'model-1', actualModelId: 'model-actual', origin: 'web', timeZone: 'America/New_York', pricingVersionId: 'private-pricing',
       openaiResponseId: 'private-provider-id', previousResponseId: null, parentResponseId: null,
       userMessageId: '00000000-0000-4000-8000-000000000003', branchReason: 'message', status: 'completed' as const,
-      executionMode: 'stream' as const, agentMode, agentCapacityAction: null, workspaceComputerId: null,
+      executionMode: 'stream' as const, agentMode, agentCapacityAction: null, workspaceComputerId: null, requesterSessionId: null,
       input: [{ role: 'user', content: 'hello' }], instructions: 'private instructions',
       presetSelections: {}, parameters: { private: true },
       output: [{ type: 'message', content: [{ type: 'output_text', text: 'answer' }] }],
@@ -71,7 +71,7 @@ describe('public chat DTOs', () => {
       modelId: 'model-1', actualModelId: null, origin: 'web', timeZone: 'America/New_York', pricingVersionId: null,
       openaiResponseId: null, previousResponseId: null, parentResponseId: null,
       userMessageId: null, branchReason: 'message', status: 'completed' as const,
-      executionMode: 'stream' as const, agentMode: false, agentCapacityAction: null, workspaceComputerId: null,
+      executionMode: 'stream' as const, agentMode: false, agentCapacityAction: null, workspaceComputerId: null, requesterSessionId: null,
       input: [], instructions: null, presetSelections: {}, parameters: {},
       output: [{ type: 'message', content: [{ type: 'output_text', text: 'unique-output-sentinel' }] }],
       usage: null, error: null, metadata: {}, publiclyStored: true, incompleteDetails: null,
@@ -94,7 +94,7 @@ describe('public chat DTOs', () => {
       modelId: 'model-1', actualModelId: null, origin: 'web', timeZone: 'America/New_York', pricingVersionId: null,
       openaiResponseId: null, previousResponseId: null, parentResponseId: null,
       userMessageId: '00000000-0000-4000-8000-000000000003', branchReason: 'message', status: 'completed' as const,
-      executionMode: 'stream' as const, agentMode: false, agentCapacityAction: null, workspaceComputerId: null,
+      executionMode: 'stream' as const, agentMode: false, agentCapacityAction: null, workspaceComputerId: null, requesterSessionId: null,
       input: [{ role: 'user', content: 'large inactive prompt' }], instructions: null,
       presetSelections: { style: 'long' }, parameters: {},
       output: [{ type: 'message', content: [{ type: 'output_text', text: 'large inactive answer' }] }],
@@ -120,7 +120,7 @@ describe('public chat DTOs', () => {
       openaiResponseId: null, previousResponseId: null, parentResponseId: null,
       userMessageId: `00000000-0000-4000-8000-00000000001${index}`, branchReason: 'message',
       status: 'completed' as const, executionMode: 'stream' as const, agentMode: true,
-      agentCapacityAction: null, workspaceComputerId: null, input: [{ role: 'user', content: 'edit' }], instructions: null,
+      agentCapacityAction: null, workspaceComputerId: null, requesterSessionId: null, input: [{ role: 'user', content: 'edit' }], instructions: null,
       presetSelections: {}, parameters: {},
       output: [
         {
@@ -149,7 +149,7 @@ describe('public chat DTOs', () => {
       openaiResponseId: null, previousResponseId: null, parentResponseId: null,
       userMessageId: `00000000-0000-4000-8000-00000000001${index}`, branchReason: 'message',
       status: 'completed' as const, executionMode: 'stream' as const, agentMode: false,
-      agentCapacityAction: null, workspaceComputerId: null, input: [{ role: 'user', content: `prompt ${index}` }],
+      agentCapacityAction: null, workspaceComputerId: null, requesterSessionId: null, input: [{ role: 'user', content: `prompt ${index}` }],
       instructions: null, presetSelections: {}, parameters: {},
       output: [{ type: 'message', content: [{ type: 'output_text', text: `answer ${index}` }] }],
       usage: null, error: null, metadata: {}, publiclyStored: true, incompleteDetails: null,

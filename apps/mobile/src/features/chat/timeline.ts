@@ -233,8 +233,12 @@ export function buildMessageTimeline(output: unknown[], showReasoning: boolean):
       segments.unshift({ kind: 'activity', steps: [{ kind: 'workspace', workspace }], active: workspaceIsActive(workspace.state) })
     }
   }
-  // The preference controls the entire work disclosure, including workspace-only activity.
-  return showReasoning ? segments : segments.filter((segment) => segment.kind === 'text')
+  // Decisions remain actionable even when work details are hidden.
+  return showReasoning ? segments : segments.flatMap((segment): TimelineSegment[] => {
+    if (segment.kind === 'text') return [segment]
+    const steps = segment.steps.filter((step) => step.kind === 'approval' && approvalIsPending(step.approval))
+    return steps.length ? [{ kind: 'activity', steps, active: true }] : []
+  })
 }
 
 export function activityDurationMs(steps: TimelineStep[]): number | undefined {

@@ -5,7 +5,6 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import type { ComputerOperationSnapshot, ComputerReply, ComputerRequest, ToolApproval } from '@pulpo/contracts'
 import { ComputerAgent, type ComputerSocket } from './agent'
-import { createNativeComputerPrompts } from './prompts'
 import { saveComputerConfig, defaultComputerConfig } from './config-store'
 
 const { showMessageBox } = vi.hoisted(() => ({ showMessageBox: vi.fn() }))
@@ -20,7 +19,18 @@ const posixOnly = process.platform === 'win32' ? describe.skip : describe
 class FakeSocket extends EventEmitter {
   emitted: Array<{ event: string; args: unknown[] }> = []
   disconnected = false
+  approved = new Set<string>()
+  verify?: (input: { approvalId: string; chatId: string; operationId: string; digest: string }) => boolean
   emit(event: string, ...args: unknown[]): boolean {
+    if (event === 'computer.approval.decided') {
+      const decision = args[0] as { approvalId: string; status: string }
+      if (decision.status === 'approved') this.approved.add(decision.approvalId)
+    }
+    if (event === 'computer.approval.verify') {
+      const input = args[0] as { approvalId: string; chatId: string; operationId: string; digest: string }
+      ;(args[1] as (approved: boolean) => void)(this.verify ? this.verify(input) : this.approved.has(input.approvalId))
+      return true
+    }
     if (['connect', 'disconnect', 'connect_error'].includes(event) || event.startsWith('computer.') && this.listenerCount(event) > 0 && !['computer.heartbeat', 'computer.update', 'computer.approval.decide', 'computer.pairing.decide'].includes(event)) {
       return super.emit(event, ...args)
     }
@@ -34,7 +44,7 @@ class FakeSocket extends EventEmitter {
 
 async function settled(agent: ComputerAgent, id: string): Promise<ComputerOperationSnapshot> {
   for (let attempt = 0; attempt < 400; attempt += 1) {
-    const reply = await agent.handleRequest({ chatId: '00000000-0000-4000-8000-000000000001', kind: 'operation.status', id }) as ComputerReply<'operation.status'>
+    const reply = await agent.handleRequest({ requesterSessionId: 'owner', responseId: 'response', chatId: '00000000-0000-4000-8000-000000000001', kind: 'operation.status', id }) as ComputerReply<'operation.status'>
     if (reply.ok && reply.result && reply.result.status !== 'running') return reply.result
     await new Promise((resolve) => setTimeout(resolve, 25))
   }
@@ -58,13 +68,13 @@ posixOnly('ComputerAgent', () => {
     agent = new ComputerAgent({
       userDataDir: directory, homeDir: directory, hostname: 'studio', platform: process.platform, arch: 'arm64', appVersion: '0.0.0-test',
       loadSession: async () => ({ instanceUrl: 'https://pulpo.test', token: 'x'.repeat(40) }),
-      prompts: createNativeComputerPrompts(() => null),
       connect: () => socket as unknown as ComputerSocket,
       log: { info() {}, warn() {}, error() {} },
       approvalGraceMs: 50,
     })
     await agent.start()
     socket.emit('connect')
+    socket.emit('computer.ready', { sessionId: 'owner' })
   })
   afterEach(async () => {
     await agent.stop()
@@ -78,11 +88,11 @@ posixOnly('ComputerAgent', () => {
 
   it('runs unrestricted reads and lists immediately but refuses gated operations without an approval', async () => {
     await writeFile(join(root, 'notes.txt'), 'hello\n')
-    await agent.handleRequest({ chatId: '00000000-0000-4000-8000-000000000001', kind: 'operation.start', id: 'op-ls', type: 'list', args: {} })
+    await agent.handleRequest({ requesterSessionId: 'owner', responseId: 'response', chatId: '00000000-0000-4000-8000-000000000001', kind: 'operation.start', id: 'op-ls', type: 'list', args: {} })
     expect((await settled(agent, 'op-ls')).output).toContain('- notes.txt')
-    const refused = await agent.handleRequest({ chatId: '00000000-0000-4000-8000-000000000001', kind: 'operation.start', id: 'op-bash', type: 'bash', args: { command: 'echo hi' } })
+    const refused = await agent.handleRequest({ requesterSessionId: 'owner', responseId: 'response', chatId: '00000000-0000-4000-8000-000000000001', kind: 'operation.start', id: 'op-bash', type: 'bash', args: { command: 'echo hi' } })
     expect(refused).toEqual({ ok: false, error: expect.stringMatching(/approval/), code: 'approval_required' })
-    expect((await agent.handleRequest({ chatId: '00000000-0000-4000-8000-000000000001', kind: 'operation.status', id: 'op-bash' })).ok && (await agent.handleRequest({ chatId: '00000000-0000-4000-8000-000000000001', kind: 'operation.status', id: 'op-bash' }) as { result: unknown }).result).toBeNull()
+    expect((await agent.handleRequest({ requesterSessionId: 'owner', responseId: 'response', chatId: '00000000-0000-4000-8000-000000000001', kind: 'operation.status', id: 'op-bash' })).ok && (await agent.handleRequest({ requesterSessionId: 'owner', responseId: 'response', chatId: '00000000-0000-4000-8000-000000000001', kind: 'operation.status', id: 'op-bash' }) as { result: unknown }).result).toBeNull()
   })
 
   it('waits for approval in chat without opening a native dialog or deciding locally', async () => {
@@ -95,12 +105,12 @@ posixOnly('ComputerAgent', () => {
     socket.emit('computer.approval.requested', approval)
     expect(showMessageBox).not.toHaveBeenCalled()
     expect(agent.state.pendingApprovals).toBe(1)
-    const refused = await agent.handleRequest({ chatId: '00000000-0000-4000-8000-000000000001', kind: 'operation.start', id: 'op-write', type: 'write', args: { path: 'notes.txt', content: 'written' }, approvalId: approval.id })
+    const refused = await agent.handleRequest({ requesterSessionId: 'owner', responseId: 'response', chatId: '00000000-0000-4000-8000-000000000001', kind: 'operation.start', id: 'op-write', type: 'write', args: { path: 'notes.txt', content: 'written' }, approvalId: approval.id })
     expect(refused).toMatchObject({ ok: false, code: 'approval_required' })
     await expect(readFile(join(root, 'notes.txt'))).rejects.toMatchObject({ code: 'ENOENT' })
     expect(socket.emitted.some((entry) => entry.event === 'computer.approval.decide')).toBe(false)
     socket.emit('computer.approval.decided', { approvalId: approval.id, status: 'approved' })
-    const started = await agent.handleRequest({ chatId: '00000000-0000-4000-8000-000000000001', kind: 'operation.start', id: 'op-write', type: 'write', args: { path: 'notes.txt', content: 'written' }, approvalId: approval.id })
+    const started = await agent.handleRequest({ requesterSessionId: 'owner', responseId: 'response', chatId: '00000000-0000-4000-8000-000000000001', kind: 'operation.start', id: 'op-write', type: 'write', args: { path: 'notes.txt', content: 'written' }, approvalId: approval.id })
     expect(started.ok).toBe(true)
     await settled(agent, 'op-write')
     expect(await readFile(join(root, 'notes.txt'), 'utf8')).toBe('written')
@@ -111,7 +121,7 @@ posixOnly('ComputerAgent', () => {
     const approvalId = '44444444-4444-4444-8444-444444444444'
     socket.emit('computer.approval.requested', { id: approvalId })
     expect(agent.state.pendingApprovals).toBe(1)
-    const pending = agent.handleRequest({ chatId: '00000000-0000-4000-8000-000000000001', kind: 'operation.start', id: 'op-refused', type: 'write', args: { path: 'refused.txt', content: 'must not be written' }, approvalId })
+    const pending = agent.handleRequest({ requesterSessionId: 'owner', responseId: 'response', chatId: '00000000-0000-4000-8000-000000000001', kind: 'operation.start', id: 'op-refused', type: 'write', args: { path: 'refused.txt', content: 'must not be written' }, approvalId })
     socket.emit('computer.approval.decided', { approvalId, status })
     expect(await pending).toMatchObject({ ok: false, code: 'approval_required' })
     expect(agent.state.pendingApprovals).toBe(0)
@@ -122,7 +132,7 @@ posixOnly('ComputerAgent', () => {
 
   it('accepts an approval decided from the chat that arrives just after the operation request', async () => {
     const approvalId = '44444444-4444-4444-8444-444444444444'
-    const pending = agent.handleRequest({ chatId: '00000000-0000-4000-8000-000000000001', kind: 'operation.start', id: 'op-late', type: 'bash', args: { command: 'echo late' }, approvalId })
+    const pending = agent.handleRequest({ requesterSessionId: 'owner', responseId: 'response', chatId: '00000000-0000-4000-8000-000000000001', kind: 'operation.start', id: 'op-late', type: 'bash', args: { command: 'echo late' }, approvalId })
     setTimeout(() => socket.emit('computer.approval.decided', { approvalId, status: 'approved' }), 10)
     const reply = await pending
     expect(reply.ok).toBe(true)
@@ -130,26 +140,26 @@ posixOnly('ComputerAgent', () => {
   })
 
   it('confines file tools to the chosen folder and stages attachments into the app directory', async () => {
-    const outside = await agent.handleRequest({ chatId: '00000000-0000-4000-8000-000000000001', kind: 'operation.start', id: 'op-outside', type: 'read', args: { path: join(directory, 'outside.txt') } })
+    const outside = await agent.handleRequest({ requesterSessionId: 'owner', responseId: 'response', chatId: '00000000-0000-4000-8000-000000000001', kind: 'operation.start', id: 'op-outside', type: 'read', args: { path: join(directory, 'outside.txt') } })
     expect(outside.ok).toBe(true)
     expect((await settled(agent, 'op-outside')).error).toMatch(/readable roots/)
 
     const attachmentsDir = join(directory, 'agent-workspace', 'chats', '00000000-0000-4000-8000-000000000001', 'attachments')
     const target = join(attachmentsDir, 'abc-file.txt')
     const data = Buffer.from('attached content')
-    const begin = await agent.handleRequest({ chatId: '00000000-0000-4000-8000-000000000001', kind: 'file.begin', transferId: 't1', path: target, sizeBytes: data.byteLength, checksum: null })
+    const begin = await agent.handleRequest({ requesterSessionId: 'owner', responseId: 'response', chatId: '00000000-0000-4000-8000-000000000001', kind: 'file.begin', transferId: 't1', path: target, sizeBytes: data.byteLength, checksum: null })
     expect(begin.ok).toBe(true)
-    await agent.handleRequest({ chatId: '00000000-0000-4000-8000-000000000001', kind: 'file.chunk', transferId: 't1', data: data.toString('base64') })
-    const end = await agent.handleRequest({ chatId: '00000000-0000-4000-8000-000000000001', kind: 'file.end', transferId: 't1' })
+    await agent.handleRequest({ requesterSessionId: 'owner', responseId: 'response', chatId: '00000000-0000-4000-8000-000000000001', kind: 'file.chunk', transferId: 't1', data: data.toString('base64') })
+    const end = await agent.handleRequest({ requesterSessionId: 'owner', responseId: 'response', chatId: '00000000-0000-4000-8000-000000000001', kind: 'file.end', transferId: 't1' })
     expect(end).toEqual({ ok: true, result: { path: target } })
     expect(await readFile(target, 'utf8')).toBe('attached content')
-    const missing = await agent.handleRequest({ chatId: '00000000-0000-4000-8000-000000000001', kind: 'files.missing', files: [{ path: target, checksum: null, sizeBytes: data.byteLength }] })
+    const missing = await agent.handleRequest({ requesterSessionId: 'owner', responseId: 'response', chatId: '00000000-0000-4000-8000-000000000001', kind: 'files.missing', files: [{ path: target, checksum: null, sizeBytes: data.byteLength }] })
     expect(missing).toEqual({ ok: true, result: { missing: [target] } })
 
-    const denied = await agent.handleRequest({ chatId: '00000000-0000-4000-8000-000000000001', kind: 'file.begin', transferId: 't2', path: join(root, 'escape.txt'), sizeBytes: 1, checksum: null }).catch((error: Error) => error.message)
+    const denied = await agent.handleRequest({ requesterSessionId: 'owner', responseId: 'response', chatId: '00000000-0000-4000-8000-000000000001', kind: 'file.begin', transferId: 't2', path: join(root, 'escape.txt'), sizeBytes: 1, checksum: null }).catch((error: Error) => error.message)
     expect(String(denied)).toMatch(/escapes/)
 
-    const exported = await agent.handleRequest({ chatId: '00000000-0000-4000-8000-000000000001', kind: 'file.read', scope: 'export', path: target, offset: 0, length: 1024, maxBytes: 1_000_000 }) as Extract<ComputerReply<'file.read'>, { ok: true }>
+    const exported = await agent.handleRequest({ requesterSessionId: 'owner', responseId: 'response', chatId: '00000000-0000-4000-8000-000000000001', kind: 'file.read', scope: 'export', path: target, offset: 0, length: 1024, maxBytes: 1_000_000 }) as Extract<ComputerReply<'file.read'>, { ok: true }>
     expect(Buffer.from(exported.result.data, 'base64').toString('utf8')).toBe('attached content')
     expect(exported.result.eof).toBe(true)
   })
@@ -158,23 +168,23 @@ posixOnly('ComputerAgent', () => {
     const chatId = '00000000-0000-4000-8000-000000000001'
     const otherChatId = '00000000-0000-4000-8000-000000000002'
     const target = join(directory, 'agent-workspace', 'chats', chatId, 'attachments', 'file.txt')
-    expect((await agent.handleRequest({ chatId, kind: 'file.begin', transferId: 'owned', path: target, sizeBytes: 2, checksum: null })).ok).toBe(true)
-    expect((await agent.handleRequest({ chatId: otherChatId, kind: 'file.chunk', transferId: 'owned', data: 'aGk=' })).ok).toBe(false)
-    expect((await agent.handleRequest({ chatId: otherChatId, kind: 'file.end', transferId: 'owned' })).ok).toBe(false)
-    expect((await agent.handleRequest({ chatId, kind: 'file.chunk', transferId: 'owned', data: 'aGk=' })).ok).toBe(true)
-    expect((await agent.handleRequest({ chatId, kind: 'file.end', transferId: 'owned' })).ok).toBe(true)
+    expect((await agent.handleRequest({ requesterSessionId: 'owner', responseId: 'response', chatId, kind: 'file.begin', transferId: 'owned', path: target, sizeBytes: 2, checksum: null })).ok).toBe(true)
+    expect((await agent.handleRequest({ requesterSessionId: 'owner', responseId: 'response', chatId: otherChatId, kind: 'file.chunk', transferId: 'owned', data: 'aGk=' })).ok).toBe(false)
+    expect((await agent.handleRequest({ requesterSessionId: 'owner', responseId: 'response', chatId: otherChatId, kind: 'file.end', transferId: 'owned' })).ok).toBe(false)
+    expect((await agent.handleRequest({ requesterSessionId: 'owner', responseId: 'response', chatId, kind: 'file.chunk', transferId: 'owned', data: 'aGk=' })).ok).toBe(true)
+    expect((await agent.handleRequest({ requesterSessionId: 'owner', responseId: 'response', chatId, kind: 'file.end', transferId: 'owned' })).ok).toBe(true)
     expect(await readFile(target, 'utf8')).toBe('hi')
-    await expect(agent.handleRequest({ chatId: otherChatId, kind: 'files.missing', files: [{ path: target, sizeBytes: 2, checksum: null }] })).rejects.toThrow()
-    await expect(agent.handleRequest({ chatId: otherChatId, kind: 'file.read', scope: 'export', path: target, offset: 0, length: 2, maxBytes: 2 })).rejects.toThrow()
+    await expect(agent.handleRequest({ requesterSessionId: 'owner', responseId: 'response', chatId: otherChatId, kind: 'files.missing', files: [{ path: target, sizeBytes: 2, checksum: null }] })).rejects.toThrow()
+    await expect(agent.handleRequest({ requesterSessionId: 'owner', responseId: 'response', chatId: otherChatId, kind: 'file.read', scope: 'export', path: target, offset: 0, length: 2, maxBytes: 2 })).rejects.toThrow()
   })
 
   it('disables itself and cancels running work when the server revokes it', async () => {
     socket.emit('computer.approval.decided', { approvalId: '55555555-5555-4555-8555-555555555555', status: 'approved' })
-    await agent.handleRequest({ chatId: '00000000-0000-4000-8000-000000000001', kind: 'operation.start', id: 'op-sleep', type: 'bash', args: { command: 'sleep 30' }, approvalId: '55555555-5555-4555-8555-555555555555' })
+    await agent.handleRequest({ requesterSessionId: 'owner', responseId: 'response', chatId: '00000000-0000-4000-8000-000000000001', kind: 'operation.start', id: 'op-sleep', type: 'bash', args: { command: 'sleep 30' }, approvalId: '55555555-5555-4555-8555-555555555555' })
     socket.emit('computer.revoked', { reason: 'disabled' })
     await vi.waitFor(() => expect(agent.state.status).toBe('disabled'))
     expect(agent.state.enabled).toBe(false)
-    const reply = await agent.handleRequest({ chatId: '00000000-0000-4000-8000-000000000001', kind: 'operation.status', id: 'op-sleep' } satisfies ComputerRequest)
+    const reply = await agent.handleRequest({ requesterSessionId: 'owner', responseId: 'response', chatId: '00000000-0000-4000-8000-000000000001', kind: 'operation.status', id: 'op-sleep' } satisfies ComputerRequest)
     expect(reply).toEqual({ ok: false, error: expect.any(String), code: 'disabled' })
   })
 
@@ -183,7 +193,65 @@ posixOnly('ComputerAgent', () => {
     expect(state).toMatchObject({ approvalPolicy: 'never', allowRemote: true })
     const update = socket.emitted.find((entry) => entry.event === 'computer.update')
     expect(update?.args[0]).toMatchObject({ approvalPolicy: 'never', allowRemote: true, rootPath: root })
-    const reply = await agent.handleRequest({ chatId: '00000000-0000-4000-8000-000000000001', kind: 'operation.start', id: 'op-free', type: 'bash', args: { command: 'echo free' } })
+    const reply = await agent.handleRequest({ requesterSessionId: 'owner', responseId: 'response', chatId: '00000000-0000-4000-8000-000000000001', kind: 'operation.start', id: 'op-free', type: 'bash', args: { command: 'echo free' } })
     expect(reply.ok).toBe(true)
   })
+  it('verifies exact action digests and rejects changed payloads and chats using an approved ID', async () => {
+    const request: Extract<ComputerRequest, { kind: 'operation.start' }> = { requesterSessionId: 'owner', responseId: 'response', chatId: '00000000-0000-4000-8000-000000000001', kind: 'operation.start', id: 'bound', type: 'write', args: { path: 'bound.txt', content: 'approved' }, approvalId: 'approval' }
+    let digest = ''
+    socket.verify = (input) => { digest = input.digest; return true }
+    expect((await agent.handleRequest(request)).ok).toBe(true)
+    await settled(agent, request.id)
+    const authorizedDigest = digest
+    socket.verify = (input) => input.digest === authorizedDigest
+    expect(await agent.handleRequest({ ...request, args: { path: 'other.txt', content: 'unapproved' } })).toMatchObject({ ok: false, code: 'approval_required' })
+    expect(await agent.handleRequest({ ...request, chatId: '00000000-0000-4000-8000-000000000002' })).toMatchObject({ ok: false, code: 'approval_required' })
+    expect(await agent.handleRequest({ ...request, id: 'other' })).toMatchObject({ ok: false, code: 'approval_required' })
+    expect((await agent.handleRequest(request)).ok).toBe(true)
+    await expect(readFile(join(root, 'other.txt'))).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  it('recovers server-approved retries without any approval event after restart', async () => {
+    const request: ComputerRequest = { requesterSessionId: 'owner', responseId: 'response', chatId: '00000000-0000-4000-8000-000000000001', kind: 'operation.start', id: 'retry', type: 'write', args: { path: 'retry.txt', content: 'approved' }, approvalId: 'durable' }
+    socket.approved.add('durable')
+    expect((await agent.handleRequest(request)).ok).toBe(true)
+    await settled(agent, request.id)
+    await agent.stop()
+    agent = new ComputerAgent({ userDataDir: directory, homeDir: directory, hostname: 'studio', platform: process.platform, arch: 'arm64', appVersion: 'test', loadSession: async () => ({ instanceUrl: 'https://pulpo.test', token: 'x'.repeat(40) }), connect: () => socket as unknown as ComputerSocket, log: { info() {}, warn() {}, error() {} }, approvalGraceMs: 10 })
+    await agent.start()
+    socket.emit('computer.ready', { sessionId: 'owner' })
+    expect((await agent.handleRequest(request)).ok).toBe(true)
+    expect(await readFile(join(root, 'retry.txt'), 'utf8')).toBe('approved')
+  })
+
+  it.each(['revocation', 'remote-off'])('stops active remote commands on %s and preserves local access', async (event) => {
+    await agent.updateConfig({ allowRemote: true, approvalPolicy: 'never' })
+    socket.emit('computer.ready', { sessionId: 'owner' })
+    const request: ComputerRequest = { requesterSessionId: 'remote', responseId: 'response', chatId: '00000000-0000-4000-8000-000000000001', kind: 'operation.start', id: 'remote-work', type: 'bash', args: { command: 'sleep 30' } }
+    expect((await agent.handleRequest(request)).ok).toBe(true)
+    if (event === 'revocation') socket.emit('computer.access.revoked', { sessionId: 'remote' })
+    else await agent.updateConfig({ allowRemote: false })
+    await vi.waitFor(async () => expect((await settled(agent, request.id)).status).toBe('cancelled'))
+    expect(await agent.handleRequest({ ...request, id: 'after-revoke' })).toMatchObject({ ok: false, code: 'disabled' })
+    expect((await agent.handleRequest({ ...request, id: 'local-work', requesterSessionId: 'owner', args: { command: 'echo local' } })).ok).toBe(true)
+  })
+
+  it('registers a new identity after removal and explicit re-enabling', async () => {
+    const original = agent.state.computerId
+    socket.emit('connect_error', new Error('computer_revoked'))
+    await agent.updateConfig({ enabled: false })
+    await agent.updateConfig({ enabled: true })
+    expect(agent.state.computerId).not.toBe(original)
+    expect(agent.state.enabled).toBe(true)
+  })
+
+  it('cancels a response without revoking the session for other follow-ups', async () => {
+    await agent.updateConfig({ approvalPolicy: 'never' })
+    const request: ComputerRequest = { requesterSessionId: 'owner', responseId: 'old', chatId: '00000000-0000-4000-8000-000000000001', kind: 'operation.start', id: 'old-work', type: 'bash', args: { command: 'sleep 30' } }
+    expect((await agent.handleRequest(request)).ok).toBe(true)
+    socket.emit('computer.response.revoked', { responseId: 'old' })
+    expect(await agent.handleRequest({ ...request, id: 'old-retry' })).toMatchObject({ ok: false, code: 'disabled' })
+    expect((await agent.handleRequest({ ...request, responseId: 'new', id: 'new-work', args: { command: 'echo new' } })).ok).toBe(true)
+  })
+
 })

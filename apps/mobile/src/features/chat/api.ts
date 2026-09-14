@@ -312,8 +312,8 @@ export async function listComputerPairings(): Promise<{ pairings: ComputerPairin
   return apiRequest('/api/agent/pairings')
 }
 
-export async function requestComputerPairing(computerId: string): Promise<{ pairing: ComputerPairing }> {
-  return apiRequest(`/api/agent/computers/${computerId}/pairings`, { method: 'POST' })
+export async function requestComputerPairing(computerId: string, code: string): Promise<{ pairing: ComputerPairing }> {
+  return apiRequest(`/api/agent/computers/${computerId}/pairings`, { method: 'POST', body: { code } })
 }
 
 export async function revokeComputerPairing(computerId: string, pairingId: string): Promise<void> {

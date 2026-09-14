@@ -34,7 +34,6 @@ import { desktopUpdatesSupported } from './update-support'
 import { prepareDesktopDownload } from './downloads'
 import { ComputerAgent } from './computer/agent'
 import { publishComputerState, registerComputerIpc } from './computer/ipc'
-import { createNativeComputerPrompts } from './computer/prompts'
 
 const WINDOWS_APP_USER_MODEL_ID = 'com.squirrel.Pulpo.Pulpo'
 
@@ -254,7 +253,6 @@ async function initializeComputerAgent(): Promise<void> {
       const stored = await loadStoredSession()
       return stored ? { instanceUrl: stored.instanceUrl, token: stored.token } : null
     },
-    prompts: createNativeComputerPrompts(() => mainWindow),
     onStateChange: (state) => publishComputerState(() => mainWindow, state),
     log,
   })

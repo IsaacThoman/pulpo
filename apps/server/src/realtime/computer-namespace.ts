@@ -1,8 +1,9 @@
+import { AppError } from '../lib/errors.js'
 import { eq } from 'drizzle-orm'
 import type { Redis } from 'ioredis'
 import type { Namespace, Server, Socket } from 'socket.io'
 import {
-  computerAnnounceSchema, computerPairingDecisionSchema, toolApprovalDecisionSchema,
+  computerAnnounceSchema,
   type ComputerClientToServerEvents, type ComputerReply, type ComputerServerToClientEvents,
 } from '@pulpo/contracts'
 import { authenticateSessionTokenWithSession, type AuthenticatedUser } from '../auth/service.js'
@@ -11,10 +12,10 @@ import { getConfig } from '../config.js'
 import { db } from '../database/client.js'
 import { agentComputers, applicationSettings } from '../database/schema.js'
 import { parseAgentSettings } from '../settings/application-settings.js'
-import { decideToolApproval } from '../agent/computer/approvals.js'
-import { decidePairing } from '../agent/computer/pairings.js'
-import { clearComputerPresence, markComputerOnline, refreshComputerPresence } from '../agent/computer/presence.js'
-import { bumpComputersRevision, registerComputer, type ComputerRow } from '../agent/computer/registry.js'
+import { verifyToolApproval } from '../agent/computer/approvals.js'
+import { issuePairingCode } from '../agent/computer/pairing-codes.js'
+import { clearComputerPresence, markComputerOnline, refreshComputerPresence, readPresence } from '../agent/computer/presence.js'
+import { authorizeComputerRequest, bumpComputersRevision, loadComputer, registerComputer, type ComputerRow } from '../agent/computer/registry.js'
 import {
   COMPUTER_EVENTS_CHANNEL, COMPUTER_REPLIES_CHANNEL, COMPUTER_REQUESTS_CHANNEL,
   type ComputerEventEnvelope, type ComputerReplyEnvelope, type ComputerRequestEnvelope,
@@ -56,13 +57,13 @@ export function registerComputerNamespace(io: Server, subscriber: Redis): Comput
       if (!await computersEnabled()) return next(new Error('computers_disabled'))
       const announce = computerAnnounceSchema.safeParse(socket.handshake.auth.computer)
       if (!announce.success) return next(new Error('invalid_announce'))
-      const computer = await registerComputer(authenticated.user.id, authenticated.sessionId, announce.data)
+      const computer = await registerComputer(authenticated.user.id, authenticated.sessionId, announce.data, socket.handshake.auth.deviceSecret)
       socket.data.user = authenticated.user
       socket.data.sessionId = authenticated.sessionId
       socket.data.computer = computer
       next()
     } catch (error) {
-      next(error instanceof Error ? error : new Error('unauthorized'))
+      next(error instanceof AppError ? new Error(error.code) : error instanceof Error ? error : new Error('unauthorized'))
     }
   })
 
@@ -75,39 +76,41 @@ export function registerComputerNamespace(io: Server, subscriber: Redis): Comput
       previous.disconnect(true)
     }
     local.set(computerId, socket)
+    socket.emit('computer.ready', { sessionId: socket.data.sessionId })
     void socket.join(`computer:${computerId}`)
     void markComputerOnline(computerId, socket.id).then(() => bumpComputersRevision(socket.data.user.id)).catch((error) => console.error('[computer] presence failed', error))
 
     socket.on('computer.heartbeat', () => {
       void refreshComputerPresence(computerId, socket.id).then(async (kept) => {
-        if (!kept) await markComputerOnline(computerId, socket.id)
+        if (!kept) { socket.emit('computer.superseded'); socket.disconnect(true) }
       }).catch(() => undefined)
     })
 
     socket.on('computer.update', (input, ack) => {
       void (async () => {
+        if ((await readPresence(computerId))?.socketId !== socket.id) throw new Error('computer_superseded')
         const merged = computerAnnounceSchema.safeParse({ ...announceFromRow(socket.data.computer), ...(input && typeof input === 'object' ? input : {}), computerId })
         if (!merged.success) { ack?.({ ok: false, error: 'invalid_announce' }); return }
-        socket.data.computer = await registerComputer(socket.data.user.id, socket.data.sessionId, merged.data)
+        socket.data.computer = await registerComputer(socket.data.user.id, socket.data.sessionId, merged.data, socket.handshake.auth.deviceSecret)
         await bumpComputersRevision(socket.data.user.id)
         ack?.({ ok: true })
       })().catch((error) => ack?.({ ok: false, error: error instanceof Error ? error.message : 'update_failed' }))
     })
 
-    socket.on('computer.approval.decide', (input, ack) => {
+    socket.on('computer.pairing.code', (ack) => {
+      if (typeof ack !== 'function') return
       void (async () => {
-        const decision = toolApprovalDecisionSchema.parse(input)
-        await decideToolApproval({ approvalId: decision.approvalId, approved: decision.approved, userId: socket.data.user.id, sessionId: socket.data.sessionId, via: 'desktop', computerId })
-        ack?.({ ok: true })
-      })().catch((error) => ack?.({ ok: false, error: error instanceof Error ? error.message : 'decision_failed' }))
+        const current = await loadComputer(computerId)
+        if (!current || current.ownerSessionId !== socket.data.sessionId || !current.enabled || !current.allowRemote || current.revokedAt || (await readPresence(computerId))?.socketId !== socket.id) throw new Error('Enable remote access on this computer before generating a code')
+        ack(await issuePairingCode(computerId))
+      })().catch((error) => ack({ error: error instanceof Error ? error.message : 'Unable to generate code' }))
     })
-
-    socket.on('computer.pairing.decide', (input, ack) => {
+    socket.on('computer.approval.verify', (input, ack) => {
+      if (typeof ack !== 'function') return
       void (async () => {
-        const decision = computerPairingDecisionSchema.parse(input)
-        await decidePairing({ pairingId: decision.pairingId, approved: decision.approved, userId: socket.data.user.id, actorSessionId: socket.data.sessionId, requireOwner: true })
-        ack?.({ ok: true })
-      })().catch((error) => ack?.({ ok: false, error: error instanceof Error ? error.message : 'decision_failed' }))
+        if ((await readPresence(computerId))?.socketId !== socket.id) return ack(false)
+        ack(await verifyToolApproval(computerId, input))
+      })().catch(() => ack(false))
     })
 
     socket.on('disconnect', () => {
@@ -123,9 +126,14 @@ export function registerComputerNamespace(io: Server, subscriber: Redis): Comput
 
   const relayRequest = async (envelope: ComputerRequestEnvelope) => {
     const socket = local.get(envelope.computerId)
-    if (!socket) return
+    if (!socket || socket.id !== envelope.socketId || (await readPresence(envelope.computerId))?.socketId !== socket.id) return
     let reply: ComputerReply
     try {
+      try { await authorizeComputerRequest(envelope.computerId, envelope.request) } catch {
+        if (envelope.request.responseId) socket.emit('computer.response.revoked', { responseId: envelope.request.responseId })
+        await redis.publish(COMPUTER_REPLIES_CHANNEL, JSON.stringify({ requestId: envelope.requestId, reply: { ok: false, error: 'This device or response no longer has access to the computer', code: 'disabled' } }))
+        return
+      }
       reply = await socket.timeout(envelope.timeoutMs).emitWithAck('computer.request', envelope.request)
     } catch {
       reply = { ok: false, error: 'The computer did not acknowledge the request', code: 'failed' }

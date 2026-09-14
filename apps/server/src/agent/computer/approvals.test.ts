@@ -1,10 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
 import { toolApprovalRequired } from '@pulpo/contracts'
 
-vi.mock('../../database/client.js', () => ({ db: {} }))
+const state = vi.hoisted(() => ({ loaded: undefined as unknown }))
+vi.mock('../../database/client.js', () => ({ db: { select: () => ({ from: () => ({ innerJoin: () => ({ where: () => ({ limit: async () => state.loaded ? [state.loaded] : [] }) }) }) }) } }))
 vi.mock('../../redis.js', () => ({ redis: {}, createRedis: () => ({}) }))
 
-import { serializeToolApproval, toolApprovalItem, toolApprovalSummary, type ApprovalRow } from './approvals.js'
+import { verifyToolApproval, serializeToolApproval, toolApprovalItem, toolApprovalSummary, type ApprovalRow } from './approvals.js'
 
 const row: ApprovalRow = {
   id: '11111111-1111-4111-8111-111111111111',
@@ -12,6 +13,7 @@ const row: ApprovalRow = {
   agentRunId: '33333333-3333-4333-8333-333333333333',
   computerId: '44444444-4444-4444-8444-444444444444',
   operationId: 'call_1',
+  actionDigest: null,
   kind: 'bash',
   summary: 'rm -rf build',
   status: 'pending',
@@ -49,4 +51,17 @@ describe('tool approvals', () => {
       id: row.id, chatId: '55555555-5555-4555-8555-555555555555', computerName: 'Studio', toolCallId: 'call_1', status: 'denied', decidedVia: 'desktop',
     })
   })
+  it('requires a durable approved record bound to the chat, operation and full payload digest', async () => {
+    const input = { approvalId: row.id, chatId: 'chat', operationId: row.operationId, digest: 'original' }
+    state.loaded = { approval: { ...row, status: 'approved', actionDigest: 'original' }, chatId: 'chat' }
+    expect(await verifyToolApproval(row.computerId, input)).toBe(true)
+    for (const patch of [{ chatId: 'different' }, { operationId: 'different' }, { digest: 'modified' }]) {
+      expect(await verifyToolApproval(row.computerId, { ...input, ...patch })).toBe(false)
+    }
+    state.loaded = { approval: { ...row, status: 'pending', actionDigest: 'original' }, chatId: 'chat' }
+    expect(await verifyToolApproval(row.computerId, input)).toBe(false)
+    state.loaded = undefined
+    expect(await verifyToolApproval(row.computerId, input)).toBe(false)
+  })
+
 })

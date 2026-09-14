@@ -16,7 +16,7 @@ import { setComposerSelection } from '../features/chat/composerSelection';
 import { ToolImagePreview } from '../components/ToolImagePreview';
 import { localComposerDraftId, mergePendingAttachments } from '@pulpo/client-core';
 import { DevicesScreen } from '../components/Devices';
-import { ComputersScreen } from '../components/Computers';
+import { ComputersScreen, PairComputerDialog } from '../components/Computers';
 import { initialActivityTiming } from '@pulpo/client-core';
 import { mobileShelf, durableShelfAttachments, shelfComposerAttachments } from '../features/chat/shelf';
 import { useAppTheme } from './src/theme';
@@ -211,7 +211,7 @@ import { activateOptimisticBranch } from './src/production/optimisticBranches';
 import { cacheNamespace, cacheOpenedChat, deleteResponseCursor, loadDraft, saveDraft } from '../data/database';
 import { queryKeys } from '../data/queries';
 import { enqueueCacheWrite } from '../data/writeBehind';
-import { activateBranch as activateServerBranch, cancelResponse, continueWithoutAgent, decideToolApproval, listAgentComputers, requestComputerPairing, deleteMessageCascade as deleteServerMessage, deleteUnreferencedAttachment, downloadAttachment, downloadAttachmentThumbnail, duplicateChat as duplicateServerChat, editMessage as editServerMessage, persistChat as persistServerChat, regenerateResponse as regenerateServerResponse, sendMessage as sendServerMessage, shareAttachment as shareServerAttachment, shareChat as shareServerChat, startChat as startServerChat, uploadAttachment } from '../features/chat/api';
+import { activateBranch as activateServerBranch, cancelResponse, continueWithoutAgent, decideToolApproval, listAgentComputers, deleteMessageCascade as deleteServerMessage, deleteUnreferencedAttachment, downloadAttachment, downloadAttachmentThumbnail, duplicateChat as duplicateServerChat, editMessage as editServerMessage, persistChat as persistServerChat, regenerateResponse as regenerateServerResponse, sendMessage as sendServerMessage, shareAttachment as shareServerAttachment, shareChat as shareServerChat, startChat as startServerChat, uploadAttachment } from '../features/chat/api';
 import { attachmentUploadErrorMessage } from '../features/chat/attachmentUploadError';
 import { subscribeToResponse, useRealtimeStore } from '../providers/realtimeStore';
 import { shouldShowConnectionBanner } from '../providers/realtimeConnection';
@@ -3408,7 +3408,7 @@ function ApprovalStepRow({ step }: { step: Extract<TimelineStep, { kind: 'approv
   );
 }
 
-function WorkBlock({ steps, active, durationMs, initialWork, onOpenChat }: {
+function WorkBlock({ steps: allSteps, active, durationMs, initialWork, onOpenChat }: {
   steps: TimelineStep[];
   active: boolean;
   durationMs?: number;
@@ -3416,22 +3416,31 @@ function WorkBlock({ steps, active, durationMs, initialWork, onOpenChat }: {
   onOpenChat: (chatId: string) => void;
 }) {
   const { styles, COLORS } = useChatStyles();
-  const pendingApproval = steps.some((step) => step.kind === 'approval' && approvalIsPending(step.approval));
-  const [open, setOpen] = useState(pendingApproval);
-  // Surface a new approval prompt without waiting for a tap; the user must act on it.
-  useEffect(() => { if (pendingApproval) setOpen(true); }, [pendingApproval]);
-  if (steps.length === 0 && durationMs === undefined) return null;
+  const [, tick] = useState(0);
+  useEffect(() => {
+    const pending = allSteps.filter((step) => step.kind === 'approval' && approvalIsPending(step.approval));
+    if (!pending.length) return;
+    const timer = setInterval(() => tick((value) => value + 1), 1000);
+    return () => clearInterval(timer);
+  }, [allSteps]);
+  const pendingApprovals = allSteps.filter((step) => step.kind === 'approval' && approvalIsPending(step.approval));
+  const { showReasoning } = useAppPreferences();
+  const steps = showReasoning ? allSteps.filter((step) => !(step.kind === 'approval' && approvalIsPending(step.approval))) : [];
+  const [open, setOpen] = useState(false);
+  if (!showReasoning) return <View>{pendingApprovals.map((step) => step.kind === 'approval' ? <ApprovalStepRow key={step.approval.id} step={step} /> : null)}</View>;
+  if (steps.length === 0 && !pendingApprovals.length && durationMs === undefined) return null;
   const failed = steps.some((step) => (step.kind === 'compaction' && step.compaction.status === 'failed')
     || (step.kind === 'workspace' && ['expired', 'unavailable'].includes(step.workspace.state ?? '')));
   const label = initialWork !== undefined && !active && durationMs !== undefined && !failed
     ? `${initialWork ? 'Worked' : 'Thought'} for ${Math.max(0, Math.round(durationMs / 1000))}s`
     : workLabel(steps, active, durationMs);
-  if (steps.length === 0) return <View style={styles.reasoningTrigger}>
+  if (steps.length === 0 && !pendingApprovals.length) return <View style={styles.reasoningTrigger}>
     <WorkTriggerIcon active={false} steps={[]} /><Text style={styles.reasoningLabel}>{label}</Text>
   </View>;
   return (
     <View style={[styles.workBlock, !open && styles.workBlockCollapsed]}>
-      <Pressable
+      {pendingApprovals.map((step) => step.kind === 'approval' ? <ApprovalStepRow key={step.approval.id} step={step} /> : null)}
+      {steps.length > 0 && <Pressable
         accessibilityRole="button"
         accessibilityState={{ expanded: open }}
         accessibilityLabel={label}
@@ -3441,7 +3450,7 @@ function WorkBlock({ steps, active, durationMs, initialWork, onOpenChat }: {
         <WorkTriggerIcon active={active} steps={steps} />
         <Text style={styles.reasoningLabel}>{label}</Text>
         <Icon name={open ? 'chevron.down' : 'chevron.right'} size={10} color={COLORS.dim} weight="semibold" />
-      </Pressable>
+      </Pressable>}
       {open && (
         <View style={styles.reasoningBody}>
           {steps.map((step, index) => {
@@ -4138,6 +4147,7 @@ function ChatView({
   ), [agentComputers, workspaceSelection]);
   const showWorkspaceMenu = activeAgentEnabled && workspaceMenuChoices.length > 0;
   const sendWorkspace = activeAgentEnabled ? workspaceSelection : undefined;
+  const [pairingComputer, setPairingComputer] = useState<{ id: string; name: string } | null>(null);
   const chooseWorkspace = useCallback((choice: ReturnType<typeof workspaceChoices>[number]) => {
     if (choice.action === 'select') {
       setWorkspaceSelections((current) => ({ ...current, [workspaceKey]: choice.selection }));
@@ -4145,11 +4155,8 @@ function ChatView({
       return;
     }
     if (choice.action !== 'pair') return;
-    void requestComputerPairing(choice.id).then(({ pairing }) => {
-      void computersQuery.refetch();
-      if (pairing.status === 'pending') Alert.alert('Pairing requested', `Approve this device on ${choice.label} to use it as a workspace.`);
-    }).catch((error) => Alert.alert('Couldn’t request pairing', error instanceof Error ? error.message : undefined));
-  }, [computersQuery, workspaceKey]);
+    setPairingComputer({ id: choice.id, name: choice.label });
+  }, [workspaceKey]);
   const [attachments, setAttachmentState] = useState<ComposerAttachment[]>([]);
   const attachmentsRequireAgent = attachments.some((attachment) => attachment.kind === 'file')
     || imageBatchNeedsWorkspace(attachments.filter((attachment) => attachment.kind !== 'file').map((attachment) => ({ sizeBytes: attachment.size })), maxInlineImages);
@@ -5527,6 +5534,7 @@ function ChatView({
 
   return (
     <Reanimated.View style={[styles.chatRoot, temporarySurfaceAnimatedStyle]}>
+      <PairComputerDialog computer={pairingComputer} onClose={() => setPairingComputer(null)} onPaired={() => { void computersQuery.refetch(); if (pairingComputer) setWorkspaceSelections((current) => ({ ...current, [workspaceKey]: { kind: 'computer', computerId: pairingComputer.id } })); }} />
       <View
         onLayout={(event) => {
           const height = event.nativeEvent.layout.height;

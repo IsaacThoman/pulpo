@@ -44,6 +44,10 @@ export interface ComputerIpcOptions {
 }
 
 export function registerComputerIpc({ agent, assertTrustedSender, getWindow }: ComputerIpcOptions): void {
+  ipcMain.handle('desktop:computer:pairing-code', (event) => {
+    assertTrustedSender(event)
+    return agent.createPairingCode()
+  })
   ipcMain.handle('desktop:computer:get-state', (event) => {
     assertTrustedSender(event)
     return agent.state

@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import type { Redis } from 'ioredis'
 import type { ComputerReply, ComputerReplyErrorCode, ComputerRequest, ComputerRequestResult } from '@pulpo/contracts'
 import { createRedis, redis as sharedRedis } from '../../redis.js'
-import { computerIsOnline } from './presence.js'
+import { computerIsOnline, readPresence } from './presence.js'
 
 export const COMPUTER_REQUESTS_CHANNEL = 'pulpo:computer-requests'
 export const COMPUTER_REPLIES_CHANNEL = 'pulpo:computer-replies'
@@ -22,6 +22,7 @@ export class ComputerRpcError extends Error {
 /** Published by the worker; the API replica that holds the computer's socket relays it. */
 export interface ComputerRequestEnvelope {
   requestId: string
+  socketId: string
   computerId: string
   request: ComputerRequest
   timeoutMs: number
@@ -84,6 +85,8 @@ export class ComputerRpcClient {
     await this.ensureSubscribed()
     options.signal?.throwIfAborted()
     const timeoutMs = options.timeoutMs ?? DEFAULT_COMPUTER_RPC_TIMEOUT_MS
+    const owner = await readPresence(computerId, this.publisher)
+    if (!owner) throw new ComputerRpcError('offline', 'The computer is offline')
     const requestId = randomUUID()
     const reply = await new Promise<ComputerReply | 'timeout' | 'aborted'>((resolve) => {
       const timer = setTimeout(() => { this.pending.delete(requestId); resolve('timeout') }, timeoutMs)
@@ -93,7 +96,7 @@ export class ComputerRpcClient {
         resolve: (value) => { options.signal?.removeEventListener('abort', onAbort); resolve(value) },
         timer,
       })
-      const envelope: ComputerRequestEnvelope = { requestId, computerId, request, timeoutMs }
+      const envelope: ComputerRequestEnvelope = { requestId, socketId: owner.socketId, computerId, request, timeoutMs }
       void this.publisher.publish(COMPUTER_REQUESTS_CHANNEL, JSON.stringify(envelope)).catch(() => {
         clearTimeout(timer)
         this.pending.delete(requestId)

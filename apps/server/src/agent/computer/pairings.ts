@@ -4,10 +4,11 @@ import { db } from '../../database/client.js'
 import { agentComputerPairings, agentComputers, sessions } from '../../database/schema.js'
 import { serializeDeviceSession } from '../../auth/device-sessions.js'
 import { AppError, notFound } from '../../lib/errors.js'
+import { consumePairingCode } from './pairing-codes.js'
 import { newId } from '../../lib/ids.js'
 import { computerIsOnline } from './presence.js'
 import { publishComputerEvent } from './rpc.js'
-import { bumpComputersRevision, recordComputerAudit, type ComputerRow } from './registry.js'
+import { bumpComputersRevision, recordComputerAudit, revokeComputerSession, type ComputerRow } from './registry.js'
 
 type PairingRow = typeof agentComputerPairings.$inferSelect
 type SessionRow = typeof sessions.$inferSelect
@@ -31,45 +32,26 @@ async function loadPairing(pairingId: string): Promise<{ pairing: PairingRow; co
   return row
 }
 
-/** A non-owner device asks to use the computer. The owning desktop is prompted to approve. */
-export async function requestPairing(userId: string, sessionId: string, computerId: string, requestedIp: string | null): Promise<ComputerPairing> {
-  const [computer] = await db.select().from(agentComputers).where(and(eq(agentComputers.id, computerId), eq(agentComputers.userId, userId), isNull(agentComputers.revokedAt))).limit(1)
-  if (!computer) throw notFound('Computer')
-  if (computer.ownerSessionId === sessionId) throw new AppError(409, 'computer_owner_session', 'This device already owns the computer')
-  if (!computer.enabled) throw new AppError(409, 'computer_disabled', `${computer.name} has agent access turned off`)
-  if (!computer.allowRemote) throw new AppError(403, 'computer_remote_disabled', `${computer.name} does not allow other devices to use it`)
-  if (!await computerIsOnline(computerId)) throw new AppError(409, 'computer_offline', `${computer.name} is offline; open the Pulpo desktop app there first`)
-  const [session] = await db.select().from(sessions).where(eq(sessions.id, sessionId)).limit(1)
-  if (!session) throw notFound('Session')
-  const [existing] = await db.select().from(agentComputerPairings).where(and(
-    eq(agentComputerPairings.computerId, computerId), eq(agentComputerPairings.deviceSessionId, sessionId), inArray(agentComputerPairings.status, ['pending', 'approved']),
-  )).limit(1)
-  let pairing = existing
-  if (!pairing) {
-    ;[pairing] = await db.insert(agentComputerPairings).values({ id: newId(), computerId, deviceSessionId: sessionId, status: 'pending', requestedIp }).returning()
-    if (!pairing) throw new Error('Unable to create pairing request')
-    await recordComputerAudit(userId, 'computer.pairing.requested', computerId, { pairingId: pairing.id, deviceSessionId: sessionId })
-  }
-  const serialized = serializePairing(pairing, computer, session, sessionId)
-  if (pairing.status === 'pending') await publishComputerEvent(computerId, 'computer.pairing.requested', { ...serialized, isCurrentDevice: false })
+/** A signed-in device redeems a one-use code displayed only on the owning desktop. */
+export async function requestPairing(userId: string, sessionId: string, computerId: string, requestedIp: string | null, code: string): Promise<ComputerPairing> {
+  const pairing = await db.transaction(async (tx) => {
+    const [computer] = await tx.select().from(agentComputers).where(and(eq(agentComputers.id, computerId), eq(agentComputers.userId, userId), isNull(agentComputers.revokedAt))).limit(1).for('update')
+    if (!computer) throw notFound('Computer')
+    if (!computer.enabled || !computer.allowRemote) throw new AppError(403, 'computer_remote_disabled', 'Turn on remote access on the computer first')
+    if (computer.ownerSessionId === sessionId) throw new AppError(409, 'computer_owner_session', 'This device already owns the computer')
+    if (!await computerIsOnline(computerId)) throw new AppError(409, 'computer_offline', 'Open Pulpo on the computer first')
+    const [session] = await tx.select().from(sessions).where(and(eq(sessions.id, sessionId), eq(sessions.userId, userId))).limit(1)
+    if (!session || session.expiresAt.getTime() <= Date.now()) throw notFound('Session')
+    await consumePairingCode(computerId, userId, code)
+    await tx.update(agentComputerPairings).set({ status: 'revoked', updatedAt: new Date() }).where(and(eq(agentComputerPairings.computerId, computerId), eq(agentComputerPairings.deviceSessionId, sessionId), inArray(agentComputerPairings.status, ['pending', 'approved'])))
+    const [row] = await tx.insert(agentComputerPairings).values({ id: newId(), computerId, deviceSessionId: sessionId, status: 'approved', requestedIp, decidedAt: new Date(), decidedBySessionId: sessionId }).returning()
+    if (!row) throw new Error('Unable to pair device')
+    return serializePairing(row, computer, session, sessionId)
+  })
+  await recordComputerAudit(userId, 'computer.pairing.approved', computerId, { pairingId: pairing.id, deviceSessionId: sessionId, via: 'code' })
+  await publishComputerEvent(computerId, 'computer.access.granted', { sessionId })
   await bumpComputersRevision(userId)
-  return serialized
-}
-
-export async function decidePairing(input: { pairingId: string; approved: boolean; userId: string; actorSessionId: string; requireOwner: boolean }): Promise<ComputerPairing> {
-  const loaded = await loadPairing(input.pairingId)
-  if (!loaded || loaded.computer.userId !== input.userId) throw notFound('Pairing request')
-  const { pairing, computer, session } = loaded
-  if (input.requireOwner && computer.ownerSessionId !== input.actorSessionId) throw new AppError(403, 'computer_owner_only', 'Only the desktop app that owns this computer can approve pairing requests')
-  if (pairing.status !== 'pending') throw new AppError(409, 'pairing_already_decided', 'This pairing request was already decided')
-  const status: ComputerPairingStatus = input.approved ? 'approved' : 'denied'
-  const [updated] = await db.update(agentComputerPairings).set({ status, decidedAt: new Date(), decidedBySessionId: input.actorSessionId, updatedAt: new Date() })
-    .where(and(eq(agentComputerPairings.id, pairing.id), eq(agentComputerPairings.status, 'pending'))).returning()
-  if (!updated) throw new AppError(409, 'pairing_already_decided', 'This pairing request was already decided')
-  await recordComputerAudit(input.userId, `computer.pairing.${status}`, computer.id, { pairingId: pairing.id, deviceSessionId: pairing.deviceSessionId })
-  await publishComputerEvent(computer.id, 'computer.pairing.decided', { pairingId: pairing.id, status })
-  await bumpComputersRevision(input.userId)
-  return serializePairing(updated, computer, session, input.actorSessionId)
+  return pairing
 }
 
 /** Either side may end a pairing: the owner from the desktop, or the paired device itself. */
@@ -82,6 +64,7 @@ export async function revokePairing(userId: string, actorSessionId: string, pair
   if (!['pending', 'approved'].includes(pairing.status)) return
   await db.update(agentComputerPairings).set({ status: 'revoked', decidedAt: new Date(), decidedBySessionId: actorSessionId, updatedAt: new Date() }).where(eq(agentComputerPairings.id, pairingId))
   await recordComputerAudit(userId, 'computer.pairing.revoked', computer.id, { pairingId, deviceSessionId: pairing.deviceSessionId })
+  await revokeComputerSession(computer.id, pairing.deviceSessionId)
   await publishComputerEvent(computer.id, 'computer.pairing.decided', { pairingId, status: 'revoked' })
   await bumpComputersRevision(userId)
 }

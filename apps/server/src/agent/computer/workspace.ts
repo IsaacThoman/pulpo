@@ -32,6 +32,7 @@ export interface ComputerWorkspaceOptions {
   chatId: string
   userId: string
   agentRunId: string
+  requesterSessionId?: string | null
   computer: ComputerRow
   onLeaseEvent?: WorkspaceLeaseListener
   onApprovalEvent?: (state: ApprovalEventState, item: ToolApprovalItem) => Promise<void>
@@ -123,7 +124,7 @@ export class ComputerWorkspace implements AgentWorkspace {
   /** Send one request, translating connectivity failures into a lease expiry the timeline can show. */
   private async send<K extends ComputerRequest['kind']>(request: { kind: K } & Omit<Extract<ComputerRequest, { kind: K }>, 'chatId'>, signal?: AbortSignal, timeoutMs = RPC_TIMEOUT_MS) {
     try {
-      return await this.rpc.request<K>(this.computerId, { ...request, chatId: this.options.chatId } as Extract<ComputerRequest, { kind: K }>, { signal, timeoutMs })
+      return await this.rpc.request<K>(this.computerId, { ...request, chatId: this.options.chatId, responseId: this.options.responseId, requesterSessionId: this.options.requesterSessionId ?? undefined } as Extract<ComputerRequest, { kind: K }>, { signal, timeoutMs })
     } catch (error) {
       if (error instanceof ComputerRpcError && (error.code === 'offline' || error.code === 'unreachable' || error.code === 'disabled')) {
         const reason = error.code === 'disabled'
@@ -141,7 +142,7 @@ export class ComputerWorkspace implements AgentWorkspace {
     const summary = toolApprovalSummary(type, args)
     const row = await createToolApproval({
       responseId: this.options.responseId, chatId: this.options.chatId, agentRunId: this.options.agentRunId, computerId: this.computerId,
-      computerName: this.computerName, operationId, kind: type, summary,
+      computerName: this.computerName, operationId, kind: type, summary, args, context: { computerId: this.computerId, root: this.descriptor.root, accessMode: this.descriptor.accessMode },
     })
     if (row.status === 'approved') return row.id
     if (row.status === 'pending') await this.options.onApprovalEvent?.('requested', toolApprovalItem(row, this.computerName))

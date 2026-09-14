@@ -1,6 +1,7 @@
+import { createHash } from 'node:crypto'
 import { and, eq } from 'drizzle-orm'
 import {
-  TOOL_APPROVAL_SUMMARY_MAX_CHARACTERS, TOOL_APPROVAL_TIMEOUT_MS,
+  computerActionPayload, TOOL_APPROVAL_SUMMARY_MAX_CHARACTERS, TOOL_APPROVAL_TIMEOUT_MS,
   type ToolApproval, type ToolApprovalDecisionSource, type ToolApprovalItem, type ToolApprovalKind, type ToolApprovalStatus,
 } from '@pulpo/contracts'
 import { db } from '../../database/client.js'
@@ -45,12 +46,18 @@ export async function createToolApproval(input: {
   operationId: string
   kind: ToolApprovalKind
   summary: string
+  args: Record<string, unknown>
+  context: { computerId: string; root: string; accessMode: string }
 }): Promise<ApprovalRow> {
   const [existing] = await db.select().from(agentToolApprovals).where(eq(agentToolApprovals.operationId, input.operationId)).limit(1)
-  if (existing) return existing
+  const actionDigest = createHash('sha256').update(computerActionPayload(input.chatId, input.operationId, input.kind, input.args, input.context)).digest('hex')
+  if (existing) {
+    if (existing.responseId !== input.responseId || existing.computerId !== input.computerId || existing.actionDigest !== actionDigest) throw new Error('Approval retry changed the action; request a new operation')
+    return existing
+  }
   const [row] = await db.insert(agentToolApprovals).values({
     id: newId(), responseId: input.responseId, agentRunId: input.agentRunId, computerId: input.computerId, operationId: input.operationId,
-    kind: input.kind, summary: input.summary, status: 'pending', expiresAt: new Date(Date.now() + TOOL_APPROVAL_TIMEOUT_MS),
+    actionDigest, kind: input.kind, summary: input.summary, status: 'pending', expiresAt: new Date(Date.now() + TOOL_APPROVAL_TIMEOUT_MS),
   }).onConflictDoNothing().returning()
   const created = row ?? (await db.select().from(agentToolApprovals).where(eq(agentToolApprovals.operationId, input.operationId)).limit(1))[0]
   if (!created) throw new Error('Unable to record approval request')
@@ -132,4 +139,12 @@ export async function listPendingApprovals(userId: string): Promise<ToolApproval
     .innerJoin(responses, eq(responses.id, agentToolApprovals.responseId))
     .where(and(eq(responses.userId, userId), eq(agentToolApprovals.status, 'pending')))
   return rows.map((row) => serializeToolApproval(row.approval, row.computer.name, row.response.chatId))
+}
+
+/** Desktop verification is durable and bound to the complete action, never a reusable bare ID. */
+export async function verifyToolApproval(computerId: string, input: { approvalId: string; chatId: string; operationId: string; digest: string }): Promise<boolean> {
+  const [loaded] = await db.select({ approval: agentToolApprovals, chatId: responses.chatId }).from(agentToolApprovals)
+    .innerJoin(responses, eq(responses.id, agentToolApprovals.responseId))
+    .where(and(eq(agentToolApprovals.id, input.approvalId), eq(agentToolApprovals.computerId, computerId))).limit(1)
+  return Boolean(loaded && loaded.chatId === input.chatId && loaded.approval.operationId === input.operationId && loaded.approval.status === 'approved' && loaded.approval.actionDigest === input.digest)
 }

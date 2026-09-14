@@ -174,7 +174,7 @@ describe('buildMessageTimeline', () => {
     expect(approvalIsPending(approval as never)).toBe(true)
     expect(activityDurationMs(activity.steps)).toBe(400)
     expect(completedActivityLabel([activity.steps[2]!])).toBe('Worked')
-    expect(buildMessageTimeline([approval], false)).toEqual([])
+    expect(buildMessageTimeline([approval], false)).toMatchObject([{ kind: 'activity', steps: [{ kind: 'approval', approval: { id: approval.id } }] }])
   })
 
   it('does not keep work active for approvals that were decided or timed out', () => {

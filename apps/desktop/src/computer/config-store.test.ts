@@ -43,4 +43,12 @@ describe('computer config store', () => {
     const loaded = await loadComputerConfig(directory, 'host')
     expect(loaded.enabled).toBe(false)
   })
+  it('persists a device secret and never replaces it when normalizing settings', async () => {
+    const config = defaultComputerConfig('studio')
+    expect(config.deviceSecret).toMatch(/^[a-f0-9]{64}$/)
+    await saveComputerConfig(directory, config)
+    expect((await loadComputerConfig(directory, 'studio')).deviceSecret).toBe(config.deviceSecret)
+    expect(normalizeComputerConfig({ ...config, name: 'renamed' }, 'studio').deviceSecret).toBe(config.deviceSecret)
+  })
+
 })

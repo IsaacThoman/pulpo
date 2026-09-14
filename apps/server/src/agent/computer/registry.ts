@@ -1,14 +1,16 @@
+import { createHash, timingSafeEqual } from 'node:crypto'
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm'
 import {
   computerChatAttachmentsDirectory, computerAccessModeSchema, computerApprovalPolicySchema, computerOsSchema, computerShellSchema,
   type AgentComputer, type ComputerAnnounce, type ComputerPairingStatus, type ComputerWorkspaceDescriptor, type UpdateAgentComputerInput,
 } from '@pulpo/contracts'
 import { db } from '../../database/client.js'
-import { agentComputerPairings, agentComputers, agentToolApprovals, auditEvents, users, workspaceLeases } from '../../database/schema.js'
+import { agentComputerPairings, agentComputers, agentToolApprovals, auditEvents, users, workspaceLeases, sessions, responses } from '../../database/schema.js'
 import { AppError, notFound } from '../../lib/errors.js'
 import { newId } from '../../lib/ids.js'
-import { publishStateChange } from '../../responses/events.js'
+import { publishStateChange, requestCancellation } from '../../responses/events.js'
 import { onlineComputerIds } from './presence.js'
+import { clearPairingCode } from './pairing-codes.js'
 import { publishComputerEvent } from './rpc.js'
 
 export type ComputerRow = typeof agentComputers.$inferSelect
@@ -39,23 +41,33 @@ export function computerDescriptor(row: ComputerRow, chatId: string): ComputerWo
 }
 
 /** Called on every desktop connection: creates or refreshes the row and binds it to the connecting session. */
-export async function registerComputer(userId: string, sessionId: string, announce: ComputerAnnounce): Promise<ComputerRow> {
-  const [existing] = await db.select().from(agentComputers).where(eq(agentComputers.id, announce.computerId)).limit(1)
-  if (existing && existing.userId !== userId) throw new AppError(403, 'computer_owner_mismatch', 'This computer is registered to a different account')
-  if (existing?.revokedAt) throw new AppError(403, 'computer_revoked', 'This computer was removed from the account. Re-enable it from the desktop app to register it again.')
-  const now = new Date()
-  const values = {
-    userId, ownerSessionId: sessionId, name: announce.name, os: announce.os, arch: announce.arch, appVersion: announce.appVersion,
-    accessMode: announce.accessMode, rootPath: announce.rootPath, attachmentsDir: announce.attachmentsDir, homeDir: announce.homeDir,
-    shell: announce.shell, approvalPolicy: announce.approvalPolicy, allowRemote: announce.allowRemote, enabled: true, lastSeenAt: now, updatedAt: now,
-  }
-  const [row] = existing
-    ? await db.update(agentComputers).set(values).where(eq(agentComputers.id, announce.computerId)).returning()
-    : await db.insert(agentComputers).values({ id: announce.computerId, ...values }).returning()
-  if (!row) throw new Error('Unable to register computer')
-  if (!existing) await recordComputerAudit(userId, 'computer.registered', row.id, { name: row.name, os: row.os })
-  else if (existing.allowRemote && !announce.allowRemote) await revokeAllPairings(row.id, sessionId, 'remote_disabled')
-  return row
+export async function registerComputer(userId: string, sessionId: string, announce: ComputerAnnounce, deviceSecret: string): Promise<ComputerRow> {
+  if (!/^[a-f0-9]{64}$/.test(deviceSecret)) throw new AppError(403, 'computer_credential_required', 'Update the desktop app to register this computer')
+  const credentialHash = createHash('sha256').update(deviceSecret).digest('hex')
+  let ownershipChanged = false
+  let created = false
+  const registered = await db.transaction(async (tx) => {
+    const [existing] = await tx.select().from(agentComputers).where(eq(agentComputers.id, announce.computerId)).limit(1).for('update')
+    if (existing && !computerCredentialMatches(existing, sessionId, credentialHash)) throw new AppError(403, 'computer_credential_invalid', 'This installation cannot claim that computer')
+    if (existing && existing.userId !== userId) throw new AppError(403, 'computer_owner_mismatch', 'This computer is registered to a different account')
+    if (existing?.revokedAt) throw new AppError(403, 'computer_revoked', 'This computer was removed from the account. Re-enable it from the desktop app to register it again.')
+    created = !existing
+    ownershipChanged = Boolean(existing && existing.ownerSessionId !== sessionId)
+    const now = new Date()
+    const values = {
+      userId, credentialHash, ownerSessionId: sessionId, name: announce.name, os: announce.os, arch: announce.arch, appVersion: announce.appVersion,
+      accessMode: announce.accessMode, rootPath: announce.rootPath, attachmentsDir: announce.attachmentsDir, homeDir: announce.homeDir,
+      shell: announce.shell, approvalPolicy: announce.approvalPolicy, allowRemote: announce.allowRemote, enabled: true, lastSeenAt: now, updatedAt: now,
+    }
+    const [row] = existing
+      ? await tx.update(agentComputers).set(values).where(eq(agentComputers.id, announce.computerId)).returning()
+      : await tx.insert(agentComputers).values({ id: announce.computerId, ...values }).returning()
+    if (!row) throw new Error('Unable to register computer')
+    return row
+  })
+  if (created) await recordComputerAudit(userId, 'computer.registered', registered.id, { name: registered.name, os: registered.os })
+  if (ownershipChanged || !announce.allowRemote) await revokeAllPairings(registered.id, sessionId, ownershipChanged ? 'owner_changed' : 'remote_disabled')
+  return registered
 }
 
 /** Owner-driven change from the shared settings UI. The desktop mirrors it into its local config. */
@@ -72,9 +84,11 @@ export async function updateComputer(userId: string, sessionId: string, computer
   return row
 }
 
-async function revokeAllPairings(computerId: string, actorSessionId: string | null, reason: string): Promise<void> {
+export async function revokeAllPairings(computerId: string, actorSessionId: string | null, reason: string): Promise<void> {
+  await clearPairingCode(computerId)
   const revoked = await db.update(agentComputerPairings).set({ status: 'revoked', decidedAt: new Date(), decidedBySessionId: actorSessionId, updatedAt: new Date() })
-    .where(and(eq(agentComputerPairings.computerId, computerId), inArray(agentComputerPairings.status, ['pending', 'approved']))).returning({ id: agentComputerPairings.id })
+    .where(and(eq(agentComputerPairings.computerId, computerId), inArray(agentComputerPairings.status, ['pending', 'approved']))).returning({ id: agentComputerPairings.id, sessionId: agentComputerPairings.deviceSessionId })
+  for (const pairing of revoked) await revokeComputerSession(computerId, pairing.sessionId)
   if (revoked.length) {
     const [computer] = await db.select({ userId: agentComputers.userId }).from(agentComputers).where(eq(agentComputers.id, computerId)).limit(1)
     if (computer) await recordComputerAudit(computer.userId, 'computer.pairings.revoked', computerId, { reason, count: revoked.length })
@@ -102,11 +116,6 @@ export async function revokeComputer(userId: string, sessionId: string | null, c
   await bumpComputersRevision(userId)
 }
 
-/** Let the desktop re-register after the user removed and re-enabled the same computer id. */
-export async function clearComputerRevocation(userId: string, computerId: string): Promise<void> {
-  await db.update(agentComputers).set({ revokedAt: null, updatedAt: new Date() }).where(and(eq(agentComputers.id, computerId), eq(agentComputers.userId, userId)))
-}
-
 export async function loadComputer(computerId: string): Promise<ComputerRow | undefined> {
   const [row] = await db.select().from(agentComputers).where(eq(agentComputers.id, computerId)).limit(1)
   return row
@@ -125,6 +134,8 @@ export async function loadRunnableComputer(computerId: string): Promise<Computer
  * always may; any other session needs an approved pairing while remote access stays enabled.
  */
 export async function assertComputerUsable(userId: string, sessionId: string, computerId: string): Promise<ComputerRow> {
+  const [session] = await db.select().from(sessions).where(and(eq(sessions.id, sessionId), eq(sessions.userId, userId))).limit(1)
+  if (!session || session.expiresAt.getTime() <= Date.now()) throw new AppError(403, 'computer_session_required', 'Sign in again to use this computer')
   const [row] = await db.select().from(agentComputers).where(and(eq(agentComputers.id, computerId), eq(agentComputers.userId, userId))).limit(1)
   if (!row || row.revokedAt) throw notFound('Computer')
   if (!row.enabled) throw new AppError(409, 'computer_disabled', `${row.name} has agent access turned off`)
@@ -165,9 +176,35 @@ export async function listComputers(userId: string, sessionId: string | null): P
 /** Desktop sessions that sign out or get revoked take their computers offline and drop their pairings. */
 export async function detachComputersFromSessions(sessionIds: string[]): Promise<void> {
   if (!sessionIds.length) return
+  const paired = await db.select().from(agentComputerPairings).where(inArray(agentComputerPairings.deviceSessionId, sessionIds))
+  for (const pairing of paired) await revokeComputerSession(pairing.computerId, pairing.deviceSessionId)
   const owned = await db.select().from(agentComputers).where(inArray(agentComputers.ownerSessionId, sessionIds))
   for (const row of owned) {
+    await revokeAllPairings(row.id, null, 'session_revoked')
     await db.update(agentComputers).set({ ownerSessionId: null, updatedAt: new Date() }).where(eq(agentComputers.id, row.id))
     await disableComputerSideEffects(row, null, 'session_revoked')
   }
+}
+
+export function computerCredentialMatches(existing: Pick<ComputerRow, 'credentialHash' | 'ownerSessionId'>, sessionId: string, hash: string): boolean {
+  if (!existing.credentialHash) return existing.ownerSessionId === sessionId
+  const expected = Buffer.from(existing.credentialHash, 'hex')
+  const actual = Buffer.from(hash, 'hex')
+  return expected.length === actual.length && timingSafeEqual(expected, actual)
+}
+
+/** Stop this session's accepted work as well as refusing its next request. */
+export async function revokeComputerSession(computerId: string, sessionId: string): Promise<void> {
+  const affected = await db.select({ id: responses.id }).from(responses).where(and(eq(responses.workspaceComputerId, computerId), eq(responses.requesterSessionId, sessionId), inArray(responses.status, ['queued', 'in_progress'])))
+  await Promise.all(affected.map((row) => requestCancellation(row.id)))
+  if (affected.length) await db.update(agentToolApprovals).set({ status: 'cancelled', decidedAt: new Date(), updatedAt: new Date() }).where(and(inArray(agentToolApprovals.responseId, affected.map((row) => row.id)), eq(agentToolApprovals.status, 'pending')))
+  await publishComputerEvent(computerId, 'computer.access.revoked', { sessionId })
+}
+
+/** Reauthorize every relayed request against the persisted response destination and session. */
+export async function authorizeComputerRequest(computerId: string, request: { kind?: string; chatId: string; responseId?: string; requesterSessionId?: string }): Promise<void> {
+  if (!request.responseId || !request.requesterSessionId) throw new Error('Computer request is missing its originating session')
+  const [response] = await db.select({ userId: responses.userId, chatId: responses.chatId, workspaceComputerId: responses.workspaceComputerId, requesterSessionId: responses.requesterSessionId, status: responses.status }).from(responses).where(eq(responses.id, request.responseId)).limit(1)
+  if (!response || response.chatId !== request.chatId || response.workspaceComputerId !== computerId || response.requesterSessionId !== request.requesterSessionId || (request.kind !== 'operation.cancel' && !['queued', 'in_progress'].includes(response.status))) throw new Error('This response no longer has access to the computer')
+  await assertComputerUsable(response.userId, request.requesterSessionId, computerId)
 }

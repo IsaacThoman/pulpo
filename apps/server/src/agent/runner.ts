@@ -617,7 +617,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
   }
   manager = computerRow
     ? new ComputerWorkspace({
-      responseId, chatId: record.response.chatId, userId: record.response.userId, agentRunId: runId, computer: computerRow, onLeaseEvent,
+      responseId, chatId: record.response.chatId, userId: record.response.userId, requesterSessionId: record.response.requesterSessionId, agentRunId: runId, computer: computerRow, onLeaseEvent,
       onApprovalEvent: async (state, item) => {
         await emit(`pulpo.agent.approval.${state}`, item)
         await snapshotIfDue()

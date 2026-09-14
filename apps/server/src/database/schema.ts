@@ -212,6 +212,7 @@ export const sessions = pgTable('sessions', {
 export const agentComputers = pgTable('agent_computers', {
   id: uuid('id').primaryKey(),
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  credentialHash: text('credential_hash'),
   ownerSessionId: uuid('owner_session_id').references(() => sessions.id, { onDelete: 'set null' }),
   name: text('name').notNull(),
   os: text('os').notNull(),
@@ -523,6 +524,7 @@ export const responses = pgTable('responses', {
   executionMode: executionModeEnum('execution_mode').notNull().default('stream'),
   agentMode: boolean('agent_mode').notNull().default(false),
   agentCapacityAction: text('agent_capacity_action'),
+  requesterSessionId: uuid('requester_session_id').references(() => sessions.id, { onDelete: 'set null' }),
   workspaceComputerId: uuid('workspace_computer_id').references(() => agentComputers.id, { onDelete: 'set null' }),
   input: jsonb('input').notNull(),
   instructions: text('instructions'),
@@ -690,6 +692,7 @@ export const agentToolApprovals = pgTable('agent_tool_approvals', {
   operationId: text('operation_id').notNull(),
   kind: text('kind').notNull(),
   summary: text('summary').notNull().default(''),
+  actionDigest: text('action_digest'),
   status: text('status').notNull().default('pending'),
   decidedBySessionId: uuid('decided_by_session_id').references(() => sessions.id, { onDelete: 'set null' }),
   decidedVia: text('decided_via'),

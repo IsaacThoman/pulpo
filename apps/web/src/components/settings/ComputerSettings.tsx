@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { AlertTriangle, Laptop, Link2, Loader2, RefreshCw, Smartphone, Monitor, Unplug } from 'lucide-react'
 import { computerOsLabel, type AgentComputer, type ComputerPairing, type DesktopComputerState } from '@pulpo/contracts'
 import { desktopComputerApi, isDesktopRuntime } from '@/lib/runtime'
-import { decideComputerPairing, removeComputer, requestComputerPairing, revokeComputerPairing, useAgentComputers, useAgentPairings, useInvalidateComputers } from '@/lib/computers'
+import { removeComputer, requestComputerPairing, revokeComputerPairing, useAgentComputers, useAgentPairings, useInvalidateComputers } from '@/lib/computers'
 import { timeAgo } from '@/lib/format'
 import { ui } from '@/i18n/ui'
 import { Button } from '@/components/ui/button'
@@ -37,6 +37,12 @@ export function ThisComputerCard() {
   const [state, setState] = useState<DesktopComputerState | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [pairingCode, setPairingCode] = useState<{ code: string; expiresAt: string } | null>(null)
+  useEffect(() => {
+    if (!pairingCode) return
+    const timer = setTimeout(() => setPairingCode(null), Math.max(0, Date.parse(pairingCode.expiresAt) - Date.now()))
+    return () => clearTimeout(timer)
+  }, [pairingCode])
   const [nameDraft, setNameDraft] = useState<string | null>(null)
   const invalidate = useInvalidateComputers()
 
@@ -47,6 +53,8 @@ export function ThisComputerCard() {
     const unsubscribe = api.onStateChanged((next) => { if (!disposed) setState(next) })
     return () => { disposed = true; unsubscribe() }
   }, [api])
+
+  useEffect(() => { if (!state?.enabled || !state.allowRemote) setPairingCode(null) }, [state?.enabled, state?.allowRemote])
 
   if (!api) return null
   if (!state) return <p role="status" className="text-sm text-muted-foreground">{ui('Loading this computer…')}</p>
@@ -129,15 +137,25 @@ export function ThisComputerCard() {
             </SelectContent>
           </Select>
         </Row>
-        <Row label={ui('Allow other devices')} hint={ui('Your phone or browser can use this computer after you approve a pairing request here.')}>
+        <Row label={ui('Allow other devices')} hint={ui('Pair your phone or browser by entering a code generated on this computer.')}>
           <Switch checked={state.allowRemote} disabled={busy} aria-label={ui('Allow other devices')} onCheckedChange={(allowRemote) => void update({ allowRemote })} />
         </Row>
+        {state.enabled && state.allowRemote && <Row label={ui('Pair a device')} hint={ui('Generate a code here, then enter it in Computers settings on your other device. Each code works once and expires after five minutes.')}>
+          <div className="space-y-2 text-right">
+            {pairingCode && <output aria-label={ui('Pairing code')} className="block font-mono text-xl tracking-widest">{pairingCode.code}</output>}
+            <Button size="sm" variant="outline" disabled={busy || state.status !== 'online'} onClick={() => {
+              setBusy(true); setError(''); void api.createPairingCode().then(setPairingCode).catch((next: unknown) => setError(next instanceof Error ? next.message : ui('Could not generate a code.'))).finally(() => setBusy(false))
+            }}>{pairingCode ? ui('New code') : ui('Generate code')}</Button>
+          </div>
+        </Row>}
       </div>
     </div>
   )
 }
 
 function ComputerRow({ computer, pairings, onChanged }: { computer: AgentComputer; pairings: ComputerPairing[]; onChanged: () => Promise<void> }) {
+  const [code, setCode] = useState('')
+  const [enteringCode, setEnteringCode] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const run = async (task: () => Promise<unknown>) => {
@@ -147,7 +165,7 @@ function ComputerRow({ computer, pairings, onChanged }: { computer: AgentCompute
   }
   const status = !computer.enabled ? ui('Turned off') : computer.online ? ui('Online') : computer.lastSeenAt ? ui('Last seen {{when}}', { when: timeAgo(Date.parse(computer.lastSeenAt)) }) : ui('Offline')
   const access = computer.accessMode === 'folder' ? ui('Folder: {{path}}', { path: computer.rootPath }) : ui('Whole computer')
-  const canRequest = !computer.isOwnedByThisDevice && computer.enabled && computer.online && computer.allowRemote && !computer.pairing
+  const canRequest = !computer.isOwnedByThisDevice && computer.enabled && computer.online && computer.allowRemote && computer.pairing?.status !== 'approved'
   return (
     <div className="rounded-lg border p-3">
       <div className="flex items-start gap-3">
@@ -162,20 +180,28 @@ function ComputerRow({ computer, pairings, onChanged }: { computer: AgentCompute
           {!computer.isOwnedByThisDevice && (
             <div className="text-xs text-muted-foreground">
               {computer.pairing?.status === 'approved' ? ui('Paired with this device')
-                : computer.pairing?.status === 'pending' ? ui('Waiting for approval on {{name}}…', { name: computer.name })
+                : computer.pairing?.status === 'pending' ? ui('Enter a pairing code from {{name}}', { name: computer.name })
                 : computer.allowRemote ? ui('Not paired with this device') : ui('Does not allow other devices')}
             </div>
           )}
           {error && <div role="alert" className="text-xs text-destructive">{error}</div>}
         </div>
         <div className="flex shrink-0 flex-wrap justify-end gap-2">
-          {canRequest && <Button size="sm" disabled={busy} onClick={() => void run(() => requestComputerPairing(computer.id))}><Link2 />{ui('Pair')}</Button>}
+          {canRequest && <Button size="sm" disabled={busy} onClick={() => setEnteringCode(true)}><Link2 />{ui('Pair')}</Button>}
           {computer.pairing && <Button size="sm" variant="outline" disabled={busy} onClick={() => void run(() => revokeComputerPairing(computer.id, computer.pairing!.id))}><Unplug />{computer.pairing.status === 'pending' ? ui('Cancel') : ui('Unpair')}</Button>}
           {!computer.isOwnedByThisDevice && !computer.pairing && !isDesktopRuntime() && (
             <Button size="sm" variant="outline" disabled={busy} onClick={() => void run(() => removeComputer(computer.id))}>{ui('Remove')}</Button>
           )}
         </div>
       </div>
+      {canRequest && enteringCode && <form className="mt-3 space-y-2" onSubmit={(event) => { event.preventDefault(); void run(async () => { await requestComputerPairing(computer.id, code); setEnteringCode(false); setCode('') }) }}>
+        <p className="text-xs text-muted-foreground">{ui('On {{name}}, open Settings → Agent → This computer and generate a pairing code.', { name: computer.name })}</p>
+        <div className="flex gap-2">
+          <Input autoFocus aria-label={ui('Pairing code')} placeholder={ui('ABC234')} autoComplete="off" autoCapitalize="characters" spellCheck={false} maxLength={6} value={code} onChange={(event) => setCode(event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))} className="max-w-40 font-mono tracking-widest" />
+          <Button size="sm" disabled={busy || code.length !== 6} type="submit">{ui('Connect')}</Button>
+          <Button size="sm" variant="ghost" type="button" onClick={() => setEnteringCode(false)}>{ui('Cancel')}</Button>
+        </div>
+      </form>}
       {computer.isOwnedByThisDevice && pairings.length > 0 && (
         <div className="ml-8 mt-3 space-y-2">
           <div className="text-xs font-medium text-muted-foreground">{ui('Paired devices')}</div>
@@ -185,8 +211,6 @@ function ComputerRow({ computer, pairings, onChanged }: { computer: AgentCompute
               <div key={pairing.id} className="flex items-center gap-2 text-xs">
                 <Icon className="size-3.5 shrink-0 text-muted-foreground" />
                 <span className="min-w-0 flex-1 truncate">{pairing.deviceLabel}{pairing.requestedIp ? ` · ${pairing.requestedIp}` : ''}{pairing.status === 'pending' ? ` · ${ui('Pending')}` : ''}</span>
-                {pairing.status === 'pending' && <Button size="sm" disabled={busy} onClick={() => void run(() => decideComputerPairing(computer.id, pairing.id, true))}>{ui('Approve')}</Button>}
-                {pairing.status === 'pending' && <Button size="sm" variant="outline" disabled={busy} onClick={() => void run(() => decideComputerPairing(computer.id, pairing.id, false))}>{ui('Deny')}</Button>}
                 {pairing.status === 'approved' && <Button size="sm" variant="outline" disabled={busy} onClick={() => void run(() => revokeComputerPairing(computer.id, pairing.id))}>{ui('Revoke')}</Button>}
               </div>
             )
@@ -216,7 +240,7 @@ export function ComputerSettings() {
           </Button>
         </div>
         <p className="mt-1 text-xs leading-5 text-muted-foreground">
-          {ui('Computers running the Pulpo desktop app can be chosen as the agent workspace. Other devices need a pairing approved on that computer first.')}
+          {ui('Computers running the Pulpo desktop app can be chosen as the agent workspace. Other devices pair using a code generated on that computer.')}
         </p>
         {featureDisabled && <p className="mt-3 text-sm text-muted-foreground">{ui('This Pulpo instance does not allow the agent to use personal computers.')}</p>}
         {computersQuery.isPending && !featureDisabled && <p role="status" className="mt-3 text-sm text-muted-foreground">{ui('Loading computers…')}</p>}

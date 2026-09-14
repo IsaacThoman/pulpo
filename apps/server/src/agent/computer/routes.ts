@@ -9,7 +9,7 @@ import { resolveClientIp } from '../../lib/client-ip.js'
 import { getConfig } from '../../config.js'
 import { parseAgentSettings } from '../../settings/application-settings.js'
 import { decideToolApproval, listPendingApprovals } from './approvals.js'
-import { decidePairing, listPairings, requestPairing, revokePairing } from './pairings.js'
+import { listPairings, requestPairing, revokePairing } from './pairings.js'
 import { listComputers, revokeComputer, updateComputer } from './registry.js'
 
 /** Session id for a signed-in device, or null for API-key and admin-access callers who cannot select computers. */
@@ -72,19 +72,10 @@ export async function registerAgentComputerRoutes(app: FastifyInstance): Promise
     const { id } = request.params as { id: string }
     if (!await computersFeatureEnabled()) throw new AppError(403, 'computers_disabled', 'Running the agent on personal computers is turned off for this instance')
     const sessionId = await requiredSessionId(request, user.id)
-    const pairing = await requestPairing(user.id, sessionId, id, resolveClientIp(request.raw, getConfig()) ?? null)
+    const pairing = await requestPairing(user.id, sessionId, id, resolveClientIp(request.raw, getConfig()) ?? null, typeof (request.body as { code?: unknown } | null)?.code === 'string' ? (request.body as { code: string }).code : '')
     reply.code(pairing.status === 'pending' ? 202 : 200)
     return { pairing }
   })
-
-  for (const decision of ['approve', 'deny'] as const) {
-    app.post(`/api/agent/computers/:id/pairings/:pairingId/${decision}`, async (request) => {
-      const user = requireUser(request)
-      const { pairingId } = request.params as { id: string; pairingId: string }
-      const sessionId = await requiredSessionId(request, user.id)
-      return { pairing: await decidePairing({ pairingId, approved: decision === 'approve', userId: user.id, actorSessionId: sessionId, requireOwner: true }) }
-    })
-  }
 
   app.delete('/api/agent/computers/:id/pairings/:pairingId', async (request, reply) => {
     const user = requireUser(request)

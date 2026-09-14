@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto'
+import { randomBytes, randomUUID } from 'node:crypto'
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import type { ComputerAccessMode, ComputerApprovalPolicy } from '@pulpo/contracts'
@@ -8,6 +8,7 @@ export interface ComputerConfig {
   version: 1
   /** Stable identity for this installation; generated once and reused across sign-ins. */
   computerId: string
+  deviceSecret: string
   enabled: boolean
   name: string
   accessMode: ComputerAccessMode
@@ -26,6 +27,7 @@ export function defaultComputerConfig(hostname: string): ComputerConfig {
   return {
     version: 1,
     computerId: randomUUID(),
+    deviceSecret: randomBytes(32).toString('hex'),
     enabled: false,
     name: hostname.trim() || 'This computer',
     accessMode: 'folder',
@@ -46,6 +48,7 @@ export function normalizeComputerConfig(value: unknown, hostname: string): Compu
   return {
     version: 1,
     computerId: typeof candidate.computerId === 'string' && UUID_PATTERN.test(candidate.computerId) ? candidate.computerId : fallback.computerId,
+    deviceSecret: typeof candidate.deviceSecret === 'string' && /^[a-f0-9]{64}$/.test(candidate.deviceSecret) ? candidate.deviceSecret : fallback.deviceSecret,
     // Folder mode without a folder cannot run, so it is never enabled.
     enabled: candidate.enabled === true && (accessMode === 'full' || rootPath !== null),
     name,

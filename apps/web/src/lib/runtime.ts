@@ -23,6 +23,7 @@ interface DesktopApi {
   computer?: {
     getState(): Promise<DesktopComputerState>
     update(patch: DesktopComputerUpdate): Promise<DesktopComputerState>
+    createPairingCode: () => Promise<{ code: string; expiresAt: string }>
     chooseFolder(): Promise<string | null>
     onStateChanged(listener: (state: DesktopComputerState) => void): () => void
   }

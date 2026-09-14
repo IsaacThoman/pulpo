@@ -1,4 +1,16 @@
 const esUi: Record<string, string> = {
+  "Pair your phone or browser by entering a code generated on this computer.": "Vincula tu teléfono o navegador introduciendo un código generado en este ordenador.",
+  "Pair a device": "Vincular un dispositivo",
+  "Generate a code here, then enter it in Computers settings on your other device. Each code works once and expires after five minutes.": "Genera un código aquí e introdúcelo en los ajustes de Ordenadores del otro dispositivo. Cada código sirve una vez y caduca a los cinco minutos.",
+  "Pairing code": "Código de vinculación",
+  "Could not generate a code.": "No se ha podido generar un código.",
+  "New code": "Nuevo código",
+  "Generate code": "Generar código",
+  "Enter a pairing code from {{name}}": "Introduce un código de vinculación de {{name}}",
+  "On {{name}}, open Settings → Agent → This computer and generate a pairing code.": "En {{name}}, abre Ajustes → Agente → Este ordenador y genera un código de vinculación.",
+  "Computers running the Pulpo desktop app can be chosen as the agent workspace. Other devices pair using a code generated on that computer.": "Los ordenadores con la aplicación de escritorio de Pulpo pueden usarse como espacio de trabajo del agente. Los demás dispositivos se vinculan mediante un código generado en ese ordenador.",
+  "ABC234": "ABC234",
+
   "Image billing unit": "Unidad de facturación de imágenes",
   "Per image": "Por imagen",
   "Per token": "Por token",

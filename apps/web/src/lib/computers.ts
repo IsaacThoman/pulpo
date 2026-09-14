@@ -46,12 +46,8 @@ export function useInvalidateComputers() {
   }
 }
 
-export function requestComputerPairing(computerId: string): Promise<{ pairing: ComputerPairing }> {
-  return apiRequest(`/api/agent/computers/${computerId}/pairings`, { method: 'POST' })
-}
-
-export function decideComputerPairing(computerId: string, pairingId: string, approved: boolean): Promise<{ pairing: ComputerPairing }> {
-  return apiRequest(`/api/agent/computers/${computerId}/pairings/${pairingId}/${approved ? 'approve' : 'deny'}`, { method: 'POST' })
+export function requestComputerPairing(computerId: string, code: string): Promise<{ pairing: ComputerPairing }> {
+  return apiRequest(`/api/agent/computers/${computerId}/pairings`, { method: 'POST', body: { code } })
 }
 
 export function revokeComputerPairing(computerId: string, pairingId: string): Promise<void> {

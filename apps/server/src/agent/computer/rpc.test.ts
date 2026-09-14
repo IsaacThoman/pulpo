@@ -17,6 +17,7 @@ function fakeRedis(online: Set<string>) {
       bus.emit('publish', channel, message)
       return 1
     },
+    get: async (key: string) => [...online].some((id) => computerPresenceKey(id) === key) ? JSON.stringify({ socketId: 'socket-1' }) : null,
     exists: async (key: string) => ([...online].some((id) => computerPresenceKey(id) === key) ? 1 : 0),
   } as unknown as Redis
   const subscriber = () => {

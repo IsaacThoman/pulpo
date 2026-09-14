@@ -172,7 +172,7 @@ export const COMPUTER_HEARTBEAT_INTERVAL_MS = 20_000
 export const COMPUTER_PRESENCE_TTL_SECONDS = 60
 
 /** Requests relayed from the agent worker to the desktop app over the `/computer` namespace. */
-export type ComputerRequest = { chatId: string } & (
+export type ComputerRequest = { chatId: string; responseId?: string; requesterSessionId?: string } & (
   | { kind: 'operation.start'; id: string; type: string; args: Record<string, unknown>; approvalId?: string }
   | { kind: 'operation.status'; id: string }
   | { kind: 'operation.cancel'; id: string }
@@ -219,16 +219,19 @@ export type ComputerReply<K extends ComputerRequest['kind'] = ComputerRequest['k
 
 export interface ComputerClientToServerEvents {
   'computer.heartbeat': () => void
+  'computer.pairing.code': (ack: (result: { code?: string; expiresAt?: string; error?: string }) => void) => void
+  'computer.approval.verify': (input: { approvalId: string; chatId: string; operationId: string; digest: string }, ack: (approved: boolean) => void) => void
   'computer.update': (input: Partial<ComputerAnnounce>, ack?: (result: { ok: boolean; error?: string }) => void) => void
-  'computer.approval.decide': (input: ToolApprovalDecision, ack?: (result: { ok: boolean; error?: string }) => void) => void
-  'computer.pairing.decide': (input: ComputerPairingDecision, ack?: (result: { ok: boolean; error?: string }) => void) => void
 }
 
 export interface ComputerServerToClientEvents {
+  'computer.ready': (input: { sessionId: string }) => void
+  'computer.access.granted': (input: { sessionId: string }) => void
+  'computer.response.revoked': (input: { responseId: string }) => void
+  'computer.access.revoked': (input: { sessionId: string }) => void
   'computer.request': (request: ComputerRequest, ack: (reply: ComputerReply) => void) => void
   'computer.approval.requested': (approval: ToolApproval) => void
   'computer.approval.decided': (input: { approvalId: string; status: ToolApprovalStatus }) => void
-  'computer.pairing.requested': (pairing: ComputerPairing) => void
   'computer.pairing.decided': (input: { pairingId: string; status: ComputerPairingStatus }) => void
   'computer.revoked': (input: { reason: 'disabled' | 'deleted' | 'session_revoked' }) => void
   'computer.superseded': () => void
@@ -265,4 +268,14 @@ export interface DesktopComputerUpdate {
   rootPath?: string | null
   approvalPolicy?: ComputerApprovalPolicy
   allowRemote?: boolean
+}
+
+/** Stable exact-action representation for approval verification. */
+export function computerActionPayload(chatId: string, operationId: string, type: string, args: Record<string, unknown>, context?: { computerId: string; root: string; accessMode: string }): string {
+  const canonical = (value: unknown): unknown => {
+    if (Array.isArray(value)) return value.map(canonical)
+    if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([key, entry]) => [key, canonical(entry)]))
+    return value
+  }
+  return JSON.stringify(canonical({ chatId, operationId, type, args, context }))
 }

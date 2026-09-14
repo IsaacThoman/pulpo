@@ -1,10 +1,10 @@
-import { createHash } from 'node:crypto'
+import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { mkdir, open, rename, rm, stat, type FileHandle } from 'node:fs/promises'
 import path from 'node:path'
 import { io, type ManagerOptions, type Socket, type SocketOptions } from 'socket.io-client'
 import {
-  COMPUTER_HEARTBEAT_INTERVAL_MS, toolApprovalRequired,
-  type ComputerClientToServerEvents, type ComputerOperationSnapshot, type ComputerPairing, type ComputerReply, type ComputerRequest,
+  computerActionPayload, COMPUTER_HEARTBEAT_INTERVAL_MS, toolApprovalRequired,
+  type ComputerClientToServerEvents, type ComputerOperationSnapshot, type ComputerReply, type ComputerRequest,
   type ComputerServerToClientEvents, type DesktopComputerState, type DesktopComputerUpdate, type ToolApproval,
 } from '@pulpo/contracts'
 import type { Operation } from '@pulpo/workspace-daemon/core'
@@ -12,16 +12,6 @@ import { loadComputerConfig, normalizeComputerConfig, saveComputerConfig, type C
 import { computerOsFor, createComputerRuntime, type ComputerRuntime, type ChatComputerRuntime } from './runtime'
 
 export type ComputerSocket = Socket<ComputerServerToClientEvents, ComputerClientToServerEvents>
-
-export interface ComputerPromptHandle {
-  decision: Promise<boolean>
-  /** Close the prompt because the question was answered somewhere else. */
-  dismiss(): void
-}
-
-export interface ComputerPrompts {
-  pairing(pairing: ComputerPairing): ComputerPromptHandle
-}
 
 export interface ComputerAgentLogger {
   info(message: string, ...rest: unknown[]): void
@@ -39,7 +29,6 @@ export interface ComputerAgentOptions {
   rgPath?: string
   env?: NodeJS.ProcessEnv
   loadSession: () => Promise<{ instanceUrl: string; token: string } | null>
-  prompts: ComputerPrompts
   onStateChange?: (state: DesktopComputerState) => void
   connect?: (url: string, options: Partial<ManagerOptions & SocketOptions>) => ComputerSocket
   log?: ComputerAgentLogger
@@ -49,6 +38,8 @@ export interface ComputerAgentOptions {
 
 interface FileTransfer {
   chatId: string
+  sessionId?: string
+  responseId?: string
   target: string
   temporary: string
   handle: FileHandle
@@ -79,10 +70,12 @@ export class ComputerAgent {
   private heartbeat?: NodeJS.Timeout
   private status: DesktopComputerState['status'] = 'disabled'
   private error: string | null = null
-  private readonly approvedIds = new Set<string>()
-  private readonly approvalWaiters = new Map<string, Array<(approved: boolean) => void>>()
+  private needsRegistration = false
+  private ownerSessionId?: string
+  private readonly revokedResponses = new Set<string>()
+  private readonly revokedSessions = new Set<string>()
+  private readonly activeOperations = new Map<string, { chatId: string; sessionId?: string; responseId?: string }>()
   private readonly pendingApprovals = new Set<string>()
-  private readonly openPairings = new Map<string, ComputerPromptHandle>()
   private readonly transfers = new Map<string, FileTransfer>()
   private readonly log: ComputerAgentLogger
   private started = false
@@ -106,7 +99,7 @@ export class ComputerAgent {
       hostname: this.options.hostname,
       homeDir: this.options.homeDir,
       pendingApprovals: this.pendingApprovals.size,
-      pendingPairings: this.openPairings.size,
+      pendingPairings: 0,
     }
   }
 
@@ -122,6 +115,7 @@ export class ComputerAgent {
 
   async start(): Promise<DesktopComputerState> {
     this.config = await loadComputerConfig(this.options.userDataDir, this.options.hostname)
+    await saveComputerConfig(this.options.userDataDir, this.config)
     this.started = true
     await this.refresh()
     return this.state
@@ -137,6 +131,9 @@ export class ComputerAgent {
     }
     const session = await this.options.loadSession()
     if (!session) {
+      await this.runtime?.cancelAll()
+      await this.abortTransfers()
+      this.pendingApprovals.clear()
       await this.disconnect()
       this.setStatus('offline', 'Sign in to the desktop app to share this computer with the agent.')
       return
@@ -155,7 +152,11 @@ export class ComputerAgent {
       })
       return
     }
+    await this.runtime?.cancelAll()
+    await this.abortTransfers()
     await this.disconnect()
+    this.revokedSessions.clear()
+    this.revokedResponses.clear()
     this.socketKey = key
     this.openSocket(session.instanceUrl, session.token)
   }
@@ -187,7 +188,7 @@ export class ComputerAgent {
     const socket = connect(`${instanceUrl.replace(/\/$/, '')}/computer`, {
       path: '/socket.io',
       transports: ['websocket'],
-      auth: { sessionToken: token, computer: runtime.announce },
+      auth: { sessionToken: token, computer: runtime.announce, deviceSecret: this.config.deviceSecret },
       reconnection: true,
       reconnectionDelay: 1_000,
       reconnectionDelayMax: 30_000,
@@ -198,6 +199,8 @@ export class ComputerAgent {
       this.startHeartbeat()
     })
     socket.on('disconnect', (reason) => {
+      void this.runtime?.cancelAll()
+      void this.abortTransfers()
       this.stopHeartbeat()
       if (this.socket !== socket) return
       if (this.status !== 'error') this.setStatus(reason === 'io client disconnect' ? 'disabled' : 'offline', reason === 'io client disconnect' ? null : 'Reconnecting to Pulpo…')
@@ -212,7 +215,12 @@ export class ComputerAgent {
         this.setStatus('error', 'This Pulpo instance does not allow the agent to use personal computers.')
         socket.disconnect()
       } else if (message === 'computer_revoked') {
+        this.needsRegistration = true
         this.setStatus('error', 'This computer was removed from your account. Turn it off and on again to register it fresh.')
+        socket.disconnect()
+      } else if (message === 'computer_credential_invalid' || message === 'computer_credential_required') {
+        this.needsRegistration = true
+        this.setStatus('error', 'This computer needs to be registered again. Turn access off and on to register this installation.')
         socket.disconnect()
       } else if (message === 'computer_owner_mismatch') {
         this.setStatus('error', 'This computer is registered to a different Pulpo account.')
@@ -221,23 +229,23 @@ export class ComputerAgent {
         this.setStatus('offline', `Cannot reach Pulpo: ${message}`)
       }
     })
+    socket.on('computer.ready', ({ sessionId }) => { this.ownerSessionId = sessionId })
+    socket.on('computer.response.revoked', ({ responseId }) => { void this.cancelResponse(responseId) })
+    socket.on('computer.access.revoked', ({ sessionId }) => { void this.cancelSession(sessionId) })
+    socket.on('computer.access.granted', ({ sessionId }) => { this.revokedSessions.delete(sessionId) })
     socket.on('computer.request', (request, ack) => {
       void this.handleRequest(request).then(ack, (error) => ack(failure(error instanceof Error ? error.message : String(error))))
     })
     socket.on('computer.approval.requested', (approval) => this.trackApproval(approval))
-    socket.on('computer.approval.decided', ({ approvalId, status }) => this.resolveApproval(approvalId, status === 'approved'))
-    socket.on('computer.pairing.requested', (pairing) => this.promptPairing(pairing))
-    socket.on('computer.pairing.decided', ({ pairingId }) => {
-      this.openPairings.get(pairingId)?.dismiss()
-      this.openPairings.delete(pairingId)
-      this.publish()
-    })
+    socket.on('computer.approval.decided', ({ approvalId }) => this.resolveApproval(approvalId))
+
     socket.on('computer.revoked', ({ reason }) => {
       void (async () => {
         await this.runtime?.cancelAll()
         this.pendingApprovals.clear()
+        await this.abortTransfers()
         if (reason === 'disabled' || reason === 'deleted') {
-          this.config = { ...this.config, enabled: false }
+          this.config = { ...this.config, enabled: false, ...(reason === 'deleted' ? { computerId: randomUUID(), deviceSecret: randomBytes(32).toString('hex') } : {}) }
           await saveComputerConfig(this.options.userDataDir, this.config)
         }
         await this.disconnect()
@@ -245,6 +253,8 @@ export class ComputerAgent {
       })().catch((error) => this.log.error('revocation handling failed', error))
     })
     socket.on('computer.superseded', () => {
+      void this.runtime?.cancelAll()
+      void this.abortTransfers()
       if (this.socket !== socket) return
       this.socket = undefined
       socket.disconnect()
@@ -273,13 +283,23 @@ export class ComputerAgent {
 
   async updateConfig(patch: DesktopComputerUpdate): Promise<DesktopComputerState> {
     const previous = this.config
-    const next = normalizeComputerConfig({ ...previous, ...patch, version: 1, computerId: previous.computerId }, this.options.hostname)
+    if (patch.enabled && this.needsRegistration) {
+      this.config = { ...previous, computerId: randomUUID(), deviceSecret: randomBytes(32).toString('hex') }
+      this.needsRegistration = false
+    }
+    const next = normalizeComputerConfig({ ...this.config, ...patch, version: 1, computerId: this.config.computerId }, this.options.hostname)
     if (patch.enabled && next.accessMode === 'folder' && !next.rootPath) throw new Error('Choose a folder before enabling this computer.')
     if (patch.enabled) next.enabled = true
     this.config = next
+    if (previous.allowRemote && !next.allowRemote) {
+      for (const sessionId of new Set([...this.activeOperations.values()].map((entry) => entry.sessionId))) {
+        if (sessionId && sessionId !== this.ownerSessionId) await this.cancelSession(sessionId)
+      }
+    }
     await saveComputerConfig(this.options.userDataDir, next)
     if (previous.enabled && !next.enabled) {
       await this.runtime?.cancelAll()
+      await this.abortTransfers()
       this.pendingApprovals.clear()
     }
     await this.refresh()
@@ -293,10 +313,9 @@ export class ComputerAgent {
 
   async stop(): Promise<void> {
     await this.runtime?.cancelAll()
+    await this.abortTransfers()
     await this.disconnect()
-    for (const handle of this.openPairings.values()) handle.dismiss()
     this.pendingApprovals.clear()
-    this.openPairings.clear()
   }
 
   private trackApproval(approval: ToolApproval): void {
@@ -305,59 +324,84 @@ export class ComputerAgent {
     this.publish()
   }
 
-  private resolveApproval(approvalId: string, approved: boolean): void {
-    if (approved) this.approvedIds.add(approvalId)
+  private resolveApproval(approvalId: string): void {
     if (this.pendingApprovals.delete(approvalId)) this.publish()
-    for (const resolve of this.approvalWaiters.get(approvalId) ?? []) resolve(approved)
-    this.approvalWaiters.delete(approvalId)
   }
 
-  private promptPairing(pairing: ComputerPairing): void {
-    if (this.openPairings.has(pairing.id)) return
-    const handle = this.options.prompts.pairing(pairing)
-    this.openPairings.set(pairing.id, handle)
-    this.publish()
-    void handle.decision.then((approved) => {
-      if (this.openPairings.get(pairing.id) !== handle) return
-      this.openPairings.delete(pairing.id)
-      this.publish()
-      this.socket?.emit('computer.pairing.decide', { pairingId: pairing.id, approved }, (result) => {
-        if (!result.ok) this.log.warn('pairing decision rejected', result.error)
+  async createPairingCode(): Promise<{ code: string; expiresAt: string }> {
+    if (!this.socket || this.status !== 'online' || !this.config.allowRemote) throw new Error('Enable remote access and connect this computer first.')
+    const result = await this.socket.timeout(5_000).emitWithAck('computer.pairing.code')
+    if (!result.code || !result.expiresAt) throw new Error(result.error ?? 'Could not generate a pairing code.')
+    return { code: result.code, expiresAt: result.expiresAt }
+  }
+
+  private async cancelSession(sessionId: string): Promise<void> {
+    this.revokedSessions.add(sessionId)
+    for (const [id, operation] of this.activeOperations) {
+      if (operation.sessionId === sessionId) await this.runtime?.forChat(operation.chatId).runner.cancel(id)
+    }
+    await this.abortTransfers(sessionId)
+  }
+
+  private async cancelResponse(responseId: string): Promise<void> {
+    this.revokedResponses.add(responseId)
+    for (const [id, operation] of this.activeOperations) {
+      if (operation.responseId === responseId) await this.runtime?.forChat(operation.chatId).runner.cancel(id)
+    }
+    await this.abortTransfers(undefined, responseId)
+  }
+
+  private async abortTransfers(sessionId?: string, responseId?: string): Promise<void> {
+    for (const [id, transfer] of this.transfers) {
+      if (sessionId && transfer.sessionId !== sessionId) continue
+      if (responseId && transfer.responseId !== responseId) continue
+      this.transfers.delete(id)
+      await transfer.handle.close().catch(() => undefined)
+      await rm(transfer.temporary, { force: true }).catch(() => undefined)
+    }
+  }
+
+  private requestAllowed(request: ComputerRequest): boolean {
+    return Boolean(request.responseId && !this.revokedResponses.has(request.responseId) && request.requesterSessionId && !this.revokedSessions.has(request.requesterSessionId) && (this.config.allowRemote || request.requesterSessionId === this.ownerSessionId))
+  }
+
+  /** Query durable server approval state with the exact action; a missed event or restart is harmless. */
+  private async awaitApproval(request: Extract<ComputerRequest, { kind: 'operation.start' }>): Promise<boolean> {
+    const socket = this.socket
+    if (!socket || !request.approvalId) return false
+    const digest = createHash('sha256').update(computerActionPayload(request.chatId, request.id, request.type, request.args, { computerId: this.config.computerId, root: this.runtime!.announce.rootPath, accessMode: this.config.accessMode })).digest('hex')
+    const deadline = Date.now() + (this.options.approvalGraceMs ?? 2_000)
+    do {
+      const approved = await new Promise<boolean>((resolve) => {
+        const timer = setTimeout(() => resolve(false), 2_000)
+        socket.emit('computer.approval.verify', { approvalId: request.approvalId!, chatId: request.chatId, operationId: request.id, digest }, (value) => { clearTimeout(timer); resolve(value === true) })
       })
-    }).catch((error) => this.log.error('pairing prompt failed', error))
-  }
-
-  /** Wait briefly for a decision that may still be in flight from the chat UI. */
-  private awaitApproval(approvalId: string): Promise<boolean> {
-    if (this.approvedIds.has(approvalId)) return Promise.resolve(true)
-    const graceMs = this.options.approvalGraceMs ?? 2_000
-    return new Promise((resolve) => {
-      const timer = setTimeout(() => {
-        const waiters = this.approvalWaiters.get(approvalId)?.filter((entry) => entry !== settle) ?? []
-        if (waiters.length) this.approvalWaiters.set(approvalId, waiters)
-        else this.approvalWaiters.delete(approvalId)
-        resolve(false)
-      }, graceMs)
-      const settle = (approved: boolean) => { clearTimeout(timer); resolve(approved) }
-      this.approvalWaiters.set(approvalId, [...(this.approvalWaiters.get(approvalId) ?? []), settle])
-    })
+      if (approved) return this.socket === socket
+      if (Date.now() >= deadline) return false
+      await new Promise((resolve) => setTimeout(resolve, 25))
+    } while (this.socket === socket)
+    return false
   }
 
   async handleRequest(request: ComputerRequest): Promise<ComputerReply> {
     const manager = this.runtime
+    if (!this.requestAllowed(request)) return failure('This device no longer has access to the computer', 'disabled')
     if (!manager || !this.config.enabled) return failure('This computer is not sharing with the agent', 'disabled')
     let runtime: ChatComputerRuntime
     try { runtime = manager.forChat(request.chatId) } catch { return failure('A valid chat ID is required', 'invalid_request') }
     switch (request.kind) {
       case 'operation.start': {
+        this.activeOperations.set(request.id, { chatId: request.chatId, sessionId: request.requesterSessionId, responseId: request.responseId })
         if (toolApprovalRequired(request.type, this.config.approvalPolicy)) {
-          if (!request.approvalId || !await this.awaitApproval(request.approvalId)) return failure('This action needs the user\'s approval before it can run', 'approval_required')
+          if (!request.approvalId || !await this.awaitApproval(request)) return failure('This action needs the user\'s approval before it can run', 'approval_required')
         }
+        if (!this.config.enabled || this.runtime !== manager || !this.requestAllowed(request)) return failure('Computer access was revoked', 'disabled')
         const operation = await runtime.runner.execute(request.id, request.type, request.args ?? {})
         return { ok: true, result: snapshot(operation) }
       }
       case 'operation.status': {
         const operation = await runtime.runner.find(request.id)
+        if (operation?.status !== 'running') this.activeOperations.delete(request.id)
         return { ok: true, result: operation ? snapshot(operation) : null }
       }
       case 'operation.cancel': {
@@ -389,7 +433,7 @@ export class ComputerAgent {
     if (!/^[a-zA-Z0-9-]{1,100}$/.test(request.transferId) || this.transfers.has(request.transferId)) return failure('Invalid or duplicate transfer ID', 'invalid_request')
     const temporary = `${target}.${request.transferId}.upload`
     const handle = await open(temporary, 'wx')
-    this.transfers.set(request.transferId, { chatId: request.chatId, target, temporary, handle, sizeBytes: request.sizeBytes, checksum: request.checksum, received: 0, hash: createHash('sha256') })
+    this.transfers.set(request.transferId, { chatId: request.chatId, sessionId: request.requesterSessionId, responseId: request.responseId, target, temporary, handle, sizeBytes: request.sizeBytes, checksum: request.checksum, received: 0, hash: createHash('sha256') })
     return { ok: true, result: { transferId: request.transferId } }
   }
 

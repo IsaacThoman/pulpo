@@ -33,6 +33,7 @@ const api: PulpoDesktopApi = {
   },
   appInfo: () => ipcRenderer.invoke('desktop:app-info') as Promise<{ name: string; version: string; packaged: boolean }>,
   computer: {
+    createPairingCode: () => ipcRenderer.invoke('desktop:computer:pairing-code') as Promise<{ code: string; expiresAt: string }>,
     getState: () => ipcRenderer.invoke('desktop:computer:get-state') as Promise<DesktopComputerState>,
     update: (patch: DesktopComputerUpdate) => ipcRenderer.invoke('desktop:computer:update', patch) as Promise<DesktopComputerState>,
     chooseFolder: () => ipcRenderer.invoke('desktop:computer:choose-folder') as Promise<string | null>,
