@@ -21,7 +21,7 @@ export function ImageGenerationSettings() {
         <SelectTrigger aria-labelledby="image-model-label" className="w-full"><SelectValue placeholder={ui(catalog.isLoading ? 'Loading models…' : preferences.modelId ? 'Selected model unavailable' : 'Choose a model')} /></SelectTrigger>
         <SelectContent>{catalog.data?.data.map(entry => <SelectItem key={entry.id} value={entry.id}>{entry.name}</SelectItem>)}</SelectContent>
       </Select>
-      {model && <p className="text-xs text-muted-foreground">{ui(imagePriceLabel(model))}</p>}
+      {model && <p className="text-xs text-muted-foreground">{imagePriceLabel(model, ui)}</p>}
     </div>
     {catalog.isError && <div role="alert"><p className="text-sm text-destructive">{ui('Image models could not be loaded.')}</p><Button variant="ghost" onClick={() => void catalog.refetch()}>{ui('Retry')}</Button></div>}
     {catalog.data?.data.length === 0 && <p className="text-sm text-muted-foreground">{ui('An admin must configure an image model first.')}</p>}

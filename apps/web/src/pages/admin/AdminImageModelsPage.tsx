@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { AZURE_MAI_IMAGE_PRESET, IMAGE_MODEL_PRESETS, imageModelSchema, imagePriceLabel, type ImageModel } from '@pulpo/contracts'
+import { AZURE_MAI_IMAGE_PRESET, IMAGE_MODEL_PRESETS, imageModelSchema, imagePriceLabel, imageTokenRateKeys, imageTokenRateLabel, type ImageModel } from '@pulpo/contracts'
 import { apiRequest } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -24,7 +24,7 @@ export function AdminImageModelsPage() {
     setModels(catalog.data); setProviders(connections.data)
   }
   useEffect(() => { void load().catch(error => setError(error.message)) }, [])
-  const open = (model?: ImageModel) => { setDraft(model ?? { ...AZURE_MAI_IMAGE_PRESET, id: '', providerConnectionId: providers[0]?.id ?? '' }); setEditing(Boolean(model)); setError('') }
+  const open = (model?: ImageModel) => { setDraft(model ? imageModelSchema.parse(model) : { ...AZURE_MAI_IMAGE_PRESET, id: '', providerConnectionId: providers[0]?.id ?? '' }); setEditing(Boolean(model)); setError('') }
   const field = <K extends keyof ImageModel>(key: K, value: ImageModel[K]) => setDraft(current => current ? { ...current, [key]: value } : current)
   const text = (key: 'id' | 'name' | 'upstreamModelId', label: string) => <label className="block text-sm">{ui(label)}<Input className="mt-1" disabled={saving || (key === 'id' && editing)} value={draft?.[key] ?? ''} onChange={event => field(key, event.target.value)} /></label>
   const save = async () => {
@@ -41,11 +41,11 @@ export function AdminImageModelsPage() {
     <div className="flex items-center justify-between gap-3"><h1 className="text-2xl font-semibold">{ui('Image models')}</h1><Button onClick={() => open()}>{ui('Add image model')}</Button></div>
     <p className="text-sm text-muted-foreground">{ui('Configure image generation using your provider connections. Users choose a model and enable image generation in Settings.')}</p>
     {error && !draft && <p role="alert" className="text-sm text-destructive">{ui(error)}</p>}
-    {models.map(model => <div key={model.id} className="flex items-center justify-between gap-3 rounded-lg border p-4"><div className="min-w-0"><div className="font-medium">{model.name}</div><div className="text-xs text-muted-foreground">{providers.find(provider => provider.id === model.providerConnectionId)?.name} · {ui(model.enabled ? 'Enabled' : 'Disabled')} · {ui(imagePriceLabel(model))}</div></div><div className="flex gap-2"><Button variant="outline" onClick={() => open(model)}>{ui('Edit')}</Button><Button variant="ghost" onClick={() => { if (confirm(ui('Delete this image model?'))) void apiRequest(`/api/admin/image-models/${model.id}`, { method: 'DELETE' }).then(load).catch(error => setError(error.message)) }}>{ui('Delete')}</Button></div></div>)}
+    {models.map(model => <div key={model.id} className="flex items-center justify-between gap-3 rounded-lg border p-4"><div className="min-w-0"><div className="font-medium">{model.name}</div><div className="break-words text-xs text-muted-foreground">{providers.find(provider => provider.id === model.providerConnectionId)?.name} · {ui(model.enabled ? 'Enabled' : 'Disabled')} · {imagePriceLabel(model, ui)}</div></div><div className="flex gap-2"><Button variant="outline" onClick={() => open(model)}>{ui('Edit')}</Button><Button variant="ghost" onClick={() => { if (confirm(ui('Delete this image model?'))) void apiRequest(`/api/admin/image-models/${model.id}`, { method: 'DELETE' }).then(load).catch(error => setError(error.message)) }}>{ui('Delete')}</Button></div></div>)}
     <Dialog open={Boolean(draft)} onOpenChange={open => { if (!open && !saving) setDraft(null) }}><DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl"><DialogHeader><DialogTitle>{ui(editing ? 'Edit image model' : 'Add image model')}</DialogTitle></DialogHeader>{draft && <div className="space-y-4">
       <label className="block text-sm">{ui('Image provider API')}<select aria-label={ui('Image provider API')} disabled={saving} className="mt-1 w-full rounded border bg-background p-2" value={draft.adapter} onChange={event => {
         const preset = IMAGE_MODEL_PRESETS[event.target.value as ImageModel['adapter']]
-        setDraft(current => current ? { ...current, adapter: preset.adapter, name: preset.name, upstreamModelId: preset.upstreamModelId, enabled: false } : current)
+        setDraft(current => current ? { ...current, adapter: preset.adapter, name: preset.name, upstreamModelId: preset.upstreamModelId, enabled: false, billUsers: false, billingUnit: preset.billingUnit, tokenPrices: { ...preset.tokenPrices } } : current)
       }}>{(Object.keys(providerCopy) as ImageModel['adapter'][]).map(adapter => <option key={adapter} value={adapter}>{ui(providerCopy[adapter].label)}</option>)}</select></label>
       {text('id', 'ID')}{text('name', 'Display name')}
       <label className="block text-sm">{ui('Provider')}<select aria-label={ui('Provider')} disabled={saving} className="mt-1 w-full rounded border bg-background p-2" value={draft.providerConnectionId} onChange={event => field('providerConnectionId', event.target.value)}><option value="" disabled>{ui('Choose a provider')}</option>{providers.map(provider => <option key={provider.id} value={provider.id}>{provider.name}</option>)}</select></label>
@@ -54,7 +54,18 @@ export function AdminImageModelsPage() {
       <label className="block text-sm">{ui('Sort order')}<Input type="number" min={0} step={1} disabled={saving} value={draft.sortOrder} onChange={event => field('sortOrder', Number(event.target.value))} /></label>
       <label className="flex items-center gap-2 text-sm"><input type="checkbox" disabled={saving} checked={draft.enabled} onChange={event => field('enabled', event.target.checked)} />{ui('Enabled')}</label>
       <label className="flex items-center gap-2 text-sm"><input type="checkbox" disabled={saving} checked={draft.billUsers} onChange={event => field('billUsers', event.target.checked)} />{ui('Bill users for images')}</label>
-      {draft.billUsers && <label className="block text-sm">{ui('USD per generated image')}<Input type="number" min={0} step="0.000001" disabled={saving} value={draft.imagePriceMicros / 1e6} onChange={event => field('imagePriceMicros', Math.round(Number(event.target.value) * 1e6))} /></label>}
+      {draft.billUsers && <>
+        <label className="block text-sm">{ui('Image billing unit')}<select aria-label={ui('Image billing unit')} className="mt-1 w-full rounded border bg-background p-2" disabled={saving} value={draft.billingUnit} onChange={event => field('billingUnit', event.target.value as ImageModel['billingUnit'])}>
+          <option value="images">{ui('Per image')}</option><option value="tokens" disabled={draft.adapter === 'azure-mai'}>{ui('Per token')}</option>
+        </select></label>
+        {draft.adapter === 'azure-mai' && <p className="text-xs text-muted-foreground">{ui('Azure MAI does not report token usage; use per-image pricing.')}</p>}
+        {draft.billingUnit === 'images' ? <label className="block text-sm">{ui('USD per generated image')}<Input type="number" min={0} step="0.000001" disabled={saving} value={draft.imagePriceMicros / 1e6} onChange={event => field('imagePriceMicros', Math.round(Number(event.target.value) * 1e6))} /></label> : <>
+          <p className="text-xs text-muted-foreground">{ui('Rates are USD per 1M tokens. Enter your user prices, including zero for free categories. Rates are not automatically synchronized with providers.')}</p>
+          <div className="grid gap-3 sm:grid-cols-2">{imageTokenRateKeys(draft.adapter).map(key => <label key={key} className="block text-sm">{ui(imageTokenRateLabel(draft.adapter, key))}<Input type="number" min={0} step="0.000001" disabled={saving} value={draft.tokenPrices[key] === null ? '' : draft.tokenPrices[key]! / 1e6} onChange={event => field('tokenPrices', { ...draft.tokenPrices, [key]: event.target.value === '' ? null : Math.round(Number(event.target.value) * 1e6) })} /></label>)}</div>
+          <label className="block text-sm">{ui('Upfront reservation (USD)')}<Input type="number" min="0.000001" step="0.000001" disabled={saving} value={draft.reservationMicros / 1e6} onChange={event => field('reservationMicros', Math.round(Number(event.target.value) * 1e6))} /></label>
+          <p className="text-xs text-muted-foreground">{ui('The reservation checks available funds before generation. Actual token usage determines the charge; additional funds may be required before the image can be saved.')}</p>
+        </>}
+      </>}
       {error && <p role="alert" className="whitespace-pre-line text-sm text-destructive">{ui(error)}</p>}<Button disabled={saving} onClick={() => void save()}>{ui(saving ? 'Saving…' : 'Save')}</Button>
     </div>}</DialogContent></Dialog>
   </div>

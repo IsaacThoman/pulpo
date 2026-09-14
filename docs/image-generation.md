@@ -20,9 +20,24 @@ same encrypted provider connections as chat and speech. Apply migration
    OpenAI defaults to `gpt-image-2.5-flare`; the upstream model ID is editable,
    for example to use `gpt-image-2.5-sunburst`. This adapter targets GPT Image
    models that support generation and editing, not legacy DALL-E models.
-4. Optionally enable **Bill users for images** and set a USD price per image.
-   This is the Pulpo user charge; it is not automatically synchronized with the
-   provider's pricing. Billing is disabled by default.
+4. Optionally enable **Bill users for images** and choose **Per image** or
+   **Per token**. These are Pulpo user prices, manually managed and independent
+   of provider price changes. Billing is disabled by default.
+   - Per image charges the configured USD amount per successfully saved image.
+   - OpenAI token pricing separates text input, cached text input, image input,
+     cached image input, text output, and image output. Rates are USD per million
+     tokens. The Flare preset includes published rates verified September 13,
+     2026; review them when changing the upstream model.
+   - Meta token pricing uses combined input, cached input, and output rates.
+     Enter each rate explicitly; zero is allowed. Output includes reasoning and
+     is billed once, not again as a separate reasoning charge.
+   - Azure MAI supports per-image pricing only because its documented API
+     response does not report token usage.
+   - Token billing requires a positive **Upfront reservation (USD)**. This is a
+     budget hold, not a fixed fee or maximum price. If actual usage exceeds the
+     hold, Pulpo reserves the difference before saving the image. If funds are
+     insufficient, the image is not saved or charged; the provider may still
+     charge Pulpo for that generation.
 5. Enable the model when its provider deployment is ready. Test a generation
    and an edit with an opted-in account before announcing availability.
 
@@ -48,8 +63,17 @@ JSON generations at `/v1/images/generations`, multipart edits at
 with quality left at the provider default. Edits upload up to four PNG, JPEG,
 or WebP references using `image[]`, including saved attachments from earlier
 turns. No Responses API conversation or additional text model is required.
-Returned token usage is saved as operation metadata; user billing remains the
-configured flat charge per saved image, independent of upstream token costs.
+Returned usage breakdowns are saved as operation metadata. Token billing sums
+all applicable categories with integer arithmetic, then rounds upward once to
+one microdollar. Per-image billing continues to ignore token usage.
+
+Only explicitly reported cached tokens receive cached rates. If cached usage is
+omitted, ordinary input rates apply. OpenAI cached tokens must be attributable
+to text or image input; a positive aggregate cache count is sufficient only when
+all input belongs to one modality. Missing, malformed, inconsistent, or
+ambiguous required token usage fails without saving or billing an image. Pulpo
+does not estimate missing usage or fall back to a flat fee. The reported user
+charge therefore depends on the usage breakdown available from the provider.
 
 All three adapters share the agent tool, encrypted provider connections,
 timeouts, image validation, attachment storage, and billing/recovery flow.
@@ -61,7 +85,7 @@ existing Azure and Meta entries; admins must explicitly add and enable it.
 ## User settings and tool inputs
 
 On web and desktop, open **Settings → Agent → Image generation**. On mobile,
-open **Settings → Agent → Image generation**. Choose a model and enable image
+open **Settings → Personalization → Image generation**. Choose a model and enable image
 generation; the setting and selected model sync with the account. New and existing
 accounts default to `{ "enabled": false, "modelId": null }`. An unavailable
 selection is retained, and another provider is never selected automatically.
@@ -92,8 +116,11 @@ the user's attachment quota.
 
 ## Accounting, recovery, and backups
 
-Pulpo reserves the configured charge before contacting the provider and records
-one charge for a successfully saved image. Agent settlement includes that charge
+Pulpo reserves the configured per-image charge or token budget hold before
+contacting the provider and records one charge for a successfully saved image.
+Token billing settles actual usage and releases unused funds with the agent
+response. Rates and usage are snapshotted per operation, so later catalog edits
+do not change saved or recovered charges. Agent settlement includes that charge
 even after cancellation. Durable operation claims prevent duplicate calls and
 charges on replay; saved results are reused. Resume and settlement reconcile
 images saved immediately before an interrupted billing write, even if the account
@@ -106,7 +133,9 @@ balance or storage return actionable errors without provider credentials or raw
 image data in diagnostic messages.
 
 Full backups include the image catalog, operation metadata, and generated
-attachments. Legacy backups without the new tables remain supported. Restore
+attachments. Legacy backups without the image tables remain supported. Legacy model configs
+and operation snapshots without billing fields default to per-image pricing;
+no database migration is required for token pricing. Restore
 uses the normal provider-secret and attachment-blob handling. Temporary-chat
 operation metadata follows the existing backup exclusion policy.
 

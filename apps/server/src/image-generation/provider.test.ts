@@ -23,8 +23,9 @@ describe('image providers', () => {
   it('uploads all OpenAI edit references as image[] files, including previous renders', async () => {
     const data = await png()
     const references = await Promise.all(['png', 'jpeg', 'webp', 'png'].map(async format => ({ data: await sharp(data).toFormat(format as 'png' | 'jpeg' | 'webp').toBuffer(), mimeType: `image/${format}` })))
-    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ data: [{ b64_json: data.toString('base64') }] }))
-    await generateImage({ ...openaiOptions(), references: references.map(reference => ({ ...reference, priorImageItem: { id: 'meta-image', type: 'image_generation_call', status: 'completed' } })), fetch: fetcher })
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ data: [{ b64_json: data.toString('base64') }], usage: { input_tokens: 40, input_tokens_details: { text_tokens: 10, image_tokens: 30, cached_tokens: 5, cached_tokens_details: { text_tokens: 2, image_tokens: 3 } }, output_tokens: 20, output_tokens_details: { text_tokens: 0, image_tokens: 20 }, total_tokens: 60 } }))
+    const result = await generateImage({ ...openaiOptions(), references: references.map(reference => ({ ...reference, priorImageItem: { id: 'meta-image', type: 'image_generation_call', status: 'completed' } })), fetch: fetcher })
+    expect(result.usage).toMatchObject({ inputTokens: 40, inputDetails: { textTokens: 10, imageTokens: 30, cachedTokens: 5, cachedDetails: { textTokens: 2, imageTokens: 3 } }, outputDetails: { textTokens: 0, imageTokens: 20 } })
     const [url, request] = fetcher.mock.calls[0]!
     expect(url).toBe('https://api.openai.com/v1/images/edits')
     expect(request!.headers).toEqual({ Authorization: 'Bearer SECRET' })
