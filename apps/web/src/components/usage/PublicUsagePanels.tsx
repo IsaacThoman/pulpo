@@ -67,21 +67,14 @@ export function PublicRecentUsagePanel({
     if (el.scrollHeight <= el.clientHeight + 160) onLoadMoreRef.current()
   }, [records, nextCursor, loadingMore, error])
 
-  return <div className="rounded-lg border">
-    <div className="flex items-center justify-between border-b px-3 py-2">
+  return <div className="min-w-0 rounded-lg border">
+    <div className="flex flex-wrap items-center justify-between gap-2 border-b px-3 py-2">
       <div className="flex items-center gap-2"><Zap className="size-3" /><h3 className="text-xs font-medium">{ui("Recent usage")}</h3></div>
       <span className="text-xs text-muted-foreground">{records.length.toLocaleString(activeLocale())} {ui("settled calls")}</span>
     </div>
     {records.length === 0 ? <div className="p-6 text-center text-xs text-muted-foreground">{ui("No settled usage in this period")}</div> : <>
-      <div className="usage-records-head border-b">
-        <table className="data-table table-fixed">
-          <colgroup>
-            <col className="w-[22%]" />
-            <col className="w-[18%]" />
-            <col />
-            <col className="w-[18%]" />
-            <col className="w-[18%]" />
-          </colgroup>
+      <div ref={scrollRef} className="max-h-96 min-w-0 overflow-auto" onScroll={onScroll} tabIndex={0} role="region" aria-label={ui("Recent usage")}>
+        <table className="data-table usage-records-table">
           <thead>
             <tr className="text-left text-muted-foreground">
               <th className="px-3 py-2 font-normal">{ui("Time")}</th>
@@ -91,21 +84,10 @@ export function PublicRecentUsagePanel({
               <th className="px-3 py-2 text-right font-normal">{ui("Cost")}</th>
             </tr>
           </thead>
-        </table>
-      </div>
-      <div ref={scrollRef} className="max-h-96 overflow-y-scroll" onScroll={onScroll}>
-        <table className="data-table table-fixed">
-          <colgroup>
-            <col className="w-[22%]" />
-            <col className="w-[18%]" />
-            <col />
-            <col className="w-[12%]" />
-            <col className="w-[12%]" />
-          </colgroup>
           <tbody className="divide-y">{records.map((record) => <tr key={record.id}>
             <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">{new Date(record.createdAt).toLocaleString(activeLocale())}</td>
-            <td className="px-3 py-2"><span className="flex min-w-0 items-center gap-1.5"><ProfileAvatar name={record.participant.displayName} avatarUrl={record.participant.avatarUrl} className="size-5" fallbackClassName="text-[8px]" /><span className="truncate">{record.participant.displayName}</span></span></td>
-            <td className="px-3 py-2"><span className="flex min-w-0 items-center gap-1.5"><UsageModelIcon modelId={record.model.id} logo={record.model.logo} /><span className="truncate">{record.model.name}</span></span></td>
+            <td className="px-3 py-2"><span className="flex min-w-0 max-w-48 items-center gap-1.5"><ProfileAvatar name={record.participant.displayName} avatarUrl={record.participant.avatarUrl} className="size-5" fallbackClassName="text-[8px]" /><span className="truncate">{record.participant.displayName}</span></span></td>
+            <td className="px-3 py-2"><span className="flex min-w-0 max-w-48 items-center gap-1.5"><UsageModelIcon modelId={record.model.id} logo={record.model.logo} /><span className="truncate">{record.model.name}</span></span></td>
             <td className="px-3 py-2 text-right tabular-nums">{(record.inputTokens + record.outputTokens).toLocaleString(activeLocale())}</td>
             <td className="px-3 py-2 text-right tabular-nums">
               <UsageCostBreakdown
@@ -125,7 +107,7 @@ export function PublicRecentUsagePanel({
 }
 
 export function PublicTopModelsPanel({ models }: { models: PublicTopModel[] }) {
-  return <div className="rounded-lg border">
+  return <div className="min-w-0 rounded-lg border">
     <div className="flex items-center gap-2 border-b px-3 py-2"><BarChart3 className="size-3" /><h3 className="text-xs font-medium">{ui("Top models")}</h3></div>
     {models.length === 0 ? <div className="p-6 text-center text-xs text-muted-foreground">{ui("No settled usage in this period")}</div> : <div className="max-h-96 divide-y overflow-y-auto">
       {models.map((model, index) => {

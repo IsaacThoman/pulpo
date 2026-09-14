@@ -10,8 +10,8 @@ const TABS = [
 
 export function AdminUsageLayout() {
   return <div className="space-y-5">
-    <nav className="flex items-center gap-1 border-b pb-3">
-      {TABS.map((tab) => <NavLink key={tab.to} to={tab.to} end={tab.end} className={({ isActive }) => cn('rounded-md px-2.5 py-1.5 text-sm transition-colors', isActive ? 'bg-accent font-medium' : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground')}>{ui(tab.label)}</NavLink>)}
+    <nav className="settings-section-nav flex min-w-0 items-center gap-1 overflow-x-auto border-b pb-3">
+      {TABS.map((tab) => <NavLink key={tab.to} to={tab.to} end={tab.end} className={({ isActive }) => cn('shrink-0 whitespace-nowrap rounded-md px-2.5 py-1.5 text-sm transition-colors', isActive ? 'bg-accent font-medium' : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground')}>{ui(tab.label)}</NavLink>)}
     </nav>
     <Outlet />
   </div>

@@ -54,8 +54,8 @@ export function RecentUsagePanel({
   }
 
   return (
-    <div className="rounded-lg border">
-      <div className="flex items-center justify-between border-b px-3 py-2">
+    <div className="min-w-0 rounded-lg border">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b px-3 py-2">
         <div className="flex items-center gap-2">
           <Zap className="size-3" />
           <h3 className="text-xs font-medium">{ui("Recent usage")}</h3>
@@ -68,16 +68,8 @@ export function RecentUsagePanel({
         <div className="p-6 text-center text-xs text-muted-foreground">{ui("No usage records yet")}</div>
       ) : (
         <>
-          <div className="usage-records-head border-b">
-            <table className="data-table table-fixed">
-              <colgroup>
-                <col className="w-[22%]" />
-                <col />
-                {showUser && <col className="w-[16%]" />}
-                <col className="w-[18%]" />
-                <col className="w-[18%]" />
-                {showBalance && <col className="w-[14%]" />}
-              </colgroup>
+          <div ref={scrollRef} className="max-h-96 min-w-0 overflow-auto" onScroll={onScroll} tabIndex={0} role="region" aria-label={ui("Recent usage")}>
+            <table className="data-table usage-records-table">
               <thead>
                 <tr className="text-left text-muted-foreground">
                   <th className="px-3 py-2 font-normal">{ui("Time")}</th>
@@ -90,18 +82,6 @@ export function RecentUsagePanel({
                   )}
                 </tr>
               </thead>
-            </table>
-          </div>
-          <div ref={scrollRef} className="max-h-96 overflow-y-scroll" onScroll={onScroll}>
-            <table className="data-table table-fixed">
-              <colgroup>
-                <col className="w-[22%]" />
-                <col />
-                {showUser && <col className="w-[16%]" />}
-                <col className="w-[12%]" />
-                <col className="w-[12%]" />
-                {showBalance && <col className="w-[14%]" />}
-              </colgroup>
               <tbody className="divide-y">
                 {records.map((r) => {
                   const model = getCatalogModel(r.modelId)
@@ -111,7 +91,7 @@ export function RecentUsagePanel({
                         {formatUsageTime(r.timestamp)}
                       </td>
                       <td className="px-3 py-2">
-                        <span className="flex min-w-0 items-center gap-1.5">
+                        <span className="flex min-w-0 max-w-48 items-center gap-1.5">
                           <ModelIcon model={model} className="size-3.5 shrink-0 rounded-[2px]" />
                           <span className="truncate" title={model.name}>
                             {model.name}
@@ -120,7 +100,7 @@ export function RecentUsagePanel({
                       </td>
                       {showUser && (
                         <td className="px-3 py-2">
-                          <span className="block truncate">{nameOf(r.userId)}</span>
+                          <span className="block max-w-40 truncate">{nameOf(r.userId)}</span>
                         </td>
                       )}
                       <td className="px-3 py-2 text-right tabular-nums">
@@ -165,7 +145,7 @@ export interface TopModelStat {
 /** Ranked model list: position, icon, name, call count and spend. */
 export function TopModelsPanel({ models }: { models: TopModelStat[] }) {
   return (
-    <div className="rounded-lg border">
+    <div className="min-w-0 rounded-lg border">
       <div className="flex items-center gap-2 border-b px-3 py-2">
         <BarChart3 className="size-3" />
         <h3 className="text-xs font-medium">{ui("Top models")}</h3>

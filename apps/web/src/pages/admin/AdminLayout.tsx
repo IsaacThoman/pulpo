@@ -29,7 +29,7 @@ export function AdminLayout() {
   return (
     <div className="flex h-full flex-col">
       <header className="flex h-12 shrink-0 items-center gap-4 border-b px-5">
-        <h1 className="text-sm font-semibold">{ui("Admin panel")}</h1>
+        <h1 className="shrink-0 text-sm font-semibold">{ui("Admin panel")}</h1>
         <nav className="settings-section-nav flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
           {tabs.map((t) => (
             <NavLink

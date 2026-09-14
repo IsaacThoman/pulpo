@@ -198,7 +198,7 @@ function AdminUsersTable({ storageKey }: { storageKey: string | null }) {
       <Dialog open={Boolean(devicesUser)} onOpenChange={(open) => { if (!open) setDevicesUser(null) }}>
         <DialogContent className="max-h-[85dvh] overflow-y-auto sm:max-w-xl"><DialogHeader><DialogTitle>{ui('Devices')}</DialogTitle><DialogDescription>{devicesUser?.email}</DialogDescription></DialogHeader>{devicesUser && <DeviceSessionListView key={devicesUser.id} userId={devicesUser.id} />}</DialogContent>
       </Dialog>
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <h2 className="text-lg font-semibold">{ui("Users")}</h2>
         <span className="text-lg text-muted-foreground">{users.length.toLocaleString(activeLocale())}</span>
         <div className="flex-1" />
