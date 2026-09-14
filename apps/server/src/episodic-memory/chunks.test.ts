@@ -63,3 +63,15 @@ describe('episodic chat chunks', () => {
     expect(chatTurnChunk(turn('empty', null, '', ''))).toBeNull()
   })
 })
+
+
+it('keeps search projections PostgreSQL-safe without changing original messages', () => {
+  const text = 'partition \0 emoji 🐙 unmatched \ud800'
+  const response = turn('unicode', null, text, text)
+  for (const chunk of [chatTurnChunk(response)!, ...chatTurnPassages(response)]) {
+    expect(chunk.text).not.toContain('\0')
+    expect(chunk.text).toContain('␀')
+    expect(Buffer.from(chunk.text, 'utf8').toString('utf8')).toBe(chunk.text)
+  }
+  expect(response.input[0]!.content[0]!.text).toBe(text)
+})
