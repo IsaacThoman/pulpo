@@ -145,6 +145,11 @@ html[data-desktop="true"] .desktop-sidebar-collapsed .chat-header::before {
 }
 
 @media (width < 750px) {
+  /* These pages keep their original in-content title; clear the drawer button. */
+  .mobile-page-content {
+    padding-top: 3rem;
+  }
+
   .mobile-sidebar-opener {
     display: flex;
   }
@@ -170,14 +175,56 @@ html[data-desktop="true"] .desktop-sidebar-collapsed .chat-header::before {
 *::-webkit-scrollbar-track {
   background: transparent;
 }
-/* Invisible scrollbar gutter on header so columns align with the scrollable body */
-.usage-records-head {
-  overflow-y: scroll;
-  scrollbar-width: thin;
-  scrollbar-color: transparent transparent;
+/* A single scrolling table keeps headings and cells aligned on both axes.
+   Intrinsic column widths keep dates and numeric values from painting over
+   adjacent cells; overflow belongs to the panel, never the page. */
+.usage-records-table {
+  min-width: max-content;
 }
-.usage-records-head::-webkit-scrollbar-thumb {
-  background: transparent;
+
+.usage-records-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--background);
+  box-shadow: inset 0 -1px var(--border);
+}
+
+.usage-records-table th,
+.usage-records-table td {
+  white-space: nowrap;
+}
+
+/* Keep the original stat strip treatment, but size columns to the space
+   remaining beside the sidebar. Utilities retain control of gaps/padding. */
+@layer components {
+  .stat-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 9rem), 1fr));
+    gap: 0.25rem;
+  }
+
+  .stat-grid > * {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .stat-strip {
+    overflow: hidden;
+  }
+
+  .stat-strip > * {
+    position: relative;
+  }
+
+  /* Clip the separator at each row's left edge, including wrapped rows. */
+  .stat-strip > *::before {
+    content: '';
+    position: absolute;
+    inset-block: 0;
+    left: -1px;
+    border-left: var(--stat-divider-width, 0px) solid var(--border);
+  }
 }
 
 /* Shared compact treatment for app-owned data tables. */

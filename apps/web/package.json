@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "test": "vitest run",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:responsive": "node tests/responsive-layout.browser.mjs"
   },
   "dependencies": {
     "@pulpo/client-core": "0.1.0",
@@ -60,6 +61,7 @@
     "@vitejs/plugin-react": "^6.0.3",
     "fake-indexeddb": "^6.2.5",
     "jsdom": "^26.1.0",
+    "playwright": "^1.63.0",
     "typescript": "~6.0.2",
     "vite": "^8.1.1",
     "vitest": "^3.2.7"
