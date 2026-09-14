@@ -6,6 +6,8 @@ import {
   resolvePlanEntitlement,
   resolveSubscriptionChange,
   splitReservationMicros,
+  subscriptionPaidPlan,
+  subscriptionPendingPlan,
   utcWeekEnd,
   utcWeekStart,
 } from './plans.js'
@@ -89,5 +91,30 @@ describe('billing plan calculations', () => {
     expect(resolveSubscriptionChange({ plan: 'eight', cancelAtPeriodEnd: false }, 'fat')).toBe('upgrade_fat')
     expect(resolveSubscriptionChange({ plan: 'fat', cancelAtPeriodEnd: false }, 'eight')).toBe('downgrade_eight')
     expect(resolveSubscriptionChange({ plan: 'fat', cancelAtPeriodEnd: true }, 'eight')).toBe('downgrade_eight')
+  })
+
+  it('restores an already paid Fat period for free instead of charging another upgrade', () => {
+    expect(resolveSubscriptionChange({ plan: 'eight', paidPlan: 'fat', cancelAtPeriodEnd: false }, 'fat')).toBe('restore_fat')
+    expect(resolveSubscriptionChange({ plan: 'eight', paidPlan: 'fat', cancelAtPeriodEnd: true }, 'fat')).toBe('restore_fat')
+    expect(resolveSubscriptionChange({ plan: 'eight', paidPlan: 'eight', cancelAtPeriodEnd: false }, 'fat')).toBe('upgrade_fat')
+    expect(resolveSubscriptionChange({ plan: 'eight', paidPlan: null, cancelAtPeriodEnd: false }, 'fat')).toBe('upgrade_fat')
+    expect(resolveSubscriptionChange({ plan: 'eight', paidPlan: 'fat', cancelAtPeriodEnd: false }, 'eight')).toBe('noop')
+  })
+
+  it('keeps the paid plan in effect until the period ends after a downgrade', () => {
+    const future = new Date('2026-09-01T00:00:00Z')
+    const now = new Date('2026-08-17T00:00:00Z')
+    const downgraded = { plan: 'eight', paidPlan: 'fat', status: 'active', paidThrough: future }
+    expect(effectivePlan([downgraded], now)).toBe('fat')
+    expect(effectivePlan([downgraded], new Date('2026-09-02T00:00:00Z'))).toBe('baby')
+    expect(effectivePlan([{ ...downgraded, paidPlan: null }], now)).toBe('eight')
+    expect(effectivePlan([{ plan: 'fat', paidPlan: 'eight', status: 'active', paidThrough: future }], now)).toBe('eight')
+    expect(subscriptionPaidPlan(downgraded)).toBe('fat')
+    expect(subscriptionPendingPlan(downgraded)).toBe('eight')
+    expect(subscriptionPendingPlan({ plan: 'fat', paidPlan: 'fat' })).toBeNull()
+    expect(subscriptionPendingPlan({ plan: 'fat', paidPlan: null })).toBeNull()
+    expect(resolvePlanEntitlement([downgraded], null, now)).toEqual({
+      subscriptionPlan: 'fat', plan: 'fat', planOverridden: false,
+    })
   })
 })

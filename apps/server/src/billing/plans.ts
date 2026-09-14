@@ -71,23 +71,41 @@ export type SubscriptionChange =
   | 'cancel'
   | 'renew'
   | 'upgrade_fat'
+  | 'restore_fat'
   | 'downgrade_eight'
   | 'unsupported'
 
+/**
+ * Upgrades are billed immediately with proration. Downgrades switch the Stripe price
+ * without proration, so the paid plan keeps its benefits until the period ends and the
+ * next renewal bills the lower price. Returning to the plan already paid for this period
+ * (`restore_fat`) is free.
+ */
 export function resolveSubscriptionChange(
-  current: { plan: PaidBillingPlan; cancelAtPeriodEnd: boolean } | null,
+  current: { plan: PaidBillingPlan; paidPlan?: string | null; cancelAtPeriodEnd: boolean } | null,
   target: BillingPlan,
 ): SubscriptionChange {
   if (!current) return 'missing'
   if (target === current.plan) return current.cancelAtPeriodEnd ? 'renew' : 'noop'
   if (target === 'baby') return current.cancelAtPeriodEnd ? 'noop' : 'cancel'
-  if (target === 'fat' && current.plan === 'eight') return 'upgrade_fat'
+  if (target === 'fat' && current.plan === 'eight') return current.paidPlan === 'fat' ? 'restore_fat' : 'upgrade_fat'
   if (target === 'eight' && current.plan === 'fat') return 'downgrade_eight'
   return 'unsupported'
 }
 
-export function effectivePlan(subscriptions: Array<{
-  plan: string
+export type SubscriptionPlanState = { plan: string; paidPlan?: string | null }
+
+/** The plan whose benefits the subscription currently carries. */
+export function subscriptionPaidPlan(subscription: SubscriptionPlanState): string {
+  return isPaidPlan(subscription.paidPlan) ? subscription.paidPlan : subscription.plan
+}
+
+/** The plan the next renewal will bill, when it differs from the plan in effect. */
+export function subscriptionPendingPlan(subscription: SubscriptionPlanState): PaidBillingPlan | null {
+  return isPaidPlan(subscription.plan) && subscription.plan !== subscriptionPaidPlan(subscription) ? subscription.plan : null
+}
+
+export function effectivePlan(subscriptions: Array<SubscriptionPlanState & {
   status: string
   paidThrough: Date | null
 }>, now = new Date()): BillingPlan {
@@ -96,14 +114,14 @@ export function effectivePlan(subscriptions: Array<{
     && (subscription.status === 'active' || subscription.status === 'past_due')
     && subscription.paidThrough !== null
     && subscription.paidThrough > now,
-  )
-  if (eligible.some((subscription) => subscription.plan === 'fat')) return 'fat'
-  if (eligible.some((subscription) => subscription.plan === 'eight')) return 'eight'
+  ).map(subscriptionPaidPlan)
+  if (eligible.includes('fat')) return 'fat'
+  if (eligible.includes('eight')) return 'eight'
   return 'baby'
 }
 
 export function resolvePlanEntitlement(
-  subscriptions: Array<{ plan: string; status: string; paidThrough: Date | null }>,
+  subscriptions: Array<SubscriptionPlanState & { status: string; paidThrough: Date | null }>,
   planOverride: unknown,
   now = new Date(),
 ): { subscriptionPlan: BillingPlan; plan: BillingPlan; planOverridden: boolean } {

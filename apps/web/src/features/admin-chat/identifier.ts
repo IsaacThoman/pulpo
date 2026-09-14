@@ -11,3 +11,15 @@ export function adminChatIdFromInput(raw: string): string | null {
     return null
   }
 }
+
+export function adminShareTokenFromInput(raw: string): string | null {
+  try {
+    const url = new URL(raw.trim(), location.origin)
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return null
+    const match = /^\/share\/([^/]+)\/?$/.exec(url.pathname)
+    const token = match?.[1] ? decodeURIComponent(match[1]) : ''
+    return /^[A-Za-z0-9_-]+$/.test(token) ? token : null
+  } catch {
+    return null
+  }
+}
