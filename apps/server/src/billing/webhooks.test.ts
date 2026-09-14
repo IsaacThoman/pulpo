@@ -1,9 +1,21 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+
+vi.mock('../config.js', () => ({
+  getConfig: () => ({
+    PULPO_BILLING_ENABLED: true,
+    STRIPE_SECRET_KEY: 'sk_test_fixture',
+    STRIPE_EIGHT_PRICE_ID: 'price_eight',
+    STRIPE_FAT_PRICE_ID: 'price_fat',
+  }),
+}))
+
 import {
   grantMicrosForPaidOrder,
   invoicePaymentListParams,
   isStaleProviderUpdate,
   matchingStripeOwner,
+  paidPlanForInvoice,
+  shouldRecordPaidPlan,
   stripeCheckoutStatus,
   validateCreditCheckoutPayment,
 } from './webhooks.js'
@@ -125,5 +137,25 @@ describe('billing webhook lifecycle rules', () => {
     expect(isStaleProviderUpdate(current, new Date('2026-08-17T14:59:59.999Z'))).toBe(true)
     expect(isStaleProviderUpdate(current, current)).toBe(false)
     expect(isStaleProviderUpdate(current, new Date('2026-08-17T15:00:00.001Z'))).toBe(false)
+  })
+
+  it('records the plan a paid invoice actually charged for', () => {
+    expect(paidPlanForInvoice([{ amount: 2_400, priceId: 'price_fat' }], 'eight')).toBe('fat')
+    // An upgrade invoice credits the old price and charges the new one.
+    expect(paidPlanForInvoice([
+      { amount: -400, priceId: 'price_eight' },
+      { amount: 1_200, priceId: 'price_fat' },
+    ], 'eight')).toBe('fat')
+    expect(paidPlanForInvoice([{ amount: 0, priceId: 'price_other' }], 'eight')).toBe('eight')
+    expect(paidPlanForInvoice([], 'fat')).toBe('fat')
+  })
+
+  it('lets only newer invoices move the paid plan when reconciliation replays history', () => {
+    const earlier = new Date('2026-08-01T00:00:00Z')
+    const later = new Date('2026-09-01T00:00:00Z')
+    expect(shouldRecordPaidPlan(null, earlier)).toBe(true)
+    expect(shouldRecordPaidPlan(earlier, later)).toBe(true)
+    expect(shouldRecordPaidPlan(later, later)).toBe(true)
+    expect(shouldRecordPaidPlan(later, earlier)).toBe(false)
   })
 })

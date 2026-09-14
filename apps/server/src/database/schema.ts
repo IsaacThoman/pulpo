@@ -1030,12 +1030,17 @@ export const billingSubscriptions = pgTable('billing_subscriptions', {
   currentPeriodStart: timestamp('current_period_start', { withTimezone: true }),
   currentPeriodEnd: timestamp('current_period_end', { withTimezone: true }),
   paidThrough: timestamp('paid_through', { withTimezone: true }),
+  // Plan covered by the most recent paid invoice. A downgrade switches `plan` on Stripe
+  // without proration, so the paid plan stays in effect until the period ends.
+  paidPlan: text('paid_plan'),
+  paidPlanAt: timestamp('paid_plan_at', { withTimezone: true }),
   providerModifiedAt: timestamp('provider_modified_at', { withTimezone: true }).notNull(),
   ...timestamps,
 }, (table) => [
   index('billing_subscriptions_user_idx').on(table.userId),
   index('billing_subscriptions_status_idx').on(table.status),
   check('billing_subscriptions_plan_check', sql`${table.plan} in ('eight', 'fat')`),
+  check('billing_subscriptions_paid_plan_check', sql`${table.paidPlan} is null or ${table.paidPlan} in ('eight', 'fat')`),
 ])
 
 export const billingCheckouts = pgTable('billing_checkouts', {
