@@ -1,6 +1,7 @@
+import { scopeChatPaths } from './scoped-paths'
 import { execFileSync } from 'node:child_process'
 import path from 'node:path'
-import type { ComputerAnnounce, ComputerOs } from '@pulpo/contracts'
+import { computerChatAttachmentsDirectory, type ComputerAnnounce, type ComputerOs } from '@pulpo/contracts'
 import { OperationRunner, StagedFiles, createPathPolicy, defaultShellFor, platformForProcess, type PathPolicy } from '@pulpo/workspace-daemon/core'
 import type { ComputerConfig } from './config-store'
 
@@ -19,6 +20,11 @@ export interface ComputerRuntimeInput {
 
 export interface ComputerRuntime {
   announce: ComputerAnnounce
+  forChat(chatId: string): ChatComputerRuntime
+  cancelAll(): Promise<void>
+}
+
+export interface ChatComputerRuntime {
   runner: OperationRunner
   /** Governs agent tools: confined to the chosen folder, or unrestricted in full mode. */
   policy: PathPolicy
@@ -33,7 +39,7 @@ export function computerOsFor(platform: NodeJS.Platform): ComputerOs {
 }
 
 export function attachmentsDirectory(userDataDir: string): string {
-  return path.join(userDataDir, 'agent-workspace', 'attachments')
+  return path.join(userDataDir, 'agent-workspace', 'chats')
 }
 
 /** The folder shell commands start in and file tools resolve against. */
@@ -82,25 +88,36 @@ export function loginShellPath(platform: NodeJS.Platform, env: NodeJS.ProcessEnv
 
 export function createComputerRuntime(input: ComputerRuntimeInput): ComputerRuntime {
   const announce = buildComputerAnnounce(input)
-  const attachmentsDir = attachmentsDirectory(input.userDataDir)
-  const pathPlatform = platformForProcess(input.platform)
-  const policy = createPathPolicy({
-    writableRoot: announce.rootPath,
-    readableRoots: [attachmentsDir],
-    platform: pathPlatform,
-    unrestricted: input.config.accessMode === 'full',
-  })
-  const attachmentsPolicy = createPathPolicy({ writableRoot: attachmentsDir, platform: pathPlatform })
-  const baseEnv = input.env ?? process.env
-  const shellPath = loginShellPath(input.platform, baseEnv)
-  const runner = new OperationRunner({
-    policy,
-    shell: announce.shell,
-    env: { ...baseEnv, ...(shellPath ? { PATH: shellPath } : {}) },
-    journalDir: path.join(input.userDataDir, 'agent-workspace', 'operations'),
-    rgPath: input.rgPath,
-    platform: input.platform,
-    onChange: (operation) => input.onOperationChange?.(operation.id),
-  })
-  return { announce, runner, policy, attachmentsPolicy, stagedFiles: new StagedFiles(), attachmentsDir }
+  const chats = new Map<string, ChatComputerRuntime>()
+  return {
+    announce,
+    cancelAll: async () => { await Promise.all([...chats.values()].map((chat) => chat.runner.cancelAll())) },
+    forChat: (chatId) => {
+      const attachmentsDir = computerChatAttachmentsDirectory(announce.attachmentsDir, chatId, announce.os)
+      const existing = chats.get(chatId)
+      if (existing) return existing
+      const pathPlatform = platformForProcess(input.platform)
+      const storageRoot = path.join(input.userDataDir, 'agent-workspace')
+      const policy = scopeChatPaths(createPathPolicy({
+        writableRoot: announce.rootPath,
+        readableRoots: [attachmentsDir],
+        platform: pathPlatform,
+        unrestricted: input.config.accessMode === 'full',
+      }), storageRoot, attachmentsDir)
+      const attachmentsPolicy = scopeChatPaths(createPathPolicy({ writableRoot: attachmentsDir, platform: pathPlatform }), storageRoot, attachmentsDir)
+      const baseEnv = input.env ?? process.env
+      const shellPath = loginShellPath(input.platform, baseEnv)
+      const runner = new OperationRunner({
+        policy, shell: announce.shell,
+        env: { ...baseEnv, ...(shellPath ? { PATH: shellPath } : {}) },
+        journalDir: path.join(input.userDataDir, 'agent-workspace', 'chats', chatId, 'operations'),
+        searchPathAllowed: async (target) => { try { await policy.readable(target); return true } catch { return false } },
+        rgPath: input.rgPath, platform: input.platform,
+        onChange: (operation) => input.onOperationChange?.(operation.id),
+      })
+      const runtime = { runner, policy, attachmentsPolicy, stagedFiles: new StagedFiles(), attachmentsDir }
+      chats.set(chatId, runtime)
+      return runtime
+    },
+  }
 }

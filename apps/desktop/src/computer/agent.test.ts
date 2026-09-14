@@ -34,7 +34,7 @@ class FakeSocket extends EventEmitter {
 
 async function settled(agent: ComputerAgent, id: string): Promise<ComputerOperationSnapshot> {
   for (let attempt = 0; attempt < 400; attempt += 1) {
-    const reply = await agent.handleRequest({ kind: 'operation.status', id }) as ComputerReply<'operation.status'>
+    const reply = await agent.handleRequest({ chatId: '00000000-0000-4000-8000-000000000001', kind: 'operation.status', id }) as ComputerReply<'operation.status'>
     if (reply.ok && reply.result && reply.result.status !== 'running') return reply.result
     await new Promise((resolve) => setTimeout(resolve, 25))
   }
@@ -78,11 +78,11 @@ posixOnly('ComputerAgent', () => {
 
   it('runs unrestricted reads and lists immediately but refuses gated operations without an approval', async () => {
     await writeFile(join(root, 'notes.txt'), 'hello\n')
-    await agent.handleRequest({ kind: 'operation.start', id: 'op-ls', type: 'list', args: {} })
+    await agent.handleRequest({ chatId: '00000000-0000-4000-8000-000000000001', kind: 'operation.start', id: 'op-ls', type: 'list', args: {} })
     expect((await settled(agent, 'op-ls')).output).toContain('- notes.txt')
-    const refused = await agent.handleRequest({ kind: 'operation.start', id: 'op-bash', type: 'bash', args: { command: 'echo hi' } })
+    const refused = await agent.handleRequest({ chatId: '00000000-0000-4000-8000-000000000001', kind: 'operation.start', id: 'op-bash', type: 'bash', args: { command: 'echo hi' } })
     expect(refused).toEqual({ ok: false, error: expect.stringMatching(/approval/), code: 'approval_required' })
-    expect((await agent.handleRequest({ kind: 'operation.status', id: 'op-bash' })).ok && (await agent.handleRequest({ kind: 'operation.status', id: 'op-bash' }) as { result: unknown }).result).toBeNull()
+    expect((await agent.handleRequest({ chatId: '00000000-0000-4000-8000-000000000001', kind: 'operation.status', id: 'op-bash' })).ok && (await agent.handleRequest({ chatId: '00000000-0000-4000-8000-000000000001', kind: 'operation.status', id: 'op-bash' }) as { result: unknown }).result).toBeNull()
   })
 
   it('waits for approval in chat without opening a native dialog or deciding locally', async () => {
@@ -95,12 +95,12 @@ posixOnly('ComputerAgent', () => {
     socket.emit('computer.approval.requested', approval)
     expect(showMessageBox).not.toHaveBeenCalled()
     expect(agent.state.pendingApprovals).toBe(1)
-    const refused = await agent.handleRequest({ kind: 'operation.start', id: 'op-write', type: 'write', args: { path: 'notes.txt', content: 'written' }, approvalId: approval.id })
+    const refused = await agent.handleRequest({ chatId: '00000000-0000-4000-8000-000000000001', kind: 'operation.start', id: 'op-write', type: 'write', args: { path: 'notes.txt', content: 'written' }, approvalId: approval.id })
     expect(refused).toMatchObject({ ok: false, code: 'approval_required' })
     await expect(readFile(join(root, 'notes.txt'))).rejects.toMatchObject({ code: 'ENOENT' })
     expect(socket.emitted.some((entry) => entry.event === 'computer.approval.decide')).toBe(false)
     socket.emit('computer.approval.decided', { approvalId: approval.id, status: 'approved' })
-    const started = await agent.handleRequest({ kind: 'operation.start', id: 'op-write', type: 'write', args: { path: 'notes.txt', content: 'written' }, approvalId: approval.id })
+    const started = await agent.handleRequest({ chatId: '00000000-0000-4000-8000-000000000001', kind: 'operation.start', id: 'op-write', type: 'write', args: { path: 'notes.txt', content: 'written' }, approvalId: approval.id })
     expect(started.ok).toBe(true)
     await settled(agent, 'op-write')
     expect(await readFile(join(root, 'notes.txt'), 'utf8')).toBe('written')
@@ -111,7 +111,7 @@ posixOnly('ComputerAgent', () => {
     const approvalId = '44444444-4444-4444-8444-444444444444'
     socket.emit('computer.approval.requested', { id: approvalId })
     expect(agent.state.pendingApprovals).toBe(1)
-    const pending = agent.handleRequest({ kind: 'operation.start', id: 'op-refused', type: 'write', args: { path: 'refused.txt', content: 'must not be written' }, approvalId })
+    const pending = agent.handleRequest({ chatId: '00000000-0000-4000-8000-000000000001', kind: 'operation.start', id: 'op-refused', type: 'write', args: { path: 'refused.txt', content: 'must not be written' }, approvalId })
     socket.emit('computer.approval.decided', { approvalId, status })
     expect(await pending).toMatchObject({ ok: false, code: 'approval_required' })
     expect(agent.state.pendingApprovals).toBe(0)
@@ -122,7 +122,7 @@ posixOnly('ComputerAgent', () => {
 
   it('accepts an approval decided from the chat that arrives just after the operation request', async () => {
     const approvalId = '44444444-4444-4444-8444-444444444444'
-    const pending = agent.handleRequest({ kind: 'operation.start', id: 'op-late', type: 'bash', args: { command: 'echo late' }, approvalId })
+    const pending = agent.handleRequest({ chatId: '00000000-0000-4000-8000-000000000001', kind: 'operation.start', id: 'op-late', type: 'bash', args: { command: 'echo late' }, approvalId })
     setTimeout(() => socket.emit('computer.approval.decided', { approvalId, status: 'approved' }), 10)
     const reply = await pending
     expect(reply.ok).toBe(true)
@@ -130,37 +130,51 @@ posixOnly('ComputerAgent', () => {
   })
 
   it('confines file tools to the chosen folder and stages attachments into the app directory', async () => {
-    const outside = await agent.handleRequest({ kind: 'operation.start', id: 'op-outside', type: 'read', args: { path: join(directory, 'outside.txt') } })
+    const outside = await agent.handleRequest({ chatId: '00000000-0000-4000-8000-000000000001', kind: 'operation.start', id: 'op-outside', type: 'read', args: { path: join(directory, 'outside.txt') } })
     expect(outside.ok).toBe(true)
     expect((await settled(agent, 'op-outside')).error).toMatch(/readable roots/)
 
-    const attachmentsDir = join(directory, 'agent-workspace', 'attachments')
+    const attachmentsDir = join(directory, 'agent-workspace', 'chats', '00000000-0000-4000-8000-000000000001', 'attachments')
     const target = join(attachmentsDir, 'abc-file.txt')
     const data = Buffer.from('attached content')
-    const begin = await agent.handleRequest({ kind: 'file.begin', transferId: 't1', path: target, sizeBytes: data.byteLength, checksum: null })
+    const begin = await agent.handleRequest({ chatId: '00000000-0000-4000-8000-000000000001', kind: 'file.begin', transferId: 't1', path: target, sizeBytes: data.byteLength, checksum: null })
     expect(begin.ok).toBe(true)
-    await agent.handleRequest({ kind: 'file.chunk', transferId: 't1', data: data.toString('base64') })
-    const end = await agent.handleRequest({ kind: 'file.end', transferId: 't1' })
+    await agent.handleRequest({ chatId: '00000000-0000-4000-8000-000000000001', kind: 'file.chunk', transferId: 't1', data: data.toString('base64') })
+    const end = await agent.handleRequest({ chatId: '00000000-0000-4000-8000-000000000001', kind: 'file.end', transferId: 't1' })
     expect(end).toEqual({ ok: true, result: { path: target } })
     expect(await readFile(target, 'utf8')).toBe('attached content')
-    const missing = await agent.handleRequest({ kind: 'files.missing', files: [{ path: target, checksum: null, sizeBytes: data.byteLength }] })
+    const missing = await agent.handleRequest({ chatId: '00000000-0000-4000-8000-000000000001', kind: 'files.missing', files: [{ path: target, checksum: null, sizeBytes: data.byteLength }] })
     expect(missing).toEqual({ ok: true, result: { missing: [target] } })
 
-    const denied = await agent.handleRequest({ kind: 'file.begin', transferId: 't2', path: join(root, 'escape.txt'), sizeBytes: 1, checksum: null }).catch((error: Error) => error.message)
+    const denied = await agent.handleRequest({ chatId: '00000000-0000-4000-8000-000000000001', kind: 'file.begin', transferId: 't2', path: join(root, 'escape.txt'), sizeBytes: 1, checksum: null }).catch((error: Error) => error.message)
     expect(String(denied)).toMatch(/escapes/)
 
-    const exported = await agent.handleRequest({ kind: 'file.read', scope: 'export', path: target, offset: 0, length: 1024, maxBytes: 1_000_000 }) as Extract<ComputerReply<'file.read'>, { ok: true }>
+    const exported = await agent.handleRequest({ chatId: '00000000-0000-4000-8000-000000000001', kind: 'file.read', scope: 'export', path: target, offset: 0, length: 1024, maxBytes: 1_000_000 }) as Extract<ComputerReply<'file.read'>, { ok: true }>
     expect(Buffer.from(exported.result.data, 'base64').toString('utf8')).toBe('attached content')
     expect(exported.result.eof).toBe(true)
   })
 
+  it('binds transfer chunks and completion to their originating chat', async () => {
+    const chatId = '00000000-0000-4000-8000-000000000001'
+    const otherChatId = '00000000-0000-4000-8000-000000000002'
+    const target = join(directory, 'agent-workspace', 'chats', chatId, 'attachments', 'file.txt')
+    expect((await agent.handleRequest({ chatId, kind: 'file.begin', transferId: 'owned', path: target, sizeBytes: 2, checksum: null })).ok).toBe(true)
+    expect((await agent.handleRequest({ chatId: otherChatId, kind: 'file.chunk', transferId: 'owned', data: 'aGk=' })).ok).toBe(false)
+    expect((await agent.handleRequest({ chatId: otherChatId, kind: 'file.end', transferId: 'owned' })).ok).toBe(false)
+    expect((await agent.handleRequest({ chatId, kind: 'file.chunk', transferId: 'owned', data: 'aGk=' })).ok).toBe(true)
+    expect((await agent.handleRequest({ chatId, kind: 'file.end', transferId: 'owned' })).ok).toBe(true)
+    expect(await readFile(target, 'utf8')).toBe('hi')
+    await expect(agent.handleRequest({ chatId: otherChatId, kind: 'files.missing', files: [{ path: target, sizeBytes: 2, checksum: null }] })).rejects.toThrow()
+    await expect(agent.handleRequest({ chatId: otherChatId, kind: 'file.read', scope: 'export', path: target, offset: 0, length: 2, maxBytes: 2 })).rejects.toThrow()
+  })
+
   it('disables itself and cancels running work when the server revokes it', async () => {
     socket.emit('computer.approval.decided', { approvalId: '55555555-5555-4555-8555-555555555555', status: 'approved' })
-    await agent.handleRequest({ kind: 'operation.start', id: 'op-sleep', type: 'bash', args: { command: 'sleep 30' }, approvalId: '55555555-5555-4555-8555-555555555555' })
+    await agent.handleRequest({ chatId: '00000000-0000-4000-8000-000000000001', kind: 'operation.start', id: 'op-sleep', type: 'bash', args: { command: 'sleep 30' }, approvalId: '55555555-5555-4555-8555-555555555555' })
     socket.emit('computer.revoked', { reason: 'disabled' })
     await vi.waitFor(() => expect(agent.state.status).toBe('disabled'))
     expect(agent.state.enabled).toBe(false)
-    const reply = await agent.handleRequest({ kind: 'operation.status', id: 'op-sleep' } satisfies ComputerRequest)
+    const reply = await agent.handleRequest({ chatId: '00000000-0000-4000-8000-000000000001', kind: 'operation.status', id: 'op-sleep' } satisfies ComputerRequest)
     expect(reply).toEqual({ ok: false, error: expect.any(String), code: 'disabled' })
   })
 
@@ -169,7 +183,7 @@ posixOnly('ComputerAgent', () => {
     expect(state).toMatchObject({ approvalPolicy: 'never', allowRemote: true })
     const update = socket.emitted.find((entry) => entry.event === 'computer.update')
     expect(update?.args[0]).toMatchObject({ approvalPolicy: 'never', allowRemote: true, rootPath: root })
-    const reply = await agent.handleRequest({ kind: 'operation.start', id: 'op-free', type: 'bash', args: { command: 'echo free' } })
+    const reply = await agent.handleRequest({ chatId: '00000000-0000-4000-8000-000000000001', kind: 'operation.start', id: 'op-free', type: 'bash', args: { command: 'echo free' } })
     expect(reply.ok).toBe(true)
   })
 })

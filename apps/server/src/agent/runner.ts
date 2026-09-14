@@ -166,7 +166,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
   const settings = parseAgentSettings(settingsRow?.value)
   const computerRow = record.response.workspaceComputerId ? await loadComputer(record.response.workspaceComputerId) : undefined
   if (record.response.workspaceComputerId && (!computerRow || computerRow.revokedAt)) throw new Error('The computer selected for this response is no longer available')
-  const workspaceDescriptor = computerRow ? computerDescriptor(computerRow) : SANDBOX_WORKSPACE_DESCRIPTOR
+  const workspaceDescriptor = computerRow ? computerDescriptor(computerRow, record.response.chatId) : SANDBOX_WORKSPACE_DESCRIPTOR
   const webToolsSettings = parseWebToolsSettings(webToolsRow?.value)
   const preferenceValues = (preferencesRow?.values ?? {}) as Record<string, unknown>
   const customInstructions = composeCustomInstructions(

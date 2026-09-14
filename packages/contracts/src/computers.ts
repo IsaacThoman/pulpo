@@ -172,7 +172,7 @@ export const COMPUTER_HEARTBEAT_INTERVAL_MS = 20_000
 export const COMPUTER_PRESENCE_TTL_SECONDS = 60
 
 /** Requests relayed from the agent worker to the desktop app over the `/computer` namespace. */
-export type ComputerRequest =
+export type ComputerRequest = { chatId: string } & (
   | { kind: 'operation.start'; id: string; type: string; args: Record<string, unknown>; approvalId?: string }
   | { kind: 'operation.status'; id: string }
   | { kind: 'operation.cancel'; id: string }
@@ -181,6 +181,15 @@ export type ComputerRequest =
   | { kind: 'file.chunk'; transferId: string; data: string }
   | { kind: 'file.end'; transferId: string }
   | { kind: 'file.read'; scope: 'export' | 'image'; path: string; offset: number; length: number; maxBytes: number }
+
+)
+
+/** Stable per-chat attachment location under the computer's announced storage root. */
+export function computerChatAttachmentsDirectory(root: string, chatId: string, os: ComputerOs): string {
+  idSchema.parse(chatId)
+  const separator = os === 'windows' ? '\\' : '/'
+  return `${root.replace(/[\\/]+$/, '')}${separator}${chatId}${separator}attachments`
+}
 
 export interface ComputerOperationSnapshot {
   id: string

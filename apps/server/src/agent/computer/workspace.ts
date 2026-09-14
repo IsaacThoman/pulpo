@@ -51,7 +51,7 @@ export class ComputerWorkspace implements AgentWorkspace {
 
   constructor(private readonly options: ComputerWorkspaceOptions) {
     this.computer = options.computer
-    this.descriptor = computerDescriptor(options.computer)
+    this.descriptor = computerDescriptor(options.computer, options.chatId)
     this.rpc = options.rpc ?? computerRpc()
   }
 
@@ -121,9 +121,9 @@ export class ComputerWorkspace implements AgentWorkspace {
   }
 
   /** Send one request, translating connectivity failures into a lease expiry the timeline can show. */
-  private async send<K extends ComputerRequest['kind']>(request: Extract<ComputerRequest, { kind: K }>, signal?: AbortSignal, timeoutMs = RPC_TIMEOUT_MS) {
+  private async send<K extends ComputerRequest['kind']>(request: { kind: K } & Omit<Extract<ComputerRequest, { kind: K }>, 'chatId'>, signal?: AbortSignal, timeoutMs = RPC_TIMEOUT_MS) {
     try {
-      return await this.rpc.request(this.computerId, request, { signal, timeoutMs })
+      return await this.rpc.request<K>(this.computerId, { ...request, chatId: this.options.chatId } as Extract<ComputerRequest, { kind: K }>, { signal, timeoutMs })
     } catch (error) {
       if (error instanceof ComputerRpcError && (error.code === 'offline' || error.code === 'unreachable' || error.code === 'disabled')) {
         const reason = error.code === 'disabled'
@@ -274,7 +274,7 @@ export class ComputerWorkspace implements AgentWorkspace {
 
   async cancel(operationId: string): Promise<void> {
     if (!this.ready) return
-    await this.rpc.request(this.computerId, { kind: 'operation.cancel', id: operationId }, { timeoutMs: 10_000 }).catch(() => undefined)
+    await this.rpc.request(this.computerId, { chatId: this.options.chatId, kind: 'operation.cancel', id: operationId }, { timeoutMs: 10_000 }).catch(() => undefined)
   }
 
   get leaseId(): string | undefined { return this.localLeaseId }

@@ -9,7 +9,7 @@ import {
 } from '@pulpo/contracts'
 import type { Operation } from '@pulpo/workspace-daemon/core'
 import { loadComputerConfig, normalizeComputerConfig, saveComputerConfig, type ComputerConfig } from './config-store'
-import { computerOsFor, createComputerRuntime, type ComputerRuntime } from './runtime'
+import { computerOsFor, createComputerRuntime, type ComputerRuntime, type ChatComputerRuntime } from './runtime'
 
 export type ComputerSocket = Socket<ComputerServerToClientEvents, ComputerClientToServerEvents>
 
@@ -48,6 +48,7 @@ export interface ComputerAgentOptions {
 }
 
 interface FileTransfer {
+  chatId: string
   target: string
   temporary: string
   handle: FileHandle
@@ -173,7 +174,7 @@ export class ComputerAgent {
         this.runtime = { ...this.runtime, announce: next }
         return this.runtime
       }
-      void this.runtime.runner.cancelAll()
+      void this.runtime.cancelAll()
     }
     this.runtime = runtime
     return runtime
@@ -233,7 +234,7 @@ export class ComputerAgent {
     })
     socket.on('computer.revoked', ({ reason }) => {
       void (async () => {
-        await this.runtime?.runner.cancelAll()
+        await this.runtime?.cancelAll()
         this.pendingApprovals.clear()
         if (reason === 'disabled' || reason === 'deleted') {
           this.config = { ...this.config, enabled: false }
@@ -278,7 +279,7 @@ export class ComputerAgent {
     this.config = next
     await saveComputerConfig(this.options.userDataDir, next)
     if (previous.enabled && !next.enabled) {
-      await this.runtime?.runner.cancelAll()
+      await this.runtime?.cancelAll()
       this.pendingApprovals.clear()
     }
     await this.refresh()
@@ -291,7 +292,7 @@ export class ComputerAgent {
   }
 
   async stop(): Promise<void> {
-    await this.runtime?.runner.cancelAll()
+    await this.runtime?.cancelAll()
     await this.disconnect()
     for (const handle of this.openPairings.values()) handle.dismiss()
     this.pendingApprovals.clear()
@@ -343,8 +344,10 @@ export class ComputerAgent {
   }
 
   async handleRequest(request: ComputerRequest): Promise<ComputerReply> {
-    const runtime = this.runtime
-    if (!runtime || !this.config.enabled) return failure('This computer is not sharing with the agent', 'disabled')
+    const manager = this.runtime
+    if (!manager || !this.config.enabled) return failure('This computer is not sharing with the agent', 'disabled')
+    let runtime: ChatComputerRuntime
+    try { runtime = manager.forChat(request.chatId) } catch { return failure('A valid chat ID is required', 'invalid_request') }
     switch (request.kind) {
       case 'operation.start': {
         if (toolApprovalRequired(request.type, this.config.approvalPolicy)) {
@@ -366,7 +369,7 @@ export class ComputerAgent {
         const missing: string[] = []
         for (const file of request.files) {
           if (typeof file.path !== 'string' || !Number.isSafeInteger(file.sizeBytes)) return failure('Invalid staging file', 'invalid_request')
-          const target = runtime.attachmentsPolicy.writable(file.path)
+          const target = await runtime.attachmentsPolicy.writableChecked(file.path)
           if (!await runtime.stagedFiles.matches(target, file.checksum, file.sizeBytes)) missing.push(file.path)
         }
         return { ok: true, result: { missing } }
@@ -379,19 +382,20 @@ export class ComputerAgent {
     }
   }
 
-  private async beginTransfer(runtime: ComputerRuntime, request: Extract<ComputerRequest, { kind: 'file.begin' }>): Promise<ComputerReply> {
+  private async beginTransfer(runtime: ChatComputerRuntime, request: Extract<ComputerRequest, { kind: 'file.begin' }>): Promise<ComputerReply> {
     if (!Number.isSafeInteger(request.sizeBytes) || request.sizeBytes < 0 || request.sizeBytes > MAX_TRANSFER_BYTES) return failure('File size is missing or exceeds the limit', 'invalid_request')
     const target = await runtime.attachmentsPolicy.writableChecked(request.path)
     await mkdir(path.dirname(target), { recursive: true })
+    if (!/^[a-zA-Z0-9-]{1,100}$/.test(request.transferId) || this.transfers.has(request.transferId)) return failure('Invalid or duplicate transfer ID', 'invalid_request')
     const temporary = `${target}.${request.transferId}.upload`
     const handle = await open(temporary, 'wx')
-    this.transfers.set(request.transferId, { target, temporary, handle, sizeBytes: request.sizeBytes, checksum: request.checksum, received: 0, hash: createHash('sha256') })
+    this.transfers.set(request.transferId, { chatId: request.chatId, target, temporary, handle, sizeBytes: request.sizeBytes, checksum: request.checksum, received: 0, hash: createHash('sha256') })
     return { ok: true, result: { transferId: request.transferId } }
   }
 
   private async appendTransfer(request: Extract<ComputerRequest, { kind: 'file.chunk' }>): Promise<ComputerReply> {
     const transfer = this.transfers.get(request.transferId)
-    if (!transfer) return failure('Unknown transfer', 'invalid_request')
+    if (!transfer || transfer.chatId !== request.chatId) return failure('Unknown transfer', 'invalid_request')
     const chunk = Buffer.from(request.data, 'base64')
     if (transfer.received + chunk.byteLength > transfer.sizeBytes) {
       await this.abortTransfer(request.transferId)
@@ -403,15 +407,16 @@ export class ComputerAgent {
     return { ok: true, result: { received: transfer.received } }
   }
 
-  private async finishTransfer(runtime: ComputerRuntime, request: Extract<ComputerRequest, { kind: 'file.end' }>): Promise<ComputerReply> {
+  private async finishTransfer(runtime: ChatComputerRuntime, request: Extract<ComputerRequest, { kind: 'file.end' }>): Promise<ComputerReply> {
     const transfer = this.transfers.get(request.transferId)
-    if (!transfer) return failure('Unknown transfer', 'invalid_request')
+    if (!transfer || transfer.chatId !== request.chatId) return failure('Unknown transfer', 'invalid_request')
     this.transfers.delete(request.transferId)
     await transfer.handle.close()
     try {
       if (transfer.received !== transfer.sizeBytes) throw new Error('Uploaded file size does not match')
       const digest = transfer.hash.digest('base64url')
       if (transfer.checksum && transfer.checksum !== digest) throw new Error('Uploaded file checksum does not match')
+      await runtime.attachmentsPolicy.writableChecked(transfer.target)
       await rename(transfer.temporary, transfer.target)
       await runtime.stagedFiles.record(transfer.target, digest)
       return { ok: true, result: { path: transfer.target } }
@@ -429,7 +434,7 @@ export class ComputerAgent {
     await rm(transfer.temporary, { force: true }).catch(() => undefined)
   }
 
-  private async readFile(runtime: ComputerRuntime, request: Extract<ComputerRequest, { kind: 'file.read' }>): Promise<ComputerReply> {
+  private async readFile(runtime: ChatComputerRuntime, request: Extract<ComputerRequest, { kind: 'file.read' }>): Promise<ComputerReply> {
     let resolved: string
     if (request.scope === 'export') {
       // Deliverables may come from the working folder or from the attachments the app staged.

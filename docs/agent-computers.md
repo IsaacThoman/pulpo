@@ -37,7 +37,7 @@ worker (BullMQ)  --Redis pub/sub-->  API replica holding the socket  --Socket.IO
 
 - **Admin toggle.** Admin → Settings → Agent → "Allow agent on personal computers" (default on). Turning it off hides computers from pickers, refuses new selections, and rejects desktop connections with `computers_disabled`.
 - **Redis keys.** Presence `pulpo:computer:<id>:online`; channels `pulpo:computer-requests`, `pulpo:computer-replies`, `pulpo:computer-events`.
-- **Desktop files.** `<userData>/computer.json` (config, stable computer id), `<userData>/agent-workspace/operations` (operation journal), `<userData>/agent-workspace/attachments` (staged attachments).
+- **Desktop files.** `<userData>/computer.json` (config, stable computer id), `<userData>/agent-workspace/chats/<chat-id>/operations` (operation journal), `<userData>/agent-workspace/chats/<chat-id>/attachments` (staged attachments).
 - **ripgrep.** The desktop bundles `@vscode/ripgrep`; packaged builds unpack it from the asar so it can be spawned. Without it the pure-Node search fallback runs.
 
 ## Local verification
@@ -55,4 +55,8 @@ worker (BullMQ)  --Redis pub/sub-->  API replica holding the socket  --Socket.IO
 
 Each response keeps its own destination. Switching releases the previous active lease and restores all ready chat attachments and saved deliverables into the chosen workspace on its first tool call. Arbitrary files in a previous working directory are not copied. The model receives a current manifest so paths from an earlier computer or expired sandbox do not override restored paths.
 
-Computer attachments live under Electron’s `userData/agent-workspace/attachments` directory (normally `~/Library/Application Support/Pulpo/agent-workspace/attachments` on macOS), separate from the configured working root. Names use the first eight attachment-ID characters and a sanitized filename. This is persistent app storage, not an OS temporary folder; files are transferred in chunks with size and SHA-256 verification.
+Computer attachments live under Electron’s `userData/agent-workspace/chats/<chat-id>/attachments` directory (normally `~/Library/Application Support/Pulpo/agent-workspace/chats/<chat-id>/attachments` on macOS), separate from the configured working root. Names use the full attachment ID and a sanitized filename. This is persistent app storage, not an OS temporary folder; files are transferred in chunks with size and SHA-256 verification.
+
+All computer RPC requests carry a validated chat UUID. Each chat has its own attachment path policy, staging inventory, and operation journal. Transfer chunks and completion must use the same chat as the upload. File tools reject other chats’ managed storage, even when it sits under the configured working root or full access is enabled; recursive file searches exclude managed storage and can search the current attachments folder explicitly. Existing flat attachment copies are left untouched and are no longer used: saved files restore into the chat folder on demand. Both the desktop app and server must be updated for this protocol change.
+
+These checks apply to Pulpo file tools and attachment transfers. Approved shell commands still run with the OS permissions of the signed-in user; chat folders do not create an OS sandbox for shell commands.

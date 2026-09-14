@@ -67,7 +67,7 @@ export function buildAgentSystemPrompt(
 
 export function attachmentWorkspacePath(name: string, id: string, descriptor: WorkspaceDescriptor = SANDBOX_WORKSPACE_DESCRIPTOR): string {
   const cleaned = name.normalize('NFKC').replace(/[^a-zA-Z0-9._-]+/g, '_').replace(/^\.+/, '').slice(0, 160) || 'attachment'
-  return workspacePathModule(descriptor).join(workspaceAttachmentsDir(descriptor), `${id.slice(0, 8)}-${cleaned}`)
+  return workspacePathModule(descriptor).join(workspaceAttachmentsDir(descriptor), `${descriptor.kind === 'computer' ? id : id.slice(0, 8)}-${cleaned}`)
 }
 
 export function restoredAttachmentWorkspacePath(attachment: {

@@ -30,6 +30,8 @@ export interface OperationRunnerOptions {
   /** Directory where operation journals persist across restarts. */
   journalDir: string
   /** Absolute path to a ripgrep binary. When omitted, a pure-Node search fallback runs. */
+  /** Optional traversal filter for workspaces with private managed directories. */
+  searchPathAllowed?: (path: string) => Promise<boolean>
   rgPath?: string
   maxOutputBytes?: number
   maxTimeoutMs?: number
@@ -152,7 +154,7 @@ export class OperationRunner {
         }
         case 'list': {
           const path = await policy.readable(args.path ?? '.')
-          operation.output = (await readdir(path, { withFileTypes: true })).map((entry) => `${entry.isDirectory() ? 'd' : '-'} ${entry.name}`).join('\n')
+          operation.output = (await readdir(path, { withFileTypes: true })).filter((entry) => policy.isReadable(policy.path.join(path, entry.name))).map((entry) => `${entry.isDirectory() ? 'd' : '-'} ${entry.name}`).join('\n')
           break
         }
         case 'find':
@@ -163,7 +165,7 @@ export class OperationRunner {
             const result = await runSearch({
               type: type as 'find' | 'grep', pattern: String(args.pattern ?? (type === 'find' ? '*' : '')),
               path: await policy.readable(args.path ?? '.'), cwd: policy.root,
-              rgPath: this.options.rgPath, maxOutputBytes: this.maxOutputBytes, signal: controller.signal,
+              pathAllowed: this.options.searchPathAllowed, rgPath: this.options.rgPath, maxOutputBytes: this.maxOutputBytes, signal: controller.signal,
             })
             operation.output = result.output
             operation.exitCode = result.exitCode

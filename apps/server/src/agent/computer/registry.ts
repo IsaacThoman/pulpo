@@ -1,6 +1,6 @@
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm'
 import {
-  computerAccessModeSchema, computerApprovalPolicySchema, computerOsSchema, computerShellSchema,
+  computerChatAttachmentsDirectory, computerAccessModeSchema, computerApprovalPolicySchema, computerOsSchema, computerShellSchema,
   type AgentComputer, type ComputerAnnounce, type ComputerPairingStatus, type ComputerWorkspaceDescriptor, type UpdateAgentComputerInput,
 } from '@pulpo/contracts'
 import { db } from '../../database/client.js'
@@ -23,7 +23,7 @@ export async function bumpComputersRevision(userId: string): Promise<void> {
   if (row) await publishStateChange({ userId, revision: row.revision, scopes: ['computers'] })
 }
 
-export function computerDescriptor(row: ComputerRow): ComputerWorkspaceDescriptor {
+export function computerDescriptor(row: ComputerRow, chatId: string): ComputerWorkspaceDescriptor {
   return {
     kind: 'computer',
     computerId: row.id,
@@ -31,7 +31,7 @@ export function computerDescriptor(row: ComputerRow): ComputerWorkspaceDescripto
     os: computerOsSchema.parse(row.os),
     accessMode: computerAccessModeSchema.parse(row.accessMode),
     root: row.rootPath,
-    attachmentsDir: row.attachmentsDir,
+    attachmentsDir: computerChatAttachmentsDirectory(row.attachmentsDir, chatId, computerOsSchema.parse(row.os)),
     homeDir: row.homeDir,
     shell: computerShellSchema.parse(row.shell),
     approvalPolicy: computerApprovalPolicySchema.parse(row.approvalPolicy),

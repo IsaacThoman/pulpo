@@ -11,6 +11,7 @@ export interface SearchRequest {
   path: string
   /** Directory that output paths are shown relative to. */
   cwd: string
+  pathAllowed?: (path: string) => Promise<boolean>
   rgPath?: string
   maxOutputBytes?: number
   signal?: AbortSignal
@@ -84,15 +85,16 @@ async function isProbablyText(path: string): Promise<boolean> {
   }
 }
 
-async function* walk(directory: string, signal?: AbortSignal): AsyncGenerator<string> {
+async function* walk(directory: string, signal?: AbortSignal, pathAllowed?: (path: string) => Promise<boolean>): AsyncGenerator<string> {
   const entries = await readdir(directory, { withFileTypes: true }).catch(() => [])
   entries.sort((left, right) => left.name.localeCompare(right.name))
   for (const entry of entries) {
     if (signal?.aborted) return
     const full = join(directory, entry.name)
+    if (pathAllowed && !await pathAllowed(full)) continue
     if (entry.isDirectory()) {
       if (SKIPPED_DIRECTORIES.has(entry.name)) continue
-      yield* walk(full, signal)
+      yield* walk(full, signal, pathAllowed)
     } else if (entry.isFile()) yield full
   }
 }
@@ -112,7 +114,7 @@ async function runFallback(request: SearchRequest): Promise<SearchResult> {
   }
   const display = (file: string) => relative(request.cwd, file).split(sep).join('/')
   const metadata = await stat(request.path)
-  const files = metadata.isFile() ? (async function* single() { yield request.path })() : walk(request.path, request.signal)
+  const files = metadata.isFile() ? (async function* single() { yield request.path })() : walk(request.path, request.signal, request.pathAllowed)
 
   if (request.type === 'find') {
     const matcher = globToRegExp(request.pattern || '*')
@@ -157,7 +159,7 @@ async function runFallback(request: SearchRequest): Promise<SearchResult> {
 
 /** Search with ripgrep when a binary is available, otherwise with a pure-Node walker that mirrors rg's output format. */
 export async function runSearch(request: SearchRequest): Promise<SearchResult> {
-  if (request.rgPath) {
+  if (request.rgPath && !request.pathAllowed) {
     try {
       return await runRipgrep(request, request.rgPath)
     } catch (error) {

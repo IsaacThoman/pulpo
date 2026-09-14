@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  applyResponseEventToSnapshot, computerAnnounceSchema, createChatResponseSchema, toolApprovalItemSchema, toolApprovalRequired, workspaceSelectionSchema,
+  applyResponseEventToSnapshot, computerChatAttachmentsDirectory, computerAnnounceSchema, createChatResponseSchema, toolApprovalItemSchema, toolApprovalRequired, workspaceSelectionSchema,
   type ResponseEvent, type ResponseSnapshot,
 } from './index.js'
 
@@ -51,4 +51,11 @@ describe('computer contracts', () => {
     expect(toolApprovalRequired('write', 'bash-only')).toBe(false)
     expect(toolApprovalRequired('bash', 'never')).toBe(false)
   })
+})
+
+it('builds per-chat attachment paths on POSIX and Windows', () => {
+  const chatId = '00000000-0000-4000-8000-000000000001'
+  expect(computerChatAttachmentsDirectory('/app/chats/', chatId, 'macos')).toBe(`/app/chats/${chatId}/attachments`)
+  expect(computerChatAttachmentsDirectory('C:\\Pulpo\\chats', chatId, 'windows')).toBe(`C:\\Pulpo\\chats\\${chatId}\\attachments`)
+  expect(() => computerChatAttachmentsDirectory('/app/chats', '../escape', 'linux')).toThrow()
 })
