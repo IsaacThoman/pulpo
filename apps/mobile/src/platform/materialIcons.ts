@@ -8,6 +8,7 @@ const icons: Record<string, ImageSourcePropType> = {
   'science': require('../../assets/material/science.xml'),
   'account_circle': require('../../assets/material/account_circle.xml'),
   'add': require('../../assets/material/add.xml'),
+  'remove': require('../../assets/material/remove.xml'),
   'alternate_email': require('../../assets/material/alternate_email.xml'),
   'arrow_back': require('../../assets/material/arrow_back.xml'),
   'arrow_downward': require('../../assets/material/arrow_downward.xml'),

@@ -5,7 +5,8 @@ import sharp from 'sharp'
 import { and, eq, sql } from 'drizzle-orm'
 import { beforeAll, beforeEach, afterAll, describe, expect, it, vi } from 'vitest'
 import { ZodError } from 'zod'
-import { META_MUSE_IMAGE_PRESET, OPENAI_IMAGE_PRESET, type ImageModel } from '@pulpo/contracts'
+import { META_MUSE_IMAGE_PRESET, OPENAI_IMAGE_PRESET, imageModelSchema, responseUsageSchema, type ImageModel } from '@pulpo/contracts'
+vi.mock('../responses/events.js', () => ({ publishStateChange: vi.fn() }))
 const mocks = vi.hoisted(() => ({ blobs: new Map<string, Uint8Array>(), writeFails: false }))
 vi.mock('../storage/index.js', () => ({ getBlobStore: () => ({
   get: async (key: string) => { const value = mocks.blobs.get(key); if (!value) throw new Error('Missing blob'); return value },
@@ -15,7 +16,8 @@ vi.mock('../storage/index.js', () => ({ getBlobStore: () => ({
 }) }))
 vi.mock('../lib/url-security.js', () => ({ assertSafeProviderUrl: vi.fn() }))
 import { db, queryClient } from '../database/client.js'
-import { agentRuns, auditEvents, chats, imageGenerationRequests, imageModels, models, providerConnections, responses, toolExecutions, userPreferences, users } from '../database/schema.js'
+import { usageEvents, attachments, budgetReservations, creditLedger, modelPricingVersions, agentRuns, auditEvents, chats, imageGenerationRequests, imageModels, models, providerConnections, responses, toolExecutions, userPreferences, users } from '../database/schema.js'
+import { reserveBudget, extendBudgetReservationFixedCost, settleBudget, releaseBudget } from '../accounting/service.js'
 import { getConfig } from '../config.js'
 import { encryptSecret } from '../lib/crypto.js'
 import { AppError } from '../lib/errors.js'
@@ -38,7 +40,7 @@ async function turn() {
   await db.insert(responses).values({ id: responseId, userId, chatId, modelId: chatModelId, input: [], agentMode: true })
   await db.insert(agentRuns).values({ id: runId, responseId })
   await db.insert(toolExecutions).values({ id: randomUUID(), agentRunId: runId, operationId, toolName: 'generate_image' })
-  return { responseId, runId, operationId, userId, chatId, manager, args: { prompt: 'Paint a fox' }, reserveCost: vi.fn(async (_amount: number) => undefined) }
+  return { responseId, runId, operationId, userId, chatId, manager, args: { prompt: 'Paint a fox' }, reserveCost: vi.fn(async (_amount: number): Promise<void> => undefined) }
 }
 async function preference(enabled = true, modelId: string | null = config.id) {
   await db.update(userPreferences).set({ values: { imageGeneration: { enabled, modelId } } }).where(eq(userPreferences.userId, userId))
@@ -58,6 +60,7 @@ describe.skipIf(!enabled)('image generation persistence and authorization', () =
     await registerCatalogRoutes(server)
   })
   beforeEach(async () => {
+    await db.update(budgetReservations).set({ status: 'released' }).where(eq(budgetReservations.userId, userId))
     role = 'admin'; mocks.writeFails = false; exportFile.mockReset(); stageGeneratedAttachment.mockReset().mockResolvedValue(undefined)
     await db.delete(imageModels).where(eq(imageModels.id, config.id))
     await db.insert(imageModels).values({ id: config.id, providerConnectionId: providerId, config })
@@ -70,6 +73,7 @@ describe.skipIf(!enabled)('image generation persistence and authorization', () =
   afterAll(async () => {
     vi.unstubAllGlobals(); await server?.close()
     await db.delete(chats).where(eq(chats.id, chatId))
+    await db.delete(usageEvents).where(eq(usageEvents.userId, userId))
     await db.delete(models).where(eq(models.id, chatModelId))
     await db.delete(imageModels).where(eq(imageModels.providerConnectionId, providerId))
     await db.delete(providerConnections).where(eq(providerConnections.id, providerId))
@@ -131,6 +135,111 @@ describe.skipIf(!enabled)('image generation persistence and authorization', () =
     expect(Buffer.from(await (form.get('image[]') as Blob).arrayBuffer())).toEqual(image)
     expect(exportFile).not.toHaveBeenCalled()
   })
+  it('persists Meta cached usage and bills combined output including reasoning', async () => {
+    const token = imageModelSchema.parse({ ...config, billingUnit: 'tokens', reservationMicros: 20000,
+      tokenPrices: { input: 2000000, cachedInput: 500000, output: 10000000 } })
+    await db.update(imageModels).set({ config: token }).where(eq(imageModels.id, config.id))
+    fetcher.mockImplementation(async () => Response.json({ status: 'completed', output: [{ type: 'image_generation_call', id: 'image-item', status: 'completed', result: image.toString('base64') }],
+      usage: { input_tokens: 9996, input_tokens_details: { cached_tokens: 7936 }, output_tokens: 908, output_tokens_details: { reasoning_tokens: 161 }, total_tokens: 10904 } }))
+    const input = await turn()
+    const result = await executeImageGeneration(input)
+    expect(result.billedCostMicros).toBe(17168)
+    expect(result.metadata.usage).toMatchObject({ inputDetails: { cachedTokens: 7936 }, outputDetails: { reasoningTokens: 161 } })
+    expect(input.reserveCost).toHaveBeenCalledExactlyOnceWith(20000)
+    expect((await executeImageGeneration(input)).billedCostMicros).toBe(17168)
+    expect(fetcher).toHaveBeenCalledOnce()
+  })
+  async function tokenModel(reservationMicros = 100) {
+    const token = imageModelSchema.parse({ ...config, ...OPENAI_IMAGE_PRESET, enabled: true, billUsers: true, billingUnit: 'tokens', reservationMicros })
+    await db.update(imageModels).set({ config: token }).where(eq(imageModels.id, config.id))
+    await db.update(providerConnections).set({ baseUrl: 'https://api.openai.com/v1' }).where(eq(providerConnections.id, providerId))
+    fetcher.mockImplementation(async () => Response.json({ data: [{ b64_json: image.toString('base64') }], usage: { input_tokens: 30, input_tokens_details: { text_tokens: 10, image_tokens: 20 }, output_tokens: 10, total_tokens: 40 } }))
+    return token // 10*5 + 20*8 + 10*30 = 510 microdollars.
+  }
+  async function fundedTurn(balanceMicros = 1000) {
+    await db.update(users).set({ balanceMicros }).where(eq(users.id, userId))
+    const input = await turn()
+    const [pricing] = await db.insert(modelPricingVersions).values({ id: randomUUID(), modelId: chatModelId, inputPriceMicros: 0, cachedInputPriceMicros: 0, cacheWritePriceMicros: 0, outputPriceMicros: 0 }).returning()
+    await reserveBudget({ responseId: input.responseId, userId, requestInput: [], maxOutputTokens: 0, pricing: pricing! })
+    input.reserveCost.mockImplementation(async micros => { await extendBudgetReservationFixedCost(input.responseId, micros) })
+    return input
+  }
+  const settle = (responseId: string, cost: number) => settleBudget({ responseId, usage: responseUsageSchema.parse({ inputTokens: 0, outputTokens: 0, totalTokens: 0 }), latencyMs: 0, costMicrosOverride: cost })
+
+  it.each([100, 800])('reserves %i, settles actual tokens once and releases unused funding', async hold => {
+    await tokenModel(hold)
+    const input = await fundedTurn()
+    const result = await executeImageGeneration(input)
+    expect(result.billedCostMicros).toBe(510)
+    expect(input.reserveCost.mock.calls.map(call => call[0])).toEqual(hold < 510 ? [hold, 510 - hold] : [hold])
+    expect((await executeImageGeneration(input)).attachment.id).toBe(result.attachment.id)
+    await settle(input.responseId, result.billedCostMicros)
+    await settle(input.responseId, result.billedCostMicros)
+    expect((await db.select().from(users).where(eq(users.id, userId)))[0]?.balanceMicros).toBe(490)
+    const [reservation] = await db.select().from(budgetReservations).where(eq(budgetReservations.responseId, input.responseId))
+    expect(reservation).toMatchObject({ status: 'settled', settledAmountMicros: 510 })
+    expect(await db.select().from(creditLedger).where(eq(creditLedger.responseId, input.responseId))).toHaveLength(1)
+    expect(fetcher).toHaveBeenCalledOnce()
+  })
+  it('rejects an unaffordable token hold before calling the provider', async () => {
+    await tokenModel(100)
+    const input = await fundedTurn(50)
+    await expect(executeImageGeneration(input)).rejects.toMatchObject({ code: 'insufficient_balance' })
+    expect(fetcher).not.toHaveBeenCalled()
+    expect(await db.select().from(attachments).where(eq(attachments.sourceResponseId, input.responseId))).toEqual([])
+    await releaseBudget(input.responseId)
+  })
+  it('does not save or bill an image when the actual cost cannot be reserved', async () => {
+    await tokenModel()
+    const input = await fundedTurn(200)
+    await expect(executeImageGeneration(input)).rejects.toMatchObject({ code: 'insufficient_balance' })
+    expect(await db.select().from(attachments).where(eq(attachments.sourceResponseId, input.responseId))).toEqual([])
+    expect((await db.select().from(toolExecutions).where(eq(toolExecutions.operationId, input.operationId)))[0]?.billedCostMicros).toBe(0)
+    await recoverSavedImageGenerations(input.responseId, input.runId)
+    await expect(executeImageGeneration(input)).rejects.toThrow('already submitted')
+    await releaseBudget(input.responseId)
+    expect((await db.select().from(users).where(eq(users.id, userId)))[0]?.balanceMicros).toBe(200)
+    expect(fetcher).toHaveBeenCalledOnce()
+  })
+  it('fails token billing without usage rather than charging the flat fallback', async () => {
+    await tokenModel()
+    fetcher.mockImplementation(async () => Response.json({ data: [{ b64_json: image.toString('base64') }] }))
+    const input = await turn()
+    await expect(executeImageGeneration(input)).rejects.toMatchObject({ code: 'image_usage_invalid' })
+    expect(await db.select().from(attachments).where(eq(attachments.sourceResponseId, input.responseId))).toEqual([])
+    expect(input.reserveCost).toHaveBeenCalledExactlyOnceWith(100)
+  })
+  it('recovers token charges using the snapshot after pricing changes and cancellation', async () => {
+    const original = await tokenModel(800)
+    const input = await fundedTurn()
+    fetcher.mockImplementationOnce(async () => {
+      await db.update(imageModels).set({ config: { ...original, tokenPrices: { ...original.tokenPrices, imageOutput: 900000000 } } }).where(eq(imageModels.id, config.id))
+      return Response.json({ data: [{ b64_json: image.toString('base64') }], usage: { input_tokens: 30, input_tokens_details: { text_tokens: 10, image_tokens: 20 }, output_tokens: 10, total_tokens: 40 } })
+    })
+    const result = await executeImageGeneration(input)
+    expect(result.billedCostMicros).toBe(510)
+    await db.update(imageGenerationRequests).set({ status: 'claimed', attachmentId: null, billedCostMicros: 0 }).where(eq(imageGenerationRequests.responseId, input.responseId))
+    await db.update(toolExecutions).set({ status: 'running', billedCostMicros: 0 }).where(eq(toolExecutions.operationId, input.operationId))
+    await db.update(responses).set({ status: 'cancelled' }).where(eq(responses.id, input.responseId))
+    await preference(false)
+    await recoverSavedImageGenerations(input.responseId, input.runId)
+    await recoverSavedImageGenerations(input.responseId, input.runId)
+    expect((await db.select().from(toolExecutions).where(eq(toolExecutions.operationId, input.operationId)))[0]?.billedCostMicros).toBe(510)
+    await settle(input.responseId, 510)
+    expect(fetcher).toHaveBeenCalledOnce()
+  })
+  it('round trips token rates and normalizes restored legacy catalog entries', async () => {
+    const token = await tokenModel()
+    const patched = await server.inject({ method: 'PATCH', url: `/api/admin/image-models/${config.id}`, payload: token })
+    expect(patched.statusCode).toBe(200)
+    expect(patched.json()).toEqual(token)
+    expect((await server.inject('/api/admin/image-models')).json().data).toEqual([token])
+    expect((await server.inject('/api/image-models')).json().data[0]).toMatchObject({ tokenPrices: token.tokenPrices, billingUnit: 'tokens' })
+    const { billingUnit: _unit, tokenPrices: _rates, reservationMicros: _hold, ...legacy } = config
+    await db.update(imageModels).set({ config: legacy as ImageModel }).where(eq(imageModels.id, config.id))
+    expect((await server.inject('/api/admin/image-models')).json().data[0]).toMatchObject({ billingUnit: 'images', imagePriceMicros: 10000 })
+    expect((await server.inject('/api/image-models')).json().data[0]).toMatchObject({ billingUnit: 'images' })
+  })
   it('never replays a failed or uncertain request, and rejects concurrent duplicates', async () => {
     const input = await turn(); let release!: () => void
     fetcher.mockImplementationOnce(async () => { await new Promise<void>(resolve => { release = resolve }); throw new Error('uncertain') })
@@ -147,6 +256,8 @@ describe.skipIf(!enabled)('image generation persistence and authorization', () =
     const input = await turn(), result = await executeImageGeneration(input)
     await db.update(imageGenerationRequests).set({ status: 'claimed', attachmentId: null, billedCostMicros: 0 }).where(eq(imageGenerationRequests.responseId, input.responseId))
     await db.update(toolExecutions).set({ status: 'running', billedCostMicros: 0 }).where(eq(toolExecutions.operationId, input.operationId))
+    const { billingUnit: _unit, tokenPrices: _prices, reservationMicros: _hold, ...legacy } = config
+    await db.update(imageGenerationRequests).set({ model: legacy as ImageModel }).where(eq(imageGenerationRequests.responseId, input.responseId))
     await preference(false)
     await recoverSavedImageGenerations(input.responseId, input.runId)
     await recoverSavedImageGenerations(input.responseId, input.runId)

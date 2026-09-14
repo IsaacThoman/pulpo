@@ -30,20 +30,25 @@ export function SpeechSettings() {
   const settings = model ? preferences.models[model.id] ?? { instructions: '', speed: 1 } : undefined
   const update = (patch: object) => { if (model) set('speech', { ...preferences, models: { ...preferences.models, [model.id]: { ...settings!, ...patch } } }) }
   return <div className="space-y-5">
-    <h3 className="text-lg font-semibold">{ui('Speech')}</h3>
+    <div className="space-y-1.5">
+      <h3 className="text-lg font-semibold">{ui('Speech')}</h3>
+      {model && settings?.voice !== undefined && <button
+        type="button"
+        className="block cursor-pointer text-xs text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline"
+        onClick={() => { closeVoices(); speechPlayback.stop(); update({ voice: undefined }) }}
+      >{ui('Use default voice')}</button>}
+    </div>
     <p className="text-sm text-muted-foreground">{ui('Read messages aloud with an AI-generated voice.')}</p>
     {catalog.isError && <p role="alert">{ui('Speech models could not be loaded.')} <button onClick={() => void catalog.refetch()}>{ui('Retry')}</button></p>}
     <div className="space-y-2">
       <label id="speech-model-label" className="text-sm font-medium">{ui('Model')}</label>
-      <Select value={preferences.modelId ?? '@default'} onValueChange={modelId => { closeVoices(); speechPlayback.stop(); set('speech', { ...preferences, modelId: modelId === '@default' ? null : modelId }) }} disabled={catalog.isLoading}>
+      <Select value={preferences.modelId ?? model?.id ?? ''} onValueChange={modelId => { closeVoices(); speechPlayback.stop(); set('speech', { ...preferences, modelId }) }} disabled={catalog.isLoading}>
         <SelectTrigger aria-labelledby="speech-model-label" className="w-full"><SelectValue placeholder={ui(catalog.isLoading ? 'Loading…' : 'Choose a speech model')} /></SelectTrigger>
         <SelectContent>
-          <SelectItem value="@default">{ui('Use admin default')}</SelectItem>
           {preferences.modelId && !model && <SelectItem value={preferences.modelId} disabled>{ui('Selected model unavailable')}</SelectItem>}
           {catalog.data?.data.map(option => <SelectItem key={option.id} value={option.id}>{option.name}</SelectItem>)}
         </SelectContent>
       </Select>
-      {!preferences.modelId && <p className="text-xs text-muted-foreground">{model ? ui('Admin default: {{name}}', { name: model.name }) : ui('No admin default is available. Choose a speech model to read aloud.')}</p>}
     </div>
     {catalog.data?.data.length === 0 && <p className="text-sm">{ui('An admin must configure a speech model first.')}</p>}
     {model && settings && <>
@@ -98,7 +103,6 @@ export function SpeechSettings() {
           </div>
           </PopoverContent>
         </Popover>
-        {settings.voice !== undefined && <Button variant="ghost" size="sm" onClick={() => { closeVoices(); speechPlayback.stop(); update({ voice: undefined }) }}>{ui('Use default voice')}</Button>}
         {playback.error && <p role="alert" className="text-sm text-destructive">{ui(playback.error)}</p>}
       </div>
       {model.supportsInstructions && <label className="block text-sm">{ui('Instructions')}<Textarea className="mt-2" value={settings.instructions} maxLength={SPEECH_MAX_INSTRUCTIONS_LENGTH} placeholder={ui('Speak in a calm, friendly tone.')} onChange={event => update({ instructions: event.target.value })} /></label>}

@@ -519,6 +519,20 @@
       "when": 1789243979522,
       "tag": "0073_model_prompt_caching",
       "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1789353337317,
+      "tag": "0074_billing_paid_plan",
+      "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "7",
+      "when": 1789415565603,
+      "tag": "0075_lossless_conversation_storage",
+      "breakpoints": true
     }
   ]
 }

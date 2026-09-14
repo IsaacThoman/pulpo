@@ -1,3 +1,4 @@
+import { losslessJson, losslessText } from './lossless-json.js'
 import { sql } from 'drizzle-orm'
 import {
   bigint,
@@ -476,16 +477,16 @@ export const responses = pgTable('responses', {
   executionMode: executionModeEnum('execution_mode').notNull().default('stream'),
   agentMode: boolean('agent_mode').notNull().default(false),
   agentCapacityAction: text('agent_capacity_action'),
-  input: jsonb('input').notNull(),
-  instructions: text('instructions'),
+  input: losslessJson('input').notNull(),
+  instructions: losslessText('instructions'),
   presetSelections: jsonb('preset_selections').notNull().default({}),
-  parameters: jsonb('parameters').notNull().default({}),
-  metadata: jsonb('metadata').$type<Record<string, string>>().notNull().default({}),
+  parameters: losslessJson('parameters').notNull().default(sql`'{}'`),
+  metadata: losslessJson('metadata').$type<Record<string, string>>().notNull().default(sql`'{}'`),
   publiclyStored: boolean('publicly_stored').notNull().default(true),
-  output: jsonb('output').notNull().default([]),
+  output: losslessJson('output').notNull().default(sql`'[]'`),
   usage: jsonb('usage'),
-  error: jsonb('error'),
-  incompleteDetails: jsonb('incomplete_details').$type<{ reason?: string }>(),
+  error: losslessJson('error'),
+  incompleteDetails: losslessJson('incomplete_details').$type<{ reason?: string }>(),
   lastSequence: bigint('last_sequence', { mode: 'number' }).notNull().default(0),
   upstreamSequence: bigint('upstream_sequence', { mode: 'number' }).notNull().default(0),
   idempotencyKey: text('idempotency_key'),
@@ -533,7 +534,7 @@ export const responseItems = pgTable('response_items', {
   role: text('role'),
   status: text('status'),
   position: integer('position').notNull(),
-  payload: jsonb('payload').notNull(),
+  payload: losslessJson('payload').notNull(),
 }, (table) => [uniqueIndex('response_items_position_unique').on(table.responseId, table.position)])
 
 export const responseContentParts = pgTable('response_content_parts', {
@@ -541,7 +542,7 @@ export const responseContentParts = pgTable('response_content_parts', {
   responseItemId: uuid('response_item_id').notNull().references(() => responseItems.id, { onDelete: 'cascade' }),
   type: text('type').notNull(),
   position: integer('position').notNull(),
-  payload: jsonb('payload').notNull(),
+  payload: losslessJson('payload').notNull(),
 }, (table) => [uniqueIndex('content_parts_position_unique').on(table.responseItemId, table.position)])
 
 export const chatShares = pgTable('chat_shares', {
@@ -600,10 +601,10 @@ export const agentRuns = pgTable('agent_runs', {
   responseId: uuid('response_id').notNull().references(() => responses.id, { onDelete: 'cascade' }),
   workspaceLeaseId: uuid('workspace_lease_id').references(() => workspaceLeases.id, { onDelete: 'set null' }),
   status: agentRunStatusEnum('status').notNull().default('queued'),
-  context: jsonb('context').notNull().default({}),
+  context: losslessJson('context').notNull().default(sql`'{}'`),
   modelTurns: integer('model_turns').notNull().default(0),
   toolCalls: integer('tool_calls').notNull().default(0),
-  error: text('error'),
+  error: losslessText('error'),
   startedAt: timestamp('started_at', { withTimezone: true }),
   completedAt: timestamp('completed_at', { withTimezone: true }),
   ...timestamps,
@@ -615,13 +616,13 @@ export const toolExecutions = pgTable('tool_executions', {
   workspaceLeaseId: uuid('workspace_lease_id').references(() => workspaceLeases.id, { onDelete: 'set null' }),
   operationId: text('operation_id').notNull(),
   toolName: text('tool_name').notNull(),
-  arguments: jsonb('arguments').notNull().default({}),
+  arguments: losslessJson('arguments').notNull().default(sql`'{}'`),
   status: toolExecutionStatusEnum('status').notNull().default('queued'),
-  output: text('output'),
+  output: losslessText('output'),
   exitCode: integer('exit_code'),
-  error: text('error'),
+  error: losslessText('error'),
   provider: text('provider'),
-  providerAttempts: jsonb('provider_attempts').notNull().default([]),
+  providerAttempts: losslessJson('provider_attempts').notNull().default(sql`'[]'`),
   providerCostMicros: bigint('provider_cost_micros', { mode: 'number' }).notNull().default(0),
   billedCostMicros: bigint('billed_cost_micros', { mode: 'number' }).notNull().default(0),
   startedAt: timestamp('started_at', { withTimezone: true }),
@@ -647,7 +648,7 @@ export const requestLogs = pgTable('request_logs', {
   stickyFallbackUsed: boolean('sticky_fallback_used').notNull().default(false),
   ocrStatus: text('ocr_status').notNull().default('not_requested'),
   errorCategory: text('error_category'),
-  errorMessage: text('error_message'),
+  errorMessage: losslessText('error_message'),
   inputTokens: integer('input_tokens').notNull().default(0),
   cachedInputTokens: integer('cached_input_tokens').notNull().default(0),
   cacheWriteTokens: integer('cache_write_tokens').notNull().default(0),
@@ -657,8 +658,8 @@ export const requestLogs = pgTable('request_logs', {
   durationMs: integer('duration_ms'),
   tokensPerSecond: doublePrecision('tokens_per_second'),
   eventCount: integer('event_count').notNull().default(0),
-  requestPayload: jsonb('request_payload'),
-  responsePayload: jsonb('response_payload'),
+  requestPayload: losslessJson('request_payload'),
+  responsePayload: losslessJson('response_payload'),
   captureDetailedPayloads: boolean('capture_detailed_payloads').notNull().default(false),
   payloadExpiresAt: timestamp('payload_expires_at', { withTimezone: true }),
   startedAt: timestamp('started_at', { withTimezone: true }),
@@ -685,7 +686,7 @@ export const generationAttempts = pgTable('generation_attempts', {
   fallbackFromModelId: text('fallback_from_model_id').references(() => models.id),
   upstreamResponseId: text('upstream_response_id'),
   errorCategory: text('error_category'),
-  errorMessage: text('error_message'),
+  errorMessage: losslessText('error_message'),
   firstTokenMs: integer('first_token_ms'),
   durationMs: integer('duration_ms'),
   inputTokens: integer('input_tokens').notNull().default(0),
@@ -707,9 +708,9 @@ export const ocrAttempts = pgTable('ocr_attempts', {
   modelId: text('model_id'),
   status: text('status').notNull().default('in_progress'),
   cached: boolean('cached').notNull().default(false),
-  errorMessage: text('error_message'),
-  requestPayload: jsonb('request_payload'),
-  responsePayload: jsonb('response_payload'),
+  errorMessage: losslessText('error_message'),
+  requestPayload: losslessJson('request_payload'),
+  responsePayload: losslessJson('response_payload'),
   durationMs: integer('duration_ms'),
   ...timestamps,
 })
@@ -717,7 +718,7 @@ export const ocrAttempts = pgTable('ocr_attempts', {
 export const ocrCacheEntries = pgTable('ocr_cache_entries', {
   checksum: text('checksum').primaryKey(),
   providerFingerprint: text('provider_fingerprint').notNull(),
-  text: text('text').notNull(),
+  text: losslessText('text').notNull(),
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [index('ocr_cache_expiry_idx').on(table.expiresAt)])
@@ -1030,12 +1031,17 @@ export const billingSubscriptions = pgTable('billing_subscriptions', {
   currentPeriodStart: timestamp('current_period_start', { withTimezone: true }),
   currentPeriodEnd: timestamp('current_period_end', { withTimezone: true }),
   paidThrough: timestamp('paid_through', { withTimezone: true }),
+  // Plan covered by the most recent paid invoice. A downgrade switches `plan` on Stripe
+  // without proration, so the paid plan stays in effect until the period ends.
+  paidPlan: text('paid_plan'),
+  paidPlanAt: timestamp('paid_plan_at', { withTimezone: true }),
   providerModifiedAt: timestamp('provider_modified_at', { withTimezone: true }).notNull(),
   ...timestamps,
 }, (table) => [
   index('billing_subscriptions_user_idx').on(table.userId),
   index('billing_subscriptions_status_idx').on(table.status),
   check('billing_subscriptions_plan_check', sql`${table.plan} in ('eight', 'fat')`),
+  check('billing_subscriptions_paid_plan_check', sql`${table.paidPlan} is null or ${table.paidPlan} in ('eight', 'fat')`),
 ])
 
 export const billingCheckouts = pgTable('billing_checkouts', {

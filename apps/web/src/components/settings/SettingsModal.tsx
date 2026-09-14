@@ -1022,6 +1022,8 @@ export function SettingsModal({
                       </div>
                     </div>
                   </div>
+                  <Separator className="my-5" />
+                  <SpeechSettings />
                 </div>
               )}
 
@@ -1076,8 +1078,6 @@ export function SettingsModal({
                       <span className="text-xs text-muted-foreground">{ui("MB")}</span>
                     </div>
                   </Row>
-                  <Separator className="my-5" />
-                  <SpeechSettings />
                 </div>
               )}
 

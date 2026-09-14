@@ -7,7 +7,9 @@ import { AppError } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import {
   chargeCentsForCredits,
+  isPaidPlan,
   resolveSubscriptionChange,
+  subscriptionPendingPlan,
   type BillingPlan,
   type PaidBillingPlan,
 } from './plans.js'
@@ -276,14 +278,22 @@ function rethrowStripe(error: unknown): never {
   throw error
 }
 
+/**
+ * Upgrades invoice the prorated difference immediately. Downgrades and restores switch
+ * the price without proration: Stripe keeps the current period as paid, issues no credit,
+ * and bills the new price at the next renewal. This closes the loophole where a Fat
+ * subscriber collected the monthly credit grant, downgraded, and received most of the
+ * $24 back as Stripe customer balance.
+ */
 export function subscriptionSwitchParams(
   itemId: string,
   priceId: string,
+  options: { prorate: boolean } = { prorate: true },
 ): Stripe.SubscriptionUpdateParams {
   return {
     cancel_at_period_end: false,
     items: [{ id: itemId, price: priceId }],
-    proration_behavior: 'always_invoice',
+    proration_behavior: options.prorate ? 'always_invoice' : 'none',
     payment_behavior: 'error_if_incomplete',
   }
 }
@@ -297,8 +307,12 @@ function subscriptionResult(subscription: Stripe.Subscription) {
   return { priceId, plan, periodStart, periodEnd }
 }
 
-async function saveSubscription(subscription: Stripe.Subscription): Promise<ReturnType<typeof subscriptionResult>> {
+async function saveSubscription(
+  subscription: Stripe.Subscription,
+  paidPlan?: PaidBillingPlan,
+): Promise<ReturnType<typeof subscriptionResult>> {
   const result = subscriptionResult(subscription)
+  const now = new Date()
   await db.update(billingSubscriptions).set({
     stripePriceId: result.priceId,
     plan: result.plan,
@@ -306,16 +320,25 @@ async function saveSubscription(subscription: Stripe.Subscription): Promise<Retu
     cancelAtPeriodEnd: subscription.cancel_at_period_end,
     currentPeriodStart: result.periodStart ? new Date(result.periodStart * 1_000) : null,
     currentPeriodEnd: result.periodEnd ? new Date(result.periodEnd * 1_000) : null,
-    providerModifiedAt: new Date(),
-    updatedAt: new Date(),
+    ...(paidPlan ? { paidPlan, paidPlanAt: now } : {}),
+    providerModifiedAt: now,
+    updatedAt: now,
   }).where(eq(billingSubscriptions.stripeSubscriptionId, subscription.id))
   return result
+}
+
+export interface SubscriptionChangeResult {
+  plan: BillingPlan
+  pendingPlan: PaidBillingPlan | null
+  status: string
+  cancelAtPeriodEnd: boolean
+  currentPeriodEnd: string | null
 }
 
 async function changeSubscriptionUnchecked(input: {
   userId: string
   plan: BillingPlan
-}): Promise<{ plan: BillingPlan; status: string; cancelAtPeriodEnd: boolean; currentPeriodEnd: string | null }> {
+}): Promise<SubscriptionChangeResult> {
   await checkoutUser(input.userId)
   const current = await currentPaidSubscription(input.userId)
   if (!current) throw new AppError(409, 'subscription_missing', 'Subscribe to a paid plan first')
@@ -338,14 +361,18 @@ async function changeSubscriptionUnchecked(input: {
     throw new AppError(409, 'subscription_inactive', 'This subscription is no longer active. Refresh Billing to start a new one.')
   }
   const live = await saveSubscription(subscription)
+  // The plan whose benefits the current paid period carries. Rows created before paid-plan
+  // tracking fall back to the subscribed plan.
+  const paidPlan: PaidBillingPlan = isPaidPlan(current.paidPlan) ? current.paidPlan : live.plan
   const change = resolveSubscriptionChange(
-    { plan: live.plan, cancelAtPeriodEnd: subscription.cancel_at_period_end },
+    { plan: live.plan, paidPlan, cancelAtPeriodEnd: subscription.cancel_at_period_end },
     input.plan,
   )
   if (change === 'unsupported') throw new AppError(409, 'subscription_change_unsupported', 'That plan change is not available')
   if (change === 'noop') {
     return {
       plan: live.plan,
+      pendingPlan: subscriptionPendingPlan({ plan: live.plan, paidPlan }),
       status: subscription.status,
       cancelAtPeriodEnd: subscription.cancel_at_period_end,
       currentPeriodEnd: live.periodEnd ? new Date(live.periodEnd * 1_000).toISOString() : null,
@@ -354,6 +381,10 @@ async function changeSubscriptionUnchecked(input: {
 
   try {
     let updated: Stripe.Subscription
+    // Set once the paid period's plan is known to have changed: only a prorated upgrade
+    // buys a new plan for the current period. Pin the fallback so a legacy row that
+    // downgrades keeps its benefits until the period ends.
+    let paidPlanAfterChange: PaidBillingPlan | undefined = current.paidPlan ? undefined : paidPlan
     if (change === 'cancel' || change === 'renew') {
       updated = await stripe.subscriptions.update(current.stripeSubscriptionId, {
         cancel_at_period_end: change === 'cancel',
@@ -364,14 +395,17 @@ async function changeSubscriptionUnchecked(input: {
       if (subscription.pending_update) {
         throw new AppError(409, 'subscription_update_pending', 'A previous plan change is awaiting payment. Update your payment method in the Billing Portal, then try again.')
       }
+      const targetPlan: PaidBillingPlan = change === 'downgrade_eight' ? 'eight' : 'fat'
       updated = await stripe.subscriptions.update(
         current.stripeSubscriptionId,
-        subscriptionSwitchParams(item.id, priceIdForPlan(change === 'upgrade_fat' ? 'fat' : 'eight')),
+        subscriptionSwitchParams(item.id, priceIdForPlan(targetPlan), { prorate: change === 'upgrade_fat' }),
       )
+      if (change === 'upgrade_fat') paidPlanAfterChange = 'fat'
     }
-    const result = await saveSubscription(updated)
+    const result = await saveSubscription(updated, paidPlanAfterChange)
     return {
       plan: result.plan,
+      pendingPlan: subscriptionPendingPlan({ plan: result.plan, paidPlan: paidPlanAfterChange ?? paidPlan }),
       status: updated.status,
       cancelAtPeriodEnd: updated.cancel_at_period_end,
       currentPeriodEnd: result.periodEnd ? new Date(result.periodEnd * 1_000).toISOString() : null,

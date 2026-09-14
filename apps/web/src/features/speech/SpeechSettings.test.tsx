@@ -101,8 +101,9 @@ it('stops an active preview when leaving settings and preserves unavailable sele
 it('shows inherited defaults without persisting them and can clear a voice override', async () => {
   useSettings.setState({ speech: { modelId: null, models: {} } })
   render(<QueryClientProvider client={new QueryClient()}><SpeechSettings /></QueryClientProvider>)
-  expect(await screen.findByText('Admin default: First model')).toBeTruthy()
-  expect(screen.getByRole('combobox', { name: 'Model' }).textContent).toBe('Use admin default')
+  await waitFor(() => expect(screen.getByRole('combobox', { name: 'Model' }).textContent).toBe('First model'))
+  expect(screen.queryByText('Use admin default')).toBeNull()
+  expect(screen.queryByText('Admin default: First model')).toBeNull()
   expect(screen.getByRole('button', { name: 'Voice Coral' })).toBeTruthy()
   expect(useSettings.getState().speech).toEqual({ modelId: null, models: {} })
   fireEvent.click(screen.getByRole('button', { name: 'Voice Coral' }))

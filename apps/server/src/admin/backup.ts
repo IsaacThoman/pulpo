@@ -1,3 +1,4 @@
+import { decodePayloadRow, encodePayloadRow } from '../database/lossless-json.js'
 import { createHash, randomInt } from 'node:crypto'
 import { createReadStream } from 'node:fs'
 import { mkdtemp, rm, stat } from 'node:fs/promises'
@@ -84,7 +85,7 @@ export async function createFullBackup(jobId: string, finalAttempt = true): Prom
       const database: Record<string, unknown[]> = {}
       for (const [index, table] of FULL_BACKUP_TABLES.entries()) {
         const columns = FULL_BACKUP_EXPLICIT_COLUMNS[table]
-        database[table] = [...await tx.execute(sql.raw(`select ${columns?.join(', ') ?? '*'} from ${table}`))] as unknown[]
+        database[table] = [...await tx.execute(sql.raw(`select ${columns?.join(', ') ?? '*'} from ${table}`))].map(row => decodePayloadRow(table, row))
         await db.update(backupJobs).set({ progress: Math.round(((index + 1) / FULL_BACKUP_TABLES.length) * 55), updatedAt: new Date() }).where(eq(backupJobs.id, jobId))
       }
       return {
@@ -314,6 +315,7 @@ async function insertBackupRows(
   table: FullBackupTable,
   rows: Array<Record<string, unknown>>,
 ): Promise<void> {
+  rows = rows.map(row => encodePayloadRow(table, row))
   const columns = FULL_BACKUP_EXPLICIT_COLUMNS[table]
   if (!columns) {
     await tx.execute(sql`insert into ${sql.raw(table)} select * from json_populate_recordset(null::${sql.raw(table)}, ${json(rows)}::json)`)

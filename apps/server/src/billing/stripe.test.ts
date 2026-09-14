@@ -81,4 +81,13 @@ describe('Stripe subscription changes', () => {
       payment_behavior: 'error_if_incomplete',
     })
   })
+
+  it('downgrades without proration so the paid period is never credited back', () => {
+    expect(subscriptionSwitchParams('si_current', 'price_eight', { prorate: false })).toEqual({
+      cancel_at_period_end: false,
+      items: [{ id: 'si_current', price: 'price_eight' }],
+      proration_behavior: 'none',
+      payment_behavior: 'error_if_incomplete',
+    })
+  })
 })

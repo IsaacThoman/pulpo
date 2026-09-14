@@ -1,5 +1,33 @@
 # Image generation validation
 
+## Token pricing — September 14, 2026
+
+- Added actual-token billing for OpenAI and Meta, explicit per-image pricing for
+  Azure, editable rates, and upfront budget holds. Legacy catalog entries and
+  operation snapshots retain their previous flat charge.
+- Full repository tests, application build, lint, and documentation build passed.
+  The ordinary suite skips opt-in database tests; those were run separately.
+- All 69 focused image tests passed, including 20 tests against a freshly
+  migrated disposable PostgreSQL database. Real accounting checks cover hold
+  increases, unused funding release, insufficient funds before and after the
+  provider call, exactly-once settlement, and saved-image recovery after pricing
+  changes and cancellation. Provider HTTP and blob storage use fixtures.
+- Coverage includes OpenAI text/image and cached breakdowns, edit response usage,
+  Meta combined tokens and reasoning, missing or malformed usage, rounding,
+  overflow, legacy snapshots, admin/management payloads, and backup preservation.
+- Admin and settings browser checks rendered actual components with fixture API
+  responses at 1280 pixels in light mode and 390 pixels in dark mode. The pricing
+  form scrolls, saves successfully, and has no horizontal overflow. Temporary
+  harness files were removed; raw screenshots remain outside the repository.
+- Mobile settings use existing native controls beside speech in Personalization.
+  iOS and Android component tests verify pricing, selection, opt-in, and retained
+  unavailable selections. The mobile typecheck passed; no device deployment or
+  native simulator visual run was performed.
+- No paid live provider calls were made. Rates are administrator-managed; review
+  the OpenAI preset when selecting another upstream model. Missing cache data
+  uses ordinary input rates. Failed funding after generation can still incur a
+  provider charge even though Pulpo does not save or bill the image.
+
 ## OpenAI Images addition — September 10, 2026
 
 - Full application build, repository lint, and documentation build passed.

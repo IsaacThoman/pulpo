@@ -13,9 +13,10 @@ Users who have not chosen a model use the current admin default automatically;
 users without a saved voice for their effective model use that model's default
 voice. Explicit user selections always take precedence and are not overwritten.
 
-In speech settings, users can select **Use admin default** for the model or
-**Use default voice** to clear a voice override. Defaults remain inherited, so
-later admin changes apply without rewriting account preferences. If no enabled
+Speech settings show the actual default model and voice as selected. The model
+menu contains only available models. Defaults remain inherited until the user
+chooses a model, so later admin changes apply without rewriting account
+preferences. **Use default voice** clears a voice override. If no enabled
 default is available, users are prompted to choose a model. Removed explicit
 selections remain visible as unavailable rather than silently switching models.
 

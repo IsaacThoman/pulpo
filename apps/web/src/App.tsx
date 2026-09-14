@@ -18,7 +18,6 @@ const ChatPage = lazy(() => import('@/pages/ChatPage').then((module) => ({ defau
 const UsageLayout = lazy(() => import('@/pages/usage/UsageLayout').then((module) => ({ default: module.UsageLayout })))
 const PersonalPage = lazy(() => import('@/pages/usage/PersonalPage').then((module) => ({ default: module.PersonalPage })))
 const LeaderboardPage = lazy(() => import('@/pages/usage/LeaderboardPage').then((module) => ({ default: module.LeaderboardPage })))
-const PoolPage = lazy(() => import('@/pages/PoolPage').then((module) => ({ default: module.PoolPage })))
 const FriendsPage = lazy(() => import('@/pages/FriendsPage').then((module) => ({ default: module.FriendsPage })))
 const ApiKeysPage = lazy(() => import('@/pages/ApiKeysPage').then((module) => ({ default: module.ApiKeysPage })))
 const BillingPage = lazy(() => import('@/pages/BillingPage').then((module) => ({ default: module.BillingPage })))
@@ -131,7 +130,7 @@ export default function App() {
               <Route path="leaderboard" element={<Navigate to="/usage/friends" replace />} />
             </Route>
             <Route path="friends" element={<LocalizedRoute><FriendsPage /></LocalizedRoute>} />
-            <Route path="friends/pool" element={<LocalizedRoute><PoolPage /></LocalizedRoute>} />
+            <Route path="friends/pool" element={<Navigate to="/friends" replace />} />
             <Route path="api-keys" element={<LocalizedRoute><ApiKeysPage /></LocalizedRoute>} />
             <Route path="billing" element={<LocalizedRoute><RequireBilling><BillingPage /></RequireBilling></LocalizedRoute>} />
             <Route element={<RequireAdmin />}>

@@ -1,3 +1,4 @@
+import { safeErrorMessage } from '../database/errors.js'
 import OpenAI, { toFile } from 'openai'
 import type { AssistantMessage, Context, Message, ThinkingLevel } from '@earendil-works/pi-ai'
 import { and, asc, eq, inArray, isNull, ne, sql } from 'drizzle-orm'
@@ -647,9 +648,9 @@ async function processGenerationAttempt(
       }
       throw new Error('Background response recovery timed out')
     } catch (error) {
-      if (options.willRetry) throw new GenerationAttemptError(error instanceof Error ? error.message : 'Recovery failed', false, error)
+      if (options.willRetry) throw new GenerationAttemptError(safeErrorMessage(error), false, error)
       await db.update(responses).set({
-        status: 'failed', error: { message: error instanceof Error ? error.message : 'Recovery failed' },
+        status: 'failed', error: { message: safeErrorMessage(error) },
         completedAt: new Date(), updatedAt: new Date(),
       }).where(eq(responses.id, responseId))
       await releaseBudget(responseId)
@@ -876,7 +877,7 @@ async function processGenerationAttempt(
       updatedAt: completedAt,
     }).where(eq(responses.id, responseId))
     const postTaskCostMicros = terminalStatus === 'completed' ? await runPostResponseTasks(record, record, output, requestLog.id).catch((error) => {
-      console.warn(JSON.stringify({ level: 'warn', service: 'pulpo-worker', event: 'post_response_tasks.failed', responseId, error: error instanceof Error ? error.message : String(error) }))
+      console.warn(JSON.stringify({ level: 'warn', service: 'pulpo-worker', event: 'post_response_tasks.failed', responseId, error: safeErrorMessage(error) }))
       return 0
     }) : 0
     await settleWithSidecars({
@@ -897,7 +898,7 @@ async function processGenerationAttempt(
     const completedAt = new Date()
     await db.update(responses).set({
       status: cancelled ? 'cancelled' : options.willRetry ? 'queued' : 'failed',
-      error: { message: error instanceof Error ? error.message : 'Generation failed' },
+      error: { message: safeErrorMessage(error) },
       lastSequence: sequence,
       completedAt: cancelled || !options.willRetry ? completedAt : null,
       updatedAt: completedAt,
@@ -913,7 +914,7 @@ async function processGenerationAttempt(
       const [terminal] = await db.select().from(responses).where(eq(responses.id, responseId)).limit(1)
       if (terminal) await publishSnapshot(toSnapshot(terminal))
     }
-    if (!cancelled) throw new GenerationAttemptError(error instanceof Error ? error.message : 'Generation failed', outputStarted, error)
+    if (!cancelled) throw new GenerationAttemptError(safeErrorMessage(error), outputStarted, error)
   }
 }
 
@@ -1017,7 +1018,7 @@ export async function processGeneration(responseId: string): Promise<void> {
       } catch (error) {
         lastError = error
         const category = classifyGenerationError(error)
-        await db.update(generationAttempts).set({ status: 'failed', errorCategory: category, errorMessage: error instanceof Error ? error.message : String(error), durationMs: Date.now() - attemptStarted, completedAt: new Date() }).where(eq(generationAttempts.id, attemptId))
+        await db.update(generationAttempts).set({ status: 'failed', errorCategory: category, errorMessage: safeErrorMessage(error), durationMs: Date.now() - attemptStarted, completedAt: new Date() }).where(eq(generationAttempts.id, attemptId))
         if (!canFallbackAfterGenerationError(error)) { model = undefined; break }
         if (attempt + 1 < attemptLimit && retryDelaySeconds > 0) await new Promise((resolve) => setTimeout(resolve, retryDelaySeconds * 1000))
       }
@@ -1037,7 +1038,7 @@ export async function processGeneration(responseId: string): Promise<void> {
   await failGeneration(lastError)
 
   async function failGeneration(error: unknown): Promise<void> {
-    const message = error instanceof Error ? error.message : 'Generation failed'
+    const message = safeErrorMessage(error)
     const category = classifyGenerationError(error)
     const completedAt = new Date()
     await db.transaction(async (tx) => {

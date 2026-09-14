@@ -19,3 +19,13 @@ it('allows text and typed references, never client-selected providers or arbitra
     expect(imageGenerationInputSchema.safeParse({ prompt: 'Paint a fox', ...patch }).success).toBe(false)
   }
 })
+
+it('defaults legacy models to flat prices and requires complete token pricing when billing', () => {
+  const legacy = { id: 'image', providerConnectionId: '11111111-1111-4111-8111-111111111111', adapter: 'meta-muse', name: 'Image', upstreamModelId: 'image', billUsers: true, imagePriceMicros: 42 }
+  expect(imageModelSchema.parse(legacy)).toMatchObject({ billingUnit: 'images', imagePriceMicros: 42, reservationMicros: 0 })
+  const token = { ...legacy, billingUnit: 'tokens', reservationMicros: 100, tokenPrices: { input: 0, cachedInput: 0, output: 0 } }
+  expect(imageModelSchema.safeParse(token).success).toBe(true)
+  for (const patch of [{ reservationMicros: 0 }, { tokenPrices: {} }, { tokenPrices: { input: -1, cachedInput: 0, output: 1 } }, { adapter: 'azure-mai' }]) {
+    expect(imageModelSchema.safeParse({ ...token, ...patch }).success).toBe(false)
+  }
+})
