@@ -29,7 +29,11 @@ final class PulpoTVUITests: XCTestCase {
             visits[key, default: 0] += 1
             let dx = t.midX - f.midX, dy = t.midY - f.midY
             let sameColumn = t.minX < f.maxX && t.maxX > f.minX
-            if sameColumn || (revisited && abs(dy) > 20) { remote.press(dy > 0 ? .down : .up) }
+            // Native tvOS focus scales buttons beyond their layout bounds.
+            // Neighbors in the same row can overlap without being in a column.
+            let sameRow = abs(dy) < min(f.height, t.height) / 2
+            if sameRow { remote.press(dx > 0 ? .right : .left) }
+            else if sameColumn || (revisited && abs(dy) > 20) { remote.press(dy > 0 ? .down : .up) }
             else { remote.press(dx > 0 ? .right : .left) }
         }
         XCTFail("Could not focus \(target.identifier).\n\(app.debugDescription)", file: file, line: line)
@@ -97,19 +101,19 @@ final class PulpoTVUITests: XCTestCase {
         XCTAssertTrue(reply.waitForExistence(timeout: 10))
         capture("regenerated-reply")
     }
-    func testModelOptionsAndLightAppearance() {
+    func testModelOptionsAndSystemAppearance() {
         launch(); select("generation-options")
         focus(app.buttons.matching(NSPredicate(format: "label CONTAINS 'Reasoning'")).firstMatch); remote.press(.select)
         select("choice-high"); XCTAssertTrue(app.buttons["choice-high"].waitForNonExistence(timeout: 5)); remote.press(.menu)
-        select("settings"); select("theme-picker"); select("choice-light")
-        XCTAssertTrue(app.buttons["choice-light"].waitForNonExistence(timeout: 5))
-        XCTAssertTrue(app.buttons["theme-picker"].waitForExistence(timeout: 5))
-        capture("settings-light")
+        select("settings")
+        XCTAssertTrue(app.buttons["panel-done"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["theme-picker"].exists)
+        capture("settings-system")
         remote.press(.menu)
-        XCTAssertTrue(app.buttons["theme-picker"].waitForNonExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["panel-done"].waitForNonExistence(timeout: 5))
         select("chat-11111111-1111-4111-8111-111111111111")
         XCTAssertTrue(app.buttons["prompt-33333333-3333-4333-8333-333333333333"].waitForExistence(timeout: 10))
-        capture("chat-light")
+        capture("chat-system")
     }
     func testNativeSignInAndKeyboard() {
         launch(login: false); capture("sign-in")

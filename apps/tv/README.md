@@ -5,6 +5,10 @@ layout, with television-sized text, focus highlights, native text entry, and
 Siri Remote navigation. It uses the existing Pulpo HTTP and Socket.IO APIs;
 no server deployment or changes to the mobile build are required.
 
+Appearance follows the Apple TV's system setting. The TV app uses native
+backgrounds, materials, and button focus effects, independently of the account's
+phone/web theme preference.
+
 ## Run
 
 Install Xcode with a tvOS 26 simulator runtime, Node.js, and XcodeGen

@@ -31,7 +31,7 @@ function reset() {
   chats = [{ id: CHAT, title: 'A weekend by the coast', modelId: 'test-model', pinned: false, folderId: null, temporary: false, activeResponseId: TURN, activeBranchLeafId: TURN, responses: [r], queuedMessages: [], attachments: [{ id: FILE, originalName: 'Pulpo.png', mimeType: 'image/png', sizeBytes: 3000 }], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }]
 }
 reset()
-function summary(c) { const { responses, attachments, queuedMessages, ...rest } = c; return rest }
+function summary(c) { const { responses: _responses, attachments: _attachments, queuedMessages: _queuedMessages, ...rest } = c; return rest }
 function activeChat(c) {
   const byID = new Map(c.responses.map(r => [r.id, r])); const lineage = []; let id = c.activeBranchLeafId
   while (id && byID.has(id)) { const r = byID.get(id); lineage.unshift(r); id = r.parentResponseId }

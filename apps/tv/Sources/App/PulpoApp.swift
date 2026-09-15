@@ -6,7 +6,6 @@ import SwiftUI
     var body: some Scene {
         WindowGroup {
             RootView(store: store)
-                .preferredColorScheme(store.settings["theme"].string == "light" ? .light : store.settings["theme"].string == "dark" ? .dark : nil)
                 .task { await store.bootstrap() }
                 .task { await store.poll() }
                 .onChange(of: phase) { _, next in Task { await store.foreground(next == .active) } }
@@ -31,28 +30,6 @@ struct RootView: View {
             } else { ChatShell(store: store) }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Palette.background)
-        .tint(.primary)
-    }
-}
-
-enum Palette {
-    static let background = Color(uiColor: UIColor { $0.userInterfaceStyle == .dark ? .black : UIColor(red: 0.961, green: 0.961, blue: 0.969, alpha: 1) })
-    static let panel = Color.primary.opacity(0.055)
-    static let separator = Color.primary.opacity(0.10)
-}
-
-struct TVButtonStyle: ButtonStyle {
-    @Environment(\.isFocused) private var focused
-    @Environment(\.colorScheme) private var scheme
-    var selected = false
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .foregroundStyle(focused ? (scheme == .dark ? Color.black : .white) : .primary)
-            .padding(.horizontal, 20).padding(.vertical, 15)
-            .background(focused ? Color.primary : selected ? Color.primary.opacity(0.14) : .clear, in: RoundedRectangle(cornerRadius: 14))
-            .scaleEffect(configuration.isPressed ? 0.98 : 1)
-            .animation(.easeOut(duration: 0.12), value: focused)
     }
 }
 
@@ -67,7 +44,7 @@ struct ErrorBanner: View {
                 Button("Retry") { Task { if store.pending != nil { await store.retrySend() } else { await store.reload() } } }
                     .disabled(store.working).accessibilityIdentifier("error-retry")
                 Button { store.error = nil } label: { Image(systemName: "xmark") }.accessibilityLabel("Dismiss error")
-            }.padding(20).background(Palette.panel, in: RoundedRectangle(cornerRadius: 16))
+            }.padding(20).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
         }
     }
 }
@@ -144,7 +121,6 @@ struct Panel<Content: View>: View {
             HStack { Text(title).font(.title2).fontWeight(.semibold); Spacer(); Button("Done") { dismiss() }.accessibilityIdentifier("panel-done") }
             ScrollView { VStack(alignment: .leading, spacing: 28) { content }.padding(30) }.scrollClipDisabled()
         }.padding(.horizontal, 100).padding(.vertical, 60).frame(maxWidth: 1400, maxHeight: .infinity)
-            .background(Palette.background)
             .onExitCommand { dismiss() }
     }
 }
@@ -178,7 +154,7 @@ struct ChoiceRow: View {
                         selection = choice.id; choosing = false
                     } label: {
                         HStack { Text(choice.title); Spacer(); if choice.id == selection { Image(systemName: "checkmark") } }
-                    }.buttonStyle(TVButtonStyle(selected: choice.id == selection)).accessibilityIdentifier("choice-\(choice.id)")
+                    }.accessibilityIdentifier("choice-\(choice.id)")
                 }
             }
         }

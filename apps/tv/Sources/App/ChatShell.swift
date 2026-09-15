@@ -13,7 +13,7 @@ struct ChatShell: View {
     var body: some View {
         HStack(spacing: 0) {
             sidebar.frame(width: 330)
-            Rectangle().fill(Palette.separator).frame(width: 1)
+            Divider()
             VStack(spacing: 20) {
                 HStack {
                     VStack(alignment: .leading, spacing: 5) {
@@ -44,7 +44,6 @@ struct ChatShell: View {
                 .frame(maxWidth: .infinity).focusSection()
         }
         .padding(.horizontal, 64).padding(.vertical, 48)
-        .background(Palette.background)
         .sheet(item: $sheet) { value in
             switch value {
             case .search: SearchView(store: store)
@@ -64,11 +63,12 @@ struct ChatShell: View {
                 Image("PulpoMark").resizable().scaledToFit().frame(width: 40, height: 40)
                 Text("Pulpo").font(.system(size: 32, weight: .semibold))
             }.padding(.horizontal, 20).padding(.bottom, 16)
-            Button { Task { await store.select(nil) } } label: { row("New chat", icon: "square.and.pencil") }
-                .focused($sidebarFocused).buttonStyle(TVButtonStyle(selected: store.selectedID == nil))
+            Button { Task { await store.select(nil) } } label: { row("New chat", icon: "square.and.pencil", selected: store.selectedID == nil) }
+                .focused($sidebarFocused)
+                .accessibilityAddTraits(store.selectedID == nil ? .isSelected : [])
                 .accessibilityIdentifier("new-chat")
             Button { sheet = .search } label: { row("Search", icon: "magnifyingglass") }
-                .buttonStyle(TVButtonStyle()).accessibilityIdentifier("search")
+                .accessibilityIdentifier("search")
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 6) {
                     ForEach(store.chats.filter(\.pinned)) { chat in chatButton(chat) }
@@ -76,8 +76,8 @@ struct ChatShell: View {
                         Button {
                             if !expandedFolders.insert(folder.id).inserted { expandedFolders.remove(folder.id) }
                         } label: {
-                            HStack { Image(systemName: expandedFolders.contains(folder.id) ? "folder.fill" : "folder"); Text(folder["name"].string).lineLimit(1); Spacer(); Image(systemName: expandedFolders.contains(folder.id) ? "chevron.down" : "chevron.right").font(.system(size: 16)) }
-                        }.buttonStyle(TVButtonStyle()).accessibilityIdentifier("folder-\(folder.id)")
+                            HStack(spacing: 16) { Image(systemName: expandedFolders.contains(folder.id) ? "folder.fill" : "folder"); Text(folder["name"].string).lineLimit(1).layoutPriority(1); Spacer(); Image(systemName: expandedFolders.contains(folder.id) ? "chevron.down" : "chevron.right").font(.system(size: 16)) }
+                        }.accessibilityIdentifier("folder-\(folder.id)")
                         if expandedFolders.contains(folder.id) {
                             ForEach(store.chats.filter { $0.folderID == folder.id && !$0.pinned }) { chat in chatButton(chat).padding(.leading, 16) }
                         }
@@ -86,20 +86,20 @@ struct ChatShell: View {
                     if store.chats.isEmpty { Text("No chats").foregroundStyle(.secondary).padding(20) }
                 }.padding(.vertical, 10)
             }.scrollClipDisabled().frame(maxHeight: .infinity)
-            HStack(spacing: 0) {
+            HStack(spacing: 12) {
                 Button { sheet = .folders } label: { Image(systemName: "folder.badge.plus") }.accessibilityLabel("Folders").accessibilityIdentifier("folders")
                 Button { sheet = .trash } label: { Image(systemName: "trash") }.accessibilityLabel("Trash").accessibilityIdentifier("trash")
                 Button { sheet = .settings } label: { Image(systemName: "gearshape") }.accessibilityLabel("Settings").accessibilityIdentifier("settings")
-            }.buttonStyle(TVButtonStyle()).padding(.top, 8)
+            }.padding(.top, 8)
         }.font(.system(size: 24)).padding(.trailing, 24).focusSection()
     }
-    private func row(_ title: String, icon: String) -> some View {
-        HStack(spacing: 16) { Image(systemName: icon).frame(width: 24); Text(title); Spacer() }
+    private func row(_ title: String, icon: String, selected: Bool = false) -> some View {
+        HStack(spacing: 16) { Image(systemName: icon).frame(width: 24); Text(title); Spacer(); if selected { Image(systemName: "checkmark").font(.system(size: 18)) } }
     }
     private func chatButton(_ chat: Chat) -> some View {
         Button { Task { await store.select(chat) } } label: {
-            HStack(spacing: 12) { if chat.pinned { Image(systemName: "pin.fill").font(.system(size: 17)) }; Text(chat.title).lineLimit(2).multilineTextAlignment(.leading); Spacer(minLength: 0) }
-        }.buttonStyle(TVButtonStyle(selected: store.selectedID == chat.id)).accessibilityIdentifier("chat-\(chat.id)")
+            HStack(spacing: 12) { if chat.pinned { Image(systemName: "pin.fill").font(.system(size: 17)) }; Text(chat.title).lineLimit(2).multilineTextAlignment(.leading); Spacer(minLength: 0); if store.selectedID == chat.id { Image(systemName: "checkmark").font(.system(size: 18)) } }
+        }.accessibilityAddTraits(store.selectedID == chat.id ? .isSelected : []).accessibilityIdentifier("chat-\(chat.id)")
     }
     private var composer: some View {
         VStack(spacing: 14) {
@@ -124,7 +124,7 @@ struct ChatShell: View {
                     .disabled(!store.canSend).accessibilityLabel(store.selected?.busy == true ? "Queue message" : "Send")
                     .accessibilityIdentifier("send")
             }
-        }.padding(18).background(Palette.panel, in: RoundedRectangle(cornerRadius: 22))
+        }.padding(18).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 22))
     }
 }
 
@@ -164,7 +164,7 @@ struct ModelPicker: View {
                         Spacer()
                         if store.modelID == model.id { Image(systemName: "checkmark") }
                     }
-                }.buttonStyle(TVButtonStyle(selected: store.modelID == model.id)).accessibilityIdentifier("model-\(model.id)")
+                }.accessibilityIdentifier("model-\(model.id)")
             }
             if models.isEmpty { Text("No models").foregroundStyle(.secondary) }
         }

@@ -10,7 +10,6 @@ struct SettingsView: View {
     var body: some View {
         Panel(title: "Settings") {
             Text("Appearance").font(.headline)
-            ChoiceRow(title: "Theme", selection: preference("theme", fallback: "system"), choices: [Choice("system", "System"), Choice("light", "Light"), Choice("dark", "Dark")]).accessibilityIdentifier("theme-picker")
             Toggle("Larger text", isOn: $largeText).accessibilityIdentifier("larger-text")
             Toggle("Show reasoning", isOn: boolPreference("showReasoning", fallback: true))
             Text("Chats").font(.headline)

@@ -16,7 +16,8 @@ struct TranscriptView: View {
                             Button { detail = turn } label: {
                                 Text(turn.prompt).font(.system(size: largeText ? 31 : 27)).multilineTextAlignment(.leading)
                                     .frame(maxWidth: .infinity, alignment: .leading)
-                            }.buttonStyle(TVButtonStyle()).background(Palette.panel, in: RoundedRectangle(cornerRadius: 16))
+                                    .padding(.horizontal, 20).padding(.vertical, 15)
+                            }.buttonStyle(.borderless).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
                                 .accessibilityIdentifier("prompt-\(turn.id)")
                             HStack {
                                 Text(store.models.first { $0.id == turn.modelID }?["name"].optionalString ?? turn.modelID)
@@ -27,7 +28,8 @@ struct TranscriptView: View {
                             ForEach(Array(MarkdownBlock.parse(turn.text).enumerated()), id: \.offset) { index, block in
                                 Button { detail = turn } label: {
                                     MarkdownText(block: block, size: largeText ? 31 : 27).frame(maxWidth: .infinity, alignment: .leading)
-                                }.buttonStyle(TVButtonStyle()).accessibilityIdentifier("reply-\(turn.id)-\(index)")
+                                        .padding(.horizontal, 20).padding(.vertical, 15)
+                                }.buttonStyle(.borderless).accessibilityIdentifier("reply-\(turn.id)-\(index)")
                             }
                             if store.settings["showReasoning"] != .bool(false), !turn.reasoning.isEmpty {
                                 Button("Reasoning") { detail = turn }.font(.system(size: 22))
@@ -47,7 +49,7 @@ struct TranscriptView: View {
                             Spacer()
                             Button { Task { _ = await store.mutate("/api/chats/\(API.resource(chat.id))/queued-messages/\(API.resource(queued.id))", method: "DELETE") } } label: { Image(systemName: "xmark") }
                                 .disabled(queued["status"].string == "dispatching").accessibilityLabel("Remove queued message")
-                        }.padding(24).background(Palette.panel, in: RoundedRectangle(cornerRadius: 16))
+                        }.padding(24).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
                     }
                     Color.clear.frame(height: 8).id("end")
                 }.padding(20)

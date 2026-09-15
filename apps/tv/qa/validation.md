@@ -32,9 +32,10 @@ the native tvOS keyboard.
 
 The image-preview UI test waits for the authenticated image to load. The message
 action UI test regenerates a reply and checks that its replacement appears.
-The appearance test changes a model preset, switches to Light, and opens a
-conversation. A focused rerun also checks the light conversation after sheet
-dismissal, avoiding a screenshot during the transition.
+The appearance test changes a model preset, verifies that TV settings do not
+offer an account-theme override, and opens a conversation after sheet dismissal.
+Appearance comes from tvOS; the fixture deliberately retains its account's Dark
+theme preference.
 
 ## Reproduce
 
@@ -49,6 +50,17 @@ The commands create ignored `.build/evidence/*.xcresult` bundles with logs,
 screenshots, and UI recordings. The initial complete runs are
 `20260915-183326.xcresult` (1080p) and `20260915-183626.xcresult` (4K).
 Evidence is intentionally excluded from source control.
+
+## System appearance
+
+The native appearance update removes custom background colors, tint, focus
+colors, and the shared account theme override. It uses the tvOS backdrop,
+standard buttons, and system materials. The complete 29-test suite passed with
+the simulator's Dark appearance (`20260915-191617.xcresult`).
+After switching to Light in tvOS Settings, the final 29-test suite also passed
+(`20260915-192521.xcresult`). Screenshots confirm the system Light appearance
+despite the fixture account's saved Dark theme. Native button scaling is included
+in the remote test navigation, and the Release build passed with Xcode 27.
 
 ## Physical-device deployment
 
