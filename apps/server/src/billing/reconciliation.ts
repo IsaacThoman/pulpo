@@ -1,3 +1,4 @@
+import { sweepAutoTopUps } from './auto-top-up-queue.js'
 import type Stripe from 'stripe'
 import { eq } from 'drizzle-orm'
 import { getConfig } from '../config.js'
@@ -88,6 +89,10 @@ export async function reconcileStripeBilling(): Promise<void> {
     }
 
     for await (const checkout of stripe.checkout.sessions.list({ created: { gte: createdGte }, limit: 100 })) {
+      if (checkout.mode === 'setup' && checkout.status === 'complete' && checkout.metadata?.pulpo_auto_top_up_setup) {
+        await processStripeWebhookEvent(syntheticEvent(`reconcile:setup:${checkout.id}`, 'checkout.session.completed', checkout, checkout.created))
+        continue
+      }
       if (checkout.mode !== 'payment' || checkout.metadata?.pulpo_kind !== 'credits') continue
       if (checkout.status !== 'complete' && checkout.status !== 'expired') continue
       const type = checkout.status === 'expired' ? 'checkout.session.expired' : 'checkout.session.completed'
@@ -120,6 +125,7 @@ export async function reconcileStripeBilling(): Promise<void> {
         refund.created,
       ))
     }
+    await sweepAutoTopUps()
     await saveReconciliationResult(null)
   } catch (error) {
     const message = error instanceof Error ? error.message.slice(0, 2_000) : String(error).slice(0, 2_000)

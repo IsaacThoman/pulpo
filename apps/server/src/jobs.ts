@@ -53,3 +53,7 @@ export const payloadRetentionQueue = new Queue('payload-retention', {
   connection,
   defaultJobOptions: { attempts: 3, backoff: { type: 'exponential', delay: 1_000 }, removeOnComplete: 100, removeOnFail: 100 },
 })
+
+export const autoTopUpQueue = new Queue<{ userId?: string }>('auto-top-up', { connection,
+  defaultJobOptions: { attempts: 3, backoff: { type: 'exponential', delay: 5000 }, removeOnComplete: 100, removeOnFail: 1000 },
+})

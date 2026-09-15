@@ -8,6 +8,7 @@
     "build": "tsc -b && vite build",
     "test": "vitest run",
     "preview": "vite preview",
+    "test:billing": "node tests/billing.browser.mjs",
     "test:responsive": "node tests/responsive-layout.browser.mjs"
   },
   "dependencies": {

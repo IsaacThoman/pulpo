@@ -25,6 +25,15 @@ export async function cancelStripeResources(stripe: Stripe, customerId: string |
       if (!isMissingStripeResource(error)) throw error
     }
   }
+  if (customerId) {
+    try {
+      for await (const invoice of stripe.invoices.list({ customer: customerId, limit: 100 })) {
+        if (!invoice.metadata?.pulpo_auto_top_up_attempt) continue
+        if (invoice.status === 'draft') await stripe.invoices.del(invoice.id)
+        else if (invoice.status === 'open' || invoice.status === 'uncollectible') await stripe.invoices.voidInvoice(invoice.id)
+      }
+    } catch (error) { if (!isMissingStripeResource(error)) throw error }
+  }
   // Close checkout links before cancelling subscriptions so they cannot restart billing.
   for (const id of checkoutIds) {
     try {

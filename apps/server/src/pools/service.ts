@@ -43,7 +43,7 @@ export async function dissolveSingletonPool(tx: Transaction, poolId: string, opt
   return [...new Set(members.map((row) => row.user.id).concat(pending.map((row) => row.inviteeUserId)))]
 }
 
-export async function pendingFundingByUser(tx: Transaction, userIds: string[]): Promise<Map<string, number>> {
+export async function pendingFundingByUser(tx: Pick<Transaction, 'select'>, userIds: string[]): Promise<Map<string, number>> {
   if (!userIds.length) return new Map()
   const rows = await tx.select({
     userId: budgetReservationFunders.userId,

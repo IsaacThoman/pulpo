@@ -5,6 +5,7 @@ import { cancelStripeResources } from './stripe-deletion.js'
 function fixture() {
   const calls: string[] = []
   const stripe = {
+    invoices: { list: vi.fn(async function* (): AsyncGenerator<{ id: string; status: string; metadata: Record<string, string> }> {}), del: vi.fn(), voidInvoice: vi.fn() },
     subscriptions: {
       list: vi.fn(async function* () { yield { id: 'sub_remote' } }),
       retrieve: vi.fn(async (id: string) => ({ id, status: id === 'sub_terminal' ? 'canceled' : 'active' })),
@@ -26,6 +27,19 @@ describe('account subscription cancellation', () => {
     expect(calls).toEqual(['expire:cs_local', 'expire:cs_remote', 'cancel:sub_local', 'cancel:sub_remote'])
     expect(stripe.subscriptions.cancel).toHaveBeenCalledWith('sub_local', { invoice_now: false, prorate: false })
     expect(stripe.subscriptions.list).toHaveBeenCalledWith({ customer: 'cus_user', status: 'all', limit: 100 })
+  })
+  it('closes only automatic top-up invoices, including uncollectible invoices', async () => {
+    const { client, stripe } = fixture()
+    stripe.invoices.list.mockImplementationOnce(async function* (): AsyncGenerator<{ id: string; status: string; metadata: Record<string, string> }> {
+      yield { id: 'in_draft', status: 'draft', metadata: { pulpo_auto_top_up_attempt: 'attempt' } }
+      yield { id: 'in_open', status: 'open', metadata: { pulpo_auto_top_up_attempt: 'attempt' } }
+      yield { id: 'in_uncollectible', status: 'uncollectible', metadata: { pulpo_auto_top_up_attempt: 'attempt' } }
+      yield { id: 'in_paid', status: 'paid', metadata: { pulpo_auto_top_up_attempt: 'attempt' } }
+      yield { id: 'in_other', status: 'open', metadata: {} }
+    })
+    await cancelStripeResources(client, 'cus_user', [], [])
+    expect(stripe.invoices.del).toHaveBeenCalledExactlyOnceWith('in_draft')
+    expect(stripe.invoices.voidInvoice.mock.calls).toEqual([['in_open'], ['in_uncollectible']])
   })
   it('keeps cancellation failures retryable and skips already canceled subscriptions', async () => {
     const { client, stripe } = fixture()

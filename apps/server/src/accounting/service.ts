@@ -1,3 +1,4 @@
+import { enqueueAutoTopUps, enqueueReservationTopUps } from '../billing/auto-top-up-queue.js'
 import { and, eq, gte, gt, inArray, isNull, lte, or, sql } from 'drizzle-orm'
 import type { ResponseUsage } from '@pulpo/contracts'
 import { db } from '../database/client.js'
@@ -67,7 +68,7 @@ export async function reserveBudget(input: {
   minimumOutputReservationTokens?: number
   pricing: ActivePricing
 }): Promise<{ amountMicros: number; maxOutputTokens: number }> {
-  return db.transaction(async (tx) => {
+  const result = await db.transaction(async (tx) => {
     const membership = await activePoolMembership(tx, input.userId)
     if (membership) await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`pool:${membership.pool.id}`}))`)
     const poolRows = membership ? await activePoolMembers(tx, membership.pool.id) : []
@@ -112,6 +113,8 @@ export async function reserveBudget(input: {
     await tx.update(responses).set({ pricingVersionId: input.pricing.id }).where(eq(responses.id, input.responseId))
     return reservation
   })
+  await enqueueReservationTopUps(input.responseId)
+  return result
 }
 
 type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0]
@@ -221,6 +224,7 @@ export async function chargeMeteredUsage(input: {
   })
   await Promise.all([
     publishScopedStateChanges(changes.ownChanges, ['usage', 'billing']),
+    enqueueAutoTopUps(changes.ownChanges.map(change => change.userId)),
     publishScopedStateChanges(changes.friendChanges, ['friends']),
     publishScopedStateChanges(changes.poolChanges, ['pool', 'usage', 'billing']),
   ])
@@ -373,6 +377,7 @@ export async function settleBudget(input: {
   })
   await Promise.all([
     publishScopedStateChanges(settlement.ownChanges, ['usage', 'billing']),
+    enqueueAutoTopUps(settlement.ownChanges.map(change => change.userId)),
     publishScopedStateChanges(settlement.friendChanges, ['friends']),
     publishScopedStateChanges(settlement.poolChanges, ['pool', 'usage', 'billing']),
   ])
@@ -406,7 +411,7 @@ async function updateReservationAmount<T extends { amountMicros: number }>(
   responseId: string,
   calculate: (capacityMicros: number, currentAmountMicros: number) => T | null,
 ): Promise<T> {
-  return db.transaction(async tx => {
+  const updated = await db.transaction(async tx => {
     const [reservation] = await tx.select().from(budgetReservations).where(eq(budgetReservations.responseId, responseId)).for('update')
     if (!reservation || reservation.status !== 'pending') throw new AppError(409, 'reservation_missing', 'Budget reservation is unavailable')
     const balances = await lockReservationBalances(tx, reservation)
@@ -443,6 +448,8 @@ async function updateReservationAmount<T extends { amountMicros: number }>(
     }).where(eq(budgetReservations.id, reservation.id))
     return result
   })
+  await enqueueReservationTopUps(responseId)
+  return updated
 }
 
 export async function resizeBudgetReservation(input: {

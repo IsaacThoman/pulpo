@@ -1,3 +1,5 @@
+import { autoTopUpSummary, createAutoTopUpSetup, updateAutoTopUp } from './auto-top-up.js'
+import { enqueueAutoTopUps } from './auto-top-up-queue.js'
 import { desc, eq } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
@@ -5,6 +7,7 @@ import { requireUser } from '../auth/service.js'
 import { getConfig } from '../config.js'
 import { db } from '../database/client.js'
 import {
+  autoTopUpSettings,
   billingCheckouts,
   billingOrders,
   billingSubscriptions,
@@ -94,7 +97,7 @@ export async function registerBillingRoutes(app: FastifyInstance): Promise<void>
 
   app.get('/api/billing/summary', async (request) => {
     const user = requireUser(request)
-    const [entitlements, subscriptions, orders, poolBalance] = await Promise.all([
+    const [entitlements, subscriptions, orders, poolBalance, autoTopUp] = await Promise.all([
       getBillingEntitlements(user.id),
       db.select().from(billingSubscriptions).where(eq(billingSubscriptions.userId, user.id))
         .orderBy(desc(billingSubscriptions.updatedAt)),
@@ -113,12 +116,14 @@ export async function registerBillingRoutes(app: FastifyInstance): Promise<void>
           availableMicros: availableBillingBalanceMicros(balanceMicros, pendingMicros),
         }
       }),
+      autoTopUpSummary(user.id),
     ])
     const subscription = selectSummarySubscription(subscriptions, entitlements.subscriptionPlan)
     const fiveHour = entitlements.fiveHourRemainingPercentage === null
       ? null
       : fiveHourSummaryPercentages(entitlements)
     return {
+      autoTopUp,
       plan: entitlements.plan,
       planOverridden: entitlements.planOverridden,
       balanceMicros: user.balanceMicros,
@@ -149,7 +154,8 @@ export async function registerBillingRoutes(app: FastifyInstance): Promise<void>
       } : null,
       payments: orders.map((order) => ({
         id: order.stripePaymentId,
-        kind: order.billingReason === 'purchase' ? 'credits' : 'subscription',
+        kind: ['purchase', 'automatic_top_up'].includes(order.billingReason) ? 'credits' : 'subscription',
+        automatic: order.billingReason === 'automatic_top_up',
         plan: order.stripePriceId === config.STRIPE_FAT_PRICE_ID
           ? 'fat'
           : order.stripePriceId === config.STRIPE_EIGHT_PRICE_ID
@@ -162,6 +168,29 @@ export async function registerBillingRoutes(app: FastifyInstance): Promise<void>
         createdAt: order.createdAt.toISOString(),
       })),
     }
+  })
+
+  app.patch('/api/billing/auto-top-up', { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } }, async request => {
+    const user = requireUser(request)
+    const result = await updateAutoTopUp(user.id, request.body)
+    await enqueueAutoTopUps([user.id])
+    return result
+  })
+  app.post('/api/billing/auto-top-up/setup/confirm', { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } }, async request => {
+    const user = requireUser(request)
+    const [settings] = await db.select().from(autoTopUpSettings).where(eq(autoTopUpSettings.userId, user.id))
+    if (settings?.setupSessionId) {
+      const { getStripeClient } = await import('./stripe.js')
+      const checkout = await getStripeClient().checkout.sessions.retrieve(settings.setupSessionId)
+      if (checkout.status !== 'complete') throw new AppError(409, 'auto_top_up_setup_pending', 'Card setup is not complete yet. Refresh Billing to try again.')
+      await processStripeWebhookEvent({ object: 'event', api_version: null, livemode: checkout.livemode, pending_webhooks: 0, request: null, id: `auto-top-up-setup:${checkout.id}`, type: 'checkout.session.completed', created: checkout.created, data: { object: checkout } } as import('stripe').default.Event)
+    }
+    return autoTopUpSummary(user.id)
+  })
+  app.post('/api/billing/auto-top-up/setup', { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } }, async request => {
+    const user = requireUser(request)
+    const input = z.object({ revision: z.number().int().nonnegative(), enable: z.boolean(), consent: z.literal(true), idempotencyKey: z.string().uuid() }).parse(request.body)
+    return createAutoTopUpSetup(user.id, input)
   })
 
   app.post('/api/billing/credit-quote', {

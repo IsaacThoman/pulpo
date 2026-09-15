@@ -70,7 +70,7 @@ export async function registerAdminBillingRoutes(app: FastifyInstance): Promise<
         refundedCents: sql<number>`coalesce(sum(${billingOrders.refundedAmountCents}), 0)::bigint`,
         creditsGrantedMicros: sql<number>`coalesce(sum(${billingOrders.grantedCreditMicros}), 0)::bigint`,
         payments: sql<number>`count(*)::int`,
-        topUps: sql<number>`count(*) filter (where ${billingOrders.billingReason} = 'purchase')::int`,
+        topUps: sql<number>`count(*) filter (where ${billingOrders.billingReason} in ('purchase', 'automatic_top_up'))::int`,
       }).from(billingOrders).where(orderFilter),
       db.select({
         plan: billingSubscriptions.plan,

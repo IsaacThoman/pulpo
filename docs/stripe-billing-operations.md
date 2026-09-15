@@ -76,3 +76,58 @@ STRIPE_FAT_PRICE_ID=price_...
 The API and worker fail closed when billing is enabled and any Stripe value is missing or malformed. Replace the previous billing-provider variables in Coolify before merging or deploying this change.
 
 After deployment, complete a low-value test-mode credit purchase, subscription, renewal, plan change, cancellation, refund, and webhook replay. Confirm that credits are granted once, Stripe Tax reports the expected Georgia result, the admin dashboard links to the correct Stripe mode, and the hourly reconciliation job reports no error.
+
+## Automatic balance top-ups
+
+Automatic top-ups are opt-in under **Billing → Pay as you go → Configure top-ups**.
+Defaults are a $5 personal available-balance threshold, $25 of credits, and a $100
+monthly charge limit. The cap includes fees and tax, excludes manual purchases
+and subscriptions, and resets on the first of each month at 00:00 UTC. Pending
+payments reserve budget across month boundaries. Refunds do not restore budget.
+A full top-up that cannot fit waits for a limit change or the next month.
+
+Users authorize future card charges through Checkout setup mode, with a required
+billing address. Setup callbacks are tied to the current settings revision;
+stale or canceled setup cannot enable charging. Updating a paused account's card
+does not resume charges: the user must authorize and save enabled settings again.
+
+The dedicated `auto-top-up` queue checks affected funding accounts after usage and
+reservation changes. Its one-minute sweep repairs missed submissions, unfinished
+card setup, and payment attempts. It is enabled by `PULPO_BILLING_ENABLED` and uses
+the existing Stripe credentials and credit product; no new environment variables
+or webhook event subscriptions are required. Deploy migrations `0079` and `0080` before the
+API and worker. Existing accounts stay disabled.
+
+Every attempt creates an isolated invoice with `auto_advance: false`, automatic
+tax, and no inherited discounts or pending invoice items. Pulpo reserves the
+final payable amount before explicitly requesting off-session collection. Do not
+manually enable automatic advancement or payment retries for these invoices.
+Declines or authentication requests pause top-ups, and an unpaid invoice is
+closed before its budget reservation is released. Account deletion closes unpaid
+automatic invoices as well as checkout sessions and subscriptions.
+
+Monitor worker events named `auto_top_up.failed` and the existing billing webhook
+and reconciliation dashboards. Attempts in `auto_top_up_attempts` identify their
+Stripe invoice and settings revision; invoice metadata contains
+`pulpo_auto_top_up_attempt`. A timeout preserves the same attempt and its budget
+reservation until Stripe's state is known. Never clear an unresolved reservation
+or create a replacement charge based only on a timeout. Old attempts are reconciled by invoice ID or metadata before Stripe's idempotency
+keys can be reused. Unpaid, unattempted invoices are closed before starting a new
+attempt; ambiguous payment states remain reserved and fail closed for operator
+review.
+
+### Verification
+
+Run the billing integration suite against a disposable, migrated PostgreSQL
+database named `pulpo_billing_test`:
+
+```sh
+DATABASE_URL=postgres://.../pulpo_billing_test npm run db:migrate -w @pulpo/server
+DATABASE_URL=postgres://.../pulpo_billing_test PULPO_BILLING_POSTGRES_TEST=1 npm run test -w @pulpo/server -- src/billing/auto-top-up.postgres.test.ts
+```
+
+In Stripe test mode, verify card setup and return, an off-session purchase,
+tax-inclusive cap rejection, a declined/authentication-required card, explicit
+resume, duplicate webhooks, and reconciliation after interrupting a worker.
+Check that the invoice is paid once, one credit grant appears, and automatic
+purchases are labeled in user history and counted in the admin top-up totals.
