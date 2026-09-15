@@ -1,3 +1,4 @@
+import { diagnosticFetch } from '../logging/diagnostic-fetch.js'
 import { eq } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { requireUser } from '../auth/service.js'
@@ -60,6 +61,7 @@ export async function registerDictationRoutes(app: FastifyInstance): Promise<voi
         filename: part.filename || 'dictation.webm',
         mimeType,
         signal: AbortSignal.timeout(30_000),
+        fetchImpl: diagnosticFetch({ purpose: 'dictation', userId: user.id, providerId: 'groq', upstreamModelId: 'whisper-large-v3-turbo' }),
       })
     } catch (cause) {
       request.log.warn({ err: cause }, 'Groq dictation transcription failed')

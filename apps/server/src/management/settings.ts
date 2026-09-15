@@ -98,7 +98,7 @@ export async function loadManagementSettings(userId: string, database: typeof db
   const revision = revisionOf({
     account: preferenceRow?.values ?? {},
     profile,
-    instance: [...settingRows].sort((left, right) => left.key.localeCompare(right.key))
+    instance: settingRows.filter(row => row.key !== 'diagnosticCleanup').sort((left, right) => left.key.localeCompare(right.key))
       .map((row) => ({ key: row.key, value: row.value, updatedAt: row.updatedAt.toISOString() })),
   })
   return managementSettingsDocumentSchema.parse({

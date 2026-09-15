@@ -193,6 +193,9 @@ export async function restoreFullBackup(jobId: string): Promise<void> {
     }
     if (!restoredAdminId) throw new Error('Backup must contain at least one administrator')
     const settings = await readSmallRestoreTable(tables.get('application_settings'))
+    const archivePolicy = await readSmallRestoreTable(tables.get('diagnostic_policy'))
+    const restoredEpoch = Date.now()
+
     // Keep reference IDs/decisions only; detailed payloads stay on disk. This
     // preserves legacy logging defaults across separately streamed tables.
     const ocrPayloadLogs = new Set<string>()
@@ -215,7 +218,7 @@ export async function restoreFullBackup(jobId: string): Promise<void> {
     }
     async function* compatibleRows(table: FullBackupTable): AsyncGenerator<RestoreRow> {
       for await (const row of restoreRows(tables.get(table))) {
-        const data: Record<string, RestoreRow[]> = { [table]: [row], application_settings: settings }
+        const data: Record<string, RestoreRow[]> = { [table]: [row], application_settings: settings, ...(table !== 'diagnostic_policy' ? { diagnostic_policy: archivePolicy } : {}) }
         if (table === 'users' && !(typeof row.username === 'string' && row.username.trim())) {
           fillMissingUsernames([row], () => {
             let number: number
@@ -229,6 +232,11 @@ export async function restoreFullBackup(jobId: string): Promise<void> {
           data.ocr_attempts = ocrPayloadLogs.has(String(row.id)) ? [{ request_log_id: row.id, request_payload: true }] : []
         }
         applyFullBackupCompatibilityDefaults(data)
+        if (table === 'diagnostic_policy') row.epoch = restoredEpoch
+        if (table === 'provider_diagnostics') {
+          if (new Date(String(row.created_at)).getTime() + 90 * 86_400_000 <= Date.now()) continue
+          row.payload_epoch = restoredEpoch
+        }
         if (table === 'request_logs') logCapture.set(String(row.id), row.capture_detailed_payloads === true)
         if (table === 'ocr_attempts' && logCapture.get(String(row.request_log_id)) === false) {
           row.request_payload = null; row.response_payload = null
@@ -276,6 +284,10 @@ export async function restoreFullBackup(jobId: string): Promise<void> {
         }
         await tx.update(backupJobs).set({ progress: 40 + Math.round(((index + 1) / FULL_BACKUP_TABLES.length) * 55), updatedAt: new Date() }).where(eq(backupJobs.id, jobId))
       }
+      const restoredLogging = settings.find(row => row.key === 'logging')?.value as { logDetailedPayloads?: boolean; payloadRetention?: string } | undefined
+      const durations: Record<string, number> = { '1h': 3600, '24h': 86400, '7d': 604800, '30d': 2592000, '90d': 7776000 }
+      await tx.execute(sql`insert into diagnostic_policy (id, epoch, enabled, retention_seconds, expired_before) values (1, ${restoredEpoch}, ${restoredLogging?.logDetailedPayloads === true}, ${restoredLogging?.payloadRetention === 'indefinite' ? null : durations[restoredLogging?.payloadRetention ?? '7d'] ?? 604800}, ${typeof archivePolicy[0]?.expired_before === 'string' ? archivePolicy[0].expired_before : null})
+        on conflict (id) do update set epoch = excluded.epoch, enabled = excluded.enabled, retention_seconds = excluded.retention_seconds, expired_before = excluded.expired_before`)
       // Persist the completion marker with the imported data. A worker crash
       // after COMMIT must not cause BullMQ to import the same backup again.
       await tx.update(backupJobs).set({ status: 'completed', progress: 100, completedAt: new Date(), expiresAt: new Date(Date.now() + 7 * 86_400_000), updatedAt: new Date() }).where(eq(backupJobs.id, jobId))

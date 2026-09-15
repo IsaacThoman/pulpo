@@ -50,4 +50,17 @@ describe('detailed payload commands', () => {
     await expect(program.parseAsync(['node', 'pulpo', 'usage', 'requests', flag, value])).rejects.toThrow()
     expect(request).not.toHaveBeenCalled()
   })
+  it.each([
+    { args: ['diagnostics'], endpoint: '/diagnostics' },
+    { args: ['diagnostics', 'call/id'], endpoint: '/requests/call%2Fid/diagnostics' },
+    { args: ['diagnostic-payloads', 'attempt/id'], endpoint: '/diagnostics/attempt%2Fid/payloads' },
+    { args: ['retention-status'], endpoint: '/diagnostics/retention' },
+  ])('reads provider diagnostics through $endpoint', async ({ args, endpoint }) => {
+    const result = { data: [{ metadata: { httpStatus: 400 } }] }
+    const { program, stdout, request } = cli(result)
+    await program.parseAsync(['node', 'pulpo', 'usage', ...args])
+    expect(request).toHaveBeenCalledWith('/api/management/v1/usage' + endpoint)
+    expect(JSON.parse(stdout.read().toString())).toEqual(result)
+  })
+
 })

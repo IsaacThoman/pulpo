@@ -36,7 +36,7 @@ describe('speech routes', () => {
       mocks.claims = [{}]
       const response = await server.inject({ method: 'POST', url: '/api/speech', payload: { ...request, input, instructions } })
       expect(response.statusCode, response.body).toBe(200)
-      expect(mocks.generate).toHaveBeenLastCalledWith(expect.objectContaining({ input: expect.objectContaining({ input }) }))
+      expect(mocks.generate).toHaveBeenLastCalledWith(expect.objectContaining({ input: expect.objectContaining({ input }) }), expect.any(Function))
     }
     await server.close()
   })

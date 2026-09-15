@@ -1,3 +1,4 @@
+import { refreshDiagnosticPolicy, closeDiagnostics } from './logging/provider-diagnostics.js'
 import { getConfig } from './config.js'
 import { buildApp } from './app.js'
 import { createSocketServer } from './realtime/socket.js'
@@ -6,6 +7,7 @@ import { redis } from './redis.js'
 import { checkReadiness } from './runtime-health.js'
 
 const config = getConfig()
+await refreshDiagnosticPolicy()
 const app = await buildApp()
 const io = await createSocketServer(app.server)
 let stopping = false
@@ -34,6 +36,7 @@ const shutdown = async (signal: string) => {
       app.close(),
       new Promise<void>((resolve) => io.close(() => resolve())),
     ])
+    await closeDiagnostics()
     await Promise.all([queryClient.end(), redis.quit()])
     process.exit(0)
   } catch (error) {

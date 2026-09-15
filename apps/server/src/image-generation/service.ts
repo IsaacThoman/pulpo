@@ -1,3 +1,6 @@
+import sharp from 'sharp'
+import { reportDiagnosticFailure } from '../logging/provider-diagnostics.js'
+import { diagnosticFetch } from '../logging/diagnostic-fetch.js'
 import { basename, extname } from 'node:path'
 import { and, eq, inArray } from 'drizzle-orm'
 import { imageGenerationPreferencesSchema, imageModelSchema, IMAGE_GENERATION_MAX_BYTES, IMAGE_PROVIDER_CAPABILITIES, type ImageGenerationInput, type ImageModel } from '@pulpo/contracts'
@@ -97,7 +100,7 @@ export async function recoverSavedImageGenerations(responseId: string, runId: st
 }
 
 export async function executeImageGeneration(input: {
-  userId: string; chatId: string; responseId: string; runId: string; operationId: string; args: ImageGenerationInput
+  userId: string; chatId: string; responseId: string; requestLogId?: string; runId: string; operationId: string; args: ImageGenerationInput
   manager: WorkspaceManager; signal?: AbortSignal; reserveCost: (micros: number) => Promise<void>
 }): Promise<ImageExecutionResult> {
   const selection = await selectedImageModel(input.userId)
@@ -131,6 +134,7 @@ export async function executeImageGeneration(input: {
   input.signal?.throwIfAborted()
   const claims = await db.insert(imageGenerationRequests).values({ responseId: input.responseId, operationId: input.operationId, model }).onConflictDoNothing().returning()
   if (!claims.length) throw new AppError(409, 'image_request_duplicate', 'This image request is already running')
+  let providerSucceeded = false
   try {
     const reservedMicros = imageReservation(model)
     await input.reserveCost(reservedMicros)
@@ -138,7 +142,10 @@ export async function executeImageGeneration(input: {
     const current = await selectedImageModel(input.userId)
     if (!current || current.model.id !== model.id || JSON.stringify(current.model) !== JSON.stringify(model) || current.provider.updatedAt.getTime() !== provider.updatedAt.getTime()) throw unavailable()
     const signal = AbortSignal.any([...(input.signal ? [input.signal] : []), AbortSignal.timeout(provider.requestTimeoutMs)])
-    const result = await generateImage({ model, baseUrl: provider.baseUrl, apiKey: decryptSecret(provider.encryptedApiKey, getConfig().ENCRYPTION_KEY), prompt: input.args.prompt, references, signal })
+    const referenceMetadata = await Promise.all(references.map(async reference => { const m = await sharp(reference.data).metadata().catch(() => ({ width: undefined, height: undefined })); return { mimeType: reference.mimeType, sizeBytes: reference.data.length, width: m.width, height: m.height } }))
+    const fetch = diagnosticFetch({ purpose: references.length ? 'image_edit' : 'image_generation', userId: input.userId, requestLogId: input.requestLogId, operationId: input.operationId, providerId: provider.id, modelId: model.id, upstreamModelId: model.upstreamModelId, metadata: { references: referenceMetadata, billingUnit: model.billingUnit } })
+    const result = await generateImage({ fetch, model, baseUrl: provider.baseUrl, apiKey: decryptSecret(provider.encryptedApiKey, getConfig().ENCRYPTION_KEY), prompt: input.args.prompt, references, signal })
+    providerSucceeded = true
     const { data, mimeType, ...metadata } = result
     await db.update(imageGenerationRequests).set({ result: metadata, updatedAt: new Date() }).where(condition)
     const actualMicros = imageCost(model, metadata.usage)
@@ -153,6 +160,7 @@ export async function executeImageGeneration(input: {
     const [attachment] = await db.select().from(attachments).where(eq(attachments.id, stored.id)).limit(1)
     return await finish({ ...claims[0]!, result: metadata }, attachment!)
   } catch (error) {
+    if (!providerSucceeded) await db.update(toolExecutions).set({ provider: model.adapter, providerAttempts: [{ provider: model.adapter, providerId: provider.id, modelId: model.id, upstreamModelId: model.upstreamModelId, outcome: 'failed' }], updatedAt: new Date() }).where(and(eq(toolExecutions.agentRunId, input.runId), eq(toolExecutions.operationId, input.operationId))).catch(() => reportDiagnosticFailure('image_failure_metadata'))
     await db.update(imageGenerationRequests).set({ status: 'failed', updatedAt: new Date() }).where(and(condition, inArray(imageGenerationRequests.status, ['claimed', 'failed'])))
     throw error
   }

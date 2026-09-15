@@ -1,3 +1,4 @@
+import { refreshDiagnosticPolicy, flushDiagnostics, closeDiagnostics } from '../logging/provider-diagnostics.js'
 import { randomUUID } from 'node:crypto'
 import { Readable } from 'node:stream'
 import Fastify, { type FastifyRequest, type FastifyInstance } from 'fastify'
@@ -16,7 +17,7 @@ vi.mock('../storage/index.js', () => ({ getBlobStore: () => ({
 }) }))
 vi.mock('../lib/url-security.js', () => ({ assertSafeProviderUrl: vi.fn() }))
 import { db, queryClient } from '../database/client.js'
-import { usageEvents, attachments, budgetReservations, creditLedger, modelPricingVersions, agentRuns, auditEvents, chats, imageGenerationRequests, imageModels, models, providerConnections, responses, toolExecutions, userPreferences, users } from '../database/schema.js'
+import { providerDiagnostics, usageEvents, attachments, budgetReservations, creditLedger, modelPricingVersions, agentRuns, auditEvents, chats, imageGenerationRequests, imageModels, models, providerConnections, responses, toolExecutions, userPreferences, users } from '../database/schema.js'
 import { reserveBudget, extendBudgetReservationFixedCost, settleBudget, releaseBudget } from '../accounting/service.js'
 import { getConfig } from '../config.js'
 import { encryptSecret } from '../lib/crypto.js'
@@ -61,6 +62,7 @@ describe.skipIf(!enabled)('image generation persistence and authorization', () =
   })
   beforeEach(async () => {
     await db.update(budgetReservations).set({ status: 'released' }).where(eq(budgetReservations.userId, userId))
+    await refreshDiagnosticPolicy()
     role = 'admin'; mocks.writeFails = false; exportFile.mockReset(); stageGeneratedAttachment.mockReset().mockResolvedValue(undefined)
     await db.delete(imageModels).where(eq(imageModels.id, config.id))
     await db.insert(imageModels).values({ id: config.id, providerConnectionId: providerId, config })
@@ -71,6 +73,7 @@ describe.skipIf(!enabled)('image generation persistence and authorization', () =
     vi.stubGlobal('fetch', fetcher)
   })
   afterAll(async () => {
+    await closeDiagnostics()
     vi.unstubAllGlobals(); await server?.close()
     await db.delete(chats).where(eq(chats.id, chatId))
     await db.delete(usageEvents).where(eq(usageEvents.userId, userId))
@@ -93,6 +96,18 @@ describe.skipIf(!enabled)('image generation persistence and authorization', () =
     await expect(executeImageGeneration(input)).rejects.toThrow('Enable image generation')
     expect(fetcher).not.toHaveBeenCalled(); expect(input.reserveCost).not.toHaveBeenCalled()
   })
+  it('retains provider error details without creating a charge or keeping detailed bodies', async () => {
+    const input = await turn()
+    fetcher.mockResolvedValue(Response.json({ error: { code: 'invalid_image', message: 'Unsupported reference format' } }, { status: 400, headers: { 'x-request-id': 'req-image-failed' } }))
+    await expect(executeImageGeneration(input)).rejects.toThrow()
+    await flushDiagnostics()
+    const [diagnostic] = await db.select().from(providerDiagnostics).where(eq(providerDiagnostics.operationId, input.operationId))
+    expect(diagnostic).toMatchObject({ status: 'failed', providerId, modelId: config.id, requestPayload: null, responsePayload: null, metadata: { httpStatus: 400, errorCode: 'invalid_image', providerRequestId: 'req-image-failed' } })
+    const [tool] = await db.select().from(toolExecutions).where(eq(toolExecutions.operationId, input.operationId))
+    expect(tool!.billedCostMicros).toBe(0)
+    expect(tool!.providerAttempts).toEqual([expect.objectContaining({ providerId, modelId: config.id, outcome: 'failed' })])
+  })
+
   it('persists one result and one charge on replay; edits reuse a stateless image item', async () => {
     const input = await turn()
     const result = await executeImageGeneration(input)

@@ -160,6 +160,7 @@ describe('temporary chat backup projection', () => {
       attachments: [{ id: 'temp-attachment', chat_id: 'temp-chat', status: 'ready', object_key: 'temp-blob', checksum: 'temp-checksum' }],
       request_logs: [{ id: 'temp-log', response_id: 'temp-response' }],
       generation_attempts: [{ id: 'temp-attempt', request_log_id: 'temp-log' }],
+      provider_diagnostics: [{ id: 'temp-diagnostic', request_log_id: 'temp-log' }],
       ocr_attempts: [{ id: 'temp-ocr', request_log_id: 'temp-log', attachment_id: 'temp-attachment' }],
       ocr_cache_entries: [{ checksum: 'temp-checksum', text: 'secret' }],
     })

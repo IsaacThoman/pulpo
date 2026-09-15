@@ -12,7 +12,7 @@ const now = new Date('2026-09-10T12:00:00Z')
 const createdAt = new Date('2026-09-10T10:00:00Z')
 const finite = ['1h', '24h', '7d', '30d', '90d'] as const
 async function seed(expiry: Date | null, capture = true) {
-  await database.execute(sql`insert into request_logs values ('log', ${createdAt.toISOString()}, ${createdAt.toISOString()}, ${capture}, ${expiry?.toISOString() ?? null}, '{"input":"secret"}', '{"output":"secret"}')`)
+  await database.execute(sql`insert into request_logs (id, created_at, updated_at, capture_detailed_payloads, payload_expires_at, request_payload, response_payload) values ('log', ${createdAt.toISOString()}, ${createdAt.toISOString()}, ${capture}, ${expiry?.toISOString() ?? null}, '{"input":"secret"}', '{"output":"secret"}')`)
   await database.execute(sql`insert into ocr_attempts values ('ocr', 'log', ${createdAt.toISOString()}, '{"image":"secret"}', '{"text":"secret"}')`)
 }
 async function reconcile(retention: DetailedPayloadRetention, enabled = true) {
@@ -34,9 +34,15 @@ function cleared(result: Awaited<ReturnType<typeof rows>>) {
 describe.skipIf(!url)('detailed payload retention in PostgreSQL', () => {
   beforeAll(async () => {
     await client`create temporary table request_logs (id text primary key, created_at timestamptz, updated_at timestamptz, capture_detailed_payloads boolean, payload_expires_at timestamptz, request_payload jsonb, response_payload jsonb)`
+    await client`alter table request_logs add column response_id text`
+    await client`create temporary table agent_runs (id text primary key, response_id text)`
+    await client`create temporary table tool_executions (id text primary key, agent_run_id text, arguments text, output text, updated_at timestamptz)`
+    await client`create temporary table diagnostic_policy(id integer primary key, enabled boolean, epoch bigint, retention_seconds integer, expired_before timestamptz)`
+    await client`insert into diagnostic_policy values (1,true,0,86400,null)`
+    await client`create temporary table provider_diagnostics (id text primary key, payload_epoch bigint default 0, retention_started_at timestamptz, created_at timestamptz, updated_at timestamptz, capture_detailed_payloads boolean, payload_expires_at timestamptz, request_payload text, response_payload text)`
     await client`create temporary table ocr_attempts (id text primary key, request_log_id text references request_logs(id), updated_at timestamptz, request_payload jsonb, response_payload jsonb)`
   })
-  beforeEach(async () => { await client`truncate ocr_attempts, request_logs` })
+  beforeEach(async () => { await client`truncate ocr_attempts, request_logs, provider_diagnostics` })
   afterAll(async () => { await client.end() })
 
   it.each(finite)('applies %s from creation time, including immediate expiration', async (retention) => {

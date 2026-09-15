@@ -1,3 +1,4 @@
+import { diagnosticFetch } from '../logging/diagnostic-fetch.js'
 import { eq } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { SPEECH_DURATION_HEADER, SPEECH_REQUEST_BODY_LIMIT, speechModelSchema, speechRequestSchema, type SpeechModel, type PublicSpeechModel } from '@pulpo/contracts'
@@ -122,7 +123,7 @@ export async function registerSpeechRoutes(app: FastifyInstance) {
     reply.raw.on('close', close)
     const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(Math.min(provider.requestTimeoutMs, 120_000))])
     try {
-      const result = await generateSpeech({ baseUrl: provider.baseUrl, apiKey: decryptSecret(provider.encryptedApiKey, getConfig().ENCRYPTION_KEY), organizationId: provider.organizationId, projectId: provider.projectId, model, input, signal, upstreamVoiceId: clone?.upstreamVoiceId })
+      const result = await generateSpeech({ baseUrl: provider.baseUrl, apiKey: decryptSecret(provider.encryptedApiKey, getConfig().ENCRYPTION_KEY), organizationId: provider.organizationId, projectId: provider.projectId, model, input, signal, upstreamVoiceId: clone?.upstreamVoiceId }, diagnosticFetch({ purpose: 'speech', userId: user.id, operationId: input.requestId, providerId: provider.id, modelId: model.id, upstreamModelId: model.upstreamModelId }))
       signal.throwIfAborted()
       const audio = await applyVoiceWatermark(result.audio, row, input.voice, model.responseFormat, input.playbackOffsetSeconds ?? 0, signal)
       signal.throwIfAborted()

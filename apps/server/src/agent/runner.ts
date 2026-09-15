@@ -1,3 +1,6 @@
+import { diagnosticPayload } from '../logging/diagnostic-sanitizer.js'
+import { diagnosticFetch } from '../logging/diagnostic-fetch.js'
+import { recordReconstructedDiagnostic } from '../logging/provider-diagnostics.js'
 import { createImageGenerationTools } from '../image-generation/tool.js'
 import { selectedImageModel, executeImageGeneration, recoverSavedImageGenerations } from '../image-generation/service.js'
 import { Agent, type AgentMessage } from '@earendil-works/pi-agent-core'
@@ -70,8 +73,7 @@ import { agentModelAttemptLimit, agentStreamEventHasSubstantiveOutput, assistant
 import { projectNextAgentResponseEvent, selectAgentResponseCheckpoint } from './streaming-snapshot.js'
 import { createFirstTokenTimeout, type FirstTokenTimeout } from './first-token-timeout.js'
 import { createProviderCostCapture } from './provider-cost.js'
-import { activeDetailedPayloadCondition, detailedPayloadCaptureIsActive } from '../logging/detailed-payload-retention.js'
-import { orderedAgentTurnPayloads } from './detailed-payloads.js'
+import { detailedPayloadCaptureIsActive } from '../logging/detailed-payload-retention.js'
 import { loadAgentPromptImages } from './prompt-images.js'
 import { adaptToolResultImagesForProvider, type ToolResultImageMode } from './tool-result-images.js'
 import { CODEX_PROVIDER_ID } from '../codex/constants.js'
@@ -332,7 +334,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
   const turnPricing = new Map<number, ActivePricing>()
   const turnProviderCosts = new Map<number, () => Promise<number | undefined>>()
   const turnRequestPayloads = new Map<number, unknown>()
-  const turnResponsePayloads = new Map<number, unknown>()
+  const turnFirstTokenMs = new Map<number, number>()
   const turnRetryAttempts = new Map<number, number>()
   let currentRetryAttempt = 1
   let lastResponder: { runtime: RuntimeModel; pricing: ActivePricing } | undefined
@@ -634,6 +636,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
     model: (await selectedImageModel(record.response.userId))?.model ?? null,
     onStarted: markToolStarted,
     execute: (operationId, args, signal) => executeImageGeneration({
+      requestLogId: requestLog.id,
       operationId, args, signal, userId: record.response.userId, chatId: record.response.chatId,
       responseId, runId, manager, reserveCost: micros => micros > 0 ? extendBudgetReservationFixedCost(responseId, micros) : Promise.resolve(),
     }),
@@ -780,11 +783,11 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
           signal: firstTokenTimeout.signal,
           sessionId: cacheOptions.sessionId,
           headers: cacheOptions.headers,
-          fetch: providerCostCapture?.fetch,
-          onPayload: detailedPayloadsEnabled
+          fetch: diagnosticFetch({ purpose: 'generation', userId: record.response.userId, requestLogId: requestLog.id, modelCallId: turnAttemptIds.get(modelTurns), modelId: active.model.id, upstreamModelId: active.model.upstreamModelId, providerId: active.provider.id, metadata: { turnNumber: modelTurns, retryAttempt: currentRetryAttempt } }, providerCostCapture?.fetch),
+          onPayload: detailedPayloadsEnabled && active.codex
             ? async (payload: unknown, model: Model<Api>) => {
                 const transformed = await options?.onPayload?.(payload, model)
-                turnRequestPayloads.set(modelTurns, transformed ?? payload)
+                turnRequestPayloads.set(modelTurns, diagnosticPayload(transformed ?? payload, 'reconstructed').body)
                 return transformed
               }
             : options?.onPayload,
@@ -850,6 +853,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
       const substantiveOutput = agentStreamEventHasSubstantiveOutput(update)
       if (substantiveOutput) {
         firstTokenTimeout?.clear()
+        if (!turnOutputStarted.has(modelTurns)) turnFirstTokenMs.set(modelTurns, Date.now() - (modelTurnStartedAt.get(modelTurns) ?? Date.now()))
         turnOutputStarted.add(modelTurns)
       }
       if (update.type === 'text_delta') await emit('response.output_text.delta', {
@@ -872,7 +876,8 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
       firstTokenTimeout?.clear()
       const message = event.message as AssistantMessage
       const completedTurnNumber = modelTurns
-      if (detailedPayloadsEnabled) turnResponsePayloads.set(completedTurnNumber, message)
+      if (active.codex) await recordReconstructedDiagnostic({ requestLogId: requestLog.id, modelCallId: turnAttemptIds.get(modelTurns), purpose: 'generation', providerId: active.provider.id, modelId: active.model.id, upstreamModelId: active.model.upstreamModelId }, turnRequestPayloads.get(modelTurns), message, { turnNumber: modelTurns, firstTokenMs: turnFirstTokenMs.get(modelTurns) }, message.stopReason === 'error' ? 'failed' : 'completed')
+      turnRequestPayloads.delete(completedTurnNumber)
       const completedRuntime = turnRuntime.get(completedTurnNumber) ?? { runtime: active, index: activeIndex }
       const turnUsage = { inputTokens: message.usage.input + message.usage.cacheRead + message.usage.cacheWrite, cachedInputTokens: message.usage.cacheRead, cacheWriteTokens: message.usage.cacheWrite, outputTokens: message.usage.output, reasoningTokens: message.usage.reasoning ?? 0, totalTokens: message.usage.totalTokens }
       usage = { inputTokens: usage.inputTokens + turnUsage.inputTokens, cachedInputTokens: usage.cachedInputTokens + turnUsage.cachedInputTokens, cacheWriteTokens: usage.cacheWriteTokens + turnUsage.cacheWriteTokens, outputTokens: usage.outputTokens + turnUsage.outputTokens, reasoningTokens: usage.reasoningTokens + turnUsage.reasoningTokens, totalTokens: usage.totalTokens + turnUsage.totalTokens }
@@ -946,7 +951,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
         output: '',
       }
       toolItems.set(event.toolCallId, item)
-      await db.insert(toolExecutions).values({ id: newId(), agentRunId: runId, operationId: event.toolCallId, toolName: event.toolName, arguments: event.args, status: 'queued' }).onConflictDoNothing()
+      await db.insert(toolExecutions).values({ id: newId(), agentRunId: runId, operationId: event.toolCallId, toolName: event.toolName, arguments: {}, status: 'queued' }).onConflictDoNothing()
       await emit('pulpo.agent.tool.queued', item)
       await snapshotIfDue()
     } else if (event.type === 'tool_execution_update') {
@@ -968,11 +973,12 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
         const durationMs = item.startedAt ? Math.max(0, Date.now() - Date.parse(item.startedAt)) : undefined
         Object.assign(item, { ...(imagePreview ? { imagePreview } : {}), output, status: event.isError ? 'failed' : 'completed', isError: event.isError, ...(durationMs !== undefined ? { durationMs } : {}) })
       }
+      await recordReconstructedDiagnostic({ requestLogId: requestLog.id, operationId: event.toolCallId, purpose: 'tool', metadata: { toolName: event.toolName } }, item?.arguments, { output }, { durationMs: item?.durationMs, ...(event.isError ? { failureStage: 'tool' } : {}) }, event.isError ? 'failed' : 'completed')
       await db.update(toolExecutions).set({
         workspaceLeaseId: manager.leaseId,
         status: event.isError ? 'failed' : 'completed',
-        output,
-        provider: typeof details.provider === 'string' ? details.provider : providerExecution?.provider,
+        output: null,
+        ...(event.toolName === 'generate_image' ? {} : { provider: typeof details.provider === 'string' ? details.provider : providerExecution?.provider }),
         ...(event.toolName === 'generate_image' ? {} : { providerAttempts: Array.isArray(details.providerAttempts) ? details.providerAttempts : providerExecution?.attempts ?? [] }),
         providerCostMicros,
         ...(event.toolName === 'generate_image' ? {} : { billedCostMicros }),
@@ -1123,10 +1129,6 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
       : (await releaseBudget(responseId), 0)
     const totalDurationMs = Date.now() - startedAt
     await db.update(requestLogs).set({ status: 'completed', actualModelId: finalResponder.runtime.model.id, inputTokens: usage.inputTokens, cachedInputTokens: usage.cachedInputTokens, cacheWriteTokens: usage.cacheWriteTokens, outputTokens: usage.outputTokens, reasoningTokens: usage.reasoningTokens, costMicros: cost, durationMs: totalDurationMs, tokensPerSecond: totalDurationMs > 0 ? completionTokensPerSecond(totalDurationMs, usage.outputTokens) : null, completedAt: new Date(), updatedAt: new Date() }).where(eq(requestLogs.id, requestLog.id))
-    if (detailedPayloadsEnabled) {
-      await db.update(requestLogs).set({ requestPayload: orderedAgentTurnPayloads(turnRequestPayloads), responsePayload: orderedAgentTurnPayloads(turnResponsePayloads), updatedAt: new Date() })
-        .where(activeDetailedPayloadCondition(requestLog.id))
-    }
     await publishAdminUsage(requestLog.id, true)
   } catch (error) {
     const errorMessage = active.codex ? safeCodexErrorMessage(error) : error instanceof Error ? error.message : String(error)
@@ -1134,10 +1136,6 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
       agent.state.messages = agent.state.messages.map((message) => (
         message.role === 'assistant' && message.errorMessage ? { ...message, errorMessage } : message
       ))
-      for (const [turn, payload] of turnResponsePayloads) {
-        const value = payload as { role?: string; errorMessage?: string }
-        if (value.role === 'assistant' && value.errorMessage) turnResponsePayloads.set(turn, { ...value, errorMessage })
-      }
     }
     if (active.codex && codexErrorRequiresReauthentication(error)) {
       await markCodexReauthenticationRequired(record.response.userId, 'Your Codex connection needs to be renewed.')
@@ -1171,10 +1169,6 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
       : (await releaseBudget(responseId), 0)
     const totalDurationMs = Date.now() - startedAt
     await db.update(requestLogs).set({ status, actualModelId: finalResponder.runtime.model.id, inputTokens: usage.inputTokens, cachedInputTokens: usage.cachedInputTokens, cacheWriteTokens: usage.cacheWriteTokens, outputTokens: usage.outputTokens, reasoningTokens: usage.reasoningTokens, costMicros: cost, errorCategory: cancelled ? 'cancellation' : classifyGenerationError(error), errorMessage, durationMs: totalDurationMs, tokensPerSecond: totalDurationMs > 0 ? completionTokensPerSecond(totalDurationMs, usage.outputTokens) : null, completedAt: new Date(), updatedAt: new Date() }).where(eq(requestLogs.id, requestLog.id))
-    if (detailedPayloadsEnabled) {
-      await db.update(requestLogs).set({ requestPayload: orderedAgentTurnPayloads(turnRequestPayloads), responsePayload: orderedAgentTurnPayloads(turnResponsePayloads), updatedAt: new Date() })
-        .where(activeDetailedPayloadCondition(requestLog.id))
-    }
     await publishAdminUsage(requestLog.id, true)
     if (!cancelled) throw active.codex ? new Error(errorMessage) : error
   } finally {
