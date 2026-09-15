@@ -1,5 +1,6 @@
 import { refreshDiagnosticPolicy, flushDiagnostics, closeDiagnostics } from '../logging/provider-diagnostics.js'
 import { randomUUID } from 'node:crypto'
+import { readFile } from 'node:fs/promises'
 import { Readable } from 'node:stream'
 import Fastify, { type FastifyRequest, type FastifyInstance } from 'fastify'
 import sharp from 'sharp'
@@ -149,6 +150,27 @@ describe.skipIf(!enabled)('image generation persistence and authorization', () =
     const form = fetcher.mock.calls[1]![1]!.body as FormData
     expect(Buffer.from(await (form.get('image[]') as Blob).arrayBuffer())).toEqual(image)
     expect(exportFile).not.toHaveBeenCalled()
+  })
+  it.each(['attachment', 'workspace'] as const)('normalizes an MPO from a %s before editing without replacing the source', async source => {
+    const data = await readFile(new URL('./fixtures/oriented-mpo.jpg', import.meta.url))
+    const id = randomUUID(), objectKey = `reference-${id}`
+    const model = { ...config, ...OPENAI_IMAGE_PRESET, enabled: true }
+    await db.update(imageModels).set({ config: model }).where(eq(imageModels.id, config.id))
+    await db.update(providerConnections).set({ baseUrl: 'https://api.openai.com/v1' }).where(eq(providerConnections.id, providerId))
+    if (source === 'attachment') {
+      mocks.blobs.set(objectKey, data)
+      await db.insert(attachments).values({ id, userId, chatId, objectKey, originalName: 'oriented-mpo.jpg', mimeType: 'image/jpeg', sizeBytes: data.length, status: 'ready' })
+    } else exportFile.mockResolvedValue({ data })
+    fetcher.mockImplementation(async () => Response.json({ data: [{ b64_json: image.toString('base64') }] }))
+    await executeImageGeneration({ ...await turn(), args: { prompt: 'Make it blue', referenceImages: [source === 'attachment' ? { attachmentId: id } : { path: '/workspace/oriented-mpo.jpg' }] } })
+    expect(fetcher).toHaveBeenCalledOnce()
+    const file = (fetcher.mock.calls[0]![1]!.body as FormData).get('image[]') as File
+    const bytes = Buffer.from(await file.arrayBuffer())
+    expect(file.type).toBe('image/jpeg')
+    expect(bytes.includes(Buffer.from('MPF\0'))).toBe(false)
+    expect(await sharp(bytes).metadata()).toMatchObject({ width: 32, height: 64 })
+    if (source === 'attachment') { expect(mocks.blobs.get(objectKey)).toEqual(data); expect(exportFile).not.toHaveBeenCalled() }
+    else expect(exportFile).toHaveBeenCalledWith('/workspace/oriented-mpo.jpg', undefined)
   })
   it('persists Meta cached usage and bills combined output including reasoning', async () => {
     const token = imageModelSchema.parse({ ...config, billingUnit: 'tokens', reservationMicros: 20000,
