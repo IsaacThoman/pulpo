@@ -71,13 +71,13 @@ async function processLocked(store: typeof db, userId: string, stripe: Stripe): 
   const eligible = user && !user.blocked && !user.deletionRequestedAt && settings?.enabled && !settings.pausedReason
     && settings.paymentMethodId && account?.stripeCustomerId && !(account.holdAt && !account.holdClearedAt)
   if (!attempt) {
-    if (!eligible || (settings.limitReached && settings.updatedAt >= utcMonth().start)) return null
+    if (!eligible || (settings.limitReachedAt && settings.limitReachedAt >= utcMonth().start)) return null
     const pending = await pendingFundingByUser(store, [userId])
     if (!belowTopUpThreshold(user.balanceMicros, pending.get(userId) ?? 0, settings.thresholdCents)) return null
     const spending = await topUpSpending(userId, store)
     const chargeCents = chargeCentsForCredits(settings.creditCents)
     if (!topUpFits(settings.monthlyLimitCents, spending.chargedCents, spending.pendingCents, chargeCents)) {
-      await store.update(autoTopUpSettings).set({ limitReached: true, updatedAt: new Date() }).where(eq(autoTopUpSettings.userId, userId))
+      await store.update(autoTopUpSettings).set({ limitReachedAt: new Date(), updatedAt: new Date() }).where(eq(autoTopUpSettings.userId, userId))
       return null
     }
     const rows = await store.insert(autoTopUpAttempts).values({ id: newId(), userId, settingsRevision: settings.revision,
@@ -135,7 +135,7 @@ async function processLocked(store: typeof db, userId: string, stripe: Stripe): 
   if (attempt.status !== 'paying') {
     const spending = await topUpSpending(userId, store)
     if (!settings || !topUpFits(settings.monthlyLimitCents, spending.chargedCents, spending.pendingCents - attempt.reservedCents, invoice.amount_due)) {
-      await store.update(autoTopUpSettings).set({ limitReached: true, updatedAt: new Date() }).where(eq(autoTopUpSettings.userId, userId))
+      await store.update(autoTopUpSettings).set({ limitReachedAt: new Date(), updatedAt: new Date() }).where(eq(autoTopUpSettings.userId, userId))
       return closeAttempt(store, attempt, stripe, 'monthly_limit')
     }
     await saveAttempt(store, attempt, { status: 'ready', reservedCents: invoice.amount_due })

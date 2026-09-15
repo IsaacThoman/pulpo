@@ -1038,7 +1038,7 @@ export const autoTopUpSettings = pgTable('auto_top_up_settings', {
   setupSessionId: text('setup_session_id'),
   setupEnable: boolean('setup_enable').notNull().default(false),
   pausedReason: text('paused_reason'),
-  limitReached: boolean('limit_reached').notNull().default(false),
+  limitReachedAt: timestamp('limit_reached_at', { withTimezone: true }),
   ...timestamps,
 }, table => [check('auto_top_up_settings_amounts', sql`${table.creditCents} between 500 and 50000 and ${table.thresholdCents} > 0 and ${table.thresholdCents} <= ${table.creditCents} and ${table.monthlyLimitCents} >= ceil((${table.creditCents} + 50) / 0.95)` )])
 

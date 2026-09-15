@@ -139,6 +139,14 @@ describe.skipIf(!enabled)('automatic top-up payments in PostgreSQL', () => {
     expect(f.stripe.invoices.voidInvoice).toHaveBeenCalledTimes(1)
     expect(await autoTopUpSummary(id)).toMatchObject({ status: 'limit_reached', chargedCents: 0, pendingCents: 0 })
   })
+  it('does not carry last month’s limit block forward when other settings are updated', async () => {
+    const id = await account()
+    const previousMonth = new Date(); previousMonth.setUTCDate(1); previousMonth.setUTCMonth(previousMonth.getUTCMonth() - 1)
+    await db.update(autoTopUpSettings).set({ limitReachedAt: previousMonth, updatedAt: new Date() }).where(eq(autoTopUpSettings.userId, id))
+    expect(await autoTopUpSummary(id)).toMatchObject({ status: 'active' })
+    await processAutoTopUp(id)
+    expect(f.stripe.invoices.pay).toHaveBeenCalledTimes(1)
+  })
   it('permits the exact tax-inclusive limit and excludes manual purchases', async () => {
     const id = await account({ limit: 2885 }); f.tax(200)
     await db.insert(billingOrders).values({ stripePaymentId: `manual_${id}`, userId: id, stripePriceId: 'prod_credits', billingReason: 'purchase', status: 'paid', currency: 'usd', totalAmountCents: 5000, paidAt: new Date() })

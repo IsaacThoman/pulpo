@@ -388,7 +388,7 @@ async function applyPaidAutoTopUp(tx: Transaction, invoice: Stripe.Invoice, paym
     isCreditPurchase: true, billingReason: 'automatic_top_up', plan: null })
   await tx.update(autoTopUpAttempts).set({ status: 'succeeded', chargedCents, chargedAt: payment.chargedAt ?? unixDate(invoice.status_transitions.paid_at), reservedCents: 0, updatedAt: new Date() })
     .where(eq(autoTopUpAttempts.id, attempt.id))
-  await tx.update(autoTopUpSettings).set({ limitReached: false, updatedAt: new Date() }).where(eq(autoTopUpSettings.userId, attempt.userId))
+  await tx.update(autoTopUpSettings).set({ limitReachedAt: null, updatedAt: new Date() }).where(eq(autoTopUpSettings.userId, attempt.userId))
   changedUsers.add(attempt.userId)
 }
 

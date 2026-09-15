@@ -26,7 +26,7 @@ export async function autoTopUpSummary(userId: string) {
   const [[settings], spending] = await Promise.all([
     db.select().from(autoTopUpSettings).where(eq(autoTopUpSettings.userId, userId)), topUpSpending(userId),
   ])
-  const limitReached = settings?.limitReached && settings.updatedAt >= utcMonth().start
+  const limitReached = settings?.limitReachedAt && settings.limitReachedAt >= utcMonth().start
   return {
     ...AUTO_TOP_UP_DEFAULTS,
     ...(settings && { enabled: settings.enabled, thresholdCents: settings.thresholdCents, creditCents: settings.creditCents, monthlyLimitCents: settings.monthlyLimitCents }),
@@ -58,7 +58,7 @@ export async function updateAutoTopUp(userId: string, body: unknown) {
       enabled: input.enabled, thresholdCents: input.thresholdCents, creditCents: input.creditCents, monthlyLimitCents: input.monthlyLimitCents,
       revision: settings!.revision + 1, setupId: null, setupSessionId: null, setupEnable: false,
       ...(input.consent && { consentAt: new Date() }),
-      ...(input.resume && { pausedReason: null }), limitReached: false, updatedAt: new Date(),
+      ...(input.resume && { pausedReason: null }), limitReachedAt: null, updatedAt: new Date(),
     }).where(eq(autoTopUpSettings.userId, userId))
   })
   await notifyAutoTopUp(userId)
