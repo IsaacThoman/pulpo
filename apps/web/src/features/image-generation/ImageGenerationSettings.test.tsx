@@ -15,7 +15,7 @@ vi.mock('@/stores/auth', () => ({ useAuth: (selector: (state: unknown) => unknow
 Element.prototype.scrollIntoView = vi.fn()
 afterEach(() => { cleanup(); vi.clearAllMocks() })
 const mount = () => render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><ImageGenerationSettings /></QueryClientProvider>)
-it('requires a model selection before opt-in and shows its price', async () => {
+it('requires a model selection before opt-in without showing its price', async () => {
   mocks.api.mockResolvedValue({ data: [{ ...META_MUSE_IMAGE_PRESET, id: 'muse', enabled: true, billUsers: true, imagePriceMicros: 10000 }] })
   useSettings.setState({ imageGeneration: { enabled: false, modelId: null } })
   mount()
@@ -23,7 +23,7 @@ it('requires a model selection before opt-in and shows its price', async () => {
   fireEvent.click(screen.getByRole('combobox', { name: 'Image model' }))
   fireEvent.click(await screen.findByRole('option', { name: 'Muse Image' }))
   expect(useSettings.getState().imageGeneration).toEqual({ enabled: false, modelId: 'muse' })
-  expect(await screen.findByText('$0.01 / image')).toBeTruthy()
+  expect(screen.queryByText('$0.01 / image')).toBeNull()
   fireEvent.click(screen.getByRole('switch'))
   expect(useSettings.getState().imageGeneration).toEqual({ enabled: true, modelId: 'muse' })
 })
@@ -44,11 +44,12 @@ it('shows catalog failures and provides retry', async () => {
   fireEvent.click(await screen.findByRole('button', { name: 'Retry' }))
   await waitFor(() => expect(screen.getByText('An admin must configure an image model first.')).toBeTruthy())
 })
-it('shows token rates instead of a per-image charge', async () => {
+it('hides token rates for the selected image model', async () => {
   mocks.api.mockResolvedValue({ data: [{ ...META_MUSE_IMAGE_PRESET, id: 'muse', enabled: true, billUsers: true, billingUnit: 'tokens', tokenPrices: { input: 2000000, cachedInput: 500000, output: 10000000 } }] })
   useSettings.setState({ imageGeneration: { enabled: true, modelId: 'muse' } })
   mount()
-  expect(await screen.findByText('$2 / 1M Input tokens · $0.5 / 1M Cached input tokens · $10 / 1M Output tokens')).toBeTruthy()
+  expect(await screen.findByText('Muse Image')).toBeTruthy()
+  expect(screen.queryByText(/\/ 1M/)).toBeNull()
   expect(screen.queryByText(/\/ image$/)).toBeNull()
 })
 

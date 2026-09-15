@@ -29,7 +29,7 @@ vi.mock('../speech/SpeechPicker', () => ({ SpeechPicker: ({ label, value, placeh
 import { ImageGenerationSettings } from './ImageGenerationSettings'
 const mount = () => render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><ImageGenerationSettings /></QueryClientProvider>)
 afterEach(() => { cleanup(); vi.clearAllMocks() })
-it.each(['ios', 'android'])('shows token pricing and persists model selection and opt-in on %s', async platform => {
+it.each(['ios', 'android'])('hides token pricing and persists model selection and opt-in on %s', async platform => {
   mocks.platform = platform; mocks.preferences = { enabled: false, modelId: null }
   mocks.api.mockResolvedValue({ data: [{ ...META_MUSE_IMAGE_PRESET, id: 'muse', billUsers: true, billingUnit: 'tokens', tokenPrices: { input: 2000000, cachedInput: 500000, output: 10000000 } }] })
   const view = mount()
@@ -37,7 +37,8 @@ it.each(['ios', 'android'])('shows token pricing and persists model selection an
   fireEvent.change(screen.getByLabelText('Image model'), { target: { value: 'muse' } })
   expect(mocks.set).toHaveBeenCalledWith('imageGeneration', { enabled: false, modelId: 'muse' })
   view.unmount(); mocks.preferences = { enabled: false, modelId: 'muse' }; mount()
-  expect(await screen.findByText('$2 / 1M Input tokens · $0.5 / 1M Cached input tokens · $10 / 1M Output tokens')).toBeTruthy()
+  await screen.findByRole('option', { name: 'Muse Image' })
+  expect(screen.queryByText(/\/ 1M/)).toBeNull()
   fireEvent.click(screen.getByText('Enable image generation'))
   expect(mocks.set).toHaveBeenCalledWith('imageGeneration', { enabled: true, modelId: 'muse' })
 })
@@ -54,7 +55,8 @@ it.each(['ios', 'android'])('uses the admin default without persisting a selecti
   mocks.platform = platform; mocks.preferences = { enabled: false, modelId: null }
   mocks.api.mockResolvedValue({ data: [{ ...META_MUSE_IMAGE_PRESET, id: 'muse', enabled: true }], defaultModelId: 'muse' })
   mount()
-  await screen.findByText('Free to use')
+  await screen.findByRole('option', { name: 'Muse Image' })
+  expect(screen.queryByText('Free to use')).toBeNull()
   expect((screen.getByLabelText('Image model') as HTMLSelectElement).value).toBe('muse')
   expect(mocks.set).not.toHaveBeenCalled()
   fireEvent.click(screen.getByText('Enable image generation'))
@@ -64,7 +66,8 @@ it.each(['ios', 'android'])('preserves explicit choices over the admin default o
   mocks.platform = platform; mocks.preferences = { enabled: false, modelId: 'chosen' }
   mocks.api.mockResolvedValue({ data: [{ ...META_MUSE_IMAGE_PRESET, id: 'muse' }, { ...META_MUSE_IMAGE_PRESET, id: 'chosen', name: 'My model' }], defaultModelId: 'muse' })
   mount()
-  await screen.findByText('Free to use')
+  await screen.findByRole('option', { name: 'My model' })
+  expect(screen.queryByText('Free to use')).toBeNull()
   expect((screen.getByLabelText('Image model') as HTMLSelectElement).value).toBe('chosen')
   expect(mocks.set).not.toHaveBeenCalled()
 })
