@@ -1,7 +1,20 @@
 import { describe, expect, it } from 'vitest'
-import { attachmentWorkspacePath, buildAgentSystemPrompt, buildAgentUserPrompt, restoredAttachmentWorkspacePath } from './policy.js'
+import { attachmentWorkspacePath, buildAgentSystemPrompt, buildAgentUserPrompt, buildToolsDisabledSystemPrompt, restoredAttachmentWorkspacePath } from './policy.js'
 
 describe('agent policy', () => {
+  it('replaces workspace capabilities while preserving model policy and personalization when tools are disabled', () => {
+    const prompt = buildToolsDisabledSystemPrompt('Model policy', 'Prefer TypeScript.', 'User memory')
+    expect(prompt).toContain('Agent tools are disabled for this response')
+    expect(prompt).toContain('Earlier tool results are historical context')
+    expect(prompt).toContain('Model policy')
+    expect(prompt).toContain('User-provided custom instructions:\nPrefer TypeScript.')
+    expect(prompt).toContain('User memory')
+    expect(prompt).not.toContain('passwordless sudo')
+    expect(prompt).not.toContain('Use view_image')
+    expect(prompt).not.toContain('Use attach_file')
+    expect(prompt).not.toContain('Update it whenever')
+  })
+
   it('keeps the Pulpo harness first and appends configured instructions', () => {
     const prompt = buildAgentSystemPrompt('Model policy', 'Agent policy', 'Prefer TypeScript.')
     expect(prompt).toContain('/workspace')

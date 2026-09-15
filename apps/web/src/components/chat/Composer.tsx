@@ -40,7 +40,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { useChat } from '@/stores/chat'
+import { useChat, type ResponseGenerationSelection } from '@/stores/chat'
 import { useSettings } from '@/stores/settings'
 import { chatOptionsFor, resolveSelections, useModelConfig } from '@/stores/modelConfig'
 import { getCatalogModel, useCatalog } from '@/stores/catalog'
@@ -132,6 +132,7 @@ export function Composer({
   temporaryControlRef,
   suggestionControlRef,
   focusControlRef,
+  generationControlRef,
   onTemporaryChange,
 }: {
   chatId: string | null
@@ -147,6 +148,7 @@ export function Composer({
   temporaryControlRef?: Ref<{ toggle: () => Promise<void> }>
   suggestionControlRef?: Ref<{ submit: (message: string) => void }>
   focusControlRef?: Ref<{ focus: () => void }>
+  generationControlRef?: Ref<{ getSelection: () => ResponseGenerationSelection }>
   onTemporaryChange?: (temporary: boolean) => void
 }) {
   const { t } = useTranslation()
@@ -274,6 +276,14 @@ export function Composer({
 
   const [editAgentMode, setEditAgentMode] = useState(false)
   const activeAgentMode = messageEdit ? editAgentMode : agentModeEnabled
+  const generationSelection: ResponseGenerationSelection = {
+    modelId,
+    presetSelections: selections,
+    agentMode: activeAgentMode && canUseAgent,
+  }
+  useImperativeHandle(generationControlRef, () => ({
+    getSelection: () => ({ ...generationSelection, presetSelections: { ...selections } }),
+  }))
   const attachments = attachmentIds.map((id) => uploads[id]).filter((item): item is UploadRecord => Boolean(item))
   const uploading = attachments.some((a) => a.status === 'uploading')
   const uploadFailed = attachments.some((a) => a.status === 'error')
@@ -732,9 +742,7 @@ export function Composer({
       composerDraft: userId && composerSync && submittedState ? { userId, draftId, state: submittedState, revision } : undefined,
       chatId,
       content: text,
-      modelId,
-      presetSelections: selections,
-      agentMode: activeAgentMode && canUseAgent,
+      ...generationSelection,
       temporary,
       autoExpire,
       attachmentIds: ids,
@@ -762,10 +770,8 @@ export function Composer({
     const payload = queuePayload()
     const queueInput = {
       input: text,
-      modelId,
-      presetSelections: selections,
+      ...generationSelection,
       attachmentIds: payload.map((attachment) => attachment.id),
-      agentMode: activeAgentMode && canUseAgent,
     }
     setQueueError(null)
     if (messageEdit && chatId) {

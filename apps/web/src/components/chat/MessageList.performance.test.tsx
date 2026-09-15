@@ -20,7 +20,7 @@ it.each([200, 1000])('keeps completed rows stable with %i messages during foregr
   const chat: Chat = { id: 'active', title: 'Chat', modelId: 'model', messages, createdAt: 1, updatedAt: 1, pinned: false, folderId: null, sortOrder: 0, temporary: false, expiresAt: null, expired: false, tags: [] }
   useChat.setState({ chats: [chat, { ...chat, id: 'background', messages: [] }] })
   const getModel = vi.spyOn(catalog, 'getCatalogModel')
-  const view = render(<MessageList chat={chat} activeModelId="model" />)
+  const view = render(<MessageList chat={chat} onRegenerate={() => undefined} />)
   getModel.mockClear()
   await act(async () => useChat.setState((state) => ({ chats: state.chats.map((item) => item.id === 'background' ? { ...item, title: 'Changed' } : item) })))
   expect(getModel).not.toHaveBeenCalled()
