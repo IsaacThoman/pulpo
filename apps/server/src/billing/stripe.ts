@@ -76,7 +76,7 @@ export async function reusableStripeCustomerId(customerId: string, stripe: Strip
   }
 }
 
-async function ensureCustomer(userId: string): Promise<string> {
+export async function ensureCustomer(userId: string): Promise<string> {
   const [account] = await db.select({ stripeCustomerId: billingAccounts.stripeCustomerId })
     .from(billingAccounts).where(eq(billingAccounts.userId, userId)).limit(1)
   const stripe = getStripeClient()
@@ -421,7 +421,7 @@ async function changeSubscriptionUnchecked(input: {
 
 // Hold a shared user lock while creating external billing resources. Deletion waits
 // for in-flight operations, then its cleanup sees every resulting Stripe ID.
-async function withBillingAccount<T>(userId: string, operation: () => Promise<T>): Promise<T> {
+export async function withBillingAccount<T>(userId: string, operation: () => Promise<T>): Promise<T> {
   return db.transaction(async (tx) => {
     const [user] = await tx.select().from(users).where(eq(users.id, userId)).for('share')
     if (!user || user.blocked || user.deletionRequestedAt) throw new AppError(403, 'account_blocked', 'The account cannot make billing changes')

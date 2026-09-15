@@ -1023,6 +1023,48 @@ export const billingAccounts = pgTable('billing_accounts', {
   check('billing_accounts_storage_override_check', sql`${table.storageLimitOverrideBytes} is null or ${table.storageLimitOverrideBytes} >= 0`),
 ])
 
+// Consent and payment attempts are separate from subscriptions and manual purchases.
+export const autoTopUpSettings = pgTable('auto_top_up_settings', {
+  userId: uuid('user_id').primaryKey().references(() => users.id, { onDelete: 'cascade' }),
+  enabled: boolean('enabled').notNull().default(false),
+  thresholdCents: integer('threshold_cents').notNull().default(500),
+  creditCents: integer('credit_cents').notNull().default(2500),
+  monthlyLimitCents: integer('monthly_limit_cents').notNull().default(10000),
+  revision: integer('revision').notNull().default(0),
+  paymentMethodId: text('payment_method_id'),
+  card: jsonb('card').$type<{ brand: string; last4: string; expMonth: number; expYear: number }>(),
+  consentAt: timestamp('consent_at', { withTimezone: true }),
+  setupId: uuid('setup_id'),
+  setupSessionId: text('setup_session_id'),
+  setupEnable: boolean('setup_enable').notNull().default(false),
+  pausedReason: text('paused_reason'),
+  limitReached: boolean('limit_reached').notNull().default(false),
+  ...timestamps,
+}, table => [check('auto_top_up_settings_amounts', sql`${table.creditCents} between 500 and 50000 and ${table.thresholdCents} > 0 and ${table.thresholdCents} <= ${table.creditCents} and ${table.monthlyLimitCents} >= ceil((${table.creditCents} + 50) / 0.95)` )])
+
+export const autoTopUpAttempts = pgTable('auto_top_up_attempts', {
+  id: uuid('id').primaryKey(),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  settingsRevision: integer('settings_revision').notNull(),
+  customerId: text('customer_id').notNull(),
+  paymentMethodId: text('payment_method_id').notNull(),
+  creditCents: integer('credit_cents').notNull(),
+  chargeCents: integer('charge_cents').notNull(),
+  reservedCents: integer('reserved_cents').notNull().default(0),
+  chargedCents: integer('charged_cents').notNull().default(0),
+  chargedAt: timestamp('charged_at', { withTimezone: true }),
+  invoiceId: text('invoice_id'),
+  status: text('status').notNull().default('creating'),
+  failureReason: text('failure_reason'),
+  ...timestamps,
+}, table => [
+  uniqueIndex('auto_top_up_one_active').on(table.userId).where(sql`${table.status} in ('creating', 'ready', 'paying')`),
+  uniqueIndex('auto_top_up_invoice_unique').on(table.invoiceId),
+  index('auto_top_up_user_charged_idx').on(table.userId, table.chargedAt),
+  check('auto_top_up_status_check', sql`${table.status} in ('creating', 'ready', 'paying', 'succeeded', 'failed', 'canceled')`),
+  check('auto_top_up_amounts_check', sql`${table.creditCents} between 500 and 50000 and ${table.chargeCents} > 0 and ${table.reservedCents} >= 0 and ${table.chargedCents} >= 0`),
+])
+
 export const billingSubscriptions = pgTable('billing_subscriptions', {
   stripeSubscriptionId: text('stripe_subscription_id').primaryKey(),
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),

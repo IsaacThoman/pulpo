@@ -1,3 +1,4 @@
+import { AutoTopUpSettings } from '@/components/billing/AutoTopUpSettings'
 import { useEffect, useState, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate, useSearchParams } from 'react-router-dom'
@@ -291,6 +292,7 @@ export function BillingPage() {
               <div className="flex flex-wrap gap-2 pt-1">
                 <Button variant="default" onClick={() => { resetTopUp(); setTopUpOpen(true) }}><Plus />{ui("Add credits")}</Button>
               </div>
+              {summary?.autoTopUp && <AutoTopUpSettings value={summary.autoTopUp} userId={userId!} />}
             </PaymentOption>
           </div>
 
@@ -302,7 +304,7 @@ export function BillingPage() {
               <div className="hidden grid-cols-[minmax(0,1fr)_140px_100px_90px] border-b px-4 py-2.5 text-xs text-muted-foreground sm:grid"><div>{ui("Description")}</div><div>{ui("Date")}</div><div className="text-right">{ui("Amount")}</div><div className="text-right">{ui("Status")}</div></div>
               {summary?.payments.length ? <div className="divide-y">{summary.payments.map((payment) => (
                 <div key={payment.id} className="grid gap-3 px-4 py-3 text-sm sm:grid-cols-[minmax(0,1fr)_140px_100px_90px] sm:items-center">
-                  <div className="flex min-w-0 items-center gap-3"><ReceiptText className="size-4 shrink-0 text-muted-foreground" /><div className="truncate font-medium">{payment.kind === 'credits' ? uit`${formatBalance((payment.requestedCreditCents ?? 0) / 100)} credit top-up` : uit`${billingPlanName(payment.plan ?? 'baby')} subscription`}</div></div>
+                  <div className="flex min-w-0 items-center gap-3"><ReceiptText className="size-4 shrink-0 text-muted-foreground" /><div className="truncate font-medium">{payment.automatic ? uit`${formatBalance((payment.requestedCreditCents ?? 0) / 100)} automatic top-up` : payment.kind === 'credits' ? uit`${formatBalance((payment.requestedCreditCents ?? 0) / 100)} credit top-up` : uit`${billingPlanName(payment.plan ?? 'baby')} subscription`}</div></div>
                   <div className="text-muted-foreground">{formatDate(Date.parse(payment.createdAt))}</div>
                   <div className="font-medium tabular-nums sm:text-right">{formatBalance(payment.amountCents / 100)}</div>
                   <div className="text-muted-foreground sm:text-right">{paymentStatusLabel(payment.status)}</div>

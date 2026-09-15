@@ -1,8 +1,13 @@
+import { applyAutoTopUpSetup } from './auto-top-up.js'
+import { validateAutoTopUpInvoice } from './auto-top-up-processor.js'
+import { enqueueAutoTopUps } from './auto-top-up-queue.js'
 import type Stripe from 'stripe'
 import { eq, inArray, or, sql } from 'drizzle-orm'
 import { getConfig } from '../config.js'
 import { db } from '../database/client.js'
 import {
+  autoTopUpAttempts,
+  autoTopUpSettings,
   billingAccounts,
   billingCheckouts,
   billingOrders,
@@ -24,6 +29,8 @@ type PaymentDetails = {
   paymentIntentId: string | null
   chargeId: string | null
   processingFeeCents: number
+  chargedAt?: Date
+  chargedCents?: number
 }
 
 type EventContext = {
@@ -358,6 +365,33 @@ export function shouldRecordPaidPlan(existingPaidPlanAt: Date | null, invoicePai
   return existingPaidPlanAt === null || invoicePaidAt >= existingPaidPlanAt
 }
 
+async function applyPaidAutoTopUp(tx: Transaction, invoice: Stripe.Invoice, payment: PaymentDetails, changedUsers: Set<string>) {
+  const attemptId = invoice.metadata?.pulpo_auto_top_up_attempt
+  if (!attemptId || invoice.status !== 'paid') return
+  const [attempt] = await tx.select().from(autoTopUpAttempts).where(eq(autoTopUpAttempts.id, attemptId)).for('update')
+  if (!attempt || attempt.status === 'succeeded') return
+  validateAutoTopUpInvoice(attempt, invoice)
+  const chargedCents = payment.chargedCents ?? 0
+  if (chargedCents > attempt.reservedCents || (invoice.amount_paid > 0 && !payment.chargeId)) throw new Error('Automatic top-up payment does not match its reservation')
+  const [account] = await tx.select().from(billingAccounts).where(eq(billingAccounts.userId, attempt.userId))
+  if (account?.stripeCustomerId !== attempt.customerId) throw new Error('Automatic top-up customer changed')
+  await tx.insert(billingOrders).values({
+    stripePaymentId: invoice.id, userId: attempt.userId, stripePaymentIntentId: payment.paymentIntentId, stripeChargeId: payment.chargeId,
+    stripePriceId: getConfig().STRIPE_CREDIT_PRODUCT_ID!, billingReason: 'automatic_top_up', status: 'paid', currency: 'usd',
+    subtotalAmountCents: invoice.subtotal, netAmountCents: invoice.total_excluding_tax ?? invoice.subtotal,
+    taxAmountCents: sumAmounts(invoice.total_taxes), totalAmountCents: chargedCents,
+    platformFeeAmountCents: attempt.chargeCents - attempt.creditCents, processingFeeAmountCents: payment.processingFeeCents,
+    requestedCreditCents: attempt.creditCents, paidAt: payment.chargedAt ?? unixDate(invoice.status_transitions.paid_at),
+  }).onConflictDoNothing()
+  const [order] = await tx.select().from(billingOrders).where(eq(billingOrders.stripePaymentId, invoice.id)).for('update')
+  if (!order?.grantedCreditMicros) await recordGrant(tx, { orderId: invoice.id, userId: attempt.userId, grantMicros: attempt.creditCents * 10000,
+    isCreditPurchase: true, billingReason: 'automatic_top_up', plan: null })
+  await tx.update(autoTopUpAttempts).set({ status: 'succeeded', chargedCents, chargedAt: payment.chargedAt ?? unixDate(invoice.status_transitions.paid_at), reservedCents: 0, updatedAt: new Date() })
+    .where(eq(autoTopUpAttempts.id, attempt.id))
+  await tx.update(autoTopUpSettings).set({ limitReached: false, updatedAt: new Date() }).where(eq(autoTopUpSettings.userId, attempt.userId))
+  changedUsers.add(attempt.userId)
+}
+
 async function applyPaidInvoice(
   tx: Transaction,
   invoice: Stripe.Invoice,
@@ -367,6 +401,7 @@ async function applyPaidInvoice(
   changedUsers: Set<string>,
 ): Promise<void> {
   if (invoice.status !== 'paid' || invoice.currency.toLowerCase() !== 'usd') return
+  if (invoice.metadata?.pulpo_auto_top_up_attempt) return applyPaidAutoTopUp(tx, invoice, payment, changedUsers)
   const subscriptionId = invoiceSubscriptionId(invoice)
   const priceId = invoicePriceId(invoice, subscription)
   const plan = planForPriceId(priceId)
@@ -456,6 +491,14 @@ async function applyPaidInvoice(
 }
 
 async function applyFailedInvoice(tx: Transaction, invoice: Stripe.Invoice, changedUsers: Set<string>): Promise<void> {
+  if (invoice.metadata?.pulpo_auto_top_up_attempt) {
+    const [attempt] = await tx.select().from(autoTopUpAttempts).where(eq(autoTopUpAttempts.invoiceId, invoice.id)).for('update')
+    if (attempt && attempt.status !== 'succeeded') {
+      await tx.update(autoTopUpSettings).set({ pausedReason: 'payment_failed', updatedAt: new Date() }).where(eq(autoTopUpSettings.userId, attempt.userId))
+      changedUsers.add(attempt.userId)
+    }
+    return
+  }
   const subscriptionId = invoiceSubscriptionId(invoice)
   if (!subscriptionId) return
   const [subscription] = await tx.update(billingSubscriptions).set({ status: 'past_due', updatedAt: new Date() })
@@ -568,6 +611,8 @@ async function paymentDetailsForIntent(value: string | Stripe.PaymentIntent | nu
     paymentIntentId,
     chargeId: charge?.id ?? idOf(paymentIntent.latest_charge),
     processingFeeCents: balanceTransaction?.fee ?? 0,
+    chargedAt: charge ? new Date(charge.created * 1000) : undefined,
+    chargedCents: charge?.amount,
   }
 }
 
@@ -597,10 +642,11 @@ async function hydrateEvent(event: Stripe.Event): Promise<EventContext> {
       return { checkoutSession: event.data.object }
     case 'invoice.paid':
     case 'invoice.payment_failed': {
-      const invoice = event.data.object
+      const source = event.data.object
+      const invoice = source.metadata?.pulpo_auto_top_up_attempt ? await getStripeClient().invoices.retrieve(source.id) : source
       const subscriptionId = invoiceSubscriptionId(invoice)
       const subscription = subscriptionId ? await getStripeClient().subscriptions.retrieve(subscriptionId) : undefined
-      const payment = event.type === 'invoice.paid' ? await invoicePaymentDetails(invoice.id) : undefined
+      const payment = invoice.status === 'paid' ? await invoicePaymentDetails(invoice.id) : undefined
       return { invoice, subscription, payment }
     }
     case 'customer.subscription.created':
@@ -622,6 +668,10 @@ async function applyEvent(
   switch (event.type) {
     case 'checkout.session.completed':
     case 'checkout.session.async_payment_succeeded':
+      if (context.checkoutSession!.mode === 'setup') {
+        await applyAutoTopUpSetup(tx, context.checkoutSession!, changedUsers)
+        return
+      }
       await applyCheckoutStatus(tx, context.checkoutSession!)
       await applyPaidCheckout(tx, context.checkoutSession!, context.payment!, eventAt, changedUsers)
       return
@@ -632,6 +682,7 @@ async function applyEvent(
       await applyPaidInvoice(tx, context.invoice!, context.subscription, context.payment!, eventAt, changedUsers)
       return
     case 'invoice.payment_failed':
+      if (context.invoice!.status === 'paid') { await applyPaidInvoice(tx, context.invoice!, context.subscription, context.payment!, eventAt, changedUsers); return }
       await applyFailedInvoice(tx, context.invoice!, changedUsers)
       return
     case 'customer.subscription.created':
@@ -680,6 +731,7 @@ export async function processStripeWebhookEvent(event: Stripe.Event): Promise<vo
       }).where(eq(billingWebhookEvents.providerEventId, providerEventId))
       return revisions
     })
+    await enqueueAutoTopUps(changes.map(change => change.userId))
     await Promise.all(changes.map((change) => publishStateChange({
       ...change,
       scopes: ['usage', 'pool', 'billing'],

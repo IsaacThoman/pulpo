@@ -23,6 +23,9 @@ describe('billing feature gate', () => {
     await registerBillingRoutes(app)
     const response = await app.inject({ method: 'GET', url: '/api/billing/summary' })
     expect(response.statusCode).toBe(404)
+    for (const [method, url] of [['PATCH', '/api/billing/auto-top-up'], ['POST', '/api/billing/auto-top-up/setup'], ['POST', '/api/billing/auto-top-up/setup/confirm']] as const) {
+      expect((await app.inject({ method, url })).statusCode).toBe(404)
+    }
   })
 
   it('does not register admin billing routes when billing is disabled', async () => {

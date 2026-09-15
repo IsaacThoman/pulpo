@@ -1,3 +1,6 @@
+import { autoTopUpQueue } from './jobs.js'
+import { processAutoTopUp } from './billing/auto-top-up-processor.js'
+import { sweepAutoTopUps } from './billing/auto-top-up-queue.js'
 import { refreshDiagnosticPolicy, closeDiagnostics } from './logging/provider-diagnostics.js'
 import { retentionHealth, sampleRetentionBacklog } from './logging/retention-health.js'
 import { safeErrorMessage } from './database/errors.js'
@@ -43,6 +46,16 @@ console.info(JSON.stringify({
   level: 'info', service: 'pulpo-worker', event: 'worker.started',
   environment: config.NODE_ENV, generationConcurrency: initialGenerationConcurrency,
 }))
+
+const autoTopUpWorker = new Worker<{ userId?: string }>('auto-top-up', async job => {
+  if (job.data.userId) await processAutoTopUp(job.data.userId)
+  else await sweepAutoTopUps()
+}, { connection: { url: config.REDIS_URL }, concurrency: 1 })
+autoTopUpWorker.on('failed', (job, error) => console.error(JSON.stringify({ level: 'error', event: 'auto_top_up.failed', jobId: job?.id, error: safeErrorMessage(error) })))
+if (config.PULPO_BILLING_ENABLED) {
+  await autoTopUpQueue.upsertJobScheduler('sweep', { every: 60_000 }, { name: 'sweep', data: {} })
+  await autoTopUpQueue.add('startup-sweep', {})
+}
 
 const generationWorker = new Worker<GenerationJob>('generation', async (job) => {
   try {
@@ -195,7 +208,7 @@ for (const response of recoverable) {
 await recoverMessageQueues()
 if ((await readEpisodicMemorySettings()).enabled) await enqueueEpisodicReconciliation()
 
-const workers = [generationWorker, codexLoginWorker, embeddingWorker, maintenanceWorker, payloadRetentionWorker]
+const workers = [autoTopUpWorker, generationWorker, codexLoginWorker, embeddingWorker, maintenanceWorker, payloadRetentionWorker]
 await Promise.all(workers.map((worker) => worker.waitUntilReady()))
 let stopping = false
 // Private health endpoint used by Docker/Coolify, never routed publicly.

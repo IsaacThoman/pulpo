@@ -3,7 +3,22 @@ import { ui } from '@/i18n/ui'
 
 export type BillingPlan = 'baby' | 'eight' | 'fat'
 
+export interface AutoTopUpSummary {
+  enabled: boolean
+  thresholdCents: number
+  creditCents: number
+  monthlyLimitCents: number
+  revision: number
+  card: { brand: string; last4: string; expMonth: number; expYear: number } | null
+  chargedCents: number
+  pendingCents: number
+  resetsAt: string
+  processing: boolean
+  status: 'disabled' | 'active' | 'processing' | 'limit_reached' | 'payment_issue'
+}
+
 export interface BillingSummary {
+  autoTopUp?: AutoTopUpSummary
   plan: BillingPlan
   planOverridden: boolean
   balanceMicros: number
@@ -39,6 +54,7 @@ export interface BillingSummary {
   payments: Array<{
     id: string
     kind: 'credits' | 'subscription'
+    automatic?: boolean
     plan: 'eight' | 'fat' | null
     requestedCreditCents: number | null
     amountCents: number
