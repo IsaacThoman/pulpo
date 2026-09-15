@@ -1,0 +1,72 @@
+name: PulpoTV
+options:
+  bundleIdPrefix: com.isaacthoman
+  deploymentTarget:
+    tvOS: '26.0'
+packages:
+  SocketIO:
+    url: https://github.com/socketio/socket.io-client-swift
+    exactVersion: 16.1.1
+settings:
+  base:
+    SWIFT_VERSION: '5.0'
+    DEVELOPMENT_TEAM: PX72AL9366
+    MARKETING_VERSION: '1.0.0'
+    CURRENT_PROJECT_VERSION: '1'
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+targets:
+  PulpoTV:
+    type: application
+    platform: tvOS
+    sources:
+      - Sources
+      - path: ../mobile/assets/pulpo-smiley.png
+        buildPhase: resources
+      - path: Resources
+        buildPhase: resources
+    dependencies:
+      - package: SocketIO
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.isaacthoman.pulpo
+        PRODUCT_NAME: Pulpo
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: Pulpo
+        INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        ASSETCATALOG_COMPILER_APPICON_NAME: App Icon & Top Shelf Image
+      configs:
+        Debug:
+          INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsLocalNetworking: YES
+  PulpoTVTests:
+    type: bundle.unit-test
+    platform: tvOS
+    sources: [Tests]
+    dependencies:
+      - target: PulpoTV
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.isaacthoman.pulpo.tv.tests
+        TEST_HOST: $(BUILT_PRODUCTS_DIR)/Pulpo.app/Pulpo
+        BUNDLE_LOADER: $(TEST_HOST)
+        GENERATE_INFOPLIST_FILE: YES
+  PulpoTVUITests:
+    type: bundle.ui-testing
+    platform: tvOS
+    sources: [UITests]
+    dependencies:
+      - target: PulpoTV
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.isaacthoman.pulpo.tv.uitests
+        GENERATE_INFOPLIST_FILE: YES
+schemes:
+  PulpoTV:
+    build:
+      targets:
+        PulpoTV: all
+    test:
+      targets: [PulpoTVTests, PulpoTVUITests]
+      gatherCoverageData: true
+      commandLineArguments:
+        '-UITesting': true

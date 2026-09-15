@@ -39,7 +39,10 @@
     "local:preview:refresh": "bash ./scripts/local-preview.sh refresh",
     "local:preview:reset": "bash ./scripts/local-preview.sh reset",
     "preview": "npm run preview -w @pulpo/web",
-    "dev:android": "npm run android -w @pulpo/mobile"
+    "dev:android": "npm run android -w @pulpo/mobile",
+    "tv:simulator": "npm run simulator -w @pulpo/tv",
+    "tv:build": "npm run build -w @pulpo/tv",
+    "tv:test": "npm run test -w @pulpo/tv"
   },
   "devDependencies": {
     "@semantic-release/commit-analyzer": "^13.0.1",

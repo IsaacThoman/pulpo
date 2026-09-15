@@ -1,0 +1,15 @@
+{
+  "name": "@pulpo/tv",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "project": "xcodegen generate --spec project.yml",
+    "build": "bash scripts/tv.sh build",
+    "simulator": "bash scripts/tv.sh run",
+    "test": "bash scripts/tv.sh test",
+    "fixture": "node qa/fixture.mjs"
+  },
+  "devDependencies": {
+    "socket.io": "^4.8.3"
+  }
+}
