@@ -78,6 +78,7 @@ export const FULL_BACKUP_TEMPORARY_DATA_POLICY = {
   chat_import_sources: 'chat-reference',
   workspace_leases: 'workspace-lease',
   agent_runs: 'agent-run',
+  agent_questions: 'response-reference',
   tool_executions: 'tool-execution',
 } as const satisfies Record<FullBackupTable, TemporaryDataPolicy>
 

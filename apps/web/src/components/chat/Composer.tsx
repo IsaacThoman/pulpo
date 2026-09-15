@@ -1,3 +1,5 @@
+import { questionItems } from '@pulpo/contracts'
+import { QuestionCard, type QuestionCardControl } from './QuestionCard'
 import { AttachmentWindow } from './AttachmentWindow'
 import { attachmentBatchRequiresAgent } from '@/lib/attachments'
 import { speechPlayback } from '@/features/speech/state'
@@ -152,6 +154,15 @@ export function Composer({
   const { t } = useTranslation()
   const navigate = useNavigate()
   const userId = useAuth((s) => s.user?.id)
+  const questionMessage = useChat(s => s.chats.find(chat => chat.id === chatId)?.messages.findLast(message => message.role === 'assistant' && !message.done))
+  const pendingQuestion = !messageEdit && syncEnabled ? questionItems(questionMessage?.outputItems).find(item => item.status === 'pending') : undefined
+  const questionControl = useRef<QuestionCardControl>(null)
+  const [questionReply, setQuestionReply] = useState('')
+  const pendingQuestionRef = useRef(pendingQuestion)
+  pendingQuestionRef.current = pendingQuestion
+  const questionReplyRef = useRef(questionReply)
+  questionReplyRef.current = questionReply
+
   const shelf = userId ? webShelf(userId) : null
   const shelfRows = useSyncExternalStore(shelf?.subscribe ?? EMPTY_SUBSCRIBE, shelf?.getSnapshot ?? EMPTY_SHELF_SNAPSHOT)
   const [shelfBusy, setShelfBusy] = useState(false)
@@ -488,6 +499,11 @@ export function Composer({
         method: 'POST', body: form, signal: controller.signal,
       })
       if (!result.text.trim()) throw new Error(ui("No speech was detected in the recording"))
+      if (pendingQuestionRef.current) {
+        const inserted = insertDictationText(questionReplyRef.current, result.text, ref.current?.selectionStart ?? questionReplyRef.current.length, ref.current?.selectionEnd ?? questionReplyRef.current.length)
+        questionControl.current?.setText(inserted.value)
+        return
+      }
       const textarea = ref.current
       const start = textarea?.selectionStart ?? value.length
       const end = textarea?.selectionEnd ?? start
@@ -560,13 +576,16 @@ export function Composer({
     }
   }, [releaseMicrophone, stopDictation, transcribeRecording])
 
-  useEffect(() => () => {
-    dictationAbortRef.current?.abort()
-    const recorder = mediaRecorderRef.current
-    if (recorder) recorder.onstop = null
-    if (recorder?.state !== 'inactive') recorder?.stop()
-    releaseMicrophone()
-  }, [releaseMicrophone])
+  useEffect(() => {
+    setDictationState('idle')
+    return () => {
+      dictationAbortRef.current?.abort()
+      const recorder = mediaRecorderRef.current
+      if (recorder) recorder.onstop = null
+      if (recorder?.state !== 'inactive') recorder?.stop()
+      releaseMicrophone()
+    }
+  }, [releaseMicrophone, pendingQuestion?.id])
 
   const removeAttachment = useCallback((localId: string) => {
     setAttachmentIds((current) => current.filter((id) => id !== localId))
@@ -756,6 +775,7 @@ export function Composer({
   }))
 
   const submit = async () => {
+    if (pendingQuestion) { questionControl.current?.answerText(questionReply); return }
     const text = value.trim()
     if (!canSend) return
     if (!text && attachments.length === 0) return
@@ -975,6 +995,7 @@ export function Composer({
 
   return (
     <div inert={handoffBusy} className={cn('w-full min-w-0', centered && 'px-2')}>
+      {pendingQuestion && <QuestionCard key={pendingQuestion.id} item={pendingQuestion} persistDraft={!temporary} namespace={userId ?? 'local'} controlRef={questionControl} onTextChange={setQuestionReply} />}
       {dragging && (
         <div className="pointer-events-none fixed inset-0 z-[100] flex items-center justify-center bg-black/35 backdrop-grayscale" role="status">
           <div className="flex flex-col items-center gap-3 text-center text-white drop-shadow-sm">
@@ -1202,9 +1223,10 @@ export function Composer({
           <textarea
             ref={ref}
             readOnly={handoffBusy || shelfBusy}
-            value={value}
+            value={pendingQuestion ? questionReply : value}
             onChange={(e) => {
-              setValue(e.target.value)
+              if (pendingQuestion) questionControl.current?.setText(e.target.value)
+              else setValue(e.target.value)
               autosize()
             }}
             onKeyDown={(e) => {
@@ -1231,7 +1253,8 @@ export function Composer({
             }}
             onPaste={onPaste}
             rows={1}
-            placeholder={attachments.length ? t('chat.addCaption') : temporary ? t('chat.temporaryMessage') : t('chat.message')}
+            aria-label={pendingQuestion ? ui('Answer the current question') : t('chat.message')}
+            placeholder={pendingQuestion ? ui('Or reply directly…') : attachments.length ? t('chat.addCaption') : temporary ? t('chat.temporaryMessage') : t('chat.message')}
             className="max-h-[220px] min-w-0 flex-1 resize-none select-text bg-transparent px-4 pt-3.5 text-[15px] leading-6 outline-none placeholder:select-none placeholder:text-muted-foreground"
           />
           {showShelf && <Tooltip><TooltipTrigger asChild><button type="button"
@@ -1345,7 +1368,8 @@ export function Composer({
             <TooltipContent side="top">{dictationState === 'recording' ? t('chat.stopDictation') : dictationState === 'transcribing' ? t('chat.transcribing') : t('chat.dictate')}</TooltipContent>
           </Tooltip>}
 
-          {composerPrimaryAction(Boolean(streamingResponseId) && !messageEdit, hasDraft || Boolean(editingQueueId) || Boolean(messageEdit)) === 'stop' ? (
+          {pendingQuestion && <Button size="icon-sm" className="rounded-full" disabled={!questionReply.trim() || dictationState !== 'idle'} aria-label={ui('Use answer')} onClick={() => void submit()}><ArrowUp className="size-4" /></Button>}
+          {pendingQuestion || composerPrimaryAction(Boolean(streamingResponseId) && !messageEdit, hasDraft || Boolean(editingQueueId) || Boolean(messageEdit)) === 'stop' ? (
             <Button
               size="icon-sm"
               className="rounded-full"

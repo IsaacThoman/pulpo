@@ -27,6 +27,7 @@ export const LOSSLESS_PAYLOAD_COLUMNS: Record<string, readonly string[]> = {
   response_items: ['payload'],
   response_content_parts: ['payload'],
   agent_runs: ['context', 'error'],
+  agent_questions: ['item'],
   tool_executions: ['arguments', 'output', 'error', 'provider_attempts'],
   request_logs: ['request_payload', 'response_payload', 'error_message'],
   generation_attempts: ['error_message'],

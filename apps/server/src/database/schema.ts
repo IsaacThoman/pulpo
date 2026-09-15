@@ -40,7 +40,7 @@ export const attachmentStatusEnum = pgEnum('attachment_status', ['pending', 'rea
 export const apiKeyStatusEnum = pgEnum('api_key_status', ['active', 'disabled'])
 export const reservationStatusEnum = pgEnum('reservation_status', ['pending', 'settled', 'released'])
 export const workspaceLeaseStatusEnum = pgEnum('workspace_lease_status', ['provisioning', 'ready', 'expired', 'failed', 'released'])
-export const agentRunStatusEnum = pgEnum('agent_run_status', ['queued', 'running', 'completed', 'failed', 'cancelled'])
+export const agentRunStatusEnum = pgEnum('agent_run_status', ['queued', 'running', 'waiting_for_input', 'completed', 'failed', 'cancelled'])
 export const toolExecutionStatusEnum = pgEnum('tool_execution_status', ['queued', 'running', 'completed', 'failed', 'cancelled'])
 export const friendshipStatusEnum = pgEnum('friendship_status', ['pending', 'accepted'])
 
@@ -606,10 +606,23 @@ export const agentRuns = pgTable('agent_runs', {
   modelTurns: integer('model_turns').notNull().default(0),
   toolCalls: integer('tool_calls').notNull().default(0),
   error: losslessText('error'),
+  activeDurationMs: bigint('active_duration_ms', { mode: 'number' }).notNull().default(0),
+  workspaceCostMicros: bigint('workspace_cost_micros', { mode: 'number' }).notNull().default(0),
   startedAt: timestamp('started_at', { withTimezone: true }),
   completedAt: timestamp('completed_at', { withTimezone: true }),
   ...timestamps,
 }, (table) => [uniqueIndex('agent_runs_response_unique').on(table.responseId)])
+
+export const agentQuestions = pgTable('agent_questions', {
+  id: uuid('id').primaryKey(),
+  responseId: uuid('response_id').notNull().references(() => responses.id, { onDelete: 'cascade' }),
+  agentRunId: uuid('agent_run_id').notNull().references(() => agentRuns.id, { onDelete: 'cascade' }),
+  toolCallId: text('tool_call_id').notNull(),
+  item: losslessJson('item').notNull(),
+  resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+  consumedAt: timestamp('consumed_at', { withTimezone: true }),
+  ...timestamps,
+}, (table) => [uniqueIndex('agent_questions_tool_unique').on(table.toolCallId), index('agent_questions_resume_idx').on(table.resolvedAt, table.consumedAt)])
 
 export const toolExecutions = pgTable('tool_executions', {
   id: uuid('id').primaryKey(),

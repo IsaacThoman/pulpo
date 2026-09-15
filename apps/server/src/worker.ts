@@ -1,3 +1,4 @@
+import { dispatchQuestionResumes } from './agent/questions.js'
 import { refreshDiagnosticPolicy, closeDiagnostics } from './logging/provider-diagnostics.js'
 import { retentionHealth, sampleRetentionBacklog } from './logging/retention-health.js'
 import { safeErrorMessage } from './database/errors.js'
@@ -6,7 +7,7 @@ import { createServer } from 'node:http'
 import { checkReadiness } from './runtime-health.js'
 import { queryClient } from './database/client.js'
 import { redis } from './redis.js'
-import { Worker } from 'bullmq'
+import { Worker, DelayedError } from 'bullmq'
 import { and, inArray, isNull, eq, sql } from 'drizzle-orm'
 import { getConfig } from './config.js'
 import { db } from './database/client.js'
@@ -44,10 +45,22 @@ console.info(JSON.stringify({
   environment: config.NODE_ENV, generationConcurrency: initialGenerationConcurrency,
 }))
 
-const generationWorker = new Worker<GenerationJob>('generation', async (job) => {
+const generationWorker = new Worker<GenerationJob>('generation', async (job, token) => {
+  // A submitted answer can arrive before the parking job has finished unwinding.
+  const lockKey = `pulpo:generation-lock:${job.data.responseId}`
+  const owner = `${job.id}:${token}`
+  if (!await redis.set(lockKey, owner, 'PX', 60_000, 'NX')) {
+    await job.moveToDelayed(Date.now() + 1_000, token)
+    throw new DelayedError()
+  }
+  const renewal = setInterval(() => {
+    void redis.eval('if redis.call("get", KEYS[1]) == ARGV[1] then return redis.call("pexpire", KEYS[1], 60000) end', 1, lockKey, owner).catch(() => undefined)
+  }, 15_000)
   try {
     await processGeneration(job.data.responseId)
   } finally {
+    clearInterval(renewal)
+    await redis.eval('if redis.call("get", KEYS[1]) == ARGV[1] then return redis.call("del", KEYS[1]) end', 1, lockKey, owner)
     const [response] = await db.select({ chatId: responses.chatId, userId: responses.userId, status: responses.status })
       .from(responses).where(eq(responses.id, job.data.responseId)).limit(1)
     if (response && isTerminalResponseStatus(response.status)) {
@@ -59,6 +72,15 @@ const generationWorker = new Worker<GenerationJob>('generation', async (job) => 
   connection: { url: config.REDIS_URL },
   concurrency: initialGenerationConcurrency,
 })
+
+let dispatchingQuestions = false
+const questionRecoveryInterval = setInterval(() => {
+  if (dispatchingQuestions) return
+  dispatchingQuestions = true
+  void dispatchQuestionResumes().catch(error => console.error('Question resume recovery failed', safeErrorMessage(error))).finally(() => { dispatchingQuestions = false })
+}, 5_000)
+questionRecoveryInterval.unref()
+await dispatchQuestionResumes()
 
 const concurrencyRefreshInterval = setInterval(() => {
   void readGenerationConcurrency().then((generationConcurrency) => {
@@ -221,6 +243,7 @@ const shutdown = async (signal: string) => {
   stopping = true
   console.info(JSON.stringify({ level: 'info', service: 'pulpo-worker', event: 'worker.stopping', signal }))
   clearInterval(concurrencyRefreshInterval)
+  clearInterval(questionRecoveryInterval)
   healthServer.close()
   // Stop all consumers from taking more jobs immediately, then drain them
   // together. Sequential close could keep accepting work during shutdown.

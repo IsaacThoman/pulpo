@@ -1,3 +1,4 @@
+import { answerAgentQuestions, cancelWaitingQuestions } from '../agent/questions.js'
 import { and, asc, desc, eq, inArray, isNotNull, isNull, ne, sql } from 'drizzle-orm'
 import { createHash } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
@@ -704,6 +705,14 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     return toSnapshot(row.response)
   })
 
+  app.post('/api/responses/:id/questions/:questionSetId/answer', async (request, reply) => {
+    const user = requireUser(request)
+    const { id, questionSetId } = request.params as { id: string; questionSetId: string }
+    const result = await answerAgentQuestions(id, questionSetId, user.id, request.body)
+    if (result.conflict) reply.code(409)
+    return result.snapshot
+  })
+
   app.post('/api/responses/:id/cancel', async (request) => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
@@ -720,6 +729,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     if (!response) throw notFound('Response')
     if (!['queued', 'in_progress'].includes(response.status)) return toSnapshot(response)
     await requestCancellation(id)
+    await cancelWaitingQuestions(id)
     await db.update(responses).set({ status: 'cancelled', completedAt: new Date(), updatedAt: new Date() }).where(eq(responses.id, id))
     await db.update(workspaceLeases).set({ status: 'released', capacityState: null, releasedAt: new Date(), error: 'Generation cancelled while waiting for capacity', updatedAt: new Date() }).where(and(eq(workspaceLeases.responseId, id), eq(workspaceLeases.status, 'provisioning')))
     const [log] = await db.update(requestLogs).set({ status: 'cancelled', errorCategory: 'cancellation', completedAt: new Date(), updatedAt: new Date() }).where(eq(requestLogs.responseId, id)).returning({ id: requestLogs.id })

@@ -1,3 +1,4 @@
+import { cancelWaitingQuestions } from '../agent/questions.js'
 import { and, eq, inArray, isNotNull, isNull, lte, sql } from 'drizzle-orm'
 import { db } from '../database/client.js'
 import { attachments, chats, queuedMessages, responses, userPreferences, users } from '../database/schema.js'
@@ -69,6 +70,7 @@ export async function cancelChatWork(chatIds: string[]): Promise<void> {
     inArray(responses.status, ['queued', 'in_progress']),
   ))
   await Promise.all(active.map((response) => requestCancellation(response.id)))
+  await Promise.all(active.map(response => cancelWaitingQuestions(response.id)))
   await Promise.all(chatIds.map((chatId) => releaseWorkspaceForChat(chatId)))
 }
 

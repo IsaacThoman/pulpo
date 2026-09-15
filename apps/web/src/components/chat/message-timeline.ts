@@ -158,6 +158,7 @@ export function buildTimeline(outputItems: unknown[], showReasoning: boolean): T
       continue
     }
     if (type === 'pulpo_tool') {
+      if ((item as ToolItem).tool === 'request_user_input') continue
       if (!activity) activity = { kind: 'activity', steps: [], active: false }
       const tool = item as ToolItem
       activity.steps.push({ kind: 'tool', tool })

@@ -1,3 +1,4 @@
+export * from './questions.js'
 import { imageGenerationPreferencesSchema } from './image-generation.js'
 export * from './image-generation.js'
 import { speechPreferencesSchema } from './speech.js'
@@ -652,6 +653,9 @@ function upsertOutputItem(
 
 function applyAgentEventOutput(output: unknown[], event: ResponseEvent): unknown[] {
   const payload = event.payload as Record<string, unknown>
+  if (event.type === 'pulpo.agent.question.updated' && typeof payload.id === 'string') {
+    return upsertOutputItem(output, (item) => item.type === 'pulpo_question' && item.id === payload.id, payload)
+  }
   if (event.type === 'pulpo.recall.completed' && typeof payload.id === 'string') {
     return upsertOutputItem(output, (item) => item.type === 'pulpo_recall' && item.id === payload.id, payload)
   }
