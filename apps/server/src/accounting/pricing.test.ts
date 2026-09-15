@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   availableReservationCapacityMicros,
+  budgetOutputReservation,
   calculateCostMicros,
   calculateReservationMicros,
   calculateRollingReservationMicros,
@@ -84,5 +85,50 @@ describe('pricing', () => {
 
     expect(resized).toBe(accruedBilledCost + calculateReservationMicros('next turn', 1_000, pricing))
     expect(resized).toBeLessThan(reservationIncludingUnbilledTool + calculateReservationMicros('next turn', 1_000, pricing))
+  })
+})
+
+describe('budget-aware output reservation', () => {
+  const requestInput = 'hello'
+  const reserve = (capacityMicros: number, maxOutputTokens = 32_000, accruedCostMicros = 0) =>
+    budgetOutputReservation({ requestInput, pricing, capacityMicros, maxOutputTokens, accruedCostMicros })
+
+  it('admits exactly the minimum, rejects one micro less, and fully funds a longer cap', () => {
+    const minimum = calculateReservationMicros(requestInput, 8_000, pricing)
+    expect(reserve(minimum)).toEqual({ amountMicros: minimum, maxOutputTokens: 8_000 })
+    expect(reserve(minimum - 1)).toBeNull()
+    const longer = calculateReservationMicros(requestInput, 12_345, pricing)
+    expect(reserve(longer + 1)).toEqual({ amountMicros: longer, maxOutputTokens: 12_345 })
+  })
+
+  it('honors a smaller client/model ceiling and never forces 8k generation', () => {
+    const small = calculateReservationMicros(requestInput, 37, pricing)
+    expect(reserve(small, 37)).toEqual({ amountMicros: small, maxOutputTokens: 37 })
+    expect(reserve(small - 1, 37)).toBeNull()
+    expect(reserve(1_000_000, 37)?.maxOutputTokens).toBe(37)
+  })
+
+  it('includes accrued costs, request fees, and worst-case input/cache-write pricing', () => {
+    const capacity = calculateReservationMicros(requestInput, 9_000, pricing) + 500
+    expect(reserve(capacity, 32_000, 500)).toEqual({ amountMicros: capacity, maxOutputTokens: 9_000 })
+    expect(reserve(capacity, 32_000, 20_000)).toBeNull()
+  })
+
+  it('supports free output without dividing by zero but still funds input and fees', () => {
+    const freeOutput = { ...pricing, outputPriceMicros: 0 }
+    const amountMicros = calculateReservationMicros(requestInput, 0, freeOutput)
+    expect(budgetOutputReservation({ requestInput, maxOutputTokens: 32_000, pricing: freeOutput, capacityMicros: amountMicros }))
+      .toEqual({ amountMicros, maxOutputTokens: 32_000 })
+    expect(budgetOutputReservation({ requestInput, maxOutputTokens: 32_000, pricing: freeOutput, capacityMicros: amountMicros - 1 })).toBeNull()
+  })
+
+  it('finds a maximal funded cap with fractional-micro token prices and rounding', () => {
+    const fractional = { ...pricing, outputPriceMicros: 123_456 }
+    for (let capacityMicros = 1_100; capacityMicros < 1_500; capacityMicros += 7) {
+      const result = budgetOutputReservation({ requestInput, maxOutputTokens: 32_000, pricing: fractional, capacityMicros })
+      if (!result) continue
+      expect(result.amountMicros).toBeLessThanOrEqual(capacityMicros)
+      expect(calculateReservationMicros(requestInput, result.maxOutputTokens + 1, fractional)).toBeGreaterThan(capacityMicros)
+    }
   })
 })

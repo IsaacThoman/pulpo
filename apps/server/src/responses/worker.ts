@@ -1,5 +1,5 @@
 import { diagnosticFetch } from '../logging/diagnostic-fetch.js'
-import { withDiagnosticContext, recordReconstructedDiagnostic } from '../logging/provider-diagnostics.js'
+import { diagnosticContext, withDiagnosticContext, recordReconstructedDiagnostic } from '../logging/provider-diagnostics.js'
 import { safeErrorMessage } from '../database/errors.js'
 import OpenAI, { toFile } from 'openai'
 import type { AssistantMessage, Context, Message, ThinkingLevel } from '@earendil-works/pi-ai'
@@ -23,7 +23,7 @@ import { decryptSecret } from '../lib/crypto.js'
 import { getConfig } from '../config.js'
 import { newId } from '../lib/ids.js'
 import { isCancellationRequested, createResponseEventPublisher, publishSnapshot } from './events.js'
-import { getActivePricing, releaseBudget, settleBudget } from '../accounting/service.js'
+import { getActivePricing, releaseBudget, resizeBudgetReservation, retainBudgetReservation, settleBudget } from '../accounting/service.js'
 import { toSnapshot } from './service.js'
 import { getBlobStore } from '../storage/index.js'
 import { publishAdminUsage } from '../admin/usage-events.js'
@@ -67,7 +67,7 @@ import { CODEX_PROVIDER_ID } from '../codex/constants.js'
 import { codexErrorRequiresReauthentication, createCodexModels, markCodexReauthenticationRequired, redactedCodexError } from '../codex/credential-store.js'
 import { codexInferenceReferenceCostMicros } from '../codex/reference-cost.js'
 import { agentThinkingLevel } from '../agent/model-parameters.js'
-import { estimateInputTokens } from '../accounting/pricing.js'
+import { calculateCostMicros, estimateInputTokens, MINIMUM_OUTPUT_RESERVATION_TOKENS } from '../accounting/pricing.js'
 import { generationTimeContext, TIME_CONTEXT_INSTRUCTIONS, withGenerationTimeContext } from './time-context.js'
 
 type UpstreamEvent = { type: string; [key: string]: unknown }
@@ -451,9 +451,14 @@ async function processCodexGenerationAttempt(
   await db.update(responses).set({ status: 'in_progress', startedAt: record.response.startedAt ?? new Date(), output: output(), updatedAt: new Date() })
     .where(eq(responses.id, responseId))
   try {
+    const reservation = await resizeBudgetReservation({
+      responseId, accruedCostMicros: 0, requestInput: context,
+      maxOutputTokens: publicOutputTokenLimit(record.model.maxOutputTokens, record.response.parameters as Record<string, unknown>).max_output_tokens,
+      pricing: await getActivePricing(record.model.id),
+    })
     const stream = codex.streamSimple(piModel, context, {
       reasoning: agentThinkingLevel(record.response.parameters as Record<string, unknown>) as ThinkingLevel,
-      maxTokens: record.model.maxOutputTokens,
+      maxTokens: reservation.maxOutputTokens,
       maxRetries: 0,
       timeoutMs: record.provider.requestTimeoutMs,
       transport: 'auto',
@@ -684,7 +689,18 @@ async function processGenerationAttempt(
   if (!requestLog) throw new Error('Request log is missing')
   const [chatState] = await db.select({ temporary: chats.temporary }).from(chats)
     .where(eq(chats.id, record.response.chatId)).limit(1)
-  let sidecarCostMicros = 0
+  const [priorSidecars] = await db.select({ total: sql<number>`coalesce(sum(${generationAttempts.costMicros}), 0)::bigint` })
+    .from(generationAttempts).where(and(eq(generationAttempts.requestLogId, requestLog.id), eq(generationAttempts.source, 'tool')))
+  let sidecarCostMicros = Number(priorSidecars?.total ?? 0)
+  const [priorGeneration] = await db.select({ total: sql<number>`coalesce(sum(${generationAttempts.costMicros}), 0)::bigint` })
+    .from(generationAttempts).where(and(eq(generationAttempts.requestLogId, requestLog.id), eq(generationAttempts.purpose, 'generation'), eq(generationAttempts.status, 'failed')))
+  const priorGenerationCostMicros = Number(priorGeneration?.total ?? 0)
+  // Free excess output headroom while required preprocessing reserves its own calls.
+  await resizeBudgetReservation({
+    responseId, accruedCostMicros: sidecarCostMicros + priorGenerationCostMicros, requestInput: record.response.input,
+    maxOutputTokens: Math.min(MINIMUM_OUTPUT_RESERVATION_TOKENS, publicOutputTokenLimit(record.model.maxOutputTokens, record.response.parameters as Record<string, unknown>).max_output_tokens),
+    pricing: await getActivePricing(record.model.id),
+  })
   const imageInterceptor = await createModelImageInterceptor(requestLog.id, {
     allowCache: !chatState?.temporary,
     responseId,
@@ -740,6 +756,7 @@ async function processGenerationAttempt(
   let outputStarted = generationOutputHasStarted(output)
   let usage: ResponseUsage | null = null
   let providerCostMicros: number | undefined
+  const pricing = await getActivePricing(record.model.id)
   let upstreamResponseId = record.response.openaiResponseId
   let terminalStatus: typeof responses.$inferSelect.status = 'completed'
   let incompleteDetails: { reason?: string } | null = null
@@ -774,9 +791,19 @@ async function processGenerationAttempt(
       chatId: record.response.chatId,
       runId: record.response.id,
     })
+    const reservation = await resizeBudgetReservation({
+      responseId,
+      accruedCostMicros: sidecarCostMicros + priorGenerationCostMicros,
+      requestInput: { input, parameters },
+      maxOutputTokens: publicOutputTokenLimit(record.model.maxOutputTokens, {
+        ...parameters, ...record.response.parameters as Record<string, unknown>,
+      }).max_output_tokens,
+      pricing,
+    })
+    await db.update(responses).set({ pricingVersionId: pricing.id }).where(eq(responses.id, responseId))
     const upstreamPayload = {
       ...providerPromptCacheParameters(record.model.promptCachingEnabled, parameters),
-      ...(requestLog.apiKeyId ? publicOutputTokenLimit(record.model.maxOutputTokens, parameters) : {}),
+      max_output_tokens: reservation.maxOutputTokens,
       ...promptCacheKeyParameter(requestLog.apiKeyId ? parameters : {}, cacheOptions.promptCacheKey),
       model: record.model.upstreamModelId,
       input: input as never,
@@ -871,6 +898,7 @@ async function processGenerationAttempt(
       completedAt,
       updatedAt: completedAt,
     }).where(eq(responses.id, responseId))
+    await retainBudgetReservation(responseId, sidecarCostMicros + priorGenerationCostMicros + (usage ? providerCostMicros ?? calculateCostMicros(usage, pricing) : 0))
     const postTaskCostMicros = terminalStatus === 'completed' ? await runPostResponseTasks(record, record, output, requestLog.id).catch((error) => {
       console.warn(JSON.stringify({ level: 'warn', service: 'pulpo-worker', event: 'post_response_tasks.failed', responseId, error: safeErrorMessage(error) }))
       return 0
@@ -880,7 +908,7 @@ async function processGenerationAttempt(
       usage,
       latencyMs: Date.now() - startedAt,
       providerCostMicros,
-      additionalCostMicros: sidecarCostMicros + postTaskCostMicros,
+      additionalCostMicros: sidecarCostMicros + priorGenerationCostMicros + postTaskCostMicros,
     })
     await db.update(chats).set({ updatedAt: completedAt }).where(eq(chats.id, record.response.chatId))
     const [completed] = await db.select().from(responses).where(eq(responses.id, responseId)).limit(1)
@@ -888,6 +916,14 @@ async function processGenerationAttempt(
   } catch (caughtError) {
     firstToken.clear()
     const error = firstToken.error ?? caughtError
+    const attemptId = diagnosticContext.getStore()?.modelCallId
+    if (attemptId && usage && usage.totalTokens > 0) {
+      await db.update(generationAttempts).set({
+        inputTokens: usage.inputTokens, cachedInputTokens: usage.cachedInputTokens, cacheWriteTokens: usage.cacheWriteTokens,
+        outputTokens: usage.outputTokens, reasoningTokens: usage.reasoningTokens,
+        costMicros: providerCostMicros ?? calculateCostMicros(usage, pricing),
+      }).where(eq(generationAttempts.id, attemptId))
+    }
     await flushTelemetry(true).catch(() => undefined)
     const cancelled = await isCancellationRequested(responseId)
     const completedAt = new Date()
@@ -904,7 +940,7 @@ async function processGenerationAttempt(
         usage,
         latencyMs: Date.now() - startedAt,
         providerCostMicros,
-        additionalCostMicros: sidecarCostMicros,
+        additionalCostMicros: sidecarCostMicros + priorGenerationCostMicros,
       })
       const [terminal] = await db.select().from(responses).where(eq(responses.id, responseId)).limit(1)
       if (terminal) await publishSnapshot(toSnapshot(terminal))
@@ -966,7 +1002,7 @@ export async function processGeneration(responseId: string): Promise<void> {
     .innerJoin(models, eq(responses.modelId, models.id))
     .innerJoin(requestLogs, eq(requestLogs.responseId, responses.id))
     .where(eq(responses.id, responseId)).limit(1)
-  if (!base || ['completed', 'cancelled', 'failed'].includes(base.response.status)) return
+  if (!base || ['completed', 'incomplete', 'cancelled', 'failed'].includes(base.response.status)) return
   const failureLog = base.log
   const chatRetention = { temporary: base.chatTemporary, expiresAt: base.chatExpiresAt }
   if (base.chatDeletedAt || temporaryChatIsExpired(chatRetention) || normalChatIsExpired(chatRetention)) {
@@ -1076,7 +1112,15 @@ export async function processGeneration(responseId: string): Promise<void> {
       await tx.update(responses).set({ status: 'failed', error: { message, category, ...(error instanceof Error && 'code' in error ? { code: error.code } : {}), ...upstreamErrorFields(error) }, completedAt, updatedAt: completedAt }).where(eq(responses.id, responseId))
       await tx.update(requestLogs).set({ status: 'failed', errorCategory: category, errorMessage: message, durationMs: Date.now() - (failureLog.startedAt ?? failureLog.createdAt).getTime(), completedAt, updatedAt: completedAt }).where(eq(requestLogs.id, failureLog.id))
     })
-    await releaseBudget(responseId)
+    const [incurred] = await db.select({ total: sql<number>`coalesce(sum(${generationAttempts.costMicros}), 0)::bigint` })
+      .from(generationAttempts).where(eq(generationAttempts.requestLogId, failureLog.id))
+    const incurredCostMicros = Number(incurred?.total ?? 0)
+    if (incurredCostMicros > 0) {
+      const [failed] = await db.select({ usage: responses.usage }).from(responses).where(eq(responses.id, responseId))
+      await settleBudget({ responseId, usage: failed?.usage as ResponseUsage ?? EMPTY_USAGE,
+        latencyMs: Date.now() - (failureLog.startedAt ?? failureLog.createdAt).getTime(), costMicrosOverride: incurredCostMicros })
+      await db.update(requestLogs).set({ costMicros: incurredCostMicros }).where(eq(requestLogs.id, failureLog.id))
+    } else await releaseBudget(responseId)
     const [terminal] = await db.select().from(responses).where(eq(responses.id, responseId)).limit(1)
     if (terminal) await publishSnapshot(toSnapshot(terminal))
     await publishAdminUsage(failureLog.id, true)

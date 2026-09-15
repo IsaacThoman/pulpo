@@ -50,6 +50,31 @@ export function calculateRollingReservationMicros(
   return accruedCostMicros + calculateReservationMicros(input, maxOutputTokens, pricing)
 }
 
+export const MINIMUM_OUTPUT_RESERVATION_TOKENS = 8_000
+
+/** Find the largest fully funded output limit, using the same rounding as billing. */
+export function budgetOutputReservation(input: {
+  requestInput: unknown
+  maxOutputTokens: number
+  pricing: Pricing
+  capacityMicros: number
+  accruedCostMicros?: number
+}): { amountMicros: number; maxOutputTokens: number } | null {
+  const { maxOutputTokens, pricing } = input
+  if (!Number.isSafeInteger(maxOutputTokens) || maxOutputTokens <= 0) throw new Error('Invalid output token limit')
+  const fixedCostMicros = calculateRollingReservationMicros(input.accruedCostMicros ?? 0, input.requestInput, 0, pricing)
+  const cost = (tokens: number) => fixedCostMicros + tokenCostMicros(tokens, pricing.outputPriceMicros)
+  let low = Math.min(MINIMUM_OUTPUT_RESERVATION_TOKENS, maxOutputTokens)
+  if (cost(low) > input.capacityMicros) return null
+  let high = maxOutputTokens
+  while (low < high) {
+    const mid = low + Math.ceil((high - low) / 2)
+    if (cost(mid) <= input.capacityMicros) low = mid
+    else high = mid - 1
+  }
+  return { amountMicros: cost(low), maxOutputTokens: low }
+}
+
 export function availableReservationCapacityMicros(
   balanceMicros: number,
   totalPendingMicros: number,
