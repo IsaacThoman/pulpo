@@ -13,17 +13,40 @@ export const PUBLIC_API_PROTOCOL_PARAMETERS = new Set([
   'stream_options',
 ])
 
+// Sampling and output-shape knobs that OpenAI-compatible clients send by
+// default. They bill per token like any other request, so public API callers
+// may always set them without an admin allowlist entry.
+export const PUBLIC_API_SAFE_PARAMETERS = new Set([
+  'temperature',
+  'top_p',
+  'reasoning',
+  'text',
+])
+
 export type ModelParameterContext = {
   publicApi?: boolean
 }
 
-export function unsupportedPublicModelParameter(model: { allowedParameters: unknown }, parameters: unknown): string | undefined {
-  const allowed = new Set(
+function allowedSet(model: { allowedParameters: unknown }): Set<string> {
+  return new Set(
     Array.isArray(model.allowedParameters)
       ? model.allowedParameters.filter((key): key is string => typeof key === 'string')
       : [],
   )
-  return Object.keys(record(parameters)).find((key) => !allowed.has(key) && !PUBLIC_API_PROTOCOL_PARAMETERS.has(key))
+}
+
+function publicApiParameter(key: string): boolean {
+  return PUBLIC_API_PROTOCOL_PARAMETERS.has(key) || PUBLIC_API_SAFE_PARAMETERS.has(key)
+}
+
+/**
+ * Public parameters the catalog does not allow for this model. Callers drop
+ * these and fall back to the model defaults instead of failing the request,
+ * matching how OpenAI-compatible proxies treat unsupported options.
+ */
+export function droppedPublicModelParameters(model: { allowedParameters: unknown }, parameters: unknown): string[] {
+  const allowed = allowedSet(model)
+  return Object.keys(record(parameters)).filter((key) => !allowed.has(key) && !publicApiParameter(key)).sort()
 }
 
 function record(value: unknown): Record<string, unknown> {
@@ -37,18 +60,14 @@ export function resolveModelParameters(
   responseParameters: unknown,
   context: ModelParameterContext = {},
 ): Record<string, unknown> {
-  const allowed = new Set(
-    Array.isArray(model.allowedParameters)
-      ? model.allowedParameters.filter((key): key is string => typeof key === 'string')
-      : [],
-  )
+  const allowed = allowedSet(model)
   const result: Record<string, unknown> = {}
   for (const [key, value] of Object.entries(record(model.defaultParameters))) {
     if (allowed.has(key) && !RESERVED_PARAMETERS.has(key)) result[key] = value
   }
   for (const [key, value] of Object.entries(record(responseParameters))) {
-    const publicApiProtocolParameter = context.publicApi && PUBLIC_API_PROTOCOL_PARAMETERS.has(key)
-    if ((allowed.has(key) || publicApiProtocolParameter) && !RESERVED_PARAMETERS.has(key)) result[key] = value
+    const publicApiPassthrough = context.publicApi && publicApiParameter(key)
+    if ((allowed.has(key) || publicApiPassthrough) && !RESERVED_PARAMETERS.has(key)) result[key] = value
   }
   return result
 }

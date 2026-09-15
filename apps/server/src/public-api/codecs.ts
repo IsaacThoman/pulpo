@@ -49,13 +49,21 @@ function acceptNoop(
   ignored.add(param)
 }
 
+/** Options with no Responses API equivalent. Dropping them keeps OpenAI-compatible clients working. */
+function ignoreAlways(value: JsonRecord, params: readonly string[], ignored: Set<string>): void {
+  for (const param of params) {
+    if (Object.prototype.hasOwnProperty.call(value, param)) ignored.add(param)
+  }
+}
+
 const chatTopLevelKeys = new Set([
   'model', 'messages', 'stream', 'stream_options', 'max_completion_tokens', 'max_tokens',
   'temperature', 'top_p', 'reasoning_effort', 'service_tier', 'parallel_tool_calls',
   'tools', 'tool_choice', 'response_format', 'n', 'store',
   'audio', 'functions', 'function_call', 'logprobs', 'top_logprobs', 'stop',
   'presence_penalty', 'frequency_penalty', 'seed', 'prediction', 'modalities',
-  'web_search_options',
+  'web_search_options', 'user', 'logit_bias', 'metadata', 'prompt_cache_key', 'safety_identifier',
+  'verbosity',
 ])
 
 const chatRequestSchema = z.object({
@@ -75,6 +83,12 @@ const chatRequestSchema = z.object({
   response_format: z.unknown().nullish().transform((value) => value ?? undefined),
   n: z.number().int().positive().nullish().transform((value) => value ?? undefined),
   store: z.boolean().nullish().transform((value) => value ?? undefined),
+  functions: z.array(z.unknown()).nullish().transform((value) => value ?? undefined),
+  function_call: z.unknown().nullish().transform((value) => value ?? undefined),
+  verbosity: z.enum(['low', 'medium', 'high']).nullish().transform((value) => value ?? undefined),
+  prompt_cache_key: z.string().min(1).nullish().transform((value) => value ?? undefined),
+  safety_identifier: z.string().min(1).max(64).nullish().transform((value) => value ?? undefined),
+  user: z.string().min(1).nullish().transform((value) => value ?? undefined),
 }).passthrough()
 
 function inputContent(content: unknown, path: string, images: boolean): unknown {
@@ -86,6 +100,9 @@ function inputContent(content: unknown, path: string, images: boolean): unknown 
     if (part.type === 'text') {
       if (typeof part.text !== 'string') throw new AppError(400, 'validation_error', 'Text content requires text', 'invalid_request_error', `${path}.${index}.text`)
       return { type: 'input_text', text: part.text }
+    }
+    if (part.type === 'refusal' && typeof part.refusal === 'string') {
+      return { type: 'input_text', text: part.refusal }
     }
     if (part.type === 'image_url' && images) {
       const image = typeof part.image_url === 'string' ? { url: part.image_url } : record(part.image_url)
@@ -131,9 +148,24 @@ function chatMessages(messages: unknown[]): unknown[] {
           output.push({ type: 'function_call', call_id: toolCall.id, name: fn.name, arguments: fn.arguments })
         }
       }
-      if (message.content == null && !Array.isArray(message.tool_calls)) {
+      const legacyCall = record(message.function_call)
+      if (legacyCall) {
+        if (typeof legacyCall.name !== 'string' || typeof legacyCall.arguments !== 'string') {
+          throw new AppError(400, 'validation_error', 'Invalid legacy function_call', 'invalid_request_error', `${path}.function_call`)
+        }
+        output.push({ type: 'function_call', call_id: legacyCallId(legacyCall.name), name: legacyCall.name, arguments: legacyCall.arguments })
+      }
+      if (message.content == null && !Array.isArray(message.tool_calls) && !legacyCall) {
         throw new AppError(400, 'validation_error', 'Assistant message requires content or tool_calls', 'invalid_request_error', path)
       }
+      continue
+    }
+    if (message.role === 'function') {
+      // Deprecated function-calling protocol: results are keyed by function name.
+      if (typeof message.name !== 'string') {
+        throw new AppError(400, 'validation_error', 'Function messages require a name', 'invalid_request_error', path)
+      }
+      output.push({ type: 'function_call_output', call_id: legacyCallId(message.name), output: textOnlyContent(message.content ?? '', `${path}.content`) })
       continue
     }
     if (message.role === 'tool') {
@@ -146,6 +178,28 @@ function chatMessages(messages: unknown[]): unknown[] {
     unsupported(`${path}.role`, `Message role ${message.role} is not supported`)
   }
   return output
+}
+
+/** Legacy function messages have no call id, so pair calls and results by name. */
+function legacyCallId(name: string): string {
+  return `call_legacy_${name}`
+}
+
+/** Deprecated `functions` entries carry the function definition at the top level. */
+function legacyFunctionTools(rawFunctions: unknown[] | undefined): unknown[] | undefined {
+  if (!rawFunctions?.length) return undefined
+  return rawFunctions.map((rawFunction, index) => {
+    const fn = record(rawFunction)
+    if (!fn || typeof fn.name !== 'string') throw new AppError(400, 'validation_error', 'Legacy function requires a name', 'invalid_request_error', `functions.${index}`)
+    return { type: 'function', function: fn }
+  })
+}
+
+function legacyFunctionCallChoice(value: unknown): unknown {
+  if (value === undefined || value === 'auto' || value === 'none') return value
+  const choice = record(value)
+  if (!choice || typeof choice.name !== 'string') throw new AppError(400, 'validation_error', 'Invalid function_call', 'invalid_request_error', 'function_call')
+  return { type: 'function', function: { name: choice.name } }
 }
 
 function chatTools(rawTools: unknown[] | undefined): unknown[] | undefined {
@@ -218,12 +272,13 @@ function rejectDeferredResponseParts(input: unknown): void {
   }
 }
 
-function responseTextFormat(value: unknown): unknown {
-  if (value === undefined) return undefined
+function responseTextFormat(value: unknown, verbosity?: 'low' | 'medium' | 'high'): unknown {
+  const verbosityField = verbosity ? { verbosity } : {}
+  if (value === undefined) return verbosity ? verbosityField : undefined
   const format = record(value)
   if (!format || typeof format.type !== 'string') throw new AppError(400, 'validation_error', 'Invalid response_format', 'invalid_request_error', 'response_format')
   if (format.type === 'text' || format.type === 'json_object') {
-    return { format: { type: format.type } }
+    return { format: { type: format.type }, ...verbosityField }
   }
   if (format.type !== 'json_schema') unsupported('response_format.type')
   const schema = record(format.json_schema)
@@ -234,35 +289,41 @@ function responseTextFormat(value: unknown): unknown {
     type: 'json_schema', name: schema.name, schema: schema.schema,
     ...(typeof schema.description === 'string' ? { description: schema.description } : {}),
     ...(typeof schema.strict === 'boolean' ? { strict: schema.strict } : {}),
-  } }
+  }, ...verbosityField }
 }
 
 export function parseChatCompletionRequest(raw: unknown): PublicGenerationRequest {
   const source = record(raw)
   if (!source) throw new AppError(400, 'validation_error', 'Request body must be an object', 'invalid_request_error')
   const ignored = ignoredTopLevelParameters(source, chatTopLevelKeys)
-  acceptNoop(source, 'audio', (value) => value == null, ignored)
-  acceptNoop(source, 'functions', (value) => value == null || (Array.isArray(value) && value.length === 0), ignored)
-  acceptNoop(source, 'function_call', (value) => value == null, ignored)
-  acceptNoop(source, 'logprobs', (value) => value == null || value === false, ignored)
-  acceptNoop(source, 'top_logprobs', (value) => value == null || value === 0, ignored)
-  acceptNoop(source, 'stop', (value) => value == null || (Array.isArray(value) && value.length === 0), ignored)
-  acceptNoop(source, 'presence_penalty', (value) => value == null || value === 0, ignored)
-  acceptNoop(source, 'frequency_penalty', (value) => value == null || value === 0, ignored)
-  acceptNoop(source, 'seed', (value) => value == null, ignored)
-  acceptNoop(source, 'prediction', (value) => value == null, ignored)
-  acceptNoop(source, 'modalities', (value) => value == null || (Array.isArray(value) && value.length === 1 && value[0] === 'text'), ignored)
-  acceptNoop(source, 'web_search_options', (value) => value == null, ignored)
+  // No Responses API equivalent; clients such as the Vercel AI SDK send these
+  // whenever a user configures them, so drop rather than fail.
+  ignoreAlways(source, [
+    'audio', 'logprobs', 'top_logprobs', 'stop', 'presence_penalty', 'frequency_penalty',
+    'seed', 'prediction', 'web_search_options', 'logit_bias', 'metadata',
+  ], ignored)
+  // Audio output cannot be represented; text-only modality lists are the default.
+  acceptNoop(source, 'modalities', (value) => value == null || (Array.isArray(value) && value.every((entry) => entry === 'text')), ignored)
   const input = chatRequestSchema.parse(source)
   assertPublicIdentifier(input.model, 'model')
   if (input.max_completion_tokens !== undefined && input.max_tokens !== undefined) {
     throw new AppError(400, 'parameter_conflict', 'Specify only one of max_completion_tokens or max_tokens', 'invalid_request_error', 'max_completion_tokens')
   }
   if (input.n !== undefined && input.n !== 1) unsupported('n', 'Only n=1 is supported')
-  if (input.store === true) unsupported('store', 'Stored Chat Completions are not supported')
-  if (input.stream_options && !input.stream) throw new AppError(400, 'parameter_conflict', 'stream_options requires stream=true', 'invalid_request_error', 'stream_options')
-  const tools = chatTools(input.tools)
-  const text = responseTextFormat(input.response_format)
+  // Chat Completions are never retrievable through Pulpo, so `store` only changes
+  // what the client expects. Note it and continue rather than failing.
+  if (input.store !== undefined) ignored.add('store')
+  if (input.stream_options && !input.stream) ignored.add('stream_options')
+  // Deprecated functions/function_call map onto tools when no tools were given.
+  const legacyTools = input.tools === undefined ? legacyFunctionTools(input.functions) : undefined
+  if (input.functions !== undefined && !legacyTools) ignored.add('functions')
+  const legacyChoice = input.tool_choice === undefined && legacyTools ? legacyFunctionCallChoice(input.function_call) : undefined
+  if (input.function_call !== undefined && legacyChoice === undefined) ignored.add('function_call')
+  const tools = chatTools(input.tools ?? legacyTools)
+  const text = responseTextFormat(input.response_format, input.verbosity)
+  const promptCacheKey = input.prompt_cache_key ?? input.user
+  const safetyIdentifier = input.safety_identifier ?? input.user
+  if (input.user && input.prompt_cache_key && input.safety_identifier) ignored.add('user')
   const parameters = Object.fromEntries(Object.entries({
     temperature: input.temperature,
     top_p: input.top_p,
@@ -270,8 +331,10 @@ export function parseChatCompletionRequest(raw: unknown): PublicGenerationReques
     service_tier: input.service_tier,
     parallel_tool_calls: input.parallel_tool_calls,
     tools,
-    tool_choice: chatToolChoice(input.tool_choice),
+    tool_choice: chatToolChoice(input.tool_choice ?? legacyChoice),
     text,
+    prompt_cache_key: promptCacheKey,
+    safety_identifier: safetyIdentifier,
   }).filter(([, value]) => value !== undefined))
   const rawInput = chatMessages(input.messages)
   return {
@@ -284,19 +347,19 @@ export function parseChatCompletionRequest(raw: unknown): PublicGenerationReques
     stream: input.stream,
     background: false,
     publiclyStored: true,
-    streamIncludeUsage: input.stream_options?.include_usage ?? false,
+    streamIncludeUsage: input.stream ? input.stream_options?.include_usage ?? false : false,
     ignoredParameters: [...ignored].sort(),
     fingerprintValue: {
       model: input.model, input: rawInput, parameters,
       maxOutputTokens: input.max_completion_tokens ?? input.max_tokens,
-      stream: input.stream, streamIncludeUsage: input.stream_options?.include_usage ?? false,
+      stream: input.stream, streamIncludeUsage: input.stream ? input.stream_options?.include_usage ?? false : false,
     },
   }
 }
 
 const completionTopLevelKeys = new Set([
   'model', 'prompt', 'stream', 'max_tokens', 'temperature', 'top_p', 'n',
-  'best_of', 'echo', 'suffix', 'logprobs', 'stop', 'presence_penalty', 'frequency_penalty', 'seed',
+  'best_of', 'echo', 'suffix', 'logprobs', 'stop', 'presence_penalty', 'frequency_penalty', 'seed', 'user',
 ])
 const completionRequestSchema = z.object({
   model: z.string().min(1),
@@ -315,11 +378,7 @@ export function parseCompletionRequest(raw: unknown): PublicGenerationRequest {
   acceptNoop(source, 'best_of', (value) => value == null || value === 1, ignored)
   acceptNoop(source, 'echo', (value) => value == null || value === false, ignored)
   acceptNoop(source, 'suffix', (value) => value == null || value === '', ignored)
-  acceptNoop(source, 'logprobs', (value) => value == null, ignored)
-  acceptNoop(source, 'stop', (value) => value == null || (Array.isArray(value) && value.length === 0), ignored)
-  acceptNoop(source, 'presence_penalty', (value) => value == null || value === 0, ignored)
-  acceptNoop(source, 'frequency_penalty', (value) => value == null || value === 0, ignored)
-  acceptNoop(source, 'seed', (value) => value == null, ignored)
+  ignoreAlways(source, ['logprobs', 'stop', 'presence_penalty', 'frequency_penalty', 'seed', 'user'], ignored)
   if (Array.isArray(source.prompt)) unsupported('prompt', 'Prompt arrays and token arrays are not supported')
   const input = completionRequestSchema.parse(source)
   assertPublicIdentifier(input.model, 'model')
@@ -362,11 +421,14 @@ function responseIncludes(source: JsonRecord, ignored: Set<string>): string[] | 
   }
   const normalized = new Set<string>()
   for (const candidate of value) {
-    if (typeof candidate !== 'string' || !supportedResponseIncludes.has(candidate)) {
-      unsupported('include', `Include value ${String(candidate)} is not supported`)
+    if (typeof candidate !== 'string') {
+      throw new AppError(400, 'validation_error', 'include values must be strings', 'invalid_request_error', 'include')
     }
-    normalized.add(candidate)
+    // Hosted-tool projections have nothing to project through Pulpo; drop them.
+    if (supportedResponseIncludes.has(candidate)) normalized.add(candidate)
+    else ignored.add(`include.${candidate}`)
   }
+  if (!normalized.size) return undefined
   return [...normalized].sort()
 }
 
@@ -410,13 +472,11 @@ export function parseResponsesRequest(raw: unknown): PublicGenerationRequest {
   const source = record(raw)
   if (!source) throw new AppError(400, 'validation_error', 'Request body must be an object', 'invalid_request_error')
   const ignored = ignoredTopLevelParameters(source, responsesTopLevelKeys)
-  acceptNoop(source, 'context_management', (value) => value == null || (Array.isArray(value) && value.length === 0), ignored)
+  // Server-side state cannot be honored: Pulpo replays conversations statelessly.
   acceptNoop(source, 'conversation', (value) => value == null, ignored)
-  const include = responseIncludes(source, ignored)
-  acceptNoop(source, 'max_tool_calls', (value) => value == null, ignored)
-  acceptNoop(source, 'moderation', (value) => value == null, ignored)
   acceptNoop(source, 'previous_response_id', (value) => value == null, ignored)
-  acceptNoop(source, 'prompt', (value) => value == null, ignored)
+  ignoreAlways(source, ['context_management', 'max_tool_calls', 'moderation', 'prompt'], ignored)
+  const include = responseIncludes(source, ignored)
   const input = responsesRequestSchema.parse(source)
   assertPublicIdentifier(input.model, 'model')
   if (input.stream && input.background) throw new AppError(400, 'parameter_conflict', 'Streaming background responses are not supported', 'invalid_request_error', 'background')
@@ -533,20 +593,35 @@ function finishReason(status: ResponseRow['status'], incompleteDetails: unknown,
   return hasTools ? 'tool_calls' : 'stop'
 }
 
-function assertCompletionSucceeded(row: ResponseRow): void {
-  if (row.status === 'completed' || row.status === 'incomplete') return
+// Provider rejections of the request body are the caller's to fix, so they keep
+// their status. Anything else is Pulpo's problem and stays a server error.
+const FORWARDED_UPSTREAM_STATUSES = new Set([400, 413, 422])
+
+function publicFailure(row: ResponseRow): { status: number; code: string; message: string; type: string; param: string | null } {
   const error = record(row.error)
-  throw new AppError(500, 'generation_failed', typeof error?.message === 'string' ? error.message : `Generation ${row.status}`, 'server_error')
+  const upstream = record(error?.upstream)
+  const message = typeof error?.message === 'string' ? error.message : `Generation ${row.status}`
+  if (typeof upstream?.status === 'number' && FORWARDED_UPSTREAM_STATUSES.has(upstream.status)) {
+    return {
+      status: upstream.status,
+      code: typeof upstream.code === 'string' ? upstream.code : 'upstream_rejected_request',
+      message,
+      type: typeof upstream.type === 'string' ? upstream.type : 'invalid_request_error',
+      param: typeof upstream.param === 'string' ? upstream.param : null,
+    }
+  }
+  return { status: 500, code: typeof error?.code === 'string' ? error.code : 'generation_failed', message, type: 'server_error', param: null }
 }
 
-function streamError(row: ResponseRow): { error: { message: string; type: 'server_error'; code: unknown; param: null } } {
-  const error = record(row.error)
-  return { error: {
-    message: typeof error?.message === 'string' ? error.message : `Generation ${row.status}`,
-    type: 'server_error',
-    code: error?.code ?? 'generation_failed',
-    param: null,
-  } }
+function assertCompletionSucceeded(row: ResponseRow): void {
+  if (row.status === 'completed' || row.status === 'incomplete') return
+  const failure = publicFailure(row)
+  throw new AppError(failure.status, failure.code, failure.message, failure.type, failure.param)
+}
+
+function streamError(row: ResponseRow): { error: { message: string; type: string; code: string; param: string | null } } {
+  const failure = publicFailure(row)
+  return { error: { message: failure.message, type: failure.type, code: failure.code, param: failure.param } }
 }
 
 export function serializePublicResponse(row: ResponseRow) {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { backgroundRequestParameter, promptCacheKeyParameter, publicOutputTokenLimit, responseIncludeParameter } from './upstream-request.js'
+import { backgroundRequestParameter, promptCacheKeyParameter, publicOutputTokenLimit, responseIncludeParameter, strippableUpstreamParameter, upstreamErrorDetails } from './upstream-request.js'
 
 describe('publicOutputTokenLimit', () => {
   it('preserves an admitted client limit through retries and higher-capacity fallbacks', () => {
@@ -49,5 +49,46 @@ describe('promptCacheKeyParameter', () => {
   it('falls back to configured provider affinity', () => {
     expect(promptCacheKeyParameter({}, 'chat:generated')).toEqual({ prompt_cache_key: 'chat:generated' })
     expect(promptCacheKeyParameter({})).toEqual({})
+  })
+})
+
+describe('strippableUpstreamParameter', () => {
+  const payload = { model: 'gpt-x', input: 'hi', temperature: 0.2, top_p: 0.9, reasoning: { effort: 'high' }, max_output_tokens: 100, stream: true }
+  const apiError = (status: number, message: string, extra: Record<string, unknown> = {}) => Object.assign(new Error(message), { status, ...extra })
+
+  it('names a strippable parameter from the structured param field', () => {
+    expect(strippableUpstreamParameter(apiError(400, 'Unsupported parameter', { param: 'temperature', code: 'unsupported_parameter' }), payload)).toBe('temperature')
+    expect(strippableUpstreamParameter(apiError(400, 'Invalid value', { param: 'reasoning.effort' }), payload)).toBe('reasoning')
+  })
+
+  it('falls back to the message when the provider omits param', () => {
+    expect(strippableUpstreamParameter(apiError(400, "Unsupported parameter: 'top_p' is not supported with this model."), payload)).toBe('top_p')
+    expect(strippableUpstreamParameter(apiError(400, "Unsupported value: 'temperature' does not support 0.2 with this model."), payload)).toBe('temperature')
+    expect(strippableUpstreamParameter(apiError(400, 'temperature and top_p cannot both be specified'), payload)).toBeUndefined()
+  })
+
+  it('never strips billing limits, conversation fields, or parameters that are absent', () => {
+    expect(strippableUpstreamParameter(apiError(400, 'bad', { param: 'max_output_tokens' }), payload)).toBeUndefined()
+    expect(strippableUpstreamParameter(apiError(400, 'bad', { param: 'input' }), payload)).toBeUndefined()
+    expect(strippableUpstreamParameter(apiError(400, 'bad', { param: 'tools' }), payload)).toBeUndefined()
+    expect(strippableUpstreamParameter(apiError(400, 'bad', { param: 'service_tier' }), payload)).toBeUndefined()
+  })
+
+  it('only reacts to 400 responses', () => {
+    expect(strippableUpstreamParameter(apiError(500, 'bad', { param: 'temperature' }), payload)).toBeUndefined()
+    expect(strippableUpstreamParameter(new Error("Unsupported parameter: 'temperature'"), payload)).toBeUndefined()
+  })
+})
+
+describe('upstreamErrorDetails', () => {
+  it('reads SDK error fields and nested provider bodies', () => {
+    const sdkError = Object.assign(new Error('400 Unsupported parameter'), {
+      status: 400, code: 'unsupported_parameter', param: 'top_p', type: 'invalid_request_error',
+      error: { message: "Unsupported parameter: 'top_p'", type: 'invalid_request_error', code: 'unsupported_parameter', param: 'top_p' },
+    })
+    expect(upstreamErrorDetails(sdkError)).toEqual({
+      status: 400, code: 'unsupported_parameter', param: 'top_p', type: 'invalid_request_error', message: "Unsupported parameter: 'top_p'",
+    })
+    expect(upstreamErrorDetails(new Error('plain'))).toEqual({ status: undefined, code: undefined, param: undefined, type: undefined, message: 'plain' })
   })
 })
