@@ -59,7 +59,7 @@ describe('user message actions', () => {
       chat={chat}
       message={user({ branch: { ids: ['response-1', 'response-2'], index: 1 } })}
       streaming={false}
-      activeModelId="model-1"
+      onRegenerate={() => undefined}
     />)
 
     expect(markup.indexOf('aria-label="Copy"')).toBeLessThan(markup.indexOf('aria-label="Previous branch"'))
@@ -74,7 +74,7 @@ describe('user message actions', () => {
       chat={streamingChat}
       message={user()}
       streaming={false}
-      activeModelId="model-1"
+      onRegenerate={() => undefined}
     />)
 
     const editButton = markup.match(/<button[^>]*aria-label="Edit"[^>]*>/)?.[0]
@@ -101,7 +101,7 @@ describe('assistant response metadata', () => {
         latencyMs: 932,
       })}
       streaming={false}
-      activeModelId="model-1"
+      onRegenerate={() => undefined}
     />)
 
     const text = container.textContent ?? ''
@@ -123,7 +123,7 @@ describe('assistant response metadata', () => {
         latencyMs: 932,
       })}
       streaming={false}
-      activeModelId="model-1"
+      onRegenerate={() => undefined}
     />)
 
     expect(container.textContent).toContain('802→12 tok · 13tok/sec · 932ms · $0.0042')
@@ -143,7 +143,7 @@ describe('assistant response metadata', () => {
         latencyMs: 932,
       })}
       streaming={false}
-      activeModelId="model-1"
+      onRegenerate={() => undefined}
     /></TooltipProvider>)
 
     const markup = container.innerHTML
@@ -165,7 +165,7 @@ describe('assistant response metadata', () => {
           cost: 0.0017, inferenceReferenceCost: 0.0385, latencyMs: 18_700,
         })}
         streaming={false}
-        activeModelId="model-1"
+        onRegenerate={() => undefined}
       />
       <div data-testid="usage-table-cost">
         <UsageCostBreakdown costUsd={0.0017} inferenceReferenceUsd={0.0385} subscriptionCoveredUsd={0} personal />
@@ -187,7 +187,7 @@ describe('assistant response metadata', () => {
       chat={chat}
       message={assistant({ content: 'Answer', cost: 0.0123, inferenceReferenceCost })}
       streaming={false}
-      activeModelId="model-1"
+      onRegenerate={() => undefined}
     />)
 
     expect(container.textContent).toContain('$0.0123')
@@ -233,7 +233,7 @@ describe('show reasoning preference', () => {
         ],
       })}
       streaming={streaming}
-      activeModelId="model-1"
+      onRegenerate={() => undefined}
     />)
 
     expect(container.textContent).toContain('Worked')
@@ -258,7 +258,7 @@ describe('show reasoning preference', () => {
         outputItems: [{ type: 'pulpo_tool', tool: 'bash', status: 'running' }],
       })}
       streaming
-      activeModelId="model-1"
+      onRegenerate={() => undefined}
     />)
 
     expect(container.querySelector('.animate-bounce')).not.toBeNull()
@@ -273,7 +273,7 @@ describe('show reasoning preference', () => {
       chat={chat}
       message={assistant({ content: 'Answer', reasoning: 'Private summary', error: 'Generation failed', initialResponseDurationMs: 8_000 })}
       streaming={false}
-      activeModelId="model-1"
+      onRegenerate={() => undefined}
     />)
 
     expect(container.textContent).toContain('Answer')
@@ -296,7 +296,7 @@ describe('live tool activity presentation', () => {
         }],
       })}
       streaming
-      activeModelId="model-1"
+      onRegenerate={() => undefined}
     />)
 
     expect(markup).toContain('Fetching a webpage…')
@@ -314,7 +314,7 @@ describe('live tool activity presentation', () => {
         }],
       })}
       streaming
-      activeModelId="model-1"
+      onRegenerate={() => undefined}
     />)
 
     expect(markup).toContain('Working…')
@@ -339,7 +339,7 @@ describe('recalled chat activity', () => {
         }, { type: 'message', content: [{ type: 'output_text', text: 'Answer' }] }],
       })}
       streaming={false}
-      activeModelId="model-1"
+      onRegenerate={() => undefined}
     />)
 
     expect(markup).toContain('Recalled from 1 chat')
@@ -366,7 +366,7 @@ describe('recalled chat activity', () => {
         }, { type: 'message', content: [{ type: 'output_text', text: 'Answer' }] }],
       })}
       streaming={false}
-      activeModelId="model-1"
+      onRegenerate={() => undefined}
     />)
 
     expect(markup).toContain('Recalled from 2 chats')
@@ -394,7 +394,7 @@ describe('recalled chat activity', () => {
         ],
       })}
       streaming={false}
-      activeModelId="model-1"
+      onRegenerate={() => undefined}
     />)
     const thought = renderToStaticMarkup(<MessageItem
       chat={chat}
@@ -406,7 +406,7 @@ describe('recalled chat activity', () => {
         ],
       })}
       streaming={false}
-      activeModelId="model-1"
+      onRegenerate={() => undefined}
     />)
 
     expect(worked).toContain('Worked')
@@ -430,7 +430,7 @@ describe('Spanish activity summaries', () => {
           }],
         })}
         streaming={false}
-        activeModelId="model-1"
+        onRegenerate={() => undefined}
       />)
       const thought = renderToStaticMarkup(<MessageItem
         chat={chat}
@@ -441,7 +441,7 @@ describe('Spanish activity summaries', () => {
           }],
         })}
         streaming={false}
-        activeModelId="model-1"
+        onRegenerate={() => undefined}
       />)
 
       expect(worked).toContain('Trabajó durante 3 segundos')
@@ -464,7 +464,7 @@ describe('Spanish activity summaries', () => {
           outputItems: [{ type: 'pulpo_workspace', state: 'waiting', position: 3 }],
         })}
         streaming
-        activeModelId="model-1"
+        onRegenerate={() => undefined}
       />)
       const expired = renderToStaticMarkup(<MessageItem
         chat={chat}
@@ -472,7 +472,7 @@ describe('Spanish activity summaries', () => {
           outputItems: [{ type: 'pulpo_workspace', state: 'expired' }],
         })}
         streaming={false}
-        activeModelId="model-1"
+        onRegenerate={() => undefined}
       />)
 
       expect(queued).toContain('Esperando un espacio de trabajo · puesto 3 en la cola')
@@ -498,7 +498,7 @@ describe('workspace continue timing', () => {
         }],
       })}
       streaming
-      activeModelId="model-1"
+      onRegenerate={() => undefined}
     />)
 
     expect(markup).toContain('Continue without agent')
@@ -516,7 +516,7 @@ describe('workspace continue timing', () => {
         }],
       })}
       streaming
-      activeModelId="model-1"
+      onRegenerate={() => undefined}
     />)
 
     expect(markup).not.toContain('Continue without agent')
@@ -539,7 +539,7 @@ describe('assistant terminal error rendering', () => {
         ],
       })}
       streaming={false}
-      activeModelId="model-1"
+      onRegenerate={() => undefined}
     />)
 
     expect(markup).toContain('Previously generated answer')
@@ -556,7 +556,7 @@ describe('assistant terminal error rendering', () => {
       chat={chat}
       message={assistant({ error: 'Generation failed' })}
       streaming={false}
-      activeModelId="model-1"
+      onRegenerate={() => undefined}
     />)
 
     expect(markup).toContain('Generation failed')
@@ -576,7 +576,7 @@ describe('assistant streaming caret', () => {
         ],
       })}
       streaming
-      activeModelId="model-1"
+      onRegenerate={() => undefined}
     />)
 
     expect(markup).toContain('stream-caret')
@@ -594,7 +594,7 @@ describe('assistant streaming caret', () => {
         ],
       })}
       streaming
-      activeModelId="model-1"
+      onRegenerate={() => undefined}
     />)
 
     expect(markup).not.toContain('stream-caret')
@@ -612,7 +612,7 @@ describe('assistant streaming caret', () => {
         ],
       })}
       streaming
-      activeModelId="model-1"
+      onRegenerate={() => undefined}
     />)
 
     expect(markup).toContain('stream-caret')
@@ -629,7 +629,7 @@ describe('assistant streaming caret', () => {
         ],
       })}
       streaming={false}
-      activeModelId="model-1"
+      onRegenerate={() => undefined}
     />)
 
     expect(markup).not.toContain('stream-caret')
@@ -639,7 +639,7 @@ describe('assistant streaming caret', () => {
 describe('initial server receipt timing', () => {
   it('uses the full initial wait and preserves subsequent work durations', async () => {
     const { MessageItem } = await import('./MessageItem')
-    const markup = renderToStaticMarkup(<MessageItem chat={chat} activeModelId="model-1" streaming
+    const markup = renderToStaticMarkup(<MessageItem chat={chat} onRegenerate={() => undefined} streaming
       message={assistant({
         done: false, initialResponseDurationMs: 10_000,
         outputItems: [
@@ -658,7 +658,7 @@ describe('initial server receipt timing', () => {
   it.each([true, false])('hides timing-only labels with reasoning visibility %s', async (showReasoning) => {
     useSettings.setState({ showReasoning })
     const { MessageItem } = await import('./MessageItem')
-    const { container } = render(<MessageItem chat={chat} activeModelId="model-1" streaming={false}
+    const { container } = render(<MessageItem chat={chat} onRegenerate={() => undefined} streaming={false}
       message={assistant({ content: 'Reply', initialResponseDurationMs: 10_000 })} />)
     expect(container.textContent).not.toContain('Thought')
     expect(container.textContent).toContain('Reply')
@@ -666,7 +666,7 @@ describe('initial server receipt timing', () => {
 
   it('retains errors without inventing activity when no reply was emitted', async () => {
     const { MessageItem } = await import('./MessageItem')
-    const markup = renderToStaticMarkup(<MessageItem chat={chat} activeModelId="model-1" streaming={false}
+    const markup = renderToStaticMarkup(<MessageItem chat={chat} onRegenerate={() => undefined} streaming={false}
       message={assistant({ error: 'Generation failed', initialResponseDurationMs: 8_000 })} />)
     expect(markup).not.toContain('Thought')
     expect(markup).toContain('Generation failed')
@@ -674,7 +674,7 @@ describe('initial server receipt timing', () => {
 
   it.each([false, true])('hides timing for empty reasoning output when streaming is %s', async (streaming) => {
     const { MessageItem } = await import('./MessageItem')
-    const markup = renderToStaticMarkup(<MessageItem chat={chat} activeModelId="model-1" streaming={streaming}
+    const markup = renderToStaticMarkup(<MessageItem chat={chat} onRegenerate={() => undefined} streaming={streaming}
       message={assistant({
         done: !streaming, initialResponseDurationMs: 10_000,
         outputItems: [
@@ -688,7 +688,7 @@ describe('initial server receipt timing', () => {
 
   it('keeps the full initial wait for actual reasoning', async () => {
     const { MessageItem } = await import('./MessageItem')
-    const markup = renderToStaticMarkup(<MessageItem chat={chat} activeModelId="model-1" streaming={false}
+    const markup = renderToStaticMarkup(<MessageItem chat={chat} onRegenerate={() => undefined} streaming={false}
       message={assistant({
         initialResponseDurationMs: 10_000,
         outputItems: [
@@ -713,7 +713,7 @@ describe('view_image tool details', () => {
         { id: 'view-2', type: 'pulpo_tool', tool: 'view_image', status: 'completed', arguments: { path: '/tmp/chart.png' }, output: 'Viewed chart.png', imagePreview },
       ] })}
       streaming={false}
-      activeModelId="model-1"
+      onRegenerate={() => undefined}
     /></TooltipProvider>)
     fireEvent.click(getByText(/^Worked/))
     const tools = [...container.querySelectorAll('button')].filter((button) => button.textContent?.includes('view_image'))
@@ -732,16 +732,16 @@ describe('view_image tool details', () => {
 describe('read aloud actions', () => {
   it('adds read aloud immediately after regenerate and supports user messages', async () => {
     const { MessageItem } = await import('./MessageItem')
-    const result = render(<TooltipProvider><MessageItem chat={chat} message={assistant({ content: 'Hello' })} streaming={false} activeModelId="model-1" /></TooltipProvider>)
+    const result = render(<TooltipProvider><MessageItem chat={chat} message={assistant({ content: 'Hello' })} streaming={false} onRegenerate={() => undefined} /></TooltipProvider>)
     const labels = [...result.container.querySelectorAll('button[aria-label]')].map(button => button.getAttribute('aria-label'))
     expect(labels.indexOf('Read aloud')).toBe(labels.indexOf('Regenerate') + 1)
-    result.rerender(<TooltipProvider><MessageItem chat={chat} message={user({ content: 'Read my prompt' })} streaming={false} activeModelId="model-1" /></TooltipProvider>)
+    result.rerender(<TooltipProvider><MessageItem chat={chat} message={user({ content: 'Read my prompt' })} streaming={false} onRegenerate={() => undefined} /></TooltipProvider>)
     expect(result.getByRole('button', { name: 'Read aloud' })).toBeTruthy()
   })
   it('does not offer speech for streaming or code-only assistant messages', async () => {
     const { MessageItem } = await import('./MessageItem')
     for (const message of [assistant({ content: 'Still writing', done: false }), assistant({ content: '```js\nsecret()\n```' })]) {
-      const result = render(<TooltipProvider><MessageItem chat={chat} message={message} streaming={!message.done} activeModelId="model-1" /></TooltipProvider>)
+      const result = render(<TooltipProvider><MessageItem chat={chat} message={message} streaming={!message.done} onRegenerate={() => undefined} /></TooltipProvider>)
       expect(result.queryByRole('button', { name: 'Read aloud' })).toBeNull(); result.unmount()
     }
   })

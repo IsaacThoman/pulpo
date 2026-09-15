@@ -540,7 +540,7 @@ export const MessageItem = memo(function MessageItem({
   chat,
   message,
   streaming,
-  activeModelId,
+  onRegenerate,
   onEditUserMessage = ignoreUserMessageEdit,
   composerEditActive = false,
   onOpenChat = ignoreOpenChat,
@@ -548,7 +548,7 @@ export const MessageItem = memo(function MessageItem({
   chat: Pick<Chat, 'id' | 'expired' | 'modelId'>
   message: Message
   streaming: boolean
-  activeModelId: string
+  onRegenerate: (messageId: string) => void
   onEditUserMessage?: (message: Message) => void
   composerEditActive?: boolean
   onOpenChat?: (chatId: string) => void
@@ -556,7 +556,6 @@ export const MessageItem = memo(function MessageItem({
   const speechState = useSyncExternalStore(speechPlayback.subscribe, speechPlayback.getSnapshot, speechPlayback.getSnapshot)
   const speechActive = speechState.key === `${chat.id}:${message.id}`
   const { t } = useTranslation()
-  const regenerate = useChat((state) => state.regenerate)
   const editAssistantMessage = useChat((state) => state.editAssistantMessage)
   const deleteUserMessage = useChat((state) => state.deleteUserMessage)
   const stopStreaming = useChat((state) => state.stopStreaming)
@@ -831,7 +830,7 @@ export const MessageItem = memo(function MessageItem({
                     >
                       <Pencil className="size-3.5" />
                     </ActionButton>
-                    <ActionButton label={t('chat.regenerate')} onClick={() => { speechPlayback.stop(); regenerate(chat.id, message.id, activeModelId) }}>
+                    <ActionButton label={t('chat.regenerate')} onClick={() => { speechPlayback.stop(); onRegenerate(message.id) }}>
                       <RefreshCw className="size-3.5" />
                     </ActionButton>
                   </>
@@ -868,7 +867,7 @@ export const MessageItem = memo(function MessageItem({
 }, (previous, next) => (
   previous.message === next.message
   && previous.streaming === next.streaming
-  && previous.activeModelId === next.activeModelId
+  && previous.onRegenerate === next.onRegenerate
   && previous.chat.id === next.chat.id
   && previous.chat.modelId === next.chat.modelId
   && previous.chat.expired === next.chat.expired

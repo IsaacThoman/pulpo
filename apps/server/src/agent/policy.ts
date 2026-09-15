@@ -24,6 +24,26 @@ export function buildAgentSystemPrompt(
     .join('\n\n')
 }
 
+export function buildToolsDisabledSystemPrompt(
+  systemPrompt: string,
+  customInstructions = '',
+  memoryContext = '',
+): string {
+  return [
+    systemPrompt,
+    customInstructions.trim() ? `User-provided custom instructions:\n${customInstructions.trim()}` : '',
+    memoryContext,
+    `You are a helpful AI assistant inside of Pulpo. Agent tools are disabled for this response.
+You cannot access the workspace, inspect or change files, run commands, browse the web, generate images, attach files, or update memory. Earlier tool results are historical context and do not grant current access.
+Answer using the conversation and information already provided. Explain any limitation relevant to the request, and do not claim to perform actions or access resources that require tools.`,
+  ].filter((value) => value.trim()).join('\n\n')
+}
+
+/** The running agent loop has its own context snapshot, separate from agent.state. */
+export function withoutAgentTools<T extends { systemPrompt?: string; tools?: unknown[] }>(context: T, systemPrompt: string): T {
+  return { ...context, systemPrompt, tools: [] }
+}
+
 export function attachmentWorkspacePath(name: string, id: string): string {
   const cleaned = name.normalize('NFKC').replace(/[^a-zA-Z0-9._-]+/g, '_').replace(/^\.+/, '').slice(0, 160) || 'attachment'
   return `/workspace/${id.slice(0, 8)}-${cleaned}`
