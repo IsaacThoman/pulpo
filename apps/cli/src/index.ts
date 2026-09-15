@@ -575,37 +575,6 @@ export function createProgram(io: CliIo = processIo, dependencies: CliDependenci
     .action((id, options) => {
       writeOutput(io, speechModelSchema.parse({ ...(z.enum(['openai', 'mistral']).parse(options.adapter) === 'mistral' ? VOXTRAL_SPEECH_PRESET : OPENAI_SPEECH_PRESET), id, providerConnectionId: options.provider }), true)
     })
-  const speechPreview = speechModel.command('preview').description('Manage each voice’s optional MP3/WAV preview')
-  const speechPreviewPath = (id: string, voice: string) => `/api/management/v1/speech-models/${encodeURIComponent(id)}/voices/${encodeURIComponent(voice)}/preview`
-  speechPreview.command('upload <id> <voice> <path>').description('Upload or replace a voice preview (up to 30 seconds and 5 MiB)')
-    .action(async (id, voice, path, _options, command) => {
-      const filename = basename(path)
-      const extension = filename.split('.').at(-1)?.toLowerCase()
-      const contentType = extension === 'mp3' ? 'audio/mpeg' : extension === 'wav' ? 'audio/wav' : null
-      if (!contentType) throw new Error('Speech previews must be MP3 or WAV files')
-      const file = await stat(path)
-      if (!file.isFile() || !file.size || file.size > 5 * 1024 * 1024) throw new Error('Speech previews must be nonempty files of at most 5 MiB')
-      const bytes = new Uint8Array(await readFile(path))
-      if (!bytes.length || bytes.length > 5 * 1024 * 1024) throw new Error('Speech previews must be nonempty and at most 5 MiB')
-      const { client } = await clientFor(command)
-      emit(io, command, await client.upload(speechPreviewPath(id, voice), { bytes, filename, contentType }))
-    })
-  speechPreview.command('download <id> <voice>').requiredOption('-o, --output <path>', 'destination audio file')
-    .action(async (id, voice, options, command) => {
-      const { client } = await clientFor(command)
-      const result = await client.download(speechPreviewPath(id, voice))
-      await writeFile(options.output, result.bytes, { mode: 0o600 })
-      emit(io, command, { id, voice, output: options.output })
-    })
-  speechPreview.command('delete <id> <voice>').description('Remove a voice preview without deleting its voice')
-    .action(async (id, voice, _options, command) => {
-      const options = globalOptions(command)
-      await confirmExact(io, `${id}/${voice}`, Boolean(options.yes), Boolean(options.json))
-      const { client } = await clientFor(command)
-      await client.request(speechPreviewPath(id, voice), { method: 'DELETE' })
-      emit(io, command, { id, voice, deleted: true })
-    })
-
   const voicePath = (id: string, voice: string) => `/api/management/v1/speech-models/${encodeURIComponent(id)}/voices/${encodeURIComponent(voice)}`
   speechModel.command('provider-voices <id>').action(async (id, _options, command) => {
     const { client } = await clientFor(command)
@@ -645,9 +614,9 @@ export function createProgram(io: CliIo = processIo, dependencies: CliDependenci
       })
     }
   }
-  speechModel.command('test-voice <id> <voice>').requiredOption('-o, --output <path>').option('--text <text>', 'text to synthesize', 'Hello. This is a sample of my voice.').option('--save-preview', 'save generated speech as the user preview').action(async (id, voice, options, command) => {
+  speechModel.command('test-voice <id> <voice>').requiredOption('-o, --output <path>').option('--text <text>', 'text to synthesize (defaults to the voice preview text)').action(async (id, voice, options, command) => {
     const { client } = await clientFor(command)
-    const result = await client.download(`${voicePath(id, voice)}/test`, 120_000, { method: 'POST', body: { input: options.text, savePreview: Boolean(options.savePreview) } })
+    const result = await client.download(`${voicePath(id, voice)}/test`, 120_000, { method: 'POST', body: { ...(options.text !== undefined ? { input: options.text } : {}) } })
     await writeFile(options.output, result.bytes, { mode: 0o600 }); emit(io, command, { output: options.output })
   })
   speechModel.command('cleanup').option('--retry <id>', 'retry a cleanup record').action(async (options, command) => {

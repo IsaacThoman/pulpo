@@ -3,7 +3,7 @@ import { createAudioPlayer, setAudioModeAsync } from 'expo-audio'
 import { File, Paths, Directory } from 'expo-file-system'
 import { randomUUID } from 'expo-crypto'
 import { speechChunks, speechText } from '@pulpo/client-core'
-import { SPEECH_DURATION_HEADER, type PublicSpeechModel, type SpeechCatalog } from '@pulpo/contracts'
+import { SPEECH_DEFAULT_PREVIEW_TEXT, SPEECH_DURATION_HEADER, type PublicSpeechModel, type SpeechCatalog } from '@pulpo/contracts'
 import { apiRequest, apiUrl, nativeAuthorizationHeaders } from '../../api/client'
 import { usePreferencesStore } from '../../store/preferences'
 import { useSessionStore } from '../../store/session'
@@ -14,21 +14,31 @@ const directory = new Directory(Paths.cache, 'speech')
 // Clear files left behind if the OS killed the preceding playback session.
 if (directory.exists) directory.delete()
 directory.create({ intermediates: true, idempotent: true })
-export async function readAloud(key: string, markdown: string) {
+export function readAloud(key: string, markdown: string) {
+  return playSpeech(key, markdown)
+}
+export function previewSpeech() {
+  return playSpeech('preview:settings')
+}
+async function playSpeech(key: string, markdown?: string) {
+  const current = usePreferencesStore.getState().speech
+  const preferences = { ...current, models: Object.fromEntries(Object.entries(current.models).map(([id, settings]) => [id, { ...settings }])) }
   let model: PublicSpeechModel
   let settings: { voice?: string; instructions: string; speed: number } | undefined
   let instructions = ''
   await speechPlayback.start(key, async signal => {
     if (AppState.currentState !== 'active') throw new Error('Open the app to read aloud')
-    const preferences = usePreferencesStore.getState().speech
     const { data, defaultModelId } = await apiRequest<SpeechCatalog>('/api/speech-models', { signal })
     const modelId = preferences.modelId ?? defaultModelId
-    if (!modelId) throw new Error('Choose a speech model in Settings → Interface → Speech')
+    if (!modelId) throw new Error('Choose a speech model in Settings → Personalization → Speech')
     const selected = data.find(model => model.id === modelId)
-    if (!selected) throw new Error('Your speech model is unavailable. Choose another in Settings → Interface → Speech')
+    if (!selected) throw new Error('Your speech model is unavailable. Choose another in Settings → Personalization → Speech')
     model = selected; settings = preferences.models[model.id]
     instructions = model.supportsInstructions ? settings?.instructions ?? '' : ''
-    const chunks = speechChunks(speechText(markdown), model, instructions)
+    const voice = model.voices.find(voice => voice.id === (settings?.voice ?? model.defaultVoice))
+    if (markdown === undefined && !voice) throw new Error('Your speech voice is unavailable. Choose another in Settings → Personalization → Speech')
+    const text = markdown === undefined ? voice?.previewText ?? SPEECH_DEFAULT_PREVIEW_TEXT : speechText(markdown)
+    const chunks = speechChunks(text, model, instructions)
     if (!chunks.length) throw new Error('This message has no readable text')
     await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true, shouldPlayInBackground: false })
     return chunks
@@ -47,16 +57,6 @@ useSessionStore.subscribe((state, previous) => {
   if (state.user?.id !== previous.user?.id || state.instanceUrl !== previous.instanceUrl || state.token !== previous.token) speechPlayback.stop()
 })
 
-export function previewSpeechVoice(modelId: string, voiceId: string) {
-  return speechPlayback.start(`preview:${modelId}:${voiceId}`, ['preview'], async (_, signal) => {
-    if (AppState.currentState !== 'active') throw new Error('Open the app to preview speech')
-    await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true, shouldPlayInBackground: false })
-    const response = await fetch(apiUrl(`/api/speech-models/${encodeURIComponent(modelId)}/voices/${encodeURIComponent(voiceId)}/preview`), { signal, headers: nativeAuthorizationHeaders() })
-    if (!response.ok) throw new Error('This preview is unavailable')
-    const bytes = new Uint8Array(await response.arrayBuffer())
-    return nativeSpeechAudio(bytes, response.headers.get('content-type')?.includes('wav') ? 'wav' : 'mp3', signal)
-  })
-}
 function nativeSpeechAudio(bytes: Uint8Array, format: string, signal: AbortSignal) {
   if (signal.aborted) throw new Error('Cancelled')
   const file = new File(directory, `${randomUUID()}.${format}`)

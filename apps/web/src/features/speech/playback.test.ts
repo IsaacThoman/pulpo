@@ -1,12 +1,12 @@
 // @vitest-environment jsdom
-import type { SpeechPreferences } from '@pulpo/contracts'
+import { SPEECH_DEFAULT_PREVIEW_TEXT, type SpeechPreferences } from '@pulpo/contracts'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 const mocks = vi.hoisted(() => ({ preferences: { modelId: 'voxtral', models: {} } as SpeechPreferences, request: vi.fn(), audio: vi.fn(), preview: vi.fn(), pause: vi.fn(), revoke: vi.fn() }))
 vi.mock('@/lib/api', () => ({ apiRequest: mocks.request, fetchApiBlobResponse: mocks.audio, fetchApiBlob: mocks.preview }))
 vi.mock('@/stores/settings', () => ({ useSettings: { getState: () => ({ speech: mocks.preferences }) } }))
 vi.mock('@/stores/auth', () => ({ useAuth: { subscribe: vi.fn() } }))
 vi.mock('@/stores/chat', () => ({ useChat: { subscribe: vi.fn() } }))
-import { readAloud, speechPlayback } from './playback'
+import { readAloud, previewSpeech, speechPlayback } from './playback'
 const tick = () => new Promise(resolve => setTimeout(resolve, 0))
 beforeEach(() => {
   mocks.preferences = { modelId: 'voxtral', models: {} }
@@ -68,4 +68,63 @@ it('asks for a model when neither user nor admin has chosen one', async () => {
   await readAloud('missing', 'Hello')
   expect(mocks.audio).not.toHaveBeenCalled()
   expect(speechPlayback.getSnapshot().error).toContain('Choose a speech model')
+})
+
+it('previews the selected voice as plain text with all supported current settings', async () => {
+  mocks.preferences.models['voxtral'] = { voice: 'custom', instructions: 'Speak warmly', speed: 1.4 }
+  const catalog = await mocks.request()
+  mocks.request.mockResolvedValue({ ...catalog, data: [{ ...catalog.data[0], maxInputCharacters: 4096, supportsInstructions: true, supportsSpeed: true,
+    voices: [{ id: 'custom', label: 'Custom', previewText: '**Hello** https://example.test' }, { id: 'coral', label: 'Coral', previewText: 'Other voice' }] }] })
+  const run = previewSpeech()
+  await tick(); await tick()
+  expect(JSON.parse(String(mocks.audio.mock.calls[0]![1]?.body))).toMatchObject({ modelId: 'voxtral', voice: 'custom', instructions: 'Speak warmly', speed: 1.4, input: '**Hello** https://example.test', playbackOffsetSeconds: 0 })
+  speechPlayback.stop(); await run
+})
+it.each([undefined, null])('uses the default preview text for an unset override (%s) and omits unsupported controls', async previewText => {
+  const catalog = await mocks.request()
+  mocks.request.mockResolvedValue({ ...catalog, data: [{ ...catalog.data[0], maxInputCharacters: 4096, voices: [{ id: catalog.data[0].defaultVoice, label: 'Default', previewText }] }] })
+  const run = previewSpeech()
+  await tick(); await tick()
+  const request = JSON.parse(String(mocks.audio.mock.calls[0]![1]?.body))
+  expect(request.input).toBe(SPEECH_DEFAULT_PREVIEW_TEXT)
+  expect(request).not.toHaveProperty('instructions'); expect(request).not.toHaveProperty('speed')
+  speechPlayback.stop(); await run
+})
+it('snapshots preferences while waiting for the latest catalog and generates again on each click', async () => {
+  const catalog = await mocks.request()
+  catalog.data[0].maxInputCharacters = 4096
+  catalog.data[0].supportsInstructions = true; catalog.data[0].supportsSpeed = true
+  mocks.preferences.models['voxtral'] = { voice: catalog.data[0].defaultVoice, instructions: 'Original', speed: 1.1 }
+  let resolve!: (catalog: unknown) => void
+  mocks.request.mockImplementationOnce(() => new Promise(done => { resolve = done }))
+  const first = previewSpeech()
+  mocks.preferences.models['voxtral']!.speed = 1.8
+  resolve(catalog)
+  await tick(); await tick()
+  expect(JSON.parse(String(mocks.audio.mock.calls[0]![1]?.body)).speed).toBe(1.1)
+  await previewSpeech(); await first
+  expect(speechPlayback.getSnapshot().phase).toBe('idle')
+  mocks.request.mockResolvedValue({ ...catalog, data: [{ ...catalog.data[0], voices: [{ id: catalog.data[0].defaultVoice, label: 'Default', previewText: 'Updated text' }] }] })
+  const second = previewSpeech()
+  await tick(); await tick()
+  expect(mocks.audio).toHaveBeenCalledTimes(2)
+  expect(JSON.parse(String(mocks.audio.mock.calls[1]![1]?.body))).toMatchObject({ input: 'Updated text', speed: 1.8 })
+  speechPlayback.stop(); await second
+})
+it('does not generate a preview for a removed voice', async () => {
+  mocks.preferences.models['voxtral'] = { voice: 'removed', instructions: '', speed: 1 }
+  await previewSpeech()
+  expect(mocks.audio).not.toHaveBeenCalled()
+  expect(speechPlayback.getSnapshot().error).toContain('voice is unavailable')
+})
+it('cancels a preview while the catalog is loading without generating or playing', async () => {
+  const catalog = await mocks.request()
+  let resolve!: (catalog: unknown) => void
+  mocks.request.mockImplementationOnce(() => new Promise(done => { resolve = done }))
+  const run = previewSpeech()
+  expect(speechPlayback.getSnapshot().phase).toBe('loading')
+  await previewSpeech()
+  resolve(catalog); await run
+  expect(mocks.audio).not.toHaveBeenCalled()
+  expect(speechPlayback.getSnapshot().phase).toBe('idle')
 })

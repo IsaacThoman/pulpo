@@ -72,23 +72,18 @@ microdollars: `inputPriceMicros`/`outputPriceMicros` per million respective toke
 audio minute. Token billing requires SSE usage support. Credentials remain in
 the referenced provider connection.
 
-Manage each voice's optional sample independently:
+Set each voice's `previewText` in the model document to customize generated
+previews (up to 500 characters). Use `null` to reset to the shared default;
+updates from older clients that omit this field preserve existing overrides.
+Users generate previews from **Preview speech** at the bottom of speech settings,
+using their selected controls and normal speech billing.
 
-```bash
-pulpo speech-model preview upload read-aloud coral ./coral.wav
-pulpo speech-model preview download read-aloud coral --output ./coral-preview.wav
-pulpo --yes speech-model preview delete read-aloud coral
-pulpo --yes speech-model delete read-aloud
-```
+`speech-model test-voice <id> <voice> -o clip.mp3` defaults to the configured text;
+`--text` supplies a one-off override. Admin tests incur provider costs without
+charging a user balance. Saved-preview upload/download/delete commands and
+`--save-preview` are retired.
 
-Uploading again replaces that voice's clip. MP3 and WAV files must be nonempty,
-at most 5 MiB, and no longer than 30 seconds; the server validates the audio.
-Deleting a preview leaves its voice configured. Model updates retain clips for
-unchanged voice IDs and remove clips for deleted voices. Model deletion removes
-its clips. Listening to an uploaded sample does not generate speech or incur
-generation charges.
-
-Speech catalog and preview commands use `/api/management/v1/speech-models` and
+Speech catalog and voice asset commands use `/api/management/v1/speech-models` and
 require a current administrator with `catalog:read` for reads/downloads or
 `catalog:write` for mutations. Older servers without the `speechModels`
 capability report that an upgrade is required. User preferences continue to use
@@ -169,7 +164,7 @@ totals. Active or queued model work must finish before deletion can proceed.
 Use `speech-model preset --adapter mistral` for the Voxtral preset. The
 `provider-voices`, `provider-sample`, `clone`, `watermark`, `test-voice`, and
 `cleanup` subcommands manage provider discovery, private reference uploads,
-repair, looping watermark settings, synthesized previews, and retryable cleanup.
+repair, looping watermark settings, speech tests, and retryable cleanup.
 See [the speech administration guide](../../docs/speech.md) for complete commands,
 upload limits, billing behavior, and FFmpeg setup.
 

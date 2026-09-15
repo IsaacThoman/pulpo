@@ -36,7 +36,7 @@ describe.skipIf(!enabled)('speech backup round trips in PostgreSQL', () => {
     await db.insert(providerConnections).values({ id: providerId, name: 'Backup QA', baseUrl: 'https://api.mistral.ai/v1', encryptedApiKey: 'fixture' })
     const audio = speechTestWav(3)
     const asset = (key: string) => { blobs.set(key, audio); return { objectKey: key, contentType: 'audio/wav' as const, durationSeconds: 3, checksum: hash(audio) } }
-    const config = speechModelSchema.parse({ ...VOXTRAL_SPEECH_PRESET, id: modelId, providerConnectionId: providerId, voices: [{ id: 'stable', label: 'Named clone', kind: 'cloned', watermark: { enabled: true, volume: 0.15 } }], defaultVoice: 'stable' })
+    const config = speechModelSchema.parse({ ...VOXTRAL_SPEECH_PRESET, id: modelId, providerConnectionId: providerId, voices: [{ id: 'stable', label: 'Named clone', previewText: 'Restored voice preview', kind: 'cloned', watermark: { enabled: true, volume: 0.15 } }], defaultVoice: 'stable' })
     await db.insert(speechModels).values({ id: modelId, providerConnectionId: providerId, config, voiceAssets: [{ voiceId: 'stable', clone: { ...asset('reference.wav'), upstreamVoiceId: 'remote-id' }, watermark: asset('watermark.wav') }], voicePreviews: [{ voiceId: 'stable', ...asset('preview.wav') }] })
     await db.insert(speechResourceCleanup).values({ id: randomUUID(), providerConnectionId: providerId, upstreamVoiceId: 'retired-remote', objectKeys: ['unarchived-retired.wav'], error: 'Retry provider cleanup' })
     const backupId = randomUUID()

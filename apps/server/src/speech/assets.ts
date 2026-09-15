@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { eq } from 'drizzle-orm'
 import { z } from 'zod'
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
-import { SPEECH_ASSET_MAX_BYTES, speechModelSchema, speechWatermarkSchema } from '@pulpo/contracts'
+import { SPEECH_DEFAULT_PREVIEW_TEXT, SPEECH_MAX_PREVIEW_TEXT_LENGTH, SPEECH_ASSET_MAX_BYTES, speechModelSchema, speechWatermarkSchema } from '@pulpo/contracts'
 import { db } from '../database/client.js'
 import { auditEvents, speechModels, speechResourceCleanup } from '../database/schema.js'
 import { requireAdmin } from '../auth/service.js'
@@ -166,9 +166,10 @@ export async function registerSpeechAssetRoutes(app: FastifyInstance, prefix = '
   })
   app.post(`${prefix}/:id/voices/:voiceId/test`, async (request, reply) => {
     const row = await modelFor(request); const { voiceId } = paramsSchema.parse(request.params)
-    const { input, savePreview } = z.object({ input: z.string().trim().min(1).max(500).default('Hello. This is a sample of my voice.'), savePreview: z.boolean().default(false) }).parse(request.body ?? {})
+    const body = z.object({ input: z.string().trim().min(1).max(SPEECH_MAX_PREVIEW_TEXT_LENGTH).optional() }).strict().parse(request.body ?? {})
     const voice = row.config.voices.find(v => v.id === voiceId)
     if (!voice) throw notFound('Speech voice')
+    const input = body.input ?? voice.previewText ?? SPEECH_DEFAULT_PREVIEW_TEXT
     const pending = requestSignal(request, reply)
     try {
       const model = speechModelSchema.parse(row.config)
@@ -178,22 +179,6 @@ export async function registerSpeechAssetRoutes(app: FastifyInstance, prefix = '
       if (Array.from(input).length > model.maxInputCharacters || (model.maxInputTokens !== null && Buffer.byteLength(input) > model.maxInputTokens)) throw new AppError(400, 'speech_input_limit', 'Test text exceeds this model’s limits')
       const result = await generateSpeech({ ...await speechConnection(row.providerConnectionId, pending.signal), model, input: { requestId: newId(), modelId: row.id, voice: voiceId!, input }, upstreamVoiceId: clone?.upstreamVoiceId })
       const mixed = await applyVoiceWatermark(result.audio, row, voiceId!, model.responseFormat, 0, pending.signal)
-      if (savePreview) {
-        if (result.durationSeconds > 30 || result.audio.length > 5 * 1024 * 1024) throw new AppError(400, 'speech_preview_invalid', 'Use shorter test text for a preview of at most 30 seconds and 5 MiB')
-        const objectKey = `speech-previews/${newId()}.${model.responseFormat}`
-        await getBlobStore().put(objectKey, result.audio, { contentType: model.responseFormat === 'wav' ? 'audio/wav' : 'audio/mpeg', contentLength: result.audio.length })
-        try {
-          await db.transaction(async tx => {
-            await lockSpeechResources(tx)
-            const [current] = await tx.select().from(speechModels).where(eq(speechModels.id, row.id)).for('update')
-            if (!current || current.updatedAt.getTime() !== row.updatedAt.getTime()) throw new AppError(409, 'speech_model_changed', 'Model changed. Generate the preview again.')
-            const old = current.voicePreviews.find(v => v.voiceId === voiceId)
-            if (old) await tx.insert(speechResourceCleanup).values({ id: newId(), objectKeys: [old.objectKey] })
-            await tx.update(speechModels).set({ voicePreviews: [...current.voicePreviews.filter(v => v.voiceId !== voiceId), { voiceId: voiceId!, objectKey, contentType: model.responseFormat === 'wav' ? 'audio/wav' : 'audio/mpeg', checksum: createHash('sha256').update(result.audio).digest('hex') }], updatedAt: new Date() }).where(eq(speechModels.id, row.id))
-          })
-        } catch (error) { await getBlobStore().delete(objectKey); throw error }
-        await retrySpeechCleanup(request)
-      }
       return reply.header('cache-control', 'no-store').type(model.responseFormat === 'wav' ? 'audio/wav' : 'audio/mpeg').send(mixed)
     } finally { pending.dispose() }
   })

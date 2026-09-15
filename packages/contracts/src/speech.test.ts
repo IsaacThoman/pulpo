@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { managementAccountSettingsSchema } from './index.js'
-import { OPENAI_SPEECH_PRESET, speechModelSchema, speechPreferencesSchema, speechRequestSchema } from './speech.js'
+import { OPENAI_SPEECH_PRESET, SPEECH_DEFAULT_PREVIEW_TEXT, speechVoiceSchema, speechModelSchema, speechPreferencesSchema, speechRequestSchema } from './speech.js'
 const model = { ...OPENAI_SPEECH_PRESET, id: 'openai-tts', providerConnectionId: '11111111-1111-4111-8111-111111111111' }
 describe('speech contracts', () => {
   it('preserves speech preferences in management account documents', () => {
@@ -37,4 +37,14 @@ it('supports empty disabled Voxtral drafts but rejects unsupported controls and 
   expect(speechModelSchema.safeParse({ ...draft, enabled: true }).success).toBe(false)
   for (const patch of [{ supportsSse: true }, { supportsSpeed: true }, { supportsInstructions: true }, { billUsers: true, billingUnit: 'tokens' }]) expect(speechModelSchema.safeParse({ ...draft, ...patch }).success).toBe(false)
   expect(speechModelSchema.parse({ ...model, adapter: undefined }).adapter).toBe('openai')
+})
+
+it('supports bounded per-voice preview text and explicit resets without defaulting omitted fields', () => {
+  const voice = { id: 'coral', label: 'Coral' }
+  expect(speechVoiceSchema.parse(voice)).not.toHaveProperty('previewText')
+  expect(speechVoiceSchema.parse({ ...voice, previewText: '  Custom text  ' }).previewText).toBe('Custom text')
+  for (const previewText of [null, '', '   ']) expect(speechVoiceSchema.parse({ ...voice, previewText }).previewText).toBeNull()
+  expect(speechVoiceSchema.safeParse({ ...voice, previewText: 'x'.repeat(500) }).success).toBe(true)
+  expect(speechVoiceSchema.safeParse({ ...voice, previewText: 'x'.repeat(501) }).success).toBe(false)
+  expect(SPEECH_DEFAULT_PREVIEW_TEXT).toBe('Hey, this is a test audio clip. The quick brown fox jumps over the lazy dog')
 })

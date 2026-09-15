@@ -46,7 +46,7 @@ describe('speech routes', () => {
     expect(response.statusCode).toBe(200)
     expect(response.body).not.toMatch(/providerConnectionId|upstreamModelId|secret|baseUrl/)
     expect(response.json().data[0].id).toBe('speech')
-    expect(response.json().data[0].voices.find((voice: { id: string }) => voice.id === 'coral').previewAvailable).toBe(true)
+    expect(response.json().data[0].voices.find((voice: { id: string }) => voice.id === 'coral').previewText).toBeNull()
     mocks.rows = [{ config: { ...model, enabled: false }, enabled: true }, { config: model, enabled: false }]
     expect((await server.inject('/api/speech-models')).json().data).toEqual([])
     await server.close()
@@ -96,4 +96,19 @@ it('validates capabilities, voices, speed and input on the server', () => {
   for (const input of [{ ...request, voice: 'missing' }, { ...request, speed: 5 }, { ...request, input: 'x'.repeat(4097) }, { ...request, input: '👋'.repeat(600) }]) expect(() => validateSpeechInput(model, input)).toThrow()
   expect(() => validateSpeechInput({ ...model, supportsInstructions: false }, request)).toThrow()
   expect(() => validateSpeechInput({ ...model, supportsSpeed: false }, request)).toThrow()
+})
+
+it('does not serve or accept legacy preview files', async () => {
+  const server = await app()
+  for (const prefix of ['/api/speech-models', '/api/admin/speech-models']) {
+    for (const method of ['GET', 'POST', 'DELETE'] as const) {
+      expect((await server.inject({ method, url: `${prefix}/speech/voices/coral/preview` })).statusCode).toBe(404)
+    }
+  }
+  expect(mocks.generate).not.toHaveBeenCalled()
+  await server.close()
+})
+it('publishes per-voice preview text without exposing private assets', () => {
+  const publicModel = publicSpeechModel({ ...model, voices: [{ id: 'coral', label: 'Coral', previewText: 'Custom text', watermark: { enabled: true, volume: 0.2 } }, { id: 'alloy', label: 'Alloy' }] })
+  expect(publicModel.voices).toEqual([{ id: 'coral', label: 'Coral', previewText: 'Custom text' }, { id: 'alloy', label: 'Alloy', previewText: null }])
 })
