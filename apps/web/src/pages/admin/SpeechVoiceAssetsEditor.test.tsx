@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { VOXTRAL_SPEECH_PRESET, type SpeechModelCatalogEntry } from '@pulpo/contracts'
+import { SPEECH_DEFAULT_PREVIEW_TEXT, VOXTRAL_SPEECH_PRESET, type SpeechModelCatalogEntry } from '@pulpo/contracts'
 import { SpeechVoiceAssetsEditor, MistralVoiceDiscovery } from './SpeechVoiceAssetsEditor'
 import { apiRequest, fetchApiBlob } from '@/lib/api'
 vi.mock('@/lib/api', () => ({ apiRequest: vi.fn(async () => ({})), fetchApiBlob: vi.fn(async () => new Blob()) }))
@@ -18,12 +18,12 @@ it('uploads cloning references separately from watermarks and reloads published 
   fireEvent.change(screen.getByLabelText('Watermark clip for My voice'), { target: { files: [new File(['mark'], 'clip.mp3')] } })
   await waitFor(() => expect(apiRequest).toHaveBeenCalledWith('/api/admin/speech-models/voxtral/voices/local/watermark', expect.objectContaining({ method: 'POST', body: expect.any(FormData) })))
 })
-it('preserves watermark volume when enabling and generates a user preview through the server', async () => {
+it('preserves watermark volume when enabling and tests without saving preview audio', async () => {
   render(<SpeechVoiceAssetsEditor model={model} voice={model.voices[0]!} disabled={false} onSaved={async () => {}} onError={vi.fn()} />)
   fireEvent.click(screen.getByLabelText('Enable watermark'))
   await waitFor(() => expect(apiRequest).toHaveBeenCalledWith('/api/admin/speech-models/voxtral/voices/local/watermark', { method: 'PATCH', body: { enabled: true, volume: 0.15 } }))
-  fireEvent.click(screen.getByText('Generate user preview'))
-  await waitFor(() => expect(fetchApiBlob).toHaveBeenCalledWith('/api/admin/speech-models/voxtral/voices/local/test', expect.objectContaining({ method: 'POST', body: JSON.stringify({ input: 'Hello. This is a sample of my voice.', savePreview: true }) })))
+  fireEvent.click(screen.getByText('Test voice and watermark'))
+  await waitFor(() => expect(fetchApiBlob).toHaveBeenCalledWith('/api/admin/speech-models/voxtral/voices/local/test', expect.objectContaining({ method: 'POST', body: JSON.stringify({ input: SPEECH_DEFAULT_PREVIEW_TEXT }) })))
 })
 it('requires a saved model and keeps reference controls exclusive to Mistral', () => {
   const { rerender } = render(<SpeechVoiceAssetsEditor model={model} voice={model.voices[0]!} disabled onSaved={async () => {}} onError={vi.fn()} />)

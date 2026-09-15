@@ -1,6 +1,6 @@
 import { speechChunks, speechText } from '@pulpo/client-core'
-import { SPEECH_DURATION_HEADER, type PublicSpeechModel, type SpeechCatalog } from '@pulpo/contracts'
-import { apiRequest, fetchApiBlob, fetchApiBlobResponse } from '@/lib/api'
+import { SPEECH_DEFAULT_PREVIEW_TEXT, SPEECH_DURATION_HEADER, type PublicSpeechModel, type SpeechCatalog } from '@pulpo/contracts'
+import { apiRequest, fetchApiBlobResponse } from '@/lib/api'
 import { useSettings } from '@/stores/settings'
 import { useAuth } from '@/stores/auth'
 import { useChat } from '@/stores/chat'
@@ -8,21 +8,32 @@ import { useChat } from '@/stores/chat'
 import { speechPlayback } from './state'
 export { speechPlayback } from './state'
 export const speechCatalog = () => apiRequest<SpeechCatalog>('/api/speech-models')
-export async function readAloud(key: string, markdown: string) {
+export function readAloud(key: string, markdown: string) {
+  return playSpeech(key, markdown)
+}
+export function previewSpeech() {
+  return playSpeech('preview:settings')
+}
+async function playSpeech(key: string, markdown?: string) {
   if (speechPlayback.getSnapshot().key === key) { speechPlayback.stop(); return }
+  const current = useSettings.getState().speech
+  const preferences = { ...current, models: Object.fromEntries(Object.entries(current.models).map(([id, settings]) => [id, { ...settings }])) }
   let model: PublicSpeechModel
   let settings: { voice?: string; instructions: string; speed: number } | undefined
   let instructions = ''
   await speechPlayback.start(key, async signal => {
-    const preferences = useSettings.getState().speech
+    if (document.hidden) throw new Error('Open the app to play speech')
     const { data, defaultModelId } = await apiRequest<SpeechCatalog>('/api/speech-models', { signal })
     const modelId = preferences.modelId ?? defaultModelId
-    if (!modelId) throw new Error('Choose a speech model in Settings → Interface → Speech')
+    if (!modelId) throw new Error('Choose a speech model in Settings → Personalization → Speech')
     const selected = data.find(model => model.id === modelId)
-    if (!selected) throw new Error('Your speech model is unavailable. Choose another in Settings → Interface → Speech')
+    if (!selected) throw new Error('Your speech model is unavailable. Choose another in Settings → Personalization → Speech')
     model = selected; settings = preferences.models[model.id]
     instructions = model.supportsInstructions ? settings?.instructions ?? '' : ''
-    const chunks = speechChunks(speechText(markdown), model, instructions)
+    const voice = model.voices.find(voice => voice.id === (settings?.voice ?? model.defaultVoice))
+    if (markdown === undefined && !voice) throw new Error('Your speech voice is unavailable. Choose another in Settings → Personalization → Speech')
+    const text = markdown === undefined ? voice?.previewText ?? SPEECH_DEFAULT_PREVIEW_TEXT : speechText(markdown)
+    const chunks = speechChunks(text, model, instructions)
     if (!chunks.length) throw new Error('This message has no readable text')
     return chunks
   }, async (input, signal, offsetSeconds) => {
@@ -37,18 +48,6 @@ document.addEventListener('visibilitychange', () => { if (document.hidden) speec
 useAuth.subscribe((state, previous) => { if (state.user?.id !== previous.user?.id) speechPlayback.stop() })
 useChat.subscribe((state, previous) => { if (state.activeChatId !== previous.activeChatId) speechPlayback.stop() })
 
-export function previewSpeechVoice(modelId: string, voiceId: string) {
-  return speechPlayback.start(`preview:${modelId}:${voiceId}`, ['preview'], async (_, signal) => {
-    if (document.hidden) throw new Error('Open the app to preview speech')
-    return browserSpeechAudio(await fetchApiBlob(`/api/speech-models/${encodeURIComponent(modelId)}/voices/${encodeURIComponent(voiceId)}/preview`, { signal }))
-  })
-}
-export function previewSpeechFile(file: File, key = 'preview:upload') {
-  return speechPlayback.start(key, ['preview'], async () => {
-    if (document.hidden) throw new Error('Open the app to preview speech')
-    return browserSpeechAudio(file)
-  })
-}
 export function browserSpeechAudio(blob: Blob) {
   const url = URL.createObjectURL(blob)
   const audio = new Audio(url)

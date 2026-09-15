@@ -29,7 +29,7 @@ beforeEach(async () => {
   vi.clearAllMocks()
   info.mockResolvedValue({ managementApiVersion: 1, capabilities: ['speechModels'] })
   request.mockResolvedValue({ data: [model] })
-  upload.mockResolvedValue({ previewAvailable: true })
+  upload.mockResolvedValue({})
   download.mockResolvedValue({ bytes: new Uint8Array([1, 2, 3]), contentType: 'audio/wav' })
 })
 afterEach(async () => { vi.unstubAllEnvs(); await rm(directory, { recursive: true, force: true }) })
@@ -42,7 +42,7 @@ it('lists, reads, creates, updates, and deletes full model configurations', asyn
   expect(await run(['speech-model', 'get', 'tts'])).toEqual(model)
   const file = join(directory, 'model.json')
   for (const billingUnit of ['tokens', 'characters', 'duration'] as const) {
-    const desired = { ...model, enabled: true, maxInputCharacters: 100_000, maxInputTokens: 64_000, billingUnit, billUsers: true, inputPriceMicros: 12, outputPriceMicros: 34, characterPriceMicros: 56, minutePriceMicros: 78, sortOrder: 3 }
+    const desired = { ...model, voices: model.voices.map((voice, index) => ({ ...voice, previewText: index === 0 ? 'Custom preview' : null })), enabled: true, maxInputCharacters: 100_000, maxInputTokens: 64_000, billingUnit, billUsers: true, inputPriceMicros: 12, outputPriceMicros: 34, characterPriceMicros: 56, minutePriceMicros: 78, sortOrder: 3 }
     await writeFile(file, JSON.stringify(desired))
     await run(['speech-model', 'create', '--file', file])
     expect(request).toHaveBeenLastCalledWith('/api/management/v1/speech-models', { method: 'POST', body: desired })
@@ -59,26 +59,9 @@ it('rejects invalid model capabilities before connecting', async () => {
   await expect(run(['speech-model', 'create', '-f', file])).rejects.toThrow('Default voice')
   expect(info).not.toHaveBeenCalled()
 })
-it('uploads, downloads, and removes voice clips with safely encoded IDs', async () => {
-  const file = join(directory, 'sample.WAV')
-  await writeFile(file, new Uint8Array([1, 2, 3]))
-  const voice = 'voice / + 日本語'
-  const path = `/api/management/v1/speech-models/tts/voices/${encodeURIComponent(voice)}/preview`
-  await run(['speech-model', 'preview', 'upload', 'tts', voice, file])
-  expect(upload).toHaveBeenCalledWith(path, { bytes: new Uint8Array([1, 2, 3]), filename: 'sample.WAV', contentType: 'audio/wav' })
-  const output = join(directory, 'download.wav')
-  await run(['speech-model', 'preview', 'download', 'tts', voice, '-o', output])
-  expect(download).toHaveBeenCalledWith(path)
-  expect(new Uint8Array(await readFile(output))).toEqual(new Uint8Array([1, 2, 3]))
-  await expect(run(['speech-model', 'preview', 'delete', 'tts', voice])).rejects.toThrow('--yes')
-  await run(['--yes', 'speech-model', 'preview', 'delete', 'tts', voice])
-  expect(request).toHaveBeenLastCalledWith(path, { method: 'DELETE' })
-})
-it('rejects unsupported and oversized clips before connecting', async () => {
-  await expect(run(['speech-model', 'preview', 'upload', 'tts', 'coral', 'file.txt'])).rejects.toThrow('MP3 or WAV')
-  const file = join(directory, 'large.mp3')
-  await writeFile(file, new Uint8Array(5 * 1024 * 1024 + 1))
-  await expect(run(['speech-model', 'preview', 'upload', 'tts', 'coral', file])).rejects.toThrow('5 MiB')
+it('rejects retired preview commands and save options before connecting', async () => {
+  await expect(run(['speech-model', 'preview', 'upload', 'tts', 'coral', 'file.wav'])).rejects.toThrow()
+  await expect(run(['speech-model', 'test-voice', 'tts', 'coral', '-o', 'file.wav', '--save-preview'])).rejects.toThrow()
   expect(info).not.toHaveBeenCalled()
 })
 it('reports older servers without speech management support', async () => {
@@ -96,6 +79,9 @@ it('prints the Voxtral draft preset and manages cloned voices and watermark asse
   expect(request).toHaveBeenLastCalledWith('/api/management/v1/speech-models/voxtral/voices/voice/clone/repair', { method: 'POST', timeoutMs: 120_000 })
   await run(['speech-model', 'watermark', 'upload', 'voxtral', 'voice', file])
   expect(upload).toHaveBeenLastCalledWith('/api/management/v1/speech-models/voxtral/voices/voice/watermark', expect.anything())
-  await run(['speech-model', 'test-voice', 'voxtral', 'voice', '-o', join(directory, 'preview.wav'), '--text', 'Hello', '--save-preview'])
-  expect(download).toHaveBeenLastCalledWith('/api/management/v1/speech-models/voxtral/voices/voice/test', 120_000, { method: 'POST', body: { input: 'Hello', savePreview: true } })
+  await run(['speech-model', 'test-voice', 'voxtral', 'voice', '-o', join(directory, 'preview.wav'), '--text', 'Hello'])
+  expect(download).toHaveBeenLastCalledWith('/api/management/v1/speech-models/voxtral/voices/voice/test', 120_000, { method: 'POST', body: { input: 'Hello' } })
+  expect(new Uint8Array(await readFile(join(directory, 'preview.wav')))).toEqual(new Uint8Array([1, 2, 3]))
+  await run(['speech-model', 'test-voice', 'voxtral', 'voice', '-o', join(directory, 'default.wav')])
+  expect(download).toHaveBeenLastCalledWith('/api/management/v1/speech-models/voxtral/voices/voice/test', 120_000, { method: 'POST', body: {} })
 })

@@ -6,14 +6,14 @@ import { OPENAI_SPEECH_PRESET } from '@pulpo/contracts'
 import { SpeechSettings } from './SpeechSettings'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { useSettings } from '@/stores/settings'
-import { speechPlayback, previewSpeechVoice } from './playback'
+import { speechPlayback, previewSpeech } from './playback'
 vi.hoisted(() => { Object.defineProperty(window, 'matchMedia', { value: () => ({ matches: false, addEventListener() {} }), configurable: true }) })
 Element.prototype.scrollIntoView = vi.fn()
 vi.mock('@/stores/auth', () => ({ useAuth: (selector: (state: unknown) => unknown) => selector({ user: { id: 'user' } }) }))
 vi.mock('./playback', async () => ({
-  speechPlayback: new (await import('@pulpo/client-core')).SpeechPlayback(), previewSpeechVoice: vi.fn(),
+  speechPlayback: new (await import('@pulpo/client-core')).SpeechPlayback(), previewSpeech: vi.fn(),
   speechCatalog: async () => ({ defaultModelId: 'first', data: [
-    { ...OPENAI_SPEECH_PRESET, id: 'first', name: 'First model', voices: [{ id: 'coral', label: 'Coral', previewAvailable: true }, { id: 'alloy', label: 'Alloy' }] },
+    { ...OPENAI_SPEECH_PRESET, id: 'first', name: 'First model', voices: [{ id: 'coral', label: 'Coral' }, { id: 'alloy', label: 'Alloy' }] },
     { ...OPENAI_SPEECH_PRESET, id: 'second', name: 'Second model' },
   ] }),
 }))
@@ -38,7 +38,7 @@ it('allows wheel and touch scrolling inside the voice popup in a modal dialog', 
   fireEvent(document.body, outsideWheel)
   expect(outsideWheel.defaultPrevented).toBe(true)
 })
-it('uses a model dropdown and lets users preview each voice without selecting it', async () => {
+it('keeps voice selection separate from the generated preview at the bottom', async () => {
   useSettings.setState({ speech: { modelId: 'first', models: { first: { voice: 'alloy', instructions: 'Calm', speed: 1.2 } } } })
   render(<QueryClientProvider client={new QueryClient()}><SpeechSettings /></QueryClientProvider>)
   const trigger = await screen.findByRole('button', { name: 'Voice Alloy' })
@@ -47,8 +47,7 @@ it('uses a model dropdown and lets users preview each voice without selecting it
   expect(screen.getByRole('combobox', { name: 'Model' }).textContent).toBe('First model')
   fireEvent.click(trigger)
   expect(document.activeElement).toBe(screen.getByRole('radio', { name: 'Alloy' }))
-  fireEvent.click(screen.getByRole('button', { name: 'Preview Coral' }))
-  expect(previewSpeechVoice).toHaveBeenCalledWith('first', 'coral')
+  expect(screen.queryByRole('button', { name: 'Preview Coral' })).toBeNull()
   expect(useSettings.getState().speech.models.first?.voice).toBe('alloy')
   expect(screen.queryByRole('button', { name: 'Preview Alloy' })).toBeNull()
   fireEvent.click(screen.getByRole('radio', { name: 'Coral' }))
@@ -57,6 +56,10 @@ it('uses a model dropdown and lets users preview each voice without selecting it
   expect(screen.queryByRole('radio')).toBeNull()
   expect(screen.getByRole('button', { name: 'Voice Coral' }).getAttribute('aria-expanded')).toBe('false')
   await waitFor(() => expect(document.activeElement).toBe(trigger))
+  const preview = screen.getByRole('button', { name: 'Preview speech' })
+  expect(screen.getByLabelText('Speed').compareDocumentPosition(preview) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  fireEvent.click(preview)
+  expect(previewSpeech).toHaveBeenCalledWith()
   fireEvent.click(trigger)
   fireEvent.keyDown(screen.getByRole('radio', { name: 'Coral' }), { key: 'ArrowDown' })
   expect(document.activeElement).toBe(screen.getByRole('radio', { name: 'Alloy' }))
@@ -87,6 +90,7 @@ it('shows an unavailable saved voice without silently selecting a replacement', 
   fireEvent.click(await screen.findByRole('button', { name: 'Voice Selected voice unavailable' }))
   expect(screen.getAllByRole('radio').every(radio => !(radio as HTMLInputElement).checked)).toBe(true)
   expect(useSettings.getState().speech.models.first?.voice).toBe('removed')
+  expect((screen.getByRole('button', { name: 'Preview speech', hidden: true }) as HTMLButtonElement).disabled).toBe(true)
 })
 it('stops an active preview when leaving settings and preserves unavailable selections', async () => {
   useSettings.setState({ speech: { modelId: 'removed', models: {} } })
@@ -113,4 +117,27 @@ it('shows inherited defaults without persisting them and can clear a voice overr
   fireEvent.click(screen.getByRole('button', { name: 'Use default voice' }))
   expect(useSettings.getState().speech.models.first?.voice).toBeUndefined()
   expect(screen.getByRole('button', { name: 'Voice Coral' })).toBeTruthy()
+})
+
+it('shows loading and recoverable errors beside the preview and cancels on any settings edit', async () => {
+  useSettings.setState({ speech: { modelId: 'first', models: {} } })
+  render(<QueryClientProvider client={new QueryClient()}><SpeechSettings /></QueryClientProvider>)
+  await screen.findByLabelText('Instructions')
+  const start = async () => {
+    await act(async () => { void speechPlayback.start('preview:settings', async signal => new Promise(resolve => signal.addEventListener('abort', () => resolve([]))), async () => { throw new Error('Not reached') }) })
+    expect(screen.getByRole('status').textContent).toBe('Generating speech…')
+  }
+  await start()
+  fireEvent.click(screen.getByRole('button', { name: 'Stop preview' }))
+  expect(speechPlayback.getSnapshot().phase).toBe('idle')
+  await start()
+  fireEvent.change(screen.getByLabelText('Instructions'), { target: { value: 'Calm' } })
+  expect(speechPlayback.getSnapshot().phase).toBe('idle')
+  await start()
+  fireEvent.change(screen.getByLabelText('Speed'), { target: { value: '1.2' } })
+  expect(speechPlayback.getSnapshot().phase).toBe('idle')
+  await act(async () => { await speechPlayback.start('preview:settings', ['text'], async () => { throw new Error('Speech generation failed') }) })
+  expect(screen.getByRole('alert').textContent).toBe('Speech generation failed')
+  fireEvent.click(screen.getByRole('button', { name: 'Preview speech' }))
+  expect(previewSpeech).toHaveBeenCalledOnce()
 })
