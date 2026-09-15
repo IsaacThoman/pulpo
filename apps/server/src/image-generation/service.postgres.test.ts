@@ -7,7 +7,8 @@ import sharp from 'sharp'
 import { and, eq, sql } from 'drizzle-orm'
 import { beforeAll, beforeEach, afterAll, describe, expect, it, vi } from 'vitest'
 import { ZodError } from 'zod'
-import { META_MUSE_IMAGE_PRESET, OPENAI_IMAGE_PRESET, imageModelSchema, responseUsageSchema, type ImageModel } from '@pulpo/contracts'
+import { META_MUSE_IMAGE_PRESET, OPENAI_IMAGE_PRESET, imageModelSchema, imageGenerationInputSchema, responseUsageSchema, type ImageModel } from '@pulpo/contracts'
+vi.mock('../agent/controller-http.js', () => ({ workspaceControllerRequest: vi.fn() }))
 vi.mock('../responses/events.js', () => ({ publishStateChange: vi.fn() }))
 const mocks = vi.hoisted(() => ({ blobs: new Map<string, Uint8Array>(), writeFails: false }))
 vi.mock('../storage/index.js', () => ({ getBlobStore: () => ({
@@ -18,24 +19,28 @@ vi.mock('../storage/index.js', () => ({ getBlobStore: () => ({
 }) }))
 vi.mock('../lib/url-security.js', () => ({ assertSafeProviderUrl: vi.fn() }))
 import { db, queryClient } from '../database/client.js'
-import { providerDiagnostics, usageEvents, attachments, budgetReservations, creditLedger, modelPricingVersions, agentRuns, auditEvents, chats, imageGenerationRequests, imageModels, models, providerConnections, responses, toolExecutions, userPreferences, users } from '../database/schema.js'
+import { providerDiagnostics, usageEvents, workspaceLeases, attachments, budgetReservations, creditLedger, modelPricingVersions, agentRuns, auditEvents, chats, imageGenerationRequests, imageModels, models, providerConnections, responses, toolExecutions, userPreferences, users } from '../database/schema.js'
 import { reserveBudget, extendBudgetReservationFixedCost, settleBudget, releaseBudget } from '../accounting/service.js'
 import { getConfig } from '../config.js'
 import { encryptSecret } from '../lib/crypto.js'
 import { AppError } from '../lib/errors.js'
+import { storeGeneratedAttachment } from '../attachments/generated.js'
 import { executeImageGeneration, selectedImageModel, recoverSavedImageGenerations } from './service.js'
+import { createWorkspaceTools } from '../agent/tools.js'
 import { createImageGenerationTools } from './tool.js'
 import { registerImageGenerationRoutes } from './routes.js'
 import { registerCatalogRoutes } from '../catalog/routes.js'
+import { workspaceControllerRequest } from '../agent/controller-http.js'
 import { agentSettlementAmounts } from '../agent/settlement.js'
-import type { WorkspaceManager } from '../agent/controller.js'
+import { WorkspaceManager } from '../agent/controller.js'
 
 const enabled = process.env.PULPO_IMAGE_POSTGRES_TEST === '1'
 if (enabled && new URL(process.env.DATABASE_URL ?? 'http://invalid').pathname !== '/pulpo_image_test') throw new Error('Use the disposable pulpo_image_test database')
 const providerId = randomUUID(), userId = randomUUID(), chatId = randomUUID(), chatModelId = `chat-${randomUUID()}`
 const config: ImageModel = { ...META_MUSE_IMAGE_PRESET, id: 'muse-test', providerConnectionId: providerId, enabled: true, billUsers: true, imagePriceMicros: 10_000 }
-const exportFile = vi.fn(), stageGeneratedAttachment = vi.fn()
-const manager = { exportFile, stageGeneratedAttachment } as unknown as WorkspaceManager
+const workspaceFiles = new Map<string, Uint8Array>()
+const exportFile = vi.fn(), ensureLease = vi.fn(), saveGeneratedFile = vi.fn(), readGeneratedFile = vi.fn()
+const manager = { exportFile, ensureLease, saveGeneratedFile, readGeneratedFile, continuedWithoutAgent: false } as unknown as WorkspaceManager
 let server: FastifyInstance, role: 'admin' | 'user' | null = 'admin', image: Buffer, fetcher: ReturnType<typeof vi.fn<typeof fetch>>
 async function turn() {
   const responseId = randomUUID(), runId = randomUUID(), operationId = `image-${randomUUID()}`
@@ -64,7 +69,16 @@ describe.skipIf(!enabled)('image generation persistence and authorization', () =
   beforeEach(async () => {
     await db.update(budgetReservations).set({ status: 'released' }).where(eq(budgetReservations.userId, userId))
     await refreshDiagnosticPolicy()
-    role = 'admin'; mocks.writeFails = false; exportFile.mockReset(); stageGeneratedAttachment.mockReset().mockResolvedValue(undefined)
+    role = 'admin'; mocks.writeFails = false; workspaceFiles.clear()
+    const readWorkspace = async (path: string) => {
+      const data = workspaceFiles.get(path)
+      if (!data) throw new Error('Workspace file unavailable')
+      return { data, sizeBytes: data.byteLength }
+    }
+    exportFile.mockReset().mockImplementation(readWorkspace)
+    readGeneratedFile.mockReset().mockImplementation(readWorkspace)
+    ensureLease.mockReset().mockResolvedValue('image-test-lease')
+    saveGeneratedFile.mockReset().mockImplementation(async (path: string, data: Uint8Array) => { workspaceFiles.set(path, data) })
     await db.delete(imageModels).where(eq(imageModels.id, config.id))
     await db.insert(imageModels).values({ id: config.id, providerConnectionId: providerId, config })
     await db.update(providerConnections).set({ enabled: true, baseUrl: 'https://api.meta.ai/v1' }).where(eq(providerConnections.id, providerId))
@@ -90,7 +104,7 @@ describe.skipIf(!enabled)('image generation persistence and authorization', () =
       await preference(settings[0], settings[1])
       const selected = await selectedImageModel(userId)
       expect(selected).toBeNull()
-      expect(createImageGenerationTools({ model: selected?.model ?? null, execute: vi.fn(), onStarted: vi.fn(), onAttachment: vi.fn() })).toEqual([])
+      expect(createImageGenerationTools({ model: selected?.model ?? null, execute: vi.fn(), onStarted: vi.fn() })).toEqual([])
       await expect(executeImageGeneration(input)).rejects.toThrow('Enable image generation')
     }
     await preference(); await db.update(providerConnections).set({ enabled: false }).where(eq(providerConnections.id, providerId))
@@ -109,26 +123,28 @@ describe.skipIf(!enabled)('image generation persistence and authorization', () =
     expect(tool!.providerAttempts).toEqual([expect.objectContaining({ providerId, modelId: config.id, outcome: 'failed' })])
   })
 
-  it('persists one result and one charge on replay; edits reuse a stateless image item', async () => {
+  it('saves only a workspace file, bills once on replay, and edits its bytes', async () => {
     const input = await turn()
     const result = await executeImageGeneration(input)
-    expect(result.attachment.mimeType).toBe('image/png'); expect(result.billedCostMicros).toBe(10_000)
+    expect(result.file.mimeType).toBe('image/png'); expect(result.billedCostMicros).toBe(10_000)
     expect(input.reserveCost).toHaveBeenCalledExactlyOnceWith(10_000)
     const replay = await executeImageGeneration(input)
-    expect(replay.attachment.id).toBe(result.attachment.id); expect(fetcher).toHaveBeenCalledOnce(); expect(input.reserveCost).toHaveBeenCalledOnce()
-    expect(stageGeneratedAttachment).toHaveBeenCalledWith(result.attachment.id, undefined)
+    expect(replay.path).toBe(result.path); expect(fetcher).toHaveBeenCalledOnce(); expect(input.reserveCost).toHaveBeenCalledOnce()
+    expect(saveGeneratedFile).toHaveBeenCalledExactlyOnceWith(result.path, image, 'image/png', 'image-test-lease', undefined)
+    expect(workspaceFiles.get(result.path)).toEqual(image)
+    expect(await db.select().from(attachments).where(eq(attachments.sourceResponseId, input.responseId))).toEqual([])
     const [claim] = await db.select().from(imageGenerationRequests).where(eq(imageGenerationRequests.responseId, input.responseId))
     expect(claim).toMatchObject({ status: 'completed', billedCostMicros: 10_000, result: { imageItem: { id: 'image-item' }, usage: { inputTokens: 5, outputTokens: 10 } } })
     expect(JSON.stringify(claim)).not.toContain(image.toString('base64')); expect(JSON.stringify(claim)).not.toContain('fixture-secret')
     const [charge] = await db.select().from(toolExecutions).where(eq(toolExecutions.operationId, input.operationId))
     expect(agentSettlementAmounts({ totalTokens: 0, generationCostMicros: 0, toolCostMicros: charge!.billedCostMicros, sidecarCostMicros: 0, workspaceCostMicros: 0 })).toMatchObject({ shouldSettle: true, costMicrosOverride: 10_000 })
     const edit = await turn()
-    await executeImageGeneration({ ...edit, args: { prompt: 'Make it blue', referenceImages: [{ attachmentId: result.attachment.id }] } })
+    await executeImageGeneration({ ...edit, args: { prompt: 'Make it blue', referenceImages: [{ path: result.path }] } })
     const request = JSON.parse(String(fetcher.mock.calls[1]![1]!.body))
-    expect(request).toMatchObject({ store: false, input: [{ id: 'image-item', type: 'image_generation_call', result: image.toString('base64') }, { role: 'user' }] })
-    expect(exportFile).not.toHaveBeenCalled()
+    expect(request).toMatchObject({ store: false, input: [{ role: 'user', content: expect.arrayContaining([expect.objectContaining({ type: 'input_image' })]) }] })
+    expect(exportFile).toHaveBeenCalledWith(result.path, undefined)
   })
-  it('creates an OpenAI catalog entry, saves and bills once, and edits a saved attachment', async () => {
+  it('creates an OpenAI catalog entry, saves and bills once, and edits the workspace file', async () => {
     await db.update(providerConnections).set({ baseUrl: 'https://api.openai.com/v1' }).where(eq(providerConnections.id, providerId))
     await db.delete(imageModels).where(eq(imageModels.id, config.id))
     const openai = { ...config, ...OPENAI_IMAGE_PRESET, enabled: true, billUsers: true, imagePriceMicros: 20_000 }
@@ -141,17 +157,17 @@ describe.skipIf(!enabled)('image generation persistence and authorization', () =
     const result = await executeImageGeneration(input)
     expect(result.billedCostMicros).toBe(20_000)
     expect(input.reserveCost).toHaveBeenCalledExactlyOnceWith(20_000)
-    expect((await executeImageGeneration(input)).attachment.id).toBe(result.attachment.id)
+    expect((await executeImageGeneration(input)).path).toBe(result.path)
     expect(fetcher).toHaveBeenCalledOnce()
     const [charge] = await db.select().from(toolExecutions).where(eq(toolExecutions.operationId, input.operationId))
     expect(charge).toMatchObject({ billedCostMicros: 20_000, providerAttempts: [{ provider: 'openai-images', usage: { inputTokens: 5, outputTokens: 10, totalTokens: 15 } }] })
-    await executeImageGeneration({ ...await turn(), args: { prompt: 'Make it blue', referenceImages: [{ attachmentId: result.attachment.id }] } })
+    await executeImageGeneration({ ...await turn(), args: { prompt: 'Make it blue', referenceImages: [{ path: result.path }] } })
     expect(fetcher.mock.calls[1]![0]).toBe('https://api.openai.com/v1/images/edits')
     const form = fetcher.mock.calls[1]![1]!.body as FormData
     expect(Buffer.from(await (form.get('image[]') as Blob).arrayBuffer())).toEqual(image)
-    expect(exportFile).not.toHaveBeenCalled()
+    expect(exportFile).toHaveBeenCalledWith(result.path, undefined)
   })
-  it.each(['attachment', 'workspace'] as const)('normalizes an MPO from a %s before editing without replacing the source', async source => {
+  it.each(['attachment', 'workspace', 'shorthand'] as const)('normalizes an MPO from a %s before editing without replacing the source', async source => {
     const data = await readFile(new URL('./fixtures/oriented-mpo.jpg', import.meta.url))
     const id = randomUUID(), objectKey = `reference-${id}`
     const model = { ...config, ...OPENAI_IMAGE_PRESET, enabled: true }
@@ -162,7 +178,8 @@ describe.skipIf(!enabled)('image generation persistence and authorization', () =
       await db.insert(attachments).values({ id, userId, chatId, objectKey, originalName: 'oriented-mpo.jpg', mimeType: 'image/jpeg', sizeBytes: data.length, status: 'ready' })
     } else exportFile.mockResolvedValue({ data })
     fetcher.mockImplementation(async () => Response.json({ data: [{ b64_json: image.toString('base64') }] }))
-    await executeImageGeneration({ ...await turn(), args: { prompt: 'Make it blue', referenceImages: [source === 'attachment' ? { attachmentId: id } : { path: '/workspace/oriented-mpo.jpg' }] } })
+    const args = imageGenerationInputSchema.parse({ prompt: 'Make it blue', referenceImages: [source === 'attachment' ? { attachmentId: id } : source === 'shorthand' ? '/workspace/oriented-mpo.jpg' : { path: '/workspace/oriented-mpo.jpg' }] })
+    await executeImageGeneration({ ...await turn(), args })
     expect(fetcher).toHaveBeenCalledOnce()
     const file = (fetcher.mock.calls[0]![1]!.body as FormData).get('image[]') as File
     const bytes = Buffer.from(await file.arrayBuffer())
@@ -211,7 +228,7 @@ describe.skipIf(!enabled)('image generation persistence and authorization', () =
     const result = await executeImageGeneration(input)
     expect(result.billedCostMicros).toBe(510)
     expect(input.reserveCost.mock.calls.map(call => call[0])).toEqual(hold < 510 ? [hold, 510 - hold] : [hold])
-    expect((await executeImageGeneration(input)).attachment.id).toBe(result.attachment.id)
+    expect((await executeImageGeneration(input)).path).toBe(result.path)
     await settle(input.responseId, result.billedCostMicros)
     await settle(input.responseId, result.billedCostMicros)
     expect((await db.select().from(users).where(eq(users.id, userId)))[0]?.balanceMicros).toBe(490)
@@ -234,7 +251,7 @@ describe.skipIf(!enabled)('image generation persistence and authorization', () =
     await expect(executeImageGeneration(input)).rejects.toMatchObject({ code: 'insufficient_balance' })
     expect(await db.select().from(attachments).where(eq(attachments.sourceResponseId, input.responseId))).toEqual([])
     expect((await db.select().from(toolExecutions).where(eq(toolExecutions.operationId, input.operationId)))[0]?.billedCostMicros).toBe(0)
-    await recoverSavedImageGenerations(input.responseId, input.runId)
+    await recoverSavedImageGenerations(input.responseId, input.runId, manager)
     await expect(executeImageGeneration(input)).rejects.toThrow('already submitted')
     await releaseBudget(input.responseId)
     expect((await db.select().from(users).where(eq(users.id, userId)))[0]?.balanceMicros).toBe(200)
@@ -261,8 +278,8 @@ describe.skipIf(!enabled)('image generation persistence and authorization', () =
     await db.update(toolExecutions).set({ status: 'running', billedCostMicros: 0 }).where(eq(toolExecutions.operationId, input.operationId))
     await db.update(responses).set({ status: 'cancelled' }).where(eq(responses.id, input.responseId))
     await preference(false)
-    await recoverSavedImageGenerations(input.responseId, input.runId)
-    await recoverSavedImageGenerations(input.responseId, input.runId)
+    await recoverSavedImageGenerations(input.responseId, input.runId, manager)
+    await recoverSavedImageGenerations(input.responseId, input.runId, manager)
     expect((await db.select().from(toolExecutions).where(eq(toolExecutions.operationId, input.operationId)))[0]?.billedCostMicros).toBe(510)
     await settle(input.responseId, 510)
     expect(fetcher).toHaveBeenCalledOnce()
@@ -291,25 +308,27 @@ describe.skipIf(!enabled)('image generation persistence and authorization', () =
     const [charge] = await db.select().from(toolExecutions).where(eq(toolExecutions.operationId, input.operationId))
     expect(charge!.billedCostMicros).toBe(0)
   })
-  it('recovers a saved attachment after interruption without another provider call', async () => {
+  it('recovers a saved workspace image after interruption without another provider call', async () => {
     const input = await turn(), result = await executeImageGeneration(input)
     await db.update(imageGenerationRequests).set({ status: 'claimed', attachmentId: null, billedCostMicros: 0 }).where(eq(imageGenerationRequests.responseId, input.responseId))
     await db.update(toolExecutions).set({ status: 'running', billedCostMicros: 0 }).where(eq(toolExecutions.operationId, input.operationId))
     const { billingUnit: _unit, tokenPrices: _prices, reservationMicros: _hold, ...legacy } = config
     await db.update(imageGenerationRequests).set({ model: legacy as ImageModel }).where(eq(imageGenerationRequests.responseId, input.responseId))
     await preference(false)
-    await recoverSavedImageGenerations(input.responseId, input.runId)
-    await recoverSavedImageGenerations(input.responseId, input.runId)
+    await recoverSavedImageGenerations(input.responseId, input.runId, manager)
+    await recoverSavedImageGenerations(input.responseId, input.runId, manager)
     await preference()
-    expect((await executeImageGeneration(input)).attachment.id).toBe(result.attachment.id)
+    expect((await executeImageGeneration(input)).path).toBe(result.path)
     expect(fetcher).toHaveBeenCalledOnce()
     const [charge] = await db.select().from(toolExecutions).where(eq(toolExecutions.operationId, input.operationId))
     expect(charge!.billedCostMicros).toBe(10_000)
   })
   it('rejects another chat’s reference without loading it or charging', async () => {
-    const original = await executeImageGeneration(await turn()); fetcher.mockClear()
+    const originalTurn = await turn()
+    const original = await storeGeneratedAttachment({ ...originalTurn, toolCallId: 'attached-reference', path: '/workspace/other-chat-reference.png', data: image })
+    fetcher.mockClear()
     const input = await turn()
-    await expect(executeImageGeneration({ ...input, chatId: randomUUID(), args: { prompt: 'Edit', referenceImages: [{ attachmentId: original.attachment.id }] } })).rejects.toThrow('not available in this chat')
+    await expect(executeImageGeneration({ ...input, chatId: randomUUID(), args: { prompt: 'Edit', referenceImages: [{ attachmentId: original.id }] } })).rejects.toThrow('not available in this chat')
     expect(fetcher).not.toHaveBeenCalled(); expect(input.reserveCost).not.toHaveBeenCalled()
   })
   it('resolves workspace files, rejects invalid images, and honors cancellation', async () => {
@@ -317,7 +336,8 @@ describe.skipIf(!enabled)('image generation persistence and authorization', () =
     await expect(executeImageGeneration({ ...input, args: { prompt: 'Edit', referenceImages: [{ path: '/etc/reference.png' }] } })).rejects.toThrow('inside /workspace')
     expect(exportFile).not.toHaveBeenCalled()
     exportFile.mockRejectedValueOnce(new Error('internal controller error'))
-    await expect(executeImageGeneration({ ...input, args: { prompt: 'Edit', referenceImages: [{ path: '/workspace/missing.png' }] } })).rejects.toThrow('check the path')
+    await expect(executeImageGeneration({ ...input, args: imageGenerationInputSchema.parse({ prompt: 'Edit', referenceImages: ['/workspace/missing.png'] }) })).rejects.toThrow('check the path')
+    expect(fetcher).not.toHaveBeenCalled(); expect(input.reserveCost).not.toHaveBeenCalled()
     exportFile.mockResolvedValue({ data: image, sizeBytes: image.length })
     await executeImageGeneration({ ...input, args: { prompt: 'Edit', referenceImages: [{ path: '/workspace/reference.png' }] } })
     expect(exportFile).toHaveBeenCalledWith('/workspace/reference.png', undefined)
@@ -326,17 +346,119 @@ describe.skipIf(!enabled)('image generation persistence and authorization', () =
     await expect(executeImageGeneration({ ...await turn(), signal: AbortSignal.abort() })).rejects.toThrow()
     expect(fetcher).not.toHaveBeenCalled()
   })
-  it('does not bill storage failures and does not call the provider without balance or storage', async () => {
+  it('does not call the provider without balance or an available workspace, or bill failed writes', async () => {
     const noBalance = await turn(); noBalance.reserveCost.mockRejectedValueOnce(new Error('Insufficient balance'))
     await expect(executeImageGeneration(noBalance)).rejects.toThrow('Insufficient balance'); expect(fetcher).not.toHaveBeenCalled()
-    mocks.writeFails = true; const failed = await turn()
+    ensureLease.mockRejectedValueOnce(new Error('Workspace unavailable'))
+    await expect(executeImageGeneration(await turn())).rejects.toThrow('Workspace unavailable')
+    expect(fetcher).not.toHaveBeenCalled()
+    await expect(executeImageGeneration({ ...await turn(), manager: { ...manager, continuedWithoutAgent: true } as WorkspaceManager })).rejects.toThrow('Workspace unavailable')
+    expect(fetcher).not.toHaveBeenCalled()
+    saveGeneratedFile.mockRejectedValueOnce(new Error('Workspace storage unavailable'))
+    const failed = await turn()
     await expect(executeImageGeneration(failed)).rejects.toThrow('storage unavailable')
+    await recoverSavedImageGenerations(failed.responseId, failed.runId, manager)
     const [charge] = await db.select().from(toolExecutions).where(eq(toolExecutions.operationId, failed.operationId))
     expect(charge!.billedCostMicros).toBe(0)
-    mocks.writeFails = false; fetcher.mockClear()
+    expect(workspaceFiles.size).toBe(0)
+    await expect(executeImageGeneration(failed)).rejects.toThrow('missing or changed')
+    expect(fetcher).toHaveBeenCalledOnce()
+  })
+  it('saves with a full attachment quota; only explicit attachment storage publishes the image', async () => {
     await db.update(users).set({ storageLimitBytes: 0 }).where(eq(users.id, userId))
-    await expect(executeImageGeneration(await turn())).rejects.toThrow('attachment storage')
+    const input = await turn(), result = await executeImageGeneration(input)
+    expect(result.billedCostMicros).toBe(10_000)
+    expect(await db.select().from(attachments).where(eq(attachments.sourceResponseId, input.responseId))).toEqual([])
+    const attachTool = createWorkspaceTools(manager, 1000, undefined, async (toolCallId, path, requestedName, signal) => {
+      const file = await manager.exportFile(path, signal)
+      return storeGeneratedAttachment({ ...input, toolCallId, path, requestedName, data: file.data })
+    }).find(tool => tool.name === 'attach_file')!
+    const attach = () => attachTool.execute('explicit-attach', { path: result.path })
+    await expect(attach()).rejects.toThrow('storage allowance')
+    await db.update(users).set({ storageLimitBytes: 100_000_000 }).where(eq(users.id, userId))
+    const attached = await attach()
+    expect(await attach()).toEqual(attached)
+    expect(await db.select().from(attachments).where(eq(attachments.sourceResponseId, input.responseId))).toEqual([expect.objectContaining({ sourceToolCallId: 'explicit-attach', workspacePath: result.path, status: 'ready' })])
+    expect((await executeImageGeneration(input)).billedCostMicros).toBe(10_000)
+    expect(fetcher).toHaveBeenCalledOnce()
+  })
+  it('recovers a lost write acknowledgement, including cancellation after the bytes were saved', async () => {
+    const controller = new AbortController()
+    saveGeneratedFile.mockImplementationOnce(async (path: string, data: Uint8Array) => {
+      workspaceFiles.set(path, data)
+      controller.abort()
+      throw new Error('Write acknowledgement lost')
+    })
+    const input = await turn()
+    const result = await executeImageGeneration({ ...input, signal: controller.signal })
+    expect(result.billedCostMicros).toBe(10_000)
+    expect(readGeneratedFile).toHaveBeenCalledWith(result.path, 'image-test-lease')
+    expect(fetcher).toHaveBeenCalledOnce()
+  })
+  it.each(['missing', 'modified'])('never regenerates or recovers a %s workspace file', async state => {
+    const input = await turn(), result = await executeImageGeneration(input)
+    await db.update(imageGenerationRequests).set({ status: 'claimed', billedCostMicros: 0 }).where(eq(imageGenerationRequests.responseId, input.responseId))
+    await db.update(toolExecutions).set({ status: 'running', billedCostMicros: 0 }).where(eq(toolExecutions.operationId, input.operationId))
+    if (state === 'missing') workspaceFiles.delete(result.path)
+    else workspaceFiles.set(result.path, Buffer.from('modified'))
+    ensureLease.mockClear()
+    await recoverSavedImageGenerations(input.responseId, input.runId, manager)
+    await expect(executeImageGeneration(input)).rejects.toMatchObject({ code: 'image_workspace_unavailable' })
+    expect((await db.select().from(toolExecutions).where(eq(toolExecutions.operationId, input.operationId)))[0]?.billedCostMicros).toBe(0)
+    expect(ensureLease).not.toHaveBeenCalled()
+    expect(fetcher).toHaveBeenCalledOnce()
+  })
+  it('still recovers legacy attachment saves and reuses their image item without another generation', async () => {
+    const input = await turn()
+    const attachment = await storeGeneratedAttachment({ ...input, toolCallId: input.operationId, path: '/workspace/legacy.png', data: image })
+    await db.insert(imageGenerationRequests).values({ responseId: input.responseId, operationId: input.operationId, model: config, result: { text: '', imageItem: { id: 'legacy-image-item', type: 'image_generation_call', status: 'completed' } } })
+    await recoverSavedImageGenerations(input.responseId, input.runId, manager)
+    const result = await executeImageGeneration(input)
+    expect(workspaceFiles.get(result.path)).toEqual(image)
+    expect(result.billedCostMicros).toBe(10_000)
     expect(fetcher).not.toHaveBeenCalled()
+    await executeImageGeneration({ ...await turn(), args: { prompt: 'Make it blue', referenceImages: [{ attachmentId: attachment.id }] } })
+    expect(JSON.parse(String(fetcher.mock.calls[0]![1]!.body))).toMatchObject({ store: false, input: [{ id: 'legacy-image-item', type: 'image_generation_call', result: image.toString('base64') }, { role: 'user' }] })
+  })
+  it('writes through the real manager and recovers only from the original authorized lease', async () => {
+    const isolatedChatId = randomUUID(), leaseId = randomUUID(), controllerId = 'original-image-lease'
+    const controllerRequest = vi.mocked(workspaceControllerRequest)
+    const settings = getConfig()
+    const originalUrl = settings.WORKSPACE_CONTROLLER_URL, originalToken = settings.WORKSPACE_CONTROLLER_TOKEN
+    settings.WORKSPACE_CONTROLLER_URL = 'http://controller.test'
+    settings.WORKSPACE_CONTROLLER_TOKEN = 'fixture-controller-token'
+    await db.insert(chats).values({ id: isolatedChatId, userId, modelId: chatModelId })
+    await db.insert(workspaceLeases).values({ id: leaseId, chatId: isolatedChatId, userId, controllerLeaseId: controllerId, status: 'ready', imageDigest: 'test-image' })
+    try {
+      const workspace = new WorkspaceManager(randomUUID(), isolatedChatId, userId)
+      await expect(workspace.ensureLease()).resolves.toBe(controllerId)
+      controllerRequest.mockResolvedValueOnce(Response.json({ saved: true }))
+      const path = '/workspace/generated-image.png'
+      await workspace.saveGeneratedFile(path, image, 'image/png', controllerId)
+      expect(controllerRequest).toHaveBeenLastCalledWith(`/v1/leases/${controllerId}/v1/files?path=${encodeURIComponent(path)}`, expect.objectContaining({ method: 'PUT', body: image }))
+      expect((await db.select().from(workspaceLeases).where(eq(workspaceLeases.id, leaseId)))[0]?.lastUsedAt).toBeInstanceOf(Date)
+      controllerRequest.mockReset().mockImplementation(async () => new Response(new Uint8Array(image)))
+      const reader = new WorkspaceManager(randomUUID(), isolatedChatId, userId)
+      expect(await reader.readGeneratedFile(path, controllerId)).toMatchObject({ data: new Uint8Array(image), sizeBytes: image.length })
+      const calls = controllerRequest.mock.calls.length
+      await expect(reader.saveGeneratedFile(path, image, 'image/png', controllerId)).rejects.toThrow('original image workspace')
+      await expect(new WorkspaceManager(randomUUID(), chatId, userId).readGeneratedFile(path, controllerId)).rejects.toThrow('original image workspace')
+      await expect(new WorkspaceManager(randomUUID(), isolatedChatId, randomUUID()).readGeneratedFile(path, controllerId)).rejects.toThrow('original image workspace')
+      await expect(reader.readGeneratedFile(path, 'replacement-lease')).rejects.toThrow('original image workspace')
+      await expect(reader.readGeneratedFile('/etc/image.png', controllerId)).rejects.toThrow('inside /workspace')
+      expect(controllerRequest).toHaveBeenCalledTimes(calls)
+      controllerRequest.mockResolvedValueOnce(new Response('Expired', { status: 404 }))
+      await expect(reader.readGeneratedFile(path, controllerId)).rejects.toThrow()
+      expect(controllerRequest).toHaveBeenCalledTimes(calls + 1)
+      await db.update(workspaceLeases).set({ status: 'expired' }).where(eq(workspaceLeases.id, leaseId))
+      await expect(reader.readGeneratedFile(path, controllerId)).rejects.toThrow('original image workspace')
+      expect(controllerRequest).toHaveBeenCalledTimes(calls + 1)
+      expect(await db.select().from(workspaceLeases).where(eq(workspaceLeases.chatId, isolatedChatId))).toHaveLength(1)
+    } finally {
+      settings.WORKSPACE_CONTROLLER_URL = originalUrl; settings.WORKSPACE_CONTROLLER_TOKEN = originalToken
+      controllerRequest.mockReset()
+      await db.delete(chats).where(eq(chats.id, isolatedChatId))
+    }
   })
   it('rechecks opt-in after reservation and allows free generation without a charge', async () => {
     const input = await turn(); input.reserveCost.mockImplementationOnce(async () => { await preference(false) })

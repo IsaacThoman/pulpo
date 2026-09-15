@@ -641,19 +641,9 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
       operationId, args, signal, userId: record.response.userId, chatId: record.response.chatId,
       responseId, runId, manager, reserveCost: micros => micros > 0 ? extendBudgetReservationFixedCost(responseId, micros) : Promise.resolve(),
     }),
-    onAttachment: async (operationId, result) => {
-      const stored = result.attachment
-      const item: AttachmentTimelineItem = {
-        type: 'pulpo_attachment', attachment_id: stored.id, name: stored.name,
-        mime_type: stored.mimeType, size_bytes: stored.sizeBytes, status: 'completed',
-      }
-      attachmentItems.set(operationId, item)
-      await emit('pulpo.agent.attachment.created', item)
-      await snapshotIfDue()
-    },
   })
   const readToolCost = async () => {
-    await recoverSavedImageGenerations(responseId, runId)
+    await recoverSavedImageGenerations(responseId, runId, manager)
     const [row] = await db.select({ total: sql<number>`coalesce(sum(${toolExecutions.billedCostMicros}), 0)::bigint` })
       .from(toolExecutions).where(eq(toolExecutions.agentRunId, runId))
     return Number(row?.total ?? 0)
@@ -971,7 +961,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
     } else if (event.type === 'tool_execution_end') {
       const output = truncateUtf8(toolResultText(event.result), settings.maxToolOutputBytes)
       const details = toolResultDetails(event.result)
-      const imagePreview = ['view_image', 'generate_image'].includes(event.toolName) && !event.isError
+      const imagePreview = event.toolName === 'view_image' && !event.isError
         ? toolImagePreviewSchema.safeParse(details.imagePreview).data
         : undefined
       const providerExecution = webProviderExecutions.get(event.toolCallId)

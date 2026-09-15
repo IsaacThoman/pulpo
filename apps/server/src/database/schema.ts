@@ -1276,7 +1276,7 @@ export const imageGenerationRequests = pgTable('image_generation_requests', {
   status: text('status').notNull().default('claimed'),
   model: jsonb('model').notNull().$type<import('@pulpo/contracts').ImageModel>(),
   attachmentId: uuid('attachment_id').references(() => attachments.id, { onDelete: 'set null' }),
-  result: jsonb('result').$type<import('../image-generation/provider.js').ImageResultMetadata>(),
+  result: jsonb('result').$type<import('../image-generation/service.js').SavedImageResult>(),
   billedCostMicros: bigint('billed_cost_micros', { mode: 'number' }).notNull().default(0),
   ...timestamps,
 }, table => [primaryKey({ columns: [table.responseId, table.operationId] })])
