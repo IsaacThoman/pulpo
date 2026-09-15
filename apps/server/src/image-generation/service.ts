@@ -2,21 +2,20 @@ import sharp from 'sharp'
 import { reportDiagnosticFailure } from '../logging/provider-diagnostics.js'
 import { diagnosticFetch } from '../logging/diagnostic-fetch.js'
 import { basename, extname } from 'node:path'
+import { createHash } from 'node:crypto'
 import { and, eq, inArray } from 'drizzle-orm'
 import { imageGenerationPreferencesSchema, imageModelSchema, IMAGE_GENERATION_MAX_BYTES, IMAGE_PROVIDER_CAPABILITIES, type ImageGenerationInput, type ImageModel } from '@pulpo/contracts'
 import { db } from '../database/client.js'
-import { attachments, imageGenerationRequests, imageModels, providerConnections, toolExecutions, userPreferences } from '../database/schema.js'
+import { attachments, responses, imageGenerationRequests, imageModels, providerConnections, toolExecutions, userPreferences } from '../database/schema.js'
 import { getBlobStore } from '../storage/index.js'
 import { decryptSecret } from '../lib/crypto.js'
 import { getConfig } from '../config.js'
 import { AppError } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import { assertSafeProviderUrl } from '../lib/url-security.js'
-import { storeGeneratedAttachment, generatedAttachmentMetadata, type GeneratedAttachment } from '../attachments/generated.js'
-import { getStorageUsage } from '../attachments/storage-quota.js'
-import { createAttachmentThumbnail } from '../attachments/thumbnail.js'
+import { generatedAttachmentMetadata } from '../attachments/generated.js'
 import { restoredAttachmentWorkspacePath, attachmentWorkspacePath } from '../agent/policy.js'
-import type { WorkspaceManager } from '../agent/controller.js'
+import { WorkspaceManager } from '../agent/controller.js'
 import { imageCost, imageReservation } from './pricing.js'
 import { generateImage, validateImageBytes, validateImageRequest, type ImageReference, type ImageResultMetadata } from './provider.js'
 import { readImageDefaults } from './defaults.js'
@@ -66,16 +65,28 @@ export async function resolveImageReferences(input: ImageGenerationInput, userId
   return references
 }
 
-export interface ImageExecutionResult {
-  attachment: GeneratedAttachment
+export interface GeneratedWorkspaceImage {
   path: string
-  previewData: string
+  name: string
+  mimeType: string
+  sizeBytes: number
+  checksum: string
+  leaseId: string
+}
+export interface SavedImageResult extends ImageResultMetadata {
+  workspaceFile?: GeneratedWorkspaceImage
+}
+export interface ImageExecutionResult {
+  file: Pick<GeneratedWorkspaceImage, 'name' | 'mimeType' | 'sizeBytes'>
+  path: string
   metadata: ImageResultMetadata
   billedCostMicros: number
   model: ImageModel
 }
+const checksum = (data: Uint8Array) => createHash('sha256').update(data).digest('base64url')
+const matchesSavedFile = (data: Uint8Array, file: GeneratedWorkspaceImage) => data.byteLength === file.sizeBytes && checksum(data) === file.checksum
 
-async function recordSavedImage(claim: typeof imageGenerationRequests.$inferSelect, attachmentId: string, runId: string) {
+async function recordSavedImage(claim: typeof imageGenerationRequests.$inferSelect, attachmentId: string | null, runId: string) {
   const billedCostMicros = imageCost(claim.model, claim.result?.usage)
   await db.transaction(async tx => {
     await tx.update(imageGenerationRequests).set({ status: 'completed', attachmentId, billedCostMicros, updatedAt: new Date() })
@@ -88,14 +99,24 @@ async function recordSavedImage(claim: typeof imageGenerationRequests.$inferSele
   return billedCostMicros
 }
 
-// Reconcile the crash window between saving a blob and recording its charge, even
-// when the resumed agent does not replay the tool or the user has since opted out.
-export async function recoverSavedImageGenerations(responseId: string, runId: string) {
+// Reconcile both legacy attachment saves and workspace writes interrupted before
+// recording the charge. Only the exact saved bytes in the original lease qualify.
+export async function recoverSavedImageGenerations(responseId: string, runId: string, manager?: WorkspaceManager) {
   const saved = await db.select({ claim: imageGenerationRequests, attachmentId: attachments.id }).from(imageGenerationRequests)
     .innerJoin(attachments, and(eq(attachments.sourceResponseId, imageGenerationRequests.responseId), eq(attachments.sourceToolCallId, imageGenerationRequests.operationId)))
     .where(and(eq(imageGenerationRequests.responseId, responseId), inArray(imageGenerationRequests.status, ['claimed', 'failed']), eq(attachments.status, 'ready')))
   for (const { claim, attachmentId } of saved) {
-    if (claim.result) await recordSavedImage(claim, attachmentId, runId)
+    if (claim.result && !claim.result.workspaceFile) await recordSavedImage(claim, attachmentId, runId)
+  }
+  const pending = await db.select({ claim: imageGenerationRequests, userId: responses.userId, chatId: responses.chatId }).from(imageGenerationRequests)
+    .innerJoin(responses, eq(responses.id, imageGenerationRequests.responseId))
+    .where(and(eq(imageGenerationRequests.responseId, responseId), inArray(imageGenerationRequests.status, ['claimed', 'failed'])))
+  for (const { claim, userId, chatId } of pending) {
+    const file = claim.result?.workspaceFile
+    if (!file) continue
+    const reader = manager ?? new WorkspaceManager(responseId, chatId, userId)
+    const saved = await reader.readGeneratedFile(file.path, file.leaseId).catch(() => null)
+    if (saved && matchesSavedFile(saved.data, file)) await recordSavedImage(claim, null, runId)
   }
 }
 
@@ -107,29 +128,35 @@ export async function executeImageGeneration(input: {
   if (!selection) throw unavailable()
   const { model, provider } = selection
   const condition = and(eq(imageGenerationRequests.responseId, input.responseId), eq(imageGenerationRequests.operationId, input.operationId))
-  const finish = async (claim: typeof imageGenerationRequests.$inferSelect, attachment: typeof attachments.$inferSelect): Promise<ImageExecutionResult> => {
+  const finish = async (claim: typeof imageGenerationRequests.$inferSelect, file: GeneratedWorkspaceImage, attachmentId: string | null = null): Promise<ImageExecutionResult> => {
     if (!claim.result) throw new AppError(409, 'image_request_uncertain', 'This image request was interrupted; submit a new request to try again')
-    const billedCostMicros = await recordSavedImage(claim, attachment.id, input.runId)
-    const data = await getBlobStore().get(attachment.objectKey)
-    const path = restoredAttachmentWorkspacePath(attachment)
-    let text = claim.result.text
-    try { await input.manager.stageGeneratedAttachment(attachment.id, input.signal) }
-    catch { text += '\nWorkspace copy is unavailable; use the attachment ID for subsequent image edits.' }
-    return {
-      attachment: { id: attachment.id, name: attachment.originalName, mimeType: attachment.mimeType, sizeBytes: attachment.sizeBytes },
-      path, previewData: (await createAttachmentThumbnail(data)).toString('base64'), metadata: { ...claim.result, text }, billedCostMicros, model: imageModelSchema.parse(claim.model),
-    }
+    const billedCostMicros = await recordSavedImage(claim, attachmentId, input.runId)
+    const { workspaceFile: _file, ...metadata } = claim.result
+    return { file: { name: file.name, mimeType: file.mimeType, sizeBytes: file.sizeBytes }, path: file.path, metadata, billedCostMicros, model: imageModelSchema.parse(claim.model) }
   }
   const [existing] = await db.select().from(imageGenerationRequests).where(condition).limit(1)
   if (existing) {
+    const file = existing.result?.workspaceFile
+    if (file) {
+      const saved = await input.manager.readGeneratedFile(file.path, file.leaseId, input.signal).catch(() => null)
+      if (saved && matchesSavedFile(saved.data, file)) return finish(existing, file)
+      throw new AppError(409, 'image_workspace_unavailable', 'The generated workspace image is missing or changed; it will not be regenerated automatically')
+    }
+    // Old operations saved attachments. Reuse them without a second provider call
+    // or emitting another user-visible attachment from the generation tool.
     const [attachment] = await db.select().from(attachments).where(and(eq(attachments.userId, input.userId), eq(attachments.sourceResponseId, input.responseId), eq(attachments.sourceToolCallId, input.operationId), eq(attachments.status, 'ready'))).limit(1)
-    if (attachment && existing.result) return finish(existing, attachment)
+    if (attachment && existing.result) {
+      const data = await getBlobStore().get(attachment.objectKey)
+      const leaseId = await input.manager.ensureLease(input.signal)
+      const file = { path: restoredAttachmentWorkspacePath(attachment), name: attachment.originalName, mimeType: attachment.mimeType, sizeBytes: data.byteLength, checksum: checksum(data), leaseId }
+      await input.manager.saveGeneratedFile(file.path, data, file.mimeType, leaseId, input.signal)
+      return finish(existing, file, attachment.id)
+    }
     throw new AppError(409, 'image_request_uncertain', 'This image request was already submitted but has no saved result; submit a new request to try again')
   }
   const references = await resolveImageReferences(input.args, input.userId, input.chatId, model, input.manager, input.signal)
   validateImageRequest(model, input.args.prompt, references)
   for (const reference of references) await validateImageBytes(reference.data, model.adapter === 'azure-mai' ? ['image/png', 'image/jpeg'] : undefined)
-  if ((await getStorageUsage(input.userId)).remainingBytes <= 0) throw new AppError(413, 'storage_quota_exceeded', 'Free some attachment storage before generating an image')
   await assertSafeProviderUrl(provider.baseUrl)
   input.signal?.throwIfAborted()
   const claims = await db.insert(imageGenerationRequests).values({ responseId: input.responseId, operationId: input.operationId, model }).onConflictDoNothing().returning()
@@ -138,6 +165,9 @@ export async function executeImageGeneration(input: {
   try {
     const reservedMicros = imageReservation(model)
     await input.reserveCost(reservedMicros)
+    // Acquire capacity before spending money on an image that needs a workspace.
+    const leaseId = await input.manager.ensureLease(input.signal)
+    if (input.manager.continuedWithoutAgent) throw new AppError(409, 'image_workspace_unavailable', 'Workspace unavailable; image generation requires an active workspace')
     // Settings or provider availability may have changed while inputs were loading.
     const current = await selectedImageModel(input.userId)
     if (!current || current.model.id !== model.id || JSON.stringify(current.model) !== JSON.stringify(model) || current.provider.updatedAt.getTime() !== provider.updatedAt.getTime()) throw unavailable()
@@ -156,9 +186,17 @@ export async function executeImageGeneration(input: {
     const rawName = `${requested.slice(0, requested.length - extname(requested).length).slice(0, 180) || 'generated-image'}${extension}`
     const name = generatedAttachmentMetadata(rawName, undefined, data).name
     const path = `/workspace/generated-${newId()}-${name}`
-    const stored = await storeGeneratedAttachment({ responseId: input.responseId, toolCallId: input.operationId, userId: input.userId, chatId: input.chatId, path, requestedName: name, data })
-    const [attachment] = await db.select().from(attachments).where(eq(attachments.id, stored.id)).limit(1)
-    return await finish({ ...claims[0]!, result: metadata }, attachment!)
+    const file: GeneratedWorkspaceImage = { path, name, mimeType, sizeBytes: data.byteLength, checksum: checksum(data), leaseId }
+    const savedResult: SavedImageResult = { ...metadata, workspaceFile: file }
+    // Persist identity before PUT so a lost acknowledgement or process restart
+    // can verify a completed write without issuing another paid provider request.
+    await db.update(imageGenerationRequests).set({ result: savedResult, updatedAt: new Date() }).where(condition)
+    try { await input.manager.saveGeneratedFile(path, data, mimeType, leaseId, input.signal) }
+    catch (error) {
+      const saved = await input.manager.readGeneratedFile(path, leaseId).catch(() => null)
+      if (!saved || !matchesSavedFile(saved.data, file)) throw error
+    }
+    return await finish({ ...claims[0]!, result: savedResult }, file)
   } catch (error) {
     if (!providerSucceeded) await db.update(toolExecutions).set({ provider: model.adapter, providerAttempts: [{ provider: model.adapter, providerId: provider.id, modelId: model.id, upstreamModelId: model.upstreamModelId, outcome: 'failed' }], updatedAt: new Date() }).where(and(eq(toolExecutions.agentRunId, input.runId), eq(toolExecutions.operationId, input.operationId))).catch(() => reportDiagnosticFailure('image_failure_metadata'))
     await db.update(imageGenerationRequests).set({ status: 'failed', updatedAt: new Date() }).where(and(condition, inArray(imageGenerationRequests.status, ['claimed', 'failed'])))
