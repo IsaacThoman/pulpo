@@ -21,6 +21,12 @@ Web attachment lists render pages of 20, with preview requests only near the vie
 
 Composer attachment changes synchronize at most once per 250 ms during uploads, with an explicit flush before submission. Pending local persistence saves coalesce to the latest state. The database writes only changed attachment positions; typing does not rewrite attachment-reference rows.
 
+## Agent workspace lifetime
+
+Each agent response gets a fresh disposable workspace, including follow-ups, edited prompts, and regenerated answers. Tool calls and recovery within that same response may reuse its live workspace. Pulpo releases the workspace after the response finishes, fails, or is cancelled; idle and hard timeouts remain a fallback if cleanup is interrupted.
+
+Only saved attachments referenced by the response and its ancestor turns are restored. This includes user uploads and files the assistant exported with `attach_file`. Files from sibling edits or regenerations are excluded. Other workspace files, installed packages, and running processes do not carry over to the next response. Attached deliverables remain downloadable after workspace disposal.
+
 ## Large-file deployment considerations
 
 The current transfer uses one PUT per file. Interrupted transfers restart the file; uploads are not resumable. For production deployments, align reverse-proxy request-size limits, timeouts, and buffering with the configured file limit. Check S3 CORS and public endpoint reachability. Workspace storage must accommodate the conversation's attachments.

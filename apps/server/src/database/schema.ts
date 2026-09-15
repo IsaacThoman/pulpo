@@ -595,7 +595,13 @@ export const workspaceLeases = pgTable('workspace_leases', {
   hardExpiresAt: timestamp('hard_expires_at', { withTimezone: true }),
   releasedAt: timestamp('released_at', { withTimezone: true }),
   ...timestamps,
-}, (table) => [uniqueIndex('workspace_leases_chat_active_unique').on(table.chatId).where(sql`${table.status} in ('provisioning', 'ready')`), index('workspace_leases_expiry_idx').on(table.expiresAt), index('workspace_leases_queue_idx').on(table.capacityState, table.createdAt)])
+}, (table) => [
+  uniqueIndex('workspace_leases_response_active_unique').on(table.responseId).where(sql`${table.status} in ('provisioning', 'ready')`),
+  index('workspace_leases_response_idx').on(table.responseId),
+  index('workspace_leases_chat_idx').on(table.chatId),
+  index('workspace_leases_expiry_idx').on(table.expiresAt),
+  index('workspace_leases_queue_idx').on(table.capacityState, table.createdAt),
+])
 
 export const agentRuns = pgTable('agent_runs', {
   id: uuid('id').primaryKey(),

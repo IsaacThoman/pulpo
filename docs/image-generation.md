@@ -135,7 +135,7 @@ the image**. Generation does not create a chat attachment or preview. The model
 can use `view_image` to inspect the file or its workspace path for another edit.
 
 An available workspace is required before contacting the image provider. Generated
-files follow the normal workspace lifetime and disappear when it expires unless
+files follow the response's workspace lifetime and disappear when the response ends unless
 explicitly attached. `attach_file` publishes a normal conversation attachment and
 applies the user's attachment quota; a full attachment quota does not prevent
 workspace-only generation. Attached images remain available for later edits after

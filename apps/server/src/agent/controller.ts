@@ -1,5 +1,5 @@
 import { stageWorkspaceAttachments } from './stage-attachments.js'
-import { and, asc, eq, inArray, isNotNull, lte, or } from 'drizzle-orm'
+import { and, asc, eq, inArray, isNotNull, isNull, lte, or } from 'drizzle-orm'
 import { parseAgentSettings } from '../settings/application-settings.js'
 import { applicationSettings, attachments, responses, workspaceLeases } from '../database/schema.js'
 import { db } from '../database/client.js'
@@ -7,6 +7,9 @@ import { getConfig } from '../config.js'
 import { getBlobStore } from '../storage/index.js'
 import { newId } from '../lib/ids.js'
 import { restoredAttachmentWorkspacePath } from './policy.js'
+import { workspaceAttachmentIds } from './workspace-attachments.js'
+import { releaseFinishedWorkspaces } from './workspace-lifecycle.js'
+export { releaseWorkspaceForChat, releaseWorkspaceForResponse } from './workspace-lifecycle.js'
 import { workspaceContinueWithoutAgentAvailableAt, workspaceQueuePosition } from './capacity.js'
 import { workspaceControllerRequest } from './controller-http.js'
 import type { RequestInit } from 'undici'
@@ -66,7 +69,7 @@ export class WorkspaceManager {
 
   async ensureLease(signal?: AbortSignal): Promise<string> {
     if (this.controllerLeaseId) return this.controllerLeaseId
-    let [existing] = await db.select().from(workspaceLeases).where(and(eq(workspaceLeases.chatId, this.chatId), inArray(workspaceLeases.status, ['provisioning', 'ready']))).limit(1)
+    let [existing] = await db.select().from(workspaceLeases).where(and(eq(workspaceLeases.responseId, this.responseId), inArray(workspaceLeases.status, ['provisioning', 'ready']))).limit(1)
     if (existing?.status === 'ready' && (!existing.controllerLeaseId || (existing.hardExpiresAt && existing.hardExpiresAt <= new Date()) || (existing.expiresAt && existing.expiresAt <= new Date()))) {
       await db.update(workspaceLeases).set({ status: 'expired', error: 'Workspace lease expired before reuse', updatedAt: new Date() }).where(eq(workspaceLeases.id, existing.id))
       existing = undefined
@@ -82,7 +85,7 @@ export class WorkspaceManager {
       const id = existing?.id ?? newId()
       if (!existing) {
         await db.insert(workspaceLeases).values({ id, responseId: this.responseId, chatId: this.chatId, userId: this.userId, imageDigest: settings.imageDigest, status: 'provisioning', capacityState: 'waiting' }).onConflictDoNothing()
-        ;[existing] = await db.select().from(workspaceLeases).where(and(eq(workspaceLeases.chatId, this.chatId), inArray(workspaceLeases.status, ['provisioning', 'ready']))).limit(1)
+        ;[existing] = await db.select().from(workspaceLeases).where(and(eq(workspaceLeases.responseId, this.responseId), inArray(workspaceLeases.status, ['provisioning', 'ready']))).limit(1)
       }
       if (!existing) throw new Error('Unable to create workspace queue record')
       const queueLease = existing
@@ -174,12 +177,22 @@ export class WorkspaceManager {
 
   private async stageAttachments(): Promise<void> {
     if (!this.controllerLeaseId) return
+    const turns = await db.select({ id: responses.id, parentResponseId: responses.parentResponseId, input: responses.input, output: responses.output })
+      .from(responses).where(and(eq(responses.chatId, this.chatId), eq(responses.userId, this.userId), isNull(responses.deletedAt)))
+    const ids = workspaceAttachmentIds(turns, this.responseId)
+    if (!ids.length) { this.staged = true; return }
     const rows = await db.select().from(attachments).where(and(
       eq(attachments.userId, this.userId),
       eq(attachments.chatId, this.chatId),
       eq(attachments.status, 'ready'),
+      inArray(attachments.id, ids),
     )).orderBy(asc(attachments.createdAt), asc(attachments.id))
-    await stageWorkspaceAttachments(rows.map((attachment) => ({ ...attachment, path: restoredAttachmentWorkspacePath(attachment) })),
+    // Later attached revisions replace earlier versions saved at the same path.
+    const files = new Map(rows.map((attachment) => {
+      const path = restoredAttachmentWorkspacePath(attachment)
+      return [path, { ...attachment, path }] as const
+    }))
+    await stageWorkspaceAttachments([...files.values()],
       (path, init) => this.request(`/v1/leases/${this.controllerLeaseId}${path}`, init),
       (key) => getBlobStore().getStream(key))
     this.staged = true
@@ -203,7 +216,7 @@ export class WorkspaceManager {
   async readGeneratedFile(path: string, leaseId: string, signal?: AbortSignal): Promise<WorkspaceFile> {
     if (!path.startsWith('/workspace/')) throw new Error('Generated files must be inside /workspace')
     const [lease] = await db.select({ id: workspaceLeases.id }).from(workspaceLeases)
-      .where(and(eq(workspaceLeases.chatId, this.chatId), eq(workspaceLeases.userId, this.userId), eq(workspaceLeases.controllerLeaseId, leaseId), eq(workspaceLeases.status, 'ready'))).limit(1)
+      .where(and(eq(workspaceLeases.responseId, this.responseId), eq(workspaceLeases.chatId, this.chatId), eq(workspaceLeases.userId, this.userId), eq(workspaceLeases.controllerLeaseId, leaseId), eq(workspaceLeases.status, 'ready'))).limit(1)
     if (!lease) throw new Error('The original image workspace is unavailable')
     const response = await this.request(`/v1/leases/${leaseId}/v1/files?path=${encodeURIComponent(path)}`, { signal: signal ?? AbortSignal.timeout(10_000) })
     const data = new Uint8Array(await response.arrayBuffer())
@@ -306,18 +319,9 @@ export class WorkspaceManager {
   disableTools(): void { this.toolsDisabled = true }
 }
 
-export async function releaseWorkspaceForChat(chatId: string): Promise<void> {
-  const [lease] = await db.select().from(workspaceLeases).where(and(eq(workspaceLeases.chatId, chatId), inArray(workspaceLeases.status, ['provisioning', 'ready']))).limit(1)
-  if (!lease) return
-  const config = getConfig()
-  if (lease.controllerLeaseId && config.WORKSPACE_CONTROLLER_URL && config.WORKSPACE_CONTROLLER_TOKEN) {
-    await workspaceControllerRequest(`/v1/leases/${lease.controllerLeaseId}`, { method: 'DELETE', signal: AbortSignal.timeout(10_000) }).catch(() => undefined)
-  }
-  await db.update(workspaceLeases).set({ status: 'released', capacityState: null, releasedAt: new Date(), updatedAt: new Date() }).where(eq(workspaceLeases.id, lease.id))
-}
-
 /** Mark DB leases expired when timers elapsed or the controller no longer holds them. */
 export async function reconcileWorkspaceLeases(): Promise<void> {
+  await releaseFinishedWorkspaces()
   const now = new Date()
   await db.update(workspaceLeases).set({
     status: 'expired', capacityState: null, error: 'Workspace lease expired', updatedAt: now,

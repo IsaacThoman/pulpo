@@ -20,7 +20,7 @@ import { isCancellationRequested, createResponseEventPublisher, publishSnapshot 
 import { toSnapshot } from '../responses/service.js'
 import { persistResponseItems } from '../responses/storage.js'
 import { extendBudgetReservationFixedCost, getActivePricing, releaseBudget, resizeBudgetReservation, retainBudgetReservation, settleBudget } from '../accounting/service.js'
-import { WorkspaceManager } from './controller.js'
+import { WorkspaceManager, releaseWorkspaceForResponse } from './controller.js'
 import { createWorkspaceTools } from './tools.js'
 import { publishAdminUsage } from '../admin/usage-events.js'
 import { buildAgentSystemPrompt, buildAgentUserPrompt, buildToolsDisabledSystemPrompt, withoutAgentTools } from './policy.js'
@@ -144,6 +144,11 @@ export async function processAgentGeneration(responseId: string, codexAllowed: b
   } catch (error) {
     await finalizeUnhandledAgentFailure(responseId, error)
     throw error
+  } finally {
+    // Attached deliverables and image billing recovery finish before workspace disposal.
+    await releaseWorkspaceForResponse(responseId).catch((error: unknown) => {
+      console.warn(JSON.stringify({ event: 'workspace.cleanup_failed', responseId, error: error instanceof Error ? error.message : String(error) }))
+    })
   }
 }
 

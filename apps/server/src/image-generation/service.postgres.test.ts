@@ -428,9 +428,11 @@ describe.skipIf(!enabled)('image generation persistence and authorization', () =
     settings.WORKSPACE_CONTROLLER_URL = 'http://controller.test'
     settings.WORKSPACE_CONTROLLER_TOKEN = 'fixture-controller-token'
     await db.insert(chats).values({ id: isolatedChatId, userId, modelId: chatModelId })
-    await db.insert(workspaceLeases).values({ id: leaseId, chatId: isolatedChatId, userId, controllerLeaseId: controllerId, status: 'ready', imageDigest: 'test-image' })
+    const responseId = randomUUID()
+    await db.insert(responses).values({ id: responseId, chatId: isolatedChatId, userId, modelId: chatModelId, input: [], agentMode: true })
+    await db.insert(workspaceLeases).values({ id: leaseId, responseId, chatId: isolatedChatId, userId, controllerLeaseId: controllerId, status: 'ready', imageDigest: 'test-image' })
     try {
-      const workspace = new WorkspaceManager(randomUUID(), isolatedChatId, userId)
+      const workspace = new WorkspaceManager(responseId, isolatedChatId, userId)
       await expect(workspace.ensureLease()).resolves.toBe(controllerId)
       controllerRequest.mockResolvedValueOnce(Response.json({ saved: true }))
       const path = '/workspace/generated-image.png'
@@ -438,12 +440,13 @@ describe.skipIf(!enabled)('image generation persistence and authorization', () =
       expect(controllerRequest).toHaveBeenLastCalledWith(`/v1/leases/${controllerId}/v1/files?path=${encodeURIComponent(path)}`, expect.objectContaining({ method: 'PUT', body: image }))
       expect((await db.select().from(workspaceLeases).where(eq(workspaceLeases.id, leaseId)))[0]?.lastUsedAt).toBeInstanceOf(Date)
       controllerRequest.mockReset().mockImplementation(async () => new Response(new Uint8Array(image)))
-      const reader = new WorkspaceManager(randomUUID(), isolatedChatId, userId)
+      const reader = new WorkspaceManager(responseId, isolatedChatId, userId)
       expect(await reader.readGeneratedFile(path, controllerId)).toMatchObject({ data: new Uint8Array(image), sizeBytes: image.length })
       const calls = controllerRequest.mock.calls.length
       await expect(reader.saveGeneratedFile(path, image, 'image/png', controllerId)).rejects.toThrow('original image workspace')
       await expect(new WorkspaceManager(randomUUID(), chatId, userId).readGeneratedFile(path, controllerId)).rejects.toThrow('original image workspace')
       await expect(new WorkspaceManager(randomUUID(), isolatedChatId, randomUUID()).readGeneratedFile(path, controllerId)).rejects.toThrow('original image workspace')
+      await expect(new WorkspaceManager(randomUUID(), isolatedChatId, userId).readGeneratedFile(path, controllerId)).rejects.toThrow('original image workspace')
       await expect(reader.readGeneratedFile(path, 'replacement-lease')).rejects.toThrow('original image workspace')
       await expect(reader.readGeneratedFile('/etc/image.png', controllerId)).rejects.toThrow('inside /workspace')
       expect(controllerRequest).toHaveBeenCalledTimes(calls)

@@ -188,6 +188,13 @@ jobs:
         run: npm run test -w @pulpo/server -- src/logging/detailed-payload-retention.postgres.test.ts src/logging/provider-diagnostics.postgres.test.ts
       - name: Create disposable image generation database
         run: node --input-type=module -e 'import postgres from "postgres"; const sql = postgres(process.env.DATABASE_URL); await sql.unsafe("CREATE DATABASE pulpo_image_test"); await sql.end();'
+      - name: Create disposable workspace database
+        run: node --input-type=module -e 'import postgres from "postgres"; const sql = postgres(process.env.DATABASE_URL); await sql.unsafe("CREATE DATABASE pulpo_workspace_test"); await sql.end();'
+      - name: Test response workspace isolation and cleanup against PostgreSQL
+        env:
+          DATABASE_URL: postgres://postgres:search-test@localhost:5432/pulpo_workspace_test
+          PULPO_WORKSPACE_POSTGRES_TEST: '1'
+        run: npm run test -w @pulpo/server -- src/agent/workspace-lifecycle.postgres.test.ts
       - name: Apply image generation test migrations
         env:
           DATABASE_URL: postgres://postgres:search-test@localhost:5432/pulpo_image_test
