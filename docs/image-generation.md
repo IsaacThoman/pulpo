@@ -106,7 +106,12 @@ again, including after budget reservation. The tool accepts:
 }
 ```
 
-References may instead use `{ "path": "/workspace/reference.png" }`. Attachments
+References may instead use `{ "path": "/workspace/reference.png" }`. For workspace
+files, the shorthand `"referenceImages": ["/workspace/reference.png"]` is also
+accepted and normalized to the same path object before execution. Attachment IDs
+must use the explicit `attachmentId` object; bare IDs, URLs, and paths outside
+`/workspace/` are not accepted as shorthand. Reference counts and existing file
+access checks apply to both forms. Attachments
 must belong to the account and current chat. Workspace references use the existing
 authorized workspace manager. Pulpo validates decoded image content, rejects
 animation, and limits images to 20 MiB and 40 megapixels; prompts are limited to

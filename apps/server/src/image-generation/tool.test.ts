@@ -4,7 +4,7 @@ import { createImageGenerationTools } from './tool.js'
 import { ImageGenerationError } from './provider.js'
 import { messagesForPersistence } from '../agent/context.js'
 import { adaptToolResultImagesForProvider } from '../agent/tool-result-images.js'
-import type { Context } from '@earendil-works/pi-ai'
+import { validateToolCall, type Context } from '@earendil-works/pi-ai'
 import type { AgentMessage } from '@earendil-works/pi-agent-core'
 const fixture = {
   attachment: { id: '11111111-1111-4111-8111-111111111111', name: 'fox.png', mimeType: 'image/png', sizeBytes: 100 },
@@ -12,6 +12,23 @@ const fixture = {
   model: { ...META_MUSE_IMAGE_PRESET, id: 'muse', providerConnectionId: '11111111-1111-4111-8111-111111111111' },
 }
 describe('generate_image tool', () => {
+  it.each(['azure-mai', 'meta-muse', 'openai-images'] as const)('accepts path shorthand through the actual %s tool validator and executes canonical arguments', async adapter => {
+    const execute = vi.fn().mockResolvedValue(fixture)
+    const tool = createImageGenerationTools({ model: { ...fixture.model, ...IMAGE_MODEL_PRESETS[adapter] }, execute, onStarted: vi.fn(), onAttachment: vi.fn() })[0]!
+    const args = validateToolCall([tool], { type: 'toolCall', id: 'call', name: 'generate_image', arguments: { prompt: 'Edit', referenceImages: ['/workspace/photo.jpeg'] } })
+    await tool.execute('call', args)
+    expect(execute).toHaveBeenCalledExactlyOnceWith('call', { prompt: 'Edit', referenceImages: [{ path: '/workspace/photo.jpeg' }] }, undefined)
+    expect(tool.description).toContain('[{"path":"/workspace/photo.jpeg"}]')
+  })
+  it('rejects malformed shorthand and adapter-specific reference counts before execution', async () => {
+    const execute = vi.fn()
+    const tool = createImageGenerationTools({ model: { ...fixture.model, ...IMAGE_MODEL_PRESETS['azure-mai'] }, execute, onStarted: vi.fn(), onAttachment: vi.fn() })[0]!
+    for (const referenceImages of [['/etc/photo.jpeg'], ['https://example.com/image.png'], ['11111111-1111-4111-8111-111111111111'], ['/workspace/'], ['/workspace/a\0.jpg'], ['/workspace/a.png', '/workspace/b.png']]) {
+      expect(() => validateToolCall([tool], { type: 'toolCall', id: 'call', name: 'generate_image', arguments: { prompt: 'Edit', referenceImages } })).toThrow()
+    }
+    await expect(tool.execute('call', { prompt: 'Edit', referenceImages: ['https://example.com/image.png'] })).rejects.toThrow('Invalid image generation arguments')
+    expect(execute).not.toHaveBeenCalled()
+  })
   it.each<[ImageModel['adapter'], number, boolean]>([['azure-mai', 1, false], ['meta-muse', 4, true], ['openai-images', 4, true]])('describes and limits references for %s', (adapter, maxItems, webp) => {
     const tool = createImageGenerationTools({ model: { ...fixture.model, ...IMAGE_MODEL_PRESETS[adapter] }, execute: vi.fn(), onStarted: vi.fn(), onAttachment: vi.fn() })[0]!
     expect(tool.parameters).toMatchObject({ properties: { referenceImages: { maxItems } } })

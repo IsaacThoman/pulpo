@@ -7,7 +7,7 @@ import sharp from 'sharp'
 import { and, eq, sql } from 'drizzle-orm'
 import { beforeAll, beforeEach, afterAll, describe, expect, it, vi } from 'vitest'
 import { ZodError } from 'zod'
-import { META_MUSE_IMAGE_PRESET, OPENAI_IMAGE_PRESET, imageModelSchema, responseUsageSchema, type ImageModel } from '@pulpo/contracts'
+import { META_MUSE_IMAGE_PRESET, OPENAI_IMAGE_PRESET, imageModelSchema, imageGenerationInputSchema, responseUsageSchema, type ImageModel } from '@pulpo/contracts'
 vi.mock('../responses/events.js', () => ({ publishStateChange: vi.fn() }))
 const mocks = vi.hoisted(() => ({ blobs: new Map<string, Uint8Array>(), writeFails: false }))
 vi.mock('../storage/index.js', () => ({ getBlobStore: () => ({
@@ -151,7 +151,7 @@ describe.skipIf(!enabled)('image generation persistence and authorization', () =
     expect(Buffer.from(await (form.get('image[]') as Blob).arrayBuffer())).toEqual(image)
     expect(exportFile).not.toHaveBeenCalled()
   })
-  it.each(['attachment', 'workspace'] as const)('normalizes an MPO from a %s before editing without replacing the source', async source => {
+  it.each(['attachment', 'workspace', 'shorthand'] as const)('normalizes an MPO from a %s before editing without replacing the source', async source => {
     const data = await readFile(new URL('./fixtures/oriented-mpo.jpg', import.meta.url))
     const id = randomUUID(), objectKey = `reference-${id}`
     const model = { ...config, ...OPENAI_IMAGE_PRESET, enabled: true }
@@ -162,7 +162,8 @@ describe.skipIf(!enabled)('image generation persistence and authorization', () =
       await db.insert(attachments).values({ id, userId, chatId, objectKey, originalName: 'oriented-mpo.jpg', mimeType: 'image/jpeg', sizeBytes: data.length, status: 'ready' })
     } else exportFile.mockResolvedValue({ data })
     fetcher.mockImplementation(async () => Response.json({ data: [{ b64_json: image.toString('base64') }] }))
-    await executeImageGeneration({ ...await turn(), args: { prompt: 'Make it blue', referenceImages: [source === 'attachment' ? { attachmentId: id } : { path: '/workspace/oriented-mpo.jpg' }] } })
+    const args = imageGenerationInputSchema.parse({ prompt: 'Make it blue', referenceImages: [source === 'attachment' ? { attachmentId: id } : source === 'shorthand' ? '/workspace/oriented-mpo.jpg' : { path: '/workspace/oriented-mpo.jpg' }] })
+    await executeImageGeneration({ ...await turn(), args })
     expect(fetcher).toHaveBeenCalledOnce()
     const file = (fetcher.mock.calls[0]![1]!.body as FormData).get('image[]') as File
     const bytes = Buffer.from(await file.arrayBuffer())
@@ -315,7 +316,8 @@ describe.skipIf(!enabled)('image generation persistence and authorization', () =
     await expect(executeImageGeneration({ ...input, args: { prompt: 'Edit', referenceImages: [{ path: '/etc/reference.png' }] } })).rejects.toThrow('inside /workspace')
     expect(exportFile).not.toHaveBeenCalled()
     exportFile.mockRejectedValueOnce(new Error('internal controller error'))
-    await expect(executeImageGeneration({ ...input, args: { prompt: 'Edit', referenceImages: [{ path: '/workspace/missing.png' }] } })).rejects.toThrow('check the path')
+    await expect(executeImageGeneration({ ...input, args: imageGenerationInputSchema.parse({ prompt: 'Edit', referenceImages: ['/workspace/missing.png'] }) })).rejects.toThrow('check the path')
+    expect(fetcher).not.toHaveBeenCalled(); expect(input.reserveCost).not.toHaveBeenCalled()
     exportFile.mockResolvedValue({ data: image, sizeBytes: image.length })
     await executeImageGeneration({ ...input, args: { prompt: 'Edit', referenceImages: [{ path: '/workspace/reference.png' }] } })
     expect(exportFile).toHaveBeenCalledWith('/workspace/reference.png', undefined)

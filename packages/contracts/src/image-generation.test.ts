@@ -29,3 +29,21 @@ it('defaults legacy models to flat prices and requires complete token pricing wh
     expect(imageModelSchema.safeParse({ ...token, ...patch }).success).toBe(false)
   }
 })
+
+it('normalizes workspace path shorthand and preserves typed references and order', () => {
+  const attachment = { attachmentId: '11111111-1111-4111-8111-111111111111' }
+  const path = { path: '/workspace/typed.png' }
+  const input = { prompt: 'Edit', referenceImages: ['/workspace/my photo.jpeg', attachment, path] }
+  expect(imageGenerationInputSchema.parse(input).referenceImages).toEqual([{ path: '/workspace/my photo.jpeg' }, attachment, path])
+  expect(input.referenceImages[0]).toBe('/workspace/my photo.jpeg')
+})
+
+it('rejects ambiguous or unsupported shorthand without relaxing object validation', () => {
+  for (const reference of ['', '/workspace/', 'photo.jpeg', '/etc/photo.jpeg', 'https://example.com/photo.jpeg', 'file:///workspace/photo.jpeg',
+    '11111111-1111-4111-8111-111111111111', '/workspace/a\0.jpg', '/workspace/' + 'x'.repeat(4086), null, 42,
+    { path: '/workspace/photo.jpeg', url: 'https://example.com' }, { attachmentId: '11111111-1111-4111-8111-111111111111', path: '/workspace/photo.jpeg' }]) {
+    expect(imageGenerationInputSchema.safeParse({ prompt: 'Edit', referenceImages: [reference] }).success).toBe(false)
+  }
+  expect(imageGenerationInputSchema.safeParse({ prompt: 'Edit', referenceImages: Array(5).fill('/workspace/photo.jpeg') }).success).toBe(false)
+  expect(imageGenerationInputSchema.parse({ prompt: 'Edit', referenceImages: ['/workspace/' + 'x'.repeat(4085)] }).referenceImages).toHaveLength(1)
+})
