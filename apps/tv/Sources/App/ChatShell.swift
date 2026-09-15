@@ -76,7 +76,11 @@ struct ChatShell: View {
                         Button {
                             if !expandedFolders.insert(folder.id).inserted { expandedFolders.remove(folder.id) }
                         } label: {
-                            HStack(spacing: 16) { Image(systemName: expandedFolders.contains(folder.id) ? "folder.fill" : "folder"); Text(folder["name"].string).lineLimit(1).layoutPriority(1); Spacer(); Image(systemName: expandedFolders.contains(folder.id) ? "chevron.down" : "chevron.right").font(.system(size: 16)) }
+                            HStack(spacing: 16) {
+                                Image(systemName: expandedFolders.contains(folder.id) ? "folder.fill" : "folder")
+                                Text(folder["name"].string).lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
+                                Image(systemName: expandedFolders.contains(folder.id) ? "chevron.down" : "chevron.right").font(.system(size: 16))
+                            }
                         }.accessibilityIdentifier("folder-\(folder.id)")
                         if expandedFolders.contains(folder.id) {
                             ForEach(store.chats.filter { $0.folderID == folder.id && !$0.pinned }) { chat in chatButton(chat).padding(.leading, 16) }
