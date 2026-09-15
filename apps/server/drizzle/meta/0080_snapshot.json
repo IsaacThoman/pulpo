@@ -1,6 +1,6 @@
 {
-  "id": "3d30c9c0-8605-4517-9079-8f3f37719e6c",
-  "prevId": "88aa417e-358f-4a83-892f-de5d75ef6e0e",
+  "id": "44c5da9e-85dd-43c2-ad94-4fa073bb835d",
+  "prevId": "3d30c9c0-8605-4517-9079-8f3f37719e6c",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -944,12 +944,11 @@
           "primaryKey": false,
           "notNull": false
         },
-        "limit_reached": {
-          "name": "limit_reached",
-          "type": "boolean",
+        "limit_reached_at": {
+          "name": "limit_reached_at",
+          "type": "timestamp with time zone",
           "primaryKey": false,
-          "notNull": true,
-          "default": false
+          "notNull": false
         },
         "created_at": {
           "name": "created_at",

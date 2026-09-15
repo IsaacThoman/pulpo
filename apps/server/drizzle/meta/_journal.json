@@ -558,8 +558,15 @@
     {
       "idx": 79,
       "version": "7",
-      "when": 1789487954814,
+      "when": 1789486556335,
       "tag": "0079_automatic_top_ups",
+      "breakpoints": true
+    },
+    {
+      "idx": 80,
+      "version": "7",
+      "when": 1789488766116,
+      "tag": "0080_automatic_top_up_reset_timestamp",
       "breakpoints": true
     }
   ]

@@ -95,7 +95,7 @@ The dedicated `auto-top-up` queue checks affected funding accounts after usage a
 reservation changes. Its one-minute sweep repairs missed submissions, unfinished
 card setup, and payment attempts. It is enabled by `PULPO_BILLING_ENABLED` and uses
 the existing Stripe credentials and credit product; no new environment variables
-or webhook event subscriptions are required. Deploy migration `0079` before the
+or webhook event subscriptions are required. Deploy migrations `0079` and `0080` before the
 API and worker. Existing accounts stay disabled.
 
 Every attempt creates an isolated invoice with `auto_advance: false`, automatic

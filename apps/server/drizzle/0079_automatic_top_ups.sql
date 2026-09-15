@@ -32,7 +32,7 @@ CREATE TABLE "auto_top_up_settings" (
 	"setup_session_id" text,
 	"setup_enable" boolean DEFAULT false NOT NULL,
 	"paused_reason" text,
-	"limit_reached_at" timestamp with time zone,
+	"limit_reached" boolean DEFAULT false NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "auto_top_up_settings_amounts" CHECK ("auto_top_up_settings"."credit_cents" between 500 and 50000 and "auto_top_up_settings"."threshold_cents" > 0 and "auto_top_up_settings"."threshold_cents" <= "auto_top_up_settings"."credit_cents" and "auto_top_up_settings"."monthly_limit_cents" >= ceil(("auto_top_up_settings"."credit_cents" + 50) / 0.95))
