@@ -197,7 +197,9 @@ describe.skipIf(!enabled)('image generation persistence and authorization', () =
     await db.update(users).set({ balanceMicros }).where(eq(users.id, userId))
     const input = await turn()
     const [pricing] = await db.insert(modelPricingVersions).values({ id: randomUUID(), modelId: chatModelId, inputPriceMicros: 0, cachedInputPriceMicros: 0, cacheWritePriceMicros: 0, outputPriceMicros: 0 }).returning()
-    await reserveBudget({ responseId: input.responseId, userId, requestInput: [], maxOutputTokens: 0, pricing: pricing! })
+    // Free text pricing leaves the entire balance available for image charges.
+    expect(await reserveBudget({ responseId: input.responseId, userId, requestInput: [], maxOutputTokens: 1000, pricing: pricing! }))
+      .toEqual({ amountMicros: 0, maxOutputTokens: 1000 })
     input.reserveCost.mockImplementation(async micros => { await extendBudgetReservationFixedCost(input.responseId, micros) })
     return input
   }
