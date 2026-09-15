@@ -1,9 +1,12 @@
+import { minimumOutputReservationTokensSchema } from '@pulpo/contracts'
+
 export interface ManagedCodexModelSettings {
   id: string
   name: string
   upstreamModelId: string
   contextWindow: number
   maxOutputTokens: number
+  minimumOutputReservationTokens: number
   compactionThresholdTokens: number
   compactionRetainedTurns: number
   maximumCompactionThresholdTokens: number
@@ -15,7 +18,8 @@ export function compactionContextPercent(thresholdTokens: number, contextWindow:
 }
 
 export function validManagedCodexSettings(model: ManagedCodexModelSettings): boolean {
-  return Number.isInteger(model.compactionThresholdTokens)
+  return minimumOutputReservationTokensSchema.safeParse(model.minimumOutputReservationTokens).success
+    && Number.isInteger(model.compactionThresholdTokens)
     && model.compactionThresholdTokens >= 2_000
     && model.compactionThresholdTokens <= model.maximumCompactionThresholdTokens
     && Number.isInteger(model.compactionRetainedTurns)
@@ -25,6 +29,7 @@ export function validManagedCodexSettings(model: ManagedCodexModelSettings): boo
 
 export function managedCodexSettingsPatch(model: ManagedCodexModelSettings) {
   return {
+    minimumOutputReservationTokens: model.minimumOutputReservationTokens,
     compactionThresholdTokens: model.compactionThresholdTokens,
     compactionRetainedTurns: model.compactionRetainedTurns,
   }

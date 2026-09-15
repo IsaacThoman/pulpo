@@ -58,5 +58,6 @@ describe('managed Codex catalog settings', () => {
     expect(mocks.codexConflictUpdate).toMatchObject({ compactionEnabled: true })
     expect(mocks.codexConflictUpdate).not.toHaveProperty('compactionThresholdTokens')
     expect(mocks.codexConflictUpdate).not.toHaveProperty('compactionRetainedTurns')
+    expect(mocks.codexConflictUpdate).not.toHaveProperty('minimumOutputReservationTokens')
   })
 })
