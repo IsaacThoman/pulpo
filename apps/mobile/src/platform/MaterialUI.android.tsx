@@ -8,7 +8,7 @@ import {
   SegmentedButton, Shape, SingleChoiceSegmentedButtonRow, Switch, Text, TextButton, TextField, type TextFieldRef,
   useMaterialColors, useNativeState,
 } from '@expo/ui/jetpack-compose';
-import { clickable, defaultMinSize, fillMaxWidth, height, padding, semantics, size, toggleable, verticalScroll, weight, width, wrapContentWidth } from '@expo/ui/jetpack-compose/modifiers';
+import { clickable, combinedClickable, defaultMinSize, fillMaxWidth, height, padding, semantics, size, toggleable, verticalScroll, weight, width, wrapContentWidth } from '@expo/ui/jetpack-compose/modifiers';
 import { getMaterialOverlay, showActions, subscribe, update } from './materialActions.android';
 import { androidDialogBodyHeight } from './androidLayout';
 import { materialTint } from './materialTint';
@@ -270,10 +270,12 @@ export function MaterialCard({ children, style }: CardProps) {
   </Host>;
 }
 
-export function MaterialNavigationRow({ title, icon, value, expanded, onPress }: NavigationRowProps) {
+export function MaterialNavigationRow({ title, icon, value, expanded, onPress, onLongPress }: NavigationRowProps) {
   const colors = useMaterialColors();
-  return <Host matchContents={{ vertical: true }} style={{ width: '100%' }} ignoreSafeAreaKeyboardInsets>
-    <ListItem colors={{ containerColor: colors.surfaceContainerLow }} modifiers={[clickable(onPress)]}>
+  const trigger = useRef<View>(null);
+  const openActions = () => trigger.current?.measureInWindow((x, y, width, height) => onLongPress?.({ x: x + width / 2, y: y + height / 2 }));
+  const content = <Host matchContents={{ vertical: true }} style={{ width: '100%' }} ignoreSafeAreaKeyboardInsets>
+    <ListItem colors={{ containerColor: colors.surfaceContainerLow }} modifiers={[onLongPress ? combinedClickable({ onClick: onPress, onLongClick: openActions }) : clickable(onPress)]}>
       <ListItem.HeadlineContent><Text maxLines={2} overflow="ellipsis">{title}</Text></ListItem.HeadlineContent>
       {icon ? <ListItem.LeadingContent><Icon source={materialIcon(icon)} size={24} /></ListItem.LeadingContent> : null}
       {expanded !== undefined || value ? <ListItem.TrailingContent><Row horizontalArrangement={{ spacedBy: 8 }} verticalAlignment="center">
@@ -282,6 +284,8 @@ export function MaterialNavigationRow({ title, icon, value, expanded, onPress }:
       </Row></ListItem.TrailingContent> : null}
     </ListItem>
   </Host>;
+  if (!onLongPress) return content;
+  return <View ref={trigger} collapsable={false}>{content}</View>;
 }
 
 export function MaterialToggleRow({ title, detail, value, onChange }: { title: string; detail?: string; value: boolean; onChange: (value: boolean) => void }) {

@@ -5880,11 +5880,16 @@ function NativeDrawerSearch({ value, focused, onChange, onFocusChange, fieldRef 
   </SwiftUIHost>;
 }
 
-function NativeFoldersDisclosure({ folders, onCreate, onSelectChat }: {
-  folders: Array<{ id: string; name: string; chats: HistoryChatSummary[] }>;
+type HistoryFolder = { id: string; name: string; chats: HistoryChatSummary[] };
+type FoldersDisclosureProps = {
+  folders: HistoryFolder[];
   onCreate: () => void;
   onSelectChat: (chat: HistoryChatSummary) => void;
-}) {
+  onRename: (folder: HistoryFolder) => void;
+  onDelete: (folder: HistoryFolder) => void;
+};
+
+function NativeFoldersDisclosure({ folders, onCreate, onSelectChat, onRename, onDelete }: FoldersDisclosureProps) {
   const { styles } = useChatStyles();
   const [expanded, setExpanded] = useState(false);
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
@@ -5913,14 +5918,22 @@ function NativeFoldersDisclosure({ folders, onCreate, onSelectChat }: {
         const folderExpanded = expandedFolders[folder.id] ?? false;
         return <Reanimated.View key={folder.id} layout={layout} style={styles.nativeFolderGroup}>
           <SwiftUIHost ignoreSafeArea="all" style={styles.nativeFolderRowHost}>
-            <SwiftUIButton onPress={() => { Haptics.selectionAsync(); setExpandedFolders((current) => ({ ...current, [folder.id]: !folderExpanded })); }} modifiers={[buttonStyle('plain'), foregroundStyle('primary'), swiftUIAccessibilityLabel(`${folder.name}, ${folder.chats.length} chats, ${folderExpanded ? 'expanded' : 'collapsed'}`)]}>
-              <SwiftUIHStack spacing={10} modifiers={[padding({ leading: 24 }), frame({ maxWidth: Infinity, minHeight: 40 }), contentShape(shapes.rectangle())]}>
-                <SwiftUIImage systemName={folderExpanded ? 'folder.fill' : 'folder'} size={15} modifiers={[frame({ width: 20, height: 20 }), foregroundStyle('secondary')]} />
-                <SwiftUIText>{folder.name}</SwiftUIText>
-                <SwiftUISpacer />
-                <SwiftUIText modifiers={[foregroundStyle('secondary')]}>{String(folder.chats.length)}</SwiftUIText>
-              </SwiftUIHStack>
-            </SwiftUIButton>
+            <SwiftUIContextMenu>
+              <SwiftUIContextMenu.Trigger>
+                <SwiftUIButton onPress={() => { Haptics.selectionAsync(); setExpandedFolders((current) => ({ ...current, [folder.id]: !folderExpanded })); }} modifiers={[buttonStyle('plain'), foregroundStyle('primary'), swiftUIAccessibilityLabel(`${folder.name}, ${folder.chats.length} chats, ${folderExpanded ? 'expanded' : 'collapsed'}`), swiftUIAccessibilityHint('Double tap to expand or collapse. Long press for more actions.')]}>
+                  <SwiftUIHStack spacing={10} modifiers={[padding({ leading: 24 }), frame({ maxWidth: Infinity, minHeight: 40 }), contentShape(shapes.rectangle())]}>
+                    <SwiftUIImage systemName={folderExpanded ? 'folder.fill' : 'folder'} size={15} modifiers={[frame({ width: 20, height: 20 }), foregroundStyle('secondary')]} />
+                    <SwiftUIText>{folder.name}</SwiftUIText>
+                    <SwiftUISpacer />
+                    <SwiftUIText modifiers={[foregroundStyle('secondary')]}>{String(folder.chats.length)}</SwiftUIText>
+                  </SwiftUIHStack>
+                </SwiftUIButton>
+              </SwiftUIContextMenu.Trigger>
+              <SwiftUIContextMenu.Items>
+                <SwiftUIButton label="Rename" systemImage="pencil" onPress={() => onRename(folder)} />
+                <SwiftUIButton label="Delete folder" systemImage="trash" role="destructive" onPress={() => onDelete(folder)} />
+              </SwiftUIContextMenu.Items>
+            </SwiftUIContextMenu>
           </SwiftUIHost>
           {folderExpanded ? <Reanimated.View entering={entering} exiting={exiting} layout={layout} style={styles.nativeFoldersContent}>
             {folder.chats.length > 0 ? folder.chats.map((chat) =>
@@ -5942,11 +5955,7 @@ function NativeFoldersDisclosure({ folders, onCreate, onSelectChat }: {
   </Reanimated.View>;
 }
 
-function AndroidFoldersDisclosure({ folders, onSelectChat, onCreate }: {
-  folders: { id: string; name: string; chats: HistoryChatSummary[] }[];
-  onSelectChat: (chat: HistoryChatSummary) => void;
-  onCreate: () => void;
-}) {
+function AndroidFoldersDisclosure({ folders, onSelectChat, onCreate, onRename, onDelete }: FoldersDisclosureProps) {
   const { COLORS } = useChatStyles();
   const [expanded, setExpanded] = useState(false);
   const [openFolders, setOpenFolders] = useState<Set<string>>(() => new Set());
@@ -5959,7 +5968,13 @@ function AndroidFoldersDisclosure({ folders, onSelectChat, onCreate }: {
     <MaterialNavigationRow title="Folders" icon="folder" value={String(folders.length)} expanded={expanded} onPress={() => setExpanded(!expanded)} />
     {expanded ? <ScrollView nestedScrollEnabled style={{ maxHeight: 220 }}>
       {folders.map((folder) => <View key={folder.id} style={{ paddingLeft: 16 }}>
-        <MaterialNavigationRow title={folder.name} icon="folder" value={String(folder.chats.length)} expanded={openFolders.has(folder.id)} onPress={() => toggleFolder(folder.id)} />
+        <MaterialNavigationRow title={folder.name} icon="folder" value={String(folder.chats.length)} expanded={openFolders.has(folder.id)} onPress={() => toggleFolder(folder.id)} onLongPress={(anchor) => {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+          showActions(folder.name, [
+            { label: 'Rename', icon: 'pencil', onPress: () => onRename(folder) },
+            { label: 'Delete folder', icon: 'trash', destructive: true, onPress: () => onDelete(folder) },
+          ], anchor);
+        }} />
         {openFolders.has(folder.id) ? <View style={{ paddingLeft: 16 }}>{folder.chats.length ? folder.chats.map((chat) => <MaterialNavigationRow key={chat.id} title={chat.title} icon="bubble.left" onPress={() => onSelectChat(chat)} />) : <Text style={{ color: COLORS.muted, padding: 16 }}>No chats yet</Text>}</View> : null}
       </View>)}
       <View style={{ paddingLeft: 16 }}><MaterialNavigationRow title="New folder" icon="folder.badge.plus" onPress={onCreate} /></View>
@@ -6073,6 +6088,8 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
   const renameChat = usePrototypeStore((state) => state.renameChat);
   const upsertChat = usePrototypeStore((state) => state.upsertChat);
   const addFolder = usePrototypeStore((state) => state.addFolder);
+  const renameFolder = usePrototypeStore((state) => state.renameFolder);
+  const deleteFolder = usePrototypeStore((state) => state.deleteFolder);
   const [folderSheet, setFolderSheet] = useState<{ chatId: string; folderId: string | null } | null>(null);
   const [search, setSearch] = useState('');
   const [searchFocused, setSearchFocused] = useState(false);
@@ -6104,6 +6121,23 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
     Keyboard.dismiss();
     blurSearch();
   }, [blurSearch]);
+  const renameHistoryFolder = useCallback((folder: HistoryFolder) => {
+    dismissSearch();
+    Haptics.selectionAsync();
+    if (Platform.OS === 'ios') {
+      Alert.prompt('Rename folder', undefined, (name) => name.trim() && renameFolder(folder.id, name), 'plain-text', folder.name);
+    } else {
+      promptText({ title: 'Rename folder', value: folder.name, onSubmit: (name) => renameFolder(folder.id, name) });
+    }
+  }, [dismissSearch, renameFolder]);
+  const deleteHistoryFolder = useCallback((folder: HistoryFolder) => {
+    dismissSearch();
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    Alert.alert('Delete folder?', `“${folder.name}” will be deleted. Its chats will stay in your history.`, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete folder', style: 'destructive', onPress: () => deleteFolder(folder.id) },
+    ]);
+  }, [deleteFolder, dismissSearch]);
   useEffect(() => {
     // Closing history must not dismiss a keyboard now owned by the composer.
     if (!drawerOpen) blurSearch();
@@ -6260,7 +6294,7 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
         </View>}
 
         <Reanimated.View pointerEvents={searchActive ? 'none' : 'auto'} style={searchActionsAnimatedStyle}>
-          {Platform.OS === 'ios' ? <NativeFoldersDisclosure folders={folderItems} onSelectChat={selectHistoryChat} onCreate={() => { dismissSearch(); Alert.prompt('New folder', 'Create a folder for related chats.', (name) => name.trim() && addFolder(name)); }} /> : <AndroidFoldersDisclosure folders={folderItems} onSelectChat={selectHistoryChat} onCreate={() => { dismissSearch(); promptText({ title: 'New folder', confirmLabel: 'Create', onSubmit: (name) => addFolder(name) }); }} />}
+          {Platform.OS === 'ios' ? <NativeFoldersDisclosure folders={folderItems} onSelectChat={selectHistoryChat} onRename={renameHistoryFolder} onDelete={deleteHistoryFolder} onCreate={() => { dismissSearch(); Alert.prompt('New folder', 'Create a folder for related chats.', (name) => name.trim() && addFolder(name)); }} /> : <AndroidFoldersDisclosure folders={folderItems} onSelectChat={selectHistoryChat} onRename={renameHistoryFolder} onDelete={deleteHistoryFolder} onCreate={() => { dismissSearch(); promptText({ title: 'New folder', confirmLabel: 'Create', onSubmit: (name) => addFolder(name) }); }} />}
 
         </Reanimated.View>
 
