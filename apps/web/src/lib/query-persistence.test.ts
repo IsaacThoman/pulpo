@@ -3,6 +3,13 @@ import { ApiError } from './api'
 import { shouldPersistQuery } from './query-persistence'
 
 describe('query persistence policy', () => {
+  it('does not restore an old online count after reopening the app', () => {
+    expect(shouldPersistQuery({
+      queryKey: ['instance-online-count', 'owner-1'],
+      state: { status: 'success', data: { count: 12 } },
+    })).toBe(false)
+  })
+
   it('never persists scoped administrator chat data', () => {
     expect(shouldPersistQuery({
       queryKey: ['chat', 'admin-chat:access-1', 'chat-1'],

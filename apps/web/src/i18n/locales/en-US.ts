@@ -147,6 +147,8 @@ const enUS = {
     },
   },
   sidebar: {
+    onlineCount: '{{count}} online',
+    onlineCountDescription: 'Users last seen on this instance within the past 30 minutes',
     apiKeys: 'API keys',
     billing: 'Billing',
     chats: 'Chats',

@@ -153,6 +153,8 @@ const esES = {
     },
   },
   sidebar: {
+    onlineCount: '{{count}} en línea',
+    onlineCountDescription: 'Usuarios vistos en esta instancia en los últimos 30 minutos',
     apiKeys: 'Claves de API',
     billing: 'Facturación',
     chats: 'Chats',

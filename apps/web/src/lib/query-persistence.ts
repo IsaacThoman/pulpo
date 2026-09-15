@@ -1,6 +1,7 @@
 import { isNetworkError } from './api'
 
 export function shouldPersistQuery(query: { queryKey: readonly unknown[]; state: { status: string; data?: unknown; error?: unknown } }): boolean {
+  if (query.queryKey[0] === 'instance-online-count') return false
   const recoverableRefetch = query.state.status === 'error' && query.state.data !== undefined && isNetworkError(query.state.error)
   if (query.state.status !== 'success' && !recoverableRefetch) return false
   if (typeof query.queryKey[1] === 'string' && query.queryKey[1].startsWith('admin-chat:')) return false

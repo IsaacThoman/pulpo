@@ -64,6 +64,7 @@ import { newChatLocationState } from '@/lib/new-chat-navigation'
 import { fetchBillingSummary } from '@/lib/billing'
 import { isDesktopRuntime } from '@/lib/runtime'
 import { uit } from '@/i18n/ui'
+import { OnlineUserCount } from './OnlineUserCount'
 
 const GROUP_ORDER = ['Today', 'Yesterday', 'Previous 7 Days', 'Previous 30 Days', 'Older'] as const
 
@@ -996,14 +997,15 @@ export function Sidebar({
           </TooltipTrigger>
           {collapsed && <TooltipContent side="right">{openSidebarLabel}</TooltipContent>}
         </Tooltip>
-        <span
+        <div
           className={cn(
-            'min-w-0 flex-1 truncate whitespace-nowrap text-sm font-semibold text-sidebar-foreground transition-[opacity,transform] ease-[cubic-bezier(0.4,0,0.2,1)]',
+            'flex min-w-0 flex-1 items-center gap-2 whitespace-nowrap text-sm font-semibold text-sidebar-foreground transition-[opacity,transform] ease-[cubic-bezier(0.4,0,0.2,1)]',
             sidebarTextTransition
           )}
         >
-          Pulpo
-        </span>
+          <span className="shrink-0">Pulpo</span>
+          <OnlineUserCount visible={!collapsed && (!mobile || mobileOpen)} />
+        </div>
         {!collapsed && (
           <Tooltip>
             <TooltipTrigger asChild>
