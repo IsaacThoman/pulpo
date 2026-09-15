@@ -26,7 +26,7 @@ describe('full backup format', () => {
 
   it('accepts full backups created before episodic memory was introduced', () => {
     expect(OPTIONAL_TABLES_IN_LEGACY_BACKUPS).toEqual([
-      'diagnostic_policy', 'provider_diagnostics', 'image_models', 'image_generation_requests',
+      'agent_questions', 'diagnostic_policy', 'provider_diagnostics', 'image_models', 'image_generation_requests',
       'speech_models', 'speech_requests', 'speech_resource_cleanup',
       'user_memory_documents',
       'user_memory_document_revisions',
@@ -39,6 +39,7 @@ describe('full backup format', () => {
   it('supplies required columns added after older v1 archives were created', () => {
     const database = {
       users: [{}],
+      agent_runs: [{}],
       provider_connections: [{}],
       responses: [{}],
       usage_events: [{}],
@@ -51,6 +52,7 @@ describe('full backup format', () => {
 
     applyFullBackupCompatibilityDefaults(database)
 
+    expect(database.agent_runs[0]).toMatchObject({ active_duration_ms: 0, workspace_cost_micros: 0 })
     expect(database.users[0]).toMatchObject({ profile_color: null, avatar_object_key: null, avatar_version: 0 })
     expect(database.provider_connections[0]).toMatchObject({ tool_result_image_mode: 'native', convert_images_to_webp: false, webp_quality: 80 })
     expect(database.episodic_memory_generations[0]).toMatchObject({ index_version: 1 })

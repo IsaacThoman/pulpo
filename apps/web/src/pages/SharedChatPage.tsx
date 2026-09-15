@@ -1,3 +1,5 @@
+import { questionItems } from '@pulpo/contracts'
+import { QuestionSummary } from '@/components/chat/QuestionSummary'
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { AlertCircle, Loader2 } from 'lucide-react'
@@ -49,6 +51,7 @@ function SharedResponseView({ response }: { response: SharedResponse }) {
   const user = [...response.input].reverse().find((item) => item.role === 'user')
   const prompt = contentText(user?.content)
   const answer = responseText(response)
+  const questions = questionItems(response.output)
   const modelName = response.model?.name ?? response.modelId
 
   return (
@@ -71,7 +74,8 @@ function SharedResponseView({ response }: { response: SharedResponse }) {
             </span>
           </div>
           <div className="mt-1 min-w-0 max-w-full text-[15px]">
-            <Markdown content={answer || (response.status === 'failed' ? 'This response failed.' : 'No text output.')} />
+            {questions.map(item => <QuestionSummary key={item.id} item={item} />)}
+            {(answer || !questions.length) && <Markdown content={answer || (response.status === 'failed' ? 'This response failed.' : 'No text output.')} />}
           </div>
         </div>
       </article>

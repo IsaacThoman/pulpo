@@ -1,3 +1,5 @@
+import { questionItems } from '@pulpo/contracts'
+import { QuestionSummary } from './QuestionSummary'
 import { useSyncExternalStore } from 'react'
 import { SpeechButton } from '@/features/speech/SpeechButton'
 import { ActionButton } from './ActionButton'
@@ -553,6 +555,9 @@ export const MessageItem = memo(function MessageItem({
   composerEditActive?: boolean
   onOpenChat?: (chatId: string) => void
 }) {
+  const questions = questionItems(message.outputItems)
+  const waitingForAnswer = questions.some(item => item.status === 'pending')
+  streaming = streaming && !waitingForAnswer
   const speechState = useSyncExternalStore(speechPlayback.subscribe, speechPlayback.getSnapshot, speechPlayback.getSnapshot)
   const speechActive = speechState.key === `${chat.id}:${message.id}`
   const { t } = useTranslation()
@@ -704,6 +709,7 @@ export const MessageItem = memo(function MessageItem({
           <span className="shrink-0 text-xs text-muted-foreground">{timeAgo(message.timestamp)}</span>
         </div>
 
+        {questions.map(item => <QuestionSummary key={item.id} item={item} />)}
         <div className="mt-1 flex flex-col gap-1.5">
           {editing ? (
             <div className="rounded-2xl border bg-card p-3">

@@ -6,7 +6,7 @@ export const FULL_BACKUP_TABLES = [
   'episodic_memory_generations', 'chat_turn_embeddings', 'episodic_memory_metric_buckets',
   'api_keys', 'management_tokens', 'api_key_model_permissions', 'credit_ledger', 'usage_events', 'daily_usage_rollups', 'application_settings',
   'banners', 'request_logs', 'generation_attempts', 'ocr_attempts', 'ocr_cache_entries', 'chat_import_sources',
-  'workspace_leases', 'agent_runs', 'tool_executions', 'diagnostic_policy', 'provider_diagnostics',
+  'workspace_leases', 'agent_runs', 'agent_questions', 'tool_executions', 'diagnostic_policy', 'provider_diagnostics',
 ] as const
 
 export type FullBackupTable = typeof FULL_BACKUP_TABLES[number]
@@ -24,7 +24,7 @@ export const FULL_BACKUP_EXPLICIT_COLUMNS: Partial<Record<FullBackupTable, reado
 }
 
 export const OPTIONAL_TABLES_IN_LEGACY_BACKUPS: readonly FullBackupTable[] = [
-  'diagnostic_policy', 'provider_diagnostics', 'image_models', 'image_generation_requests',
+  'agent_questions', 'diagnostic_policy', 'provider_diagnostics', 'image_models', 'image_generation_requests',
   'speech_models', 'speech_requests', 'speech_resource_cleanup',
   'user_memory_documents',
   'user_memory_document_revisions',
@@ -39,6 +39,7 @@ export const OPTIONAL_TABLES_IN_LEGACY_BACKUPS: readonly FullBackupTable[] = [
  * a later migration adds a required column to an existing backup table.
  */
 export function applyFullBackupCompatibilityDefaults(database: Record<string, Array<Record<string, unknown>>>): void {
+  for (const run of database.agent_runs ?? []) { run.active_duration_ms ??= 0; run.workspace_cost_micros ??= 0 }
   for (const job of database.speech_resource_cleanup ?? []) job.object_keys = []
   for (const model of database.speech_models ?? []) {
     model.voice_assets ??= []

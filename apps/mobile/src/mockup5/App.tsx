@@ -1,3 +1,5 @@
+import { questionItems } from '@pulpo/contracts';
+import { QuestionCard, QuestionSummary, type QuestionCardControl } from '../features/chat/QuestionCard';
 import { imageBatchNeedsWorkspace, DEFAULT_MAX_INLINE_IMAGES } from '@pulpo/contracts';
 import { speechPlayback, readAloud } from '../features/speech/playback';
 import { speechText } from '@pulpo/client-core';
@@ -3385,7 +3387,7 @@ function WorkBlock({ steps, active, durationMs, initialWork, onOpenChat }: {
 }
 
 function otherOutputItems(outputItems?: unknown[]): Array<Record<string, unknown>> {
-  const known = new Set(['message', 'reasoning', 'pulpo_tool', 'pulpo_workspace', 'pulpo_attachment', 'pulpo_compaction', 'pulpo_recall']);
+  const known = new Set(['message', 'reasoning', 'pulpo_tool', 'pulpo_workspace', 'pulpo_attachment', 'pulpo_compaction', 'pulpo_recall', 'pulpo_question']);
   return (outputItems ?? []).filter((item): item is Record<string, unknown> => {
     const type = (item as { type?: unknown }).type;
     return typeof type === 'string' && !known.has(type);
@@ -3485,7 +3487,9 @@ const MessageRow = memo(function MessageRow({
   const branchIndex = message.activeBranch ?? 0;
   const [capacityPending, setCapacityPending] = useState(false);
   const [streamingFallbackDurationMs, setStreamingFallbackDurationMs] = useState<number>();
-  const streaming = message.status === 'streaming' || message.status === 'queued';
+  const questions = questionItems(message.outputItems);
+  const waitingForAnswer = questions.some(item => item.status === 'pending');
+  const streaming = !waitingForAnswer && (message.status === 'streaming' || message.status === 'queued');
   const responseStartedAt = useMemo(() => message.requestReceivedAt ? Date.parse(message.requestReceivedAt) : message.createdAt ?? Date.now(), [message.createdAt, message.requestReceivedAt]);
   const extraOutput = useMemo(() => otherOutputItems(message.outputItems), [message.outputItems]);
   const capacityWorkspace = useMemo(() => (message.outputItems ?? []).find((item) => (
@@ -3567,6 +3571,7 @@ const MessageRow = memo(function MessageRow({
         </View>
       ) : (
         <AssistantFrame model={model} sideRail={sideRail} time={timeAgo(message.createdAt ?? Date.now())}>
+            {questions.map(item => <QuestionSummary key={item.id} item={item} />)}
             {timeline.length ? (
               <MessageContextMenu message={message} model={model} onEdit={onEdit} onRegenerate={onRegenerate}>
                 <View style={styles.assistantContent}>
@@ -3964,6 +3969,10 @@ function ChatView({
   onAutoExpirationChange: (value: boolean) => void;
 }) {
   const { styles, COLORS } = useChatStyles();
+  const questionMessage = messages.findLast(message => message.role === 'assistant' && (message.status === 'streaming' || message.status === 'queued'));
+  const pendingQuestion = questionItems(questionMessage?.outputItems).find(item => item.status === 'pending');
+  const questionControl = useRef<QuestionCardControl>(null);
+  const [questionReply, setQuestionReply] = useState('');
   const queueClient = useQueryClient();
   const [queueBusy, setQueueBusy] = useState(false);
   const queueEditRef = useRef<{ id: string; chatId: string; namespace: string; model: Model; presets: Record<string, GenerationSelections> } | null>(null);
@@ -4120,12 +4129,13 @@ function ChatView({
   const dictationToken = useSessionStore((state) => state.token);
   const dictationInstance = useSessionStore((state) => state.instanceUrl);
   const dictation = useDictation({
-    identity: JSON.stringify([dictationInstance, dictationToken, draftNamespace, localComposerDraftId(chatId, temporary), messageEdit?.message.id, composerFocusRequest.revision]),
+    identity: JSON.stringify([dictationInstance, dictationToken, draftNamespace, localComposerDraftId(chatId, temporary), messageEdit?.message.id, composerFocusRequest.revision, pendingQuestion?.id]),
     enabled: dictationEnabled && !expired && composerScreenFocused,
     canStart: !networkOffline && !sending && !queueBusy && !shelfBusy && !composerFocusSuppressed
       && hydratedComposerScope === `${draftNamespace ?? 'local'}\u0000${localComposerDraftId(chatId, temporary)}`,
-    read: () => ({ text: inputRef.current, selection: inputSelectionRef.current }),
+    read: () => ({ text: pendingQuestion ? questionReply : inputRef.current, selection: inputSelectionRef.current }),
     apply: (value, cursor) => {
+      if (pendingQuestion) { questionControl.current?.setText(value); return; }
       inputRef.current = value;
       setComposerSelection(setInputSelection, inputSelectionRef, { start: cursor, end: cursor });
       onChangeInput(value);
@@ -5021,6 +5031,7 @@ function ChatView({
   }, [messageEdit, setAttachments]);
 
   const submitMessage = async () => {
+    if (pendingQuestion) { questionControl.current?.answerText(questionReply); return; }
     if ((chatId && !chatLoaded) || handoffBusyRef.current || sendingRef.current || isDictationBusy()) return;
     if (attachmentsRequireAgent && !activeAgentEnabled) {
       Alert.alert('Agent mode required', 'Enable Agent mode or reduce these attachments before sending.');
@@ -5321,7 +5332,7 @@ function ChatView({
     </View>
   ) : null;
   const attachmentPolicy = attachmentSendPolicy(attachments, { editing: Boolean(messageEdit) });
-  const canSend = Boolean(model.id)
+  const canSend = pendingQuestion ? Boolean(questionReply.trim()) && !expired && !dictationBusy : Boolean(model.id)
     && (!chatId || chatLoaded)
     && (input.trim().length > 0 || attachments.length > 0)
     && !sending
@@ -5330,7 +5341,7 @@ function ChatView({
     && !expired
     && !(attachmentsRequireAgent && (!activeAgentEnabled || !canUseAgent))
     && attachmentPolicy.allowed;
-  const composerAction = composerGenerationAction(assistantStatus, Boolean(messageEdit), Boolean(input.trim() || attachments.length));
+  const composerAction = pendingQuestion ? 'submit' : composerGenerationAction(assistantStatus, Boolean(messageEdit), Boolean(input.trim() || attachments.length));
 
   useEffect(() => {
     const target = headerControl.expanded ? 1 : 0;
@@ -5612,6 +5623,7 @@ function ChatView({
           }}
           style={[styles.composerWrap, styles.chatContent, { paddingHorizontal: Math.max(12, horizontalPadding - 6), paddingBottom: Math.max(insets.bottom, 10) }]}
         >
+            {pendingQuestion && <QuestionCard key={pendingQuestion.id} item={pendingQuestion} persistDraft={!temporary} namespace={draftNamespace ?? 'local'} controlRef={questionControl} onTextChange={setQuestionReply} />}
             <ComposerSurface
               interactive
               style={[styles.composer, Platform.OS === 'android' && { borderRadius: 24 }]}
@@ -5725,7 +5737,7 @@ function ChatView({
               <View style={[styles.composerInputRow, showShelf && styles.composerShelfInputRow]}>
                 <TextInput
                   ref={composerInputRef}
-                  accessibilityLabel="Message"
+                  accessibilityLabel={pendingQuestion ? "Answer the current question" : "Message"}
                   disableFullscreenUI
                   // Keep focus during shelf actions; transferShelf checks for edits before replacing content.
                   editable={!handoffBusy && !composerFocusSuppressed && !(messageEdit && sending)}
@@ -5734,17 +5746,17 @@ function ChatView({
                   maxLength={1_000_000}
                   onFocus={() => { setQueueCollapsed(true); setShelfCollapsed(true); }}
                   onBlur={() => { setQueueCollapsed(false); setShelfCollapsed(false); }}
-                  onChangeText={(value) => { inputRef.current = value; onChangeInput(value); }}
-                  selection={{ start: Math.min(inputSelection.start, input.length), end: Math.min(inputSelection.end, input.length) }}
+                  onChangeText={(value) => { if (pendingQuestion) questionControl.current?.setText(value); else { inputRef.current = value; onChangeInput(value); } }}
+                  selection={pendingQuestion ? undefined : { start: Math.min(inputSelection.start, input.length), end: Math.min(inputSelection.end, input.length) }}
                   onSelectionChange={(event) => { setComposerSelection(setInputSelection, inputSelectionRef, event.nativeEvent.selection); }}
-                  placeholder={attachments.length > 0 ? 'Add a caption…' : messageEdit ? 'Edit message…' : temporary ? 'Temporary message…' : 'Message…'}
+                  placeholder={pendingQuestion ? 'Or reply directly…' : attachments.length > 0 ? 'Add a caption…' : messageEdit ? 'Edit message…' : temporary ? 'Temporary message…' : 'Message…'}
                   placeholderTextColor={COLORS.muted}
                   // iOS multiline measurement can retain the previous draft's height after a clear.
                   // Derive the reset from the controlled value so synced clears work too, without remounting.
                   style={[styles.input, styles.composerTextInput, Platform.OS === 'ios' && input.length === 0 && {
                     height: Math.max(styles.input.minHeight, Math.ceil(styles.input.lineHeight * Math.min(fontScale, COMPOSER_MAX_FONT_SIZE_MULTIPLIER))),
                   }]}
-                  value={input}
+                  value={pendingQuestion ? questionReply : input}
                 />
                 {showShelf && (Platform.OS === 'ios'
                   ? <NativeComposerShelfButton disabled={!(input.trim() || attachments.length) || shelfBusy || sending || dictationBusy} onPress={() => { void transferShelf(); }} />
@@ -5813,6 +5825,7 @@ function ChatView({
                   ]} />
                 )}
                 <View style={styles.flex} />
+                {pendingQuestion && <Pressable accessibilityRole="button" accessibilityLabel="Stop generating" onPress={onStop} style={{ minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' }}><Text style={{ color: COLORS.text }}>■</Text></Pressable>}
                 {dictationEnabled && (Platform.OS === 'ios'
                   ? <NativeComposerIconButton label={dictationLabel} systemImage={dictation.phase === 'recording' ? 'stop.fill' : 'mic'} prominent={dictation.phase === 'recording'} disabled={dictationDisabled} onPress={dictation.phase === 'recording' ? dictation.stop : dictation.start} />
                   : <MaterialIconButton label={dictationLabel} icon={dictation.phase === 'recording' ? 'stop.fill' : 'mic'} selected={dictation.phase === 'recording'} disabled={dictationDisabled} onPress={dictation.phase === 'recording' ? dictation.stop : dictation.start} />)}

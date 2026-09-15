@@ -1,16 +1,19 @@
 import { publicOutputTokenLimit } from '../responses/upstream-request.js'
+import { createQuestionTool } from './question-tool.js'
+import { resumePendingTools } from './pending-tools.js'
+import { questionItemSchema, questionItems, type QuestionItem } from '@pulpo/contracts'
 import { diagnosticPayload } from '../logging/diagnostic-sanitizer.js'
 import { diagnosticFetch } from '../logging/diagnostic-fetch.js'
 import { recordReconstructedDiagnostic } from '../logging/provider-diagnostics.js'
 import { createImageGenerationTools } from '../image-generation/tool.js'
 import { selectedImageModel, executeImageGeneration, recoverSavedImageGenerations } from '../image-generation/service.js'
-import { Agent, type AgentMessage } from '@earendil-works/pi-agent-core'
+import { Agent, type AgentEvent, type AgentMessage } from '@earendil-works/pi-agent-core'
 import { openAIResponsesApi } from '@earendil-works/pi-ai/api/openai-responses.lazy'
 import type { Api, AssistantMessage, Context, Model } from '@earendil-works/pi-ai'
 import { toolImagePreviewSchema, type ToolImagePreview, type CompactionItem, type RecallItem, type ResponseSnapshot } from '@pulpo/contracts'
-import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm'
+import { and, asc, eq, inArray, isNull, ne, sql } from 'drizzle-orm'
 import { db } from '../database/client.js'
-import { agentRuns, applicationSettings, attachments, chats, generationAttempts, models, providerConnections, requestLogs, responses, toolExecutions, userPreferences } from '../database/schema.js'
+import { agentQuestions, agentRuns, applicationSettings, attachments, chats, generationAttempts, models, providerConnections, requestLogs, responses, toolExecutions, userPreferences } from '../database/schema.js'
 import { decryptSecret } from '../lib/crypto.js'
 import { getConfig } from '../config.js'
 import { newId } from '../lib/ids.js'
@@ -211,6 +214,15 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
     new Map(historyAttachments.map((attachment) => [attachment.id, attachment])),
   )
   const [existingRun] = await db.select().from(agentRuns).where(eq(agentRuns.responseId, responseId)).limit(1)
+  if (existingRun?.status === 'cancelled') return
+  const savedQuestions = await db.select().from(agentQuestions).where(eq(agentQuestions.responseId, responseId))
+  // Recover a crash between the tool-result checkpoint and acknowledging its outbox row.
+  const completedQuestionCalls = new Set(messagesFromAgentContext(existingRun?.context).flatMap(message => message.role === 'toolResult' ? [message.toolCallId] : []))
+  const consumedQuestions = savedQuestions.filter(row => !row.consumedAt && completedQuestionCalls.has(row.toolCallId))
+  if (consumedQuestions.length) await db.update(agentQuestions).set({ consumedAt: new Date(), updatedAt: new Date() }).where(inArray(agentQuestions.id, consumedQuestions.map(row => row.id)))
+  if (savedQuestions.some(row => questionItemSchema.parse(row.item).status === 'pending')) return
+  const previousActiveDurationMs = existingRun?.activeDurationMs ?? 0
+  const activeDurationMs = () => previousActiveDurationMs + Date.now() - startedAt
   const runId = existingRun?.id ?? newId()
   let agentSystemPrompt = withGenerationTimeContext(
     generationSystemPrompt(memory.enabled, currentAgentSystemPrompt, systemPromptFromAgentContext(existingRun?.context)),
@@ -218,7 +230,8 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
   )
   let resumedMessages = existingRun ? messagesFromAgentContext(existingRun.context) : parentMessages
   if (!memory.enabled) resumedMessages = withoutMemoryToolMessages(resumedMessages)
-  await db.insert(agentRuns).values({ id: runId, responseId, status: 'running', context: { systemPrompt: agentSystemPrompt, messages: resumedMessages }, startedAt: new Date() }).onConflictDoUpdate({ target: agentRuns.responseId, set: { status: 'running', updatedAt: new Date() } })
+  const [claimedRun] = await db.insert(agentRuns).values({ id: runId, responseId, status: 'running', context: { systemPrompt: agentSystemPrompt, messages: resumedMessages }, startedAt: new Date() }).onConflictDoUpdate({ target: agentRuns.responseId, set: { status: 'running', updatedAt: new Date() }, setWhere: ne(agentRuns.status, 'cancelled') }).returning({ id: agentRuns.id })
+  if (!claimedRun) return
   const [requestLog] = await db.select().from(requestLogs).where(eq(requestLogs.responseId, responseId)).limit(1)
   if (!requestLog) throw new Error('Request log is missing')
   const detailedPayloadsEnabled = detailedPayloadCaptureIsActive(requestLog)
@@ -280,7 +293,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
     )
   }
   const initialRuntime = await resolveStickyRuntimeIndex(0)
-  let activeIndex = initialRuntime.index; let active = runtimes[activeIndex]!
+  let activeIndex = existingRun && record.response.actualModelId ? Math.max(0, runtimes.findIndex(candidate => candidate.model.id === record.response.actualModelId)) : initialRuntime.index; let active = runtimes[activeIndex]!
   if (initialRuntime.stickyUsed) {
     const pricing = await getActivePricing(active.model.id)
     await db.update(responses).set({ actualModelId: active.model.id, pricingVersionId: pricing.id }).where(eq(responses.id, responseId))
@@ -325,7 +338,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
   const [previousSidecarCost] = await db.select({ total: sql<number>`coalesce(sum(${generationAttempts.costMicros}), 0)::bigint` })
     .from(generationAttempts).where(and(eq(generationAttempts.requestLogId, requestLog.id), eq(generationAttempts.source, 'tool')))
   sidecarCostMicros += Number(previousSidecarCost?.total ?? 0)
-  const billingTurns: Array<Record<string, unknown>> = []
+  const billingTurns: Array<Record<string, unknown>> = (existingRun?.context as { billingTurns?: Array<Record<string, unknown>> } | undefined)?.billingTurns ?? []
   const modelTurnStartedAt = new Map<number, number>()
   const turnDurationsMs = new Map<number, number>()
   const turnRuntime = new Map<number, { runtime: RuntimeModel; index: number }>()
@@ -376,7 +389,9 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
   let workspaceStartedAtMs: number | undefined
   let workspaceReadyAtMs: number | undefined
   let workspaceHoldMicrosAmount = 0
-  let workspaceCostMicros = 0
+  let workspaceCostMicros = existingRun?.workspaceCostMicros ?? 0
+  let suspended = false
+  const resumeAbort = new AbortController()
   let skipMessageCount = parentMessages.length
   const archivedDisplayMessages: AgentMessage[] = []
   let lastSnapshotAt = 0
@@ -444,6 +459,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
         streaming: false,
         terminal: true,
       })
+      for (const item of questionItems(streamProjection.output)) terminalOutput.push(item)
       checkpoint = selectAgentResponseCheckpoint(streamProjection, { terminal: true, output: terminalOutput })
     }
     await db.update(responses).set({ status: terminal ?? 'in_progress', incompleteDetails: terminal === 'incomplete' ? { reason: 'max_output_tokens' } : null, output: checkpoint.output, usage, error: errorMessage ? { message: errorMessage } : undefined, lastSequence: checkpoint.sequence, completedAt: terminal ? new Date() : undefined, updatedAt: new Date() }).where(eq(responses.id, responseId))
@@ -679,11 +695,13 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
   let agentAbortReason: 'response_timeout' | 'cancellation' | 'turn_limit' | undefined
   const abortTimer = setTimeout(() => {
     agentAbortReason ??= 'response_timeout'
+    resumeAbort.abort()
     agent.abort()
-  }, settings.responseTimeoutSeconds * 1000)
+  }, Math.max(1, settings.responseTimeoutSeconds * 1000 - previousActiveDurationMs))
   const cancellationTimer = setInterval(() => void isCancellationRequested(responseId).then((cancelled) => {
     if (!cancelled) return
     agentAbortReason ??= 'cancellation'
+    resumeAbort.abort()
     agent.abort()
   }), 500)
   const initialParameters = resolveAgentModelParameters(active.model, record.response.parameters)
@@ -693,6 +711,32 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
       systemPrompt: agentSystemPrompt,
       model: active.piModel,
       tools: [
+        createQuestionTool(async (toolCallId, questions) => {
+          const saved = savedQuestions.find(row => row.toolCallId === toolCallId)
+          if (saved) {
+            const item = questionItemSchema.parse(saved.item)
+            if (item.status === 'pending') throw new Error('Question is still pending')
+            return { content: [{ type: 'text', text: JSON.stringify({ status: item.status, answers: item.questions.map(q => ({ id: q.id, question: q.prompt, answer: item.answers[q.id], options: q.options })) }) }], details: {} }
+          }
+          const item: QuestionItem = { type: 'pulpo_question', id: newId(), toolCallId, responseId, questions, status: 'pending', answers: {} }
+          await emissionQueue
+          const next = projectNextAgentResponseEvent(streamProjection, { type: 'pulpo.agent.question.updated', payload: item, emittedAt: new Date().toISOString() })
+          const checkpointWorkspaceCost = (existingRun?.workspaceCostMicros ?? 0) + (workspaceReadyAtMs !== undefined && settings.billWorkspaces ? workspaceUsageMicros(Date.now() - workspaceReadyAtMs, settings.workspacePricePerMinuteMicros) : 0)
+          await db.transaction(async tx => {
+            const [current] = await tx.select().from(responses).where(eq(responses.id, responseId)).for('update').limit(1)
+            if (!current || !['queued', 'in_progress'].includes(current.status)) throw new Error('Generation cancelled')
+            await tx.insert(agentQuestions).values({ id: item.id, responseId, agentRunId: runId, toolCallId, item })
+            await tx.update(agentRuns).set({ status: 'waiting_for_input', context: { systemPrompt: agentSystemPrompt, messages: messagesForPersistence(agent.state.messages), billingTurns, inferenceReferenceCostMicros }, modelTurns, toolCalls, activeDurationMs: activeDurationMs(), workspaceCostMicros: checkpointWorkspaceCost, updatedAt: new Date() }).where(eq(agentRuns.id, runId))
+            await tx.update(responses).set({ output: next.projection.output, usage, lastSequence: next.projection.sequence, updatedAt: new Date() }).where(eq(responses.id, responseId))
+          })
+          suspended = true
+          streamProjection = next.projection
+          agent.abort()
+          await publishResponseEvent(next.event)
+          await publishSnapshot(next.projection)
+          // This sentinel stays inside the stopped library loop, never in saved/model context.
+          return { content: [{ type: 'text', text: 'Waiting for user input' }], details: {} }
+        }),
         ...createWorkspaceTools(manager, settings.commandTimeoutSeconds * 1000, markToolStarted, attachFile, async (toolCallId, path, data) => {
           const existing = imagePreviews.get(toolCallId)
           if (existing) return existing
@@ -755,7 +799,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
       const pricing = await getActivePricing(active.model.id)
       const reservation = await resizeBudgetReservation({
         responseId,
-        accruedCostMicros: accruedCostMicros + accruedToolCostMicros + sidecarCostMicros + workspaceHoldMicrosAmount,
+        accruedCostMicros: accruedCostMicros + accruedToolCostMicros + sidecarCostMicros + (existingRun?.workspaceCostMicros ?? 0) + workspaceHoldMicrosAmount,
         requestInput: preparedContext,
         maxOutputTokens: publicOutputTokenLimit(active.model.maxOutputTokens, {
           ...resolvedParameters.parameters,
@@ -811,14 +855,15 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
       })
     },
     toolExecution: 'sequential',
+    shouldStopAfterTurn: () => suspended,
     beforeToolCall: async () => {
       if (manager.continuedWithoutAgent) return { block: true, reason: 'Agent tools were disabled at the user’s request' }
-      return toolCalls >= settings.maxToolCalls ? { block: true, reason: `Tool call limit (${settings.maxToolCalls}) reached` } : undefined
+      return toolCalls > settings.maxToolCalls ? { block: true, reason: `Tool call limit (${settings.maxToolCalls}) reached` } : undefined
     },
   })
   let lastRunPersistAt = 0
   const persistRunContext = async (force = false) => {
-    if (!force && Date.now() - lastRunPersistAt < 500) return
+    if (suspended || !force && Date.now() - lastRunPersistAt < 500) return
     lastRunPersistAt = Date.now()
     await db.update(agentRuns).set({
       workspaceLeaseId: manager.leaseId,
@@ -828,7 +873,8 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
       updatedAt: new Date(),
     }).where(eq(agentRuns.id, runId))
   }
-  agent.subscribe(async (event) => {
+  const handleAgentEvent = async (event: AgentEvent) => {
+    if (suspended) return
     if (event.type === 'turn_start') {
       modelTurns += 1
       if (modelTurns > settings.maxModelTurns) {
@@ -886,7 +932,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
         : undefined
       const turnCost = providerTurnCost ?? configuredTurnCost
       accruedCostMicros += turnCost
-      await retainBudgetReservation(responseId, accruedCostMicros + accruedToolCostMicros + sidecarCostMicros + workspaceHoldMicrosAmount)
+      await retainBudgetReservation(responseId, accruedCostMicros + accruedToolCostMicros + sidecarCostMicros + (existingRun?.workspaceCostMicros ?? 0) + workspaceHoldMicrosAmount)
       if (completedRuntime.runtime.codex) {
         inferenceReferenceCostMicros += codexInferenceReferenceCostMicros(completedRuntime.runtime.piModel, turnUsage)
       }
@@ -940,7 +986,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
       }
       await snapshotIfDue()
     } else if (event.type === 'tool_execution_start') {
-      toolCalls += 1
+      if (!toolItems.has(event.toolCallId)) toolCalls += 1
       const item: ToolTimelineItem = {
         id: event.toolCallId,
         type: 'pulpo_tool',
@@ -991,11 +1037,16 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
       await snapshotIfDue()
     }
     await persistRunContext(event.type !== 'message_update' && event.type !== 'tool_execution_update')
-  })
+    if (event.type === 'message_end' && event.message.role === 'toolResult') {
+      const toolCallId = event.message.toolCallId
+      if (savedQuestions.some(row => row.toolCallId === toolCallId)) await db.update(agentQuestions).set({ consumedAt: new Date(), updatedAt: new Date() }).where(eq(agentQuestions.toolCallId, toolCallId))
+    }
+  }
+  agent.subscribe(handleAgentEvent)
   await db.update(responses).set({ status: 'in_progress', startedAt: new Date(), updatedAt: new Date() }).where(eq(responses.id, responseId))
   try {
     await resizeBudgetReservation({
-      responseId, accruedCostMicros: accruedCostMicros + accruedToolCostMicros + sidecarCostMicros,
+      responseId, accruedCostMicros: accruedCostMicros + accruedToolCostMicros + sidecarCostMicros + (existingRun?.workspaceCostMicros ?? 0),
       requestInput: record.response.input,
       maxOutputTokens: Math.min(active.model.minimumOutputReservationTokens, publicOutputTokenLimit(active.model.maxOutputTokens, record.response.parameters as Record<string, unknown>).max_output_tokens),
       minimumOutputReservationTokens: active.model.minimumOutputReservationTokens,
@@ -1022,8 +1073,18 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
       agent.state.model = active.piModel
       skipMessageCount = resumedMessages.length
     }
-    if (existingRun && resumedMessages.length > parentMessages.length) await agent.continue()
+    if (existingRun && resumedMessages.length > parentMessages.length) {
+      await resumePendingTools({ messages: agent.state.messages, tools: agent.state.tools, emit: handleAgentEvent, stopped: () => suspended || resumeAbort.signal.aborted, signal: resumeAbort.signal, beforeExecute: id => {
+        if (savedQuestions.some(row => row.toolCallId === id)) return
+        if (manager.continuedWithoutAgent) throw new Error('Agent tools were disabled at the user’s request')
+        if (toolCalls > settings.maxToolCalls) throw new Error(`Tool call limit (${settings.maxToolCalls}) reached`)
+      } })
+      if (suspended) return
+      if (resumeAbort.signal.aborted) throw new Error('Generation stopped')
+      await agent.continue()
+    }
     else await agent.prompt(initialMessage)
+    if (suspended) return
     let last = agent.state.messages.at(-1)
     let overflowRetried = false
     const refreshTimeContext = () => {
@@ -1112,9 +1173,9 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
       }))
       return 0
     }) : 0
-    workspaceCostMicros = workspaceReadyAtMs !== undefined && settings.billWorkspaces
+    workspaceCostMicros = (existingRun?.workspaceCostMicros ?? 0) + (workspaceReadyAtMs !== undefined && settings.billWorkspaces
       ? workspaceUsageMicros(Date.now() - workspaceReadyAtMs, settings.workspacePricePerMinuteMicros)
-      : 0
+      : 0)
     accruedToolCostMicros = await readToolCost()
     const settlement = agentSettlementAmounts({
       totalTokens: usage.totalTokens,
@@ -1128,13 +1189,14 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
       ? await settleBudget({
         responseId,
         usage,
-        latencyMs: Date.now() - startedAt,
+        latencyMs: activeDurationMs(),
         costMicrosOverride: settlement.costMicrosOverride,
         additionalCostMicros: settlement.additionalCostMicros,
         inferenceReferenceCostMicros,
       })
       : (await releaseBudget(responseId), 0)
-    const totalDurationMs = Date.now() - startedAt
+    const totalDurationMs = activeDurationMs()
+    await db.update(agentRuns).set({ activeDurationMs: totalDurationMs, workspaceCostMicros, updatedAt: new Date() }).where(eq(agentRuns.id, runId))
     await db.update(requestLogs).set({ status: terminalStatus, actualModelId: finalResponder.runtime.model.id, inputTokens: usage.inputTokens, cachedInputTokens: usage.cachedInputTokens, cacheWriteTokens: usage.cacheWriteTokens, outputTokens: usage.outputTokens, reasoningTokens: usage.reasoningTokens, costMicros: cost, durationMs: totalDurationMs, tokensPerSecond: totalDurationMs > 0 ? completionTokensPerSecond(totalDurationMs, usage.outputTokens) : null, completedAt: new Date(), updatedAt: new Date() }).where(eq(requestLogs.id, requestLog.id))
     await publishAdminUsage(requestLog.id, true)
   } catch (error) {
@@ -1153,9 +1215,9 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
     await db.update(agentRuns).set({ status, error: errorMessage, context: { systemPrompt: agentSystemPrompt, messages: messagesForPersistence(agent.state.messages), billingTurns }, completedAt: new Date(), updatedAt: new Date() }).where(eq(agentRuns.id, runId))
     const finalResponder = lastResponder ?? { runtime: active, pricing: await getActivePricing(active.model.id) }
     await db.update(responses).set({ actualModelId: finalResponder.runtime.model.id, pricingVersionId: finalResponder.pricing.id }).where(eq(responses.id, responseId))
-    workspaceCostMicros = workspaceReadyAtMs !== undefined && settings.billWorkspaces
+    workspaceCostMicros = (existingRun?.workspaceCostMicros ?? 0) + (workspaceReadyAtMs !== undefined && settings.billWorkspaces
       ? workspaceUsageMicros(Date.now() - workspaceReadyAtMs, settings.workspacePricePerMinuteMicros)
-      : 0
+      : 0)
     accruedToolCostMicros = await readToolCost()
     const settlement = agentSettlementAmounts({
       totalTokens: usage.totalTokens,
@@ -1168,13 +1230,14 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
       ? await settleBudget({
         responseId,
         usage,
-        latencyMs: Date.now() - startedAt,
+        latencyMs: activeDurationMs(),
         costMicrosOverride: settlement.costMicrosOverride,
         additionalCostMicros: settlement.additionalCostMicros,
         inferenceReferenceCostMicros,
       })
       : (await releaseBudget(responseId), 0)
-    const totalDurationMs = Date.now() - startedAt
+    const totalDurationMs = activeDurationMs()
+    await db.update(agentRuns).set({ activeDurationMs: totalDurationMs, workspaceCostMicros, updatedAt: new Date() }).where(eq(agentRuns.id, runId))
     await db.update(requestLogs).set({ status, actualModelId: finalResponder.runtime.model.id, inputTokens: usage.inputTokens, cachedInputTokens: usage.cachedInputTokens, cacheWriteTokens: usage.cacheWriteTokens, outputTokens: usage.outputTokens, reasoningTokens: usage.reasoningTokens, costMicros: cost, errorCategory: cancelled ? 'cancellation' : classifyGenerationError(error), errorMessage, durationMs: totalDurationMs, tokensPerSecond: totalDurationMs > 0 ? completionTokensPerSecond(totalDurationMs, usage.outputTokens) : null, completedAt: new Date(), updatedAt: new Date() }).where(eq(requestLogs.id, requestLog.id))
     await publishAdminUsage(requestLog.id, true)
     if (!cancelled) throw active.codex ? new Error(errorMessage) : error

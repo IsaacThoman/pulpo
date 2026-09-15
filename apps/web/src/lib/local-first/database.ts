@@ -181,6 +181,9 @@ export const indexedDbPersister: Persister = {
 }
 
 export async function clearLocalUserData(userId: string): Promise<void> {
+  if (typeof localStorage !== 'undefined') {
+    for (const key of Object.keys(localStorage)) if (key.startsWith(`pulpo:questions:${userId}:`)) localStorage.removeItem(key)
+  }
   const accountKey = localAccountKey(userId)
   await localDb.transaction('rw', localDb.outbox, localDb.drafts, localDb.attachmentBlobs, localDb.kv, async () => {
     await localDb.kv.where('key').startsWith(`composer-sync:${accountKey}:`).delete()
