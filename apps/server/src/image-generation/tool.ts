@@ -16,7 +16,7 @@ export function createImageGenerationTools(input: {
   const { maxReferenceImages, inputMimeTypes } = IMAGE_PROVIDER_CAPABILITIES[input.model.adapter]
   return [{
     name: 'generate_image', label: 'Generate image', executionMode: 'sequential',
-    description: `Generate or edit an image using the image model selected in the user’s Settings. Supply a detailed text prompt and optional reference images from chat attachments or workspace files. This model accepts up to ${maxReferenceImages} reference image(s) in ${inputMimeTypes.map(type => type.replace('image/', '')).join(', ')} format. For edits, include the previous generated attachment as a reference. The completed image is automatically shown and attached for the user; do not attach it again. Returns its attachment ID, workspace path, and a preview.`,
+    description: `Generate or edit an image using the image model selected in the user’s Settings. Supply a detailed text prompt and optional reference images from chat attachments or workspace files. This model accepts up to ${maxReferenceImages} reference image(s) in ${inputMimeTypes.map(type => type.replace('image/', '')).join(', ')} format. For edits, include the previous generated attachment as a reference. The completed image is automatically shown and attached for the user; do not attach it again. Returns its attachment ID, workspace path, and a preview. If an edit fails, report the stated reason; do not guess a policy restriction or repeatedly retry the same image with reworded prompts.`,
     parameters: Type.Object({
       prompt: Type.String({ minLength: 1, maxLength: 32000 }),
       referenceImages: Type.Optional(Type.Array(Type.Union([

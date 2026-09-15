@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import sharp from 'sharp'
+import { readFile } from 'node:fs/promises'
 import { AZURE_MAI_IMAGE_PRESET, META_MUSE_IMAGE_PRESET, OPENAI_IMAGE_PRESET, type ImageModel } from '@pulpo/contracts'
 import { generateImage, imageProviderEndpoint, validateImageBytes } from './provider.js'
 const model = (meta = false): ImageModel => ({ ...(meta ? META_MUSE_IMAGE_PRESET : AZURE_MAI_IMAGE_PRESET), id: 'image', providerConnectionId: '11111111-1111-4111-8111-111111111111' })
@@ -39,12 +40,42 @@ describe('image providers', () => {
     expect(files.map(file => file.name)).toEqual(['reference-1.png', 'reference-2.jpg', 'reference-3.webp', 'reference-4.png'])
     for (const [index, file] of files.entries()) {
       expect(file.type).toBe(references[index]!.mimeType)
-      expect(Buffer.from(await file.arrayBuffer())).toEqual(references[index]!.data)
+      const bytes = Buffer.from(await file.arrayBuffer())
+      expect(await sharp(bytes).metadata()).toMatchObject({ width: 16, height: 16 })
+      const before = await sharp(references[index]!.data).raw().toBuffer()
+      const after = await sharp(bytes).raw().toBuffer()
+      expect(after.length).toBe(before.length)
+      expect(Math.max(...after.map((value, i) => Math.abs(value - before[i]!)))).toBeLessThanOrEqual(3)
     }
     fetcher.mockClear()
     await expect(generateImage({ ...openaiOptions(), references: [...references, references[0]!], fetch: fetcher })).rejects.toThrow('at most 4')
     await expect(generateImage({ ...openaiOptions(), references: [{ data: Buffer.from('invalid'), mimeType: 'image/png' }], fetch: fetcher })).rejects.toThrow('Unsupported')
     expect(fetcher).not.toHaveBeenCalled()
+  })
+  it.each([false, true, 'openai'] as const)('normalizes MPO references at the %s provider boundary', async kind => {
+    const data = await readFile(new URL('./fixtures/oriented-mpo.jpg', import.meta.url))
+    const output = await png()
+    const reference = Object.freeze({ data, mimeType: 'image/jpeg' })
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(Response.json(kind === true
+      ? { status: 'completed', output: [{ type: 'image_generation_call', status: 'completed', result: output.toString('base64') }] }
+      : { data: [{ b64_json: output.toString('base64') }] }))
+    await generateImage({ ...(kind === 'openai' ? openaiOptions() : options(kind)), references: [reference], fetch: fetcher })
+    let bytes: Buffer
+    if (kind === true) {
+      const body = JSON.parse(String(fetcher.mock.calls[0]![1]!.body))
+      const url = body.input[0].content[1].image_url as string
+      expect(url).toMatch(/^data:image\/jpeg;base64,/)
+      bytes = Buffer.from(url.split(',')[1]!, 'base64')
+    } else {
+      const form = fetcher.mock.calls[0]![1]!.body as FormData
+      const file = form.get(kind === 'openai' ? 'image[]' : 'image') as File
+      expect(file.type).toBe('image/jpeg'); expect(file.name).toBe('reference-1.jpg')
+      bytes = Buffer.from(await file.arrayBuffer())
+    }
+    expect(bytes.includes(Buffer.from('MPF\0'))).toBe(false)
+    expect(await sharp(bytes).metadata()).toMatchObject({ width: 32, height: 64 })
+    expect(reference.data).toEqual(data)
+    expect(reference.data.includes(Buffer.from('MPF\0'))).toBe(true)
   })
   it.each([
     ['https://api.openai.com', 'https://api.openai.com/v1/images/generations'],
