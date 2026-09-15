@@ -126,15 +126,10 @@ describe('Chat Completions input codec', () => {
     })).toThrowError(expect.objectContaining({ code: 'parameter_conflict', param: 'max_completion_tokens' }))
   })
 
-  it('rejects every explicitly unsupported Chat Completions parameter', () => {
+  it('rejects only Chat Completions behavior that cannot be represented', () => {
     const base = { model: 'm', messages: [{ role: 'user', content: 'hi' }] }
-    for (const [param, value] of [
-      ['audio', {}], ['functions', [{ name: 'legacy' }]], ['function_call', 'auto'], ['logprobs', true], ['top_logprobs', 1],
-      ['stop', ['END']], ['presence_penalty', 1], ['frequency_penalty', 1], ['seed', 1],
-      ['prediction', {}], ['modalities', ['audio']],
-    ] as const) expectUnsupported(() => parseChatCompletionRequest({ ...base, [param]: value }), param)
+    expectUnsupported(() => parseChatCompletionRequest({ ...base, modalities: ['text', 'audio'] }), 'modalities')
     expectUnsupported(() => parseChatCompletionRequest({ ...base, n: 2 }), 'n')
-    expectUnsupported(() => parseChatCompletionRequest({ ...base, store: true }), 'store')
     expectUnsupported(() => parseChatCompletionRequest({ ...base, tools: [{ type: 'custom', custom: {} }] }), 'tools.0.type')
     expectUnsupported(() => parseChatCompletionRequest({
       model: 'm', messages: [{ role: 'user', content: [{ type: 'audio', audio: {} }] }],
@@ -154,9 +149,74 @@ describe('Chat Completions input codec', () => {
 
     expect(parsed.ignoredParameters).toEqual([
       'frequency_penalty', 'functions', 'logprobs', 'modalities', 'presence_penalty',
-      'stop', 'top_logprobs', 'future_client_option',
+      'stop', 'store', 'top_logprobs', 'future_client_option',
     ].sort())
     expect(parsed.rawInput).toEqual([{ role: 'user', content: 'hi' }])
+  })
+
+  it('drops options with no Responses equivalent instead of failing the request', () => {
+    // Values a real client sets deliberately: still no way to honor them upstream.
+    const parsed = parseChatCompletionRequest({
+      model: 'm', messages: [{ role: 'user', content: 'hi' }],
+      audio: { voice: 'alloy', format: 'wav' }, logprobs: true, top_logprobs: 3, stop: ['END'],
+      presence_penalty: 1, frequency_penalty: 1, seed: 42, prediction: { type: 'content', content: 'x' },
+      logit_bias: { 50256: -100 }, metadata: { trace: 'x' }, store: true, web_search_options: {},
+    })
+    expect(parsed.ignoredParameters).toEqual([
+      'audio', 'frequency_penalty', 'logit_bias', 'logprobs', 'metadata', 'prediction', 'presence_penalty',
+      'seed', 'stop', 'store', 'top_logprobs', 'web_search_options',
+    ])
+    expect(parsed.parameters).toEqual({})
+    // stream_options without streaming is a client default worth tolerating.
+    expect(parseChatCompletionRequest({
+      model: 'm', messages: [{ role: 'user', content: 'hi' }], stream_options: { include_usage: true },
+    })).toMatchObject({ streamIncludeUsage: false, ignoredParameters: ['stream_options'] })
+  })
+
+  it('maps the deprecated functions protocol onto tools and pairs results by name', () => {
+    const parsed = parseChatCompletionRequest({
+      model: 'm',
+      messages: [
+        { role: 'user', content: 'weather?' },
+        { role: 'assistant', content: null, function_call: { name: 'weather', arguments: '{"city":"Oslo"}' } },
+        { role: 'function', name: 'weather', content: 'cold' },
+      ],
+      functions: [{ name: 'weather', description: 'Look up weather', parameters: { type: 'object' } }],
+      function_call: { name: 'weather' },
+    })
+    expect(parsed.parameters).toEqual({
+      tools: [{ type: 'function', name: 'weather', description: 'Look up weather', parameters: { type: 'object' } }],
+      tool_choice: { type: 'function', name: 'weather' },
+    })
+    expect(parsed.rawInput).toEqual([
+      { role: 'user', content: 'weather?' },
+      { type: 'function_call', call_id: 'call_legacy_weather', name: 'weather', arguments: '{"city":"Oslo"}' },
+      { type: 'function_call_output', call_id: 'call_legacy_weather', output: 'cold' },
+    ])
+    expect(parsed.ignoredParameters).toEqual([])
+    // Modern tools win when both are present; the legacy fields are then noted as ignored.
+    expect(parseChatCompletionRequest({
+      model: 'm', messages: [{ role: 'user', content: 'hi' }],
+      tools: [{ type: 'function', function: { name: 'modern' } }], functions: [{ name: 'legacy' }], function_call: 'auto',
+    })).toMatchObject({ parameters: { tools: [{ type: 'function', name: 'modern' }] }, ignoredParameters: ['function_call', 'functions'] })
+  })
+
+  it('forwards verbosity, refusal history, and user-derived identifiers', () => {
+    const parsed = parseChatCompletionRequest({
+      model: 'm',
+      messages: [
+        { role: 'user', content: 'hi' },
+        { role: 'assistant', content: [{ type: 'refusal', refusal: 'I cannot help with that.' }] },
+        { role: 'user', content: 'ok' },
+      ],
+      verbosity: 'low', response_format: { type: 'text' }, user: 'tenant-1',
+    })
+    expect(parsed.parameters).toEqual({
+      text: { format: { type: 'text' }, verbosity: 'low' }, prompt_cache_key: 'tenant-1', safety_identifier: 'tenant-1',
+    })
+    expect((parsed.rawInput as unknown[])[1]).toEqual({ role: 'assistant', content: 'I cannot help with that.' })
+    expect(parseChatCompletionRequest({ model: 'm', messages: [{ role: 'user', content: 'hi' }], verbosity: 'high' }).parameters)
+      .toEqual({ text: { verbosity: 'high' } })
   })
 })
 
@@ -171,9 +231,11 @@ describe('legacy Completions input codec', () => {
     expectUnsupported(() => parseCompletionRequest({ model: 'm', prompt: [1, 2, 3] }), 'prompt')
     expectUnsupported(() => parseCompletionRequest({ model: 'm', prompt: 'hi', n: 2 }), 'n')
     for (const [param, value] of [
-      ['best_of', 2], ['echo', true], ['suffix', 'end'], ['logprobs', 1], ['stop', 'END'],
-      ['presence_penalty', 1], ['frequency_penalty', 1], ['seed', 1],
+      ['best_of', 2], ['echo', true], ['suffix', 'end'],
     ] as const) expectUnsupported(() => parseCompletionRequest({ model: 'm', prompt: 'hi', [param]: value }), param)
+    expect(parseCompletionRequest({
+      model: 'm', prompt: 'hi', logprobs: 1, stop: 'END', presence_penalty: 1, frequency_penalty: 1, seed: 1, user: 'u',
+    }).ignoredParameters).toEqual(['frequency_penalty', 'logprobs', 'presence_penalty', 'seed', 'stop', 'user'])
   })
 
   it('accepts legacy no-op defaults without silently ignoring requested behavior', () => {
@@ -269,6 +331,25 @@ describe('completion streaming projections', () => {
     expect(projected[4]).toMatchObject({ choices: [{ finish_reason: 'tool_calls' }] })
     expect(projected[5]).toMatchObject({ choices: [], usage: { total_tokens: 7 } })
     expect(projector.finish(responseRow())).toEqual([])
+  })
+
+  it('forwards provider request rejections with their status while keeping outages as server errors', () => {
+    const rejected = responseRow({
+      status: 'failed',
+      error: { message: "Unsupported parameter: 'temperature' is not supported with this model.", category: 'validation', upstream: { status: 400, code: 'unsupported_parameter', param: 'temperature', type: 'invalid_request_error' } },
+    })
+    expect(() => serializeChatCompletion(rejected)).toThrowError(expect.objectContaining({
+      statusCode: 400, code: 'unsupported_parameter', param: 'temperature', type: 'invalid_request_error',
+    }))
+    expect(() => serializeCompletion(rejected)).toThrowError(expect.objectContaining({ statusCode: 400 }))
+    expect(new ChatCompletionStreamProjector(rejected, false).finish(rejected)).toEqual([{ error: {
+      message: "Unsupported parameter: 'temperature' is not supported with this model.",
+      type: 'invalid_request_error', code: 'unsupported_parameter', param: 'temperature',
+    } }])
+    const outage = responseRow({ status: 'failed', error: { message: 'upstream 503', upstream: { status: 503 } } })
+    expect(() => serializeChatCompletion(outage)).toThrowError(expect.objectContaining({ statusCode: 500, code: 'generation_failed' }))
+    const misconfigured = responseRow({ status: 'failed', error: { message: 'Incorrect API key', upstream: { status: 401, code: 'invalid_api_key' } } })
+    expect(() => serializeChatCompletion(misconfigured)).toThrowError(expect.objectContaining({ statusCode: 500, code: 'generation_failed' }))
   })
 
   it('projects terminal errors and legacy text completion chunks', () => {
@@ -368,9 +449,21 @@ describe('Responses request codec', () => {
     expect(() => parseResponsesRequest({ model: 'm', input: 'hi', safety_identifier: 'x'.repeat(65) })).toThrow()
   })
 
-  it('rejects unknown and hosted-tool include projections', () => {
-    expectUnsupported(() => parseResponsesRequest({ model: 'm', input: 'hi', include: ['future.output'] }), 'include')
-    expectUnsupported(() => parseResponsesRequest({ model: 'm', input: 'hi', include: ['web_search_call.action.sources'] }), 'include')
+  it('drops unknown and hosted-tool include projections while keeping supported ones', () => {
+    const parsed = parseResponsesRequest({
+      model: 'm', input: 'hi', include: ['future.output', 'web_search_call.action.sources', 'reasoning.encrypted_content'],
+    })
+    expect(parsed.parameters.include).toEqual(['reasoning.encrypted_content'])
+    expect(parsed.ignoredParameters).toEqual(['include.future.output', 'include.web_search_call.action.sources'])
+    expect(parseResponsesRequest({ model: 'm', input: 'hi', include: ['future.output'] }).parameters).not.toHaveProperty('include')
+    expect(() => parseResponsesRequest({ model: 'm', input: 'hi', include: [1] })).toThrow()
+  })
+
+  it('ignores stateless-safe Responses options and still rejects server-side state', () => {
+    expect(parseResponsesRequest({
+      model: 'm', input: 'hi', max_tool_calls: 3, moderation: 'strict', prompt: { id: 'pmpt_1' }, context_management: [{ type: 'compaction' }],
+    }).ignoredParameters).toEqual(['context_management', 'max_tool_calls', 'moderation', 'prompt'])
+    expectUnsupported(() => parseResponsesRequest({ model: 'm', input: 'hi', conversation: 'conv_1' }), 'conversation')
   })
 
   it('rejects custom tools and deferred audio/file input parts', () => {

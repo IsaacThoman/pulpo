@@ -78,3 +78,19 @@ docker stop pulpo-public-api-pg pulpo-public-api-redis
 ```
 
 Without `OPENCODE_BIN`, the runner executes the 26 SDK/API checks and explicitly reports that the OpenCode workflow was not run. The runner starts the API and local fixture provider on ephemeral loopback ports and isolates OpenCode's configuration, cache, state, and data directories.
+
+## Broad client compatibility follow-up
+
+Validated on 2026-09-14. OpenCode and other OpenAI-compatible tools send tuning options such as `top_p`, `temperature`, and `reasoning_effort` whenever a user configures them. Pulpo previously returned HTTP 400 `parameter_not_allowed` for any option outside the catalog model's `allowedParameters`, so a default OpenCode profile could not complete a request against a model with an empty allowlist.
+
+### What changed
+
+- **Admission drops instead of rejecting.** `createResponse` now strips public parameters the catalog does not allow, logs them as `public_api.parameters_dropped`, and continues with the model defaults. The worker applies the same allowlist when it builds the upstream payload, so a dropped option never reaches the provider.
+- **Per-token knobs are always forwarded.** `temperature`, `top_p`, `reasoning`, and `text` join the shared public parameter set. They bill per token like any request. `service_tier`, `top_logprobs`, `truncation`, and cache retention options stay behind the admin allowlist and fall back to defaults when absent.
+- **Codecs tolerate options with no Responses equivalent.** `stop`, `seed`, `presence_penalty`, `frequency_penalty`, `logprobs`, `top_logprobs`, `logit_bias`, `metadata`, `audio`, `prediction`, `store`, and `user` on Chat Completions are recorded as ignored. The deprecated `functions`, `function_call`, and `function` role map onto tools and tool results, paired by function name. `verbosity` maps to `text.verbosity`; `user` fills `prompt_cache_key` and `safety_identifier`. Requests still fail for `n > 1`, audio output modalities, hosted tool types, `conversation`, and `previous_response_id`.
+- **Provider parameter rejections are retried without the parameter.** When the upstream returns 400 naming a strippable parameter (structured `param` or an "Unsupported parameter" message), the worker removes that key and retries once per parameter, up to three times. Billing limits, input, and tools are never stripped.
+- **Provider request rejections keep their status.** Upstream 400, 413, and 422 responses are classified as validation failures, so they are not retried or sent to a fallback model. The public API returns the provider's status, code, message, and param instead of a generic 500. Auth and outage statuses still allow fallback and remain server errors to the client.
+
+### Verification
+
+The smoke runner gained five checks: default client tuning on an unallowlisted model with admin-gated options dropped, the legacy functions protocol, provider parameter strip-and-retry, provider 400 forwarding without retry or fallback, and the narrowed set of unrepresentable options. The OpenCode workflow check was rerun with the current release.

@@ -43,7 +43,7 @@ import { splitCodexConversationExchanges, type CodexConversationExchange } from 
 import { temporaryChatIsExpired } from '../chats/temporary.js'
 import { normalChatIsExpired } from '../chats/expiration.js'
 import { resolveModelParameters } from './model-parameters.js'
-import { backgroundRequestParameter, promptCacheKeyParameter, publicOutputTokenLimit, responseIncludeParameter } from './upstream-request.js'
+import { backgroundRequestParameter, promptCacheKeyParameter, publicOutputTokenLimit, responseIncludeParameter, strippableUpstreamParameter, upstreamErrorDetails } from './upstream-request.js'
 import { browserChatOutputError, generationOutputHasStarted } from './output-text.js'
 import { firstTokenTimeout } from './first-token-timeout.js'
 import { responseAttachmentIds, responseInputText } from '../messages/input.js'
@@ -784,10 +784,7 @@ async function processGenerationAttempt(
       ...backgroundRequestParameter(record.response.executionMode),
       store: false as const,
     }
-    const stream = await client.responses.create(upstreamPayload, {
-      signal: controller.signal,
-      headers: cacheOptions.headers,
-    })
+    const stream = await createUpstreamStream(client, upstreamPayload, { signal: controller.signal, headers: cacheOptions.headers }, responseId)
     for await (const rawEvent of stream) {
       if (await isCancellationRequested(responseId)) {
         if (record.response.executionMode === 'background' && upstreamResponseId) {
@@ -896,7 +893,7 @@ async function processGenerationAttempt(
     const completedAt = new Date()
     await db.update(responses).set({
       status: cancelled ? 'cancelled' : options.willRetry ? 'queued' : 'failed',
-      error: { message: safeErrorMessage(error) },
+      error: { message: safeErrorMessage(error), ...upstreamErrorFields(error) },
       lastSequence: sequence,
       completedAt: cancelled || !options.willRetry ? completedAt : null,
       updatedAt: completedAt,
@@ -913,6 +910,45 @@ async function processGenerationAttempt(
       if (terminal) await publishSnapshot(toSnapshot(terminal))
     }
     if (!cancelled) throw new GenerationAttemptError(safeErrorMessage(error), outputStarted, error)
+  }
+}
+
+/** Provider status, code, and param persisted with a failure so public clients see the real rejection. */
+function upstreamErrorFields(error: unknown): { upstream?: { status: number; code?: string; param?: string; type?: string } } {
+  const source = error instanceof GenerationAttemptError && error.upstreamError ? error.upstreamError : error
+  const details = upstreamErrorDetails(source)
+  if (details.status === undefined) return {}
+  return { upstream: {
+    status: details.status,
+    ...(details.code ? { code: details.code } : {}),
+    ...(details.param ? { param: details.param } : {}),
+    ...(details.type ? { type: details.type } : {}),
+  } }
+}
+
+const MAX_UPSTREAM_PARAMETER_STRIPS = 3
+
+/**
+ * Open the upstream stream, dropping parameters the provider explicitly rejects.
+ * Providers differ on which sampling knobs each model accepts; a request should
+ * degrade to the provider's defaults rather than fail on a knob the client set.
+ */
+async function createUpstreamStream<Payload extends Record<string, unknown> & { stream: true }>(
+  client: OpenAI,
+  payload: Payload,
+  options: { signal: AbortSignal; headers?: Record<string, string> },
+  responseId: string,
+) {
+  let current: Payload = payload
+  for (let strips = 0; ; strips += 1) {
+    try {
+      return await client.responses.create(current as Payload & Parameters<typeof client.responses.create>[0] & { stream: true }, options)
+    } catch (error) {
+      const parameter = strips < MAX_UPSTREAM_PARAMETER_STRIPS ? strippableUpstreamParameter(error, current) : undefined
+      if (!parameter) throw error
+      console.info(JSON.stringify({ level: 'info', service: 'pulpo-worker', event: 'upstream.parameter_stripped', responseId, parameter, message: safeErrorMessage(error) }))
+      current = Object.fromEntries(Object.entries(current).filter(([key]) => key !== parameter)) as Payload
+    }
   }
 }
 
@@ -1037,7 +1073,7 @@ export async function processGeneration(responseId: string): Promise<void> {
     const category = classifyGenerationError(error)
     const completedAt = new Date()
     await db.transaction(async (tx) => {
-      await tx.update(responses).set({ status: 'failed', error: { message, category, ...(error instanceof Error && 'code' in error ? { code: error.code } : {}) }, completedAt, updatedAt: completedAt }).where(eq(responses.id, responseId))
+      await tx.update(responses).set({ status: 'failed', error: { message, category, ...(error instanceof Error && 'code' in error ? { code: error.code } : {}), ...upstreamErrorFields(error) }, completedAt, updatedAt: completedAt }).where(eq(responses.id, responseId))
       await tx.update(requestLogs).set({ status: 'failed', errorCategory: category, errorMessage: message, durationMs: Date.now() - (failureLog.startedAt ?? failureLog.createdAt).getTime(), completedAt, updatedAt: completedAt }).where(eq(requestLogs.id, failureLog.id))
     })
     await releaseBudget(responseId)

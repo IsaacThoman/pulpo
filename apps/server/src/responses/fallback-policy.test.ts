@@ -71,6 +71,19 @@ describe('shared model fallback policy', () => {
     expect(canFallbackAfterGenerationError(new Error('Generation cancelled'))).toBe(false)
   })
 
+  it('does not retry or fall back when the provider rejects the request body', () => {
+    for (const status of [400, 404, 413, 415, 422]) {
+      const rejected = Object.assign(new Error("Unsupported parameter: 'top_p' is not supported with this model."), { status })
+      expect(classifyGenerationError(rejected)).toBe('validation')
+      expect(canFallbackAfterGenerationError(rejected)).toBe(false)
+      expect(canFallbackAfterGenerationError(new GenerationAttemptError(rejected.message, false, rejected))).toBe(false)
+    }
+    // Provider auth problems still let a fallback model serve the request.
+    expect(canFallbackAfterGenerationError(Object.assign(new Error('Incorrect API key provided'), { status: 401 }))).toBe(true)
+    // Provider payload limits stay classified as provider HTTP failures.
+    expect(classifyGenerationError(Object.assign(new Error('Request exceeds TCP payload budget'), { status: 413 }))).toBe('provider_http')
+  })
+
   it('allows fallback for provider TCP payload budgets, including wrapped Responses errors', () => {
     for (const message of ['Request exceeds TCP payload budget', payloadBudgetMessage]) {
       const error = new Error(message)
