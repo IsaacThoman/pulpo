@@ -87,7 +87,7 @@ export function ListRow({ icon, iconColor, leading, title, detail, value, onPres
   }
   if (Platform.OS === 'android' && !leading && !children) return <MaterialRow title={title} detail={detail} value={value} icon={icon} destructive={destructive} onPress={onPress} />;
   const body = <>
-    {icon ? <View style={[styles.rowIcon, { backgroundColor: `${iconColor ?? theme.secondary}20` }]}><SymbolView name={icon as never} size={17} tintColor={iconColor ?? theme.secondary} /></View> : null}
+    {icon ? <View style={[styles.rowIcon, Platform.OS !== 'ios' && { backgroundColor: `${iconColor ?? theme.secondary}20` }]}><SymbolView name={icon as never} size={17} tintColor={iconColor ?? theme.secondary} /></View> : null}
     {leading}
     <View style={styles.rowText}><Text style={[styles.rowTitle, { color: destructive ? theme.red : theme.text }]}>{title}</Text>{detail ? <Text style={[styles.rowDetail, { color: theme.secondary }]}>{detail}</Text> : null}</View>
     {value ? <Text style={[styles.rowValue, { color: theme.secondary }]}>{value}</Text> : null}
