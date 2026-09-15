@@ -105,6 +105,9 @@ export function classifyGenerationError(error: unknown): GenerationErrorCategory
   // Baseten's TCP payload budget is a provider size limit, not an account budget.
   if (message.includes('request exceeds tcp payload budget')) return 'provider_http'
   if (message.includes('budget') || message.includes('balance')) return 'budget'
+  // A provider that rejects the request body will reject it again on retry.
+  // Auth and rate-limit statuses still fall through so a fallback model can serve.
+  if (status !== undefined && [400, 404, 413, 415, 422].includes(status)) return 'validation'
   if (message.includes('validation') || message.includes('invalid')) return 'validation'
   if (/\b5\d\d\b/.test(message) || message.includes('fetch') || message.includes('network') || message.includes('connect')) return 'provider_http'
   if (message.includes('cancel')) return 'cancellation'

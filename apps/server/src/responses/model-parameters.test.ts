@@ -1,16 +1,31 @@
 import { describe, expect, it } from 'vitest'
-import { resolveModelParameters, unsupportedPublicModelParameter } from './model-parameters.js'
+import { droppedPublicModelParameters, resolveModelParameters } from './model-parameters.js'
 
 describe('model request parameters', () => {
-  it('identifies the exact unsupported public parameter before queueing', () => {
-    expect(unsupportedPublicModelParameter(
+  it('lists the admin-gated public parameters to drop before queueing', () => {
+    expect(droppedPublicModelParameters(
       { allowedParameters: ['temperature'] },
-      { instructions: 'safe protocol field', include: ['reasoning.encrypted_content'], temperature: 0.2, service_tier: 'priority' },
-    )).toBe('service_tier')
-    expect(unsupportedPublicModelParameter(
-      { allowedParameters: ['temperature', 'tools'] },
+      { instructions: 'safe protocol field', include: ['reasoning.encrypted_content'], temperature: 0.2, service_tier: 'priority', top_logprobs: 3 },
+    )).toEqual(['service_tier', 'top_logprobs'])
+    expect(droppedPublicModelParameters(
+      { allowedParameters: ['tools'] },
       { instructions: 'safe protocol field', temperature: 0.2, tools: [] },
-    )).toBeUndefined()
+    )).toEqual([])
+  })
+
+  it('always forwards per-token sampling and output-shape knobs for public requests', () => {
+    // Clients such as OpenCode send these by default; they bill per token like any request.
+    const parameters = { temperature: 0.3, top_p: 0.9, reasoning: { effort: 'high' }, text: { format: { type: 'text' } } }
+    expect(droppedPublicModelParameters({ allowedParameters: [] }, parameters)).toEqual([])
+    expect(resolveModelParameters({ allowedParameters: [], defaultParameters: {} }, parameters, { publicApi: true })).toEqual(parameters)
+    // Admin-gated behavior falls back to the model default instead of failing.
+    expect(resolveModelParameters(
+      { allowedParameters: [], defaultParameters: { service_tier: 'flex' } },
+      { ...parameters, service_tier: 'priority' },
+      { publicApi: true },
+    )).toEqual(parameters)
+    // Web chat keeps the allowlist boundary for the same knobs.
+    expect(resolveModelParameters({ allowedParameters: [], defaultParameters: {} }, parameters)).toEqual({})
   })
 
   it('applies allowed response parameters over model defaults', () => {
@@ -56,14 +71,14 @@ describe('model request parameters', () => {
     const tools = [{ type: 'function', name: 'bash', description: 'Run a command', parameters: { type: 'object' } }]
     const parameters = { tools, tool_choice: 'auto', parallel_tool_calls: false }
 
-    expect(unsupportedPublicModelParameter({ allowedParameters: [] }, parameters)).toBeUndefined()
+    expect(droppedPublicModelParameters({ allowedParameters: [] }, parameters)).toEqual([])
 
     expect(resolveModelParameters({
       allowedParameters: [],
       defaultParameters: {},
     }, {
       ...parameters,
-      temperature: 0.2,
+      service_tier: 'priority',
     }, { publicApi: true })).toEqual(parameters)
   })
 
@@ -89,7 +104,7 @@ describe('model request parameters', () => {
       truncation: 'auto',
     }
 
-    expect(unsupportedPublicModelParameter({ allowedParameters: [] }, parameters)).toBe('top_logprobs')
+    expect(droppedPublicModelParameters({ allowedParameters: [] }, parameters)).toEqual(['top_logprobs', 'truncation'])
     expect(resolveModelParameters({
       allowedParameters: ['top_logprobs', 'truncation'],
       defaultParameters: {},

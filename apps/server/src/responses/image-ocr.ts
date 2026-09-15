@@ -6,7 +6,6 @@ import { newId } from '../lib/ids.js'
 import { parseOcrSettings } from '../settings/application-settings.js'
 import { publishAdminUsage } from '../admin/usage-events.js'
 import { trackBilledInternalModelCall } from './model-calls.js'
-import { detailedPayloadCaptureIsActive } from '../logging/detailed-payload-retention.js'
 
 export const OCR_MAX_OUTPUT_TOKENS = 4_096
 import { createCatalogModelClient, resolveAvailableCatalogModel, resolveLegacyOcrCatalogModel, type CatalogModelRuntime } from './catalog-model-runtime.js'
@@ -127,11 +126,6 @@ export async function createModelImageInterceptor(
           }
         }
         await db.transaction(async (tx) => {
-          const [payloadPolicy] = await tx.select({
-            captureDetailedPayloads: requestLogs.captureDetailedPayloads,
-            payloadExpiresAt: requestLogs.payloadExpiresAt,
-          }).from(requestLogs).where(eq(requestLogs.id, requestLogId)).for('update').limit(1)
-          const captureDetailedPayloads = payloadPolicy && detailedPayloadCaptureIsActive(payloadPolicy)
           await tx.insert(ocrAttempts).values({
             id: attemptId,
             requestLogId,
@@ -141,8 +135,8 @@ export async function createModelImageInterceptor(
             modelId: runtime.model.id,
             status: 'completed',
             cached: Boolean(cached),
-            requestPayload: captureDetailedPayloads ? { model: runtime.model.upstreamModelId, input: dataUrl(providerImage) } : null,
-            responsePayload: captureDetailedPayloads ? rawResponse : null,
+            requestPayload: null, // Per-attempt diagnostics capture a redacted request.
+            responsePayload: null,
             durationMs: Date.now() - started,
           })
         })

@@ -84,8 +84,8 @@ describe('public OpenAI-compatible routes', () => {
   it('rejects unsupported parameters before queueing', async () => {
     const handler = (await handlers()).get('POST /v1/chat/completions')!
     await expect(handler(request({ body: {
-      model: 'm', messages: [{ role: 'user', content: 'hi' }], stop: 'END',
-    } }), {} as FastifyReply)).rejects.toMatchObject({ statusCode: 400, code: 'unsupported_parameter', param: 'stop' })
+      model: 'm', messages: [{ role: 'user', content: 'hi' }], n: 2,
+    } }), {} as FastifyReply)).rejects.toMatchObject({ statusCode: 400, code: 'unsupported_parameter', param: 'n' })
     expect(mocks.assertApiKeyModelAllowed).not.toHaveBeenCalled()
     expect(mocks.executePublicGeneration).not.toHaveBeenCalled()
   })

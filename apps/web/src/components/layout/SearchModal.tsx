@@ -93,7 +93,7 @@ export function SearchModal({
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="top-[20%] translate-y-0 gap-0 overflow-hidden p-0 sm:max-w-xl" showCloseButton={false}>
+      <DialogContent className="top-[20%] flex max-h-[calc(80dvh-1rem)] translate-y-0 flex-col gap-0 overflow-hidden p-0 sm:max-w-xl" showCloseButton={false}>
         <div className="flex items-center gap-2 border-b px-4">
           <Search className="size-4 text-muted-foreground" />
           <input
@@ -115,11 +115,11 @@ export function SearchModal({
               }
             }}
             placeholder={ui("Search chats and messages…")}
-            className="h-12 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+            className="h-12 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
           />
           <kbd className="rounded border bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">{ui("esc")}</kbd>
         </div>
-        <div className="max-h-[320px] overflow-y-auto p-1.5">
+        <div className="max-h-[320px] min-h-0 overflow-y-auto p-1.5">
           {results.length === 0 && (
             <div className="px-3 py-8 text-center text-sm text-muted-foreground">{ui("No results")}</div>
           )}

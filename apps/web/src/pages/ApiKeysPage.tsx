@@ -200,13 +200,13 @@ export function ApiKeysPage() {
 
   return (
     <ScrollArea className="h-full">
-      <div className="mx-auto max-w-5xl space-y-5 px-6 py-8">
+      <div className="mobile-page-content mx-auto max-w-5xl space-y-5 px-6 py-8">
         {/* header */}
         <div className="flex items-start gap-3">
           <div className="min-w-0 flex-1">
             <h1 className="text-xl font-semibold tracking-tight">{ui("API Keys")}</h1>
             <p className="mt-1 text-sm text-muted-foreground"> {ui("Create and manage OpenAI-compatible keys.")}{' '}
-              <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">
+              <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs wrap-anywhere">
                 {API_BASE_URL}
               </code>
             </p>

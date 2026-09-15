@@ -12,8 +12,8 @@ export function UsageLayout() {
   return (
     <div className="flex h-full flex-col">
       <header className="flex h-12 shrink-0 items-center gap-4 border-b px-5">
-        <h1 className="text-sm font-semibold">{ui("Usage")}</h1>
-        <nav className="flex items-center gap-1">
+        <h1 className="shrink-0 text-sm font-semibold">{ui("Usage")}</h1>
+        <nav className="settings-section-nav flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
           {TABS.map((t) => (
             <NavLink
               key={t.to}
@@ -21,7 +21,7 @@ export function UsageLayout() {
               end={t.end}
               className={({ isActive }) =>
                 cn(
-                  'rounded-md px-2.5 py-1.5 text-sm transition-colors',
+                  'shrink-0 whitespace-nowrap rounded-md px-2.5 py-1.5 text-sm transition-colors',
                   isActive
                     ? 'bg-accent font-medium'
                     : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground'

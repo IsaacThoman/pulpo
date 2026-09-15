@@ -20,7 +20,7 @@ import {
 } from '../chats/temporary.js'
 import { sanitizeOutputForClient } from './public-output.js'
 import { responseAttachmentIds } from '../messages/input.js'
-import { resolveModelParameters, unsupportedPublicModelParameter } from './model-parameters.js'
+import { droppedPublicModelParameters, resolveModelParameters } from './model-parameters.js'
 import { publicOutputTokenLimit } from './upstream-request.js'
 import { requireCodexEnabled } from '../codex/policy.js'
 import { CODEX_PI_PROVIDER_ID, CODEX_PROVIDER_ID } from '../codex/constants.js'
@@ -147,9 +147,20 @@ export async function createResponse(options: CreateResponseOptions) {
       throw new AppError(401, 'codex_reauthentication_required', 'Connect your Codex subscription in Settings to use this model', 'authentication_error', 'model')
     }
   }
-  if (options.apiKeyId && options.parameters) {
-    const rejected = unsupportedPublicModelParameter(model, options.parameters)
-    if (rejected) throw new AppError(400, 'parameter_not_allowed', `Parameter ${rejected} is not available for this model`, 'invalid_request_error', rejected)
+  let admittedParameters = options.parameters
+  if (options.apiKeyId && admittedParameters) {
+    // OpenAI-compatible clients send tuning options the catalog may not allow
+    // for this model. Drop them and use the model defaults rather than failing
+    // the whole request; the worker applies the same allowlist when it builds
+    // the upstream payload.
+    const dropped = droppedPublicModelParameters(model, admittedParameters)
+    if (dropped.length) {
+      admittedParameters = Object.fromEntries(Object.entries(admittedParameters).filter(([key]) => !dropped.includes(key)))
+      console.info(JSON.stringify({
+        level: 'info', service: 'pulpo-api', event: 'public_api.parameters_dropped',
+        apiKeyId: options.apiKeyId, modelId: model.id, parameters: dropped,
+      }))
+    }
   }
   if (options.input.agentMode) {
     if (options.apiKeyId) throw new AppError(400, 'agent_web_only', 'Agent mode is only available in Pulpo web chat')
@@ -157,7 +168,7 @@ export async function createResponse(options: CreateResponseOptions) {
     if (!parseAgentSettings(agentRow?.value).enabled) throw new AppError(503, 'agent_unavailable', 'Agent mode is not enabled')
     if (!model.agentEnabled) throw new AppError(400, 'model_not_agent_capable', 'The selected model is not enabled for agent mode')
   }
-  const parameters: Record<string, unknown> = { ...(options.parameters ?? {}), ...resolved.parameters }
+  const parameters: Record<string, unknown> = { ...(admittedParameters ?? {}), ...resolved.parameters }
   const maxOutputTokens = options.apiKeyId
     ? publicOutputTokenLimit(model.maxOutputTokens, {
       ...resolveModelParameters(model, parameters, { publicApi: true }),
@@ -263,7 +274,7 @@ export async function createResponse(options: CreateResponseOptions) {
       id: requestLogId, responseId: id, userId: options.ownerUserId, actorUserId: options.actorUserId, apiKeyId: options.apiKeyId,
       origin: options.actorUserId ? 'admin_chat' : options.apiKeyId ? 'api' : 'web', requestedModelId: options.input.modelId, currentModelId: model.id,
       ...policy, createdAt: collectedAt, updatedAt: collectedAt,
-      requestPayload: policy.captureDetailedPayloads ? { input: storedInput, parameters, presetSelections: resolved.selections } : null,
+      requestPayload: null, // Detailed bodies are captured per provider attempt.
     })
   })
   await publishAdminUsage(requestLogId, true)

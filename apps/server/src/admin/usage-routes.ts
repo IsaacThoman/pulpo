@@ -1,3 +1,4 @@
+import { registerDiagnosticRoutes } from './diagnostic-routes.js'
 import { and, asc, desc, eq, gt, gte, inArray, lt, or, sql, type SQL } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
@@ -46,6 +47,7 @@ function filters(input: z.infer<typeof querySchema>, includeCursor = false): SQL
 
 export async function registerAdminUsageRoutes(app: FastifyInstance): Promise<void> {
   registerAdminUsagePayloadRoutes(app)
+  registerDiagnosticRoutes(app)
   app.get('/api/admin/usage/leaderboard', async (request) => {
     requireAdmin(request)
     const query = usageQuerySchema.parse(request.query)

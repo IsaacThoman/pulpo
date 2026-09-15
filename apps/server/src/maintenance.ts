@@ -77,7 +77,7 @@ export async function createExport(exportId: string): Promise<void> {
     let contentType: string
     if (job.type === 'config') {
       const settings = await db.select().from(applicationSettings)
-      const safeSettings = settings.filter((row) => row.key !== 'publicUrl').map((row) => {
+      const safeSettings = settings.filter((row) => !['publicUrl', 'diagnosticCleanup'].includes(row.key)).map((row) => {
         if (row.key === 'webTools') return [row.key, publicWebToolsSettings(parseWebToolsSettings(row.value))] as const
         if (row.key === 'ocr' && row.value && typeof row.value === 'object') {
           const { encryptedCustomApiKey, ...safe } = row.value as Record<string, unknown>

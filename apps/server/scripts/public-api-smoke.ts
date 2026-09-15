@@ -16,6 +16,8 @@ if (new URL(process.env.DATABASE_URL ?? 'http://invalid').pathname !== '/pulpo_p
   throw new Error('Use a migrated disposable database named pulpo_public_api_test and a dedicated Redis instance with database /15')
 }
 process.env.LOG_LEVEL = 'silent'
+const { refreshDiagnosticPolicy, flushDiagnostics, closeDiagnostics } = await import('../src/logging/provider-diagnostics.js')
+const { reconcileDetailedPayloadRetention } = await import('../src/logging/detailed-payload-retention.js')
 const { db, queryClient } = await import('../src/database/client.js')
 const schema = await import('../src/database/schema.js')
 const { encryptSecret } = await import('../src/lib/crypto.js')
@@ -30,7 +32,7 @@ type Json = Record<string, unknown>
 const records = (value: unknown): Json[] => Array.isArray(value) ? value as Json[] : []
 const message = (text: string): Json => ({ type: 'message', id: `msg_${randomUUID()}`, role: 'assistant', status: 'completed', content: [{ type: 'output_text', text, annotations: [] }] })
 const tool = (name: string, args: Json): Json => ({ type: 'function_call', id: `fc_${randomUUID()}`, call_id: `call_${randomUUID()}`, name, arguments: JSON.stringify(args), status: 'completed' })
-type Fixture = { output: Json[]; status?: string; errorStatus?: number; delayMs?: number }
+type Fixture = { output: Json[]; status?: string; errorStatus?: number; errorBody?: Json; delayMs?: number }
 let fixture: (body: Json) => Fixture = () => ({ output: [message('Hello 🐙 — 你好')] })
 const upstreamRequests: Json[] = []
 const fixtureFailures: unknown[] = []
@@ -47,7 +49,7 @@ const upstream = createServer(async (req, res) => {
     const result = fixture(body)
     if (result.errorStatus) {
       res.writeHead(result.errorStatus, { 'content-type': 'application/json' })
-      res.end(JSON.stringify({ error: { message: 'Fixture upstream unavailable', type: 'server_error', code: 'fixture_error' } }))
+      res.end(JSON.stringify({ error: result.errorBody ?? { message: 'Fixture upstream unavailable', type: 'server_error', code: 'fixture_error' } }))
       return
     }
     res.writeHead(200, { 'content-type': 'text/event-stream' })
@@ -138,6 +140,8 @@ try {
     await check(`lossless Windows output: ${protocol}, stream=${stream}, logging=${capture}`, async () => {
       await db.insert(schema.applicationSettings).values({ key: 'logging', value: { logDetailedPayloads: capture, payloadRetention: '7d' } })
         .onConflictDoUpdate({ target: schema.applicationSettings.key, set: { value: { logDetailedPayloads: capture, payloadRetention: '7d' } } })
+      await db.transaction(tx => reconcileDetailedPayloadRetention(query => tx.execute(query), { logDetailedPayloads: capture, payloadRetention: '7d' }))
+      await refreshDiagnosticPolicy()
       fixture = () => ({ output: [message(unusualText)] })
       const body = protocol === 'chat/completions'
         ? { model, stream, messages: [
@@ -173,8 +177,24 @@ try {
       }
       const [log] = await db.select().from(schema.requestLogs).where(eq(schema.requestLogs.responseId, saved.id))
       assert.equal(log!.captureDetailedPayloads, capture)
-      if (capture) assert.deepEqual((log!.requestPayload as Json).input, saved.input)
-      else { assert.equal(log!.requestPayload, null); assert.equal(log!.responsePayload, null) }
+      assert.equal(log!.requestPayload, null); assert.equal(log!.responsePayload, null)
+      await flushDiagnostics()
+      const attempts = await db.select().from(schema.providerDiagnostics).where(eq(schema.providerDiagnostics.requestLogId, log!.id))
+      assert.equal(attempts.length, 1)
+      const attempt = attempts[0]!
+      assert.equal(attempt.captureDetailedPayloads, capture)
+      assert.equal(attempt.providerId, providerId)
+      assert.equal(attempt.status, 'completed')
+      assert.equal((attempt.metadata as Json).httpStatus, 200)
+      if (capture) {
+        const request = attempt.requestPayload as { fidelity: string; body: Json }
+        const response = attempt.responsePayload as { fidelity: string; body: Json[] }
+        assert.equal(request.fidelity, 'exact')
+        assert.deepEqual(request.body.input, upstreamInput)
+        assert.equal(response.fidelity, 'reconstructed')
+        const completed = response.body.find(event => event.type === 'response.completed')!.response
+        assert.equal(textOf(completed as OpenAI.Responses.Response), unusualText)
+      } else { assert.equal(attempt.requestPayload, null); assert.equal(attempt.responsePayload, null) }
       const retrieved = await client.responses.retrieve(saved.id)
       assert.equal(textOf(retrieved), unusualText)
       // Exact retry reuses the stored response and never contacts the provider twice.
@@ -371,12 +391,45 @@ try {
     assert.deepEqual(upstreamRequests[0]!.tools, []); assert.equal(upstreamRequests[0]!.tool_choice, 'none')
     assert(!('future_client_option' in upstreamRequests[0]!))
   })
-  await check('unsupported options return actionable 400 errors', async () => {
-    for (const extra of [{ service_tier: 'priority' }, { stop: 'END' }, { tools: [{ type: 'web_search' }] }]) {
+  await check('unrepresentable options return actionable 400 errors', async () => {
+    for (const extra of [{ n: 2 }, { tools: [{ type: 'web_search' }] }, { modalities: ['text', 'audio'] }]) {
       const response = await fetch(`${base}/v1/chat/completions`, { method: 'POST', headers: { authorization: `Bearer ${key.secret}`, 'content-type': 'application/json' }, body: JSON.stringify({ model, messages, ...extra }) })
       assert.equal(response.status, 400); assert((await response.json() as { error: { param: string } }).error.param)
     }
     assert.equal(upstreamRequests.length, 0)
+  })
+  await check('default client tuning succeeds on an unallowlisted model and admin-gated options are dropped', async () => {
+    // OpenCode-style defaults: sampling knobs, reasoning effort, and options with no Responses equivalent.
+    const result = await client.chat.completions.create({ model, messages, temperature: 0.4, top_p: 0.8, reasoning_effort: 'high', service_tier: 'priority', stop: ['END'], seed: 7, presence_penalty: 0.3, response_format: { type: 'text' } })
+    assert.equal(result.choices[0]!.message.content, 'Hello 🐙 — 你好')
+    const sent = upstreamRequests[0]!
+    assert.equal(sent.temperature, 0.4); assert.equal(sent.top_p, 0.8); assert.deepEqual(sent.reasoning, { effort: 'high' })
+    assert.deepEqual(sent.text, { format: { type: 'text' } })
+    for (const dropped of ['service_tier', 'stop', 'seed', 'presence_penalty']) assert(!(dropped in sent), `${dropped} reached upstream`)
+  })
+  await check('legacy functions protocol maps onto tools', async () => {
+    fixture = () => ({ output: [tool(fn.name, { path: 'legacy.txt' })] })
+    const result = await client.chat.completions.create({ model, messages, functions: [fn], function_call: 'auto' })
+    const call = result.choices[0]!.message.tool_calls![0]!
+    assert(call.type === 'function' && call.function.name === fn.name)
+    assert.equal(records(upstreamRequests[0]!.tools)[0]?.name, fn.name)
+  })
+  await check('provider parameter rejections are retried without the parameter', async () => {
+    fixture = body => 'temperature' in body
+      ? { errorStatus: 400, errorBody: { message: "Unsupported parameter: 'temperature' is not supported with this model.", type: 'invalid_request_error', code: 'unsupported_parameter', param: 'temperature' }, output: [] }
+      : { output: [message('stripped')] }
+    const result = await client.chat.completions.create({ model, messages, temperature: 0.1 })
+    assert.equal(result.choices[0]!.message.content, 'stripped')
+    assert.equal(upstreamRequests.length, 2); assert('temperature' in upstreamRequests[0]!); assert(!('temperature' in upstreamRequests[1]!))
+  })
+  await check('provider request rejections reach clients as 400 without retries or fallback', async () => {
+    fixture = () => ({ errorStatus: 400, errorBody: { message: 'Invalid schema for response_format', type: 'invalid_request_error', code: 'invalid_json_schema', param: 'text.format.schema' }, output: [] })
+    await assert.rejects(client.chat.completions.create({ model: retryModel, messages }), (error: unknown) => error instanceof OpenAI.APIError && error.status === 400 && error.code === 'invalid_json_schema' && error.param === 'text.format.schema')
+    assert.equal(upstreamRequests.length, 1, 'a deterministic 400 must not be retried')
+    await assert.rejects(client.chat.completions.create({ model: fallbackModel, messages }), (error: unknown) => error instanceof OpenAI.APIError && error.status === 400)
+    assert.equal(upstreamRequests.length, 2, 'a deterministic 400 must not fall back to another model')
+    const stream = await client.chat.completions.create({ model, messages, stream: true })
+    await assert.rejects(async () => { for await (const _chunk of stream) { /* consume errors */ } }, /Invalid schema for response_format/)
   })
   await check('concurrent streams keep responses isolated', async () => {
     fixture = body => ({ output: [message(JSON.stringify(body.input))] })
@@ -426,7 +479,7 @@ try {
   await app.close()
   await Promise.all(Object.values(queues).map(queue => queue.close()))
   await redis.quit()
-  await queryClient.end()
+  await closeDiagnostics(); await queryClient.end()
   upstream.closeAllConnections(); upstream.close()
 }
 console.log(`\n${passed} passed; ${failures.length} failed${process.env.OPENCODE_BIN ? '' : '; OpenCode not run (set OPENCODE_BIN)'}`)

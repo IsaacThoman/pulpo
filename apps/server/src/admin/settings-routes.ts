@@ -113,13 +113,14 @@ export async function registerAdminSettingsRoutes(app: FastifyInstance): Promise
   app.get('/api/admin/settings', async (request) => {
     requireAdmin(request)
     const rows = await db.select().from(applicationSettings)
-    return { values: Object.fromEntries(rows.filter((row) => !['ocr', 'webTools', 'dictation', 'episodicMemory', 'backups'].includes(row.key)).map((row) => [row.key, row.value])) }
+    return { values: Object.fromEntries(rows.filter((row) => !['ocr', 'webTools', 'dictation', 'episodicMemory', 'backups', 'diagnosticCleanup'].includes(row.key)).map((row) => [row.key, row.value])) }
   })
 
   app.patch('/api/admin/settings', async (request) => {
     const admin = requireAdmin(request)
     const values = z.record(z.string().min(1).max(120), z.unknown()).parse(request.body)
     let loggingSettings: DetailedPayloadLoggingSettings | undefined
+    if (values.diagnosticCleanup !== undefined) throw new AppError(400, 'runtime_status_read_only', 'Diagnostic cleanup status is managed by the worker')
     if (values.publicUrl !== undefined) throw new AppError(400, 'deployment_setting_read_only', 'PUBLIC_URL is managed by the deployment environment')
     if (values.auth !== undefined) {
       const authSettings = authSettingsSchema.parse(values.auth)
