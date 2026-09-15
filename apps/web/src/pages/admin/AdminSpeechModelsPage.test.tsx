@@ -1,15 +1,15 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { OPENAI_SPEECH_PRESET } from '@pulpo/contracts'
+import { OPENAI_SPEECH_PRESET, SPEECH_DEFAULT_PREVIEW_TEXT } from '@pulpo/contracts'
 import { AdminSpeechModelsPage } from './AdminSpeechModelsPage'
 import { apiRequest } from '@/lib/api'
 
 vi.mock('@/lib/api', () => ({ apiRequest: vi.fn() }))
-vi.mock('@/features/speech/playback', async () => ({ speechPlayback: new (await import('@pulpo/client-core')).SpeechPlayback(), previewSpeechFile: vi.fn(), previewSpeechVoice: vi.fn() }))
+vi.mock('@/features/speech/playback', async () => ({ speechPlayback: new (await import('@pulpo/client-core')).SpeechPlayback() }))
 vi.mock('@/i18n/ui', () => ({ ui: (text: string, values?: Record<string, unknown>) => text.replace(/{{(\w+)}}/g, (_, key) => String(values?.[key] ?? '')) }))
 const model = { ...OPENAI_SPEECH_PRESET, id: 'speech', providerConnectionId: '11111111-1111-4111-8111-111111111111',
-  voices: [{ id: 'coral', label: 'Warm voice', previewAvailable: true }, { id: 'custom', label: 'Custom voice' }], defaultVoice: 'coral' }
+  voices: [{ id: 'coral', label: 'Warm voice' }, { id: 'custom', label: 'Custom voice' }], defaultVoice: 'coral' }
 beforeEach(() => {
   vi.mocked(apiRequest).mockReset().mockImplementation(async path => path === '/api/admin/providers'
     ? { data: [{ id: model.providerConnectionId, name: 'Provider' }] }
@@ -44,22 +44,23 @@ it.each(['0', '-1', '1.001'])('shows a readable field error for invalid limit %s
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
 })
 
-it('uploads the optional clip after saving the model and removes it only on save', async () => {
+it('edits per-voice preview text with the shared default and no upload controls', async () => {
   await edit()
-  fireEvent.change(screen.getByLabelText('Preview file for Warm voice'), { target: { files: [new File(['sample'], 'sample.wav', { type: 'audio/wav' })] } })
+  const text = screen.getByLabelText('Preview text for Warm voice') as HTMLTextAreaElement
+  expect(text.placeholder).toBe(SPEECH_DEFAULT_PREVIEW_TEXT)
+  expect(text.maxLength).toBe(500)
+  expect(screen.queryByLabelText('Preview file for Warm voice')).toBeNull()
+  expect(screen.queryByText('Generate user preview')).toBeNull()
+  fireEvent.change(text, { target: { value: 'Warm hello' } })
+  fireEvent.change(screen.getByLabelText('Preview text for Custom voice'), { target: { value: 'Custom hello' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Load preset voices' }))
+  expect(text.value).toBe('Warm hello')
   fireEvent.click(screen.getByRole('button', { name: 'Save' }))
-  await waitFor(() => expect(apiRequest).toHaveBeenCalledWith('/api/admin/speech-models/speech/voices/coral/preview', expect.objectContaining({ method: 'POST', body: expect.any(FormData) })))
-  const calls = vi.mocked(apiRequest).mock.calls
-  const saveIndex = calls.findIndex(([path, options]) => path === '/api/admin/speech-models/speech' && options?.method === 'PATCH')
-  const uploadIndex = calls.findIndex(([path]) => path.endsWith('/preview'))
-  expect(uploadIndex).toBeGreaterThan(saveIndex)
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
-  fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
-  fireEvent.click(screen.getByRole('button', { name: 'Remove preview for Warm voice' }))
-  expect(apiRequest).not.toHaveBeenCalledWith('/api/admin/speech-models/speech/voices/coral/preview', { method: 'DELETE' })
-  fireEvent.click(screen.getByRole('button', { name: 'Save' }))
-  await waitFor(() => expect(apiRequest).toHaveBeenCalledWith('/api/admin/speech-models/speech/voices/coral/preview', { method: 'DELETE' }))
-  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  expect(apiRequest).toHaveBeenCalledWith('/api/admin/speech-models/speech', expect.objectContaining({ method: 'PATCH', body: expect.objectContaining({ voices: expect.arrayContaining([
+    { id: 'coral', label: 'Warm voice', previewText: 'Warm hello' }, { id: 'custom', label: 'Custom voice', previewText: 'Custom hello' },
+  ]) }) }))
+  expect(vi.mocked(apiRequest).mock.calls.some(([path]) => path.endsWith('/preview'))).toBe(false)
 })
 
 it('keeps the selected default when renamed and requires a replacement after removal', async () => {
@@ -98,16 +99,12 @@ it('preserves existing names during preset loading and validates pasted or new r
   expect((screen.getByRole('button', { name: 'Save' }) as HTMLButtonElement).disabled).toBe(true)
 })
 
-it('saves different samples for individual voices and never uploads one model-wide clip', async () => {
+it('sends null to reset a voice to the default text', async () => {
   await edit()
-  const warm = new File(['warm'], 'warm.wav', { type: 'audio/wav' })
-  const custom = new File(['custom'], 'custom.mp3', { type: 'audio/mpeg' })
-  fireEvent.change(screen.getByLabelText('Preview file for Warm voice'), { target: { files: [warm] } })
-  fireEvent.change(screen.getByLabelText('Preview file for Custom voice'), { target: { files: [custom] } })
+  const text = screen.getByLabelText('Preview text for Warm voice')
+  fireEvent.change(text, { target: { value: 'Custom' } })
+  fireEvent.change(text, { target: { value: '' } })
   fireEvent.click(screen.getByRole('button', { name: 'Save' }))
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
-  const uploads = vi.mocked(apiRequest).mock.calls.filter(([path]) => path.endsWith('/preview'))
-  expect(uploads.map(([path]) => path)).toEqual(['/api/admin/speech-models/speech/voices/coral/preview', '/api/admin/speech-models/speech/voices/custom/preview'])
-  expect((uploads[0]![1]!.body as FormData).get('file')).toBe(warm)
-  expect((uploads[1]![1]!.body as FormData).get('file')).toBe(custom)
+  expect(apiRequest).toHaveBeenCalledWith('/api/admin/speech-models/speech', expect.objectContaining({ body: expect.objectContaining({ voices: [{ ...model.voices[0], previewText: null }, model.voices[1]] }) }))
 })
