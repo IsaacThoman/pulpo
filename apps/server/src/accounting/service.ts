@@ -64,6 +64,7 @@ export async function reserveBudget(input: {
   apiKeyId?: string | null
   requestInput: unknown
   maxOutputTokens: number
+  minimumOutputReservationTokens?: number
   pricing: ActivePricing
 }): Promise<{ amountMicros: number; maxOutputTokens: number }> {
   return db.transaction(async (tx) => {
@@ -449,6 +450,7 @@ export async function resizeBudgetReservation(input: {
   accruedCostMicros: number
   requestInput: unknown
   maxOutputTokens: number
+  minimumOutputReservationTokens?: number
   pricing: ActivePricing
 }): Promise<{ amountMicros: number; maxOutputTokens: number }> {
   return updateReservationAmount(input.responseId, capacityMicros => budgetOutputReservation({ ...input, capacityMicros }))

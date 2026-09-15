@@ -346,6 +346,40 @@ try {
       await db.update(schema.modelPricingVersions).set({ outputPriceMicros: 0 }).where(eq(schema.modelPricingVersions.modelId, model))
     }
   })
+  await check('admin model allocation settings persist, validate, and control admission', async () => {
+    const edit = (id: string, body: Json) => fetch(`${base}/api/admin/models/${id}`, {
+      method: 'PATCH', headers: { cookie, 'content-type': 'application/json' }, body: JSON.stringify(body),
+    })
+    const modelId = `${model}-allocation`
+    const created = await fetch(`${base}/api/admin/models`, {
+      method: 'POST', headers: { cookie, 'content-type': 'application/json' },
+      body: JSON.stringify({ id: modelId, providerConnectionId: providerId, upstreamModelId: modelId, name: 'Allocation fixture',
+        contextWindow: 128000, maxOutputTokens: 16384, minimumOutputReservationTokens: 1500,
+        inputPriceMicros: 0, cachedInputPriceMicros: 0, cacheWritePriceMicros: 0, outputPriceMicros: 0 }),
+    })
+    assert.equal(created.status, 201, await created.text())
+    assert.equal((await edit(modelId, { name: 'Renamed fixture' })).status, 200)
+    const listed = await fetch(`${base}/api/admin/models`, { headers: { cookie } }).then(response => response.json()) as { data: Json[] }
+    assert.equal(listed.data.find(row => row.id === modelId)?.minimumOutputReservationTokens, 1500)
+    for (const minimumOutputReservationTokens of [0, -1, 1.5, null, '1000', 2147483648]) {
+      assert.equal((await edit(modelId, { minimumOutputReservationTokens })).status, 400)
+    }
+    const [keyRow] = await db.select().from(schema.apiKeys).where(eq(schema.apiKeys.id, key.id))
+    await db.update(schema.users).set({ balanceMicros: 3000 }).where(eq(schema.users.id, keyRow!.userId))
+    await db.update(schema.modelPricingVersions).set({ outputPriceMicros: 1_000_000 }).where(eq(schema.modelPricingVersions.modelId, model))
+    try {
+      assert.equal((await edit(model, { minimumOutputReservationTokens: 12000 })).status, 200)
+      const calls = upstreamRequests.length
+      await assert.rejects(client.responses.create({ model, input: 'Hi' }), error => error instanceof OpenAI.APIError && error.status === 402)
+      assert.equal(upstreamRequests.length, calls)
+      assert.equal((await edit(model, { minimumOutputReservationTokens: 1500 })).status, 200)
+      assert.equal((await client.responses.create({ model, input: 'Hi' })).status, 'completed')
+      assert.equal(upstreamRequests.at(-1)!.max_output_tokens, 3000)
+    } finally {
+      await edit(model, { minimumOutputReservationTokens: 8000 })
+      await db.update(schema.modelPricingVersions).set({ outputPriceMicros: 0 }).where(eq(schema.modelPricingVersions.modelId, model))
+    }
+  })
   await check('fallback recalculates its affordable cap with the fallback price', async () => {
     const [keyRow] = await db.select().from(schema.apiKeys).where(eq(schema.apiKeys.id, key.id))
     await db.update(schema.users).set({ balanceMicros: 16_000 }).where(eq(schema.users.id, keyRow!.userId))
@@ -357,7 +391,14 @@ try {
       assert.equal(result.status, 'completed')
       assert.equal(upstreamRequests[0]!.max_output_tokens, 8_192)
       assert.equal(upstreamRequests.at(-1)!.max_output_tokens, 8_000)
+      await db.update(schema.users).set({ balanceMicros: 4_000 }).where(eq(schema.users.id, keyRow!.userId))
+      await db.update(schema.models).set({ minimumOutputReservationTokens: 1_000 }).where(eq(schema.models.id, fallbackModel))
+      await db.update(schema.models).set({ minimumOutputReservationTokens: 2_000 }).where(eq(schema.models.id, model))
+      assert.equal((await client.responses.create({ model: fallbackModel, input: 'Hi' })).status, 'completed')
+      assert.equal(upstreamRequests.at(-2)!.max_output_tokens, 4_000)
+      assert.equal(upstreamRequests.at(-1)!.max_output_tokens, 2_000)
     } finally {
+      for (const id of [model, fallbackModel]) await db.update(schema.models).set({ minimumOutputReservationTokens: 8_000 }).where(eq(schema.models.id, id))
       for (const id of [model, fallbackModel]) await db.update(schema.modelPricingVersions).set({ outputPriceMicros: 0 }).where(eq(schema.modelPricingVersions.modelId, id))
     }
   })
@@ -403,17 +444,17 @@ try {
     const userId = keyRow!.userId
     await db.insert(schema.applicationSettings).values({ key: 'agent', value: { enabled: true } })
       .onConflictDoUpdate({ target: schema.applicationSettings.key, set: { value: { enabled: true } } })
-    await db.update(schema.models).set({ agentEnabled: true }).where(eq(schema.models.id, model))
+    await db.update(schema.models).set({ agentEnabled: true, minimumOutputReservationTokens: 1_000 }).where(eq(schema.models.id, model))
     await db.update(schema.modelPricingVersions).set({ outputPriceMicros: 1_000_000 }).where(eq(schema.modelPricingVersions.modelId, model))
     try {
       for (const agentMode of [false, true]) {
-        await db.update(schema.users).set({ balanceMicros: 10_000 }).where(eq(schema.users.id, userId))
+        await db.update(schema.users).set({ balanceMicros: 3_000 }).where(eq(schema.users.id, userId))
         const chatId = randomUUID()
         await db.insert(schema.chats).values({ id: chatId, userId, modelId: model, title: 'Budget test' })
         let calls = 0
         fixture = body => {
           calls++
-          assert.equal(body.max_output_tokens, agentMode && calls > 1 ? 9_980 : 10_000)
+          assert.equal(body.max_output_tokens, agentMode && calls > 1 ? 2_980 : 3_000)
           return agentMode && calls === 1
             ? { output: [tool('unknown_fixture_tool', {})] }
             : { output: [message('Budget-limited answer')], status: 'incomplete' }
@@ -438,6 +479,7 @@ try {
         assert(Date.now() < deadline, 'Terminal accounting did not complete')
       }
     } finally {
+      await db.update(schema.models).set({ minimumOutputReservationTokens: 8_000 }).where(eq(schema.models.id, model))
       await db.update(schema.modelPricingVersions).set({ outputPriceMicros: 0 }).where(eq(schema.modelPricingVersions.modelId, model))
     }
   })

@@ -67,7 +67,7 @@ import { CODEX_PROVIDER_ID } from '../codex/constants.js'
 import { codexErrorRequiresReauthentication, createCodexModels, markCodexReauthenticationRequired, redactedCodexError } from '../codex/credential-store.js'
 import { codexInferenceReferenceCostMicros } from '../codex/reference-cost.js'
 import { agentThinkingLevel } from '../agent/model-parameters.js'
-import { calculateCostMicros, estimateInputTokens, MINIMUM_OUTPUT_RESERVATION_TOKENS } from '../accounting/pricing.js'
+import { calculateCostMicros, estimateInputTokens } from '../accounting/pricing.js'
 import { generationTimeContext, TIME_CONTEXT_INSTRUCTIONS, withGenerationTimeContext } from './time-context.js'
 
 type UpstreamEvent = { type: string; [key: string]: unknown }
@@ -454,6 +454,7 @@ async function processCodexGenerationAttempt(
     const reservation = await resizeBudgetReservation({
       responseId, accruedCostMicros: 0, requestInput: context,
       maxOutputTokens: publicOutputTokenLimit(record.model.maxOutputTokens, record.response.parameters as Record<string, unknown>).max_output_tokens,
+      minimumOutputReservationTokens: record.model.minimumOutputReservationTokens,
       pricing: await getActivePricing(record.model.id),
     })
     const stream = codex.streamSimple(piModel, context, {
@@ -698,7 +699,8 @@ async function processGenerationAttempt(
   // Free excess output headroom while required preprocessing reserves its own calls.
   await resizeBudgetReservation({
     responseId, accruedCostMicros: sidecarCostMicros + priorGenerationCostMicros, requestInput: record.response.input,
-    maxOutputTokens: Math.min(MINIMUM_OUTPUT_RESERVATION_TOKENS, publicOutputTokenLimit(record.model.maxOutputTokens, record.response.parameters as Record<string, unknown>).max_output_tokens),
+    maxOutputTokens: Math.min(record.model.minimumOutputReservationTokens, publicOutputTokenLimit(record.model.maxOutputTokens, record.response.parameters as Record<string, unknown>).max_output_tokens),
+    minimumOutputReservationTokens: record.model.minimumOutputReservationTokens,
     pricing: await getActivePricing(record.model.id),
   })
   const imageInterceptor = await createModelImageInterceptor(requestLog.id, {
@@ -798,6 +800,7 @@ async function processGenerationAttempt(
       maxOutputTokens: publicOutputTokenLimit(record.model.maxOutputTokens, {
         ...parameters, ...record.response.parameters as Record<string, unknown>,
       }).max_output_tokens,
+      minimumOutputReservationTokens: record.model.minimumOutputReservationTokens,
       pricing,
     })
     await db.update(responses).set({ pricingVersionId: pricing.id }).where(eq(responses.id, responseId))

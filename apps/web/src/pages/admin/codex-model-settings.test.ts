@@ -8,7 +8,7 @@ import {
 
 const model: ManagedCodexModelSettings = {
   id: 'codex:gpt-test', name: 'GPT Test', upstreamModelId: 'gpt-test', contextWindow: 200_000,
-  maxOutputTokens: 32_000, compactionThresholdTokens: 100_000, compactionRetainedTurns: 4,
+  maxOutputTokens: 32_000, minimumOutputReservationTokens: 8_000, compactionThresholdTokens: 100_000, compactionRetainedTurns: 4,
   maximumCompactionThresholdTokens: 195_904,
 }
 
@@ -20,12 +20,15 @@ describe('managed Codex model settings', () => {
 
   it('validates the server-supported bounds', () => {
     expect(validManagedCodexSettings(model)).toBe(true)
+    expect(validManagedCodexSettings({ ...model, minimumOutputReservationTokens: 0 })).toBe(false)
+    expect(validManagedCodexSettings({ ...model, minimumOutputReservationTokens: 1_500 })).toBe(true)
     expect(validManagedCodexSettings({ ...model, compactionThresholdTokens: 196_000 })).toBe(false)
     expect(validManagedCodexSettings({ ...model, compactionRetainedTurns: 0 })).toBe(false)
   })
 
   it('builds a restricted patch without managed model fields', () => {
     expect(managedCodexSettingsPatch(model)).toEqual({
+      minimumOutputReservationTokens: 8_000,
       compactionThresholdTokens: 100_000,
       compactionRetainedTurns: 4,
     })

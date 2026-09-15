@@ -1,0 +1,2 @@
+ALTER TABLE "models" ADD COLUMN "minimum_output_reservation_tokens" integer DEFAULT 8000 NOT NULL;--> statement-breakpoint
+ALTER TABLE "models" ADD CONSTRAINT "models_minimum_output_reservation_positive" CHECK ("models"."minimum_output_reservation_tokens" > 0);

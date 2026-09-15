@@ -39,10 +39,11 @@ import {
 
 type PresetInput = ChatPreset[]
 const RESERVED_PARAMETERS = new Set(['model', 'input', 'stream', 'store', 'metadata'])
-const codexCompactionPatchSchema = z.object({
+const codexModelSettingsPatchSchema = z.object({
+  minimumOutputReservationTokens: createModelSchema.shape.minimumOutputReservationTokens.removeDefault().optional(),
   compactionThresholdTokens: z.number().int().min(COMPACTION_MIN_THRESHOLD_TOKENS).optional(),
   compactionRetainedTurns: z.number().int().min(1).max(32).optional(),
-}).strict().refine((value) => Object.keys(value).length > 0, { message: 'At least one compaction setting is required' })
+}).strict().refine((value) => Object.keys(value).length > 0, { message: 'At least one model setting is required' })
 
 function codexModelSettings(model: typeof models.$inferSelect) {
   return {
@@ -51,6 +52,7 @@ function codexModelSettings(model: typeof models.$inferSelect) {
     upstreamModelId: model.upstreamModelId,
     contextWindow: model.contextWindow,
     maxOutputTokens: model.maxOutputTokens,
+    minimumOutputReservationTokens: model.minimumOutputReservationTokens,
     compactionThresholdTokens: model.compactionThresholdTokens,
     compactionRetainedTurns: model.compactionRetainedTurns,
     maximumCompactionThresholdTokens: maximumCompactionThreshold(model.contextWindow),
@@ -544,7 +546,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
   app.patch('/api/admin/codex-model-settings/:modelId', async (request) => {
     const admin = requireAdmin(request)
     const { modelId } = z.object({ modelId: z.string().min(1) }).parse(request.params)
-    const body = codexCompactionPatchSchema.parse(request.body)
+    const body = codexModelSettingsPatchSchema.parse(request.body)
     const [current] = await db.select().from(models).where(and(
       eq(models.id, modelId),
       eq(models.providerConnectionId, CODEX_PROVIDER_ID),
@@ -556,6 +558,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
     }
     const updated = await db.transaction(async (tx) => {
       const [row] = await tx.update(models).set({
+        minimumOutputReservationTokens: body.minimumOutputReservationTokens,
         compactionEnabled: true,
         compactionThresholdTokens: body.compactionThresholdTokens,
         compactionRetainedTurns: body.compactionRetainedTurns,
@@ -563,7 +566,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
       }).where(and(eq(models.id, modelId), eq(models.providerConnectionId, CODEX_PROVIDER_ID))).returning()
       if (!row) throw notFound('Codex model')
       await tx.insert(auditEvents).values({
-        id: newId(), actorUserId: admin.id, action: 'codex_model.compaction.update', targetType: 'model', targetId: modelId,
+        id: newId(), actorUserId: admin.id, action: 'codex_model.settings.update', targetType: 'model', targetId: modelId,
       })
       return row
     })
@@ -606,6 +609,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
         interceptImagesWithOcr: input.interceptImagesWithOcr,
         contextWindow: input.contextWindow,
         maxOutputTokens: input.maxOutputTokens,
+        minimumOutputReservationTokens: input.minimumOutputReservationTokens,
         compactionEnabled: input.compactionEnabled,
         compactionThresholdTokens: input.compactionThresholdTokens,
         compactionRetainedTurns: input.compactionRetainedTurns,
@@ -652,6 +656,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
     if (body.customIconId !== undefined && body.customIconId !== null) {
       await requireCatalogIcon(z.uuid().parse(body.customIconId))
     }
+    const minimumOutputReservationTokens = createModelSchema.shape.minimumOutputReservationTokens.removeDefault().optional().parse(body.minimumOutputReservationTokens)
     const promptCachingEnabled = createModelSchema.shape.promptCachingEnabled.removeDefault().optional().parse(body.promptCachingEnabled)
     const compactionPatch = z.object({
       compactionEnabled: z.boolean().optional(),
@@ -688,6 +693,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
       promptCachingEnabled,
       interceptImagesWithOcr: typeof body.interceptImagesWithOcr === 'boolean' ? body.interceptImagesWithOcr : undefined,
       contextWindow: typeof body.contextWindow === 'number' ? body.contextWindow : undefined,
+      minimumOutputReservationTokens,
       maxOutputTokens: typeof body.maxOutputTokens === 'number' ? body.maxOutputTokens : undefined,
       compactionEnabled: compactionPatch.compactionEnabled,
       compactionThresholdTokens: compactionPatch.compactionThresholdTokens,

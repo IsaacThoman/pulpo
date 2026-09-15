@@ -272,6 +272,7 @@ export async function createResponse(options: CreateResponseOptions) {
       apiKeyId: options.apiKeyId,
       requestInput: storedInput,
       maxOutputTokens,
+      minimumOutputReservationTokens: model.minimumOutputReservationTokens,
       pricing,
     })
     const acceptedAt = new Date()

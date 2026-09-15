@@ -25,7 +25,7 @@ import { createWorkspaceTools } from './tools.js'
 import { publishAdminUsage } from '../admin/usage-events.js'
 import { buildAgentSystemPrompt, buildAgentUserPrompt } from './policy.js'
 import { runPostResponseTasks } from '../responses/post-tasks.js'
-import { calculateCostMicros, MINIMUM_OUTPUT_RESERVATION_TOKENS, workspaceHoldMicros, workspaceUsageMicros } from '../accounting/pricing.js'
+import { calculateCostMicros, workspaceHoldMicros, workspaceUsageMicros } from '../accounting/pricing.js'
 import { truncateUtf8 } from './output.js'
 import { buildAgentOutput, type ToolTimelineItem } from './timeline.js'
 import { messagesForPersistence } from './context.js'
@@ -771,6 +771,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
           ...resolvedParameters.parameters,
           ...record.response.parameters as Record<string, unknown>,
         }).max_output_tokens,
+        minimumOutputReservationTokens: active.model.minimumOutputReservationTokens,
         pricing,
       })
       turnPricing.set(modelTurns, pricing)
@@ -1006,7 +1007,8 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
     await resizeBudgetReservation({
       responseId, accruedCostMicros: accruedCostMicros + accruedToolCostMicros + sidecarCostMicros,
       requestInput: record.response.input,
-      maxOutputTokens: Math.min(MINIMUM_OUTPUT_RESERVATION_TOKENS, publicOutputTokenLimit(active.model.maxOutputTokens, record.response.parameters as Record<string, unknown>).max_output_tokens),
+      maxOutputTokens: Math.min(active.model.minimumOutputReservationTokens, publicOutputTokenLimit(active.model.maxOutputTokens, record.response.parameters as Record<string, unknown>).max_output_tokens),
+      minimumOutputReservationTokens: active.model.minimumOutputReservationTokens,
       pricing: await getActivePricing(active.model.id),
     })
     await emit('pulpo.agent.started', { runId })

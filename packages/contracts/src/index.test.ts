@@ -55,6 +55,15 @@ import {
 } from './index.js'
 
 describe('model prompt caching settings', () => {
+  it('defaults and validates each model minimum output allocation without resetting omitted patches', () => {
+    const create = createModelSchema.pick({ minimumOutputReservationTokens: true })
+    const patch = createModelSchema.shape.minimumOutputReservationTokens.removeDefault().optional()
+    expect(create.parse({})).toEqual({ minimumOutputReservationTokens: 8_000 })
+    expect(create.parse({ minimumOutputReservationTokens: 1_500 })).toEqual({ minimumOutputReservationTokens: 1_500 })
+    expect(patch.parse(undefined)).toBeUndefined()
+    for (const value of [0, -1, 1.5, '1000', null, 2_147_483_648]) expect(patch.safeParse(value).success).toBe(false)
+  })
+
   it('defaults to disabled and only accepts an explicit boolean', () => {
     const create = createModelSchema.pick({ promptCachingEnabled: true })
     const update = createModelSchema.shape.promptCachingEnabled.removeDefault().optional()

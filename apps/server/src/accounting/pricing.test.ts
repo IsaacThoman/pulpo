@@ -93,6 +93,19 @@ describe('budget-aware output reservation', () => {
   const reserve = (capacityMicros: number, maxOutputTokens = 32_000, accruedCostMicros = 0) =>
     budgetOutputReservation({ requestInput, pricing, capacityMicros, maxOutputTokens, accruedCostMicros })
 
+  it('uses the per-model floor, including floors above or below the default', () => {
+    const configured = (minimumOutputReservationTokens: number, maxOutputTokens = 32_000) => budgetOutputReservation({
+      requestInput, pricing, maxOutputTokens, minimumOutputReservationTokens,
+      capacityMicros: calculateReservationMicros(requestInput, 3_000, pricing),
+    })
+    expect(configured(1_000)?.maxOutputTokens).toBe(3_000)
+    expect(configured(12_000)).toBeNull()
+    expect(configured(12_000, 2_000)?.maxOutputTokens).toBe(2_000)
+    for (const minimumOutputReservationTokens of [0, -1, 1.5, 2_147_483_648, Number.NaN]) {
+      expect(() => configured(minimumOutputReservationTokens)).toThrow('Invalid minimum output reservation')
+    }
+  })
+
   it('admits exactly the minimum, rejects one micro less, and fully funds a longer cap', () => {
     const minimum = calculateReservationMicros(requestInput, 8_000, pricing)
     expect(reserve(minimum)).toEqual({ amountMicros: minimum, maxOutputTokens: 8_000 })

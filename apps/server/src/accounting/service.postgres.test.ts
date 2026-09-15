@@ -63,6 +63,15 @@ describe.skipIf(!enabled)('budget-aware reservations in PostgreSQL', () => {
     await queryClient.end()
   })
 
+  it('stores model defaults and enforces positive minimum allocations in PostgreSQL', async () => {
+    const [model] = await db.select().from(models).where(eq(models.id, modelId))
+    expect(model?.minimumOutputReservationTokens).toBe(8_000)
+    await expect(db.update(models).set({ minimumOutputReservationTokens: 0 }).where(eq(models.id, modelId))).rejects.toThrow()
+    const userId = await account(3_001), input = await request(userId)
+    expect(await reserveBudget({ ...input, minimumOutputReservationTokens: 1_500 })).toEqual({ amountMicros: 3_001, maxOutputTokens: 3_000 })
+    await expect(resizeBudgetReservation({ ...input, accruedCostMicros: 0, minimumOutputReservationTokens: 12_000 })).rejects.toMatchObject({ code: 'insufficient_balance' })
+  })
+
   it('reserves the entire affordable cap and releases unused funding at settlement', async () => {
     const userId = await account(10_001), input = await request(userId)
     expect(await reserveBudget(input)).toEqual({ amountMicros: 10_001, maxOutputTokens: 10_000 })

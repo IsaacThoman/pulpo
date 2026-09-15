@@ -922,6 +922,9 @@ export type ChatPreset = z.infer<typeof chatPresetSchema>
 
 export const UNKNOWN_MODEL_ID = 'pulpo-unknown-model'
 
+export const DEFAULT_MINIMUM_OUTPUT_RESERVATION_TOKENS = 8_000
+export const minimumOutputReservationTokensSchema = z.number().int().min(1).max(2_147_483_647)
+
 export const createModelSchema = z.object({
   id: z.string().regex(/^[a-z0-9][a-z0-9._-]{0,119}$/),
   providerConnectionId: idSchema,
@@ -941,6 +944,7 @@ export const createModelSchema = z.object({
   interceptImagesWithOcr: z.boolean().default(false),
   contextWindow: z.number().int().positive(),
   maxOutputTokens: z.number().int().positive(),
+  minimumOutputReservationTokens: minimumOutputReservationTokensSchema.default(DEFAULT_MINIMUM_OUTPUT_RESERVATION_TOKENS),
   compactionEnabled: z.boolean().default(true),
   compactionThresholdTokens: z.number().int().min(2_000).max(1_000_000).default(100_000),
   compactionRetainedTurns: z.number().int().min(1).max(32).default(4),

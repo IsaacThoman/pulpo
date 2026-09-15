@@ -1,7 +1,7 @@
 # Generation budget reservations
 
 Generation requires enough available credit for estimated input, the request fee,
-and 8,000 output tokens. A smaller request or catalog output limit lowers that
+and the model’s minimum output allocation (8,000 tokens by default). A smaller request or catalog output limit lowers that
 minimum. This is an admission allowance, not a minimum response length or a
 charge for tokens that were never generated.
 
@@ -24,6 +24,19 @@ unused output capacity is released so agent tools and optional post-response
 calls can reserve their costs. Actual usage is settled; unused funds become
 available again. A long-running call can temporarily reserve all remaining funds
 and prevent another request from starting.
+
+## Per-model configuration
+
+In **Admin → Models**, edit **Minimum output allocation** beside **Max output
+tokens**. Managed Codex models expose it in their model settings. The admin
+create/update API field is `minimumOutputReservationTokens`; it accepts whole
+numbers from 1 to 2,147,483,647. Omitting it on an update preserves the saved value.
+Existing models and newly created models default to 8,000.
+
+Admission and each subsequent provider call use the active model’s setting,
+including agent turns and fallbacks. A floor above the request or model output
+ceiling is capped to that smaller ceiling. For example, a 12,000-token minimum
+with a 2,000-token request limit requires funding for 2,000 output tokens.
 
 ## Accounting boundary
 

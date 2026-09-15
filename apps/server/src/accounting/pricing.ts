@@ -1,4 +1,4 @@
-import type { ResponseUsage } from '@pulpo/contracts'
+import { DEFAULT_MINIMUM_OUTPUT_RESERVATION_TOKENS, type ResponseUsage } from '@pulpo/contracts'
 
 export interface Pricing {
   inputPriceMicros: number
@@ -50,12 +50,11 @@ export function calculateRollingReservationMicros(
   return accruedCostMicros + calculateReservationMicros(input, maxOutputTokens, pricing)
 }
 
-export const MINIMUM_OUTPUT_RESERVATION_TOKENS = 8_000
-
 /** Find the largest fully funded output limit, using the same rounding as billing. */
 export function budgetOutputReservation(input: {
   requestInput: unknown
   maxOutputTokens: number
+  minimumOutputReservationTokens?: number
   pricing: Pricing
   capacityMicros: number
   accruedCostMicros?: number
@@ -64,7 +63,9 @@ export function budgetOutputReservation(input: {
   if (!Number.isSafeInteger(maxOutputTokens) || maxOutputTokens <= 0) throw new Error('Invalid output token limit')
   const fixedCostMicros = calculateRollingReservationMicros(input.accruedCostMicros ?? 0, input.requestInput, 0, pricing)
   const cost = (tokens: number) => fixedCostMicros + tokenCostMicros(tokens, pricing.outputPriceMicros)
-  let low = Math.min(MINIMUM_OUTPUT_RESERVATION_TOKENS, maxOutputTokens)
+  const minimum = input.minimumOutputReservationTokens ?? DEFAULT_MINIMUM_OUTPUT_RESERVATION_TOKENS
+  if (!Number.isSafeInteger(minimum) || minimum < 1 || minimum > 2_147_483_647) throw new Error('Invalid minimum output reservation')
+  let low = Math.min(minimum, maxOutputTokens)
   if (cost(low) > input.capacityMicros) return null
   let high = maxOutputTokens
   while (low < high) {
