@@ -169,27 +169,14 @@ export async function createResponse(options: CreateResponseOptions) {
     if (!model.agentEnabled) throw new AppError(400, 'model_not_agent_capable', 'The selected model is not enabled for agent mode')
   }
   const parameters: Record<string, unknown> = { ...(admittedParameters ?? {}), ...resolved.parameters }
-  const maxOutputTokens = options.apiKeyId
-    ? publicOutputTokenLimit(model.maxOutputTokens, {
-      ...resolveModelParameters(model, parameters, { publicApi: true }),
-      ...(options.input.maxOutputTokens !== undefined ? { max_output_tokens: options.input.maxOutputTokens } : {}),
-    }).max_output_tokens
-    : Math.min(options.input.maxOutputTokens ?? model.maxOutputTokens, model.maxOutputTokens)
-  // Keep the admitted limit across retries, including higher-capacity fallbacks.
-  // The worker also caps it to the model used for each attempt.
-  if (options.apiKeyId) parameters.max_output_tokens = maxOutputTokens
-  let pricing = await getActivePricing(model.id)
-  let fallbackId = model.fallbackModelId
-  const pricedModels = new Set([model.id])
-  for (let depth = 0; fallbackId && depth < 8 && !pricedModels.has(fallbackId); depth += 1) {
-    pricedModels.add(fallbackId)
-    const [fallback] = await db.select().from(models).where(and(eq(models.id, fallbackId), eq(models.enabled, true))).limit(1)
-    if (!fallback) break
-    const candidate = await getActivePricing(fallback.id)
-    const score = (value: typeof candidate) => Math.max(value.inputPriceMicros, value.cacheWritePriceMicros) * model.contextWindow + value.outputPriceMicros * maxOutputTokens + value.perRequestPriceMicros * 1_000_000
-    if (score(candidate) > score(pricing)) pricing = candidate
-    fallbackId = fallback.fallbackModelId
-  }
+  const maxOutputTokens = publicOutputTokenLimit(model.maxOutputTokens, {
+    ...resolveModelParameters(model, parameters, { publicApi: Boolean(options.apiKeyId) }),
+    ...(options.input.maxOutputTokens !== undefined ? { max_output_tokens: options.input.maxOutputTokens } : {}),
+  }).max_output_tokens
+  // Preserve the requested ceiling for every origin and fallback. Each provider
+  // call independently reserves an affordable limit beneath this ceiling.
+  parameters.max_output_tokens = maxOutputTokens
+  const pricing = await getActivePricing(model.id)
   const requestedId = options.input.clientId
   if (requestedId) {
     const [existingById] = await db.select().from(responses).where(eq(responses.id, requestedId)).limit(1)
@@ -285,6 +272,7 @@ export async function createResponse(options: CreateResponseOptions) {
       apiKeyId: options.apiKeyId,
       requestInput: storedInput,
       maxOutputTokens,
+      minimumOutputReservationTokens: model.minimumOutputReservationTokens,
       pricing,
     })
     const acceptedAt = new Date()

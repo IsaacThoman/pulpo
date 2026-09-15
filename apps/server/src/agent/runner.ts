@@ -1,3 +1,4 @@
+import { publicOutputTokenLimit } from '../responses/upstream-request.js'
 import { diagnosticPayload } from '../logging/diagnostic-sanitizer.js'
 import { diagnosticFetch } from '../logging/diagnostic-fetch.js'
 import { recordReconstructedDiagnostic } from '../logging/provider-diagnostics.js'
@@ -18,7 +19,7 @@ import { composeCustomInstructions } from '../settings/instruction-presets.js'
 import { isCancellationRequested, createResponseEventPublisher, publishSnapshot } from '../responses/events.js'
 import { toSnapshot } from '../responses/service.js'
 import { persistResponseItems } from '../responses/storage.js'
-import { extendBudgetReservationFixedCost, getActivePricing, releaseBudget, resizeBudgetReservation, settleBudget } from '../accounting/service.js'
+import { extendBudgetReservationFixedCost, getActivePricing, releaseBudget, resizeBudgetReservation, retainBudgetReservation, settleBudget } from '../accounting/service.js'
 import { WorkspaceManager } from './controller.js'
 import { createWorkspaceTools } from './tools.js'
 import { publishAdminUsage } from '../admin/usage-events.js'
@@ -422,7 +423,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
     await publishAdminUsage(requestLog.id, true)
     return true
   }
-  const snapshot = async (terminal?: 'completed' | 'failed' | 'cancelled', errorMessage?: string) => {
+  const snapshot = async (terminal?: 'completed' | 'incomplete' | 'failed' | 'cancelled', errorMessage?: string) => {
     let checkpoint = selectAgentResponseCheckpoint(streamProjection)
     if (terminal) {
       const state = agent?.state
@@ -445,7 +446,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
       })
       checkpoint = selectAgentResponseCheckpoint(streamProjection, { terminal: true, output: terminalOutput })
     }
-    await db.update(responses).set({ status: terminal ?? 'in_progress', output: checkpoint.output, usage, error: errorMessage ? { message: errorMessage } : undefined, lastSequence: checkpoint.sequence, completedAt: terminal ? new Date() : undefined, updatedAt: new Date() }).where(eq(responses.id, responseId))
+    await db.update(responses).set({ status: terminal ?? 'in_progress', incompleteDetails: terminal === 'incomplete' ? { reason: 'max_output_tokens' } : null, output: checkpoint.output, usage, error: errorMessage ? { message: errorMessage } : undefined, lastSequence: checkpoint.sequence, completedAt: terminal ? new Date() : undefined, updatedAt: new Date() }).where(eq(responses.id, responseId))
     const [updated] = await db.select().from(responses).where(eq(responses.id, responseId)).limit(1)
     if (updated) await publishSnapshot(toSnapshot(updated))
     lastSnapshotAt = Date.now()
@@ -640,19 +641,9 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
       operationId, args, signal, userId: record.response.userId, chatId: record.response.chatId,
       responseId, runId, manager, reserveCost: micros => micros > 0 ? extendBudgetReservationFixedCost(responseId, micros) : Promise.resolve(),
     }),
-    onAttachment: async (operationId, result) => {
-      const stored = result.attachment
-      const item: AttachmentTimelineItem = {
-        type: 'pulpo_attachment', attachment_id: stored.id, name: stored.name,
-        mime_type: stored.mimeType, size_bytes: stored.sizeBytes, status: 'completed',
-      }
-      attachmentItems.set(operationId, item)
-      await emit('pulpo.agent.attachment.created', item)
-      await snapshotIfDue()
-    },
   })
   const readToolCost = async () => {
-    await recoverSavedImageGenerations(responseId, runId)
+    await recoverSavedImageGenerations(responseId, runId, manager)
     const [row] = await db.select({ total: sql<number>`coalesce(sum(${toolExecutions.billedCostMicros}), 0)::bigint` })
       .from(toolExecutions).where(eq(toolExecutions.agentRunId, runId))
     return Number(row?.total ?? 0)
@@ -761,6 +752,19 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
         throw new Error('Agent context remains above the model context window after compaction')
       }
       const resolvedParameters = resolveAgentModelParameters(active.model, record.response.parameters, options?.reasoning)
+      const pricing = await getActivePricing(active.model.id)
+      const reservation = await resizeBudgetReservation({
+        responseId,
+        accruedCostMicros: accruedCostMicros + accruedToolCostMicros + sidecarCostMicros + workspaceHoldMicrosAmount,
+        requestInput: preparedContext,
+        maxOutputTokens: publicOutputTokenLimit(active.model.maxOutputTokens, {
+          ...resolvedParameters.parameters,
+          ...record.response.parameters as Record<string, unknown>,
+        }).max_output_tokens,
+        minimumOutputReservationTokens: active.model.minimumOutputReservationTokens,
+        pricing,
+      })
+      turnPricing.set(modelTurns, pricing)
       modelTurnStartedAt.set(modelTurns, Date.now())
       firstTokenTimeout?.clear()
       firstTokenTimeout = createFirstTokenTimeout(
@@ -776,8 +780,9 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
           samplingParams: agentSamplingParameters(active.provider.baseUrl, providerPromptCacheParameters(active.model.promptCachingEnabled, {
             ...options?.samplingParams,
             ...resolvedParameters.parameters,
+            max_output_tokens: reservation.maxOutputTokens,
           })),
-          maxTokens: active.model.maxOutputTokens,
+          maxTokens: reservation.maxOutputTokens,
           timeoutMs: active.provider.requestTimeoutMs,
           maxRetries: 0,
           signal: firstTokenTimeout.signal,
@@ -830,17 +835,10 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
         agentAbortReason ??= 'turn_limit'
         agent.abort()
       }
-      if (modelTurns > 1) await resizeBudgetReservation({
-        responseId,
-        accruedCostMicros: accruedCostMicros + accruedToolCostMicros + sidecarCostMicros + workspaceHoldMicrosAmount,
-        requestInput: agent.state.messages,
-        maxOutputTokens: active.model.maxOutputTokens,
-        pricing: await getActivePricing(active.model.id),
-      })
     } else if (event.type === 'message_start' && event.message.role === 'assistant') {
       if (!modelTurnStartedAt.has(modelTurns)) modelTurnStartedAt.set(modelTurns, Date.now())
       const attemptId = newId()
-      const pricing = await getActivePricing(active.model.id)
+      const pricing = turnPricing.get(modelTurns) ?? await getActivePricing(active.model.id)
       turnRuntime.set(modelTurns, { runtime: active, index: activeIndex })
       turnAttemptIds.set(modelTurns, attemptId)
       turnPricing.set(modelTurns, pricing)
@@ -888,6 +886,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
         : undefined
       const turnCost = providerTurnCost ?? configuredTurnCost
       accruedCostMicros += turnCost
+      await retainBudgetReservation(responseId, accruedCostMicros + accruedToolCostMicros + sidecarCostMicros + workspaceHoldMicrosAmount)
       if (completedRuntime.runtime.codex) {
         inferenceReferenceCostMicros += codexInferenceReferenceCostMicros(completedRuntime.runtime.piModel, turnUsage)
       }
@@ -962,7 +961,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
     } else if (event.type === 'tool_execution_end') {
       const output = truncateUtf8(toolResultText(event.result), settings.maxToolOutputBytes)
       const details = toolResultDetails(event.result)
-      const imagePreview = ['view_image', 'generate_image'].includes(event.toolName) && !event.isError
+      const imagePreview = event.toolName === 'view_image' && !event.isError
         ? toolImagePreviewSchema.safeParse(details.imagePreview).data
         : undefined
       const providerExecution = webProviderExecutions.get(event.toolCallId)
@@ -995,6 +994,13 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
   })
   await db.update(responses).set({ status: 'in_progress', startedAt: new Date(), updatedAt: new Date() }).where(eq(responses.id, responseId))
   try {
+    await resizeBudgetReservation({
+      responseId, accruedCostMicros: accruedCostMicros + accruedToolCostMicros + sidecarCostMicros,
+      requestInput: record.response.input,
+      maxOutputTokens: Math.min(active.model.minimumOutputReservationTokens, publicOutputTokenLimit(active.model.maxOutputTokens, record.response.parameters as Record<string, unknown>).max_output_tokens),
+      minimumOutputReservationTokens: active.model.minimumOutputReservationTokens,
+      pricing: await getActivePricing(active.model.id),
+    })
     await emit('pulpo.agent.started', { runId })
     const initialPrompt = buildAgentUserPrompt(record.response.input, attachedFiles) || 'How can I help?'
     const promptImages = await loadAgentPromptImages(attachedFiles, undefined, parseAuthSettings(attachmentSettingsRow?.value).maxInlineImages)
@@ -1089,13 +1095,14 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
     if (last?.role === 'assistant' && (last.stopReason === 'error' || last.stopReason === 'aborted')) throw new Error(last.errorMessage || 'Agent model turn failed')
     const cancelled = await isCancellationRequested(responseId)
     if (cancelled) throw new Error('Generation cancelled')
-    await snapshot('completed')
+    const terminalStatus = last?.role === 'assistant' && last.stopReason === 'length' ? 'incomplete' : 'completed'
+    await snapshot(terminalStatus)
     const [completed] = await db.select().from(responses).where(eq(responses.id, responseId)).limit(1)
     if (completed) await persistResponseItems(responseId, completed.output as unknown[])
     await db.update(agentRuns).set({ status: 'completed', context: { systemPrompt: agentSystemPrompt, messages: messagesForPersistence(agent.state.messages), billingTurns }, modelTurns, toolCalls, completedAt: new Date(), updatedAt: new Date() }).where(eq(agentRuns.id, runId))
     const finalResponder = lastResponder ?? { runtime: active, pricing: await getActivePricing(active.model.id) }
     await db.update(responses).set({ actualModelId: finalResponder.runtime.model.id, pricingVersionId: finalResponder.pricing.id }).where(eq(responses.id, responseId))
-    const postTaskCostMicros = await runPostResponseTasks(record, finalResponder.runtime, completed?.output as unknown[] ?? [], requestLog.id).catch(async (error) => {
+    const postTaskCostMicros = terminalStatus === 'completed' ? await runPostResponseTasks(record, finalResponder.runtime, completed?.output as unknown[] ?? [], requestLog.id).catch(async (error) => {
       if (finalResponder.runtime.codex && codexErrorRequiresReauthentication(error)) {
         await markCodexReauthenticationRequired(record.response.userId, 'Your Codex connection needs to be renewed.')
       }
@@ -1104,7 +1111,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
         error: finalResponder.runtime.codex ? safeCodexErrorMessage(error) : error instanceof Error ? error.message : String(error),
       }))
       return 0
-    })
+    }) : 0
     workspaceCostMicros = workspaceReadyAtMs !== undefined && settings.billWorkspaces
       ? workspaceUsageMicros(Date.now() - workspaceReadyAtMs, settings.workspacePricePerMinuteMicros)
       : 0
@@ -1128,7 +1135,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
       })
       : (await releaseBudget(responseId), 0)
     const totalDurationMs = Date.now() - startedAt
-    await db.update(requestLogs).set({ status: 'completed', actualModelId: finalResponder.runtime.model.id, inputTokens: usage.inputTokens, cachedInputTokens: usage.cachedInputTokens, cacheWriteTokens: usage.cacheWriteTokens, outputTokens: usage.outputTokens, reasoningTokens: usage.reasoningTokens, costMicros: cost, durationMs: totalDurationMs, tokensPerSecond: totalDurationMs > 0 ? completionTokensPerSecond(totalDurationMs, usage.outputTokens) : null, completedAt: new Date(), updatedAt: new Date() }).where(eq(requestLogs.id, requestLog.id))
+    await db.update(requestLogs).set({ status: terminalStatus, actualModelId: finalResponder.runtime.model.id, inputTokens: usage.inputTokens, cachedInputTokens: usage.cachedInputTokens, cacheWriteTokens: usage.cacheWriteTokens, outputTokens: usage.outputTokens, reasoningTokens: usage.reasoningTokens, costMicros: cost, durationMs: totalDurationMs, tokensPerSecond: totalDurationMs > 0 ? completionTokensPerSecond(totalDurationMs, usage.outputTokens) : null, completedAt: new Date(), updatedAt: new Date() }).where(eq(requestLogs.id, requestLog.id))
     await publishAdminUsage(requestLog.id, true)
   } catch (error) {
     const errorMessage = active.codex ? safeCodexErrorMessage(error) : error instanceof Error ? error.message : String(error)

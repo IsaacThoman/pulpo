@@ -162,6 +162,15 @@ jobs:
         run: node --input-type=module -e 'import postgres from "postgres"; const sql = postgres(process.env.DATABASE_URL); await sql.unsafe("CREATE DATABASE pulpo_migration_test"); await sql.end();'
       - name: Install speech audio tools
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - name: Create disposable budget database
+        run: node --input-type=module -e 'import postgres from "postgres"; const sql = postgres(process.env.DATABASE_URL); await sql.unsafe("CREATE DATABASE pulpo_budget_test"); await sql.end();'
+      - name: Verify budget reservations and concurrency against PostgreSQL
+        env:
+          DATABASE_URL: postgres://postgres:search-test@localhost:5432/pulpo_budget_test
+          PULPO_BUDGET_POSTGRES_TEST: '1'
+        run: |
+          npm run db:migrate -w @pulpo/server
+          npm run test -w @pulpo/server -- src/accounting/service.postgres.test.ts
       - name: Create disposable speech database
         run: node --input-type=module -e 'import postgres from "postgres"; const sql = postgres(process.env.DATABASE_URL); await sql.unsafe("CREATE DATABASE pulpo_speech_test"); await sql.end();'
       - name: Apply speech test migrations

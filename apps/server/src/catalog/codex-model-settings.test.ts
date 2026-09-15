@@ -71,7 +71,7 @@ function request(input: { role?: 'admin' | 'user'; body?: unknown; modelId?: str
 }
 
 const model = {
-  id: 'codex:gpt-test', name: 'GPT Test', upstreamModelId: 'gpt-test', contextWindow: 128_000, maxOutputTokens: 16_384,
+  id: 'codex:gpt-test', name: 'GPT Test', upstreamModelId: 'gpt-test', contextWindow: 128_000, maxOutputTokens: 16_384, minimumOutputReservationTokens: 8_000,
   compactionEnabled: true, compactionThresholdTokens: 90_000, compactionRetainedTurns: 4, sortOrder: 0, createdAt: new Date(),
 }
 
@@ -87,7 +87,7 @@ describe('admin Codex model settings', () => {
     const result = await handler(request(), {} as FastifyReply)
     expect(result).toEqual({ data: [{
       id: 'codex:gpt-test', name: 'GPT Test', upstreamModelId: 'gpt-test', contextWindow: 128_000,
-      maxOutputTokens: 16_384, compactionThresholdTokens: 90_000, compactionRetainedTurns: 4,
+      maxOutputTokens: 16_384, minimumOutputReservationTokens: 8_000, compactionThresholdTokens: 90_000, compactionRetainedTurns: 4,
       maximumCompactionThresholdTokens: 123_904,
     }] })
     await expect(handler(request({ role: 'user' }), {} as FastifyReply)).rejects.toThrow('Administrator')
@@ -99,6 +99,15 @@ describe('admin Codex model settings', () => {
     await expect(handler(request({ body: { compactionThresholdTokens: 123_905 } }), {} as FastifyReply))
       .rejects.toMatchObject({ statusCode: 400, code: 'validation_error' })
     expect(mocks.updates).toHaveLength(0)
+  })
+
+  it('updates the minimum allocation independently and validates its bounds', async () => {
+    const handler = (await catalogHandlers()).get('PATCH /api/admin/codex-model-settings/:modelId')!
+    expect(await handler(request({ body: { minimumOutputReservationTokens: 1_500 } }), {} as FastifyReply))
+      .toMatchObject({ minimumOutputReservationTokens: 1_500 })
+    for (const value of [0, -1, 1.5, null, '1000', 2_147_483_648]) {
+      await expect(handler(request({ body: { minimumOutputReservationTokens: value } }), {} as FastifyReply)).rejects.toThrow()
+    }
   })
 
   it('returns 404 when the requested model is not managed by Codex', async () => {
@@ -114,7 +123,7 @@ describe('admin Codex model settings', () => {
       compactionEnabled: true, compactionThresholdTokens: 80_000, compactionRetainedTurns: 6,
     })
     expect(mocks.audits).toContainEqual(expect.objectContaining({
-      action: 'codex_model.compaction.update', targetType: 'model', targetId: 'codex:gpt-test',
+      action: 'codex_model.settings.update', targetType: 'model', targetId: 'codex:gpt-test',
     }))
     expect(result).toMatchObject({ compactionThresholdTokens: 80_000, compactionRetainedTurns: 6 })
   })

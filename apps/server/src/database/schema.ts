@@ -364,6 +364,7 @@ export const models = pgTable('models', {
   interceptImagesWithOcr: boolean('intercept_images_with_ocr').notNull().default(false),
   contextWindow: integer('context_window').notNull(),
   maxOutputTokens: integer('max_output_tokens').notNull(),
+  minimumOutputReservationTokens: integer('minimum_output_reservation_tokens').notNull().default(8_000),
   compactionEnabled: boolean('compaction_enabled').notNull().default(true),
   compactionThresholdTokens: integer('compaction_threshold_tokens').notNull().default(100_000),
   compactionRetainedTurns: integer('compaction_retained_turns').notNull().default(4),
@@ -383,7 +384,7 @@ export const models = pgTable('models', {
   iconLight: text('icon_light'),
   iconDark: text('icon_dark'),
   ...timestamps,
-})
+}, (table) => [check('models_minimum_output_reservation_positive', sql`${table.minimumOutputReservationTokens} > 0`)])
 
 export const modelPricingVersions = pgTable('model_pricing_versions', {
   id: uuid('id').primaryKey(),
@@ -1275,7 +1276,7 @@ export const imageGenerationRequests = pgTable('image_generation_requests', {
   status: text('status').notNull().default('claimed'),
   model: jsonb('model').notNull().$type<import('@pulpo/contracts').ImageModel>(),
   attachmentId: uuid('attachment_id').references(() => attachments.id, { onDelete: 'set null' }),
-  result: jsonb('result').$type<import('../image-generation/provider.js').ImageResultMetadata>(),
+  result: jsonb('result').$type<import('../image-generation/service.js').SavedImageResult>(),
   billedCostMicros: bigint('billed_cost_micros', { mode: 'number' }).notNull().default(0),
   ...timestamps,
 }, table => [primaryKey({ columns: [table.responseId, table.operationId] })])

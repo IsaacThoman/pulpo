@@ -104,12 +104,15 @@ export function imagePriceLabel(model: PublicImageModel, translate: (source: str
 
 // Pulpo transport limits; adapters may impose stricter limits.
 export const IMAGE_GENERATION_MAX_BYTES = 20 * 1024 * 1024
+// Wire shorthand only; resolving the canonical path still requires workspace access checks.
+export const IMAGE_REFERENCE_PATH_SHORTHAND_PATTERN = '^/workspace/[^\\u0000]+$'
 export const imageGenerationInputSchema = z.object({
   prompt: z.string().trim().min(1).max(32_000),
   referenceImages: z.array(z.union([
     z.object({ attachmentId: z.uuid() }).strict(),
     z.object({ path: z.string().trim().min(1).max(4096) }).strict(),
-  ])).max(4).optional(),
+    z.string().max(4096).regex(new RegExp(IMAGE_REFERENCE_PATH_SHORTHAND_PATTERN)),
+  ]).transform(reference => typeof reference === 'string' ? { path: reference } : reference)).max(4).optional(),
   filename: z.string().trim().min(1).max(255).optional(),
 }).strict()
 export type ImageGenerationInput = z.infer<typeof imageGenerationInputSchema>
