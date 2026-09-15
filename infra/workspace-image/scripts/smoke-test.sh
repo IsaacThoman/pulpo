@@ -36,6 +36,18 @@ git --version
 rg --version | head -n 1
 curl --version | head -n 1
 
+# Exercise audio/video encoding, inspection, and decoding without network access.
+media_probe="${temporary_directory}/media.mp4"
+ffmpeg -nostdin -hide_banner -loglevel error \
+  -f lavfi -i 'testsrc=size=64x64:rate=10' \
+  -f lavfi -i 'sine=frequency=440:sample_rate=44100' \
+  -t 0.5 -c:v libx264 -pix_fmt yuv420p -c:a aac "${media_probe}"
+assert_equal h264 "$(ffprobe -v error -select_streams v:0 \
+  -show_entries stream=codec_name -of default=noprint_wrappers=1:nokey=1 "${media_probe}")" 'FFmpeg encodes H.264 video'
+assert_equal aac "$(ffprobe -v error -select_streams a:0 \
+  -show_entries stream=codec_name -of default=noprint_wrappers=1:nokey=1 "${media_probe}")" 'FFmpeg encodes AAC audio'
+ffmpeg -nostdin -hide_banner -loglevel error -xerror -i "${media_probe}" -f null -
+
 node -e "
   const [major, minor] = process.versions.node.split('.').map(Number);
   if (major < ${minimum_node_major} || (major === ${minimum_node_major} && minor < ${minimum_node_minor})) {

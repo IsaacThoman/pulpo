@@ -26,6 +26,7 @@ RUN apt-get update \
         build-essential \
         ca-certificates \
         curl \
+        ffmpeg \
         git \
         jq \
         openssh-client \
