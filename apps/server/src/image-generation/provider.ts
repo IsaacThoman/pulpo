@@ -2,6 +2,7 @@ import sharp from 'sharp'
 import { IMAGE_GENERATION_MAX_BYTES, IMAGE_PROVIDER_CAPABILITIES, type ImageModel } from '@pulpo/contracts'
 import { detectImageMime } from '../agent/images.js'
 import { parseImageUsage, type ImageUsage } from './pricing.js'
+import { imageProviderError } from './provider-error.js'
 
 export class ImageGenerationError extends Error {}
 
@@ -30,6 +31,40 @@ export async function validateImageBytes(data: Uint8Array, allowed: readonly str
     await sharp(data, { limitInputPixels: 40_000_000 }).resize(1, 1).toBuffer()
   } catch { throw new ImageGenerationError('Image is invalid, animated, or exceeds 40 megapixels') }
   return mimeType
+}
+
+/** Decode and re-encode the primary image; a JPEG signature can conceal an HDR/MPO container. */
+export async function normalizeImageReference(reference: ImageReference, allowed: readonly string[], signal: AbortSignal): Promise<ImageReference> {
+  signal.throwIfAborted()
+  const mimeType = await validateImageBytes(reference.data, allowed)
+  signal.throwIfAborted()
+  // Sharp strips EXIF, MPF, auxiliary HDR images and profiles by default. Apply
+  // orientation and convert to sRGB first, without resizing or flattening alpha.
+  const encoder = sharp(reference.data, { limitInputPixels: 40_000_000 }).autoOrient().toColourspace('srgb')
+  if (mimeType === 'image/jpeg') encoder.jpeg({ quality: 95 })
+  else if (mimeType === 'image/webp') encoder.webp({ lossless: true })
+  else encoder.png()
+  const cancel = () => { encoder.destroy(new Error('Image normalization cancelled')) }
+  signal.addEventListener('abort', cancel, { once: true })
+  try {
+    const chunks: Buffer[] = []
+    let size = 0
+    for await (const chunk of encoder) {
+      signal.throwIfAborted()
+      size += chunk.length
+      if (size > IMAGE_GENERATION_MAX_BYTES) throw new ImageGenerationError('Normalized reference image exceeds 20 MiB; use a smaller image')
+      chunks.push(chunk)
+    }
+    signal.throwIfAborted()
+    return { ...reference, data: Buffer.concat(chunks), mimeType }
+  } catch (error) {
+    signal.throwIfAborted()
+    if (error instanceof ImageGenerationError) throw error
+    throw new ImageGenerationError('Reference image could not be converted to a standard image; re-export it as PNG or JPEG')
+  } finally {
+    signal.removeEventListener('abort', cancel)
+    encoder.destroy()
+  }
 }
 
 export function validateImageRequest(model: ImageModel, prompt: string, references: ImageReference[]) {
@@ -157,11 +192,12 @@ export async function generateImage(input: {
   const capabilities = IMAGE_PROVIDER_CAPABILITIES[model.adapter]
   const adapter = adapters[model.adapter]
   validateImageRequest(model, prompt, references)
-  for (const reference of references) {
-    reference.mimeType = await validateImageBytes(reference.data, capabilities.inputMimeTypes)
-  }
+  // Normalize sequentially to bound decoding memory, and leave stored originals
+  // and caller-owned references untouched (including stateless replay metadata).
+  const normalizedReferences: ImageReference[] = []
+  for (const reference of references) normalizedReferences.push(await normalizeImageReference(reference, capabilities.inputMimeTypes, signal))
   signal.throwIfAborted()
-  const { headers, body } = adapter.request(input)
+  const { headers, body } = adapter.request({ ...input, references: normalizedReferences })
   let response: Response
   try {
     response = await (input.fetch ?? fetch)(imageProviderEndpoint(input.baseUrl, model.adapter, references.length > 0), { method: 'POST', headers, body, signal, redirect: 'error' })
@@ -169,13 +205,7 @@ export async function generateImage(input: {
     throw new ImageGenerationError(signal.aborted ? 'Image generation was cancelled or timed out' : 'Image provider connection failed; this request will not be retried automatically')
   }
   if (!response.ok) {
-    await response.body?.cancel().catch(() => undefined)
-    const message = response.status === 401 || response.status === 403 ? 'Image provider credentials or access are invalid; contact an admin'
-      : response.status === 429 ? 'Image provider rate limit reached; try again later'
-      : response.status === 400 ? 'Image provider rejected the prompt or image inputs'
-      : response.status === 404 ? 'Image provider model or endpoint was not found; contact an admin'
-      : 'Image provider generation failed'
-    throw new ImageGenerationError(message)
+    throw new ImageGenerationError(await imageProviderError(response, signal))
   }
   const payload = await boundedJson(response).catch(error => {
     if (signal.aborted) throw new ImageGenerationError('Image generation was cancelled or timed out')

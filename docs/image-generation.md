@@ -113,6 +113,15 @@ animation, and limits images to 20 MiB and 40 megapixels; prompts are limited to
 32,000 UTF-8 bytes. There is no tool field for choosing a model or supplying
 thinking text.
 
+Before an edit is sent upstream, Pulpo re-encodes each reference as a standard
+single image in its validated JPEG, PNG, or WebP format. This applies EXIF
+orientation, converts colors to sRGB, and removes metadata and auxiliary images
+such as the HDR gain map in phone JPEG/MPO files. PNG and WebP retain transparency;
+JPEG is encoded at quality 95 and WebP losslessly. Dimensions are preserved after
+orientation, and the encoded result must also fit the 20 MiB limit. Original
+attachments and workspace files are unchanged. Both attachment IDs and workspace
+paths use this same normalization before any provider call.
+
 Each saved image appears as an ordinary conversation attachment, has an agent
 preview, and is available to workspace tools. An attachment reference can be used
 for a follow-up edit without starting a workspace. Generated files count toward
@@ -135,6 +144,13 @@ its upstream outcome may be unknown. The user may explicitly request another
 generation. Provider refusals, input failures, unavailable models, and insufficient
 balance or storage return actionable errors without provider credentials or raw
 image data in diagnostic messages.
+
+Recognized provider errors distinguish unsupported image formats, oversized
+images, and explicit content-policy rejections. Unrecognized errors report the
+HTTP status and an unconfirmed cause; they do not imply a policy restriction.
+Error bodies are read with a byte/time limit and mapped to fixed messages rather
+than passed to the chat model verbatim. The tool instructs the model not to retry
+the same image repeatedly by rewording its prompt.
 
 Full backups include the image catalog, operation metadata, and generated
 attachments. Legacy backups without the image tables remain supported. Legacy model configs
