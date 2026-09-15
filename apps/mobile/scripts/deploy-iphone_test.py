@@ -13,7 +13,7 @@ import unittest
 
 SCRIPTS = Path(__file__).resolve().parent
 FAKE_TOOL = '''#!/usr/bin/env python3
-import hashlib, json, os, pathlib, sys, time
+import hashlib, json, os, pathlib, shutil, sys, time
 tool = pathlib.Path(sys.argv[0]).name
 args = sys.argv[1:]
 cwd = pathlib.Path.cwd()
@@ -23,21 +23,27 @@ if os.environ.get('HOLD_COMMAND') == tool + ' ' + ' '.join(args):
     pathlib.Path(os.environ['STARTED']).touch()
     while not pathlib.Path(os.environ['RELEASE']).exists():
         time.sleep(0.02)
-if os.environ.get('FAIL_COMMAND') == tool + ' ' + ' '.join(args):
+command = tool + ' ' + ' '.join(args)
+prefix = os.environ.get('FAIL_PREFIX')
+if os.environ.get('FAIL_COMMAND') == command or (prefix and command.startswith(prefix)):
     print('intentional build failure')
     sys.exit(9)
 if args == ['--version']:
     print('24.0.0')
-elif tool == 'npm' and args[0] == 'ci':
+elif tool == 'npm' and args[0] in ('ci', 'install'):
     (cwd / 'node_modules').mkdir(exist_ok=True)
     (cwd / 'node_modules/.package-lock.json').write_text('{}')
 elif tool == 'node':
     data = (cwd / 'app.config.ts').read_bytes() + os.environ['EXPO_PUBLIC_DEFAULT_INSTANCE_URL'].encode()
     print(hashlib.sha1(data).hexdigest())
 elif tool == 'npx' and 'prebuild' in args:
-    (cwd / 'ios/Pods').mkdir(parents=True, exist_ok=True)
+    shutil.rmtree(cwd / 'ios', ignore_errors=True)
+    (cwd / 'ios').mkdir()
     (cwd / 'ios/Podfile').write_text('generated')
-    (cwd / 'ios/Pods/Manifest.lock').write_text('generated')
+elif tool == 'pod':
+    (cwd / 'Pods').mkdir(exist_ok=True)
+    (cwd / 'Pods/Manifest.lock').write_text('generated')
+    (cwd / 'Podfile.lock').write_text('generated')
 elif tool == 'npx' and 'run:ios' in args:
     (cwd / 'ios/build').mkdir(exist_ok=True)
     (cwd / 'ios/build/warm').write_text('compiled')
@@ -69,7 +75,7 @@ class DeploymentTests(unittest.TestCase):
         self.git('worktree', 'add', '-q', '--detach', str(self.other))
         binaries = self.directory / 'bin'
         binaries.mkdir()
-        for tool in ('npm', 'npx', 'node', 'xcrun'):
+        for tool in ('npm', 'npx', 'node', 'xcrun', 'pod'):
             path = binaries / tool
             path.write_text(FAKE_TOOL)
             path.chmod(0o755)
@@ -124,6 +130,7 @@ class DeploymentTests(unittest.TestCase):
         self.assertEqual((self.checkout / 'apps/mobile/app.config.ts').stat().st_mtime_ns, config_time)
         self.assertEqual((self.checkout / 'apps/mobile/ios/Podfile').stat().st_mtime_ns, native_time)
         self.assertEqual(len(self.commands('npm', 'ci')), 1)
+        self.assertEqual(len(self.commands('npm', 'install')), 0)
         self.assertEqual(len(self.commands('npx', 'prebuild')), 1)
         self.assertEqual({call['cwd'] for call in self.commands('npx', 'run:ios')},
                          {str((self.checkout / 'apps/mobile').resolve())})
@@ -135,13 +142,42 @@ class DeploymentTests(unittest.TestCase):
         self.write('apps/mobile/app.config.ts', 'changed native config')
         self.assertEqual(self.deploy().returncode, 0)
         self.assertEqual(self.deploy(PULPO_INSTANCE_URL='https://example.test').returncode, 0)
-        self.assertEqual(len(self.commands('npm', 'ci')), 2)
+        # Only the first install may delete node_modules; later refreshes are incremental.
+        self.assertEqual(len(self.commands('npm', 'ci')), 1)
+        self.assertEqual(len(self.commands('npm', 'install')), 1)
         self.assertEqual(len(self.commands('npx', 'prebuild')), 4)
+        self.assertEqual(len(self.commands('pod', 'install')), 4)
+
+    def test_installed_pods_survive_clean_prebuild(self):
+        self.assertEqual(self.deploy().returncode, 0)
+        pods = self.checkout / 'apps/mobile/ios/Pods'
+        (pods / 'warm-pod.o').write_text('compiled')
+        self.write('apps/mobile/app.config.ts', 'changed native config')
+        result = self.deploy()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual((pods / 'warm-pod.o').read_text(), 'compiled')
+        self.assertEqual((self.checkout / 'apps/mobile/ios/Podfile').read_text(), 'generated')
+        self.assertFalse(any((self.root / 'preserved-pods').iterdir()))
+        self.assertEqual(len(self.commands('npx', 'prebuild')), 2)
+        self.assertEqual([call['cwd'] for call in self.commands('pod', 'install')], [str(pods.parent.resolve())] * 2)
+
+    def test_failed_pod_install_retries_with_repo_update_then_fails(self):
+        result = self.deploy(FAIL_COMMAND='pod install')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual([call['args'] for call in self.commands('pod', 'install')],
+                         [['install'], ['install', '--repo-update']])
+        self.write('apps/mobile/app.config.ts', 'changed native config')
+        result = self.deploy(FAIL_PREFIX='pod install')
+        self.assertEqual(result.returncode, 9)
+        self.assertEqual([call['args'] for call in self.commands('pod', 'install')][2:],
+                         [['install'], ['install', '--repo-update']])
+        self.assertFalse((self.root / 'native.sha256').exists())
+        self.assertEqual(len(self.commands('xcrun', 'launch')), 1)
 
     def test_failed_native_refresh_is_retried_even_after_reverting_source(self):
         self.assertEqual(self.deploy().returncode, 0)
         self.write('apps/mobile/app.config.ts', 'new native config')
-        result = self.deploy(FAIL_COMMAND='npx --no-install expo prebuild --clean --platform ios')
+        result = self.deploy(FAIL_COMMAND='npx --no-install expo prebuild --clean --no-install --platform ios')
         self.assertEqual(result.returncode, 9)
         self.assertIn('intentional build failure', result.stderr)
         self.assertFalse((self.root / 'native.sha256').exists())

@@ -3,10 +3,6 @@ import multipart from '@fastify/multipart'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import type { ManagementScope } from '@pulpo/contracts'
 const mocks = vi.hoisted(() => ({ download: vi.fn(), upload: vi.fn(), remove: vi.fn(), catalog: vi.fn() }))
-vi.mock('../speech/preview.js', () => ({
-  MAX_PREVIEW_BYTES: 5 * 1024 * 1024,
-  downloadSpeechPreview: mocks.download, uploadSpeechPreview: mocks.upload, deleteSpeechPreview: mocks.remove,
-}))
 import { registerManagementRoutes } from './routes.js'
 
 let role: 'admin' | 'user' | null
@@ -26,16 +22,10 @@ beforeEach(async () => {
     request.managementScopes = scopes
   })
   mocks.catalog.mockImplementation((request: FastifyRequest) => ({ method: request.method, body: request.body ?? null }))
-  mocks.download.mockImplementation((_request: FastifyRequest, reply: FastifyReply) => reply.type('audio/wav').send(Buffer.from('audio')))
-  mocks.upload.mockImplementation(async (request: FastifyRequest, reply: FastifyReply) => {
-    const file = await request.file()
-    return reply.code(201).send({ voice: (request.params as { voiceId: string }).voiceId, bytes: (await file!.toBuffer()).toString() })
-  })
-  mocks.remove.mockImplementation((_request: FastifyRequest, reply: FastifyReply) => reply.code(204).send())
   server.all('/api/admin/image-models', mocks.catalog)
   server.all('/api/admin/image-models/*', mocks.catalog)
   server.all('/api/admin/speech-models', mocks.catalog)
-  server.all('/api/admin/speech-models/*', mocks.catalog)
+  server.all('/api/admin/speech-models/*', (request: FastifyRequest, reply: FastifyReply) => request.url.endsWith('/preview') ? reply.code(404).send({ error: 'Not found' }) : mocks.catalog(request))
   await registerManagementRoutes(server)
 })
 afterEach(async () => { await server.close() })
@@ -63,22 +53,13 @@ it('requires authentication, current admin role, and the matching catalog scope'
 it('allows reads with read-only scope but blocks catalog and preview writes', async () => {
   scopes = ['catalog:read']
   expect((await server.inject('/api/management/v1/speech-models')).statusCode).toBe(200)
-  const response = await server.inject(previewPath)
-  expect(response.headers['content-type']).toBe('audio/wav')
-  expect(response.rawPayload).toEqual(Buffer.from('audio'))
+  expect((await server.inject(previewPath)).statusCode).toBe(404)
   for (const url of ['/api/management/v1/speech-models', previewPath, ...assetPaths, ...discoveryPaths]) {
     for (const method of ['POST', 'PATCH', 'DELETE'] as const) expect((await server.inject({ method, url })).statusCode).toBe(403)
   }
 })
-it('preserves multipart bytes and decoded voice IDs instead of JSON-proxying uploads', async () => {
-  scopes = ['catalog:write']
-  const response = await server.inject({ method: 'POST', url: previewPath, headers: { 'content-type': 'multipart/form-data; boundary=clip' }, payload: '--clip\r\nContent-Disposition: form-data; name="file"; filename="test.wav"\r\nContent-Type: audio/wav\r\n\r\nwave bytes\r\n--clip--\r\n' })
-  expect(response.statusCode).toBe(201)
-  expect(response.json()).toEqual({ voice: 'custom/voice', bytes: 'wave bytes' })
-  expect(mocks.catalog).not.toHaveBeenCalled()
-  expect((await server.inject({ method: 'DELETE', url: previewPath })).statusCode).toBe(204)
-  expect(mocks.remove).toHaveBeenCalledOnce()
-  expect((await server.inject(previewPath)).statusCode).toBe(403)
+it('no longer handles saved-preview reads or mutations', async () => {
+  for (const method of ['GET', 'POST', 'DELETE'] as const) expect((await server.inject({ method, url: previewPath })).statusCode).toBe(404)
 })
 
 it('advertises image models and enforces catalog scopes on their management routes', async () => {

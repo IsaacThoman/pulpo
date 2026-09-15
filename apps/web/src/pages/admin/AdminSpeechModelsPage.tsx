@@ -4,7 +4,6 @@ import { speechPlayback } from '@/features/speech/playback'
 import { apiRequest } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { SpeechVoicePreview } from './SpeechVoicePreview'
 import { MistralVoiceDiscovery, SpeechVoiceAssetsEditor } from './SpeechVoiceAssetsEditor'
 import { SpeechDefaultsEditor } from './SpeechDefaultsEditor'
 import { SpeechVoiceEditor } from './SpeechVoiceEditor'
@@ -27,7 +26,6 @@ export function AdminSpeechModelsPage() {
   const [providers, setProviders] = useState<Array<{ id: string; name: string }>>([])
   const [draft, setDraft] = useState<SpeechModelCatalogEntry | null>(null)
   const playback = useSyncExternalStore(speechPlayback.subscribe, speechPlayback.getSnapshot, speechPlayback.getSnapshot)
-  const [previewChanges, setPreviewChanges] = useState<Record<string, File | null>>({})
   useEffect(() => () => { if (speechPlayback.getSnapshot().key?.startsWith('preview:')) speechPlayback.stop() }, [])
   const [editing, setEditing] = useState(false)
   const [error, setError] = useState('')
@@ -39,7 +37,7 @@ export function AdminSpeechModelsPage() {
   useEffect(() => { void load().catch(error => setError(error.message)) }, [])
   const open = (model?: SpeechModelCatalogEntry) => {
     const next = model ?? { ...OPENAI_SPEECH_PRESET, id: '', providerConnectionId: providers[0]?.id ?? '' }
-    speechPlayback.stop(); setPreviewChanges({})
+    speechPlayback.stop()
     setDraft(next); setEditing(Boolean(model)); setError('')
   }
   const field = (key: keyof SpeechModel, value: unknown) => setDraft(current => current ? { ...current, [key]: value } : current)
@@ -66,20 +64,12 @@ export function AdminSpeechModelsPage() {
       const model = parsed.data
       await apiRequest(editing ? `/api/admin/speech-models/${model.id}` : '/api/admin/speech-models', { method: editing ? 'PATCH' : 'POST', body: model })
       setEditing(true)
-      for (const voice of model.voices) {
-        const change = previewChanges[voice.id]
-        const path = `/api/admin/speech-models/${model.id}/voices/${encodeURIComponent(voice.id)}/preview`
-        if (change) {
-          const body = new FormData(); body.append('file', change)
-          await apiRequest(path, { method: 'POST', body })
-        } else if (change === null) await apiRequest(path, { method: 'DELETE' })
-      }
       await load(); speechPlayback.stop(); setDraft(null)
     } catch (error) { setError(error instanceof Error ? error.message : 'Unable to save speech model') }
     finally { setSaving(false) }
   }
   const persisted = models.find(model => model.id === draft?.id)
-  const assetsDisabled = !editing || saving || Object.keys(previewChanges).length > 0 || !persisted || JSON.stringify(speechModelSchema.safeParse(draft).data) !== JSON.stringify(speechModelSchema.safeParse(persisted).data)
+  const assetsDisabled = !editing || saving || !persisted || JSON.stringify(speechModelSchema.safeParse(draft).data) !== JSON.stringify(speechModelSchema.safeParse(persisted).data)
   const discoveryDisabled = !editing || saving || !persisted || persisted.providerConnectionId !== draft?.providerConnectionId || persisted.adapter !== draft?.adapter
   const reloadDraft = async () => {
     const catalog = await apiRequest<{ data: SpeechModelCatalogEntry[] }>('/api/admin/speech-models')
@@ -104,12 +94,10 @@ export function AdminSpeechModelsPage() {
       {text('upstreamModelId', 'Upstream model ID')}{toggle('enabled', 'Enabled')}{number('sortOrder', 'Sort order')}
       <SpeechVoiceEditor mistral={draft.adapter === 'mistral'} value={draft} onChange={value => {
         speechPlayback.stop()
-        setDraft(current => current ? { ...current, ...value, voices: value.voices.map(voice => ({ ...voice,
-          previewAvailable: models.find(model => model.id === current.id)?.voices.some(saved => saved.id === voice.id && saved.previewAvailable) ?? false,
-        })) } : current)
-      }} renderPreview={index => {
+        setDraft(current => current ? { ...current, ...value } : current)
+      }} renderAudioSettings={index => {
         const voice = draft.voices[index]!
-        return <div className="space-y-3"><SpeechVoicePreview modelId={draft.id} voiceId={voice.id.trim()} label={voice.label || voice.id} available={Boolean(voice.previewAvailable)} change={previewChanges[voice.id.trim()]} disabled={saving || Boolean(speechVoiceIssues(draft).rows[index]?.id)} onChange={change => setPreviewChanges(current => ({ ...current, [voice.id.trim()]: change }))} onError={setError} /><details><summary className="cursor-pointer text-sm">{ui('Voice audio settings')}</summary><SpeechVoiceAssetsEditor model={draft} voice={voice} disabled={assetsDisabled} onSaved={reloadDraft} onError={setError} /></details></div>
+        return <details><summary className="cursor-pointer text-sm">{ui('Voice audio settings')}</summary><SpeechVoiceAssetsEditor model={draft} voice={voice} disabled={assetsDisabled} onSaved={reloadDraft} onError={setError} /></details>
       }} />
       {playback.error && <p role="alert" className="text-sm text-destructive">{ui(playback.error)}</p>}
       {draft.adapter !== 'mistral' && <>{toggle('supportsInstructions', 'Supports instructions')}{toggle('supportsSpeed', 'Supports speed')}</>}

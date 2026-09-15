@@ -29,14 +29,14 @@ vi.mock('@expo/ui/swift-ui', () => {
       return tagged ? createElement('option', { value: tagged.tag }, children) : createElement('span', null, children)
     },
     Picker: ({ label, selection, onSelectionChange, children }: { label: string; selection: string; onSelectionChange: (id: string) => void; children: ReactNode }) => createElement('select', { 'aria-label': label, value: selection, onChange: (event: { target: { value: string } }) => onSelectionChange(event.target.value) }, children),
-    Button: ({ label, onPress }: { label: string; onPress: () => void }) => createElement('button', { onClick: onPress }, label),
+    Button: ({ label, onPress, modifiers = [] }: { label: string; onPress: () => void; modifiers?: Array<{ disabled?: boolean }> }) => createElement('button', { onClick: onPress, disabled: modifiers.some(m => m.disabled) }, label),
   }
 })
 vi.mock('@expo/ui/swift-ui/modifiers', () => ({
   ...Object.fromEntries(['accessibilityLabel', 'accessibilityValue', 'buttonStyle', 'foregroundStyle', 'frame', 'lineLimit', 'pickerStyle', 'textFieldStyle'].map(name => [name, () => ({})])),
   tag: (tag: string) => ({ tag }), disabled: (disabled = true) => ({ disabled }),
 }))
-vi.mock('../../platform/MaterialUI', () => ({ MaterialButton: ({ label, onPress }: { label: string; onPress: () => void }) => createElement('button', { onClick: onPress }, label), MaterialIconButton: ({ label, onPress, disabled }: { label: string; onPress: () => void; disabled: boolean }) => createElement('button', { onClick: onPress, disabled }, label), MaterialMenu: ({ text, label, disabled, sections }: { text: string; label: string; disabled: boolean; sections: Array<{ actions: Array<{ id: string; label: string; selected?: boolean; onPress: () => void }> }> }) => createElement('details', { 'aria-label': label, 'data-disabled': disabled }, createElement('summary', null, text), ...sections.flatMap((section, index) => section.actions.map(action => createElement('button', { key: `${index}:${action.id}`, role: index === 0 ? 'menuitemradio' : 'button', 'aria-checked': action.selected, onClick: action.onPress }, action.label)))) }))
+vi.mock('../../platform/MaterialUI', () => ({ MaterialButton: ({ label, onPress, disabled }: { label: string; onPress: () => void; disabled?: boolean }) => createElement('button', { onClick: onPress, disabled }, label), MaterialIconButton: ({ label, onPress, disabled }: { label: string; onPress: () => void; disabled: boolean }) => createElement('button', { onClick: onPress, disabled }, label), MaterialMenu: ({ text, label, disabled, sections }: { text: string; label: string; disabled: boolean; sections: Array<{ actions: Array<{ id: string; label: string; selected?: boolean; onPress: () => void }> }> }) => createElement('details', { 'aria-label': label, 'data-disabled': disabled }, createElement('summary', null, text), ...sections.flatMap((section, index) => section.actions.map(action => createElement('button', { key: `${index}:${action.id}`, role: index === 0 ? 'menuitemradio' : 'button', 'aria-checked': action.selected, onClick: action.onPress }, action.label)))) }))
 vi.mock('../../mockup5/src/components/PrototypeUI', () => ({
   ...Object.fromEntries(['Card', 'SectionTitle'].map(name => [name, ({ children }: { children: ReactNode }) => createElement('div', null, children)])),
   ListRow: ({ title, children, onPress }: { title: string; children: ReactNode; onPress?: () => void }) => createElement(onPress ? 'button' : 'div', { onClick: onPress }, title, children),
@@ -52,10 +52,10 @@ vi.mock('../../data/database', () => ({
 }))
 vi.mock('../../store/session', () => ({ useSessionStore: (selector: (state: unknown) => unknown) => selector({ user: { id: 'user' }, instanceUrl: 'test' }) }))
 vi.mock('../../api/client', () => ({ apiRequest: async () => ({ defaultModelId: 'first', data: [
-  { id: 'first', name: 'First model', supportsInstructions: true, supportsSpeed: true, speedMin: 0.5, speedMax: 2, defaultVoice: 'coral', voices: [{ id: 'coral', label: 'Coral', previewAvailable: true }, { id: 'alloy', label: 'Alloy' }] },
+  { id: 'first', name: 'First model', supportsInstructions: true, supportsSpeed: true, speedMin: 0.5, speedMax: 2, defaultVoice: 'coral', voices: [{ id: 'coral', label: 'Coral' }, { id: 'alloy', label: 'Alloy' }] },
   { id: 'second', name: 'Second model', defaultVoice: 'other', voices: [{ id: 'other', label: 'Other' }] },
 ] }) }))
-vi.mock('./playback', async () => ({ speechPlayback: new (await import('@pulpo/client-core')).SpeechPlayback(), previewSpeechVoice: mocks.preview }))
+vi.mock('./playback', async () => ({ speechPlayback: new (await import('@pulpo/client-core')).SpeechPlayback(), previewSpeech: mocks.preview }))
 import { SpeechSettings } from './SpeechSettings'
 import { speechPlayback } from './playback'
 import { usePreferencesStore } from '../../store/preferences'
@@ -68,6 +68,7 @@ Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
 let container: HTMLDivElement, root: Root, client: QueryClient
 const persist = vi.fn((key: keyof typeof defaultPreferences, value: (typeof defaultPreferences)[keyof typeof defaultPreferences]) => usePreferencesStore.getState().setPreference(key, value))
 beforeEach(() => {
+  mocks.preview.mockImplementation(() => { if (speechPlayback.getSnapshot().key === 'preview:settings') speechPlayback.stop() })
   mocks.saved.clear()
   usePreferencesStore.setState({ ...defaultPreferences, pendingServerPreferenceKeys: [] })
   usePrototypeStore.setState(createInitialState())
@@ -101,7 +102,7 @@ function selected(label: string, id: string, text: string) {
   expect([...container.querySelectorAll('summary')].some(summary => summary.textContent?.includes(text))).toBe(true)
 }
 async function startPreview() {
-  await act(async () => { void speechPlayback.start('preview:first:coral', ['clip'], async () => ({ dispose() {}, play: signal => new Promise(resolve => signal.addEventListener('abort', () => resolve())) })) })
+  await act(async () => { void speechPlayback.start('preview:settings', ['clip'], async () => ({ dispose() {}, play: signal => new Promise(resolve => signal.addEventListener('abort', () => resolve())) })) })
 }
 
 it.each(['ios', 'android'])('persists %s model and voice choices, updates native selections, and restores them after hydration', async platform => {
@@ -112,9 +113,11 @@ it.each(['ios', 'android'])('persists %s model and voice choices, updates native
   await choose('Model', 'first', 'First model')
   selected('Model', 'first', 'First model'); selected('Voice', 'coral', 'Coral')
   expect(persist).toHaveBeenCalledWith('speech', { modelId: 'first', models: {} })
-  await click('Preview Coral')
-  expect(mocks.preview).toHaveBeenCalledWith('first', 'coral'); expect(persist).toHaveBeenCalledTimes(1)
+  await click('Preview speech')
+  expect(mocks.preview).toHaveBeenCalledWith(); expect(persist).toHaveBeenCalledTimes(1)
   expect(container.textContent).not.toContain('Preview Alloy')
+  const preview = [...container.querySelectorAll('button')].find(button => button.textContent === 'Preview speech')!
+  expect(container.querySelector('textarea')!.compareDocumentPosition(preview) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   await startPreview()
   await choose('Voice', 'alloy', 'Alloy')
   expect(speechPlayback.getSnapshot().phase).toBe('idle')
@@ -222,4 +225,27 @@ it('keeps newer native typing intact while React receives an earlier instruction
   // External changes still synchronize once the user finishes editing.
   await act(async () => usePreferencesStore.setState({ speech: { modelId: null, models: { first: { instructions: 'Clear', speed: 1 } } } }))
   expect(mocks.nativeWrites).toHaveBeenLastCalledWith('Clear')
+})
+
+it.each(['ios', 'android'])('disables %s unavailable previews and cancels after instruction and speed changes', async platform => {
+  mocks.platform = platform
+  usePreferencesStore.setState({ speech: { modelId: 'removed', models: {} } })
+  await render()
+  const preview = () => [...container.querySelectorAll('button')].find(button => button.textContent === 'Preview speech')!
+  expect(preview().disabled).toBe(true)
+  await choose('Model', 'first', 'First model')
+  expect(preview().disabled).toBe(false)
+  await startPreview()
+  await act(async () => {
+    const field = container.querySelector('textarea')!
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(field, 'New instructions')
+    field.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+  expect(speechPlayback.getSnapshot().phase).toBe('idle')
+  await startPreview(); await click('Increase speech speed')
+  expect(speechPlayback.getSnapshot().phase).toBe('idle')
+  await act(async () => { await speechPlayback.start('preview:settings', ['text'], async () => { throw new Error('Speech generation failed') }) })
+  expect(container.textContent).toContain('Speech generation failed')
+  await click('Preview speech')
+  expect(mocks.preview).toHaveBeenCalledOnce()
 })

@@ -23,12 +23,39 @@ selections remain visible as unavailable rather than silently switching models.
 The instance default is stored in application settings and included in full
 backups. This setting requires no new database migration.
 
+## Generated previews
+
+Select **Preview speech** at the bottom of speech settings on web, desktop, iOS,
+or Android to hear the selected model, voice, instructions, speed, and watermark
+together. Each click generates fresh audio using normal speech pricing and
+accounting. **Stop preview** cancels generation or playback; editing speech settings,
+leaving settings, or backgrounding the app also stops the preview.
+
+Admins can edit **Preview text** beneath each voice in the speech model editor.
+The text belongs to that voice within that model, is plain text, and accepts up to
+500 characters. Leave it blank to use:
+
+> Hey, this is a test audio clip. The quick brown fox jumps over the lazy dog
+
+The public catalog exposes `voices[].previewText`. In management model documents,
+a string sets the override and `null` clears it. An omitted field preserves an
+existing override when updating through older clients. New or restored voices
+without an override use the shared default. Preview text is stored in existing
+model configuration and included in backups; no new migration is required.
+
+Uploaded/saved user previews, their API routes, the CLI `speech-model preview`
+commands, and `--save-preview` have been retired. Older clients cannot download
+those clips. Legacy blob metadata and backup/restore support remain, along with
+cleanup when voices/models are deleted; existing blobs are not bulk-deleted.
+Cloning references, watermark uploads, provider discovery samples, and admin voice
+testing remain available.
+
 ## Server setup
 
 Apply database migration `0070_speech_voice_assets.sql` with the normal
 `npm run db:migrate` workflow before running the updated server. It adds private
 per-voice assets and a durable resource-cleanup queue. Existing model configuration,
-voice IDs, previews, preferences, and billing retain their existing behavior;
+voice IDs, preferences, and billing retain their existing behavior;
 models without an adapter use OpenAI-compatible requests.
 
 The server runtime image includes FFmpeg. For development or a custom runtime,
@@ -62,7 +89,7 @@ several API replicas multiplies this concurrency bound.
 3. Save the disabled draft. An empty voice list is allowed while disabled.
 4. Reopen it and **Load Mistral voices**. Preview and add the desired voices, then
    save. Discovery loads paginated provider results; adding a voice does not
-   overwrite existing labels, previews, or watermark settings.
+   overwrite existing labels, preview text, or watermark settings.
 5. Choose a default voice and enable the model when ready. Test provider IDs
    before enabling a manually entered voice.
 
@@ -72,8 +99,8 @@ controls are unavailable for Voxtral. The client still generates and plays chunk
 with at most one chunk prefetched.
 
 Billing starts disabled. Administrators may set a character price or a generated
-audio-minute price. Mistral token usage is not fabricated. Admin voice tests and
-preview synthesis may incur provider costs, but do not charge a Pulpo user balance.
+audio-minute price. Mistral token usage is not fabricated. Admin voice tests may incur provider costs, but do not charge a Pulpo user balance.
+User previews in speech settings follow normal speech billing.
 
 ## Create and maintain cloned voices
 
@@ -82,8 +109,8 @@ that voice's **Voice audio settings**, then upload its **Cloning reference**.
 Pulpo registers a named Mistral voice and privately retains a normalized reference,
 its SHA-256 checksum, and the provider binding. Replacing the reference creates a
 new provider voice, publishes it atomically, and retires the old binding. A failed
-upload leaves the previous working binding intact. Synthesized previews are cleared
-when a clone is replaced or repaired so users do not hear the old voice.
+upload leaves the previous working binding intact. Generated user previews use
+the current provider binding.
 
 Upload limits are Pulpo's own bounds:
 
@@ -91,12 +118,11 @@ Upload limits are Pulpo's own bounds:
 | --- | --- | --- | --- |
 | Cloning reference | MP3, WAV, M4A/AAC, FLAC, Ogg/Opus | 10 MiB | 3–30 seconds |
 | Watermark | MP3, WAV, M4A/AAC, FLAC, Ogg/Opus | 10 MiB | Greater than zero, at most 2 minutes |
-| Separately uploaded user preview | MP3, WAV | 5 MiB | Greater than zero, at most 30 seconds |
 
 Actual decoding validates reference/watermark content; filenames and MIME types
 alone are insufficient. References are accessible only to administrators. Users
-hear a separately uploaded preview or one created with **Generate user preview**.
-The reference is never automatically published as a preview. **Listen to reference**
+hear freshly generated speech through **Preview speech** in settings.
+The reference is never published as a user preview. **Listen to reference**
 and **Listen to watermark** inspect the original normalized private uploads.
 
 If Mistral reports a missing voice, use **Repair provider voice** to register the
@@ -127,9 +153,8 @@ before managing assets. **Test voice and watermark** synthesizes a mixed sample;
 
 The clip loops beneath speech, beginning at the start of each message and ending
 with speech. There is no appended watermark tail. FFmpeg mixes and limits peaks
-on the server, so clients receive the mixed audio. User previews are also mixed
-when downloaded. Saved synthesized preview audio remains unmarked in private
-storage so changing a watermark does not mix it twice.
+on the server, so clients receive the mixed audio. Generated previews use the
+same mixing pipeline and the current watermark settings.
 
 Clients send `playbackOffsetSeconds` with each generation request and accumulate
 `x-speech-duration-seconds` from successful responses. The header is exposed through
@@ -158,12 +183,12 @@ admin prefix is `/api/admin/speech-models`.
 | POST | `/:id/voices/:voiceId/clone/repair` | Re-register the saved reference |
 | POST / GET / DELETE | `/:id/voices/:voiceId/watermark` | Upload/replace, inspect, or remove the clip |
 | PATCH | `/:id/voices/:voiceId/watermark` | Set `{ "enabled": true, "volume": 0.15 }` |
-| POST | `/:id/voices/:voiceId/test` | Synthesize `{ "input": "Hello", "savePreview": false }` |
+| POST | `/:id/voices/:voiceId/test` | Synthesize `{ "input": "Hello" }`; omitted input uses the voice preview text |
 | GET | `/cleanup` | List pending cleanup records |
 | POST | `/cleanup/:cleanupId/retry` | Retry an eligible cleanup record |
 
 Uploads are multipart requests with one `file` part. Test generation returns binary
-audio. Remove a cloned voice through normal model update; there is no operation
+audio. The test endpoint rejects the retired `savePreview` option. Remove a cloned voice through normal model update; there is no operation
 that leaves a cloned voice pointing to a deleted reference.
 
 ```sh
@@ -179,7 +204,7 @@ pulpo speech-model clone repair voxtral "$VOICE_ID"
 pulpo speech-model watermark upload voxtral "$VOICE_ID" watermark.ogg
 # watermark.json contains {"enabled":true,"volume":0.15}
 pulpo speech-model watermark configure voxtral "$VOICE_ID" -f watermark.json
-pulpo speech-model test-voice voxtral "$VOICE_ID" --text 'Hello.' --save-preview -o mixed.mp3
+pulpo speech-model test-voice voxtral "$VOICE_ID" --text 'Hello.' -o mixed.mp3
 pulpo --yes speech-model watermark delete voxtral "$VOICE_ID"
 pulpo speech-model cleanup
 pulpo speech-model cleanup --retry "$CLEANUP_ID"
@@ -190,8 +215,8 @@ reference and watermark downloads are normalized WAV.
 
 ## Backups and recovery
 
-Full backups include active references, watermarks, synthesized/uploaded previews,
-checksums, and provider bindings. Restore remaps private blob keys and preserves
+Full backups include preview text, active references, watermarks, legacy saved
+preview blobs, checksums, and provider bindings. Restore remaps private blob keys and preserves
 local voice IDs. Legacy backups default to OpenAI-compatible adapters, empty
 private assets, and no watermarks. The pending remote-cleanup queue is included;
 its obsolete local object keys are discarded on restore because retired/staged

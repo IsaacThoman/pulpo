@@ -31,8 +31,8 @@ describe('Pulpo CLI command surface', () => {
     ]))
     expect(commandNames(program, 'model')).toContain('icons')
     expect(commandNames(program, 'model')).toContain('test')
-    expect(commandNames(program, 'speech-model')).toEqual(expect.arrayContaining(['list', 'get', 'create', 'update', 'delete', 'preset', 'preview']))
-    expect(nestedCommandNames(program, 'speech-model', 'preview')).toEqual(['upload', 'download', 'delete'])
+    expect(commandNames(program, 'speech-model')).toEqual(expect.arrayContaining(['list', 'get', 'create', 'update', 'delete', 'preset', 'test-voice']))
+    expect(commandNames(program, 'speech-model')).not.toContain('preview')
     expect(commandNames(program, 'icon')).toEqual(expect.arrayContaining(['list', 'get', 'upload', 'update', 'delete']))
     expect(commandNames(program, 'backup')).not.toContain('restore')
     expect(commandNames(program, 'user')).toEqual(expect.arrayContaining([

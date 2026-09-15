@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { eq } from 'drizzle-orm'
 import { ZodError } from 'zod'
-import { VOXTRAL_SPEECH_PRESET, speechModelSchema } from '@pulpo/contracts'
+import { SPEECH_DEFAULT_PREVIEW_TEXT, VOXTRAL_SPEECH_PRESET, speechModelSchema } from '@pulpo/contracts'
 import { db, queryClient } from '../database/client.js'
 import { auditEvents, providerConnections, speechModels, speechRequests, speechResourceCleanup, users } from '../database/schema.js'
 import { encryptSecret } from '../lib/crypto.js'
@@ -97,12 +97,30 @@ describe.skipIf(!enabled)('speech voice assets in PostgreSQL', () => {
     const response = await server.inject(speech)
     expect(response.statusCode, response.body).toBe(200); expect(response.headers['x-speech-duration-seconds']).toBe('1')
     expect(response.rawPayload).not.toEqual(speechTestWav(1)); expect(mocks.charge).toHaveBeenCalledWith(expect.objectContaining({ costMicros: 1000 }))
-    expect((await server.inject({ method: 'POST', url: path('/voices/voice/test'), payload: { input: 'Hello', savePreview: true } })).statusCode).toBe(200)
-    const preview = await server.inject(`/api/speech-models/${modelId}/voices/voice/preview`)
+    const preview = await server.inject({ ...speech, payload: { ...speech.payload, requestId: randomUUID(), input: SPEECH_DEFAULT_PREVIEW_TEXT } })
     expect(preview.statusCode).toBe(200); expect(preview.rawPayload).not.toEqual(speechTestWav(1))
+    expect(mocks.charge).toHaveBeenCalledTimes(2)
+    expect((await server.inject({ method: 'POST', url: path('/voices/voice/test'), payload: { input: 'Hello', savePreview: true } })).statusCode).toBe(400)
+    expect((await saved()).voicePreviews).toEqual([])
     mocks.blobs.delete(current.voiceAssets[0]!.watermark!.objectKey); mocks.charge.mockClear()
     const failure = await server.inject({ ...speech, payload: { ...speech.payload, requestId: randomUUID() } })
     expect(failure.statusCode).toBe(502); expect(mocks.charge).not.toHaveBeenCalled()
+  })
+  it('preserves per-voice text across older clients, supports clearing it, and defaults admin tests', async () => {
+    const configured = { ...model(), voices: [{ id: 'voice', label: 'My voice', previewText: 'Custom hello' }, { id: 'other', label: 'Other', previewText: 'Other hello' }] }
+    expect((await server.inject({ method: 'PATCH', url: path(''), payload: configured })).statusCode).toBe(200)
+    const legacy = { ...configured, voices: configured.voices.map(({ id, label }) => ({ id, label })) }
+    expect((await server.inject({ method: 'PATCH', url: path(''), payload: legacy })).statusCode).toBe(200)
+    expect((await saved()).config.voices.map(v => v.previewText)).toEqual(['Custom hello', 'Other hello'])
+    for (const [override, expected] of [[undefined, 'Custom hello'], [null, SPEECH_DEFAULT_PREVIEW_TEXT]] as const) {
+      if (override === null) expect((await server.inject({ method: 'PATCH', url: path(''), payload: { ...legacy, voices: [{ ...legacy.voices[0], previewText: null }, legacy.voices[1]] } })).statusCode).toBe(200)
+      const test = await server.inject({ method: 'POST', url: path('/voices/voice/test'), payload: {} })
+      expect(test.statusCode, test.body).toBe(200)
+      const calls = vi.mocked(fetch).mock.calls.filter(([url]) => String(url).endsWith('/audio/speech'))
+      expect(JSON.parse(String(calls.at(-1)?.[1]?.body)).input).toBe(expected)
+    }
+    expect((await saved()).config.voices[1]?.previewText).toBe('Other hello')
+    expect(mocks.charge).not.toHaveBeenCalled()
   })
   it('preserves previous assets on upstream failures and concurrent edits, with durable cleanup', async () => {
     expect((await server.inject(upload('/voices/voice/clone'))).statusCode).toBe(201)

@@ -4,11 +4,14 @@ import { z } from 'zod'
 // String lengths here use UTF-16 code units, matching Zod's string validation.
 export const SPEECH_REQUEST_MAX_INPUT_LENGTH = 16_384
 export const SPEECH_MAX_INSTRUCTIONS_LENGTH = 4_096
+export const SPEECH_MAX_PREVIEW_TEXT_LENGTH = 500
+export const SPEECH_DEFAULT_PREVIEW_TEXT = 'Hey, this is a test audio clip. The quick brown fox jumps over the lazy dog'
 export const SPEECH_DURATION_HEADER = 'x-speech-duration-seconds'
 export const SPEECH_ASSET_MAX_BYTES = 10 * 1024 * 1024
 export const speechWatermarkSchema = z.object({ enabled: z.boolean().default(false), volume: z.number().min(0.01).max(1).default(0.15) })
 export const speechVoiceSchema = z.object({
   id: z.string().trim().min(1).max(200), label: z.string().trim().min(1).max(120),
+  previewText: z.string().trim().max(SPEECH_MAX_PREVIEW_TEXT_LENGTH).transform(text => text || null).nullable().optional(),
   kind: z.enum(['provider', 'cloned']).optional(),
   watermark: speechWatermarkSchema.optional(),
 })
@@ -66,7 +69,7 @@ export const speechModelSchema = z.object({
   if (model.adapter !== 'mistral' && model.voices.some(voice => voice.kind === 'cloned')) ctx.addIssue({ code: 'custom', path: ['voices'], message: 'Cloned voices require the Mistral adapter' })
 })
 export type SpeechModel = z.infer<typeof speechModelSchema>
-export type SpeechModelCatalogEntry = Omit<SpeechModel, 'voices'> & { voices: Array<SpeechModel['voices'][number] & { previewAvailable?: boolean; referenceAvailable?: boolean; watermarkAvailable?: boolean }> }
+export type SpeechModelCatalogEntry = Omit<SpeechModel, 'voices'> & { voices: Array<SpeechModel['voices'][number] & { referenceAvailable?: boolean; watermarkAvailable?: boolean }> }
 export type PublicSpeechModel = Omit<SpeechModelCatalogEntry, 'providerConnectionId' | 'upstreamModelId'>
 export const speechRequestSchema = z.object({
   requestId: z.string().uuid(),

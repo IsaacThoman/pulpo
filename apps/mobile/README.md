@@ -182,12 +182,21 @@ files; files absent from the next worktree are removed from the snapshot.
 Unchanged source files retain their build-directory timestamps. Generated output
 and other ignored files are not copied. The original worktree is not modified.
 
-The first deployment installs dependencies and generates the native project.
-Later deployments reinstall dependencies when package manifests, the lockfile,
-repository npm configuration, or Node/npm versions change. Expo's native fingerprint checks
-resolved app configuration, native dependencies, plugins, and assets; native
-changes trigger a clean iOS prebuild. The shared contracts and client-core
-packages are rebuilt from the snapshot before every deployment.
+The first deployment installs dependencies with `npm ci` and generates the
+native project. Later deployments refresh dependencies when package manifests,
+the lockfile, repository npm configuration, or Node/npm versions change, using an
+incremental `npm install --no-save` so unchanged packages keep their files. This
+matters because most native sources (React Native, Expo modules) are CocoaPods
+path pods inside `node_modules`, and Xcode recompiles a pod whenever its files
+are replaced. Expo's native fingerprint checks resolved app configuration,
+native dependencies, plugins, and assets; native changes trigger a clean iOS
+prebuild. The installed `ios/Pods` and `Podfile.lock` are kept across that clean
+prebuild and `pod install` runs afterwards, so only pods whose spec changed are
+reinstalled. The shared contracts and client-core packages are rebuilt from the
+snapshot before every deployment.
+
+Switching between worktrees whose lockfile or native inputs differ still costs
+an incremental install or prebuild plus the Xcode work for what actually changed.
 
 A process lock serializes the entire snapshot/build/install/launch sequence.
 Another deployment waits without changing the active build or its log. Python 3,
@@ -195,8 +204,12 @@ Node/npm, Git, and the existing Apple build tools must be available. To choose
 another persistent location, set `PULPO_IOS_BUILD_ROOT` to an empty directory
 outside your source checkouts and use that same value across worktrees.
 
-Existing per-worktree DerivedData directories are not removed automatically.
-This change does not enable ccache or modify Xcode's global settings.
+Xcode names its DerivedData directory after the workspace path, so this command
+only ever produces one. Per-worktree DerivedData directories still appear when a
+worktree runs an older `deploy:iphone` that builds in place, or when
+`npm run ios -w @pulpo/mobile` / `expo run:ios` is run inside a worktree; those
+are not removed automatically. This command does not enable ccache or modify
+Xcode's global settings.
 
 Test deployment orchestration without building or installing an app:
 

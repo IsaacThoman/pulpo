@@ -13,15 +13,15 @@ import { getConfig } from '../config.js'
 import { newId } from '../lib/ids.js'
 import { chargeMeteredUsage } from '../accounting/service.js'
 import { generateSpeech, speechCost } from './provider.js'
-import { cleanupSpeechPreview, registerSpeechPreviewRoutes } from './preview.js'
+import { cleanupSpeechPreview } from './preview.js'
 import { applyVoiceWatermark, registerSpeechAssetRoutes } from './assets.js'
 import { lockSpeechResources, queueSpeechCleanup, retrySpeechCleanup } from './resources.js'
 import { readSpeechDefaults, registerSpeechDefaultsRoutes } from './defaults.js'
 import type { SpeechVoiceAssets } from './asset-types.js'
 
-export function publicSpeechModel(model: SpeechModel, previews: Array<{ voiceId: string }> = []): PublicSpeechModel {
+export function publicSpeechModel(model: SpeechModel): PublicSpeechModel {
   const { providerConnectionId: _provider, upstreamModelId: _upstream, ...value } = model
-  return { ...value, adapter: value.adapter ?? 'openai', voices: value.voices.map(voice => ({ id: voice.id, label: voice.label, ...(voice.kind ? { kind: voice.kind } : {}), previewAvailable: previews.some(clip => clip.voiceId === voice.id) })) }
+  return { ...value, adapter: value.adapter ?? 'openai', voices: value.voices.map(voice => ({ id: voice.id, label: voice.label, ...(voice.kind ? { kind: voice.kind } : {}), previewText: voice.previewText ?? null })) }
 }
 export function validateVoiceAssets(model: SpeechModel, assets: SpeechVoiceAssets[]) {
   for (const voice of model.voices) {
@@ -38,16 +38,15 @@ export function validateSpeechInput(model: SpeechModel, input: ReturnType<typeof
 }
 export async function registerSpeechRoutes(app: FastifyInstance) {
   registerSpeechDefaultsRoutes(app)
-  await registerSpeechPreviewRoutes(app)
   await registerSpeechAssetRoutes(app)
   app.get('/api/admin/speech-models', async request => {
     requireAdmin(request)
-    return { data: (await db.select().from(speechModels)).map(row => ({ ...row.config, adapter: row.config.adapter ?? 'openai', voices: row.config.voices.map(voice => ({ ...voice, referenceAvailable: Boolean(row.voiceAssets?.find(a => a.voiceId === voice.id)?.clone), watermarkAvailable: Boolean(row.voiceAssets?.find(a => a.voiceId === voice.id)?.watermark), previewAvailable: row.voicePreviews.some(clip => clip.voiceId === voice.id) })) })).sort((a,b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name)) }
+    return { data: (await db.select().from(speechModels)).map(row => ({ ...row.config, adapter: row.config.adapter ?? 'openai', voices: row.config.voices.map(voice => ({ ...voice, referenceAvailable: Boolean(row.voiceAssets?.find(a => a.voiceId === voice.id)?.clone), watermarkAvailable: Boolean(row.voiceAssets?.find(a => a.voiceId === voice.id)?.watermark) })) })).sort((a,b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name)) }
   })
   app.get('/api/speech-models', async request => {
     requireUser(request)
-    const rows = await db.select({ config: speechModels.config, enabled: providerConnections.enabled, voicePreviews: speechModels.voicePreviews }).from(speechModels).innerJoin(providerConnections, eq(providerConnections.id, speechModels.providerConnectionId))
-    const data = rows.filter(row => row.enabled && row.config.enabled).map(row => publicSpeechModel(row.config, row.voicePreviews)).sort((a,b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name))
+    const rows = await db.select({ config: speechModels.config, enabled: providerConnections.enabled }).from(speechModels).innerJoin(providerConnections, eq(providerConnections.id, speechModels.providerConnectionId))
+    const data = rows.filter(row => row.enabled && row.config.enabled).map(row => publicSpeechModel(row.config)).sort((a,b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name))
     const defaults = await readSpeechDefaults()
     return { data, defaultModelId: data.some(model => model.id === defaults.modelId) ? defaults.modelId : null }
   })
@@ -74,7 +73,7 @@ export async function registerSpeechRoutes(app: FastifyInstance) {
         // Older admin clients may omit newer optional voice settings.
         model.voices = model.voices.map(voice => {
           const previous = current.config.voices.find(v => v.id === voice.id)
-          return { ...voice, ...(voice.kind === undefined && previous?.kind ? { kind: previous.kind } : {}), ...(voice.watermark === undefined && previous?.watermark ? { watermark: previous.watermark } : {}) }
+          return { ...voice, ...(voice.previewText === undefined && previous?.previewText !== undefined ? { previewText: previous.previewText } : {}), ...(voice.kind === undefined && previous?.kind ? { kind: previous.kind } : {}), ...(voice.watermark === undefined && previous?.watermark ? { watermark: previous.watermark } : {}) }
         })
         const retainedAssets = (current.voiceAssets ?? []).filter(a => model.voices.some(v => v.id === a.voiceId))
         validateVoiceAssets(model, retainedAssets)

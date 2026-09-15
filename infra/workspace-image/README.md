@@ -18,6 +18,7 @@ authenticated Pulpo workspace daemon that executes requested tools.
 - A writable `/workspace`
 - A preinstalled Python environment for data analysis, images, spreadsheets, PDFs, Word, and PowerPoint
 - Poppler PDF inspection and rendering tools
+- FFmpeg and ffprobe for audio/video processing and inspection
 - An installed-package inventory at `/opt/pulpo/PACKAGES.md`
 - Passwordless `sudo` inside the disposable sandbox
 
