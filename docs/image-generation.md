@@ -53,7 +53,8 @@ use 1024 × 1024 output. Edits accept one JPEG or PNG reference.
 The Meta adapter follows the [Muse Image Responses cookbook](https://github.com/meta-models/meta-model-cookbook/tree/main/05_muse_image/01_image_api_fundamentals).
 It sends `/v1/responses` requests with `store: false`, extracts
 `image_generation_call.result`, and retains the image item ID and saved image
-bytes locally for follow-up edits. It does not depend on a provider-held
+bytes locally for follow-up edits. Legacy generated attachments can replay their
+image item; workspace files are sent as fresh image references. It does not depend on a provider-held
 conversation. Pulpo accepts up to four PNG, JPEG, or WebP references for Muse.
 Generation and reasoning options remain at provider defaults.
 
@@ -76,7 +77,7 @@ does not estimate missing usage or fall back to a flat fee. The reported user
 charge therefore depends on the usage breakdown available from the provider.
 
 All three adapters share the agent tool, encrypted provider connections,
-timeouts, image validation, attachment storage, and billing/recovery flow.
+timeouts, image validation, workspace storage, and billing/recovery flow.
 Provider capabilities determine input formats, reference limits, and whether
 prior image items can be replayed. The tool advertises the selected provider's
 reference limits. Adding OpenAI requires no database migration or changes to
@@ -127,10 +128,18 @@ orientation, and the encoded result must also fit the 20 MiB limit. Original
 attachments and workspace files are unchanged. Both attachment IDs and workspace
 paths use this same normalization before any provider call.
 
-Each saved image appears as an ordinary conversation attachment, has an agent
-preview, and is available to workspace tools. An attachment reference can be used
-for a follow-up edit without starting a workspace. Generated files count toward
-the user's attachment quota.
+`generate_image` saves the result only as a file under `/workspace/`. Its text-only
+output reports the path, name, MIME type, and size, and explicitly tells the model
+it **MUST call `attach_file` with that path if it wants the user to see or download
+the image**. Generation does not create a chat attachment or preview. The model
+can use `view_image` to inspect the file or its workspace path for another edit.
+
+An available workspace is required before contacting the image provider. Generated
+files follow the normal workspace lifetime and disappear when it expires unless
+explicitly attached. `attach_file` publishes a normal conversation attachment and
+applies the user's attachment quota; a full attachment quota does not prevent
+workspace-only generation. Attached images remain available for later edits after
+the original workspace expires.
 
 ## Accounting, recovery, and backups
 
@@ -142,12 +151,17 @@ do not change saved or recovered charges. Agent settlement includes that charge
 even after cancellation. Durable operation claims prevent duplicate calls and
 charges on replay; saved results are reused. Resume and settlement reconcile
 images saved immediately before an interrupted billing write, even if the account
-has since disabled generation.
+has since disabled generation. Before writing the bytes, Pulpo stores their path,
+size, SHA-256 checksum, and original workspace lease in the operation metadata.
+Recovery checks that exact file in that authorized lease without provisioning a
+new workspace. Missing or changed files never trigger another paid generation.
+A lost save acknowledgement can therefore be reconciled if the exact bytes exist.
+Legacy operations that saved attachments remain recoverable.
 
 An interrupted request with no saved result is not automatically repeated because
 its upstream outcome may be unknown. The user may explicitly request another
 generation. Provider refusals, input failures, unavailable models, and insufficient
-balance or storage return actionable errors without provider credentials or raw
+balance or workspace storage return actionable errors without provider credentials or raw
 image data in diagnostic messages.
 
 Recognized provider errors distinguish unsupported image formats, oversized
@@ -157,8 +171,9 @@ Error bodies are read with a byte/time limit and mapped to fixed messages rather
 than passed to the chat model verbatim. The tool instructs the model not to retry
 the same image repeatedly by rewording its prompt.
 
-Full backups include the image catalog, operation metadata, and generated
-attachments. Legacy backups without the image tables remain supported. Legacy model configs
+Full backups include the image catalog, operation metadata, and explicitly attached
+images. Unattached generated files live only in the disposable workspace and are
+not attachment blobs in a backup. Legacy backups without the image tables remain supported. Legacy model configs
 and operation snapshots without billing fields default to per-image pricing;
 no database migration is required for token pricing. Restore
 uses the normal provider-secret and attachment-blob handling. Temporary-chat
