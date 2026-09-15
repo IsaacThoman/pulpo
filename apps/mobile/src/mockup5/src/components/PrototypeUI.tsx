@@ -187,7 +187,7 @@ export function Badge({ label, color }: { label: string; color?: string }) {
 
 export function EmptyState({ icon, title, detail, action }: { icon: string; title: string; detail: string; action?: ReactNode }) {
   const theme = useAppTheme();
-  return <View style={styles.empty}><View style={[styles.emptyIcon, { backgroundColor: theme.fillStrong }]}><SymbolView name={icon as never} size={28} tintColor={theme.secondary} /></View><Text style={[styles.emptyTitle, { color: theme.text }]}>{title}</Text><Text style={[styles.emptyDetail, { color: theme.secondary }]}>{detail}</Text>{action}</View>;
+  return <View style={styles.empty}><View style={[styles.emptyIcon, Platform.OS !== 'ios' && { backgroundColor: theme.fillStrong }]}><SymbolView name={icon as never} size={28} tintColor={theme.secondary} /></View><Text style={[styles.emptyTitle, { color: theme.text }]}>{title}</Text><Text style={[styles.emptyDetail, { color: theme.secondary }]}>{detail}</Text>{action}</View>;
 }
 
 const styles = StyleSheet.create({
