@@ -20,6 +20,7 @@ vi.mock('../database/client.js', () => {
       const name = getTableName(table)
       const query = {
         innerJoin: () => query, where: () => query, for: () => query,
+        then: (resolve: (rows: unknown[]) => unknown) => Promise.resolve([]).then(resolve),
         limit: async () => name === 'application_settings' ? [{ value: { enabled: state.enabled } }]
           : name === 'models' ? [model()]
           : name === 'chats' ? [{ id: 'chat', temporary: false }]

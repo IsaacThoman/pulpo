@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { chatPresetsSchema, type ChatPreset, type ChatPresetAction, type ChatPresetChoice, type ChatPresetIcon } from '@pulpo/contracts'
+import { DEFAULT_MINIMUM_OUTPUT_RESERVATION_TOKENS, minimumOutputReservationTokensSchema, chatPresetsSchema, type ChatPreset, type ChatPresetAction, type ChatPresetChoice, type ChatPresetIcon } from '@pulpo/contracts'
 import { ArrowDown, ArrowUp, Check, ChevronsUpDown, ChevronRight, Copy, Pencil, Plus, Search, Trash2 } from 'lucide-react'
 import { apiRequest } from '@/lib/api'
 import { formatNumber } from '@/lib/format'
@@ -57,6 +57,7 @@ interface AdminModel {
   interceptImagesWithOcr: boolean
   contextWindow: number
   maxOutputTokens: number
+  minimumOutputReservationTokens: number
   compactionEnabled: boolean
   compactionThresholdTokens: number
   compactionRetainedTurns: number
@@ -85,7 +86,7 @@ interface Lab { id: string; name: string; logo?: string; customIconId: string | 
 
 const empty = (providerConnectionId = '', labId: string | null = null): AdminModel => ({
   id: '', providerConnectionId, labId, upstreamModelId: '', name: '', description: '', enabled: true, visible: true, logo: null, customIconId: null, systemPrompt: '', agentEnabled: false, agentInstructions: '', defaultParameters: {}, interceptImagesWithOcr: false,
-  contextWindow: 128_000, maxOutputTokens: 16_384, executionMode: 'stream', tags: [], allowedParameters: [],
+  contextWindow: 128_000, maxOutputTokens: 16_384, minimumOutputReservationTokens: DEFAULT_MINIMUM_OUTPUT_RESERVATION_TOKENS, executionMode: 'stream', tags: [], allowedParameters: [],
   compactionEnabled: true, compactionThresholdTokens: 100_000, compactionRetainedTurns: 4,
   useProviderCost: false, promptCachingEnabled: false,
   inputPriceMicros: 0, cachedInputPriceMicros: 0, cacheWritePriceMicros: 0, outputPriceMicros: 0, perRequestPriceMicros: 0,
@@ -144,6 +145,7 @@ export function AdminModelsPage() {
   const canSave = !!draft?.id && !!draft?.name && !!draft?.upstreamModelId && !!draft.providerConnectionId && !!draft.labId
     && draft.compactionThresholdTokens >= 2_000 && draft.compactionThresholdTokens <= 1_000_000
     && draft.compactionRetainedTurns >= 1 && draft.compactionRetainedTurns <= 32
+    && minimumOutputReservationTokensSchema.safeParse(draft.minimumOutputReservationTokens).success
     && presetErrors.length === 0 && presetEditorValid && paramsValid
 
   return (
@@ -271,7 +273,7 @@ export function AdminModelsPage() {
           <DialogHeader className="border-b px-6 py-4">
             <DialogTitle className="flex flex-wrap items-center gap-2.5 pr-5">
               <AiLogo icon="codex" className="size-6 rounded-[3px]" />
-              {ui("Codex context management")}
+              {ui("Codex model settings")}
               <Badge variant="secondary" className="font-normal">{ui("Managed")}</Badge>
             </DialogTitle>
           </DialogHeader>
@@ -305,6 +307,7 @@ export function ManagedCodexSettingsEditor({
         <div><div className="text-xs text-muted-foreground">{ui("Context window")}</div><div className="mt-1 tabular-nums">{formatNumber(model.contextWindow)} {ui("tokens")}</div></div>
         <div><div className="text-xs text-muted-foreground">{ui("Max output")}</div><div className="mt-1 tabular-nums">{formatNumber(model.maxOutputTokens)} {ui("tokens")}</div></div>
       </div>
+      <MinimumOutputAllocationField value={model.minimumOutputReservationTokens} onChange={(minimumOutputReservationTokens) => onChange({ ...model, minimumOutputReservationTokens })} />
       <div className="rounded-lg border bg-muted/20 p-3">
         <div className="text-sm font-medium">{ui("Automatic context compaction")}</div>
         <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{ui("Pulpo summarizes older context at the configured threshold. Managed Codex models keep compaction enabled to prevent context-limit failures.")}</p>
@@ -353,7 +356,7 @@ export function ManagedCodexModelsSection({
         <h3 className="text-sm font-semibold">{ui("Managed Codex models")}</h3>
         <Badge variant="secondary">{models.length}</Badge>
       </div>
-      <p className="text-xs text-muted-foreground">{ui("Catalog details are managed by Pulpo. Administrators can tune context compaction for each model.")}</p>
+      <p className="text-xs text-muted-foreground">{ui("Catalog details are managed by Pulpo. Administrators can tune context compaction and minimum output allocation for each model.")}</p>
       {models.map((model) => (
         <Card key={model.id} className="shadow-none">
           <CardContent className="flex flex-wrap items-center gap-4 px-4 py-3">
@@ -369,7 +372,7 @@ export function ManagedCodexModelsSection({
                 </div>
               </div>
             </div>
-            <Button className="ml-auto" size="sm" variant="outline" onClick={() => onEdit(model)}><Pencil className="size-3.5" /> {ui("Context settings")}</Button>
+            <Button className="ml-auto" size="sm" variant="outline" onClick={() => onEdit(model)}><Pencil className="size-3.5" /> {ui("Model settings")}</Button>
           </CardContent>
         </Card>
       ))}
@@ -543,7 +546,8 @@ function ModelEditorBody({
           <Field label={ui("Max output tokens")}>
             <Input type="number" min={1} className="tabular-nums" value={draft.maxOutputTokens} onChange={(e) => setDraft({ ...draft, maxOutputTokens: Number(e.target.value) })} />
           </Field>
-          <Field label={ui("Tags")}>
+          <MinimumOutputAllocationField value={draft.minimumOutputReservationTokens} onChange={(minimumOutputReservationTokens) => setDraft({ ...draft, minimumOutputReservationTokens })} />
+          <Field label={ui("Tags")} className="col-span-2">
             <Input value={draft.tags.join(', ')} onChange={(e) => setDraft({ ...draft, tags: e.target.value.split(',').map((v) => v.trim()).filter(Boolean) })} placeholder={ui("reasoning, vision")} />
           </Field>
         </div>
@@ -923,6 +927,15 @@ function effectiveModelCustomIcon(model: AdminModel, labs: Lab[], icons: AdminCa
   return findCustomIcon(icons, labs.find((lab) => lab.id === model.labId)?.customIconId)
 }
 
+
+function MinimumOutputAllocationField({ value, onChange }: { value: number; onChange: (value: number) => void }) {
+  return (
+    <Field label={ui("Minimum output allocation")}>
+      <Input aria-label={ui("Minimum output allocation")} type="number" min={1} max={2_147_483_647} step={1} className="tabular-nums" value={value} onChange={(event) => onChange(Number(event.target.value))} />
+      <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{ui("Output tokens the account must be able to afford before a call starts. Smaller request or model limits lower this minimum. Responses can finish sooner; unused allocation is released.")}</p>
+    </Field>
+  )
+}
 
 function Field({ label, children, className }: { label: string; children: ReactNode; className?: string }) {
   return (

@@ -24,8 +24,7 @@ import {
 } from '../friends/sync.js'
 import {
   calculateCostMicros,
-  calculateReservationMicros,
-  calculateRollingReservationMicros,
+  budgetOutputReservation,
   type Pricing,
 } from './pricing.js'
 import { loadBillingEntitlements } from '../billing/entitlements.js'
@@ -65,10 +64,10 @@ export async function reserveBudget(input: {
   apiKeyId?: string | null
   requestInput: unknown
   maxOutputTokens: number
+  minimumOutputReservationTokens?: number
   pricing: ActivePricing
-}): Promise<number> {
-  const amount = calculateReservationMicros(input.requestInput, input.maxOutputTokens, input.pricing)
-  await db.transaction(async (tx) => {
+}): Promise<{ amountMicros: number; maxOutputTokens: number }> {
+  return db.transaction(async (tx) => {
     const membership = await activePoolMembership(tx, input.userId)
     if (membership) await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`pool:${membership.pool.id}`}))`)
     const poolRows = membership ? await activePoolMembers(tx, membership.pool.id) : []
@@ -78,47 +77,23 @@ export async function reserveBudget(input: {
     if (!user || user.blocked) throw new AppError(403, 'account_blocked', 'The account cannot make requests')
     const entitlements = await loadBillingEntitlements(tx, input.userId)
     if (entitlements.onHold) throw new AppError(403, 'billing_hold', 'Billing access is temporarily on hold')
-    const allocation = allocateReservationMicros(amount, entitlements.weeklyRemainingMicros, entitlements.fiveHourRemainingMicros)
-    const fiveHourPeriodStart = allocation.fiveHourMicros > 0
-      ? entitlements.fiveHourPeriodStart ?? new Date()
-      : null
     const pendingByUser = await pendingFundingByUser(tx, participantIds)
     const holdRows = await tx.select({ userId: billingAccounts.userId, holdAt: billingAccounts.holdAt, holdClearedAt: billingAccounts.holdClearedAt }).from(billingAccounts).where(inArray(billingAccounts.userId, participantIds))
     const held = new Set(holdRows.filter((row) => row.holdAt && !row.holdClearedAt).map((row) => row.userId))
     const balances = lockedUsers.filter((row) => !row.blocked && (row.id === input.userId || !held.has(row.id))).map((row) => ({
       userId: row.id,
-      availableMicros: availableAccountBalanceMicros({ balanceMicros: row.balanceMicros, pendingBalanceMicros: pendingByUser.get(row.id) ?? 0 }),
+      availableMicros: Math.max(0, availableAccountBalanceMicros({ balanceMicros: row.balanceMicros, pendingBalanceMicros: pendingByUser.get(row.id) ?? 0 })),
     }))
+    const capacity = await reservationCapacity(tx, input.apiKeyId,
+      Math.min(entitlements.weeklyRemainingMicros, entitlements.fiveHourRemainingMicros)
+        + balances.reduce((sum, row) => sum + row.availableMicros, 0))
+    const reservation = budgetOutputReservation({ ...input, capacityMicros: capacity.amountMicros })
+    if (!reservation) throw new AppError(402, capacity.code, capacity.message)
+    const amount = reservation.amountMicros
+    const allocation = allocateReservationMicros(amount, entitlements.weeklyRemainingMicros, entitlements.fiveHourRemainingMicros)
+    const fiveHourPeriodStart = allocation.fiveHourMicros > 0 ? entitlements.fiveHourPeriodStart ?? new Date() : null
     const funding = allocatePoolBalanceMicros({ amountMicros: allocation.balanceMicros, callerUserId: input.userId, balances })
-    if (allocation.balanceMicros > 0 && !funding.size) {
-      throw new AppError(402, 'insufficient_balance', 'Insufficient balance for the maximum request cost')
-    }
-    if (input.apiKeyId) {
-      const [key] = await tx.select().from(apiKeys).where(eq(apiKeys.id, input.apiKeyId)).limit(1)
-      if (!key || key.status !== 'active') throw new AppError(401, 'invalid_api_key', 'Invalid API key', 'authentication_error')
-      const monthStart = new Date(Date.UTC(nowYear(), nowMonth(), 1))
-      const [spent] = await tx
-        .select({ total: sql<number>`coalesce(sum(${usageEvents.costMicros}), 0)::bigint` })
-        .from(usageEvents)
-        .where(and(eq(usageEvents.apiKeyId, key.id), gte(usageEvents.createdAt, monthStart)))
-      const [keyReserved] = await tx
-        .select({ total: sql<number>`coalesce(sum(${budgetReservations.amountMicros}), 0)::bigint` })
-        .from(budgetReservations)
-        .where(and(eq(budgetReservations.apiKeyId, key.id), eq(budgetReservations.status, 'pending')))
-      const committed = Number(spent?.total ?? 0) + Number(keyReserved?.total ?? 0) + amount
-      if (key.monthlyBudgetMicros !== null && committed > key.monthlyBudgetMicros) {
-        throw new AppError(402, 'monthly_budget_exceeded', 'API key monthly budget exceeded')
-      }
-      if (key.lifetimeBudgetMicros !== null) {
-        const [lifetime] = await tx
-          .select({ total: sql<number>`coalesce(sum(${usageEvents.costMicros}), 0)::bigint` })
-          .from(usageEvents)
-          .where(eq(usageEvents.apiKeyId, key.id))
-        if (Number(lifetime?.total ?? 0) + Number(keyReserved?.total ?? 0) + amount > key.lifetimeBudgetMicros) {
-          throw new AppError(402, 'lifetime_budget_exceeded', 'API key lifetime budget exceeded')
-        }
-      }
-    }
+    if (allocation.balanceMicros > 0 && !funding.size) throw new AppError(402, 'insufficient_balance', 'Insufficient balance for the request')
     const reservationId = newId()
     await tx.insert(budgetReservations).values({
       id: reservationId,
@@ -135,12 +110,37 @@ export async function reserveBudget(input: {
     })
     if (funding.size) await tx.insert(budgetReservationFunders).values([...funding].map(([userId, reservedMicros]) => ({ reservationId, userId, reservedMicros })))
     await tx.update(responses).set({ pricingVersionId: input.pricing.id }).where(eq(responses.id, input.responseId))
+    return reservation
   })
-  return amount
 }
 
-function nowYear(): number { return new Date().getUTCFullYear() }
-function nowMonth(): number { return new Date().getUTCMonth() }
+type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0]
+
+/** Called only after locking the billing users, so pending holds cannot race. */
+async function reservationCapacity(tx: Transaction, apiKeyId: string | null | undefined, accountCapacity: number, currentReservationMicros = 0) {
+  let capacity = { amountMicros: accountCapacity, code: 'insufficient_balance', message: 'Insufficient balance for input and the minimum output allowance' }
+  if (!apiKeyId) return capacity
+  const [key] = await tx.select().from(apiKeys).where(eq(apiKeys.id, apiKeyId)).for('update')
+  if (!key || key.status !== 'active') throw new AppError(401, 'invalid_api_key', 'Invalid API key', 'authentication_error')
+  const now = new Date()
+  const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))
+  const [spent] = await tx.select({
+    monthly: sql<number>`coalesce(sum(${usageEvents.costMicros}) filter (where ${gte(usageEvents.createdAt, monthStart)}), 0)::bigint`,
+    lifetime: sql<number>`coalesce(sum(${usageEvents.costMicros}), 0)::bigint`,
+  }).from(usageEvents).where(eq(usageEvents.apiKeyId, apiKeyId))
+  const [reserved] = await tx.select({ total: sql<number>`coalesce(sum(${budgetReservations.amountMicros}), 0)::bigint` })
+    .from(budgetReservations).where(and(eq(budgetReservations.apiKeyId, apiKeyId), eq(budgetReservations.status, 'pending')))
+  const otherPending = Math.max(0, Number(reserved?.total ?? 0) - currentReservationMicros)
+  for (const [limit, spentMicros, code, message] of [
+    [key.monthlyBudgetMicros, Number(spent?.monthly ?? 0), 'monthly_budget_exceeded', 'API key monthly budget exceeded'],
+    [key.lifetimeBudgetMicros, Number(spent?.lifetime ?? 0), 'lifetime_budget_exceeded', 'API key lifetime budget exceeded'],
+  ] as const) {
+    if (limit !== null && limit - spentMicros - otherPending < capacity.amountMicros) {
+      capacity = { amountMicros: limit - spentMicros - otherPending, code, message }
+    }
+  }
+  return capacity
+}
 
 export async function chargeMeteredUsage(input: {
   userId: string
@@ -257,7 +257,9 @@ export async function settleBudget(input: {
     const cost = generationCost + Math.max(0, input.additionalCostMicros ?? 0)
     if (cost > reservation.amountMicros) throw new AppError(409, 'reservation_exceeded', 'Usage exceeded the reserved budget')
     const funders = await tx.select().from(budgetReservationFunders).where(eq(budgetReservationFunders.reservationId, reservation.id))
-    const funderIds = funders.map((row) => row.userId).sort()
+    // Subscription-only settlement must lock the caller too: otherwise another
+    // reservation can observe old spent usage and newly released pending usage.
+    const funderIds = [...new Set([reservation.userId, ...funders.map((row) => row.userId)])].sort()
     const fundingUsers = funderIds.length ? await tx.select().from(users).where(inArray(users.id, funderIds)).orderBy(users.id).for('update') : []
     const user = fundingUsers.find((row) => row.id === reservation.userId) ?? (await tx.select().from(users).where(eq(users.id, reservation.userId)).limit(1))[0]
     if (!user) throw new AppError(409, 'user_missing', 'User is missing')
@@ -377,30 +379,70 @@ export async function settleBudget(input: {
   return settlement.cost
 }
 
-async function replaceReservationFunding(
-  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+async function lockReservationBalances(
+  tx: Transaction,
   reservation: typeof budgetReservations.$inferSelect,
-  balanceMicros: number,
-  errorMessage: string,
-): Promise<void> {
+) {
   if (reservation.poolId) await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`pool:${reservation.poolId}`}))`)
   const existing = await tx.select().from(budgetReservationFunders).where(eq(budgetReservationFunders.reservationId, reservation.id))
   const active = reservation.poolId ? await activePoolMembers(tx, reservation.poolId) : []
   const activeIds = new Set(active.map((row) => row.user.id))
   const ids = [...new Set([reservation.userId, ...activeIds, ...existing.map((row) => row.userId)])].sort()
   const lockedUsers = await tx.select().from(users).where(inArray(users.id, ids)).orderBy(users.id).for('update')
+  const caller = lockedUsers.find(row => row.id === reservation.userId)
+  if (!caller || caller.blocked) throw new AppError(403, 'account_blocked', 'The account cannot make requests')
   const pending = await pendingFundingByUser(tx, ids)
   const holdRows = await tx.select({ userId: billingAccounts.userId, holdAt: billingAccounts.holdAt, holdClearedAt: billingAccounts.holdClearedAt }).from(billingAccounts).where(inArray(billingAccounts.userId, ids))
   const held = new Set(holdRows.filter((row) => row.holdAt && !row.holdClearedAt).map((row) => row.userId))
   const current = new Map(existing.map((row) => [row.userId, row.reservedMicros]))
   const balances = lockedUsers.filter((row) => !row.blocked && (row.id === reservation.userId || !held.has(row.id))).map((row) => {
-    const available = availableAccountBalanceMicros({ balanceMicros: row.balanceMicros, pendingBalanceMicros: pending.get(row.id) ?? 0, currentBalanceReservedMicros: current.get(row.id) ?? 0 })
+    const available = Math.max(0, availableAccountBalanceMicros({ balanceMicros: row.balanceMicros, pendingBalanceMicros: pending.get(row.id) ?? 0, currentBalanceReservedMicros: current.get(row.id) ?? 0 }))
     return { userId: row.id, availableMicros: activeIds.has(row.id) || row.id === reservation.userId ? available : Math.min(available, current.get(row.id) ?? 0) }
   })
-  const funding = allocatePoolBalanceMicros({ amountMicros: balanceMicros, callerUserId: reservation.userId, balances })
-  if (balanceMicros > 0 && !funding.size) throw new AppError(402, 'insufficient_balance', errorMessage)
-  await tx.delete(budgetReservationFunders).where(eq(budgetReservationFunders.reservationId, reservation.id))
-  if (funding.size) await tx.insert(budgetReservationFunders).values([...funding].map(([userId, reservedMicros]) => ({ reservationId: reservation.id, userId, reservedMicros })))
+  return balances
+}
+
+async function updateReservationAmount<T extends { amountMicros: number }>(
+  responseId: string,
+  calculate: (capacityMicros: number, currentAmountMicros: number) => T | null,
+): Promise<T> {
+  return db.transaction(async tx => {
+    const [reservation] = await tx.select().from(budgetReservations).where(eq(budgetReservations.responseId, responseId)).for('update')
+    if (!reservation || reservation.status !== 'pending') throw new AppError(409, 'reservation_missing', 'Budget reservation is unavailable')
+    const balances = await lockReservationBalances(tx, reservation)
+    const entitlements = await loadBillingEntitlements(tx, reservation.userId)
+    if (entitlements.onHold) throw new AppError(403, 'billing_hold', 'Billing access is temporarily on hold')
+    const allocate = (amountMicros: number) => allocateResizedReservationMicros({
+      amountMicros,
+      weeklyRemainingMicros: entitlements.weeklyRemainingMicros,
+      currentWeeklyReservedMicros: reservation.weeklyReservedMicros,
+      reservationWeeklyPeriodStart: reservation.weeklyPeriodStart,
+      currentWeeklyPeriodStart: entitlements.weeklyPeriodStart,
+      fiveHourRemainingMicros: entitlements.fiveHourRemainingMicros,
+      currentFiveHourReservedMicros: reservation.fiveHourReservedMicros,
+      reservationFiveHourPeriodStart: reservation.fiveHourPeriodStart,
+      currentFiveHourPeriodStart: entitlements.fiveHourPeriodStart,
+    })
+    const subscriptionCapacity = allocate(Number.MAX_SAFE_INTEGER).weeklyMicros
+    const capacity = await reservationCapacity(tx, reservation.apiKeyId,
+      subscriptionCapacity + balances.reduce((sum, row) => sum + row.availableMicros, 0), reservation.amountMicros)
+    const result = calculate(capacity.amountMicros, reservation.amountMicros)
+    if (!result || result.amountMicros > capacity.amountMicros) throw new AppError(402, capacity.code, capacity.message)
+    const allocation = allocate(result.amountMicros)
+    const funding = allocatePoolBalanceMicros({ amountMicros: allocation.balanceMicros, callerUserId: reservation.userId, balances })
+    if (allocation.balanceMicros > 0 && !funding.size) throw new AppError(402, 'insufficient_balance', 'Insufficient balance for the request')
+    await tx.delete(budgetReservationFunders).where(eq(budgetReservationFunders.reservationId, reservation.id))
+    if (funding.size) await tx.insert(budgetReservationFunders).values([...funding].map(([userId, reservedMicros]) => ({ reservationId: reservation.id, userId, reservedMicros })))
+    await tx.update(budgetReservations).set({
+      amountMicros: result.amountMicros,
+      weeklyReservedMicros: allocation.weeklyMicros,
+      fiveHourReservedMicros: allocation.fiveHourMicros,
+      balanceReservedMicros: allocation.balanceMicros,
+      weeklyPeriodStart: reservation.weeklyPeriodStart ?? (allocation.weeklyMicros > 0 ? entitlements.weeklyPeriodStart : null),
+      fiveHourPeriodStart: reservation.fiveHourPeriodStart ?? (allocation.fiveHourMicros > 0 ? entitlements.fiveHourPeriodStart ?? new Date() : null),
+    }).where(eq(budgetReservations.id, reservation.id))
+    return result
+  })
 }
 
 export async function resizeBudgetReservation(input: {
@@ -408,33 +450,32 @@ export async function resizeBudgetReservation(input: {
   accruedCostMicros: number
   requestInput: unknown
   maxOutputTokens: number
+  minimumOutputReservationTokens?: number
   pricing: ActivePricing
-}): Promise<void> {
-  const amount = calculateRollingReservationMicros(input.accruedCostMicros, input.requestInput, input.maxOutputTokens, input.pricing)
-  await db.transaction(async (tx) => {
-    const [reservation] = await tx.select().from(budgetReservations).where(eq(budgetReservations.responseId, input.responseId)).for('update')
-    if (!reservation || reservation.status !== 'pending') throw new AppError(409, 'reservation_missing', 'Agent budget reservation is unavailable')
-    const entitlements = await loadBillingEntitlements(tx, reservation.userId)
-    if (entitlements.onHold) throw new AppError(403, 'billing_hold', 'Billing access is temporarily on hold')
-    const allocation = allocateResizedReservationMicros({
-      amountMicros: amount,
-      weeklyRemainingMicros: entitlements.weeklyRemainingMicros,
-      currentWeeklyReservedMicros: reservation.weeklyReservedMicros,
-      reservationWeeklyPeriodStart: reservation.weeklyPeriodStart,
-      currentWeeklyPeriodStart: entitlements.weeklyPeriodStart,
-      fiveHourRemainingMicros: entitlements.fiveHourRemainingMicros,
-      currentFiveHourReservedMicros: reservation.fiveHourReservedMicros,
-      reservationFiveHourPeriodStart: reservation.fiveHourPeriodStart,
-      currentFiveHourPeriodStart: entitlements.fiveHourPeriodStart,
-    })
-    await replaceReservationFunding(tx, reservation, allocation.balanceMicros, 'Insufficient balance for the next agent turn')
-    await tx.update(budgetReservations).set({
-      amountMicros: amount,
-      weeklyReservedMicros: allocation.weeklyMicros,
-      fiveHourReservedMicros: allocation.fiveHourMicros,
-      balanceReservedMicros: allocation.balanceMicros,
-      weeklyPeriodStart: allocation.weeklyMicros > 0 ? (reservation.weeklyPeriodStart ?? entitlements.weeklyPeriodStart) : null,
-      fiveHourPeriodStart: allocation.fiveHourMicros > 0 ? (reservation.fiveHourPeriodStart ?? entitlements.fiveHourPeriodStart ?? new Date()) : null,
+}): Promise<{ amountMicros: number; maxOutputTokens: number }> {
+  return updateReservationAmount(input.responseId, capacityMicros => budgetOutputReservation({ ...input, capacityMicros }))
+}
+
+/** Release unused generation capacity only once its provider call has finished. */
+export async function retainBudgetReservation(responseId: string, amountMicros: number): Promise<void> {
+  if (!Number.isSafeInteger(amountMicros) || amountMicros < 0) throw new AppError(400, 'invalid_reservation_amount', 'Retained reservation must be a non-negative integer')
+  await db.transaction(async tx => {
+    const [reservation] = await tx.select().from(budgetReservations).where(eq(budgetReservations.responseId, responseId)).for('update')
+    if (!reservation || reservation.status !== 'pending') throw new AppError(409, 'reservation_missing', 'Budget reservation is unavailable')
+    if (amountMicros > reservation.amountMicros) throw new AppError(409, 'reservation_exceeded', 'Usage exceeded the reserved budget')
+    if (reservation.poolId) await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`pool:${reservation.poolId}`}))`)
+    const funders = await tx.select().from(budgetReservationFunders).where(eq(budgetReservationFunders.reservationId, reservation.id))
+    const ids = [...new Set([reservation.userId, ...funders.map(row => row.userId)])].sort()
+    await tx.select({ id: users.id }).from(users).where(inArray(users.id, ids)).orderBy(users.id).for('update')
+    // This only returns unused funds; revoked keys and billing holds must not
+    // prevent retaining already incurred costs or change the original funders.
+    const allocation = allocateSettlementMicros(amountMicros, reservation.weeklyReservedMicros, reservation.fiveHourReservedMicros)
+    const funding = allocatePoolBalanceMicros({ amountMicros: allocation.balanceMicros, callerUserId: reservation.userId,
+      balances: funders.map(row => ({ userId: row.userId, availableMicros: row.reservedMicros })) })
+    for (const funder of funders) await tx.update(budgetReservationFunders).set({ reservedMicros: funding.get(funder.userId) ?? 0 })
+      .where(and(eq(budgetReservationFunders.reservationId, reservation.id), eq(budgetReservationFunders.userId, funder.userId)))
+    await tx.update(budgetReservations).set({ amountMicros, weeklyReservedMicros: allocation.weeklyMicros,
+      fiveHourReservedMicros: allocation.fiveHourMicros, balanceReservedMicros: allocation.balanceMicros,
     }).where(eq(budgetReservations.id, reservation.id))
   })
 }
@@ -442,33 +483,7 @@ export async function resizeBudgetReservation(input: {
 export async function extendBudgetReservationFixedCost(responseId: string, additionalMicros: number): Promise<void> {
   if (!Number.isSafeInteger(additionalMicros) || additionalMicros < 0) throw new AppError(400, 'invalid_reservation_amount', 'Additional reservation must be a non-negative integer')
   if (additionalMicros === 0) return
-  await db.transaction(async (tx) => {
-    const [reservation] = await tx.select().from(budgetReservations).where(eq(budgetReservations.responseId, responseId)).for('update')
-    if (!reservation || reservation.status !== 'pending') throw new AppError(409, 'reservation_missing', 'Agent budget reservation is unavailable')
-    const entitlements = await loadBillingEntitlements(tx, reservation.userId)
-    if (entitlements.onHold) throw new AppError(403, 'billing_hold', 'Billing access is temporarily on hold')
-    const amount = reservation.amountMicros + additionalMicros
-    const allocation = allocateResizedReservationMicros({
-      amountMicros: amount,
-      weeklyRemainingMicros: entitlements.weeklyRemainingMicros,
-      currentWeeklyReservedMicros: reservation.weeklyReservedMicros,
-      reservationWeeklyPeriodStart: reservation.weeklyPeriodStart,
-      currentWeeklyPeriodStart: entitlements.weeklyPeriodStart,
-      fiveHourRemainingMicros: entitlements.fiveHourRemainingMicros,
-      currentFiveHourReservedMicros: reservation.fiveHourReservedMicros,
-      reservationFiveHourPeriodStart: reservation.fiveHourPeriodStart,
-      currentFiveHourPeriodStart: entitlements.fiveHourPeriodStart,
-    })
-    await replaceReservationFunding(tx, reservation, allocation.balanceMicros, 'Insufficient balance for the requested agent tool')
-    await tx.update(budgetReservations).set({
-      amountMicros: amount,
-      weeklyReservedMicros: allocation.weeklyMicros,
-      fiveHourReservedMicros: allocation.fiveHourMicros,
-      balanceReservedMicros: allocation.balanceMicros,
-      weeklyPeriodStart: allocation.weeklyMicros > 0 ? (reservation.weeklyPeriodStart ?? entitlements.weeklyPeriodStart) : null,
-      fiveHourPeriodStart: allocation.fiveHourMicros > 0 ? (reservation.fiveHourPeriodStart ?? entitlements.fiveHourPeriodStart ?? new Date()) : null,
-    }).where(eq(budgetReservations.id, reservation.id))
-  })
+  await updateReservationAmount(responseId, (_capacity, amountMicros) => ({ amountMicros: amountMicros + additionalMicros }))
 }
 
 export async function releaseBudget(responseId: string): Promise<void> {

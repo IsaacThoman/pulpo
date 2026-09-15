@@ -52,4 +52,20 @@ it('defaults a new model to disabled caching', async () => {
   await waitFor(() => expect((create as HTMLButtonElement).disabled).toBe(false))
   fireEvent.click(create)
   expect(screen.getByRole('switch', { name: /^Explicit prompt caching/ }).getAttribute('aria-checked')).toBe('false')
+  expect((screen.getByRole('spinbutton', { name: 'Minimum output allocation' }) as HTMLInputElement).value).toBe('8000')
+})
+
+it('edits and saves the per-model minimum allocation and rejects invalid values', async () => {
+  mockModels(false)
+  render(<AdminModelsPage />)
+  fireEvent.click(await screen.findByTitle('Edit'))
+  const field = screen.getByRole('spinbutton', { name: 'Minimum output allocation' }) as HTMLInputElement
+  expect(field.value).toBe('8000')
+  fireEvent.change(field, { target: { value: '0' } })
+  expect((screen.getByRole('button', { name: 'Save & update' }) as HTMLButtonElement).disabled).toBe(true)
+  fireEvent.change(field, { target: { value: '1500' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Save & update' }))
+  await waitFor(() => expect(mocks.api).toHaveBeenCalledWith('/api/admin/models/claude', {
+    method: 'PATCH', body: expect.objectContaining({ minimumOutputReservationTokens: 1_500 }),
+  }))
 })
