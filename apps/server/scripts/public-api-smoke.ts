@@ -381,6 +381,17 @@ try {
     }
   })
   await check('fallback recalculates its affordable cap with the fallback price', async () => {
+    // A completed response can be read before the worker commits accounting.
+    // Settle each request before overwriting its account balance or pricing.
+    const waitForSettlement = async (responseId: string) => {
+      const deadline = Date.now() + 5_000
+      while (Date.now() < deadline) {
+        const [hold] = await db.select().from(schema.budgetReservations).where(eq(schema.budgetReservations.responseId, responseId))
+        if (hold?.status === 'settled') { assert.equal(hold.settledAmountMicros, 40); return }
+        await new Promise(resolve => setTimeout(resolve, 25))
+      }
+      assert.fail(`Fallback accounting did not settle for ${responseId}`)
+    }
     const [keyRow] = await db.select().from(schema.apiKeys).where(eq(schema.apiKeys.id, key.id))
     await db.update(schema.users).set({ balanceMicros: 16_000 }).where(eq(schema.users.id, keyRow!.userId))
     await db.update(schema.modelPricingVersions).set({ outputPriceMicros: 1_000_000 }).where(eq(schema.modelPricingVersions.modelId, fallbackModel))
@@ -391,12 +402,15 @@ try {
       assert.equal(result.status, 'completed')
       assert.equal(upstreamRequests[0]!.max_output_tokens, 8_192)
       assert.equal(upstreamRequests.at(-1)!.max_output_tokens, 8_000)
+      await waitForSettlement(result.id)
       await db.update(schema.users).set({ balanceMicros: 4_000 }).where(eq(schema.users.id, keyRow!.userId))
       await db.update(schema.models).set({ minimumOutputReservationTokens: 1_000 }).where(eq(schema.models.id, fallbackModel))
       await db.update(schema.models).set({ minimumOutputReservationTokens: 2_000 }).where(eq(schema.models.id, model))
-      assert.equal((await client.responses.create({ model: fallbackModel, input: 'Hi' })).status, 'completed')
+      const lowerBudget = await client.responses.create({ model: fallbackModel, input: 'Hi' })
+      assert.equal(lowerBudget.status, 'completed', JSON.stringify(lowerBudget.error))
       assert.equal(upstreamRequests.at(-2)!.max_output_tokens, 4_000)
       assert.equal(upstreamRequests.at(-1)!.max_output_tokens, 2_000)
+      await waitForSettlement(lowerBudget.id)
     } finally {
       for (const id of [model, fallbackModel]) await db.update(schema.models).set({ minimumOutputReservationTokens: 8_000 }).where(eq(schema.models.id, id))
       for (const id of [model, fallbackModel]) await db.update(schema.modelPricingVersions).set({ outputPriceMicros: 0 }).where(eq(schema.modelPricingVersions.modelId, id))
