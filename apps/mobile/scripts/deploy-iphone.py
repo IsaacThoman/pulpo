@@ -98,6 +98,8 @@ def deploy(source, root, log, lock_fd):
     environment['EXPO_PUBLIC_DEFAULT_INSTANCE_URL'] = os.environ.get('PULPO_INSTANCE_URL', 'https://pulpo.baby')
     environment['CI'] = '1'
     environment.setdefault('NODE_ENV', 'production' if configuration == 'Release' else 'development')
+    # CocoaPods refuses to run without a UTF-8 locale.
+    environment.setdefault('LANG', 'en_US.UTF-8')
     # npm invokes us inside the source workspace. Child tools must see the stable checkout.
     environment['PWD'] = str(mobile)
     environment['INIT_CWD'] = str(checkout)
@@ -111,13 +113,44 @@ def deploy(source, root, log, lock_fd):
             pass_fds=(lock_fd,),
         ).stdout
 
+    def install_dependencies():
+        options = ['--include=dev', '--no-audit', '--no-fund']
+        if (checkout / 'node_modules/.package-lock.json').exists():
+            # `npm ci` deletes node_modules. Most native sources (React Native, Expo modules)
+            # are CocoaPods path pods that live there, and Xcode tracks inputs by inode and
+            # mtime, so a deleted node_modules recompiles every pod. Reinstall only what changed.
+            run(['npm', 'install', '--no-save', *options], cwd=checkout)
+        else:
+            run(['npm', 'ci', *options], cwd=checkout)
+
+    def prebuild():
+        ios = mobile / 'ios'
+        preserved = root / 'preserved-pods'
+        preserved.mkdir(exist_ok=True)
+        # Keep installed pods across the clean prebuild. `pod install` then reinstalls only pods
+        # whose spec changed, and untouched pod sources keep the timestamps Xcode's cache needs.
+        # Leftovers from an interrupted run are only used when the checkout has nothing newer.
+        for name in ('Pods', 'Podfile.lock'):
+            if (ios / name).exists():
+                remove(preserved / name)
+                (ios / name).rename(preserved / name)
+        run(['npx', '--no-install', 'expo', 'prebuild', '--clean', '--no-install', '--platform', 'ios'])
+        for name in ('Pods', 'Podfile.lock'):
+            if (preserved / name).exists():
+                remove(ios / name)
+                (preserved / name).rename(ios / name)
+        try:
+            run(['pod', 'install'], cwd=ios)
+        except subprocess.CalledProcessError:
+            run(['pod', 'install', '--repo-update'], cwd=ios)
+
     dependency_files = [name for name in names if Path(name).name in ('package.json', 'package-lock.json', '.npmrc')]
     versions = run(['node', '--version'], capture=True) + run(['npm', '--version'], capture=True)
     dependencies = input_hash(checkout, dependency_files, versions)
     refresh(
         root / 'dependencies.sha256', dependencies,
         (checkout / 'node_modules/.package-lock.json').exists(),
-        lambda: run(['npm', 'ci', '--include=dev', '--no-audit', '--no-fund'], cwd=checkout),
+        install_dependencies,
     )
     # Workspace packages expose dist/. Build the snapshot, never copy stale outputs.
     for package in ('contracts', 'client-core'):
@@ -131,7 +164,7 @@ def deploy(source, root, log, lock_fd):
     refresh(
         root / 'native.sha256', dependencies + ':' + fingerprint,
         (mobile / 'ios/Podfile').exists() and (mobile / 'ios/Pods/Manifest.lock').exists(),
-        lambda: run(['npx', '--no-install', 'expo', 'prebuild', '--clean', '--platform', 'ios']),
+        prebuild,
     )
     device = os.environ.get('PULPO_IOS_DEVICE', 'Isaac iphone')
     run(['npx', '--no-install', 'expo', 'run:ios', '--device', device,
