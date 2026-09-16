@@ -113,7 +113,9 @@ import {
   frame,
   glassEffect as swiftUIGlassEffect,
   labelStyle,
+  lineLimit,
   menuActionDismissBehavior,
+  minimumScaleFactor,
   padding,
   resizable,
   shapes,
@@ -3668,6 +3670,7 @@ const NativeModelMenu = memo(function NativeModelMenu({ model, models, onSelectM
         label={(
           <SwiftUILabel
             title={model.name}
+            modifiers={[lineLimit(1), minimumScaleFactor(0.5), frame({ maxWidth: 170, maxHeight: 28 })]}
             icon={(
               <SwiftUIImage
                 uiImage={Image.resolveAssetSource(model.icon).uri}

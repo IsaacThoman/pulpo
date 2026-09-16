@@ -1,0 +1,20 @@
+# Run after signing into the local picker fixture.
+appId: com.isaacthoman.pulpo
+---
+- stopApp
+- launchApp
+- extendedWaitUntil:
+    visible: "Model, Picker Alpha"
+    timeout: 120000
+- openLink:
+    link: "pulpo://"
+    autoVerify: true
+- assertVisible: "Model, Picker Alpha"
+- stopApp
+- openLink:
+    link: "pulpo://"
+    autoVerify: true
+- extendedWaitUntil:
+    visible: "Model, Picker Alpha"
+    timeout: 120000
+- runFlow: menu.yaml
