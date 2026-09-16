@@ -23,4 +23,8 @@ describe('branch generation settings', () => {
   it('retains stored values for older clients that omit generation selections', () => {
     expect(resolveBranchGenerationSettings(original, {})).toEqual(original)
   })
+
+  it('honors explicitly disabling agent mode on an agent response', () => {
+    expect(resolveBranchGenerationSettings({ ...original, agentMode: true }, { agentMode: false }).agentMode).toBe(false)
+  })
 })

@@ -689,11 +689,11 @@ describe('chat store branching integration', () => {
     queryClient.setQueryData(['chat', userId, chatId], initial)
     useChat.getState().setDetailedChat(initial)
     useSettings.setState({
-      agentModes: { 'another-model': false },
-      generation: { 'test-model': { reasoning: 'high' } },
+      agentModes: { 'test-model': false },
+      generation: { 'test-model': { reasoning: 'low' } },
     })
 
-    useChat.getState().regenerate(chatId, responseAId, 'test-model')
+    useChat.getState().regenerate(chatId, responseAId, { modelId: 'test-model', presetSelections: { reasoning: 'high' }, agentMode: true })
 
     const optimistic = queryClient.getQueryData<ServerChat>(['chat', userId, chatId])!
     const responseBId = optimistic.activeBranchLeafId!
@@ -766,7 +766,7 @@ describe('chat store branching integration', () => {
     useChat.getState().setDetailedChat(initial)
     expectOnly(responseAId)
 
-    useChat.getState().regenerate(chatId, responseAId, 'test-model')
+    useChat.getState().regenerate(chatId, responseAId, { modelId: 'test-model', presetSelections: { reasoning: 'high' }, agentMode: true })
     const optimistic = queryClient.getQueryData<ServerChat>(['chat', userId, chatId])!
     const responseBId = optimistic.activeBranchLeafId!
     expect(responseBId).not.toBe(responseAId)
@@ -809,7 +809,7 @@ describe('chat store branching integration', () => {
 
     // Repeat with another regeneration and several rapid switches. Navigation
     // must enqueue only activation requests and must never append sibling turns.
-    useChat.getState().regenerate(chatId, responseBId, 'test-model')
+    useChat.getState().regenerate(chatId, responseBId, { modelId: 'test-model', presetSelections: {}, agentMode: false })
     const secondOptimistic = queryClient.getQueryData<ServerChat>(['chat', userId, chatId])!
     const responseCId = secondOptimistic.activeBranchLeafId!
     const responseCStreaming = response(responseCId, 'in_progress')
