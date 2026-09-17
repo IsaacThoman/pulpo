@@ -13,7 +13,7 @@ import { publishAdminUsage } from '../admin/usage-events.js'
 import { maintenanceQueue } from '../jobs.js'
 import { cancelChatWork, getTrashRetention, markChatsForPurge, purgeAtFor } from './trash.js'
 import { planDuplicateTree } from './duplicate.js'
-import { toPublicChat, toPublicChatResponses } from './public.js'
+import { toPublicChat, toPublicChatResponses, withoutWorkspaceScope } from './public.js'
 import { responseAttachmentIds } from '../messages/input.js'
 import {
   accessibleChatCondition,
@@ -74,7 +74,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     }
     return {
       data: rows.map((chat) => ({
-        ...chat,
+        ...withoutWorkspaceScope(chat),
         inFlightResponseIds: responseIdsByChat.get(chat.id) ?? [],
       })),
     }
@@ -134,7 +134,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       ))
       : []
     return reply.type('application/json').header('content-disposition', 'attachment; filename="pulpo-chats.json"')
-      .send(createChatExportPayload(chatRows, responseRows))
+      .send(createChatExportPayload(chatRows.map(withoutWorkspaceScope), responseRows.map(withoutWorkspaceScope)))
   })
 
   app.post('/api/chats/import', CHAT_IMPORT_ROUTE_OPTIONS, async (request) => {
@@ -246,7 +246,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     if (!created) {
       const [existing] = await db.select().from(chats).where(and(eq(chats.id, id), eq(chats.userId, user.id))).limit(1)
       if (!existing) throw new AppError(409, 'chat_id_conflict', 'Chat identifier is already in use')
-      return existing
+      return withoutWorkspaceScope(existing)
     }
     if (created.temporary && created.expiresAt) {
       await scheduleTemporaryChatExpiry({ chatId: created.id, userId: user.id, expiresAt: created.expiresAt })
@@ -256,7 +256,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     }
     if (!created.temporary) await bumpRevision(user.id, id)
     reply.code(201)
-    return created
+    return withoutWorkspaceScope(created!)
   })
 
   app.post('/api/chats/start', async (request, reply) => {
@@ -305,7 +305,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
         await scheduleNormalChatExpiry({ chatId: chat.id, userId: user.id, expiresAt: chat.expiresAt })
       }
       const [updatedChat] = await db.select().from(chats).where(eq(chats.id, chat.id)).limit(1)
-      const result = { chat: updatedChat ?? chat, response: toSnapshot(response) }
+      const result = { chat: withoutWorkspaceScope(updatedChat ?? chat), response: toSnapshot(response) }
       if (inserted && !chat.temporary) {
         // Navigation is best effort; a notification failure cannot undo an accepted send.
         await publishChatStarted(user.id, { chatId: chat.id, responseId: response.id })
@@ -364,11 +364,11 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       if (afterRace && temporaryChatIsExpired(afterRace, new Date())) {
         throw new AppError(410, 'temporary_chat_expired', 'This temporary chat has expired and cannot be recovered')
       }
-      if (afterRace && !afterRace.temporary && !afterRace.deletedAt && !afterRace.purgeStartedAt) return afterRace
+      if (afterRace && !afterRace.temporary && !afterRace.deletedAt && !afterRace.purgeStartedAt) return withoutWorkspaceScope(afterRace)
       throw notFound('Chat')
     }
     await bumpRevision(user.id, id)
-    return updated
+    return withoutWorkspaceScope(updated)
   })
 
   app.post('/api/chats/:id/duplicate', async (request, reply) => {
@@ -396,6 +396,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     await db.transaction(async (tx) => {
       await tx.insert(chats).values({
         ...source,
+        workspaceScopeId: newId(),
         id: chatId,
         userId: user.id,
         title: title.slice(0, 200),
@@ -414,6 +415,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
         await tx.insert(responses).values({
           ...response,
           ...mapped,
+          workspaceScopeId: newId(),
           chatId,
           userId: user.id,
           openaiResponseId: null,
@@ -426,7 +428,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     await bumpRevision(user.id, chatId)
     await scheduleChatIndex(chatId, user.id, 'chat-duplicate')
     reply.code(201)
-    return { ...source, id: chatId, title: title.slice(0, 200), pinned: false, temporary: false, activeResponseId, activeBranchLeafId, expiresAt: null, createdAt: now, updatedAt: now }
+    return { ...withoutWorkspaceScope(source), id: chatId, title: title.slice(0, 200), pinned: false, temporary: false, activeResponseId, activeBranchLeafId, expiresAt: null, createdAt: now, updatedAt: now }
   })
 
   app.put('/api/chats/order', async (request) => {
@@ -567,7 +569,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     }
     await bumpRevision(user.id, id)
     if (patch.autoExpire !== undefined) await scheduleChatIndex(id, user.id, 'chat-expiration-change')
-    return updated
+    return withoutWorkspaceScope(updated)
   })
 
   app.delete('/api/chats/:id', async (request, reply) => {

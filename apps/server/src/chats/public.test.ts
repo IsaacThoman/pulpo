@@ -12,6 +12,7 @@ const date = new Date('2026-08-07T12:00:00.000Z')
 describe('public chat DTOs', () => {
   it('only exposes client-supported chat fields', () => {
     const row = {
+      workspaceScopeId: 'private-workspace-scope',
       id: '00000000-0000-4000-8000-000000000001', userId: 'private-user', folderId: null,
       title: 'Chat', modelId: 'model-1', pinned: false, sortOrder: 0, temporary: false,
       activeBranchLeafId: null, activeResponseId: null, expiresAt: null, deletedAt: null,
@@ -19,6 +20,7 @@ describe('public chat DTOs', () => {
     }
     const result = toPublicChat(row)
     expect(result).toMatchObject({ id: row.id, title: 'Chat', createdAt: date.toISOString() })
+    expect(result).not.toHaveProperty('workspaceScopeId')
     expect(result).not.toHaveProperty('userId')
     expect(result).not.toHaveProperty('deletedAt')
     expect(result).not.toHaveProperty('purgeStartedAt')
@@ -26,6 +28,7 @@ describe('public chat DTOs', () => {
 
   it.each([false, true])('preserves the original model identity and hides internal fields (agentMode: %s)', (agentMode) => {
     const row = {
+      workspaceScopeId: 'private-workspace-scope',
       id: '00000000-0000-4000-8000-000000000002',
       chatId: '00000000-0000-4000-8000-000000000001', userId: 'private-user',
       modelId: 'model-1', actualModelId: 'model-actual', origin: 'web', timeZone: 'America/New_York', pricingVersionId: 'private-pricing',
@@ -66,6 +69,7 @@ describe('public chat DTOs', () => {
 
   it('sends output once in compact history while retaining the legacy shape', () => {
     const row = {
+      workspaceScopeId: 'private-workspace-scope',
       id: '00000000-0000-4000-8000-000000000002',
       chatId: '00000000-0000-4000-8000-000000000001', userId: 'private-user',
       modelId: 'model-1', actualModelId: null, origin: 'web', timeZone: 'America/New_York', pricingVersionId: null,
@@ -89,6 +93,7 @@ describe('public chat DTOs', () => {
 
   it('keeps inactive branch topology without transferring its body', () => {
     const row = {
+      workspaceScopeId: 'private-workspace-scope',
       id: '00000000-0000-4000-8000-000000000002',
       chatId: '00000000-0000-4000-8000-000000000001', userId: 'private-user',
       modelId: 'model-1', actualModelId: null, origin: 'web', timeZone: 'America/New_York', pricingVersionId: null,
@@ -114,6 +119,7 @@ describe('public chat DTOs', () => {
   it('bounds a three-edit bundle that repeats the same multi-megabyte image context', () => {
     const imageData = 'A'.repeat(3 * 1024 * 1024)
     const rows = [0, 1, 2].map((index) => ({
+      workspaceScopeId: 'private-workspace-scope',
       id: `00000000-0000-4000-8000-00000000000${index + 2}`,
       chatId: '00000000-0000-4000-8000-000000000001', userId: 'private-user',
       modelId: 'model-1', actualModelId: null, origin: 'web', timeZone: 'America/New_York', pricingVersionId: null,
@@ -143,6 +149,7 @@ describe('public chat DTOs', () => {
 
   it('returns the activated lineage body with inactive branches left as stubs', () => {
     const rows = [0, 1].map((index) => ({
+      workspaceScopeId: 'private-workspace-scope',
       id: `00000000-0000-4000-8000-00000000000${index + 2}`,
       chatId: '00000000-0000-4000-8000-000000000001', userId: 'private-user',
       modelId: 'model-1', actualModelId: null, origin: 'web', timeZone: 'America/New_York', pricingVersionId: null,

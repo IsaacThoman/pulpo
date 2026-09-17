@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm'
+import { and, asc, eq, inArray, isNull, or, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { editMessageSchema, idSchema, timeZoneSchema } from '@pulpo/contracts'
@@ -181,14 +181,17 @@ export async function registerMessageRoutes(app: FastifyInstance): Promise<void>
       }
     }
     const createdAt = new Date()
-    const createdId = clientId ?? newId()
+    let createdId = clientId ?? newId()
     const output = editedOutput(content)
+    const workspaceScopeId = newId()
     await db.transaction(async (tx) => {
-      await tx.insert(responses).values({
+      await tx.select({ id: chats.id }).from(chats).where(eq(chats.id, original.chatId)).for('update')
+      const [inserted] = await tx.insert(responses).values({
         id: createdId,
         chatId: original.chatId,
         userId: user.id,
         ...assistantEditInheritedValues(original),
+        workspaceScopeId,
         branchReason: 'assistant_edit',
         status: 'completed',
         idempotencyKey,
@@ -196,8 +199,18 @@ export async function registerMessageRoutes(app: FastifyInstance): Promise<void>
         completedAt: createdAt,
         createdAt,
         updatedAt: createdAt,
-      })
+      }).onConflictDoNothing().returning({ id: responses.id })
+      if (!inserted) {
+        const [existing] = await tx.select().from(responses).where(or(
+          eq(responses.id, createdId),
+          ...(idempotencyKey ? [and(eq(responses.userId, user.id), eq(responses.idempotencyScope, 'default'), eq(responses.idempotencyKey, idempotencyKey))] : []),
+        )).limit(1)
+        if (!existing || existing.userId !== user.id || existing.chatId !== original.chatId) throw new AppError(409, 'response_id_conflict', 'Response id is already in use')
+        createdId = existing.id
+        return
+      }
       const [updatedChat] = await tx.update(chats).set({
+        workspaceScopeId,
         activeResponseId: createdId,
         activeBranchLeafId: createdId,
         updatedAt: createdAt,
@@ -223,11 +236,31 @@ export async function registerMessageRoutes(app: FastifyInstance): Promise<void>
     const user = requireUser(request)
     const { id } = request.params as { id: string }
     const selected = await ownedResponse(user.id, id)
-    const turns = await db.select().from(responses).where(and(
-      eq(responses.chatId, selected.chatId),
-      eq(responses.userId, user.id),
-      isNull(responses.deletedAt),
-    )).orderBy(asc(responses.createdAt), asc(responses.id))
+    const { turns, leafId } = await db.transaction(async tx => {
+      await tx.select({ id: chats.id }).from(chats).where(eq(chats.id, selected.chatId)).for('update')
+      const turns = await tx.select().from(responses).where(and(
+        eq(responses.chatId, selected.chatId),
+        eq(responses.userId, user.id),
+        isNull(responses.deletedAt),
+      )).orderBy(asc(responses.createdAt), asc(responses.id))
+      if (!turns.some(turn => turn.id === selected.id)) throw notFound('Response')
+      const leafId = newestDescendantId(turns, selected.id)
+      const now = new Date()
+      const [updatedChat] = await tx.update(chats).set({
+        activeResponseId: leafId, activeBranchLeafId: leafId, updatedAt: now,
+        workspaceScopeId: sql`case when coalesce(${chats.activeBranchLeafId}, ${chats.activeResponseId}) is distinct from ${leafId}::uuid then gen_random_uuid() else ${chats.workspaceScopeId} end`,
+      })
+        .where(and(
+          eq(chats.id, selected.chatId),
+          eq(chats.userId, user.id),
+          isNull(chats.deletedAt),
+          accessibleChatCondition(now),
+        )).returning({ id: chats.id })
+      if (!updatedChat) {
+        throw new AppError(410, 'temporary_chat_expired', 'This temporary chat has expired and cannot be recovered')
+      }
+      return { turns, leafId }
+    })
     const costRows = turns.length ? await db.select({
       responseId: usageEvents.responseId,
       costMicros: usageEvents.costMicros,
@@ -241,18 +274,6 @@ export async function registerMessageRoutes(app: FastifyInstance): Promise<void>
         subscriptionCoveredMicros: Number(row.subscriptionCoveredMicros),
       }] as const] : []
     )))
-    const leafId = newestDescendantId(turns, selected.id)
-    const now = new Date()
-    const [updatedChat] = await db.update(chats).set({ activeResponseId: leafId, activeBranchLeafId: leafId, updatedAt: now })
-      .where(and(
-        eq(chats.id, selected.chatId),
-        eq(chats.userId, user.id),
-        isNull(chats.deletedAt),
-        accessibleChatCondition(now),
-      )).returning({ id: chats.id })
-    if (!updatedChat) {
-      throw new AppError(410, 'temporary_chat_expired', 'This temporary chat has expired and cannot be recovered')
-    }
     await bumpRevision(user.id, selected.chatId)
     await scheduleChatIndex(selected.chatId, user.id, 'branch-activation')
     return toPublicBranchActivation(turns, leafId, usageCostsByResponseId)
@@ -262,23 +283,29 @@ export async function registerMessageRoutes(app: FastifyInstance): Promise<void>
     const user = requireUser(request)
     const { id } = request.params as { id: string }
     const original = await ownedResponse(user.id, id)
-    const [chat] = await db.select().from(chats).where(and(eq(chats.id, original.chatId), eq(chats.userId, user.id))).limit(1)
-    const turns = await db.select().from(responses).where(and(eq(responses.chatId, original.chatId), eq(responses.userId, user.id), isNull(responses.deletedAt))).orderBy(asc(responses.createdAt), asc(responses.id))
-    const deleting = cascadeDeletionIds(turns, original, id.endsWith(':input'))
-    const now = new Date()
-    if (deleting.size) {
-      await Promise.all(turns.filter((turn) => deleting.has(turn.id) && ['queued', 'in_progress'].includes(turn.status)).map((turn) => requestCancellation(turn.id)))
-      await db.update(responses).set({ deletedAt: now, updatedAt: now }).where(inArray(responses.id, [...deleting]))
-    }
-    const remaining = turns.filter((turn) => !deleting.has(turn.id))
-    const currentLeaf = chat?.activeBranchLeafId ?? chat?.activeResponseId ?? null
-    const leafId = currentLeaf && !deleting.has(currentLeaf) ? currentLeaf : remaining.at(-1)?.id ?? null
-    await db.update(chats).set({ activeResponseId: leafId, activeBranchLeafId: leafId, updatedAt: now }).where(and(
-      eq(chats.id, original.chatId),
-      eq(chats.userId, user.id),
-      isNull(chats.deletedAt),
-      accessibleChatCondition(now),
-    ))
+    const cancelling = await db.transaction(async (tx) => {
+      const [chat] = await tx.select().from(chats).where(and(eq(chats.id, original.chatId), eq(chats.userId, user.id))).for('update')
+      const turns = await tx.select().from(responses).where(and(eq(responses.chatId, original.chatId), eq(responses.userId, user.id), isNull(responses.deletedAt))).orderBy(asc(responses.createdAt), asc(responses.id))
+      const deleting = cascadeDeletionIds(turns, original, id.endsWith(':input'))
+      const now = new Date()
+      const cancelling = turns.filter((turn) => deleting.has(turn.id) && ['queued', 'in_progress'].includes(turn.status)).map((turn) => turn.id)
+      if (deleting.size) {
+        await tx.update(responses).set({ deletedAt: now, updatedAt: now }).where(inArray(responses.id, [...deleting]))
+      }
+      const remaining = turns.filter((turn) => !deleting.has(turn.id))
+      const currentLeaf = chat?.activeBranchLeafId ?? chat?.activeResponseId ?? null
+      const leafId = currentLeaf && !deleting.has(currentLeaf) ? currentLeaf : remaining.at(-1)?.id ?? null
+      await tx.update(chats).set({ activeResponseId: leafId, activeBranchLeafId: leafId, updatedAt: now,
+        ...(leafId !== currentLeaf ? { workspaceScopeId: newId() } : {}),
+      }).where(and(
+        eq(chats.id, original.chatId),
+        eq(chats.userId, user.id),
+        isNull(chats.deletedAt),
+        accessibleChatCondition(now),
+      ))
+      return cancelling
+    })
+    await Promise.all(cancelling.map((responseId) => requestCancellation(responseId)))
     await bumpRevision(user.id, original.chatId)
     await scheduleChatIndex(original.chatId, user.id, 'message-deletion')
     reply.code(204).send()

@@ -754,6 +754,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
         chatId: record.response.chatId,
         runId,
       })
+      if (!toolsDisabled) context = { ...context, systemPrompt: [context.systemPrompt, await manager.contextNotice()].filter(Boolean).join('\n\n') }
       let preparedContext = await interceptAgentContextImages(context, active.model, imageInterceptor, active.provider)
       preparedContext = adaptToolResultImagesForProvider(
         preparedContext as Context,
