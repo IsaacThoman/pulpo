@@ -1,0 +1,14 @@
+[Unit]
+Description=Pulpo pod ICMP and IPv6 isolation
+After=local-fs.target
+Before=k3s.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/nft -f /etc/pulpo/workspace-network/rules.nft
+ExecReload=/usr/sbin/nft -f /etc/pulpo/workspace-network/rules.nft
+# Keep protection installed when the service stops. Rollback is explicit.
+
+[Install]
+WantedBy=multi-user.target

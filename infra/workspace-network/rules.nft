@@ -1,0 +1,36 @@
+# Only this table belongs to Pulpo. Never flush the host's complete ruleset.
+# add + delete + recreate is one atomic transaction, including on first load.
+add table inet pulpo_workspace_network
+delete table inet pulpo_workspace_network
+table inet pulpo_workspace_network {
+    set pod_ipv4 {
+        type ipv4_addr
+        flags interval
+        elements = { 10.42.0.0/16 }
+    }
+
+    # cni0 covers local pod ingress, including IPv6 and spoofed source IPs.
+    # The subnet also covers routed pod traffic arriving from other nodes.
+    chain pod_traffic {
+        icmp type echo-request counter drop comment "Deny pod-initiated IPv4 ping"
+        icmpv6 type echo-request counter drop comment "Deny pod-initiated IPv6 ping"
+        # This cluster has IPv4-only pod policies. IPv6 link-local addresses
+        # otherwise bypass them. Preserve replies, errors and neighbor discovery,
+        # but permit no new pod-initiated IPv6 application connections.
+        meta nfproto ipv6 ct state established,related return
+        icmpv6 type { destination-unreachable, packet-too-big, time-exceeded, parameter-problem, nd-neighbor-solicit, nd-neighbor-advert } return
+        meta nfproto ipv6 counter drop comment "Deny new pod IPv6 flows in IPv4 cluster"
+    }
+
+    chain input {
+        type filter hook input priority -10; policy accept;
+        iifname "cni0" jump pod_traffic
+        ip saddr @pod_ipv4 jump pod_traffic
+    }
+
+    chain forward {
+        type filter hook forward priority -10; policy accept;
+        iifname "cni0" jump pod_traffic
+        ip saddr @pod_ipv4 jump pod_traffic
+    }
+}
