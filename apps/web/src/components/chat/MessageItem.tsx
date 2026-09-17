@@ -376,6 +376,7 @@ function ActivityBlock({
   showDuration,
   durationMs,
   initialWork,
+  grouped,
   messageId,
   onStop,
   onContinue,
@@ -387,6 +388,7 @@ function ActivityBlock({
   showDuration: boolean
   durationMs?: number
   initialWork?: boolean
+  grouped?: boolean
   messageId: string
   onStop: (id: string) => void
   onContinue: (id: string) => void
@@ -394,7 +396,10 @@ function ActivityBlock({
   onOpenChat: (chatId: string) => void
 }) {
   const workspace = steps.find((step): step is WorkspaceStep => step.kind === 'workspace')?.workspace
-  const compaction = steps.find((step) => step.kind === 'compaction')?.compaction
+  const compactions = steps.flatMap((step) => step.kind === 'compaction' ? [step.compaction] : [])
+  const compaction = compactions.find((item) => item.status === 'failed')
+    ?? (active ? compactions.findLast((item) => item.status === 'in_progress') : undefined)
+    ?? compactions.at(-1)
   const recall = steps.find((step) => step.kind === 'recall')?.recall
   const tools = steps.flatMap((step) => (step.kind === 'tool' ? [step.tool] : []))
   const hasReasoning = steps.some((step) => step.kind === 'reasoning' && step.text)
@@ -425,23 +430,24 @@ function ActivityBlock({
   const needsWorkspaceActions = isWaiting && showWorkspaceActions
   const hasTools = tools.length > 0
   const hasWorkspace = Boolean(workspace)
-  const hasOtherActivity = hasReasoning || hasTools || hasWorkspace
-  const runningTool = tools.find((tool) => tool.status === 'running')
+  const hasMessages = steps.some((step) => step.kind === 'message')
+  const hasOtherActivity = hasReasoning || hasTools || hasWorkspace || hasMessages
+  const runningTool = active ? tools.findLast((tool) => tool.status === 'running') : undefined
 
   const label = (() => {
     if (initialWork !== undefined && !active && durationMs !== undefined && !workspaceFailed && compaction?.status !== 'failed') {
       return ui(initialWork ? 'Worked for {{duration}}' : 'Thought for {{duration}}', { duration: formatSecondsLabel(durationMs) })
     }
-    if (compaction?.status === 'in_progress') return ui("Compacting context…")
+    if (active && compaction?.status === 'in_progress') return ui("Compacting context…")
     if (compaction?.status === 'failed') return ui("Context compaction failed")
-    if (compaction) return ui("Compacted context")
-    if (workspace && workspaceBusy) return workspaceLabel(workspace)
+    if (compaction && !hasOtherActivity) return ui("Compacted context")
+    if (active && workspace && workspaceBusy) return workspaceLabel(workspace)
     if (workspaceFailed && workspace) return workspaceLabel(workspace)
-    if (workspace?.state === 'continuing_without_agent' && !hasTools && !hasReasoning && !active) {
+    if (workspace?.state === 'continuing_without_agent' && !hasTools && !hasReasoning && !hasMessages && !active) {
       return workspaceLabel(workspace)
     }
     if (runningTool) return toolActivityPresentation(runningTool.tool).label
-    if (active && hasTools) return ui("Working…")
+    if (active && (hasTools || hasMessages)) return ui("Working…")
     if (active) return ui("Thinking…")
     if (recall && !hasOtherActivity) {
       const count = recall.sources.length
@@ -451,18 +457,18 @@ function ActivityBlock({
     }
     if (showDuration && durationMs !== undefined) {
       const duration = formatSecondsLabel(durationMs)
-      return hasTools || hasWorkspace
+      return hasTools || hasWorkspace || hasMessages
         ? ui('Worked for {{duration}}', { duration })
         : ui('Thought for {{duration}}', { duration })
     }
-    return hasTools || hasWorkspace ? ui('Worked') : ui('Thought')
+    return hasTools || hasWorkspace || hasMessages ? ui('Worked') : ui('Thought')
   })()
 
   const triggerIcon = (() => {
-    if (compaction?.status === 'in_progress') return <Loader2 className="size-3.5 shrink-0 animate-spin" />
+    if (active && compaction?.status === 'in_progress') return <Loader2 className="size-3.5 shrink-0 animate-spin" />
     if (compaction?.status === 'failed') return <XCircle className="size-3.5 shrink-0 text-destructive" />
-    if (compaction) return <Minimize2 className="size-3.5 shrink-0" />
-    if (workspace && workspaceBusy) {
+    if (compaction && !hasOtherActivity) return <Minimize2 className="size-3.5 shrink-0" />
+    if (active && workspace && workspaceBusy) {
       return <Server className="size-3.5 shrink-0 animate-pulse" />
     }
     if (workspaceFailed) return <XCircle className="size-3.5 shrink-0 text-destructive" />
@@ -470,10 +476,10 @@ function ActivityBlock({
       const Icon = toolActivityPresentation(runningTool.tool).icon
       return <Icon className="size-3.5 shrink-0 animate-pulse" />
     }
-    if (active && hasTools) return <Wrench className="size-3.5 shrink-0 animate-pulse" />
+    if (active && (hasTools || hasMessages)) return <Wrench className="size-3.5 shrink-0 animate-pulse" />
     if (active) return <Brain className="size-3.5 shrink-0 animate-pulse" />
     if (recall && !hasOtherActivity) return <History className="size-3.5 shrink-0" />
-    if (hasTools) return <Wrench className="size-3.5 shrink-0" />
+    if (hasTools || hasMessages) return <Wrench className="size-3.5 shrink-0" />
     if (hasWorkspace && !hasReasoning) return <Server className="size-3.5 shrink-0" />
     return <Brain className="size-3.5 shrink-0" />
   })()
@@ -483,7 +489,7 @@ function ActivityBlock({
       <Brain className="size-3.5 shrink-0" />{label}
     </div>
   )
-  if (compaction && steps.length === 1 && initialWork === undefined) return <CompactionStepRow item={compaction} />
+  if (!grouped && compaction && steps.length === 1 && initialWork === undefined) return <CompactionStepRow item={compaction} />
 
   return (
     <div className="space-y-1.5">
@@ -496,6 +502,9 @@ function ActivityBlock({
         <CollapsibleContent>
           <div className="mt-1 space-y-1.5 border-l-2 border-muted py-0.5 pl-2.5">
             {steps.map((step, index) => {
+              if (step.kind === 'message') {
+                return <Markdown key={`message:${index}`} content={step.text} />
+              }
               if (step.kind === 'reasoning') {
                 return <ReasoningStepRow key={`reasoning:${index}`} step={step} />
               }
@@ -561,6 +570,7 @@ export const MessageItem = memo(function MessageItem({
   const stopStreaming = useChat((state) => state.stopStreaming)
   const continueWithoutAgent = useChat((state) => state.continueWithoutAgent)
   const returnSubmissionToComposer = useUploadOutbox((state) => state.returnSubmissionToComposer)
+  const collapseIntermediateMessages = useSettings((s) => s.collapseIntermediateMessages)
   const showReasoning = useSettings((s) => s.showReasoning)
   const showResponseCost = useSettings((s) => s.showResponseCost)
   const [editing, setEditing] = useState(false)
@@ -570,7 +580,7 @@ export const MessageItem = memo(function MessageItem({
   const timeline = useMemo(() => {
     if (message.role !== 'assistant') return [] as TimelineSegment[]
     const items = message.outputItems ?? []
-    if (items.length > 0) return buildTimeline(items, showReasoning)
+    if (items.length > 0) return buildTimeline(items, showReasoning, collapseIntermediateMessages, message.initialResponseDurationMs)
     const segments: TimelineSegment[] = []
     if (showReasoning && message.reasoning !== undefined && (message.reasoning || streaming)) {
       segments.push({
@@ -587,7 +597,7 @@ export const MessageItem = memo(function MessageItem({
     }
     if (message.content) segments.push({ kind: 'text', text: message.content })
     return segments
-  }, [message.role, message.outputItems, showReasoning, message.reasoning, message.content, streaming])
+  }, [message.role, message.outputItems, showReasoning, collapseIntermediateMessages, message.initialResponseDurationMs, message.reasoning, message.content, streaming])
   const elapsedMs = useElapsedMs(message.requestReceivedAt ? Date.parse(message.requestReceivedAt) : message.timestamp, streaming && message.role === 'assistant', message.latencyMs)
   const initialActivity = initialActivityTiming(timeline)
   const initialDurationMs = message.initialResponseDurationMs
@@ -742,8 +752,8 @@ export const MessageItem = memo(function MessageItem({
                     .slice(index + 1)
                     .some((entry) => entry.kind === 'text')
                   const active = streaming && !hasFollowingText && (segment.active || isLastActivity)
-                  const initial = index === initialActivity.index && initialDurationMs !== undefined
-                  const segmentDurationMs = activityDurationMs(segment.steps)
+                  const initial = !(collapseIntermediateMessages && message.outputItems?.length) && index === initialActivity.index && initialDurationMs !== undefined
+                  const segmentDurationMs = segment.durationMs ?? activityDurationMs(segment.steps)
                   const useResponseDurationFallback = activitySegments.length === 1
                     && isLastActivity
                     && (!streaming || activityFinishedDuringStream)
@@ -751,6 +761,7 @@ export const MessageItem = memo(function MessageItem({
                     <ActivityBlock
                       key={`activity:${index}`}
                       steps={segment.steps}
+                      grouped={collapseIntermediateMessages}
                       active={active}
                       showDuration={!active && (initial || segmentDurationMs !== undefined || useResponseDurationFallback)}
                       durationMs={initial ? initialDurationMs : segmentDurationMs ?? streamingFallbackDurationMs ?? elapsedMs}

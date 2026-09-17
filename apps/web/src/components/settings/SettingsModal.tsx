@@ -1066,6 +1066,9 @@ export function SettingsModal({
                   <Row label={ui("Show reasoning")} hint="Show expandable thought/work activity above assistant replies.">
                     <Switch checked={s.showReasoning} onCheckedChange={(v) => s.set('showReasoning', v)} />
                   </Row>
+                  <Row label={ui("Collapse intermediate messages")} hint={ui("Group intermediate assistant messages and activity into one expandable work section, leaving the final answer visible.")}>
+                    <Switch aria-label={ui("Collapse intermediate messages")} checked={s.collapseIntermediateMessages} onCheckedChange={(v) => s.set('collapseIntermediateMessages', v)} />
+                  </Row>
                   <Row label={ui("Show response costs")} hint={ui("Show the cost of each assistant response with its tokens, speed, and time.")}>
                     <Switch checked={s.showResponseCost} onCheckedChange={(v) => s.set('showResponseCost', v)} />
                   </Row>

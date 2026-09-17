@@ -32,6 +32,7 @@ export interface SettingsState {
   doubleShiftSearch: boolean
   streamResponses: boolean
   showPromptSuggestions: boolean
+  collapseIntermediateMessages: boolean
   showReasoning: boolean
   showResponseCost: boolean
   chatWidth: 'full' | 'narrow'
@@ -71,6 +72,7 @@ export const DEFAULT_SETTINGS = {
   streamResponses: true,
   showPromptSuggestions: true,
   showReasoning: true,
+  collapseIntermediateMessages: true,
   showResponseCost: false,
   chatWidth: 'narrow' as const,
   animationSpeed: DEFAULT_ANIMATION_SPEED,
@@ -119,6 +121,7 @@ export const useSettings = create<SettingsState>()(
         return {
           ...current,
           ...saved,
+          collapseIntermediateMessages: saved.collapseIntermediateMessages !== false,
           imageGeneration: imageGenerationPreferencesSchema.catch({ enabled: false, modelId: null }).parse(saved.imageGeneration),
           speech: speechPreferencesSchema.catch({ modelId: null, models: {} }).parse(saved.speech),
           language: normalizeLanguage(saved.language),

@@ -390,6 +390,7 @@ type AppPreferences = {
   textSize: AppTextSize;
   setTextSize: (size: AppTextSize) => void;
   showReasoning: boolean;
+  collapseIntermediateMessages: boolean;
   setShowReasoning: (enabled: boolean) => void;
   haptics: boolean;
   setHaptics: (enabled: boolean) => void;
@@ -401,6 +402,7 @@ const AppPreferencesContext = createContext<AppPreferences>({
   textSize: 'Default',
   setTextSize: () => {},
   showReasoning: true,
+  collapseIntermediateMessages: true,
   setShowReasoning: () => {},
   haptics: true,
   setHaptics: () => {},
@@ -412,6 +414,7 @@ function AppPreferencesProvider({ children }: { children: ReactNode }) {
   const theme = ({ system: 'System', light: 'Light', dark: 'Dark' } as const)[preferences.theme];
   const textSize = ({ default: 'Default', large: 'Large', 'extra-large': 'Extra Large' } as const)[preferences.textSize];
   const showReasoning = preferences.showReasoning;
+  const collapseIntermediateMessages = preferences.collapseIntermediateMessages;
   const haptics = preferences.haptics;
 
   useEffect(() => {
@@ -436,10 +439,11 @@ function AppPreferencesProvider({ children }: { children: ReactNode }) {
     textSize,
     setTextSize,
     showReasoning,
+    collapseIntermediateMessages,
     setShowReasoning,
     haptics,
     setHaptics,
-  }), [haptics, setHaptics, setShowReasoning, setTextSize, setTheme, showReasoning, textSize, theme]);
+  }), [collapseIntermediateMessages, haptics, setHaptics, setShowReasoning, setTextSize, setTheme, showReasoning, textSize, theme]);
 
   return <AppPreferencesContext.Provider value={value}>{children}</AppPreferencesContext.Provider>;
 }
@@ -3125,27 +3129,31 @@ function ResolvedAttachmentImage({ attachment, onResolved, sourceNativeId, varia
 
 function WorkTriggerIcon({ steps, active }: { steps: TimelineStep[]; active: boolean }) {
   const { COLORS } = useChatStyles();
-  const compaction = steps.find((step) => step.kind === 'compaction');
+  const compactions = steps.filter((step) => step.kind === 'compaction');
+  const compaction = compactions.find((step) => step.compaction.status === 'failed')
+    ?? (active ? compactions.findLast((step) => step.compaction.status === 'in_progress') : undefined)
+    ?? compactions.at(-1);
   if (compaction?.kind === 'compaction') {
-    if (compaction.compaction.status === 'in_progress') return <Loader2 color={COLORS.muted} size={14} />;
+    if (active && compaction.compaction.status === 'in_progress') return <Loader2 color={COLORS.muted} size={14} />;
     if (compaction.compaction.status === 'failed') return <XCircle color={COLORS.critical} size={14} />;
-    return <Minimize2 color={COLORS.muted} size={14} />;
+    if (steps.length === 1) return <Minimize2 color={COLORS.muted} size={14} />;
   }
   const workspace = steps.find((step) => step.kind === 'workspace');
   if (workspace?.kind === 'workspace') {
     if (['expired', 'unavailable'].includes(workspace.workspace.state ?? '')) return <XCircle color={COLORS.critical} size={14} />;
-    if (workspaceIsActive(workspace.workspace.state)) return <Server color={COLORS.muted} size={14} />;
+    if (active && workspaceIsActive(workspace.workspace.state)) return <Server color={COLORS.muted} size={14} />;
   }
   const tools = steps.filter((step) => step.kind === 'tool');
-  const runningTool = tools.find((step) => step.tool.status === 'running');
+  const runningTool = active ? tools.findLast((step) => step.tool.status === 'running') : undefined;
   if (runningTool?.kind === 'tool') {
     const RunningToolIcon = toolActivityPresentation(runningTool.tool.tool).icon;
     return <RunningToolIcon color={COLORS.muted} size={14} />;
   }
-  if (active && tools.length > 0) return <Wrench color={COLORS.muted} size={14} />;
+  const hasMessages = steps.some((step) => step.kind === 'message');
+  if (active && (tools.length > 0 || hasMessages)) return <Wrench color={COLORS.muted} size={14} />;
   if (active) return <Brain color={COLORS.muted} size={14} />;
-  if (steps.some((step) => step.kind === 'recall')) return <History color={COLORS.muted} size={14} />;
-  if (tools.length > 0) return <Wrench color={COLORS.muted} size={14} />;
+  if (steps.every((step) => step.kind === 'recall')) return <History color={COLORS.muted} size={14} />;
+  if (tools.length > 0 || hasMessages) return <Wrench color={COLORS.muted} size={14} />;
   if (workspace && !steps.some((step) => step.kind === 'reasoning' && step.text)) return <Server color={COLORS.muted} size={14} />;
   return <Brain color={COLORS.muted} size={14} />;
 }
@@ -3185,21 +3193,24 @@ function useDeadlineReached(deadlineMs: number | undefined, active: boolean): bo
 }
 
 function workLabel(steps: TimelineStep[], active: boolean, durationMs?: number): string {
-  const compaction = steps.find((step) => step.kind === 'compaction');
+  const compactions = steps.filter((step) => step.kind === 'compaction');
+  const compaction = compactions.find((step) => step.compaction.status === 'failed')
+    ?? (active ? compactions.findLast((step) => step.compaction.status === 'in_progress') : undefined)
+    ?? compactions.at(-1);
   if (compaction?.kind === 'compaction') {
-    if (compaction.compaction.status === 'in_progress') return 'Compacting context…';
+    if (active && compaction.compaction.status === 'in_progress') return 'Compacting context…';
     if (compaction.compaction.status === 'failed') return 'Context compaction failed';
-    return 'Compacted context';
+    if (steps.length === 1) return 'Compacted context';
   }
   const workspace = steps.find((step) => step.kind === 'workspace');
   if (workspace?.kind === 'workspace') {
-    if (workspace.workspace.state === 'waiting') return `Waiting for workspace${typeof workspace.workspace.position === 'number' ? ` · queue #${workspace.workspace.position}` : ''}`;
-    if (workspace.workspace.state === 'provisioning') return 'Starting workspace…';
+    if (active && workspace.workspace.state === 'waiting') return `Waiting for workspace${typeof workspace.workspace.position === 'number' ? ` · queue #${workspace.workspace.position}` : ''}`;
+    if (active && workspace.workspace.state === 'provisioning') return 'Starting workspace…';
     if (['expired', 'unavailable'].includes(workspace.workspace.state ?? '')) return `Workspace ${workspace.workspace.state}`;
   }
-  const runningTool = steps.find((step) => step.kind === 'tool' && step.tool.status === 'running');
+  const runningTool = active ? steps.findLast((step) => step.kind === 'tool' && step.tool.status === 'running') : undefined;
   if (runningTool?.kind === 'tool') return toolActivityPresentation(runningTool.tool.tool).label;
-  if (active) return steps.some((step) => step.kind === 'tool') ? 'Working…' : 'Thinking…';
+  if (active) return steps.some((step) => step.kind === 'tool' || step.kind === 'message') ? 'Working…' : 'Thinking…';
   return completedActivityLabel(steps, durationMs);
 }
 
@@ -3345,6 +3356,9 @@ function WorkBlock({ steps, active, durationMs, initialWork, onOpenChat }: {
       {open && (
         <View style={styles.reasoningBody}>
           {steps.map((step, index) => {
+            if (step.kind === 'message') {
+              return <SafeMarkdown selectable={Platform.OS !== 'android'} compact key={`message:${index}`}>{step.text}</SafeMarkdown>;
+            }
             if (step.kind === 'reasoning') {
               return <SafeMarkdown selectable={Platform.OS !== 'android'} compact key={`reasoning:${index}`} streaming={step.active}>{step.text || (step.active ? 'Thinking…' : '')}</SafeMarkdown>;
             }
@@ -3463,7 +3477,7 @@ const MessageRow = memo(function MessageRow({
   editingLocked?: boolean;
 }) {
   const { styles, COLORS } = useChatStyles();
-  const { showReasoning } = useAppPreferences();
+  const { showReasoning, collapseIntermediateMessages } = useAppPreferences();
   const branches = message.branches ?? [];
   const branchIndex = message.activeBranch ?? 0;
   const [capacityPending, setCapacityPending] = useState(false);
@@ -3483,7 +3497,7 @@ const MessageRow = memo(function MessageRow({
   );
   const timeline = useMemo(() => {
     if (message.role !== 'assistant') return [];
-    if (message.outputItems?.length) return buildMessageTimeline(message.outputItems, showReasoning);
+    if (message.outputItems?.length) return buildMessageTimeline(message.outputItems, showReasoning, collapseIntermediateMessages, message.initialResponseDurationMs);
     return buildLegacyMessageTimeline({
       reasoning: message.reasoning,
       text: message.text,
@@ -3491,7 +3505,7 @@ const MessageRow = memo(function MessageRow({
       showReasoning,
       reasoningDurationMs: message.thinkSeconds === undefined ? undefined : message.thinkSeconds * 1000,
     });
-  }, [message.outputItems, message.reasoning, message.role, message.text, message.thinkSeconds, showReasoning, streaming]);
+  }, [message.outputItems, message.reasoning, message.role, message.text, message.thinkSeconds, message.initialResponseDurationMs, showReasoning, collapseIntermediateMessages, streaming]);
   const elapsedMs = useElapsedMs(responseStartedAt, streaming && message.role === 'assistant', message.latencyMs);
   const initialActivity = initialActivityTiming(timeline);
   const initialDurationMs = message.initialResponseDurationMs;
@@ -3556,8 +3570,8 @@ const MessageRow = memo(function MessageRow({
                   {timeline.map((segment, index) => {
                     if (segment.kind === 'activity') {
                       const active = streaming && timelineActivityIsActive(timeline, index, streaming);
-                      const initial = index === initialActivity.index && initialDurationMs !== undefined;
-                      const segmentDurationMs = activityDurationMs(segment.steps);
+                      const initial = !(collapseIntermediateMessages && message.outputItems?.length) && index === initialActivity.index && initialDurationMs !== undefined;
+                      const segmentDurationMs = segment.durationMs ?? activityDurationMs(segment.steps);
                       const useResponseDurationFallback = activitySegments.length === 1
                         && index === lastActivityTimelineIndex
                         && (!streaming || activityFinishedDuringStream);

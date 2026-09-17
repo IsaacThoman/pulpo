@@ -237,3 +237,21 @@ describe('synchronized generation preference', () => {
     expect(usePreferencesStore.getState().generationPreferenceDirty).toBe(false)
   })
 })
+
+
+it('persists collapsed-message opt-outs, reconciles remote updates, and resets across accounts', async () => {
+  await usePreferencesStore.getState().hydrate()
+  expect(usePreferencesStore.getState().collapseIntermediateMessages).toBe(true)
+  await usePreferencesStore.getState().setPreference('collapseIntermediateMessages', false)
+  await usePreferencesStore.getState().applyServerPreferences({ collapseIntermediateMessages: true })
+  expect(usePreferencesStore.getState().collapseIntermediateMessages).toBe(false)
+  await usePreferencesStore.getState().applyServerPreferences({ collapseIntermediateMessages: false })
+  expect(usePreferencesStore.getState().pendingServerPreferenceKeys).toEqual([])
+  await usePreferencesStore.getState().hydrate()
+  expect(usePreferencesStore.getState().collapseIntermediateMessages).toBe(false)
+  await usePreferencesStore.getState().applyServerPreferences({ collapseIntermediateMessages: true })
+  expect(usePreferencesStore.getState().collapseIntermediateMessages).toBe(true)
+  await usePreferencesStore.getState().setPreference('collapseIntermediateMessages', false)
+  await usePreferencesStore.getState().resetSynchronizedPreferences('other-account')
+  expect(usePreferencesStore.getState().collapseIntermediateMessages).toBe(true)
+})

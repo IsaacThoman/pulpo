@@ -190,6 +190,7 @@ export const usePreferencesStore = create<PreferenceState>((set, get) => ({
       synchronizedOwnerNamespace: namespace,
       composerSyncEnabled: defaults.composerSyncEnabled,
       showPromptSuggestions: defaults.showPromptSuggestions,
+      collapseIntermediateMessages: defaults.collapseIntermediateMessages,
       favoriteModelIds: [],
       providerOrder: [],
       generation: {},

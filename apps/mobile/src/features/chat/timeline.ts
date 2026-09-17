@@ -1,3 +1,4 @@
+import { collapseMessageTimeline, type IntermediateMessageStep } from '@pulpo/client-core'
 import type { CompactionItem, RecallItem, ToolImagePreview } from '@pulpo/contracts'
 import { recalledChatLabel } from './recall-label'
 
@@ -25,6 +26,7 @@ export type WorkspaceItem = {
 }
 
 export type TimelineStep =
+  | IntermediateMessageStep
   | { kind: 'reasoning'; text: string; active: boolean; durationMs?: number }
   | { kind: 'tool'; tool: ToolItem }
   | { kind: 'workspace'; workspace: WorkspaceItem }
@@ -32,7 +34,7 @@ export type TimelineStep =
   | { kind: 'recall'; recall: RecallItem }
 
 export type TimelineSegment =
-  | { kind: 'activity'; steps: TimelineStep[]; active: boolean }
+  | { kind: 'activity'; steps: TimelineStep[]; active: boolean; durationMs?: number }
   | { kind: 'text'; text: string }
 
 /**
@@ -56,7 +58,7 @@ export function timelineActivityIsActive(
 export function completedActivityLabel(steps: TimelineStep[], durationMs?: number): string {
   const recall = steps.find((step) => step.kind === 'recall')
   const hasReasoning = steps.some((step) => step.kind === 'reasoning' && Boolean(step.text))
-  const worked = steps.some((step) => step.kind === 'tool' || step.kind === 'workspace')
+  const worked = steps.some((step) => step.kind === 'tool' || step.kind === 'workspace' || step.kind === 'message')
   if (recall?.kind === 'recall' && !hasReasoning && !worked) {
     return recalledChatLabel(recall.recall.sources.length)
   }
@@ -127,7 +129,7 @@ function insertWorkspace(steps: TimelineStep[], workspace: WorkspaceItem): Timel
 }
 
 /** Preserve the server's reasoning/tool/message order so agent turns render like web. */
-export function buildMessageTimeline(output: unknown[], showReasoning: boolean): TimelineSegment[] {
+export function buildMessageTimeline(output: unknown[], showReasoning: boolean, collapseIntermediateMessages = false, initialResponseDurationMs?: number): TimelineSegment[] {
   const segments: TimelineSegment[] = []
   let activity: Extract<TimelineSegment, { kind: 'activity' }> | null = null
   const workspace = output.find((item): item is WorkspaceItem => (item as { type?: string }).type === 'pulpo_workspace')
@@ -159,7 +161,7 @@ export function buildMessageTimeline(output: unknown[], showReasoning: boolean):
     if (value.type === 'reasoning') {
       const text = textFromParts(value.summary)
       const active = value.status === 'in_progress'
-      if (text.trim()) {
+      if (text.trim() || (collapseIntermediateMessages && active && segments.some((segment) => segment.kind === 'text'))) {
         activity ??= { kind: 'activity', steps: [], active: false }
         activity.steps.push({
           kind: 'reasoning', text, active,
@@ -197,12 +199,15 @@ export function buildMessageTimeline(output: unknown[], showReasoning: boolean):
     }
   }
   // The preference controls the entire work disclosure, including workspace-only activity.
-  return showReasoning ? segments : segments.filter((segment) => segment.kind === 'text')
+  const visible = collapseIntermediateMessages
+    ? collapseMessageTimeline(segments, activityDurationMs, initialResponseDurationMs)
+    : segments
+  return showReasoning ? visible : visible.filter((segment) => segment.kind === 'text')
 }
 
 export function activityDurationMs(steps: TimelineStep[]): number | undefined {
   const durations = steps.flatMap((step) => {
-    if (step.kind === 'recall') return []
+    if (step.kind === 'recall' || step.kind === 'message') return []
     if (step.kind === 'reasoning') return step.durationMs === undefined ? [] : [step.durationMs]
     const duration = step.kind === 'tool'
       ? step.tool.durationMs

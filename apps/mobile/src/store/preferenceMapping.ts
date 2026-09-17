@@ -11,6 +11,7 @@ export interface Preferences {
   textSize: TextSizePreference
   streamResponses: boolean
   showPromptSuggestions: boolean
+  collapseIntermediateMessages: boolean
   showReasoning: boolean
   memoryEnabled: boolean
   haptics: boolean
@@ -33,7 +34,7 @@ export interface Preferences {
 export const defaultPreferences: Preferences = {
   imageGeneration: imageGenerationPreferencesSchema.parse(undefined),
   speech: speechPreferencesSchema.parse(undefined),
-  theme: 'system', textSize: 'default', streamResponses: true, showPromptSuggestions: true, showReasoning: true, memoryEnabled: false,
+  theme: 'system', textSize: 'default', streamResponses: true, showPromptSuggestions: true, showReasoning: true, collapseIntermediateMessages: true, memoryEnabled: false,
   haptics: true, composerSyncEnabled: true, sendWithEnter: true, attachmentCacheMb: 256, localChatLimit: 50,
   trashRetention: '30d', automaticChatExpiration: '24h', newChatAutoExpire: false, favoriteModelIds: [], providerOrder: [], defaultModelId: null, agentModes: {},
   generation: {},
@@ -52,6 +53,7 @@ export function preferencesFromServer(values: Record<string, unknown>): Partial<
     agentModes: validAgentModes(values.agentModes),
   }
   if (values.theme === 'system' || values.theme === 'light' || values.theme === 'dark') result.theme = values.theme
+  result.collapseIntermediateMessages = values.collapseIntermediateMessages !== false
   result.showPromptSuggestions = values.showPromptSuggestions !== false
   result.composerSyncEnabled = values.composerSyncEnabled !== false
   if (typeof values.sendWithEnter === 'boolean') result.sendWithEnter = values.sendWithEnter
@@ -100,7 +102,7 @@ function validAgentModes(value: unknown): Preferences['agentModes'] {
 
 export function serverPreferenceKey(key: keyof Preferences): string | null {
   return key === 'attachmentCacheMb' ? 'localAttachmentCacheMb'
-    : ['imageGeneration', 'speech', 'composerSyncEnabled', 'theme', 'sendWithEnter', 'streamResponses', 'showPromptSuggestions', 'showReasoning', 'memoryEnabled', 'localChatLimit', 'trashRetention', 'automaticChatExpiration', 'newChatAutoExpire', 'defaultModelId', 'favoriteModelIds', 'providerOrder', 'generation', 'agentModes'].includes(key)
+    : ['imageGeneration', 'speech', 'composerSyncEnabled', 'theme', 'sendWithEnter', 'streamResponses', 'showPromptSuggestions', 'showReasoning', 'collapseIntermediateMessages', 'memoryEnabled', 'localChatLimit', 'trashRetention', 'automaticChatExpiration', 'newChatAutoExpire', 'defaultModelId', 'favoriteModelIds', 'providerOrder', 'generation', 'agentModes'].includes(key)
       ? key
       : null
 }

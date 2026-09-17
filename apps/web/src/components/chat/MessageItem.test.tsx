@@ -30,7 +30,7 @@ Object.defineProperty(window, 'localStorage', {
 const { useSettings } = await import('@/stores/settings')
 
 afterEach(cleanup)
-beforeEach(() => useSettings.setState({ showReasoning: true }))
+beforeEach(() => useSettings.setState({ showReasoning: true, collapseIntermediateMessages: false }))
 
 const chat: Chat = {
   id: 'chat-1', title: 'Chat', modelId: 'model-1', messages: [],
@@ -243,7 +243,7 @@ describe('show reasoning preference', () => {
     for (const hidden of ['Worked', 'Thought', 'Private summary', 'Started workspace', 'Tool output', 'Extra work details']) {
       expect(container.textContent).not.toContain(hidden)
     }
-    act(() => useSettings.setState({ showReasoning: true }))
+    act(() => useSettings.setState({ showReasoning: true, collapseIntermediateMessages: false }))
     expect(container.textContent).toContain('Worked')
     expect(container.textContent).toContain('Extra work details')
   })
@@ -637,9 +637,10 @@ describe('assistant streaming caret', () => {
 })
 
 describe('initial server receipt timing', () => {
-  it('uses the full initial wait and preserves subsequent work durations', async () => {
+  it.each([false, true])('uses the full initial wait and preserves subsequent work durations (collapsed: %s)', async (collapsed) => {
+    useSettings.setState({ collapseIntermediateMessages: collapsed })
     const { MessageItem } = await import('./MessageItem')
-    const markup = renderToStaticMarkup(<MessageItem chat={chat} onRegenerate={() => undefined} streaming
+    const { container } = render(<MessageItem chat={chat} onRegenerate={() => undefined} streaming
       message={assistant({
         done: false, initialResponseDurationMs: 10_000,
         outputItems: [
@@ -650,9 +651,14 @@ describe('initial server receipt timing', () => {
           { type: 'message', content: [{ type: 'output_text', text: 'Final reply' }] },
         ],
       })} />)
-    expect(markup).toContain('Worked for 10 seconds')
-    expect(markup).toContain('Worked for 4 seconds')
-    expect(markup).not.toContain('Worked for 3 seconds')
+    if (collapsed) {
+      expect(container.textContent).toContain('Worked for 14 seconds')
+      expect(container.querySelectorAll('[aria-expanded]')).toHaveLength(1)
+    } else {
+      expect(container.textContent).toContain('Worked for 10 seconds')
+      expect(container.textContent).toContain('Worked for 4 seconds')
+    }
+    expect(container.textContent).not.toContain('Worked for 3 seconds')
   })
 
   it.each([true, false])('hides timing-only labels with reasoning visibility %s', async (showReasoning) => {
@@ -745,4 +751,70 @@ describe('read aloud actions', () => {
       expect(result.queryByRole('button', { name: 'Read aloud' })).toBeNull(); result.unmount()
     }
   })
+})
+
+describe('collapsed work disclosure', () => {
+  beforeEach(() => useSettings.setState({ collapseIntermediateMessages: true }))
+  const output = [
+    { type: 'reasoning', status: 'completed', summary: [{ text: 'Plan' }], durationMs: 1000 },
+    { type: 'message', content: [{ text: 'Progress update' }] },
+    { type: 'pulpo_tool', id: 'tool-1', tool: 'search', status: 'completed', durationMs: 2000 },
+    { type: 'message', content: [{ text: 'Final answer' }] },
+  ]
+  it('hides progress, expands in order, and restores the original layout immediately on opt-out', async () => {
+    const { MessageItem } = await import('./MessageItem')
+    const { container, getByText } = render(<MessageItem chat={chat} streaming={false} onRegenerate={() => undefined}
+      message={assistant({ outputItems: output, initialResponseDurationMs: 3000 })} />)
+    expect(container.textContent).toContain('Final answer')
+    expect(container.textContent).not.toContain('Progress update')
+    expect(container.querySelectorAll('[aria-expanded]')).toHaveLength(1)
+    fireEvent.click(getByText('Worked for 5 seconds'))
+    expect(container.textContent).toContain('Progress update')
+    expect(container.textContent!.indexOf('Plan')).toBeLessThan(container.textContent!.indexOf('Progress update'))
+    act(() => useSettings.getState().set('collapseIntermediateMessages', false))
+    expect(container.textContent).toContain('Progress update')
+    expect(container.querySelectorAll('[aria-expanded]')).toHaveLength(2)
+  })
+  it('keeps the disclosure open as provisional text moves into work and the final answer streams', async () => {
+    const { MessageItem } = await import('./MessageItem')
+    const props = { chat, streaming: true, onRegenerate: () => undefined }
+    const { container, getByText, rerender } = render(<MessageItem {...props}
+      message={assistant({ outputItems: output.slice(0, 2), done: false })} />)
+    fireEvent.click(getByText(/^Thought/))
+    expect(container.textContent).toContain('Plan')
+    rerender(<MessageItem {...props} message={assistant({ outputItems: output.slice(0, 3), done: false })} />)
+    expect(container.querySelector('[aria-expanded="true"]')).not.toBeNull()
+    expect(container.textContent).toContain('Progress update')
+    expect(container.querySelector('.stream-caret')).toBeNull()
+    rerender(<MessageItem {...props} message={assistant({ outputItems: output, done: false })} />)
+    expect(container.querySelector('[aria-expanded="true"]')).not.toBeNull()
+    expect(container.querySelector('.stream-caret')?.textContent).toBe('Final answer')
+  })
+  it('hides all work text with reasoning off while keeping the answer and error visible', async () => {
+    useSettings.setState({ showReasoning: false })
+    const { MessageItem } = await import('./MessageItem')
+    const { container } = render(<MessageItem chat={chat} streaming={false} onRegenerate={() => undefined}
+      message={assistant({ outputItems: output, error: 'Response interrupted' })} />)
+    expect(container.textContent).toContain('Final answer')
+    expect(container.textContent).toContain('Response interrupted')
+    expect(container.textContent).not.toContain('Progress update')
+    expect(container.textContent).not.toContain('Plan')
+  })
+})
+
+
+it('keeps compaction failures visible within a combined work section', async () => {
+  useSettings.setState({ collapseIntermediateMessages: true })
+  const { MessageItem } = await import('./MessageItem')
+  const { container, getByText } = render(<MessageItem chat={chat} streaming={false} onRegenerate={() => undefined}
+    message={assistant({ outputItems: [
+      { type: 'message', content: [{ text: 'Earlier progress' }] },
+      { type: 'pulpo_compaction', id: 'first', status: 'completed', summary: 'First compaction', retained_turns: [], retained_context: [], retained_context_turns: [] },
+      { type: 'pulpo_compaction', id: 'second', status: 'failed', error: 'Could not compact', retained_turns: [], retained_context: [], retained_context_turns: [] },
+    ], error: 'Response interrupted' })} />)
+  expect(container.textContent).toContain('Context compaction failed')
+  expect(container.textContent).toContain('Response interrupted')
+  expect(container.textContent).not.toContain('Earlier progress')
+  fireEvent.click(getByText('Context compaction failed'))
+  expect(container.textContent).toContain('Earlier progress')
 })
