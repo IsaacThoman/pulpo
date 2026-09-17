@@ -44,6 +44,18 @@ const original = {
 }
 
 describe('generation routes carry timezone', () => {
+  it('regenerates an agent response as a plain sibling using the current selections', async () => {
+    mocks.selects = [[{ response: { ...original, agentMode: true, parentResponseId: 'parent', userMessageId: 'user-turn' } }]]
+    await handlers.get('POST /api/messages/:id/regenerate')!({
+      params: { id: 'response' }, headers: {},
+      body: { modelId: 'model', agentMode: false, presetSelections: { reasoning: 'low' } },
+    } as unknown as FastifyRequest, { code: vi.fn() } as unknown as FastifyReply)
+    expect(mocks.createResponse).toHaveBeenCalledWith(expect.objectContaining({
+      parentResponseId: 'parent', userMessageId: 'user-turn', rawInput: original.input,
+      input: expect.objectContaining({ agentMode: false, presetSelections: { reasoning: 'low' } }),
+    }))
+  })
+
   it.each(['send', 'edit', 'regenerate'] as const)('uses the request timezone for %s', async (kind) => {
     const path = kind === 'send' ? 'POST /api/chats/:id/responses'
       : kind === 'edit' ? 'PATCH /api/messages/:id' : 'POST /api/messages/:id/regenerate'

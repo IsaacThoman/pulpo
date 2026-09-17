@@ -23,7 +23,7 @@ import { extendBudgetReservationFixedCost, getActivePricing, releaseBudget, resi
 import { WorkspaceManager } from './controller.js'
 import { createWorkspaceTools } from './tools.js'
 import { publishAdminUsage } from '../admin/usage-events.js'
-import { buildAgentSystemPrompt, buildAgentUserPrompt } from './policy.js'
+import { buildAgentSystemPrompt, buildAgentUserPrompt, buildToolsDisabledSystemPrompt, withoutAgentTools } from './policy.js'
 import { runPostResponseTasks } from '../responses/post-tasks.js'
 import { calculateCostMicros, workspaceHoldMicros, workspaceUsageMicros } from '../accounting/pricing.js'
 import { truncateUtf8 } from './output.js'
@@ -182,6 +182,11 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
     output: record.response.output,
   })
   const { memoryContext, recallContext, recallItem } = memory
+  let toolsDisabled = record.response.agentCapacityAction === 'continue_without_agent'
+  const toolsDisabledSystemPrompt = () => withGenerationTimeContext(
+    [buildToolsDisabledSystemPrompt(record.model.systemPrompt, customInstructions, memoryContext), recallContext].filter(Boolean).join('\n\n'),
+    record.response, Date.now(),
+  )
   const baseAgentSystemPrompt = buildAgentSystemPrompt(
     record.model.systemPrompt,
     record.model.agentInstructions,
@@ -212,7 +217,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
   )
   const [existingRun] = await db.select().from(agentRuns).where(eq(agentRuns.responseId, responseId)).limit(1)
   const runId = existingRun?.id ?? newId()
-  let agentSystemPrompt = withGenerationTimeContext(
+  let agentSystemPrompt = toolsDisabled ? toolsDisabledSystemPrompt() : withGenerationTimeContext(
     generationSystemPrompt(memory.enabled, currentAgentSystemPrompt, systemPromptFromAgentContext(existingRun?.context)),
     record.response, startedAt,
   )
@@ -569,6 +574,12 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
     return true
   }
   let manager!: WorkspaceManager
+  const disableAgentTools = () => {
+    toolsDisabled = true
+    agentSystemPrompt = toolsDisabledSystemPrompt()
+    agent.state.systemPrompt = agentSystemPrompt
+    agent.state.tools = []
+  }
   manager = new WorkspaceManager(responseId, record.response.chatId, record.response.userId, async (state, details = {}) => {
     if ((state === 'waiting' || state === 'provisioning') && workspaceStartedAtMs === undefined) {
       workspaceStartedAtMs = Date.now()
@@ -692,7 +703,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
     initialState: {
       systemPrompt: agentSystemPrompt,
       model: active.piModel,
-      tools: [
+      tools: toolsDisabled ? [] : [
         ...createWorkspaceTools(manager, settings.commandTimeoutSeconds * 1000, markToolStarted, attachFile, async (toolCallId, path, data) => {
           const existing = imagePreviews.get(toolCallId)
           if (existing) return existing
@@ -710,13 +721,15 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
       thinkingLevel: initialParameters.reasoning,
     },
     prepareNextTurnWithContext: async ({ context, toolResults }) => {
+      if (manager.continuedWithoutAgent) disableAgentTools()
+      if (toolsDisabled) context = withoutAgentTools(context, agentSystemPrompt)
       const thresholdTokens = compactionThreshold()
       let preparedContext = await interceptAgentContextImages(context, active.model, imageInterceptor, active.provider)
       preparedContext = adaptToolResultImagesForProvider(
         preparedContext as Context,
         active.provider.toolResultImageMode as ToolResultImageMode,
       ) as typeof preparedContext
-      return prepareCompactedAgentNextTurn({
+      const nextTurn = await prepareCompactedAgentNextTurn({
         context,
         completedModelTurns: modelTurns,
         estimatedTokens: estimateAgentContextTokens(preparedContext as Context),
@@ -732,6 +745,8 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
         ),
         adopt: adoptCompactedContext,
       })
+      // Return the updated snapshot even when no compaction was needed.
+      return nextTurn ?? (toolsDisabled ? { context } : undefined)
     },
     streamFn: async (_model, context, options) => {
       const cacheOptions = providerCacheRequestOptions(active.provider, {
@@ -812,7 +827,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
     },
     toolExecution: 'sequential',
     beforeToolCall: async () => {
-      if (manager.continuedWithoutAgent) return { block: true, reason: 'Agent tools were disabled at the user’s request' }
+      if (toolsDisabled || manager.continuedWithoutAgent) return { block: true, reason: 'Agent tools were disabled at the user’s request' }
       return toolCalls >= settings.maxToolCalls ? { block: true, reason: `Tool call limit (${settings.maxToolCalls}) reached` } : undefined
     },
   })
@@ -987,7 +1002,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
       accruedToolCostMicros = await readToolCost()
       webProviderExecutions.delete(event.toolCallId)
       await emit('pulpo.agent.tool.completed', { id: event.toolCallId, output, isError: event.isError, durationMs: item?.durationMs, ...(imagePreview ? { imagePreview } : {}) })
-      if (manager.continuedWithoutAgent) agent.state.tools = []
+      if (manager.continuedWithoutAgent) disableAgentTools()
       await snapshotIfDue()
     }
     await persistRunContext(event.type !== 'message_update' && event.type !== 'tool_execution_update')

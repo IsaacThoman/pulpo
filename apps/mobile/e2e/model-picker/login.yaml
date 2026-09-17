@@ -1,0 +1,18 @@
+appId: com.isaacthoman.pulpo
+---
+- launchApp:
+    clearState: true
+- extendedWaitUntil:
+    visible: Welcome back
+    timeout: 120000
+- tapOn: Email
+- inputText: picker@example.test
+- tapOn: Password
+- inputText: Picker-test-only-2026
+- tapOn: Sign in
+- tapOn:
+    text: Not Now
+    optional: true
+- extendedWaitUntil:
+    visible: "Model, Picker Alpha"
+    timeout: 30000

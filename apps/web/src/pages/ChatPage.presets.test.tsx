@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import 'fake-indexeddb/auto'
-import { Profiler } from 'react'
+import { Profiler, type ComponentProps } from 'react'
 import { act, cleanup, fireEvent, render, waitFor, within } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
@@ -12,9 +12,12 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 vi.hoisted(() => {
   Object.defineProperty(window, 'matchMedia', { configurable: true, value: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }) })
 })
-const fixture = vi.hoisted(() => ({ sync: null as ComposerSync | null }))
+const fixture = vi.hoisted(() => ({ sync: null as ComposerSync | null, showMessages: false }))
 vi.mock('@/lib/local-first/composer-sync', () => ({ webComposerSync: () => fixture.sync, clearWebComposerSync() {} }))
-vi.mock('@/components/chat/MessageList', () => ({ MessageList: () => null }))
+vi.mock('@/components/chat/MessageList', async (importOriginal) => {
+  const { MessageList } = await importOriginal<typeof import('@/components/chat/MessageList')>()
+  return { MessageList: (props: ComponentProps<typeof MessageList>) => fixture.showMessages ? <MessageList {...props} /> : null }
+})
 vi.mock('@/lib/local-first/shelf', () => ({ webShelf: () => null }))
 const { ChatPage } = await import('./ChatPage')
 const { useChat } = await import('@/stores/chat')
@@ -78,6 +81,7 @@ beforeEach(async () => {
   snapshots.clear()
   write.mockClear()
   fixture.sync = null
+  fixture.showMessages = false
   useAuth.setState({ user: { id: userId } as NonNullable<ReturnType<typeof useAuth.getState>['user']>, dictationEnabled: false })
   useSettings.setState({ generation: { [model.id]: defaults }, agentModes: { [model.id]: true },
     defaultModelId: model.id, showPromptSuggestions: true, sendWithEnter: true })
@@ -127,6 +131,43 @@ function expectControls(view: ReturnType<typeof renderChat>) {
 function expectNoPresetFlash() {
   expect(renderedControls.filter((label) => !label.includes('Low') || !label.includes('Fast'))).toEqual([])
 }
+
+it.each([
+  { initialAgentMode: true, syncEnabled: false },
+  { initialAgentMode: false, syncEnabled: false },
+  { initialAgentMode: true, syncEnabled: true },
+])('regenerates with the visible composer selections (initial agent: $initialAgentMode, sync: $syncEnabled)', async ({ initialAgentMode, syncEnabled }) => {
+  fixture.showMessages = true
+  useSettings.setState({ agentModes: { [model.id]: initialAgentMode } })
+  const responseId = crypto.randomUUID()
+  const chatId = useChat.getState().sendMessage(null, 'what can you do', model.id, [], false, false, {
+    targetChatId: crypto.randomUUID(), responseId, presetSelections: defaults, agentMode: initialAgentMode,
+  })
+  await waitFor(() => expect(requests.some((request) => request.path.endsWith('/api/chats/start'))).toBe(true))
+  useChat.setState((state) => ({ streamingIds: [], chats: state.chats.map((chat) => ({
+    ...chat, messages: chat.messages.map((message) => message.role === 'assistant'
+      ? { ...message, done: true, content: 'Original answer' } : message),
+  })) }))
+  if (syncEnabled) enableSync()
+  const view = renderChat(`/c/${chatId}`)
+  await view.findByText('Original answer')
+  fireEvent.change(view.getByRole('textbox'), { target: { value: 'keep this unsent draft' } })
+  for (const choice of ['Low', 'Fast']) {
+    fireEvent.keyDown(view.getByRole('button', { name: 'Generation options' }), { key: 'ArrowDown' })
+    fireEvent.click(await view.findByRole('menuitem', { name: choice }))
+  }
+  fireEvent.keyDown(view.getByRole('button', { name: `Agent options, ${initialAgentMode ? 'Pulpo Agent' : 'Disabled'}` }), { key: 'ArrowDown' })
+  fireEvent.click(await view.findByRole('menuitemradio', { name: initialAgentMode ? 'Disabled' : 'Pulpo Agent' }))
+  fireEvent.click(view.getByRole('button', { name: 'Regenerate' }))
+  await waitFor(() => expect(requests.some((request) => request.path.endsWith(`/api/messages/${responseId}/regenerate`))).toBe(true))
+  const request = requests.find((request) => request.path.endsWith(`/api/messages/${responseId}/regenerate`))!
+  expect(request.body).toMatchObject({ modelId: model.id, presetSelections: selected, agentMode: !initialAgentMode })
+  expect(useSettings.getState().agentModes[model.id]).toBe(initialAgentMode)
+  expect(useSettings.getState().generation[model.id]).toEqual(defaults)
+  expect((view.getByRole('textbox') as HTMLTextAreaElement).value).toBe('keep this unsent draft')
+  expect(useChat.getState().chats.find((chat) => chat.id === chatId)?.messages.find((message) => message.id === request.body.clientId))
+    .toMatchObject({ agentMode: !initialAgentMode, presetSelections: selected })
+})
 
 it.each([
   { picker: 'presets', existing: false }, { picker: 'presets', existing: true },

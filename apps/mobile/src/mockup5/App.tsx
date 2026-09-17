@@ -19,7 +19,7 @@ import { DevicesScreen } from '../components/Devices';
 import { initialActivityTiming } from '@pulpo/client-core';
 import { mobileShelf, durableShelfAttachments, shelfComposerAttachments } from '../features/chat/shelf';
 import { useAppTheme } from './src/theme';
-import { MaterialSearchField, MaterialSuggestionButton, MaterialNavigationRow, MaterialButton, MaterialContextMenu, MaterialField, MaterialIconButton, MaterialLoading, MaterialMenu, MaterialRow, MaterialDialog, type Action as MaterialAction } from '../platform/MaterialUI';
+import { MaterialSearchField, MaterialSuggestionButton, MaterialNavigationRow, MaterialButton, MaterialContextMenu, MaterialIconButton, MaterialLoading, MaterialMenu, type Action as MaterialAction } from '../platform/MaterialUI';
 import type { MenuAnchor } from '../platform/MaterialUI.types';
 import { promptText, selectText, showActions } from '../platform/materialActions';
 import { QueuedMessagesView } from '../native/QueuedMessagesView';
@@ -83,13 +83,10 @@ import {
   View,
 } from 'react-native';
 import {
-  BottomSheet as SwiftUIBottomSheet,
   Button as SwiftUIButton,
   ContextMenu as SwiftUIContextMenu,
   ControlGroup as SwiftUIControlGroup,
   Divider as SwiftUIDivider,
-  Form as SwiftUIForm,
-  Group as SwiftUIGroup,
   HStack as SwiftUIHStack,
   Host as SwiftUIHost,
   Image as SwiftUIImage,
@@ -101,7 +98,6 @@ import {
   Text as SwiftUIText,
   TextField as SwiftUITextField,
   type TextFieldRef as SwiftUITextFieldRef,
-  VStack as SwiftUIVStack,
   useNativeState,
 } from '@expo/ui/swift-ui';
 import {
@@ -117,7 +113,9 @@ import {
   frame,
   glassEffect as swiftUIGlassEffect,
   labelStyle,
+  lineLimit,
   menuActionDismissBehavior,
+  minimumScaleFactor,
   padding,
   resizable,
   shapes,
@@ -1680,7 +1678,6 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   const timedSelection = useRef<string | null>(null);
   const revealChatFrame = useRef<number | null>(null);
   const [wideSidebarVisible, setWideSidebarVisible] = useState(true);
-  const [modelSheet, setModelSheet] = useState(false);
   const composerInputRef = useRef<TextInput>(null);
   const [composerFocusSuppressed, setComposerFocusSuppressed] = useState(false);
   const composerFocusRevision = useRef(0);
@@ -2266,7 +2263,6 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     navigatedImport.current = incoming.id;
     navigation.popTo('Chat', { chatId: undefined });
     if (activeChatId) newChat();
-    setModelSheet(false);
     animatePanel(false);
     setComposerFocusSuppressed(false);
     composerFocusRevision.current += 1;
@@ -2282,7 +2278,6 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     const handle = async () => {
       try {
         if (destination.scope !== shortcutsScope()) throw new Error('Open the account and server this shortcut was created for, or enable Apple Shortcuts in Settings.');
-        setModelSheet(false);
         if (destination.action === 'open-chat' && destination.chatId) {
           const owner = useSessionStore.getState();
           const chat = await apiRequest<ServerChat>(`/api/chats/${destination.chatId}?format=compact&scope=active`);
@@ -2821,7 +2816,6 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
             onTogglePanel={togglePanel}
             persistentSidebar={persistentSidebar}
             sidebarVisible={historyVisible}
-            onOpenModelPicker={() => { Haptics.selectionAsync(); setModelSheet(true); }}
             onSelectModel={selectModel}
             temporary={activePrototypeChat?.temporary ?? newChatTemporary}
             autoExpire={chatAutoExpire}
@@ -2846,17 +2840,6 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
             <Pressable accessibilityLabel="Close chats" accessibilityRole="button" style={StyleSheet.absoluteFill} onPress={() => animatePanel(false)} />
           )}
         </Reanimated.View>
-
-        <ModelSheet
-          models={availableModels}
-          visible={modelSheet}
-          selected={selectedModel.id}
-          onClose={() => setModelSheet(false)}
-          onSelect={(model) => {
-            selectModel(model);
-            setModelSheet(false);
-          }}
-        />
       </View>
     </GestureDetector>
   );
@@ -3687,6 +3670,7 @@ const NativeModelMenu = memo(function NativeModelMenu({ model, models, onSelectM
         label={(
           <SwiftUILabel
             title={model.name}
+            modifiers={[lineLimit(1), minimumScaleFactor(0.5), frame({ maxWidth: 170, maxHeight: 28 })]}
             icon={(
               <SwiftUIImage
                 uiImage={Image.resolveAssetSource(model.icon).uri}
@@ -3917,7 +3901,7 @@ function ComposerQueueSection({ title, subject, visible, collapsed, onToggle, fa
 
 function ChatView({
   acceptIncomingFiles, messages, queuedMessages, chatId, chatLoaded, onTranscriptReady, openingChatId, draftNamespace, keyboardLayoutEnabled, transcriptTransitionActive, model, models, prototypeModel, presetSelections: defaultPresetSelections, input, composerInputRef, composerFocusSuppressed, composerFocusRequest, onChangeInput, onSend, onRemoteChatStarted, assistantStatus,
-  onEdit, onRegenerate, onActivateBranch, onOpenChat, onStop, onTogglePanel, onOpenModelPicker, onSelectModel, onNewChat, onSaveTemporary, persistentSidebar, sidebarVisible, temporary, autoExpire, expirationPeriod, showAutoExpirationControl, expired, savingTemporary, onTemporaryChange, onAutoExpirationChange,
+  onEdit, onRegenerate, onActivateBranch, onOpenChat, onStop, onTogglePanel, onSelectModel, onNewChat, onSaveTemporary, persistentSidebar, sidebarVisible, temporary, autoExpire, expirationPeriod, showAutoExpirationControl, expired, savingTemporary, onTemporaryChange, onAutoExpirationChange,
 }: {
   acceptIncomingFiles: boolean;
   messages: Message[];
@@ -3949,7 +3933,6 @@ function ChatView({
   onTogglePanel: () => void;
   persistentSidebar: boolean;
   sidebarVisible: boolean;
-  onOpenModelPicker: () => void;
   onSelectModel: (model: Model) => void;
   onSelectPreset: (presetId: string, choiceId: string) => void;
   onNewChat: () => void;
@@ -5428,26 +5411,10 @@ function ChatView({
             tinted={temporary}
           />
           <Reanimated.View pointerEvents="box-none" style={[styles.modelTriggerWrap, modelTriggerAnimatedStyle]}>
-            {Platform.OS === 'ios' && !accessibilityLayout ? (
+            {Platform.OS === 'ios' ? (
               <NativeModelMenu model={model} models={models} onSelectModel={onSelectModel} tinted={temporary} />
-            ) : Platform.OS === 'android' && !accessibilityLayout ? (
-              <AndroidModelMenu model={model} models={models} onSelectModel={onSelectModel} />
             ) : (
-              <Pressable
-                accessibilityHint="Opens the model picker"
-                accessibilityLabel={`Model, ${model.name}`}
-                accessibilityRole="button"
-                onPress={onOpenModelPicker}
-              >
-                <Glass
-                  interactive
-                  style={styles.modelTrigger}
-                  tintColor={temporary ? colorScheme === 'dark' ? 'rgba(88,28,135,0.32)' : 'rgba(175,82,222,0.16)' : undefined}
-                >
-                  <ModelMark model={model} size={22} />
-                  <Text maxFontSizeMultiplier={1.4} numberOfLines={1} style={styles.modelTriggerText}>{model.name}</Text>
-                </Glass>
-              </Pressable>
+              <AndroidModelMenu model={model} models={models} onSelectModel={onSelectModel} />
             )}
           </Reanimated.View>
           <Reanimated.View
@@ -6297,61 +6264,6 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
   );
 });
 
-function ModelSheet({ visible, selected, models, onClose, onSelect }: { visible: boolean; selected: string; models: Model[]; onClose: () => void; onSelect: (model: Model) => void }) {
-  if (Platform.OS === 'ios') return <NativeModelSheet visible={visible} selected={selected} models={models} onClose={onClose} onSelect={onSelect} />;
-  return <AndroidModelSheet visible={visible} selected={selected} models={models} onClose={onClose} onSelect={onSelect} />;
-}
-
-function AndroidModelSheet({ visible, selected, models, onClose, onSelect }: { visible: boolean; selected: string; models: Model[]; onClose: () => void; onSelect: (model: Model) => void }) {
-  const { COLORS } = useChatStyles();
-  const [query, setQuery] = useState('');
-  const [lab, setLab] = useState<string | null>(null);
-  const { width, height, fontScale } = useWindowDimensions();
-  const [favoritesOnly, setFavoritesOnly] = useState(false);
-  const favoriteIds = usePreferencesStore((state) => state.favoriteModelIds);
-  useEffect(() => { if (!visible) { setQuery(''); setLab(null); setFavoritesOnly(false); } }, [visible]);
-  const providerOrder = usePreferencesStore((state) => state.providerOrder);
-  const catalog = resolveModelMenu(models, favoriteIds, providerOrder, lab ?? FAVORITES_SECTION);
-  const labs = catalog.sections.filter((section) => section.id !== FAVORITES_SECTION);
-  const candidates = favoritesOnly ? resolveModelMenu(models, favoriteIds, providerOrder, FAVORITES_SECTION).visibleModels : models;
-  const filtered = candidates.filter((model) => (!lab || model.providerGroupId === lab) && `${model.name} ${model.lab} ${model.detail}`.toLowerCase().includes(query.trim().toLowerCase()));
-  return <MaterialDialog visible={visible} title="Choose a model" fullScreen={width < 600 || height < 600 || fontScale >= 1.5} onClose={onClose} contentHeight={Math.max(220, 144 + filtered.length * 76)}>
-    <View style={{ flex: 1, gap: 8 }}>
-      <MaterialField label="Search models" icon="magnifyingglass" value={query} onChangeText={setQuery} autoCapitalize="none" autoCorrect={false} />
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-        <View style={{ flex: 1, minWidth: 0 }}><MaterialMenu label="Filter models by lab" text={labs.find((section) => section.id === lab)?.label ?? 'All labs'} icon="chevron.down" actions={[
-          { label: 'All labs', selected: lab === null, onPress: () => setLab(null) },
-          ...labs.map((section) => ({ id: section.id, label: section.label, selected: section.id === lab, onPress: () => setLab(section.id) })),
-        ]} /></View>
-        <MaterialIconButton label={favoritesOnly ? 'Show all models' : 'Show favorite models'} icon="star" selected={favoritesOnly} onPress={() => setFavoritesOnly(!favoritesOnly)} />
-      </View>
-      <FlatList removeClippedSubviews={false} data={filtered} keyExtractor={(model) => model.id} keyboardShouldPersistTaps="handled" style={{ flex: 1 }}
-        renderItem={({ item: model }) => <MaterialRow title={model.name} image={model.menuIcon ?? model.icon} detailLines={2} detail={[model.lab, model.detail].filter(Boolean).join(' · ')} selected={selected === model.id} onPress={() => onSelect(model)} />}
-        ListEmptyComponent={<Text style={{ color: COLORS.muted, padding: 16 }}>{query || lab || favoritesOnly ? 'No matching models' : 'No models available'}</Text>} />
-    </View>
-  </MaterialDialog>;
-}
-
-function NativeModelSheet({ visible, selected, models: availableModels, onClose, onSelect }: { visible: boolean; selected: string; models: Model[]; onClose: () => void; onSelect: (model: Model) => void }) {
-  const { styles } = useChatStyles();
-  const [query, setQuery] = useState('');
-  const nativeQuery = useNativeState('');
-  const models = availableModels.filter((model) => `${model.name} ${model.lab} ${model.detail}`.toLowerCase().includes(query.trim().toLowerCase()));
-  return <SwiftUIHost style={styles.nativeModalAnchorHost}><SwiftUIBottomSheet isPresented={visible} onIsPresentedChange={(presented) => { if (!presented) onClose(); }} onDismiss={() => { setQuery(''); nativeQuery.set(''); }}>
-    <SwiftUIGroup modifiers={[frame({ minHeight: 560, maxWidth: Infinity })]}>
-      <SwiftUIForm>
-        <SwiftUISection>
-          <SwiftUIHStack><SwiftUIVStack alignment="leading" spacing={2}><SwiftUIText>Choose a model</SwiftUIText><SwiftUIText modifiers={[foregroundStyle('secondary')]}>Available through Pulpo</SwiftUIText></SwiftUIVStack><SwiftUISpacer /><SwiftUIButton label="Close model picker" systemImage="xmark.circle.fill" onPress={onClose} modifiers={[buttonStyle('plain'), labelStyle('iconOnly')]} /></SwiftUIHStack>
-          <SwiftUIHStack spacing={8}><SwiftUIImage systemName="magnifyingglass" size={15} modifiers={[foregroundStyle('secondary')]} /><SwiftUITextField placeholder="Search models" text={nativeQuery} onTextChange={setQuery} modifiers={[textFieldStyle('plain'), frame({ maxWidth: Infinity, minHeight: 44 }), swiftUIAccessibilityLabel('Search models')]} /></SwiftUIHStack>
-        </SwiftUISection>
-        <SwiftUISection title="Recommended" footer={<SwiftUIText modifiers={[foregroundStyle('secondary')]}>Routing, fallbacks, and spend limits apply from your Pulpo workspace.</SwiftUIText>}>
-          {models.map((model) => <SwiftUIButton key={model.id} modifiers={[buttonStyle('plain'), foregroundStyle('primary')]} onPress={() => onSelect(model)}><SwiftUIHStack spacing={12}><SwiftUIRNHostView matchContents><View pointerEvents="none" style={styles.nativeModelAssetHost}><ModelMark model={model} size={38} /></View></SwiftUIRNHostView><SwiftUIVStack alignment="leading" spacing={2}><SwiftUIText>{model.name}</SwiftUIText><SwiftUIText modifiers={[foregroundStyle('secondary')]}>{`${model.lab} · ${model.detail}`}</SwiftUIText></SwiftUIVStack><SwiftUISpacer /><SwiftUIImage systemName={selected === model.id ? 'checkmark.circle.fill' : 'star'} size={18} /></SwiftUIHStack></SwiftUIButton>)}
-        </SwiftUISection>
-      </SwiftUIForm>
-    </SwiftUIGroup>
-  </SwiftUIBottomSheet></SwiftUIHost>;
-}
-
 function createChatStyles(COLORS: ChatColors) { return StyleSheet.create({
   flex: { flex: 1 },
   root: { flex: 1, flexDirection: 'row', backgroundColor: COLORS.panel },
@@ -6398,8 +6310,6 @@ function createChatStyles(COLORS: ChatColors) { return StyleSheet.create({
   // screen center when temporary mode collapses the trailing control.
   modelTriggerWrap: { position: 'absolute', top: Platform.OS === 'android' ? 8 : 10, left: Platform.OS === 'android' ? 66 : -22, right: Platform.OS === 'android' ? 114 : 22, height: Platform.OS === 'android' ? 48 : 44, alignItems: 'center', justifyContent: 'center' },
   modelMenuHost: { width: 230, height: 44, justifyContent: 'center' },
-  modelTrigger: { minHeight: Platform.OS === 'android' ? 48 : 44, maxWidth: 218, borderRadius: 22, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 14, paddingVertical: 8 },
-  modelTriggerText: { color: COLORS.text, fontSize: 15, fontWeight: '600', letterSpacing: -0.2, flexShrink: 1 },
   connectionBanner: { alignSelf: 'center', maxWidth: '92%', flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 12, backgroundColor: COLORS.fill, paddingHorizontal: 10, paddingVertical: 6, marginBottom: 3 },
   connectionBannerOffline: { backgroundColor: 'rgba(255,159,63,0.12)' },
   temporaryExpiredBanner: { backgroundColor: 'rgba(139,92,246,0.14)' },
@@ -6624,23 +6534,6 @@ function createChatStyles(COLORS: ChatColors) { return StyleSheet.create({
   chatTitle: { color: COLORS.textSoft, fontSize: 15 },
   chatTime: { color: COLORS.muted, fontSize: 12 },
   noResults: { color: COLORS.muted, fontSize: 13.5, textAlign: 'center', marginTop: 30 },
-  // Model sheet
-  nativeModalAnchorHost: { position: 'absolute', width: 1, height: 1, right: 0, top: 0 },
-  nativeModelAssetHost: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  sheet: { flex: 1, backgroundColor: COLORS.background },
-  sheetSafe: { flex: 1, width: '100%', maxWidth: 760, alignSelf: 'center', paddingHorizontal: 18 },
-  sheetGrabber: { width: 36, height: 5, borderRadius: 3, backgroundColor: COLORS.fillStrong, alignSelf: 'center', marginTop: 8, marginBottom: 18 },
-  sheetHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' },
-  sheetTitle: { color: COLORS.text, fontSize: 24, fontWeight: '700', letterSpacing: -0.7 },
-  sheetSubtitle: { color: COLORS.muted, fontSize: 13, marginTop: 4 },
-  sheetClose: { width: 44, height: 44, borderRadius: 22, backgroundColor: COLORS.secondary, alignItems: 'center', justifyContent: 'center' },
-  sheetSection: { color: COLORS.muted, fontSize: 10.5, fontWeight: '600', letterSpacing: 0.7, marginTop: 24, marginBottom: 6, marginLeft: 3 },
-  modelRow: { minHeight: 70, flexDirection: 'row', alignItems: 'center', gap: 13, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.lineSoft, borderRadius: 8, paddingHorizontal: 3 },
-  modelRowTitle: { color: COLORS.text, fontSize: 15.5, fontWeight: '600', letterSpacing: -0.2 },
-  modelRowDetail: { color: COLORS.muted, fontSize: 12, marginTop: 4 },
-  sheetFootnote: { flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 18, paddingHorizontal: 3 },
-  sheetFootnoteText: { color: COLORS.muted, fontSize: 11.5, flex: 1, lineHeight: 16 },
-
   smallIconButton: { width: 44, height: 44, marginRight: -12, alignItems: 'center', justifyContent: 'center' },
 }); }
 

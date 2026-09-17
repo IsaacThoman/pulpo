@@ -87,7 +87,7 @@ export function ListRow({ icon, iconColor, leading, title, detail, value, onPres
   }
   if (Platform.OS === 'android' && !leading && !children) return <MaterialRow title={title} detail={detail} value={value} icon={icon} destructive={destructive} onPress={onPress} />;
   const body = <>
-    {icon ? <View style={[styles.rowIcon, { backgroundColor: `${iconColor ?? theme.secondary}20` }]}><SymbolView name={icon as never} size={17} tintColor={iconColor ?? theme.secondary} /></View> : null}
+    {icon ? <View style={[styles.rowIcon, Platform.OS !== 'ios' && { backgroundColor: `${iconColor ?? theme.secondary}20` }]}><SymbolView name={icon as never} size={17} tintColor={iconColor ?? theme.secondary} /></View> : null}
     {leading}
     <View style={styles.rowText}><Text style={[styles.rowTitle, { color: destructive ? theme.red : theme.text }]}>{title}</Text>{detail ? <Text style={[styles.rowDetail, { color: theme.secondary }]}>{detail}</Text> : null}</View>
     {value ? <Text style={[styles.rowValue, { color: theme.secondary }]}>{value}</Text> : null}
@@ -187,7 +187,7 @@ export function Badge({ label, color }: { label: string; color?: string }) {
 
 export function EmptyState({ icon, title, detail, action }: { icon: string; title: string; detail: string; action?: ReactNode }) {
   const theme = useAppTheme();
-  return <View style={styles.empty}><View style={[styles.emptyIcon, { backgroundColor: theme.fillStrong }]}><SymbolView name={icon as never} size={28} tintColor={theme.secondary} /></View><Text style={[styles.emptyTitle, { color: theme.text }]}>{title}</Text><Text style={[styles.emptyDetail, { color: theme.secondary }]}>{detail}</Text>{action}</View>;
+  return <View style={styles.empty}><View style={[styles.emptyIcon, Platform.OS !== 'ios' && { backgroundColor: theme.fillStrong }]}><SymbolView name={icon as never} size={28} tintColor={theme.secondary} /></View><Text style={[styles.emptyTitle, { color: theme.text }]}>{title}</Text><Text style={[styles.emptyDetail, { color: theme.secondary }]}>{detail}</Text>{action}</View>;
 }
 
 const styles = StyleSheet.create({

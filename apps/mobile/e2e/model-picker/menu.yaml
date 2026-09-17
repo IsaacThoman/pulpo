@@ -1,0 +1,31 @@
+# Run after signing into model-picker-fixture.mjs. Also run at large system text.
+appId: com.isaacthoman.pulpo
+---
+- assertVisible: "Model, Picker Alpha"
+- tapOn: "Model, Picker Alpha"
+- assertVisible: Favorites
+- assertNotVisible: Search models
+- tapOn: Picker Beta
+- assertVisible: "Model, Picker Beta"
+- tapOn: "Model, Picker Beta"
+- tapOn: Labs
+- tapOn: Lab Beta
+- assertVisible: Picker Gamma
+- tapOn: Picker Gamma
+- assertVisible: "Model, Picker Gamma"
+- tapOn: "Model, Picker Gamma"
+- tapOn: Labs
+- tapOn: Favorites
+- tapOn: Picker Alpha
+- assertVisible: "Model, Picker Alpha"
+- pressKey: Home
+- launchApp:
+    stopApp: false
+- assertVisible: "Model, Picker Alpha"
+- tapOn: "Model, Picker Alpha"
+- assertVisible: Favorites
+- tapOn: Picker Beta
+- assertVisible: "Model, Picker Beta"
+- tapOn: "Model, Picker Beta"
+- tapOn: Picker Alpha
+- assertVisible: "Model, Picker Alpha"

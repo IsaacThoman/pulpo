@@ -163,6 +163,12 @@ export interface ServerFolder {
   sortOrder?: number
 }
 
+export interface ResponseGenerationSelection {
+  modelId: string
+  presetSelections: Record<string, string>
+  agentMode: boolean
+}
+
 interface ChatState {
   chats: Chat[]
   folders: Folder[]
@@ -216,7 +222,7 @@ interface ChatState {
   updateQueuedMessage: (chatId: string, messageId: string, input: UpdateQueuedMessageInput, attachments?: Attachment[]) => Promise<void>
   reorderQueuedMessage: (chatId: string, messageId: string, targetMessageId: string, edge: 'before' | 'after') => Promise<void>
   deleteQueuedMessage: (chatId: string, messageId: string) => Promise<void>
-  regenerate: (chatId: string, messageId: string, modelId: string) => void
+  regenerate: (chatId: string, messageId: string, selection: ResponseGenerationSelection) => void
   editUserMessage: (input: {
     chatId: string
     messageId: string
@@ -1793,13 +1799,16 @@ export const useChat = create<ChatState>()((set, get) => ({
     }
   },
 
-  regenerate: (chatId, messageId, modelId) => {
+  regenerate: (chatId, messageId, selection) => {
+    const { modelId } = selection
     const generation = resolveGeneration(
       chatOptionsFor(getCatalogModel(modelId), useModelConfig.getState().overrides),
-      useSettings.getState().generation[modelId],
+      selection.presetSelections,
       modelId,
     )
-    const agentMode = currentAgentMode(modelId)
+    const agentMode = selection.agentMode
+      && Boolean(getCatalogModel(modelId).agentEnabled)
+      && useCatalog.getState().agentAvailable
     const responseId = crypto.randomUUID()
     const optimistic = cacheOptimisticBranch({
       chatId,

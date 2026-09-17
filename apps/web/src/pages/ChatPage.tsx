@@ -4,7 +4,7 @@ import { useShallow } from 'zustand/react/shallow'
 import { useTranslation } from '@/i18n/useAppTranslation'
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { Ghost, Hourglass, Loader2, Save, SquarePen } from 'lucide-react'
-import { useChat } from '@/stores/chat'
+import { useChat, type ResponseGenerationSelection } from '@/stores/chat'
 import { filterCodexModels, getCatalogModel, useCatalog } from '@/stores/catalog'
 import { ModelSelector } from '@/components/chat/ModelSelector'
 import { Composer, type ComposerMessageEdit } from '@/components/chat/Composer'
@@ -165,6 +165,11 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
   const temporaryComposerRef = useRef<{ toggle: () => Promise<void> } | null>(null)
   const suggestionComposerRef = useRef<{ submit: (message: string) => void } | null>(null)
   const focusComposerRef = useRef<{ focus: () => void } | null>(null)
+  const generationControlRef = useRef<{ getSelection: () => ResponseGenerationSelection } | null>(null)
+  const regenerateResponse = useCallback((messageId: string) => {
+    const selection = generationControlRef.current?.getSelection()
+    if (chatId && selection) useChat.getState().regenerate(chatId, messageId, selection)
+  }, [chatId])
   const focusComposer = () => focusComposerRef.current?.focus()
   const [temporary, setTemporary] = useState(false)
   const [savingTemporary, setSavingTemporary] = useState(false)
@@ -513,7 +518,7 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
             >
               <MessageList
                 chat={chat}
-                activeModelId={modelId}
+                onRegenerate={regenerateResponse}
                 onEditUserMessage={beginMessageEdit}
                 onOpenChat={openChat}
                 composerEditActive={composerEditActive || Boolean(messageEdit)}
@@ -531,6 +536,7 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
               <div role="status" className="rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive"> {ui("This temporary chat has expired and cannot be recovered. Its existing transcript is available only until you leave this page.")} </div>
             ) : (
               <Composer
+                generationControlRef={generationControlRef}
                 focusControlRef={focusComposerRef}
                 syncEnabled={!adminMode}
                 onSyncControls={applyComposerControls}
