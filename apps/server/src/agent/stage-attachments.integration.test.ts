@@ -42,6 +42,10 @@ it('stages 500 files through the real daemon, skips a second pass, and repairs c
     expect(read).toHaveBeenCalledTimes(500)
     await writeFile(files[0]!.path, Buffer.alloc(1024, 'b'))
     await rm(files[1]!.path)
+    await stageWorkspaceAttachments(files, request, read, { preserveExisting: true })
+    expect(read).toHaveBeenCalledTimes(501)
+    expect(await readFile(files[0]!.path)).toEqual(Buffer.alloc(1024, 'b'))
+    expect(await readFile(files[1]!.path)).toEqual(bytes)
     await stageWorkspaceAttachments(files, request, read)
     expect(read).toHaveBeenCalledTimes(502)
     expect(await readFile(files[0]!.path)).toEqual(bytes)
@@ -49,6 +53,16 @@ it('stages 500 files through the real daemon, skips a second pass, and repairs c
     // A bad transfer never replaces a previously valid file.
     await expect(stageWorkspaceAttachments([{ ...files[0]!, checksum: 'incorrect' }], request, read)).rejects.toThrow('checksum')
     expect(await readFile(files[0]!.path)).toEqual(bytes)
+    // Emulate an older image's inventory while exercising actual asynchronous stat operations.
+    await writeFile(files[0]!.path, Buffer.from('working version'))
+    await rm(files[1]!.path)
+    const legacyRequest: typeof request = (path, init) => request(path, path === '/v1/files/missing'
+      ? { ...init, body: JSON.stringify({ ...JSON.parse(String(init?.body)), preserveExisting: false }) } : init)
+    const readsBeforeLegacy = read.mock.calls.length
+    await stageWorkspaceAttachments(files.slice(0, 2), legacyRequest, read, { preserveExisting: true })
+    expect(read).toHaveBeenCalledTimes(readsBeforeLegacy + 1)
+    expect(await readFile(files[0]!.path, 'utf8')).toBe('working version')
+    expect(await readFile(files[1]!.path)).toEqual(bytes)
   } finally {
     if (child.exitCode === null) { child.kill('SIGTERM'); await once(child, 'exit') }
     await rm(root, { recursive: true, force: true })
@@ -66,4 +80,21 @@ it('falls back for old workspace images without hiding other controller errors',
   expect(read).toHaveBeenCalledOnce()
   await expect(stageWorkspaceAttachments(files, async () => { throw new ControllerRequestError(503, 'busy') }, read)).rejects.toThrow('503')
   expect(read).toHaveBeenCalledOnce()
+})
+
+
+it('preserves changed files on old pinned images and restores only missing paths', async () => {
+  const files = ['changed', 'missing'].map(name => ({ path: `/workspace/${name}`, objectKey: name, mimeType: 'text/plain', checksum: null, sizeBytes: 1 }))
+  const read = vi.fn(async () => Readable.from(['x']))
+  const request = vi.fn(async (path: string, init?: import('undici').RequestInit) => {
+    if (path === '/v1/files/missing') return Response.json({ missing: files.map(file => file.path) })
+    if (path === '/v1/operations') {
+      const input = JSON.parse(String(init?.body))
+      return Response.json(input.args.path.endsWith('changed') ? { status: 'completed' } : { status: 'failed', error: 'ENOENT: file missing' })
+    }
+    return Response.json({})
+  })
+  await stageWorkspaceAttachments(files, request, read, { preserveExisting: true })
+  expect(read).toHaveBeenCalledExactlyOnceWith('missing')
+  expect(request.mock.calls.filter(([, init]) => init?.method === 'PUT')).toHaveLength(1)
 })

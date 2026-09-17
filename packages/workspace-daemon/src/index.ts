@@ -2,7 +2,7 @@ import { StagedFiles } from './staged-files.js'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { createWriteStream } from 'node:fs'
-import { mkdir, open, readFile, readdir, realpath, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { link, lstat, mkdir, open, readFile, readdir, realpath, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { constants } from 'node:fs'
 import { dirname, isAbsolute, resolve, relative } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
@@ -75,7 +75,14 @@ async function writeRequestFile(request: IncomingMessage, target: string): Promi
     await pipeline(request, meter, createWriteStream(temporary, { flags: 'wx' }))
     const digest = hash.digest('base64url')
     if (checksum && checksum !== digest) throw new Error('Uploaded file checksum does not match')
-    await rename(temporary, target)
+    if (request.headers['if-none-match'] === '*') {
+      try { await link(temporary, target) } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
+        await rm(temporary, { force: true })
+        return
+      }
+      await rm(temporary)
+    } else await rename(temporary, target)
     await stagedFiles.record(target, digest)
   } catch (error) {
     await rm(temporary, { force: true }).catch(() => undefined)
@@ -184,14 +191,19 @@ const server = createServer(async (request, response) => {
     if (request.headers.authorization !== `Bearer ${token}`) return json(response, 401, { error: 'unauthorized' })
     const url = new URL(request.url ?? '/', 'http://workspace')
     if (request.method === 'POST' && url.pathname === '/v1/files/missing') {
-      const input = JSON.parse((await body(request)).toString('utf8')) as { files?: Array<{ path: string; checksum: string | null; sizeBytes: number }> }
+      const input = JSON.parse((await body(request)).toString('utf8')) as { preserveExisting?: boolean; files?: Array<{ path: string; checksum: string | null; sizeBytes: number }> }
       if (!Array.isArray(input.files) || input.files.length > 500) throw new Error('Invalid staging inventory')
       const missing: string[] = []
       for (const file of input.files) {
         if (typeof file.path !== 'string' || !Number.isSafeInteger(file.sizeBytes) || file.sizeBytes < 0 || (file.checksum !== null && typeof file.checksum !== 'string')) throw new Error('Invalid staging file')
-        if (!await stagedFiles.matches(workspacePath(file.path), file.checksum, file.sizeBytes)) missing.push(file.path)
+        if (input.preserveExisting === true) {
+          try { await lstat(workspacePath(file.path)) } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+            missing.push(file.path)
+          }
+        } else if (!await stagedFiles.matches(workspacePath(file.path), file.checksum, file.sizeBytes)) missing.push(file.path)
       }
-      return json(response, 200, { missing })
+      return json(response, 200, { missing, preserveExisting: input.preserveExisting === true })
     }
     if (request.method === 'PUT' && url.pathname === '/v1/files') {
       const path = workspacePath(url.searchParams.get('path')); await writeRequestFile(request, path); return json(response, 201, { path })

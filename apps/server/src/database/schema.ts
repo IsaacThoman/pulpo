@@ -439,6 +439,7 @@ export const folders = pgTable('folders', {
 })
 
 export const chats = pgTable('chats', {
+  workspaceScopeId: uuid('workspace_scope_id').notNull().defaultRandom(),
   id: uuid('id').primaryKey(),
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   folderId: uuid('folder_id').references(() => folders.id, { onDelete: 'set null' }),
@@ -461,6 +462,7 @@ export const chats = pgTable('chats', {
 ])
 
 export const responses = pgTable('responses', {
+  workspaceScopeId: uuid('workspace_scope_id').notNull().defaultRandom(),
   timeZone: text('time_zone'),
   id: uuid('id').primaryKey(),
   chatId: uuid('chat_id').notNull().references(() => chats.id, { onDelete: 'cascade' }),
@@ -580,6 +582,8 @@ export const attachments = pgTable('attachments', {
 ])
 
 export const workspaceLeases = pgTable('workspace_leases', {
+  // Null scopes belong to pre-isolation leases and are never acquired by new runs.
+  workspaceScopeId: uuid('workspace_scope_id'),
   id: uuid('id').primaryKey(),
   chatId: uuid('chat_id').notNull().references(() => chats.id, { onDelete: 'cascade' }),
   responseId: uuid('response_id').references(() => responses.id, { onDelete: 'set null' }),
@@ -595,7 +599,7 @@ export const workspaceLeases = pgTable('workspace_leases', {
   hardExpiresAt: timestamp('hard_expires_at', { withTimezone: true }),
   releasedAt: timestamp('released_at', { withTimezone: true }),
   ...timestamps,
-}, (table) => [uniqueIndex('workspace_leases_chat_active_unique').on(table.chatId).where(sql`${table.status} in ('provisioning', 'ready')`), index('workspace_leases_expiry_idx').on(table.expiresAt), index('workspace_leases_queue_idx').on(table.capacityState, table.createdAt)])
+}, (table) => [uniqueIndex('workspace_leases_scope_active_unique').on(table.workspaceScopeId).where(sql`${table.status} in ('provisioning', 'ready')`), index('workspace_leases_expiry_idx').on(table.expiresAt), index('workspace_leases_queue_idx').on(table.capacityState, table.createdAt)])
 
 export const agentRuns = pgTable('agent_runs', {
   id: uuid('id').primaryKey(),
