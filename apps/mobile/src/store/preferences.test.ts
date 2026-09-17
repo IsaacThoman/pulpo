@@ -22,7 +22,7 @@ describe('production preference mapping', () => {
       agentModes: { 'model-a': false, 'model-b': true },
     })).toEqual({
       imageGeneration: { enabled: false, modelId: null }, speech: { modelId: null, models: {} },
-      composerSyncEnabled: true, showPromptSuggestions: true,
+      composerSyncEnabled: true, showPromptSuggestions: true, collapseIntermediateMessages: true,
       theme: 'dark', attachmentCacheMb: 96, localChatLimit: 50,
       trashRetention: '7d', automaticChatExpiration: '24h', newChatAutoExpire: false, memoryEnabled: true,
       favoriteModelIds: ['model-b', 'model-a'], providerOrder: ['lab-b', 'lab-a'],
@@ -48,7 +48,7 @@ describe('production preference mapping', () => {
   })
 
   it('clears synchronized model preferences when older servers omit them', () => {
-    expect(preferencesFromServer({})).toEqual({ imageGeneration: { enabled: false, modelId: null }, speech: { modelId: null, models: {} }, composerSyncEnabled: true, showPromptSuggestions: true, favoriteModelIds: [], providerOrder: [], generation: {}, agentModes: {} })
+    expect(preferencesFromServer({})).toEqual({ imageGeneration: { enabled: false, modelId: null }, speech: { modelId: null, models: {} }, composerSyncEnabled: true, showPromptSuggestions: true, collapseIntermediateMessages: true, favoriteModelIds: [], providerOrder: [], generation: {}, agentModes: {} })
   })
 
   it('filters malformed generation preferences from server settings', () => {
@@ -82,4 +82,11 @@ it('round-trips image opt-in and preserves unavailable model IDs', () => {
   expect(preferencesFromServer({ imageGeneration }).imageGeneration).toEqual(imageGeneration)
   expect(preferencePatchForServer('imageGeneration', imageGeneration)).toEqual({ imageGeneration })
   expect(preferencesFromServer({ imageGeneration: { enabled: 'yes' } }).imageGeneration).toEqual({ enabled: false, modelId: null })
+})
+
+
+it('defaults collapsed messages on and synchronizes explicit opt-outs', () => {
+  expect(preferencesFromServer({}).collapseIntermediateMessages).toBe(true)
+  expect(preferencesFromServer({ collapseIntermediateMessages: false }).collapseIntermediateMessages).toBe(false)
+  expect(preferencePatchForServer('collapseIntermediateMessages', false)).toEqual({ collapseIntermediateMessages: false })
 })

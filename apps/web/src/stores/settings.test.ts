@@ -54,3 +54,15 @@ describe('language settings', () => {
     expect(document.documentElement.lang).toBe('es-ES')
   })
 })
+
+
+it('enables collapsed messages for old settings and persists explicit opt-outs', async () => {
+  const { useSettings } = await import('./settings')
+  expect(DEFAULT_SETTINGS.collapseIntermediateMessages).toBe(true)
+  storage.set('pulpo-settings', JSON.stringify({ state: { showReasoning: true }, version: 0 }))
+  await useSettings.persist.rehydrate()
+  expect(useSettings.getState().collapseIntermediateMessages).toBe(true)
+  useSettings.getState().set('collapseIntermediateMessages', false)
+  await useSettings.persist.rehydrate()
+  expect(useSettings.getState().collapseIntermediateMessages).toBe(false)
+})

@@ -1,4 +1,5 @@
 import {
+  collapseIntermediateMessagesSchema,
   imageGenerationPreferencesSchema,
   speechPreferencesSchema,
   agentModesSchema,
@@ -19,6 +20,7 @@ export function preferencesWithModelDefaults(values?: Record<string, unknown>): 
   const parsedInstructionPresetSelections = instructionPresetSelectionsSchema.safeParse(values?.instructionPresetSelections)
   return {
     ...values,
+    collapseIntermediateMessages: values?.collapseIntermediateMessages !== false,
     imageGeneration: imageGenerationPreferencesSchema.catch({ enabled: false, modelId: null }).parse(values?.imageGeneration),
     speech: speechPreferencesSchema.catch({ modelId: null, models: {} }).parse(values?.speech),
     animationSpeed: parsedAnimationSpeed.success ? parsedAnimationSpeed.data : animationSpeedSchema.parse(undefined),
@@ -47,6 +49,7 @@ export function normalizedPreferencePatch(patch: Record<string, unknown>): Recor
     : undefined
   return {
     ...patch,
+    ...('collapseIntermediateMessages' in patch ? { collapseIntermediateMessages: collapseIntermediateMessagesSchema.parse(patch.collapseIntermediateMessages) } : {}),
     ...('imageGeneration' in patch ? { imageGeneration: imageGenerationPreferencesSchema.parse(patch.imageGeneration) } : {}),
     ...('speech' in patch ? { speech: speechPreferencesSchema.parse(patch.speech) } : {}),
     ...(animationSpeed === undefined ? {} : { animationSpeed }),

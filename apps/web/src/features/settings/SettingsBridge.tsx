@@ -13,7 +13,7 @@ import { isDesktopRuntime } from '@/lib/runtime'
 import { normalizeAnimationSpeed } from '@/lib/animation-speed'
 
 const persistedKeys = [
-  'imageGeneration', 'speech', 'composerSyncEnabled', 'theme', 'language', 'sendWithEnter', 'doubleShiftSearch', 'streamResponses', 'showPromptSuggestions', 'showReasoning', 'showResponseCost',
+  'imageGeneration', 'speech', 'composerSyncEnabled', 'theme', 'language', 'sendWithEnter', 'doubleShiftSearch', 'streamResponses', 'showPromptSuggestions', 'showReasoning', 'collapseIntermediateMessages', 'showResponseCost',
   'chatWidth', 'animationSpeed', 'customInstructions', 'instructionPresetSelections', 'nickname', 'memoryEnabled', 'agentModes',
   'leaderboardVisible', 'leaderboardColor', 'generation',
   'localChatLimit',
@@ -129,6 +129,7 @@ export function SettingsBridge() {
       const next: Partial<SettingsState> = {
         ...DEFAULT_SETTINGS,
         ...remote.values,
+        collapseIntermediateMessages: remote.values.collapseIntermediateMessages !== false,
         language: normalizeLanguage(remote.values.language),
         animationSpeed: normalizeAnimationSpeed(remote.values.animationSpeed),
         ownerUserId: userId,

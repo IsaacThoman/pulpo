@@ -231,3 +231,40 @@ describe('buildLegacyMessageTimeline', () => {
     ])
   })
 })
+
+
+describe('collapsed intermediate messages', () => {
+  const output = [
+    { type: 'reasoning', status: 'completed', summary: [{ text: 'Plan' }], durationMs: 1000 },
+    { type: 'message', content: [{ text: 'Progress' }] },
+    { type: 'pulpo_tool', id: 'search', tool: 'search', status: 'completed', durationMs: 2000 },
+    { type: 'message', content: [{ text: 'Answer' }] },
+  ]
+  it('combines work, preserves final text, and uses the complete initial wait once', () => {
+    expect(buildMessageTimeline(output, true, true, 3000)).toMatchObject([
+      { kind: 'activity', durationMs: 5000, steps: [{ kind: 'reasoning' }, { kind: 'message', text: 'Progress' }, { kind: 'tool' }] },
+      { kind: 'text', text: 'Answer' },
+    ])
+    expect(buildMessageTimeline(output, true, false).map((segment) => segment.kind)).toEqual(['activity', 'text', 'activity', 'text'])
+  })
+  it('hides intermediate text along with work when reasoning is disabled', () => {
+    expect(buildMessageTimeline(output, false, true)).toEqual([{ kind: 'text', text: 'Answer' }])
+    expect(buildMessageTimeline(output, false, false)).toHaveLength(2)
+  })
+  it('ignores empty final placeholders and keeps intermediate text within ongoing work', () => {
+    expect(buildMessageTimeline([...output.slice(0, -1), { type: 'message', content: [{ text: '  ' }] }], true, true))
+      .toMatchObject([{ kind: 'activity', steps: [{ kind: 'reasoning' }, { kind: 'message' }, { kind: 'tool' }] }])
+  })
+})
+
+
+it('moves provisional text into work when new reasoning has not emitted a summary yet', () => {
+  const output = [
+    { type: 'message', content: [{ text: 'Checking a source' }] },
+    { type: 'reasoning', status: 'in_progress', summary: [] },
+  ]
+  expect(buildMessageTimeline(output, true, true)).toMatchObject([
+    { kind: 'activity', active: true, steps: [{ kind: 'message', text: 'Checking a source' }, { kind: 'reasoning', active: true }] },
+  ])
+  expect(buildMessageTimeline(output, false, true)).toEqual([])
+})

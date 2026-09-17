@@ -1378,6 +1378,7 @@ const accountPreferenceIdsSchema = z.array(z.string().trim().min(1).max(200)).ma
 
 export const automaticChatExpirationSchema = z.enum(['disabled', '24h', '7d'])
 export type AutomaticChatExpiration = z.infer<typeof automaticChatExpirationSchema>
+export const collapseIntermediateMessagesSchema = z.boolean().default(true)
 export const newChatAutoExpireSchema = z.boolean().default(false)
 export const ANIMATION_SPEED_MIN = 0.01
 export const ANIMATION_SPEED_MAX = 5
@@ -1397,6 +1398,7 @@ export const managementAccountSettingsSchema = z.object({
   streamResponses: z.boolean().default(true),
   showPromptSuggestions: z.boolean().default(true),
   showReasoning: z.boolean().default(true),
+  collapseIntermediateMessages: collapseIntermediateMessagesSchema,
   showResponseCost: z.boolean().default(false),
   chatWidth: z.enum(['full', 'narrow']).default('narrow'),
   animationSpeed: animationSpeedSchema,

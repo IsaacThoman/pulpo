@@ -1,3 +1,5 @@
+import { collapseMessageTimeline, type IntermediateMessageStep } from '@pulpo/client-core'
+import { activityDurationMs } from './activity-timing'
 import type { CompactionItem, RecallItem, ToolImagePreview } from '@pulpo/contracts'
 
 export type ToolItem = {
@@ -50,10 +52,11 @@ export type RecallStep = {
   recall: RecallItem
 }
 
-export type ActivityStep = ReasoningStep | ToolStep | WorkspaceStep | CompactionStep | RecallStep
+export type ActivityStep = IntermediateMessageStep | ReasoningStep | ToolStep | WorkspaceStep | CompactionStep | RecallStep
 
 export type ActivitySegment = {
   kind: 'activity'
+  durationMs?: number
   steps: ActivityStep[]
   active: boolean
 }
@@ -108,7 +111,7 @@ function insertWorkspaceStep(steps: ActivityStep[], workspace: WorkspaceItem): A
  * assistant messages as text segments. Provider-generated empty text parts are ignored,
  * so they cannot create artificial boundaries between work phases.
  */
-export function buildTimeline(outputItems: unknown[], showReasoning: boolean): TimelineSegment[] {
+export function buildTimeline(outputItems: unknown[], showReasoning: boolean, collapseIntermediateMessages = false, initialResponseDurationMs?: number): TimelineSegment[] {
   const segments: TimelineSegment[] = []
   let activity: ActivitySegment | null = null
   const workspace = outputItems.find(
@@ -117,7 +120,7 @@ export function buildTimeline(outputItems: unknown[], showReasoning: boolean): T
 
   const flushActivity = () => {
     if (!activity) return
-    if (activityHasContent(activity.steps)) {
+    if (activityHasContent(activity.steps) || (collapseIntermediateMessages && activity.active && segments.some((segment) => segment.kind === 'text'))) {
       segments.push(activity)
     }
     activity = null
@@ -193,5 +196,8 @@ export function buildTimeline(outputItems: unknown[], showReasoning: boolean): T
   }
 
   // The preference controls the entire work disclosure, including workspace-only activity.
-  return showReasoning ? segments : segments.filter((segment) => segment.kind === 'text')
+  const visible = collapseIntermediateMessages
+    ? collapseMessageTimeline(segments, activityDurationMs, initialResponseDurationMs)
+    : segments
+  return showReasoning ? visible : visible.filter((segment) => segment.kind === 'text')
 }

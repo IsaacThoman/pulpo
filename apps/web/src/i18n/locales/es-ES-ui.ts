@@ -1,4 +1,6 @@
 const esUi: Record<string, string> = {
+  "Collapse intermediate messages": "Contraer mensajes intermedios",
+  "Group intermediate assistant messages and activity into one expandable work section, leaving the final answer visible.": "Agrupa los mensajes intermedios del asistente y la actividad en una sección de trabajo expandible, dejando visible la respuesta final.",
   "Model settings": "Configuración del modelo",
   "Minimum output allocation": "Asignación mínima de salida",
   "Output tokens the account must be able to afford before a call starts. Smaller request or model limits lower this minimum. Responses can finish sooner; unused allocation is released.": "Tokens de salida que la cuenta debe poder pagar antes de iniciar una llamada. Los límites inferiores de la solicitud o del modelo reducen este mínimo. Las respuestas pueden terminar antes; la asignación no utilizada se libera.",

@@ -144,6 +144,7 @@ export interface AppPreferences {
   sendWithEnter: boolean;
   streamResponses: boolean;
   showPromptSuggestions: boolean;
+  collapseIntermediateMessages: boolean;
   showReasoning: boolean;
   memoryEnabled: boolean;
   haptics: boolean;

@@ -4,7 +4,7 @@ import { normalizedPreferencePatch, preferencesWithModelDefaults } from './model
 describe('account model preferences', () => {
   it('adds clean defaults to older preference records', () => {
     expect(preferencesWithModelDefaults({ theme: 'dark' })).toEqual({
-      imageGeneration: { enabled: false, modelId: null }, speech: { modelId: null, models: {} }, theme: 'dark', animationSpeed: 1, automaticChatExpiration: '24h', newChatAutoExpire: false,
+      imageGeneration: { enabled: false, modelId: null }, speech: { modelId: null, models: {} }, theme: 'dark', collapseIntermediateMessages: true, animationSpeed: 1, automaticChatExpiration: '24h', newChatAutoExpire: false,
       sidebarPins: { usage: false, billing: false, friends: false, apiKeys: false },
       agentModes: {}, instructionPresetSelections: {}, favoriteModelIds: [], providerOrder: [],
     })
@@ -93,4 +93,13 @@ it('normalizes image generation settings without losing unavailable model select
   expect(normalizedPreferencePatch({ imageGeneration })).toEqual({ imageGeneration })
   expect(preferencesWithModelDefaults({ imageGeneration: { enabled: 'yes' } }).imageGeneration).toEqual({ enabled: false, modelId: null })
   expect(() => normalizedPreferencePatch({ imageGeneration: { enabled: 'yes' } })).toThrow()
+})
+
+
+it('defaults collapsed messages on and validates explicit account preference patches', () => {
+  expect(preferencesWithModelDefaults().collapseIntermediateMessages).toBe(true)
+  expect(preferencesWithModelDefaults({ collapseIntermediateMessages: false }).collapseIntermediateMessages).toBe(false)
+  expect(normalizedPreferencePatch({ collapseIntermediateMessages: false })).toEqual({ collapseIntermediateMessages: false })
+  expect(() => normalizedPreferencePatch({ collapseIntermediateMessages: 'false' })).toThrow()
+  expect(() => normalizedPreferencePatch({ collapseIntermediateMessages: null })).toThrow()
 })
