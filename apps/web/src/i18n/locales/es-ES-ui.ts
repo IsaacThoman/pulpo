@@ -103,6 +103,8 @@ const esUi: Record<string, string> = {
   "{{0}}–{{1}} of {{2}} files": "{{0}}–{{1}} de {{2}} archivos",
   "{{0}} more files": "{{0}} archivos más",
   "Unable to save image model": "No se pudo guardar el modelo de imágenes",
+  "Could not load models.": "No se pudieron cargar los modelos.",
+  "Could not save user.": "No se pudo guardar el usuario.",
   "Loading models…": "Cargando modelos…",
   "Generating an image…": "Generando una imagen…",
   "Deployment name": "Nombre de la implementación",

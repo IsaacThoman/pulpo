@@ -34,7 +34,7 @@ export function withDefaultModel(
   return { ...value, defaultModelId }
 }
 
-export function defaultModelOptions(models: AvailableModel[], selectedId: string | null) {
+export function defaultModelOptions(models: Pick<AvailableModel, 'id' | 'name'>[], selectedId: string | null) {
   const options = [
     { value: AUTOMATIC_MODEL_VALUE, label: ui("Automatic (first available)") },
     ...models.map((model) => ({ value: model.id, label: modelOptionLabel(model) })),
