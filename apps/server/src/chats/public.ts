@@ -129,3 +129,9 @@ export function toPublicChat(chat: ChatRow) {
     updatedAt: chat.updatedAt.toISOString(),
   }
 }
+
+/** Keep internal execution identities out of legacy routes that return database rows. */
+export function withoutWorkspaceScope<T extends { workspaceScopeId: string }>(row: T): Omit<T, 'workspaceScopeId'> {
+  const { workspaceScopeId: _workspaceScopeId, ...publicRow } = row
+  return publicRow
+}

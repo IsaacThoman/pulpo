@@ -1,8 +1,9 @@
+import { canContinueWorkspaceScope } from '../agent/workspace-scope.js'
 import { MAX_MESSAGE_ATTACHMENTS } from '@pulpo/contracts'
 import { and, eq, inArray, isNull, or, sql } from 'drizzle-orm'
 import type { ChatPreset, CreateChatResponseInput, ResponseSnapshot } from '@pulpo/contracts'
 import { db } from '../database/client.js'
-import { applicationSettings, attachments, chats, modelPresetChoices, modelPresets, models, requestLogs, responses, userProviderCredentials } from '../database/schema.js'
+import { agentRuns, applicationSettings, attachments, chats, modelPresetChoices, modelPresets, models, requestLogs, responses, userProviderCredentials } from '../database/schema.js'
 import { getActivePricing, releaseBudget, reserveBudget } from '../accounting/service.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
@@ -188,11 +189,8 @@ export async function createResponse(options: CreateResponseOptions) {
     }
   }
   const id = requestedId ?? newId()
-  const [previous] = chat.activeResponseId
-    ? await db.select({ id: responses.id }).from(responses).where(eq(responses.id, chat.activeResponseId)).limit(1)
-    : []
-  const parentResponseId = options.parentResponseId === undefined ? previous?.id ?? null : options.parentResponseId
-  const previousActiveResponseId = previous?.id ?? null
+  let previousActiveResponseId = chat.activeBranchLeafId ?? chat.activeResponseId
+  let previousWorkspaceScopeId = chat.workspaceScopeId
   const executionMode = options.input.executionMode ?? model.executionMode
   const attachmentIds = [...new Set([
     ...options.input.attachmentIds,
@@ -227,45 +225,83 @@ export async function createResponse(options: CreateResponseOptions) {
       ...options.input.attachmentIds.map((attachmentId) => ({ type: 'input_file', attachment_id: attachmentId })),
     ],
   }]
-  await db.insert(responses).values({
-    id,
-    chatId: chat.id,
-    requestReceivedAt: options.requestReceivedAt ?? now,
-    timeZone: options.apiKeyId ? null : options.input.timeZone ?? null,
-    userId: options.ownerUserId,
-    modelId: model.id,
-    previousResponseId: parentResponseId,
-    parentResponseId,
-    userMessageId: options.userMessageId ?? newId(),
-    branchReason: options.branchReason ?? 'message',
-    executionMode,
-    agentMode: options.input.agentMode,
-    input: storedInput,
-    presetSelections: resolved.selections,
-    parameters,
-    metadata: options.metadata ?? {},
-    publiclyStored: options.publiclyStored ?? true,
-    idempotencyKey: options.idempotencyKey,
-    idempotencyScope,
-    idempotencyFingerprint: options.idempotencyFingerprint,
-    origin: options.actorUserId ? 'admin_chat' : options.apiKeyId ? 'api' : 'web',
+  const acceptedAt = new Date()
+  const admission = await db.transaction(async (tx) => {
+    const [current] = await tx.select().from(chats).where(and(
+      eq(chats.id, chat.id), isNull(chats.deletedAt), isNull(chats.purgeStartedAt), accessibleChatCondition(acceptedAt),
+    )).for('update')
+    if (!current) throw new AppError(410, 'temporary_chat_expired', 'This temporary chat has expired and cannot be recovered')
+    previousActiveResponseId = current.activeBranchLeafId ?? current.activeResponseId
+    previousWorkspaceScopeId = current.workspaceScopeId
+    const parentResponseId = options.parentResponseId === undefined ? previousActiveResponseId : options.parentResponseId
+    const [predecessor] = parentResponseId
+      ? await tx.select({ status: responses.status }).from(responses).where(and(eq(responses.id, parentResponseId), eq(responses.chatId, chat.id), isNull(responses.deletedAt))).limit(1)
+      : []
+    if (parentResponseId && !predecessor) throw notFound('Parent response')
+    const [runningPredecessor] = parentResponseId
+      ? await tx.select({ id: agentRuns.id }).from(agentRuns).where(and(eq(agentRuns.responseId, parentResponseId), inArray(agentRuns.status, ['queued', 'running']))).limit(1)
+      : []
+    const workspaceScopeId = !runningPredecessor && canContinueWorkspaceScope({
+      branchReason: options.branchReason ?? 'message', parentResponseId,
+      activeResponseId: previousActiveResponseId, predecessorStatus: predecessor?.status,
+    }) ? current.workspaceScopeId : newId()
+    const [inserted] = await tx.insert(responses).values({
+      id,
+      chatId: chat.id,
+      requestReceivedAt: options.requestReceivedAt ?? now,
+      timeZone: options.apiKeyId ? null : options.input.timeZone ?? null,
+      userId: options.ownerUserId,
+      modelId: model.id,
+      previousResponseId: parentResponseId,
+      parentResponseId,
+      workspaceScopeId,
+      userMessageId: options.userMessageId ?? newId(),
+      branchReason: options.branchReason ?? 'message',
+      executionMode,
+      agentMode: options.input.agentMode,
+      input: storedInput,
+      presetSelections: resolved.selections,
+      parameters,
+      metadata: options.metadata ?? {},
+      publiclyStored: options.publiclyStored ?? true,
+      idempotencyKey: options.idempotencyKey,
+      idempotencyScope,
+      idempotencyFingerprint: options.idempotencyFingerprint,
+      origin: options.actorUserId ? 'admin_chat' : options.apiKeyId ? 'api' : 'web',
+    }).onConflictDoNothing().returning({ id: responses.id })
+    if (!inserted) {
+      const [existing] = await tx.select().from(responses).where(or(
+        eq(responses.id, id),
+        ...(options.idempotencyKey ? [and(eq(responses.userId, options.ownerUserId), eq(responses.idempotencyScope, idempotencyScope), eq(responses.idempotencyKey, options.idempotencyKey))] : []),
+      )).limit(1)
+      if (!existing || existing.userId !== options.ownerUserId || existing.chatId !== chat.id) throw new AppError(409, 'response_id_conflict', 'Response id is already in use')
+      if (options.idempotencyFingerprint && existing.idempotencyFingerprint && options.idempotencyFingerprint !== existing.idempotencyFingerprint) throw new AppError(409, 'idempotency_conflict', 'The idempotency key was already used with a different request')
+      return { existing }
+    }
+    const [updatedChat] = await tx.update(chats).set({
+      activeResponseId: id, activeBranchLeafId: id, workspaceScopeId,
+      updatedAt: acceptedAt, expiresAt: temporaryChatExpiryValue(temporaryChatExpiresAt(acceptedAt)),
+    }).where(eq(chats.id, chat.id)).returning({ temporary: chats.temporary, expiresAt: chats.expiresAt })
+    return { updatedChat }
   })
-  const requestLogId = newId()
-  await db.transaction(async (tx) => {
-    await tx.execute(sql`select pg_advisory_xact_lock(1886747744)`)
-    const [loggingRow] = await tx.select().from(applicationSettings).where(eq(applicationSettings.key, 'logging')).limit(1)
-    const logging = parseLoggingSettings(loggingRow?.value)
-    const collectedAt = new Date()
-    const policy = detailedPayloadPolicy(logging, collectedAt)
-    await tx.insert(requestLogs).values({
-      id: requestLogId, responseId: id, userId: options.ownerUserId, actorUserId: options.actorUserId, apiKeyId: options.apiKeyId,
-      origin: options.actorUserId ? 'admin_chat' : options.apiKeyId ? 'api' : 'web', requestedModelId: options.input.modelId, currentModelId: model.id,
-      ...policy, createdAt: collectedAt, updatedAt: collectedAt,
-      requestPayload: null, // Detailed bodies are captured per provider attempt.
-    })
-  })
-  await publishAdminUsage(requestLogId, true)
+  if (admission.existing) return admission.existing
+  const updatedChat = admission.updatedChat
   try {
+    const requestLogId = newId()
+    await db.transaction(async (tx) => {
+      await tx.execute(sql`select pg_advisory_xact_lock(1886747744)`)
+      const [loggingRow] = await tx.select().from(applicationSettings).where(eq(applicationSettings.key, 'logging')).limit(1)
+      const logging = parseLoggingSettings(loggingRow?.value)
+      const collectedAt = new Date()
+      const policy = detailedPayloadPolicy(logging, collectedAt)
+      await tx.insert(requestLogs).values({
+        id: requestLogId, responseId: id, userId: options.ownerUserId, actorUserId: options.actorUserId, apiKeyId: options.apiKeyId,
+        origin: options.actorUserId ? 'admin_chat' : options.apiKeyId ? 'api' : 'web', requestedModelId: options.input.modelId, currentModelId: model.id,
+        ...policy, createdAt: collectedAt, updatedAt: collectedAt,
+        requestPayload: null, // Detailed bodies are captured per provider attempt.
+      })
+    })
+    await publishAdminUsage(requestLogId, true)
     await reserveBudget({
       responseId: id,
       userId: options.billingUserId ?? options.ownerUserId,
@@ -275,25 +311,6 @@ export async function createResponse(options: CreateResponseOptions) {
       minimumOutputReservationTokens: model.minimumOutputReservationTokens,
       pricing,
     })
-    const acceptedAt = new Date()
-    const nextExpiresAt = temporaryChatExpiresAt(acceptedAt)
-    const [updatedChat] = await db.update(chats).set({
-      activeResponseId: id,
-      activeBranchLeafId: id,
-      updatedAt: acceptedAt,
-      expiresAt: temporaryChatExpiryValue(nextExpiresAt),
-    }).where(and(
-      eq(chats.id, chat.id),
-      isNull(chats.deletedAt),
-      isNull(chats.purgeStartedAt),
-      accessibleChatCondition(acceptedAt),
-    )).returning({
-      temporary: chats.temporary,
-      expiresAt: chats.expiresAt,
-    })
-    if (!updatedChat) {
-      throw new AppError(410, 'temporary_chat_expired', 'This temporary chat has expired and cannot be recovered')
-    }
     await generationQueue.add('generate', { responseId: id }, { jobId: id })
     if (updatedChat?.temporary && updatedChat.expiresAt) {
       await scheduleTemporaryChatExpiry({
@@ -304,13 +321,22 @@ export async function createResponse(options: CreateResponseOptions) {
     }
   } catch (error) {
     await releaseBudget(id)
-    await db.delete(responses).where(eq(responses.id, id))
-    await db.update(chats).set({
-      activeResponseId: previousActiveResponseId,
-      activeBranchLeafId: previousActiveResponseId,
-      updatedAt: new Date(),
-      expiresAt: temporaryChatExpiryValue(chat.expiresAt),
-    }).where(and(eq(chats.id, chat.id), eq(chats.activeResponseId, id)))
+    await db.transaction(async tx => {
+      const [current] = await tx.select().from(chats).where(eq(chats.id, chat.id)).for('update')
+      const [child] = await tx.select({ id: responses.id }).from(responses).where(eq(responses.parentResponseId, id)).limit(1)
+      if (child) {
+        await tx.update(responses).set({ status: 'failed', error: { message: 'Response admission failed' }, completedAt: new Date(), updatedAt: new Date() }).where(eq(responses.id, id))
+      } else {
+        await tx.delete(responses).where(eq(responses.id, id))
+      }
+      if (current?.activeResponseId === id) {
+        await tx.update(chats).set({
+          workspaceScopeId: previousWorkspaceScopeId, activeResponseId: previousActiveResponseId,
+          activeBranchLeafId: previousActiveResponseId, updatedAt: new Date(),
+          expiresAt: temporaryChatExpiryValue(chat.expiresAt),
+        }).where(eq(chats.id, chat.id))
+      }
+    })
     throw error
   }
   const [created] = await db.select().from(responses).where(eq(responses.id, id)).limit(1)
