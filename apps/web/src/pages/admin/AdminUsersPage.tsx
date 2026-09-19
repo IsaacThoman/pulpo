@@ -30,6 +30,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { ui, activeLocale } from '@/i18n/ui'
+import { EditUserDialog } from './EditUserDialog'
 
 interface AdminBillingUser {
   userId: string
@@ -426,54 +427,13 @@ function AdminUsersTable({ storageKey }: { storageKey: string | null }) {
         </DialogContent>
       </Dialog>
 
-      {/* edit user */}
-      <Dialog open={!!editUser} onOpenChange={(v) => !v && setEditUser(null)}>
-        <DialogContent className="sm:max-w-sm">
-          <form onSubmit={(event) => {
-            event.preventDefault()
-            if (!editUser) return
-            const values = new FormData(event.currentTarget)
-            const password = String(values.get('password') ?? '')
-            void patchUser(editUser.id, {
-              name: values.get('name'), username: values.get('username'), email: values.get('email'),
-              ...(billingEnabled ? { inviteCodeQuota: Number(values.get('inviteCodeQuota') ?? 0) } : {}),
-              ...(password ? { password } : {}),
-            }).then(() => setEditUser(null))
-          }} className="contents">
-          <DialogHeader>
-            <DialogTitle>{ui("Edit user")}</DialogTitle>
-            <DialogDescription>{ui("Joined")} {editUser && formatDate(editUser.joinedAt)}</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3">
-            <div className="space-y-1.5">
-              <Label>{ui("Display name")}</Label>
-              <Input name="name" defaultValue={editUser?.name} required />
-            </div>
-            <div className="space-y-1.5">
-              <Label>{ui("Username")}</Label>
-              <Input name="username" defaultValue={editUser?.username} minLength={3} maxLength={30} pattern="[a-z0-9][a-z0-9_]{1,28}[a-z0-9]" required />
-            </div>
-            <div className="space-y-1.5">
-              <Label>{ui("Email")}</Label>
-              <Input name="email" type="email" defaultValue={editUser?.email} required />
-            </div>
-            <div className="space-y-1.5">
-              <Label>{ui("New password")}</Label>
-              <Input name="password" type="password" minLength={8} placeholder={ui("Leave blank to keep")} />
-            </div>
-            {billingEnabled && (
-              <div className="space-y-1.5">
-                <Label>{ui("Invite code quota")}</Label>
-                <Input name="inviteCodeQuota" type="number" min={0} max={1000} defaultValue={editUser?.inviteCodeQuota ?? 0} />
-              </div>
-            )}
-          </div>
-          <DialogFooter>
-            <Button type="submit">{ui("Save")}</Button>
-          </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+      {editUser && <EditUserDialog
+        key={editUser.id}
+        user={editUser}
+        billingEnabled={billingEnabled}
+        onSave={patchUser}
+        onClose={() => setEditUser(null)}
+      />}
     </div>
   )
 }

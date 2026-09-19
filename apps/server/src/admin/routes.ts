@@ -6,7 +6,7 @@ import { usernameSchema } from '@pulpo/contracts'
 import { createPasswordHash, requireAdmin } from '../auth/service.js'
 import { clearTwoFactor, hasTwoFactor, verifySecondFactor } from '../auth/two-factor.js'
 import { db } from '../database/client.js'
-import { apiKeys, applicationSettings, attachments, auditEvents, billingAccounts, creditLedger, managementTokens, passwordCredentials, passwordResetTokens, sessions, usageEvents, users, userTotpCredentials } from '../database/schema.js'
+import { apiKeys, applicationSettings, attachments, auditEvents, billingAccounts, creditLedger, managementTokens, passwordCredentials, passwordResetTokens, sessions, usageEvents, userPreferences, users, userTotpCredentials } from '../database/schema.js'
 import { newUserStorageLimit, refreshStorageLimit } from '../billing/storage-entitlements.js'
 import { hashToken, randomToken } from '../lib/crypto.js'
 import { AppError, notFound } from '../lib/errors.js'
@@ -23,9 +23,12 @@ import {
 } from '../friends/sync.js'
 import { poolPeerIds } from '../pools/service.js'
 import { apiKeyOwnerCanSpend } from '../api-keys/access.js'
+import { availableUserModels } from '../catalog/user-models.js'
+import { preferencesWithModelDefaults } from '../settings/model-preferences.js'
 
 const patchUserSchema = z.object({
   name: z.string().trim().min(1).max(120).optional(),
+  defaultModelId: z.string().trim().min(1).max(120).nullable().optional(),
   email: z.email().optional(),
   password: z.string().min(8).max(1_000).optional(),
   role: z.enum(['pending', 'user', 'admin']).optional(),
@@ -68,6 +71,10 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
     requireAdmin(request)
     const rows = await db.select({
       user: users,
+      defaultModelId: sql<string | null>`(
+        select nullif(${userPreferences.values}->>'defaultModelId', '')
+        from ${userPreferences} where ${userPreferences.userId} = ${users.id}
+      )`,
       calls: sql<number>`count(${usageEvents.id})::int`,
       spentMicros: sql<number>`coalesce(sum(${usageEvents.costMicros}), 0)::bigint`,
       lastActiveAt: sql<Date | null>`(
@@ -96,6 +103,16 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
     }) }
   })
 
+  app.get('/api/admin/users/:id/models', async (request) => {
+    requireAdmin(request)
+    const { id } = request.params as { id: string }
+    const [user] = await db.select({ id: users.id, deletionRequestedAt: users.deletionRequestedAt })
+      .from(users).where(eq(users.id, id)).limit(1)
+    if (!user) throw notFound('User')
+    if (user.deletionRequestedAt) throw new AppError(409, 'account_deleting', 'This account is being permanently deleted')
+    return { data: await availableUserModels(id) }
+  })
+
   app.patch('/api/admin/users/:id', async (request) => {
     const admin = requireAdmin(request)
     const { id } = request.params as { id: string }
@@ -113,11 +130,30 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
     ].some((value) => value !== undefined)
     const relatedChanges = await db.transaction(async (tx) => {
       await lockAccountAdministration(tx)
+      // Acquire the settings lock before user/preference row locks, matching account PATCH.
+      if (patch.defaultModelId !== undefined) await tx.execute(sql`select pg_advisory_xact_lock(1886747744)`)
       const [current] = await tx.select().from(users).where(eq(users.id, id)).limit(1)
       if (!current) throw notFound('User')
       if (current.deletionRequestedAt) throw new AppError(409, 'account_deleting', 'This account is being permanently deleted')
       const balanceChanged = patch.balanceMicros !== undefined && patch.balanceMicros !== current.balanceMicros
-      const { password, ...userPatch } = patch
+      const { password, defaultModelId, ...userPatch } = patch
+      if (defaultModelId !== undefined) {
+        const [preferences] = await tx.select({ values: userPreferences.values }).from(userPreferences)
+          .where(eq(userPreferences.userId, id)).limit(1)
+        const savedModelId = (preferences?.values as { defaultModelId?: unknown } | undefined)?.defaultModelId
+        if (defaultModelId !== null && defaultModelId !== savedModelId) {
+          const available = await availableUserModels(id, tx)
+          if (!available.some((model) => model.id === defaultModelId)) {
+            throw new AppError(400, 'invalid_default_model', 'Choose a model available to this user')
+          }
+        }
+        const modelPatch = { defaultModelId }
+        await tx.insert(userPreferences).values({ userId: id, values: preferencesWithModelDefaults(modelPatch) })
+          .onConflictDoUpdate({
+            target: userPreferences.userId,
+            set: { values: sql`${userPreferences.values} || ${JSON.stringify(modelPatch)}::jsonb`, updatedAt: new Date() },
+          })
+      }
       const [updated] = await tx.update(users).set({
         ...userPatch,
         stateRevision: sql`${users.stateRevision} + 1`,
@@ -150,7 +186,7 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
       }
       await tx.insert(auditEvents).values({
         id: newId(), actorUserId: admin.id, action: 'user.update', targetType: 'user', targetId: id,
-        metadata: { ...userPatch, ...(password ? { passwordChanged: true } : {}) },
+        metadata: { ...userPatch, ...(defaultModelId !== undefined ? { defaultModelId } : {}), ...(password ? { passwordChanged: true } : {}) },
       })
       const friendChanges = friendVisibleChanged ? await bumpAccountRevisions(tx, await friendPeerIds(tx, id)) : []
       const poolChanges = balanceChanged ? await bumpAccountRevisions(tx, await poolPeerIds(tx, id)) : []

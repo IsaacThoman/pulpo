@@ -13,6 +13,7 @@ interface AdminUserRow {
     blocked: boolean
     inviteCodeQuota?: number
   }
+  defaultModelId: string | null
   lastActiveAt: string | null
   storageBytes: number
   twoFactorEnabled: boolean
@@ -38,6 +39,7 @@ function mapAdmin(row: AdminUserRow): MonitorUser {
     twoFactorEnabled: row.twoFactorEnabled,
     deletionRequestedAt: row.user.deletionRequestedAt, deletionError: row.user.deletionError,
     inviteCodeQuota: row.user.inviteCodeQuota ?? 0,
+    defaultModelId: row.defaultModelId || null,
   }
 }
 

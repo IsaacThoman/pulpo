@@ -146,6 +146,7 @@ export interface UsageRecord {
 }
 
 export interface MonitorUser {
+  defaultModelId?: string | null
   deletionRequestedAt?: string | null
   deletionError?: string | null
   id: string
