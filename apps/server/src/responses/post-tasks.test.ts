@@ -34,7 +34,7 @@ afterEach(() => {
 describe('post-response task model selection', () => {
   it('skips UI-only title tasks for API-originated generations', async () => {
     await expect(runPostResponseTasks({ response: { origin: 'api' } } as never, {} as never, [], 'request-log'))
-      .resolves.toBe(0)
+      .resolves.toEqual({ costMicros: 0 })
   })
 
   it('uses a fixed available task model', () => {
