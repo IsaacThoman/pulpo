@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { eq, inArray } from 'drizzle-orm'
 import { db, queryClient } from '../database/client.js'
-import { apiKeys, billingAccounts, budgetReservations, budgetReservationFunders, chats, models, modelPricingVersions, pools, poolMembers, providerConnections, responses, users, usageEvents, weeklyUsagePeriods } from '../database/schema.js'
+import { apiKeys, billingAccounts, budgetReservations, creditLedger, budgetReservationFunders, chats, models, modelPricingVersions, pools, poolMembers, providerConnections, responses, users, usageEvents, weeklyUsagePeriods } from '../database/schema.js'
 import { chargeMeteredUsage, extendBudgetReservationFixedCost, releaseBudget, reserveBudget, resizeBudgetReservation, retainBudgetReservation, settleBudget } from './service.js'
 
 vi.mock('../responses/events.js', () => ({ publishStateChange: vi.fn() }))
@@ -205,6 +205,68 @@ describe.skipIf(!enabled)('budget-aware reservations in PostgreSQL', () => {
     await retainBudgetReservation(input.responseId, 101)
     await settleBudget({ responseId: input.responseId, usage, latencyMs: 1 })
     expect((await reservation(input.responseId)).settledAmountMicros).toBe(101)
+  })
+
+  it('funds a sidecar overrun from the available balance instead of failing settlement', async () => {
+    const userId = await account(6_000_000), input = await request(userId, 32_000)
+    await reserveBudget(input)
+    await retainBudgetReservation(input.responseId, 20_110)
+    await extendBudgetReservationFixedCost(input.responseId, 898)
+    expect((await reservation(input.responseId)).amountMicros).toBe(21_008)
+    const cost = await settleBudget({ responseId: input.responseId, usage, latencyMs: 1, costMicrosOverride: 20_110, additionalCostMicros: 937 })
+    expect(cost).toBe(21_047)
+    const [user] = await db.select().from(users).where(eq(users.id, userId))
+    expect(user!.balanceMicros).toBe(6_000_000 - 21_047)
+    expect(await settleBudget({ responseId: input.responseId, usage, latencyMs: 1, costMicrosOverride: 20_110, additionalCostMicros: 937 })).toBe(21_047)
+    expect((await db.select().from(users).where(eq(users.id, userId)))[0]!.balanceMicros).toBe(6_000_000 - 21_047)
+  })
+
+  it('absorbs only the part of an overrun the account cannot fund', async () => {
+    const userId = await account(1_500), input = await request(userId, 1_000)
+    await reserveBudget(input)
+    await retainBudgetReservation(input.responseId, 1_000)
+    await retainBudgetReservation(input.responseId, 5_000)
+    expect((await reservation(input.responseId)).amountMicros).toBe(1_000)
+    expect(await settleBudget({ responseId: input.responseId, usage, latencyMs: 1, costMicrosOverride: 1_937 })).toBe(1_500)
+    const [user] = await db.select().from(users).where(eq(users.id, userId))
+    expect(user!.balanceMicros).toBe(0)
+    const [entry] = await db.select().from(creditLedger).where(eq(creditLedger.responseId, input.responseId))
+    expect(entry!.metadata).toMatchObject({ totalCostMicros: 1_500, uncoveredCostMicros: 437 })
+  })
+
+  it('never funds an overrun from another pending reservation, the subscription cap, or past an API-key limit', async () => {
+    const userId = await account(3_000), first = await request(userId, 1_000), second = await request(userId, 1_500)
+    await reserveBudget(first)
+    await retainBudgetReservation(first.responseId, 1_000)
+    await reserveBudget(second)
+    const held = (await reservation(second.responseId)).amountMicros
+    expect(await settleBudget({ responseId: first.responseId, usage, latencyMs: 1, costMicrosOverride: 2_500 })).toBe(3_000 - held)
+    expect((await reservation(second.responseId)).amountMicros).toBe(held)
+
+    const subscriber = await account(0, 1_200), subscribed = await request(subscriber, 1_000)
+    await reserveBudget(subscribed)
+    await retainBudgetReservation(subscribed.responseId, 1_000)
+    expect(await settleBudget({ responseId: subscribed.responseId, usage, latencyMs: 1, costMicrosOverride: 1_937 })).toBe(1_200)
+    const [period] = await db.select().from(weeklyUsagePeriods).where(eq(weeklyUsagePeriods.userId, subscriber))
+    expect(period!.spentMicros).toBe(1_200)
+
+    const keyOwner = await account(10_000), apiKeyId = await key(keyOwner, 1_200), limited = await request(keyOwner, 1_000, apiKeyId)
+    await reserveBudget(limited)
+    await retainBudgetReservation(limited.responseId, 1_000)
+    expect(await settleBudget({ responseId: limited.responseId, usage, latencyMs: 1, costMicrosOverride: 1_937 })).toBe(1_200)
+    expect((await db.select().from(users).where(eq(users.id, keyOwner)))[0]!.balanceMicros).toBe(8_800)
+  })
+
+  it('shares an overrun with pool funders', async () => {
+    const caller = await account(1_000), friend = await account(5_000)
+    await pool([caller, friend])
+    const input = await request(caller, 1_000)
+    await reserveBudget(input)
+    await retainBudgetReservation(input.responseId, 1_000)
+    expect(await settleBudget({ responseId: input.responseId, usage, latencyMs: 1, costMicrosOverride: 1_937 })).toBe(1_937)
+    const rows = await db.select().from(users).where(inArray(users.id, [caller, friend]))
+    expect(rows.reduce((sum, row) => sum + row.balanceMicros, 0)).toBe(6_000 - 1_937)
+    expect(rows.every(row => row.balanceMicros >= 0)).toBe(true)
   })
 
   it('does not acquire a fresh allowance when an in-flight reservation crosses a window reset', async () => {

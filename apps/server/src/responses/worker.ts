@@ -31,7 +31,7 @@ import { redis } from '../redis.js'
 import { parsePersonalizationSettings } from '../settings/application-settings.js'
 import { composeCustomInstructions } from '../settings/instruction-presets.js'
 import { processAgentGeneration } from '../agent/runner.js'
-import { runPostResponseTasks } from './post-tasks.js'
+import { runPostResponseTasks, type PostResponseTaskResult } from './post-tasks.js'
 import { EMPTY_USAGE, providerReportedCostMicros, trackBilledInternalModelCall } from './model-calls.js'
 import { providerCacheRequestOptions, providerPromptCacheParameters } from './provider-cache.js'
 import { createModelImageInterceptor, interceptOpenAIInputImages, type ModelImageInterceptor } from './image-ocr.js'
@@ -123,6 +123,18 @@ async function settleWithSidecars(input: {
     additionalCostMicros: input.additionalCostMicros,
     inferenceReferenceCostMicros: input.inferenceReferenceCostMicros,
   })
+}
+
+/**
+ * A completed answer stays completed: billing problems after that point are
+ * logged for reconciliation instead of failing the response.
+ */
+async function settleCompletedResponse(input: Parameters<typeof settleWithSidecars>[0]): Promise<void> {
+  try {
+    await settleWithSidecars(input)
+  } catch (error) {
+    console.error(JSON.stringify({ level: 'error', service: 'pulpo-worker', event: 'billing.settlement_failed', responseId: input.responseId, additionalCostMicros: input.additionalCostMicros, error: safeErrorMessage(error) }))
+  }
 }
 
 async function persistItems(responseId: string, output: unknown[]): Promise<void> {
@@ -506,15 +518,13 @@ async function processCodexGenerationAttempt(
     const [requestLog] = await db.select({ id: requestLogs.id }).from(requestLogs).where(eq(requestLogs.responseId, responseId)).limit(1)
     let additionalCostMicros = 0
     if (requestLog) {
-      try {
-        additionalCostMicros = await runPostResponseTasks(record, record, terminalOutput, requestLog.id)
-      } catch (error) {
-        if (codexErrorRequiresReauthentication(error)) {
-          await markCodexReauthenticationRequired(record.response.userId, 'Your Codex connection needs to be renewed.')
-        }
+      const postTasks = await runPostResponseTasks(record, record, terminalOutput, requestLog.id)
+      additionalCostMicros = postTasks.costMicros
+      if (postTasks.error && codexErrorRequiresReauthentication(postTasks.error)) {
+        await markCodexReauthenticationRequired(record.response.userId, 'Your Codex connection needs to be renewed.')
       }
     }
-    await settleWithSidecars({
+    await settleCompletedResponse({
       responseId,
       usage,
       latencyMs: Date.now() - startedAt,
@@ -645,10 +655,10 @@ async function processGenerationAttempt(
         let additionalCostMicros = 0
         if (status === 'completed') {
           const [requestLog] = await db.select({ id: requestLogs.id }).from(requestLogs).where(eq(requestLogs.responseId, responseId)).limit(1)
-          if (requestLog) additionalCostMicros = await runPostResponseTasks(record, record, output, requestLog.id).catch(() => 0)
+          if (requestLog) additionalCostMicros = (await runPostResponseTasks(record, record, output, requestLog.id)).costMicros
         }
         if (usage.totalTokens > 0 || additionalCostMicros > 0) {
-          await settleWithSidecars({ responseId, usage, latencyMs: Date.now() - startedAt, providerCostMicros, additionalCostMicros })
+          await settleCompletedResponse({ responseId, usage, latencyMs: Date.now() - startedAt, providerCostMicros, additionalCostMicros })
         } else await releaseBudget(responseId)
         const [snapshot] = await db.select().from(responses).where(eq(responses.id, responseId)).limit(1)
         if (snapshot) await publishSnapshot(toSnapshot(snapshot))
@@ -901,12 +911,14 @@ async function processGenerationAttempt(
       completedAt,
       updatedAt: completedAt,
     }).where(eq(responses.id, responseId))
-    await retainBudgetReservation(responseId, sidecarCostMicros + priorGenerationCostMicros + (usage ? providerCostMicros ?? calculateCostMicros(usage, pricing) : 0))
-    const postTaskCostMicros = terminalStatus === 'completed' ? await runPostResponseTasks(record, record, output, requestLog.id).catch((error) => {
-      console.warn(JSON.stringify({ level: 'warn', service: 'pulpo-worker', event: 'post_response_tasks.failed', responseId, error: safeErrorMessage(error) }))
-      return 0
-    }) : 0
-    await settleWithSidecars({
+    // The answer is already completed; releasing unused budget is best effort.
+    await retainBudgetReservation(responseId, sidecarCostMicros + priorGenerationCostMicros + (usage ? providerCostMicros ?? calculateCostMicros(usage, pricing) : 0)).catch((error) => {
+      console.warn(JSON.stringify({ level: 'warn', service: 'pulpo-worker', event: 'billing.retain_failed', responseId, error: safeErrorMessage(error) }))
+    })
+    const postTasks: PostResponseTaskResult = terminalStatus === 'completed' ? await runPostResponseTasks(record, record, output, requestLog.id) : { costMicros: 0 }
+    if (postTasks.error) console.warn(JSON.stringify({ level: 'warn', service: 'pulpo-worker', event: 'post_response_tasks.failed', responseId, error: safeErrorMessage(postTasks.error) }))
+    const postTaskCostMicros = postTasks.costMicros
+    await settleCompletedResponse({
       responseId,
       usage,
       latencyMs: Date.now() - startedAt,

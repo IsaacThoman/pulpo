@@ -24,7 +24,7 @@ import { WorkspaceManager } from './controller.js'
 import { createWorkspaceTools } from './tools.js'
 import { publishAdminUsage } from '../admin/usage-events.js'
 import { buildAgentSystemPrompt, buildAgentUserPrompt, buildToolsDisabledSystemPrompt, withoutAgentTools } from './policy.js'
-import { runPostResponseTasks } from '../responses/post-tasks.js'
+import { runPostResponseTasks, type PostResponseTaskResult } from '../responses/post-tasks.js'
 import { calculateCostMicros, workspaceHoldMicros, workspaceUsageMicros } from '../accounting/pricing.js'
 import { truncateUtf8 } from './output.js'
 import { buildAgentOutput, type ToolTimelineItem } from './timeline.js'
@@ -1118,7 +1118,11 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
     await db.update(agentRuns).set({ status: 'completed', context: { systemPrompt: agentSystemPrompt, messages: messagesForPersistence(agent.state.messages), billingTurns }, modelTurns, toolCalls, completedAt: new Date(), updatedAt: new Date() }).where(eq(agentRuns.id, runId))
     const finalResponder = lastResponder ?? { runtime: active, pricing: await getActivePricing(active.model.id) }
     await db.update(responses).set({ actualModelId: finalResponder.runtime.model.id, pricingVersionId: finalResponder.pricing.id }).where(eq(responses.id, responseId))
-    const postTaskCostMicros = terminalStatus === 'completed' ? await runPostResponseTasks(record, finalResponder.runtime, completed?.output as unknown[] ?? [], requestLog.id).catch(async (error) => {
+    const postTasks: PostResponseTaskResult = terminalStatus === 'completed'
+      ? await runPostResponseTasks(record, finalResponder.runtime, completed?.output as unknown[] ?? [], requestLog.id)
+      : { costMicros: 0 }
+    if (postTasks.error) {
+      const error = postTasks.error
       if (finalResponder.runtime.codex && codexErrorRequiresReauthentication(error)) {
         await markCodexReauthenticationRequired(record.response.userId, 'Your Codex connection needs to be renewed.')
       }
@@ -1126,8 +1130,8 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
         level: 'warn', service: 'pulpo-worker', event: 'post_response_tasks.failed', responseId,
         error: finalResponder.runtime.codex ? safeCodexErrorMessage(error) : error instanceof Error ? error.message : String(error),
       }))
-      return 0
-    }) : 0
+    }
+    const postTaskCostMicros = postTasks.costMicros
     workspaceCostMicros = workspaceReadyAtMs !== undefined && settings.billWorkspaces
       ? workspaceUsageMicros(Date.now() - workspaceReadyAtMs, settings.workspacePricePerMinuteMicros)
       : 0

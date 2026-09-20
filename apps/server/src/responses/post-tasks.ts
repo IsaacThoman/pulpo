@@ -104,20 +104,41 @@ export async function persistGeneratedTitleResult(input: {
   })
 }
 
+/** Billed cost survives task failures so provider usage already incurred is still settled. */
+export interface PostResponseTaskResult {
+  costMicros: number
+  error?: unknown
+}
+
 export async function runPostResponseTasks(
   record: { response: typeof responses.$inferSelect },
   current: { model: typeof models.$inferSelect; provider: typeof providerConnections.$inferSelect },
   output: unknown[],
   requestLogId: string,
-): Promise<number> {
-  if (record.response.origin === 'api') return 0
+): Promise<PostResponseTaskResult> {
+  if (record.response.origin === 'api') return { costMicros: 0 }
+  let costMicros = 0
+  try {
+    await runTitleTask(record, current, output, requestLogId, (billedMicros) => { costMicros += billedMicros })
+    return { costMicros }
+  } catch (error) {
+    return { costMicros, error }
+  }
+}
+
+async function runTitleTask(
+  record: { response: typeof responses.$inferSelect },
+  current: { model: typeof models.$inferSelect; provider: typeof providerConnections.$inferSelect },
+  output: unknown[],
+  requestLogId: string,
+  onBilledCost: (costMicros: number) => void,
+): Promise<void> {
   const [setting] = await db.select().from(applicationSettings).where(eq(applicationSettings.key, 'interface')).limit(1)
   const task = parseInterfaceSettings(setting?.value)
   const runtime = await resolvePostTaskRuntime(task.localTask, current)
   const codex = runtime.provider.id === CODEX_PROVIDER_ID ? createCodexModels(record.response.userId) : null
   const codexModel = codex?.getModel('openai-codex', runtime.model.upstreamModelId)
   const client = codex ? null : createCatalogModelClient(runtime)
-  let costMicros = 0
   if (task.title !== false && !record.response.parentResponseId) {
     const history = selectTitleHistory(
       JSON.stringify([...(record.response.input as unknown[]), ...output]),
@@ -153,7 +174,7 @@ export async function runPostResponseTasks(
                   cachedInputTokens: response.usage.cacheRead, cacheWriteTokens: response.usage.cacheWrite,
                   outputTokens: response.usage.output, reasoningTokens: response.usage.reasoning ?? 0, totalTokens: response.usage.totalTokens,
                 },
-                title: validateGeneratedTitleResponse({ output_text: outputText, usage: { outputTokens: response.usage.output } }, maxOutputTokens),
+                validate: () => validateGeneratedTitleResponse({ output_text: outputText, usage: { outputTokens: response.usage.output } }, maxOutputTokens),
               }
             }
             if (!client) throw new Error('The pinned Pi Codex catalog no longer contains this model')
@@ -163,13 +184,14 @@ export async function runPostResponseTasks(
             return {
               id: response.id,
               usage: response.usage,
-              title: validateGeneratedTitleResponse(response, maxOutputTokens),
+              validate: () => validateGeneratedTitleResponse(response, maxOutputTokens),
             }
           },
         })
         if ('skipped' in billed) throw new TitleUnfundedError()
-        costMicros += billed.costMicros
-        return billed.result
+        // Bill before validating: an invalid title still consumed provider usage.
+        onBilledCost(billed.costMicros)
+        return { title: billed.result.validate() }
       })
       await persistGeneratedChatTitle({
         userId: record.response.userId,
@@ -180,5 +202,4 @@ export async function runPostResponseTasks(
       if (!(error instanceof TitleUnfundedError)) throw error
     }
   }
-  return costMicros
 }
