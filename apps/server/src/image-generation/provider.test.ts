@@ -8,6 +8,79 @@ const png = () => sharp({ create: { width: 16, height: 16, channels: 3, backgrou
 const options = (meta = false) => ({ model: model(meta), baseUrl: meta ? 'https://api.meta.ai/v1' : 'https://example.services.ai.azure.com', apiKey: 'SECRET', prompt: 'A red fox', references: [], signal: new AbortController().signal })
 const openaiOptions = () => ({ ...options(), model: { ...model(), ...OPENAI_IMAGE_PRESET }, baseUrl: 'https://api.openai.com/v1' })
 describe('image providers', () => {
+  it.each([
+    ['1:1', '1024x1024', 1024, 1024],
+    ['3:2', '1536x1024', 1200, 800],
+    ['2:3', '1024x1536', 800, 1200],
+  ] as const)('honors explicit %s framing using provider-supported dimensions', async (aspectRatio, size, width, height) => {
+    const data = await png()
+    for (const edit of [false, true]) {
+      const fetcher = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ data: [{ b64_json: data.toString('base64') }] }))
+      const references = edit ? [{ data, mimeType: 'image/png' }] : []
+      await generateImage({ ...openaiOptions(), aspectRatio, references, fetch: fetcher })
+      const body = fetcher.mock.calls[0]![1]!.body
+      expect(edit ? (body as FormData).get('size') : JSON.parse(String(body)).size).toBe(size)
+    }
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ data: [{ b64_json: data.toString('base64') }] }))
+    await generateImage({ ...options(), aspectRatio, fetch: fetcher })
+    expect(JSON.parse(String(fetcher.mock.calls[0]![1]!.body))).toMatchObject({ width, height, auto_aspect_ratio: false })
+    expect(width * height).toBeLessThanOrEqual(1_048_576)
+    expect(Math.min(width, height)).toBeGreaterThanOrEqual(768)
+  })
+  it.each([undefined, 'auto'] as const)('leaves %s framing to the model and preserves nonsquare edit references and results', async aspectRatio => {
+    for (const [width, height] of [[160, 90], [90, 160]] as const) {
+      const data = await sharp({ create: { width, height, channels: 3, background: '#f24' } }).png().toBuffer()
+      for (const base of [options(), openaiOptions()]) {
+        for (const edit of [false, true]) {
+          const fetcher = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ data: [{ b64_json: data.toString('base64') }] }))
+          const result = await generateImage({ ...base, aspectRatio, references: edit ? [{ data, mimeType: 'image/png' }] : [], fetch: fetcher })
+          expect(result.data).toEqual(data)
+          const body = fetcher.mock.calls[0]![1]!.body
+          const openai = base.model.adapter === 'openai-images'
+          if (edit) {
+            const form = body as FormData
+            expect(form.get(openai ? 'size' : 'auto_aspect_ratio')).toBe(openai ? 'auto' : 'true')
+            const reference = form.get(openai ? 'image[]' : 'image') as File
+            expect(await sharp(Buffer.from(await reference.arrayBuffer())).metadata()).toMatchObject({ width, height })
+            expect(form.has('width')).toBe(false)
+            expect(form.has('height')).toBe(false)
+          } else {
+            const payload = JSON.parse(String(body))
+            expect(payload).toMatchObject(openai ? { size: 'auto' } : { auto_aspect_ratio: true })
+            expect(payload).not.toHaveProperty('width')
+            expect(payload).not.toHaveProperty('height')
+          }
+        }
+      }
+    }
+  })
+  it('keeps older MAI deployments compatible without automatic aspect-ratio support', async () => {
+    const data = await png()
+    const legacy = { ...model(), name: 'MAI-Image-2.5', upstreamModelId: 'old-deployment', supportsAutoAspectRatio: undefined }
+    for (const edit of [false, true]) {
+      const fetcher = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ data: [{ b64_json: data.toString('base64') }] }))
+      await generateImage({ ...options(), model: legacy, references: edit ? [{ data, mimeType: 'image/png' }] : [], fetch: fetcher })
+      const body = fetcher.mock.calls[0]![1]!.body
+      if (edit) expect((body as FormData).has('auto_aspect_ratio')).toBe(false)
+      else expect(JSON.parse(String(body))).toEqual({ model: 'old-deployment', prompt: 'A red fox' })
+    }
+  })
+  it('passes explicit framing in the prompt for MAI edits and Muse without unsupported size parameters', async () => {
+    const data = await png()
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ data: [{ b64_json: data.toString('base64') }] }))
+    await generateImage({ ...options(), aspectRatio: '3:2', references: [{ data, mimeType: 'image/png' }], fetch: fetcher })
+    const form = fetcher.mock.calls[0]![1]!.body as FormData
+    expect(form.get('prompt')).toBe('A red fox\n\nOutput aspect ratio: 3:2.')
+    expect(form.get('auto_aspect_ratio')).toBe('true')
+    expect(form.has('width')).toBe(false)
+    expect(form.has('height')).toBe(false)
+    const metaFetch = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ status: 'completed', output: [{ type: 'image_generation_call', status: 'completed', result: data.toString('base64') }] }))
+    await generateImage({ ...options(true), aspectRatio: '2:3', fetch: metaFetch })
+    const body = JSON.parse(String(metaFetch.mock.calls[0]![1]!.body))
+    expect(body.input[0].content[0].text).toBe('A red fox\n\nOutput aspect ratio: 2:3.')
+    expect(body).not.toHaveProperty('size')
+    expect(body).not.toHaveProperty('auto_aspect_ratio')
+  })
   it('uses the OpenAI Images API with bearer auth, one PNG and optional token usage', async () => {
     const data = await png()
     const fetcher = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ data: [{ b64_json: data.toString('base64') }], usage: { input_tokens: 12, output_tokens: 30, total_tokens: 42 } }))
@@ -16,7 +89,7 @@ describe('image providers', () => {
     expect(url).toBe('https://api.openai.com/v1/images/generations')
     expect(request).toMatchObject({ method: 'POST', redirect: 'error', headers: { Authorization: 'Bearer SECRET', 'Content-Type': 'application/json' } })
     expect(request!.headers).not.toHaveProperty('api-key')
-    expect(JSON.parse(String(request!.body))).toEqual({ model: 'gpt-image-2.5-sunburst', prompt: 'A red fox', n: 1, size: '1024x1024', output_format: 'png' })
+    expect(JSON.parse(String(request!.body))).toEqual({ model: 'gpt-image-2.5-sunburst', prompt: 'A red fox', n: 1, size: 'auto', output_format: 'png' })
     expect(result).toEqual({ data, mimeType: 'image/png', text: '', usage: { inputTokens: 12, outputTokens: 30, totalTokens: 42 } })
     const withoutUsage = await generateImage({ ...openaiOptions(), fetch: async () => Response.json({ data: [{ b64_json: data.toString('base64') }] }) })
     expect(withoutUsage).not.toHaveProperty('usage')
@@ -34,7 +107,7 @@ describe('image providers', () => {
     expect(form).toBeInstanceOf(FormData)
     expect(form.get('model')).toBe(OPENAI_IMAGE_PRESET.upstreamModelId)
     expect(form.get('prompt')).toBe('A red fox')
-    expect(form.get('n')).toBe('1'); expect(form.get('size')).toBe('1024x1024'); expect(form.get('output_format')).toBe('png')
+    expect(form.get('n')).toBe('1'); expect(form.get('size')).toBe('auto'); expect(form.get('output_format')).toBe('png')
     expect(form.has('input')).toBe(false); expect(form.has('image')).toBe(false)
     const files = form.getAll('image[]') as File[]
     expect(files.map(file => file.name)).toEqual(['reference-1.png', 'reference-2.jpg', 'reference-3.webp', 'reference-4.png'])
@@ -102,7 +175,7 @@ describe('image providers', () => {
     const [url, request] = fetcher.mock.calls[0]!
     expect(url).toBe('https://example.services.ai.azure.com/mai/v1/images/generations')
     expect(request).toMatchObject({ redirect: 'error', headers: { 'api-key': 'SECRET' } })
-    expect(JSON.parse(String(request!.body))).toEqual({ model: 'my-deployment', prompt: 'A red fox', width: 1024, height: 1024 })
+    expect(JSON.parse(String(request!.body))).toEqual({ model: 'my-deployment', prompt: 'A red fox', auto_aspect_ratio: true })
     expect(result.data).toEqual(data); expect(result.mimeType).toBe('image/png')
     expect(imageProviderEndpoint('https://example.test/mai/v1/', 'azure-mai', true)).toBe('https://example.test/mai/v1/images/edits')
     expect(() => imageProviderEndpoint('https://example.test/openai/v1', 'azure-mai', false)).toThrow('Foundry')

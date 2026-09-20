@@ -5,6 +5,17 @@ import { AdminImageModelsPage } from './AdminImageModelsPage'
 const mocks = vi.hoisted(() => ({ api: vi.fn() }))
 vi.mock('@/lib/api', () => ({ apiRequest: mocks.api }))
 afterEach(() => { cleanup(); vi.clearAllMocks() })
+it.each([true, false])('saves the MAI automatic aspect-ratio capability as %s for custom deployments', async supported => {
+  const existing = { id: 'mai', adapter: 'azure-mai', name: 'Custom image model', upstreamModelId: 'custom-deployment', providerConnectionId: '11111111-1111-4111-8111-111111111111', supportsAutoAspectRatio: !supported }
+  mocks.api.mockImplementation(async (path: string) => ({ data: path.endsWith('/providers') ? [{ id: existing.providerConnectionId, name: 'Azure' }] : [existing] }))
+  render(<AdminImageModelsPage />)
+  fireEvent.click(await screen.findByRole('button', { name: 'Edit' }))
+  const checkbox = screen.getByLabelText('Automatic aspect ratio supported') as HTMLInputElement
+  expect(checkbox.checked).toBe(!supported)
+  fireEvent.click(checkbox)
+  fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+  await waitFor(() => expect(mocks.api).toHaveBeenCalledWith('/api/admin/image-models/mai', { method: 'PATCH', body: expect.objectContaining({ ...existing, supportsAutoAspectRatio: supported }) }))
+})
 it('creates an OpenAI preset with an editable model and provider connection', async () => {
   const providerId = '11111111-1111-4111-8111-111111111111'
   mocks.api.mockImplementation(async (path: string) => ({ data: path.endsWith('/providers') ? [{ id: providerId, name: 'OpenAI connection' }] : [] }))
