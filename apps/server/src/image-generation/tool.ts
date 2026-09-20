@@ -1,7 +1,7 @@
 /* eslint-disable preserve-caught-error -- Tool errors cross the model boundary; never attach raw provider causes. */
 import { Type } from '@earendil-works/pi-ai'
 import type { AgentTool } from '@earendil-works/pi-agent-core'
-import { imageGenerationInputSchema, IMAGE_PROVIDER_CAPABILITIES, IMAGE_REFERENCE_PATH_SHORTHAND_PATTERN, type ImageGenerationInput, type ImageModel } from '@pulpo/contracts'
+import { imageGenerationInputSchema, IMAGE_ASPECT_RATIOS, IMAGE_PROVIDER_CAPABILITIES, IMAGE_REFERENCE_PATH_SHORTHAND_PATTERN, type ImageGenerationInput, type ImageModel } from '@pulpo/contracts'
 import { AppError } from '../lib/errors.js'
 import { ImageGenerationError } from './provider.js'
 import type { ImageExecutionResult } from './service.js'
@@ -18,6 +18,9 @@ export function createImageGenerationTools(input: {
     description: `Generate or edit an image using the image model selected in the user’s Settings. Supply a detailed text prompt and optional reference images from chat attachments or workspace files. Prefer referenceImages: [{"path":"/workspace/photo.jpeg"}] for files or [{"attachmentId":"ATTACHMENT-UUID"}] for attachments. A workspace path string is also accepted; attachment IDs must use the explicit object form. This model accepts up to ${maxReferenceImages} reference image(s) in ${inputMimeTypes.map(type => type.replace('image/', '')).join(', ')} format. For edits, use the previous generated workspace path or an attached image as a reference. Saves the result only in the workspace and returns its path. The user cannot see the image until you explicitly call attach_file with that path. You MUST attach the file if you want the user to see it. You may inspect it with view_image first. If an edit fails, report the stated reason; do not guess a policy restriction or repeatedly retry the same image with reworded prompts.`,
     parameters: Type.Object({
       prompt: Type.String({ minLength: 1, maxLength: 32000 }),
+      aspectRatio: Type.Optional(Type.Union(IMAGE_ASPECT_RATIOS.map(ratio => Type.Literal(ratio)), {
+        description: 'Defaults to auto: let the image model choose framing from the prompt and references. Use 1:1 for square, 3:2 for landscape, or 2:3 for portrait when requested. For edits, ask in the prompt to preserve the reference aspect ratio unless the user requests a change. Other ratios can be described in the prompt with auto. OpenAI enforces explicit sizes; Azure enforces them for new images. Azure edits and Muse receive a prompt instruction, so exact proportions are not guaranteed.',
+      })),
       referenceImages: Type.Optional(Type.Array(Type.Union([
         Type.Object({ attachmentId: Type.String({ format: 'uuid' }) }, { additionalProperties: false }),
         Type.Object({ path: Type.String({ minLength: 1, maxLength: 4096 }) }, { additionalProperties: false }),

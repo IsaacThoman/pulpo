@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { AZURE_MAI_IMAGE_PRESET, IMAGE_MODEL_PRESETS, imageModelSchema, imagePriceLabel, imageTokenRateKeys, imageTokenRateLabel, type ImageModel } from '@pulpo/contracts'
+import { AZURE_MAI_IMAGE_PRESET, IMAGE_MODEL_PRESETS, imageModelSchema, imagePriceLabel, imageTokenRateKeys, imageTokenRateLabel, supportsMaiAutoAspectRatio, type ImageModel } from '@pulpo/contracts'
 import { apiRequest } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -47,12 +47,16 @@ export function AdminImageModelsPage() {
     <Dialog open={Boolean(draft)} onOpenChange={open => { if (!open && !saving) setDraft(null) }}><DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl"><DialogHeader><DialogTitle>{ui(editing ? 'Edit image model' : 'Add image model')}</DialogTitle></DialogHeader>{draft && <div className="space-y-4">
       <label className="block text-sm">{ui('Image provider API')}<select aria-label={ui('Image provider API')} disabled={saving} className="mt-1 w-full rounded border bg-background p-2" value={draft.adapter} onChange={event => {
         const preset = IMAGE_MODEL_PRESETS[event.target.value as ImageModel['adapter']]
-        setDraft(current => current ? { ...current, adapter: preset.adapter, name: preset.name, upstreamModelId: preset.upstreamModelId, enabled: false, billUsers: false, billingUnit: preset.billingUnit, tokenPrices: { ...preset.tokenPrices } } : current)
+        setDraft(current => current ? { ...current, adapter: preset.adapter, name: preset.name, upstreamModelId: preset.upstreamModelId, supportsAutoAspectRatio: preset.supportsAutoAspectRatio, enabled: false, billUsers: false, billingUnit: preset.billingUnit, tokenPrices: { ...preset.tokenPrices } } : current)
       }}>{(Object.keys(providerCopy) as ImageModel['adapter'][]).map(adapter => <option key={adapter} value={adapter}>{ui(providerCopy[adapter].label)}</option>)}</select></label>
       {text('id', 'ID')}{text('name', 'Display name')}
       <label className="block text-sm">{ui('Provider')}<select aria-label={ui('Provider')} disabled={saving} className="mt-1 w-full rounded border bg-background p-2" value={draft.providerConnectionId} onChange={event => field('providerConnectionId', event.target.value)}><option value="" disabled>{ui('Choose a provider')}</option>{providers.map(provider => <option key={provider.id} value={provider.id}>{provider.name}</option>)}</select></label>
       <p className="text-xs text-muted-foreground">{ui(providerCopy[draft.adapter].help)}</p>
       {text('upstreamModelId', providerCopy[draft.adapter].modelLabel)}
+      {draft.adapter === 'azure-mai' && <div className="space-y-1">
+        <label className="flex items-center gap-2 text-sm"><input type="checkbox" disabled={saving} checked={supportsMaiAutoAspectRatio(draft)} onChange={event => field('supportsAutoAspectRatio', event.target.checked)} />{ui('Automatic aspect ratio supported')}</label>
+        <p className="text-xs text-muted-foreground">{ui('Enable for MAI-Image-2.6 and MAI-Image-2.6-Flash deployments. Leave disabled for older MAI models.')}</p>
+      </div>}
       <label className="block text-sm">{ui('Sort order')}<Input type="number" min={0} step={1} disabled={saving} value={draft.sortOrder} onChange={event => field('sortOrder', Number(event.target.value))} /></label>
       <label className="flex items-center gap-2 text-sm"><input type="checkbox" disabled={saving} checked={draft.enabled} onChange={event => field('enabled', event.target.checked)} />{ui('Enabled')}</label>
       <label className="flex items-center gap-2 text-sm"><input type="checkbox" disabled={saving} checked={draft.billUsers} onChange={event => field('billUsers', event.target.checked)} />{ui('Bill users for images')}</label>

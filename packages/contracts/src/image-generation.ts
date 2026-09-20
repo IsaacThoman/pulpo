@@ -46,6 +46,8 @@ export const imageModelSchema = z.object({
   adapter: z.enum(['azure-mai', 'meta-muse', 'openai-images']),
   name: z.string().trim().min(1).max(120),
   upstreamModelId: z.string().trim().min(1).max(200),
+  // Optional for existing model records. Azure deployment names can be arbitrary.
+  supportsAutoAspectRatio: z.boolean().optional(),
   enabled: z.boolean().default(false),
   sortOrder: z.number().int().min(0).default(0),
   billUsers: z.boolean().default(false),
@@ -63,17 +65,26 @@ export const imageModelSchema = z.object({
   }
 })
 export type ImageModel = z.infer<typeof imageModelSchema>
+export function supportsMaiAutoAspectRatio(model: ImageModel): boolean {
+  if (model.adapter !== 'azure-mai') return false
+  if (model.supportsAutoAspectRatio !== undefined) return model.supportsAutoAspectRatio
+  // Recognize existing 2.6 presets without assuming older MAI deployments support it.
+  const identity = /^MAI-Image-\d/i.test(model.upstreamModelId) ? model.upstreamModelId : model.name
+  return /^MAI-Image-2\.6(?:-Flash)?$/i.test(identity)
+}
 export type PublicImageModel = Omit<ImageModel, 'providerConnectionId' | 'upstreamModelId'>
 export const AZURE_MAI_IMAGE_PRESET = {
   adapter: 'azure-mai', name: 'MAI-Image-2.6-Flash', upstreamModelId: 'MAI-Image-2.6-Flash',
   enabled: false, sortOrder: 0, billUsers: false, imagePriceMicros: 0,
   billingUnit: 'images', tokenPrices: imageTokenPricesSchema.parse({}), reservationMicros: 0,
+  supportsAutoAspectRatio: true,
 } satisfies Omit<ImageModel, 'id' | 'providerConnectionId'>
 export const META_MUSE_IMAGE_PRESET = {
-  ...AZURE_MAI_IMAGE_PRESET, adapter: 'meta-muse', name: 'Muse Image', upstreamModelId: 'muse-image-1.0',
+  ...AZURE_MAI_IMAGE_PRESET, adapter: 'meta-muse', name: 'Muse Image', upstreamModelId: 'muse-image-1.0', supportsAutoAspectRatio: false,
 } satisfies Omit<ImageModel, 'id' | 'providerConnectionId'>
 export const OPENAI_IMAGE_PRESET = {
   ...AZURE_MAI_IMAGE_PRESET, adapter: 'openai-images', name: 'GPT Image 2.5 Flare', upstreamModelId: 'gpt-image-2.5-flare',
+  supportsAutoAspectRatio: false,
   // Microdollars / 1M tokens, verified 2026-09-13: developers.openai.com/api/docs/models/gpt-image-2.5-flare
   tokenPrices: { input: 5_000_000, cachedInput: 1_250_000, imageInput: 8_000_000, cachedImageInput: 2_000_000, output: 0, imageOutput: 30_000_000 },
 } satisfies Omit<ImageModel, 'id' | 'providerConnectionId'>
@@ -106,8 +117,11 @@ export function imagePriceLabel(model: PublicImageModel, translate: (source: str
 export const IMAGE_GENERATION_MAX_BYTES = 20 * 1024 * 1024
 // Wire shorthand only; resolving the canonical path still requires workspace access checks.
 export const IMAGE_REFERENCE_PATH_SHORTHAND_PATTERN = '^/workspace/[^\\u0000]+$'
+export const IMAGE_ASPECT_RATIOS = ['auto', '1:1', '3:2', '2:3'] as const
+export type ImageAspectRatio = typeof IMAGE_ASPECT_RATIOS[number]
 export const imageGenerationInputSchema = z.object({
   prompt: z.string().trim().min(1).max(32_000),
+  aspectRatio: z.enum(IMAGE_ASPECT_RATIOS).optional(),
   referenceImages: z.array(z.union([
     z.object({ attachmentId: z.uuid() }).strict(),
     z.object({ path: z.string().trim().min(1).max(4096) }).strict(),

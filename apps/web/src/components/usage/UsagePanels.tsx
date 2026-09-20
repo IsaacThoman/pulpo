@@ -1,10 +1,10 @@
 import { useEffect, useRef, type UIEvent } from 'react'
-import { BarChart3, Zap } from 'lucide-react'
+import { Zap } from 'lucide-react'
 import type { MonitorUser, UsageRecord } from '@/lib/types'
 import { getCatalogModel } from '@/stores/catalog'
-import { formatBalance, formatUsd, formatUsageTime } from '@/lib/format'
-import { ModelIcon } from '@/components/ModelIcon'
+import { formatBalance, formatUsageTime } from '@/lib/format'
 import { UsageCostBreakdown } from './UsageCostBreakdown'
+import { UsageModelIcon } from './UsageModelIcon'
 import { ui, activeLocale } from '@/i18n/ui'
 
 /** Bordered panel with a scrollable, cursor-paginated records table. */
@@ -84,7 +84,7 @@ export function RecentUsagePanel({
               </thead>
               <tbody className="divide-y">
                 {records.map((r) => {
-                  const model = getCatalogModel(r.modelId)
+                  const model = r.model ?? getCatalogModel(r.modelId)
                   return (
                     <tr key={r.id}>
                       <td className="px-3 py-2 whitespace-nowrap text-muted-foreground">
@@ -92,7 +92,7 @@ export function RecentUsagePanel({
                       </td>
                       <td className="px-3 py-2">
                         <span className="flex min-w-0 max-w-48 items-center gap-1.5">
-                          <ModelIcon model={model} className="size-3.5 shrink-0 rounded-[2px]" />
+                          <UsageModelIcon modelId={model.id} logo={r.model?.logo} className="size-3.5 shrink-0 rounded-[2px]" />
                           <span className="truncate" title={model.name}>
                             {model.name}
                           </span>
@@ -131,51 +131,6 @@ export function RecentUsagePanel({
             </div>}
           </div>
         </>
-      )}
-    </div>
-  )
-}
-
-export interface TopModelStat {
-  modelId: string
-  calls: number
-  cost: number
-}
-
-/** Ranked model list: position, icon, name, call count and spend. */
-export function TopModelsPanel({ models }: { models: TopModelStat[] }) {
-  return (
-    <div className="min-w-0 rounded-lg border">
-      <div className="flex items-center gap-2 border-b px-3 py-2">
-        <BarChart3 className="size-3" />
-        <h3 className="text-xs font-medium">{ui("Top models")}</h3>
-      </div>
-
-      {models.length === 0 ? (
-        <div className="p-6 text-center text-xs text-muted-foreground">{ui("No usage records yet")}</div>
-      ) : (
-        <div className="max-h-96 divide-y overflow-y-auto">
-          {models.map((m, i) => {
-            const model = getCatalogModel(m.modelId)
-            return (
-              <div key={m.modelId} className="flex items-center justify-between gap-2 px-3 py-2">
-                <div className="flex min-w-0 flex-1 items-center gap-2">
-                  <span className="flex w-4 shrink-0 justify-center text-xs text-muted-foreground">
-                    {i + 1}
-                  </span>
-                  <ModelIcon model={model} className="size-4 shrink-0 rounded-[2px]" />
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-xs" title={model.name}>
-                      {model.name}
-                    </p>
-                    <p className="text-xs text-muted-foreground">{m.calls.toLocaleString(activeLocale())} {ui("calls")}</p>
-                  </div>
-                </div>
-                <span className="shrink-0 text-xs tabular-nums">{formatUsd(m.cost)}</span>
-              </div>
-            )
-          })}
-        </div>
       )}
     </div>
   )

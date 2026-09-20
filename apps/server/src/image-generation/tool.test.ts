@@ -9,6 +9,16 @@ const fixture = {
   model: { ...META_MUSE_IMAGE_PRESET, id: 'muse', providerConnectionId: '11111111-1111-4111-8111-111111111111' },
 }
 describe('generate_image tool', () => {
+  it.each(['auto', '1:1', '3:2', '2:3'])('passes %s framing through tool validation and execution', async aspectRatio => {
+    const execute = vi.fn().mockResolvedValue(fixture)
+    const tool = createImageGenerationTools({ model: fixture.model, execute, onStarted: vi.fn() })[0]!
+    const args = validateToolCall([tool], { type: 'toolCall', id: 'call', name: 'generate_image', arguments: { prompt: 'A fox', aspectRatio } })
+    await tool.execute('call', args)
+    expect(execute).toHaveBeenCalledExactlyOnceWith('call', { prompt: 'A fox', aspectRatio }, undefined)
+    expect(() => validateToolCall([tool], { type: 'toolCall', id: 'bad', name: 'generate_image', arguments: { prompt: 'A fox', aspectRatio: 'invalid' } })).toThrow()
+    await expect(tool.execute('bad', { prompt: 'A fox', aspectRatio: 'invalid' })).rejects.toThrow('Invalid image generation arguments')
+    expect(execute).toHaveBeenCalledTimes(1)
+  })
   it.each(['azure-mai', 'meta-muse', 'openai-images'] as const)('accepts path shorthand through the actual %s tool validator and executes canonical arguments', async adapter => {
     const execute = vi.fn().mockResolvedValue(fixture)
     const tool = createImageGenerationTools({ model: { ...fixture.model, ...IMAGE_MODEL_PRESETS[adapter] }, execute, onStarted: vi.fn() })[0]!
@@ -36,7 +46,7 @@ describe('generate_image tool', () => {
     const callbacks = { execute: vi.fn(), onStarted: vi.fn() }
     expect(createImageGenerationTools({ model: null, ...callbacks })).toEqual([])
     const tool = createImageGenerationTools({ model: fixture.model, ...callbacks })[0]!
-    expect(Object.keys((tool.parameters as unknown as { properties: object }).properties)).toEqual(['prompt', 'referenceImages', 'filename'])
+    expect(Object.keys((tool.parameters as unknown as { properties: object }).properties)).toEqual(['prompt', 'aspectRatio', 'referenceImages', 'filename'])
     expect(tool.parameters).toMatchObject({ additionalProperties: false })
   })
   it('returns only the workspace file and explicitly requires attach_file for visibility', async () => {

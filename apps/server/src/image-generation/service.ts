@@ -174,7 +174,7 @@ export async function executeImageGeneration(input: {
     const signal = AbortSignal.any([...(input.signal ? [input.signal] : []), AbortSignal.timeout(provider.requestTimeoutMs)])
     const referenceMetadata = await Promise.all(references.map(async reference => { const m = await sharp(reference.data).metadata().catch(() => ({ width: undefined, height: undefined })); return { mimeType: reference.mimeType, sizeBytes: reference.data.length, width: m.width, height: m.height } }))
     const fetch = diagnosticFetch({ purpose: references.length ? 'image_edit' : 'image_generation', userId: input.userId, requestLogId: input.requestLogId, operationId: input.operationId, providerId: provider.id, modelId: model.id, upstreamModelId: model.upstreamModelId, metadata: { references: referenceMetadata, billingUnit: model.billingUnit } })
-    const result = await generateImage({ fetch, model, baseUrl: provider.baseUrl, apiKey: decryptSecret(provider.encryptedApiKey, getConfig().ENCRYPTION_KEY), prompt: input.args.prompt, references, signal })
+    const result = await generateImage({ fetch, model, baseUrl: provider.baseUrl, apiKey: decryptSecret(provider.encryptedApiKey, getConfig().ENCRYPTION_KEY), prompt: input.args.prompt, aspectRatio: input.args.aspectRatio, references, signal })
     providerSucceeded = true
     const { data, mimeType, ...metadata } = result
     await db.update(imageGenerationRequests).set({ result: metadata, updatedAt: new Date() }).where(condition)
