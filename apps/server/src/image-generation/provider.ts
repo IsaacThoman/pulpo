@@ -1,5 +1,5 @@
 import sharp from 'sharp'
-import { IMAGE_GENERATION_MAX_BYTES, IMAGE_PROVIDER_CAPABILITIES, type ImageModel } from '@pulpo/contracts'
+import { IMAGE_GENERATION_MAX_BYTES, IMAGE_PROVIDER_CAPABILITIES, supportsMaiAutoAspectRatio, type ImageAspectRatio, type ImageModel } from '@pulpo/contracts'
 import { detectImageMime } from '../agent/images.js'
 import { parseImageUsage, type ImageUsage } from './pricing.js'
 import { imageProviderError } from './provider-error.js'
@@ -97,6 +97,7 @@ interface ImageRequest {
   apiKey: string
   prompt: string
   references: ImageReference[]
+  aspectRatio?: ImageAspectRatio
 }
 interface ImageAdapter {
   path: (basePath: string, edit: boolean) => string
@@ -121,6 +122,21 @@ function imageForm(input: ImageRequest, imageField: string): FormData {
   return form
 }
 
+const imageDimensions = {
+  '1:1': { openai: '1024x1024', mai: { width: 1024, height: 1024 } },
+  '3:2': { openai: '1536x1024', mai: { width: 1200, height: 800 } },
+  '2:3': { openai: '1024x1536', mai: { width: 800, height: 1200 } },
+} as const
+
+function requestedDimensions(input: ImageRequest) {
+  return input.aspectRatio && input.aspectRatio !== 'auto' ? imageDimensions[input.aspectRatio] : undefined
+}
+
+// Muse and MAI edits have no documented explicit output-size parameter.
+function aspectRatioPrompt(input: ImageRequest): string {
+  return requestedDimensions(input) ? `${input.prompt}\n\nOutput aspect ratio: ${input.aspectRatio}.` : input.prompt
+}
+
 const adapters: Record<ImageModel['adapter'], ImageAdapter> = {
   'azure-mai': {
     path: (path, edit) => {
@@ -130,8 +146,17 @@ const adapters: Record<ImageModel['adapter'], ImageAdapter> = {
     },
     request: input => {
       const headers: Record<string, string> = { 'api-key': input.apiKey }
-      if (input.references.length) return { headers, body: imageForm(input, 'image') }
-      return { headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify({ model: input.model.upstreamModelId, prompt: input.prompt, width: 1024, height: 1024 }) }
+      const automatic = supportsMaiAutoAspectRatio(input.model)
+      if (input.references.length) {
+        const body = imageForm({ ...input, prompt: aspectRatioPrompt(input) }, 'image')
+        if (automatic) body.set('auto_aspect_ratio', 'true')
+        return { headers, body }
+      }
+      const dimensions = requestedDimensions(input)
+      const options = dimensions
+        ? { ...dimensions.mai, ...(automatic ? { auto_aspect_ratio: false } : {}) }
+        : automatic ? { auto_aspect_ratio: true } : {}
+      return { headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify({ model: input.model.upstreamModelId, prompt: input.prompt, ...options }) }
     },
     result: imagesResult,
   },
@@ -139,7 +164,7 @@ const adapters: Record<ImageModel['adapter'], ImageAdapter> = {
     path: (path, edit) => `${path || '/v1'}/images/${edit ? 'edits' : 'generations'}`,
     request: input => {
       const headers: Record<string, string> = { Authorization: `Bearer ${input.apiKey}` }
-      const options = { n: 1, size: '1024x1024', output_format: 'png' }
+      const options = { n: 1, size: requestedDimensions(input)?.openai ?? 'auto', output_format: 'png' }
       if (input.references.length) {
         const body = imageForm(input, 'image[]')
         for (const [key, value] of Object.entries(options)) body.set(key, String(value))
@@ -151,7 +176,9 @@ const adapters: Record<ImageModel['adapter'], ImageAdapter> = {
   },
   'meta-muse': {
     path: path => `${path || '/v1'}/responses`,
-    request: ({ model, prompt, references, apiKey }) => {
+    request: input => {
+      const { model, references, apiKey } = input
+      const prompt = aspectRatioPrompt(input)
       const parts: Array<Record<string, unknown>> = [{ type: 'input_text', text: prompt }]
       const prior: Array<Record<string, unknown>> = []
       for (const reference of references) {
@@ -186,6 +213,7 @@ export function imageProviderEndpoint(baseUrl: string, adapter: ImageModel['adap
 
 export async function generateImage(input: {
   model: ImageModel; baseUrl: string; apiKey: string; prompt: string; references: ImageReference[]; signal: AbortSignal
+  aspectRatio?: ImageAspectRatio
   fetch?: typeof fetch
 }): Promise<GeneratedImageResult> {
   const { model, prompt, references, signal } = input
