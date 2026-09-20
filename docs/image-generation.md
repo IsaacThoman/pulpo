@@ -16,6 +16,11 @@ same encrypted provider connections as chat and speech. Apply migration
    to populate a disabled preset. Set a stable local ID, display name, provider,
    and sort order.
 3. For MAI-Image-2.6-Flash, enter your deployed model's **deployment name**.
+   Enable **Automatic aspect ratio supported** for MAI-Image-2.6 and
+   MAI-Image-2.6-Flash; leave it disabled for older MAI deployments. The 2.6
+   preset enables this capability. Existing records recognize the canonical
+   2.6 model ID or display name; custom deployment and display names require
+   explicitly enabling the checkbox. No database migration is required.
    For Muse, use the upstream model ID `muse-image-1.0`.
    OpenAI defaults to `gpt-image-2.5-flare`; the upstream model ID is editable,
    for example to use `gpt-image-2.5-sunburst`. This adapter targets GPT Image
@@ -47,8 +52,14 @@ remove or reassign those models first.
 
 The Azure adapter follows the [Foundry MAI image API](https://learn.microsoft.com/en-us/azure/foundry/foundry-models/how-to/use-foundry-models-mai-image):
 JSON generations at `/mai/v1/images/generations`, multipart edits at
-`/mai/v1/images/edits`, API-key authentication, and PNG output. Text generations
-use 1024 × 1024 output. Edits accept one JPEG or PNG reference.
+`/mai/v1/images/edits`, API-key authentication, and PNG output. With automatic
+aspect-ratio support enabled, both generation and editing send
+`auto_aspect_ratio: true` so the model chooses framing from the prompt and
+references. Older deployments retain their provider defaults. Explicit square,
+landscape, and portrait requests use 1024 × 1024, 1200 × 800, and 800 × 1200
+for text generations, within MAI's dimension and pixel limits. Edits accept
+one JPEG or PNG reference; explicit proportions are requested in the prompt
+because MAI does not document width/height parameters for edits.
 
 The Meta adapter follows the [Muse Image Responses cookbook](https://github.com/meta-models/meta-model-cookbook/tree/main/05_muse_image/01_image_api_fundamentals).
 It sends `/v1/responses` requests with `store: false`, extracts
@@ -60,8 +71,10 @@ Generation and reasoning options remain at provider defaults.
 
 The OpenAI adapter follows the [OpenAI Image API](https://developers.openai.com/api/docs/guides/image-generation):
 JSON generations at `/v1/images/generations`, multipart edits at
-`/v1/images/edits`, and bearer authentication. Pulpo requests one 1024 × 1024 PNG
-with quality left at the provider default. Edits upload up to four PNG, JPEG,
+`/v1/images/edits`, and bearer authentication. Pulpo requests one PNG with
+`size: "auto"` and quality left at the provider default. Explicit square,
+landscape, and portrait requests use 1024 × 1024, 1536 × 1024, and 1024 × 1536
+for both generation and editing. Edits upload up to four PNG, JPEG,
 or WebP references using `image[]`, including saved attachments from earlier
 turns. No Responses API conversation or additional text model is required.
 Returned usage breakdowns are saved as operation metadata. Token billing sums
@@ -118,6 +131,15 @@ authorized workspace manager. Pulpo validates decoded image content, rejects
 animation, and limits images to 20 MiB and 40 megapixels; prompts are limited to
 32,000 UTF-8 bytes. There is no tool field for choosing a model or supplying
 thinking text.
+
+The optional `aspectRatio` argument accepts `auto` (the default), `1:1` (square),
+`3:2` (landscape), and `2:3` (portrait). With `auto`, describe the intended
+composition or another aspect ratio in the prompt. For edits, ask to preserve
+the reference image's proportions unless the user requests reframing.
+OpenAI and MAI text generations use explicit sizes for the three fixed ratios.
+Muse and MAI edits receive a prompt instruction instead, so exact proportions
+are model-dependent. Automatic sizing can still produce squares when suitable;
+it removes Pulpo's forced square request. Existing images are not modified.
 
 Before an edit is sent upstream, Pulpo re-encodes each reference as a standard
 single image in its validated JPEG, PNG, or WebP format. This applies EXIF

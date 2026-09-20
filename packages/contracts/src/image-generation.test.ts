@@ -1,5 +1,24 @@
 import { expect, it } from 'vitest'
-import { IMAGE_MODEL_PRESETS, imageModelSchema, imageGenerationPreferencesSchema, imageGenerationInputSchema, managementAccountSettingsSchema } from './index.js'
+import { IMAGE_MODEL_PRESETS, imageModelSchema, imageGenerationPreferencesSchema, imageGenerationInputSchema, managementAccountSettingsSchema, supportsMaiAutoAspectRatio } from './index.js'
+it('accepts optional automatic, square, landscape and portrait framing', () => {
+  for (const aspectRatio of [undefined, 'auto', '1:1', '3:2', '2:3']) {
+    expect(imageGenerationInputSchema.parse({ prompt: 'Paint a fox', aspectRatio }).aspectRatio).toBe(aspectRatio)
+  }
+  for (const aspectRatio of ['landscape', '0:1', '1024x1024', 1, null]) {
+    expect(imageGenerationInputSchema.safeParse({ prompt: 'Paint a fox', aspectRatio }).success).toBe(false)
+  }
+})
+it('recognizes existing MAI 2.6 models and supports explicit deployment capability overrides', () => {
+  const model = imageModelSchema.parse({ ...IMAGE_MODEL_PRESETS['azure-mai'], id: 'mai', providerConnectionId: '11111111-1111-4111-8111-111111111111', supportsAutoAspectRatio: undefined })
+  expect(supportsMaiAutoAspectRatio(model)).toBe(true)
+  expect(supportsMaiAutoAspectRatio({ ...model, upstreamModelId: 'custom-deployment' })).toBe(true)
+  expect(supportsMaiAutoAspectRatio({ ...model, name: 'Custom', upstreamModelId: 'MAI-Image-2.6' })).toBe(true)
+  expect(supportsMaiAutoAspectRatio({ ...model, upstreamModelId: 'MAI-Image-2.5' })).toBe(false)
+  expect(supportsMaiAutoAspectRatio({ ...model, name: 'Custom', upstreamModelId: 'custom' })).toBe(false)
+  expect(supportsMaiAutoAspectRatio({ ...model, name: 'Custom', upstreamModelId: 'custom', supportsAutoAspectRatio: true })).toBe(true)
+  expect(supportsMaiAutoAspectRatio({ ...model, supportsAutoAspectRatio: false })).toBe(false)
+  expect(supportsMaiAutoAspectRatio({ ...model, adapter: 'meta-muse', supportsAutoAspectRatio: true })).toBe(false)
+})
 it('defaults to disabled and preserves selection in management account settings', () => {
   expect(imageGenerationPreferencesSchema.parse(undefined)).toEqual({ enabled: false, modelId: null })
   const imageGeneration = { enabled: true, modelId: 'muse' }
