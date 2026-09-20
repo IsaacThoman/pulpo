@@ -44,8 +44,21 @@ The reservation fully funds the transmitted output cap **at configured prices
 and estimated input usage**. Input still uses the existing JSON-length estimate;
 provider-reported prices, multimodal accounting, hidden provider overhead, and
 unreported usage from a broken connection can differ. This does not promise an
-exact ceiling on a provider invoice. Settlement retains the existing
-`reservation_exceeded` guard rather than silently debiting unreserved credit.
+exact ceiling on a provider invoice.
+
+Because the reservation is an estimate, settlement never fails when actual
+usage exceeds it. Under the same pool and account locks as a resize, settlement
+grows the reservation toward the actual cost as far as the subscription
+allowance, unreserved balances, and API-key limits permit, then charges that
+amount. Any remainder the account cannot fund is absorbed by Pulpo: it is
+recorded as `uncoveredCostMicros` in the usage ledger entry and logged as
+`settlement.overrun_absorbed`. Balances never go negative and other pending
+reservations are never drawn on.
+
+Once an answer is completed, billing errors are logged
+(`billing.settlement_failed`) instead of marking the answer failed. Optional
+post-response work such as title generation is skipped when it cannot be
+reserved, and its incurred cost is settled even if its output is rejected.
 
 ## Verification
 
