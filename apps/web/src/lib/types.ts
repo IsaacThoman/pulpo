@@ -136,6 +136,7 @@ export interface UsageRecord {
   timestamp: number
   userId: string
   modelId: string
+  model?: { id: string; name: string; logo: string | null }
   tokensIn: number
   tokensOut: number
   cost: number

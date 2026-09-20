@@ -13,7 +13,8 @@ import { fetchBillingSummary } from '@/lib/billing'
 import { ToggleGroup } from '@/components/usage/ToggleGroup'
 import { StatsRow } from '@/components/usage/StatsRow'
 import { DailyUsageChart } from '@/components/usage/DailyUsageChart'
-import { RecentUsagePanel, TopModelsPanel } from '@/components/usage/UsagePanels'
+import { RecentUsagePanel } from '@/components/usage/UsagePanels'
+import { PublicTopModelsPanel, type PublicTopModel } from '@/components/usage/PublicUsagePanels'
 import { Button } from '@/components/ui/button'
 import { SubscriptionUsageBars } from '@/components/SubscriptionUsageBars'
 import { ui } from '@/i18n/ui'
@@ -35,7 +36,8 @@ interface PersonalActivity {
   summary: { calls: number; inputTokens: number; outputTokens: number; costMicros: number; inferenceReferenceCostMicros: number; firstUsedAt: string | null }
   daily: SettledDailyRow[]
   contribution: SettledDailyRow[]
-  topModels: Array<{ modelId: string; calls: number; costMicros: number }>
+  topModels: PublicTopModel[]
+  modelNames: Record<string, string>
   balanceMicros: number
   balanceKind: 'account' | 'pool'
 }
@@ -45,6 +47,7 @@ interface PersonalRecordRow {
   createdAt: string
   userId: string
   modelId: string
+  model: { id: string; name: string; logo: string | null }
   inputTokens: number
   outputTokens: number
   costMicros: number
@@ -113,6 +116,7 @@ export function PersonalPage() {
     timestamp: Date.parse(row.createdAt),
     userId: row.userId,
     modelId: row.modelId,
+    model: row.model,
     tokensIn: row.inputTokens,
     tokensOut: row.outputTokens,
     cost: row.costMicros / 1_000_000,
@@ -184,6 +188,7 @@ export function PersonalPage() {
             data={dailyUsage}
             contributionData={contributionUsage}
             metric={metric}
+            modelNames={activity?.modelNames}
             periodDayCount={periodDays(range, activity?.summary.firstUsedAt ? Date.parse(activity.summary.firstUsedAt) : null)}
           />
           <div className="grid gap-4 lg:grid-cols-3">
@@ -197,11 +202,7 @@ export function PersonalPage() {
                 onLoadMore={() => void recordsQuery.fetchNextPage()}
               />
             </div>
-            <TopModelsPanel models={(activity?.topModels ?? []).map((model) => ({
-              modelId: model.modelId,
-              calls: model.calls,
-              cost: model.costMicros / 1_000_000,
-            }))} />
+            <PublicTopModelsPanel models={activity?.topModels ?? []} />
           </div>
         </>
       )}

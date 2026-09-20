@@ -215,6 +215,7 @@ export async function loadUsageActivity(input: {
       firstUsedAt: totals?.firstUsedAt ?? null,
     },
     daily: [...dailyByModel.values()],
+    modelNames: Object.fromEntries([...displayedModels.values()].map((model) => [model.id, model.name])),
     contribution: contribution.map((row) => ({ ...row, calls: Number(row.calls), inputTokens: Number(row.inputTokens), cacheWriteTokens: Number(row.cacheWriteTokens), outputTokens: Number(row.outputTokens), costMicros: Number(row.costMicros) })),
     topModels: [...topByModel.values()].sort((a, b) => b.costMicros - a.costMicros).slice(0, 10),
   }
@@ -292,15 +293,19 @@ export async function registerUsageRoutes(app: FastifyInstance): Promise<void> {
     const canonical = canonicalUsageModels(displayModels)
     const last = page.at(-1)?.usage
     return {
-      data: page.map(({ usage, balanceAfterMicros }, index) => ({
-        ...usage,
-        // Presentation follows the user's selected model; cost and pricing fields
-        // remain those of the actual responder recorded on the usage event.
-        modelId: canonical.get(displayModels[index]!.modelId)?.modelId ?? displayModels[index]!.modelId,
-        inferenceReferenceCostMicros: Number(usage.inferenceReferenceCostMicros),
-        subscriptionCoveredMicros: Number(usage.weeklyCostMicros),
-        balanceAfterMicros,
-      })),
+      data: page.map(({ usage, balanceAfterMicros }, index) => {
+        const model = canonical.get(displayModels[index]!.modelId) ?? displayModels[index]!
+        return {
+          ...usage,
+          // Presentation follows the user's selected model; cost and pricing fields
+          // remain those of the actual responder recorded on the usage event.
+          modelId: model.modelId,
+          model: { id: model.modelId, name: model.modelName, logo: model.modelLogo },
+          inferenceReferenceCostMicros: Number(usage.inferenceReferenceCostMicros),
+          subscriptionCoveredMicros: Number(usage.weeklyCostMicros),
+          balanceAfterMicros,
+        }
+      }),
       nextCursor: rows.length > query.limit && last ? encodeUsageCursor({ createdAt: last.createdAt, id: last.id }) : null,
     }
   })
