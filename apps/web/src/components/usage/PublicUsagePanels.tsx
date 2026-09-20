@@ -1,8 +1,6 @@
 import { useEffect, useRef, type UIEvent } from 'react'
-import { UNKNOWN_MODEL_ID } from '@pulpo/contracts'
 import { BarChart3, Zap } from 'lucide-react'
-import { getCatalogModel } from '@/stores/catalog'
-import { ModelIcon } from '@/components/ModelIcon'
+import { UsageModelIcon } from './UsageModelIcon'
 import { formatUsd } from '@/lib/format'
 import { ProfileAvatar } from '@/components/ProfileAvatar'
 import { UsageCostBreakdown } from './UsageCostBreakdown'
@@ -26,13 +24,6 @@ export interface PublicTopModel {
   logo: string | null
   calls: number
   costMicros: number
-}
-
-function UsageModelIcon({ modelId, logo }: { modelId: string; logo: string | null }) {
-  const iconModelId = modelId === 'other' ? UNKNOWN_MODEL_ID : modelId
-  const catalogModel = getCatalogModel(iconModelId)
-  const model = logo ? { ...catalogModel, modelLogo: logo, modelCustomIcon: null } : catalogModel
-  return <ModelIcon model={model} className="size-4 shrink-0 rounded-[2px]" />
 }
 
 export function PublicRecentUsagePanel({
