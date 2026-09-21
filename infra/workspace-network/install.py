@@ -5,7 +5,9 @@ Run on the Linux K3s node with the adjacent .nft, .service, and .conf files.
 Leaves a timed rollback armed until a separate --confirm after verification.
 """
 import argparse
+import contextlib
 import datetime
+import fcntl
 import json
 import os
 from pathlib import Path
@@ -34,10 +36,30 @@ def backup_path(value):
     return path
 
 
-def rollback(backup):
+@contextlib.contextmanager
+def installation_lock():
+    # Every installer copy (including timer callbacks) uses the same lock.
+    # Keep this file in place: unlinking it would let callers lock different inodes.
+    BACKUPS.mkdir(parents=True, mode=0o700, exist_ok=True)
+    with (BACKUPS / '.lock').open('a') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        yield
+
+
+def pending_installations():
+    return [state.parent for state in sorted(BACKUPS.glob('*/state.json'))
+            if not (state.parent / 'confirmed').exists()
+            and not (state.parent / 'rolled-back').exists()]
+
+
+def rollback(backup, *, automatic=False):
+    # Caller holds installation_lock through both state checks and restoration.
     state = json.loads((backup / 'state.json').read_text())
     if (backup / 'rolled-back').exists():
         print('This installation has already been rolled back:', backup)
+        return
+    if automatic and (backup / 'confirmed').exists():
+        print('Skipping automatic rollback of confirmed installation:', backup)
         return
     subprocess.run(['systemctl', 'stop', state['timer'] + '.timer'], capture_output=True)
     # Replace only our table, in one transaction. No KUBE/FLANNEL tables touched.
@@ -60,33 +82,49 @@ def rollback(backup):
     print('Restored network configuration from', backup)
 
 
-def main():
+def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     group = parser.add_mutually_exclusive_group()
     group.add_argument('--confirm', type=backup_path)
     group.add_argument('--rollback', type=backup_path)
+    group.add_argument('--auto-rollback', type=backup_path, help=argparse.SUPPRESS)
     parser.add_argument('--rollback-seconds', type=int, default=600)
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     if os.geteuid() != 0:
         parser.error('run as root')
+    with installation_lock():
+        apply(args, parser)
+
+
+def apply(args, parser):
+    if args.auto_rollback:
+        rollback(args.auto_rollback, automatic=True)
+        return
     if args.rollback:
+        if any(backup != args.rollback for backup in pending_installations()):
+            parser.error('resolve the pending installation before rolling back an older backup')
         rollback(args.rollback)
         return
     if args.confirm:
         backup = args.confirm
+        if any(pending != backup for pending in pending_installations()):
+            parser.error('confirm the pending installation instead of an older backup')
         state = json.loads((backup / 'state.json').read_text())
         if (backup / 'rolled-back').exists():
             parser.error('rollback already ran; reinstall and reverify')
         run('systemctl', 'is-active', SERVICE)
         run('/usr/sbin/nft', 'list', 'table', 'inet', TABLE, stdout=subprocess.DEVNULL)
         run('systemctl', 'stop', state['timer'] + '.timer')
-        if (backup / 'rolled-back').exists():
-            parser.error('rollback ran during confirmation; reinstall and reverify')
+        # A timer service may already be waiting for our lock. Its automatic
+        # rollback will see this marker before it can restore anything.
         (backup / 'confirmed').touch()
         print('Confirmed installation; rollback timer cancelled:', backup)
         return
     if args.rollback_seconds < 60:
         parser.error('rollback window must be at least 60 seconds')
+    pending = pending_installations()
+    if pending:
+        parser.error('confirm or roll back the pending installation first: ' + str(pending[0]))
     source = Path(__file__).resolve().parent
     for name, dest in FILES.items():
         if not (source / name).is_file():
@@ -118,7 +156,7 @@ def main():
     (backup / 'state.json').write_text(json.dumps(state, indent=2) + '\n')
     shutil.copy2(__file__, backup / 'install.py')
     run('systemd-run', '--unit=' + state['timer'], '--on-active=' + str(args.rollback_seconds) + 's',
-        sys.executable, str(backup / 'install.py'), '--rollback', str(backup))
+        sys.executable, str(backup / 'install.py'), '--auto-rollback', str(backup))
     try:
         for name, dest in FILES.items():
             path = Path(dest)

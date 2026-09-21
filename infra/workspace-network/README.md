@@ -81,6 +81,15 @@ leave the rollback timer armed after a successful deployment. The timer is a
 transient systemd timer; it is not a substitute for recovery access across a
 host reboot. Complete confirmation before rebooting.
 
+Installation, confirmation and rollback share a file lock under the backup
+directory. A second installation is refused until the pending installation is
+confirmed or rolled back. This also detects pending backups from older versions;
+resolve those using their preserved installer before upgrading this bundle.
+Do not remove the lock file or edit backup markers to bypass a pending install.
+Confirmation waits for an executing rollback and fails if restoration has already
+completed. If confirmation wins the lock, a queued automatic rollback skips the
+confirmed installation. Explicit manual rollback remains available afterward.
+
 Review loaded rules and persistence with:
 
 ```sh
@@ -147,6 +156,14 @@ enabled/active state. On first installation it removes that table and its files,
 returning to the previous K3s behavior where ping and IPv6 link-local application
 connections are permitted. It never flushes
 the full ruleset or stops K3s.
+
+## Installer regression tests
+
+Run `python3 -m unittest discover -s infra/workspace-network -p 'test_*.py'`
+from the repository root. CI runs these tests with simulated host commands and
+real file locking, including concurrent installers and both orderings of
+confirmation versus automatic rollback. They do not change host firewall rules
+or replace the live connectivity checks above.
 
 ## External network boundary
 
