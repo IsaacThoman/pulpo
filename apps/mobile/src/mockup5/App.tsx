@@ -5649,7 +5649,13 @@ function ChatView({
                       }}
                     />
                 </ComposerQueueSection>
-              <ModelWarningBanner model={prototypeModel} />
+              <ModelWarningBanner
+                model={prototypeModel}
+                onSelectModel={(id) => {
+                  const target = models.find((candidate) => candidate.id === id);
+                  if (target) onSelectModel(target);
+                }}
+              />
               {messageEdit ? (
                 <View style={styles.messageEditBanner}>
                   <Icon name="pencil" size={12} color={COLORS.muted} />

@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { PrototypeModel } from '../domain'
 
 const mocks = vi.hoisted(() => ({
+  markdown: { text: '', onLinkPress: undefined as ((url: string) => boolean) | undefined },
   state: {
     preferences: { showModelWarnings: true, modelWarningDismissals: {} as Record<string, { at: string; hash: string }> },
     models: [] as PrototypeModel[],
@@ -17,7 +18,12 @@ vi.mock('react-native', () => ({
   Pressable: ({ children, onPress, accessibilityLabel }: { children: ReactNode; onPress: () => void; accessibilityLabel: string }) =>
     createElement('button', { onClick: onPress, 'aria-label': accessibilityLabel }, children),
 }))
-vi.mock('../../../components/SafeMarkdown', () => ({ SafeMarkdown: ({ children }: { children: string }) => createElement('p', null, children) }))
+vi.mock('../../../components/SafeMarkdown', () => ({
+  SafeMarkdown: ({ children, onLinkPress }: { children: string; onLinkPress?: (url: string) => boolean }) => {
+    mocks.markdown = { text: children, onLinkPress }
+    return createElement('p', null, children)
+  },
+}))
 vi.mock('../../../platform/SymbolView', () => ({ SymbolView: () => null }))
 vi.mock('../theme', () => ({ useAppTheme: () => ({ fillStrong: '#eee', secondary: '#666' }) }))
 vi.mock('../store/prototypeStore', () => {
@@ -56,5 +62,21 @@ describe('mobile model warning banner', () => {
     mocks.state.preferences.showModelWarnings = true
     await act(async () => root.render(<ModelWarningBanner model={{ ...opus, warningMessage: '' }} />))
     expect(container.textContent).toBe('')
+  })
+})
+
+describe('mobile model warning links', () => {
+  it('switches to available models and unlinks unavailable ones', async () => {
+    const onSelectModel = vi.fn()
+    const linked = { ...opus, warningMessage: 'Try [Sonnet](model:sonnet) or [Retired](model:retired).' }
+    mocks.state.models = [linked, { ...opus, id: 'sonnet', enabled: true }, { ...opus, id: 'retired', enabled: false }] as PrototypeModel[]
+    await act(async () => root.render(<ModelWarningBanner model={linked} onSelectModel={onSelectModel} />))
+    expect(mocks.markdown.text).toBe('Try [Sonnet](model:sonnet) or Retired.')
+    expect(mocks.markdown.onLinkPress!('model:sonnet')).toBe(true)
+    expect(onSelectModel).toHaveBeenCalledWith('sonnet')
+    expect(mocks.markdown.onLinkPress!('model:retired')).toBe(true)
+    expect(onSelectModel).toHaveBeenCalledTimes(1)
+    expect(mocks.markdown.onLinkPress!('https://example.com')).toBe(false)
+    expect(mocks.state.setPreference).not.toHaveBeenCalled()
   })
 })

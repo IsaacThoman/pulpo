@@ -47,3 +47,19 @@ it('records a synced dismissal and reappears when the text changes', () => {
   act(() => useCatalog.setState({ models: [{ ...opus, warningMessage: 'New pricing applies' }] }))
   expect(screen.getByRole('note').textContent).toContain('New pricing applies')
 })
+
+it('switches models from model links and leaves unavailable targets as text', () => {
+  const onSelectModel = vi.fn()
+  act(() => useCatalog.setState({ models: [
+    { ...opus, warningMessage: 'Try [Haiku](model:haiku), [Retired](model:retired), or [docs](https://example.com).' },
+    { ...opus, id: 'haiku', name: 'Haiku', warningMessage: '' },
+    { ...opus, id: 'retired', name: 'Retired', warningMessage: '', enabled: false },
+  ] }))
+  render(<ModelWarningBanner modelId="opus" onSelectModel={onSelectModel} />)
+  fireEvent.click(screen.getByRole('button', { name: 'Haiku' }))
+  expect(onSelectModel).toHaveBeenCalledWith('haiku')
+  expect(screen.queryByRole('button', { name: 'Retired' })).toBeNull()
+  expect(screen.getByRole('note').textContent).toContain('Retired')
+  expect(screen.getByRole('link', { name: 'docs' }).getAttribute('href')).toBe('https://example.com')
+  expect(useSettings.getState().modelWarningDismissals).toEqual({})
+})

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { DEFAULT_MINIMUM_OUTPUT_RESERVATION_TOKENS, DEFAULT_MODEL_WARNING_DISMISS_DAYS, minimumOutputReservationTokensSchema, chatPresetsSchema, type ChatPreset, type ChatPresetAction, type ChatPresetChoice, type ChatPresetIcon } from '@pulpo/contracts'
+import { modelWarningLinkError } from '@pulpo/client-core'
 import { ArrowDown, ArrowUp, Check, ChevronsUpDown, ChevronRight, Copy, Pencil, Plus, Search, Trash2 } from 'lucide-react'
 import { apiRequest } from '@/lib/api'
 import { formatNumber } from '@/lib/format'
@@ -127,6 +128,7 @@ export function AdminModelsPage() {
   useEffect(() => { setPresetEditorValid(true); setParamsValid(true) }, [draft?.id])
   const filtered = useMemo(() => models.filter((model) => `${model.name} ${model.id} ${model.upstreamModelId}`.toLowerCase().includes(query.toLowerCase()) && (filter === 'all' || (filter === 'visible' ? model.visible : filter === 'hidden' ? !model.visible : filter === 'enabled' ? model.enabled : !model.enabled))), [models, query, filter])
   const presetErrors = draft ? validatePresetDrafts(draft.presets, draft.id, draft.allowedParameters, models) : []
+  const warningLinkError = draft ? modelWarningLinkError(draft.id, draft.warningMessage ?? '', models) : null
 
   const save = async () => {
     if (!draft) return
@@ -149,6 +151,7 @@ export function AdminModelsPage() {
     && draft.compactionThresholdTokens >= 2_000 && draft.compactionThresholdTokens <= 1_000_000
     && draft.compactionRetainedTurns >= 1 && draft.compactionRetainedTurns <= 32
     && minimumOutputReservationTokensSchema.safeParse(draft.minimumOutputReservationTokens).success
+    && !warningLinkError
     && presetErrors.length === 0 && presetEditorValid && paramsValid
 
   return (
@@ -258,6 +261,7 @@ export function AdminModelsPage() {
                 customIcons={customIcons}
                 models={models}
                 presetErrors={presetErrors}
+                warningLinkError={warningLinkError}
                 onPresetValidityChange={setPresetEditorValid}
                 onParamsValidityChange={setParamsValid}
               />
@@ -392,6 +396,7 @@ function ModelEditorBody({
   customIcons,
   models,
   presetErrors,
+  warningLinkError,
   onPresetValidityChange,
   onParamsValidityChange,
 }: {
@@ -403,6 +408,7 @@ function ModelEditorBody({
   customIcons: AdminCatalogIcon[]
   models: AdminModel[]
   presetErrors: string[]
+  warningLinkError: string | null
   onPresetValidityChange: (valid: boolean) => void
   onParamsValidityChange: (valid: boolean) => void
 }) {
@@ -489,6 +495,8 @@ function ModelEditorBody({
             value={draft.warningMessage ?? ''}
             onChange={(e) => setDraft({ ...draft, warningMessage: e.target.value })}
           />
+          <p className="text-xs text-muted-foreground">{ui("Link to another model with [label](model:model-id) to switch the user's composer to it.")}</p>
+          {warningLinkError && <p role="alert" className="text-xs text-destructive">{warningLinkError}</p>}
         </div>
         {draft.warningMessage?.trim() && (
           <>
@@ -504,7 +512,12 @@ function ModelEditorBody({
               />
               <p className="text-xs text-muted-foreground">{ui("0 keeps it hidden until the warning text changes. Editing the text shows it to everyone again.")}</p>
             </Field>
-            <ModelWarningNotice message={draft.warningMessage} onDismiss={() => undefined} />
+            <ModelWarningNotice
+              message={draft.warningMessage}
+              onDismiss={() => undefined}
+              onSelectModel={() => undefined}
+              isModelAvailable={(id) => id !== draft.id && models.some((model) => model.id === id && model.enabled)}
+            />
           </>
         )}
       </div>

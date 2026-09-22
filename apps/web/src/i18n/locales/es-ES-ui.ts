@@ -830,6 +830,7 @@ const esUi: Record<string, string> = {
   "Composer warning": "Aviso en el editor",
   "Shown above the composer when this model is selected. Markdown links are supported.": "Se muestra encima del editor cuando se selecciona este modelo. Admite enlaces en Markdown.",
   "Hide after dismissal (days)": "Ocultar tras descartarlo (días)",
+  "Link to another model with [label](model:model-id) to switch the user's composer to it.": "Enlaza a otro modelo con [texto](model:id-del-modelo) para cambiar el editor del usuario a ese modelo.",
   "0 keeps it hidden until the warning text changes. Editing the text shows it to everyone again.": "Con 0 permanece oculto hasta que cambie el texto del aviso. Editar el texto lo vuelve a mostrar a todos.",
   "Detailed payload retention": "Retención detallada de la carga útil",
   "Dictation": "Dictado",

@@ -27,6 +27,7 @@ import { assertSafeProviderUrl } from '../lib/url-security.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { INTERNAL_LAB_ID, INTERNAL_PROVIDER_ID, UNKNOWN_MODEL_ID } from './defaults.js'
 import { deleteCatalogModel } from './model-deletion.js'
+import { modelWarningLinkError } from '@pulpo/client-core'
 import { parseAgentSettings } from '../settings/application-settings.js'
 import { catalogIconUrls, requireCatalogIcon } from './icon-service.js'
 import { userModelEligibility } from './user-models.js'
@@ -83,6 +84,13 @@ async function validateFallback(modelId: string, fallbackModelId: string | null)
     seen.add(cursor)
     cursor = byId.get(cursor)?.fallbackModelId ?? null
   }
+}
+
+async function validateWarningLinks(modelId: string, warningMessage: string | undefined): Promise<void> {
+  if (!warningMessage?.includes('model:')) return
+  const catalog = await db.select({ id: models.id, enabled: models.enabled }).from(models)
+  const error = modelWarningLinkError(modelId, warningMessage, catalog)
+  if (error) throw new AppError(409, 'invalid_warning_link', error)
 }
 
 async function nextModelSortOrder(labId: string): Promise<number> {
@@ -577,6 +585,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
     }
     validateDefaultParameters(input.defaultParameters, input.allowedParameters)
     await validateFallback(input.id, input.fallbackModelId)
+    await validateWarningLinks(input.id, input.warningMessage)
     if (input.customIconId) await requireCatalogIcon(input.customIconId)
     await validatePresets(input.id, raw.presets, input.allowedParameters)
     const pricingId = newId()
@@ -669,6 +678,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
     validateDefaultParameters(effectiveDefaults, effectiveAllowed)
     if (parsedPresets) await validatePresets(id, parsedPresets, effectiveAllowed)
     if (body.fallbackModelId !== undefined) await validateFallback(id, typeof body.fallbackModelId === 'string' ? body.fallbackModelId : null)
+    await validateWarningLinks(id, warningMessage)
     const currentLabId = current.labId ?? INTERNAL_LAB_ID
     const requestedLabId = typeof body.labId === 'string' ? body.labId : body.labId === null ? INTERNAL_LAB_ID : currentLabId
     const labChanged = requestedLabId !== currentLabId

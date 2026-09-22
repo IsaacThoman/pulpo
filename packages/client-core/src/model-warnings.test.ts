@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { activeModelWarning, dismissModelWarning, modelWarningHash } from './model-warnings.js'
+import { activeModelWarning, dismissModelWarning, modelLinkTarget, modelWarningHash, modelWarningLinkError, modelWarningLinkTargets, unlinkUnavailableModelLinks } from './model-warnings.js'
 
 const DAY = 24 * 60 * 60 * 1000
 const now = Date.parse('2026-09-22T12:00:00.000Z')
@@ -47,5 +47,44 @@ describe('model warnings', () => {
     const changed = { id: 'changed', warningMessage: 'Different text' }
     expect(Object.keys(dismissModelWarning(dismissals, opus, [opus, sonnet, changed], now)).sort())
       .toEqual(['opus', 'removed'])
+  })
+})
+
+describe('model warning links', () => {
+  it('reads model ids from model: links only', () => {
+    expect(modelLinkTarget('model:sonnet')).toBe('sonnet')
+    expect(modelLinkTarget(' MODEL:codex%3Agpt-5 ')).toBe('codex:gpt-5')
+    expect(modelLinkTarget('https://example.com')).toBeNull()
+    expect(modelLinkTarget('model:')).toBeNull()
+    expect(modelLinkTarget('model:a/b')).toBeNull()
+    expect(modelLinkTarget('model:%E0%A4%A')).toBeNull()
+    expect(modelLinkTarget(undefined)).toBeNull()
+  })
+
+  it('collects inline, reference, nested, and autolinked model targets', () => {
+    expect(modelWarningLinkTargets([
+      'Try [Sonnet](model:sonnet) or **[Haiku](model:haiku "fast")**.',
+      '- [again](model:sonnet)',
+      'See [pricing](https://example.com) and [Mini][mini] or <model:nano>.',
+      '',
+      '[mini]: model:mini',
+    ].join('\n')).sort()).toEqual(['haiku', 'mini', 'nano', 'sonnet'])
+  })
+
+  it('validates link targets against the enabled catalog', () => {
+    const catalog = [{ id: 'opus', enabled: true }, { id: 'sonnet', enabled: true }, { id: 'retired', enabled: false }]
+    expect(modelWarningLinkError('opus', 'See [pricing](https://example.com)', catalog)).toBeNull()
+    expect(modelWarningLinkError('opus', '[Use Sonnet](model:sonnet)', catalog)).toBeNull()
+    expect(modelWarningLinkError('opus', '[Stay](model:opus)', catalog)).toMatch(/own model/)
+    expect(modelWarningLinkError('opus', '[Gone](model:missing)', catalog)).toMatch(/missing/)
+    expect(modelWarningLinkError('opus', '[Old][old]\n\n[old]: model:retired', catalog)).toMatch(/retired/)
+  })
+
+  it('turns unavailable model links into plain labels', () => {
+    const available = (id: string) => id === 'sonnet'
+    expect(unlinkUnavailableModelLinks(
+      'Use [Sonnet](model:sonnet), not **[Retired](model:retired)**, see [docs](https://example.com).',
+      available,
+    )).toBe('Use [Sonnet](model:sonnet), not **Retired**, see [docs](https://example.com).')
   })
 })

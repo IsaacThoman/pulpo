@@ -503,7 +503,7 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
               chatWidth === 'narrow' ? 'max-w-5xl' : 'max-w-[min(100%,90rem)]'
             )}
           >
-            <Composer syncEnabled={!adminMode} onSyncControls={applyComposerControls} key="new" temporaryControlRef={temporaryComposerRef} suggestionControlRef={suggestionComposerRef} focusControlRef={focusComposerRef} onTemporaryChange={setTemporary} chatId={null} modelId={modelId} temporary={temporaryMode} autoExpire={effectiveNewChatAutoExpire} />
+            <Composer syncEnabled={!adminMode} onSyncControls={applyComposerControls} key="new" temporaryControlRef={temporaryComposerRef} suggestionControlRef={suggestionComposerRef} focusControlRef={focusComposerRef} onTemporaryChange={setTemporary} chatId={null} modelId={modelId} onSelectModel={selectModel} temporary={temporaryMode} autoExpire={effectiveNewChatAutoExpire} />
           </div>
         </>
       ) : (
@@ -543,6 +543,7 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
                 key={`${chat.temporary ? "temporary:" : ""}${chat.id}`}
                 chatId={chat.id}
                 modelId={modelId}
+                onSelectModel={selectModel}
                 temporary={chat.temporary}
                 autoExpire={Boolean(chat.expiresAt)}
                 messageEdit={messageEdit}
