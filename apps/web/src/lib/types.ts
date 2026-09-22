@@ -21,6 +21,10 @@ export interface Model {
   modelCustomIcon?: CatalogIconReference | null
   inferenceProvider: string
   description: string
+  /** Admin-configured markdown notice shown above the composer. */
+  warningMessage?: string
+  /** Days a dismissed warning stays hidden; 0 keeps it hidden until the message changes. */
+  warningDismissDays?: number
   contextWindow: number
   tags: ('vision' | 'reasoning' | 'tools' | 'fast' | 'code')[]
   /** theme-aware square avatars (deathgrips style) — css colors */

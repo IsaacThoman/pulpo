@@ -181,6 +181,8 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
       upstreamModelId: model.upstreamModelId,
       name: model.name,
       description: model.description,
+      warningMessage: model.warningMessage,
+      warningDismissDays: model.warningDismissDays,
       enabled: model.enabled,
       visible: model.visible,
       logo: model.logo,
@@ -588,6 +590,8 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
         upstreamModelId: input.upstreamModelId,
         name: input.name,
         description: input.description,
+        warningMessage: input.warningMessage,
+        warningDismissDays: input.warningDismissDays,
         sortOrder,
         enabled: input.enabled,
         visible: input.visible,
@@ -650,6 +654,8 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
     }
     const minimumOutputReservationTokens = createModelSchema.shape.minimumOutputReservationTokens.removeDefault().optional().parse(body.minimumOutputReservationTokens)
     const promptCachingEnabled = createModelSchema.shape.promptCachingEnabled.removeDefault().optional().parse(body.promptCachingEnabled)
+    const warningMessage = createModelSchema.shape.warningMessage.removeDefault().optional().parse(body.warningMessage)
+    const warningDismissDays = createModelSchema.shape.warningDismissDays.removeDefault().optional().parse(body.warningDismissDays)
     const compactionPatch = z.object({
       compactionEnabled: z.boolean().optional(),
       compactionThresholdTokens: z.number().int().min(2_000).max(1_000_000).optional(),
@@ -670,6 +676,8 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
     const [updated] = await db.update(models).set({
       name: typeof body.name === 'string' ? body.name : undefined,
       description: typeof body.description === 'string' ? body.description : undefined,
+      warningMessage,
+      warningDismissDays,
       upstreamModelId: typeof body.upstreamModelId === 'string' ? body.upstreamModelId : undefined,
       providerConnectionId: typeof body.providerConnectionId === 'string' ? body.providerConnectionId : undefined,
       labId: labChanged ? requestedLabId : undefined,

@@ -8,6 +8,15 @@ describe('production preference mapping', () => {
     expect(preferencesFromServer({ showPromptSuggestions: true }).showPromptSuggestions).toBe(true)
     expect(preferencePatchForServer('showPromptSuggestions', false)).toEqual({ showPromptSuggestions: false })
   })
+  it('syncs model warning visibility and dismissals with web', () => {
+    const dismissals = { opus: { at: '2026-09-22T00:00:00.000Z', hash: '0a1b2c3d' } }
+    expect(preferencesFromServer({}).showModelWarnings).toBe(true)
+    expect(preferencesFromServer({ showModelWarnings: false }).showModelWarnings).toBe(false)
+    expect(preferencesFromServer({ modelWarningDismissals: dismissals }).modelWarningDismissals).toEqual(dismissals)
+    expect(preferencesFromServer({ modelWarningDismissals: { opus: { at: 'bad' } } }).modelWarningDismissals).toEqual({})
+    expect(preferencePatchForServer('showModelWarnings', false)).toEqual({ showModelWarnings: false })
+    expect(preferencePatchForServer('modelWarningDismissals', dismissals)).toEqual({ modelWarningDismissals: dismissals })
+  })
   it('shares composer sync as an account preference with enabled defaults', () => {
     expect(preferencesFromServer({ composerSyncEnabled: false }).composerSyncEnabled).toBe(false)
     expect(preferencesFromServer({}).composerSyncEnabled).toBe(true)
@@ -22,7 +31,7 @@ describe('production preference mapping', () => {
       agentModes: { 'model-a': false, 'model-b': true },
     })).toEqual({
       imageGeneration: { enabled: false, modelId: null }, speech: { modelId: null, models: {} },
-      composerSyncEnabled: true, showPromptSuggestions: true,
+      composerSyncEnabled: true, showPromptSuggestions: true, showModelWarnings: true, modelWarningDismissals: {},
       theme: 'dark', attachmentCacheMb: 96, localChatLimit: 50,
       trashRetention: '7d', automaticChatExpiration: '24h', newChatAutoExpire: false, memoryEnabled: true,
       favoriteModelIds: ['model-b', 'model-a'], providerOrder: ['lab-b', 'lab-a'],
@@ -48,7 +57,7 @@ describe('production preference mapping', () => {
   })
 
   it('clears synchronized model preferences when older servers omit them', () => {
-    expect(preferencesFromServer({})).toEqual({ imageGeneration: { enabled: false, modelId: null }, speech: { modelId: null, models: {} }, composerSyncEnabled: true, showPromptSuggestions: true, favoriteModelIds: [], providerOrder: [], generation: {}, agentModes: {} })
+    expect(preferencesFromServer({})).toEqual({ imageGeneration: { enabled: false, modelId: null }, speech: { modelId: null, models: {} }, composerSyncEnabled: true, showPromptSuggestions: true, showModelWarnings: true, modelWarningDismissals: {}, favoriteModelIds: [], providerOrder: [], generation: {}, agentModes: {} })
   })
 
   it('filters malformed generation preferences from server settings', () => {

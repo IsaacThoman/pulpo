@@ -755,6 +755,11 @@ export const catalogIconReferenceSchema = z.object({
 export type CatalogIconMode = z.infer<typeof catalogIconModeSchema>
 export type CatalogIconReference = z.infer<typeof catalogIconReferenceSchema>
 
+/** Days a dismissed composer warning stays hidden; 0 hides it until the message changes. */
+export const DEFAULT_MODEL_WARNING_DISMISS_DAYS = 30
+export const modelWarningMessageSchema = z.string().max(2_000)
+export const modelWarningDismissDaysSchema = z.number().int().min(0).max(3_650)
+
 export const modelSchema = z.object({
   id: z.string().min(1).max(120),
   upstreamModelId: z.string().min(1).max(200),
@@ -774,6 +779,8 @@ export const modelSchema = z.object({
   outputPriceMicros: z.number().int().nonnegative(),
   tags: z.array(z.string()),
   agentEnabled: z.boolean().default(false),
+  warningMessage: z.string().default(''),
+  warningDismissDays: z.number().int().nonnegative().default(DEFAULT_MODEL_WARNING_DISMISS_DAYS),
 })
 export type Model = z.infer<typeof modelSchema>
 
@@ -802,6 +809,17 @@ export type SidebarPins = z.infer<typeof sidebarPinsSchema>
 
 /** Account-scoped Agent mode selections keyed by visible catalog model id. */
 export const agentModesSchema = z.record(z.string(), z.boolean())
+
+/** Account-scoped composer warning dismissals keyed by model id. */
+export const modelWarningDismissalsSchema = z.record(
+  z.string().trim().min(1).max(120),
+  z.object({
+    at: z.string().datetime(),
+    /** Fingerprint of the dismissed message so edited warnings show again. */
+    hash: z.string().min(1).max(64),
+  }),
+).refine((value) => Object.keys(value).length <= 500, 'Too many model warning dismissals')
+export type ModelWarningDismissals = z.infer<typeof modelWarningDismissalsSchema>
 
 /** Account-scoped custom-instruction preset selections keyed by stable preset id. */
 export const instructionPresetSelectionsSchema = z.record(
@@ -932,6 +950,8 @@ export const createModelSchema = z.object({
   upstreamModelId: z.string().min(1).max(200),
   name: z.string().trim().min(1).max(120),
   description: z.string().max(2_000).default(''),
+  warningMessage: modelWarningMessageSchema.default(''),
+  warningDismissDays: modelWarningDismissDaysSchema.default(DEFAULT_MODEL_WARNING_DISMISS_DAYS),
   enabled: z.boolean().default(true),
   visible: z.boolean().default(true),
   logo: z.string().max(120).nullable().default(null),
@@ -1396,6 +1416,8 @@ export const managementAccountSettingsSchema = z.object({
   sendWithEnter: z.boolean().default(true),
   streamResponses: z.boolean().default(true),
   showPromptSuggestions: z.boolean().default(true),
+  showModelWarnings: z.boolean().default(true),
+  modelWarningDismissals: modelWarningDismissalsSchema.default({}),
   showReasoning: z.boolean().default(true),
   showResponseCost: z.boolean().default(false),
   chatWidth: z.enum(['full', 'narrow']).default('narrow'),

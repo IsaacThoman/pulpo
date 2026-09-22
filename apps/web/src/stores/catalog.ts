@@ -1,4 +1,4 @@
-import { UNKNOWN_MODEL_ID } from '@pulpo/contracts'
+import { DEFAULT_MODEL_WARNING_DISMISS_DAYS, UNKNOWN_MODEL_ID } from '@pulpo/contracts'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { Model } from '@/lib/types'
@@ -21,6 +21,8 @@ interface ServerModel {
   id: string
   name: string
   description: string
+  warningMessage?: string
+  warningDismissDays?: number
   contextWindow: number
   tags: string[]
   inputPriceMicros: number
@@ -41,6 +43,7 @@ interface ServerModel {
 function fromServer(model: ServerModel): Model {
   return {
     id: model.id, name: model.name, description: model.description,
+    warningMessage: model.warningMessage ?? '', warningDismissDays: model.warningDismissDays ?? DEFAULT_MODEL_WARNING_DISMISS_DAYS,
     providerGroupId: model.lab?.id ?? 'internal',
     provider: model.lab?.name ?? 'Internal', inferenceProvider: model.provider.name,
     labLogo: model.lab?.logo ?? 'pulpo', modelLogo: model.logo ?? model.lab?.logo ?? 'pulpo',

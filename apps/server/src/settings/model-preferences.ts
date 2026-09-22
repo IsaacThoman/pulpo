@@ -7,6 +7,7 @@ import {
   instructionPresetSelectionsSchema,
   modelPreferencesPatchSchema,
   modelPreferencesSchema,
+  modelWarningDismissalsSchema,
   newChatAutoExpireSchema,
   sidebarPinsSchema,
 } from '@pulpo/contracts'
@@ -17,6 +18,7 @@ export function preferencesWithModelDefaults(values?: Record<string, unknown>): 
   const parsedNewChatAutoExpire = newChatAutoExpireSchema.safeParse(values?.newChatAutoExpire)
   const parsedAgentModes = agentModesSchema.safeParse(values?.agentModes)
   const parsedInstructionPresetSelections = instructionPresetSelectionsSchema.safeParse(values?.instructionPresetSelections)
+  const parsedModelWarningDismissals = modelWarningDismissalsSchema.safeParse(values?.modelWarningDismissals)
   return {
     ...values,
     imageGeneration: imageGenerationPreferencesSchema.catch({ enabled: false, modelId: null }).parse(values?.imageGeneration),
@@ -27,6 +29,7 @@ export function preferencesWithModelDefaults(values?: Record<string, unknown>): 
     sidebarPins: sidebarPinsSchema.parse(values?.sidebarPins ?? {}),
     agentModes: parsedAgentModes.success ? parsedAgentModes.data : {},
     instructionPresetSelections: parsedInstructionPresetSelections.success ? parsedInstructionPresetSelections.data : {},
+    modelWarningDismissals: parsedModelWarningDismissals.success ? parsedModelWarningDismissals.data : {},
     ...modelPreferencesSchema.parse({
       favoriteModelIds: values?.favoriteModelIds,
       providerOrder: values?.providerOrder,
@@ -45,6 +48,9 @@ export function normalizedPreferencePatch(patch: Record<string, unknown>): Recor
   const instructionPresetSelections = 'instructionPresetSelections' in patch
     ? instructionPresetSelectionsSchema.parse(patch.instructionPresetSelections)
     : undefined
+  const modelWarningDismissals = 'modelWarningDismissals' in patch
+    ? modelWarningDismissalsSchema.parse(patch.modelWarningDismissals)
+    : undefined
   return {
     ...patch,
     ...('imageGeneration' in patch ? { imageGeneration: imageGenerationPreferencesSchema.parse(patch.imageGeneration) } : {}),
@@ -54,5 +60,6 @@ export function normalizedPreferencePatch(patch: Record<string, unknown>): Recor
     ...(sidebarPins === undefined ? {} : { sidebarPins }),
     ...(agentModes === undefined ? {} : { agentModes }),
     ...(instructionPresetSelections === undefined ? {} : { instructionPresetSelections }),
+    ...(modelWarningDismissals === undefined ? {} : { modelWarningDismissals }),
   }
 }

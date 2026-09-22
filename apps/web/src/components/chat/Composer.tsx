@@ -4,6 +4,7 @@ import { speechPlayback } from '@/features/speech/state'
 import { localComposerDraftId, mergePendingAttachments } from '@pulpo/client-core'
 import { ShelvedDrafts } from './ShelvedDrafts'
 import { ComposerTray } from './ComposerTray'
+import { ModelWarningBanner } from './ModelWarningBanner'
 import { webShelf, shelfDraftAttachments } from '@/lib/local-first/shelf'
 import type { ShelfAttachment } from '@pulpo/client-core'
 import { useComposerSync } from './use-composer-sync'
@@ -1178,6 +1179,7 @@ export function Composer({
           temporary && 'border-dashed',
         )}
       >
+        <ModelWarningBanner modelId={modelId} />
         {attachments.length > 0 && (
           <div className="space-y-2 px-3 pt-3">
             <AttachmentWindow items={attachments}>{(visible) => <div className="flex max-h-48 flex-wrap gap-2 overflow-y-auto">
