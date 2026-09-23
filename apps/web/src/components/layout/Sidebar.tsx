@@ -162,9 +162,6 @@ function useSidebarDrag() {
 
   const onChatRowDragOver = (list: ChatList, id: string, e: DragEvent<HTMLElement>) => {
     if (dragKindRef.current !== 'chat' || !dragIdRef.current || dragIdRef.current === id) return
-    // Pinned list only reorders within itself
-    if (list === 'pinned' && dragListRef.current !== 'pinned') return
-    if (dragListRef.current === 'pinned' && list !== 'pinned') return
     acceptMove(e)
     setDrop({ kind: 'row', list, id, edge: edgeFor(e) })
   }
@@ -178,19 +175,21 @@ function useSidebarDrag() {
 
   /**
    * Everywhere a row does not claim the drag (gaps, headers, empty space, rows of another list),
-   * snap to the nearest slot in the dragged item's list. Folder chats dragged down into the
-   * unfiled area target the unfiled list instead.
+   * snap to the nearest slot in the dragged item's list. Chats dragged into the pinned area or
+   * down into the unfiled area target those lists instead.
    */
-  const onSidebarDragOver = (e: DragEvent<HTMLElement>, looseZoneTop: number | undefined) => {
+  const onSidebarDragOver = (e: DragEvent<HTMLElement>, zones: { pinnedBottom?: number; looseTop?: number }) => {
     const kind = dragKindRef.current
     const source = dragListRef.current
     if (!kind || !dragIdRef.current) return
     acceptMove(e)
     const list: DropList = kind === 'folder'
       ? 'folder'
-      : source && parseFolderList(source) && looseZoneTop !== undefined && e.clientY >= looseZoneTop
-        ? 'loose'
-        : source ?? 'loose'
+      : zones.pinnedBottom !== undefined && e.clientY < zones.pinnedBottom
+        ? 'pinned'
+        : source !== 'loose' && zones.looseTop !== undefined && e.clientY >= zones.looseTop
+          ? 'loose'
+          : source ?? 'loose'
     const rows = Array.from(e.currentTarget.querySelectorAll<HTMLElement>('[data-drag-list]'))
       .filter((row) => row.dataset.dragList === list)
     if (rows.length === 0) {
@@ -718,6 +717,8 @@ export function Sidebar({
   const addFolder = useChat((s) => s.addFolder)
   const reorderFolders = useChat((s) => s.reorderFolders)
   const reorderPinnedChats = useChat((s) => s.reorderPinnedChats)
+  const pinChat = useChat((s) => s.pinChat)
+  const unpinChat = useChat((s) => s.unpinChat)
   const reorderFolderChats = useChat((s) => s.reorderFolderChats)
   const reorderLooseChats = useChat((s) => s.reorderLooseChats)
   const moveToFolder = useChat((s) => s.moveToFolder)
@@ -758,6 +759,7 @@ export function Sidebar({
   const [activeTooltip, setActiveTooltip] = useState<string | null>(null)
   const shiftHeld = useShiftHeld()
   const drag = useSidebarDrag()
+  const pinnedZoneRef = useRef<HTMLDivElement>(null)
   const looseZoneRef = useRef<HTMLDivElement>(null)
   const openSidebarLabel = t('sidebar.expand')
 
@@ -782,26 +784,29 @@ export function Sidebar({
       return
     }
     if (kind !== 'chat') return
+    // Pinned chats dropped anywhere else leave the pinned list for the folder or unfiled list they landed in.
+    const place = sourceList === 'pinned' ? unpinChat : moveToFolder
 
     if (hint.kind === 'folder-target') {
       if (sourceList === folderListId(hint.folderId)) return
-      moveToFolder(from, hint.folderId)
+      place(from, hint.folderId)
       ensureFolderExpanded(hint.folderId)
       return
     }
     if (hint.kind === 'loose-target') {
-      if (sourceList !== 'loose') moveToFolder(from, null)
+      if (sourceList !== 'loose') place(from, null)
       return
     }
     if (hint.list === 'folder' || hint.id === from) return
     const position = { targetId: hint.id, edge: hint.edge }
     if (hint.list === 'pinned') {
       if (sourceList === 'pinned') reorderPinnedChats(from, hint.id, hint.edge)
+      else pinChat(from, position)
       return
     }
     if (hint.list === 'loose') {
       if (sourceList === 'loose') reorderLooseChats(from, hint.id, hint.edge)
-      else moveToFolder(from, null, position)
+      else place(from, null, position)
       return
     }
     const folderId = parseFolderList(hint.list)
@@ -809,7 +814,7 @@ export function Sidebar({
     if (sourceList === hint.list) {
       reorderFolderChats(folderId, from, hint.id, hint.edge)
     } else {
-      moveToFolder(from, folderId, position)
+      place(from, folderId, position)
       ensureFolderExpanded(folderId)
     }
   }
@@ -923,7 +928,10 @@ export function Sidebar({
 
   return (
     <aside
-      onDragOver={(e) => drag.onSidebarDragOver(e, looseZoneRef.current?.getBoundingClientRect().top)}
+      onDragOver={(e) => drag.onSidebarDragOver(e, {
+        pinnedBottom: pinnedZoneRef.current?.getBoundingClientRect().bottom,
+        looseTop: looseZoneRef.current?.getBoundingClientRect().top,
+      })}
       onDragLeave={drag.onSidebarDragLeave}
       onDrop={handleDrop}
       aria-label={t('sidebar.sidebar')}
@@ -1032,13 +1040,12 @@ export function Sidebar({
           {/* chat list */}
           <div className="px-2 pb-4 pt-2">
             {pinned.length > 0 && (
-              <div className="mb-2">
+              <div className="mb-2" ref={pinnedZoneRef}>
                 <div className="px-2 pb-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
                   {t('sidebar.pinned')}
                 </div>
                 <div className="space-y-0.5">
                   {pinned.map((c) => {
-                    const canReorder = pinned.length > 1
                     const isDragging = drag.dragKind === 'chat' && drag.dragList === 'pinned' && drag.dragId === c.id
                     const rowDrop = drag.drop?.kind === 'row' && drag.drop.list === 'pinned' && drag.drop.id === c.id
                     const showLineBefore = Boolean(rowDrop && drag.drop?.kind === 'row' && drag.drop.edge === 'before' && !isDragging)
@@ -1050,8 +1057,8 @@ export function Sidebar({
                         active={c.id === chatId}
                         shiftHeld={shiftHeld}
                         onNavigate={onNavigate}
-                        draggable={canReorder}
-                        droppable={canReorder}
+                        draggable
+                        droppable
                         dragging={isDragging}
                         showLineBefore={showLineBefore}
                         showLineAfter={showLineAfter}
@@ -1151,7 +1158,7 @@ export function Sidebar({
                   </div>
                 </div>
               )}
-              {loose.length === 0 && drag.dragKind === 'chat' && drag.dragList !== 'loose' && drag.dragList !== 'pinned' && (
+              {loose.length === 0 && drag.dragKind === 'chat' && drag.dragList !== 'loose' && (
                 <div className="mt-3 px-2 py-2 text-xs text-muted-foreground">
                   {t('sidebar.dropHere')}
                 </div>
