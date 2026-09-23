@@ -707,6 +707,7 @@ export function Sidebar({
     staleTime: 0,
     refetchOnWindowFocus: 'always',
   })
+  const billingPlan = billingEnabled ? billingQuery.data?.plan : undefined
   const sidebarPins = useSettings((s) => s.sidebarPins)
   const setSetting = useSettings((s) => s.set)
   const logout = useAuth((s) => s.logout)
@@ -1016,6 +1017,8 @@ export function Sidebar({
           )}
         >
           Pulpo
+          {billingPlan === 'fat' && <span className="text-violet-600 dark:text-violet-400"> Fat</span>}
+          {billingPlan === 'eight' && <span className="text-yellow-700 dark:text-yellow-400"> Eight</span>}
         </span>
         {!collapsed && (
           <Tooltip>
