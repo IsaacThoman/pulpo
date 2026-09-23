@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { DEFAULT_MINIMUM_OUTPUT_RESERVATION_TOKENS, minimumOutputReservationTokensSchema, chatPresetsSchema, type ChatPreset, type ChatPresetAction, type ChatPresetChoice, type ChatPresetIcon } from '@pulpo/contracts'
+import { DEFAULT_MINIMUM_OUTPUT_RESERVATION_TOKENS, DEFAULT_MODEL_WARNING_DISMISS_DAYS, minimumOutputReservationTokensSchema, chatPresetsSchema, type ChatPreset, type ChatPresetAction, type ChatPresetChoice, type ChatPresetIcon } from '@pulpo/contracts'
+import { modelWarningLinkError } from '@pulpo/client-core'
 import { ArrowDown, ArrowUp, Check, ChevronsUpDown, ChevronRight, Copy, Pencil, Plus, Search, Trash2 } from 'lucide-react'
 import { apiRequest } from '@/lib/api'
 import { formatNumber } from '@/lib/format'
@@ -26,6 +27,7 @@ import { useCatalog } from '@/stores/catalog'
 import { AI_ICONS, isAiIconAvailable, type AiIconKind } from '@/lib/ai-icons'
 import { AiLogo } from '@/components/ProviderLogo'
 import { PresetIcon } from '@/components/chat/PresetIcon'
+import { ModelWarningNotice } from '@/components/chat/ModelWarningNotice'
 import { filterPresetIconOptions, formatPresetIconLabel } from '@/components/chat/preset-icon-options'
 import { UpstreamModelField } from '@/components/admin/UpstreamModelField'
 import { useCatalogIcons } from '@/stores/catalogIcons'
@@ -45,6 +47,8 @@ interface AdminModel {
   upstreamModelId: string
   name: string
   description: string
+  warningMessage: string
+  warningDismissDays: number
   enabled: boolean
   visible: boolean
   logo: string | null
@@ -85,7 +89,7 @@ interface Provider { id: string; name: string; baseUrl?: string }
 interface Lab { id: string; name: string; logo?: string; customIconId: string | null }
 
 const empty = (providerConnectionId = '', labId: string | null = null): AdminModel => ({
-  id: '', providerConnectionId, labId, upstreamModelId: '', name: '', description: '', enabled: true, visible: true, logo: null, customIconId: null, systemPrompt: '', agentEnabled: false, agentInstructions: '', defaultParameters: {}, interceptImagesWithOcr: false,
+  id: '', providerConnectionId, labId, upstreamModelId: '', name: '', description: '', warningMessage: '', warningDismissDays: DEFAULT_MODEL_WARNING_DISMISS_DAYS, enabled: true, visible: true, logo: null, customIconId: null, systemPrompt: '', agentEnabled: false, agentInstructions: '', defaultParameters: {}, interceptImagesWithOcr: false,
   contextWindow: 128_000, maxOutputTokens: 16_384, minimumOutputReservationTokens: DEFAULT_MINIMUM_OUTPUT_RESERVATION_TOKENS, executionMode: 'stream', tags: [], allowedParameters: [],
   compactionEnabled: true, compactionThresholdTokens: 100_000, compactionRetainedTurns: 4,
   useProviderCost: false, promptCachingEnabled: false,
@@ -124,6 +128,7 @@ export function AdminModelsPage() {
   useEffect(() => { setPresetEditorValid(true); setParamsValid(true) }, [draft?.id])
   const filtered = useMemo(() => models.filter((model) => `${model.name} ${model.id} ${model.upstreamModelId}`.toLowerCase().includes(query.toLowerCase()) && (filter === 'all' || (filter === 'visible' ? model.visible : filter === 'hidden' ? !model.visible : filter === 'enabled' ? model.enabled : !model.enabled))), [models, query, filter])
   const presetErrors = draft ? validatePresetDrafts(draft.presets, draft.id, draft.allowedParameters, models) : []
+  const warningLinkError = draft ? modelWarningLinkError(draft.id, draft.warningMessage ?? '', models) : null
 
   const save = async () => {
     if (!draft) return
@@ -146,6 +151,7 @@ export function AdminModelsPage() {
     && draft.compactionThresholdTokens >= 2_000 && draft.compactionThresholdTokens <= 1_000_000
     && draft.compactionRetainedTurns >= 1 && draft.compactionRetainedTurns <= 32
     && minimumOutputReservationTokensSchema.safeParse(draft.minimumOutputReservationTokens).success
+    && !warningLinkError
     && presetErrors.length === 0 && presetEditorValid && paramsValid
 
   return (
@@ -255,6 +261,7 @@ export function AdminModelsPage() {
                 customIcons={customIcons}
                 models={models}
                 presetErrors={presetErrors}
+                warningLinkError={warningLinkError}
                 onPresetValidityChange={setPresetEditorValid}
                 onParamsValidityChange={setParamsValid}
               />
@@ -389,6 +396,7 @@ function ModelEditorBody({
   customIcons,
   models,
   presetErrors,
+  warningLinkError,
   onPresetValidityChange,
   onParamsValidityChange,
 }: {
@@ -400,6 +408,7 @@ function ModelEditorBody({
   customIcons: AdminCatalogIcon[]
   models: AdminModel[]
   presetErrors: string[]
+  warningLinkError: string | null
   onPresetValidityChange: (valid: boolean) => void
   onParamsValidityChange: (valid: boolean) => void
 }) {
@@ -473,6 +482,44 @@ function ModelEditorBody({
       <div className="space-y-1.5">
         <Label className="text-xs">{ui("Description")}</Label>
         <Textarea rows={2} value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} />
+      </div>
+
+      <div className="space-y-3 rounded-lg border bg-muted/20 p-4">
+        <div className="space-y-1.5">
+          <Label className="text-xs" htmlFor="model-warning-message">{ui("Composer warning")}</Label>
+          <Textarea
+            id="model-warning-message"
+            rows={2}
+            maxLength={2_000}
+            placeholder={ui("Shown above the composer when this model is selected. Markdown links are supported.")}
+            value={draft.warningMessage ?? ''}
+            onChange={(e) => setDraft({ ...draft, warningMessage: e.target.value })}
+          />
+          <p className="text-xs text-muted-foreground">{ui("Link to another model with [label](model:model-id) to switch the user's composer to it.")}</p>
+          {warningLinkError && <p role="alert" className="text-xs text-destructive">{warningLinkError}</p>}
+        </div>
+        {draft.warningMessage?.trim() && (
+          <>
+            <Field label={ui("Hide after dismissal (days)")}>
+              <Input
+                aria-label={ui("Hide after dismissal (days)")}
+                type="number"
+                min={0}
+                max={3_650}
+                className="w-28 tabular-nums"
+                value={draft.warningDismissDays ?? DEFAULT_MODEL_WARNING_DISMISS_DAYS}
+                onChange={(e) => setDraft({ ...draft, warningDismissDays: Math.min(3_650, Math.max(0, Math.trunc(Number(e.target.value) || 0))) })}
+              />
+              <p className="text-xs text-muted-foreground">{ui("0 keeps it hidden until the warning text changes. Editing the text shows it to everyone again.")}</p>
+            </Field>
+            <ModelWarningNotice
+              message={draft.warningMessage}
+              onDismiss={() => undefined}
+              onSelectModel={() => undefined}
+              isModelAvailable={(id) => id !== draft.id && models.some((model) => model.id === id && model.enabled)}
+            />
+          </>
+        )}
       </div>
 
       <div className="space-y-3 rounded-lg border bg-muted/20 p-4">
@@ -755,6 +802,8 @@ function ModelEditorBody({
                 meta: {
                   model_logo: draft.logo,
                   description: draft.description,
+                  warning_message: draft.warningMessage,
+                  warning_dismiss_days: draft.warningDismissDays,
                   enabled: draft.enabled,
                   visible: draft.visible,
                   system_prompt: draft.systemPrompt,

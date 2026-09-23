@@ -18,6 +18,7 @@ import {
   episodicMemoryStatisticsSchema,
   managementInfoSchema,
   managementAccountSettingsSchema,
+  modelWarningDismissalsSchema,
   managementSettingsDocumentSchema,
   managementTokenSchema,
   isChatPresetIcon,
@@ -53,6 +54,21 @@ import {
   type ResponseEvent,
   type ResponseSnapshot,
 } from './index.js'
+
+describe('model composer warnings', () => {
+  it('defaults to no warning with a 30 day dismissal and validates patches', () => {
+    const create = createModelSchema.pick({ warningMessage: true, warningDismissDays: true })
+    expect(create.parse({})).toEqual({ warningMessage: '', warningDismissDays: 30 })
+    expect(create.parse({ warningMessage: 'Uses limits **faster**', warningDismissDays: 0 }))
+      .toEqual({ warningMessage: 'Uses limits **faster**', warningDismissDays: 0 })
+    const message = createModelSchema.shape.warningMessage.removeDefault().optional()
+    const days = createModelSchema.shape.warningDismissDays.removeDefault().optional()
+    expect(message.parse(undefined)).toBeUndefined()
+    expect(days.parse(undefined)).toBeUndefined()
+    expect(message.safeParse('x'.repeat(2_001)).success).toBe(false)
+    for (const value of [-1, 1.5, '30', null, 3_651]) expect(days.safeParse(value).success).toBe(false)
+  })
+})
 
 describe('model prompt caching settings', () => {
   it('defaults and validates each model minimum output allocation without resetting omitted patches', () => {
@@ -493,6 +509,13 @@ describe('shared contracts', () => {
     expect(managementAccountSettingsSchema.parse({ username: 'pulpo_user', newChatAutoExpire: false }).newChatAutoExpire).toBe(false)
     expect(managementAccountSettingsSchema.parse({ username: 'pulpo_user', showPromptSuggestions: false }).showPromptSuggestions).toBe(false)
     expect(managementAccountSettingsSchema.safeParse({ username: 'pulpo_user', showPromptSuggestions: 'false' }).success).toBe(false)
+    expect(document.account).toMatchObject({ showModelWarnings: true, modelWarningDismissals: {} })
+    expect(managementAccountSettingsSchema.parse({
+      username: 'pulpo_user',
+      modelWarningDismissals: { opus: { at: '2026-09-01T00:00:00.000Z', hash: 'abc123' } },
+    }).modelWarningDismissals).toEqual({ opus: { at: '2026-09-01T00:00:00.000Z', hash: 'abc123' } })
+    expect(modelWarningDismissalsSchema.safeParse({ opus: { at: 'yesterday', hash: 'abc' } }).success).toBe(false)
+    expect(managementAccountSettingsSchema.safeParse({ username: 'pulpo_user', showModelWarnings: 'yes' }).success).toBe(false)
     expect(animationSpeedSchema.parse(undefined)).toBe(1)
     expect(animationSpeedSchema.safeParse(0.01).success).toBe(true)
     expect(animationSpeedSchema.safeParse(5).success).toBe(true)

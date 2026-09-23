@@ -1,5 +1,5 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
-import ReactMarkdown, { type Components } from 'react-markdown'
+import ReactMarkdown, { type Components, type UrlTransform } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
 import rehypeKatex from 'rehype-katex'
@@ -117,16 +117,29 @@ function useRenderedContent(content: string, streaming: boolean): string {
   return rendered
 }
 
-export const Markdown = memo(function Markdown({ content, streaming = false }: { content: string; streaming?: boolean }) {
+export const Markdown = memo(function Markdown({
+  content,
+  streaming = false,
+  components,
+  urlTransform,
+}: {
+  content: string
+  streaming?: boolean
+  /** Element overrides layered over the chat defaults. */
+  components?: Components
+  urlTransform?: UrlTransform
+}) {
   const rendered = useRenderedContent(content, streaming)
   const normalized = useMemo(() => normalizeMathDelimiters(rendered, { displayMathStyle: 'multiline' }), [rendered])
+  const mergedComponents = useMemo(() => components ? { ...markdownComponents, ...components } : markdownComponents, [components])
 
   return (
     <div className="markdown-content min-w-0 max-w-full [overflow-wrap:anywhere]">
       <ReactMarkdown
         remarkPlugins={[remarkGfm, remarkMath]}
         rehypePlugins={[[rehypeKatex, { throwOnError: false, errorColor: 'var(--muted-foreground)' }]]}
-        components={markdownComponents}
+        components={mergedComponents}
+        urlTransform={urlTransform}
       >
         {normalized}
       </ReactMarkdown>

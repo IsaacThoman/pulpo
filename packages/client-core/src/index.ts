@@ -528,3 +528,5 @@ export * from "./shelf.js"
 export { insertDictationText } from './dictation.js'
 
 export * from "./speech.js"
+
+export * from './model-warnings.js'
