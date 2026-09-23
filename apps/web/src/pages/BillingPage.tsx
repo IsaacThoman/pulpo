@@ -374,7 +374,7 @@ export function BillingPage() {
               {validPurchase && quoteQuery.isPending && <div className="flex items-center gap-2 rounded-lg bg-muted/50 p-4 text-xs text-muted-foreground"><Loader2 className="size-3.5 animate-spin" />{ui("Calculating total before tax…")}</div>}
               {quote && <Quote credits={purchaseAmount} fee={feeCoverageAmount} charge={chargeAmount} />}
               {quoteQuery.isError && <p className="text-xs text-destructive">{ui("Could not calculate this purchase. Try again.")}</p>}
-              <p className="text-xs text-muted-foreground">{ui("Estimate includes a 5% + $0.50 platform fee. Sales tax is calculated at checkout.")}</p>
+              <p className="text-xs text-muted-foreground">{ui("Estimate includes a 5.5% + $0.50 platform fee. Sales tax is calculated at checkout.")}</p>
             </div>
             <DialogFooter><Button variant="outline" onClick={() => closeTopUp(false)}>{ui("Cancel")}</Button><Button disabled={!quote} onClick={() => setTopUpStep('review')}>{ui("Continue")}</Button></DialogFooter>
           </> : <>

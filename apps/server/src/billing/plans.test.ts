@@ -18,11 +18,12 @@ import {
 
 describe('billing plan calculations', () => {
   it.each([
-    [500, 579],
-    [1_000, 1_106],
-    [2_500, 2_685],
-    [5_000, 5_316],
-    [10_000, 10_579],
+    [500, 578],
+    [1_000, 1_105],
+    [2_500, 2_688],
+    [5_000, 5_325],
+    [10_000, 10_600],
+    [50_000, 52_800],
   ])('quotes %d credits as %d before tax', (credits, charge) => {
     expect(chargeCentsForCredits(credits)).toBe(charge)
   })
@@ -142,10 +143,10 @@ describe('automatic top-ups', () => {
   })
 
   it('never charges past the monthly limit on pre-tax charges', () => {
-    // $25 of credit is charged as $26.85 before tax.
-    expect(autoTopUpDecision({ ...base, monthSpentCents: 10_000 - 2_685 })).toBe('charge')
-    expect(autoTopUpDecision({ ...base, monthSpentCents: 10_000 - 2_684 })).toBe('limit_reached')
-    expect(autoTopUpDecision({ ...base, monthlyLimitCents: 2_684 })).toBe('limit_reached')
+    // $25 of credit is charged as $26.88 before tax.
+    expect(autoTopUpDecision({ ...base, monthSpentCents: 10_000 - 2_688 })).toBe('charge')
+    expect(autoTopUpDecision({ ...base, monthSpentCents: 10_000 - 2_687 })).toBe('limit_reached')
+    expect(autoTopUpDecision({ ...base, monthlyLimitCents: 2_687 })).toBe('limit_reached')
   })
 
   it('does nothing when disabled, unconfigured, on hold, or without a card', () => {

@@ -3,11 +3,12 @@ import { chargeCentsForCredits, creditCentsFromInput } from './billing-pricing'
 
 describe('Pulpo platform credit pricing', () => {
   it.each([
-    [500, 579],
-    [1_000, 1_106],
-    [2_500, 2_685],
-    [5_000, 5_316],
-    [10_000, 10_579],
+    [500, 578],
+    [1_000, 1_105],
+    [2_500, 2_688],
+    [5_000, 5_325],
+    [10_000, 10_600],
+    [50_000, 52_800],
   ])('charges %i credit cents as %i cents before tax', (creditCents, chargeCents) => {
     expect(chargeCentsForCredits(creditCents)).toBe(chargeCents)
   })

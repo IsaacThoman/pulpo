@@ -121,8 +121,8 @@ describe('automatic top-up settings', () => {
   })
 
   it('requires the monthly limit to cover one top-up including its fee', () => {
-    expect(autoTopUpSettingsSchema.safeParse({ ...valid, monthlyLimitCents: 2_685 }).success).toBe(true)
-    expect(autoTopUpSettingsSchema.safeParse({ ...valid, monthlyLimitCents: 2_684 }).success).toBe(false)
+    expect(autoTopUpSettingsSchema.safeParse({ ...valid, monthlyLimitCents: 2_688 }).success).toBe(true)
+    expect(autoTopUpSettingsSchema.safeParse({ ...valid, monthlyLimitCents: 2_687 }).success).toBe(false)
   })
 
   it('lists automatic top-ups with credit purchases', () => {

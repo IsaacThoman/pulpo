@@ -195,7 +195,7 @@ export function AutoTopUpDialog({ open, onOpenChange, autoTopUp, availableBalanc
                 )
               })}</div>
               <MoneyInput id="auto-top-up-amount" value={amountInput} onChange={setAmountInput} placeholder="5.00–500.00" invalid={amountCents === null} />
-              {chargeCents !== null && <p className="text-xs text-muted-foreground">{ui("Each top-up charges {{charge}} plus tax, including the 5% + $0.50 platform fee.", { charge: dollars(chargeCents) })}</p>}
+              {chargeCents !== null && <p className="text-xs text-muted-foreground">{ui("Each top-up charges {{charge}} plus tax, including the 5.5% + $0.50 platform fee.", { charge: dollars(chargeCents) })}</p>}
             </div>
             <div className="space-y-2">
               <Label htmlFor="auto-top-up-limit">{ui("Monthly limit")}</Label>
