@@ -151,4 +151,18 @@ describe('chat order', () => {
     const pinned = useChat.getState().chats.find((item) => item.id === 'pinned')
     expect(pinned).toMatchObject({ pinned: true, folderId, sortOrder: 0 })
   })
+
+  it('keeps a chat in place when opening it loads details cached before a reorder', () => {
+    useChat.getState().reorderLooseChats('c', 'a', 'before')
+    expect(looseOrder()).toEqual(['c', 'a', 'b'])
+
+    useChat.getState().setDetailedChat({
+      id: 'b', title: 'b', modelId: 'test-model', pinned: true, folderId, sortOrder: -5,
+      createdAt: new Date(2_000).toISOString(), updatedAt: new Date(2_000).toISOString(),
+      activeResponseId: null, activeBranchLeafId: null, responses: [],
+    })
+
+    expect(looseOrder()).toEqual(['c', 'a', 'b'])
+    expect(useChat.getState().chats.find((item) => item.id === 'b')).toMatchObject({ pinned: false, folderId: null, sortOrder: 2 })
+  })
 })
