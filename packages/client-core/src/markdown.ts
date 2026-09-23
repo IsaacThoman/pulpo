@@ -62,7 +62,7 @@ function closingInlineDollar(content: string, opening: number): number {
   return -1
 }
 
-function protectLiteralDollars(content: string): string {
+function protectLiteralDollars(content: string, options: MathDelimiterOptions): string {
   let result = ''
   for (let index = 0; index < content.length; index += 1) {
     const character = content[index]
@@ -82,7 +82,11 @@ function protectLiteralDollars(content: string): string {
       if (closing !== -1) {
         const tex = content.slice(index + 1, closing)
         if (tex.length > 0 && tex.trim() === tex) {
-          result += content.slice(index, closing + 1)
+          // Native inline math is a single text span. Long expressions can be
+          // clipped by the viewport with no way to pan across the span.
+          result += options.maxInlineMathLength !== undefined && tex.length > options.maxInlineMathLength
+            ? `\n\n${displayMathBlock(tex, options.displayMathStyle ?? 'single-line')}\n\n`
+            : content.slice(index, closing + 1)
           index = closing
           continue
         }
@@ -96,6 +100,8 @@ function protectLiteralDollars(content: string): string {
 
 export interface MathDelimiterOptions {
   displayMathStyle?: 'single-line' | 'multiline'
+  /** Render longer inline expressions as scrollable display math. Omit to preserve inline math. */
+  maxInlineMathLength?: number
 }
 
 /** Normalize common LLM math delimiters while preserving ordinary currency and literal dollar signs. */
@@ -107,7 +113,7 @@ export function normalizeMathDelimiters(content: string, options: MathDelimiterO
     const explicitMath = replaceBracketDisplayMath(part, style)
       .replace(/(?<!\\)\\\(([\s\S]*?)(?<!\\)\\\)/g, (_match, tex: string) => `$${tex}$`)
       .replace(/^[ \t]*\$\$[ \t]*\r?\n([\s\S]*?)\r?\n[ \t]*\$\$[ \t]*$/gm, (_match, tex: string) => displayMathBlock(tex, style))
-    const normalized = protectLiteralDollars(explicitMath)
+    const normalized = protectLiteralDollars(explicitMath, options)
     if (style !== 'multiline') return normalized
     return normalized.replace(/^[ \t]*\$\$([^\r\n]*?)\$\$[ \t]*$/gm, (_match, tex: string) => `$$\n${tex}\n$$`)
   }).join('')
