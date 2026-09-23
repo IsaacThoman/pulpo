@@ -347,7 +347,7 @@ const esUi: Record<string, string> = {
   "Restore draft": "Restaurar borrador",
   "Shelved drafts": "Borradores guardados",
   "Shelved": "Guardados",
-  "Queued": "En cola",
+  "{{count}} queued": "{{count}} en cola",
   "Queued messages": "Mensajes en cola",
   "Shelve draft": "Guardar borrador",
   "Permanently delete your account and its data.": "Elimina permanentemente tu cuenta y sus datos.",

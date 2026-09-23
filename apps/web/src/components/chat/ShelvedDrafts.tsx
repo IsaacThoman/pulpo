@@ -13,8 +13,8 @@ export function ShelvedDrafts({ rows, busy, collapsed, onCollapse, onRestore, on
   const [drop, setDrop] = useState<{ id: string; edge: 'before' | 'after' } | null>(null)
   if (!rows.length) return null
   const actionClass = 'flex size-9 shrink-0 sm:size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40'
-  return <ComposerTray label={ui('Shelved drafts')} title={ui('Shelved')} icon={<Archive aria-hidden="true" className="size-3.5" />}
-    count={rows.length} collapsed={collapsed} onCollapse={onCollapse}>
+  return <ComposerTray label={ui('Shelved drafts')} title={`${ui('Shelved')} · ${rows.length}`} icon={<Archive aria-hidden="true" className="size-3.5" />}
+    collapsed={collapsed} onCollapse={onCollapse}>
       {rows.map((row, index) => <div key={row.id} draggable={!busy && rows.length > 1}
         role="group" aria-label={ui('Reorder shelved draft')} tabIndex={!busy && rows.length > 1 ? 0 : undefined}
         aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
