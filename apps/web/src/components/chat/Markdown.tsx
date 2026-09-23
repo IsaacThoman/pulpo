@@ -1,5 +1,5 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
-import ReactMarkdown, { type Components, type UrlTransform } from 'react-markdown'
+import ReactMarkdown, { type Components, type Options, type UrlTransform } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
 import rehypeKatex from 'rehype-katex'
@@ -9,6 +9,7 @@ import 'katex/dist/katex.min.css'
 import { ui } from '@/i18n/ui'
 import { writeClipboardText } from '@/lib/clipboard'
 import { previewKindForLanguage, previewTitle } from '@/lib/code-preview'
+import { rehypeDisplayMathFallback, rehypeMarkDisplayMath } from '@/lib/display-math-fallback'
 import { useCodePreview } from '@/stores/codePreview'
 
 function CodeBlock({ language, code }: { language: string; code: string }) {
@@ -112,6 +113,12 @@ const markdownComponents: Components = {
   strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
 }
 
+const REHYPE_PLUGINS: NonNullable<Options['rehypePlugins']> = [
+  rehypeMarkDisplayMath,
+  [rehypeKatex, { throwOnError: false, errorColor: 'var(--muted-foreground)' }],
+  rehypeDisplayMathFallback,
+]
+
 function useRenderedContent(content: string, streaming: boolean): string {
   const latest = useRef(content)
   latest.current = content
@@ -152,7 +159,7 @@ export const Markdown = memo(function Markdown({
     <div className="markdown-content min-w-0 max-w-full [overflow-wrap:anywhere]">
       <ReactMarkdown
         remarkPlugins={[remarkGfm, remarkMath]}
-        rehypePlugins={[[rehypeKatex, { throwOnError: false, errorColor: 'var(--muted-foreground)' }]]}
+        rehypePlugins={REHYPE_PLUGINS}
         components={mergedComponents}
         urlTransform={urlTransform}
       >

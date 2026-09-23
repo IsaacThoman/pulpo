@@ -1,5 +1,37 @@
-function normalizeDisplayMath(tex: string): string {
-  return tex.trim().replace(/\s*\r?\n\s*/g, ' ')
+type DisplayMathStyle = NonNullable<MathDelimiterOptions['displayMathStyle']>
+
+function normalizeDisplayMath(tex: string, style: DisplayMathStyle): string {
+  if (style === 'single-line') return tex.trim().replace(/\s*\r?\n\s*/g, ' ')
+  return tex.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).join('\n')
+}
+
+function displayMathBlock(tex: string, style: DisplayMathStyle): string {
+  const normalized = normalizeDisplayMath(tex, style)
+  return style === 'single-line' ? `$$${normalized}$$` : `$$\n${normalized}\n$$`
+}
+
+/** Replace `\[...\]` pairs by nesting depth, so an inner block cannot close its enclosing one. */
+function replaceBracketDisplayMath(content: string, style: DisplayMathStyle): string {
+  let result = ''
+  let cursor = 0
+  let opening = -1
+  let depth = 0
+  for (let index = 0; index < content.length - 1; index += 1) {
+    if (content[index] !== '\\' || isEscaped(content, index)) continue
+    const delimiter = content[index + 1]
+    if (delimiter === '[') {
+      if (depth === 0) opening = index
+      depth += 1
+    } else if (delimiter === ']' && depth > 0) {
+      depth -= 1
+      if (depth === 0) {
+        result += `${content.slice(cursor, opening)}\n${displayMathBlock(content.slice(opening + 2, index), style)}\n`
+        cursor = index + 2
+      }
+    }
+    index += 1
+  }
+  return result + content.slice(cursor)
 }
 
 function isEscaped(content: string, index: number): boolean {
@@ -68,15 +100,15 @@ export interface MathDelimiterOptions {
 
 /** Normalize common LLM math delimiters while preserving ordinary currency and literal dollar signs. */
 export function normalizeMathDelimiters(content: string, options: MathDelimiterOptions = {}): string {
+  const style = options.displayMathStyle ?? 'single-line'
   const parts = content.split(/(```[\s\S]*?```|`[^`\n]+`)/g)
   return parts.map((part, index) => {
     if (index % 2 === 1) return part
-    const explicitMath = part
-      .replace(/(?<!\\)\\\[([\s\S]*?)(?<!\\)\\\]/g, (_match, tex: string) => `\n$$${normalizeDisplayMath(tex)}$$\n`)
+    const explicitMath = replaceBracketDisplayMath(part, style)
       .replace(/(?<!\\)\\\(([\s\S]*?)(?<!\\)\\\)/g, (_match, tex: string) => `$${tex}$`)
-      .replace(/^[ \t]*\$\$[ \t]*\r?\n([\s\S]*?)\r?\n[ \t]*\$\$[ \t]*$/gm, (_match, tex: string) => `$$${normalizeDisplayMath(tex)}$$`)
+      .replace(/^[ \t]*\$\$[ \t]*\r?\n([\s\S]*?)\r?\n[ \t]*\$\$[ \t]*$/gm, (_match, tex: string) => displayMathBlock(tex, style))
     const normalized = protectLiteralDollars(explicitMath)
-    if (options.displayMathStyle !== 'multiline') return normalized
+    if (style !== 'multiline') return normalized
     return normalized.replace(/^[ \t]*\$\$([^\r\n]*?)\$\$[ \t]*$/gm, (_match, tex: string) => `$$\n${tex}\n$$`)
   }).join('')
 }

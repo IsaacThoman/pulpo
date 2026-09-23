@@ -57,6 +57,46 @@ $$\frac{a}{b} + c$$
       .toBe('\n$$\nx^2 + y^2\n$$\n')
   })
 
+  it('pairs nested display delimiters by depth', () => {
+    const markdown = String.raw`Before.
+
+\[
+\boxed{
+\text{Let } L = D - W
+\[
+L_{ii} = \sum_j w_{ij}
+\]
+}
+\]
+
+After $x$.`
+
+    expect(normalizeMathDelimiters(markdown)).toBe(String.raw`Before.
+
+
+$$\boxed{ \text{Let } L = D - W \[ L_{ii} = \sum_j w_{ij} \] }$$
+
+
+After $x$.`)
+  })
+
+  it('keeps display math line breaks in multiline style', () => {
+    expect(normalizeMathDelimiters('\\[\n  a \\\\\n\n  b\n\\]', { displayMathStyle: 'multiline' }))
+      .toBe('\n$$\na \\\\\nb\n$$\n')
+  })
+
+  it('does not treat a LaTeX line break before a bracket as a display delimiter', () => {
+    expect(normalizeMathDelimiters(String.raw`\[a \\[2pt] b\]`)).toBe(String.raw`
+$$a \\[2pt] b$$
+`)
+  })
+
+  it('leaves an unclosed outer display block untouched', () => {
+    const markdown = String.raw`\[ a \[ b \]`
+
+    expect(normalizeMathDelimiters(markdown)).toBe(markdown)
+  })
+
   it('does not rewrite delimiters inside inline or fenced code', () => {
     const inlineCode = '`' + String.raw`$5 and \(code\)` + '`'
     const fencedCode = ['```tex', String.raw`$F_x$`, String.raw`\[block\]`, '```'].join('\n')
