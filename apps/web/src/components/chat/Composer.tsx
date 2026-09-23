@@ -1064,9 +1064,8 @@ export function Composer({
         onRetry={() => { void runShelfAction(() => shelf!.retry()) }} />}
       {showShelf && shelfError && <p role="alert" className="px-3 py-2 text-xs text-destructive">{shelfError}</p>}
       {queuedMessages.length > 0 && (
-        <ComposerTray label={ui('Queued messages')} title={ui('Queued')}
-          icon={<CornerDownRight aria-hidden="true" className="size-3.5" />}
-          count={queuedMessages.length} collapsed={queueCollapsed}
+        <ComposerTray label={ui('Queued messages')} title={ui('{{count}} queued', { count: queuedMessages.length })}
+          collapsed={queueCollapsed}
           onCollapse={() => setQueueCollapsed((value) => !value)}
           className={messageEdit ? 'rounded-none' : undefined}>
           {queuedMessages.map((message) => {
