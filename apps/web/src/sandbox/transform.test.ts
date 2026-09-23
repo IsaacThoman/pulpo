@@ -84,4 +84,21 @@ describe('loadSandboxModules', () => {
     await expect(loadSandboxModules(['react', 'axios'])).rejects.toBeInstanceOf(UnsupportedImportError)
     await expect(loadSandboxModules(['axios'])).rejects.toThrow(/"axios" isn't available in previews/)
   })
+
+  it('explains that sibling modules cannot be loaded', async () => {
+    await expect(loadSandboxModules(['./Card.jsx'])).rejects.toThrow(/Previews run a single file, so "\.\/Card\.jsx" can't be loaded/)
+  })
+
+  it('resolves stylesheet imports to empty modules so the preview still renders', async () => {
+    const modules = await loadSandboxModules(['./styles.css', '../theme.module.scss'])
+    expect(modules.get('./styles.css')).toEqual({})
+    expect(modules.get('../theme.module.scss')).toEqual({})
+
+    const compiled = transformJsx(`import './styles.css'
+import classes from './App.module.css'
+export default function App() { return <main className={classes.app}>Flashcards</main> }`)
+    expect(compiled.imports).toEqual(expect.arrayContaining(['./styles.css', './App.module.css']))
+    const App = resolveEntry(evaluateModule(compiled.code, (specifier) => specifier.endsWith('.css') ? {} : requireModule(specifier))) as ComponentType
+    expect(renderToStaticMarkup(createElement(App))).toBe('<main>Flashcards</main>')
+  })
 })

@@ -1108,6 +1108,7 @@ const esUi: Record<string, string> = {
   "Download code": "Descargar código",
   "Code preview": "Vista previa de código",
   "The preview sandbox didn't load.": "No se pudo cargar el entorno aislado de la vista previa.",
+  "Stylesheet not included: {{0}}. The preview may look unstyled.": "Hoja de estilos no incluida: {{0}}. Es posible que la vista previa aparezca sin estilos.",
   "# About me\n\n- My name is…\n\n# Preferences\n\n- I prefer…": "# Sobre mí\n\n- Me llamo…\n\n# Preferencias\n\n- Prefiero…",
   "characters": "caracteres",
   "Updated": "Actualizado",

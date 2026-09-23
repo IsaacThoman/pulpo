@@ -67,11 +67,16 @@ export type SandboxOutboundMessage =
   | { type: 'pulpo-sandbox:ready' }
   | { type: 'pulpo-sandbox:rendered' }
   | { type: 'pulpo-sandbox:error'; message: string }
+  /** Stylesheets the code imports from other files; the preview renders without them. */
+  | { type: 'pulpo-sandbox:missing-styles'; files: string[] }
 
 export function isSandboxOutboundMessage(value: unknown): value is SandboxOutboundMessage {
   if (!value || typeof value !== 'object') return false
-  const message = value as { type?: unknown; message?: unknown }
+  const message = value as { type?: unknown; message?: unknown; files?: unknown }
   if (message.type === 'pulpo-sandbox:ready' || message.type === 'pulpo-sandbox:rendered') return true
+  if (message.type === 'pulpo-sandbox:missing-styles') {
+    return Array.isArray(message.files) && message.files.every((file) => typeof file === 'string')
+  }
   return message.type === 'pulpo-sandbox:error' && typeof message.message === 'string'
 }
 

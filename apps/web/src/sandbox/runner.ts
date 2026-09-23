@@ -38,8 +38,10 @@ function writeDocument(html: string): void {
 async function renderJsx(source: string): Promise<void> {
   const { transformJsx, evaluateModule, resolveEntry, usesTailwind } = await import('./transform')
   const compiled = transformJsx(source)
-  const [{ loadSandboxModules, loadTailwind }, { mountComponent }] = await Promise.all([import('./modules'), import('./mount')])
+  const [{ isStylesheetImport, loadSandboxModules, loadTailwind }, { mountComponent }] = await Promise.all([import('./modules'), import('./mount')])
   const [modules] = await Promise.all([loadSandboxModules(compiled.imports), usesTailwind(source) ? loadTailwind() : null])
+  const missingStyles = compiled.imports.filter(isStylesheetImport)
+  if (missingStyles.length) post({ type: 'pulpo-sandbox:missing-styles', files: missingStyles })
   const exports = evaluateModule(compiled.code, (specifier) => {
     if (!modules.has(specifier)) throw new Error(`"${specifier}" isn't available in previews.`)
     return modules.get(specifier)

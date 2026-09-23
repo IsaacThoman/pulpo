@@ -16,18 +16,42 @@ export const SANDBOX_MODULES: Record<string, () => Promise<unknown>> = {
 /** Tailwind's browser build, for JSX that styles itself with utility classes. */
 export const loadTailwind = () => import('@tailwindcss/browser')
 
+const STYLESHEET = /\.(?:css|scss|sass|less)(?:\?.*)?$/i
+
+/** Stylesheets from other files can't reach a single-file preview, but the component still renders without them. */
+export function isStylesheetImport(specifier: string): boolean {
+  return STYLESHEET.test(specifier)
+}
+
+function isLocalImport(specifier: string): boolean {
+  return specifier.startsWith('.') || specifier.startsWith('/')
+}
+
+function quoted(specifiers: string[]): string {
+  return specifiers.map((specifier) => `"${specifier}"`).join(', ')
+}
+
 export class UnsupportedImportError extends Error {
   constructor(specifiers: string[]) {
-    const list = specifiers.map((specifier) => `"${specifier}"`).join(', ')
-    const available = Object.keys(SANDBOX_MODULES).filter((name) => !name.includes('/')).join(', ')
-    super(`${list} ${specifiers.length === 1 ? "isn't" : "aren't"} available in previews. Available libraries: ${available}.`)
+    const local = specifiers.filter(isLocalImport)
+    if (local.length) {
+      super(`Previews run a single file, so ${quoted(local)} can't be loaded. Move that code into this file to preview it.`)
+    } else {
+      const available = Object.keys(SANDBOX_MODULES).filter((name) => !name.includes('/')).join(', ')
+      super(`${quoted(specifiers)} ${specifiers.length === 1 ? "isn't" : "aren't"} available in previews. Available libraries: ${available}.`)
+    }
     this.name = 'UnsupportedImportError'
   }
 }
 
+/** Load the libraries a preview requires. Stylesheet imports resolve to empty modules. */
 export async function loadSandboxModules(specifiers: string[]): Promise<Map<string, unknown>> {
-  const unsupported = specifiers.filter((specifier) => !(specifier in SANDBOX_MODULES))
+  const libraries = specifiers.filter((specifier) => !isStylesheetImport(specifier))
+  const unsupported = libraries.filter((specifier) => !(specifier in SANDBOX_MODULES))
   if (unsupported.length) throw new UnsupportedImportError(unsupported)
-  const entries = await Promise.all(specifiers.map(async (specifier) => [specifier, await SANDBOX_MODULES[specifier]!()] as const))
-  return new Map(entries)
+  const entries = await Promise.all(libraries.map(async (specifier) => [specifier, await SANDBOX_MODULES[specifier]!()] as const))
+  return new Map<string, unknown>([
+    ...specifiers.filter(isStylesheetImport).map((specifier) => [specifier, {}] as const),
+    ...entries,
+  ])
 }

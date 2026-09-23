@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { AlertTriangle, Loader2 } from 'lucide-react'
+import { AlertTriangle, Info, Loader2 } from 'lucide-react'
 import {
   SANDBOX_IFRAME_PERMISSIONS,
   SANDBOX_PATH,
@@ -7,7 +7,7 @@ import {
   type CodePreviewKind,
   type SandboxInboundMessage,
 } from '@/lib/code-preview'
-import { ui } from '@/i18n/ui'
+import { ui, uit } from '@/i18n/ui'
 
 const READY_TIMEOUT_MS = 15_000
 
@@ -19,6 +19,7 @@ export function SandboxFrame({ kind, code, title }: { kind: CodePreviewKind; cod
   const frameRef = useRef<HTMLIFrameElement>(null)
   const [status, setStatus] = useState<'loading' | 'rendered'>('loading')
   const [error, setError] = useState<string | null>(null)
+  const [missingStyles, setMissingStyles] = useState<string[]>([])
 
   useEffect(() => {
     let sent = false
@@ -38,6 +39,8 @@ export function SandboxFrame({ kind, code, title }: { kind: CodePreviewKind; cod
         target.postMessage(render, '*')
       } else if (message.type === 'pulpo-sandbox:rendered') {
         setStatus('rendered')
+      } else if (message.type === 'pulpo-sandbox:missing-styles') {
+        setMissingStyles(message.files.slice(0, 10).map((file) => file.split('/').pop() || file))
       } else {
         setStatus('rendered')
         setError(message.message.slice(0, 2_000))
@@ -56,6 +59,12 @@ export function SandboxFrame({ kind, code, title }: { kind: CodePreviewKind; cod
         <div role="alert" className="flex shrink-0 items-start gap-2 border-b border-destructive/20 bg-destructive/10 px-3 py-2 text-xs text-destructive">
           <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
           <span className="min-w-0 whitespace-pre-wrap break-words font-mono">{error}</span>
+        </div>
+      )}
+      {missingStyles.length > 0 && (
+        <div role="status" className="flex shrink-0 items-start gap-2 border-b bg-muted/60 px-3 py-2 text-xs text-muted-foreground">
+          <Info className="mt-0.5 size-3.5 shrink-0" />
+          <span className="min-w-0 break-words">{uit`Stylesheet not included: ${missingStyles.join(', ')}. The preview may look unstyled.`}</span>
         </div>
       )}
       <div className="relative min-h-0 flex-1">

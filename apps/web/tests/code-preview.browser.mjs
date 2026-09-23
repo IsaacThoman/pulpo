@@ -97,6 +97,12 @@ try {
   const svg = await open(4)
   await svg.locator('#dot').waitFor()
 
+  // A stylesheet from another file is reported, but the component still renders.
+  const deck = await open(7)
+  await deck.getByRole('heading', { name: 'Flashcards' }).waitFor()
+  await panel.getByText('Stylesheet not included: styles.css. The preview may look unstyled.').waitFor()
+  assert.equal(await panel.getByRole('alert').count(), 0)
+
   // Errors surface in the panel instead of failing silently.
   await open(5)
   await panel.getByRole('alert').filter({ hasText: 'Kaboom from preview' }).waitFor()

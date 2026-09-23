@@ -30,6 +30,7 @@ document.getElementById('out').textContent = JSON.stringify({
   fence('svg', '<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><circle id="dot" cx="5" cy="5" r="4"/></svg>'),
   fence('jsx', 'export default function Broken() { throw new Error("Kaboom from preview") }'),
   fence('jsx', 'import axios from "axios"\nexport default function Fetcher() { axios.get("/api/me"); return null }'),
+  fence('jsx', 'import "./styles.css"\nexport default function Deck() { return <h2 className="deck">Flashcards</h2> }'),
 ].join('\n\n')
 
 createRoot(document.getElementById('root')!).render(

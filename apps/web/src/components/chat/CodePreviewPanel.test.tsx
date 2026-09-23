@@ -55,6 +55,9 @@ describe('code previews', () => {
     expect(postMessage).toHaveBeenCalledTimes(1)
     expect(postMessage).toHaveBeenCalledWith({ type: 'pulpo-sandbox:render', kind: 'jsx', code: jsx }, '*')
 
+    postFromFrame(frame, { type: 'pulpo-sandbox:missing-styles', files: ['./src/styles.css'] })
+    expect(view.getByText('Stylesheet not included: styles.css. The preview may look unstyled.')).toBeTruthy()
+
     postFromFrame(frame, { type: 'pulpo-sandbox:error', message: 'Boom' })
     expect(view.getByRole('alert').textContent).toContain('Boom')
   })
