@@ -1081,6 +1081,8 @@ export const billingCheckouts = pgTable('billing_checkouts', {
   expiresAt: timestamp('expires_at', { withTimezone: true }),
   // Credit checkouts that also save the card for automatic top-ups.
   savePaymentMethod: boolean('save_payment_method').notNull().default(false),
+  // Automatic top-ups turn on only once this checkout saves a card.
+  enableAutoTopUp: boolean('enable_auto_top_up').notNull().default(false),
   ...timestamps,
 }, (table) => [
   uniqueIndex('billing_checkouts_user_idempotency_unique').on(table.userId, table.idempotencyKey),

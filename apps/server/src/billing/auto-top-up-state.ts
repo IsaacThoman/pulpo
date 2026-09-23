@@ -1,5 +1,5 @@
 import type Stripe from 'stripe'
-import { and, eq } from 'drizzle-orm'
+import { and, eq, isNotNull } from 'drizzle-orm'
 import type { db } from '../database/client.js'
 import { billingAccounts, billingAutoTopUps } from '../database/schema.js'
 
@@ -33,6 +33,22 @@ export async function savePaymentMethod(
     },
   })
   return true
+}
+
+/** Turns on automatic top-ups once a checkout saves a card, if they are configured. */
+export async function enableConfiguredAutoTopUp(tx: Transaction, userId: string): Promise<void> {
+  await tx.update(billingAccounts).set({
+    autoTopUpEnabled: true,
+    autoTopUpDisabledReason: null,
+    autoTopUpDisabledAt: null,
+    updatedAt: new Date(),
+  }).where(and(
+    eq(billingAccounts.userId, userId),
+    isNotNull(billingAccounts.stripePaymentMethodId),
+    isNotNull(billingAccounts.autoTopUpThresholdCents),
+    isNotNull(billingAccounts.autoTopUpAmountCents),
+    isNotNull(billingAccounts.autoTopUpMonthlyLimitCents),
+  ))
 }
 
 export async function disableAutoTopUp(tx: Transaction, userId: string, reason: AutoTopUpDisabledReason): Promise<void> {

@@ -349,7 +349,7 @@ export async function getAutoTopUpSummary(userId: string, now = new Date()): Pro
     ])
     const hasPaymentMethod = Boolean(account?.stripePaymentMethodId)
     return {
-      enabled: account?.autoTopUpEnabled ?? false,
+      enabled: (account?.autoTopUpEnabled ?? false) && hasPaymentMethod,
       state: autoTopUpState({
         enabled: account?.autoTopUpEnabled ?? false,
         hasPaymentMethod,
@@ -383,8 +383,12 @@ export async function updateAutoTopUpSettings(userId: string, input: {
   monthlyLimitCents: number
 }): Promise<AutoTopUpSummary> {
   const now = new Date()
+  const [account] = await db.select({ paymentMethodId: billingAccounts.stripePaymentMethodId })
+    .from(billingAccounts).where(eq(billingAccounts.userId, userId)).limit(1)
   const values = {
-    autoTopUpEnabled: input.enabled,
+    // Without a card the settings are kept but stay off; the checkout that saves
+    // a card turns them on.
+    autoTopUpEnabled: input.enabled && Boolean(account?.paymentMethodId),
     autoTopUpThresholdCents: input.thresholdCents,
     autoTopUpAmountCents: input.amountCents,
     autoTopUpMonthlyLimitCents: input.monthlyLimitCents,

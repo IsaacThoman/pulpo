@@ -158,7 +158,7 @@ describe('automatic top-ups', () => {
   it('reports the state shown on the billing page', () => {
     const state = { enabled: true, hasPaymentMethod: true, disabledReason: null, amountCents: 2_500, monthlyLimitCents: 10_000, monthSpentCents: 0 }
     expect(autoTopUpState(state)).toBe('active')
-    expect(autoTopUpState({ ...state, hasPaymentMethod: false })).toBe('needs_payment_method')
+    expect(autoTopUpState({ ...state, hasPaymentMethod: false })).toBe('off')
     expect(autoTopUpState({ ...state, monthSpentCents: 8_000 })).toBe('limit_reached')
     expect(autoTopUpState({ ...state, enabled: false })).toBe('off')
     expect(autoTopUpState({ ...state, enabled: false, disabledReason: 'payment_failed' })).toBe('payment_failed')

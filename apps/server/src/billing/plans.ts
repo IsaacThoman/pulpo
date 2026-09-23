@@ -49,7 +49,7 @@ export function autoTopUpDecision(input: {
   return 'charge'
 }
 
-export type AutoTopUpState = 'off' | 'needs_payment_method' | 'active' | 'limit_reached' | 'payment_failed' | 'payment_method_removed'
+export type AutoTopUpState = 'off' | 'active' | 'limit_reached' | 'payment_failed' | 'payment_method_removed'
 
 export function autoTopUpState(input: {
   enabled: boolean
@@ -64,7 +64,8 @@ export function autoTopUpState(input: {
       ? input.disabledReason
       : 'off'
   }
-  if (!input.hasPaymentMethod) return 'needs_payment_method'
+  // Automatic top-ups only turn on with a saved card; treat a stale row as off.
+  if (!input.hasPaymentMethod) return 'off'
   if (input.amountCents !== null && input.monthlyLimitCents !== null
     && input.monthSpentCents + chargeCentsForCredits(input.amountCents) > input.monthlyLimitCents) return 'limit_reached'
   return 'active'

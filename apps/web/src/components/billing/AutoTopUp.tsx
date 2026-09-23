@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { AlertTriangle, Check, CreditCard, Loader2, Zap } from 'lucide-react'
 import {
   autoTopUpSettingsError,
-  autoTopUpStateLabel,
+  autoTopUpStatusLine,
   defaultAutoTopUpSettings,
   paymentMethodLabel,
   removeAutoTopUpPaymentMethod,
@@ -38,11 +38,6 @@ function dollars(cents: number): string {
   return formatBalance(cents / 100)
 }
 
-/** The monthly limit resets at midnight UTC, so show that calendar day in any time zone. */
-function utcCalendarDay(iso: string): number {
-  const date = new Date(iso)
-  return new Date(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()).getTime()
-}
 
 export function MoneyInput({ id, value, onChange, invalid, placeholder }: {
   id: string
@@ -70,72 +65,19 @@ export function MoneyInput({ id, value, onChange, invalid, placeholder }: {
   )
 }
 
-function autoTopUpDescription(autoTopUp: AutoTopUpSummary): string {
-  const configured = autoTopUp.thresholdCents !== null && autoTopUp.amountCents !== null
-  const rule = configured
-    ? ui("When your balance falls below {{threshold}}, add {{amount}}.", {
-      threshold: dollars(autoTopUp.thresholdCents!),
-      amount: dollars(autoTopUp.amountCents!),
-    })
-    : ''
-  switch (autoTopUp.state) {
-    case 'active':
-      return rule
-    case 'limit_reached':
-      return ui("This month's limit is reached. Auto top-up resumes on {{date}}.", { date: formatDate(utcCalendarDay(autoTopUp.monthResetsAt)) })
-    case 'needs_payment_method':
-      return ui("Add a card to turn on auto top-up.")
-    case 'payment_failed':
-      return ui("Your card couldn't be charged, so auto top-up was turned off. Review your settings or use a different card.")
-    case 'payment_method_removed':
-      return ui("Your saved card was removed, so auto top-up was turned off.")
-    default:
-      return ui("Add credit automatically when your balance runs low, up to a monthly limit you set.")
-  }
-}
-
-/** Auto top-up status under the credit balance; hidden until the user sets it up. */
+/** Auto top-up status under the credit balance; hidden while it is off. */
 export function AutoTopUpStatus({ autoTopUp, className }: {
   autoTopUp: AutoTopUpSummary | undefined
   className?: string
 }) {
-  if (!autoTopUp || autoTopUp.state === 'off') return null
-  const state = autoTopUp.state
-  const showUsage = (state === 'active' || state === 'limit_reached') && autoTopUp.monthlyLimitCents !== null
-  const usagePercentage = autoTopUp.monthlyLimitCents ? Math.min(100, (autoTopUp.monthSpentCents / autoTopUp.monthlyLimitCents) * 100) : 0
+  const status = autoTopUp ? autoTopUpStatusLine(autoTopUp) : null
+  if (!status) return null
+  const Icon = status.tone === 'muted' ? Zap : AlertTriangle
   return (
-    <div className={className}>
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs font-medium text-muted-foreground">
-        <span className="flex items-center gap-2"><Zap className="size-3.5" aria-hidden />{ui("Auto top-up")}</span>
-        <span className={cn(
-          state === 'active' && 'text-emerald-600 dark:text-emerald-400',
-          (state === 'payment_failed' || state === 'payment_method_removed') && 'text-destructive',
-          (state === 'limit_reached' || state === 'needs_payment_method') && 'text-amber-700 dark:text-amber-300',
-        )}>· {autoTopUpStateLabel(state)}</span>
-      </div>
-      <p className="mt-1 text-sm">{autoTopUpDescription(autoTopUp)}</p>
-      {state === 'payment_failed' && autoTopUp.lastAttempt?.failureMessage && (
-        <p className="mt-1 flex items-start gap-1.5 text-xs text-destructive"><AlertTriangle className="mt-0.5 size-3 shrink-0" />{autoTopUp.lastAttempt.failureMessage}</p>
-      )}
-      {showUsage && (
-        <div className="mt-3">
-          <div className="flex justify-between gap-4 text-xs text-muted-foreground">
-            <span>{ui("{{spent}} of {{limit}} this month", { spent: dollars(autoTopUp.monthSpentCents), limit: dollars(autoTopUp.monthlyLimitCents!) })}</span>
-            {autoTopUp.paymentMethod && <span className="flex shrink-0 items-center gap-1"><CreditCard className="size-3" aria-hidden />{paymentMethodLabel(autoTopUp.paymentMethod)}</span>}
-          </div>
-          <div
-            className="mt-1.5 flex h-1.5 overflow-hidden rounded-full bg-muted"
-            role="progressbar"
-            aria-label={ui("Auto top-up")}
-            aria-valuenow={Math.round(usagePercentage)}
-            aria-valuemin={0}
-            aria-valuemax={100}
-          >
-            <div className={cn('h-full', state === 'limit_reached' ? 'bg-amber-400 dark:bg-amber-500' : 'bg-emerald-500')} style={{ width: `${usagePercentage}%` }} />
-          </div>
-        </div>
-      )}
-    </div>
+    <p className={cn('flex items-start gap-1.5 text-xs', status.tone === 'error' ? 'text-destructive' : 'text-muted-foreground', className)}>
+      <Icon className={cn('mt-0.5 size-3 shrink-0', status.tone === 'attention' && 'text-amber-600 dark:text-amber-400')} aria-hidden />
+      <span>{status.text}</span>
+    </p>
   )
 }
 
@@ -191,8 +133,8 @@ export function AutoTopUpDialog({ open, onOpenChange, autoTopUp, availableBalanc
     }
   }
 
-  const addCard = async () => {
-    const result = await startPaymentMethodCheckout()
+  const addCard = async (enableAutoTopUp: boolean) => {
+    const result = await startPaymentMethodCheckout(enableAutoTopUp)
     await openExternalUrl(result.url)
     return false
   }
@@ -201,7 +143,8 @@ export function AutoTopUpDialog({ open, onOpenChange, autoTopUp, availableBalanc
     if (validationError || thresholdCents === null || amountCents === null || monthlyLimitCents === null) return false
     await saveAutoTopUpSettings({ enabled, thresholdCents, amountCents, monthlyLimitCents })
     await onSaved()
-    if (needsCard) return addCard()
+    // Without a card the server keeps the settings off until checkout saves one.
+    if (needsCard) return addCard(true)
     return true
   })
 
@@ -209,7 +152,7 @@ export function AutoTopUpDialog({ open, onOpenChange, autoTopUp, availableBalanc
     if (!validationError && thresholdCents !== null && amountCents !== null && monthlyLimitCents !== null) {
       await saveAutoTopUpSettings({ enabled, thresholdCents, amountCents, monthlyLimitCents })
     }
-    return addCard()
+    return addCard(enabled)
   })
 
   const removeCard = () => run(async () => {

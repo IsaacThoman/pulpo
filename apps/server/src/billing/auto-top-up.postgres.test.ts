@@ -3,11 +3,12 @@ import Stripe from 'stripe'
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { and, eq, inArray } from 'drizzle-orm'
 import { db, queryClient } from '../database/client.js'
-import { billingAccounts, billingAutoTopUps, billingOrders, creditLedger, users } from '../database/schema.js'
+import { billingAccounts, billingAutoTopUps, billingCheckouts, billingOrders, creditLedger, users } from '../database/schema.js'
 
 const stripe = vi.hoisted(() => ({
   payBehavior: 'succeed' as 'succeed' | 'decline' | 'slow',
   invoices: new Map<string, Record<string, unknown>>(),
+  sessions: new Map<string, Record<string, unknown>>(),
   created: 0,
   voided: [] as string[],
 }))
@@ -81,6 +82,9 @@ vi.mock('./stripe.js', async (original) => {
     },
     paymentIntents: {
       retrieve: vi.fn(async (id: string) => ({ id, latest_charge: { id: `ch_${id}`, balance_transaction: { fee: 110 } } })),
+    },
+    checkout: {
+      sessions: { retrieve: vi.fn(async (id: string) => stripe.sessions.get(id)) },
     },
   }
   return { ...actual, getStripeClient: () => client }
@@ -233,5 +237,48 @@ describe.skipIf(!enabled)('automatic top-ups in PostgreSQL', () => {
     await sweepAutoTopUps()
     expect((await attempts(userId))[0]?.status).toBe('succeeded')
     expect(await balance(userId)).toBe(25_000_000)
+  })
+
+  it('keeps new settings off until a checkout saves the card', async () => {
+    const userId = randomUUID()
+    userIds.push(userId)
+    await db.insert(users).values({ id: userId, email: `${userId}@example.test`, username: userId, name: 'Auto top-up QA', balanceMicros: 0 })
+    await db.insert(billingAccounts).values({ userId, stripeCustomerId: `cus_${userId}` })
+    const settings = { enabled: true, thresholdCents: 500, amountCents: 2_500, monthlyLimitCents: 10_000 }
+    expect(await updateAutoTopUpSettings(userId, settings)).toMatchObject({ enabled: false, state: 'off', thresholdCents: 500 })
+
+    // Abandoned checkout: nothing changes.
+    const abandoned = { id: `cs_${randomUUID()}`, object: 'checkout.session', mode: 'setup', status: 'expired', payment_status: 'no_payment_required', expires_at: 1, customer: `cus_${userId}`, metadata: { pulpo_user_id: userId }, payment_intent: null, setup_intent: null }
+    await db.insert(billingCheckouts).values({ id: randomUUID(), userId, idempotencyKey: randomUUID(), kind: 'payment_method', enableAutoTopUp: true, stripeCheckoutSessionId: abandoned.id })
+    await processStripeWebhookEvent(syntheticEvent(`evt_${randomUUID()}`, 'checkout.session.expired', abandoned as never, Math.floor(Date.now() / 1_000)))
+    expect((await db.select().from(billingAccounts).where(eq(billingAccounts.userId, userId)))[0]).toMatchObject({ autoTopUpEnabled: false, stripePaymentMethodId: null })
+
+    // Completed checkout: the card is saved and auto top-up turns on.
+    const completed = {
+      ...abandoned, id: `cs_${randomUUID()}`, status: 'complete',
+      setup_intent: { id: `seti_${randomUUID()}`, status: 'succeeded', payment_method: { id: `pm_${userId}`, card: { brand: 'visa', last4: '4242' } } },
+    }
+    stripe.sessions.set(completed.id, completed)
+    await db.insert(billingCheckouts).values({ id: randomUUID(), userId, idempotencyKey: randomUUID(), kind: 'payment_method', enableAutoTopUp: true, stripeCheckoutSessionId: completed.id })
+    await processStripeWebhookEvent(syntheticEvent(`evt_${randomUUID()}`, 'checkout.session.completed', completed as never, Math.floor(Date.now() / 1_000)))
+    expect((await db.select().from(billingAccounts).where(eq(billingAccounts.userId, userId)))[0]).toMatchObject({
+      autoTopUpEnabled: true, stripePaymentMethodId: `pm_${userId}`, paymentMethodLast4: '4242',
+    })
+  })
+
+  it('does not turn auto top-up on when replacing the card of a user who has it off', async () => {
+    const userId = await account(10_000_000)
+    await updateAutoTopUpSettings(userId, { enabled: false, thresholdCents: 500, amountCents: 2_500, monthlyLimitCents: 10_000 })
+    const completed = {
+      id: `cs_${randomUUID()}`, object: 'checkout.session', mode: 'setup', status: 'complete', payment_status: 'no_payment_required', expires_at: 1,
+      customer: `cus_${userId}`, metadata: { pulpo_user_id: userId }, payment_intent: null,
+      setup_intent: { id: `seti_${randomUUID()}`, status: 'succeeded', payment_method: { id: `pm_new_${userId}`, card: { brand: 'mastercard', last4: '4444' } } },
+    }
+    stripe.sessions.set(completed.id, completed)
+    await db.insert(billingCheckouts).values({ id: randomUUID(), userId, idempotencyKey: randomUUID(), kind: 'payment_method', enableAutoTopUp: false, stripeCheckoutSessionId: completed.id })
+    await processStripeWebhookEvent(syntheticEvent(`evt_${randomUUID()}`, 'checkout.session.completed', completed as never, Math.floor(Date.now() / 1_000)))
+    expect((await db.select().from(billingAccounts).where(eq(billingAccounts.userId, userId)))[0]).toMatchObject({
+      autoTopUpEnabled: false, stripePaymentMethodId: `pm_new_${userId}`,
+    })
   })
 })

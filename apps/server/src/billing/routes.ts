@@ -48,7 +48,10 @@ export const autoTopUpSettingsSchema = z.object({
   message: 'The monthly limit must cover at least one top-up including the platform fee',
   path: ['monthlyLimitCents'],
 })
-const paymentMethodCheckoutSchema = z.object({ idempotencyKey: z.string().uuid() })
+const paymentMethodCheckoutSchema = z.object({
+  idempotencyKey: z.string().uuid(),
+  enableAutoTopUp: z.boolean().optional(),
+})
 const subscriptionCheckoutSchema = z.object({
   idempotencyKey: z.string().uuid(),
   plan: z.enum(['eight', 'fat']),

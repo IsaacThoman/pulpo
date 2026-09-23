@@ -143,6 +143,7 @@ async function createCreditCheckoutUnchecked(input: {
     requestedCreditCents: input.creditCents,
     chargeCents,
     savePaymentMethod: input.saveForAutoTopUp ?? false,
+    enableAutoTopUp: input.saveForAutoTopUp ?? false,
   })
   const metadata = {
     pulpo_checkout_id: internalId,
@@ -197,6 +198,7 @@ async function createCreditCheckoutUnchecked(input: {
 async function createPaymentMethodCheckoutUnchecked(input: {
   userId: string
   idempotencyKey: string
+  enableAutoTopUp?: boolean
 }): Promise<{ url: string; checkoutId: string }> {
   await checkoutUser(input.userId)
   const prior = await existingCheckout(input.userId, input.idempotencyKey)
@@ -213,6 +215,7 @@ async function createPaymentMethodCheckoutUnchecked(input: {
     userId: input.userId,
     idempotencyKey: input.idempotencyKey,
     kind: 'payment_method',
+    enableAutoTopUp: input.enableAutoTopUp ?? false,
   })
   const metadata = {
     pulpo_checkout_id: internalId,

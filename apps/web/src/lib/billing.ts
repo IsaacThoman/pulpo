@@ -1,10 +1,11 @@
 import { apiRequest } from './api'
 import { chargeCentsForCredits } from './billing-pricing'
+import { formatBalance, formatDate } from './format'
 import { ui } from '@/i18n/ui'
 
 export type BillingPlan = 'baby' | 'eight' | 'fat'
 
-export type AutoTopUpState = 'off' | 'needs_payment_method' | 'active' | 'limit_reached' | 'payment_failed' | 'payment_method_removed'
+export type AutoTopUpState = 'off' | 'active' | 'limit_reached' | 'payment_failed' | 'payment_method_removed'
 
 export interface AutoTopUpSettings {
   enabled: boolean
@@ -92,9 +93,10 @@ export function saveAutoTopUpSettings(settings: AutoTopUpSettings): Promise<Auto
   return apiRequest<AutoTopUpSummary>('/api/billing/auto-top-up', { method: 'PUT', body: settings })
 }
 
-export function startPaymentMethodCheckout(): Promise<{ url: string }> {
+/** Opens a card-only checkout; `enableAutoTopUp` turns auto top-up on once the card is saved. */
+export function startPaymentMethodCheckout(enableAutoTopUp: boolean): Promise<{ url: string }> {
   return apiRequest<{ url: string }>('/api/billing/checkouts/payment-method', {
-    method: 'POST', body: { idempotencyKey: crypto.randomUUID() },
+    method: 'POST', body: { idempotencyKey: crypto.randomUUID(), enableAutoTopUp },
   })
 }
 
@@ -148,14 +150,39 @@ export function autoTopUpActionLabel(summary: AutoTopUpSummary | undefined): str
   return summary.thresholdCents === null ? ui("Set up auto top-up") : ui("Turn on auto top-up")
 }
 
-export function autoTopUpStateLabel(state: AutoTopUpState): string {
-  switch (state) {
-    case 'active': return ui("On")
-    case 'limit_reached': return ui("Monthly limit reached")
-    case 'needs_payment_method': return ui("Needs a card")
-    case 'payment_failed': return ui("Payment failed")
-    case 'payment_method_removed': return ui("Card removed")
-    default: return ui("Off")
+function dollars(cents: number): string {
+  return formatBalance(cents / 100)
+}
+
+/** The monthly limit resets at midnight UTC, so show that calendar day in any time zone. */
+function utcCalendarDay(iso: string): number {
+  const date = new Date(iso)
+  return new Date(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()).getTime()
+}
+
+/** One-line auto top-up status under the credit balance, or null while it is off. */
+export function autoTopUpStatusLine(summary: AutoTopUpSummary): { text: string; tone: 'muted' | 'attention' | 'error' } | null {
+  const usage = summary.monthlyLimitCents === null
+    ? ''
+    : ` · ${ui("{{spent}} of {{limit}} used this month", { spent: dollars(summary.monthSpentCents), limit: dollars(summary.monthlyLimitCents) })}`
+  switch (summary.state) {
+    case 'active':
+      if (summary.thresholdCents === null || summary.amountCents === null) return null
+      return {
+        text: ui("Auto top-up adds {{amount}} when your balance falls below {{threshold}}", { amount: dollars(summary.amountCents), threshold: dollars(summary.thresholdCents) }) + usage,
+        tone: 'muted',
+      }
+    case 'limit_reached':
+      return { text: ui("Auto top-up paused until {{date}}", { date: formatDate(utcCalendarDay(summary.monthResetsAt)) }) + usage, tone: 'muted' }
+    case 'payment_failed':
+      return {
+        text: ui("Auto top-up turned off: {{reason}}", { reason: summary.lastAttempt?.failureMessage ?? ui("your card couldn't be charged.") }),
+        tone: 'error',
+      }
+    case 'payment_method_removed':
+      return { text: ui("Auto top-up turned off because your saved card was removed."), tone: 'attention' }
+    default:
+      return null
   }
 }
 

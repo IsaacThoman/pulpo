@@ -575,6 +575,13 @@
       "when": 1790126176471,
       "tag": "0081_billing_auto_top_ups",
       "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "7",
+      "when": 1790130753666,
+      "tag": "0082_billing_auto_top_up_card_activation",
+      "breakpoints": true
     }
   ]
 }

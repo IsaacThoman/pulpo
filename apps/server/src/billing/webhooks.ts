@@ -18,7 +18,7 @@ import { publishStateChange } from '../responses/events.js'
 import { PLAN_MONTHLY_CREDIT_MICROS, type PaidBillingPlan } from './plans.js'
 import { getStripeClient, planForPriceId } from './stripe.js'
 import { refreshStorageLimit } from './storage-entitlements.js'
-import { disableAutoTopUp, failAutoTopUpAttempt, savePaymentMethod } from './auto-top-up-state.js'
+import { disableAutoTopUp, enableConfiguredAutoTopUp, failAutoTopUpAttempt, savePaymentMethod } from './auto-top-up-state.js'
 
 type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0]
 
@@ -354,8 +354,10 @@ async function applyPaidCheckout(
   })
   await tx.update(billingCheckouts).set({ status: 'succeeded', updatedAt: new Date() })
     .where(eq(billingCheckouts.stripeCheckoutSessionId, checkout.id))
-  if (storedCheckout.savePaymentMethod && typeof checkout.payment_intent === 'object') {
-    await savePaymentMethod(tx, userId, checkout.payment_intent?.payment_method)
+  if (storedCheckout.savePaymentMethod && typeof checkout.payment_intent === 'object'
+    && await savePaymentMethod(tx, userId, checkout.payment_intent?.payment_method)
+    && storedCheckout.enableAutoTopUp) {
+    await enableConfiguredAutoTopUp(tx, userId)
   }
   changedUsers.add(userId)
 }
@@ -381,7 +383,9 @@ async function applySetupCheckout(
   const paymentMethod = setupIntent?.payment_method
     ?? (checkout.setup_intent ? (await getStripeClient().setupIntents.retrieve(idOf(checkout.setup_intent)!, { expand: ['payment_method'] })).payment_method : null)
   await saveCustomer(tx, userId, idOf(checkout.customer))
-  if (await savePaymentMethod(tx, userId, paymentMethod)) changedUsers.add(userId)
+  if (!await savePaymentMethod(tx, userId, paymentMethod)) return
+  if (storedCheckout.enableAutoTopUp) await enableConfiguredAutoTopUp(tx, userId)
+  changedUsers.add(userId)
 }
 
 async function applyPaidAutoTopUpInvoice(
