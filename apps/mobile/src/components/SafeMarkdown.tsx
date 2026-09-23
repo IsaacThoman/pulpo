@@ -22,7 +22,11 @@ export const SafeMarkdown = memo(function SafeMarkdown({
   onLinkPress?: (url: string) => boolean
 }) {
   const theme = useAppTheme()
-  const markdown = useMemo(() => normalizeMathDelimiters(children), [children])
+  // Android's native inline math is a single bitmap span with no horizontal
+  // gesture handling. Move wide formulas into the scrollable display-math view.
+  const markdown = useMemo(() => normalizeMathDelimiters(children, {
+    maxInlineMathLength: Platform.OS === 'android' ? 24 : undefined,
+  }), [children])
   const markdownStyle = useMemo<MarkdownStyle>(() => {
     const fontSize = compact ? 13 : 16
     const lineHeight = compact ? 19 : 24

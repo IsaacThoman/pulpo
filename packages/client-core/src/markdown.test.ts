@@ -57,6 +57,20 @@ $$\frac{a}{b} + c$$
       .toBe('\n$$\nx^2 + y^2\n$$\n')
   })
 
+  it('can make wide inline math scrollable without changing short math, display math, or code', () => {
+    const wide = String.raw`a_1+b_1+c_1+d_1+e_1+f_1+g_1+h_1+i_1+j_1=\mathrm{TAIL}`
+    const markdown = `Short $x+1$; wide $${wide}$ after.\n\n$$x^2$$\n\n\`$${wide}$\``
+
+    expect(normalizeMathDelimiters(markdown, { maxInlineMathLength: 24 }))
+      .toBe(`Short $x+1$; wide \n\n$$${wide}$$\n\n after.\n\n$$x^2$$\n\n\`$${wide}$\``)
+  })
+
+  it('promotes long parenthesized math after normalizing its delimiters', () => {
+    const tex = String.raw`a_1+b_1+c_1+d_1+e_1+f_1+g_1`
+    expect(normalizeMathDelimiters(String.raw`Before \(a_1+b_1+c_1+d_1+e_1+f_1+g_1\) after`, { maxInlineMathLength: 24 }))
+      .toBe(`Before \n\n$$${tex}$$\n\n after`)
+  })
+
   it('pairs nested display delimiters by depth', () => {
     const markdown = String.raw`Before.
 
