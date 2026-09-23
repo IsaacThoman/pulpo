@@ -154,7 +154,10 @@ html[data-desktop="true"] .desktop-sidebar-collapsed .chat-header::before {
     display: flex;
   }
 
-  html:not([data-desktop="true"]) .app-main > div > header {
+  /* The chat header sits inside ChatPage's preview-panel wrapper, so match it
+     by class; other pages keep their header directly under the route root. */
+  html:not([data-desktop="true"]) .app-main > div > header,
+  html:not([data-desktop="true"]) .app-main .chat-header {
     padding-left: 3rem;
   }
 }
@@ -422,7 +425,8 @@ html[data-desktop-os="win32"] .desktop-main-titlebar-active .app-main {
   margin-top: 0;
 }
 
-html[data-desktop-os="win32"] .desktop-main-titlebar-active .app-main > div > header {
+html[data-desktop-os="win32"] .desktop-main-titlebar-active .app-main > div > header,
+html[data-desktop-os="win32"] .desktop-main-titlebar-active .app-main .chat-header {
   padding-right: 138px;
 }
 
