@@ -1,0 +1,2680 @@
+{
+  "generatedAt": "2026-09-23T08:38:35.656Z",
+  "api": [
+    {
+      "kind": "plain",
+      "turns": 10,
+      "samples": 3,
+      "dbMs": 1.2,
+      "dtoMs": 0.1,
+      "branchMs": 0,
+      "httpMs": 8.9,
+      "ttfbMs": 8.8,
+      "bytes": 22324,
+      "pagedMs": 9.8,
+      "pagedBytes": 22459
+    },
+    {
+      "kind": "plain",
+      "turns": 100,
+      "samples": 3,
+      "dbMs": 3.3,
+      "dtoMs": 0.5,
+      "branchMs": 0.1,
+      "httpMs": 12.4,
+      "ttfbMs": 12.2,
+      "bytes": 220148,
+      "pagedMs": 14.8,
+      "pagedBytes": 220283
+    },
+    {
+      "kind": "plain",
+      "turns": 500,
+      "samples": 3,
+      "dbMs": 7.7,
+      "dtoMs": 2.3,
+      "branchMs": 0.2,
+      "httpMs": 21.8,
+      "ttfbMs": 21.3,
+      "bytes": 1100544,
+      "pagedMs": 27.2,
+      "pagedBytes": 1100679
+    },
+    {
+      "kind": "plain",
+      "turns": 1000,
+      "samples": 3,
+      "dbMs": 11,
+      "dtoMs": 5.1,
+      "branchMs": 0.4,
+      "httpMs": 31.1,
+      "ttfbMs": 29.7,
+      "bytes": 2201052,
+      "pagedMs": 27.4,
+      "pagedBytes": 1101080
+    },
+    {
+      "kind": "plain",
+      "turns": 2500,
+      "samples": 3,
+      "dbMs": 28.5,
+      "dtoMs": 11.1,
+      "branchMs": 2.6,
+      "httpMs": 63,
+      "ttfbMs": 60.6,
+      "bytes": 5507048,
+      "pagedMs": 33.8,
+      "pagedBytes": 1102574
+    },
+    {
+      "kind": "plain",
+      "turns": 5000,
+      "samples": 3,
+      "dbMs": 54.1,
+      "dtoMs": 24.7,
+      "branchMs": 4,
+      "httpMs": 121,
+      "ttfbMs": 115.5,
+      "bytes": 11017086,
+      "pagedMs": 40.7,
+      "pagedBytes": 1102612
+    },
+    {
+      "kind": "plain",
+      "turns": 10000,
+      "samples": 3,
+      "dbMs": 105.9,
+      "dtoMs": 54.8,
+      "branchMs": 12.3,
+      "httpMs": 234.2,
+      "ttfbMs": 225,
+      "bytes": 22037056,
+      "pagedMs": 73.7,
+      "pagedBytes": 1102582
+    },
+    {
+      "kind": "plain",
+      "turns": 20000,
+      "samples": 3,
+      "dbMs": 193.7,
+      "dtoMs": 142.5,
+      "branchMs": 35,
+      "httpMs": 484.3,
+      "ttfbMs": 450,
+      "bytes": 44107056,
+      "pagedMs": 120.5,
+      "pagedBytes": 1104080
+    },
+    {
+      "kind": "rich",
+      "turns": 1000,
+      "samples": 3,
+      "dbMs": 14.8,
+      "dtoMs": 5,
+      "branchMs": 2,
+      "httpMs": 34.5,
+      "ttfbMs": 33.3,
+      "bytes": 2632051,
+      "pagedMs": 29.5,
+      "pagedBytes": 1316579
+    },
+    {
+      "kind": "large",
+      "turns": 100,
+      "samples": 3,
+      "dbMs": 44.4,
+      "dtoMs": 0.8,
+      "branchMs": 0.1,
+      "httpMs": 87.8,
+      "ttfbMs": 69,
+      "bytes": 30522248,
+      "pagedMs": 88,
+      "pagedBytes": 30522383
+    }
+  ],
+  "browser": [
+    {
+      "variant": "ordinary",
+      "kind": "plain",
+      "turns": 10,
+      "repeat": 0,
+      "cpu": 1,
+      "openMs": 811.3843749999999,
+      "cachedReloadMs": 687.977499999999,
+      "cachedReloadFailed": false,
+      "domElements": 936,
+      "loadTaskMs": 365.185,
+      "loadScriptMs": 175.75199999999998,
+      "loadLayoutMs": 20.785999999999998,
+      "bottomGap": 0,
+      "heapAfterGcMB": 14.028438568115234,
+      "detailTransferBytes": 1747,
+      "detailDecodedBytes": 22463,
+      "draftCorrect": true,
+      "concurrentDraftCorrect": true,
+      "cachedDraftCorrect": true,
+      "streamIntegrity": {
+        "firstNodePreserved": true,
+        "tickCount": 60,
+        "bottomGap": 0
+      },
+      "streamTicksObserved": 32,
+      "streamP50Ms": 84,
+      "streamP95Ms": 107,
+      "transcriptWrites": 16,
+      "streamResponseWrites": 4,
+      "streamUniqueResponseRecords": 1,
+      "transcriptWriteSyncMaxMs": 0.1,
+      "persistedBytes": 22491,
+      "phases": {
+        "load": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.8,
+          "frameMaxMs": 182.4,
+          "framesOver50ms": 1,
+          "inputEventMaxMs": null
+        },
+        "typing": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.7,
+          "frameMaxMs": 33.3,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": 48
+        },
+        "scroll": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.8,
+          "frameMaxMs": 16.8,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": 24
+        },
+        "stream": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.8,
+          "frameMaxMs": 16.8,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": null
+        },
+        "settle": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.8,
+          "frameMaxMs": 16.8,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": 16
+        }
+      },
+      "errors": [],
+      "failedRequests": []
+    },
+    {
+      "variant": "ordinary",
+      "kind": "plain",
+      "turns": 10,
+      "repeat": 1,
+      "cpu": 1,
+      "openMs": 697.179333,
+      "cachedReloadMs": 691.9670839999999,
+      "cachedReloadFailed": false,
+      "domElements": 937,
+      "loadTaskMs": 367.12899999999996,
+      "loadScriptMs": 169.40800000000002,
+      "loadLayoutMs": 21.482,
+      "bottomGap": 0,
+      "heapAfterGcMB": 14.045154571533203,
+      "detailTransferBytes": 1747,
+      "detailDecodedBytes": 22463,
+      "draftCorrect": true,
+      "concurrentDraftCorrect": true,
+      "cachedDraftCorrect": true,
+      "streamIntegrity": {
+        "firstNodePreserved": true,
+        "tickCount": 60,
+        "bottomGap": 0
+      },
+      "streamTicksObserved": 32,
+      "streamP50Ms": 76,
+      "streamP95Ms": 107,
+      "transcriptWrites": 16,
+      "streamResponseWrites": 4,
+      "streamUniqueResponseRecords": 1,
+      "transcriptWriteSyncMaxMs": 0.2,
+      "persistedBytes": 22491,
+      "phases": {
+        "load": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.8,
+          "frameMaxMs": 70.3,
+          "framesOver50ms": 1,
+          "inputEventMaxMs": null
+        },
+        "typing": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.7,
+          "frameMaxMs": 16.8,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": 48
+        },
+        "scroll": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.7,
+          "frameMaxMs": 16.8,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": 24
+        },
+        "stream": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.7,
+          "frameMaxMs": 16.8,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": null
+        },
+        "settle": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.7,
+          "frameMaxMs": 16.8,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": null
+        }
+      },
+      "errors": [],
+      "failedRequests": []
+    },
+    {
+      "variant": "ordinary",
+      "kind": "plain",
+      "turns": 10,
+      "repeat": 2,
+      "cpu": 1,
+      "openMs": 712.8984579999997,
+      "cachedReloadMs": 686.994584,
+      "cachedReloadFailed": false,
+      "domElements": 937,
+      "loadTaskMs": 358.67900000000003,
+      "loadScriptMs": 171.711,
+      "loadLayoutMs": 20.387999999999998,
+      "bottomGap": 0,
+      "heapAfterGcMB": 14.164386749267578,
+      "detailTransferBytes": 1747,
+      "detailDecodedBytes": 22463,
+      "draftCorrect": true,
+      "concurrentDraftCorrect": true,
+      "cachedDraftCorrect": true,
+      "streamIntegrity": {
+        "firstNodePreserved": true,
+        "tickCount": 60,
+        "bottomGap": 0
+      },
+      "streamTicksObserved": 31,
+      "streamP50Ms": 81,
+      "streamP95Ms": 108,
+      "transcriptWrites": 16,
+      "streamResponseWrites": 4,
+      "streamUniqueResponseRecords": 1,
+      "transcriptWriteSyncMaxMs": 0.1,
+      "persistedBytes": 22491,
+      "phases": {
+        "load": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.8,
+          "frameMaxMs": 101.8,
+          "framesOver50ms": 1,
+          "inputEventMaxMs": null
+        },
+        "typing": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.8,
+          "frameMaxMs": 16.8,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": 40
+        },
+        "scroll": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.7,
+          "frameMaxMs": 16.8,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": 24
+        },
+        "stream": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.7,
+          "frameMaxMs": 16.8,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": null
+        },
+        "settle": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.8,
+          "frameMaxMs": 16.8,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": null
+        }
+      },
+      "errors": [],
+      "failedRequests": []
+    },
+    {
+      "variant": "ordinary",
+      "kind": "plain",
+      "turns": 100,
+      "repeat": 0,
+      "cpu": 1,
+      "openMs": 694.4187499999971,
+      "cachedReloadMs": 663.3276669999977,
+      "cachedReloadFailed": false,
+      "domElements": 1214,
+      "loadTaskMs": 394.994,
+      "loadScriptMs": 184.291,
+      "loadLayoutMs": 23.077,
+      "bottomGap": 0,
+      "heapAfterGcMB": 14.635845184326172,
+      "detailTransferBytes": 9092,
+      "detailDecodedBytes": 220287,
+      "draftCorrect": true,
+      "concurrentDraftCorrect": true,
+      "cachedDraftCorrect": true,
+      "streamIntegrity": {
+        "firstNodePreserved": false,
+        "tickCount": 60,
+        "bottomGap": 0
+      },
+      "streamTicksObserved": 31,
+      "streamP50Ms": 81,
+      "streamP95Ms": 108,
+      "transcriptWrites": 106,
+      "streamResponseWrites": 4,
+      "streamUniqueResponseRecords": 1,
+      "transcriptWriteSyncMaxMs": 0.2,
+      "persistedBytes": 220225,
+      "phases": {
+        "load": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.7,
+          "frameMaxMs": 66.7,
+          "framesOver50ms": 1,
+          "inputEventMaxMs": null
+        },
+        "typing": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.7,
+          "frameMaxMs": 16.8,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": 48
+        },
+        "scroll": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.8,
+          "frameMaxMs": 33.4,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": 40
+        },
+        "stream": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.8,
+          "frameMaxMs": 16.8,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": null
+        },
+        "settle": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.7,
+          "frameMaxMs": 16.8,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": 16
+        }
+      },
+      "errors": [],
+      "failedRequests": []
+    },
+    {
+      "variant": "ordinary",
+      "kind": "plain",
+      "turns": 100,
+      "repeat": 1,
+      "cpu": 1,
+      "openMs": 805.9317919999958,
+      "cachedReloadMs": 718.2502079999977,
+      "cachedReloadFailed": false,
+      "domElements": 1214,
+      "loadTaskMs": 359.75,
+      "loadScriptMs": 180.76999999999998,
+      "loadLayoutMs": 18.453,
+      "bottomGap": 0,
+      "heapAfterGcMB": 14.71658706665039,
+      "detailTransferBytes": 9092,
+      "detailDecodedBytes": 220287,
+      "draftCorrect": true,
+      "concurrentDraftCorrect": true,
+      "cachedDraftCorrect": true,
+      "streamIntegrity": {
+        "firstNodePreserved": false,
+        "tickCount": 60,
+        "bottomGap": 0
+      },
+      "streamTicksObserved": 33,
+      "streamP50Ms": 81,
+      "streamP95Ms": 107,
+      "transcriptWrites": 106,
+      "streamResponseWrites": 4,
+      "streamUniqueResponseRecords": 1,
+      "transcriptWriteSyncMaxMs": 0.2,
+      "persistedBytes": 220225,
+      "phases": {
+        "load": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.8,
+          "frameMaxMs": 181.1,
+          "framesOver50ms": 1,
+          "inputEventMaxMs": null
+        },
+        "typing": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.8,
+          "frameMaxMs": 33.4,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": 40
+        },
+        "scroll": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.8,
+          "frameMaxMs": 33.3,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": 40
+        },
+        "stream": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.7,
+          "frameMaxMs": 16.8,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": null
+        },
+        "settle": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.8,
+          "frameMaxMs": 16.8,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": null
+        }
+      },
+      "errors": [],
+      "failedRequests": []
+    },
+    {
+      "variant": "ordinary",
+      "kind": "plain",
+      "turns": 100,
+      "repeat": 2,
+      "cpu": 1,
+      "openMs": 710.3432080000057,
+      "cachedReloadMs": 763.1392500000075,
+      "cachedReloadFailed": false,
+      "domElements": 1214,
+      "loadTaskMs": 396.223,
+      "loadScriptMs": 182.636,
+      "loadLayoutMs": 21.561,
+      "bottomGap": 0,
+      "heapAfterGcMB": 14.657890319824219,
+      "detailTransferBytes": 9089,
+      "detailDecodedBytes": 220287,
+      "draftCorrect": true,
+      "concurrentDraftCorrect": true,
+      "cachedDraftCorrect": true,
+      "streamIntegrity": {
+        "firstNodePreserved": false,
+        "tickCount": 60,
+        "bottomGap": 0
+      },
+      "streamTicksObserved": 30,
+      "streamP50Ms": 71,
+      "streamP95Ms": 109,
+      "transcriptWrites": 106,
+      "streamResponseWrites": 4,
+      "streamUniqueResponseRecords": 1,
+      "transcriptWriteSyncMaxMs": 0.3,
+      "persistedBytes": 220225,
+      "phases": {
+        "load": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.8,
+          "frameMaxMs": 68.2,
+          "framesOver50ms": 1,
+          "inputEventMaxMs": null
+        },
+        "typing": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.7,
+          "frameMaxMs": 16.8,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": 48
+        },
+        "scroll": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.8,
+          "frameMaxMs": 33.4,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": 56
+        },
+        "stream": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.7,
+          "frameMaxMs": 16.8,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": 24
+        },
+        "settle": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.7,
+          "frameMaxMs": 16.8,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": 16
+        }
+      },
+      "errors": [],
+      "failedRequests": []
+    },
+    {
+      "variant": "ordinary",
+      "kind": "plain",
+      "turns": 1000,
+      "repeat": 0,
+      "cpu": 1,
+      "openMs": 788.8730420000065,
+      "cachedReloadMs": 746.335500000001,
+      "cachedReloadFailed": false,
+      "domElements": 1214,
+      "loadTaskMs": 472.01,
+      "loadScriptMs": 224.606,
+      "loadLayoutMs": 24.235,
+      "bottomGap": 0,
+      "heapAfterGcMB": 18.429519653320312,
+      "detailTransferBytes": 44859,
+      "detailDecodedBytes": 1101084,
+      "draftCorrect": true,
+      "concurrentDraftCorrect": true,
+      "cachedDraftCorrect": true,
+      "streamIntegrity": {
+        "firstNodePreserved": false,
+        "tickCount": 60,
+        "bottomGap": 0
+      },
+      "streamTicksObserved": 30,
+      "streamP50Ms": 68,
+      "streamP95Ms": 110,
+      "transcriptWrites": 1006,
+      "streamResponseWrites": 4,
+      "streamUniqueResponseRecords": 1,
+      "transcriptWriteSyncMaxMs": 0.2,
+      "persistedBytes": 2200229,
+      "phases": {
+        "load": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.8,
+          "frameMaxMs": 67.3,
+          "framesOver50ms": 1,
+          "inputEventMaxMs": null
+        },
+        "typing": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.7,
+          "frameMaxMs": 33.4,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": 64
+        },
+        "scroll": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.8,
+          "frameMaxMs": 33.4,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": 56
+        },
+        "stream": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.7,
+          "frameMaxMs": 16.8,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": 24
+        },
+        "settle": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.8,
+          "frameMaxMs": 16.8,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": 16
+        }
+      },
+      "errors": [],
+      "failedRequests": []
+    },
+    {
+      "variant": "ordinary",
+      "kind": "plain",
+      "turns": 1000,
+      "repeat": 1,
+      "cpu": 1,
+      "openMs": 826.1779589999933,
+      "cachedReloadMs": 766.0979579999985,
+      "cachedReloadFailed": false,
+      "domElements": 1214,
+      "loadTaskMs": 432.99,
+      "loadScriptMs": 208.52200000000002,
+      "loadLayoutMs": 20.593,
+      "bottomGap": 0,
+      "heapAfterGcMB": 17.887081146240234,
+      "detailTransferBytes": 44858,
+      "detailDecodedBytes": 1101084,
+      "draftCorrect": true,
+      "concurrentDraftCorrect": true,
+      "cachedDraftCorrect": true,
+      "streamIntegrity": {
+        "firstNodePreserved": false,
+        "tickCount": 60,
+        "bottomGap": 0
+      },
+      "streamTicksObserved": 31,
+      "streamP50Ms": 77,
+      "streamP95Ms": 110,
+      "transcriptWrites": 1006,
+      "streamResponseWrites": 4,
+      "streamUniqueResponseRecords": 1,
+      "transcriptWriteSyncMaxMs": 0.1,
+      "persistedBytes": 2200229,
+      "phases": {
+        "load": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.7,
+          "frameMaxMs": 148.4,
+          "framesOver50ms": 1,
+          "inputEventMaxMs": null
+        },
+        "typing": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.7,
+          "frameMaxMs": 33.3,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": 48
+        },
+        "scroll": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.8,
+          "frameMaxMs": 33.4,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": 32
+        },
+        "stream": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.8,
+          "frameMaxMs": 16.8,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": null
+        },
+        "settle": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.8,
+          "frameMaxMs": 16.8,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": 32
+        }
+      },
+      "errors": [],
+      "failedRequests": []
+    },
+    {
+      "variant": "ordinary",
+      "kind": "plain",
+      "turns": 1000,
+      "repeat": 2,
+      "cpu": 1,
+      "openMs": 861.8899169999931,
+      "cachedReloadMs": 714.4288329999981,
+      "cachedReloadFailed": false,
+      "domElements": 1214,
+      "loadTaskMs": 446.76,
+      "loadScriptMs": 224.37,
+      "loadLayoutMs": 21.462,
+      "bottomGap": 0,
+      "heapAfterGcMB": 18.48800277709961,
+      "detailTransferBytes": 44858,
+      "detailDecodedBytes": 1101084,
+      "draftCorrect": true,
+      "concurrentDraftCorrect": true,
+      "cachedDraftCorrect": true,
+      "streamIntegrity": {
+        "firstNodePreserved": false,
+        "tickCount": 60,
+        "bottomGap": 0
+      },
+      "streamTicksObserved": 32,
+      "streamP50Ms": 68,
+      "streamP95Ms": 106,
+      "transcriptWrites": 1006,
+      "streamResponseWrites": 4,
+      "streamUniqueResponseRecords": 1,
+      "transcriptWriteSyncMaxMs": 0.7,
+      "persistedBytes": 2200229,
+      "phases": {
+        "load": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.8,
+          "frameMaxMs": 65.5,
+          "framesOver50ms": 1,
+          "inputEventMaxMs": null
+        },
+        "typing": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.7,
+          "frameMaxMs": 33.4,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": 64
+        },
+        "scroll": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.8,
+          "frameMaxMs": 33.4,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": 56
+        },
+        "stream": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.7,
+          "frameMaxMs": 16.8,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": 24
+        },
+        "settle": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.8,
+          "frameMaxMs": 16.8,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": 32
+        }
+      },
+      "errors": [],
+      "failedRequests": []
+    },
+    {
+      "variant": "ordinary",
+      "kind": "plain",
+      "turns": 5000,
+      "repeat": 0,
+      "cpu": 1,
+      "openMs": 706.9500419999968,
+      "cachedReloadMs": 663.8320840000233,
+      "cachedReloadFailed": false,
+      "domElements": 1215,
+      "loadTaskMs": 460.15299999999996,
+      "loadScriptMs": 192.016,
+      "loadLayoutMs": 20.063000000000002,
+      "bottomGap": 0,
+      "heapAfterGcMB": 17.60158920288086,
+      "detailTransferBytes": 44824,
+      "detailDecodedBytes": 1102616,
+      "draftCorrect": true,
+      "concurrentDraftCorrect": true,
+      "cachedDraftCorrect": true,
+      "streamIntegrity": {
+        "firstNodePreserved": false,
+        "tickCount": 60,
+        "bottomGap": 0
+      },
+      "streamTicksObserved": 33,
+      "streamP50Ms": 75,
+      "streamP95Ms": 112,
+      "transcriptWrites": 1006,
+      "streamResponseWrites": 4,
+      "streamUniqueResponseRecords": 1,
+      "transcriptWriteSyncMaxMs": 1.5,
+      "persistedBytes": 2203620,
+      "phases": {
+        "load": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.8,
+          "frameMaxMs": 65.2,
+          "framesOver50ms": 1,
+          "inputEventMaxMs": null
+        },
+        "typing": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.8,
+          "frameMaxMs": 33.3,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": 64
+        },
+        "scroll": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.8,
+          "frameMaxMs": 33.4,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": 56
+        },
+        "stream": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.8,
+          "frameMaxMs": 16.8,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": 16
+        },
+        "settle": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.8,
+          "frameMaxMs": 33.4,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": 32
+        }
+      },
+      "errors": [],
+      "failedRequests": []
+    },
+    {
+      "variant": "ordinary",
+      "kind": "plain",
+      "turns": 5000,
+      "repeat": 1,
+      "cpu": 1,
+      "openMs": 729.154291999992,
+      "cachedReloadMs": 690.181292000023,
+      "cachedReloadFailed": false,
+      "domElements": 1215,
+      "loadTaskMs": 487.044,
+      "loadScriptMs": 207.94000000000003,
+      "loadLayoutMs": 34.861999999999995,
+      "bottomGap": 0,
+      "heapAfterGcMB": 18.321502685546875,
+      "detailTransferBytes": 44823,
+      "detailDecodedBytes": 1102616,
+      "draftCorrect": true,
+      "concurrentDraftCorrect": true,
+      "cachedDraftCorrect": true,
+      "streamIntegrity": {
+        "firstNodePreserved": false,
+        "tickCount": 60,
+        "bottomGap": 0
+      },
+      "streamTicksObserved": 32,
+      "streamP50Ms": 74,
+      "streamP95Ms": 113,
+      "transcriptWrites": 1006,
+      "streamResponseWrites": 4,
+      "streamUniqueResponseRecords": 1,
+      "transcriptWriteSyncMaxMs": 0.2,
+      "persistedBytes": 2203620,
+      "phases": {
+        "load": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.8,
+          "frameMaxMs": 66.7,
+          "framesOver50ms": 1,
+          "inputEventMaxMs": null
+        },
+        "typing": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.7,
+          "frameMaxMs": 33.4,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": 64
+        },
+        "scroll": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.8,
+          "frameMaxMs": 33.4,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": 56
+        },
+        "stream": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.8,
+          "frameMaxMs": 16.8,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": 16
+        },
+        "settle": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.8,
+          "frameMaxMs": 16.8,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": 40
+        }
+      },
+      "errors": [],
+      "failedRequests": []
+    },
+    {
+      "variant": "ordinary",
+      "kind": "plain",
+      "turns": 5000,
+      "repeat": 2,
+      "cpu": 1,
+      "openMs": 708.585207999975,
+      "cachedReloadMs": 664.1423749999958,
+      "cachedReloadFailed": false,
+      "domElements": 1215,
+      "loadTaskMs": 467.87600000000003,
+      "loadScriptMs": 204.724,
+      "loadLayoutMs": 22.57,
+      "bottomGap": 0,
+      "heapAfterGcMB": 18.256866455078125,
+      "detailTransferBytes": 44824,
+      "detailDecodedBytes": 1102616,
+      "draftCorrect": true,
+      "concurrentDraftCorrect": true,
+      "cachedDraftCorrect": true,
+      "streamIntegrity": {
+        "firstNodePreserved": false,
+        "tickCount": 60,
+        "bottomGap": 0
+      },
+      "streamTicksObserved": 33,
+      "streamP50Ms": 82,
+      "streamP95Ms": 127,
+      "transcriptWrites": 1006,
+      "streamResponseWrites": 4,
+      "streamUniqueResponseRecords": 1,
+      "transcriptWriteSyncMaxMs": 0.2,
+      "persistedBytes": 2203620,
+      "phases": {
+        "load": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.8,
+          "frameMaxMs": 81.8,
+          "framesOver50ms": 1,
+          "inputEventMaxMs": null
+        },
+        "typing": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.8,
+          "frameMaxMs": 33.4,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": 64
+        },
+        "scroll": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.8,
+          "frameMaxMs": 33.4,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": 56
+        },
+        "stream": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.7,
+          "frameMaxMs": 16.8,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": 24
+        },
+        "settle": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.8,
+          "frameMaxMs": 33.4,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": 40
+        }
+      },
+      "errors": [],
+      "failedRequests": []
+    },
+    {
+      "variant": "ordinary",
+      "kind": "rich",
+      "turns": 1000,
+      "repeat": 0,
+      "cpu": 1,
+      "openMs": 758.3615829999908,
+      "cachedReloadMs": 778.9151669999992,
+      "cachedReloadFailed": false,
+      "domElements": 1958,
+      "loadTaskMs": 523.763,
+      "loadScriptMs": 230.323,
+      "loadLayoutMs": 36.307,
+      "bottomGap": 0,
+      "heapAfterGcMB": 19.41964340209961,
+      "detailTransferBytes": 44264,
+      "detailDecodedBytes": 1316583,
+      "draftCorrect": true,
+      "concurrentDraftCorrect": true,
+      "cachedDraftCorrect": true,
+      "streamIntegrity": {
+        "firstNodePreserved": false,
+        "tickCount": 60,
+        "bottomGap": 0
+      },
+      "streamTicksObserved": 32,
+      "streamP50Ms": 70,
+      "streamP95Ms": 103,
+      "transcriptWrites": 1006,
+      "streamResponseWrites": 4,
+      "streamUniqueResponseRecords": 1,
+      "transcriptWriteSyncMaxMs": 1.3,
+      "persistedBytes": 2631228,
+      "phases": {
+        "load": {
+          "longTasks": 1,
+          "blockingMs": 27,
+          "longestTaskMs": 77,
+          "frameP95Ms": 16.8,
+          "frameMaxMs": 99.9,
+          "framesOver50ms": 2,
+          "inputEventMaxMs": null
+        },
+        "typing": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.7,
+          "frameMaxMs": 33.4,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": 64
+        },
+        "scroll": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.8,
+          "frameMaxMs": 50,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": 72
+        },
+        "stream": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.7,
+          "frameMaxMs": 16.8,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": 16
+        },
+        "settle": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.7,
+          "frameMaxMs": 33.3,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": 32
+        }
+      },
+      "errors": [],
+      "failedRequests": []
+    },
+    {
+      "variant": "ordinary",
+      "kind": "rich",
+      "turns": 1000,
+      "repeat": 1,
+      "cpu": 1,
+      "openMs": 791.2649169999931,
+      "cachedReloadMs": 775.2299160000111,
+      "cachedReloadFailed": false,
+      "domElements": 1959,
+      "loadTaskMs": 525.25,
+      "loadScriptMs": 235.21200000000002,
+      "loadLayoutMs": 35.786,
+      "bottomGap": 0,
+      "heapAfterGcMB": 19.41228485107422,
+      "detailTransferBytes": 44263,
+      "detailDecodedBytes": 1316583,
+      "draftCorrect": true,
+      "concurrentDraftCorrect": true,
+      "cachedDraftCorrect": true,
+      "streamIntegrity": {
+        "firstNodePreserved": false,
+        "tickCount": 60,
+        "bottomGap": 0
+      },
+      "streamTicksObserved": 31,
+      "streamP50Ms": 63,
+      "streamP95Ms": 108,
+      "transcriptWrites": 1006,
+      "streamResponseWrites": 4,
+      "streamUniqueResponseRecords": 1,
+      "transcriptWriteSyncMaxMs": 0.2,
+      "persistedBytes": 2631228,
+      "phases": {
+        "load": {
+          "longTasks": 1,
+          "blockingMs": 29,
+          "longestTaskMs": 79,
+          "frameP95Ms": 16.8,
+          "frameMaxMs": 100,
+          "framesOver50ms": 2,
+          "inputEventMaxMs": null
+        },
+        "typing": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.8,
+          "frameMaxMs": 33.3,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": 64
+        },
+        "scroll": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.8,
+          "frameMaxMs": 50,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": 72
+        },
+        "stream": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.7,
+          "frameMaxMs": 16.8,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": 16
+        },
+        "settle": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.8,
+          "frameMaxMs": 33.4,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": 32
+        }
+      },
+      "errors": [],
+      "failedRequests": []
+    },
+    {
+      "variant": "ordinary",
+      "kind": "rich",
+      "turns": 1000,
+      "repeat": 2,
+      "cpu": 1,
+      "openMs": 843.9207919999899,
+      "cachedReloadMs": 775.4654579999915,
+      "cachedReloadFailed": false,
+      "domElements": 1959,
+      "loadTaskMs": 648.3100000000001,
+      "loadScriptMs": 310.593,
+      "loadLayoutMs": 50.333000000000006,
+      "bottomGap": 0,
+      "heapAfterGcMB": 19.419910430908203,
+      "detailTransferBytes": 44264,
+      "detailDecodedBytes": 1316583,
+      "draftCorrect": true,
+      "concurrentDraftCorrect": true,
+      "cachedDraftCorrect": true,
+      "streamIntegrity": {
+        "firstNodePreserved": false,
+        "tickCount": 60,
+        "bottomGap": 0
+      },
+      "streamTicksObserved": 32,
+      "streamP50Ms": 75,
+      "streamP95Ms": 110,
+      "transcriptWrites": 1006,
+      "streamResponseWrites": 4,
+      "streamUniqueResponseRecords": 1,
+      "transcriptWriteSyncMaxMs": 0.2,
+      "persistedBytes": 2631228,
+      "phases": {
+        "load": {
+          "longTasks": 1,
+          "blockingMs": 35,
+          "longestTaskMs": 85,
+          "frameP95Ms": 16.8,
+          "frameMaxMs": 115,
+          "framesOver50ms": 3,
+          "inputEventMaxMs": null
+        },
+        "typing": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.8,
+          "frameMaxMs": 33.3,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": 64
+        },
+        "scroll": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.8,
+          "frameMaxMs": 50,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": 72
+        },
+        "stream": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.7,
+          "frameMaxMs": 16.8,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": 16
+        },
+        "settle": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.8,
+          "frameMaxMs": 33.3,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": 40
+        }
+      },
+      "errors": [],
+      "failedRequests": []
+    },
+    {
+      "variant": "ordinary",
+      "kind": "large",
+      "turns": 100,
+      "repeat": 0,
+      "cpu": 1,
+      "openMs": 2880.154833000008,
+      "cachedReloadMs": 2850.6405000000086,
+      "cachedReloadFailed": false,
+      "domElements": 660,
+      "loadTaskMs": 2630.2059999999997,
+      "loadScriptMs": 1712.752,
+      "loadLayoutMs": 593.265,
+      "bottomGap": 0,
+      "heapAfterGcMB": 43.29597473144531,
+      "detailTransferBytes": 14740,
+      "detailDecodedBytes": 30522387,
+      "draftCorrect": true,
+      "concurrentDraftCorrect": true,
+      "cachedDraftCorrect": true,
+      "streamIntegrity": {
+        "firstNodePreserved": true,
+        "tickCount": 60,
+        "bottomGap": 0
+      },
+      "streamTicksObserved": 24,
+      "streamP50Ms": 146,
+      "streamP95Ms": 219,
+      "transcriptWrites": 91,
+      "streamResponseWrites": 4,
+      "streamUniqueResponseRecords": 1,
+      "transcriptWriteSyncMaxMs": 0.5,
+      "persistedBytes": 25944150,
+      "phases": {
+        "load": {
+          "longTasks": 4,
+          "blockingMs": 2064,
+          "longestTaskMs": 1324,
+          "frameP95Ms": 16.8,
+          "frameMaxMs": 1316.6,
+          "framesOver50ms": 4,
+          "inputEventMaxMs": null
+        },
+        "typing": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.8,
+          "frameMaxMs": 33.3,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": 64
+        },
+        "scroll": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.7,
+          "frameMaxMs": 16.8,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": 16
+        },
+        "stream": {
+          "longTasks": 32,
+          "blockingMs": 218,
+          "longestTaskMs": 108,
+          "frameP95Ms": 83.3,
+          "frameMaxMs": 133.4,
+          "framesOver50ms": 29,
+          "inputEventMaxMs": null
+        },
+        "settle": {
+          "longTasks": 1,
+          "blockingMs": 94,
+          "longestTaskMs": 144,
+          "frameP95Ms": 16.7,
+          "frameMaxMs": 166.7,
+          "framesOver50ms": 1,
+          "inputEventMaxMs": 32
+        }
+      },
+      "errors": [],
+      "failedRequests": []
+    },
+    {
+      "variant": "ordinary",
+      "kind": "large",
+      "turns": 100,
+      "repeat": 1,
+      "cpu": 1,
+      "openMs": 2923.1238330000197,
+      "cachedReloadMs": 2853.1680840000045,
+      "cachedReloadFailed": false,
+      "domElements": 660,
+      "loadTaskMs": 2615.3019999999997,
+      "loadScriptMs": 1710.917,
+      "loadLayoutMs": 579.226,
+      "bottomGap": 0,
+      "heapAfterGcMB": 43.10745620727539,
+      "detailTransferBytes": 14740,
+      "detailDecodedBytes": 30522387,
+      "draftCorrect": true,
+      "concurrentDraftCorrect": true,
+      "cachedDraftCorrect": true,
+      "streamIntegrity": {
+        "firstNodePreserved": true,
+        "tickCount": 60,
+        "bottomGap": 0
+      },
+      "streamTicksObserved": 25,
+      "streamP50Ms": 147,
+      "streamP95Ms": 182,
+      "transcriptWrites": 91,
+      "streamResponseWrites": 4,
+      "streamUniqueResponseRecords": 1,
+      "transcriptWriteSyncMaxMs": 0.3,
+      "persistedBytes": 25944150,
+      "phases": {
+        "load": {
+          "longTasks": 4,
+          "blockingMs": 2041,
+          "longestTaskMs": 1315,
+          "frameP95Ms": 16.8,
+          "frameMaxMs": 1316.6,
+          "framesOver50ms": 4,
+          "inputEventMaxMs": null
+        },
+        "typing": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.8,
+          "frameMaxMs": 16.8,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": 48
+        },
+        "scroll": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.7,
+          "frameMaxMs": 16.8,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": 32
+        },
+        "stream": {
+          "longTasks": 21,
+          "blockingMs": 183,
+          "longestTaskMs": 115,
+          "frameP95Ms": 83.2,
+          "frameMaxMs": 116.7,
+          "framesOver50ms": 23,
+          "inputEventMaxMs": null
+        },
+        "settle": {
+          "longTasks": 1,
+          "blockingMs": 88,
+          "longestTaskMs": 138,
+          "frameP95Ms": 16.8,
+          "frameMaxMs": 150,
+          "framesOver50ms": 1,
+          "inputEventMaxMs": 24
+        }
+      },
+      "errors": [],
+      "failedRequests": []
+    },
+    {
+      "variant": "ordinary",
+      "kind": "large",
+      "turns": 100,
+      "repeat": 2,
+      "cpu": 1,
+      "openMs": 2841.8308329999854,
+      "cachedReloadMs": 2900.3467079999973,
+      "cachedReloadFailed": false,
+      "domElements": 660,
+      "loadTaskMs": 2587.049,
+      "loadScriptMs": 1691.751,
+      "loadLayoutMs": 567.6099999999999,
+      "bottomGap": 0,
+      "heapAfterGcMB": 43.2781982421875,
+      "detailTransferBytes": 14740,
+      "detailDecodedBytes": 30522387,
+      "draftCorrect": true,
+      "concurrentDraftCorrect": true,
+      "cachedDraftCorrect": true,
+      "streamIntegrity": {
+        "firstNodePreserved": true,
+        "tickCount": 60,
+        "bottomGap": 0
+      },
+      "streamTicksObserved": 24,
+      "streamP50Ms": 148,
+      "streamP95Ms": 202,
+      "transcriptWrites": 91,
+      "streamResponseWrites": 4,
+      "streamUniqueResponseRecords": 1,
+      "transcriptWriteSyncMaxMs": 0.4,
+      "persistedBytes": 25944150,
+      "phases": {
+        "load": {
+          "longTasks": 4,
+          "blockingMs": 2010,
+          "longestTaskMs": 1310,
+          "frameP95Ms": 16.8,
+          "frameMaxMs": 1299.9,
+          "framesOver50ms": 4,
+          "inputEventMaxMs": null
+        },
+        "typing": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.7,
+          "frameMaxMs": 33.2,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": 48
+        },
+        "scroll": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.7,
+          "frameMaxMs": 16.8,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": 16
+        },
+        "stream": {
+          "longTasks": 25,
+          "blockingMs": 165,
+          "longestTaskMs": 102,
+          "frameP95Ms": 66.8,
+          "frameMaxMs": 116.7,
+          "framesOver50ms": 22,
+          "inputEventMaxMs": null
+        },
+        "settle": {
+          "longTasks": 1,
+          "blockingMs": 78,
+          "longestTaskMs": 128,
+          "frameP95Ms": 16.8,
+          "frameMaxMs": 133.4,
+          "framesOver50ms": 1,
+          "inputEventMaxMs": 32
+        }
+      },
+      "errors": [],
+      "failedRequests": []
+    },
+    {
+      "variant": "-slow",
+      "kind": "plain",
+      "turns": 5000,
+      "repeat": 0,
+      "cpu": 4,
+      "openMs": 1312.519209,
+      "cachedReloadMs": 981.5364590000008,
+      "cachedReloadFailed": false,
+      "domElements": 1210,
+      "loadTaskMs": 1280.096,
+      "loadScriptMs": 729.4359999999999,
+      "loadLayoutMs": 74.177,
+      "bottomGap": 0,
+      "heapAfterGcMB": 18.146873474121094,
+      "detailTransferBytes": 44824,
+      "detailDecodedBytes": 1102616,
+      "draftCorrect": true,
+      "concurrentDraftCorrect": true,
+      "cachedDraftCorrect": true,
+      "streamIntegrity": {
+        "firstNodePreserved": false,
+        "tickCount": 60,
+        "bottomGap": 0
+      },
+      "streamTicksObserved": 30,
+      "streamP50Ms": 64,
+      "streamP95Ms": 97,
+      "transcriptWrites": 1006,
+      "streamResponseWrites": 4,
+      "streamUniqueResponseRecords": 1,
+      "transcriptWriteSyncMaxMs": 1,
+      "persistedBytes": 2203620,
+      "phases": {
+        "load": {
+          "longTasks": 5,
+          "blockingMs": 210,
+          "longestTaskMs": 132,
+          "frameP95Ms": 50,
+          "frameMaxMs": 190.5,
+          "framesOver50ms": 6,
+          "inputEventMaxMs": null
+        },
+        "typing": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.8,
+          "frameMaxMs": 33.3,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": 80
+        },
+        "scroll": {
+          "longTasks": 1,
+          "blockingMs": 18,
+          "longestTaskMs": 68,
+          "frameP95Ms": 33.4,
+          "frameMaxMs": 83.3,
+          "framesOver50ms": 1,
+          "inputEventMaxMs": 104
+        },
+        "stream": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.8,
+          "frameMaxMs": 50,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": 32
+        },
+        "settle": {
+          "longTasks": 2,
+          "blockingMs": 46,
+          "longestTaskMs": 83,
+          "frameP95Ms": 16.8,
+          "frameMaxMs": 66.8,
+          "framesOver50ms": 2,
+          "inputEventMaxMs": 64
+        }
+      },
+      "errors": [],
+      "failedRequests": []
+    },
+    {
+      "variant": "-extreme",
+      "kind": "plain",
+      "turns": 10000,
+      "repeat": 0,
+      "cpu": 1,
+      "openMs": 802.409584,
+      "cachedReloadMs": 650.1114589999997,
+      "cachedReloadFailed": false,
+      "domElements": 1210,
+      "loadTaskMs": 439.56899999999996,
+      "loadScriptMs": 196.242,
+      "loadLayoutMs": 20.482,
+      "bottomGap": 0,
+      "heapAfterGcMB": 18.358325958251953,
+      "detailTransferBytes": 44767,
+      "detailDecodedBytes": 1102586,
+      "draftCorrect": true,
+      "concurrentDraftCorrect": true,
+      "cachedDraftCorrect": true,
+      "streamIntegrity": {
+        "firstNodePreserved": false,
+        "tickCount": 60,
+        "bottomGap": 0
+      },
+      "streamTicksObserved": 31,
+      "streamP50Ms": 76,
+      "streamP95Ms": 110,
+      "transcriptWrites": 2007,
+      "streamResponseWrites": 4,
+      "streamUniqueResponseRecords": 1,
+      "transcriptWriteSyncMaxMs": 0.7,
+      "persistedBytes": 3305124,
+      "phases": {
+        "load": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.7,
+          "frameMaxMs": 167.2,
+          "framesOver50ms": 1,
+          "inputEventMaxMs": null
+        },
+        "typing": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.7,
+          "frameMaxMs": 33.2,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": 64
+        },
+        "scroll": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.8,
+          "frameMaxMs": 33.4,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": 56
+        },
+        "stream": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.8,
+          "frameMaxMs": 16.8,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": 32
+        },
+        "settle": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.8,
+          "frameMaxMs": 33.4,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": 32
+        }
+      },
+      "errors": [],
+      "failedRequests": []
+    },
+    {
+      "variant": "-extreme",
+      "kind": "plain",
+      "turns": 20000,
+      "repeat": 0,
+      "cpu": 1,
+      "openMs": 757.5538329999999,
+      "cachedReloadMs": 644.1022499999999,
+      "cachedReloadFailed": false,
+      "domElements": 1210,
+      "loadTaskMs": 452.56,
+      "loadScriptMs": 205.991,
+      "loadLayoutMs": 21.113,
+      "bottomGap": 0,
+      "heapAfterGcMB": 18.369117736816406,
+      "detailTransferBytes": 44903,
+      "detailDecodedBytes": 1104084,
+      "draftCorrect": true,
+      "concurrentDraftCorrect": true,
+      "cachedDraftCorrect": true,
+      "streamIntegrity": {
+        "firstNodePreserved": false,
+        "tickCount": 60,
+        "bottomGap": 0
+      },
+      "streamTicksObserved": 31,
+      "streamP50Ms": 74,
+      "streamP95Ms": 106,
+      "transcriptWrites": 2007,
+      "streamResponseWrites": 4,
+      "streamUniqueResponseRecords": 1,
+      "transcriptWriteSyncMaxMs": 1.4,
+      "persistedBytes": 3309622,
+      "phases": {
+        "load": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.8,
+          "frameMaxMs": 150.4,
+          "framesOver50ms": 1,
+          "inputEventMaxMs": null
+        },
+        "typing": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.8,
+          "frameMaxMs": 33.2,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": 64
+        },
+        "scroll": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.8,
+          "frameMaxMs": 33.4,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": 56
+        },
+        "stream": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.7,
+          "frameMaxMs": 16.8,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": 40
+        },
+        "settle": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.8,
+          "frameMaxMs": 33.4,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": 32
+        }
+      },
+      "errors": [],
+      "failedRequests": []
+    },
+    {
+      "variant": "-layout",
+      "kind": "rich",
+      "turns": 1000,
+      "repeat": 0,
+      "cpu": 1,
+      "openMs": 863.7318329999998,
+      "cachedReloadMs": 733.1749170000003,
+      "cachedReloadFailed": false,
+      "domElements": 1959,
+      "loadTaskMs": 526.842,
+      "loadScriptMs": 227.929,
+      "loadLayoutMs": 34.461,
+      "bottomGap": 0,
+      "heapAfterGcMB": 19.398426055908203,
+      "detailTransferBytes": 44264,
+      "detailDecodedBytes": 1316583,
+      "draftCorrect": true,
+      "concurrentDraftCorrect": true,
+      "cachedDraftCorrect": true,
+      "streamIntegrity": {
+        "firstNodePreserved": false,
+        "tickCount": 60,
+        "bottomGap": 0
+      },
+      "readingAnchorShiftPx": 0,
+      "streamTicksObserved": 32,
+      "streamP50Ms": 71,
+      "streamP95Ms": 105,
+      "transcriptWrites": 1007,
+      "streamResponseWrites": 4,
+      "streamUniqueResponseRecords": 1,
+      "transcriptWriteSyncMaxMs": 1,
+      "persistedBytes": 2631228,
+      "phases": {
+        "load": {
+          "longTasks": 1,
+          "blockingMs": 25,
+          "longestTaskMs": 75,
+          "frameP95Ms": 16.8,
+          "frameMaxMs": 182.1,
+          "framesOver50ms": 2,
+          "inputEventMaxMs": null
+        },
+        "typing": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.8,
+          "frameMaxMs": 16.8,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": 48
+        },
+        "scroll": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.8,
+          "frameMaxMs": 50,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": 72
+        },
+        "stream": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.7,
+          "frameMaxMs": 16.8,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": 16
+        },
+        "settle": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.8,
+          "frameMaxMs": 33.3,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": null
+        }
+      },
+      "errors": [],
+      "failedRequests": []
+    },
+    {
+      "variant": "-rebase",
+      "kind": "plain",
+      "turns": 10,
+      "repeat": 0,
+      "cpu": 1,
+      "openMs": 801.9084169999999,
+      "cachedReloadMs": 672.8292920000004,
+      "cachedReloadFailed": false,
+      "domElements": 937,
+      "loadTaskMs": 405.06399999999996,
+      "loadScriptMs": 188.662,
+      "loadLayoutMs": 24.029999999999998,
+      "bottomGap": 0,
+      "heapAfterGcMB": 14.06650161743164,
+      "detailTransferBytes": 1747,
+      "detailDecodedBytes": 22463,
+      "draftCorrect": true,
+      "concurrentDraftCorrect": true,
+      "cachedDraftCorrect": true,
+      "streamIntegrity": {
+        "firstNodePreserved": true,
+        "tickCount": 60,
+        "bottomGap": 0
+      },
+      "readingAnchorShiftPx": 0,
+      "streamTicksObserved": 33,
+      "streamP50Ms": 81,
+      "streamP95Ms": 113,
+      "transcriptWrites": 17,
+      "streamResponseWrites": 4,
+      "streamUniqueResponseRecords": 1,
+      "transcriptWriteSyncMaxMs": 0.2,
+      "persistedBytes": 22491,
+      "phases": {
+        "load": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.8,
+          "frameMaxMs": 174.7,
+          "framesOver50ms": 1,
+          "inputEventMaxMs": null
+        },
+        "typing": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.8,
+          "frameMaxMs": 16.8,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": 40
+        },
+        "scroll": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.8,
+          "frameMaxMs": 16.8,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": 24
+        },
+        "stream": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.7,
+          "frameMaxMs": 16.8,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": null
+        },
+        "settle": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.7,
+          "frameMaxMs": 16.8,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": null
+        }
+      },
+      "errors": [],
+      "failedRequests": []
+    },
+    {
+      "variant": "-rebase",
+      "kind": "plain",
+      "turns": 5000,
+      "repeat": 0,
+      "cpu": 1,
+      "openMs": 679.427249999997,
+      "cachedReloadMs": 647.7279159999998,
+      "cachedReloadFailed": false,
+      "domElements": 1215,
+      "loadTaskMs": 456.286,
+      "loadScriptMs": 193.669,
+      "loadLayoutMs": 19.499,
+      "bottomGap": 0,
+      "heapAfterGcMB": 18.20232391357422,
+      "detailTransferBytes": 44812,
+      "detailDecodedBytes": 1102616,
+      "draftCorrect": true,
+      "concurrentDraftCorrect": true,
+      "cachedDraftCorrect": true,
+      "streamIntegrity": {
+        "firstNodePreserved": false,
+        "tickCount": 60,
+        "bottomGap": 0
+      },
+      "readingAnchorShiftPx": 0,
+      "streamTicksObserved": 32,
+      "streamP50Ms": 75,
+      "streamP95Ms": 104,
+      "transcriptWrites": 1007,
+      "streamResponseWrites": 4,
+      "streamUniqueResponseRecords": 1,
+      "transcriptWriteSyncMaxMs": 0.2,
+      "persistedBytes": 2203620,
+      "phases": {
+        "load": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.8,
+          "frameMaxMs": 65.7,
+          "framesOver50ms": 1,
+          "inputEventMaxMs": null
+        },
+        "typing": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.8,
+          "frameMaxMs": 33.3,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": 64
+        },
+        "scroll": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.8,
+          "frameMaxMs": 50,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": 72
+        },
+        "stream": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.7,
+          "frameMaxMs": 16.8,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": 24
+        },
+        "settle": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.8,
+          "frameMaxMs": 33.3,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": null
+        }
+      },
+      "errors": [],
+      "failedRequests": []
+    },
+    {
+      "variant": "-rebase",
+      "kind": "rich",
+      "turns": 1000,
+      "repeat": 0,
+      "cpu": 1,
+      "openMs": 740.9944580000047,
+      "cachedReloadMs": 712.4566249999989,
+      "cachedReloadFailed": false,
+      "domElements": 1959,
+      "loadTaskMs": 519.561,
+      "loadScriptMs": 223.58700000000002,
+      "loadLayoutMs": 33.596000000000004,
+      "bottomGap": 0,
+      "heapAfterGcMB": 19.408260345458984,
+      "detailTransferBytes": 44264,
+      "detailDecodedBytes": 1316583,
+      "draftCorrect": true,
+      "concurrentDraftCorrect": true,
+      "cachedDraftCorrect": true,
+      "streamIntegrity": {
+        "firstNodePreserved": false,
+        "tickCount": 60,
+        "bottomGap": 0
+      },
+      "readingAnchorShiftPx": 0,
+      "streamTicksObserved": 32,
+      "streamP50Ms": 78,
+      "streamP95Ms": 116,
+      "transcriptWrites": 1007,
+      "streamResponseWrites": 4,
+      "streamUniqueResponseRecords": 1,
+      "transcriptWriteSyncMaxMs": 0.7,
+      "persistedBytes": 2631228,
+      "phases": {
+        "load": {
+          "longTasks": 1,
+          "blockingMs": 21,
+          "longestTaskMs": 71,
+          "frameP95Ms": 16.8,
+          "frameMaxMs": 100,
+          "framesOver50ms": 2,
+          "inputEventMaxMs": null
+        },
+        "typing": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.8,
+          "frameMaxMs": 33.4,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": 64
+        },
+        "scroll": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.8,
+          "frameMaxMs": 66.6,
+          "framesOver50ms": 1,
+          "inputEventMaxMs": 88
+        },
+        "stream": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.8,
+          "frameMaxMs": 16.8,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": 16
+        },
+        "settle": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.8,
+          "frameMaxMs": 33.4,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": null
+        }
+      },
+      "errors": [],
+      "failedRequests": []
+    },
+    {
+      "variant": "-rebase",
+      "kind": "large",
+      "turns": 100,
+      "repeat": 0,
+      "cpu": 1,
+      "openMs": 2751.519583000001,
+      "cachedReloadMs": 2807.9573750000054,
+      "cachedReloadFailed": false,
+      "domElements": 660,
+      "loadTaskMs": 2480.5570000000002,
+      "loadScriptMs": 1639.201,
+      "loadLayoutMs": 540.378,
+      "bottomGap": 0,
+      "heapAfterGcMB": 43.36345672607422,
+      "detailTransferBytes": 14741,
+      "detailDecodedBytes": 30522387,
+      "draftCorrect": true,
+      "concurrentDraftCorrect": true,
+      "cachedDraftCorrect": true,
+      "streamIntegrity": {
+        "firstNodePreserved": true,
+        "tickCount": 60,
+        "bottomGap": 0
+      },
+      "readingAnchorShiftPx": 0,
+      "streamTicksObserved": 23,
+      "streamP50Ms": 146,
+      "streamP95Ms": 203,
+      "transcriptWrites": 91,
+      "streamResponseWrites": 4,
+      "streamUniqueResponseRecords": 1,
+      "transcriptWriteSyncMaxMs": 0.5,
+      "persistedBytes": 25944150,
+      "phases": {
+        "load": {
+          "longTasks": 4,
+          "blockingMs": 1936,
+          "longestTaskMs": 1259,
+          "frameP95Ms": 16.8,
+          "frameMaxMs": 1250,
+          "framesOver50ms": 4,
+          "inputEventMaxMs": null
+        },
+        "typing": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.7,
+          "frameMaxMs": 33.3,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": 48
+        },
+        "scroll": {
+          "longTasks": 0,
+          "blockingMs": 0,
+          "longestTaskMs": null,
+          "frameP95Ms": 16.8,
+          "frameMaxMs": 16.8,
+          "framesOver50ms": 0,
+          "inputEventMaxMs": 16
+        },
+        "stream": {
+          "longTasks": 10,
+          "blockingMs": 154,
+          "longestTaskMs": 109,
+          "frameP95Ms": 83.3,
+          "frameMaxMs": 116.7,
+          "framesOver50ms": 23,
+          "inputEventMaxMs": null
+        },
+        "settle": {
+          "longTasks": 1,
+          "blockingMs": 78,
+          "longestTaskMs": 128,
+          "frameP95Ms": 16.8,
+          "frameMaxMs": 133.4,
+          "framesOver50ms": 1,
+          "inputEventMaxMs": null
+        }
+      },
+      "errors": [],
+      "failedRequests": []
+    }
+  ],
+  "browserVersion": "153.0.8010.12",
+  "method": {
+    "implementationCommit": "e94b91f9",
+    "baselineCommit": "d16ead32d10ad1a113af66dc2b215432aa97e9e7",
+    "layoutComparisonBase": "6a5533aa",
+    "hardware": "Apple M3 Pro, 18 GiB RAM, macOS 27.0",
+    "apiNode": "26.4.0",
+    "buildAndTestNode": "24.11.1",
+    "initialTurns": 500,
+    "warmTurns": 500,
+    "prefetchMessages": 400,
+    "synthetic": true,
+    "finalImplementationCommit": "7fd65434",
+    "finalBase": "f0c0937c",
+    "coldOpenSummaryDelayMs": 750,
+    "coldOpenDelayedSummarySamples": 10
+  },
+  "layout": [
+    {
+      "case": "plain:10",
+      "initialBottomGap": 0,
+      "initialDomElements": 948,
+      "typingShiftPx": 0,
+      "prepend": null,
+      "mobileOverflow": false,
+      "mobileBottomGap": 0,
+      "resizedBottomGap": 0,
+      "errorCount": 0
+    },
+    {
+      "case": "plain:5000",
+      "initialBottomGap": 0,
+      "initialDomElements": 1193,
+      "typingShiftPx": 0,
+      "prepend": {
+        "delayMs": 1200,
+        "bufferPx": 335079,
+        "anchorShiftPx": 0,
+        "pages": 3,
+        "subsequentShiftsPx": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "mobileOverflow": false,
+      "mobileBottomGap": 0,
+      "resizedBottomGap": 0,
+      "errorCount": 0
+    },
+    {
+      "case": "rich:1000",
+      "initialBottomGap": 0,
+      "initialDomElements": 1975,
+      "typingShiftPx": 0,
+      "prepend": null,
+      "mobileOverflow": false,
+      "mobileBottomGap": 0,
+      "resizedBottomGap": 0,
+      "errorCount": 0
+    },
+    {
+      "case": "large:100",
+      "initialBottomGap": 0,
+      "initialDomElements": 676,
+      "typingShiftPx": 0,
+      "prepend": null,
+      "mobileOverflow": false,
+      "mobileBottomGap": 0,
+      "resizedBottomGap": 0,
+      "errorCount": 0
+    }
+  ],
+  "layoutComparison": [
+    {
+      "key": "plain:10",
+      "width": 1440,
+      "differences": [
+        {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        }
+      ]
+    },
+    {
+      "key": "plain:10",
+      "width": 390,
+      "differences": [
+        {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        }
+      ]
+    },
+    {
+      "key": "rich:1000",
+      "width": 1440,
+      "differences": [
+        {
+          "x": 0,
+          "y": -2.25,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "x": 0,
+          "y": -2.25,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        }
+      ]
+    },
+    {
+      "key": "rich:1000",
+      "width": 390,
+      "differences": [
+        {
+          "x": 0,
+          "y": -2,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "x": 0,
+          "y": -2,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        }
+      ]
+    }
+  ],
+  "branches": {
+    "bottomGap": 0,
+    "draftPreserved": true,
+    "previewPanelValidated": true,
+    "inlineEditPreserved": true,
+    "errors": [],
+    "activationTurns": [
+      500,
+      500
+    ]
+  },
+  "opening": [
+    {
+      "kind": "rich",
+      "turns": 1000,
+      "repeat": 0,
+      "pageCount": 2,
+      "bottomGap": 0,
+      "errors": []
+    },
+    {
+      "kind": "rich",
+      "turns": 1000,
+      "repeat": 1,
+      "pageCount": 2,
+      "bottomGap": 0,
+      "errors": []
+    },
+    {
+      "kind": "rich",
+      "turns": 1000,
+      "repeat": 2,
+      "pageCount": 2,
+      "bottomGap": 0,
+      "errors": []
+    },
+    {
+      "kind": "rich",
+      "turns": 1000,
+      "repeat": 3,
+      "pageCount": 2,
+      "bottomGap": 0,
+      "errors": []
+    },
+    {
+      "kind": "plain",
+      "turns": 1000,
+      "repeat": 4,
+      "pageCount": 2,
+      "bottomGap": 0,
+      "errors": []
+    },
+    {
+      "kind": "rich",
+      "turns": 1000,
+      "repeat": 5,
+      "pageCount": 2,
+      "bottomGap": 0,
+      "errors": []
+    },
+    {
+      "kind": "rich",
+      "turns": 1000,
+      "repeat": 6,
+      "pageCount": 2,
+      "bottomGap": 0,
+      "errors": []
+    },
+    {
+      "kind": "rich",
+      "turns": 1000,
+      "repeat": 7,
+      "pageCount": 2,
+      "bottomGap": 0,
+      "errors": []
+    },
+    {
+      "kind": "rich",
+      "turns": 1000,
+      "repeat": 8,
+      "pageCount": 2,
+      "bottomGap": 0,
+      "errors": []
+    },
+    {
+      "kind": "plain",
+      "turns": 1000,
+      "repeat": 9,
+      "pageCount": 2,
+      "bottomGap": 0,
+      "errors": []
+    },
+    {
+      "kind": "rich",
+      "turns": 1000,
+      "repeat": 10,
+      "pageCount": 2,
+      "bottomGap": 0,
+      "errors": []
+    },
+    {
+      "kind": "rich",
+      "turns": 1000,
+      "repeat": 11,
+      "pageCount": 2,
+      "bottomGap": 0,
+      "errors": []
+    },
+    {
+      "kind": "rich",
+      "turns": 1000,
+      "repeat": 12,
+      "pageCount": 2,
+      "bottomGap": 0,
+      "errors": []
+    },
+    {
+      "kind": "rich",
+      "turns": 1000,
+      "repeat": 13,
+      "pageCount": 2,
+      "bottomGap": 0,
+      "errors": []
+    },
+    {
+      "kind": "plain",
+      "turns": 1000,
+      "repeat": 14,
+      "pageCount": 2,
+      "bottomGap": 0,
+      "errors": []
+    },
+    {
+      "kind": "rich",
+      "turns": 1000,
+      "repeat": 15,
+      "pageCount": 2,
+      "bottomGap": 0,
+      "errors": []
+    },
+    {
+      "kind": "rich",
+      "turns": 1000,
+      "repeat": 16,
+      "pageCount": 2,
+      "bottomGap": 0,
+      "errors": []
+    },
+    {
+      "kind": "rich",
+      "turns": 1000,
+      "repeat": 17,
+      "pageCount": 2,
+      "bottomGap": 0,
+      "errors": []
+    },
+    {
+      "kind": "rich",
+      "turns": 1000,
+      "repeat": 18,
+      "pageCount": 2,
+      "bottomGap": 0,
+      "errors": []
+    },
+    {
+      "kind": "plain",
+      "turns": 1000,
+      "repeat": 19,
+      "pageCount": 2,
+      "bottomGap": 0,
+      "errors": []
+    }
+  ],
+  "validation": {
+    "webTestsPassed": 838,
+    "serverTestsPassed": 1235,
+    "serverTestsSkipped": 215,
+    "webBuild": "passed",
+    "serverBuild": "passed",
+    "lint": "passed"
+  }
+}
