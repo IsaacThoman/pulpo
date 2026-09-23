@@ -23,6 +23,61 @@ export function chargeCentsForCredits(creditCents: number): number {
   return Math.ceil((creditCents + 50) / 0.95)
 }
 
+export const AUTO_TOP_UP_MAX_THRESHOLD_CENTS = 50_000
+export const AUTO_TOP_UP_MAX_MONTHLY_LIMIT_CENTS = 500_000
+
+export type AutoTopUpDecision = 'charge' | 'inactive' | 'above_threshold' | 'limit_reached'
+
+/**
+ * Whether an automatic top-up should charge now. The monthly limit caps pre-tax
+ * automatic charges, so a top-up that would exceed it is skipped until next month.
+ */
+export function autoTopUpDecision(input: {
+  enabled: boolean
+  hasPaymentMethod: boolean
+  onHold: boolean
+  availableMicros: number
+  thresholdCents: number | null
+  amountCents: number | null
+  monthlyLimitCents: number | null
+  monthSpentCents: number
+}): AutoTopUpDecision {
+  if (!input.enabled || !input.hasPaymentMethod || input.onHold) return 'inactive'
+  if (input.thresholdCents === null || input.amountCents === null || input.monthlyLimitCents === null) return 'inactive'
+  if (input.availableMicros >= input.thresholdCents * 10_000) return 'above_threshold'
+  if (input.monthSpentCents + chargeCentsForCredits(input.amountCents) > input.monthlyLimitCents) return 'limit_reached'
+  return 'charge'
+}
+
+export type AutoTopUpState = 'off' | 'needs_payment_method' | 'active' | 'limit_reached' | 'payment_failed' | 'payment_method_removed'
+
+export function autoTopUpState(input: {
+  enabled: boolean
+  hasPaymentMethod: boolean
+  disabledReason: string | null
+  amountCents: number | null
+  monthlyLimitCents: number | null
+  monthSpentCents: number
+}): AutoTopUpState {
+  if (!input.enabled) {
+    return input.disabledReason === 'payment_failed' || input.disabledReason === 'payment_method_removed'
+      ? input.disabledReason
+      : 'off'
+  }
+  if (!input.hasPaymentMethod) return 'needs_payment_method'
+  if (input.amountCents !== null && input.monthlyLimitCents !== null
+    && input.monthSpentCents + chargeCentsForCredits(input.amountCents) > input.monthlyLimitCents) return 'limit_reached'
+  return 'active'
+}
+
+export function utcMonthStart(value = new Date()): Date {
+  return new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), 1))
+}
+
+export function utcMonthEnd(value = new Date()): Date {
+  return new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth() + 1, 1))
+}
+
 export function utcWeekStart(value = new Date()): Date {
   const date = new Date(value)
   const day = date.getUTCDay()

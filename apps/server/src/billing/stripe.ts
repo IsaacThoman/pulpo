@@ -122,6 +122,7 @@ async function createCreditCheckoutUnchecked(input: {
   userId: string
   creditCents: number
   idempotencyKey: string
+  saveForAutoTopUp?: boolean
 }): Promise<{ url: string; checkoutId: string; chargeCents: number }> {
   await checkoutUser(input.userId)
   const chargeCents = chargeCentsForCredits(input.creditCents)
@@ -141,12 +142,14 @@ async function createCreditCheckoutUnchecked(input: {
     kind: 'credits',
     requestedCreditCents: input.creditCents,
     chargeCents,
+    savePaymentMethod: input.saveForAutoTopUp ?? false,
   })
   const metadata = {
     pulpo_checkout_id: internalId,
     pulpo_user_id: input.userId,
     pulpo_kind: 'credits',
     requested_credit_cents: String(input.creditCents),
+    ...(input.saveForAutoTopUp ? { save_payment_method: '1' } : {}),
   }
   try {
     const checkout = await getStripeClient().checkout.sessions.create({
@@ -167,7 +170,10 @@ async function createCreditCheckoutUnchecked(input: {
       }],
       client_reference_id: internalId,
       metadata,
-      payment_intent_data: { metadata },
+      payment_intent_data: input.saveForAutoTopUp
+        ? { metadata, setup_future_usage: 'off_session' }
+        : { metadata },
+      ...(input.saveForAutoTopUp ? { payment_method_types: ['card'] } : {}),
       success_url: `${config.PUBLIC_URL}/billing?checkout=success&checkout_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${config.PUBLIC_URL}/billing`,
     }, { idempotencyKey: internalId })
@@ -180,6 +186,63 @@ async function createCreditCheckoutUnchecked(input: {
       updatedAt: new Date(),
     }).where(eq(billingCheckouts.id, internalId))
     return { url: checkout.url, checkoutId: checkout.id, chargeCents }
+  } catch (error) {
+    await db.update(billingCheckouts).set({ status: 'failed', updatedAt: new Date() })
+      .where(eq(billingCheckouts.id, internalId))
+    rethrowStripe(error)
+  }
+}
+
+/** Saves a card for automatic top-ups without charging it. */
+async function createPaymentMethodCheckoutUnchecked(input: {
+  userId: string
+  idempotencyKey: string
+}): Promise<{ url: string; checkoutId: string }> {
+  await checkoutUser(input.userId)
+  const prior = await existingCheckout(input.userId, input.idempotencyKey)
+  if (prior?.checkoutUrl && prior.stripeCheckoutSessionId) {
+    return { url: prior.checkoutUrl, checkoutId: prior.stripeCheckoutSessionId }
+  }
+  if (prior) throw new AppError(409, 'checkout_in_progress', 'This checkout is already being created')
+
+  const config = getConfig()
+  const customerId = await ensureCustomer(input.userId)
+  const internalId = newId()
+  await db.insert(billingCheckouts).values({
+    id: internalId,
+    userId: input.userId,
+    idempotencyKey: input.idempotencyKey,
+    kind: 'payment_method',
+  })
+  const metadata = {
+    pulpo_checkout_id: internalId,
+    pulpo_user_id: input.userId,
+    pulpo_kind: 'payment_method',
+  }
+  try {
+    const checkout = await getStripeClient().checkout.sessions.create({
+      mode: 'setup',
+      currency: 'usd',
+      customer: customerId,
+      customer_update: checkoutCustomerUpdates,
+      // Automatic top-up invoices calculate tax from the billing address.
+      billing_address_collection: 'required',
+      payment_method_types: ['card'],
+      client_reference_id: internalId,
+      metadata,
+      setup_intent_data: { metadata },
+      success_url: `${config.PUBLIC_URL}/billing?checkout=success&checkout_id={CHECKOUT_SESSION_ID}&autotopup=1`,
+      cancel_url: `${config.PUBLIC_URL}/billing?autotopup=1`,
+    }, { idempotencyKey: internalId })
+    if (!checkout.url) throw new Error('Stripe did not return a checkout URL')
+    await db.update(billingCheckouts).set({
+      stripeCheckoutSessionId: checkout.id,
+      checkoutUrl: checkout.url,
+      status: checkout.status ?? 'open',
+      expiresAt: new Date(checkout.expires_at * 1_000),
+      updatedAt: new Date(),
+    }).where(eq(billingCheckouts.id, internalId))
+    return { url: checkout.url, checkoutId: checkout.id }
   } catch (error) {
     await db.update(billingCheckouts).set({ status: 'failed', updatedAt: new Date() })
       .where(eq(billingCheckouts.id, internalId))
@@ -430,6 +493,9 @@ async function withBillingAccount<T>(userId: string, operation: () => Promise<T>
 }
 export async function createCreditCheckout(input: Parameters<typeof createCreditCheckoutUnchecked>[0]) {
   return withBillingAccount(input.userId, () => createCreditCheckoutUnchecked(input))
+}
+export async function createPaymentMethodCheckout(input: Parameters<typeof createPaymentMethodCheckoutUnchecked>[0]) {
+  return withBillingAccount(input.userId, () => createPaymentMethodCheckoutUnchecked(input))
 }
 export async function createSubscriptionCheckout(input: Parameters<typeof createSubscriptionCheckoutUnchecked>[0]) {
   return withBillingAccount(input.userId, () => createSubscriptionCheckoutUnchecked(input))

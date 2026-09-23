@@ -174,7 +174,7 @@ jobs:
           PULPO_BUDGET_POSTGRES_TEST: '1'
         run: |
           npm run db:migrate -w @pulpo/server
-          npm run test -w @pulpo/server -- src/accounting/service.postgres.test.ts
+          npm run test -w @pulpo/server -- src/accounting/service.postgres.test.ts src/billing/auto-top-up.postgres.test.ts
       - name: Create disposable speech database
         run: node --input-type=module -e 'import postgres from "postgres"; const sql = postgres(process.env.DATABASE_URL); await sql.unsafe("CREATE DATABASE pulpo_speech_test"); await sql.end();'
       - name: Apply speech test migrations

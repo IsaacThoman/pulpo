@@ -19,7 +19,7 @@ import { formatBalance, formatDate } from '@/lib/format'
 import { creditCentsFromInput } from '@/lib/billing-pricing'
 import { apiRequest } from '@/lib/api'
 import { openExternalUrl } from '@/lib/runtime'
-import { billingPlanName, fetchBillingSummary, managedBillingPlan, paymentStatusLabel, pendingBillingPlan, planChoiceDisabled, planChoiceLabel, type BillingPlan } from '@/lib/billing'
+import { autoTopUpSettingsError, billingPlanName, defaultAutoTopUpSettings, fetchBillingSummary, managedBillingPlan, paymentStatusLabel, pendingBillingPlan, planChoiceDisabled, planChoiceLabel, saveAutoTopUpSettings, type BillingPlan } from '@/lib/billing'
 import { queryClient } from '@/lib/query-client'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
@@ -37,6 +37,7 @@ import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { SubscriptionUsageBars } from '@/components/SubscriptionUsageBars'
+import { AutoTopUpCard, AutoTopUpDialog, MoneyInput } from '@/components/billing/AutoTopUp'
 import { ui, uit } from '@/i18n/ui'
 
 const CREDIT_AMOUNTS = [10, 25, 50, 100] as const
@@ -56,6 +57,7 @@ export function BillingPage() {
   const navigate = useNavigate()
   const checkoutId = searchParams.get('checkout_id')
   const checkoutReturned = searchParams.get('checkout') === 'success'
+  const autoTopUpReturned = searchParams.get('autotopup') === '1'
   const summaryQuery = useQuery({
     queryKey: ['billing', userId],
     queryFn: fetchBillingSummary,
@@ -79,6 +81,15 @@ export function BillingPage() {
   const [submitting, setSubmitting] = useState(false)
   const [planOpen, setPlanOpen] = useState(false)
   const [planError, setPlanError] = useState('')
+  const [autoTopUpOpen, setAutoTopUpOpen] = useState(false)
+  const [saveCardForAutoTopUp, setSaveCardForAutoTopUp] = useState(false)
+  const [autoThresholdInput, setAutoThresholdInput] = useState('5.00')
+  const [autoLimitInput, setAutoLimitInput] = useState('')
+
+  useEffect(() => {
+    // Returning from an abandoned card checkout reopens the auto top-up settings.
+    if (autoTopUpReturned && !checkoutReturned) setAutoTopUpOpen(true)
+  }, [autoTopUpReturned, checkoutReturned])
 
   useEffect(() => {
     if (searchParams.get('topup') !== '1') return
@@ -115,7 +126,25 @@ export function BillingPage() {
     setCreditAmountInput('25.00')
     setTopUpKey(newCheckoutKey())
     setTopUpError('')
+    setSaveCardForAutoTopUp(false)
+    setAutoThresholdInput(((summary?.autoTopUp.thresholdCents ?? 500) / 100).toFixed(2))
+    setAutoLimitInput('')
   }
+
+  const autoTopUpAvailable = Boolean(summary && !summary.autoTopUp.paymentMethod)
+  const autoThresholdCents = creditCentsFromInput(autoThresholdInput)
+  const autoLimitCents = creditCentsFromInput(autoLimitInput)
+  const toggleSaveCardForAutoTopUp = (checked: boolean) => {
+    setSaveCardForAutoTopUp(checked)
+    if (checked && creditCents !== null) {
+      setAutoLimitInput((defaultAutoTopUpSettings(undefined, creditCents).monthlyLimitCents / 100).toFixed(2))
+    }
+  }
+  const autoTopUpFormError = saveCardForAutoTopUp
+    ? autoTopUpSettingsError({ thresholdCents: autoThresholdCents, amountCents: creditCents, monthlyLimitCents: autoLimitCents })
+    : null
+
+  const refreshBilling = () => queryClient.invalidateQueries({ queryKey: ['billing', userId] })
 
   const closeTopUp = (open: boolean) => {
     setTopUpOpen(open)
@@ -124,11 +153,17 @@ export function BillingPage() {
 
   const startCreditCheckout = async () => {
     if (!validPurchase || creditCents === null) return
+    const saveCard = saveCardForAutoTopUp && autoTopUpAvailable
+    if (saveCard && autoTopUpFormError) return
     setSubmitting(true)
     setTopUpError('')
     try {
+      if (saveCard) {
+        // Auto top-up waits for the card this checkout saves.
+        await saveAutoTopUpSettings({ enabled: true, thresholdCents: autoThresholdCents!, amountCents: creditCents, monthlyLimitCents: autoLimitCents! })
+      }
       const result = await apiRequest<{ url: string }>('/api/billing/checkouts/credits', {
-        method: 'POST', body: { creditCents, idempotencyKey: topUpKey },
+        method: 'POST', body: { creditCents, idempotencyKey: topUpKey, ...(saveCard ? { saveForAutoTopUp: true } : {}) },
       })
       await openExternalUrl(result.url)
     } catch (error) {
@@ -226,10 +261,14 @@ export function BillingPage() {
               <span>{checkoutQuery.isError
                 ? ui("Could not confirm this checkout. Your balance and payment history may already be updated.")
                 : checkoutQuery.data?.status === 'succeeded'
-                ? ui("Payment confirmed. Your billing balance is up to date.")
+                ? autoTopUpReturned
+                  ? ui("Card saved. Auto top-up will use it when your balance runs low.")
+                  : ui("Payment confirmed. Your billing balance is up to date.")
                 : checkoutQuery.data?.status === 'failed' || checkoutQuery.data?.status === 'expired'
                   ? ui("Checkout was not completed.")
-                  : ui("Confirming your payment… this page will update automatically.")}</span>
+                  : autoTopUpReturned
+                    ? ui("Saving your card… this page will update automatically.")
+                    : ui("Confirming your payment… this page will update automatically.")}</span>
               <Button className="ml-auto" size="sm" variant="ghost" onClick={() => navigate('/billing', { replace: true })}>{ui("Dismiss")}</Button>
             </div>
           )}
@@ -291,6 +330,7 @@ export function BillingPage() {
               <div className="flex flex-wrap gap-2 pt-1">
                 <Button variant="default" onClick={() => { resetTopUp(); setTopUpOpen(true) }}><Plus />{ui("Add credits")}</Button>
               </div>
+              <AutoTopUpCard autoTopUp={summary?.autoTopUp} onEdit={() => setAutoTopUpOpen(true)} />
             </PaymentOption>
           </div>
 
@@ -302,7 +342,7 @@ export function BillingPage() {
               <div className="hidden grid-cols-[minmax(0,1fr)_140px_100px_90px] border-b px-4 py-2.5 text-xs text-muted-foreground sm:grid"><div>{ui("Description")}</div><div>{ui("Date")}</div><div className="text-right">{ui("Amount")}</div><div className="text-right">{ui("Status")}</div></div>
               {summary?.payments.length ? <div className="divide-y">{summary.payments.map((payment) => (
                 <div key={payment.id} className="grid gap-3 px-4 py-3 text-sm sm:grid-cols-[minmax(0,1fr)_140px_100px_90px] sm:items-center">
-                  <div className="flex min-w-0 items-center gap-3"><ReceiptText className="size-4 shrink-0 text-muted-foreground" /><div className="truncate font-medium">{payment.kind === 'credits' ? uit`${formatBalance((payment.requestedCreditCents ?? 0) / 100)} credit top-up` : uit`${billingPlanName(payment.plan ?? 'baby')} subscription`}</div></div>
+                  <div className="flex min-w-0 items-center gap-3"><ReceiptText className="size-4 shrink-0 text-muted-foreground" /><div className="truncate font-medium">{payment.kind === 'credits' ? payment.automatic ? uit`${formatBalance((payment.requestedCreditCents ?? 0) / 100)} auto top-up` : uit`${formatBalance((payment.requestedCreditCents ?? 0) / 100)} credit top-up` : uit`${billingPlanName(payment.plan ?? 'baby')} subscription`}</div></div>
                   <div className="text-muted-foreground">{formatDate(Date.parse(payment.createdAt))}</div>
                   <div className="font-medium tabular-nums sm:text-right">{formatBalance(payment.amountCents / 100)}</div>
                   <div className="text-muted-foreground sm:text-right">{paymentStatusLabel(payment.status)}</div>
@@ -331,11 +371,41 @@ export function BillingPage() {
             <DialogFooter><Button variant="outline" onClick={() => closeTopUp(false)}>{ui("Cancel")}</Button><Button disabled={!quote} onClick={() => setTopUpStep('review')}>{ui("Continue")}</Button></DialogFooter>
           </> : <>
             <DialogHeader><DialogTitle>{ui("Review purchase")}</DialogTitle><DialogDescription>{ui("You’ll finish payment in a secure checkout.")}</DialogDescription></DialogHeader>
-            <div className="space-y-4 py-2"><Quote credits={purchaseAmount} fee={feeCoverageAmount} charge={chargeAmount} /><div className="flex items-start gap-2 text-xs text-muted-foreground"><ShieldCheck className="mt-0.5 size-3.5 shrink-0" />{ui("Sales tax is calculated at checkout.")}</div>{topUpError && <p className="text-sm text-destructive">{topUpError}</p>}</div>
-            <DialogFooter><Button variant="outline" disabled={submitting} onClick={() => setTopUpStep('amount')}><ArrowLeft />{ui("Back")}</Button><Button disabled={submitting} onClick={() => void startCreditCheckout()}>{submitting && <Loader2 className="animate-spin" />}{ui("Continue to checkout")}</Button></DialogFooter>
+            <div className="space-y-4 py-2">
+              <Quote credits={purchaseAmount} fee={feeCoverageAmount} charge={chargeAmount} />
+              <div className="flex items-start gap-2 text-xs text-muted-foreground"><ShieldCheck className="mt-0.5 size-3.5 shrink-0" />{ui("Sales tax is calculated at checkout.")}</div>
+              {autoTopUpAvailable && (
+                <div className="space-y-3 rounded-lg border p-3">
+                  <label className="flex cursor-pointer items-start gap-2.5 text-sm">
+                    <input type="checkbox" className="mt-0.5 size-4 accent-primary" checked={saveCardForAutoTopUp} onChange={(event) => toggleSaveCardForAutoTopUp(event.target.checked)} />
+                    <span><span className="font-medium">{ui("Use this card for automatic top-ups")}</span><span className="mt-0.5 block text-xs text-muted-foreground">{ui("Add {{amount}} whenever your balance runs low.", { amount: formatBalance(purchaseAmount) })}</span></span>
+                  </label>
+                  {saveCardForAutoTopUp && <>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1.5"><Label htmlFor="purchase-auto-threshold" className="text-xs">{ui("When balance falls below")}</Label><MoneyInput id="purchase-auto-threshold" value={autoThresholdInput} onChange={setAutoThresholdInput} invalid={autoThresholdCents === null} /></div>
+                      <div className="space-y-1.5"><Label htmlFor="purchase-auto-limit" className="text-xs">{ui("Monthly limit")}</Label><MoneyInput id="purchase-auto-limit" value={autoLimitInput} onChange={setAutoLimitInput} invalid={autoLimitCents === null} /></div>
+                    </div>
+                    {autoTopUpFormError && <p className="text-xs text-destructive">{autoTopUpFormError}</p>}
+                    <p className="text-xs text-muted-foreground">{ui("By turning on auto top-up, you authorize Pulpo to charge this card whenever your balance falls below your threshold, up to your monthly limit. Sales tax is added to each charge. You can turn this off at any time.")}</p>
+                  </>}
+                </div>
+              )}
+              {topUpError && <p className="text-sm text-destructive">{topUpError}</p>}
+            </div>
+            <DialogFooter><Button variant="outline" disabled={submitting} onClick={() => setTopUpStep('amount')}><ArrowLeft />{ui("Back")}</Button><Button disabled={submitting || (saveCardForAutoTopUp && autoTopUpAvailable && autoTopUpFormError !== null)} onClick={() => void startCreditCheckout()}>{submitting && <Loader2 className="animate-spin" />}{ui("Continue to checkout")}</Button></DialogFooter>
           </>}
         </DialogContent>
       </Dialog>
+
+      <AutoTopUpDialog
+        open={autoTopUpOpen}
+        onOpenChange={(open) => {
+          setAutoTopUpOpen(open)
+          if (!open && autoTopUpReturned && !checkoutReturned) navigate('/billing', { replace: true })
+        }}
+        autoTopUp={summary?.autoTopUp}
+        onSaved={refreshBilling}
+      />
 
       <Dialog open={planOpen} onOpenChange={(open) => { setPlanOpen(open); if (!open) setPlanError('') }}>
         <DialogContent className="sm:max-w-5xl">

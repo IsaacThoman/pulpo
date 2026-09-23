@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
+  autoTopUpDecision,
+  autoTopUpState,
   chargeCentsForCredits,
   effectivePlan,
   remainingPercentage,
@@ -8,6 +10,8 @@ import {
   splitReservationMicros,
   subscriptionPaidPlan,
   subscriptionPendingPlan,
+  utcMonthEnd,
+  utcMonthStart,
   utcWeekEnd,
   utcWeekStart,
 } from './plans.js'
@@ -116,5 +120,55 @@ describe('billing plan calculations', () => {
     expect(resolvePlanEntitlement([downgraded], null, now)).toEqual({
       subscriptionPlan: 'fat', plan: 'fat', planOverridden: false,
     })
+  })
+})
+
+describe('automatic top-ups', () => {
+  const base = {
+    enabled: true,
+    hasPaymentMethod: true,
+    onHold: false,
+    availableMicros: 4_990_000,
+    thresholdCents: 500,
+    amountCents: 2_500,
+    monthlyLimitCents: 10_000,
+    monthSpentCents: 0,
+  }
+
+  it('charges only below the threshold', () => {
+    expect(autoTopUpDecision(base)).toBe('charge')
+    expect(autoTopUpDecision({ ...base, availableMicros: 5_000_000 })).toBe('above_threshold')
+    expect(autoTopUpDecision({ ...base, availableMicros: -1 })).toBe('charge')
+  })
+
+  it('never charges past the monthly limit on pre-tax charges', () => {
+    // $25 of credit is charged as $26.85 before tax.
+    expect(autoTopUpDecision({ ...base, monthSpentCents: 10_000 - 2_685 })).toBe('charge')
+    expect(autoTopUpDecision({ ...base, monthSpentCents: 10_000 - 2_684 })).toBe('limit_reached')
+    expect(autoTopUpDecision({ ...base, monthlyLimitCents: 2_684 })).toBe('limit_reached')
+  })
+
+  it('does nothing when disabled, unconfigured, on hold, or without a card', () => {
+    expect(autoTopUpDecision({ ...base, enabled: false })).toBe('inactive')
+    expect(autoTopUpDecision({ ...base, hasPaymentMethod: false })).toBe('inactive')
+    expect(autoTopUpDecision({ ...base, onHold: true })).toBe('inactive')
+    expect(autoTopUpDecision({ ...base, amountCents: null })).toBe('inactive')
+  })
+
+  it('reports the state shown on the billing page', () => {
+    const state = { enabled: true, hasPaymentMethod: true, disabledReason: null, amountCents: 2_500, monthlyLimitCents: 10_000, monthSpentCents: 0 }
+    expect(autoTopUpState(state)).toBe('active')
+    expect(autoTopUpState({ ...state, hasPaymentMethod: false })).toBe('needs_payment_method')
+    expect(autoTopUpState({ ...state, monthSpentCents: 8_000 })).toBe('limit_reached')
+    expect(autoTopUpState({ ...state, enabled: false })).toBe('off')
+    expect(autoTopUpState({ ...state, enabled: false, disabledReason: 'payment_failed' })).toBe('payment_failed')
+    expect(autoTopUpState({ ...state, enabled: false, disabledReason: 'payment_method_removed' })).toBe('payment_method_removed')
+  })
+
+  it('resets the monthly limit at the UTC month boundary', () => {
+    const lastMoment = new Date('2026-09-30T23:59:59.999Z')
+    expect(utcMonthStart(lastMoment).toISOString()).toBe('2026-09-01T00:00:00.000Z')
+    expect(utcMonthEnd(lastMoment).toISOString()).toBe('2026-10-01T00:00:00.000Z')
+    expect(utcMonthEnd(new Date('2026-12-15T00:00:00.000Z')).toISOString()).toBe('2027-01-01T00:00:00.000Z')
   })
 })
