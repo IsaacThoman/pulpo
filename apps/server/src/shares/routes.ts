@@ -11,6 +11,7 @@ import { lineageFromLeaf } from '../messages/branching.js'
 import { createRedis } from '../redis.js'
 import { getConfig } from '../config.js'
 import { accessibleChatCondition } from '../chats/temporary.js'
+import { responseDisplayModelId } from '../chats/modelIdentity.js'
 
 function publicOutput(output: unknown[]): unknown[] {
   return output.filter((item) => (item as { type?: string }).type !== 'reasoning')
@@ -88,7 +89,7 @@ export async function registerShareRoutes(app: FastifyInstance): Promise<void> {
       allTurns,
       row.chat.activeBranchLeafId ?? row.chat.activeResponseId ?? allTurns.at(-1)?.id ?? null,
     )
-    const modelIds = [...new Set(turns.map((turn) => turn.actualModelId ?? turn.modelId))]
+    const modelIds = [...new Set(turns.map(responseDisplayModelId))]
     const modelRows = modelIds.length
       ? await db.select({
         id: catalogModels.id,
@@ -108,8 +109,8 @@ export async function registerShareRoutes(app: FastifyInstance): Promise<void> {
       id: row.share.id,
       chat: { id: row.chat.id, title: row.chat.title, modelId: row.chat.modelId, createdAt: row.chat.createdAt },
       responses: turns.map((turn) => ({
-        id: turn.id, modelId: turn.actualModelId ?? turn.modelId,
-        model: modelById.get(turn.actualModelId ?? turn.modelId) ?? null,
+        id: turn.id, modelId: responseDisplayModelId(turn),
+        model: modelById.get(responseDisplayModelId(turn)) ?? null,
         status: turn.status, input: turn.input,
         output: publicOutput(turn.output as unknown[]), createdAt: turn.createdAt, completedAt: turn.completedAt,
       })),
