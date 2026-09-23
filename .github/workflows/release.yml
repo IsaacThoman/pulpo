@@ -236,11 +236,14 @@ jobs:
           npm run db:migrate -w @pulpo/server
           npm run test:public-api -w @pulpo/server
 
-      - name: Test persistent preview migration recovery
+      - name: Test persistent preview migration recovery and reset
         env:
           DATABASE_URL: postgres://postgres:search-test@localhost:5432/pulpo_migration_test
           PULPO_MIGRATION_POSTGRES_TEST: '1'
-        run: npm run test -w @pulpo/server -- src/database/migration-recovery.postgres.test.ts
+        # Both files reset the same disposable database, so run them one at a time.
+        run: |
+          npm run test -w @pulpo/server -- src/database/migration-recovery.postgres.test.ts
+          npm run test -w @pulpo/server -- src/database/preview-reset.postgres.test.ts
 
   cli-package:
     name: CLI package / Node ${{ matrix.node }}
