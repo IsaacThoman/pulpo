@@ -1,0 +1,1 @@
+ALTER TABLE "billing_checkouts" ADD COLUMN "enable_auto_top_up" boolean DEFAULT false NOT NULL;

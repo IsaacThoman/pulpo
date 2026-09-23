@@ -11,7 +11,10 @@ import {
 } from '../database/schema.js'
 import { AppError } from '../lib/errors.js'
 import { getBillingEntitlements } from './entitlements.js'
+import { getAutoTopUpSummary, removeAutoTopUpPaymentMethod, updateAutoTopUpSettings } from './auto-top-up.js'
 import {
+  AUTO_TOP_UP_MAX_MONTHLY_LIMIT_CENTS,
+  AUTO_TOP_UP_MAX_THRESHOLD_CENTS,
   chargeCentsForCredits,
   MAX_TOP_UP_CENTS,
   MIN_TOP_UP_CENTS,
@@ -22,6 +25,7 @@ import {
   changeSubscription,
   createCreditCheckout,
   createCustomerPortalUrl,
+  createPaymentMethodCheckout,
   createSubscriptionCheckout,
   verifyStripeWebhookSignature,
 } from './stripe.js'
@@ -32,11 +36,30 @@ const creditAmountSchema = z.number().int().min(MIN_TOP_UP_CENTS).max(MAX_TOP_UP
 const checkoutInputSchema = z.object({
   idempotencyKey: z.string().uuid(),
   creditCents: creditAmountSchema,
+  saveForAutoTopUp: z.boolean().optional(),
+})
+export const autoTopUpSettingsSchema = z.object({
+  enabled: z.boolean(),
+  thresholdCents: z.number().int().min(0).max(AUTO_TOP_UP_MAX_THRESHOLD_CENTS),
+  amountCents: creditAmountSchema,
+  monthlyLimitCents: z.number().int().min(MIN_TOP_UP_CENTS).max(AUTO_TOP_UP_MAX_MONTHLY_LIMIT_CENTS),
+}).refine((value) => !creditAmountSchema.safeParse(value.amountCents).success
+  || value.monthlyLimitCents >= chargeCentsForCredits(value.amountCents), {
+  message: 'The monthly limit must cover at least one top-up including the platform fee',
+  path: ['monthlyLimitCents'],
+})
+const paymentMethodCheckoutSchema = z.object({
+  idempotencyKey: z.string().uuid(),
+  enableAutoTopUp: z.boolean().optional(),
 })
 const subscriptionCheckoutSchema = z.object({
   idempotencyKey: z.string().uuid(),
   plan: z.enum(['eight', 'fat']),
 })
+
+export function isCreditOrderReason(billingReason: string): boolean {
+  return billingReason === 'purchase' || billingReason === 'auto_top_up'
+}
 
 export function resolvedCheckoutStatus(
   checkoutStatus: string | null | undefined,
@@ -94,7 +117,7 @@ export async function registerBillingRoutes(app: FastifyInstance): Promise<void>
 
   app.get('/api/billing/summary', async (request) => {
     const user = requireUser(request)
-    const [entitlements, subscriptions, orders, poolBalance] = await Promise.all([
+    const [entitlements, subscriptions, orders, poolBalance, autoTopUp] = await Promise.all([
       getBillingEntitlements(user.id),
       db.select().from(billingSubscriptions).where(eq(billingSubscriptions.userId, user.id))
         .orderBy(desc(billingSubscriptions.updatedAt)),
@@ -113,6 +136,7 @@ export async function registerBillingRoutes(app: FastifyInstance): Promise<void>
           availableMicros: availableBillingBalanceMicros(balanceMicros, pendingMicros),
         }
       }),
+      getAutoTopUpSummary(user.id),
     ])
     const subscription = selectSummarySubscription(subscriptions, entitlements.subscriptionPlan)
     const fiveHour = entitlements.fiveHourRemainingPercentage === null
@@ -147,9 +171,11 @@ export async function registerBillingRoutes(app: FastifyInstance): Promise<void>
         cancelAtPeriodEnd: subscription.cancelAtPeriodEnd,
         currentPeriodEnd: subscription.currentPeriodEnd?.toISOString() ?? null,
       } : null,
+      autoTopUp,
       payments: orders.map((order) => ({
         id: order.stripePaymentId,
-        kind: order.billingReason === 'purchase' ? 'credits' : 'subscription',
+        kind: isCreditOrderReason(order.billingReason) ? 'credits' : 'subscription',
+        automatic: order.billingReason === 'auto_top_up',
         plan: order.stripePriceId === config.STRIPE_FAT_PRICE_ID
           ? 'fat'
           : order.stripePriceId === config.STRIPE_EIGHT_PRICE_ID
@@ -180,6 +206,30 @@ export async function registerBillingRoutes(app: FastifyInstance): Promise<void>
     const result = await createCreditCheckout({ userId: user.id, ...input })
     reply.code(201)
     return result
+  })
+
+  app.post('/api/billing/checkouts/payment-method', {
+    config: { rateLimit: { max: 10, timeWindow: '1 minute' } },
+  }, async (request, reply) => {
+    const user = requireUser(request)
+    const input = paymentMethodCheckoutSchema.parse(request.body)
+    const result = await createPaymentMethodCheckout({ userId: user.id, ...input })
+    reply.code(201)
+    return result
+  })
+
+  app.put('/api/billing/auto-top-up', {
+    config: { rateLimit: { max: 10, timeWindow: '1 minute' } },
+  }, async (request) => {
+    const user = requireUser(request)
+    return updateAutoTopUpSettings(user.id, autoTopUpSettingsSchema.parse(request.body))
+  })
+
+  app.delete('/api/billing/payment-method', {
+    config: { rateLimit: { max: 10, timeWindow: '1 minute' } },
+  }, async (request) => {
+    const user = requireUser(request)
+    return removeAutoTopUpPaymentMethod(user.id)
   })
 
   app.post('/api/billing/checkouts/subscription', {

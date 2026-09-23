@@ -2,9 +2,11 @@ import Fastify from 'fastify'
 import { afterEach, describe, expect, it } from 'vitest'
 import { registerAdminBillingRoutes } from './admin-routes.js'
 import {
+  autoTopUpSettingsSchema,
   availableBillingBalanceMicros,
   billingLimitPercentage,
   fiveHourSummaryPercentages,
+  isCreditOrderReason,
   registerBillingRoutes,
   resolvedCheckoutStatus,
   selectSummarySubscription,
@@ -23,6 +25,8 @@ describe('billing feature gate', () => {
     await registerBillingRoutes(app)
     const response = await app.inject({ method: 'GET', url: '/api/billing/summary' })
     expect(response.statusCode).toBe(404)
+    const autoTopUp = await app.inject({ method: 'PUT', url: '/api/billing/auto-top-up', payload: {} })
+    expect(autoTopUp.statusCode).toBe(404)
   })
 
   it('does not register admin billing routes when billing is disabled', async () => {
@@ -97,5 +101,33 @@ describe('billing summary reservation balances', () => {
       pendingMicros: 0,
       pendingBarPercentage: 0,
     })
+  })
+})
+
+describe('automatic top-up settings', () => {
+  const valid = { enabled: true, thresholdCents: 500, amountCents: 2_500, monthlyLimitCents: 10_000 }
+
+  it('accepts settings within the top-up bounds', () => {
+    expect(autoTopUpSettingsSchema.parse(valid)).toEqual(valid)
+    expect(autoTopUpSettingsSchema.parse({ ...valid, thresholdCents: 0 }).thresholdCents).toBe(0)
+  })
+
+  it('rejects amounts outside the manual top-up range', () => {
+    expect(autoTopUpSettingsSchema.safeParse({ ...valid, amountCents: 499 }).success).toBe(false)
+    expect(autoTopUpSettingsSchema.safeParse({ ...valid, amountCents: 50_001 }).success).toBe(false)
+    expect(autoTopUpSettingsSchema.safeParse({ ...valid, thresholdCents: 50_001 }).success).toBe(false)
+    expect(autoTopUpSettingsSchema.safeParse({ ...valid, monthlyLimitCents: 500_001 }).success).toBe(false)
+    expect(autoTopUpSettingsSchema.safeParse({ ...valid, amountCents: 12.5 }).success).toBe(false)
+  })
+
+  it('requires the monthly limit to cover one top-up including its fee', () => {
+    expect(autoTopUpSettingsSchema.safeParse({ ...valid, monthlyLimitCents: 2_685 }).success).toBe(true)
+    expect(autoTopUpSettingsSchema.safeParse({ ...valid, monthlyLimitCents: 2_684 }).success).toBe(false)
+  })
+
+  it('lists automatic top-ups with credit purchases', () => {
+    expect(isCreditOrderReason('purchase')).toBe(true)
+    expect(isCreditOrderReason('auto_top_up')).toBe(true)
+    expect(isCreditOrderReason('subscription_cycle')).toBe(false)
   })
 })

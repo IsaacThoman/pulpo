@@ -35,6 +35,18 @@ Monthly platform credits are granted in full when a subscription invoice is paid
 
 The portal must not offer plan switching, because a portal downgrade would bypass this proration rule.
 
+## Automatic top-ups
+
+Users can save a card and have Pulpo add credit when their available balance falls below a threshold they choose. A card is saved either through a card-only Checkout (`mode: setup`) or by ticking "Use this card for automatic top-ups" when buying credits (`setup_future_usage: off_session`). Both collect a billing address so tax can be calculated later.
+
+- **Charge.** The worker creates a Stripe invoice for the credit product with `automatic_tax`, a price of credits plus the 5% + $0.50 platform fee, and `auto_advance: false`. It finalizes the invoice and pays it off-session with the saved card. The `invoice.paid` webhook and the worker both grant the credit; `billing_orders` keeps the grant to one. Orders use `billing_reason = auto_top_up`.
+- **Triggers.** Reservations, settlements, and metered charges queue a per-user `auto-top-up` job when the balance falls below the threshold. A `auto-top-up-sweep` job runs every 15 minutes to catch missed checks and settle attempts a worker stopped part-way through.
+- **Monthly limit.** Automatic charges before tax are totalled per UTC calendar month from `billing_auto_top_ups`. A top-up that would go over the user's limit is skipped until the next month. Manual purchases do not count.
+- **Failures.** A declined card, or any request Stripe rejects, voids the invoice and turns automatic top-ups off with `payment_failed`. The billing page asks the user to review them. A card removed in the Billing Portal (`payment_method.detached`) turns them off with `payment_method_removed`. Account deletion detaches the saved card.
+- **Holds.** Accounts on a billing hold are never charged automatically.
+
+Keep the Billing Portal's payment method management enabled so users can remove the saved card.
+
 ## Webhook endpoint
 
 Create a webhook destination for:
@@ -57,6 +69,7 @@ Subscribe it to:
 - `refund.updated`
 - `charge.refunded`
 - `charge.dispute.created`
+- `payment_method.detached`
 
 Save the signing secret as `STRIPE_WEBHOOK_SECRET`. Use a separate destination and secret for test and live mode.
 
@@ -75,4 +88,4 @@ STRIPE_FAT_PRICE_ID=price_...
 
 The API and worker fail closed when billing is enabled and any Stripe value is missing or malformed. Replace the previous billing-provider variables in Coolify before merging or deploying this change.
 
-After deployment, complete a low-value test-mode credit purchase, subscription, renewal, plan change, cancellation, refund, and webhook replay. Confirm that credits are granted once, Stripe Tax reports the expected Georgia result, the admin dashboard links to the correct Stripe mode, and the hourly reconciliation job reports no error.
+After deployment, complete a low-value test-mode credit purchase, subscription, renewal, plan change, cancellation, refund, automatic top-up (including a declined card such as `4000 0000 0000 0341`), and webhook replay. Confirm that credits are granted once, Stripe Tax reports the expected Georgia result, the admin dashboard links to the correct Stripe mode, and the hourly reconciliation job reports no error.
