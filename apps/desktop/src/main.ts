@@ -23,7 +23,9 @@ import {
   desktopDevelopmentResponseHeaders,
   desktopPermissionAllowed,
   isTrustedRendererUrl,
+  rendererAssetHeaders,
   rendererAssetPath,
+  rendererCsp,
   validatedExternalUrl,
   validatedProtocolUrl,
 } from './security'
@@ -249,7 +251,12 @@ function registerRendererProtocol(): void {
     if (relative === null) return new Response('Not found', { status: 404 })
     const requested = relative || 'index.html'
     const asset = path.extname(requested) ? requested : 'index.html'
-    return net.fetch(pathToFileURL(path.join(rendererRoot, asset)).toString())
+    const response = await net.fetch(pathToFileURL(path.join(rendererRoot, asset)).toString())
+    const extraHeaders = Object.entries(rendererAssetHeaders(`/${asset}`))
+    if (!extraHeaders.length) return response
+    const headers = new Headers(response.headers)
+    for (const [name, value] of extraHeaders) headers.set(name, value)
+    return new Response(response.body, { status: response.status, statusText: response.statusText, headers })
   })
 }
 
@@ -272,13 +279,12 @@ function configureSession(): void {
           : undefined,
       })
     }
-    if (new URL(details.url).origin !== rendererOrigin) return callback({ responseHeaders: details.responseHeaders })
+    const url = new URL(details.url)
+    if (url.origin !== rendererOrigin) return callback({ responseHeaders: details.responseHeaders })
     callback({
       responseHeaders: {
         ...details.responseHeaders,
-        'Content-Security-Policy': [
-          "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' blob: https:; connect-src 'self' https: wss:; worker-src 'self' blob:; font-src 'self' data:; object-src 'none'; base-uri 'none'; frame-src 'none'; form-action 'self' https:",
-        ],
+        'Content-Security-Policy': [rendererCsp(url.pathname)],
       },
     })
   })

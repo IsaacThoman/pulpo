@@ -8,7 +8,8 @@
     "build": "tsc -b && vite build",
     "test": "vitest run",
     "preview": "vite preview",
-    "test:responsive": "node tests/responsive-layout.browser.mjs"
+    "test:responsive": "node tests/responsive-layout.browser.mjs",
+    "test:code-preview": "node tests/code-preview.browser.mjs && node tests/code-preview.browser.mjs --build"
   },
   "dependencies": {
     "@pulpo/client-core": "0.1.0",
@@ -28,6 +29,7 @@
     "@radix-ui/react-tabs": "^1.1.21",
     "@radix-ui/react-tooltip": "^1.2.16",
     "@simplewebauthn/browser": "^13.3.0",
+    "@tailwindcss/browser": "^4.3.3",
     "@tanstack/react-query": "^5.83.0",
     "@tanstack/react-query-persist-client": "^5.101.4",
     "class-variance-authority": "^0.7.1",
@@ -46,6 +48,7 @@
     "remark-gfm": "^4.0.1",
     "remark-math": "^6.0.0",
     "socket.io-client": "^4.8.1",
+    "sucrase": "^3.35.1",
     "tailwind-merge": "^3.6.0",
     "tailwindcss": "^4.3.3",
     "zod": "^4.0.5",
