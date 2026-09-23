@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
 import { useTranslation } from '@/i18n/useAppTranslation'
-import { useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import {
   BarChart3,
@@ -304,7 +304,7 @@ function useShiftHeld() {
   return shiftHeld
 }
 
-function ChatRow({
+export function ChatRow({
   chat,
   active,
   shiftHeld,
@@ -366,20 +366,33 @@ function ChatRow({
         canDrag && 'cursor-grab active:cursor-grabbing',
         dragging && 'opacity-40',
       )}
-      onClick={() => {
-        if (didDragRef?.current) {
-          didDragRef.current = false
-          return
-        }
-        navigate(`/c/${chat.id}`)
-        onNavigate?.()
-      }}
     >
       <DropLines active={canDrag || canDrop} before={showLineBefore} after={showLineAfter} />
-      <span className="flex-1 truncate">{chat.title}</span>
+      {/* A real link (stretched over the row) so the browser offers "Open in new tab" and honors modifier clicks. */}
+      <Link
+        to={`/c/${chat.id}`}
+        draggable={canDrag ? false : undefined}
+        className="flex-1 cursor-[inherit] truncate outline-none after:absolute after:inset-0 after:rounded-lg focus-visible:after:ring-2 focus-visible:after:ring-ring"
+        onClick={(e) => {
+          if (didDragRef?.current) {
+            didDragRef.current = false
+            e.preventDefault()
+            return
+          }
+          const modified = e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0
+          if (modified) {
+            if (!isDesktopRuntime()) return
+            e.preventDefault()
+            navigate(`/c/${chat.id}`)
+          }
+          onNavigate?.()
+        }}
+      >
+        {chat.title}
+      </Link>
       {shiftHeld && (
         <button
-          className={cn(actionClassName, 'hidden hover:text-destructive group-hover:block')}
+          className={cn(actionClassName, 'relative hidden hover:text-destructive group-hover:block')}
           onClick={(e) => {
             e.stopPropagation()
             deleteChat(chat.id)
@@ -394,7 +407,7 @@ function ChatRow({
           <button
             className={cn(
               actionClassName,
-              'group/chat-action',
+              'group/chat-action relative',
               generating || chat.expiresAt !== null ? 'visible' : 'invisible group-hover:visible',
               shiftHeld && 'group-hover:hidden',
               'data-[state=open]:visible',
