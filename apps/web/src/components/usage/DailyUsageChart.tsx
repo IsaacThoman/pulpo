@@ -8,7 +8,7 @@ import { ContributionGraph } from './ContributionGraph'
 import { ui, activeLocale } from '@/i18n/ui'
 import { useSettings } from '@/stores/settings'
 import { DEFAULT_CHART_ANIMATION_DURATION_MS, scaledAnimationDuration } from '@/lib/animation-speed'
-import { modelChartColor } from '@/lib/usage-chart-colors'
+import { modelChartColors } from '@/lib/usage-chart-colors'
 
 const OTHER_COLOR = 'hsl(220 15% 45%)'
 const MAX_LEGEND_MODELS = 8
@@ -144,6 +144,7 @@ export function DailyUsageChart({
       return row
     })
 
+    const colors = modelChartColors(top)
     const series: Series[] = [
       // largest model ends up on top of the stack (recharts stacks bottom-up)
       ...(hasOther ? [{ key: 'other', name: 'Other', color: OTHER_COLOR }] : []),
@@ -153,7 +154,7 @@ export function DailyUsageChart({
         .map((id) => ({
           key: id,
           name: modelNames?.[id] ?? getCatalogModel(id).name,
-          color: modelChartColor(id),
+          color: colors.get(id) ?? OTHER_COLOR,
         })),
     ]
     return { rows, series }
