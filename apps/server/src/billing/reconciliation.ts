@@ -7,7 +7,7 @@ import { parseBillingSettings } from '../settings/application-settings.js'
 import { getStripeClient, planForPriceId } from './stripe.js'
 import { processStripeWebhookEvent } from './webhooks.js'
 
-function syntheticEvent<T extends Stripe.Event.Type>(
+export function syntheticEvent<T extends Stripe.Event.Type>(
   id: string,
   type: T,
   object: Stripe.Event.Data.Object,
@@ -88,7 +88,9 @@ export async function reconcileStripeBilling(): Promise<void> {
     }
 
     for await (const checkout of stripe.checkout.sessions.list({ created: { gte: createdGte }, limit: 100 })) {
-      if (checkout.mode !== 'payment' || checkout.metadata?.pulpo_kind !== 'credits') continue
+      const isCreditCheckout = checkout.mode === 'payment' && checkout.metadata?.pulpo_kind === 'credits'
+      const isCardCheckout = checkout.mode === 'setup' && checkout.metadata?.pulpo_kind === 'payment_method'
+      if (!isCreditCheckout && !isCardCheckout) continue
       if (checkout.status !== 'complete' && checkout.status !== 'expired') continue
       const type = checkout.status === 'expired' ? 'checkout.session.expired' : 'checkout.session.completed'
       await processStripeWebhookEvent(syntheticEvent(

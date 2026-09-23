@@ -43,6 +43,23 @@ that parent without a PR number. Its preview URL template is
 `pulpo-dev-pr-{{pr_id}}.deathgrips.org`. Preview credentials and bootstrap settings
 remain separate from persistent dev. Local development still uses `compose.yaml`.
 
+## Preview database resets
+
+Each preview keeps its PostgreSQL volume across deploys of the same PR. Merging
+`dev` into a PR can renumber a migration the preview already applied. Drizzle
+compares migration timestamps, so it then skips the upstream migration and replays
+the renumbered one, and the API never starts. Editing an applied migration has the
+same effect.
+
+On previews only, the migration step detects this drift and resets the database
+(drops the `public` and `drizzle` schemas) before migrating. It logs a
+`preview.database_reset` warning with the reason, and the `ci-preview` bootstrap
+recreates the administrator. Object storage and Redis are left alone, so earlier
+uploads become orphaned until the preview is deleted. A preview is detected from
+Coolify's `COOLIFY_BRANCH=pull/<n>/head`; persistent development and production
+never reset. Set `PULPO_PREVIEW_RESET_DATABASE=never` on the preview parent to
+turn this off, for example while debugging a drifted database.
+
 ## Targeted cleanup
 
 Disable **Delete Unused Volumes** in the host's Coolify Docker Cleanup settings.

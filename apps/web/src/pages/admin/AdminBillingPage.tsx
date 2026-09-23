@@ -431,6 +431,7 @@ export function AdminBillingPage() {
 
 function humanReason(reason: string) {
   if (reason === 'purchase') return ui("Top-up")
+  if (reason === 'auto_top_up') return ui("Auto top-up")
   if (reason === 'subscription_create') return ui("Subscription create")
   if (reason === 'subscription_cycle') return ui("Renewal")
   if (reason === 'subscription_update') return ui("Plan update")

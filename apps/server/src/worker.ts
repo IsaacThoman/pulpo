@@ -22,6 +22,7 @@ import { accessibleChatCondition } from './chats/temporary.js'
 import { advanceMessageQueue, recoverMessageQueues } from './chats/message-queue.js'
 import { isTerminalResponseStatus } from './chats/message-queue-policy.js'
 import { reconcileStripeBilling } from './billing/reconciliation.js'
+import { runAutoTopUp, sweepAutoTopUps } from './billing/auto-top-up.js'
 import { processEmbeddingJob } from './episodic-memory/processor.js'
 import { scheduleChatIndex } from './episodic-memory/queue.js'
 import { readEpisodicMemorySettings, enqueueEpisodicReconciliation } from './episodic-memory/settings.js'
@@ -133,6 +134,8 @@ const maintenanceWorker = new Worker<MaintenanceJob>('maintenance', async (job) 
   }
   if (job.data.type === 'restore') await restoreFullBackup(String(job.data.payload?.jobId))
   if (job.data.type === 'billing-reconcile') await reconcileStripeBilling()
+  if (job.data.type === 'auto-top-up' && typeof job.data.payload?.userId === 'string') await runAutoTopUp(job.data.payload.userId)
+  if (job.data.type === 'auto-top-up-sweep') await sweepAutoTopUps()
 }, { connection: { url: config.REDIS_URL }, concurrency: 1 })
 
 const embeddingWorker = new Worker<EmbeddingJob>('episodic-memory', async (job) => {
@@ -151,6 +154,9 @@ await maintenanceQueue.upsertJobScheduler('daily-rollup', { pattern: '15 2 * * *
 if (config.PULPO_BILLING_ENABLED) {
   await maintenanceQueue.upsertJobScheduler('billing-reconcile', { every: 60 * 60 * 1_000 }, {
     name: 'billing-reconcile', data: { type: 'billing-reconcile' },
+  })
+  await maintenanceQueue.upsertJobScheduler('auto-top-up-sweep', { every: 15 * 60 * 1_000 }, {
+    name: 'auto-top-up-sweep', data: { type: 'auto-top-up-sweep' },
   })
 }
 await maintenanceQueue.add('startup-cleanup', { type: 'cleanup' }, { jobId: `startup-cleanup-${Date.now()}` })

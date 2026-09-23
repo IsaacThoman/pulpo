@@ -1,8 +1,10 @@
-import type Stripe from 'stripe'
+import Stripe from 'stripe'
 import { eq } from 'drizzle-orm'
 import { db } from '../database/client.js'
 import { billingAccounts, billingCheckouts, billingSubscriptions } from '../database/schema.js'
 import { getStripeClient, isMissingStripeResource } from '../billing/stripe.js'
+
+const { StripeInvalidRequestError } = Stripe.errors
 
 export async function cancelAccountBilling(userId: string): Promise<void> {
   const [account] = await db.select().from(billingAccounts).where(eq(billingAccounts.userId, userId))
@@ -11,10 +13,11 @@ export async function cancelAccountBilling(userId: string): Promise<void> {
   if (!account?.stripeCustomerId && !subscriptions.length && !checkouts.length) return
   await cancelStripeResources(getStripeClient(), account?.stripeCustomerId ?? null,
     subscriptions.map((row) => row.stripeSubscriptionId),
-    checkouts.flatMap((row) => row.stripeCheckoutSessionId ? [row.stripeCheckoutSessionId] : []))
+    checkouts.flatMap((row) => row.stripeCheckoutSessionId ? [row.stripeCheckoutSessionId] : []),
+    account?.stripePaymentMethodId ? [account.stripePaymentMethodId] : [])
 }
 
-export async function cancelStripeResources(stripe: Stripe, customerId: string | null, subscriptions: string[], checkouts: string[]): Promise<void> {
+export async function cancelStripeResources(stripe: Stripe, customerId: string | null, subscriptions: string[], checkouts: string[], paymentMethods: string[] = []): Promise<void> {
   const subscriptionIds = new Set(subscriptions)
   const checkoutIds = new Set(checkouts)
   if (customerId) {
@@ -31,6 +34,14 @@ export async function cancelStripeResources(stripe: Stripe, customerId: string |
       const checkout = await stripe.checkout.sessions.retrieve(id)
       if (checkout.status === 'open') await stripe.checkout.sessions.expire(id)
     } catch (error) { if (!isMissingStripeResource(error)) throw error }
+  }
+  // Detach saved cards first so no automatic top-up can charge a deleted account.
+  for (const id of paymentMethods) {
+    try {
+      await stripe.paymentMethods.detach(id)
+    } catch (error) {
+      if (!isMissingStripeResource(error) && !(error instanceof StripeInvalidRequestError)) throw error
+    }
   }
   for (const id of subscriptionIds) {
     try {

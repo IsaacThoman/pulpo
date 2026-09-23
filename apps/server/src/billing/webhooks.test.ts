@@ -6,6 +6,7 @@ vi.mock('../config.js', () => ({
     STRIPE_SECRET_KEY: 'sk_test_fixture',
     STRIPE_EIGHT_PRICE_ID: 'price_eight',
     STRIPE_FAT_PRICE_ID: 'price_fat',
+    STRIPE_CREDIT_PRODUCT_ID: 'prod_credit',
   }),
 }))
 
@@ -17,6 +18,7 @@ import {
   paidPlanForInvoice,
   shouldRecordPaidPlan,
   stripeCheckoutStatus,
+  validateAutoTopUpInvoice,
   validateCreditCheckoutPayment,
 } from './webhooks.js'
 
@@ -92,6 +94,34 @@ describe('billing webhook lifecycle rules', () => {
     expect(stripeCheckoutStatus({ mode: 'subscription', status: 'complete', paymentStatus: 'paid' })).toBe('processing')
     expect(stripeCheckoutStatus({ mode: 'payment', status: 'complete', paymentStatus: 'paid' })).toBe('succeeded')
     expect(stripeCheckoutStatus({ mode: 'payment', status: 'expired', paymentStatus: 'unpaid' })).toBe('expired')
+    expect(stripeCheckoutStatus({ mode: 'setup', status: 'complete', paymentStatus: 'no_payment_required' })).toBe('succeeded')
+    expect(stripeCheckoutStatus({ mode: 'setup', status: 'open', paymentStatus: 'no_payment_required' })).toBe('open')
+  })
+
+  it('validates automatic top-up invoices against the attempt', () => {
+    const valid = {
+      attempt: { userId: 'user_1', creditCents: 2_500, chargeCents: 2_685 },
+      ownerUserId: 'user_1',
+      metadataCreditCents: '2500',
+      subtotalCents: 2_685,
+      currency: 'usd',
+      productIds: ['prod_credit'],
+      expectedProductId: 'prod_credit',
+      invoiceId: 'in_auto',
+    }
+    expect(() => validateAutoTopUpInvoice(valid)).not.toThrow()
+    expect(() => validateAutoTopUpInvoice({ ...valid, ownerUserId: 'user_2' })).toThrow('attempt owner')
+    expect(() => validateAutoTopUpInvoice({ ...valid, subtotalCents: 2_684 })).toThrow('amount')
+    expect(() => validateAutoTopUpInvoice({ ...valid, metadataCreditCents: '5000' })).toThrow('amount')
+    expect(() => validateAutoTopUpInvoice({ ...valid, currency: 'eur' })).toThrow('amount')
+    expect(() => validateAutoTopUpInvoice({ ...valid, productIds: ['prod_other'] })).toThrow('product')
+    expect(() => validateAutoTopUpInvoice({ ...valid, productIds: ['prod_credit', 'prod_credit'] })).toThrow('product')
+  })
+
+  it('grants an automatic top-up once', () => {
+    const paid = { isCreditPurchase: true, requestedCreditCents: 2_500, plan: null, billingReason: 'auto_top_up' }
+    expect(grantMicrosForPaidOrder({ ...paid, alreadyGrantedMicros: 0 })).toBe(25_000_000)
+    expect(grantMicrosForPaidOrder({ ...paid, alreadyGrantedMicros: 25_000_000 })).toBe(0)
   })
 
   it('validates tax-exclusive credit checkout amounts and configured product', () => {

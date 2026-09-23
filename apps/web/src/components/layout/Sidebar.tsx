@@ -60,7 +60,7 @@ import { ProfileAvatar } from '@/components/ProfileAvatar'
 import { apiRequest } from '@/lib/api'
 import { toggleSidebarPin, type SidebarPinKey } from '@/lib/sidebar-pins'
 import { newChatLocationState } from '@/lib/new-chat-navigation'
-import { fetchBillingSummary } from '@/lib/billing'
+import { billingPlanTier, fetchBillingSummary } from '@/lib/billing'
 import { isDesktopRuntime } from '@/lib/runtime'
 import { uit } from '@/i18n/ui'
 
@@ -749,6 +749,7 @@ export function Sidebar({
     staleTime: 0,
     refetchOnWindowFocus: 'always',
   })
+  const billingPlan = billingEnabled ? billingQuery.data?.plan : undefined
   const sidebarPins = useSettings((s) => s.sidebarPins)
   const setSetting = useSettings((s) => s.set)
   const logout = useAuth((s) => s.logout)
@@ -985,6 +986,11 @@ export function Sidebar({
           )}
         >
           Pulpo
+          {(billingPlan === 'fat' || billingPlan === 'eight') && (
+            <span className={billingPlan === 'fat' ? 'text-violet-600 dark:text-violet-400' : 'text-yellow-700 dark:text-yellow-400'}>
+              {' '}{billingPlanTier(billingPlan)}
+            </span>
+          )}
         </span>
         {!collapsed && (
           <Tooltip>

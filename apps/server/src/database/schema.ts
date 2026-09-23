@@ -1020,9 +1020,24 @@ export const billingAccounts = pgTable('billing_accounts', {
   holdReference: text('hold_reference'),
   holdClearedAt: timestamp('hold_cleared_at', { withTimezone: true }),
   holdClearedBy: uuid('hold_cleared_by').references(() => users.id, { onDelete: 'set null' }),
+  // Card saved for off-session charges (automatic top-ups).
+  stripePaymentMethodId: text('stripe_payment_method_id'),
+  paymentMethodBrand: text('payment_method_brand'),
+  paymentMethodLast4: text('payment_method_last4'),
+  autoTopUpEnabled: boolean('auto_top_up_enabled').notNull().default(false),
+  autoTopUpThresholdCents: integer('auto_top_up_threshold_cents'),
+  autoTopUpAmountCents: integer('auto_top_up_amount_cents'),
+  autoTopUpMonthlyLimitCents: integer('auto_top_up_monthly_limit_cents'),
+  autoTopUpDisabledReason: text('auto_top_up_disabled_reason'),
+  autoTopUpDisabledAt: timestamp('auto_top_up_disabled_at', { withTimezone: true }),
   ...timestamps,
 }, (table) => [
   uniqueIndex('billing_accounts_stripe_customer_unique').on(table.stripeCustomerId),
+  check('billing_accounts_auto_top_up_threshold_check', sql`${table.autoTopUpThresholdCents} is null or ${table.autoTopUpThresholdCents} between 0 and 50000`),
+  check('billing_accounts_auto_top_up_amount_check', sql`${table.autoTopUpAmountCents} is null or ${table.autoTopUpAmountCents} between 500 and 50000`),
+  check('billing_accounts_auto_top_up_limit_check', sql`${table.autoTopUpMonthlyLimitCents} is null or (${table.autoTopUpMonthlyLimitCents} between 500 and 500000 and ${table.autoTopUpMonthlyLimitCents} >= coalesce(${table.autoTopUpAmountCents}, 0))`),
+  check('billing_accounts_auto_top_up_config_check', sql`not ${table.autoTopUpEnabled} or (${table.autoTopUpThresholdCents} is not null and ${table.autoTopUpAmountCents} is not null and ${table.autoTopUpMonthlyLimitCents} is not null)`),
+  check('billing_accounts_auto_top_up_disabled_reason_check', sql`${table.autoTopUpDisabledReason} is null or ${table.autoTopUpDisabledReason} in ('payment_failed', 'payment_method_removed')`),
   check('billing_accounts_plan_override_check', sql`${table.planOverride} is null or ${table.planOverride} in ('baby', 'eight', 'fat')`),
   check('billing_accounts_weekly_override_check', sql`${table.weeklyLimitOverrideMicros} is null or ${table.weeklyLimitOverrideMicros} >= 0`),
   check('billing_accounts_five_hour_override_check', sql`${table.fiveHourLimitOverrideMicros} is null or ${table.fiveHourLimitOverrideMicros} >= 0`),
@@ -1064,12 +1079,39 @@ export const billingCheckouts = pgTable('billing_checkouts', {
   status: text('status').notNull().default('creating'),
   checkoutUrl: text('checkout_url'),
   expiresAt: timestamp('expires_at', { withTimezone: true }),
+  // Credit checkouts that also save the card for automatic top-ups.
+  savePaymentMethod: boolean('save_payment_method').notNull().default(false),
+  // Automatic top-ups turn on only once this checkout saves a card.
+  enableAutoTopUp: boolean('enable_auto_top_up').notNull().default(false),
   ...timestamps,
 }, (table) => [
   uniqueIndex('billing_checkouts_user_idempotency_unique').on(table.userId, table.idempotencyKey),
   uniqueIndex('billing_checkouts_stripe_unique').on(table.stripeCheckoutSessionId),
   index('billing_checkouts_user_created_idx').on(table.userId, table.createdAt),
-  check('billing_checkouts_kind_check', sql`${table.kind} in ('credits', 'subscription')`),
+  check('billing_checkouts_kind_check', sql`${table.kind} in ('credits', 'subscription', 'payment_method')`),
+])
+
+export const billingAutoTopUps = pgTable('billing_auto_top_ups', {
+  id: uuid('id').primaryKey(),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  status: text('status').notNull().default('processing'),
+  creditCents: integer('credit_cents').notNull(),
+  chargeCents: integer('charge_cents').notNull(),
+  stripePaymentMethodId: text('stripe_payment_method_id').notNull(),
+  stripeInvoiceId: text('stripe_invoice_id'),
+  stripePaymentIntentId: text('stripe_payment_intent_id'),
+  failureCode: text('failure_code'),
+  failureMessage: text('failure_message'),
+  completedAt: timestamp('completed_at', { withTimezone: true }),
+  ...timestamps,
+}, (table) => [
+  index('billing_auto_top_ups_user_created_idx').on(table.userId, table.createdAt),
+  uniqueIndex('billing_auto_top_ups_invoice_unique').on(table.stripeInvoiceId),
+  // At most one charge in flight per user.
+  uniqueIndex('billing_auto_top_ups_user_processing_unique').on(table.userId).where(sql`${table.status} = 'processing'`),
+  index('billing_auto_top_ups_processing_idx').on(table.createdAt).where(sql`${table.status} = 'processing'`),
+  check('billing_auto_top_ups_status_check', sql`${table.status} in ('processing', 'succeeded', 'failed')`),
+  check('billing_auto_top_ups_amount_check', sql`${table.creditCents} > 0 and ${table.chargeCents} >= ${table.creditCents}`),
 ])
 
 export const billingOrders = pgTable('billing_orders', {
