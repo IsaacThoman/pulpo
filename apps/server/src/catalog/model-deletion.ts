@@ -96,6 +96,7 @@ export async function deleteCatalogModel(modelId: string, actorUserId: string): 
     await tx.update(generationAttempts).set({ modelId: UNKNOWN_MODEL_ID }).where(eq(generationAttempts.modelId, modelId))
     await tx.update(generationAttempts).set({ fallbackFromModelId: UNKNOWN_MODEL_ID }).where(eq(generationAttempts.fallbackFromModelId, modelId))
     await tx.update(usageEvents).set({ modelId: UNKNOWN_MODEL_ID }).where(eq(usageEvents.modelId, modelId))
+    await tx.update(usageEvents).set({ requestedModelId: UNKNOWN_MODEL_ID }).where(eq(usageEvents.requestedModelId, modelId))
     await tx.update(models).set({ fallbackModelId: null }).where(eq(models.fallbackModelId, modelId))
 
     await tx.execute(sql`

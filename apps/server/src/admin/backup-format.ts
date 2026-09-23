@@ -66,9 +66,13 @@ export function applyFullBackupCompatibilityDefaults(database: Record<string, Ar
     response.idempotency_scope ??= 'default'
     response.publicly_stored ??= true
   }
+  const requestedModelByResponse = new Map((database.request_logs ?? [])
+    .filter((log) => log.response_id != null)
+    .map((log) => [log.response_id, log.requested_model_id]))
   for (const event of database.usage_events ?? []) {
     event.five_hour_cost_micros ??= 0
     event.inference_reference_cost_micros ??= 0
+    event.requested_model_id ??= requestedModelByResponse.get(event.response_id) ?? event.model_id
   }
   scrubFullBackupDetailedPayloads(database)
 }

@@ -3,7 +3,7 @@ import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { requireAdmin, requireUser } from '../auth/service.js'
 import { db } from '../database/client.js'
-import { creditLedger, modelPresetChoices, modelPresets, models, requestLogs, usageEvents, users } from '../database/schema.js'
+import { creditLedger, modelPresetChoices, modelPresets, models, usageEvents, users } from '../database/schema.js'
 import { canonicalUsageModels, decodeUsageCursor, encodeUsageCursor, publicModel, resolveUsageModelAlias, type UsageModelIdentity } from './public.js'
 import { friendUserIds } from '../friends/routes.js'
 import { profileAvatarUrl } from '../profile/service.js'
@@ -111,7 +111,6 @@ export async function loadUsageActivity(input: {
 }) {
   const rangeWhere = and(...eligibleUsageFilters(input.since, input.userIds))
   const allWhere = and(...eligibleUsageFilters(null, input.userIds))
-  const attributedModelId = sql<string>`coalesce(${requestLogs.requestedModelId}, ${usageEvents.modelId})`
   const dayBucket = sql<string>`(${usageEvents.createdAt} at time zone ${input.timeZone})::date`
   const [summary, daily, contribution, topModels, aliases] = await Promise.all([
     db.select({
@@ -134,7 +133,7 @@ export async function loadUsageActivity(input: {
       cacheWriteTokens: sql<number>`coalesce(sum(${usageEvents.cacheWriteTokens}), 0)::bigint`,
       outputTokens: sql<number>`coalesce(sum(${usageEvents.outputTokens}), 0)::bigint`,
       costMicros: sql<number>`coalesce(sum(${usageEvents.costMicros}), 0)::bigint`,
-    }).from(usageEvents).innerJoin(users, eq(usageEvents.userId, users.id)).leftJoin(requestLogs, eq(requestLogs.responseId, usageEvents.responseId)).innerJoin(models, eq(models.id, attributedModelId))
+    }).from(usageEvents).innerJoin(users, eq(usageEvents.userId, users.id)).innerJoin(models, eq(models.id, usageEvents.requestedModelId))
       .where(rangeWhere).groupBy(sql`1`, models.id).orderBy(sql`1 asc`),
     db.select({
       day: dayBucket,
@@ -155,7 +154,7 @@ export async function loadUsageActivity(input: {
       cacheWriteTokens: sql<number>`coalesce(sum(${usageEvents.cacheWriteTokens}), 0)::bigint`,
       outputTokens: sql<number>`coalesce(sum(${usageEvents.outputTokens}), 0)::bigint`,
       costMicros: sql<number>`coalesce(sum(${usageEvents.costMicros}), 0)::bigint`,
-    }).from(usageEvents).innerJoin(users, eq(usageEvents.userId, users.id)).leftJoin(requestLogs, eq(requestLogs.responseId, usageEvents.responseId)).innerJoin(models, eq(models.id, attributedModelId))
+    }).from(usageEvents).innerJoin(users, eq(usageEvents.userId, users.id)).innerJoin(models, eq(models.id, usageEvents.requestedModelId))
       .where(rangeWhere).groupBy(models.id).orderBy(desc(sql`sum(${usageEvents.costMicros})`)),
     loadUsageModelAliases(),
   ])
@@ -270,7 +269,6 @@ export async function registerUsageRoutes(app: FastifyInstance): Promise<void> {
       lt(usageEvents.createdAt, cursor.createdAt),
       and(eq(usageEvents.createdAt, cursor.createdAt), lt(usageEvents.id, cursor.id)),
     ) : undefined
-    const attributedModelId = sql<string>`coalesce(${requestLogs.requestedModelId}, ${usageEvents.modelId})`
     const [rows, aliases] = await Promise.all([db.select({
       usage: usageEvents,
       balanceAfterMicros: sql<number | null>`coalesce(${usageEvents.poolBalanceAfterMicros}, ${creditLedger.balanceAfterMicros})`,
@@ -280,8 +278,7 @@ export async function registerUsageRoutes(app: FastifyInstance): Promise<void> {
       displayModelVisible: models.visible,
     }).from(usageEvents)
       .leftJoin(creditLedger, and(eq(creditLedger.responseId, usageEvents.responseId), eq(creditLedger.userId, user.id)))
-      .leftJoin(requestLogs, eq(requestLogs.responseId, usageEvents.responseId))
-      .innerJoin(models, eq(models.id, attributedModelId))
+      .innerJoin(models, eq(models.id, usageEvents.requestedModelId))
       .where(and(eq(usageEvents.userId, user.id), since ? gte(usageEvents.createdAt, since) : undefined, cursorFilter))
       .orderBy(desc(usageEvents.createdAt), desc(usageEvents.id))
       .limit(query.limit + 1), loadUsageModelAliases()])
@@ -382,7 +379,6 @@ export async function registerUsageRoutes(app: FastifyInstance): Promise<void> {
       lt(usageEvents.createdAt, cursor.createdAt),
       and(eq(usageEvents.createdAt, cursor.createdAt), lt(usageEvents.id, cursor.id)),
     ) : undefined
-    const attributedModelId = sql<string>`coalesce(${requestLogs.requestedModelId}, ${usageEvents.modelId})`
     const [rows, aliases] = await Promise.all([db.select({
       usage: usageEvents,
       userId: users.id,
@@ -395,7 +391,7 @@ export async function registerUsageRoutes(app: FastifyInstance): Promise<void> {
       modelName: models.name,
       modelLogo: models.logo,
       modelVisible: models.visible,
-    }).from(usageEvents).innerJoin(users, eq(usageEvents.userId, users.id)).leftJoin(requestLogs, eq(requestLogs.responseId, usageEvents.responseId)).innerJoin(models, eq(models.id, attributedModelId))
+    }).from(usageEvents).innerJoin(users, eq(usageEvents.userId, users.id)).innerJoin(models, eq(models.id, usageEvents.requestedModelId))
       .where(and(...eligibleUsageFilters(since, circle), cursorFilter)).orderBy(desc(usageEvents.createdAt), desc(usageEvents.id)).limit(query.limit + 1), loadUsageModelAliases()])
     const page = rows.slice(0, query.limit)
     const last = page.at(-1)?.usage

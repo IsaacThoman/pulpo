@@ -990,6 +990,9 @@ export const usageEvents = pgTable('usage_events', {
   apiKeyId: uuid('api_key_id').references(() => apiKeys.id),
   responseId: uuid('response_id').references(() => responses.id, { onDelete: 'set null' }),
   modelId: text('model_id').notNull().references(() => models.id),
+  // The model the user asked for. Request logs are removed with purged chats,
+  // so usage attribution cannot rely on joining them after the fact.
+  requestedModelId: text('requested_model_id').notNull().references(() => models.id),
   pricingVersionId: uuid('pricing_version_id').references(() => modelPricingVersions.id),
   inputTokens: integer('input_tokens').notNull(),
   cachedInputTokens: integer('cached_input_tokens').notNull().default(0),

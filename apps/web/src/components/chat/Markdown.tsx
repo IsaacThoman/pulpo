@@ -3,18 +3,33 @@ import ReactMarkdown, { type Components, type UrlTransform } from 'react-markdow
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
 import rehypeKatex from 'rehype-katex'
-import { Check, Copy } from 'lucide-react'
+import { Check, Copy, Play } from 'lucide-react'
 import { normalizeMathDelimiters } from '@pulpo/client-core'
 import 'katex/dist/katex.min.css'
 import { ui } from '@/i18n/ui'
 import { writeClipboardText } from '@/lib/clipboard'
+import { previewKindForLanguage, previewTitle } from '@/lib/code-preview'
+import { useCodePreview } from '@/stores/codePreview'
 
 function CodeBlock({ language, code }: { language: string; code: string }) {
   const [copied, setCopied] = useState(false)
+  const canPreview = useCodePreview((state) => state.hosts > 0)
+  const openPreview = useCodePreview((state) => state.open)
+  const previewKind = canPreview ? previewKindForLanguage(language, code) : null
   return (
     <div className="group/code my-3 min-w-0 max-w-full overflow-hidden rounded-lg border bg-zinc-950 dark:bg-zinc-900">
       <div className="flex min-w-0 items-center justify-between gap-2 border-b border-white/10 px-3 py-1.5">
-        <span className="min-w-0 truncate text-[11px] font-medium text-zinc-400">{language || 'text'}</span>
+        <span className="min-w-0 flex-1 truncate text-[11px] font-medium text-zinc-400">{language || 'text'}</span>
+        {previewKind && (
+          <button
+            type="button"
+            className="flex shrink-0 cursor-pointer items-center gap-1 text-[11px] text-zinc-400 hover:text-zinc-100"
+            onClick={() => openPreview({ kind: previewKind, code, title: previewTitle(previewKind, code) })}
+          >
+            <Play className="size-3" />
+            {ui("Preview")}
+          </button>
+        )}
         <button
           className="flex shrink-0 cursor-pointer items-center gap-1 text-[11px] text-zinc-400 hover:text-zinc-100"
           onClick={() => {

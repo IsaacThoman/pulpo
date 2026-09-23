@@ -89,6 +89,54 @@ function topSortOrder(chats: Chat[]): number {
   return chats.reduce((min, chat) => Math.min(min, chat.sortOrder), 1) - 1
 }
 
+type ChatListPosition = { targetId: string; edge: 'before' | 'after' }
+
+function insertChatId(ids: string[], id: string, position: ChatListPosition | undefined): string[] {
+  return position && ids.includes(position.targetId)
+    ? reorderList([...ids, id], id, position.targetId, position.edge)
+    : [...ids, id]
+}
+
+/** Saves a chat's new list along with the full order of that list. */
+function commitChatPlacement(id: string, nextIds: string[], patch: Partial<Pick<Chat, 'pinned' | 'folderId'>>) {
+  const orders = applySortOrders(nextIds)
+  const sortOrder = orders.get(id) ?? nextIds.length - 1
+  useChat.setState((state) => ({
+    chats: state.chats.map((chat) => {
+      if (chat.id === id) return { ...chat, ...patch, sortOrder }
+      const nextOrder = orders.get(chat.id)
+      return nextOrder === undefined ? chat : { ...chat, sortOrder: nextOrder }
+    }),
+  }))
+  void optimisticRequest('PATCH', `/api/chats/${id}`, { ...patch, sortOrder })
+  if (nextIds.length > 1) {
+    void optimisticRequest('PUT', '/api/chats/order', { chatIds: nextIds })
+  }
+}
+
+/** Places an unpinned chat in a folder (at its end by default) or the unfiled list (at its top by default). */
+function placeInChatList(
+  id: string,
+  folderId: string | null,
+  position: ChatListPosition | undefined,
+  patch: Partial<Pick<Chat, 'pinned'>> = {},
+) {
+  const { chats, folders } = useChat.getState()
+  const destination = chatListMembers(chats, folders, folderId).filter((chat) => chat.id !== id)
+  const destIds = orderedChatIds(destination)
+
+  if (!folderId && !(position && destIds.includes(position.targetId))) {
+    const sortOrder = topSortOrder(destination)
+    useChat.setState((state) => ({
+      chats: state.chats.map((chat) => chat.id === id ? { ...chat, ...patch, folderId: null, sortOrder } : chat),
+    }))
+    void optimisticRequest('PATCH', `/api/chats/${id}`, { ...patch, folderId: null, sortOrder })
+    return
+  }
+
+  commitChatPlacement(id, insertChatId(destIds, id, position), { ...patch, folderId })
+}
+
 function reorderChatList(ids: string[], fromId: string, toId: string, edge: 'before' | 'after') {
   const nextIds = reorderList(ids, fromId, toId, edge)
   if (nextIds.join() === ids.join()) return
@@ -233,11 +281,11 @@ interface ChatState {
   deleteChat: (id: string) => void
   renameChat: (id: string, title: string) => void
   togglePin: (id: string) => void
-  moveToFolder: (
-    id: string,
-    folderId: string | null,
-    position?: { targetId: string; edge: 'before' | 'after' },
-  ) => void
+  moveToFolder: (id: string, folderId: string | null, position?: ChatListPosition) => void
+  /** Pins a chat at `position` in the pinned list, or at its end. */
+  pinChat: (id: string, position?: ChatListPosition) => void
+  /** Unpins a chat into a folder or the unfiled list, like `moveToFolder` does for unpinned chats. */
+  unpinChat: (id: string, folderId: string | null, position?: ChatListPosition) => void
   reorderPinnedChats: (fromId: string, toId: string, edge: 'before' | 'after') => void
   reorderFolderChats: (folderId: string, fromId: string, toId: string, edge: 'before' | 'after') => void
   reorderLooseChats: (fromId: string, toId: string, edge: 'before' | 'after') => void
@@ -1234,38 +1282,18 @@ export const useChat = create<ChatState>()((set, get) => ({
       void optimisticRequest('PATCH', `/api/chats/${id}`, { folderId })
       return
     }
-    const destination = chatListMembers(get().chats, get().folders, folderId).filter((chat) => chat.id !== id)
-    const destIds = orderedChatIds(destination)
-
-    if (!folderId && !(position && destIds.includes(position.targetId))) {
-      const sortOrder = topSortOrder(destination)
-      set((state) => ({
-        chats: state.chats.map((chat) => chat.id === id ? { ...chat, folderId: null, sortOrder } : chat),
-      }))
-      void optimisticRequest('PATCH', `/api/chats/${id}`, { folderId: null, sortOrder })
-      return
-    }
-
-    let nextIds: string[]
-    if (position && destIds.includes(position.targetId)) {
-      nextIds = reorderList([...destIds, id], id, position.targetId, position.edge)
-    } else {
-      nextIds = [...destIds, id]
-    }
-
-    const orders = applySortOrders(nextIds)
-    const sortOrder = orders.get(id) ?? nextIds.length - 1
-    set((state) => ({
-      chats: state.chats.map((chat) => {
-        if (chat.id === id) return { ...chat, folderId, sortOrder }
-        const nextOrder = orders.get(chat.id)
-        return nextOrder === undefined ? chat : { ...chat, sortOrder: nextOrder }
-      }),
-    }))
-    void optimisticRequest('PATCH', `/api/chats/${id}`, { folderId, sortOrder })
-    if (nextIds.length > 1) {
-      void optimisticRequest('PUT', '/api/chats/order', { chatIds: nextIds })
-    }
+    placeInChatList(id, folderId, position)
+  },
+  pinChat: (id, position) => {
+    const chat = get().chats.find((item) => item.id === id)
+    if (!chat || chat.pinned || chat.temporary) return
+    // The chat keeps its folder, so unpinning returns it there.
+    const pinnedIds = orderedChatIds(get().chats.filter((item) => item.pinned && item.id !== id))
+    commitChatPlacement(id, insertChatId(pinnedIds, id, position), { pinned: true })
+  },
+  unpinChat: (id, folderId, position) => {
+    if (!get().chats.find((chat) => chat.id === id)?.pinned) return
+    placeInChatList(id, folderId, position, { pinned: false })
   },
   reorderPinnedChats: (fromId, toId, edge) => {
     reorderChatList(orderedChatIds(get().chats.filter((chat) => chat.pinned)), fromId, toId, edge)

@@ -4,6 +4,7 @@ import { AlertCircle, Loader2 } from 'lucide-react'
 import { apiRequest } from '@/lib/api'
 import { AiLogo } from '@/components/ProviderLogo'
 import { Markdown } from '@/components/chat/Markdown'
+import { CodePreviewPanel } from '@/components/chat/CodePreviewPanel'
 import { timeAgo } from '@/lib/format'
 import { ui } from '@/i18n/ui'
 import { useDocumentTitle } from '@/lib/document-title'
@@ -102,6 +103,7 @@ export function SharedChatView({ share }: { share: SharedChat }) {
       </section>
 
       <footer className="border-t bg-muted/20 px-4 py-4 text-center text-xs text-muted-foreground"> {ui("Public, read-only chat shared from Pulpo. Reasoning is not included.")} </footer>
+      <CodePreviewPanel variant="overlay" />
     </>
   )
 }
