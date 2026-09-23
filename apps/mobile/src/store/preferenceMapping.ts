@@ -1,4 +1,4 @@
-import { imageGenerationPreferencesSchema, type ImageGenerationPreferences, speechPreferencesSchema, type SpeechPreferences } from '@pulpo/contracts'
+import { imageGenerationPreferencesSchema, type ImageGenerationPreferences, modelWarningDismissalsSchema, type ModelWarningDismissals, speechPreferencesSchema, type SpeechPreferences } from '@pulpo/contracts'
 export type ThemePreference = 'system' | 'light' | 'dark'
 export type TextSizePreference = 'default' | 'large' | 'extra-large'
 export type TrashRetentionPreference = 'instant' | '24h' | '7d' | '30d' | '90d' | 'indefinite'
@@ -11,6 +11,9 @@ export interface Preferences {
   textSize: TextSizePreference
   streamResponses: boolean
   showPromptSuggestions: boolean
+  showModelWarnings: boolean
+  /** Per-model composer warning dismissals, synchronized with the account. */
+  modelWarningDismissals: ModelWarningDismissals
   showReasoning: boolean
   memoryEnabled: boolean
   haptics: boolean
@@ -33,7 +36,7 @@ export interface Preferences {
 export const defaultPreferences: Preferences = {
   imageGeneration: imageGenerationPreferencesSchema.parse(undefined),
   speech: speechPreferencesSchema.parse(undefined),
-  theme: 'system', textSize: 'default', streamResponses: true, showPromptSuggestions: true, showReasoning: true, memoryEnabled: false,
+  theme: 'system', textSize: 'default', streamResponses: true, showPromptSuggestions: true, showModelWarnings: true, modelWarningDismissals: {}, showReasoning: true, memoryEnabled: false,
   haptics: true, composerSyncEnabled: true, sendWithEnter: true, attachmentCacheMb: 256, localChatLimit: 50,
   trashRetention: '30d', automaticChatExpiration: '24h', newChatAutoExpire: false, favoriteModelIds: [], providerOrder: [], defaultModelId: null, agentModes: {},
   generation: {},
@@ -50,9 +53,11 @@ export function preferencesFromServer(values: Record<string, unknown>): Partial<
     providerOrder: validOrderedIds(values.providerOrder),
     generation: validGenerationPreferences(values.generation),
     agentModes: validAgentModes(values.agentModes),
+    modelWarningDismissals: modelWarningDismissalsSchema.catch({}).parse(values.modelWarningDismissals ?? {}),
   }
   if (values.theme === 'system' || values.theme === 'light' || values.theme === 'dark') result.theme = values.theme
   result.showPromptSuggestions = values.showPromptSuggestions !== false
+  result.showModelWarnings = values.showModelWarnings !== false
   result.composerSyncEnabled = values.composerSyncEnabled !== false
   if (typeof values.sendWithEnter === 'boolean') result.sendWithEnter = values.sendWithEnter
   if (typeof values.streamResponses === 'boolean') result.streamResponses = values.streamResponses
@@ -100,7 +105,7 @@ function validAgentModes(value: unknown): Preferences['agentModes'] {
 
 export function serverPreferenceKey(key: keyof Preferences): string | null {
   return key === 'attachmentCacheMb' ? 'localAttachmentCacheMb'
-    : ['imageGeneration', 'speech', 'composerSyncEnabled', 'theme', 'sendWithEnter', 'streamResponses', 'showPromptSuggestions', 'showReasoning', 'memoryEnabled', 'localChatLimit', 'trashRetention', 'automaticChatExpiration', 'newChatAutoExpire', 'defaultModelId', 'favoriteModelIds', 'providerOrder', 'generation', 'agentModes'].includes(key)
+    : ['imageGeneration', 'speech', 'composerSyncEnabled', 'theme', 'sendWithEnter', 'streamResponses', 'showPromptSuggestions', 'showModelWarnings', 'modelWarningDismissals', 'showReasoning', 'memoryEnabled', 'localChatLimit', 'trashRetention', 'automaticChatExpiration', 'newChatAutoExpire', 'defaultModelId', 'favoriteModelIds', 'providerOrder', 'generation', 'agentModes'].includes(key)
       ? key
       : null
 }

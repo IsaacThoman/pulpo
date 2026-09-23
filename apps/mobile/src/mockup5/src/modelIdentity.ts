@@ -1,3 +1,4 @@
+import { DEFAULT_MODEL_WARNING_DISMISS_DAYS } from '@pulpo/contracts'
 import type { MobileModel } from '../../types'
 import type { PrototypeModel } from './domain'
 
@@ -67,6 +68,8 @@ export function mapModel(model: MobileModel, favorites: string[]): PrototypeMode
     provider: model.provider.name,
     lab: model.lab?.name ?? 'Internal',
     description: model.description,
+    warningMessage: model.warningMessage ?? '',
+    warningDismissDays: model.warningDismissDays ?? DEFAULT_MODEL_WARNING_DISMISS_DAYS,
     contextWindow: model.tags.find((tag) => /context/i.test(tag)) ?? `${Math.round(model.maxOutputTokens / 1000)}K max output`,
     pricing: 'Managed by this Pulpo instance',
     tags: model.tags,

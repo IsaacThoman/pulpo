@@ -213,6 +213,7 @@ import { usePreferencesStore } from '../store/preferences';
 import { FAVORITES_SECTION, resolveModelMenu } from '../features/chat/modelMenu';
 import { aiIconSource, useCatalogIconCacheRevision } from './src/production/AiIconAssets';
 import { SafeMarkdown } from '../components/SafeMarkdown';
+import { ModelWarningBanner } from './src/components/ModelWarningBanner';
 import { AttachmentImageViewer, type AttachmentImagePreviewItem, type AttachmentImageTransitionOrigin } from '../components/AttachmentImageViewer';
 import { timeAgo } from '../features/chat/format';
 import {
@@ -5648,6 +5649,13 @@ function ChatView({
                       }}
                     />
                 </ComposerQueueSection>
+              <ModelWarningBanner
+                model={prototypeModel}
+                onSelectModel={(id) => {
+                  const target = models.find((candidate) => candidate.id === id);
+                  if (target) onSelectModel(target);
+                }}
+              />
               {messageEdit ? (
                 <View style={styles.messageEditBanner}>
                   <Icon name="pencil" size={12} color={COLORS.muted} />

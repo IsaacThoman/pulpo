@@ -13,6 +13,8 @@ export interface MobileModel {
   id: string
   name: string
   description: string
+  warningMessage?: string
+  warningDismissDays?: number
   executionMode: 'stream' | 'background'
   maxOutputTokens: number
   agentEnabled: boolean

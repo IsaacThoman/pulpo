@@ -4,6 +4,7 @@ import { speechPlayback } from '@/features/speech/state'
 import { localComposerDraftId, mergePendingAttachments } from '@pulpo/client-core'
 import { ShelvedDrafts } from './ShelvedDrafts'
 import { ComposerTray } from './ComposerTray'
+import { ModelWarningBanner } from './ModelWarningBanner'
 import { webShelf, shelfDraftAttachments } from '@/lib/local-first/shelf'
 import type { ShelfAttachment } from '@pulpo/client-core'
 import { useComposerSync } from './use-composer-sync'
@@ -134,6 +135,7 @@ export function Composer({
   focusControlRef,
   generationControlRef,
   onTemporaryChange,
+  onSelectModel,
 }: {
   chatId: string | null
   modelId: string
@@ -150,6 +152,8 @@ export function Composer({
   focusControlRef?: Ref<{ focus: () => void }>
   generationControlRef?: Ref<{ getSelection: () => ResponseGenerationSelection }>
   onTemporaryChange?: (temporary: boolean) => void
+  /** Selects another model, e.g. from a model warning link. */
+  onSelectModel?: (modelId: string) => void
 }) {
   const { t } = useTranslation()
   const navigate = useNavigate()
@@ -1178,6 +1182,13 @@ export function Composer({
           temporary && 'border-dashed',
         )}
       >
+        <ModelWarningBanner
+          modelId={modelId}
+          onSelectModel={onSelectModel && ((id) => {
+            onSelectModel(id)
+            ref.current?.focus()
+          })}
+        />
         {attachments.length > 0 && (
           <div className="space-y-2 px-3 pt-3">
             <AttachmentWindow items={attachments}>{(visible) => <div className="flex max-h-48 flex-wrap gap-2 overflow-y-auto">

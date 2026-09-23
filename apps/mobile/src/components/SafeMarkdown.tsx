@@ -10,6 +10,7 @@ export const SafeMarkdown = memo(function SafeMarkdown({
   selectable = true,
   containerStyle,
   tightenLeadingHeading = false,
+  onLinkPress,
 }: {
   children: string
   streaming?: boolean
@@ -17,6 +18,8 @@ export const SafeMarkdown = memo(function SafeMarkdown({
   selectable?: boolean
   containerStyle?: ViewStyle | TextStyle
   tightenLeadingHeading?: boolean
+  /** Return true when the link was handled; otherwise http(s) links open externally. */
+  onLinkPress?: (url: string) => boolean
 }) {
   const theme = useAppTheme()
   const markdown = useMemo(() => normalizeMathDelimiters(children), [children])
@@ -64,6 +67,7 @@ export const SafeMarkdown = memo(function SafeMarkdown({
     markdownStyle={markdownStyle}
     maxFontSizeMultiplier={2}
     onLinkPress={({ url }) => {
+      if (onLinkPress?.(url)) return
       if (/^https?:\/\//i.test(url)) void Linking.openURL(url)
     }}
     selectable={selectable}

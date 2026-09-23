@@ -67,6 +67,9 @@ export async function registerSettingsRoutes(app: FastifyInstance): Promise<void
     if ('showPromptSuggestions' in patch && typeof patch.showPromptSuggestions !== 'boolean') {
       throw new AppError(400, 'invalid_prompt_suggestions_setting', 'Choose whether prompt suggestions should be shown')
     }
+    if ('showModelWarnings' in patch && typeof patch.showModelWarnings !== 'boolean') {
+      throw new AppError(400, 'invalid_model_warnings_setting', 'Choose whether model warnings should be shown')
+    }
     if ('composerSyncEnabled' in patch && typeof patch.composerSyncEnabled !== 'boolean') {
       throw new AppError(400, 'invalid_composer_sync_setting', 'Choose whether composer drafts should sync')
     }
