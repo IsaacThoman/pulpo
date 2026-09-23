@@ -1687,7 +1687,6 @@ const esUi: Record<string, string> = {
   "Your saved card was removed, so auto top-up was turned off.": "Se eliminó tu tarjeta guardada, así que se desactivó la recarga automática.",
   "Add credit automatically when your balance runs low, up to a monthly limit you set.": "Añade crédito automáticamente cuando tu saldo esté bajo, hasta el límite mensual que elijas.",
   "Auto top-up": "Recarga automática",
-  "Turn on": "Activar",
   "{{spent}} of {{limit}} this month": "{{spent}} de {{limit}} este mes",
   "Could not save auto top-up.": "No se pudo guardar la recarga automática.",
   "Add credit automatically when your balance runs low.": "Añade crédito automáticamente cuando tu saldo esté bajo.",
@@ -1716,6 +1715,8 @@ const esUi: Record<string, string> = {
   "{{0}} auto top-up": "Recarga automática de {{0}}",
   "Use this card for automatic top-ups": "Usar esta tarjeta para recargas automáticas",
   "Add {{amount}} whenever your balance runs low.": "Añadir {{amount}} cada vez que tu saldo esté bajo.",
+  "Auto top-up settings": "Ajustes de recarga automática",
+  "Set up auto top-up": "Configurar recarga automática",
 }
 
 export default esUi

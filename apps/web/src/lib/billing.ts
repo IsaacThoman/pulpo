@@ -142,6 +142,12 @@ export function paymentMethodLabel(paymentMethod: { brand: string | null; last4:
   return paymentMethod.last4 ? `${brand} •••• ${paymentMethod.last4}` : brand
 }
 
+/** Label for the button that opens the auto top-up settings. */
+export function autoTopUpActionLabel(summary: AutoTopUpSummary | undefined): string {
+  if (!summary || summary.state !== 'off') return summary ? ui("Auto top-up settings") : ui("Set up auto top-up")
+  return summary.thresholdCents === null ? ui("Set up auto top-up") : ui("Turn on auto top-up")
+}
+
 export function autoTopUpStateLabel(state: AutoTopUpState): string {
   switch (state) {
     case 'active': return ui("On")

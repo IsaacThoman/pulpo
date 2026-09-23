@@ -14,7 +14,6 @@ import { chargeCentsForCredits, creditCentsFromInput } from '@/lib/billing-prici
 import { formatBalance, formatDate } from '@/lib/format'
 import { openExternalUrl } from '@/lib/runtime'
 import { cn } from '@/lib/utils'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -95,52 +94,44 @@ function autoTopUpDescription(autoTopUp: AutoTopUpSummary): string {
   }
 }
 
-export function AutoTopUpCard({ autoTopUp, onEdit, disabled }: {
+/** Auto top-up status under the credit balance; hidden until the user sets it up. */
+export function AutoTopUpStatus({ autoTopUp, className }: {
   autoTopUp: AutoTopUpSummary | undefined
-  onEdit: () => void
-  disabled?: boolean
+  className?: string
 }) {
-  const state = autoTopUp?.state ?? 'off'
-  const configured = Boolean(autoTopUp && autoTopUp.state !== 'off')
-  const turnedOff = autoTopUp?.state === 'off' && autoTopUp.thresholdCents !== null
+  if (!autoTopUp || autoTopUp.state === 'off') return null
+  const state = autoTopUp.state
+  const showUsage = (state === 'active' || state === 'limit_reached') && autoTopUp.monthlyLimitCents !== null
+  const usagePercentage = autoTopUp.monthlyLimitCents ? Math.min(100, (autoTopUp.monthSpentCents / autoTopUp.monthlyLimitCents) * 100) : 0
   return (
-    <div className="rounded-lg border p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2 text-sm font-medium">
-            <Zap className="size-3.5 text-muted-foreground" aria-hidden />
-            {ui("Auto top-up")}
-            <Badge
-              variant={state === 'active' ? 'secondary' : 'outline'}
-              className={cn(
-                state === 'active' && 'border-emerald-500/25 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300',
-                (state === 'payment_failed' || state === 'payment_method_removed') && 'border-destructive/30 text-destructive',
-                (state === 'limit_reached' || state === 'needs_payment_method') && 'border-amber-500/30 text-amber-700 dark:text-amber-300',
-              )}
-            >
-              {autoTopUpStateLabel(state)}
-            </Badge>
-          </div>
-          {autoTopUp && <p className="mt-1 text-xs text-muted-foreground">{autoTopUpDescription(autoTopUp)}</p>}
-          {autoTopUp?.state === 'payment_failed' && autoTopUp.lastAttempt?.failureMessage && (
-            <p className="mt-1 flex items-start gap-1.5 text-xs text-destructive"><AlertTriangle className="mt-0.5 size-3 shrink-0" />{autoTopUp.lastAttempt.failureMessage}</p>
-          )}
-        </div>
-        <Button size="sm" variant="outline" className="shrink-0" disabled={disabled || !autoTopUp} onClick={onEdit}>
-          {configured ? ui("Edit") : turnedOff ? ui("Turn on") : ui("Set up")}
-        </Button>
+    <div className={className}>
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs font-medium text-muted-foreground">
+        <span className="flex items-center gap-2"><Zap className="size-3.5" aria-hidden />{ui("Auto top-up")}</span>
+        <span className={cn(
+          state === 'active' && 'text-emerald-600 dark:text-emerald-400',
+          (state === 'payment_failed' || state === 'payment_method_removed') && 'text-destructive',
+          (state === 'limit_reached' || state === 'needs_payment_method') && 'text-amber-700 dark:text-amber-300',
+        )}>· {autoTopUpStateLabel(state)}</span>
       </div>
-      {autoTopUp && (autoTopUp.state === 'active' || autoTopUp.state === 'limit_reached') && autoTopUp.monthlyLimitCents !== null && (
-        <div className="mt-3 space-y-1.5">
+      <p className="mt-1 text-sm">{autoTopUpDescription(autoTopUp)}</p>
+      {state === 'payment_failed' && autoTopUp.lastAttempt?.failureMessage && (
+        <p className="mt-1 flex items-start gap-1.5 text-xs text-destructive"><AlertTriangle className="mt-0.5 size-3 shrink-0" />{autoTopUp.lastAttempt.failureMessage}</p>
+      )}
+      {showUsage && (
+        <div className="mt-3">
           <div className="flex justify-between gap-4 text-xs text-muted-foreground">
-            <span>{ui("{{spent}} of {{limit}} this month", { spent: dollars(autoTopUp.monthSpentCents), limit: dollars(autoTopUp.monthlyLimitCents) })}</span>
-            {autoTopUp.paymentMethod && <span className="flex items-center gap-1"><CreditCard className="size-3" aria-hidden />{paymentMethodLabel(autoTopUp.paymentMethod)}</span>}
+            <span>{ui("{{spent}} of {{limit}} this month", { spent: dollars(autoTopUp.monthSpentCents), limit: dollars(autoTopUp.monthlyLimitCents!) })}</span>
+            {autoTopUp.paymentMethod && <span className="flex shrink-0 items-center gap-1"><CreditCard className="size-3" aria-hidden />{paymentMethodLabel(autoTopUp.paymentMethod)}</span>}
           </div>
-          <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-            <div
-              className={cn('h-full rounded-full', autoTopUp.state === 'limit_reached' ? 'bg-amber-500' : 'bg-emerald-500')}
-              style={{ width: `${Math.min(100, (autoTopUp.monthSpentCents / autoTopUp.monthlyLimitCents) * 100)}%` }}
-            />
+          <div
+            className="mt-1.5 flex h-1.5 overflow-hidden rounded-full bg-muted"
+            role="progressbar"
+            aria-label={ui("Auto top-up")}
+            aria-valuenow={Math.round(usagePercentage)}
+            aria-valuemin={0}
+            aria-valuemax={100}
+          >
+            <div className={cn('h-full', state === 'limit_reached' ? 'bg-amber-400 dark:bg-amber-500' : 'bg-emerald-500')} style={{ width: `${usagePercentage}%` }} />
           </div>
         </div>
       )}

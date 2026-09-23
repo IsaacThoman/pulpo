@@ -13,13 +13,14 @@ import {
   ShieldCheck,
   Wallet,
   UsersRound,
+  Zap,
 } from 'lucide-react'
 import { useAuth } from '@/stores/auth'
 import { formatBalance, formatDate } from '@/lib/format'
 import { creditCentsFromInput } from '@/lib/billing-pricing'
 import { apiRequest } from '@/lib/api'
 import { openExternalUrl } from '@/lib/runtime'
-import { autoTopUpSettingsError, billingPlanName, defaultAutoTopUpSettings, fetchBillingSummary, managedBillingPlan, paymentStatusLabel, pendingBillingPlan, planChoiceDisabled, planChoiceLabel, saveAutoTopUpSettings, type BillingPlan } from '@/lib/billing'
+import { autoTopUpActionLabel, autoTopUpSettingsError, billingPlanName, defaultAutoTopUpSettings, fetchBillingSummary, managedBillingPlan, paymentStatusLabel, pendingBillingPlan, planChoiceDisabled, planChoiceLabel, saveAutoTopUpSettings, type BillingPlan } from '@/lib/billing'
 import { queryClient } from '@/lib/query-client'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
@@ -37,7 +38,7 @@ import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { SubscriptionUsageBars } from '@/components/SubscriptionUsageBars'
-import { AutoTopUpCard, AutoTopUpDialog, MoneyInput } from '@/components/billing/AutoTopUp'
+import { AutoTopUpDialog, AutoTopUpStatus, MoneyInput } from '@/components/billing/AutoTopUp'
 import { ui, uit } from '@/i18n/ui'
 
 const CREDIT_AMOUNTS = [10, 25, 50, 100] as const
@@ -326,11 +327,12 @@ export function BillingPage() {
                     <p className="mt-0.5 text-xs text-muted-foreground">{ui("The combined account balances available to your Pool.")}{summary.poolBalancePendingMicros !== null && summary.poolBalancePendingMicros > 0 && <> {formatBalance(summary.poolBalancePendingMicros / 1_000_000)} {ui("reserved")}.</>}</p>
                   </div>
                 )}
+                <AutoTopUpStatus className="mt-4" autoTopUp={summary?.autoTopUp} />
               </div>
               <div className="flex flex-wrap gap-2 pt-1">
                 <Button variant="default" onClick={() => { resetTopUp(); setTopUpOpen(true) }}><Plus />{ui("Add credits")}</Button>
+                <Button variant="ghost" disabled={!summary} onClick={() => setAutoTopUpOpen(true)}><Zap />{autoTopUpActionLabel(summary?.autoTopUp)}</Button>
               </div>
-              <AutoTopUpCard autoTopUp={summary?.autoTopUp} onEdit={() => setAutoTopUpOpen(true)} />
             </PaymentOption>
           </div>
 
