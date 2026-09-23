@@ -97,8 +97,8 @@ describe('automatic top-up settings', () => {
   })
 
   it('requires the monthly limit to cover one charge including the platform fee', () => {
-    expect(autoTopUpSettingsError({ ...valid, monthlyLimitCents: 2_685 })).toBeNull()
-    expect(autoTopUpSettingsError({ ...valid, monthlyLimitCents: 2_684 })).toContain('at least one top-up')
+    expect(autoTopUpSettingsError({ ...valid, monthlyLimitCents: 2_688 })).toBeNull()
+    expect(autoTopUpSettingsError({ ...valid, monthlyLimitCents: 2_687 })).toContain('at least one top-up')
   })
 
   it('starts from stored settings or a limit of four top-ups', () => {

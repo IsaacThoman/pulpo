@@ -143,9 +143,9 @@ describe.skipIf(!enabled)('automatic top-ups in PostgreSQL', () => {
     expect(await runAutoTopUp(userId)).toBe(1)
     expect(await balance(userId)).toBe(26_000_000)
     const [attempt] = await attempts(userId)
-    expect(attempt).toMatchObject({ status: 'succeeded', creditCents: 2_500, chargeCents: 2_685 })
+    expect(attempt).toMatchObject({ status: 'succeeded', creditCents: 2_500, chargeCents: 2_688 })
     const [order] = await db.select().from(billingOrders).where(eq(billingOrders.userId, userId))
-    expect(order).toMatchObject({ billingReason: 'auto_top_up', requestedCreditCents: 2_500, grantedCreditMicros: 25_000_000, platformFeeAmountCents: 185 })
+    expect(order).toMatchObject({ billingReason: 'auto_top_up', requestedCreditCents: 2_500, grantedCreditMicros: 25_000_000, platformFeeAmountCents: 188 })
     const ledger = await db.select().from(creditLedger).where(and(eq(creditLedger.userId, userId), eq(creditLedger.type, 'credit_purchase')))
     expect(ledger).toHaveLength(1)
 
@@ -176,7 +176,7 @@ describe.skipIf(!enabled)('automatic top-ups in PostgreSQL', () => {
 
   it('keeps topping up while the balance stays below the threshold, within the monthly limit', async () => {
     const userId = await account(-60_000_000, { amountCents: 2_500, monthlyLimitCents: 6_000 })
-    // Two $26.85 charges fit in $60; a third would exceed it.
+    // Two $26.88 charges fit in $60; a third would exceed it.
     expect(await runAutoTopUp(userId)).toBe(2)
     expect(await balance(userId)).toBe(-10_000_000)
     expect((await attempts(userId)).map((row) => row.status)).toEqual(['succeeded', 'succeeded'])
@@ -184,7 +184,7 @@ describe.skipIf(!enabled)('automatic top-ups in PostgreSQL', () => {
 
   it('skips a top-up that would exceed the monthly limit', async () => {
     const userId = await account(0, { monthlyLimitCents: 10_000 })
-    await db.insert(billingAutoTopUps).values({ id: randomUUID(), userId, status: 'succeeded', creditCents: 7_000, chargeCents: 7_422, stripePaymentMethodId: `pm_${userId}` })
+    await db.insert(billingAutoTopUps).values({ id: randomUUID(), userId, status: 'succeeded', creditCents: 7_000, chargeCents: 7_435, stripePaymentMethodId: `pm_${userId}` })
     expect(await runAutoTopUp(userId)).toBe(0)
     expect(stripe.created).toBe(0)
   })
@@ -192,7 +192,7 @@ describe.skipIf(!enabled)('automatic top-ups in PostgreSQL', () => {
   it('does not count attempts from earlier months', async () => {
     const userId = await account(0, { monthlyLimitCents: 10_000 })
     const lastMonth = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth() - 1, 15))
-    await db.insert(billingAutoTopUps).values({ id: randomUUID(), userId, status: 'succeeded', creditCents: 7_000, chargeCents: 7_422, stripePaymentMethodId: `pm_${userId}`, createdAt: lastMonth })
+    await db.insert(billingAutoTopUps).values({ id: randomUUID(), userId, status: 'succeeded', creditCents: 7_000, chargeCents: 7_435, stripePaymentMethodId: `pm_${userId}`, createdAt: lastMonth })
     expect(await runAutoTopUp(userId)).toBe(1)
   })
 
@@ -227,11 +227,11 @@ describe.skipIf(!enabled)('automatic top-ups in PostgreSQL', () => {
     const invoiceId = `in_${randomUUID()}`
     stripe.invoices.set(invoiceId, paidInvoice({
       id: invoiceId, object: 'invoice', currency: 'usd', customer: `cus_${userId}`, created: Math.floor(Date.now() / 1_000),
-      parent: null, billing_reason: 'manual', item: { unit_amount: 2_685 },
+      parent: null, billing_reason: 'manual', item: { unit_amount: 2_688 },
       metadata: { pulpo_kind: 'auto_top_up', pulpo_user_id: userId, pulpo_auto_top_up_id: attemptId, requested_credit_cents: '2500' },
     }))
     await db.insert(billingAutoTopUps).values({
-      id: attemptId, userId, status: 'processing', creditCents: 2_500, chargeCents: 2_685,
+      id: attemptId, userId, status: 'processing', creditCents: 2_500, chargeCents: 2_688,
       stripePaymentMethodId: `pm_${userId}`, stripeInvoiceId: invoiceId, createdAt: new Date(Date.now() - 20 * 60 * 1_000),
     })
     await sweepAutoTopUps()

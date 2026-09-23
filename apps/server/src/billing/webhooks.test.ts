@@ -100,10 +100,10 @@ describe('billing webhook lifecycle rules', () => {
 
   it('validates automatic top-up invoices against the attempt', () => {
     const valid = {
-      attempt: { userId: 'user_1', creditCents: 2_500, chargeCents: 2_685 },
+      attempt: { userId: 'user_1', creditCents: 2_500, chargeCents: 2_688 },
       ownerUserId: 'user_1',
       metadataCreditCents: '2500',
-      subtotalCents: 2_685,
+      subtotalCents: 2_688,
       currency: 'usd',
       productIds: ['prod_credit'],
       expectedProductId: 'prod_credit',
@@ -111,7 +111,7 @@ describe('billing webhook lifecycle rules', () => {
     }
     expect(() => validateAutoTopUpInvoice(valid)).not.toThrow()
     expect(() => validateAutoTopUpInvoice({ ...valid, ownerUserId: 'user_2' })).toThrow('attempt owner')
-    expect(() => validateAutoTopUpInvoice({ ...valid, subtotalCents: 2_684 })).toThrow('amount')
+    expect(() => validateAutoTopUpInvoice({ ...valid, subtotalCents: 2_687 })).toThrow('amount')
     expect(() => validateAutoTopUpInvoice({ ...valid, metadataCreditCents: '5000' })).toThrow('amount')
     expect(() => validateAutoTopUpInvoice({ ...valid, currency: 'eur' })).toThrow('amount')
     expect(() => validateAutoTopUpInvoice({ ...valid, productIds: ['prod_other'] })).toThrow('product')
@@ -128,8 +128,8 @@ describe('billing webhook lifecycle rules', () => {
     expect(() => validateCreditCheckoutPayment({
       requestedCreditCents: 1_000,
       metadataCreditCents: '1000',
-      storedChargeCents: 1_106,
-      subtotalCents: 1_106,
+      storedChargeCents: 1_105,
+      subtotalCents: 1_105,
       currency: 'usd',
       productId: 'prod_credits',
       expectedProductId: 'prod_credits',
@@ -138,7 +138,7 @@ describe('billing webhook lifecycle rules', () => {
     expect(() => validateCreditCheckoutPayment({
       requestedCreditCents: 1_000,
       metadataCreditCents: '1000',
-      storedChargeCents: 1_106,
+      storedChargeCents: 1_105,
       subtotalCents: 1_195,
       currency: 'usd',
       productId: 'prod_credits',
@@ -148,8 +148,8 @@ describe('billing webhook lifecycle rules', () => {
     expect(() => validateCreditCheckoutPayment({
       requestedCreditCents: 1_000,
       metadataCreditCents: '1000',
-      storedChargeCents: 1_106,
-      subtotalCents: 1_106,
+      storedChargeCents: 1_105,
+      subtotalCents: 1_105,
       currency: 'usd',
       productId: 'prod_unknown',
       expectedProductId: 'prod_credits',
