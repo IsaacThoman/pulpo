@@ -179,6 +179,23 @@ function useSidebarDrag() {
     if (dragListRef.current !== 'loose' && drop?.kind !== 'loose-target') setDrop({ kind: 'loose-target' })
   }
 
+  /** Space below the unfiled list drops a chat at the end of it. */
+  const onBelowLooseDragOver = (lastLooseId: string | undefined, e: DragEvent<HTMLElement>) => {
+    if (dragKindRef.current !== 'chat' || !dragIdRef.current || dragListRef.current === 'pinned') return
+    acceptMove(e)
+    if (!lastLooseId) {
+      if (drop?.kind !== 'loose-target') setDrop({ kind: 'loose-target' })
+      return
+    }
+    if (lastLooseId === dragIdRef.current) {
+      if (drop) setDrop(null)
+      return
+    }
+    if (drop?.kind !== 'row' || drop.list !== 'loose' || drop.id !== lastLooseId || drop.edge !== 'after') {
+      setDrop({ kind: 'row', list: 'loose', id: lastLooseId, edge: 'after' })
+    }
+  }
+
   return {
     dragId,
     dragKind,
@@ -194,6 +211,7 @@ function useSidebarDrag() {
     onChatRowDragOver,
     onFolderBodyDragOver,
     onLooseZoneDragOver,
+    onBelowLooseDragOver,
     setDrop,
   }
 }
@@ -712,6 +730,11 @@ export function Sidebar({
   const [activeTooltip, setActiveTooltip] = useState<string | null>(null)
   const shiftHeld = useShiftHeld()
   const drag = useSidebarDrag()
+  const looseZoneRef = useRef<HTMLDivElement>(null)
+  const isBelowLooseZone = (e: DragEvent) => {
+    const zone = looseZoneRef.current
+    return Boolean(zone && e.clientY > zone.getBoundingClientRect().bottom)
+  }
   const openSidebarLabel = t('sidebar.expand')
 
   const ensureFolderExpanded = (folderId: string) => {
@@ -1016,7 +1039,15 @@ export function Sidebar({
       </div>
 
       {/* The complete menu shares one scroll position; the header and account stay anchored. */}
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div
+        className="min-h-0 flex-1 overflow-y-auto"
+        onDragOver={(e) => {
+          if (isBelowLooseZone(e)) drag.onBelowLooseDragOver(loose.at(-1)?.id, e)
+        }}
+        onDrop={(e) => {
+          if (isBelowLooseZone(e)) handleDropToLoose(e)
+        }}
+      >
         {/* primary nav */}
         <div className="space-y-0.5 px-2">
           {iconBtn(t('chat.newChat'), startNewChat, <SquarePen className="size-4" />)}
@@ -1122,6 +1153,7 @@ export function Sidebar({
                 'rounded-lg',
                 drag.drop?.kind === 'loose-target' && drag.dragKind === 'chat' && 'bg-sidebar-accent/40 ring-1 ring-foreground/10',
               )}
+              ref={looseZoneRef}
               onDragOver={drag.onLooseZoneDragOver}
               onDrop={handleDropToLoose}
             >
