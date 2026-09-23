@@ -6,24 +6,66 @@ import {
   historyChatSummary,
   resolveHistoryChatExpiryMenuAction,
   reuseHistoryChatSummaries,
+  topChatSortOrder,
   visibleHistoryChats,
+  type HistoryChatSummary,
 } from './history'
+
+function summary(id: string, patch: Partial<HistoryChatSummary> = {}): HistoryChatSummary {
+  return {
+    id, title: id, modelId: 'gpt-5', time: '1:00 PM', section: 'Today',
+    pinned: false, folderId: null, sortOrder: 0, createdAt: 1_000, expiresAt: null, ...patch,
+  }
+}
 
 describe('historyChatSections', () => {
   it('always places pinned chats in the first section', () => {
-    const newerUnpinned = {
-      id: 'newer', title: 'Newer', modelId: 'gpt-5', time: '1:00 PM', section: 'Today',
-      pinned: false, folderId: null, expiresAt: null,
-    }
-    const olderPinned = {
-      id: 'pinned', title: 'Pinned', modelId: 'gpt-5', time: 'Aug 1', section: 'Pinned',
-      pinned: true, folderId: null, expiresAt: null,
-    }
+    const newerUnpinned = summary('newer')
+    const olderPinned = summary('pinned', { time: 'Aug 1', section: 'Pinned', pinned: true })
 
     const sections = historyChatSections([newerUnpinned, olderPinned])
 
-    expect(sections.map((section) => section.title)).toEqual(['Pinned', 'Today'])
+    expect(sections.map((section) => section.title)).toEqual(['Pinned', 'Chats'])
     expect(sections[0]?.data).toEqual([olderPinned])
+  })
+
+  it('orders chats by their manual position, not their last activity', () => {
+    const active = summary('active', { sortOrder: 2, createdAt: 3_000, section: 'Today' })
+    const top = summary('top', { sortOrder: -1, createdAt: 1_000, section: 'Previous 30 Days' })
+    const newest = summary('newest', { sortOrder: 0, createdAt: 2_000 })
+    const older = summary('older', { sortOrder: 0, createdAt: 500 })
+
+    expect(historyChatSections([active, older, newest, top])[0]?.data.map((chat) => chat.id))
+      .toEqual(['top', 'newest', 'older', 'active'])
+  })
+
+  it('keeps filed chats in their folders unless searching', () => {
+    const folders = [{ id: 'b' }, { id: 'a' }]
+    const loose = summary('loose', { sortOrder: 5 })
+    const inA = summary('in-a', { folderId: 'a' })
+    const inB = summary('in-b', { folderId: 'b', sortOrder: 9 })
+    const missingFolder = summary('missing-folder', { folderId: 'gone', sortOrder: 6 })
+
+    expect(historyChatSections([inA, loose, inB, missingFolder], folders)[0]?.data.map((chat) => chat.id))
+      .toEqual(['loose', 'missing-folder'])
+    expect(historyChatSections([inA, loose, inB, missingFolder], folders, true)[0]?.data.map((chat) => chat.id))
+      .toEqual(['loose', 'missing-folder', 'in-b', 'in-a'])
+  })
+})
+
+describe('topChatSortOrder', () => {
+  const chats = [
+    { id: 'loose', pinned: false, folderId: null, sortOrder: 0, createdAt: 1 },
+    { id: 'filed', pinned: false, folderId: 'a', sortOrder: -5, createdAt: 1 },
+    { id: 'pinned', pinned: true, folderId: null, sortOrder: -9, createdAt: 1 },
+  ]
+
+  it('places a chat above every other chat in its destination list', () => {
+    expect(topChatSortOrder(chats, new Set(['a']), null)).toBe(-1)
+    expect(topChatSortOrder(chats, new Set(['a']), 'a')).toBe(-6)
+    expect(topChatSortOrder(chats, new Set(), null)).toBe(-6)
+    expect(topChatSortOrder([], new Set(), null)).toBe(0)
+    expect(topChatSortOrder(chats, new Set(['a']), null, 'loose')).toBe(0)
   })
 })
 
@@ -61,8 +103,10 @@ describe('reuseHistoryChatSummaries', () => {
     title: 'Performance investigation',
     modelId: 'gpt-5',
     updatedAt: now - 3_600_000,
+    createdAt: now - 7_200_000,
     pinned: false,
     folderId: null,
+    sortOrder: 0,
     expiresAt: null,
   }
 
@@ -82,6 +126,7 @@ describe('reuseHistoryChatSummaries', () => {
     ['time', { updatedAt: now - 2 * 86_400_000 }],
     ['pin', { pinned: true }],
     ['folder', { folderId: 'folder-1' }],
+    ['order', { sortOrder: 3 }],
     ['expiration', { expiresAt: now + 86_400_000 }],
   ])('replaces a row when its %s metadata changes', (_field, patch) => {
     const before = historyChatSummary(source, now)
@@ -122,8 +167,8 @@ describe('reuseHistoryChatSummaries', () => {
 
 describe('large history projection', () => {
   const now = Date.UTC(2026, 8, 7, 12)
-  const source = { id: 'a', title: 'A', modelId: 'fixture', updatedAt: now - 1_000,
-    pinned: false, folderId: null, expiresAt: null, deletedAt: null, temporary: false }
+  const source = { id: 'a', title: 'A', modelId: 'fixture', updatedAt: now - 1_000, createdAt: now - 1_000,
+    pinned: false, folderId: null, sortOrder: 0, expiresAt: null, deletedAt: null, temporary: false }
 
   it('projects only changed metadata across 5,000 chats and releases removed entries', () => {
     const format = vi.fn(historyChatSummary)
@@ -157,7 +202,7 @@ describe('large history projection', () => {
   })
 
   it('groups large sections and folders without changing order or mutating inputs', () => {
-    const chats = Array.from({ length: 5000 }, (_, i) => Object.freeze(historyChatSummary({ ...source, id: String(i), folderId: i % 2 ? 'b' : 'a' }, now)))
+    const chats = Array.from({ length: 5000 }, (_, i) => Object.freeze(historyChatSummary({ ...source, id: String(i), folderId: i % 2 ? 'b' : 'a', sortOrder: i }, now)))
     expect(historyChatSections(chats)[0].data).toEqual(chats)
     const folders = historyFolderItems([{ id: 'b', name: 'B' }, { id: 'a', name: 'A' }, { id: 'empty', name: 'Empty' }], chats)
     expect(folders.map((f) => f.id)).toEqual(['b', 'a', 'empty'])

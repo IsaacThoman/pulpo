@@ -215,7 +215,7 @@ describe('chat preview hydration', () => {
       chats: [{
         id: summary.id, title: summary.title, modelId: summary.modelId,
         createdAt: Date.parse(summary.createdAt), updatedAt: Date.parse(summary.updatedAt),
-        pinned: false, folderId: null, temporary: false, detailLoaded: false,
+        pinned: false, folderId: null, sortOrder: 0, temporary: false, detailLoaded: false,
         messages: [], deletedAt: null, purgeAt: null,
       }],
     })
@@ -234,7 +234,7 @@ describe('chat preview hydration', () => {
       chats: [{
         id: summary.id, title: summary.title, modelId: summary.modelId,
         createdAt: Date.parse(summary.createdAt), updatedAt: Date.parse(summary.updatedAt),
-        pinned: false, folderId: null, temporary: false, detailLoaded: true,
+        pinned: false, folderId: null, sortOrder: 0, temporary: false, detailLoaded: true,
         messages: [], deletedAt: null, purgeAt: null,
       }],
     })

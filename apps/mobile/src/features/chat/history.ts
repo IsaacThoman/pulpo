@@ -7,9 +7,12 @@ export type HistoryChatSummary = {
   title: string
   modelId: string
   time: string
+  /** Last-activity label shown in previews; list placement comes from sortOrder. */
   section: string
   pinned: boolean
   folderId: string | null
+  sortOrder: number
+  createdAt: number
   expiresAt: number | null
 }
 
@@ -18,19 +21,53 @@ export type HistoryChatSection = {
   data: HistoryChatSummary[]
 }
 
-export function historyChatSections(chats: HistoryChatSummary[]): HistoryChatSection[] {
-  const grouped = new Map<string, HistoryChatSummary[]>()
-  for (const chat of chats) {
-    const section = grouped.get(chat.section)
-    if (section) section.push(chat)
-    else grouped.set(chat.section, [chat])
-  }
+type OrderedChat = { id: string; pinned: boolean; folderId: string | null; sortOrder: number; createdAt: number }
 
-  const sections = Array.from(grouped, ([title, data]) => ({ title, data }))
-  const pinned = grouped.get('Pinned')
-  return pinned
-    ? [{ title: 'Pinned', data: pinned }, ...sections.filter((section) => section.title !== 'Pinned')]
-    : sections
+/** Matches the web sidebar: manual order first, newest first among ties. Activity never moves a chat. */
+export function compareChatOrder(left: Pick<OrderedChat, 'sortOrder' | 'createdAt'>, right: Pick<OrderedChat, 'sortOrder' | 'createdAt'>): number {
+  return left.sortOrder - right.sortOrder || right.createdAt - left.createdAt
+}
+
+/** The sort order that places a chat above every other chat in its destination list. */
+export function topChatSortOrder<T extends OrderedChat>(
+  chats: T[],
+  folderIds: ReadonlySet<string>,
+  folderId: string | null,
+  excludeId?: string,
+): number {
+  return chats
+    .filter((chat) => chat.id !== excludeId && !chat.pinned && (folderId
+      ? chat.folderId === folderId
+      : !(chat.folderId && folderIds.has(chat.folderId))))
+    .reduce((min, chat) => Math.min(min, chat.sortOrder), 1) - 1
+}
+
+/**
+ * Pinned chats, then unfiled chats, each in their manual order. Filed chats live in their folders
+ * unless `includeFiled` is set (search), where they follow the unfiled chats in folder order.
+ */
+export function historyChatSections(
+  chats: HistoryChatSummary[],
+  folders: readonly { id: string }[] = [],
+  includeFiled = false,
+): HistoryChatSection[] {
+  const folderIndex = new Map(folders.map((folder, index) => [folder.id, index]))
+  const pinned: HistoryChatSummary[] = []
+  const loose: HistoryChatSummary[] = []
+  const filed: HistoryChatSummary[] = []
+  for (const chat of chats) {
+    if (chat.pinned) pinned.push(chat)
+    else if (chat.folderId && folderIndex.has(chat.folderId)) filed.push(chat)
+    else loose.push(chat)
+  }
+  pinned.sort(compareChatOrder)
+  loose.sort(compareChatOrder)
+  filed.sort((left, right) => folderIndex.get(left.folderId!)! - folderIndex.get(right.folderId!)! || compareChatOrder(left, right))
+  const unpinned = includeFiled ? [...loose, ...filed] : loose
+  const sections: HistoryChatSection[] = []
+  if (pinned.length) sections.push({ title: 'Pinned', data: pinned })
+  if (unpinned.length) sections.push({ title: 'Chats', data: unpinned })
+  return sections
 }
 
 export type HistoryChatExpiryMenuAction =
@@ -52,8 +89,10 @@ type HistoryChatSource = {
   title: string
   modelId: string
   updatedAt: number
+  createdAt: number
   pinned: boolean
   folderId: string | null
+  sortOrder: number
   expiresAt?: number | null
 }
 
@@ -79,6 +118,8 @@ export function historyChatSummary<T extends HistoryChatSource>(chat: T, now = D
     section: chat.pinned ? 'Pinned' : historySection(chat.updatedAt, now),
     pinned: chat.pinned,
     folderId: chat.folderId,
+    sortOrder: chat.sortOrder,
+    createdAt: chat.createdAt,
     expiresAt: chat.expiresAt ?? null,
   }
 }
@@ -99,7 +140,7 @@ export function createHistoryProjector(project = historyChatSummary) {
       const section = chat.pinned ? 'Pinned' : historySection(chat.updatedAt, now)
       const entry = existing && row && existing.updatedAt === chat.updatedAt && existing.timeOnly === timeOnly
         && row.title === chat.title && row.modelId === chat.modelId && row.pinned === chat.pinned
-        && row.folderId === chat.folderId && row.expiresAt === (chat.expiresAt ?? null) && row.section === section
+        && row.folderId === chat.folderId && row.sortOrder === chat.sortOrder && row.expiresAt === (chat.expiresAt ?? null) && row.section === section
         ? existing : { updatedAt: chat.updatedAt, timeOnly, summary: project(chat, now) }
       nextCache.set(chat.id, entry)
       if (entry.summary !== previous[next.length]) changed = true
@@ -115,12 +156,12 @@ export function createHistoryProjector(project = historyChatSummary) {
 export function historyFolderItems<T extends { id: string; name: string }>(folders: T[], chats: HistoryChatSummary[]) {
   const grouped = new Map<string, HistoryChatSummary[]>()
   for (const chat of chats) {
-    if (chat.folderId === null) continue
+    if (chat.folderId === null || chat.pinned) continue
     const group = grouped.get(chat.folderId)
     if (group) group.push(chat)
     else grouped.set(chat.folderId, [chat])
   }
-  return folders.map((folder) => ({ id: folder.id, name: folder.name, chats: grouped.get(folder.id) ?? [] }))
+  return folders.map((folder) => ({ id: folder.id, name: folder.name, chats: (grouped.get(folder.id) ?? []).sort(compareChatOrder) }))
 }
 
 function historyChatSummaryEqual(left: HistoryChatSummary, right: HistoryChatSummary): boolean {
@@ -131,6 +172,7 @@ function historyChatSummaryEqual(left: HistoryChatSummary, right: HistoryChatSum
     && left.section === right.section
     && left.pinned === right.pinned
     && left.folderId === right.folderId
+    && left.sortOrder === right.sortOrder
     && left.expiresAt === right.expiresAt
 }
 
