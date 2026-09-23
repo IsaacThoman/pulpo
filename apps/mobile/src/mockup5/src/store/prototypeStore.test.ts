@@ -28,7 +28,7 @@ beforeEach(() => {
   const chats: PrototypeChat[] = [
     {
       id: 'c-streaming', title: 'Streaming state architecture', modelId: 'model-1', createdAt: 1, updatedAt: 2,
-      pinned: true, folderId: null, temporary: false, deletedAt: null, purgeAt: null,
+      pinned: true, folderId: null, sortOrder: 0, temporary: false, deletedAt: null, purgeAt: null,
       messages: [
         { id: 'm-stream-user', role: 'user', text: 'How should streaming state work?', createdAt: 1 },
         { id: 'm-stream-assistant', role: 'assistant', text: 'Keep transient state local.', createdAt: 2 },
@@ -36,7 +36,7 @@ beforeEach(() => {
     },
     {
       id: 'c-kv', title: 'KV caching explainer', modelId: 'model-1', createdAt: 1, updatedAt: 2,
-      pinned: false, folderId: null, temporary: false, deletedAt: null, purgeAt: null, messages: [],
+      pinned: false, folderId: null, sortOrder: 0, temporary: false, deletedAt: null, purgeAt: null, messages: [],
     },
   ];
   usePrototypeStore.setState({ ...createInitialState(), chats, productionNamespace: null, agentAvailable: false });
@@ -57,6 +57,31 @@ describe('prototype store', () => {
     expect(createFolder).toHaveBeenCalledWith('Android QA', folderId);
     expect(usePrototypeStore.getState().folders.find((folder) => folder.id === folderId)?.name).toBe('Android QA');
   });
+  it('places pinned, unpinned, and moved chats the same way as the web sidebar', () => {
+    const togglePin = vi.fn(async () => undefined);
+    const moveChat = vi.fn(async () => undefined);
+    configureProductionActions({ togglePin, moveChat });
+    const folderId = usePrototypeStore.getState().addFolder('Work');
+    const chat = (id: string) => usePrototypeStore.getState().chats.find((item) => item.id === id);
+
+    usePrototypeStore.getState().togglePin('c-kv');
+    expect(chat('c-kv')).toMatchObject({ pinned: true, sortOrder: 1 });
+    expect(togglePin).toHaveBeenLastCalledWith('c-kv', true, 1);
+
+    usePrototypeStore.getState().togglePin('c-streaming');
+    expect(chat('c-streaming')).toMatchObject({ pinned: false, sortOrder: 0 });
+    expect(togglePin).toHaveBeenLastCalledWith('c-streaming', false, 0);
+
+    usePrototypeStore.getState().moveChat('c-streaming', folderId);
+    expect(chat('c-streaming')).toMatchObject({ folderId, sortOrder: 0 });
+    expect(moveChat).toHaveBeenLastCalledWith('c-streaming', folderId, 0);
+
+    usePrototypeStore.getState().togglePin('c-kv');
+    usePrototypeStore.getState().moveChat('c-streaming', null);
+    expect(chat('c-streaming')).toMatchObject({ folderId: null, sortOrder: -1 });
+    expect(moveChat).toHaveBeenLastCalledWith('c-streaming', null, -1);
+  });
+
   it('optimistically persists the new-chat expiration choice', async () => {
     const persistPreference = vi.fn(async () => undefined);
     configureProductionActions({ setPreference: persistPreference });

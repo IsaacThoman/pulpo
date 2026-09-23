@@ -181,13 +181,6 @@ const esES = {
     sidebar: 'Barra lateral',
     signedOut: 'Sesión cerrada',
     signOut: 'Cerrar sesión',
-    groups: {
-      today: 'Hoy',
-      yesterday: 'Ayer',
-      previous7: 'Últimos 7 días',
-      previous30: 'Últimos 30 días',
-      older: 'Anteriores',
-    },
   },
   settings: {
     title: 'Ajustes',

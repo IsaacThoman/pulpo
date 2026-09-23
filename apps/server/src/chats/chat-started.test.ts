@@ -26,7 +26,7 @@ let reply: FastifyReply
 beforeEach(async () => {
   vi.clearAllMocks()
   mocks.inserted = [chat]
-  mocks.selects = [[{ id: 'model' }], [chat]]
+  mocks.selects = [[{ id: 'model' }], [{ sortOrder: -1 }], [chat]]
   mocks.createResponse.mockResolvedValue({ id: responseId })
   mocks.publish.mockResolvedValue(undefined)
   await registerChatRoutes({
@@ -54,7 +54,7 @@ describe('accepted new chat notifications', () => {
   })
   it('does not emit for an idempotent retry of an existing chat', async () => {
     mocks.inserted = []
-    mocks.selects = [[{ id: 'model' }], [chat], [chat]]
+    mocks.selects = [[{ id: 'model' }], [{ sortOrder: -1 }], [chat], [chat]]
     await handler(request, reply)
     expect(mocks.publish).not.toHaveBeenCalled()
   })

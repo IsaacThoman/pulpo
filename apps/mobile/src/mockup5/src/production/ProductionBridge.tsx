@@ -105,6 +105,8 @@ function mapChat(chat: ServerChat, messages: PrototypeMessage[] = [], detailLoad
     updatedAt: Date.parse(chat.updatedAt),
     pinned: chat.pinned,
     folderId: chat.folderId,
+    // Chats cached before sort orders were synced fall back to creation order.
+    sortOrder: chat.sortOrder ?? 0,
     temporary: chat.temporary,
     expiresAt: chat.expiresAt ? Date.parse(chat.expiresAt) : null,
     expired: false,
@@ -387,8 +389,8 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
   useEffect(() => {
     configureProductionActions({
       renameChat: (id, title) => offlineCapableMutation({ namespace, entityKey: `chat:${id}`, method: 'PATCH', path: `/api/chats/${id}`, body: { title }, request: () => updateChat(id, { title }) }),
-      togglePin: (id, pinned) => offlineCapableMutation({ namespace, entityKey: `chat:${id}`, method: 'PATCH', path: `/api/chats/${id}`, body: { pinned }, request: () => updateChat(id, { pinned }) }),
-      moveChat: (id, folderId) => offlineCapableMutation({ namespace, entityKey: `chat:${id}`, method: 'PATCH', path: `/api/chats/${id}`, body: { folderId }, request: () => updateChat(id, { folderId }) }),
+      togglePin: (id, pinned, sortOrder) => offlineCapableMutation({ namespace, entityKey: `chat:${id}`, method: 'PATCH', path: `/api/chats/${id}`, body: { pinned, sortOrder }, request: () => updateChat(id, { pinned, sortOrder }) }),
+      moveChat: (id, folderId, sortOrder) => offlineCapableMutation({ namespace, entityKey: `chat:${id}`, method: 'PATCH', path: `/api/chats/${id}`, body: { folderId, sortOrder }, request: () => updateChat(id, { folderId, sortOrder }) }),
       setChatAutoExpiration: (id, enabled) => offlineCapableMutation({ namespace, entityKey: `chat:${id}:expiration`, method: 'PATCH', path: `/api/chats/${id}`, body: { autoExpire: enabled }, request: () => updateChat(id, { autoExpire: enabled }) }),
       trashChat: (id) => offlineCapableMutation({ namespace, entityKey: `chat:${id}`, method: 'DELETE', path: `/api/chats/${id}`, request: () => trashChat(id) }),
       trashAllChats: () => offlineCapableMutation({ namespace, entityKey: 'chats:all', method: 'DELETE', path: '/api/chats', request: () => mobileApi.trashAllChats() }),

@@ -30,6 +30,7 @@ interface CacheOptimisticTurnInput {
   content: string
   title: string
   modelId: string
+  sortOrder?: number
   temporary: boolean
   expiresAt?: string | null
   presetSelections: Record<string, string>
@@ -218,7 +219,7 @@ export function cacheOptimisticTurn(input: CacheOptimisticTurnInput): void {
     modelId: input.modelId,
     pinned: false,
     folderId: null,
-    sortOrder: 0,
+    sortOrder: input.sortOrder ?? 0,
     temporary: input.temporary,
     expiresAt: input.expiresAt ?? null,
     activeResponseId: response.id,

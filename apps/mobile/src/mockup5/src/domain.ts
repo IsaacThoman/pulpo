@@ -122,6 +122,8 @@ export interface PrototypeChat {
   updatedAt: number;
   pinned: boolean;
   folderId: string | null;
+  /** Manual position within the pinned list, its folder, or the unfiled list. */
+  sortOrder: number;
   temporary: boolean;
   expiresAt?: number | null;
   expired?: boolean;

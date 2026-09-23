@@ -256,6 +256,8 @@ import {
   resolveHistoryChatExpiryMenuAction,
   createHistoryProjector,
   historyFolderItems,
+  topChatSortOrder,
+  visibleHistoryChats,
   type HistoryChatExpiryMenuAction,
   type HistoryChatSummary,
 } from '../features/chat/history';
@@ -2346,7 +2348,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
       const persisted = await persistServerChat(activeChatId);
       usePrototypeStore.setState((state) => ({
         chats: state.chats.map((candidate) => candidate.id === activeChatId
-          ? { ...candidate, temporary: false, expiresAt: null, expired: false }
+          ? { ...candidate, temporary: false, expiresAt: null, expired: false, sortOrder: persisted.sortOrder ?? candidate.sortOrder }
           : candidate),
       }));
       setNewChatTemporary(false);
@@ -2443,6 +2445,11 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
       ? timestamp + 48 * 60 * 60 * 1_000
       : options?.autoExpire ? automaticExpirationDeadline(automaticChatExpiration, timestamp) : null;
     const productionNamespace = productionUserId ? cacheNamespace(productionInstanceUrl, productionUserId) : null;
+    const { chats: currentChats, folders: currentFolders } = usePrototypeStore.getState();
+    // New chats open at the top of the unfiled list, matching the server's placement.
+    const initialSortOrder = activePrototypeChat?.sortOrder ?? (options?.temporary ? 0 : topChatSortOrder(
+      visibleHistoryChats(currentChats), new Set(currentFolders.map((folder) => folder.id)), null,
+    ));
     if (!activeChat) {
       upsertChat({
         id: key,
@@ -2452,6 +2459,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
         updatedAt: timestamp,
         pinned: false,
         folderId: null,
+        sortOrder: initialSortOrder,
         temporary: options?.temporary ?? false,
         expiresAt: initialExpiresAt,
         deletedAt: null,
@@ -2504,6 +2512,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
           content: trimmed,
           title,
           modelId,
+          sortOrder: initialSortOrder,
           temporary: options?.temporary ?? false,
           expiresAt: initialExpiresAt === null ? null : new Date(initialExpiresAt).toISOString(),
           presetSelections: selections,
@@ -6104,8 +6113,9 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
     [chats, search],
   );
   const sections = useMemo(() => {
-    return historyChatSections(filtered);
-  }, [filtered]);
+    // Search also surfaces filed chats, since the folder list is hidden while searching.
+    return historyChatSections(filtered, folders, search.length > 0);
+  }, [filtered, folders, search]);
   const { label: removeChatLabel, requiresConfirmation } = chatRemovalBehavior(trashRetention);
 
   const runChatAction = useCallback((chat: HistoryChatSummary, action: HistoryChatAction) => {
@@ -6150,7 +6160,7 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
     if (action === 'duplicate') {
       void duplicateServerChat(chat.id).then((copy) => {
         const source = usePrototypeStore.getState().chats.find((item) => item.id === chat.id);
-        upsertChat({ id: copy.id, title: copy.title, modelId: copy.modelId, pinned: copy.pinned, folderId: copy.folderId, temporary: copy.temporary, createdAt: Date.parse(copy.createdAt), updatedAt: Date.parse(copy.updatedAt), deletedAt: null, purgeAt: null, messages: source?.messages ?? [] });
+        upsertChat({ id: copy.id, title: copy.title, modelId: copy.modelId, pinned: copy.pinned, folderId: copy.folderId, sortOrder: copy.sortOrder, temporary: copy.temporary, createdAt: Date.parse(copy.createdAt), updatedAt: Date.parse(copy.updatedAt), deletedAt: null, purgeAt: null, messages: source?.messages ?? [] });
       }).catch((error) => Alert.alert('Couldn’t duplicate chat', error instanceof Error ? error.message : undefined));
     }
   }, [renameChat, requiresConfirmation, togglePin, trashChat, upsertChat]);
