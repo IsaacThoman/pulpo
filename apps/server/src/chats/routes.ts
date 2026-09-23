@@ -39,6 +39,21 @@ async function requestedNormalChatExpiry(userId: string, enabled: boolean, now: 
   return expiresAt
 }
 
+/** New and newly persisted chats go to the top of the manually ordered, unfiled chat list. */
+async function topLooseChatSortOrder(userId: string): Promise<number> {
+  const [row] = await db.select({ sortOrder: sql<number>`coalesce(min(${chats.sortOrder}), 1)::int - 1` })
+    .from(chats)
+    .where(and(
+      eq(chats.userId, userId),
+      isNull(chats.folderId),
+      eq(chats.pinned, false),
+      eq(chats.temporary, false),
+      isNull(chats.deletedAt),
+    ))
+    .limit(1)
+  return row?.sortOrder ?? 0
+}
+
 export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
   const bumpRevision = async (userId: string, chatId?: string, scopes?: StateInvalidationScope[]) => {
     const [updated] = await db.update(users)
@@ -239,6 +254,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       modelId: input.modelId,
       title: input.title ?? 'New chat',
       temporary: input.temporary,
+      sortOrder: input.temporary ? 0 : await topLooseChatSortOrder(user.id),
       expiresAt,
       createdAt,
       updatedAt: createdAt,
@@ -279,6 +295,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       modelId: input.chat.modelId,
       title: input.chat.title ?? 'New chat',
       temporary: input.chat.temporary,
+      sortOrder: input.chat.temporary ? 0 : await topLooseChatSortOrder(user.id),
       expiresAt,
       createdAt,
       updatedAt: createdAt,
@@ -347,6 +364,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     const [updated] = await db.update(chats).set({
       temporary: false,
       expiresAt: null,
+      sortOrder: await topLooseChatSortOrder(user.id),
       updatedAt: now,
     }).where(and(
       eq(chats.id, id),
@@ -449,13 +467,10 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       inArray(chats.id, chatIds),
     ))
     if (existing.length !== chatIds.length) throw notFound('Chat')
-    await db.transaction(async (tx) => {
-      for (const [sortOrder, chatId] of chatIds.entries()) {
-        await tx.update(chats)
-          .set({ sortOrder })
-          .where(and(eq(chats.id, chatId), eq(chats.userId, user.id), eq(chats.temporary, false)))
-      }
-    })
+    // One statement keeps long unfiled chat lists cheap to reorder.
+    await db.update(chats)
+      .set({ sortOrder: sql`case ${chats.id} ${sql.join(chatIds.map((chatId, sortOrder) => sql`when ${chatId} then ${sortOrder}::int`), sql` `)} end` })
+      .where(and(eq(chats.userId, user.id), eq(chats.temporary, false), inArray(chats.id, chatIds)))
     await bumpRevision(user.id)
     return { data: chatIds }
   })

@@ -28,10 +28,9 @@ import {
   PanelLeftOpen,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { useChat } from '@/stores/chat'
+import { compareChatOrder, useChat } from '@/stores/chat'
 import { useAuth } from '@/stores/auth'
 import { useSettings } from '@/stores/settings'
-import { chatTimeGroup } from '@/lib/format'
 import { resolveChatExpiryMenuAction } from '@/lib/chat-expiration'
 import { chatHasStreamingResponse } from '@/lib/response-tracking'
 import type { Chat, Folder } from '@/lib/types'
@@ -65,8 +64,6 @@ import { fetchBillingSummary } from '@/lib/billing'
 import { isDesktopRuntime } from '@/lib/runtime'
 import { uit } from '@/i18n/ui'
 
-const GROUP_ORDER = ['Today', 'Yesterday', 'Previous 7 Days', 'Previous 30 Days', 'Older'] as const
-
 type DragKind = 'folder' | 'chat'
 type ChatList = 'pinned' | 'loose' | `folder:${string}`
 
@@ -75,12 +72,8 @@ type DropHint =
   | { kind: 'folder-target'; folderId: string }
   | { kind: 'loose-target' }
 
-function bySortOrder<T extends { sortOrder: number; updatedAt?: number; pinned?: boolean }>(a: T, b: T) {
-  if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder
-  if (a.updatedAt !== undefined && b.updatedAt !== undefined && a.updatedAt !== b.updatedAt) {
-    return b.updatedAt - a.updatedAt
-  }
-  return Number(b.pinned ?? false) - Number(a.pinned ?? false)
+function byFolderOrder(a: Folder, b: Folder) {
+  return a.sortOrder - b.sortOrder || Number(b.pinned) - Number(a.pinned)
 }
 
 function folderListId(folderId: string): ChatList {
@@ -153,15 +146,16 @@ function useSidebarDrag() {
   }
 
   const onChatRowDragOver = (list: ChatList, id: string, e: DragEvent<HTMLElement>) => {
-    if (dragKindRef.current !== 'chat' || !dragIdRef.current || dragIdRef.current === id) return
+    if (dragKindRef.current !== 'chat' || !dragIdRef.current) return
+    if (dragIdRef.current === id) {
+      // Hovering the dragged row itself means "leave it here", so drop any stale neighbor line.
+      if (drop?.kind === 'row') setDrop(null)
+      return
+    }
     // Pinned list only reorders within itself
     if (list === 'pinned' && dragListRef.current !== 'pinned') return
     if (dragListRef.current === 'pinned' && list !== 'pinned') return
     acceptMove(e)
-    if (list === 'loose') {
-      if (drop?.kind !== 'loose-target') setDrop({ kind: 'loose-target' })
-      return
-    }
     const edge = edgeFor(e)
     if (drop?.kind !== 'row' || drop.list !== list || drop.id !== id || drop.edge !== edge) {
       setDrop({ kind: 'row', list, id, edge })
@@ -180,7 +174,9 @@ function useSidebarDrag() {
     if (dragKindRef.current !== 'chat' || !dragIdRef.current) return
     if (dragListRef.current === 'pinned') return
     acceptMove(e)
-    if (drop?.kind !== 'loose-target') setDrop({ kind: 'loose-target' })
+    // Gaps between rows keep the last row hint so the drop line does not flicker.
+    if (drop?.kind === 'row' && drop.list === 'loose') return
+    if (dragListRef.current !== 'loose' && drop?.kind !== 'loose-target') setDrop({ kind: 'loose-target' })
   }
 
   return {
@@ -663,7 +659,7 @@ export function Sidebar({
   const navigate = useNavigate()
   const { chatId } = useParams()
   const chatListRevision = useChat((state) => state.chats.map((chat) => (
-    `${chat.id}:${chat.title}:${chat.updatedAt}:${chat.pinned}:${chat.folderId ?? ''}:${chat.modelId}:${chat.sortOrder}:${chat.temporary}`
+    `${chat.id}:${chat.title}:${chat.pinned}:${chat.folderId ?? ''}:${chat.modelId}:${chat.sortOrder}:${chat.temporary}`
   )).join('|'))
   void chatListRevision
   const folderListRevision = useChat((state) => state.folders.map((folder) => (
@@ -678,6 +674,7 @@ export function Sidebar({
   const reorderFolders = useChat((s) => s.reorderFolders)
   const reorderPinnedChats = useChat((s) => s.reorderPinnedChats)
   const reorderFolderChats = useChat((s) => s.reorderFolderChats)
+  const reorderLooseChats = useChat((s) => s.reorderLooseChats)
   const moveToFolder = useChat((s) => s.moveToFolder)
   const toggleFolder = useChat((s) => s.toggleFolder)
   const user = useAuth((s) => s.user)
@@ -716,13 +713,6 @@ export function Sidebar({
   const shiftHeld = useShiftHeld()
   const drag = useSidebarDrag()
   const openSidebarLabel = t('sidebar.expand')
-  const groupLabels: Record<(typeof GROUP_ORDER)[number], string> = {
-    Today: t('sidebar.groups.today'),
-    Yesterday: t('sidebar.groups.yesterday'),
-    'Previous 7 Days': t('sidebar.groups.previous7'),
-    'Previous 30 Days': t('sidebar.groups.previous30'),
-    Older: t('sidebar.groups.older'),
-  }
 
   const ensureFolderExpanded = (folderId: string) => {
     const target = useChat.getState().folders.find((folder) => folder.id === folderId)
@@ -754,8 +744,8 @@ export function Sidebar({
     }
 
     if (list === 'loose') {
-      const sourceChat = useChat.getState().chats.find((chat) => chat.id === from)
-      if (sourceChat?.folderId) moveToFolder(from, null)
+      if (drag.dragListRef.current === 'loose') reorderLooseChats(from, targetId, edge)
+      else moveToFolder(from, null, { targetId, edge })
       drag.clearDrag()
       return
     }
@@ -799,6 +789,10 @@ export function Sidebar({
   }
 
   const handleDropToLoose = (e: DragEvent) => {
+    if (drag.drop?.kind === 'row' && drag.drop.list === 'loose') {
+      handleChatDropOnRow(e, 'loose', drag.drop.id)
+      return
+    }
     e.preventDefault()
     e.stopPropagation()
     if (drag.dragKindRef.current !== 'chat') {
@@ -852,27 +846,15 @@ export function Sidebar({
     setActiveTooltip(null)
   }, [collapsed])
 
-  const orderedFolders = useMemo(() => [...folders].sort(bySortOrder), [folders])
-  const pinned = useMemo(() => chats.filter((c) => c.pinned).sort(bySortOrder), [chats])
-  const unpinned = useMemo(
-    () => [...chats].filter((c) => !c.pinned).sort((a, b) => b.updatedAt - a.updatedAt),
-    [chats],
-  )
+  const orderedFolders = useMemo(() => [...folders].sort(byFolderOrder), [folders])
+  const pinned = useMemo(() => chats.filter((c) => c.pinned).sort(compareChatOrder), [chats])
+  const unpinned = useMemo(() => chats.filter((c) => !c.pinned).sort(compareChatOrder), [chats])
   const inFolders = new Map<string, Chat[]>()
   for (const f of folders) inFolders.set(f.id, [])
   const loose: Chat[] = []
   for (const c of unpinned) {
     if (c.folderId && inFolders.has(c.folderId)) inFolders.get(c.folderId)!.push(c)
     else loose.push(c)
-  }
-  for (const [folderId, items] of inFolders) {
-    inFolders.set(folderId, [...items].sort(bySortOrder))
-  }
-  const groups = new Map<string, Chat[]>()
-  for (const c of loose) {
-    const g = chatTimeGroup(c.updatedAt)
-    if (!groups.has(g)) groups.set(g, [])
-    groups.get(g)!.push(c)
   }
 
   const sidebarContentTransition = !transitions
@@ -1143,39 +1125,40 @@ export function Sidebar({
               onDragOver={drag.onLooseZoneDragOver}
               onDrop={handleDropToLoose}
             >
-              {GROUP_ORDER.map((g) => {
-                const items = groups.get(g)
-                if (!items?.length) return null
-                return (
-                  <div key={g} className="mt-3">
-                    <div className="px-2 pb-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-                      {groupLabels[g]}
-                    </div>
-                    <div className="space-y-0.5">
-                      {items.map((c) => {
-                        const isDragging = drag.dragKind === 'chat' && drag.dragId === c.id
-                        return (
-                          <ChatRow
-                            key={c.id}
-                            chat={c}
-                            active={c.id === chatId}
-                            shiftHeld={shiftHeld}
-                            onNavigate={onNavigate}
-                            draggable
-                            droppable
-                            dragging={isDragging}
-                            didDragRef={drag.didDragRef}
-                            onDragStart={(e) => drag.startDrag('chat', c.id, e, 'loose')}
-                            onDragOver={(e) => drag.onChatRowDragOver('loose', c.id, e)}
-                            onDrop={(e) => handleChatDropOnRow(e, 'loose', c.id)}
-                            onDragEnd={drag.clearDrag}
-                          />
-                        )
-                      })}
-                    </div>
+              {loose.length > 0 && (
+                <div className="mt-3">
+                  <div className="px-2 pb-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                    {t('sidebar.chats')}
                   </div>
-                )
-              })}
+                  <div className="space-y-0.5">
+                    {loose.map((c) => {
+                      const isDragging = drag.dragKind === 'chat' && drag.dragId === c.id
+                      const rowDrop = drag.drop?.kind === 'row' && drag.drop.list === 'loose' && drag.drop.id === c.id
+                      const showLineBefore = Boolean(rowDrop && drag.drop?.kind === 'row' && drag.drop.edge === 'before' && !isDragging)
+                      const showLineAfter = Boolean(rowDrop && drag.drop?.kind === 'row' && drag.drop.edge === 'after' && !isDragging)
+                      return (
+                        <ChatRow
+                          key={c.id}
+                          chat={c}
+                          active={c.id === chatId}
+                          shiftHeld={shiftHeld}
+                          onNavigate={onNavigate}
+                          draggable
+                          droppable
+                          dragging={isDragging}
+                          showLineBefore={showLineBefore}
+                          showLineAfter={showLineAfter}
+                          didDragRef={drag.didDragRef}
+                          onDragStart={(e) => drag.startDrag('chat', c.id, e, 'loose')}
+                          onDragOver={(e) => drag.onChatRowDragOver('loose', c.id, e)}
+                          onDrop={(e) => handleChatDropOnRow(e, 'loose', c.id)}
+                          onDragEnd={drag.clearDrag}
+                        />
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
               {loose.length === 0 && drag.dragKind === 'chat' && drag.dragList !== 'loose' && drag.dragList !== 'pinned' && (
                 <div className="mt-3 px-2 py-2 text-xs text-muted-foreground">
                   {t('sidebar.dropHere')}

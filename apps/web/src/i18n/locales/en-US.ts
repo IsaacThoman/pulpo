@@ -175,13 +175,6 @@ const enUS = {
     sidebar: 'Sidebar',
     signedOut: 'Signed out',
     signOut: 'Sign out',
-    groups: {
-      today: 'Today',
-      yesterday: 'Yesterday',
-      previous7: 'Previous 7 Days',
-      previous30: 'Previous 30 Days',
-      older: 'Older',
-    },
   },
   settings: {
     title: 'Settings',
