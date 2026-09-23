@@ -35,7 +35,7 @@ const MessageRow = memo(function MessageRow({ id, ...props }: Omit<MessageListPr
 
 type HistoryContext = ReturnType<typeof useChatHistory>
 function HistoryHeader({ context }: { context?: HistoryContext }) {
-  return <div className="pt-18">{context?.history?.hasMore ? <div className="pb-4 text-center text-xs text-muted-foreground" role="status">
+  return <div className="relative pt-18">{context?.history?.hasMore ? <div className="absolute inset-x-0 bottom-1 text-center text-xs text-muted-foreground" role="status">
     {context.error
       ? <Button variant="ghost" size="sm" onClick={() => void context.load()}>{ui('Retry loading earlier messages')}</Button>
       : ui('Loading earlier messages…')}
@@ -72,6 +72,8 @@ function VirtualMessages({ viewport, ...props }: MessageListProps & { viewport: 
     let captureFrame = 0
     let resizeTimer: ReturnType<typeof setTimeout> | undefined
     let resizing = false
+    let measuredHeight = viewport.scrollHeight
+    let measuredViewport = viewport.clientHeight
     const captureAnchor = () => {
       if (resizing || content.getBoundingClientRect().width !== width) return
       const top = viewport.getBoundingClientRect().top
@@ -81,12 +83,19 @@ function VirtualMessages({ viewport, ...props }: MessageListProps & { viewport: 
     }
     const onScroll = () => {
       if (resizing || content.getBoundingClientRect().width !== width) return
-      stickToBottom.current = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < 96
+      const nearBottom = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < 96
+      const geometryChanged = viewport.scrollHeight !== measuredHeight || viewport.clientHeight !== measuredViewport
+      // Measurement corrections also emit scroll events; they are not an instruction to stop following.
+      if (nearBottom || !geometryChanged) stickToBottom.current = nearBottom
+      measuredHeight = viewport.scrollHeight
+      measuredViewport = viewport.clientHeight
       cancelAnimationFrame(captureFrame)
       captureFrame = requestAnimationFrame(captureAnchor)
     }
     // Capture before the virtualizer measures newly visible rows and corrects its height estimates.
+    const onWheel = (event: WheelEvent) => { if (event.deltaY < 0) stickToBottom.current = false }
     viewport.addEventListener('scroll', onScroll, { passive: true, capture: true })
+    viewport.addEventListener('wheel', onWheel, { passive: true })
     const observer = new ResizeObserver(() => {
       const nextWidth = content.getBoundingClientRect().width
       if (nextWidth === width) return
@@ -102,6 +111,7 @@ function VirtualMessages({ viewport, ...props }: MessageListProps & { viewport: 
     captureAnchor()
     return () => {
       viewport.removeEventListener('scroll', onScroll, true)
+      viewport.removeEventListener('wheel', onWheel)
       observer.disconnect()
       cancelAnimationFrame(captureFrame)
       clearTimeout(resizeTimer)
