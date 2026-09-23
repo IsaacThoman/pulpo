@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { beginsWithMarkdownHeading, normalizeMathDelimiters } from './markdown'
+import { beginsWithMarkdownHeading, normalizeMathDelimiters, unwrapBoxedMinipages } from './markdown'
 
 describe('beginsWithMarkdownHeading', () => {
   it('recognizes a leading heading after blank lines', () => {
@@ -97,5 +97,40 @@ $$\begin{aligned} a &= b \\ c &= d \end{aligned}$$
     expect(normalized).toContain('`' + String.raw`\(code\) and $$code$$` + '`')
     expect(normalized).toContain(String.raw`\[code block\]`)
     expect(normalized).toContain('$$\n' + String.raw`x_1` + '\n$$')
+  })
+})
+
+describe('unwrapBoxedMinipages', () => {
+  it('renders prose and nested equations from a boxed LaTeX document separately', () => {
+    const source = String.raw`Intro.
+
+\[
+\boxed{
+\begin{minipage}{0.98\linewidth}
+\textbf{Problem.}
+Let \(x+y\) be known.
+\[
+z=x+y
+\]
+\begin{enumerate}
+\item Find \(z\).
+\end{enumerate}
+\end{minipage}
+}
+\]`
+
+    const normalized = normalizeMathDelimiters(unwrapBoxedMinipages(source))
+    expect(normalized).toContain('**Problem.**')
+    expect(normalized).toContain('Let $x+y$ be known.')
+    expect(normalized).toContain('$$z=x+y$$')
+    expect(normalized).toContain('**1.** Find $z$.')
+    expect(normalized).not.toContain('\\begin{minipage}')
+    expect(normalized).not.toContain('\\boxed')
+  })
+
+  it('leaves ordinary boxed math and fenced examples unchanged', () => {
+    const boxed = String.raw`\[\boxed{x+y}\]`
+    const example = '```latex\n' + String.raw`\[\boxed{\begin{minipage}{1\linewidth}example\end{minipage}}\]` + '\n```'
+    expect(unwrapBoxedMinipages(`${boxed}\n\n${example}`)).toBe(`${boxed}\n\n${example}`)
   })
 })
