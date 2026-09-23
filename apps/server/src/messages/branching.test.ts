@@ -56,3 +56,20 @@ describe('response branches', () => {
     })
   })
 })
+
+it('shares indexed assistant groups without letting active user variants overwrite siblings', async () => {
+  const { branchMetadataIndex } = await import('./branching.js')
+  const lookup = branchMetadataIndex(turns)
+  const first = lookup(turns[0]!)
+  const regenerated = lookup(turns[1]!)
+  expect(first.user.ids).toEqual(['first', 'edited-prompt'])
+  expect(regenerated.user.ids).toEqual(['regenerated', 'edited-prompt'])
+  expect(first.assistant.ids).toBe(regenerated.assistant.ids)
+})
+
+it('handles a deep lineage and malformed descendant cycles without recursion or repeated array shifts', () => {
+  const deep = Array.from({ length: 20000 }, (_, i) => ({ id: String(i), parentResponseId: i ? String(i - 1) : null, input: [] }))
+  expect(lineageFromLeaf(deep, '19999')).toEqual(deep)
+  expect(newestDescendantId(deep, '0')).toBe('19999')
+  expect(newestDescendantId([{ id: 'a', parentResponseId: 'b', input: [] }, { id: 'b', parentResponseId: 'a', input: [] }], 'a')).toBe('b')
+})

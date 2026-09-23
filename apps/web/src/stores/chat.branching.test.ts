@@ -469,6 +469,25 @@ describe('chat store branching integration', () => {
     },
   )
 
+  it('keeps a newly sent message visible in paginated history', async () => {
+    const initial = { ...detail(responseAId, [response(responseAId, 'completed')]),
+      history: { offset: 500, hasMore: true, before: responseAId, leafId: responseAId } }
+    queryClient.setQueryData(['chat', userId, chatId], initial)
+    useChat.getState().setDetailedChat(initial)
+    useChat.getState().sendMessage(chatId, 'new paginated prompt', 'test-model')
+    await vi.waitFor(() => expect(requests).toHaveLength(1))
+    const optimistic = queryClient.getQueryData<ServerChat>(['chat', userId, chatId])!
+    const newId = optimistic.activeBranchLeafId!
+    expect(newId).not.toBe(responseAId)
+    expect(visibleResponseIds()).toEqual([responseAId, newId])
+    expect(useChat.getState().chats.find(chat => chat.id === chatId)?.history).toMatchObject({ offset: 500, leafId: newId })
+    requests[0]!.resolve({ response: response(newId, 'queued').snapshot }, 202)
+    await new Promise(resolve => setTimeout(resolve, 0))
+    const completed = { ...optimistic.responses!.find(row => row.id === newId)!, status: 'completed' as const, snapshot: response(newId, 'completed').snapshot }
+    useChat.getState().applyResponseSnapshot(completed.snapshot)
+    useChat.getState().setDetailedChat({ ...optimistic, responses: [initial.responses![0]!, completed] })
+  })
+
   it.each(['completed', 'failed'] as const)('creates a user branch for a persisted %s response', async (status) => {
     const responseA = response(responseAId, status)
     const initial = detail(responseAId, [responseA])

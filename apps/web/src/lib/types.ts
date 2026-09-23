@@ -91,6 +91,7 @@ export interface Message {
 }
 
 export interface Chat {
+  history?: import('./chat-history').ChatHistory
   id: string
   title: string
   modelId: string

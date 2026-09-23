@@ -18,35 +18,54 @@ function userBranchKey(turn: BranchTurn): string {
   return turn.userMessageId ?? `legacy:${inputSignature(turn.input)}`
 }
 
-export function metadataForTurn(turns: BranchTurn[], active: BranchTurn): BranchMetadata {
-  const siblings = turns.filter((turn) => turn.parentResponseId === active.parentResponseId)
-  const groups = new Map<string, BranchTurn[]>()
-  for (const sibling of siblings) {
-    const signature = userBranchKey(sibling)
-    const group = groups.get(signature) ?? []
-    group.push(sibling)
-    groups.set(signature, group)
+/** Build sibling/user groups once, shared by every response in a history payload. */
+export function branchMetadataIndex(turns: BranchTurn[]): (active: BranchTurn) => BranchMetadata {
+  const parents = new Map<string | null, Map<string, BranchTurn[]>>()
+  for (const turn of turns) {
+    const groups = parents.get(turn.parentResponseId) ?? new Map<string, BranchTurn[]>()
+    const key = userBranchKey(turn)
+    const group = groups.get(key) ?? []
+    group.push(turn)
+    groups.set(key, group)
+    parents.set(turn.parentResponseId, groups)
   }
-
-  const activeSignature = userBranchKey(active)
-  const userIds = [...groups.entries()].map(([signature, group]) =>
-    signature === activeSignature ? active.id : group.at(-1)!.id
-  )
-  const assistantIds = groups.get(activeSignature)?.map((turn) => turn.id) ?? [active.id]
-  return {
-    user: { ids: userIds, index: userIds.indexOf(active.id) },
-    assistant: { ids: assistantIds, index: assistantIds.indexOf(active.id) },
+  const indexed = new Map([...parents].map(([parent, groups]) => [parent, {
+    keys: new Map([...groups.keys()].map((key, index) => [key, index])),
+    userIds: [...groups.values()].map((group) => group.at(-1)!.id),
+    groups: new Map([...groups].map(([key, group]) => [key, {
+      ids: group.map((turn) => turn.id),
+      positions: new Map(group.map((turn, index) => [turn.id, index])),
+    }])),
+  }]))
+  return (active) => {
+    const parent = indexed.get(active.parentResponseId)
+    const key = userBranchKey(active)
+    const group = parent?.groups.get(key)
+    const index = parent?.keys.get(key) ?? 0
+    const userIds = parent ? [...parent.userIds] : [active.id]
+    userIds[index] = active.id
+    return {
+      user: { ids: userIds, index },
+      assistant: { ids: group?.ids ?? [active.id], index: group?.positions.get(active.id) ?? 0 },
+    }
   }
 }
 
-export function newestDescendantId(turns: BranchTurn[], selectedId: string): string {
+export function metadataForTurn(turns: BranchTurn[], active: BranchTurn): BranchMetadata {
+  return branchMetadataIndex(turns)(active)
+}
+
+export function newestDescendantId<T extends Pick<BranchTurn, 'id' | 'parentResponseId'>>(turns: T[], selectedId: string): string {
+  const newestChild = new Map(turns.map((turn) => [turn.parentResponseId, turn.id]))
   let leafId = selectedId
-  for (;;) {
-    const children = turns.filter((turn) => turn.parentResponseId === leafId)
-    const newest = children.at(-1)
-    if (!newest) return leafId
-    leafId = newest.id
+  const seen = new Set<string>()
+  while (!seen.has(leafId)) {
+    seen.add(leafId)
+    const child = newestChild.get(leafId)
+    if (!child || seen.has(child)) break
+    leafId = child
   }
+  return leafId
 }
 
 export function cascadeDeletionIds(turns: BranchTurn[], selected: BranchTurn, includeUserVariant: boolean): Set<string> {
@@ -79,8 +98,8 @@ export function lineageFromLeaf<T extends BranchTurn>(turns: T[], leafId: string
     seen.add(cursor)
     const turn = byId.get(cursor)
     if (!turn) break
-    lineage.unshift(turn)
+    lineage.push(turn)
     cursor = turn.parentResponseId
   }
-  return lineage
+  return lineage.reverse()
 }

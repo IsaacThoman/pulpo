@@ -353,9 +353,10 @@ async function processCodexGenerationAttempt(
     seen.add(parentId)
     const parent = byId.get(parentId)
     if (!parent) break
-    lineage.unshift(parent)
+    lineage.push(parent)
     parentId = parent.parentResponseId
   }
+  lineage.reverse()
   const checkpoint = lineage.findLast((turn) => (turn.output as unknown[]).some((raw) => {
     const item = raw as Partial<CompactionItem>
     return item.type === 'pulpo_compaction' && item.phase === 'pre_response' && item.status === 'completed'
@@ -688,9 +689,10 @@ async function processGenerationAttempt(
     seenParents.add(parentId)
     const parent = byId.get(parentId)
     if (!parent) break
-    history.unshift(parent)
+    history.push(parent)
     parentId = parent.parentResponseId
   }
+  history.reverse()
   const [requestLog] = await db.select({
     id: requestLogs.id,
     apiKeyId: requestLogs.apiKeyId,
