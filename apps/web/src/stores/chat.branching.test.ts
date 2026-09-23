@@ -932,3 +932,18 @@ describe('stable hydrated message identities', () => {
     expect(updated.title).toBe('Updated title')
   })
 })
+
+
+it('preserves loaded pagination when a later sidebar summary refresh omits transcript details', () => {
+  const history = { offset: 4500, hasMore: true, before: responseAId, leafId: responseAId }
+  const loaded = { ...detail(responseAId, [response(responseAId, 'completed')]), history }
+  useChat.getState().setDetailedChat(loaded)
+  const previous = useChat.getState().chats.find(chat => chat.id === chatId)!
+  const { responses: _responses, history: _history, ...summary } = loaded
+  useChat.getState().replaceSummaries([{ ...summary, title: 'New sidebar title' }])
+  const updated = useChat.getState().chats.find(chat => chat.id === chatId)!
+  expect(updated.title).toBe('New sidebar title')
+  expect(updated.messages).toBe(previous.messages)
+  expect(updated.history).toBe(previous.history)
+  expect(updated.history).toEqual(history)
+})

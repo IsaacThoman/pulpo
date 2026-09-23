@@ -520,7 +520,7 @@ function toChat(
     title: row.title,
     modelId: row.modelId,
     messages: replaceEqualDeep(current?.messages, messages),
-    history: row.history ? { ...row.history, leafId: row.activeBranchLeafId ?? row.activeResponseId ?? row.history.leafId } : undefined,
+    history: row.history ? { ...row.history, leafId: row.activeBranchLeafId ?? row.activeResponseId ?? row.history.leafId } : row.responses ? undefined : current?.history,
     queuedMessages: replaceEqualDeep(current?.queuedMessages, queuedMessages),
     createdAt: Date.parse(row.createdAt),
     updatedAt: Date.parse(row.updatedAt),
