@@ -544,6 +544,7 @@ export const MessageItem = memo(function MessageItem({
   onEditUserMessage = ignoreUserMessageEdit,
   composerEditActive = false,
   onOpenChat = ignoreOpenChat,
+  editDrafts,
 }: {
   chat: Pick<Chat, 'id' | 'expired' | 'modelId'>
   message: Message
@@ -552,6 +553,7 @@ export const MessageItem = memo(function MessageItem({
   onEditUserMessage?: (message: Message) => void
   composerEditActive?: boolean
   onOpenChat?: (chatId: string) => void
+  editDrafts?: Map<string, string>
 }) {
   const speechState = useSyncExternalStore(speechPlayback.subscribe, speechPlayback.getSnapshot, speechPlayback.getSnapshot)
   const speechActive = speechState.key === `${chat.id}:${message.id}`
@@ -563,8 +565,12 @@ export const MessageItem = memo(function MessageItem({
   const returnSubmissionToComposer = useUploadOutbox((state) => state.returnSubmissionToComposer)
   const showReasoning = useSettings((s) => s.showReasoning)
   const showResponseCost = useSettings((s) => s.showResponseCost)
-  const [editing, setEditing] = useState(false)
-  const [draft, setDraft] = useState(message.content)
+  const [editing, setEditing] = useState(() => editDrafts?.has(message.id) ?? false)
+  const [draft, setDraft] = useState(() => editDrafts?.get(message.id) ?? message.content)
+  useEffect(() => {
+    if (editing) editDrafts?.set(message.id, draft)
+    else editDrafts?.delete(message.id)
+  }, [editDrafts, message.id, editing, draft])
   const [capacityActionPending, setCapacityActionPending] = useState(false)
   const [streamingFallbackDurationMs, setStreamingFallbackDurationMs] = useState<number>()
   const timeline = useMemo(() => {
@@ -712,7 +718,7 @@ export const MessageItem = memo(function MessageItem({
                 value={draft}
                 onChange={(event) => setDraft(event.target.value)}
                 onKeyDown={handleEditKeyDown}
-                autoFocus
+                autoFocus={!editDrafts?.has(message.id)}
               />
               <div className="mt-2 flex justify-end gap-2">
                 <Button size="sm" variant="ghost" onClick={() => setEditing(false)}>
@@ -866,6 +872,7 @@ export const MessageItem = memo(function MessageItem({
   )
 }, (previous, next) => (
   previous.message === next.message
+  && previous.editDrafts === next.editDrafts
   && previous.streaming === next.streaming
   && previous.onRegenerate === next.onRegenerate
   && previous.chat.id === next.chat.id

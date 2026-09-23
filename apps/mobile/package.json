@@ -70,5 +70,12 @@
     "@types/react": "~19.2.2",
     "typescript": "~6.0.3",
     "vitest": "^3.2.7"
+  },
+  "expo": {
+    "autolinking": {
+      "android": {
+        "buildFromSource": ["expo-ui"]
+      }
+    }
   }
 }

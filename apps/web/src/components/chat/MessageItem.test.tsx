@@ -746,3 +746,20 @@ describe('read aloud actions', () => {
     }
   })
 })
+
+it('retains an unsaved assistant edit across virtual row remounts and clears it on cancel', async () => {
+  const { MessageItem } = await import('./MessageItem')
+  const editDrafts = new Map<string, string>()
+  const message = assistant({ content: 'Original answer' })
+  const row = () => <TooltipProvider><MessageItem chat={chat} message={message} streaming={false} onRegenerate={() => {}} editDrafts={editDrafts} /></TooltipProvider>
+  const first = render(row())
+  fireEvent.click(first.getByRole('button', { name: 'Edit response' }))
+  fireEvent.change(first.getByRole('textbox'), { target: { value: 'Keep this unsaved edit' } })
+  first.unmount()
+  const remounted = render(row())
+  expect((remounted.getByRole('textbox') as HTMLTextAreaElement).value).toBe('Keep this unsaved edit')
+  expect(document.activeElement).not.toBe(remounted.getByRole('textbox'))
+  fireEvent.click(remounted.getByRole('button', { name: 'Cancel' }))
+  expect(editDrafts.size).toBe(0)
+  expect(remounted.getByText('Original answer')).toBeTruthy()
+})

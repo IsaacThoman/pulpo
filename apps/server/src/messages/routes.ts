@@ -1,3 +1,4 @@
+import { historyPageQuery, loadHistoryPage } from '../chats/history-page.js'
 import { and, asc, eq, inArray, isNull, or, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
@@ -236,15 +237,20 @@ export async function registerMessageRoutes(app: FastifyInstance): Promise<void>
     const user = requireUser(request)
     const { id } = request.params as { id: string }
     const selected = await ownedResponse(user.id, id)
+    const query = request.query as { historyLimit?: string }
+    const pageLimit = query.historyLimit === undefined ? undefined : historyPageQuery.parse(query).historyLimit
     const { turns, leafId } = await db.transaction(async tx => {
       await tx.select({ id: chats.id }).from(chats).where(eq(chats.id, selected.chatId)).for('update')
-      const turns = await tx.select().from(responses).where(and(
+      const turns = pageLimit ? [] : await tx.select().from(responses).where(and(
         eq(responses.chatId, selected.chatId),
         eq(responses.userId, user.id),
         isNull(responses.deletedAt),
       )).orderBy(asc(responses.createdAt), asc(responses.id))
-      if (!turns.some(turn => turn.id === selected.id)) throw notFound('Response')
-      const leafId = newestDescendantId(turns, selected.id)
+      const graph = pageLimit ? await tx.select({ id: responses.id, parentResponseId: responses.parentResponseId })
+        .from(responses).where(and(eq(responses.chatId, selected.chatId), eq(responses.userId, user.id), isNull(responses.deletedAt)))
+        .orderBy(asc(responses.createdAt), asc(responses.id)) : turns
+      if (!graph.some(turn => turn.id === selected.id)) throw notFound('Response')
+      const leafId = newestDescendantId(graph, selected.id)
       const now = new Date()
       const [updatedChat] = await tx.update(chats).set({
         activeResponseId: leafId, activeBranchLeafId: leafId, updatedAt: now,
@@ -261,6 +267,11 @@ export async function registerMessageRoutes(app: FastifyInstance): Promise<void>
       }
       return { turns, leafId }
     })
+    if (pageLimit) {
+      await bumpRevision(user.id, selected.chatId)
+      await scheduleChatIndex(selected.chatId, user.id, 'branch-activation')
+      return { activeBranchLeafId: leafId, ...await loadHistoryPage(selected.chatId, user.id, leafId, pageLimit) }
+    }
     const costRows = turns.length ? await db.select({
       responseId: usageEvents.responseId,
       costMicros: usageEvents.costMicros,

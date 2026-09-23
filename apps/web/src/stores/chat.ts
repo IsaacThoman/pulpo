@@ -1,3 +1,4 @@
+import { HISTORY_PAGE_TURNS, mergeHistory, type ChatHistory } from '@/lib/chat-history'
 import { create } from 'zustand'
 import { webChatStarted } from '@/lib/chat-started'
 import { replaceEqualDeep } from '@tanstack/react-query'
@@ -202,9 +203,12 @@ export interface ServerChat {
   attachments?: ServerAttachment[]
   responses?: ServerResponse[]
   queuedMessages?: QueuedMessage[]
+  history?: ChatHistory
 }
 
 interface BranchActivationResult {
+  history?: ChatHistory
+  attachments?: ServerAttachment[]
   activeBranchLeafId: string
   responses?: ServerResponse[]
 }
@@ -236,6 +240,14 @@ interface StagedSendOptions {
 
 export function mergeServerChatDetails(cached: ServerChat | undefined, incoming: ServerChat): ServerChat {
   if (!cached) return incoming
+  if (incoming.history && incoming.responses) {
+    const enriched = mergeCachedResponseDetails(cached.responses, incoming.responses) ?? incoming.responses
+    return { ...incoming, ...mergeHistory(cached.responses ?? [], enriched, { ...incoming.history,
+      leafId: incoming.activeBranchLeafId ?? incoming.activeResponseId ?? incoming.history.leafId,
+    }),
+      attachments: [...new Map([...(cached.attachments ?? []), ...(incoming.attachments ?? [])].map(row => [row.id, row])).values()],
+    }
+  }
   return {
     ...incoming,
     responses: mergeCachedResponseDetails(cached.responses, incoming.responses),
@@ -508,6 +520,7 @@ function toChat(
     title: row.title,
     modelId: row.modelId,
     messages: replaceEqualDeep(current?.messages, messages),
+    history: row.history ? { ...row.history, leafId: row.activeBranchLeafId ?? row.activeResponseId ?? row.history.leafId } : row.responses ? undefined : current?.history,
     queuedMessages: replaceEqualDeep(current?.queuedMessages, queuedMessages),
     createdAt: Date.parse(row.createdAt),
     updatedAt: Date.parse(row.updatedAt),
@@ -647,6 +660,7 @@ function cacheOptimisticTurn(input: {
         updatedAt: createdAt,
         activeResponseId: input.responseId,
         activeBranchLeafId: input.responseId,
+        history: existing.history ? { ...existing.history, leafId: input.responseId } : undefined,
         temporary: existing.temporary ?? input.temporary,
         expiresAt: (existing.temporary ?? input.temporary)
           ? new Date(input.createdAt + 48 * 60 * 60 * 1_000).toISOString()
@@ -1019,15 +1033,14 @@ export const useChat = create<ChatState>()((set, get) => ({
           .filter(([, chatId]) => chatId === row.id)
           .map(([responseId]) => responseId),
       )
-      const chat = toChat(
-        row,
-        state.chats.find((item) => item.id === row.id),
-        responseSequences,
-        state.streamingIds,
-        durableResponseIds,
-      )
-      const exists = state.chats.some((item) => item.id === row.id)
-      const chats = exists ? state.chats.map((item) => item.id === row.id ? chat : item) : [chat, ...state.chats]
+      const current = state.chats.find((item) => item.id === row.id)
+      const fromDetail = toChat(row, current, responseSequences, state.streamingIds, durableResponseIds)
+      // Detail rows are often served from a cache that predates reorders, pins, or folder moves, so
+      // the summary list and local mutations stay authoritative for where a known chat sits in the sidebar.
+      const chat = current
+        ? { ...fromDetail, pinned: current.pinned, folderId: current.folderId, sortOrder: current.sortOrder }
+        : fromDetail
+      const chats = current ? state.chats.map((item) => item.id === row.id ? chat : item) : [chat, ...state.chats]
       return {
         chats,
         streamingIds: reconcileStreamingResponseIds(chats, state.streamingIds, row),
@@ -1511,6 +1524,7 @@ export const useChat = create<ChatState>()((set, get) => ({
       const updated: Chat = existing
         ? {
           ...existing,
+          history: existing.history ? { ...existing.history, leafId: responseId } : undefined,
           updatedAt: timestamp,
           expiresAt: existing.temporary ? timestamp + 48 * 60 * 60 * 1_000 : existing.expiresAt,
           messages: staged && existing.messages.some((message) => message.id === userMessage.id)
@@ -2009,7 +2023,7 @@ export const useChat = create<ChatState>()((set, get) => ({
       queryClient.setQueryData(chatKey(chatId), updated)
       get().setDetailedChat(updated)
     }
-    void enqueueChatMutation(chatId, () => optimisticRequest('POST', `/api/messages/${responseId}/activate`, undefined, {
+    void enqueueChatMutation(chatId, () => optimisticRequest('POST', `/api/messages/${responseId}/activate${cached?.history ? `?historyLimit=${HISTORY_PAGE_TURNS}` : ''}`, undefined, {
       queueOffline: !get().chats.some((chat) => chat.id === chatId && chat.temporary),
     })).then((rawResult) => {
       const result = rawResult as BranchActivationResult | undefined
@@ -2017,7 +2031,9 @@ export const useChat = create<ChatState>()((set, get) => ({
       if (!activeBranchLeafId) return
       const current = queryClient.getQueryData<ServerChat>(chatKey(chatId))
       if (!current) return
-      const enriched = {
+      const enriched = result.history && result.responses ? mergeServerChatDetails(current, {
+        ...current, ...result, activeBranchLeafId,
+      }) : {
         ...current,
         responses: mergeCachedResponseDetails(current.responses, result.responses),
       }
@@ -2025,7 +2041,7 @@ export const useChat = create<ChatState>()((set, get) => ({
       if (!branchSelectionIntents.isCurrent(chatId, selectionIntent.version)) return
       branchSelectionIntents.clear(chatId, selectionIntent.version)
       if (!enriched.responses
-        || !responseLineageDetailsAvailable(enriched.responses, activeBranchLeafId)) {
+        || (!result.history && !responseLineageDetailsAvailable(enriched.responses, activeBranchLeafId))) {
         void queryClient.invalidateQueries({ queryKey: chatKey(chatId) })
         return
       }

@@ -1,3 +1,4 @@
+import { historyPageQuery, loadHistoryPage } from './history-page.js'
 import { and, asc, desc, eq, inArray, isNotNull, isNull, ne, sql } from 'drizzle-orm'
 import { createHash } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
@@ -478,7 +479,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/chats/:id', async (request) => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
-    const query = request.query as { format?: string; scope?: string }
+    const query = request.query as { format?: string; scope?: string; historyLimit?: string; before?: string }
     const compact = query.format === 'compact'
     const activeScope = query.scope === 'active'
     const now = new Date()
@@ -514,6 +515,14 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
         attachments: [],
         queuedMessages: [],
         responses: [],
+      }
+    }
+    if (query.historyLimit !== undefined) {
+      const { historyLimit, before } = historyPageQuery.parse(query)
+      return {
+        ...toPublicChat(chat), deletedAt: null,
+        ...await loadHistoryPage(id, user.id, chat.activeBranchLeafId ?? chat.activeResponseId, historyLimit, before),
+        queuedMessages: await listQueuedMessages(id, user.id),
       }
     }
     const allTurns = await db.select()

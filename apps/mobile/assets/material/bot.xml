@@ -1,23 +1,26 @@
-<!-- Lucide bot; ISC license in ../lucide-LICENSE. -->
+<!-- Lucide bot, strokes expanded to fills for Expo UI's vector loader; ISC license in ../lucide-LICENSE. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="24dp" android:height="24dp"
-    android:viewportWidth="24" android:viewportHeight="24">
-  <path android:pathData="M12 8V4H8" android:fillColor="@android:color/transparent"
-      android:strokeColor="@android:color/white" android:strokeWidth="2"
-      android:strokeLineCap="round" android:strokeLineJoin="round" />
-  <path android:pathData="M6 8h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2Z" android:fillColor="@android:color/transparent"
-      android:strokeColor="@android:color/white" android:strokeWidth="2"
-      android:strokeLineCap="round" android:strokeLineJoin="round" />
-  <path android:pathData="M2 14h2" android:fillColor="@android:color/transparent"
-      android:strokeColor="@android:color/white" android:strokeWidth="2"
-      android:strokeLineCap="round" android:strokeLineJoin="round" />
-  <path android:pathData="M20 14h2" android:fillColor="@android:color/transparent"
-      android:strokeColor="@android:color/white" android:strokeWidth="2"
-      android:strokeLineCap="round" android:strokeLineJoin="round" />
-  <path android:pathData="M15 13v2" android:fillColor="@android:color/transparent"
-      android:strokeColor="@android:color/white" android:strokeWidth="2"
-      android:strokeLineCap="round" android:strokeLineJoin="round" />
-  <path android:pathData="M9 13v2" android:fillColor="@android:color/transparent"
-      android:strokeColor="@android:color/white" android:strokeWidth="2"
-      android:strokeLineCap="round" android:strokeLineJoin="round" />
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24"
+    android:tint="?attr/colorControlNormal">
+  <path
+      android:fillColor="@android:color/white"
+      android:pathData="M11,8 L11,5 L8,5 Q7.586,5 7.293,4.707 Q7,4.414 7,4 Q7,3.586 7.293,3.293 Q7.586,3 8,3 L12,3 Q12.414,3 12.707,3.293 Q13,3.586 13,4 L13,8 Q13,8.414 12.707,8.707 Q12.414,9 12,9 Q11.586,9 11.293,8.707 Q11,8.414 11,8 Z"/>
+  <path
+      android:fillColor="@android:color/white"
+      android:pathData="M6,7 L18,7 Q21,7 21,10 L21,18 Q21,21 18,21 L6,21 Q3,21 3,18 L3,10 Q3,7 6,7 Z M6,9 Q5,9 5,10 L5,18 Q5,19 6,19 L18,19 Q19,19 19,18 L19,10 Q19,9 18,9 Z"/>
+  <path
+      android:fillColor="@android:color/white"
+      android:pathData="M2,13 L4,13 Q4.414,13 4.707,13.293 Q5,13.586 5,14 Q5,14.414 4.707,14.707 Q4.414,15 4,15 L2,15 Q1.586,15 1.293,14.707 Q1,14.414 1,14 Q1,13.586 1.293,13.293 Q1.586,13 2,13 Z"/>
+  <path
+      android:fillColor="@android:color/white"
+      android:pathData="M20,13 L22,13 Q22.414,13 22.707,13.293 Q23,13.586 23,14 Q23,14.414 22.707,14.707 Q22.414,15 22,15 L20,15 Q19.586,15 19.293,14.707 Q19,14.414 19,14 Q19,13.586 19.293,13.293 Q19.586,13 20,13 Z"/>
+  <path
+      android:fillColor="@android:color/white"
+      android:pathData="M16,13 L16,15 Q16,15.414 15.707,15.707 Q15.414,16 15,16 Q14.586,16 14.293,15.707 Q14,15.414 14,15 L14,13 Q14,12.586 14.293,12.293 Q14.586,12 15,12 Q15.414,12 15.707,12.293 Q16,12.586 16,13 Z"/>
+  <path
+      android:fillColor="@android:color/white"
+      android:pathData="M10,13 L10,15 Q10,15.414 9.707,15.707 Q9.414,16 9,16 Q8.586,16 8.293,15.707 Q8,15.414 8,15 L8,13 Q8,12.586 8.293,12.293 Q8.586,12 9,12 Q9.414,12 9.707,12.293 Q10,12.586 10,13 Z"/>
 </vector>
