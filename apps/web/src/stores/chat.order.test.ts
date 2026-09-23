@@ -47,6 +47,13 @@ function looseOrder() {
     .map((item) => item.id)
 }
 
+function pinnedOrder() {
+  return useChat.getState().chats
+    .filter((item) => item.pinned)
+    .sort(compareChatOrder)
+    .map((item) => item.id)
+}
+
 beforeEach(() => {
   requests.splice(0)
   queryClient.clear()
@@ -106,6 +113,36 @@ describe('chat order', () => {
     useChat.getState().togglePin('pinned')
 
     expect(looseOrder()).toEqual(['pinned', 'c', 'a', 'b'])
+  })
+
+  it('pins a chat at the dropped position and keeps its folder', async () => {
+    useChat.setState((state) => ({ chats: [...state.chats, chat('pinned-2', { pinned: true, sortOrder: 1 })] }))
+    useChat.getState().pinChat('in-folder', { targetId: 'pinned-2', edge: 'before' })
+
+    expect(pinnedOrder()).toEqual(['pinned', 'in-folder', 'pinned-2'])
+    expect(useChat.getState().chats.find((item) => item.id === 'in-folder')).toMatchObject({ pinned: true, folderId })
+    await vi.waitFor(() => expect(requests).toContainEqual(expect.objectContaining({
+      method: 'PUT', body: { chatIds: ['pinned', 'in-folder', 'pinned-2'] },
+    })))
+    expect(requests).toContainEqual(expect.objectContaining({
+      method: 'PATCH', path: expect.stringContaining('/api/chats/in-folder'), body: { pinned: true, sortOrder: 1 },
+    }))
+  })
+
+  it('unpins a chat into the dropped position of the unfiled list', async () => {
+    useChat.getState().unpinChat('pinned', null, { targetId: 'b', edge: 'after' })
+
+    expect(pinnedOrder()).toEqual([])
+    expect(looseOrder()).toEqual(['a', 'b', 'pinned', 'c'])
+    await vi.waitFor(() => expect(requests).toContainEqual(expect.objectContaining({
+      method: 'PATCH', path: expect.stringContaining('/api/chats/pinned'), body: { pinned: false, folderId: null, sortOrder: 2 },
+    })))
+  })
+
+  it('unpins a chat into a folder', () => {
+    useChat.getState().unpinChat('pinned', folderId)
+
+    expect(useChat.getState().chats.find((item) => item.id === 'pinned')).toMatchObject({ pinned: false, folderId, sortOrder: 1 })
   })
 
   it('keeps a pinned chat in place when it is filed into a folder', () => {
