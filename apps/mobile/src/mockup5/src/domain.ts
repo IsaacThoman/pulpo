@@ -47,6 +47,9 @@ export interface PrototypeModel {
   provider: string;
   lab: string;
   description: string;
+  /** Admin-configured markdown notice shown above the composer. */
+  warningMessage?: string;
+  warningDismissDays?: number;
   contextWindow: string;
   pricing: string;
   tags: string[];
@@ -119,6 +122,8 @@ export interface PrototypeChat {
   updatedAt: number;
   pinned: boolean;
   folderId: string | null;
+  /** Manual position within the pinned list, its folder, or the unfiled list. */
+  sortOrder: number;
   temporary: boolean;
   expiresAt?: number | null;
   expired?: boolean;
@@ -144,6 +149,8 @@ export interface AppPreferences {
   sendWithEnter: boolean;
   streamResponses: boolean;
   showPromptSuggestions: boolean;
+  showModelWarnings: boolean;
+  modelWarningDismissals: import('@pulpo/contracts').ModelWarningDismissals;
   showReasoning: boolean;
   memoryEnabled: boolean;
   haptics: boolean;

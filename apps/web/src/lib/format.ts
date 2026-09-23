@@ -104,19 +104,6 @@ export function formatSecondsLabel(ms: number): string {
   return seconds === 1 ? ui('1 second') : ui('{{count}} seconds', { count: seconds })
 }
 
-export type ChatTimeGroup = 'Pinned' | 'Today' | 'Yesterday' | 'Previous 7 Days' | 'Previous 30 Days' | 'Older'
-
-export function chatTimeGroup(ts: number): Exclude<ChatTimeGroup, 'Pinned'> {
-  const now = new Date()
-  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
-  const dayMs = 86_400_000
-  if (ts >= startOfToday) return 'Today'
-  if (ts >= startOfToday - dayMs) return 'Yesterday'
-  if (ts >= startOfToday - 7 * dayMs) return 'Previous 7 Days'
-  if (ts >= startOfToday - 30 * dayMs) return 'Previous 30 Days'
-  return 'Older'
-}
-
 export function maskKey(prefix: string): string {
   return `${prefix}${'•'.repeat(12)}`
 }

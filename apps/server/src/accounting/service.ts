@@ -28,6 +28,7 @@ import {
   type Pricing,
 } from './pricing.js'
 import { loadBillingEntitlements } from '../billing/entitlements.js'
+import { queueAutoTopUpChecks } from '../billing/auto-top-up.js'
 import {
   allocateReservationMicros,
   allocateResizedReservationMicros,
@@ -67,6 +68,20 @@ export async function reserveBudget(input: {
   minimumOutputReservationTokens?: number
   pricing: ActivePricing
 }): Promise<{ amountMicros: number; maxOutputTokens: number }> {
+  const fundingUserIds = new Set([input.userId])
+  try {
+    return await reserveBudgetTransaction(input, fundingUserIds)
+  } finally {
+    // Pending reservations lower the available balance, and a refused request may be
+    // the first sign it fell below the threshold.
+    void queueAutoTopUpChecks(fundingUserIds)
+  }
+}
+
+function reserveBudgetTransaction(
+  input: Parameters<typeof reserveBudget>[0],
+  fundingUserIds: Set<string>,
+): Promise<{ amountMicros: number; maxOutputTokens: number }> {
   return db.transaction(async (tx) => {
     const membership = await activePoolMembership(tx, input.userId)
     if (membership) await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`pool:${membership.pool.id}`}))`)
@@ -93,6 +108,7 @@ export async function reserveBudget(input: {
     const allocation = allocateReservationMicros(amount, entitlements.weeklyRemainingMicros, entitlements.fiveHourRemainingMicros)
     const fiveHourPeriodStart = allocation.fiveHourMicros > 0 ? entitlements.fiveHourPeriodStart ?? new Date() : null
     const funding = allocatePoolBalanceMicros({ amountMicros: allocation.balanceMicros, callerUserId: input.userId, balances })
+    for (const userId of funding.keys()) fundingUserIds.add(userId)
     if (allocation.balanceMicros > 0 && !funding.size) throw new AppError(402, 'insufficient_balance', 'Insufficient balance for the request')
     const reservationId = newId()
     await tx.insert(budgetReservations).values({
@@ -224,6 +240,7 @@ export async function chargeMeteredUsage(input: {
     publishScopedStateChanges(changes.friendChanges, ['friends']),
     publishScopedStateChanges(changes.poolChanges, ['pool', 'usage', 'billing']),
   ])
+  void queueAutoTopUpChecks(changes.ownChanges.map((change) => change.userId))
 }
 
 export async function settleBudget(input: {
@@ -386,6 +403,7 @@ export async function settleBudget(input: {
     publishScopedStateChanges(settlement.friendChanges, ['friends']),
     publishScopedStateChanges(settlement.poolChanges, ['pool', 'usage', 'billing']),
   ])
+  void queueAutoTopUpChecks(settlement.ownChanges.map((change) => change.userId))
   return settlement.cost
 }
 

@@ -44,6 +44,16 @@ describe('realtime preference reconciliation', () => {
     await usePreferencesStore.getState().resetSynchronizedPreferences('other-account')
     expect(usePreferencesStore.getState().showPromptSuggestions).toBe(true)
   })
+  it('keeps a pending model warning dismissal and clears it for another account', async () => {
+    const dismissals = { opus: { at: '2026-09-22T00:00:00.000Z', hash: '0a1b2c3d' } }
+    await usePreferencesStore.getState().setPreference('modelWarningDismissals', dismissals)
+    await usePreferencesStore.getState().applyServerPreferences({ modelWarningDismissals: {} })
+    expect(usePreferencesStore.getState().modelWarningDismissals).toEqual(dismissals)
+    await usePreferencesStore.getState().applyServerPreferences({ modelWarningDismissals: dismissals })
+    expect(usePreferencesStore.getState().pendingServerPreferenceKeys).not.toContain('modelWarningDismissals')
+    await usePreferencesStore.getState().resetSynchronizedPreferences('other-account')
+    expect(usePreferencesStore.getState()).toMatchObject({ modelWarningDismissals: {}, showModelWarnings: true })
+  })
   it('persists remote composer opt-out and retires pending checkpoints', async () => {
     const before = usePreferencesStore.getState().composerSyncGeneration
     await usePreferencesStore.getState().applyServerPreferences({ composerSyncEnabled: false })

@@ -1,7 +1,7 @@
 import { imageGenerationPreferencesSchema, type ImageGenerationPreferences, speechPreferencesSchema, type SpeechPreferences } from '@pulpo/contracts'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import type { SidebarPins } from '@pulpo/contracts'
+import type { ModelWarningDismissals, SidebarPins } from '@pulpo/contracts'
 import {
   applyAnimationSpeed,
   DEFAULT_ANIMATION_SPEED,
@@ -32,6 +32,9 @@ export interface SettingsState {
   doubleShiftSearch: boolean
   streamResponses: boolean
   showPromptSuggestions: boolean
+  showModelWarnings: boolean
+  /** Per-model composer warning dismissals, synchronized with the account. */
+  modelWarningDismissals: ModelWarningDismissals
   showReasoning: boolean
   showResponseCost: boolean
   chatWidth: 'full' | 'narrow'
@@ -70,6 +73,8 @@ export const DEFAULT_SETTINGS = {
   doubleShiftSearch: true,
   streamResponses: true,
   showPromptSuggestions: true,
+  showModelWarnings: true,
+  modelWarningDismissals: {} as ModelWarningDismissals,
   showReasoning: true,
   showResponseCost: false,
   chatWidth: 'narrow' as const,

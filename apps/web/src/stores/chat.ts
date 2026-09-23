@@ -64,6 +64,44 @@ function applySortOrders(ids: string[]): Map<string, number> {
   return new Map(ids.map((id, index) => [id, index]))
 }
 
+/** Sidebar lists keep their manual order; activity in a chat never moves it. */
+export function compareChatOrder(a: Pick<Chat, 'sortOrder' | 'createdAt'>, b: Pick<Chat, 'sortOrder' | 'createdAt'>): number {
+  return a.sortOrder - b.sortOrder || b.createdAt - a.createdAt
+}
+
+function orderedChatIds(chats: Chat[]): string[] {
+  return [...chats].sort(compareChatOrder).map((chat) => chat.id)
+}
+
+/** Unpinned, non-temporary chats that are not inside an existing folder. */
+function looseChats(chats: Chat[], folders: Folder[]): Chat[] {
+  const folderIds = new Set(folders.map((folder) => folder.id))
+  return chats.filter((chat) => !chat.pinned && !chat.temporary && !(chat.folderId && folderIds.has(chat.folderId)))
+}
+
+function chatListMembers(chats: Chat[], folders: Folder[], folderId: string | null): Chat[] {
+  return folderId
+    ? chats.filter((chat) => !chat.pinned && chat.folderId === folderId)
+    : looseChats(chats, folders)
+}
+
+function topSortOrder(chats: Chat[]): number {
+  return chats.reduce((min, chat) => Math.min(min, chat.sortOrder), 1) - 1
+}
+
+function reorderChatList(ids: string[], fromId: string, toId: string, edge: 'before' | 'after') {
+  const nextIds = reorderList(ids, fromId, toId, edge)
+  if (nextIds.join() === ids.join()) return
+  const orders = applySortOrders(nextIds)
+  useChat.setState((state) => ({
+    chats: state.chats.map((chat) => {
+      const sortOrder = orders.get(chat.id)
+      return sortOrder === undefined ? chat : { ...chat, sortOrder }
+    }),
+  }))
+  void optimisticRequest('PUT', '/api/chats/order', { chatIds: nextIds })
+}
+
 export interface ServerResponse {
   id: string
   parentResponseId: string | null
@@ -202,6 +240,7 @@ interface ChatState {
   ) => void
   reorderPinnedChats: (fromId: string, toId: string, edge: 'before' | 'after') => void
   reorderFolderChats: (folderId: string, fromId: string, toId: string, edge: 'before' | 'after') => void
+  reorderLooseChats: (fromId: string, toId: string, edge: 'before' | 'after') => void
   shareChat: (id: string) => Promise<string>
   addFolder: (name: string) => void
   toggleFolder: (id: string) => void
@@ -576,7 +615,7 @@ function cacheOptimisticTurn(input: {
         modelId: input.modelId,
         pinned: false,
         folderId: null,
-        sortOrder: 0,
+        sortOrder: input.temporary ? 0 : topSortOrder(looseChats(useChat.getState().chats, useChat.getState().folders)),
         temporary: input.temporary,
         expiresAt: input.temporary ? new Date(input.createdAt + 48 * 60 * 60 * 1_000).toISOString() : input.expiresAt,
         createdAt,
@@ -1069,6 +1108,7 @@ export const useChat = create<ChatState>()((set, get) => ({
           temporary: false,
           expiresAt: null,
           expired: false,
+          sortOrder: persisted.sortOrder ?? chat.sortOrder,
         } : chat),
       }))
       queryClient.setQueryData<ServerChat>(chatKey(id), (chat) => chat ? {
@@ -1175,28 +1215,36 @@ export const useChat = create<ChatState>()((set, get) => ({
     const chat = get().chats.find((item) => item.id === id)
     if (!chat) return
     const nextPinned = !chat.pinned
-    const maxPinnedOrder = get().chats
-      .filter((item) => item.pinned && item.id !== id)
+    const others = get().chats.filter((item) => item.id !== id)
+    const maxPinnedOrder = others
+      .filter((item) => item.pinned)
       .reduce((max, item) => Math.max(max, item.sortOrder), -1)
-    const sortOrder = nextPinned ? maxPinnedOrder + 1 : chat.sortOrder
+    // Unpinned chats return to the top of their folder or the unfiled list.
+    const folderId = get().folders.some((folder) => folder.id === chat.folderId) ? chat.folderId : null
+    const sortOrder = nextPinned ? maxPinnedOrder + 1 : topSortOrder(chatListMembers(others, get().folders, folderId))
     set((state) => ({
       chats: state.chats.map((item) => item.id === id ? { ...item, pinned: nextPinned, sortOrder } : item),
     }))
     void optimisticRequest('PATCH', `/api/chats/${id}`, { pinned: nextPinned, sortOrder })
   },
   moveToFolder: (id, folderId, position) => {
-    if (!folderId) {
-      set((state) => ({
-        chats: state.chats.map((chat) => chat.id === id ? { ...chat, folderId: null, sortOrder: 0 } : chat),
-      }))
-      void optimisticRequest('PATCH', `/api/chats/${id}`, { folderId: null, sortOrder: 0 })
+    if (get().chats.find((chat) => chat.id === id)?.pinned) {
+      // Pinned chats keep their pinned position; the folder applies once they are unpinned.
+      set((state) => ({ chats: state.chats.map((chat) => chat.id === id ? { ...chat, folderId } : chat) }))
+      void optimisticRequest('PATCH', `/api/chats/${id}`, { folderId })
       return
     }
+    const destination = chatListMembers(get().chats, get().folders, folderId).filter((chat) => chat.id !== id)
+    const destIds = orderedChatIds(destination)
 
-    const destIds = get().chats
-      .filter((chat) => !chat.pinned && chat.folderId === folderId && chat.id !== id)
-      .sort((a, b) => a.sortOrder - b.sortOrder || b.updatedAt - a.updatedAt)
-      .map((chat) => chat.id)
+    if (!folderId && !(position && destIds.includes(position.targetId))) {
+      const sortOrder = topSortOrder(destination)
+      set((state) => ({
+        chats: state.chats.map((chat) => chat.id === id ? { ...chat, folderId: null, sortOrder } : chat),
+      }))
+      void optimisticRequest('PATCH', `/api/chats/${id}`, { folderId: null, sortOrder })
+      return
+    }
 
     let nextIds: string[]
     if (position && destIds.includes(position.targetId)) {
@@ -1220,36 +1268,13 @@ export const useChat = create<ChatState>()((set, get) => ({
     }
   },
   reorderPinnedChats: (fromId, toId, edge) => {
-    const pinnedIds = get().chats
-      .filter((chat) => chat.pinned)
-      .sort((a, b) => a.sortOrder - b.sortOrder || b.updatedAt - a.updatedAt)
-      .map((chat) => chat.id)
-    const nextIds = reorderList(pinnedIds, fromId, toId, edge)
-    if (nextIds === pinnedIds || nextIds.join() === pinnedIds.join()) return
-    const orders = applySortOrders(nextIds)
-    set((state) => ({
-      chats: state.chats.map((chat) => {
-        const sortOrder = orders.get(chat.id)
-        return sortOrder === undefined ? chat : { ...chat, sortOrder }
-      }),
-    }))
-    void optimisticRequest('PUT', '/api/chats/order', { chatIds: nextIds })
+    reorderChatList(orderedChatIds(get().chats.filter((chat) => chat.pinned)), fromId, toId, edge)
   },
   reorderFolderChats: (folderId, fromId, toId, edge) => {
-    const folderChatIds = get().chats
-      .filter((chat) => !chat.pinned && chat.folderId === folderId)
-      .sort((a, b) => a.sortOrder - b.sortOrder || b.updatedAt - a.updatedAt)
-      .map((chat) => chat.id)
-    const nextIds = reorderList(folderChatIds, fromId, toId, edge)
-    if (nextIds === folderChatIds || nextIds.join() === folderChatIds.join()) return
-    const orders = applySortOrders(nextIds)
-    set((state) => ({
-      chats: state.chats.map((chat) => {
-        const sortOrder = orders.get(chat.id)
-        return sortOrder === undefined ? chat : { ...chat, sortOrder }
-      }),
-    }))
-    void optimisticRequest('PUT', '/api/chats/order', { chatIds: nextIds })
+    reorderChatList(orderedChatIds(chatListMembers(get().chats, get().folders, folderId)), fromId, toId, edge)
+  },
+  reorderLooseChats: (fromId, toId, edge) => {
+    reorderChatList(orderedChatIds(looseChats(get().chats, get().folders)), fromId, toId, edge)
   },
   shareChat: async (id) => {
     const share = await apiRequest<{ token: string }>('/api/chat-shares', {

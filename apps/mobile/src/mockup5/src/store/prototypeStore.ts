@@ -9,6 +9,7 @@ import { createInitialState } from '../initialState';
 import { productionActions, runProductionAction } from '../production/productionActions';
 import { useRealtimeStore } from '../../../providers/realtimeStore';
 import { usePreferencesStore } from '../../../store/preferences';
+import { topChatSortOrder, visibleHistoryChats } from '../../../features/chat/history';
 
 type PrototypeActions = {
   productionNamespace: string | null;
@@ -62,7 +63,7 @@ const retentionMs: Record<AppPreferences['trashRetention'], number | null> = {
 };
 
 const initialsFor = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase()).join('') || '?';
-const productionPreferenceKeys = new Set(['imageGeneration', 'speech', 'theme', 'textSize', 'streamResponses', 'showPromptSuggestions', 'showReasoning', 'memoryEnabled', 'haptics', 'sendWithEnter', 'attachmentCacheMb', 'localChatLimit', 'trashRetention', 'automaticChatExpiration', 'newChatAutoExpire']);
+const productionPreferenceKeys = new Set(['imageGeneration', 'speech', 'theme', 'textSize', 'streamResponses', 'showPromptSuggestions', 'showModelWarnings', 'modelWarningDismissals', 'showReasoning', 'memoryEnabled', 'haptics', 'sendWithEnter', 'attachmentCacheMb', 'localChatLimit', 'trashRetention', 'automaticChatExpiration', 'newChatAutoExpire']);
 const actionVersions = new Map<string, number>();
 
 function automaticExpirationDeadline(now = Date.now()): number | null {
@@ -156,20 +157,33 @@ export const usePrototypeStore = create<PrototypeStore>()((set, get) => ({
     });
   },
   togglePin: (chatId) => {
-    const previous = get().chats.find((chat) => chat.id === chatId)?.pinned;
-    const next = !previous;
-    set((state) => ({ chats: state.chats.map((chat) => chat.id === chatId ? { ...chat, pinned: next } : chat) }));
-    runOptimisticAction(`chat:${chatId}:pinned`, productionActions.togglePin(chatId, next), () => {
-      if (previous === undefined) return;
-      set((state) => ({ chats: state.chats.map((chat) => chat.id === chatId ? { ...chat, pinned: previous } : chat) }));
+    const current = get().chats.find((chat) => chat.id === chatId);
+    if (!current) return;
+    const next = !current.pinned;
+    const others = visibleHistoryChats(get().chats).filter((chat) => chat.id !== chatId);
+    const folderIds = new Set(get().folders.map((folder) => folder.id));
+    // Match the web sidebar: pin to the end of Pinned, unpin to the top of the chat's list.
+    const sortOrder = next
+      ? others.filter((chat) => chat.pinned).reduce((max, chat) => Math.max(max, chat.sortOrder), -1) + 1
+      : topChatSortOrder(others, folderIds, current.folderId && folderIds.has(current.folderId) ? current.folderId : null);
+    set((state) => ({ chats: state.chats.map((chat) => chat.id === chatId ? { ...chat, pinned: next, sortOrder } : chat) }));
+    runOptimisticAction(`chat:${chatId}:pinned`, productionActions.togglePin(chatId, next, sortOrder), () => {
+      set((state) => ({ chats: state.chats.map((chat) => chat.id === chatId ? { ...chat, pinned: current.pinned, sortOrder: current.sortOrder } : chat) }));
     });
   },
   moveChat: (chatId, folderId) => {
-    const previous = get().chats.find((chat) => chat.id === chatId)?.folderId;
-    set((state) => ({ chats: state.chats.map((chat) => chat.id === chatId ? { ...chat, folderId } : chat) }));
-    runOptimisticAction(`chat:${chatId}:folder`, productionActions.moveChat(chatId, folderId), () => {
-      if (previous === undefined) return;
-      set((state) => ({ chats: state.chats.map((chat) => chat.id === chatId ? { ...chat, folderId: previous } : chat) }));
+    const current = get().chats.find((chat) => chat.id === chatId);
+    if (!current) return;
+    const others = visibleHistoryChats(get().chats).filter((chat) => chat.id !== chatId && !chat.pinned);
+    // Pinned chats keep their pinned position; otherwise match the web sidebar's placement.
+    const sortOrder = current.pinned
+      ? current.sortOrder
+      : folderId
+        ? others.filter((chat) => chat.folderId === folderId).reduce((max, chat) => Math.max(max, chat.sortOrder), -1) + 1
+        : topChatSortOrder(others, new Set(get().folders.map((folder) => folder.id)), null);
+    set((state) => ({ chats: state.chats.map((chat) => chat.id === chatId ? { ...chat, folderId, sortOrder } : chat) }));
+    runOptimisticAction(`chat:${chatId}:folder`, productionActions.moveChat(chatId, folderId, sortOrder), () => {
+      set((state) => ({ chats: state.chats.map((chat) => chat.id === chatId ? { ...chat, folderId: current.folderId, sortOrder: current.sortOrder } : chat) }));
     });
   },
   setChatAutoExpiration: (chatId, enabled) => {

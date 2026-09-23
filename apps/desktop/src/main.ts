@@ -326,6 +326,8 @@ async function createMainWindow(): Promise<void> {
   mainWindow = window
   if (state.maximized) window.maximize()
   window.webContents.setWindowOpenHandler(({ url }) => {
+    // In-app links (e.g. middle-clicked sidebar chats) have no external equivalent; keep them out of the system browser.
+    if (new URL(url).origin === rendererOrigin) return { action: 'deny' }
     void shell.openExternal(validatedExternalUrl(url, !app.isPackaged)).catch(() => undefined)
     return { action: 'deny' }
   })
