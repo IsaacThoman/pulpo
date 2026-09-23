@@ -1,5 +1,31 @@
 export const DESKTOP_ORIGIN = 'https://desktop.pulpo.invalid'
 
+export const RENDERER_CSP = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' blob: https:; connect-src 'self' https: wss:; worker-src 'self' blob:; font-src 'self' data:; object-src 'none'; base-uri 'none'; frame-src 'self'; form-action 'self' https:"
+
+/** Code previews run here, in an iframe without allow-same-origin. Keep in sync with apps/web/sandbox.html. */
+export const SANDBOX_PATH = '/sandbox.html'
+export const SANDBOX_CSP = "sandbox allow-scripts allow-modals allow-popups allow-forms allow-downloads; default-src 'none'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: https:; style-src 'self' 'unsafe-inline' https:; img-src 'self' data: blob: https:; font-src data: https:; media-src data: blob: https:; connect-src 'self' https:; worker-src blob:; frame-src 'none'; base-uri 'none'; form-action 'none'"
+
+export function isSandboxUrl(value: string): boolean {
+  try {
+    return new URL(value).pathname === SANDBOX_PATH
+  } catch {
+    return false
+  }
+}
+
+export function rendererCsp(pathname: string): string {
+  return pathname === SANDBOX_PATH ? SANDBOX_CSP : RENDERER_CSP
+}
+
+/** Extra headers the renderer protocol adds to bundled files; the CSP is applied separately. */
+export function rendererAssetHeaders(pathname: string): Record<string, string> {
+  if (pathname === SANDBOX_PATH) return { 'Cache-Control': 'no-cache' }
+  // The sandbox's opaque origin fetches module chunks in CORS mode.
+  if (pathname.startsWith('/assets/')) return { 'Access-Control-Allow-Origin': '*' }
+  return {}
+}
+
 export function desktopDevelopmentRequestHeaders(
   headers: Record<string, string>,
   developmentOrigin: string,
@@ -38,7 +64,7 @@ export function desktopPermissionAllowed(
   mediaTypes?: readonly string[],
   developmentOrigin?: string,
 ): boolean {
-  if (!isTrustedRendererUrl(rendererUrl, developmentOrigin)) return false
+  if (!isTrustedRendererUrl(rendererUrl, developmentOrigin) || isSandboxUrl(rendererUrl)) return false
   if (permission === 'clipboard-sanitized-write') return true
   return permission === 'media' && (!mediaTypes || mediaTypes.every((type) => type === 'audio'))
 }

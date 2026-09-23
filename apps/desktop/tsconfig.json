@@ -13,5 +13,5 @@
       "@/*": ["../web/src/*"]
     }
   },
-  "include": ["src", "*.ts"]
+  "include": ["src", "*.ts", "../web/src/sandbox/vendor.d.ts"]
 }

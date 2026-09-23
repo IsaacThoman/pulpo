@@ -10,6 +10,8 @@ import { ModelSelector } from '@/components/chat/ModelSelector'
 import { Composer, type ComposerMessageEdit } from '@/components/chat/Composer'
 import { ExpiryCountdown } from '@/components/chat/ExpiryCountdown'
 import { MessageList } from '@/components/chat/MessageList'
+import { CodePreviewPanel } from '@/components/chat/CodePreviewPanel'
+import { useCodePreview } from '@/stores/codePreview'
 import { ModelIcon } from '@/components/ModelIcon'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -171,6 +173,8 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
     if (chatId && selection) useChat.getState().regenerate(chatId, messageId, selection)
   }, [chatId])
   const focusComposer = () => focusComposerRef.current?.focus()
+  // Previews belong to the chat they were opened from.
+  useEffect(() => () => useCodePreview.getState().close(), [chatId])
   const [temporary, setTemporary] = useState(false)
   const [savingTemporary, setSavingTemporary] = useState(false)
   const [temporaryError, setTemporaryError] = useState<string | null>(null)
@@ -379,181 +383,184 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
   }
 
   return (
-    <div className={cn(
-      'flex h-full min-w-0 flex-col transition-colors duration-200',
-      temporaryMode && 'bg-violet-100/50 dark:bg-violet-950/15',
-    )} data-desktop-temporary-chat={temporaryMode ? 'true' : undefined}>
-      {/* header */}
-      <header className="chat-header relative z-20 flex h-12 min-w-0 shrink-0 items-center gap-1 px-3">
-        {desktopSidebarVisible ? (
-          <DesktopModelTitleBarSlot>
+    <div className="flex h-full min-w-0">
+      <div className={cn(
+        'flex h-full min-w-0 flex-1 flex-col transition-colors duration-200',
+        temporaryMode && 'bg-violet-100/50 dark:bg-violet-950/15',
+      )} data-desktop-temporary-chat={temporaryMode ? 'true' : undefined}>
+        {/* header */}
+        <header className="chat-header relative z-20 flex h-12 min-w-0 shrink-0 items-center gap-1 px-3">
+          {desktopSidebarVisible ? (
+            <DesktopModelTitleBarSlot>
+              <ModelSelector value={modelId} onChange={selectModel} onSelectClose={focusComposer} />
+            </DesktopModelTitleBarSlot>
+          ) : (
             <ModelSelector value={modelId} onChange={selectModel} onSelectClose={focusComposer} />
-          </DesktopModelTitleBarSlot>
-        ) : (
-          <ModelSelector value={modelId} onChange={selectModel} onSelectClose={focusComposer} />
-        )}
-        <div className="flex-1" />
-        <ChatHeaderActions desktop={desktopSidebarVisible}>
-          {showExpirationControl && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                className="flex size-8 cursor-pointer items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground"
-                aria-label={expirationEnabled
-                  ? t('chat.disableChatExpiry')
-                  : expirationPeriodLabel ? t('chat.expireChatIn', { period: expirationPeriodLabel }) : t('chat.enableChatExpiry')}
-                aria-pressed={expirationEnabled}
-                onClick={toggleExpiration}
-              >
-                <Hourglass className={cn('size-4', expirationEnabled && 'text-teal-500 dark:text-teal-400')} />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent>
-              {expirationEnabled
-                ? chat?.expiresAt
-                  ? <>{t('chat.disableExpiry')} <ExpiryCountdown expiresAt={chat.expiresAt} /></>
-                  : t('chat.disableChatExpiry')
-                : expirationPeriodLabel ? t('chat.expireChatIn', { period: expirationPeriodLabel }) : t('chat.enableChatExpiry')}
-            </TooltipContent>
-          </Tooltip>
           )}
-          {showTemporaryControl && (chat?.temporary ? (
-          <div className="flex items-center gap-1">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  className="flex size-8 cursor-pointer items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
-                  aria-label={t('chat.saveChat')}
-                  onClick={() => void handleTemporaryControl()}
-                  disabled={savingTemporary || Boolean(chat.expired)}
-                >
-                  {savingTemporary
-                    ? <Loader2 className="size-4 animate-spin" />
-                    : <Save className="size-4 text-primary" />}
-                </button>
-              </TooltipTrigger>
-              <TooltipContent>{chat.expired ? t('chat.temporaryExpired') : t('chat.saveChat')}</TooltipContent>
-            </Tooltip>
+          <div className="flex-1" />
+          <ChatHeaderActions desktop={desktopSidebarVisible}>
+            {showExpirationControl && (
             <Tooltip>
               <TooltipTrigger asChild>
                 <button
                   className="flex size-8 cursor-pointer items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground"
-                  aria-label={t('chat.newTemporaryChat')}
-                  onClick={() => startNewChat(true)}
+                  aria-label={expirationEnabled
+                    ? t('chat.disableChatExpiry')
+                    : expirationPeriodLabel ? t('chat.expireChatIn', { period: expirationPeriodLabel }) : t('chat.enableChatExpiry')}
+                  aria-pressed={expirationEnabled}
+                  onClick={toggleExpiration}
                 >
-                  <SquarePen className="size-4 text-primary" />
+                  <Hourglass className={cn('size-4', expirationEnabled && 'text-teal-500 dark:text-teal-400')} />
                 </button>
               </TooltipTrigger>
-              <TooltipContent>{t('chat.newTemporaryChat')}</TooltipContent>
+              <TooltipContent>
+                {expirationEnabled
+                  ? chat?.expiresAt
+                    ? <>{t('chat.disableExpiry')} <ExpiryCountdown expiresAt={chat.expiresAt} /></>
+                    : t('chat.disableChatExpiry')
+                  : expirationPeriodLabel ? t('chat.expireChatIn', { period: expirationPeriodLabel }) : t('chat.enableChatExpiry')}
+              </TooltipContent>
             </Tooltip>
-          </div>
-        ) : (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                className="flex size-8 cursor-pointer items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground"
-                aria-label={temporaryMode ? t('chat.disableTemporary') : t('chat.enableTemporary')}
-                onClick={() => void handleTemporaryControl()}
-                data-active={temporaryMode}
-              >
-                <Ghost className={cn('size-4', temporaryMode && 'text-primary')} />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent>{temporaryMode ? t('chat.disableTemporary') : t('chat.enableTemporary')}</TooltipContent>
-          </Tooltip>
-          ))}
-          {!adminMode && chat && !chat.temporary && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                className="flex size-8 cursor-pointer items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground"
-                aria-label={t('chat.newChat')}
-                onClick={() => startNewChat()}
-              >
-                <SquarePen className="size-4" />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent>{t('chat.newChat')}</TooltipContent>
-          </Tooltip>
-          )}
-        </ChatHeaderActions>
-      </header>
-
-      {temporaryError && (
-        <div role="status" className="mx-auto w-full max-w-5xl px-4 pb-2 text-sm text-destructive">
-          {temporaryError}
-        </div>
-      )}
-
-      {/* body */}
-      {isEmpty ? (
-        <>
-          <div className="min-h-0 flex-1">
-            <Placeholder
-              modelId={modelId}
-              suggestions={suggestions}
-              onPick={sendSuggestion}
-              badge={landingBadge}
-              expirationPeriod={expirationPeriodLabel}
-            />
-          </div>
-          <div
-            className={cn(
-              'mx-auto w-full shrink-0 px-4 pb-4',
-              chatWidth === 'narrow' ? 'max-w-5xl' : 'max-w-[min(100%,90rem)]'
             )}
-          >
-            <Composer syncEnabled={!adminMode} onSyncControls={applyComposerControls} key="new" temporaryControlRef={temporaryComposerRef} suggestionControlRef={suggestionComposerRef} focusControlRef={focusComposerRef} onTemporaryChange={setTemporary} chatId={null} modelId={modelId} onSelectModel={selectModel} temporary={temporaryMode} autoExpire={effectiveNewChatAutoExpire} />
+            {showTemporaryControl && (chat?.temporary ? (
+            <div className="flex items-center gap-1">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    className="flex size-8 cursor-pointer items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                    aria-label={t('chat.saveChat')}
+                    onClick={() => void handleTemporaryControl()}
+                    disabled={savingTemporary || Boolean(chat.expired)}
+                  >
+                    {savingTemporary
+                      ? <Loader2 className="size-4 animate-spin" />
+                      : <Save className="size-4 text-primary" />}
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent>{chat.expired ? t('chat.temporaryExpired') : t('chat.saveChat')}</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    className="flex size-8 cursor-pointer items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground"
+                    aria-label={t('chat.newTemporaryChat')}
+                    onClick={() => startNewChat(true)}
+                  >
+                    <SquarePen className="size-4 text-primary" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent>{t('chat.newTemporaryChat')}</TooltipContent>
+              </Tooltip>
+            </div>
+          ) : (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  className="flex size-8 cursor-pointer items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground"
+                  aria-label={temporaryMode ? t('chat.disableTemporary') : t('chat.enableTemporary')}
+                  onClick={() => void handleTemporaryControl()}
+                  data-active={temporaryMode}
+                >
+                  <Ghost className={cn('size-4', temporaryMode && 'text-primary')} />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>{temporaryMode ? t('chat.disableTemporary') : t('chat.enableTemporary')}</TooltipContent>
+            </Tooltip>
+            ))}
+            {!adminMode && chat && !chat.temporary && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  className="flex size-8 cursor-pointer items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground"
+                  aria-label={t('chat.newChat')}
+                  onClick={() => startNewChat()}
+                >
+                  <SquarePen className="size-4" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>{t('chat.newChat')}</TooltipContent>
+            </Tooltip>
+            )}
+          </ChatHeaderActions>
+        </header>
+
+        {temporaryError && (
+          <div role="status" className="mx-auto w-full max-w-5xl px-4 pb-2 text-sm text-destructive">
+            {temporaryError}
           </div>
-        </>
-      ) : (
-        <>
-          <ScrollArea className="-mt-12 min-h-0 flex-1" viewportRef={viewportRef}>
+        )}
+
+        {/* body */}
+        {isEmpty ? (
+          <>
+            <div className="min-h-0 flex-1">
+              <Placeholder
+                modelId={modelId}
+                suggestions={suggestions}
+                onPick={sendSuggestion}
+                badge={landingBadge}
+                expirationPeriod={expirationPeriodLabel}
+              />
+            </div>
             <div
-              ref={contentRef}
               className={cn(
-                'mx-auto flex w-full min-w-0 flex-col gap-7 px-4 pt-18 pb-6',
+                'mx-auto w-full shrink-0 px-4 pb-4',
                 chatWidth === 'narrow' ? 'max-w-5xl' : 'max-w-[min(100%,90rem)]'
               )}
             >
-              <MessageList
-                chat={chat}
-                onRegenerate={regenerateResponse}
-                onEditUserMessage={beginMessageEdit}
-                onOpenChat={openChat}
-                composerEditActive={composerEditActive || Boolean(messageEdit)}
-              />
-              <div className="h-px" />
+              <Composer syncEnabled={!adminMode} onSyncControls={applyComposerControls} key="new" temporaryControlRef={temporaryComposerRef} suggestionControlRef={suggestionComposerRef} focusControlRef={focusComposerRef} onTemporaryChange={setTemporary} chatId={null} modelId={modelId} onSelectModel={selectModel} temporary={temporaryMode} autoExpire={effectiveNewChatAutoExpire} />
             </div>
-          </ScrollArea>
-          <div
-            className={cn(
-              'mx-auto w-full shrink-0 px-4 pb-4',
-              chatWidth === 'narrow' ? 'max-w-5xl' : 'max-w-[min(100%,90rem)]'
-            )}
-          >
-            {chat.expired ? (
-              <div role="status" className="rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive"> {ui("This temporary chat has expired and cannot be recovered. Its existing transcript is available only until you leave this page.")} </div>
-            ) : (
-              <Composer
-                generationControlRef={generationControlRef}
-                focusControlRef={focusComposerRef}
-                syncEnabled={!adminMode}
-                onSyncControls={applyComposerControls}
-                key={`${chat.temporary ? "temporary:" : ""}${chat.id}`}
-                chatId={chat.id}
-                modelId={modelId}
-                onSelectModel={selectModel}
-                temporary={chat.temporary}
-                autoExpire={Boolean(chat.expiresAt)}
-                messageEdit={messageEdit}
-                onMessageEditComplete={() => setMessageEdit(null)}
-                onEditStateChange={setComposerEditActive}
-              />
-            )}
-          </div>
-        </>
-      )}
+          </>
+        ) : (
+          <>
+            <ScrollArea className="-mt-12 min-h-0 flex-1" viewportRef={viewportRef}>
+              <div
+                ref={contentRef}
+                className={cn(
+                  'mx-auto flex w-full min-w-0 flex-col gap-7 px-4 pt-18 pb-6',
+                  chatWidth === 'narrow' ? 'max-w-5xl' : 'max-w-[min(100%,90rem)]'
+                )}
+              >
+                <MessageList
+                  chat={chat}
+                  onRegenerate={regenerateResponse}
+                  onEditUserMessage={beginMessageEdit}
+                  onOpenChat={openChat}
+                  composerEditActive={composerEditActive || Boolean(messageEdit)}
+                />
+                <div className="h-px" />
+              </div>
+            </ScrollArea>
+            <div
+              className={cn(
+                'mx-auto w-full shrink-0 px-4 pb-4',
+                chatWidth === 'narrow' ? 'max-w-5xl' : 'max-w-[min(100%,90rem)]'
+              )}
+            >
+              {chat.expired ? (
+                <div role="status" className="rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive"> {ui("This temporary chat has expired and cannot be recovered. Its existing transcript is available only until you leave this page.")} </div>
+              ) : (
+                <Composer
+                  generationControlRef={generationControlRef}
+                  focusControlRef={focusComposerRef}
+                  syncEnabled={!adminMode}
+                  onSyncControls={applyComposerControls}
+                  key={`${chat.temporary ? "temporary:" : ""}${chat.id}`}
+                  chatId={chat.id}
+                  modelId={modelId}
+                  onSelectModel={selectModel}
+                  temporary={chat.temporary}
+                  autoExpire={Boolean(chat.expiresAt)}
+                  messageEdit={messageEdit}
+                  onMessageEditComplete={() => setMessageEdit(null)}
+                  onEditStateChange={setComposerEditActive}
+                />
+              )}
+            </div>
+          </>
+        )}
+      </div>
+      <CodePreviewPanel />
     </div>
   )
 }

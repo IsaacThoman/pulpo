@@ -17,12 +17,16 @@ import { formatBytes } from '@/lib/attachments'
 import {
   attachmentPreviewKind,
   formatTextPreview,
+  isTextPreviewKind,
   parseDelimitedPreview,
   previewSizeLimit,
   type AttachmentPreviewKind,
   type DelimitedPreview,
 } from '@/lib/attachment-previews'
 import { ui, uit } from '@/i18n/ui'
+import { SandboxFrame } from '@/components/chat/SandboxFrame'
+import { CodeSource, PreviewModeToggle } from '@/components/chat/CodePreviewPanel'
+import { previewKindForFile } from '@/lib/code-preview'
 
 type PreviewContent =
   | { status: 'idle' }
@@ -35,6 +39,7 @@ function previewLabel(kind: AttachmentPreviewKind): string {
   if (kind === 'table') return ui("Table preview")
   if (kind === 'markdown') return ui("Markdown preview")
   if (kind === 'text') return ui("Text preview")
+  if (kind === 'sandbox') return ui("Live preview")
   return `${kind[0]!.toUpperCase()}${kind.slice(1)} preview`
 }
 
@@ -90,7 +95,7 @@ function usePreviewContent(
           throw new Error(`This file is too large to preview (${formatBytes(blob.size)}).`)
         }
 
-        if (kind === 'markdown' || kind === 'text' || kind === 'table') {
+        if (isTextPreviewKind(kind)) {
           const result = formatTextPreview(attachment.name, attachment.mimeType, await blob.text())
           if (!cancelled) setContent({ status: 'ready', url: null, text: result.text, textTruncated: result.truncated })
           return
@@ -189,6 +194,25 @@ function TextPreview({
   )
 }
 
+function SandboxPreview({ attachment, text, truncated }: { attachment: Attachment; text: string; truncated: boolean }) {
+  const [mode, setMode] = useState<'preview' | 'code'>(truncated ? 'code' : 'preview')
+  const kind = previewKindForFile(attachment.name, attachment.mimeType)
+  return (
+    <div className="flex size-full flex-col" data-preview-kind="sandbox">
+      {!truncated && (
+        <div className="flex shrink-0 items-center gap-2 border-b bg-background px-3 py-1.5">
+          <PreviewModeToggle mode={mode} onChange={setMode} />
+        </div>
+      )}
+      <div className="min-h-0 flex-1">
+        {mode === 'preview' && kind
+          ? <SandboxFrame kind={kind} code={text} title={uit`Preview of ${attachment.name}`} />
+          : <CodeSource code={text} />}
+      </div>
+    </div>
+  )
+}
+
 function PreviewBody({
   attachment,
   kind,
@@ -220,6 +244,9 @@ function PreviewBody({
         </div>
       </div>
     )
+  }
+  if (kind === 'sandbox' && content.text !== null) {
+    return <SandboxPreview attachment={attachment} text={content.text} truncated={content.textTruncated} />
   }
   if ((kind === 'markdown' || kind === 'text' || kind === 'table') && content.text !== null) {
     return <TextPreview attachment={attachment} text={content.text} truncated={content.textTruncated} table={table} markdown={kind === 'markdown'} />

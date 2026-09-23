@@ -12,6 +12,8 @@ it('loads built renderer assets from the desktop origin after a nested-route rel
     await writeFile(path.join(root, 'index.html'), '<div id="root"></div><script type="module" src="/entry.js"></script>')
     await writeFile(path.join(root, 'entry.js'), 'import "./style.css"; document.getElementById("root").textContent = "Pulpo"')
     await writeFile(path.join(root, 'style.css'), 'body { color: red }')
+    await writeFile(path.join(root, 'sandbox.html'), '<div id="root"></div><script type="module" src="/sandbox.js"></script>')
+    await writeFile(path.join(root, 'sandbox.js'), 'import("./entry.js")')
     const config = getConfig({ root, mode: 'production', forgeConfigSelf: { name: 'main_window' } }, rendererConfig)
     const result = await build(mergeConfig(config, {
       configFile: false,
@@ -21,7 +23,8 @@ it('loads built renderer assets from the desktop origin after a nested-route rel
     }))
     const output = (Array.isArray(result) ? result[0] : result).output
     const html = output.find((asset) => asset.fileName === 'index.html').source.toString()
-    const assets = [...html.matchAll(/(?:src|href)="([^"]+)"/g)].map((match) => match[1])
+    const sandbox = output.find((asset) => asset.fileName === 'sandbox.html').source.toString()
+    const assets = [...`${html}${sandbox}`.matchAll(/(?:src|href)="([^"]+)"/g)].map((match) => match[1])
     expect(assets.some((asset) => asset.endsWith('.js'))).toBe(true)
     expect(assets.some((asset) => asset.endsWith('.css'))).toBe(true)
     for (const route of ['/', '/login', '/c/reload-test', '/usage/friends', '/admin/usage/requests', '/c/reload-test/']) {

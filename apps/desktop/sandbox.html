@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="referrer" content="no-referrer" />
+    <!-- Mirrors apps/web/sandbox.html; keep in sync with SANDBOX_CSP in src/security.ts. -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: https:; style-src 'self' 'unsafe-inline' https:; img-src 'self' data: blob: https:; font-src data: https:; media-src data: blob: https:; connect-src 'self' https:; worker-src blob:; frame-src 'none'; base-uri 'none'; form-action 'none'"
+    />
+    <title>Preview</title>
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #fff; color-scheme: light; }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/sandbox.ts"></script>
+  </body>
+</html>
