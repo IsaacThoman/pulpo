@@ -62,6 +62,13 @@ export function billingPlanName(plan: BillingPlan): string {
   return 'Pulpo Baby'
 }
 
+/** Tier word shown after the Pulpo wordmark. */
+export function billingPlanTier(plan: BillingPlan): string {
+  if (plan === 'eight') return 'Eight'
+  if (plan === 'fat') return 'Fat'
+  return 'Baby'
+}
+
 export function pendingBillingPlan(summary: Pick<BillingSummary, 'subscription'>): BillingPlan | null {
   const pending = summary.subscription?.pendingPlan ?? null
   return pending && pending !== summary.subscription?.plan ? pending : null

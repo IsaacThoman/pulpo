@@ -61,7 +61,7 @@ import { ProfileAvatar } from '@/components/ProfileAvatar'
 import { apiRequest } from '@/lib/api'
 import { toggleSidebarPin, type SidebarPinKey } from '@/lib/sidebar-pins'
 import { newChatLocationState } from '@/lib/new-chat-navigation'
-import { fetchBillingSummary } from '@/lib/billing'
+import { billingPlanTier, fetchBillingSummary } from '@/lib/billing'
 import { isDesktopRuntime } from '@/lib/runtime'
 import { uit } from '@/i18n/ui'
 
@@ -1017,8 +1017,11 @@ export function Sidebar({
           )}
         >
           Pulpo
-          {billingPlan === 'fat' && <span className="text-violet-600 dark:text-violet-400"> Fat</span>}
-          {billingPlan === 'eight' && <span className="text-yellow-700 dark:text-yellow-400"> Eight</span>}
+          {(billingPlan === 'fat' || billingPlan === 'eight') && (
+            <span className={billingPlan === 'fat' ? 'text-violet-600 dark:text-violet-400' : 'text-yellow-700 dark:text-yellow-400'}>
+              {' '}{billingPlanTier(billingPlan)}
+            </span>
+          )}
         </span>
         {!collapsed && (
           <Tooltip>
