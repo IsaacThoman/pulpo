@@ -41,6 +41,44 @@ describe('Markdown responsive containment', () => {
     expect(markup).toContain('katex-display')
   })
 
+  it('shows display math KaTeX cannot parse as a LaTeX code block', () => {
+    const content = String.raw`Here is a problem:
+
+\[
+\boxed{
+\begin{minipage}{0.98\linewidth}
+\textbf{Problem.} Let $n\ge 3$ and
+\[
+L=D-W,\qquad W_{ij}=
+\begin{cases}
+w_{ij}, & (i,j)\in E,\\
+0, & (i,j)\notin E.
+\end{cases}
+\]
+\end{minipage}
+}
+\]
+
+Then $x\in\mathbb{R}^n$.`
+    const markup = renderToStaticMarkup(<Markdown content={content} />)
+
+    expect(markup).not.toContain('katex-error')
+    expect(markup).toContain('>latex</span>')
+    expect(markup).toContain(String.raw`\begin{minipage}{0.98\linewidth}
+\textbf{Problem.} Let $n\ge 3$ and
+\[`)
+    expect(markup).toContain(String.raw`\end{minipage}
+}</code>`)
+    expect(markup.match(/class="katex"/g)).toHaveLength(1)
+  })
+
+  it('keeps inline math errors inline', () => {
+    const markup = renderToStaticMarkup(<Markdown content={String.raw`Bad $\begin{minipage}$ math.`} />)
+
+    expect(markup).toContain('katex-error')
+    expect(markup).not.toContain('>latex</span>')
+  })
+
   it.each(['# Heading', '## Heading', '### Heading'])('removes top spacing from an initial heading: %s', (content) => {
     const markup = renderToStaticMarkup(<Markdown content={content} />)
 
