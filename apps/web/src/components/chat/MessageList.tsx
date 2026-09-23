@@ -46,6 +46,8 @@ const historyComponents = { Header: HistoryHeader }
 function VirtualMessages({ viewport, ...props }: MessageListProps & { viewport: HTMLDivElement }) {
   const ids = useChat(state => messageIds(props.chat.id, state.chats.find(chat => chat.id === props.chat.id)?.messages ?? EMPTY_MESSAGES))
   useEffect(() => () => { idsByChat.delete(props.chat.id) }, [props.chat.id])
+  // Keep unsaved inline edits when virtual rows unmount; release them when the chat closes.
+  const editDrafts = useRef(new Map<string, string>())
   const list = useRef<VirtuosoHandle>(null)
   const stickToBottom = useRef(true)
   const lineage = useRef({ end: ids.at(-1), version: 0 })
@@ -68,10 +70,12 @@ function VirtualMessages({ viewport, ...props }: MessageListProps & { viewport: 
     const content = viewport.querySelector<HTMLElement>('[data-virtuoso-scroller]')
     if (!content) return
     let width = content.getBoundingClientRect().width
+    let viewportHeight = viewport.clientHeight
     let anchor: { id: string; offset: number } | undefined
     let captureFrame = 0
     let resizeTimer: ReturnType<typeof setTimeout> | undefined
     let resizing = false
+    let previousTop = viewport.scrollTop
     let measuredHeight = viewport.scrollHeight
     let measuredViewport = viewport.clientHeight
     const captureAnchor = () => {
@@ -86,32 +90,46 @@ function VirtualMessages({ viewport, ...props }: MessageListProps & { viewport: 
       const nearBottom = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < 96
       const geometryChanged = viewport.scrollHeight !== measuredHeight || viewport.clientHeight !== measuredViewport
       // Measurement corrections also emit scroll events; they are not an instruction to stop following.
-      if (nearBottom || !geometryChanged) stickToBottom.current = nearBottom
+      if (nearBottom && (stickToBottom.current || viewport.scrollTop > previousTop)) stickToBottom.current = true
+      else if (!nearBottom && !geometryChanged) stickToBottom.current = false
+      previousTop = viewport.scrollTop
       measuredHeight = viewport.scrollHeight
       measuredViewport = viewport.clientHeight
       cancelAnimationFrame(captureFrame)
       captureFrame = requestAnimationFrame(captureAnchor)
     }
     // Capture before the virtualizer measures newly visible rows and corrects its height estimates.
-    const onWheel = (event: WheelEvent) => { if (event.deltaY < 0) stickToBottom.current = false }
+    const onWheel = (event: WheelEvent) => {
+      if (event.deltaY < 0 && viewport.scrollTop > 0) {
+        stickToBottom.current = false
+        previousTop = viewport.scrollTop
+      }
+    }
     viewport.addEventListener('scroll', onScroll, { passive: true, capture: true })
-    viewport.addEventListener('wheel', onWheel, { passive: true })
+    viewport.addEventListener('wheel', onWheel, { passive: true, capture: true })
     const observer = new ResizeObserver(() => {
       const nextWidth = content.getBoundingClientRect().width
-      if (nextWidth === width) return
+      const nextHeight = viewport.clientHeight
+      if (nextWidth === width) {
+        if (nextHeight !== viewportHeight && stickToBottom.current) viewport.scrollTop = viewport.scrollHeight
+        viewportHeight = nextHeight
+        return
+      }
+      viewportHeight = nextHeight
       width = nextWidth
       resizing = true
       const index = anchor ? currentIds.current.indexOf(anchor.id) : -1
-      if (stickToBottom.current) list.current?.scrollToIndex({ index: 'LAST', align: 'end' })
+      if (stickToBottom.current) viewport.scrollTop = viewport.scrollHeight
       else if (index >= 0) list.current?.scrollToIndex({ index, align: 'start', offset: -anchor!.offset })
       clearTimeout(resizeTimer)
       resizeTimer = setTimeout(() => { resizing = false; captureAnchor() }, 200)
     })
     observer.observe(content)
+    observer.observe(viewport)
     captureAnchor()
     return () => {
       viewport.removeEventListener('scroll', onScroll, true)
-      viewport.removeEventListener('wheel', onWheel)
+      viewport.removeEventListener('wheel', onWheel, true)
       observer.disconnect()
       cancelAnimationFrame(captureFrame)
       clearTimeout(resizeTimer)
@@ -122,20 +140,20 @@ function VirtualMessages({ viewport, ...props }: MessageListProps & { viewport: 
     if (!ready || !stickToBottom.current) return
     if (bottomFrame.current !== null) cancelAnimationFrame(bottomFrame.current)
     bottomFrame.current = requestAnimationFrame(() => {
-      if (stickToBottom.current) list.current?.scrollToIndex({ index: 'LAST', align: 'end', behavior: 'auto' })
+      if (stickToBottom.current) viewport.scrollTop = viewport.scrollHeight
     })
-  }, [ready])
+  }, [ready, viewport])
+  useEffect(settleBottom, [ids.length, settleBottom])
   const firstIndex = 1 + (history?.offset ?? 0) * 2
   const version = lineage.current.version
-  const rangeChanged = useCallback(({ startIndex, endIndex }: { startIndex: number; endIndex: number }) => {
+  const endReached = useCallback(() => setReadyVersion(version), [version])
+  const rangeChanged = useCallback(({ startIndex }: { startIndex: number }) => {
     // Initial measurement/scrolling must finish before a prepend changes the item indices.
-    if (!ready) {
-      if (endIndex >= firstIndex + ids.length - 1) setReadyVersion(version)
-      return
-    }
+    if (!ready) return
     if (startIndex - firstIndex < HISTORY_PREFETCH_MESSAGES && history?.hasMore && !loading && !error) void load()
-  }, [ready, version, ids.length, firstIndex, history?.hasMore, loading, error, load])
+  }, [ready, firstIndex, history?.hasMore, loading, error, load])
   if (!ids.length) return null
+  // Resolve the end again after a prepend; measure the initial row before estimating other heights.
   return <Virtuoso
     key={lineage.current.version}
     ref={list}
@@ -143,17 +161,16 @@ function VirtualMessages({ viewport, ...props }: MessageListProps & { viewport: 
     data={ids}
     customScrollParent={viewport}
     firstItemIndex={firstIndex}
-    initialTopMostItemIndex={{ index: ids.length - 1, align: 'end' }}
+    initialTopMostItemIndex={{ index: 'LAST', align: 'end' }}
     computeItemKey={(_index, id) => id}
-    defaultItemHeight={220}
     increaseViewportBy={{ top: 3000, bottom: 1500 }}
     minOverscanItemCount={{ top: 10, bottom: 5 }}
     atBottomThreshold={96}
-    followOutput="auto"
     rangeChanged={rangeChanged}
+    endReached={endReached}
     components={historyComponents}
     context={context}
-    itemContent={(_index, id) => <div className={id === ids.at(-1) ? "pb-[53px]" : "pb-7"} data-message-id={id}><MessageRow {...props} id={id} /></div>}
+    itemContent={(_index, id) => <div className={id === ids.at(-1) ? "pb-[53px]" : "pb-7"} data-message-id={id}><MessageRow {...props} editDrafts={editDrafts.current} id={id} /></div>}
   />
 }
 
