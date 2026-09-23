@@ -11,6 +11,8 @@ import { DEFAULT_CHART_ANIMATION_DURATION_MS, scaledAnimationDuration } from '@/
 import { modelChartColors } from '@/lib/usage-chart-colors'
 
 const OTHER_COLOR = 'hsl(220 15% 45%)'
+/** series key for the rollup; friends usage also sends private models under this id */
+const OTHER_KEY = 'other'
 const MAX_LEGEND_MODELS = 8
 const MAX_SEGMENTS_PER_DAY = 4
 
@@ -123,9 +125,14 @@ export function DailyUsageChart({
     const totals = new Map<string, number>()
     for (const day of data)
       for (const m of day.models) totals.set(m.modelId, (totals.get(m.modelId) ?? 0) + valueOf(m, metric))
-    const ranked = [...totals.entries()].sort((a, b) => b[1] - a[1]).map(([id]) => id)
+    // models already reported as "Other" always roll into the Other segment, so they never
+    // get a second series (and duplicate React keys) under the same key
+    const ranked = [...totals.entries()]
+      .filter(([id]) => id !== OTHER_KEY)
+      .sort((a, b) => b[1] - a[1])
+      .map(([id]) => id)
     const top = ranked.slice(0, MAX_LEGEND_MODELS)
-    const hasOther = ranked.length > MAX_SEGMENTS_PER_DAY
+    const hasOther = ranked.length > MAX_SEGMENTS_PER_DAY || totals.has(OTHER_KEY)
 
     // per day: only the top 4 models get their own segment, the rest roll into "Other"
     const rows = data.map((day) => {
@@ -140,14 +147,14 @@ export function DailyUsageChart({
         if (visible.includes(m.modelId)) row[m.modelId] = valueOf(m, metric)
         else other += valueOf(m, metric)
       }
-      if (hasOther) row.other = other
+      if (hasOther) row[OTHER_KEY] = other
       return row
     })
 
     const colors = modelChartColors(top)
     const series: Series[] = [
       // largest model ends up on top of the stack (recharts stacks bottom-up)
-      ...(hasOther ? [{ key: 'other', name: 'Other', color: OTHER_COLOR }] : []),
+      ...(hasOther ? [{ key: OTHER_KEY, name: 'Other', color: OTHER_COLOR }] : []),
       ...top
         .slice()
         .reverse()
@@ -172,8 +179,8 @@ export function DailyUsageChart({
   // legend order: rank order, Other last (series are reversed for stacking)
   const legend = useMemo(
     () => [
-      ...series.filter((s) => s.key !== 'other').reverse(),
-      ...series.filter((s) => s.key === 'other'),
+      ...series.filter((s) => s.key !== OTHER_KEY).reverse(),
+      ...series.filter((s) => s.key === OTHER_KEY),
     ],
     [series]
   )
