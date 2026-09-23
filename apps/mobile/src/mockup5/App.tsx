@@ -5711,8 +5711,10 @@ function ChatView({
                   ref={composerInputRef}
                   accessibilityLabel="Message"
                   disableFullscreenUI
-                  // Keep focus during shelf actions; transferShelf checks for edits before replacing content.
-                  editable={!handoffBusy && !composerFocusSuppressed && !(messageEdit && sending)}
+                  // Toggling editable off resigns focus and dismisses the keyboard, so stay editable during
+                  // shelf actions and temporary handoffs. transferShelf checks for edits before replacing content;
+                  // toggleTemporary moves draft ownership up front, so edits persist to the destination draft once it settles.
+                  editable={!composerFocusSuppressed && !(messageEdit && sending)}
                   maxFontSizeMultiplier={COMPOSER_MAX_FONT_SIZE_MULTIPLIER}
                   multiline
                   maxLength={1_000_000}
