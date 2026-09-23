@@ -1,3 +1,4 @@
+import { historyUrl } from '@/lib/chat-history'
 import { handleSessionConnectionError } from '@/lib/session-revocation'
 import { webChatStarted } from '@/lib/chat-started'
 import { bindWebShelfSocket } from '@/lib/local-first/shelf'
@@ -80,7 +81,7 @@ export function ChatDataBridge() {
   const chatQuery = useQuery({
     queryKey: ['chat', userId, chatId],
     queryFn: async ({ signal }) => {
-      const incoming = await apiRequest<ServerChat>(`/api/chats/${chatId}?format=compact&scope=active`, { signal })
+      const incoming = await apiRequest<ServerChat>(historyUrl(chatId!), { signal })
       return mergeServerChatDetails(queryClient.getQueryData<ServerChat>(['chat', userId, chatId]), incoming)
     },
     enabled: Boolean(!adminChatView && networkReady && userId && chatId),

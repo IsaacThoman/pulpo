@@ -260,30 +260,8 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
       .catch(() => {})
   }, [networkReady])
 
-  const viewportRef = useRef<HTMLDivElement>(null)
-  const contentRef = useRef<HTMLDivElement>(null)
-  const stickToBottomRef = useRef(true)
+  const [viewport, setViewport] = useState<HTMLDivElement | null>(null)
   const temporaryViewVersionRef = useRef(0)
-  useEffect(() => {
-    const viewport = viewportRef.current
-    const content = contentRef.current
-    if (!viewport || !content) return
-    stickToBottomRef.current = true
-    const updateStickiness = () => {
-      stickToBottomRef.current = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < 96
-    }
-    const scrollToBottom = () => {
-      if (stickToBottomRef.current) viewport.scrollTop = viewport.scrollHeight
-    }
-    viewport.addEventListener('scroll', updateStickiness, { passive: true })
-    const observer = new ResizeObserver(() => window.requestAnimationFrame(scrollToBottom))
-    observer.observe(content)
-    window.requestAnimationFrame(scrollToBottom)
-    return () => {
-      viewport.removeEventListener('scroll', updateStickiness)
-      observer.disconnect()
-    }
-  }, [chatId, chat?.id])
 
   useEffect(() => {
     setMessageEdit(null)
@@ -513,22 +491,21 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
           </>
         ) : (
           <>
-            <ScrollArea className="-mt-12 min-h-0 flex-1" viewportRef={viewportRef}>
+            <ScrollArea className="-mt-12 min-h-0 flex-1" viewportRef={setViewport}>
               <div
-                ref={contentRef}
                 className={cn(
-                  'mx-auto flex w-full min-w-0 flex-col gap-7 px-4 pt-18 pb-6',
+                  'mx-auto w-full min-w-0 px-4',
                   chatWidth === 'narrow' ? 'max-w-5xl' : 'max-w-[min(100%,90rem)]'
                 )}
               >
-                <MessageList
+                {viewport && <MessageList
+                  viewport={viewport}
                   chat={chat}
                   onRegenerate={regenerateResponse}
                   onEditUserMessage={beginMessageEdit}
                   onOpenChat={openChat}
                   composerEditActive={composerEditActive || Boolean(messageEdit)}
-                />
-                <div className="h-px" />
+                />}
               </div>
             </ScrollArea>
             <div
