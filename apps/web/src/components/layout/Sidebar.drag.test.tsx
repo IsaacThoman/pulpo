@@ -12,6 +12,8 @@ const actions = vi.hoisted(() => ({
   reorderFolderChats: vi.fn(),
   reorderFolders: vi.fn(),
   moveToFolder: vi.fn(),
+  pinChat: vi.fn(),
+  unpinChat: vi.fn(),
   toggleFolder: vi.fn(),
 }))
 
@@ -132,7 +134,7 @@ describe('sidebar chat dragging outside the rows', () => {
   })
 
   it('moves an unfiled chat to the top when dragged above the list', () => {
-    dragTo(chatRow('c'), 5)
+    dragTo(chatRow('c'), 170)
     expect(actions.reorderLooseChats).toHaveBeenCalledWith('c', 'a', 'before')
   })
 
@@ -150,6 +152,30 @@ describe('sidebar chat dragging outside the rows', () => {
   it('moves a folder chat into the unfiled list when dragged down there', () => {
     dragTo(chatRow('x1'), 10_000)
     expect(actions.moveToFolder).toHaveBeenCalledWith('x1', null, { targetId: 'c', edge: 'after' })
+  })
+
+  it('pins a chat dragged into the pinned section at that spot', () => {
+    dragTo(chatRow('b'), 5)
+    expect(actions.pinChat).toHaveBeenCalledWith('b', { targetId: 'p1', edge: 'before' })
+    dragTo(chatRow('x1'), 50, chatRow('p2'))
+    expect(actions.pinChat).toHaveBeenCalledWith('x1', { targetId: 'p2', edge: 'after' })
+    expect(actions.moveToFolder).not.toHaveBeenCalled()
+  })
+
+  it('unpins a pinned chat dragged into the unfiled list', () => {
+    dragTo(chatRow('p1'), 10_000)
+    expect(actions.unpinChat).toHaveBeenCalledWith('p1', null, { targetId: 'c', edge: 'after' })
+    dragTo(chatRow('p2'), 215, chatRow('b'))
+    expect(actions.unpinChat).toHaveBeenCalledWith('p2', null, { targetId: 'b', edge: 'before' })
+    expect(actions.reorderPinnedChats).not.toHaveBeenCalled()
+  })
+
+  it('unpins a pinned chat dropped on a folder or among its chats', () => {
+    dragTo(chatRow('p1'), 150, folderRow('f2'))
+    expect(actions.unpinChat).toHaveBeenCalledWith('p1', 'f2')
+    dragTo(chatRow('p2'), 145, chatRow('x2'))
+    expect(actions.unpinChat).toHaveBeenCalledWith('p2', 'f1', { targetId: 'x2', edge: 'after' })
+    expect(actions.moveToFolder).not.toHaveBeenCalled()
   })
 
   it('reorders folders from outside the folder rows', () => {
