@@ -16,7 +16,7 @@ const fixture = vi.hoisted(() => ({ sync: null as ComposerSync | null, showMessa
 vi.mock('@/lib/local-first/composer-sync', () => ({ webComposerSync: () => fixture.sync, clearWebComposerSync() {} }))
 vi.mock('@/components/chat/MessageList', async (importOriginal) => {
   const { MessageList } = await importOriginal<typeof import('@/components/chat/MessageList')>()
-  return { MessageList: (props: ComponentProps<typeof MessageList>) => fixture.showMessages ? <MessageList {...props} /> : null }
+  return { MessageList: (props: ComponentProps<typeof MessageList>) => fixture.showMessages ? <MessageList {...props} viewport={undefined} /> : null }
 })
 vi.mock('@/lib/local-first/shelf', () => ({ webShelf: () => null }))
 const { ChatPage } = await import('./ChatPage')
@@ -151,6 +151,7 @@ it.each([
   if (syncEnabled) enableSync()
   const view = renderChat(`/c/${chatId}`)
   await view.findByText('Original answer')
+  if (syncEnabled) await waitFor(() => expect(snapshots.has(chatId)).toBe(true))
   fireEvent.change(view.getByRole('textbox'), { target: { value: 'keep this unsent draft' } })
   for (const choice of ['Low', 'Fast']) {
     fireEvent.keyDown(view.getByRole('button', { name: 'Generation options' }), { key: 'ArrowDown' })

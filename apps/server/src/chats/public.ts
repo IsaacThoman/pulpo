@@ -1,6 +1,6 @@
 import type { EmbeddedResponseSnapshot, ResponseSnapshot } from '@pulpo/contracts'
 import type { chats, responses } from '../database/schema.js'
-import { lineageFromLeaf, metadataForTurn } from '../messages/branching.js'
+import { branchMetadataIndex, lineageFromLeaf, metadataForTurn } from '../messages/branching.js'
 import { toSnapshot } from '../responses/service.js'
 import { responseDisplayModelId } from './modelIdentity.js'
 
@@ -35,7 +35,7 @@ export interface PublicChatResponse {
 export function toPublicChatResponse(
   response: ResponseRow,
   allTurns: ResponseRow[],
-  options: { compact?: boolean; usageCost?: ResponseUsageCost } = {},
+  options: { compact?: boolean; usageCost?: ResponseUsageCost; branches?: ReturnType<typeof metadataForTurn> } = {},
 ): PublicChatResponse {
   const snapshot = toSnapshot(response)
   const { output: _duplicatedOutput, ...snapshotMarker } = snapshot
@@ -59,7 +59,7 @@ export function toPublicChatResponse(
     completedAt: response.completedAt?.toISOString() ?? null,
     agentMode: response.agentMode,
     snapshot: options.compact ? snapshotMarker : snapshot,
-    branches: metadataForTurn(allTurns, response),
+    branches: options.branches ?? metadataForTurn(allTurns, response),
     detailAvailable: true,
   }
 }
@@ -68,8 +68,9 @@ export function toPublicChatResponse(
 export function toPublicChatResponseStub(
   response: ResponseRow,
   allTurns: ResponseRow[],
+  branches?: ReturnType<typeof metadataForTurn>,
 ): PublicChatResponse {
-  const full = toPublicChatResponse(response, allTurns, { compact: true })
+  const full = toPublicChatResponse({ ...response, input: [], output: [] }, allTurns, { compact: true, branches: branches ?? metadataForTurn(allTurns, response) })
   return {
     ...full,
     input: [],
@@ -89,10 +90,12 @@ export function toPublicChatResponses(
   const activeIds = options.activeOnly
     ? new Set(lineageFromLeaf(allTurns, activeLeafId ?? allTurns.at(-1)?.id ?? null).map((response) => response.id))
     : undefined
+  const metadata = branchMetadataIndex(allTurns)
   return allTurns.map((response) => activeIds && !activeIds.has(response.id)
-    ? toPublicChatResponseStub(response, allTurns)
+    ? toPublicChatResponseStub(response, allTurns, metadata(response))
     : toPublicChatResponse(response, allTurns, {
         compact: options.compact,
+        branches: metadata(response),
         usageCost: options.usageCostsByResponseId?.get(response.id),
       }))
 }

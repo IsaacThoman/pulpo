@@ -157,6 +157,8 @@ const esUi: Record<string, string> = {
   "Use shorter test text for a preview of at most 30 seconds and 5 MiB": "Usa un texto de prueba más corto para una muestra de hasta 30 segundos y 5 MiB",
   "Test text exceeds this model’s limits": "El texto de prueba supera los límites de este modelo",
   "Model changed. Generate the preview again.": "El modelo ha cambiado. Genera la muestra de nuevo.",
+  'Retry loading earlier messages': 'Reintentar cargar mensajes anteriores',
+  'Loading earlier messages…': 'Cargando mensajes anteriores…',
   'Voice audio settings': 'Ajustes de audio de la voz',
   'Save this disabled model first, then discover voices or add a named voice and upload its cloning reference.': 'Guarda primero este modelo desactivado; después busca voces o añade una voz con nombre y sube su audio de referencia para clonarla.',
   "Voice operation failed": "No se pudo completar la operación de voz",
