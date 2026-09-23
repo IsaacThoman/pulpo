@@ -1,8 +1,9 @@
-export const PLATFORM_PERCENT_FEE = 0.05
+export const PLATFORM_PERCENT_FEE_BASIS_POINTS = 550
 export const PLATFORM_FIXED_FEE_CENTS = 50
 
 /**
- * Gross up a requested credit amount with Pulpo's 5% + $0.50 platform fee.
+ * Gross up a requested credit amount with Pulpo's 5.5% + $0.50 platform fee,
+ * where the percentage applies to the credit amount.
  * Checkout creation must repeat this calculation on the server.
  */
 export function chargeCentsForCredits(creditCents: number): number {
@@ -10,9 +11,9 @@ export function chargeCentsForCredits(creditCents: number): number {
     throw new Error('creditCents must be a non-negative integer')
   }
 
-  return Math.ceil(
-    (creditCents + PLATFORM_FIXED_FEE_CENTS) / (1 - PLATFORM_PERCENT_FEE),
-  )
+  return creditCents
+    + Math.ceil((creditCents * PLATFORM_PERCENT_FEE_BASIS_POINTS) / 10_000)
+    + PLATFORM_FIXED_FEE_CENTS
 }
 
 /** Parse a USD input with at most two decimal places without floating-point rounding. */

@@ -20,7 +20,8 @@ export function chargeCentsForCredits(creditCents: number): number {
   if (!Number.isSafeInteger(creditCents) || creditCents < MIN_TOP_UP_CENTS || creditCents > MAX_TOP_UP_CENTS) {
     throw new Error(`Credit amount must be between ${MIN_TOP_UP_CENTS} and ${MAX_TOP_UP_CENTS} cents`)
   }
-  return Math.ceil((creditCents + 50) / 0.95)
+  // 5.5% of the credit amount, rounded up to the cent, plus $0.50.
+  return creditCents + Math.ceil((creditCents * 550) / 10_000) + 50
 }
 
 export const AUTO_TOP_UP_MAX_THRESHOLD_CENTS = 50_000
