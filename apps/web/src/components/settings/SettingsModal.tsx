@@ -1063,6 +1063,9 @@ export function SettingsModal({
                   <Row label={ui("Show prompt suggestions")} hint={ui("Show suggested prompts in new chats.")}>
                     <Switch aria-label={ui("Show prompt suggestions")} checked={s.showPromptSuggestions} onCheckedChange={(v) => s.set('showPromptSuggestions', v)} />
                   </Row>
+                  <Row label={ui("Show model warnings")} hint={ui("Show notes from your administrator about the selected model above the composer.")}>
+                    <Switch aria-label={ui("Show model warnings")} checked={s.showModelWarnings} onCheckedChange={(v) => s.set('showModelWarnings', v)} />
+                  </Row>
                   <Row label={ui("Show reasoning")} hint="Show expandable thought/work activity above assistant replies.">
                     <Switch checked={s.showReasoning} onCheckedChange={(v) => s.set('showReasoning', v)} />
                   </Row>

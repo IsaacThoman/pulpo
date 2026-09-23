@@ -1,6 +1,6 @@
 {
-  "id": "6614b88e-f52a-45aa-a838-8aca50bafddd",
-  "prevId": "5c91b6ea-6bf2-4207-91fd-e0ba1d6aa3f4",
+  "id": "78005a28-8f4d-447d-89d6-b84b8685245c",
+  "prevId": "6614b88e-f52a-45aa-a838-8aca50bafddd",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1022,6 +1022,61 @@
           "primaryKey": false,
           "notNull": false
         },
+        "stripe_payment_method_id": {
+          "name": "stripe_payment_method_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "payment_method_brand": {
+          "name": "payment_method_brand",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "payment_method_last4": {
+          "name": "payment_method_last4",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "auto_top_up_enabled": {
+          "name": "auto_top_up_enabled",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "auto_top_up_threshold_cents": {
+          "name": "auto_top_up_threshold_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "auto_top_up_amount_cents": {
+          "name": "auto_top_up_amount_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "auto_top_up_monthly_limit_cents": {
+          "name": "auto_top_up_monthly_limit_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "auto_top_up_disabled_reason": {
+          "name": "auto_top_up_disabled_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "auto_top_up_disabled_at": {
+          "name": "auto_top_up_disabled_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -1086,6 +1141,26 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
+        "billing_accounts_auto_top_up_threshold_check": {
+          "name": "billing_accounts_auto_top_up_threshold_check",
+          "value": "\"billing_accounts\".\"auto_top_up_threshold_cents\" is null or \"billing_accounts\".\"auto_top_up_threshold_cents\" between 0 and 50000"
+        },
+        "billing_accounts_auto_top_up_amount_check": {
+          "name": "billing_accounts_auto_top_up_amount_check",
+          "value": "\"billing_accounts\".\"auto_top_up_amount_cents\" is null or \"billing_accounts\".\"auto_top_up_amount_cents\" between 500 and 50000"
+        },
+        "billing_accounts_auto_top_up_limit_check": {
+          "name": "billing_accounts_auto_top_up_limit_check",
+          "value": "\"billing_accounts\".\"auto_top_up_monthly_limit_cents\" is null or (\"billing_accounts\".\"auto_top_up_monthly_limit_cents\" between 500 and 500000 and \"billing_accounts\".\"auto_top_up_monthly_limit_cents\" >= coalesce(\"billing_accounts\".\"auto_top_up_amount_cents\", 0))"
+        },
+        "billing_accounts_auto_top_up_config_check": {
+          "name": "billing_accounts_auto_top_up_config_check",
+          "value": "not \"billing_accounts\".\"auto_top_up_enabled\" or (\"billing_accounts\".\"auto_top_up_threshold_cents\" is not null and \"billing_accounts\".\"auto_top_up_amount_cents\" is not null and \"billing_accounts\".\"auto_top_up_monthly_limit_cents\" is not null)"
+        },
+        "billing_accounts_auto_top_up_disabled_reason_check": {
+          "name": "billing_accounts_auto_top_up_disabled_reason_check",
+          "value": "\"billing_accounts\".\"auto_top_up_disabled_reason\" is null or \"billing_accounts\".\"auto_top_up_disabled_reason\" in ('payment_failed', 'payment_method_removed')"
+        },
         "billing_accounts_plan_override_check": {
           "name": "billing_accounts_plan_override_check",
           "value": "\"billing_accounts\".\"plan_override\" is null or \"billing_accounts\".\"plan_override\" in ('baby', 'eight', 'fat')"
@@ -1101,6 +1176,192 @@
         "billing_accounts_storage_override_check": {
           "name": "billing_accounts_storage_override_check",
           "value": "\"billing_accounts\".\"storage_limit_override_bytes\" is null or \"billing_accounts\".\"storage_limit_override_bytes\" >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.billing_auto_top_ups": {
+      "name": "billing_auto_top_ups",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'processing'"
+        },
+        "credit_cents": {
+          "name": "credit_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "charge_cents": {
+          "name": "charge_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "stripe_payment_method_id": {
+          "name": "stripe_payment_method_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "stripe_invoice_id": {
+          "name": "stripe_invoice_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "stripe_payment_intent_id": {
+          "name": "stripe_payment_intent_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "failure_code": {
+          "name": "failure_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "failure_message": {
+          "name": "failure_message",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "completed_at": {
+          "name": "completed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "billing_auto_top_ups_user_created_idx": {
+          "name": "billing_auto_top_ups_user_created_idx",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "billing_auto_top_ups_invoice_unique": {
+          "name": "billing_auto_top_ups_invoice_unique",
+          "columns": [
+            {
+              "expression": "stripe_invoice_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "billing_auto_top_ups_user_processing_unique": {
+          "name": "billing_auto_top_ups_user_processing_unique",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"billing_auto_top_ups\".\"status\" = 'processing'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "billing_auto_top_ups_processing_idx": {
+          "name": "billing_auto_top_ups_processing_idx",
+          "columns": [
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"billing_auto_top_ups\".\"status\" = 'processing'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "billing_auto_top_ups_user_id_users_id_fk": {
+          "name": "billing_auto_top_ups_user_id_users_id_fk",
+          "tableFrom": "billing_auto_top_ups",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "billing_auto_top_ups_status_check": {
+          "name": "billing_auto_top_ups_status_check",
+          "value": "\"billing_auto_top_ups\".\"status\" in ('processing', 'succeeded', 'failed')"
+        },
+        "billing_auto_top_ups_amount_check": {
+          "name": "billing_auto_top_ups_amount_check",
+          "value": "\"billing_auto_top_ups\".\"credit_cents\" > 0 and \"billing_auto_top_ups\".\"charge_cents\" >= \"billing_auto_top_ups\".\"credit_cents\""
         }
       },
       "isRLSEnabled": false
@@ -1175,6 +1436,13 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
+        },
+        "save_payment_method": {
+          "name": "save_payment_method",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         },
         "created_at": {
           "name": "created_at",
@@ -1271,7 +1539,7 @@
       "checkConstraints": {
         "billing_checkouts_kind_check": {
           "name": "billing_checkouts_kind_check",
-          "value": "\"billing_checkouts\".\"kind\" in ('credits', 'subscription')"
+          "value": "\"billing_checkouts\".\"kind\" in ('credits', 'subscription', 'payment_method')"
         }
       },
       "isRLSEnabled": false

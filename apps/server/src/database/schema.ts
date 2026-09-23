@@ -351,6 +351,8 @@ export const models = pgTable('models', {
   upstreamModelId: text('upstream_model_id').notNull(),
   name: text('name').notNull(),
   description: text('description').notNull().default(''),
+  warningMessage: text('warning_message').notNull().default(''),
+  warningDismissDays: integer('warning_dismiss_days').notNull().default(30),
   sortOrder: integer('sort_order').notNull().default(0),
   enabled: boolean('enabled').notNull().default(true),
   visible: boolean('visible').notNull().default(true),

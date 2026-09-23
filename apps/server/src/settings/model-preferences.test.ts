@@ -6,8 +6,16 @@ describe('account model preferences', () => {
     expect(preferencesWithModelDefaults({ theme: 'dark' })).toEqual({
       imageGeneration: { enabled: false, modelId: null }, speech: { modelId: null, models: {} }, theme: 'dark', animationSpeed: 1, automaticChatExpiration: '24h', newChatAutoExpire: false,
       sidebarPins: { usage: false, billing: false, friends: false, apiKeys: false },
-      agentModes: {}, instructionPresetSelections: {}, favoriteModelIds: [], providerOrder: [],
+      agentModes: {}, instructionPresetSelections: {}, modelWarningDismissals: {}, favoriteModelIds: [], providerOrder: [],
     })
+  })
+
+  it('validates model warning dismissals and repairs malformed stored maps', () => {
+    const dismissals = { opus: { at: '2026-09-22T00:00:00.000Z', hash: '0a1b2c3d' } }
+    expect(normalizedPreferencePatch({ modelWarningDismissals: dismissals })).toEqual({ modelWarningDismissals: dismissals })
+    expect(() => normalizedPreferencePatch({ modelWarningDismissals: { opus: { at: 'now', hash: 'x' } } })).toThrow()
+    expect(preferencesWithModelDefaults({ modelWarningDismissals: dismissals }).modelWarningDismissals).toEqual(dismissals)
+    expect(preferencesWithModelDefaults({ modelWarningDismissals: 'bad' }).modelWarningDismissals).toEqual({})
   })
 
   it('defaults malformed animation speeds and validates supplied patches', () => {

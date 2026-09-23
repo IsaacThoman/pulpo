@@ -47,6 +47,9 @@ export interface PrototypeModel {
   provider: string;
   lab: string;
   description: string;
+  /** Admin-configured markdown notice shown above the composer. */
+  warningMessage?: string;
+  warningDismissDays?: number;
   contextWindow: string;
   pricing: string;
   tags: string[];
@@ -144,6 +147,8 @@ export interface AppPreferences {
   sendWithEnter: boolean;
   streamResponses: boolean;
   showPromptSuggestions: boolean;
+  showModelWarnings: boolean;
+  modelWarningDismissals: import('@pulpo/contracts').ModelWarningDismissals;
   showReasoning: boolean;
   memoryEnabled: boolean;
   haptics: boolean;
