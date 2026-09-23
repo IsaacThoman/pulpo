@@ -2,7 +2,7 @@ import { memo, useMemo } from 'react'
 import { Linking, Platform, StyleSheet, type TextStyle, type ViewStyle } from 'react-native'
 import { EnrichedMarkdownText, type MarkdownStyle } from 'react-native-enriched-markdown'
 import { useAppTheme } from '../theme'
-import { beginsWithMarkdownHeading, normalizeMathDelimiters } from './markdown'
+import { beginsWithMarkdownHeading, normalizeMathDelimiters, unwrapBoxedMinipages } from './markdown'
 
 export const SafeMarkdown = memo(function SafeMarkdown({
   children,
@@ -24,7 +24,7 @@ export const SafeMarkdown = memo(function SafeMarkdown({
   const theme = useAppTheme()
   // Android's native inline math is a single bitmap span with no horizontal
   // gesture handling. Move wide formulas into the scrollable display-math view.
-  const markdown = useMemo(() => normalizeMathDelimiters(children, {
+  const markdown = useMemo(() => normalizeMathDelimiters(unwrapBoxedMinipages(children), {
     maxInlineMathLength: Platform.OS === 'android' ? 24 : undefined,
   }), [children])
   const markdownStyle = useMemo<MarkdownStyle>(() => {
