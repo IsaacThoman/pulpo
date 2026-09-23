@@ -110,7 +110,6 @@ export async function registerAdminUsageRoutes(app: FastifyInstance): Promise<vo
       lt(usageEvents.createdAt, cursor.createdAt),
       and(eq(usageEvents.createdAt, cursor.createdAt), lt(usageEvents.id, cursor.id)),
     ) : undefined
-    const attributedModelId = sql<string>`coalesce(${requestLogs.requestedModelId}, ${usageEvents.modelId})`
     const [rows, aliases] = await Promise.all([db.select({
       usage: usageEvents,
       userId: users.id,
@@ -125,8 +124,7 @@ export async function registerAdminUsageRoutes(app: FastifyInstance): Promise<vo
       modelVisible: models.visible,
     }).from(usageEvents)
       .innerJoin(users, eq(usageEvents.userId, users.id))
-      .leftJoin(requestLogs, eq(requestLogs.responseId, usageEvents.responseId))
-      .innerJoin(models, eq(models.id, attributedModelId))
+      .innerJoin(models, eq(models.id, usageEvents.requestedModelId))
       .where(and(...eligibleUsageFilters(start, null), cursorFilter))
       .orderBy(desc(usageEvents.createdAt), desc(usageEvents.id))
       .limit(query.limit + 1), loadUsageModelAliases()])

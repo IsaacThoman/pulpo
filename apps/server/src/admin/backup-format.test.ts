@@ -68,6 +68,20 @@ describe('full backup format', () => {
     expect(database.ocr_attempts[0]).toMatchObject({ request_payload: null, response_payload: null })
   })
 
+  it('attributes archived usage to the requested model rather than a fallback responder', () => {
+    const database: Record<string, Array<Record<string, unknown>>> = {
+      request_logs: [{ id: 'log', response_id: 'kept', requested_model_id: 'glm-flash' }],
+      usage_events: [
+        { response_id: 'kept', model_id: 'glm-flash-fireworks' },
+        { response_id: null, model_id: 'glm-flash-fireworks' },
+      ],
+    }
+
+    applyFullBackupCompatibilityDefaults(database)
+
+    expect(database.usage_events!.map((event) => event.requested_model_id)).toEqual(['glm-flash', 'glm-flash-fireworks'])
+  })
+
   it.each(['90d', 'indefinite'])('does not revive expired backup bodies under %s retention', (payloadRetention) => {
     const database = {
       request_logs: [{ id: 'log', created_at: new Date().toISOString(), capture_detailed_payloads: true, payload_expires_at: new Date(Date.now() - 1).toISOString(), request_payload: { secret: true } }],

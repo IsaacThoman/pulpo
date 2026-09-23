@@ -8,6 +8,7 @@ import {
   creditLedger,
   fiveHourUsagePeriods,
   modelPricingVersions,
+  requestLogs,
   responses,
   usageEvents,
   users,
@@ -367,12 +368,15 @@ export async function settleBudget(input: {
         eq(poolMembers.poolId, reservation.poolId), lte(poolMembers.joinedAt, reservation.createdAt),
         or(isNull(poolMembers.leftAt), gt(poolMembers.leftAt, reservation.createdAt)),
       )) : []
+    const [requestLog] = await tx.select({ requestedModelId: requestLogs.requestedModelId })
+      .from(requestLogs).where(eq(requestLogs.responseId, response.id)).limit(1)
     await tx.insert(usageEvents).values({
       id: newId(),
       userId: user.id,
       apiKeyId: reservation.apiKeyId,
       responseId: response.id,
       modelId: response.actualModelId ?? response.modelId,
+      requestedModelId: requestLog?.requestedModelId ?? response.modelId,
       pricingVersionId: pricing.id,
       inputTokens: input.usage.inputTokens,
       cachedInputTokens: input.usage.cachedInputTokens,
