@@ -1717,6 +1717,12 @@ const esUi: Record<string, string> = {
   "Add {{amount}} whenever your balance runs low.": "Añadir {{amount}} cada vez que tu saldo esté bajo.",
   "Auto top-up settings": "Ajustes de recarga automática",
   "Set up auto top-up": "Configurar recarga automática",
+  "Your card will be charged right away": "Se cobrará tu tarjeta de inmediato",
+  "Your balance of {{balance}} is already below {{threshold}}, so {{charge}} plus tax will be charged as soon as you add your card.": "Tu saldo de {{balance}} ya está por debajo de {{threshold}}, así que se cobrarán {{charge}} más impuestos en cuanto añadas tu tarjeta.",
+  "Your balance of {{balance}} is already below {{threshold}}, so {{charge}} plus tax will be charged as soon as you save.": "Tu saldo de {{balance}} ya está por debajo de {{threshold}}, así que se cobrarán {{charge}} más impuestos en cuanto guardes.",
+  "You'll add a card in a secure checkout.": "Añadirás una tarjeta en un pago seguro.",
+  "Save and charge {{charge}}": "Guardar y cobrar {{charge}}",
+  "Your balance after this purchase will still be below {{threshold}}, so an automatic top-up of {{charge}} plus tax will be charged right after checkout.": "Tu saldo tras esta compra seguirá por debajo de {{threshold}}, así que se cobrará una recarga automática de {{charge}} más impuestos justo después del pago.",
 }
 
 export default esUi

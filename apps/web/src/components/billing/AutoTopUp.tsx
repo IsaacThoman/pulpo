@@ -139,10 +139,12 @@ export function AutoTopUpStatus({ autoTopUp, className }: {
   )
 }
 
-export function AutoTopUpDialog({ open, onOpenChange, autoTopUp, onSaved }: {
+export function AutoTopUpDialog({ open, onOpenChange, autoTopUp, availableBalanceMicros, onSaved }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   autoTopUp: AutoTopUpSummary | undefined
+  /** The balance auto top-up compares against its threshold. */
+  availableBalanceMicros: number | undefined
   onSaved: () => Promise<void> | void
 }) {
   const [enabled, setEnabled] = useState(true)
@@ -171,6 +173,11 @@ export function AutoTopUpDialog({ open, onOpenChange, autoTopUp, onSaved }: {
   const chargeCents = amountCents !== null && validationError === null ? chargeCentsForCredits(amountCents) : null
   const paymentMethod = autoTopUp?.paymentMethod ?? null
   const needsCard = enabled && !paymentMethod
+  // Saving a threshold above the current balance tops up right away, unless this
+  // month's limit is already used up.
+  const chargesImmediately = enabled && chargeCents !== null && thresholdCents !== null && monthlyLimitCents !== null
+    && availableBalanceMicros !== undefined && availableBalanceMicros < thresholdCents * 10_000
+    && (autoTopUp?.monthSpentCents ?? 0) + chargeCents <= monthlyLimitCents
 
   const run = async (action: () => Promise<boolean>) => {
     setSubmitting(true)
@@ -255,6 +262,18 @@ export function AutoTopUpDialog({ open, onOpenChange, autoTopUp, onSaved }: {
             {validationError && <p className="text-xs text-destructive">{validationError}</p>}
           </div>
 
+          {chargesImmediately && (
+            <div className="flex items-start gap-2.5 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm" role="status">
+              <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-400" aria-hidden />
+              <div>
+                <div className="font-medium">{ui("Your card will be charged right away")}</div>
+                <p className="mt-0.5 text-xs text-muted-foreground">{needsCard
+                  ? ui("Your balance of {{balance}} is already below {{threshold}}, so {{charge}} plus tax will be charged as soon as you add your card.", { balance: formatBalance(availableBalanceMicros! / 1_000_000), threshold: dollars(thresholdCents!), charge: dollars(chargeCents!) })
+                  : ui("Your balance of {{balance}} is already below {{threshold}}, so {{charge}} plus tax will be charged as soon as you save.", { balance: formatBalance(availableBalanceMicros! / 1_000_000), threshold: dollars(thresholdCents!), charge: dollars(chargeCents!) })}</p>
+              </div>
+            </div>
+          )}
+
           <div className="space-y-2 rounded-lg bg-muted/50 p-4 text-sm">
             {paymentMethod ? (
               <div className="flex items-center justify-between gap-3">
@@ -265,7 +284,9 @@ export function AutoTopUpDialog({ open, onOpenChange, autoTopUp, onSaved }: {
                 </span>
               </div>
             ) : (
-              <p className="text-xs text-muted-foreground">{ui("You'll add a card in a secure checkout. It won't be charged until your balance falls below your threshold.")}</p>
+              <p className="text-xs text-muted-foreground">{chargesImmediately
+                ? ui("You'll add a card in a secure checkout.")
+                : ui("You'll add a card in a secure checkout. It won't be charged until your balance falls below your threshold.")}</p>
             )}
             {enabled && <p className="text-xs text-muted-foreground">{ui("By turning on auto top-up, you authorize Pulpo to charge this card whenever your balance falls below your threshold, up to your monthly limit. Sales tax is added to each charge. You can turn this off at any time.")}</p>}
           </div>
@@ -278,7 +299,9 @@ export function AutoTopUpDialog({ open, onOpenChange, autoTopUp, onSaved }: {
           <Button variant="outline" disabled={submitting} onClick={() => onOpenChange(false)}>{ui("Cancel")}</Button>
           <Button disabled={submitting || validationError !== null} onClick={() => void save()}>
             {submitting && <Loader2 className="animate-spin" />}
-            {needsCard ? ui("Save and add card") : ui("Save")}
+            {needsCard
+              ? ui("Save and add card")
+              : chargesImmediately ? ui("Save and charge {{charge}}", { charge: dollars(chargeCents!) }) : ui("Save")}
           </Button>
         </DialogFooter>
       </DialogContent>

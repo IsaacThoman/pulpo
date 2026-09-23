@@ -858,6 +858,12 @@ export async function processStripeWebhookEvent(event: Stripe.Event): Promise<vo
       ...change,
       scopes: ['usage', 'pool', 'billing'],
     })))
+    if (changes.length) {
+      // A newly saved card tops up right away when the balance is already below the
+      // threshold. Imported lazily because auto top-ups record payments through here.
+      const { queueAutoTopUpChecks } = await import('./auto-top-up.js')
+      await queueAutoTopUpChecks(changes.map((change) => change.userId))
+    }
   } catch (error) {
     const message = error instanceof Error ? error.message.slice(0, 2_000) : String(error).slice(0, 2_000)
     await db.insert(billingWebhookEvents).values({

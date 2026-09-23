@@ -141,6 +141,12 @@ export function BillingPage() {
       setAutoLimitInput((defaultAutoTopUpSettings(undefined, creditCents).monthlyLimitCents / 100).toFixed(2))
     }
   }
+  // The purchase lands first; a threshold above the resulting balance tops up right away.
+  const balanceAfterPurchaseMicros = availableAccountBalanceMicros !== undefined && creditCents !== null
+    ? availableAccountBalanceMicros + creditCents * 10_000
+    : null
+  const purchaseTopsUpImmediately = saveCardForAutoTopUp && autoThresholdCents !== null && balanceAfterPurchaseMicros !== null
+    && balanceAfterPurchaseMicros < autoThresholdCents * 10_000
   const autoTopUpFormError = saveCardForAutoTopUp
     ? autoTopUpSettingsError({ thresholdCents: autoThresholdCents, amountCents: creditCents, monthlyLimitCents: autoLimitCents })
     : null
@@ -388,6 +394,9 @@ export function BillingPage() {
                       <div className="space-y-1.5"><Label htmlFor="purchase-auto-limit" className="text-xs">{ui("Monthly limit")}</Label><MoneyInput id="purchase-auto-limit" value={autoLimitInput} onChange={setAutoLimitInput} invalid={autoLimitCents === null} /></div>
                     </div>
                     {autoTopUpFormError && <p className="text-xs text-destructive">{autoTopUpFormError}</p>}
+                    {!autoTopUpFormError && purchaseTopsUpImmediately && (
+                      <p className="flex items-start gap-1.5 text-xs text-amber-700 dark:text-amber-300"><AlertTriangle className="mt-0.5 size-3 shrink-0" aria-hidden />{ui("Your balance after this purchase will still be below {{threshold}}, so an automatic top-up of {{charge}} plus tax will be charged right after checkout.", { threshold: formatBalance(autoThresholdCents! / 100), charge: formatBalance(chargeAmount) })}</p>
+                    )}
                     <p className="text-xs text-muted-foreground">{ui("By turning on auto top-up, you authorize Pulpo to charge this card whenever your balance falls below your threshold, up to your monthly limit. Sales tax is added to each charge. You can turn this off at any time.")}</p>
                   </>}
                 </div>
@@ -406,6 +415,7 @@ export function BillingPage() {
           if (!open && autoTopUpReturned && !checkoutReturned) navigate('/billing', { replace: true })
         }}
         autoTopUp={summary?.autoTopUp}
+        availableBalanceMicros={summary?.availableBalanceMicros}
         onSaved={refreshBilling}
       />
 
