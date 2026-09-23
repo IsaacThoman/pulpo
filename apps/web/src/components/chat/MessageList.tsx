@@ -78,6 +78,18 @@ function VirtualMessages({ viewport, ...props }: MessageListProps & { viewport: 
     let previousTop = viewport.scrollTop
     let measuredHeight = viewport.scrollHeight
     let measuredViewport = viewport.clientHeight
+    // Confirm the rendered bottom as well; warming must not depend on receiving
+    // a single initial endReached notification from the virtualizer.
+    let initialBottomObserved = false
+    const markInitialBottom = () => {
+      if (initialBottomObserved || viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight > 96) return
+      const last = [...content.querySelectorAll<HTMLElement>('[data-message-id]')]
+        .find(row => row.dataset.messageId === currentIds.current.at(-1))
+      if (last && last.getBoundingClientRect().bottom <= viewport.getBoundingClientRect().bottom + 96) {
+        initialBottomObserved = true
+        setReadyVersion(lineage.current.version)
+      }
+    }
     const captureAnchor = () => {
       if (resizing || content.getBoundingClientRect().width !== width) return
       const top = viewport.getBoundingClientRect().top
@@ -87,6 +99,7 @@ function VirtualMessages({ viewport, ...props }: MessageListProps & { viewport: 
     }
     const onScroll = () => {
       if (resizing || content.getBoundingClientRect().width !== width) return
+      markInitialBottom()
       const nearBottom = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < 96
       const geometryChanged = viewport.scrollHeight !== measuredHeight || viewport.clientHeight !== measuredViewport
       // Measurement corrections also emit scroll events; they are not an instruction to stop following.
@@ -108,6 +121,7 @@ function VirtualMessages({ viewport, ...props }: MessageListProps & { viewport: 
     viewport.addEventListener('scroll', onScroll, { passive: true, capture: true })
     viewport.addEventListener('wheel', onWheel, { passive: true, capture: true })
     const observer = new ResizeObserver(() => {
+      markInitialBottom()
       const nextWidth = content.getBoundingClientRect().width
       const nextHeight = viewport.clientHeight
       if (nextWidth === width) {
@@ -127,6 +141,7 @@ function VirtualMessages({ viewport, ...props }: MessageListProps & { viewport: 
     observer.observe(content)
     observer.observe(viewport)
     captureAnchor()
+    markInitialBottom()
     return () => {
       viewport.removeEventListener('scroll', onScroll, true)
       viewport.removeEventListener('wheel', onWheel, true)
