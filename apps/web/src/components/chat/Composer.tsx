@@ -1021,7 +1021,7 @@ export function Composer({
       )}
       {recovery && (
         <div className={cn(
-          'flex items-center gap-2 rounded-t-2xl border border-b-0 px-3 py-2 text-sm shadow-sm',
+          '-mb-3 flex items-center gap-2 rounded-t-2xl border border-b-0 px-3 pt-2 pb-5 text-sm shadow-sm',
           uploadFailed || recovery.recoveryError ? 'border-destructive/30 bg-destructive/5' : 'bg-card',
         )}>
           {uploadFailed || recovery.recoveryError
@@ -1046,7 +1046,7 @@ export function Composer({
         </div>
       )}
       {messageEdit && (
-        <div className="flex items-center gap-2 rounded-t-2xl border border-b-0 bg-card px-3 py-2 text-sm shadow-sm">
+        <div className="-mb-3 flex items-center gap-2 rounded-t-2xl border border-b-0 bg-card px-3 pt-2 pb-5 text-sm shadow-sm">
           <Pencil className="size-3.5 text-muted-foreground" />
           <span className="flex-1 font-medium">{ui("Editing message")}</span>
           <button
