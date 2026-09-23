@@ -1019,15 +1019,14 @@ export const useChat = create<ChatState>()((set, get) => ({
           .filter(([, chatId]) => chatId === row.id)
           .map(([responseId]) => responseId),
       )
-      const chat = toChat(
-        row,
-        state.chats.find((item) => item.id === row.id),
-        responseSequences,
-        state.streamingIds,
-        durableResponseIds,
-      )
-      const exists = state.chats.some((item) => item.id === row.id)
-      const chats = exists ? state.chats.map((item) => item.id === row.id ? chat : item) : [chat, ...state.chats]
+      const current = state.chats.find((item) => item.id === row.id)
+      const fromDetail = toChat(row, current, responseSequences, state.streamingIds, durableResponseIds)
+      // Detail rows are often served from a cache that predates reorders, pins, or folder moves, so
+      // the summary list and local mutations stay authoritative for where a known chat sits in the sidebar.
+      const chat = current
+        ? { ...fromDetail, pinned: current.pinned, folderId: current.folderId, sortOrder: current.sortOrder }
+        : fromDetail
+      const chats = current ? state.chats.map((item) => item.id === row.id ? chat : item) : [chat, ...state.chats]
       return {
         chats,
         streamingIds: reconcileStreamingResponseIds(chats, state.streamingIds, row),
