@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { BookOpen } from 'lucide-react'
+import { BookOpen, LaptopMinimal } from 'lucide-react'
 import { DownloadButton } from '@/components/DownloadButton'
 import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/i18n/useAppTranslation'
@@ -59,7 +59,7 @@ export function LandingContent({ instanceName, signupEnabled }: { instanceName: 
           <div className="mt-8 flex w-full max-w-xs flex-col gap-3 sm:w-auto sm:max-w-none sm:flex-row">
             <DownloadButton />
             <Button asChild size="lg" variant="outline">
-              <Link to="/login">{ui("Log in on the web")}</Link>
+              <Link to="/login"><LaptopMinimal />{ui("Launch in browser")}</Link>
             </Button>
           </div>
         </section>

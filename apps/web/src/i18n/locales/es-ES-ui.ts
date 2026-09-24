@@ -1710,7 +1710,7 @@ const esUi: Record<string, string> = {
   "your card couldn't be charged.": "no se pudo cobrar tu tarjeta.",
   "Auto top-up turned off because your saved card was removed.": "La recarga automática se desactivó porque se eliminó tu tarjeta guardada.",
   "Docs": "Documentación",
-  "Log in on the web": "Iniciar sesión en la web",
+  "Launch in browser": "Abrir en el navegador",
   "Open-source chatbot for everyday use": "Chatbot de código abierto para el día a día",
   "Pulpo comes with native mobile apps, fast disposable workspaces, and broad model support. Everything stays perfectly in sync.": "Pulpo incluye apps móviles nativas, espacios de trabajo desechables y rápidos, y compatibilidad con una amplia variedad de modelos. Todo se mantiene perfectamente sincronizado.",
   "Download for {{0}}": "Descargar para {{0}}",
