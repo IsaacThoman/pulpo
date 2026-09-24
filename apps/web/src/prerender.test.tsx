@@ -21,6 +21,7 @@ describe('landing pre-render', () => {
     expect(html).toContain('href="https://github.com/IsaacThoman/pulpo/releases/latest"')
     expect(html).not.toContain('href="/signup"')
     expect(html).toContain("localStorage.getItem('pulpo-profile')")
+    expect(html).toMatch(/<script>[^<]*prefers-color-scheme: dark[^<]*<\/script>.*<\/head>/s)
   })
 
   it('adds SoftwareApplication structured data', async () => {

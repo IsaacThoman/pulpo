@@ -21,6 +21,10 @@ const STRUCTURED_DATA = {
   sameAs: [GITHUB_URL, APP_STORE_URL],
 }
 
+// Applies the system theme before first paint so dark-mode visitors never see the light page flash.
+// Signed-in visitors are left to the app, which applies their saved theme.
+const SYSTEM_THEME = `<script>try{if(!localStorage.getItem('pulpo-profile')&&matchMedia('(prefers-color-scheme: dark)').matches)document.documentElement.classList.add('dark')}catch(e){}</script>`
+
 // Signed-in visitors should not see the landing page flash before the app mounts, so the
 // pre-rendered markup is dropped when the auth store's cached profile is present.
 const SIGNED_IN_GUARD = `<script>try{if(localStorage.getItem('pulpo-profile'))document.getElementById('root').replaceChildren()}catch(e){}</script>`
@@ -40,6 +44,6 @@ export async function renderLandingDocument(indexHtml: string): Promise<string> 
   return indexHtml
     .replace(/<title>[^<]*<\/title>/, `<title>${title}</title>`)
     .replace(/<meta property="og:title" content="[^"]*" \/>/, `<meta property="og:title" content="${title}" />`)
-    .replace('</head>', `<script type="application/ld+json">${JSON.stringify(STRUCTURED_DATA).replace(/</g, '\\u003c')}</script></head>`)
+    .replace('</head>', `${SYSTEM_THEME}<script type="application/ld+json">${JSON.stringify(STRUCTURED_DATA).replace(/</g, '\\u003c')}</script></head>`)
     .replace(EMPTY_ROOT, `<div id="root">${markup}</div>${SIGNED_IN_GUARD}`)
 }

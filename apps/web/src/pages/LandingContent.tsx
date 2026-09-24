@@ -17,8 +17,11 @@ function GithubIcon() {
 function Screenshot({ name, alt }: { name: string; alt: string }) {
   return (
     <div className="overflow-hidden rounded-xl border bg-card shadow-2xl shadow-black/10 dark:shadow-black/40">
-      <img src={`/landing/${name}-light.webp`} alt={alt} width={1440} height={900} className="block h-auto w-full dark:hidden" decoding="async" />
-      <img src={`/landing/${name}-dark.webp`} alt={alt} width={1440} height={900} className="hidden h-auto w-full dark:block" decoding="async" />
+      {/* The landing page always follows the system theme, so the browser can pick the matching image itself. */}
+      <picture>
+        <source srcSet={`/landing/${name}-dark.webp`} media="(prefers-color-scheme: dark)" />
+        <img src={`/landing/${name}-light.webp`} alt={alt} width={1440} height={900} className="block h-auto w-full" decoding="async" />
+      </picture>
     </div>
   )
 }
