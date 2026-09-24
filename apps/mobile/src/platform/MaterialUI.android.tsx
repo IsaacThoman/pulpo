@@ -1,5 +1,6 @@
-import { Fragment, useEffect, useImperativeHandle, useRef, useState, useSyncExternalStore } from 'react';
-import { Keyboard, KeyboardAvoidingView, Modal, Pressable, ScrollView, StyleSheet, Text as RNText, View, useWindowDimensions } from 'react-native';
+import { Fragment, useEffect, useImperativeHandle, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { Keyboard, KeyboardAvoidingView, Modal, ScrollView, StyleSheet, Text as RNText, View, useWindowDimensions } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   AlertDialog, Box, Button, Card, Column, DropdownMenu, DropdownMenuItem, FilledIconButton,
@@ -168,8 +169,20 @@ export function MaterialLoading() { return <Host style={{ width: 48, height: 48 
 
 export function MaterialContextMenu({ title, actions, children, style }: ContextMenuProps) {
   const trigger = useRef<View>(null);
+  const menu = useRef({ title, actions });
+  menu.current = { title, actions };
+  // A Pressable would take the JS responder on touch down, and on Fabric the
+  // responder view then intercepts every later move from its native children.
+  // That cancels horizontal scrollers inside messages (display math, tables)
+  // unless the drag outruns the responder grant. A native long-press gesture
+  // yields to those scrollers instead.
+  const longPress = useMemo(() => Gesture.LongPress().runOnJS(true).onStart((event) => {
+    showActions(menu.current.title, menu.current.actions, { x: event.absoluteX, y: event.absoluteY });
+  }), []);
   const openForAccessibility = () => trigger.current?.measureInWindow((x, y, width, height) => showActions(title, actions, { x: x + width / 2, y: y + height / 2 }));
-  return <Pressable ref={trigger} style={style} onLongPress={(event) => showActions(title, actions, { x: event.nativeEvent.pageX, y: event.nativeEvent.pageY })} accessibilityActions={[{name: 'longpress', label: 'Show actions'}]} onAccessibilityAction={openForAccessibility}>{children}</Pressable>;
+  return <GestureDetector gesture={longPress}>
+    <View ref={trigger} collapsable={false} accessible style={style} accessibilityActions={[{name: 'longpress', label: 'Show actions'}]} onAccessibilityAction={openForAccessibility}>{children}</View>
+  </GestureDetector>;
 }
 function MenuItems({ actions, onDismiss, onSelect }: { actions: Action[]; onDismiss?: () => void; onSelect?: (action: Action) => void }) {
   const colors = useMaterialColors();
