@@ -357,6 +357,81 @@ html[data-desktop="true"] .desktop-sidebar-collapsed .chat-header::before {
   }
 }
 
+/* Syntax highlighting (GitHub Dark) — code surfaces stay dark in both app themes */
+.code-highlight .hljs-doctag,
+.code-highlight .hljs-keyword,
+.code-highlight .hljs-meta .hljs-keyword,
+.code-highlight .hljs-template-tag,
+.code-highlight .hljs-template-variable,
+.code-highlight .hljs-type,
+.code-highlight .hljs-variable.language_ {
+  color: #ff7b72;
+}
+.code-highlight .hljs-title,
+.code-highlight .hljs-title.class_,
+.code-highlight .hljs-title.class_.inherited__,
+.code-highlight .hljs-title.function_ {
+  color: #d2a8ff;
+}
+.code-highlight .hljs-attr,
+.code-highlight .hljs-attribute,
+.code-highlight .hljs-literal,
+.code-highlight .hljs-meta,
+.code-highlight .hljs-number,
+.code-highlight .hljs-operator,
+.code-highlight .hljs-property,
+.code-highlight .hljs-selector-attr,
+.code-highlight .hljs-selector-class,
+.code-highlight .hljs-selector-id,
+.code-highlight .hljs-variable {
+  color: #79c0ff;
+}
+.code-highlight .hljs-meta .hljs-string,
+.code-highlight .hljs-regexp,
+.code-highlight .hljs-string {
+  color: #a5d6ff;
+}
+.code-highlight .hljs-built_in,
+.code-highlight .hljs-symbol {
+  color: #ffa657;
+}
+.code-highlight .hljs-code,
+.code-highlight .hljs-comment,
+.code-highlight .hljs-formula {
+  color: #8b949e;
+  font-style: italic;
+}
+.code-highlight .hljs-name,
+.code-highlight .hljs-quote,
+.code-highlight .hljs-selector-pseudo,
+.code-highlight .hljs-selector-tag {
+  color: #7ee787;
+}
+.code-highlight .hljs-subst {
+  color: inherit;
+}
+.code-highlight .hljs-section {
+  color: #1f6feb;
+  font-weight: 600;
+}
+.code-highlight .hljs-bullet {
+  color: #f2cc60;
+}
+.code-highlight .hljs-emphasis {
+  font-style: italic;
+}
+.code-highlight .hljs-strong {
+  font-weight: 600;
+}
+.code-highlight .hljs-addition {
+  color: #aff5b4;
+  background-color: #033a16;
+}
+.code-highlight .hljs-deletion {
+  color: #ffdcd7;
+  background-color: #67060c;
+}
+
 /* KaTeX */
 .katex {
   font-size: 1.1em;

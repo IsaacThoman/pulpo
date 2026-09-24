@@ -6,6 +6,7 @@ import rehypeKatex from 'rehype-katex'
 import { Check, Copy, Play } from 'lucide-react'
 import { normalizeMathDelimiters, unwrapBoxedMinipages } from '@pulpo/client-core'
 import 'katex/dist/katex.min.css'
+import { HighlightedCode } from '@/components/chat/HighlightedCode'
 import { ui } from '@/i18n/ui'
 import { writeClipboardText } from '@/lib/clipboard'
 import { previewKindForLanguage, previewTitle } from '@/lib/code-preview'
@@ -46,7 +47,7 @@ function CodeBlock({ language, code }: { language: string; code: string }) {
         </button>
       </div>
       <pre className="max-w-full overflow-x-auto p-3 text-[13px] leading-relaxed text-zinc-100">
-        <code className="font-mono">{code}</code>
+        <code className="code-highlight font-mono"><HighlightedCode code={code} language={language} /></code>
       </pre>
     </div>
   )
@@ -56,7 +57,7 @@ function CodeBlock({ language, code }: { language: string; code: string }) {
 const markdownComponents: Components = {
   pre: ({ children }) => <>{children}</>,
   code({ className, children, ...props }) {
-    const match = /language-(\w+)/.exec(className || '')
+    const match = /language-([\w+#.-]+)/.exec(className || '')
     const text = String(children).replace(/\n$/, '')
     if (match?.[1] === 'math') {
       return (
