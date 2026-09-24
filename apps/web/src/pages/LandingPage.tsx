@@ -57,10 +57,10 @@ export function LandingPage() {
       </header>
 
       <main>
-        <section className="mx-auto flex max-w-3xl flex-col items-center px-4 pt-12 pb-12 text-center sm:px-8 sm:pt-20">
-          <img src="/pulpo-smiley.png" alt="" className="size-16 sm:size-20" />
-          <h1 className="mt-6 text-4xl font-semibold tracking-tight text-balance sm:text-5xl">{ui("Pulpo")}</h1>
-          <p className="mt-4 max-w-xl text-base text-pretty text-muted-foreground sm:text-lg">{ui("A minimal, open-source, agentic chatbot interface with apps for web, desktop, and mobile.")}</p>
+        <section className="mx-auto flex max-w-5xl flex-col items-center px-4 pt-12 pb-10 text-center sm:px-8 sm:pt-16 sm:pb-12">
+          {/* "open‑source" uses a non-breaking hyphen so the headline never wraps mid-word. */}
+          <h1 className="text-4xl font-semibold tracking-tight text-balance sm:text-5xl">{ui("A minimal, open‑source, agentic chatbot.")}</h1>
+          <p className="mt-4 text-base text-pretty text-muted-foreground sm:text-lg">{ui("Apps for web, desktop, and mobile.")}</p>
         </section>
 
         <section className="mx-auto max-w-6xl px-4 pb-16 sm:px-8 md:pb-24">
