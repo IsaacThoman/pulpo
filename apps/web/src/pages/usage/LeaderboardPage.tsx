@@ -85,6 +85,30 @@ function displayName(u: MonitorUser): string {
   return u.name
 }
 
+const AXIS_FONT_SIZE = 11
+const AXIS_LABEL_ANGLE = 35
+const AXIS_LABEL_MAX_CHARS = 20
+const Y_AXIS_WIDTH = 48
+
+/** long names are ellipsized on the axis; the tooltip keeps the full name */
+function axisLabel(name: string): string {
+  const chars = Array.from(name)
+  return chars.length > AXIS_LABEL_MAX_CHARS ? `${chars.slice(0, AXIS_LABEL_MAX_CHARS - 1).join('')}…` : name
+}
+
+let measureContext: CanvasRenderingContext2D | null | undefined
+function axisLabelWidth(text: string): number {
+  if (measureContext === undefined) {
+    try {
+      measureContext = typeof document === 'undefined' ? null : document.createElement('canvas').getContext('2d')
+      if (measureContext) measureContext.font = `${AXIS_FONT_SIZE}px ${getComputedStyle(document.body).fontFamily}`
+    } catch {
+      measureContext = null
+    }
+  }
+  return measureContext?.measureText(text).width ?? text.length * AXIS_FONT_SIZE * 0.6
+}
+
 function barColor(u: MonitorUser): string {
   return u.profileColor ?? automaticProfileColor(u.id)
 }
@@ -248,6 +272,19 @@ export function LeaderboardPage({ scope = 'friends' }: { scope?: 'friends' | 'po
       })),
     [rows, metric]
   )
+  // Rotated labels hang below and to the left of their tick, so reserve room
+  // for the longest one and for the first one past the y-axis.
+  const angledLabels = chartData.length > 8
+  const axisSpace = useMemo(() => {
+    if (!angledLabels) return { height: 30, left: 4 }
+    const rad = (AXIS_LABEL_ANGLE * Math.PI) / 180
+    const widths = chartData.map((d) => axisLabelWidth(axisLabel(d.name)))
+    const longest = Math.max(0, ...widths)
+    return {
+      height: Math.ceil(longest * Math.sin(rad) + AXIS_FONT_SIZE * Math.cos(rad)) + 12,
+      left: Math.max(4, Math.ceil((widths[0] ?? 0) * Math.cos(rad)) - Y_AXIS_WIDTH),
+    }
+  }, [angledLabels, chartData])
   const hasOtherParticipants = rows.some((row) => row.user.id !== currentUserId)
   const hasRankingParticipants = instanceMode ? rows.length > 0 : hasOtherParticipants
 
@@ -296,25 +333,26 @@ export function LeaderboardPage({ scope = 'friends' }: { scope?: 'friends' | 'po
             {!instanceMode && <Button asChild size="sm" variant="outline"><Link to="/friends">{scope === 'pool' ? ui("Manage Pool") : ui("Find friends")}</Link></Button>}
           </div>
         ) : (
-          <div className="h-[250px]">
+          <div style={{ height: 220 + axisSpace.height }}>
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={chartData} margin={{ top: 4, right: 4, left: 4, bottom: 0 }}>
+              <BarChart data={chartData} margin={{ top: 4, right: 4, left: axisSpace.left, bottom: 0 }}>
                 <CartesianGrid vertical={false} stroke="var(--border)" />
                 <XAxis
                   dataKey="name"
-                  tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }}
+                  tick={{ fontSize: AXIS_FONT_SIZE, fill: 'var(--muted-foreground)' }}
                   tickLine={false}
                   axisLine={{ stroke: 'var(--border)' }}
                   interval={0}
-                  angle={chartData.length > 8 ? -35 : 0}
-                  textAnchor={chartData.length > 8 ? 'end' : 'middle'}
-                  height={chartData.length > 8 ? 60 : 30}
+                  tickFormatter={axisLabel}
+                  angle={angledLabels ? -AXIS_LABEL_ANGLE : 0}
+                  textAnchor={angledLabels ? 'end' : 'middle'}
+                  height={axisSpace.height}
                 />
                 <YAxis
                   tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }}
                   tickLine={false}
                   axisLine={{ stroke: 'var(--border)' }}
-                  width={48}
+                  width={Y_AXIS_WIDTH}
                   tickFormatter={(v: number) =>
                     metric === 'balance'
                       ? formatBalance(v)
