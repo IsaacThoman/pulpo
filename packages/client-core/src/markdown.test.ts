@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { normalizeMathDelimiters } from './markdown.js'
+import { normalizeMathDelimiters, unwrapBoxedMinipages } from './markdown.js'
 
 describe('normalizeMathDelimiters', () => {
   it('preserves paired single-dollar inline math', () => {
@@ -121,5 +121,46 @@ $$a \\[2pt] b$$
     expect(normalized).toContain(inlineCode)
     expect(normalized).toContain(String.raw`$F_x$
 \[block\]`)
+  })
+})
+
+describe('unwrapBoxedMinipages', () => {
+  it('renders prose and nested equations from a boxed LaTeX document separately', () => {
+    const source = String.raw`Intro.
+
+\[
+\boxed{
+\begin{minipage}{0.98\linewidth}
+\textbf{Problem.}
+Let \(x+y\) be known.
+\[
+z=x+y
+\]
+\begin{enumerate}
+\item Find \(z\).
+\end{enumerate}
+\end{minipage}
+}
+\]`
+
+    const normalized = normalizeMathDelimiters(unwrapBoxedMinipages(source))
+    expect(normalized).toContain('**Problem.**')
+    expect(normalized).toContain('Let $x+y$ be known.')
+    expect(normalized).toContain('$$z=x+y$$')
+    expect(normalized).toContain('**1.** Find $z$.')
+    expect(normalized).not.toContain('\\begin{minipage}')
+    expect(normalized).not.toContain('\\boxed')
+  })
+
+  it('leaves ordinary boxed math and fenced examples unchanged', () => {
+    const boxed = String.raw`\[\boxed{x+y}\]`
+    const example = '```latex\n' + String.raw`\[\boxed{\begin{minipage}{1\linewidth}example\end{minipage}}\]` + '\n```'
+    expect(unwrapBoxedMinipages(`${boxed}\n\n${example}`)).toBe(`${boxed}\n\n${example}`)
+  })
+  it('bolds a heading that shares its line with prose', () => {
+    const source = String.raw`\[\boxed{\begin{minipage}{0.98\linewidth}
+\textbf{Problem.} Let $n\ge 3$.
+\end{minipage}}\]`
+    expect(unwrapBoxedMinipages(source).trim()).toBe(String.raw`**Problem.** Let $n\ge 3$.`)
   })
 })

@@ -21,7 +21,7 @@ import {
   type User,
 } from '@pulpo/contracts'
 
-export { normalizeMathDelimiters, type MathDelimiterOptions } from './markdown.js'
+export { normalizeMathDelimiters, unwrapBoxedMinipages, type MathDelimiterOptions } from './markdown.js'
 export { deviceTimeZone } from './time-zone.js'
 export { createUploadQueue, retryBusyUpload } from './upload-queue.js'
 export { mergePendingAttachments } from './attachment-order.js'
