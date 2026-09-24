@@ -14,12 +14,11 @@ function GithubIcon() {
   )
 }
 
-function Screenshot({ name, alt, eager = false }: { name: string; alt: string; eager?: boolean }) {
-  const loading = eager ? 'eager' : 'lazy'
+function Screenshot({ name, alt }: { name: string; alt: string }) {
   return (
     <div className="overflow-hidden rounded-xl border bg-card shadow-2xl shadow-black/10 dark:shadow-black/40">
-      <img src={`/landing/${name}-light.webp`} alt={alt} width={1440} height={900} className="block h-auto w-full dark:hidden" loading={loading} decoding="async" />
-      <img src={`/landing/${name}-dark.webp`} alt={alt} width={1440} height={900} className="hidden h-auto w-full dark:block" loading={loading} decoding="async" />
+      <img src={`/landing/${name}-light.webp`} alt={alt} width={1440} height={900} className="block h-auto w-full dark:hidden" decoding="async" />
+      <img src={`/landing/${name}-dark.webp`} alt={alt} width={1440} height={900} className="hidden h-auto w-full dark:block" decoding="async" />
     </div>
   )
 }
@@ -69,25 +68,8 @@ export function LandingPage() {
           </div>
         </section>
 
-        <section className="mx-auto max-w-6xl px-4 sm:px-8">
-          <Screenshot eager name="chat" alt={ui("A Pulpo conversation with a formatted answer and code")} />
-        </section>
-
-        <section className="mx-auto grid max-w-6xl gap-10 px-4 py-16 sm:px-8 md:grid-cols-2 md:gap-8 md:py-24">
-          <figure>
-            <Screenshot name="agent" alt={ui("Pulpo Agent running Python to answer a question")} />
-            <figcaption className="mt-4">
-              <h2 className="font-semibold">{ui("Agents that do the work")}</h2>
-              <p className="mt-1 text-sm text-muted-foreground">{ui("Pulpo Agent runs code in a sandboxed workspace and shows every step it takes.")}</p>
-            </figcaption>
-          </figure>
-          <figure>
-            <Screenshot name="table" alt={ui("A comparison table in a Pulpo answer")} />
-            <figcaption className="mt-4">
-              <h2 className="font-semibold">{ui("Answers that read well")}</h2>
-              <p className="mt-1 text-sm text-muted-foreground">{ui("Tables, math, and code render cleanly, and every chat stays searchable.")}</p>
-            </figcaption>
-          </figure>
+        <section className="mx-auto max-w-6xl px-4 pb-16 sm:px-8 md:pb-24">
+          <Screenshot name="chat" alt={ui("A Pulpo conversation with a formatted answer and code")} />
         </section>
       </main>
 
