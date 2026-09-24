@@ -3,8 +3,6 @@ import { APP_STORE_URL, GITHUB_LATEST_RELEASE_API, GITHUB_LATEST_RELEASE_URL } f
 
 export type DownloadPlatform = 'macos-arm64' | 'macos-x64' | 'windows-x64' | 'windows-arm64' | 'android' | 'ios'
 
-export const DOWNLOAD_PLATFORMS: DownloadPlatform[] = ['macos-arm64', 'macos-x64', 'windows-x64', 'windows-arm64', 'android', 'ios']
-
 // Matches the versioned asset names the release workflow publishes, e.g. Pulpo-0.144.1-macOS-arm64.dmg.
 const ASSET_PATTERNS: Record<Exclude<DownloadPlatform, 'ios'>, RegExp> = {
   'macos-arm64': /-macOS-arm64\.dmg$/,

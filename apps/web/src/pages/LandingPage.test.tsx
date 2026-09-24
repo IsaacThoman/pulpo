@@ -40,6 +40,7 @@ describe('landing page', () => {
     expect(markup).toContain('href="https://github.com/IsaacThoman/pulpo"')
     expect(markup).toContain('/landing/chat-dark.webp')
     expect(markup).toContain('Download')
+    expect(markup).toContain('Log in on the web')
   })
 
   it('offers sign up only when signup is enabled', () => {

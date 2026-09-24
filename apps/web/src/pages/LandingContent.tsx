@@ -56,8 +56,11 @@ export function LandingContent({ instanceName, signupEnabled }: { instanceName: 
         <section className="mx-auto flex max-w-5xl flex-col items-center px-4 pt-12 pb-10 text-center sm:px-8 sm:pt-16 sm:pb-12">
           <h1 className="text-4xl font-semibold tracking-tight text-balance sm:text-5xl">{ui("Open-source chatbot for everyday use")}</h1>
           <p className="mt-4 text-base text-pretty text-muted-foreground sm:text-lg">{ui("Pulpo comes with native mobile apps, fast disposable workspaces, and broad model support. Everything stays perfectly in sync.")}</p>
-          <div className="mt-8">
+          <div className="mt-8 flex w-full max-w-xs flex-col gap-3 sm:w-auto sm:max-w-none sm:flex-row">
             <DownloadButton />
+            <Button asChild size="lg" variant="outline">
+              <Link to="/login">{ui("Log in on the web")}</Link>
+            </Button>
           </div>
         </section>
 

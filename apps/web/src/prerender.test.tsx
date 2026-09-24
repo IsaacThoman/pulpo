@@ -18,6 +18,7 @@ describe('landing pre-render', () => {
   it('renders deterministically without per-visitor details', async () => {
     const html = await renderLandingDocument(indexHtml)
     expect(html).not.toContain('Download for')
+    expect(html).toContain('href="https://github.com/IsaacThoman/pulpo/releases/latest"')
     expect(html).not.toContain('href="/signup"')
     expect(html).toContain("localStorage.getItem('pulpo-profile')")
   })
