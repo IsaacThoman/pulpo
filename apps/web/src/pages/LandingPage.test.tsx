@@ -27,15 +27,18 @@ afterEach(async () => {
 })
 
 describe('landing page', () => {
-  it('shows the instance name and a log in button', () => {
+  it('shows the instance name, log in, docs, GitHub, and screenshots', () => {
     const markup = renderToStaticMarkup(<MemoryRouter><LandingPage /></MemoryRouter>)
 
     expect(markup).toContain('Pulpo')
     expect(markup).toContain('href="/login"')
     expect(markup).toContain('Log in')
     expect(markup).not.toContain('href="/signup"')
-    expect(markup).toContain('href="/privacy"')
-    expect(markup).toContain('href="/support"')
+    expect(markup).toContain('href="https://help.pulpo.baby"')
+    expect(markup).toContain('href="https://help.pulpo.baby/privacy"')
+    expect(markup).toContain('href="https://help.pulpo.baby/support"')
+    expect(markup).toContain('href="https://github.com/IsaacThoman/pulpo"')
+    expect(markup).toContain('/landing/chat-dark.webp')
   })
 
   it('offers sign up only when signup is enabled', () => {
@@ -68,6 +71,6 @@ describe('landing page', () => {
     const markup = renderToStaticMarkup(<MemoryRouter><LandingPage /></MemoryRouter>)
 
     expect(markup).toContain('Iniciar sesión')
-    expect(markup).toContain('Una plataforma de IA autoalojada y configurable.')
+    expect(markup).toContain('Todos los modelos, un solo espacio de trabajo')
   })
 })

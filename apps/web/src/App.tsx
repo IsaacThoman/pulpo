@@ -11,6 +11,8 @@ import { DesktopTitleBar } from '@/components/desktop/DesktopTitleBar'
 import { desktopStartupSurface } from '@/lib/desktop-startup'
 import { ui } from '@/i18n/ui'
 import { LocaleBoundary } from '@/i18n/LocaleBoundary'
+import { ExternalRedirect } from '@/components/ExternalRedirect'
+import { DOCS_URL } from '@/lib/links'
 
 const AppLayout = lazy(() => import('@/components/layout/AppLayout').then((module) => ({ default: module.AppLayout })))
 
@@ -45,8 +47,6 @@ const ForgotPasswordPage = lazy(() => import('@/pages/auth/ForgotPasswordPage').
 const ResetPasswordPage = lazy(() => import('@/pages/auth/ResetPasswordPage').then((module) => ({ default: module.ResetPasswordPage })))
 const PendingPage = lazy(() => import('@/pages/auth/PendingPage').then((module) => ({ default: module.PendingPage })))
 const SharedChatPage = lazy(() => import('@/pages/SharedChatPage').then((module) => ({ default: module.SharedChatPage })))
-const PrivacyPage = lazy(() => import('@/pages/PrivacyPage').then((module) => ({ default: module.PrivacyPage })))
-const SupportPage = lazy(() => import('@/pages/SupportPage').then((module) => ({ default: module.SupportPage })))
 const MobilePasskeyPage = lazy(() => import('@/pages/MobilePasskeyPage').then((module) => ({ default: module.MobilePasskeyPage })))
 const MobilePasskeyEnrollmentPage = lazy(() => import('@/pages/MobilePasskeyPage').then((module) => ({ default: module.MobilePasskeyEnrollmentPage })))
 
@@ -114,8 +114,8 @@ export default function App() {
         </Route>
         <Route path="pending" element={<LocalizedRoute><PendingPage /></LocalizedRoute>} />
         <Route path="share/:token" element={<LocalizedRoute><SharedChatPage /></LocalizedRoute>} />
-        <Route path="privacy" element={<LocalizedRoute><PrivacyPage /></LocalizedRoute>} />
-        <Route path="support" element={<LocalizedRoute><SupportPage /></LocalizedRoute>} />
+        <Route path="privacy" element={<ExternalRedirect to={`${DOCS_URL}/privacy`} />} />
+        <Route path="support" element={<ExternalRedirect to={`${DOCS_URL}/support`} />} />
         <Route path="mobile/passkey" element={<LocalizedRoute><MobilePasskeyPage /></LocalizedRoute>} />
         <Route path="mobile/passkey/enroll" element={<LocalizedRoute><MobilePasskeyEnrollmentPage /></LocalizedRoute>} />
 
