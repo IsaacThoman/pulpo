@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { SPEECH_REQUEST_MAX_INPUT_LENGTH, speechRequestSchema } from '@pulpo/contracts'
-import { SpeechPlayback, speechBytes, speechChunks, speechText, type SpeechAudio } from './speech.js'
+import { SpeechPlayback, nextSpeechRate, speechBytes, speechChunks, speechClock, speechRateLabel, speechText, speechTimeLabel, type SpeechAudio } from './speech.js'
 const tick = () => new Promise(resolve => setTimeout(resolve, 0))
 function deferred<T>() { let resolve!: (value: T) => void; let reject!: (error: Error) => void; const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no }); return { promise, resolve, reject } }
 
@@ -86,4 +86,139 @@ it('carries generated duration through prefetch to keep watermark phase across c
   offsets.length = 0
   await player.start('legacy', ['a', 'b'], async (_, _signal, offset) => { offsets.push(offset); return { dispose() {}, play: async () => {} } })
   expect(offsets).toEqual([0, 0])
+})
+
+describe('speech playback controls', () => {
+  // A controllable clip: time only moves when the test sets it, and it ends when finish() is called.
+  function clip(length: number) {
+    let finish = () => {}
+    const audio = {
+      time: 0, rate: 1, playing: false, plays: 0,
+      dispose: vi.fn(),
+      play: vi.fn((signal: AbortSignal) => new Promise<void>(resolve => {
+        audio.plays++; audio.playing = true
+        finish = () => { audio.playing = false; resolve() }
+        signal.addEventListener('abort', () => { audio.playing = false; resolve() }, { once: true })
+      })),
+      pause: vi.fn(() => { audio.playing = false }),
+      resume: vi.fn(() => { audio.playing = true }),
+      seek: vi.fn((seconds: number) => { audio.time = seconds }),
+      currentTime: () => audio.time,
+      duration: () => length,
+      setRate: vi.fn((rate: number) => { audio.rate = rate }),
+      finish: () => finish(),
+    }
+    return audio
+  }
+  const setup = (lengths: number[]) => {
+    const player = new SpeechPlayback(); const clips = lengths.map(clip)
+    let i = 0; const generate = vi.fn(async () => clips[i++]!)
+    const run = player.start('m', lengths.map((_, index) => 'x'.repeat(10 + index)), generate)
+    return { player, clips, generate, run }
+  }
+
+  it('pauses and resumes the current clip', async () => {
+    const { player, clips: [a], run } = setup([5])
+    await tick(); expect(a!.playing).toBe(true)
+    player.togglePause(); expect(player.getSnapshot().paused).toBe(true); expect(a!.pause).toHaveBeenCalledOnce()
+    player.togglePause(); expect(player.getSnapshot().paused).toBe(false); expect(a!.resume).toHaveBeenCalledOnce()
+    a!.finish(); await run
+    expect(player.getSnapshot()).toMatchObject({ key: null, phase: 'idle', paused: false })
+  })
+
+  it('stays paused across a chunk boundary until resumed', async () => {
+    const { player, clips: [a, b], run } = setup([5, 5])
+    await tick(); player.pause(); a!.finish(); await tick()
+    expect(player.getSnapshot()).toMatchObject({ phase: 'playing', paused: true }); expect(b!.play).not.toHaveBeenCalled()
+    player.resume(); await tick(); expect(b!.play).toHaveBeenCalledOnce()
+    b!.finish(); await run
+  })
+
+  it('seeks within a clip, back into the previous clip without regenerating, and forward into the next', async () => {
+    const { player, clips: [a, b], generate, run } = setup([20, 30])
+    await tick(); a!.time = 12
+    player.seekBy(-10); expect(a!.time).toBe(2)
+    player.seekBy(10); expect(a!.time).toBe(12)
+    player.seekBy(10); await tick(); await tick()
+    expect(b!.play).toHaveBeenCalledOnce(); expect(b!.time).toBe(2)
+    b!.time = 4; player.seekBy(-10); await tick(); await tick()
+    expect(a!.plays).toBe(2); expect(a!.time).toBe(14); expect(generate).toHaveBeenCalledTimes(2)
+    expect(player.progress()).toMatchObject({ elapsed: 14, total: 50 })
+    a!.finish(); await tick(); await tick(); expect(b!.plays).toBe(2); expect(b!.time).toBe(0)
+    b!.finish(); await run
+  })
+
+  it('keeps retained audio after the end for replay and seeking back, without regenerating', async () => {
+    const player = new SpeechPlayback(); const clips = [clip(5), clip(7)]
+    let i = 0; const generate = vi.fn(async () => clips[i++]!)
+    const run = player.start('m', ['a', 'b'], generate, { retain: true })
+    await tick(); clips[0]!.finish(); await tick(); await tick(); clips[1]!.finish(); await tick()
+    expect(player.getSnapshot()).toMatchObject({ key: 'm', phase: 'ended', paused: false })
+    expect(player.progress()).toMatchObject({ elapsed: 12, total: 12, fraction: 1 })
+    player.pause(); expect(player.getSnapshot().paused).toBe(false)
+    player.seekBy(-3); await tick(); await tick()
+    expect(player.getSnapshot().phase).toBe('playing'); expect(clips[1]!.plays).toBe(2); expect(clips[1]!.time).toBe(4)
+    clips[1]!.finish(); await tick(); expect(player.getSnapshot().phase).toBe('ended')
+    player.togglePause(); await tick(); await tick()
+    expect(clips[0]!.plays).toBe(2); expect(clips[0]!.time).toBe(0); expect(generate).toHaveBeenCalledTimes(2)
+    player.stop(); await run
+    expect(player.getSnapshot()).toMatchObject({ key: null, phase: 'idle' }); for (const c of clips) expect(c.dispose).toHaveBeenCalledOnce()
+  })
+
+  it('replays from the start mid-playback and lets media play restart an ended playback', async () => {
+    const player = new SpeechPlayback(); const clips = [clip(5)]
+    const run = player.start('m', ['a'], async () => clips[0]!, { retain: true })
+    await tick(); clips[0]!.time = 3; player.replay(); await tick(); await tick()
+    expect(clips[0]!.plays).toBe(2); expect(clips[0]!.time).toBe(0)
+    clips[0]!.finish(); await tick(); expect(player.getSnapshot().phase).toBe('ended')
+    player.resume(); await tick(); await tick(); expect(clips[0]!.plays).toBe(3)
+    player.stop(); await run
+  })
+
+  it('scrubs across clips and stops at the start of a clip still being generated', async () => {
+    const player = new SpeechPlayback(); const a = clip(10), b = clip(20), c = clip(30); const third = deferred<SpeechAudio>()
+    const generate = vi.fn().mockResolvedValueOnce(a).mockResolvedValueOnce(b).mockReturnValueOnce(third.promise)
+    const run = player.start('m', ['x'.repeat(10), 'x'.repeat(20), 'x'.repeat(30)], generate)
+    await tick(); await tick()
+    expect(player.progress()).toMatchObject({ buffered: 30, total: 60, estimated: true })
+    player.seekTo(4); expect(a.time).toBe(4)
+    player.seekTo(25); await tick(); await tick(); expect(b.plays).toBe(1); expect(b.time).toBe(15)
+    player.seekTo(55); await tick(); await tick()
+    expect(player.getSnapshot().phase).toBe('loading'); expect(c.play).not.toHaveBeenCalled()
+    player.seekTo(3); third.resolve(c); await tick(); await tick()
+    expect(c.play).not.toHaveBeenCalled(); expect(a.plays).toBe(2); expect(a.time).toBe(3)
+    expect(player.progress()).toMatchObject({ elapsed: 3, total: 60, estimated: false, buffered: 60 })
+    player.stop(); await run
+  })
+
+  it('ends playback when seeking past the final clip', async () => {
+    const { player, clips: [a], run } = setup([8])
+    await tick(); a!.time = 5; player.seekBy(10); await run
+    expect(player.getSnapshot()).toMatchObject({ key: null, phase: 'idle' })
+  })
+
+  it('applies the playback rate to the current and later clips and keeps it after stopping', async () => {
+    const { player, clips: [a, b], run } = setup([5, 5])
+    await tick(); player.setRate(1.5); expect(a!.rate).toBe(1.5)
+    a!.finish(); await tick(); await tick(); expect(b!.rate).toBe(1.5)
+    player.stop(); await run
+    expect(player.getSnapshot().rate).toBe(1.5)
+  })
+
+  it('estimates the total from the speaking rate until every clip is generated', async () => {
+    const player = new SpeechPlayback(); const a = clip(10); const pending = deferred<SpeechAudio>()
+    const generate = vi.fn().mockResolvedValueOnce(a).mockReturnValueOnce(pending.promise)
+    const run = player.start('m', ['x'.repeat(10), 'x'.repeat(30)], generate)
+    await tick(); a.time = 5
+    expect(player.progress()).toEqual({ elapsed: 5, total: 40, estimated: true, buffered: 10, fraction: 5 / 40 })
+    expect(speechTimeLabel(player.progress())).toBe('0:05 / ~0:40')
+    player.stop(); await run; pending.resolve(clip(1))
+    expect(player.progress()).toBeNull()
+  })
+})
+
+it('formats playback time and cycles playback rates', () => {
+  expect([0, 9.9, 61, 3600].map(speechClock)).toEqual(['0:00', '0:09', '1:01', '60:00'])
+  expect([0.75, 1, 1.25, 1.5, 2, 1.1].map(nextSpeechRate)).toEqual([1, 1.25, 1.5, 2, 0.75, 1.25])
+  expect(speechRateLabel(1.25)).toBe('1.25×')
 })

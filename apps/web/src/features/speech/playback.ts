@@ -1,4 +1,4 @@
-import { speechChunks, speechText } from '@pulpo/client-core'
+import { SPEECH_SEEK_SECONDS, speechChunks, speechText } from '@pulpo/client-core'
 import { SPEECH_DEFAULT_PREVIEW_TEXT, SPEECH_DURATION_HEADER, type PublicSpeechModel, type SpeechCatalog } from '@pulpo/contracts'
 import { apiRequest, fetchApiBlobResponse } from '@/lib/api'
 import { useSettings } from '@/stores/settings'
@@ -15,7 +15,9 @@ export function previewSpeech() {
   return playSpeech('preview:settings')
 }
 async function playSpeech(key: string, markdown?: string) {
-  if (speechPlayback.getSnapshot().key === key) { speechPlayback.stop(); return }
+  const snapshot = speechPlayback.getSnapshot()
+  // A finished message keeps its audio, so reading it again replays without regenerating.
+  if (snapshot.key === key) { if (snapshot.phase === 'ended') speechPlayback.replay(); else speechPlayback.stop(); return }
   const current = useSettings.getState().speech
   const preferences = { ...current, models: Object.fromEntries(Object.entries(current.models).map(([id, settings]) => [id, { ...settings }])) }
   let model: PublicSpeechModel
@@ -42,17 +44,33 @@ async function playSpeech(key: string, markdown?: string) {
       ...(model.supportsInstructions ? { instructions } : {}), ...(model.supportsSpeed ? { speed: settings?.speed ?? 1 } : {}),
     }) })
     return { ...browserSpeechAudio(await response.blob()), durationSeconds: Number(response.headers.get(SPEECH_DURATION_HEADER)) }
-  })
+  }, { retain: markdown !== undefined })
 }
 document.addEventListener('visibilitychange', () => { if (document.hidden) speechPlayback.stop() })
 useAuth.subscribe((state, previous) => { if (state.user?.id !== previous.user?.id) speechPlayback.stop() })
 useChat.subscribe((state, previous) => { if (state.activeChatId !== previous.activeChatId) speechPlayback.stop() })
+// Hardware media keys and the browser's media controls drive message playback.
+if (typeof navigator !== 'undefined' && 'mediaSession' in navigator) {
+  const handlers: Array<[MediaSessionAction, () => void]> = [
+    ['play', speechPlayback.resume], ['pause', speechPlayback.pause], ['stop', speechPlayback.stop],
+    ['seekbackward', () => speechPlayback.seekBy(-SPEECH_SEEK_SECONDS)], ['seekforward', () => speechPlayback.seekBy(SPEECH_SEEK_SECONDS)],
+  ]
+  for (const [action, handler] of handlers) {
+    try { navigator.mediaSession.setActionHandler(action, handler) } catch { /* Unsupported action. */ }
+  }
+}
 
 export function browserSpeechAudio(blob: Blob) {
   const url = URL.createObjectURL(blob)
   const audio = new Audio(url)
   return {
     dispose: () => { audio.pause(); audio.removeAttribute('src'); audio.load(); URL.revokeObjectURL(url) },
+    pause: () => audio.pause(),
+    resume: () => { void audio.play().catch(() => {}) },
+    seek: (seconds: number) => { audio.currentTime = seconds },
+    currentTime: () => audio.currentTime,
+    duration: () => audio.duration,
+    setRate: (rate: number) => { audio.defaultPlaybackRate = rate; audio.playbackRate = rate },
     play: (signal: AbortSignal) => new Promise<void>((resolve, reject) => {
       const cleanup = () => { signal.removeEventListener('abort', abort); audio.onended = null; audio.onerror = null }
       const abort = () => { audio.pause(); cleanup(); resolve() }
