@@ -1,6 +1,6 @@
 import { imageBatchNeedsWorkspace, DEFAULT_MAX_INLINE_IMAGES } from '@pulpo/contracts';
 import { speechPlayback, readAloud } from '../features/speech/playback';
-import { speechText } from '@pulpo/client-core';
+import { SPEECH_SEEK_SECONDS, nextSpeechRate, speechClock, speechRateLabel, speechText, type SpeechProgress } from '@pulpo/client-core';
 import { INITIAL_TRANSCRIPT_ROWS, hasLargeInitialMessage, transcriptListMessages, usesBottomAnchoredTranscript } from '../features/chat/transcriptWindow';
 import { hasChatSelectionObserver, recordChatSelection, hasTranscriptPositionObserver, recordTranscriptPosition } from '../features/chat/selectionTiming';
 import { prepareChatSelection } from '../data/prepareChat';
@@ -3831,6 +3831,70 @@ const EMPTY_MOBILE_QUEUE: MobileQueuedMessage[] = [];
 const COMPOSER_MAX_FONT_SIZE_MULTIPLIER = 1.6;
 const COMPOSER_SECTION_SPRING = { damping: 24, stiffness: 260, mass: 0.8, overshootClamping: true };
 
+function SpeechPlayerButton({ label, icon, disabled = false, onPress }: { label: string; icon: SymbolName; disabled?: boolean; onPress: () => void }) {
+  const { styles, COLORS } = useChatStyles();
+  return (
+    <Pressable
+      accessibilityLabel={label}
+      accessibilityRole="button"
+      accessibilityState={{ disabled }}
+      disabled={disabled}
+      hitSlop={4}
+      onPress={() => { Haptics.selectionAsync(); onPress(); }}
+      style={({ pressed }) => [styles.speechPlayerButton, disabled && styles.disabledIconAction, pressed && styles.pressed]}
+    >
+      <Icon name={icon} size={17} color={COLORS.text} />
+    </Pressable>
+  );
+}
+
+// Read-aloud controls docked at the top of the composer while a message is being read.
+function SpeechPlayerBar() {
+  const { styles } = useChatStyles();
+  const state = useSyncExternalStore(speechPlayback.subscribe, speechPlayback.getSnapshot);
+  const visible = state.key !== null && !state.key.startsWith('preview:');
+  const [progress, setProgress] = useState<SpeechProgress | null>(null);
+  // Audio time is not part of the playback store; poll while visible and refresh on every state change.
+  useEffect(() => {
+    if (!visible) { setProgress(null); return; }
+    const refresh = () => setProgress(speechPlayback.progress());
+    refresh();
+    const timer = setInterval(refresh, 250);
+    return () => clearInterval(timer);
+  }, [visible, state]);
+  if (!visible) return null;
+  const loading = state.phase === 'loading';
+  const percent = Math.round((progress?.fraction ?? 0) * 100);
+  const time = `${speechClock(progress?.elapsed ?? 0)}${progress?.total ? ` / ${speechClock(progress.total)}` : ''}`;
+  return (
+    <View accessibilityLabel="Read aloud controls" style={styles.speechPlayer}>
+      <SpeechPlayerButton label={`Back ${SPEECH_SEEK_SECONDS} seconds`} icon="gobackward.10" disabled={loading} onPress={() => speechPlayback.seekBy(-SPEECH_SEEK_SECONDS)} />
+      <SpeechPlayerButton label={state.paused ? 'Resume reading' : 'Pause reading'} icon={state.paused ? 'play.fill' : 'pause.fill'} onPress={speechPlayback.togglePause} />
+      <SpeechPlayerButton label={`Forward ${SPEECH_SEEK_SECONDS} seconds`} icon="goforward.10" disabled={loading} onPress={() => speechPlayback.seekBy(SPEECH_SEEK_SECONDS)} />
+      <View style={styles.speechPlayerInfo}>
+        <View style={styles.speechPlayerMeta}>
+          <Text accessibilityLiveRegion="polite" numberOfLines={1} style={styles.speechPlayerStatus}>{state.paused ? 'Paused' : loading ? 'Preparing speech…' : 'Reading aloud'}</Text>
+          <Text style={styles.speechPlayerTime}>{time}</Text>
+        </View>
+        <View accessibilityRole="progressbar" accessibilityLabel="Reading progress" accessibilityValue={{ min: 0, max: 100, now: percent }} style={styles.speechPlayerTrack}>
+          <View style={[styles.speechPlayerFill, { width: `${percent}%` }]} />
+        </View>
+      </View>
+      <Pressable
+        accessibilityLabel={`Playback speed ${speechRateLabel(state.rate)}`}
+        accessibilityHint="Changes the reading speed"
+        accessibilityRole="button"
+        hitSlop={4}
+        onPress={() => { Haptics.selectionAsync(); speechPlayback.setRate(nextSpeechRate(state.rate)); }}
+        style={({ pressed }) => [styles.speechPlayerButton, styles.speechPlayerRateButton, pressed && styles.pressed]}
+      >
+        <Text style={styles.speechPlayerRate}>{speechRateLabel(state.rate)}</Text>
+      </Pressable>
+      <SpeechPlayerButton label="Stop reading" icon="xmark" onPress={speechPlayback.stop} />
+    </View>
+  );
+}
+
 function ComposerQueueSection({ title, subject, visible, collapsed, onToggle, failed = false, children }: {
   title: string;
   subject: string;
@@ -5595,6 +5659,7 @@ function ChatView({
               surfaceStyle={temporaryComposerAnimatedStyle}
               tintColor={temporary ? colorScheme === 'dark' ? 'rgba(88,28,135,0.32)' : 'rgba(175,82,222,0.16)' : undefined}
             >
+              <SpeechPlayerBar />
               {showShelf && <ComposerQueueSection
                 visible={shelfRows.length > 0}
                 title={`Shelved · ${shelfRows.length}`} subject="shelved drafts" collapsed={shelfCollapsed}
@@ -6470,6 +6535,16 @@ function createChatStyles(COLORS: ChatColors) { return StyleSheet.create({
   composerWrap: { paddingTop: 6 },
   composer: { minHeight: 108, borderRadius: 28, paddingTop: 8, paddingHorizontal: 10, paddingBottom: 4 },
   messageEditBanner: { flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 6, paddingBottom: 8 },
+  speechPlayer: { flexDirection: 'row', alignItems: 'center', gap: 2, paddingBottom: 6, marginBottom: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.line },
+  speechPlayerButton: { width: 36, height: 40, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  speechPlayerRateButton: { width: 44 },
+  speechPlayerRate: { color: COLORS.text, fontSize: 13, fontWeight: '600', fontVariant: ['tabular-nums'] },
+  speechPlayerInfo: { flex: 1, minWidth: 0, gap: 5, paddingHorizontal: 6 },
+  speechPlayerMeta: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: 6 },
+  speechPlayerStatus: { flexShrink: 1, color: COLORS.muted, fontSize: 12, fontWeight: '500' },
+  speechPlayerTime: { color: COLORS.muted, fontSize: 12, fontVariant: ['tabular-nums'] },
+  speechPlayerTrack: { height: 3, borderRadius: 1.5, overflow: 'hidden', backgroundColor: COLORS.fill },
+  speechPlayerFill: { height: '100%', borderRadius: 1.5, backgroundColor: COLORS.muted },
   messageEditBannerText: { flex: 1, color: COLORS.text, fontSize: 12, fontWeight: '600' },
   messageEditCancel: { color: COLORS.muted, fontSize: 12, fontWeight: '600', paddingHorizontal: 4, paddingVertical: 2 },
   attachmentRestrictionText: { color: COLORS.warning, fontSize: 11, lineHeight: 15, paddingHorizontal: 6, paddingBottom: 6 },

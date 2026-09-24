@@ -66,6 +66,12 @@ function nativeSpeechAudio(bytes: Uint8Array, format: string, signal: AbortSigna
   let disposed = false
   return {
     dispose: () => { if (disposed) return; disposed = true; player.remove(); if (file.exists) file.delete() },
+    pause: () => player.pause(),
+    resume: () => player.play(),
+    seek: (seconds: number) => player.seekTo(seconds),
+    currentTime: () => player.currentTime,
+    duration: () => player.duration,
+    setRate: (rate: number) => { player.shouldCorrectPitch = true; player.setPlaybackRate(rate, 'high') },
     play: (signal: AbortSignal) => new Promise<void>((resolve, reject) => {
       const subscription = player.addListener('playbackStatusUpdate', status => {
         if (status.didJustFinish) { cleanup(); resolve() }

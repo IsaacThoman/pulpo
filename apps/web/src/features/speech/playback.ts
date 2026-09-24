@@ -1,4 +1,4 @@
-import { speechChunks, speechText } from '@pulpo/client-core'
+import { SPEECH_SEEK_SECONDS, speechChunks, speechText } from '@pulpo/client-core'
 import { SPEECH_DEFAULT_PREVIEW_TEXT, SPEECH_DURATION_HEADER, type PublicSpeechModel, type SpeechCatalog } from '@pulpo/contracts'
 import { apiRequest, fetchApiBlobResponse } from '@/lib/api'
 import { useSettings } from '@/stores/settings'
@@ -47,12 +47,28 @@ async function playSpeech(key: string, markdown?: string) {
 document.addEventListener('visibilitychange', () => { if (document.hidden) speechPlayback.stop() })
 useAuth.subscribe((state, previous) => { if (state.user?.id !== previous.user?.id) speechPlayback.stop() })
 useChat.subscribe((state, previous) => { if (state.activeChatId !== previous.activeChatId) speechPlayback.stop() })
+// Hardware media keys and the browser's media controls drive message playback.
+if (typeof navigator !== 'undefined' && 'mediaSession' in navigator) {
+  const handlers: Array<[MediaSessionAction, () => void]> = [
+    ['play', speechPlayback.resume], ['pause', speechPlayback.pause], ['stop', speechPlayback.stop],
+    ['seekbackward', () => speechPlayback.seekBy(-SPEECH_SEEK_SECONDS)], ['seekforward', () => speechPlayback.seekBy(SPEECH_SEEK_SECONDS)],
+  ]
+  for (const [action, handler] of handlers) {
+    try { navigator.mediaSession.setActionHandler(action, handler) } catch { /* Unsupported action. */ }
+  }
+}
 
 export function browserSpeechAudio(blob: Blob) {
   const url = URL.createObjectURL(blob)
   const audio = new Audio(url)
   return {
     dispose: () => { audio.pause(); audio.removeAttribute('src'); audio.load(); URL.revokeObjectURL(url) },
+    pause: () => audio.pause(),
+    resume: () => { void audio.play().catch(() => {}) },
+    seek: (seconds: number) => { audio.currentTime = seconds },
+    currentTime: () => audio.currentTime,
+    duration: () => audio.duration,
+    setRate: (rate: number) => { audio.defaultPlaybackRate = rate; audio.playbackRate = rate },
     play: (signal: AbortSignal) => new Promise<void>((resolve, reject) => {
       const cleanup = () => { signal.removeEventListener('abort', abort); audio.onended = null; audio.onerror = null }
       const abort = () => { audio.pause(); cleanup(); resolve() }
