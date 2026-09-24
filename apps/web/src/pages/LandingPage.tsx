@@ -1,5 +1,6 @@
 import { Link, Navigate } from 'react-router-dom'
 import { BookOpen } from 'lucide-react'
+import { DownloadButton } from '@/components/DownloadButton'
 import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/i18n/useAppTranslation'
 import { ui } from '@/i18n/ui'
@@ -58,9 +59,11 @@ export function LandingPage() {
 
       <main>
         <section className="mx-auto flex max-w-5xl flex-col items-center px-4 pt-12 pb-10 text-center sm:px-8 sm:pt-16 sm:pb-12">
-          {/* "open‑source" uses a non-breaking hyphen so the headline never wraps mid-word. */}
-          <h1 className="text-4xl font-semibold tracking-tight text-balance sm:text-5xl">{ui("A minimal, open‑source, agentic chatbot.")}</h1>
-          <p className="mt-4 text-base text-pretty text-muted-foreground sm:text-lg">{ui("Apps for web, desktop, and mobile.")}</p>
+          <h1 className="text-4xl font-semibold tracking-tight text-balance sm:text-5xl">{ui("Open-source chatbot for everyday use")}</h1>
+          <p className="mt-4 text-base text-pretty text-muted-foreground sm:text-lg">{ui("Pulpo comes with native mobile apps, fast disposable workspaces, and broad model support. Everything stays perfectly in sync.")}</p>
+          <div className="mt-8">
+            <DownloadButton />
+          </div>
         </section>
 
         <section className="mx-auto max-w-6xl px-4 pb-16 sm:px-8 md:pb-24">

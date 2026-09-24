@@ -39,6 +39,7 @@ describe('landing page', () => {
     expect(markup).toContain('href="https://help.pulpo.baby/support"')
     expect(markup).toContain('href="https://github.com/IsaacThoman/pulpo"')
     expect(markup).toContain('/landing/chat-dark.webp')
+    expect(markup).toContain('Download')
   })
 
   it('offers sign up only when signup is enabled', () => {
@@ -71,6 +72,6 @@ describe('landing page', () => {
     const markup = renderToStaticMarkup(<MemoryRouter><LandingPage /></MemoryRouter>)
 
     expect(markup).toContain('Iniciar sesión')
-    expect(markup).toContain('Un chatbot minimalista, de código abierto y con agentes.')
+    expect(markup).toContain('Chatbot de código abierto para el día a día')
   })
 })
