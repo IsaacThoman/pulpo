@@ -5,6 +5,7 @@ import {
 } from '@pulpo/client-core'
 import type { QueryClient } from '@tanstack/react-query'
 import type { BranchActivationResult, ServerChat } from '../../../types'
+import { releaseOptimisticLeaf } from './optimisticResponses'
 
 interface BranchSelection {
   namespace: string
@@ -72,6 +73,7 @@ export async function activateOptimisticBranch(input: ActivateOptimisticBranchIn
     : false
   const version = (selectionVersions.get(key) ?? 0) + 1
   selectionVersions.set(key, version)
+  releaseOptimisticLeaf(input.namespace, input.chatId)
   selections.set(key, {
     namespace: input.namespace,
     chatId: input.chatId,
