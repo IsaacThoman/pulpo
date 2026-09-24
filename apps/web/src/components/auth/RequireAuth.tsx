@@ -13,12 +13,15 @@ export function RequireAuth() {
 
   useEffect(() => { void bootstrap() }, [bootstrap])
 
+  // Visitors without a cached profile are almost always signed out, so the root shows the
+  // landing page (matching the pre-rendered HTML) instead of a spinner while the session is checked.
+  if (!user && location.pathname === '/' && !isDesktopRuntime()) return <LandingPage />
+
   if (!user && checkingSession) {
     return <div className="flex h-dvh items-center justify-center"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>
   }
 
   if (!user) {
-    if (location.pathname === '/' && !isDesktopRuntime()) return <LandingPage />
     return <Navigate to="/login" replace state={{ from: location.pathname }} />
   }
 

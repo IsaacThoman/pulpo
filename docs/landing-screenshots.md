@@ -1,6 +1,6 @@
 # Landing page screenshots
 
-The web landing page shown to signed-out visitors at `/` uses a screenshot of the chat view in light and dark variants: `apps/web/public/landing/chat-light.webp` and `chat-dark.webp`. `apps/web/scripts/capture-landing-screenshots.mjs` regenerates both from a Pulpo instance you sign in to. Only capture accounts whose chats and profile can appear publicly.
+The web landing page shown to signed-out visitors at `/` uses a screenshot of the chat view in light and dark variants: `apps/web/public/landing/chat-light.webp` and `chat-dark.webp`. Link previews use `apps/web/public/og-image.jpg`, cropped from the dark capture. `apps/web/scripts/capture-landing-screenshots.mjs` regenerates both from a Pulpo instance you sign in to. Only capture accounts whose chats and profile can appear publicly.
 
 ## Requirements
 
@@ -47,6 +47,7 @@ This needs no production account, but the local preview only has the preview pro
 - Sends the hero prompt: "Explain how KV caching speeds up transformer decoding. Include a short PyTorch snippet and the memory cost formula." Its answer shows headings, display math, and a code block, and a fresh chat shows the "now" timestamp.
 - Opens that chat at 1440×900 with a device scale factor of 2, switches the composer's agent control to Pulpo Agent, scrolls to the start of the conversation, and captures it once with a light and once with a dark color scheme.
 - Converts each capture with `cwebp -q 80 -m 6 -resize 2400 0` into `apps/web/public/landing/`.
+- Saves the top 1440×756 of the dark capture as `apps/web/public/og-image.jpg`, the link-preview image referenced by `og:image` in `apps/web/index.html`.
 
 ## Options
 

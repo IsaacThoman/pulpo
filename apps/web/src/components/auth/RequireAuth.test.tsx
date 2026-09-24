@@ -63,6 +63,21 @@ describe('RequireAuth', () => {
     expect(screen.getByText('login page')).toBeTruthy()
   })
 
+  it('shows the landing page at the root while the session is still being checked', () => {
+    authState.checkingSession = true
+    renderAt('/')
+    expect(screen.getByRole('link', { name: 'Log in' }).getAttribute('href')).toBe('/login')
+    authState.checkingSession = false
+  })
+
+  it('keeps the spinner on other routes while the session is being checked', () => {
+    authState.checkingSession = true
+    renderAt('/c/abc')
+    expect(screen.queryByText('login page')).toBeNull()
+    expect(screen.queryByRole('link', { name: 'Log in' })).toBeNull()
+    authState.checkingSession = false
+  })
+
   it('renders the app for signed-in users', () => {
     authState.user = { id: 'u1', role: 'user' }
     renderAt('/')

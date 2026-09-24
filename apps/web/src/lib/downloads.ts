@@ -18,8 +18,8 @@ export type LatestRelease = { version: string; assets: Array<{ name: string; url
 
 type NavigatorWithUAData = Navigator & { userAgentData?: { platform?: string } }
 
-/** Best guess from the user agent. Browsers hide Mac CPU architecture, so Macs default to Apple silicon. */
-export function detectPlatform(nav: NavigatorWithUAData | undefined = typeof navigator === 'undefined' ? undefined : navigator): DownloadPlatform | null {
+/** Best guess from the user agent. Browsers hide Mac CPU architecture, so Macs default to Apple silicon. Returns null outside a browser, including the build's pre-render. */
+export function detectPlatform(nav: NavigatorWithUAData | undefined = typeof window === 'undefined' ? undefined : navigator): DownloadPlatform | null {
   if (!nav) return null
   const userAgent = nav.userAgent ?? ''
   const platform = nav.userAgentData?.platform ?? nav.platform ?? ''

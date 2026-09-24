@@ -10,6 +10,7 @@ import { chromium } from 'playwright'
 const { values: args } = parseArgs({ options: { hero: { type: 'string' }, 'demo-profile': { type: 'boolean' } } })
 const origin = process.env.PULPO_URL ?? 'https://pulpo.baby'
 const outputDirectory = new URL('../public/landing/', import.meta.url).pathname
+const ogImagePath = new URL('../public/og-image.jpg', import.meta.url).pathname
 const profile = { name: 'Alex Rivera', username: 'alex' }
 const heroPrompt = 'Explain how KV caching speeds up transformer decoding. Include a short PyTorch snippet and the memory cost formula.'
 // Oldest first so the sidebar reads naturally with the hero chat on top.
@@ -108,6 +109,11 @@ try {
     const webp = join(outputDirectory, `chat-${scheme}.webp`)
     execFileSync('cwebp', ['-quiet', '-q', '80', '-m', '6', '-resize', '2400', '0', png, '-o', webp])
     console.log(`Wrote ${webp}`)
+    if (scheme === 'dark') {
+      // Link-preview image referenced by og:image in index.html (1.91:1).
+      await page.screenshot({ path: ogImagePath, type: 'jpeg', quality: 85, scale: 'css', clip: { x: 0, y: 0, width: 1440, height: 756 } })
+      console.log(`Wrote ${ogImagePath}`)
+    }
   }
 } finally {
   await context.close()
