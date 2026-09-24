@@ -1,10 +1,25 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { MemoryRouter } from 'react-router-dom'
 import i18n from '@/i18n'
+import { APP_STORE_URL, GITHUB_LATEST_RELEASE_URL, GITHUB_URL } from '@/lib/links'
 import { LandingContent } from '@/pages/LandingContent'
 
 export const LANDING_TITLE = 'Pulpo — Open-source chatbot for everyday use'
 const EMPTY_ROOT = '<div id="root"></div>'
+
+// Structured data for search results. The description matches the meta description in index.html.
+const STRUCTURED_DATA = {
+  '@context': 'https://schema.org',
+  '@type': 'SoftwareApplication',
+  name: 'Pulpo',
+  url: 'https://pulpo.baby/',
+  description: 'Pulpo comes with native mobile apps, fast disposable workspaces, and broad model support. Everything stays perfectly in sync.',
+  applicationCategory: 'ProductivityApplication',
+  operatingSystem: 'Web, macOS, Windows, Android, iOS',
+  image: 'https://pulpo.baby/og-image.jpg',
+  downloadUrl: GITHUB_LATEST_RELEASE_URL,
+  sameAs: [GITHUB_URL, APP_STORE_URL],
+}
 
 // Signed-in visitors should not see the landing page flash before the app mounts, so the
 // pre-rendered markup is dropped when the auth store's cached profile is present.
@@ -25,5 +40,6 @@ export async function renderLandingDocument(indexHtml: string): Promise<string> 
   return indexHtml
     .replace(/<title>[^<]*<\/title>/, `<title>${title}</title>`)
     .replace(/<meta property="og:title" content="[^"]*" \/>/, `<meta property="og:title" content="${title}" />`)
+    .replace('</head>', `<script type="application/ld+json">${JSON.stringify(STRUCTURED_DATA).replace(/</g, '\\u003c')}</script></head>`)
     .replace(EMPTY_ROOT, `<div id="root">${markup}</div>${SIGNED_IN_GUARD}`)
 }

@@ -23,6 +23,12 @@ describe('landing pre-render', () => {
     expect(html).toContain("localStorage.getItem('pulpo-profile')")
   })
 
+  it('adds SoftwareApplication structured data', async () => {
+    const html = await renderLandingDocument(indexHtml)
+    const json = html.match(/<script type="application\/ld\+json">(.*?)<\/script>/)?.[1]
+    expect(JSON.parse(json ?? 'null')).toMatchObject({ '@type': 'SoftwareApplication', name: 'Pulpo', url: 'https://pulpo.baby/' })
+  })
+
   it('fails the build when the root placeholder is missing', async () => {
     await expect(renderLandingDocument('<html><body></body></html>')).rejects.toThrow('no <div id="root"></div>')
   })
