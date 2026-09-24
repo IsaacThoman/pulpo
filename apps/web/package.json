@@ -9,7 +9,8 @@
     "test": "vitest run",
     "preview": "vite preview",
     "test:responsive": "node tests/responsive-layout.browser.mjs",
-    "test:code-preview": "node tests/code-preview.browser.mjs && node tests/code-preview.browser.mjs --build"
+    "test:code-preview": "node tests/code-preview.browser.mjs && node tests/code-preview.browser.mjs --build",
+    "capture:landing": "node scripts/capture-landing-screenshots.mjs"
   },
   "dependencies": {
     "@pulpo/client-core": "0.1.0",
