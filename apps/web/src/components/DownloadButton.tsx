@@ -38,7 +38,7 @@ export function DownloadButton() {
   const release = useLatestRelease()
 
   const menu = (
-    <DropdownMenuContent align="end" className="w-52">
+    <DropdownMenuContent align="center" className="w-52">
       {DOWNLOAD_PLATFORMS.map((option) => (
         <DropdownMenuItem key={option} asChild>
           <a href={downloadUrl(option, release)}>{platformLabel(option)}</a>
@@ -63,15 +63,13 @@ export function DownloadButton() {
   }
 
   return (
-    <div className="inline-flex">
-      <Button asChild size="lg" className="rounded-r-none">
+    <div className="flex flex-col items-center gap-3">
+      <Button asChild size="lg">
         <a href={downloadUrl(platform, release)}><Download />{uit`Download for ${PLATFORM_NAMES[platform]}`}</a>
       </Button>
       <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button size="lg" className="rounded-l-none border-l border-primary-foreground/20 px-2.5" aria-label={ui("Other platforms")}>
-            <ChevronDown />
-          </Button>
+        <DropdownMenuTrigger className="inline-flex items-center gap-1 rounded-sm text-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring">
+          {ui("Other platforms")}<ChevronDown className="size-3.5" />
         </DropdownMenuTrigger>
         {menu}
       </DropdownMenu>
