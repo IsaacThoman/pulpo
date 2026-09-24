@@ -160,20 +160,21 @@ function utcCalendarDay(iso: string): number {
   return new Date(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()).getTime()
 }
 
-/** One-line auto top-up status under the credit balance, or null while it is off. */
-export function autoTopUpStatusLine(summary: AutoTopUpSummary): { text: string; tone: 'muted' | 'attention' | 'error' } | null {
+/** Auto top-up status under the credit balance, with monthly usage on its own line, or null while it is off. */
+export function autoTopUpStatusLine(summary: AutoTopUpSummary): { text: string; usage?: string; tone: 'muted' | 'attention' | 'error' } | null {
   const usage = summary.monthlyLimitCents === null
-    ? ''
-    : ` · ${ui("{{spent}} of {{limit}} used this month", { spent: dollars(summary.monthSpentCents), limit: dollars(summary.monthlyLimitCents) })}`
+    ? undefined
+    : ui("{{spent}} of {{limit}} used this month", { spent: dollars(summary.monthSpentCents), limit: dollars(summary.monthlyLimitCents) })
   switch (summary.state) {
     case 'active':
       if (summary.thresholdCents === null || summary.amountCents === null) return null
       return {
-        text: ui("Auto top-up adds {{amount}} when your balance falls below {{threshold}}", { amount: dollars(summary.amountCents), threshold: dollars(summary.thresholdCents) }) + usage,
+        text: ui("Auto top-up adds {{amount}} when your balance falls below {{threshold}}", { amount: dollars(summary.amountCents), threshold: dollars(summary.thresholdCents) }),
+        usage,
         tone: 'muted',
       }
     case 'limit_reached':
-      return { text: ui("Auto top-up paused until {{date}}", { date: formatDate(utcCalendarDay(summary.monthResetsAt)) }) + usage, tone: 'muted' }
+      return { text: ui("Auto top-up paused until {{date}}", { date: formatDate(utcCalendarDay(summary.monthResetsAt)) }), usage, tone: 'muted' }
     case 'payment_failed':
       return {
         text: ui("Auto top-up turned off: {{reason}}", { reason: summary.lastAttempt?.failureMessage ?? ui("your card couldn't be charged.") }),

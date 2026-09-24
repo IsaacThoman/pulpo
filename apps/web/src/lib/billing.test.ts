@@ -113,15 +113,16 @@ describe('automatic top-up settings', () => {
     expect(paymentMethodLabel({ brand: null, last4: null })).toBe('Card')
   })
 
-  it('summarizes the status in one line', async () => {
+  it('summarizes the status with usage on its own line', async () => {
     const active = {
       enabled: true, state: 'active', thresholdCents: 500, amountCents: 2_500, monthlyLimitCents: 10_000,
       monthSpentCents: 5_370, monthResetsAt: '2026-10-01T00:00:00.000Z', paymentMethod: { brand: 'visa', last4: '4242' }, lastAttempt: null,
     } satisfies AutoTopUpSummary
     expect(autoTopUpStatusLine({ ...active, state: 'off', enabled: false })).toBeNull()
-    expect(autoTopUpStatusLine(active)).toEqual({ text: 'Auto top-up adds $25.00 when your balance falls below $5.00 · $53.70 of $100.00 used this month', tone: 'muted' })
+    expect(autoTopUpStatusLine(active)).toEqual({ text: 'Auto top-up adds $25.00 when your balance falls below $5.00', usage: '$53.70 of $100.00 used this month', tone: 'muted' })
     // Resets at midnight UTC show as the 1st in every time zone.
-    expect(autoTopUpStatusLine({ ...active, state: 'limit_reached' })?.text).toBe('Auto top-up paused until Oct 1, 2026 · $53.70 of $100.00 used this month')
+    expect(autoTopUpStatusLine({ ...active, state: 'limit_reached' })).toEqual({ text: 'Auto top-up paused until Oct 1, 2026', usage: '$53.70 of $100.00 used this month', tone: 'muted' })
+    expect(autoTopUpStatusLine({ ...active, monthlyLimitCents: null })?.usage).toBeUndefined()
     expect(autoTopUpStatusLine({ ...active, state: 'payment_failed', lastAttempt: { status: 'failed', creditCents: 2_500, failureMessage: 'Your card has insufficient funds.', createdAt: '2026-09-22T00:00:00.000Z' } }))
       .toEqual({ text: 'Auto top-up turned off: Your card has insufficient funds.', tone: 'error' })
     expect(autoTopUpStatusLine({ ...active, state: 'payment_method_removed' })?.tone).toBe('attention')
