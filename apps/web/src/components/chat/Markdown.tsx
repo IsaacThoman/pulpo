@@ -4,7 +4,7 @@ import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
 import rehypeKatex from 'rehype-katex'
 import { Check, Copy, Play } from 'lucide-react'
-import { normalizeMathDelimiters } from '@pulpo/client-core'
+import { normalizeMathDelimiters, unwrapBoxedMinipages } from '@pulpo/client-core'
 import 'katex/dist/katex.min.css'
 import { ui } from '@/i18n/ui'
 import { writeClipboardText } from '@/lib/clipboard'
@@ -152,7 +152,7 @@ export const Markdown = memo(function Markdown({
   urlTransform?: UrlTransform
 }) {
   const rendered = useRenderedContent(content, streaming)
-  const normalized = useMemo(() => normalizeMathDelimiters(rendered, { displayMathStyle: 'multiline' }), [rendered])
+  const normalized = useMemo(() => normalizeMathDelimiters(unwrapBoxedMinipages(rendered), { displayMathStyle: 'multiline' }), [rendered])
   const mergedComponents = useMemo(() => components ? { ...markdownComponents, ...components } : markdownComponents, [components])
 
   return (

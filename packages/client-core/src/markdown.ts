@@ -118,3 +118,25 @@ export function normalizeMathDelimiters(content: string, options: MathDelimiterO
     return normalized.replace(/^[ \t]*\$\$([^\r\n]*?)\$\$[ \t]*$/gm, (_match, tex: string) => `$$\n${tex}\n$$`)
   }).join('')
 }
+
+// Some models put an entire prose document inside a LaTeX minipage and box it
+// as one display equation. Math renderers cannot parse document environments or
+// nested display math, so expose the prose and inner equations to Markdown.
+const boxedMinipage = /\\\[\s*\\boxed\{\s*\\begin\{minipage\}\{[^}\n]+\}([\s\S]*?)\\end\{minipage\}\s*\}\s*\\\]/g
+
+/** Unwrap `\[\boxed{\begin{minipage}...}\]` documents into Markdown prose with their equations intact. */
+export function unwrapBoxedMinipages(content: string): string {
+  return content.split(/(```[\s\S]*?```|`[^`\n]+`)/g).map((part, index) => {
+    if (index % 2 === 1) return part
+    return part.replace(boxedMinipage, (_match, body: string) => {
+      let item = 0
+      const markdown = body.trim()
+        .replace(/^([ \t]*)\\textbf\{([^{}]*)\}/gm, '$1**$2**')
+        .replace(/^[ \t]*\\begin\{enumerate\}[ \t]*$/gm, '')
+        .replace(/^[ \t]*\\end\{enumerate\}[ \t]*$/gm, '')
+        .replace(/^[ \t]*\\item[ \t]+/gm, () => `\n\n**${++item}.** `)
+        .trim()
+      return `\n\n${markdown}\n\n`
+    })
+  }).join('')
+}
