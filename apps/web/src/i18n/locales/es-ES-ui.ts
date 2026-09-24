@@ -1717,8 +1717,6 @@ const esUi: Record<string, string> = {
   "GitHub": "GitHub",
   "A Pulpo conversation with a formatted answer and code": "Una conversación de Pulpo con una respuesta con formato y código",
   "Log in": "Iniciar sesión",
-  "Privacy": "Privacidad",
-  "Support": "Soporte",
 }
 
 export default esUi

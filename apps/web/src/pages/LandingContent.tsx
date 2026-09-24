@@ -68,15 +68,6 @@ export function LandingContent({ instanceName, signupEnabled }: { instanceName: 
           <Screenshot name="chat" alt={ui("A Pulpo conversation with a formatted answer and code")} />
         </section>
       </main>
-
-      <footer className="border-t">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-center gap-x-6 gap-y-2 px-4 py-6 text-sm text-muted-foreground sm:px-8">
-          <a href={DOCS_URL} className="hover:text-foreground">{ui("Docs")}</a>
-          <a href={`${DOCS_URL}/privacy`} className="hover:text-foreground">{ui("Privacy")}</a>
-          <a href={`${DOCS_URL}/support`} className="hover:text-foreground">{ui("Support")}</a>
-          <a href={GITHUB_URL} className="hover:text-foreground">{ui("GitHub")}</a>
-        </div>
-      </footer>
     </div>
   )
 }

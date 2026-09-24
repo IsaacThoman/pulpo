@@ -35,8 +35,6 @@ describe('landing page', () => {
     expect(markup).toContain('Log in')
     expect(markup).not.toContain('href="/signup"')
     expect(markup).toContain('href="https://help.pulpo.baby"')
-    expect(markup).toContain('href="https://help.pulpo.baby/privacy"')
-    expect(markup).toContain('href="https://help.pulpo.baby/support"')
     expect(markup).toContain('href="https://github.com/IsaacThoman/pulpo"')
     expect(markup).toContain('/landing/chat-dark.webp')
     expect(markup).toContain('Download')
