@@ -13,33 +13,56 @@ function clip() {
   return audio satisfies SpeechAudio
 }
 
-it('stays hidden for settings previews and idle playback', async () => {
-  render(<SpeechPlayer />)
+it('only appears beneath the message being read', async () => {
+  render(<SpeechPlayer messageKey="chat:message" />)
   expect(screen.queryByRole('region', { name: 'Read aloud controls' })).toBeNull()
-  await act(async () => { void speechPlayback.start('preview:settings', ['a'], async () => clip()) })
+  await act(async () => { void speechPlayback.start('chat:other', ['a'], async () => clip()) })
   expect(screen.queryByRole('region', { name: 'Read aloud controls' })).toBeNull()
 })
 
-it('pauses, seeks, changes speed, and stops message playback', async () => {
+it('pauses, seeks, and changes speed, and hides when playback stops', async () => {
   const audio = clip()
-  render(<SpeechPlayer />)
+  render(<SpeechPlayer messageKey="chat:message" />)
   await act(async () => { void speechPlayback.start('chat:message', ['Hello'], async () => audio) })
   expect(screen.getByRole('region', { name: 'Read aloud controls' })).toBeTruthy()
   expect(screen.getByText('0:03 / 1:05')).toBeTruthy()
-  expect(screen.getByRole('progressbar').getAttribute('aria-valuenow')).toBe('5')
+  expect((screen.getByRole('slider', { name: 'Reading position' }) as HTMLInputElement).value).toBe('3')
 
   fireEvent.click(screen.getByRole('button', { name: 'Pause reading' }))
-  expect(audio.pause).toHaveBeenCalledOnce(); expect(screen.getByText('Paused')).toBeTruthy()
+  expect(audio.pause).toHaveBeenCalledOnce()
   fireEvent.click(screen.getByRole('button', { name: 'Resume reading' }))
   expect(audio.resume).toHaveBeenCalledOnce()
 
+  const slider = screen.getByRole('slider', { name: 'Reading position' })
+  fireEvent.change(slider, { target: { value: '40' } }); expect(screen.getByText('0:40 / 1:05')).toBeTruthy(); expect(audio.seek).not.toHaveBeenCalled()
+  fireEvent.pointerUp(slider); expect(audio.time).toBe(40)
+  audio.time = 3
   fireEvent.click(screen.getByRole('button', { name: 'Forward 10 seconds' })); expect(audio.time).toBe(13)
   fireEvent.click(screen.getByRole('button', { name: 'Back 10 seconds' })); expect(audio.time).toBe(3)
 
   fireEvent.click(screen.getByRole('button', { name: 'Playback speed 1×' }))
   expect(audio.setRate).toHaveBeenLastCalledWith(1.25); expect(screen.getByRole('button', { name: 'Playback speed 1.25×' })).toBeTruthy()
 
-  fireEvent.click(screen.getByRole('button', { name: 'Stop reading' }))
+  act(() => speechPlayback.stop())
+  expect(screen.queryByRole('region', { name: 'Read aloud controls' })).toBeNull()
+})
+
+it('stays after a retained playback ends, replays its audio, and closes', async () => {
+  let finish = () => {}
+  const audio = { ...clip(), play: vi.fn((signal: AbortSignal) => new Promise<void>(resolve => { finish = resolve; signal.addEventListener('abort', () => resolve(), { once: true }) })) }
+  const generate = vi.fn(async () => audio)
+  render(<SpeechPlayer messageKey="chat:message" />)
+  await act(async () => { void speechPlayback.start('chat:message', ['Hello'], generate, { retain: true }) })
+  await act(async () => { finish() })
+  expect(screen.getByRole('region', { name: 'Read aloud controls' })).toBeTruthy()
+  expect(screen.getByText('1:05 / 1:05')).toBeTruthy()
+  expect((screen.getByRole('button', { name: 'Forward 10 seconds' }) as HTMLButtonElement).disabled).toBe(true)
+
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Replay' })) })
+  expect(audio.play).toHaveBeenCalledTimes(2); expect(audio.seek).toHaveBeenLastCalledWith(0); expect(generate).toHaveBeenCalledOnce()
+  expect(screen.getByRole('button', { name: 'Pause reading' })).toBeTruthy()
+
+  fireEvent.click(screen.getByRole('button', { name: 'Close player' }))
   expect(speechPlayback.getSnapshot().key).toBeNull()
   expect(screen.queryByRole('region', { name: 'Read aloud controls' })).toBeNull()
 })

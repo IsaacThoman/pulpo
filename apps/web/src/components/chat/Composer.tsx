@@ -1,7 +1,6 @@
 import { AttachmentWindow } from './AttachmentWindow'
 import { attachmentBatchRequiresAgent } from '@/lib/attachments'
 import { speechPlayback } from '@/features/speech/state'
-import { SpeechPlayer } from '@/features/speech/SpeechPlayer'
 import { localComposerDraftId, mergePendingAttachments } from '@pulpo/client-core'
 import { ShelvedDrafts } from './ShelvedDrafts'
 import { ComposerTray } from './ComposerTray'
@@ -1020,7 +1019,6 @@ export function Composer({
           )}
         </div>
       )}
-      <SpeechPlayer />
       {recovery && (
         <div className={cn(
           '-mb-3 flex items-center gap-2 rounded-t-2xl border border-b-0 px-3 pt-2 pb-5 text-sm shadow-sm',

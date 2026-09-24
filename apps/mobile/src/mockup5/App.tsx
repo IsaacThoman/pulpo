@@ -1,6 +1,6 @@
 import { imageBatchNeedsWorkspace, DEFAULT_MAX_INLINE_IMAGES } from '@pulpo/contracts';
 import { speechPlayback, readAloud } from '../features/speech/playback';
-import { SPEECH_SEEK_SECONDS, nextSpeechRate, speechClock, speechRateLabel, speechText, type SpeechProgress } from '@pulpo/client-core';
+import { SPEECH_SEEK_SECONDS, nextSpeechRate, speechRateLabel, speechText, speechTimeLabel, type SpeechProgress } from '@pulpo/client-core';
 import { INITIAL_TRANSCRIPT_ROWS, hasLargeInitialMessage, transcriptListMessages, usesBottomAnchoredTranscript } from '../features/chat/transcriptWindow';
 import { hasChatSelectionObserver, recordChatSelection, hasTranscriptPositionObserver, recordTranscriptPosition } from '../features/chat/selectionTiming';
 import { prepareChatSelection } from '../data/prepareChat';
@@ -2950,7 +2950,8 @@ function MessageContextMenu({
   const { styles } = useChatStyles();
   const speechState = useSyncExternalStore(speechPlayback.subscribe, speechPlayback.getSnapshot);
   const speechKey = `${message.chatId ?? ''}:${message.id}`;
-  const speaking = speechState.key === speechKey;
+  // An ended message keeps its player open; the menu reads it again from the start.
+  const speaking = speechState.key === speechKey && speechState.phase !== 'ended';
   const canSpeak = Boolean(speechText(message.text)) && (message.role === 'user' || !message.status || ['completed', 'complete', 'failed', 'stopped'].includes(message.status));
   useEffect(() => () => { if (speechPlayback.getSnapshot().key === speechKey) speechPlayback.stop(); }, [speechKey, message.text]);
   const speak = () => { void readAloud(speechKey, message.text).then(() => { const error = speechPlayback.getSnapshot().error; if (error) Alert.alert('Read aloud', error); }).catch(error => Alert.alert('Read aloud', error.message)); };
@@ -3848,7 +3849,55 @@ function SpeechPlayerButton({ label, icon, disabled = false, onPress }: { label:
   );
 }
 
-// Read-aloud controls docked at the top of the composer while a message is being read.
+// Drag or tap the track to seek. The lighter band is generated audio, the furthest a seek can
+// reach while later chunks are still generating. Accessibility adjust actions skip 10 seconds.
+function SpeechScrubTrack({ progress }: { progress: SpeechProgress | null }) {
+  const { styles } = useChatStyles();
+  const [drag, setDrag] = useState<number | null>(null);
+  const width = useRef(0);
+  const latest = useRef({ progress, drag });
+  latest.current = { progress, drag };
+  const total = progress?.total ?? 0;
+  const enabled = total > 0;
+  const gesture = useMemo(() => {
+    const at = (x: number) => {
+      const current = latest.current.progress;
+      if (!current?.total || !width.current) return null;
+      return Math.min(current.buffered, Math.max(0, x / width.current) * current.total);
+    };
+    return Gesture.Pan().runOnJS(true).minDistance(0).enabled(enabled)
+      .onBegin((event) => setDrag(at(event.x)))
+      .onUpdate((event) => setDrag(at(event.x)))
+      .onEnd(() => { const target = latest.current.drag; if (target !== null) speechPlayback.seekTo(target); })
+      .onFinalize(() => setDrag(null));
+  }, [enabled]);
+  const elapsed = drag ?? progress?.elapsed ?? 0;
+  const played = total ? Math.min(100, (elapsed / total) * 100) : 0;
+  const buffered = total ? Math.min(100, ((progress?.buffered ?? 0) / total) * 100) : 0;
+  return (
+    <GestureDetector gesture={gesture}>
+      <View
+        accessible
+        accessibilityRole="adjustable"
+        accessibilityLabel="Reading position"
+        accessibilityValue={{ text: speechTimeLabel(progress && { ...progress, elapsed }) }}
+        accessibilityActions={[{ name: 'increment' }, { name: 'decrement' }]}
+        onAccessibilityAction={({ nativeEvent }) => speechPlayback.seekBy(nativeEvent.actionName === 'increment' ? SPEECH_SEEK_SECONDS : -SPEECH_SEEK_SECONDS)}
+        onLayout={({ nativeEvent: { layout } }) => { width.current = layout.width; }}
+        style={styles.speechPlayerScrub}
+      >
+        <View style={styles.speechPlayerTrack}>
+          <View style={[styles.speechPlayerBuffered, { width: `${buffered}%` }]} />
+          <View style={[styles.speechPlayerFill, { width: `${played}%` }]} />
+        </View>
+        {drag !== null ? <View pointerEvents="none" style={[styles.speechPlayerThumb, { left: `${played}%` }]} /> : null}
+      </View>
+    </GestureDetector>
+  );
+}
+
+// Read-aloud controls docked at the top of the composer. They stay after a message ends so it
+// can be replayed or rewound from its generated audio, until closed or another read starts.
 function SpeechPlayerBar() {
   const { styles } = useChatStyles();
   const state = useSyncExternalStore(speechPlayback.subscribe, speechPlayback.getSnapshot);
@@ -3864,21 +3913,20 @@ function SpeechPlayerBar() {
   }, [visible, state]);
   if (!visible) return null;
   const loading = state.phase === 'loading';
-  const percent = Math.round((progress?.fraction ?? 0) * 100);
-  const time = `${speechClock(progress?.elapsed ?? 0)}${progress?.total ? ` / ${speechClock(progress.total)}` : ''}`;
+  const ended = state.phase === 'ended';
+  const time = speechTimeLabel(progress);
+  const status = ended ? 'Finished' : state.paused ? 'Paused' : loading ? 'Preparing speech…' : 'Reading aloud';
   return (
     <View accessibilityLabel="Read aloud controls" style={styles.speechPlayer}>
       <SpeechPlayerButton label={`Back ${SPEECH_SEEK_SECONDS} seconds`} icon="gobackward.10" disabled={loading} onPress={() => speechPlayback.seekBy(-SPEECH_SEEK_SECONDS)} />
-      <SpeechPlayerButton label={state.paused ? 'Resume reading' : 'Pause reading'} icon={state.paused ? 'play.fill' : 'pause.fill'} onPress={speechPlayback.togglePause} />
-      <SpeechPlayerButton label={`Forward ${SPEECH_SEEK_SECONDS} seconds`} icon="goforward.10" disabled={loading} onPress={() => speechPlayback.seekBy(SPEECH_SEEK_SECONDS)} />
+      <SpeechPlayerButton label={ended ? 'Replay' : state.paused ? 'Resume reading' : 'Pause reading'} icon={ended || state.paused ? 'play.fill' : 'pause.fill'} onPress={speechPlayback.togglePause} />
+      <SpeechPlayerButton label={`Forward ${SPEECH_SEEK_SECONDS} seconds`} icon="goforward.10" disabled={loading || ended} onPress={() => speechPlayback.seekBy(SPEECH_SEEK_SECONDS)} />
       <View style={styles.speechPlayerInfo}>
         <View style={styles.speechPlayerMeta}>
-          <Text accessibilityLiveRegion="polite" numberOfLines={1} style={styles.speechPlayerStatus}>{state.paused ? 'Paused' : loading ? 'Preparing speech…' : 'Reading aloud'}</Text>
+          <Text accessibilityLiveRegion="polite" numberOfLines={1} style={styles.speechPlayerStatus}>{status}</Text>
           <Text style={styles.speechPlayerTime}>{time}</Text>
         </View>
-        <View accessibilityRole="progressbar" accessibilityLabel="Reading progress" accessibilityValue={{ min: 0, max: 100, now: percent }} style={styles.speechPlayerTrack}>
-          <View style={[styles.speechPlayerFill, { width: `${percent}%` }]} />
-        </View>
+        <SpeechScrubTrack progress={progress} />
       </View>
       <Pressable
         accessibilityLabel={`Playback speed ${speechRateLabel(state.rate)}`}
@@ -3890,7 +3938,7 @@ function SpeechPlayerBar() {
       >
         <Text style={styles.speechPlayerRate}>{speechRateLabel(state.rate)}</Text>
       </Pressable>
-      <SpeechPlayerButton label="Stop reading" icon="xmark" onPress={speechPlayback.stop} />
+      <SpeechPlayerButton label="Close player" icon="xmark" onPress={speechPlayback.stop} />
     </View>
   );
 }
@@ -6539,12 +6587,15 @@ function createChatStyles(COLORS: ChatColors) { return StyleSheet.create({
   speechPlayerButton: { width: 36, height: 40, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
   speechPlayerRateButton: { width: 44 },
   speechPlayerRate: { color: COLORS.text, fontSize: 13, fontWeight: '600', fontVariant: ['tabular-nums'] },
-  speechPlayerInfo: { flex: 1, minWidth: 0, gap: 5, paddingHorizontal: 6 },
+  speechPlayerInfo: { flex: 1, minWidth: 0, gap: 1, paddingHorizontal: 6 },
   speechPlayerMeta: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: 6 },
   speechPlayerStatus: { flexShrink: 1, color: COLORS.muted, fontSize: 12, fontWeight: '500' },
   speechPlayerTime: { color: COLORS.muted, fontSize: 12, fontVariant: ['tabular-nums'] },
-  speechPlayerTrack: { height: 3, borderRadius: 1.5, overflow: 'hidden', backgroundColor: COLORS.fill },
-  speechPlayerFill: { height: '100%', borderRadius: 1.5, backgroundColor: COLORS.muted },
+  speechPlayerScrub: { height: 18, justifyContent: 'center' },
+  speechPlayerTrack: { height: 4, borderRadius: 2, overflow: 'hidden', backgroundColor: COLORS.fill },
+  speechPlayerBuffered: { position: 'absolute', top: 0, bottom: 0, left: 0, backgroundColor: COLORS.line },
+  speechPlayerFill: { position: 'absolute', top: 0, bottom: 0, left: 0, borderRadius: 2, backgroundColor: COLORS.muted },
+  speechPlayerThumb: { position: 'absolute', top: 3, width: 12, height: 12, marginLeft: -6, borderRadius: 6, backgroundColor: COLORS.text },
   messageEditBannerText: { flex: 1, color: COLORS.text, fontSize: 12, fontWeight: '600' },
   messageEditCancel: { color: COLORS.muted, fontSize: 12, fontWeight: '600', paddingHorizontal: 4, paddingVertical: 2 },
   attachmentRestrictionText: { color: COLORS.warning, fontSize: 11, lineHeight: 15, paddingHorizontal: 6, paddingBottom: 6 },

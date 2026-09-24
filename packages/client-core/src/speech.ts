@@ -63,13 +63,22 @@ export function nextSpeechRate(rate: number) {
 export function speechRateLabel(rate: number) {
   return `${rate}×`
 }
+/** `elapsed / total`, with `~` marking an estimated total. */
+export function speechTimeLabel(progress: SpeechProgress | null) {
+  const elapsed = speechClock(progress?.elapsed ?? 0)
+  return progress?.total ? `${elapsed} / ${progress.estimated ? '~' : ''}${speechClock(progress.total)}` : elapsed
+}
 export function speechClock(value: number) {
   const total = Math.max(0, Math.floor(value))
   return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`
 }
-export type SpeechPlaybackState = { key: string | null; phase: 'idle' | 'loading' | 'playing'; paused: boolean; rate: number; error: string | null }
-/** `total` is known once every chunk has been generated; `fraction` is estimated from text length until then. */
-export type SpeechProgress = { elapsed: number; total: number | null; fraction: number }
+/** `ended` keeps a retained playback's audio after its natural end, for replay, until it is stopped. */
+export type SpeechPlaybackState = { key: string | null; phase: 'idle' | 'loading' | 'playing' | 'ended'; paused: boolean; rate: number; error: string | null }
+/**
+ * `total` is exact once every chunk has been generated, and `estimated` from the speaking rate so far until then.
+ * `buffered` is how far from the start audio has been generated, and so how far `seekTo` can reach.
+ */
+export type SpeechProgress = { elapsed: number; total: number | null; estimated: boolean; buffered: number; fraction: number }
 type SpeechSession = {
   weights: number[]
   ready: SpeechAudio[]
@@ -79,6 +88,7 @@ type SpeechSession = {
   interrupt?: AbortController
   jump?: { index: number; at: number }
   wake?: () => void
+  ended: boolean
 }
 const seconds = (value: number | undefined) => typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : undefined
 const audioLength = (audio: SpeechAudio | undefined) => seconds(audio?.duration?.()) ?? seconds(audio?.durationSeconds)
@@ -95,35 +105,52 @@ export class SpeechPlayback {
   stop = () => { this.active?.abort(); this.active = undefined; this.session = undefined; this.update({ key: null, phase: 'idle', paused: false, error: null }) }
   pause = () => {
     const session = this.session
-    if (!session || this.state.paused) return
+    if (!session || session.ended || this.state.paused) return
     if (session.started) session.audio?.pause?.()
     this.update({ paused: true })
   }
   resume = () => {
     const session = this.session
+    if (session?.ended) { this.replay(); return }
     if (!session || !this.state.paused) return
     this.update({ paused: false })
     if (session.started) session.audio?.resume?.()
     else session.wake?.()
   }
-  togglePause = () => { if (this.state.paused) this.resume(); else this.pause() }
+  togglePause = () => { if (this.state.phase === 'ended') this.replay(); else if (this.state.paused) this.resume(); else this.pause() }
+  /** Restarts from the beginning using audio already generated where possible. */
+  replay = () => {
+    const session = this.session
+    if (!session) return
+    if (this.state.paused) this.update({ paused: false })
+    this.jump(session, 0, 0)
+  }
   setRate = (rate: number) => { this.session?.audio?.setRate?.(rate); this.update({ rate }) }
-  /** Seeks within generated audio: backwards into earlier chunks, forwards at most into the next chunk. */
   seekBy = (delta: number) => {
-    const session = this.session, audio = session?.audio
-    if (!session || !audio?.seek) return
-    // A failed in-place seek leaves playback where it was.
-    const seek = (seconds: number) => { void Promise.resolve(audio.seek!(seconds)).catch(() => {}) }
-    const target = (audio.currentTime?.() ?? 0) + delta
-    if (target < 0) {
-      const previous = session.ready[session.index - 1]
-      if (!previous) { seek(0); return }
-      this.jump(session, session.index - 1, Math.max(0, (audioLength(previous) ?? 0) + target))
-      return
+    const progress = this.progress()
+    if (progress) this.seekTo(progress.elapsed + delta)
+  }
+  /**
+   * Seeks to a time across the whole message. Chunks are generated in order, so a target past
+   * the generated audio stops at the start of the next chunk still being generated.
+   */
+  seekTo = (target: number) => {
+    const session = this.session
+    if (!session) return
+    let start = 0
+    for (let index = 0; index < session.weights.length; index++) {
+      const length = audioLength(session.ready[index])
+      if (length === undefined) { this.moveTo(session, index, 0); return }
+      if (target < start + length) { this.moveTo(session, index, Math.max(0, target - start)); return }
+      start += length
     }
-    const length = audioLength(audio)
-    if (length !== undefined && target >= length) this.jump(session, session.index + 1, 0)
-    else seek(target)
+    if (session.weights.length) this.jump(session, session.weights.length, 0)
+  }
+  private moveTo(session: SpeechSession, index: number, at: number) {
+    const audio = session.audio
+    // A failed in-place seek leaves playback where it was.
+    if (index === session.index && !session.ended && audio?.seek) void Promise.resolve(audio.seek(at)).catch(() => {})
+    else this.jump(session, index, at)
   }
   progress = (): SpeechProgress | null => {
     const session = this.session
@@ -131,23 +158,28 @@ export class SpeechPlayback {
     const position = session.audio?.currentTime?.() ?? 0
     const lengths = session.weights.map((_, index) => audioLength(session.ready[index]))
     const elapsed = sum(lengths.slice(0, session.index).map(length => length ?? 0)) + position
-    const total = lengths.length && lengths.every(length => length !== undefined) ? sum(lengths as number[]) : null
-    if (total) return { elapsed, total, fraction: Math.min(1, elapsed / total) }
-    const weight = sum(session.weights)
-    const current = lengths[session.index]
-    const done = sum(session.weights.slice(0, session.index)) + (current ? Math.min(1, position / current) : 0) * (session.weights[session.index] ?? 0)
-    return { elapsed, total, fraction: weight ? done / weight : 0 }
+    // Until every chunk is generated, extrapolate the rest from the speaking rate heard so far.
+    const knownSeconds = sum(lengths.map(length => length ?? 0))
+    const knownCharacters = sum(session.weights.filter((_, index) => lengths[index] !== undefined))
+    const firstMissing = lengths.findIndex(length => length === undefined)
+    const buffered = sum(lengths.slice(0, firstMissing < 0 ? lengths.length : firstMissing) as number[])
+    if (!knownSeconds || !knownCharacters) return { elapsed, total: null, estimated: false, buffered, fraction: 0 }
+    const estimated = firstMissing >= 0
+    const total = sum(lengths.map((length, index) => length ?? session.weights[index]! * knownSeconds / knownCharacters))
+    return { elapsed, total, estimated, buffered, fraction: Math.min(1, elapsed / total) }
   }
   private jump(session: SpeechSession, index: number, at: number) {
     session.jump = { index, at }
     session.interrupt?.abort()
+    session.wake?.()
   }
-  async start(key: string, chunks: string[] | ((signal: AbortSignal) => Promise<string[]>), generate: (input: string, signal: AbortSignal, offsetSeconds: number) => Promise<SpeechAudio>) {
+  /** With `retain`, playback that reaches its end stays in the `ended` phase with its audio, instead of stopping. */
+  async start(key: string, chunks: string[] | ((signal: AbortSignal) => Promise<string[]>), generate: (input: string, signal: AbortSignal, offsetSeconds: number) => Promise<SpeechAudio>, { retain = false }: { retain?: boolean } = {}) {
     if (this.state.key === key) { this.stop(); return }
     this.stop()
     const active = new AbortController(); this.active = active
     const { signal } = active
-    const session: SpeechSession = { weights: [], ready: [], index: 0, started: false }
+    const session: SpeechSession = { weights: [], ready: [], index: 0, started: false, ended: false }
     this.session = session
     this.update({ key, phase: 'loading', paused: false, error: null })
     const owned = new Set<SpeechAudio>(), played = new Set<SpeechAudio>()
@@ -166,19 +198,32 @@ export class SpeechPlayback {
       if (signal.aborted) return
       session.weights = list.map(chunk => chunk.length)
       let startAt = 0
-      while (session.index < list.length && !signal.aborted) {
+      while (!signal.aborted) {
+        if (session.index >= list.length) {
+          if (!retain) break
+          session.ended = true
+          this.update({ phase: 'ended', paused: false })
+          await new Promise<void>(resolve => { session.wake = resolve; signal.addEventListener('abort', () => resolve(), { once: true }) })
+          Object.assign(session, { wake: undefined, ended: false })
+          const jump = session.jump; session.jump = undefined
+          if (signal.aborted || !jump) break
+          session.index = jump.index; startAt = jump.at
+          continue
+        }
         const index = session.index
         this.update({ phase: 'loading' })
         const result = await load(index)
         if ('error' in result) throw result.error
         if (signal.aborted) break
+        // A seek made while this chunk was loading goes elsewhere first.
+        if (session.jump) { ({ index: session.index, at: startAt } = session.jump); session.jump = undefined; continue }
         // Observe prefetch errors immediately, even while the current chunk plays.
         if (index + 1 < list.length) void load(index + 1)
         const { audio } = result
         const interrupt = new AbortController()
         const forward = () => interrupt.abort()
         signal.addEventListener('abort', forward, { once: true })
-        Object.assign(session, { audio, interrupt, started: false, jump: undefined })
+        Object.assign(session, { audio, interrupt, started: false })
         audio.setRate?.(this.state.rate)
         if (startAt > 0 || played.has(audio)) await audio.seek?.(startAt)
         played.add(audio)
@@ -190,7 +235,8 @@ export class SpeechPlayback {
         session.wake = undefined
         if (!interrupt.signal.aborted) { session.started = true; await audio.play(interrupt.signal) }
         signal.removeEventListener('abort', forward)
-        const jump = session.jump
+        // Set by a seek while this chunk played; TypeScript cannot see that asynchronous write.
+        const jump = session.jump as SpeechSession['jump']
         Object.assign(session, { audio: undefined, interrupt: undefined, started: false, jump: undefined })
         if (signal.aborted) break
         session.index = jump?.index ?? index + 1

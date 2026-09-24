@@ -34,12 +34,16 @@ describe('native speech lifecycle', () => {
     mocks.onAppState?.('background'); await run
     expect(mocks.remove).toHaveBeenCalledOnce(); expect(mocks.deleteFile).toHaveBeenCalledOnce()
   })
-  it('plays with the session token and releases the player and temporary file on completion', async () => {
+  it('plays with the session token, keeps the finished audio for replay, and releases it when closed', async () => {
     const run = readAloud('chat:message', 'Hello')
     await tick(); expect(mocks.play).toHaveBeenCalledOnce()
     expect(fetch).toHaveBeenCalledWith('https://instance.example/api/speech', expect.objectContaining({ headers: { authorization: 'Bearer session', 'content-type': 'application/json' } }))
     expect(mocks.audioMode).toHaveBeenCalledWith(expect.objectContaining({ shouldPlayInBackground: false, allowsRecording: false }))
-    mocks.status?.({ didJustFinish: true }); await run
+    mocks.status?.({ didJustFinish: true }); await tick()
+    expect(speechPlayback.getSnapshot()).toMatchObject({ key: 'chat:message', phase: 'ended' }); expect(mocks.remove).not.toHaveBeenCalled()
+    void readAloud('chat:message', 'Hello'); await tick(); await tick()
+    expect(mocks.seekTo).toHaveBeenLastCalledWith(0); expect(mocks.play).toHaveBeenCalledTimes(2); expect(fetch).toHaveBeenCalledOnce()
+    speechPlayback.stop(); await run
     expect(mocks.remove).toHaveBeenCalledOnce(); expect(mocks.deleteFile).toHaveBeenCalledOnce()
   })
   it('carries generated duration into the prefetched watermark offset', async () => {

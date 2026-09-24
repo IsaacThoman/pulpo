@@ -21,6 +21,9 @@ export function previewSpeech() {
   return playSpeech('preview:settings')
 }
 async function playSpeech(key: string, markdown?: string) {
+  const snapshot = speechPlayback.getSnapshot()
+  // A finished message keeps its audio, so reading it again replays without regenerating.
+  if (snapshot.key === key) { if (snapshot.phase === 'ended') speechPlayback.replay(); else speechPlayback.stop(); return }
   const current = usePreferencesStore.getState().speech
   const preferences = { ...current, models: Object.fromEntries(Object.entries(current.models).map(([id, settings]) => [id, { ...settings }])) }
   let model: PublicSpeechModel
@@ -50,7 +53,7 @@ async function playSpeech(key: string, markdown?: string) {
     if (!response.ok) { const body = await response.json().catch(() => null); throw new Error(body?.error?.message ?? 'Speech generation failed') }
     const bytes = new Uint8Array(await response.arrayBuffer())
     return { ...nativeSpeechAudio(bytes, model.responseFormat, signal), durationSeconds: Number(response.headers.get(SPEECH_DURATION_HEADER)) }
-  })
+  }, { retain: markdown !== undefined })
 }
 AppState.addEventListener('change', state => { if (state !== 'active') speechPlayback.stop() })
 useSessionStore.subscribe((state, previous) => {

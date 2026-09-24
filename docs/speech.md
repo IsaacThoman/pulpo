@@ -7,18 +7,27 @@ Dictation and live voice conversations use separate systems.
 
 ## Playback controls
 
-While a message is read aloud, a player docks above the composer on web, desktop,
-iOS, and Android. It can pause and resume, skip back or forward 10 seconds, cycle
-the playback speed (0.75×–2×), and stop. The speed is applied by the client with
-pitch correction, multiplies any model speed setting, and lasts until the app
-reloads. On web, hardware media keys also control playback.
+While a message is read aloud, compact controls appear beneath that message's
+**Read aloud** button on web and desktop, and above the composer on iOS and Android.
+They pause and resume, skip back or forward 10 seconds, and cycle the playback speed
+(0.75×–2×). The speed is applied by the client with pitch correction, multiplies any
+model speed setting, and lasts until the app reloads. On web, hardware media keys also
+control playback.
 
-Long messages are generated in chunks with one chunk prefetched. Seeking back can
-cross into earlier chunks without generating them again; seeking forward goes at
-most to the start of the next chunk, and past the final chunk it ends playback.
-Elapsed time is shown throughout; total length appears once every chunk has been
-generated, and the progress bar estimates by text length until then. Settings
-previews do not show the player.
+When a message finishes, its controls stay open with the generated audio kept on the
+device. **Replay**, skipping back, or reading the message aloud again plays that audio
+without new speech requests or charges. **Close player** discards the audio and hides
+the controls, as do reading another message, switching chats, or leaving the app.
+
+The time shows elapsed / total. Drag or click the progress bar to seek; on mobile, drag
+or tap it, and VoiceOver or TalkBack adjust actions skip 10 seconds.
+
+Long messages are generated in chunks, in order, with one chunk prefetched. The lighter
+band on the progress bar marks audio generated so far. Seeking anywhere inside it, or
+back into earlier chunks, never generates audio again. A seek past it stops at the start
+of the chunk still being generated and continues once that chunk is ready. Until every
+chunk is generated, the total is estimated from the speaking rate so far and shown with
+`~`. Settings previews do not show the player.
 
 ## Defaults for users
 
