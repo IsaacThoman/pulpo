@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { normalizeMathDelimiters } from './markdown.js'
+import { normalizeMathDelimiters, unwrapBoxedMinipages } from './markdown.js'
 
 describe('normalizeMathDelimiters', () => {
   it('preserves paired single-dollar inline math', () => {
@@ -57,6 +57,60 @@ $$\frac{a}{b} + c$$
       .toBe('\n$$\nx^2 + y^2\n$$\n')
   })
 
+  it('can make wide inline math scrollable without changing short math, display math, or code', () => {
+    const wide = String.raw`a_1+b_1+c_1+d_1+e_1+f_1+g_1+h_1+i_1+j_1=\mathrm{TAIL}`
+    const markdown = `Short $x+1$; wide $${wide}$ after.\n\n$$x^2$$\n\n\`$${wide}$\``
+
+    expect(normalizeMathDelimiters(markdown, { maxInlineMathLength: 24 }))
+      .toBe(`Short $x+1$; wide \n\n$$${wide}$$\n\n after.\n\n$$x^2$$\n\n\`$${wide}$\``)
+  })
+
+  it('promotes long parenthesized math after normalizing its delimiters', () => {
+    const tex = String.raw`a_1+b_1+c_1+d_1+e_1+f_1+g_1`
+    expect(normalizeMathDelimiters(String.raw`Before \(a_1+b_1+c_1+d_1+e_1+f_1+g_1\) after`, { maxInlineMathLength: 24 }))
+      .toBe(`Before \n\n$$${tex}$$\n\n after`)
+  })
+
+  it('pairs nested display delimiters by depth', () => {
+    const markdown = String.raw`Before.
+
+\[
+\boxed{
+\text{Let } L = D - W
+\[
+L_{ii} = \sum_j w_{ij}
+\]
+}
+\]
+
+After $x$.`
+
+    expect(normalizeMathDelimiters(markdown)).toBe(String.raw`Before.
+
+
+$$\boxed{ \text{Let } L = D - W \[ L_{ii} = \sum_j w_{ij} \] }$$
+
+
+After $x$.`)
+  })
+
+  it('keeps display math line breaks in multiline style', () => {
+    expect(normalizeMathDelimiters('\\[\n  a \\\\\n\n  b\n\\]', { displayMathStyle: 'multiline' }))
+      .toBe('\n$$\na \\\\\nb\n$$\n')
+  })
+
+  it('does not treat a LaTeX line break before a bracket as a display delimiter', () => {
+    expect(normalizeMathDelimiters(String.raw`\[a \\[2pt] b\]`)).toBe(String.raw`
+$$a \\[2pt] b$$
+`)
+  })
+
+  it('leaves an unclosed outer display block untouched', () => {
+    const markdown = String.raw`\[ a \[ b \]`
+
+    expect(normalizeMathDelimiters(markdown)).toBe(markdown)
+  })
+
   it('does not rewrite delimiters inside inline or fenced code', () => {
     const inlineCode = '`' + String.raw`$5 and \(code\)` + '`'
     const fencedCode = ['```tex', String.raw`$F_x$`, String.raw`\[block\]`, '```'].join('\n')
@@ -67,5 +121,46 @@ $$\frac{a}{b} + c$$
     expect(normalized).toContain(inlineCode)
     expect(normalized).toContain(String.raw`$F_x$
 \[block\]`)
+  })
+})
+
+describe('unwrapBoxedMinipages', () => {
+  it('renders prose and nested equations from a boxed LaTeX document separately', () => {
+    const source = String.raw`Intro.
+
+\[
+\boxed{
+\begin{minipage}{0.98\linewidth}
+\textbf{Problem.}
+Let \(x+y\) be known.
+\[
+z=x+y
+\]
+\begin{enumerate}
+\item Find \(z\).
+\end{enumerate}
+\end{minipage}
+}
+\]`
+
+    const normalized = normalizeMathDelimiters(unwrapBoxedMinipages(source))
+    expect(normalized).toContain('**Problem.**')
+    expect(normalized).toContain('Let $x+y$ be known.')
+    expect(normalized).toContain('$$z=x+y$$')
+    expect(normalized).toContain('**1.** Find $z$.')
+    expect(normalized).not.toContain('\\begin{minipage}')
+    expect(normalized).not.toContain('\\boxed')
+  })
+
+  it('leaves ordinary boxed math and fenced examples unchanged', () => {
+    const boxed = String.raw`\[\boxed{x+y}\]`
+    const example = '```latex\n' + String.raw`\[\boxed{\begin{minipage}{1\linewidth}example\end{minipage}}\]` + '\n```'
+    expect(unwrapBoxedMinipages(`${boxed}\n\n${example}`)).toBe(`${boxed}\n\n${example}`)
+  })
+  it('bolds a heading that shares its line with prose', () => {
+    const source = String.raw`\[\boxed{\begin{minipage}{0.98\linewidth}
+\textbf{Problem.} Let $n\ge 3$.
+\end{minipage}}\]`
+    expect(unwrapBoxedMinipages(source).trim()).toBe(String.raw`**Problem.** Let $n\ge 3$.`)
   })
 })

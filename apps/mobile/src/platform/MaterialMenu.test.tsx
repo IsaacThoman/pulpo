@@ -4,6 +4,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 vi.mock('react-native', () => ({ useWindowDimensions: () => ({ width: 412 }) }))
 vi.mock('react-native-safe-area-context', () => ({ SafeAreaView: () => null }))
+vi.mock('react-native-gesture-handler', () => ({ Gesture: {}, GestureDetector: () => null }))
 vi.mock('./materialIcons', () => ({ materialIcon: (name: string) => name }))
 vi.mock('@expo/ui/jetpack-compose/modifiers', () => Object.fromEntries(['clickable', 'defaultMinSize', 'fillMaxWidth', 'height', 'padding', 'semantics', 'size', 'verticalScroll', 'weight', 'width', 'wrapContentWidth'].map(name => [name, () => ({})])))
 vi.mock('@expo/ui/jetpack-compose', async () => {

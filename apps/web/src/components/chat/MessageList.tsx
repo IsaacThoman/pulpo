@@ -1,5 +1,5 @@
 import { memo, useCallback, useRef, useEffect, useState, type ComponentProps } from 'react'
-import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso'
+import { Virtuoso, type ListProps, type VirtuosoHandle } from 'react-virtuoso'
 import { useChat } from '@/stores/chat'
 import type { Message } from '@/lib/types'
 import { HISTORY_PREFETCH_MESSAGES } from '@/lib/chat-history'
@@ -33,7 +33,7 @@ const MessageRow = memo(function MessageRow({ id, ...props }: Omit<MessageListPr
   return message ? <MessageItem {...props} message={message} streaming={message.role === 'assistant' && !message.done} /> : null
 })
 
-type HistoryContext = ReturnType<typeof useChatHistory>
+type HistoryContext = ReturnType<typeof useChatHistory> & { ready: boolean }
 function HistoryHeader({ context }: { context?: HistoryContext }) {
   return <div className="relative pt-18">{context?.history?.hasMore ? <div className="absolute inset-x-0 bottom-1 text-center text-xs text-muted-foreground" role="status">
     {context.error
@@ -41,7 +41,12 @@ function HistoryHeader({ context }: { context?: HistoryContext }) {
       : ui('Loading earlier messages…')}
   </div> : null}</div>
 }
-const historyComponents = { Header: HistoryHeader }
+// Virtuoso hides an initial LAST positioning until sizes stay unchanged for 150 ms. Reveal as soon
+// as the rendered bottom is confirmed instead; any later correction still scrolls to the bottom.
+function HistoryList({ context, style, ...props }: ListProps & { context?: HistoryContext }) {
+  return <div {...props} style={context?.ready ? { ...style, visibility: undefined } : style} />
+}
+const historyComponents = { Header: HistoryHeader, List: HistoryList }
 
 function VirtualMessages({ viewport, ...props }: MessageListProps & { viewport: HTMLDivElement }) {
   const ids = useChat(state => messageIds(props.chat.id, state.chats.find(chat => chat.id === props.chat.id)?.messages ?? EMPTY_MESSAGES))
@@ -60,9 +65,11 @@ function VirtualMessages({ viewport, ...props }: MessageListProps & { viewport: 
   }
   const [readyVersion, setReadyVersion] = useState<number | null>(null)
   const ready = readyVersion === lineage.current.version
-  const context = useChatHistory(props.chat.id, ready)
-  const { history, loading, error, load } = context
+  const historyState = useChatHistory(props.chat.id, ready)
+  const { history, loading, error, load } = historyState
+  const context = { ...historyState, ready }
   const bottomFrame = useRef<number | null>(null)
+  const confirmBottom = useRef(() => {})
   const currentIds = useRef(ids)
   currentIds.current = ids
   const hasMessages = ids.length > 0
@@ -85,7 +92,9 @@ function VirtualMessages({ viewport, ...props }: MessageListProps & { viewport: 
       if (initialBottomObserved || viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight > 96) return
       const last = [...content.querySelectorAll<HTMLElement>('[data-message-id]')]
         .find(row => row.dataset.messageId === currentIds.current.at(-1))
-      if (last && last.getBoundingClientRect().bottom <= viewport.getBoundingClientRect().bottom + 96) {
+      // Virtuoso first renders one unsized probe row, which is not the positioned list.
+      const probe = last?.closest<HTMLElement>('[data-known-size]')?.dataset.knownSize === '0'
+      if (last && !probe && last.getBoundingClientRect().bottom <= viewport.getBoundingClientRect().bottom + 96) {
         initialBottomObserved = true
         setReadyVersion(lineage.current.version)
       }
@@ -140,12 +149,18 @@ function VirtualMessages({ viewport, ...props }: MessageListProps & { viewport: 
     })
     observer.observe(content)
     observer.observe(viewport)
+    // Row measurements can settle the bottom without resizing the scroller or scrolling.
+    const rows = new ResizeObserver(markInitialBottom)
+    const itemList = content.querySelector('[data-testid="virtuoso-item-list"]')
+    if (itemList) rows.observe(itemList)
     captureAnchor()
+    confirmBottom.current = markInitialBottom
     markInitialBottom()
     return () => {
       viewport.removeEventListener('scroll', onScroll, true)
       viewport.removeEventListener('wheel', onWheel, true)
       observer.disconnect()
+      rows.disconnect()
       cancelAnimationFrame(captureFrame)
       clearTimeout(resizeTimer)
       if (bottomFrame.current !== null) cancelAnimationFrame(bottomFrame.current)
@@ -160,8 +175,8 @@ function VirtualMessages({ viewport, ...props }: MessageListProps & { viewport: 
   }, [ready, viewport])
   useEffect(settleBottom, [ids.length, settleBottom])
   const firstIndex = 1 + (history?.offset ?? 0) * 2
-  const version = lineage.current.version
-  const endReached = useCallback(() => setReadyVersion(version), [version])
+  // endReached also fires for the probe row, so it only triggers the geometry check.
+  const endReached = useCallback(() => confirmBottom.current(), [])
   const rangeChanged = useCallback(({ startIndex }: { startIndex: number }) => {
     // Initial measurement/scrolling must finish before a prepend changes the item indices.
     if (!ready) return
