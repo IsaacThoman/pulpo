@@ -76,7 +76,10 @@ export function AutoTopUpStatus({ autoTopUp, className }: {
   return (
     <p className={cn('flex items-start gap-1.5 text-xs', status.tone === 'error' ? 'text-destructive' : 'text-muted-foreground', className)}>
       <Icon className={cn('mt-0.5 size-3 shrink-0', status.tone === 'attention' && 'text-amber-600 dark:text-amber-400')} aria-hidden />
-      <span>{status.text}</span>
+      <span>
+        {status.text}
+        {status.usage && <span className="block">{status.usage}</span>}
+      </span>
     </p>
   )
 }
