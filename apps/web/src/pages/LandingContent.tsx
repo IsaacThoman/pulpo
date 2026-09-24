@@ -59,7 +59,7 @@ export function LandingContent({ instanceName, signupEnabled }: { instanceName: 
           <div className="mt-8 flex w-full max-w-xs flex-col gap-3 sm:w-auto sm:max-w-none sm:flex-row">
             <DownloadButton />
             <Button asChild size="lg" variant="outline">
-              <Link to="/login"><LaptopMinimal />{ui("Launch in browser")}</Link>
+              <Link to="/login"><LaptopMinimal />{ui("Open in your browser")}</Link>
             </Button>
           </div>
         </section>
