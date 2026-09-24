@@ -30,7 +30,7 @@ import { mergePendingLocalMessages } from '@/lib/merge-pending-local-messages'
 import { applyEventToSnapshot } from '@/lib/local-first/response-snapshot'
 import { clearLocalChats } from '@/lib/local-first/chat-cache'
 import { coalesceResponseEvents } from '@/features/chat/response-sync'
-import { withBranchMetadata } from '@/lib/message-branches'
+import { withInsertedBranchResponse, withoutBranchResponse } from '@/lib/message-branches'
 import { mergeSummaryResponseTracking, reconcileStreamingResponseIds, reindexDetailedChatResponses } from '@/lib/response-tracking'
 import { BranchSelectionIntents } from '@/lib/branch-selection-intents'
 import { reorderList } from '@/lib/model-order'
@@ -559,7 +559,7 @@ const branchSelectionIntents = new BranchSelectionIntents()
 
 function mergePendingOptimisticResponses(row: ServerChat): ServerChat {
   if (!row.responses) return row
-  const responses = [...row.responses]
+  let responses = row.responses
   const serverIds = new Set(responses.map((response) => response.id))
   const attachmentRows = [...(row.attachments ?? [])]
   const attachmentIds = new Set(attachmentRows.map((attachment) => attachment.id))
@@ -579,7 +579,7 @@ function mergePendingOptimisticResponses(row: ServerChat): ServerChat {
       }
       continue
     }
-    responses.push(pending.response)
+    responses = withInsertedBranchResponse(responses, pending.response)
     for (const attachment of pending.attachments) {
       if (attachmentIds.has(attachment.id)) continue
       attachmentIds.add(attachment.id)
@@ -597,7 +597,7 @@ function mergePendingOptimisticResponses(row: ServerChat): ServerChat {
     ...row,
     activeResponseId: activeLeaf,
     activeBranchLeafId: activeLeaf,
-    responses: withBranchMetadata(responses),
+    responses,
     attachments: attachmentRows,
   }
 }
@@ -669,7 +669,7 @@ function cacheOptimisticTurn(input: {
           ...(existing.attachments ?? []).filter((attachment) => !input.attachments.some((item) => item.id === attachment.id)),
           ...attachmentRows,
         ],
-        responses: withBranchMetadata([...(existing.responses ?? []), response]),
+        responses: withInsertedBranchResponse(existing.responses ?? [], response),
       }
     : {
         id: input.chatId,
@@ -777,7 +777,7 @@ function cacheOptimisticBranch(input: {
     updatedAt: createdAt,
     activeResponseId: response.id,
     activeBranchLeafId: response.id,
-    responses: withBranchMetadata([...existing.responses, response]),
+    responses: withInsertedBranchResponse(existing.responses, response),
     attachments: [
       ...(existing.attachments ?? []).filter((attachment) => !attachmentRows.some((item) => item.id === attachment.id)),
       ...attachmentRows,
@@ -949,13 +949,13 @@ function failOptimisticResponse(
     ...current,
     activeResponseId: restoreFallback ? fallbackResponseId : current.activeResponseId,
     activeBranchLeafId: restoreFallback ? fallbackResponseId : current.activeBranchLeafId,
-    responses: withBranchMetadata(current.responses.map((response) => response.id !== responseId ? response : {
+    responses: current.responses.map((response) => response.id !== responseId ? response : {
       ...response,
       status: 'failed',
       error: { message },
       completedAt: failedAt,
       snapshot: { ...hydratedResponseSnapshot(response), status: 'failed', error: { message }, updatedAt: failedAt },
-    })),
+    }),
   }
   const failedResponse = updated.responses?.find((response) => response.id === responseId)
   if (failedResponse) pendingOptimisticResponses.set(responseId, {
@@ -1968,8 +1968,8 @@ export const useChat = create<ChatState>()((set, get) => ({
         if (pending) pendingOptimisticResponses.set(responseId, { ...pending, response: { ...pending.response, rejectedSend: undefined } })
         queryClient.setQueryData<ServerChat>(chatKey(chatId), (chat) => chat && ({
           ...chat,
-          responses: withBranchMetadata((chat.responses ?? []).filter((response) => response.id !== sourceResponseId)
-            .map((response) => response.id === responseId ? { ...response, rejectedSend: undefined } : response)),
+          responses: withoutBranchResponse(chat.responses ?? [], sourceResponseId)
+            .map((response) => response.id === responseId ? { ...response, rejectedSend: undefined } : response),
         }))
         const detail = queryClient.getQueryData<ServerChat>(chatKey(chatId))
         if (detail) get().setDetailedChat(detail)
@@ -1987,7 +1987,7 @@ export const useChat = create<ChatState>()((set, get) => ({
       let failed = failOptimisticResponse(chatId, responseId, previousActiveLeafId, selectionVersion, message)
       if (failed && rejectedSend) {
         pendingOptimisticResponses.delete(responseId)
-        failed = { ...failed, responses: withBranchMetadata((failed.responses ?? []).filter((response) => response.id !== responseId)) }
+        failed = { ...failed, responses: withoutBranchResponse(failed.responses ?? [], responseId) }
         queryClient.setQueryData(chatKey(chatId), failed)
       }
       if (failed) get().setDetailedChat(failed)

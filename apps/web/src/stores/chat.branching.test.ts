@@ -761,6 +761,58 @@ describe('chat store branching integration', () => {
     requests[1]!.resolve({ activeBranchLeafId: responseAId, responses: activatedA.responses })
   })
 
+  it('keeps server sibling counts when switching back during a regeneration in paged history', async () => {
+    const responseBId = '00000000-0000-4000-8000-000000000005'
+    const history = { offset: 0, hasMore: false, before: responseBId, leafId: responseBId }
+    const assistantBranch = (ids: string[], id: string) => ({ ids, index: ids.indexOf(id) })
+    // Paged history holds only the active lineage; A is known only through B's server metadata.
+    const responseB = {
+      ...response(responseBId, 'completed'),
+      branches: { user: { ids: [responseBId], index: 0 }, assistant: assistantBranch([responseAId, responseBId], responseBId) },
+    }
+    const initial: ServerChat = { ...detail(responseBId, []), responses: [responseB], history }
+    queryClient.setQueryData(['chat', userId, chatId], initial)
+    useChat.getState().setDetailedChat(initial)
+
+    useChat.getState().regenerate(chatId, responseBId, { modelId: 'test-model', presetSelections: {}, agentMode: false })
+    const responseCId = queryClient.getQueryData<ServerChat>(['chat', userId, chatId])!.activeBranchLeafId!
+    const branchOf = (id: string) => useChat.getState().chats.find((chat) => chat.id === chatId)
+      ?.messages.find((message) => message.id === id)?.branch
+    expect(branchOf(responseCId)).toEqual(assistantBranch([responseAId, responseBId, responseCId], responseCId))
+
+    // Regeneration prunes B from the active-lineage cache, so going back waits for the server page.
+    useChat.getState().activateBranch(chatId, responseBId)
+    await vi.waitFor(() => expect(requests).toHaveLength(1))
+    requests[0]!.resolve({ response: response(responseCId, 'in_progress').snapshot }, 202)
+    await vi.waitFor(() => expect(requests).toHaveLength(2))
+    expect(requests[1]!.path).toContain(`/api/messages/${responseBId}/activate?historyLimit=`)
+    const allThree = [responseAId, responseBId, responseCId]
+    requests[1]!.resolve({
+      activeBranchLeafId: responseBId,
+      history,
+      attachments: [],
+      responses: [{ ...responseB, branches: { ...responseB.branches, assistant: assistantBranch(allThree, responseBId) } }],
+    })
+    await vi.waitFor(() => expect(
+      queryClient.getQueryData<ServerChat>(['chat', userId, chatId])?.activeBranchLeafId,
+    ).toBe(responseBId))
+
+    // C is still streaming, so its optimistic row is merged back into B's page.
+    expectOnly(responseBId)
+    expect(branchOf(responseBId)).toEqual(assistantBranch(allThree, responseBId))
+
+    const responseCCompleted = response(responseCId, 'completed')
+    useChat.getState().applyResponseSnapshot(responseCCompleted.snapshot)
+    useChat.getState().setDetailedChat({
+      ...detail(responseBId, [responseB, responseCCompleted]),
+      responses: [responseB, responseCCompleted].map((row) => ({
+        ...row, branches: { ...row.branches, assistant: assistantBranch(allThree, row.id) },
+      })),
+    })
+    expectOnly(responseBId)
+    expect(branchOf(responseBId)).toEqual(assistantBranch(allThree, responseBId))
+  })
+
   it('does not downgrade a cached branch when an active-only detail refresh returns its stub', () => {
     const responseBId = '00000000-0000-4000-8000-000000000005'
     const responseA = response(responseAId, 'completed')
