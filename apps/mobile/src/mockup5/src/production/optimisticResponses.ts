@@ -19,6 +19,8 @@ interface PendingOptimisticResponse {
   attachments: ServerAttachment[]
   chatListed: boolean
   terminalDetailSeen: boolean
+  /** Cleared once the user picks another branch, so a streaming turn stops reclaiming the leaf. */
+  pinsLeaf: boolean
 }
 
 interface CacheOptimisticTurnInput {
@@ -193,6 +195,7 @@ export function cacheOptimisticTurn(input: CacheOptimisticTurnInput): void {
     attachments: attachmentRows,
     chatListed: false,
     terminalDetailSeen: false,
+    pinsLeaf: true,
   })
 
   const existing = input.queryClient.getQueryData<ServerChat>(chatKey(input.namespace, input.chatId))
@@ -294,6 +297,7 @@ export function cacheOptimisticBranch(input: CacheOptimisticBranchInput): Server
     attachments: attachmentRows,
     chatListed: false,
     terminalDetailSeen: false,
+    pinsLeaf: true,
   })
   input.queryClient.setQueryData<ServerChat>(chatKey(input.namespace, input.chatId), {
     ...existing,
@@ -340,7 +344,7 @@ export function reconcileOptimisticResponses(
     // leaf, and attachment metadata in the same client read. Keep the latest
     // accepted turn selected and its attachments resolvable until both the
     // terminal transcript and chat list have caught up.
-    optimisticLeaf = item.response.id
+    if (item.pinsLeaf) optimisticLeaf = item.response.id
     for (const attachment of item.attachments) {
       if (attachmentIds.has(attachment.id)) continue
       attachmentIds.add(attachment.id)
@@ -385,6 +389,13 @@ export function reconcileOptimisticResponses(
     activeBranchLeafId: optimisticLeaf ?? chat.activeBranchLeafId,
     responses: withBranchMetadata(responses),
     attachments,
+  }
+}
+
+/** Let an explicit branch choice replace the accepted turn while that turn is still pending. */
+export function releaseOptimisticLeaf(namespace: string, chatId: string): void {
+  for (const pending of pendingResponses.values()) {
+    if (pending.namespace === namespace && pending.chatId === chatId) pending.pinsLeaf = false
   }
 }
 
