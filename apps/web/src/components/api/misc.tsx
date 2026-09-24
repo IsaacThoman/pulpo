@@ -38,11 +38,11 @@ export function CheckboxRow({
 export function Snippet({ title, code }: { title: string; code: string }) {
   const [copied, setCopied] = useState(false)
   return (
-    <div className="overflow-hidden rounded-lg border bg-zinc-950 dark:bg-zinc-900">
-      <div className="flex items-center justify-between border-b border-white/10 px-3 py-1.5">
-        <span className="text-[11px] font-medium text-zinc-400">{title}</span>
+    <div className="overflow-hidden rounded-lg border bg-code">
+      <div className="flex items-center justify-between border-b border-code-border px-3 py-1.5">
+        <span className="text-[11px] font-medium text-code-muted">{title}</span>
         <button
-          className="flex cursor-pointer items-center gap-1 text-[11px] text-zinc-400 hover:text-zinc-100"
+          className="flex cursor-pointer items-center gap-1 text-[11px] text-code-muted hover:text-code-foreground"
           onClick={() => {
             navigator.clipboard?.writeText(code).catch(() => {})
             setCopied(true)
@@ -53,7 +53,7 @@ export function Snippet({ title, code }: { title: string; code: string }) {
           {copied ? ui("copied") : ui("copy")}
         </button>
       </div>
-      <pre className="overflow-x-auto p-3 font-mono text-xs leading-relaxed text-zinc-100">{code}</pre>
+      <pre className="overflow-x-auto p-3 font-mono text-xs leading-relaxed text-code-foreground">{code}</pre>
     </div>
   )
 }

@@ -31,6 +31,23 @@
   --sidebar-accent: oklch(0.967 0.001 286.375);
   --sidebar-accent-foreground: oklch(0.21 0.006 285.885);
   --sidebar-border: oklch(0.92 0.004 286.32);
+  --code: oklch(0.985 0 0);
+  --code-foreground: oklch(0.21 0.006 285.885);
+  --code-muted: oklch(0.552 0.016 285.938);
+  --code-border: oklch(0.92 0.004 286.32);
+  --code-keyword: #cf222e;
+  --code-title: #8250df;
+  --code-constant: #0550ae;
+  --code-string: #0a3069;
+  --code-builtin: #953800;
+  --code-comment: #6e7781;
+  --code-tag: #116329;
+  --code-section: #0550ae;
+  --code-bullet: #953800;
+  --code-addition: #116329;
+  --code-addition-background: #dafbe1;
+  --code-deletion: #82071e;
+  --code-deletion-background: #ffebe9;
 }
 
 .dark {
@@ -58,6 +75,23 @@
   --sidebar-accent: oklch(0.25 0.006 285.942);
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 8%);
+  --code: oklch(0.21 0.006 285.885);
+  --code-foreground: oklch(0.967 0.001 286.375);
+  --code-muted: oklch(0.705 0.015 286.067);
+  --code-border: oklch(1 0 0 / 10%);
+  --code-keyword: #ff7b72;
+  --code-title: #d2a8ff;
+  --code-constant: #79c0ff;
+  --code-string: #a5d6ff;
+  --code-builtin: #ffa657;
+  --code-comment: #8b949e;
+  --code-tag: #7ee787;
+  --code-section: #1f6feb;
+  --code-bullet: #f2cc60;
+  --code-addition: #aff5b4;
+  --code-addition-background: #033a16;
+  --code-deletion: #ffdcd7;
+  --code-deletion-background: #67060c;
 }
 
 @theme inline {
@@ -85,6 +119,10 @@
   --color-sidebar-accent: var(--sidebar-accent);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
+  --color-code: var(--code);
+  --color-code-foreground: var(--code-foreground);
+  --color-code-muted: var(--code-muted);
+  --color-code-border: var(--code-border);
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -357,7 +395,7 @@ html[data-desktop="true"] .desktop-sidebar-collapsed .chat-header::before {
   }
 }
 
-/* Syntax highlighting (GitHub Dark) — code surfaces stay dark in both app themes */
+/* Syntax highlighting — token colours follow the app theme (GitHub Light / GitHub Dark) */
 .code-highlight .hljs-doctag,
 .code-highlight .hljs-keyword,
 .code-highlight .hljs-meta .hljs-keyword,
@@ -365,13 +403,13 @@ html[data-desktop="true"] .desktop-sidebar-collapsed .chat-header::before {
 .code-highlight .hljs-template-variable,
 .code-highlight .hljs-type,
 .code-highlight .hljs-variable.language_ {
-  color: #ff7b72;
+  color: var(--code-keyword);
 }
 .code-highlight .hljs-title,
 .code-highlight .hljs-title.class_,
 .code-highlight .hljs-title.class_.inherited__,
 .code-highlight .hljs-title.function_ {
-  color: #d2a8ff;
+  color: var(--code-title);
 }
 .code-highlight .hljs-attr,
 .code-highlight .hljs-attribute,
@@ -384,38 +422,38 @@ html[data-desktop="true"] .desktop-sidebar-collapsed .chat-header::before {
 .code-highlight .hljs-selector-class,
 .code-highlight .hljs-selector-id,
 .code-highlight .hljs-variable {
-  color: #79c0ff;
+  color: var(--code-constant);
 }
 .code-highlight .hljs-meta .hljs-string,
 .code-highlight .hljs-regexp,
 .code-highlight .hljs-string {
-  color: #a5d6ff;
+  color: var(--code-string);
 }
 .code-highlight .hljs-built_in,
 .code-highlight .hljs-symbol {
-  color: #ffa657;
+  color: var(--code-builtin);
 }
 .code-highlight .hljs-code,
 .code-highlight .hljs-comment,
 .code-highlight .hljs-formula {
-  color: #8b949e;
+  color: var(--code-comment);
   font-style: italic;
 }
 .code-highlight .hljs-name,
 .code-highlight .hljs-quote,
 .code-highlight .hljs-selector-pseudo,
 .code-highlight .hljs-selector-tag {
-  color: #7ee787;
+  color: var(--code-tag);
 }
 .code-highlight .hljs-subst {
   color: inherit;
 }
 .code-highlight .hljs-section {
-  color: #1f6feb;
+  color: var(--code-section);
   font-weight: 600;
 }
 .code-highlight .hljs-bullet {
-  color: #f2cc60;
+  color: var(--code-bullet);
 }
 .code-highlight .hljs-emphasis {
   font-style: italic;
@@ -424,12 +462,12 @@ html[data-desktop="true"] .desktop-sidebar-collapsed .chat-header::before {
   font-weight: 600;
 }
 .code-highlight .hljs-addition {
-  color: #aff5b4;
-  background-color: #033a16;
+  color: var(--code-addition);
+  background-color: var(--code-addition-background);
 }
 .code-highlight .hljs-deletion {
-  color: #ffdcd7;
-  background-color: #67060c;
+  color: var(--code-deletion);
+  background-color: var(--code-deletion-background);
 }
 
 /* KaTeX */

@@ -19,13 +19,13 @@ function CodeBlock({ language, code }: { language: string; code: string }) {
   const openPreview = useCodePreview((state) => state.open)
   const previewKind = canPreview ? previewKindForLanguage(language, code) : null
   return (
-    <div className="group/code my-3 min-w-0 max-w-full overflow-hidden rounded-lg border bg-zinc-950 dark:bg-zinc-900">
-      <div className="flex min-w-0 items-center justify-between gap-2 border-b border-white/10 px-3 py-1.5">
-        <span className="min-w-0 flex-1 truncate text-[11px] font-medium text-zinc-400">{language || 'text'}</span>
+    <div className="group/code my-3 min-w-0 max-w-full overflow-hidden rounded-lg border bg-code">
+      <div className="flex min-w-0 items-center justify-between gap-2 border-b border-code-border px-3 py-1.5">
+        <span className="min-w-0 flex-1 truncate text-[11px] font-medium text-code-muted">{language || 'text'}</span>
         {previewKind && (
           <button
             type="button"
-            className="flex shrink-0 cursor-pointer items-center gap-1 text-[11px] text-zinc-400 hover:text-zinc-100"
+            className="flex shrink-0 cursor-pointer items-center gap-1 text-[11px] text-code-muted hover:text-code-foreground"
             onClick={() => openPreview({ kind: previewKind, code, title: previewTitle(previewKind, code) })}
           >
             <Play className="size-3" />
@@ -33,7 +33,7 @@ function CodeBlock({ language, code }: { language: string; code: string }) {
           </button>
         )}
         <button
-          className="flex shrink-0 cursor-pointer items-center gap-1 text-[11px] text-zinc-400 hover:text-zinc-100"
+          className="flex shrink-0 cursor-pointer items-center gap-1 text-[11px] text-code-muted hover:text-code-foreground"
           onClick={() => {
             void writeClipboardText(code).then((success) => {
               if (!success) return
@@ -46,7 +46,7 @@ function CodeBlock({ language, code }: { language: string; code: string }) {
           {copied ? ui("copied") : ui("copy")}
         </button>
       </div>
-      <pre className="max-w-full overflow-x-auto p-3 text-[13px] leading-relaxed text-zinc-100">
+      <pre className="max-w-full overflow-x-auto p-3 text-[13px] leading-relaxed text-code-foreground">
         <code className="code-highlight font-mono"><HighlightedCode code={code} language={language} /></code>
       </pre>
     </div>

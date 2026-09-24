@@ -21,7 +21,7 @@ function downloadCode(preview: CodePreview): void {
 
 export function CodeSource({ code, language }: { code: string; language?: string | null }) {
   return (
-    <div className="size-full overflow-auto bg-[#0d1117] text-slate-200" data-preview-kind="source">
+    <div className="size-full overflow-auto bg-code text-code-foreground" data-preview-kind="source">
       <pre className="code-highlight min-h-full p-5 font-mono text-xs leading-5 whitespace-pre-wrap break-words">
         <HighlightedCode code={code} language={language} />
       </pre>

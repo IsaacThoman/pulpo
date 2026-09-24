@@ -186,12 +186,12 @@ function TextPreview({
   }
 
   return (
-    <div className="size-full overflow-auto bg-[#0d1117] text-slate-200" data-preview-kind="text">
+    <div className="size-full overflow-auto bg-code text-code-foreground" data-preview-kind="text">
       <pre className="code-highlight min-h-full p-5 font-mono text-xs leading-5 whitespace-pre-wrap break-words">
         <HighlightedCode code={text} language={languageForFile(attachment.name, attachment.mimeType)} />
       </pre>
       {truncated && (
-        <p className="sticky bottom-0 border-t border-white/10 bg-[#0d1117]/95 px-5 py-2 text-xs text-slate-400 backdrop-blur"> {ui("Showing the first part of")} {attachment.name}.
+        <p className="sticky bottom-0 border-t border-code-border bg-code/95 px-5 py-2 text-xs text-code-muted backdrop-blur"> {ui("Showing the first part of")} {attachment.name}.
         </p>
       )}
     </div>
