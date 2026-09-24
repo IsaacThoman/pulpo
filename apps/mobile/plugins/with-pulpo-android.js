@@ -25,6 +25,56 @@ function unclipDropdownMenu(source) {
     .replace(call, `      onDismissRequest = onDismissRequest,\n      ${DROPDOWN_MENU_PROPERTIES}\n    ) {`);
 }
 
+// Display math scrolls horizontally inside the chat, where the drawer's pan
+// gesture and the vertical list both watch the same drag. The gesture handler
+// sees each move before the math view does, so a normal-speed drag across wide
+// math could open the drawer instead of scrolling. Claim the gesture on touch
+// down when the equation overflows, and hand it back once the drag turns out
+// to be vertical so the chat still scrolls.
+const MATH_CONTAINER_SOURCE = 'android/src/math/java/com/swmansion/enriched/markdown/views/MathContainerView.kt';
+const MATH_SCROLL_VIEW = `
+private class MathScrollView(
+  context: Context,
+) : HorizontalScrollView(context) {
+  private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop
+  private var downX = 0f
+  private var downY = 0f
+  private var claimed = false
+
+  override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+    when (event.actionMasked) {
+      MotionEvent.ACTION_DOWN -> {
+        downX = event.x
+        downY = event.y
+        claimed = canScrollHorizontally(1) || canScrollHorizontally(-1)
+        if (claimed) parent?.requestDisallowInterceptTouchEvent(true)
+      }
+      MotionEvent.ACTION_MOVE -> if (claimed) {
+        val dx = abs(event.x - downX)
+        val dy = abs(event.y - downY)
+        if (dx > touchSlop || dy > touchSlop) {
+          claimed = false
+          if (dy > dx) parent?.requestDisallowInterceptTouchEvent(false)
+        }
+      }
+    }
+    return super.dispatchTouchEvent(event)
+  }
+}
+`;
+function claimMathScrollGestures(source) {
+  if (source.includes('class MathScrollView')) return source;
+  const field = '  private val scrollView = HorizontalScrollView(context)\n';
+  if (!source.includes(field) || !source.includes('import android.view.View\n') || !source.includes('import kotlin.math.ceil\n')) {
+    throw new Error(`react-native-enriched-markdown's ${MATH_CONTAINER_SOURCE} changed; update withPulpoAndroid's math scroll patch.`);
+  }
+  return source
+    .replace('import android.view.View\n', 'import android.view.MotionEvent\nimport android.view.View\nimport android.view.ViewConfiguration\n')
+    .replace('import kotlin.math.ceil\n', 'import kotlin.math.abs\nimport kotlin.math.ceil\n')
+    .replace(field, '  private val scrollView: HorizontalScrollView = MathScrollView(context)\n')
+    .trimEnd() + '\n' + MATH_SCROLL_VIEW;
+}
+
 // Resource aliases keep RN transcript surfaces in the same wallpaper-derived
 // tonal family as the native Compose controls, and follow Android night mode.
 module.exports = function withPulpoAndroid(config) {
@@ -42,6 +92,10 @@ module.exports = function withPulpoAndroid(config) {
     const menuSource = await fs.readFile(menu, 'utf8');
     const unclipped = unclipDropdownMenu(menuSource);
     if (unclipped !== menuSource) await fs.writeFile(menu, unclipped);
+    const math = path.join(path.dirname(require.resolve('react-native-enriched-markdown/package.json', { paths: [config.modRequest.projectRoot] })), MATH_CONTAINER_SOURCE);
+    const mathSource = await fs.readFile(math, 'utf8');
+    const claimed = claimMathScrollGestures(mathSource);
+    if (claimed !== mathSource) await fs.writeFile(math, claimed);
     const root = path.join(config.modRequest.platformProjectRoot, 'app/src/main/res');
     const palettes = {
       values: { surface: '#FFFBFE', container: '#F3EDF7', text: '#1C1B1F', secondary: '#49454F', outline: '#CAC4D0', primary: '#6750A4', on_primary: '#FFFFFF', error: '#B3261E' },
@@ -57,3 +111,4 @@ module.exports = function withPulpoAndroid(config) {
   }]);
 };
 module.exports.unclipDropdownMenu = unclipDropdownMenu;
+module.exports.claimMathScrollGestures = claimMathScrollGestures;

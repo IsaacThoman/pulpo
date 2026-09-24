@@ -6,6 +6,7 @@ const native = vi.hoisted(() => ({ dismiss: vi.fn(), blur: vi.fn(), change: (_va
 vi.mock('react-native', () => ({ Keyboard: { dismiss: native.dismiss } }))
 vi.mock('./materialIcons', () => ({ materialIcon: (name: string) => name }))
 vi.mock('react-native-safe-area-context', () => ({ SafeAreaView: () => null }))
+vi.mock('react-native-gesture-handler', () => ({ Gesture: {}, GestureDetector: () => null }))
 vi.mock('@expo/ui/jetpack-compose/modifiers', () => ({ fillMaxWidth: () => ({}) }))
 vi.mock('@expo/ui/jetpack-compose', async () => {
   const { createElement, useImperativeHandle, useState } = await import('react')
