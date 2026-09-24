@@ -6,6 +6,7 @@ import {
   clearOptimisticBranchSelections,
   reconcileOptimisticBranchSelection,
 } from './optimisticBranches'
+import { cacheOptimisticBranch, clearPendingOptimisticResponses, reconcileOptimisticResponses } from './optimisticResponses'
 
 const namespace = 'https://pulpo.test:user-1'
 const chatId = 'chat-1'
@@ -73,7 +74,10 @@ function deferred<T>() {
 }
 
 describe('optimistic branch activation', () => {
-  beforeEach(() => clearOptimisticBranchSelections())
+  beforeEach(() => {
+    clearOptimisticBranchSelections()
+    clearPendingOptimisticResponses()
+  })
 
   it('selects the newest descendant immediately without waiting for the server', async () => {
     const queryClient = new QueryClient()
@@ -111,6 +115,31 @@ describe('optimistic branch activation', () => {
     expect(reconciled.activeBranchLeafId).toBe('a')
     request.resolve({ activeBranchLeafId: 'a' })
     await activation
+  })
+
+  it('lets the user leave a regeneration that is still streaming', async () => {
+    const queryClient = new QueryClient()
+    queryClient.setQueryData(key, chat())
+    cacheOptimisticBranch({
+      queryClient, namespace, chatId, sourceResponseId: 'c', responseId: 'regenerated',
+      modelId: 'model-1', presetSelections: {}, createdAt: Date.parse('2026-08-04T00:00:04.000Z'),
+    })
+    // Mirrors ProductionBridge: the pending-turn overlay runs before the branch-selection overlay.
+    const visibleLeaf = () => reconcileOptimisticBranchSelection(
+      namespace,
+      reconcileOptimisticResponses(namespace, queryClient.getQueryData<ServerChat>(key)!, {}),
+    ).activeBranchLeafId
+    expect(visibleLeaf()).toBe('regenerated')
+
+    const request = deferred<{ activeBranchLeafId: string }>()
+    const activation = activateOptimisticBranch({
+      queryClient, namespace, chatId, selectedResponseId: 'c', request: () => request.promise,
+    })
+    expect(visibleLeaf()).toBe('c')
+
+    request.resolve({ activeBranchLeafId: 'c' })
+    await activation
+    expect(visibleLeaf()).toBe('c')
   })
 
   it('reconciles the authoritative leaf returned by the server', async () => {
