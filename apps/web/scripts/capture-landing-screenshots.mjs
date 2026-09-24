@@ -8,7 +8,7 @@ import { parseArgs } from 'node:util'
 import { chromium } from 'playwright'
 
 const { values: args } = parseArgs({ options: { hero: { type: 'string' }, 'demo-profile': { type: 'boolean' } } })
-const origin = process.env.PULPO_URL ?? 'http://localhost:8080'
+const origin = process.env.PULPO_URL ?? 'https://pulpo.baby'
 const outputDirectory = new URL('../public/landing/', import.meta.url).pathname
 const profile = { name: 'Alex Rivera', username: 'alex' }
 const heroPrompt = 'Explain how KV caching speeds up transformer decoding. Include a short PyTorch snippet and the memory cost formula.'

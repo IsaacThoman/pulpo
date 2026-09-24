@@ -12,15 +12,16 @@ The web landing page shown to signed-out visitors at `/` uses a screenshot of th
 
 Production has the full model catalog, so the screenshot matches what visitors get.
 
-1. Sign up a dedicated demo account on [pulpo.baby](https://pulpo.baby) and give it a presentable name, username, and enough balance for eight short prompts. Keep the account empty so the script fills the sidebar with demo chats. Never capture a personal account: its chat titles appear in the sidebar.
-2. Run the script against production:
+1. Use the shared demo account on [pulpo.baby](https://pulpo.baby). It needs a presentable name and username and enough balance for eight short prompts. Never capture a personal account: its chat titles appear in the sidebar.
+2. To refresh the demo chats, sign in to the demo account and move its chats to the trash first. The script only creates sidebar chats when the account has none.
+3. Run the script. It targets production by default:
 
    ```sh
-   PULPO_URL=https://pulpo.baby npm run capture:landing -w @pulpo/web
+   npm run capture:landing -w @pulpo/web
    ```
 
-3. Sign in with the demo account in the Chromium window that opens. The script waits up to 10 minutes, then continues on its own.
-4. Review the new images, then commit them.
+4. Sign in with the demo account in the Chromium window that opens. The script waits up to 10 minutes, then continues on its own.
+5. Review the new images, then commit them.
 
 The demo chats are real requests: they're billed to the demo account and appear in its usage like any other chats.
 
@@ -30,10 +31,10 @@ This needs no production account, but the local preview only has the preview pro
 
 1. Configure the local preview (`npm run local:preview:init`, then fill in `~/.config/pulpo/local-preview.env`).
 2. For a clean sidebar, start from an empty stack with `npm run local:preview:reset`. Otherwise, run `npm run local:preview:refresh`. Either way the stack serves `http://localhost:8080`.
-3. Run the script with a demo profile, since the preview admin is named "Preview Admin":
+3. Run the script against the local stack with a demo profile, since the preview admin is named "Preview Admin":
 
    ```sh
-   npm run capture:landing -w @pulpo/web -- --demo-profile
+   PULPO_URL=http://localhost:8080 npm run capture:landing -w @pulpo/web -- --demo-profile
    ```
 
 4. Sign in as the preview admin (`PULPO_PREVIEW_ADMIN_EMAIL` and `PULPO_PREVIEW_ADMIN_PASSWORD` in the local preview config) in the Chromium window.
@@ -49,6 +50,6 @@ This needs no production account, but the local preview only has the preview pro
 
 ## Options
 
-- `PULPO_URL` sets the instance (default `http://localhost:8080`).
+- `PULPO_URL` sets the instance (default `https://pulpo.baby`).
 - `--demo-profile` renames the signed-in account to the demo identity before capturing.
 - `--hero <chatId>` recaptures an existing chat without sending new prompts. Its timestamp shows the chat's real age.
