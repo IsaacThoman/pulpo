@@ -71,6 +71,6 @@ describe('landing page', () => {
     const markup = renderToStaticMarkup(<MemoryRouter><LandingPage /></MemoryRouter>)
 
     expect(markup).toContain('Iniciar sesión')
-    expect(markup).toContain('Todos los modelos, un solo espacio de trabajo')
+    expect(markup).toContain('Una interfaz de chatbot minimalista, de código abierto y con agentes')
   })
 })

@@ -45,6 +45,11 @@ export function LandingPage() {
           <Button asChild variant="ghost" size="sm" className="hidden sm:inline-flex">
             <a href={GITHUB_URL}><GithubIcon />{ui("GitHub")}</a>
           </Button>
+          {signupEnabled ? (
+            <Button asChild variant="outline" size="sm">
+              <Link to="/signup">{t('auth.signUp')}</Link>
+            </Button>
+          ) : null}
           <Button asChild size="sm">
             <Link to="/login">{ui("Log in")}</Link>
           </Button>
@@ -54,18 +59,8 @@ export function LandingPage() {
       <main>
         <section className="mx-auto flex max-w-3xl flex-col items-center px-4 pt-12 pb-12 text-center sm:px-8 sm:pt-20">
           <img src="/pulpo-smiley.png" alt="" className="size-16 sm:size-20" />
-          <h1 className="mt-6 text-4xl font-semibold tracking-tight text-balance sm:text-5xl">{ui("Every model, one workspace")}</h1>
-          <p className="mt-4 max-w-xl text-base text-pretty text-muted-foreground sm:text-lg">{ui("Pulpo is a configurable, self-hostable AI platform. Chat with models from every major lab, run agents, and keep your history in sync across the web, iOS, and Android.")}</p>
-          <div className="mt-8 flex w-full max-w-xs flex-col gap-3 sm:w-auto sm:max-w-none sm:flex-row">
-            <Button asChild size="lg" className="sm:min-w-32">
-              <Link to="/login">{ui("Log in")}</Link>
-            </Button>
-            {signupEnabled ? (
-              <Button asChild size="lg" variant="outline" className="sm:min-w-32">
-                <Link to="/signup">{t('auth.signUp')}</Link>
-              </Button>
-            ) : null}
-          </div>
+          <h1 className="mt-6 text-4xl font-semibold tracking-tight text-balance sm:text-5xl">{ui("Pulpo")}</h1>
+          <p className="mt-4 max-w-xl text-base text-pretty text-muted-foreground sm:text-lg">{ui("A minimal, open-source, agentic chatbot interface with apps for web, desktop, and mobile.")}</p>
         </section>
 
         <section className="mx-auto max-w-6xl px-4 pb-16 sm:px-8 md:pb-24">

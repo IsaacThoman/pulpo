@@ -48,7 +48,7 @@ afterEach(() => {
 describe('RequireAuth', () => {
   it('shows the landing page at the root when signed out', () => {
     renderAt('/')
-    expect(screen.getAllByRole('link', { name: 'Log in' }).map((link) => link.getAttribute('href'))).toEqual(['/login', '/login'])
+    expect(screen.getByRole('link', { name: 'Log in' }).getAttribute('href')).toBe('/login')
     expect(screen.queryByText('chat page')).toBeNull()
   })
 
