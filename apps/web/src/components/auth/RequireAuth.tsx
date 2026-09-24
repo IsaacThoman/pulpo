@@ -2,6 +2,8 @@ import { useEffect } from 'react'
 import { Navigate, Outlet, useLocation } from 'react-router-dom'
 import { Loader2 } from 'lucide-react'
 import { useAuth } from '@/stores/auth'
+import { isDesktopRuntime } from '@/lib/runtime'
+import { LandingPage } from '@/pages/LandingPage'
 
 export function RequireAuth() {
   const user = useAuth((s) => s.user)
@@ -16,6 +18,7 @@ export function RequireAuth() {
   }
 
   if (!user) {
+    if (location.pathname === '/' && !isDesktopRuntime()) return <LandingPage />
     return <Navigate to="/login" replace state={{ from: location.pathname }} />
   }
 

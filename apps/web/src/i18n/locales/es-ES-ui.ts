@@ -1735,6 +1735,10 @@ const esUi: Record<string, string> = {
   "Auto top-up turned off: {{reason}}": "Recarga automática desactivada: {{reason}}",
   "your card couldn't be charged.": "no se pudo cobrar tu tarjeta.",
   "Auto top-up turned off because your saved card was removed.": "La recarga automática se desactivó porque se eliminó tu tarjeta guardada.",
+  "A configurable self-hosted AI platform.": "Una plataforma de IA autoalojada y configurable.",
+  "Log in": "Iniciar sesión",
+  "Privacy": "Privacidad",
+  "Support": "Soporte",
 }
 
 export default esUi
