@@ -1,4 +1,4 @@
-import { memo, useCallback, useRef, useEffect, useState, type ComponentProps } from 'react'
+import { memo, useCallback, useRef, useEffect, useLayoutEffect, useState, type ComponentProps } from 'react'
 import { Virtuoso, type ListProps, type VirtuosoHandle } from 'react-virtuoso'
 import { useChat } from '@/stores/chat'
 import type { Message } from '@/lib/types'
@@ -52,15 +52,17 @@ function VirtualMessages({ viewport, ...props }: MessageListProps & { viewport: 
   const ids = useChat(state => messageIds(props.chat.id, state.chats.find(chat => chat.id === props.chat.id)?.messages ?? EMPTY_MESSAGES))
   useEffect(() => () => { idsByChat.delete(props.chat.id) }, [props.chat.id])
   // Keep unsaved inline edits when virtual rows unmount; release them when the chat closes.
-  const editDrafts = useRef(new Map<string, string>())
+  const editState = useRef({ chatId: props.chat.id, drafts: new Map<string, string>() })
+  if (editState.current.chatId !== props.chat.id) editState.current = { chatId: props.chat.id, drafts: new Map() }
   const list = useRef<VirtuosoHandle>(null)
   const stickToBottom = useRef(true)
-  const lineage = useRef({ end: ids.at(-1), version: 0 })
-  if (lineage.current.end !== ids.at(-1)) {
-    if (lineage.current.end && !ids.includes(lineage.current.end)) {
+  const lineage = useRef({ chatId: props.chat.id, end: ids.at(-1), version: 0 })
+  if (lineage.current.chatId !== props.chat.id || lineage.current.end !== ids.at(-1)) {
+    if (lineage.current.chatId !== props.chat.id || (lineage.current.end && !ids.includes(lineage.current.end))) {
       lineage.current.version++
       stickToBottom.current = true
     }
+    lineage.current.chatId = props.chat.id
     lineage.current.end = ids.at(-1)
   }
   const [readyVersion, setReadyVersion] = useState<number | null>(null)
@@ -73,6 +75,13 @@ function VirtualMessages({ viewport, ...props }: MessageListProps & { viewport: 
   const currentIds = useRef(ids)
   currentIds.current = ids
   const hasMessages = ids.length > 0
+  // Reposition the existing list instead of remounting it. Remounting discards measured
+  // heights and hides every row during Virtuoso's initial LAST positioning (several frames).
+  useLayoutEffect(() => {
+    if (lineage.current.version > 0 && hasMessages) {
+      list.current?.scrollToIndex({ index: 'LAST', align: 'end' })
+    }
+  }, [props.chat.id, hasMessages, lineage.current.version])
   useEffect(() => {
     const content = viewport.querySelector<HTMLElement>('[data-virtuoso-scroller]')
     if (!content) return
@@ -145,7 +154,17 @@ function VirtualMessages({ viewport, ...props }: MessageListProps & { viewport: 
       if (stickToBottom.current) viewport.scrollTop = viewport.scrollHeight
       else if (index >= 0) list.current?.scrollToIndex({ index, align: 'start', offset: -anchor!.offset })
       clearTimeout(resizeTimer)
-      resizeTimer = setTimeout(() => { resizing = false; captureAnchor() }, 200)
+      resizeTimer = setTimeout(() => {
+        // Correct the estimate with the actual row after reflow, including reused measurements
+        // from a previous thread. Keep the reader's offset rather than accumulating rounding drift.
+        if (!stickToBottom.current && anchor) {
+          const row = [...content.querySelectorAll<HTMLElement>('[data-message-id]')]
+            .find(row => row.dataset.messageId === anchor!.id)
+          if (row) viewport.scrollTop += row.getBoundingClientRect().top - viewport.getBoundingClientRect().top - anchor.offset
+        }
+        resizing = false
+        captureAnchor()
+      }, 200)
     })
     observer.observe(content)
     observer.observe(viewport)
@@ -185,7 +204,6 @@ function VirtualMessages({ viewport, ...props }: MessageListProps & { viewport: 
   if (!ids.length) return null
   // Resolve the end again after a prepend; measure the initial row before estimating other heights.
   return <Virtuoso
-    key={lineage.current.version}
     ref={list}
     totalListHeightChanged={settleBottom}
     data={ids}
@@ -200,13 +218,13 @@ function VirtualMessages({ viewport, ...props }: MessageListProps & { viewport: 
     endReached={endReached}
     components={historyComponents}
     context={context}
-    itemContent={(_index, id) => <div className={id === ids.at(-1) ? "pb-[53px]" : "pb-7"} data-message-id={id}><MessageRow {...props} editDrafts={editDrafts.current} id={id} /></div>}
+    itemContent={(_index, id) => <div className={id === ids.at(-1) ? "pb-[53px]" : "pb-7"} data-message-id={id}><MessageRow {...props} editDrafts={editState.current.drafts} id={id} /></div>}
   />
 }
 
 /** Rows subscribe by ID; token updates do not reconcile the complete transcript. */
 export const MessageList = memo(function MessageList({ viewport, ...props }: MessageListProps) {
   const messages = useChat(state => viewport ? EMPTY_MESSAGES : state.chats.find(chat => chat.id === props.chat.id)?.messages ?? EMPTY_MESSAGES)
-  if (viewport) return <VirtualMessages key={props.chat.id} {...props} viewport={viewport} />
+  if (viewport) return <VirtualMessages {...props} viewport={viewport} />
   return messages.map(message => <MessageItem key={message.id} {...props} message={message} streaming={message.role === 'assistant' && !message.done} />)
 })

@@ -5,6 +5,7 @@ import {
   hydrateEmbeddedResponseSnapshot,
   LatestValueQueue,
   lineageFromLeaf,
+  newestDescendantId,
   mergeCachedResponseDetails,
   mergeRevisionInvalidation,
   normalizeInstanceUrl,
@@ -93,6 +94,18 @@ describe('client core', () => {
     expect(responseLineageDetailsAvailable(nodes, 'leaf')).toBe(false)
     expect(responseLineageDetailsAvailable(nodes, 'missing')).toBe(false)
     expect(responseLineageDetailsAvailable(nodes.map((node) => ({ ...node, detailAvailable: true })), 'leaf')).toBe(true)
+  })
+
+  it('follows the last child in server order through deep branches without repeated scans', () => {
+    let reads = 0
+    const nodes = Array.from({ length: 20_000 }, (_, i) => ({
+      id: String(i), get parentResponseId() { reads++; return i ? String(i - 1) : null },
+    }))
+    expect(newestDescendantId(nodes, '0')).toBe('19999')
+    expect(reads).toBeLessThanOrEqual(nodes.length * 2)
+    expect(newestDescendantId([...nodes, { id: 'alternate', parentResponseId: '0' }], '0')).toBe('alternate')
+    expect(newestDescendantId(nodes, 'missing')).toBe('missing')
+    expect(newestDescendantId([{ id: 'a', parentResponseId: 'b' }, { id: 'b', parentResponseId: 'a' }], 'a')).toBe('b')
   })
 
   it('preserves cached response bodies while accepting incoming branch topology', () => {
