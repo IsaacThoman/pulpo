@@ -134,7 +134,7 @@ import { SymbolView } from '../platform/SymbolView';
 import { DarkTheme as NavigationDarkTheme, DefaultTheme as NavigationLightTheme, NavigationContainer, useIsFocused } from '@react-navigation/native';
 import { createNativeStackNavigator, type NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useQueryClient } from '@tanstack/react-query';
-import { findCostWarningItem, workspaceContinueWithoutAgentAvailableAtMs } from '@pulpo/contracts';
+import { findCostLimitItem, workspaceContinueWithoutAgentAvailableAtMs } from '@pulpo/contracts';
 import {
   Brain,
   Ghost,
@@ -204,7 +204,7 @@ import { activateOptimisticBranch } from './src/production/optimisticBranches';
 import { cacheNamespace, cacheOpenedChat, deleteResponseCursor, loadDraft, saveDraft } from '../data/database';
 import { queryKeys } from '../data/queries';
 import { enqueueCacheWrite } from '../data/writeBehind';
-import { activateBranch as activateServerBranch, cancelResponse, continueWithoutAgent, deleteMessageCascade as deleteServerMessage, deleteUnreferencedAttachment, downloadAttachment, downloadAttachmentThumbnail, duplicateChat as duplicateServerChat, editMessage as editServerMessage, persistChat as persistServerChat, regenerateResponse as regenerateServerResponse, sendMessage as sendServerMessage, shareAttachment as shareServerAttachment, shareChat as shareServerChat, startChat as startServerChat, uploadAttachment } from '../features/chat/api';
+import { activateBranch as activateServerBranch, cancelResponse, continuePastCostLimit, continueWithoutAgent, deleteMessageCascade as deleteServerMessage, deleteUnreferencedAttachment, downloadAttachment, downloadAttachmentThumbnail, duplicateChat as duplicateServerChat, editMessage as editServerMessage, persistChat as persistServerChat, regenerateResponse as regenerateServerResponse, sendMessage as sendServerMessage, shareAttachment as shareServerAttachment, shareChat as shareServerChat, startChat as startServerChat, uploadAttachment } from '../features/chat/api';
 import { attachmentUploadErrorMessage } from '../features/chat/attachmentUploadError';
 import { subscribeToResponse, useRealtimeStore } from '../providers/realtimeStore';
 import { shouldShowConnectionBanner } from '../providers/realtimeConnection';
@@ -3379,14 +3379,14 @@ function WorkBlock({ steps, active, durationMs, initialWork, onOpenChat }: {
 }
 
 function otherOutputItems(outputItems?: unknown[]): Array<Record<string, unknown>> {
-  const known = new Set(['message', 'reasoning', 'pulpo_tool', 'pulpo_workspace', 'pulpo_attachment', 'pulpo_compaction', 'pulpo_recall', 'pulpo_cost_warning']);
+  const known = new Set(['message', 'reasoning', 'pulpo_tool', 'pulpo_workspace', 'pulpo_attachment', 'pulpo_compaction', 'pulpo_recall', 'pulpo_cost_limit']);
   return (outputItems ?? []).filter((item): item is Record<string, unknown> => {
     const type = (item as { type?: unknown }).type;
     return typeof type === 'string' && !known.has(type);
   });
 }
 
-function formatWarningCost(micros: number): string {
+function formatLimitCost(micros: number): string {
   const usd = micros / 1_000_000;
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: usd < 0.01 ? 4 : 2, maximumFractionDigits: usd < 0.01 ? 4 : 2 }).format(usd);
 }
@@ -3464,6 +3464,7 @@ const MessageRow = memo(function MessageRow({
   onRegenerate,
   onActivateBranch,
   onOpenChat,
+  onStop,
   sideRail = false,
   editingLocked = false,
 }: {
@@ -3475,6 +3476,7 @@ const MessageRow = memo(function MessageRow({
   onRegenerate: (message: Message) => void;
   onActivateBranch: (message: Message, branchId: string) => Promise<void>;
   onOpenChat: (chatId: string) => void;
+  onStop: () => void;
   sideRail?: boolean;
   editingLocked?: boolean;
 }) {
@@ -3487,7 +3489,10 @@ const MessageRow = memo(function MessageRow({
   const streaming = message.status === 'streaming' || message.status === 'queued';
   const responseStartedAt = useMemo(() => message.requestReceivedAt ? Date.parse(message.requestReceivedAt) : message.createdAt ?? Date.now(), [message.createdAt, message.requestReceivedAt]);
   const extraOutput = useMemo(() => otherOutputItems(message.outputItems), [message.outputItems]);
-  const costWarning = useMemo(() => findCostWarningItem(message.outputItems), [message.outputItems]);
+  const costLimit = useMemo(() => findCostLimitItem(message.outputItems), [message.outputItems]);
+  const [costLimitPending, setCostLimitPending] = useState(false);
+  const costLimitKey = costLimit ? `${costLimit.limit_micros}:${costLimit.status}` : undefined;
+  useEffect(() => setCostLimitPending(false), [costLimitKey]);
   const capacityWorkspace = useMemo(() => (message.outputItems ?? []).find((item) => (
     (item as { type?: string }).type === 'pulpo_workspace'
   )) as { state?: string; startedAt?: string; continueWithoutAgentAvailableAt?: string } | undefined, [message.outputItems]);
@@ -3624,9 +3629,32 @@ const MessageRow = memo(function MessageRow({
                 ))}
               </>}</SentAttachmentWindow>
             )}
-            {costWarning && <View accessibilityRole="alert" style={styles.costWarning}><Icon name="exclamationmark.triangle" size={15} color={COLORS.warning} /><Text style={styles.costWarningText}>{streaming
-              ? `This response has cost ${formatWarningCost(costWarning.cost_micros)} so far, over your ${formatWarningCost(costWarning.threshold_micros)} warning.`
-              : `This response went over your ${formatWarningCost(costWarning.threshold_micros)} cost warning.`}</Text></View>}
+            {costLimit && <View style={styles.workRow}><Icon name="pause.fill" size={13} color={COLORS.muted} /><Text style={styles.workRowTitle}>{costLimit.status === 'continued'
+              ? `Continued past your ${formatLimitCost(costLimit.limit_micros)} cost limit`
+              : streaming
+                ? `Paused at ${formatLimitCost(costLimit.cost_micros)}, over your ${formatLimitCost(costLimit.limit_micros)} cost limit`
+                : `Stopped at your ${formatLimitCost(costLimit.limit_micros)} cost limit`}</Text></View>}
+            {costLimit?.status === 'awaiting_confirmation' && streaming && (
+              <View style={styles.costLimitActions}>
+                <Pressable accessibilityRole="button" onPress={onStop} style={({ pressed }) => [styles.costLimitButton, pressed && styles.navRowPressed]}>
+                  <Text style={styles.continueButtonText}>Cancel generation</Text>
+                </Pressable>
+                <Pressable
+                  accessibilityRole="button"
+                  disabled={costLimitPending}
+                  onPress={() => {
+                    setCostLimitPending(true);
+                    void continuePastCostLimit(message.id).catch((error) => {
+                      setCostLimitPending(false);
+                      Alert.alert('Couldn’t continue', error instanceof Error ? error.message : undefined);
+                    });
+                  }}
+                  style={({ pressed }) => [styles.costLimitButton, pressed && styles.navRowPressed]}
+                >
+                  <Text style={styles.continueButtonText}>{costLimitPending ? 'Continuing…' : 'Continue'}</Text>
+                </Pressable>
+              </View>
+            )}
             {message.error && timeline.length > 0 && <View style={styles.responseError}><Icon name="exclamationmark.triangle" size={15} color={COLORS.critical} /><Text style={styles.responseErrorText}>{message.error}</Text><Pressable accessibilityRole="button" onPress={() => onRegenerate(message)}><Text style={styles.tryAgainText}>Try again</Text></Pressable></View>}
             {!message.error && message.status === 'stopped' && <MessageContextMenu message={message} model={model} onEdit={onEdit} onRegenerate={onRegenerate}><View style={styles.responseError}><Icon name="stop.circle" size={15} color={COLORS.muted} /><Text style={styles.responseErrorText}>Response stopped before completion.</Text><Pressable accessibilityRole="button" onPress={() => onRegenerate(message)}><Text style={styles.tryAgainText}>Try again</Text></Pressable></View></MessageContextMenu>}
             {message.agentMode && streaming && capacityWorkspace?.state === 'waiting' && canContinueWithoutAgent && (
@@ -5403,11 +5431,12 @@ function ChatView({
           ? async () => { Alert.alert('Temporary chat expired', 'This conversation is read-only.'); }
           : onActivateBranch}
         onOpenChat={onOpenChat}
+        onStop={onStop}
         sideRail={assistantSideRail}
         editingLocked={Boolean(messageEdit) || dictationBusy}
       />
     </View>
-  ), [assistantSideRail, expired, handleMessageEditAction, latestMessageId, messageEdit, dictationBusy, model, models, onActivateBranch, onOpenChat, onRegenerate, openFilePreview, openImageViewer, styles.transcriptColumn]);
+  ), [assistantSideRail, expired, handleMessageEditAction, latestMessageId, messageEdit, dictationBusy, model, models, onActivateBranch, onOpenChat, onRegenerate, onStop, openFilePreview, openImageViewer, styles.transcriptColumn]);
 
   const empty = isEmptyConversation && assistantStatus === 'idle';
   const headerAction = resolveChatHeaderAction(chatId, messages.length, temporary);
@@ -6563,12 +6592,12 @@ function createChatStyles(COLORS: ChatColors) { return StyleSheet.create({
   messageMeta: { color: COLORS.muted, fontSize: 11, marginTop: 12, fontFamily: COLORS.mono, letterSpacing: -0.2 },
   responseError: { flexDirection: 'row', gap: 8, alignItems: 'flex-start', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,92,92,0.35)', backgroundColor: 'rgba(255,92,92,0.10)', borderRadius: 12, padding: 11, marginTop: 6 },
   responseErrorText: { color: COLORS.critical, flex: 1, fontSize: 12.5, lineHeight: 18 },
-  costWarning: { flexDirection: 'row', gap: 8, alignItems: 'flex-start', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,159,10,0.4)', backgroundColor: 'rgba(255,159,10,0.12)', borderRadius: 12, padding: 11, marginTop: 6 },
-  costWarningText: { color: COLORS.warning, flex: 1, fontSize: 12.5, lineHeight: 18 },
   tryAgainText: { color: COLORS.criticalAction, fontSize: 12.5, fontWeight: '700', lineHeight: 18 },
   otherOutput: { borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.line, borderRadius: 12, padding: 10, gap: 7, marginTop: 6 },
   continueButton: { alignSelf: 'stretch', minHeight: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 14, backgroundColor: COLORS.fillStrong, marginTop: 8 },
   continueButtonText: { color: COLORS.text, fontSize: 13, fontWeight: '700' },
+  costLimitActions: { flexDirection: 'row', gap: 8, marginTop: 8 },
+  costLimitButton: { flex: 1, minHeight: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 14, backgroundColor: COLORS.fillStrong },
   branchControls: { flexDirection: 'row', alignItems: 'center', gap: 2, marginTop: 5 },
   branchLabel: { color: COLORS.muted, fontSize: 11, fontVariant: ['tabular-nums'] },
   iconAction: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },

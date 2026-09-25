@@ -1,5 +1,5 @@
 import type { AgentMessage } from '@earendil-works/pi-agent-core'
-import type { CompactionItem, CostWarningItem, RecallItem, ToolImagePreview } from '@pulpo/contracts'
+import type { CompactionItem, CostLimitItem, RecallItem, ToolImagePreview } from '@pulpo/contracts'
 
 export type ToolTimelineItem = {
   id: string
@@ -98,7 +98,7 @@ function pushAssistantParts(
   }
 }
 
-/** Ordered response.output: workspace → (reasoning|message|tool)* preserving turn order → cost warning. */
+/** Ordered response.output: workspace → (reasoning|message|tool)* preserving turn order → cost limit. */
 export function buildAgentOutput(options: {
   messages: AgentMessage[]
   skipMessageCount: number
@@ -107,7 +107,7 @@ export function buildAgentOutput(options: {
   workspaceItem?: Record<string, unknown>
   compactionItems?: CompactionItem[]
   recallItems?: RecallItem[]
-  costWarningItem?: CostWarningItem
+  costLimitItem?: CostLimitItem
   /** Model-turn durations keyed by 1-based assistant turn index in this run. */
   turnDurationsMs?: Map<number, number>
   /** Last message is still streaming (use in_progress status). */
@@ -122,7 +122,7 @@ export function buildAgentOutput(options: {
     workspaceItem,
     compactionItems = [],
     recallItems = [],
-    costWarningItem,
+    costLimitItem,
     turnDurationsMs,
     streaming = false,
     terminal = false,
@@ -169,7 +169,7 @@ export function buildAgentOutput(options: {
     if (attachment) output.push(attachment)
   }
 
-  if (costWarningItem) output.push(costWarningItem)
+  if (costLimitItem) output.push(costLimitItem)
 
   if (terminal) {
     for (const entry of output) {

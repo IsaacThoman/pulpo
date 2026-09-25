@@ -14,7 +14,7 @@ import { normalizeAnimationSpeed } from '@/lib/animation-speed'
 
 const persistedKeys = [
   'imageGeneration', 'speech', 'composerSyncEnabled', 'theme', 'language', 'sendWithEnter', 'doubleShiftSearch', 'streamResponses', 'showPromptSuggestions', 'showModelWarnings', 'modelWarningDismissals', 'showReasoning', 'showResponseCost',
-  'agentCostWarningEnabled', 'agentCostWarningThresholdMicros',
+  'agentCostLimitEnabled', 'agentCostLimitMicros',
   'chatWidth', 'animationSpeed', 'customInstructions', 'instructionPresetSelections', 'nickname', 'memoryEnabled', 'agentModes',
   'leaderboardVisible', 'leaderboardColor', 'generation',
   'localChatLimit',

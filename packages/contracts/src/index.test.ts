@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   applyResponseEventToSnapshot,
-  agentCostWarningThresholdMicros,
-  findCostWarningItem,
+  agentCostLimitMicros,
+  findCostLimitItem,
   adminUsageEventSchema,
   animationSpeedSchema,
   automaticChatExpirationSchema,
@@ -505,7 +505,7 @@ describe('shared contracts', () => {
     expect(document.account).toMatchObject({
       theme: 'system', trashRetention: '30d', automaticChatExpiration: '24h', newChatAutoExpire: false,
       nickname: '', animationSpeed: 1, showPromptSuggestions: true, showResponseCost: false, favoriteModelIds: [], agentModes: {},
-      agentCostWarningEnabled: false, agentCostWarningThresholdMicros: 1_000_000,
+      agentCostLimitEnabled: false, agentCostLimitMicros: 1_000_000,
       instructionPresetSelections: {},
       sidebarPins: { usage: false, billing: false, friends: false, apiKeys: false },
     })
@@ -767,33 +767,35 @@ describe('response snapshot accumulation', () => {
     expect(() => recallItemSchema.parse({ ...recall, sources: Array(6).fill(recall.sources[0]) })).toThrow()
   })
 
-  it('projects a rising Agent cost warning as one output item', () => {
-    const warning = (sequence: number, costMicros: number) => ({
+  it('projects Agent cost limit pauses and continuations as one output item', () => {
+    const pause = (sequence: number, status: 'awaiting_confirmation' | 'continued') => ({
       responseId: streamingSnapshot.responseId,
       sequence,
-      type: 'pulpo.agent.cost_warning',
+      type: 'pulpo.agent.cost_limit',
       payload: {
-        id: `${streamingSnapshot.responseId}:cost-warning`,
-        type: 'pulpo_cost_warning',
+        id: `${streamingSnapshot.responseId}:cost-limit`,
+        type: 'pulpo_cost_limit',
+        status,
         threshold_micros: 1_000_000,
-        cost_micros: costMicros,
-        triggered_at: '2026-09-24T00:00:01.000Z',
+        limit_micros: 1_000_000,
+        cost_micros: 1_020_000,
+        paused_at: '2026-09-24T00:00:01.000Z',
       },
       emittedAt: `2026-09-24T00:00:0${sequence}.000Z`,
     })
-    const result = [warning(1, 1_020_000), warning(2, 1_450_000)].reduce(applyResponseEventToSnapshot, streamingSnapshot)
+    const result = [pause(1, 'awaiting_confirmation'), pause(2, 'continued')].reduce(applyResponseEventToSnapshot, streamingSnapshot)
 
     expect(result.output).toHaveLength(1)
-    expect(findCostWarningItem(result.output)).toMatchObject({ threshold_micros: 1_000_000, cost_micros: 1_450_000 })
-    expect(findCostWarningItem([{ type: 'pulpo_cost_warning', cost_micros: 'lots' }])).toBeUndefined()
+    expect(findCostLimitItem(result.output)).toMatchObject({ status: 'continued', limit_micros: 1_000_000, cost_micros: 1_020_000 })
+    expect(findCostLimitItem([{ type: 'pulpo_cost_limit', cost_micros: 'lots' }])).toBeUndefined()
   })
 
-  it('reads the Agent cost warning threshold only when enabled', () => {
-    expect(agentCostWarningThresholdMicros({})).toBeUndefined()
-    expect(agentCostWarningThresholdMicros({ agentCostWarningThresholdMicros: 2_000_000 })).toBeUndefined()
-    expect(agentCostWarningThresholdMicros({ agentCostWarningEnabled: true })).toBe(1_000_000)
-    expect(agentCostWarningThresholdMicros({ agentCostWarningEnabled: true, agentCostWarningThresholdMicros: 250_000 })).toBe(250_000)
-    expect(agentCostWarningThresholdMicros({ agentCostWarningEnabled: true, agentCostWarningThresholdMicros: 1 })).toBeUndefined()
+  it('reads the Agent cost limit only when enabled', () => {
+    expect(agentCostLimitMicros({})).toBeUndefined()
+    expect(agentCostLimitMicros({ agentCostLimitMicros: 2_000_000 })).toBeUndefined()
+    expect(agentCostLimitMicros({ agentCostLimitEnabled: true })).toBe(1_000_000)
+    expect(agentCostLimitMicros({ agentCostLimitEnabled: true, agentCostLimitMicros: 250_000 })).toBe(250_000)
+    expect(agentCostLimitMicros({ agentCostLimitEnabled: true, agentCostLimitMicros: 1 })).toBeUndefined()
   })
 
   it('accepts terminal output as authoritative', () => {

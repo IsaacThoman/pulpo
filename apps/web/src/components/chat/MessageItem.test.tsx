@@ -523,50 +523,58 @@ describe('workspace continue timing', () => {
   })
 })
 
-describe('agent cost warning', () => {
-  const costWarning = {
-    id: 'response-1:cost-warning', type: 'pulpo_cost_warning', threshold_micros: 1_000_000,
-    cost_micros: 1_250_000, triggered_at: '2026-09-24T00:00:00.000Z',
+describe('agent cost limit pause', () => {
+  const pause = {
+    id: 'response-1:cost-limit', type: 'pulpo_cost_limit', status: 'awaiting_confirmation', threshold_micros: 1_000_000,
+    limit_micros: 1_000_000, cost_micros: 1_250_000, paused_at: '2026-09-24T00:00:00.000Z',
   }
 
-  it('shows the running cost and a stop action while streaming, even with reasoning hidden', async () => {
+  it('asks to continue or cancel while paused, even with reasoning hidden', async () => {
     useSettings.setState({ showReasoning: false })
     const { useChat } = await import('@/stores/chat')
-    const stopped: string[] = []
-    const { stopStreaming } = useChat.getState()
-    useChat.setState({ stopStreaming: (id: string) => { stopped.push(id) } })
-    onTestFinished(() => useChat.setState({ stopStreaming }))
+    const actions: string[] = []
+    const { stopStreaming, continuePastCostLimit } = useChat.getState()
+    useChat.setState({
+      stopStreaming: (id: string) => { actions.push(`stop:${id}`) },
+      continuePastCostLimit: async (id: string) => { actions.push(`continue:${id}`) },
+    })
+    onTestFinished(() => useChat.setState({ stopStreaming, continuePastCostLimit }))
     const { MessageItem } = await import('./MessageItem')
     const view = render(<MessageItem
       chat={chat}
       message={assistant({
         done: false,
-        outputItems: [{ type: 'message', content: [{ type: 'output_text', text: 'Working on it' }] }, costWarning],
+        outputItems: [{ type: 'message', content: [{ type: 'output_text', text: 'Working on it' }] }, pause],
       })}
       streaming
       onRegenerate={() => undefined}
     />)
 
-    expect(view.getByRole('status').textContent).toContain('This response has cost $1.25 so far, over your $1.00 warning.')
-    expect(view.container.textContent).not.toContain('pulpo cost warning')
-    fireEvent.click(view.getByRole('button', { name: 'Stop response' }))
-    expect(stopped).toEqual(['response-1'])
+    expect(view.getByRole('status').textContent).toBe('Paused at $1.25, over your $1.00 cost limit')
+    expect(view.container.textContent).not.toContain('pulpo cost limit')
+    fireEvent.click(view.getByRole('button', { name: 'Continue' }))
+    expect(view.getByRole('button', { name: 'Continuing…' })).toHaveProperty('disabled', true)
+    fireEvent.click(view.getByRole('button', { name: 'Cancel generation' }))
+    expect(actions).toEqual(['continue:response-1', 'stop:response-1'])
   })
 
-  it('keeps a settled notice without the stop action after completion', async () => {
+  it('records the outcome without actions after the pause resolves', async () => {
     const { MessageItem } = await import('./MessageItem')
-    const markup = renderToStaticMarkup(<MessageItem
+    const render = (item: typeof pause, streaming: boolean) => renderToStaticMarkup(<MessageItem
       chat={chat}
       message={assistant({
+        done: !streaming,
         content: 'Done',
-        outputItems: [{ type: 'message', content: [{ type: 'output_text', text: 'Done' }] }, costWarning],
+        outputItems: [{ type: 'message', content: [{ type: 'output_text', text: 'Done' }] }, item],
       })}
-      streaming={false}
+      streaming={streaming}
       onRegenerate={() => undefined}
     />)
 
-    expect(markup).toContain('This response went over your $1.00 cost warning.')
-    expect(markup).not.toContain('Stop response')
+    const continued = render({ ...pause, status: 'continued' }, true)
+    expect(continued).toContain('Continued past your $1.00 cost limit')
+    expect(continued).not.toContain('Cancel generation')
+    expect(render(pause, false)).toContain('Stopped at your $1.00 cost limit')
   })
 })
 

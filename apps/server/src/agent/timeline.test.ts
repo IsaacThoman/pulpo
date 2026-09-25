@@ -15,19 +15,19 @@ describe('buildAgentOutput', () => {
     expect(output[0]).toEqual(recall)
   })
 
-  it('keeps the cost warning after agent work in persisted output', () => {
-    const costWarning = {
-      id: 'response:cost-warning', type: 'pulpo_cost_warning' as const,
-      threshold_micros: 1_000_000, cost_micros: 1_250_000, triggered_at: '2026-09-24T00:00:00.000Z',
+  it('keeps the cost limit pause after agent work in persisted output', () => {
+    const costLimit = {
+      id: 'response:cost-limit', type: 'pulpo_cost_limit' as const, status: 'continued' as const,
+      threshold_micros: 1_000_000, limit_micros: 1_000_000, cost_micros: 1_250_000, paused_at: '2026-09-24T00:00:00.000Z',
     }
     const output = buildAgentOutput({
       messages: [{ role: 'assistant', content: [{ type: 'text', text: 'Done.' }] } as never],
       skipMessageCount: 0,
       toolItems: new Map(),
-      costWarningItem: costWarning,
+      costLimitItem: costLimit,
       terminal: true,
     })
-    expect(output.at(-1)).toEqual(costWarning)
+    expect(output.at(-1)).toEqual(costLimit)
   })
 
   it('interleaves reasoning, text, and tools across turns', () => {

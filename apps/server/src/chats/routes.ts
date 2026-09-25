@@ -2,7 +2,7 @@ import { historyPageQuery, loadHistoryPage } from './history-page.js'
 import { and, asc, desc, eq, inArray, isNotNull, isNull, ne, sql } from 'drizzle-orm'
 import { createHash } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
-import { createChatResponseSchema, createChatSchema, createQueuedMessageSchema, reorderQueuedMessageSchema, startChatSchema, updateChatSchema, updateQueuedMessageSchema, type StateInvalidationScope } from '@pulpo/contracts'
+import { createChatResponseSchema, createChatSchema, createQueuedMessageSchema, findCostLimitItem, reorderQueuedMessageSchema, startChatSchema, updateChatSchema, updateQueuedMessageSchema, type StateInvalidationScope } from '@pulpo/contracts'
 import { db } from '../database/client.js'
 import { attachments, chatImportSources, chats, folders, models, queuedMessages, requestLogs, responses, usageEvents, users, workspaceLeases } from '../database/schema.js'
 import { billingUserForRequest, requireUser } from '../auth/service.js'
@@ -25,6 +25,7 @@ import {
 import { advanceMessageQueue, createQueuedMessage, deleteQueuedMessage, listQueuedMessages, reorderQueuedMessage, updateQueuedMessage } from './message-queue.js'
 import { automaticChatExpiresAt, getAutomaticChatExpiration, normalChatIsExpired, scheduleNormalChatExpiry } from './expiration.js'
 import { workspaceContinueWithoutAgentIsAvailable } from '../agent/capacity.js'
+import { requestCostLimitContinue } from '../agent/cost-limit.js'
 import { scheduleChatIndex, scheduleUserIndex } from '../episodic-memory/queue.js'
 import { createChatExportPayload } from './export-format.js'
 import { importedModelIdentity } from './modelIdentity.js'
@@ -778,6 +779,28 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     await db.update(responses).set({ agentCapacityAction: 'continue_without_agent', updatedAt: new Date() }).where(eq(responses.id, id))
     const [updated] = await db.select().from(responses).where(eq(responses.id, id)).limit(1)
     return toSnapshot(updated!)
+  })
+
+  app.post('/api/responses/:id/continue-past-cost-limit', async (request) => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    const [row] = await db.select({ response: responses }).from(responses)
+      .innerJoin(chats, eq(chats.id, responses.chatId))
+      .where(and(
+        eq(responses.id, id),
+        eq(responses.userId, user.id),
+        isNull(responses.deletedAt),
+        isNull(chats.deletedAt),
+        accessibleChatCondition(),
+      )).limit(1)
+    const response = row?.response
+    if (!response) throw notFound('Response')
+    const pause = findCostLimitItem(response.output as unknown[])
+    if (!response.agentMode || response.status !== 'in_progress' || pause?.status !== 'awaiting_confirmation') {
+      throw new AppError(409, 'agent_not_paused', 'This response is not paused at your cost limit')
+    }
+    await requestCostLimitContinue(id, pause.limit_micros)
+    return toSnapshot(response)
   })
 
   app.get('/api/folders', async (request) => {

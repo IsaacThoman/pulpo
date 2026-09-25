@@ -1,14 +1,14 @@
 import { useEffect, useState } from 'react'
-import { AGENT_COST_WARNING_MAX_MICROS, AGENT_COST_WARNING_MIN_MICROS } from '@pulpo/contracts'
+import { AGENT_COST_LIMIT_MAX_MICROS, AGENT_COST_LIMIT_MIN_MICROS } from '@pulpo/contracts'
 import { Input } from '@/components/ui/input'
 import { ui } from '@/i18n/ui'
-import { parseCostWarningThreshold } from './cost-warning-threshold'
+import { parseCostLimit } from './cost-limit'
 
 function formatDollars(micros: number): string {
   return String(micros / 1_000_000)
 }
 
-export function CostWarningThresholdInput({
+export function CostLimitInput({
   value,
   onChange,
 }: {
@@ -22,7 +22,7 @@ export function CostWarningThresholdInput({
   }, [value])
 
   const commit = () => {
-    const next = parseCostWarningThreshold(draft) ?? value
+    const next = parseCostLimit(draft) ?? value
     setDraft(formatDollars(next))
     if (next !== value) onChange(next)
   }
@@ -31,12 +31,12 @@ export function CostWarningThresholdInput({
     <div className="flex items-center gap-2">
       <span className="text-sm text-muted-foreground">$</span>
       <Input
-        aria-label={ui("Agent cost warning threshold in US dollars")}
+        aria-label={ui("Agent cost limit in US dollars")}
         className="w-24 tabular-nums"
         type="number"
         inputMode="decimal"
-        min={AGENT_COST_WARNING_MIN_MICROS / 1_000_000}
-        max={AGENT_COST_WARNING_MAX_MICROS / 1_000_000}
+        min={AGENT_COST_LIMIT_MIN_MICROS / 1_000_000}
+        max={AGENT_COST_LIMIT_MAX_MICROS / 1_000_000}
         step={0.01}
         value={draft}
         onChange={(event) => setDraft(event.currentTarget.value)}

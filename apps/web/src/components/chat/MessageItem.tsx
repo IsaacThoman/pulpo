@@ -23,9 +23,9 @@ import {
   Minimize2,
   History,
   ExternalLink,
-  AlertTriangle,
+  CirclePause,
 } from 'lucide-react'
-import { findCostWarningItem, workspaceContinueWithoutAgentAvailableAtMs, type CompactionItem, type CostWarningItem, type RecallItem } from '@pulpo/contracts'
+import { findCostLimitItem, workspaceContinueWithoutAgentAvailableAtMs, type CompactionItem, type CostLimitItem, type RecallItem } from '@pulpo/contracts'
 import type { Chat, Message } from '@/lib/types'
 import { hasMultipleBranches } from '@/lib/message-branches'
 import { getCatalogModel } from '@/stores/catalog'
@@ -217,17 +217,46 @@ function ActivityToolRow({ tool }: { tool: ToolItem }) {
   )
 }
 
-function CostWarningNotice({ item, streaming, onStop }: { item: CostWarningItem; streaming: boolean; onStop: () => void }) {
-  const threshold = formatCost(item.threshold_micros / 1_000_000)
+function CostLimitPrompt({
+  item,
+  streaming,
+  onStop,
+  onContinue,
+}: {
+  item: CostLimitItem
+  streaming: boolean
+  onStop: () => void
+  onContinue: () => Promise<void>
+}) {
+  const [pending, setPending] = useState(false)
+  const limit = formatCost(item.limit_micros / 1_000_000)
+  const awaiting = item.status === 'awaiting_confirmation'
+  const label = awaiting && streaming
+    ? ui("Paused at {{cost}}, over your {{limit}} cost limit", { cost: formatCost(item.cost_micros / 1_000_000), limit })
+    : awaiting
+      ? ui("Stopped at your {{limit}} cost limit", { limit })
+      : ui("Continued past your {{limit}} cost limit", { limit })
   return (
-    <div role="status" className="flex min-w-0 max-w-full flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-800 dark:text-amber-200">
-      <AlertTriangle className="size-4 shrink-0" />
-      <span className="min-w-0 flex-1">
-        {streaming
-          ? ui("This response has cost {{cost}} so far, over your {{threshold}} warning.", { cost: formatCost(item.cost_micros / 1_000_000), threshold })
-          : ui("This response went over your {{threshold}} cost warning.", { threshold })}
-      </span>
-      {streaming && <Button size="sm" variant="outline" onClick={onStop}>{ui("Stop response")}</Button>}
+    <div className="space-y-1.5">
+      <div role={awaiting && streaming ? 'status' : undefined} className="flex min-w-0 items-center gap-1.5 text-xs font-medium text-muted-foreground">
+        <CirclePause className="size-3.5 shrink-0" />
+        <span className="min-w-0">{label}</span>
+      </div>
+      {awaiting && streaming && (
+        <div className="flex flex-wrap gap-2">
+          <Button size="sm" variant="outline" onClick={onStop}> {ui("Cancel generation")} </Button>
+          <Button
+            size="sm"
+            disabled={pending}
+            onClick={() => {
+              setPending(true)
+              void onContinue().catch(() => setPending(false))
+            }}
+          >
+            {pending ? ui("Continuing…") : ui("Continue")}
+          </Button>
+        </div>
+      )}
     </div>
   )
 }
@@ -579,6 +608,7 @@ export const MessageItem = memo(function MessageItem({
   const deleteUserMessage = useChat((state) => state.deleteUserMessage)
   const stopStreaming = useChat((state) => state.stopStreaming)
   const continueWithoutAgent = useChat((state) => state.continueWithoutAgent)
+  const continuePastCostLimit = useChat((state) => state.continuePastCostLimit)
   const returnSubmissionToComposer = useUploadOutbox((state) => state.returnSubmissionToComposer)
   const showReasoning = useSettings((s) => s.showReasoning)
   const showResponseCost = useSettings((s) => s.showResponseCost)
@@ -712,9 +742,9 @@ export const MessageItem = memo(function MessageItem({
   const outputItems = message.outputItems ?? []
   const otherItems = outputItems.filter((item) => {
     const type = (item as { type?: string }).type
-    return type && !['message', 'reasoning', 'pulpo_tool', 'pulpo_workspace', 'pulpo_attachment', 'pulpo_compaction', 'pulpo_recall', 'pulpo_cost_warning'].includes(type)
+    return type && !['message', 'reasoning', 'pulpo_tool', 'pulpo_workspace', 'pulpo_attachment', 'pulpo_compaction', 'pulpo_recall', 'pulpo_cost_limit'].includes(type)
   })
-  const costWarning = findCostWarningItem(outputItems)
+  const costLimit = findCostLimitItem(outputItems)
   const lastActivityIndex = activitySegments.length - 1
   const hasVisibleBody = timeline.length > 0 || Boolean(message.error)
   let activityOrdinal = -1
@@ -830,8 +860,14 @@ export const MessageItem = memo(function MessageItem({
             )
           })}
 
-          {!editing && costWarning && (
-            <CostWarningNotice item={costWarning} streaming={streaming} onStop={() => stopStreaming(message.id)} />
+          {!editing && costLimit && (
+            <CostLimitPrompt
+              key={`${costLimit.limit_micros}:${costLimit.status}`}
+              item={costLimit}
+              streaming={streaming}
+              onStop={() => stopStreaming(message.id)}
+              onContinue={() => continuePastCostLimit(message.id)}
+            />
           )}
 
           {!editing && message.error && (

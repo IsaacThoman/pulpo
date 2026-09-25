@@ -7,7 +7,7 @@ import { selectedImageModel, executeImageGeneration, recoverSavedImageGeneration
 import { Agent, type AgentMessage } from '@earendil-works/pi-agent-core'
 import { openAIResponsesApi } from '@earendil-works/pi-ai/api/openai-responses.lazy'
 import type { Api, AssistantMessage, Context, Model } from '@earendil-works/pi-ai'
-import { agentCostWarningThresholdMicros, findCostWarningItem, toolImagePreviewSchema, type ToolImagePreview, type CompactionItem, type RecallItem, type ResponseSnapshot } from '@pulpo/contracts'
+import { agentCostLimitMicros, findCostLimitItem, toolImagePreviewSchema, type ToolImagePreview, type CompactionItem, type RecallItem, type ResponseSnapshot } from '@pulpo/contracts'
 import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm'
 import { db } from '../database/client.js'
 import { agentRuns, applicationSettings, attachments, chats, generationAttempts, models, providerConnections, requestLogs, responses, toolExecutions, userPreferences } from '../database/schema.js'
@@ -81,7 +81,7 @@ import { CODEX_PROVIDER_ID } from '../codex/constants.js'
 import { codexErrorRequiresReauthentication, createCodexModels, markCodexReauthenticationRequired, safeCodexErrorMessage } from '../codex/credential-store.js'
 import { codexInferenceReferenceCostMicros } from '../codex/reference-cost.js'
 import { agentSettlementAmounts } from './settlement.js'
-import { nextCostWarning } from './cost-warning.js'
+import { costLimitPause, redisCostLimitApproval, waitForCostLimitDecision } from './cost-limit.js'
 
 function toolResultText(result: unknown): string {
   const content = (result as { content?: Array<{ type?: string; text?: string }> } | undefined)?.content
@@ -167,7 +167,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
   const settings = parseAgentSettings(settingsRow?.value)
   const webToolsSettings = parseWebToolsSettings(webToolsRow?.value)
   const preferenceValues = (preferencesRow?.values ?? {}) as Record<string, unknown>
-  const costWarningThresholdMicros = agentCostWarningThresholdMicros(preferenceValues)
+  const costLimitMicros = agentCostLimitMicros(preferenceValues)
   const customInstructions = composeCustomInstructions(
     parsePersonalizationSettings(personalizationRow?.value),
     preferenceValues,
@@ -379,7 +379,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
     (raw as { type?: string }).type === 'pulpo_compaction'
   ))
   const recallItems: RecallItem[] = recallItem ? [recallItem] : []
-  let costWarningItem = findCostWarningItem(record.response.output as unknown[])
+  let costLimitItem = findCostLimitItem(record.response.output as unknown[])
   let workspaceItem: Record<string, unknown> | undefined
   let workspaceStartedAtMs: number | undefined
   let workspaceReadyAtMs: number | undefined
@@ -448,7 +448,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
         workspaceItem,
         compactionItems,
         recallItems,
-        costWarningItem,
+        costLimitItem,
         turnDurationsMs,
         streaming: false,
         terminal: true,
@@ -463,19 +463,24 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
   const snapshotIfDue = async () => {
     if (agentSnapshotIsDue(lastSnapshotAt, Date.now(), config.RESPONSE_SNAPSHOT_INTERVAL_MS)) await snapshot()
   }
-  const updateCostWarning = async () => {
-    const workspaceUsage = workspaceReadyAtMs !== undefined && settings.billWorkspaces
+  const currentCostMicros = () => accruedCostMicros + accruedToolCostMicros + sidecarCostMicros + (
+    workspaceReadyAtMs !== undefined && settings.billWorkspaces
       ? workspaceUsageMicros(Date.now() - workspaceReadyAtMs, settings.workspacePricePerMinuteMicros)
       : 0
-    const next = nextCostWarning({
-      responseId,
-      thresholdMicros: costWarningThresholdMicros,
-      costMicros: accruedCostMicros + accruedToolCostMicros + sidecarCostMicros + workspaceUsage,
-      current: costWarningItem,
-    })
-    if (!next) return
-    costWarningItem = next
-    await emit('pulpo.agent.cost_warning', next)
+  )
+  /** Holds the loop at the user's cost limit until they continue; false when the run was stopped instead. */
+  const waitAtCostLimit = async (signal?: AbortSignal): Promise<boolean> => {
+    const paused = costLimitPause({ responseId, thresholdMicros: costLimitMicros, costMicros: currentCostMicros(), current: costLimitItem })
+    if (!paused) return true
+    costLimitItem = paused
+    await emit('pulpo.agent.cost_limit', paused)
+    await snapshot()
+    const decision = await waitForCostLimitDecision({ limitMicros: paused.limit_micros, approval: redisCostLimitApproval(responseId), signal })
+    if (decision === 'stopped') return false
+    costLimitItem = { ...paused, status: 'continued' }
+    await emit('pulpo.agent.cost_limit', costLimitItem)
+    await snapshot()
+    return true
   }
   const updateCompaction = async (item: CompactionItem) => {
     const index = compactionItems.findIndex((candidate) => candidate.id === item.id)
@@ -578,7 +583,6 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
       sidecarCostMicros += billed.costMicros
       const item: CompactionItem = { ...base, status: 'completed', summary: billed.result.output_text, duration_ms: Date.now() - started }
       await updateCompaction(item)
-      await updateCostWarning()
       return [compactedAgentHandoffMessage(billed.result.output_text, phase), ...retained]
     } catch (error) {
       await updateCompaction({ ...base, status: 'failed', duration_ms: Date.now() - started, error: error instanceof Error ? error.message : String(error) })
@@ -739,7 +743,8 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
       messages: resumedMessages,
       thinkingLevel: initialParameters.reasoning,
     },
-    prepareNextTurnWithContext: async ({ context, toolResults }) => {
+    prepareNextTurnWithContext: async ({ context, toolResults }, signal) => {
+      if (!await waitAtCostLimit(signal)) return undefined
       if (manager.continuedWithoutAgent) disableAgentTools()
       if (toolsDisabled) context = withoutAgentTools(context, agentSystemPrompt)
       const thresholdTokens = compactionThreshold()
@@ -846,9 +851,10 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
       })
     },
     toolExecution: 'sequential',
-    beforeToolCall: async () => {
+    beforeToolCall: async (_context, signal) => {
       if (toolsDisabled || manager.continuedWithoutAgent) return { block: true, reason: 'Agent tools were disabled at the user’s request' }
-      return toolCalls >= settings.maxToolCalls ? { block: true, reason: `Tool call limit (${settings.maxToolCalls}) reached` } : undefined
+      if (toolCalls >= settings.maxToolCalls) return { block: true, reason: `Tool call limit (${settings.maxToolCalls}) reached` }
+      return await waitAtCostLimit(signal) ? undefined : { block: true, reason: 'Stopped at the cost limit' }
     },
   })
   let lastRunPersistAt = 0
@@ -973,7 +979,6 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
         await markModelSticky(redis, completedRuntime.runtime.model, 'slow_completion')
         if (completedRuntime.index === activeIndex) await activateFallbackRuntime(completedRuntime.index)
       }
-      await updateCostWarning()
       await snapshotIfDue()
     } else if (event.type === 'tool_execution_start') {
       toolCalls += 1
@@ -1023,7 +1028,6 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
       accruedToolCostMicros = await readToolCost()
       webProviderExecutions.delete(event.toolCallId)
       await emit('pulpo.agent.tool.completed', { id: event.toolCallId, output, isError: event.isError, durationMs: item?.durationMs, ...(imagePreview ? { imagePreview } : {}) })
-      await updateCostWarning()
       if (manager.continuedWithoutAgent) disableAgentTools()
       await snapshotIfDue()
     }

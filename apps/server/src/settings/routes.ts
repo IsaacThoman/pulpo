@@ -1,7 +1,7 @@
 import { eq, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
-import { agentCostWarningThresholdMicrosSchema, newChatAutoExpireSchema } from '@pulpo/contracts'
+import { agentCostLimitMicrosSchema, newChatAutoExpireSchema } from '@pulpo/contracts'
 import { requireUser } from '../auth/service.js'
 import { db } from '../database/client.js'
 import { applicationSettings, userPreferences, users } from '../database/schema.js'
@@ -76,11 +76,11 @@ export async function registerSettingsRoutes(app: FastifyInstance): Promise<void
     if ('memoryEnabled' in patch && typeof patch.memoryEnabled !== 'boolean') {
       throw new AppError(400, 'invalid_memory_setting', 'Choose whether Memories should be enabled')
     }
-    if ('agentCostWarningEnabled' in patch && typeof patch.agentCostWarningEnabled !== 'boolean') {
-      throw new AppError(400, 'invalid_agent_cost_warning_setting', 'Choose whether Agent cost warnings should be shown')
+    if ('agentCostLimitEnabled' in patch && typeof patch.agentCostLimitEnabled !== 'boolean') {
+      throw new AppError(400, 'invalid_agent_cost_limit_setting', 'Choose whether Agent responses should pause at a cost limit')
     }
-    if ('agentCostWarningThresholdMicros' in patch && !agentCostWarningThresholdMicrosSchema.safeParse(patch.agentCostWarningThresholdMicros).success) {
-      throw new AppError(400, 'invalid_agent_cost_warning_threshold', 'Choose an Agent cost warning between $0.01 and $1,000')
+    if ('agentCostLimitMicros' in patch && !agentCostLimitMicrosSchema.safeParse(patch.agentCostLimitMicros).success) {
+      throw new AppError(400, 'invalid_agent_cost_limit', 'Choose an Agent cost limit between $0.01 and $1,000')
     }
     let previousTrashRetention = DEFAULT_TRASH_RETENTION
     let previousMemoryEnabled = false
