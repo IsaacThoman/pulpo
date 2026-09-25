@@ -3147,9 +3147,9 @@ function costLimitLabel(item: CostLimitItem, live: boolean): string {
   return live ? `Paused at ${formatLimitCost(item.cost_micros)}, over your ${limit} cost limit` : `Stopped at your ${limit} cost limit`;
 }
 
-function pausedAtCostLimit(steps: TimelineStep[], active: boolean): boolean {
+function pausedCostLimit(steps: TimelineStep[], active: boolean): CostLimitItem | undefined {
   const last = steps.at(-1);
-  return active && last?.kind === 'cost_limit' && last.costLimit.status === 'awaiting_confirmation';
+  return active && last?.kind === 'cost_limit' && last.costLimit.status === 'awaiting_confirmation' ? last.costLimit : undefined;
 }
 
 function WorkTriggerIcon({ steps, active }: { steps: TimelineStep[]; active: boolean }) {
@@ -3166,7 +3166,7 @@ function WorkTriggerIcon({ steps, active }: { steps: TimelineStep[]; active: boo
     if (['expired', 'unavailable'].includes(workspace.workspace.state ?? '')) return <XCircle color={COLORS.critical} size={14} />;
     if (workspaceIsActive(workspace.workspace.state)) return <PulsingIcon reduceMotion={reduceMotion}><Server color={COLORS.muted} size={14} /></PulsingIcon>;
   }
-  if (pausedAtCostLimit(steps, active)) return <Pause color={COLORS.muted} size={14} />;
+  if (pausedCostLimit(steps, active)) return <Pause color={COLORS.muted} size={14} />;
   const tools = steps.filter((step) => step.kind === 'tool');
   const runningTool = tools.find((step) => step.tool.status === 'running');
   if (runningTool?.kind === 'tool') {
@@ -3228,7 +3228,8 @@ function workLabel(steps: TimelineStep[], active: boolean, durationMs?: number):
     if (workspace.workspace.state === 'provisioning') return 'Starting workspace…';
     if (['expired', 'unavailable'].includes(workspace.workspace.state ?? '')) return `Workspace ${workspace.workspace.state}`;
   }
-  if (pausedAtCostLimit(steps, active)) return 'Paused at cost limit';
+  const paused = pausedCostLimit(steps, active);
+  if (paused) return costLimitLabel(paused, true);
   const runningTool = steps.find((step) => step.kind === 'tool' && step.tool.status === 'running');
   if (runningTool?.kind === 'tool') return toolActivityPresentation(runningTool.tool.tool).label;
   if (active) return steps.some((step) => step.kind === 'tool') ? 'Working…' : 'Thinking…';
@@ -3650,7 +3651,7 @@ const MessageRow = memo(function MessageRow({
                 ))}
               </>}</SentAttachmentWindow>
             )}
-            {costLimit?.status === 'awaiting_confirmation' && streaming && <View style={styles.workRow}><Pause color={COLORS.muted} size={13} /><Text style={styles.workRowTitle}>{costLimitLabel(costLimit, true)}</Text></View>}
+            {costLimit?.status === 'awaiting_confirmation' && streaming && !timeline.some((segment) => segment.kind === 'activity' && segment.steps.some((step) => step.kind === 'cost_limit')) && <View style={styles.workRow}><Pause color={COLORS.muted} size={13} /><Text style={styles.workRowTitle}>{costLimitLabel(costLimit, true)}</Text></View>}
             {costLimit?.status === 'awaiting_confirmation' && streaming && (
               <View style={styles.costLimitActions}>
                 <Pressable accessibilityRole="button" onPress={onStop} style={({ pressed }) => [styles.costLimitButton, pressed && styles.navRowPressed]}>

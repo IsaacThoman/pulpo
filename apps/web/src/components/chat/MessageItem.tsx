@@ -236,22 +236,27 @@ function CostLimitStepRow({ item, live }: { item: CostLimitItem; live: boolean }
   )
 }
 
+/** Continue/Cancel actions for a paused response; the label is shown here only when no work summary carries it. */
 function CostLimitPrompt({
   item,
+  showLabel,
   onStop,
   onContinue,
 }: {
   item: CostLimitItem
+  showLabel: boolean
   onStop: () => void
   onContinue: () => Promise<void>
 }) {
   const [pending, setPending] = useState(false)
   return (
     <div className="space-y-1.5">
-      <div role="status" className="flex min-w-0 items-center gap-1.5 text-xs font-medium text-muted-foreground">
-        <Pause className="size-3.5 shrink-0" />
-        <span className="min-w-0">{costLimitStepLabel(item, true)}</span>
-      </div>
+      {showLabel && (
+        <div role="status" className="flex min-w-0 items-center gap-1.5 text-xs font-medium text-muted-foreground">
+          <Pause className="size-3.5 shrink-0" />
+          <span className="min-w-0">{costLimitStepLabel(item, true)}</span>
+        </div>
+      )}
       <div className="flex flex-wrap gap-2">
         <Button size="sm" variant="outline" onClick={onStop}> {ui("Cancel generation")} </Button>
         <Button
@@ -452,7 +457,9 @@ function ActivityBlock({
   const recall = steps.find((step) => step.kind === 'recall')?.recall
   const tools = steps.flatMap((step) => (step.kind === 'tool' ? [step.tool] : []))
   const lastStep = steps.at(-1)
-  const pausedAtCostLimit = active && lastStep?.kind === 'cost_limit' && lastStep.costLimit.status === 'awaiting_confirmation'
+  const pausedCostLimit = active && lastStep?.kind === 'cost_limit' && lastStep.costLimit.status === 'awaiting_confirmation'
+    ? lastStep.costLimit
+    : undefined
   const hasReasoning = steps.some((step) => step.kind === 'reasoning' && step.text)
   const workspaceBusy = workspaceIsActive(workspace?.state)
   const workspaceFailed = workspaceIsFailed(workspace?.state)
@@ -496,7 +503,7 @@ function ActivityBlock({
     if (workspace?.state === 'continuing_without_agent' && !hasTools && !hasReasoning && !active) {
       return workspaceLabel(workspace)
     }
-    if (pausedAtCostLimit) return ui("Paused at cost limit")
+    if (pausedCostLimit) return costLimitStepLabel(pausedCostLimit, true)
     if (runningTool) return toolActivityPresentation(runningTool.tool).label
     if (active && hasTools) return ui("Working…")
     if (active) return ui("Thinking…")
@@ -523,7 +530,7 @@ function ActivityBlock({
       return <Server className="size-3.5 shrink-0 animate-pulse" />
     }
     if (workspaceFailed) return <XCircle className="size-3.5 shrink-0 text-destructive" />
-    if (pausedAtCostLimit) return <Pause className="size-3.5 shrink-0" />
+    if (pausedCostLimit) return <Pause className="size-3.5 shrink-0" />
     if (runningTool) {
       const Icon = toolActivityPresentation(runningTool.tool).icon
       return <Icon className="size-3.5 shrink-0 animate-pulse" />
@@ -876,6 +883,7 @@ export const MessageItem = memo(function MessageItem({
             <CostLimitPrompt
               key={costLimit.limit_micros}
               item={costLimit}
+              showLabel={!timeline.some((segment) => segment.kind === 'activity' && segment.steps.some((step) => step.kind === 'cost_limit'))}
               onStop={() => stopStreaming(message.id)}
               onContinue={() => continuePastCostLimit(message.id)}
             />

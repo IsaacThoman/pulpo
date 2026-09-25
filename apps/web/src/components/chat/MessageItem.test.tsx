@@ -558,6 +558,24 @@ describe('agent cost limit pause', () => {
     expect(actions).toEqual(['continue:response-1', 'stop:response-1'])
   })
 
+  it('shows the pause once, in the work summary header, when reasoning is visible', async () => {
+    const { MessageItem } = await import('./MessageItem')
+    const view = render(<MessageItem
+      chat={chat}
+      message={assistant({
+        done: false,
+        outputItems: [{ type: 'pulpo_tool', id: 'tool-1', tool: 'bash', status: 'completed', output: '42' }, pause],
+      })}
+      streaming
+      onRegenerate={() => undefined}
+    />)
+
+    expect(view.getByRole('button', { name: /Paused at \$1\.25, over your \$1\.00 cost limit/ })).toBeTruthy()
+    expect(view.container.textContent?.match(/Paused at/g)).toHaveLength(1)
+    expect(view.queryByRole('status')).toBeNull()
+    expect(view.getByRole('button', { name: 'Continue' })).toBeTruthy()
+  })
+
   it('records the outcome inside the collapsed work summary after the pause resolves', async () => {
     const { MessageItem } = await import('./MessageItem')
     const view = (item: typeof pause, streaming: boolean) => render(<MessageItem
