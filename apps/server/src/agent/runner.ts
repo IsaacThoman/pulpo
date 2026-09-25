@@ -7,7 +7,7 @@ import { selectedImageModel, executeImageGeneration, recoverSavedImageGeneration
 import { Agent, type AgentMessage } from '@earendil-works/pi-agent-core'
 import { openAIResponsesApi } from '@earendil-works/pi-ai/api/openai-responses.lazy'
 import type { Api, AssistantMessage, Context, Model } from '@earendil-works/pi-ai'
-import { agentCostLimitMicros, findCostLimitItem, toolImagePreviewSchema, type ToolImagePreview, type CompactionItem, type RecallItem, type ResponseSnapshot } from '@pulpo/contracts'
+import { agentCostLimitMicros, findCostLimitItem, findCostLimitItems, toolImagePreviewSchema, type ToolImagePreview, type CompactionItem, type CostLimitItem, type RecallItem, type ResponseSnapshot } from '@pulpo/contracts'
 import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm'
 import { db } from '../database/client.js'
 import { agentRuns, applicationSettings, attachments, chats, generationAttempts, models, providerConnections, requestLogs, responses, toolExecutions, userPreferences, users } from '../database/schema.js'
@@ -380,7 +380,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
     (raw as { type?: string }).type === 'pulpo_compaction'
   ))
   const recallItems: RecallItem[] = recallItem ? [recallItem] : []
-  let costLimitItem = findCostLimitItem(record.response.output as unknown[])
+  const costLimitItems = findCostLimitItems(record.response.output as unknown[])
   let workspaceItem: Record<string, unknown> | undefined
   let workspaceStartedAtMs: number | undefined
   let workspaceReadyAtMs: number | undefined
@@ -449,7 +449,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
         workspaceItem,
         compactionItems,
         recallItems,
-        costLimitItem,
+        costLimitItems,
         turnDurationsMs,
         streaming: false,
         terminal: true,
@@ -471,15 +471,21 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
   )
   /** Holds the loop at the user's cost limit until they continue; false when the run was stopped instead. */
   const waitAtCostLimit = async (signal?: AbortSignal): Promise<boolean> => {
-    const paused = costLimitPause({ responseId, thresholdMicros: costLimitMicros, costMicros: currentCostMicros(), current: costLimitItem, agentTurn: modelTurns })
+    const paused = costLimitPause({ responseId, thresholdMicros: costLimitMicros, costMicros: currentCostMicros(), current: findCostLimitItem(costLimitItems), agentTurn: modelTurns })
     if (!paused) return true
-    costLimitItem = paused
+    const setCostLimitItem = (item: CostLimitItem) => {
+      const index = costLimitItems.findIndex((candidate) => candidate.id === item.id)
+      if (index >= 0) costLimitItems[index] = item
+      else costLimitItems.push(item)
+    }
+    setCostLimitItem(paused)
     await emit('pulpo.agent.cost_limit', paused)
     await snapshot()
     const decision = await waitForCostLimitDecision({ limitMicros: paused.limit_micros, approval: redisCostLimitApproval(responseId), signal })
     if (decision === 'stopped') return false
-    costLimitItem = { ...paused, status: 'continued' }
-    await emit('pulpo.agent.cost_limit', costLimitItem)
+    const continued: CostLimitItem = { ...paused, status: 'continued' }
+    setCostLimitItem(continued)
+    await emit('pulpo.agent.cost_limit', continued)
     await snapshot()
     return true
   }

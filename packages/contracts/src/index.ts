@@ -572,13 +572,21 @@ export function agentCostLimitMicros(preferences: Record<string, unknown>, role:
   return limit.success ? limit.data : undefined
 }
 
-export function findCostLimitItem(output: readonly unknown[] | undefined): CostLimitItem | undefined {
-  for (const item of output ?? []) {
-    if ((item as { type?: unknown } | null)?.type !== 'pulpo_cost_limit') continue
+/** Every cost limit pause in a response, one per limit reached. */
+export function findCostLimitItems(output: readonly unknown[] | undefined): CostLimitItem[] {
+  return (output ?? []).flatMap((item) => {
+    if ((item as { type?: unknown } | null)?.type !== 'pulpo_cost_limit') return []
     const parsed = costLimitItemSchema.safeParse(item)
-    if (parsed.success) return parsed.data
-  }
-  return undefined
+    return parsed.success ? [parsed.data] : []
+  })
+}
+
+/** The latest pause (highest limit), which is the one a running response may be waiting on. */
+export function findCostLimitItem(output: readonly unknown[] | undefined): CostLimitItem | undefined {
+  return findCostLimitItems(output).reduce<CostLimitItem | undefined>(
+    (latest, item) => !latest || item.limit_micros > latest.limit_micros ? item : latest,
+    undefined,
+  )
 }
 
 export const responseSnapshotSchema = z.object({
@@ -719,7 +727,7 @@ function applyAgentEventOutput(output: unknown[], event: ResponseEvent): unknown
     return upsertOutputItem(output, (item) => item.id === payload.id, payload)
   }
   if (event.type === 'pulpo.agent.cost_limit' && typeof payload.id === 'string') {
-    return upsertOutputItem(output, (item) => item.type === 'pulpo_cost_limit', payload)
+    return upsertOutputItem(output, (item) => item.type === 'pulpo_cost_limit' && item.id === payload.id, payload)
   }
   if (event.type === 'pulpo.agent.attachment.created' && typeof payload.attachment_id === 'string') {
     return upsertOutputItem(output, (item) => item.type === 'pulpo_attachment' && item.attachment_id === payload.attachment_id, payload)

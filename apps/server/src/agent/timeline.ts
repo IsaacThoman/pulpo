@@ -98,7 +98,7 @@ function pushAssistantParts(
   }
 }
 
-/** Ordered response.output: workspace → (reasoning|message|tool)* preserving turn order, with the cost limit after its turn. */
+/** Ordered response.output: workspace → (reasoning|message|tool)* preserving turn order, with each cost limit pause after its turn. */
 export function buildAgentOutput(options: {
   messages: AgentMessage[]
   skipMessageCount: number
@@ -107,7 +107,7 @@ export function buildAgentOutput(options: {
   workspaceItem?: Record<string, unknown>
   compactionItems?: CompactionItem[]
   recallItems?: RecallItem[]
-  costLimitItem?: CostLimitItem
+  costLimitItems?: CostLimitItem[]
   /** Model-turn durations keyed by 1-based assistant turn index in this run. */
   turnDurationsMs?: Map<number, number>
   /** Last message is still streaming (use in_progress status). */
@@ -122,7 +122,7 @@ export function buildAgentOutput(options: {
     workspaceItem,
     compactionItems = [],
     recallItems = [],
-    costLimitItem,
+    costLimitItems = [],
     turnDurationsMs,
     streaming = false,
     terminal = false,
@@ -151,7 +151,7 @@ export function buildAgentOutput(options: {
       turnDurationsMs?.get(assistantTurn),
       assistantTurn,
     )
-    if (costLimitItem?.agent_turn === assistantTurn) output.push(costLimitItem)
+    output.push(...costLimitItems.filter((item) => item.agent_turn === assistantTurn))
     for (const part of content) {
       if ((part as { type?: string }).type === 'toolCall' && typeof (part as { id?: string }).id === 'string') {
         seenToolIds.add((part as { id: string }).id)
@@ -170,7 +170,7 @@ export function buildAgentOutput(options: {
     if (attachment) output.push(attachment)
   }
 
-  if (costLimitItem && !output.includes(costLimitItem)) output.push(costLimitItem)
+  output.push(...costLimitItems.filter((item) => !output.includes(item)))
 
   if (terminal) {
     for (const entry of output) {

@@ -3,6 +3,7 @@ import {
   applyResponseEventToSnapshot,
   agentCostLimitMicros,
   findCostLimitItem,
+  findCostLimitItems,
   withAgentCostLimitDefault,
   adminUsageEventSchema,
   animationSpeedSchema,
@@ -768,26 +769,31 @@ describe('response snapshot accumulation', () => {
     expect(() => recallItemSchema.parse({ ...recall, sources: Array(6).fill(recall.sources[0]) })).toThrow()
   })
 
-  it('projects Agent cost limit pauses and continuations as one output item', () => {
-    const pause = (sequence: number, status: 'awaiting_confirmation' | 'continued') => ({
+  it('projects each Agent cost limit pause as its own output item', () => {
+    const pause = (sequence: number, limit: number, status: 'awaiting_confirmation' | 'continued') => ({
       responseId: streamingSnapshot.responseId,
       sequence,
       type: 'pulpo.agent.cost_limit',
       payload: {
-        id: `${streamingSnapshot.responseId}:cost-limit`,
+        id: `${streamingSnapshot.responseId}:cost-limit:${limit}`,
         type: 'pulpo_cost_limit',
         status,
-        threshold_micros: 1_000_000,
-        limit_micros: 1_000_000,
-        cost_micros: 1_020_000,
+        threshold_micros: 100_000,
+        limit_micros: limit,
+        cost_micros: limit + 20_000,
         paused_at: '2026-09-24T00:00:01.000Z',
       },
       emittedAt: `2026-09-24T00:00:0${sequence}.000Z`,
     })
-    const result = [pause(1, 'awaiting_confirmation'), pause(2, 'continued')].reduce(applyResponseEventToSnapshot, streamingSnapshot)
+    const result = [
+      pause(1, 100_000, 'awaiting_confirmation'), pause(2, 100_000, 'continued'),
+      pause(3, 200_000, 'awaiting_confirmation'),
+    ].reduce(applyResponseEventToSnapshot, streamingSnapshot)
 
-    expect(result.output).toHaveLength(1)
-    expect(findCostLimitItem(result.output)).toMatchObject({ status: 'continued', limit_micros: 1_000_000, cost_micros: 1_020_000 })
+    expect(findCostLimitItems(result.output).map((item) => [item.limit_micros, item.status])).toEqual([
+      [100_000, 'continued'], [200_000, 'awaiting_confirmation'],
+    ])
+    expect(findCostLimitItem([...result.output].reverse())).toMatchObject({ limit_micros: 200_000, status: 'awaiting_confirmation' })
     expect(findCostLimitItem([{ type: 'pulpo_cost_limit', cost_micros: 'lots' }])).toBeUndefined()
   })
 

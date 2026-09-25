@@ -1,8 +1,9 @@
 import type { CostLimitItem } from '@pulpo/contracts'
 import { redis } from '../redis.js'
 
-export function costLimitItemId(responseId: string): string {
-  return `${responseId}:cost-limit`
+/** One item per limit reached, so every pause and continuation stays in the response. */
+export function costLimitItemId(responseId: string, limitMicros: number): string {
+  return `${responseId}:cost-limit:${limitMicros}`
 }
 
 /** The next limit after the user continues: the first multiple of the threshold above the cost so far. */
@@ -31,7 +32,7 @@ export function costLimitPause(options: {
       : nextCostLimitMicros(current.cost_micros, thresholdMicros)
   if (costMicros < limitMicros) return undefined
   return {
-    id: costLimitItemId(responseId),
+    id: costLimitItemId(responseId, limitMicros),
     type: 'pulpo_cost_limit',
     status: 'awaiting_confirmation',
     threshold_micros: thresholdMicros,

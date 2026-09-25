@@ -15,7 +15,7 @@ describe('Agent cost limit pauses', () => {
 
   it('pauses once the accrued cost reaches the limit', () => {
     expect(costLimitPause({ responseId, thresholdMicros: 1_000_000, costMicros: 1_020_000, current: undefined, agentTurn: 3, now })).toEqual({
-      id: costLimitItemId(responseId),
+      id: costLimitItemId(responseId, 1_000_000),
       type: 'pulpo_cost_limit',
       status: 'awaiting_confirmation',
       threshold_micros: 1_000_000,
@@ -32,9 +32,9 @@ describe('Agent cost limit pauses', () => {
     expect(nextCostLimitMicros(1_020_000, 1_000_000)).toBe(2_000_000)
     expect(nextCostLimitMicros(3_500_000, 1_000_000)).toBe(4_000_000)
     expect(costLimitPause({ responseId, thresholdMicros: 1_000_000, costMicros: 1_900_000, current: continued, now })).toBeUndefined()
-    expect(costLimitPause({ responseId, thresholdMicros: 1_000_000, costMicros: 2_100_000, current: continued, now })).toMatchObject({
-      status: 'awaiting_confirmation', limit_micros: 2_000_000, cost_micros: 2_100_000,
-    })
+    const second = costLimitPause({ responseId, thresholdMicros: 1_000_000, costMicros: 2_100_000, current: continued, now })
+    expect(second).toMatchObject({ status: 'awaiting_confirmation', limit_micros: 2_000_000, cost_micros: 2_100_000 })
+    expect(second?.id).not.toBe(paused.id)
   })
 
   it('re-pauses at the same limit when a waiting run resumes', () => {
