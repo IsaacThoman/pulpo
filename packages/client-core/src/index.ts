@@ -97,13 +97,19 @@ export function lineageFromLeaf<T extends ChatTreeNode>(nodes: T[], leafId: stri
 }
 
 export function newestDescendantId<T extends ChatTreeNode>(nodes: T[], selectedId: string): string {
+  // The last child in server order wins. Index once instead of scanning every response
+  // for every generation after an early version (quadratic for a long conversation).
+  const newestChild = new Map<string, string>()
+  for (const node of nodes) if (node.parentResponseId !== null) newestChild.set(node.parentResponseId, node.id)
   let leafId = selectedId
-  for (;;) {
-    const children = nodes.filter((node) => node.parentResponseId === leafId)
-    const newest = children.at(-1)
-    if (!newest) return leafId
-    leafId = newest.id
+  const seen = new Set<string>()
+  while (!seen.has(leafId)) {
+    seen.add(leafId)
+    const next = newestChild.get(leafId)
+    if (!next || seen.has(next)) return leafId
+    leafId = next
   }
+  return leafId
 }
 
 /** A branch can render locally only when every response in its lineage has a cached body. */

@@ -131,6 +131,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { useNetworkOffline } from '../providers/useNetworkOffline';
 import { StatusBar } from 'expo-status-bar';
 import { SymbolView } from '../platform/SymbolView';
+import { PulsingIcon, SpinningLoader } from '../components/SpinningLoader';
 import { DarkTheme as NavigationDarkTheme, DefaultTheme as NavigationLightTheme, NavigationContainer, useIsFocused } from '@react-navigation/native';
 import { createNativeStackNavigator, type NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useQueryClient } from '@tanstack/react-query';
@@ -140,7 +141,6 @@ import {
   Ghost,
   History,
   Hourglass,
-  Loader2,
   Minimize2,
   Server,
   Wrench,
@@ -3136,25 +3136,26 @@ function ResolvedAttachmentImage({ attachment, onResolved, sourceNativeId, varia
 
 function WorkTriggerIcon({ steps, active }: { steps: TimelineStep[]; active: boolean }) {
   const { COLORS } = useChatStyles();
+  const { reduceMotion } = useAccessibilityPreferences();
   const compaction = steps.find((step) => step.kind === 'compaction');
   if (compaction?.kind === 'compaction') {
-    if (compaction.compaction.status === 'in_progress') return <Loader2 color={COLORS.muted} size={14} />;
+    if (compaction.compaction.status === 'in_progress') return <SpinningLoader color={COLORS.muted} reduceMotion={reduceMotion} size={14} />;
     if (compaction.compaction.status === 'failed') return <XCircle color={COLORS.critical} size={14} />;
     return <Minimize2 color={COLORS.muted} size={14} />;
   }
   const workspace = steps.find((step) => step.kind === 'workspace');
   if (workspace?.kind === 'workspace') {
     if (['expired', 'unavailable'].includes(workspace.workspace.state ?? '')) return <XCircle color={COLORS.critical} size={14} />;
-    if (workspaceIsActive(workspace.workspace.state)) return <Server color={COLORS.muted} size={14} />;
+    if (workspaceIsActive(workspace.workspace.state)) return <PulsingIcon reduceMotion={reduceMotion}><Server color={COLORS.muted} size={14} /></PulsingIcon>;
   }
   const tools = steps.filter((step) => step.kind === 'tool');
   const runningTool = tools.find((step) => step.tool.status === 'running');
   if (runningTool?.kind === 'tool') {
     const RunningToolIcon = toolActivityPresentation(runningTool.tool.tool).icon;
-    return <RunningToolIcon color={COLORS.muted} size={14} />;
+    return <PulsingIcon reduceMotion={reduceMotion}><RunningToolIcon color={COLORS.muted} size={14} /></PulsingIcon>;
   }
-  if (active && tools.length > 0) return <Wrench color={COLORS.muted} size={14} />;
-  if (active) return <Brain color={COLORS.muted} size={14} />;
+  if (active && tools.length > 0) return <PulsingIcon reduceMotion={reduceMotion}><Wrench color={COLORS.muted} size={14} /></PulsingIcon>;
+  if (active) return <PulsingIcon reduceMotion={reduceMotion}><Brain color={COLORS.muted} size={14} /></PulsingIcon>;
   if (steps.some((step) => step.kind === 'recall')) return <History color={COLORS.muted} size={14} />;
   if (tools.length > 0) return <Wrench color={COLORS.muted} size={14} />;
   if (workspace && !steps.some((step) => step.kind === 'reasoning' && step.text)) return <Server color={COLORS.muted} size={14} />;
@@ -3231,6 +3232,7 @@ function toolStepSummary(step: Extract<TimelineStep, { kind: 'tool' }>['tool']):
 
 const ToolStepRow = memo(function ToolStepRow({ step }: { step: Extract<TimelineStep, { kind: 'tool' }> }) {
   const { styles, COLORS } = useChatStyles();
+  const { reduceMotion } = useAccessibilityPreferences();
   const [open, setOpen] = useState(false);
   const failed = step.tool.status === 'failed' || step.tool.isError;
   const running = step.tool.status === 'running';
@@ -3251,7 +3253,7 @@ const ToolStepRow = memo(function ToolStepRow({ step }: { step: Extract<Timeline
         style={styles.workToolTrigger}
       >
         {running
-          ? <Loader2 color={COLORS.muted} size={13} />
+          ? <SpinningLoader color={COLORS.muted} reduceMotion={reduceMotion} size={13} />
           : failed
             ? <XCircle color={COLORS.critical} size={13} />
             : <ToolIcon color={COLORS.muted} size={13} />}

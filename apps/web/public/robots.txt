@@ -1,0 +1,9 @@
+# Shared chats are user content, so they stay out of search results.
+User-agent: *
+Disallow: /api/
+Disallow: /v1/
+Disallow: /socket.io/
+Disallow: /share/
+Disallow: /sandbox.html
+
+Sitemap: https://pulpo.baby/sitemap.xml

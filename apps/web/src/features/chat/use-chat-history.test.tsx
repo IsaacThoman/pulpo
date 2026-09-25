@@ -4,7 +4,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { useChatHistory } from './use-chat-history'
 
 const fixture = vi.hoisted(() => ({
-  userId: 'user', warm: false, cached: undefined as any,
+  userId: 'user', chatId: 'chat', warm: false, cached: undefined as any,
   request: vi.fn(), setDetailedChat: vi.fn(),
 }))
 vi.mock('@/lib/api', () => ({ apiRequest: fixture.request }))
@@ -20,7 +20,7 @@ vi.mock('@/stores/chat', async () => {
   const { mergeHistory } = await import('@/lib/chat-history')
   return {
     useChat: Object.assign(
-      (selector: (state: unknown) => unknown) => selector({ chats: [{ id: 'chat', history: { hasMore: fixture.warm } }] }),
+      (selector: (state: unknown) => unknown) => selector({ chats: [{ id: fixture.chatId, history: { ...fixture.cached?.history, hasMore: fixture.warm } }] }),
       { getState: () => ({ setDetailedChat: fixture.setDetailedChat }) },
     ),
     mergeServerChatDetails: (cached: any, incoming: any) => ({ ...incoming, ...mergeHistory(cached.responses, incoming.responses, incoming.history) }),
@@ -31,6 +31,7 @@ const page = () => ({ id: 'chat', activeBranchLeafId: '1199', responses: rows.sl
   history: { offset: 200, hasMore: true, before: '200', leafId: '1199' } })
 beforeEach(() => {
   fixture.userId = 'user'
+  fixture.chatId = 'chat'
   fixture.warm = false
   fixture.cached = { id: 'chat', activeBranchLeafId: '1199', responses: rows.slice(700),
     history: { offset: 700, hasMore: true, before: '700', leafId: '1199' } }
@@ -93,4 +94,35 @@ it('warms one additional page before the user scrolls', async () => {
   await waitFor(() => expect(fixture.setDetailedChat).toHaveBeenCalledTimes(1))
   expect(fixture.request).toHaveBeenCalledTimes(1)
   expect(fixture.request).toHaveBeenCalledWith('/api/chats/chat?format=compact&scope=active&historyLimit=500&before=700')
+})
+
+it('isolates pending/error state when the same list switches chats', async () => {
+  let rejectOld!: (error: Error) => void
+  let resolveNew!: (value: unknown) => void
+  fixture.request.mockImplementationOnce(() => new Promise((_resolve, reject) => { rejectOld = reject }))
+    .mockImplementationOnce(() => new Promise(resolve => { resolveNew = resolve }))
+  const view = renderHook(({ id }) => useChatHistory(id), { initialProps: { id: 'chat' } })
+  let old!: Promise<void>, next!: Promise<void>
+  act(() => { old = view.result.current.load() })
+  expect(view.result.current.loading).toBe(true)
+  fixture.chatId = 'second'
+  view.rerender({ id: 'second' })
+  expect(view.result.current.loading).toBe(false)
+  act(() => { next = view.result.current.load() })
+  await act(async () => { rejectOld(new Error('old chat is offline')); await old })
+  expect(view.result.current.error).toBe(false)
+  expect(view.result.current.loading).toBe(true)
+  await act(async () => { resolveNew(page()); await next })
+  expect(view.result.current.loading).toBe(false)
+})
+
+it('warms the newly selected chat without remounting the hook', async () => {
+  fixture.warm = true
+  fixture.request.mockResolvedValue(page())
+  const view = renderHook(({ id }) => useChatHistory(id), { initialProps: { id: 'chat' } })
+  await waitFor(() => expect(fixture.request).toHaveBeenCalledTimes(1))
+  fixture.chatId = 'second'
+  view.rerender({ id: 'second' })
+  await waitFor(() => expect(fixture.request).toHaveBeenCalledTimes(2))
+  expect(fixture.request.mock.calls[1]?.[0]).toContain('/api/chats/second?')
 })
