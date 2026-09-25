@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
 import ReactMarkdown, { type Components, type Options, type UrlTransform } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
@@ -10,6 +10,7 @@ import { ui } from '@/i18n/ui'
 import { writeClipboardText } from '@/lib/clipboard'
 import { previewKindForLanguage, previewTitle } from '@/lib/code-preview'
 import { rehypeDisplayMathFallback, rehypeMarkDisplayMath } from '@/lib/display-math-fallback'
+import { createRenderCache } from '@/lib/render-cache'
 import { useCodePreview } from '@/stores/codePreview'
 
 function CodeBlock({ language, code }: { language: string; code: string }) {
@@ -113,11 +114,26 @@ const markdownComponents: Components = {
   strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
 }
 
+const REMARK_PLUGINS: NonNullable<Options['remarkPlugins']> = [remarkGfm, remarkMath]
 const REHYPE_PLUGINS: NonNullable<Options['rehypePlugins']> = [
   rehypeMarkDisplayMath,
   [rehypeKatex, { throwOnError: false, errorColor: 'var(--muted-foreground)' }],
   rehypeDisplayMathFallback,
 ]
+
+function renderMarkdown(content: string, components: Components, urlTransform?: UrlTransform): ReactElement {
+  return ReactMarkdown({
+    remarkPlugins: REMARK_PLUGINS,
+    rehypePlugins: REHYPE_PLUGINS,
+    components,
+    urlTransform,
+    children: normalizeMathDelimiters(unwrapBoxedMinipages(content), { displayMathStyle: 'multiline' }),
+  })
+}
+
+// Parsing (remark, rehype, KaTeX) dominates mounting a transcript, and switching chats remounts every
+// visible row. Finished messages reuse their rendered elements; ~25k elements is roughly 12-25 MB.
+const cachedMarkdown = createRenderCache(25_000)
 
 function useRenderedContent(content: string, streaming: boolean): string {
   const latest = useRef(content)
@@ -152,19 +168,18 @@ export const Markdown = memo(function Markdown({
   urlTransform?: UrlTransform
 }) {
   const rendered = useRenderedContent(content, streaming)
-  const normalized = useMemo(() => normalizeMathDelimiters(unwrapBoxedMinipages(rendered), { displayMathStyle: 'multiline' }), [rendered])
-  const mergedComponents = useMemo(() => components ? { ...markdownComponents, ...components } : markdownComponents, [components])
+  // Streaming text changes every frame and would only churn the cache.
+  const cacheable = !streaming && !components && !urlTransform
+  const element = useMemo(
+    () => cacheable
+      ? cachedMarkdown(rendered, () => renderMarkdown(rendered, markdownComponents))
+      : renderMarkdown(rendered, components ? { ...markdownComponents, ...components } : markdownComponents, urlTransform),
+    [cacheable, components, rendered, urlTransform],
+  )
 
   return (
     <div className="markdown-content min-w-0 max-w-full [overflow-wrap:anywhere]">
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm, remarkMath]}
-        rehypePlugins={REHYPE_PLUGINS}
-        components={mergedComponents}
-        urlTransform={urlTransform}
-      >
-        {normalized}
-      </ReactMarkdown>
+      {element}
     </div>
   )
 })

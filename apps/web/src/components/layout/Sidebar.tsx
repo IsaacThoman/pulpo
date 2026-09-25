@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
+import { memo, useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
 import { useTranslation } from '@/i18n/useAppTranslation'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
@@ -340,7 +340,57 @@ function useShiftHeld() {
   return shiftHeld
 }
 
-export function ChatRow({
+type ChatRowHandlers = {
+  onNavigate?: () => void
+  onDragStart?: (e: DragEvent, chatId: string, list?: ChatList) => void
+  onDragOver?: (e: DragEvent<HTMLElement>, chatId: string, list?: ChatList) => void
+  onDrop?: (e: DragEvent) => void
+  onDragEnd?: () => void
+}
+
+/** Router hooks re-render on every navigation, so keep them out of the memoized row. */
+function ChatLink({
+  chatId,
+  title,
+  canDrag,
+  didDragRef,
+  onNavigate,
+}: {
+  chatId: string
+  title: string
+  canDrag: boolean
+  didDragRef?: { current: boolean }
+  onNavigate?: () => void
+}) {
+  const navigate = useNavigate()
+  return (
+    // A real link (stretched over the row) so the browser offers "Open in new tab" and honors modifier clicks.
+    <Link
+      to={`/c/${chatId}`}
+      draggable={canDrag ? false : undefined}
+      className="flex-1 cursor-[inherit] truncate outline-none after:absolute after:inset-0 after:rounded-lg focus-visible:after:ring-2 focus-visible:after:ring-ring"
+      onClick={(e) => {
+        if (didDragRef?.current) {
+          didDragRef.current = false
+          e.preventDefault()
+          return
+        }
+        const modified = e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0
+        if (modified) {
+          if (!isDesktopRuntime()) return
+          e.preventDefault()
+          navigate(`/c/${chatId}`)
+        }
+        onNavigate?.()
+      }}
+    >
+      {title}
+    </Link>
+  )
+}
+
+/** Memoized so switching chats re-renders only the rows whose props changed; handlers must be stable. */
+export const ChatRow = memo(function ChatRow({
   chat,
   active,
   shiftHeld,
@@ -356,26 +406,20 @@ export function ChatRow({
   onDrop,
   onDragEnd,
   didDragRef,
-}: {
+}: ChatRowHandlers & {
   chat: Chat
   active: boolean
   shiftHeld: boolean
-  onNavigate?: () => void
   draggable?: boolean
   droppable?: boolean
   /** Identifies the reorderable list this row belongs to, for sidebar-wide drop snapping. */
-  dragList?: string
+  dragList?: ChatList
   dragging?: boolean
   showLineBefore?: boolean
   showLineAfter?: boolean
-  onDragStart?: (e: DragEvent) => void
-  onDragOver?: (e: DragEvent<HTMLElement>) => void
-  onDrop?: (e: DragEvent) => void
-  onDragEnd?: () => void
   didDragRef?: { current: boolean }
 }) {
   const { t } = useTranslation()
-  const navigate = useNavigate()
   const [renameOpen, setRenameOpen] = useState(false)
   const [title, setTitle] = useState(chat.title)
   const renameChat = useChat((state) => state.renameChat)
@@ -395,8 +439,8 @@ export function ChatRow({
       data-drag-list={dragList}
       data-drag-id={dragList ? chat.id : undefined}
       draggable={canDrag}
-      onDragStart={canDrag ? onDragStart : undefined}
-      onDragOver={canDrop || canDrag ? onDragOver : undefined}
+      onDragStart={canDrag && onDragStart ? (e) => onDragStart(e, chat.id, dragList) : undefined}
+      onDragOver={(canDrop || canDrag) && onDragOver ? (e) => onDragOver(e, chat.id, dragList) : undefined}
       onDrop={canDrop || canDrag ? onDrop : undefined}
       onDragEnd={canDrag ? onDragEnd : undefined}
       className={cn(
@@ -409,28 +453,7 @@ export function ChatRow({
       )}
     >
       <DropLines active={canDrag || canDrop} before={showLineBefore} after={showLineAfter} />
-      {/* A real link (stretched over the row) so the browser offers "Open in new tab" and honors modifier clicks. */}
-      <Link
-        to={`/c/${chat.id}`}
-        draggable={canDrag ? false : undefined}
-        className="flex-1 cursor-[inherit] truncate outline-none after:absolute after:inset-0 after:rounded-lg focus-visible:after:ring-2 focus-visible:after:ring-ring"
-        onClick={(e) => {
-          if (didDragRef?.current) {
-            didDragRef.current = false
-            e.preventDefault()
-            return
-          }
-          const modified = e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0
-          if (modified) {
-            if (!isDesktopRuntime()) return
-            e.preventDefault()
-            navigate(`/c/${chat.id}`)
-          }
-          onNavigate?.()
-        }}
-      >
-        {chat.title}
-      </Link>
+      <ChatLink chatId={chat.id} title={chat.title} canDrag={canDrag} didDragRef={didDragRef} onNavigate={onNavigate} />
       {shiftHeld && (
         <button
           className={cn(actionClassName, 'relative hidden hover:text-destructive group-hover:block')}
@@ -510,14 +533,13 @@ export function ChatRow({
       </Dialog>
     </div>
   )
-}
+})
 
 function FolderGroup({
   folder,
   chats,
   chatId,
   shiftHeld,
-  onNavigate,
   canReorderFolder,
   folderDragging,
   showFolderLineBefore,
@@ -529,12 +551,12 @@ function FolderGroup({
   onFolderDragEnd,
   folderDidDragRef,
   drag,
+  rowHandlers,
 }: {
   folder: Folder
   chats: Chat[]
   chatId?: string
   shiftHeld: boolean
-  onNavigate: () => void
   canReorderFolder: boolean
   folderDragging: boolean
   showFolderLineBefore: boolean
@@ -546,6 +568,7 @@ function FolderGroup({
   onFolderDragEnd: () => void
   folderDidDragRef: { current: boolean }
   drag: ReturnType<typeof useSidebarDrag>
+  rowHandlers: ChatRowHandlers
 }) {
   const { t } = useTranslation()
   const toggleFolder = useChat((state) => state.toggleFolder)
@@ -642,7 +665,6 @@ function FolderGroup({
               chat={chat}
               active={chat.id === chatId}
               shiftHeld={shiftHeld}
-              onNavigate={onNavigate}
               draggable
               droppable
               dragging={isDragging}
@@ -650,10 +672,7 @@ function FolderGroup({
               showLineAfter={showLineAfter}
               didDragRef={drag.didDragRef}
               dragList={list}
-              onDragStart={(e) => drag.startDrag('chat', chat.id, e, list)}
-              onDragOver={(e) => drag.onChatRowDragOver(list, chat.id, e)}
-              onDrop={onDrop}
-              onDragEnd={drag.clearDrag}
+              {...rowHandlers}
             />
           )
         })}
@@ -818,6 +837,19 @@ export function Sidebar({
       ensureFolderExpanded(folderId)
     }
   }
+
+  // Chat rows are memoized, so their handlers keep one identity and call the latest render's logic.
+  const latestRowHandlers = useRef({ onNavigate, handleDrop, drag })
+  latestRowHandlers.current = { onNavigate, handleDrop, drag }
+  const rowHandlers = useMemo<ChatRowHandlers>(() => ({
+    onNavigate: () => latestRowHandlers.current.onNavigate(),
+    onDragStart: (e, chatId, list) => latestRowHandlers.current.drag.startDrag('chat', chatId, e, list),
+    onDragOver: (e, chatId, list) => {
+      if (list) latestRowHandlers.current.drag.onChatRowDragOver(list, chatId, e)
+    },
+    onDrop: (e) => latestRowHandlers.current.handleDrop(e),
+    onDragEnd: () => latestRowHandlers.current.drag.clearDrag(),
+  }), [])
 
   const go = (path: string) => {
     navigate(path)
@@ -1056,7 +1088,6 @@ export function Sidebar({
                         chat={c}
                         active={c.id === chatId}
                         shiftHeld={shiftHeld}
-                        onNavigate={onNavigate}
                         draggable
                         droppable
                         dragging={isDragging}
@@ -1064,10 +1095,7 @@ export function Sidebar({
                         showLineAfter={showLineAfter}
                         didDragRef={drag.didDragRef}
                         dragList="pinned"
-                        onDragStart={(e) => drag.startDrag('chat', c.id, e, 'pinned')}
-                        onDragOver={(e) => drag.onChatRowDragOver('pinned', c.id, e)}
-                        onDrop={handleDrop}
-                        onDragEnd={drag.clearDrag}
+                        {...rowHandlers}
                       />
                     )
                   })}
@@ -1093,7 +1121,6 @@ export function Sidebar({
                   chats={items}
                   chatId={chatId}
                   shiftHeld={shiftHeld}
-                  onNavigate={onNavigate}
                   canReorderFolder={canReorderFolder}
                   folderDragging={isDragging}
                   showFolderLineBefore={showFolderLineBefore}
@@ -1105,6 +1132,7 @@ export function Sidebar({
                   onFolderDragEnd={drag.clearDrag}
                   folderDidDragRef={drag.didDragRef}
                   drag={drag}
+                  rowHandlers={rowHandlers}
                 />
               )
             })}
@@ -1140,7 +1168,6 @@ export function Sidebar({
                           chat={c}
                           active={c.id === chatId}
                           shiftHeld={shiftHeld}
-                          onNavigate={onNavigate}
                           draggable
                           droppable
                           dragging={isDragging}
@@ -1148,10 +1175,7 @@ export function Sidebar({
                           showLineAfter={showLineAfter}
                           didDragRef={drag.didDragRef}
                           dragList="loose"
-                          onDragStart={(e) => drag.startDrag('chat', c.id, e, 'loose')}
-                          onDragOver={(e) => drag.onChatRowDragOver('loose', c.id, e)}
-                          onDrop={handleDrop}
-                          onDragEnd={drag.clearDrag}
+                          {...rowHandlers}
                         />
                       )
                     })}
