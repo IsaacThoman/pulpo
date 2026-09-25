@@ -31,7 +31,7 @@ export function CostLimitInput({
     <div className="flex items-center gap-2">
       <span className="text-sm text-muted-foreground">$</span>
       <Input
-        aria-label={ui("Agent cost limit in US dollars")}
+        aria-label={ui("Cost threshold in US dollars")}
         className="w-24 tabular-nums"
         type="number"
         inputMode="decimal"

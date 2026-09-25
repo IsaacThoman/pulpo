@@ -1089,11 +1089,11 @@ export function SettingsModal({
                 <div>
                   <h2 className="text-base font-semibold">{ui('Agent')}</h2>
                   <Separator className="my-3" />
-                  <Row label={ui("Pause at cost limit")} hint={ui("Pause an Agent response and ask before it continues each time it costs another limit's worth.")}>
-                    <Switch aria-label={ui("Pause at cost limit")} checked={s.agentCostLimitEnabled} onCheckedChange={(v) => s.set('agentCostLimitEnabled', v)} />
+                  <Row label={ui("Enable cost warning threshold")} hint={ui("Pause for confirmation after an agent loop exceeds set cost threshold. Does not guarantee total cost remains below threshold.")}>
+                    <Switch aria-label={ui("Enable cost warning threshold")} checked={s.agentCostLimitEnabled} onCheckedChange={(v) => s.set('agentCostLimitEnabled', v)} />
                   </Row>
                   {s.agentCostLimitEnabled && (
-                    <Row label={ui("Cost limit")} hint={ui("Applies to each Agent response, including model, tool, and workspace costs.")}>
+                    <Row label={ui("Cost threshold")}>
                       <CostLimitInput
                         value={s.agentCostLimitMicros}
                         onChange={(value) => s.set('agentCostLimitMicros', value)}
