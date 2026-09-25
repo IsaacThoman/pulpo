@@ -89,11 +89,6 @@ try {
     else for (const prompt of sidebarPrompts) await send(page, prompt)
     heroChatId = await send(page, heroPrompt)
   }
-  // Accounts can expire new chats automatically; keep the hero chat and hide its hourglass.
-  const kept = await api(page, 'PATCH', `/api/chats/${heroChatId}`, { autoExpire: false })
-  if (!kept.ok) throw new Error(`Could not turn off expiry for chat ${heroChatId} (${kept.status})`)
-  // Give the app's local cache time to pick up the change before capturing.
-  await page.waitForTimeout(5000)
 
   for (const scheme of ['light', 'dark']) {
     await page.emulateMedia({ colorScheme: scheme })

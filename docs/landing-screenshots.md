@@ -45,7 +45,6 @@ This needs no production account, but the local preview only has the preview pro
 - With `--demo-profile`, renames the signed-in account to **Alex Rivera** (`@alex`). This changes the real account, so use it only on disposable accounts.
 - If the account has no chats, sends seven short prompts so the sidebar looks lived in.
 - Sends the hero prompt in a new chat, which uses the account's default model: "Explain how KV caching speeds up transformer decoding. Include a short PyTorch snippet and the memory cost formula." Its answer shows headings, display math, and a code block, and a fresh chat shows the "now" timestamp.
-- Turns off automatic expiry for that chat, so it stays in the account and its sidebar entry has no hourglass.
 - Opens that chat at 1440×900 with a device scale factor of 2, switches the composer's agent control to Pulpo Agent, scrolls to the start of the conversation and captures it once with a light and once with a dark color scheme.
 - Converts each capture with `cwebp -q 80 -m 6 -resize 2400 0` into `apps/web/public/landing/`.
 - Saves the top 1440×756 of the dark capture as `apps/web/public/og-image.jpg`, the link-preview image referenced by `og:image` in `apps/web/index.html`.
