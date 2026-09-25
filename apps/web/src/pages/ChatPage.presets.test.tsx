@@ -45,7 +45,7 @@ const model: Model = {
     ] },
     { id: 'speed', name: 'Speed', icon: 'rocket', defaultChoiceId: 'auto', choices: [
       { id: 'auto', displayName: 'Auto', action: { type: 'none' } },
-      { id: 'fast', displayName: 'Fast', action: { type: 'none' } },
+      { id: 'fast', displayName: 'Fast', action: { type: 'redirect', modelId: 'test-model-fast' } },
     ] },
   ],
 }
@@ -84,7 +84,7 @@ beforeEach(async () => {
   fixture.showMessages = false
   useAuth.setState({ user: { id: userId } as NonNullable<ReturnType<typeof useAuth.getState>['user']>, dictationEnabled: false })
   useSettings.setState({ generation: { [model.id]: defaults }, agentModes: { [model.id]: true },
-    defaultModelId: model.id, showPromptSuggestions: true, sendWithEnter: true })
+    defaultModelId: model.id, showPromptSuggestions: true, sendWithEnter: true, composerSyncEnabled: true })
   useComposerSyncPreference.setState({ enabled: true, generation: '' })
   useCatalog.setState({ models: [model], loaded: true, agentAvailable: true })
   useChat.setState({ chats: [], folders: [], activeChatId: null, activeTemporaryChatId: null,
@@ -119,18 +119,35 @@ async function selectControls(view: ReturnType<typeof renderChat>) {
   fireEvent.click(await view.findByRole('menuitemradio', { name: 'Disabled' }))
   await waitFor(() => expect(view.getByRole('button', { name: 'Generation options' }).textContent).toContain('Low'))
 }
-function expectControls(view: ReturnType<typeof renderChat>) {
+function expectControls(view: ReturnType<typeof renderChat>, temporary = false) {
   const label = view.getByRole('button', { name: 'Generation options' }).textContent
   expect(label).toContain('Low')
   expect(label).toContain('Fast')
   expect(view.getByRole('button', { name: 'Agent options, Disabled' }).textContent).toContain('Disabled')
-  expect(useSettings.getState().generation[model.id]).toEqual(defaults)
+  expect(useSettings.getState().generation[model.id]).toEqual(temporary ? defaults : selected)
   expect(useSettings.getState().agentModes[model.id]).toBe(true)
 }
 
 function expectNoPresetFlash() {
   expect(renderedControls.filter((label) => !label.includes('Low') || !label.includes('Fast'))).toEqual([])
 }
+
+it.each([false, true])('remembers new-chat preset choices without relying on a saved draft (sync: %s)', async (syncEnabled) => {
+  useSettings.setState({ generation: {}, composerSyncEnabled: syncEnabled })
+  if (syncEnabled) enableSync()
+  const view = renderChat()
+  await view.findByRole('button', { name: 'Try a suggestion' })
+  await selectControls(view)
+  expect(useSettings.getState().generation[model.id]).toEqual(selected)
+  view.unmount()
+  fixture.sync?.dispose()
+  fixture.sync = null
+  clearRuntimeComposerDrafts(userId)
+  const reopened = renderChat()
+  await reopened.findByRole('button', { name: 'Try a suggestion' })
+  expect(reopened.getByRole('button', { name: 'Generation options' }).textContent).toContain('Low')
+  expect(reopened.getByRole('button', { name: 'Generation options' }).textContent).toContain('Fast')
+})
 
 it.each([
   { initialAgentMode: true, syncEnabled: false },
@@ -240,7 +257,7 @@ it.each([
   await waitFor(() => expect(view.getByRole('textbox')).not.toBe(landingInput))
   const start = requests.find((request) => request.path.endsWith('/api/chats/start'))!
   expect(start.body.response).toMatchObject({ input: 'hello', presetSelections: selected, agentMode: false })
-  expectControls(view)
+  expectControls(view, temporary)
   expectNoPresetFlash()
   const chatId = useChat.getState().activeChatId!
   await waitFor(() => expect(useChat.getState().chats.find((chat) => chat.id === chatId)?.provisional).toBe(false))
@@ -254,11 +271,11 @@ it.each([
   await waitFor(() => expect(requests.some((request) => request.path.endsWith(`/api/chats/${chatId}/responses`))).toBe(true))
   expect(requests.find((request) => request.path.endsWith(`/api/chats/${chatId}/responses`))!.body)
     .toMatchObject({ input: 'follow-up', presetSelections: selected, agentMode: false })
-  if (!syncEnabled && !temporary) {
+  if (!temporary) {
     fireEvent.click(view.getByRole('button', { name: 'New chat' }))
     await view.findByRole('button', { name: 'Try a suggestion' })
-    expect(view.getByRole('button', { name: 'Generation options' }).textContent).toContain('Medium')
-    expect(view.getByRole('button', { name: 'Generation options' }).textContent).toContain('Auto')
+    expect(view.getByRole('button', { name: 'Generation options' }).textContent).toContain('Low')
+    expect(view.getByRole('button', { name: 'Generation options' }).textContent).toContain('Fast')
   }
 })
 
@@ -279,7 +296,7 @@ it.each([false, true])('uses selected controls for suggestions and preserves the
   const start = requests.find((request) => request.path.endsWith('/api/chats/start'))!
   expect(start.body.response).toMatchObject({ input: 'suggested message', presetSelections: selected, agentMode: false, attachmentIds: [] })
   expect(start.body.chat).toMatchObject({ temporary })
-  expectControls(view)
+  expectControls(view, temporary)
   expectNoPresetFlash()
   expect(runtimeComposerDraft(userId, temporary ? 'temporary:new' : 'new')?.content).toBe('keep this draft')
   expect(runtimeComposerDraft(userId, temporary ? 'temporary:new' : 'new')?.attachmentIds).toEqual(['pending'])
@@ -334,6 +351,8 @@ it.each(['send', 'suggestion'])('does not flash defaults when older summaries fi
   const chatId = useChat.getState().activeChatId!
   await waitFor(() => expect(useChat.getState().chats.find((chat) => chat.id === chatId)?.provisional).toBe(false))
   const detail = queryClient.getQueryData<import('@/stores/chat').ServerChat>(['chat', userId, chatId])!
+  expect(detail.modelId).toBe(model.id)
+  expect(detail.responses?.[0]?.modelId).toBe('test-model-fast')
   const startedInput = view.getByRole('textbox')
   fireEvent.change(startedInput, { target: { value: 'next unsent message' } })
   renderedControls.length = 0
