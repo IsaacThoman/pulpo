@@ -20,6 +20,7 @@ import {
   storeDesktopSession,
 } from '@/lib/runtime'
 import { ui } from '@/i18n/ui'
+import { PROFILE_CHANGE_EVENT } from '@/lib/profile-events'
 
 export type AuthRole = 'pending' | 'user' | 'admin'
 
@@ -114,6 +115,7 @@ function readCachedProfile(): AuthUser | null {
 function cacheProfile(user: AuthUser | null): void {
   if (user) localStorage.setItem(runtimeProfileKey(), JSON.stringify(user))
   else localStorage.removeItem(runtimeProfileKey())
+  if (typeof window !== 'undefined') window.dispatchEvent?.(new Event(PROFILE_CHANGE_EVENT))
 }
 
 const cachedProfile = readCachedProfile()

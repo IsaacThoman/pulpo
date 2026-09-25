@@ -2,6 +2,8 @@ import { useEffect } from 'react'
 import { Navigate, Outlet, useLocation } from 'react-router-dom'
 import { Loader2 } from 'lucide-react'
 import { useAuth } from '@/stores/auth'
+import { isDesktopRuntime } from '@/lib/runtime'
+import { LandingPage } from '@/pages/LandingPage'
 
 export function RequireAuth() {
   const user = useAuth((s) => s.user)
@@ -10,6 +12,10 @@ export function RequireAuth() {
   const location = useLocation()
 
   useEffect(() => { void bootstrap() }, [bootstrap])
+
+  // Visitors without a cached profile are almost always signed out, so the root shows the
+  // landing page (matching the pre-rendered HTML) instead of a spinner while the session is checked.
+  if (!user && location.pathname === '/' && !isDesktopRuntime()) return <LandingPage />
 
   if (!user && checkingSession) {
     return <div className="flex h-dvh items-center justify-center"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>

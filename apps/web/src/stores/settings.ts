@@ -1,6 +1,8 @@
 import { imageGenerationPreferencesSchema, type ImageGenerationPreferences, speechPreferencesSchema, type SpeechPreferences } from '@pulpo/contracts'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { PROFILE_CHANGE_EVENT } from '@/lib/profile-events'
+import { runtimeProfileKey } from '@/lib/runtime'
 import type { ModelWarningDismissals, SidebarPins } from '@pulpo/contracts'
 import {
   applyAnimationSpeed,
@@ -140,11 +142,20 @@ export function normalizeLanguage(value: unknown): Language {
     : DEFAULT_SETTINGS.language
 }
 
+function signedIn(): boolean {
+  try {
+    return localStorage.getItem(runtimeProfileKey()) !== null
+  } catch {
+    return false
+  }
+}
+
+/** Signed-out screens follow the system theme; a saved theme belongs to whoever last signed in on this device. */
 export function applyTheme(theme: Theme) {
-  const root = document.documentElement
+  const effective = signedIn() ? theme : 'system'
   const dark =
-    theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)
-  root.classList.toggle('dark', dark)
+    effective === 'dark' || (effective === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)
+  document.documentElement.classList.toggle('dark', dark)
 }
 
 export function applyLanguage(language: Language) {
@@ -160,6 +171,6 @@ useSettings.subscribe((state, previous) => {
   if (state.language !== previous.language) applyLanguage(normalizeLanguage(state.language))
   if (state.animationSpeed !== previous.animationSpeed) applyAnimationSpeed(state.animationSpeed)
 })
-window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
-  if (useSettings.getState().theme === 'system') applyTheme('system')
-})
+window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => applyTheme(useSettings.getState().theme))
+// Re-apply on sign-in and sign-out. Some tests stub window without event methods.
+window.addEventListener?.(PROFILE_CHANGE_EVENT, () => applyTheme(useSettings.getState().theme))
