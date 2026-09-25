@@ -1116,6 +1116,7 @@ const esUi: Record<string, string> = {
   "Show code": "Mostrar código",
   "Reload preview": "Recargar vista previa",
   "Copy code": "Copiar código",
+  "Copy text": "Copiar texto",
   "Download code": "Descargar código",
   "Code preview": "Vista previa de código",
   "The preview sandbox didn't load.": "No se pudo cargar el entorno aislado de la vista previa.",

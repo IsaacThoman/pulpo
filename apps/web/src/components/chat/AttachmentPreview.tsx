@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Download, FileWarning, Loader2, X } from 'lucide-react'
+import { Check, Copy, Download, FileWarning, Loader2, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Markdown } from '@/components/chat/Markdown'
 import {
@@ -14,6 +14,7 @@ import { apiRequest, fetchApiBlob } from '@/lib/api'
 import { getCachedAttachment } from '@/lib/local-first/attachment-cache'
 import { useAuth } from '@/stores/auth'
 import { formatBytes } from '@/lib/attachments'
+import { writeClipboardText } from '@/lib/clipboard'
 import {
   attachmentPreviewKind,
   formatTextPreview,
@@ -26,7 +27,9 @@ import {
 import { ui, uit } from '@/i18n/ui'
 import { SandboxFrame } from '@/components/chat/SandboxFrame'
 import { CodeSource, PreviewModeToggle } from '@/components/chat/CodePreviewPanel'
+import { HighlightedCode } from '@/components/chat/HighlightedCode'
 import { previewKindForFile } from '@/lib/code-preview'
+import { languageForFile } from '@/lib/syntax-highlight'
 
 type PreviewContent =
   | { status: 'idle' }
@@ -184,10 +187,12 @@ function TextPreview({
   }
 
   return (
-    <div className="size-full overflow-auto bg-[#0d1117] text-slate-200" data-preview-kind="text">
-      <pre className="min-h-full p-5 font-mono text-xs leading-5 whitespace-pre-wrap break-words">{text}</pre>
+    <div className="size-full overflow-auto bg-code text-code-foreground" data-preview-kind="text">
+      <pre className="code-highlight min-h-full p-5 font-mono text-xs leading-5 whitespace-pre-wrap break-words">
+        <HighlightedCode code={text} language={languageForFile(attachment.name, attachment.mimeType)} />
+      </pre>
       {truncated && (
-        <p className="sticky bottom-0 border-t border-white/10 bg-[#0d1117]/95 px-5 py-2 text-xs text-slate-400 backdrop-blur"> {ui("Showing the first part of")} {attachment.name}.
+        <p className="sticky bottom-0 border-t border-code-border bg-code/95 px-5 py-2 text-xs text-code-muted backdrop-blur"> {ui("Showing the first part of")} {attachment.name}.
         </p>
       )}
     </div>
@@ -207,7 +212,7 @@ function SandboxPreview({ attachment, text, truncated }: { attachment: Attachmen
       <div className="min-h-0 flex-1">
         {mode === 'preview' && kind
           ? <SandboxFrame kind={kind} code={text} title={uit`Preview of ${attachment.name}`} />
-          : <CodeSource code={text} />}
+          : <CodeSource code={text} language={languageForFile(attachment.name, attachment.mimeType)} />}
       </div>
     </div>
   )
@@ -268,6 +273,28 @@ function PreviewBody({
   return <video src={content.url} controls preload="metadata" aria-label={uit`Video preview of ${attachment.name}`} className="size-full bg-black object-contain" data-preview-kind="video" />
 }
 
+function CopyTextButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false)
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      size="icon-sm"
+      className="rounded-full"
+      aria-label={copied ? ui("Copied") : ui("Copy text")}
+      onClick={() => {
+        void writeClipboardText(text).then((success) => {
+          if (!success) return
+          setCopied(true)
+          setTimeout(() => setCopied(false), 1200)
+        })
+      }}
+    >
+      {copied ? <Check className="size-4" /> : <Copy className="size-4" />}
+    </Button>
+  )
+}
+
 export function AttachmentPreviewDialog({
   attachment,
   sourceFile,
@@ -299,6 +326,10 @@ export function AttachmentPreviewDialog({
               {attachmentDescription(attachment, kind)}
             </DialogDescription>
           </div>
+          {/* Truncated previews only hold the start of the file, so copying would silently drop the rest. */}
+          {content.status === 'ready' && content.text !== null && !content.textTruncated && (
+            <CopyTextButton text={content.text} />
+          )}
           <Button type="button" variant="ghost" size="icon-sm" onClick={onDownload} aria-label={uit`Download ${attachment.name}`} className="rounded-full">
             <Download className="size-4" />
           </Button>

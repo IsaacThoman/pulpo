@@ -1,26 +1,22 @@
 import { useEffect, useState } from 'react'
 import { Check, Code2, Copy, Download, Eye, RotateCw, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { HighlightedCode } from '@/components/chat/HighlightedCode'
 import { SandboxFrame } from '@/components/chat/SandboxFrame'
 import { previewFileName, previewKindLabel, previewMimeType } from '@/lib/code-preview'
+import { downloadCode } from '@/lib/code-download'
+import { languageForPreviewKind } from '@/lib/syntax-highlight'
 import { writeClipboardText } from '@/lib/clipboard'
 import { cn } from '@/lib/utils'
 import { useCodePreview, type CodePreview } from '@/stores/codePreview'
 import { ui } from '@/i18n/ui'
 
-function downloadCode(preview: CodePreview): void {
-  const url = URL.createObjectURL(new Blob([preview.code], { type: previewMimeType(preview.kind) }))
-  const anchor = document.createElement('a')
-  anchor.href = url
-  anchor.download = previewFileName(preview.title, preview.kind)
-  anchor.click()
-  setTimeout(() => URL.revokeObjectURL(url), 0)
-}
-
-export function CodeSource({ code }: { code: string }) {
+export function CodeSource({ code, language }: { code: string; language?: string | null }) {
   return (
-    <div className="size-full overflow-auto bg-[#0d1117] text-slate-200" data-preview-kind="source">
-      <pre className="min-h-full p-5 font-mono text-xs leading-5 whitespace-pre-wrap break-words">{code}</pre>
+    <div className="size-full overflow-auto bg-code text-code-foreground" data-preview-kind="source">
+      <pre className="code-highlight min-h-full p-5 font-mono text-xs leading-5 whitespace-pre-wrap break-words">
+        <HighlightedCode code={code} language={language} />
+      </pre>
     </div>
   )
 }
@@ -83,7 +79,7 @@ function PanelBody({ preview }: { preview: CodePreview }) {
         >
           {copied ? <Check className="size-4" /> : <Copy className="size-4" />}
         </Button>
-        <Button type="button" variant="ghost" size="icon-sm" className="rounded-full" aria-label={ui("Download code")} onClick={() => downloadCode(preview)}>
+        <Button type="button" variant="ghost" size="icon-sm" className="rounded-full" aria-label={ui("Download code")} onClick={() => downloadCode(preview.code, previewFileName(preview.title, preview.kind), previewMimeType(preview.kind))}>
           <Download className="size-4" />
         </Button>
         <Button type="button" variant="ghost" size="icon-sm" className="rounded-full" aria-label={ui("Close preview")} onClick={close}>
@@ -93,7 +89,7 @@ function PanelBody({ preview }: { preview: CodePreview }) {
       <div className="min-h-0 flex-1 overflow-hidden">
         {mode === 'preview'
           ? <SandboxFrame key={reloads} kind={preview.kind} code={preview.code} title={preview.title} />
-          : <CodeSource code={preview.code} />}
+          : <CodeSource code={preview.code} language={languageForPreviewKind(preview.kind)} />}
       </div>
     </>
   )
