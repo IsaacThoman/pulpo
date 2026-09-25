@@ -4,7 +4,6 @@ import {
   agentCostLimitMicros,
   findCostLimitItem,
   findCostLimitItems,
-  withAgentCostLimitDefault,
   adminUsageEventSchema,
   animationSpeedSchema,
   automaticChatExpirationSchema,
@@ -507,7 +506,7 @@ describe('shared contracts', () => {
     expect(document.account).toMatchObject({
       theme: 'system', trashRetention: '30d', automaticChatExpiration: '24h', newChatAutoExpire: false,
       nickname: '', animationSpeed: 1, showPromptSuggestions: true, showResponseCost: false, favoriteModelIds: [], agentModes: {},
-      agentCostLimitMicros: 1_000_000,
+      agentCostLimitEnabled: true, agentCostLimitMicros: 1_000_000,
       instructionPresetSelections: {},
       sidebarPins: { usage: false, billing: false, friends: false, apiKeys: false },
     })
@@ -797,14 +796,11 @@ describe('response snapshot accumulation', () => {
     expect(findCostLimitItem([{ type: 'pulpo_cost_limit', cost_micros: 'lots' }])).toBeUndefined()
   })
 
-  it('enables the Agent cost limit by default for regular accounts only', () => {
-    expect(agentCostLimitMicros({}, 'user')).toBe(1_000_000)
-    expect(agentCostLimitMicros({}, 'admin')).toBeUndefined()
-    expect(agentCostLimitMicros({ agentCostLimitEnabled: false }, 'user')).toBeUndefined()
-    expect(agentCostLimitMicros({ agentCostLimitEnabled: true, agentCostLimitMicros: 250_000 }, 'admin')).toBe(250_000)
-    expect(agentCostLimitMicros({ agentCostLimitMicros: 1 }, 'user')).toBeUndefined()
-    expect(withAgentCostLimitDefault({ theme: 'dark' }, 'user')).toEqual({ theme: 'dark', agentCostLimitEnabled: true })
-    expect(withAgentCostLimitDefault({ agentCostLimitEnabled: false }, 'user')).toEqual({ agentCostLimitEnabled: false })
+  it('enables the Agent cost limit at $1 unless the account turned it off', () => {
+    expect(agentCostLimitMicros({})).toBe(1_000_000)
+    expect(agentCostLimitMicros({ agentCostLimitEnabled: false })).toBeUndefined()
+    expect(agentCostLimitMicros({ agentCostLimitEnabled: true, agentCostLimitMicros: 250_000 })).toBe(250_000)
+    expect(agentCostLimitMicros({ agentCostLimitMicros: 1 })).toBeUndefined()
   })
 
   it('accepts terminal output as authoritative', () => {

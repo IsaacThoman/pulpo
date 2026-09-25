@@ -550,24 +550,9 @@ export const costLimitItemSchema = z.object({
 })
 export type CostLimitItem = z.infer<typeof costLimitItemSchema>
 
-/** Accounts that never chose pause on at the default limit, except administrators. */
-export function agentCostLimitEnabledByDefault(role: string | null | undefined): boolean {
-  return role !== 'admin'
-}
-
-/** Stored preferences with agentCostLimitEnabled resolved from the account role when it was never chosen. */
-export function withAgentCostLimitDefault<T extends Record<string, unknown>>(
-  preferences: T,
-  role: string | null | undefined,
-): T & { agentCostLimitEnabled: boolean } {
-  return typeof preferences.agentCostLimitEnabled === 'boolean'
-    ? preferences as T & { agentCostLimitEnabled: boolean }
-    : { ...preferences, agentCostLimitEnabled: agentCostLimitEnabledByDefault(role) }
-}
-
-/** The enabled Agent cost limit for an account's stored preferences and role, if any. */
-export function agentCostLimitMicros(preferences: Record<string, unknown>, role: string | null | undefined): number | undefined {
-  if (!withAgentCostLimitDefault(preferences, role).agentCostLimitEnabled) return undefined
+/** The enabled Agent cost limit from stored account preferences, if any. Accounts that never chose are enabled. */
+export function agentCostLimitMicros(preferences: Record<string, unknown>): number | undefined {
+  if (preferences.agentCostLimitEnabled === false) return undefined
   const limit = agentCostLimitMicrosSchema.safeParse(preferences.agentCostLimitMicros)
   return limit.success ? limit.data : undefined
 }
@@ -1488,8 +1473,7 @@ export const managementAccountSettingsSchema = z.object({
   modelWarningDismissals: modelWarningDismissalsSchema.default({}),
   showReasoning: z.boolean().default(true),
   showResponseCost: z.boolean().default(false),
-  /** Unset means the role default: on for regular accounts, off for administrators. */
-  agentCostLimitEnabled: z.boolean().optional(),
+  agentCostLimitEnabled: z.boolean().default(true),
   agentCostLimitMicros: agentCostLimitMicrosSchema,
   chatWidth: z.enum(['full', 'narrow']).default('narrow'),
   animationSpeed: animationSpeedSchema,

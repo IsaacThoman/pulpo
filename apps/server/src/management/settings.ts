@@ -11,7 +11,6 @@ import {
   managementWebToolsSettingsSchema,
   personalizationSettingsSchema,
   webToolsSettingsSchema,
-  withAgentCostLimitDefault,
   type ManagementSettingsChange,
   type ManagementSettingsDocument,
 } from '@pulpo/contracts'
@@ -68,17 +67,16 @@ function publicOcr(value: ReturnType<typeof parseOcrSettings>) {
 }
 
 export async function loadManagementSettings(userId: string, database: typeof db = db): Promise<ManagementSettingsDocument> {
-  const [[preferenceRow], [profile], [owner], settingRows] = await Promise.all([
+  const [[preferenceRow], [profile], settingRows] = await Promise.all([
     database.select().from(userPreferences).where(eq(userPreferences.userId, userId)).limit(1),
     database.select({
       username: users.username,
       profileColor: users.profileColor,
     }).from(users).where(eq(users.id, userId)).limit(1),
-    database.select({ role: users.role }).from(users).where(eq(users.id, userId)).limit(1),
     database.select().from(applicationSettings),
   ])
   const byKey = new Map(settingRows.map((row) => [row.key, row.value]))
-  const rawAccount = withAgentCostLimitDefault(preferencesWithModelDefaults(preferenceRow?.values as Record<string, unknown> | undefined), owner?.role)
+  const rawAccount = preferencesWithModelDefaults(preferenceRow?.values as Record<string, unknown> | undefined)
   const account = managementAccountSettingsSchema.parse({
     ...rawAccount,
     username: profile?.username,
