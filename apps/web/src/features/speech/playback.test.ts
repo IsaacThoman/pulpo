@@ -128,3 +128,13 @@ it('cancels a preview while the catalog is loading without generating or playing
   expect(mocks.audio).not.toHaveBeenCalled()
   expect(speechPlayback.getSnapshot().phase).toBe('idle')
 })
+it('keeps a finished message for replay without generating it again, but not settings previews', async () => {
+  vi.stubGlobal('Audio', class { pause = mocks.pause; removeAttribute() {} load() {} currentTime = 0; duration = 2; onended: null | (() => void) = null; onerror = null; play = async () => { queueMicrotask(() => this.onended?.()) } })
+  const run = readAloud('message', 'Hello')
+  await tick(); await tick(); await tick()
+  expect(speechPlayback.getSnapshot()).toMatchObject({ key: 'message', phase: 'ended' })
+  void readAloud('message', 'Hello'); await tick(); await tick()
+  expect(mocks.audio).toHaveBeenCalledOnce(); expect(speechPlayback.getSnapshot().key).toBe('message')
+  speechPlayback.stop(); await run
+  await previewSpeech(); expect(speechPlayback.getSnapshot()).toMatchObject({ key: null, phase: 'idle' })
+})

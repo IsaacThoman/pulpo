@@ -5,6 +5,30 @@ models under **Admin → Speech models**. Voice selections belong to one model;
 changing a provider binding does not change the voice ID saved in user preferences.
 Dictation and live voice conversations use separate systems.
 
+## Playback controls
+
+While a message is read aloud, compact controls appear beneath that message's
+**Read aloud** button on web and desktop, and above the composer on iOS and Android.
+They pause and resume, skip back or forward 10 seconds, and cycle the playback speed
+(0.75×–2×). The speed is applied by the client with pitch correction, multiplies any
+model speed setting, and lasts until the app reloads. On web, hardware media keys also
+control playback.
+
+When a message finishes, its controls stay open with the generated audio kept on the
+device. **Replay**, skipping back, or reading the message aloud again plays that audio
+without new speech requests or charges. **Close player** discards the audio and hides
+the controls, as do reading another message, switching chats, or leaving the app.
+
+The time shows elapsed / total. Drag or click the progress bar to seek; on mobile, drag
+or tap it, and VoiceOver or TalkBack adjust actions skip 10 seconds.
+
+Long messages are generated in chunks, in order, with one chunk prefetched. The lighter
+band on the progress bar marks audio generated so far. Seeking anywhere inside it, or
+back into earlier chunks, never generates audio again. A seek past it stops at the start
+of the chunk still being generated and continues once that chunk is ready. Until every
+chunk is generated, the total is estimated from the speaking rate so far and shown with
+`~`. Settings previews do not show the player.
+
 ## Defaults for users
 
 In **Admin → Speech models**, choose an enabled **Default speech model** and
