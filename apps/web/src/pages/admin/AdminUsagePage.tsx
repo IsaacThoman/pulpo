@@ -5,7 +5,7 @@ import { Activity, AlertTriangle, ChevronDown, ChevronRight, CircleCheck, Clock3
 import { io, type Socket } from 'socket.io-client'
 import { isDesktopRuntime, runtimeInstanceUrl, runtimeSessionToken } from '@/lib/runtime'
 import type { AdminUsageEvent, ClientToServerEvents, ServerToClientEvents } from '@pulpo/contracts'
-import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis, matchByDataKey } from 'recharts'
 import { apiRequest } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -17,6 +17,8 @@ import { DEFAULT_CHART_ANIMATION_DURATION_MS, scaledAnimationDuration } from '@/
 import { usageRequestSequence } from './usage-request-sequence'
 
 type Range = '24h' | '7d' | '30d' | '90d' | 'all'
+/** animate bars by day so range changes and live refreshes keep each day in place */
+const MATCH_BY_DAY = matchByDataKey('day')
 interface SummaryResult {
   summary: Record<string, number>; daily: Array<{ day: string; modelId: string; calls: number; costMicros: number; tokens: number }>
   topModels: Array<{ id: string; calls: number; costMicros: number }>; topUsers: Array<{ id: string; name: string; email: string; calls: number; costMicros: number }>
@@ -67,7 +69,7 @@ export function AdminUsagePage() {
     <Card className="gap-0 rounded-lg py-0 shadow-none"><div className="flex items-center gap-2 border-b px-3 py-2"><span className="text-xs font-medium">{ui("Recent model calls")}</span><div className="flex-1" /><Select value={status} onValueChange={setStatus}><SelectTrigger size="sm" className="w-32 text-xs"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">{ui("All statuses")}</SelectItem>{['in_progress','completed','failed'].map((v) => <SelectItem key={v} value={v}>{v.replace('_',' ')}</SelectItem>)}</SelectContent></Select></div>
       <div className="overflow-x-auto"><table className="data-table"><thead><tr className="border-b"><th className="px-3 py-2" /><th className="px-3 py-2">{ui("Started")}</th><th className="px-3 py-2">{ui("Source / identity")}</th><th className="px-3 py-2">{ui("Requested → actual")}</th><th className="px-3 py-2">{ui("Turn / attempt")}</th><th className="px-3 py-2">{ui("OCR")}</th><th className="px-3 py-2 text-right">{ui("Tokens")}</th><th className="px-3 py-2 text-right">{ui("Cost")}</th><th className="px-3 py-2">{ui("Status")}</th></tr></thead><tbody>{rows.map((row) => <RequestRow key={row.id} row={row} open={expanded === row.id} detail={expanded === row.id ? detail : null} onToggle={async () => { if (expanded === row.id) { setExpanded(null); setDetail(null); return } setExpanded(row.id); setDetail(await apiRequest(`/api/admin/usage/requests/${row.id}`)) }} />)}</tbody></table></div>
     </Card>
-    <Card><CardContent className="h-64 p-4"><div className="mb-2 text-sm font-medium">{ui("Daily model calls")}</div><ResponsiveContainer width="100%" height="90%"><BarChart data={chart}><CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="day" tick={{ fontSize: 11 }} /><YAxis allowDecimals={false} tick={{ fontSize: 11 }} /><Tooltip /><Bar dataKey="calls" fill="#3b82f6" radius={[4,4,0,0]} animationDuration={animationDuration} /></BarChart></ResponsiveContainer></CardContent></Card>
+    <Card><CardContent className="h-64 p-4"><div className="mb-2 text-sm font-medium">{ui("Daily model calls")}</div><ResponsiveContainer width="100%" height="90%"><BarChart data={chart}><CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="day" tick={{ fontSize: 11 }} /><YAxis allowDecimals={false} tick={{ fontSize: 11 }} /><Tooltip /><Bar dataKey="calls" fill="#3b82f6" radius={[4,4,0,0]} animationDuration={animationDuration} animationMatchBy={MATCH_BY_DAY} /></BarChart></ResponsiveContainer></CardContent></Card>
     <div className="grid gap-3 lg:grid-cols-3"><Top title={ui("Top models")} rows={(summary?.topModels ?? []).map((x) => ({ label: x.id, value: `${x.calls} calls` }))} /><Top title={ui("Top users")} rows={(summary?.topUsers ?? []).map((x) => ({ label: x.name || x.email, value: `${x.calls} calls` }))} /><Top title={ui("Top API keys")} rows={(summary?.topApiKeys ?? []).map((x) => ({ label: x.name, value: `${x.calls} calls` }))} /></div>
   </div>
 }
