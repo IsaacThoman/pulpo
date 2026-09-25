@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Download, FileWarning, Loader2, X } from 'lucide-react'
+import { Check, Copy, Download, FileWarning, Loader2, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Markdown } from '@/components/chat/Markdown'
 import {
@@ -14,6 +14,7 @@ import { apiRequest, fetchApiBlob } from '@/lib/api'
 import { getCachedAttachment } from '@/lib/local-first/attachment-cache'
 import { useAuth } from '@/stores/auth'
 import { formatBytes } from '@/lib/attachments'
+import { writeClipboardText } from '@/lib/clipboard'
 import {
   attachmentPreviewKind,
   formatTextPreview,
@@ -272,6 +273,28 @@ function PreviewBody({
   return <video src={content.url} controls preload="metadata" aria-label={uit`Video preview of ${attachment.name}`} className="size-full bg-black object-contain" data-preview-kind="video" />
 }
 
+function CopyTextButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false)
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      size="icon-sm"
+      className="rounded-full"
+      aria-label={copied ? ui("Copied") : ui("Copy text")}
+      onClick={() => {
+        void writeClipboardText(text).then((success) => {
+          if (!success) return
+          setCopied(true)
+          setTimeout(() => setCopied(false), 1200)
+        })
+      }}
+    >
+      {copied ? <Check className="size-4" /> : <Copy className="size-4" />}
+    </Button>
+  )
+}
+
 export function AttachmentPreviewDialog({
   attachment,
   sourceFile,
@@ -303,6 +326,10 @@ export function AttachmentPreviewDialog({
               {attachmentDescription(attachment, kind)}
             </DialogDescription>
           </div>
+          {/* Truncated previews only hold the start of the file, so copying would silently drop the rest. */}
+          {content.status === 'ready' && content.text !== null && !content.textTruncated && (
+            <CopyTextButton text={content.text} />
+          )}
           <Button type="button" variant="ghost" size="icon-sm" onClick={onDownload} aria-label={uit`Download ${attachment.name}`} className="rounded-full">
             <Download className="size-4" />
           </Button>
