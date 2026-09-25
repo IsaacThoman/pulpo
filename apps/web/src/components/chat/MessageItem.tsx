@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from 'react'
 import { SpeechButton } from '@/features/speech/SpeechButton'
+import { SpeechPlayer } from '@/features/speech/SpeechPlayer'
 import { ActionButton } from './ActionButton'
 import { speechPlayback } from '@/features/speech/state'
 import { ToolImagePreview } from './ToolImagePreview'
@@ -686,6 +687,7 @@ export const MessageItem = memo(function MessageItem({
             </div>
             {!chat.expired && !pendingDelivery && <BranchControls chatId={chat.id} branch={message.branch} disabled={composerEditActive} />}
           </div>
+          {message.content ? <SpeechPlayer messageKey={`${chat.id}:${message.id}`} /> : null}
         </div>
     )
   }
@@ -867,6 +869,7 @@ export const MessageItem = memo(function MessageItem({
             )}
           </div>
         )}
+        {message.done && <div className="mt-1"><SpeechPlayer messageKey={`${chat.id}:${message.id}`} /></div>}
       </div>
     </div>
   )

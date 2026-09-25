@@ -8,7 +8,8 @@ import { ActionButton } from '@/components/chat/ActionButton'
 export function SpeechButton({ messageKey, text }: { messageKey: string; text: string }) {
   const state = useSyncExternalStore(speechPlayback.subscribe, speechPlayback.getSnapshot, speechPlayback.getSnapshot)
   const [error, setError] = useState<string | null>(null)
-  const active = state.key === messageKey
+  // An ended message keeps its player open; the button reads it again from the start.
+  const active = state.key === messageKey && state.phase !== 'ended'
   useEffect(() => () => { if (speechPlayback.getSnapshot().key === messageKey) speechPlayback.stop() }, [messageKey, text])
   if (!speechText(text)) return null
   const label = active ? 'Stop reading' : 'Read aloud'

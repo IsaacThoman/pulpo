@@ -7,6 +7,9 @@ export type AppSymbolViewProps = Omit<SymbolViewProps, 'name'> & { name: SymbolV
 // SF Symbols used by iOS map to Material Symbols on Android.
 export const materialSymbolNames: Record<string, string> = {
   "play.fill": "play_arrow",
+  "pause.fill": "pause",
+  "gobackward.10": "undo",
+  "goforward.10": "redo",
   "speaker.wave.2": "volume_up",
   "line.3.horizontal": "menu",
   "gearshape": "settings",
