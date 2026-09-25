@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useEffect, useMemo, useRef, useState, type ComponentProps } from 'react'
 import ReactMarkdown, { type Components, type Options, type UrlTransform } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
@@ -12,9 +12,10 @@ import { writeClipboardText } from '@/lib/clipboard'
 import { codeFileExtension, downloadCode } from '@/lib/code-download'
 import { previewKindForLanguage, previewTitle } from '@/lib/code-preview'
 import { rehypeDisplayMathFallback, rehypeMarkDisplayMath } from '@/lib/display-math-fallback'
+import { rehypeStreamCaret, STREAM_CARET_CLASS } from '@/lib/stream-caret'
 import { useCodePreview } from '@/stores/codePreview'
 
-function CodeBlock({ language, code }: { language: string; code: string }) {
+function CodeBlock({ language, code, caret }: { language: string; code: string; caret: boolean }) {
   const [copied, setCopied] = useState(false)
   const canPreview = useCodePreview((state) => state.hosts > 0)
   const openPreview = useCodePreview((state) => state.open)
@@ -59,7 +60,7 @@ function CodeBlock({ language, code }: { language: string; code: string }) {
         </button>
       </div>
       <pre className="max-w-full overflow-x-auto p-3 text-[13px] leading-relaxed text-code-foreground">
-        <code className="code-highlight font-mono"><HighlightedCode code={code} language={language} /></code>
+        <code className="code-highlight font-mono"><HighlightedCode code={code} language={language} />{caret && <span className={STREAM_CARET_CLASS} aria-hidden="true" />}</code>
       </pre>
     </div>
   )
@@ -68,7 +69,7 @@ function CodeBlock({ language, code }: { language: string; code: string }) {
 // Stable renderer identities preserve DOM nodes and in-progress interactions during streaming.
 const markdownComponents: Components = {
   pre: ({ children }) => <>{children}</>,
-  code({ className, children, ...props }) {
+  code({ className, children, 'data-stream-caret': caret, ...props }: ComponentProps<'code'> & { 'data-stream-caret'?: unknown }) {
     const match = /language-([\w+#.-]+)/.exec(className || '')
     const text = String(children).replace(/\n$/, '')
     if (match?.[1] === 'math') {
@@ -89,7 +90,7 @@ const markdownComponents: Components = {
         </code>
       )
     }
-    return <CodeBlock language={match?.[1] ?? ''} code={text} />
+    return <CodeBlock language={match?.[1] ?? ''} code={text} caret={Boolean(caret)} />
   },
   p: ({ children }) => <p className="my-2 leading-7 first:mt-0 last:mb-0">{children}</p>,
   ul: ({ children }) => <ul className="my-2 list-disc space-y-1 pl-6">{children}</ul>,
@@ -131,6 +132,7 @@ const REHYPE_PLUGINS: NonNullable<Options['rehypePlugins']> = [
   [rehypeKatex, { throwOnError: false, errorColor: 'var(--muted-foreground)' }],
   rehypeDisplayMathFallback,
 ]
+const CARET_REHYPE_PLUGINS: NonNullable<Options['rehypePlugins']> = [...REHYPE_PLUGINS, rehypeStreamCaret]
 
 function useRenderedContent(content: string, streaming: boolean): string {
   const latest = useRef(content)
@@ -155,11 +157,14 @@ function useRenderedContent(content: string, streaming: boolean): string {
 export const Markdown = memo(function Markdown({
   content,
   streaming = false,
+  caret = false,
   components,
   urlTransform,
 }: {
   content: string
   streaming?: boolean
+  /** Shows a blinking caret after the last rendered text. */
+  caret?: boolean
   /** Element overrides layered over the chat defaults. */
   components?: Components
   urlTransform?: UrlTransform
@@ -172,7 +177,7 @@ export const Markdown = memo(function Markdown({
     <div className="markdown-content min-w-0 max-w-full [overflow-wrap:anywhere]">
       <ReactMarkdown
         remarkPlugins={[remarkGfm, remarkMath]}
-        rehypePlugins={REHYPE_PLUGINS}
+        rehypePlugins={caret ? CARET_REHYPE_PLUGINS : REHYPE_PLUGINS}
         components={mergedComponents}
         urlTransform={urlTransform}
       >
