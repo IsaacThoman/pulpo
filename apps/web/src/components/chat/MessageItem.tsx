@@ -838,11 +838,8 @@ export const MessageItem = memo(function MessageItem({
                 }
                 const textIsStreaming = streaming && index === timeline.length - 1
                 return (
-                  <div
-                    key={`text:${index}`}
-                    className={cn('min-w-0 max-w-full text-[15px]', textIsStreaming && 'stream-caret')}
-                  >
-                    <Markdown content={segment.text} streaming={textIsStreaming} />
+                  <div key={`text:${index}`} className="min-w-0 max-w-full text-[15px]">
+                    <Markdown content={segment.text} streaming={textIsStreaming} caret={textIsStreaming} />
                   </div>
                 )
               })}
