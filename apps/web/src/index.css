@@ -382,8 +382,8 @@ html[data-desktop="true"] .desktop-sidebar-collapsed .chat-header::before {
   }
 }
 
-/* Streaming caret — attach to last markdown block so it sits inline at stream end */
-.stream-caret .markdown-content > *:last-child::after {
+/* Streaming caret — rehypeStreamCaret places this span after the last streamed text */
+.stream-caret::after {
   content: '▋';
   margin-left: 1px;
   animation: blink 1s steps(2) infinite;
