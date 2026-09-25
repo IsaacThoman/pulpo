@@ -3,12 +3,13 @@ import ReactMarkdown, { type Components, type Options, type UrlTransform } from 
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
 import rehypeKatex from 'rehype-katex'
-import { Check, Copy, Play } from 'lucide-react'
+import { Check, Copy, Download, Play } from 'lucide-react'
 import { normalizeMathDelimiters, unwrapBoxedMinipages } from '@pulpo/client-core'
 import 'katex/dist/katex.min.css'
 import { HighlightedCode } from '@/components/chat/HighlightedCode'
 import { ui } from '@/i18n/ui'
 import { writeClipboardText } from '@/lib/clipboard'
+import { codeFileExtension, downloadCode } from '@/lib/code-download'
 import { previewKindForLanguage, previewTitle } from '@/lib/code-preview'
 import { rehypeDisplayMathFallback, rehypeMarkDisplayMath } from '@/lib/display-math-fallback'
 import { useCodePreview } from '@/stores/codePreview'
@@ -33,7 +34,19 @@ function CodeBlock({ language, code }: { language: string; code: string }) {
           </button>
         )}
         <button
-          className="flex shrink-0 cursor-pointer items-center gap-1 text-[11px] text-code-muted hover:text-code-foreground"
+          type="button"
+          aria-label={ui("Download code")}
+          title={ui("Download code")}
+          className="flex shrink-0 cursor-pointer items-center text-code-muted hover:text-code-foreground"
+          onClick={() => downloadCode(code, `snippet.${codeFileExtension(language)}`)}
+        >
+          <Download className="size-3.5" />
+        </button>
+        <button
+          type="button"
+          aria-label={copied ? ui("Copied") : ui("Copy code")}
+          title={copied ? ui("Copied") : ui("Copy code")}
+          className="flex shrink-0 cursor-pointer items-center text-code-muted hover:text-code-foreground"
           onClick={() => {
             void writeClipboardText(code).then((success) => {
               if (!success) return
@@ -42,8 +55,7 @@ function CodeBlock({ language, code }: { language: string; code: string }) {
             })
           }}
         >
-          {copied ? <Check className="size-3" /> : <Copy className="size-3" />}
-          {copied ? ui("copied") : ui("copy")}
+          {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
         </button>
       </div>
       <pre className="max-w-full overflow-x-auto p-3 text-[13px] leading-relaxed text-code-foreground">
