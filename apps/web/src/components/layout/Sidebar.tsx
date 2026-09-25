@@ -702,8 +702,9 @@ export function Sidebar({
   const { t } = useTranslation()
   const navigate = useNavigate()
   const { chatId } = useParams()
+  // Rows render from a non-reactive snapshot below, so this key must cover every chat field they display.
   const chatListRevision = useChat((state) => state.chats.map((chat) => (
-    `${chat.id}:${chat.title}:${chat.pinned}:${chat.folderId ?? ''}:${chat.modelId}:${chat.sortOrder}:${chat.temporary}`
+    `${chat.id}:${chat.title}:${chat.pinned}:${chat.folderId ?? ''}:${chat.modelId}:${chat.sortOrder}:${chat.temporary}:${chat.expiresAt ?? ''}`
   )).join('|'))
   void chatListRevision
   const folderListRevision = useChat((state) => state.folders.map((folder) => (
