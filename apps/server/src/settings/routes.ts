@@ -1,7 +1,7 @@
 import { eq, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
-import { agentCostLimitMicrosSchema, newChatAutoExpireSchema } from '@pulpo/contracts'
+import { agentCostLimitMicrosSchema, newChatAutoExpireSchema, withAgentCostLimitDefault } from '@pulpo/contracts'
 import { requireUser } from '../auth/service.js'
 import { db } from '../database/client.js'
 import { applicationSettings, userPreferences, users } from '../database/schema.js'
@@ -38,7 +38,7 @@ export async function registerSettingsRoutes(app: FastifyInstance): Promise<void
         .where(eq(applicationSettings.key, 'personalization'))
         .limit(1),
     ])
-    const values = preferencesWithModelDefaults(row?.values as Record<string, unknown> | undefined)
+    const values = withAgentCostLimitDefault(preferencesWithModelDefaults(row?.values as Record<string, unknown> | undefined), user.role)
     const newAccountFavoriteModelIds = parseAuthSettings(authSetting?.value).newAccountModelDefaults.favoriteModelIds
     return {
       values: {

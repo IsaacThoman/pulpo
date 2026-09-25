@@ -10,7 +10,7 @@ import type { Api, AssistantMessage, Context, Model } from '@earendil-works/pi-a
 import { agentCostLimitMicros, findCostLimitItem, toolImagePreviewSchema, type ToolImagePreview, type CompactionItem, type RecallItem, type ResponseSnapshot } from '@pulpo/contracts'
 import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm'
 import { db } from '../database/client.js'
-import { agentRuns, applicationSettings, attachments, chats, generationAttempts, models, providerConnections, requestLogs, responses, toolExecutions, userPreferences } from '../database/schema.js'
+import { agentRuns, applicationSettings, attachments, chats, generationAttempts, models, providerConnections, requestLogs, responses, toolExecutions, userPreferences, users } from '../database/schema.js'
 import { decryptSecret } from '../lib/crypto.js'
 import { getConfig } from '../config.js'
 import { newId } from '../lib/ids.js'
@@ -155,7 +155,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
     .from(responses).innerJoin(models, eq(responses.modelId, models.id)).innerJoin(providerConnections, eq(models.providerConnectionId, providerConnections.id))
     .where(eq(responses.id, responseId)).limit(1)
   if (!record || !record.response.agentMode || ['completed', 'cancelled'].includes(record.response.status)) return
-  const [settingsRow, webToolsRow, personalizationRow, preferencesRow, episodicMemorySettings, attachmentSettingsRow] = await Promise.all([
+  const [settingsRow, webToolsRow, personalizationRow, preferencesRow, episodicMemorySettings, attachmentSettingsRow, owner] = await Promise.all([
     db.select().from(applicationSettings).where(eq(applicationSettings.key, 'agent')).limit(1).then((rows) => rows[0]),
     db.select().from(applicationSettings).where(eq(applicationSettings.key, 'webTools')).limit(1).then((rows) => rows[0]),
     db.select().from(applicationSettings).where(eq(applicationSettings.key, 'personalization')).limit(1).then((rows) => rows[0]),
@@ -163,11 +163,12 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
       .where(eq(userPreferences.userId, record.response.userId)).limit(1).then((rows) => rows[0]),
     readEpisodicMemorySettings(),
     db.select().from(applicationSettings).where(eq(applicationSettings.key, 'auth')).limit(1).then((rows) => rows[0]),
+    db.select({ role: users.role }).from(users).where(eq(users.id, record.response.userId)).limit(1).then((rows) => rows[0]),
   ])
   const settings = parseAgentSettings(settingsRow?.value)
   const webToolsSettings = parseWebToolsSettings(webToolsRow?.value)
   const preferenceValues = (preferencesRow?.values ?? {}) as Record<string, unknown>
-  const costLimitMicros = agentCostLimitMicros(preferenceValues)
+  const costLimitMicros = agentCostLimitMicros(preferenceValues, owner?.role)
   const customInstructions = composeCustomInstructions(
     parsePersonalizationSettings(personalizationRow?.value),
     preferenceValues,

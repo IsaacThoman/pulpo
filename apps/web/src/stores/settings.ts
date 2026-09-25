@@ -82,7 +82,8 @@ export const DEFAULT_SETTINGS = {
   modelWarningDismissals: {} as ModelWarningDismissals,
   showReasoning: true,
   showResponseCost: false,
-  agentCostLimitEnabled: false,
+  // The server resolves the role default (off for administrators) when the account never chose.
+  agentCostLimitEnabled: true,
   agentCostLimitMicros: DEFAULT_AGENT_COST_LIMIT_MICROS,
   chatWidth: 'narrow' as const,
   animationSpeed: DEFAULT_ANIMATION_SPEED,
