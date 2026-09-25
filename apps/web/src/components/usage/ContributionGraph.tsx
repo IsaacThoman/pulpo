@@ -10,6 +10,7 @@ const GAP = 3
 const STEP = CELL + GAP
 const GUTTER = 28 // day-of-week labels
 const HEADER = 16 // month labels
+const MIN_LABEL_COLS = 3 // month labels closer than this would overlap
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
@@ -106,6 +107,8 @@ export function ContributionGraph({ data, metric }: { data: DailyModelUsage[]; m
       const rec = byDate.get(localKey(it))
       const v = before || !rec ? 0 : metricValue(rec, metric)
       if (it.getDay() === 0 && it.getMonth() !== lastMonth && !before) {
+        // a partial leading month leaves too little room; the next month wins
+        if (labels.length > 0 && weeksArr.length - labels[labels.length - 1].col < MIN_LABEL_COLS) labels.pop()
         labels.push({ text: MONTHS[it.getMonth()], col: weeksArr.length })
         lastMonth = it.getMonth()
       }
