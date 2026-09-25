@@ -33,6 +33,7 @@ import { coalesceResponseEvents } from '@/features/chat/response-sync'
 import { withInsertedBranchResponse, withoutBranchResponse } from '@/lib/message-branches'
 import { mergeSummaryResponseTracking, reconcileStreamingResponseIds, reindexDetailedChatResponses } from '@/lib/response-tracking'
 import { BranchSelectionIntents } from '@/lib/branch-selection-intents'
+import { BranchHistoryCache } from '@/lib/branch-history-cache'
 import { reorderList } from '@/lib/model-order'
 import { useAuth } from './auth'
 import { adminChatAccessActive, adminChatAccountKey } from '@/features/admin-chat/access'
@@ -556,6 +557,11 @@ const pendingOptimisticResponses = new Map<string, {
 }>()
 const pendingOptimisticQueuedMessages = new Map<string, QueuedMessage>()
 const branchSelectionIntents = new BranchSelectionIntents()
+const branchHistories = new BranchHistoryCache()
+// Query identity scopes these windows to the account/session and releases them on deletion/logout.
+queryClient.getQueryCache().subscribe(event => {
+  if (event.type === 'removed') branchHistories.delete(event.query)
+})
 
 function mergePendingOptimisticResponses(row: ServerChat): ServerChat {
   if (!row.responses) return row
@@ -735,6 +741,8 @@ function cacheOptimisticBranch(input: {
   const existing = queryClient.getQueryData<ServerChat>(chatKey(input.chatId))
   const source = existing?.responses?.find((response) => response.id === input.sourceResponseId)
   if (!existing?.responses || !source) return undefined
+  const owner = queryClient.getQueryCache().find({ queryKey: chatKey(input.chatId), exact: true })
+  if (owner) branchHistories.remember(owner, existing)
   const createdAt = new Date().toISOString()
   const response: ServerResponse = {
     ...source,
@@ -1016,7 +1024,22 @@ export const useChat = create<ChatState>()((set, get) => ({
     }
   }),
   setDetailedChat: (incoming) => {
-    const detailed = mergeServerChatDetails(queryClient.getQueryData<ServerChat>(chatKey(incoming.id)), incoming)
+    const key = chatKey(incoming.id)
+    const cached = queryClient.getQueryData<ServerChat>(key)
+    let detailed = mergeServerChatDetails(cached, incoming)
+    const desiredLeaf = branchSelectionIntents.current(incoming.id)?.leafId
+    if (detailed.history && desiredLeaf && detailed.activeBranchLeafId !== desiredLeaf) {
+      const owner = queryClient.getQueryCache().find({ queryKey: key, exact: true })
+      const selected = cached?.activeBranchLeafId === desiredLeaf ? cached : owner && branchHistories.find(owner, desiredLeaf)
+      // A refetch can finish while activation is queued. Preserve a locally selected page
+      // even when the server still returns the old branch, whose page omits that leaf entirely.
+      if (selected?.history && selected.activeBranchLeafId === desiredLeaf) {
+        detailed = mergeServerChatDetails(detailed, { ...detailed,
+          activeResponseId: desiredLeaf, activeBranchLeafId: desiredLeaf,
+          responses: selected.responses, history: selected.history, attachments: selected.attachments,
+        })
+      }
+    }
     const row = mergePendingOptimisticResponses(detailed)
     if (row !== incoming) queryClient.setQueryData(chatKey(row.id), row)
     set((state) => {
@@ -1996,12 +2019,17 @@ export const useChat = create<ChatState>()((set, get) => ({
     }
   },
   editAssistantMessage: (chatId, messageId, content) => {
+    const owner = queryClient.getQueryCache().find({ queryKey: chatKey(chatId), exact: true })
+    const cached = queryClient.getQueryData<ServerChat>(chatKey(chatId))
+    if (owner && cached) branchHistories.remember(owner, cached)
     void enqueueChatMutation(chatId, () => optimisticRequest('PATCH', `/api/messages/${messageId}`, { content }, {
       queueOffline: !get().chats.some((chat) => chat.id === chatId && chat.temporary),
     }))
       .then(() => queryClient.invalidateQueries({ queryKey: chatKey(chatId) }))
   },
   deleteUserMessage: (chatId, messageId) => {
+    const owner = queryClient.getQueryCache().find({ queryKey: chatKey(chatId), exact: true })
+    if (owner) branchHistories.delete(owner)
     void enqueueChatMutation(chatId, () => optimisticRequest('DELETE', `/api/messages/${messageId}`, undefined, {
       queueOffline: !get().chats.some((chat) => chat.id === chatId && chat.temporary),
     })).then(async () => {
@@ -2010,7 +2038,14 @@ export const useChat = create<ChatState>()((set, get) => ({
     })
   },
   activateBranch: (chatId, responseId) => {
-    const cached = queryClient.getQueryData<ServerChat>(chatKey(chatId))
+    const key = chatKey(chatId)
+    const owner = queryClient.getQueryCache().find({ queryKey: key, exact: true })
+    let cached = queryClient.getQueryData<ServerChat>(key)
+    if (owner && cached?.history) {
+      branchHistories.remember(owner, cached)
+      const window = branchHistories.find(owner, responseId)
+      if (window) cached = mergeServerChatDetails(cached, { ...cached, ...window })
+    }
     const intendedLeafId = cached?.responses?.some((response) => response.id === responseId)
       ? newestDescendantId(cached.responses, responseId)
       : responseId
@@ -2029,7 +2064,9 @@ export const useChat = create<ChatState>()((set, get) => ({
       const result = rawResult as BranchActivationResult | undefined
       const activeBranchLeafId = result?.activeBranchLeafId
       if (!activeBranchLeafId) return
-      const current = queryClient.getQueryData<ServerChat>(chatKey(chatId))
+      // An activation from a removed query/account must not populate a new session.
+      if (queryClient.getQueryCache().find({ queryKey: key, exact: true }) !== owner) return
+      const current = queryClient.getQueryData<ServerChat>(key)
       if (!current) return
       const enriched = result.history && result.responses ? mergeServerChatDetails(current, {
         ...current, ...result, activeBranchLeafId,
@@ -2037,8 +2074,9 @@ export const useChat = create<ChatState>()((set, get) => ({
         ...current,
         responses: mergeCachedResponseDetails(current.responses, result.responses),
       }
-      queryClient.setQueryData(chatKey(chatId), enriched)
+      if (owner) branchHistories.remember(owner, enriched)
       if (!branchSelectionIntents.isCurrent(chatId, selectionIntent.version)) return
+      queryClient.setQueryData(key, enriched)
       branchSelectionIntents.clear(chatId, selectionIntent.version)
       if (!enriched.responses
         || (!result.history && !responseLineageDetailsAvailable(enriched.responses, activeBranchLeafId))) {

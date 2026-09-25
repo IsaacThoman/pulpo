@@ -1,0 +1,492 @@
+{
+  "date": "2026-09-24",
+  "baselineCommit": "be8d0c00",
+  "method": "Production Chromium, real MessageList/MessageItem/ScrollArea/Zustand/React Query, synthetic activation transport with 200 ms delay. Three switch cycles in one fresh page per scenario; cached-thread n=6, cached-branch n=5, cold-branch n=1. First frame containing the visible target ends timing; blank frames are sampled in requestAnimationFrame.",
+  "variants": {
+    "before": [
+      {
+        "turns": 10,
+        "content": "plain",
+        "cpu": 1,
+        "width": 1440,
+        "kind": "cached-thread",
+        "samples": 6,
+        "medianMs": 145.2,
+        "medianBlankMs": 128.5,
+        "maxBlankFrames": 8,
+        "maxBottomGap": 0
+      },
+      {
+        "turns": 10,
+        "content": "plain",
+        "cpu": 1,
+        "width": 1440,
+        "kind": "cold-branch",
+        "samples": 1,
+        "medianMs": 341.2,
+        "medianBlankMs": 133.3,
+        "maxBlankFrames": 8,
+        "maxBottomGap": 0,
+        "allSharedRowsRetained": false
+      },
+      {
+        "turns": 10,
+        "content": "plain",
+        "cpu": 1,
+        "width": 1440,
+        "kind": "cached-branch",
+        "samples": 5,
+        "medianMs": 344.9,
+        "medianBlankMs": 133.4,
+        "maxBlankFrames": 8,
+        "maxBottomGap": 0,
+        "allSharedRowsRetained": false
+      },
+      {
+        "turns": 1000,
+        "content": "plain",
+        "cpu": 1,
+        "width": 1440,
+        "kind": "cached-thread",
+        "samples": 6,
+        "medianMs": 162.6,
+        "medianBlankMs": 145.9,
+        "maxBlankFrames": 8,
+        "maxBottomGap": 0
+      },
+      {
+        "turns": 1000,
+        "content": "plain",
+        "cpu": 1,
+        "width": 1440,
+        "kind": "cold-branch",
+        "samples": 1,
+        "medianMs": 362.4,
+        "medianBlankMs": 133.4,
+        "maxBlankFrames": 8,
+        "maxBottomGap": 0,
+        "allSharedRowsRetained": false
+      },
+      {
+        "turns": 1000,
+        "content": "plain",
+        "cpu": 1,
+        "width": 1440,
+        "kind": "cached-branch",
+        "samples": 5,
+        "medianMs": 362.8,
+        "medianBlankMs": 149.9,
+        "maxBlankFrames": 8,
+        "maxBottomGap": 0,
+        "allSharedRowsRetained": false
+      },
+      {
+        "turns": 1000,
+        "content": "rich",
+        "cpu": 1,
+        "width": 1440,
+        "kind": "cached-thread",
+        "samples": 6,
+        "medianMs": 196.3,
+        "medianBlankMs": 179.6,
+        "maxBlankFrames": 9,
+        "maxBottomGap": 0
+      },
+      {
+        "turns": 1000,
+        "content": "rich",
+        "cpu": 1,
+        "width": 1440,
+        "kind": "cold-branch",
+        "samples": 1,
+        "medianMs": 394.4,
+        "medianBlankMs": 166.7,
+        "maxBlankFrames": 9,
+        "maxBottomGap": 0,
+        "allSharedRowsRetained": false
+      },
+      {
+        "turns": 1000,
+        "content": "rich",
+        "cpu": 1,
+        "width": 1440,
+        "kind": "cached-branch",
+        "samples": 5,
+        "medianMs": 379.9,
+        "medianBlankMs": 166.7,
+        "maxBlankFrames": 9,
+        "maxBottomGap": 0,
+        "allSharedRowsRetained": false
+      },
+      {
+        "turns": 1000,
+        "content": "rich",
+        "cpu": 4,
+        "width": 390,
+        "kind": "cached-thread",
+        "samples": 6,
+        "medianMs": 263.3,
+        "medianBlankMs": 246.3,
+        "maxBlankFrames": 9,
+        "maxBottomGap": 0
+      },
+      {
+        "turns": 1000,
+        "content": "rich",
+        "cpu": 4,
+        "width": 390,
+        "kind": "cold-branch",
+        "samples": 1,
+        "medianMs": 525.6,
+        "medianBlankMs": 283.2,
+        "maxBlankFrames": 9,
+        "maxBottomGap": 0,
+        "allSharedRowsRetained": false
+      },
+      {
+        "turns": 1000,
+        "content": "rich",
+        "cpu": 4,
+        "width": 390,
+        "kind": "cached-branch",
+        "samples": 5,
+        "medianMs": 494,
+        "medianBlankMs": 266.6,
+        "maxBlankFrames": 9,
+        "maxBottomGap": 0,
+        "allSharedRowsRetained": false
+      }
+    ],
+    "stableListOnly": [
+      {
+        "turns": 10,
+        "content": "plain",
+        "cpu": 1,
+        "width": 1440,
+        "kind": "cached-thread",
+        "samples": 6,
+        "medianMs": 145.6,
+        "medianBlankMs": 128.9,
+        "maxBlankFrames": 8,
+        "maxBottomGap": 0
+      },
+      {
+        "turns": 10,
+        "content": "plain",
+        "cpu": 1,
+        "width": 1440,
+        "kind": "cold-branch",
+        "samples": 1,
+        "medianMs": 208.3,
+        "medianBlankMs": 0,
+        "maxBlankFrames": 0,
+        "maxBottomGap": 0,
+        "allSharedRowsRetained": true
+      },
+      {
+        "turns": 10,
+        "content": "plain",
+        "cpu": 1,
+        "width": 1440,
+        "kind": "cached-branch",
+        "samples": 5,
+        "medianMs": 212.1,
+        "medianBlankMs": 0,
+        "maxBlankFrames": 0,
+        "maxBottomGap": 0,
+        "allSharedRowsRetained": true
+      },
+      {
+        "turns": 1000,
+        "content": "plain",
+        "cpu": 1,
+        "width": 1440,
+        "kind": "cached-thread",
+        "samples": 6,
+        "medianMs": 163.5,
+        "medianBlankMs": 146.9,
+        "maxBlankFrames": 8,
+        "maxBottomGap": 0
+      },
+      {
+        "turns": 1000,
+        "content": "plain",
+        "cpu": 1,
+        "width": 1440,
+        "kind": "cold-branch",
+        "samples": 1,
+        "medianMs": 229.2,
+        "medianBlankMs": 0,
+        "maxBlankFrames": 0,
+        "maxBottomGap": 0,
+        "allSharedRowsRetained": true
+      },
+      {
+        "turns": 1000,
+        "content": "plain",
+        "cpu": 1,
+        "width": 1440,
+        "kind": "cached-branch",
+        "samples": 5,
+        "medianMs": 212.7,
+        "medianBlankMs": 0,
+        "maxBlankFrames": 0,
+        "maxBottomGap": 0,
+        "allSharedRowsRetained": true
+      },
+      {
+        "turns": 1000,
+        "content": "rich",
+        "cpu": 1,
+        "width": 1440,
+        "kind": "cached-thread",
+        "samples": 6,
+        "medianMs": 195.9,
+        "medianBlankMs": 179.2,
+        "maxBlankFrames": 9,
+        "maxBottomGap": 0
+      },
+      {
+        "turns": 1000,
+        "content": "rich",
+        "cpu": 1,
+        "width": 1440,
+        "kind": "cold-branch",
+        "samples": 1,
+        "medianMs": 227,
+        "medianBlankMs": 0,
+        "maxBlankFrames": 0,
+        "maxBottomGap": 0,
+        "allSharedRowsRetained": true
+      },
+      {
+        "turns": 1000,
+        "content": "rich",
+        "cpu": 1,
+        "width": 1440,
+        "kind": "cached-branch",
+        "samples": 5,
+        "medianMs": 228,
+        "medianBlankMs": 0,
+        "maxBlankFrames": 0,
+        "maxBottomGap": 0,
+        "allSharedRowsRetained": true
+      },
+      {
+        "turns": 1000,
+        "content": "rich",
+        "cpu": 4,
+        "width": 390,
+        "kind": "cached-thread",
+        "samples": 6,
+        "medianMs": 269.6,
+        "medianBlankMs": 244.9,
+        "maxBlankFrames": 9,
+        "maxBottomGap": 0
+      },
+      {
+        "turns": 1000,
+        "content": "rich",
+        "cpu": 4,
+        "width": 390,
+        "kind": "cold-branch",
+        "samples": 1,
+        "medianMs": 226.4,
+        "medianBlankMs": 0,
+        "maxBlankFrames": 0,
+        "maxBottomGap": 0,
+        "allSharedRowsRetained": true
+      },
+      {
+        "turns": 1000,
+        "content": "rich",
+        "cpu": 4,
+        "width": 390,
+        "kind": "cached-branch",
+        "samples": 5,
+        "medianMs": 228,
+        "medianBlankMs": 0,
+        "maxBlankFrames": 0,
+        "maxBottomGap": 0,
+        "allSharedRowsRetained": true
+      }
+    ],
+    "after": [
+      {
+        "turns": 10,
+        "content": "plain",
+        "cpu": 1,
+        "width": 1440,
+        "kind": "cached-thread",
+        "samples": 6,
+        "medianMs": 12.8,
+        "medianBlankMs": 0,
+        "maxBlankFrames": 0,
+        "maxBottomGap": 0
+      },
+      {
+        "turns": 10,
+        "content": "plain",
+        "cpu": 1,
+        "width": 1440,
+        "kind": "cold-branch",
+        "samples": 1,
+        "medianMs": 208.3,
+        "medianBlankMs": 0,
+        "maxBlankFrames": 0,
+        "maxBottomGap": 0,
+        "allSharedRowsRetained": true
+      },
+      {
+        "turns": 10,
+        "content": "plain",
+        "cpu": 1,
+        "width": 1440,
+        "kind": "cached-branch",
+        "samples": 5,
+        "medianMs": 11.7,
+        "medianBlankMs": 0,
+        "maxBlankFrames": 0,
+        "maxBottomGap": 0,
+        "allSharedRowsRetained": true
+      },
+      {
+        "turns": 1000,
+        "content": "plain",
+        "cpu": 1,
+        "width": 1440,
+        "kind": "cached-thread",
+        "samples": 6,
+        "medianMs": 12.3,
+        "medianBlankMs": 0,
+        "maxBlankFrames": 0,
+        "maxBottomGap": 0
+      },
+      {
+        "turns": 1000,
+        "content": "plain",
+        "cpu": 1,
+        "width": 1440,
+        "kind": "cold-branch",
+        "samples": 1,
+        "medianMs": 228.5,
+        "medianBlankMs": 0,
+        "maxBlankFrames": 0,
+        "maxBottomGap": 0,
+        "allSharedRowsRetained": true
+      },
+      {
+        "turns": 1000,
+        "content": "plain",
+        "cpu": 1,
+        "width": 1440,
+        "kind": "cached-branch",
+        "samples": 5,
+        "medianMs": 12.4,
+        "medianBlankMs": 0,
+        "maxBlankFrames": 0,
+        "maxBottomGap": 0,
+        "allSharedRowsRetained": true
+      },
+      {
+        "turns": 1000,
+        "content": "rich",
+        "cpu": 1,
+        "width": 1440,
+        "kind": "cached-thread",
+        "samples": 6,
+        "medianMs": 13.4,
+        "medianBlankMs": 0,
+        "maxBlankFrames": 0,
+        "maxBottomGap": 0
+      },
+      {
+        "turns": 1000,
+        "content": "rich",
+        "cpu": 1,
+        "width": 1440,
+        "kind": "cold-branch",
+        "samples": 1,
+        "medianMs": 228.1,
+        "medianBlankMs": 0,
+        "maxBlankFrames": 0,
+        "maxBottomGap": 0,
+        "allSharedRowsRetained": true
+      },
+      {
+        "turns": 1000,
+        "content": "rich",
+        "cpu": 1,
+        "width": 1440,
+        "kind": "cached-branch",
+        "samples": 5,
+        "medianMs": 12.5,
+        "medianBlankMs": 0,
+        "maxBlankFrames": 0,
+        "maxBottomGap": 0,
+        "allSharedRowsRetained": true
+      },
+      {
+        "turns": 1000,
+        "content": "rich",
+        "cpu": 4,
+        "width": 390,
+        "kind": "cached-thread",
+        "samples": 6,
+        "medianMs": 45.1,
+        "medianBlankMs": 0,
+        "maxBlankFrames": 0,
+        "maxBottomGap": 0
+      },
+      {
+        "turns": 1000,
+        "content": "rich",
+        "cpu": 4,
+        "width": 390,
+        "kind": "cold-branch",
+        "samples": 1,
+        "medianMs": 225.5,
+        "medianBlankMs": 0,
+        "maxBlankFrames": 0,
+        "maxBottomGap": 0,
+        "allSharedRowsRetained": true
+      },
+      {
+        "turns": 1000,
+        "content": "rich",
+        "cpu": 4,
+        "width": 390,
+        "kind": "cached-branch",
+        "samples": 5,
+        "medianMs": 27.3,
+        "medianBlankMs": 0,
+        "maxBlankFrames": 0,
+        "maxBottomGap": 0,
+        "allSharedRowsRetained": true
+      }
+    ]
+  },
+  "descendantSelection": [
+    {
+      "responses": 1000,
+      "medianMs": {
+        "scanning": 3.832,
+        "indexed": 0.157
+      }
+    },
+    {
+      "responses": 5000,
+      "medianMs": {
+        "scanning": 87.405,
+        "indexed": 0.559
+      }
+    },
+    {
+      "responses": 20000,
+      "medianMs": {
+        "scanning": 2536.129,
+        "indexed": 1.907
+      }
+    }
+  ]
+}

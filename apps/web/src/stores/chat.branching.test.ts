@@ -761,6 +761,52 @@ describe('chat store branching integration', () => {
     requests[1]!.resolve({ activeBranchLeafId: responseAId, responses: activatedA.responses })
   })
 
+  it('restores a visited paginated branch immediately and ignores superseded acknowledgments', async () => {
+    const responseBId = '00000000-0000-4000-8000-000000000005'
+    const paged = (id: string) => ({ ...detail(id, [response(id, 'completed')]),
+      history: { offset: 500, hasMore: true, before: id, leafId: id } })
+    const initial = paged(responseAId)
+    queryClient.setQueryData(['chat', userId, chatId], initial)
+    useChat.getState().setDetailedChat(initial)
+    useChat.getState().activateBranch(chatId, responseBId)
+    expectOnly(responseAId)
+    await vi.waitFor(() => expect(requests).toHaveLength(1))
+    requests[0]!.resolve(paged(responseBId))
+    await vi.waitFor(() => expectOnly(responseBId))
+
+    useChat.getState().activateBranch(chatId, responseAId)
+    expectOnly(responseAId)
+    expect(useChat.getState().chats[0]?.history?.offset).toBe(500)
+    // React Query can publish a stale refetch before its bridge effect hydrates the store.
+    queryClient.setQueryData(['chat', userId, chatId], paged(responseBId))
+    useChat.getState().setDetailedChat(paged(responseBId))
+    expectOnly(responseAId)
+    expect(queryClient.getQueryData<ServerChat>(['chat', userId, chatId])?.activeBranchLeafId).toBe(responseAId)
+    useChat.getState().activateBranch(chatId, responseBId)
+    expectOnly(responseBId)
+    await vi.waitFor(() => expect(requests).toHaveLength(2))
+    requests[1]!.resolve(paged(responseAId))
+    await vi.waitFor(() => expect(requests).toHaveLength(3))
+    expect(queryClient.getQueryData<ServerChat>(['chat', userId, chatId])?.activeBranchLeafId).toBe(responseBId)
+    expectOnly(responseBId)
+    requests[2]!.resolve(paged(responseBId))
+  })
+
+  it('does not hydrate an activation after its query was removed', async () => {
+    const responseBId = '00000000-0000-4000-8000-000000000005'
+    const initial = detail(responseAId, [response(responseAId, 'completed')])
+    queryClient.setQueryData(['chat', userId, chatId], initial)
+    useChat.getState().setDetailedChat(initial)
+    useChat.getState().activateBranch(chatId, responseBId)
+    await vi.waitFor(() => expect(requests).toHaveLength(1))
+    queryClient.removeQueries({ queryKey: ['chat', userId, chatId] })
+    useChat.setState({ chats: [] })
+    requests[0]!.resolve(detail(responseBId, [response(responseBId, 'completed')]))
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(queryClient.getQueryData(['chat', userId, chatId])).toBeUndefined()
+    expect(useChat.getState().chats).toEqual([])
+  })
+
   it('keeps server sibling counts when switching back during a regeneration in paged history', async () => {
     const responseBId = '00000000-0000-4000-8000-000000000005'
     const history = { offset: 0, hasMore: false, before: responseBId, leafId: responseBId }
@@ -780,8 +826,10 @@ describe('chat store branching integration', () => {
       ?.messages.find((message) => message.id === id)?.branch
     expect(branchOf(responseCId)).toEqual(assistantBranch([responseAId, responseBId, responseCId], responseCId))
 
-    // Regeneration prunes B from the active-lineage cache, so going back waits for the server page.
+    // Regeneration prunes B from the active page; its visited window still restores immediately.
     useChat.getState().activateBranch(chatId, responseBId)
+    expectOnly(responseBId)
+    expect(branchOf(responseBId)).toEqual(assistantBranch([responseAId, responseBId, responseCId], responseBId))
     await vi.waitFor(() => expect(requests).toHaveLength(1))
     requests[0]!.resolve({ response: response(responseCId, 'in_progress').snapshot }, 202)
     await vi.waitFor(() => expect(requests).toHaveLength(2))
