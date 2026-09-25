@@ -45,18 +45,6 @@ async function enableAgent(page) {
   await page.keyboard.press('Escape')
 }
 
-// Opens the header model picker so the screenshot previews the account's favorite models.
-async function openModelPicker(page, chatId) {
-  const chats = (await api(page, 'GET', '/api/chats')).json?.data ?? []
-  const models = (await api(page, 'GET', '/api/models')).json?.data ?? []
-  const modelId = chats.find((chat) => chat.id === chatId)?.modelId
-  const name = models.find((model) => model.id === modelId)?.name
-  if (!name) throw new Error(`Could not find the model for chat ${chatId}`)
-  await page.locator('button[aria-haspopup="menu"]').filter({ hasText: name }).first().click()
-  await page.getByPlaceholder(/Search models/).waitFor()
-  await page.waitForTimeout(800)
-}
-
 async function send(page, prompt) {
   await page.goto(origin)
   const composer = page.getByPlaceholder('Message…')
@@ -119,7 +107,6 @@ try {
         if (element.clientHeight > 400 && element.scrollHeight > element.clientHeight + 50 && getComputedStyle(element).overflowY !== 'visible') element.scrollTop = 0
       }
     })
-    await openModelPicker(page, heroChatId)
     await page.mouse.move(1, 1)
     await page.waitForTimeout(800)
     const png = join(profileDirectory, `chat-${scheme}.png`)

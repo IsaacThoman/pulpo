@@ -12,7 +12,7 @@ The web landing page shown to signed-out visitors at `/` uses a screenshot of th
 
 Production has the full model catalog, so the screenshot matches what visitors get.
 
-1. Use the shared demo account on [pulpo.baby](https://pulpo.baby). It needs a presentable name and username, the model to feature set as its default, the models to preview marked as favorites, and enough balance for eight short prompts. Never capture a personal account: its chat titles appear in the sidebar.
+1. Use the shared demo account on [pulpo.baby](https://pulpo.baby). It needs a presentable name and username, the model to feature set as its default, and enough balance for eight short prompts. Never capture a personal account: its chat titles appear in the sidebar.
 2. To refresh only the hero chat, move the previous hero chat to the trash. To refresh the sidebar demo chats too, trash all of the account's chats. The script only creates sidebar chats when the account has none.
 3. Run the script. It targets production by default:
 
@@ -46,7 +46,7 @@ This needs no production account, but the local preview only has the preview pro
 - If the account has no chats, sends seven short prompts so the sidebar looks lived in.
 - Sends the hero prompt in a new chat, which uses the account's default model: "Explain how KV caching speeds up transformer decoding. Include a short PyTorch snippet and the memory cost formula." Its answer shows headings, display math, and a code block, and a fresh chat shows the "now" timestamp.
 - Turns off automatic expiry for that chat, so it stays in the account and its sidebar entry has no hourglass.
-- Opens that chat at 1440×900 with a device scale factor of 2, switches the composer's agent control to Pulpo Agent, scrolls to the start of the conversation, opens the model picker to preview the account's favorite models, and captures it once with a light and once with a dark color scheme.
+- Opens that chat at 1440×900 with a device scale factor of 2, switches the composer's agent control to Pulpo Agent, scrolls to the start of the conversation and captures it once with a light and once with a dark color scheme.
 - Converts each capture with `cwebp -q 80 -m 6 -resize 2400 0` into `apps/web/public/landing/`.
 - Saves the top 1440×756 of the dark capture as `apps/web/public/og-image.jpg`, the link-preview image referenced by `og:image` in `apps/web/index.html`.
 
