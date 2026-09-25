@@ -4,7 +4,7 @@ import i18n from '@/i18n'
 import { APP_STORE_URL, GITHUB_LATEST_RELEASE_URL, GITHUB_URL } from '@/lib/links'
 import { LandingContent } from '@/pages/LandingContent'
 
-export const LANDING_TITLE = 'Pulpo — Open-source chatbot for everyday use'
+export const LANDING_TITLE = 'Pulpo'
 const EMPTY_ROOT = '<div id="root"></div>'
 
 // Structured data for search results. The description matches the meta description in index.html.
