@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, onTestFinished } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import type { Chat, Message } from '@/lib/types'
@@ -520,6 +520,53 @@ describe('workspace continue timing', () => {
     />)
 
     expect(markup).not.toContain('Continue without agent')
+  })
+})
+
+describe('agent cost warning', () => {
+  const costWarning = {
+    id: 'response-1:cost-warning', type: 'pulpo_cost_warning', threshold_micros: 1_000_000,
+    cost_micros: 1_250_000, triggered_at: '2026-09-24T00:00:00.000Z',
+  }
+
+  it('shows the running cost and a stop action while streaming, even with reasoning hidden', async () => {
+    useSettings.setState({ showReasoning: false })
+    const { useChat } = await import('@/stores/chat')
+    const stopped: string[] = []
+    const { stopStreaming } = useChat.getState()
+    useChat.setState({ stopStreaming: (id: string) => { stopped.push(id) } })
+    onTestFinished(() => useChat.setState({ stopStreaming }))
+    const { MessageItem } = await import('./MessageItem')
+    const view = render(<MessageItem
+      chat={chat}
+      message={assistant({
+        done: false,
+        outputItems: [{ type: 'message', content: [{ type: 'output_text', text: 'Working on it' }] }, costWarning],
+      })}
+      streaming
+      onRegenerate={() => undefined}
+    />)
+
+    expect(view.getByRole('status').textContent).toContain('This response has cost $1.25 so far, over your $1.00 warning.')
+    expect(view.container.textContent).not.toContain('pulpo cost warning')
+    fireEvent.click(view.getByRole('button', { name: 'Stop response' }))
+    expect(stopped).toEqual(['response-1'])
+  })
+
+  it('keeps a settled notice without the stop action after completion', async () => {
+    const { MessageItem } = await import('./MessageItem')
+    const markup = renderToStaticMarkup(<MessageItem
+      chat={chat}
+      message={assistant({
+        content: 'Done',
+        outputItems: [{ type: 'message', content: [{ type: 'output_text', text: 'Done' }] }, costWarning],
+      })}
+      streaming={false}
+      onRegenerate={() => undefined}
+    />)
+
+    expect(markup).toContain('This response went over your $1.00 cost warning.')
+    expect(markup).not.toContain('Stop response')
   })
 })
 

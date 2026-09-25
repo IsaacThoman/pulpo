@@ -23,12 +23,13 @@ import {
   Minimize2,
   History,
   ExternalLink,
+  AlertTriangle,
 } from 'lucide-react'
-import { workspaceContinueWithoutAgentAvailableAtMs, type CompactionItem, type RecallItem } from '@pulpo/contracts'
+import { findCostWarningItem, workspaceContinueWithoutAgentAvailableAtMs, type CompactionItem, type CostWarningItem, type RecallItem } from '@pulpo/contracts'
 import type { Chat, Message } from '@/lib/types'
 import { hasMultipleBranches } from '@/lib/message-branches'
 import { getCatalogModel } from '@/stores/catalog'
-import { formatDuration, formatSecondsLabel, timeAgo } from '@/lib/format'
+import { formatCost, formatDuration, formatSecondsLabel, timeAgo } from '@/lib/format'
 import { useChat } from '@/stores/chat'
 import { selectAvailableChatIds } from '@/lib/chat-availability'
 import { useSettings } from '@/stores/settings'
@@ -213,6 +214,21 @@ function ActivityToolRow({ tool }: { tool: ToolItem }) {
         </CollapsibleContent>
       )}
     </Collapsible>
+  )
+}
+
+function CostWarningNotice({ item, streaming, onStop }: { item: CostWarningItem; streaming: boolean; onStop: () => void }) {
+  const threshold = formatCost(item.threshold_micros / 1_000_000)
+  return (
+    <div role="status" className="flex min-w-0 max-w-full flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-800 dark:text-amber-200">
+      <AlertTriangle className="size-4 shrink-0" />
+      <span className="min-w-0 flex-1">
+        {streaming
+          ? ui("This response has cost {{cost}} so far, over your {{threshold}} warning.", { cost: formatCost(item.cost_micros / 1_000_000), threshold })
+          : ui("This response went over your {{threshold}} cost warning.", { threshold })}
+      </span>
+      {streaming && <Button size="sm" variant="outline" onClick={onStop}>{ui("Stop response")}</Button>}
+    </div>
   )
 }
 
@@ -696,8 +712,9 @@ export const MessageItem = memo(function MessageItem({
   const outputItems = message.outputItems ?? []
   const otherItems = outputItems.filter((item) => {
     const type = (item as { type?: string }).type
-    return type && !['message', 'reasoning', 'pulpo_tool', 'pulpo_workspace', 'pulpo_attachment', 'pulpo_compaction', 'pulpo_recall'].includes(type)
+    return type && !['message', 'reasoning', 'pulpo_tool', 'pulpo_workspace', 'pulpo_attachment', 'pulpo_compaction', 'pulpo_recall', 'pulpo_cost_warning'].includes(type)
   })
+  const costWarning = findCostWarningItem(outputItems)
   const lastActivityIndex = activitySegments.length - 1
   const hasVisibleBody = timeline.length > 0 || Boolean(message.error)
   let activityOrdinal = -1
@@ -812,6 +829,10 @@ export const MessageItem = memo(function MessageItem({
               </details>
             )
           })}
+
+          {!editing && costWarning && (
+            <CostWarningNotice item={costWarning} streaming={streaming} onStop={() => stopStreaming(message.id)} />
+          )}
 
           {!editing && message.error && (
             <div role="alert" className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">

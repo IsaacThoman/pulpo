@@ -524,6 +524,41 @@ export const recallItemSchema = z.object({
 })
 export type RecallItem = z.infer<typeof recallItemSchema>
 
+/** Per-response Agent cost warning thresholds, in USD micros ($0.01 to $1,000). */
+export const AGENT_COST_WARNING_MIN_MICROS = 10_000
+export const AGENT_COST_WARNING_MAX_MICROS = 1_000_000_000
+export const DEFAULT_AGENT_COST_WARNING_MICROS = 1_000_000
+export const agentCostWarningThresholdMicrosSchema = z.number().int()
+  .min(AGENT_COST_WARNING_MIN_MICROS)
+  .max(AGENT_COST_WARNING_MAX_MICROS)
+  .default(DEFAULT_AGENT_COST_WARNING_MICROS)
+
+/** Raised once an Agent response's accrued cost passes the user's warning threshold; cost_micros keeps rising while it runs. */
+export const costWarningItemSchema = z.object({
+  id: z.string().min(1),
+  type: z.literal('pulpo_cost_warning'),
+  threshold_micros: z.number().int().positive(),
+  cost_micros: z.number().int().nonnegative(),
+  triggered_at: isoDateSchema,
+})
+export type CostWarningItem = z.infer<typeof costWarningItemSchema>
+
+/** The enabled Agent cost warning threshold from stored account preferences, if any. */
+export function agentCostWarningThresholdMicros(preferences: Record<string, unknown>): number | undefined {
+  if (preferences.agentCostWarningEnabled !== true) return undefined
+  const threshold = agentCostWarningThresholdMicrosSchema.safeParse(preferences.agentCostWarningThresholdMicros)
+  return threshold.success ? threshold.data : undefined
+}
+
+export function findCostWarningItem(output: readonly unknown[] | undefined): CostWarningItem | undefined {
+  for (const item of output ?? []) {
+    if ((item as { type?: unknown } | null)?.type !== 'pulpo_cost_warning') continue
+    const parsed = costWarningItemSchema.safeParse(item)
+    if (parsed.success) return parsed.data
+  }
+  return undefined
+}
+
 export const responseSnapshotSchema = z.object({
   requestReceivedAt: isoDateSchema.nullable().optional(),
   firstReplyTextAt: isoDateSchema.nullable().optional(),
@@ -660,6 +695,9 @@ function applyAgentEventOutput(output: unknown[], event: ResponseEvent): unknown
   }
   if (event.type === 'pulpo.compaction.updated' && typeof payload.id === 'string') {
     return upsertOutputItem(output, (item) => item.id === payload.id, payload)
+  }
+  if (event.type === 'pulpo.agent.cost_warning' && typeof payload.id === 'string') {
+    return upsertOutputItem(output, (item) => item.type === 'pulpo_cost_warning', payload)
   }
   if (event.type === 'pulpo.agent.attachment.created' && typeof payload.attachment_id === 'string') {
     return upsertOutputItem(output, (item) => item.type === 'pulpo_attachment' && item.attachment_id === payload.attachment_id, payload)
@@ -1420,6 +1458,8 @@ export const managementAccountSettingsSchema = z.object({
   modelWarningDismissals: modelWarningDismissalsSchema.default({}),
   showReasoning: z.boolean().default(true),
   showResponseCost: z.boolean().default(false),
+  agentCostWarningEnabled: z.boolean().default(false),
+  agentCostWarningThresholdMicros: agentCostWarningThresholdMicrosSchema,
   chatWidth: z.enum(['full', 'narrow']).default('narrow'),
   animationSpeed: animationSpeedSchema,
   customInstructions: z.string().max(100_000).default(''),

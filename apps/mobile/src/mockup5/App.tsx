@@ -134,7 +134,7 @@ import { SymbolView } from '../platform/SymbolView';
 import { DarkTheme as NavigationDarkTheme, DefaultTheme as NavigationLightTheme, NavigationContainer, useIsFocused } from '@react-navigation/native';
 import { createNativeStackNavigator, type NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useQueryClient } from '@tanstack/react-query';
-import { workspaceContinueWithoutAgentAvailableAtMs } from '@pulpo/contracts';
+import { findCostWarningItem, workspaceContinueWithoutAgentAvailableAtMs } from '@pulpo/contracts';
 import {
   Brain,
   Ghost,
@@ -3379,11 +3379,16 @@ function WorkBlock({ steps, active, durationMs, initialWork, onOpenChat }: {
 }
 
 function otherOutputItems(outputItems?: unknown[]): Array<Record<string, unknown>> {
-  const known = new Set(['message', 'reasoning', 'pulpo_tool', 'pulpo_workspace', 'pulpo_attachment', 'pulpo_compaction', 'pulpo_recall']);
+  const known = new Set(['message', 'reasoning', 'pulpo_tool', 'pulpo_workspace', 'pulpo_attachment', 'pulpo_compaction', 'pulpo_recall', 'pulpo_cost_warning']);
   return (outputItems ?? []).filter((item): item is Record<string, unknown> => {
     const type = (item as { type?: unknown }).type;
     return typeof type === 'string' && !known.has(type);
   });
+}
+
+function formatWarningCost(micros: number): string {
+  const usd = micros / 1_000_000;
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: usd < 0.01 ? 4 : 2, maximumFractionDigits: usd < 0.01 ? 4 : 2 }).format(usd);
 }
 
 function outputItemTitle(item: Record<string, unknown>): string {
@@ -3482,6 +3487,7 @@ const MessageRow = memo(function MessageRow({
   const streaming = message.status === 'streaming' || message.status === 'queued';
   const responseStartedAt = useMemo(() => message.requestReceivedAt ? Date.parse(message.requestReceivedAt) : message.createdAt ?? Date.now(), [message.createdAt, message.requestReceivedAt]);
   const extraOutput = useMemo(() => otherOutputItems(message.outputItems), [message.outputItems]);
+  const costWarning = useMemo(() => findCostWarningItem(message.outputItems), [message.outputItems]);
   const capacityWorkspace = useMemo(() => (message.outputItems ?? []).find((item) => (
     (item as { type?: string }).type === 'pulpo_workspace'
   )) as { state?: string; startedAt?: string; continueWithoutAgentAvailableAt?: string } | undefined, [message.outputItems]);
@@ -3618,6 +3624,9 @@ const MessageRow = memo(function MessageRow({
                 ))}
               </>}</SentAttachmentWindow>
             )}
+            {costWarning && <View accessibilityRole="alert" style={styles.costWarning}><Icon name="exclamationmark.triangle" size={15} color={COLORS.warning} /><Text style={styles.costWarningText}>{streaming
+              ? `This response has cost ${formatWarningCost(costWarning.cost_micros)} so far, over your ${formatWarningCost(costWarning.threshold_micros)} warning.`
+              : `This response went over your ${formatWarningCost(costWarning.threshold_micros)} cost warning.`}</Text></View>}
             {message.error && timeline.length > 0 && <View style={styles.responseError}><Icon name="exclamationmark.triangle" size={15} color={COLORS.critical} /><Text style={styles.responseErrorText}>{message.error}</Text><Pressable accessibilityRole="button" onPress={() => onRegenerate(message)}><Text style={styles.tryAgainText}>Try again</Text></Pressable></View>}
             {!message.error && message.status === 'stopped' && <MessageContextMenu message={message} model={model} onEdit={onEdit} onRegenerate={onRegenerate}><View style={styles.responseError}><Icon name="stop.circle" size={15} color={COLORS.muted} /><Text style={styles.responseErrorText}>Response stopped before completion.</Text><Pressable accessibilityRole="button" onPress={() => onRegenerate(message)}><Text style={styles.tryAgainText}>Try again</Text></Pressable></View></MessageContextMenu>}
             {message.agentMode && streaming && capacityWorkspace?.state === 'waiting' && canContinueWithoutAgent && (
@@ -6554,6 +6563,8 @@ function createChatStyles(COLORS: ChatColors) { return StyleSheet.create({
   messageMeta: { color: COLORS.muted, fontSize: 11, marginTop: 12, fontFamily: COLORS.mono, letterSpacing: -0.2 },
   responseError: { flexDirection: 'row', gap: 8, alignItems: 'flex-start', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,92,92,0.35)', backgroundColor: 'rgba(255,92,92,0.10)', borderRadius: 12, padding: 11, marginTop: 6 },
   responseErrorText: { color: COLORS.critical, flex: 1, fontSize: 12.5, lineHeight: 18 },
+  costWarning: { flexDirection: 'row', gap: 8, alignItems: 'flex-start', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,159,10,0.4)', backgroundColor: 'rgba(255,159,10,0.12)', borderRadius: 12, padding: 11, marginTop: 6 },
+  costWarningText: { color: COLORS.warning, flex: 1, fontSize: 12.5, lineHeight: 18 },
   tryAgainText: { color: COLORS.criticalAction, fontSize: 12.5, fontWeight: '700', lineHeight: 18 },
   otherOutput: { borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.line, borderRadius: 12, padding: 10, gap: 7, marginTop: 6 },
   continueButton: { alignSelf: 'stretch', minHeight: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 14, backgroundColor: COLORS.fillStrong, marginTop: 8 },

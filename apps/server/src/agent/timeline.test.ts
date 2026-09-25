@@ -15,6 +15,21 @@ describe('buildAgentOutput', () => {
     expect(output[0]).toEqual(recall)
   })
 
+  it('keeps the cost warning after agent work in persisted output', () => {
+    const costWarning = {
+      id: 'response:cost-warning', type: 'pulpo_cost_warning' as const,
+      threshold_micros: 1_000_000, cost_micros: 1_250_000, triggered_at: '2026-09-24T00:00:00.000Z',
+    }
+    const output = buildAgentOutput({
+      messages: [{ role: 'assistant', content: [{ type: 'text', text: 'Done.' }] } as never],
+      skipMessageCount: 0,
+      toolItems: new Map(),
+      costWarningItem: costWarning,
+      terminal: true,
+    })
+    expect(output.at(-1)).toEqual(costWarning)
+  })
+
   it('interleaves reasoning, text, and tools across turns', () => {
     const tools = new Map<string, ToolTimelineItem>([
       ['t1', { id: 't1', type: 'pulpo_tool', tool: 'bash', arguments: { command: 'ping' }, status: 'completed', output: 'ok', durationMs: 1200 }],

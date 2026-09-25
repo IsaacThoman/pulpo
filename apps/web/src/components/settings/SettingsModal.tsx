@@ -73,6 +73,7 @@ import { SETTINGS_SECTION_IDS, type SettingsSectionId } from './settings-dialog'
 import { InstructionPresetButtons } from './InstructionPresetButtons'
 import { DesktopAppVersion } from './DesktopAppVersion'
 import { AnimationSpeedInput } from './AnimationSpeedInput'
+import { CostWarningThresholdInput } from './CostWarningThresholdInput'
 import { chatImportFileIsTooLarge } from './chat-import'
 import { ui, uit } from '@/i18n/ui'
 
@@ -1087,6 +1088,18 @@ export function SettingsModal({
               {section === 'agent' && (
                 <div>
                   <h2 className="text-base font-semibold">{ui('Agent')}</h2>
+                  <Separator className="my-3" />
+                  <Row label={ui("Cost warning")} hint={ui("Show a warning when an Agent response costs more than your limit. The response keeps running until you stop it.")}>
+                    <Switch aria-label={ui("Cost warning")} checked={s.agentCostWarningEnabled} onCheckedChange={(v) => s.set('agentCostWarningEnabled', v)} />
+                  </Row>
+                  {s.agentCostWarningEnabled && (
+                    <Row label={ui("Warn above")} hint={ui("Applies to each Agent response, including model, tool, and workspace costs.")}>
+                      <CostWarningThresholdInput
+                        value={s.agentCostWarningThresholdMicros}
+                        onChange={(value) => s.set('agentCostWarningThresholdMicros', value)}
+                      />
+                    </Row>
+                  )}
                   <Separator className="my-3" />
                   <ImageGenerationSettings />
                 </div>

@@ -7,7 +7,7 @@ import { selectedImageModel, executeImageGeneration, recoverSavedImageGeneration
 import { Agent, type AgentMessage } from '@earendil-works/pi-agent-core'
 import { openAIResponsesApi } from '@earendil-works/pi-ai/api/openai-responses.lazy'
 import type { Api, AssistantMessage, Context, Model } from '@earendil-works/pi-ai'
-import { toolImagePreviewSchema, type ToolImagePreview, type CompactionItem, type RecallItem, type ResponseSnapshot } from '@pulpo/contracts'
+import { agentCostWarningThresholdMicros, findCostWarningItem, toolImagePreviewSchema, type ToolImagePreview, type CompactionItem, type RecallItem, type ResponseSnapshot } from '@pulpo/contracts'
 import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm'
 import { db } from '../database/client.js'
 import { agentRuns, applicationSettings, attachments, chats, generationAttempts, models, providerConnections, requestLogs, responses, toolExecutions, userPreferences } from '../database/schema.js'
@@ -81,6 +81,7 @@ import { CODEX_PROVIDER_ID } from '../codex/constants.js'
 import { codexErrorRequiresReauthentication, createCodexModels, markCodexReauthenticationRequired, safeCodexErrorMessage } from '../codex/credential-store.js'
 import { codexInferenceReferenceCostMicros } from '../codex/reference-cost.js'
 import { agentSettlementAmounts } from './settlement.js'
+import { nextCostWarning } from './cost-warning.js'
 
 function toolResultText(result: unknown): string {
   const content = (result as { content?: Array<{ type?: string; text?: string }> } | undefined)?.content
@@ -166,6 +167,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
   const settings = parseAgentSettings(settingsRow?.value)
   const webToolsSettings = parseWebToolsSettings(webToolsRow?.value)
   const preferenceValues = (preferencesRow?.values ?? {}) as Record<string, unknown>
+  const costWarningThresholdMicros = agentCostWarningThresholdMicros(preferenceValues)
   const customInstructions = composeCustomInstructions(
     parsePersonalizationSettings(personalizationRow?.value),
     preferenceValues,
@@ -377,6 +379,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
     (raw as { type?: string }).type === 'pulpo_compaction'
   ))
   const recallItems: RecallItem[] = recallItem ? [recallItem] : []
+  let costWarningItem = findCostWarningItem(record.response.output as unknown[])
   let workspaceItem: Record<string, unknown> | undefined
   let workspaceStartedAtMs: number | undefined
   let workspaceReadyAtMs: number | undefined
@@ -445,6 +448,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
         workspaceItem,
         compactionItems,
         recallItems,
+        costWarningItem,
         turnDurationsMs,
         streaming: false,
         terminal: true,
@@ -458,6 +462,20 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
   }
   const snapshotIfDue = async () => {
     if (agentSnapshotIsDue(lastSnapshotAt, Date.now(), config.RESPONSE_SNAPSHOT_INTERVAL_MS)) await snapshot()
+  }
+  const updateCostWarning = async () => {
+    const workspaceUsage = workspaceReadyAtMs !== undefined && settings.billWorkspaces
+      ? workspaceUsageMicros(Date.now() - workspaceReadyAtMs, settings.workspacePricePerMinuteMicros)
+      : 0
+    const next = nextCostWarning({
+      responseId,
+      thresholdMicros: costWarningThresholdMicros,
+      costMicros: accruedCostMicros + accruedToolCostMicros + sidecarCostMicros + workspaceUsage,
+      current: costWarningItem,
+    })
+    if (!next) return
+    costWarningItem = next
+    await emit('pulpo.agent.cost_warning', next)
   }
   const updateCompaction = async (item: CompactionItem) => {
     const index = compactionItems.findIndex((candidate) => candidate.id === item.id)
@@ -560,6 +578,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
       sidecarCostMicros += billed.costMicros
       const item: CompactionItem = { ...base, status: 'completed', summary: billed.result.output_text, duration_ms: Date.now() - started }
       await updateCompaction(item)
+      await updateCostWarning()
       return [compactedAgentHandoffMessage(billed.result.output_text, phase), ...retained]
     } catch (error) {
       await updateCompaction({ ...base, status: 'failed', duration_ms: Date.now() - started, error: error instanceof Error ? error.message : String(error) })
@@ -954,6 +973,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
         await markModelSticky(redis, completedRuntime.runtime.model, 'slow_completion')
         if (completedRuntime.index === activeIndex) await activateFallbackRuntime(completedRuntime.index)
       }
+      await updateCostWarning()
       await snapshotIfDue()
     } else if (event.type === 'tool_execution_start') {
       toolCalls += 1
@@ -1003,6 +1023,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
       accruedToolCostMicros = await readToolCost()
       webProviderExecutions.delete(event.toolCallId)
       await emit('pulpo.agent.tool.completed', { id: event.toolCallId, output, isError: event.isError, durationMs: item?.durationMs, ...(imagePreview ? { imagePreview } : {}) })
+      await updateCostWarning()
       if (manager.continuedWithoutAgent) disableAgentTools()
       await snapshotIfDue()
     }
