@@ -114,6 +114,17 @@ c &amp; d
     expect(markup).toContain('[overflow-wrap:anywhere]')
   })
 
+  it('colours fenced code tokens but leaves inline code plain', () => {
+    const markup = renderToStaticMarkup(
+      <Markdown content={'Use `const` here:\n\n```c++\nint main() { return 0; }\n```'} />,
+    )
+
+    expect(markup).toContain('>c++</span>')
+    expect(markup).toContain('<code class="code-highlight font-mono">')
+    expect(markup).toContain('<span class="hljs-keyword">return</span>')
+    expect(markup).toMatch(/<code class="rounded-\[4px\][^>]*>const<\/code>/)
+  })
+
   it('keeps wide code and tables inside local overflow containers', () => {
     const markup = renderToStaticMarkup(
       <Markdown content={'```js\nconst unbrokenValue = "abcdefghijklmnopqrstuvwxyz0123456789"\n```\n\n| heading |\n| --- |\n| abcdefghijklmnopqrstuvwxyz0123456789 |'} />,
