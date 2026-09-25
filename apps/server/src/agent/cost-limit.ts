@@ -19,6 +19,7 @@ export function costLimitPause(options: {
   thresholdMicros: number | undefined
   costMicros: number
   current: CostLimitItem | undefined
+  agentTurn?: number
   now?: Date
 }): CostLimitItem | undefined {
   const { responseId, thresholdMicros, costMicros, current } = options
@@ -37,6 +38,7 @@ export function costLimitPause(options: {
     limit_micros: limitMicros,
     cost_micros: costMicros,
     paused_at: (options.now ?? new Date()).toISOString(),
+    ...(options.agentTurn ? { agent_turn: options.agentTurn } : {}),
   }
 }
 

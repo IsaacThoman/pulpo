@@ -134,7 +134,7 @@ import { SymbolView } from '../platform/SymbolView';
 import { DarkTheme as NavigationDarkTheme, DefaultTheme as NavigationLightTheme, NavigationContainer, useIsFocused } from '@react-navigation/native';
 import { createNativeStackNavigator, type NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useQueryClient } from '@tanstack/react-query';
-import { findCostLimitItem, workspaceContinueWithoutAgentAvailableAtMs } from '@pulpo/contracts';
+import { findCostLimitItem, workspaceContinueWithoutAgentAvailableAtMs, type CostLimitItem } from '@pulpo/contracts';
 import {
   Brain,
   Ghost,
@@ -142,7 +142,9 @@ import {
   Hourglass,
   Loader2,
   Minimize2,
+  Pause,
   Server,
+  StepForward,
   Wrench,
   XCircle,
 } from 'lucide-react-native';
@@ -3134,6 +3136,22 @@ function ResolvedAttachmentImage({ attachment, onResolved, sourceNativeId, varia
   );
 }
 
+function formatLimitCost(micros: number): string {
+  const usd = micros / 1_000_000;
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: usd < 0.01 ? 4 : 2, maximumFractionDigits: usd < 0.01 ? 4 : 2 }).format(usd);
+}
+
+function costLimitLabel(item: CostLimitItem, live: boolean): string {
+  const limit = formatLimitCost(item.limit_micros);
+  if (item.status === 'continued') return `Continued past your ${limit} cost limit`;
+  return live ? `Paused at ${formatLimitCost(item.cost_micros)}, over your ${limit} cost limit` : `Stopped at your ${limit} cost limit`;
+}
+
+function pausedAtCostLimit(steps: TimelineStep[], active: boolean): boolean {
+  const last = steps.at(-1);
+  return active && last?.kind === 'cost_limit' && last.costLimit.status === 'awaiting_confirmation';
+}
+
 function WorkTriggerIcon({ steps, active }: { steps: TimelineStep[]; active: boolean }) {
   const { COLORS } = useChatStyles();
   const compaction = steps.find((step) => step.kind === 'compaction');
@@ -3147,6 +3165,7 @@ function WorkTriggerIcon({ steps, active }: { steps: TimelineStep[]; active: boo
     if (['expired', 'unavailable'].includes(workspace.workspace.state ?? '')) return <XCircle color={COLORS.critical} size={14} />;
     if (workspaceIsActive(workspace.workspace.state)) return <Server color={COLORS.muted} size={14} />;
   }
+  if (pausedAtCostLimit(steps, active)) return <Pause color={COLORS.muted} size={14} />;
   const tools = steps.filter((step) => step.kind === 'tool');
   const runningTool = tools.find((step) => step.tool.status === 'running');
   if (runningTool?.kind === 'tool') {
@@ -3208,6 +3227,7 @@ function workLabel(steps: TimelineStep[], active: boolean, durationMs?: number):
     if (workspace.workspace.state === 'provisioning') return 'Starting workspace…';
     if (['expired', 'unavailable'].includes(workspace.workspace.state ?? '')) return `Workspace ${workspace.workspace.state}`;
   }
+  if (pausedAtCostLimit(steps, active)) return 'Paused at cost limit';
   const runningTool = steps.find((step) => step.kind === 'tool' && step.tool.status === 'running');
   if (runningTool?.kind === 'tool') return toolActivityPresentation(runningTool.tool.tool).label;
   if (active) return steps.some((step) => step.kind === 'tool') ? 'Working…' : 'Thinking…';
@@ -3370,6 +3390,10 @@ function WorkBlock({ steps, active, durationMs, initialWork, onOpenChat }: {
             if (step.kind === 'recall') {
               return <RecallStepContent key={step.recall.id} step={step} onOpenChat={onOpenChat} />;
             }
+            if (step.kind === 'cost_limit') {
+              const CostLimitIcon = step.costLimit.status === 'continued' ? StepForward : Pause;
+              return <View key={step.costLimit.id} style={styles.workRow}><CostLimitIcon color={COLORS.muted} size={13} /><Text style={styles.costLimitRowText}>{costLimitLabel(step.costLimit, active)}</Text></View>;
+            }
             return <ToolStepRow key={step.tool.id ?? `tool:${index}`} step={step} />;
           })}
         </View>
@@ -3384,11 +3408,6 @@ function otherOutputItems(outputItems?: unknown[]): Array<Record<string, unknown
     const type = (item as { type?: unknown }).type;
     return typeof type === 'string' && !known.has(type);
   });
-}
-
-function formatLimitCost(micros: number): string {
-  const usd = micros / 1_000_000;
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: usd < 0.01 ? 4 : 2, maximumFractionDigits: usd < 0.01 ? 4 : 2 }).format(usd);
 }
 
 function outputItemTitle(item: Record<string, unknown>): string {
@@ -3629,11 +3648,7 @@ const MessageRow = memo(function MessageRow({
                 ))}
               </>}</SentAttachmentWindow>
             )}
-            {costLimit && <View style={styles.workRow}><Icon name="pause.fill" size={13} color={COLORS.muted} /><Text style={styles.workRowTitle}>{costLimit.status === 'continued'
-              ? `Continued past your ${formatLimitCost(costLimit.limit_micros)} cost limit`
-              : streaming
-                ? `Paused at ${formatLimitCost(costLimit.cost_micros)}, over your ${formatLimitCost(costLimit.limit_micros)} cost limit`
-                : `Stopped at your ${formatLimitCost(costLimit.limit_micros)} cost limit`}</Text></View>}
+            {costLimit?.status === 'awaiting_confirmation' && streaming && <View style={styles.workRow}><Pause color={COLORS.muted} size={13} /><Text style={styles.workRowTitle}>{costLimitLabel(costLimit, true)}</Text></View>}
             {costLimit?.status === 'awaiting_confirmation' && streaming && (
               <View style={styles.costLimitActions}>
                 <Pressable accessibilityRole="button" onPress={onStop} style={({ pressed }) => [styles.costLimitButton, pressed && styles.navRowPressed]}>
@@ -6559,6 +6574,7 @@ function createChatStyles(COLORS: ChatColors) { return StyleSheet.create({
   workBlockCollapsed: { marginBottom: -4 },
   workRow: { flexDirection: 'row', alignItems: 'center', gap: 7, minHeight: 22 },
   workRowText: { color: COLORS.muted, fontSize: 12.5, lineHeight: 18, flex: 1, textTransform: 'capitalize' },
+  costLimitRowText: { color: COLORS.muted, fontSize: 12.5, lineHeight: 18, flex: 1 },
   workRowTitle: { color: COLORS.textSoft, fontSize: 12.5, lineHeight: 18, fontWeight: '600', flex: 1 },
   workStep: { gap: 5 },
   compactionDetail: { gap: 12 },

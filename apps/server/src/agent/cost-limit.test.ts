@@ -14,7 +14,7 @@ describe('Agent cost limit pauses', () => {
   })
 
   it('pauses once the accrued cost reaches the limit', () => {
-    expect(costLimitPause({ responseId, thresholdMicros: 1_000_000, costMicros: 1_020_000, current: undefined, now })).toEqual({
+    expect(costLimitPause({ responseId, thresholdMicros: 1_000_000, costMicros: 1_020_000, current: undefined, agentTurn: 3, now })).toEqual({
       id: costLimitItemId(responseId),
       type: 'pulpo_cost_limit',
       status: 'awaiting_confirmation',
@@ -22,6 +22,7 @@ describe('Agent cost limit pauses', () => {
       limit_micros: 1_000_000,
       cost_micros: 1_020_000,
       paused_at: now.toISOString(),
+      agent_turn: 3,
     })
   })
 

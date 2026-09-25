@@ -558,23 +558,33 @@ describe('agent cost limit pause', () => {
     expect(actions).toEqual(['continue:response-1', 'stop:response-1'])
   })
 
-  it('records the outcome without actions after the pause resolves', async () => {
+  it('records the outcome inside the collapsed work summary after the pause resolves', async () => {
     const { MessageItem } = await import('./MessageItem')
-    const render = (item: typeof pause, streaming: boolean) => renderToStaticMarkup(<MessageItem
+    const view = (item: typeof pause, streaming: boolean) => render(<MessageItem
       chat={chat}
       message={assistant({
         done: !streaming,
         content: 'Done',
-        outputItems: [{ type: 'message', content: [{ type: 'output_text', text: 'Done' }] }, item],
+        outputItems: [
+          { type: 'pulpo_tool', id: 'tool-1', tool: 'bash', status: 'completed', output: '42' },
+          item,
+          { type: 'message', content: [{ type: 'output_text', text: 'Done' }] },
+        ],
       })}
       streaming={streaming}
       onRegenerate={() => undefined}
     />)
 
-    const continued = render({ ...pause, status: 'continued' }, true)
-    expect(continued).toContain('Continued past your $1.00 cost limit')
-    expect(continued).not.toContain('Cancel generation')
-    expect(render(pause, false)).toContain('Stopped at your $1.00 cost limit')
+    const continued = view({ ...pause, status: 'continued' }, false)
+    expect(continued.container.textContent).not.toContain('cost limit')
+    expect(continued.queryByRole('button', { name: 'Cancel generation' })).toBeNull()
+    fireEvent.click(continued.getByRole('button', { name: /Worked/ }))
+    expect(continued.container.textContent).toContain('Continued past your $1.00 cost limit')
+    cleanup()
+
+    const stopped = view(pause, false)
+    fireEvent.click(stopped.getByRole('button', { name: /Worked/ }))
+    expect(stopped.container.textContent).toContain('Stopped at your $1.00 cost limit')
   })
 })
 

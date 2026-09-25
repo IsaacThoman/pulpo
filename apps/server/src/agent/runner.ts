@@ -470,7 +470,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
   )
   /** Holds the loop at the user's cost limit until they continue; false when the run was stopped instead. */
   const waitAtCostLimit = async (signal?: AbortSignal): Promise<boolean> => {
-    const paused = costLimitPause({ responseId, thresholdMicros: costLimitMicros, costMicros: currentCostMicros(), current: costLimitItem })
+    const paused = costLimitPause({ responseId, thresholdMicros: costLimitMicros, costMicros: currentCostMicros(), current: costLimitItem, agentTurn: modelTurns })
     if (!paused) return true
     costLimitItem = paused
     await emit('pulpo.agent.cost_limit', paused)

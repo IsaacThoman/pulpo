@@ -1432,6 +1432,7 @@ const esUi: Record<string, string> = {
   "Agent cost limit in US dollars": "Límite de coste del Agente en dólares estadounidenses",
   "Paused at {{cost}}, over your {{limit}} cost limit": "En pausa en {{cost}}, por encima de tu límite de coste de {{limit}}",
   "Stopped at your {{limit}} cost limit": "Detenida en tu límite de coste de {{limit}}",
+  "Paused at cost limit": "En pausa por el límite de coste",
   "Continued past your {{limit}} cost limit": "Continuó después de tu límite de coste de {{limit}}",
   "Show suggested prompts": "Mostrar prompts sugeridos",
   "Show the cost of each assistant response with its tokens, speed, and time.": "Mostrar el coste de cada respuesta del asistente junto con sus tokens, velocidad y tiempo.",

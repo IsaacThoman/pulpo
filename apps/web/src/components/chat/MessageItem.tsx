@@ -23,7 +23,8 @@ import {
   Minimize2,
   History,
   ExternalLink,
-  CirclePause,
+  Pause,
+  StepForward,
 } from 'lucide-react'
 import { findCostLimitItem, workspaceContinueWithoutAgentAvailableAtMs, type CompactionItem, type CostLimitItem, type RecallItem } from '@pulpo/contracts'
 import type { Chat, Message } from '@/lib/types'
@@ -217,46 +218,53 @@ function ActivityToolRow({ tool }: { tool: ToolItem }) {
   )
 }
 
+function costLimitStepLabel(item: CostLimitItem, live: boolean): string {
+  const limit = formatCost(item.limit_micros / 1_000_000)
+  if (item.status === 'continued') return ui("Continued past your {{limit}} cost limit", { limit })
+  return live
+    ? ui("Paused at {{cost}}, over your {{limit}} cost limit", { cost: formatCost(item.cost_micros / 1_000_000), limit })
+    : ui("Stopped at your {{limit}} cost limit", { limit })
+}
+
+function CostLimitStepRow({ item, live }: { item: CostLimitItem; live: boolean }) {
+  const Icon = item.status === 'continued' ? StepForward : Pause
+  return (
+    <div className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
+      <Icon className="size-3 shrink-0" />
+      <span className="min-w-0 flex-1">{costLimitStepLabel(item, live)}</span>
+    </div>
+  )
+}
+
 function CostLimitPrompt({
   item,
-  streaming,
   onStop,
   onContinue,
 }: {
   item: CostLimitItem
-  streaming: boolean
   onStop: () => void
   onContinue: () => Promise<void>
 }) {
   const [pending, setPending] = useState(false)
-  const limit = formatCost(item.limit_micros / 1_000_000)
-  const awaiting = item.status === 'awaiting_confirmation'
-  const label = awaiting && streaming
-    ? ui("Paused at {{cost}}, over your {{limit}} cost limit", { cost: formatCost(item.cost_micros / 1_000_000), limit })
-    : awaiting
-      ? ui("Stopped at your {{limit}} cost limit", { limit })
-      : ui("Continued past your {{limit}} cost limit", { limit })
   return (
     <div className="space-y-1.5">
-      <div role={awaiting && streaming ? 'status' : undefined} className="flex min-w-0 items-center gap-1.5 text-xs font-medium text-muted-foreground">
-        <CirclePause className="size-3.5 shrink-0" />
-        <span className="min-w-0">{label}</span>
+      <div role="status" className="flex min-w-0 items-center gap-1.5 text-xs font-medium text-muted-foreground">
+        <Pause className="size-3.5 shrink-0" />
+        <span className="min-w-0">{costLimitStepLabel(item, true)}</span>
       </div>
-      {awaiting && streaming && (
-        <div className="flex flex-wrap gap-2">
-          <Button size="sm" variant="outline" onClick={onStop}> {ui("Cancel generation")} </Button>
-          <Button
-            size="sm"
-            disabled={pending}
-            onClick={() => {
-              setPending(true)
-              void onContinue().catch(() => setPending(false))
-            }}
-          >
-            {pending ? ui("Continuing…") : ui("Continue")}
-          </Button>
-        </div>
-      )}
+      <div className="flex flex-wrap gap-2">
+        <Button size="sm" variant="outline" onClick={onStop}> {ui("Cancel generation")} </Button>
+        <Button
+          size="sm"
+          disabled={pending}
+          onClick={() => {
+            setPending(true)
+            void onContinue().catch(() => setPending(false))
+          }}
+        >
+          {pending ? ui("Continuing…") : ui("Continue")}
+        </Button>
+      </div>
     </div>
   )
 }
@@ -443,6 +451,8 @@ function ActivityBlock({
   const compaction = steps.find((step) => step.kind === 'compaction')?.compaction
   const recall = steps.find((step) => step.kind === 'recall')?.recall
   const tools = steps.flatMap((step) => (step.kind === 'tool' ? [step.tool] : []))
+  const lastStep = steps.at(-1)
+  const pausedAtCostLimit = active && lastStep?.kind === 'cost_limit' && lastStep.costLimit.status === 'awaiting_confirmation'
   const hasReasoning = steps.some((step) => step.kind === 'reasoning' && step.text)
   const workspaceBusy = workspaceIsActive(workspace?.state)
   const workspaceFailed = workspaceIsFailed(workspace?.state)
@@ -486,6 +496,7 @@ function ActivityBlock({
     if (workspace?.state === 'continuing_without_agent' && !hasTools && !hasReasoning && !active) {
       return workspaceLabel(workspace)
     }
+    if (pausedAtCostLimit) return ui("Paused at cost limit")
     if (runningTool) return toolActivityPresentation(runningTool.tool).label
     if (active && hasTools) return ui("Working…")
     if (active) return ui("Thinking…")
@@ -512,6 +523,7 @@ function ActivityBlock({
       return <Server className="size-3.5 shrink-0 animate-pulse" />
     }
     if (workspaceFailed) return <XCircle className="size-3.5 shrink-0 text-destructive" />
+    if (pausedAtCostLimit) return <Pause className="size-3.5 shrink-0" />
     if (runningTool) {
       const Icon = toolActivityPresentation(runningTool.tool).icon
       return <Icon className="size-3.5 shrink-0 animate-pulse" />
@@ -553,6 +565,9 @@ function ActivityBlock({
               }
               if (step.kind === 'recall') {
                 return <RecallStepRow key={step.recall.id} item={step.recall} onOpenChat={onOpenChat} />
+              }
+              if (step.kind === 'cost_limit') {
+                return <CostLimitStepRow key={step.costLimit.id} item={step.costLimit} live={active} />
               }
               return (
                 <ActivityToolRow
@@ -860,11 +875,10 @@ export const MessageItem = memo(function MessageItem({
             )
           })}
 
-          {!editing && costLimit && (
+          {!editing && streaming && costLimit?.status === 'awaiting_confirmation' && (
             <CostLimitPrompt
-              key={`${costLimit.limit_micros}:${costLimit.status}`}
+              key={costLimit.limit_micros}
               item={costLimit}
-              streaming={streaming}
               onStop={() => stopStreaming(message.id)}
               onContinue={() => continuePastCostLimit(message.id)}
             />

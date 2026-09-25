@@ -98,7 +98,7 @@ function pushAssistantParts(
   }
 }
 
-/** Ordered response.output: workspace → (reasoning|message|tool)* preserving turn order → cost limit. */
+/** Ordered response.output: workspace → (reasoning|message|tool)* preserving turn order, with the cost limit after its turn. */
 export function buildAgentOutput(options: {
   messages: AgentMessage[]
   skipMessageCount: number
@@ -151,6 +151,7 @@ export function buildAgentOutput(options: {
       turnDurationsMs?.get(assistantTurn),
       assistantTurn,
     )
+    if (costLimitItem?.agent_turn === assistantTurn) output.push(costLimitItem)
     for (const part of content) {
       if ((part as { type?: string }).type === 'toolCall' && typeof (part as { id?: string }).id === 'string') {
         seenToolIds.add((part as { id: string }).id)
@@ -169,7 +170,7 @@ export function buildAgentOutput(options: {
     if (attachment) output.push(attachment)
   }
 
-  if (costLimitItem) output.push(costLimitItem)
+  if (costLimitItem && !output.includes(costLimitItem)) output.push(costLimitItem)
 
   if (terminal) {
     for (const entry of output) {

@@ -30,6 +30,25 @@ describe('buildAgentOutput', () => {
     expect(output.at(-1)).toEqual(costLimit)
   })
 
+  it('places the cost limit pause after the tool calls of the turn it interrupted', () => {
+    const costLimit = {
+      id: 'response:cost-limit', type: 'pulpo_cost_limit' as const, status: 'continued' as const,
+      threshold_micros: 1_000_000, limit_micros: 1_000_000, cost_micros: 1_250_000, paused_at: '2026-09-24T00:00:00.000Z', agent_turn: 1,
+    }
+    const output = buildAgentOutput({
+      messages: [
+        { role: 'assistant', content: [{ type: 'toolCall', id: 't1', name: 'bash', arguments: {} }] } as never,
+        { role: 'toolResult', toolCallId: 't1', toolName: 'bash', content: [{ type: 'text', text: 'ok' }] } as never,
+        { role: 'assistant', content: [{ type: 'text', text: 'Done.' }] } as never,
+      ],
+      skipMessageCount: 0,
+      toolItems: new Map([['t1', { id: 't1', type: 'pulpo_tool', tool: 'bash', arguments: {}, status: 'completed', output: 'ok' }]]),
+      costLimitItem: costLimit,
+      terminal: true,
+    }) as Array<{ type?: string; id?: string }>
+    expect(output.map((item) => item.type)).toEqual(['pulpo_tool', 'pulpo_cost_limit', 'message'])
+  })
+
   it('interleaves reasoning, text, and tools across turns', () => {
     const tools = new Map<string, ToolTimelineItem>([
       ['t1', { id: 't1', type: 'pulpo_tool', tool: 'bash', arguments: { command: 'ping' }, status: 'completed', output: 'ok', durationMs: 1200 }],

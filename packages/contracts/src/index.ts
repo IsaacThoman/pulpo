@@ -545,6 +545,8 @@ export const costLimitItemSchema = z.object({
   limit_micros: z.number().int().positive(),
   cost_micros: z.number().int().nonnegative(),
   paused_at: isoDateSchema,
+  /** The Agent turn whose work preceded the pause; the item is shown after that turn's tool calls. */
+  agent_turn: z.number().int().positive().optional(),
 })
 export type CostLimitItem = z.infer<typeof costLimitItemSchema>
 
