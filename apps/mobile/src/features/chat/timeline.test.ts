@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { recalledChatLabel } from './recall-label'
-import { buildLegacyMessageTimeline, buildMessageTimeline, completedActivityLabel, timelineActivityIsActive } from './timeline'
+import { activityDurationMs, buildLegacyMessageTimeline, buildMessageTimeline, completedActivityLabel, timelineActivityIsActive } from './timeline'
 
 describe('buildMessageTimeline', () => {
   it('ignores empty active reasoning while ordinary answer text streams', () => {
@@ -229,5 +229,24 @@ describe('buildLegacyMessageTimeline', () => {
       { kind: 'activity', active: false, steps: [{ kind: 'reasoning', text: 'Checked the constraints', durationMs: 900 }] },
       { kind: 'text', text: 'Final answer' },
     ])
+  })
+})
+
+describe('cost limit pauses', () => {
+  it('keeps the pause record in the work block it interrupted', () => {
+    const costLimit = {
+      id: 'response:cost-limit', type: 'pulpo_cost_limit', status: 'continued', threshold_micros: 100_000,
+      limit_micros: 100_000, cost_micros: 120_000, paused_at: '2026-09-24T00:00:00.000Z', agent_turn: 1,
+    }
+    const timeline = buildMessageTimeline([
+      { type: 'pulpo_tool', id: 'tool-1', tool: 'bash', status: 'completed', output: '42', durationMs: 20 },
+      costLimit,
+      { type: 'message', content: [{ type: 'output_text', text: 'Done' }] },
+    ], true)
+
+    expect(timeline).toHaveLength(2)
+    const activity = timeline[0]
+    expect(activity?.kind === 'activity' && activity.steps.map((step) => step.kind)).toEqual(['tool', 'cost_limit'])
+    expect(activity?.kind === 'activity' && activityDurationMs(activity.steps)).toBe(20)
   })
 })

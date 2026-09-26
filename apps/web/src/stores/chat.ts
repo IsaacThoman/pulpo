@@ -336,6 +336,7 @@ interface ChatState {
   activateBranch: (chatId: string, responseId: string) => void
   stopStreaming: (responseId: string) => void
   continueWithoutAgent: (responseId: string) => Promise<void>
+  continuePastCostLimit: (responseId: string) => Promise<void>
 }
 
 function addStreamingId(ids: string[], id: string): string[] {
@@ -680,7 +681,9 @@ function cacheOptimisticTurn(input: {
     : {
         id: input.chatId,
         title: input.title,
-        modelId: input.modelId,
+        // The chat and composer keep the selected catalog model. Only the
+        // response uses the execution model chosen by a redirect preset.
+        modelId: input.displayModelId,
         pinned: false,
         folderId: null,
         sortOrder: input.temporary ? 0 : topSortOrder(looseChats(useChat.getState().chats, useChat.getState().folders)),
@@ -2111,5 +2114,9 @@ export const useChat = create<ChatState>()((set, get) => ({
   continueWithoutAgent: async (responseId) => {
     if (!responseId) return
     await optimisticRequest('POST', `/api/responses/${responseId}/continue-without-agent`)
+  },
+  continuePastCostLimit: async (responseId) => {
+    if (!responseId) return
+    await optimisticRequest('POST', `/api/responses/${responseId}/continue-past-cost-limit`)
   },
 }))

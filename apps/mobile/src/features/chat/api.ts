@@ -292,6 +292,10 @@ export async function deleteMessageCascade(id: string): Promise<void> {
   await apiRequest(`/api/messages/${id}`, { method: 'DELETE' })
 }
 
+export async function continuePastCostLimit(id: string): Promise<ResponseSnapshot> {
+  return apiRequest<ResponseSnapshot>(`/api/responses/${id}/continue-past-cost-limit`, { method: 'POST' })
+}
+
 export async function continueWithoutAgent(id: string): Promise<ResponseSnapshot> {
   const snapshot = await apiRequest<ResponseSnapshot>(`/api/responses/${id}/continue-without-agent`, { method: 'POST' })
   useRealtimeStore.getState().receiveSnapshot(snapshot)

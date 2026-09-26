@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
   applyResponseEventToSnapshot,
+  agentCostLimitMicros,
+  findCostLimitItem,
+  findCostLimitItems,
   adminUsageEventSchema,
   animationSpeedSchema,
   automaticChatExpirationSchema,
@@ -503,6 +506,7 @@ describe('shared contracts', () => {
     expect(document.account).toMatchObject({
       theme: 'system', trashRetention: '30d', automaticChatExpiration: '24h', newChatAutoExpire: false,
       nickname: '', animationSpeed: 1, showPromptSuggestions: true, showResponseCost: false, favoriteModelIds: [], agentModes: {},
+      agentCostLimitEnabled: true, agentCostLimitMicros: 1_000_000,
       instructionPresetSelections: {},
       sidebarPins: { usage: false, billing: false, friends: false, apiKeys: false },
     })
@@ -762,6 +766,41 @@ describe('response snapshot accumulation', () => {
     expect(result.output).toEqual([recall])
     expect(result.sequence).toBe(1)
     expect(() => recallItemSchema.parse({ ...recall, sources: Array(6).fill(recall.sources[0]) })).toThrow()
+  })
+
+  it('projects each Agent cost limit pause as its own output item', () => {
+    const pause = (sequence: number, limit: number, status: 'awaiting_confirmation' | 'continued') => ({
+      responseId: streamingSnapshot.responseId,
+      sequence,
+      type: 'pulpo.agent.cost_limit',
+      payload: {
+        id: `${streamingSnapshot.responseId}:cost-limit:${limit}`,
+        type: 'pulpo_cost_limit',
+        status,
+        threshold_micros: 100_000,
+        limit_micros: limit,
+        cost_micros: limit + 20_000,
+        paused_at: '2026-09-24T00:00:01.000Z',
+      },
+      emittedAt: `2026-09-24T00:00:0${sequence}.000Z`,
+    })
+    const result = [
+      pause(1, 100_000, 'awaiting_confirmation'), pause(2, 100_000, 'continued'),
+      pause(3, 200_000, 'awaiting_confirmation'),
+    ].reduce(applyResponseEventToSnapshot, streamingSnapshot)
+
+    expect(findCostLimitItems(result.output).map((item) => [item.limit_micros, item.status])).toEqual([
+      [100_000, 'continued'], [200_000, 'awaiting_confirmation'],
+    ])
+    expect(findCostLimitItem([...result.output].reverse())).toMatchObject({ limit_micros: 200_000, status: 'awaiting_confirmation' })
+    expect(findCostLimitItem([{ type: 'pulpo_cost_limit', cost_micros: 'lots' }])).toBeUndefined()
+  })
+
+  it('enables the Agent cost limit at $1 unless the account turned it off', () => {
+    expect(agentCostLimitMicros({})).toBe(1_000_000)
+    expect(agentCostLimitMicros({ agentCostLimitEnabled: false })).toBeUndefined()
+    expect(agentCostLimitMicros({ agentCostLimitEnabled: true, agentCostLimitMicros: 250_000 })).toBe(250_000)
+    expect(agentCostLimitMicros({ agentCostLimitMicros: 1 })).toBeUndefined()
   })
 
   it('accepts terminal output as authoritative', () => {

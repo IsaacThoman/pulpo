@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip as RTooltip, XAxis, YAxis } from 'recharts'
+import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip as RTooltip, XAxis, YAxis, matchByDataKey } from 'recharts'
 import type { DailyModelUsage } from '@/lib/mock'
 import { getCatalogModel } from '@/stores/catalog'
 import { formatChartNumber, formatUsd } from '@/lib/format'
@@ -15,6 +15,8 @@ const OTHER_COLOR = 'hsl(220 15% 45%)'
 const OTHER_KEY = 'other'
 const MAX_LEGEND_MODELS = 8
 const MAX_SEGMENTS_PER_DAY = 4
+/** animate bars by day so a range change keeps each day in place (recharts pairs by index otherwise) */
+const MATCH_BY_DATE = matchByDataKey('date')
 
 interface Series {
   key: string // modelId or 'other'
@@ -235,7 +237,7 @@ export function DailyUsageChart({
                 content={<ChartTip metric={metric} series={series} />}
               />
               {series.map((s) => (
-                <Bar key={s.key} dataKey={s.key} stackId="day" fill={s.color} maxBarSize={28} animationDuration={animationDuration} />
+                <Bar key={s.key} dataKey={s.key} stackId="day" fill={s.color} maxBarSize={28} animationDuration={animationDuration} animationMatchBy={MATCH_BY_DATE} />
               ))}
             </BarChart>
           </ResponsiveContainer>

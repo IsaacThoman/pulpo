@@ -15,6 +15,60 @@ describe('buildAgentOutput', () => {
     expect(output[0]).toEqual(recall)
   })
 
+  it('keeps the cost limit pause after agent work in persisted output', () => {
+    const costLimit = {
+      id: 'response:cost-limit', type: 'pulpo_cost_limit' as const, status: 'continued' as const,
+      threshold_micros: 1_000_000, limit_micros: 1_000_000, cost_micros: 1_250_000, paused_at: '2026-09-24T00:00:00.000Z',
+    }
+    const output = buildAgentOutput({
+      messages: [{ role: 'assistant', content: [{ type: 'text', text: 'Done.' }] } as never],
+      skipMessageCount: 0,
+      toolItems: new Map(),
+      costLimitItems: [costLimit],
+      terminal: true,
+    })
+    expect(output.at(-1)).toEqual(costLimit)
+  })
+
+  it('places the cost limit pause after the tool calls of the turn it interrupted', () => {
+    const costLimit = {
+      id: 'response:cost-limit', type: 'pulpo_cost_limit' as const, status: 'continued' as const,
+      threshold_micros: 1_000_000, limit_micros: 1_000_000, cost_micros: 1_250_000, paused_at: '2026-09-24T00:00:00.000Z', agent_turn: 1,
+    }
+    const output = buildAgentOutput({
+      messages: [
+        { role: 'assistant', content: [{ type: 'toolCall', id: 't1', name: 'bash', arguments: {} }] } as never,
+        { role: 'toolResult', toolCallId: 't1', toolName: 'bash', content: [{ type: 'text', text: 'ok' }] } as never,
+        { role: 'assistant', content: [{ type: 'text', text: 'Done.' }] } as never,
+      ],
+      skipMessageCount: 0,
+      toolItems: new Map([['t1', { id: 't1', type: 'pulpo_tool', tool: 'bash', arguments: {}, status: 'completed', output: 'ok' }]]),
+      costLimitItems: [costLimit],
+      terminal: true,
+    }) as Array<{ type?: string; id?: string }>
+    expect(output.map((item) => item.type)).toEqual(['pulpo_tool', 'pulpo_cost_limit', 'message'])
+  })
+
+  it('keeps every cost limit pause after the turn it interrupted', () => {
+    const pause = (limit: number, turn: number) => ({
+      id: `response:cost-limit:${limit}`, type: 'pulpo_cost_limit' as const, status: 'continued' as const,
+      threshold_micros: 100_000, limit_micros: limit, cost_micros: limit + 1, paused_at: '2026-09-24T00:00:00.000Z', agent_turn: turn,
+    })
+    const tool = (id: string) => ({ id, type: 'pulpo_tool' as const, tool: 'bash', arguments: {}, status: 'completed', output: 'ok' })
+    const call = (id: string) => ({ role: 'assistant', content: [{ type: 'toolCall', id, name: 'bash', arguments: {} }] }) as never
+    const result = (id: string) => ({ role: 'toolResult', toolCallId: id, toolName: 'bash', content: [{ type: 'text', text: 'ok' }] }) as never
+    const output = buildAgentOutput({
+      messages: [call('t1'), result('t1'), call('t2'), result('t2'), call('t3'), result('t3')],
+      skipMessageCount: 0,
+      toolItems: new Map([['t1', tool('t1')], ['t2', tool('t2')], ['t3', tool('t3')]]),
+      costLimitItems: [pause(100_000, 1), pause(200_000, 2), pause(300_000, 3)],
+      terminal: true,
+    }) as Array<{ id?: string }>
+    expect(output.map((item) => item.id)).toEqual([
+      't1', 'response:cost-limit:100000', 't2', 'response:cost-limit:200000', 't3', 'response:cost-limit:300000',
+    ])
+  })
+
   it('interleaves reasoning, text, and tools across turns', () => {
     const tools = new Map<string, ToolTimelineItem>([
       ['t1', { id: 't1', type: 'pulpo_tool', tool: 'bash', arguments: { command: 'ping' }, status: 'completed', output: 'ok', durationMs: 1200 }],

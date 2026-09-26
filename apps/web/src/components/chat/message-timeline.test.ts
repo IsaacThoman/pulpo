@@ -210,3 +210,38 @@ describe('buildTimeline', () => {
     expect(activityDurationMs(activity.steps)).toBe(500)
   })
 })
+
+describe('cost limit pauses in the timeline', () => {
+  it('keeps the pause record with the work it interrupted', () => {
+    const costLimit = {
+      id: 'response:cost-limit', type: 'pulpo_cost_limit', status: 'continued', threshold_micros: 100_000,
+      limit_micros: 100_000, cost_micros: 120_000, paused_at: '2026-09-24T00:00:00.000Z', agent_turn: 1,
+    }
+    const timeline = buildTimeline([
+      { type: 'pulpo_tool', id: 'tool-1', tool: 'bash', status: 'completed', output: '42', durationMs: 20 },
+      costLimit,
+      message('Done'),
+    ], true)
+
+    expect(timeline).toHaveLength(2)
+    const activity = timeline[0] as ActivitySegment
+    expect(activity.steps.map((step) => step.kind)).toEqual(['tool', 'cost_limit'])
+    expect(activityDurationMs(activity.steps)).toBe(20)
+    expect(timeline[1]).toEqual({ kind: 'text', text: 'Done' })
+  })
+
+  it('keeps one record per pause when the response continued several times', () => {
+    const pause = (limit: number) => ({
+      id: `response:cost-limit:${limit}`, type: 'pulpo_cost_limit', status: 'continued', threshold_micros: 100_000,
+      limit_micros: limit, cost_micros: limit + 5_000, paused_at: '2026-09-24T00:00:00.000Z',
+    })
+    const tool = (id: string) => ({ type: 'pulpo_tool', id, tool: 'bash', status: 'completed', output: '1' })
+    const timeline = buildTimeline([
+      tool('t1'), pause(100_000), tool('t2'), pause(200_000), tool('t3'), pause(300_000), tool('t4'), message('Done'),
+    ], true)
+
+    const activity = timeline[0] as ActivitySegment
+    expect(activity.steps.flatMap((step) => step.kind === 'cost_limit' ? [step.costLimit.limit_micros] : []))
+      .toEqual([100_000, 200_000, 300_000])
+  })
+})

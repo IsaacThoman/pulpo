@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
 import { BarChart3, Clock } from 'lucide-react'
 import { Link } from 'react-router-dom'
-import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip as RTooltip, XAxis, YAxis } from 'recharts'
+import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip as RTooltip, XAxis, YAxis, matchByDataKey } from 'recharts'
 import { useAuth } from '@/stores/auth'
 import { formatBalance, formatChartNumber, formatDate, formatUsd } from '@/lib/format'
 import type { Metric, MonitorUser, TimeRange } from '@/lib/types'
@@ -89,6 +89,8 @@ const AXIS_FONT_SIZE = 11
 const AXIS_LABEL_ANGLE = 35
 const AXIS_LABEL_MAX_CHARS = 20
 const Y_AXIS_WIDTH = 48
+/** animate bars by user so re-ranking slides each user's bar instead of recoloring by rank */
+const MATCH_BY_USER = matchByDataKey('userId')
 
 /** long names are ellipsized on the axis; the tooltip keeps the full name */
 function axisLabel(name: string): string {
@@ -265,6 +267,7 @@ export function LeaderboardPage({ scope = 'friends' }: { scope?: 'friends' | 'po
   const chartData = useMemo(
     () =>
       rows.map((r, i) => ({
+        userId: r.user.id,
         name: displayName(r.user),
         value: rowValue(r, metric),
         fill: barColor(r.user),
@@ -362,7 +365,7 @@ export function LeaderboardPage({ scope = 'friends' }: { scope?: 'friends' | 'po
                   }
                 />
                 <RTooltip cursor={{ fill: 'var(--muted)', fillOpacity: 0.5 }} content={<LeaderboardTip metric={metric} />} />
-                <Bar dataKey="value" radius={[3, 3, 0, 0]} maxBarSize={48} animationDuration={animationDuration}>
+                <Bar dataKey="value" radius={[3, 3, 0, 0]} maxBarSize={48} animationDuration={animationDuration} animationMatchBy={MATCH_BY_USER}>
                   {chartData.map((d) => (
                     <Cell key={d.rank} fill={d.fill} />
                   ))}

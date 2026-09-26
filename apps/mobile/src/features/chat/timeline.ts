@@ -1,4 +1,4 @@
-import type { CompactionItem, RecallItem, ToolImagePreview } from '@pulpo/contracts'
+import type { CompactionItem, CostLimitItem, RecallItem, ToolImagePreview } from '@pulpo/contracts'
 import { recalledChatLabel } from './recall-label'
 
 export type ToolItem = {
@@ -30,6 +30,7 @@ export type TimelineStep =
   | { kind: 'workspace'; workspace: WorkspaceItem }
   | { kind: 'compaction'; compaction: CompactionItem }
   | { kind: 'recall'; recall: RecallItem }
+  | { kind: 'cost_limit'; costLimit: CostLimitItem }
 
 export type TimelineSegment =
   | { kind: 'activity'; steps: TimelineStep[]; active: boolean }
@@ -146,6 +147,11 @@ export function buildMessageTimeline(output: unknown[], showReasoning: boolean):
       activity.steps.push({ kind: 'recall', recall: item as RecallItem })
       continue
     }
+    if (value.type === 'pulpo_cost_limit') {
+      activity ??= { kind: 'activity', steps: [], active: false }
+      activity.steps.push({ kind: 'cost_limit', costLimit: item as CostLimitItem })
+      continue
+    }
     if (value.type === 'pulpo_compaction') {
       flush()
       const compaction = item as CompactionItem
@@ -202,7 +208,7 @@ export function buildMessageTimeline(output: unknown[], showReasoning: boolean):
 
 export function activityDurationMs(steps: TimelineStep[]): number | undefined {
   const durations = steps.flatMap((step) => {
-    if (step.kind === 'recall') return []
+    if (step.kind === 'recall' || step.kind === 'cost_limit') return []
     if (step.kind === 'reasoning') return step.durationMs === undefined ? [] : [step.durationMs]
     const duration = step.kind === 'tool'
       ? step.tool.durationMs
