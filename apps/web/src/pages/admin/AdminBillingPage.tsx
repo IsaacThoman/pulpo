@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { AlertTriangle, CreditCard, ExternalLink, RefreshCw, Repeat2, UsersRound, WalletCards } from 'lucide-react'
-import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis, matchByDataKey } from 'recharts'
 import { apiRequest } from '@/lib/api'
 import { formatBalance, formatDate } from '@/lib/format'
 import { stripeDashboardUrl, stripePaymentUrl, stripeSubscriptionUrl, stripeWebhooksUrl, type StripeMode } from '@/lib/stripe-dashboard'
@@ -14,6 +14,8 @@ import { useSettings } from '@/stores/settings'
 import { DEFAULT_CHART_ANIMATION_DURATION_MS, scaledAnimationDuration } from '@/lib/animation-speed'
 
 type Range = '7d' | '30d' | '90d' | 'all'
+/** animate bars by full date so a range change keeps each day in place */
+const MATCH_BY_DATE = matchByDataKey('date')
 type ProductKind = 'eight' | 'fat' | 'credits' | 'unknown'
 
 const RANGES: { id: Range; label: string }[] = [
@@ -187,7 +189,7 @@ export function AdminBillingPage() {
   const data = dashboardQuery.data
   const totals = data?.totals
   const stripeMode = data?.stripe?.mode
-  const chart = data?.trend.map((row) => ({ day: row.day.slice(5, 10), collected: row.totalCents / 100 })) ?? []
+  const chart = data?.trend.map((row) => ({ date: row.day.slice(0, 10), day: row.day.slice(5, 10), collected: row.totalCents / 100 })) ?? []
   const limitsAreValid = [eightLimit, fatLimit, eightFiveHourLimit, fatFiveHourLimit, babyStorage, eightStorage, fatStorage]
     .every((value) => Number.isFinite(Number(value)) && Number(value) >= 0)
   const attention = (totals?.holds ?? 0) + (totals?.pastDue ?? 0) + (totals?.failedWebhooks ?? 0)
@@ -257,7 +259,7 @@ export function AdminBillingPage() {
                 <XAxis dataKey="day" tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }} tickLine={false} axisLine={{ stroke: 'var(--border)' }} minTickGap={30} />
                 <YAxis tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }} tickLine={false} axisLine={{ stroke: 'var(--border)' }} width={48} tickFormatter={(value: number) => axisCost(value)} />
                 <Tooltip cursor={{ fill: 'var(--muted)', fillOpacity: 0.5 }} content={<ChartTip />} />
-                <Bar dataKey="collected" fill="hsl(160 60% 45%)" maxBarSize={28} animationDuration={animationDuration} />
+                <Bar dataKey="collected" fill="hsl(160 60% 45%)" maxBarSize={28} animationDuration={animationDuration} animationMatchBy={MATCH_BY_DATE} />
               </BarChart>
             </ResponsiveContainer>
           </div>
