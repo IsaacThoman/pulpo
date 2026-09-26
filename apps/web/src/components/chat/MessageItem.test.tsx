@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, onTestFinished } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import type { Chat, Message } from '@/lib/types'
@@ -520,6 +520,89 @@ describe('workspace continue timing', () => {
     />)
 
     expect(markup).not.toContain('Continue without agent')
+  })
+})
+
+describe('agent cost limit pause', () => {
+  const pause = {
+    id: 'response-1:cost-limit', type: 'pulpo_cost_limit', status: 'awaiting_confirmation', threshold_micros: 1_000_000,
+    limit_micros: 1_000_000, cost_micros: 1_250_000, paused_at: '2026-09-24T00:00:00.000Z',
+  }
+
+  it('asks to continue or cancel while paused, even with reasoning hidden', async () => {
+    useSettings.setState({ showReasoning: false })
+    const { useChat } = await import('@/stores/chat')
+    const actions: string[] = []
+    const { stopStreaming, continuePastCostLimit } = useChat.getState()
+    useChat.setState({
+      stopStreaming: (id: string) => { actions.push(`stop:${id}`) },
+      continuePastCostLimit: async (id: string) => { actions.push(`continue:${id}`) },
+    })
+    onTestFinished(() => useChat.setState({ stopStreaming, continuePastCostLimit }))
+    const { MessageItem } = await import('./MessageItem')
+    const view = render(<MessageItem
+      chat={chat}
+      message={assistant({
+        done: false,
+        outputItems: [{ type: 'message', content: [{ type: 'output_text', text: 'Working on it' }] }, pause],
+      })}
+      streaming
+      onRegenerate={() => undefined}
+    />)
+
+    expect(view.getByRole('status').textContent).toBe('Paused at $1.25, over your $1.00 cost limit')
+    expect(view.container.textContent).not.toContain('pulpo cost limit')
+    fireEvent.click(view.getByRole('button', { name: 'Continue' }))
+    expect(view.getByRole('button', { name: 'Continuing…' })).toHaveProperty('disabled', true)
+    fireEvent.click(view.getByRole('button', { name: 'Cancel generation' }))
+    expect(actions).toEqual(['continue:response-1', 'stop:response-1'])
+  })
+
+  it('shows the pause once, in the work summary header, when reasoning is visible', async () => {
+    const { MessageItem } = await import('./MessageItem')
+    const view = render(<MessageItem
+      chat={chat}
+      message={assistant({
+        done: false,
+        outputItems: [{ type: 'pulpo_tool', id: 'tool-1', tool: 'bash', status: 'completed', output: '42' }, pause],
+      })}
+      streaming
+      onRegenerate={() => undefined}
+    />)
+
+    expect(view.getByRole('button', { name: /Paused at \$1\.25, over your \$1\.00 cost limit/ })).toBeTruthy()
+    expect(view.container.textContent?.match(/Paused at/g)).toHaveLength(1)
+    expect(view.queryByRole('status')).toBeNull()
+    expect(view.getByRole('button', { name: 'Continue' })).toBeTruthy()
+  })
+
+  it('records the outcome inside the collapsed work summary after the pause resolves', async () => {
+    const { MessageItem } = await import('./MessageItem')
+    const view = (item: typeof pause, streaming: boolean) => render(<MessageItem
+      chat={chat}
+      message={assistant({
+        done: !streaming,
+        content: 'Done',
+        outputItems: [
+          { type: 'pulpo_tool', id: 'tool-1', tool: 'bash', status: 'completed', output: '42' },
+          item,
+          { type: 'message', content: [{ type: 'output_text', text: 'Done' }] },
+        ],
+      })}
+      streaming={streaming}
+      onRegenerate={() => undefined}
+    />)
+
+    const continued = view({ ...pause, status: 'continued' }, false)
+    expect(continued.container.textContent).not.toContain('cost limit')
+    expect(continued.queryByRole('button', { name: 'Cancel generation' })).toBeNull()
+    fireEvent.click(continued.getByRole('button', { name: /Worked/ }))
+    expect(continued.container.textContent).toContain('Continued past your $1.00 cost limit')
+    cleanup()
+
+    const stopped = view(pause, false)
+    fireEvent.click(stopped.getByRole('button', { name: /Worked/ }))
+    expect(stopped.container.textContent).toContain('Stopped at your $1.00 cost limit')
   })
 })
 

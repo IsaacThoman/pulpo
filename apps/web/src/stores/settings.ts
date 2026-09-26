@@ -1,4 +1,4 @@
-import { imageGenerationPreferencesSchema, type ImageGenerationPreferences, speechPreferencesSchema, type SpeechPreferences } from '@pulpo/contracts'
+import { DEFAULT_AGENT_COST_LIMIT_MICROS, imageGenerationPreferencesSchema, type ImageGenerationPreferences, speechPreferencesSchema, type SpeechPreferences } from '@pulpo/contracts'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { PROFILE_CHANGE_EVENT } from '@/lib/profile-events'
@@ -39,6 +39,9 @@ export interface SettingsState {
   modelWarningDismissals: ModelWarningDismissals
   showReasoning: boolean
   showResponseCost: boolean
+  /** Pause Agent responses for confirmation each time their accrued cost passes this limit. */
+  agentCostLimitEnabled: boolean
+  agentCostLimitMicros: number
   chatWidth: 'full' | 'narrow'
   animationSpeed: number
   customInstructions: string
@@ -79,6 +82,8 @@ export const DEFAULT_SETTINGS = {
   modelWarningDismissals: {} as ModelWarningDismissals,
   showReasoning: true,
   showResponseCost: false,
+  agentCostLimitEnabled: true,
+  agentCostLimitMicros: DEFAULT_AGENT_COST_LIMIT_MICROS,
   chatWidth: 'narrow' as const,
   animationSpeed: DEFAULT_ANIMATION_SPEED,
   customInstructions: '',

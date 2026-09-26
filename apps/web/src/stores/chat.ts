@@ -336,6 +336,7 @@ interface ChatState {
   activateBranch: (chatId: string, responseId: string) => void
   stopStreaming: (responseId: string) => void
   continueWithoutAgent: (responseId: string) => Promise<void>
+  continuePastCostLimit: (responseId: string) => Promise<void>
 }
 
 function addStreamingId(ids: string[], id: string): string[] {
@@ -2113,5 +2114,9 @@ export const useChat = create<ChatState>()((set, get) => ({
   continueWithoutAgent: async (responseId) => {
     if (!responseId) return
     await optimisticRequest('POST', `/api/responses/${responseId}/continue-without-agent`)
+  },
+  continuePastCostLimit: async (responseId) => {
+    if (!responseId) return
+    await optimisticRequest('POST', `/api/responses/${responseId}/continue-past-cost-limit`)
   },
 }))

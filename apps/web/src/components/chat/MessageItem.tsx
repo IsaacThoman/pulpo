@@ -23,12 +23,14 @@ import {
   Minimize2,
   History,
   ExternalLink,
+  Pause,
+  StepForward,
 } from 'lucide-react'
-import { workspaceContinueWithoutAgentAvailableAtMs, type CompactionItem, type RecallItem } from '@pulpo/contracts'
+import { findCostLimitItem, workspaceContinueWithoutAgentAvailableAtMs, type CompactionItem, type CostLimitItem, type RecallItem } from '@pulpo/contracts'
 import type { Chat, Message } from '@/lib/types'
 import { hasMultipleBranches } from '@/lib/message-branches'
 import { getCatalogModel } from '@/stores/catalog'
-import { formatDuration, formatSecondsLabel, timeAgo } from '@/lib/format'
+import { formatCost, formatDuration, formatSecondsLabel, timeAgo } from '@/lib/format'
 import { useChat } from '@/stores/chat'
 import { selectAvailableChatIds } from '@/lib/chat-availability'
 import { useSettings } from '@/stores/settings'
@@ -216,6 +218,62 @@ function ActivityToolRow({ tool }: { tool: ToolItem }) {
   )
 }
 
+function costLimitStepLabel(item: CostLimitItem, live: boolean): string {
+  const limit = formatCost(item.limit_micros / 1_000_000)
+  if (item.status === 'continued') return ui("Continued past your {{limit}} cost limit", { limit })
+  return live
+    ? ui("Paused at {{cost}}, over your {{limit}} cost limit", { cost: formatCost(item.cost_micros / 1_000_000), limit })
+    : ui("Stopped at your {{limit}} cost limit", { limit })
+}
+
+function CostLimitStepRow({ item, live }: { item: CostLimitItem; live: boolean }) {
+  const Icon = item.status === 'continued' ? StepForward : Pause
+  return (
+    <div className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
+      <Icon className="size-3 shrink-0" />
+      <span className="min-w-0 flex-1">{costLimitStepLabel(item, live)}</span>
+    </div>
+  )
+}
+
+/** Continue/Cancel actions for a paused response; the label is shown here only when no work summary carries it. */
+function CostLimitPrompt({
+  item,
+  showLabel,
+  onStop,
+  onContinue,
+}: {
+  item: CostLimitItem
+  showLabel: boolean
+  onStop: () => void
+  onContinue: () => Promise<void>
+}) {
+  const [pending, setPending] = useState(false)
+  return (
+    <div className="space-y-1.5">
+      {showLabel && (
+        <div role="status" className="flex min-w-0 items-center gap-1.5 text-xs font-medium text-muted-foreground">
+          <Pause className="size-3.5 shrink-0" />
+          <span className="min-w-0">{costLimitStepLabel(item, true)}</span>
+        </div>
+      )}
+      <div className="flex flex-wrap gap-2">
+        <Button size="sm" variant="outline" onClick={onStop}> {ui("Cancel generation")} </Button>
+        <Button
+          size="sm"
+          disabled={pending}
+          onClick={() => {
+            setPending(true)
+            void onContinue().catch(() => setPending(false))
+          }}
+        >
+          {pending ? ui("Continuing…") : ui("Continue")}
+        </Button>
+      </div>
+    </div>
+  )
+}
+
 function CompactionStepRow({ item }: { item: CompactionItem }) {
   const [open, setOpen] = useState(false)
   const active = item.status === 'in_progress'
@@ -398,6 +456,10 @@ function ActivityBlock({
   const compaction = steps.find((step) => step.kind === 'compaction')?.compaction
   const recall = steps.find((step) => step.kind === 'recall')?.recall
   const tools = steps.flatMap((step) => (step.kind === 'tool' ? [step.tool] : []))
+  const lastStep = steps.at(-1)
+  const pausedCostLimit = active && lastStep?.kind === 'cost_limit' && lastStep.costLimit.status === 'awaiting_confirmation'
+    ? lastStep.costLimit
+    : undefined
   const hasReasoning = steps.some((step) => step.kind === 'reasoning' && step.text)
   const workspaceBusy = workspaceIsActive(workspace?.state)
   const workspaceFailed = workspaceIsFailed(workspace?.state)
@@ -441,6 +503,7 @@ function ActivityBlock({
     if (workspace?.state === 'continuing_without_agent' && !hasTools && !hasReasoning && !active) {
       return workspaceLabel(workspace)
     }
+    if (pausedCostLimit) return costLimitStepLabel(pausedCostLimit, true)
     if (runningTool) return toolActivityPresentation(runningTool.tool).label
     if (active && hasTools) return ui("Working…")
     if (active) return ui("Thinking…")
@@ -467,6 +530,7 @@ function ActivityBlock({
       return <Server className="size-3.5 shrink-0 animate-pulse" />
     }
     if (workspaceFailed) return <XCircle className="size-3.5 shrink-0 text-destructive" />
+    if (pausedCostLimit) return <Pause className="size-3.5 shrink-0" />
     if (runningTool) {
       const Icon = toolActivityPresentation(runningTool.tool).icon
       return <Icon className="size-3.5 shrink-0 animate-pulse" />
@@ -508,6 +572,9 @@ function ActivityBlock({
               }
               if (step.kind === 'recall') {
                 return <RecallStepRow key={step.recall.id} item={step.recall} onOpenChat={onOpenChat} />
+              }
+              if (step.kind === 'cost_limit') {
+                return <CostLimitStepRow key={step.costLimit.id} item={step.costLimit} live={active} />
               }
               return (
                 <ActivityToolRow
@@ -563,6 +630,7 @@ export const MessageItem = memo(function MessageItem({
   const deleteUserMessage = useChat((state) => state.deleteUserMessage)
   const stopStreaming = useChat((state) => state.stopStreaming)
   const continueWithoutAgent = useChat((state) => state.continueWithoutAgent)
+  const continuePastCostLimit = useChat((state) => state.continuePastCostLimit)
   const returnSubmissionToComposer = useUploadOutbox((state) => state.returnSubmissionToComposer)
   const showReasoning = useSettings((s) => s.showReasoning)
   const showResponseCost = useSettings((s) => s.showResponseCost)
@@ -696,8 +764,9 @@ export const MessageItem = memo(function MessageItem({
   const outputItems = message.outputItems ?? []
   const otherItems = outputItems.filter((item) => {
     const type = (item as { type?: string }).type
-    return type && !['message', 'reasoning', 'pulpo_tool', 'pulpo_workspace', 'pulpo_attachment', 'pulpo_compaction', 'pulpo_recall'].includes(type)
+    return type && !['message', 'reasoning', 'pulpo_tool', 'pulpo_workspace', 'pulpo_attachment', 'pulpo_compaction', 'pulpo_recall', 'pulpo_cost_limit'].includes(type)
   })
+  const costLimit = findCostLimitItem(outputItems)
   const lastActivityIndex = activitySegments.length - 1
   const hasVisibleBody = timeline.length > 0 || Boolean(message.error)
   let activityOrdinal = -1
@@ -809,6 +878,16 @@ export const MessageItem = memo(function MessageItem({
               </details>
             )
           })}
+
+          {!editing && streaming && costLimit?.status === 'awaiting_confirmation' && (
+            <CostLimitPrompt
+              key={costLimit.limit_micros}
+              item={costLimit}
+              showLabel={!timeline.some((segment) => segment.kind === 'activity' && segment.steps.some((step) => step.kind === 'cost_limit'))}
+              onStop={() => stopStreaming(message.id)}
+              onContinue={() => continuePastCostLimit(message.id)}
+            />
+          )}
 
           {!editing && message.error && (
             <div role="alert" className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
