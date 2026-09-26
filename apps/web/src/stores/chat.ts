@@ -681,7 +681,9 @@ function cacheOptimisticTurn(input: {
     : {
         id: input.chatId,
         title: input.title,
-        modelId: input.modelId,
+        // The chat and composer keep the selected catalog model. Only the
+        // response uses the execution model chosen by a redirect preset.
+        modelId: input.displayModelId,
         pinned: false,
         folderId: null,
         sortOrder: input.temporary ? 0 : topSortOrder(looseChats(useChat.getState().chats, useChat.getState().folders)),
