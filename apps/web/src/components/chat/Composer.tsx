@@ -261,7 +261,13 @@ export function Composer({
   const [draftPresets, setDraftPresets] = useState<Record<string, Record<string, string>>>(() => (
     initialControls?.presetSelections ? { [modelId]: initialControls.presetSelections } : {}
   ))
-  const setPresetChoice = (id: string, preset: string, choice: string) => setDraftPresets((current) => ({ ...current, [id]: { ...generation[id], ...current[id], [preset]: choice } }))
+  const setPresetChoice = (id: string, preset: string, choice: string) => {
+    setDraftPresets((current) => ({ ...current, [id]: { ...generation[id], ...current[id], [preset]: choice } }))
+    // Explicit choices in the regular new-chat composer become model defaults,
+    // even when shared drafts are disabled or unavailable. Existing chats and
+    // temporary drafts retain their independent controls.
+    if (!chatId && !temporary) useSettings.getState().setPresetChoice(id, preset, choice)
+  }
   const defaultAgentMode = useSettings((s) => s.agentModes[modelId] ?? true)
   const [draftAgentMode, setDraftAgentMode] = useState<boolean | null>(initialControls?.agentMode ?? null)
   const agentModeEnabled = draftAgentMode ?? defaultAgentMode
