@@ -71,6 +71,16 @@ function VirtualMessages({ viewport, ...props }: MessageListProps & { viewport: 
   const { history, loading, error, load } = historyState
   const context = { ...historyState, ready }
   const bottomFrame = useRef<number | null>(null)
+  // Follow changing estimates during opening too. Waiting for ready here can leave the
+  // newest row outside the viewport forever, since seeing that row is what marks it ready.
+  const settleBottom = useCallback(() => {
+    if (!stickToBottom.current) return
+    if (bottomFrame.current !== null) cancelAnimationFrame(bottomFrame.current)
+    bottomFrame.current = requestAnimationFrame(() => {
+      bottomFrame.current = null
+      if (stickToBottom.current) viewport.scrollTop = viewport.scrollHeight
+    })
+  }, [viewport])
   const confirmBottom = useRef(() => {})
   const currentIds = useRef(ids)
   currentIds.current = ids
@@ -92,8 +102,6 @@ function VirtualMessages({ viewport, ...props }: MessageListProps & { viewport: 
     let resizeTimer: ReturnType<typeof setTimeout> | undefined
     let resizing = false
     let previousTop = viewport.scrollTop
-    let measuredHeight = viewport.scrollHeight
-    let measuredViewport = viewport.clientHeight
     // Confirm the rendered bottom as well; warming must not depend on receiving
     // a single initial endReached notification from the virtualizer.
     let initialBottomObserved = false
@@ -118,26 +126,46 @@ function VirtualMessages({ viewport, ...props }: MessageListProps & { viewport: 
     const onScroll = () => {
       if (resizing || content.getBoundingClientRect().width !== width) return
       markInitialBottom()
-      const nearBottom = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < 96
-      const geometryChanged = viewport.scrollHeight !== measuredHeight || viewport.clientHeight !== measuredViewport
+      const bottomGap = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight
       // Measurement corrections also emit scroll events; they are not an instruction to stop following.
-      if (nearBottom && (stickToBottom.current || viewport.scrollTop > previousTop)) stickToBottom.current = true
-      else if (!nearBottom && !geometryChanged) stickToBottom.current = false
+      // A reader rejoins only by reaching the end: re-arming within a tolerance snaps the last stretch.
+      if (bottomGap <= 1 && viewport.scrollTop > previousTop) stickToBottom.current = true
+      if (bottomGap > 1) settleBottom()
       previousTop = viewport.scrollTop
-      measuredHeight = viewport.scrollHeight
-      measuredViewport = viewport.clientHeight
       cancelAnimationFrame(captureFrame)
       captureFrame = requestAnimationFrame(captureAnchor)
     }
-    // Capture before the virtualizer measures newly visible rows and corrects its height estimates.
+    // Scroll events cannot distinguish reading from the virtualizer's delayed index/height
+    // corrections. Release bottom following on reader input, before those corrections run.
+    const stopFollowing = () => {
+      stickToBottom.current = false
+      previousTop = viewport.scrollTop
+    }
     const onWheel = (event: WheelEvent) => {
-      if (event.deltaY < 0 && viewport.scrollTop > 0) {
-        stickToBottom.current = false
-        previousTop = viewport.scrollTop
-      }
+      if (event.deltaY < 0) stopFollowing()
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) return
+      if ((event.target as HTMLElement).closest('input, textarea, select, button, [contenteditable="true"], [role="textbox"]')) return
+      if (['ArrowUp', 'PageUp', 'Home'].includes(event.key) || (event.key === ' ' && event.shiftKey)) stopFollowing()
+    }
+    let touchY = 0
+    const onTouchStart = (event: TouchEvent) => { touchY = event.touches[0]?.clientY ?? 0 }
+    const onTouchMove = (event: TouchEvent) => {
+      const nextY = event.touches[0]?.clientY ?? touchY
+      if (nextY > touchY) stopFollowing()
+      touchY = nextY
+    }
+    const scrollArea = viewport.closest('[data-slot="scroll-area"]')
+    const onPointerDown = (event: Event) => {
+      if ((event.target as HTMLElement).closest('[data-slot="scroll-area-scrollbar"]')) stopFollowing()
     }
     viewport.addEventListener('scroll', onScroll, { passive: true, capture: true })
     viewport.addEventListener('wheel', onWheel, { passive: true, capture: true })
+    viewport.addEventListener('keydown', onKeyDown)
+    viewport.addEventListener('touchstart', onTouchStart, { passive: true })
+    viewport.addEventListener('touchmove', onTouchMove, { passive: true })
+    scrollArea?.addEventListener('pointerdown', onPointerDown, { capture: true })
     const observer = new ResizeObserver(() => {
       markInitialBottom()
       const nextWidth = content.getBoundingClientRect().width
@@ -178,20 +206,17 @@ function VirtualMessages({ viewport, ...props }: MessageListProps & { viewport: 
     return () => {
       viewport.removeEventListener('scroll', onScroll, true)
       viewport.removeEventListener('wheel', onWheel, true)
+      viewport.removeEventListener('keydown', onKeyDown)
+      viewport.removeEventListener('touchstart', onTouchStart)
+      viewport.removeEventListener('touchmove', onTouchMove)
+      scrollArea?.removeEventListener('pointerdown', onPointerDown, true)
       observer.disconnect()
       rows.disconnect()
       cancelAnimationFrame(captureFrame)
       clearTimeout(resizeTimer)
       if (bottomFrame.current !== null) cancelAnimationFrame(bottomFrame.current)
     }
-  }, [viewport, hasMessages, lineage.current.version])
-  const settleBottom = useCallback(() => {
-    if (!ready || !stickToBottom.current) return
-    if (bottomFrame.current !== null) cancelAnimationFrame(bottomFrame.current)
-    bottomFrame.current = requestAnimationFrame(() => {
-      if (stickToBottom.current) viewport.scrollTop = viewport.scrollHeight
-    })
-  }, [ready, viewport])
+  }, [viewport, hasMessages, lineage.current.version, settleBottom])
   useEffect(settleBottom, [ids.length, settleBottom])
   const firstIndex = 1 + (history?.offset ?? 0) * 2
   // endReached also fires for the probe row, so it only triggers the geometry check.
