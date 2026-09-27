@@ -16,6 +16,7 @@ import {
   timestamp,
   uniqueIndex,
   uuid,
+  type AnyPgColumn,
 } from 'drizzle-orm/pg-core'
 
 const halfvec = customType<{ data: number[]; driverData: string }>({
@@ -815,6 +816,40 @@ export const userMemoryDocumentRevisions = pgTable('user_memory_document_revisio
   check('user_memory_document_revisions_content_length_check', sql`char_length(${table.content}) <= 16000`),
   check('user_memory_document_revisions_revision_check', sql`${table.revision} >= 0`),
   check('user_memory_document_revisions_editor_check', sql`${table.editor} in ('user', 'agent')`),
+])
+
+/** Account-owned Files tree. Distinct from `folders`, which only groups chats. */
+export const fileNodes = pgTable('file_nodes', {
+  id: uuid('id').primaryKey(),
+  // Access always resolves through the owner today; sharing will add grants beside it.
+  ownerUserId: uuid('owner_user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  parentId: uuid('parent_id').references((): AnyPgColumn => fileNodes.id, { onDelete: 'cascade' }),
+  kind: text('kind').notNull(),
+  name: text('name').notNull(),
+  status: text('status').notNull().default('ready'),
+  mimeType: text('mime_type'),
+  sizeBytes: bigint('size_bytes', { mode: 'number' }).notNull().default(0),
+  objectKey: text('object_key'),
+  checksum: text('checksum'),
+  trashedAt: timestamp('trashed_at', { withTimezone: true }),
+  // The node the user trashed; its whole subtree shares this id so restore returns the batch.
+  trashRootId: uuid('trash_root_id'),
+  revision: integer('revision').notNull().default(0),
+  ...timestamps,
+}, (table) => [
+  uniqueIndex('file_nodes_live_name_unique').on(
+    table.ownerUserId,
+    sql`coalesce(${table.parentId}, '00000000-0000-0000-0000-000000000000'::uuid)`,
+    sql`lower(${table.name})`,
+  ).where(sql`${table.trashedAt} is null`),
+  index('file_nodes_owner_parent_idx').on(table.ownerUserId, table.parentId).where(sql`${table.trashedAt} is null`),
+  index('file_nodes_owner_trash_idx').on(table.ownerUserId, table.trashRootId).where(sql`${table.trashedAt} is not null`),
+  index('file_nodes_object_key_idx').on(table.objectKey),
+  check('file_nodes_kind_check', sql`${table.kind} in ('folder', 'doc', 'blob')`),
+  check('file_nodes_status_check', sql`${table.status} in ('pending', 'ready')`),
+  check('file_nodes_name_check', sql`char_length(${table.name}) between 1 and 255`),
+  check('file_nodes_size_check', sql`${table.sizeBytes} >= 0`),
+  check('file_nodes_blob_check', sql`(${table.kind} = 'blob') = (${table.objectKey} is not null)`),
 ])
 
 export const episodicMemoryGenerations = pgTable('episodic_memory_generations', {

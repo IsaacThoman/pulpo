@@ -7,6 +7,7 @@ import {
   CreditCard,
   ChevronRight,
   Folder as FolderIcon,
+  FolderOpen,
   FolderInput,
   Hourglass,
   KeyRound,
@@ -743,6 +744,7 @@ export function Sidebar({
   })
   const pendingSocialCount = (pendingFriendsQuery.data?.count ?? 0) + (pendingPoolsQuery.data?.count ?? 0)
   const apiKeysEnabled = useAuth((s) => s.apiKeysEnabled)
+  const filesEnabled = useAuth((s) => s.filesEnabled)
   const billingEnabled = useAuth((s) => s.billingEnabled)
   const billingQuery = useQuery({
     queryKey: ['billing', user?.id],
@@ -1023,6 +1025,7 @@ export function Sidebar({
         <div className="space-y-0.5 px-2">
           {iconBtn(t('chat.newChat'), startNewChat, <SquarePen className="size-4" />)}
           {iconBtn(t('sidebar.searchChats'), onOpenSearch, <Search className="size-4" />)}
+          {filesEnabled && iconBtn(t('sidebar.files'), () => go('/files'), <FolderOpen className="size-4" />)}
           {sidebarPins.usage && iconBtn(t('sidebar.usage'), () => go('/usage'), <BarChart3 className="size-4" />)}
           {billingEnabled && sidebarPins.billing && iconBtn(t('sidebar.billing'), () => go('/billing'), <CreditCard className="size-4" />)}
           {sidebarPins.friends && iconBtn(t('sidebar.friends'), () => go('/friends'), <UsersRound className="size-4" />, pendingSocialCount)}

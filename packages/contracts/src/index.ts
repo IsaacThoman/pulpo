@@ -1344,6 +1344,7 @@ export const authSettingsSchema = z.object({
   pendingMessage: z.string().max(2_000).default('Your account is pending approval. An admin will review it shortly.'),
   defaultSignupRole: z.enum(['pending', 'user']).default('pending'),
   apiKeysEnabled: z.boolean().default(true),
+  filesEnabled: z.boolean().default(true),
   inviteCodesEnabled: z.boolean().default(false),
   newAccountModelDefaults: newAccountModelDefaultsSchema.default(() => newAccountModelDefaultsSchema.parse({})),
 })
@@ -1849,7 +1850,7 @@ export const syncRequestSchema = z.object({
 })
 export type SyncRequest = z.infer<typeof syncRequestSchema>
 
-export const stateInvalidationScopeSchema = z.enum(['chats', 'folders', 'models', 'usage', 'settings', 'friends', 'pool', 'billing', 'shelved-drafts'])
+export const stateInvalidationScopeSchema = z.enum(['chats', 'folders', 'models', 'usage', 'settings', 'friends', 'pool', 'billing', 'shelved-drafts', 'files'])
 export type StateInvalidationScope = z.infer<typeof stateInvalidationScopeSchema>
 
 export const syncResultSchema = z.object({
@@ -1892,3 +1893,4 @@ export interface ServerToClientEvents {
 }
 
 export * from "./shelf.js"
+export * from "./files.js"

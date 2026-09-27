@@ -6,6 +6,11 @@ import { pipeline } from 'node:stream/promises'
 import path from 'node:path'
 import type { BlobMetadata, BlobStore } from './blob-store.js'
 
+/** Local URLs are served by the API route that owns the object's metadata table. */
+export function localObjectRouteBase(key: string): '/api/files' | '/api/attachments' {
+  return /^users\/[^/]+\/files\//.test(key) ? '/api/files' : '/api/attachments'
+}
+
 export class LocalBlobStore implements BlobStore {
   constructor(private readonly root: string) {}
 
@@ -48,10 +53,10 @@ export class LocalBlobStore implements BlobStore {
   }
 
   async createUploadUrl(key: string): Promise<string> {
-    return `/api/attachments/local-upload/${encodeURIComponent(key)}`
+    return `${localObjectRouteBase(key)}/local-upload/${encodeURIComponent(key)}`
   }
 
   async createDownloadUrl(key: string): Promise<string> {
-    return `/api/attachments/local-download/${encodeURIComponent(key)}`
+    return `${localObjectRouteBase(key)}/local-download/${encodeURIComponent(key)}`
   }
 }

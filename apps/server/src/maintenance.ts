@@ -9,6 +9,7 @@ import {
 } from './database/schema.js'
 import { getBlobStore } from './storage/index.js'
 import { expireNormalChats, markExpiredChatsForPurge, purgePendingChats } from './chats/trash.js'
+import { cleanupFiles } from './files/tree-service.js'
 import { sanitizeContextForStorage } from './responses/public-output.js'
 import { persistResponseItems } from './responses/storage.js'
 import { parseBackupSettings, parseWebToolsSettings, publicWebToolsSettings } from './settings/application-settings.js'
@@ -119,6 +120,7 @@ export async function runCleanup(): Promise<void> {
   const abandoned = await db.select().from(attachments).where(and(eq(attachments.status, 'pending'), lt(attachments.createdAt, abandonedBefore)))
   for (const attachment of abandoned) await getBlobStore().delete(attachment.objectKey).catch(() => undefined)
   if (abandoned.length) await db.update(attachments).set({ status: 'deleted', updatedAt: now }).where(inArray(attachments.id, abandoned.map((row) => row.id)))
+  await cleanupFiles(now)
   await expireNormalChats(now)
   await markExpiredChatsForPurge(now)
   await db.delete(sessions).where(lt(sessions.expiresAt, now))

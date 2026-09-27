@@ -154,6 +154,7 @@ const enUS = {
     createFolder: 'Create folder',
     expand: 'Expand sidebar',
     folderName: 'Folder name',
+    files: 'Files',
     friends: 'Friends',
     logout: 'Log out',
     newFolder: 'New folder',

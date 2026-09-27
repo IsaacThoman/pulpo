@@ -98,7 +98,7 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
       .from(applicationSettings)
       .where(inArray(applicationSettings.key, ['auth', 'dictation', 'codex']))
     const byKey = new Map(rows.map((row) => [row.key, row.value]))
-    const { accountDeletionEnabled, signupEnabled, pendingDetails, adminEmail, pendingMessage, apiKeysEnabled, maxAttachmentBytes, maxInlineImages, inviteCodesEnabled } = parseAuthSettings(byKey.get('auth'))
+    const { accountDeletionEnabled, signupEnabled, pendingDetails, adminEmail, pendingMessage, apiKeysEnabled, filesEnabled, maxAttachmentBytes, maxInlineImages, inviteCodesEnabled } = parseAuthSettings(byKey.get('auth'))
     const dictation = parseDictationSettings(byKey.get('dictation'))
     const billingEnabled = getConfig().PULPO_BILLING_ENABLED
     return {
@@ -109,6 +109,7 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
       adminEmail,
       pendingMessage,
       apiKeysEnabled,
+      filesEnabled,
       maxAttachmentBytes,
       maxInlineImages,
       billingEnabled,

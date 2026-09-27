@@ -48,6 +48,7 @@ interface PublicAuthSettings {
   adminEmail: string
   pendingMessage: string
   apiKeysEnabled: boolean
+  filesEnabled: boolean
   maxInlineImages: number
   maxAttachmentBytes: number
   billingEnabled: boolean
@@ -67,6 +68,7 @@ interface AuthState {
   adminEmail: string
   pendingMessage: string
   apiKeysEnabled: boolean
+  filesEnabled: boolean
   maxInlineImages: number
   maxAttachmentBytes: number
   billingEnabled: boolean
@@ -131,6 +133,7 @@ export const useAuth = create<AuthState>()((set, get) => ({
   adminEmail: '',
   pendingMessage: 'Your account is pending approval. An admin will review it shortly.',
   apiKeysEnabled: true,
+  filesEnabled: true,
   maxInlineImages: DEFAULT_MAX_INLINE_IMAGES,
   maxAttachmentBytes: DEFAULT_MAX_ATTACHMENT_BYTES,
   billingEnabled: false,
@@ -198,6 +201,7 @@ export const useAuth = create<AuthState>()((set, get) => ({
           adminEmail: config.auth.adminEmail,
           pendingMessage: config.auth.pendingMessage,
           apiKeysEnabled: true,
+          filesEnabled: true,
           maxAttachmentBytes: config.limits.maxAttachmentBytes,
           maxInlineImages: config.limits.maxInlineImages ?? DEFAULT_MAX_INLINE_IMAGES,
           billingEnabled: false,
@@ -269,6 +273,7 @@ export const useAuth = create<AuthState>()((set, get) => ({
         adminEmail: get().adminEmail,
         pendingMessage: get().pendingMessage,
         apiKeysEnabled: get().apiKeysEnabled,
+        filesEnabled: get().filesEnabled,
         maxAttachmentBytes: get().maxAttachmentBytes,
         maxInlineImages: get().maxInlineImages,
         billingEnabled: get().billingEnabled,
@@ -435,6 +440,7 @@ export const useAuth = create<AuthState>()((set, get) => ({
         adminEmail: config.auth.adminEmail,
         pendingMessage: config.auth.pendingMessage,
         apiKeysEnabled: true,
+        filesEnabled: true,
         maxAttachmentBytes: config.limits.maxAttachmentBytes,
         maxInlineImages: config.limits.maxInlineImages ?? DEFAULT_MAX_INLINE_IMAGES,
         billingEnabled: false,

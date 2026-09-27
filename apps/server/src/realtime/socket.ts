@@ -41,6 +41,7 @@ export const FULL_STATE_INVALIDATION_SCOPES: StateInvalidationScope[] = [
   'pool',
   'billing',
   'shelved-drafts',
+  'files',
 ]
 
 export function cookieValue(header: string | undefined, name: string): string | undefined {

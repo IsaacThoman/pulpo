@@ -160,6 +160,7 @@ const esES = {
     createFolder: 'Crear carpeta',
     expand: 'Expandir barra lateral',
     folderName: 'Nombre de la carpeta',
+    files: 'Archivos',
     friends: 'Amigos',
     logout: 'Cerrar sesión',
     newFolder: 'Nueva carpeta',

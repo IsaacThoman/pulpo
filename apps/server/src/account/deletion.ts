@@ -1,6 +1,6 @@
 import { and, eq, inArray, isNotNull, isNull, ne, sql } from 'drizzle-orm'
 import { db } from '../database/client.js'
-import { apiKeys, applicationSettings, auditEvents, attachments, backupJobs, budgetReservationFunders, budgetReservations, chats, chatShares, exportJobs, managementTokens, poolInvitations, poolMembers, pools, queuedMessages, responses, sessions, users, workspaceLeases } from '../database/schema.js'
+import { apiKeys, applicationSettings, auditEvents, attachments, backupJobs, budgetReservationFunders, budgetReservations, chats, chatShares, exportJobs, fileNodes, managementTokens, poolInvitations, poolMembers, pools, queuedMessages, responses, sessions, users, workspaceLeases } from '../database/schema.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import { parseAuthSettings } from '../settings/application-settings.js'
@@ -109,8 +109,10 @@ export async function deleteAccountData(userId: string): Promise<void> {
       throw new Error('Waiting for outstanding upload URLs to expire before final cleanup.')
     }
     const files = await db.select({ key: attachments.objectKey }).from(attachments).where(eq(attachments.userId, userId))
+    const fileBlobs = await db.select({ key: fileNodes.objectKey }).from(fileNodes).where(and(eq(fileNodes.ownerUserId, userId), isNotNull(fileNodes.objectKey)))
     const exports = await db.select().from(exportJobs).where(eq(exportJobs.userId, userId))
     const keys = new Set<string>(files.map((file) => file.key))
+    for (const blob of fileBlobs) if (blob.key) keys.add(blob.key)
     if (user.avatarObjectKey) keys.add(user.avatarObjectKey)
     for (const job of exports) keys.add(job.objectKey ?? `exports/${userId}/${job.id}`)
     for (const key of keys) await getBlobStore().delete(key)
