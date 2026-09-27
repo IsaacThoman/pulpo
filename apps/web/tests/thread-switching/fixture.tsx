@@ -11,6 +11,8 @@ import { queryClient } from '../../src/lib/query-client'
 const params = new URLSearchParams(location.search)
 const count = Number(params.get('turns') ?? 1000)
 const rich = params.has('rich')
+const imageShape = params.get('image')
+const imageIndex = count - 10
 const countFor = (chatId: string) => chatId === 'two' ? Number(params.get('otherTurns') ?? count) : count
 const pageSize = Number(params.get('page') ?? Infinity)
 const activeVersions = new Map<string, string>()
@@ -27,7 +29,10 @@ function response(chatId: string, index: number, alternate = false): ServerRespo
   const siblings = index === countFor(chatId) - 1 ? [`${chatId}-${index}`, `${chatId}-${index}-alt`] : [id]
   return {
     id, parentResponseId: index ? `${chatId}-${index - 1}` : null, userMessageId: `input-${chatId}-${index}`,
-    modelId: 'benchmark', status: 'completed', input: [{ role: 'user', content: [{ type: 'input_text', text: `Question ${index}` }] }],
+    modelId: 'benchmark', status: 'completed', input: [{ role: 'user', content: [
+      { type: 'input_text', text: `Question ${index}` },
+      ...(imageShape && index === imageIndex ? [{ type: 'input_file', attachment_id: 'scroll-image' }] : []),
+    ] }],
     output, presetSelections: {}, usage: null, error: null, createdAt: timestamp, completedAt: timestamp,
     snapshot: { responseId: id, status: 'completed', sequence: 1, output, usage: null, error: null, updatedAt: timestamp },
     branches: { user: { ids: [id], index: 0 }, assistant: { ids: siblings, index: alternate ? 1 : 0 } },
@@ -42,7 +47,8 @@ function detail(chatId: string, selected = activeVersions.get(chatId) ?? `${chat
   const leafId = selected
   return {
     id: chatId, title: chatId, modelId: 'benchmark', pinned: false, folderId: null, createdAt: timestamp, updatedAt: timestamp,
-    activeResponseId: leafId, activeBranchLeafId: leafId, responses, attachments: [],
+    activeResponseId: leafId, activeBranchLeafId: leafId, responses,
+    attachments: imageShape ? [{ id: 'scroll-image', originalName: 'scroll-image.png', mimeType: 'image/png', sizeBytes: 1024 }] : [],
     history: { offset: start, hasMore: start > 0, before: responses[0]!.id, leafId },
   }
 }
@@ -56,6 +62,12 @@ for (const id of ['one', 'two']) {
 const originalFetch = window.fetch.bind(window)
 window.fetch = async (input, init) => {
   const url = String(input)
+  if (imageShape && url.includes('/api/attachments/scroll-image/thumbnail')) {
+    const [width, height] = imageShape === 'tall' ? [200, 1200] : imageShape === 'wide' ? [1200, 200] : [1200, 900]
+    return new Response(`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><rect width="100%" height="100%" fill="#38bdf8"/></svg>`, {
+      headers: { 'content-type': 'image/svg+xml' },
+    })
+  }
   if (url.includes('/activate')) {
     await new Promise(resolve => setTimeout(resolve, Number(params.get('latency') ?? 200)))
     const id = url.split('/messages/')[1]!.split('/')[0]!
