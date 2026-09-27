@@ -265,7 +265,7 @@ import {
 } from '../features/chat/history';
 import { activityDurationMs, buildLegacyMessageTimeline, buildMessageTimeline, completedActivityLabel, timelineActivityIsActive, workspaceIsActive, type TimelineStep } from '../features/chat/timeline';
 import { toolActivityPresentation } from '../features/chat/toolActivityPresentation';
-import { chatLandingKeyboardTranslation, chatKeyboardBlankSpace, isNearChatBottom, resolveKeyboardLayoutProgress, shouldFollowChatContent } from '../features/chat/viewport';
+import { CHAT_SCROLL_TO_BOTTOM_THRESHOLD, chatLandingKeyboardTranslation, chatKeyboardBlankSpace, isNearChatBottom, resolveKeyboardLayoutProgress, shouldFollowChatContent } from '../features/chat/viewport';
 import {
   nextChatStartsTemporary,
   resolveChatHeaderAction,
@@ -3998,6 +3998,41 @@ function SpeechPlayerBar() {
   );
 }
 
+function ScrollToBottomButton({ visible, onPress }: { visible: boolean; onPress: () => void }) {
+  const { styles } = useChatStyles();
+  const { reduceMotion } = useAccessibilityPreferences();
+  const progress = useSharedValue(visible ? 1 : 0);
+  useEffect(() => {
+    progress.value = reduceMotion
+      ? withTiming(Number(visible), { duration: 120 })
+      : visible
+        ? withSpring(1, { damping: 16, stiffness: 260, mass: 0.7 })
+        : withTiming(0, { duration: 160 });
+  }, [progress, reduceMotion, visible]);
+  const animatedStyle = useAnimatedStyle(() => ({
+    opacity: Math.min(1, Math.max(0, progress.value)),
+    transform: reduceMotion ? [] : [
+      { translateY: interpolate(progress.value, [0, 1], [12, 0]) },
+      { scale: interpolate(progress.value, [0, 1], [0.6, 1]) },
+    ],
+  }));
+  return (
+    <View pointerEvents="box-none" style={styles.scrollToBottomSlot}>
+      <Reanimated.View
+        accessibilityElementsHidden={!visible}
+        importantForAccessibility={visible ? 'auto' : 'no-hide-descendants'}
+        pointerEvents={visible ? 'auto' : 'none'}
+        style={animatedStyle}
+        testID="chat-scroll-to-bottom"
+      >
+        {Platform.OS === 'android'
+          ? <MaterialIconButton icon="arrow.down" label="Scroll to bottom" onPress={onPress} selected />
+          : <RoundButton icon="arrow.down" accessibilityLabel="Scroll to bottom" onPress={onPress} />}
+      </Reanimated.View>
+    </View>
+  );
+}
+
 function ComposerQueueSection({ title, subject, visible, collapsed, onToggle, failed = false, children }: {
   title: string;
   subject: string;
@@ -4161,6 +4196,16 @@ function ChatView({
   const shouldAutoFollow = useRef(true);
   const readerInteracting = useRef(false);
   const [maintainReaderAnchor, setMaintainReaderAnchor] = useState(false);
+  const [scrollToBottomVisible, setScrollToBottomVisibleState] = useState(false);
+  const scrollToBottomShown = useRef(false);
+  // Hides the jump button for the length of its own animated scroll, whose
+  // intermediate offsets would otherwise reveal it again.
+  const jumpingToBottom = useRef(false);
+  const setScrollToBottomVisible = useCallback((visible: boolean) => {
+    if (scrollToBottomShown.current === visible) return;
+    scrollToBottomShown.current = visible;
+    setScrollToBottomVisibleState(visible);
+  }, []);
   const transcriptTopInset = useRef(0);
   const updateTranscriptInset = useCallback((insets: { top: number }) => { transcriptTopInset.current = insets.top; }, []);
   const chatTailPending = useRef(true);
@@ -5314,23 +5359,27 @@ function ChatView({
 
   const updateBottomProximity = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const { contentOffset, contentInset, contentSize, layoutMeasurement } = event.nativeEvent;
-    const nearBottom = isNearChatBottom({
+    const metrics = {
       inverted: bottomAnchored,
       insetTop: contentInset.top,
       offsetY: contentOffset.y,
       contentHeight: contentSize.height,
       viewportHeight: layoutMeasurement.height,
-    });
+    };
+    const nearBottom = isNearChatBottom(metrics);
     isNearBottom.current = nearBottom;
     // A newly selected chat initially reports offset zero before its rows have
     // finished measuring. Do not interpret that transient position as the
     // reader intentionally leaving the tail.
     if (chatTailPending.current) {
+      setScrollToBottomVisible(false);
       return;
     }
+    if (nearBottom) jumpingToBottom.current = false;
+    setScrollToBottomVisible(!jumpingToBottom.current && !isNearChatBottom(metrics, CHAT_SCROLL_TO_BOTTOM_THRESHOLD));
     // Native measurement and anchor adjustments also emit scroll events. Only
     // an actual gesture ending may rearm following after the reader takes over.
-  }, [bottomAnchored]);
+  }, [bottomAnchored, setScrollToBottomVisible]);
 
   const cancelPendingFollow = useCallback(() => {
     if (pendingFollowFrame.current === null) return;
@@ -5370,6 +5419,7 @@ function ChatView({
     if (chatId && hasTranscriptPositionObserver()) recordTranscriptPosition({ chatId, at: Date.now(), kind: 'readerStart' });
     submittedTurnFollowRevision.current += 1;
     readerInteracting.current = true;
+    jumpingToBottom.current = false;
     setMaintainReaderAnchor(true);
     chatTailPending.current = false;
     shouldAutoFollow.current = false;
@@ -5408,6 +5458,20 @@ function ChatView({
     });
   }, [assistantStatus, bottomAnchored, scrollToMeasuredTail]);
 
+  const jumpToBottom = useCallback(() => {
+    void Haptics.selectionAsync();
+    submittedTurnFollowRevision.current += 1;
+    cancelPendingFollow();
+    cancelTailSettle();
+    readerInteracting.current = false;
+    jumpingToBottom.current = true;
+    isNearBottom.current = true;
+    shouldAutoFollow.current = true;
+    setMaintainReaderAnchor(false);
+    setScrollToBottomVisible(false);
+    scrollToMeasuredTail(true);
+  }, [cancelPendingFollow, cancelTailSettle, scrollToMeasuredTail, setScrollToBottomVisible]);
+
   const handleContentSizeChange = useCallback((_width: number, height: number) => {
     measuredContentHeight.current = height;
     keyboardBlankSpace.value = chatKeyboardBlankSpace(chatViewportHeight.current, height);
@@ -5422,14 +5486,16 @@ function ChatView({
     isNearBottom.current = true;
     shouldAutoFollow.current = true;
     readerInteracting.current = false;
+    jumpingToBottom.current = false;
     chatTailPending.current = !bottomAnchored;
     setMaintainReaderAnchor(false);
+    setScrollToBottomVisible(false);
     measuredContentHeight.current = 0;
     keyboardBlankSpace.value = 0;
     cancelPendingFollow();
     cancelTailSettle();
     if (!bottomAnchored) scheduleTailSettle();
-  }, [bottomAnchored, cancelPendingFollow, cancelTailSettle, chatId, draftNamespace, keyboardBlankSpace, scheduleTailSettle]);
+  }, [bottomAnchored, cancelPendingFollow, cancelTailSettle, chatId, draftNamespace, keyboardBlankSpace, scheduleTailSettle, setScrollToBottomVisible]);
 
   useEffect(() => () => {
     cancelPendingFollow();
@@ -5748,6 +5814,7 @@ function ChatView({
 
       <KeyboardStickyView enabled={keyboardLayoutEnabled} offset={keyboardOffset} style={styles.composerSticky}>
         {Platform.OS === 'android' && <Reanimated.View pointerEvents="none" style={[StyleSheet.absoluteFill, temporarySurfaceAnimatedStyle]} />}
+        <ScrollToBottomButton visible={scrollToBottomVisible && !empty && !loadingExistingChat && !openingChatId} onPress={jumpToBottom} />
         <View
           onLayout={({ nativeEvent: { layout } }) => {
             // The resting composer is already covered by the transcript's static
@@ -6632,6 +6699,7 @@ function createChatStyles(COLORS: ChatColors) { return StyleSheet.create({
   suggestionLabel: { color: COLORS.textSoft, fontSize: 13, lineHeight: 18 },
 
   composerSticky: { position: 'absolute', left: 0, right: 0, bottom: 0 },
+  scrollToBottomSlot: { position: 'absolute', left: 0, right: 0, bottom: '100%', alignItems: 'center', paddingBottom: 6 },
   composerQueue: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.line, marginBottom: 10 },
   composerQueueHeader: { minHeight: 44, paddingHorizontal: 5, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   composerQueueTitle: { color: COLORS.muted, fontSize: 12, fontWeight: '500' },
