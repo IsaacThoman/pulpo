@@ -1,4 +1,6 @@
 export const CHAT_BOTTOM_FOLLOW_THRESHOLD = 96
+/** Distance from the tail before offering a jump back to the latest message. */
+export const CHAT_SCROLL_TO_BOTTOM_THRESHOLD = 240
 
 export type ChatViewportMetrics = {
   offsetY: number

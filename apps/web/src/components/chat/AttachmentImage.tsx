@@ -33,6 +33,7 @@ import {
 } from '@/lib/attachments'
 import { attachmentPreviewKind } from '@/lib/attachment-previews'
 import { useAttachmentPreviewUrl } from './use-attachment-preview-url'
+import { useAttachmentImageDimensions } from './use-attachment-image-dimensions'
 import { AttachmentPreviewDialog } from './AttachmentPreview'
 import { useUploadOutbox, type UploadRecord } from '@/stores/upload-outbox'
 import { ui, uit } from '@/i18n/ui'
@@ -232,6 +233,7 @@ function MessageFilePreview({ attachment }: { attachment: Attachment }) {
 
 function MessageImagePreview({ attachment }: { attachment: Attachment }) {
   const visibility = useAttachmentVisibility()
+  const { dimensions, rememberDimensions } = useAttachmentImageDimensions(attachment.id)
   const { url, loading } = useAttachmentPreviewUrl(
     attachment.id,
     visibility.visible,
@@ -251,20 +253,27 @@ function MessageImagePreview({ attachment }: { attachment: Attachment }) {
           type="button"
           aria-label={uit`Preview ${attachment.name}`}
           onClick={() => setPreviewOpen(true)}
-          className="block w-full cursor-zoom-in bg-muted/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+          className="relative block w-full cursor-zoom-in bg-muted/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
         >
           {url ? (
             <img
               decoding="async"
               src={url}
               alt={attachment.name}
+              width={dimensions?.width}
+              height={dimensions?.height}
+              onLoad={(event) => rememberDimensions(event.currentTarget)}
               className="mx-auto block max-h-72 min-h-28 w-full object-contain transition-transform duration-300 group-hover/attachment:scale-[1.01]"
               draggable={false}
             />
           ) : (
-            <span className="flex h-36 w-full items-center justify-center text-muted-foreground">
-              {loading ? <Loader2 className="size-5 animate-spin" /> : <ImageIcon className="size-5" />}
-            </span>
+            <>
+              {/* Match the image's intrinsic size, including flex sizing, without retaining its URL. */}
+              {dimensions && <svg width={dimensions.width} height={dimensions.height} viewBox={`0 0 ${dimensions.width} ${dimensions.height}`} aria-hidden="true" className="mx-auto block h-auto max-h-72 min-h-28 w-full" />}
+              <span className={cn('flex w-full items-center justify-center text-muted-foreground', dimensions ? 'absolute inset-0 h-full' : 'h-36')}>
+                {loading ? <Loader2 className="size-5 animate-spin" /> : <ImageIcon className="size-5" />}
+              </span>
+            </>
           )}
         </button>
         <figcaption className="flex min-w-0 items-center gap-2 border-t bg-background/90 px-3 py-2">

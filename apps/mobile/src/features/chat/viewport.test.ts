@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
+  CHAT_BOTTOM_FOLLOW_THRESHOLD,
+  CHAT_SCROLL_TO_BOTTOM_THRESHOLD,
   chatKeyboardBlankSpace,
   chatLandingKeyboardTranslation,
   isNearChatBottom,
@@ -23,6 +25,16 @@ describe('chat viewport following', () => {
     expect(isNearChatBottom({ ...metrics, offsetY: -250 })).toBe(true)
     expect(isNearChatBottom({ ...metrics, offsetY: 0 })).toBe(false)
     expect(isNearChatBottom({ ...metrics, insetTop: 0, offsetY: 110 })).toBe(false)
+  })
+
+  it('offers a jump to the tail only once the reader is clearly away from it', () => {
+    expect(CHAT_SCROLL_TO_BOTTOM_THRESHOLD).toBeGreaterThan(CHAT_BOTTOM_FOLLOW_THRESHOLD)
+    const metrics = { contentHeight: 2000, viewportHeight: 700 }
+    expect(isNearChatBottom({ ...metrics, offsetY: 1150 }, CHAT_SCROLL_TO_BOTTOM_THRESHOLD)).toBe(true)
+    expect(isNearChatBottom({ ...metrics, offsetY: 1000 }, CHAT_SCROLL_TO_BOTTOM_THRESHOLD)).toBe(false)
+    const inverted = { ...metrics, inverted: true, insetTop: 300 }
+    expect(isNearChatBottom({ ...inverted, offsetY: -150 }, CHAT_SCROLL_TO_BOTTOM_THRESHOLD)).toBe(true)
+    expect(isNearChatBottom({ ...inverted, offsetY: 0 }, CHAT_SCROLL_TO_BOTTOM_THRESHOLD)).toBe(false)
   })
 
   it('pauses following as soon as a drag or momentum sequence begins', () => {
