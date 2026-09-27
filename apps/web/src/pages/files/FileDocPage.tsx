@@ -16,6 +16,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { ui, uit } from '@/i18n/ui'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/stores/auth'
+import { useSettings } from '@/stores/settings'
 import { downloadDocMarkdown, fetchFileNode, fileNodeQueryKey, filesQueryKey, trashFileNode, updateFileNode } from '@/features/files/api'
 import { filesErrorMessage } from '@/features/files/file-display'
 import { DocEditor } from '@/features/files/editor/DocEditor'
@@ -125,6 +126,7 @@ function OpenDoc({ userId, docId }: { userId: string; docId: string }) {
   const { session, status, peers } = useDocSession(userId, docId)
   const [everSynced, setEverSynced] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
+  const chatWidth = useSettings((state) => state.chatWidth)
 
   useEffect(() => setEverSynced(false), [docId])
   useEffect(() => { if (status.state === 'synced') setEverSynced(true) }, [status.state])
@@ -202,7 +204,7 @@ function OpenDoc({ userId, docId }: { userId: string; docId: string }) {
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         {session ? (
-          <DocEditor key={docId} session={session} editable={editable} />
+          <DocEditor key={docId} session={session} editable={editable} wide={chatWidth === 'full'} />
         ) : (
           <div className="grid h-64 place-items-center"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>
         )}
