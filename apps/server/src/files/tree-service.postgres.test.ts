@@ -20,6 +20,7 @@ import {
 const publish = vi.hoisted(() => vi.fn())
 const deletedKeys = vi.hoisted(() => [] as string[])
 vi.mock('../responses/events.js', () => ({ publishStateChange: publish }))
+vi.mock('./doc-events.js', () => ({ publishDocsClosed: vi.fn() }))
 vi.mock('../storage/index.js', () => ({ getBlobStore: () => ({ delete: async (key: string) => { deletedKeys.push(key) } }) }))
 
 const enabled = process.env.PULPO_FILES_TESTS === 'true'

@@ -6,6 +6,7 @@ import { eventHasAssistantReplyText } from './response-timing.js'
 export * from './avatar-crop.js'
 export * from './response-timing.js'
 import type { ComposerAck, ComposerSnapshot, ComposerWrite } from './composer.js'
+import type { DocAck, DocClosedEvent, DocJoinInput, DocJoinResult, DocUpdateMessage } from './files.js'
 export * from './composer.js'
 import { z } from 'zod'
 import { DEFAULT_MAX_INLINE_IMAGES, MAX_CONFIGURABLE_INLINE_IMAGES, MAX_MESSAGE_ATTACHMENTS } from './attachment-limits.js'
@@ -1872,6 +1873,10 @@ export interface ClientToServerEvents {
   'response.unsubscribe': (input: { responseId: string }) => void
   'admin.usage.subscribe': () => void
   'admin.usage.unsubscribe': () => void
+  'doc.join': (input: DocJoinInput, ack: (result: DocJoinResult) => void) => void
+  'doc.leave': (input: { docId: string }) => void
+  'doc.update': (input: DocUpdateMessage, ack: (result: DocAck) => void) => void
+  'doc.awareness': (input: DocUpdateMessage) => void
 }
 
 export interface ChatStartedEvent {
@@ -1890,6 +1895,12 @@ export interface ServerToClientEvents {
   'usage.changed': (input: { balanceMicros: number; spentThisMonthMicros: number }) => void
   'sync.result': (result: SyncResult) => void
   'admin.usage.upsert': (event: z.infer<typeof adminUsageEventSchema>) => void
+  'doc.update': (event: DocUpdateMessage) => void
+  'doc.awareness': (event: DocUpdateMessage) => void
+  /** A peer joined; everyone re-sends their awareness state so it can draw existing cursors. */
+  'doc.awareness-query': (event: { docId: string }) => void
+  'doc.peer-left': (event: { docId: string; clientIds: number[] }) => void
+  'doc.closed': (event: DocClosedEvent) => void
 }
 
 export * from "./shelf.js"

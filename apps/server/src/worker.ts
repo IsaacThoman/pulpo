@@ -11,7 +11,8 @@ import { and, inArray, isNull, eq, sql } from 'drizzle-orm'
 import { getConfig } from './config.js'
 import { db } from './database/client.js'
 import { applicationSettings, chats, responses } from './database/schema.js'
-import { generationQueue, maintenanceQueue, payloadRetentionQueue, type CodexLoginJob, type EmbeddingJob, type GenerationJob, type MaintenanceJob } from './jobs.js'
+import { generationQueue, maintenanceQueue, payloadRetentionQueue, type CodexLoginJob, type EmbeddingJob, type FileDocJob, type GenerationJob, type MaintenanceJob } from './jobs.js'
+import { compactDoc } from './files/doc-store.js'
 import { purgeExpiredDetailedPayloads } from './logging/detailed-payload-retention.js'
 import { processGeneration } from './responses/worker.js'
 import { createExport, rebuildDailyRollups, runCleanup, scrubPersistedResponseBinaryContext } from './maintenance.js'
@@ -142,6 +143,10 @@ const embeddingWorker = new Worker<EmbeddingJob>('episodic-memory', async (job) 
   await processEmbeddingJob(job.data)
 }, { connection: { url: config.REDIS_URL }, concurrency: 1 })
 
+const fileDocWorker = new Worker<FileDocJob>('file-docs', async (job) => {
+  await compactDoc(job.data.nodeId)
+}, { connection: { url: config.REDIS_URL }, concurrency: 4 })
+
 const codexLoginWorker = new Worker<CodexLoginJob>('codex-login', async (job) => {
   await processCodexLogin(job.data)
 }, { connection: { url: config.REDIS_URL }, concurrency: 10 })
@@ -201,7 +206,7 @@ for (const response of recoverable) {
 await recoverMessageQueues()
 if ((await readEpisodicMemorySettings()).enabled) await enqueueEpisodicReconciliation()
 
-const workers = [generationWorker, codexLoginWorker, embeddingWorker, maintenanceWorker, payloadRetentionWorker]
+const workers = [generationWorker, codexLoginWorker, embeddingWorker, maintenanceWorker, payloadRetentionWorker, fileDocWorker]
 await Promise.all(workers.map((worker) => worker.waitUntilReady()))
 let stopping = false
 // Private health endpoint used by Docker/Coolify, never routed publicly.

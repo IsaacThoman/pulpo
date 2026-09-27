@@ -27,6 +27,12 @@ const halfvec = customType<{ data: number[]; driverData: string }>({
 
 const tsvector = customType<{ data: string }>({ dataType: () => 'tsvector' })
 
+const bytea = customType<{ data: Uint8Array; driverData: Buffer }>({
+  dataType: () => 'bytea',
+  toDriver: (value) => Buffer.from(value.buffer, value.byteOffset, value.byteLength),
+  fromDriver: (value) => new Uint8Array(value.buffer, value.byteOffset, value.byteLength),
+})
+
 const timestamps = {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
@@ -850,6 +856,33 @@ export const fileNodes = pgTable('file_nodes', {
   check('file_nodes_name_check', sql`char_length(${table.name}) between 1 and 255`),
   check('file_nodes_size_check', sql`${table.sizeBytes} >= 0`),
   check('file_nodes_blob_check', sql`(${table.kind} = 'blob') = (${table.objectKey} is not null)`),
+])
+
+/** Collaborative document state: a compacted Yjs update plus Markdown derived from it. */
+export const fileDocs = pgTable('file_docs', {
+  nodeId: uuid('node_id').primaryKey().references(() => fileNodes.id, { onDelete: 'cascade' }),
+  state: bytea('state').notNull(),
+  stateBytes: integer('state_bytes').notNull(),
+  // Log rows not yet folded into `state`; drives compaction scheduling.
+  pendingUpdates: integer('pending_updates').notNull().default(0),
+  markdown: text('markdown').notNull().default(''),
+  schemaVersion: integer('schema_version').notNull(),
+  lastEditedAt: timestamp('last_edited_at', { withTimezone: true }).notNull().defaultNow(),
+  ...timestamps,
+})
+
+/** Append-only Yjs updates awaiting compaction. Loading a doc merges `state` with every remaining row. */
+export const fileDocUpdates = pgTable('file_doc_updates', {
+  seq: bigint('seq', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+  nodeId: uuid('node_id').notNull().references(() => fileDocs.nodeId, { onDelete: 'cascade' }),
+  update: bytea('update').notNull(),
+  byteSize: integer('byte_size').notNull(),
+  origin: text('origin').notNull(),
+  actorUserId: uuid('actor_user_id').references(() => users.id, { onDelete: 'set null' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('file_doc_updates_node_seq_idx').on(table.nodeId, table.seq),
+  check('file_doc_updates_origin_check', sql`${table.origin} in ('client', 'agent', 'import', 'restore')`),
 ])
 
 export const episodicMemoryGenerations = pgTable('episodic_memory_generations', {

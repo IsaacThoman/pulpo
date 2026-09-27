@@ -22,6 +22,27 @@ export function createFolder(parentId: string | null, name: string): Promise<Fil
   return apiRequest<FileNode>('/api/files/folders', { method: 'POST', body: { parentId, name } })
 }
 
+export const fileNodeQueryKey = (userId: string | undefined, id: string) => [...filesQueryKey(userId), 'node', id] as const
+
+export function fetchFileNode(id: string): Promise<{ node: FileNode; ancestors: FileNode[] }> {
+  return apiRequest<{ node: FileNode; ancestors: FileNode[] }>(`/api/files/${id}`)
+}
+
+export function createDoc(parentId: string | null, name: string, markdown?: string): Promise<FileNode> {
+  return apiRequest<FileNode>('/api/files/docs', { method: 'POST', body: { parentId, name, markdown } })
+}
+
+/** Saves a document as a .md file, with the latest edits folded in by the server. */
+export async function downloadDocMarkdown(node: Pick<FileNode, 'id' | 'name'>): Promise<void> {
+  const { markdown } = await apiRequest<{ name: string; markdown: string }>(`/api/files/${node.id}/markdown`)
+  const url = URL.createObjectURL(new Blob([markdown], { type: 'text/markdown;charset=utf-8' }))
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = /\.(md|markdown)$/i.test(node.name) ? node.name : `${node.name}.md`
+  anchor.click()
+  window.setTimeout(() => URL.revokeObjectURL(url), 1_000)
+}
+
 export function updateFileNode(id: string, input: UpdateFileNode): Promise<FileNode> {
   return apiRequest<FileNode>(`/api/files/${id}`, { method: 'PATCH', body: input })
 }

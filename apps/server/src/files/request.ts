@@ -19,11 +19,15 @@ export function parseFileInput<T>(schema: z.ZodType<T>, body: unknown): T {
   throw parsed.error
 }
 
-export async function requireFilesUser(request: FastifyRequest): Promise<AuthenticatedUser> {
-  const user = requireUser(request)
+export async function filesFeatureEnabled(): Promise<boolean> {
   const [setting] = await db.select({ value: applicationSettings.value }).from(applicationSettings)
     .where(eq(applicationSettings.key, 'auth')).limit(1)
-  if (!parseAuthSettings(setting?.value).filesEnabled) {
+  return parseAuthSettings(setting?.value).filesEnabled
+}
+
+export async function requireFilesUser(request: FastifyRequest): Promise<AuthenticatedUser> {
+  const user = requireUser(request)
+  if (!await filesFeatureEnabled()) {
     throw new AppError(403, 'files_disabled', 'Files are disabled by the administrator', 'permission_error')
   }
   return user

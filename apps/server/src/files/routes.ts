@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
-import { createFileFolderSchema, updateFileNodeSchema } from '@pulpo/contracts'
+import { createFileDocSchema, createFileFolderSchema, updateFileNodeSchema } from '@pulpo/contracts'
+import { createDoc, readDocMarkdown } from './doc-store.js'
 import { parseFileInput, requireFilesUser } from './request.js'
 import {
   createFolder,
@@ -45,6 +46,18 @@ export async function registerFileRoutes(app: FastifyInstance): Promise<void> {
     const input = parseFileInput(createFileFolderSchema, request.body)
     reply.code(201)
     return createFolder(user.id, input)
+  })
+
+  app.post('/api/files/docs', async (request, reply) => {
+    const user = await requireFilesUser(request)
+    const input = parseFileInput(createFileDocSchema, request.body)
+    reply.code(201)
+    return createDoc(user.id, input)
+  })
+
+  app.get('/api/files/:id/markdown', async (request) => {
+    const user = await requireFilesUser(request)
+    return readDocMarkdown(user.id, idParams.parse(request.params).id)
   })
 
   app.patch('/api/files/:id', async (request) => {

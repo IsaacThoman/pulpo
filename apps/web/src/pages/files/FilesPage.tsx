@@ -7,6 +7,8 @@ import {
   Download,
   Eye,
   FolderInput,
+  FilePlus2,
+  FileUp,
   FolderPlus,
   HardDrive,
   LayoutGrid,
@@ -35,7 +37,9 @@ import { timeAgo } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/stores/auth'
 import {
+  createDoc,
   createFolder,
+  downloadDocMarkdown,
   downloadFile,
   fetchFolder,
   filesQueryKey,
@@ -91,6 +95,7 @@ export function FilesPage() {
   const [previewing, setPreviewing] = useState<FileNode | null>(null)
   const [dropTarget, setDropTarget] = useState<string | null>(null)
   const fileInput = useRef<HTMLInputElement>(null)
+  const markdownInput = useRef<HTMLInputElement>(null)
 
   const children = listing.data?.children ?? []
   const trail = [...(listing.data?.ancestors ?? []), ...(listing.data?.folder ? [listing.data.folder] : [])]
@@ -104,7 +109,30 @@ export function FilesPage() {
 
   const open = (node: FileNode) => {
     if (node.kind === 'folder') navigate(`/files/f/${node.id}`)
+    else if (node.kind === 'doc') navigate(`/files/d/${node.id}`)
     else setPreviewing(node)
+  }
+
+  const newDocument = async () => {
+    try {
+      const node = await createDoc(folderId, ui("Untitled document"))
+      await refresh()
+      navigate(`/files/d/${node.id}`)
+    } catch (cause) {
+      report(cause)
+    }
+  }
+
+  /** Markdown files become editable documents; the file name without its extension becomes the title. */
+  const importMarkdown = async (files: File[]) => {
+    for (const file of files) {
+      try {
+        await createDoc(folderId, file.name.replace(/\.(md|markdown|txt)$/i, '') || ui("Untitled document"), await file.text())
+      } catch (cause) {
+        report(cause, file.name)
+      }
+    }
+    await refresh()
   }
 
   const move = async (node: FileNode, parentId: string | null) => {
@@ -201,8 +229,13 @@ export function FilesPage() {
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" onClick={(event) => event.stopPropagation()}>
         <DropdownMenuItem onSelect={() => open(node)}>
-          <Eye /> {node.kind === 'folder' ? ui("Open") : ui("Preview")}
+          <Eye /> {node.kind === 'blob' ? ui("Preview") : ui("Open")}
         </DropdownMenuItem>
+        {node.kind === 'doc' && (
+          <DropdownMenuItem onSelect={() => void downloadDocMarkdown(node).catch((cause: unknown) => report(cause))}>
+            <Download /> {ui("Download as Markdown")}
+          </DropdownMenuItem>
+        )}
         {node.kind === 'blob' && (
           <DropdownMenuItem onSelect={() => void downloadFile(node).catch((cause: unknown) => report(cause))}>
             <Download /> {ui("Download")}
@@ -252,7 +285,7 @@ export function FilesPage() {
       <div className="rounded-xl border border-dashed p-10 text-center">
         <Upload className="mx-auto size-8 text-muted-foreground" />
         <p className="mt-3 text-sm font-medium">{ui("This folder is empty")}</p>
-        <p className="mt-1 text-sm text-muted-foreground">{ui("Drop files here, or use New to add a folder or upload files.")}</p>
+        <p className="mt-1 text-sm text-muted-foreground">{ui("Drop files here, or use New to start a document, add a folder, or upload files.")}</p>
       </div>
     )
   } else if (view === 'grid') {
@@ -363,10 +396,24 @@ export function FilesPage() {
                 <Button size="sm" disabled={listing.isError}><Plus /> {ui("New")}</Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
+                <DropdownMenuItem onSelect={() => void newDocument()}><FilePlus2 /> {ui("New document")}</DropdownMenuItem>
                 <DropdownMenuItem onSelect={() => setCreating(true)}><FolderPlus /> {ui("New folder")}</DropdownMenuItem>
+                <DropdownMenuSeparator />
                 <DropdownMenuItem onSelect={() => fileInput.current?.click()}><Upload /> {ui("Upload files")}</DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => markdownInput.current?.click()}><FileUp /> {ui("Import Markdown as document")}</DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
+            <input
+              ref={markdownInput}
+              type="file"
+              accept=".md,.markdown,text/markdown"
+              multiple
+              hidden
+              onChange={(event) => {
+                void importMarkdown([...(event.target.files ?? [])])
+                event.target.value = ''
+              }}
+            />
             <input
               ref={fileInput}
               type="file"

@@ -7,6 +7,7 @@ import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import { getBlobStore } from '../storage/index.js'
 import { resolveFileAccess, type FileExecutor, type FileNodeRow } from './access.js'
+import { publishDocsClosed } from './doc-events.js'
 import { nextAvailableName } from './names.js'
 
 type DatabaseTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0]
@@ -142,11 +143,16 @@ export async function getFileNode(userId: string, id: string): Promise<{ node: F
   return { node: toFileNode(access.node), ancestors: (await ancestorsOf(db, userId, access.node)).map(toFileNode) }
 }
 
+const treeTooDeep = () => new AppError(400, 'file_tree_too_deep', `Folders can be nested at most ${FILE_TREE_MAX_DEPTH} levels deep`)
+
+/** Checks that a new item can be placed in `parentId` (a live folder, or the root). */
+export async function assertDestination(executor: FileExecutor, userId: string, parentId: string | null): Promise<void> {
+  if (await destinationDepth(executor, userId, parentId) > FILE_TREE_MAX_DEPTH) throw treeTooDeep()
+}
+
 export async function createFolder(userId: string, input: { parentId: string | null; name: string }): Promise<FileNode> {
   return mutateFileTree(userId, async (tx) => {
-    if (await destinationDepth(tx, userId, input.parentId) > FILE_TREE_MAX_DEPTH) {
-      throw new AppError(400, 'file_tree_too_deep', `Folders can be nested at most ${FILE_TREE_MAX_DEPTH} levels deep`)
-    }
+    await assertDestination(tx, userId, input.parentId)
     await assertNameAvailable(tx, userId, input.parentId, input.name)
     const [created] = await tx.insert(fileNodes).values({
       id: newId(), ownerUserId: userId, parentId: input.parentId, kind: 'folder', name: input.name,
@@ -173,9 +179,7 @@ export async function updateFileNode(userId: string, id: string, input: {
         throw new AppError(400, 'file_move_cycle', 'A folder cannot be moved into itself')
       }
       const height = Math.max(...(await subtree(tx, userId, node.id)).map((row) => row.depth))
-      if (await destinationDepth(tx, userId, parentId) + height > FILE_TREE_MAX_DEPTH) {
-        throw new AppError(400, 'file_tree_too_deep', `Folders can be nested at most ${FILE_TREE_MAX_DEPTH} levels deep`)
-      }
+      if (await destinationDepth(tx, userId, parentId) + height > FILE_TREE_MAX_DEPTH) throw treeTooDeep()
     }
     if (parentId === node.parentId && name === node.name) return toFileNode(node)
     await assertNameAvailable(tx, userId, parentId, name, node.id)
@@ -187,14 +191,17 @@ export async function updateFileNode(userId: string, id: string, input: {
 }
 
 export async function trashFileNode(userId: string, id: string): Promise<void> {
-  await mutateFileTree(userId, async (tx) => {
+  const docIds = await mutateFileTree(userId, async (tx) => {
     const node = await liveNode(tx, userId, id)
     if (node.status !== 'ready') throw notFound('File')
     const ids = (await subtree(tx, userId, node.id)).map((row) => row.id)
     // Descendants trashed earlier keep their own trash root so they can still be restored separately.
-    await tx.update(fileNodes).set({ trashedAt: new Date(), trashRootId: node.id, updatedAt: new Date() })
+    const trashed = await tx.update(fileNodes).set({ trashedAt: new Date(), trashRootId: node.id, updatedAt: new Date() })
       .where(and(eq(fileNodes.ownerUserId, userId), inArray(fileNodes.id, ids), isNull(fileNodes.trashedAt)))
+      .returning({ id: fileNodes.id, kind: fileNodes.kind })
+    return trashed.filter((row) => row.kind === 'doc').map((row) => row.id)
   })
+  await publishDocsClosed(docIds, 'trashed')
 }
 
 export async function restoreFileNode(userId: string, id: string): Promise<FileNode> {
@@ -224,16 +231,21 @@ export async function listTrash(userId: string): Promise<FileNode[]> {
   return rows.map(toFileNode)
 }
 
-/** Deletes stored objects before rows so a failed purge can be retried without orphaning blobs. */
-async function purgeNodes(tx: DatabaseTransaction, userId: string, rootIds: string[]): Promise<void> {
-  if (!rootIds.length) return
+/**
+ * Deletes stored objects before rows so a failed purge can be retried without orphaning blobs.
+ * Returns the purged document ids so open editors can be closed after commit.
+ */
+async function purgeNodes(tx: DatabaseTransaction, userId: string, rootIds: string[]): Promise<string[]> {
+  if (!rootIds.length) return []
   const ids = new Set<string>()
   for (const rootId of rootIds) for (const row of await subtree(tx, userId, rootId)) ids.add(row.id)
-  const blobs = await tx.select({ key: fileNodes.objectKey }).from(fileNodes)
-    .where(and(eq(fileNodes.ownerUserId, userId), inArray(fileNodes.id, [...ids]), isNotNull(fileNodes.objectKey)))
-  for (const blob of blobs) if (blob.key) await getBlobStore().delete(blob.key)
-  // Children cascade from their parents.
+  if (!ids.size) return []
+  const rows = await tx.select({ id: fileNodes.id, kind: fileNodes.kind, key: fileNodes.objectKey }).from(fileNodes)
+    .where(and(eq(fileNodes.ownerUserId, userId), inArray(fileNodes.id, [...ids])))
+  for (const row of rows) if (row.key) await getBlobStore().delete(row.key)
+  // Children, document state, and update logs cascade from their parents.
   await tx.delete(fileNodes).where(and(eq(fileNodes.ownerUserId, userId), inArray(fileNodes.id, rootIds)))
+  return rows.filter((row) => row.kind === 'doc').map((row) => row.id)
 }
 
 /** Permanently deletes a trashed item, or cancels an upload that was never confirmed. */
@@ -244,8 +256,8 @@ export async function deleteFileNode(userId: string, id: string): Promise<void> 
     if (!access.node.trashedAt && access.node.status !== 'pending') {
       throw new AppError(409, 'file_not_trashed', 'Move this item to the trash before deleting it permanently')
     }
-    await purgeNodes(tx, userId, [id])
-  })
+    return purgeNodes(tx, userId, [id])
+  }).then((docIds) => publishDocsClosed(docIds, 'deleted'))
 }
 
 export async function emptyTrash(userId: string): Promise<void> {
@@ -255,8 +267,8 @@ export async function emptyTrash(userId: string): Promise<void> {
       isNotNull(fileNodes.trashedAt),
       eq(fileNodes.trashRootId, fileNodes.id),
     ))
-    await purgeNodes(tx, userId, roots.map((row) => row.id))
-  })
+    return purgeNodes(tx, userId, roots.map((row) => row.id))
+  }).then((docIds) => publishDocsClosed(docIds, 'deleted'))
 }
 
 /** Maintenance: drop uploads that were never confirmed and trash past its retention window. */
@@ -273,6 +285,8 @@ export async function cleanupFiles(now = new Date()): Promise<void> {
   for (const row of [...abandoned, ...expired]) byUser.set(row.userId, [...byUser.get(row.userId) ?? [], row.id])
   for (const [userId, ids] of byUser) {
     // One account's storage failure must not block cleanup for the others.
-    await mutateFileTree(userId, (tx) => purgeNodes(tx, userId, ids)).catch(() => undefined)
+    await mutateFileTree(userId, (tx) => purgeNodes(tx, userId, ids))
+      .then((docIds) => publishDocsClosed(docIds, 'deleted'))
+      .catch(() => undefined)
   }
 }

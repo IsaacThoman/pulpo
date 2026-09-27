@@ -91,7 +91,6 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
         select coalesce(sum(${fileNodes.sizeBytes}), 0)
         from ${fileNodes}
         where ${fileNodes.ownerUserId} = ${users.id}
-          and ${fileNodes.kind} = 'blob'
       ))::bigint`,
       twoFactorEnabled: sql<boolean>`exists (
         select 1 from ${userTotpCredentials}

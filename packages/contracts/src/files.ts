@@ -49,6 +49,15 @@ export const createFileFolderSchema = z.object({
   name: fileNameSchema,
 })
 
+export const FILE_DOC_MAX_MARKDOWN_LENGTH = 2_000_000
+
+export const createFileDocSchema = z.object({
+  parentId: z.uuid().nullable().default(null),
+  name: fileNameSchema.optional(),
+  /** Initial content, e.g. when importing an uploaded .md file. */
+  markdown: z.string().max(FILE_DOC_MAX_MARKDOWN_LENGTH).optional(),
+})
+
 export const updateFileNodeSchema = z.object({
   name: fileNameSchema.optional(),
   parentId: z.uuid().nullable().optional(),
@@ -67,6 +76,7 @@ export type FileNodeKind = z.infer<typeof fileNodeKindSchema>
 export type FileNode = z.infer<typeof fileNodeSchema>
 export type CreateFileFolder = z.input<typeof createFileFolderSchema>
 export type UpdateFileNode = z.input<typeof updateFileNodeSchema>
+export type CreateFileDoc = z.input<typeof createFileDocSchema>
 export type ReserveFileUpload = z.input<typeof reserveFileUploadSchema>
 
 export interface FileListing {
@@ -81,4 +91,38 @@ export interface FileUploadReservation {
   node: FileNode
   uploadUrl: string
   uploadHeaders: Record<string, string>
+}
+
+export type DocSyncError =
+  | 'not_found'
+  | 'unauthorized'
+  | 'schema_outdated'
+  | 'doc_too_large'
+  | 'invalid_update'
+  | 'rate_limited'
+  | 'failed'
+
+export interface DocJoinInput {
+  docId: string
+  /** Yjs state vector of the client's copy; the server replies with what the client is missing. */
+  stateVector: Uint8Array
+  /** The client's awareness clientID, so the server can clear its cursor when the socket leaves. */
+  awarenessClientId: number
+  schemaVersion: number
+}
+
+export type DocJoinResult =
+  | { ok: true; update: Uint8Array; stateVector: Uint8Array }
+  | { ok: false; error: DocSyncError }
+
+export type DocAck = { ok: true } | { ok: false; error: DocSyncError }
+
+export interface DocUpdateMessage {
+  docId: string
+  update: Uint8Array
+}
+
+export interface DocClosedEvent {
+  docId: string
+  reason: 'trashed' | 'deleted'
 }

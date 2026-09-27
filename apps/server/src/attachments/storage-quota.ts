@@ -23,13 +23,14 @@ export function attachmentSizeError(sizeBytes: number, maxAttachmentBytes: numbe
     : null
 }
 
-/** Bytes charged to the account: live chat attachments plus every Files blob, including trashed ones. */
+/** Bytes charged to the account: live chat attachments plus every Files item, including trashed ones. */
 export async function storageUsedBytes(executor: typeof db | DatabaseTransaction, userId: string): Promise<number> {
   const [[attachmentUsage], [fileUsage]] = await Promise.all([
     executor.select({ bytes: sql<string>`coalesce(sum(${attachments.sizeBytes}), 0)::bigint` }).from(attachments)
       .where(and(eq(attachments.userId, userId), inArray(attachments.status, ['pending', 'ready']))),
+    // Folders are zero bytes; documents carry their compacted state size.
     executor.select({ bytes: sql<string>`coalesce(sum(${fileNodes.sizeBytes}), 0)::bigint` }).from(fileNodes)
-      .where(and(eq(fileNodes.ownerUserId, userId), eq(fileNodes.kind, 'blob'))),
+      .where(eq(fileNodes.ownerUserId, userId)),
   ])
   return Number(attachmentUsage?.bytes ?? 0) + Number(fileUsage?.bytes ?? 0)
 }

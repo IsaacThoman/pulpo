@@ -1,4 +1,5 @@
 import Dexie, { type EntityTable } from 'dexie'
+import { clearDocCaches } from './doc-cache'
 import type { PersistedClient, Persister } from '@tanstack/react-query-persist-client'
 import { fitChatToBytes, MAX_PERSISTED_CHAT_DETAIL_BYTES } from './chat-cache-policy'
 import { createPersistenceQueue } from './persistence-queue'
@@ -197,6 +198,7 @@ export async function clearLocalUserData(userId: string): Promise<void> {
     await localDb.attachmentBlobs.where('userId').equals(accountKey).delete()
   })
   await indexedDbPersister.removeClient()
+  await clearDocCaches(accountKey)
 }
 
 export const localChatLimit = DEFAULT_MAX_LOCAL_CHATS
