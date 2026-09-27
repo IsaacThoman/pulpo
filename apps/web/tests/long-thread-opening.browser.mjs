@@ -91,6 +91,12 @@ try {
           const offset = await page.locator(`[data-message-id="${anchor.id}"]`).evaluate(el => el.getBoundingClientRect().top - el.closest('[data-radix-scroll-area-viewport]').getBoundingClientRect().top)
           assert(Math.abs(offset - anchor.offset) <= 4, `${input} reading anchor moved ${offset - anchor.offset}px`)
           await page.mouse.move(width / 2, 400)
+          // Approaching the end must not snap the remaining distance.
+          const approach = await viewport.evaluate(el => el.scrollHeight - el.scrollTop - el.clientHeight - 60)
+          await page.mouse.wheel(0, approach)
+          await page.waitForTimeout(700)
+          const nearGap = await viewport.evaluate(el => el.scrollHeight - el.scrollTop - el.clientHeight)
+          assert(nearGap > 30, `${input} snapped to the bottom from ${nearGap}px`)
           await page.mouse.wheel(0, 1e7)
           await page.waitForTimeout(700)
           await page.getByRole('button', { name: 'Grow answer', exact: true }).click()
