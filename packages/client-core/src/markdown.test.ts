@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { normalizeMathDelimiters, unwrapBoxedMinipages } from './markdown.js'
+import { linkMarkdownImages, normalizeMathDelimiters, unwrapBoxedMinipages } from './markdown.js'
 
 describe('normalizeMathDelimiters', () => {
   it('preserves paired single-dollar inline math', () => {
@@ -162,5 +162,17 @@ z=x+y
 \textbf{Problem.} Let $n\ge 3$.
 \end{minipage}}\]`
     expect(unwrapBoxedMinipages(source).trim()).toBe(String.raw`**Problem.** Let $n\ge 3$.`)
+  })
+})
+
+describe('linkMarkdownImages', () => {
+  it('turns inline, empty-alt, and reference images into links', () => {
+    expect(linkMarkdownImages('See ![chart [v2]](https://x.test/a.png?d=1) and ![](https://x.test/p.gif) or ![ref][1].'))
+      .toBe('See [🖼 chart [v2]](https://x.test/a.png?d=1) and [🖼 Image](https://x.test/p.gif) or [🖼 ref][1].')
+  })
+
+  it('leaves code and escaped exclamation marks alone', () => {
+    const markdown = '`![a](u)`\n\n```md\n![b](u)\n```\n\n\\![c](u)'
+    expect(linkMarkdownImages(markdown)).toBe(markdown)
   })
 })

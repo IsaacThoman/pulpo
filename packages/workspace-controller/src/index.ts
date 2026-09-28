@@ -6,7 +6,7 @@ import { pipeline } from 'node:stream/promises'
 import * as k8s from '@kubernetes/client-node'
 import { BOUNDED_RUNTIME, storageSettings, workspacePodSlots } from './storage.js'
 import { CapacityReservationError, CapacityTracker, WorkspaceCapacityError } from './capacity.js'
-import { isStaleStartingPod, isUnleasedOrphanPod, podMatchesSpec, WORKSPACE_SPEC_HASH_ANNOTATION, workspaceSpecHash, type WorkspaceSpec } from './workspace-spec.js'
+import { isStaleStartingPod, isTerminalPod, isUnleasedOrphanPod, podMatchesSpec, WORKSPACE_SPEC_HASH_ANNOTATION, workspaceSpecHash, type WorkspaceSpec } from './workspace-spec.js'
 import { effectiveWarmTargets, instanceIdHash, normalizeInstanceId, WORKSPACE_INSTANCE_ANNOTATION, WORKSPACE_INSTANCE_HASH_LABEL, WORKSPACE_INSTANCE_HEADER, type WarmRequest } from './tenancy.js'
 
 const namespace = process.env.PULPO_WORKSPACE_NAMESPACE ?? 'pulpo-workspaces'
@@ -151,14 +151,16 @@ async function reconcileOnce(): Promise<void> {
   const pods = (await core.listNamespacedPod({ namespace, labelSelector: 'app.kubernetes.io/name=pulpo-workspace' })).items
   const podNames = new Set(pods.flatMap((pod) => pod.metadata?.name ? [pod.metadata.name] : []))
   for (const [leaseId, lease] of leases) if (!podNames.has(lease.podName)) { leases.delete(leaseId); activeOperations.delete(leaseId) }
+  // Pods that failed or were evicted lose their IP but keep their lease labels.
+  // Track them anyway so a controller restart cannot exempt them from cleanup.
   for (const pod of pods) {
     const leaseId = pod.metadata?.labels?.['pulpo.dev/lease-id']; const annotations = pod.metadata?.annotations
-    if (!leaseId || leases.has(leaseId) || !pod.metadata?.name || !pod.status?.podIP) continue
+    if (!leaseId || leases.has(leaseId) || !pod.metadata?.name || pod.metadata.deletionTimestamp) continue
     leases.set(leaseId, {
       id: leaseId,
       instanceId: podInstanceId(pod),
       podName: pod.metadata.name,
-      podIp: pod.status.podIP,
+      podIp: pod.status?.podIP ?? '',
       daemonToken: annotations?.['pulpo.dev/daemon-token'] ?? '',
       specHash: annotations?.[WORKSPACE_SPEC_HASH_ANNOTATION] ?? '',
       createdAt: Number(annotations?.['pulpo.dev/created-at'] ?? Date.now()),
@@ -168,7 +170,8 @@ async function reconcileOnce(): Promise<void> {
     })
   }
   const now = Date.now()
-  for (const lease of leases.values()) if (now - lease.lastUsedAt > lease.idleMs || now - lease.createdAt > lease.hardMs) {
+  const terminalPods = new Set(pods.flatMap((pod) => pod.metadata?.name && isTerminalPod(pod) ? [pod.metadata.name] : []))
+  for (const lease of leases.values()) if (terminalPods.has(lease.podName) || now - lease.lastUsedAt > lease.idleMs || now - lease.createdAt > lease.hardMs) {
     await core.deleteNamespacedPod({ namespace, name: lease.podName }).catch(() => undefined); leases.delete(lease.id); activeOperations.delete(lease.id)
   }
   const staleStarting = pods.filter((pod) => isStaleStartingPod(pod, now))
