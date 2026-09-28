@@ -7,7 +7,6 @@ import {
   CreditCard,
   ChevronRight,
   Folder as FolderIcon,
-  FolderOpen,
   FolderInput,
   Hourglass,
   KeyRound,
@@ -1025,7 +1024,7 @@ export function Sidebar({
         <div className="space-y-0.5 px-2">
           {iconBtn(t('chat.newChat'), startNewChat, <SquarePen className="size-4" />)}
           {sidebarPins.searchChats && iconBtn(t('sidebar.searchChats'), onOpenSearch, <Search className="size-4" />)}
-          {filesEnabled && sidebarPins.files && iconBtn(t('sidebar.files'), () => go('/files'), <FolderOpen className="size-4" />)}
+          {filesEnabled && sidebarPins.files && iconBtn(t('sidebar.files'), () => go('/files'), <FolderIcon className="size-4" />)}
           {sidebarPins.usage && iconBtn(t('sidebar.usage'), () => go('/usage'), <BarChart3 className="size-4" />)}
           {billingEnabled && sidebarPins.billing && iconBtn(t('sidebar.billing'), () => go('/billing'), <CreditCard className="size-4" />)}
           {sidebarPins.friends && iconBtn(t('sidebar.friends'), () => go('/friends'), <UsersRound className="size-4" />, pendingSocialCount)}
@@ -1204,7 +1203,7 @@ export function Sidebar({
           </DropdownMenuTrigger>
           <DropdownMenuContent side="top" align="start" className="w-56">
             {accountNavItem('searchChats', t('sidebar.searchChats'), onOpenSearch, <Search />)}
-            {filesEnabled && accountNavItem('files', t('sidebar.files'), '/files', <FolderOpen />)}
+            {filesEnabled && accountNavItem('files', t('sidebar.files'), '/files', <FolderIcon />)}
             {accountNavItem('usage', t('sidebar.usage'), '/usage', <BarChart3 />)}
             {accountNavItem('friends', t('sidebar.friends'), '/friends', <UsersRound />, pendingSocialCount)}
             {apiKeysEnabled && accountNavItem('apiKeys', t('sidebar.apiKeys'), '/api-keys', <KeyRound />)}

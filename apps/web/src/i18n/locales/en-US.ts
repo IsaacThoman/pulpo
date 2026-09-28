@@ -159,7 +159,7 @@ const enUS = {
     logout: 'Log out',
     newFolder: 'New folder',
     pinned: 'Pinned',
-    searchChats: 'Search chats',
+    searchChats: 'Search',
     settings: 'Settings',
     usage: 'Usage',
     admin: 'Admin',

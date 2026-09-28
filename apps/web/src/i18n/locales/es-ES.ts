@@ -165,7 +165,7 @@ const esES = {
     logout: 'Cerrar sesión',
     newFolder: 'Nueva carpeta',
     pinned: 'Fijados',
-    searchChats: 'Buscar chats',
+    searchChats: 'Buscar',
     settings: 'Ajustes',
     usage: 'Uso',
     admin: 'Administración',
