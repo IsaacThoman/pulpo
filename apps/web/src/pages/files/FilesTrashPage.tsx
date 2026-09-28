@@ -112,7 +112,7 @@ export function FilesTrashPage() {
           </div>
           {/* The selection bar takes the place of Empty trash so the list never shifts. */}
           {selectedNodes.length > 0 ? (
-            <div role="toolbar" aria-label={ui("Selection")} className="flex h-8 items-center gap-0.5 rounded-lg border bg-sky-500/10 px-0.5 dark:bg-sky-400/10">
+            <div role="toolbar" aria-label={ui("Selection")} className="flex h-8 items-center gap-0.5 rounded-lg border bg-muted/60 px-0.5">
               <button type="button" aria-label={ui("Clear selection")} title={ui("Clear selection")} onClick={() => setSelection(EMPTY_SELECTION)} className="grid size-6.5 cursor-pointer place-items-center rounded-md text-muted-foreground hover:bg-background/70 hover:text-foreground">
                 <X className="size-4" />
               </button>
