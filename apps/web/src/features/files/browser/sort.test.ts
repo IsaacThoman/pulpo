@@ -35,5 +35,6 @@ describe('file sorting', () => {
 
   it('picks a free name for items created in place', () => {
     expect(uniqueChildName('Untitled folder', [node('untitled folder', 'folder'), node('Untitled folder (2)', 'folder')])).toBe('Untitled folder (3)')
+    expect(uniqueChildName('Untitled.md', [node('untitled.md', 'doc')])).toBe('Untitled (2).md')
   })
 })

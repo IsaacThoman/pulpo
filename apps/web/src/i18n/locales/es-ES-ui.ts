@@ -1827,8 +1827,6 @@ const esUi: Record<string, string> = {
   "Reload": "Recargar",
   "Open trash": "Abrir la papelera",
   "{{0}} other sessions are editing": "{{0}} sesiones más están editando",
-  "Untitled document": "Documento sin título",
-  "New document": "Nuevo documento",
   "Import Markdown as document": "Importar Markdown como documento",
   "Move {{0}} items": "Mover {{0}} elementos",
   "Moved \"{{0}}\" and kept both copies": "Se movió «{{0}}» y se conservaron ambas copias",
@@ -1859,7 +1857,6 @@ const esUi: Record<string, string> = {
   "Paste {{0}} items": "Pegar {{0}} elementos",
   "Paste": "Pegar",
   "Select all": "Seleccionar todo",
-  "Drop files here, or right-click to create a document or folder.": "Suelta archivos aquí o haz clic derecho para crear un documento o una carpeta.",
   "Kind": "Tipo",
   "Sort": "Ordenar",
   "Selection": "Selección",
@@ -1868,6 +1865,9 @@ const esUi: Record<string, string> = {
   "{{0}} selected": "{{0}} seleccionados",
   "Emptied the trash": "Se vació la papelera",
   "{{0}} items and everything inside them will be permanently deleted. This cannot be undone.": "{{0}} elementos y todo su contenido se eliminarán definitivamente. Esta acción no se puede deshacer.",
+  "New file": "Nuevo archivo",
+  "Untitled": "Sin título",
+  "Drop files here, or right-click to create a file or folder.": "Suelta archivos aquí o haz clic derecho para crear un archivo o una carpeta.",
 }
 
 export default esUi

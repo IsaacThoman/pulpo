@@ -188,21 +188,23 @@ export function FilesPage() {
     }
   }
 
-  const newDocument = async () => {
+  /** Creates a Markdown file and starts renaming it in place, like a desktop file manager. */
+  const newFile = async () => {
     try {
-      const node = await createDoc(folderId, ui("Untitled document"))
-      await ops.refresh()
-      navigate(`/files/d/${node.id}`)
+      const node = await createDoc(folderId, uniqueChildName(`${ui("Untitled")}.md`, nodes))
+      insertIntoListing(node)
+      setSelection(selectOnly(node.id))
+      setRenamingId(node.id)
     } catch (cause) {
       ops.fail(cause)
     }
   }
 
-  /** Markdown files become editable documents; the file name without its extension becomes the title. */
+  /** Markdown files become editable documents that keep their original file names. */
   const importMarkdown = async (files: File[]) => {
     for (const file of files) {
       try {
-        await createDoc(folderId, file.name.replace(/\.(md|markdown|txt)$/i, '') || ui("Untitled document"), await file.text())
+        await createDoc(folderId, file.name, await file.text())
       } catch (cause) {
         ops.fail(cause)
       }
@@ -508,7 +510,7 @@ export function FilesPage() {
   )
   const backgroundMenu = (
     <>
-      <DropdownMenuItem onSelect={() => void newDocument()}><FilePlus2 /> {ui("New document")}</DropdownMenuItem>
+      <DropdownMenuItem onSelect={() => void newFile()}><FilePlus2 /> {ui("New file")}</DropdownMenuItem>
       <DropdownMenuItem onSelect={() => void newFolder()}><FolderPlus /> {ui("New folder")}<DropdownMenuShortcut>{shortcutLabel('N', { mod: true, shift: true })}</DropdownMenuShortcut></DropdownMenuItem>
       <DropdownMenuSeparator />
       <DropdownMenuItem onSelect={() => fileInput.current?.click()}><Upload /> {ui("Upload files")}</DropdownMenuItem>
@@ -539,7 +541,7 @@ export function FilesPage() {
       <div className="rounded-xl border border-dashed p-10 text-center">
         <Upload className="mx-auto size-8 text-muted-foreground" />
         <p className="mt-3 text-sm font-medium">{ui("This folder is empty")}</p>
-        <p className="mt-1 text-sm text-muted-foreground">{ui("Drop files here, or right-click to create a document or folder.")}</p>
+        <p className="mt-1 text-sm text-muted-foreground">{ui("Drop files here, or right-click to create a file or folder.")}</p>
       </div>
     )
   } else {

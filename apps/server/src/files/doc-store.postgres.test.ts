@@ -40,7 +40,7 @@ describe.skipIf(!enabled)('collaborative document storage', () => {
 
   it('creates a document from Markdown and exposes it through the tree and export', async () => {
     const node = await createDoc(userId, { parentId: null, markdown: '# Hello\n\nWorld' })
-    expect(node).toMatchObject({ kind: 'doc', name: 'Untitled document' })
+    expect(node).toMatchObject({ kind: 'doc', name: 'Untitled.md' })
     expect(ydocToMarkdown(await loaded(node.id))).toBe('# Hello\n\nWorld')
     expect((await readDocMarkdown(userId, node.id)).markdown).toBe('# Hello\n\nWorld')
   })

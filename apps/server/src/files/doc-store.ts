@@ -17,7 +17,7 @@ export const MAX_DOC_STATE_BYTES = 8_000_000
 const COMPACT_EVERY_UPDATES = 100
 /** First compaction after an edit burst waits this long so it can fold the whole burst. */
 const COMPACT_DELAY_MS = 15_000
-export const DEFAULT_DOC_NAME = 'Untitled document'
+export const DEFAULT_DOC_NAME = 'Untitled.md'
 
 export type DocUpdateOrigin = 'client' | 'agent' | 'import' | 'restore'
 

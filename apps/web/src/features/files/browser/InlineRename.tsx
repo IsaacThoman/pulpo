@@ -24,7 +24,8 @@ export function InlineRename({ node, className, onCommit, onCancel }: {
     const element = input.current
     if (!element) return
     element.focus()
-    const dot = node.kind === 'blob' ? node.name.lastIndexOf('.') : -1
+    // Select the name but not its extension, so typing keeps ".md", ".pdf", and so on.
+    const dot = node.kind === 'folder' ? -1 : node.name.lastIndexOf('.')
     element.setSelectionRange(0, dot > 0 ? dot : node.name.length)
   }, [node.kind, node.name])
 
