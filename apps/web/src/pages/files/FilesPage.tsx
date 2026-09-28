@@ -49,6 +49,7 @@ import { FileMoveDialog } from '@/features/files/FileMoveDialog'
 import { FilePreviewDialog } from '@/features/files/FilePreviewDialog'
 import { useFileClipboard } from '@/features/files/browser/clipboard'
 import { FileContextMenu, type ContextMenuPoint } from '@/features/files/browser/FileContextMenu'
+import { FileDragOverlay } from '@/features/files/browser/FileDragOverlay'
 import { FileItem, type FileDropHandlers } from '@/features/files/browser/FileItem'
 import { FileToasts } from '@/features/files/browser/FileToasts'
 import {
@@ -66,9 +67,8 @@ import {
 import { readFileSort, sortFileNodes, toggleFileSort, uniqueChildName, writeFileSort, type FileSort, type FileSortKey } from '@/features/files/browser/sort'
 import { hasPrimaryModifier, isEditableTarget, shortcutLabel } from '@/features/files/browser/shortcuts'
 import { useFileOperations } from '@/features/files/browser/use-file-operations'
+import { useItemDrag } from '@/features/files/browser/use-item-drag'
 
-/** Drag payload for moving existing items (a JSON id list); external drops carry "Files" instead. */
-const NODE_DRAG_TYPE = 'application/x-pulpo-file-nodes'
 const VIEW_STORAGE_KEY = 'pulpo.files.view'
 const UPLOAD_CONCURRENCY = 3
 const TYPEAHEAD_RESET_MS = 800
@@ -85,10 +85,6 @@ function readView(): FilesView {
 
 function isFileDrag(event: DragEvent) {
   return event.dataTransfer.types.includes('Files')
-}
-
-function isNodeDrag(event: DragEvent) {
-  return event.dataTransfer.types.includes(NODE_DRAG_TYPE)
 }
 
 function SortHeader({ label, sortKey, sort, onSort, className }: {
@@ -141,7 +137,6 @@ export function FilesPage() {
   const fileInput = useRef<HTMLInputElement>(null)
   const markdownInput = useRef<HTMLInputElement>(null)
   const itemsRef = useRef<HTMLDivElement>(null)
-  const draggingIds = useRef<string[]>([])
   const lastPointerType = useRef('mouse')
   const typeahead = useRef({ text: '', at: 0 })
 
@@ -391,31 +386,35 @@ export function FilesPage() {
     setMenu({ point, scope: node ? 'items' : 'background' })
   }
 
-  /** Folder rows and breadcrumbs accept both uploads and moves. */
+  const drag = useItemDrag({
+    resolveNodes: (node) => {
+      if (selection.ids.has(node.id)) return nodes.filter((item) => selection.ids.has(item.id))
+      setSelection(selectOnly(node.id))
+      return [node]
+    },
+    // Dropping into the folder the items already live in, or into one of them, does nothing.
+    canDrop: (targetId, dragged) => !dragged.some((node) => node.id === targetId) && !dragged.every((node) => node.parentId === targetId),
+    onDrop: (dragged, targetId) => { void ops.move(dragged, targetId) },
+  })
+
+  /** Folder rows and breadcrumbs accept files dropped in from the operating system. */
   const dropProps = (targetId: string | null, key = targetId ?? 'root'): FileDropHandlers => ({
     onDragOver: (event) => {
-      if (!isFileDrag(event) && !isNodeDrag(event)) return
-      if (targetId && draggingIds.current.includes(targetId)) return
+      if (!isFileDrag(event)) return
       event.preventDefault()
       event.stopPropagation()
-      event.dataTransfer.dropEffect = isNodeDrag(event) ? 'move' : 'copy'
+      event.dataTransfer.dropEffect = 'copy'
       setDropTarget(key)
     },
     onDragLeave: (event) => {
       if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropTarget((current) => current === key ? null : current)
     },
     onDrop: (event) => {
-      if (!isFileDrag(event) && !isNodeDrag(event)) return
+      if (!isFileDrag(event)) return
       event.preventDefault()
       event.stopPropagation()
       setDropTarget(null)
-      const payload = event.dataTransfer.getData(NODE_DRAG_TYPE)
-      if (payload) {
-        const ids = JSON.parse(payload) as string[]
-        void ops.move(ids.map((id) => byId.get(id)).filter((node): node is FileNode => Boolean(node)), targetId)
-      } else {
-        void upload([...event.dataTransfer.files], targetId)
-      }
+      void upload([...event.dataTransfer.files], targetId)
     },
   })
 
@@ -440,9 +439,10 @@ export function FilesPage() {
     onPointerDown: (event: PointerEvent) => {
       lastPointerType.current = event.pointerType
       setKeyboardFocus(false)
+      if (renamingId !== node.id) drag.onPointerDown(event, node)
     },
     onClick: (event: MouseEvent) => {
-      if (renamingId === node.id) return
+      if (renamingId === node.id || drag.consumeClick()) return
       // Touch has no double-click or hover, so a tap opens, as in mobile file browsers.
       if (lastPointerType.current === 'touch') { open(node); return }
       setSelection(clickSelect(selection, order, node.id, { toggle: hasPrimaryModifier(event), range: event.shiftKey }))
@@ -457,14 +457,6 @@ export function FilesPage() {
       const rect = event.currentTarget.getBoundingClientRect()
       openMenuAt({ x: rect.left, y: rect.bottom }, node)
     },
-    onDragStart: (event: DragEvent) => {
-      const ids = selection.ids.has(node.id) ? order.filter((id) => selection.ids.has(id)) : [node.id]
-      if (!selection.ids.has(node.id)) setSelection(selectOnly(node.id))
-      draggingIds.current = ids
-      event.dataTransfer.setData(NODE_DRAG_TYPE, JSON.stringify(ids))
-      event.dataTransfer.effectAllowed = 'move'
-    },
-    onDragEnd: () => { draggingIds.current = [] },
     dropHandlers: node.kind === 'folder' ? dropProps(node.id) : undefined,
     onRenameCommit: async (name: string) => {
       const ok = await ops.rename(node, name)
@@ -557,7 +549,8 @@ export function FilesPage() {
         selected={selection.ids.has(node.id)}
         focused={keyboardFocus && selection.focus === node.id}
         cut={cutIds.has(node.id)}
-        dropActive={dropTarget === node.id}
+        dragging={drag.draggingIds.has(node.id)}
+        dropActive={dropTarget === node.id || drag.activeTarget === node.id}
         renaming={renamingId === node.id}
         {...itemHandlers(node)}
       />
@@ -610,7 +603,9 @@ export function FilesPage() {
               <Link
                 to="/files"
                 {...dropProps(null)}
-                className={cn('flex items-center gap-1 rounded px-1.5 py-0.5 hover:bg-accent hover:text-foreground', dropTarget === 'root' && 'bg-primary/10 text-foreground')}
+                data-drop-target="root"
+                draggable={false}
+                className={cn('flex items-center gap-1 rounded px-1.5 py-0.5 hover:bg-accent hover:text-foreground', (dropTarget === 'root' || drag.activeTarget === 'root') && 'bg-sky-500/20 text-foreground')}
               >
                 <HardDrive className="size-3.5" />{ui("My files")}
               </Link>
@@ -620,11 +615,13 @@ export function FilesPage() {
                   <Link
                     to={`/files/f/${folder.id}`}
                     {...dropProps(folder.id, `crumb:${folder.id}`)}
+                    data-drop-target={folder.id}
+                    draggable={false}
                     aria-current={index === trail.length - 1 ? 'page' : undefined}
                     className={cn(
                       'max-w-48 truncate rounded px-1.5 py-0.5 hover:bg-accent hover:text-foreground',
                       index === trail.length - 1 && 'font-medium text-foreground',
-                      dropTarget === `crumb:${folder.id}` && 'bg-primary/10',
+                      (dropTarget === `crumb:${folder.id}` || drag.activeTarget === folder.id) && 'bg-sky-500/20 text-foreground',
                     )}
                   >
                     {folder.name}
@@ -752,6 +749,7 @@ export function FilesPage() {
         onOpenChange={(open) => { if (!open) setPreviewing(null) }}
         onDownload={(node) => void downloadFile(node).catch(ops.fail)}
       />
+      <FileDragOverlay drag={drag} />
       <FileToasts />
     </ScrollArea>
   )

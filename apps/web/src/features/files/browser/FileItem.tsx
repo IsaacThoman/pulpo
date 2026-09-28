@@ -21,6 +21,8 @@ export interface FileItemProps {
   selected: boolean
   focused: boolean
   cut: boolean
+  /** Part of the selection currently being dragged; shown faded in place. */
+  dragging: boolean
   dropActive: boolean
   renaming: boolean
   onPointerDown: (event: PointerEvent) => void
@@ -28,8 +30,7 @@ export interface FileItemProps {
   onDoubleClick: (event: MouseEvent) => void
   onContextMenu: (event: MouseEvent) => void
   onMenuButton: (event: MouseEvent<HTMLButtonElement>) => void
-  onDragStart: (event: DragEvent) => void
-  onDragEnd: () => void
+  /** Accepts files dropped in from the operating system (folders only). */
   dropHandlers?: FileDropHandlers
   onRenameCommit: (name: string) => Promise<boolean>
   onRenameCancel: () => void
@@ -37,7 +38,7 @@ export interface FileItemProps {
 
 /** One row (list view) or tile (grid view). Selection and opening are handled by the browser. */
 export function FileItem(props: FileItemProps) {
-  const { node, view, selected, focused, cut, dropActive, renaming } = props
+  const { node, view, selected, focused, cut, dragging, dropActive, renaming } = props
   const name = renaming
     ? <InlineRename node={node} onCommit={props.onRenameCommit} onCancel={props.onRenameCancel} className={view === 'grid' ? 'w-full' : undefined} />
     : <span className={cn('min-w-0 text-sm', view === 'grid' ? 'line-clamp-2 w-full break-words' : 'truncate')} title={node.name}>{node.name}</span>
@@ -61,13 +62,13 @@ export function FileItem(props: FileItemProps) {
     'data-file-id': node.id,
     role: 'option' as const,
     'aria-selected': selected,
-    draggable: !renaming,
+    // Folders are drop targets for items dragged within Files (see useItemDrag).
+    'data-drop-target': node.kind === 'folder' ? node.id : undefined,
+    draggable: false,
     onPointerDown: props.onPointerDown,
     onClick: props.onClick,
     onDoubleClick: props.onDoubleClick,
     onContextMenu: props.onContextMenu,
-    onDragStart: props.onDragStart,
-    onDragEnd: props.onDragEnd,
     ...props.dropHandlers,
   }
 
@@ -79,8 +80,8 @@ export function FileItem(props: FileItemProps) {
           'group relative flex cursor-default flex-col items-center gap-2 rounded-xl px-3 pt-6 pb-3 text-center transition-colors select-none hover:bg-accent/60',
           selected && 'bg-sky-500/15 ring-1 ring-sky-500/50 hover:bg-sky-500/20 dark:bg-sky-400/15',
           focused && 'ring-2 ring-sky-500/70',
-          cut && 'opacity-50',
-          dropActive && 'bg-primary/10 ring-2 ring-primary/40',
+          (cut || dragging) && 'opacity-50',
+          dropActive && 'bg-sky-500/20 ring-2 ring-sky-500/60',
         )}
       >
         <FileNodeIcon node={node} className="size-11" />
@@ -98,8 +99,8 @@ export function FileItem(props: FileItemProps) {
         // Inset shadow draws the accent bar: a global border-color rule overrides border utilities.
         selected && 'bg-sky-500/15 shadow-[inset_3px_0_0_var(--color-sky-500)] hover:bg-sky-500/20 dark:bg-sky-400/15',
         focused && 'outline-2 -outline-offset-2 outline-sky-500/60',
-        cut && 'opacity-50',
-        dropActive && 'bg-primary/10 outline-2 -outline-offset-2 outline-primary/40',
+        (cut || dragging) && 'opacity-50',
+        dropActive && 'bg-sky-500/20 outline-2 -outline-offset-2 outline-sky-500/60',
       )}
     >
       <span className="flex min-w-0 items-center gap-3 py-2">
