@@ -127,9 +127,9 @@ function VirtualMessages({ viewport, ...props }: MessageListProps & { viewport: 
       if (resizing || content.getBoundingClientRect().width !== width) return
       markInitialBottom()
       const bottomGap = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight
-      const nearBottom = bottomGap < 96
       // Measurement corrections also emit scroll events; they are not an instruction to stop following.
-      if (nearBottom && (stickToBottom.current || viewport.scrollTop > previousTop)) stickToBottom.current = true
+      // A reader rejoins only by reaching the end: re-arming within a tolerance snaps the last stretch.
+      if (bottomGap <= 1 && viewport.scrollTop > previousTop) stickToBottom.current = true
       if (bottomGap > 1) settleBottom()
       previousTop = viewport.scrollTop
       cancelAnimationFrame(captureFrame)
