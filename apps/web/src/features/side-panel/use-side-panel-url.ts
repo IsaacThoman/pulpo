@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { parsePanelContent, serializePanelContent, SIDE_PANEL_PARAM, useSidePanel } from './store'
+import { locationIsCurrent } from './use-panel-actions'
 
 /**
  * Mirrors the side panel into the URL so reloads and shared links reopen it. The panel belongs
@@ -14,6 +15,8 @@ export function useSidePanelUrl(): void {
   const lastApplied = useRef<string | null>(null)
 
   useEffect(() => {
+    // Writing against a stale location would replace the pending entry; wait for the router.
+    if (!locationIsCurrent(location)) return
     const params = new URLSearchParams(location.search)
     const current = params.get(SIDE_PANEL_PARAM)
     // Read the store now, not the rendered value: a child effect in this same commit (a full page
@@ -37,5 +40,5 @@ export function useSidePanelUrl(): void {
     // `:` and `,` are valid in a query; keep the panel readable (`?side=chat:new:<id>,<id>`).
     const search = params.toString().replace(/%3A/gi, ':').replace(/%2C/gi, ',')
     navigate({ pathname: location.pathname, search: search ? `?${search}` : '', hash: location.hash }, { replace: true, state: location.state })
-  }, [content, location.hash, location.pathname, location.search, location.state, navigate])
+  }, [content, location.hash, location.key, location.pathname, location.search, location.state, navigate])
 }

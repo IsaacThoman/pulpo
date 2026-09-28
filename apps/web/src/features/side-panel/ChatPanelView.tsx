@@ -19,7 +19,7 @@ import { useChat, type ResponseGenerationSelection } from '@/stores/chat'
 import { useSettings } from '@/stores/settings'
 import { PanelMenuItems, PanelWindowButtons } from './PanelControls'
 import { samePanelContent, useSidePanel, type PanelContent } from './store'
-import { mainViewContent } from './use-panel-actions'
+import { locationIsCurrent, mainViewContent } from './use-panel-actions'
 
 type ChatContent = Extract<PanelContent, { kind: 'chat' }>
 
@@ -54,8 +54,9 @@ export function ChatPanelView({ content }: { content: ChatContent }) {
 
   // One chat is never open twice: the main view wins.
   useEffect(() => {
-    if (samePanelContent(mainViewContent(location.pathname), content) && chatId) useSidePanel.getState().close()
-  }, [chatId, content, location.pathname])
+    if (!chatId || !locationIsCurrent(location)) return
+    if (samePanelContent(mainViewContent(location.pathname), content)) useSidePanel.getState().close()
+  }, [chatId, content, location])
 
   useEffect(() => { if (chat?.modelId) setModelId(chat.modelId) }, [chat?.modelId])
   useEffect(() => {

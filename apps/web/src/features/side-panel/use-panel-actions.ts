@@ -1,6 +1,15 @@
 import { useLocation, useNavigate } from 'react-router-dom'
 import { SIDE_PANEL_PARAM, useSidePanel, type PanelContent } from './store'
 
+/**
+ * False while a navigation is pending. The router applies navigations in a transition, but panel
+ * changes render at once, so a handler that changes both renders first with the old location.
+ */
+export function locationIsCurrent(location: { key: string }): boolean {
+  const entryKey = (window.history.state as { key?: string } | null)?.key
+  return !entryKey || entryKey === location.key
+}
+
 /** The route that shows `content` as the main view. */
 export function panelContentPath(content: PanelContent): string | null {
   if (content.kind === 'file') return `/files/d/${content.id}`
