@@ -88,12 +88,20 @@ export function FilesTrashPage() {
   }
 
   return (
-    <ScrollArea className="h-full">
-      <div
-        className="mobile-page-content mx-auto min-h-full max-w-6xl space-y-4 px-6 py-8"
-        onClick={(event) => { if (!(event.target as Element).closest('[data-file-id], button, a')) setSelection(EMPTY_SELECTION) }}
-        onContextMenu={(event) => { if (!(event.target as Element).closest('[data-file-id]') && items.length) openMenu(event, null) }}
-      >
+    // Handlers sit on the scroll area so clicks in the empty space below the list count too.
+    <ScrollArea
+      className="h-full"
+      onClick={(event) => {
+        // Menus and dialogs render in portals; React still bubbles their events up to here.
+        if (!event.currentTarget.contains(event.target as Node)) return
+        if (!(event.target as Element).closest('[data-file-id], button, a, [role="toolbar"], [data-slot="scroll-area-scrollbar"]')) setSelection(EMPTY_SELECTION)
+      }}
+      onContextMenu={(event) => {
+        if (!event.currentTarget.contains(event.target as Node)) return
+        if (!(event.target as Element).closest('[data-file-id], [data-slot="scroll-area-scrollbar"]') && items.length) openMenu(event, null)
+      }}
+    >
+      <div className="mobile-page-content mx-auto min-h-full max-w-6xl space-y-4 px-6 py-8">
         <div className="flex flex-wrap items-start gap-3">
           <div className="min-w-0 flex-1">
             <Link to="/files" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">

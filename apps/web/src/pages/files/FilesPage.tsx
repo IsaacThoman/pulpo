@@ -348,9 +348,11 @@ export function FilesPage() {
   }, [])
 
   /** Rubber-band selection from empty space; Cmd/Ctrl or Shift adds to the current selection. */
-  const startMarquee = (event: PointerEvent<HTMLDivElement>) => {
+  const startMarquee = (event: PointerEvent) => {
+    // Menus and dialogs render in portals; React still bubbles their events up to here.
+    if (!event.currentTarget.contains(event.target as Node)) return
     if (event.button !== 0 || event.pointerType !== 'mouse') return
-    if ((event.target as Element).closest('[data-file-id], button, a, input')) return
+    if ((event.target as Element).closest('[data-file-id], button, a, input, [role="toolbar"], [data-slot="scroll-area-scrollbar"]')) return
     const additive = hasPrimaryModifier(event) || event.shiftKey
     const base = additive ? new Set(selection.ids) : new Set<string>()
     const startX = event.clientX
@@ -581,15 +583,20 @@ export function FilesPage() {
   const sortLabels: Record<FileSortKey, string> = { name: ui("Name"), modified: ui("Modified"), kind: ui("Kind"), size: ui("Size") }
 
   return (
-    <ScrollArea className="h-full">
+    // Handlers sit on the scroll area so the empty space below the list also clears the
+    // selection, starts a drag-select, opens the folder menu, and accepts dropped files.
+    <ScrollArea
+      className="h-full"
+      {...pageDrop}
+      onPointerDown={startMarquee}
+      onContextMenu={(event) => {
+        if (!event.currentTarget.contains(event.target as Node)) return
+        if ((event.target as Element).closest('[data-file-id], input, a, [data-slot="scroll-area-scrollbar"]')) return
+        event.preventDefault()
+        if (!listing.isError) openMenuAt({ x: event.clientX, y: event.clientY }, null)
+      }}
+    >
       <div
-        {...pageDrop}
-        onPointerDown={startMarquee}
-        onContextMenu={(event) => {
-          if ((event.target as Element).closest('[data-file-id], input, a')) return
-          event.preventDefault()
-          if (!listing.isError) openMenuAt({ x: event.clientX, y: event.clientY }, null)
-        }}
         className={cn(
           'mobile-page-content mx-auto min-h-full max-w-6xl space-y-4 px-6 py-8',
           dropTarget === 'page' && 'rounded-2xl bg-primary/5 outline-2 -outline-offset-8 outline-dashed outline-primary/40',
