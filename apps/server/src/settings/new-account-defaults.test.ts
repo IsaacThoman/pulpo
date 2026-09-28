@@ -16,7 +16,7 @@ describe('new-account model defaults', () => {
       newChatAutoExpire: false,
       favoriteModelIds: [],
       providerOrder: [],
-      sidebarPins: { usage: false, billing: false, friends: false, apiKeys: false },
+      sidebarPins: { searchChats: true, files: true, usage: false, billing: false, friends: false, apiKeys: false },
     })
   })
 
@@ -38,7 +38,7 @@ describe('new-account model defaults', () => {
       newChatAutoExpire: false,
       favoriteModelIds: ['model-c', 'model-a', 'model-b'],
       providerOrder: [],
-      sidebarPins: { usage: false, billing: false, friends: false, apiKeys: false },
+      sidebarPins: { searchChats: true, files: true, usage: false, billing: false, friends: false, apiKeys: false },
     })
   })
 

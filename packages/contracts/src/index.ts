@@ -854,6 +854,9 @@ export type ModelPreferences = z.infer<typeof modelPreferencesSchema>
 
 /** Account-scoped visibility controls for optional primary sidebar links. */
 export const sidebarPinsSchema = z.object({
+  // Shown by default; saved preferences that predate these keys keep them visible.
+  searchChats: z.boolean().default(true),
+  files: z.boolean().default(true),
   usage: z.boolean().default(false),
   billing: z.boolean().default(false),
   friends: z.boolean().default(false),

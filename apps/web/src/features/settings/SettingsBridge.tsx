@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react'
+import { normalizeSidebarPins } from '@/lib/sidebar-pins'
 import { useQuery } from '@tanstack/react-query'
 import { modelPreferencesSchema } from '@pulpo/contracts'
 import { LatestValueQueue } from '@pulpo/client-core'
@@ -132,6 +133,7 @@ export function SettingsBridge() {
         ...remote.values,
         language: normalizeLanguage(remote.values.language),
         animationSpeed: normalizeAnimationSpeed(remote.values.animationSpeed),
+        sidebarPins: normalizeSidebarPins(remote.values.sidebarPins),
         ownerUserId: userId,
       }
       for (const key of dirtyKeys.current) {
