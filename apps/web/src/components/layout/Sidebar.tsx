@@ -426,6 +426,13 @@ export function ChatRow({
             e.preventDefault()
             return
           }
+          if (e.altKey && e.button === 0 && !e.metaKey && !e.ctrlKey && !e.shiftKey) {
+            // Alt/Option-click opens the chat beside the current view, as in Files.
+            e.preventDefault()
+            useSidePanel.getState().open({ kind: 'chat', id: chat.id })
+            onNavigate?.()
+            return
+          }
           const modified = e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0
           if (modified) {
             if (!isDesktopRuntime()) return

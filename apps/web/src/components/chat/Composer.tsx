@@ -10,7 +10,7 @@ import type { ShelfAttachment } from '@pulpo/client-core'
 import { useComposerSync } from './use-composer-sync'
 import { useFollowStartedChat } from './use-follow-started-chat'
 import { useMenuTriggerFocus } from './use-menu-trigger-focus'
-import { registerComposerFocus } from './composer-focus'
+import { registerComposerFocus, registerPanelComposerFocus } from './composer-focus'
 import { webComposerSync } from '@/lib/local-first/composer-sync'
 import { MAX_MESSAGE_ATTACHMENTS, type ComposerState } from '@pulpo/contracts'
 import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, useSyncExternalStore, type Ref, type DragEvent as ReactDragEvent } from 'react'
@@ -65,7 +65,7 @@ import { canSubmitComposerDraft } from '@/components/chat/composer-upload-policy
 import type { Attachment } from '@/lib/types'
 import { useUploadOutbox, type UploadRecord } from '@/stores/upload-outbox'
 import { FileScopeChip, FileScopePicker } from '@/features/files/FileScope'
-import { addFileScope } from '@/features/files/file-scope'
+import { extendFileScope } from '@/features/files/file-scope-cache'
 import { apiRequest } from '@/lib/api'
 import { dictationFilename, insertDictationText, preferredDictationMimeType } from '@/lib/dictation'
 import { isDesktopRuntime } from '@/lib/runtime'
@@ -221,7 +221,7 @@ export function Composer({
   const focusComposer = useCallback(() => ref.current?.focus({ preventScroll: true }), [])
   const presetMenuFocus = useMenuTriggerFocus(focusComposer)
   useImperativeHandle(focusControlRef, () => ({ focus: focusComposer }), [focusComposer])
-  useEffect(() => surface === 'page' ? registerComposerFocus(focusComposer) : undefined, [focusComposer, surface])
+  useEffect(() => surface === 'page' ? registerComposerFocus(focusComposer) : registerPanelComposerFocus(focusComposer), [focusComposer, surface])
   const fileInputRef = useRef<HTMLInputElement>(null)
   const valueRef = useRef(value)
   const attachmentIdsRef = useRef(attachmentIds)
@@ -1243,6 +1243,7 @@ export function Composer({
                 <FileScopeChip
                   key={id}
                   id={id}
+                  openFilesBeside={surface === 'page'}
                   onRemove={onFileScopeChange ? () => onFileScopeChange(fileScopeIds.filter((item) => item !== id)) : undefined}
                 />
               ))}
@@ -1369,7 +1370,7 @@ export function Composer({
               onOpenChange={(open) => { setFolderPickerOpen(open); if (!open) requestAnimationFrame(focusComposer) }}
               selected={fileScopeIds}
               onAdd={(ids) => {
-                onFileScopeChange?.(addFileScope(fileScopeIds, ids))
+                onFileScopeChange?.(extendFileScope(fileScopeIds, ids))
                 // Files are reached through agent tools; adding some implies agent mode.
                 if (canUseAgent && !messageEdit) setAgentMode(modelId, true)
               }}

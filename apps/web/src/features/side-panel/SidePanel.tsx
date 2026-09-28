@@ -1,4 +1,5 @@
-import { lazy, Suspense, useEffect, useState, type PointerEvent } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState, type PointerEvent } from 'react'
+import { useLocation } from 'react-router-dom'
 import { Loader2 } from 'lucide-react'
 import { ui } from '@/i18n/ui'
 import { cn } from '@/lib/utils'
@@ -30,7 +31,17 @@ export function SidePanel({ mode }: { mode: SidePanelMode }) {
     return () => window.removeEventListener('resize', fit)
   }, [])
 
-  // Cmd/Ctrl+\\ shows or hides the panel; Cmd/Ctrl+Shift+Enter maximizes or restores it.
+  // Navigating the main view while the panel is maximized would change nothing visible.
+  const { pathname } = useLocation()
+  const shownPath = useRef(pathname)
+  useEffect(() => {
+    if (shownPath.current === pathname) return
+    shownPath.current = pathname
+    if (useSidePanel.getState().maximized) useSidePanel.getState().setMaximized(false)
+  }, [pathname])
+
+  // Cmd/Ctrl+\\ shows or hides the panel, Cmd/Ctrl+J the agent beside the page, and
+  // Cmd/Ctrl+Shift+Enter maximizes or restores the panel.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const mod = event.metaKey || event.ctrlKey
@@ -39,6 +50,10 @@ export function SidePanel({ mode }: { mode: SidePanelMode }) {
       if (event.key === '\\' && !event.shiftKey) {
         event.preventDefault()
         state.toggle()
+      } else if (event.key.toLowerCase() === 'j' && !event.shiftKey) {
+        event.preventDefault()
+        // Loaded on use: the agent helpers bring in the chat store.
+        void import('./agent').then((agent) => agent.toggleAgent())
       } else if (event.key === 'Enter' && event.shiftKey && state.content) {
         event.preventDefault()
         state.setMaximized(!state.maximized)

@@ -38,6 +38,8 @@ import { useDocSession, type PresencePeer } from '@/features/files/editor/use-do
 import { FilePreviewBody } from '@/features/files/FilePreviewDialog'
 import { MarkdownConversionDialog } from '@/features/files/MarkdownConversionDialog'
 import { PanelMenuItems, PanelWindowButtons } from '@/features/side-panel/PanelControls'
+import { AskAgentButton } from '@/features/side-panel/AskAgentButton'
+import { usePublishAgentContext } from '@/features/side-panel/agent'
 import { useSidePanel, type PanelContent } from '@/features/side-panel/store'
 
 function statusProblem(status: DocSyncStatus): string | null {
@@ -167,6 +169,8 @@ function FileHeader({ node, ancestors, view, menu, children }: {
   menu: ReactNode
   children?: ReactNode
 }) {
+  const page = view.layout === 'page'
+  usePublishAgentContext(page && node ? { id: node.id, ancestorIds: ancestors.map((folder) => folder.id) } : null)
   return (
     <header className={cn('flex items-center border-b', view.layout === 'panel' ? 'side-panel-header gap-1.5 px-3 py-1.5' : 'mobile-page-content gap-3 px-4 py-2 sm:px-6')}>
       <div className="min-w-0 flex-1">
@@ -174,6 +178,7 @@ function FileHeader({ node, ancestors, view, menu, children }: {
         {node ? <DocTitle node={node} /> : <div className="h-8" />}
       </div>
       {children}
+      {page && node && <AskAgentButton />}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button variant="ghost" size="icon-sm" aria-label={ui("Document actions")} disabled={!node}><MoreHorizontal /></Button>

@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { FILE_SCOPE_ROOT, MAX_CHAT_FILE_SCOPES, type FileNode } from '@pulpo/contracts'
 import { Check, ChevronRight, HardDrive, Loader2, X } from 'lucide-react'
@@ -10,6 +11,7 @@ import { cn } from '@/lib/utils'
 import { useAuth } from '@/stores/auth'
 import { fetchFileNode, fetchFolder, fileNodeQueryKey, folderQueryKey } from './api'
 import { FileNodeIcon } from './FileNodeIcon'
+import { useSidePanel } from '@/features/side-panel/store'
 
 function useScopeNode(id: string): { node: FileNode | null; missing: boolean } {
   const userId = useAuth((state) => state.user?.id)
@@ -24,10 +26,26 @@ function useScopeNode(id: string): { node: FileNode | null; missing: boolean } {
   return { node, missing: !root && (query.isError || Boolean(node?.trashedAt)) }
 }
 
-/** One file or folder the agent can use, shown in the composer like an attachment. */
-export function FileScopeChip({ id, onRemove, className }: { id: string; onRemove?: () => void; className?: string }) {
+/**
+ * One file or folder the agent can use, shown in the composer like an attachment. Clicking it
+ * shows the item: folders in Files, and files beside a chat on the page (`openFilesBeside`) or
+ * in the main view from a chat in the side panel.
+ */
+export function FileScopeChip({ id, onRemove, openFilesBeside = false, className }: {
+  id: string
+  onRemove?: () => void
+  openFilesBeside?: boolean
+  className?: string
+}) {
+  const navigate = useNavigate()
   const { node, missing } = useScopeNode(id)
   const root = id === FILE_SCOPE_ROOT
+  const show = () => {
+    if (root) navigate('/files')
+    else if (node?.kind === 'folder') navigate(`/files/f/${node.id}`)
+    else if (node && openFilesBeside) useSidePanel.getState().open({ kind: 'file', id: node.id })
+    else if (node) navigate(`/files/d/${node.id}`)
+  }
   const name = root ? ui("My files") : node?.name ?? null
   const hint = missing
     ? ui("This item is no longer available")
@@ -46,7 +64,7 @@ export function FileScopeChip({ id, onRemove, className }: { id: string; onRemov
           {root
             ? <HardDrive className="size-4 shrink-0 text-sky-600 dark:text-sky-400" aria-hidden="true" />
             : node ? <FileNodeIcon node={node} className="size-4 shrink-0" /> : <span className="size-4 shrink-0" />}
-          <span className="min-w-0 truncate">{name ?? '…'}</span>
+          <button type="button" disabled={missing || (!root && !node)} className="min-w-0 cursor-pointer truncate hover:underline disabled:cursor-default disabled:no-underline" onClick={show}>{name ?? '…'}</button>
           {onRemove && (
             <button
               type="button"

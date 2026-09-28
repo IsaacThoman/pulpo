@@ -36,7 +36,6 @@ export function usePanelActions(content: PanelContent) {
   const location = useLocation()
   const maximized = useSidePanel((state) => state.maximized)
   const target = panelContentPath(content)
-  const main = mainViewContent(location.pathname)
 
   const go = ({ pathname, state }: PanelTarget) => {
     // The side parameter is re-applied from the store; drop the old one so it cannot be adopted.
@@ -51,7 +50,5 @@ export function usePanelActions(content: PanelContent) {
     close: () => useSidePanel.getState().close(),
     /** Moves the panel's content into the main view and closes the panel. */
     openAsPage: () => { useSidePanel.getState().close(); go(target) },
-    /** Exchanges the main view and the panel, when the panel can show the main view's content. */
-    swap: main ? () => { useSidePanel.getState().open(main); go(target) } : undefined,
   }
 }

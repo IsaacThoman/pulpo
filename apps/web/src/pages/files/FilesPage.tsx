@@ -69,6 +69,8 @@ import {
 import { readFileSort, sortFileNodes, toggleFileSort, uniqueChildName, writeFileSort, type FileSort, type FileSortKey } from '@/features/files/browser/sort'
 import { hasPrimaryModifier, isAppleShortcut, isEditableTarget, shortcutLabel } from '@/features/files/browser/shortcuts'
 import { useSidePanel } from '@/features/side-panel/store'
+import { AskAgentButton } from '@/features/side-panel/AskAgentButton'
+import { usePublishAgentContext } from '@/features/side-panel/agent'
 import { SelectionAction } from '@/features/files/browser/SelectionAction'
 import { useFileOperations } from '@/features/files/browser/use-file-operations'
 import { useItemDrag } from '@/features/files/browser/use-item-drag'
@@ -125,6 +127,9 @@ export function FilesPage() {
     queryFn: () => fetchFolder(folderId),
     enabled: Boolean(userId && filesEnabled),
   })
+  usePublishAgentContext(filesEnabled && !listing.isError
+    ? { id: folderId ?? FILE_SCOPE_ROOT, ancestorIds: listing.data?.ancestors.map((folder) => folder.id) ?? [] }
+    : null)
   const ops = useFileOperations()
   const clip = useFileClipboard((state) => state.clip)
   const [view, setView] = useState<FilesView>(readView)
@@ -696,6 +701,7 @@ export function FilesPage() {
                 <LayoutGrid className="size-4" />
               </button>
               </div>
+              <AskAgentButton />
               <Button asChild variant="outline" size="sm"><Link to="/files/trash"><Trash2 /> {ui("Trash")}</Link></Button>
               <DropdownMenu>
               <DropdownMenuTrigger asChild>

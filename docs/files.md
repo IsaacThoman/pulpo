@@ -16,7 +16,9 @@ Copying writes folders and documents in the same transaction that reserves stora
 
 A file or chat can open beside the current view (**Open to the side**, or Alt/Option-click in Files) while the main view keeps navigating between chats and folders. The panel is window state mirrored into `?side=file:<id>`, `?side=chat:<id>`, or `?side=chat:new`, so reloads and shared links reopen it and navigation carries it along. It docks and resizes on wide windows, becomes a drawer below 1100px, and a full-screen sheet on phones.
 
-**Open as page** moves the panel's content into the main view and **Swap sides** exchanges the two; the same file or chat is never shown in both. **Maximize** (Cmd/Ctrl+Shift+Enter) fills the content area while the main view stays mounted, and Cmd/Ctrl+\ hides or reopens the panel. A chat in the panel loads and subscribes like the routed chat; its composer keeps its own new-chat draft, takes only files dropped on the panel, and replaces the panel's content instead of navigating when the first message creates the chat.
+**Open as page** moves the panel's content into the main view; the same file or chat is never shown in both. **Maximize** (Cmd/Ctrl+Shift+Enter) fills the content area while the main view stays mounted, and navigating the main view restores the split. Cmd/Ctrl+\ hides or reopens the panel. Alt/Option-click opens a file in Files or a chat in the sidebar beside the current view.
+
+**Ask agent** (Cmd/Ctrl+J) in a file's or folder's header opens an agent chat beside it, scoped to that item. Pages publish what they show as the agent context (`usePublishAgentContext`); when an agent chat is already in the panel, the button adds the item to that chat's scope instead (unless a folder above it is already there), and Cmd/Ctrl+J hides the open agent chat. A chat in the panel loads and subscribes like the routed chat; its composer keeps its own new-chat draft, takes only files dropped on the panel, and replaces the panel's content instead of navigating when the first message creates the chat.
 
 ## Agent files
 
