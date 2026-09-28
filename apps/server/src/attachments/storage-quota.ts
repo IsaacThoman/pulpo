@@ -44,6 +44,37 @@ export async function getStorageUsage(userId: string): Promise<StorageUsage> {
 }
 
 /**
+ * Takes the account's storage lock and checks the remaining allowance, plus the per-file cap
+ * unless `sizeBytes` covers several files. The lock is held until the transaction ends.
+ */
+export async function assertStorageCapacity(
+  tx: DatabaseTransaction,
+  userId: string,
+  sizeBytes: number,
+  options: { perFileLimit?: boolean } = {},
+): Promise<void> {
+  await lockAccountStorage(tx, userId)
+  const [[user], [setting]] = await Promise.all([
+    tx.select({ storageLimitBytes: users.storageLimitBytes }).from(users).where(eq(users.id, userId)).limit(1),
+    tx.select({ value: applicationSettings.value }).from(applicationSettings).where(eq(applicationSettings.key, 'auth')).limit(1),
+  ])
+  if (!user) throw notFound('User')
+  if (options.perFileLimit !== false) {
+    const sizeError = attachmentSizeError(sizeBytes, parseAuthSettings(setting?.value).maxAttachmentBytes)
+    if (sizeError) throw new AppError(413, 'attachment_too_large', sizeError, 'invalid_request_error')
+  }
+  const usedBytes = await storageUsedBytes(tx, userId)
+  if (!hasStorageCapacity(usedBytes, user.storageLimitBytes, sizeBytes)) {
+    throw new AppError(413, 'storage_quota_exceeded', 'This file would exceed your storage allowance', 'invalid_request_error')
+  }
+}
+
+/** Serializes storage reservations per account. Take it before any Files tree lock. */
+export async function lockAccountStorage(tx: DatabaseTransaction, userId: string): Promise<void> {
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`pulpo-storage:${userId}`}))`)
+}
+
+/**
  * Runs `insert` in a transaction that holds the account's storage lock after checking the
  * per-file cap and remaining quota, so concurrent reservations cannot overdraw storage.
  */
@@ -53,19 +84,7 @@ export async function withReservedStorage<T>(
   insert: (tx: DatabaseTransaction) => Promise<T>,
 ): Promise<T> {
   return db.transaction(async (tx) => {
-    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`pulpo-storage:${userId}`}))`)
-    const [[user], [setting]] = await Promise.all([
-      tx.select({ storageLimitBytes: users.storageLimitBytes }).from(users).where(eq(users.id, userId)).limit(1),
-      tx.select({ value: applicationSettings.value }).from(applicationSettings).where(eq(applicationSettings.key, 'auth')).limit(1),
-    ])
-    if (!user) throw notFound('User')
-    const maxAttachmentBytes = parseAuthSettings(setting?.value).maxAttachmentBytes
-    const sizeError = attachmentSizeError(sizeBytes, maxAttachmentBytes)
-    if (sizeError) throw new AppError(413, 'attachment_too_large', sizeError, 'invalid_request_error')
-    const usedBytes = await storageUsedBytes(tx, userId)
-    if (!hasStorageCapacity(usedBytes, user.storageLimitBytes, sizeBytes)) {
-      throw new AppError(413, 'storage_quota_exceeded', 'This file would exceed your storage allowance', 'invalid_request_error')
-    }
+    await assertStorageCapacity(tx, userId, sizeBytes)
     return insert(tx)
   })
 }

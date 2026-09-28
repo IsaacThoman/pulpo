@@ -52,7 +52,7 @@ export async function mutateFileTree<T>(userId: string, mutation: (tx: DatabaseT
 }
 
 /** Ids from `startId` up to the root, nearest first. The start node is included. */
-async function chainIds(executor: FileExecutor, userId: string, startId: string): Promise<string[]> {
+export async function chainIds(executor: FileExecutor, userId: string, startId: string): Promise<string[]> {
   const rows = await executor.execute<{ id: string }>(sql`
     with recursive chain(id, parent_id, depth) as (
       select id, parent_id, 0 from file_nodes where id = ${startId} and owner_user_id = ${userId}
@@ -96,14 +96,14 @@ async function liveNode(executor: FileExecutor, userId: string, id: string): Pro
 }
 
 /** Validates a destination folder and returns the depth its children would have (root children are depth 1). */
-async function destinationDepth(executor: FileExecutor, userId: string, parentId: string | null): Promise<number> {
+export async function destinationDepth(executor: FileExecutor, userId: string, parentId: string | null): Promise<number> {
   if (!parentId) return 1
   const parent = await liveNode(executor, userId, parentId).catch(() => { throw notFound('Folder') })
   if (parent.kind !== 'folder') throw new AppError(400, 'file_parent_not_folder', 'Items can only be placed in folders')
   return (await chainIds(executor, userId, parentId)).length + 1
 }
 
-async function liveSiblingNames(executor: FileExecutor, userId: string, parentId: string | null, excludeId?: string): Promise<Set<string>> {
+export async function liveSiblingNames(executor: FileExecutor, userId: string, parentId: string | null, excludeId?: string): Promise<Set<string>> {
   const rows = await executor.select({ name: fileNodes.name }).from(fileNodes).where(and(
     eq(fileNodes.ownerUserId, userId),
     parentId ? eq(fileNodes.parentId, parentId) : isNull(fileNodes.parentId),
@@ -143,7 +143,7 @@ export async function getFileNode(userId: string, id: string): Promise<{ node: F
   return { node: toFileNode(access.node), ancestors: (await ancestorsOf(db, userId, access.node)).map(toFileNode) }
 }
 
-const treeTooDeep = () => new AppError(400, 'file_tree_too_deep', `Folders can be nested at most ${FILE_TREE_MAX_DEPTH} levels deep`)
+export const treeTooDeep = () => new AppError(400, 'file_tree_too_deep', `Folders can be nested at most ${FILE_TREE_MAX_DEPTH} levels deep`)
 
 /** Checks that a new item can be placed in `parentId` (a live folder, or the root). */
 export async function assertDestination(executor: FileExecutor, userId: string, parentId: string | null): Promise<void> {
@@ -161,6 +161,53 @@ export async function createFolder(userId: string, input: { parentId: string | n
   })
 }
 
+const revisionConflict = () => new AppError(409, 'file_revision_conflict', 'This item changed on another device. Refresh and try again.')
+
+/**
+ * Moves and/or renames one live node inside a tree transaction. On a name clash it either fails
+ * (explicit renames) or keeps both by suffixing, the way file managers do for moves.
+ */
+async function moveNodeInTx(tx: DatabaseTransaction, userId: string, node: FileNodeRow, target: {
+  parentId: string | null
+  name: string
+  onConflict: 'fail' | 'rename'
+}): Promise<FileNodeRow> {
+  if (node.status !== 'ready') throw notFound('File')
+  if (target.parentId !== node.parentId) {
+    if (target.parentId && (await chainIds(tx, userId, target.parentId)).includes(node.id)) {
+      throw new AppError(400, 'file_move_cycle', 'A folder cannot be moved into itself')
+    }
+    const height = Math.max(...(await subtree(tx, userId, node.id)).map((row) => row.depth))
+    if (await destinationDepth(tx, userId, target.parentId) + height > FILE_TREE_MAX_DEPTH) throw treeTooDeep()
+  }
+  if (target.parentId === node.parentId && target.name === node.name) return node
+  const taken = await liveSiblingNames(tx, userId, target.parentId, node.id)
+  let name = target.name
+  if (taken.has(name.toLowerCase())) {
+    if (target.onConflict === 'fail') throw nameConflict(name)
+    name = nextAvailableName(name, taken)
+  }
+  const [updated] = await tx.update(fileNodes).set({
+    name, parentId: target.parentId, revision: sql`${fileNodes.revision} + 1`, updatedAt: new Date(),
+  }).where(eq(fileNodes.id, node.id)).returning()
+  return updated!
+}
+
+/**
+ * Drops ids whose ancestor is also listed, so acting on a folder and its contents together
+ * treats the contents as part of the folder, like a file manager selection.
+ */
+export async function topLevelIds(tx: DatabaseTransaction, userId: string, ids: string[]): Promise<string[]> {
+  const unique = [...new Set(ids)]
+  const listed = new Set(unique)
+  const result: string[] = []
+  for (const id of unique) {
+    const ancestors = (await chainIds(tx, userId, id)).slice(1)
+    if (!ancestors.some((ancestor) => listed.has(ancestor))) result.push(id)
+  }
+  return result
+}
+
 export async function updateFileNode(userId: string, id: string, input: {
   name?: string
   parentId?: string | null
@@ -168,58 +215,82 @@ export async function updateFileNode(userId: string, id: string, input: {
 }): Promise<FileNode> {
   return mutateFileTree(userId, async (tx) => {
     const node = await liveNode(tx, userId, id)
-    if (node.status !== 'ready') throw notFound('File')
-    if (input.expectedRevision !== undefined && input.expectedRevision !== node.revision) {
-      throw new AppError(409, 'file_revision_conflict', 'This item changed on another device. Refresh and try again.')
-    }
-    const parentId = input.parentId === undefined ? node.parentId : input.parentId
-    const name = input.name ?? node.name
-    if (parentId !== node.parentId) {
-      if (parentId && (await chainIds(tx, userId, parentId)).includes(node.id)) {
-        throw new AppError(400, 'file_move_cycle', 'A folder cannot be moved into itself')
-      }
-      const height = Math.max(...(await subtree(tx, userId, node.id)).map((row) => row.depth))
-      if (await destinationDepth(tx, userId, parentId) + height > FILE_TREE_MAX_DEPTH) throw treeTooDeep()
-    }
-    if (parentId === node.parentId && name === node.name) return toFileNode(node)
-    await assertNameAvailable(tx, userId, parentId, name, node.id)
-    const [updated] = await tx.update(fileNodes).set({
-      name, parentId, revision: sql`${fileNodes.revision} + 1`, updatedAt: new Date(),
-    }).where(eq(fileNodes.id, node.id)).returning()
-    return toFileNode(updated!)
+    if (input.expectedRevision !== undefined && input.expectedRevision !== node.revision) throw revisionConflict()
+    const updated = await moveNodeInTx(tx, userId, node, {
+      parentId: input.parentId === undefined ? node.parentId : input.parentId,
+      name: input.name ?? node.name,
+      onConflict: 'fail',
+    })
+    return toFileNode(updated)
   })
+}
+
+/** Moves several items atomically. Name clashes keep both items; the response has the final names. */
+export async function moveFileNodes(userId: string, items: Array<{ id: string; parentId: string | null; name?: string }>): Promise<FileNode[]> {
+  return mutateFileTree(userId, async (tx) => {
+    const ids = new Set(await topLevelIds(tx, userId, items.map((item) => item.id)))
+    const moved: FileNode[] = []
+    for (const item of items) {
+      if (!ids.delete(item.id)) continue
+      const node = await liveNode(tx, userId, item.id)
+      moved.push(toFileNode(await moveNodeInTx(tx, userId, node, { parentId: item.parentId, name: item.name ?? node.name, onConflict: 'rename' })))
+    }
+    return moved
+  })
+}
+
+async function trashNodeInTx(tx: DatabaseTransaction, userId: string, node: FileNodeRow): Promise<string[]> {
+  if (node.status !== 'ready') throw notFound('File')
+  const ids = (await subtree(tx, userId, node.id)).map((row) => row.id)
+  // Descendants trashed earlier keep their own trash root so they can still be restored separately.
+  const trashed = await tx.update(fileNodes).set({ trashedAt: new Date(), trashRootId: node.id, updatedAt: new Date() })
+    .where(and(eq(fileNodes.ownerUserId, userId), inArray(fileNodes.id, ids), isNull(fileNodes.trashedAt)))
+    .returning({ id: fileNodes.id, kind: fileNodes.kind })
+  return trashed.filter((row) => row.kind === 'doc').map((row) => row.id)
+}
+
+/** Trashes several items atomically and returns the ids that became trash entries (for undo). */
+export async function trashFileNodes(userId: string, ids: string[]): Promise<string[]> {
+  const { roots, docIds } = await mutateFileTree(userId, async (tx) => {
+    const roots = await topLevelIds(tx, userId, ids)
+    const docIds: string[] = []
+    for (const id of roots) docIds.push(...await trashNodeInTx(tx, userId, await liveNode(tx, userId, id)))
+    return { roots, docIds }
+  })
+  await publishDocsClosed(docIds, 'trashed')
+  return roots
 }
 
 export async function trashFileNode(userId: string, id: string): Promise<void> {
-  const docIds = await mutateFileTree(userId, async (tx) => {
-    const node = await liveNode(tx, userId, id)
-    if (node.status !== 'ready') throw notFound('File')
-    const ids = (await subtree(tx, userId, node.id)).map((row) => row.id)
-    // Descendants trashed earlier keep their own trash root so they can still be restored separately.
-    const trashed = await tx.update(fileNodes).set({ trashedAt: new Date(), trashRootId: node.id, updatedAt: new Date() })
-      .where(and(eq(fileNodes.ownerUserId, userId), inArray(fileNodes.id, ids), isNull(fileNodes.trashedAt)))
-      .returning({ id: fileNodes.id, kind: fileNodes.kind })
-    return trashed.filter((row) => row.kind === 'doc').map((row) => row.id)
+  await trashFileNodes(userId, [id])
+}
+
+async function restoreNodeInTx(tx: DatabaseTransaction, userId: string, id: string): Promise<FileNodeRow> {
+  const access = await resolveFileAccess(tx, userId, id)
+  if (!access || !access.node.trashedAt || access.node.trashRootId !== access.node.id) throw notFound('Trashed item')
+  const node = access.node
+  // If the original folder is still in the trash, the item comes back at the top level.
+  const parent = node.parentId ? (await resolveFileAccess(tx, userId, node.parentId))?.node : null
+  const parentId = parent && !parent.trashedAt ? parent.id : null
+  const name = await availableName(tx, userId, parentId, node.name)
+  // Rename while still trashed; the live-name index only applies once the batch is restored.
+  await tx.update(fileNodes).set({ parentId, name, revision: sql`${fileNodes.revision} + 1` }).where(eq(fileNodes.id, node.id))
+  await tx.update(fileNodes).set({ trashedAt: null, trashRootId: null, updatedAt: new Date() })
+    .where(and(eq(fileNodes.ownerUserId, userId), eq(fileNodes.trashRootId, node.id)))
+  const [restored] = await tx.select().from(fileNodes).where(eq(fileNodes.id, node.id))
+  return restored!
+}
+
+export async function restoreFileNodes(userId: string, ids: string[]): Promise<FileNode[]> {
+  return mutateFileTree(userId, async (tx) => {
+    const restored: FileNode[] = []
+    for (const id of new Set(ids)) restored.push(toFileNode(await restoreNodeInTx(tx, userId, id)))
+    return restored
   })
-  await publishDocsClosed(docIds, 'trashed')
 }
 
 export async function restoreFileNode(userId: string, id: string): Promise<FileNode> {
-  return mutateFileTree(userId, async (tx) => {
-    const access = await resolveFileAccess(tx, userId, id)
-    if (!access || !access.node.trashedAt || access.node.trashRootId !== access.node.id) throw notFound('Trashed item')
-    const node = access.node
-    // If the original folder is still in the trash, the item comes back at the top level.
-    const parent = node.parentId ? (await resolveFileAccess(tx, userId, node.parentId))?.node : null
-    const parentId = parent && !parent.trashedAt ? parent.id : null
-    const name = await availableName(tx, userId, parentId, node.name)
-    // Rename while still trashed; the live-name index only applies once the batch is restored.
-    await tx.update(fileNodes).set({ parentId, name, revision: sql`${fileNodes.revision} + 1` }).where(eq(fileNodes.id, node.id))
-    await tx.update(fileNodes).set({ trashedAt: null, trashRootId: null, updatedAt: new Date() })
-      .where(and(eq(fileNodes.ownerUserId, userId), eq(fileNodes.trashRootId, node.id)))
-    const [restored] = await tx.select().from(fileNodes).where(eq(fileNodes.id, node.id))
-    return toFileNode(restored!)
-  })
+  return (await restoreFileNodes(userId, [id]))[0]!
 }
 
 export async function listTrash(userId: string): Promise<FileNode[]> {
@@ -248,16 +319,23 @@ async function purgeNodes(tx: DatabaseTransaction, userId: string, rootIds: stri
   return rows.filter((row) => row.kind === 'doc').map((row) => row.id)
 }
 
-/** Permanently deletes a trashed item, or cancels an upload that was never confirmed. */
-export async function deleteFileNode(userId: string, id: string): Promise<void> {
+/** Permanently deletes trashed items, or cancels uploads that were never confirmed. */
+export async function deleteFileNodes(userId: string, ids: string[]): Promise<void> {
   await mutateFileTree(userId, async (tx) => {
-    const access = await resolveFileAccess(tx, userId, id)
-    if (!access) throw notFound('File')
-    if (!access.node.trashedAt && access.node.status !== 'pending') {
-      throw new AppError(409, 'file_not_trashed', 'Move this item to the trash before deleting it permanently')
+    const unique = [...new Set(ids)]
+    for (const id of unique) {
+      const access = await resolveFileAccess(tx, userId, id)
+      if (!access) throw notFound('File')
+      if (!access.node.trashedAt && access.node.status !== 'pending') {
+        throw new AppError(409, 'file_not_trashed', 'Move this item to the trash before deleting it permanently')
+      }
     }
-    return purgeNodes(tx, userId, [id])
+    return purgeNodes(tx, userId, unique)
   }).then((docIds) => publishDocsClosed(docIds, 'deleted'))
+}
+
+export async function deleteFileNode(userId: string, id: string): Promise<void> {
+  await deleteFileNodes(userId, [id])
 }
 
 export async function emptyTrash(userId: string): Promise<void> {

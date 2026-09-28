@@ -1,5 +1,5 @@
 import { createReadStream, createWriteStream } from 'node:fs'
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import type { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
@@ -50,6 +50,19 @@ export class LocalBlobStore implements BlobStore {
 
   async delete(key: string): Promise<void> {
     await rm(this.resolve(key), { force: true })
+  }
+
+  async copy(sourceKey: string, targetKey: string): Promise<void> {
+    const target = this.resolve(targetKey)
+    const temporary = `${target}.${randomUUID()}.copy`
+    await mkdir(path.dirname(target), { recursive: true })
+    try {
+      await copyFile(this.resolve(sourceKey), temporary)
+      await rename(temporary, target)
+    } catch (error) {
+      await rm(temporary, { force: true }).catch(() => undefined)
+      throw error
+    }
   }
 
   async createUploadUrl(key: string): Promise<string> {

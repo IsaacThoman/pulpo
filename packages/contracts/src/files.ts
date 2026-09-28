@@ -64,6 +64,26 @@ export const updateFileNodeSchema = z.object({
   expectedRevision: z.number().int().nonnegative().optional(),
 }).refine((input) => input.name !== undefined || input.parentId !== undefined, { message: 'Nothing to update' })
 
+/** Upper bound on items in one batch request; a selection larger than this is split by the client. */
+export const FILE_BATCH_MAX_ITEMS = 500
+const fileIdsSchema = z.array(z.uuid()).min(1).max(FILE_BATCH_MAX_ITEMS)
+
+export const fileNodeIdsSchema = z.object({ ids: fileIdsSchema })
+
+export const moveFileNodesSchema = z.object({
+  items: z.array(z.object({
+    id: z.uuid(),
+    parentId: z.uuid().nullable(),
+    /** Optional target name, e.g. when undoing a move that had to rename. */
+    name: fileNameSchema.optional(),
+  })).min(1).max(FILE_BATCH_MAX_ITEMS),
+})
+
+export const copyFileNodesSchema = z.object({
+  ids: fileIdsSchema,
+  parentId: z.uuid().nullable(),
+})
+
 export const reserveFileUploadSchema = z.object({
   parentId: z.uuid().nullable().default(null),
   name: fileNameSchema,
@@ -78,6 +98,7 @@ export type CreateFileFolder = z.input<typeof createFileFolderSchema>
 export type UpdateFileNode = z.input<typeof updateFileNodeSchema>
 export type CreateFileDoc = z.input<typeof createFileDocSchema>
 export type ReserveFileUpload = z.input<typeof reserveFileUploadSchema>
+export type MoveFileNodes = z.input<typeof moveFileNodesSchema>
 
 export interface FileListing {
   /** Null for the root of the account's Files tree. */

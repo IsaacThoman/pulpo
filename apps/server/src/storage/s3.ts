@@ -1,4 +1,4 @@
-import { CreateBucketCommand, DeleteObjectCommand, GetObjectCommand, HeadBucketCommand, PutBucketCorsCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3'
+import { CopyObjectCommand, CreateBucketCommand, DeleteObjectCommand, GetObjectCommand, HeadBucketCommand, PutBucketCorsCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { Readable } from 'node:stream'
 import type { BlobDownloadOptions, BlobMetadata, BlobStore } from './blob-store.js'
@@ -97,6 +97,15 @@ export class S3BlobStore implements BlobStore {
   async delete(key: string): Promise<void> {
     await this.ensureReady()
     await this.client.send(new DeleteObjectCommand({ Bucket: this.options.bucket, Key: key }))
+  }
+
+  async copy(sourceKey: string, targetKey: string): Promise<void> {
+    await this.ensureReady()
+    await this.client.send(new CopyObjectCommand({
+      Bucket: this.options.bucket,
+      Key: targetKey,
+      CopySource: `${this.options.bucket}/${sourceKey.split('/').map(encodeURIComponent).join('/')}`,
+    }))
   }
 
   async createUploadUrl(key: string, metadata: BlobMetadata, expiresInSeconds: number): Promise<string> {

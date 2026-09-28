@@ -1,4 +1,4 @@
-import type { FileListing, FileNode, FileUploadReservation, UpdateFileNode } from '@pulpo/contracts'
+import type { FileListing, FileNode, FileUploadReservation, MoveFileNodes, UpdateFileNode } from '@pulpo/contracts'
 import { formatAttachmentSizeLimit } from '@pulpo/client-core'
 import { ApiError, apiRequest, authenticatedFetch, downloadApiFile, fetchApiBlob } from '@/lib/api'
 import { uit } from '@/i18n/ui'
@@ -57,6 +57,28 @@ export function restoreFileNode(id: string): Promise<FileNode> {
 
 export function deleteFileNode(id: string): Promise<void> {
   return apiRequest<void>(`/api/files/${id}`, { method: 'DELETE' })
+}
+
+// Batch operations change every listed item or none of them.
+export async function moveFileNodes(items: MoveFileNodes['items']): Promise<FileNode[]> {
+  return (await apiRequest<{ nodes: FileNode[] }>('/api/files/batch/move', { method: 'POST', body: { items } })).nodes
+}
+
+export async function copyFileNodes(ids: string[], parentId: string | null): Promise<FileNode[]> {
+  return (await apiRequest<{ nodes: FileNode[] }>('/api/files/batch/copy', { method: 'POST', body: { ids, parentId } })).nodes
+}
+
+/** Returns the ids that became trash entries; a folder's selected contents travel with it. */
+export async function trashFileNodes(ids: string[]): Promise<string[]> {
+  return (await apiRequest<{ ids: string[] }>('/api/files/batch/trash', { method: 'POST', body: { ids } })).ids
+}
+
+export async function restoreFileNodes(ids: string[]): Promise<FileNode[]> {
+  return (await apiRequest<{ nodes: FileNode[] }>('/api/files/batch/restore', { method: 'POST', body: { ids } })).nodes
+}
+
+export function deleteFileNodes(ids: string[]): Promise<void> {
+  return apiRequest<void>('/api/files/batch/delete', { method: 'POST', body: { ids } })
 }
 
 export function emptyTrash(): Promise<void> {

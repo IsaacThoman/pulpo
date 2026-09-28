@@ -10,15 +10,15 @@ import { fetchFolder, folderQueryKey } from './api'
 import { filesErrorMessage } from './file-display'
 import { FileNodeIcon } from './FileNodeIcon'
 
-/** Folder picker that walks the tree one level at a time, starting from the item's current folder. */
+/** Folder picker that walks the tree one level at a time, starting from the items' current folder. */
 export function FileMoveDialog({
-  node,
+  nodes,
   onOpenChange,
   onMove,
 }: {
-  node: FileNode | null
+  nodes: FileNode[] | null
   onOpenChange: (open: boolean) => void
-  onMove: (node: FileNode, parentId: string | null) => Promise<unknown>
+  onMove: (nodes: FileNode[], parentId: string | null) => Promise<unknown>
 }) {
   const userId = useAuth((state) => state.user?.id)
   const [folderId, setFolderId] = useState<string | null>(null)
@@ -26,38 +26,39 @@ export function FileMoveDialog({
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
-    if (!node) return
-    setFolderId(node.parentId)
+    if (!nodes?.length) return
+    setFolderId(nodes[0]!.parentId)
     setError(null)
-  }, [node])
+  }, [nodes])
 
   const listing = useQuery({
     queryKey: folderQueryKey(userId, folderId),
     queryFn: () => fetchFolder(folderId),
-    enabled: Boolean(node && userId),
+    enabled: Boolean(nodes?.length && userId),
   })
   const folders = (listing.data?.children ?? []).filter((child) => child.kind === 'folder')
   const trail = [...(listing.data?.ancestors ?? []), ...(listing.data?.folder ? [listing.data.folder] : [])]
-  const unchanged = node?.parentId === folderId
+  const moving = new Set(nodes?.map((node) => node.id))
+  const unchanged = Boolean(nodes?.every((node) => node.parentId === folderId))
 
   const move = async () => {
-    if (!node) return
+    if (!nodes?.length) return
     setSaving(true)
     try {
-      await onMove(node, folderId)
+      await onMove(nodes, folderId)
       onOpenChange(false)
     } catch (cause) {
-      setError(filesErrorMessage(cause, node.name))
+      setError(filesErrorMessage(cause))
     } finally {
       setSaving(false)
     }
   }
 
   return (
-    <Dialog open={Boolean(node)} onOpenChange={onOpenChange}>
+    <Dialog open={Boolean(nodes?.length)} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>{node ? uit`Move "${node.name}"` : ui("Move")}</DialogTitle>
+          <DialogTitle>{nodes?.length === 1 ? uit`Move "${nodes[0]!.name}"` : nodes?.length ? uit`Move ${nodes.length} items` : ui("Move")}</DialogTitle>
           <DialogDescription>{ui("Choose a destination folder.")}</DialogDescription>
         </DialogHeader>
         <nav aria-label={ui("Destination path")} className="flex min-w-0 flex-wrap items-center gap-0.5 text-sm">
@@ -75,7 +76,7 @@ export function FileMoveDialog({
           {listing.isPending && <div className="grid h-full place-items-center"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>}
           {!listing.isPending && folders.length === 0 && <p className="p-6 text-center text-sm text-muted-foreground">{ui("No folders here")}</p>}
           {folders.map((folder) => {
-            const self = folder.id === node?.id
+            const self = moving.has(folder.id)
             return (
               <button
                 key={folder.id}

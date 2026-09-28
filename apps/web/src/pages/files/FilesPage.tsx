@@ -1,22 +1,29 @@
-import { useRef, useState, type DragEvent, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type DragEvent, type MouseEvent, type PointerEvent, type ReactNode } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import type { FileNode } from '@pulpo/contracts'
+import type { FileListing, FileNode } from '@pulpo/contracts'
 import {
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
   ChevronRight,
+  ClipboardPaste,
+  Copy,
+  CopyPlus,
   Download,
   Eye,
-  FolderInput,
   FilePlus2,
   FileUp,
+  FolderInput,
   FolderPlus,
   HardDrive,
   LayoutGrid,
   List,
   Loader2,
-  MoreHorizontal,
   Pencil,
   Plus,
+  Scissors,
+  SquareDashedMousePointer,
   Trash2,
   TriangleAlert,
   Upload,
@@ -27,40 +34,50 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
+  DropdownMenuShortcut,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { ui, uit } from '@/i18n/ui'
-import { formatBytes } from '@/lib/attachments'
-import { timeAgo } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/stores/auth'
-import {
-  createDoc,
-  createFolder,
-  downloadDocMarkdown,
-  downloadFile,
-  fetchFolder,
-  filesQueryKey,
-  folderQueryKey,
-  trashFileNode,
-  updateFileNode,
-  uploadFile,
-} from '@/features/files/api'
+import { createDoc, createFolder, downloadFile, fetchFolder, folderQueryKey, uploadFile } from '@/features/files/api'
 import { filesErrorMessage } from '@/features/files/file-display'
-import { FileNodeIcon } from '@/features/files/FileNodeIcon'
 import { FileMoveDialog } from '@/features/files/FileMoveDialog'
-import { FileNameDialog } from '@/features/files/FileNameDialog'
 import { FilePreviewDialog } from '@/features/files/FilePreviewDialog'
+import { useFileClipboard } from '@/features/files/browser/clipboard'
+import { FileContextMenu, type ContextMenuPoint } from '@/features/files/browser/FileContextMenu'
+import { FileItem, type FileDropHandlers } from '@/features/files/browser/FileItem'
+import { FileToasts } from '@/features/files/browser/FileToasts'
+import {
+  clickSelect,
+  EMPTY_SELECTION,
+  navigateIndex,
+  pruneSelection,
+  selectAll,
+  selectOnly,
+  stepSelect,
+  typeaheadIndex,
+  type FileSelection,
+  type NavigationKey,
+} from '@/features/files/browser/selection'
+import { readFileSort, sortFileNodes, toggleFileSort, uniqueChildName, writeFileSort, type FileSort, type FileSortKey } from '@/features/files/browser/sort'
+import { hasPrimaryModifier, isEditableTarget, shortcutLabel } from '@/features/files/browser/shortcuts'
+import { useFileOperations } from '@/features/files/browser/use-file-operations'
 
-/** Drag payload for moving an existing item; external drops carry "Files" instead. */
-const NODE_DRAG_TYPE = 'application/x-pulpo-file-node'
+/** Drag payload for moving existing items (a JSON id list); external drops carry "Files" instead. */
+const NODE_DRAG_TYPE = 'application/x-pulpo-file-nodes'
 const VIEW_STORAGE_KEY = 'pulpo.files.view'
 const UPLOAD_CONCURRENCY = 3
+const TYPEAHEAD_RESET_MS = 800
+const NAVIGATION_KEYS = new Set<string>(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End'])
 
 type FilesView = 'list' | 'grid'
 interface UploadEntry { id: string; name: string; error?: string }
+interface MenuState { point: ContextMenuPoint; scope: 'items' | 'background' }
+interface Marquee { left: number; top: number; width: number; height: number }
 
 function readView(): FilesView {
   try { return localStorage.getItem(VIEW_STORAGE_KEY) === 'grid' ? 'grid' : 'list' } catch { return 'list' }
@@ -72,6 +89,28 @@ function isFileDrag(event: DragEvent) {
 
 function isNodeDrag(event: DragEvent) {
   return event.dataTransfer.types.includes(NODE_DRAG_TYPE)
+}
+
+function SortHeader({ label, sortKey, sort, onSort, className }: {
+  label: string
+  sortKey: FileSortKey
+  sort: FileSort
+  onSort: (key: FileSortKey) => void
+  className?: string
+}) {
+  const active = sort.key === sortKey
+  const Icon = sort.direction === 'asc' ? ArrowUp : ArrowDown
+  return (
+    <button
+      type="button"
+      onClick={() => onSort(sortKey)}
+      aria-sort={active ? (sort.direction === 'asc' ? 'ascending' : 'descending') : undefined}
+      className={cn('flex min-w-0 cursor-pointer items-center gap-1 rounded text-left hover:text-foreground', active && 'text-foreground', className)}
+    >
+      <span className="truncate">{label}</span>
+      {active && <Icon className="size-3 shrink-0" />}
+    </button>
+  )
 }
 
 export function FilesPage() {
@@ -86,25 +125,48 @@ export function FilesPage() {
     queryFn: () => fetchFolder(folderId),
     enabled: Boolean(userId && filesEnabled),
   })
+  const ops = useFileOperations()
+  const clip = useFileClipboard((state) => state.clip)
   const [view, setView] = useState<FilesView>(readView)
-  const [uploads, setUploads] = useState<UploadEntry[]>([])
-  const [notice, setNotice] = useState<string | null>(null)
-  const [creating, setCreating] = useState(false)
-  const [renaming, setRenaming] = useState<FileNode | null>(null)
-  const [moving, setMoving] = useState<FileNode | null>(null)
+  const [sort, setSort] = useState<FileSort>(readFileSort)
+  const [selection, setSelection] = useState<FileSelection>(EMPTY_SELECTION)
+  const [keyboardFocus, setKeyboardFocus] = useState(false)
+  const [renamingId, setRenamingId] = useState<string | null>(null)
+  const [menu, setMenu] = useState<MenuState | null>(null)
+  const [moving, setMoving] = useState<FileNode[] | null>(null)
   const [previewing, setPreviewing] = useState<FileNode | null>(null)
+  const [uploads, setUploads] = useState<UploadEntry[]>([])
   const [dropTarget, setDropTarget] = useState<string | null>(null)
+  const [marquee, setMarquee] = useState<Marquee | null>(null)
   const fileInput = useRef<HTMLInputElement>(null)
   const markdownInput = useRef<HTMLInputElement>(null)
+  const itemsRef = useRef<HTMLDivElement>(null)
+  const draggingIds = useRef<string[]>([])
+  const lastPointerType = useRef('mouse')
+  const typeahead = useRef({ text: '', at: 0 })
 
-  const children = listing.data?.children ?? []
+  const nodes = useMemo(() => sortFileNodes(listing.data?.children ?? [], sort), [listing.data, sort])
+  const order = useMemo(() => nodes.map((node) => node.id), [nodes])
+  const byId = useMemo(() => new Map(nodes.map((node) => [node.id, node])), [nodes])
+  const selectedNodes = nodes.filter((node) => selection.ids.has(node.id))
   const trail = [...(listing.data?.ancestors ?? []), ...(listing.data?.folder ? [listing.data.folder] : [])]
-  const refresh = () => queryClient.invalidateQueries({ queryKey: filesQueryKey(userId) })
-  const report = (cause: unknown, name?: string) => setNotice(filesErrorMessage(cause, name))
+  const cutIds = new Set(clip?.mode === 'cut' ? clip.nodes.map((node) => node.id) : [])
+
+  useEffect(() => {
+    setSelection(EMPTY_SELECTION)
+    setRenamingId(null)
+  }, [folderId])
+  useEffect(() => setSelection((current) => pruneSelection(current, order)), [order])
 
   const changeView = (next: FilesView) => {
     setView(next)
     try { localStorage.setItem(VIEW_STORAGE_KEY, next) } catch { /* the preference is optional */ }
+  }
+
+  const changeSort = (key: FileSortKey) => {
+    const next = toggleFileSort(sort, key)
+    setSort(next)
+    writeFileSort(next)
   }
 
   const open = (node: FileNode) => {
@@ -113,13 +175,29 @@ export function FilesPage() {
     else setPreviewing(node)
   }
 
+  /** Adds a freshly created node to the cached listing so it can be renamed immediately. */
+  const insertIntoListing = (node: FileNode) => {
+    queryClient.setQueryData<FileListing>(folderQueryKey(userId, folderId), (current) => current && { ...current, children: [...current.children, node] })
+  }
+
+  const newFolder = async () => {
+    try {
+      const node = await createFolder(folderId, uniqueChildName(ui("Untitled folder"), nodes))
+      insertIntoListing(node)
+      setSelection(selectOnly(node.id))
+      setRenamingId(node.id)
+    } catch (cause) {
+      ops.fail(cause)
+    }
+  }
+
   const newDocument = async () => {
     try {
       const node = await createDoc(folderId, ui("Untitled document"))
-      await refresh()
+      await ops.refresh()
       navigate(`/files/d/${node.id}`)
     } catch (cause) {
-      report(cause)
+      ops.fail(cause)
     }
   }
 
@@ -129,30 +207,10 @@ export function FilesPage() {
       try {
         await createDoc(folderId, file.name.replace(/\.(md|markdown|txt)$/i, '') || ui("Untitled document"), await file.text())
       } catch (cause) {
-        report(cause, file.name)
+        ops.fail(cause)
       }
     }
-    await refresh()
-  }
-
-  const move = async (node: FileNode, parentId: string | null) => {
-    await updateFileNode(node.id, { parentId, expectedRevision: node.revision })
-    await refresh()
-  }
-
-  const moveById = (id: string, parentId: string | null) => {
-    const node = children.find((child) => child.id === id)
-    if (!node || node.id === parentId || node.parentId === parentId) return
-    void move(node, parentId).catch((cause: unknown) => report(cause, node.name))
-  }
-
-  const trash = async (node: FileNode) => {
-    try {
-      await trashFileNode(node.id)
-      await refresh()
-    } catch (cause) {
-      report(cause)
-    }
+    await ops.refresh()
   }
 
   const upload = async (files: File[], parentId: string | null = folderId) => {
@@ -169,32 +227,193 @@ export function FilesPage() {
           const error = filesErrorMessage(cause, file.name)
           setUploads((current) => current.map((candidate) => candidate.id === entry.id ? { ...candidate, error } : candidate))
         }
-        await refresh()
+        await ops.refresh()
       }
     }
     await Promise.all(Array.from({ length: Math.min(UPLOAD_CONCURRENCY, queue.length) }, worker))
   }
 
-  /** Folder rows and breadcrumbs accept both uploads and moves; the page background accepts uploads. */
-  const dropProps = (targetId: string | null, key = targetId ?? 'root') => ({
-    onDragOver: (event: DragEvent) => {
+  const trashSelection = async (targets = selectedNodes) => {
+    if (!targets.length) return
+    setSelection(EMPTY_SELECTION)
+    await ops.trash(targets)
+  }
+
+  const setClipboard = (mode: 'cut' | 'copy', targets = selectedNodes) => {
+    if (!targets.length) return
+    useFileClipboard.setState({ clip: { mode, nodes: targets } })
+    if (mode === 'copy') {
+      ops.notify(targets.length === 1 ? uit`Copied "${targets[0]!.name}"` : uit`Copied ${targets.length} items`)
+    }
+  }
+
+  const paste = async () => {
+    const current = useFileClipboard.getState().clip
+    if (!current) return
+    if (current.mode === 'cut') {
+      useFileClipboard.setState({ clip: null })
+      await ops.move(current.nodes, folderId)
+    } else {
+      const created = await ops.copy(current.nodes, folderId)
+      if (created?.length) setSelection({ ids: new Set(created.map((node) => node.id)), anchor: created[0]!.id, focus: created.at(-1)!.id })
+    }
+  }
+
+  const duplicate = async (targets = selectedNodes) => {
+    const created = await ops.copy(targets, folderId, 'duplicate')
+    if (created?.length) setSelection({ ids: new Set(created.map((node) => node.id)), anchor: created[0]!.id, focus: created.at(-1)!.id })
+  }
+
+  const startRename = () => {
+    const target = selection.focus && selection.ids.has(selection.focus) ? byId.get(selection.focus) : selectedNodes[0]
+    if (target && selectedNodes.length === 1) setRenamingId(target.id)
+  }
+
+  const gridColumns = () => {
+    if (view !== 'grid') return 1
+    const items = itemsRef.current?.querySelectorAll<HTMLElement>('[data-file-id]')
+    if (!items?.length) return 1
+    const top = items[0]!.offsetTop
+    let columns = 0
+    for (const item of items) {
+      if (item.offsetTop !== top) break
+      columns += 1
+    }
+    return Math.max(1, columns)
+  }
+
+  const focusItem = (id: string) => {
+    setKeyboardFocus(true)
+    itemsRef.current?.querySelector<HTMLElement>(`[data-file-id="${id}"]`)?.scrollIntoView({ block: 'nearest' })
+  }
+
+  // One window listener that always sees the latest state, like a desktop file manager.
+  const handleKey = (event: KeyboardEvent) => {
+    if (event.defaultPrevented || isEditableTarget(event.target) || renamingId || moving || previewing || menu) return
+    const mod = hasPrimaryModifier(event)
+    const key = event.key
+    if (NAVIGATION_KEYS.has(key) && !mod) {
+      event.preventDefault()
+      const current = selection.focus ? order.indexOf(selection.focus) : -1
+      const next = navigateIndex(current, order.length, key as NavigationKey, gridColumns())
+      if (next < 0) return
+      setSelection(stepSelect(selection, order, order[next]!, event.shiftKey))
+      focusItem(order[next]!)
+      return
+    }
+    if (mod && key.toLowerCase() === 'a') { event.preventDefault(); setSelection(selectAll(order)); return }
+    if (mod && key.toLowerCase() === 'x') { event.preventDefault(); setClipboard('cut'); return }
+    if (mod && key.toLowerCase() === 'c') { event.preventDefault(); setClipboard('copy'); return }
+    if (mod && key.toLowerCase() === 'v') { event.preventDefault(); void paste(); return }
+    if (mod && key.toLowerCase() === 'd') { event.preventDefault(); void duplicate(); return }
+    if (mod && event.shiftKey && key.toLowerCase() === 'n') { event.preventDefault(); void newFolder(); return }
+    if (mod) return
+    if (key === 'Enter') {
+      const target = selection.focus ? byId.get(selection.focus) : selectedNodes[0]
+      if (target) { event.preventDefault(); open(target) }
+      return
+    }
+    if (key === 'F2') { event.preventDefault(); startRename(); return }
+    if (key === 'Delete' || key === 'Backspace') {
+      if (selectedNodes.length) { event.preventDefault(); void trashSelection() }
+      return
+    }
+    if (key === ' ') {
+      const target = selection.focus ? byId.get(selection.focus) : selectedNodes[0]
+      if (target) { event.preventDefault(); open(target) }
+      return
+    }
+    if (key === 'Escape') {
+      if (clip?.mode === 'cut') useFileClipboard.setState({ clip: null })
+      setSelection(EMPTY_SELECTION)
+      return
+    }
+    if (key.length === 1 && !event.altKey && /\S/.test(key)) {
+      const now = Date.now()
+      typeahead.current = { text: now - typeahead.current.at > TYPEAHEAD_RESET_MS ? key : typeahead.current.text + key, at: now }
+      const current = selection.focus ? order.indexOf(selection.focus) : -1
+      const index = typeaheadIndex(nodes.map((node) => node.name), typeahead.current.text, current)
+      if (index >= 0) {
+        setSelection(selectOnly(order[index]!))
+        focusItem(order[index]!)
+      }
+    }
+  }
+  const handleKeyRef = useRef(handleKey)
+  handleKeyRef.current = handleKey
+  useEffect(() => {
+    const listener = (event: KeyboardEvent) => handleKeyRef.current(event)
+    window.addEventListener('keydown', listener)
+    return () => window.removeEventListener('keydown', listener)
+  }, [])
+
+  /** Rubber-band selection from empty space; Cmd/Ctrl or Shift adds to the current selection. */
+  const startMarquee = (event: PointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0 || event.pointerType !== 'mouse') return
+    if ((event.target as Element).closest('[data-file-id], button, a, input')) return
+    const additive = hasPrimaryModifier(event) || event.shiftKey
+    const base = additive ? new Set(selection.ids) : new Set<string>()
+    const startX = event.clientX
+    const startY = event.clientY
+    let moved = false
+    setKeyboardFocus(false)
+    const update = (moveEvent: globalThis.PointerEvent) => {
+      const left = Math.min(startX, moveEvent.clientX)
+      const top = Math.min(startY, moveEvent.clientY)
+      const width = Math.abs(moveEvent.clientX - startX)
+      const height = Math.abs(moveEvent.clientY - startY)
+      if (!moved && width < 4 && height < 4) return
+      moved = true
+      setMarquee({ left, top, width, height })
+      const hits = new Set(base)
+      for (const element of itemsRef.current?.querySelectorAll<HTMLElement>('[data-file-id]') ?? []) {
+        const rect = element.getBoundingClientRect()
+        if (rect.left < left + width && rect.right > left && rect.top < top + height && rect.bottom > top) hits.add(element.dataset.fileId!)
+      }
+      const ids = order.filter((id) => hits.has(id))
+      setSelection({ ids: new Set(ids), anchor: ids[0] ?? null, focus: ids.at(-1) ?? null })
+    }
+    const finish = () => {
+      window.removeEventListener('pointermove', update)
+      window.removeEventListener('pointerup', finish)
+      setMarquee(null)
+      if (!moved && !additive) setSelection(EMPTY_SELECTION)
+    }
+    window.addEventListener('pointermove', update)
+    window.addEventListener('pointerup', finish)
+  }
+
+  const openMenuAt = (point: ContextMenuPoint, node: FileNode | null) => {
+    if (node && !selection.ids.has(node.id)) setSelection(selectOnly(node.id))
+    if (!node) setSelection(EMPTY_SELECTION)
+    setMenu({ point, scope: node ? 'items' : 'background' })
+  }
+
+  /** Folder rows and breadcrumbs accept both uploads and moves. */
+  const dropProps = (targetId: string | null, key = targetId ?? 'root'): FileDropHandlers => ({
+    onDragOver: (event) => {
       if (!isFileDrag(event) && !isNodeDrag(event)) return
+      if (targetId && draggingIds.current.includes(targetId)) return
       event.preventDefault()
       event.stopPropagation()
       event.dataTransfer.dropEffect = isNodeDrag(event) ? 'move' : 'copy'
       setDropTarget(key)
     },
-    onDragLeave: (event: DragEvent) => {
+    onDragLeave: (event) => {
       if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropTarget((current) => current === key ? null : current)
     },
-    onDrop: (event: DragEvent) => {
+    onDrop: (event) => {
       if (!isFileDrag(event) && !isNodeDrag(event)) return
       event.preventDefault()
       event.stopPropagation()
       setDropTarget(null)
-      const nodeId = event.dataTransfer.getData(NODE_DRAG_TYPE)
-      if (nodeId) moveById(nodeId, targetId)
-      else void upload([...event.dataTransfer.files], targetId)
+      const payload = event.dataTransfer.getData(NODE_DRAG_TYPE)
+      if (payload) {
+        const ids = JSON.parse(payload) as string[]
+        void ops.move(ids.map((id) => byId.get(id)).filter((node): node is FileNode => Boolean(node)), targetId)
+      } else {
+        void upload([...event.dataTransfer.files], targetId)
+      }
     },
   })
 
@@ -215,47 +434,42 @@ export function FilesPage() {
     },
   }
 
-  const actions = (node: FileNode) => (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <button
-          type="button"
-          className="grid size-8 shrink-0 cursor-pointer place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
-          aria-label={uit`Actions for ${node.name}`}
-          onClick={(event) => event.stopPropagation()}
-        >
-          <MoreHorizontal className="size-4" />
-        </button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" onClick={(event) => event.stopPropagation()}>
-        <DropdownMenuItem onSelect={() => open(node)}>
-          <Eye /> {node.kind === 'blob' ? ui("Preview") : ui("Open")}
-        </DropdownMenuItem>
-        {node.kind === 'doc' && (
-          <DropdownMenuItem onSelect={() => void downloadDocMarkdown(node).catch((cause: unknown) => report(cause))}>
-            <Download /> {ui("Download as Markdown")}
-          </DropdownMenuItem>
-        )}
-        {node.kind === 'blob' && (
-          <DropdownMenuItem onSelect={() => void downloadFile(node).catch((cause: unknown) => report(cause))}>
-            <Download /> {ui("Download")}
-          </DropdownMenuItem>
-        )}
-        <DropdownMenuItem onSelect={() => setRenaming(node)}><Pencil /> {ui("Rename")}</DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => setMoving(node)}><FolderInput /> {ui("Move")}</DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem variant="destructive" onSelect={() => void trash(node)}><Trash2 /> {ui("Move to trash")}</DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  )
-
-  const itemProps = (node: FileNode) => ({
-    draggable: true,
+  const itemHandlers = (node: FileNode) => ({
+    onPointerDown: (event: PointerEvent) => {
+      lastPointerType.current = event.pointerType
+      setKeyboardFocus(false)
+    },
+    onClick: (event: MouseEvent) => {
+      if (renamingId === node.id) return
+      // Touch has no double-click or hover, so a tap opens, as in mobile file browsers.
+      if (lastPointerType.current === 'touch') { open(node); return }
+      setSelection(clickSelect(selection, order, node.id, { toggle: hasPrimaryModifier(event), range: event.shiftKey }))
+    },
+    onDoubleClick: () => { if (renamingId !== node.id) open(node) },
+    onContextMenu: (event: MouseEvent) => {
+      event.preventDefault()
+      event.stopPropagation()
+      openMenuAt({ x: event.clientX, y: event.clientY }, node)
+    },
+    onMenuButton: (event: MouseEvent<HTMLButtonElement>) => {
+      const rect = event.currentTarget.getBoundingClientRect()
+      openMenuAt({ x: rect.left, y: rect.bottom }, node)
+    },
     onDragStart: (event: DragEvent) => {
-      event.dataTransfer.setData(NODE_DRAG_TYPE, node.id)
+      const ids = selection.ids.has(node.id) ? order.filter((id) => selection.ids.has(id)) : [node.id]
+      if (!selection.ids.has(node.id)) setSelection(selectOnly(node.id))
+      draggingIds.current = ids
+      event.dataTransfer.setData(NODE_DRAG_TYPE, JSON.stringify(ids))
       event.dataTransfer.effectAllowed = 'move'
     },
-    ...(node.kind === 'folder' ? dropProps(node.id) : {}),
+    onDragEnd: () => { draggingIds.current = [] },
+    dropHandlers: node.kind === 'folder' ? dropProps(node.id) : undefined,
+    onRenameCommit: async (name: string) => {
+      const ok = await ops.rename(node, name)
+      if (ok) setRenamingId(null)
+      return ok
+    },
+    onRenameCancel: () => setRenamingId(null),
   })
 
   if (!filesEnabled) {
@@ -270,6 +484,50 @@ export function FilesPage() {
     )
   }
 
+  const single = selectedNodes.length === 1 ? selectedNodes[0]! : null
+  const canDownload = selectedNodes.length > 0 && selectedNodes.every((node) => node.kind !== 'folder')
+  const itemMenu = (
+    <>
+      {selectedNodes.length > 1 && <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">{uit`${selectedNodes.length} items selected`}</DropdownMenuLabel>}
+      {single && (
+        <DropdownMenuItem onSelect={() => open(single)}>
+          <Eye /> {single.kind === 'blob' ? ui("Preview") : ui("Open")}
+          <DropdownMenuShortcut>{single.kind === 'blob' ? ui("Space") : '↵'}</DropdownMenuShortcut>
+        </DropdownMenuItem>
+      )}
+      {canDownload && (
+        <DropdownMenuItem onSelect={() => void ops.download(selectedNodes)}>
+          <Download /> {single?.kind === 'doc' ? ui("Download as Markdown") : ui("Download")}
+        </DropdownMenuItem>
+      )}
+      {single && <DropdownMenuItem onSelect={() => setRenamingId(single.id)}><Pencil /> {ui("Rename")}<DropdownMenuShortcut>{shortcutLabel('F2')}</DropdownMenuShortcut></DropdownMenuItem>}
+      <DropdownMenuItem onSelect={() => setMoving(selectedNodes)}><FolderInput /> {ui("Move to…")}</DropdownMenuItem>
+      <DropdownMenuItem onSelect={() => void duplicate()}><CopyPlus /> {ui("Duplicate")}<DropdownMenuShortcut>{shortcutLabel('D', { mod: true })}</DropdownMenuShortcut></DropdownMenuItem>
+      <DropdownMenuSeparator />
+      <DropdownMenuItem onSelect={() => setClipboard('cut')}><Scissors /> {ui("Cut")}<DropdownMenuShortcut>{shortcutLabel('X', { mod: true })}</DropdownMenuShortcut></DropdownMenuItem>
+      <DropdownMenuItem onSelect={() => setClipboard('copy')}><Copy /> {ui("Copy")}<DropdownMenuShortcut>{shortcutLabel('C', { mod: true })}</DropdownMenuShortcut></DropdownMenuItem>
+      <DropdownMenuSeparator />
+      <DropdownMenuItem variant="destructive" onSelect={() => void trashSelection()}><Trash2 /> {ui("Move to trash")}<DropdownMenuShortcut>⌫</DropdownMenuShortcut></DropdownMenuItem>
+    </>
+  )
+  const backgroundMenu = (
+    <>
+      <DropdownMenuItem onSelect={() => void newDocument()}><FilePlus2 /> {ui("New document")}</DropdownMenuItem>
+      <DropdownMenuItem onSelect={() => void newFolder()}><FolderPlus /> {ui("New folder")}<DropdownMenuShortcut>{shortcutLabel('N', { mod: true, shift: true })}</DropdownMenuShortcut></DropdownMenuItem>
+      <DropdownMenuSeparator />
+      <DropdownMenuItem onSelect={() => fileInput.current?.click()}><Upload /> {ui("Upload files")}</DropdownMenuItem>
+      <DropdownMenuItem onSelect={() => markdownInput.current?.click()}><FileUp /> {ui("Import Markdown as document")}</DropdownMenuItem>
+      <DropdownMenuSeparator />
+      <DropdownMenuItem disabled={!clip} onSelect={() => void paste()}>
+        <ClipboardPaste /> {clip ? (clip.nodes.length === 1 ? uit`Paste "${clip.nodes[0]!.name}"` : uit`Paste ${clip.nodes.length} items`) : ui("Paste")}
+        <DropdownMenuShortcut>{shortcutLabel('V', { mod: true })}</DropdownMenuShortcut>
+      </DropdownMenuItem>
+      <DropdownMenuItem disabled={!nodes.length} onSelect={() => setSelection(selectAll(order))}>
+        <SquareDashedMousePointer /> {ui("Select all")}<DropdownMenuShortcut>{shortcutLabel('A', { mod: true })}</DropdownMenuShortcut>
+      </DropdownMenuItem>
+    </>
+  )
+
   let body: ReactNode
   if (listing.isPending) {
     body = <div className="grid h-48 place-items-center"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>
@@ -280,75 +538,62 @@ export function FilesPage() {
         <Button asChild variant="outline" size="sm" className="mt-4"><Link to="/files">{ui("Back to My files")}</Link></Button>
       </div>
     )
-  } else if (!children.length) {
+  } else if (!nodes.length) {
     body = (
       <div className="rounded-xl border border-dashed p-10 text-center">
         <Upload className="mx-auto size-8 text-muted-foreground" />
         <p className="mt-3 text-sm font-medium">{ui("This folder is empty")}</p>
-        <p className="mt-1 text-sm text-muted-foreground">{ui("Drop files here, or use New to start a document, add a folder, or upload files.")}</p>
-      </div>
-    )
-  } else if (view === 'grid') {
-    body = (
-      <div className="grid grid-cols-[repeat(auto-fill,minmax(9.5rem,1fr))] gap-3">
-        {children.map((node) => (
-          <div
-            key={node.id}
-            {...itemProps(node)}
-            className={cn(
-              'group relative flex flex-col rounded-xl border bg-card transition-colors hover:bg-accent/50',
-              dropTarget === node.id && 'border-primary bg-primary/5 ring-2 ring-primary/30',
-            )}
-          >
-            <button type="button" className="flex cursor-pointer flex-col items-center gap-2 px-3 pt-6 pb-3 text-center" onClick={() => open(node)}>
-              <FileNodeIcon node={node} className="size-10" />
-              <span className="line-clamp-2 w-full text-sm break-words">{node.name}</span>
-            </button>
-            <div className="absolute top-1 right-1 opacity-100 sm:opacity-0 sm:group-focus-within:opacity-100 sm:group-hover:opacity-100">{actions(node)}</div>
-          </div>
-        ))}
+        <p className="mt-1 text-sm text-muted-foreground">{ui("Drop files here, or right-click to create a document or folder.")}</p>
       </div>
     )
   } else {
-    body = (
+    const items = nodes.map((node) => (
+      <FileItem
+        key={node.id}
+        node={node}
+        view={view}
+        selected={selection.ids.has(node.id)}
+        focused={keyboardFocus && selection.focus === node.id}
+        cut={cutIds.has(node.id)}
+        dropActive={dropTarget === node.id}
+        renaming={renamingId === node.id}
+        {...itemHandlers(node)}
+      />
+    ))
+    body = view === 'grid' ? (
+      <div ref={itemsRef} role="listbox" aria-multiselectable aria-label={ui("Files")} className="grid grid-cols-[repeat(auto-fill,minmax(8.5rem,1fr))] gap-2">
+        {items}
+      </div>
+    ) : (
       <div className="overflow-hidden rounded-xl border">
-        <div className="hidden grid-cols-[minmax(0,1fr)_9rem_6rem_2.5rem] gap-3 border-b bg-muted/40 px-3 py-2 text-xs font-medium text-muted-foreground sm:grid">
-          <span>{ui("Name")}</span>
-          <span>{ui("Modified")}</span>
-          <span className="text-right">{ui("Size")}</span>
+        <div className="hidden grid-cols-[minmax(0,1fr)_9rem_6.5rem_6rem_2.5rem] gap-3 border-b bg-muted/40 px-3 py-2 text-xs font-medium text-muted-foreground sm:grid">
+          <SortHeader label={ui("Name")} sortKey="name" sort={sort} onSort={changeSort} />
+          <SortHeader label={ui("Modified")} sortKey="modified" sort={sort} onSort={changeSort} />
+          <SortHeader label={ui("Kind")} sortKey="kind" sort={sort} onSort={changeSort} />
+          <SortHeader label={ui("Size")} sortKey="size" sort={sort} onSort={changeSort} className="justify-end" />
           <span />
         </div>
-        <ul className="divide-y">
-          {children.map((node) => (
-            <li
-              key={node.id}
-              {...itemProps(node)}
-              className={cn(
-                'grid grid-cols-[minmax(0,1fr)_2.5rem] items-center gap-3 px-3 transition-colors hover:bg-accent/50 sm:grid-cols-[minmax(0,1fr)_9rem_6rem_2.5rem]',
-                dropTarget === node.id && 'bg-primary/10 outline-2 -outline-offset-2 outline-primary/40',
-              )}
-            >
-              <button type="button" className="flex min-w-0 cursor-pointer items-center gap-3 py-2.5 text-left" onClick={() => open(node)}>
-                <FileNodeIcon node={node} className="size-5" />
-                <span className="min-w-0 truncate text-sm">{node.name}</span>
-              </button>
-              <span className="hidden truncate text-sm text-muted-foreground sm:block">{timeAgo(Date.parse(node.updatedAt))}</span>
-              <span className="hidden text-right text-sm text-muted-foreground tabular-nums sm:block">{node.kind === 'blob' ? formatBytes(node.sizeBytes) : '—'}</span>
-              {actions(node)}
-            </li>
-          ))}
-        </ul>
+        <div ref={itemsRef} role="listbox" aria-multiselectable aria-label={ui("Files")} className="divide-y">{items}</div>
       </div>
     )
   }
+
+  const sortLabels: Record<FileSortKey, string> = { name: ui("Name"), modified: ui("Modified"), kind: ui("Kind"), size: ui("Size") }
 
   return (
     <ScrollArea className="h-full">
       <div
         {...pageDrop}
+        onPointerDown={startMarquee}
+        onContextMenu={(event) => {
+          if ((event.target as Element).closest('[data-file-id], input, a')) return
+          event.preventDefault()
+          if (!listing.isError) openMenuAt({ x: event.clientX, y: event.clientY }, null)
+        }}
         className={cn(
-          'mobile-page-content mx-auto min-h-full max-w-6xl space-y-5 px-6 py-8',
+          'mobile-page-content mx-auto min-h-full max-w-6xl space-y-4 px-6 py-8',
           dropTarget === 'page' && 'rounded-2xl bg-primary/5 outline-2 -outline-offset-8 outline-dashed outline-primary/40',
+          marquee && 'select-none',
         )}
       >
         <div className="flex flex-wrap items-start gap-3">
@@ -382,6 +627,21 @@ export function FilesPage() {
             </nav>
           </div>
           <div className="flex items-center gap-2">
+            {view === 'grid' && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="sm" aria-label={ui("Sort")}><ArrowUpDown /> {sortLabels[sort.key]}</Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  {(Object.keys(sortLabels) as FileSortKey[]).map((key) => (
+                    <DropdownMenuItem key={key} onSelect={() => changeSort(key)}>
+                      {sortLabels[key]}
+                      {sort.key === key && <DropdownMenuShortcut>{sort.direction === 'asc' ? '↑' : '↓'}</DropdownMenuShortcut>}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
             <div className="flex rounded-lg border p-0.5" role="group" aria-label={ui("View")}>
               <button type="button" aria-pressed={view === 'list'} aria-label={ui("List view")} onClick={() => changeView('list')} className={cn('grid size-7 cursor-pointer place-items-center rounded-md text-muted-foreground', view === 'list' && 'bg-accent text-foreground')}>
                 <List className="size-4" />
@@ -395,13 +655,7 @@ export function FilesPage() {
               <DropdownMenuTrigger asChild>
                 <Button size="sm" disabled={listing.isError}><Plus /> {ui("New")}</Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onSelect={() => void newDocument()}><FilePlus2 /> {ui("New document")}</DropdownMenuItem>
-                <DropdownMenuItem onSelect={() => setCreating(true)}><FolderPlus /> {ui("New folder")}</DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onSelect={() => fileInput.current?.click()}><Upload /> {ui("Upload files")}</DropdownMenuItem>
-                <DropdownMenuItem onSelect={() => markdownInput.current?.click()}><FileUp /> {ui("Import Markdown as document")}</DropdownMenuItem>
-              </DropdownMenuContent>
+              <DropdownMenuContent align="end">{backgroundMenu}</DropdownMenuContent>
             </DropdownMenu>
             <input
               ref={markdownInput}
@@ -427,15 +681,29 @@ export function FilesPage() {
           </div>
         </div>
 
-        {notice && (
-          <div role="alert" className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-            <span className="min-w-0 flex-1">{notice}</span>
-            <button type="button" className="cursor-pointer" aria-label={ui("Dismiss")} onClick={() => setNotice(null)}><X className="size-4" /></button>
+        {selectedNodes.length > 0 && (
+          <div role="toolbar" aria-label={ui("Selection")} className="sticky top-2 z-10 flex flex-wrap items-center gap-1 rounded-lg border bg-background/95 px-2 py-1 shadow-sm backdrop-blur">
+            <button type="button" aria-label={ui("Clear selection")} onClick={() => setSelection(EMPTY_SELECTION)} className="grid size-8 cursor-pointer place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground">
+              <X className="size-4" />
+            </button>
+            <span className="mr-2 text-sm font-medium">{selectedNodes.length === 1 ? ui("1 selected") : uit`${selectedNodes.length} selected`}</span>
+            {canDownload && <Button variant="ghost" size="sm" onClick={() => void ops.download(selectedNodes)}><Download /> <span className="hidden sm:inline">{ui("Download")}</span></Button>}
+            <Button variant="ghost" size="sm" onClick={() => setMoving(selectedNodes)}><FolderInput /> <span className="hidden sm:inline">{ui("Move to…")}</span></Button>
+            <Button variant="ghost" size="sm" onClick={() => void duplicate()}><CopyPlus /> <span className="hidden sm:inline">{ui("Duplicate")}</span></Button>
+            <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => void trashSelection()}><Trash2 /> <span className="hidden sm:inline">{ui("Move to trash")}</span></Button>
           </div>
         )}
 
         {body}
       </div>
+
+      {marquee && (
+        <div
+          aria-hidden
+          className="pointer-events-none fixed z-40 rounded-sm border border-sky-500/70 bg-sky-500/15"
+          style={{ left: marquee.left, top: marquee.top, width: marquee.width, height: marquee.height }}
+        />
+      )}
 
       {uploads.length > 0 && (
         <div className="fixed right-4 bottom-4 z-40 w-80 max-w-[calc(100vw-2rem)] rounded-xl border bg-popover p-2 shadow-lg" aria-live="polite">
@@ -459,28 +727,16 @@ export function FilesPage() {
         </div>
       )}
 
-      <FileNameDialog
-        open={creating}
-        title={ui("New folder")}
-        initialName={ui("Untitled folder")}
-        submitLabel={ui("Create")}
-        onOpenChange={setCreating}
-        onSubmit={async (name) => { await createFolder(folderId, name); await refresh() }}
-      />
-      <FileNameDialog
-        open={Boolean(renaming)}
-        title={ui("Rename")}
-        initialName={renaming?.name ?? ''}
-        submitLabel={ui("Rename")}
-        onOpenChange={(open) => { if (!open) setRenaming(null) }}
-        onSubmit={async (name) => { if (renaming) await updateFileNode(renaming.id, { name, expectedRevision: renaming.revision }); await refresh() }}
-      />
-      <FileMoveDialog node={moving} onOpenChange={(open) => { if (!open) setMoving(null) }} onMove={move} />
+      <FileContextMenu point={menu?.point ?? null} onClose={() => setMenu(null)}>
+        {menu?.scope === 'items' ? itemMenu : backgroundMenu}
+      </FileContextMenu>
+      <FileMoveDialog nodes={moving} onOpenChange={(open) => { if (!open) setMoving(null) }} onMove={(targets, parentId) => ops.move(targets, parentId)} />
       <FilePreviewDialog
         node={previewing}
         onOpenChange={(open) => { if (!open) setPreviewing(null) }}
-        onDownload={(node) => void downloadFile(node).catch((cause: unknown) => report(cause))}
+        onDownload={(node) => void downloadFile(node).catch(ops.fail)}
       />
+      <FileToasts />
     </ScrollArea>
   )
 }

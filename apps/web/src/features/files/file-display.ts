@@ -36,6 +36,14 @@ export function filePreviewKind(node: Pick<FileNode, 'kind' | 'name' | 'mimeType
   return null
 }
 
+/** Short type description for the Kind column. */
+export function fileKindLabel(node: Pick<FileNode, 'kind' | 'name'>): string {
+  if (node.kind === 'folder') return ui("Folder")
+  if (node.kind === 'doc') return ui("Document")
+  const extension = fileExtension(node.name)
+  return extension ? extension.toUpperCase() : ui("File")
+}
+
 export function fileNameErrorMessage(error: FileNameError): string {
   switch (error) {
     case 'empty': return ui("Name is required")

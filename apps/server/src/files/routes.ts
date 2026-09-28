@@ -1,17 +1,22 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
-import { createFileDocSchema, createFileFolderSchema, updateFileNodeSchema } from '@pulpo/contracts'
+import { copyFileNodesSchema, createFileDocSchema, createFileFolderSchema, fileNodeIdsSchema, moveFileNodesSchema, updateFileNodeSchema } from '@pulpo/contracts'
+import { copyFileNodes } from './copy-service.js'
 import { createDoc, readDocMarkdown } from './doc-store.js'
 import { parseFileInput, requireFilesUser } from './request.js'
 import {
   createFolder,
   deleteFileNode,
+  deleteFileNodes,
   emptyTrash,
   getFileNode,
   listFolder,
   listTrash,
+  moveFileNodes,
   restoreFileNode,
+  restoreFileNodes,
   trashFileNode,
+  trashFileNodes,
   updateFileNode,
 } from './tree-service.js'
 import { registerFileUploadRoutes } from './upload-routes.js'
@@ -33,6 +38,34 @@ export async function registerFileRoutes(app: FastifyInstance): Promise<void> {
   app.delete('/api/files/trash', async (request, reply) => {
     const user = await requireFilesUser(request)
     await emptyTrash(user.id)
+    reply.code(204).send()
+  })
+
+  // Batch operations are atomic: either every item changes or none does.
+  app.post('/api/files/batch/move', async (request) => {
+    const user = await requireFilesUser(request)
+    return { nodes: await moveFileNodes(user.id, moveFileNodesSchema.parse(request.body).items) }
+  })
+
+  app.post('/api/files/batch/copy', async (request) => {
+    const user = await requireFilesUser(request)
+    const input = copyFileNodesSchema.parse(request.body)
+    return { nodes: await copyFileNodes(user.id, input.ids, input.parentId) }
+  })
+
+  app.post('/api/files/batch/trash', async (request) => {
+    const user = await requireFilesUser(request)
+    return { ids: await trashFileNodes(user.id, fileNodeIdsSchema.parse(request.body).ids) }
+  })
+
+  app.post('/api/files/batch/restore', async (request) => {
+    const user = await requireFilesUser(request)
+    return { nodes: await restoreFileNodes(user.id, fileNodeIdsSchema.parse(request.body).ids) }
+  })
+
+  app.post('/api/files/batch/delete', async (request, reply) => {
+    const user = await requireFilesUser(request)
+    await deleteFileNodes(user.id, fileNodeIdsSchema.parse(request.body).ids)
     reply.code(204).send()
   })
 

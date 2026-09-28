@@ -29,6 +29,18 @@ describe('local blob streaming', () => {
   })
 })
 
+describe('local blob copies', () => {
+  it('duplicates an object under a new key', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'pulpo-local-store-'))
+    roots.push(root)
+    const store = new LocalBlobStore(root)
+    await store.put('users/u/files/a', Buffer.from('bytes'), { contentType: 'text/plain' })
+    await store.copy('users/u/files/a', 'users/u/files/b')
+    expect(await readFile(join(root, 'users/u/files/b'), 'utf8')).toBe('bytes')
+    expect(await readFile(join(root, 'users/u/files/a'), 'utf8')).toBe('bytes')
+  })
+})
+
 describe('local blob URLs', () => {
   it('routes Files objects to the Files API and everything else to attachments', async () => {
     const store = new LocalBlobStore('/unused')

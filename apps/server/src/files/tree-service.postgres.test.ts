@@ -12,16 +12,26 @@ import {
   FILE_TRASH_RETENTION_MS,
   listFolder,
   listTrash,
+  moveFileNodes,
   restoreFileNode,
+  restoreFileNodes,
   trashFileNode,
+  trashFileNodes,
   updateFileNode,
 } from './tree-service.js'
+import { copyFileNodes } from './copy-service.js'
 
 const publish = vi.hoisted(() => vi.fn())
 const deletedKeys = vi.hoisted(() => [] as string[])
+const copiedKeys = vi.hoisted(() => [] as Array<[string, string]>)
 vi.mock('../responses/events.js', () => ({ publishStateChange: publish }))
 vi.mock('./doc-events.js', () => ({ publishDocsClosed: vi.fn() }))
-vi.mock('../storage/index.js', () => ({ getBlobStore: () => ({ delete: async (key: string) => { deletedKeys.push(key) } }) }))
+vi.mock('../storage/index.js', () => ({
+  getBlobStore: () => ({
+    delete: async (key: string) => { deletedKeys.push(key) },
+    copy: async (source: string, target: string) => { copiedKeys.push([source, target]) },
+  }),
+}))
 
 const enabled = process.env.PULPO_FILES_TESTS === 'true'
 let userId: string
@@ -39,6 +49,7 @@ describe.skipIf(!enabled)('Files tree PostgreSQL behavior', () => {
     await db.insert(users).values({ id: userId, name: 'Files test', email: `${userId}@example.test`, username: `f${userId.replaceAll('-', '')}`, role: 'user', storageLimitBytes: 100 })
     publish.mockClear()
     deletedKeys.length = 0
+    copiedKeys.length = 0
   })
   afterAll(async () => { await queryClient.end() })
 
@@ -127,5 +138,57 @@ describe.skipIf(!enabled)('Files tree PostgreSQL behavior', () => {
     await cleanupFiles()
     const remaining = await db.select({ id: fileNodes.id }).from(fileNodes).where(eq(fileNodes.ownerUserId, userId))
     expect(remaining.map((row) => row.id)).toEqual([kept])
+  })
+
+  it('moves a selection atomically, keeping both items on name clashes', async () => {
+    const target = await createFolder(userId, { parentId: null, name: 'Target' })
+    await insertBlob(target.id, 'report.pdf')
+    const a = await insertBlob(null, 'report.pdf')
+    const b = await createFolder(userId, { parentId: null, name: 'Notes' })
+    const moved = await moveFileNodes(userId, [{ id: a, parentId: target.id }, { id: b.id, parentId: target.id }])
+    expect(moved.map((node) => node.name)).toEqual(['report (2).pdf', 'Notes'])
+    // Undo moves back with the original name.
+    const undone = await moveFileNodes(userId, [{ id: a, parentId: null, name: 'report.pdf' }])
+    expect(undone[0]).toMatchObject({ parentId: null, name: 'report.pdf' })
+  })
+
+  it('rolls back the whole batch when one move is invalid', async () => {
+    const parent = await createFolder(userId, { parentId: null, name: 'Parent' })
+    const child = await createFolder(userId, { parentId: parent.id, name: 'Child' })
+    const loose = await insertBlob(null, 'loose.txt')
+    await expect(moveFileNodes(userId, [{ id: loose, parentId: child.id }, { id: parent.id, parentId: child.id }]))
+      .rejects.toMatchObject({ code: 'file_move_cycle' })
+    const [row] = await db.select({ parentId: fileNodes.parentId }).from(fileNodes).where(eq(fileNodes.id, loose))
+    expect(row?.parentId).toBeNull()
+  })
+
+  it('treats a folder selected with its contents as one item for trash and restore', async () => {
+    const folder = await createFolder(userId, { parentId: null, name: 'Folder' })
+    const inner = await insertBlob(folder.id, 'inner.txt')
+    const other = await insertBlob(null, 'other.txt')
+    const roots = await trashFileNodes(userId, [inner, folder.id, other])
+    expect(roots.sort()).toEqual([folder.id, other].sort())
+    expect((await listTrash(userId)).map((node) => node.id).sort()).toEqual(roots.sort())
+    await restoreFileNodes(userId, roots)
+    expect((await listFolder(userId, folder.id)).children.map((node) => node.id)).toEqual([inner])
+  })
+
+  it('copies folders, documents, and files, reserving storage for the whole selection', async () => {
+    const folder = await createFolder(userId, { parentId: null, name: 'Folder' })
+    const file = await insertBlob(folder.id, 'photo.png', 30)
+    const [copy] = await copyFileNodes(userId, [folder.id], null)
+    expect(copy).toMatchObject({ kind: 'folder', name: 'Folder (2)', parentId: null })
+    const children = (await listFolder(userId, copy!.id)).children
+    expect(children).toMatchObject([{ name: 'photo.png', sizeBytes: 30, status: 'ready' }])
+    expect(copiedKeys).toEqual([[`users/${userId}/files/${file}`, `users/${userId}/files/${children[0]!.id}`]])
+    expect(await storageUsedBytes(db, userId)).toBe(60)
+    await db.update(users).set({ storageLimitBytes: 80 }).where(eq(users.id, userId))
+    await expect(copyFileNodes(userId, [folder.id], null)).rejects.toMatchObject({ code: 'storage_quota_exceeded' })
+  })
+
+  it('refuses to copy a folder into itself', async () => {
+    const folder = await createFolder(userId, { parentId: null, name: 'Folder' })
+    const child = await createFolder(userId, { parentId: folder.id, name: 'Child' })
+    await expect(copyFileNodes(userId, [folder.id], child.id)).rejects.toMatchObject({ code: 'file_move_cycle' })
   })
 })

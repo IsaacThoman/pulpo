@@ -11,6 +11,8 @@ export interface BlobStore {
   get(key: string): Promise<Uint8Array>
   getStream(key: string): Promise<Readable>
   delete(key: string): Promise<void>
+  /** Duplicates an object within the store without routing its bytes through the API. */
+  copy(sourceKey: string, targetKey: string): Promise<void>
   createUploadUrl(key: string, metadata: BlobMetadata, expiresInSeconds: number): Promise<string>
   createDownloadUrl(key: string, expiresInSeconds: number, options?: BlobDownloadOptions): Promise<string>
 }

@@ -8,6 +8,10 @@ Names are unique among live siblings, case-insensitively. Creating or renaming i
 
 Trashing marks the whole subtree with the trashed node as its `trash_root_id`; restore returns that batch. An item whose original folder is still trashed returns to the top level. Trash is purged after 30 days, and uploads never confirmed are purged after 24 hours.
 
+Selections act through `POST /api/files/batch/{move,copy,trash,restore,delete}`. Each batch runs in one transaction, so every item changes or none does. A folder listed together with its own contents is treated as the folder alone. Batch moves keep both items on a name clash and return the final names, which lets clients undo a move by moving each item back to its original folder and name.
+
+Copying writes folders and documents in the same transaction that reserves storage for the whole selection. Uploaded files are inserted as pending, duplicated inside the object store (`BlobStore.copy`), then marked ready; a failed object copy removes its placeholder instead of leaving a visible file without bytes.
+
 ## Uploads
 
 Uploads use the attachment flow (reserve, PUT, confirm) with `users/<id>/files/<node>` object keys and the same per-file cap. Files blobs, including trashed ones, and document state count toward the account storage allowance together with chat attachments. They do not reuse the `attachments` table, because chat purges delete attachments claimed by a chat.
