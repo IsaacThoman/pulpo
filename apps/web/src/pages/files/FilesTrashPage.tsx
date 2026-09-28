@@ -102,23 +102,24 @@ export function FilesTrashPage() {
             <h1 className="mt-1 text-xl font-semibold tracking-tight">{ui("Trash")}</h1>
             <p className="mt-1 text-sm text-muted-foreground">{ui("Items in the trash still count toward your storage and are deleted forever after 30 days.")}</p>
           </div>
-          <Button variant="outline" size="sm" disabled={!items.length} onClick={() => setPending({ kind: 'all' })}>
-            <Trash2 /> {ui("Empty trash")}
-          </Button>
-        </div>
-
-        {selectedNodes.length > 0 && (
-          <div role="toolbar" aria-label={ui("Selection")} className="sticky top-2 z-10 flex flex-wrap items-center gap-1 rounded-lg border bg-background/95 px-2 py-1 shadow-sm backdrop-blur">
-            <button type="button" aria-label={ui("Clear selection")} onClick={() => setSelection(EMPTY_SELECTION)} className="grid size-8 cursor-pointer place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground">
-              <X className="size-4" />
-            </button>
-            <span className="mr-2 text-sm font-medium">{selectedNodes.length === 1 ? ui("1 selected") : uit`${selectedNodes.length} selected`}</span>
-            <Button variant="ghost" size="sm" onClick={() => void restore()}><RotateCcw /> {ui("Restore")}</Button>
-            <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => setPending({ kind: 'selection', nodes: selectedNodes })}>
-              <Trash2 /> {ui("Delete forever")}
+          {/* The selection bar takes the place of Empty trash so the list never shifts. */}
+          {selectedNodes.length > 0 ? (
+            <div role="toolbar" aria-label={ui("Selection")} className="flex h-8 items-center gap-0.5 rounded-lg border bg-sky-500/10 px-0.5 dark:bg-sky-400/10">
+              <button type="button" aria-label={ui("Clear selection")} title={ui("Clear selection")} onClick={() => setSelection(EMPTY_SELECTION)} className="grid size-6.5 cursor-pointer place-items-center rounded-md text-muted-foreground hover:bg-background/70 hover:text-foreground">
+                <X className="size-4" />
+              </button>
+              <span className="px-1.5 text-sm font-medium whitespace-nowrap tabular-nums">{selectedNodes.length === 1 ? ui("1 selected") : uit`${selectedNodes.length} selected`}</span>
+              <Button variant="ghost" size="sm" className="h-6.5" onClick={() => void restore()}><RotateCcw /> {ui("Restore")}</Button>
+              <Button variant="ghost" size="sm" className="h-6.5 text-destructive hover:text-destructive" onClick={() => setPending({ kind: 'selection', nodes: selectedNodes })}>
+                <Trash2 /> <span className="hidden sm:inline">{ui("Delete forever")}</span>
+              </Button>
+            </div>
+          ) : (
+            <Button variant="outline" size="sm" disabled={!items.length} onClick={() => setPending({ kind: 'all' })}>
+              <Trash2 /> {ui("Empty trash")}
             </Button>
-          </div>
-        )}
+          )}
+        </div>
 
         {trash.isPending ? (
           <div className="grid h-48 place-items-center"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>

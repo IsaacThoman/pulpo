@@ -626,37 +626,53 @@ export function FilesPage() {
               ))}
             </nav>
           </div>
-          <div className="flex items-center gap-2">
-            {view === 'grid' && (
+          {/* The selection bar takes the place of the folder controls so the list never shifts. */}
+          <div className="flex min-h-8 items-center gap-2">
+            {selectedNodes.length > 0 ? (
+              <div role="toolbar" aria-label={ui("Selection")} className="flex h-8 items-center gap-0.5 rounded-lg border bg-sky-500/10 px-0.5 dark:bg-sky-400/10">
+                <button type="button" aria-label={ui("Clear selection")} title={ui("Clear selection")} onClick={() => setSelection(EMPTY_SELECTION)} className="grid size-6.5 cursor-pointer place-items-center rounded-md text-muted-foreground hover:bg-background/70 hover:text-foreground">
+                  <X className="size-4" />
+                </button>
+                <span className="px-1.5 text-sm font-medium whitespace-nowrap tabular-nums">{selectedNodes.length === 1 ? ui("1 selected") : uit`${selectedNodes.length} selected`}</span>
+                {canDownload && <Button variant="ghost" size="sm" className="h-6.5" aria-label={ui("Download")} title={ui("Download")} onClick={() => void ops.download(selectedNodes)}><Download /> <span className="hidden lg:inline">{ui("Download")}</span></Button>}
+                <Button variant="ghost" size="sm" className="h-6.5" aria-label={ui("Move to…")} title={ui("Move to…")} onClick={() => setMoving(selectedNodes)}><FolderInput /> <span className="hidden lg:inline">{ui("Move to…")}</span></Button>
+                <Button variant="ghost" size="sm" className="h-6.5" aria-label={ui("Duplicate")} title={ui("Duplicate")} onClick={() => void duplicate()}><CopyPlus /> <span className="hidden lg:inline">{ui("Duplicate")}</span></Button>
+                <Button variant="ghost" size="sm" className="h-6.5 text-destructive hover:text-destructive" aria-label={ui("Move to trash")} title={ui("Move to trash")} onClick={() => void trashSelection()}><Trash2 /> <span className="hidden lg:inline">{ui("Move to trash")}</span></Button>
+              </div>
+            ) : (
+              <>
+              {view === 'grid' && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" size="sm" aria-label={ui("Sort")}><ArrowUpDown /> {sortLabels[sort.key]}</Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    {(Object.keys(sortLabels) as FileSortKey[]).map((key) => (
+                      <DropdownMenuItem key={key} onSelect={() => changeSort(key)}>
+                        {sortLabels[key]}
+                        {sort.key === key && <DropdownMenuShortcut>{sort.direction === 'asc' ? '↑' : '↓'}</DropdownMenuShortcut>}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
+              <div className="flex rounded-lg border p-0.5" role="group" aria-label={ui("View")}>
+                <button type="button" aria-pressed={view === 'list'} aria-label={ui("List view")} onClick={() => changeView('list')} className={cn('grid size-7 cursor-pointer place-items-center rounded-md text-muted-foreground', view === 'list' && 'bg-accent text-foreground')}>
+                  <List className="size-4" />
+                </button>
+                <button type="button" aria-pressed={view === 'grid'} aria-label={ui("Grid view")} onClick={() => changeView('grid')} className={cn('grid size-7 cursor-pointer place-items-center rounded-md text-muted-foreground', view === 'grid' && 'bg-accent text-foreground')}>
+                  <LayoutGrid className="size-4" />
+                </button>
+              </div>
+              <Button asChild variant="outline" size="sm"><Link to="/files/trash"><Trash2 /> {ui("Trash")}</Link></Button>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="sm" aria-label={ui("Sort")}><ArrowUpDown /> {sortLabels[sort.key]}</Button>
+                  <Button size="sm" disabled={listing.isError}><Plus /> {ui("New")}</Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  {(Object.keys(sortLabels) as FileSortKey[]).map((key) => (
-                    <DropdownMenuItem key={key} onSelect={() => changeSort(key)}>
-                      {sortLabels[key]}
-                      {sort.key === key && <DropdownMenuShortcut>{sort.direction === 'asc' ? '↑' : '↓'}</DropdownMenuShortcut>}
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuContent>
+                <DropdownMenuContent align="end">{backgroundMenu}</DropdownMenuContent>
               </DropdownMenu>
+              </>
             )}
-            <div className="flex rounded-lg border p-0.5" role="group" aria-label={ui("View")}>
-              <button type="button" aria-pressed={view === 'list'} aria-label={ui("List view")} onClick={() => changeView('list')} className={cn('grid size-7 cursor-pointer place-items-center rounded-md text-muted-foreground', view === 'list' && 'bg-accent text-foreground')}>
-                <List className="size-4" />
-              </button>
-              <button type="button" aria-pressed={view === 'grid'} aria-label={ui("Grid view")} onClick={() => changeView('grid')} className={cn('grid size-7 cursor-pointer place-items-center rounded-md text-muted-foreground', view === 'grid' && 'bg-accent text-foreground')}>
-                <LayoutGrid className="size-4" />
-              </button>
-            </div>
-            <Button asChild variant="outline" size="sm"><Link to="/files/trash"><Trash2 /> {ui("Trash")}</Link></Button>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button size="sm" disabled={listing.isError}><Plus /> {ui("New")}</Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">{backgroundMenu}</DropdownMenuContent>
-            </DropdownMenu>
             <input
               ref={markdownInput}
               type="file"
@@ -680,19 +696,6 @@ export function FilesPage() {
             />
           </div>
         </div>
-
-        {selectedNodes.length > 0 && (
-          <div role="toolbar" aria-label={ui("Selection")} className="sticky top-2 z-10 flex flex-wrap items-center gap-1 rounded-lg border bg-background/95 px-2 py-1 shadow-sm backdrop-blur">
-            <button type="button" aria-label={ui("Clear selection")} onClick={() => setSelection(EMPTY_SELECTION)} className="grid size-8 cursor-pointer place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground">
-              <X className="size-4" />
-            </button>
-            <span className="mr-2 text-sm font-medium">{selectedNodes.length === 1 ? ui("1 selected") : uit`${selectedNodes.length} selected`}</span>
-            {canDownload && <Button variant="ghost" size="sm" onClick={() => void ops.download(selectedNodes)}><Download /> <span className="hidden sm:inline">{ui("Download")}</span></Button>}
-            <Button variant="ghost" size="sm" onClick={() => setMoving(selectedNodes)}><FolderInput /> <span className="hidden sm:inline">{ui("Move to…")}</span></Button>
-            <Button variant="ghost" size="sm" onClick={() => void duplicate()}><CopyPlus /> <span className="hidden sm:inline">{ui("Duplicate")}</span></Button>
-            <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => void trashSelection()}><Trash2 /> <span className="hidden sm:inline">{ui("Move to trash")}</span></Button>
-          </div>
-        )}
 
         {body}
       </div>
