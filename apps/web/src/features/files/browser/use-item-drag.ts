@@ -5,6 +5,8 @@ import type { FileNode } from '@pulpo/contracts'
 const DRAG_THRESHOLD_PX = 5
 const AUTOSCROLL_EDGE_PX = 56
 const AUTOSCROLL_MAX_SPEED = 18
+/** Gap between the cursor tip and the drag chip's top-left corner. */
+const CHIP_OFFSET_PX = 2
 
 export type ItemDragPhase = 'idle' | 'dragging' | 'returning' | 'dropping'
 
@@ -53,7 +55,9 @@ export function useItemDrag(options: {
 
   const positionChip = useCallback(() => {
     const chip = chipRef.current
-    if (chip) chip.style.transform = `translate3d(${pointer.current.x + 14}px, ${pointer.current.y + 10}px, 0)`
+    // The chip's top-left corner sits at the cursor tip; the overlay ignores the pointer, so it
+    // never blocks hit-testing for drop targets.
+    if (chip) chip.style.transform = `translate3d(${pointer.current.x + CHIP_OFFSET_PX}px, ${pointer.current.y + CHIP_OFFSET_PX}px, 0)`
   }, [])
 
   const setTarget = (target: string | null) => {
