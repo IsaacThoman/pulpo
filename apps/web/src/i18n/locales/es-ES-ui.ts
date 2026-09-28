@@ -1895,6 +1895,22 @@ const esUi: Record<string, string> = {
   "New chat": "Nuevo chat",
   "Panel actions": "Acciones del panel",
   "This chat is no longer available.": "Este chat ya no está disponible.",
+  "folder": "carpeta",
+  "This folder is no longer available": "Esta carpeta ya no está disponible",
+  "The agent can read and edit files in this folder and its subfolders": "El agente puede leer y editar archivos de esta carpeta y sus subcarpetas",
+  "Add a folder": "Añadir una carpeta",
+  "The agent can read and edit everything in the folder, including subfolders.": "El agente puede leer y editar todo lo que hay en la carpeta, incluidas las subcarpetas.",
+  "Already added": "Ya añadida",
+  "Add \"{{0}}\"": "Añadir «{{0}}»",
+  "Add all files": "Añadir todos los archivos",
+  "Turn on agent mode so the model can use these folders.": "Activa el modo agente para que el modelo pueda usar estas carpetas.",
+  "Add files or folders": "Añadir archivos o carpetas",
+  "Add a folder…": "Añadir una carpeta…",
+  "Ask about the folders below, or have the agent organize and edit them.": "Pregunta sobre las carpetas de abajo o pide al agente que las organice y edite.",
+  "Open with agent": "Abrir con el agente",
+  "Open this folder with agent": "Abrir esta carpeta con el agente",
+  "Open my files with agent": "Abrir mis archivos con el agente",
+  "Uses Files folders": "Usa carpetas de Archivos",
 }
 
 export default esUi

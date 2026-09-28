@@ -25,6 +25,7 @@ type ChatContent = Extract<PanelContent, { kind: 'chat' }>
 
 /** Draft slot for a new chat started in the panel, apart from the main view's new chat. */
 const PANEL_NEW_DRAFT = 'panel:new'
+const NO_SCOPE: string[] = []
 
 /** A chat beside the main view: its own messages, model, and composer. */
 export function ChatPanelView({ content }: { content: ChatContent }) {
@@ -35,6 +36,7 @@ export function ChatPanelView({ content }: { content: ChatContent }) {
     return current ? {
       id: current.id, title: current.title, modelId: current.modelId,
       temporary: current.temporary, expired: current.expired, expiresAt: current.expiresAt,
+      fileScopeIds: current.fileScopeIds ?? NO_SCOPE,
     } : null
   }))
   const chatsLoaded = useChat((state) => state.chats.length > 0)
@@ -73,7 +75,9 @@ export function ChatPanelView({ content }: { content: ChatContent }) {
     setMessageEdit({ messageId: message.id, content: message.content, attachments: message.attachments ?? [] })
   }, [])
   const openChat = useCallback((id: string) => useSidePanel.getState().open({ kind: 'chat', id }), [])
-  const startNewChat = () => useSidePanel.getState().open({ kind: 'chat', id: null, folderIds: content.id === null ? content.folderIds : [] })
+  // A new chat keeps the folders of the chat it was started from.
+  const startNewChat = () => useSidePanel.getState().open({ kind: 'chat', id: null, folderIds: chat?.fileScopeIds ?? [] })
+  const setNewChatScope = (folderIds: string[]) => useSidePanel.getState().open({ kind: 'chat', id: null, folderIds })
   const chatStarted = useCallback((id: string) => useSidePanel.getState().open({ kind: 'chat', id }), [])
 
   const width = chatWidth === 'narrow' ? 'max-w-3xl' : 'max-w-[min(100%,90rem)]'
@@ -134,6 +138,8 @@ export function ChatPanelView({ content }: { content: ChatContent }) {
                 chatId={chat.id}
                 modelId={modelId}
                 onSelectModel={setModelId}
+                fileScopeIds={chat.fileScopeIds}
+                onFileScopeChange={chat.temporary ? undefined : (ids) => useChat.getState().setChatFileScope(chat.id, ids)}
                 temporary={chat.temporary}
                 autoExpire={Boolean(chat.expiresAt)}
                 messageEdit={messageEdit}
@@ -145,7 +151,7 @@ export function ChatPanelView({ content }: { content: ChatContent }) {
         </>
       ) : (
         <>
-          <NewChatPlaceholder modelId={modelId} />
+          <NewChatPlaceholder modelId={modelId} scoped={content.id === null && content.folderIds.length > 0} />
           <div className={`mx-auto w-full shrink-0 px-3 pb-3 ${width}`}>
             <Composer
               key="panel:new"
@@ -157,6 +163,8 @@ export function ChatPanelView({ content }: { content: ChatContent }) {
               chatId={null}
               modelId={modelId}
               onSelectModel={setModelId}
+              fileScopeIds={content.id === null ? content.folderIds : NO_SCOPE}
+              onFileScopeChange={setNewChatScope}
               autoExpire={automaticChatExpiration !== 'disabled' && newChatAutoExpire}
               onChatStarted={chatStarted}
             />
@@ -167,7 +175,7 @@ export function ChatPanelView({ content }: { content: ChatContent }) {
   )
 }
 
-function NewChatPlaceholder({ modelId }: { modelId: string }) {
+function NewChatPlaceholder({ modelId, scoped }: { modelId: string; scoped: boolean }) {
   const model = getCatalogModel(modelId)
   return (
     <div className="flex min-h-0 flex-1 select-none flex-col items-center justify-center gap-1.5 px-4 text-center">
@@ -175,7 +183,7 @@ function NewChatPlaceholder({ modelId }: { modelId: string }) {
         <ModelIcon model={model} className="size-9" boxed={false} />
         <h2 className="text-2xl font-semibold tracking-tight">{model.name}</h2>
       </div>
-      <p className="text-sm text-muted-foreground">{modelSubtitle(model)}</p>
+      <p className="text-sm text-muted-foreground">{scoped ? ui("Ask about the folders below, or have the agent organize and edit them.") : modelSubtitle(model)}</p>
     </div>
   )
 }

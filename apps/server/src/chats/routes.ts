@@ -15,6 +15,7 @@ import { maintenanceQueue } from '../jobs.js'
 import { cancelChatWork, getTrashRetention, markChatsForPurge, purgeAtFor } from './trash.js'
 import { planDuplicateTree } from './duplicate.js'
 import { toPublicChat, toPublicChatResponses, withoutWorkspaceScope } from './public.js'
+import { assertFileScope } from './file-scope.js'
 import { responseAttachmentIds } from '../messages/input.js'
 import {
   accessibleChatCondition,
@@ -243,6 +244,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
   app.post('/api/chats', async (request, reply) => {
     const user = requireUser(request)
     const input = createChatSchema.parse(request.body)
+    await assertFileScope(user.id, input.fileScopeIds)
     const [model] = await db.select({ id: models.id }).from(models).where(and(eq(models.id, input.modelId), eq(models.enabled, true))).limit(1)
     if (!model) throw new AppError(400, 'model_not_found', 'The selected model is unavailable')
     const id = input.clientId ?? newId()
@@ -256,6 +258,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       modelId: input.modelId,
       title: input.title ?? 'New chat',
       temporary: input.temporary,
+      fileScopeIds: input.fileScopeIds,
       sortOrder: input.temporary ? 0 : await topLooseChatSortOrder(user.id),
       expiresAt,
       createdAt,
@@ -283,6 +286,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     if (input.response.parentResponseId) {
       throw new AppError(400, 'invalid_parent_response', 'A new chat cannot start from an existing response')
     }
+    await assertFileScope(user.id, input.chat.fileScopeIds)
     const [model] = await db.select({ id: models.id }).from(models).where(and(
       eq(models.id, input.chat.modelId), eq(models.enabled, true),
     )).limit(1)
@@ -297,6 +301,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       modelId: input.chat.modelId,
       title: input.chat.title ?? 'New chat',
       temporary: input.chat.temporary,
+      fileScopeIds: input.chat.fileScopeIds,
       sortOrder: input.chat.temporary ? 0 : await topLooseChatSortOrder(user.id),
       expiresAt,
       createdAt,
@@ -572,6 +577,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
     const patch = updateChatSchema.parse(request.body)
+    if (patch.fileScopeIds) await assertFileScope(user.id, patch.fileScopeIds)
     const now = new Date()
     const expiresAt = patch.autoExpire === undefined
       ? undefined
@@ -582,6 +588,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       folderId: patch.folderId,
       modelId: patch.modelId,
       sortOrder: typeof patch.sortOrder === 'number' ? patch.sortOrder : undefined,
+      fileScopeIds: patch.fileScopeIds,
       expiresAt,
       updatedAt: now,
     }).where(and(

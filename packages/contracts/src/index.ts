@@ -1692,6 +1692,13 @@ export const updateApiKeySchema = z.object({
   message: 'Provide at least one API key setting',
 })
 
+/** A chat's Files scope entry: a folder id, or `root` for all of the owner's files. */
+export const FILE_SCOPE_ROOT = 'root'
+export const MAX_CHAT_FILE_SCOPES = 8
+export const fileScopeIdsSchema = z.array(z.union([z.literal(FILE_SCOPE_ROOT), idSchema])).max(MAX_CHAT_FILE_SCOPES)
+  // The root already covers every folder, and repeats add nothing.
+  .transform((ids) => ids.includes(FILE_SCOPE_ROOT) ? [FILE_SCOPE_ROOT] : [...new Set(ids.map((id) => id.toLowerCase()))])
+
 export const chatSummarySchema = z.object({
   id: idSchema,
   title: z.string(),
@@ -1700,6 +1707,7 @@ export const chatSummarySchema = z.object({
   folderId: idSchema.nullable(),
   sortOrder: z.number().int().optional(),
   temporary: z.boolean(),
+  fileScopeIds: z.array(z.string()).default([]),
   expiresAt: isoDateSchema.nullable().optional(),
   updatedAt: isoDateSchema,
   activeResponseId: idSchema.nullable(),
@@ -1719,6 +1727,8 @@ export const createChatSchema = z.object({
   title: z.string().trim().min(1).max(200).optional(),
   temporary: z.boolean().default(false),
   autoExpire: z.boolean().default(false),
+  /** Files folders the agent may read and edit in this chat. */
+  fileScopeIds: fileScopeIdsSchema.default([]),
 })
 
 export const updateChatSchema = z.object({
@@ -1728,6 +1738,7 @@ export const updateChatSchema = z.object({
   modelId: z.string().min(1).optional(),
   sortOrder: z.number().int().optional(),
   autoExpire: z.boolean().optional(),
+  fileScopeIds: fileScopeIdsSchema.optional(),
 })
 export type UpdateChatInput = z.infer<typeof updateChatSchema>
 

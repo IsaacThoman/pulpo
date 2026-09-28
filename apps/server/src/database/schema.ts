@@ -457,6 +457,8 @@ export const chats = pgTable('chats', {
   pinned: boolean('pinned').notNull().default(false),
   sortOrder: integer('sort_order').notNull().default(0),
   temporary: boolean('temporary').notNull().default(false),
+  // Files folders the agent may use: file_nodes ids, or 'root' for all of the owner's files.
+  fileScopeIds: jsonb('file_scope_ids').$type<string[]>().notNull().default([]),
   activeBranchLeafId: uuid('active_branch_leaf_id'),
   activeResponseId: uuid('active_response_id'),
   expiresAt: timestamp('expires_at', { withTimezone: true }),

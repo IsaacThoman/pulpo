@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState, type DragEvent, type MouseEvent, type PointerEvent, type ReactNode } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { isMarkdownName, type FileListing, type FileNode } from '@pulpo/contracts'
+import { FILE_SCOPE_ROOT, isMarkdownName, MAX_CHAT_FILE_SCOPES, type FileListing, type FileNode } from '@pulpo/contracts'
 import {
   ArrowDown,
   ArrowUp,
   ArrowUpDown,
+  Bot,
   ChevronRight,
   ClipboardPaste,
   Copy,
@@ -168,6 +169,11 @@ export function FilesPage() {
 
   const openToSide = (node: FileNode) => {
     if (node.kind !== 'folder') useSidePanel.getState().open({ kind: 'file', id: node.id })
+  }
+
+  /** Starts a chat beside Files whose agent can use these folders (the whole tree at the root). */
+  const openWithAgent = (folderIds: string[]) => {
+    useSidePanel.getState().open({ kind: 'chat', id: null, folderIds: folderIds.length ? folderIds : [FILE_SCOPE_ROOT] })
   }
 
   const open = (node: FileNode) => {
@@ -485,6 +491,7 @@ export function FilesPage() {
 
   const single = selectedNodes.length === 1 ? selectedNodes[0]! : null
   const canDownload = selectedNodes.length > 0 && selectedNodes.every((node) => node.kind !== 'folder')
+  const allFolders = selectedNodes.length > 0 && selectedNodes.length <= MAX_CHAT_FILE_SCOPES && selectedNodes.every((node) => node.kind === 'folder')
   const itemMenu = (
     <>
       {selectedNodes.length > 1 && <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">{uit`${selectedNodes.length} items selected`}</DropdownMenuLabel>}
@@ -497,6 +504,11 @@ export function FilesPage() {
       {single && single.kind !== 'folder' && (
         <DropdownMenuItem onSelect={() => openToSide(single)}>
           <PanelRight /> {ui("Open to the side")}<DropdownMenuShortcut>{isAppleShortcut() ? '⌥ Click' : 'Alt+Click'}</DropdownMenuShortcut>
+        </DropdownMenuItem>
+      )}
+      {allFolders && (
+        <DropdownMenuItem onSelect={() => openWithAgent(selectedNodes.map((node) => node.id))}>
+          <Bot /> {ui("Open with agent")}
         </DropdownMenuItem>
       )}
       {canDownload && (
@@ -739,7 +751,15 @@ export function FilesPage() {
       )}
 
       <FileContextMenu point={menu?.point ?? null} onClose={() => setMenu(null)}>
-        {menu?.scope === 'items' ? itemMenu : backgroundMenu}
+        {menu?.scope === 'items' ? itemMenu : (
+          <>
+            {backgroundMenu}
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onSelect={() => openWithAgent(folderId ? [folderId] : [])}>
+              <Bot /> {folderId ? ui("Open this folder with agent") : ui("Open my files with agent")}
+            </DropdownMenuItem>
+          </>
+        )}
       </FileContextMenu>
       <FileMoveDialog nodes={moving} onOpenChange={(open) => { if (!open) setMoving(null) }} onMove={(targets, parentId) => ops.move(targets, parentId)} />
       <FilePreviewDialog

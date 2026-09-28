@@ -195,6 +195,7 @@ export interface ServerChat {
   folderId: string | null
   sortOrder?: number
   temporary?: boolean
+  fileScopeIds?: string[]
   expiresAt?: string | null
   createdAt: string
   updatedAt: string
@@ -222,6 +223,7 @@ interface PendingMessageInput {
   attachments: Attachment[]
   temporary: boolean
   autoExpire: boolean
+  fileScopeIds?: string[]
   createdAt?: number
 }
 
@@ -293,6 +295,8 @@ interface ChatState {
   setChatAutoExpiration: (id: string, enabled: boolean) => void
   deleteChat: (id: string) => void
   renameChat: (id: string, title: string) => void
+  /** Sets the Files folders the agent may use in a saved chat. */
+  setChatFileScope: (id: string, fileScopeIds: string[]) => void
   togglePin: (id: string) => void
   moveToFolder: (id: string, folderId: string | null, position?: ChatListPosition) => void
   /** Pins a chat at `position` in the pinned list, or at its end. */
@@ -531,6 +535,7 @@ function toChat(
     sortOrder: row.sortOrder ?? current?.sortOrder ?? 0,
     tags: current?.tags ?? [],
     temporary: row.temporary ?? current?.temporary ?? false,
+    fileScopeIds: row.fileScopeIds ?? current?.fileScopeIds ?? [],
     expiresAt: row.expiresAt === undefined
       ? current?.expiresAt ?? null
       : row.expiresAt === null ? null : Date.parse(row.expiresAt),
@@ -1298,6 +1303,10 @@ export const useChat = create<ChatState>()((set, get) => ({
     set((state) => ({ chats: state.chats.map((chat) => chat.id === id ? { ...chat, title } : chat) }))
     void optimisticRequest('PATCH', `/api/chats/${id}`, { title })
   },
+  setChatFileScope: (id, fileScopeIds) => {
+    set((state) => ({ chats: state.chats.map((chat) => chat.id === id ? { ...chat, fileScopeIds } : chat) }))
+    void optimisticRequest('PATCH', `/api/chats/${id}`, { fileScopeIds })
+  },
   togglePin: (id) => {
     const chat = get().chats.find((item) => item.id === id)
     if (!chat) return
@@ -1448,6 +1457,7 @@ export const useChat = create<ChatState>()((set, get) => ({
             sortOrder: 0,
             tags: [],
             temporary: input.temporary,
+            fileScopeIds: input.fileScopeIds ?? [],
             expiresAt: input.temporary ? timestamp + 48 * 60 * 60 * 1_000 : newChatExpiresAt,
             expired: false,
             provisional: true,
@@ -1569,6 +1579,7 @@ export const useChat = create<ChatState>()((set, get) => ({
           sortOrder: 0,
           tags: [],
           temporary,
+          fileScopeIds: [],
           expiresAt: temporary ? timestamp + 48 * 60 * 60 * 1_000 : newChatExpiresAt,
           expired: false,
           // Request completion enables follow-up responses. List visibility has
@@ -1619,6 +1630,8 @@ export const useChat = create<ChatState>()((set, get) => ({
           title: (content || attachments[0]?.name || 'Image').slice(0, 200),
           temporary,
           autoExpire,
+          // Staging put the scope on the provisional chat.
+          fileScopeIds: currentChat?.fileScopeIds ?? [],
         },
         response: responseBody,
       }

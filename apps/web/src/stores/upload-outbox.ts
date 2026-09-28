@@ -50,6 +50,8 @@ export interface PendingSubmission {
   agentMode: boolean
   temporary: boolean
   autoExpire: boolean
+  /** Files folders for the chat this submission starts; absent in older saved submissions. */
+  fileScopeIds?: string[]
   attachmentIds: string[]
   createdAt: number
   placement: 'bubble' | 'queue'
@@ -71,6 +73,7 @@ interface SubmissionDraft {
   agentMode: boolean
   temporary: boolean
   autoExpire: boolean
+  fileScopeIds?: string[]
   attachmentIds: string[]
 }
 
@@ -132,6 +135,7 @@ function renderSubmissionSurface(submission: PendingSubmission, records: UploadR
       attachments,
       temporary: submission.temporary,
       autoExpire: submission.autoExpire,
+      fileScopeIds: submission.fileScopeIds,
       createdAt: submission.createdAt,
     })
     return
@@ -560,6 +564,7 @@ export const useUploadOutbox = create<UploadOutboxState>()((set, get) => ({
           attachments: records.map(pendingAttachment),
           temporary: draft.temporary,
           autoExpire: draft.autoExpire,
+          fileScopeIds: draft.fileScopeIds,
           createdAt,
         })
       : { chatId: draft.chatId!, responseId }
@@ -574,6 +579,7 @@ export const useUploadOutbox = create<UploadOutboxState>()((set, get) => ({
       agentMode: draft.agentMode,
       temporary: draft.temporary,
       autoExpire: draft.autoExpire,
+      ...(draft.chatId === null && draft.fileScopeIds?.length ? { fileScopeIds: draft.fileScopeIds } : {}),
       attachmentIds: draft.attachmentIds,
       createdAt,
       placement,

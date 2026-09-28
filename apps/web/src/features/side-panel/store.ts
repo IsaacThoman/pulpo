@@ -8,7 +8,7 @@ const DEFAULT_WIDTH = 520
 
 /**
  * What the side panel shows. A chat without an id is a new chat; its folders are the Files
- * folders the agent may use once the first message creates it.
+ * folders (or `root` for all files) the agent may use once the first message creates it.
  */
 export type PanelContent =
   | { kind: 'file'; id: string }
@@ -61,8 +61,12 @@ export function parsePanelContent(value: string | null): PanelContent | null {
   if (file) return { kind: 'file', id: file[1]! }
   const chat = new RegExp(`^chat:(${UUID})$`).exec(lower)
   if (chat) return { kind: 'chat', id: chat[1]! }
-  const fresh = new RegExp(`^chat:new(?::((?:${UUID})(?:,${UUID})*))?$`).exec(lower)
-  if (fresh) return { kind: 'chat', id: null, folderIds: fresh[1] ? [...new Set(fresh[1].split(','))] : [] }
+  const scope = `(?:root|${UUID})`
+  const fresh = new RegExp(`^chat:new(?::(${scope}(?:,${scope})*))?$`).exec(lower)
+  if (fresh) {
+    const ids = fresh[1] ? [...new Set(fresh[1].split(','))] : []
+    return { kind: 'chat', id: null, folderIds: ids.includes('root') ? ['root'] : ids }
+  }
   return null
 }
 

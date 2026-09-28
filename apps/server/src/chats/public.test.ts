@@ -15,11 +15,12 @@ describe('public chat DTOs', () => {
       workspaceScopeId: 'private-workspace-scope',
       id: '00000000-0000-4000-8000-000000000001', userId: 'private-user', folderId: null,
       title: 'Chat', modelId: 'model-1', pinned: false, sortOrder: 0, temporary: false,
+      fileScopeIds: ['root'],
       activeBranchLeafId: null, activeResponseId: null, expiresAt: null, deletedAt: null,
       purgeStartedAt: null, createdAt: date, updatedAt: date,
     }
     const result = toPublicChat(row)
-    expect(result).toMatchObject({ id: row.id, title: 'Chat', createdAt: date.toISOString() })
+    expect(result).toMatchObject({ id: row.id, title: 'Chat', fileScopeIds: ['root'], createdAt: date.toISOString() })
     expect(result).not.toHaveProperty('workspaceScopeId')
     expect(result).not.toHaveProperty('userId')
     expect(result).not.toHaveProperty('deletedAt')

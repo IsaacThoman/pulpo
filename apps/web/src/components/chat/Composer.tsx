@@ -23,6 +23,7 @@ import {
   Check,
   ChevronDown,
   CornerDownRight,
+  FolderPlus,
   ImagePlus,
   Loader2,
   Mic,
@@ -63,6 +64,8 @@ import { composerPrimaryAction } from '@/components/chat/composer-queue'
 import { canSubmitComposerDraft } from '@/components/chat/composer-upload-policy'
 import type { Attachment } from '@/lib/types'
 import { useUploadOutbox, type UploadRecord } from '@/stores/upload-outbox'
+import { FileScopeChip, FileScopePicker } from '@/features/files/FileScope'
+import { addFileScope } from '@/features/files/file-scope'
 import { apiRequest } from '@/lib/api'
 import { dictationFilename, insertDictationText, preferredDictationMimeType } from '@/lib/dictation'
 import { isDesktopRuntime } from '@/lib/runtime'
@@ -120,6 +123,8 @@ function downloadComposerAttachment(attachment: UploadRecord): void {
   }, useSettings.getState().localAttachmentCacheMb)
 }
 
+const NO_FILE_SCOPE: readonly string[] = []
+
 export function Composer({
   chatId,
   modelId,
@@ -140,6 +145,8 @@ export function Composer({
   surface = 'page',
   draftSlot,
   onChatStarted,
+  fileScopeIds = NO_FILE_SCOPE,
+  onFileScopeChange,
 }: {
   chatId: string | null
   modelId: string
@@ -167,6 +174,10 @@ export function Composer({
   draftSlot?: string
   /** Called instead of navigating when the first message creates the chat. */
   onChatStarted?: (chatId: string) => void
+  /** Files folders the agent may use in this chat, shown as chips. */
+  fileScopeIds?: readonly string[]
+  /** Lets the user add and remove folders; without it the chips are read-only. */
+  onFileScopeChange?: (ids: string[]) => void
 }) {
   const { t } = useTranslation()
   const navigate = useNavigate()
@@ -290,6 +301,9 @@ export function Composer({
   const agentCapable = Boolean(getCatalogModel(modelId).agentEnabled)
   const canUseAgent = agentAvailable && agentCapable
   const dictationEnabled = useAuth((s) => s.dictationEnabled)
+  const filesEnabled = useAuth((s) => s.filesEnabled)
+  const [folderPickerOpen, setFolderPickerOpen] = useState(false)
+  const canScopeFiles = filesEnabled && Boolean(onFileScopeChange) && !temporary
   const instanceReady = useAuth((s) => s.instanceReady)
   const desktopCanMutate = !isDesktopRuntime() || instanceReady
   uploadsRef.current = uploads
@@ -779,6 +793,7 @@ export function Composer({
       ...generationSelection,
       temporary,
       autoExpire,
+      fileScopeIds: chatId ? undefined : [...fileScopeIds],
       attachmentIds: ids,
     })
     if (!chatId && staged.chatId && !temporary) {
@@ -1221,6 +1236,20 @@ export function Composer({
             ref.current?.focus()
           })}
         />
+        {filesEnabled && fileScopeIds.length > 0 && (
+          <div className="space-y-1.5 px-3 pt-3">
+            <div className="flex flex-wrap gap-2">
+              {fileScopeIds.map((id) => (
+                <FileScopeChip
+                  key={id}
+                  id={id}
+                  onRemove={onFileScopeChange ? () => onFileScopeChange(fileScopeIds.filter((item) => item !== id)) : undefined}
+                />
+              ))}
+            </div>
+            {!(activeAgentMode && canUseAgent) && <p className="px-1 text-xs text-muted-foreground">{ui("Turn on agent mode so the model can use these folders.")}</p>}
+          </div>
+        )}
         {attachments.length > 0 && (
           <div className="space-y-2 px-3 pt-3">
             <AttachmentWindow items={attachments}>{(visible) => <div className="flex max-h-48 flex-wrap gap-2 overflow-y-auto">
@@ -1298,19 +1327,54 @@ export function Composer({
             className="hidden"
             onChange={(event) => addFiles(event.target.files)}
           />
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                className="flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground"
-                aria-label={t('chat.attachFiles')}
-              >
-                <Plus className="size-4.5" />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="top">{t('chat.attachFiles')}</TooltipContent>
-          </Tooltip>
+          {canScopeFiles ? (
+            <DropdownMenu>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      type="button"
+                      className="flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground"
+                      aria-label={ui("Add files or folders")}
+                    >
+                      <Plus className="size-4.5" />
+                    </button>
+                  </DropdownMenuTrigger>
+                </TooltipTrigger>
+                <TooltipContent side="top">{ui("Add files or folders")}</TooltipContent>
+              </Tooltip>
+              <DropdownMenuContent align="start" side="top">
+                <DropdownMenuItem onSelect={() => fileInputRef.current?.click()}><Paperclip /> {t('chat.attachFiles')}</DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => setFolderPickerOpen(true)}><FolderPlus /> {ui("Add a folder…")}</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground"
+                  aria-label={t('chat.attachFiles')}
+                >
+                  <Plus className="size-4.5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="top">{t('chat.attachFiles')}</TooltipContent>
+            </Tooltip>
+          )}
+          {canScopeFiles && folderPickerOpen && (
+            <FileScopePicker
+              open={folderPickerOpen}
+              onOpenChange={(open) => { setFolderPickerOpen(open); if (!open) requestAnimationFrame(focusComposer) }}
+              selected={fileScopeIds}
+              onAdd={(id) => {
+                onFileScopeChange?.(addFileScope(fileScopeIds, id))
+                // Folders are agent tools; choosing one implies agent mode.
+                if (canUseAgent && !messageEdit) setAgentMode(modelId, true)
+              }}
+            />
+          )}
 
           {activePresets.length > 0 && (
             <DropdownMenu>

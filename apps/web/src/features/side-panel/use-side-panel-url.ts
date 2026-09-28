@@ -34,7 +34,8 @@ export function useSidePanelUrl(): void {
     if (desired) params.set(SIDE_PANEL_PARAM, desired)
     else params.delete(SIDE_PANEL_PARAM)
     lastApplied.current = desired
-    const search = params.toString()
+    // `:` and `,` are valid in a query; keep the panel readable (`?side=chat:new:<id>,<id>`).
+    const search = params.toString().replace(/%3A/gi, ':').replace(/%2C/gi, ',')
     navigate({ pathname: location.pathname, search: search ? `?${search}` : '', hash: location.hash }, { replace: true, state: location.state })
   }, [content, location.hash, location.pathname, location.search, location.state, navigate])
 }

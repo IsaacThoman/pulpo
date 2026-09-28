@@ -26,6 +26,7 @@ import {
   UsersRound,
   PanelLeftClose,
   PanelLeftOpen,
+  PanelRight,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { compareChatOrder, useChat } from '@/stores/chat'
@@ -62,7 +63,8 @@ import { toggleSidebarPin, type SidebarPinKey } from '@/lib/sidebar-pins'
 import { newChatLocationState } from '@/lib/new-chat-navigation'
 import { billingPlanTier, fetchBillingSummary } from '@/lib/billing'
 import { isDesktopRuntime } from '@/lib/runtime'
-import { uit } from '@/i18n/ui'
+import { ui, uit } from '@/i18n/ui'
+import { useSidePanel } from '@/features/side-panel/store'
 
 type DragKind = 'folder' | 'chat'
 type ChatList = 'pinned' | 'loose' | `folder:${string}`
@@ -277,6 +279,10 @@ function ChatMenu({ chat, onRename }: { chat: Chat; onRename: () => void }) {
         <Pencil />
         {t('common.rename')}
       </DropdownMenuItem>
+      <DropdownMenuItem onClick={() => useSidePanel.getState().open({ kind: 'chat', id: chat.id })}>
+        <PanelRight />
+        {ui("Open to the side")}
+      </DropdownMenuItem>
       {expirationMenuAction && (
         <DropdownMenuItem onClick={() => setChatAutoExpiration(chat.id, expirationMenuAction.kind === 'enable')}>
           <Hourglass className={cn(expirationMenuAction.kind === 'disable' && 'text-teal-500 dark:text-teal-400')} />
@@ -429,6 +435,9 @@ export function ChatRow({
           onNavigate?.()
         }}
       >
+        {chat.fileScopeIds?.length ? (
+          <FolderIcon role="img" aria-label={ui("Uses Files folders")} className="mr-1.5 inline size-3.5 -translate-y-px text-sky-600 dark:text-sky-400" />
+        ) : null}
         {chat.title}
       </Link>
       {shiftHeld && (
@@ -704,7 +713,7 @@ export function Sidebar({
   const { chatId } = useParams()
   // Rows render from a non-reactive snapshot below, so this key must cover every chat field they display.
   const chatListRevision = useChat((state) => state.chats.map((chat) => (
-    `${chat.id}:${chat.title}:${chat.pinned}:${chat.folderId ?? ''}:${chat.modelId}:${chat.sortOrder}:${chat.temporary}:${chat.expiresAt ?? ''}`
+    `${chat.id}:${chat.title}:${chat.pinned}:${chat.folderId ?? ''}:${chat.modelId}:${chat.sortOrder}:${chat.temporary}:${chat.expiresAt ?? ''}:${chat.fileScopeIds?.length ?? 0}`
   )).join('|'))
   void chatListRevision
   const folderListRevision = useChat((state) => state.folders.map((folder) => (
