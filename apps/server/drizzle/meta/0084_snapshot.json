@@ -1,5 +1,5 @@
 {
-  "id": "be96aa71-13b7-41e6-87fa-adaa1d168338",
+  "id": "53cf43d2-1fca-48a7-8f9d-a17599289389",
   "prevId": "3437396a-ca65-460e-a343-91ce47e50293",
   "version": "7",
   "dialect": "postgresql",
@@ -4276,6 +4276,213 @@
           "tableTo": "users",
           "columnsFrom": [
             "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.file_doc_updates": {
+      "name": "file_doc_updates",
+      "schema": "",
+      "columns": {
+        "seq": {
+          "name": "seq",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "file_doc_updates_seq_seq",
+            "schema": "public",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "node_id": {
+          "name": "node_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "update": {
+          "name": "update",
+          "type": "bytea",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "byte_size": {
+          "name": "byte_size",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "origin": {
+          "name": "origin",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "actor_user_id": {
+          "name": "actor_user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "file_doc_updates_node_seq_idx": {
+          "name": "file_doc_updates_node_seq_idx",
+          "columns": [
+            {
+              "expression": "node_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "seq",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "file_doc_updates_node_id_file_docs_node_id_fk": {
+          "name": "file_doc_updates_node_id_file_docs_node_id_fk",
+          "tableFrom": "file_doc_updates",
+          "tableTo": "file_docs",
+          "columnsFrom": [
+            "node_id"
+          ],
+          "columnsTo": [
+            "node_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "file_doc_updates_actor_user_id_users_id_fk": {
+          "name": "file_doc_updates_actor_user_id_users_id_fk",
+          "tableFrom": "file_doc_updates",
+          "tableTo": "users",
+          "columnsFrom": [
+            "actor_user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "file_doc_updates_origin_check": {
+          "name": "file_doc_updates_origin_check",
+          "value": "\"file_doc_updates\".\"origin\" in ('client', 'agent', 'import', 'restore')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.file_docs": {
+      "name": "file_docs",
+      "schema": "",
+      "columns": {
+        "node_id": {
+          "name": "node_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "state": {
+          "name": "state",
+          "type": "bytea",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "state_bytes": {
+          "name": "state_bytes",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "pending_updates": {
+          "name": "pending_updates",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "markdown": {
+          "name": "markdown",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "''"
+        },
+        "schema_version": {
+          "name": "schema_version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "last_edited_at": {
+          "name": "last_edited_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "file_docs_node_id_file_nodes_id_fk": {
+          "name": "file_docs_node_id_file_nodes_id_fk",
+          "tableFrom": "file_docs",
+          "tableTo": "file_nodes",
+          "columnsFrom": [
+            "node_id"
           ],
           "columnsTo": [
             "id"
