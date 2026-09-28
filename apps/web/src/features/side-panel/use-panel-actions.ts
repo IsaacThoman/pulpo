@@ -1,5 +1,6 @@
 import { useLocation, useNavigate } from 'react-router-dom'
 import type { NewChatLocationState } from '@/lib/new-chat-navigation'
+import { isDesktopRuntime } from '@/lib/runtime'
 import { SIDE_PANEL_PARAM, useSidePanel, type PanelContent } from './store'
 
 /**
@@ -48,7 +49,14 @@ export function usePanelActions(content: PanelContent) {
     maximized,
     toggleMaximized: () => useSidePanel.getState().setMaximized(!maximized),
     close: () => useSidePanel.getState().close(),
-    /** Moves the panel's content into the main view and closes the panel. */
-    openAsPage: () => { useSidePanel.getState().close(); go(target) },
+    /**
+     * Shows the panel's content on its own: in a new browser tab, or on desktop (which has no
+     * tabs) by moving it into the main view. A new chat has no address until it is sent.
+     */
+    openElsewhere: isDesktopRuntime()
+      ? { newTab: false, run: () => { useSidePanel.getState().close(); go(target) } }
+      : content.kind === 'file' || content.id !== null
+        ? { newTab: true, run: () => { window.open(target.pathname, '_blank', 'noopener') } }
+        : null,
   }
 }

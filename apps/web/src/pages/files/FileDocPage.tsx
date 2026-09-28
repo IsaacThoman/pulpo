@@ -37,7 +37,7 @@ import type { DocSyncStatus } from '@/features/files/editor/socket-provider'
 import { useDocSession, type PresencePeer } from '@/features/files/editor/use-doc-session'
 import { FilePreviewBody } from '@/features/files/FilePreviewDialog'
 import { MarkdownConversionDialog } from '@/features/files/MarkdownConversionDialog'
-import { PanelMenuItems, PanelWindowButtons } from '@/features/side-panel/PanelControls'
+import { PanelWindowButtons } from '@/features/side-panel/PanelControls'
 import { AskAgentButton } from '@/features/side-panel/AskAgentButton'
 import { usePublishAgentContext } from '@/features/side-panel/agent'
 import { useSidePanel, type PanelContent } from '@/features/side-panel/store'
@@ -185,7 +185,6 @@ function FileHeader({ node, ancestors, view, menu, children }: {
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
           {menu}
-          {view.panel && <><DropdownMenuSeparator /><PanelMenuItems content={view.panel} /></>}
         </DropdownMenuContent>
       </DropdownMenu>
       {view.panel && <PanelWindowButtons content={view.panel} />}

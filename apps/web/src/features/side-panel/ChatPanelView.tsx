@@ -1,13 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import { useShallow } from 'zustand/react/shallow'
-import { Loader2, MoreHorizontal, SquarePen } from 'lucide-react'
+import { Loader2, SquarePen } from 'lucide-react'
 import { Composer, type ComposerMessageEdit } from '@/components/chat/Composer'
 import { MessageList } from '@/components/chat/MessageList'
 import { ModelSelector } from '@/components/chat/ModelSelector'
 import { ModelIcon } from '@/components/ModelIcon'
 import { Button } from '@/components/ui/button'
-import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { ui } from '@/i18n/ui'
@@ -17,7 +16,7 @@ import type { Message } from '@/lib/types'
 import { getCatalogModel, useCatalog } from '@/stores/catalog'
 import { useChat, type ResponseGenerationSelection } from '@/stores/chat'
 import { useSettings } from '@/stores/settings'
-import { PanelMenuItems, PanelWindowButtons } from './PanelControls'
+import { PanelWindowButtons } from './PanelControls'
 import { samePanelContent, useSidePanel, type PanelContent } from './store'
 import { locationIsCurrent, mainViewContent } from './use-panel-actions'
 
@@ -101,12 +100,6 @@ export function ChatPanelView({ content }: { content: ChatContent }) {
             <TooltipContent side="bottom">{ui("New chat")}</TooltipContent>
           </Tooltip>
         )}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon-sm" aria-label={ui("Panel actions")}><MoreHorizontal /></Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end"><PanelMenuItems content={content} /></DropdownMenuContent>
-        </DropdownMenu>
         <PanelWindowButtons content={content} />
       </header>
 

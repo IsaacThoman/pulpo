@@ -1,7 +1,6 @@
 import type { ReactNode } from 'react'
-import { Maximize2, Minimize2, SquareArrowOutUpRight, X } from 'lucide-react'
+import { ExternalLink, Maximize2, Minimize2, SquareArrowOutUpRight, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { DropdownMenuItem } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { ui } from '@/i18n/ui'
 import type { PanelContent } from './store'
@@ -20,11 +19,17 @@ function IconButton({ label, shortcut, onClick, children }: { label: string; sho
   )
 }
 
-/** Maximize/restore and close, at the end of every panel header. */
+/** Open in a new tab, maximize/restore, and close, at the end of every panel header. */
 export function PanelWindowButtons({ content }: { content: PanelContent }) {
   const actions = usePanelActions(content)
+  const elsewhere = actions.openElsewhere
   return (
     <>
+      {elsewhere && (
+        <IconButton label={elsewhere.newTab ? ui("Open in new tab") : ui("Open as page")} onClick={elsewhere.run}>
+          {elsewhere.newTab ? <ExternalLink /> : <SquareArrowOutUpRight />}
+        </IconButton>
+      )}
       <IconButton
         label={actions.maximized ? ui("Restore split view") : ui("Maximize panel")}
         shortcut={isApplePlatform ? '⌘⇧↵' : 'Ctrl+Shift+Enter'}
@@ -33,16 +38,6 @@ export function PanelWindowButtons({ content }: { content: PanelContent }) {
         {actions.maximized ? <Minimize2 /> : <Maximize2 />}
       </IconButton>
       <IconButton label={ui("Close panel")} shortcut={panelShortcut('\\')} onClick={actions.close}><X /></IconButton>
-    </>
-  )
-}
-
-/** Less frequent panel actions for a header's "⋯" menu. */
-export function PanelMenuItems({ content }: { content: PanelContent }) {
-  const actions = usePanelActions(content)
-  return (
-    <>
-      <DropdownMenuItem onSelect={actions.openAsPage}><SquareArrowOutUpRight /> {ui("Open as page")}</DropdownMenuItem>
     </>
   )
 }
