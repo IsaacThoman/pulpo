@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { MessageSquare, Search } from 'lucide-react'
 import { Dialog, DialogContent } from '@/components/ui/dialog'
@@ -8,6 +8,7 @@ import { apiRequest } from '@/lib/api'
 import type { ServerChat } from '@/stores/chat'
 import { timeAgo } from '@/lib/format'
 import { ModelIcon } from '@/components/ModelIcon'
+import { focusComposer } from '@/components/chat/composer-focus'
 import { cn } from '@/lib/utils'
 import { ui } from '@/i18n/ui'
 
@@ -32,11 +33,13 @@ export function SearchModal({
   )
   const navigate = useNavigate()
   const [remote, setRemote] = useState<ServerChat[]>([])
+  const escapedRef = useRef(false)
 
   useEffect(() => {
     if (open) {
       setQuery('')
       setCursor(0)
+      escapedRef.current = false
     }
   }, [open])
 
@@ -93,7 +96,15 @@ export function SearchModal({
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="top-[20%] flex max-h-[calc(80dvh-1rem)] translate-y-0 flex-col gap-0 overflow-hidden p-0 sm:max-w-xl" showCloseButton={false}>
+      <DialogContent
+        className="top-[20%] flex max-h-[calc(80dvh-1rem)] translate-y-0 flex-col gap-0 overflow-hidden p-0 sm:max-w-xl"
+        showCloseButton={false}
+        onEscapeKeyDown={() => { escapedRef.current = true }}
+        onCloseAutoFocus={(event) => {
+          // Escaping search means "back to typing", not back to the search trigger.
+          if (escapedRef.current && focusComposer()) event.preventDefault()
+        }}
+      >
         <div className="flex items-center gap-2 border-b px-4">
           <Search className="size-4 text-muted-foreground" />
           <input
