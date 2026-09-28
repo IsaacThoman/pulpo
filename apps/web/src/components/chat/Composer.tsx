@@ -137,6 +137,9 @@ export function Composer({
   generationControlRef,
   onTemporaryChange,
   onSelectModel,
+  surface = 'page',
+  draftSlot,
+  onChatStarted,
 }: {
   chatId: string | null
   modelId: string
@@ -155,6 +158,15 @@ export function Composer({
   onTemporaryChange?: (temporary: boolean) => void
   /** Selects another model, e.g. from a model warning link. */
   onSelectModel?: (modelId: string) => void
+  /**
+   * `panel` is a second composer beside the main view: it takes only drops aimed at the side
+   * panel, leaves global focus and the shelf to the page, and never follows or navigates to chats.
+   */
+  surface?: 'page' | 'panel'
+  /** Overrides the local draft slot, so a panel's new chat does not share the page's. */
+  draftSlot?: string
+  /** Called instead of navigating when the first message creates the chat. */
+  onChatStarted?: (chatId: string) => void
 }) {
   const { t } = useTranslation()
   const navigate = useNavigate()
@@ -167,12 +179,12 @@ export function Composer({
   const [shelfCollapsed, setShelfCollapsed] = useState(false)
   const [shelfError, setShelfError] = useState<string | null>(null)
   const [attachmentSelectionError, setAttachmentSelectionError] = useState<string | null>(null)
-  const showShelf = !chatId && !temporary && Boolean(shelf) && !messageEdit
+  const showShelf = surface === 'page' && !chatId && !temporary && Boolean(shelf) && !messageEdit
   const activeShelf = useRef(shelf)
   activeShelf.current = showShelf ? shelf : null
   useEffect(() => { shelfMounted.current = true; return () => { shelfMounted.current = false } }, [])
   useEffect(() => { if (shelf) void shelf.hydrate().then(() => shelf.sync()).catch(() => undefined) }, [shelf])
-  const draftId = localComposerDraftId(chatId, temporary)
+  const draftId = draftSlot ?? localComposerDraftId(chatId, temporary)
   const [handoffBusy, setHandoffBusy] = useState(false)
   const handoffBusyRef = useRef(false)
   const draftOwnershipRef = useRef(draftId)
@@ -198,7 +210,7 @@ export function Composer({
   const focusComposer = useCallback(() => ref.current?.focus({ preventScroll: true }), [])
   const presetMenuFocus = useMenuTriggerFocus(focusComposer)
   useImperativeHandle(focusControlRef, () => ({ focus: focusComposer }), [focusComposer])
-  useEffect(() => registerComposerFocus(focusComposer), [focusComposer])
+  useEffect(() => surface === 'page' ? registerComposerFocus(focusComposer) : undefined, [focusComposer, surface])
   const fileInputRef = useRef<HTMLInputElement>(null)
   const valueRef = useRef(value)
   const attachmentIdsRef = useRef(attachmentIds)
@@ -421,7 +433,7 @@ export function Composer({
   }, [])
 
   useFollowStartedChat({
-    userId, chatId, textarea: ref, syncEnabled, temporary,
+    userId, chatId, textarea: ref, syncEnabled: syncEnabled && surface === 'page', temporary,
     busy: () => submitting || handoffBusyRef.current || shelfBusyRef.current || dictationState !== 'idle',
   })
 
@@ -613,42 +625,52 @@ export function Composer({
   }, [uploadFiles])
 
   useEffect(() => {
+    // The page composer takes drops anywhere except the side panel, which has its own.
+    const panel = surface === 'panel' ? ref.current?.closest<HTMLElement>('[data-side-panel]') : null
+    if (surface === 'panel' && !panel) return
+    const target: EventTarget = panel ?? window
+    const inPanel = (event: DragEvent) => event.target instanceof Element && event.target.closest('[data-side-panel]') !== null
     const hasFiles = (event: DragEvent) => event.dataTransfer?.types.includes('Files') ?? false
+    const ours = (event: DragEvent) => hasFiles(event) && (panel !== null || !inPanel(event))
+    // A file dropped on a panel without a composer must not make the browser open it.
+    const refuse = (event: DragEvent) => {
+      if (!hasFiles(event) || panel) return
+      setDragging(false)
+      if (event.defaultPrevented) return
+      event.preventDefault()
+      if (event.dataTransfer) event.dataTransfer.dropEffect = 'none'
+    }
     const showDropTarget = (event: DragEvent) => {
-      if (!hasFiles(event)) return
+      if (!ours(event)) return refuse(event)
       event.preventDefault()
       setDragging(true)
     }
     const allowDrop = (event: DragEvent) => {
-      if (!hasFiles(event)) return
+      if (!ours(event)) return refuse(event)
       event.preventDefault()
       if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy'
       setDragging(true)
     }
     const hideDropTarget = (event: DragEvent) => {
-      if (event.relatedTarget !== null) return
+      // Leaving the window (or, for the panel, leaving the panel) hides the drop target.
+      if (panel ? event.relatedTarget instanceof Node && panel.contains(event.relatedTarget) : event.relatedTarget !== null) return
       setDragging(false)
     }
     const dropFiles = (event: DragEvent) => {
-      if (!hasFiles(event)) return
+      if (!ours(event)) return refuse(event)
       event.preventDefault()
       setDragging(false)
       addFiles(event.dataTransfer?.files)
     }
 
-    window.addEventListener('dragenter', showDropTarget)
-    window.addEventListener('dragover', allowDrop)
-    window.addEventListener('dragleave', hideDropTarget)
-    window.addEventListener('drop', dropFiles)
-    window.addEventListener('dragend', hideDropTarget)
+    const listeners: [string, (event: DragEvent) => void][] = [
+      ['dragenter', showDropTarget], ['dragover', allowDrop], ['dragleave', hideDropTarget], ['drop', dropFiles], ['dragend', hideDropTarget],
+    ]
+    for (const [type, listener] of listeners) target.addEventListener(type, listener as EventListener)
     return () => {
-      window.removeEventListener('dragenter', showDropTarget)
-      window.removeEventListener('dragover', allowDrop)
-      window.removeEventListener('dragleave', hideDropTarget)
-      window.removeEventListener('drop', dropFiles)
-      window.removeEventListener('dragend', hideDropTarget)
+      for (const [type, listener] of listeners) target.removeEventListener(type, listener as EventListener)
     }
-  }, [addFiles])
+  }, [addFiles, surface])
 
   const clearDraft = (release = true) => {
     if (release) releaseDraftUploads(attachmentIds)
@@ -759,7 +781,10 @@ export function Composer({
       autoExpire,
       attachmentIds: ids,
     })
-    if (!chatId && staged.chatId && !temporary) navigate(`/c/${staged.chatId}`)
+    if (!chatId && staged.chatId && !temporary) {
+      if (onChatStarted) onChatStarted(staged.chatId)
+      else navigate(`/c/${staged.chatId}`)
+    }
   }
 
   const suggestionSubmitted = useRef(false)

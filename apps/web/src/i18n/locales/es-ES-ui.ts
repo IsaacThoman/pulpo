@@ -1885,9 +1885,16 @@ const esUi: Record<string, string> = {
   "Side panel": "Panel lateral",
   "Resize side panel": "Cambiar el tamaño del panel lateral",
   "Close side panel": "Cerrar el panel lateral",
-  "Open full page": "Abrir en página completa",
   "Folders open in the Files view.": "Las carpetas se abren en la vista de Archivos.",
   "Open to the side": "Abrir al lado",
+  "Open as page": "Abrir como página",
+  "Swap sides": "Intercambiar lados",
+  "Maximize panel": "Maximizar panel",
+  "Restore split view": "Restaurar vista dividida",
+  "Close panel": "Cerrar panel",
+  "New chat": "Nuevo chat",
+  "Panel actions": "Acciones del panel",
+  "This chat is no longer available.": "Este chat ya no está disponible.",
 }
 
 export default esUi

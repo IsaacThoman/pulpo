@@ -26,7 +26,13 @@ import { coalesceResponseEvents, groupResponseEvents, outboxInvalidationQueryKey
 import { isDesktopRuntime, runtimeInstanceUrl, runtimeSessionToken } from '@/lib/runtime'
 import { createSyncScheduler } from './sync-scheduler'
 import { adminAccessRequiredChatId } from '@/features/admin-chat/route-access'
+import { useSidePanel } from '@/features/side-panel/store'
 
+
+async function fetchChatDetail(userId: string | undefined, chatId: string, signal: AbortSignal): Promise<ServerChat> {
+  const incoming = await apiRequest<ServerChat>(historyUrl(chatId), { signal })
+  return mergeServerChatDetails(queryClient.getQueryData<ServerChat>(['chat', userId, chatId]), incoming)
+}
 
 function tabId(): string {
   const existing = sessionStorage.getItem('pulpo-tab-id')
@@ -61,6 +67,11 @@ export function ChatDataBridge() {
   const networkReady = !isDesktopRuntime() || instanceReady
   const activeChatIdRef = useRef(chatId)
   activeChatIdRef.current = chatId
+  // A chat in the side panel loads and stays live like the routed one.
+  const panelChatId = useSidePanel((state) => state.content?.kind === 'chat' ? state.content.id : null) ?? undefined
+  const openChatKey = [...new Set([chatId, panelChatId].filter((id): id is string => Boolean(id)))].join(',')
+  const openChatIdsRef = useRef<string[]>([])
+  openChatIdsRef.current = openChatKey ? openChatKey.split(',') : []
 
   const chatsQuery = useQuery({
     queryKey: ['chats', userId],
@@ -78,11 +89,16 @@ export function ChatDataBridge() {
   })
   const chatQuery = useQuery({
     queryKey: ['chat', userId, chatId],
-    queryFn: async ({ signal }) => {
-      const incoming = await apiRequest<ServerChat>(historyUrl(chatId!), { signal })
-      return mergeServerChatDetails(queryClient.getQueryData<ServerChat>(['chat', userId, chatId]), incoming)
-    },
+    queryFn: ({ signal }) => fetchChatDetail(userId, chatId!, signal),
     enabled: Boolean(!adminChatView && networkReady && userId && chatId),
+    retry: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+  })
+  const panelChatQuery = useQuery({
+    queryKey: ['chat', userId, panelChatId],
+    queryFn: ({ signal }) => fetchChatDetail(userId, panelChatId!, signal),
+    enabled: Boolean(!adminChatView && networkReady && userId && panelChatId && panelChatId !== chatId),
     retry: false,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
@@ -91,6 +107,7 @@ export function ChatDataBridge() {
   useEffect(() => { if (chatsQuery.data) replaceSummaries(chatsQuery.data) }, [chatsQuery.data, replaceSummaries])
   useEffect(() => { if (foldersQuery.data) replaceFolders(foldersQuery.data) }, [foldersQuery.data, replaceFolders])
   useEffect(() => { if (chatQuery.data) setDetailedChat(chatQuery.data) }, [chatQuery.data, setDetailedChat])
+  useEffect(() => { if (panelChatQuery.data) setDetailedChat(panelChatQuery.data) }, [panelChatQuery.data, setDetailedChat])
   useEffect(() => {
     setAdminAccessRequiredChat(adminAccessRequiredChatId(chatId, chatQuery.error))
   }, [chatId, chatQuery.error, setAdminAccessRequiredChat])
@@ -231,8 +248,8 @@ export function ChatDataBridge() {
       if (scopes.includes('chats')) {
         queueInvalidation(['deleted-chats', userId])
       }
-      if (scopes.includes('chats') && activeChatIdRef.current) {
-        queueInvalidation(['chat', userId, activeChatIdRef.current])
+      if (scopes.includes('chats')) {
+        for (const id of openChatIdsRef.current) queueInvalidation(['chat', userId, id])
       }
     }
     const applyLiveSnapshot = (snapshot: Parameters<typeof applyResponseSnapshot>[0]) => {
@@ -250,7 +267,9 @@ export function ChatDataBridge() {
       if (disposed || !socket.connected) return
       const settledPaths = await flushOutbox(userId)
       if (disposed) return
-      for (const key of outboxInvalidationQueryKeys(settledPaths, userId, activeChatIdRef.current)) queueInvalidation(key)
+      for (const id of openChatIdsRef.current.length ? openChatIdsRef.current : [undefined]) {
+        for (const key of outboxInvalidationQueryKeys(settledPaths, userId, id)) queueInvalidation(key)
+      }
       const cursors = await localDb.responseCursors.where('tabId').equals(currentTabId).toArray()
       if (disposed || !socket.connected) return
       const afterSequences = new Map(cursors.map((cursor) => [cursor.responseId, cursor.sequence]))
@@ -262,7 +281,7 @@ export function ChatDataBridge() {
       })
       if (disposed || !socket.connected) return
       applySync(result)
-      if (activeChatIdRef.current) socket.emit('chat.subscribe', { chatId: activeChatIdRef.current })
+      for (const id of openChatIdsRef.current) socket.emit('chat.subscribe', { chatId: id })
       subscribedResponseIds.clear()
       for (const responseId of useChat.getState().streamingIds) {
         socket.emit('response.subscribe', { responseId, afterSequence: afterSequences.get(responseId) ?? 0 })
@@ -331,10 +350,11 @@ export function ChatDataBridge() {
 
   useEffect(() => {
     const socket = socketRef.current
-    if (!socket || !chatId) return
-    socket.emit('chat.subscribe', { chatId })
-    return () => { socket.emit('chat.unsubscribe', { chatId }) }
-  }, [chatId])
+    if (!socket || !openChatKey) return
+    const ids = openChatKey.split(',')
+    for (const id of ids) socket.emit('chat.subscribe', { chatId: id })
+    return () => { for (const id of ids) socket.emit('chat.unsubscribe', { chatId: id }) }
+  }, [openChatKey])
 
   return null
 }

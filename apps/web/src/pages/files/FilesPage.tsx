@@ -67,7 +67,7 @@ import {
 } from '@/features/files/browser/selection'
 import { readFileSort, sortFileNodes, toggleFileSort, uniqueChildName, writeFileSort, type FileSort, type FileSortKey } from '@/features/files/browser/sort'
 import { hasPrimaryModifier, isAppleShortcut, isEditableTarget, shortcutLabel } from '@/features/files/browser/shortcuts'
-import { useSidePanel } from '@/features/files/side-panel/store'
+import { useSidePanel } from '@/features/side-panel/store'
 import { SelectionAction } from '@/features/files/browser/SelectionAction'
 import { useFileOperations } from '@/features/files/browser/use-file-operations'
 import { useItemDrag } from '@/features/files/browser/use-item-drag'
@@ -167,7 +167,7 @@ export function FilesPage() {
   }
 
   const openToSide = (node: FileNode) => {
-    if (node.kind !== 'folder') useSidePanel.getState().open(node.id)
+    if (node.kind !== 'folder') useSidePanel.getState().open({ kind: 'file', id: node.id })
   }
 
   const open = (node: FileNode) => {

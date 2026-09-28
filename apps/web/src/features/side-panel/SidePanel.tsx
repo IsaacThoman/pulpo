@@ -4,19 +4,22 @@ import { ui } from '@/i18n/ui'
 import { cn } from '@/lib/utils'
 import { clampPanelWidth, readPanelWidth, useSidePanel, writePanelWidth } from './store'
 
-// The editor is heavy; load it only once a file is opened beside the main view.
+// Panel views are heavy (editor, chat); load each only once something of that kind opens.
 const FilePanelView = lazy(() => import('@/pages/files/FileDocPage').then((module) => ({ default: module.FilePanelView })))
+const ChatPanelView = lazy(() => import('./ChatPanelView').then((module) => ({ default: module.ChatPanelView })))
 
 export type SidePanelMode = 'docked' | 'drawer' | 'sheet'
 
 const loading = <div className="grid h-full place-items-center"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>
 
 /**
- * The file shown beside the main view. Docked on wide windows (drag its edge to resize), a
- * slide-over drawer on medium ones, and a full-screen sheet on phones.
+ * A file or chat shown beside the main view. Docked on wide windows (drag its edge to resize), a
+ * slide-over drawer on medium ones, and a full-screen sheet on phones. Maximizing fills the
+ * content area while the main view stays mounted, so restoring returns to the same split.
  */
 export function SidePanel({ mode }: { mode: SidePanelMode }) {
-  const fileId = useSidePanel((state) => state.fileId)
+  const panel = useSidePanel((state) => state.content)
+  const maximized = useSidePanel((state) => state.maximized)
   const close = useSidePanel((state) => state.close)
   const [width, setWidth] = useState(() => clampPanelWidth(readPanelWidth(), window.innerWidth))
   const [resizing, setResizing] = useState(false)
@@ -27,9 +30,27 @@ export function SidePanel({ mode }: { mode: SidePanelMode }) {
     return () => window.removeEventListener('resize', fit)
   }, [])
 
+  // Cmd/Ctrl+\\ shows or hides the panel; Cmd/Ctrl+Shift+Enter maximizes or restores it.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      const mod = event.metaKey || event.ctrlKey
+      if (!mod || event.altKey) return
+      const state = useSidePanel.getState()
+      if (event.key === '\\' && !event.shiftKey) {
+        event.preventDefault()
+        state.toggle()
+      } else if (event.key === 'Enter' && event.shiftKey && state.content) {
+        event.preventDefault()
+        state.setMaximized(!state.maximized)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
   // Overlays close with Escape, unless the key belongs to something inside the panel.
   useEffect(() => {
-    if (!fileId || mode === 'docked') return
+    if (!panel || mode === 'docked') return
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== 'Escape' || event.defaultPrevented) return
       if (event.target instanceof Element && event.target.closest('input, textarea, [contenteditable="true"], [role="dialog"], [role="menu"]')) return
@@ -37,9 +58,9 @@ export function SidePanel({ mode }: { mode: SidePanelMode }) {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [close, fileId, mode])
+  }, [close, mode, panel])
 
-  if (!fileId) return null
+  if (!panel) return null
 
   const startResize = (event: PointerEvent<HTMLDivElement>) => {
     if (event.button !== 0) return
@@ -60,17 +81,21 @@ export function SidePanel({ mode }: { mode: SidePanelMode }) {
     handle.addEventListener('pointercancel', end)
   }
 
-  const content = <Suspense fallback={loading}><FilePanelView fileId={fileId} /></Suspense>
+  const content = (
+    <Suspense fallback={loading}>
+      {panel.kind === 'file' ? <FilePanelView fileId={panel.id} /> : <ChatPanelView content={panel} />}
+    </Suspense>
+  )
 
   if (mode === 'docked') {
     return (
       <aside
         data-side-panel
         aria-label={ui("Side panel")}
-        className={cn('app-side-panel relative flex h-full shrink-0 flex-col border-l bg-background', resizing && 'select-none')}
-        style={{ width }}
+        className={cn('app-side-panel relative flex h-full min-w-0 flex-col border-l bg-background', maximized ? 'flex-1' : 'shrink-0', resizing && 'select-none')}
+        style={maximized ? undefined : { width }}
       >
-        <div
+        {!maximized && <div
           role="separator"
           aria-orientation="vertical"
           aria-label={ui("Resize side panel")}
@@ -90,7 +115,7 @@ export function SidePanel({ mode }: { mode: SidePanelMode }) {
             'after:absolute after:inset-y-0 after:left-[3px] after:w-0.5 after:transition-colors hover:after:bg-sky-500/60 focus-visible:after:bg-sky-500',
             resizing && 'after:bg-sky-500',
           )}
-        />
+        />}
         {content}
       </aside>
     )
@@ -106,7 +131,7 @@ export function SidePanel({ mode }: { mode: SidePanelMode }) {
         aria-label={ui("Side panel")}
         className={cn(
           'fixed z-40 flex flex-col bg-background',
-          mode === 'drawer' ? 'inset-y-0 right-0 w-[min(34rem,92vw)] border-l shadow-2xl' : 'inset-0',
+          mode === 'drawer' && !maximized ? 'inset-y-0 right-0 w-[min(34rem,92vw)] border-l shadow-2xl' : 'inset-0',
         )}
       >
         {content}

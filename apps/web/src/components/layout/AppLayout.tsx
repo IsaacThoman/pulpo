@@ -15,8 +15,9 @@ import { ui } from '@/i18n/ui'
 import { useSettings } from '@/stores/settings'
 import { useDesktopChrome } from '@/stores/desktopChrome'
 import { isDesktopRuntime } from '@/lib/runtime'
-import { SidePanel } from '@/features/files/side-panel/SidePanel'
-import { useSidePanelUrl } from '@/features/files/side-panel/use-side-panel-url'
+import { SidePanel } from '@/features/side-panel/SidePanel'
+import { useSidePanelUrl } from '@/features/side-panel/use-side-panel-url'
+import { useSidePanel } from '@/features/side-panel/store'
 
 const SearchModal = lazy(() => import('./SearchModal').then((module) => ({ default: module.SearchModal })))
 const SettingsModal = lazy(() => import('@/components/settings/SettingsModal').then((module) => ({ default: module.SettingsModal })))
@@ -26,6 +27,7 @@ export function AppLayout() {
   const [mobile, setMobile] = useState(() => window.matchMedia('(width < 750px)').matches)
   // Below this width a docked side panel would crowd the main view, so it becomes a drawer.
   const [narrow, setNarrow] = useState(() => window.matchMedia('(width < 1100px)').matches)
+  const panelMaximized = useSidePanel((state) => state.maximized && state.content !== null)
   const [mobileOpen, setMobileOpen] = useState(false)
   const [sidebarTransitions, setSidebarTransitions] = useState(true)
   const [searchOpen, setSearchOpen] = useState(false)
@@ -201,7 +203,8 @@ export function AppLayout() {
               openSettings('general')
             }}
           />}
-          <main className="app-main min-w-0 flex-1 overflow-hidden">
+          {/* A maximized docked panel hides the main view without unmounting it, so restoring keeps its state. */}
+          <main className={cn('app-main min-w-0 flex-1 overflow-hidden', panelMaximized && !mobile && !narrow && 'hidden')}>
             <Suspense fallback={<div className="h-full bg-background" aria-label={ui("Loading view")} />}>
               <Outlet />
             </Suspense>

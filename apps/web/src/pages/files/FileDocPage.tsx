@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { DOC_FRAGMENT_NAME } from '@pulpo/client-core/doc-schema'
 import { isMarkdownName, type FileConversionPreview, type FileNode } from '@pulpo/contracts'
-import { ChevronRight, Cloud, CloudOff, Download, HardDrive, Loader2, Maximize2, MoreHorizontal, Pencil, Trash2, TriangleAlert, X } from 'lucide-react'
+import { ChevronRight, Cloud, CloudOff, Download, HardDrive, Loader2, MoreHorizontal, Pencil, Trash2, TriangleAlert } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -37,7 +37,8 @@ import type { DocSyncStatus } from '@/features/files/editor/socket-provider'
 import { useDocSession, type PresencePeer } from '@/features/files/editor/use-doc-session'
 import { FilePreviewBody } from '@/features/files/FilePreviewDialog'
 import { MarkdownConversionDialog } from '@/features/files/MarkdownConversionDialog'
-import { useSidePanel } from '@/features/files/side-panel/store'
+import { PanelMenuItems, PanelWindowButtons } from '@/features/side-panel/PanelControls'
+import { useSidePanel, type PanelContent } from '@/features/side-panel/store'
 
 function statusProblem(status: DocSyncStatus): string | null {
   if (status.state === 'closed') {
@@ -152,22 +153,11 @@ function FilePath({ ancestors }: { ancestors: FileNode[] }) {
 /** Where a file view renders: the full page, or the side panel next to another view. */
 interface FileViewContext {
   layout: 'page' | 'panel'
-  onClose?: () => void
-  onExpand?: () => void
+  /** Set in the side panel, for its window controls. */
+  panel?: PanelContent
 }
 
 const PAGE_VIEW: FileViewContext = { layout: 'page' }
-
-function HeaderIconButton({ label, onClick, children }: { label: string; onClick?: () => void; children: ReactNode }) {
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Button variant="ghost" size="icon-sm" aria-label={label} onClick={onClick}>{children}</Button>
-      </TooltipTrigger>
-      <TooltipContent side="bottom">{label}</TooltipContent>
-    </Tooltip>
-  )
-}
 
 /** Title bar shared by every file view; in the side panel it adds full-page and close buttons. */
 function FileHeader({ node, ancestors, view, menu, children }: {
@@ -177,9 +167,8 @@ function FileHeader({ node, ancestors, view, menu, children }: {
   menu: ReactNode
   children?: ReactNode
 }) {
-  const panel = view.layout === 'panel'
   return (
-    <header className={cn('flex items-center border-b', panel ? 'side-panel-header gap-1.5 px-3 py-1.5' : 'mobile-page-content gap-3 px-4 py-2 sm:px-6')}>
+    <header className={cn('flex items-center border-b', view.layout === 'panel' ? 'side-panel-header gap-1.5 px-3 py-1.5' : 'mobile-page-content gap-3 px-4 py-2 sm:px-6')}>
       <div className="min-w-0 flex-1">
         <FilePath ancestors={ancestors} />
         {node ? <DocTitle node={node} /> : <div className="h-8" />}
@@ -189,14 +178,12 @@ function FileHeader({ node, ancestors, view, menu, children }: {
         <DropdownMenuTrigger asChild>
           <Button variant="ghost" size="icon-sm" aria-label={ui("Document actions")} disabled={!node}><MoreHorizontal /></Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">{menu}</DropdownMenuContent>
+        <DropdownMenuContent align="end">
+          {menu}
+          {view.panel && <><DropdownMenuSeparator /><PanelMenuItems content={view.panel} /></>}
+        </DropdownMenuContent>
       </DropdownMenu>
-      {panel && (
-        <>
-          <HeaderIconButton label={ui("Open full page")} onClick={view.onExpand}><Maximize2 /></HeaderIconButton>
-          <HeaderIconButton label={ui("Close")} onClick={view.onClose}><X /></HeaderIconButton>
-        </>
-      )}
+      {view.panel && <PanelWindowButtons content={view.panel} />}
     </header>
   )
 }
@@ -209,7 +196,7 @@ function useLeaveAfterTrash(node: FileNode | undefined, view: FileViewContext) {
     if (!node) return
     await trashFileNode(node.id)
     await queryClient.invalidateQueries({ queryKey: filesQueryKey(userId) })
-    if (view.layout === 'panel') view.onClose?.()
+    if (view.layout === 'panel') useSidePanel.getState().close()
     else navigate(node.parentId ? `/files/f/${node.parentId}` : '/files')
   }
 }
@@ -407,7 +394,7 @@ function FileViewMessage({ message, view, back }: { message: string; view: FileV
         <TriangleAlert className="mx-auto size-8 text-amber-500" />
         <p className="mt-3 text-sm text-muted-foreground">{message}</p>
         {view.layout === 'panel'
-          ? <Button variant="outline" size="sm" className="mt-4" onClick={view.onClose}>{ui("Close")}</Button>
+          ? <Button variant="outline" size="sm" className="mt-4" onClick={() => useSidePanel.getState().close()}>{ui("Close")}</Button>
           : <Button asChild variant="outline" size="sm" className="mt-4"><Link to={back}>{ui("Back to My files")}</Link></Button>}
       </div>
     </div>
@@ -434,7 +421,8 @@ export function FileDocPage() {
   const filesEnabled = useAuth((state) => state.filesEnabled)
   // Opening the side panel's file full page moves it here instead of showing it twice.
   useEffect(() => {
-    if (docId && useSidePanel.getState().fileId === docId) useSidePanel.getState().close()
+    const shown = useSidePanel.getState().content
+    if (docId && shown?.kind === 'file' && shown.id === docId) useSidePanel.getState().close()
   }, [docId])
   if (!filesEnabled) {
     return <div className="grid h-full place-items-center p-8 text-sm text-muted-foreground">{ui("Files are disabled by the administrator")}</div>
@@ -445,14 +433,8 @@ export function FileDocPage() {
 
 /** The side panel's content: the same file views in a compact layout. */
 export function FilePanelView({ fileId }: { fileId: string }) {
-  const navigate = useNavigate()
   const userId = useAuth((state) => state.user?.id)
-  const close = useSidePanel((state) => state.close)
-  const view = useMemo<FileViewContext>(() => ({
-    layout: 'panel',
-    onClose: close,
-    onExpand: () => navigate(`/files/d/${fileId}`),
-  }), [close, fileId, navigate])
+  const view = useMemo<FileViewContext>(() => ({ layout: 'panel', panel: { kind: 'file', id: fileId } }), [fileId])
   if (!userId) return null
   return <FileRoute key={fileId} userId={userId} fileId={fileId} view={view} />
 }
