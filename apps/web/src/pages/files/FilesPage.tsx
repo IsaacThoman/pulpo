@@ -603,7 +603,7 @@ export function FilesPage() {
           marquee && 'select-none',
         )}
       >
-        <div className="flex flex-wrap items-start gap-3">
+        <div className="@container flex flex-wrap items-start gap-3">
           <div className="min-w-0 flex-1">
             <h1 className="text-xl font-semibold tracking-tight">{ui("Files")}</h1>
             <nav aria-label={ui("Folder path")} className="mt-1 flex min-w-0 flex-wrap items-center gap-0.5 text-sm text-muted-foreground">
@@ -633,53 +633,59 @@ export function FilesPage() {
               ))}
             </nav>
           </div>
-          {/* The selection bar takes the place of the folder controls so the list never shifts. */}
-          <div className="flex min-h-8 items-center gap-2">
-            {selectedNodes.length > 0 ? (
-              <div role="toolbar" aria-label={ui("Selection")} className="flex h-8 items-center gap-0.5 rounded-lg border bg-muted/60 px-0.5">
+          {/* With room, the selection bar floats over the empty space left of the controls so the title and
+              list never move; in a narrow header it takes the controls' place instead of wrapping. */}
+          <div className="relative flex min-h-8 items-center gap-2">
+            {selectedNodes.length > 0 && (
+              <div role="toolbar" aria-label={ui("Selection")} className={cn(
+                'flex h-8 items-center gap-0.5 rounded-lg border bg-muted px-0.5',
+                // Grid view has an extra Sort button, so it needs a wider header to fit both.
+                view === 'grid'
+                  ? '@min-[42rem]:absolute @min-[42rem]:top-0 @min-[42rem]:right-full @min-[42rem]:mr-2'
+                  : '@min-[36rem]:absolute @min-[36rem]:top-0 @min-[36rem]:right-full @min-[36rem]:mr-2',
+              )}>
                 <button type="button" aria-label={ui("Clear selection")} title={ui("Clear selection")} onClick={() => setSelection(EMPTY_SELECTION)} className="grid size-6.5 cursor-pointer place-items-center rounded-md text-muted-foreground hover:bg-background/70 hover:text-foreground">
                   <X className="size-4" />
                 </button>
                 <span className="px-1.5 text-sm font-medium whitespace-nowrap tabular-nums">{selectedNodes.length === 1 ? ui("1 selected") : uit`${selectedNodes.length} selected`}</span>
-                {canDownload && <Button variant="ghost" size="sm" className="h-6.5" aria-label={ui("Download")} title={ui("Download")} onClick={() => void ops.download(selectedNodes)}><Download /> <span className="hidden lg:inline">{ui("Download")}</span></Button>}
-                <Button variant="ghost" size="sm" className="h-6.5" aria-label={ui("Move to…")} title={ui("Move to…")} onClick={() => setMoving(selectedNodes)}><FolderInput /> <span className="hidden lg:inline">{ui("Move to…")}</span></Button>
-                <Button variant="ghost" size="sm" className="h-6.5" aria-label={ui("Duplicate")} title={ui("Duplicate")} onClick={() => void duplicate()}><CopyPlus /> <span className="hidden lg:inline">{ui("Duplicate")}</span></Button>
-                <Button variant="ghost" size="sm" className="h-6.5 text-destructive hover:text-destructive" aria-label={ui("Move to trash")} title={ui("Move to trash")} onClick={() => void trashSelection()}><Trash2 /> <span className="hidden lg:inline">{ui("Move to trash")}</span></Button>
+                {canDownload && <Button variant="ghost" size="sm" className="h-6.5" aria-label={ui("Download")} title={ui("Download")} onClick={() => void ops.download(selectedNodes)}><Download /> <span className="hidden xl:inline">{ui("Download")}</span></Button>}
+                <Button variant="ghost" size="sm" className="h-6.5" aria-label={ui("Move to…")} title={ui("Move to…")} onClick={() => setMoving(selectedNodes)}><FolderInput /> <span className="hidden xl:inline">{ui("Move to…")}</span></Button>
+                <Button variant="ghost" size="sm" className="h-6.5" aria-label={ui("Duplicate")} title={ui("Duplicate")} onClick={() => void duplicate()}><CopyPlus /> <span className="hidden xl:inline">{ui("Duplicate")}</span></Button>
+                <Button variant="ghost" size="sm" className="h-6.5 text-destructive hover:text-destructive" aria-label={ui("Move to trash")} title={ui("Move to trash")} onClick={() => void trashSelection()}><Trash2 /> <span className="hidden xl:inline">{ui("Move to trash")}</span></Button>
               </div>
-            ) : (
-              <>
+            )}
+            <div className={cn('flex items-center gap-2', selectedNodes.length > 0 && (view === 'grid' ? '@max-[42rem]:hidden' : '@max-[36rem]:hidden'))}>
               {view === 'grid' && (
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="outline" size="sm" aria-label={ui("Sort")}><ArrowUpDown /> {sortLabels[sort.key]}</Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    {(Object.keys(sortLabels) as FileSortKey[]).map((key) => (
-                      <DropdownMenuItem key={key} onSelect={() => changeSort(key)}>
-                        {sortLabels[key]}
-                        {sort.key === key && <DropdownMenuShortcut>{sort.direction === 'asc' ? '↑' : '↓'}</DropdownMenuShortcut>}
-                      </DropdownMenuItem>
-                    ))}
-                  </DropdownMenuContent>
-                </DropdownMenu>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="sm" aria-label={ui("Sort")}><ArrowUpDown /> {sortLabels[sort.key]}</Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  {(Object.keys(sortLabels) as FileSortKey[]).map((key) => (
+                    <DropdownMenuItem key={key} onSelect={() => changeSort(key)}>
+                      {sortLabels[key]}
+                      {sort.key === key && <DropdownMenuShortcut>{sort.direction === 'asc' ? '↑' : '↓'}</DropdownMenuShortcut>}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
               )}
               <div className="flex rounded-lg border p-0.5" role="group" aria-label={ui("View")}>
-                <button type="button" aria-pressed={view === 'list'} aria-label={ui("List view")} onClick={() => changeView('list')} className={cn('grid size-7 cursor-pointer place-items-center rounded-md text-muted-foreground', view === 'list' && 'bg-accent text-foreground')}>
-                  <List className="size-4" />
-                </button>
-                <button type="button" aria-pressed={view === 'grid'} aria-label={ui("Grid view")} onClick={() => changeView('grid')} className={cn('grid size-7 cursor-pointer place-items-center rounded-md text-muted-foreground', view === 'grid' && 'bg-accent text-foreground')}>
-                  <LayoutGrid className="size-4" />
-                </button>
+              <button type="button" aria-pressed={view === 'list'} aria-label={ui("List view")} onClick={() => changeView('list')} className={cn('grid size-7 cursor-pointer place-items-center rounded-md text-muted-foreground', view === 'list' && 'bg-accent text-foreground')}>
+                <List className="size-4" />
+              </button>
+              <button type="button" aria-pressed={view === 'grid'} aria-label={ui("Grid view")} onClick={() => changeView('grid')} className={cn('grid size-7 cursor-pointer place-items-center rounded-md text-muted-foreground', view === 'grid' && 'bg-accent text-foreground')}>
+                <LayoutGrid className="size-4" />
+              </button>
               </div>
               <Button asChild variant="outline" size="sm"><Link to="/files/trash"><Trash2 /> {ui("Trash")}</Link></Button>
               <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button size="sm" disabled={listing.isError}><Plus /> {ui("New")}</Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">{backgroundMenu}</DropdownMenuContent>
+              <DropdownMenuTrigger asChild>
+                <Button size="sm" disabled={listing.isError}><Plus /> {ui("New")}</Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">{backgroundMenu}</DropdownMenuContent>
               </DropdownMenu>
-              </>
-            )}
+            </div>
             <input
               ref={markdownInput}
               type="file"

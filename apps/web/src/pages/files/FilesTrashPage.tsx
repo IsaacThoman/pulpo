@@ -102,32 +102,34 @@ export function FilesTrashPage() {
       }}
     >
       <div className="mobile-page-content mx-auto min-h-full max-w-6xl space-y-4 px-6 py-8">
-        <div className="flex flex-wrap items-start gap-3">
+        <div className="@container flex flex-wrap items-start gap-3">
           <div className="min-w-0 flex-1">
             <Link to="/files" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
               <ArrowLeft className="size-3.5" /> {ui("My files")}
             </Link>
             <h1 className="mt-1 text-xl font-semibold tracking-tight">{ui("Trash")}</h1>
-            <p className="mt-1 text-sm text-muted-foreground">{ui("Items in the trash still count toward your storage and are deleted forever after 30 days.")}</p>
           </div>
-          {/* The selection bar takes the place of Empty trash so the list never shifts. */}
-          {selectedNodes.length > 0 ? (
-            <div role="toolbar" aria-label={ui("Selection")} className="flex h-8 items-center gap-0.5 rounded-lg border bg-muted/60 px-0.5">
-              <button type="button" aria-label={ui("Clear selection")} title={ui("Clear selection")} onClick={() => setSelection(EMPTY_SELECTION)} className="grid size-6.5 cursor-pointer place-items-center rounded-md text-muted-foreground hover:bg-background/70 hover:text-foreground">
-                <X className="size-4" />
-              </button>
-              <span className="px-1.5 text-sm font-medium whitespace-nowrap tabular-nums">{selectedNodes.length === 1 ? ui("1 selected") : uit`${selectedNodes.length} selected`}</span>
-              <Button variant="ghost" size="sm" className="h-6.5" onClick={() => void restore()}><RotateCcw /> {ui("Restore")}</Button>
-              <Button variant="ghost" size="sm" className="h-6.5 text-destructive hover:text-destructive" onClick={() => setPending({ kind: 'selection', nodes: selectedNodes })}>
-                <Trash2 /> <span className="hidden sm:inline">{ui("Delete forever")}</span>
-              </Button>
-            </div>
-          ) : (
-            <Button variant="outline" size="sm" disabled={!items.length} onClick={() => setPending({ kind: 'all' })}>
+          {/* With room, the selection bar floats left of Empty trash so nothing moves; in a narrow header
+              it takes the button's place instead of wrapping. */}
+          <div className="relative flex min-h-8 items-center gap-2">
+            {selectedNodes.length > 0 && (
+              <div role="toolbar" aria-label={ui("Selection")} className="flex h-8 items-center gap-0.5 rounded-lg border bg-muted px-0.5 @min-[36rem]:absolute @min-[36rem]:top-0 @min-[36rem]:right-full @min-[36rem]:mr-2">
+                <button type="button" aria-label={ui("Clear selection")} title={ui("Clear selection")} onClick={() => setSelection(EMPTY_SELECTION)} className="grid size-6.5 cursor-pointer place-items-center rounded-md text-muted-foreground hover:bg-background/70 hover:text-foreground">
+                  <X className="size-4" />
+                </button>
+                <span className="px-1.5 text-sm font-medium whitespace-nowrap tabular-nums">{selectedNodes.length === 1 ? ui("1 selected") : uit`${selectedNodes.length} selected`}</span>
+                <Button variant="ghost" size="sm" className="h-6.5" onClick={() => void restore()}><RotateCcw /> {ui("Restore")}</Button>
+                <Button variant="ghost" size="sm" className="h-6.5 text-destructive hover:text-destructive" onClick={() => setPending({ kind: 'selection', nodes: selectedNodes })}>
+                  <Trash2 /> <span className="hidden sm:inline">{ui("Delete forever")}</span>
+                </Button>
+              </div>
+            )}
+            <Button variant="outline" size="sm" className={cn(selectedNodes.length > 0 && '@max-[36rem]:hidden')} disabled={!items.length} onClick={() => setPending({ kind: 'all' })}>
               <Trash2 /> {ui("Empty trash")}
             </Button>
-          )}
+          </div>
         </div>
+        <p className="-mt-2 text-sm text-muted-foreground">{ui("Items in the trash still count toward your storage and are deleted forever after 30 days.")}</p>
 
         {trash.isPending ? (
           <div className="grid h-48 place-items-center"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>
