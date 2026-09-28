@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuShortcut } from '@/components/ui/dropdown-menu'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { TooltipProvider } from '@/components/ui/tooltip'
 import { ui, uit } from '@/i18n/ui'
 import { formatBytes } from '@/lib/attachments'
 import { timeAgo } from '@/lib/format'
@@ -19,6 +20,7 @@ import { FileContextMenu, type ContextMenuPoint } from '@/features/files/browser
 import { FileToasts } from '@/features/files/browser/FileToasts'
 import { clickSelect, EMPTY_SELECTION, pruneSelection, selectAll, selectOnly, type FileSelection } from '@/features/files/browser/selection'
 import { hasPrimaryModifier, isEditableTarget, shortcutLabel } from '@/features/files/browser/shortcuts'
+import { SelectionAction } from '@/features/files/browser/SelectionAction'
 import { useFileOperations } from '@/features/files/browser/use-file-operations'
 
 type PendingDeletion = { kind: 'selection'; nodes: FileNode[] } | { kind: 'all' }
@@ -113,16 +115,14 @@ export function FilesTrashPage() {
               it takes the button's place instead of wrapping. */}
           <div className="relative flex min-h-8 items-center gap-2">
             {selectedNodes.length > 0 && (
-              <div role="toolbar" aria-label={ui("Selection")} className="flex h-8 items-center gap-0.5 rounded-lg border bg-muted px-0.5 @min-[36rem]:absolute @min-[36rem]:top-0 @min-[36rem]:right-full @min-[36rem]:mr-2">
-                <button type="button" aria-label={ui("Clear selection")} title={ui("Clear selection")} onClick={() => setSelection(EMPTY_SELECTION)} className="grid size-6.5 cursor-pointer place-items-center rounded-md text-muted-foreground hover:bg-background/70 hover:text-foreground">
-                  <X className="size-4" />
-                </button>
-                <span className="px-1.5 text-sm font-medium whitespace-nowrap tabular-nums">{selectedNodes.length === 1 ? ui("1 selected") : uit`${selectedNodes.length} selected`}</span>
-                <Button variant="ghost" size="sm" className="h-6.5" onClick={() => void restore()}><RotateCcw /> {ui("Restore")}</Button>
-                <Button variant="ghost" size="sm" className="h-6.5 text-destructive hover:text-destructive" onClick={() => setPending({ kind: 'selection', nodes: selectedNodes })}>
-                  <Trash2 /> <span className="hidden sm:inline">{ui("Delete forever")}</span>
-                </Button>
-              </div>
+              <TooltipProvider delayDuration={250}>
+                <div role="toolbar" aria-label={ui("Selection")} className="flex h-8 items-center gap-0.5 rounded-lg border bg-muted px-0.5 @min-[36rem]:absolute @min-[36rem]:top-0 @min-[36rem]:right-full @min-[36rem]:mr-2">
+                  <SelectionAction label={ui("Clear selection")} onClick={() => setSelection(EMPTY_SELECTION)}><X /></SelectionAction>
+                  <span className="px-1.5 text-sm font-medium whitespace-nowrap tabular-nums">{selectedNodes.length === 1 ? ui("1 selected") : uit`${selectedNodes.length} selected`}</span>
+                  <SelectionAction label={ui("Restore")} onClick={() => void restore()}><RotateCcw /></SelectionAction>
+                  <SelectionAction label={ui("Delete forever")} destructive onClick={() => setPending({ kind: 'selection', nodes: selectedNodes })}><Trash2 /></SelectionAction>
+                </div>
+              </TooltipProvider>
             )}
             <Button variant="outline" size="sm" className={cn(selectedNodes.length > 0 && '@max-[36rem]:hidden')} disabled={!items.length} onClick={() => setPending({ kind: 'all' })}>
               <Trash2 /> {ui("Empty trash")}

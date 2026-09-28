@@ -40,6 +40,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { TooltipProvider } from '@/components/ui/tooltip'
 import { ui, uit } from '@/i18n/ui'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/stores/auth'
@@ -66,6 +67,7 @@ import {
 } from '@/features/files/browser/selection'
 import { readFileSort, sortFileNodes, toggleFileSort, uniqueChildName, writeFileSort, type FileSort, type FileSortKey } from '@/features/files/browser/sort'
 import { hasPrimaryModifier, isEditableTarget, shortcutLabel } from '@/features/files/browser/shortcuts'
+import { SelectionAction } from '@/features/files/browser/SelectionAction'
 import { useFileOperations } from '@/features/files/browser/use-file-operations'
 import { useItemDrag } from '@/features/files/browser/use-item-drag'
 
@@ -634,22 +636,22 @@ export function FilesPage() {
               list never move; in a narrow header it takes the controls' place instead of wrapping. */}
           <div className="relative flex min-h-8 items-center gap-2">
             {selectedNodes.length > 0 && (
-              <div role="toolbar" aria-label={ui("Selection")} className={cn(
-                'flex h-8 items-center gap-0.5 rounded-lg border bg-muted px-0.5',
-                // Grid view has an extra Sort button, so it needs a wider header to fit both.
-                view === 'grid'
-                  ? '@min-[42rem]:absolute @min-[42rem]:top-0 @min-[42rem]:right-full @min-[42rem]:mr-2'
-                  : '@min-[36rem]:absolute @min-[36rem]:top-0 @min-[36rem]:right-full @min-[36rem]:mr-2',
-              )}>
-                <button type="button" aria-label={ui("Clear selection")} title={ui("Clear selection")} onClick={() => setSelection(EMPTY_SELECTION)} className="grid size-6.5 cursor-pointer place-items-center rounded-md text-muted-foreground hover:bg-background/70 hover:text-foreground">
-                  <X className="size-4" />
-                </button>
-                <span className="px-1.5 text-sm font-medium whitespace-nowrap tabular-nums">{selectedNodes.length === 1 ? ui("1 selected") : uit`${selectedNodes.length} selected`}</span>
-                {canDownload && <Button variant="ghost" size="sm" className="h-6.5" aria-label={ui("Download")} title={ui("Download")} onClick={() => void ops.download(selectedNodes)}><Download /> <span className="hidden xl:inline">{ui("Download")}</span></Button>}
-                <Button variant="ghost" size="sm" className="h-6.5" aria-label={ui("Move to…")} title={ui("Move to…")} onClick={() => setMoving(selectedNodes)}><FolderInput /> <span className="hidden xl:inline">{ui("Move to…")}</span></Button>
-                <Button variant="ghost" size="sm" className="h-6.5" aria-label={ui("Duplicate")} title={ui("Duplicate")} onClick={() => void duplicate()}><CopyPlus /> <span className="hidden xl:inline">{ui("Duplicate")}</span></Button>
-                <Button variant="ghost" size="sm" className="h-6.5 text-destructive hover:text-destructive" aria-label={ui("Move to trash")} title={ui("Move to trash")} onClick={() => void trashSelection()}><Trash2 /> <span className="hidden xl:inline">{ui("Move to trash")}</span></Button>
-              </div>
+              <TooltipProvider delayDuration={250}>
+                <div role="toolbar" aria-label={ui("Selection")} className={cn(
+                  'flex h-8 items-center gap-0.5 rounded-lg border bg-muted px-0.5',
+                  // Grid view has an extra Sort button, so it needs a wider header to fit both.
+                  view === 'grid'
+                    ? '@min-[42rem]:absolute @min-[42rem]:top-0 @min-[42rem]:right-full @min-[42rem]:mr-2'
+                    : '@min-[36rem]:absolute @min-[36rem]:top-0 @min-[36rem]:right-full @min-[36rem]:mr-2',
+                )}>
+                  <SelectionAction label={ui("Clear selection")} onClick={() => setSelection(EMPTY_SELECTION)}><X /></SelectionAction>
+                  <span className="px-1.5 text-sm font-medium whitespace-nowrap tabular-nums">{selectedNodes.length === 1 ? ui("1 selected") : uit`${selectedNodes.length} selected`}</span>
+                  {canDownload && <SelectionAction label={ui("Download")} onClick={() => void ops.download(selectedNodes)}><Download /></SelectionAction>}
+                  <SelectionAction label={ui("Move to…")} onClick={() => setMoving(selectedNodes)}><FolderInput /></SelectionAction>
+                  <SelectionAction label={ui("Duplicate")} onClick={() => void duplicate()}><CopyPlus /></SelectionAction>
+                  <SelectionAction label={ui("Move to trash")} destructive onClick={() => void trashSelection()}><Trash2 /></SelectionAction>
+                </div>
+              </TooltipProvider>
             )}
             <div className={cn('flex items-center gap-2', selectedNodes.length > 0 && (view === 'grid' ? '@max-[42rem]:hidden' : '@max-[36rem]:hidden'))}>
               {view === 'grid' && (
