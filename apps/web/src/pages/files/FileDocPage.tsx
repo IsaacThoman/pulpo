@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { DOC_FRAGMENT_NAME } from '@pulpo/client-core/doc-schema'
 import { isMarkdownName, type FileConversionPreview, type FileNode } from '@pulpo/contracts'
-import { ChevronRight, Cloud, CloudOff, Download, HardDrive, Loader2, MoreHorizontal, Pencil, Trash2, TriangleAlert } from 'lucide-react'
+import { ChevronRight, Cloud, CloudOff, Download, HardDrive, Loader2, Maximize2, MoreHorizontal, Pencil, Trash2, TriangleAlert, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -14,6 +14,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { ui, uit } from '@/i18n/ui'
+import { formatBytes } from '@/lib/attachments'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/stores/auth'
 import { useSettings } from '@/stores/settings'
@@ -34,7 +35,9 @@ import { filesErrorMessage } from '@/features/files/file-display'
 import { DocEditor } from '@/features/files/editor/DocEditor'
 import type { DocSyncStatus } from '@/features/files/editor/socket-provider'
 import { useDocSession, type PresencePeer } from '@/features/files/editor/use-doc-session'
+import { FilePreviewBody } from '@/features/files/FilePreviewDialog'
 import { MarkdownConversionDialog } from '@/features/files/MarkdownConversionDialog'
+import { useSidePanel } from '@/features/files/side-panel/store'
 
 function statusProblem(status: DocSyncStatus): string | null {
   if (status.state === 'closed') {
@@ -146,9 +149,72 @@ function FilePath({ ancestors }: { ancestors: FileNode[] }) {
   )
 }
 
-function OpenDoc({ userId, docId }: { userId: string; docId: string }) {
+/** Where a file view renders: the full page, or the side panel next to another view. */
+interface FileViewContext {
+  layout: 'page' | 'panel'
+  onClose?: () => void
+  onExpand?: () => void
+}
+
+const PAGE_VIEW: FileViewContext = { layout: 'page' }
+
+function HeaderIconButton({ label, onClick, children }: { label: string; onClick?: () => void; children: ReactNode }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button variant="ghost" size="icon-sm" aria-label={label} onClick={onClick}>{children}</Button>
+      </TooltipTrigger>
+      <TooltipContent side="bottom">{label}</TooltipContent>
+    </Tooltip>
+  )
+}
+
+/** Title bar shared by every file view; in the side panel it adds full-page and close buttons. */
+function FileHeader({ node, ancestors, view, menu, children }: {
+  node: FileNode | undefined
+  ancestors: FileNode[]
+  view: FileViewContext
+  menu: ReactNode
+  children?: ReactNode
+}) {
+  const panel = view.layout === 'panel'
+  return (
+    <header className={cn('flex items-center border-b', panel ? 'side-panel-header gap-1.5 px-3 py-1.5' : 'mobile-page-content gap-3 px-4 py-2 sm:px-6')}>
+      <div className="min-w-0 flex-1">
+        <FilePath ancestors={ancestors} />
+        {node ? <DocTitle node={node} /> : <div className="h-8" />}
+      </div>
+      {children}
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="ghost" size="icon-sm" aria-label={ui("Document actions")} disabled={!node}><MoreHorizontal /></Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">{menu}</DropdownMenuContent>
+      </DropdownMenu>
+      {panel && (
+        <>
+          <HeaderIconButton label={ui("Open full page")} onClick={view.onExpand}><Maximize2 /></HeaderIconButton>
+          <HeaderIconButton label={ui("Close")} onClick={view.onClose}><X /></HeaderIconButton>
+        </>
+      )}
+    </header>
+  )
+}
+
+function useLeaveAfterTrash(node: FileNode | undefined, view: FileViewContext) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const userId = useAuth((state) => state.user?.id)
+  return async () => {
+    if (!node) return
+    await trashFileNode(node.id)
+    await queryClient.invalidateQueries({ queryKey: filesQueryKey(userId) })
+    if (view.layout === 'panel') view.onClose?.()
+    else navigate(node.parentId ? `/files/f/${node.parentId}` : '/files')
+  }
+}
+
+function OpenDoc({ userId, docId, view }: { userId: string; docId: string; view: FileViewContext }) {
   const nodeQuery = useQuery({ queryKey: fileNodeQueryKey(userId, docId), queryFn: () => fetchFileNode(docId) })
   const { session, status, peers } = useDocSession(userId, docId)
   const [everSynced, setEverSynced] = useState(false)
@@ -165,52 +231,27 @@ function OpenDoc({ userId, docId }: { userId: string; docId: string }) {
   // Before the first sync, only allow typing when a cached copy is already on screen.
   const hasContent = Boolean(session && session.doc.getXmlFragment(DOC_FRAGMENT_NAME).length > 0)
   const editable = !problem && Boolean(node && !node.trashedAt) && (everSynced || hasContent)
-
-  const trash = async () => {
-    if (!node) return
-    try {
-      await trashFileNode(node.id)
-      await queryClient.invalidateQueries({ queryKey: filesQueryKey(userId) })
-      navigate(parentPath)
-    } catch (cause) {
-      setNotice(filesErrorMessage(cause))
-    }
-  }
-
-  if (nodeQuery.isError) {
-    return (
-      <div className="grid h-full place-items-center p-8">
-        <div className="max-w-md rounded-xl border p-6 text-center">
-          <TriangleAlert className="mx-auto size-8 text-amber-500" />
-          <p className="mt-3 text-sm text-muted-foreground">{filesErrorMessage(nodeQuery.error)}</p>
-          <Button asChild variant="outline" size="sm" className="mt-4"><Link to="/files">{ui("Back to My files")}</Link></Button>
-        </div>
-      </div>
-    )
-  }
+  const trash = useLeaveAfterTrash(node, view)
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <header className="mobile-page-content flex items-center gap-3 border-b px-4 py-2 sm:px-6">
-        <div className="min-w-0 flex-1">
-          <FilePath ancestors={ancestors} />
-          {node ? <DocTitle node={node} /> : <div className="h-8" />}
-        </div>
-        <Presence peers={peers} />
-        <SyncIndicator status={status} />
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon-sm" aria-label={ui("Document actions")} disabled={!node}><MoreHorizontal /></Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
+      <FileHeader
+        node={node}
+        ancestors={ancestors}
+        view={view}
+        menu={(
+          <>
             <DropdownMenuItem onSelect={() => node && void downloadDocMarkdown(node).catch((cause: unknown) => setNotice(filesErrorMessage(cause)))}>
               <Download /> {ui("Download")}
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem variant="destructive" onSelect={() => void trash()}><Trash2 /> {ui("Move to trash")}</DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </header>
+            <DropdownMenuItem variant="destructive" onSelect={() => void trash().catch((cause: unknown) => setNotice(filesErrorMessage(cause)))}><Trash2 /> {ui("Move to trash")}</DropdownMenuItem>
+          </>
+        )}
+      >
+        <Presence peers={peers} />
+        <SyncIndicator status={status} />
+      </FileHeader>
 
       {(problem || notice) && (
         <div role="alert" className={cn('flex items-center gap-2 border-b px-4 py-2 text-sm sm:px-6', problem ? 'bg-amber-500/10 text-amber-700 dark:text-amber-300' : 'bg-destructive/5 text-destructive')}>
@@ -223,7 +264,7 @@ function OpenDoc({ userId, docId }: { userId: string; docId: string }) {
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         {session ? (
-          <DocEditor key={docId} session={session} editable={editable} wide={chatWidth === 'full'} />
+          <DocEditor key={docId} session={session} editable={editable} width={view.layout === 'panel' ? 'fill' : chatWidth === 'full' ? 'wide' : 'narrow'} />
         ) : (
           <div className="grid h-64 place-items-center"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>
         )}
@@ -233,12 +274,16 @@ function OpenDoc({ userId, docId }: { userId: string; docId: string }) {
   )
 }
 
+function contentWidth(view: FileViewContext, chatWidth: 'full' | 'narrow'): string {
+  if (view.layout === 'panel') return 'w-full px-5 py-5'
+  return cn('mx-auto w-full px-4 py-8 sm:px-6', chatWidth === 'full' ? 'max-w-[min(100%,90rem)]' : 'max-w-5xl')
+}
+
 /**
  * An uploaded Markdown file keeps its original bytes and opens read-only. Edit converts it into
  * an editable document, after showing what the editor's formatting would change, if anything.
  */
-function MarkdownFileView({ node, ancestors }: { node: FileNode; ancestors: FileNode[] }) {
-  const navigate = useNavigate()
+function MarkdownFileView({ node, ancestors, view }: { node: FileNode; ancestors: FileNode[]; view: FileViewContext }) {
   const queryClient = useQueryClient()
   const userId = useAuth((state) => state.user?.id)
   const chatWidth = useSettings((state) => state.chatWidth)
@@ -249,7 +294,7 @@ function MarkdownFileView({ node, ancestors }: { node: FileNode; ancestors: File
   const [preview, setPreview] = useState<FileConversionPreview | null>(null)
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
-  const parentPath = node.parentId ? `/files/f/${node.parentId}` : '/files'
+  const trash = useLeaveAfterTrash(node, view)
 
   const convert = async () => {
     setBusy(true)
@@ -280,40 +325,27 @@ function MarkdownFileView({ node, ancestors }: { node: FileNode; ancestors: File
     }
   }
 
-  const trash = async () => {
-    try {
-      await trashFileNode(node.id)
-      await queryClient.invalidateQueries({ queryKey: filesQueryKey(userId) })
-      navigate(parentPath)
-    } catch (cause) {
-      setNotice(filesErrorMessage(cause))
-    }
-  }
-
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <header className="mobile-page-content flex items-center gap-3 border-b px-4 py-2 sm:px-6">
-        <div className="min-w-0 flex-1">
-          <FilePath ancestors={ancestors} />
-          <DocTitle node={node} />
-        </div>
-        <span className="hidden text-xs text-muted-foreground sm:inline">{ui("Read-only")}</span>
-        <Button size="sm" disabled={busy || node.trashedAt !== null} onClick={() => void startEditing()}>
-          {busy ? <Loader2 className="animate-spin" /> : <Pencil />} {ui("Edit")}
-        </Button>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon-sm" aria-label={ui("Document actions")}><MoreHorizontal /></Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
+      <FileHeader
+        node={node}
+        ancestors={ancestors}
+        view={view}
+        menu={(
+          <>
             <DropdownMenuItem onSelect={() => void downloadFile(node).catch((cause: unknown) => setNotice(filesErrorMessage(cause)))}>
               <Download /> {ui("Download")}
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem variant="destructive" onSelect={() => void trash()}><Trash2 /> {ui("Move to trash")}</DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </header>
+            <DropdownMenuItem variant="destructive" onSelect={() => void trash().catch((cause: unknown) => setNotice(filesErrorMessage(cause)))}><Trash2 /> {ui("Move to trash")}</DropdownMenuItem>
+          </>
+        )}
+      >
+        <span className={cn('text-xs text-muted-foreground', view.layout === 'panel' ? 'hidden' : 'hidden sm:inline')}>{ui("Read-only")}</span>
+        <Button size="sm" disabled={busy || node.trashedAt !== null} onClick={() => void startEditing()}>
+          {busy ? <Loader2 className="animate-spin" /> : <Pencil />} {ui("Edit")}
+        </Button>
+      </FileHeader>
       {notice && (
         <div role="alert" className="flex items-center gap-2 border-b bg-destructive/5 px-4 py-2 text-sm text-destructive sm:px-6">
           <TriangleAlert className="size-4 shrink-0" />
@@ -321,7 +353,7 @@ function MarkdownFileView({ node, ancestors }: { node: FileNode; ancestors: File
         </div>
       )}
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className={cn('mx-auto w-full px-4 py-8 sm:px-6', chatWidth === 'full' ? 'max-w-[min(100%,90rem)]' : 'max-w-5xl')}>
+        <div className={contentWidth(view, chatWidth)}>
           {content.isPending ? (
             <div className="grid h-64 place-items-center"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>
           ) : content.isError ? (
@@ -338,35 +370,89 @@ function MarkdownFileView({ node, ancestors }: { node: FileNode; ancestors: File
   )
 }
 
-/** Opens a file by what its name says it is: Markdown is edited, anything else only previews. */
-function FileRoute({ userId, fileId }: { userId: string; fileId: string }) {
+/** Any other uploaded file: a preview filling the page or panel, with download and trash. */
+function BlobFileView({ node, ancestors, view }: { node: FileNode; ancestors: FileNode[]; view: FileViewContext }) {
+  const [notice, setNotice] = useState<string | null>(null)
+  const trash = useLeaveAfterTrash(node, view)
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <FileHeader
+        node={node}
+        ancestors={ancestors}
+        view={view}
+        menu={(
+          <>
+            <DropdownMenuItem onSelect={() => void downloadFile(node).catch((cause: unknown) => setNotice(filesErrorMessage(cause)))}>
+              <Download /> {ui("Download")}
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem variant="destructive" onSelect={() => void trash().catch((cause: unknown) => setNotice(filesErrorMessage(cause)))}><Trash2 /> {ui("Move to trash")}</DropdownMenuItem>
+          </>
+        )}
+      >
+        <span className="hidden text-xs text-muted-foreground tabular-nums sm:inline">{formatBytes(node.sizeBytes)}</span>
+      </FileHeader>
+      {notice && <p role="alert" className="border-b bg-destructive/5 px-4 py-2 text-sm text-destructive sm:px-6">{notice}</p>}
+      <div className="min-h-0 flex-1 overflow-auto bg-muted/20 p-4">
+        <FilePreviewBody node={node} fill />
+      </div>
+    </div>
+  )
+}
+
+function FileViewMessage({ message, view, back }: { message: string; view: FileViewContext; back: string }) {
+  return (
+    <div className="grid h-full place-items-center p-8">
+      <div className="max-w-md rounded-xl border p-6 text-center">
+        <TriangleAlert className="mx-auto size-8 text-amber-500" />
+        <p className="mt-3 text-sm text-muted-foreground">{message}</p>
+        {view.layout === 'panel'
+          ? <Button variant="outline" size="sm" className="mt-4" onClick={view.onClose}>{ui("Close")}</Button>
+          : <Button asChild variant="outline" size="sm" className="mt-4"><Link to={back}>{ui("Back to My files")}</Link></Button>}
+      </div>
+    </div>
+  )
+}
+
+/** Opens a file by what its name says it is: Markdown is edited, anything else previews. */
+function FileRoute({ userId, fileId, view }: { userId: string; fileId: string; view: FileViewContext }) {
   const nodeQuery = useQuery({ queryKey: fileNodeQueryKey(userId, fileId), queryFn: () => fetchFileNode(fileId) })
   if (nodeQuery.isPending) return <div className="grid h-full place-items-center"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>
   const node = nodeQuery.data?.node
-  if (nodeQuery.isError || !node || (node.kind === 'blob' && !isMarkdownName(node.name)) || node.kind === 'folder') {
-    const message = nodeQuery.isError ? filesErrorMessage(nodeQuery.error) : ui("This file isn't Markdown, so it can't be edited here.")
-    const back = node?.parentId ? `/files/f/${node.parentId}` : '/files'
-    return (
-      <div className="grid h-full place-items-center p-8">
-        <div className="max-w-md rounded-xl border p-6 text-center">
-          <TriangleAlert className="mx-auto size-8 text-amber-500" />
-          <p className="mt-3 text-sm text-muted-foreground">{message}</p>
-          <Button asChild variant="outline" size="sm" className="mt-4"><Link to={back}>{ui("Back to My files")}</Link></Button>
-        </div>
-      </div>
-    )
-  }
-  if (node.kind === 'doc') return <OpenDoc key={`doc:${fileId}`} userId={userId} docId={fileId} />
-  return <MarkdownFileView key={`file:${fileId}`} node={node} ancestors={nodeQuery.data.ancestors} />
+  const back = node?.parentId ? `/files/f/${node.parentId}` : '/files'
+  if (nodeQuery.isError || !node) return <FileViewMessage message={filesErrorMessage(nodeQuery.error)} view={view} back={back} />
+  if (node.kind === 'folder') return <FileViewMessage message={ui("Folders open in the Files view.")} view={view} back={`/files/f/${node.id}`} />
+  if (node.kind === 'doc') return <OpenDoc key={`doc:${fileId}`} userId={userId} docId={fileId} view={view} />
+  const ancestors = nodeQuery.data.ancestors
+  if (isMarkdownName(node.name)) return <MarkdownFileView key={`md:${fileId}`} node={node} ancestors={ancestors} view={view} />
+  return <BlobFileView key={`blob:${fileId}`} node={node} ancestors={ancestors} view={view} />
 }
 
 export function FileDocPage() {
   const { docId } = useParams()
   const userId = useAuth((state) => state.user?.id)
   const filesEnabled = useAuth((state) => state.filesEnabled)
+  // Opening the side panel's file full page moves it here instead of showing it twice.
+  useEffect(() => {
+    if (docId && useSidePanel.getState().fileId === docId) useSidePanel.getState().close()
+  }, [docId])
   if (!filesEnabled) {
     return <div className="grid h-full place-items-center p-8 text-sm text-muted-foreground">{ui("Files are disabled by the administrator")}</div>
   }
   if (!userId || !docId) return null
-  return <FileRoute key={docId} userId={userId} fileId={docId} />
+  return <FileRoute key={docId} userId={userId} fileId={docId} view={PAGE_VIEW} />
+}
+
+/** The side panel's content: the same file views in a compact layout. */
+export function FilePanelView({ fileId }: { fileId: string }) {
+  const navigate = useNavigate()
+  const userId = useAuth((state) => state.user?.id)
+  const close = useSidePanel((state) => state.close)
+  const view = useMemo<FileViewContext>(() => ({
+    layout: 'panel',
+    onClose: close,
+    onExpand: () => navigate(`/files/d/${fileId}`),
+  }), [close, fileId, navigate])
+  if (!userId) return null
+  return <FileRoute key={fileId} userId={userId} fileId={fileId} view={view} />
 }

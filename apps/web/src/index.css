@@ -538,6 +538,25 @@ html[data-desktop-os="win32"] .desktop-main-titlebar-active .app-main {
   margin-top: 0;
 }
 
+/* The docked side panel follows the main view under the desktop title bar. */
+html[data-desktop="true"] .app-side-panel {
+  z-index: 41;
+  transition: margin-top 300ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+html[data-desktop="true"] .desktop-main-titlebar-active .app-side-panel {
+  margin-top: -38px;
+}
+
+html[data-desktop-os="win32"] .desktop-main-titlebar-active .app-side-panel {
+  margin-top: 0;
+}
+
+/* On Windows the caption buttons sit over the right edge, which the panel now occupies. */
+html[data-desktop-os="win32"] .app-side-panel .side-panel-header {
+  padding-right: 138px;
+}
+
 html[data-desktop-os="win32"] .desktop-main-titlebar-active .app-main > div > header,
 html[data-desktop-os="win32"] .desktop-main-titlebar-active .app-main .chat-header {
   padding-right: 138px;

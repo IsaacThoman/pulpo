@@ -112,11 +112,11 @@ function DocToolbar({ editor }: { editor: Editor }) {
   )
 }
 
-export function DocEditor({ session, editable, wide = false, toolbarSlot }: {
+export function DocEditor({ session, editable, width = 'narrow', toolbarSlot }: {
   session: DocSession
   editable: boolean
-  /** Follows the chat width preference: a 64rem column, or up to 90rem when wide. */
-  wide?: boolean
+  /** `narrow` and `wide` follow the chat width preference (64rem or 90rem); `fill` uses the side panel's width. */
+  width?: 'narrow' | 'wide' | 'fill'
   /** Rendered next to the toolbar, e.g. presence and sync status. */
   toolbarSlot?: ReactNode
 }) {
@@ -148,7 +148,12 @@ export function DocEditor({ session, editable, wide = false, toolbarSlot }: {
         {toolbarSlot}
       </div>
       {/* Match the chat column so documents read at the same width as conversations. */}
-      <div className={cn('mx-auto w-full flex-1 px-4 py-8 sm:px-6', wide ? 'max-w-[min(100%,90rem)]' : 'max-w-5xl')}>
+      <div className={cn(
+        'mx-auto w-full flex-1',
+        width === 'fill' ? 'px-5 py-5' : 'px-4 py-8 sm:px-6',
+        width === 'wide' && 'max-w-[min(100%,90rem)]',
+        width === 'narrow' && 'max-w-5xl',
+      )}>
         <EditorContent editor={editor} />
       </div>
     </div>

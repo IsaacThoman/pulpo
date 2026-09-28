@@ -1,5 +1,9 @@
 const isApple = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
 
+export function isAppleShortcut(): boolean {
+  return isApple
+}
+
 /** Platform-style hint for a menu item, e.g. ⌘⇧N on macOS and Ctrl+Shift+N elsewhere. */
 export function shortcutLabel(key: string, modifiers: { mod?: boolean; shift?: boolean } = {}): string {
   if (isApple) return `${modifiers.mod ? '⌘' : ''}${modifiers.shift ? '⇧' : ''}${key}`

@@ -1881,6 +1881,12 @@ const esUi: Record<string, string> = {
   "Read-only": "Solo lectura",
   "This file is empty.": "Este archivo está vacío.",
   "This file isn't Markdown, so it can't be edited here.": "Este archivo no es Markdown, así que no se puede editar aquí.",
+  "Side panel": "Panel lateral",
+  "Resize side panel": "Cambiar el tamaño del panel lateral",
+  "Close side panel": "Cerrar el panel lateral",
+  "Open full page": "Abrir en página completa",
+  "Folders open in the Files view.": "Las carpetas se abren en la vista de Archivos.",
+  "Open to the side": "Abrir al lado",
 }
 
 export default esUi

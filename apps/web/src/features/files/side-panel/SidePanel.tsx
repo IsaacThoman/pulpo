@@ -1,0 +1,116 @@
+import { lazy, Suspense, useEffect, useState, type PointerEvent } from 'react'
+import { Loader2 } from 'lucide-react'
+import { ui } from '@/i18n/ui'
+import { cn } from '@/lib/utils'
+import { clampPanelWidth, readPanelWidth, useSidePanel, writePanelWidth } from './store'
+
+// The editor is heavy; load it only once a file is opened beside the main view.
+const FilePanelView = lazy(() => import('@/pages/files/FileDocPage').then((module) => ({ default: module.FilePanelView })))
+
+export type SidePanelMode = 'docked' | 'drawer' | 'sheet'
+
+const loading = <div className="grid h-full place-items-center"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>
+
+/**
+ * The file shown beside the main view. Docked on wide windows (drag its edge to resize), a
+ * slide-over drawer on medium ones, and a full-screen sheet on phones.
+ */
+export function SidePanel({ mode }: { mode: SidePanelMode }) {
+  const fileId = useSidePanel((state) => state.fileId)
+  const close = useSidePanel((state) => state.close)
+  const [width, setWidth] = useState(() => clampPanelWidth(readPanelWidth(), window.innerWidth))
+  const [resizing, setResizing] = useState(false)
+
+  useEffect(() => {
+    const fit = () => setWidth((current) => clampPanelWidth(current, window.innerWidth))
+    window.addEventListener('resize', fit)
+    return () => window.removeEventListener('resize', fit)
+  }, [])
+
+  // Overlays close with Escape, unless the key belongs to something inside the panel.
+  useEffect(() => {
+    if (!fileId || mode === 'docked') return
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.defaultPrevented) return
+      if (event.target instanceof Element && event.target.closest('input, textarea, [contenteditable="true"], [role="dialog"], [role="menu"]')) return
+      close()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [close, fileId, mode])
+
+  if (!fileId) return null
+
+  const startResize = (event: PointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return
+    event.preventDefault()
+    const handle = event.currentTarget
+    handle.setPointerCapture(event.pointerId)
+    setResizing(true)
+    const move = (moveEvent: globalThis.PointerEvent) => setWidth(clampPanelWidth(window.innerWidth - moveEvent.clientX, window.innerWidth))
+    const end = () => {
+      handle.removeEventListener('pointermove', move)
+      handle.removeEventListener('pointerup', end)
+      handle.removeEventListener('pointercancel', end)
+      setResizing(false)
+      setWidth((current) => { writePanelWidth(current); return current })
+    }
+    handle.addEventListener('pointermove', move)
+    handle.addEventListener('pointerup', end)
+    handle.addEventListener('pointercancel', end)
+  }
+
+  const content = <Suspense fallback={loading}><FilePanelView fileId={fileId} /></Suspense>
+
+  if (mode === 'docked') {
+    return (
+      <aside
+        data-side-panel
+        aria-label={ui("Side panel")}
+        className={cn('app-side-panel relative flex h-full shrink-0 flex-col border-l bg-background', resizing && 'select-none')}
+        style={{ width }}
+      >
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          aria-label={ui("Resize side panel")}
+          aria-valuenow={width}
+          tabIndex={0}
+          onPointerDown={startResize}
+          onDoubleClick={() => { setWidth(clampPanelWidth(520, window.innerWidth)); writePanelWidth(520) }}
+          onKeyDown={(event) => {
+            if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
+            event.preventDefault()
+            const next = clampPanelWidth(width + (event.key === 'ArrowLeft' ? 32 : -32), window.innerWidth)
+            setWidth(next)
+            writePanelWidth(next)
+          }}
+          className={cn(
+            'absolute inset-y-0 -left-1 z-20 w-2 cursor-col-resize outline-none',
+            'after:absolute after:inset-y-0 after:left-[3px] after:w-0.5 after:transition-colors hover:after:bg-sky-500/60 focus-visible:after:bg-sky-500',
+            resizing && 'after:bg-sky-500',
+          )}
+        />
+        {content}
+      </aside>
+    )
+  }
+
+  return (
+    <>
+      {mode === 'drawer' && (
+        <button type="button" aria-label={ui("Close side panel")} className="fixed inset-0 z-40 cursor-default bg-black/30" onClick={close} />
+      )}
+      <aside
+        data-side-panel
+        aria-label={ui("Side panel")}
+        className={cn(
+          'fixed z-40 flex flex-col bg-background',
+          mode === 'drawer' ? 'inset-y-0 right-0 w-[min(34rem,92vw)] border-l shadow-2xl' : 'inset-0',
+        )}
+      >
+        {content}
+      </aside>
+    </>
+  )
+}

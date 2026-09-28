@@ -12,6 +12,10 @@ Selections act through `POST /api/files/batch/{move,copy,trash,restore,delete}`.
 
 Copying writes folders and documents in the same transaction that reserves storage for the whole selection. Uploaded files are inserted as pending, duplicated inside the object store (`BlobStore.copy`), then marked ready; a failed object copy removes its placeholder instead of leaving a visible file without bytes.
 
+## Side panel
+
+Any file can open beside the current view (**Open to the side**, or Alt/Option-click in Files) while the main view keeps navigating between chats and folders. The panel is window state mirrored into `?side=file:<id>`, so reloads and shared links reopen it and navigation carries it along. It docks and resizes on wide windows, becomes a drawer below 1100px, and a full-screen sheet on phones. **Open full page** moves the file into the main view and closes the panel so one tab never edits the same document twice.
+
 ## Uploads
 
 Uploads use the attachment flow (reserve, PUT, confirm) with `users/<id>/files/<node>` object keys and the same per-file cap. Files blobs, including trashed ones, and document state count toward the account storage allowance together with chat attachments. They do not reuse the `attachments` table, because chat purges delete attachments claimed by a chat.

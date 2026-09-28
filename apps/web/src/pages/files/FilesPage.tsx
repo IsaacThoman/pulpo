@@ -18,6 +18,7 @@ import {
   HardDrive,
   LayoutGrid,
   List,
+  PanelRight,
   Loader2,
   Pencil,
   Plus,
@@ -65,7 +66,8 @@ import {
   type NavigationKey,
 } from '@/features/files/browser/selection'
 import { readFileSort, sortFileNodes, toggleFileSort, uniqueChildName, writeFileSort, type FileSort, type FileSortKey } from '@/features/files/browser/sort'
-import { hasPrimaryModifier, isEditableTarget, shortcutLabel } from '@/features/files/browser/shortcuts'
+import { hasPrimaryModifier, isAppleShortcut, isEditableTarget, shortcutLabel } from '@/features/files/browser/shortcuts'
+import { useSidePanel } from '@/features/files/side-panel/store'
 import { SelectionAction } from '@/features/files/browser/SelectionAction'
 import { useFileOperations } from '@/features/files/browser/use-file-operations'
 import { useItemDrag } from '@/features/files/browser/use-item-drag'
@@ -162,6 +164,10 @@ export function FilesPage() {
     const next = toggleFileSort(sort, key)
     setSort(next)
     writeFileSort(next)
+  }
+
+  const openToSide = (node: FileNode) => {
+    if (node.kind !== 'folder') useSidePanel.getState().open(node.id)
   }
 
   const open = (node: FileNode) => {
@@ -276,6 +282,8 @@ export function FilesPage() {
   // One window listener that always sees the latest state, like a desktop file manager.
   const handleKey = (event: KeyboardEvent) => {
     if (event.defaultPrevented || isEditableTarget(event.target) || renamingId || moving || previewing || menu) return
+    // Keys pressed inside the side panel belong to the file shown there.
+    if (event.target instanceof Element && event.target.closest('[data-side-panel]')) return
     const mod = hasPrimaryModifier(event)
     const key = event.key
     if (NAVIGATION_KEYS.has(key) && !mod) {
@@ -436,6 +444,12 @@ export function FilesPage() {
       if (renamingId === node.id || drag.consumeClick()) return
       // Touch has no double-click or hover, so a tap opens, as in mobile file browsers.
       if (lastPointerType.current === 'touch') { open(node); return }
+      // Alt/Option-click opens a file beside the current view, like "Open to the side" in editors.
+      if (event.altKey && node.kind !== 'folder') {
+        setSelection(selectOnly(node.id))
+        openToSide(node)
+        return
+      }
       setSelection(clickSelect(selection, order, node.id, { toggle: hasPrimaryModifier(event), range: event.shiftKey }))
     },
     onDoubleClick: () => { if (renamingId !== node.id) open(node) },
@@ -478,6 +492,11 @@ export function FilesPage() {
         <DropdownMenuItem onSelect={() => open(single)}>
           <Eye /> {single.kind === 'blob' ? ui("Preview") : ui("Open")}
           <DropdownMenuShortcut>{single.kind === 'blob' ? ui("Space") : '↵'}</DropdownMenuShortcut>
+        </DropdownMenuItem>
+      )}
+      {single && single.kind !== 'folder' && (
+        <DropdownMenuItem onSelect={() => openToSide(single)}>
+          <PanelRight /> {ui("Open to the side")}<DropdownMenuShortcut>{isAppleShortcut() ? '⌥ Click' : 'Alt+Click'}</DropdownMenuShortcut>
         </DropdownMenuItem>
       )}
       {canDownload && (
@@ -550,11 +569,11 @@ export function FilesPage() {
         {items}
       </div>
     ) : (
-      <div className="overflow-hidden rounded-xl border">
-        <div className="hidden grid-cols-[minmax(0,1fr)_9rem_6.5rem_6rem_2.5rem] gap-3 border-b bg-muted/40 px-3 py-2 text-xs font-medium text-muted-foreground sm:grid">
+      <div className="@container overflow-hidden rounded-xl border">
+        <div className="hidden gap-3 border-b bg-muted/40 px-3 py-2 text-xs font-medium text-muted-foreground @lg:grid @lg:grid-cols-[minmax(0,1fr)_6rem_2.5rem] @2xl:grid-cols-[minmax(0,1fr)_9rem_6.5rem_6rem_2.5rem]">
           <SortHeader label={ui("Name")} sortKey="name" sort={sort} onSort={changeSort} />
-          <SortHeader label={ui("Modified")} sortKey="modified" sort={sort} onSort={changeSort} />
-          <SortHeader label={ui("Kind")} sortKey="kind" sort={sort} onSort={changeSort} />
+          <SortHeader label={ui("Modified")} sortKey="modified" sort={sort} onSort={changeSort} className="hidden @2xl:flex" />
+          <SortHeader label={ui("Kind")} sortKey="kind" sort={sort} onSort={changeSort} className="hidden @2xl:flex" />
           <SortHeader label={ui("Size")} sortKey="size" sort={sort} onSort={changeSort} className="justify-end" />
           <span />
         </div>

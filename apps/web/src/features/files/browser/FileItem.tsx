@@ -95,7 +95,8 @@ export function FileItem(props: FileItemProps) {
     <div
       {...shared}
       className={cn(
-        'grid cursor-default grid-cols-[minmax(0,1fr)_2.5rem] items-center gap-3 px-3 transition-colors select-none hover:bg-accent/50 sm:grid-cols-[minmax(0,1fr)_9rem_6.5rem_6rem_2.5rem]',
+        // Columns follow the list's own width (it may sit beside the side panel), not the window's.
+        'grid cursor-default grid-cols-[minmax(0,1fr)_2.5rem] items-center gap-3 px-3 transition-colors select-none hover:bg-accent/50 @lg:grid-cols-[minmax(0,1fr)_6rem_2.5rem] @2xl:grid-cols-[minmax(0,1fr)_9rem_6.5rem_6rem_2.5rem]',
         // Inset shadow draws the accent bar: a global border-color rule overrides border utilities.
         selected && 'bg-sky-500/15 shadow-[inset_3px_0_0_var(--color-sky-500)] hover:bg-sky-500/20 dark:bg-sky-400/15',
         focused && 'outline-2 -outline-offset-2 outline-sky-500/60',
@@ -107,9 +108,9 @@ export function FileItem(props: FileItemProps) {
         <FileNodeIcon node={node} className="size-5" />
         {name}
       </span>
-      <span className="hidden truncate text-sm text-muted-foreground sm:block">{timeAgo(Date.parse(node.updatedAt))}</span>
-      <span className="hidden truncate text-sm text-muted-foreground sm:block">{fileKindLabel(node)}</span>
-      <span className="hidden text-right text-sm text-muted-foreground tabular-nums sm:block">{node.kind === 'folder' ? '—' : formatBytes(node.sizeBytes)}</span>
+      <span className="hidden truncate text-sm text-muted-foreground @2xl:block">{timeAgo(Date.parse(node.updatedAt))}</span>
+      <span className="hidden truncate text-sm text-muted-foreground @2xl:block">{fileKindLabel(node)}</span>
+      <span className="hidden text-right text-sm text-muted-foreground tabular-nums @lg:block">{node.kind === 'folder' ? '—' : formatBytes(node.sizeBytes)}</span>
       {menuButton}
     </div>
   )
