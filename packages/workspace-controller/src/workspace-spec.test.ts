@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type * as k8s from '@kubernetes/client-node'
-import { isStaleStartingPod, isUnleasedOrphanPod, podMatchesSpec, WORKSPACE_SPEC_HASH_ANNOTATION, workspaceSpecHash, type WorkspaceSpec } from './workspace-spec.js'
+import { isStaleStartingPod, isTerminalPod, isUnleasedOrphanPod, podMatchesSpec, WORKSPACE_SPEC_HASH_ANNOTATION, workspaceSpecHash, type WorkspaceSpec } from './workspace-spec.js'
 
 const spec: WorkspaceSpec = {
   imageDigest: `ghcr.io/example/workspace@sha256:${'a'.repeat(64)}`,
@@ -68,5 +68,15 @@ describe('orphan workspace pods', () => {
     expect(isStaleStartingPod(orphan('starting', 9), now)).toBe(false)
     expect(isStaleStartingPod(orphan('unknown', 60), now)).toBe(false)
     expect(isStaleStartingPod(orphan('starting', 60, 'lease-1'), now)).toBe(false)
+  })
+})
+
+describe('terminal workspace pods', () => {
+  it('treats failed and completed pods as unable to serve a lease', () => {
+    expect(isTerminalPod({ status: { phase: 'Failed', reason: 'Evicted' } })).toBe(true)
+    expect(isTerminalPod({ status: { phase: 'Succeeded' } })).toBe(true)
+    expect(isTerminalPod({ status: { phase: 'Running', podIP: '10.0.0.4' } })).toBe(false)
+    expect(isTerminalPod({ status: { phase: 'Unknown' } })).toBe(false)
+    expect(isTerminalPod({})).toBe(false)
   })
 })
