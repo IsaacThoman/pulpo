@@ -9,9 +9,9 @@ describe('side panel state', () => {
     const contents: PanelContent[] = [
       { kind: 'file', id: a },
       { kind: 'chat', id: b },
-      { kind: 'chat', id: null, folderIds: [] },
-      { kind: 'chat', id: null, folderIds: [a, b] },
-      { kind: 'chat', id: null, folderIds: ['root'] },
+      { kind: 'chat', id: null, scopeIds: [] },
+      { kind: 'chat', id: null, scopeIds: [a, b] },
+      { kind: 'chat', id: null, scopeIds: ['root'] },
     ]
     for (const content of contents) {
       expect(parsePanelContent(serializePanelContent(content))).toEqual(content)
@@ -26,8 +26,8 @@ describe('side panel state', () => {
   })
 
   it('lets the whole tree replace the folders it contains', () => {
-    expect(parsePanelContent(`chat:new:${a},root`)).toEqual({ kind: 'chat', id: null, folderIds: ['root'] })
-    expect(parsePanelContent(`chat:new:${a},${a.toUpperCase()}`)).toEqual({ kind: 'chat', id: null, folderIds: [a] })
+    expect(parsePanelContent(`chat:new:${a},root`)).toEqual({ kind: 'chat', id: null, scopeIds: ['root'] })
+    expect(parsePanelContent(`chat:new:${a},${a.toUpperCase()}`)).toEqual({ kind: 'chat', id: null, scopeIds: [a] })
   })
 
   it('keeps the panel between its minimum and 70% of the window', () => {

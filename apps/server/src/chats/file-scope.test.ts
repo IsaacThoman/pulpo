@@ -30,15 +30,15 @@ describe('chat Files scope', () => {
     expect(mocks.where).not.toHaveBeenCalled()
   })
 
-  it('accepts only live folders the user owns', async () => {
+  it('accepts only live files and folders the user owns', async () => {
     mocks.rows = [{ id: a }, { id: b }]
     await assertFileScope('owner', [a, b])
     const query = new PgDialect().sqlToQuery(mocks.where.mock.calls[0]![0])
-    expect(query.params).toEqual(expect.arrayContaining([a, b, 'owner', 'folder']))
+    expect(query.params).toEqual(expect.arrayContaining([a, b, 'owner', 'ready']))
     expect(query.sql).toContain('"file_nodes"."trashed_at" is null')
   })
 
-  it('rejects a scope with any folder that is missing, trashed, foreign, or not a folder', async () => {
+  it('rejects a scope with any item that is missing, trashed, pending, or foreign', async () => {
     mocks.rows = [{ id: a }]
     await expect(assertFileScope('owner', [a, b])).rejects.toMatchObject({ statusCode: 400, code: 'invalid_file_scope' })
   })

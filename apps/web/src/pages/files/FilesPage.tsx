@@ -171,9 +171,9 @@ export function FilesPage() {
     if (node.kind !== 'folder') useSidePanel.getState().open({ kind: 'file', id: node.id })
   }
 
-  /** Starts a chat beside Files whose agent can use these folders (the whole tree at the root). */
-  const openWithAgent = (folderIds: string[]) => {
-    useSidePanel.getState().open({ kind: 'chat', id: null, folderIds: folderIds.length ? folderIds : [FILE_SCOPE_ROOT] })
+  /** Starts a chat beside Files whose agent can use these items (the whole tree at the root). */
+  const openWithAgent = (ids: string[]) => {
+    useSidePanel.getState().open({ kind: 'chat', id: null, scopeIds: ids.length ? ids : [FILE_SCOPE_ROOT] })
   }
 
   const open = (node: FileNode) => {
@@ -491,7 +491,7 @@ export function FilesPage() {
 
   const single = selectedNodes.length === 1 ? selectedNodes[0]! : null
   const canDownload = selectedNodes.length > 0 && selectedNodes.every((node) => node.kind !== 'folder')
-  const allFolders = selectedNodes.length > 0 && selectedNodes.length <= MAX_CHAT_FILE_SCOPES && selectedNodes.every((node) => node.kind === 'folder')
+  const canOpenWithAgent = selectedNodes.length > 0 && selectedNodes.length <= MAX_CHAT_FILE_SCOPES
   const itemMenu = (
     <>
       {selectedNodes.length > 1 && <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">{uit`${selectedNodes.length} items selected`}</DropdownMenuLabel>}
@@ -506,7 +506,7 @@ export function FilesPage() {
           <PanelRight /> {ui("Open to the side")}<DropdownMenuShortcut>{isAppleShortcut() ? '⌥ Click' : 'Alt+Click'}</DropdownMenuShortcut>
         </DropdownMenuItem>
       )}
-      {allFolders && (
+      {canOpenWithAgent && (
         <DropdownMenuItem onSelect={() => openWithAgent(selectedNodes.map((node) => node.id))}>
           <Bot /> {ui("Open with agent")}
         </DropdownMenuItem>

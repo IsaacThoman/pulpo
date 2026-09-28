@@ -174,9 +174,9 @@ export function Composer({
   draftSlot?: string
   /** Called instead of navigating when the first message creates the chat. */
   onChatStarted?: (chatId: string) => void
-  /** Files folders the agent may use in this chat, shown as chips. */
+  /** Files items the agent may use in this chat, shown as chips. */
   fileScopeIds?: readonly string[]
-  /** Lets the user add and remove folders; without it the chips are read-only. */
+  /** Lets the user add and remove items; without it the chips are read-only. */
   onFileScopeChange?: (ids: string[]) => void
 }) {
   const { t } = useTranslation()
@@ -1247,7 +1247,7 @@ export function Composer({
                 />
               ))}
             </div>
-            {!(activeAgentMode && canUseAgent) && <p className="px-1 text-xs text-muted-foreground">{ui("Turn on agent mode so the model can use these folders.")}</p>}
+            {!(activeAgentMode && canUseAgent) && <p className="px-1 text-xs text-muted-foreground">{ui("Turn on agent mode so the model can use these files.")}</p>}
           </div>
         )}
         {attachments.length > 0 && (
@@ -1345,7 +1345,7 @@ export function Composer({
               </Tooltip>
               <DropdownMenuContent align="start" side="top">
                 <DropdownMenuItem onSelect={() => fileInputRef.current?.click()}><Paperclip /> {t('chat.attachFiles')}</DropdownMenuItem>
-                <DropdownMenuItem onSelect={() => setFolderPickerOpen(true)}><FolderPlus /> {ui("Add a folder…")}</DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => setFolderPickerOpen(true)}><FolderPlus /> {ui("Add from Files…")}</DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           ) : (
@@ -1368,9 +1368,9 @@ export function Composer({
               open={folderPickerOpen}
               onOpenChange={(open) => { setFolderPickerOpen(open); if (!open) requestAnimationFrame(focusComposer) }}
               selected={fileScopeIds}
-              onAdd={(id) => {
-                onFileScopeChange?.(addFileScope(fileScopeIds, id))
-                // Folders are agent tools; choosing one implies agent mode.
+              onAdd={(ids) => {
+                onFileScopeChange?.(addFileScope(fileScopeIds, ids))
+                // Files are reached through agent tools; adding some implies agent mode.
                 if (canUseAgent && !messageEdit) setAgentMode(modelId, true)
               }}
             />

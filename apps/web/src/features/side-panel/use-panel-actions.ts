@@ -1,4 +1,5 @@
 import { useLocation, useNavigate } from 'react-router-dom'
+import type { NewChatLocationState } from '@/lib/new-chat-navigation'
 import { SIDE_PANEL_PARAM, useSidePanel, type PanelContent } from './store'
 
 /**
@@ -10,12 +11,13 @@ export function locationIsCurrent(location: { key: string }): boolean {
   return !entryKey || entryKey === location.key
 }
 
+interface PanelTarget { pathname: string; state?: NewChatLocationState }
+
 /** The route that shows `content` as the main view. */
-export function panelContentPath(content: PanelContent): string | null {
-  if (content.kind === 'file') return `/files/d/${content.id}`
-  if (content.id !== null) return `/c/${content.id}`
-  // A new chat's folders live only in the panel, so it cannot move to the main view as-is.
-  return content.folderIds.length ? null : '/'
+export function panelContentPath(content: PanelContent): PanelTarget {
+  if (content.kind === 'file') return { pathname: `/files/d/${content.id}` }
+  if (content.id !== null) return { pathname: `/c/${content.id}` }
+  return { pathname: '/', state: content.scopeIds.length ? { fileScopeIds: content.scopeIds } : undefined }
 }
 
 /** What the main view shows, when it is something the panel can also show. */
@@ -24,7 +26,7 @@ export function mainViewContent(pathname: string): PanelContent | null {
   if (file) return { kind: 'file', id: file[1]!.toLowerCase() }
   const chat = /^\/c\/([0-9a-f-]{36})$/i.exec(pathname)
   if (chat) return { kind: 'chat', id: chat[1]!.toLowerCase() }
-  if (pathname === '/') return { kind: 'chat', id: null, folderIds: [] }
+  if (pathname === '/') return { kind: 'chat', id: null, scopeIds: [] }
   return null
 }
 
@@ -36,11 +38,11 @@ export function usePanelActions(content: PanelContent) {
   const target = panelContentPath(content)
   const main = mainViewContent(location.pathname)
 
-  const go = (path: string) => {
+  const go = ({ pathname, state }: PanelTarget) => {
     // The side parameter is re-applied from the store; drop the old one so it cannot be adopted.
     const params = new URLSearchParams(location.search)
     params.delete(SIDE_PANEL_PARAM)
-    navigate({ pathname: path, search: params.toString() ? `?${params}` : '' })
+    navigate({ pathname, search: params.toString() ? `?${params}` : '' }, { state })
   }
 
   return {
@@ -48,8 +50,8 @@ export function usePanelActions(content: PanelContent) {
     toggleMaximized: () => useSidePanel.getState().setMaximized(!maximized),
     close: () => useSidePanel.getState().close(),
     /** Moves the panel's content into the main view and closes the panel. */
-    openAsPage: target ? () => { useSidePanel.getState().close(); go(target) } : undefined,
-    /** Exchanges the main view and the panel, when both can show the other's content. */
-    swap: target && main ? () => { useSidePanel.getState().open(main); go(target) } : undefined,
+    openAsPage: () => { useSidePanel.getState().close(); go(target) },
+    /** Exchanges the main view and the panel, when the panel can show the main view's content. */
+    swap: main ? () => { useSidePanel.getState().open(main); go(target) } : undefined,
   }
 }

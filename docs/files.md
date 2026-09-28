@@ -18,9 +18,9 @@ A file or chat can open beside the current view (**Open to the side**, or Alt/Op
 
 **Open as page** moves the panel's content into the main view and **Swap sides** exchanges the two; the same file or chat is never shown in both. **Maximize** (Cmd/Ctrl+Shift+Enter) fills the content area while the main view stays mounted, and Cmd/Ctrl+\ hides or reopens the panel. A chat in the panel loads and subscribes like the routed chat; its composer keeps its own new-chat draft, takes only files dropped on the panel, and replaces the panel's content instead of navigating when the first message creates the chat.
 
-## Agent folders
+## Agent files
 
-A chat can be scoped to Files folders (`chats.file_scope_ids`): folder ids, or `root` for the whole tree, which replaces any folders beside it. A scope includes every subfolder. **Open with agent** on one or more selected folders, or on the empty space of a folder or My files, opens a new chat in the side panel with that scope (`?side=chat:new:<id>,<id>`). The composer shows the scope as removable chips and adds folders from its **+** menu; choosing a folder turns on agent mode, because the folders are only reachable through agent tools. Scopes are validated when set (live folders the user owns, at most eight). A folder trashed later stays listed but stops resolving.
+A chat can be scoped to Files items (`chats.file_scope_ids`): file or folder ids, or `root` for the whole tree, which replaces anything beside it. A folder includes every subfolder. **Open with agent** on selected items, or on the empty space of a folder or My files, opens a new chat in the side panel with that scope (`?side=chat:new:<id>,<id>`); **Open as page** carries the scope to the main view's new chat. The composer shows the scope as removable chips, and **Add from Files…** in its **+** menu picks files and folders (checked items stay selected while browsing; with none checked, the folder being viewed is added). Adding items turns on agent mode, because Files are reached only through agent tools. Scopes are validated when set (live items the user owns, at most twenty); an item trashed later stays listed but stops resolving.
 
 ## Uploads
 

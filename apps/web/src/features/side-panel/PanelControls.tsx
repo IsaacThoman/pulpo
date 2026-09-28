@@ -43,7 +43,7 @@ export function PanelMenuItems({ content }: { content: PanelContent }) {
   const actions = usePanelActions(content)
   return (
     <>
-      {actions.openAsPage && <DropdownMenuItem onSelect={actions.openAsPage}><SquareArrowOutUpRight /> {ui("Open as page")}</DropdownMenuItem>}
+      <DropdownMenuItem onSelect={actions.openAsPage}><SquareArrowOutUpRight /> {ui("Open as page")}</DropdownMenuItem>
       {actions.swap && <DropdownMenuItem onSelect={actions.swap}><ArrowLeftRight /> {ui("Swap sides")}</DropdownMenuItem>}
     </>
   )

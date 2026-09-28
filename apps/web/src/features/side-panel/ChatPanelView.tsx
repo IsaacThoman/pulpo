@@ -77,8 +77,8 @@ export function ChatPanelView({ content }: { content: ChatContent }) {
   }, [])
   const openChat = useCallback((id: string) => useSidePanel.getState().open({ kind: 'chat', id }), [])
   // A new chat keeps the folders of the chat it was started from.
-  const startNewChat = () => useSidePanel.getState().open({ kind: 'chat', id: null, folderIds: chat?.fileScopeIds ?? [] })
-  const setNewChatScope = (folderIds: string[]) => useSidePanel.getState().open({ kind: 'chat', id: null, folderIds })
+  const startNewChat = () => useSidePanel.getState().open({ kind: 'chat', id: null, scopeIds: chat?.fileScopeIds ?? [] })
+  const setNewChatScope = (scopeIds: string[]) => useSidePanel.getState().open({ kind: 'chat', id: null, scopeIds })
   const chatStarted = useCallback((id: string) => useSidePanel.getState().open({ kind: 'chat', id }), [])
 
   const width = chatWidth === 'narrow' ? 'max-w-3xl' : 'max-w-[min(100%,90rem)]'
@@ -86,10 +86,11 @@ export function ChatPanelView({ content }: { content: ChatContent }) {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <header className="side-panel-header flex min-w-0 items-center gap-1 border-b px-2 py-1.5">
+      {/* Like the main chat header: no divider, and room under the model name for "Set as default". */}
+      <header className="side-panel-header relative z-10 flex h-12 min-w-0 shrink-0 items-start gap-1 px-2 pt-2">
         <div className="min-w-0 flex-1">
           {chat
-            ? <h2 className="truncate px-1 text-sm font-medium" title={chat.title}>{chat.title || ui("New chat")}</h2>
+            ? <h2 className="truncate px-1 text-sm leading-8 font-medium" title={chat.title}>{chat.title || ui("New chat")}</h2>
             : <ModelSelector value={modelId} onChange={setModelId} onSelectClose={() => focusComposerRef.current?.focus()} />}
         </div>
         {chat && !chat.temporary && (
@@ -152,7 +153,7 @@ export function ChatPanelView({ content }: { content: ChatContent }) {
         </>
       ) : (
         <>
-          <NewChatPlaceholder modelId={modelId} scoped={content.id === null && content.folderIds.length > 0} />
+          <NewChatPlaceholder modelId={modelId} scoped={content.id === null && content.scopeIds.length > 0} />
           <div className={`mx-auto w-full shrink-0 px-3 pb-3 ${width}`}>
             <Composer
               key="panel:new"
@@ -164,7 +165,7 @@ export function ChatPanelView({ content }: { content: ChatContent }) {
               chatId={null}
               modelId={modelId}
               onSelectModel={setModelId}
-              fileScopeIds={content.id === null ? content.folderIds : NO_SCOPE}
+              fileScopeIds={content.id === null ? content.scopeIds : NO_SCOPE}
               onFileScopeChange={setNewChatScope}
               autoExpire={automaticChatExpiration !== 'disabled' && newChatAutoExpire}
               onChatStarted={chatStarted}
@@ -184,7 +185,7 @@ function NewChatPlaceholder({ modelId, scoped }: { modelId: string; scoped: bool
         <ModelIcon model={model} className="size-9" boxed={false} />
         <h2 className="text-2xl font-semibold tracking-tight">{model.name}</h2>
       </div>
-      <p className="text-sm text-muted-foreground">{scoped ? ui("Ask about the folders below, or have the agent organize and edit them.") : modelSubtitle(model)}</p>
+      <p className="text-sm text-muted-foreground">{scoped ? ui("Ask about the files below, or have the agent organize and edit them.") : modelSubtitle(model)}</p>
     </div>
   )
 }

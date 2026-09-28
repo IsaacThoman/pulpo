@@ -7,13 +7,13 @@ const WIDTH_STORAGE_KEY = 'pulpo.sidePanel.width'
 const DEFAULT_WIDTH = 520
 
 /**
- * What the side panel shows. A chat without an id is a new chat; its folders are the Files
- * folders (or `root` for all files) the agent may use once the first message creates it.
+ * What the side panel shows. A chat without an id is a new chat; its scope lists the Files
+ * items (or `root` for all files) the agent may use once the first message creates it.
  */
 export type PanelContent =
   | { kind: 'file'; id: string }
   | { kind: 'chat'; id: string }
-  | { kind: 'chat'; id: null; folderIds: string[] }
+  | { kind: 'chat'; id: null; scopeIds: string[] }
 
 interface SidePanelState {
   content: PanelContent | null
@@ -51,7 +51,7 @@ export function serializePanelContent(content: PanelContent | null): string | nu
   if (!content) return null
   if (content.kind === 'file') return `file:${content.id}`
   if (content.id !== null) return `chat:${content.id}`
-  return content.folderIds.length ? `chat:new:${content.folderIds.join(',')}` : 'chat:new'
+  return content.scopeIds.length ? `chat:new:${content.scopeIds.join(',')}` : 'chat:new'
 }
 
 export function parsePanelContent(value: string | null): PanelContent | null {
@@ -65,7 +65,7 @@ export function parsePanelContent(value: string | null): PanelContent | null {
   const fresh = new RegExp(`^chat:new(?::(${scope}(?:,${scope})*))?$`).exec(lower)
   if (fresh) {
     const ids = fresh[1] ? [...new Set(fresh[1].split(','))] : []
-    return { kind: 'chat', id: null, folderIds: ids.includes('root') ? ['root'] : ids }
+    return { kind: 'chat', id: null, scopeIds: ids.includes('root') ? ['root'] : ids }
   }
   return null
 }

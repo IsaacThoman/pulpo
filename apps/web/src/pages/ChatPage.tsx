@@ -183,7 +183,8 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
   const [temporaryError, setTemporaryError] = useState<string | null>(null)
   const setDesktopTemporaryChat = useDesktopChrome((state) => state.setTemporaryChat)
   const [messageEdit, setMessageEdit] = useState<ComposerMessageEdit | null>(null)
-  const [newChatFileScope, setNewChatFileScope] = useState<string[]>(NO_FILE_SCOPE)
+  const carriedFileScope = navigationState?.fileScopeIds?.join(',') ?? ''
+  const [newChatFileScope, setNewChatFileScope] = useState<string[]>(() => carriedFileScope ? carriedFileScope.split(',') : NO_FILE_SCOPE)
   const [composerEditActive, setComposerEditActive] = useState(false)
   const [promptConfig, setPromptConfig] = useState<{ enabled: boolean; count: number; prompts: SuggestedPrompt[] }>({
     enabled: true,
@@ -270,8 +271,11 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
   useEffect(() => {
     setMessageEdit(null)
     setComposerEditActive(false)
-    setNewChatFileScope(NO_FILE_SCOPE)
   }, [chatId])
+  // Keyed by value: the location state object is recreated whenever the URL is rewritten.
+  useEffect(() => {
+    setNewChatFileScope(carriedFileScope ? carriedFileScope.split(',') : NO_FILE_SCOPE)
+  }, [chatId, carriedFileScope])
 
   const beginMessageEdit = useCallback((message: Message) => {
     setMessageEdit({
