@@ -1,7 +1,7 @@
 import { and, asc, eq, gt, inArray, lt, sql } from 'drizzle-orm'
 import * as Y from 'yjs'
 import { DOC_SCHEMA_VERSION, ydocToMarkdown } from '@pulpo/client-core/doc-schema'
-import type { FileNode } from '@pulpo/contracts'
+import { isMarkdownName, type FileNode } from '@pulpo/contracts'
 import { db } from '../database/client.js'
 import { fileDocs, fileDocUpdates, fileNodes } from '../database/schema.js'
 import { fileDocQueue } from '../jobs.js'
@@ -26,6 +26,10 @@ export type DocUpdateOrigin = 'client' | 'agent' | 'import' | 'restore'
 export const invalidDocUpdate = () => new AppError(400, 'invalid_update', 'The document update is invalid')
 
 export async function createDoc(userId: string, input: { parentId: string | null; name?: string; markdown?: string }): Promise<FileNode> {
+  // Only Markdown names are editable documents; any other name is an ordinary file.
+  if (input.name !== undefined && !isMarkdownName(input.name)) {
+    throw new AppError(400, 'file_not_markdown', 'Only files named .md or .markdown can be edited')
+  }
   const initial = initialDocState(input.markdown)
   return mutateFileTree(userId, async (tx) => {
     await assertDestination(tx, userId, input.parentId)

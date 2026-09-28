@@ -22,7 +22,8 @@ vi.mock('../storage/index.js', () => ({
 
 const { convertBlobToDocInTx, previewMarkdownConversion } = await import('./conversion.js')
 const { loadYDoc } = await import('./doc-store.js')
-const { mutateFileTree, updateFileNode } = await import('./tree-service.js')
+const { convertMisnamedDocs, mutateFileTree, updateFileNode } = await import('./tree-service.js')
+const { createDoc } = await import('./doc-store.js')
 
 const enabled = process.env.PULPO_FILES_TESTS === 'true'
 let userId: string
@@ -101,5 +102,25 @@ describe.skipIf(!enabled)('Markdown file conversion', () => {
     const doc = new Y.Doc()
     Y.applyUpdate(doc, Y.encodeStateAsUpdate(await loadYDoc(node.id)))
     expect(ydocToMarkdown(doc)).toBe('text')
+  })
+
+  it('only creates editable documents with Markdown names', async () => {
+    await expect(createDoc(userId, { parentId: null, name: 'notes.txt' })).rejects.toMatchObject({ code: 'file_not_markdown' })
+    expect(await createDoc(userId, { parentId: null, name: 'notes.md' })).toMatchObject({ kind: 'doc' })
+  })
+
+  it('repairs documents whose names are not Markdown into plain files', async () => {
+    const legacy = await createDoc(userId, { parentId: null, name: 'legacy.md', markdown: '# Old' })
+    const untitled = await createDoc(userId, { parentId: null, name: 'untitled.md' })
+    const kept = await createDoc(userId, { parentId: null, name: 'kept.MD', markdown: 'stays' })
+    await db.update(fileNodes).set({ name: 'legacy.txt' }).where(eq(fileNodes.id, legacy.id))
+    await db.update(fileNodes).set({ name: 'Untitled document' }).where(eq(fileNodes.id, untitled.id))
+    await convertMisnamedDocs()
+    const rows = new Map((await db.select().from(fileNodes).where(eq(fileNodes.ownerUserId, userId))).map((row) => [row.id, row]))
+    expect(rows.get(legacy.id)).toMatchObject({ kind: 'blob', mimeType: 'text/plain' })
+    expect(objects.get(rows.get(legacy.id)!.objectKey!)?.toString()).toBe('# Old')
+    expect(rows.get(untitled.id)).toMatchObject({ kind: 'blob', sizeBytes: 0 })
+    expect(rows.get(kept.id)).toMatchObject({ kind: 'doc' })
+    expect(closed).toHaveBeenCalledWith([legacy.id], 'converted')
   })
 })

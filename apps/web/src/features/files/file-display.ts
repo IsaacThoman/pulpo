@@ -39,7 +39,8 @@ export function filePreviewKind(node: Pick<FileNode, 'kind' | 'name' | 'mimeType
 /** Short type description for the Kind column. */
 export function fileKindLabel(node: Pick<FileNode, 'kind' | 'name'>): string {
   if (node.kind === 'folder') return ui("Folder")
-  if (node.kind === 'doc' || isMarkdownName(node.name)) return ui("Markdown")
+  // The extension alone decides the type, whether or not the file is editable yet.
+  if (isMarkdownName(node.name)) return ui("Markdown")
   const extension = fileExtension(node.name)
   return extension ? extension.toUpperCase() : ui("File")
 }

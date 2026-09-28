@@ -16,8 +16,8 @@ import { ARCHIVE_EXTENSIONS, CODE_EXTENSIONS, fileExtension, SHEET_EXTENSIONS } 
 export function FileNodeIcon({ node, className }: { node: Pick<FileNode, 'kind' | 'name' | 'mimeType'>; className?: string }) {
   const classes = cn('shrink-0', className)
   if (node.kind === 'folder') return <Folder className={cn(classes, 'fill-sky-500/15 text-sky-600 dark:text-sky-400')} />
-  // Markdown files look the same before and after they become editable.
-  if (node.kind === 'doc' || isMarkdownName(node.name)) return <FileText className={cn(classes, 'text-blue-600 dark:text-blue-400')} />
+  // The extension decides the icon; Markdown looks the same before and after it becomes editable.
+  if (isMarkdownName(node.name)) return <FileText className={cn(classes, 'text-blue-600 dark:text-blue-400')} />
   const mime = (node.mimeType ?? '').toLowerCase()
   const extension = fileExtension(node.name)
   if (mime.startsWith('image/')) return <FileImage className={cn(classes, 'text-rose-500')} />

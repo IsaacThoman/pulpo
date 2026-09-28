@@ -378,3 +378,28 @@ export async function cleanupFiles(now = new Date()): Promise<void> {
       .catch(() => undefined)
   }
 }
+
+/**
+ * Maintenance repair: documents whose names lack a Markdown extension (created before renames
+ * converted them) become ordinary files holding their Markdown, so the extension alone decides.
+ */
+export async function convertMisnamedDocs(limit = 200): Promise<number> {
+  const rows = await db.select({ id: fileNodes.id, userId: fileNodes.ownerUserId }).from(fileNodes).where(and(
+    eq(fileNodes.kind, 'doc'),
+    sql`${fileNodes.name} !~* '\\.(md|markdown)$'`,
+  )).limit(limit)
+  let converted = 0
+  for (const row of rows) {
+    const done = await mutateFileTree(row.userId, async (tx) => {
+      const [node] = await tx.select().from(fileNodes).where(eq(fileNodes.id, row.id)).for('update')
+      if (!node || node.kind !== 'doc' || isMarkdownName(node.name)) return false
+      await convertDocToBlobInTx(tx, row.userId, node)
+      return true
+    }).catch(() => false)
+    if (done) {
+      converted += 1
+      await publishDocsClosed([row.id], 'converted')
+    }
+  }
+  return converted
+}
