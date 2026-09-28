@@ -482,7 +482,7 @@ export function FilesPage() {
       )}
       {canDownload && (
         <DropdownMenuItem onSelect={() => void ops.download(selectedNodes)}>
-          <Download /> {single?.kind === 'doc' ? ui("Download as Markdown") : ui("Download")}
+          <Download /> {ui("Download")}
         </DropdownMenuItem>
       )}
       {single && <DropdownMenuItem onSelect={() => setRenamingId(single.id)}><Pencil /> {ui("Rename")}<DropdownMenuShortcut>{shortcutLabel('F2')}</DropdownMenuShortcut></DropdownMenuItem>}

@@ -1823,7 +1823,6 @@ const esUi: Record<string, string> = {
   "Also editing": "También editando",
   "Document name": "Nombre del documento",
   "Document actions": "Acciones del documento",
-  "Download as Markdown": "Descargar como Markdown",
   "Reload": "Recargar",
   "Open trash": "Abrir la papelera",
   "{{0}} other sessions are editing": "{{0}} sesiones más están editando",

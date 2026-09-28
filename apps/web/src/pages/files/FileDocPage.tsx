@@ -204,7 +204,7 @@ function OpenDoc({ userId, docId }: { userId: string; docId: string }) {
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuItem onSelect={() => node && void downloadDocMarkdown(node).catch((cause: unknown) => setNotice(filesErrorMessage(cause)))}>
-              <Download /> {ui("Download as Markdown")}
+              <Download /> {ui("Download")}
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem variant="destructive" onSelect={() => void trash()}><Trash2 /> {ui("Move to trash")}</DropdownMenuItem>
