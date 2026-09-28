@@ -16,6 +16,12 @@ Copying writes folders and documents in the same transaction that reserves stora
 
 Uploads use the attachment flow (reserve, PUT, confirm) with `users/<id>/files/<node>` object keys and the same per-file cap. Files blobs, including trashed ones, and document state count toward the account storage allowance together with chat attachments. They do not reuse the `attachments` table, because chat purges delete attachments claimed by a chat.
 
+## Markdown files
+
+A file's name decides what it is: names ending in `.md` or `.markdown` are Markdown files, and everything else is an ordinary file. New files start as empty editable Markdown documents. Uploaded Markdown keeps its original bytes and opens read-only until someone chooses **Edit**. `GET /api/files/:id/conversion` then does a dry run: it converts the text and reports whether anything would change beyond line endings and trailing whitespace, so the client can show a line diff before `POST /api/files/:id/convert` makes the document. The uploaded object is deleted only after the document commits.
+
+Renaming an editable document to a name without a Markdown extension turns it back into an ordinary file holding its Markdown, and open editors receive `doc.closed` with reason `converted`. Renaming a file to `.md` never converts it; it waits for **Edit**.
+
 ## Documents
 
 Documents are edited as rich text (TipTap/ProseMirror) and stored as Yjs state. The editor schema lives in `@pulpo/client-core/doc-schema` so web, server, and future clients agree on it; changing its nodes or marks requires bumping `DOC_SCHEMA_VERSION`, and the server rejects joins from other versions.

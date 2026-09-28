@@ -1,4 +1,4 @@
-import type { FileNameError, FileNode } from '@pulpo/contracts'
+import { isMarkdownName, type FileNameError, type FileNode } from '@pulpo/contracts'
 import { ApiError } from '@/lib/api'
 import { ui, uit } from '@/i18n/ui'
 
@@ -39,7 +39,7 @@ export function filePreviewKind(node: Pick<FileNode, 'kind' | 'name' | 'mimeType
 /** Short type description for the Kind column. */
 export function fileKindLabel(node: Pick<FileNode, 'kind' | 'name'>): string {
   if (node.kind === 'folder') return ui("Folder")
-  if (node.kind === 'doc') return ui("Document")
+  if (node.kind === 'doc' || isMarkdownName(node.name)) return ui("Markdown")
   const extension = fileExtension(node.name)
   return extension ? extension.toUpperCase() : ui("File")
 }
@@ -68,6 +68,9 @@ export function filesErrorMessage(error: unknown, name?: string): string {
       case 'file_revision_conflict': return ui("This item changed on another device. Refresh and try again.")
       case 'storage_quota_exceeded': return ui("This file would exceed your storage allowance")
       case 'files_disabled': return ui("Files are disabled by the administrator")
+      case 'file_too_large_to_edit': return ui("This file is too large to edit")
+      case 'file_not_text': return ui("This file isn't plain text, so it can't be edited")
+      case 'file_not_markdown': return ui("Only .md and .markdown files can be edited")
       case 'not_found': return ui("This item no longer exists")
       default: return error.message
     }

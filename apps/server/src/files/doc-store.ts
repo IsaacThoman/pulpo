@@ -1,6 +1,6 @@
 import { and, asc, eq, gt, inArray, lt, sql } from 'drizzle-orm'
 import * as Y from 'yjs'
-import { applyMarkdownToYDoc, DOC_SCHEMA_VERSION, ydocToMarkdown } from '@pulpo/client-core/doc-schema'
+import { DOC_SCHEMA_VERSION, ydocToMarkdown } from '@pulpo/client-core/doc-schema'
 import type { FileNode } from '@pulpo/contracts'
 import { db } from '../database/client.js'
 import { fileDocs, fileDocUpdates, fileNodes } from '../database/schema.js'
@@ -8,11 +8,13 @@ import { fileDocQueue } from '../jobs.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import { resolveFileAccess } from './access.js'
+import { docTooLarge, initialDocState, MAX_DOC_STATE_BYTES } from './doc-state.js'
 import { assertDestination, availableName, mutateFileTree, toFileNode } from './tree-service.js'
 
 export const MAX_DOC_UPDATE_BYTES = 1_000_000
-/** Past this size a document stops accepting edits; keeps loads and compaction bounded. */
-export const MAX_DOC_STATE_BYTES = 8_000_000
+// Re-exported for callers that import document limits from the store.
+export { docTooLarge, initialDocState, MAX_DOC_STATE_BYTES }
+
 /** Compact after this many logged updates even while editing continues. */
 const COMPACT_EVERY_UPDATES = 100
 /** First compaction after an edit burst waits this long so it can fold the whole burst. */
@@ -21,16 +23,7 @@ export const DEFAULT_DOC_NAME = 'Untitled.md'
 
 export type DocUpdateOrigin = 'client' | 'agent' | 'import' | 'restore'
 
-export const docTooLarge = () => new AppError(413, 'doc_too_large', 'This document is too large to edit')
 export const invalidDocUpdate = () => new AppError(400, 'invalid_update', 'The document update is invalid')
-
-export function initialDocState(markdown?: string): { state: Uint8Array; markdown: string } {
-  const doc = new Y.Doc()
-  if (markdown?.trim()) applyMarkdownToYDoc(doc, markdown, 'import')
-  const state = Y.encodeStateAsUpdate(doc)
-  if (state.byteLength > MAX_DOC_STATE_BYTES) throw docTooLarge()
-  return { state, markdown: ydocToMarkdown(doc) }
-}
 
 export async function createDoc(userId: string, input: { parentId: string | null; name?: string; markdown?: string }): Promise<FileNode> {
   const initial = initialDocState(input.markdown)

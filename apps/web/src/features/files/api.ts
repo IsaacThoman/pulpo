@@ -1,4 +1,4 @@
-import type { FileListing, FileNode, FileUploadReservation, MoveFileNodes, UpdateFileNode } from '@pulpo/contracts'
+import type { FileConversionPreview, FileListing, FileNode, FileUploadReservation, MoveFileNodes, UpdateFileNode } from '@pulpo/contracts'
 import { formatAttachmentSizeLimit } from '@pulpo/client-core'
 import { ApiError, apiRequest, authenticatedFetch, downloadApiFile, fetchApiBlob } from '@/lib/api'
 import { uit } from '@/i18n/ui'
@@ -30,6 +30,16 @@ export function fetchFileNode(id: string): Promise<{ node: FileNode; ancestors: 
 
 export function createDoc(parentId: string | null, name: string, markdown?: string): Promise<FileNode> {
   return apiRequest<FileNode>('/api/files/docs', { method: 'POST', body: { parentId, name, markdown } })
+}
+
+/** Dry run of making an uploaded Markdown file editable; nothing changes on the server. */
+export function fetchConversionPreview(id: string): Promise<FileConversionPreview> {
+  return apiRequest<FileConversionPreview>(`/api/files/${id}/conversion`)
+}
+
+/** Makes an uploaded Markdown file an editable document. */
+export function convertToDoc(id: string): Promise<FileNode> {
+  return apiRequest<FileNode>(`/api/files/${id}/convert`, { method: 'POST' })
 }
 
 /** Saves a document as a .md file, with the latest edits folded in by the server. */

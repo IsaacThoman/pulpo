@@ -1,5 +1,5 @@
 import { and, asc, desc, eq, inArray, isNotNull, isNull, lt, ne, sql } from 'drizzle-orm'
-import { FILE_TREE_MAX_DEPTH, type FileListing, type FileNode, type FileNodeKind } from '@pulpo/contracts'
+import { FILE_TREE_MAX_DEPTH, isMarkdownName, type FileListing, type FileNode, type FileNodeKind } from '@pulpo/contracts'
 import { db } from '../database/client.js'
 import { fileNodes } from '../database/schema.js'
 import { bumpAccountRevisions, publishScopedStateChanges, type AccountRevisionChange } from '../friends/sync.js'
@@ -7,6 +7,7 @@ import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import { getBlobStore } from '../storage/index.js'
 import { resolveFileAccess, type FileExecutor, type FileNodeRow } from './access.js'
+import { convertDocToBlobInTx } from './conversion.js'
 import { publishDocsClosed } from './doc-events.js'
 import { nextAvailableName } from './names.js'
 
@@ -165,13 +166,14 @@ const revisionConflict = () => new AppError(409, 'file_revision_conflict', 'This
 
 /**
  * Moves and/or renames one live node inside a tree transaction. On a name clash it either fails
- * (explicit renames) or keeps both by suffixing, the way file managers do for moves.
+ * (explicit renames) or keeps both by suffixing, the way file managers do for moves. Renaming an
+ * editable document away from .md turns it into an ordinary file holding its Markdown.
  */
 async function moveNodeInTx(tx: DatabaseTransaction, userId: string, node: FileNodeRow, target: {
   parentId: string | null
   name: string
   onConflict: 'fail' | 'rename'
-}): Promise<FileNodeRow> {
+}): Promise<{ row: FileNodeRow; converted: boolean }> {
   if (node.status !== 'ready') throw notFound('File')
   if (target.parentId !== node.parentId) {
     if (target.parentId && (await chainIds(tx, userId, target.parentId)).includes(node.id)) {
@@ -180,7 +182,7 @@ async function moveNodeInTx(tx: DatabaseTransaction, userId: string, node: FileN
     const height = Math.max(...(await subtree(tx, userId, node.id)).map((row) => row.depth))
     if (await destinationDepth(tx, userId, target.parentId) + height > FILE_TREE_MAX_DEPTH) throw treeTooDeep()
   }
-  if (target.parentId === node.parentId && target.name === node.name) return node
+  if (target.parentId === node.parentId && target.name === node.name) return { row: node, converted: false }
   const taken = await liveSiblingNames(tx, userId, target.parentId, node.id)
   let name = target.name
   if (taken.has(name.toLowerCase())) {
@@ -190,7 +192,8 @@ async function moveNodeInTx(tx: DatabaseTransaction, userId: string, node: FileN
   const [updated] = await tx.update(fileNodes).set({
     name, parentId: target.parentId, revision: sql`${fileNodes.revision} + 1`, updatedAt: new Date(),
   }).where(eq(fileNodes.id, node.id)).returning()
-  return updated!
+  if (updated!.kind === 'doc' && !isMarkdownName(name)) return { row: await convertDocToBlobInTx(tx, userId, updated!), converted: true }
+  return { row: updated!, converted: false }
 }
 
 /**
@@ -213,30 +216,37 @@ export async function updateFileNode(userId: string, id: string, input: {
   parentId?: string | null
   expectedRevision?: number
 }): Promise<FileNode> {
-  return mutateFileTree(userId, async (tx) => {
-    const node = await liveNode(tx, userId, id)
-    if (input.expectedRevision !== undefined && input.expectedRevision !== node.revision) throw revisionConflict()
-    const updated = await moveNodeInTx(tx, userId, node, {
-      parentId: input.parentId === undefined ? node.parentId : input.parentId,
-      name: input.name ?? node.name,
+  const { node, converted } = await mutateFileTree(userId, async (tx) => {
+    const current = await liveNode(tx, userId, id)
+    if (input.expectedRevision !== undefined && input.expectedRevision !== current.revision) throw revisionConflict()
+    const result = await moveNodeInTx(tx, userId, current, {
+      parentId: input.parentId === undefined ? current.parentId : input.parentId,
+      name: input.name ?? current.name,
       onConflict: 'fail',
     })
-    return toFileNode(updated)
+    return { node: toFileNode(result.row), converted: result.converted }
   })
+  if (converted) await publishDocsClosed([node.id], 'converted')
+  return node
 }
 
 /** Moves several items atomically. Name clashes keep both items; the response has the final names. */
 export async function moveFileNodes(userId: string, items: Array<{ id: string; parentId: string | null; name?: string }>): Promise<FileNode[]> {
-  return mutateFileTree(userId, async (tx) => {
+  const { moved, converted } = await mutateFileTree(userId, async (tx) => {
     const ids = new Set(await topLevelIds(tx, userId, items.map((item) => item.id)))
     const moved: FileNode[] = []
+    const converted: string[] = []
     for (const item of items) {
       if (!ids.delete(item.id)) continue
       const node = await liveNode(tx, userId, item.id)
-      moved.push(toFileNode(await moveNodeInTx(tx, userId, node, { parentId: item.parentId, name: item.name ?? node.name, onConflict: 'rename' })))
+      const result = await moveNodeInTx(tx, userId, node, { parentId: item.parentId, name: item.name ?? node.name, onConflict: 'rename' })
+      moved.push(toFileNode(result.row))
+      if (result.converted) converted.push(node.id)
     }
-    return moved
+    return { moved, converted }
   })
+  await publishDocsClosed(converted, 'converted')
+  return moved
 }
 
 async function trashNodeInTx(tx: DatabaseTransaction, userId: string, node: FileNodeRow): Promise<string[]> {

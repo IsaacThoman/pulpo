@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { fileNameError, fileNameSchema, normalizeFileName, updateFileNodeSchema } from './files.js'
+import { fileNameError, fileNameSchema, isMarkdownName, normalizeFileName, updateFileNodeSchema } from './files.js'
 
 describe('Files names', () => {
   it('normalizes to trimmed NFC', () => {
@@ -20,5 +20,14 @@ describe('Files names', () => {
   it('requires a rename or move in updates', () => {
     expect(updateFileNodeSchema.safeParse({ expectedRevision: 1 }).success).toBe(false)
     expect(updateFileNodeSchema.safeParse({ parentId: null }).success).toBe(true)
+  })
+})
+
+describe('Markdown names', () => {
+  it('recognizes .md and .markdown in any case', () => {
+    expect(isMarkdownName('notes.md')).toBe(true)
+    expect(isMarkdownName('README.MARKDOWN')).toBe(true)
+    expect(isMarkdownName('notes.md.txt')).toBe(false)
+    expect(isMarkdownName('md')).toBe(false)
   })
 })

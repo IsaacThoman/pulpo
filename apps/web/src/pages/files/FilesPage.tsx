@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type DragEvent, type MouseEvent, type PointerEvent, type ReactNode } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import type { FileListing, FileNode } from '@pulpo/contracts'
+import { isMarkdownName, type FileListing, type FileNode } from '@pulpo/contracts'
 import {
   ArrowDown,
   ArrowUp,
@@ -13,7 +13,6 @@ import {
   Download,
   Eye,
   FilePlus2,
-  FileUp,
   FolderInput,
   FolderPlus,
   HardDrive,
@@ -137,7 +136,6 @@ export function FilesPage() {
   const [dropTarget, setDropTarget] = useState<string | null>(null)
   const [marquee, setMarquee] = useState<Marquee | null>(null)
   const fileInput = useRef<HTMLInputElement>(null)
-  const markdownInput = useRef<HTMLInputElement>(null)
   const itemsRef = useRef<HTMLDivElement>(null)
   const lastPointerType = useRef('mouse')
   const typeahead = useRef({ text: '', at: 0 })
@@ -168,7 +166,8 @@ export function FilesPage() {
 
   const open = (node: FileNode) => {
     if (node.kind === 'folder') navigate(`/files/f/${node.id}`)
-    else if (node.kind === 'doc') navigate(`/files/d/${node.id}`)
+    // Markdown opens in the editor view: editable documents directly, uploads as a preview with Edit.
+    else if (node.kind === 'doc' || isMarkdownName(node.name)) navigate(`/files/d/${node.id}`)
     else setPreviewing(node)
   }
 
@@ -198,18 +197,6 @@ export function FilesPage() {
     } catch (cause) {
       ops.fail(cause)
     }
-  }
-
-  /** Markdown files become editable documents that keep their original file names. */
-  const importMarkdown = async (files: File[]) => {
-    for (const file of files) {
-      try {
-        await createDoc(folderId, file.name, await file.text())
-      } catch (cause) {
-        ops.fail(cause)
-      }
-    }
-    await ops.refresh()
   }
 
   const upload = async (files: File[], parentId: string | null = folderId) => {
@@ -514,7 +501,6 @@ export function FilesPage() {
       <DropdownMenuItem onSelect={() => void newFolder()}><FolderPlus /> {ui("New folder")}<DropdownMenuShortcut>{shortcutLabel('N', { mod: true, shift: true })}</DropdownMenuShortcut></DropdownMenuItem>
       <DropdownMenuSeparator />
       <DropdownMenuItem onSelect={() => fileInput.current?.click()}><Upload /> {ui("Upload files")}</DropdownMenuItem>
-      <DropdownMenuItem onSelect={() => markdownInput.current?.click()}><FileUp /> {ui("Import Markdown as document")}</DropdownMenuItem>
       <DropdownMenuSeparator />
       <DropdownMenuItem disabled={!clip} onSelect={() => void paste()}>
         <ClipboardPaste /> {clip ? (clip.nodes.length === 1 ? uit`Paste "${clip.nodes[0]!.name}"` : uit`Paste ${clip.nodes.length} items`) : ui("Paste")}
@@ -687,17 +673,6 @@ export function FilesPage() {
               <DropdownMenuContent align="end">{backgroundMenu}</DropdownMenuContent>
               </DropdownMenu>
             </div>
-            <input
-              ref={markdownInput}
-              type="file"
-              accept=".md,.markdown,text/markdown"
-              multiple
-              hidden
-              onChange={(event) => {
-                void importMarkdown([...(event.target.files ?? [])])
-                event.target.value = ''
-              }}
-            />
             <input
               ref={fileInput}
               type="file"

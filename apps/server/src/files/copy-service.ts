@@ -1,15 +1,16 @@
-import { and, asc, eq, inArray, sql } from 'drizzle-orm'
+import { and, eq, inArray, sql } from 'drizzle-orm'
 import * as Y from 'yjs'
 import { DOC_SCHEMA_VERSION, ydocToMarkdown } from '@pulpo/client-core/doc-schema'
 import { FILE_TREE_MAX_DEPTH, type FileNode } from '@pulpo/contracts'
 import { assertStorageCapacity, lockAccountStorage } from '../attachments/storage-quota.js'
 import { db } from '../database/client.js'
-import { fileDocs, fileDocUpdates, fileNodes } from '../database/schema.js'
+import { fileDocs, fileNodes } from '../database/schema.js'
 import { bumpAccountRevisions, publishScopedStateChanges } from '../friends/sync.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import { getBlobStore } from '../storage/index.js'
 import type { FileNodeRow } from './access.js'
+import { mergedDocState } from './doc-state.js'
 import { nextAvailableName } from './names.js'
 import {
   chainIds,
@@ -51,14 +52,6 @@ function docMarkdown(state: Uint8Array): string {
   } catch {
     return ''
   }
-}
-
-async function docState(tx: DatabaseTransaction, nodeId: string): Promise<Uint8Array> {
-  const [doc] = await tx.select({ state: fileDocs.state }).from(fileDocs).where(eq(fileDocs.nodeId, nodeId))
-  if (!doc) throw notFound('Document')
-  const rows = await tx.select({ update: fileDocUpdates.update }).from(fileDocUpdates)
-    .where(eq(fileDocUpdates.nodeId, nodeId)).orderBy(asc(fileDocUpdates.seq))
-  return rows.length ? Y.mergeUpdates([doc.state, ...rows.map((row) => row.update)]) : doc.state
 }
 
 /**
@@ -106,7 +99,7 @@ export async function copyFileNodes(userId: string, ids: string[], parentId: str
           checksum: node.checksum, objectKey, status: node.kind === 'blob' ? 'pending' : 'ready',
         })
         if (node.kind === 'doc') {
-          const state = await docState(tx, node.id)
+          const state = await mergedDocState(tx, node.id)
           await tx.insert(fileDocs).values({
             nodeId: id, state, stateBytes: state.byteLength, markdown: docMarkdown(state), schemaVersion: DOC_SCHEMA_VERSION,
           })

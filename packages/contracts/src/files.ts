@@ -27,6 +27,14 @@ export const fileNameSchema = z.string().max(4 * FILE_NAME_MAX_LENGTH).transform
   if (error) context.addIssue({ code: 'custom', message: `Invalid file name (${error})` })
 })
 
+/**
+ * Names ending in .md or .markdown are Markdown files: they open in the editor, either
+ * already converted (`doc` nodes) or still holding their uploaded bytes (`blob` nodes).
+ */
+export function isMarkdownName(name: string): boolean {
+  return /\.(md|markdown)$/i.test(name)
+}
+
 export const fileNodeKindSchema = z.enum(['folder', 'doc', 'blob'])
 export const fileNodeStatusSchema = z.enum(['pending', 'ready'])
 
@@ -145,5 +153,14 @@ export interface DocUpdateMessage {
 
 export interface DocClosedEvent {
   docId: string
-  reason: 'trashed' | 'deleted'
+  /** `converted`: renamed to a non-Markdown name, so it became an ordinary file. */
+  reason: 'trashed' | 'deleted' | 'converted'
+}
+
+/** Dry run of turning an uploaded Markdown file into an editable document. */
+export interface FileConversionPreview {
+  original: string
+  converted: string
+  /** False when only line endings or trailing whitespace would change. */
+  changed: boolean
 }

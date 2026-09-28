@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { DOC_FRAGMENT_NAME } from '@pulpo/client-core/doc-schema'
-import type { FileNode } from '@pulpo/contracts'
-import { ChevronRight, Cloud, CloudOff, Download, HardDrive, Loader2, MoreHorizontal, Trash2, TriangleAlert } from 'lucide-react'
+import { isMarkdownName, type FileConversionPreview, type FileNode } from '@pulpo/contracts'
+import { ChevronRight, Cloud, CloudOff, Download, HardDrive, Loader2, MoreHorizontal, Pencil, Trash2, TriangleAlert } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -17,17 +17,30 @@ import { ui, uit } from '@/i18n/ui'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/stores/auth'
 import { useSettings } from '@/stores/settings'
-import { downloadDocMarkdown, fetchFileNode, fileNodeQueryKey, filesQueryKey, trashFileNode, updateFileNode } from '@/features/files/api'
+import { Markdown } from '@/components/chat/Markdown'
+import {
+  convertToDoc,
+  downloadDocMarkdown,
+  downloadFile,
+  fetchConversionPreview,
+  fetchFileBlob,
+  fetchFileNode,
+  fileNodeQueryKey,
+  filesQueryKey,
+  trashFileNode,
+  updateFileNode,
+} from '@/features/files/api'
 import { filesErrorMessage } from '@/features/files/file-display'
 import { DocEditor } from '@/features/files/editor/DocEditor'
 import type { DocSyncStatus } from '@/features/files/editor/socket-provider'
 import { useDocSession, type PresencePeer } from '@/features/files/editor/use-doc-session'
+import { MarkdownConversionDialog } from '@/features/files/MarkdownConversionDialog'
 
 function statusProblem(status: DocSyncStatus): string | null {
   if (status.state === 'closed') {
-    return status.reason === 'trashed'
-      ? ui("This document was moved to the trash. Restore it to keep editing.")
-      : ui("This document was deleted.")
+    if (status.reason === 'trashed') return ui("This document was moved to the trash. Restore it to keep editing.")
+    if (status.reason === 'converted') return ui("This file was renamed without a Markdown extension, so it's no longer editable.")
+    return ui("This document was deleted.")
   }
   if (status.state !== 'error' || status.error === 'rate_limited') return null
   switch (status.error) {
@@ -119,6 +132,20 @@ function DocTitle({ node }: { node: FileNode }) {
   )
 }
 
+function FilePath({ ancestors }: { ancestors: FileNode[] }) {
+  return (
+    <nav aria-label={ui("Folder path")} className="flex min-w-0 items-center gap-0.5 overflow-hidden text-xs text-muted-foreground">
+      <Link to="/files" className="flex shrink-0 items-center gap-1 rounded px-1 hover:text-foreground"><HardDrive className="size-3" />{ui("My files")}</Link>
+      {ancestors.map((folder) => (
+        <span key={folder.id} className="flex min-w-0 items-center gap-0.5">
+          <ChevronRight className="size-3 shrink-0" />
+          <Link to={`/files/f/${folder.id}`} className="truncate rounded px-1 hover:text-foreground">{folder.name}</Link>
+        </span>
+      ))}
+    </nav>
+  )
+}
+
 function OpenDoc({ userId, docId }: { userId: string; docId: string }) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
@@ -166,15 +193,7 @@ function OpenDoc({ userId, docId }: { userId: string; docId: string }) {
     <div className="flex h-full min-h-0 flex-col">
       <header className="mobile-page-content flex items-center gap-3 border-b px-4 py-2 sm:px-6">
         <div className="min-w-0 flex-1">
-          <nav aria-label={ui("Folder path")} className="flex min-w-0 items-center gap-0.5 overflow-hidden text-xs text-muted-foreground">
-            <Link to="/files" className="flex shrink-0 items-center gap-1 rounded px-1 hover:text-foreground"><HardDrive className="size-3" />{ui("My files")}</Link>
-            {ancestors.map((folder) => (
-              <span key={folder.id} className="flex min-w-0 items-center gap-0.5">
-                <ChevronRight className="size-3 shrink-0" />
-                <Link to={`/files/f/${folder.id}`} className="truncate rounded px-1 hover:text-foreground">{folder.name}</Link>
-              </span>
-            ))}
-          </nav>
+          <FilePath ancestors={ancestors} />
           {node ? <DocTitle node={node} /> : <div className="h-8" />}
         </div>
         <Presence peers={peers} />
@@ -198,7 +217,7 @@ function OpenDoc({ userId, docId }: { userId: string; docId: string }) {
           <TriangleAlert className="size-4 shrink-0" />
           <span className="min-w-0 flex-1">{problem ?? notice}</span>
           {status.state === 'error' && <Button size="sm" variant="outline" onClick={() => window.location.reload()}>{ui("Reload")}</Button>}
-          {status.state === 'closed' && <Button asChild size="sm" variant="outline"><Link to={status.reason === 'trashed' ? '/files/trash' : '/files'}>{status.reason === 'trashed' ? ui("Open trash") : ui("Back to My files")}</Link></Button>}
+          {status.state === 'closed' && <Button asChild size="sm" variant="outline"><Link to={status.reason === 'trashed' ? '/files/trash' : parentPath}>{status.reason === 'trashed' ? ui("Open trash") : ui("Back to My files")}</Link></Button>}
         </div>
       )}
 
@@ -214,6 +233,133 @@ function OpenDoc({ userId, docId }: { userId: string; docId: string }) {
   )
 }
 
+/**
+ * An uploaded Markdown file keeps its original bytes and opens read-only. Edit converts it into
+ * an editable document, after showing what the editor's formatting would change, if anything.
+ */
+function MarkdownFileView({ node, ancestors }: { node: FileNode; ancestors: FileNode[] }) {
+  const navigate = useNavigate()
+  const queryClient = useQueryClient()
+  const userId = useAuth((state) => state.user?.id)
+  const chatWidth = useSettings((state) => state.chatWidth)
+  const content = useQuery({
+    queryKey: [...fileNodeQueryKey(userId, node.id), 'content', node.updatedAt],
+    queryFn: async () => (await fetchFileBlob(node)).text(),
+  })
+  const [preview, setPreview] = useState<FileConversionPreview | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [notice, setNotice] = useState<string | null>(null)
+  const parentPath = node.parentId ? `/files/f/${node.parentId}` : '/files'
+
+  const convert = async () => {
+    setBusy(true)
+    try {
+      await convertToDoc(node.id)
+      // The route re-reads the node and switches to the editor.
+      await queryClient.invalidateQueries({ queryKey: filesQueryKey(userId) })
+      setPreview(null)
+    } catch (cause) {
+      setNotice(filesErrorMessage(cause))
+      setPreview(null)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const startEditing = async () => {
+    setBusy(true)
+    setNotice(null)
+    try {
+      const dryRun = await fetchConversionPreview(node.id)
+      if (dryRun.changed) setPreview(dryRun)
+      else await convert()
+    } catch (cause) {
+      setNotice(filesErrorMessage(cause))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const trash = async () => {
+    try {
+      await trashFileNode(node.id)
+      await queryClient.invalidateQueries({ queryKey: filesQueryKey(userId) })
+      navigate(parentPath)
+    } catch (cause) {
+      setNotice(filesErrorMessage(cause))
+    }
+  }
+
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <header className="mobile-page-content flex items-center gap-3 border-b px-4 py-2 sm:px-6">
+        <div className="min-w-0 flex-1">
+          <FilePath ancestors={ancestors} />
+          <DocTitle node={node} />
+        </div>
+        <span className="hidden text-xs text-muted-foreground sm:inline">{ui("Read-only")}</span>
+        <Button size="sm" disabled={busy || node.trashedAt !== null} onClick={() => void startEditing()}>
+          {busy ? <Loader2 className="animate-spin" /> : <Pencil />} {ui("Edit")}
+        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="icon-sm" aria-label={ui("Document actions")}><MoreHorizontal /></Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onSelect={() => void downloadFile(node).catch((cause: unknown) => setNotice(filesErrorMessage(cause)))}>
+              <Download /> {ui("Download")}
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem variant="destructive" onSelect={() => void trash()}><Trash2 /> {ui("Move to trash")}</DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </header>
+      {notice && (
+        <div role="alert" className="flex items-center gap-2 border-b bg-destructive/5 px-4 py-2 text-sm text-destructive sm:px-6">
+          <TriangleAlert className="size-4 shrink-0" />
+          <span className="min-w-0 flex-1">{notice}</span>
+        </div>
+      )}
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className={cn('mx-auto w-full px-4 py-8 sm:px-6', chatWidth === 'full' ? 'max-w-[min(100%,90rem)]' : 'max-w-5xl')}>
+          {content.isPending ? (
+            <div className="grid h-64 place-items-center"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>
+          ) : content.isError ? (
+            <p className="text-sm text-destructive">{filesErrorMessage(content.error)}</p>
+          ) : content.data.trim() ? (
+            <Markdown content={content.data} />
+          ) : (
+            <p className="text-sm text-muted-foreground">{ui("This file is empty.")}</p>
+          )}
+        </div>
+      </div>
+      <MarkdownConversionDialog preview={preview} busy={busy} onCancel={() => setPreview(null)} onConfirm={() => void convert()} />
+    </div>
+  )
+}
+
+/** Opens a file by what its name says it is: Markdown is edited, anything else only previews. */
+function FileRoute({ userId, fileId }: { userId: string; fileId: string }) {
+  const nodeQuery = useQuery({ queryKey: fileNodeQueryKey(userId, fileId), queryFn: () => fetchFileNode(fileId) })
+  if (nodeQuery.isPending) return <div className="grid h-full place-items-center"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>
+  const node = nodeQuery.data?.node
+  if (nodeQuery.isError || !node || (node.kind === 'blob' && !isMarkdownName(node.name)) || node.kind === 'folder') {
+    const message = nodeQuery.isError ? filesErrorMessage(nodeQuery.error) : ui("This file isn't Markdown, so it can't be edited here.")
+    const back = node?.parentId ? `/files/f/${node.parentId}` : '/files'
+    return (
+      <div className="grid h-full place-items-center p-8">
+        <div className="max-w-md rounded-xl border p-6 text-center">
+          <TriangleAlert className="mx-auto size-8 text-amber-500" />
+          <p className="mt-3 text-sm text-muted-foreground">{message}</p>
+          <Button asChild variant="outline" size="sm" className="mt-4"><Link to={back}>{ui("Back to My files")}</Link></Button>
+        </div>
+      </div>
+    )
+  }
+  if (node.kind === 'doc') return <OpenDoc key={`doc:${fileId}`} userId={userId} docId={fileId} />
+  return <MarkdownFileView key={`file:${fileId}`} node={node} ancestors={nodeQuery.data.ancestors} />
+}
+
 export function FileDocPage() {
   const { docId } = useParams()
   const userId = useAuth((state) => state.user?.id)
@@ -222,5 +368,5 @@ export function FileDocPage() {
     return <div className="grid h-full place-items-center p-8 text-sm text-muted-foreground">{ui("Files are disabled by the administrator")}</div>
   }
   if (!userId || !docId) return null
-  return <OpenDoc key={docId} userId={userId} docId={docId} />
+  return <FileRoute key={docId} userId={userId} fileId={docId} />
 }

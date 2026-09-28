@@ -95,8 +95,9 @@ export function FilePreviewDialog({
           {state.status === 'url' && kind === 'pdf' && <iframe src={state.url} title={node?.name ?? ''} className="h-[70dvh] w-full" />}
           {state.status === 'url' && kind === 'video' && <video src={state.url} controls className="mx-auto max-h-[70dvh]" />}
           {state.status === 'url' && kind === 'audio' && <audio src={state.url} controls className="m-6 w-[calc(100%-3rem)]" />}
-          {state.status === 'text' && kind === 'markdown' && <div className="px-6 py-4"><Markdown content={state.text} /></div>}
-          {state.status === 'text' && kind === 'text' && <pre className="overflow-auto p-4 font-mono text-xs whitespace-pre-wrap">{state.text}</pre>}
+          {state.status === 'text' && !state.text.trim() && <p className="p-8 text-center text-sm text-muted-foreground">{ui("This file is empty.")}</p>}
+          {state.status === 'text' && state.text.trim() && kind === 'markdown' && <div className="px-6 py-4"><Markdown content={state.text} /></div>}
+          {state.status === 'text' && state.text.trim() && kind === 'text' && <pre className="overflow-auto p-4 font-mono text-xs whitespace-pre-wrap">{state.text}</pre>}
         </div>
       </DialogContent>
     </Dialog>

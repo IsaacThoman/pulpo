@@ -1,6 +1,11 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { copyFileNodesSchema, createFileDocSchema, createFileFolderSchema, fileNodeIdsSchema, moveFileNodesSchema, updateFileNodeSchema } from '@pulpo/contracts'
+import { db } from '../database/client.js'
+import { notFound } from '../lib/errors.js'
+import { getBlobStore } from '../storage/index.js'
+import { resolveFileAccess } from './access.js'
+import { convertBlobToDocInTx, previewMarkdownConversion } from './conversion.js'
 import { copyFileNodes } from './copy-service.js'
 import { createDoc, readDocMarkdown } from './doc-store.js'
 import { parseFileInput, requireFilesUser } from './request.js'
@@ -11,12 +16,14 @@ import {
   emptyTrash,
   getFileNode,
   listFolder,
+  mutateFileTree,
   listTrash,
   moveFileNodes,
   restoreFileNode,
   restoreFileNodes,
   trashFileNode,
   trashFileNodes,
+  toFileNode,
   updateFileNode,
 } from './tree-service.js'
 import { registerFileUploadRoutes } from './upload-routes.js'
@@ -86,6 +93,30 @@ export async function registerFileRoutes(app: FastifyInstance): Promise<void> {
     const input = parseFileInput(createFileDocSchema, request.body)
     reply.code(201)
     return createDoc(user.id, input)
+  })
+
+  // Uploaded Markdown keeps its bytes until someone edits it. The dry run shows what converting
+  // to an editable document would change, so clients can warn before reformatting.
+  app.get('/api/files/:id/conversion', async (request) => {
+    const user = await requireFilesUser(request)
+    const access = await resolveFileAccess(db, user.id, idParams.parse(request.params).id)
+    if (!access || access.node.trashedAt) throw notFound('File')
+    return previewMarkdownConversion(access.node)
+  })
+
+  app.post('/api/files/:id/convert', async (request) => {
+    const user = await requireFilesUser(request)
+    const id = idParams.parse(request.params).id
+    const result = await mutateFileTree(user.id, async (tx) => {
+      const access = await resolveFileAccess(tx, user.id, id)
+      if (!access || access.node.trashedAt) throw notFound('File')
+      if (access.node.kind === 'doc') return { node: toFileNode(access.node), objectKey: null }
+      const converted = await convertBlobToDocInTx(tx, access.node)
+      return { node: toFileNode(converted.row), objectKey: converted.objectKey }
+    })
+    // The uploaded object goes only after the document is committed, so a failure keeps the file.
+    if (result.objectKey) await getBlobStore().delete(result.objectKey).catch(() => undefined)
+    return result.node
   })
 
   app.get('/api/files/:id/markdown', async (request) => {
