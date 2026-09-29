@@ -16,6 +16,7 @@ import { useSettings } from '@/stores/settings'
 import { useDesktopChrome } from '@/stores/desktopChrome'
 import { isDesktopRuntime } from '@/lib/runtime'
 import { SidePanel } from '@/features/side-panel/SidePanel'
+import { FileToasts } from '@/features/files/browser/FileToasts'
 import { useSidePanelUrl } from '@/features/side-panel/use-side-panel-url'
 import { useSidePanel } from '@/features/side-panel/store'
 
@@ -210,6 +211,8 @@ export function AppLayout() {
             </Suspense>
           </main>
           {!adminChatView && <SidePanel mode={mobile ? 'sheet' : narrow ? 'drawer' : 'docked'} />}
+          {/* One host for Files undo toasts, whether Files is on the page or in the panel. */}
+          {!adminChatView && <FileToasts />}
         </div>
         {searchOpen && <Suspense fallback={null}>
           <SearchModal

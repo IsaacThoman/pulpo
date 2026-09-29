@@ -26,7 +26,6 @@ import {
   UsersRound,
   PanelLeftClose,
   PanelLeftOpen,
-  PanelRight,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { compareChatOrder, useChat } from '@/stores/chat'
@@ -64,7 +63,6 @@ import { newChatLocationState } from '@/lib/new-chat-navigation'
 import { billingPlanTier, fetchBillingSummary } from '@/lib/billing'
 import { isDesktopRuntime } from '@/lib/runtime'
 import { ui, uit } from '@/i18n/ui'
-import { useSidePanel } from '@/features/side-panel/store'
 
 type DragKind = 'folder' | 'chat'
 type ChatList = 'pinned' | 'loose' | `folder:${string}`
@@ -279,10 +277,6 @@ function ChatMenu({ chat, onRename }: { chat: Chat; onRename: () => void }) {
         <Pencil />
         {t('common.rename')}
       </DropdownMenuItem>
-      <DropdownMenuItem onClick={() => useSidePanel.getState().open({ kind: 'chat', id: chat.id })}>
-        <PanelRight />
-        {ui("Open to the side")}
-      </DropdownMenuItem>
       {expirationMenuAction && (
         <DropdownMenuItem onClick={() => setChatAutoExpiration(chat.id, expirationMenuAction.kind === 'enable')}>
           <Hourglass className={cn(expirationMenuAction.kind === 'disable' && 'text-teal-500 dark:text-teal-400')} />
@@ -424,13 +418,6 @@ export function ChatRow({
           if (didDragRef?.current) {
             didDragRef.current = false
             e.preventDefault()
-            return
-          }
-          if (e.altKey && e.button === 0 && !e.metaKey && !e.ctrlKey && !e.shiftKey) {
-            // Alt/Option-click opens the chat beside the current view, as in Files.
-            e.preventDefault()
-            useSidePanel.getState().open({ kind: 'chat', id: chat.id })
-            onNavigate?.()
             return
           }
           const modified = e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0

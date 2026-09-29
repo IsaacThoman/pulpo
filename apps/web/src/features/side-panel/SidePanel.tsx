@@ -4,10 +4,11 @@ import { Loader2 } from 'lucide-react'
 import { ui } from '@/i18n/ui'
 import { cn } from '@/lib/utils'
 import { clampPanelWidth, readPanelWidth, useSidePanel, writePanelWidth } from './store'
+import { useMainNavigate } from './use-panel-actions'
 
 // Panel views are heavy (editor, chat); load each only once something of that kind opens.
 const FilePanelView = lazy(() => import('@/pages/files/FileDocPage').then((module) => ({ default: module.FilePanelView })))
-const ChatPanelView = lazy(() => import('./ChatPanelView').then((module) => ({ default: module.ChatPanelView })))
+const FolderPanelView = lazy(() => import('@/pages/files/FilesPage').then((module) => ({ default: module.FolderPanelView })))
 
 export type SidePanelMode = 'docked' | 'drawer' | 'sheet'
 
@@ -33,6 +34,9 @@ export function SidePanel({ mode }: { mode: SidePanelMode }) {
 
   // Navigating the main view while the panel is maximized would change nothing visible.
   const { pathname } = useLocation()
+  const go = useMainNavigate()
+  const goRef = useRef(go)
+  goRef.current = go
   const shownPath = useRef(pathname)
   useEffect(() => {
     if (shownPath.current === pathname) return
@@ -40,7 +44,7 @@ export function SidePanel({ mode }: { mode: SidePanelMode }) {
     if (useSidePanel.getState().maximized) useSidePanel.getState().setMaximized(false)
   }, [pathname])
 
-  // Cmd/Ctrl+\\ shows or hides the panel, Cmd/Ctrl+J the agent beside the page, and
+  // Cmd/Ctrl+\\ shows or hides the panel, Cmd/Ctrl+J asks the agent about the files in view, and
   // Cmd/Ctrl+Shift+Enter maximizes or restores the panel.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -53,7 +57,7 @@ export function SidePanel({ mode }: { mode: SidePanelMode }) {
       } else if (event.key.toLowerCase() === 'j' && !event.shiftKey) {
         event.preventDefault()
         // Loaded on use: the agent helpers bring in the chat store.
-        void import('./agent').then((agent) => agent.toggleAgent())
+        void import('./agent').then((agent) => agent.runAgentShortcut(goRef.current))
       } else if (event.key === 'Enter' && event.shiftKey && state.content) {
         event.preventDefault()
         state.setMaximized(!state.maximized)
@@ -98,7 +102,7 @@ export function SidePanel({ mode }: { mode: SidePanelMode }) {
 
   const content = (
     <Suspense fallback={loading}>
-      {panel.kind === 'file' ? <FilePanelView fileId={panel.id} /> : <ChatPanelView content={panel} />}
+      {panel.kind === 'file' ? <FilePanelView fileId={panel.id} /> : <FolderPanelView folderId={panel.id} />}
     </Suspense>
   )
 

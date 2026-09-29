@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { FILE_SCOPE_ROOT, MAX_CHAT_FILE_SCOPES, type FileNode } from '@pulpo/contracts'
 import { Check, ChevronRight, HardDrive, Loader2, X } from 'lucide-react'
@@ -28,23 +27,14 @@ function useScopeNode(id: string): { node: FileNode | null; missing: boolean } {
 
 /**
  * One file or folder the agent can use, shown in the composer like an attachment. Clicking it
- * shows the item: folders in Files, and files beside a chat on the page (`openFilesBeside`) or
- * in the main view from a chat in the side panel.
+ * shows the item beside the chat.
  */
-export function FileScopeChip({ id, onRemove, openFilesBeside = false, className }: {
-  id: string
-  onRemove?: () => void
-  openFilesBeside?: boolean
-  className?: string
-}) {
-  const navigate = useNavigate()
+export function FileScopeChip({ id, onRemove, className }: { id: string; onRemove?: () => void; className?: string }) {
   const { node, missing } = useScopeNode(id)
   const root = id === FILE_SCOPE_ROOT
   const show = () => {
-    if (root) navigate('/files')
-    else if (node?.kind === 'folder') navigate(`/files/f/${node.id}`)
-    else if (node && openFilesBeside) useSidePanel.getState().open({ kind: 'file', id: node.id })
-    else if (node) navigate(`/files/d/${node.id}`)
+    if (root) useSidePanel.getState().open({ kind: 'folder', id: null })
+    else if (node) useSidePanel.getState().open(node.kind === 'folder' ? { kind: 'folder', id: node.id } : { kind: 'file', id: node.id })
   }
   const name = root ? ui("My files") : node?.name ?? null
   const hint = missing

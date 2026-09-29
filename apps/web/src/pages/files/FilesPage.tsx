@@ -6,7 +6,6 @@ import {
   ArrowDown,
   ArrowUp,
   ArrowUpDown,
-  Bot,
   ChevronRight,
   ClipboardPaste,
   Copy,
@@ -53,7 +52,6 @@ import { useFileClipboard } from '@/features/files/browser/clipboard'
 import { FileContextMenu, type ContextMenuPoint } from '@/features/files/browser/FileContextMenu'
 import { FileDragOverlay } from '@/features/files/browser/FileDragOverlay'
 import { FileItem, type FileDropHandlers } from '@/features/files/browser/FileItem'
-import { FileToasts } from '@/features/files/browser/FileToasts'
 import {
   clickSelect,
   EMPTY_SELECTION,
@@ -69,8 +67,9 @@ import {
 import { readFileSort, sortFileNodes, toggleFileSort, uniqueChildName, writeFileSort, type FileSort, type FileSortKey } from '@/features/files/browser/sort'
 import { hasPrimaryModifier, isAppleShortcut, isEditableTarget, shortcutLabel } from '@/features/files/browser/shortcuts'
 import { useSidePanel } from '@/features/side-panel/store'
-import { AskAgentButton } from '@/features/side-panel/AskAgentButton'
-import { usePublishAgentContext } from '@/features/side-panel/agent'
+import { AgentActions, AgentMenuItems } from '@/features/side-panel/AgentActions'
+import { usePublishFilesView, type FilesViewPlace } from '@/features/side-panel/agent'
+import { PanelWindowButtons } from '@/features/side-panel/PanelControls'
 import { SelectionAction } from '@/features/files/browser/SelectionAction'
 import { useFileOperations } from '@/features/files/browser/use-file-operations'
 import { useItemDrag } from '@/features/files/browser/use-item-drag'
@@ -115,9 +114,32 @@ function SortHeader({ label, sortKey, sort, onSort, className }: {
   )
 }
 
+/*
+ * Which files view keys go to: the one last clicked. Before any click only the page listens,
+ * so a browser in the side panel never takes arrow keys meant for a chat beside it.
+ */
+let lastPointerDown: Element | null = null
+if (typeof window !== 'undefined') {
+  window.addEventListener('pointerdown', (event) => { lastPointerDown = event.target instanceof Element ? event.target : null }, true)
+}
+
+function ownsKeys(layout: FilesViewPlace['layout'], root: HTMLElement | null): boolean {
+  if (layout === 'panel') return Boolean(root && lastPointerDown && root.contains(lastPointerDown))
+  return !lastPointerDown?.closest('[data-side-panel]')
+}
+
 export function FilesPage() {
-  const { folderId: routeFolderId } = useParams()
-  const folderId = routeFolderId ?? null
+  const { folderId } = useParams()
+  return <FilesBrowser folderId={folderId ?? null} layout="page" />
+}
+
+/** A folder in the side panel, beside a chat or another view. */
+export function FolderPanelView({ folderId }: { folderId: string | null }) {
+  return <FilesBrowser folderId={folderId} layout="panel" />
+}
+
+function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: FilesViewPlace['layout'] }) {
+  const panel = layout === 'panel'
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const userId = useAuth((state) => state.user?.id)
@@ -127,12 +149,14 @@ export function FilesPage() {
     queryFn: () => fetchFolder(folderId),
     enabled: Boolean(userId && filesEnabled),
   })
-  usePublishAgentContext(filesEnabled && !listing.isError
-    ? { id: folderId ?? FILE_SCOPE_ROOT, ancestorIds: listing.data?.ancestors.map((folder) => folder.id) ?? [] }
-    : null)
+  const place = useMemo<FilesViewPlace>(() => ({ layout, view: { kind: 'folder', id: folderId } }), [folderId, layout])
+  const agentItem = useMemo(() => ({ id: folderId ?? FILE_SCOPE_ROOT, ancestorIds: listing.data?.ancestors.map((folder) => folder.id) ?? [] }), [folderId, listing.data])
+  usePublishFilesView(place, filesEnabled && !listing.isError ? agentItem : null)
   const ops = useFileOperations()
   const clip = useFileClipboard((state) => state.clip)
-  const [view, setView] = useState<FilesView>(readView)
+  const [storedView, setView] = useState<FilesView>(readView)
+  // The side panel is narrow; it always lists.
+  const view: FilesView = panel ? 'list' : storedView
   const [sort, setSort] = useState<FileSort>(readFileSort)
   const [selection, setSelection] = useState<FileSelection>(EMPTY_SELECTION)
   const [keyboardFocus, setKeyboardFocus] = useState(false)
@@ -145,6 +169,7 @@ export function FilesPage() {
   const [marquee, setMarquee] = useState<Marquee | null>(null)
   const fileInput = useRef<HTMLInputElement>(null)
   const itemsRef = useRef<HTMLDivElement>(null)
+  const rootRef = useRef<HTMLDivElement>(null)
   const lastPointerType = useRef('mouse')
   const typeahead = useRef({ text: '', at: 0 })
 
@@ -173,16 +198,19 @@ export function FilesPage() {
   }
 
   const openToSide = (node: FileNode) => {
-    if (node.kind !== 'folder') useSidePanel.getState().open({ kind: 'file', id: node.id })
+    useSidePanel.getState().open(node.kind === 'folder' ? { kind: 'folder', id: node.id } : { kind: 'file', id: node.id })
   }
 
-  /** Starts a chat beside Files whose agent can use these items (the whole tree at the root). */
-  const openWithAgent = (ids: string[]) => {
-    useSidePanel.getState().open({ kind: 'chat', id: null, scopeIds: ids.length ? ids : [FILE_SCOPE_ROOT] })
+  /** Shows a folder here: the page follows the route, the panel keeps its own place. */
+  const showFolder = (id: string | null) => {
+    if (panel) useSidePanel.getState().open({ kind: 'folder', id })
+    else navigate(id ? `/files/f/${id}` : '/files')
   }
 
   const open = (node: FileNode) => {
-    if (node.kind === 'folder') navigate(`/files/f/${node.id}`)
+    if (node.kind === 'folder') showFolder(node.id)
+    // The panel shows every file in place, with a way back to its folder.
+    else if (panel) useSidePanel.getState().open({ kind: 'file', id: node.id })
     // Markdown opens in the editor view: editable documents directly, uploads as a preview with Edit.
     else if (node.kind === 'doc' || isMarkdownName(node.name)) navigate(`/files/d/${node.id}`)
     else setPreviewing(node)
@@ -293,8 +321,7 @@ export function FilesPage() {
   // One window listener that always sees the latest state, like a desktop file manager.
   const handleKey = (event: KeyboardEvent) => {
     if (event.defaultPrevented || isEditableTarget(event.target) || renamingId || moving || previewing || menu) return
-    // Keys pressed inside the side panel belong to the file shown there.
-    if (event.target instanceof Element && event.target.closest('[data-side-panel]')) return
+    if (!ownsKeys(layout, rootRef.current)) return
     const mod = hasPrimaryModifier(event)
     const key = event.key
     if (NAVIGATION_KEYS.has(key) && !mod) {
@@ -455,8 +482,8 @@ export function FilesPage() {
       if (renamingId === node.id || drag.consumeClick()) return
       // Touch has no double-click or hover, so a tap opens, as in mobile file browsers.
       if (lastPointerType.current === 'touch') { open(node); return }
-      // Alt/Option-click opens a file beside the current view, like "Open to the side" in editors.
-      if (event.altKey && node.kind !== 'folder') {
+      // Alt/Option-click opens an item beside the current view, like "Open to the side" in editors.
+      if (event.altKey && !panel) {
         setSelection(selectOnly(node.id))
         openToSide(node)
         return
@@ -496,7 +523,7 @@ export function FilesPage() {
 
   const single = selectedNodes.length === 1 ? selectedNodes[0]! : null
   const canDownload = selectedNodes.length > 0 && selectedNodes.every((node) => node.kind !== 'folder')
-  const canOpenWithAgent = selectedNodes.length > 0 && selectedNodes.length <= MAX_CHAT_FILE_SCOPES
+  const canUseAgent = selectedNodes.length > 0 && selectedNodes.length <= MAX_CHAT_FILE_SCOPES
   const itemMenu = (
     <>
       {selectedNodes.length > 1 && <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">{uit`${selectedNodes.length} items selected`}</DropdownMenuLabel>}
@@ -506,16 +533,12 @@ export function FilesPage() {
           <DropdownMenuShortcut>{single.kind === 'blob' ? ui("Space") : '↵'}</DropdownMenuShortcut>
         </DropdownMenuItem>
       )}
-      {single && single.kind !== 'folder' && (
+      {single && !panel && (
         <DropdownMenuItem onSelect={() => openToSide(single)}>
           <PanelRight /> {ui("Open to the side")}<DropdownMenuShortcut>{isAppleShortcut() ? '⌥ Click' : 'Alt+Click'}</DropdownMenuShortcut>
         </DropdownMenuItem>
       )}
-      {canOpenWithAgent && (
-        <DropdownMenuItem onSelect={() => openWithAgent(selectedNodes.map((node) => node.id))}>
-          <Bot /> {ui("Open with agent")}
-        </DropdownMenuItem>
-      )}
+      {canUseAgent && <AgentMenuItems ids={selectedNodes.map((node) => node.id)} place={place} />}
       {canDownload && (
         <DropdownMenuItem onSelect={() => void ops.download(selectedNodes)}>
           <Download /> {ui("Download")}
@@ -555,7 +578,7 @@ export function FilesPage() {
     body = (
       <div className="rounded-xl border p-8 text-center text-sm">
         <p className="text-muted-foreground">{filesErrorMessage(listing.error)}</p>
-        <Button asChild variant="outline" size="sm" className="mt-4"><Link to="/files">{ui("Back to My files")}</Link></Button>
+        <Button variant="outline" size="sm" className="mt-4" onClick={() => showFolder(null)}>{ui("Back to My files")}</Button>
       </div>
     )
   } else if (!nodes.length) {
@@ -601,131 +624,90 @@ export function FilesPage() {
 
   const sortLabels: Record<FileSortKey, string> = { name: ui("Name"), modified: ui("Modified"), kind: ui("Kind"), size: ui("Size") }
 
-  return (
-    // Handlers sit on the scroll area so the empty space below the list also clears the
-    // selection, starts a drag-select, opens the folder menu, and accepts dropped files.
-    <ScrollArea
-      className="h-full"
-      {...pageDrop}
-      onPointerDown={startMarquee}
-      onContextMenu={(event) => {
-        if (!event.currentTarget.contains(event.target as Node)) return
-        if ((event.target as Element).closest('[data-file-id], input, a, [data-slot="scroll-area-scrollbar"]')) return
-        event.preventDefault()
-        if (!listing.isError) openMenuAt({ x: event.clientX, y: event.clientY }, null)
-      }}
+  const crumb = (id: string | null, key: string, isCurrent: boolean, content: ReactNode, className: string) => (
+    <Link
+      to={id ? `/files/f/${id}` : '/files'}
+      {...dropProps(id, key)}
+      data-drop-target={id ?? 'root'}
+      draggable={false}
+      aria-current={isCurrent ? 'page' : undefined}
+      // In the panel the path moves the panel, not the page; the link still opens new tabs.
+      onClick={panel ? (event) => { if (!event.metaKey && !event.ctrlKey && !event.shiftKey) { event.preventDefault(); showFolder(id) } } : undefined}
+      className={cn(className, (dropTarget === key || drag.activeTarget === (id ?? 'root')) && 'bg-sky-500/20 text-foreground')}
     >
-      <div
-        className={cn(
-          'mobile-page-content mx-auto min-h-full max-w-6xl space-y-4 px-6 py-8',
-          dropTarget === 'page' && 'rounded-2xl bg-primary/5 outline-2 -outline-offset-8 outline-dashed outline-primary/40',
-          marquee && 'select-none',
-        )}
-      >
-        <div className="@container flex flex-wrap items-start gap-3">
-          <div className="min-w-0 flex-1">
-            <h1 className="text-xl font-semibold tracking-tight">{ui("Files")}</h1>
-            <nav aria-label={ui("Folder path")} className="mt-1 flex min-w-0 flex-wrap items-center gap-0.5 text-sm text-muted-foreground">
-              <Link
-                to="/files"
-                {...dropProps(null)}
-                data-drop-target="root"
-                draggable={false}
-                className={cn('flex items-center gap-1 rounded px-1.5 py-0.5 hover:bg-accent hover:text-foreground', (dropTarget === 'root' || drag.activeTarget === 'root') && 'bg-sky-500/20 text-foreground')}
-              >
-                <HardDrive className="size-3.5" />{ui("My files")}
-              </Link>
-              {trail.map((folder, index) => (
-                <span key={folder.id} className="flex min-w-0 items-center gap-0.5">
-                  <ChevronRight className="size-3.5 shrink-0" />
-                  <Link
-                    to={`/files/f/${folder.id}`}
-                    {...dropProps(folder.id, `crumb:${folder.id}`)}
-                    data-drop-target={folder.id}
-                    draggable={false}
-                    aria-current={index === trail.length - 1 ? 'page' : undefined}
-                    className={cn(
-                      'max-w-48 truncate rounded px-1.5 py-0.5 hover:bg-accent hover:text-foreground',
-                      index === trail.length - 1 && 'font-medium text-foreground',
-                      (dropTarget === `crumb:${folder.id}` || drag.activeTarget === folder.id) && 'bg-sky-500/20 text-foreground',
-                    )}
-                  >
-                    {folder.name}
-                  </Link>
-                </span>
-              ))}
-            </nav>
-          </div>
-          {/* With room, the selection bar floats over the empty space left of the controls so the title and
-              list never move; in a narrow header it takes the controls' place instead of wrapping. */}
-          <div className="relative flex min-h-8 items-center gap-2">
-            {selectedNodes.length > 0 && (
-              <TooltipProvider delayDuration={250}>
-                <div role="toolbar" aria-label={ui("Selection")} className={cn(
-                  'flex h-8 items-center gap-0.5 rounded-lg border bg-muted px-0.5',
-                  // Grid view has an extra Sort button, so it needs a wider header to fit both.
-                  view === 'grid'
-                    ? '@min-[42rem]:absolute @min-[42rem]:top-0 @min-[42rem]:right-full @min-[42rem]:mr-2'
-                    : '@min-[36rem]:absolute @min-[36rem]:top-0 @min-[36rem]:right-full @min-[36rem]:mr-2',
-                )}>
-                  <SelectionAction label={ui("Clear selection")} onClick={() => setSelection(EMPTY_SELECTION)}><X /></SelectionAction>
-                  <span className="px-1.5 text-sm font-medium whitespace-nowrap tabular-nums">{selectedNodes.length === 1 ? ui("1 selected") : uit`${selectedNodes.length} selected`}</span>
-                  {canDownload && <SelectionAction label={ui("Download")} onClick={() => void ops.download(selectedNodes)}><Download /></SelectionAction>}
-                  <SelectionAction label={ui("Move to…")} onClick={() => setMoving(selectedNodes)}><FolderInput /></SelectionAction>
-                  <SelectionAction label={ui("Duplicate")} onClick={() => void duplicate()}><CopyPlus /></SelectionAction>
-                  <SelectionAction label={ui("Move to trash")} destructive onClick={() => void trashSelection()}><Trash2 /></SelectionAction>
-                </div>
-              </TooltipProvider>
-            )}
-            <div className={cn('flex items-center gap-2', selectedNodes.length > 0 && (view === 'grid' ? '@max-[42rem]:hidden' : '@max-[36rem]:hidden'))}>
-              {view === 'grid' && (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="sm" aria-label={ui("Sort")}><ArrowUpDown /> {sortLabels[sort.key]}</Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  {(Object.keys(sortLabels) as FileSortKey[]).map((key) => (
-                    <DropdownMenuItem key={key} onSelect={() => changeSort(key)}>
-                      {sortLabels[key]}
-                      {sort.key === key && <DropdownMenuShortcut>{sort.direction === 'asc' ? '↑' : '↓'}</DropdownMenuShortcut>}
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
-              )}
-              <div className="flex rounded-lg border p-0.5" role="group" aria-label={ui("View")}>
-              <button type="button" aria-pressed={view === 'list'} aria-label={ui("List view")} onClick={() => changeView('list')} className={cn('grid size-7 cursor-pointer place-items-center rounded-md text-muted-foreground', view === 'list' && 'bg-accent text-foreground')}>
-                <List className="size-4" />
-              </button>
-              <button type="button" aria-pressed={view === 'grid'} aria-label={ui("Grid view")} onClick={() => changeView('grid')} className={cn('grid size-7 cursor-pointer place-items-center rounded-md text-muted-foreground', view === 'grid' && 'bg-accent text-foreground')}>
-                <LayoutGrid className="size-4" />
-              </button>
-              </div>
-              <AskAgentButton />
-              <Button asChild variant="outline" size="sm"><Link to="/files/trash"><Trash2 /> {ui("Trash")}</Link></Button>
-              <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button size="sm" disabled={listing.isError}><Plus /> {ui("New")}</Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">{backgroundMenu}</DropdownMenuContent>
-              </DropdownMenu>
-            </div>
-            <input
-              ref={fileInput}
-              type="file"
-              multiple
-              hidden
-              onChange={(event) => {
-                void upload([...(event.target.files ?? [])])
-                event.target.value = ''
-              }}
-            />
-          </div>
-        </div>
-
-        {body}
+      {content}
+    </Link>
+  )
+  const path = (
+    <nav aria-label={ui("Folder path")} className={cn('flex min-w-0 items-center gap-0.5 text-muted-foreground', panel ? 'overflow-hidden text-xs' : 'mt-1 flex-wrap text-sm')}>
+      {crumb(null, 'root', false, <><HardDrive className={panel ? 'size-3' : 'size-3.5'} />{ui("My files")}</>, cn('flex shrink-0 items-center gap-1 rounded hover:bg-accent hover:text-foreground', panel ? 'px-1' : 'px-1.5 py-0.5'))}
+      {trail.map((folder, index) => (
+        <span key={folder.id} className="flex min-w-0 items-center gap-0.5">
+          <ChevronRight className={cn('shrink-0', panel ? 'size-3' : 'size-3.5')} />
+          {crumb(folder.id, `crumb:${folder.id}`, index === trail.length - 1, folder.name, cn(
+            'truncate rounded hover:bg-accent hover:text-foreground',
+            panel ? 'px-1' : 'max-w-48 px-1.5 py-0.5',
+            index === trail.length - 1 && 'font-medium text-foreground',
+          ))}
+        </span>
+      ))}
+    </nav>
+  )
+  const selectionBar = selectedNodes.length > 0 && (
+    <TooltipProvider delayDuration={250}>
+      <div role="toolbar" aria-label={ui("Selection")} className={cn(
+        'flex h-8 items-center gap-0.5 rounded-lg border bg-muted px-0.5',
+        // Grid view has an extra Sort button, so it needs a wider header to fit both.
+        !panel && (view === 'grid'
+          ? '@min-[42rem]:absolute @min-[42rem]:top-0 @min-[42rem]:right-full @min-[42rem]:mr-2'
+          : '@min-[36rem]:absolute @min-[36rem]:top-0 @min-[36rem]:right-full @min-[36rem]:mr-2'),
+      )}>
+        <SelectionAction label={ui("Clear selection")} onClick={() => setSelection(EMPTY_SELECTION)}><X /></SelectionAction>
+        <span className="px-1.5 text-sm font-medium whitespace-nowrap tabular-nums">{selectedNodes.length === 1 ? ui("1 selected") : uit`${selectedNodes.length} selected`}</span>
+        {canDownload && <SelectionAction label={ui("Download")} onClick={() => void ops.download(selectedNodes)}><Download /></SelectionAction>}
+        <SelectionAction label={ui("Move to…")} onClick={() => setMoving(selectedNodes)}><FolderInput /></SelectionAction>
+        <SelectionAction label={ui("Duplicate")} onClick={() => void duplicate()}><CopyPlus /></SelectionAction>
+        <SelectionAction label={ui("Move to trash")} destructive onClick={() => void trashSelection()}><Trash2 /></SelectionAction>
       </div>
-
+    </TooltipProvider>
+  )
+  const newMenu = (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        {panel
+          ? <Button variant="ghost" size="icon-sm" disabled={listing.isError} aria-label={ui("New")}><Plus /></Button>
+          : <Button size="sm" disabled={listing.isError}><Plus /> {ui("New")}</Button>}
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">{backgroundMenu}</DropdownMenuContent>
+    </DropdownMenu>
+  )
+  const fileInputElement = (
+    <input
+      ref={fileInput}
+      type="file"
+      multiple
+      hidden
+      onChange={(event) => {
+        void upload([...(event.target.files ?? [])])
+        event.target.value = ''
+      }}
+    />
+  )
+  // Handlers sit on the scroll area so the empty space below the list also clears the
+  // selection, starts a drag-select, opens the folder menu, and accepts dropped files.
+  const scrollHandlers = {
+    ...pageDrop,
+    onPointerDown: startMarquee,
+    onContextMenu: (event: MouseEvent) => {
+      if (!event.currentTarget.contains(event.target as Node)) return
+      if ((event.target as Element).closest('[data-file-id], input, a, [data-slot="scroll-area-scrollbar"]')) return
+      event.preventDefault()
+      if (!listing.isError) openMenuAt({ x: event.clientX, y: event.clientY }, null)
+    },
+  }
+  const dropHighlight = dropTarget === 'page' && 'rounded-2xl bg-primary/5 outline-2 -outline-offset-8 outline-dashed outline-primary/40'
+  const overlays = (
+    <>
       {marquee && (
         <div
           aria-hidden
@@ -761,9 +743,7 @@ export function FilesPage() {
           <>
             {backgroundMenu}
             <DropdownMenuSeparator />
-            <DropdownMenuItem onSelect={() => openWithAgent(folderId ? [folderId] : [])}>
-              <Bot /> {folderId ? ui("Open this folder with agent") : ui("Open my files with agent")}
-            </DropdownMenuItem>
+            <AgentMenuItems ids={[folderId ?? FILE_SCOPE_ROOT]} place={place} />
           </>
         )}
       </FileContextMenu>
@@ -772,9 +752,95 @@ export function FilesPage() {
         node={previewing}
         onOpenChange={(open) => { if (!open) setPreviewing(null) }}
         onDownload={(node) => void downloadFile(node).catch(ops.fail)}
+        actions={previewing && (
+          <AgentActions
+            item={{ id: previewing.id, ancestorIds: [...trail.map((folder) => folder.id)] }}
+            place={{ layout: 'page', view: { kind: 'file', id: previewing.id } }}
+          />
+        )}
       />
       <FileDragOverlay drag={drag} />
-      <FileToasts />
+    </>
+  )
+
+  if (panel) {
+    return (
+      <div ref={rootRef} className="flex h-full min-h-0 flex-col">
+        <header className="side-panel-header flex min-w-0 items-center gap-1.5 border-b px-3 py-1.5">
+          <div className="min-w-0 flex-1">
+            {path}
+            <h2 className="truncate text-sm font-medium">{listing.data?.folder?.name ?? ui("My files")}</h2>
+          </div>
+          {selectionBar || (
+            <>
+              {!listing.isError && <AgentActions item={agentItem} place={place} />}
+              {newMenu}
+            </>
+          )}
+          <PanelWindowButtons content={place.view} />
+          {fileInputElement}
+        </header>
+        <ScrollArea className="min-h-0 flex-1" {...scrollHandlers}>
+          <div className={cn('min-h-full px-3 py-3', dropHighlight, marquee && 'select-none')}>{body}</div>
+          {overlays}
+        </ScrollArea>
+      </div>
+    )
+  }
+
+  return (
+    <ScrollArea className="h-full" {...scrollHandlers}>
+      <div
+        className={cn(
+          'mobile-page-content mx-auto min-h-full max-w-6xl space-y-4 px-6 py-8',
+          dropHighlight,
+          marquee && 'select-none',
+        )}
+      >
+        <div className="@container flex flex-wrap items-start gap-3">
+          <div className="min-w-0 flex-1">
+            <h1 className="text-xl font-semibold tracking-tight">{ui("Files")}</h1>
+            {path}
+          </div>
+          {/* With room, the selection bar floats over the empty space left of the controls so the title and
+              list never move; in a narrow header it takes the controls' place instead of wrapping. */}
+          <div className="relative flex min-h-8 items-center gap-2">
+            {selectionBar}
+            <div className={cn('flex items-center gap-2', selectedNodes.length > 0 && (view === 'grid' ? '@max-[42rem]:hidden' : '@max-[36rem]:hidden'))}>
+              {view === 'grid' && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="sm" aria-label={ui("Sort")}><ArrowUpDown /> {sortLabels[sort.key]}</Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  {(Object.keys(sortLabels) as FileSortKey[]).map((key) => (
+                    <DropdownMenuItem key={key} onSelect={() => changeSort(key)}>
+                      {sortLabels[key]}
+                      {sort.key === key && <DropdownMenuShortcut>{sort.direction === 'asc' ? '↑' : '↓'}</DropdownMenuShortcut>}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+              )}
+              <div className="flex rounded-lg border p-0.5" role="group" aria-label={ui("View")}>
+              <button type="button" aria-pressed={view === 'list'} aria-label={ui("List view")} onClick={() => changeView('list')} className={cn('grid size-7 cursor-pointer place-items-center rounded-md text-muted-foreground', view === 'list' && 'bg-accent text-foreground')}>
+                <List className="size-4" />
+              </button>
+              <button type="button" aria-pressed={view === 'grid'} aria-label={ui("Grid view")} onClick={() => changeView('grid')} className={cn('grid size-7 cursor-pointer place-items-center rounded-md text-muted-foreground', view === 'grid' && 'bg-accent text-foreground')}>
+                <LayoutGrid className="size-4" />
+              </button>
+              </div>
+              {!listing.isError && <AgentActions item={agentItem} place={place} />}
+              <Button asChild variant="outline" size="sm"><Link to="/files/trash"><Trash2 /> {ui("Trash")}</Link></Button>
+              {newMenu}
+            </div>
+            {fileInputElement}
+          </div>
+        </div>
+
+        {body}
+      </div>
+      {overlays}
     </ScrollArea>
   )
 }

@@ -1,5 +1,4 @@
 import { useLocation, useNavigate } from 'react-router-dom'
-import type { NewChatLocationState } from '@/lib/new-chat-navigation'
 import { isDesktopRuntime } from '@/lib/runtime'
 import { SIDE_PANEL_PARAM, useSidePanel, type PanelContent } from './store'
 
@@ -12,38 +11,39 @@ export function locationIsCurrent(location: { key: string }): boolean {
   return !entryKey || entryKey === location.key
 }
 
-interface PanelTarget { pathname: string; state?: NewChatLocationState }
-
 /** The route that shows `content` as the main view. */
-export function panelContentPath(content: PanelContent): PanelTarget {
-  if (content.kind === 'file') return { pathname: `/files/d/${content.id}` }
-  if (content.id !== null) return { pathname: `/c/${content.id}` }
-  return { pathname: '/', state: content.scopeIds.length ? { fileScopeIds: content.scopeIds } : undefined }
+export function panelContentPath(content: PanelContent): string {
+  if (content.kind === 'file') return `/files/d/${content.id}`
+  return content.id ? `/files/f/${content.id}` : '/files'
 }
 
 /** What the main view shows, when it is something the panel can also show. */
 export function mainViewContent(pathname: string): PanelContent | null {
   const file = /^\/files\/d\/([0-9a-f-]{36})$/i.exec(pathname)
   if (file) return { kind: 'file', id: file[1]!.toLowerCase() }
-  const chat = /^\/c\/([0-9a-f-]{36})$/i.exec(pathname)
-  if (chat) return { kind: 'chat', id: chat[1]!.toLowerCase() }
-  if (pathname === '/') return { kind: 'chat', id: null, scopeIds: [] }
+  const folder = /^\/files\/f\/([0-9a-f-]{36})$/i.exec(pathname)
+  if (folder) return { kind: 'folder', id: folder[1]!.toLowerCase() }
+  if (pathname === '/files') return { kind: 'folder', id: null }
   return null
+}
+
+/** Navigates the main view without adopting a stale `side` parameter from the current URL. */
+export function useMainNavigate() {
+  const navigate = useNavigate()
+  const location = useLocation()
+  return (pathname: string) => {
+    // The side parameter is re-applied from the store; drop the old one so it cannot be adopted.
+    const params = new URLSearchParams(location.search)
+    params.delete(SIDE_PANEL_PARAM)
+    navigate({ pathname, search: params.toString() ? `?${params}` : '' })
+  }
 }
 
 /** Panel header actions shared by every kind of panel content. */
 export function usePanelActions(content: PanelContent) {
-  const navigate = useNavigate()
-  const location = useLocation()
+  const go = useMainNavigate()
   const maximized = useSidePanel((state) => state.maximized)
   const target = panelContentPath(content)
-
-  const go = ({ pathname, state }: PanelTarget) => {
-    // The side parameter is re-applied from the store; drop the old one so it cannot be adopted.
-    const params = new URLSearchParams(location.search)
-    params.delete(SIDE_PANEL_PARAM)
-    navigate({ pathname, search: params.toString() ? `?${params}` : '' }, { state })
-  }
 
   return {
     maximized,
@@ -51,12 +51,10 @@ export function usePanelActions(content: PanelContent) {
     close: () => useSidePanel.getState().close(),
     /**
      * Shows the panel's content on its own: in a new browser tab, or on desktop (which has no
-     * tabs) by moving it into the main view. A new chat has no address until it is sent.
+     * tabs) by moving it into the main view.
      */
     openElsewhere: isDesktopRuntime()
       ? { newTab: false, run: () => { useSidePanel.getState().close(); go(target) } }
-      : content.kind === 'file' || content.id !== null
-        ? { newTab: true, run: () => { window.open(target.pathname, '_blank', 'noopener') } }
-        : null,
+      : { newTab: true, run: () => { window.open(target, '_blank', 'noopener') } },
   }
 }

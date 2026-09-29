@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type MouseEvent, type ReactNode } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { DOC_FRAGMENT_NAME } from '@pulpo/client-core/doc-schema'
@@ -38,8 +38,8 @@ import { useDocSession, type PresencePeer } from '@/features/files/editor/use-do
 import { FilePreviewBody } from '@/features/files/FilePreviewDialog'
 import { MarkdownConversionDialog } from '@/features/files/MarkdownConversionDialog'
 import { PanelWindowButtons } from '@/features/side-panel/PanelControls'
-import { AskAgentButton } from '@/features/side-panel/AskAgentButton'
-import { usePublishAgentContext } from '@/features/side-panel/agent'
+import { AgentActions } from '@/features/side-panel/AgentActions'
+import { usePublishFilesView, type AgentItem, type FilesViewPlace } from '@/features/side-panel/agent'
 import { useSidePanel, type PanelContent } from '@/features/side-panel/store'
 
 function statusProblem(status: DocSyncStatus): string | null {
@@ -138,14 +138,20 @@ function DocTitle({ node }: { node: FileNode }) {
   )
 }
 
-function FilePath({ ancestors }: { ancestors: FileNode[] }) {
+/** The folders above a file. In the side panel they open there, so the panel can walk back up. */
+function FilePath({ ancestors, inPanel }: { ancestors: FileNode[]; inPanel: boolean }) {
+  const showInPanel = (id: string | null) => (event: MouseEvent) => {
+    if (!inPanel || event.metaKey || event.ctrlKey || event.shiftKey) return
+    event.preventDefault()
+    useSidePanel.getState().open({ kind: 'folder', id })
+  }
   return (
     <nav aria-label={ui("Folder path")} className="flex min-w-0 items-center gap-0.5 overflow-hidden text-xs text-muted-foreground">
-      <Link to="/files" className="flex shrink-0 items-center gap-1 rounded px-1 hover:text-foreground"><HardDrive className="size-3" />{ui("My files")}</Link>
+      <Link to="/files" onClick={showInPanel(null)} className="flex shrink-0 items-center gap-1 rounded px-1 hover:text-foreground"><HardDrive className="size-3" />{ui("My files")}</Link>
       {ancestors.map((folder) => (
         <span key={folder.id} className="flex min-w-0 items-center gap-0.5">
           <ChevronRight className="size-3 shrink-0" />
-          <Link to={`/files/f/${folder.id}`} className="truncate rounded px-1 hover:text-foreground">{folder.name}</Link>
+          <Link to={`/files/f/${folder.id}`} onClick={showInPanel(folder.id)} className="truncate rounded px-1 hover:text-foreground">{folder.name}</Link>
         </span>
       ))}
     </nav>
@@ -169,16 +175,18 @@ function FileHeader({ node, ancestors, view, menu, children }: {
   menu: ReactNode
   children?: ReactNode
 }) {
-  const page = view.layout === 'page'
-  usePublishAgentContext(page && node ? { id: node.id, ancestorIds: ancestors.map((folder) => folder.id) } : null)
+  const place = useMemo<FilesViewPlace | null>(() => node ? { layout: view.layout, view: { kind: 'file', id: node.id } } : null, [node, view.layout])
+  const ancestorKey = ancestors.map((folder) => folder.id).join(',')
+  const item = useMemo<AgentItem | null>(() => node ? { id: node.id, ancestorIds: ancestorKey ? ancestorKey.split(',') : [] } : null, [ancestorKey, node])
+  usePublishFilesView(place ?? { layout: view.layout, view: { kind: 'folder', id: null } }, item)
   return (
     <header className={cn('flex items-center border-b', view.layout === 'panel' ? 'side-panel-header gap-1.5 px-3 py-1.5' : 'mobile-page-content gap-3 px-4 py-2 sm:px-6')}>
       <div className="min-w-0 flex-1">
-        <FilePath ancestors={ancestors} />
+        <FilePath ancestors={ancestors} inPanel={view.layout === 'panel'} />
         {node ? <DocTitle node={node} /> : <div className="h-8" />}
       </div>
       {children}
-      {page && node && <AskAgentButton />}
+      {place && item && <AgentActions item={item} place={place} />}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button variant="ghost" size="icon-sm" aria-label={ui("Document actions")} disabled={!node}><MoreHorizontal /></Button>
@@ -200,7 +208,8 @@ function useLeaveAfterTrash(node: FileNode | undefined, view: FileViewContext) {
     if (!node) return
     await trashFileNode(node.id)
     await queryClient.invalidateQueries({ queryKey: filesQueryKey(userId) })
-    if (view.layout === 'panel') useSidePanel.getState().close()
+    // The panel steps back to the file's folder; the page goes there.
+    if (view.layout === 'panel') useSidePanel.getState().open({ kind: 'folder', id: node.parentId })
     else navigate(node.parentId ? `/files/f/${node.parentId}` : '/files')
   }
 }

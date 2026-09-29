@@ -7,13 +7,12 @@ const WIDTH_STORAGE_KEY = 'pulpo.sidePanel.width'
 const DEFAULT_WIDTH = 520
 
 /**
- * What the side panel shows. A chat without an id is a new chat; its scope lists the Files
- * items (or `root` for all files) the agent may use once the first message creates it.
+ * What the side panel shows: a file, or a folder of the Files browser (`null` is My files).
+ * Chats always live in the main view; the panel holds what they work on.
  */
 export type PanelContent =
   | { kind: 'file'; id: string }
-  | { kind: 'chat'; id: string }
-  | { kind: 'chat'; id: null; scopeIds: string[] }
+  | { kind: 'folder'; id: string | null }
 
 interface SidePanelState {
   content: PanelContent | null
@@ -50,8 +49,7 @@ const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
 export function serializePanelContent(content: PanelContent | null): string | null {
   if (!content) return null
   if (content.kind === 'file') return `file:${content.id}`
-  if (content.id !== null) return `chat:${content.id}`
-  return content.scopeIds.length ? `chat:new:${content.scopeIds.join(',')}` : 'chat:new'
+  return `folder:${content.id ?? 'root'}`
 }
 
 export function parsePanelContent(value: string | null): PanelContent | null {
@@ -59,14 +57,8 @@ export function parsePanelContent(value: string | null): PanelContent | null {
   const lower = value.toLowerCase()
   const file = new RegExp(`^file:(${UUID})$`).exec(lower)
   if (file) return { kind: 'file', id: file[1]! }
-  const chat = new RegExp(`^chat:(${UUID})$`).exec(lower)
-  if (chat) return { kind: 'chat', id: chat[1]! }
-  const scope = `(?:root|${UUID})`
-  const fresh = new RegExp(`^chat:new(?::(${scope}(?:,${scope})*))?$`).exec(lower)
-  if (fresh) {
-    const ids = fresh[1] ? [...new Set(fresh[1].split(','))] : []
-    return { kind: 'chat', id: null, scopeIds: ids.includes('root') ? ['root'] : ids }
-  }
+  const folder = new RegExp(`^folder:(root|${UUID})$`).exec(lower)
+  if (folder) return { kind: 'folder', id: folder[1] === 'root' ? null : folder[1]! }
   return null
 }
 

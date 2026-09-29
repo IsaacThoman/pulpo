@@ -10,7 +10,7 @@ import type { ShelfAttachment } from '@pulpo/client-core'
 import { useComposerSync } from './use-composer-sync'
 import { useFollowStartedChat } from './use-follow-started-chat'
 import { useMenuTriggerFocus } from './use-menu-trigger-focus'
-import { registerComposerFocus, registerPanelComposerFocus } from './composer-focus'
+import { registerComposerFocus } from './composer-focus'
 import { webComposerSync } from '@/lib/local-first/composer-sync'
 import { MAX_MESSAGE_ATTACHMENTS, type ComposerState } from '@pulpo/contracts'
 import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, useSyncExternalStore, type Ref, type DragEvent as ReactDragEvent } from 'react'
@@ -142,9 +142,6 @@ export function Composer({
   generationControlRef,
   onTemporaryChange,
   onSelectModel,
-  surface = 'page',
-  draftSlot,
-  onChatStarted,
   fileScopeIds = NO_FILE_SCOPE,
   onFileScopeChange,
 }: {
@@ -165,15 +162,6 @@ export function Composer({
   onTemporaryChange?: (temporary: boolean) => void
   /** Selects another model, e.g. from a model warning link. */
   onSelectModel?: (modelId: string) => void
-  /**
-   * `panel` is a second composer beside the main view: it takes only drops aimed at the side
-   * panel, leaves global focus and the shelf to the page, and never follows or navigates to chats.
-   */
-  surface?: 'page' | 'panel'
-  /** Overrides the local draft slot, so a panel's new chat does not share the page's. */
-  draftSlot?: string
-  /** Called instead of navigating when the first message creates the chat. */
-  onChatStarted?: (chatId: string) => void
   /** Files items the agent may use in this chat, shown as chips. */
   fileScopeIds?: readonly string[]
   /** Lets the user add and remove items; without it the chips are read-only. */
@@ -190,12 +178,12 @@ export function Composer({
   const [shelfCollapsed, setShelfCollapsed] = useState(false)
   const [shelfError, setShelfError] = useState<string | null>(null)
   const [attachmentSelectionError, setAttachmentSelectionError] = useState<string | null>(null)
-  const showShelf = surface === 'page' && !chatId && !temporary && Boolean(shelf) && !messageEdit
+  const showShelf = !chatId && !temporary && Boolean(shelf) && !messageEdit
   const activeShelf = useRef(shelf)
   activeShelf.current = showShelf ? shelf : null
   useEffect(() => { shelfMounted.current = true; return () => { shelfMounted.current = false } }, [])
   useEffect(() => { if (shelf) void shelf.hydrate().then(() => shelf.sync()).catch(() => undefined) }, [shelf])
-  const draftId = draftSlot ?? localComposerDraftId(chatId, temporary)
+  const draftId = localComposerDraftId(chatId, temporary)
   const [handoffBusy, setHandoffBusy] = useState(false)
   const handoffBusyRef = useRef(false)
   const draftOwnershipRef = useRef(draftId)
@@ -221,7 +209,7 @@ export function Composer({
   const focusComposer = useCallback(() => ref.current?.focus({ preventScroll: true }), [])
   const presetMenuFocus = useMenuTriggerFocus(focusComposer)
   useImperativeHandle(focusControlRef, () => ({ focus: focusComposer }), [focusComposer])
-  useEffect(() => surface === 'page' ? registerComposerFocus(focusComposer) : registerPanelComposerFocus(focusComposer), [focusComposer, surface])
+  useEffect(() => registerComposerFocus(focusComposer), [focusComposer])
   const fileInputRef = useRef<HTMLInputElement>(null)
   const valueRef = useRef(value)
   const attachmentIdsRef = useRef(attachmentIds)
@@ -447,7 +435,7 @@ export function Composer({
   }, [])
 
   useFollowStartedChat({
-    userId, chatId, textarea: ref, syncEnabled: syncEnabled && surface === 'page', temporary,
+    userId, chatId, textarea: ref, syncEnabled, temporary,
     busy: () => submitting || handoffBusyRef.current || shelfBusyRef.current || dictationState !== 'idle',
   })
 
@@ -639,16 +627,13 @@ export function Composer({
   }, [uploadFiles])
 
   useEffect(() => {
-    // The page composer takes drops anywhere except the side panel, which has its own.
-    const panel = surface === 'panel' ? ref.current?.closest<HTMLElement>('[data-side-panel]') : null
-    if (surface === 'panel' && !panel) return
-    const target: EventTarget = panel ?? window
+    // Files dropped on the side panel belong to what it shows (a folder takes uploads).
     const inPanel = (event: DragEvent) => event.target instanceof Element && event.target.closest('[data-side-panel]') !== null
     const hasFiles = (event: DragEvent) => event.dataTransfer?.types.includes('Files') ?? false
-    const ours = (event: DragEvent) => hasFiles(event) && (panel !== null || !inPanel(event))
-    // A file dropped on a panel without a composer must not make the browser open it.
+    const ours = (event: DragEvent) => hasFiles(event) && !inPanel(event)
+    // A file dropped where the panel does not take it must not make the browser open it.
     const refuse = (event: DragEvent) => {
-      if (!hasFiles(event) || panel) return
+      if (!hasFiles(event)) return
       setDragging(false)
       if (event.defaultPrevented) return
       event.preventDefault()
@@ -666,8 +651,7 @@ export function Composer({
       setDragging(true)
     }
     const hideDropTarget = (event: DragEvent) => {
-      // Leaving the window (or, for the panel, leaving the panel) hides the drop target.
-      if (panel ? event.relatedTarget instanceof Node && panel.contains(event.relatedTarget) : event.relatedTarget !== null) return
+      if (event.relatedTarget !== null) return
       setDragging(false)
     }
     const dropFiles = (event: DragEvent) => {
@@ -677,14 +661,19 @@ export function Composer({
       addFiles(event.dataTransfer?.files)
     }
 
-    const listeners: [string, (event: DragEvent) => void][] = [
-      ['dragenter', showDropTarget], ['dragover', allowDrop], ['dragleave', hideDropTarget], ['drop', dropFiles], ['dragend', hideDropTarget],
-    ]
-    for (const [type, listener] of listeners) target.addEventListener(type, listener as EventListener)
+    window.addEventListener('dragenter', showDropTarget)
+    window.addEventListener('dragover', allowDrop)
+    window.addEventListener('dragleave', hideDropTarget)
+    window.addEventListener('drop', dropFiles)
+    window.addEventListener('dragend', hideDropTarget)
     return () => {
-      for (const [type, listener] of listeners) target.removeEventListener(type, listener as EventListener)
+      window.removeEventListener('dragenter', showDropTarget)
+      window.removeEventListener('dragover', allowDrop)
+      window.removeEventListener('dragleave', hideDropTarget)
+      window.removeEventListener('drop', dropFiles)
+      window.removeEventListener('dragend', hideDropTarget)
     }
-  }, [addFiles, surface])
+  }, [addFiles])
 
   const clearDraft = (release = true) => {
     if (release) releaseDraftUploads(attachmentIds)
@@ -796,10 +785,9 @@ export function Composer({
       fileScopeIds: chatId ? undefined : [...fileScopeIds],
       attachmentIds: ids,
     })
-    if (!chatId && staged.chatId && !temporary) {
-      if (onChatStarted) onChatStarted(staged.chatId)
-      else navigate(`/c/${staged.chatId}`)
-    }
+    // The new chat took the scope; the next one starts without it.
+    if (!chatId && fileScopeIds.length) onFileScopeChange?.([])
+    if (!chatId && staged.chatId && !temporary) navigate(`/c/${staged.chatId}`)
   }
 
   const suggestionSubmitted = useRef(false)
@@ -1243,7 +1231,6 @@ export function Composer({
                 <FileScopeChip
                   key={id}
                   id={id}
-                  openFilesBeside={surface === 'page'}
                   onRemove={onFileScopeChange ? () => onFileScopeChange(fileScopeIds.filter((item) => item !== id)) : undefined}
                 />
               ))}

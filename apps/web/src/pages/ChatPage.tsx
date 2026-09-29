@@ -34,6 +34,7 @@ import { isDesktopRuntime } from '@/lib/runtime'
 import { ui } from '@/i18n/ui'
 import { DesktopActionsTitleBarSlot, DesktopModelTitleBarSlot } from '@/components/desktop/DesktopSidebarTitleBar'
 import { useDocumentTitle } from '@/lib/document-title'
+import { useNewChatScope, usePublishChatTarget } from '@/features/side-panel/agent'
 
 const DEFAULT_SUGGESTED_PROMPTS = [
   { id: '1', translationKey: 'chat.suggestedPrompts.build' },
@@ -183,8 +184,9 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
   const [temporaryError, setTemporaryError] = useState<string | null>(null)
   const setDesktopTemporaryChat = useDesktopChrome((state) => state.setTemporaryChat)
   const [messageEdit, setMessageEdit] = useState<ComposerMessageEdit | null>(null)
-  const carriedFileScope = navigationState?.fileScopeIds?.join(',') ?? ''
-  const [newChatFileScope, setNewChatFileScope] = useState<string[]>(() => carriedFileScope ? carriedFileScope.split(',') : NO_FILE_SCOPE)
+  // Kept in a store so Files beside this page can add to the unsent chat.
+  const newChatFileScope = useNewChatScope((state) => state.scopeIds)
+  const setNewChatFileScope = useCallback((scopeIds: string[]) => useNewChatScope.setState({ scopeIds }), [])
   const [composerEditActive, setComposerEditActive] = useState(false)
   const [promptConfig, setPromptConfig] = useState<{ enabled: boolean; count: number; prompts: SuggestedPrompt[] }>({
     enabled: true,
@@ -272,10 +274,6 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
     setMessageEdit(null)
     setComposerEditActive(false)
   }, [chatId])
-  // Keyed by value: the location state object is recreated whenever the URL is rewritten.
-  useEffect(() => {
-    setNewChatFileScope(carriedFileScope ? carriedFileScope.split(',') : NO_FILE_SCOPE)
-  }, [chatId, carriedFileScope])
 
   const beginMessageEdit = useCallback((message: Message) => {
     setMessageEdit({
@@ -340,6 +338,8 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
   }
 
   const temporaryMode = temporary || Boolean(chat?.temporary)
+  // Files beside the page add to this chat; temporary chats and admin views take no files.
+  usePublishChatTarget(adminMode || temporaryMode ? null : chat ? { kind: 'chat', id: chat.id } : { kind: 'new' })
   const desktopSidebarVisible = useDesktopChrome((state) => state.desktopSidebarVisible)
   useEffect(() => {
     setDesktopTemporaryChat(temporaryMode)

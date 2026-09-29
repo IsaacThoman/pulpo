@@ -1,67 +1,125 @@
 import { useEffect } from 'react'
 import { create } from 'zustand'
 import { FILE_SCOPE_ROOT } from '@pulpo/contracts'
-import { focusSidePanelComposer } from '@/components/chat/composer-focus'
+import { focusComposer } from '@/components/chat/composer-focus'
 import { extendFileScope } from '@/features/files/file-scope-cache'
 import { useChat } from '@/stores/chat'
-import { useSidePanel } from './store'
+import { useSidePanel, type PanelContent } from './store'
 
-/** What the main view shows that the agent could work on: a file, a folder, or all files. */
-export interface AgentContext {
-  /** A file or folder id, or `root`. */
+/*
+ * Chats always live in the main view and Files beside them. A files view (a folder or a file,
+ * on the page or in the panel) offers its items to the chat on the left: a new chat when none is
+ * open, otherwise the chat that is.
+ */
+
+/** A file or folder id, or `root`, with the folders above it (outermost first). */
+export interface AgentItem {
   id: string
-  /** Folders above it, outermost first, so a scope that already covers it is recognized. */
   ancestorIds: string[]
 }
 
-export const useAgentContext = create<{ context: AgentContext | null }>()(() => ({ context: null }))
+/** Where a files view is shown, and what it shows, so it can move into the panel. */
+export interface FilesViewPlace {
+  layout: 'page' | 'panel'
+  view: PanelContent
+}
 
-/** Offers the page's file or folder to "Ask agent" while the page is shown. */
-export function usePublishAgentContext(context: AgentContext | null): void {
-  const id = context?.id
-  const ancestors = context?.ancestorIds.join(',') ?? ''
+/** The chat in the main view that files can be added to. */
+export type ChatTarget = { kind: 'new' } | { kind: 'chat'; id: string }
+
+export const useChatTarget = create<{ target: ChatTarget | null }>()(() => ({ target: null }))
+
+/** Files items for the unsent new chat; the new-chat composer shows them as chips. */
+export const useNewChatScope = create<{ scopeIds: string[] }>()(() => ({ scopeIds: [] }))
+
+/** The files views on screen, so Cmd/Ctrl+J can act on what the user is looking at. */
+export const useFilesViews = create<{ page: (FilesViewPlace & { item: AgentItem }) | null; panel: (FilesViewPlace & { item: AgentItem }) | null }>()(() => ({ page: null, panel: null }))
+
+/** Registers the chat in the main view as the target for "Add to chat" while it is shown. */
+export function usePublishChatTarget(target: ChatTarget | null): void {
+  const key = target ? target.kind === 'new' ? 'new' : target.id : ''
   useEffect(() => {
-    if (!id) return
-    const published = { id, ancestorIds: ancestors ? ancestors.split(',') : [] }
-    useAgentContext.setState({ context: published })
-    return () => { if (useAgentContext.getState().context === published) useAgentContext.setState({ context: null }) }
-  }, [ancestors, id])
+    if (!key) return
+    const published: ChatTarget = key === 'new' ? { kind: 'new' } : { kind: 'chat', id: key }
+    useChatTarget.setState({ target: published })
+    return () => { if (useChatTarget.getState().target === published) useChatTarget.setState({ target: null }) }
+  }, [key])
 }
 
-/** Whether a chat scope already reaches the context, directly or through a folder above it. */
-export function scopeCovers(scope: readonly string[], context: AgentContext): boolean {
-  return scope.includes(FILE_SCOPE_ROOT) || [context.id, ...context.ancestorIds].some((id) => scope.includes(id))
+/** Registers a files view and its current item while it is shown. */
+export function usePublishFilesView(place: FilesViewPlace, item: AgentItem | null): void {
+  const itemKey = item ? `${item.id}:${item.ancestorIds.join(',')}` : ''
+  const viewKey = `${place.view.kind}:${place.view.id ?? ''}`
+  const { layout } = place
+  useEffect(() => {
+    if (!itemKey) return
+    const [id, ancestors] = itemKey.split(':') as [string, string]
+    const [kind, viewId] = viewKey.split(':') as ['file' | 'folder', string]
+    const view: PanelContent = kind === 'file' ? { kind, id: viewId } : { kind, id: viewId || null }
+    const published = { layout, view, item: { id, ancestorIds: ancestors ? ancestors.split(',') : [] } }
+    useFilesViews.setState({ [layout]: published })
+    return () => { if (useFilesViews.getState()[layout] === published) useFilesViews.setState({ [layout]: null }) }
+  }, [itemKey, layout, viewKey])
 }
 
-/**
- * Brings up the agent for what the main view shows. An agent chat already in the panel gains the
- * file or folder; otherwise a new chat opens beside the page, scoped to it.
- */
-export function askAgent(): void {
-  const context = useAgentContext.getState().context
-  const scope = context ? [context.id] : []
-  const panel = useSidePanel.getState()
-  const content = panel.content
-  if (content?.kind === 'chat') {
-    if (content.id === null) {
-      if (context && !scopeCovers(content.scopeIds, context)) panel.open({ ...content, scopeIds: extendFileScope(content.scopeIds, scope) })
-    } else {
-      const chat = useChat.getState().chats.find((item) => item.id === content.id)
-      if (!chat || chat.temporary) {
-        panel.open({ kind: 'chat', id: null, scopeIds: scope })
-      } else if (context && !scopeCovers(chat.fileScopeIds ?? [], context)) {
-        useChat.getState().setChatFileScope(chat.id, extendFileScope(chat.fileScopeIds ?? [], scope))
-      }
-    }
-    requestAnimationFrame(() => focusSidePanelComposer())
+/** Whether a chat scope already reaches an item, directly or through a folder above it. */
+export function scopeCovers(scope: readonly string[], item: AgentItem): boolean {
+  return scope.includes(FILE_SCOPE_ROOT) || [item.id, ...item.ancestorIds].some((id) => scope.includes(id))
+}
+
+/** The Files scope of the chat in the main view. */
+export function targetScope(target: ChatTarget | null, chats = useChat.getState().chats, draft = useNewChatScope.getState().scopeIds): string[] | null {
+  if (!target) return null
+  if (target.kind === 'new') return draft
+  return chats.find((chat) => chat.id === target.id)?.fileScopeIds ?? []
+}
+
+/** Navigates the main view (see `useMainNavigate`). */
+type Go = (pathname: string) => void
+
+/** Moves a files view from the main view into the panel, leaving the main view for a chat. */
+export function splitView(view: PanelContent, go: Go): void {
+  useSidePanel.getState().open(view)
+  go('/')
+}
+
+/** Starts a new chat in the main view with these items, moving a page view into the panel. */
+export function openInNewChat(ids: string[], place: FilesViewPlace, go: Go): void {
+  if (place.layout === 'page') useSidePanel.getState().open(place.view)
+  useNewChatScope.setState({ scopeIds: extendFileScope([], ids) })
+  go('/')
+  // Already on the new-chat page, nothing remounts to take focus.
+  requestAnimationFrame(() => focusComposer())
+}
+
+/** Adds items to the chat in the main view. */
+export function addToChat(ids: string[]): void {
+  const target = useChatTarget.getState().target
+  if (!target) return
+  if (target.kind === 'new') {
+    useNewChatScope.setState((state) => ({ scopeIds: extendFileScope(state.scopeIds, ids) }))
+  } else {
+    const chat = useChat.getState().chats.find((item) => item.id === target.id)
+    if (chat) useChat.getState().setChatFileScope(chat.id, extendFileScope(chat.fileScopeIds ?? [], ids))
+  }
+  requestAnimationFrame(() => focusComposer())
+}
+
+/** The main agent action for a view: add to the open chat, or start one. */
+export function primaryAgentAction(ids: string[], place: FilesViewPlace, go: Go): void {
+  if (place.layout === 'panel' && useChatTarget.getState().target) addToChat(ids)
+  else openInNewChat(ids, place, go)
+}
+
+/** Cmd/Ctrl+J: the main agent action for the files view in the main view, else the panel's. */
+export function runAgentShortcut(go: Go): void {
+  const { page, panel } = useFilesViews.getState()
+  const place = page ?? panel
+  if (!place) return
+  const scope = targetScope(useChatTarget.getState().target)
+  if (place.layout === 'panel' && scope && scopeCovers(scope, place.item)) {
+    focusComposer()
     return
   }
-  // A new chat's composer focuses itself when it mounts.
-  panel.open({ kind: 'chat', id: null, scopeIds: scope })
-}
-
-/** Cmd/Ctrl+J: hides an open agent chat, or asks the agent about the current page. */
-export function toggleAgent(): void {
-  if (useSidePanel.getState().content?.kind === 'chat') useSidePanel.getState().close()
-  else askAgent()
+  primaryAgentAction([place.item.id], place, go)
 }

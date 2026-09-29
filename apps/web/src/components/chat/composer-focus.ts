@@ -15,20 +15,3 @@ export function focusComposer() {
   focusActiveComposer()
   return true
 }
-
-// The side panel's composer is tracked apart from the page's, so each keeps its own target.
-let focusPanelComposer: (() => void) | null = null
-
-export function registerPanelComposerFocus(focus: () => void) {
-  focusPanelComposer = focus
-  return () => {
-    if (focusPanelComposer === focus) focusPanelComposer = null
-  }
-}
-
-/** Focuses the composer in the side panel. Returns false when none is mounted. */
-export function focusSidePanelComposer() {
-  if (!focusPanelComposer) return false
-  focusPanelComposer()
-  return true
-}

@@ -5,29 +5,25 @@ const a = '0b4f6a3e-1c2d-4e5f-8a9b-0c1d2e3f4a5b'
 const b = '1b4f6a3e-1c2d-4e5f-8a9b-0c1d2e3f4a5c'
 
 describe('side panel state', () => {
-  it('round-trips files, chats, and scoped new chats through the URL parameter', () => {
+  it('round-trips files and folders through the URL parameter', () => {
     const contents: PanelContent[] = [
       { kind: 'file', id: a },
-      { kind: 'chat', id: b },
-      { kind: 'chat', id: null, scopeIds: [] },
-      { kind: 'chat', id: null, scopeIds: [a, b] },
-      { kind: 'chat', id: null, scopeIds: ['root'] },
+      { kind: 'folder', id: b },
+      { kind: 'folder', id: null },
     ]
     for (const content of contents) {
       expect(parsePanelContent(serializePanelContent(content))).toEqual(content)
     }
+    expect(serializePanelContent({ kind: 'folder', id: null })).toBe('folder:root')
+    expect(parsePanelContent(`FILE:${a.toUpperCase()}`)).toEqual({ kind: 'file', id: a })
   })
 
-  it('rejects anything else', () => {
+  it('rejects anything else, including chats, which only open in the main view', () => {
     expect(parsePanelContent('file:not-an-id')).toBeNull()
-    expect(parsePanelContent(`folder:${a}`)).toBeNull()
-    expect(parsePanelContent('chat:new:nope')).toBeNull()
+    expect(parsePanelContent(`chat:${a}`)).toBeNull()
+    expect(parsePanelContent('chat:new')).toBeNull()
+    expect(parsePanelContent('folder:')).toBeNull()
     expect(parsePanelContent(null)).toBeNull()
-  })
-
-  it('lets the whole tree replace the folders it contains', () => {
-    expect(parsePanelContent(`chat:new:${a},root`)).toEqual({ kind: 'chat', id: null, scopeIds: ['root'] })
-    expect(parsePanelContent(`chat:new:${a},${a.toUpperCase()}`)).toEqual({ kind: 'chat', id: null, scopeIds: [a] })
   })
 
   it('keeps the panel between its minimum and 70% of the window', () => {
