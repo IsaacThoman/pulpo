@@ -149,7 +149,6 @@ const enUS = {
   sidebar: {
     apiKeys: 'API keys',
     billing: 'Billing',
-    chats: 'Chats',
     chatSort: {
       default: 'Default',
       recent: 'Recent',

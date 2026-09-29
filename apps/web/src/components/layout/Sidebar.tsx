@@ -1145,9 +1145,7 @@ export function Sidebar({
             >
               {loose.length > 0 && (
                 <div className="mt-3">
-                  <div className="flex items-center gap-1.5 px-2 pb-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-                    <span>{t('sidebar.chats')}</span>
-                    <span aria-hidden>-</span>
+                  <div className="flex px-2 pb-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
                     <button
                       type="button"
                       className="cursor-pointer uppercase tracking-wider underline-offset-2 hover:text-foreground hover:underline focus-visible:text-foreground focus-visible:underline focus-visible:outline-none"

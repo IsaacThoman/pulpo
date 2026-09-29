@@ -155,7 +155,6 @@ const esES = {
   sidebar: {
     apiKeys: 'Claves de API',
     billing: 'Facturación',
-    chats: 'Chats',
     chatSort: {
       default: 'Predeterminado',
       recent: 'Recientes',
