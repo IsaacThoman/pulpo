@@ -31,6 +31,7 @@ import { cn } from '@/lib/utils'
 import { compareChatOrder, useChat } from '@/stores/chat'
 import { useAuth } from '@/stores/auth'
 import { useSettings } from '@/stores/settings'
+import { CHAT_TIME_GROUPS, chatTimeGroup, type ChatTimeGroup } from '@/lib/format'
 import { resolveChatExpiryMenuAction } from '@/lib/chat-expiration'
 import { chatHasStreamingResponse } from '@/lib/response-tracking'
 import type { Chat, Folder } from '@/lib/types'
@@ -404,7 +405,7 @@ export function ChatRow({
         active
           ? 'bg-sidebar-accent text-sidebar-accent-foreground'
           : 'text-sidebar-foreground/80 hover:bg-sidebar-accent/60',
-        canDrag && 'cursor-grab active:cursor-grabbing',
+        canDrag && 'active:cursor-grabbing',
         dragging && 'opacity-40',
       )}
     >
@@ -702,9 +703,10 @@ export function Sidebar({
   const { t } = useTranslation()
   const navigate = useNavigate()
   const { chatId } = useParams()
-  // Rows render from a non-reactive snapshot below, so this key must cover every chat field they display.
+  const recentOrder = useSettings((s) => s.chatSortMode === 'recent')
+  // Rows render from a non-reactive snapshot below, so this key must cover every chat field they display or sort by.
   const chatListRevision = useChat((state) => state.chats.map((chat) => (
-    `${chat.id}:${chat.title}:${chat.pinned}:${chat.folderId ?? ''}:${chat.modelId}:${chat.sortOrder}:${chat.temporary}:${chat.expiresAt ?? ''}`
+    `${chat.id}:${chat.title}:${chat.pinned}:${chat.folderId ?? ''}:${chat.modelId}:${chat.sortOrder}:${chat.temporary}:${chat.expiresAt ?? ''}:${recentOrder ? chat.updatedAt : ''}`
   )).join('|'))
   void chatListRevision
   const folderListRevision = useChat((state) => state.folders.map((folder) => (
@@ -848,6 +850,23 @@ export function Sidebar({
     if (c.folderId && inFolders.has(c.folderId)) inFolders.get(c.folderId)!.push(c)
     else loose.push(c)
   }
+  // Recent order lists unfiled chats by last activity under time headings; drag order stays saved underneath.
+  const looseGroups: { group: ChatTimeGroup | null; chats: Chat[] }[] = []
+  if (recentOrder) {
+    const byGroup = new Map<ChatTimeGroup, Chat[]>()
+    for (const c of [...loose].sort((a, b) => b.updatedAt - a.updatedAt)) {
+      const group = chatTimeGroup(c.updatedAt)
+      if (!byGroup.has(group)) byGroup.set(group, [])
+      byGroup.get(group)!.push(c)
+    }
+    for (const group of CHAT_TIME_GROUPS) {
+      const items = byGroup.get(group)
+      if (items) looseGroups.push({ group, chats: items })
+    }
+  } else if (loose.length > 0) {
+    looseGroups.push({ group: null, chats: loose })
+  }
+  const toggleChatSortMode = () => setSetting('chatSortMode', recentOrder ? 'default' : 'recent')
 
   const sidebarContentTransition = !transitions
     ? collapsed
@@ -1128,37 +1147,58 @@ export function Sidebar({
             >
               {loose.length > 0 && (
                 <div className="mt-3">
-                  <div className="px-2 pb-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-                    {t('sidebar.chats')}
+                  <div className="flex px-2 pb-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                    <button
+                      type="button"
+                      className="cursor-pointer uppercase tracking-wider underline-offset-2 hover:text-foreground hover:underline focus-visible:text-foreground focus-visible:underline focus-visible:outline-none"
+                      onClick={toggleChatSortMode}
+                      aria-label={t('sidebar.chatSort.toggle', {
+                        mode: t(recentOrder ? 'sidebar.chatSort.recent' : 'sidebar.chatSort.default'),
+                        next: t(recentOrder ? 'sidebar.chatSort.default' : 'sidebar.chatSort.recent'),
+                      })}
+                    >
+                      {t(recentOrder ? 'sidebar.chatSort.recent' : 'sidebar.chatSort.default')}
+                    </button>
                   </div>
-                  <div className="space-y-0.5">
-                    {loose.map((c) => {
-                      const isDragging = drag.dragKind === 'chat' && drag.dragId === c.id
-                      const rowDrop = drag.drop?.kind === 'row' && drag.drop.list === 'loose' && drag.drop.id === c.id
-                      const showLineBefore = Boolean(rowDrop && drag.drop?.kind === 'row' && drag.drop.edge === 'before' && !isDragging)
-                      const showLineAfter = Boolean(rowDrop && drag.drop?.kind === 'row' && drag.drop.edge === 'after' && !isDragging)
-                      return (
-                        <ChatRow
-                          key={c.id}
-                          chat={c}
-                          active={c.id === chatId}
-                          shiftHeld={shiftHeld}
-                          onNavigate={onNavigate}
-                          draggable
-                          droppable
-                          dragging={isDragging}
-                          showLineBefore={showLineBefore}
-                          showLineAfter={showLineAfter}
-                          didDragRef={drag.didDragRef}
-                          dragList="loose"
-                          onDragStart={(e) => drag.startDrag('chat', c.id, e, 'loose')}
-                          onDragOver={(e) => drag.onChatRowDragOver('loose', c.id, e)}
-                          onDrop={handleDrop}
-                          onDragEnd={drag.clearDrag}
-                        />
-                      )
-                    })}
-                  </div>
+                  {looseGroups.map(({ group, chats: items }) => (
+                    <div key={group ?? 'default'} className={cn(group && group !== looseGroups[0]!.group && 'mt-3')}>
+                      {group && (
+                        <div className="px-2 pb-1 pt-1 text-[11px] font-medium text-muted-foreground/80">
+                          {t(`sidebar.groups.${group}`)}
+                        </div>
+                      )}
+                      <div className="space-y-0.5">
+                        {items.map((c) => {
+                          const isDragging = drag.dragKind === 'chat' && drag.dragId === c.id
+                          const rowDrop = drag.drop?.kind === 'row' && drag.drop.list === 'loose' && drag.drop.id === c.id
+                          const showLineBefore = Boolean(rowDrop && drag.drop?.kind === 'row' && drag.drop.edge === 'before' && !isDragging)
+                          const showLineAfter = Boolean(rowDrop && drag.drop?.kind === 'row' && drag.drop.edge === 'after' && !isDragging)
+                          return (
+                            <ChatRow
+                              key={c.id}
+                              chat={c}
+                              active={c.id === chatId}
+                              shiftHeld={shiftHeld}
+                              onNavigate={onNavigate}
+                              draggable
+                              // Recent order cannot be rearranged, so drags over these rows fall through to the
+                              // sidebar handler, which targets the unfiled list as a whole.
+                              droppable={!recentOrder}
+                              dragging={isDragging}
+                              showLineBefore={showLineBefore}
+                              showLineAfter={showLineAfter}
+                              didDragRef={drag.didDragRef}
+                              dragList={recentOrder ? undefined : 'loose'}
+                              onDragStart={(e) => drag.startDrag('chat', c.id, e, 'loose')}
+                              onDragOver={recentOrder ? undefined : (e) => drag.onChatRowDragOver('loose', c.id, e)}
+                              onDrop={recentOrder ? undefined : handleDrop}
+                              onDragEnd={drag.clearDrag}
+                            />
+                          )
+                        })}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               )}
               {loose.length === 0 && drag.dragKind === 'chat' && drag.dragList !== 'loose' && (

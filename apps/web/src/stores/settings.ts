@@ -20,6 +20,8 @@ export const SUPPORTED_LANGUAGES = [
 export type Language = (typeof SUPPORTED_LANGUAGES)[number]['value']
 export type TrashRetention = 'instant' | '24h' | '7d' | '30d' | '90d' | 'indefinite'
 export type AutomaticChatExpiration = 'disabled' | '24h' | '7d'
+/** Unfiled sidebar chats: manual drag order, or most recently updated first under time headings. */
+export type ChatSortMode = 'default' | 'recent'
 
 /** Per-model map of preset id → selected choice id. */
 export type GenerationPrefs = Record<string, string>
@@ -60,6 +62,7 @@ export interface SettingsState {
   newChatAutoExpire: boolean
   defaultModelId: string
   sidebarPins: SidebarPins
+  chatSortMode: ChatSortMode
   /** Per-model composer preset selections. */
   generation: Record<string, GenerationPrefs>
   setTheme: (t: Theme) => void
@@ -101,6 +104,7 @@ export const DEFAULT_SETTINGS = {
   newChatAutoExpire: false,
   defaultModelId: '',
   sidebarPins: DEFAULT_SIDEBAR_PINS,
+  chatSortMode: 'default' as ChatSortMode,
   generation: {},
 }
 
