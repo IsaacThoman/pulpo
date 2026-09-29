@@ -1,10 +1,9 @@
 import { lazy, Suspense, useEffect, useRef, useState, type PointerEvent } from 'react'
-import { useLocation } from 'react-router-dom'
 import { Loader2 } from 'lucide-react'
 import { ui } from '@/i18n/ui'
 import { cn } from '@/lib/utils'
 import { clampPanelWidth, readPanelWidth, useSidePanel, writePanelWidth } from './store'
-import { useMainNavigate } from './use-panel-actions'
+import { panelContentPath, useMainNavigate } from './use-panel-actions'
 
 // Panel views are heavy (editor, chat); load each only once something of that kind opens.
 const FilePanelView = lazy(() => import('@/pages/files/FileDocPage').then((module) => ({ default: module.FilePanelView })))
@@ -21,7 +20,6 @@ const loading = <div className="grid h-full place-items-center"><Loader2 classNa
  */
 export function SidePanel({ mode }: { mode: SidePanelMode }) {
   const panel = useSidePanel((state) => state.content)
-  const maximized = useSidePanel((state) => state.maximized)
   const close = useSidePanel((state) => state.close)
   const [width, setWidth] = useState(() => clampPanelWidth(readPanelWidth(), window.innerWidth))
   const [resizing, setResizing] = useState(false)
@@ -32,20 +30,12 @@ export function SidePanel({ mode }: { mode: SidePanelMode }) {
     return () => window.removeEventListener('resize', fit)
   }, [])
 
-  // Navigating the main view while the panel is maximized would change nothing visible.
-  const { pathname } = useLocation()
   const go = useMainNavigate()
   const goRef = useRef(go)
   goRef.current = go
-  const shownPath = useRef(pathname)
-  useEffect(() => {
-    if (shownPath.current === pathname) return
-    shownPath.current = pathname
-    if (useSidePanel.getState().maximized) useSidePanel.getState().setMaximized(false)
-  }, [pathname])
 
   // Cmd/Ctrl+\\ shows or hides the panel, Cmd/Ctrl+J asks the agent about the files in view, and
-  // Cmd/Ctrl+Shift+Enter maximizes or restores the panel.
+  // Cmd/Ctrl+Shift+Enter opens the panel's content in the main view.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const mod = event.metaKey || event.ctrlKey
@@ -60,7 +50,9 @@ export function SidePanel({ mode }: { mode: SidePanelMode }) {
         void import('./agent').then((agent) => agent.runAgentShortcut(goRef.current))
       } else if (event.key === 'Enter' && event.shiftKey && state.content) {
         event.preventDefault()
-        state.setMaximized(!state.maximized)
+        const target = panelContentPath(state.content)
+        state.close()
+        goRef.current(target)
       }
     }
     window.addEventListener('keydown', onKey)
@@ -111,10 +103,10 @@ export function SidePanel({ mode }: { mode: SidePanelMode }) {
       <aside
         data-side-panel
         aria-label={ui("Side panel")}
-        className={cn('app-side-panel relative flex h-full min-w-0 flex-col border-l bg-background', maximized ? 'flex-1' : 'shrink-0', resizing && 'select-none')}
-        style={maximized ? undefined : { width }}
+        className={cn('app-side-panel relative flex h-full min-w-0 shrink-0 flex-col border-l bg-background', resizing && 'select-none')}
+        style={{ width }}
       >
-        {!maximized && <div
+        <div
           role="separator"
           aria-orientation="vertical"
           aria-label={ui("Resize side panel")}
@@ -134,7 +126,7 @@ export function SidePanel({ mode }: { mode: SidePanelMode }) {
             'after:absolute after:inset-y-0 after:left-[3px] after:w-0.5 after:transition-colors hover:after:bg-sky-500/60 focus-visible:after:bg-sky-500',
             resizing && 'after:bg-sky-500',
           )}
-        />}
+        />
         {content}
       </aside>
     )
@@ -150,7 +142,7 @@ export function SidePanel({ mode }: { mode: SidePanelMode }) {
         aria-label={ui("Side panel")}
         className={cn(
           'fixed z-40 flex flex-col bg-background',
-          mode === 'drawer' && !maximized ? 'inset-y-0 right-0 w-[min(34rem,92vw)] border-l shadow-2xl' : 'inset-0',
+          mode === 'drawer' ? 'inset-y-0 right-0 w-[min(34rem,92vw)] border-l shadow-2xl' : 'inset-0',
         )}
       >
         {content}

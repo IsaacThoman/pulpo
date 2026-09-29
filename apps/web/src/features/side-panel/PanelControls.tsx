@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { ExternalLink, Maximize2, Minimize2, SquareArrowOutUpRight, X } from 'lucide-react'
+import { ExternalLink, Maximize2, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { ui } from '@/i18n/ui'
@@ -19,23 +19,14 @@ function IconButton({ label, shortcut, onClick, children }: { label: string; sho
   )
 }
 
-/** Open in a new tab, maximize/restore, and close, at the end of every panel header. */
+/** Open in a new tab, open in the main view, and close, at the end of every panel header. */
 export function PanelWindowButtons({ content }: { content: PanelContent }) {
   const actions = usePanelActions(content)
-  const elsewhere = actions.openElsewhere
   return (
     <>
-      {elsewhere && (
-        <IconButton label={elsewhere.newTab ? ui("Open in new tab") : ui("Open as page")} onClick={elsewhere.run}>
-          {elsewhere.newTab ? <ExternalLink /> : <SquareArrowOutUpRight />}
-        </IconButton>
-      )}
-      <IconButton
-        label={actions.maximized ? ui("Restore split view") : ui("Maximize panel")}
-        shortcut={isApplePlatform ? '⌘⇧↵' : 'Ctrl+Shift+Enter'}
-        onClick={actions.toggleMaximized}
-      >
-        {actions.maximized ? <Minimize2 /> : <Maximize2 />}
+      {actions.openInNewTab && <IconButton label={ui("Open in new tab")} onClick={actions.openInNewTab}><ExternalLink /></IconButton>}
+      <IconButton label={ui("Open in main view")} shortcut={isApplePlatform ? '⌘⇧↵' : 'Ctrl+Shift+Enter'} onClick={actions.openInMain}>
+        <Maximize2 />
       </IconButton>
       <IconButton label={ui("Close panel")} shortcut={panelShortcut('\\')} onClick={actions.close}><X /></IconButton>
     </>

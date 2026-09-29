@@ -18,26 +18,21 @@ interface SidePanelState {
   content: PanelContent | null
   /** The last thing shown, so the panel can be reopened after closing it. */
   lastContent: PanelContent | null
-  /** Temporarily fill the content area; the main view stays mounted underneath. */
-  maximized: boolean
   open: (content: PanelContent) => void
   close: () => void
   toggle: () => void
-  setMaximized: (maximized: boolean) => void
 }
 
 export const useSidePanel = create<SidePanelState>()((set, get) => ({
   content: null,
   lastContent: null,
-  maximized: false,
   open: (content) => set({ content, lastContent: content }),
-  close: () => set({ content: null, maximized: false }),
+  close: () => set({ content: null }),
   toggle: () => {
     const { content, lastContent } = get()
-    if (content) set({ content: null, maximized: false })
+    if (content) set({ content: null })
     else if (lastContent) set({ content: lastContent })
   },
-  setMaximized: (maximized) => set({ maximized: maximized && get().content !== null }),
 }))
 
 export function samePanelContent(left: PanelContent | null, right: PanelContent | null): boolean {

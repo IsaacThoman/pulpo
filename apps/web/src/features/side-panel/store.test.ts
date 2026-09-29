@@ -33,13 +33,11 @@ describe('side panel state', () => {
     expect(clampPanelWidth(600, 400)).toBe(360)
   })
 
-  it('reopens the last content and forgets maximize when closed', () => {
+  it('reopens the last content after closing', () => {
     const store = useSidePanel.getState()
     store.open({ kind: 'file', id: a })
-    store.setMaximized(true)
-    expect(useSidePanel.getState().maximized).toBe(true)
     store.close()
-    expect(useSidePanel.getState()).toMatchObject({ content: null, maximized: false })
+    expect(useSidePanel.getState().content).toBeNull()
     useSidePanel.getState().toggle()
     expect(useSidePanel.getState().content).toEqual({ kind: 'file', id: a })
   })

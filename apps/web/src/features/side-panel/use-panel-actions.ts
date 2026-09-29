@@ -42,19 +42,13 @@ export function useMainNavigate() {
 /** Panel header actions shared by every kind of panel content. */
 export function usePanelActions(content: PanelContent) {
   const go = useMainNavigate()
-  const maximized = useSidePanel((state) => state.maximized)
   const target = panelContentPath(content)
 
   return {
-    maximized,
-    toggleMaximized: () => useSidePanel.getState().setMaximized(!maximized),
     close: () => useSidePanel.getState().close(),
-    /**
-     * Shows the panel's content on its own: in a new browser tab, or on desktop (which has no
-     * tabs) by moving it into the main view.
-     */
-    openElsewhere: isDesktopRuntime()
-      ? { newTab: false, run: () => { useSidePanel.getState().close(); go(target) } }
-      : { newTab: true, run: () => { window.open(target, '_blank', 'noopener') } },
+    /** Makes the panel's content the main view: the panel closes and the page opens it. */
+    openInMain: () => { useSidePanel.getState().close(); go(target) },
+    /** A new browser tab; the desktop app has no tabs. */
+    openInNewTab: isDesktopRuntime() ? null : () => { window.open(target, '_blank', 'noopener') },
   }
 }

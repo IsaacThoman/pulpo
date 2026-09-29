@@ -16,7 +16,7 @@ Copying writes folders and documents in the same transaction that reserves stora
 
 Chats always live in the main view; the side panel holds Files beside them: a folder (a compact Files browser) or a file. Folders and files opened in the panel stay there, and the path above a panel file walks back up its folders. Alt/Option-click, or **Open to the side**, opens a Files item beside the current view. The panel is window state mirrored into `?side=file:<id>` or `?side=folder:<id>` (`folder:root` for My files), so reloads and shared links reopen it and navigation carries it along. It docks and resizes on wide windows, becomes a drawer below 1100px, and a full-screen sheet on phones.
 
-The header's **Open in new tab** button opens the item in its own browser tab; the desktop app, which has no tabs, shows **Open as page** instead, moving it into the main view. **Maximize** (Cmd/Ctrl+Shift+Enter) fills the content area while the main view stays mounted, and navigating the main view restores the split. Cmd/Ctrl+\ hides or reopens the panel. Keys go to the Files view last clicked; before any click only the page listens.
+The header's **Open in main view** button (maximize icon, Cmd/Ctrl+Shift+Enter) makes the panel's folder or file the main view: the panel closes and the main view navigates to it, replacing the chat (browser back returns to it). On the web, **Open in new tab** opens the item in its own tab. Cmd/Ctrl+\ hides or reopens the panel. Keys go to the Files view last clicked; before any click only the page listens.
 
 ## Agent files
 
