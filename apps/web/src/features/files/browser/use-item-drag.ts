@@ -27,8 +27,12 @@ export interface ItemDragState {
 
 const IDLE: ItemDragState = { phase: 'idle', nodes: [], origins: [], start: { x: 0, y: 0 }, releasedAt: null, homes: [], tile: false }
 
-function rowRect(id: string): DOMRect | null {
-  return document.querySelector<HTMLElement>(`[data-file-id="${CSS.escape(id)}"]`)?.getBoundingClientRect() ?? null
+/**
+ * An item's rectangle in the view the drag started in. The same folder can be open on the page
+ * and in the side panel, so a document-wide lookup could find the other view's copy.
+ */
+function rowRect(id: string, scope: ParentNode): DOMRect | null {
+  return scope.querySelector<HTMLElement>(`[data-file-id="${CSS.escape(id)}"]`)?.getBoundingClientRect() ?? null
 }
 
 /**
@@ -86,6 +90,8 @@ export function useItemDrag(options: {
   // The active drag, set synchronously so a release before React re-renders is still handled.
   const session = useRef<ItemDragState | null>(null)
   const scrollStart = useRef<{ element: HTMLElement | null; left: number; top: number }>({ element: null, left: 0, top: 0 })
+  // The view the drag started in; item rectangles are looked up only there.
+  const scope = useRef<ParentNode>(document)
 
   const finish = useCallback((dropped: boolean) => {
     cleanup.current?.()
@@ -112,7 +118,7 @@ export function useItemDrag(options: {
       })
       setState(IDLE)
     } else {
-      const homes = current.nodes.map((node, index) => rowRect(node.id) ?? current.origins[index] ?? current.origins[0]!)
+      const homes = current.nodes.map((node, index) => rowRect(node.id, scope.current) ?? current.origins[index] ?? current.origins[0]!)
       setState({ ...current, phase: 'returning', releasedAt, homes })
     }
   }, [])
@@ -163,8 +169,9 @@ export function useItemDrag(options: {
         if (Math.hypot(moveEvent.clientX - startX, moveEvent.clientY - startY) < DRAG_THRESHOLD_PX) return
         started = true
         const nodes = optionsRef.current.resolveNodes(node)
-        const origins = nodes.map((item) => rowRect(item.id)).filter((rect): rect is DOMRect => Boolean(rect))
         viewport = (event.target as Element).closest<HTMLElement>('[data-slot="scroll-area-viewport"]')
+        scope.current = viewport ?? document
+        const origins = nodes.map((item) => rowRect(item.id, scope.current)).filter((rect): rect is DOMRect => Boolean(rect))
         scrollStart.current = { element: viewport, left: viewport?.scrollLeft ?? 0, top: viewport?.scrollTop ?? 0 }
         document.body.style.userSelect = 'none'
         window.getSelection()?.removeAllRanges()
