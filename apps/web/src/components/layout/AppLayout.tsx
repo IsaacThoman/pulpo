@@ -16,6 +16,7 @@ import { useSettings } from '@/stores/settings'
 import { useDesktopChrome } from '@/stores/desktopChrome'
 import { isDesktopRuntime } from '@/lib/runtime'
 import { SidePanel } from '@/features/side-panel/SidePanel'
+import { splitFits, useSidePanel } from '@/features/side-panel/store'
 import { FileToasts } from '@/features/files/browser/FileToasts'
 import { useSidePanelUrl } from '@/features/side-panel/use-side-panel-url'
 
@@ -25,8 +26,9 @@ const SettingsModal = lazy(() => import('@/components/settings/SettingsModal').t
 export function AppLayout() {
   const [collapsed, setCollapsed] = useState(() => window.matchMedia('(width < 750px)').matches)
   const [mobile, setMobile] = useState(() => window.matchMedia('(width < 750px)').matches)
-  // Below this width a docked side panel would crowd the main view, so it becomes a drawer.
-  const [narrow, setNarrow] = useState(() => window.matchMedia('(width < 1100px)').matches)
+  // The room beside the sidebar that the main view and the side panel share.
+  const [contentWidth, setContentWidth] = useState(() => window.innerWidth)
+  const contentRef = useRef<HTMLDivElement>(null)
   const [mobileOpen, setMobileOpen] = useState(false)
   const [sidebarTransitions, setSidebarTransitions] = useState(true)
   const [searchOpen, setSearchOpen] = useState(false)
@@ -73,12 +75,23 @@ export function AppLayout() {
 
   useSidePanelUrl()
 
-  useEffect(() => {
-    const query = window.matchMedia('(width < 1100px)')
-    const update = () => setNarrow(query.matches)
-    query.addEventListener('change', update)
-    return () => query.removeEventListener('change', update)
+  useLayoutEffect(() => {
+    const element = contentRef.current
+    if (!element) return
+    const measure = () => setContentWidth(element.clientWidth)
+    measure()
+    // The sidebar collapsing changes the room without resizing the window, hence the observer.
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', measure)
+      return () => window.removeEventListener('resize', measure)
+    }
+    const observer = new ResizeObserver(measure)
+    observer.observe(element)
+    return () => observer.disconnect()
   }, [])
+  // Phones never split; elsewhere the panel shows only beside a main view of usable width.
+  const splitRoom = mobile ? 0 : contentWidth
+  useEffect(() => { useSidePanel.setState({ splitAvailable: splitFits(splitRoom) }) }, [splitRoom])
 
   useEffect(() => {
     if (sidebarTransitions) return
@@ -202,12 +215,14 @@ export function AppLayout() {
               openSettings('general')
             }}
           />}
-          <main className="app-main min-w-0 flex-1 overflow-hidden">
-            <Suspense fallback={<div className="h-full bg-background" aria-label={ui("Loading view")} />}>
-              <Outlet />
-            </Suspense>
-          </main>
-          {!adminChatView && <SidePanel mode={mobile ? 'sheet' : narrow ? 'drawer' : 'docked'} />}
+          <div ref={contentRef} className="flex h-full min-w-0 flex-1">
+            <main className="app-main min-w-0 flex-1 overflow-hidden">
+              <Suspense fallback={<div className="h-full bg-background" aria-label={ui("Loading view")} />}>
+                <Outlet />
+              </Suspense>
+            </main>
+            {!adminChatView && <SidePanel available={splitRoom} />}
+          </div>
           {/* One host for Files undo toasts, whether Files is on the page or in the panel. */}
           {!adminChatView && <FileToasts />}
         </div>

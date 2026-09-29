@@ -2,9 +2,11 @@ import { create } from 'zustand'
 
 /** URL search parameter that mirrors the side panel, e.g. `?side=file:<id>`. */
 export const SIDE_PANEL_PARAM = 'side'
-export const SIDE_PANEL_MIN_WIDTH = 360
+export const SIDE_PANEL_MIN_WIDTH = 320
+/** The main view never gets narrower than this beside the panel. */
+export const MAIN_VIEW_MIN_WIDTH = 360
 const WIDTH_STORAGE_KEY = 'pulpo.sidePanel.width'
-const DEFAULT_WIDTH = 520
+export const DEFAULT_PANEL_WIDTH = 520
 
 /**
  * What the side panel shows: a file, or a folder of the Files browser (`null` is My files).
@@ -21,11 +23,17 @@ interface SidePanelState {
   open: (content: PanelContent) => void
   close: () => void
   toggle: () => void
+  /**
+   * Whether the panel fits beside the main view. When it does not, the panel is not shown (it is
+   * never laid over the main view) and things opened "to the side" open in the main view instead.
+   */
+  splitAvailable: boolean
 }
 
 export const useSidePanel = create<SidePanelState>()((set, get) => ({
   content: null,
   lastContent: null,
+  splitAvailable: true,
   open: (content) => set({ content, lastContent: content }),
   close: () => set({ content: null }),
   toggle: () => {
@@ -57,9 +65,14 @@ export function parsePanelContent(value: string | null): PanelContent | null {
   return null
 }
 
-/** Keeps the main view usable: the panel takes at most 70% of the window. */
-export function clampPanelWidth(width: number, viewport: number): number {
-  return Math.round(Math.min(Math.max(width, SIDE_PANEL_MIN_WIDTH), Math.max(SIDE_PANEL_MIN_WIDTH, viewport * 0.7)))
+/** Whether a panel and the main view both fit, at their minimum widths, in `available` pixels. */
+export function splitFits(available: number): boolean {
+  return available >= SIDE_PANEL_MIN_WIDTH + MAIN_VIEW_MIN_WIDTH
+}
+
+/** Keeps both views usable: the panel is at least its minimum and leaves the main view its own. */
+export function clampPanelWidth(width: number, available: number): number {
+  return Math.round(Math.min(Math.max(width, SIDE_PANEL_MIN_WIDTH), Math.max(SIDE_PANEL_MIN_WIDTH, available - MAIN_VIEW_MIN_WIDTH)))
 }
 
 export function readPanelWidth(): number {
@@ -67,7 +80,7 @@ export function readPanelWidth(): number {
     const saved = Number(localStorage.getItem(WIDTH_STORAGE_KEY))
     if (Number.isFinite(saved) && saved > 0) return saved
   } catch { /* the preference is optional */ }
-  return DEFAULT_WIDTH
+  return DEFAULT_PANEL_WIDTH
 }
 
 export function writePanelWidth(width: number): void {

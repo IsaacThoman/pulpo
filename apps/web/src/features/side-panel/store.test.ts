@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { clampPanelWidth, parsePanelContent, serializePanelContent, useSidePanel, type PanelContent } from './store'
+import { clampPanelWidth, parsePanelContent, serializePanelContent, splitFits, useSidePanel, type PanelContent } from './store'
 
 const a = '0b4f6a3e-1c2d-4e5f-8a9b-0c1d2e3f4a5b'
 const b = '1b4f6a3e-1c2d-4e5f-8a9b-0c1d2e3f4a5c'
@@ -26,11 +26,13 @@ describe('side panel state', () => {
     expect(parsePanelContent(null)).toBeNull()
   })
 
-  it('keeps the panel between its minimum and 70% of the window', () => {
-    expect(clampPanelWidth(100, 1600)).toBe(360)
-    expect(clampPanelWidth(2000, 1600)).toBe(1120)
+  it('fits the panel beside a usable main view', () => {
+    expect(clampPanelWidth(100, 1600)).toBe(320)
+    expect(clampPanelWidth(2000, 1600)).toBe(1240)
     expect(clampPanelWidth(600, 1600)).toBe(600)
-    expect(clampPanelWidth(600, 400)).toBe(360)
+    expect(clampPanelWidth(600, 800)).toBe(440)
+    expect(splitFits(680)).toBe(true)
+    expect(splitFits(679)).toBe(false)
   })
 
   it('reopens the last content after closing', () => {

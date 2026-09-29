@@ -38,7 +38,7 @@ import { useDocSession, type PresencePeer } from '@/features/files/editor/use-do
 import { FilePreviewBody } from '@/features/files/FilePreviewDialog'
 import { MarkdownConversionDialog } from '@/features/files/MarkdownConversionDialog'
 import { PanelWindowButtons } from '@/features/side-panel/PanelControls'
-import { panelContentPath, useMainNavigate } from '@/features/side-panel/use-panel-actions'
+import { openBeside, panelContentPath, useMainNavigate } from '@/features/side-panel/use-panel-actions'
 import { SplitViewButton } from '@/features/side-panel/AgentActions'
 import { usePublishFilesView, type AgentItem, type FilesViewPlace } from '@/features/side-panel/agent'
 import { useSidePanel, type PanelContent } from '@/features/side-panel/store'
@@ -154,7 +154,7 @@ function FilePath({ ancestors, inPanel }: { ancestors: FileNode[]; inPanel: bool
         useSidePanel.getState().close()
         goMain(panelContentPath(folder))
       } else {
-        useSidePanel.getState().open(folder)
+        openBeside(folder, goMain)
       }
     } else if (inPanel) {
       event.preventDefault()
