@@ -1,0 +1,1 @@
+ALTER TABLE "chats" ADD COLUMN "file_scope_ids" jsonb DEFAULT '[]'::jsonb NOT NULL;

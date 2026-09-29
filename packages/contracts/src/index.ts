@@ -6,6 +6,7 @@ import { eventHasAssistantReplyText } from './response-timing.js'
 export * from './avatar-crop.js'
 export * from './response-timing.js'
 import type { ComposerAck, ComposerSnapshot, ComposerWrite } from './composer.js'
+import type { DocAck, DocClosedEvent, DocJoinInput, DocJoinResult, DocUpdateMessage } from './files.js'
 export * from './composer.js'
 import { z } from 'zod'
 import { DEFAULT_MAX_INLINE_IMAGES, MAX_CONFIGURABLE_INLINE_IMAGES, MAX_MESSAGE_ATTACHMENTS } from './attachment-limits.js'
@@ -853,6 +854,9 @@ export type ModelPreferences = z.infer<typeof modelPreferencesSchema>
 
 /** Account-scoped visibility controls for optional primary sidebar links. */
 export const sidebarPinsSchema = z.object({
+  // Shown by default; saved preferences that predate these keys keep them visible.
+  searchChats: z.boolean().default(true),
+  files: z.boolean().default(true),
   usage: z.boolean().default(false),
   billing: z.boolean().default(false),
   friends: z.boolean().default(false),
@@ -1344,6 +1348,7 @@ export const authSettingsSchema = z.object({
   pendingMessage: z.string().max(2_000).default('Your account is pending approval. An admin will review it shortly.'),
   defaultSignupRole: z.enum(['pending', 'user']).default('pending'),
   apiKeysEnabled: z.boolean().default(true),
+  filesEnabled: z.boolean().default(true),
   inviteCodesEnabled: z.boolean().default(false),
   newAccountModelDefaults: newAccountModelDefaultsSchema.default(() => newAccountModelDefaultsSchema.parse({})),
 })
@@ -1687,6 +1692,16 @@ export const updateApiKeySchema = z.object({
   message: 'Provide at least one API key setting',
 })
 
+/**
+ * A chat's Files scope entry: a file or folder id (folders include their subfolders), or `root`
+ * for all of the owner's files. A folder and items inside it can both be listed: the items are
+ * ones the user pointed out.
+ */
+export const FILE_SCOPE_ROOT = 'root'
+export const MAX_CHAT_FILE_SCOPES = 20
+export const fileScopeIdsSchema = z.array(z.union([z.literal(FILE_SCOPE_ROOT), idSchema])).max(MAX_CHAT_FILE_SCOPES)
+  .transform((ids) => [...new Set(ids.map((id) => id.toLowerCase()))])
+
 export const chatSummarySchema = z.object({
   id: idSchema,
   title: z.string(),
@@ -1695,6 +1710,7 @@ export const chatSummarySchema = z.object({
   folderId: idSchema.nullable(),
   sortOrder: z.number().int().optional(),
   temporary: z.boolean(),
+  fileScopeIds: z.array(z.string()).default([]),
   expiresAt: isoDateSchema.nullable().optional(),
   updatedAt: isoDateSchema,
   activeResponseId: idSchema.nullable(),
@@ -1714,6 +1730,8 @@ export const createChatSchema = z.object({
   title: z.string().trim().min(1).max(200).optional(),
   temporary: z.boolean().default(false),
   autoExpire: z.boolean().default(false),
+  /** Files items the agent may read and edit in this chat. */
+  fileScopeIds: fileScopeIdsSchema.default([]),
 })
 
 export const updateChatSchema = z.object({
@@ -1723,6 +1741,7 @@ export const updateChatSchema = z.object({
   modelId: z.string().min(1).optional(),
   sortOrder: z.number().int().optional(),
   autoExpire: z.boolean().optional(),
+  fileScopeIds: fileScopeIdsSchema.optional(),
 })
 export type UpdateChatInput = z.infer<typeof updateChatSchema>
 
@@ -1849,7 +1868,7 @@ export const syncRequestSchema = z.object({
 })
 export type SyncRequest = z.infer<typeof syncRequestSchema>
 
-export const stateInvalidationScopeSchema = z.enum(['chats', 'folders', 'models', 'usage', 'settings', 'friends', 'pool', 'billing', 'shelved-drafts'])
+export const stateInvalidationScopeSchema = z.enum(['chats', 'folders', 'models', 'usage', 'settings', 'friends', 'pool', 'billing', 'shelved-drafts', 'files'])
 export type StateInvalidationScope = z.infer<typeof stateInvalidationScopeSchema>
 
 export const syncResultSchema = z.object({
@@ -1871,6 +1890,10 @@ export interface ClientToServerEvents {
   'response.unsubscribe': (input: { responseId: string }) => void
   'admin.usage.subscribe': () => void
   'admin.usage.unsubscribe': () => void
+  'doc.join': (input: DocJoinInput, ack: (result: DocJoinResult) => void) => void
+  'doc.leave': (input: { docId: string }) => void
+  'doc.update': (input: DocUpdateMessage, ack: (result: DocAck) => void) => void
+  'doc.awareness': (input: DocUpdateMessage) => void
 }
 
 export interface ChatStartedEvent {
@@ -1889,6 +1912,13 @@ export interface ServerToClientEvents {
   'usage.changed': (input: { balanceMicros: number; spentThisMonthMicros: number }) => void
   'sync.result': (result: SyncResult) => void
   'admin.usage.upsert': (event: z.infer<typeof adminUsageEventSchema>) => void
+  'doc.update': (event: DocUpdateMessage) => void
+  'doc.awareness': (event: DocUpdateMessage) => void
+  /** A peer joined; everyone re-sends their awareness state so it can draw existing cursors. */
+  'doc.awareness-query': (event: { docId: string }) => void
+  'doc.peer-left': (event: { docId: string; clientIds: number[] }) => void
+  'doc.closed': (event: DocClosedEvent) => void
 }
 
 export * from "./shelf.js"
+export * from "./files.js"

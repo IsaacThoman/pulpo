@@ -745,6 +745,7 @@ export function Sidebar({
   })
   const pendingSocialCount = (pendingFriendsQuery.data?.count ?? 0) + (pendingPoolsQuery.data?.count ?? 0)
   const apiKeysEnabled = useAuth((s) => s.apiKeysEnabled)
+  const filesEnabled = useAuth((s) => s.filesEnabled)
   const billingEnabled = useAuth((s) => s.billingEnabled)
   const billingQuery = useQuery({
     queryKey: ['billing', user?.id],
@@ -912,7 +913,7 @@ export function Sidebar({
   const accountNavItem = (
     key: SidebarPinKey,
     label: string,
-    path: string,
+    target: string | (() => void),
     icon: React.ReactNode,
     badge?: number,
   ) => {
@@ -920,7 +921,7 @@ export function Sidebar({
     const action = pinned ? 'Unpin' : 'Pin'
     return (
       <div key={key} className="group/account-nav relative">
-        <DropdownMenuItem className="w-full pr-9" onClick={() => go(path)}>
+        <DropdownMenuItem className="w-full pr-9" onClick={() => typeof target === 'string' ? go(target) : target()}>
           {icon}
           <span className="flex min-w-0 flex-1 items-center gap-1.5">
             <span className="min-w-0 truncate">{label}</span>
@@ -1041,7 +1042,8 @@ export function Sidebar({
         {/* primary nav */}
         <div className="space-y-0.5 px-2">
           {iconBtn(t('chat.newChat'), startNewChat, <SquarePen className="size-4" />)}
-          {iconBtn(t('sidebar.searchChats'), onOpenSearch, <Search className="size-4" />)}
+          {sidebarPins.searchChats && iconBtn(t('sidebar.searchChats'), onOpenSearch, <Search className="size-4" />)}
+          {filesEnabled && sidebarPins.files && iconBtn(t('sidebar.files'), () => go('/files'), <FolderIcon className="size-4" />)}
           {sidebarPins.usage && iconBtn(t('sidebar.usage'), () => go('/usage'), <BarChart3 className="size-4" />)}
           {billingEnabled && sidebarPins.billing && iconBtn(t('sidebar.billing'), () => go('/billing'), <CreditCard className="size-4" />)}
           {sidebarPins.friends && iconBtn(t('sidebar.friends'), () => go('/friends'), <UsersRound className="size-4" />, pendingSocialCount)}
@@ -1240,6 +1242,8 @@ export function Sidebar({
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent side="top" align="start" className="w-56">
+            {accountNavItem('searchChats', t('sidebar.searchChats'), onOpenSearch, <Search />)}
+            {filesEnabled && accountNavItem('files', t('sidebar.files'), '/files', <FolderIcon />)}
             {accountNavItem('usage', t('sidebar.usage'), '/usage', <BarChart3 />)}
             {accountNavItem('friends', t('sidebar.friends'), '/friends', <UsersRound />, pendingSocialCount)}
             {apiKeysEnabled && accountNavItem('apiKeys', t('sidebar.apiKeys'), '/api-keys', <KeyRound />)}

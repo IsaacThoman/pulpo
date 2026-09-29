@@ -6,7 +6,7 @@ import { usernameSchema } from '@pulpo/contracts'
 import { createPasswordHash, requireAdmin } from '../auth/service.js'
 import { clearTwoFactor, hasTwoFactor, verifySecondFactor } from '../auth/two-factor.js'
 import { db } from '../database/client.js'
-import { apiKeys, applicationSettings, attachments, auditEvents, billingAccounts, creditLedger, managementTokens, passwordCredentials, passwordResetTokens, sessions, usageEvents, userPreferences, users, userTotpCredentials } from '../database/schema.js'
+import { apiKeys, applicationSettings, attachments, auditEvents, fileNodes, billingAccounts, creditLedger, managementTokens, passwordCredentials, passwordResetTokens, sessions, usageEvents, userPreferences, users, userTotpCredentials } from '../database/schema.js'
 import { newUserStorageLimit, refreshStorageLimit } from '../billing/storage-entitlements.js'
 import { hashToken, randomToken } from '../lib/crypto.js'
 import { AppError, notFound } from '../lib/errors.js'
@@ -82,12 +82,16 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
         from ${sessions}
         where ${sessions.userId} = ${users.id}
       )`,
-      storageBytes: sql<number>`(
-        select coalesce(sum(${attachments.sizeBytes}), 0)::bigint
+      storageBytes: sql<number>`((
+        select coalesce(sum(${attachments.sizeBytes}), 0)
         from ${attachments}
         where ${attachments.userId} = ${users.id}
           and ${attachments.status} in ('pending', 'ready')
-      )`,
+      ) + (
+        select coalesce(sum(${fileNodes.sizeBytes}), 0)
+        from ${fileNodes}
+        where ${fileNodes.ownerUserId} = ${users.id}
+      ))::bigint`,
       twoFactorEnabled: sql<boolean>`exists (
         select 1 from ${userTotpCredentials}
         where ${userTotpCredentials.userId} = ${users.id}

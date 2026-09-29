@@ -1,4 +1,5 @@
 import { DEFAULT_AGENT_COST_LIMIT_MICROS, imageGenerationPreferencesSchema, type ImageGenerationPreferences, speechPreferencesSchema, type SpeechPreferences } from '@pulpo/contracts'
+import { DEFAULT_SIDEBAR_PINS, normalizeSidebarPins } from '@/lib/sidebar-pins'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { PROFILE_CHANGE_EVENT } from '@/lib/profile-events'
@@ -102,7 +103,7 @@ export const DEFAULT_SETTINGS = {
   automaticChatExpiration: '24h' as AutomaticChatExpiration,
   newChatAutoExpire: false,
   defaultModelId: '',
-  sidebarPins: { usage: false, billing: false, friends: false, apiKeys: false },
+  sidebarPins: DEFAULT_SIDEBAR_PINS,
   chatSortMode: 'default' as ChatSortMode,
   generation: {},
 }
@@ -139,6 +140,7 @@ export const useSettings = create<SettingsState>()(
           speech: speechPreferencesSchema.catch({ modelId: null, models: {} }).parse(saved.speech),
           language: normalizeLanguage(saved.language),
           animationSpeed: normalizeAnimationSpeed(saved.animationSpeed),
+          sidebarPins: normalizeSidebarPins(saved.sidebarPins),
         }
       },
     }

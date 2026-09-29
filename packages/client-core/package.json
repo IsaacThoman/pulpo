@@ -9,6 +9,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./doc-schema": {
+      "types": "./dist/doc-schema/index.d.ts",
+      "import": "./dist/doc-schema/index.js"
     }
   },
   "scripts": {
@@ -17,7 +21,15 @@
   },
   "dependencies": {
     "@pulpo/contracts": "0.1.0",
-    "marked": "^15.0.12"
+    "@tiptap/core": "^3.31.3",
+    "@tiptap/extension-list": "^3.31.3",
+    "@tiptap/extension-table": "^3.31.3",
+    "@tiptap/markdown": "^3.31.3",
+    "@tiptap/pm": "^3.31.3",
+    "@tiptap/starter-kit": "^3.31.3",
+    "@tiptap/y-tiptap": "^3.0.9",
+    "marked": "^15.0.12",
+    "yjs": "^13.6.33"
   },
   "devDependencies": {
     "typescript": "~6.0.2",

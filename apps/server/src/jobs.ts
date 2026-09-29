@@ -20,6 +20,10 @@ export type EmbeddingJob =
   | { type: 'index-user'; userId: string }
   | { type: 'delete-user'; userId: string }
 
+export interface FileDocJob {
+  nodeId: string
+}
+
 const connection = { url: getConfig().REDIS_URL }
 
 export const generationQueue = new Queue<GenerationJob>('generation', {
@@ -52,4 +56,10 @@ export const embeddingQueue = new Queue<EmbeddingJob>('episodic-memory', {
 export const payloadRetentionQueue = new Queue('payload-retention', {
   connection,
   defaultJobOptions: { attempts: 3, backoff: { type: 'exponential', delay: 1_000 }, removeOnComplete: 100, removeOnFail: 100 },
+})
+
+/** Folds collaborative document update logs into their snapshot and refreshes derived Markdown. */
+export const fileDocQueue = new Queue<FileDocJob>('file-docs', {
+  connection,
+  defaultJobOptions: { attempts: 3, backoff: { type: 'exponential', delay: 2_000 }, removeOnComplete: true, removeOnFail: 1_000 },
 })

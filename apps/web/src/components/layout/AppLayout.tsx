@@ -15,6 +15,9 @@ import { ui } from '@/i18n/ui'
 import { useSettings } from '@/stores/settings'
 import { useDesktopChrome } from '@/stores/desktopChrome'
 import { isDesktopRuntime } from '@/lib/runtime'
+import { SidePanel } from '@/features/side-panel/SidePanel'
+import { FileToasts } from '@/features/files/browser/FileToasts'
+import { useSidePanelUrl } from '@/features/side-panel/use-side-panel-url'
 
 const SearchModal = lazy(() => import('./SearchModal').then((module) => ({ default: module.SearchModal })))
 const SettingsModal = lazy(() => import('@/components/settings/SettingsModal').then((module) => ({ default: module.SettingsModal })))
@@ -22,6 +25,8 @@ const SettingsModal = lazy(() => import('@/components/settings/SettingsModal').t
 export function AppLayout() {
   const [collapsed, setCollapsed] = useState(() => window.matchMedia('(width < 750px)').matches)
   const [mobile, setMobile] = useState(() => window.matchMedia('(width < 750px)').matches)
+  // Below this width a docked side panel would crowd the main view, so it becomes a drawer.
+  const [narrow, setNarrow] = useState(() => window.matchMedia('(width < 1100px)').matches)
   const [mobileOpen, setMobileOpen] = useState(false)
   const [sidebarTransitions, setSidebarTransitions] = useState(true)
   const [searchOpen, setSearchOpen] = useState(false)
@@ -62,6 +67,15 @@ export function AppLayout() {
       if (query.matches) setCollapsed(true)
       else setMobileOpen(false)
     }
+    query.addEventListener('change', update)
+    return () => query.removeEventListener('change', update)
+  }, [])
+
+  useSidePanelUrl()
+
+  useEffect(() => {
+    const query = window.matchMedia('(width < 1100px)')
+    const update = () => setNarrow(query.matches)
     query.addEventListener('change', update)
     return () => query.removeEventListener('change', update)
   }, [])
@@ -193,6 +207,9 @@ export function AppLayout() {
               <Outlet />
             </Suspense>
           </main>
+          {!adminChatView && <SidePanel mode={mobile ? 'sheet' : narrow ? 'drawer' : 'docked'} />}
+          {/* One host for Files undo toasts, whether Files is on the page or in the panel. */}
+          {!adminChatView && <FileToasts />}
         </div>
         {searchOpen && <Suspense fallback={null}>
           <SearchModal

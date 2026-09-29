@@ -24,12 +24,15 @@ vi.mock('./Sidebar', () => ({
 }))
 
 let narrow = false
-let resize: () => void
+// Every media query the layout watches reacts to the simulated resize.
+let listeners: Array<() => void> = []
+const resize = () => { for (const listener of listeners) listener() }
 beforeEach(() => {
   narrow = false
+  listeners = []
   Object.defineProperty(window, 'matchMedia', { configurable: true, value: vi.fn(() => ({
     get matches() { return narrow },
-    addEventListener: (_: string, listener: () => void) => { resize = listener },
+    addEventListener: (_: string, listener: () => void) => { listeners.push(listener) },
     removeEventListener: vi.fn(),
   })) })
   Object.defineProperty(window, 'pulpoDesktop', { configurable: true, value: { os: 'darwin' } })

@@ -56,6 +56,7 @@ import { lineageFromLeaf } from '../messages/branching.js'
 import { responseUserAttachmentIds } from '../messages/input.js'
 import { responseInputText } from '../messages/input.js'
 import { createGenerationMemoryTools } from './memory-tools.js'
+import { createFilesTools, describeFileScope, loadFileScope } from '../files/agent-tools.js'
 import { readEpisodicMemorySettings } from '../episodic-memory/settings.js'
 import { generationSystemPrompt, loadGenerationMemory } from '../responses/memory-context.js'
 import { withGenerationTimeContext } from '../responses/time-context.js'
@@ -172,8 +173,13 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
     parsePersonalizationSettings(personalizationRow?.value),
     preferenceValues,
   )
-  const [chatState] = await db.select({ temporary: chats.temporary }).from(chats)
+  const [chatState] = await db.select({ temporary: chats.temporary, fileScopeIds: chats.fileScopeIds }).from(chats)
     .where(eq(chats.id, record.response.chatId)).limit(1)
+  // Files attached to the chat, reachable only through the files tools and only while Files is on.
+  const fileScope = parseAuthSettings(attachmentSettingsRow?.value).filesEnabled
+    ? await loadFileScope(record.response.userId, chatState?.fileScopeIds ?? [])
+    : { roots: [], attached: [] }
+  const fileScopeContext = fileScope.roots.length ? describeFileScope(fileScope) : ''
   const memory = await loadGenerationMemory({
     chat: chatState,
     memoryEnabled: preferenceValues.memoryEnabled,
@@ -195,7 +201,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
     customInstructions,
     memoryContext,
   )
-  const currentAgentSystemPrompt = [baseAgentSystemPrompt, recallContext].filter(Boolean).join('\n\n')
+  const currentAgentSystemPrompt = [baseAgentSystemPrompt, fileScopeContext, recallContext].filter(Boolean).join('\n\n')
   if (!settings.enabled || !record.model.agentEnabled) throw new Error('Agent mode is no longer available')
   const allHistory = await db.select().from(responses).where(and(
     eq(responses.chatId, record.response.chatId),
@@ -697,6 +703,13 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
     maxOutputBytes: settings.maxToolOutputBytes,
     onOperationStarted: markToolStarted,
   })
+  const filesTools = createFilesTools({
+    userId: record.response.userId,
+    responseId,
+    scope: fileScope,
+    maxOutputBytes: settings.maxToolOutputBytes,
+    onOperationStarted: markToolStarted,
+  })
   const attachFile = async (operationId: string, path: string, name: string | undefined, signal?: AbortSignal) => {
     const [existing] = await db.select().from(attachments).where(and(
       eq(attachments.sourceResponseId, responseId), eq(attachments.sourceToolCallId, operationId), eq(attachments.status, 'ready'),
@@ -745,6 +758,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
         ...configuredWebTools,
         ...imageTools,
         ...memoryTools,
+        ...filesTools,
       ],
       messages: resumedMessages,
       thinkingLevel: initialParameters.reasoning,

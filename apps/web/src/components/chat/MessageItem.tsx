@@ -58,6 +58,8 @@ import { writeClipboardText } from '@/lib/clipboard'
 import { ui, activeLocale } from '@/i18n/ui'
 import { toolActivityPresentation } from './tool-activity-presentation'
 import { UsageCostBreakdown } from '@/components/usage/UsageCostBreakdown'
+import { FileChangesBar } from '@/features/files/FileChangesBar'
+import { changedFiles } from '@/features/files/file-changes'
 
 function CopyButton({ text }: { text: string }) {
   const { t } = useTranslation()
@@ -895,6 +897,8 @@ export const MessageItem = memo(function MessageItem({
             </div>
           )}
         </div>
+
+        {message.done && !chat.expired && changedFiles(message.outputItems) && <FileChangesBar responseId={message.id} />}
 
         {(message.done || hasMultipleBranches(message.branch)) && (
           <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-1">

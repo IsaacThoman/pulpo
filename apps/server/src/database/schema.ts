@@ -16,6 +16,7 @@ import {
   timestamp,
   uniqueIndex,
   uuid,
+  type AnyPgColumn,
 } from 'drizzle-orm/pg-core'
 
 const halfvec = customType<{ data: number[]; driverData: string }>({
@@ -25,6 +26,12 @@ const halfvec = customType<{ data: number[]; driverData: string }>({
 })
 
 const tsvector = customType<{ data: string }>({ dataType: () => 'tsvector' })
+
+const bytea = customType<{ data: Uint8Array; driverData: Buffer }>({
+  dataType: () => 'bytea',
+  toDriver: (value) => Buffer.from(value.buffer, value.byteOffset, value.byteLength),
+  fromDriver: (value) => new Uint8Array(value.buffer, value.byteOffset, value.byteLength),
+})
 
 const timestamps = {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -450,6 +457,8 @@ export const chats = pgTable('chats', {
   pinned: boolean('pinned').notNull().default(false),
   sortOrder: integer('sort_order').notNull().default(0),
   temporary: boolean('temporary').notNull().default(false),
+  // Files items the agent may use: file_nodes ids (folders include subfolders), or 'root' for all files.
+  fileScopeIds: jsonb('file_scope_ids').$type<string[]>().notNull().default([]),
   activeBranchLeafId: uuid('active_branch_leaf_id'),
   activeResponseId: uuid('active_response_id'),
   expiresAt: timestamp('expires_at', { withTimezone: true }),
@@ -815,6 +824,103 @@ export const userMemoryDocumentRevisions = pgTable('user_memory_document_revisio
   check('user_memory_document_revisions_content_length_check', sql`char_length(${table.content}) <= 16000`),
   check('user_memory_document_revisions_revision_check', sql`${table.revision} >= 0`),
   check('user_memory_document_revisions_editor_check', sql`${table.editor} in ('user', 'agent')`),
+])
+
+/** Account-owned Files tree. Distinct from `folders`, which only groups chats. */
+export const fileNodes = pgTable('file_nodes', {
+  id: uuid('id').primaryKey(),
+  // Access always resolves through the owner today; sharing will add grants beside it.
+  ownerUserId: uuid('owner_user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  parentId: uuid('parent_id').references((): AnyPgColumn => fileNodes.id, { onDelete: 'cascade' }),
+  kind: text('kind').notNull(),
+  name: text('name').notNull(),
+  status: text('status').notNull().default('ready'),
+  mimeType: text('mime_type'),
+  sizeBytes: bigint('size_bytes', { mode: 'number' }).notNull().default(0),
+  objectKey: text('object_key'),
+  checksum: text('checksum'),
+  trashedAt: timestamp('trashed_at', { withTimezone: true }),
+  // The node the user trashed; its whole subtree shares this id so restore returns the batch.
+  trashRootId: uuid('trash_root_id'),
+  revision: integer('revision').notNull().default(0),
+  ...timestamps,
+}, (table) => [
+  uniqueIndex('file_nodes_live_name_unique').on(
+    table.ownerUserId,
+    sql`coalesce(${table.parentId}, '00000000-0000-0000-0000-000000000000'::uuid)`,
+    sql`lower(${table.name})`,
+  ).where(sql`${table.trashedAt} is null`),
+  index('file_nodes_owner_parent_idx').on(table.ownerUserId, table.parentId).where(sql`${table.trashedAt} is null`),
+  index('file_nodes_owner_trash_idx').on(table.ownerUserId, table.trashRootId).where(sql`${table.trashedAt} is not null`),
+  index('file_nodes_object_key_idx').on(table.objectKey),
+  check('file_nodes_kind_check', sql`${table.kind} in ('folder', 'doc', 'blob')`),
+  check('file_nodes_status_check', sql`${table.status} in ('pending', 'ready')`),
+  check('file_nodes_name_check', sql`char_length(${table.name}) between 1 and 255`),
+  check('file_nodes_size_check', sql`${table.sizeBytes} >= 0`),
+  check('file_nodes_blob_check', sql`(${table.kind} = 'blob') = (${table.objectKey} is not null)`),
+])
+
+/** Collaborative document state: a compacted Yjs update plus Markdown derived from it. */
+export const fileDocs = pgTable('file_docs', {
+  nodeId: uuid('node_id').primaryKey().references(() => fileNodes.id, { onDelete: 'cascade' }),
+  state: bytea('state').notNull(),
+  stateBytes: integer('state_bytes').notNull(),
+  // Log rows not yet folded into `state`; drives compaction scheduling.
+  pendingUpdates: integer('pending_updates').notNull().default(0),
+  markdown: text('markdown').notNull().default(''),
+  schemaVersion: integer('schema_version').notNull(),
+  lastEditedAt: timestamp('last_edited_at', { withTimezone: true }).notNull().defaultNow(),
+  ...timestamps,
+})
+
+/** Append-only Yjs updates awaiting compaction. Loading a doc merges `state` with every remaining row. */
+export const fileDocUpdates = pgTable('file_doc_updates', {
+  seq: bigint('seq', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+  nodeId: uuid('node_id').notNull().references(() => fileDocs.nodeId, { onDelete: 'cascade' }),
+  update: bytea('update').notNull(),
+  byteSize: integer('byte_size').notNull(),
+  origin: text('origin').notNull(),
+  actorUserId: uuid('actor_user_id').references(() => users.id, { onDelete: 'set null' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('file_doc_updates_node_seq_idx').on(table.nodeId, table.seq),
+  check('file_doc_updates_origin_check', sql`${table.origin} in ('client', 'agent', 'import', 'restore')`),
+])
+
+/**
+ * How a folder's grid view is arranged: item positions and whether they snap to cells. One row
+ * per folder that has been arranged; `folder_id` null is My files.
+ */
+export const fileFolderLayouts = pgTable('file_folder_layouts', {
+  id: uuid('id').primaryKey(),
+  ownerUserId: uuid('owner_user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  folderId: uuid('folder_id').references(() => fileNodes.id, { onDelete: 'cascade' }),
+  snapToGrid: boolean('snap_to_grid').notNull().default(true),
+  positions: jsonb('positions').$type<Record<string, { x: number; y: number }>>().notNull().default({}),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex('file_folder_layouts_owner_folder_unique').on(
+    table.ownerUserId,
+    sql`coalesce(${table.folderId}, '00000000-0000-0000-0000-000000000000'::uuid)`,
+  ),
+])
+
+/**
+ * What an agent response changed in Files, so the whole response can be undone: the Markdown a
+ * document had before the response first edited it, or an item the response created.
+ */
+export const fileAgentChanges = pgTable('file_agent_changes', {
+  id: uuid('id').primaryKey(),
+  responseId: uuid('response_id').notNull().references(() => responses.id, { onDelete: 'cascade' }),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  nodeId: uuid('node_id').notNull().references(() => fileNodes.id, { onDelete: 'cascade' }),
+  kind: text('kind').notNull(),
+  beforeMarkdown: text('before_markdown'),
+  revertedAt: timestamp('reverted_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex('file_agent_changes_response_node_unique').on(table.responseId, table.nodeId),
+  check('file_agent_changes_kind_check', sql`${table.kind} in ('edit', 'create')`),
 ])
 
 export const episodicMemoryGenerations = pgTable('episodic_memory_generations', {

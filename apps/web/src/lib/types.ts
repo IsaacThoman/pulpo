@@ -104,6 +104,8 @@ export interface Chat {
   sortOrder: number
   tags: string[]
   temporary: boolean
+  /** Files folders the agent may use (`root` means all files). */
+  fileScopeIds?: string[]
   expiresAt: number | null
   expired: boolean
   shareId?: string
