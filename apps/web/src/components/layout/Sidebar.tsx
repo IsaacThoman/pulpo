@@ -405,7 +405,7 @@ export function ChatRow({
         active
           ? 'bg-sidebar-accent text-sidebar-accent-foreground'
           : 'text-sidebar-foreground/80 hover:bg-sidebar-accent/60',
-        canDrag && 'cursor-grab active:cursor-grabbing',
+        canDrag && 'active:cursor-grabbing',
         dragging && 'opacity-40',
       )}
     >
