@@ -1128,9 +1128,6 @@ export function Sidebar({
             >
               {loose.length > 0 && (
                 <div className="mt-3">
-                  <div className="px-2 pb-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-                    {t('sidebar.chats')}
-                  </div>
                   <div className="space-y-0.5">
                     {loose.map((c) => {
                       const isDragging = drag.dragKind === 'chat' && drag.dragId === c.id

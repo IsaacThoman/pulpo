@@ -39,7 +39,7 @@ import { FilePreviewBody } from '@/features/files/FilePreviewDialog'
 import { MarkdownConversionDialog } from '@/features/files/MarkdownConversionDialog'
 import { PanelWindowButtons } from '@/features/side-panel/PanelControls'
 import { panelContentPath, useMainNavigate } from '@/features/side-panel/use-panel-actions'
-import { AgentActions, SplitViewButton } from '@/features/side-panel/AgentActions'
+import { SplitViewButton } from '@/features/side-panel/AgentActions'
 import { usePublishFilesView, type AgentItem, type FilesViewPlace } from '@/features/side-panel/agent'
 import { useSidePanel, type PanelContent } from '@/features/side-panel/store'
 
@@ -150,8 +150,12 @@ function FilePath({ ancestors, inPanel }: { ancestors: FileNode[]; inPanel: bool
     const folder = { kind: 'folder' as const, id }
     if (event.altKey) {
       event.preventDefault()
-      if (inPanel) goMain(panelContentPath(folder))
-      else useSidePanel.getState().open(folder)
+      if (inPanel) {
+        useSidePanel.getState().close()
+        goMain(panelContentPath(folder))
+      } else {
+        useSidePanel.getState().open(folder)
+      }
     } else if (inPanel) {
       event.preventDefault()
       useSidePanel.getState().open(folder)
@@ -197,7 +201,6 @@ function FileHeader({ node, ancestors, view, menu, children }: {
         {node ? <DocTitle node={node} /> : <div className="h-8" />}
       </div>
       {children}
-      {place && item && <AgentActions item={item} place={place} />}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button variant="ghost" size="icon-sm" aria-label={ui("Document actions")} disabled={!node}><MoreHorizontal /></Button>
