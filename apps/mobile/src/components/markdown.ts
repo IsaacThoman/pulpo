@@ -1,4 +1,4 @@
-export { normalizeMathDelimiters, unwrapBoxedMinipages } from '@pulpo/client-core'
+export { linkMarkdownImages, normalizeMathDelimiters, unwrapBoxedMinipages } from '@pulpo/client-core'
 
 /** Whether the first visible Markdown block is an ATX heading. */
 export function beginsWithMarkdownHeading(content: string): boolean {

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import i18n from '@/i18n'
-import { formatBalance, formatChartNumber, formatNumber, formatSecondsLabel, timeAgo } from './format'
+import { chatTimeGroup, formatBalance, formatChartNumber, formatNumber, formatSecondsLabel, timeAgo } from './format'
 
 describe('locale-aware formatting', () => {
   afterEach(async () => {
@@ -35,5 +35,18 @@ describe('timeAgo', () => {
   it('does not throw when a search result has an invalid timestamp', () => {
     expect(timeAgo(Number.NaN)).toBe('')
     expect(timeAgo(Number.POSITIVE_INFINITY)).toBe('')
+  })
+})
+
+describe('chatTimeGroup', () => {
+  const now = new Date(2026, 8, 29, 15, 0)
+  const at = (days: number, hour = 12) => new Date(2026, 8, 29 - days, hour).getTime()
+
+  it('buckets timestamps by calendar day relative to now', () => {
+    expect(chatTimeGroup(at(0, 0), now)).toBe('today')
+    expect(chatTimeGroup(at(1, 23), now)).toBe('yesterday')
+    expect(chatTimeGroup(at(7), now)).toBe('previous7')
+    expect(chatTimeGroup(at(30), now)).toBe('previous30')
+    expect(chatTimeGroup(at(31), now)).toBe('older')
   })
 })

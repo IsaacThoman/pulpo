@@ -10,6 +10,7 @@ import type { ShelfAttachment } from '@pulpo/client-core'
 import { useComposerSync } from './use-composer-sync'
 import { useFollowStartedChat } from './use-follow-started-chat'
 import { useMenuTriggerFocus } from './use-menu-trigger-focus'
+import { registerComposerFocus } from './composer-focus'
 import { webComposerSync } from '@/lib/local-first/composer-sync'
 import { MAX_MESSAGE_ATTACHMENTS, type ComposerState } from '@pulpo/contracts'
 import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, useSyncExternalStore, type Ref, type DragEvent as ReactDragEvent } from 'react'
@@ -197,6 +198,7 @@ export function Composer({
   const focusComposer = useCallback(() => ref.current?.focus({ preventScroll: true }), [])
   const presetMenuFocus = useMenuTriggerFocus(focusComposer)
   useImperativeHandle(focusControlRef, () => ({ focus: focusComposer }), [focusComposer])
+  useEffect(() => registerComposerFocus(focusComposer), [focusComposer])
   const fileInputRef = useRef<HTMLInputElement>(null)
   const valueRef = useRef(value)
   const attachmentIdsRef = useRef(attachmentIds)

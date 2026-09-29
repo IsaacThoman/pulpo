@@ -45,3 +45,8 @@ export function isStaleStartingPod(pod: k8s.V1Pod, now = Date.now(), maxAgeMs = 
   const createdAt = pod.metadata?.creationTimestamp ? new Date(pod.metadata.creationTimestamp).getTime() : Number.NaN
   return Number.isFinite(createdAt) && now - createdAt >= maxAgeMs
 }
+
+/** Workspace pods use `restartPolicy: Never`, so a finished pod can never serve its lease again. */
+export function isTerminalPod(pod: k8s.V1Pod): boolean {
+  return pod.status?.phase === 'Succeeded' || pod.status?.phase === 'Failed'
+}
