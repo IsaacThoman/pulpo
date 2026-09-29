@@ -18,6 +18,7 @@ import {
   HardDrive,
   LayoutGrid,
   List,
+  Maximize2,
   PanelRight,
   Loader2,
   Pencil,
@@ -66,10 +67,11 @@ import {
 } from '@/features/files/browser/selection'
 import { readFileSort, sortFileNodes, toggleFileSort, uniqueChildName, writeFileSort, type FileSort, type FileSortKey } from '@/features/files/browser/sort'
 import { hasPrimaryModifier, isAppleShortcut, isEditableTarget, shortcutLabel } from '@/features/files/browser/shortcuts'
-import { useSidePanel } from '@/features/side-panel/store'
+import { useSidePanel, type PanelContent } from '@/features/side-panel/store'
 import { AgentActions, AgentMenuItems } from '@/features/side-panel/AgentActions'
 import { usePublishFilesView, type FilesViewPlace } from '@/features/side-panel/agent'
 import { PanelWindowButtons } from '@/features/side-panel/PanelControls'
+import { panelContentPath, useMainNavigate } from '@/features/side-panel/use-panel-actions'
 import { SelectionAction } from '@/features/files/browser/SelectionAction'
 import { useFileOperations } from '@/features/files/browser/use-file-operations'
 import { useItemDrag } from '@/features/files/browser/use-item-drag'
@@ -197,9 +199,19 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
     writeFileSort(next)
   }
 
-  const openToSide = (node: FileNode) => {
-    useSidePanel.getState().open(node.kind === 'folder' ? { kind: 'folder', id: node.id } : { kind: 'file', id: node.id })
+  const goMain = useMainNavigate()
+  /**
+   * Shows a folder or file in the other view: the panel when browsing on the page, the main view
+   * when browsing in the panel. Alt/Option-click, and "Open to the side" or "Open in main view".
+   */
+  const openElsewhere = (content: PanelContent) => {
+    if (panel) goMain(panelContentPath(content))
+    else useSidePanel.getState().open(content)
   }
+  const nodeContent = (node: FileNode): PanelContent => node.kind === 'folder' ? { kind: 'folder', id: node.id } : { kind: 'file', id: node.id }
+  const elsewhereLabel = panel ? ui("Open in main view") : ui("Open to the side")
+  const ElsewhereIcon = panel ? Maximize2 : PanelRight
+  const elsewhereShortcut = isAppleShortcut() ? '⌥ Click' : 'Alt+Click'
 
   /** Shows a folder here: the page follows the route, the panel keeps its own place. */
   const showFolder = (id: string | null) => {
@@ -482,10 +494,10 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
       if (renamingId === node.id || drag.consumeClick()) return
       // Touch has no double-click or hover, so a tap opens, as in mobile file browsers.
       if (lastPointerType.current === 'touch') { open(node); return }
-      // Alt/Option-click opens an item beside the current view, like "Open to the side" in editors.
-      if (event.altKey && !panel) {
+      // Alt/Option-click opens an item in the other view, like "Open to the side" in editors.
+      if (event.altKey) {
         setSelection(selectOnly(node.id))
-        openToSide(node)
+        openElsewhere(nodeContent(node))
         return
       }
       setSelection(clickSelect(selection, order, node.id, { toggle: hasPrimaryModifier(event), range: event.shiftKey }))
@@ -533,9 +545,9 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
           <DropdownMenuShortcut>{single.kind === 'blob' ? ui("Space") : '↵'}</DropdownMenuShortcut>
         </DropdownMenuItem>
       )}
-      {single && !panel && (
-        <DropdownMenuItem onSelect={() => openToSide(single)}>
-          <PanelRight /> {ui("Open to the side")}<DropdownMenuShortcut>{isAppleShortcut() ? '⌥ Click' : 'Alt+Click'}</DropdownMenuShortcut>
+      {single && (
+        <DropdownMenuItem onSelect={() => openElsewhere(nodeContent(single))}>
+          <ElsewhereIcon /> {elsewhereLabel}<DropdownMenuShortcut>{elsewhereShortcut}</DropdownMenuShortcut>
         </DropdownMenuItem>
       )}
       {canUseAgent && <AgentMenuItems ids={selectedNodes.map((node) => node.id)} place={place} />}
@@ -631,8 +643,12 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
       data-drop-target={id ?? 'root'}
       draggable={false}
       aria-current={isCurrent ? 'page' : undefined}
-      // In the panel the path moves the panel, not the page; the link still opens new tabs.
-      onClick={panel ? (event) => { if (!event.metaKey && !event.ctrlKey && !event.shiftKey) { event.preventDefault(); showFolder(id) } } : undefined}
+      onClick={(event) => {
+        if (event.metaKey || event.ctrlKey || event.shiftKey) return
+        if (event.altKey) { event.preventDefault(); openElsewhere({ kind: 'folder', id }); return }
+        // In the panel the path moves the panel, not the page; the link still opens new tabs.
+        if (panel) { event.preventDefault(); showFolder(id) }
+      }}
       className={cn(className, (dropTarget === key || drag.activeTarget === (id ?? 'root')) && 'bg-sky-500/20 text-foreground')}
     >
       {content}
@@ -743,6 +759,7 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
           <>
             {backgroundMenu}
             <DropdownMenuSeparator />
+            <DropdownMenuItem onSelect={() => openElsewhere(place.view)}><ElsewhereIcon /> {elsewhereLabel}</DropdownMenuItem>
             <AgentMenuItems ids={[folderId ?? FILE_SCOPE_ROOT]} place={place} />
           </>
         )}

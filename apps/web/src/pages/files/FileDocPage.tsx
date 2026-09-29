@@ -38,6 +38,7 @@ import { useDocSession, type PresencePeer } from '@/features/files/editor/use-do
 import { FilePreviewBody } from '@/features/files/FilePreviewDialog'
 import { MarkdownConversionDialog } from '@/features/files/MarkdownConversionDialog'
 import { PanelWindowButtons } from '@/features/side-panel/PanelControls'
+import { panelContentPath, useMainNavigate } from '@/features/side-panel/use-panel-actions'
 import { AgentActions } from '@/features/side-panel/AgentActions'
 import { usePublishFilesView, type AgentItem, type FilesViewPlace } from '@/features/side-panel/agent'
 import { useSidePanel, type PanelContent } from '@/features/side-panel/store'
@@ -138,12 +139,23 @@ function DocTitle({ node }: { node: FileNode }) {
   )
 }
 
-/** The folders above a file. In the side panel they open there, so the panel can walk back up. */
+/**
+ * The folders above a file. In the side panel they open there, so the panel can walk back up;
+ * Alt/Option-click opens one in the other view, as in the Files browser.
+ */
 function FilePath({ ancestors, inPanel }: { ancestors: FileNode[]; inPanel: boolean }) {
+  const goMain = useMainNavigate()
   const showInPanel = (id: string | null) => (event: MouseEvent) => {
-    if (!inPanel || event.metaKey || event.ctrlKey || event.shiftKey) return
-    event.preventDefault()
-    useSidePanel.getState().open({ kind: 'folder', id })
+    if (event.metaKey || event.ctrlKey || event.shiftKey) return
+    const folder = { kind: 'folder' as const, id }
+    if (event.altKey) {
+      event.preventDefault()
+      if (inPanel) goMain(panelContentPath(folder))
+      else useSidePanel.getState().open(folder)
+    } else if (inPanel) {
+      event.preventDefault()
+      useSidePanel.getState().open(folder)
+    }
   }
   return (
     <nav aria-label={ui("Folder path")} className="flex min-w-0 items-center gap-0.5 overflow-hidden text-xs text-muted-foreground">
