@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react'
-import { Bot, Columns2, MessageSquareCheck, MessageSquarePlus, SquarePen } from 'lucide-react'
+import { Columns2, MessageSquareCheck, MessageSquarePlus, SquarePen } from 'lucide-react'
 import { focusComposer } from '@/components/chat/composer-focus'
 import { Button } from '@/components/ui/button'
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu'
@@ -19,6 +19,7 @@ import {
   type FilesViewPlace,
 } from './agent'
 import { panelShortcut } from './shortcuts'
+import type { PanelContent } from './store'
 import { useMainNavigate } from './use-panel-actions'
 
 function TipButton({ tip, children }: { tip: string; children: ReactElement }) {
@@ -38,48 +39,26 @@ function useTargetScope() {
   return { target, scope: targetScope(target, chats, draft) }
 }
 
-/**
- * Agent controls for a file or folder view's header. On the page: split the view to the side,
- * or ask the agent in a new chat. Beside a chat: add the item to it, or start a new one.
- */
+/** Agent controls for a file or folder view's header, the same on the page and in the panel. */
 export function AgentActions({ item, place }: { item: AgentItem; place: FilesViewPlace }) {
   const go = useMainNavigate()
   const { target, scope } = useTargetScope()
   const shortcut = panelShortcut('J')
 
-  if (place.layout === 'page') {
-    return (
-      <>
-        <TipButton tip={ui("Split view: move this to the side and open a chat")}>
-          <Button variant="outline" size="icon-sm" aria-label={ui("Split view")} onClick={() => splitView(place.view, go)}><Columns2 /></Button>
-        </TipButton>
-        <TipButton tip={`${ui("Ask about this in a new chat")} · ${shortcut}`}>
-          <Button variant="outline" size="sm" onClick={() => openInNewChat([item.id], place, go)}>
-            <Bot /> <span className="max-sm:sr-only">{ui("Ask agent")}</span>
-          </Button>
-        </TipButton>
-      </>
-    )
-  }
-
-  // In the panel header the agent controls are plain icons like the window controls beside them.
-  if (!target) {
-    return (
-      <TipButton tip={`${ui("Ask about this in a new chat")} · ${shortcut}`}>
-        <Button variant="ghost" size="icon-sm" aria-label={ui("Ask agent")} onClick={() => openInNewChat([item.id], place, go)}><SquarePen /></Button>
-      </TipButton>
-    )
-  }
+  // Plain icons, like the window controls beside them. Without a chat on the left (always so on
+  // the page) the agent starts one; beside a chat it adds to that chat, or starts a new one.
+  const newChat = (
+    <TipButton tip={`${ui("Ask about this in a new chat")}${place.layout === 'page' || !target ? ` · ${shortcut}` : ''}`}>
+      <Button variant="ghost" size="icon-sm" aria-label={target && place.layout === 'panel' ? ui("Open in new chat") : ui("Ask agent")} onClick={() => openInNewChat([item.id], place, go)}><SquarePen /></Button>
+    </TipButton>
+  )
+  if (place.layout === 'page' || !target) return newChat
 
   const added = Boolean(scope && scopeIncludes(scope, item))
   const label = added ? ui("Already added to the chat") : ui("Add to the chat on the left")
   return (
     <>
-      {target.kind === 'chat' && (
-        <TipButton tip={ui("Ask about this in a new chat")}>
-          <Button variant="ghost" size="icon-sm" aria-label={ui("Open in new chat")} onClick={() => openInNewChat([item.id], place, go)}><SquarePen /></Button>
-        </TipButton>
-      )}
+      {target.kind === 'chat' && newChat}
       <TipButton tip={added ? label : `${label} · ${shortcut}`}>
         <Button
           variant="ghost"
@@ -93,6 +72,16 @@ export function AgentActions({ item, place }: { item: AgentItem; place: FilesVie
         </Button>
       </TipButton>
     </>
+  )
+}
+
+/** Moves a files view from the main view into the panel and opens a chat beside it. */
+export function SplitViewButton({ view }: { view: PanelContent }) {
+  const go = useMainNavigate()
+  return (
+    <TipButton tip={ui("Split view: move this to the side and open a chat")}>
+      <Button variant="ghost" size="icon-sm" aria-label={ui("Split view")} onClick={() => splitView(view, go)}><Columns2 /></Button>
+    </TipButton>
   )
 }
 

@@ -1889,6 +1889,7 @@ const esUi: Record<string, string> = {
   "Open to the side": "Abrir al lado",
   "Close panel": "Cerrar panel",
   "Ask agent": "Preguntar al agente",
+  "Sort: {{0}}": "Ordenar: {{0}}",
   "Open in main view": "Abrir en la vista principal",
   "Looking through your files…": "Revisando tus archivos…",
   "Reading a document…": "Leyendo un documento…",

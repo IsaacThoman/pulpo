@@ -41,7 +41,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { TooltipProvider } from '@/components/ui/tooltip'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { ui, uit } from '@/i18n/ui'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/stores/auth'
@@ -68,7 +68,7 @@ import {
 import { readFileSort, sortFileNodes, toggleFileSort, uniqueChildName, writeFileSort, type FileSort, type FileSortKey } from '@/features/files/browser/sort'
 import { hasPrimaryModifier, isAppleShortcut, isEditableTarget, shortcutLabel } from '@/features/files/browser/shortcuts'
 import { useSidePanel, type PanelContent } from '@/features/side-panel/store'
-import { AgentActions, AgentMenuItems } from '@/features/side-panel/AgentActions'
+import { AgentActions, AgentMenuItems, SplitViewButton } from '@/features/side-panel/AgentActions'
 import { usePublishFilesView, type FilesViewPlace } from '@/features/side-panel/agent'
 import { PanelWindowButtons } from '@/features/side-panel/PanelControls'
 import { panelContentPath, useMainNavigate } from '@/features/side-panel/use-panel-actions'
@@ -156,9 +156,7 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
   usePublishFilesView(place, filesEnabled && !listing.isError ? agentItem : null)
   const ops = useFileOperations()
   const clip = useFileClipboard((state) => state.clip)
-  const [storedView, setView] = useState<FilesView>(readView)
-  // The side panel is narrow; it always lists.
-  const view: FilesView = panel ? 'list' : storedView
+  const [view, setView] = useState<FilesView>(readView)
   const [sort, setSort] = useState<FileSort>(readFileSort)
   const [selection, setSelection] = useState<FileSelection>(EMPTY_SELECTION)
   const [keyboardFocus, setKeyboardFocus] = useState(false)
@@ -655,14 +653,13 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
     </Link>
   )
   const path = (
-    <nav aria-label={ui("Folder path")} className={cn('flex min-w-0 items-center gap-0.5 text-muted-foreground', panel ? 'overflow-hidden text-xs' : 'mt-1 flex-wrap text-sm')}>
-      {crumb(null, 'root', false, <><HardDrive className={panel ? 'size-3' : 'size-3.5'} />{ui("My files")}</>, cn('flex shrink-0 items-center gap-1 rounded hover:bg-accent hover:text-foreground', panel ? 'px-1' : 'px-1.5 py-0.5'))}
+    <nav aria-label={ui("Folder path")} className="flex min-w-0 items-center gap-0.5 overflow-hidden text-xs text-muted-foreground">
+      {crumb(null, 'root', false, <><HardDrive className="size-3" />{ui("My files")}</>, 'flex shrink-0 items-center gap-1 rounded px-1 hover:bg-accent hover:text-foreground')}
       {trail.map((folder, index) => (
         <span key={folder.id} className="flex min-w-0 items-center gap-0.5">
-          <ChevronRight className={cn('shrink-0', panel ? 'size-3' : 'size-3.5')} />
+          <ChevronRight className="size-3 shrink-0" />
           {crumb(folder.id, `crumb:${folder.id}`, index === trail.length - 1, folder.name, cn(
-            'truncate rounded hover:bg-accent hover:text-foreground',
-            panel ? 'px-1' : 'max-w-48 px-1.5 py-0.5',
+            'truncate rounded px-1 hover:bg-accent hover:text-foreground',
             index === trail.length - 1 && 'font-medium text-foreground',
           ))}
         </span>
@@ -671,13 +668,7 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
   )
   const selectionBar = selectedNodes.length > 0 && (
     <TooltipProvider delayDuration={250}>
-      <div role="toolbar" aria-label={ui("Selection")} className={cn(
-        'flex h-8 items-center gap-0.5 rounded-lg border bg-muted px-0.5',
-        // Grid view has an extra Sort button, so it needs a wider header to fit both.
-        !panel && (view === 'grid'
-          ? '@min-[42rem]:absolute @min-[42rem]:top-0 @min-[42rem]:right-full @min-[42rem]:mr-2'
-          : '@min-[36rem]:absolute @min-[36rem]:top-0 @min-[36rem]:right-full @min-[36rem]:mr-2'),
-      )}>
+      <div role="toolbar" aria-label={ui("Selection")} className="flex h-8 shrink-0 items-center gap-0.5 rounded-lg border bg-muted px-0.5">
         <SelectionAction label={ui("Clear selection")} onClick={() => setSelection(EMPTY_SELECTION)}><X /></SelectionAction>
         <span className="px-1.5 text-sm font-medium whitespace-nowrap tabular-nums">{selectedNodes.length === 1 ? ui("1 selected") : uit`${selectedNodes.length} selected`}</span>
         {canDownload && <SelectionAction label={ui("Download")} onClick={() => void ops.download(selectedNodes)}><Download /></SelectionAction>}
@@ -689,11 +680,14 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
   )
   const newMenu = (
     <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        {panel
-          ? <Button variant="ghost" size="icon-sm" disabled={listing.isError} aria-label={ui("New")}><Plus /></Button>
-          : <Button size="sm" disabled={listing.isError}><Plus /> {ui("New")}</Button>}
-      </DropdownMenuTrigger>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="icon-sm" disabled={listing.isError} aria-label={ui("New")}><Plus /></Button>
+          </DropdownMenuTrigger>
+        </TooltipTrigger>
+        <TooltipContent side="bottom">{ui("New")}</TooltipContent>
+      </Tooltip>
       <DropdownMenuContent align="end">{backgroundMenu}</DropdownMenuContent>
     </DropdownMenu>
   )
@@ -780,84 +774,65 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
     </>
   )
 
-  if (panel) {
-    return (
-      <div ref={rootRef} className="flex h-full min-h-0 flex-col">
-        <header className="side-panel-header flex min-w-0 items-center gap-1.5 border-b px-3 py-1.5">
-          <div className="min-w-0 flex-1">
-            {path}
-            <h2 className="truncate text-sm font-medium">{listing.data?.folder?.name ?? ui("My files")}</h2>
-          </div>
-          {selectionBar || (
-            <>
-              {!listing.isError && <AgentActions item={agentItem} place={place} />}
-              {newMenu}
-            </>
-          )}
-          <PanelWindowButtons content={place.view} />
-          {fileInputElement}
-        </header>
-        <ScrollArea className="min-h-0 flex-1" {...scrollHandlers}>
-          <div className={cn('min-h-full px-3 py-3', dropHighlight, marquee && 'select-none')}>{body}</div>
-          {overlays}
-        </ScrollArea>
+  const iconTip = (label: string, control: ReactNode) => (
+    <Tooltip>
+      <TooltipTrigger asChild>{control}</TooltipTrigger>
+      <TooltipContent side="bottom">{label}</TooltipContent>
+    </Tooltip>
+  )
+  const toolbar = (
+    <>
+      <div role="group" aria-label={ui("View")} className="flex">
+        {iconTip(ui("List view"), <Button variant="ghost" size="icon-sm" aria-pressed={view === 'list'} aria-label={ui("List view")} className={cn(view === 'list' && 'bg-accent text-foreground')} onClick={() => changeView('list')}><List /></Button>)}
+        {iconTip(ui("Grid view"), <Button variant="ghost" size="icon-sm" aria-pressed={view === 'grid'} aria-label={ui("Grid view")} className={cn(view === 'grid' && 'bg-accent text-foreground')} onClick={() => changeView('grid')}><LayoutGrid /></Button>)}
       </div>
-    )
-  }
+      {view === 'grid' && (
+        <DropdownMenu>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon-sm" aria-label={uit`Sort: ${sortLabels[sort.key]}`}><ArrowUpDown /></Button>
+              </DropdownMenuTrigger>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">{uit`Sort: ${sortLabels[sort.key]}`}</TooltipContent>
+          </Tooltip>
+          <DropdownMenuContent align="end">
+            {(Object.keys(sortLabels) as FileSortKey[]).map((key) => (
+              <DropdownMenuItem key={key} onSelect={() => changeSort(key)}>
+                {sortLabels[key]}
+                {sort.key === key && <DropdownMenuShortcut>{sort.direction === 'asc' ? '↑' : '↓'}</DropdownMenuShortcut>}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
+      {!listing.isError && <AgentActions item={agentItem} place={place} />}
+      {iconTip(ui("Trash"), <Button asChild variant="ghost" size="icon-sm" aria-label={ui("Trash")}><Link to="/files/trash"><Trash2 /></Link></Button>)}
+      {newMenu}
+    </>
+  )
 
+  // The page and the panel share one layout; only the window controls at the end differ.
   return (
-    <ScrollArea className="h-full" {...scrollHandlers}>
-      <div
-        className={cn(
-          'mobile-page-content mx-auto min-h-full max-w-6xl space-y-4 px-6 py-8',
-          dropHighlight,
-          marquee && 'select-none',
-        )}
-      >
-        <div className="@container flex flex-wrap items-start gap-3">
-          <div className="min-w-0 flex-1">
-            <h1 className="text-xl font-semibold tracking-tight">{ui("Files")}</h1>
-            {path}
-          </div>
-          {/* With room, the selection bar floats over the empty space left of the controls so the title and
-              list never move; in a narrow header it takes the controls' place instead of wrapping. */}
-          <div className="relative flex min-h-8 items-center gap-2">
-            {selectionBar}
-            <div className={cn('flex items-center gap-2', selectedNodes.length > 0 && (view === 'grid' ? '@max-[42rem]:hidden' : '@max-[36rem]:hidden'))}>
-              {view === 'grid' && (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="sm" aria-label={ui("Sort")}><ArrowUpDown /> {sortLabels[sort.key]}</Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  {(Object.keys(sortLabels) as FileSortKey[]).map((key) => (
-                    <DropdownMenuItem key={key} onSelect={() => changeSort(key)}>
-                      {sortLabels[key]}
-                      {sort.key === key && <DropdownMenuShortcut>{sort.direction === 'asc' ? '↑' : '↓'}</DropdownMenuShortcut>}
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
-              )}
-              <div className="flex rounded-lg border p-0.5" role="group" aria-label={ui("View")}>
-              <button type="button" aria-pressed={view === 'list'} aria-label={ui("List view")} onClick={() => changeView('list')} className={cn('grid size-7 cursor-pointer place-items-center rounded-md text-muted-foreground', view === 'list' && 'bg-accent text-foreground')}>
-                <List className="size-4" />
-              </button>
-              <button type="button" aria-pressed={view === 'grid'} aria-label={ui("Grid view")} onClick={() => changeView('grid')} className={cn('grid size-7 cursor-pointer place-items-center rounded-md text-muted-foreground', view === 'grid' && 'bg-accent text-foreground')}>
-                <LayoutGrid className="size-4" />
-              </button>
-              </div>
-              {!listing.isError && <AgentActions item={agentItem} place={place} />}
-              <Button asChild variant="outline" size="sm"><Link to="/files/trash"><Trash2 /> {ui("Trash")}</Link></Button>
-              {newMenu}
-            </div>
-            {fileInputElement}
-          </div>
+    <div ref={rootRef} className="flex h-full min-h-0 flex-col">
+      <header className={cn(
+        '@container flex min-w-0 items-center gap-1 border-b',
+        panel ? 'side-panel-header px-3 py-1.5' : 'mobile-page-content px-4 py-1.5 sm:px-6',
+      )}>
+        <div className="min-w-0 flex-1 pr-1">
+          {path}
+          <h1 className="truncate text-base leading-7 font-semibold">{listing.data?.folder?.name ?? ui("My files")}</h1>
         </div>
-
-        {body}
-      </div>
-      {overlays}
-    </ScrollArea>
+        {selectionBar}
+        {/* With room the controls stay beside the selection bar; in a narrow header the bar takes their place. */}
+        <div className={cn('flex shrink-0 items-center gap-0.5', selectedNodes.length > 0 && '@max-[40rem]:hidden')}>{toolbar}</div>
+        {panel ? <PanelWindowButtons content={place.view} /> : <SplitViewButton view={place.view} />}
+        {fileInputElement}
+      </header>
+      <ScrollArea className="min-h-0 flex-1" {...scrollHandlers}>
+        <div className={cn('min-h-full', panel ? 'px-3 py-3' : 'mobile-page-content mx-auto max-w-6xl px-4 py-4 sm:px-6', dropHighlight, marquee && 'select-none')}>{body}</div>
+        {overlays}
+      </ScrollArea>
+    </div>
   )
 }

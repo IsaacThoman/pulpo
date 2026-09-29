@@ -39,7 +39,7 @@ import { FilePreviewBody } from '@/features/files/FilePreviewDialog'
 import { MarkdownConversionDialog } from '@/features/files/MarkdownConversionDialog'
 import { PanelWindowButtons } from '@/features/side-panel/PanelControls'
 import { panelContentPath, useMainNavigate } from '@/features/side-panel/use-panel-actions'
-import { AgentActions } from '@/features/side-panel/AgentActions'
+import { AgentActions, SplitViewButton } from '@/features/side-panel/AgentActions'
 import { usePublishFilesView, type AgentItem, type FilesViewPlace } from '@/features/side-panel/agent'
 import { useSidePanel, type PanelContent } from '@/features/side-panel/store'
 
@@ -206,7 +206,7 @@ function FileHeader({ node, ancestors, view, menu, children }: {
           {menu}
         </DropdownMenuContent>
       </DropdownMenu>
-      {view.panel && <PanelWindowButtons content={view.panel} />}
+      {view.panel ? <PanelWindowButtons content={view.panel} /> : place && <SplitViewButton view={place.view} />}
     </header>
   )
 }
