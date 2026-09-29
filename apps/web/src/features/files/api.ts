@@ -1,4 +1,4 @@
-import type { FileConversionPreview, FileListing, FileNode, FileUploadReservation, MoveFileNodes, UpdateFileNode } from '@pulpo/contracts'
+import type { FileConversionPreview, FileFolderLayout, FileListing, FileNode, FileUploadReservation, MoveFileNodes, UpdateFileFolderLayout, UpdateFileNode } from '@pulpo/contracts'
 import { formatAttachmentSizeLimit } from '@pulpo/client-core'
 import { ApiError, apiRequest, authenticatedFetch, downloadApiFile, fetchApiBlob } from '@/lib/api'
 import { uit } from '@/i18n/ui'
@@ -9,6 +9,16 @@ export const filesQueryKey = (userId: string | undefined) => ['files', userId] a
 export const folderQueryKey = (userId: string | undefined, folderId: string | null) =>
   [...filesQueryKey(userId), 'folder', folderId ?? 'root'] as const
 export const trashQueryKey = (userId: string | undefined) => [...filesQueryKey(userId), 'trash'] as const
+export const folderLayoutQueryKey = (userId: string | undefined, folderId: string | null) =>
+  [...filesQueryKey(userId), 'layout', folderId ?? 'root'] as const
+
+export function fetchFolderLayout(folderId: string | null): Promise<FileFolderLayout> {
+  return apiRequest<FileFolderLayout>(folderId ? `/api/files/layout?folderId=${encodeURIComponent(folderId)}` : '/api/files/layout')
+}
+
+export function updateFolderLayout(input: UpdateFileFolderLayout): Promise<FileFolderLayout> {
+  return apiRequest<FileFolderLayout>('/api/files/layout', { method: 'PATCH', body: input })
+}
 
 export function fetchFolder(folderId: string | null): Promise<FileListing> {
   return apiRequest<FileListing>(folderId ? `/api/files?parentId=${encodeURIComponent(folderId)}` : '/api/files')

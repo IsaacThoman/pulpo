@@ -1,11 +1,10 @@
-import { useEffect, useMemo, useRef, useState, type DragEvent, type MouseEvent, type PointerEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type MouseEvent, type PointerEvent, type ReactNode } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { FILE_SCOPE_ROOT, isMarkdownName, MAX_CHAT_FILE_SCOPES, type FileListing, type FileNode } from '@pulpo/contracts'
+import { FILE_SCOPE_ROOT, isMarkdownName, MAX_CHAT_FILE_SCOPES, type FileFolderLayout, type FileGridPosition, type FileListing, type FileNode } from '@pulpo/contracts'
 import {
   ArrowDown,
   ArrowUp,
-  ArrowUpDown,
   ChevronRight,
   ClipboardPaste,
   Copy,
@@ -33,6 +32,7 @@ import {
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
@@ -45,7 +45,8 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { ui, uit } from '@/i18n/ui'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/stores/auth'
-import { createDoc, createFolder, downloadFile, fetchFolder, folderQueryKey, uploadFile } from '@/features/files/api'
+import { createDoc, createFolder, downloadFile, fetchFolder, fetchFolderLayout, folderLayoutQueryKey, folderQueryKey, updateFolderLayout, uploadFile } from '@/features/files/api'
+import { arrangeGrid, GRID_CELL, moveInGrid, readingOrder } from '@/features/files/browser/grid-layout'
 import { filesErrorMessage } from '@/features/files/file-display'
 import { FileMoveDialog } from '@/features/files/FileMoveDialog'
 import { FilePreviewDialog } from '@/features/files/FilePreviewDialog'
@@ -174,7 +175,50 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
   const typeahead = useRef({ text: '', at: 0 })
 
   const nodes = useMemo(() => sortFileNodes(listing.data?.children ?? [], sort), [listing.data, sort])
-  const order = useMemo(() => nodes.map((node) => node.id), [nodes])
+
+  // Grid view is a canvas: items keep the places they are dragged to, per folder and synced.
+  const layoutKey = folderLayoutQueryKey(userId, folderId)
+  const layoutQuery = useQuery({
+    queryKey: layoutKey,
+    queryFn: () => fetchFolderLayout(folderId),
+    enabled: Boolean(userId && filesEnabled && view === 'grid' && !listing.isError),
+  })
+  const snapToGrid = layoutQuery.data?.snapToGrid ?? true
+  const [canvasWidth, setCanvasWidth] = useState(0)
+  const widthProbe = useCallback((element: HTMLDivElement | null) => {
+    if (!element) return
+    const observer = new ResizeObserver(() => setCanvasWidth(element.clientWidth))
+    observer.observe(element)
+    setCanvasWidth(element.clientWidth)
+    return () => observer.disconnect()
+  }, [])
+  const columns = Math.max(1, Math.floor(canvasWidth / GRID_CELL.width))
+  const gridPositions = useMemo(
+    () => view === 'grid' ? arrangeGrid(nodes.map((node) => node.id), layoutQuery.data?.positions ?? {}, { columns, snap: snapToGrid }) : null,
+    [columns, layoutQuery.data, nodes, snapToGrid, view],
+  )
+  const order = useMemo(() => gridPositions ? readingOrder(gridPositions) : nodes.map((node) => node.id), [gridPositions, nodes])
+  const bodyRef = useRef<HTMLDivElement>(null)
+
+  /** Saves layout changes at once here, then on the server (other sessions refetch). */
+  const saveLayout = (patch: { snapToGrid?: boolean; positions?: Record<string, FileGridPosition> }) => {
+    queryClient.setQueryData<FileFolderLayout>(layoutKey, (current) => ({
+      folderId,
+      snapToGrid: patch.snapToGrid ?? current?.snapToGrid ?? true,
+      positions: { ...current?.positions, ...patch.positions },
+    }))
+    void updateFolderLayout({ folderId, ...patch }).catch((cause: unknown) => {
+      ops.fail(cause)
+      void queryClient.invalidateQueries({ queryKey: layoutKey })
+    })
+  }
+  const toggleSnap = () => {
+    if (!gridPositions) return
+    const snap = !snapToGrid
+    // Every current place is saved, so items that were placed automatically stay put.
+    const current = Object.fromEntries(gridPositions)
+    saveLayout({ snapToGrid: snap, positions: snap ? Object.fromEntries(arrangeGrid(order, current, { columns, snap: true })) : current })
+  }
   const byId = useMemo(() => new Map(nodes.map((node) => [node.id, node])), [nodes])
   const selectedNodes = nodes.filter((node) => selection.ids.has(node.id))
   const trail = [...(listing.data?.ancestors ?? []), ...(listing.data?.folder ? [listing.data.folder] : [])]
@@ -434,6 +478,14 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
   }
 
   const drag = useItemDrag({
+    canvas: view === 'grid' ? {
+      // The whole scrolling area below the header, including empty space past the items.
+      element: () => bodyRef.current?.closest<HTMLElement>('[data-slot="scroll-area-viewport"]') ?? null,
+      onMove: (dragged, delta) => {
+        if (!gridPositions) return
+        saveLayout({ positions: Object.fromEntries(moveInGrid(gridPositions, dragged.map((node) => node.id), delta, snapToGrid)) })
+      },
+    } : undefined,
     resolveNodes: (node) => {
       if (selection.ids.has(node.id)) return nodes.filter((item) => selection.ids.has(item.id))
       setSelection(selectOnly(node.id))
@@ -600,11 +652,13 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
       </div>
     )
   } else {
-    const items = nodes.map((node) => (
+    const shown = gridPositions ? order.map((id) => byId.get(id)!).filter(Boolean) : nodes
+    const items = shown.map((node) => (
       <FileItem
         key={node.id}
         node={node}
         view={view}
+        position={gridPositions?.get(node.id)}
         selected={selection.ids.has(node.id)}
         focused={keyboardFocus && selection.focus === node.id}
         cut={cutIds.has(node.id)}
@@ -614,8 +668,21 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
         {...itemHandlers(node)}
       />
     ))
+    let width = 0, height = 0
+    for (const place of gridPositions?.values() ?? []) {
+      width = Math.max(width, place.x + GRID_CELL.width)
+      height = Math.max(height, place.y + GRID_CELL.height)
+    }
     body = view === 'grid' ? (
-      <div ref={itemsRef} role="listbox" aria-multiselectable aria-label={ui("Files")} className="grid grid-cols-[repeat(auto-fill,minmax(8.5rem,1fr))] gap-2">
+      // One spare cell past the last item leaves room to drag things further out.
+      <div
+        ref={itemsRef}
+        role="listbox"
+        aria-multiselectable
+        aria-label={ui("Files")}
+        className="relative"
+        style={{ width: Math.max(canvasWidth, width + GRID_CELL.width), height: height + GRID_CELL.height }}
+      >
         {items}
       </div>
     ) : (
@@ -632,7 +699,6 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
     )
   }
 
-  const sortLabels: Record<FileSortKey, string> = { name: ui("Name"), modified: ui("Modified"), kind: ui("Kind"), size: ui("Size") }
 
   const crumb = (id: string | null, key: string, isCurrent: boolean, content: ReactNode, className: string) => (
     <Link
@@ -753,6 +819,11 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
           <>
             {backgroundMenu}
             <DropdownMenuSeparator />
+            {view === 'grid' && (
+              <DropdownMenuCheckboxItem checked={snapToGrid} onCheckedChange={toggleSnap} onSelect={(event: Event) => event.preventDefault()}>
+                {ui("Snap to grid")}
+              </DropdownMenuCheckboxItem>
+            )}
             <DropdownMenuItem onSelect={() => openElsewhere(place.view)}><ElsewhereIcon /> {elsewhereLabel}</DropdownMenuItem>
             <AgentMenuItems ids={[folderId ?? FILE_SCOPE_ROOT]} place={place} />
           </>
@@ -786,26 +857,6 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
         {iconTip(ui("List view"), <Button variant="ghost" size="icon-sm" aria-pressed={view === 'list'} aria-label={ui("List view")} className={cn(view === 'list' && 'bg-accent text-foreground')} onClick={() => changeView('list')}><List /></Button>)}
         {iconTip(ui("Grid view"), <Button variant="ghost" size="icon-sm" aria-pressed={view === 'grid'} aria-label={ui("Grid view")} className={cn(view === 'grid' && 'bg-accent text-foreground')} onClick={() => changeView('grid')}><LayoutGrid /></Button>)}
       </div>
-      {view === 'grid' && (
-        <DropdownMenu>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon-sm" aria-label={uit`Sort: ${sortLabels[sort.key]}`}><ArrowUpDown /></Button>
-              </DropdownMenuTrigger>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">{uit`Sort: ${sortLabels[sort.key]}`}</TooltipContent>
-          </Tooltip>
-          <DropdownMenuContent align="end">
-            {(Object.keys(sortLabels) as FileSortKey[]).map((key) => (
-              <DropdownMenuItem key={key} onSelect={() => changeSort(key)}>
-                {sortLabels[key]}
-                {sort.key === key && <DropdownMenuShortcut>{sort.direction === 'asc' ? '↑' : '↓'}</DropdownMenuShortcut>}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
-      )}
       {!listing.isError && <AgentActions item={agentItem} place={place} />}
       {iconTip(ui("Trash"), <Button asChild variant="ghost" size="icon-sm" aria-label={ui("Trash")}><Link to="/files/trash"><Trash2 /></Link></Button>)}
       {newMenu}
@@ -829,8 +880,11 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
         {panel ? <PanelWindowButtons content={place.view} /> : <SplitViewButton view={place.view} />}
         {fileInputElement}
       </header>
-      <ScrollArea className="min-h-0 flex-1" {...scrollHandlers}>
-        <div className={cn('min-h-full', panel ? 'px-3 py-3' : 'mobile-page-content mx-auto max-w-6xl px-4 py-4 sm:px-6', dropHighlight, marquee && 'select-none')}>{body}</div>
+      <ScrollArea className="min-h-0 flex-1" horizontal={view === 'grid'} {...scrollHandlers}>
+        <div ref={bodyRef} className={cn('min-h-full', panel ? 'px-3 py-3' : 'mobile-page-content mx-auto max-w-6xl px-4 py-4 sm:px-6', dropHighlight, marquee && 'select-none')}>
+          <div ref={widthProbe} aria-hidden className="h-0 w-full" />
+          {body}
+        </div>
         {overlays}
       </ScrollArea>
     </div>

@@ -888,6 +888,24 @@ export const fileDocUpdates = pgTable('file_doc_updates', {
 ])
 
 /**
+ * How a folder's grid view is arranged: item positions and whether they snap to cells. One row
+ * per folder that has been arranged; `folder_id` null is My files.
+ */
+export const fileFolderLayouts = pgTable('file_folder_layouts', {
+  id: uuid('id').primaryKey(),
+  ownerUserId: uuid('owner_user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  folderId: uuid('folder_id').references(() => fileNodes.id, { onDelete: 'cascade' }),
+  snapToGrid: boolean('snap_to_grid').notNull().default(true),
+  positions: jsonb('positions').$type<Record<string, { x: number; y: number }>>().notNull().default({}),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex('file_folder_layouts_owner_folder_unique').on(
+    table.ownerUserId,
+    sql`coalesce(${table.folderId}, '00000000-0000-0000-0000-000000000000'::uuid)`,
+  ),
+])
+
+/**
  * What an agent response changed in Files, so the whole response can be undone: the Markdown a
  * document had before the response first edited it, or an item the response created.
  */

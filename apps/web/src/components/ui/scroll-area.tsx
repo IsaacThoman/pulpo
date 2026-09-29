@@ -7,9 +7,12 @@ function ScrollArea({
   className,
   children,
   viewportRef,
+  horizontal = false,
   ...props
 }: React.ComponentProps<typeof ScrollAreaPrimitive.Root> & {
   viewportRef?: React.Ref<HTMLDivElement>
+  /** Also scroll sideways when the content is wider than the area. */
+  horizontal?: boolean
 }) {
   return (
     <ScrollAreaPrimitive.Root
@@ -25,6 +28,7 @@ function ScrollArea({
         {children}
       </ScrollAreaPrimitive.Viewport>
       <ScrollBar />
+      {horizontal && <ScrollBar orientation="horizontal" />}
       <ScrollAreaPrimitive.Corner />
     </ScrollAreaPrimitive.Root>
   )

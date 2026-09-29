@@ -18,6 +18,10 @@ Chats always live in the main view; the side panel holds Files beside them: a fo
 
 The header's **Open in main view** button (maximize icon, Cmd/Ctrl+Shift+Enter) makes the panel's folder or file the main view: the panel closes and the main view navigates to it, replacing the chat (browser back returns to it). On the web, **Open in new tab** opens the item in its own tab. Cmd/Ctrl+\ hides or reopens the panel. Keys go to the Files view last clicked; before any click only the page listens.
 
+## Grid view
+
+Grid view is a canvas: items can be dragged anywhere, and the view scrolls both ways to reach them. Each folder's arrangement (`file_folder_layouts`: item positions and **Snap to grid**, toggled from the background right-click menu) is stored on the server (`GET`/`PATCH /api/files/layout`), so it follows the user across devices and between the page and the panel. With snapping on, items land in the free cell nearest where they are dropped; turning it on snaps everything. Items without a saved place fill the first free cells row by row; the first rearrangement saves every current place so nothing shifts later. Positions of items that leave a folder are dropped on its next save. List view keeps sorting by column.
+
 ## Agent files
 
 A chat can be scoped to Files items (`chats.file_scope_ids`): file or folder ids, or `root` for the whole tree. A folder includes every subfolder, and items inside an attached folder (or with the whole tree attached) can be attached as well: they tell the agent what the user pointed out. The composer shows the scope as removable chips (clicking one shows it in the panel), and **Add from Files…** in its **+** menu picks files and folders. Adding items turns on agent mode, because Files are reached only through agent tools. Scopes are validated when set (live items the user owns, at most twenty); an item trashed later stays listed but stops resolving.

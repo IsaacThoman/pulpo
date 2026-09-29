@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
-import { copyFileNodesSchema, createFileDocSchema, createFileFolderSchema, fileNodeIdsSchema, moveFileNodesSchema, updateFileNodeSchema } from '@pulpo/contracts'
+import { updateFileFolderLayoutSchema, copyFileNodesSchema, createFileDocSchema, createFileFolderSchema, fileNodeIdsSchema, moveFileNodesSchema, updateFileNodeSchema } from '@pulpo/contracts'
 import { db } from '../database/client.js'
 import { notFound } from '../lib/errors.js'
 import { getBlobStore } from '../storage/index.js'
@@ -28,6 +28,7 @@ import {
 } from './tree-service.js'
 import { registerFileUploadRoutes } from './upload-routes.js'
 import { listFileChanges, revertFileChanges } from './agent-tools.js'
+import { getFolderLayout, normalizeInput, updateFolderLayout } from './layout-service.js'
 
 const idParams = z.object({ id: z.uuid() })
 
@@ -49,6 +50,18 @@ export async function registerFileRoutes(app: FastifyInstance): Promise<void> {
     const user = await requireFilesUser(request)
     const { parentId } = z.object({ parentId: z.uuid().optional() }).parse(request.query)
     return listFolder(user.id, parentId ?? null)
+  })
+
+  // Grid view arrangement of a folder (omit folderId for My files).
+  app.get('/api/files/layout', async (request) => {
+    const user = await requireFilesUser(request)
+    const { folderId } = z.object({ folderId: z.uuid().optional() }).parse(request.query)
+    return getFolderLayout(user.id, folderId ?? null)
+  })
+
+  app.patch('/api/files/layout', async (request) => {
+    const user = await requireFilesUser(request)
+    return updateFolderLayout(user.id, normalizeInput(updateFileFolderLayoutSchema.parse(request.body)))
   })
 
   app.get('/api/files/trash', async (request) => {

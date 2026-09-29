@@ -100,6 +100,30 @@ export const reserveFileUploadSchema = z.object({
   sizeBytes: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
 })
 
+/** Where an item sits in a folder's grid view, in pixels from the canvas's top-left corner. */
+export const fileGridPositionSchema = z.object({
+  x: z.number().int().min(0).max(1_000_000),
+  y: z.number().int().min(0).max(1_000_000),
+})
+
+/** A folder's grid arrangement; `folderId` null is My files. */
+export interface FileFolderLayout {
+  folderId: string | null
+  snapToGrid: boolean
+  positions: Record<string, FileGridPosition>
+}
+
+/** Changes to a folder's grid arrangement; a null position forgets that item's place. */
+export const updateFileFolderLayoutSchema = z.object({
+  folderId: z.uuid().nullable(),
+  snapToGrid: z.boolean().optional(),
+  positions: z.record(z.uuid(), fileGridPositionSchema.nullable())
+    .refine((positions) => Object.keys(positions).length <= 5_000, { message: 'Too many positions' })
+    .optional(),
+})
+
+export type FileGridPosition = z.infer<typeof fileGridPositionSchema>
+export type UpdateFileFolderLayout = z.input<typeof updateFileFolderLayoutSchema>
 export type FileNodeKind = z.infer<typeof fileNodeKindSchema>
 export type FileNode = z.infer<typeof fileNodeSchema>
 export type CreateFileFolder = z.input<typeof createFileFolderSchema>

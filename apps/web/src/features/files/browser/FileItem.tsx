@@ -18,6 +18,8 @@ export interface FileDropHandlers {
 export interface FileItemProps {
   node: FileNode
   view: 'list' | 'grid'
+  /** Where a grid tile sits on a freely arranged canvas. */
+  position?: { x: number; y: number }
   selected: boolean
   focused: boolean
   cut: boolean
@@ -76,8 +78,10 @@ export function FileItem(props: FileItemProps) {
     return (
       <div
         {...shared}
+        style={props.position && { left: props.position.x, top: props.position.y }}
         className={cn(
-          'group relative flex cursor-default flex-col items-center gap-2 rounded-xl px-3 pt-6 pb-3 text-center transition-colors select-none hover:bg-accent/60',
+          'group flex cursor-default flex-col items-center gap-2 rounded-xl px-3 pt-6 pb-3 text-center transition-colors select-none hover:bg-accent/60',
+          props.position ? 'absolute w-32' : 'relative',
           selected && 'bg-sky-500/15 ring-1 ring-sky-500/50 hover:bg-sky-500/20 dark:bg-sky-400/15',
           focused && 'ring-2 ring-sky-500/70',
           (cut || dragging) && 'opacity-50',

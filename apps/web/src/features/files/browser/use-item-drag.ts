@@ -40,6 +40,14 @@ export function useItemDrag(options: {
   resolveNodes: (node: FileNode) => FileNode[]
   canDrop: (targetId: string | null, nodes: FileNode[]) => boolean
   onDrop: (nodes: FileNode[], targetId: string | null) => void
+  /**
+   * A freely arranged view: released over this element's empty space, the items move there.
+   * `delta` is how far they travelled in the element's own coordinates, scrolling included.
+   */
+  canvas?: {
+    element: () => HTMLElement | null
+    onMove: (nodes: FileNode[], delta: { x: number; y: number }) => void
+  }
 }) {
   const [state, setState] = useState<ItemDragState>(IDLE)
   const [activeTarget, setActiveTarget] = useState<string | null>(null)
@@ -67,6 +75,7 @@ export function useItemDrag(options: {
 
   // The active drag, set synchronously so a release before React re-renders is still handled.
   const session = useRef<ItemDragState | null>(null)
+  const scrollStart = useRef<{ element: HTMLElement | null; left: number; top: number }>({ element: null, left: 0, top: 0 })
 
   const finish = useCallback((dropped: boolean) => {
     cleanup.current?.()
@@ -77,10 +86,21 @@ export function useItemDrag(options: {
     const target = activeTargetRef.current
     setTarget(null)
     const releasedAt = chipRef.current?.firstElementChild?.getBoundingClientRect() ?? null
+    const canvas = optionsRef.current.canvas
+    const canvasElement = canvas?.element()
+    const over = document.elementFromPoint(pointer.current.x, pointer.current.y)
     if (dropped && target !== null) {
       const targetId = target === 'root' ? null : target
       setState({ ...current, phase: 'dropping', releasedAt })
       optionsRef.current.onDrop(current.nodes, targetId)
+    } else if (dropped && canvas && canvasElement && over && canvasElement.contains(over)) {
+      // Rearranging: the items land where they were dropped, with no fly-back.
+      const scroller = scrollStart.current
+      canvas.onMove(current.nodes, {
+        x: pointer.current.x - current.start.x + (scroller.element ? scroller.element.scrollLeft - scroller.left : 0),
+        y: pointer.current.y - current.start.y + (scroller.element ? scroller.element.scrollTop - scroller.top : 0),
+      })
+      setState(IDLE)
     } else {
       const homes = current.nodes.map((node, index) => rowRect(node.id) ?? current.origins[index] ?? current.origins[0]!)
       setState({ ...current, phase: 'returning', releasedAt, homes })
@@ -103,13 +123,19 @@ export function useItemDrag(options: {
       frame = requestAnimationFrame(autoscroll)
       if (!viewport) return
       const bounds = viewport.getBoundingClientRect()
-      const { y } = pointer.current
-      const speed = y < bounds.top + AUTOSCROLL_EDGE_PX
-        ? -Math.ceil(AUTOSCROLL_MAX_SPEED * (1 - Math.max(0, y - bounds.top) / AUTOSCROLL_EDGE_PX))
-        : y > bounds.bottom - AUTOSCROLL_EDGE_PX
-          ? Math.ceil(AUTOSCROLL_MAX_SPEED * (1 - Math.max(0, bounds.bottom - y) / AUTOSCROLL_EDGE_PX))
+      const { x, y } = pointer.current
+      const edgeSpeed = (position: number, start: number, end: number) => position < start + AUTOSCROLL_EDGE_PX
+        ? -Math.ceil(AUTOSCROLL_MAX_SPEED * (1 - Math.max(0, position - start) / AUTOSCROLL_EDGE_PX))
+        : position > end - AUTOSCROLL_EDGE_PX
+          ? Math.ceil(AUTOSCROLL_MAX_SPEED * (1 - Math.max(0, end - position) / AUTOSCROLL_EDGE_PX))
           : 0
-      if (speed) viewport.scrollTop += speed
+      const vertical = edgeSpeed(y, bounds.top, bounds.bottom)
+      if (vertical) viewport.scrollTop += vertical
+      // Sideways only where the content scrolls sideways (a freely arranged grid).
+      if (viewport.scrollWidth > viewport.clientWidth) {
+        const sideways = edgeSpeed(x, bounds.left, bounds.right)
+        if (sideways) viewport.scrollLeft += sideways
+      }
     }
 
     const hitTest = () => {
@@ -129,6 +155,7 @@ export function useItemDrag(options: {
         const nodes = optionsRef.current.resolveNodes(node)
         const origins = nodes.map((item) => rowRect(item.id)).filter((rect): rect is DOMRect => Boolean(rect))
         viewport = (event.target as Element).closest<HTMLElement>('[data-slot="scroll-area-viewport"]')
+        scrollStart.current = { element: viewport, left: viewport?.scrollLeft ?? 0, top: viewport?.scrollTop ?? 0 }
         document.body.style.userSelect = 'none'
         window.getSelection()?.removeAllRanges()
         session.current = { phase: 'dragging', nodes, origins, start: { x: startX, y: startY }, releasedAt: null, homes: [] }
