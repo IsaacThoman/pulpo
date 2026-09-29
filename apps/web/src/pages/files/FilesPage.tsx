@@ -483,6 +483,7 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
   }
 
   const drag = useItemDrag({
+    tile: view === 'grid',
     canvas: view === 'grid' ? {
       // The whole scrolling area below the header, including empty space past the items.
       element: () => bodyRef.current?.closest<HTMLElement>('[data-slot="scroll-area-viewport"]') ?? null,

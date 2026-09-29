@@ -21,9 +21,11 @@ export interface ItemDragState {
   releasedAt: DOMRect | null
   /** Current row rectangles at release, where cancelled items fly back to. */
   homes: DOMRect[]
+  /** Grid tiles keep their shape and stay under the pointer where they were grabbed. */
+  tile: boolean
 }
 
-const IDLE: ItemDragState = { phase: 'idle', nodes: [], origins: [], start: { x: 0, y: 0 }, releasedAt: null, homes: [] }
+const IDLE: ItemDragState = { phase: 'idle', nodes: [], origins: [], start: { x: 0, y: 0 }, releasedAt: null, homes: [], tile: false }
 
 function rowRect(id: string): DOMRect | null {
   return document.querySelector<HTMLElement>(`[data-file-id="${CSS.escape(id)}"]`)?.getBoundingClientRect() ?? null
@@ -40,6 +42,8 @@ export function useItemDrag(options: {
   resolveNodes: (node: FileNode) => FileNode[]
   canDrop: (targetId: string | null, nodes: FileNode[]) => boolean
   onDrop: (nodes: FileNode[], targetId: string | null) => void
+  /** Items are grid tiles: the drag shows the tile itself instead of a compact chip. */
+  tile?: boolean
   /**
    * A freely arranged view: released over this element's empty space, the items move there.
    * `delta` is how far they travelled in the element's own coordinates, scrolling included.
@@ -61,11 +65,17 @@ export function useItemDrag(options: {
   const activeTargetRef = useRef<string | null>(null)
   const cleanup = useRef<(() => void) | null>(null)
 
+  // Where the pointer grabbed a tile, relative to its corner; null for the compact chip.
+  const grab = useRef<{ x: number; y: number } | null>(null)
   const positionChip = useCallback(() => {
     const chip = chipRef.current
-    // The chip's top-left corner sits at the cursor tip; the overlay ignores the pointer, so it
-    // never blocks hit-testing for drop targets.
-    if (chip) chip.style.transform = `translate3d(${pointer.current.x + CHIP_OFFSET_PX}px, ${pointer.current.y + CHIP_OFFSET_PX}px, 0)`
+    if (!chip) return
+    // A tile stays under the pointer where it was grabbed, so it shows where it will land. The
+    // compact chip's top-left corner sits at the cursor tip. The overlay ignores the pointer, so
+    // it never blocks hit-testing for drop targets.
+    const x = grab.current ? pointer.current.x - grab.current.x : pointer.current.x + CHIP_OFFSET_PX
+    const y = grab.current ? pointer.current.y - grab.current.y : pointer.current.y + CHIP_OFFSET_PX
+    chip.style.transform = `translate3d(${x}px, ${y}px, 0)`
   }, [])
 
   const setTarget = (target: string | null) => {
@@ -158,7 +168,9 @@ export function useItemDrag(options: {
         scrollStart.current = { element: viewport, left: viewport?.scrollLeft ?? 0, top: viewport?.scrollTop ?? 0 }
         document.body.style.userSelect = 'none'
         window.getSelection()?.removeAllRanges()
-        session.current = { phase: 'dragging', nodes, origins, start: { x: startX, y: startY }, releasedAt: null, homes: [] }
+        const tile = Boolean(optionsRef.current.tile && origins[0])
+        grab.current = tile ? { x: startX - origins[0]!.left, y: startY - origins[0]!.top } : null
+        session.current = { phase: 'dragging', nodes, origins, start: { x: startX, y: startY }, releasedAt: null, homes: [], tile }
         setState(session.current)
         frame = requestAnimationFrame(autoscroll)
       }
