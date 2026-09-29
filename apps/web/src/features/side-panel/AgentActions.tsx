@@ -1,8 +1,8 @@
 import type { ReactElement } from 'react'
-import { Bot, ChevronDown, Columns2, MessageSquareCheck, MessageSquarePlus, SquarePen } from 'lucide-react'
+import { Bot, Columns2, MessageSquareCheck, MessageSquarePlus, SquarePen } from 'lucide-react'
 import { focusComposer } from '@/components/chat/composer-focus'
 import { Button } from '@/components/ui/button'
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { DropdownMenuItem } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { ui } from '@/i18n/ui'
 import { cn } from '@/lib/utils'
@@ -74,7 +74,12 @@ export function AgentActions({ item, place }: { item: AgentItem; place: FilesVie
   const added = Boolean(scope && scopeIncludes(scope, item))
   const label = added ? ui("Already added to the chat") : ui("Add to the chat on the left")
   return (
-    <div className="flex items-center">
+    <>
+      {target.kind === 'chat' && (
+        <TipButton tip={ui("Ask about this in a new chat")}>
+          <Button variant="ghost" size="icon-sm" aria-label={ui("Open in new chat")} onClick={() => openInNewChat([item.id], place, go)}><SquarePen /></Button>
+        </TipButton>
+      )}
       <TipButton tip={added ? label : `${label} · ${shortcut}`}>
         <Button
           variant="ghost"
@@ -87,17 +92,7 @@ export function AgentActions({ item, place }: { item: AgentItem; place: FilesVie
           {added ? <MessageSquareCheck /> : <MessageSquarePlus />}
         </Button>
       </TipButton>
-      {target.kind === 'chat' && (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon-sm" className="w-4 text-muted-foreground" aria-label={ui("More agent actions")}><ChevronDown className="size-3.5" /></Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onSelect={() => openInNewChat([item.id], place, go)}><SquarePen /> {ui("Open in new chat")}</DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      )}
-    </div>
+    </>
   )
 }
 

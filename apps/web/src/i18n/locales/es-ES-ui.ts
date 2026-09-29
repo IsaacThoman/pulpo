@@ -1910,7 +1910,6 @@ const esUi: Record<string, string> = {
   "Add to the chat on the left": "Añadir al chat de la izquierda",
   "In chat": "En el chat",
   "Add to chat": "Añadir al chat",
-  "More agent actions": "Más acciones del agente",
   "Open in new chat": "Abrir en un chat nuevo",
   "Add to current chat": "Añadir al chat actual",
   "Open in new tab": "Abrir en una pestaña nueva",
