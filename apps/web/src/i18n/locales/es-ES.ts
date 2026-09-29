@@ -156,6 +156,18 @@ const esES = {
     apiKeys: 'Claves de API',
     billing: 'Facturación',
     chats: 'Chats',
+    chatSort: {
+      default: 'Predeterminado',
+      recent: 'Recientes',
+      toggle: 'Orden de chats: {{mode}}. Cambiar a {{next}}.',
+    },
+    groups: {
+      today: 'Hoy',
+      yesterday: 'Ayer',
+      previous7: 'Últimos 7 días',
+      previous30: 'Últimos 30 días',
+      older: 'Anteriores',
+    },
     collapse: 'Contraer barra lateral',
     createFolder: 'Crear carpeta',
     expand: 'Expandir barra lateral',

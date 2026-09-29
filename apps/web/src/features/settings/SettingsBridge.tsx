@@ -24,6 +24,7 @@ const persistedKeys = [
   'newChatAutoExpire',
   'defaultModelId',
   'sidebarPins',
+  'chatSortMode',
 ] as const
 type PersistedKey = typeof persistedKeys[number]
 type SettingsDocument = {
