@@ -104,6 +104,20 @@ export function formatSecondsLabel(ms: number): string {
   return seconds === 1 ? ui('1 second') : ui('{{count}} seconds', { count: seconds })
 }
 
+export type ChatTimeGroup = 'today' | 'yesterday' | 'previous7' | 'previous30' | 'older'
+
+export const CHAT_TIME_GROUPS: readonly ChatTimeGroup[] = ['today', 'yesterday', 'previous7', 'previous30', 'older']
+
+export function chatTimeGroup(ts: number, now = new Date()): ChatTimeGroup {
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+  const dayMs = 86_400_000
+  if (ts >= startOfToday) return 'today'
+  if (ts >= startOfToday - dayMs) return 'yesterday'
+  if (ts >= startOfToday - 7 * dayMs) return 'previous7'
+  if (ts >= startOfToday - 30 * dayMs) return 'previous30'
+  return 'older'
+}
+
 export function maskKey(prefix: string): string {
   return `${prefix}${'•'.repeat(12)}`
 }

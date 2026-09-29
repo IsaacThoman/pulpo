@@ -149,7 +149,18 @@ const enUS = {
   sidebar: {
     apiKeys: 'API keys',
     billing: 'Billing',
-    chats: 'Chats',
+    chatSort: {
+      default: 'Default',
+      recent: 'Recent',
+      toggle: 'Chat order: {{mode}}. Switch to {{next}}.',
+    },
+    groups: {
+      today: 'Today',
+      yesterday: 'Yesterday',
+      previous7: 'Previous 7 Days',
+      previous30: 'Previous 30 Days',
+      older: 'Older',
+    },
     collapse: 'Collapse sidebar',
     createFolder: 'Create folder',
     expand: 'Expand sidebar',
