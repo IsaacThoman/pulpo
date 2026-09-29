@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react'
-import { Bot, ChevronDown, Columns2, MessageSquarePlus } from 'lucide-react'
+import { Bot, ChevronDown, Columns2, MessageSquareCheck, MessageSquarePlus, SquarePen } from 'lucide-react'
 import { focusComposer } from '@/components/chat/composer-focus'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
@@ -47,14 +47,12 @@ export function AgentActions({ item, place }: { item: AgentItem; place: FilesVie
   const { target, scope } = useTargetScope()
   const shortcut = panelShortcut('J')
 
-  if (place.layout === 'page' || !target) {
+  if (place.layout === 'page') {
     return (
       <>
-        {place.layout === 'page' && (
-          <TipButton tip={ui("Split view: move this to the side and open a chat")}>
-            <Button variant="outline" size="icon-sm" aria-label={ui("Split view")} onClick={() => splitView(place.view, go)}><Columns2 /></Button>
-          </TipButton>
-        )}
+        <TipButton tip={ui("Split view: move this to the side and open a chat")}>
+          <Button variant="outline" size="icon-sm" aria-label={ui("Split view")} onClick={() => splitView(place.view, go)}><Columns2 /></Button>
+        </TipButton>
         <TipButton tip={`${ui("Ask about this in a new chat")} · ${shortcut}`}>
           <Button variant="outline" size="sm" onClick={() => openInNewChat([item.id], place, go)}>
             <Bot /> <span className="max-sm:sr-only">{ui("Ask agent")}</span>
@@ -64,32 +62,41 @@ export function AgentActions({ item, place }: { item: AgentItem; place: FilesVie
     )
   }
 
-  const covered = Boolean(scope && scopeIncludes(scope, item))
-  const add = (
-    <TipButton tip={covered ? ui("Already added to the chat") : `${ui("Add to the chat on the left")} · ${shortcut}`}>
-      <Button
-        variant="outline"
-        size="sm"
-        aria-pressed={covered}
-        className={cn(covered && 'bg-accent', target.kind === 'chat' && 'rounded-r-none')}
-        onClick={() => covered ? focusComposer() : addToChat([item.id])}
-      >
-        <Bot /> <span className="max-sm:sr-only">{covered ? ui("In chat") : ui("Add to chat")}</span>
-      </Button>
-    </TipButton>
-  )
-  if (target.kind === 'new') return add
+  // In the panel header the agent controls are plain icons like the window controls beside them.
+  if (!target) {
+    return (
+      <TipButton tip={`${ui("Ask about this in a new chat")} · ${shortcut}`}>
+        <Button variant="ghost" size="icon-sm" aria-label={ui("Ask agent")} onClick={() => openInNewChat([item.id], place, go)}><SquarePen /></Button>
+      </TipButton>
+    )
+  }
+
+  const added = Boolean(scope && scopeIncludes(scope, item))
+  const label = added ? ui("Already added to the chat") : ui("Add to the chat on the left")
   return (
-    <div className="flex">
-      {add}
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button variant="outline" size="icon-sm" className="w-7 rounded-l-none border-l-0" aria-label={ui("More agent actions")}><ChevronDown /></Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          <DropdownMenuItem onSelect={() => openInNewChat([item.id], place, go)}><MessageSquarePlus /> {ui("Open in new chat")}</DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+    <div className="flex items-center">
+      <TipButton tip={added ? label : `${label} · ${shortcut}`}>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label={added ? ui("In chat") : ui("Add to chat")}
+          aria-pressed={added}
+          className={cn(added && 'bg-accent text-foreground')}
+          onClick={() => added ? focusComposer() : addToChat([item.id])}
+        >
+          {added ? <MessageSquareCheck /> : <MessageSquarePlus />}
+        </Button>
+      </TipButton>
+      {target.kind === 'chat' && (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="icon-sm" className="w-4 text-muted-foreground" aria-label={ui("More agent actions")}><ChevronDown className="size-3.5" /></Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onSelect={() => openInNewChat([item.id], place, go)}><SquarePen /> {ui("Open in new chat")}</DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
     </div>
   )
 }
@@ -103,12 +110,12 @@ export function AgentMenuItems({ ids, place }: { ids: string[]; place: FilesView
     <>
       {inPanel && (
         <DropdownMenuItem onSelect={() => addToChat(ids)}>
-          <Bot /> {target.kind === 'chat' ? ui("Add to current chat") : ui("Add to chat")}
+          <MessageSquarePlus /> {target.kind === 'chat' ? ui("Add to current chat") : ui("Add to chat")}
         </DropdownMenuItem>
       )}
       {(!inPanel || target.kind === 'chat') && (
         <DropdownMenuItem onSelect={() => openInNewChat(ids, place, go)}>
-          {inPanel ? <MessageSquarePlus /> : <Bot />} {ui("Open in new chat")}
+          <SquarePen /> {ui("Open in new chat")}
         </DropdownMenuItem>
       )}
     </>
