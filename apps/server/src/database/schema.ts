@@ -887,6 +887,24 @@ export const fileDocUpdates = pgTable('file_doc_updates', {
   check('file_doc_updates_origin_check', sql`${table.origin} in ('client', 'agent', 'import', 'restore')`),
 ])
 
+/**
+ * What an agent response changed in Files, so the whole response can be undone: the Markdown a
+ * document had before the response first edited it, or an item the response created.
+ */
+export const fileAgentChanges = pgTable('file_agent_changes', {
+  id: uuid('id').primaryKey(),
+  responseId: uuid('response_id').notNull().references(() => responses.id, { onDelete: 'cascade' }),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  nodeId: uuid('node_id').notNull().references(() => fileNodes.id, { onDelete: 'cascade' }),
+  kind: text('kind').notNull(),
+  beforeMarkdown: text('before_markdown'),
+  revertedAt: timestamp('reverted_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex('file_agent_changes_response_node_unique').on(table.responseId, table.nodeId),
+  check('file_agent_changes_kind_check', sql`${table.kind} in ('edit', 'create')`),
+])
+
 export const episodicMemoryGenerations = pgTable('episodic_memory_generations', {
   id: uuid('id').primaryKey(),
   indexVersion: integer('index_version').notNull().default(1),

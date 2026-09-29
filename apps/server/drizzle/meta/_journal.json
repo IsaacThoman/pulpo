@@ -603,6 +603,13 @@
       "when": 1790636026555,
       "tag": "0085_chat_file_scope",
       "breakpoints": true
+    },
+    {
+      "idx": 86,
+      "version": "7",
+      "when": 1790691964903,
+      "tag": "0086_file_agent_changes",
+      "breakpoints": true
     }
   ]
 }

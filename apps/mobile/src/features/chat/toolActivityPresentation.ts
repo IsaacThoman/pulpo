@@ -2,6 +2,8 @@ import {
   FilePenLine,
   FilePlus,
   FileText,
+  FolderOpen,
+  FolderPlus,
   FolderSearch,
   Globe,
   Image,
@@ -32,6 +34,11 @@ const presentations: Record<string, ToolActivityPresentation> = {
   web_search: { icon: Search, label: 'Searching the web…' },
   web_fetch: { icon: Globe, label: 'Fetching a webpage…' },
   update_memory: { icon: FilePenLine, label: 'Updating memory…' },
+  files_list: { icon: FolderOpen, label: 'Looking through your files…' },
+  files_read: { icon: FileText, label: 'Reading a document…' },
+  files_write: { icon: FilePlus, label: 'Writing a document…' },
+  files_edit: { icon: FilePenLine, label: 'Editing a document…' },
+  files_create_folder: { icon: FolderPlus, label: 'Creating a folder…' },
 };
 
 export function toolActivityPresentation(name?: string): ToolActivityPresentation {

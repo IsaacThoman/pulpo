@@ -149,6 +149,11 @@ export function bindDocSocket(socket: PulpoSocket): void {
   })
 }
 
+/** Runs on every API instance for each published update, so only local sockets are touched. */
+export function relayDocUpdateLocally(io: PulpoServer, event: { docId: string; update: string }): void {
+  io.local.to(docRoom(event.docId)).emit('doc.update', { docId: event.docId, update: new Uint8Array(Buffer.from(event.update, 'base64')) })
+}
+
 /** Runs on every API instance for each published close, so only local sockets are touched. */
 export function closeDocsLocally(io: PulpoServer, event: { docIds: string[]; reason: DocClosedEvent['reason'] }): void {
   for (const docId of event.docIds) {

@@ -3,6 +3,8 @@ import {
   FilePenLine,
   FilePlus,
   FileText,
+  FolderOpen,
+  FolderPlus,
   FolderSearch,
   Globe,
   Image,
@@ -29,6 +31,11 @@ describe('toolActivityPresentation', () => {
     ['web_search', 'Searching the web…', Search],
     ['web_fetch', 'Fetching a webpage…', Globe],
     ['update_memory', 'Updating memory…', FilePenLine],
+    ['files_list', 'Looking through your files…', FolderOpen],
+    ['files_read', 'Reading a document…', FileText],
+    ['files_write', 'Writing a document…', FilePlus],
+    ['files_edit', 'Editing a document…', FilePenLine],
+    ['files_create_folder', 'Creating a folder…', FolderPlus],
   ])('maps %s to a friendly label and icon', (name, label, icon) => {
     expect(toolActivityPresentation(name)).toEqual({ label, icon })
   })

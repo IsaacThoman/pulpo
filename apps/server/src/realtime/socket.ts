@@ -23,8 +23,8 @@ import { chats, responses, users, userPreferences } from '../database/schema.js'
 import { readResponseEvents } from '../responses/events.js'
 import { toSnapshot } from '../responses/service.js'
 import { accessibleChatCondition } from '../chats/temporary.js'
-import { DOC_CLOSED_CHANNEL } from '../files/doc-events.js'
-import { bindDocSocket, closeDocsLocally } from '../files/doc-socket.js'
+import { DOC_CLOSED_CHANNEL, DOC_UPDATE_CHANNEL } from '../files/doc-events.js'
+import { bindDocSocket, closeDocsLocally, relayDocUpdateLocally } from '../files/doc-socket.js'
 
 export interface SocketData {
   composerSyncEnabled: boolean
@@ -282,7 +282,7 @@ export async function createSocketServer(httpServer: HttpServer) {
     return pending
   }
 
-  await subscriber.subscribe('pulpo:chat-started', 'pulpo:composer-changes', 'pulpo:response-events', 'pulpo:response-snapshots', 'pulpo:state-changes', 'pulpo:session-revocations', 'pulpo:admin-usage', DOC_CLOSED_CHANNEL)
+  await subscriber.subscribe('pulpo:chat-started', 'pulpo:composer-changes', 'pulpo:response-events', 'pulpo:response-snapshots', 'pulpo:state-changes', 'pulpo:session-revocations', 'pulpo:admin-usage', DOC_CLOSED_CHANNEL, DOC_UPDATE_CHANNEL)
   subscriber.on('message', (channel: string, message: string) => {
     if (channel === 'pulpo:composer-changes') {
       const change = JSON.parse(message)
@@ -298,6 +298,8 @@ export async function createSocketServer(httpServer: HttpServer) {
       })
     } else if (channel === DOC_CLOSED_CHANNEL) {
       closeDocsLocally(io, JSON.parse(message))
+    } else if (channel === DOC_UPDATE_CHANNEL) {
+      relayDocUpdateLocally(io, JSON.parse(message))
     } else if (channel === 'pulpo:admin-usage') {
       io.to('admin:usage').emit('admin.usage.upsert', JSON.parse(message))
     } else if (channel === 'pulpo:response-events') {

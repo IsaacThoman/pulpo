@@ -28,6 +28,14 @@ Files views offer their items to the chat in the main view, which `ChatPage` pub
 - In the panel beside the new-chat page, **Add to chat** attaches the item to the unsent chat. Beside a saved chat it adds to that chat, with **Open in new chat** in its menu. The button shows **In chat** when the scope already covers the item.
 - Right-click menus follow the same rule: **Open in new chat** when no chat is open, **Add to chat** beside the new-chat page, and **Add to current chat** or **Open in new chat** beside a saved chat. On empty space they act on the folder being viewed, or My files.
 
+### Agent tools
+
+In agent mode, a chat with a scope gets `files_list`, `files_read`, `files_write`, `files_edit`, and `files_create_folder` (`apps/server/src/files/agent-tools.ts`), and its system prompt lists the attached items. The tools are left out when Files is disabled or nothing in the scope is still live.
+
+- Paths start with an attached item's name (or at the top of My files for a `root` scope) and are walked one child at a time from there, so nothing outside the scope can be named; `.` and `..` segments are refused. New items must go inside an attached folder.
+- Documents are read and edited as Markdown. `files_edit` replaces exact text that must occur once. Writes use `writeDocMarkdown`, which applies the new Markdown to the Yjs document as a minimal diff, appends the update with origin `agent`, and publishes it on `pulpo:file-doc-updates`; every API instance relays it to its `doc:<id>` room, so open editors show the edit live. Uploaded text files are readable but not writable, and only `.md` documents can be created.
+- Each response's changes are recorded in `file_agent_changes`: the Markdown a document had before the response first edited it, or an item it created. The reply shows what changed, with **Undo** (`POST /api/responses/:id/file-changes/revert`), which writes the earlier Markdown back as a minimal diff (origin `restore`, so edits made elsewhere since survive) and moves created items to the trash.
+
 ## Uploads
 
 Uploads use the attachment flow (reserve, PUT, confirm) with `users/<id>/files/<node>` object keys and the same per-file cap. Files blobs, including trashed ones, and document state count toward the account storage allowance together with chat attachments. They do not reuse the `attachments` table, because chat purges delete attachments claimed by a chat.

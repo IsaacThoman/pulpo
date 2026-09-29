@@ -1,6 +1,6 @@
 import { and, asc, eq, gt, inArray, lt, sql } from 'drizzle-orm'
 import * as Y from 'yjs'
-import { DOC_SCHEMA_VERSION, ydocToMarkdown } from '@pulpo/client-core/doc-schema'
+import { applyMarkdownToYDoc, DOC_SCHEMA_VERSION, ydocToMarkdown } from '@pulpo/client-core/doc-schema'
 import { isMarkdownName, type FileNode } from '@pulpo/contracts'
 import { db } from '../database/client.js'
 import { fileDocs, fileDocUpdates, fileNodes } from '../database/schema.js'
@@ -8,6 +8,7 @@ import { fileDocQueue } from '../jobs.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import { resolveFileAccess } from './access.js'
+import { publishDocUpdate } from './doc-events.js'
 import { docTooLarge, initialDocState, MAX_DOC_STATE_BYTES } from './doc-state.js'
 import { assertDestination, availableName, mutateFileTree, toFileNode } from './tree-service.js'
 
@@ -143,6 +144,27 @@ export async function scheduleStaleDocCompactions(now = new Date()): Promise<voi
     lt(fileDocs.lastEditedAt, new Date(now.getTime() - 60_000)),
   )).limit(500)
   for (const doc of stale) await scheduleDocCompaction(doc.nodeId, 0)
+}
+
+/**
+ * Rewrites a document to match `markdown` as a minimal Yjs diff, persists it, and sends it to
+ * open editors. Returns the Markdown it had before, or null when nothing changed.
+ */
+export async function writeDocMarkdown(input: {
+  nodeId: string
+  actorUserId: string
+  markdown: string
+  origin: Extract<DocUpdateOrigin, 'agent' | 'restore'>
+}): Promise<{ before: string } | null> {
+  const doc = await loadYDoc(input.nodeId)
+  const before = ydocToMarkdown(doc)
+  const vector = Y.encodeStateVector(doc)
+  applyMarkdownToYDoc(doc, input.markdown, input.origin)
+  if (ydocToMarkdown(doc) === before) return null
+  const update = Y.encodeStateAsUpdate(doc, vector)
+  await appendDocUpdate({ nodeId: input.nodeId, actorUserId: input.actorUserId, update, origin: input.origin })
+  await publishDocUpdate(input.nodeId, update)
+  return { before }
 }
 
 export async function readDocMarkdown(userId: string, nodeId: string): Promise<{ name: string; markdown: string }> {

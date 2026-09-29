@@ -27,10 +27,24 @@ import {
   updateFileNode,
 } from './tree-service.js'
 import { registerFileUploadRoutes } from './upload-routes.js'
+import { listFileChanges, revertFileChanges } from './agent-tools.js'
 
 const idParams = z.object({ id: z.uuid() })
 
 export async function registerFileRoutes(app: FastifyInstance): Promise<void> {
+  // What an agent response changed in Files, and undoing all of it.
+  app.get('/api/responses/:id/file-changes', async (request) => {
+    const user = await requireFilesUser(request)
+    const { id } = idParams.parse(request.params)
+    return { changes: await listFileChanges(user.id, id) }
+  })
+
+  app.post('/api/responses/:id/file-changes/revert', async (request) => {
+    const user = await requireFilesUser(request)
+    const { id } = idParams.parse(request.params)
+    return revertFileChanges(user.id, id)
+  })
+
   app.get('/api/files', async (request) => {
     const user = await requireFilesUser(request)
     const { parentId } = z.object({ parentId: z.uuid().optional() }).parse(request.query)
