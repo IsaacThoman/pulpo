@@ -69,7 +69,7 @@ import {
 import { readFileSort, sortFileNodes, toggleFileSort, uniqueChildName, writeFileSort, type FileSort, type FileSortKey } from '@/features/files/browser/sort'
 import { hasPrimaryModifier, isAppleShortcut, isEditableTarget, shortcutLabel } from '@/features/files/browser/shortcuts'
 import { useSidePanel, type PanelContent } from '@/features/side-panel/store'
-import { AgentMenuItems, SplitViewButton } from '@/features/side-panel/AgentActions'
+import { AgentActions, AgentMenuItems, SplitViewButton } from '@/features/side-panel/AgentActions'
 import { usePublishFilesView, type FilesViewPlace } from '@/features/side-panel/agent'
 import { PanelWindowButtons } from '@/features/side-panel/PanelControls'
 import { panelContentPath, useMainNavigate } from '@/features/side-panel/use-panel-actions'
@@ -247,13 +247,8 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
    * when browsing in the panel. Alt/Option-click, and "Open to the side" or "Open in main view".
    */
   const openElsewhere = (content: PanelContent) => {
-    // From the panel it becomes the only view, as with the header's maximize button.
-    if (panel) {
-      useSidePanel.getState().close()
-      goMain(panelContentPath(content))
-    } else {
-      useSidePanel.getState().open(content)
-    }
+    if (panel) goMain(panelContentPath(content))
+    else useSidePanel.getState().open(content)
   }
   const nodeContent = (node: FileNode): PanelContent => node.kind === 'folder' ? { kind: 'folder', id: node.id } : { kind: 'file', id: node.id }
   const elsewhereLabel = panel ? ui("Open in main view") : ui("Open to the side")
@@ -839,6 +834,12 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
         node={previewing}
         onOpenChange={(open) => { if (!open) setPreviewing(null) }}
         onDownload={(node) => void downloadFile(node).catch(ops.fail)}
+        actions={previewing && (
+          <AgentActions
+            item={{ id: previewing.id }}
+            place={{ layout: 'page', view: { kind: 'file', id: previewing.id } }}
+          />
+        )}
       />
       <FileDragOverlay drag={drag} />
     </>
@@ -856,6 +857,7 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
         {iconTip(ui("List view"), <Button variant="ghost" size="icon-sm" aria-pressed={view === 'list'} aria-label={ui("List view")} className={cn(view === 'list' && 'bg-accent text-foreground')} onClick={() => changeView('list')}><List /></Button>)}
         {iconTip(ui("Grid view"), <Button variant="ghost" size="icon-sm" aria-pressed={view === 'grid'} aria-label={ui("Grid view")} className={cn(view === 'grid' && 'bg-accent text-foreground')} onClick={() => changeView('grid')}><LayoutGrid /></Button>)}
       </div>
+      {!listing.isError && <AgentActions item={agentItem} place={place} />}
       {iconTip(ui("Trash"), <Button asChild variant="ghost" size="icon-sm" aria-label={ui("Trash")}><Link to="/files/trash"><Trash2 /></Link></Button>)}
       {newMenu}
     </>

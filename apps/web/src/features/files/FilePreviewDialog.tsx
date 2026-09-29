@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { useEffect, useState } from 'react'
 import type { FileNode } from '@pulpo/contracts'
 import { Download, Loader2 } from 'lucide-react'
@@ -88,10 +89,13 @@ export function FilePreviewDialog({
   node,
   onOpenChange,
   onDownload,
+  actions,
 }: {
   node: FileNode | null
   onOpenChange: (open: boolean) => void
   onDownload: (node: FileNode) => void
+  /** Extra controls beside Download, e.g. asking the agent about the file. */
+  actions?: ReactNode
 }) {
   return (
     <Dialog open={Boolean(node)} onOpenChange={onOpenChange}>
@@ -108,6 +112,7 @@ export function FilePreviewDialog({
                 <Download /> {ui("Download")}
               </Button>
             )}
+            {actions}
           </DialogDescription>
         </DialogHeader>
         <div className="min-h-0 flex-1 overflow-auto rounded-lg border bg-muted/30">
