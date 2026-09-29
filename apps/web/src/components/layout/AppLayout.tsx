@@ -55,6 +55,9 @@ export function AppLayout() {
   const sidebarMakesRoom = !mobile && !collapsed && !searchHasQuery && !keepSidebar && panelNeedsSidebarRoom
   const sidebarCollapsed = mobile || collapsed || searchHasQuery || sidebarMakesRoom
   useEffect(() => { if (!panelNeedsSidebarRoom) setKeepSidebar(false) }, [panelNeedsSidebarRoom])
+  // Too narrow for two views even without the sidebar (phones): the panel becomes the only view,
+  // in the layout rather than over it; the main view stays mounted and returns when it closes.
+  const panelFull = panelOpen && !adminChatView && (mobile || !splitFits(frameWidth - SIDEBAR_COLLAPSED_WIDTH))
   /** The desktop sidebar toggle, aware of a sidebar folded away for the panel. */
   const toggleDesktopSidebar = () => {
     // Reopening a folded-away sidebar keeps it open, and hides the panel, until there is room.
@@ -245,12 +248,12 @@ export function AppLayout() {
             }}
           />}
           <div ref={contentRef} className="flex h-full min-w-0 flex-1">
-            <main className="app-main min-w-0 flex-1 overflow-hidden">
+            <main className={cn('app-main min-w-0 flex-1 overflow-hidden', panelFull && 'hidden')}>
               <Suspense fallback={<div className="h-full bg-background" aria-label={ui("Loading view")} />}>
                 <Outlet />
               </Suspense>
             </main>
-            {!adminChatView && <SidePanel available={splitRoom} />}
+            {!adminChatView && <SidePanel available={splitRoom} full={panelFull} />}
           </div>
           {/* One host for Files undo toasts, whether Files is on the page or in the panel. */}
           {!adminChatView && <FileToasts />}

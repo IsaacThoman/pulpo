@@ -13,9 +13,10 @@ const loading = <div className="grid h-full place-items-center"><Loader2 classNa
 
 /**
  * A folder or file docked beside the main view (drag its edge to resize), within `available`,
- * the room the two share. It is never laid over the main view: without room for both it hides.
+ * the room the two share. It is never laid over the main view: without room for both it hides,
+ * or, where two views can never fit (`full`, e.g. phones), it takes the main view's place.
  */
-export function SidePanel({ available }: { available: number }) {
+export function SidePanel({ available, full = false }: { available: number; full?: boolean }) {
   const panel = useSidePanel((state) => state.content)
   // The preferred width is kept as set; what shows is clamped to the room there is now.
   const [preferred, setPreferred] = useState(readPanelWidth)
@@ -52,7 +53,7 @@ export function SidePanel({ available }: { available: number }) {
   }, [])
 
   // No room for two views: the panel stays hidden (its URL is kept) until there is.
-  if (!panel || !splitFits(available)) return null
+  if (!panel || (!full && !splitFits(available))) return null
 
   const choose = (next: number) => {
     const clamped = clampPanelWidth(next, available)
@@ -81,6 +82,20 @@ export function SidePanel({ available }: { available: number }) {
     handle.addEventListener('pointercancel', end)
   }
 
+  const content = (
+    <Suspense fallback={loading}>
+      {panel.kind === 'file' ? <FilePanelView fileId={panel.id} /> : <FolderPanelView folderId={panel.id} />}
+    </Suspense>
+  )
+
+  if (full) {
+    return (
+      <aside data-side-panel data-full aria-label={ui("Side panel")} className="app-side-panel relative flex h-full min-w-0 flex-1 flex-col bg-background">
+        {content}
+      </aside>
+    )
+  }
+
   return (
     <aside
       data-side-panel
@@ -107,9 +122,7 @@ export function SidePanel({ available }: { available: number }) {
           resizing && 'after:bg-sky-500',
         )}
       />
-      <Suspense fallback={loading}>
-        {panel.kind === 'file' ? <FilePanelView fileId={panel.id} /> : <FolderPanelView folderId={panel.id} />}
-      </Suspense>
+      {content}
     </aside>
   )
 }

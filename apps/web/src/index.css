@@ -192,6 +192,11 @@ html[data-desktop="true"] .desktop-sidebar-collapsed .chat-header::before {
     display: flex;
   }
 
+  /* A side panel shown as the only view clears the drawer button like page headers do. */
+  html:not([data-desktop="true"]) .app-side-panel[data-full] .side-panel-header {
+    padding-left: 3rem;
+  }
+
   /* The chat header sits inside ChatPage's preview-panel wrapper, so match it
      by class; other pages keep their header directly under the route root. */
   html:not([data-desktop="true"]) .app-main > div > header,
