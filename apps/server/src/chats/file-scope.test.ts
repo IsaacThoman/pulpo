@@ -17,9 +17,9 @@ const b = '1b4f6a3e-1c2d-4e5f-8a9b-0c1d2e3f4a5c'
 beforeEach(() => { mocks.rows = []; vi.clearAllMocks() })
 
 describe('chat Files scope', () => {
-  it('normalizes the scope: the root replaces folders, and repeats collapse', () => {
+  it('keeps every attached item once, including items inside an attached folder', () => {
     expect(createChatSchema.parse({ modelId: 'm' }).fileScopeIds).toEqual([])
-    expect(createChatSchema.parse({ modelId: 'm', fileScopeIds: [a, 'root'] }).fileScopeIds).toEqual(['root'])
+    expect(createChatSchema.parse({ modelId: 'm', fileScopeIds: [a, 'root', a] }).fileScopeIds).toEqual([a, 'root'])
     expect(updateChatSchema.parse({ fileScopeIds: [a, a.toUpperCase(), b] }).fileScopeIds).toEqual([a, b])
     expect(() => updateChatSchema.parse({ fileScopeIds: ['elsewhere'] })).toThrow()
   })

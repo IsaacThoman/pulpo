@@ -9,51 +9,118 @@ import { newId } from '../lib/ids.js'
 import { getBlobStore } from '../storage/index.js'
 import type { FileNodeRow } from './access.js'
 import { createDoc, readDocMarkdown, writeDocMarkdown } from './doc-store.js'
-import { createFolder, trashFileNodes } from './tree-service.js'
+import { chainIds, createFolder, trashFileNodes } from './tree-service.js'
 
 const LIST_LIMIT = 300
 const LIST_MAX_DEPTH = 8
 const TEXT_READ_LIMIT_BYTES = 2_000_000
 const TEXT_EXTENSIONS = /\.(txt|md|markdown|csv|tsv|json|jsonl|ya?ml|toml|xml|html?|css|js|jsx|ts|tsx|py|rb|go|rs|java|kt|swift|c|h|cpp|hpp|cs|php|sh|sql|log|ini|cfg|conf|env)$/i
 
-/** Something the chat may reach: an attached file or folder, or all files (`node` null). */
+/** A starting point for paths: an attached item no other attached folder contains, or all files (`node` null). */
 export interface FileScopeEntry {
   /** First path segment for this entry; empty for all files. */
   label: string
   node: FileNodeRow | null
 }
 
-/** The live items of a chat's scope, in scope order, with names made unique for paths. */
-export async function loadFileScope(userId: string, scopeIds: readonly string[]): Promise<FileScopeEntry[]> {
-  if (scopeIds.includes(FILE_SCOPE_ROOT)) return [{ label: '', node: null }]
-  if (!scopeIds.length) return []
-  const rows = await db.select().from(fileNodes).where(and(
-    inArray(fileNodes.id, [...scopeIds]),
+/** One item the user attached, with the path the tools use for it. */
+export interface AttachedFileItem {
+  /** Tool path; empty for all files. */
+  path: string
+  node: FileNodeRow | null
+  /** Where a top-level attachment sits in the user's Files, e.g. `Work/Q3`; null at the top. */
+  location: string | null
+}
+
+export interface FileScope {
+  roots: FileScopeEntry[]
+  attached: AttachedFileItem[]
+}
+
+/**
+ * Resolves a chat's scope. Items inside another attached folder (or anywhere, with all files
+ * attached) stay listed on their own, since the user pointed at them, but are reached through
+ * that folder's path; the rest become path roots, with names made unique.
+ */
+export async function loadFileScope(userId: string, scopeIds: readonly string[]): Promise<FileScope> {
+  const all = scopeIds.includes(FILE_SCOPE_ROOT)
+  const ids = [...new Set(scopeIds.filter((id) => id !== FILE_SCOPE_ROOT))]
+  const rows = ids.length ? await db.select().from(fileNodes).where(and(
+    inArray(fileNodes.id, ids),
     eq(fileNodes.ownerUserId, userId),
     isNull(fileNodes.trashedAt),
     eq(fileNodes.status, 'ready'),
-  ))
+  )) : []
   const byId = new Map(rows.map((row) => [row.id, row]))
-  const used = new Map<string, number>()
-  return scopeIds.flatMap((id) => {
-    const node = byId.get(id)
-    if (!node) return []
-    const count = (used.get(node.name.toLowerCase()) ?? 0) + 1
-    used.set(node.name.toLowerCase(), count)
-    return [{ label: count > 1 ? `${node.name} (${count})` : node.name, node }]
-  })
+  const live = ids.flatMap((id) => byId.get(id) ?? [])
+  // Each item's chain up to the top, nearest first, with the names along it.
+  const chains = new Map(await Promise.all(live.map(async (row) => [row.id, await chainIds(db, userId, row.id)] as const)))
+  const chainNodeIds = [...new Set([...chains.values()].flat())]
+  const names = new Map((chainNodeIds.length
+    ? await db.select({ id: fileNodes.id, name: fileNodes.name }).from(fileNodes).where(inArray(fileNodes.id, chainNodeIds))
+    : []).map((row) => [row.id, row.name]))
+  const nameOf = (id: string) => names.get(id) ?? byId.get(id)?.name ?? '?'
+
+  const roots: FileScopeEntry[] = all ? [{ label: '', node: null }] : []
+  const rootLabels = new Map<string, string>()
+  if (!all) {
+    const used = new Map<string, number>()
+    for (const row of live) {
+      if (chains.get(row.id)!.slice(1).some((id) => byId.has(id))) continue
+      const count = (used.get(row.name.toLowerCase()) ?? 0) + 1
+      used.set(row.name.toLowerCase(), count)
+      const label = count > 1 ? `${row.name} (${count})` : row.name
+      rootLabels.set(row.id, label)
+      roots.push({ label, node: row })
+    }
+  }
+
+  const attached: AttachedFileItem[] = []
+  for (const id of scopeIds) {
+    if (id === FILE_SCOPE_ROOT) {
+      if (!attached.some((item) => !item.node)) attached.push({ path: '', node: null, location: null })
+      continue
+    }
+    const row = byId.get(id)
+    if (!row || attached.some((item) => item.node?.id === id)) continue
+    const chain = chains.get(id)!
+    if (all) {
+      attached.push({ path: [...chain].reverse().map(nameOf).join('/'), node: row, location: null })
+      continue
+    }
+    // The outermost attached folder above the item is the root its path starts from.
+    const rootIndex = chain.findLastIndex((chainId) => rootLabels.has(chainId))
+    const rootId = chain[rootIndex]!
+    const inner = chain.slice(0, rootIndex).reverse().map(nameOf)
+    const path = [rootLabels.get(rootId)!, ...inner].join('/')
+    const location = rootId === id && chain.length > 1 ? chain.slice(1).reverse().map(nameOf).join('/') : null
+    attached.push({ path, node: row, location })
+  }
+  return { roots, attached }
 }
 
-/** The system prompt section that tells the agent what it can reach. */
-export function describeFileScope(scope: FileScopeEntry[]): string {
-  const roots = scope.length === 1 && !scope[0]!.node
-    ? '- All of the user\'s files. Paths start at the top of their Files, e.g. `Projects/Plan.md`; `files_list` with no path lists the top level.'
-    : scope.map((entry) => `- \`${entry.label}${entry.node!.kind === 'folder' ? '/' : ''}\` (${entry.node!.kind === 'folder' ? 'folder, with everything inside it' : entry.node!.kind === 'doc' ? 'Markdown document' : 'uploaded file'})`).join('\n')
+function describeKind(node: FileNodeRow): string {
+  if (node.kind === 'folder') return 'folder, with everything inside it'
+  return node.kind === 'doc' ? 'Markdown document' : 'uploaded file, read-only'
+}
+
+/** The system prompt section that tells the agent what the user attached and how to reach it. */
+export function describeFileScope(scope: FileScope): string {
+  const lines = scope.attached.map((item) => {
+    if (!item.node) return '- All of their files. Paths start at the top of their Files, e.g. `Projects/Plan.md`; `files_list` with no path lists the top level.'
+    const folder = item.node.kind === 'folder' ? '/' : ''
+    const where = item.location ? `; it is in their Files at \`${item.location}/\`` : ''
+    return `- \`${item.path}${folder}\` (${describeKind(item.node)}${where})`
+  })
+  const all = scope.roots.length === 1 && !scope.roots[0]!.node
+  const start = all
+    ? 'Paths start at the top of their Files.'
+    : `Paths start with ${scope.roots.map((root) => `\`${root.label}\``).join(', ')}.`
   return [
     '# Files',
-    'The user attached items from their Files to this chat. Work with them through the `files_*` tools, which only reach these items:',
-    roots,
-    'Paths start with one of the names above. Markdown files (.md) are live documents: the user sees your edits as you make them and can undo all of a response\'s changes. Other files are read-only uploads. Read a document before editing it, prefer `files_edit` for changes to part of a document, and keep the user\'s structure and formatting.',
+    'The user attached these items from their Files to this chat. Work with them through the `files_*` tools, which reach only these items (and everything inside attached folders):',
+    ...lines,
+    `${start} An item listed inside an attached folder is one the user pointed out specifically. Markdown files (.md) are live documents: the user sees your edits as you make them and can undo all of a response's changes. Other files are read-only uploads. Read a document before editing it, prefer \`files_edit\` for changes to part of a document, and keep the user's structure and formatting.`,
   ].join('\n')
 }
 
@@ -207,11 +274,12 @@ export function applyTextEdits(source: string, edits: Array<{ oldText: string; n
 export function createFilesTools(input: {
   userId: string
   responseId: string
-  scope: FileScopeEntry[]
+  scope: FileScope
   maxOutputBytes: number
   onOperationStarted?: (operationId: string) => void | Promise<void>
 }): AgentTool[] {
-  const { userId, responseId, scope } = input
+  const { userId, responseId } = input
+  const scope = input.scope.roots
   if (!scope.length) return []
   const run = <T>(operation: (args: Record<string, unknown>) => Promise<T>) =>
     async (id: string, rawArgs: unknown, signal?: AbortSignal): Promise<T> => {

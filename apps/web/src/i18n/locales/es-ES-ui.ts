@@ -1906,7 +1906,7 @@ const esUi: Record<string, string> = {
   "Split view: move this to the side and open a chat": "Vista dividida: mueve esto a un lado y abre un chat",
   "Split view": "Vista dividida",
   "Ask about this in a new chat": "Pregunta sobre esto en un chat nuevo",
-  "The chat can already use this": "El chat ya puede usar esto",
+  "Already added to the chat": "Ya se añadió al chat",
   "Add to the chat on the left": "Añadir al chat de la izquierda",
   "In chat": "En el chat",
   "Add to chat": "Añadir al chat",

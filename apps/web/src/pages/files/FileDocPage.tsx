@@ -176,8 +176,7 @@ function FileHeader({ node, ancestors, view, menu, children }: {
   children?: ReactNode
 }) {
   const place = useMemo<FilesViewPlace | null>(() => node ? { layout: view.layout, view: { kind: 'file', id: node.id } } : null, [node, view.layout])
-  const ancestorKey = ancestors.map((folder) => folder.id).join(',')
-  const item = useMemo<AgentItem | null>(() => node ? { id: node.id, ancestorIds: ancestorKey ? ancestorKey.split(',') : [] } : null, [ancestorKey, node])
+  const item = useMemo<AgentItem | null>(() => node ? { id: node.id } : null, [node])
   usePublishFilesView(place ?? { layout: view.layout, view: { kind: 'folder', id: null } }, item)
   return (
     <header className={cn('flex items-center border-b', view.layout === 'panel' ? 'side-panel-header gap-1.5 px-3 py-1.5' : 'mobile-page-content gap-3 px-4 py-2 sm:px-6')}>

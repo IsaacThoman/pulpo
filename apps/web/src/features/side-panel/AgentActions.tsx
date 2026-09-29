@@ -10,7 +10,7 @@ import { useChat } from '@/stores/chat'
 import {
   addToChat,
   openInNewChat,
-  scopeCovers,
+  scopeIncludes,
   splitView,
   targetScope,
   useChatTarget,
@@ -64,9 +64,9 @@ export function AgentActions({ item, place }: { item: AgentItem; place: FilesVie
     )
   }
 
-  const covered = Boolean(scope && scopeCovers(scope, item))
+  const covered = Boolean(scope && scopeIncludes(scope, item))
   const add = (
-    <TipButton tip={covered ? ui("The chat can already use this") : `${ui("Add to the chat on the left")} · ${shortcut}`}>
+    <TipButton tip={covered ? ui("Already added to the chat") : `${ui("Add to the chat on the left")} · ${shortcut}`}>
       <Button
         variant="outline"
         size="sm"

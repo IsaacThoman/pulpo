@@ -150,7 +150,7 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
     enabled: Boolean(userId && filesEnabled),
   })
   const place = useMemo<FilesViewPlace>(() => ({ layout, view: { kind: 'folder', id: folderId } }), [folderId, layout])
-  const agentItem = useMemo(() => ({ id: folderId ?? FILE_SCOPE_ROOT, ancestorIds: listing.data?.ancestors.map((folder) => folder.id) ?? [] }), [folderId, listing.data])
+  const agentItem = useMemo(() => ({ id: folderId ?? FILE_SCOPE_ROOT }), [folderId])
   usePublishFilesView(place, filesEnabled && !listing.isError ? agentItem : null)
   const ops = useFileOperations()
   const clip = useFileClipboard((state) => state.clip)
@@ -754,7 +754,7 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
         onDownload={(node) => void downloadFile(node).catch(ops.fail)}
         actions={previewing && (
           <AgentActions
-            item={{ id: previewing.id, ancestorIds: [...trail.map((folder) => folder.id)] }}
+            item={{ id: previewing.id }}
             place={{ layout: 'page', view: { kind: 'file', id: previewing.id } }}
           />
         )}

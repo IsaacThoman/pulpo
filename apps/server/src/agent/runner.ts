@@ -178,8 +178,8 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
   // Files attached to the chat, reachable only through the files tools and only while Files is on.
   const fileScope = parseAuthSettings(attachmentSettingsRow?.value).filesEnabled
     ? await loadFileScope(record.response.userId, chatState?.fileScopeIds ?? [])
-    : []
-  const fileScopeContext = fileScope.length ? describeFileScope(fileScope) : ''
+    : { roots: [], attached: [] }
+  const fileScopeContext = fileScope.roots.length ? describeFileScope(fileScope) : ''
   const memory = await loadGenerationMemory({
     chat: chatState,
     memoryEnabled: preferenceValues.memoryEnabled,

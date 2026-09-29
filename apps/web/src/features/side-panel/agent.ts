@@ -1,8 +1,7 @@
 import { useEffect } from 'react'
 import { create } from 'zustand'
-import { FILE_SCOPE_ROOT } from '@pulpo/contracts'
 import { focusComposer } from '@/components/chat/composer-focus'
-import { extendFileScope } from '@/features/files/file-scope-cache'
+import { addFileScope } from '@/features/files/file-scope'
 import { useChat } from '@/stores/chat'
 import { useSidePanel, type PanelContent } from './store'
 
@@ -12,10 +11,9 @@ import { useSidePanel, type PanelContent } from './store'
  * open, otherwise the chat that is.
  */
 
-/** A file or folder id, or `root`, with the folders above it (outermost first). */
+/** A file or folder id, or `root` for all files. */
 export interface AgentItem {
   id: string
-  ancestorIds: string[]
 }
 
 /** Where a files view is shown, and what it shows, so it can move into the panel. */
@@ -48,23 +46,25 @@ export function usePublishChatTarget(target: ChatTarget | null): void {
 
 /** Registers a files view and its current item while it is shown. */
 export function usePublishFilesView(place: FilesViewPlace, item: AgentItem | null): void {
-  const itemKey = item ? `${item.id}:${item.ancestorIds.join(',')}` : ''
+  const itemKey = item?.id ?? ''
   const viewKey = `${place.view.kind}:${place.view.id ?? ''}`
   const { layout } = place
   useEffect(() => {
     if (!itemKey) return
-    const [id, ancestors] = itemKey.split(':') as [string, string]
     const [kind, viewId] = viewKey.split(':') as ['file' | 'folder', string]
     const view: PanelContent = kind === 'file' ? { kind, id: viewId } : { kind, id: viewId || null }
-    const published = { layout, view, item: { id, ancestorIds: ancestors ? ancestors.split(',') : [] } }
+    const published = { layout, view, item: { id: itemKey } }
     useFilesViews.setState({ [layout]: published })
     return () => { if (useFilesViews.getState()[layout] === published) useFilesViews.setState({ [layout]: null }) }
   }, [itemKey, layout, viewKey])
 }
 
-/** Whether a chat scope already reaches an item, directly or through a folder above it. */
-export function scopeCovers(scope: readonly string[], item: AgentItem): boolean {
-  return scope.includes(FILE_SCOPE_ROOT) || [item.id, ...item.ancestorIds].some((id) => scope.includes(id))
+/**
+ * Whether the item itself is attached. Items inside an attached folder can still be added, so
+ * the agent knows the user pointed them out.
+ */
+export function scopeIncludes(scope: readonly string[], item: AgentItem): boolean {
+  return scope.includes(item.id)
 }
 
 /** The Files scope of the chat in the main view. */
@@ -86,7 +86,7 @@ export function splitView(view: PanelContent, go: Go): void {
 /** Starts a new chat in the main view with these items, moving a page view into the panel. */
 export function openInNewChat(ids: string[], place: FilesViewPlace, go: Go): void {
   if (place.layout === 'page') useSidePanel.getState().open(place.view)
-  useNewChatScope.setState({ scopeIds: extendFileScope([], ids) })
+  useNewChatScope.setState({ scopeIds: addFileScope([], ids) })
   go('/')
   // Already on the new-chat page, nothing remounts to take focus.
   requestAnimationFrame(() => focusComposer())
@@ -97,10 +97,10 @@ export function addToChat(ids: string[]): void {
   const target = useChatTarget.getState().target
   if (!target) return
   if (target.kind === 'new') {
-    useNewChatScope.setState((state) => ({ scopeIds: extendFileScope(state.scopeIds, ids) }))
+    useNewChatScope.setState((state) => ({ scopeIds: addFileScope(state.scopeIds, ids) }))
   } else {
     const chat = useChat.getState().chats.find((item) => item.id === target.id)
-    if (chat) useChat.getState().setChatFileScope(chat.id, extendFileScope(chat.fileScopeIds ?? [], ids))
+    if (chat) useChat.getState().setChatFileScope(chat.id, addFileScope(chat.fileScopeIds ?? [], ids))
   }
   requestAnimationFrame(() => focusComposer())
 }
@@ -117,7 +117,7 @@ export function runAgentShortcut(go: Go): void {
   const place = page ?? panel
   if (!place) return
   const scope = targetScope(useChatTarget.getState().target)
-  if (place.layout === 'panel' && scope && scopeCovers(scope, place.item)) {
+  if (place.layout === 'panel' && scope && scopeIncludes(scope, place.item)) {
     focusComposer()
     return
   }

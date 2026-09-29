@@ -65,7 +65,7 @@ import { canSubmitComposerDraft } from '@/components/chat/composer-upload-policy
 import type { Attachment } from '@/lib/types'
 import { useUploadOutbox, type UploadRecord } from '@/stores/upload-outbox'
 import { FileScopeChip, FileScopePicker } from '@/features/files/FileScope'
-import { extendFileScope } from '@/features/files/file-scope-cache'
+import { addFileScope } from '@/features/files/file-scope'
 import { apiRequest } from '@/lib/api'
 import { dictationFilename, insertDictationText, preferredDictationMimeType } from '@/lib/dictation'
 import { isDesktopRuntime } from '@/lib/runtime'
@@ -1357,7 +1357,7 @@ export function Composer({
               onOpenChange={(open) => { setFolderPickerOpen(open); if (!open) requestAnimationFrame(focusComposer) }}
               selected={fileScopeIds}
               onAdd={(ids) => {
-                onFileScopeChange?.(extendFileScope(fileScopeIds, ids))
+                onFileScopeChange?.(addFileScope(fileScopeIds, ids))
                 // Files are reached through agent tools; adding some implies agent mode.
                 if (canUseAgent && !messageEdit) setAgentMode(modelId, true)
               }}

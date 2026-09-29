@@ -20,17 +20,17 @@ The header's **Open in new tab** button opens the item in its own browser tab; t
 
 ## Agent files
 
-A chat can be scoped to Files items (`chats.file_scope_ids`): file or folder ids, or `root` for the whole tree, which replaces anything beside it. A folder includes every subfolder. The composer shows the scope as removable chips (clicking one shows it in the panel), and **Add from Files…** in its **+** menu picks files and folders. Adding items turns on agent mode, because Files are reached only through agent tools. Scopes are validated when set (live items the user owns, at most twenty); an item trashed later stays listed but stops resolving. Adding a folder drops items it already covers.
+A chat can be scoped to Files items (`chats.file_scope_ids`): file or folder ids, or `root` for the whole tree. A folder includes every subfolder, and items inside an attached folder (or with the whole tree attached) can be attached as well: they tell the agent what the user pointed out. The composer shows the scope as removable chips (clicking one shows it in the panel), and **Add from Files…** in its **+** menu picks files and folders. Adding items turns on agent mode, because Files are reached only through agent tools. Scopes are validated when set (live items the user owns, at most twenty); an item trashed later stays listed but stops resolving.
 
 Files views offer their items to the chat in the main view, which `ChatPage` publishes as the chat target (the unsent new chat, a saved chat, or none for temporary chats and other pages):
 
 - On the Files page or a file page, **Split view** moves that view into the panel and opens the new-chat page, and **Ask agent** (Cmd/Ctrl+J) does the same with the item attached to a new chat.
-- In the panel beside the new-chat page, **Add to chat** attaches the item to the unsent chat. Beside a saved chat it adds to that chat, with **Open in new chat** in its menu. The button shows **In chat** when the scope already covers the item.
+- In the panel beside the new-chat page, **Add to chat** attaches the item to the unsent chat. Beside a saved chat it adds to that chat, with **Open in new chat** in its menu. The button shows **In chat** when the item itself is attached.
 - Right-click menus follow the same rule: **Open in new chat** when no chat is open, **Add to chat** beside the new-chat page, and **Add to current chat** or **Open in new chat** beside a saved chat. On empty space they act on the folder being viewed, or My files.
 
 ### Agent tools
 
-In agent mode, a chat with a scope gets `files_list`, `files_read`, `files_write`, `files_edit`, and `files_create_folder` (`apps/server/src/files/agent-tools.ts`), and its system prompt lists the attached items. The tools are left out when Files is disabled or nothing in the scope is still live.
+In agent mode, a chat with a scope gets `files_list`, `files_read`, `files_write`, `files_edit`, and `files_create_folder` (`apps/server/src/files/agent-tools.ts`), and its system prompt lists every attached item by the path the tools use: an item inside an attached folder by its path from that folder (`Projects/Drafts/Idea.md`), and a top-level attachment by its name plus where it sits in the user's Files. The tools are left out when Files is disabled or nothing in the scope is still live.
 
 - Paths start with an attached item's name (or at the top of My files for a `root` scope) and are walked one child at a time from there, so nothing outside the scope can be named; `.` and `..` segments are refused. New items must go inside an attached folder.
 - Documents are read and edited as Markdown. `files_edit` replaces exact text that must occur once. Writes use `writeDocMarkdown`, which applies the new Markdown to the Yjs document as a minimal diff, appends the update with origin `agent`, and publishes it on `pulpo:file-doc-updates`; every API instance relays it to its `doc:<id>` room, so open editors show the edit live. Uploaded text files are readable but not writable, and only `.md` documents can be created.

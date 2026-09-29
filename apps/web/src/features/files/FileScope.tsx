@@ -110,8 +110,8 @@ export function FileScopePicker({
   const children = listing.data?.children ?? []
   const trail = [...(listing.data?.ancestors ?? []), ...(listing.data?.folder ? [listing.data.folder] : [])]
   const current = folderId ?? FILE_SCOPE_ROOT
-  // Everything here is already available when this folder, or one above it, is in the scope.
-  const covered = selected.includes(FILE_SCOPE_ROOT) || [current, ...trail.map((folder) => folder.id)].some((id) => selected.includes(id))
+  // Items inside an added folder stay pickable: adding them points the agent at them.
+  const covered = selected.includes(current)
   const room = MAX_CHAT_FILE_SCOPES - selected.length
 
   const toggle = (node: FileNode) => setChecked((previous) => {
@@ -147,7 +147,7 @@ export function FileScopePicker({
           {listing.isPending && <div className="grid h-full place-items-center"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>}
           {!listing.isPending && children.length === 0 && <p className="p-6 text-center text-sm text-muted-foreground">{ui("This folder is empty")}</p>}
           {children.map((node) => {
-            const already = covered || selected.includes(node.id)
+            const already = selected.includes(node.id)
             const isChecked = already || checked.has(node.id)
             const folder = node.kind === 'folder'
             return (

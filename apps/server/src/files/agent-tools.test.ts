@@ -19,10 +19,19 @@ describe('agent file tools', () => {
     expect(() => applyTextEdits('abc', [{ oldText: 'z', newText: 'b' }])).toThrow(/not found/)
   })
 
-  it('tells the agent which items it can reach and how paths start', () => {
-    const scoped = describeFileScope([{ label: 'Projects', node: folder }, { label: 'Plan.md', node: doc }])
-    expect(scoped).toContain('`Projects/` (folder, with everything inside it)')
-    expect(scoped).toContain('`Plan.md` (Markdown document)')
-    expect(describeFileScope([{ label: '', node: null }])).toContain('All of the user\'s files')
+  it('lists every attached item with the path the tools use, and where paths start', () => {
+    const scoped = describeFileScope({
+      roots: [{ label: 'Projects', node: folder }],
+      attached: [
+        { path: 'Projects', node: folder, location: 'Work' },
+        { path: 'Projects/Plan.md', node: doc, location: null },
+      ],
+    })
+    expect(scoped).toContain('- `Projects/` (folder, with everything inside it; it is in their Files at `Work/`)')
+    expect(scoped).toContain('- `Projects/Plan.md` (Markdown document)')
+    expect(scoped).toContain('Paths start with `Projects`.')
+    const all = describeFileScope({ roots: [{ label: '', node: null }], attached: [{ path: '', node: null, location: null }, { path: 'Projects/Plan.md', node: doc, location: null }] })
+    expect(all).toContain('All of their files')
+    expect(all).toContain('- `Projects/Plan.md` (Markdown document)')
   })
 })

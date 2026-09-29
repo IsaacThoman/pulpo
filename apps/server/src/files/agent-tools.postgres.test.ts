@@ -66,6 +66,24 @@ describe.skipIf(!enabled)('agent Files tools', () => {
     expect(await call('files_write', { path: 'Projects/Drafts/Idea.md', content: '# Idea' })).toBe('Created Projects/Drafts/Idea.md')
   })
 
+  it('describes a folder and items inside it by their paths from the folder', async () => {
+    const work = await createFolder(userId, { parentId: null, name: 'Work' })
+    const report = await createDoc(userId, { parentId: work.id, name: 'Report.md', markdown: 'r' })
+    const drafts = await createFolder(userId, { parentId: projectsId, name: 'Drafts' })
+    const idea = await createDoc(userId, { parentId: drafts.id, name: 'Idea.md', markdown: 'i' })
+    const scope = await loadFileScope(userId, [projectsId, idea.id, planId, report.id])
+    expect(scope.roots.map((root) => root.label)).toEqual(['Projects', 'Report.md'])
+    expect(scope.attached.map((item) => [item.path, item.location])).toEqual([
+      ['Projects', null],
+      ['Projects/Drafts/Idea.md', null],
+      ['Projects/Plan.md', null],
+      ['Report.md', 'Work'],
+    ])
+    const all = await loadFileScope(userId, ['root', idea.id])
+    expect(all.roots).toEqual([{ label: '', node: null }])
+    expect(all.attached.map((item) => item.path)).toEqual(['', 'Projects/Drafts/Idea.md'])
+  })
+
   it('reaches nothing outside the attached items', async () => {
     const { call } = await tools()
     await expect(call('files_read', { path: 'Secret/private.md' })).rejects.toThrow(/not attached/)
