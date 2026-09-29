@@ -1929,7 +1929,6 @@ const esUi: Record<string, string> = {
   "Add \"{{0}}\"": "Añadir «{{0}}»",
   "Add all files": "Añadir todos los archivos",
   "Add files or folders": "Añadir archivos o carpetas",
-  "Uses Files folders": "Usa carpetas de Archivos",
 }
 
 export default esUi
