@@ -1,10 +1,17 @@
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { createRequire } from 'node:module'
 import os from 'node:os'
 import path from 'node:path'
-import { getConfig } from '@electron-forge/plugin-vite/dist/config/vite.renderer.config.js'
+import { pathToFileURL } from 'node:url'
 import { build, mergeConfig } from 'vite'
 import { expect, it } from 'vitest'
 import rendererConfig from '../vite.renderer.config.mjs'
+
+// Forge 8 exposes only its plugin entry point. Resolve this integration test's
+// renderer config relative to that entry point instead of an unexported subpath.
+const require = createRequire(import.meta.url)
+const pluginEntry = pathToFileURL(require.resolve('@electron-forge/plugin-vite'))
+const { getConfig } = await import(new URL('./config/vite.renderer.config.js', pluginEntry).href)
 
 it('loads built renderer assets from the desktop origin after a nested-route reload', async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), 'pulpo-renderer-build-'))
