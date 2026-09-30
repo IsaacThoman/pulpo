@@ -1,0 +1,10 @@
+{
+  "name": "@pulpo/appdmg-image-size",
+  "version": "0.7.6",
+  "private": true,
+  "description": "Adapt appdmg's callback API to the patched image-size file reader",
+  "main": "index.cjs",
+  "dependencies": {
+    "image-size-patched": "npm:image-size@2.0.4"
+  }
+}

@@ -1,5 +1,4 @@
-import type { WindowsSignOptions } from '@electron/packager'
-import type { HASHES } from '@electron/windows-sign/dist/esm/types'
+import type { PackagerWindowsSignOptions } from '@electron/packager'
 
 function requiredEnvironment(name: string): string {
   const value = process.env[name]
@@ -7,7 +6,7 @@ function requiredEnvironment(name: string): string {
   return value
 }
 
-export function artifactSigningOptions(): WindowsSignOptions {
+export function artifactSigningOptions(): PackagerWindowsSignOptions {
   return {
     signToolPath: requiredEnvironment('WINDOWS_SIGNTOOL_PATH'),
     signWithParams: [
@@ -18,7 +17,7 @@ export function artifactSigningOptions(): WindowsSignOptions {
       requiredEnvironment('AZURE_ARTIFACT_SIGNING_METADATA'),
     ],
     timestampServer: 'http://timestamp.acs.microsoft.com/',
-    hashes: ['sha256' as HASHES],
+    hashes: ['sha256' as NonNullable<PackagerWindowsSignOptions['hashes']>[number]],
     description: 'Pulpo',
     website: 'https://isaacthoman.com',
     debug: true,
