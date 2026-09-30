@@ -1,10 +1,17 @@
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import { getConfig } from '@electron-forge/plugin-vite/dist/config/vite.renderer.config.js'
+import { createRequire } from 'node:module'
+import { pathToFileURL } from 'node:url'
 import { build, mergeConfig } from 'vite'
 import { expect, it } from 'vitest'
 import rendererConfig from '../vite.renderer.config.mjs'
+
+// Forge 8 exports only the plugin's public API. Resolve this internal config
+// helper relative to its public entry so this integration test can still check
+// our renderer config against Forge's actual production defaults.
+const forgeEntry = createRequire(import.meta.url).resolve('@electron-forge/plugin-vite')
+const { getConfig } = await import(new URL('config/vite.renderer.config.js', pathToFileURL(forgeEntry)).href)
 
 it('loads built renderer assets from the desktop origin after a nested-route reload', async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), 'pulpo-renderer-build-'))

@@ -1,5 +1,7 @@
-import type { WindowsSignOptions } from '@electron/packager'
-import type { HASHES } from '@electron/windows-sign/dist/esm/types'
+import type { Options } from '@electron/packager'
+
+type WindowsSignOptions = Extract<Options['windowsSign'], object>
+type WindowsSigningHash = NonNullable<WindowsSignOptions['hashes']>[number]
 
 function requiredEnvironment(name: string): string {
   const value = process.env[name]
@@ -18,7 +20,7 @@ export function artifactSigningOptions(): WindowsSignOptions {
       requiredEnvironment('AZURE_ARTIFACT_SIGNING_METADATA'),
     ],
     timestampServer: 'http://timestamp.acs.microsoft.com/',
-    hashes: ['sha256' as HASHES],
+    hashes: ['sha256' as WindowsSigningHash],
     description: 'Pulpo',
     website: 'https://isaacthoman.com',
     debug: true,

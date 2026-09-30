@@ -1,0 +1,13 @@
+{
+  "name": "image-size",
+  "version": "2.0.4-pulpo.1",
+  "private": true,
+  "description": "Adapt patched image-size to appdmg's legacy callback API",
+  "main": "index.cjs",
+  "scripts": {
+    "test": "node --test"
+  },
+  "dependencies": {
+    "image-size-patched": "npm:image-size@2.0.4"
+  }
+}
