@@ -195,7 +195,7 @@ function FileHeader({ node, ancestors, view, menu, children }: {
   const item = useMemo<AgentItem | null>(() => node ? { id: node.id } : null, [node])
   usePublishFilesView(place ?? { layout: view.layout, view: { kind: 'folder', id: null } }, item)
   return (
-    <header className={cn('flex items-center border-b', view.layout === 'panel' ? 'side-panel-header gap-1.5 px-3 py-1.5' : 'mobile-page-content gap-3 px-4 py-2 sm:px-6')}>
+    <header className={cn('flex items-center gap-1.5 border-b px-4 py-1.5', view.layout === 'panel' ? 'side-panel-header' : 'mobile-page-content')}>
       <div className="min-w-0 flex-1">
         <FilePath ancestors={ancestors} inPanel={view.layout === 'panel'} />
         {node ? <DocTitle node={node} /> : <div className="h-8" />}

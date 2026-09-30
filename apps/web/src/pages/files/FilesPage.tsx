@@ -870,7 +870,9 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
     <div ref={rootRef} className="flex h-full min-h-0 flex-col">
       <header className={cn(
         '@container flex min-w-0 items-center gap-1 border-b',
-        panel ? 'side-panel-header px-3 py-1.5' : 'mobile-page-content px-4 py-1.5 sm:px-6',
+        // The same padding in both, so the path, title, and buttons line up between the views.
+        'px-4 py-1.5',
+        panel ? 'side-panel-header' : 'mobile-page-content',
       )}>
         <div className="min-w-0 flex-1 pr-1">
           {path}
@@ -883,7 +885,7 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
         {fileInputElement}
       </header>
       <ScrollArea className="min-h-0 flex-1" horizontal={view === 'grid'} {...scrollHandlers}>
-        <div ref={bodyRef} className={cn('min-h-full', panel ? 'px-3 py-3' : 'mobile-page-content mx-auto max-w-6xl px-4 py-4 sm:px-6', dropHighlight, marquee && 'select-none')}>
+        <div ref={bodyRef} className={cn('min-h-full px-4 py-3', !panel && 'mx-auto max-w-6xl', dropHighlight, marquee && 'select-none')}>
           <div ref={widthProbe} aria-hidden className="h-0 w-full" />
           {body}
         </div>
