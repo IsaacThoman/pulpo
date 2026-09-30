@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type MouseEvent, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { DOC_FRAGMENT_NAME } from '@pulpo/client-core/doc-schema'
@@ -103,9 +103,16 @@ function DocTitle({ node }: { node: FileNode }) {
   const userId = useAuth((state) => state.user?.id)
   const [name, setName] = useState(node.name)
   const [error, setError] = useState<string | null>(null)
+  // Escape blurs the field too; the blur must not save the name being abandoned.
+  const cancelled = useRef(false)
   useEffect(() => setName(node.name), [node.name])
 
   const save = async () => {
+    if (cancelled.current) {
+      cancelled.current = false
+      setName(node.name)
+      return
+    }
     const trimmed = name.trim()
     if (!trimmed || trimmed === node.name) {
       setName(node.name)
@@ -121,19 +128,27 @@ function DocTitle({ node }: { node: FileNode }) {
     }
   }
 
+  const text = 'px-1.5 py-0.5 text-lg font-semibold tracking-tight'
   return (
     <div className="min-w-0 flex-1">
-      <input
-        value={name}
-        aria-label={ui("Document name")}
-        onChange={(event) => setName(event.target.value)}
-        onBlur={() => void save()}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter') event.currentTarget.blur()
-          if (event.key === 'Escape') { setName(node.name); event.currentTarget.blur() }
-        }}
-        className="w-full min-w-0 truncate rounded-md bg-transparent px-1.5 py-0.5 text-lg font-semibold tracking-tight outline-none hover:bg-accent/60 focus:bg-accent/60"
-      />
+      {/* The field is as wide as its text: a hidden copy of the name sizes the shared grid cell,
+          so the clickable area follows the name as it is edited and truncates when it is long. */}
+      <div className="inline-grid max-w-full grid-cols-[minmax(0,auto)] align-top">
+        <span aria-hidden className={cn('invisible col-start-1 row-start-1 truncate whitespace-pre pr-2.5', text)}>{name || ' '}</span>
+        <input
+          value={name}
+          // Without a size the field asks for about 20 characters and sets the width itself.
+          size={1}
+          aria-label={ui("Document name")}
+          onChange={(event) => setName(event.target.value)}
+          onBlur={() => void save()}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') event.currentTarget.blur()
+            if (event.key === 'Escape') { cancelled.current = true; setName(node.name); event.currentTarget.blur() }
+          }}
+          className={cn('col-start-1 row-start-1 w-full min-w-0 truncate rounded-md bg-transparent outline-none hover:bg-accent/60 focus:bg-accent/60', text)}
+        />
+      </div>
       {error && <p className="px-1.5 text-xs text-destructive">{error}</p>}
     </div>
   )
