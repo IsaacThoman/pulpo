@@ -307,7 +307,7 @@ function configureSession(): void {
 
 async function createMainWindow(): Promise<void> {
   const state = await loadWindowState()
-  const preload = path.join(__dirname, 'preload.js')
+  const preload = path.join(__dirname, 'preload.cjs')
   const window = new BrowserWindow({
     ...state,
     minWidth: MIN_WINDOW_WIDTH,

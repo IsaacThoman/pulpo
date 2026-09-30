@@ -48,6 +48,7 @@
     "@semantic-release/npm": "file:packages/semantic-release-npm",
     "@semantic-release/release-notes-generator": "^14.1.1",
     "conventional-changelog-conventionalcommits": "^10.2.1",
+    "image-size": "file:apps/desktop/vendor/appdmg-image-size",
     "oxlint": "^1.71.0",
     "react": "19.2.3",
     "react-dom": "19.2.3",
@@ -58,6 +59,7 @@
   },
   "overrides": {
     "expo-modules-core": "57.0.9",
+    "image-size": "$image-size",
     "linkify-it": "6.1.0",
     "markdown-it": "15.0.0",
     "metro": "0.84.5",
