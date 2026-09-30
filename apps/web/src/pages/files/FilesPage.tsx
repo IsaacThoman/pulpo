@@ -654,7 +654,7 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
     )
   } else if (!nodes.length) {
     body = (
-      <div className="rounded-xl border border-dashed p-10 text-center">
+      <div className="p-10 text-center">
         <Upload className="mx-auto size-8 text-muted-foreground" />
         <p className="mt-3 text-sm font-medium">{ui("This folder is empty")}</p>
         <p className="mt-1 text-sm text-muted-foreground">{ui("Drop files here, or right-click to create a file or folder.")}</p>
