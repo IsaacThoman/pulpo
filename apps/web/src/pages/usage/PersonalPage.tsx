@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
+import type { UsageCostItem } from '@pulpo/contracts'
 import { Clock } from 'lucide-react'
 import { useAuth } from '@/stores/auth'
 import { formatBalance, formatDate } from '@/lib/format'
@@ -53,6 +54,7 @@ interface PersonalRecordRow {
   costMicros: number
   inferenceReferenceCostMicros: number
   subscriptionCoveredMicros: number
+  costBreakdown: UsageCostItem[] | null
   latencyMs: number
   balanceAfterMicros: number | null
 }
@@ -122,6 +124,7 @@ export function PersonalPage() {
     cost: row.costMicros / 1_000_000,
     inferenceReferenceCost: row.inferenceReferenceCostMicros / 1_000_000,
     subscriptionCoveredCost: row.subscriptionCoveredMicros / 1_000_000,
+    costBreakdown: row.costBreakdown,
     balanceAfter: row.balanceAfterMicros === null ? null : row.balanceAfterMicros / 1_000_000,
     latencyMs: row.latencyMs,
   })), [recordsQuery.data])

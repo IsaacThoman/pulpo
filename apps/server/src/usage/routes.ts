@@ -418,6 +418,7 @@ export async function registerUsageRoutes(app: FastifyInstance): Promise<void> {
         costMicros: Number(row.usage.costMicros),
         inferenceReferenceCostMicros: Number(row.usage.inferenceReferenceCostMicros),
         subscriptionCoveredMicros: Number(row.usage.weeklyCostMicros),
+        costBreakdown: row.usage.costBreakdown,
       }}),
       nextCursor: rows.length > query.limit && last ? encodeUsageCursor({ createdAt: last.createdAt, id: last.id }) : null,
     }

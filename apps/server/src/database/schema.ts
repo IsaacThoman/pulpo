@@ -1110,6 +1110,8 @@ export const usageEvents = pgTable('usage_events', {
   weeklyCostMicros: bigint('weekly_cost_micros', { mode: 'number' }).notNull().default(0),
   fiveHourCostMicros: bigint('five_hour_cost_micros', { mode: 'number' }).notNull().default(0),
   balanceCostMicros: bigint('balance_cost_micros', { mode: 'number' }).notNull().default(0),
+  // Itemized charges snapshotted at settlement; null for events settled before itemization.
+  costBreakdown: jsonb('cost_breakdown').$type<import('@pulpo/contracts').UsageCostItem[]>(),
   poolBalanceAfterMicros: bigint('pool_balance_after_micros', { mode: 'number' }),
   weeklyPeriodStart: timestamp('weekly_period_start', { withTimezone: true }),
   fiveHourPeriodStart: timestamp('five_hour_period_start', { withTimezone: true }),

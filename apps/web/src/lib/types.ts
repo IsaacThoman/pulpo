@@ -2,6 +2,7 @@ import type {
   ChatPreset,
   QueuedMessage as ServerQueuedMessage,
   QueuedMessageAttachment as ServerQueuedMessageAttachment,
+  UsageCostItem,
 } from '@pulpo/contracts'
 import type { CatalogIconReference } from '@/lib/catalog-icons'
 
@@ -149,6 +150,7 @@ export interface UsageRecord {
   cost: number
   inferenceReferenceCost: number
   subscriptionCoveredCost: number
+  costBreakdown?: UsageCostItem[] | null
   balanceAfter: number | null
   latencyMs: number
 }

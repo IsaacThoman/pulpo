@@ -2,11 +2,13 @@ import { and, eq, gte, gt, inArray, isNull, lte, or, sql } from 'drizzle-orm'
 import type { ResponseUsage } from '@pulpo/contracts'
 import { db } from '../database/client.js'
 import {
+  agentRuns,
   apiKeys,
   budgetReservations,
   budgetReservationFunders,
   creditLedger,
   fiveHourUsagePeriods,
+  generationAttempts,
   modelPricingVersions,
   requestLogs,
   responses,
@@ -15,6 +17,7 @@ import {
   weeklyUsagePeriods,
   poolMembers,
   billingAccounts,
+  toolExecutions,
 } from '../database/schema.js'
 import { AppError } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
@@ -28,6 +31,7 @@ import {
   budgetOutputReservation,
   type Pricing,
 } from './pricing.js'
+import { itemizeUsageCost } from './cost-breakdown.js'
 import { loadBillingEntitlements } from '../billing/entitlements.js'
 import { queueAutoTopUpChecks } from '../billing/auto-top-up.js'
 import {
@@ -252,6 +256,8 @@ export async function settleBudget(input: {
   costMicrosOverride?: number
   additionalCostMicros?: number
   inferenceReferenceCostMicros?: number
+  /** Billed workspace time, which is folded into `additionalCostMicros`. */
+  workspace?: { minutes: number; costMicros: number }
 }): Promise<number> {
   const settlement = await db.transaction(async (tx) => {
     const [lockedReservation] = await tx
@@ -370,6 +376,25 @@ export async function settleBudget(input: {
       )) : []
     const [requestLog] = await tx.select({ requestedModelId: requestLogs.requestedModelId })
       .from(requestLogs).where(eq(requestLogs.responseId, response.id)).limit(1)
+    const [toolCharges, taskCharges] = await Promise.all([
+      tx.select({ name: toolExecutions.toolName, calls: sql<number>`count(*)::int`, costMicros: sql<number>`sum(${toolExecutions.billedCostMicros})::bigint` })
+        .from(toolExecutions).innerJoin(agentRuns, eq(agentRuns.id, toolExecutions.agentRunId))
+        .where(and(eq(agentRuns.responseId, response.id), gt(toolExecutions.billedCostMicros, 0)))
+        .groupBy(toolExecutions.toolName),
+      tx.select({ name: generationAttempts.purpose, calls: sql<number>`count(*)::int`, costMicros: sql<number>`sum(${generationAttempts.costMicros})::bigint` })
+        .from(generationAttempts).innerJoin(requestLogs, eq(requestLogs.id, generationAttempts.requestLogId))
+        .where(and(eq(requestLogs.responseId, response.id), eq(generationAttempts.source, 'tool'), gt(generationAttempts.costMicros, 0)))
+        .groupBy(generationAttempts.purpose),
+    ])
+    const numeric = (rows: Array<{ name: string; calls: number; costMicros: number }>) => rows.map((row) => ({ ...row, calls: Number(row.calls), costMicros: Number(row.costMicros) }))
+    const costBreakdown = itemizeUsageCost({
+      incurredMicros: incurredCost,
+      chargedMicros: cost,
+      tokens: input.usage.inputTokens + input.usage.outputTokens,
+      tools: numeric(toolCharges),
+      tasks: numeric(taskCharges),
+      workspace: input.workspace,
+    })
     await tx.insert(usageEvents).values({
       id: newId(),
       userId: user.id,
@@ -388,6 +413,7 @@ export async function settleBudget(input: {
       weeklyCostMicros: weeklyCost,
       fiveHourCostMicros: fiveHourCost,
       balanceCostMicros: balanceCost,
+      costBreakdown,
       poolBalanceAfterMicros: reservation.poolId ? Number(poolSnapshot?.total ?? 0) : null,
       weeklyPeriodStart: reservation.weeklyPeriodStart,
       fiveHourPeriodStart: reservation.fiveHourPeriodStart,
