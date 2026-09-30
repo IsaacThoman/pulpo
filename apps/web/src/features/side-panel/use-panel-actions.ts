@@ -39,6 +39,21 @@ export function useMainNavigate() {
   }
 }
 
+/**
+ * Shows a file or folder beside the main view, or, when the window has no room for a split, in
+ * the main view itself.
+ */
+export function openBeside(content: PanelContent, go: (pathname: string) => void): void {
+  if (useSidePanel.getState().splitAvailable) useSidePanel.getState().open(content)
+  else go(panelContentPath(content))
+}
+
+/** `openBeside` bound to the router, for components. */
+export function useOpenBeside(): (content: PanelContent) => void {
+  const go = useMainNavigate()
+  return (content) => openBeside(content, go)
+}
+
 /** Panel header actions shared by every kind of panel content. */
 export function usePanelActions(content: PanelContent) {
   const go = useMainNavigate()

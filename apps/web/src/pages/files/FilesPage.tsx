@@ -72,7 +72,7 @@ import { useSidePanel, type PanelContent } from '@/features/side-panel/store'
 import { AgentMenuItems, SplitViewButton } from '@/features/side-panel/AgentActions'
 import { usePublishFilesView, type FilesViewPlace } from '@/features/side-panel/agent'
 import { PanelWindowButtons } from '@/features/side-panel/PanelControls'
-import { panelContentPath, useMainNavigate } from '@/features/side-panel/use-panel-actions'
+import { openBeside, panelContentPath, useMainNavigate } from '@/features/side-panel/use-panel-actions'
 import { SelectionAction } from '@/features/files/browser/SelectionAction'
 import { useFileOperations } from '@/features/files/browser/use-file-operations'
 import { useItemDrag } from '@/features/files/browser/use-item-drag'
@@ -252,11 +252,14 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
       useSidePanel.getState().close()
       goMain(panelContentPath(content))
     } else {
-      useSidePanel.getState().open(content)
+      openBeside(content, goMain)
     }
   }
   const nodeContent = (node: FileNode): PanelContent => node.kind === 'folder' ? { kind: 'folder', id: node.id } : { kind: 'file', id: node.id }
   const elsewhereLabel = panel ? ui("Open in main view") : ui("Open to the side")
+  // Without room for a split there is no "side"; Open already shows it in the main view.
+  const splitAvailable = useSidePanel((state) => state.splitAvailable)
+  const canOpenElsewhere = panel || splitAvailable
   const ElsewhereIcon = panel ? Maximize2 : PanelRight
   const elsewhereShortcut = isAppleShortcut() ? '⌥ Click' : 'Alt+Click'
 
@@ -601,7 +604,7 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
           <DropdownMenuShortcut>{single.kind === 'blob' ? ui("Space") : '↵'}</DropdownMenuShortcut>
         </DropdownMenuItem>
       )}
-      {single && (
+      {single && canOpenElsewhere && (
         <DropdownMenuItem onSelect={() => openElsewhere(nodeContent(single))}>
           <ElsewhereIcon /> {elsewhereLabel}<DropdownMenuShortcut>{elsewhereShortcut}</DropdownMenuShortcut>
         </DropdownMenuItem>
@@ -651,7 +654,7 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
     )
   } else if (!nodes.length) {
     body = (
-      <div className="rounded-xl border border-dashed p-10 text-center">
+      <div className="p-10 text-center">
         <Upload className="mx-auto size-8 text-muted-foreground" />
         <p className="mt-3 text-sm font-medium">{ui("This folder is empty")}</p>
         <p className="mt-1 text-sm text-muted-foreground">{ui("Drop files here, or right-click to create a file or folder.")}</p>
@@ -830,7 +833,7 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
                 {ui("Snap to grid")}
               </DropdownMenuCheckboxItem>
             )}
-            <DropdownMenuItem onSelect={() => openElsewhere(place.view)}><ElsewhereIcon /> {elsewhereLabel}</DropdownMenuItem>
+            {canOpenElsewhere && <DropdownMenuItem onSelect={() => openElsewhere(place.view)}><ElsewhereIcon /> {elsewhereLabel}</DropdownMenuItem>}
             <AgentMenuItems ids={[folderId ?? FILE_SCOPE_ROOT]} place={place} />
           </>
         )}
@@ -867,7 +870,9 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
     <div ref={rootRef} className="flex h-full min-h-0 flex-col">
       <header className={cn(
         '@container flex min-w-0 items-center gap-1 border-b',
-        panel ? 'side-panel-header px-3 py-1.5' : 'mobile-page-content px-4 py-1.5 sm:px-6',
+        // The same padding in both, so the path, title, and buttons line up between the views.
+        'px-4 py-1.5',
+        panel ? 'side-panel-header' : 'mobile-page-content',
       )}>
         <div className="min-w-0 flex-1 pr-1">
           {path}
@@ -880,7 +885,7 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
         {fileInputElement}
       </header>
       <ScrollArea className="min-h-0 flex-1" horizontal={view === 'grid'} {...scrollHandlers}>
-        <div ref={bodyRef} className={cn('min-h-full', panel ? 'px-3 py-3' : 'mobile-page-content mx-auto max-w-6xl px-4 py-4 sm:px-6', dropHighlight, marquee && 'select-none')}>
+        <div ref={bodyRef} className={cn('min-h-full px-4 py-3', !panel && 'mx-auto max-w-6xl', dropHighlight, marquee && 'select-none')}>
           <div ref={widthProbe} aria-hidden className="h-0 w-full" />
           {body}
         </div>

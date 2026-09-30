@@ -10,7 +10,7 @@ import { cn } from '@/lib/utils'
 import { useAuth } from '@/stores/auth'
 import { fetchFileNode, fetchFolder, fileNodeQueryKey, folderQueryKey } from './api'
 import { FileNodeIcon } from './FileNodeIcon'
-import { useSidePanel } from '@/features/side-panel/store'
+import { useOpenBeside } from '@/features/side-panel/use-panel-actions'
 
 function useScopeNode(id: string): { node: FileNode | null; missing: boolean } {
   const userId = useAuth((state) => state.user?.id)
@@ -31,10 +31,11 @@ function useScopeNode(id: string): { node: FileNode | null; missing: boolean } {
  */
 export function FileScopeChip({ id, onRemove, className }: { id: string; onRemove?: () => void; className?: string }) {
   const { node, missing } = useScopeNode(id)
+  const openBeside = useOpenBeside()
   const root = id === FILE_SCOPE_ROOT
   const show = () => {
-    if (root) useSidePanel.getState().open({ kind: 'folder', id: null })
-    else if (node) useSidePanel.getState().open(node.kind === 'folder' ? { kind: 'folder', id: node.id } : { kind: 'file', id: node.id })
+    if (root) openBeside({ kind: 'folder', id: null })
+    else if (node) openBeside(node.kind === 'folder' ? { kind: 'folder', id: node.id } : { kind: 'file', id: node.id })
   }
   const name = root ? ui("My files") : node?.name ?? null
   const hint = missing

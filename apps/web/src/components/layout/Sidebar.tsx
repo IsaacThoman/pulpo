@@ -341,6 +341,10 @@ function useShiftHeld() {
   return shiftHeld
 }
 
+/** Desktop sidebar widths, matching the classes on the sidebar below. */
+export const SIDEBAR_WIDTH = 264
+export const SIDEBAR_COLLAPSED_WIDTH = 52
+
 export function ChatRow({
   chat,
   active,

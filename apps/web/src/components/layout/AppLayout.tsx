@@ -2,7 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRe
 import { Outlet, useLocation } from 'react-router-dom'
 import { PanelLeftOpen } from 'lucide-react'
 import { TooltipProvider } from '@/components/ui/tooltip'
-import { Sidebar } from './Sidebar'
+import { Sidebar, SIDEBAR_COLLAPSED_WIDTH, SIDEBAR_WIDTH } from './Sidebar'
 import { SettingsDialogProvider, type SettingsSectionId } from '@/components/settings/settings-dialog'
 import { ChatDataBridge } from '@/features/chat/ChatDataBridge'
 import { SettingsBridge } from '@/features/settings/SettingsBridge'
@@ -16,6 +16,7 @@ import { useSettings } from '@/stores/settings'
 import { useDesktopChrome } from '@/stores/desktopChrome'
 import { isDesktopRuntime } from '@/lib/runtime'
 import { SidePanel } from '@/features/side-panel/SidePanel'
+import { splitFits, useSidePanel } from '@/features/side-panel/store'
 import { FileToasts } from '@/features/files/browser/FileToasts'
 import { useSidePanelUrl } from '@/features/side-panel/use-side-panel-url'
 
@@ -25,8 +26,15 @@ const SettingsModal = lazy(() => import('@/components/settings/SettingsModal').t
 export function AppLayout() {
   const [collapsed, setCollapsed] = useState(() => window.matchMedia('(width < 750px)').matches)
   const [mobile, setMobile] = useState(() => window.matchMedia('(width < 750px)').matches)
-  // Below this width a docked side panel would crowd the main view, so it becomes a drawer.
-  const [narrow, setNarrow] = useState(() => window.matchMedia('(width < 1100px)').matches)
+  // The room beside the sidebar that the main view and the side panel share.
+  const [contentWidth, setContentWidth] = useState(() => window.innerWidth)
+  const contentRef = useRef<HTMLDivElement>(null)
+  // The whole frame, sidebar included; unlike the content area it does not change as the sidebar animates.
+  const [frameWidth, setFrameWidth] = useState(() => window.innerWidth)
+  const frameRef = useRef<HTMLDivElement>(null)
+  const panelOpen = useSidePanel((state) => state.content !== null)
+  // Set when the user reopens a sidebar that was folded away for the panel: the sidebar wins.
+  const [keepSidebar, setKeepSidebar] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
   const [sidebarTransitions, setSidebarTransitions] = useState(true)
   const [searchOpen, setSearchOpen] = useState(false)
@@ -39,7 +47,27 @@ export function AppLayout() {
   const setDesktopSidebarVisible = useDesktopChrome((state) => state.setDesktopSidebarVisible)
   const location = useLocation()
   const adminChatView = location.pathname.startsWith('/admin/chats/')
-  const sidebarCollapsed = mobile || collapsed || searchHasQuery
+  // An open side panel that fits only without the sidebar folds the sidebar away (without changing
+  // the user's own choice), so the sidebar gives way before the panel does. It returns once there
+  // is room again or the panel closes.
+  const panelNeedsSidebarRoom = panelOpen && !adminChatView
+    && !splitFits(frameWidth - SIDEBAR_WIDTH) && splitFits(frameWidth - SIDEBAR_COLLAPSED_WIDTH)
+  const sidebarMakesRoom = !mobile && !collapsed && !searchHasQuery && !keepSidebar && panelNeedsSidebarRoom
+  const sidebarCollapsed = mobile || collapsed || searchHasQuery || sidebarMakesRoom
+  useEffect(() => { if (!panelNeedsSidebarRoom) setKeepSidebar(false) }, [panelNeedsSidebarRoom])
+  // Too narrow for two views even without the sidebar (phones): the panel becomes the only view,
+  // in the layout rather than over it; the main view stays mounted and returns when it closes.
+  const panelFull = panelOpen && !adminChatView && (mobile || !splitFits(frameWidth - SIDEBAR_COLLAPSED_WIDTH))
+  /** The desktop sidebar toggle, aware of a sidebar folded away for the panel. */
+  const toggleDesktopSidebar = () => {
+    // Reopening a folded-away sidebar keeps it open, and hides the panel, until there is room.
+    if (sidebarMakesRoom) setKeepSidebar(true)
+    // Closing it again hands the room back to the panel.
+    else if (keepSidebar && !collapsed) setKeepSidebar(false)
+    else setCollapsed((v) => !v)
+  }
+  const toggleDesktopSidebarRef = useRef(toggleDesktopSidebar)
+  toggleDesktopSidebarRef.current = toggleDesktopSidebar
   const desktopTitleBarVisible = isDesktopRuntime() && !adminChatView
   const mainUsesDesktopTitleBar = !mobile && !sidebarCollapsed
   const previousPathRef = useRef(location.pathname)
@@ -73,12 +101,28 @@ export function AppLayout() {
 
   useSidePanelUrl()
 
-  useEffect(() => {
-    const query = window.matchMedia('(width < 1100px)')
-    const update = () => setNarrow(query.matches)
-    query.addEventListener('change', update)
-    return () => query.removeEventListener('change', update)
+  useLayoutEffect(() => {
+    const content = contentRef.current
+    const frame = frameRef.current
+    if (!content || !frame) return
+    const measure = () => {
+      setContentWidth(content.clientWidth)
+      setFrameWidth(frame.clientWidth)
+    }
+    measure()
+    // The sidebar collapsing changes the room without resizing the window, hence the observer.
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', measure)
+      return () => window.removeEventListener('resize', measure)
+    }
+    const observer = new ResizeObserver(measure)
+    observer.observe(content)
+    observer.observe(frame)
+    return () => observer.disconnect()
   }, [])
+  // Phones never split; elsewhere the panel shows only beside a main view of usable width.
+  const splitRoom = mobile ? 0 : contentWidth
+  useEffect(() => { useSidePanel.setState({ splitAvailable: splitFits(splitRoom) }) }, [splitRoom])
 
   useEffect(() => {
     if (sidebarTransitions) return
@@ -111,7 +155,7 @@ export function AppLayout() {
       if ((e.metaKey || e.ctrlKey) && e.key === 'b') {
         e.preventDefault()
         if (window.matchMedia('(width < 750px)').matches) setMobileOpen((v) => !v)
-        else setCollapsed((v) => !v)
+        else toggleDesktopSidebarRef.current()
       }
       if ((e.metaKey || e.ctrlKey) && e.key === ',') {
         e.preventDefault()
@@ -160,6 +204,7 @@ export function AppLayout() {
           animationSpeed={animationSpeed}
         />
         <div
+          ref={frameRef}
           className={cn(
             'app-layout-frame relative flex h-full overflow-hidden',
             mainUsesDesktopTitleBar && 'desktop-main-titlebar-active',
@@ -191,7 +236,7 @@ export function AppLayout() {
             mobile={mobile}
             mobileOpen={mobileOpen}
             transitions={sidebarTransitions}
-            onToggle={() => mobile ? setMobileOpen(false) : setCollapsed((v) => !v)}
+            onToggle={() => mobile ? setMobileOpen(false) : toggleDesktopSidebar()}
             onNavigate={() => setMobileOpen(false)}
             onOpenSearch={() => {
               setMobileOpen(false)
@@ -202,12 +247,14 @@ export function AppLayout() {
               openSettings('general')
             }}
           />}
-          <main className="app-main min-w-0 flex-1 overflow-hidden">
-            <Suspense fallback={<div className="h-full bg-background" aria-label={ui("Loading view")} />}>
-              <Outlet />
-            </Suspense>
-          </main>
-          {!adminChatView && <SidePanel mode={mobile ? 'sheet' : narrow ? 'drawer' : 'docked'} />}
+          <div ref={contentRef} className="flex h-full min-w-0 flex-1">
+            <main className={cn('app-main min-w-0 flex-1 overflow-hidden', panelFull && 'hidden')}>
+              <Suspense fallback={<div className="h-full bg-background" aria-label={ui("Loading view")} />}>
+                <Outlet />
+              </Suspense>
+            </main>
+            {!adminChatView && <SidePanel available={splitRoom} full={panelFull} />}
+          </div>
           {/* One host for Files undo toasts, whether Files is on the page or in the panel. */}
           {!adminChatView && <FileToasts />}
         </div>

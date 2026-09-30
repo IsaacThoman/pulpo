@@ -5,7 +5,7 @@ import { DropdownMenuItem } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { ui } from '@/i18n/ui'
 import { addToChat, openInNewChat, splitView, useChatTarget, type FilesViewPlace } from './agent'
-import type { PanelContent } from './store'
+import { useSidePanel, type PanelContent } from './store'
 import { useMainNavigate } from './use-panel-actions'
 
 function TipButton({ tip, children }: { tip: string; children: ReactElement }) {
@@ -20,6 +20,9 @@ function TipButton({ tip, children }: { tip: string; children: ReactElement }) {
 /** Moves a files view from the main view into the panel and opens a chat beside it. */
 export function SplitViewButton({ view }: { view: PanelContent }) {
   const go = useMainNavigate()
+  // No split without room for two views.
+  const available = useSidePanel((state) => state.splitAvailable)
+  if (!available) return null
   return (
     <TipButton tip={ui("Split view: move this to the side and open a chat")}>
       <Button variant="ghost" size="icon-sm" aria-label={ui("Split view")} onClick={() => splitView(view, go)}><Columns2 /></Button>
