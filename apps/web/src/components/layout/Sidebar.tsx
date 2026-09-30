@@ -259,8 +259,8 @@ function DropLines({
 }
 
 /**
- * A chat's actions, from its row's "⋯" button or, with `atPointer`, from right-clicking the row,
- * where it also offers opening the chat in a new browser tab (the desktop app has no tabs).
+ * A chat's actions, the same from its row's "⋯" button and from right-clicking the row
+ * (`atPointer` only places it at the pointer). The desktop app has no tabs, so no new-tab item.
  */
 function ChatMenu({ chat, onRename, atPointer = false }: { chat: Chat; onRename: () => void; atPointer?: boolean }) {
   const { t } = useTranslation()
@@ -275,14 +275,11 @@ function ChatMenu({ chat, onRename, atPointer = false }: { chat: Chat; onRename:
   const expirationMenuAction = resolveChatExpiryMenuAction(chat.expiresAt, automaticChatExpiration)
   return (
     <DropdownMenuContent side={atPointer ? 'bottom' : 'right'} align="start" sideOffset={atPointer ? 2 : undefined} className="w-48">
-      {atPointer && !isDesktopRuntime() && (
-        <>
-          <DropdownMenuItem onClick={() => { window.open(`/c/${chat.id}`, '_blank', 'noopener') }}>
-            <ExternalLink />
-            {ui("Open in new tab")}
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-        </>
+      {!isDesktopRuntime() && (
+        <DropdownMenuItem onClick={() => { window.open(`/c/${chat.id}`, '_blank', 'noopener') }}>
+          <ExternalLink />
+          {ui("Open in new tab")}
+        </DropdownMenuItem>
       )}
       <DropdownMenuItem onClick={() => togglePin(chat.id)}>
         {chat.pinned ? <PinOff /> : <Pin />}
