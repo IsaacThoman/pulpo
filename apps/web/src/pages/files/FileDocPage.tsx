@@ -1,17 +1,10 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { DOC_FRAGMENT_NAME } from '@pulpo/client-core/doc-schema'
 import { isMarkdownName, type FileConversionPreview, type FileNode } from '@pulpo/contracts'
-import { ChevronRight, Cloud, CloudOff, Download, HardDrive, Loader2, MoreHorizontal, Pencil, Trash2, TriangleAlert } from 'lucide-react'
+import { ChevronRight, CloudCheck, CloudOff, Download, HardDrive, Loader2, Pencil, TriangleAlert } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { ui, uit } from '@/i18n/ui'
 import { formatBytes } from '@/lib/attachments'
@@ -28,7 +21,6 @@ import {
   fetchFileNode,
   fileNodeQueryKey,
   filesQueryKey,
-  trashFileNode,
   updateFileNode,
 } from '@/features/files/api'
 import { filesErrorMessage } from '@/features/files/file-display'
@@ -59,7 +51,7 @@ function statusProblem(status: DocSyncStatus): string | null {
 }
 
 function SyncIndicator({ status }: { status: DocSyncStatus }) {
-  if (status.state === 'synced') return <span className="flex items-center gap-1.5 text-xs text-muted-foreground"><Cloud className="size-3.5" />{ui("Saved")}</span>
+  if (status.state === 'synced') return <span className="flex items-center gap-1.5 text-xs text-muted-foreground"><CloudCheck className="size-3.5" />{ui("Synced")}</span>
   if (status.state === 'offline') {
     return (
       <Tooltip>
@@ -199,11 +191,11 @@ interface FileViewContext {
 const PAGE_VIEW: FileViewContext = { layout: 'page' }
 
 /** Title bar shared by every file view; in the side panel it adds full-page and close buttons. */
-function FileHeader({ node, ancestors, view, menu, children }: {
+function FileHeader({ node, ancestors, view, onDownload, children }: {
   node: FileNode | undefined
   ancestors: FileNode[]
   view: FileViewContext
-  menu: ReactNode
+  onDownload: () => void
   children?: ReactNode
 }) {
   const place = useMemo<FilesViewPlace | null>(() => node ? { layout: view.layout, view: { kind: 'file', id: node.id } } : null, [node, view.layout])
@@ -216,31 +208,15 @@ function FileHeader({ node, ancestors, view, menu, children }: {
         {node ? <DocTitle node={node} /> : <div className="h-8" />}
       </div>
       {children}
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size="icon-sm" aria-label={ui("Document actions")} disabled={!node}><MoreHorizontal /></Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          {menu}
-        </DropdownMenuContent>
-      </DropdownMenu>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button variant="ghost" size="icon-sm" aria-label={ui("Download")} disabled={!node} onClick={onDownload}><Download /></Button>
+        </TooltipTrigger>
+        <TooltipContent side="bottom">{ui("Download")}</TooltipContent>
+      </Tooltip>
       {view.panel ? <PanelWindowButtons content={view.panel} /> : place && <SplitViewButton view={place.view} />}
     </header>
   )
-}
-
-function useLeaveAfterTrash(node: FileNode | undefined, view: FileViewContext) {
-  const navigate = useNavigate()
-  const queryClient = useQueryClient()
-  const userId = useAuth((state) => state.user?.id)
-  return async () => {
-    if (!node) return
-    await trashFileNode(node.id)
-    await queryClient.invalidateQueries({ queryKey: filesQueryKey(userId) })
-    // The panel steps back to the file's folder; the page goes there.
-    if (view.layout === 'panel') useSidePanel.getState().open({ kind: 'folder', id: node.parentId })
-    else navigate(node.parentId ? `/files/f/${node.parentId}` : '/files')
-  }
 }
 
 function OpenDoc({ userId, docId, view }: { userId: string; docId: string; view: FileViewContext }) {
@@ -260,7 +236,6 @@ function OpenDoc({ userId, docId, view }: { userId: string; docId: string; view:
   // Before the first sync, only allow typing when a cached copy is already on screen.
   const hasContent = Boolean(session && session.doc.getXmlFragment(DOC_FRAGMENT_NAME).length > 0)
   const editable = !problem && Boolean(node && !node.trashedAt) && (everSynced || hasContent)
-  const trash = useLeaveAfterTrash(node, view)
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -268,15 +243,7 @@ function OpenDoc({ userId, docId, view }: { userId: string; docId: string; view:
         node={node}
         ancestors={ancestors}
         view={view}
-        menu={(
-          <>
-            <DropdownMenuItem onSelect={() => node && void downloadDocMarkdown(node).catch((cause: unknown) => setNotice(filesErrorMessage(cause)))}>
-              <Download /> {ui("Download")}
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem variant="destructive" onSelect={() => void trash().catch((cause: unknown) => setNotice(filesErrorMessage(cause)))}><Trash2 /> {ui("Move to trash")}</DropdownMenuItem>
-          </>
-        )}
+        onDownload={() => node && void downloadDocMarkdown(node).catch((cause: unknown) => setNotice(filesErrorMessage(cause)))}
       >
         <Presence peers={peers} />
         <SyncIndicator status={status} />
@@ -323,7 +290,6 @@ function MarkdownFileView({ node, ancestors, view }: { node: FileNode; ancestors
   const [preview, setPreview] = useState<FileConversionPreview | null>(null)
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
-  const trash = useLeaveAfterTrash(node, view)
 
   const convert = async () => {
     setBusy(true)
@@ -360,15 +326,7 @@ function MarkdownFileView({ node, ancestors, view }: { node: FileNode; ancestors
         node={node}
         ancestors={ancestors}
         view={view}
-        menu={(
-          <>
-            <DropdownMenuItem onSelect={() => void downloadFile(node).catch((cause: unknown) => setNotice(filesErrorMessage(cause)))}>
-              <Download /> {ui("Download")}
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem variant="destructive" onSelect={() => void trash().catch((cause: unknown) => setNotice(filesErrorMessage(cause)))}><Trash2 /> {ui("Move to trash")}</DropdownMenuItem>
-          </>
-        )}
+        onDownload={() => void downloadFile(node).catch((cause: unknown) => setNotice(filesErrorMessage(cause)))}
       >
         <span className={cn('text-xs text-muted-foreground', view.layout === 'panel' ? 'hidden' : 'hidden sm:inline')}>{ui("Read-only")}</span>
         <Button size="sm" disabled={busy || node.trashedAt !== null} onClick={() => void startEditing()}>
@@ -399,25 +357,16 @@ function MarkdownFileView({ node, ancestors, view }: { node: FileNode; ancestors
   )
 }
 
-/** Any other uploaded file: a preview filling the page or panel, with download and trash. */
+/** Any other uploaded file: a preview filling the page or panel, with download. */
 function BlobFileView({ node, ancestors, view }: { node: FileNode; ancestors: FileNode[]; view: FileViewContext }) {
   const [notice, setNotice] = useState<string | null>(null)
-  const trash = useLeaveAfterTrash(node, view)
   return (
     <div className="flex h-full min-h-0 flex-col">
       <FileHeader
         node={node}
         ancestors={ancestors}
         view={view}
-        menu={(
-          <>
-            <DropdownMenuItem onSelect={() => void downloadFile(node).catch((cause: unknown) => setNotice(filesErrorMessage(cause)))}>
-              <Download /> {ui("Download")}
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem variant="destructive" onSelect={() => void trash().catch((cause: unknown) => setNotice(filesErrorMessage(cause)))}><Trash2 /> {ui("Move to trash")}</DropdownMenuItem>
-          </>
-        )}
+        onDownload={() => void downloadFile(node).catch((cause: unknown) => setNotice(filesErrorMessage(cause)))}
       >
         <span className="hidden text-xs text-muted-foreground tabular-nums sm:inline">{formatBytes(node.sizeBytes)}</span>
       </FileHeader>
