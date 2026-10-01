@@ -4,6 +4,7 @@ import {
   autoTopUpSettingsError,
   autoTopUpStatusLine,
   defaultAutoTopUpSettings,
+  formatPlanStorage,
   managedBillingPlan,
   paymentMethodLabel,
   paymentStatusLabel,
@@ -34,6 +35,13 @@ describe('payment status labels', () => {
 })
 
 describe('plan comparison choices', () => {
+  it('formats admin-configured plan storage without trailing zeros', () => {
+    expect(formatPlanStorage(5 * 1024 ** 3)).toBe('5 GiB')
+    expect(formatPlanStorage(100 * 1024 ** 3)).toBe('100 GiB')
+    expect(formatPlanStorage(1.5 * 1024 ** 3)).toBe('1.5 GiB')
+    expect(formatPlanStorage(500 * 1024 ** 2)).toBe('500 MiB')
+  })
+
   it('uses only the Stripe subscription for plan-management state', () => {
     expect(managedBillingPlan({ subscription: null })).toBe('baby')
     expect(managedBillingPlan({ subscription: {
