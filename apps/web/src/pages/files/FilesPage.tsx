@@ -453,6 +453,9 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
     const startY = event.clientY
     let moved = false
     setKeyboardFocus(false)
+    // A drag-select must not also select page text (headers, the chat beside, the composer).
+    document.body.style.userSelect = 'none'
+    window.getSelection()?.removeAllRanges()
     const update = (moveEvent: globalThis.PointerEvent) => {
       const left = Math.min(startX, moveEvent.clientX)
       const top = Math.min(startY, moveEvent.clientY)
@@ -460,6 +463,7 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
       const height = Math.abs(moveEvent.clientY - startY)
       if (!moved && width < 4 && height < 4) return
       moved = true
+      moveEvent.preventDefault()
       setMarquee({ left, top, width, height })
       const hits = new Set(base)
       for (const element of itemsRef.current?.querySelectorAll<HTMLElement>('[data-file-id]') ?? []) {
@@ -472,11 +476,14 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
     const finish = () => {
       window.removeEventListener('pointermove', update)
       window.removeEventListener('pointerup', finish)
+      window.removeEventListener('pointercancel', finish)
+      document.body.style.userSelect = ''
       setMarquee(null)
       if (!moved && !additive) setSelection(EMPTY_SELECTION)
     }
     window.addEventListener('pointermove', update)
     window.addEventListener('pointerup', finish)
+    window.addEventListener('pointercancel', finish)
   }
 
   const openMenuAt = (point: ContextMenuPoint, node: FileNode | null) => {

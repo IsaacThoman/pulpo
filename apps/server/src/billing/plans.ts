@@ -7,9 +7,10 @@ export const PLAN_MONTHLY_PRICE_CENTS: Record<PaidBillingPlan, number> = {
   fat: 2_400,
 }
 
+// Plans include weekly and five-hour allowances instead of monthly platform credits.
 export const PLAN_MONTHLY_CREDIT_MICROS: Record<PaidBillingPlan, number> = {
-  eight: 1_000_000,
-  fat: 16_000_000,
+  eight: 0,
+  fat: 0,
 }
 
 export const MIN_TOP_UP_CENTS = 500

@@ -348,8 +348,8 @@ function rethrowStripe(error: unknown): never {
  * Upgrades invoice the prorated difference immediately. Downgrades and restores switch
  * the price without proration: Stripe keeps the current period as paid, issues no credit,
  * and bills the new price at the next renewal. This closes the loophole where a Fat
- * subscriber collected the monthly credit grant, downgraded, and received most of the
- * $24 back as Stripe customer balance.
+ * subscriber used Fat allowances, downgraded, and received most of the $24 back as
+ * Stripe customer balance.
  */
 export function subscriptionSwitchParams(
   itemId: string,
