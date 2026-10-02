@@ -26,6 +26,7 @@ import {
   UsersRound,
   PanelLeftClose,
   PanelLeftOpen,
+  ExternalLink,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { compareChatOrder, useChat } from '@/stores/chat'
@@ -63,7 +64,7 @@ import { toggleSidebarPin, type SidebarPinKey } from '@/lib/sidebar-pins'
 import { newChatLocationState } from '@/lib/new-chat-navigation'
 import { billingPlanTier, fetchBillingSummary } from '@/lib/billing'
 import { isDesktopRuntime } from '@/lib/runtime'
-import { uit } from '@/i18n/ui'
+import { ui, uit } from '@/i18n/ui'
 
 type DragKind = 'folder' | 'chat'
 type ChatList = 'pinned' | 'loose' | `folder:${string}`
@@ -257,7 +258,11 @@ function DropLines({
   )
 }
 
-function ChatMenu({ chat, onRename }: { chat: Chat; onRename: () => void }) {
+/**
+ * A chat's actions, the same from its row's "⋯" button and from right-clicking the row
+ * (`atPointer` only places it at the pointer). The desktop app has no tabs, so no new-tab item.
+ */
+function ChatMenu({ chat, onRename, atPointer = false }: { chat: Chat; onRename: () => void; atPointer?: boolean }) {
   const { t } = useTranslation()
   const togglePin = useChat((state) => state.togglePin)
   const setChatAutoExpiration = useChat((state) => state.setChatAutoExpiration)
@@ -269,7 +274,13 @@ function ChatMenu({ chat, onRename }: { chat: Chat; onRename: () => void }) {
   const automaticChatExpiration = useSettings((state) => state.automaticChatExpiration)
   const expirationMenuAction = resolveChatExpiryMenuAction(chat.expiresAt, automaticChatExpiration)
   return (
-    <DropdownMenuContent side="right" align="start" className="w-48">
+    <DropdownMenuContent side={atPointer ? 'bottom' : 'right'} align="start" sideOffset={atPointer ? 2 : undefined} className="w-48">
+      {!isDesktopRuntime() && (
+        <DropdownMenuItem onClick={() => { window.open(`/c/${chat.id}`, '_blank', 'noopener') }}>
+          <ExternalLink />
+          {ui("Open in new tab")}
+        </DropdownMenuItem>
+      )}
       <DropdownMenuItem onClick={() => togglePin(chat.id)}>
         {chat.pinned ? <PinOff /> : <Pin />}
         {chat.pinned ? t('chat.unpin') : t('chat.pin')}
@@ -382,6 +393,8 @@ export function ChatRow({
   const { t } = useTranslation()
   const navigate = useNavigate()
   const [renameOpen, setRenameOpen] = useState(false)
+  // Right-clicking the row opens the chat's menu at the pointer instead of the browser's link menu.
+  const [menuPoint, setMenuPoint] = useState<{ x: number; y: number } | null>(null)
   const [title, setTitle] = useState(chat.title)
   const renameChat = useChat((state) => state.renameChat)
   const deleteChat = useChat((state) => state.deleteChat)
@@ -404,6 +417,10 @@ export function ChatRow({
       onDragOver={canDrop || canDrag ? onDragOver : undefined}
       onDrop={canDrop || canDrag ? onDrop : undefined}
       onDragEnd={canDrag ? onDragEnd : undefined}
+      onContextMenu={(event) => {
+        event.preventDefault()
+        setMenuPoint({ x: event.clientX, y: event.clientY })
+      }}
       className={cn(
         'group relative flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm transition-colors',
         active
@@ -495,6 +512,14 @@ export function ChatRow({
         </DropdownMenuTrigger>
         <ChatMenu chat={chat} onRename={() => setRenameOpen(true)} />
       </DropdownMenu>
+      {menuPoint && (
+        <DropdownMenu key={`${menuPoint.x}:${menuPoint.y}`} open onOpenChange={(open) => { if (!open) setMenuPoint(null) }} modal={false}>
+          <DropdownMenuTrigger asChild>
+            <span aria-hidden className="pointer-events-none fixed size-0" style={{ left: menuPoint.x, top: menuPoint.y }} />
+          </DropdownMenuTrigger>
+          <ChatMenu chat={chat} onRename={() => setRenameOpen(true)} atPointer />
+        </DropdownMenu>
+      )}
       <Dialog open={renameOpen} onOpenChange={setRenameOpen}>
         <DialogContent className="sm:max-w-sm" onClick={(e) => e.stopPropagation()}>
           <DialogHeader>
