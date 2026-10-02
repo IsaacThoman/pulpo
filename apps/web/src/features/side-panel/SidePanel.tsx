@@ -1,8 +1,8 @@
-import { lazy, Suspense, useEffect, useRef, useState, type PointerEvent } from 'react'
+import { lazy, memo, Suspense, useEffect, useRef, useState, type PointerEvent } from 'react'
 import { Loader2 } from 'lucide-react'
 import { ui } from '@/i18n/ui'
 import { cn } from '@/lib/utils'
-import { clampPanelWidth, DEFAULT_PANEL_WIDTH, readPanelWidth, splitFits, useSidePanel, writePanelWidth } from './store'
+import { clampPanelWidth, DEFAULT_PANEL_WIDTH, readPanelWidth, splitFits, useSidePanel, writePanelWidth, type PanelContent } from './store'
 import { panelContentPath, useMainNavigate } from './use-panel-actions'
 
 // Panel views are heavy (editor, chat); load each only once something of that kind opens.
@@ -10,6 +10,15 @@ const FilePanelView = lazy(() => import('@/pages/files/FileDocPage').then((modul
 const FolderPanelView = lazy(() => import('@/pages/files/FilesPage').then((module) => ({ default: module.FolderPanelView })))
 
 const loading = <div className="grid h-full place-items-center"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>
+
+// Shell measurements must not propagate renders into the file browser/editor.
+const PanelView = memo(function PanelView({ panel }: { panel: PanelContent }) {
+  return (
+    <Suspense fallback={loading}>
+      {panel.kind === 'file' ? <FilePanelView fileId={panel.id} /> : <FolderPanelView folderId={panel.id} />}
+    </Suspense>
+  )
+})
 
 /**
  * A folder or file docked beside the main view (drag its edge to resize), within `available`,
@@ -82,11 +91,7 @@ export function SidePanel({ available, full = false }: { available: number; full
     handle.addEventListener('pointercancel', end)
   }
 
-  const content = (
-    <Suspense fallback={loading}>
-      {panel.kind === 'file' ? <FilePanelView fileId={panel.id} /> : <FolderPanelView folderId={panel.id} />}
-    </Suspense>
-  )
+  const content = <PanelView panel={panel} />
 
   if (full) {
     return (

@@ -15,7 +15,7 @@ import { ui } from '@/i18n/ui'
 import { useSettings } from '@/stores/settings'
 import { useDesktopChrome } from '@/stores/desktopChrome'
 import { isDesktopRuntime } from '@/lib/runtime'
-import { SidePanel } from '@/features/side-panel/SidePanel'
+import { SidePanelLayout } from '@/features/side-panel/SidePanelLayout'
 import { splitFits, useSidePanel } from '@/features/side-panel/store'
 import { FileToasts } from '@/features/files/browser/FileToasts'
 import { useSidePanelUrl } from '@/features/side-panel/use-side-panel-url'
@@ -26,9 +26,6 @@ const SettingsModal = lazy(() => import('@/components/settings/SettingsModal').t
 export function AppLayout() {
   const [collapsed, setCollapsed] = useState(() => window.matchMedia('(width < 750px)').matches)
   const [mobile, setMobile] = useState(() => window.matchMedia('(width < 750px)').matches)
-  // The room beside the sidebar that the main view and the side panel share.
-  const [contentWidth, setContentWidth] = useState(() => window.innerWidth)
-  const contentRef = useRef<HTMLDivElement>(null)
   // The whole frame, sidebar included; unlike the content area it does not change as the sidebar animates.
   const [frameWidth, setFrameWidth] = useState(() => window.innerWidth)
   const frameRef = useRef<HTMLDivElement>(null)
@@ -102,27 +99,20 @@ export function AppLayout() {
   useSidePanelUrl()
 
   useLayoutEffect(() => {
-    const content = contentRef.current
     const frame = frameRef.current
-    if (!content || !frame) return
-    const measure = () => {
-      setContentWidth(content.clientWidth)
-      setFrameWidth(frame.clientWidth)
-    }
+    if (!frame) return
+    const measure = () => setFrameWidth(frame.clientWidth)
     measure()
-    // The sidebar collapsing changes the room without resizing the window, hence the observer.
+    // Only observe the outer frame here. The space beside the animated sidebar changes every
+    // frame; measuring it in this component would rerender the entire chat list on every tick.
     if (typeof ResizeObserver === 'undefined') {
       window.addEventListener('resize', measure)
       return () => window.removeEventListener('resize', measure)
     }
     const observer = new ResizeObserver(measure)
-    observer.observe(content)
     observer.observe(frame)
     return () => observer.disconnect()
   }, [])
-  // Phones never split; elsewhere the panel shows only beside a main view of usable width.
-  const splitRoom = mobile ? 0 : contentWidth
-  useEffect(() => { useSidePanel.setState({ splitAvailable: splitFits(splitRoom) }) }, [splitRoom])
 
   useEffect(() => {
     if (sidebarTransitions) return
@@ -247,14 +237,13 @@ export function AppLayout() {
               openSettings('general')
             }}
           />}
-          <div ref={contentRef} className="flex h-full min-w-0 flex-1">
+          <SidePanelLayout mobile={mobile} full={panelFull} enabled={!adminChatView}>
             <main className={cn('app-main min-w-0 flex-1 overflow-hidden', panelFull && 'hidden')}>
               <Suspense fallback={<div className="h-full bg-background" aria-label={ui("Loading view")} />}>
                 <Outlet />
               </Suspense>
             </main>
-            {!adminChatView && <SidePanel available={splitRoom} full={panelFull} />}
-          </div>
+          </SidePanelLayout>
           {/* One host for Files undo toasts, whether Files is on the page or in the panel. */}
           {!adminChatView && <FileToasts />}
         </div>
