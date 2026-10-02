@@ -7,6 +7,7 @@ const native = vi.hoisted(() => ({
   requestPermission: vi.fn(async () => ({ granted: true })),
   prepare: vi.fn(async () => {}), record: vi.fn(), stop: vi.fn(async () => {}), release: vi.fn(),
   remove: vi.fn(), audioMode: vi.fn(async () => {}), request: vi.fn(async () => ({ text: 'Transcript' })),
+  recorderOptions: [] as unknown[], metering: -24 as number | undefined,
 }))
 vi.mock('react-native', () => ({ Platform: { OS: 'android' }, AppState: {
   get currentState() { return native.currentState },
@@ -19,8 +20,10 @@ vi.mock('expo-audio', () => ({
     getRecordingPermissionsAsync: native.getPermission,
     requestRecordingPermissionsAsync: native.requestPermission,
     AudioRecorder: class {
+      constructor(options: unknown) { native.recorderOptions.push(options) }
       uri = 'file:///recording.m4a'; isRecording = true
       prepareToRecordAsync = native.prepare; record = native.record; stop = native.stop; release = native.release
+      getStatus = () => ({ isRecording: true, metering: native.metering })
     },
   },
   RecordingPresets: { HIGH_QUALITY: { android: {}, ios: {} } }, setAudioModeAsync: native.audioMode,
@@ -33,7 +36,7 @@ vi.mock('../../api/client', () => ({ apiRequest: native.request }))
 import { createNativeDictation } from './useDictation'
 
 async function settle() { for (let i = 0; i < 20; i++) await Promise.resolve() }
-afterEach(() => { vi.clearAllMocks(); vi.useRealTimers(); native.currentState = 'active'; native.listeners.clear() })
+afterEach(() => { vi.clearAllMocks(); vi.useRealTimers(); native.currentState = 'active'; native.listeners.clear(); native.recorderOptions.length = 0; native.metering = -24 })
 describe('SDK 57 native dictation adapter', () => {
   it('uploads a real multipart Blob with M4A metadata and authentication timeout options', async () => {
     const controller = createNativeDictation(); const apply = vi.fn()
@@ -64,5 +67,16 @@ describe('SDK 57 native dictation adapter', () => {
     await vi.advanceTimersByTimeAsync(1000); await run
     expect(native.record).not.toHaveBeenCalled(); expect(native.listeners.size).toBe(0)
     expect(controller.getSnapshot().error).toContain('interrupted')
+  })
+  it('enables native metering and feeds recorder levels to the waveform', async () => {
+    vi.useFakeTimers()
+    const controller = createNativeDictation(); const run = controller.start(vi.fn()); await settle()
+    expect(native.recorderOptions[0]).toMatchObject({ isMeteringEnabled: true })
+    await vi.advanceTimersByTimeAsync(80)
+    expect(controller.getLevels().at(-1)).toBeGreaterThan(0)
+    native.metering = undefined
+    await vi.advanceTimersByTimeAsync(80)
+    expect(controller.getLevels().at(-1)).toBe(0)
+    controller.cancel(); await run
   })
 })

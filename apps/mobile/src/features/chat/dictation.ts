@@ -1,5 +1,13 @@
+import {
+  DICTATION_LEVEL_INTERVAL_MS,
+  DICTATION_MAX_SECONDS,
+  emptyDictationLevels,
+  normalizeDictationDecibels,
+  pushDictationLevel,
+} from '@pulpo/client-core'
+
 export const MAX_DICTATION_BYTES = 10 * 1024 * 1024
-export const MAX_DICTATION_SECONDS = 90
+export const MAX_DICTATION_SECONDS = DICTATION_MAX_SECONDS
 
 export type DictationState = {
   phase: 'idle' | 'preparing' | 'recording' | 'transcribing' | 'cancelling'
@@ -14,6 +22,13 @@ export interface DictationRecorder {
   release(): void
   readonly uri: string | null
   readonly isRecording: boolean
+  /** Current input level in dBFS, when the recorder meters audio. */
+  metering?(): number | undefined
+}
+
+export interface DictationLevelSource {
+  getLevels(): readonly number[]
+  subscribeLevels(listener: () => void): () => void
 }
 
 export interface DictationDependencies {
@@ -27,11 +42,13 @@ export interface DictationDependencies {
 }
 
 /** Owns a recording until cleanup finishes, including cancellation during native preparation. */
-export class DictationController {
+export class DictationController implements DictationLevelSource {
   private state: DictationState = { phase: 'idle', seconds: 0, error: null }
   requestingPermission = false
   private listeners = new Set<() => void>()
   private active: { abort: AbortController; finish: () => void; error: string | null } | null = null
+  private levels: readonly number[] = emptyDictationLevels()
+  private levelListeners = new Set<() => void>()
 
   constructor(private readonly deps: DictationDependencies) {}
   getSnapshot = (): DictationState => this.state
@@ -39,7 +56,24 @@ export class DictationController {
     this.listeners.add(listener)
     return () => { this.listeners.delete(listener) }
   }
+  /** Recent input levels, oldest first. Kept apart from state so meters do not re-render the composer. */
+  getLevels = (): readonly number[] => this.levels
+  subscribeLevels = (listener: () => void): (() => void) => {
+    this.levelListeners.add(listener)
+    return () => { this.levelListeners.delete(listener) }
+  }
   get busy(): boolean { return this.active !== null }
+  private sampleLevel(recorder: DictationRecorder): void {
+    let decibels: number | undefined
+    // A missed meter reading only drops one waveform sample; it never ends the recording.
+    try { decibels = recorder.metering?.() } catch { decibels = undefined }
+    this.setLevels(pushDictationLevel(this.levels, normalizeDictationDecibels(decibels)))
+  }
+  private setLevels(levels: readonly number[]): void {
+    if (levels === this.levels) return
+    this.levels = levels
+    this.levelListeners.forEach((listener) => listener())
+  }
   private update(patch: Partial<DictationState>): void {
     this.state = { ...this.state, ...patch }
     this.listeners.forEach((listener) => listener())
@@ -64,6 +98,7 @@ export class DictationController {
     const active = { abort: new AbortController(), finish, error: null as string | null }
     this.active = active
     this.update({ phase: 'preparing', seconds: 0, error: null })
+    this.setLevels(emptyDictationLevels())
     let recorder: DictationRecorder | undefined
     let timer: ReturnType<typeof setInterval> | undefined
     let stoppedRecorder = false
@@ -86,16 +121,19 @@ export class DictationController {
       const started = Date.now()
       timer = setInterval(() => {
         const seconds = Math.min(MAX_DICTATION_SECONDS, Math.floor((Date.now() - started) / 1000))
-        this.update({ seconds })
+        if (seconds !== this.state.seconds) this.update({ seconds })
         if (seconds >= MAX_DICTATION_SECONDS) finish()
         else {
           try {
-            if (recorder!.isRecording) return
+            if (recorder!.isRecording) {
+              this.sampleLevel(recorder!)
+              return
+            }
           } catch { /* A native media reset can invalidate the recorder. */ }
           active.error = 'Recording was interrupted. Please try again.'
           finish()
         }
-      }, 250)
+      }, DICTATION_LEVEL_INTERVAL_MS)
       await stopped
       clearInterval(timer)
       if (cancelled()) return

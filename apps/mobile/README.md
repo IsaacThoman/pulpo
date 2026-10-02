@@ -93,8 +93,10 @@ drafts, and queue state shared between platforms.
 ### Dictation
 
 When the instance administrator enables Dictation and configures its Groq key,
-the chat composer shows a microphone on iOS and Android. Tap to record, then tap
-Stop dictation to insert the transcript at the cursor. Selected text is replaced;
+the chat composer shows a microphone on iOS and Android. Tap to record: the
+toolbar rolls away to a live loudness waveform with an elapsed timer, which turns
+amber in the last 10 seconds. Tap the checkmark to insert the transcript at the
+cursor, or the X to discard the recording. Selected text is replaced;
 if the draft changed in the meantime, the transcript is appended to the latest
 text. Review or edit the result and send it manually. Recording stops after
 90 seconds. Dictation also works while editing messages and queued messages.
