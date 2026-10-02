@@ -111,6 +111,7 @@ export function RecentUsagePanel({
                           costUsd={r.cost}
                           inferenceReferenceUsd={r.inferenceReferenceCost}
                           subscriptionCoveredUsd={r.subscriptionCoveredCost}
+                          items={r.costBreakdown}
                           personal
                         />
                       </td>

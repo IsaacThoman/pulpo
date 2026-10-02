@@ -162,6 +162,7 @@ export async function registerAdminUsageRoutes(app: FastifyInstance): Promise<vo
           costMicros: Number(row.usage.costMicros),
           inferenceReferenceCostMicros: Number(row.usage.inferenceReferenceCostMicros),
           subscriptionCoveredMicros: Number(row.usage.weeklyCostMicros),
+          costBreakdown: row.usage.costBreakdown,
         }
       }),
       nextCursor: rows.length > query.limit && last

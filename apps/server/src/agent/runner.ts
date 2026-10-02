@@ -25,7 +25,7 @@ import { createWorkspaceTools } from './tools.js'
 import { publishAdminUsage } from '../admin/usage-events.js'
 import { buildAgentSystemPrompt, buildAgentUserPrompt, buildToolsDisabledSystemPrompt, withoutAgentTools } from './policy.js'
 import { runPostResponseTasks, type PostResponseTaskResult } from '../responses/post-tasks.js'
-import { calculateCostMicros, workspaceHoldMicros, workspaceUsageMicros } from '../accounting/pricing.js'
+import { calculateCostMicros, workspaceBillableMinutes, workspaceHoldMicros, workspaceUsageMicros } from '../accounting/pricing.js'
 import { truncateUtf8 } from './output.js'
 import { buildAgentOutput, type ToolTimelineItem } from './timeline.js'
 import { messagesForPersistence } from './context.js'
@@ -1177,9 +1177,8 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
       }))
     }
     const postTaskCostMicros = postTasks.costMicros
-    workspaceCostMicros = workspaceReadyAtMs !== undefined && settings.billWorkspaces
-      ? workspaceUsageMicros(Date.now() - workspaceReadyAtMs, settings.workspacePricePerMinuteMicros)
-      : 0
+    const workspaceElapsedMs = workspaceReadyAtMs !== undefined && settings.billWorkspaces ? Date.now() - workspaceReadyAtMs : 0
+    workspaceCostMicros = workspaceUsageMicros(workspaceElapsedMs, settings.workspacePricePerMinuteMicros)
     accruedToolCostMicros = await readToolCost()
     const settlement = agentSettlementAmounts({
       totalTokens: usage.totalTokens,
@@ -1197,6 +1196,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
         costMicrosOverride: settlement.costMicrosOverride,
         additionalCostMicros: settlement.additionalCostMicros,
         inferenceReferenceCostMicros,
+        workspace: { minutes: workspaceBillableMinutes(workspaceElapsedMs), costMicros: workspaceCostMicros },
       })
       : (await releaseBudget(responseId), 0)
     const totalDurationMs = Date.now() - startedAt
@@ -1218,9 +1218,8 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
     await db.update(agentRuns).set({ status, error: errorMessage, context: { systemPrompt: agentSystemPrompt, messages: messagesForPersistence(agent.state.messages), billingTurns }, completedAt: new Date(), updatedAt: new Date() }).where(eq(agentRuns.id, runId))
     const finalResponder = lastResponder ?? { runtime: active, pricing: await getActivePricing(active.model.id) }
     await db.update(responses).set({ actualModelId: finalResponder.runtime.model.id, pricingVersionId: finalResponder.pricing.id }).where(eq(responses.id, responseId))
-    workspaceCostMicros = workspaceReadyAtMs !== undefined && settings.billWorkspaces
-      ? workspaceUsageMicros(Date.now() - workspaceReadyAtMs, settings.workspacePricePerMinuteMicros)
-      : 0
+    const workspaceElapsedMs = workspaceReadyAtMs !== undefined && settings.billWorkspaces ? Date.now() - workspaceReadyAtMs : 0
+    workspaceCostMicros = workspaceUsageMicros(workspaceElapsedMs, settings.workspacePricePerMinuteMicros)
     accruedToolCostMicros = await readToolCost()
     const settlement = agentSettlementAmounts({
       totalTokens: usage.totalTokens,
@@ -1237,6 +1236,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
         costMicrosOverride: settlement.costMicrosOverride,
         additionalCostMicros: settlement.additionalCostMicros,
         inferenceReferenceCostMicros,
+        workspace: { minutes: workspaceBillableMinutes(workspaceElapsedMs), costMicros: workspaceCostMicros },
       })
       : (await releaseBudget(responseId), 0)
     const totalDurationMs = Date.now() - startedAt

@@ -1,4 +1,5 @@
 import { useEffect, useRef, type UIEvent } from 'react'
+import type { UsageCostItem } from '@pulpo/contracts'
 import { BarChart3, Zap } from 'lucide-react'
 import { UsageModelIcon } from './UsageModelIcon'
 import { formatUsd } from '@/lib/format'
@@ -16,6 +17,7 @@ export interface PublicUsageRecord {
   costMicros: number
   inferenceReferenceCostMicros: number
   subscriptionCoveredMicros: number
+  costBreakdown: UsageCostItem[] | null
 }
 
 export interface PublicTopModel {
@@ -85,6 +87,7 @@ export function PublicRecentUsagePanel({
                 costUsd={record.costMicros / 1_000_000}
                 inferenceReferenceUsd={record.inferenceReferenceCostMicros / 1_000_000}
                 subscriptionCoveredUsd={record.subscriptionCoveredMicros / 1_000_000}
+                items={record.costBreakdown}
               />
             </td>
           </tr>)}</tbody>

@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { eq, inArray } from 'drizzle-orm'
 import { db, queryClient } from '../database/client.js'
-import { apiKeys, billingAccounts, budgetReservations, creditLedger, budgetReservationFunders, chats, models, modelPricingVersions, pools, poolMembers, providerConnections, responses, users, usageEvents, weeklyUsagePeriods } from '../database/schema.js'
+import { agentRuns, apiKeys, billingAccounts, budgetReservations, creditLedger, budgetReservationFunders, chats, generationAttempts, models, modelPricingVersions, pools, poolMembers, providerConnections, requestLogs, responses, toolExecutions, users, usageEvents, weeklyUsagePeriods } from '../database/schema.js'
 import { chargeMeteredUsage, extendBudgetReservationFixedCost, releaseBudget, reserveBudget, resizeBudgetReservation, retainBudgetReservation, settleBudget } from './service.js'
 
 vi.mock('../responses/events.js', () => ({ publishStateChange: vi.fn() }))
@@ -219,6 +219,38 @@ describe.skipIf(!enabled)('budget-aware reservations in PostgreSQL', () => {
     expect(user!.balanceMicros).toBe(6_000_000 - 21_047)
     expect(await settleBudget({ responseId: input.responseId, usage, latencyMs: 1, costMicrosOverride: 20_110, additionalCostMicros: 937 })).toBe(21_047)
     expect((await db.select().from(users).where(eq(users.id, userId)))[0]!.balanceMicros).toBe(6_000_000 - 21_047)
+  })
+
+  it('snapshots an itemized cost breakdown on the usage event', async () => {
+    const userId = await account(6_000_000), input = await request(userId, 32_000)
+    await reserveBudget(input)
+    await retainBudgetReservation(input.responseId, 16_800)
+    const requestLogId = randomUUID(), runId = randomUUID()
+    await db.insert(requestLogs).values({ id: requestLogId, responseId: input.responseId, userId, requestedModelId: modelId })
+    await db.insert(generationAttempts).values([
+      { id: randomUUID(), requestLogId, modelId, source: 'agent', purpose: 'generation', costMicros: 10_000 },
+      { id: randomUUID(), requestLogId, modelId, source: 'tool', purpose: 'title', costMicros: 300 },
+      { id: randomUUID(), requestLogId, modelId, source: 'tool', purpose: 'compaction', costMicros: 0 },
+    ])
+    await db.insert(agentRuns).values({ id: runId, responseId: input.responseId })
+    await db.insert(toolExecutions).values([
+      { id: randomUUID(), agentRunId: runId, operationId: randomUUID(), toolName: 'web_search', billedCostMicros: 1_000 },
+      { id: randomUUID(), agentRunId: runId, operationId: randomUUID(), toolName: 'web_search', billedCostMicros: 1_000 },
+      { id: randomUUID(), agentRunId: runId, operationId: randomUUID(), toolName: 'web_fetch', billedCostMicros: 500 },
+      { id: randomUUID(), agentRunId: runId, operationId: randomUUID(), toolName: 'web_fetch', billedCostMicros: 0 },
+    ])
+    expect(await settleBudget({
+      responseId: input.responseId, usage, latencyMs: 1,
+      costMicrosOverride: 12_500, additionalCostMicros: 4_300, workspace: { minutes: 2, costMicros: 4_000 },
+    })).toBe(16_800)
+    const [event] = await db.select().from(usageEvents).where(eq(usageEvents.responseId, input.responseId))
+    expect(event!.costBreakdown).toEqual([
+      { kind: 'model', quantity: 101, costMicros: 10_000 },
+      { kind: 'tool', name: 'web_search', quantity: 2, costMicros: 2_000 },
+      { kind: 'tool', name: 'web_fetch', quantity: 1, costMicros: 500 },
+      { kind: 'task', name: 'title', quantity: 1, costMicros: 300 },
+      { kind: 'workspace', quantity: 2, costMicros: 4_000 },
+    ])
   })
 
   it('absorbs only the part of an overrun the account cannot fund', async () => {

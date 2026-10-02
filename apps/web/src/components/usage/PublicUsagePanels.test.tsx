@@ -20,6 +20,7 @@ describe('public usage model icons', () => {
           costMicros: 300,
           inferenceReferenceCostMicros: 300,
           subscriptionCoveredMicros: 0,
+          costBreakdown: null,
         }]}
         nextCursor={null}
         loadingMore={false}
