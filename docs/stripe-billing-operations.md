@@ -27,9 +27,9 @@ Configure the Stripe Billing Portal to allow customers to update payment methods
 
 ## Plan changes
 
-Monthly platform credits are granted in full when a subscription invoice is paid, so plan changes must not refund the current period:
+Subscriptions include weekly and five-hour usage allowances and do not grant platform credits. A paid invoice covers that plan's allowances for the whole period, so plan changes must not refund the current period:
 
-- **Upgrade (Eight to Fat)** is immediate. Stripe invoices the prorated difference and the upgrade only completes once that invoice is paid. No additional credits are granted mid-cycle.
+- **Upgrade (Eight to Fat)** is immediate. Stripe invoices the prorated difference and the upgrade only completes once that invoice is paid. Fat allowances apply as soon as it does.
 - **Downgrade (Fat to Eight)** switches the Stripe price with `proration_behavior: none`. Stripe issues no credit and the next renewal bills $8. Pulpo records the plan covered by the last paid invoice (`billing_subscriptions.paid_plan`) and keeps Fat benefits until the paid period ends. Switching back to Fat before renewal is free because the period was already paid at the Fat price.
 - **Cancel** sets `cancel_at_period_end`; the paid plan stays in effect until the period ends.
 
