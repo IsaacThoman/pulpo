@@ -247,3 +247,24 @@ describe('synchronized generation preference', () => {
     expect(usePreferencesStore.getState().generationPreferenceDirty).toBe(false)
   })
 })
+
+describe('dictation engine preference', () => {
+  it('defaults to the server model and keeps a device choice on this device only', async () => {
+    expect(defaultPreferences.dictationEngine).toBe('server')
+    await usePreferencesStore.getState().setPreference('dictationEngine', 'device')
+    expect(usePreferencesStore.getState().dictationEngine).toBe('device')
+    expect(usePreferencesStore.getState().pendingServerPreferenceKeys).not.toContain('dictationEngine')
+    usePreferencesStore.setState({ dictationEngine: 'server' })
+    await usePreferencesStore.getState().hydrate()
+    expect(usePreferencesStore.getState().dictationEngine).toBe('device')
+  })
+
+  it('falls back to the server model for missing or unknown stored values', async () => {
+    mocks.values.set('global:preferences', { dictationEngine: 'cloud' })
+    await usePreferencesStore.getState().hydrate()
+    expect(usePreferencesStore.getState().dictationEngine).toBe('server')
+    mocks.values.set('global:preferences', {})
+    await usePreferencesStore.getState().hydrate()
+    expect(usePreferencesStore.getState().dictationEngine).toBe('server')
+  })
+})

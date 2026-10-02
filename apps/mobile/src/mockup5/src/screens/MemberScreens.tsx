@@ -40,6 +40,8 @@ import { usePrototypeStore } from '../store/prototypeStore';
 import type { RootStackParamList, SettingsSection } from '../navigation';
 import { apiRequest, mobileApi } from '../../../api/client';
 import { useSessionStore } from '../../../store/session';
+import { DICTATION_ENGINE_OPTIONS, dictationEngineFooter } from '../../../features/chat/dictationEngine';
+import { localTranscriber } from '../../../native/localTranscription';
 import { useRealtimeStore } from '../../../providers/realtimeStore';
 import { canUseNativePasskeys, createPkceRequest, nativeRegister, openPasskeyEnrollment, PasskeyCancelledError } from '../../../auth/passkeys';
 
@@ -310,6 +312,18 @@ function NativeChoiceRow<T extends string>({ title, value, options, onChange, ic
   return <SwiftUIMenu label={<SwiftUIHStack spacing={12}>{icon ? <SwiftUIImage systemName={icon as never} size={17} modifiers={[frame({ width: 22, height: 22 })]} /> : null}<SwiftUIText>{title}</SwiftUIText><SwiftUISpacer /><SwiftUIText modifiers={[foregroundStyle('secondary')]}>{selected}</SwiftUIText><SwiftUIImage systemName="chevron.up.chevron.down" size={10} modifiers={[foregroundStyle('secondary')]} /></SwiftUIHStack>} modifiers={[buttonStyle('plain'), foregroundStyle('primary')]}>{options.map((option) => <SwiftUIButton key={option.value} label={option.label} systemImage={option.value === value ? 'checkmark' : undefined} onPress={() => onChange(option.value)} />)}</SwiftUIMenu>;
 }
 
+/** Only shown where Apple's on-device transcriber can run; elsewhere the server is the only engine. */
+function NativeDictationSection() {
+  const engine = usePrototypeStore((state) => state.preferences.dictationEngine);
+  const setPreference = usePrototypeStore((state) => state.setPreference);
+  const serverAvailable = useSessionStore((state) => state.config?.capabilities.dictation === true);
+  const [deviceAvailable] = useState(() => localTranscriber() !== null);
+  if (!deviceAvailable) return null;
+  return <SwiftUISection title="Dictation" footer={<SwiftUIText modifiers={[foregroundStyle('secondary')]}>{dictationEngineFooter(serverAvailable)}</SwiftUIText>}>
+    <NativeChoiceRow icon="waveform" title="Transcription" value={engine} options={DICTATION_ENGINE_OPTIONS} onChange={(value) => setPreference('dictationEngine', value)} />
+  </SwiftUISection>;
+}
+
 function NativeToggleRow({ title, detail, value, onChange, icon }: { title: string; detail: string; value: boolean; onChange: (value: boolean) => void; icon?: string }) {
   const theme = useAppTheme();
   return <SwiftUIToggle isOn={value} onIsOnChange={onChange} systemImage={icon as never} modifiers={[tint(theme.green)]}><SwiftUIText>{title}</SwiftUIText><SwiftUIText modifiers={[foregroundStyle('secondary'), font({ textStyle: 'footnote' })]}>{detail}</SwiftUIText></SwiftUIToggle>;
@@ -358,6 +372,7 @@ export function SettingsDetailScreen({ navigation, route }: NativeStackScreenPro
         <NativeToggleRow icon="brain.head.profile" title="Show reasoning" detail="Show expandable work details." value={preferences.showReasoning} onChange={(value) => setPreference('showReasoning', value)} />
         <NativeToggleRow icon="iphone.radiowaves.left.and.right" title="Haptics" detail="Feedback for sends, menus, and completion." value={preferences.haptics} onChange={(value) => setPreference('haptics', value)} />
       </SwiftUISection>
+      <NativeDictationSection />
       <SwiftUISection title="Offline storage">
         <SwiftUILabeledContent label="Chats kept on device"><SwiftUIText modifiers={[foregroundStyle('secondary')]}>{`${preferences.localChatLimit}`}</SwiftUIText></SwiftUILabeledContent>
         <SwiftUILabeledContent label="Attachment cache"><SwiftUIText modifiers={[foregroundStyle('secondary')]}>{`${preferences.attachmentCacheMb} MB`}</SwiftUIText></SwiftUILabeledContent>

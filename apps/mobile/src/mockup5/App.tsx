@@ -12,6 +12,8 @@ import { incomingFileAttachment } from '../features/chat/incomingFileAttachment'
 import { useShortcutInbox } from '../shortcuts/inbox';
 import { shortcutsScope } from '../shortcuts/native';
 import { useDictation } from '../features/chat/useDictation';
+import { resolveDictationEngine } from '../features/chat/dictationEngine';
+import { localTranscriber } from '../native/localTranscription';
 import { DictationCancelButton, DictationStrip } from '../features/chat/DictationStrip';
 import { useDictationToolbarStyle } from '../features/chat/dictationMotion';
 import { setComposerSelection } from '../features/chat/composerSelection';
@@ -4323,13 +4325,23 @@ function ChatView({
   });
   inputRef.current = input;
   const composerScreenFocused = useIsFocused();
-  const dictationEnabled = useSessionStore((state) => state.status === 'authenticated' && state.config?.capabilities.dictation === true);
+  const sessionAuthenticated = useSessionStore((state) => state.status === 'authenticated');
+  const serverDictation = useSessionStore((state) => state.status === 'authenticated' && state.config?.capabilities.dictation === true);
+  const dictationPreference = usePreferencesStore((state) => state.dictationEngine);
+  const [deviceDictation] = useState(() => Platform.OS === 'ios' && localTranscriber() !== null);
+  const dictationEngine = sessionAuthenticated ? resolveDictationEngine({
+    preference: dictationPreference, serverAvailable: serverDictation, deviceAvailable: deviceDictation, offline: networkOffline,
+  }) : null;
+  const dictationEnabled = dictationEngine !== null;
+  // On-device transcription keeps working without a connection.
+  const dictationOffline = dictationEngine === 'server' && networkOffline;
   const dictationToken = useSessionStore((state) => state.token);
   const dictationInstance = useSessionStore((state) => state.instanceUrl);
   const dictation = useDictation({
     identity: JSON.stringify([dictationInstance, dictationToken, draftNamespace, localComposerDraftId(chatId, temporary), messageEdit?.message.id, composerFocusRequest.revision]),
+    engine: dictationEngine,
     enabled: dictationEnabled && !expired && composerScreenFocused,
-    canStart: !networkOffline && !sending && !queueBusy && !shelfBusy && !composerFocusSuppressed
+    canStart: !dictationOffline && !sending && !queueBusy && !shelfBusy && !composerFocusSuppressed
       && hydratedComposerScope === `${draftNamespace ?? 'local'}\u0000${localComposerDraftId(chatId, temporary)}`,
     read: () => ({ text: inputRef.current, selection: inputSelectionRef.current }),
     apply: (value, cursor) => {
@@ -4346,7 +4358,7 @@ function ChatView({
     busy: () => sendingRef.current || handoffBusyRef.current || shelfBusyRef.current || isDictationBusy(),
     open: onRemoteChatStarted,
   });
-  const dictationDisabled = dictationBusy || !composerScreenFocused || networkOffline || sending || queueBusy || shelfBusy || expired || composerFocusSuppressed
+  const dictationDisabled = dictationBusy || !composerScreenFocused || dictationOffline || sending || queueBusy || shelfBusy || expired || composerFocusSuppressed
       || hydratedComposerScope !== `${draftNamespace ?? 'local'}\u0000${localComposerDraftId(chatId, temporary)}`;
 
   // Draft hydration owns the selection only. Navigation intent owns focus so

@@ -5,7 +5,9 @@ import { AudioModule, RecordingPresets, setAudioModeAsync } from 'expo-audio'
 import { File } from 'expo-file-system'
 import { insertDictationText } from '@pulpo/client-core'
 import { apiRequest } from '../../api/client'
+import { localTranscriber } from '../../native/localTranscription'
 import { DictationController, type DictationLevelSource } from './dictation'
+import type { DictationEngine } from './dictationEngine'
 
 async function requestMicrophonePermission(): Promise<boolean> {
   const current = await AudioModule.getRecordingPermissionsAsync()
@@ -27,7 +29,11 @@ async function requestMicrophonePermission(): Promise<boolean> {
   return true
 }
 
-export function createNativeDictation(): DictationController {
+/**
+ * Records with expo-audio and transcribes with the engine chosen when each step runs:
+ * the Pulpo server, or Apple's on-device transcriber.
+ */
+export function createNativeDictation(engine: () => DictationEngine = () => 'server', local = localTranscriber): DictationController {
   return new DictationController({
     permission: requestMicrophonePermission,
     isForeground: () => AppState.currentState === 'active',
@@ -47,7 +53,13 @@ export function createNativeDictation(): DictationController {
     },
     size: (uri) => new File(uri).size,
     remove: (uri) => { const file = new File(uri); if (file.exists) file.delete() },
+    warmUp: () => { if (engine() === 'device') local()?.warmUp() },
     transcribe: async (uri, signal) => {
+      if (engine() === 'device') {
+        const transcriber = local()
+        if (!transcriber) throw new Error('On-device transcription is not available on this device.')
+        return transcriber.transcribe(uri, signal)
+      }
       const form = new FormData()
       // SDK 57 uses standards-based fetch; URI descriptors are not multipart Blobs.
       const audio = new File(uri)
@@ -63,14 +75,16 @@ export function createNativeDictation(): DictationController {
 
 export function useDictation(input: {
   identity: string
+  /** Where recordings are transcribed; dictation is unavailable when null. */
+  engine: DictationEngine | null
   enabled: boolean
   canStart: boolean
   read: () => { text: string; selection: { start: number; end: number } }
   apply: (value: string, cursor: number) => void
-}, create = createNativeDictation) {
-  const [controller] = useState(create)
+}, create: (engine: () => DictationEngine) => DictationController = createNativeDictation) {
   const latest = useRef(input)
   latest.current = input
+  const [controller] = useState(() => create(() => latest.current.engine ?? 'server'))
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot)
   useLayoutEffect(() => {
     if (!input.enabled) controller.cancel()
@@ -86,7 +100,7 @@ export function useDictation(input: {
   const isBusy = useCallback(() => controller.busy, [controller])
   const start = () => {
     speechPlayback.stop()
-    if (!latest.current.enabled || !latest.current.canStart || controller.busy) return
+    if (!latest.current.enabled || !latest.current.engine || !latest.current.canStart || controller.busy) return
     const original = latest.current.read()
     const identity = latest.current.identity
     void controller.start((text) => {

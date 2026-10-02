@@ -5,7 +5,7 @@ import { LatestValueQueue } from '@pulpo/client-core'
 import { getValue, setValue } from '../data/database'
 import { defaultPreferences as defaults, serverPreferenceKey, type Preferences } from './preferenceMapping'
 
-export type { AutomaticChatExpirationPreference, Preferences, TextSizePreference, ThemePreference, TrashRetentionPreference } from './preferenceMapping'
+export type { AutomaticChatExpirationPreference, DictationEnginePreference, Preferences, TextSizePreference, ThemePreference, TrashRetentionPreference } from './preferenceMapping'
 export { preferencePatchForServer, preferencesFromServer } from './preferenceMapping'
 
 interface PreferenceState extends Preferences {
@@ -98,6 +98,7 @@ export const usePreferencesStore = create<PreferenceState>((set, get) => ({
         imageGeneration: imageGenerationPreferencesSchema.catch({ enabled: false, modelId: null }).parse(stored?.imageGeneration),
         speech: speechPreferencesSchema.catch({ modelId: null, models: {} }).parse(stored?.speech),
         localChatLimit: Math.min(defaults.localChatLimit, stored?.localChatLimit ?? defaults.localChatLimit),
+        dictationEngine: stored?.dictationEngine === 'device' ? 'device' as const : defaults.dictationEngine,
       }
       Appearance.setColorScheme(preferences.theme === 'system' ? 'unspecified' : preferences.theme)
       set({

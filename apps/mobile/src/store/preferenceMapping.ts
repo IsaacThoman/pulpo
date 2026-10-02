@@ -3,6 +3,8 @@ export type ThemePreference = 'system' | 'light' | 'dark'
 export type TextSizePreference = 'default' | 'large' | 'extra-large'
 export type TrashRetentionPreference = 'instant' | '24h' | '7d' | '30d' | '90d' | 'indefinite'
 export type AutomaticChatExpirationPreference = 'disabled' | '24h' | '7d'
+/** Where dictation is transcribed. Device-specific, so it is never synchronized. */
+export type DictationEnginePreference = 'server' | 'device'
 
 export interface Preferences {
   imageGeneration: ImageGenerationPreferences
@@ -17,6 +19,7 @@ export interface Preferences {
   showReasoning: boolean
   memoryEnabled: boolean
   haptics: boolean
+  dictationEngine: DictationEnginePreference
   composerSyncEnabled: boolean
   sendWithEnter: boolean
   attachmentCacheMb: number
@@ -37,7 +40,7 @@ export const defaultPreferences: Preferences = {
   imageGeneration: imageGenerationPreferencesSchema.parse(undefined),
   speech: speechPreferencesSchema.parse(undefined),
   theme: 'system', textSize: 'default', streamResponses: true, showPromptSuggestions: true, showModelWarnings: true, modelWarningDismissals: {}, showReasoning: true, memoryEnabled: false,
-  haptics: true, composerSyncEnabled: true, sendWithEnter: true, attachmentCacheMb: 256, localChatLimit: 50,
+  haptics: true, dictationEngine: 'server', composerSyncEnabled: true, sendWithEnter: true, attachmentCacheMb: 256, localChatLimit: 50,
   trashRetention: '30d', automaticChatExpiration: '24h', newChatAutoExpire: false, favoriteModelIds: [], providerOrder: [], defaultModelId: null, agentModes: {},
   generation: {},
 }

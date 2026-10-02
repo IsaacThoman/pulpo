@@ -3,6 +3,7 @@ import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DictationController } from './dictation'
+import type { DictationEngine } from './dictationEngine'
 import { setComposerSelection } from './composerSelection'
 
 const appState = vi.hoisted(() => ({ change: (_state: string) => {} }))
@@ -11,6 +12,7 @@ vi.mock('react-native', () => ({ Platform: { OS: 'ios' }, AppState: {
 } }))
 vi.mock('expo-audio', () => ({}))
 vi.mock('expo-file-system', () => ({}))
+vi.mock('../../native/localTranscription', () => ({ localTranscriber: () => null }))
 import { useDictation } from './useDictation'
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
@@ -30,7 +32,7 @@ async function fixture() {
   let text = 'replace this please'
   const selectionRef = { current: { start: 8, end: 12 } }
   const apply = vi.fn((value: string) => { text = value })
-  const input = { identity: 'account/chat', enabled: true, canStart: true, read: () => ({ text, selection: selectionRef.current }), apply }
+  const input = { identity: 'account/chat', engine: 'server' as DictationEngine | null, enabled: true, canStart: true, read: () => ({ text, selection: selectionRef.current }), apply }
   function Component() { view = useDictation(input, () => controller); return null }
   host = document.createElement('div'); document.body.append(host); root = createRoot(host)
   const render = () => act(async () => { root!.render(createElement(Component)) })
@@ -86,6 +88,24 @@ describe('dictation composer ownership', () => {
     expect(f.deps.permission).not.toHaveBeenCalled()
     f.input.canStart = true; f.input.enabled = false; await f.render(); await f.start()
     expect(f.deps.permission).not.toHaveBeenCalled()
+  })
+  it('does not start when no transcription engine is available', async () => {
+    const f = await fixture(); f.input.engine = null; await f.render(); await f.start()
+    expect(f.deps.permission).not.toHaveBeenCalled()
+    f.input.engine = 'device'; await f.render(); await f.start()
+    expect(f.deps.permission).toHaveBeenCalledOnce()
+  })
+  it('passes the current engine to the dictation adapter', async () => {
+    let engine!: () => DictationEngine
+    const input = { identity: 'a', engine: 'server' as DictationEngine | null, enabled: true, canStart: true, read: () => ({ text: '', selection: { start: 0, end: 0 } }), apply: vi.fn() }
+    const created = new DictationController({ permission: async () => true, audioMode: async () => {}, recorder: () => { throw new Error('unused') }, size: () => 0, remove: () => {}, transcribe: async () => '' })
+    function Probe() { useDictation(input, (resolve) => { engine = resolve; return created }); return null }
+    host = document.createElement('div'); document.body.append(host); root = createRoot(host)
+    await act(async () => { root!.render(createElement(Probe)) })
+    expect(engine()).toBe('server')
+    input.engine = 'device'
+    await act(async () => { root!.render(createElement(Probe)) })
+    expect(engine()).toBe('device')
   })
   it('cancels when the composer loses availability or navigation focus', async () => {
     const f = await fixture(); await f.start()

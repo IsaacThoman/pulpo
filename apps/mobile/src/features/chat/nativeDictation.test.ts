@@ -33,6 +33,7 @@ vi.mock('expo-file-system', () => ({ File: class extends Blob {
   exists = true; delete = native.remove
 } }))
 vi.mock('../../api/client', () => ({ apiRequest: native.request }))
+vi.mock('../../native/localTranscription', () => ({ localTranscriber: () => null }))
 import { createNativeDictation } from './useDictation'
 
 async function settle() { for (let i = 0; i < 20; i++) await Promise.resolve() }
@@ -78,5 +79,31 @@ describe('SDK 57 native dictation adapter', () => {
     await vi.advanceTimersByTimeAsync(80)
     expect(controller.getLevels().at(-1)).toBe(0)
     controller.cancel(); await run
+  })
+  it('transcribes on device without uploading when the device engine is selected', async () => {
+    const local = { warmUp: vi.fn(), transcribe: vi.fn(async () => 'On-device transcript') }
+    const controller = createNativeDictation(() => 'device', () => local); const apply = vi.fn()
+    const run = controller.start(apply); await settle()
+    expect(local.warmUp).toHaveBeenCalledOnce()
+    controller.stop(); await run
+    expect(local.transcribe).toHaveBeenCalledWith('file:///recording.m4a', expect.any(AbortSignal))
+    expect(native.request).not.toHaveBeenCalled()
+    expect(apply).toHaveBeenCalledWith('On-device transcript')
+    expect(native.remove).toHaveBeenCalledOnce()
+  })
+  it('uses the server and skips on-device warm-up when the server engine is selected', async () => {
+    const local = { warmUp: vi.fn(), transcribe: vi.fn(async () => 'unused') }
+    const controller = createNativeDictation(() => 'server', () => local)
+    const run = controller.start(vi.fn()); await settle(); controller.stop(); await run
+    expect(local.warmUp).not.toHaveBeenCalled()
+    expect(local.transcribe).not.toHaveBeenCalled()
+    expect(native.request).toHaveBeenCalledOnce()
+  })
+  it('reports a clear error if on-device transcription disappears', async () => {
+    const controller = createNativeDictation(() => 'device', () => null)
+    const run = controller.start(vi.fn()); await settle(); controller.stop(); await run
+    expect(controller.getSnapshot().error).toBe('On-device transcription is not available on this device.')
+    expect(native.request).not.toHaveBeenCalled()
+    expect(native.remove).toHaveBeenCalledOnce()
   })
 })

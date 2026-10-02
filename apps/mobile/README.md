@@ -108,6 +108,15 @@ applies just as on web. Older servers without the capability flag hide the contr
 Adding the native audio module requires rebuilding the app, not just updating its
 JavaScript bundle. See `e2e/dictation-validation.md` for local acceptance testing.
 
+On iPhones that support Apple's on-device speech transcriber (iOS 26,
+`modules/pulpo-speech-transcriber`), the microphone is available even when the
+server has no dictation configured. **Settings → Interface → Dictation** chooses
+**Server** (the default, usually more accurate) or **On device**. On-device
+transcription is also used automatically while offline or when the server does
+not offer dictation. The first on-device use downloads the language model for the
+device language; that download overlaps with recording. On-device recordings never
+leave the phone and are not billed.
+
 ## Configuration and validation
 
 `EXPO_PUBLIC_DEFAULT_INSTANCE_URL` is compiled into the client. It is public

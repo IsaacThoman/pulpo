@@ -38,6 +38,8 @@ export interface DictationDependencies {
   recorder(): DictationRecorder
   size(uri: string): number
   remove(uri: string): void
+  /** Called as a recording starts so slow transcriber setup can overlap with it. */
+  warmUp?(): void
   transcribe(uri: string, signal: AbortSignal): Promise<string>
 }
 
@@ -99,6 +101,7 @@ export class DictationController implements DictationLevelSource {
     this.active = active
     this.update({ phase: 'preparing', seconds: 0, error: null })
     this.setLevels(emptyDictationLevels())
+    try { this.deps.warmUp?.() } catch { /* Transcription reports setup failures itself. */ }
     let recorder: DictationRecorder | undefined
     let timer: ReturnType<typeof setInterval> | undefined
     let stoppedRecorder = false

@@ -24,6 +24,7 @@ export function createInitialState(): PersistedPrototypeState {
       showPromptSuggestions: true, showModelWarnings: true, modelWarningDismissals: {}, showReasoning: true,
       memoryEnabled: false,
       haptics: true,
+      dictationEngine: 'server',
       localChatLimit: 50,
       attachmentCacheMb: 50,
       trashRetention: '30d',

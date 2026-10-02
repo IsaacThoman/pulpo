@@ -53,6 +53,8 @@ describe('production preference mapping', () => {
     })
     expect(preferencePatchForServer('agentModes', { 'model-a': false })).toEqual({ agentModes: { 'model-a': false } })
     expect(preferencePatchForServer('haptics', false)).toBeNull()
+    expect(preferencePatchForServer('dictationEngine', 'device')).toBeNull()
+    expect(preferencesFromServer({ dictationEngine: 'device' })).not.toHaveProperty('dictationEngine')
     expect(preferencesFromServer({ agentModeEnabled: false }).agentModes).toEqual({})
   })
 

@@ -235,4 +235,29 @@ describe('mobile dictation level metering', () => {
     expect(listener).not.toHaveBeenCalled()
     controller.cancel(); await run
   })
+  it('warms the transcriber up as each recording starts', async () => {
+    const { recorder, apply } = fixture()
+    const warmUp = vi.fn()
+    const controller = new DictationController({
+      permission: async () => true, audioMode: async () => {}, recorder: () => recorder,
+      size: () => 10, remove: () => {}, transcribe: async () => 'ok', warmUp,
+    })
+    const run = controller.start(apply)
+    expect(warmUp).toHaveBeenCalledOnce()
+    await preparingSettled(); controller.stop(); await run
+    expect(apply).toHaveBeenCalledWith('ok')
+  })
+
+  it('keeps recording if warming the transcriber up throws', async () => {
+    const { recorder, apply } = fixture()
+    const controller = new DictationController({
+      permission: async () => true, audioMode: async () => {}, recorder: () => recorder,
+      size: () => 10, remove: () => {}, transcribe: async () => 'ok', warmUp: () => { throw new Error('not ready') },
+    })
+    const run = controller.start(apply)
+    await preparingSettled()
+    expect(controller.getSnapshot().phase).toBe('recording')
+    controller.stop(); await run
+    expect(apply).toHaveBeenCalledWith('ok')
+  })
 })

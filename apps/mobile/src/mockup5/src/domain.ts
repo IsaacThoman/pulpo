@@ -154,6 +154,7 @@ export interface AppPreferences {
   showReasoning: boolean;
   memoryEnabled: boolean;
   haptics: boolean;
+  dictationEngine: import('../../store/preferences').DictationEnginePreference;
   localChatLimit: number;
   attachmentCacheMb: number;
   trashRetention: TrashRetention;
