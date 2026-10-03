@@ -27,8 +27,18 @@ vi.mock('react-native', async () => {
       'data-live': accessibilityLiveRegion, 'aria-hidden': accessibilityElementsHidden ? 'true' : undefined,
     }, children)
   }
+  const Pressable = ({ children, style, onPress, disabled, accessibilityLabel, accessibilityRole }: {
+    children?: ReactNode; style?: unknown; onPress?: () => void; disabled?: boolean; accessibilityLabel?: string; accessibilityRole?: string
+  }) => {
+    const resolve = (pressed: boolean) => flatten(typeof style === 'function' ? style({ pressed }) : style)
+    return h('button', {
+      'aria-label': accessibilityLabel, 'data-role': accessibilityRole, disabled, onClick: onPress,
+      'data-style': JSON.stringify(resolve(false)), 'data-pressed-style': JSON.stringify(resolve(true)),
+    }, children)
+  }
   return {
     View,
+    Pressable,
     Text: ({ children, style }: { children?: ReactNode; style?: unknown }) => h('span', { 'data-style': JSON.stringify(flatten(style)) }, children),
     StyleSheet: { create: <T,>(styles: T) => styles },
   }
@@ -58,7 +68,11 @@ vi.mock('react-native-reanimated', async () => {
     },
   }
 })
-import { DictationStatus, DictationStrip, DictationWaveform } from './DictationStrip'
+vi.mock('../../platform/SymbolView', async () => {
+  const { createElement: h } = await import('react')
+  return { SymbolView: ({ name, size, tintColor }: { name: string; size: number; tintColor: string }) => h('i', { 'data-symbol': name, 'data-size': size, 'data-tint': tintColor }) }
+})
+import { DictationCancelButton, DictationStatus, DictationStrip, DictationWaveform } from './DictationStrip'
 import {
   DICTATION_WAVEFORM_HEIGHT,
   dictationStatusLabel,
@@ -241,6 +255,46 @@ describe('DictationStrip', () => {
     const exiting = (dictationStripExiting as () => { initialValues: Style; animations: Style })()
     expect(exiting.initialValues).toEqual({ opacity: 1, transform: [{ translateY: 0 }] })
     expect(exiting.animations).toEqual({ opacity: 0, transform: [{ translateY: 22 }] })
+  })
+})
+
+describe('DictationCancelButton', () => {
+  it('is a centred 44 pt plain xmark button laid out by React Native', async () => {
+    const onPress = vi.fn()
+    await render(createElement(DictationCancelButton, { onPress, color: '#111' }))
+    const button = container.querySelector('button')!
+    expect(button.getAttribute('aria-label')).toBe('Cancel dictation')
+    expect(button.getAttribute('data-role')).toBe('button')
+    expect(styleOf(button)).toEqual({ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' })
+    expect(JSON.parse(button.getAttribute('data-pressed-style')!)).toMatchObject({ opacity: 0.5 })
+    const icon = button.querySelector('i')!
+    expect(icon.dataset).toMatchObject({ symbol: 'xmark', size: '18', tint: '#111' })
+    await act(async () => button.click())
+    expect(onPress).toHaveBeenCalledOnce()
+  })
+
+  it('dims and ignores presses while cancelling', async () => {
+    const onPress = vi.fn()
+    await render(createElement(DictationCancelButton, { onPress, color: '#111', disabled: true }))
+    const button = container.querySelector('button')!
+    expect(button.disabled).toBe(true)
+    expect(styleOf(button)).toMatchObject({ opacity: 0.4 })
+    await act(async () => button.click())
+    expect(onPress).not.toHaveBeenCalled()
+  })
+
+  it('shares the strip centre line with the status and finish button', async () => {
+    const { source } = levelSource()
+    await render(createElement(DictationStrip, {
+      phase: 'recording', seconds: 1, source, colors,
+      leading: createElement(DictationCancelButton, { onPress: vi.fn(), color: '#111' }),
+      trailing: createElement('button', { 'aria-label': 'Finish dictation' }),
+    }))
+    const strip = container.firstElementChild!
+    expect(styleOf(strip)).toMatchObject({ flexDirection: 'row', alignItems: 'center' })
+    const [cancel, status] = [...strip.children]
+    expect(styleOf(cancel!)).toMatchObject({ height: 44 })
+    expect(styleOf(status!)).toMatchObject({ height: 44 })
   })
 })
 

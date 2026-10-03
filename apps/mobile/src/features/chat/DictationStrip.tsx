@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useState, type ReactNode } from 'react'
-import { StyleSheet, Text, View, type ColorValue, type LayoutChangeEvent } from 'react-native'
+import { Pressable, StyleSheet, Text, View, type ColorValue, type LayoutChangeEvent } from 'react-native'
 import Reanimated, {
   Easing,
   ReduceMotion,
@@ -19,6 +19,7 @@ import {
   dictationWaveformBarCount,
   formatDictationElapsed,
 } from '@pulpo/client-core'
+import { SymbolView } from '../../platform/SymbolView'
 import type { DictationLevelSource, DictationState } from './dictation'
 import { DICTATION_WAVEFORM_HEIGHT, dictationStatusLabel, dictationStripEntering, dictationStripExiting } from './dictationMotion'
 
@@ -123,6 +124,26 @@ export function DictationStatus({ phase, seconds, source, colors }: {
   )
 }
 
+/**
+ * Plain icon cancel button laid out by React Native, so it centres on the waveform exactly.
+ * A SwiftUI glass button here rendered several points above the strip's centre line.
+ */
+export function DictationCancelButton({ onPress, disabled = false, color }: { onPress: () => void; disabled?: boolean; color: ColorValue }) {
+  return (
+    <Pressable
+      accessibilityLabel="Cancel dictation"
+      accessibilityRole="button"
+      accessibilityState={{ disabled }}
+      disabled={disabled}
+      hitSlop={4}
+      onPress={onPress}
+      style={({ pressed }) => [styles.cancel, disabled ? styles.cancelDisabled : pressed && styles.cancelPressed]}
+    >
+      <SymbolView name="xmark" size={18} weight="medium" tintColor={color} />
+    </Pressable>
+  )
+}
+
 /** Replaces the composer toolbar while dictating: cancel, live status, and finish. */
 export function DictationStrip({ leading, trailing, ...status }: {
   phase: DictationState['phase']
@@ -142,6 +163,9 @@ export function DictationStrip({ leading, trailing, ...status }: {
 }
 
 const styles = StyleSheet.create({
+  cancel: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  cancelPressed: { opacity: 0.5 },
+  cancelDisabled: { opacity: 0.4 },
   strip: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, flexDirection: 'row', alignItems: 'center', gap: 4 },
   status: { flex: 1, minWidth: 0, height: 44, justifyContent: 'center' },
   statusLayer: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 },

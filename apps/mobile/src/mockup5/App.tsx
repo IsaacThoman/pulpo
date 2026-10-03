@@ -12,7 +12,7 @@ import { incomingFileAttachment } from '../features/chat/incomingFileAttachment'
 import { useShortcutInbox } from '../shortcuts/inbox';
 import { shortcutsScope } from '../shortcuts/native';
 import { useDictation } from '../features/chat/useDictation';
-import { DictationStrip } from '../features/chat/DictationStrip';
+import { DictationCancelButton, DictationStrip } from '../features/chat/DictationStrip';
 import { useDictationToolbarStyle } from '../features/chat/dictationMotion';
 import { setComposerSelection } from '../features/chat/composerSelection';
 import { ToolImagePreview } from '../components/ToolImagePreview';
@@ -6053,7 +6053,7 @@ function ChatView({
                     source={dictation.levels}
                     colors={{ text: COLORS.text, muted: COLORS.muted, warning: COLORS.warning }}
                     leading={Platform.OS === 'ios'
-                      ? <NativeComposerIconButton label="Cancel dictation" systemImage="xmark" disabled={dictation.phase === 'cancelling'} onPress={dictation.cancel} />
+                      ? <DictationCancelButton color={COLORS.text} disabled={dictation.phase === 'cancelling'} onPress={dictation.cancel} />
                       : <MaterialIconButton label="Cancel dictation" icon="xmark" disabled={dictation.phase === 'cancelling'} onPress={dictation.cancel} />}
                     trailing={Platform.OS === 'ios'
                       ? <NativeComposerIconButton label="Finish dictation" systemImage="checkmark" prominent disabled={dictation.phase !== 'recording'} onPress={dictation.stop} />
