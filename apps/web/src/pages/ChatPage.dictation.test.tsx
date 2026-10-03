@@ -28,7 +28,11 @@ const model: Model = {
   id: 'test-model', name: 'Test Model', providerGroupId: 'test', provider: 'Test', inferenceProvider: 'Test',
   labLogo: 'pulpo', modelLogo: 'pulpo', description: '', contextWindow: 128_000, tags: [],
   iconLight: '#000', iconDark: '#fff', inputPrice: 0, outputPrice: 0, perMessagePrice: 0,
-  enabled: true, agentEnabled: true, presets: [],
+  enabled: true, agentEnabled: true,
+  presets: [{ id: 'reasoning', name: 'Reasoning', icon: 'brain', defaultChoiceId: 'medium', choices: [
+    { id: 'medium', displayName: 'Medium', action: { type: 'none' } },
+    { id: 'high', displayName: 'High', action: { type: 'none' } },
+  ] }],
 }
 
 function deferred<T>() {
@@ -160,6 +164,31 @@ it('swaps the toolbar for a live waveform and inserts the transcript when finish
   await view.toolbarRestored()
   expect(view.face('draft').hasAttribute('inert')).toBe(false)
   expect(document.activeElement).toBe(view.textarea)
+})
+
+it('keeps attachments, presets, and agent controls usable while recording', async () => {
+  const view = await renderComposer()
+  fireEvent.click(view.getByRole('button', { name: 'Dictate' }))
+  await view.recording()
+  const leftControls = [
+    view.getByRole('button', { name: /^(Add files or folders|Attach files)$/ }),
+    view.getByRole('button', { name: 'Generation options' }),
+    view.getByRole('button', { name: /^Agent options/ }),
+  ]
+  for (const control of leftControls) {
+    expect(control.closest('[inert]')).toBeNull()
+    expect(control.closest('.composer-toolbar-face')).toBeNull()
+    expect(control.hasAttribute('disabled')).toBe(false)
+  }
+  // Only the trailing actions are swapped for the dictation bar.
+  expect(view.getByRole('button', { name: 'Dictate' }).closest('[inert]')).toBe(view.face('draft'))
+  expect(view.getByRole('button', { name: 'Send message' }).closest('[inert]')).toBe(view.face('draft'))
+  fireEvent.keyDown(view.getByRole('button', { name: 'Generation options' }), { key: 'ArrowDown' })
+  fireEvent.click(await view.findByRole('menuitem', { name: 'High' }))
+  await waitFor(() => expect(view.getByRole('button', { name: 'Generation options' }).textContent).toContain('High'))
+  expect(view.dictating()).toBe(true)
+  fireEvent.click(view.getByRole('button', { name: 'Finish dictation' }))
+  await waitFor(() => expect(view.textarea.value).toBe('hello from dictation'))
 })
 
 it('cancels a recording without uploading it', async () => {

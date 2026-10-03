@@ -1388,14 +1388,7 @@ export function Composer({
           className="hidden"
           onChange={(event) => addFiles(event.target.files)}
         />
-        <div className="grid min-w-0 select-none px-2.5 pb-2.5">
-        <div
-          ref={composerToolbarRef}
-          className="composer-toolbar-face flex min-w-0 items-center gap-1"
-          data-face="draft"
-          data-active={dictationState === 'idle'}
-          inert={dictationState !== 'idle'}
-        >
+        <div className="flex min-w-0 select-none items-center gap-1 px-2.5 pb-2.5">
           {canScopeFiles ? (
             <DropdownMenu>
               <Tooltip>
@@ -1509,8 +1502,19 @@ export function Composer({
             }}
           />
 
-          <div className="flex-1" />
-
+          {/* Attachments, presets, and agent stay usable while dictating; only the trailing actions flip to the dictation bar. */}
+          {/* While dictating, reserve room for a readable waveform; presets truncate rather than squeeze it. */}
+          <div className={cn(
+            'grid flex-1 transition-[min-width] duration-[260ms] ease-[cubic-bezier(0.65,0,0.35,1)] motion-reduce:transition-none',
+            dictationState !== 'idle' ? 'min-w-44' : dictationEnabled ? 'min-w-[4.25rem]' : 'min-w-8',
+          )}>
+          <div
+            ref={composerToolbarRef}
+            className="composer-toolbar-face flex min-w-0 items-center justify-end gap-1"
+            data-face="draft"
+            data-active={dictationState === 'idle'}
+            inert={dictationState !== 'idle'}
+          >
           {dictationEnabled && <Tooltip>
             <TooltipTrigger asChild>
               <button
@@ -1565,6 +1569,7 @@ export function Composer({
             />
           </div>
         )}
+          </div>
         </div>
         {queueError && <p role="alert" className="px-4 pb-3 text-xs text-destructive">{queueError}</p>}
         {dictationError && <p role="alert" className="px-4 pb-3 text-xs text-destructive">{dictationError}</p>}
