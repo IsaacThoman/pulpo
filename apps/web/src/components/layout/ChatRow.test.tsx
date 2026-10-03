@@ -5,7 +5,8 @@ import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { ChatRow } from './Sidebar'
 import type { Chat } from '@/lib/types'
 
-const chatState = { streamingIds: [] as string[], responseChatIds: {} as Record<string, string>, folders: [] }
+const renameChat = vi.fn()
+const chatState = { streamingIds: [] as string[], responseChatIds: {} as Record<string, string>, folders: [], renameChat }
 vi.mock('@/stores/chat', () => ({ useChat: (select: (state: typeof chatState) => unknown) => select(chatState) }))
 vi.mock('@/stores/settings', () => {
   const settings = { trashRetention: '30d', composerSyncEnabled: false }
@@ -48,6 +49,7 @@ function mount(props: Partial<Parameters<typeof ChatRow>[0]> = {}) {
 
 afterEach(() => {
   cleanup()
+  renameChat.mockReset()
   Reflect.deleteProperty(window, 'pulpoDesktop')
 })
 
@@ -96,5 +98,30 @@ describe('ChatRow', () => {
     expect(screen.getByRole('status').textContent).toBe('/')
     expect(onNavigate).not.toHaveBeenCalled()
     expect(didDragRef.current).toBe(false)
+  })
+
+  it('renames the chat inline from its menu', async () => {
+    const { link } = mount()
+    fireEvent.contextMenu(link)
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Rename' }))
+    const input = screen.getByRole('textbox', { name: 'Rename chat' }) as HTMLInputElement
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(document.activeElement).toBe(input)
+    fireEvent.change(input, { target: { value: '  Merge Sort  ' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    expect(renameChat).toHaveBeenCalledWith('chat-1', 'Merge Sort')
+    expect(screen.getByRole('link', { name: chat.title })).toBeTruthy()
+  })
+
+  it('keeps the old title when an inline rename is cancelled', async () => {
+    const { link } = mount()
+    fireEvent.contextMenu(link)
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Rename' }))
+    const input = screen.getByRole('textbox', { name: 'Rename chat' })
+    fireEvent.change(input, { target: { value: 'Something else' } })
+    fireEvent.keyDown(input, { key: 'Escape' })
+    fireEvent.blur(input)
+    expect(renameChat).not.toHaveBeenCalled()
+    expect(screen.getByRole('link', { name: chat.title })).toBeTruthy()
   })
 })
