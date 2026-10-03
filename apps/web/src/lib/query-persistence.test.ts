@@ -14,6 +14,10 @@ describe('query persistence policy', () => {
     })).toBe(false)
   })
 
+  it('never persists instance-wide admin analytics', () => {
+    expect(shouldPersistQuery({ queryKey: ['admin-analytics', 'overview', 'range=24h'], state: { status: 'success', data: {} } })).toBe(false)
+  })
+
   it('retains the existing owner query behavior', () => {
     expect(shouldPersistQuery({ queryKey: ['chat', 'owner-1'], state: { status: 'success', data: { temporary: false } } })).toBe(true)
     expect(shouldPersistQuery({ queryKey: ['chat', 'owner-1'], state: { status: 'success', data: { temporary: true } } })).toBe(false)
