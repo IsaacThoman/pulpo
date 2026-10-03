@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type MouseEvent, type PointerEvent, type ReactNode } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { FILE_SCOPE_ROOT, isMarkdownName, MAX_CHAT_FILE_SCOPES, type FileFolderLayout, type FileGridPosition, type FileListing, type FileNode } from '@pulpo/contracts'
+import { FILE_SCOPE_ROOT, MAX_CHAT_FILE_SCOPES, type FileFolderLayout, type FileGridPosition, type FileListing, type FileNode } from '@pulpo/contracts'
 import {
   ArrowDown,
   ArrowUp,
@@ -45,12 +45,11 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { ui, uit } from '@/i18n/ui'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/stores/auth'
-import { createDoc, createFolder, downloadFile, fetchFolder, fetchFolderLayout, folderLayoutQueryKey, folderQueryKey, updateFolderLayout, uploadFile } from '@/features/files/api'
+import { createDoc, createFolder, fetchFolder, fetchFolderLayout, folderLayoutQueryKey, folderQueryKey, updateFolderLayout, uploadFile } from '@/features/files/api'
 import { arrangeGrid, GRID_CELL, moveInGrid, readingOrder } from '@/features/files/browser/grid-layout'
 import { filesErrorMessage } from '@/features/files/file-display'
 import { FileMoveDialog } from '@/features/files/FileMoveDialog'
 import { useFilesPageRequest } from '@/features/files/files-page-request'
-import { FilePreviewDialog } from '@/features/files/FilePreviewDialog'
 import { useFileClipboard } from '@/features/files/browser/clipboard'
 import { FileContextMenu, type ContextMenuPoint } from '@/features/files/browser/FileContextMenu'
 import { FileDragOverlay } from '@/features/files/browser/FileDragOverlay'
@@ -165,7 +164,6 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [menu, setMenu] = useState<MenuState | null>(null)
   const [moving, setMoving] = useState<FileNode[] | null>(null)
-  const [previewing, setPreviewing] = useState<FileNode | null>(null)
   const [uploads, setUploads] = useState<UploadEntry[]>([])
   const [dropTarget, setDropTarget] = useState<string | null>(null)
   const [marquee, setMarquee] = useState<Marquee | null>(null)
@@ -245,7 +243,7 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
   const goMain = useMainNavigate()
   /**
    * Shows a folder or file in the other view: the panel when browsing on the page, the main view
-   * when browsing in the panel. Alt/Option-click, and "Open to the side" or "Open in main view".
+   * when browsing in the panel. Alt/Option-click, and "Open to the right" or "Open in main view".
    */
   const openElsewhere = (content: PanelContent) => {
     // From the panel it becomes the only view, as with the header's maximize button.
@@ -257,7 +255,7 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
     }
   }
   const nodeContent = (node: FileNode): PanelContent => node.kind === 'folder' ? { kind: 'folder', id: node.id } : { kind: 'file', id: node.id }
-  const elsewhereLabel = panel ? ui("Open in main view") : ui("Open to the side")
+  const elsewhereLabel = panel ? ui("Open in main view") : ui("Open to the right")
   // Without room for a split there is no "side"; Open already shows it in the main view.
   const splitAvailable = useSidePanel((state) => state.splitAvailable)
   const canOpenElsewhere = panel || splitAvailable
@@ -270,13 +268,25 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
     else navigate(id ? `/files/f/${id}` : '/files')
   }
 
+  /** Opens an item here: folders browse in place, files fill this view with their editor or preview. */
   const open = (node: FileNode) => {
     if (node.kind === 'folder') showFolder(node.id)
     // The panel shows every file in place, with a way back to its folder.
     else if (panel) useSidePanel.getState().open({ kind: 'file', id: node.id })
-    // Markdown opens in the editor view: editable documents directly, uploads as a preview with Edit.
-    else if (node.kind === 'doc' || isMarkdownName(node.name)) navigate(`/files/d/${node.id}`)
-    else setPreviewing(node)
+    else navigate(`/files/d/${node.id}`)
+  }
+
+  /**
+   * Double-click: a file opens to the right of the files page, keeping the folder in view, and in
+   * place in the panel. Cmd/Ctrl swaps it for the other view. Folders always browse in place.
+   */
+  const openFromDoubleClick = (node: FileNode, event: MouseEvent) => {
+    if (node.kind === 'folder') { open(node); return }
+    // A Cmd/Ctrl-click toggles selection, so the pair of clicks would otherwise leave it unselected.
+    setSelection(selectOnly(node.id))
+    const swap = hasPrimaryModifier(event)
+    if (panel ? swap : !swap) openElsewhere(nodeContent(node))
+    else open(node)
   }
 
   /** Adds a freshly created node to the cached listing so it can be renamed immediately. */
@@ -399,7 +409,7 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
 
   // One window listener that always sees the latest state, like a desktop file manager.
   const handleKey = (event: KeyboardEvent) => {
-    if (event.defaultPrevented || isEditableTarget(event.target) || renamingId || moving || previewing || menu) return
+    if (event.defaultPrevented || isEditableTarget(event.target) || renamingId || moving || menu) return
     if (!ownsKeys(layout, rootRef.current)) return
     const mod = hasPrimaryModifier(event)
     const key = event.key
@@ -577,7 +587,7 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
       if (renamingId === node.id || drag.consumeClick()) return
       // Touch has no double-click or hover, so a tap opens, as in mobile file browsers.
       if (lastPointerType.current === 'touch') { open(node); return }
-      // Alt/Option-click opens an item in the other view, like "Open to the side" in editors.
+      // Alt/Option-click opens an item in the other view, like "Open to the right" in editors.
       if (event.altKey) {
         setSelection(selectOnly(node.id))
         openElsewhere(nodeContent(node))
@@ -585,7 +595,7 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
       }
       setSelection(clickSelect(selection, order, node.id, { toggle: hasPrimaryModifier(event), range: event.shiftKey }))
     },
-    onDoubleClick: () => { if (renamingId !== node.id) open(node) },
+    onDoubleClick: (event: MouseEvent) => { if (renamingId !== node.id) openFromDoubleClick(node, event) },
     onContextMenu: (event: MouseEvent) => {
       event.preventDefault()
       event.stopPropagation()
@@ -624,8 +634,8 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
       {selectedNodes.length > 1 && <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">{uit`${selectedNodes.length} items selected`}</DropdownMenuLabel>}
       {single && (
         <DropdownMenuItem onSelect={() => open(single)}>
-          <Eye /> {single.kind === 'blob' ? ui("Preview") : ui("Open")}
-          <DropdownMenuShortcut>{single.kind === 'blob' ? ui("Space") : '↵'}</DropdownMenuShortcut>
+          <Eye /> {ui("Open")}
+          <DropdownMenuShortcut>↵</DropdownMenuShortcut>
         </DropdownMenuItem>
       )}
       {single && canOpenElsewhere && (
@@ -863,11 +873,6 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
         )}
       </FileContextMenu>
       <FileMoveDialog nodes={moving} onOpenChange={(open) => { if (!open) setMoving(null) }} onMove={(targets, parentId) => ops.move(targets, parentId)} />
-      <FilePreviewDialog
-        node={previewing}
-        onOpenChange={(open) => { if (!open) setPreviewing(null) }}
-        onDownload={(node) => void downloadFile(node).catch(ops.fail)}
-      />
       <FileDragOverlay drag={drag} />
     </>
   )
