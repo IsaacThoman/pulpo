@@ -56,6 +56,7 @@ import {
 } from 'react';
 import {
   AccessibilityInfo,
+  ActionSheetIOS,
   ActivityIndicator,
   Alert,
   Appearance,
@@ -2859,7 +2860,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   );
 }
 
-type MessageAction = 'copy' | 'share' | 'reply' | 'edit' | 'regenerate' | 'delete';
+type MessageAction = 'copy' | 'share' | 'share-options' | 'share-chat' | 'reply' | 'edit' | 'regenerate' | 'delete';
 
 function useMessageActionRunner({ message, onEdit, onRegenerate }: {
   message: Message;
@@ -2876,7 +2877,7 @@ function useMessageActionRunner({ message, onEdit, onRegenerate }: {
     void queryClient.invalidateQueries({ queryKey: queryKeys.chat(namespace, message.chatId) });
   }, [instanceUrl, message.chatId, queryClient, userId]);
 
-  return useCallback((action: MessageAction) => {
+  return useCallback(function runAction(action: MessageAction): void {
     if (['edit', 'delete', 'regenerate'].includes(action)) speechPlayback.stop();
     if (action === 'copy') {
       void copyText(message.text, 'Message copied');
@@ -2884,6 +2885,24 @@ function useMessageActionRunner({ message, onEdit, onRegenerate }: {
     }
     if (action === 'share') {
       void Share.share({ message: message.text });
+      return;
+    }
+    if (action === 'share-options') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        { options: ['Share chat link', 'Share as text', 'Cancel'], cancelButtonIndex: 2 },
+        (index) => {
+          if (index === 0) runAction('share-chat');
+          if (index === 1) runAction('share');
+        },
+      );
+      return;
+    }
+    if (action === 'share-chat') {
+      const chatId = message.chatId;
+      if (!chatId) return;
+      Haptics.selectionAsync();
+      const title = usePrototypeStore.getState().chats.find((chat) => chat.id === chatId)?.title;
+      void shareServerChat(chatId).then((url) => Share.share({ message: title ? `${title}\n\n${url}` : url, url })).catch((error) => Alert.alert('Couldn’t share chat', error instanceof Error ? error.message : undefined));
       return;
     }
     if (action === 'delete') {
@@ -2971,7 +2990,8 @@ function MessageContextMenu({
       androidActions={[
         { label: 'Copy', icon: 'doc.on.doc', onPress: () => runAction('copy') },
         { label: 'Select text', icon: 'doc.text', onPress: () => selectText(message.text) },
-        { label: 'Share', icon: 'square.and.arrow.up', onPress: () => runAction('share') },
+        { label: 'Share as text', icon: 'square.and.arrow.up', onPress: () => runAction('share') },
+        ...(message.chatId ? [{ label: 'Share chat link', icon: 'square.and.arrow.up', onPress: () => runAction('share-chat') }] : []),
         { label: 'Reply', icon: 'arrowshape.turn.up.left', onPress: () => runAction('reply') },
         { label: message.role === 'user' ? 'Edit message' : 'Edit response', icon: 'pencil', onPress: () => runAction('edit') },
         ...(message.role === 'assistant' ? [{ label: 'Regenerate response', icon: 'arrow.clockwise', onPress: () => runAction('regenerate') }] : []),
@@ -2994,7 +3014,7 @@ function MessageContextMenu({
         <>
           <SwiftUIControlGroup>
             <SwiftUIButton label="Copy" systemImage="doc.on.doc" onPress={() => runAction('copy')} />
-            <SwiftUIButton label="Share" systemImage="square.and.arrow.up" onPress={() => runAction('share')} />
+            <SwiftUIButton label="Share" systemImage="square.and.arrow.up" onPress={() => runAction(message.chatId ? 'share-options' : 'share')} />
             <SwiftUIButton label="Reply" systemImage="arrowshape.turn.up.left" onPress={() => runAction('reply')} />
           </SwiftUIControlGroup>
           <SwiftUIDivider />
