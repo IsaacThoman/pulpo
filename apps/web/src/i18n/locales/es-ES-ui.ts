@@ -1463,6 +1463,8 @@ const esUi: Record<string, string> = {
   "Show suggested prompts": "Mostrar prompts sugeridos",
   "Show the cost of each assistant response with its tokens, speed, and time.": "Mostrar el coste de cada respuesta del asistente junto con sus tokens, velocidad y tiempo.",
   "Showing the first part of": "Mostrando la primera parte de",
+  "{{0}} rows · {{1}} columns": "{{0}} filas · {{1}} columnas",
+  "{{0}} rows loaded · {{1}} columns · scroll for more": "{{0}} filas cargadas · {{1}} columnas · desplázate para ver más",
   "Shown on the button": "Se muestra en el botón",
   "Shutting down": "Apagándose",
   "Sign in securely without a password.": "Inicia sesión de forma segura y sin contraseña.",
@@ -1909,7 +1911,7 @@ const esUi: Record<string, string> = {
   "Resize side panel": "Cambiar el tamaño del panel lateral",
   "Close side panel": "Cerrar el panel lateral",
   "Folders open in the Files view.": "Las carpetas se abren en la vista de Archivos.",
-  "Open to the side": "Abrir al lado",
+  "Open to the right": "Abrir a la derecha",
   "Close panel": "Cerrar panel",
   "Snap to grid": "Ajustar a la cuadrícula",
   "Sort: {{0}}": "Ordenar: {{0}}",
@@ -2150,6 +2152,9 @@ const esUi: Record<string, string> = {
   "Regenerate": "Regenerar",
   "Model default": "Predeterminado del modelo",
   "1 retry": "1 reintento",
+  "Untitled chat": "Chat sin título",
+  "New chat": "Nuevo chat",
+  "This attachment could not be found. It may have been deleted with its chat.": "No se encontró este adjunto. Puede que se haya eliminado junto con su chat.",
 }
 
 export default esUi

@@ -1,6 +1,6 @@
 import { AttachmentWindow } from './AttachmentWindow'
 import { useAttachmentVisibility } from './use-attachment-visibility'
-import { useState } from 'react'
+import { useState, type MouseEvent } from 'react'
 import {
   AlertCircle,
   Download,
@@ -22,6 +22,8 @@ import {
 import type { Attachment } from '@/lib/types'
 import { cn } from '@/lib/utils'
 import { downloadAttachment } from '@/lib/local-first/attachment-cache'
+import { hasPrimaryModifier } from '@/features/files/browser/shortcuts'
+import { useMainNavigate } from '@/features/side-panel/use-panel-actions'
 import { useAuth } from '@/stores/auth'
 import { useSettings } from '@/stores/settings'
 import {
@@ -35,6 +37,7 @@ import { attachmentPreviewKind } from '@/lib/attachment-previews'
 import { useAttachmentPreviewUrl } from './use-attachment-preview-url'
 import { useAttachmentImageDimensions } from './use-attachment-image-dimensions'
 import { AttachmentPreviewDialog } from './AttachmentPreview'
+import { downloadChatAttachment, openAttachment } from './attachment-actions'
 import { useUploadOutbox, type UploadRecord } from '@/stores/upload-outbox'
 import { ui, uit } from '@/i18n/ui'
 
@@ -81,15 +84,17 @@ function AttachmentTypeIcon({ name, mimeType, className }: {
   )
 }
 
-function performAttachmentDownload(attachment: Attachment): void {
-  const userId = useAuth.getState().user?.id
-  if (!userId) return
-  void downloadAttachment(userId, {
-    id: attachment.id,
-    originalName: attachment.name,
-    mimeType: attachment.mimeType,
-    sizeBytes: attachment.size,
-  }, useSettings.getState().localAttachmentCacheMb)
+/**
+ * A sent attachment opens to the right of the chat, like a saved file; Cmd/Ctrl-click opens it in
+ * the main view. Where there is no side panel, it previews in a dialog.
+ */
+function useOpenAttachment(attachment: Attachment) {
+  const go = useMainNavigate()
+  const [previewOpen, setPreviewOpen] = useState(false)
+  const open = (event: MouseEvent) => {
+    if (!openAttachment(attachment, go, hasPrimaryModifier(event))) setPreviewOpen(true)
+  }
+  return { open, previewOpen, setPreviewOpen }
 }
 
 export function MessageAttachmentList(props: { attachments: Attachment[]; align?: 'start' | 'end' }) {
@@ -178,7 +183,7 @@ function PendingMessageAttachment({ attachment }: { attachment: Attachment }) {
 }
 
 function MessageFilePreview({ attachment }: { attachment: Attachment }) {
-  const [previewOpen, setPreviewOpen] = useState(false)
+  const { open, previewOpen, setPreviewOpen } = useOpenAttachment(attachment)
   const previewable = attachmentPreviewKind(attachment.name, attachment.mimeType) !== null
   const details = (
     <>
@@ -201,7 +206,7 @@ function MessageFilePreview({ attachment }: { attachment: Attachment }) {
         {previewable ? (
           <button
             type="button"
-            onClick={() => setPreviewOpen(true)}
+            onClick={open}
             aria-label={uit`Preview ${attachment.name}`}
             className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-l-2xl p-2.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
           >
@@ -212,7 +217,7 @@ function MessageFilePreview({ attachment }: { attachment: Attachment }) {
         )}
         <button
           type="button"
-          onClick={() => performAttachmentDownload(attachment)}
+          onClick={() => downloadChatAttachment(attachment)}
           aria-label={uit`Download ${attachment.name}`}
           className="mr-2.5 flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
@@ -224,7 +229,7 @@ function MessageFilePreview({ attachment }: { attachment: Attachment }) {
           attachment={attachment}
           open={previewOpen}
           onOpenChange={setPreviewOpen}
-          onDownload={() => performAttachmentDownload(attachment)}
+          onDownload={() => downloadChatAttachment(attachment)}
         />
       )}
     </>
@@ -239,8 +244,8 @@ function MessageImagePreview({ attachment }: { attachment: Attachment }) {
     visibility.visible,
     isSupportedImageMime(attachment.mimeType) ? 'thumbnail' : 'full',
   )
-  const [previewOpen, setPreviewOpen] = useState(false)
-  const handleDownload = () => performAttachmentDownload(attachment)
+  const { open, previewOpen, setPreviewOpen } = useOpenAttachment(attachment)
+  const handleDownload = () => downloadChatAttachment(attachment)
 
   return (
     <>
@@ -252,7 +257,7 @@ function MessageImagePreview({ attachment }: { attachment: Attachment }) {
         <button
           type="button"
           aria-label={uit`Preview ${attachment.name}`}
-          onClick={() => setPreviewOpen(true)}
+          onClick={open}
           className="relative block w-full cursor-zoom-in bg-muted/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
         >
           {url ? (

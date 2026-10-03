@@ -14,6 +14,7 @@ export function locationIsCurrent(location: { key: string }): boolean {
 /** The route that shows `content` as the main view. */
 export function panelContentPath(content: PanelContent): string {
   if (content.kind === 'file') return `/files/d/${content.id}`
+  if (content.kind === 'attachment') return `/attachments/${content.id}`
   return content.id ? `/files/f/${content.id}` : '/files'
 }
 
@@ -21,6 +22,8 @@ export function panelContentPath(content: PanelContent): string {
 export function mainViewContent(pathname: string): PanelContent | null {
   const file = /^\/files\/d\/([0-9a-f-]{36})$/i.exec(pathname)
   if (file) return { kind: 'file', id: file[1]!.toLowerCase() }
+  const attachment = /^\/attachments\/([0-9a-f-]{36})$/i.exec(pathname)
+  if (attachment) return { kind: 'attachment', id: attachment[1]!.toLowerCase() }
   const folder = /^\/files\/f\/([0-9a-f-]{36})$/i.exec(pathname)
   if (folder) return { kind: 'folder', id: folder[1]!.toLowerCase() }
   if (pathname === '/files') return { kind: 'folder', id: null }

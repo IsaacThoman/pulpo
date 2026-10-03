@@ -8,6 +8,7 @@ import { panelContentPath, useMainNavigate } from './use-panel-actions'
 // Panel views are heavy (editor, chat); load each only once something of that kind opens.
 const FilePanelView = lazy(() => import('@/pages/files/FileDocPage').then((module) => ({ default: module.FilePanelView })))
 const FolderPanelView = lazy(() => import('@/pages/files/FilesPage').then((module) => ({ default: module.FolderPanelView })))
+const AttachmentPanelView = lazy(() => import('@/pages/AttachmentPage').then((module) => ({ default: module.AttachmentPanelView })))
 
 const loading = <div className="grid h-full place-items-center"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>
 
@@ -15,7 +16,9 @@ const loading = <div className="grid h-full place-items-center"><Loader2 classNa
 const PanelView = memo(function PanelView({ panel }: { panel: PanelContent }) {
   return (
     <Suspense fallback={loading}>
-      {panel.kind === 'file' ? <FilePanelView fileId={panel.id} /> : <FolderPanelView folderId={panel.id} />}
+      {panel.kind === 'file' ? <FilePanelView fileId={panel.id} />
+        : panel.kind === 'attachment' ? <AttachmentPanelView attachmentId={panel.id} />
+        : <FolderPanelView folderId={panel.id} />}
     </Suspense>
   )
 })

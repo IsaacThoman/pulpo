@@ -14,6 +14,10 @@ export function SidePanelLayout({ children, mobile, full, enabled }: {
   const [available, setAvailable] = useState(0)
 
   useLayoutEffect(() => {
+    if (useSidePanel.getState().enabled !== enabled) useSidePanel.setState({ enabled })
+  }, [enabled])
+
+  useLayoutEffect(() => {
     const container = containerRef.current
     if (!container) return
     const measure = () => {
