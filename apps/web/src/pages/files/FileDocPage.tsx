@@ -27,7 +27,7 @@ import { filesErrorMessage } from '@/features/files/file-display'
 import { DocEditor } from '@/features/files/editor/DocEditor'
 import type { DocSyncStatus } from '@/features/files/editor/socket-provider'
 import { useDocSession, type PresencePeer } from '@/features/files/editor/use-doc-session'
-import { FilePreviewBody } from '@/features/files/FilePreviewDialog'
+import { FilePreviewBody } from '@/features/files/FilePreview'
 import { MarkdownConversionDialog } from '@/features/files/MarkdownConversionDialog'
 import { PanelWindowButtons } from '@/features/side-panel/PanelControls'
 import { openBeside, panelContentPath, useMainNavigate } from '@/features/side-panel/use-panel-actions'
@@ -372,7 +372,7 @@ function BlobFileView({ node, ancestors, view }: { node: FileNode; ancestors: Fi
       </FileHeader>
       {notice && <p role="alert" className="border-b bg-destructive/5 px-4 py-2 text-sm text-destructive sm:px-6">{notice}</p>}
       <div className="min-h-0 flex-1 overflow-auto bg-muted/20 p-4">
-        <FilePreviewBody node={node} fill />
+        <FilePreviewBody node={node} />
       </div>
     </div>
   )

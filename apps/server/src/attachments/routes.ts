@@ -155,6 +155,23 @@ export async function registerAttachmentRoutes(app: FastifyInstance): Promise<vo
     }
   }))
 
+  /** What a preview needs to show an attachment opened from a link or a reload, without its message. */
+  app.get('/api/attachments/:id', { config: attachmentRateLimit }, async (request) => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    const attachment = await readyAttachment(user.id, id)
+    if (!attachment) throw notFound('Attachment')
+    return {
+      attachment: {
+        id: attachment.id,
+        name: attachment.originalName,
+        mimeType: attachment.mimeType,
+        size: attachment.sizeBytes,
+        chatId: attachment.chatId,
+      },
+    }
+  })
+
   app.get('/api/attachments/:id/download', { config: attachmentRateLimit }, async (request) => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }

@@ -33,7 +33,7 @@ export function FilesNavMenu({ point, onClose, go }: {
         <DropdownMenuSeparator />
         <DropdownMenuItem onSelect={() => fileInput.current?.click()}><Upload /> {ui("Upload files")}</DropdownMenuItem>
         <DropdownMenuSeparator />
-        {splitAvailable && <DropdownMenuItem onSelect={() => openBeside({ kind: 'folder', id: null }, go)}><PanelRight /> {ui("Open to the side")}</DropdownMenuItem>}
+        {splitAvailable && <DropdownMenuItem onSelect={() => openBeside({ kind: 'folder', id: null }, go)}><PanelRight /> {ui("Open to the right")}</DropdownMenuItem>}
         <DropdownMenuItem onSelect={() => openInNewChat([FILE_SCOPE_ROOT], null, go)}><SquarePen /> {ui("Open in new chat")}</DropdownMenuItem>
       </FileContextMenu>
       {/* Outside the menu, which closes before the file picker returns. */}

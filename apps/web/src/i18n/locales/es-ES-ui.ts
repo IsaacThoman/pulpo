@@ -1911,7 +1911,7 @@ const esUi: Record<string, string> = {
   "Resize side panel": "Cambiar el tamaño del panel lateral",
   "Close side panel": "Cerrar el panel lateral",
   "Folders open in the Files view.": "Las carpetas se abren en la vista de Archivos.",
-  "Open to the side": "Abrir al lado",
+  "Open to the right": "Abrir a la derecha",
   "Close panel": "Cerrar panel",
   "Snap to grid": "Ajustar a la cuadrícula",
   "Sort: {{0}}": "Ordenar: {{0}}",
@@ -1956,6 +1956,9 @@ const esUi: Record<string, string> = {
   "Pool members can draw this share of a Fat subscriber's weekly usage, each within their own 5-hour limit.": "Los miembros del Pool pueden usar esta parte del uso semanal de un suscriptor de Fat, cada uno dentro de su propio límite de 5 horas.",
   "Share of Fat weekly": "Parte del uso semanal de Fat",
   "5-hour limit per member": "Límite de 5 horas por miembro",
+  "Untitled chat": "Chat sin título",
+  "New chat": "Nuevo chat",
+  "This attachment could not be found. It may have been deleted with its chat.": "No se encontró este adjunto. Puede que se haya eliminado junto con su chat.",
 }
 
 export default esUi

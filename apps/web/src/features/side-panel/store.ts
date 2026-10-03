@@ -9,12 +9,13 @@ const WIDTH_STORAGE_KEY = 'pulpo.sidePanel.width'
 export const DEFAULT_PANEL_WIDTH = 520
 
 /**
- * What the side panel shows: a file, or a folder of the Files browser (`null` is My files).
- * Chats always live in the main view; the panel holds what they work on.
+ * What the side panel shows: a file, a folder of the Files browser (`null` is My files), or a
+ * chat attachment. Chats always live in the main view; the panel holds what they work on.
  */
 export type PanelContent =
   | { kind: 'file'; id: string }
   | { kind: 'folder'; id: string | null }
+  | { kind: 'attachment'; id: string }
 
 interface SidePanelState {
   content: PanelContent | null
@@ -28,12 +29,15 @@ interface SidePanelState {
    * never laid over the main view) and things opened "to the side" open in the main view instead.
    */
   splitAvailable: boolean
+  /** Whether this screen has a side panel at all; admin chat views do not. */
+  enabled: boolean
 }
 
 export const useSidePanel = create<SidePanelState>()((set, get) => ({
   content: null,
   lastContent: null,
   splitAvailable: true,
+  enabled: true,
   open: (content) => set({ content, lastContent: content }),
   close: () => set({ content: null }),
   toggle: () => {
@@ -52,6 +56,7 @@ const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
 export function serializePanelContent(content: PanelContent | null): string | null {
   if (!content) return null
   if (content.kind === 'file') return `file:${content.id}`
+  if (content.kind === 'attachment') return `attachment:${content.id}`
   return `folder:${content.id ?? 'root'}`
 }
 
@@ -60,6 +65,8 @@ export function parsePanelContent(value: string | null): PanelContent | null {
   const lower = value.toLowerCase()
   const file = new RegExp(`^file:(${UUID})$`).exec(lower)
   if (file) return { kind: 'file', id: file[1]! }
+  const attachment = new RegExp(`^attachment:(${UUID})$`).exec(lower)
+  if (attachment) return { kind: 'attachment', id: attachment[1]! }
   const folder = new RegExp(`^folder:(root|${UUID})$`).exec(lower)
   if (folder) return { kind: 'folder', id: folder[1] === 'root' ? null : folder[1]! }
   return null
