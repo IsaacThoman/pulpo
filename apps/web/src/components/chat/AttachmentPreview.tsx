@@ -30,6 +30,7 @@ import { CodeSource, PreviewModeToggle } from '@/components/chat/CodePreviewPane
 import { HighlightedCode } from '@/components/chat/HighlightedCode'
 import { previewKindForFile } from '@/lib/code-preview'
 import { languageForFile } from '@/lib/syntax-highlight'
+import { SaveToFilesButton } from './SaveToFilesButton'
 
 type PreviewContent =
   | { status: 'idle' }
@@ -342,12 +343,15 @@ export function AttachmentPreviewDialog({
   open,
   onOpenChange,
   onDownload,
+  saveToFiles = false,
 }: {
   attachment: Attachment
   sourceFile?: File
   open: boolean
   onOpenChange: (open: boolean) => void
   onDownload: () => void
+  /** Offer copying the attachment into Files; only stored attachments can be copied. */
+  saveToFiles?: boolean
 }) {
   const kind = attachmentPreviewKind(attachment.name, attachment.mimeType)
   const content = usePreviewContent(attachment, kind, open, sourceFile)
@@ -371,6 +375,7 @@ export function AttachmentPreviewDialog({
           {content.status === 'ready' && content.text !== null && !content.textTruncated && (
             <CopyTextButton text={content.text} />
           )}
+          {saveToFiles && <SaveToFilesButton attachment={attachment} className="text-foreground" />}
           <Button type="button" variant="ghost" size="icon-sm" onClick={onDownload} aria-label={uit`Download ${attachment.name}`} className="rounded-full">
             <Download className="size-4" />
           </Button>

@@ -35,6 +35,7 @@ import { attachmentPreviewKind } from '@/lib/attachment-previews'
 import { useAttachmentPreviewUrl } from './use-attachment-preview-url'
 import { useAttachmentImageDimensions } from './use-attachment-image-dimensions'
 import { AttachmentPreviewDialog } from './AttachmentPreview'
+import { SaveToFilesButton } from './SaveToFilesButton'
 import { useUploadOutbox, type UploadRecord } from '@/stores/upload-outbox'
 import { ui, uit } from '@/i18n/ui'
 
@@ -210,6 +211,7 @@ function MessageFilePreview({ attachment }: { attachment: Attachment }) {
         ) : (
           <div className="flex min-w-0 flex-1 items-center gap-3 p-2.5">{details}</div>
         )}
+        <SaveToFilesButton attachment={attachment} />
         <button
           type="button"
           onClick={() => performAttachmentDownload(attachment)}
@@ -225,6 +227,7 @@ function MessageFilePreview({ attachment }: { attachment: Attachment }) {
           open={previewOpen}
           onOpenChange={setPreviewOpen}
           onDownload={() => performAttachmentDownload(attachment)}
+          saveToFiles
         />
       )}
     </>
@@ -283,6 +286,7 @@ function MessageImagePreview({ attachment }: { attachment: Attachment }) {
               {attachmentMeta(attachment.name, attachment.mimeType, attachment.size)}
             </span>
           </span>
+          <SaveToFilesButton attachment={attachment} />
           <button
             type="button"
             aria-label={uit`Download ${attachment.name}`}
@@ -298,6 +302,7 @@ function MessageImagePreview({ attachment }: { attachment: Attachment }) {
         open={previewOpen}
         onOpenChange={setPreviewOpen}
         onDownload={handleDownload}
+        saveToFiles
       />
     </>
   )

@@ -19,7 +19,7 @@ import {
   trashFileNodes,
   updateFileNode,
 } from './tree-service.js'
-import { copyFileNodes } from './copy-service.js'
+import { copyFileNodes, saveAttachmentToFiles } from './copy-service.js'
 
 const publish = vi.hoisted(() => vi.fn())
 const deletedKeys = vi.hoisted(() => [] as string[])
@@ -190,5 +190,22 @@ describe.skipIf(!enabled)('Files tree PostgreSQL behavior', () => {
     const folder = await createFolder(userId, { parentId: null, name: 'Folder' })
     const child = await createFolder(userId, { parentId: folder.id, name: 'Child' })
     await expect(copyFileNodes(userId, [folder.id], child.id)).rejects.toMatchObject({ code: 'file_move_cycle' })
+  })
+
+  it('saves an attachment into Files as a copy, keeping both on name clashes', async () => {
+    const folder = await createFolder(userId, { parentId: null, name: 'Folder' })
+    await insertBlob(folder.id, 'report.pdf', 10)
+    const attachmentId = randomUUID()
+    await db.insert(attachments).values({
+      id: attachmentId, userId, status: 'ready', objectKey: `users/${userId}/attachments/${attachmentId}`,
+      originalName: 'report.pdf', mimeType: 'application/pdf', sizeBytes: 20,
+    })
+    const node = await saveAttachmentToFiles(userId, attachmentId, folder.id)
+    expect(node).toMatchObject({ kind: 'blob', name: 'report (2).pdf', parentId: folder.id, mimeType: 'application/pdf', sizeBytes: 20, status: 'ready' })
+    expect(copiedKeys).toEqual([[`users/${userId}/attachments/${attachmentId}`, `users/${userId}/files/${node.id}`]])
+    expect(await storageUsedBytes(db, userId)).toBe(50)
+    await db.update(users).set({ storageLimitBytes: 60 }).where(eq(users.id, userId))
+    await expect(saveAttachmentToFiles(userId, attachmentId, null)).rejects.toMatchObject({ code: 'storage_quota_exceeded' })
+    await expect(saveAttachmentToFiles(userId, randomUUID(), null)).rejects.toMatchObject({ statusCode: 404 })
   })
 })

@@ -63,6 +63,11 @@ export async function downloadDocMarkdown(node: Pick<FileNode, 'id' | 'name'>): 
   window.setTimeout(() => URL.revokeObjectURL(url), 1_000)
 }
 
+/** Copies a chat attachment into Files; the server picks a free name if this one is taken. */
+export function saveAttachmentToFiles(attachmentId: string, parentId: string | null): Promise<FileNode> {
+  return apiRequest<FileNode>('/api/files/from-attachment', { method: 'POST', body: { attachmentId, parentId } })
+}
+
 export function updateFileNode(id: string, input: UpdateFileNode): Promise<FileNode> {
   return apiRequest<FileNode>(`/api/files/${id}`, { method: 'PATCH', body: input })
 }

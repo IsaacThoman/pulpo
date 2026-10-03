@@ -2,7 +2,7 @@ import { ThumbnailCache } from './thumbnail-cache.js'
 import { attachmentRateLimit, withAttachmentCapacity } from './capacity.js'
 import { shelfAttachmentIsLive } from '../shelf/routes.js'
 import { composerAttachmentIsLive } from '../composer/service.js'
-import { and, eq, isNull, or } from 'drizzle-orm'
+import { and, eq, isNull } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { Readable } from 'node:stream'
 import { z } from 'zod'
@@ -16,17 +16,11 @@ import { newId } from '../lib/ids.js'
 import { getBlobStore } from '../storage/index.js'
 import { getStorageUsage, reserveAttachment } from './storage-quota.js'
 import { accessibleChatCondition } from '../chats/temporary.js'
+import { accessibleAttachmentCondition, readyAttachment } from './access.js'
 import { canonicalUploadedMimeType, isConfirmedRasterImage } from './policy.js'
 import { createAttachmentThumbnail } from './thumbnail.js'
 import { attachmentReferenceIsLive } from './references.js'
 import { AttachmentSizeMismatchError, exactSizeStream, inspectAttachmentStream } from './streams.js'
-
-function accessibleAttachmentCondition() {
-  return or(
-    isNull(attachments.chatId),
-    and(isNull(chats.deletedAt), accessibleChatCondition()),
-  )
-}
 
 export function attachmentUploadContentType(storageDriver: 'local' | 's3', mimeType: string): string {
   return storageDriver === 'local' ? 'application/octet-stream' : mimeType
@@ -41,18 +35,6 @@ export function attachmentStorageErrorCode(cause: unknown): string {
 
 export async function registerAttachmentRoutes(app: FastifyInstance): Promise<void> {
   app.addContentTypeParser('application/octet-stream', (_request, body, done) => done(null, body))
-
-  const readyAttachment = async (userId: string, id: string) => {
-    const [result] = await db.select({ attachment: attachments }).from(attachments)
-      .leftJoin(chats, eq(chats.id, attachments.chatId))
-      .where(and(
-        eq(attachments.id, id),
-        eq(attachments.userId, userId),
-        eq(attachments.status, 'ready'),
-        accessibleAttachmentCondition(),
-      )).limit(1)
-    return result?.attachment
-  }
 
   app.get('/api/attachments/usage', async (request) => {
     const user = requireUser(request)

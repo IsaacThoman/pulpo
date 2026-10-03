@@ -1,12 +1,12 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
-import { updateFileFolderLayoutSchema, copyFileNodesSchema, createFileDocSchema, createFileFolderSchema, fileNodeIdsSchema, moveFileNodesSchema, updateFileNodeSchema } from '@pulpo/contracts'
+import { updateFileFolderLayoutSchema, copyFileNodesSchema, saveAttachmentToFilesSchema, createFileDocSchema, createFileFolderSchema, fileNodeIdsSchema, moveFileNodesSchema, updateFileNodeSchema } from '@pulpo/contracts'
 import { db } from '../database/client.js'
 import { notFound } from '../lib/errors.js'
 import { getBlobStore } from '../storage/index.js'
 import { resolveFileAccess } from './access.js'
 import { convertBlobToDocInTx, previewMarkdownConversion } from './conversion.js'
-import { copyFileNodes } from './copy-service.js'
+import { copyFileNodes, saveAttachmentToFiles } from './copy-service.js'
 import { createDoc, readDocMarkdown } from './doc-store.js'
 import { parseFileInput, requireFilesUser } from './request.js'
 import {
@@ -85,6 +85,13 @@ export async function registerFileRoutes(app: FastifyInstance): Promise<void> {
     const user = await requireFilesUser(request)
     const input = copyFileNodesSchema.parse(request.body)
     return { nodes: await copyFileNodes(user.id, input.ids, input.parentId) }
+  })
+
+  app.post('/api/files/from-attachment', async (request, reply) => {
+    const user = await requireFilesUser(request)
+    const input = saveAttachmentToFilesSchema.parse(request.body)
+    reply.code(201)
+    return saveAttachmentToFiles(user.id, input.attachmentId, input.parentId)
   })
 
   app.post('/api/files/batch/trash', async (request) => {

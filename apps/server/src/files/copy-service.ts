@@ -1,7 +1,8 @@
 import { and, eq, inArray, sql } from 'drizzle-orm'
 import * as Y from 'yjs'
 import { DOC_SCHEMA_VERSION, ydocToMarkdown } from '@pulpo/client-core/doc-schema'
-import { FILE_TREE_MAX_DEPTH, type FileNode } from '@pulpo/contracts'
+import { FILE_TREE_MAX_DEPTH, fileNameError, normalizeFileName, type FileNode } from '@pulpo/contracts'
+import { readyAttachment } from '../attachments/access.js'
 import { assertStorageCapacity, lockAccountStorage } from '../attachments/storage-quota.js'
 import { db } from '../database/client.js'
 import { fileDocs, fileNodes } from '../database/schema.js'
@@ -134,4 +135,53 @@ export async function copyFileNodes(userId: string, ids: string[], parentId: str
   })
   if (failed.length) throw new AppError(502, 'file_copy_failed', 'Some files could not be copied')
   return nodes
+}
+
+/** Attachment names are not checked against Files rules, so fall back when one would be rejected. */
+function attachmentFileName(name: string): string {
+  const normalized = normalizeFileName(name.replaceAll('/', '_'))
+  return fileNameError(normalized) ? 'Attachment' : normalized
+}
+
+/**
+ * Saves a copy of one of the user's chat attachments into `parentId`. Like uploaded copies, the
+ * node is reserved as pending, filled in the object store after commit, then marked ready.
+ */
+export async function saveAttachmentToFiles(userId: string, attachmentId: string, parentId: string | null): Promise<FileNode> {
+  const attachment = await readyAttachment(userId, attachmentId)
+  if (!attachment) throw notFound('Attachment')
+  const id = newId()
+  const objectKey = `users/${userId}/files/${id}`
+  const changes = await db.transaction(async (tx) => {
+    await assertStorageCapacity(tx, userId, attachment.sizeBytes, { perFileLimit: false })
+    await lockFileTree(tx, userId)
+    await destinationDepth(tx, userId, parentId)
+    const name = nextAvailableName(attachmentFileName(attachment.originalName), await liveSiblingNames(tx, userId, parentId))
+    await tx.insert(fileNodes).values({
+      id, ownerUserId: userId, parentId, kind: 'blob', name, mimeType: attachment.mimeType,
+      sizeBytes: attachment.sizeBytes, checksum: attachment.checksum, objectKey, status: 'pending',
+    })
+    return bumpAccountRevisions(tx, [userId])
+  })
+  await publishScopedStateChanges(changes, ['files'])
+
+  let copied = true
+  try {
+    await getBlobStore().copy(attachment.objectKey, objectKey)
+  } catch {
+    copied = false
+  }
+  const node = await mutateFileTree(userId, async (tx) => {
+    if (!copied) {
+      // Nothing was stored; drop the placeholder so it stops counting against storage.
+      await tx.delete(fileNodes).where(and(eq(fileNodes.ownerUserId, userId), eq(fileNodes.id, id)))
+      return null
+    }
+    const [ready] = await tx.update(fileNodes).set({ status: 'ready', updatedAt: new Date() })
+      .where(and(eq(fileNodes.ownerUserId, userId), eq(fileNodes.id, id))).returning()
+    return ready ? toFileNode(ready) : null
+  })
+  if (!copied) throw new AppError(502, 'file_copy_failed', 'The attachment could not be saved to Files')
+  if (!node) throw notFound('File')
+  return node
 }

@@ -1956,6 +1956,11 @@ const esUi: Record<string, string> = {
   "Pool members can draw this share of a Fat subscriber's weekly usage, each within their own 5-hour limit.": "Los miembros del Pool pueden usar esta parte del uso semanal de un suscriptor de Fat, cada uno dentro de su propio límite de 5 horas.",
   "Share of Fat weekly": "Parte del uso semanal de Fat",
   "5-hour limit per member": "Límite de 5 horas por miembro",
+  "Saved to Files": "Guardado en Archivos",
+  "Save {{0}} to Files": "Guardar {{0}} en Archivos",
+  "Save \"{{0}}\" to Files": "Guardar «{{0}}» en Archivos",
+  "Choose a folder for the copy.": "Elige una carpeta para la copia.",
+  "Save here": "Guardar aquí",
 }
 
 export default esUi

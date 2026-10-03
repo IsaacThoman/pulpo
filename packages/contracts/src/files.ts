@@ -92,6 +92,12 @@ export const copyFileNodesSchema = z.object({
   parentId: z.uuid().nullable(),
 })
 
+/** Copies a chat attachment's bytes into Files, keeping both when the name clashes. */
+export const saveAttachmentToFilesSchema = z.object({
+  attachmentId: z.uuid(),
+  parentId: z.uuid().nullable().default(null),
+})
+
 export const reserveFileUploadSchema = z.object({
   parentId: z.uuid().nullable().default(null),
   name: fileNameSchema,
@@ -131,6 +137,7 @@ export type UpdateFileNode = z.input<typeof updateFileNodeSchema>
 export type CreateFileDoc = z.input<typeof createFileDocSchema>
 export type ReserveFileUpload = z.input<typeof reserveFileUploadSchema>
 export type MoveFileNodes = z.input<typeof moveFileNodesSchema>
+export type SaveAttachmentToFiles = z.input<typeof saveAttachmentToFilesSchema>
 
 export interface FileListing {
   /** Null for the root of the account's Files tree. */
