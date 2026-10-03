@@ -23,15 +23,13 @@ function renderMessageAttachments() {
 }
 
 describe('attachment card actions', () => {
-  it('separates preview and download actions for supported message files', () => {
+  it('separates preview from the save menu (download or save to Files) for message files', () => {
     const markup = renderMessageAttachments()
 
     expect(markup).toContain('aria-label="Preview report.pdf"')
-    expect(markup).toContain('aria-label="Download report.pdf"')
+    expect(markup).toContain('aria-label="Save report.pdf"')
     expect(markup).not.toContain('aria-label="Preview source.zip"')
-    expect(markup).toContain('aria-label="Download source.zip"')
-    expect(markup).toContain('aria-label="Save report.pdf to Files"')
-    expect(markup).toContain('aria-label="Save source.zip to Files"')
+    expect(markup).toContain('aria-label="Save source.zip"')
   })
 
   it('keeps composer preview, download, and removal as distinct controls', () => {

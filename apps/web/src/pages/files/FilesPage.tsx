@@ -50,6 +50,7 @@ import { arrangeGrid, GRID_CELL, moveInGrid, readingOrder } from '@/features/fil
 import { filesErrorMessage } from '@/features/files/file-display'
 import { FileMoveDialog } from '@/features/files/FileMoveDialog'
 import { useFilesPageRequest } from '@/features/files/files-page-request'
+import { useFileReveal } from '@/features/files/reveal'
 import { useFileClipboard } from '@/features/files/browser/clipboard'
 import { FileContextMenu, type ContextMenuPoint } from '@/features/files/browser/FileContextMenu'
 import { FileDragOverlay } from '@/features/files/browser/FileDragOverlay'
@@ -228,6 +229,17 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
     setRenamingId(null)
   }, [folderId])
   useEffect(() => setSelection((current) => pruneSelection(current, order)), [order])
+
+  // A file revealed from elsewhere (e.g. just saved to Files) is selected once this folder lists it.
+  const reveal = useFileReveal((state) => state.target)
+  useEffect(() => {
+    if (!reveal || reveal.folderId !== folderId || !byId.has(reveal.nodeId)) return
+    useFileReveal.setState({ target: null })
+    setSelection(selectOnly(reveal.nodeId))
+    requestAnimationFrame(() => {
+      itemsRef.current?.querySelector<HTMLElement>(`[data-file-id="${reveal.nodeId}"]`)?.scrollIntoView({ block: 'nearest' })
+    })
+  }, [byId, folderId, reveal])
 
   const changeView = (next: FilesView) => {
     setView(next)

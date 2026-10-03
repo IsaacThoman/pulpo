@@ -1,14 +1,16 @@
 import { useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { FolderDown } from 'lucide-react'
+import { Download, FolderDown, FolderInput } from 'lucide-react'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { uit, ui } from '@/i18n/ui'
 import type { Attachment } from '@/lib/types'
 import { useAuth } from '@/stores/auth'
 import { deleteFileNodes, filesQueryKey, trashFileNodes } from '@/features/files/api'
 import { FolderPickerDialog } from '@/features/files/FileMoveDialog'
 import { useFileToasts } from '@/features/files/browser/toasts'
+import { revealFile } from '@/features/files/reveal'
 import { useSidePanel } from '@/features/side-panel/store'
-import { useOpenBeside } from '@/features/side-panel/use-panel-actions'
+import { useMainNavigate } from '@/features/side-panel/use-panel-actions'
 import { saveAttachmentToFiles } from './attachment-actions'
 
 /**
@@ -22,16 +24,29 @@ function useCanSaveToFiles(): boolean {
 }
 
 /**
- * "Save to Files": choose a folder, then the attachment is copied there on the server. The toast
- * offers to show the new file beside the chat, or to undo.
+ * Keeping an attachment: one button whose menu downloads it or saves it to Files. Saving asks
+ * for a folder, copies the attachment there on the server, and offers to show it in that folder
+ * or to undo. Where Files is unavailable the button simply downloads.
  */
-export function SaveToFilesButton({ attachment, className, iconClassName }: { attachment: Attachment; className: string; iconClassName?: string }) {
-  const [open, setOpen] = useState(false)
+export function AttachmentSaveMenu({ attachment, onDownload, className }: {
+  attachment: Attachment
+  onDownload: () => void
+  className: string
+}) {
+  const [picking, setPicking] = useState(false)
   const queryClient = useQueryClient()
   const userId = useAuth((state) => state.user?.id)
   const show = useFileToasts((state) => state.show)
-  const openBeside = useOpenBeside()
-  if (!useCanSaveToFiles()) return null
+  const go = useMainNavigate()
+  const canSave = useCanSaveToFiles()
+
+  if (!canSave) {
+    return (
+      <button type="button" onClick={onDownload} aria-label={uit`Download ${attachment.name}`} title={ui("Download")} className={className}>
+        <Download className="size-4" aria-hidden="true" />
+      </button>
+    )
+  }
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: filesQueryKey(userId) })
   const save = async (parentId: string | null) => {
@@ -39,7 +54,7 @@ export function SaveToFilesButton({ attachment, className, iconClassName }: { at
     void refresh()
     show({
       message: uit`Saved "${node.name}" to Files`,
-      action: { label: ui("Show"), run: () => openBeside({ kind: 'file', id: node.id }) },
+      action: { label: ui("Show"), run: () => revealFile(node, go) },
       undo: async () => {
         try {
           await deleteFileNodes(await trashFileNodes([node.id]))
@@ -52,15 +67,23 @@ export function SaveToFilesButton({ attachment, className, iconClassName }: { at
 
   return (
     <>
-      <button type="button" onClick={() => setOpen(true)} aria-label={uit`Save ${attachment.name} to Files`} title={ui("Save to Files")} className={className}>
-        <FolderDown className={iconClassName ?? 'size-4'} aria-hidden="true" />
-      </button>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button type="button" aria-label={uit`Save ${attachment.name}`} title={ui("Save")} className={className}>
+            <FolderDown className="size-4" aria-hidden="true" />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem onSelect={onDownload}><Download /> {ui("Download")}</DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => setPicking(true)}><FolderInput /> {ui("Save to Files…")}</DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
       <FolderPickerDialog
-        open={open}
+        open={picking}
         title={uit`Save "${attachment.name}" to Files`}
         confirmLabel={ui("Save here")}
         startFolderId={null}
-        onOpenChange={setOpen}
+        onOpenChange={setPicking}
         onConfirm={save}
       />
     </>

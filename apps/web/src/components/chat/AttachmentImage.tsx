@@ -38,7 +38,7 @@ import { useAttachmentPreviewUrl } from './use-attachment-preview-url'
 import { useAttachmentImageDimensions } from './use-attachment-image-dimensions'
 import { AttachmentPreviewDialog } from './AttachmentPreview'
 import { downloadChatAttachment, openAttachment } from './attachment-actions'
-import { SaveToFilesButton } from './SaveToFiles'
+import { AttachmentSaveMenu } from './SaveToFiles'
 import { useUploadOutbox, type UploadRecord } from '@/stores/upload-outbox'
 import { ui, uit } from '@/i18n/ui'
 
@@ -216,15 +216,7 @@ function MessageFilePreview({ attachment }: { attachment: Attachment }) {
         ) : (
           <div className="flex min-w-0 flex-1 items-center gap-3 p-2.5">{details}</div>
         )}
-        <SaveToFilesButton attachment={attachment} className="flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
-        <button
-          type="button"
-          onClick={() => downloadChatAttachment(attachment)}
-          aria-label={uit`Download ${attachment.name}`}
-          className="mr-2.5 flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <Download className="size-4" aria-hidden="true" />
-        </button>
+        <AttachmentSaveMenu attachment={attachment} onDownload={() => downloadChatAttachment(attachment)} className="mr-2.5 flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
       </div>
       {previewable && (
         <AttachmentPreviewDialog
@@ -290,15 +282,7 @@ function MessageImagePreview({ attachment }: { attachment: Attachment }) {
               {attachmentMeta(attachment.name, attachment.mimeType, attachment.size)}
             </span>
           </span>
-          <SaveToFilesButton attachment={attachment} className="flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
-          <button
-            type="button"
-            aria-label={uit`Download ${attachment.name}`}
-            onClick={handleDownload}
-            className="flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <Download className="size-4" />
-          </button>
+          <AttachmentSaveMenu attachment={attachment} onDownload={handleDownload} className="flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
         </figcaption>
       </figure>
       <AttachmentPreviewDialog
