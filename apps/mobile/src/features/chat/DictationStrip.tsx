@@ -21,7 +21,7 @@ import {
 } from '@pulpo/client-core'
 import { SymbolView } from '../../platform/SymbolView'
 import type { DictationLevelSource, DictationState } from './dictation'
-import { DICTATION_WAVEFORM_HEIGHT, dictationStatusLabel, dictationStripEntering, dictationStripExiting } from './dictationMotion'
+import { DICTATION_WAVEFORM_HEIGHT, dictationStatusLabel, dictationStripEntering, dictationStripExiting, useStalled } from './dictationMotion'
 
 const MIN_BAR_HEIGHT = 2
 /** One sampling interval, linear, so consecutive slides join into continuous motion. */
@@ -85,7 +85,10 @@ export const DictationWaveform = memo(function DictationWaveform({ source, color
   )
 })
 
-/** Waveform and timer while recording; cross-fades to a text status while preparing or transcribing. */
+/**
+ * Waveform and timer while recording. Opening the microphone and cancelling keep the still
+ * waveform unless they take over a second; transcribing cross-fades to a text status.
+ */
 export function DictationStatus({ phase, seconds, source, colors }: {
   phase: DictationState['phase']
   seconds: number
@@ -93,10 +96,13 @@ export function DictationStatus({ phase, seconds, source, colors }: {
   colors: DictationStripColors
 }) {
   const recording = phase === 'recording'
-  const visibility = useSharedValue(recording ? 1 : 0)
+  const waiting = phase === 'preparing' || phase === 'cancelling'
+  const stalled = useStalled(waiting ? phase : null)
+  const showsWaveform = recording || (waiting && !stalled)
+  const visibility = useSharedValue(showsWaveform ? 1 : 0)
   useEffect(() => {
-    visibility.value = withTiming(recording ? 1 : 0, STATUS_TIMING)
-  }, [recording, visibility])
+    visibility.value = withTiming(showsWaveform ? 1 : 0, STATUS_TIMING)
+  }, [showsWaveform, visibility])
   const waveformStyle = useAnimatedStyle(() => ({ opacity: visibility.value }))
   const labelStyle = useAnimatedStyle(() => ({ opacity: 1 - visibility.value }))
   const label = dictationStatusLabel(phase, seconds)

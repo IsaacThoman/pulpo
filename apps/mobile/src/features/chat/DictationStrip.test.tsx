@@ -209,19 +209,63 @@ describe('DictationStatus', () => {
     expect(styleOf(timer).color).toBe('#a50')
   })
 
+  const layers = (label: string) => {
+    const status = container.querySelector(`[aria-label="${label}"]`)!
+    const [waveformLayer, labelLayer] = [...status.children]
+    return { status, waveform: styleOf(waveformLayer!).opacity, label: styleOf(labelLayer!).opacity, text: labelLayer!.textContent }
+  }
+
+  it('cross-fades to a polite text status while transcribing', async () => {
+    const { source } = levelSource()
+    await render(createElement(DictationStatus, { phase: 'transcribing', seconds: 4, source, colors }))
+    const shown = layers('Transcribing…')
+    expect(shown.status.getAttribute('data-live')).toBe('polite')
+    expect(shown).toMatchObject({ waveform: 0, label: 1, text: 'Transcribing…' })
+  })
+
   it.each([
     ['preparing', 'Preparing microphone…'],
-    ['transcribing', 'Transcribing…'],
     ['cancelling', 'Cancelling…'],
-  ] as const)('cross-fades to a polite text status while %s', async (phase, label) => {
-    const { source } = levelSource()
-    await render(createElement(DictationStatus, { phase, seconds: 4, source, colors }))
-    const status = container.querySelector(`[aria-label="${label}"]`)!
-    expect(status.getAttribute('data-live')).toBe('polite')
-    const [waveformLayer, labelLayer] = [...status.children]
-    expect(styleOf(waveformLayer!).opacity).toBe(0)
-    expect(styleOf(labelLayer!).opacity).toBe(1)
-    expect(labelLayer!.textContent).toBe(label)
+  ] as const)('keeps the still waveform while %s, and shows text only after a second', async (phase, label) => {
+    vi.useFakeTimers()
+    try {
+      const { source } = levelSource()
+      // A fresh element each time so the mocked shared value is read again.
+      const element = () => createElement(DictationStatus, { phase, seconds: 0, source, colors })
+      await render(element())
+      expect(layers(label)).toMatchObject({ waveform: 1, label: 0 })
+      expect(container.textContent).toContain('0:00')
+      await act(async () => { vi.advanceTimersByTime(999) })
+      await render(element())
+      expect(layers(label)).toMatchObject({ waveform: 1, label: 0 })
+      await act(async () => { vi.advanceTimersByTime(1) })
+      await render(element())
+      expect(layers(label)).toMatchObject({ waveform: 0, label: 1, text: label })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('starts the wait again for each phase and recording', async () => {
+    vi.useFakeTimers()
+    try {
+      const { source } = levelSource()
+      const show = (phase: 'preparing' | 'recording' | 'cancelling') => render(createElement(DictationStatus, { phase, seconds: 0, source, colors }))
+      await show('preparing')
+      await act(async () => { vi.advanceTimersByTime(800) })
+      await show('recording')
+      await show('recording')
+      expect(layers('Recording 0:00')).toMatchObject({ waveform: 1, label: 0 })
+      await show('cancelling')
+      await act(async () => { vi.advanceTimersByTime(800) })
+      await show('cancelling')
+      expect(layers('Cancelling…')).toMatchObject({ waveform: 1, label: 0 })
+      await show('preparing')
+      await show('preparing')
+      expect(layers('Preparing microphone…')).toMatchObject({ waveform: 1, label: 0 })
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('labels every phase', () => {

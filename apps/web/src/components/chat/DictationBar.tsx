@@ -15,6 +15,7 @@ import { useTranslation } from '@/i18n/useAppTranslation'
 import { ui } from '@/i18n/ui'
 import { cn } from '@/lib/utils'
 import { useMicrophoneLevels, type DictationPhase } from './use-microphone-levels'
+import { useStalled } from './use-stalled'
 
 type ActivePhase = Exclude<DictationPhase, 'idle'>
 
@@ -123,7 +124,11 @@ export function DictationBar({ phase, stream, startedAt, onCancel, onConfirm }: 
   const displayed = useDisplayedPhase(phase)
   const recording = displayed === 'recording'
   const levels = useMicrophoneLevels(recording ? stream : null)
-  const seconds = useElapsedSeconds(recording ? startedAt : null)
+  const elapsedSeconds = useElapsedSeconds(recording ? startedAt : null)
+  // Opening the microphone keeps the still waveform unless the wait passes a second.
+  const stalled = useStalled(phase === 'preparing' ? phase : null)
+  const showsWaveform = recording || (displayed === 'preparing' && !stalled)
+  const seconds = displayed === 'preparing' ? 0 : elapsedSeconds
   const elapsed = formatDictationElapsed(seconds)
   const label = displayed === 'recording' ? ui('Recording {{elapsed}}', { elapsed })
     : displayed === 'transcribing' ? t('chat.transcribing')
@@ -144,13 +149,13 @@ export function DictationBar({ phase, stream, startedAt, onCancel, onConfirm }: 
         <TooltipContent side="top">{ui('Cancel dictation')}</TooltipContent>
       </Tooltip>
       <div role="status" aria-live={recording ? 'off' : 'polite'} aria-label={label} className="relative h-8 min-w-0 flex-1">
-        <div className={cn('absolute inset-0 flex items-center gap-2.5 px-1 transition-opacity duration-200 motion-reduce:transition-none', recording ? 'opacity-100' : 'opacity-0')}>
+        <div className={cn('absolute inset-0 flex items-center gap-2.5 px-1 transition-opacity duration-200 motion-reduce:transition-none', showsWaveform ? 'opacity-100' : 'opacity-0')} data-testid="dictation-waveform-layer">
           <DictationWaveform levels={levels} />
           <span className={cn('shrink-0 text-xs tabular-nums', dictationNearsLimit(seconds) ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground')} data-testid="dictation-elapsed">
             {elapsed}
           </span>
         </div>
-        <div className={cn('absolute inset-0 flex items-center justify-center px-2 text-sm text-muted-foreground transition-opacity duration-200 motion-reduce:transition-none', recording ? 'opacity-0' : 'opacity-100')}>
+        <div className={cn('absolute inset-0 flex items-center justify-center px-2 text-sm text-muted-foreground transition-opacity duration-200 motion-reduce:transition-none', showsWaveform ? 'opacity-0' : 'opacity-100')} data-testid="dictation-label-layer">
           <span className="truncate">{label}</span>
         </div>
       </div>
@@ -163,7 +168,7 @@ export function DictationBar({ phase, stream, startedAt, onCancel, onConfirm }: 
             disabled={!recording}
             aria-label={ui('Finish dictation')}
           >
-            {recording ? <Check className="size-4" /> : <Loader2 className="size-4 animate-spin" />}
+            {showsWaveform ? <Check className="size-4" /> : <Loader2 className="size-4 animate-spin" />}
           </Button>
         </TooltipTrigger>
         <TooltipContent side="top">{ui('Finish dictation')}</TooltipContent>

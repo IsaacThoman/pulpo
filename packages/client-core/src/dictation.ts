@@ -17,6 +17,11 @@ export const DICTATION_WAVEFORM_BAR_PITCH = 5
 export const DICTATION_WAVEFORM_BAR_WIDTH = 2
 /** The recorder stops itself after this many seconds. */
 export const DICTATION_MAX_SECONDS = 90
+/**
+ * Brief waits (opening the microphone, cancelling) keep the still waveform on screen;
+ * a text status replaces it only after the wait lasts this long.
+ */
+export const DICTATION_STALLED_STATUS_DELAY_MS = 1000
 /** Remaining seconds at which the elapsed timer starts warning about the limit. */
 export const DICTATION_WARNING_SECONDS = 10
 

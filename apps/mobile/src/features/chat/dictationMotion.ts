@@ -1,6 +1,6 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { Easing, ReduceMotion, useAnimatedStyle, useSharedValue, withTiming, type EntryExitAnimationFunction } from 'react-native-reanimated'
-import { formatDictationElapsed } from '@pulpo/client-core'
+import { DICTATION_STALLED_STATUS_DELAY_MS, formatDictationElapsed } from '@pulpo/client-core'
 import type { DictationState } from './dictation'
 
 export const DICTATION_WAVEFORM_HEIGHT = 28
@@ -51,4 +51,19 @@ export function dictationStatusLabel(phase: DictationState['phase'], seconds: nu
     case 'cancelling': return 'Cancelling…'
     default: return 'Preparing microphone…'
   }
+}
+
+/**
+ * True once `key` has stayed the same non-null value for `delayMs`. A different key,
+ * including the same phase in a later session, starts the wait again.
+ */
+export function useStalled(key: string | null, delayMs = DICTATION_STALLED_STATUS_DELAY_MS): boolean {
+  const [state, setState] = useState({ key, stalled: false })
+  if (state.key !== key) setState({ key, stalled: false })
+  useEffect(() => {
+    if (key === null) return undefined
+    const timer = setTimeout(() => setState((current) => current.key === key ? { key, stalled: true } : current), delayMs)
+    return () => clearTimeout(timer)
+  }, [key, delayMs])
+  return key !== null && state.key === key && state.stalled
 }

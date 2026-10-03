@@ -238,6 +238,52 @@ describe('DictationBar', () => {
     expect(audio.contexts).toHaveLength(0)
   })
 
+  const shown = (view: ReturnType<typeof renderBar>) => ({
+    waveform: view.getByTestId('dictation-waveform-layer').className.includes('opacity-100'),
+    label: view.getByTestId('dictation-label-layer').className.includes('opacity-100'),
+    spinner: Boolean(view.getByRole('button', { name: 'Finish dictation' }).querySelector('.animate-spin')),
+  })
+
+  it('shows the transcribing status straight away', () => {
+    const view = renderBar({ phase: 'transcribing' })
+    expect(shown(view)).toEqual({ waveform: false, label: true, spinner: true })
+  })
+
+  it('keeps the still waveform while the microphone opens, and explains only after a second', () => {
+    const view = renderBar({ phase: 'preparing', stream: null, startedAt: null })
+    expect(shown(view)).toEqual({ waveform: true, label: false, spinner: false })
+    expect(view.getByTestId('dictation-elapsed').textContent).toBe('0:00')
+    expect(view.getByRole('button', { name: 'Finish dictation' }).hasAttribute('disabled')).toBe(true)
+    act(() => { vi.advanceTimersByTime(999) })
+    expect(shown(view).label).toBe(false)
+    act(() => { vi.advanceTimersByTime(1) })
+    expect(shown(view)).toEqual({ waveform: false, label: true, spinner: true })
+    expect(view.getByTestId('dictation-label-layer').textContent).toBe('Waiting for microphone…')
+  })
+
+  it('never flashes the waiting text when recording starts or is cancelled quickly', () => {
+    const view = renderBar({ phase: 'preparing', stream: null, startedAt: null })
+    act(() => { vi.advanceTimersByTime(600) })
+    view.rerenderBar({ phase: 'recording' })
+    act(() => { vi.advanceTimersByTime(2000) })
+    expect(shown(view)).toEqual({ waveform: true, label: false, spinner: false })
+    view.rerenderBar({ phase: 'idle', stream: null, startedAt: null })
+    view.rerenderBar({ phase: 'preparing', stream: null, startedAt: null })
+    act(() => { vi.advanceTimersByTime(600) })
+    view.rerenderBar({ phase: 'idle', stream: null, startedAt: null })
+    act(() => { vi.advanceTimersByTime(2000) })
+    expect(shown(view).label).toBe(false)
+  })
+
+  it('restarts the wait for a new session after a slow one', () => {
+    const view = renderBar({ phase: 'preparing', stream: null, startedAt: null })
+    act(() => { vi.advanceTimersByTime(1500) })
+    expect(shown(view).label).toBe(true)
+    view.rerenderBar({ phase: 'idle', stream: null, startedAt: null })
+    view.rerenderBar({ phase: 'preparing', stream: null, startedAt: null })
+    expect(shown(view)).toEqual({ waveform: true, label: false, spinner: false })
+  })
+
   it('keeps showing the last phase while animating away and stops metering', () => {
     const view = renderBar({ phase: 'transcribing' })
     view.rerenderBar({ phase: 'idle', stream: null, startedAt: null })
