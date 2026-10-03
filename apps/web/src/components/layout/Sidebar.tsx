@@ -281,10 +281,13 @@ function ChatMenu({ chat, onRename, atPointer = false }: { chat: Chat; onRename:
       align="start"
       sideOffset={atPointer ? 2 : undefined}
       className="w-48"
-      // Leave focus in the inline title input rather than returning it to the menu's trigger.
+      // Start the inline rename only once the menu has closed: a modal menu traps focus until
+      // then and would pull it back out of the input. Keep focus off the trigger, too.
       onCloseAutoFocus={(event) => {
-        if (renaming.current) event.preventDefault()
+        if (!renaming.current) return
         renaming.current = false
+        event.preventDefault()
+        onRename()
       }}
     >
       {!isDesktopRuntime() && (
@@ -297,7 +300,7 @@ function ChatMenu({ chat, onRename, atPointer = false }: { chat: Chat; onRename:
         {chat.pinned ? <PinOff /> : <Pin />}
         {chat.pinned ? t('chat.unpin') : t('chat.pin')}
       </DropdownMenuItem>
-      <DropdownMenuItem onClick={() => { renaming.current = true; onRename() }}>
+      <DropdownMenuItem onClick={() => { renaming.current = true }}>
         <Pencil />
         {t('common.rename')}
       </DropdownMenuItem>
@@ -694,17 +697,20 @@ function FolderGroup({
             side="right"
             align="start"
             className="w-48"
-            // Leave focus in the inline name input rather than returning it to the menu's trigger.
+            // Start the inline rename only once the menu has closed: the modal menu traps focus
+            // until then and would pull it back out of the input. Keep focus off the trigger, too.
             onCloseAutoFocus={(event) => {
-              if (renameChosen.current) event.preventDefault()
+              if (!renameChosen.current) return
               renameChosen.current = false
+              event.preventDefault()
+              setRenaming(true)
             }}
           >
             <DropdownMenuItem onClick={() => toggleFolderPin(folder.id)}>
               {folder.pinned ? <PinOff /> : <Pin />}
               {folder.pinned ? t('chat.unpin') : t('chat.pin')}
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => { renameChosen.current = true; setRenaming(true) }}>
+            <DropdownMenuItem onClick={() => { renameChosen.current = true }}>
               <Pencil />
               {t('common.rename')}
             </DropdownMenuItem>

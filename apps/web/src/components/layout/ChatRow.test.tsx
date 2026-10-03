@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { ChatRow } from './Sidebar'
@@ -104,7 +104,7 @@ describe('ChatRow', () => {
     const { link } = mount()
     fireEvent.contextMenu(link)
     fireEvent.click(await screen.findByRole('menuitem', { name: 'Rename' }))
-    const input = screen.getByRole('textbox', { name: 'Rename chat' }) as HTMLInputElement
+    const input = await screen.findByRole('textbox', { name: 'Rename chat' }) as HTMLInputElement
     expect(screen.queryByRole('dialog')).toBeNull()
     expect(document.activeElement).toBe(input)
     fireEvent.change(input, { target: { value: '  Merge Sort  ' } })
@@ -113,11 +113,19 @@ describe('ChatRow', () => {
     expect(screen.getByRole('link', { name: chat.title })).toBeTruthy()
   })
 
+  it('focuses the inline rename from the options button menu', async () => {
+    mount()
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Chat options' }), { key: 'Enter' })
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Rename' }))
+    const input = await screen.findByRole('textbox', { name: 'Rename chat' })
+    await waitFor(() => expect(document.activeElement).toBe(input))
+  })
+
   it('keeps the old title when an inline rename is cancelled', async () => {
     const { link } = mount()
     fireEvent.contextMenu(link)
     fireEvent.click(await screen.findByRole('menuitem', { name: 'Rename' }))
-    const input = screen.getByRole('textbox', { name: 'Rename chat' })
+    const input = await screen.findByRole('textbox', { name: 'Rename chat' })
     fireEvent.change(input, { target: { value: 'Something else' } })
     fireEvent.keyDown(input, { key: 'Escape' })
     fireEvent.blur(input)
