@@ -27,6 +27,8 @@ const settingsPatchSchema = z.object({
   fatWeeklyLimitMicros: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
   eightFiveHourLimitMicros: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
   fatFiveHourLimitMicros: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
+  fatSharedWeeklyPercent: z.number().int().min(0).max(100).optional(),
+  sharedFiveHourLimitMicros: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
   babyStorageLimitBytes: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
   eightStorageLimitBytes: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
   fatStorageLimitBytes: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),

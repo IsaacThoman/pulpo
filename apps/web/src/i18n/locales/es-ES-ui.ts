@@ -1942,6 +1942,14 @@ const esUi: Record<string, string> = {
   "Add \"{{0}}\"": "Añadir «{{0}}»",
   "Add all files": "Añadir todos los archivos",
   "Add files or folders": "Añadir archivos o carpetas",
+  "Shared usage": "Uso compartido",
+  "Pool members can use up to {{percent}}% of your weekly usage": "Los miembros del Pool pueden usar hasta el {{percent}} % de tu uso semanal",
+  "Share {{percent}}% of your weekly usage with your Pool": "Comparte el {{percent}} % de tu uso semanal con tu Pool",
+  "Weekly usage shared by Le Pulpo Fat subscribers in this Pool": "Uso semanal compartido por los suscriptores de Le Pulpo Fat de este Pool",
+  "Your 5-hour shared limit": "Tu límite compartido de 5 horas",
+  "Pool members can draw this share of a Fat subscriber's weekly usage, each within their own 5-hour limit.": "Los miembros del Pool pueden usar esta parte del uso semanal de un suscriptor de Fat, cada uno dentro de su propio límite de 5 horas.",
+  "Share of Fat weekly": "Parte del uso semanal de Fat",
+  "5-hour limit per member": "Límite de 5 horas por miembro",
 }
 
 export default esUi

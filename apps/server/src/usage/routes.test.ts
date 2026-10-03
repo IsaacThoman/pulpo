@@ -45,7 +45,7 @@ it('returns canonical names and logos on personal records without changing accou
   const rows = [target, codex, owner].map((model, index) => ({
     usage: {
       id: `00000000-0000-4000-8000-00000000000${index}`, modelId: model.modelId,
-      createdAt: new Date('2026-09-20T00:00:00Z'), costMicros: 250, inferenceReferenceCostMicros: 300, weeklyCostMicros: 100,
+      createdAt: new Date('2026-09-20T00:00:00Z'), costMicros: 250, inferenceReferenceCostMicros: 300, weeklyCostMicros: 60, sharedCostMicros: 40,
     },
     balanceAfterMicros: 500,
     displayModelId: model.modelId, displayModelName: model.modelName, displayModelLogo: model.modelLogo, displayModelVisible: model.modelVisible,
