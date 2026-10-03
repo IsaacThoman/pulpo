@@ -299,7 +299,7 @@ export function BillingPage() {
                 <div className="text-xs font-medium text-muted-foreground">{ui("Your plan")}</div>
                 <div className="mt-1 text-base font-semibold">{billingPlanName(currentPlan)}</div>
                 <div className="mt-0.5 text-sm text-muted-foreground">{subscriptionSubtitle}</div>
-                <SubscriptionUsageBars className="mt-4" weekly={summary?.weekly ?? null} fiveHour={summary?.fiveHour ?? null} />
+                <SubscriptionUsageBars className="mt-4" weekly={summary?.weekly ?? null} fiveHour={summary?.fiveHour ?? null} shared={summary?.shared ?? null} sharedWeeklyPercent={summary?.sharedWeeklyPercent} />
               </div>
               {!subscribed && (
                 <ul className="space-y-2 text-sm">
@@ -426,7 +426,7 @@ export function BillingPage() {
           <div className="grid gap-6 py-2 md:grid-cols-3 md:gap-0 md:divide-x">
             <PlanColumn plan="baby" current={managedPlan} pendingPlan={pendingPlan} cancelAtPeriodEnd={summary?.subscription?.cancelAtPeriodEnd ?? false} benefits={[ui("Pay as you go"), ui("Share platform credits with your pool"), planStorage('baby'), ui("Free and source-available")]} onChoose={() => void changePlan('baby')} disabled={submitting} />
             <PlanColumn plan="eight" current={managedPlan} pendingPlan={pendingPlan} cancelAtPeriodEnd={summary?.subscription?.cancelAtPeriodEnd ?? false} benefits={[ui("Everything in Pulpo Baby"), ui("High usage limits"), planStorage('eight'), ui("Cancel any time")]} onChoose={() => void changePlan('eight')} disabled={submitting} />
-            <PlanColumn plan="fat" current={managedPlan} pendingPlan={pendingPlan} cancelAtPeriodEnd={summary?.subscription?.cancelAtPeriodEnd ?? false} benefits={[ui("Everything in Pulpo Eight"), ui("Highest usage limits"), planStorage('fat')]} onChoose={() => void changePlan('fat')} disabled={submitting} />
+            <PlanColumn plan="fat" current={managedPlan} pendingPlan={pendingPlan} cancelAtPeriodEnd={summary?.subscription?.cancelAtPeriodEnd ?? false} benefits={[ui("Everything in Pulpo Eight"), ui("Highest usage limits"), ui("Share {{percent}}% of your weekly usage with your Pool", { percent: summary?.sharedWeeklyPercent ?? 50 }), planStorage('fat')]} onChoose={() => void changePlan('fat')} disabled={submitting} />
           </div>
           {planError && <p className="text-center text-sm text-destructive">{planError}</p>}
         </DialogContent>

@@ -299,7 +299,7 @@ export async function registerUsageRoutes(app: FastifyInstance): Promise<void> {
           modelId: model.modelId,
           model: { id: model.modelId, name: model.modelName, logo: model.modelLogo },
           inferenceReferenceCostMicros: Number(usage.inferenceReferenceCostMicros),
-          subscriptionCoveredMicros: Number(usage.weeklyCostMicros),
+          subscriptionCoveredMicros: Number(usage.weeklyCostMicros) + Number(usage.sharedCostMicros),
           balanceAfterMicros,
         }
       }),
@@ -417,7 +417,7 @@ export async function registerUsageRoutes(app: FastifyInstance): Promise<void> {
         outputTokens: row.usage.outputTokens,
         costMicros: Number(row.usage.costMicros),
         inferenceReferenceCostMicros: Number(row.usage.inferenceReferenceCostMicros),
-        subscriptionCoveredMicros: Number(row.usage.weeklyCostMicros),
+        subscriptionCoveredMicros: Number(row.usage.weeklyCostMicros) + Number(row.usage.sharedCostMicros),
         costBreakdown: row.usage.costBreakdown,
       }}),
       nextCursor: rows.length > query.limit && last ? encodeUsageCursor({ createdAt: last.createdAt, id: last.id }) : null,

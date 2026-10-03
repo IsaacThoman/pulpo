@@ -365,6 +365,15 @@ export const poolInvitationSchema = z.object({
 })
 export type PoolInvitation = z.infer<typeof poolInvitationSchema>
 
+export const usageLimitBarSchema = z.object({
+  remainingPercentage: z.number().int().min(0).max(100),
+  availableBarPercentage: z.number().min(0).max(100),
+  pendingMicros: z.number().int().nonnegative(),
+  pendingBarPercentage: z.number().min(0).max(100),
+  resetsAt: isoDateSchema.nullable(),
+})
+export type UsageLimitBar = z.infer<typeof usageLimitBarSchema>
+
 export const poolSummarySchema = z.object({
   accountBalanceMicros: z.number().int().nonnegative(),
   pool: z.object({
@@ -373,6 +382,12 @@ export const poolSummarySchema = z.object({
     pooledBalanceMicros: z.number().int().nonnegative(),
     members: z.array(poolMemberSchema).max(6),
     pendingInvitations: z.array(poolInvitationSchema),
+    /** Shared weekly usage from Fat subscribers in the pool; null when nobody shares. */
+    sharedUsage: z.object({
+      total: usageLimitBarSchema,
+      /** The viewer's own five-hour limit on drawing from others' shared usage. */
+      fiveHour: usageLimitBarSchema.nullable(),
+    }).nullable(),
   }).nullable(),
   incomingInvitations: z.array(poolInvitationSchema),
 })

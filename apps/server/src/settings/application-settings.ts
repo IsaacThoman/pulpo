@@ -36,12 +36,18 @@ export const DEFAULT_EIGHT_WEEKLY_LIMIT_MICROS = 2_500_000
 export const DEFAULT_FAT_WEEKLY_LIMIT_MICROS = 6_500_000
 export const DEFAULT_EIGHT_FIVE_HOUR_LIMIT_MICROS = 1_000_000
 export const DEFAULT_FAT_FIVE_HOUR_LIMIT_MICROS = 1_500_000
+export const DEFAULT_FAT_SHARED_WEEKLY_PERCENT = 50
+export const DEFAULT_SHARED_FIVE_HOUR_LIMIT_MICROS = 1_000_000
 
 export const billingSettingsSchema = z.object({
   eightWeeklyLimitMicros: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).default(DEFAULT_EIGHT_WEEKLY_LIMIT_MICROS),
   fatWeeklyLimitMicros: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).default(DEFAULT_FAT_WEEKLY_LIMIT_MICROS),
   eightFiveHourLimitMicros: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).default(DEFAULT_EIGHT_FIVE_HOUR_LIMIT_MICROS),
   fatFiveHourLimitMicros: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).default(DEFAULT_FAT_FIVE_HOUR_LIMIT_MICROS),
+  // Share of a Fat subscriber's weekly allowance that other pool members may draw on.
+  fatSharedWeeklyPercent: z.number().int().min(0).max(100).default(DEFAULT_FAT_SHARED_WEEKLY_PERCENT),
+  // Each pool member's five-hour cap on drawing from shared allowances.
+  sharedFiveHourLimitMicros: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).default(DEFAULT_SHARED_FIVE_HOUR_LIMIT_MICROS),
   babyStorageLimitBytes: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).default(DEFAULT_BABY_STORAGE_LIMIT_BYTES),
   eightStorageLimitBytes: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).default(DEFAULT_EIGHT_STORAGE_LIMIT_BYTES),
   fatStorageLimitBytes: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).default(DEFAULT_FAT_STORAGE_LIMIT_BYTES),

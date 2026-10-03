@@ -5,6 +5,7 @@ import {
   applicationSettings,
   billingAccounts,
   billingSubscriptions,
+  budgetReservationAllowanceFunders,
   budgetReservationFunders,
   budgetReservations,
   fiveHourUsagePeriods,
@@ -114,7 +115,7 @@ export async function loadBillingEntitlements(
     && (!activeFiveHourPeriod || activePendingFiveHour.periodStart > activeFiveHourPeriod.periodStart)
     ? activePendingFiveHour.periodStart
     : activeFiveHourPeriod?.periodStart ?? null
-  const [[pendingWeekly], [pendingFiveHour]] = await Promise.all([
+  const [[pendingWeekly], [pendingShared], [pendingFiveHour]] = await Promise.all([
     tx.select({
       weekly: sql<number>`coalesce(sum(${budgetReservations.weeklyReservedMicros}), 0)::bigint`,
     }).from(budgetReservations).where(and(
@@ -122,6 +123,16 @@ export async function loadBillingEntitlements(
       eq(budgetReservations.status, 'pending'),
       eq(budgetReservations.weeklyPeriodStart, periodStart),
     )),
+    // Pool members' pending draws on this user's shared allowance use the same weekly allowance.
+    tx.select({
+      shared: sql<number>`coalesce(sum(${budgetReservationAllowanceFunders.reservedMicros}), 0)::bigint`,
+    }).from(budgetReservationAllowanceFunders)
+      .innerJoin(budgetReservations, eq(budgetReservations.id, budgetReservationAllowanceFunders.reservationId))
+      .where(and(
+        eq(budgetReservationAllowanceFunders.ownerUserId, userId),
+        eq(budgetReservationAllowanceFunders.weeklyPeriodStart, periodStart),
+        eq(budgetReservations.status, 'pending'),
+      )),
     fiveHourPeriodStart
       ? tx.select({ fiveHour: sql<number>`coalesce(sum(${budgetReservations.fiveHourReservedMicros}), 0)::bigint` })
         .from(budgetReservations).where(and(
@@ -148,7 +159,7 @@ export async function loadBillingEntitlements(
   const fiveHourLimitMicros = account?.fiveHourLimitOverrideMicros ?? defaultFiveHourLimit
   const storageLimitBytes = account?.storageLimitOverrideBytes ?? storageDefaultForPlan(settings, plan)
   const weeklySpentMicros = period?.spentMicros ?? 0
-  const weeklyPendingMicros = Number(pendingWeekly?.weekly ?? 0)
+  const weeklyPendingMicros = Number(pendingWeekly?.weekly ?? 0) + Number(pendingShared?.shared ?? 0)
   const weeklyRemainingMicros = Math.max(0, weeklyLimitMicros - weeklySpentMicros - weeklyPendingMicros)
   const fiveHourSpentMicros = activeFiveHourPeriod && fiveHourPeriodStart?.getTime() === activeFiveHourPeriod.periodStart.getTime()
     ? activeFiveHourPeriod.spentMicros
