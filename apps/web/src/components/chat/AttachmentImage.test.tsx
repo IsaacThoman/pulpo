@@ -10,6 +10,9 @@ vi.hoisted(() => {
   })
 })
 
+// react-virtuoso (table previews) probes the DOM when it loads, which this stub document lacks.
+vi.mock('react-virtuoso', () => ({ TableVirtuoso: () => null }))
+
 describe('attachment card actions', () => {
   it('separates preview and download actions for supported message files', () => {
     const markup = renderToStaticMarkup(<MessageAttachmentList attachments={[

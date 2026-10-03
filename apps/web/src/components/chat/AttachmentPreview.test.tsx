@@ -15,12 +15,12 @@ afterEach(() => {
   vi.mocked(writeClipboardText).mockClear()
 })
 
-function renderPreview(name: string, text: string) {
+function renderPreview(name: string, text: string, mimeType = 'text/plain') {
   // jsdom's File has no text(); the dialog reads previews through it.
-  const file = Object.assign(new File([text], name, { type: 'text/plain' }), { text: async () => text })
+  const file = Object.assign(new File([text], name, { type: mimeType }), { text: async () => text })
   return render(
     <AttachmentPreviewDialog
-      attachment={{ id: name, name, mimeType: 'text/plain', type: 'file', size: file.size }}
+      attachment={{ id: name, name, mimeType, type: 'file', size: file.size }}
       sourceFile={file}
       open
       onOpenChange={() => undefined}
@@ -43,5 +43,25 @@ describe('attachment text previews', () => {
     await waitFor(() => expect(view.getByText(/Showing the first part of/)).toBeTruthy())
 
     expect(view.queryByRole('button', { name: 'Copy text' })).toBeNull()
+  })
+})
+
+describe('attachment table previews', () => {
+  it('keeps the whole file and loads rows in batches', async () => {
+    const lines = ['id,name', ...Array.from({ length: 450 }, (_, index) => `${index + 1},row ${index + 1}`)]
+    const text = lines.join('\n')
+    const view = renderPreview('big.csv', text, 'text/csv')
+
+    expect(await view.findByText('200 rows loaded · 2 columns · scroll for more')).toBeTruthy()
+    expect(view.getByText('name')).toBeTruthy()
+    expect(view.queryByText(/Showing the first part of/)).toBeNull()
+
+    fireEvent.click(view.getByRole('button', { name: 'Copy text' }))
+    expect(writeClipboardText).toHaveBeenCalledWith(text)
+  })
+
+  it('shows single-column files as text', async () => {
+    const view = renderPreview('list.csv', 'one\ntwo', 'text/csv')
+    await waitFor(() => expect(view.container.ownerDocument.querySelector('[data-preview-kind="text"]')).toBeTruthy())
   })
 })
