@@ -12,6 +12,7 @@
     "test:code-preview": "node tests/code-preview.browser.mjs && node tests/code-preview.browser.mjs --build",
     "test:long-thread-opening": "node tests/long-thread-opening.browser.mjs",
     "test:attachment-scroll": "node tests/attachment-scroll.browser.mjs",
+    "test:table-preview": "node tests/table-preview.browser.mjs",
     "test:sidebar-animation": "node tests/sidebar-animation.browser.mjs",
     "capture:landing": "node scripts/capture-landing-screenshots.mjs"
   },
