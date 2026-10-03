@@ -2,12 +2,14 @@
 import { act, createElement, type ReactNode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { DICTATION_WAVEFORM_SAMPLES, emptyDictationLevels } from '@pulpo/client-core'
+import { DICTATION_LEVEL_INTERVAL_MS, DICTATION_WAVEFORM_BAR_PITCH, DICTATION_WAVEFORM_SAMPLES, emptyDictationLevels } from '@pulpo/client-core'
 
 type Style = Record<string, unknown>
 const mocks = vi.hoisted(() => ({
   layouts: [] as Array<(event: { nativeEvent: { layout: { width: number } } }) => void>,
   sharedValues: [] as Array<{ value: unknown }>,
+  timings: [] as unknown[],
+  reactions: [] as Array<{ prepare: () => unknown; react: (current: unknown, previous: unknown) => void }>,
 }))
 const flatten = (style: unknown): Style => (Array.isArray(style) ? style : [style])
   .flat(Infinity as 1)
@@ -40,10 +42,14 @@ vi.mock('react-native-reanimated', async () => {
         'data-entering': entering ? 'yes' : undefined, 'data-exiting': exiting ? 'yes' : undefined,
       }, children),
     },
-    Easing: { out: (curve: string) => `out(${curve})`, inOut: (curve: string) => `inOut(${curve})`, quad: 'quad', cubic: 'cubic' },
+    Easing: { out: (curve: string) => `out(${curve})`, inOut: (curve: string) => `inOut(${curve})`, quad: 'quad', cubic: 'cubic', linear: 'linear' },
     ReduceMotion: { System: 'system' },
     // Timings resolve to their target so rendered styles show the settled value.
-    withTiming: (target: unknown) => target,
+    withTiming: (target: unknown, config?: unknown) => { mocks.timings.push(config); return target },
+    withSequence: (...steps: unknown[]) => ({ sequence: steps }),
+    useAnimatedReaction: (prepare: () => unknown, react: (current: unknown, previous: unknown) => void) => {
+      mocks.reactions.push({ prepare, react })
+    },
     useAnimatedStyle: (factory: () => unknown) => factory(),
     useSharedValue: (initial: unknown) => {
       const ref = useRef<{ value: unknown } | null>(null)
@@ -84,6 +90,8 @@ const bars = () => [...container.querySelectorAll('[data-testid="animated"]')].m
 beforeEach(() => {
   mocks.layouts.length = 0
   mocks.sharedValues.length = 0
+  mocks.reactions.length = 0
+  mocks.timings.length = 0
   container = document.createElement('div')
   document.body.append(container)
   root = createRoot(container)
@@ -99,7 +107,8 @@ describe('DictationWaveform', () => {
     await render(createElement(DictationWaveform, { source, color: '#111' }))
     expect(bars()).toHaveLength(0)
     await layout(200)
-    expect(bars()).toHaveLength(40)
+    // Forty visible slots plus the bar sliding out past the left edge.
+    expect(bars()).toHaveLength(41)
     await layout(10_000)
     expect(bars()).toHaveLength(DICTATION_WAVEFORM_SAMPLES)
     expect(container.firstElementChild!.getAttribute('aria-hidden')).toBe('true')
@@ -109,11 +118,12 @@ describe('DictationWaveform', () => {
     const levels = emptyDictationLevels()
     levels[DICTATION_WAVEFORM_SAMPLES - 1] = 1
     levels[DICTATION_WAVEFORM_SAMPLES - 2] = 0.5
-    levels[0] = 1 // Too old to fit three bars.
+    levels[0] = 1 // Too old to fit the four bars a 15 pt track needs.
     const { source } = levelSource(levels)
     await render(createElement(DictationWaveform, { source, color: '#111' }))
     await layout(15)
-    const [oldest, middle, newest] = bars()
+    const [leaving, oldest, middle, newest] = bars()
+    expect(leaving!.opacity).toBeCloseTo(0.22)
     const scale = (style: Style) => (style.transform as Array<{ scaleY: number }>)[0]!.scaleY
     expect(scale(newest!)).toBe(1)
     expect(newest!.opacity).toBe(1)
@@ -122,6 +132,35 @@ describe('DictationWaveform', () => {
     expect(scale(oldest!)).toBeCloseTo(2 / DICTATION_WAVEFORM_HEIGHT)
     expect(oldest!.opacity).toBeCloseTo(0.22)
     expect(newest!.backgroundColor).toBe('#111')
+  })
+
+  it('right-aligns a gapped row inside a clipped track', async () => {
+    const { source } = levelSource()
+    await render(createElement(DictationWaveform, { source, color: '#111' }))
+    const track = container.firstElementChild!
+    expect(styleOf(track)).toMatchObject({ overflow: 'hidden' })
+    expect(styleOf(track.firstElementChild!)).toMatchObject({ position: 'absolute', right: 0, flexDirection: 'row', gap: 3, transform: [{ translateX: 0 }] })
+  })
+
+  it('slides the row one bar to the left over each sampling interval when a sample arrives', async () => {
+    const { source } = levelSource()
+    await render(createElement(DictationWaveform, { source, color: '#111' }))
+    const [reaction] = mocks.reactions
+    const offset = mocks.sharedValues[1]!
+    const levels = mocks.sharedValues[0]!
+    expect(reaction!.prepare()).toBe(levels.value)
+    reaction!.react(levels.value, null)
+    expect(offset.value).toBe(0)
+    const previous = levels.value
+    reaction!.react(previous, previous)
+    expect(offset.value).toBe(0)
+    mocks.timings.length = 0
+    reaction!.react([...emptyDictationLevels().slice(1), 0.5], previous)
+    expect(offset.value).toEqual({ sequence: [DICTATION_WAVEFORM_BAR_PITCH, 0] })
+    expect(mocks.timings).toEqual([
+      { duration: 0, reduceMotion: 'system' },
+      { duration: DICTATION_LEVEL_INTERVAL_MS, easing: 'linear', reduceMotion: 'system' },
+    ])
   })
 
   it('pushes level updates into the shared value without re-rendering and unsubscribes on unmount', async () => {

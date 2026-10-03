@@ -14,6 +14,7 @@ export const DICTATION_WAVEFORM_SAMPLES = 64
 export const DICTATION_LEVEL_INTERVAL_MS = 80
 /** Horizontal distance between waveform bars, including the bar itself. */
 export const DICTATION_WAVEFORM_BAR_PITCH = 5
+export const DICTATION_WAVEFORM_BAR_WIDTH = 2
 /** The recorder stops itself after this many seconds. */
 export const DICTATION_MAX_SECONDS = 90
 /** Remaining seconds at which the elapsed timer starts warning about the limit. */
@@ -52,9 +53,13 @@ export function pushDictationLevel(history: readonly number[], level: number): r
   return [...history.slice(1), clamped]
 }
 
-/** Number of bars that fit the measured width without exceeding the level history. */
+/**
+ * Bars needed to fill the measured width while the waveform scrolls: every slot,
+ * plus the one sliding out past the left edge as the newest enters on the right.
+ * Never more than the level history holds.
+ */
 export function dictationWaveformBarCount(width: number, samples = DICTATION_WAVEFORM_SAMPLES): number {
-  return Math.max(1, Math.min(samples, Math.floor(width / DICTATION_WAVEFORM_BAR_PITCH)))
+  return Math.max(2, Math.min(samples, Math.ceil(Math.max(0, width) / DICTATION_WAVEFORM_BAR_PITCH) + 1))
 }
 
 export function formatDictationElapsed(seconds: number): string {

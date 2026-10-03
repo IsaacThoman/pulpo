@@ -71,10 +71,11 @@ describe('dictation waveform levels', () => {
     expect(pushDictationLevel(loud, 0)).not.toBe(loud)
   })
 
-  it('fits bars to the available width without exceeding the history', () => {
-    expect(dictationWaveformBarCount(0)).toBe(1)
-    expect(dictationWaveformBarCount(49)).toBe(9)
-    expect(dictationWaveformBarCount(200)).toBe(40)
+  it('covers the width plus one scrolling bar without exceeding the history', () => {
+    expect(dictationWaveformBarCount(0)).toBe(2)
+    expect(dictationWaveformBarCount(-10)).toBe(2)
+    expect(dictationWaveformBarCount(49)).toBe(11)
+    expect(dictationWaveformBarCount(200)).toBe(41)
     expect(dictationWaveformBarCount(5000)).toBe(DICTATION_WAVEFORM_SAMPLES)
     expect(dictationWaveformBarCount(5000, 128)).toBe(128)
   })

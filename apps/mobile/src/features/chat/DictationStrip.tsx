@@ -3,17 +3,28 @@ import { StyleSheet, Text, View, type ColorValue, type LayoutChangeEvent } from 
 import Reanimated, {
   Easing,
   ReduceMotion,
+  useAnimatedReaction,
   useAnimatedStyle,
   useSharedValue,
+  withSequence,
   withTiming,
   type SharedValue,
 } from 'react-native-reanimated'
-import { DICTATION_WAVEFORM_SAMPLES, dictationNearsLimit, dictationWaveformBarCount, formatDictationElapsed } from '@pulpo/client-core'
+import {
+  DICTATION_LEVEL_INTERVAL_MS,
+  DICTATION_WAVEFORM_BAR_PITCH,
+  DICTATION_WAVEFORM_BAR_WIDTH,
+  DICTATION_WAVEFORM_SAMPLES,
+  dictationNearsLimit,
+  dictationWaveformBarCount,
+  formatDictationElapsed,
+} from '@pulpo/client-core'
 import type { DictationLevelSource, DictationState } from './dictation'
 import { DICTATION_WAVEFORM_HEIGHT, dictationStatusLabel, dictationStripEntering, dictationStripExiting } from './dictationMotion'
 
 const MIN_BAR_HEIGHT = 2
-const LEVEL_TIMING = { duration: 100, easing: Easing.out(Easing.quad), reduceMotion: ReduceMotion.System } as const
+/** One sampling interval, linear, so consecutive slides join into continuous motion. */
+const SCROLL_TIMING = { duration: DICTATION_LEVEL_INTERVAL_MS, easing: Easing.linear, reduceMotion: ReduceMotion.System } as const
 const STATUS_TIMING = { duration: 220, easing: Easing.out(Easing.cubic), reduceMotion: ReduceMotion.System } as const
 
 export type DictationStripColors = { text: ColorValue; muted: ColorValue; warning: ColorValue }
@@ -33,30 +44,42 @@ const WaveformBar = memo(function WaveformBar({ levels, index, color }: {
   index: number
   color: ColorValue
 }) {
+  // Each bar keeps its sample's height as it travels; the row's slide supplies the motion.
   const animatedStyle = useAnimatedStyle(() => {
     const level = levels.value[index] ?? 0
     return {
-      opacity: withTiming(0.22 + level * 0.78, LEVEL_TIMING),
-      transform: [{
-        scaleY: withTiming((MIN_BAR_HEIGHT + level * (DICTATION_WAVEFORM_HEIGHT - MIN_BAR_HEIGHT)) / DICTATION_WAVEFORM_HEIGHT, LEVEL_TIMING),
-      }],
+      opacity: 0.22 + level * 0.78,
+      transform: [{ scaleY: (MIN_BAR_HEIGHT + level * (DICTATION_WAVEFORM_HEIGHT - MIN_BAR_HEIGHT)) / DICTATION_WAVEFORM_HEIGHT }],
     }
   })
   return <Reanimated.View style={[styles.bar, { backgroundColor: color }, animatedStyle]} />
 })
 
-/** Scrolling loudness history: the newest sample enters on the right. */
+/** Scrolling loudness history: bars glide left and the newest sample slides in from the right. */
 export const DictationWaveform = memo(function DictationWaveform({ source, color }: { source: DictationLevelSource; color: ColorValue }) {
   const levels = useLevelHistory(source)
+  const offset = useSharedValue(0)
+  // A new sample moves every bar one slot left. Starting the row one pitch to the right and
+  // sliding it back over one interval turns those steps into a smooth scroll.
+  useAnimatedReaction(() => levels.value, (current, previous) => {
+    if (previous === null || current === previous) return
+    offset.value = withSequence(
+      withTiming(DICTATION_WAVEFORM_BAR_PITCH, { duration: 0, reduceMotion: ReduceMotion.System }),
+      withTiming(0, SCROLL_TIMING),
+    )
+  })
+  const rowStyle = useAnimatedStyle(() => ({ transform: [{ translateX: offset.value }] }))
   const [barCount, setBarCount] = useState(0)
   const onLayout = useCallback((event: LayoutChangeEvent) => {
     setBarCount(dictationWaveformBarCount(event.nativeEvent.layout.width))
   }, [])
   return (
     <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={styles.waveform} onLayout={onLayout}>
-      {Array.from({ length: barCount }, (_, index) => (
-        <WaveformBar key={index} levels={levels} index={DICTATION_WAVEFORM_SAMPLES - barCount + index} color={color} />
-      ))}
+      <Reanimated.View style={[styles.waveformRow, rowStyle]}>
+        {Array.from({ length: barCount }, (_, index) => (
+          <WaveformBar key={index} levels={levels} index={DICTATION_WAVEFORM_SAMPLES - barCount + index} color={color} />
+        ))}
+      </Reanimated.View>
     </View>
   )
 })
@@ -124,8 +147,10 @@ const styles = StyleSheet.create({
   statusLayer: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 },
   recordingRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 4 },
   labelLayer: { justifyContent: 'center', paddingHorizontal: 8 },
-  waveform: { flex: 1, minWidth: 0, height: DICTATION_WAVEFORM_HEIGHT, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', overflow: 'hidden' },
-  bar: { width: 2, height: DICTATION_WAVEFORM_HEIGHT, borderRadius: 1 },
+  waveform: { flex: 1, minWidth: 0, height: DICTATION_WAVEFORM_HEIGHT, overflow: 'hidden' },
+  // Right-aligned and wider than the track, so the oldest bar hides past the left edge.
+  waveformRow: { position: 'absolute', top: 0, bottom: 0, right: 0, flexDirection: 'row', alignItems: 'center', gap: DICTATION_WAVEFORM_BAR_PITCH - DICTATION_WAVEFORM_BAR_WIDTH },
+  bar: { width: DICTATION_WAVEFORM_BAR_WIDTH, height: DICTATION_WAVEFORM_HEIGHT, borderRadius: DICTATION_WAVEFORM_BAR_WIDTH / 2 },
   elapsed: { fontSize: 13, fontVariant: ['tabular-nums'] },
   label: { fontSize: 14, textAlign: 'center' },
 })

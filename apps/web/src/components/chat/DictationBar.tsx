@@ -1,6 +1,14 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Check, Loader2, X } from 'lucide-react'
-import { DICTATION_MAX_SECONDS, dictationNearsLimit, dictationWaveformBarCount, formatDictationElapsed } from '@pulpo/client-core'
+import {
+  DICTATION_LEVEL_INTERVAL_MS,
+  DICTATION_MAX_SECONDS,
+  DICTATION_WAVEFORM_BAR_PITCH,
+  DICTATION_WAVEFORM_BAR_WIDTH,
+  dictationNearsLimit,
+  dictationWaveformBarCount,
+  formatDictationElapsed,
+} from '@pulpo/client-core'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useTranslation } from '@/i18n/useAppTranslation'
@@ -28,24 +36,58 @@ function useElementWidth<T extends HTMLElement>() {
   return [ref, width] as const
 }
 
-/** Scrolling loudness history: the newest sample enters on the right. */
+/**
+ * A new sample moves every bar one slot left. Starting the row one pitch to the right and
+ * sliding it back over one sampling interval turns those steps into a smooth scroll.
+ */
+function useScrollOnNewSample(levels: readonly number[]) {
+  const ref = useRef<HTMLDivElement>(null)
+  const previous = useRef(levels)
+  const animation = useRef<Animation | null>(null)
+  useLayoutEffect(() => {
+    if (previous.current === levels) return
+    previous.current = levels
+    const row = ref.current
+    if (!row || typeof row.animate !== 'function') return
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return
+    animation.current?.cancel()
+    animation.current = row.animate(
+      [{ transform: `translateX(${DICTATION_WAVEFORM_BAR_PITCH}px)` }, { transform: 'translateX(0)' }],
+      { duration: DICTATION_LEVEL_INTERVAL_MS, easing: 'linear' },
+    )
+  }, [levels])
+  useEffect(() => () => animation.current?.cancel(), [])
+  return ref
+}
+
+/** Scrolling loudness history: bars glide left and the newest sample slides in from the right. */
 export function DictationWaveform({ levels }: { levels: readonly number[] }) {
   const [ref, width] = useElementWidth<HTMLDivElement>()
+  const rowRef = useScrollOnNewSample(levels)
   const count = dictationWaveformBarCount(width, levels.length)
   return (
-    <div ref={ref} aria-hidden className="flex min-w-0 flex-1 items-center justify-between overflow-hidden" style={{ height: BAR_HEIGHT }} data-testid="dictation-waveform">
-      {levels.slice(levels.length - count).map((level, index) => (
-        <span
-          key={index}
-          data-level={level}
-          className="w-0.5 shrink-0 rounded-full bg-foreground transition-[transform,opacity] duration-100 ease-out motion-reduce:transition-none"
-          style={{
-            height: BAR_HEIGHT,
-            opacity: 0.22 + level * 0.78,
-            transform: `scaleY(${(MIN_BAR_HEIGHT + level * (BAR_HEIGHT - MIN_BAR_HEIGHT)) / BAR_HEIGHT})`,
-          }}
-        />
-      ))}
+    <div ref={ref} aria-hidden className="relative min-w-0 flex-1 overflow-hidden" style={{ height: BAR_HEIGHT }} data-testid="dictation-waveform">
+      {/* Right-aligned and wider than the track, so the oldest bar hides past the left edge. */}
+      <div
+        ref={rowRef}
+        className="absolute inset-y-0 right-0 flex items-center"
+        style={{ gap: DICTATION_WAVEFORM_BAR_PITCH - DICTATION_WAVEFORM_BAR_WIDTH }}
+        data-testid="dictation-waveform-row"
+      >
+        {levels.slice(levels.length - count).map((level, index) => (
+          <span
+            key={index}
+            data-level={level}
+            className="shrink-0 rounded-full bg-foreground"
+            style={{
+              width: DICTATION_WAVEFORM_BAR_WIDTH,
+              height: BAR_HEIGHT,
+              opacity: 0.22 + level * 0.78,
+              transform: `scaleY(${(MIN_BAR_HEIGHT + level * (BAR_HEIGHT - MIN_BAR_HEIGHT)) / BAR_HEIGHT})`,
+            }}
+          />
+        ))}
+      </div>
     </div>
   )
 }

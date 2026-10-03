@@ -112,25 +112,76 @@ describe('useMicrophoneLevels', () => {
 })
 
 describe('DictationWaveform', () => {
-  const bars = (container: HTMLElement) => [...container.querySelectorAll<HTMLElement>('[data-testid="dictation-waveform"] > span')]
+  const bars = (container: HTMLElement) => [...container.querySelectorAll<HTMLElement>('[data-testid="dictation-waveform-row"] > span')]
+  const row = (container: HTMLElement) => container.querySelector<HTMLElement>('[data-testid="dictation-waveform-row"]')!
+  function stubAnimate() {
+    const animations: Array<{ keyframes: Keyframe[]; options: KeyframeAnimationOptions; cancel: ReturnType<typeof vi.fn> }> = []
+    const animate = vi.fn(function (keyframes: Keyframe[], options: KeyframeAnimationOptions) {
+      const animation = { keyframes, options, cancel: vi.fn() }
+      animations.push(animation)
+      return animation as unknown as Animation
+    })
+    Object.defineProperty(HTMLElement.prototype, 'animate', { configurable: true, value: animate })
+    return animations
+  }
+  function setReducedMotion(reduce: boolean) {
+    vi.stubGlobal('matchMedia', (query: string) => ({ matches: reduce && query === '(prefers-reduced-motion: reduce)' }))
+  }
+  afterEach(() => { delete (HTMLElement.prototype as { animate?: unknown }).animate })
 
-  it('fits bars to the measured width with the newest sample on the right', () => {
+  it('covers the width plus one leaving bar, with the newest sample on the right', () => {
     observedWidth = 15
     const levels = [1, 0, 0, 0.5, 1]
     const { container } = render(<DictationWaveform levels={levels} />)
     const rendered = bars(container)
-    expect(rendered.map((bar) => Number(bar.dataset.level))).toEqual([0, 0.5, 1])
-    expect(rendered[2]!.style.transform).toBe('scaleY(1)')
-    expect(rendered[2]!.style.opacity).toBe('1')
+    expect(rendered.map((bar) => Number(bar.dataset.level))).toEqual([0, 0, 0.5, 1])
+    expect(rendered[3]!.style.transform).toBe('scaleY(1)')
+    expect(rendered[3]!.style.opacity).toBe('1')
     expect(rendered[0]!.style.transform).toBe(`scaleY(${2 / 24})`)
     expect(Number(rendered[0]!.style.opacity)).toBeCloseTo(0.22)
+    expect(rendered[0]!.style.width).toBe('2px')
     expect(container.querySelector('[data-testid="dictation-waveform"]')!.getAttribute('aria-hidden')).toBe('true')
+  })
+
+  it('right-aligns a gapped row inside a clipped track', () => {
+    observedWidth = 100
+    const { container } = render(<DictationWaveform levels={[0, 0, 0]} />)
+    expect(container.querySelector('[data-testid="dictation-waveform"]')!.className).toContain('overflow-hidden')
+    expect(row(container).className).toContain('right-0')
+    expect(row(container).style.gap).toBe('3px')
   })
 
   it('never draws more bars than the history holds', () => {
     observedWidth = 10_000
     const { container } = render(<DictationWaveform levels={[0.2, 0.4]} />)
     expect(bars(container)).toHaveLength(2)
+  })
+
+  it('slides the row one bar to the left over each sampling interval when a sample arrives', () => {
+    setReducedMotion(false)
+    const animations = stubAnimate()
+    observedWidth = 20
+    const first = [0, 0, 0, 0, 0.2, 0.4]
+    const view = render(<DictationWaveform levels={first} />)
+    expect(animations).toHaveLength(0)
+    view.rerender(<DictationWaveform levels={first} />)
+    expect(animations).toHaveLength(0)
+    view.rerender(<DictationWaveform levels={[0, 0, 0, 0.2, 0.4, 0.9]} />)
+    expect(animations).toHaveLength(1)
+    expect(animations[0]!.keyframes).toEqual([{ transform: 'translateX(5px)' }, { transform: 'translateX(0)' }])
+    expect(animations[0]!.options).toEqual({ duration: DICTATION_LEVEL_INTERVAL_MS, easing: 'linear' })
+    view.rerender(<DictationWaveform levels={[0, 0, 0.2, 0.4, 0.9, 0.1]} />)
+    expect(animations[0]!.cancel).toHaveBeenCalledOnce()
+    view.unmount()
+    expect(animations[1]!.cancel).toHaveBeenCalledOnce()
+  })
+
+  it('steps without sliding when reduced motion is requested', () => {
+    setReducedMotion(true)
+    const animations = stubAnimate()
+    const view = render(<DictationWaveform levels={[0, 0.2]} />)
+    view.rerender(<DictationWaveform levels={[0.2, 0.4]} />)
+    expect(animations).toHaveLength(0)
   })
 })
 
