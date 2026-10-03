@@ -39,7 +39,7 @@ export async function loadHistoryPage(chatId: string, userId: string, leafId: st
   // A concurrent deletion must not splice disconnected history into a cached branch.
   if (rows.length !== ids.length) throw new AppError(409, 'history_changed', 'The conversation changed. Reload its history.')
   const costs = ids.length ? await db.select({ responseId: usageEvents.responseId, costMicros: usageEvents.costMicros,
-    inferenceReferenceCostMicros: usageEvents.inferenceReferenceCostMicros, subscriptionCoveredMicros: usageEvents.weeklyCostMicros,
+    inferenceReferenceCostMicros: usageEvents.inferenceReferenceCostMicros, subscriptionCoveredMicros: sql<number>`${usageEvents.weeklyCostMicros} + ${usageEvents.sharedCostMicros}`,
   }).from(usageEvents).where(inArray(usageEvents.responseId, ids)) : []
   const byResponse = new Map(costs.map(row => [row.responseId, { costMicros: Number(row.costMicros),
     inferenceReferenceCostMicros: Number(row.inferenceReferenceCostMicros), subscriptionCoveredMicros: Number(row.subscriptionCoveredMicros) }]))

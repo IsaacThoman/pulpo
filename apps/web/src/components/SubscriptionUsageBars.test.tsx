@@ -50,4 +50,13 @@ describe('SubscriptionUsageBars', () => {
   it('renders nothing when the account has no subscription limits', () => {
     expect(renderToStaticMarkup(<SubscriptionUsageBars weekly={null} fiveHour={null} />)).toBe('')
   })
+  it('shows a Fat subscriber how much of their weekly usage their Pool can still draw', () => {
+    const shared = { ...weekly, remainingPercentage: 30, availableBarPercentage: 30 }
+    const markup = renderToStaticMarkup(<SubscriptionUsageBars weekly={weekly} fiveHour={null} shared={shared} sharedWeeklyPercent={50} />)
+
+    expect(markup).toContain('Shared usage')
+    expect(markup).toContain('30% left')
+    expect(markup).toContain('Pool members can use up to 50% of your weekly usage')
+    expect(renderToStaticMarkup(<SubscriptionUsageBars weekly={weekly} fiveHour={null} />)).not.toContain('Shared usage')
+  })
 })

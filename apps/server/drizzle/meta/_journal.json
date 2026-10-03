@@ -631,6 +631,13 @@
       "when": 1790953458359,
       "tag": "0089_usage_cost_breakdown",
       "breakpoints": true
+    },
+    {
+      "idx": 90,
+      "version": "7",
+      "when": 1791034025037,
+      "tag": "0090_fat_shared_allowance",
+      "breakpoints": true
     }
   ]
 }

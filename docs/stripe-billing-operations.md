@@ -35,6 +35,17 @@ Subscriptions include weekly and five-hour usage allowances and do not grant pla
 
 The portal must not offer plan switching, because a portal downgrade would bypass this proration rule.
 
+## Shared usage
+
+Fat subscribers share part of their weekly allowance with the other members of their Pool. It is not extra usage: a member's draw counts against the owner's weekly allowance, and the shared limit only caps how much of it members can take.
+
+- **Shared limit.** `fatSharedWeeklyPercent` (default 50%) of the owner's weekly limit, after any per-user override. It resets with the weekly allowance. The owner can still use their whole weekly allowance themselves.
+- **Member five-hour limit.** Each member draws within their own five-hour window, capped by `sharedFiveHourLimitMicros` (default $1.00), so one member cannot use up the shared limit in one sitting.
+- **Funding order.** A request is paid from the member's own plan allowance, then shared usage, then their balance, then the Pool balance. With several Fat subscribers in a Pool, members draw from each in proportion to what they have left.
+- **Records.** Reservations record each owner's share in `budget_reservation_allowance_funders`. Settlement adds it to the owner's `weekly_usage_periods` and `shared_allowance_periods` and to the member's `shared_five_hour_usage_periods`. `usage_events.shared_cost_micros` counts as covered by a subscription.
+
+Owners see a **Shared usage** bar on the billing page. The Pool section on the Friends page shows shared usage across every Fat subscriber in the Pool, plus the viewer's own five-hour shared limit.
+
 ## Automatic top-ups
 
 Users can save a card and have Pulpo add credit when their available balance falls below a threshold they choose. A card is saved either through a card-only Checkout (`mode: setup`) or by ticking "Use this card for automatic top-ups" when buying credits (`setup_future_usage: off_session`). Both collect a billing address so tax can be calculated later.

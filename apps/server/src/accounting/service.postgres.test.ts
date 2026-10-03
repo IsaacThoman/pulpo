@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
-import { eq, inArray } from 'drizzle-orm'
+import { eq, inArray, sql } from 'drizzle-orm'
 import { db, queryClient } from '../database/client.js'
-import { agentRuns, apiKeys, billingAccounts, budgetReservations, creditLedger, budgetReservationFunders, chats, generationAttempts, models, modelPricingVersions, pools, poolMembers, providerConnections, requestLogs, responses, toolExecutions, users, usageEvents, weeklyUsagePeriods } from '../database/schema.js'
+import { agentRuns, apiKeys, applicationSettings, billingAccounts, budgetReservationAllowanceFunders, budgetReservations, fiveHourUsagePeriods, sharedAllowancePeriods, sharedFiveHourUsagePeriods, creditLedger, budgetReservationFunders, chats, generationAttempts, models, modelPricingVersions, pools, poolMembers, providerConnections, requestLogs, responses, toolExecutions, users, usageEvents, weeklyUsagePeriods } from '../database/schema.js'
 import { chargeMeteredUsage, extendBudgetReservationFixedCost, releaseBudget, reserveBudget, resizeBudgetReservation, retainBudgetReservation, settleBudget } from './service.js'
 
 vi.mock('../responses/events.js', () => ({ publishStateChange: vi.fn() }))
@@ -23,6 +23,16 @@ async function account(balanceMicros: number, weekly?: number, fiveHour = weekly
   await db.insert(users).values({ id, email: `${id}@example.test`, username: id, name: 'Budget QA', balanceMicros })
   if (weekly !== undefined) await db.insert(billingAccounts).values({ userId: id, planOverride: 'eight', weeklyLimitOverrideMicros: weekly, fiveHourLimitOverrideMicros: fiveHour })
   return id
+}
+async function fatAccount(weekly: number, fiveHour = weekly) {
+  const id = await account(0)
+  await db.insert(billingAccounts).values({ userId: id, planOverride: 'fat', weeklyLimitOverrideMicros: weekly, fiveHourLimitOverrideMicros: fiveHour })
+  return id
+}
+async function spent(table: typeof weeklyUsagePeriods | typeof fiveHourUsagePeriods | typeof sharedAllowancePeriods | typeof sharedFiveHourUsagePeriods, userId: string) {
+  const column = 'ownerUserId' in table ? table.ownerUserId : table.userId
+  const [row] = await db.execute<{ total: string }>(sql`select coalesce(sum(${table.spentMicros}), 0)::bigint as total from ${table} where ${column} = ${userId}`)
+  return Number(row?.total ?? 0)
 }
 async function request(userId: string, maxOutputTokens = 16_000, apiKeyId?: string) {
   const chatId = randomUUID(), responseId = randomUUID()
@@ -307,5 +317,90 @@ describe.skipIf(!enabled)('budget-aware reservations in PostgreSQL', () => {
     await db.update(budgetReservations).set({ weeklyPeriodStart: new Date('2020-01-06'), fiveHourPeriodStart: new Date('2020-01-06') })
       .where(eq(budgetReservations.responseId, input.responseId))
     expect((await resizeBudgetReservation({ ...input, maxOutputTokens: 32_000, accruedCostMicros: 0 })).maxOutputTokens).toBe(8_000)
+  })
+  it('draws a pool member request from a Fat owner\'s shared half of their weekly usage', async () => {
+    const owner = await fatAccount(20_000), member = await account(0)
+    await pool([owner, member])
+    const input = await request(member)
+    expect(await reserveBudget(input)).toEqual({ amountMicros: 10_000, maxOutputTokens: 9_999 })
+    expect(await reservation(input.responseId)).toMatchObject({ weeklyReservedMicros: 0, sharedReservedMicros: 10_000, balanceReservedMicros: 0 })
+    expect(await db.select().from(budgetReservationAllowanceFunders).where(eq(budgetReservationAllowanceFunders.ownerUserId, owner))).toMatchObject([{ reservedMicros: 10_000 }])
+    await settleBudget({ responseId: input.responseId, usage, latencyMs: 1 })
+    expect(await reservation(input.responseId)).toMatchObject({ settledSharedMicros: 101, settledBalanceMicros: 0 })
+    expect(await spent(weeklyUsagePeriods, owner)).toBe(101)
+    expect(await spent(sharedAllowancePeriods, owner)).toBe(101)
+    expect(await spent(sharedFiveHourUsagePeriods, member)).toBe(101)
+    expect(await spent(weeklyUsagePeriods, member)).toBe(0)
+    expect((await db.select().from(usageEvents).where(eq(usageEvents.responseId, input.responseId)))[0]).toMatchObject({ sharedCostMicros: 101, weeklyCostMicros: 0, balanceCostMicros: 0 })
+    expect((await db.select().from(users).where(eq(users.id, member)))[0]?.balanceMicros).toBe(0)
+    // The owner keeps the rest of their own weekly usage.
+    const own = await request(owner)
+    expect(await reserveBudget(own)).toEqual({ amountMicros: 16_001, maxOutputTokens: 16_000 })
+    expect(await reservation(own.responseId)).toMatchObject({ weeklyReservedMicros: 16_001, sharedReservedMicros: 0 })
+  })
+
+  it('counts pending member draws against the owner\'s weekly usage', async () => {
+    const owner = await fatAccount(20_000), member = await account(0)
+    await pool([owner, member])
+    await reserveBudget(await request(member))
+    const own = await request(owner)
+    expect(await reserveBudget(own)).toEqual({ amountMicros: 10_000, maxOutputTokens: 9_999 })
+  })
+
+  it('uses a member\'s own allowance before shared usage and shared usage before balance', async () => {
+    const owner = await fatAccount(20_000), member = await account(3_000, 2_000)
+    await pool([owner, member])
+    const input = await request(member)
+    expect(await reserveBudget(input)).toEqual({ amountMicros: 15_000, maxOutputTokens: 14_999 })
+    expect(await reservation(input.responseId)).toMatchObject({ weeklyReservedMicros: 2_000, sharedReservedMicros: 10_000, balanceReservedMicros: 3_000 })
+    await settleBudget({ responseId: input.responseId, usage: { ...usage, outputTokens: 4_999 }, latencyMs: 1 })
+    expect(await reservation(input.responseId)).toMatchObject({ settledWeeklyMicros: 2_000, settledSharedMicros: 3_000, settledBalanceMicros: 0 })
+    expect(await spent(fiveHourUsagePeriods, member)).toBe(2_000)
+  })
+
+  it('gives each member their own five-hour limit on shared usage', async () => {
+    await db.insert(applicationSettings).values({ key: 'billing', value: { sharedFiveHourLimitMicros: 10_000 } })
+    try {
+      const owner = await fatAccount(50_000), first = await account(0), second = await account(0)
+      await pool([owner, first, second])
+      expect((await reserveBudget(await request(first))).amountMicros).toBe(10_000)
+      await expect(reserveBudget(await request(first))).rejects.toMatchObject({ code: 'insufficient_balance' })
+      expect((await reserveBudget(await request(second))).amountMicros).toBe(10_000)
+      // Both windows came out of the owner's 25,000 shared limit.
+      expect((await reserveBudget(await request(owner))).amountMicros).toBe(16_001)
+    } finally {
+      await db.delete(applicationSettings).where(eq(applicationSettings.key, 'billing'))
+    }
+  })
+
+  it('splits shared usage across several Fat owners and grows it on resize', async () => {
+    const left = await fatAccount(8_000), right = await fatAccount(16_000), member = await account(0)
+    await pool([left, right, member])
+    const input = await request(member, 1_000)
+    expect(await reserveBudget(input)).toEqual({ amountMicros: 1_001, maxOutputTokens: 1_000 })
+    expect((await resizeBudgetReservation({ ...input, maxOutputTokens: 32_000, accruedCostMicros: 0 })).maxOutputTokens).toBe(11_999)
+    const rows = await db.select().from(budgetReservationAllowanceFunders).where(eq(budgetReservationAllowanceFunders.reservationId, (await reservation(input.responseId)).id))
+    expect(Object.fromEntries(rows.map((row) => [row.ownerUserId, row.reservedMicros]))).toEqual({ [left]: 4_000, [right]: 8_000 })
+    await retainBudgetReservation(input.responseId, 300)
+    expect(await reservation(input.responseId)).toMatchObject({ amountMicros: 300, sharedReservedMicros: 300 })
+    await settleBudget({ responseId: input.responseId, usage, latencyMs: 1 })
+    expect((await spent(sharedAllowancePeriods, left)) + (await spent(sharedAllowancePeriods, right))).toBe(101)
+  })
+
+  it('charges metered usage to shared allowances', async () => {
+    const owner = await fatAccount(20_000), member = await account(1_000)
+    await pool([owner, member])
+    await chargeMeteredUsage({ userId: member, costMicros: 10_500, type: 'test_metered' })
+    expect(await spent(weeklyUsagePeriods, owner)).toBe(10_000)
+    expect(await spent(sharedAllowancePeriods, owner)).toBe(10_000)
+    expect(await spent(sharedFiveHourUsagePeriods, member)).toBe(10_000)
+    expect((await db.select().from(users).where(eq(users.id, member)))[0]?.balanceMicros).toBe(500)
+  })
+
+  it('does not share Eight allowances or allowances outside the pool', async () => {
+    const eight = await account(0, 20_000), outsider = await fatAccount(20_000), member = await account(0)
+    await pool([eight, member])
+    void outsider
+    await expect(reserveBudget(await request(member))).rejects.toMatchObject({ code: 'insufficient_balance' })
   })
 })

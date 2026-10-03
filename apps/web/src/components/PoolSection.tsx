@@ -5,6 +5,7 @@ import { Crown, MoreHorizontal } from 'lucide-react'
 import { apiRequest } from '@/lib/api'
 import { formatBalance } from '@/lib/format'
 import { ProfileIdentity } from '@/components/FriendIdentity'
+import { SubscriptionUsageBar } from '@/components/SubscriptionUsageBars'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
@@ -85,6 +86,10 @@ export function PoolSection({ query, currentUserId, friends, busy, act, inviteTa
           <div className="text-lg font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">{formatBalance(pool.pooledBalanceMicros / 1_000_000)}</div>
         </div>
       </div>
+      {pool.sharedUsage && <div className="space-y-4 border-b px-4 py-3">
+        <SubscriptionUsageBar label={ui('Shared usage')} limit={pool.sharedUsage.total} compact={false} showResetDate hint={ui('Weekly usage shared by Le Pulpo Fat subscribers in this Pool')} />
+        {pool.sharedUsage.fiveHour && <SubscriptionUsageBar label={ui('Your 5-hour shared limit')} limit={pool.sharedUsage.fiveHour} compact={false} />}
+      </div>}
       <div className="divide-y">{pool.members.map((member) => {
         const self = member.profile.id === currentUserId
         const friend = friendIds.has(member.profile.id)
