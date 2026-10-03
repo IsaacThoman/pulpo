@@ -85,10 +85,11 @@ export function splitView(view: PanelContent, go: Go): void {
 
 /**
  * Starts a new chat in the main view with these items, moving a page view into the panel when
- * there is room for both; otherwise the chat simply takes the main view.
+ * there is room for both; otherwise the chat simply takes the main view. Without a place (from
+ * outside any files view) only the chat opens.
  */
-export function openInNewChat(ids: string[], place: FilesViewPlace, go: Go): void {
-  if (place.layout === 'page' && useSidePanel.getState().splitAvailable) useSidePanel.getState().open(place.view)
+export function openInNewChat(ids: string[], place: FilesViewPlace | null, go: Go): void {
+  if (place?.layout === 'page' && useSidePanel.getState().splitAvailable) useSidePanel.getState().open(place.view)
   useNewChatScope.setState({ scopeIds: addFileScope([], ids) })
   go('/')
   // Already on the new-chat page, nothing remounts to take focus.
