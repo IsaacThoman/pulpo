@@ -5,11 +5,13 @@ import { MessageAttachmentList, PendingAttachmentChip } from './AttachmentImage'
 vi.hoisted(() => {
   const mediaQuery = { matches: false, addEventListener: () => undefined }
   Object.assign(globalThis, {
-    // react-virtuoso (table previews) probes documentElement.style when it loads.
-    document: { documentElement: { classList: { toggle: () => undefined }, style: {} } },
+    document: { documentElement: { classList: { toggle: () => undefined } } },
     window: { matchMedia: () => mediaQuery },
   })
 })
+
+// react-virtuoso (table previews) probes the DOM when it loads, which this stub document lacks.
+vi.mock('react-virtuoso', () => ({ TableVirtuoso: () => null }))
 
 describe('attachment card actions', () => {
   it('separates preview and download actions for supported message files', () => {
