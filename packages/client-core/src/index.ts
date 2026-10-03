@@ -531,7 +531,7 @@ export * from './chat-started.js'
 export { initialActivityTiming } from './activity-timing.js'
 export * from "./shelf.js"
 
-export { insertDictationText } from './dictation.js'
+export * from './dictation.js'
 
 export * from "./speech.js"
 

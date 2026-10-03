@@ -1,7 +1,7 @@
 import { AttachmentWindow } from './AttachmentWindow'
 import { attachmentBatchRequiresAgent } from '@/lib/attachments'
 import { speechPlayback } from '@/features/speech/state'
-import { localComposerDraftId, mergePendingAttachments } from '@pulpo/client-core'
+import { DICTATION_MAX_SECONDS, localComposerDraftId, mergePendingAttachments } from '@pulpo/client-core'
 import { ShelvedDrafts } from './ShelvedDrafts'
 import { ComposerTray } from './ComposerTray'
 import { ModelWarningBanner } from './ModelWarningBanner'
@@ -68,6 +68,8 @@ import { FileScopeChip, FileScopePicker } from '@/features/files/FileScope'
 import { addFileScope } from '@/features/files/file-scope'
 import { apiRequest } from '@/lib/api'
 import { dictationFilename, insertDictationText, preferredDictationMimeType } from '@/lib/dictation'
+import { DictationBar } from '@/components/chat/DictationBar'
+import type { DictationPhase } from '@/components/chat/use-microphone-levels'
 import { isDesktopRuntime } from '@/lib/runtime'
 import { ui, uit } from '@/i18n/ui'
 import {
@@ -201,7 +203,9 @@ export function Composer({
   const [queueError, setQueueError] = useState<string | null>(null)
   const [queueCollapsed, setQueueCollapsed] = useState(false)
   const [dictationError, setDictationError] = useState<string | null>(null)
-  const [dictationState, setDictationState] = useState<'idle' | 'recording' | 'transcribing'>('idle')
+  const [dictationState, setDictationState] = useState<DictationPhase>('idle')
+  const [dictationStream, setDictationStream] = useState<MediaStream | null>(null)
+  const [dictationStartedAt, setDictationStartedAt] = useState<number | null>(null)
   const [editingQueueId, setEditingQueueId] = useState<string | null>(null)
   const [queueDragId, setQueueDragId] = useState<string | null>(null)
   const [queueDrop, setQueueDrop] = useState<{ id: string; edge: 'before' | 'after' } | null>(null)
@@ -223,6 +227,10 @@ export function Composer({
   const dictationChunksRef = useRef<Blob[]>([])
   const dictationTimerRef = useRef<number | null>(null)
   const dictationAbortRef = useRef<AbortController | null>(null)
+  /** Increments on every start and cancel so callbacks from an abandoned recording are ignored. */
+  const dictationSessionRef = useRef(0)
+  const composerToolbarRef = useRef<HTMLDivElement>(null)
+  const dictationToolbarRef = useRef<HTMLDivElement>(null)
   valueRef.current = value
   attachmentIdsRef.current = attachmentIds
 
@@ -511,7 +519,14 @@ export function Composer({
     dictationTimerRef.current = null
     mediaStreamRef.current?.getTracks().forEach((track) => track.stop())
     mediaStreamRef.current = null
+    setDictationStream(null)
   }, [])
+
+  /** Keyboard focus would otherwise fall to the page when its toolbar face becomes inert. */
+  const keepFocusInComposer = useCallback((face: HTMLElement | null) => {
+    if (!face?.contains(document.activeElement)) return
+    if (window.matchMedia?.('(pointer: fine)').matches) focusComposer()
+  }, [focusComposer])
 
   const transcribeRecording = useCallback(async (blob: Blob, mimeType: string) => {
     setDictationState('transcribing')
@@ -523,6 +538,7 @@ export function Composer({
       const result = await apiRequest<{ text: string }>('/api/dictation/transcriptions', {
         method: 'POST', body: form, signal: controller.signal,
       })
+      if (controller.signal.aborted) return
       if (!result.text.trim()) throw new Error(ui("No speech was detected in the recording"))
       const textarea = ref.current
       const start = textarea?.selectionStart ?? value.length
@@ -539,8 +555,11 @@ export function Composer({
     } catch (error) {
       if (!controller.signal.aborted) setDictationError(error instanceof Error ? error.message : 'Unable to transcribe the recording')
     } finally {
-      if (dictationAbortRef.current === controller) dictationAbortRef.current = null
-      setDictationState('idle')
+      // A cancelled transcription has already reset the UI, possibly for a newer recording.
+      if (dictationAbortRef.current === controller) {
+        dictationAbortRef.current = null
+        setDictationState('idle')
+      }
     }
   }, [autosize, value.length])
 
@@ -551,6 +570,25 @@ export function Composer({
     if (recorder && recorder.state !== 'inactive') recorder.stop()
   }, [])
 
+  /** Discards the recording or in-flight transcription and returns to the regular toolbar. */
+  const cancelDictation = useCallback(() => {
+    dictationSessionRef.current += 1
+    dictationAbortRef.current?.abort()
+    dictationAbortRef.current = null
+    const recorder = mediaRecorderRef.current
+    mediaRecorderRef.current = null
+    if (recorder) {
+      recorder.ondataavailable = null
+      recorder.onerror = null
+      recorder.onstop = null
+      if (recorder.state !== 'inactive') recorder.stop()
+    }
+    dictationChunksRef.current = []
+    releaseMicrophone()
+    setDictationState('idle')
+    keepFocusInComposer(dictationToolbarRef.current)
+  }, [keepFocusInComposer, releaseMicrophone])
+
   const startDictation = useCallback(async () => {
     speechPlayback.stop()
     setDictationError(null)
@@ -558,8 +596,17 @@ export function Composer({
       setDictationError(ui("This browser does not support microphone recording"))
       return
     }
+    const session = ++dictationSessionRef.current
+    const current = () => dictationSessionRef.current === session
+    setDictationState('preparing')
+    keepFocusInComposer(composerToolbarRef.current)
+    let stream: MediaStream | null = null
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      if (!current()) {
+        stream.getTracks().forEach((track) => track.stop())
+        return
+      }
       const preferredType = preferredDictationMimeType()
       const recorder = preferredType ? new MediaRecorder(stream, { mimeType: preferredType }) : new MediaRecorder(stream)
       mediaStreamRef.current = stream
@@ -567,12 +614,15 @@ export function Composer({
       dictationChunksRef.current = []
       recorder.ondataavailable = (event) => { if (event.data.size > 0) dictationChunksRef.current.push(event.data) }
       recorder.onerror = () => {
+        if (!current()) return
         dictationChunksRef.current = []
+        mediaRecorderRef.current = null
         setDictationError(ui("Microphone recording failed"))
         releaseMicrophone()
         setDictationState('idle')
       }
       recorder.onstop = () => {
+        if (!current()) return
         const chunks = dictationChunksRef.current
         dictationChunksRef.current = []
         mediaRecorderRef.current = null
@@ -585,22 +635,31 @@ export function Composer({
         void transcribeRecording(new Blob(chunks, { type: mimeType }), mimeType)
       }
       recorder.start()
+      setDictationStream(stream)
+      setDictationStartedAt(Date.now())
       setDictationState('recording')
-      dictationTimerRef.current = window.setTimeout(() => stopDictation(), 90_000)
+      dictationTimerRef.current = window.setTimeout(() => stopDictation(), DICTATION_MAX_SECONDS * 1000)
     } catch (error) {
+      if (!current()) {
+        stream?.getTracks().forEach((track) => track.stop())
+        return
+      }
+      mediaRecorderRef.current = null
+      if (mediaStreamRef.current !== stream) stream?.getTracks().forEach((track) => track.stop())
       releaseMicrophone()
       setDictationState('idle')
       setDictationError(error instanceof DOMException && error.name === 'NotAllowedError'
         ? 'Microphone permission was denied'
         : 'Unable to access the microphone')
     }
-  }, [releaseMicrophone, stopDictation, transcribeRecording])
+  }, [keepFocusInComposer, releaseMicrophone, stopDictation, transcribeRecording])
 
   useEffect(() => () => {
+    dictationSessionRef.current += 1
     dictationAbortRef.current?.abort()
     const recorder = mediaRecorderRef.current
     if (recorder) recorder.onstop = null
-    if (recorder?.state !== 'inactive') recorder?.stop()
+    if (recorder && recorder.state !== 'inactive') recorder.stop()
     releaseMicrophone()
   }, [releaseMicrophone])
 
@@ -1274,6 +1333,21 @@ export function Composer({
               autosize()
             }}
             onKeyDown={(e) => {
+              if (dictationState !== 'idle' && !e.nativeEvent.isComposing) {
+                if (e.key === 'Escape') {
+                  e.preventDefault()
+                  cancelDictation()
+                  return
+                }
+                if (shouldSubmitComposerKey({
+                  key: e.key, metaKey: e.metaKey, ctrlKey: e.ctrlKey, shiftKey: e.shiftKey, isComposing: false,
+                }, sendWithEnter)) {
+                  // The send shortcut finishes dictation; the draft cannot be sent until it lands.
+                  e.preventDefault()
+                  if (dictationState === 'recording') stopDictation()
+                  return
+                }
+              }
               if (e.key === 'Escape' && messageEdit && !e.nativeEvent.isComposing) {
                 e.preventDefault()
                 cancelMessageEdit()
@@ -1307,14 +1381,14 @@ export function Composer({
             {shelfBusy ? <Loader2 className="size-4 animate-spin" /> : <Archive className="size-4" />}
           </button></TooltipTrigger><TooltipContent>{ui('Shelve draft')}</TooltipContent></Tooltip>}
         </div>
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          className="hidden"
+          onChange={(event) => addFiles(event.target.files)}
+        />
         <div className="flex min-w-0 select-none items-center gap-1 px-2.5 pb-2.5">
-          <input
-            ref={fileInputRef}
-            type="file"
-            multiple
-            className="hidden"
-            onChange={(event) => addFiles(event.target.files)}
-          />
           {canScopeFiles ? (
             <DropdownMenu>
               <Tooltip>
@@ -1428,22 +1502,32 @@ export function Composer({
             }}
           />
 
-          <div className="flex-1" />
-
+          {/* Attachments, presets, and agent stay usable while dictating; only the trailing actions flip to the dictation bar. */}
+          {/* While dictating, reserve room for a readable waveform; presets truncate rather than squeeze it. */}
+          <div className={cn(
+            'grid flex-1 transition-[min-width] duration-[260ms] ease-[cubic-bezier(0.65,0,0.35,1)] motion-reduce:transition-none',
+            dictationState !== 'idle' ? 'min-w-44' : dictationEnabled ? 'min-w-[4.25rem]' : 'min-w-8',
+          )}>
+          <div
+            ref={composerToolbarRef}
+            className="composer-toolbar-face flex min-w-0 items-center justify-end gap-1"
+            data-face="draft"
+            data-active={dictationState === 'idle'}
+            inert={dictationState !== 'idle'}
+          >
           {dictationEnabled && <Tooltip>
             <TooltipTrigger asChild>
               <button
                 type="button"
-                disabled={!desktopCanMutate || dictationState === 'transcribing'}
-                onClick={() => dictationState === 'recording' ? stopDictation() : void startDictation()}
-                className={cn('flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground disabled:cursor-wait disabled:opacity-60', dictationState === 'recording' && 'bg-destructive/10 text-destructive')}
-                aria-label={dictationState === 'recording' ? t('chat.stopDictation') : dictationState === 'transcribing' ? t('chat.transcribing') : t('chat.dictate')}
-                aria-pressed={dictationState === 'recording'}
+                disabled={!desktopCanMutate}
+                onClick={() => void startDictation()}
+                className="flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+                aria-label={t('chat.dictate')}
               >
-                {dictationState === 'transcribing' ? <Loader2 className="size-4 animate-spin" /> : <Mic className={cn('size-4', dictationState === 'recording' && 'animate-pulse')} />}
+                <Mic className="size-4" />
               </button>
             </TooltipTrigger>
-            <TooltipContent side="top">{dictationState === 'recording' ? t('chat.stopDictation') : dictationState === 'transcribing' ? t('chat.transcribing') : t('chat.dictate')}</TooltipContent>
+            <TooltipContent side="top">{t('chat.dictate')}</TooltipContent>
           </Tooltip>}
 
           {composerPrimaryAction(Boolean(streamingResponseId) && !messageEdit, hasDraft || Boolean(editingQueueId) || Boolean(messageEdit)) === 'stop' ? (
@@ -1467,6 +1551,25 @@ export function Composer({
               {submitting ? <Loader2 className="size-4 animate-spin" /> : <ArrowUp className="size-4" />}
             </Button>
           )}
+        </div>
+        {dictationEnabled && (
+          <div
+            ref={dictationToolbarRef}
+            className="composer-toolbar-face"
+            data-face="dictation"
+            data-active={dictationState !== 'idle'}
+            inert={dictationState === 'idle'}
+          >
+            <DictationBar
+              phase={dictationState}
+              stream={dictationStream}
+              startedAt={dictationStartedAt}
+              onCancel={cancelDictation}
+              onConfirm={stopDictation}
+            />
+          </div>
+        )}
+          </div>
         </div>
         {queueError && <p role="alert" className="px-4 pb-3 text-xs text-destructive">{queueError}</p>}
         {dictationError && <p role="alert" className="px-4 pb-3 text-xs text-destructive">{dictationError}</p>}
