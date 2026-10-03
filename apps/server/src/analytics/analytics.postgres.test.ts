@@ -18,6 +18,9 @@ import { registerAdminUsageRoutes } from '../admin/usage-routes.js'
 
 // Run against a migrated, disposable database: the backfill check clears request_analytics.
 const enabled = process.env.PULPO_ANALYTICS_POSTGRES_TEST === '1'
+if (enabled && new URL(process.env.DATABASE_URL ?? 'http://invalid').pathname !== '/pulpo_analytics_test') {
+  throw new Error('Analytics tests require a migrated disposable database named pulpo_analytics_test')
+}
 
 // One connection keeps the suite usable with single-session servers such as PGlite.
 vi.mock('../database/client.js', async () => {
