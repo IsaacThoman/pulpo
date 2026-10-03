@@ -264,6 +264,7 @@ function DropLines({
  * (`atPointer` only places it at the pointer). The desktop app has no tabs, so no new-tab item.
  */
 function ChatMenu({ chat, onRename, atPointer = false }: { chat: Chat; onRename: () => void; atPointer?: boolean }) {
+  const renaming = useRef(false)
   const { t } = useTranslation()
   const togglePin = useChat((state) => state.togglePin)
   const setChatAutoExpiration = useChat((state) => state.setChatAutoExpiration)
@@ -275,7 +276,20 @@ function ChatMenu({ chat, onRename, atPointer = false }: { chat: Chat; onRename:
   const automaticChatExpiration = useSettings((state) => state.automaticChatExpiration)
   const expirationMenuAction = resolveChatExpiryMenuAction(chat.expiresAt, automaticChatExpiration)
   return (
-    <DropdownMenuContent side={atPointer ? 'bottom' : 'right'} align="start" sideOffset={atPointer ? 2 : undefined} className="w-48">
+    <DropdownMenuContent
+      side={atPointer ? 'bottom' : 'right'}
+      align="start"
+      sideOffset={atPointer ? 2 : undefined}
+      className="w-48"
+      // Start the inline rename only once the menu has closed: a modal menu traps focus until
+      // then and would pull it back out of the input. Keep focus off the trigger, too.
+      onCloseAutoFocus={(event) => {
+        if (!renaming.current) return
+        renaming.current = false
+        event.preventDefault()
+        onRename()
+      }}
+    >
       {!isDesktopRuntime() && (
         <DropdownMenuItem onClick={() => { window.open(`/c/${chat.id}`, '_blank', 'noopener') }}>
           <ExternalLink />
@@ -286,7 +300,7 @@ function ChatMenu({ chat, onRename, atPointer = false }: { chat: Chat; onRename:
         {chat.pinned ? <PinOff /> : <Pin />}
         {chat.pinned ? t('chat.unpin') : t('chat.pin')}
       </DropdownMenuItem>
-      <DropdownMenuItem onClick={onRename}>
+      <DropdownMenuItem onClick={() => { renaming.current = true }}>
         <Pencil />
         {t('common.rename')}
       </DropdownMenuItem>
@@ -328,6 +342,54 @@ function ChatMenu({ chat, onRename, atPointer = false }: { chat: Chat; onRename:
         {trashRetention === 'instant' ? t('common.delete') : t('chat.trash')}
       </DropdownMenuItem>
     </DropdownMenuContent>
+  )
+}
+
+/**
+ * Edits a sidebar title in place. Enter or blur saves, Escape cancels, and a blank or
+ * unchanged title leaves the old one.
+ */
+function InlineTitleInput({ value, label, onCommit, onDone }: {
+  value: string
+  label: string
+  onCommit: (value: string) => void
+  onDone: () => void
+}) {
+  const [draft, setDraft] = useState(value)
+  const input = useRef<HTMLInputElement>(null)
+  const settled = useRef(false)
+
+  useEffect(() => {
+    input.current?.focus()
+    input.current?.select()
+  }, [])
+
+  const finish = (save: boolean) => {
+    if (settled.current) return
+    settled.current = true
+    const next = draft.trim()
+    if (save && next && next !== value) onCommit(next)
+    onDone()
+  }
+
+  return (
+    <input
+      ref={input}
+      value={draft}
+      aria-label={label}
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={() => finish(true)}
+      onKeyDown={(event) => {
+        event.stopPropagation()
+        if (event.key === 'Enter') { event.preventDefault(); finish(true) }
+        if (event.key === 'Escape') { event.preventDefault(); finish(false) }
+      }}
+      onClick={(event) => event.stopPropagation()}
+      onPointerDown={(event) => event.stopPropagation()}
+      onContextMenu={(event) => event.stopPropagation()}
+      draggable={false}
+      className="relative z-10 w-full min-w-0 flex-1 rounded-sm border border-ring bg-background px-1 py-px text-sm text-foreground outline-none ring-2 ring-ring/30"
+    />
   )
 }
 
@@ -393,10 +455,9 @@ export function ChatRow({
 }) {
   const { t } = useTranslation()
   const navigate = useNavigate()
-  const [renameOpen, setRenameOpen] = useState(false)
+  const [renaming, setRenaming] = useState(false)
   // Right-clicking the row opens the chat's menu at the pointer instead of the browser's link menu.
   const [menuPoint, setMenuPoint] = useState<{ x: number; y: number } | null>(null)
-  const [title, setTitle] = useState(chat.title)
   const renameChat = useChat((state) => state.renameChat)
   const deleteChat = useChat((state) => state.deleteChat)
   const trashRetention = useSettings((state) => state.trashRetention)
@@ -413,12 +474,13 @@ export function ChatRow({
     <div
       data-drag-list={dragList}
       data-drag-id={dragList ? chat.id : undefined}
-      draggable={canDrag}
+      draggable={canDrag && !renaming}
       onDragStart={canDrag ? onDragStart : undefined}
       onDragOver={canDrop || canDrag ? onDragOver : undefined}
       onDrop={canDrop || canDrag ? onDrop : undefined}
       onDragEnd={canDrag ? onDragEnd : undefined}
       onContextMenu={(event) => {
+        if (renaming) return
         event.preventDefault()
         setMenuPoint({ x: event.clientX, y: event.clientY })
       }}
@@ -433,7 +495,14 @@ export function ChatRow({
     >
       <DropLines active={canDrag || canDrop} before={showLineBefore} after={showLineAfter} />
       {/* A real link (stretched over the row) so the browser offers "Open in new tab" and honors modifier clicks. */}
-      <Link
+      {renaming ? (
+        <InlineTitleInput
+          value={chat.title}
+          label={t('sidebar.renameChat')}
+          onCommit={(next) => renameChat(chat.id, next)}
+          onDone={() => setRenaming(false)}
+        />
+      ) : <Link
         to={`/c/${chat.id}`}
         draggable={canDrag ? false : undefined}
         className="flex-1 cursor-[inherit] truncate outline-none after:absolute after:inset-0 after:rounded-lg focus-visible:after:ring-2 focus-visible:after:ring-ring"
@@ -453,7 +522,7 @@ export function ChatRow({
         }}
       >
         {chat.title}
-      </Link>
+      </Link>}
       {shiftHeld && (
         <button
           className={cn(actionClassName, 'relative hidden hover:text-destructive group-hover:block')}
@@ -511,34 +580,16 @@ export function ChatRow({
             )}
           </button>
         </DropdownMenuTrigger>
-        <ChatMenu chat={chat} onRename={() => setRenameOpen(true)} />
+        <ChatMenu chat={chat} onRename={() => setRenaming(true)} />
       </DropdownMenu>
       {menuPoint && (
         <DropdownMenu key={`${menuPoint.x}:${menuPoint.y}`} open onOpenChange={(open) => { if (!open) setMenuPoint(null) }} modal={false}>
           <DropdownMenuTrigger asChild>
             <span aria-hidden className="pointer-events-none fixed size-0" style={{ left: menuPoint.x, top: menuPoint.y }} />
           </DropdownMenuTrigger>
-          <ChatMenu chat={chat} onRename={() => setRenameOpen(true)} atPointer />
+          <ChatMenu chat={chat} onRename={() => setRenaming(true)} atPointer />
         </DropdownMenu>
       )}
-      <Dialog open={renameOpen} onOpenChange={setRenameOpen}>
-        <DialogContent className="sm:max-w-sm" onClick={(e) => e.stopPropagation()}>
-          <DialogHeader>
-            <DialogTitle>{t('sidebar.renameChat')}</DialogTitle>
-          </DialogHeader>
-          <Input value={title} onChange={(e) => setTitle(e.target.value)} autoFocus />
-          <DialogFooter>
-            <Button
-              onClick={() => {
-                renameChat(chat.id, title.trim() || chat.title)
-                setRenameOpen(false)
-              }}
-            >
-              {t('common.save')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   )
 }
@@ -583,11 +634,9 @@ function FolderGroup({
   const renameFolder = useChat((state) => state.renameFolder)
   const toggleFolderPin = useChat((state) => state.toggleFolderPin)
   const deleteFolder = useChat((state) => state.deleteFolder)
-  const [renameOpen, setRenameOpen] = useState(false)
-  const [name, setName] = useState(folder.name)
+  const [renaming, setRenaming] = useState(false)
+  const renameChosen = useRef(false)
   const list = folderListId(folder.id)
-
-  useEffect(() => setName(folder.name), [folder.name])
 
   return (
     <Collapsible open={folder.expanded} onOpenChange={() => {
@@ -598,7 +647,7 @@ function FolderGroup({
       toggleFolder(folder.id)
     }}>
       <div
-        draggable={canReorderFolder}
+        draggable={canReorderFolder && !renaming}
         onDragStart={canReorderFolder ? onFolderDragStart : undefined}
         onDragOver={onFolderDragOver}
         onDrop={onDrop}
@@ -613,13 +662,28 @@ function FolderGroup({
         )}
       >
         <DropLines active={!chatDropHighlight} before={showFolderLineBefore} after={showFolderLineAfter} />
-        <CollapsibleTrigger className="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 px-2 py-1.5">
-          <ChevronRight
-            className={cn('size-3.5 text-muted-foreground transition-transform', folder.expanded && 'rotate-90')}
-          />
-          <FolderIcon className="size-4 text-muted-foreground" />
-          <span className="flex-1 truncate text-left">{folder.name}</span>
-        </CollapsibleTrigger>
+        {renaming ? (
+          <div className="flex min-w-0 flex-1 items-center gap-1.5 px-2 py-1.5">
+            <ChevronRight
+              className={cn('size-3.5 shrink-0 text-muted-foreground transition-transform', folder.expanded && 'rotate-90')}
+            />
+            <FolderIcon className="size-4 shrink-0 text-muted-foreground" />
+            <InlineTitleInput
+              value={folder.name}
+              label={t('sidebar.renameFolder')}
+              onCommit={(next) => renameFolder(folder.id, next)}
+              onDone={() => setRenaming(false)}
+            />
+          </div>
+        ) : (
+          <CollapsibleTrigger className="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 px-2 py-1.5">
+            <ChevronRight
+              className={cn('size-3.5 text-muted-foreground transition-transform', folder.expanded && 'rotate-90')}
+            />
+            <FolderIcon className="size-4 text-muted-foreground" />
+            <span className="flex-1 truncate text-left">{folder.name}</span>
+          </CollapsibleTrigger>
+        )}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
@@ -629,12 +693,24 @@ function FolderGroup({
               <MoreHorizontal className="size-4" />
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent side="right" align="start" className="w-48">
+          <DropdownMenuContent
+            side="right"
+            align="start"
+            className="w-48"
+            // Start the inline rename only once the menu has closed: the modal menu traps focus
+            // until then and would pull it back out of the input. Keep focus off the trigger, too.
+            onCloseAutoFocus={(event) => {
+              if (!renameChosen.current) return
+              renameChosen.current = false
+              event.preventDefault()
+              setRenaming(true)
+            }}
+          >
             <DropdownMenuItem onClick={() => toggleFolderPin(folder.id)}>
               {folder.pinned ? <PinOff /> : <Pin />}
               {folder.pinned ? t('chat.unpin') : t('chat.pin')}
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setRenameOpen(true)}>
+            <DropdownMenuItem onClick={() => { renameChosen.current = true }}>
               <Pencil />
               {t('common.rename')}
             </DropdownMenuItem>
@@ -689,24 +765,6 @@ function FolderGroup({
           )
         })}
       </CollapsibleContent>
-      <Dialog open={renameOpen} onOpenChange={setRenameOpen}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle>{t('sidebar.renameFolder')}</DialogTitle>
-          </DialogHeader>
-          <Input value={name} onChange={(event) => setName(event.target.value)} autoFocus />
-          <DialogFooter>
-            <Button
-              onClick={() => {
-                renameFolder(folder.id, name.trim() || folder.name)
-                setRenameOpen(false)
-              }}
-            >
-              {t('common.save')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </Collapsible>
   )
 }
