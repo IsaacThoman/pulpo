@@ -1463,6 +1463,8 @@ const esUi: Record<string, string> = {
   "Show suggested prompts": "Mostrar prompts sugeridos",
   "Show the cost of each assistant response with its tokens, speed, and time.": "Mostrar el coste de cada respuesta del asistente junto con sus tokens, velocidad y tiempo.",
   "Showing the first part of": "Mostrando la primera parte de",
+  "{{0}} rows · {{1}} columns": "{{0}} filas · {{1}} columnas",
+  "{{0}} rows loaded · {{1}} columns · scroll for more": "{{0}} filas cargadas · {{1}} columnas · desplázate para ver más",
   "Shown on the button": "Se muestra en el botón",
   "Shutting down": "Apagándose",
   "Sign in securely without a password.": "Inicia sesión de forma segura y sin contraseña.",

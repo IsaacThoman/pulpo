@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   attachmentPreviewKind,
   formatTextPreview,
-  parseDelimitedPreview,
+  createDelimitedReader,
 } from './attachment-previews'
 
 describe('attachmentPreviewKind', () => {
@@ -34,18 +34,37 @@ describe('formatTextPreview', () => {
   })
 })
 
-describe('parseDelimitedPreview', () => {
-  it('parses quoted CSV cells and embedded delimiters', () => {
-    expect(parseDelimitedPreview('results.csv', 'text/csv', 'Name,Note\nPulpo,"Fast, friendly"'))
-      .toMatchObject({ headers: ['Name', 'Note'], rows: [['Pulpo', 'Fast, friendly']], truncated: false })
+describe('createDelimitedReader', () => {
+  it('parses quoted CSV cells, embedded delimiters, and quoted newlines', () => {
+    const reader = createDelimitedReader('results.csv', 'text/csv', 'Name,Note\nPulpo,"Fast, friendly"\nOcto,"two\nlines ""quoted"""')
+    expect(reader?.headers).toEqual(['Name', 'Note'])
+    expect(reader?.next(10)).toEqual([['Pulpo', 'Fast, friendly'], ['Octo', 'two\nlines "quoted"']])
+    expect(reader?.done).toBe(true)
   })
 
-  it('supports TSV and reports truncated row sets', () => {
-    expect(parseDelimitedPreview('results.tsv', 'text/tab-separated-values', 'A\tB\n1\t2\n3\t4', 1))
-      .toMatchObject({ headers: ['A', 'B'], rows: [['1', '2']], truncated: true })
+  it('reads TSV rows in batches until the file is exhausted', () => {
+    const reader = createDelimitedReader('results.tsv', 'text/tab-separated-values', 'A\tB\r\n1\t2\r\n3\t4\r\n5\t6\r\n')!
+    expect(reader.next(2)).toEqual([['1', '2'], ['3', '4']])
+    expect(reader.done).toBe(false)
+    expect(reader.next(2)).toEqual([['5', '6']])
+    expect(reader.done).toBe(true)
+    expect(reader.next(2)).toEqual([])
+  })
+
+  it('aligns ragged rows to the header, skips blank lines, and strips a BOM', () => {
+    const reader = createDelimitedReader('ragged.csv', 'text/csv', '\uFEFFA,,C\n1\n\n1,2,3,4\n')!
+    expect(reader.headers).toEqual(['A', 'Column 2', 'C'])
+    expect(reader.next(10)).toEqual([['1', '', ''], ['1', '2', '3']])
+  })
+
+  it('caps the number of columns', () => {
+    const reader = createDelimitedReader('wide.csv', 'text/csv', 'a,b,c,d\n1,2,3,4', 2)!
+    expect(reader.headers).toEqual(['a', 'b'])
+    expect(reader.next(1)).toEqual([['1', '2']])
   })
 
   it('falls back when delimited content has only one column', () => {
-    expect(parseDelimitedPreview('results.csv', 'text/csv', 'Only one column')).toBeNull()
+    expect(createDelimitedReader('results.csv', 'text/csv', 'Only one column')).toBeNull()
+    expect(createDelimitedReader('empty.csv', 'text/csv', '')).toBeNull()
   })
 })
