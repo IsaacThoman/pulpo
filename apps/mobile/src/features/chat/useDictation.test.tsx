@@ -109,4 +109,15 @@ describe('dictation composer ownership', () => {
     expect(f.apply).not.toHaveBeenCalled()
     expect(f.deps.remove).toHaveBeenCalledOnce()
   })
+  it('exposes a stable level source for the waveform without re-rendering on meter ticks', async () => {
+    const f = await fixture()
+    const levels = f.view.levels
+    await f.start()
+    expect(f.view.levels).toBe(levels)
+    expect(levels.getLevels().every((level) => level === 0)).toBe(true)
+    const listener = vi.fn()
+    const unsubscribe = levels.subscribeLevels(listener)
+    unsubscribe()
+    expect(listener).not.toHaveBeenCalled()
+  })
 })

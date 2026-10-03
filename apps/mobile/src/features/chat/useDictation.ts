@@ -5,7 +5,7 @@ import { AudioModule, RecordingPresets, setAudioModeAsync } from 'expo-audio'
 import { File } from 'expo-file-system'
 import { insertDictationText } from '@pulpo/client-core'
 import { apiRequest } from '../../api/client'
-import { DictationController } from './dictation'
+import { DictationController, type DictationLevelSource } from './dictation'
 
 async function requestMicrophonePermission(): Promise<boolean> {
   const current = await AudioModule.getRecordingPermissionsAsync()
@@ -34,7 +34,7 @@ export function createNativeDictation(): DictationController {
     audioMode: (allowsRecording) => setAudioModeAsync({ allowsRecording, playsInSilentMode: true, shouldPlayInBackground: false }),
     recorder: () => {
       const preset = RecordingPresets.HIGH_QUALITY
-      const recorder = new AudioModule.AudioRecorder({ ...preset, ...preset[Platform.OS === 'ios' ? 'ios' : 'android'] })
+      const recorder = new AudioModule.AudioRecorder({ ...preset, ...preset[Platform.OS === 'ios' ? 'ios' : 'android'], isMeteringEnabled: true })
       return {
         prepare: () => recorder.prepareToRecordAsync(),
         record: () => recorder.record(),
@@ -42,6 +42,7 @@ export function createNativeDictation(): DictationController {
         release: () => recorder.release(),
         get uri() { return recorder.uri },
         get isRecording() { return recorder.isRecording },
+        metering: () => recorder.getStatus().metering,
       }
     },
     size: (uri) => new File(uri).size,
@@ -96,5 +97,8 @@ export function useDictation(input: {
       latest.current.apply(inserted.value, inserted.cursor)
     })
   }
-  return { ...state, busy: state.phase !== 'idle', isBusy, start, stop: controller.stop, cancel: controller.cancel }
+  return {
+    ...state, busy: state.phase !== 'idle', isBusy, start, stop: controller.stop, cancel: controller.cancel,
+    levels: controller as DictationLevelSource,
+  }
 }
