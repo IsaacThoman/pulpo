@@ -7,6 +7,9 @@ export type AttachmentPreviewKind = 'image' | 'pdf' | 'markdown' | 'text' | 'tab
 export const MAX_TEXT_PREVIEW_BYTES = 2 * 1024 * 1024
 export const MAX_MEDIA_PREVIEW_BYTES = 100 * 1024 * 1024
 export const MAX_TEXT_PREVIEW_CHARACTERS = 200_000
+/** Tables are parsed and rendered lazily, so they can preview much larger files than plain text. */
+export const MAX_TABLE_PREVIEW_BYTES = 25 * 1024 * 1024
+export const MAX_TABLE_PREVIEW_COLUMNS = 200
 
 const TEXT_EXTENSIONS = new Set([
   'c', 'cc', 'cpp', 'cs', 'css', 'go', 'h', 'hpp', 'html', 'java', 'js', 'jsx', 'json',
@@ -43,6 +46,7 @@ export function isTextPreviewKind(kind: AttachmentPreviewKind): boolean {
 }
 
 export function previewSizeLimit(kind: AttachmentPreviewKind): number {
+  if (kind === 'table') return MAX_TABLE_PREVIEW_BYTES
   return isTextPreviewKind(kind) ? MAX_TEXT_PREVIEW_BYTES : MAX_MEDIA_PREVIEW_BYTES
 }
 
@@ -61,69 +65,82 @@ export function formatTextPreview(name: string, mimeType: string, text: string):
   return { text: formatted.slice(0, MAX_TEXT_PREVIEW_CHARACTERS), truncated: true }
 }
 
-export interface DelimitedPreview {
+/** Reads a delimited file a batch of rows at a time, so huge tables only parse what is on screen. */
+export interface DelimitedReader {
   headers: string[]
-  rows: string[][]
-  truncated: boolean
+  /** Parses up to `count` more data rows, each padded or cut to the header width. */
+  next: (count: number) => string[][]
+  readonly done: boolean
 }
 
-export function parseDelimitedPreview(
+export function createDelimitedReader(
   name: string,
   mimeType: string,
   text: string,
-  maxRows = 50,
-  maxColumns = 12,
-): DelimitedPreview | null {
+  maxColumns = MAX_TABLE_PREVIEW_COLUMNS,
+): DelimitedReader | null {
   const delimiter = extension(name) === 'tsv' || mimeType.toLowerCase() === 'text/tab-separated-values' ? '\t' : ','
-  const parsed: string[][] = []
-  let row: string[] = []
-  let cell = ''
-  let quoted = false
-  let index = 0
+  let index = text.charCodeAt(0) === 0xfeff ? 1 : 0
 
-  const finishCell = () => {
-    if (row.length < maxColumns) row.push(cell)
-    cell = ''
-  }
-  const finishRow = () => {
-    finishCell()
-    parsed.push(row)
-    row = []
-  }
-
-  while (index < text.length && parsed.length <= maxRows) {
-    const character = text[index]!
-    if (character === '"') {
-      if (quoted && text[index + 1] === '"') {
-        cell += '"'
-        index += 2
-        continue
+  const readRow = (): string[] | null => {
+    while (index < text.length) {
+      const row: string[] = []
+      let cell = ''
+      let quoted = false
+      const finishCell = () => {
+        if (row.length < maxColumns) row.push(cell)
+        cell = ''
       }
-      quoted = !quoted
-      index += 1
-      continue
-    }
-    if (!quoted && character === delimiter) {
-      finishCell()
-      index += 1
-      continue
-    }
-    if (!quoted && (character === '\n' || character === '\r')) {
-      finishRow()
-      if (character === '\r' && text[index + 1] === '\n') index += 1
-      index += 1
-      continue
-    }
-    cell += character
-    index += 1
-  }
-  if (cell || row.length) finishRow()
-  if (!parsed.length || parsed[0]!.length < 2) return null
 
-  const [headerRow, ...dataRows] = parsed
+      while (index < text.length) {
+        const character = text[index]!
+        if (character === '"') {
+          if (quoted && text[index + 1] === '"') {
+            cell += '"'
+            index += 2
+            continue
+          }
+          quoted = !quoted
+          index += 1
+          continue
+        }
+        if (!quoted && character === delimiter) {
+          finishCell()
+          index += 1
+          continue
+        }
+        if (!quoted && (character === '\n' || character === '\r')) {
+          index += character === '\r' && text[index + 1] === '\n' ? 2 : 1
+          break
+        }
+        cell += character
+        index += 1
+      }
+      finishCell()
+      // Blank lines carry no data, so they are skipped rather than shown as empty rows.
+      if (row.length > 1 || row[0]) return row
+    }
+    return null
+  }
+
+  const headerRow = readRow()
+  if (!headerRow || headerRow.length < 2) return null
+  const width = headerRow.length
+
   return {
-    headers: headerRow!.map((value, column) => value.trim() || `Column ${column + 1}`),
-    rows: dataRows.slice(0, maxRows),
-    truncated: index < text.length || dataRows.length > maxRows,
+    headers: headerRow.map((value, column) => value.trim() || `Column ${column + 1}`),
+    next(count) {
+      const rows: string[][] = []
+      while (rows.length < count) {
+        const row = readRow()
+        if (!row) break
+        if (row.length < width) row.push(...Array<string>(width - row.length).fill(''))
+        rows.push(row.length > width ? row.slice(0, width) : row)
+      }
+      return rows
+    },
+    get done() {
+      return index >= text.length
+    },
   }
 }
