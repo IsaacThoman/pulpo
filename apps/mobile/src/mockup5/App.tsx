@@ -581,7 +581,11 @@ type Message = {
   agentMode?: boolean;
 };
 type Chat = { id: string; title: string; modelId: string; time: string; section: string; messages: Message[] };
-type SendOptions = { presetSelections: GenerationSelections; agentEnabled: boolean; temporary: boolean; autoExpire: boolean };
+type SendOptions = {
+  presetSelections: GenerationSelections; agentEnabled: boolean; temporary: boolean; autoExpire: boolean;
+  /** Dictation produced some of the message text (analytics only). */
+  usedDictation?: boolean;
+};
 type PrepareAttachments = () => Promise<PreparedAttachment[]>;
 
 function automaticExpirationDeadline(preference: 'disabled' | '24h' | '7d', now = Date.now()): number | null {
@@ -2427,6 +2431,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
         input: trimmed, modelId: selectedModel.id, presetSelections: options?.presetSelections ?? presetSelections,
         attachmentIds: prepared.map((item) => item.serverId),
         agentMode: Boolean(options?.agentEnabled && agentAvailable && selectedPrototypeModel?.agentEnabled),
+        ...(options?.usedDictation ? { usedDictation: true } : {}),
       }, prepared.map((item) => ({ id: item.serverId, name: item.name, mimeType: item.mimeType, sizeBytes: item.size ?? 0 })), activePrototypeChat?.temporary ?? false);
       return true;
     }
@@ -2544,6 +2549,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
           presetSelections: selections,
           attachmentIds: prepared.map((attachment) => attachment.serverId),
           agentMode,
+          usedDictation: options?.usedDictation,
         });
         if (options?.temporary) pendingTemporaryStart.current = { chatId: key, promise: startPromise };
         let started: Awaited<typeof startPromise>;
@@ -2567,6 +2573,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
           attachmentIds: prepared.map((attachment) => attachment.serverId),
           agentMode,
           temporary: activePrototypeChat?.temporary ?? false,
+          usedDictation: options?.usedDictation,
         });
       }
       updateStoredMessage(serverChatId, response.responseId, {
@@ -4289,7 +4296,15 @@ function ChatView({
     input: string;
     attachments: ComposerAttachment[];
     agentEnabled: boolean;
+    usedDictation?: boolean;
   } | null>(null);
+  // Whether dictation inserted text into the current draft (analytics only).
+  // Client-local: not persisted or synced with the draft.
+  const usedDictationRef = useRef(false);
+  useEffect(() => {
+    // Erasing the whole draft discards any dictated text with it.
+    if (!input.trim()) usedDictationRef.current = false;
+  }, [input]);
   const inputRef = useRef(input);
   const [inputSelection, setInputSelection] = useState({ start: input.length, end: input.length });
   const inputSelectionRef = useRef(inputSelection);
@@ -4333,6 +4348,7 @@ function ChatView({
       && hydratedComposerScope === `${draftNamespace ?? 'local'}\u0000${localComposerDraftId(chatId, temporary)}`,
     read: () => ({ text: inputRef.current, selection: inputSelectionRef.current }),
     apply: (value, cursor) => {
+      usedDictationRef.current = true;
       inputRef.current = value;
       setComposerSelection(setInputSelection, inputSelectionRef, { start: cursor, end: cursor });
       onChangeInput(value);
@@ -4485,6 +4501,7 @@ function ChatView({
     queueEditRef.current = null;
     if (queueEdit) { onSelectModel(queueEdit.model); setDraftPresets(queueEdit.presets); }
     if (!preserved) return;
+    usedDictationRef.current = preserved.usedDictation ?? false;
     draftOwnerRef.current = preserved.attachments[0]?.ownerId ?? `draft:${Crypto.randomUUID()}`;
     onChangeInput(preserved.input);
     placeComposerCursorAtEnd(preserved.input);
@@ -4536,6 +4553,7 @@ function ChatView({
     }
 
     activeDraftRef.current = { scope, namespace: draftNamespace, draftId };
+    usedDictationRef.current = false;
     hydratedDraftScopeRef.current = null;
     draftLoadRevisionRef.current += 1;
     const revision = draftLoadRevisionRef.current;
@@ -4656,7 +4674,8 @@ function ChatView({
 
   const beginMessageEdit = useCallback((message: Message) => {
     if (messageEdit || sending || isDictationBusy()) return;
-    preservedComposerRef.current = { input, attachments, agentEnabled };
+    preservedComposerRef.current = { input, attachments, agentEnabled, usedDictation: usedDictationRef.current };
+    usedDictationRef.current = false;
     const editOwnerId = `edit:${message.id}:${Crypto.randomUUID()}`;
     draftOwnerRef.current = editOwnerId;
     const existing = message.attachments ?? [];
@@ -5058,6 +5077,7 @@ function ChatView({
       latestAttachmentsRef.current.delete(a.localId); attachmentDraftOwnersRef.current.delete(a.localId);
     }
     skipNextEdit();
+    usedDictationRef.current = false;
     inputRef.current = after.content; onChangeInput(after.content); setAttachments(next);
     composerSync?.replaceShelfContent('new', { ...sharedComposerState, content: after.content,
       attachments: after.attachments.filter((a) => a.id).map((a) => ({ id: a.id!, name: a.name, mimeType: a.mimeType, size: a.size })) });
@@ -5245,9 +5265,10 @@ function ChatView({
     sendingRef.current = true;
     setSending(true);
     let followSnapshot: ChatFollowSnapshot | null = null;
-    const submittedDraft = { input, attachments: [...attachments], agentEnabled: activeAgentEnabled };
+    const submittedDraft = { input, attachments: [...attachments], agentEnabled: activeAgentEnabled, usedDictation: usedDictationRef.current };
     const submittedDraftIdentity = activeDraftRef.current;
     const restoreSubmittedDraft = () => {
+      usedDictationRef.current = submittedDraft.usedDictation;
       onChangeInput(submittedDraft.input);
       inputRef.current = submittedDraft.input;
       setAttachments(restoreLatestDraft(submittedDraft.attachments, latestAttachmentsRef.current));
@@ -5294,7 +5315,7 @@ function ChatView({
           return onSend(
             submittedDraft.input,
             submittedDraft.attachments,
-            { presetSelections, agentEnabled: activeAgentEnabled, temporary, autoExpire },
+            { presetSelections, agentEnabled: activeAgentEnabled, temporary, autoExpire, usedDictation: submittedDraft.usedDictation },
             async () => {
               const prepared = await Promise.all(submittedDraft.attachments.map(uploadOne));
               if (prepared.some((attachment) => attachment === null)) {
@@ -5306,6 +5327,7 @@ function ChatView({
         },
         clear: () => {
           skipNextEdit();
+          usedDictationRef.current = false;
           onChangeInput('');
           inputRef.current = '';
           attachmentsRef.current = [];

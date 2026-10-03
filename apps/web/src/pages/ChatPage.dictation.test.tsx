@@ -50,6 +50,7 @@ const media = {
   transcriptions: [] as Array<{ body: FormData; signal: AbortSignal | null | undefined }>,
   transcript: null as ReturnType<typeof deferred<string>> | null,
 }
+const requests: Array<{ path: string; body: Record<string, unknown> }> = []
 function microphone() {
   const track = { stop: vi.fn() }
   media.tracks.push(track)
@@ -97,10 +98,14 @@ beforeEach(async () => {
   media.contexts = 0
   media.transcriptions.length = 0
   media.transcript = null
+  requests.length = 0
   media.getUserMedia.mockReset().mockImplementation(async () => microphone())
   Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: { getUserMedia: media.getUserMedia } })
   vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
-    if (!String(input).endsWith('/api/dictation/transcriptions')) return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } })
+    if (!String(input).endsWith('/api/dictation/transcriptions')) {
+      if (typeof init?.body === 'string') requests.push({ path: String(input), body: JSON.parse(init.body) })
+      return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } })
+    }
     media.transcriptions.push({ body: init!.body as FormData, signal: init!.signal })
     const pending = media.transcript ?? deferred<string>()
     if (!media.transcript) pending.resolve('hello from dictation')
@@ -125,6 +130,7 @@ afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
 async function renderComposer() {
   const view = render(<MemoryRouter initialEntries={['/']}><TooltipProvider><Routes>
     <Route path="/" element={<ChatPage />} />
+    <Route path="/c/:chatId" element={<ChatPage />} />
   </Routes></TooltipProvider></MemoryRouter>)
   const textarea = await waitFor(() => {
     const element = view.container.querySelector('textarea')
@@ -266,4 +272,47 @@ it('reports denied microphone permission and restores the toolbar', async () => 
   await waitFor(() => expect(view.getByRole('alert').textContent).toBe('Microphone permission was denied'))
   await view.toolbarRestored()
   expect(media.recorders).toHaveLength(0)
+})
+
+it('flags dictated messages when sending and resets the flag for the next draft', async () => {
+  const view = await renderComposer()
+  const textbox = () => view.getByRole('textbox') as HTMLTextAreaElement
+  const dictate = async () => {
+    const transcriptions = media.transcriptions.length
+    fireEvent.click(view.getByRole('button', { name: 'Dictate' }))
+    await view.recording()
+    fireEvent.click(view.getByRole('button', { name: 'Finish dictation' }))
+    await waitFor(() => expect(media.transcriptions).toHaveLength(transcriptions + 1))
+    await waitFor(() => expect(textbox().value).toBe('hello from dictation'))
+    await view.toolbarRestored()
+  }
+  const sent = (suffix: string) => requests.filter((request) => request.path.endsWith(suffix))
+
+  await dictate()
+  const landing = textbox()
+  fireEvent.keyDown(landing, { key: 'Enter' })
+  await waitFor(() => expect(sent('/api/chats/start')).toHaveLength(1))
+  // The started chat gets its own composer.
+  await waitFor(() => expect(textbox()).not.toBe(landing))
+  expect(sent('/api/chats/start')[0]!.body.response).toMatchObject({ input: 'hello from dictation', usedDictation: true })
+  const chatId = useChat.getState().activeChatId!
+  await waitFor(() => expect(useChat.getState().chats.find((chat) => chat.id === chatId)?.provisional).toBe(false))
+
+  // The first response is still streaming, so this one is queued.
+  fireEvent.change(textbox(), { target: { value: '' } })
+  await dictate()
+  fireEvent.keyDown(textbox(), { key: 'Enter' })
+  await waitFor(() => expect(sent(`/api/chats/${chatId}/queued-messages`)).toHaveLength(1))
+  expect(sent(`/api/chats/${chatId}/queued-messages`)[0]!.body).toMatchObject({ input: 'hello from dictation', usedDictation: true })
+
+  act(() => useChat.setState((state) => ({ streamingIds: [], chats: state.chats.map((chat) => ({
+    ...chat, queuedMessages: [], messages: chat.messages.map((message) => ({ ...message, done: true })),
+  })) })))
+  await waitFor(() => expect(textbox().value).toBe(''))
+  fireEvent.change(textbox(), { target: { value: 'typed follow-up' } })
+  fireEvent.keyDown(textbox(), { key: 'Enter' })
+  await waitFor(() => expect(sent(`/api/chats/${chatId}/responses`)).toHaveLength(1))
+  const followUp = sent(`/api/chats/${chatId}/responses`)[0]!.body
+  expect(followUp).toMatchObject({ input: 'typed follow-up' })
+  expect(followUp).not.toHaveProperty('usedDictation')
 })

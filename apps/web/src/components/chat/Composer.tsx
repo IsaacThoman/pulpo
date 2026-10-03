@@ -219,6 +219,14 @@ export function Composer({
   const attachmentIdsRef = useRef(attachmentIds)
   const uploadsRef = useRef<Record<string, UploadRecord>>({})
   const preservedDraftRef = useRef<{ value: string; attachmentIds: string[] } | null>(null)
+  // Whether dictation inserted text into the current draft (analytics only).
+  // Client-local: not persisted or synced with the draft.
+  const usedDictationRef = useRef(false)
+  const preservedUsedDictationRef = useRef(false)
+  useEffect(() => {
+    // Erasing the whole draft discards any dictated text with it.
+    if (!value.trim()) usedDictationRef.current = false
+  }, [value])
   const activeRecoveryIdRef = useRef<string | null>(null)
   const activeMessageEditIdRef = useRef<string | null>(null)
   const queueDragIdRef = useRef<string | null>(null)
@@ -467,6 +475,7 @@ export function Composer({
       void saveComposerDraft(userId, previous, outgoing)
     }
     draftOwnershipRef.current = draftId
+    usedDictationRef.current = false
     const incoming = userId ? runtimeComposerDraft(userId, draftId) : null
     valueRef.current = incoming?.content ?? ''
     attachmentIdsRef.current = incoming?.attachmentIds ?? []
@@ -545,6 +554,7 @@ export function Composer({
       const end = textarea?.selectionEnd ?? start
       setValue((current) => {
         const inserted = insertDictationText(current, result.text, start, end)
+        usedDictationRef.current = true
         requestAnimationFrame(() => {
           autosize()
           ref.current?.focus()
@@ -738,6 +748,7 @@ export function Composer({
     if (release) releaseDraftUploads(attachmentIds)
     valueRef.current = ''
     attachmentIdsRef.current = []
+    usedDictationRef.current = false
     setValue('')
     setAttachmentIds([])
     if (userId) void deleteComposerDraft(userId, draftId)
@@ -765,6 +776,8 @@ export function Composer({
     setEditingQueueId(null)
     activeMessageEditIdRef.current = null
     if (!preserved) return
+    usedDictationRef.current = preservedUsedDictationRef.current
+    preservedUsedDictationRef.current = false
     const preservedIds = new Set(preserved.attachmentIds)
     releaseDraftUploads(attachmentIds.filter((id) => !preservedIds.has(id)))
     setValue(preserved.value)
@@ -775,6 +788,8 @@ export function Composer({
   useEffect(() => {
     if (!messageEdit || editingQueueId || activeMessageEditIdRef.current === messageEdit.messageId) return
     preservedDraftRef.current = { value, attachmentIds }
+    preservedUsedDictationRef.current = usedDictationRef.current
+    usedDictationRef.current = false
     activeMessageEditIdRef.current = messageEdit.messageId
     setValue(messageEdit.content)
     setEditAgentMode(agentModeEnabled)
@@ -805,6 +820,8 @@ export function Composer({
   useEffect(() => {
     if (recovery && !activeRecoveryIdRef.current && !messageEdit && !editingQueueId) {
       preserveComposerDraft(recovery.chatId, { value, attachmentIds })
+      preservedUsedDictationRef.current = usedDictationRef.current
+      usedDictationRef.current = false
       activeRecoveryIdRef.current = recovery.id
       setValue(recovery.content)
       setAttachmentIds(recovery.attachmentIds)
@@ -820,6 +837,8 @@ export function Composer({
     if (!chatId) return
     const preserved = takePreservedComposerDraft(chatId)
     if (!preserved) return
+    usedDictationRef.current = preservedUsedDictationRef.current
+    preservedUsedDictationRef.current = false
     setValue(preserved.value)
     setAttachmentIds(preserved.attachmentIds)
     requestAnimationFrame(autosize)
@@ -833,7 +852,7 @@ export function Composer({
     size: attachment.size,
   }))
 
-  const stageMessage = (text: string, ids: string[], submittedState?: ComposerState, revision?: number) => {
+  const stageMessage = (text: string, ids: string[], submittedState?: ComposerState, revision?: number, usedDictation = false) => {
     const staged = stageSubmission({
       composerDraft: userId && composerSync && submittedState ? { userId, draftId, state: submittedState, revision } : undefined,
       chatId,
@@ -843,6 +862,7 @@ export function Composer({
       autoExpire,
       fileScopeIds: chatId ? undefined : [...fileScopeIds],
       attachmentIds: ids,
+      ...(usedDictation ? { usedDictation: true } : {}),
     })
     // The new chat took the scope; the next one starts without it.
     if (!chatId && fileScopeIds.length) onFileScopeChange?.([])
@@ -914,6 +934,7 @@ export function Composer({
         presetSelections: selections,
         agentMode: activeAgentMode && canUseAgent,
         attachmentIds,
+        ...(usedDictationRef.current ? { usedDictation: true } : {}),
       })
       clearDraft(false)
       return
@@ -921,7 +942,7 @@ export function Composer({
     setSubmitting(true)
     const submittedRevision = await composerSync?.prepareSubmission(draftId, sharedComposerState)
     setSubmitting(false)
-    stageMessage(text, attachmentIds, sharedComposerState, submittedRevision ?? undefined)
+    stageMessage(text, attachmentIds, sharedComposerState, submittedRevision ?? undefined, usedDictationRef.current)
     if (valueRef.current === value && attachmentIdsRef.current === attachmentIds) {
       skipNextEdit()
       clearDraft(false)
@@ -955,6 +976,7 @@ export function Composer({
     }
     const ids = restoreDraftAttachments(shelfDraftAttachments(after.attachments), { chatId: null, temporary: false })
     skipNextEdit()
+    usedDictationRef.current = false
     valueRef.current = after.content; attachmentIdsRef.current = ids
     setValue(after.content); setAttachmentIds(ids)
     rememberRuntimeComposerDraft(userId, 'new', { content: after.content, attachmentIds: ids, attachments: shelfDraftAttachments(after.attachments) })
@@ -990,6 +1012,8 @@ export function Composer({
     try {
       await updateQueuedMessage(chatId, messageId, { action: 'begin_edit' })
       preservedDraftRef.current = { value, attachmentIds }
+      preservedUsedDictationRef.current = usedDictationRef.current
+      usedDictationRef.current = false
       setEditingQueueId(messageId)
       setValue(message.content)
       setAttachmentIds(addExistingAttachments(message.attachments.map((attachment) => ({
