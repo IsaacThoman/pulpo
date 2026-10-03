@@ -5,9 +5,10 @@ const a = '0b4f6a3e-1c2d-4e5f-8a9b-0c1d2e3f4a5b'
 const b = '1b4f6a3e-1c2d-4e5f-8a9b-0c1d2e3f4a5c'
 
 describe('side panel state', () => {
-  it('round-trips files and folders through the URL parameter', () => {
+  it('round-trips files, folders, and attachments through the URL parameter', () => {
     const contents: PanelContent[] = [
       { kind: 'file', id: a },
+      { kind: 'attachment', id: b },
       { kind: 'folder', id: b },
       { kind: 'folder', id: null },
     ]

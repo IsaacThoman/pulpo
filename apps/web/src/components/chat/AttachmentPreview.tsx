@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { TableVirtuoso, type TableComponents } from 'react-virtuoso'
 import { Check, Copy, Download, FileWarning, Loader2, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -11,126 +11,20 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import type { Attachment } from '@/lib/types'
-import { apiRequest, fetchApiBlob } from '@/lib/api'
-import { getCachedAttachment } from '@/lib/local-first/attachment-cache'
-import { useAuth } from '@/stores/auth'
-import { formatBytes } from '@/lib/attachments'
 import { writeClipboardText } from '@/lib/clipboard'
 import {
   attachmentPreviewKind,
   createDelimitedReader,
   formatTextPreview,
-  isTextPreviewKind,
-  previewSizeLimit,
   type AttachmentPreviewKind,
 } from '@/lib/attachment-previews'
 import { activeLocale, ui, uit } from '@/i18n/ui'
+import { attachmentDescription, usePreviewContent, type PreviewContent } from './use-attachment-preview-content'
 import { SandboxFrame } from '@/components/chat/SandboxFrame'
 import { CodeSource, PreviewModeToggle } from '@/components/chat/CodePreviewPanel'
 import { HighlightedCode } from '@/components/chat/HighlightedCode'
 import { previewKindForFile } from '@/lib/code-preview'
 import { languageForFile } from '@/lib/syntax-highlight'
-
-type PreviewContent =
-  | { status: 'idle' }
-  | { status: 'loading' }
-  | { status: 'ready'; url: string | null; text: string | null; textTruncated: boolean }
-  | { status: 'error'; message: string }
-
-function previewLabel(kind: AttachmentPreviewKind): string {
-  if (kind === 'pdf') return ui("PDF preview")
-  if (kind === 'table') return ui("Table preview")
-  if (kind === 'markdown') return ui("Markdown preview")
-  if (kind === 'text') return ui("Text preview")
-  if (kind === 'sandbox') return ui("Live preview")
-  return `${kind[0]!.toUpperCase()}${kind.slice(1)} preview`
-}
-
-function attachmentDescription(attachment: Attachment, kind: AttachmentPreviewKind): string {
-  return [previewLabel(kind), attachment.size > 0 ? formatBytes(attachment.size) : null]
-    .filter(Boolean)
-    .join(' · ')
-}
-
-function usePreviewContent(
-  attachment: Attachment,
-  kind: AttachmentPreviewKind | null,
-  open: boolean,
-  sourceFile?: File,
-): PreviewContent {
-  const userId = useAuth((state) => state.user?.id)
-  const [content, setContent] = useState<PreviewContent>({ status: 'idle' })
-
-  useEffect(() => {
-    if (!open || !kind) {
-      setContent({ status: 'idle' })
-      return
-    }
-    if (attachment.size > previewSizeLimit(kind)) {
-      setContent({
-        status: 'error',
-        message: `This file is too large to preview (${formatBytes(attachment.size)}).`,
-      })
-      return
-    }
-
-    let cancelled = false
-    let objectUrl: string | null = null
-    setContent({ status: 'loading' })
-
-    void (async () => {
-      try {
-        let blob: Blob | undefined = sourceFile
-        if (!blob) {
-          if (!userId) throw new Error(ui("Sign in to preview this file."))
-          const cached = await getCachedAttachment(userId, attachment.id)
-          if (cancelled) return
-          if (cached) {
-            blob = cached.blob
-          } else {
-            const { url } = await apiRequest<{ url: string }>(`/api/attachments/${attachment.id}/download`)
-            blob = await fetchApiBlob(url)
-          }
-        }
-        if (cancelled) return
-        if (!blob) throw new Error(ui("This preview could not be loaded."))
-        if (blob.size > previewSizeLimit(kind)) {
-          throw new Error(`This file is too large to preview (${formatBytes(blob.size)}).`)
-        }
-
-        if (kind === 'table') {
-          // Tables keep the whole file: rows are parsed and rendered on demand as the reader scrolls.
-          const text = await blob.text()
-          if (!cancelled) setContent({ status: 'ready', url: null, text, textTruncated: false })
-          return
-        }
-        if (isTextPreviewKind(kind)) {
-          const result = formatTextPreview(attachment.name, attachment.mimeType, await blob.text())
-          if (!cancelled) setContent({ status: 'ready', url: null, text: result.text, textTruncated: result.truncated })
-          return
-        }
-
-        const typedBlob = blob.type || !attachment.mimeType
-          ? blob
-          : new Blob([blob], { type: attachment.mimeType })
-        objectUrl = URL.createObjectURL(typedBlob)
-        setContent({ status: 'ready', url: objectUrl, text: null, textTruncated: false })
-      } catch (cause) {
-        if (!cancelled) setContent({
-          status: 'error',
-          message: cause instanceof Error ? cause.message : 'This preview could not be loaded.',
-        })
-      }
-    })()
-
-    return () => {
-      cancelled = true
-      if (objectUrl) URL.revokeObjectURL(objectUrl)
-    }
-  }, [attachment.id, attachment.mimeType, attachment.name, attachment.size, kind, open, sourceFile, userId])
-
-  return content
-}
 
 const TABLE_ROW_BATCH = 200
 
@@ -253,7 +147,7 @@ function SandboxPreview({ attachment, text, truncated }: { attachment: Attachmen
   )
 }
 
-function PreviewBody({
+export function PreviewBody({
   attachment,
   kind,
   content,
@@ -314,7 +208,7 @@ function PreviewBody({
   return <video src={content.url} controls preload="metadata" aria-label={uit`Video preview of ${attachment.name}`} className="size-full bg-black object-contain" data-preview-kind="video" />
 }
 
-function CopyTextButton({ text }: { text: string }) {
+export function CopyTextButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false)
   return (
     <Button

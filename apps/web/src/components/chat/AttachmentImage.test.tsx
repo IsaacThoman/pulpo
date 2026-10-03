@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
+import { MemoryRouter } from 'react-router-dom'
 import { MessageAttachmentList, PendingAttachmentChip } from './AttachmentImage'
 
 vi.hoisted(() => {
@@ -15,10 +16,10 @@ vi.mock('react-virtuoso', () => ({ TableVirtuoso: () => null }))
 
 describe('attachment card actions', () => {
   it('separates preview and download actions for supported message files', () => {
-    const markup = renderToStaticMarkup(<MessageAttachmentList attachments={[
+    const markup = renderToStaticMarkup(<MemoryRouter><MessageAttachmentList attachments={[
       { id: 'pdf', name: 'report.pdf', mimeType: 'application/pdf', type: 'file', size: 1_024 },
       { id: 'zip', name: 'source.zip', mimeType: 'application/zip', type: 'file', size: 2_048 },
-    ]} />)
+    ]} /></MemoryRouter>)
 
     expect(markup).toContain('aria-label="Preview report.pdf"')
     expect(markup).toContain('aria-label="Download report.pdf"')

@@ -1956,6 +1956,9 @@ const esUi: Record<string, string> = {
   "Pool members can draw this share of a Fat subscriber's weekly usage, each within their own 5-hour limit.": "Los miembros del Pool pueden usar esta parte del uso semanal de un suscriptor de Fat, cada uno dentro de su propio límite de 5 horas.",
   "Share of Fat weekly": "Parte del uso semanal de Fat",
   "5-hour limit per member": "Límite de 5 horas por miembro",
+  "Untitled chat": "Chat sin título",
+  "New chat": "Nuevo chat",
+  "This attachment could not be found. It may have been deleted with its chat.": "No se encontró este adjunto. Puede que se haya eliminado junto con su chat.",
 }
 
 export default esUi
