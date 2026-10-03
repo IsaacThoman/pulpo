@@ -3,6 +3,53 @@
 Run `npm run test:dependency-security`. These tests also run at the start of
 `npm test` and exercise the installed dependencies through their consumers.
 
+## Temporary braces fork
+
+As of October 3, 2026, braces 3.0.3 is the latest published release and all
+published versions are affected by
+[CVE-2026-93687 / GHSA-vfj7-8cjw-p6xm](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm).
+Recursive AST walkers can exhaust the call stack on deeply nested input under
+the existing 10,000-character limit. This propagates through micromatch into
+Metro, Expo, React Native, and semantic-release.
+
+The root override selects the local `@pulpo/braces` fork in `vendor/braces`.
+Its runtime files and MIT license are copied verbatim from
+[`28d440b5dd449dbf1fe6f3506cf94ecca4d02660`](https://github.com/FSDevelop/braces/commit/28d440b5dd449dbf1fe6f3506cf94ecca4d02660),
+the head of [upstream PR #72](https://github.com/micromatch/braces/pull/72).
+**This is an unmerged proposed fix, not a published or maintainer-approved
+release.** The fork caps brace and parenthesis nesting and caller-supplied AST
+depth at 100 and rejects cyclic AST parent chains. Stricter `maxDepth` options
+are honored; larger values cannot disable the cap. The source also includes
+upstream's unreleased fixes for unpaired quotes and range/set expansion.
+Only the package manifest is customized: a private name/version, the existing
+fill-range dependency and Node requirement, and no lifecycle scripts.
+
+The separate package identity distinguishes this reviewed source from the
+vulnerable npm release, which still has version 3.0.3 even in the proposed fix.
+An archive override alone continued to flag its version and downstream
+consumers in npm audit. Vendoring makes the actual patched source reviewable
+in this repository and works with `npm ci --ignore-scripts`; it does not rely
+on suppressing advisories or patching node_modules after installation.
+
+Regression tests resolve braces through each Metro and semantic-release
+micromatch consumer. They cover 4,000-level malicious patterns, caller-supplied
+ASTs, the 100/101 depth boundary, fractional and oversized limits, cyclic
+parents, and ordinary expansion, escaping, and glob matching. Replace the
+local fork and override with a published fixed braces release once available,
+then rerun these tests and both full and production audits.
+
+## Fastify multipart parser
+
+The lockfile updates `@fastify/busboy` from 3.2.0 to 3.2.2 within
+`@fastify/multipart`'s existing dependency range. This fixes
+[CVE-2026-19484](https://github.com/advisories/GHSA-xjh9-v7x6-24jw) and
+[CVE-2026-19481](https://github.com/advisories/GHSA-x8mw-p69m-v3mx).
+Regression tests resolve the parser through Fastify multipart and exercise
+ordinary and prototype-named headers with ordinary, 252-byte, and oversized
+boundaries, plus a fragmented 252-byte boundary mismatch. Each parser runs in
+a child process with a timeout so a synchronous
+boundary-search infinite loop fails safely.
+
 ## Temporary node-forge pin
 
 As of October 2, 2026, node-forge 1.4.0 is the latest published release and is

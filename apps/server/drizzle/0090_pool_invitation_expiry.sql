@@ -1,2 +1,0 @@
-ALTER TABLE "pool_invitations" DROP CONSTRAINT "pool_invitations_status_check";--> statement-breakpoint
-ALTER TABLE "pool_invitations" ADD CONSTRAINT "pool_invitations_status_check" CHECK ("pool_invitations"."status" in ('pending', 'accepted', 'declined', 'canceled', 'expired'));

@@ -2,6 +2,7 @@ FROM node:22-bookworm-slim AS build
 ARG NODE_ENV
 WORKDIR /app
 COPY package.json package-lock.json ./
+COPY scripts/security/vendor/braces scripts/security/vendor/braces
 COPY apps/web/package.json apps/web/package.json
 COPY apps/server/package.json apps/server/package.json
 COPY packages/contracts/package.json packages/contracts/package.json
@@ -21,6 +22,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -r
 WORKDIR /app
 ENV NODE_ENV=production
 COPY package.json package-lock.json ./
+COPY scripts/security/vendor/braces scripts/security/vendor/braces
 COPY apps/web/package.json apps/web/package.json
 COPY apps/server/package.json apps/server/package.json
 COPY packages/contracts/package.json packages/contracts/package.json

@@ -81,3 +81,33 @@ export function allocatePoolBalanceMicros(input: {
   for (const [userId, amount] of shared) result.set(userId, amount)
   return result
 }
+
+/**
+ * Split what the caller's own allowance left uncovered across pool owners' shared
+ * allowances, within the caller's shared five-hour window. Owners contribute in
+ * proportion to what they have available.
+ */
+export function allocateSharedAllowanceMicros(
+  amountMicros: number,
+  fiveHourAvailableMicros: number,
+  owners: Array<{ userId: string; availableMicros: number }>,
+): Map<string, number> {
+  const ownersAvailable = owners.reduce((sum, owner) => sum + Math.max(0, owner.availableMicros), 0)
+  const sharedMicros = Math.min(amountMicros, Math.max(0, fiveHourAvailableMicros), ownersAvailable)
+  if (sharedMicros <= 0) return new Map()
+  return allocateProportionallyMicros(sharedMicros, owners)
+}
+
+/** Charge settled or retained cost to shared allowances, never beyond what each owner reserved. */
+export function allocateSharedSettlementMicros(amountMicros: number, funders: Array<{ userId: string; reservedMicros: number }>): Map<string, number> {
+  const reserved = funders.reduce((sum, row) => sum + Math.max(0, row.reservedMicros), 0)
+  const coveredMicros = Math.min(Math.max(0, amountMicros), reserved)
+  if (coveredMicros <= 0) return new Map()
+  return allocateProportionallyMicros(coveredMicros, funders.map((row) => ({ userId: row.userId, availableMicros: row.reservedMicros })))
+}
+
+export function totalMicros(allocation: Map<string, number>): number {
+  let total = 0
+  for (const micros of allocation.values()) total += micros
+  return total
+}

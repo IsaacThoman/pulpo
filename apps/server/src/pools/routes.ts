@@ -7,6 +7,7 @@ import { friendships, poolInvitations, poolMembers, pools, users } from '../data
 import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import { publicFriendProfile } from '../profile/service.js'
+import { poolSharedUsageSummary } from '../billing/shared-allowance.js'
 import { activePoolMembers, activePoolMembership, dissolveSingletonPool, expirePoolInvitations, openPoolInvitation, pendingFundingByUser, poolInvitationExpiresAt, publishPoolChanges } from './service.js'
 
 const disclosureSchema = z.object({ userId: z.uuid(), balanceDisclosureAccepted: z.literal(true) })
@@ -62,6 +63,7 @@ export async function registerPoolRoutes(app: FastifyInstance): Promise<void> {
     if (!membership) return { accountBalanceMicros: user.balanceMicros, pool: null, incomingInvitations: incoming.map(invitation) }
     const members = await db.transaction((tx) => activePoolMembers(tx, membership.pool.id))
     const reserved = await db.transaction((tx) => pendingFundingByUser(tx, members.map((row) => row.user.id)))
+    const sharedUsage = await db.transaction((tx) => poolSharedUsageSummary(tx, user.id, members.map((row) => row.user.id)))
     return {
       accountBalanceMicros: user.balanceMicros,
       pool: {
@@ -74,6 +76,7 @@ export async function registerPoolRoutes(app: FastifyInstance): Promise<void> {
           owner: row.user.id === membership.pool.ownerUserId,
         })),
         pendingInvitations: outgoing.map(invitation),
+        sharedUsage,
       },
       incomingInvitations: incoming.map(invitation),
     }

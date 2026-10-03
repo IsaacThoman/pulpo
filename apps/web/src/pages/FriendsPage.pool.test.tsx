@@ -22,7 +22,7 @@ let mutation: (path: string, options: { method: string; body?: unknown }) => unk
 
 beforeEach(() => {
   friends = { friends: [connection('Alice'), connection('Bob')], incoming: [], outgoing: [], blocked: [] }
-  summary = { accountBalanceMicros: 5_000_000, pool: { id: 'pool', ownerUserId: 'me', pooledBalanceMicros: 15_000_000, members: [member('me'), member('Alice'), member('Stranger')], pendingInvitations: [] }, incomingInvitations: [] }
+  summary = { accountBalanceMicros: 5_000_000, pool: { id: 'pool', ownerUserId: 'me', pooledBalanceMicros: 15_000_000, members: [member('me'), member('Alice'), member('Stranger')], pendingInvitations: [], sharedUsage: null }, incomingInvitations: [] }
   mutation = () => ({})
   queryClient.clear()
   queryClient.setDefaultOptions({ queries: { retry: false, gcTime: Infinity } })
@@ -68,6 +68,22 @@ describe('combined Friends and Pool page', () => {
     expect(headings.indexOf('Pool')).toBeLessThan(headings.indexOf('Friends'))
   })
 
+  it('shows the Pool\'s combined shared usage and the viewer\'s own 5-hour shared limit', async () => {
+    summary.pool!.sharedUsage = {
+      total: { remainingPercentage: 64, availableBarPercentage: 64, pendingMicros: 0, pendingBarPercentage: 0, resetsAt: '2026-10-05T00:00:00.000Z' },
+      fiveHour: { remainingPercentage: 80, availableBarPercentage: 80, pendingMicros: 0, pendingBarPercentage: 0, resetsAt: null },
+    }
+    await mount()
+    expect(within(poolRegion()).getByRole('progressbar', { name: 'Shared usage' }).getAttribute('aria-valuenow')).toBe('64')
+    expect(within(poolRegion()).getByRole('progressbar', { name: 'Your 5-hour shared limit' }).getAttribute('aria-valuenow')).toBe('80')
+    expect(within(poolRegion()).getByText('Weekly usage shared by Le Pulpo Fat subscribers in this Pool')).toBeTruthy()
+  })
+
+  it('hides shared usage when nobody in the Pool shares', async () => {
+    await mount()
+    expect(within(poolRegion()).queryByRole('progressbar')).toBeNull()
+  })
+
   it('keeps pending invitees in Friends, prevents duplicate invites, and cancels reserved seats', async () => {
     summary.pool!.pendingInvitations = [invitation('Bob')]
     await mount()
@@ -93,7 +109,7 @@ describe('combined Friends and Pool page', () => {
     await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'More options for Bob' })))
     expect(writes()).toHaveLength(0)
     await menu('Bob'); await choose('Invite to Pool')
-    mutation = () => { summary.pool = { id: 'pool', ownerUserId: 'me', members: [member('me')], pendingInvitations: [invitation('Bob')], pooledBalanceMicros: 5_000_000 }; return {} }
+    mutation = () => { summary.pool = { id: 'pool', ownerUserId: 'me', members: [member('me')], pendingInvitations: [invitation('Bob')], pooledBalanceMicros: 5_000_000, sharedUsage: null }; return {} }
     fireEvent.click(await screen.findByRole('button', { name: 'Invite and share' }))
     await screen.findByText('Invitation sent')
     expect(within(poolRegion()).getByText('Myself')).toBeTruthy()
@@ -177,7 +193,7 @@ describe('combined Friends and Pool page', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Join' }))
     expect(await screen.findByRole('dialog')).toBeTruthy()
     expect(writes()).toHaveLength(0)
-    mutation = () => { summary.incomingInvitations = []; summary.pool = { id: 'pool', ownerUserId: 'Alice', members: [member('me'), member('Alice')], pendingInvitations: [], pooledBalanceMicros: 10_000_000 }; return {} }
+    mutation = () => { summary.incomingInvitations = []; summary.pool = { id: 'pool', ownerUserId: 'Alice', members: [member('me'), member('Alice')], pendingInvitations: [], pooledBalanceMicros: 10_000_000, sharedUsage: null }; return {} }
     fireEvent.click(screen.getByRole('button', { name: 'Join and share' }))
     await waitFor(() => expect(within(poolRegion()).getByText('Alice')).toBeTruthy())
     expect(within(friendsRegion()).queryByText('Alice')).toBeNull()

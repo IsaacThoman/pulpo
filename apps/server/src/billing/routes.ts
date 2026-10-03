@@ -13,6 +13,7 @@ import {
 import { AppError } from '../lib/errors.js'
 import { parseBillingSettings } from '../settings/application-settings.js'
 import { getBillingEntitlements } from './entitlements.js'
+import { loadOwnerSharedAllowance, sharedAllowanceBar } from './shared-allowance.js'
 import { getAutoTopUpSummary, removeAutoTopUpPaymentMethod, updateAutoTopUpSettings } from './auto-top-up.js'
 import {
   AUTO_TOP_UP_MAX_MONTHLY_LIMIT_CENTS,
@@ -143,6 +144,7 @@ export async function registerBillingRoutes(app: FastifyInstance): Promise<void>
         .where(eq(applicationSettings.key, 'billing')).limit(1),
     ])
     const settings = parseBillingSettings(billingSetting?.value)
+    const sharedAllowance = poolBalance ? await db.transaction((tx) => loadOwnerSharedAllowance(tx, user.id, entitlements, settings)) : null
     const subscription = selectSummarySubscription(subscriptions, entitlements.subscriptionPlan)
     const fiveHour = entitlements.fiveHourRemainingPercentage === null
       ? null
@@ -167,6 +169,9 @@ export async function registerBillingRoutes(app: FastifyInstance): Promise<void>
         ...fiveHour,
         resetsAt: entitlements.fiveHourResetAt?.toISOString() ?? null,
       } : null,
+      // How much of this user's weekly usage pool members can still draw on.
+      shared: sharedAllowance ? sharedAllowanceBar(sharedAllowance) : null,
+      sharedWeeklyPercent: settings.fatSharedWeeklyPercent,
       onHold: entitlements.onHold,
       planStorageLimitBytes: {
         baby: settings.babyStorageLimitBytes,

@@ -1,6 +1,6 @@
 {
-  "id": "948db5ed-6784-4a71-a870-7005b119c9db",
-  "prevId": "81a2f06f-bba9-4269-ad0f-f0088c72fb4b",
+  "id": "358c548e-9766-4827-b1ef-fdd1744658ec",
+  "prevId": "948db5ed-6784-4a71-a870-7005b119c9db",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -7602,7 +7602,7 @@
       "checkConstraints": {
         "pool_invitations_status_check": {
           "name": "pool_invitations_status_check",
-          "value": "\"pool_invitations\".\"status\" in ('pending', 'accepted', 'declined', 'canceled')"
+          "value": "\"pool_invitations\".\"status\" in ('pending', 'accepted', 'declined', 'canceled', 'expired')"
         }
       },
       "isRLSEnabled": false

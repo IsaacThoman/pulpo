@@ -27,7 +27,7 @@
     "mobile:typecheck": "npm run typecheck -w @pulpo/mobile",
     "mobile:export": "npm run export -w @pulpo/mobile",
     "test": "npm run test:dependency-security && npm run build -w @pulpo/contracts && npm run build -w @pulpo/client-core && npm run build -w @isaacthoman/pulpo && npm run test -w @semantic-release/npm && npm run test -w @pulpo/contracts && npm run test -w @pulpo/client-core && npm run test -w @isaacthoman/pulpo && npm run test -w @pulpo/web && npm run test -w @pulpo/workspace-controller && npm run test -w @pulpo/server && npm run test -w @pulpo/mobile && npm run test -w @pulpo/desktop",
-    "test:dependency-security": "node --test scripts/security/node-forge.test.cjs",
+    "test:dependency-security": "node --test --test-timeout=10000 scripts/security/*.test.cjs",
     "lint": "oxlint --report-unused-disable-directives --deny-warnings",
     "release": "semantic-release",
     "release:dry-run": "semantic-release --dry-run --no-ci",
@@ -48,6 +48,7 @@
     "@semantic-release/github": "^12.0.9",
     "@semantic-release/npm": "file:packages/semantic-release-npm",
     "@semantic-release/release-notes-generator": "^14.1.1",
+    "braces": "file:scripts/security/vendor/braces",
     "conventional-changelog-conventionalcommits": "^10.2.1",
     "image-size": "file:apps/desktop/vendor/appdmg-image-size",
     "oxlint": "^1.71.0",
@@ -59,6 +60,7 @@
     "vitepress": "1.6.4"
   },
   "overrides": {
+    "braces": "$braces",
     "expo-modules-core": "57.0.9",
     "image-size": "$image-size",
     "linkify-it": "6.1.0",

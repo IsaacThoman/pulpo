@@ -56,6 +56,16 @@ export interface BillingSummary {
     pendingBarPercentage: number
     resetsAt: string | null
   } | null
+  /** How much of this Fat subscriber's weekly usage pool members can still draw on; null when not sharing. */
+  shared: {
+    remainingPercentage: number
+    availableBarPercentage: number
+    pendingMicros: number
+    pendingBarPercentage: number
+    resetsAt: string | null
+  } | null
+  /** Share of Fat weekly usage that pool members may draw on. */
+  sharedWeeklyPercent: number
   onHold: boolean
   /** Admin-configured file storage included with each plan. */
   planStorageLimitBytes: Record<BillingPlan, number>

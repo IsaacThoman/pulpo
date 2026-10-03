@@ -93,6 +93,8 @@ interface BillingSettings {
   fatWeeklyLimitMicros: number
   eightFiveHourLimitMicros: number
   fatFiveHourLimitMicros: number
+  fatSharedWeeklyPercent: number
+  sharedFiveHourLimitMicros: number
   babyStorageLimitBytes: number
   eightStorageLimitBytes: number
   fatStorageLimitBytes: number
@@ -108,6 +110,8 @@ export function AdminBillingPage() {
   const [fatLimit, setFatLimit] = useState('4.00')
   const [eightFiveHourLimit, setEightFiveHourLimit] = useState('1.00')
   const [fatFiveHourLimit, setFatFiveHourLimit] = useState('1.00')
+  const [sharedPercent, setSharedPercent] = useState('50')
+  const [sharedFiveHourLimit, setSharedFiveHourLimit] = useState('1.00')
   const [babyStorage, setBabyStorage] = useState('5')
   const [eightStorage, setEightStorage] = useState('25')
   const [fatStorage, setFatStorage] = useState('100')
@@ -129,6 +133,8 @@ export function AdminBillingPage() {
     setFatLimit((settingsQuery.data.fatWeeklyLimitMicros / 1_000_000).toFixed(2))
     setEightFiveHourLimit((settingsQuery.data.eightFiveHourLimitMicros / 1_000_000).toFixed(2))
     setFatFiveHourLimit((settingsQuery.data.fatFiveHourLimitMicros / 1_000_000).toFixed(2))
+    setSharedPercent(String(settingsQuery.data.fatSharedWeeklyPercent))
+    setSharedFiveHourLimit((settingsQuery.data.sharedFiveHourLimitMicros / 1_000_000).toFixed(2))
     setBabyStorage(String(settingsQuery.data.babyStorageLimitBytes / (1024 ** 3)))
     setEightStorage(String(settingsQuery.data.eightStorageLimitBytes / (1024 ** 3)))
     setFatStorage(String(settingsQuery.data.fatStorageLimitBytes / (1024 ** 3)))
@@ -145,6 +151,8 @@ export function AdminBillingPage() {
           fatWeeklyLimitMicros: Math.round(Number(fatLimit) * 1_000_000),
           eightFiveHourLimitMicros: Math.round(Number(eightFiveHourLimit) * 1_000_000),
           fatFiveHourLimitMicros: Math.round(Number(fatFiveHourLimit) * 1_000_000),
+          fatSharedWeeklyPercent: Math.round(Number(sharedPercent)),
+          sharedFiveHourLimitMicros: Math.round(Number(sharedFiveHourLimit) * 1_000_000),
           babyStorageLimitBytes: Math.round(Number(babyStorage) * 1024 ** 3),
           eightStorageLimitBytes: Math.round(Number(eightStorage) * 1024 ** 3),
           fatStorageLimitBytes: Math.round(Number(fatStorage) * 1024 ** 3),
@@ -190,8 +198,9 @@ export function AdminBillingPage() {
   const totals = data?.totals
   const stripeMode = data?.stripe?.mode
   const chart = data?.trend.map((row) => ({ date: row.day.slice(0, 10), day: row.day.slice(5, 10), collected: row.totalCents / 100 })) ?? []
-  const limitsAreValid = [eightLimit, fatLimit, eightFiveHourLimit, fatFiveHourLimit, babyStorage, eightStorage, fatStorage]
+  const limitsAreValid = [eightLimit, fatLimit, eightFiveHourLimit, fatFiveHourLimit, sharedFiveHourLimit, babyStorage, eightStorage, fatStorage]
     .every((value) => Number.isFinite(Number(value)) && Number(value) >= 0)
+    && Number.isInteger(Number(sharedPercent)) && Number(sharedPercent) >= 0 && Number(sharedPercent) <= 100
   const attention = (totals?.holds ?? 0) + (totals?.pastDue ?? 0) + (totals?.failedWebhooks ?? 0)
   const stats = [
     { label: ui("Collected"), value: formatBalance((totals?.grossCollectedCents ?? 0) / 100) },
@@ -301,6 +310,12 @@ export function AdminBillingPage() {
             <div className="flex flex-wrap items-end gap-3">
               <LimitInput label={ui("Pulpo Eight")} value={eightFiveHourLimit} onChange={setEightFiveHourLimit} />
               <LimitInput label={ui("Le Pulpo Fat")} value={fatFiveHourLimit} onChange={setFatFiveHourLimit} />
+            </div>
+            <p className="pt-1 text-xs font-medium">{ui("Shared usage")}</p>
+            <p className="text-xs text-muted-foreground">{ui("Pool members can draw this share of a Fat subscriber's weekly usage, each within their own 5-hour limit.")}</p>
+            <div className="flex flex-wrap items-end gap-3">
+              <PercentInput label={ui("Share of Fat weekly")} value={sharedPercent} onChange={setSharedPercent} />
+              <LimitInput label={ui("5-hour limit per member")} value={sharedFiveHourLimit} onChange={setSharedFiveHourLimit} />
             </div>
             <p className="pt-1 text-xs text-muted-foreground">{ui("File storage allowances apply immediately to users without an override.")}</p>
             <div className="flex flex-wrap items-end gap-3">
@@ -490,6 +505,18 @@ function LimitInput({ label, value, onChange }: { label: string; value: string; 
       <div className="relative">
         <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">$</span>
         <Input className="h-8 w-28 pl-6 text-xs tabular-nums" type="number" min="0" step="0.01" value={value} onChange={(event) => onChange(event.target.value)} />
+      </div>
+    </label>
+  )
+}
+
+function PercentInput({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+  return (
+    <label className="space-y-1">
+      <span className="text-xs text-muted-foreground">{label}</span>
+      <div className="relative">
+        <Input className="h-8 w-28 pr-7 text-xs tabular-nums" type="number" min="0" max="100" step="1" value={value} onChange={(event) => onChange(event.target.value)} />
+        <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">%</span>
       </div>
     </label>
   )

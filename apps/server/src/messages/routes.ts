@@ -276,7 +276,7 @@ export async function registerMessageRoutes(app: FastifyInstance): Promise<void>
       responseId: usageEvents.responseId,
       costMicros: usageEvents.costMicros,
       inferenceReferenceCostMicros: usageEvents.inferenceReferenceCostMicros,
-      subscriptionCoveredMicros: usageEvents.weeklyCostMicros,
+      subscriptionCoveredMicros: sql<number>`${usageEvents.weeklyCostMicros} + ${usageEvents.sharedCostMicros}`,
     }).from(usageEvents).where(inArray(usageEvents.responseId, turns.map((response) => response.id))) : []
     const usageCostsByResponseId = new Map(costRows.flatMap((row) => (
       row.responseId ? [[row.responseId, {
