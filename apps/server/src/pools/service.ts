@@ -1,9 +1,36 @@
-import { and, eq, inArray, isNull, sql } from 'drizzle-orm'
+import { and, eq, gt, inArray, isNull, lte, sql, type SQL } from 'drizzle-orm'
 import { db } from '../database/client.js'
 import { budgetReservationFunders, budgetReservations, poolInvitations, poolMembers, pools, users } from '../database/schema.js'
 import { bumpAccountRevisions, publishScopedStateChanges } from '../friends/sync.js'
 
 export type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0]
+
+export const POOL_INVITATION_TTL_MS = 7 * 86_400_000
+
+export function poolInvitationExpiresAt(createdAt: Date): Date {
+  return new Date(createdAt.getTime() + POOL_INVITATION_TTL_MS)
+}
+
+/** Pending invitations that have not yet passed their expiry; stale rows are swept to 'expired' by cleanup. */
+export function openPoolInvitation(now = new Date()): SQL {
+  return and(eq(poolInvitations.status, 'pending'), gt(poolInvitations.createdAt, new Date(now.getTime() - POOL_INVITATION_TTL_MS)))!
+}
+
+export async function expirePoolInvitations(tx: Transaction, now = new Date(), scope?: SQL) {
+  return tx.update(poolInvitations).set({ status: 'expired', respondedAt: now, updatedAt: now }).where(and(
+    eq(poolInvitations.status, 'pending'), lte(poolInvitations.createdAt, new Date(now.getTime() - POOL_INVITATION_TTL_MS)), scope,
+  )).returning({ poolId: poolInvitations.poolId, inviterUserId: poolInvitations.inviterUserId, inviteeUserId: poolInvitations.inviteeUserId })
+}
+
+export async function sweepExpiredPoolInvitations(now = new Date()): Promise<void> {
+  const affected = await db.transaction(async (tx) => {
+    const expired = await expirePoolInvitations(tx, now)
+    const dissolved: string[] = []
+    for (const poolId of new Set(expired.map((row) => row.poolId))) dissolved.push(...await dissolveSingletonPool(tx, poolId, { keepWhileInvited: true }))
+    return [...new Set(expired.flatMap((row) => [row.inviterUserId, row.inviteeUserId]).concat(dissolved))]
+  })
+  if (affected.length) await publishPoolChanges(affected)
+}
 
 export async function activePoolMembership(tx: Transaction, userId: string) {
   const [row] = await tx.select({ member: poolMembers, pool: pools }).from(poolMembers)
@@ -35,7 +62,7 @@ export async function dissolveSingletonPool(tx: Transaction, poolId: string, opt
   const members = await activePoolMembers(tx, poolId)
   if (members.length > 1) return []
   const pending = await tx.select().from(poolInvitations).where(and(eq(poolInvitations.poolId, poolId), eq(poolInvitations.status, 'pending')))
-  if (options.keepWhileInvited && pending.length > 0) return []
+  if (options.keepWhileInvited && pending.some((row) => row.createdAt.getTime() + POOL_INVITATION_TTL_MS > Date.now())) return []
   const now = new Date()
   await tx.update(pools).set({ closedAt: now, updatedAt: now }).where(and(eq(pools.id, poolId), isNull(pools.closedAt)))
   await tx.update(poolMembers).set({ leftAt: now }).where(and(eq(poolMembers.poolId, poolId), isNull(poolMembers.leftAt)))

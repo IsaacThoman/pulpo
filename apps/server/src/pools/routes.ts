@@ -7,7 +7,7 @@ import { friendships, poolInvitations, poolMembers, pools, users } from '../data
 import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import { publicFriendProfile } from '../profile/service.js'
-import { activePoolMembers, activePoolMembership, dissolveSingletonPool, pendingFundingByUser, publishPoolChanges } from './service.js'
+import { activePoolMembers, activePoolMembership, dissolveSingletonPool, expirePoolInvitations, openPoolInvitation, pendingFundingByUser, poolInvitationExpiresAt, publishPoolChanges } from './service.js'
 
 const disclosureSchema = z.object({ userId: z.uuid(), balanceDisclosureAccepted: z.literal(true) })
 
@@ -27,7 +27,7 @@ export async function registerPoolRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/pools/pending-count', async (request) => {
     const user = requireUser(request)
     const [result] = await db.select({ count: sql<number>`count(*)::int` }).from(poolInvitations).where(and(
-      eq(poolInvitations.inviteeUserId, user.id), eq(poolInvitations.status, 'pending'),
+      eq(poolInvitations.inviteeUserId, user.id), openPoolInvitation(),
     ))
     return { count: Number(result?.count ?? 0) }
   })
@@ -36,10 +36,10 @@ export async function registerPoolRoutes(app: FastifyInstance): Promise<void> {
     const user = requireUser(request)
     const membership = await db.transaction((tx) => activePoolMembership(tx, user.id))
     const incoming = await db.select().from(poolInvitations).where(and(
-      eq(poolInvitations.inviteeUserId, user.id), eq(poolInvitations.status, 'pending'),
+      eq(poolInvitations.inviteeUserId, user.id), openPoolInvitation(),
     ))
     const outgoing = membership ? await db.select().from(poolInvitations).where(and(
-      eq(poolInvitations.poolId, membership.pool.id), eq(poolInvitations.status, 'pending'),
+      eq(poolInvitations.poolId, membership.pool.id), openPoolInvitation(),
     )) : []
     const allInvitations = [...incoming, ...outgoing]
     const profileIds = [...new Set(allInvitations.flatMap((row) => [row.inviterUserId, row.inviteeUserId]))]
@@ -57,6 +57,7 @@ export async function registerPoolRoutes(app: FastifyInstance): Promise<void> {
       invitee: publicFriendProfile(byId.get(row.inviteeUserId)!),
       memberCount: memberCounts.get(row.poolId) ?? 1,
       createdAt: row.createdAt.toISOString(),
+      expiresAt: poolInvitationExpiresAt(row.createdAt).toISOString(),
     })
     if (!membership) return { accountBalanceMicros: user.balanceMicros, pool: null, incomingInvitations: incoming.map(invitation) }
     const members = await db.transaction((tx) => activePoolMembers(tx, membership.pool.id))
@@ -94,6 +95,7 @@ export async function registerPoolRoutes(app: FastifyInstance): Promise<void> {
       }
       await lockPool(tx, membership.pool.id)
       if (membership.pool.ownerUserId !== user.id) throw new AppError(403, 'pool_owner_required', 'Only the Pool owner can invite members')
+      const expired = await expirePoolInvitations(tx, new Date(), eq(poolInvitations.poolId, membership.pool.id))
       const [[memberCount], [inviteCount]] = await Promise.all([
         tx.select({ value: sql<number>`count(*)::int` }).from(poolMembers).where(and(eq(poolMembers.poolId, membership.pool.id), isNull(poolMembers.leftAt))),
         tx.select({ value: sql<number>`count(*)::int` }).from(poolInvitations).where(and(eq(poolInvitations.poolId, membership.pool.id), eq(poolInvitations.status, 'pending'))),
@@ -103,7 +105,7 @@ export async function registerPoolRoutes(app: FastifyInstance): Promise<void> {
         id: newId(), poolId: membership.pool.id, inviterUserId: user.id, inviteeUserId: input.userId,
         inviterDisclosureAcceptedAt: new Date(),
       }).returning()
-      return { created: created!, affected: [user.id, input.userId] }
+      return { created: created!, affected: [...new Set([user.id, input.userId, ...expired.map((row) => row.inviteeUserId)])] }
     })
     await publishPoolChanges(result.affected)
     reply.code(201)
@@ -116,7 +118,7 @@ export async function registerPoolRoutes(app: FastifyInstance): Promise<void> {
     const { id } = z.object({ id: z.uuid() }).parse(request.params)
     const affected = await db.transaction(async (tx) => {
       await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`pool-user:${user.id}`}))`)
-      const [invite] = await tx.select().from(poolInvitations).where(and(eq(poolInvitations.id, id), eq(poolInvitations.inviteeUserId, user.id), eq(poolInvitations.status, 'pending'))).limit(1)
+      const [invite] = await tx.select().from(poolInvitations).where(and(eq(poolInvitations.id, id), eq(poolInvitations.inviteeUserId, user.id), openPoolInvitation())).limit(1)
       if (!invite) throw notFound('Pool invitation')
       await lockPool(tx, invite.poolId)
       if (await activePoolMembership(tx, user.id)) throw new AppError(409, 'pool_membership_exists', 'Leave your current Pool before joining another')
@@ -139,7 +141,7 @@ export async function registerPoolRoutes(app: FastifyInstance): Promise<void> {
     const user = requireUser(request)
     const { id } = z.object({ id: z.uuid() }).parse(request.params)
     const affected = await db.transaction(async (tx) => {
-      const rows = await tx.update(poolInvitations).set({ status: 'declined', respondedAt: new Date(), updatedAt: new Date() }).where(and(eq(poolInvitations.id, id), eq(poolInvitations.inviteeUserId, user.id), eq(poolInvitations.status, 'pending'))).returning()
+      const rows = await tx.update(poolInvitations).set({ status: 'declined', respondedAt: new Date(), updatedAt: new Date() }).where(and(eq(poolInvitations.id, id), eq(poolInvitations.inviteeUserId, user.id), openPoolInvitation())).returning()
       if (!rows.length) throw notFound('Pool invitation')
       return [...new Set([user.id, rows[0]!.inviterUserId, ...await dissolveSingletonPool(tx, rows[0]!.poolId, { keepWhileInvited: true })])]
     })
@@ -150,7 +152,7 @@ export async function registerPoolRoutes(app: FastifyInstance): Promise<void> {
   app.delete('/api/pools/invitations/:id', async (request, reply) => {
     const user = requireUser(request)
     const { id } = z.object({ id: z.uuid() }).parse(request.params)
-    const [invite] = await db.select().from(poolInvitations).where(and(eq(poolInvitations.id, id), eq(poolInvitations.status, 'pending'))).limit(1)
+    const [invite] = await db.select().from(poolInvitations).where(and(eq(poolInvitations.id, id), openPoolInvitation())).limit(1)
     if (!invite) throw notFound('Pool invitation')
     const membership = await db.transaction((tx) => activePoolMembership(tx, user.id))
     if (!membership || membership.pool.id !== invite.poolId || membership.pool.ownerUserId !== user.id) throw new AppError(403, 'pool_owner_required', 'Only the Pool owner can cancel invitations')

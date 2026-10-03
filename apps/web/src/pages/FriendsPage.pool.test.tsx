@@ -15,7 +15,7 @@ vi.mock('@/lib/runtime-resource', () => ({ useRuntimeImageUrl: () => ({ url: nul
 const profile = (id: string): FriendProfile => ({ id, username: id, displayName: id === 'me' ? 'Myself' : id, avatarUrl: null, profileColor: null })
 const connection = (id: string): FriendConnection => ({ profile: profile(id), requestId: `friend-${id}`, requestedAt: '2026-09-01T00:00:00.000Z', acceptedAt: '2026-09-01T00:00:00.000Z' })
 const member = (id: string): PoolMember => ({ profile: profile(id), owner: id === 'me', contributionBalanceMicros: 5_000_000, reservedMicros: id === 'Alice' ? 100_000 : 0, joinedAt: '2026-09-01T00:00:00.000Z' })
-const invitation = (id: string): PoolInvitation => ({ id: `invite-${id}`, poolId: 'pool', inviter: profile('me'), invitee: profile(id), memberCount: 2, createdAt: '2026-09-01T00:00:00.000Z' })
+const invitation = (id: string): PoolInvitation => ({ id: `invite-${id}`, poolId: 'pool', inviter: profile('me'), invitee: profile(id), memberCount: 2, createdAt: '2026-09-01T00:00:00.000Z', expiresAt: '2026-09-08T00:00:00.000Z' })
 let friends: FriendsList
 let summary: PoolSummary
 let mutation: (path: string, options: { method: string; body?: unknown }) => unknown

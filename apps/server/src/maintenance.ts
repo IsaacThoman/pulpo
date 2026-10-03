@@ -18,6 +18,7 @@ import { purgeExpiredMemoryDocumentRevisions } from './memory-document/service.j
 import { cleanupRestoreUploads } from './admin/restore-uploads.js'
 import { deleteExpiredBackupObjects } from './admin/backup-retention.js'
 import { deleteUnlockedOffsiteBackups } from './admin/backup-scheduler.js'
+import { sweepExpiredPoolInvitations } from './pools/service.js'
 import { backupSettingsForExport } from './admin/backup-settings.js'
 
 const RESPONSE_CONTEXT_SCRUB_BATCH_SIZE = 100
@@ -140,6 +141,7 @@ export async function runCleanup(): Promise<void> {
   await deleteUnlockedOffsiteBackups(now)
   await cleanupRestoreUploads()
   await reconcileWorkspaceLeases()
+  await sweepExpiredPoolInvitations(now)
   await purgePendingChats()
 }
 

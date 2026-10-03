@@ -362,6 +362,7 @@ export const poolInvitationSchema = z.object({
   invitee: friendProfileSchema,
   memberCount: z.number().int().min(1).max(6),
   createdAt: isoDateSchema,
+  expiresAt: isoDateSchema,
 })
 export type PoolInvitation = z.infer<typeof poolInvitationSchema>
 

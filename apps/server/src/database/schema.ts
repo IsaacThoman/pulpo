@@ -123,7 +123,7 @@ export const poolInvitations = pgTable('pool_invitations', {
 }, (table) => [
   index('pool_invitations_invitee_status_idx').on(table.inviteeUserId, table.status),
   uniqueIndex('pool_invitations_pool_invitee_pending_unique').on(table.poolId, table.inviteeUserId).where(sql`${table.status} = 'pending'`),
-  check('pool_invitations_status_check', sql`${table.status} in ('pending', 'accepted', 'declined', 'canceled')`),
+  check('pool_invitations_status_check', sql`${table.status} in ('pending', 'accepted', 'declined', 'canceled', 'expired')`),
 ])
 
 export const inviteCodes = pgTable('invite_codes', {
