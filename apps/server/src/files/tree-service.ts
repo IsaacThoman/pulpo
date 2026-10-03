@@ -249,7 +249,7 @@ export async function moveFileNodes(userId: string, items: Array<{ id: string; p
   return moved
 }
 
-async function trashNodeInTx(tx: DatabaseTransaction, userId: string, node: FileNodeRow): Promise<string[]> {
+export async function trashNodeInTx(tx: DatabaseTransaction, userId: string, node: FileNodeRow): Promise<string[]> {
   if (node.status !== 'ready') throw notFound('File')
   const ids = (await subtree(tx, userId, node.id)).map((row) => row.id)
   // Descendants trashed earlier keep their own trash root so they can still be restored separately.
@@ -275,7 +275,7 @@ export async function trashFileNode(userId: string, id: string): Promise<void> {
   await trashFileNodes(userId, [id])
 }
 
-async function restoreNodeInTx(tx: DatabaseTransaction, userId: string, id: string): Promise<FileNodeRow> {
+export async function restoreNodeInTx(tx: DatabaseTransaction, userId: string, id: string): Promise<FileNodeRow> {
   const access = await resolveFileAccess(tx, userId, id)
   if (!access || !access.node.trashedAt || access.node.trashRootId !== access.node.id) throw notFound('Trashed item')
   const node = access.node

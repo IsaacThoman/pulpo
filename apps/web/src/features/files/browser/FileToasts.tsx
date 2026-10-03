@@ -42,6 +42,15 @@ function ToastItem({ toast }: { toast: FileToast }) {
       )}
     >
       <span className="min-w-0 flex-1 truncate">{toast.message}</span>
+      {toast.action && (
+        <button
+          type="button"
+          onClick={() => { toast.action!.run(); dismiss(toast.id) }}
+          className="shrink-0 cursor-pointer rounded-md px-2 py-1 font-medium text-primary hover:bg-accent dark:text-sky-400"
+        >
+          {toast.action.label}
+        </button>
+      )}
       {toast.undo && (
         <button
           type="button"

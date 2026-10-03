@@ -64,6 +64,7 @@ export function filesErrorMessage(error: unknown, name?: string): string {
       case 'file_name_reserved':
       case 'file_name_invalid_character':
         return fileNameErrorMessage(error.code.slice('file_name_'.length) as FileNameError)
+      case 'file_replace_conflict': return ui("The file to overwrite has changed. Try saving again.")
       case 'file_move_cycle': return ui("A folder cannot be moved into itself")
       case 'file_tree_too_deep': return ui("Folders can be nested at most 32 levels deep")
       case 'file_revision_conflict': return ui("This item changed on another device. Refresh and try again.")

@@ -87,6 +87,17 @@ export const moveFileNodesSchema = z.object({
   })).min(1).max(FILE_BATCH_MAX_ITEMS),
 })
 
+/**
+ * Copies a chat attachment into Files, into `parentId` (null is My files). `name` defaults to the
+ * attachment's; a taken name gets a ` (n)` suffix unless `replaceId` names the file to overwrite,
+ * which then moves to the trash.
+ */
+export const saveAttachmentToFilesSchema = z.object({
+  parentId: z.uuid().nullable().default(null),
+  name: fileNameSchema.optional(),
+  replaceId: z.uuid().optional(),
+})
+
 export const copyFileNodesSchema = z.object({
   ids: fileIdsSchema,
   parentId: z.uuid().nullable(),

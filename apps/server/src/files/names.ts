@@ -1,4 +1,4 @@
-import { FILE_NAME_MAX_LENGTH, type FileNameError } from '@pulpo/contracts'
+import { FILE_NAME_MAX_LENGTH, fileNameError, normalizeFileName, type FileNameError } from '@pulpo/contracts'
 
 const FILE_NAME_MESSAGES: Record<FileNameError, string> = {
   empty: 'Name is required',
@@ -34,4 +34,17 @@ export function nextAvailableName(desired: string, takenLowercase: ReadonlySet<s
     const candidate = truncateCodePoints(base, FILE_NAME_MAX_LENGTH - [...suffix].length) + suffix
     if (!takenLowercase.has(candidate.toLowerCase())) return candidate
   }
+}
+
+/** A valid Files name for an attachment: characters Files rejects become `-`, and long names are cut. */
+export function attachmentFileName(originalName: string): string {
+  const cleaned = [...normalizeFileName(originalName)]
+    .map((character) => {
+      const code = character.charCodeAt(0)
+      return character === '/' || code < 0x20 || code === 0x7f ? '-' : character
+    })
+    .slice(0, FILE_NAME_MAX_LENGTH)
+    .join('')
+    .trim()
+  return fileNameError(cleaned) ? 'Attachment' : cleaned
 }
