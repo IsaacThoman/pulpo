@@ -529,6 +529,10 @@ export const queuedMessages = pgTable('queued_messages', {
   presetSelections: jsonb('preset_selections').$type<Record<string, string>>().notNull().default({}),
   agentMode: boolean('agent_mode').notNull().default(false),
   attachmentIds: jsonb('attachment_ids').$type<string[]>().notNull().default([]),
+  // Analytics attribution captured when the message was queued, applied when it dispatches.
+  clientPlatform: text('client_platform'),
+  clientVersion: text('client_version'),
+  usedDictation: boolean('used_dictation'),
   position: integer('position').notNull(),
   status: text('status').notNull().default('pending'),
   error: text('error'),
@@ -685,6 +689,8 @@ export const requestLogs = pgTable('request_logs', {
   uniqueIndex('request_logs_response_unique').on(table.responseId),
   index('request_logs_created_idx').on(table.createdAt),
   index('request_logs_status_idx').on(table.status),
+  index('request_logs_user_created_idx').on(table.userId, table.createdAt),
+  index('request_logs_api_key_idx').on(table.apiKeyId).where(sql`${table.apiKeyId} is not null`),
   index('request_logs_payload_expiry_idx').on(table.payloadExpiresAt),
   index('request_logs_retained_idx').on(table.payloadExpiresAt, table.id).where(sql`${table.captureDetailedPayloads} or ${table.requestPayload} is not null or ${table.responsePayload} is not null`),
 ])
@@ -714,7 +720,10 @@ export const generationAttempts = pgTable('generation_attempts', {
   costMicros: bigint('cost_micros', { mode: 'number' }).notNull().default(0),
   startedAt: timestamp('started_at', { withTimezone: true }).notNull().defaultNow(),
   completedAt: timestamp('completed_at', { withTimezone: true }),
-}, (table) => [index('generation_attempts_log_idx').on(table.requestLogId, table.startedAt)])
+}, (table) => [
+  index('generation_attempts_log_idx').on(table.requestLogId, table.startedAt),
+  index('generation_attempts_started_idx').on(table.startedAt),
+])
 
 export const ocrAttempts = pgTable('ocr_attempts', {
   id: uuid('id').primaryKey(),
@@ -1135,7 +1144,93 @@ export const usageEvents = pgTable('usage_events', {
   fiveHourPeriodStart: timestamp('five_hour_period_start', { withTimezone: true }),
   latencyMs: integer('latency_ms').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-}, (table) => [uniqueIndex('usage_response_unique').on(table.responseId), index('usage_user_created_idx').on(table.userId, table.createdAt)])
+}, (table) => [
+  uniqueIndex('usage_response_unique').on(table.responseId),
+  index('usage_user_created_idx').on(table.userId, table.createdAt),
+  index('usage_created_idx').on(table.createdAt),
+])
+
+/**
+ * One row per response for admin analytics. Rows are written at admission and
+ * finalized once the response settles. Unlike request logs they survive chat
+ * purges (the response link is cleared), so usage history stays complete.
+ */
+export const requestAnalytics = pgTable('request_analytics', {
+  id: uuid('id').primaryKey(),
+  responseId: uuid('response_id').references(() => responses.id, { onDelete: 'set null' }),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  apiKeyId: uuid('api_key_id').references(() => apiKeys.id, { onDelete: 'set null' }),
+  poolId: uuid('pool_id').references(() => pools.id, { onDelete: 'set null' }),
+  // Model ids are plain text so deleting a catalog model keeps its history.
+  requestedModelId: text('requested_model_id').notNull(),
+  answeredModelId: text('answered_model_id'),
+  plan: text('plan'),
+  origin: text('origin').notNull(),
+  clientPlatform: text('client_platform').notNull().default('unknown'),
+  clientVersion: text('client_version'),
+  // Null settings mean they were not captured (backfilled history).
+  presetSelections: jsonb('preset_selections').$type<Record<string, string>>(),
+  reasoningEffort: text('reasoning_effort'),
+  verbosity: text('verbosity'),
+  temperature: doublePrecision('temperature'),
+  maxOutputTokens: integer('max_output_tokens'),
+  instructionPresetIds: jsonb('instruction_preset_ids').$type<string[]>(),
+  customInstructions: boolean('custom_instructions'),
+  memoryEnabled: boolean('memory_enabled'),
+  agentMode: boolean('agent_mode').notNull().default(false),
+  branchReason: text('branch_reason'),
+  attachmentCount: integer('attachment_count'),
+  attachmentKinds: jsonb('attachment_kinds').$type<string[]>(),
+  usedDictation: boolean('used_dictation'),
+  inputChars: integer('input_chars'),
+  status: text('status').notNull().default('queued'),
+  errorCategory: text('error_category'),
+  retryCount: integer('retry_count').notNull().default(0),
+  fallbackUsed: boolean('fallback_used').notNull().default(false),
+  firstTokenMs: integer('first_token_ms'),
+  durationMs: integer('duration_ms'),
+  inputTokens: integer('input_tokens').notNull().default(0),
+  cachedInputTokens: integer('cached_input_tokens').notNull().default(0),
+  outputTokens: integer('output_tokens').notNull().default(0),
+  reasoningTokens: integer('reasoning_tokens').notNull().default(0),
+  costMicros: bigint('cost_micros', { mode: 'number' }).notNull().default(0),
+  toolCalls: integer('tool_calls').notNull().default(0),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  finalizedAt: timestamp('finalized_at', { withTimezone: true }),
+}, (table) => [
+  uniqueIndex('request_analytics_response_unique').on(table.responseId),
+  index('request_analytics_created_idx').on(table.createdAt),
+  index('request_analytics_user_created_idx').on(table.userId, table.createdAt),
+  index('request_analytics_pending_idx').on(table.createdAt).where(sql`${table.finalizedAt} is null`),
+])
+
+export const requestAnalyticsTools = pgTable('request_analytics_tools', {
+  analyticsId: uuid('analytics_id').notNull().references(() => requestAnalytics.id, { onDelete: 'cascade' }),
+  toolName: text('tool_name').notNull(),
+  calls: integer('calls').notNull(),
+  failures: integer('failures').notNull().default(0),
+  costMicros: bigint('cost_micros', { mode: 'number' }).notNull().default(0),
+  // Copied from the parent row so range queries avoid a join.
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.analyticsId, table.toolName] }),
+  index('request_analytics_tools_created_idx').on(table.createdAt),
+])
+
+/** Hourly request counts by dimension, refreshed from request_analytics for long-range charts. */
+export const analyticsHourlyRollups = pgTable('analytics_hourly_rollups', {
+  hour: timestamp('hour', { withTimezone: true }).notNull(),
+  modelId: text('model_id').notNull(),
+  clientPlatform: text('client_platform').notNull(),
+  origin: text('origin').notNull(),
+  plan: text('plan').notNull(),
+  agentMode: boolean('agent_mode').notNull(),
+  requests: integer('requests').notNull(),
+  failures: integer('failures').notNull(),
+  inputTokens: bigint('input_tokens', { mode: 'number' }).notNull(),
+  outputTokens: bigint('output_tokens', { mode: 'number' }).notNull(),
+  costMicros: bigint('cost_micros', { mode: 'number' }).notNull(),
+}, (table) => [primaryKey({ name: 'analytics_hourly_rollups_pk', columns: [table.hour, table.modelId, table.clientPlatform, table.origin, table.plan, table.agentMode] })])
 
 export const billingAccounts = pgTable('billing_accounts', {
   userId: uuid('user_id').primaryKey().references(() => users.id, { onDelete: 'cascade' }),

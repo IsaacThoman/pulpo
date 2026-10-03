@@ -11,7 +11,9 @@ import { and, inArray, isNull, eq, sql } from 'drizzle-orm'
 import { getConfig } from './config.js'
 import { db } from './database/client.js'
 import { applicationSettings, chats, responses } from './database/schema.js'
-import { generationQueue, maintenanceQueue, payloadRetentionQueue, type CodexLoginJob, type EmbeddingJob, type FileDocJob, type GenerationJob, type MaintenanceJob } from './jobs.js'
+import { analyticsQueue, generationQueue, maintenanceQueue, payloadRetentionQueue, type AnalyticsJob, type CodexLoginJob, type EmbeddingJob, type FileDocJob, type GenerationJob, type MaintenanceJob } from './jobs.js'
+import { sweepRequestAnalytics } from './analytics/capture.js'
+import { RECENT_ROLLUP_HOURS, refreshAnalyticsRollups } from './analytics/rollups.js'
 import { compactDoc } from './files/doc-store.js'
 import { purgeExpiredDetailedPayloads } from './logging/detailed-payload-retention.js'
 import { processGeneration } from './responses/worker.js'
@@ -139,6 +141,17 @@ const maintenanceWorker = new Worker<MaintenanceJob>('maintenance', async (job) 
   if (job.data.type === 'auto-top-up-sweep') await sweepAutoTopUps()
 }, { connection: { url: config.REDIS_URL }, concurrency: 1 })
 
+const analyticsWorker = new Worker<AnalyticsJob>('analytics', async (job) => {
+  if (job.data.type === 'sweep') await sweepRequestAnalytics()
+  if (job.data.type === 'rollup-recent') await refreshAnalyticsRollups(new Date(Date.now() - RECENT_ROLLUP_HOURS * 3_600_000))
+  if (job.data.type === 'rollup-full') await refreshAnalyticsRollups(null)
+}, { connection: { url: config.REDIS_URL }, concurrency: 1 })
+analyticsWorker.on('failed', (job, error) => {
+  console.error(JSON.stringify({
+    level: 'error', service: 'pulpo-worker', event: 'analytics.failed', jobId: job?.id, type: job?.data.type, error: safeErrorMessage(error),
+  }))
+})
+
 const embeddingWorker = new Worker<EmbeddingJob>('episodic-memory', async (job) => {
   await processEmbeddingJob(job.data)
 }, { connection: { url: config.REDIS_URL }, concurrency: 1 })
@@ -156,6 +169,10 @@ await payloadRetentionQueue.add('startup-expiry', {})
 await maintenanceQueue.upsertJobScheduler('payload-cleanup', { every: 15 * 60 * 1_000 }, { name: 'cleanup', data: { type: 'cleanup' } })
 await maintenanceQueue.upsertJobScheduler('offsite-backup-schedule', { every: 60 * 1_000 }, { name: 'backup-schedule', data: { type: 'backup-schedule' } })
 await maintenanceQueue.upsertJobScheduler('daily-rollup', { pattern: '15 2 * * *' }, { name: 'rollup', data: { type: 'rollup' } })
+await analyticsQueue.upsertJobScheduler('analytics-sweep', { every: 60 * 1_000 }, { name: 'sweep', data: { type: 'sweep' } })
+await analyticsQueue.upsertJobScheduler('analytics-rollup-recent', { every: 10 * 60 * 1_000 }, { name: 'rollup-recent', data: { type: 'rollup-recent' } })
+await analyticsQueue.upsertJobScheduler('analytics-rollup-full', { pattern: '30 2 * * *' }, { name: 'rollup-full', data: { type: 'rollup-full' } })
+await analyticsQueue.add('startup-rollup-full', { type: 'rollup-full' }, { jobId: `startup-analytics-rollup-${Date.now()}` })
 if (config.PULPO_BILLING_ENABLED) {
   await maintenanceQueue.upsertJobScheduler('billing-reconcile', { every: 60 * 60 * 1_000 }, {
     name: 'billing-reconcile', data: { type: 'billing-reconcile' },
@@ -206,7 +223,7 @@ for (const response of recoverable) {
 await recoverMessageQueues()
 if ((await readEpisodicMemorySettings()).enabled) await enqueueEpisodicReconciliation()
 
-const workers = [generationWorker, codexLoginWorker, embeddingWorker, maintenanceWorker, payloadRetentionWorker, fileDocWorker]
+const workers = [generationWorker, codexLoginWorker, embeddingWorker, maintenanceWorker, payloadRetentionWorker, fileDocWorker, analyticsWorker]
 await Promise.all(workers.map((worker) => worker.waitUntilReady()))
 let stopping = false
 // Private health endpoint used by Docker/Coolify, never routed publicly.

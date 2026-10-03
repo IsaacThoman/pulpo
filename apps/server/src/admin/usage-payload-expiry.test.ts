@@ -28,7 +28,7 @@ describe('request detail OCR retention', () => {
       .mockReturnValueOnce(queryResult([{ id: 'ocr', requestPayload: { image: true }, responsePayload: { text: true }, status: 'completed' }]))
       .mockReturnValueOnce(queryResult([]))
     await registerAdminUsageRoutes(app)
-    const response = await app.inject('/api/admin/usage/requests/call')
+    const response = await app.inject('/api/admin/usage/requests/00000000-0000-4000-8000-000000000001')
     expect(response.statusCode).toBe(200)
     expect(response.json().request.requestPayload).toBeUndefined()
     expect(response.json().ocrAttempts).toEqual([{ id: 'ocr', status: 'completed', requestPayload: retained ? { image: true } : null, responsePayload: retained ? { text: true } : null }])

@@ -1,4 +1,5 @@
 import { protectTranscriptRequest } from '../data/transcriptResidency'
+import { CLIENT_PLATFORM_HEADER } from '@pulpo/contracts'
 import type { NativeDevice, DeviceSessionList, MobileConfig, NativeAuthResponse, PasskeyAuthenticationResponse, PasskeyCeremony, PasskeyList, PasskeyRegistrationResponse, PasskeySummary, TwoFactorEnrollment, TwoFactorRecoveryCodes, TwoFactorStatus, User } from '@pulpo/contracts'
 import type { MobileModel, ServerChat, ServerDeletedChat, ServerFolder } from '../types'
 
@@ -17,6 +18,7 @@ export class ApiError extends Error {
 let instanceUrl = process.env.EXPO_PUBLIC_DEFAULT_INSTANCE_URL ?? 'https://pulpo.baby'
 let sessionToken: string | null = null
 let unauthorizedHandler: (() => void) | undefined
+let clientPlatform: string | null = null
 
 export function configureApi(input: {
   instanceUrl: string
@@ -26,6 +28,11 @@ export function configureApi(input: {
   instanceUrl = input.instanceUrl.replace(/\/+$/, '')
   sessionToken = input.token
   unauthorizedHandler = input.onUnauthorized
+}
+
+/** Sets the `x-pulpo-client` value (`ios/<version>` etc.) sent with instance requests. */
+export function configureClientPlatform(value: string | null): void {
+  clientPlatform = value
 }
 
 export function apiOrigin(): string {
@@ -67,6 +74,7 @@ async function performApiRequest<T>(path: string, options: RequestOptions): Prom
   else if (options.body !== undefined) headers.set('content-type', 'application/json')
   if (options.idempotencyKey) headers.set('idempotency-key', options.idempotencyKey)
   if (options.auth !== false && sessionToken) headers.set('authorization', `Bearer ${sessionToken}`)
+  if (clientPlatform) headers.set(CLIENT_PLATFORM_HEADER, clientPlatform)
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? 15_000)
   const abort = () => controller.abort()

@@ -272,6 +272,20 @@ describe('generation timezone requests', () => {
   })
 })
 
+describe('dictation analytics flag', () => {
+  const snapshot = { responseId: 'response-1', status: 'queued', sequence: 0, output: [], usage: null, error: null, updatedAt: '2026-09-08T01:15:00Z' }
+  it.each(['start', 'send'] as const)('includes usedDictation only when dictation was used for %s', async (kind) => {
+    mocks.apiRequest.mockResolvedValue({ chat: {}, response: snapshot })
+    for (const usedDictation of [true, false]) {
+      if (kind === 'start') await startChat({ chatId: 'chat-1', responseId: 'response-1', content: 'hello', modelId: 'model-1', title: 'Chat', usedDictation })
+      else await sendMessage({ chatId: 'chat-1', clientId: 'response-1', content: 'hello', modelId: 'model-1', usedDictation })
+    }
+    const bodies = mocks.apiRequest.mock.calls.map(([, options]) => kind === 'start' ? options.body.response : options.body)
+    expect(bodies[0]).toHaveProperty('usedDictation', true)
+    expect(bodies[1]).not.toHaveProperty('usedDictation')
+  })
+})
+
 
 describe('thumbnail downloads', () => {
   it('bounds 500 native previews to two transfers, deduplicates, and accounts for disk cache', async () => {

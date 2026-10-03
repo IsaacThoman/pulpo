@@ -175,6 +175,15 @@ jobs:
         run: |
           npm run db:migrate -w @pulpo/server
           npm run test -w @pulpo/server -- src/accounting/service.postgres.test.ts src/billing/auto-top-up.postgres.test.ts
+      - name: Create disposable analytics database
+        run: node --input-type=module -e 'import postgres from "postgres"; const sql = postgres(process.env.DATABASE_URL); await sql.unsafe("CREATE DATABASE pulpo_analytics_test"); await sql.end();'
+      - name: Verify admin analytics capture, queries, and backfill against PostgreSQL
+        env:
+          DATABASE_URL: postgres://postgres:search-test@localhost:5432/pulpo_analytics_test
+          PULPO_ANALYTICS_POSTGRES_TEST: '1'
+        run: |
+          npm run db:migrate -w @pulpo/server
+          npm run test -w @pulpo/server -- src/analytics/analytics.postgres.test.ts
       - name: Create disposable Files database
         run: node --input-type=module -e 'import postgres from "postgres"; const sql = postgres(process.env.DATABASE_URL); await sql.unsafe("CREATE DATABASE pulpo_files_test"); await sql.end();'
       - name: Verify the Files tree, documents, and conversions against PostgreSQL

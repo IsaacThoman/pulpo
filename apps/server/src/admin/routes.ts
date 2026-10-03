@@ -69,14 +69,20 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/api/admin/users', async (request) => {
     requireAdmin(request)
+    // Aggregate usage once per user instead of grouping every user row by every usage row.
+    const usageTotals = db.select({
+      userId: usageEvents.userId,
+      calls: sql<number>`count(*)`.as('calls'),
+      spentMicros: sql<number>`sum(${usageEvents.costMicros})`.as('spent_micros'),
+    }).from(usageEvents).groupBy(usageEvents.userId).as('usage_totals')
     const rows = await db.select({
       user: users,
       defaultModelId: sql<string | null>`(
         select nullif(${userPreferences.values}->>'defaultModelId', '')
         from ${userPreferences} where ${userPreferences.userId} = ${users.id}
       )`,
-      calls: sql<number>`count(${usageEvents.id})::int`,
-      spentMicros: sql<number>`coalesce(sum(${usageEvents.costMicros}), 0)::bigint`,
+      calls: sql<number>`coalesce(${usageTotals.calls}, 0)::int`,
+      spentMicros: sql<number>`coalesce(${usageTotals.spentMicros}, 0)::bigint`,
       lastActiveAt: sql<Date | null>`(
         select max(${sessions.lastSeenAt})
         from ${sessions}
@@ -96,7 +102,7 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
         select 1 from ${userTotpCredentials}
         where ${userTotpCredentials.userId} = ${users.id}
       )`,
-    }).from(users).leftJoin(usageEvents, eq(usageEvents.userId, users.id)).groupBy(users.id).orderBy(desc(users.createdAt))
+    }).from(users).leftJoin(usageTotals, eq(usageTotals.userId, users.id)).orderBy(desc(users.createdAt))
     return { data: rows.map((row) => {
       const { avatarObjectKey: _avatarObjectKey, ...publicUser } = row.user
       return {

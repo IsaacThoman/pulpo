@@ -5,6 +5,7 @@ import { getBlobStore } from '../storage/index.js'
 import { releaseWorkspaceForChat } from '../agent/controller.js'
 import { publishStateChange, requestCancellation } from '../responses/events.js'
 import { scheduleChatIndex } from '../episodic-memory/queue.js'
+import { finalizeRequestAnalytics } from '../analytics/capture.js'
 
 export const trashRetentionValues = ['instant', '24h', '7d', '30d', '90d', 'indefinite'] as const
 export type TrashRetention = typeof trashRetentionValues[number]
@@ -200,6 +201,10 @@ export async function purgePendingChats(userId?: string): Promise<number> {
       await Promise.all(responseRows.filter((response) => ['queued', 'in_progress'].includes(response.status))
         .map((response) => requestCancellation(response.id)))
       await releaseWorkspaceForChat(row.id)
+      // Capture outcomes before the cascade removes request logs; analytics rows outlive the chat.
+      // Analytics must never hold up a purge, so failures only lose the last outcome update.
+      await finalizeRequestAnalytics(responseRows.map((response) => response.id), { force: true })
+        .catch((error) => console.warn(JSON.stringify({ level: 'warn', service: 'pulpo-analytics', event: 'analytics.purge_finalize_failed', chatId: row.id, error: error instanceof Error ? error.message : String(error) })))
       const files = await db.select({ objectKey: attachments.objectKey }).from(attachments)
         .where(eq(attachments.chatId, row.id))
       await Promise.all(files.map((file) => getBlobStore().delete(file.objectKey)))

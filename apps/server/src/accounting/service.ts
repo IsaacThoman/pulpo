@@ -48,6 +48,7 @@ import {
 } from '../billing/allocation.js'
 import { loadPoolAllowance, recordSharedUsage } from '../billing/shared-allowance.js'
 import { activePoolMembers, activePoolMembership, pendingFundingByUser } from '../pools/service.js'
+import { scheduleAnalyticsFinalization } from '../analytics/capture.js'
 
 export interface ActivePricing extends Pricing {
   id: string
@@ -477,6 +478,7 @@ export async function settleBudget(input: {
     publishScopedStateChanges(settlement.poolChanges, ['pool', 'usage', 'billing']),
   ])
   void queueAutoTopUpChecks(settlement.ownChanges.map((change) => change.userId))
+  scheduleAnalyticsFinalization(input.responseId)
   return settlement.cost
 }
 

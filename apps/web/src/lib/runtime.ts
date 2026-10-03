@@ -1,4 +1,4 @@
-import type { NativeDevice } from '@pulpo/contracts'
+import { CLIENT_PLATFORM_HEADER, type NativeDevice } from '@pulpo/contracts'
 import { normalizeInstanceUrl } from '@pulpo/client-core'
 
 export interface DesktopStoredSession {
@@ -96,6 +96,48 @@ export function runtimeAuthorizationHeaders(url: string): Record<string, string>
   return runtimeUrlTargetsInstance(url)
     ? { authorization: `Bearer ${sessionToken}` }
     : {}
+}
+
+let desktopAppVersion: string | null = null
+let desktopAppVersionRequested = false
+
+function requestDesktopAppVersion(): void {
+  if (desktopAppVersionRequested || typeof window === 'undefined') return
+  const appInfo = window.pulpoDesktop?.appInfo
+  if (typeof appInfo !== 'function') return
+  desktopAppVersionRequested = true
+  void appInfo()
+    .then((info) => { desktopAppVersion = info.version })
+    .catch(() => undefined)
+}
+
+// Start early so the first chat request can usually carry the version.
+requestDesktopAppVersion()
+
+/** `desktop/<version>` once Electron reports it (`desktop` until then), else `web`. */
+export function runtimeClientPlatform(): string {
+  if (!isDesktopRuntime()) return 'web'
+  requestDesktopAppVersion()
+  const version = desktopAppVersion?.trim().toLowerCase()
+  return version && /^[0-9a-z.+-]{1,32}$/.test(version) ? `desktop/${version}` : 'desktop'
+}
+
+/** Attributes Pulpo API requests to this client; never sent to other origins. */
+export function runtimeClientHeaders(url: string): Record<string, string> {
+  const base = runtimeInstanceUrl()
+  try {
+    const target = new URL(runtimeApiUrl(url), `${base}/`)
+    if (target.origin !== new URL(base).origin || !target.pathname.startsWith('/api/')) return {}
+  } catch {
+    return {}
+  }
+  return { [CLIENT_PLATFORM_HEADER]: runtimeClientPlatform() }
+}
+
+/** Test hook: forgets the cached desktop version. */
+export function resetRuntimeClientPlatformForTests(): void {
+  desktopAppVersion = null
+  desktopAppVersionRequested = false
 }
 
 export function runtimeAccountKey(userId: string): string {
