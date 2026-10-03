@@ -1,5 +1,7 @@
 import { and, asc, eq, inArray, isNull, max, ne, sql } from 'drizzle-orm'
 import type { CreateQueuedMessageInput, QueuedMessage, ReorderQueuedMessageInput, UpdateQueuedMessageInput } from '@pulpo/contracts'
+import { clientPlatformSchema } from '@pulpo/contracts'
+import type { ClientAttribution } from '../analytics/capture.js'
 import { db } from '../database/client.js'
 import { applicationSettings, attachments, chats, models, queuedMessages, responses, users } from '../database/schema.js'
 import { AppError, notFound } from '../lib/errors.js'
@@ -105,7 +107,7 @@ export async function createQueuedMessage(
   userId: string,
   chatId: string,
   input: CreateQueuedMessageInput,
-  attribution: { billingUserId?: string; actorUserId?: string | null; requestReceivedAt?: Date | null } = {},
+  attribution: { billingUserId?: string; actorUserId?: string | null; requestReceivedAt?: Date | null; client?: ClientAttribution | null } = {},
 ): Promise<{ queuedMessage: QueuedMessage | null }> {
   const requestReceivedAt = attribution.requestReceivedAt ?? new Date()
   await validateQueueInput(userId, chatId, input)
@@ -143,6 +145,9 @@ export async function createQueuedMessage(
       presetSelections: input.presetSelections,
       agentMode: input.agentMode,
       attachmentIds: [...new Set(input.attachmentIds)],
+      clientPlatform: attribution.client?.platform ?? null,
+      clientVersion: attribution.client?.version ?? null,
+      usedDictation: input.usedDictation ?? null,
       position: nextQueuePosition(positionRow?.value),
       dispatchResponseId: input.clientId ?? newId(),
       requestReceivedAt,
@@ -306,6 +311,9 @@ export async function advanceMessageQueue(chatId: string): Promise<void> {
         actorUserId: claim.actorUserId,
         chatId,
         parentResponseId: chat?.activeBranchLeafId ?? chat?.activeResponseId ?? null,
+        client: claim.clientPlatform && clientPlatformSchema.safeParse(claim.clientPlatform).success
+          ? { platform: clientPlatformSchema.parse(claim.clientPlatform), version: claim.clientVersion }
+          : null,
         input: {
           clientId: claim.dispatchResponseId,
           input: claim.content,
@@ -314,6 +322,7 @@ export async function advanceMessageQueue(chatId: string): Promise<void> {
           presetSelections: claim.presetSelections,
           attachmentIds: claim.attachmentIds,
           agentMode: claim.agentMode,
+          usedDictation: claim.usedDictation ?? undefined,
         },
       })
     }
