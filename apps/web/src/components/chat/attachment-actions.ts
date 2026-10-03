@@ -18,9 +18,12 @@ export async function fetchAttachment(id: string): Promise<ChatAttachment> {
   return { ...attachment, type: attachment.mimeType.startsWith('image/') ? 'image' : 'file' }
 }
 
-/** Keeps a copy of a chat attachment in Files; returns the new file. */
-export async function saveAttachmentToFiles(id: string, parentId: string | null): Promise<FileNode> {
-  return (await apiRequest<{ node: FileNode }>(`/api/attachments/${id}/save-to-files`, { method: 'POST', body: { parentId } })).node
+/**
+ * Keeps a copy of a chat attachment in Files. A taken name gets a ` (n)` suffix, unless `replaceId`
+ * names the file to overwrite, which moves to the trash (`replacedId`, for undo).
+ */
+export async function saveAttachmentToFiles(id: string, input: { parentId: string | null; name: string; replaceId?: string }): Promise<{ node: FileNode; replacedId: string | null }> {
+  return apiRequest(`/api/attachments/${id}/save-to-files`, { method: 'POST', body: input })
 }
 
 export function downloadChatAttachment(attachment: Attachment): void {

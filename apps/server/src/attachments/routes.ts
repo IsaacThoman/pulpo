@@ -20,7 +20,7 @@ import { canonicalUploadedMimeType, isConfirmedRasterImage } from './policy.js'
 import { createAttachmentThumbnail } from './thumbnail.js'
 import { attachmentReferenceIsLive } from './references.js'
 import { AttachmentSizeMismatchError, exactSizeStream, inspectAttachmentStream } from './streams.js'
-import { requireFilesUser } from '../files/request.js'
+import { parseFileInput, requireFilesUser } from '../files/request.js'
 import { saveAttachmentToFiles } from '../files/save-attachment.js'
 
 function accessibleAttachmentCondition() {
@@ -180,12 +180,12 @@ export async function registerAttachmentRoutes(app: FastifyInstance): Promise<vo
     if (request.adminChatAccess) throw new AppError(403, 'forbidden', 'Attachments cannot be saved to Files during admin chat access')
     const user = await requireFilesUser(request)
     const { id } = request.params as { id: string }
-    const { parentId } = saveAttachmentToFilesSchema.parse(request.body ?? {})
+    const input = parseFileInput(saveAttachmentToFilesSchema, request.body ?? {})
     const attachment = await readyAttachment(user.id, id)
     if (!attachment) throw notFound('Attachment')
-    const node = await saveAttachmentToFiles(user.id, attachment, parentId)
+    const saved = await saveAttachmentToFiles(user.id, attachment, input)
     reply.code(201)
-    return { node }
+    return saved
   })
 
   app.get('/api/attachments/:id/download', { config: attachmentRateLimit }, async (request) => {

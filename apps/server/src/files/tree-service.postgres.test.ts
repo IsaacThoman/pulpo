@@ -199,11 +199,30 @@ describe.skipIf(!enabled)('Files tree PostgreSQL behavior', () => {
     }).returning()
     const folder = await createFolder(userId, { parentId: null, name: 'Work' })
     await insertBlob(folder.id, 'report.pdf')
-    const saved = await saveAttachmentToFiles(userId, attachment!, folder.id)
+    const { node: saved, replacedId } = await saveAttachmentToFiles(userId, attachment!, { parentId: folder.id })
+    expect(replacedId).toBeNull()
     expect(saved).toMatchObject({ kind: 'blob', name: 'report (2).pdf', parentId: folder.id, status: 'ready', mimeType: 'application/pdf', sizeBytes: 30 })
     expect(copiedKeys).toEqual([[`users/${userId}/attachments/a`, `users/${userId}/files/${saved.id}`]])
     expect(await storageUsedBytes(db, userId)).toBe(70)
     await db.update(users).set({ storageLimitBytes: 80 }).where(eq(users.id, userId))
-    await expect(saveAttachmentToFiles(userId, attachment!, null)).rejects.toMatchObject({ code: 'storage_quota_exceeded' })
+    await expect(saveAttachmentToFiles(userId, attachment!, { parentId: null })).rejects.toMatchObject({ code: 'storage_quota_exceeded' })
+  })
+
+  it('saves an attachment under a chosen name, or over a file of that name, which moves to the trash', async () => {
+    const [attachment] = await db.insert(attachments).values({
+      id: randomUUID(), userId, originalName: 'report.pdf', mimeType: 'application/pdf', sizeBytes: 5, objectKey: `users/${userId}/attachments/b`, status: 'ready',
+    }).returning()
+    const existing = await insertBlob(null, 'Q3.pdf')
+    const { node: renamed } = await saveAttachmentToFiles(userId, attachment!, { parentId: null, name: 'Notes.pdf' })
+    expect(renamed.name).toBe('Notes.pdf')
+
+    const { node, replacedId } = await saveAttachmentToFiles(userId, attachment!, { parentId: null, name: 'q3.pdf', replaceId: existing })
+    expect(replacedId).toBe(existing)
+    expect(node).toMatchObject({ name: 'q3.pdf', parentId: null, status: 'ready' })
+    expect((await listTrash(userId)).map((item) => item.id)).toEqual([existing])
+
+    // The file to overwrite must still hold that name where the user saw it.
+    await expect(saveAttachmentToFiles(userId, attachment!, { parentId: null, name: 'Other.pdf', replaceId: node.id }))
+      .rejects.toMatchObject({ code: 'file_replace_conflict' })
   })
 })
