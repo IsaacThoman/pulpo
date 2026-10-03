@@ -49,6 +49,7 @@ import { createDoc, createFolder, downloadFile, fetchFolder, fetchFolderLayout, 
 import { arrangeGrid, GRID_CELL, moveInGrid, readingOrder } from '@/features/files/browser/grid-layout'
 import { filesErrorMessage } from '@/features/files/file-display'
 import { FileMoveDialog } from '@/features/files/FileMoveDialog'
+import { useFilesPageRequest } from '@/features/files/files-page-request'
 import { FilePreviewDialog } from '@/features/files/FilePreviewDialog'
 import { useFileClipboard } from '@/features/files/browser/clipboard'
 import { FileContextMenu, type ContextMenuPoint } from '@/features/files/browser/FileContextMenu'
@@ -325,6 +326,22 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
     }
     await Promise.all(Array.from({ length: Math.min(UPLOAD_CONCURRENCY, queue.length) }, worker))
   }
+
+  // Requests from the sidebar's Files menu, carried out by the page once My files has loaded.
+  const pageRequest = useFilesPageRequest((state) => state.request)
+  const requestStatus = panel || folderId !== null ? 'pending' : listing.status
+  useEffect(() => {
+    // Read from the store, not the render, so a request runs only once.
+    const request = useFilesPageRequest.getState().request
+    if (!request || requestStatus === 'pending') return
+    useFilesPageRequest.setState({ request: null })
+    // Without My files there is nowhere to put it; the page already shows the error.
+    if (requestStatus === 'error') return
+    if (request.kind === 'newFile') void newFile()
+    else if (request.kind === 'newFolder') void newFolder()
+    else void upload(request.files)
+    // oxlint-disable-next-line react/exhaustive-deps -- the actions read this render's listing
+  }, [pageRequest, requestStatus])
 
   const trashSelection = async (targets = selectedNodes) => {
     if (!targets.length) return

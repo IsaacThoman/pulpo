@@ -65,6 +65,7 @@ import { newChatLocationState } from '@/lib/new-chat-navigation'
 import { billingPlanTier, fetchBillingSummary } from '@/lib/billing'
 import { isDesktopRuntime } from '@/lib/runtime'
 import { ui, uit } from '@/i18n/ui'
+import { FilesNavMenu } from '@/features/files/FilesNavMenu'
 
 type DragKind = 'folder' | 'chat'
 type ChatList = 'pinned' | 'loose' | `folder:${string}`
@@ -790,6 +791,7 @@ export function Sidebar({
   const [newFolderOpen, setNewFolderOpen] = useState(false)
   const [folderName, setFolderName] = useState('')
   const [activeTooltip, setActiveTooltip] = useState<string | null>(null)
+  const [filesMenuPoint, setFilesMenuPoint] = useState<{ x: number; y: number } | null>(null)
   const shiftHeld = useShiftHeld()
   const drag = useSidebarDrag()
   const pinnedZoneRef = useRef<HTMLDivElement>(null)
@@ -914,7 +916,7 @@ export function Sidebar({
     collapsed ? 'w-9' : 'w-full'
   )
 
-  const iconBtn = (label: string, onClick: () => void, icon: React.ReactNode, badge?: number) => (
+  const iconBtn = (label: string, onClick: () => void, icon: React.ReactNode, badge?: number, onContextMenu?: (event: React.MouseEvent) => void) => (
     <Tooltip
       key={label}
       open={collapsed && activeTooltip === label}
@@ -923,7 +925,7 @@ export function Sidebar({
       }}
     >
       <TooltipTrigger asChild>
-        <button className={navBtn} onClick={onClick} aria-label={label}>
+        <button className={navBtn} onClick={onClick} onContextMenu={onContextMenu} aria-label={label}>
           <span className="relative flex size-8 shrink-0 items-center justify-center">{icon}{Boolean(badge) && <span className="absolute right-0 top-0 grid min-w-3.5 place-items-center rounded-full bg-primary px-1 text-[9px] leading-3.5 text-primary-foreground">{badge! > 99 ? '99+' : badge}</span>}</span>
           <span
             className={cn(
@@ -1072,11 +1074,15 @@ export function Sidebar({
         <div className="space-y-0.5 px-2">
           {iconBtn(t('chat.newChat'), startNewChat, <SquarePen className="size-4" />)}
           {sidebarPins.searchChats && iconBtn(t('sidebar.searchChats'), onOpenSearch, <Search className="size-4" />)}
-          {filesEnabled && sidebarPins.files && iconBtn(t('sidebar.files'), () => go('/files'), <FolderIcon className="size-4" />)}
+          {filesEnabled && sidebarPins.files && iconBtn(t('sidebar.files'), () => go('/files'), <FolderIcon className="size-4" />, undefined, (event) => {
+            event.preventDefault()
+            setFilesMenuPoint({ x: event.clientX, y: event.clientY })
+          })}
           {sidebarPins.usage && iconBtn(t('sidebar.usage'), () => go('/usage'), <BarChart3 className="size-4" />)}
           {billingEnabled && sidebarPins.billing && iconBtn(t('sidebar.billing'), () => go('/billing'), <CreditCard className="size-4" />)}
           {sidebarPins.friends && iconBtn(t('sidebar.friends'), () => go('/friends'), <UsersRound className="size-4" />, pendingSocialCount)}
           {apiKeysEnabled && sidebarPins.apiKeys && iconBtn(t('sidebar.apiKeys'), () => go('/api-keys'), <KeyRound className="size-4" />)}
+          {filesEnabled && <FilesNavMenu point={filesMenuPoint} onClose={() => setFilesMenuPoint(null)} go={go} />}
         </div>
 
         {/* Secondary content stays mounted so every section animates on one timeline. */}
