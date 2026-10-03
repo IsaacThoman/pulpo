@@ -5,6 +5,7 @@ import { Download, Loader2, MessageSquare, TriangleAlert } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { CopyTextButton, PreviewBody } from '@/components/chat/AttachmentPreview'
+import { SaveToFilesButton } from '@/components/chat/SaveToFiles'
 import { attachmentDescription, usePreviewContent } from '@/components/chat/use-attachment-preview-content'
 import { attachmentQueryKey, downloadChatAttachment, fetchAttachment, type ChatAttachment } from '@/components/chat/attachment-actions'
 import { ui } from '@/i18n/ui'
@@ -45,6 +46,10 @@ function AttachmentView({ attachment, inPanel }: { attachment: ChatAttachment; i
         </span>
         {/* Truncated previews only hold the start of the file, so copying would silently drop the rest. */}
         {content.status === 'ready' && content.text !== null && !content.textTruncated && <CopyTextButton text={content.text} />}
+        <SaveToFilesButton
+          attachment={attachment}
+          className="inline-flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-md text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        />
         <Tooltip>
           <TooltipTrigger asChild>
             <Button variant="ghost" size="icon-sm" aria-label={ui("Download")} onClick={() => downloadChatAttachment(attachment)}><Download /></Button>

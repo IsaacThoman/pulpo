@@ -6,6 +6,8 @@ export interface FileToast {
   tone?: 'default' | 'error'
   /** Reverses the action; the toast offers an Undo button while it is visible. */
   undo?: () => Promise<unknown>
+  /** A follow-up, e.g. showing what was just created; the toast closes when it runs. */
+  action?: { label: string; run: () => void }
 }
 
 interface FileToastState {

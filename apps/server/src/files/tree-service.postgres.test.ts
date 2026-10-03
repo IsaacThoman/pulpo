@@ -20,6 +20,7 @@ import {
   updateFileNode,
 } from './tree-service.js'
 import { copyFileNodes } from './copy-service.js'
+import { saveAttachmentToFiles } from './save-attachment.js'
 
 const publish = vi.hoisted(() => vi.fn())
 const deletedKeys = vi.hoisted(() => [] as string[])
@@ -190,5 +191,19 @@ describe.skipIf(!enabled)('Files tree PostgreSQL behavior', () => {
     const folder = await createFolder(userId, { parentId: null, name: 'Folder' })
     const child = await createFolder(userId, { parentId: folder.id, name: 'Child' })
     await expect(copyFileNodes(userId, [folder.id], child.id)).rejects.toMatchObject({ code: 'file_move_cycle' })
+  })
+
+  it('saves a chat attachment into Files as a copy, keeping both names and counting its storage', async () => {
+    const [attachment] = await db.insert(attachments).values({
+      id: randomUUID(), userId, originalName: 'report.pdf', mimeType: 'application/pdf', sizeBytes: 30, objectKey: `users/${userId}/attachments/a`, status: 'ready',
+    }).returning()
+    const folder = await createFolder(userId, { parentId: null, name: 'Work' })
+    await insertBlob(folder.id, 'report.pdf')
+    const saved = await saveAttachmentToFiles(userId, attachment!, folder.id)
+    expect(saved).toMatchObject({ kind: 'blob', name: 'report (2).pdf', parentId: folder.id, status: 'ready', mimeType: 'application/pdf', sizeBytes: 30 })
+    expect(copiedKeys).toEqual([[`users/${userId}/attachments/a`, `users/${userId}/files/${saved.id}`]])
+    expect(await storageUsedBytes(db, userId)).toBe(70)
+    await db.update(users).set({ storageLimitBytes: 80 }).where(eq(users.id, userId))
+    await expect(saveAttachmentToFiles(userId, attachment!, null)).rejects.toMatchObject({ code: 'storage_quota_exceeded' })
   })
 })

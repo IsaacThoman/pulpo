@@ -1,3 +1,4 @@
+import type { FileNode } from '@pulpo/contracts'
 import type { Attachment } from '@/lib/types'
 import { apiRequest } from '@/lib/api'
 import { downloadAttachment } from '@/lib/local-first/attachment-cache'
@@ -15,6 +16,11 @@ export type ChatAttachment = Attachment & { chatId?: string | null }
 export async function fetchAttachment(id: string): Promise<ChatAttachment> {
   const { attachment } = await apiRequest<{ attachment: Omit<ChatAttachment, 'type'> }>(`/api/attachments/${id}`)
   return { ...attachment, type: attachment.mimeType.startsWith('image/') ? 'image' : 'file' }
+}
+
+/** Keeps a copy of a chat attachment in Files; returns the new file. */
+export async function saveAttachmentToFiles(id: string, parentId: string | null): Promise<FileNode> {
+  return (await apiRequest<{ node: FileNode }>(`/api/attachments/${id}/save-to-files`, { method: 'POST', body: { parentId } })).node
 }
 
 export function downloadChatAttachment(attachment: Attachment): void {

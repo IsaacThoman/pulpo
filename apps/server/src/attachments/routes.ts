@@ -6,7 +6,7 @@ import { and, eq, isNull, or } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { Readable } from 'node:stream'
 import { z } from 'zod'
-import { MAX_CONFIGURABLE_ATTACHMENT_BYTES } from '@pulpo/contracts'
+import { MAX_CONFIGURABLE_ATTACHMENT_BYTES, saveAttachmentToFilesSchema } from '@pulpo/contracts'
 import { requireUser } from '../auth/service.js'
 import { getConfig } from '../config.js'
 import { db } from '../database/client.js'
@@ -20,6 +20,8 @@ import { canonicalUploadedMimeType, isConfirmedRasterImage } from './policy.js'
 import { createAttachmentThumbnail } from './thumbnail.js'
 import { attachmentReferenceIsLive } from './references.js'
 import { AttachmentSizeMismatchError, exactSizeStream, inspectAttachmentStream } from './streams.js'
+import { requireFilesUser } from '../files/request.js'
+import { saveAttachmentToFiles } from '../files/save-attachment.js'
 
 function accessibleAttachmentCondition() {
   return or(
@@ -170,6 +172,20 @@ export async function registerAttachmentRoutes(app: FastifyInstance): Promise<vo
         chatId: attachment.chatId,
       },
     }
+  })
+
+  /** Keeps a copy of a chat attachment in the user's Files; the attachment itself is unchanged. */
+  app.post('/api/attachments/:id/save-to-files', { config: attachmentRateLimit }, async (request, reply) => {
+    // An admin reading someone's chat acts as its owner, but must not write into the owner's Files.
+    if (request.adminChatAccess) throw new AppError(403, 'forbidden', 'Attachments cannot be saved to Files during admin chat access')
+    const user = await requireFilesUser(request)
+    const { id } = request.params as { id: string }
+    const { parentId } = saveAttachmentToFilesSchema.parse(request.body ?? {})
+    const attachment = await readyAttachment(user.id, id)
+    if (!attachment) throw notFound('Attachment')
+    const node = await saveAttachmentToFiles(user.id, attachment, parentId)
+    reply.code(201)
+    return { node }
   })
 
   app.get('/api/attachments/:id/download', { config: attachmentRateLimit }, async (request) => {
