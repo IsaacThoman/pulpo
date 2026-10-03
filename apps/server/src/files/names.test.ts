@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { attachmentFileName, nextAvailableName } from './names.js'
+import { nextAvailableName } from '@pulpo/contracts'
+import { attachmentFileName } from './names.js'
 
 describe('Files sibling names', () => {
   it('keeps a free name and compares case-insensitively', () => {

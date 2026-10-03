@@ -12,6 +12,7 @@ import { useAuth } from '@/stores/auth'
 import { deleteFileNodes, fetchFolder, filesQueryKey, folderQueryKey, restoreFileNodes, trashFileNodes } from '@/features/files/api'
 import { fileNameErrorMessage, filesErrorMessage } from '@/features/files/file-display'
 import { FolderBrowser } from '@/features/files/FileMoveDialog'
+import { uniqueChildName } from '@/features/files/browser/sort'
 import { useFileToasts } from '@/features/files/browser/toasts'
 import { revealFile } from '@/features/files/reveal'
 import { useSidePanel } from '@/features/side-panel/store'
@@ -31,9 +32,10 @@ function useCanSaveToFiles(): boolean {
 }
 
 /**
- * Picks a folder and a name. The folder's files show grayed out; picking one takes its name. A
- * name already in use asks first: overwrite that file (it moves to the trash), save separately
- * (the server adds " (n)"), or go back.
+ * Picks a folder and a name. The name starts as the attachment's, numbered (" (n)") when the
+ * folder already has it. The folder's files show grayed out; picking one takes its name. A name
+ * already in use asks first: overwrite that file (it moves to the trash), save separately (the
+ * server adds the number), or go back.
  */
 export function SaveToFilesDialog({ attachment, open, onOpenChange, onSaved }: {
   attachment: Attachment
@@ -43,7 +45,8 @@ export function SaveToFilesDialog({ attachment, open, onOpenChange, onSaved }: {
 }) {
   const userId = useAuth((state) => state.user?.id)
   const [folderId, setFolderId] = useState<string | null>(null)
-  const [name, setName] = useState(attachment.name)
+  // What the user typed or picked; until then the name follows the folder's next free name.
+  const [chosen, setChosen] = useState<{ name: string; picked: boolean } | null>(null)
   const [clash, setClash] = useState<FileNode | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
@@ -51,18 +54,21 @@ export function SaveToFilesDialog({ attachment, open, onOpenChange, onSaved }: {
   useEffect(() => {
     if (!open) return
     setFolderId(null)
-    setName(attachment.name)
+    setChosen(null)
     setClash(null)
     setError(null)
   }, [attachment.name, open])
 
   // The same listing the browser shows, to check the name against.
   const listing = useQuery({ queryKey: folderQueryKey(userId, folderId), queryFn: () => fetchFolder(folderId), enabled: Boolean(open && userId) })
+  const name = chosen?.name ?? (listing.data ? uniqueChildName(attachment.name, listing.data.children) : attachment.name)
   const normalized = normalizeFileName(name)
   const match = listing.data?.children.find((node) => node.name.toLowerCase() === normalized.toLowerCase()) ?? null
 
   const navigate = (next: string | null) => {
     setFolderId(next)
+    // A typed name carries over; a picked file's name belongs to the folder being left.
+    setChosen((current) => current?.picked ? null : current)
     setClash(null)
     setError(null)
   }
@@ -101,7 +107,7 @@ export function SaveToFilesDialog({ attachment, open, onOpenChange, onSaved }: {
             onNavigate={navigate}
             files={{
               selectedId: match && match.kind !== 'folder' ? match.id : null,
-              onSelect: (node) => { setName(node.name); setClash(null); setError(null) },
+              onSelect: (node) => { setChosen({ name: node.name, picked: true }); setClash(null); setError(null) },
             }}
           />
         )}
@@ -111,7 +117,7 @@ export function SaveToFilesDialog({ attachment, open, onOpenChange, onSaved }: {
             value={name}
             disabled={saving}
             aria-invalid={Boolean(error)}
-            onChange={(event) => { setName(event.target.value); setClash(null); setError(null) }}
+            onChange={(event) => { setChosen({ name: event.target.value, picked: false }); setClash(null); setError(null) }}
             onKeyDown={(event) => { if (event.key === 'Enter' && !clash) { event.preventDefault(); submit() } }}
           />
         </label>

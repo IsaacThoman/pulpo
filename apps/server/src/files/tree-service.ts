@@ -1,5 +1,5 @@
 import { and, asc, desc, eq, inArray, isNotNull, isNull, lt, ne, sql } from 'drizzle-orm'
-import { FILE_TREE_MAX_DEPTH, isMarkdownName, type FileListing, type FileNode, type FileNodeKind } from '@pulpo/contracts'
+import { FILE_TREE_MAX_DEPTH, isMarkdownName, nextAvailableName, type FileListing, type FileNode, type FileNodeKind } from '@pulpo/contracts'
 import { db } from '../database/client.js'
 import { fileNodes } from '../database/schema.js'
 import { bumpAccountRevisions, publishScopedStateChanges, type AccountRevisionChange } from '../friends/sync.js'
@@ -9,7 +9,6 @@ import { getBlobStore } from '../storage/index.js'
 import { resolveFileAccess, type FileExecutor, type FileNodeRow } from './access.js'
 import { convertDocToBlobInTx } from './conversion.js'
 import { publishDocsClosed } from './doc-events.js'
-import { nextAvailableName } from './names.js'
 
 type DatabaseTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0]
 

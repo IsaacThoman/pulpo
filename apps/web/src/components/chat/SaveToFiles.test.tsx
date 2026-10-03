@@ -68,6 +68,22 @@ describe('saving an attachment to Files', () => {
     await waitFor(() => expect(api.save).toHaveBeenCalledWith('att', { parentId: null, name: 'q3.pdf', replaceId: undefined }))
   })
 
+  it('starts from the next free numbered name when the folder already has the attachment', async () => {
+    api.fetchFolder.mockImplementation(async (folderId: string | null) => folderId
+      ? { folder: node('f1', 'Work', 'folder'), ancestors: [], children: [] }
+      : { folder: null, ancestors: [], children: [node('f1', 'Work', 'folder'), node('r1', 'Report.pdf'), node('r2', 'report (2).pdf')] })
+    const { name } = renderDialog()
+    await waitFor(() => expect(name().value).toBe('report (3).pdf'))
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(api.save).toHaveBeenCalledWith('att', { parentId: null, name: 'report (3).pdf', replaceId: undefined }))
+
+    // In another folder the plain name is free again; a picked file's name does not follow along.
+    fireEvent.click(screen.getByText('Report.pdf'))
+    expect(name().value).toBe('Report.pdf')
+    fireEvent.click(screen.getByText('Work'))
+    await waitFor(() => expect(name().value).toBe('report.pdf'))
+  })
+
   it('cannot overwrite a folder, only save separately', async () => {
     const { name } = renderDialog()
     await screen.findByText('Work')

@@ -1,4 +1,4 @@
-import type { FileNode } from '@pulpo/contracts'
+import { nextAvailableName, type FileNode } from '@pulpo/contracts'
 import { fileExtension } from '../file-display'
 
 export type FileSortKey = 'name' | 'modified' | 'size' | 'kind'
@@ -60,13 +60,6 @@ export function sortFileNodes(nodes: readonly FileNode[], sort: FileSort): FileN
 
 /** Client-side "Name (2).md" for items created in place before the server confirms them. */
 export function uniqueChildName(desired: string, siblings: readonly Pick<FileNode, 'name'>[]): string {
-  const taken = new Set(siblings.map((node) => node.name.toLocaleLowerCase()))
-  if (!taken.has(desired.toLocaleLowerCase())) return desired
-  // Keep the extension last, matching the server's suffixing.
-  const dot = desired.lastIndexOf('.')
-  const [base, extension] = dot > 0 ? [desired.slice(0, dot), desired.slice(dot)] : [desired, '']
-  for (let index = 2; ; index += 1) {
-    const candidate = `${base} (${index})${extension}`
-    if (!taken.has(candidate.toLocaleLowerCase())) return candidate
-  }
+  // The server's own suffixing, so what is shown is what gets saved.
+  return nextAvailableName(desired, new Set(siblings.map((node) => node.name.toLowerCase())))
 }
