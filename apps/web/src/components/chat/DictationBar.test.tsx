@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { DICTATION_LEVEL_INTERVAL_MS, normalizeDictationDecibels } from '@pulpo/client-core'
+import { DICTATION_LEVEL_INTERVAL_MS, DICTATION_WAVEFORM_BAR_PITCH, dictationWaveformBarCount, normalizeDictationDecibels } from '@pulpo/client-core'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { DictationBar, DictationWaveform } from './DictationBar'
 import { WEB_DICTATION_WAVEFORM_SAMPLES, useMicrophoneLevels } from './use-microphone-levels'
@@ -192,6 +192,16 @@ describe('DictationBar', () => {
     const view = render(<TooltipProvider><DictationBar {...all} /></TooltipProvider>)
     return { ...view, ...handlers, rerenderBar: (next: Partial<Parameters<typeof DictationBar>[0]>) => view.rerender(<TooltipProvider><DictationBar {...all} {...next} /></TooltipProvider>) }
   }
+
+  it('fills the whole track up to the cancel button, even in the widest composer', () => {
+    // 90rem composer minus the side controls still fits inside the history.
+    expect(WEB_DICTATION_WAVEFORM_SAMPLES * DICTATION_WAVEFORM_BAR_PITCH).toBeGreaterThanOrEqual(1440)
+    observedWidth = 1200
+    const view = renderBar()
+    const bars = view.container.querySelectorAll('[data-testid="dictation-waveform-row"] > span')
+    expect(bars).toHaveLength(dictationWaveformBarCount(1200, WEB_DICTATION_WAVEFORM_SAMPLES))
+    expect(bars.length * DICTATION_WAVEFORM_BAR_PITCH).toBeGreaterThan(1200)
+  })
 
   it('shows a waveform and running timer while recording', () => {
     const view = renderBar()

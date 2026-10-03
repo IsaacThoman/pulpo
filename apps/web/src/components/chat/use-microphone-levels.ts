@@ -9,8 +9,11 @@ import {
 
 export type DictationPhase = 'idle' | 'preparing' | 'recording' | 'transcribing'
 
-/** Desktop composers are wide, so web keeps about ten seconds of history. */
-export const WEB_DICTATION_WAVEFORM_SAMPLES = 128
+/**
+ * Enough history for the waveform to reach the cancel button in the widest composer
+ * (90rem): 320 samples span 1600 px, about 25 seconds. Only bars that fit are rendered.
+ */
+export const WEB_DICTATION_WAVEFORM_SAMPLES = 320
 /** Samples microphone loudness from a live stream. Levels are oldest first; the newest is last. */
 export function useMicrophoneLevels(stream: MediaStream | null, samples = WEB_DICTATION_WAVEFORM_SAMPLES): readonly number[] {
   const [levels, setLevels] = useState<readonly number[]>(() => emptyDictationLevels(samples))
