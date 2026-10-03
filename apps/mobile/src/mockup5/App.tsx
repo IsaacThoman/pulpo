@@ -56,6 +56,7 @@ import {
 } from 'react';
 import {
   AccessibilityInfo,
+  ActionSheetIOS,
   ActivityIndicator,
   Alert,
   Appearance,
@@ -2859,7 +2860,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   );
 }
 
-type MessageAction = 'copy' | 'share' | 'share-chat' | 'reply' | 'edit' | 'regenerate' | 'delete';
+type MessageAction = 'copy' | 'share' | 'share-options' | 'share-chat' | 'reply' | 'edit' | 'regenerate' | 'delete';
 
 function useMessageActionRunner({ message, onEdit, onRegenerate }: {
   message: Message;
@@ -2876,7 +2877,7 @@ function useMessageActionRunner({ message, onEdit, onRegenerate }: {
     void queryClient.invalidateQueries({ queryKey: queryKeys.chat(namespace, message.chatId) });
   }, [instanceUrl, message.chatId, queryClient, userId]);
 
-  return useCallback((action: MessageAction) => {
+  return useCallback(function runAction(action: MessageAction): void {
     if (['edit', 'delete', 'regenerate'].includes(action)) speechPlayback.stop();
     if (action === 'copy') {
       void copyText(message.text, 'Message copied');
@@ -2884,6 +2885,16 @@ function useMessageActionRunner({ message, onEdit, onRegenerate }: {
     }
     if (action === 'share') {
       void Share.share({ message: message.text });
+      return;
+    }
+    if (action === 'share-options') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        { options: ['Share chat link', 'Share as text', 'Cancel'], cancelButtonIndex: 2 },
+        (index) => {
+          if (index === 0) runAction('share-chat');
+          if (index === 1) runAction('share');
+        },
+      );
       return;
     }
     if (action === 'share-chat') {
@@ -3003,14 +3014,7 @@ function MessageContextMenu({
         <>
           <SwiftUIControlGroup>
             <SwiftUIButton label="Copy" systemImage="doc.on.doc" onPress={() => runAction('copy')} />
-            {message.chatId
-              ? (
-                <SwiftUIMenu label="Share" systemImage="square.and.arrow.up">
-                  <SwiftUIButton label="Share chat link" systemImage="link" onPress={() => runAction('share-chat')} />
-                  <SwiftUIButton label="Share as text" systemImage="text.alignleft" onPress={() => runAction('share')} />
-                </SwiftUIMenu>
-              )
-              : <SwiftUIButton label="Share" systemImage="square.and.arrow.up" onPress={() => runAction('share')} />}
+            <SwiftUIButton label="Share" systemImage="square.and.arrow.up" onPress={() => runAction(message.chatId ? 'share-options' : 'share')} />
             <SwiftUIButton label="Reply" systemImage="arrowshape.turn.up.left" onPress={() => runAction('reply')} />
           </SwiftUIControlGroup>
           <SwiftUIDivider />
