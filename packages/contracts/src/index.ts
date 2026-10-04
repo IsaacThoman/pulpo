@@ -6,6 +6,7 @@ import { eventHasAssistantReplyText } from './response-timing.js'
 export * from './avatar-crop.js'
 export * from './response-timing.js'
 export * from './usage-cost.js'
+export * from './admin-analytics.js'
 import type { ComposerAck, ComposerSnapshot, ComposerWrite } from './composer.js'
 import type { DocAck, DocClosedEvent, DocJoinInput, DocJoinResult, DocUpdateMessage } from './files.js'
 export * from './composer.js'
@@ -1788,6 +1789,8 @@ export const createChatResponseSchema = z.object({
   presetSelections: z.record(z.string(), z.string()).default({}),
   attachmentIds: attachmentIdListSchema.default([]),
   agentMode: z.boolean().default(false),
+  /** Analytics only: whether dictation produced any of the message text. */
+  usedDictation: z.boolean().optional(),
 }).refine((value) => value.input.length > 0 || value.attachmentIds.length > 0, {
   message: 'Message must include text or attachments',
   path: ['input'],
@@ -1840,6 +1843,8 @@ export const createQueuedMessageSchema = z.object({
   presetSelections: z.record(z.string(), z.string()).default({}),
   attachmentIds: attachmentIdListSchema.default([]),
   agentMode: z.boolean().default(false),
+  /** Analytics only: whether dictation produced any of the message text. */
+  usedDictation: z.boolean().optional(),
 }).refine((value) => value.input.length > 0 || value.attachmentIds.length > 0, {
   message: 'Message must include text or attachments',
   path: ['input'],

@@ -26,6 +26,7 @@ import { publicOutputTokenLimit } from './upstream-request.js'
 import { requireCodexEnabled } from '../codex/policy.js'
 import { CODEX_PI_PROVIDER_ID, CODEX_PROVIDER_ID } from '../codex/constants.js'
 import { detailedPayloadPolicy } from '../logging/detailed-payload-retention.js'
+import { discardRequestAnalytics, recordRequestAdmission, type ClientAttribution } from '../analytics/capture.js'
 
 export interface CreateResponseOptions {
   requestReceivedAt?: Date | null
@@ -49,6 +50,8 @@ export interface CreateResponseOptions {
   parentResponseId?: string | null
   userMessageId?: string
   branchReason?: 'message' | 'regenerate' | 'user_edit'
+  /** App surface that sent the request, for admin analytics. */
+  client?: ClientAttribution | null
 }
 
 async function loadPresetModel(modelId: string): Promise<PresetResolutionModel | undefined> {
@@ -197,6 +200,7 @@ export async function createResponse(options: CreateResponseOptions) {
     ...responseAttachmentIds(options.rawInput),
   ])]
   if (attachmentIds.length > MAX_MESSAGE_ATTACHMENTS) throw new AppError(400, 'attachment_count_exceeded', `Messages support up to ${MAX_MESSAGE_ATTACHMENTS} attachments`)
+  let attachmentMimeTypes: string[] = []
   if (attachmentIds.length) {
     const ownedAttachments = await db.select().from(attachments).where(and(
       eq(attachments.userId, options.ownerUserId),
@@ -205,6 +209,7 @@ export async function createResponse(options: CreateResponseOptions) {
       or(isNull(attachments.chatId), eq(attachments.chatId, chat.id)),
     ))
     if (ownedAttachments.length !== attachmentIds.length) throw new AppError(400, 'attachment_not_ready', 'One or more attachments are unavailable')
+    attachmentMimeTypes = ownedAttachments.map((attachment) => attachment.mimeType)
     const [attachmentSettings] = await db.select().from(applicationSettings).where(eq(applicationSettings.key, 'auth')).limit(1)
     if (!options.input.agentMode && attachmentsRequireAgentMode(ownedAttachments, parseAuthSettings(attachmentSettings?.value).maxInlineImages)) {
       throw new AppError(400, 'attachment_requires_agent', 'These attachments require Agent mode: non-image files, large images, or too many images for a prompt')
@@ -225,6 +230,7 @@ export async function createResponse(options: CreateResponseOptions) {
       ...options.input.attachmentIds.map((attachmentId) => ({ type: 'input_file', attachment_id: attachmentId })),
     ],
   }]
+  const origin = options.actorUserId ? 'admin_chat' : options.apiKeyId ? 'api' : 'web'
   const acceptedAt = new Date()
   const admission = await db.transaction(async (tx) => {
     const [current] = await tx.select().from(chats).where(and(
@@ -267,7 +273,7 @@ export async function createResponse(options: CreateResponseOptions) {
       idempotencyKey: options.idempotencyKey,
       idempotencyScope,
       idempotencyFingerprint: options.idempotencyFingerprint,
-      origin: options.actorUserId ? 'admin_chat' : options.apiKeyId ? 'api' : 'web',
+      origin,
     }).onConflictDoNothing().returning({ id: responses.id })
     if (!inserted) {
       const [existing] = await tx.select().from(responses).where(or(
@@ -296,12 +302,30 @@ export async function createResponse(options: CreateResponseOptions) {
       const policy = detailedPayloadPolicy(logging, collectedAt)
       await tx.insert(requestLogs).values({
         id: requestLogId, responseId: id, userId: options.ownerUserId, actorUserId: options.actorUserId, apiKeyId: options.apiKeyId,
-        origin: options.actorUserId ? 'admin_chat' : options.apiKeyId ? 'api' : 'web', requestedModelId: options.input.modelId, currentModelId: model.id,
+        origin, requestedModelId: options.input.modelId, currentModelId: model.id,
         ...policy, createdAt: collectedAt, updatedAt: collectedAt,
         requestPayload: null, // Detailed bodies are captured per provider attempt.
       })
     })
     await publishAdminUsage(requestLogId, true)
+    await recordRequestAdmission({
+      responseId: id,
+      ownerUserId: options.ownerUserId,
+      billingUserId: options.billingUserId ?? options.ownerUserId,
+      apiKeyId: options.apiKeyId ?? null,
+      requestedModelId: options.input.modelId,
+      answeredModelId: model.id,
+      origin,
+      client: options.client ?? null,
+      presetSelections: resolved.selections,
+      effectiveParameters: resolveModelParameters(model, parameters, { publicApi: Boolean(options.apiKeyId) }),
+      maxOutputTokens: typeof maxOutputTokens === 'number' ? maxOutputTokens : null,
+      agentMode: options.input.agentMode,
+      branchReason: options.branchReason ?? 'message',
+      attachmentMimeTypes,
+      usedDictation: options.input.usedDictation ?? null,
+      inputChars: options.input.input.length,
+    })
     await reserveBudget({
       responseId: id,
       userId: options.billingUserId ?? options.ownerUserId,
@@ -321,6 +345,7 @@ export async function createResponse(options: CreateResponseOptions) {
     }
   } catch (error) {
     await releaseBudget(id)
+    await discardRequestAnalytics(id)
     await db.transaction(async tx => {
       const [current] = await tx.select().from(chats).where(eq(chats.id, chat.id)).for('update')
       const [child] = await tx.select({ id: responses.id }).from(responses).where(eq(responses.parentResponseId, id)).limit(1)

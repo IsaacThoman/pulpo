@@ -30,6 +30,7 @@ import { requestCostLimitContinue } from '../agent/cost-limit.js'
 import { scheduleChatIndex, scheduleUserIndex } from '../episodic-memory/queue.js'
 import { createChatExportPayload } from './export-format.js'
 import { importedModelIdentity } from './modelIdentity.js'
+import { clientAttributionForRequest } from '../analytics/capture.js'
 
 export const CHAT_IMPORT_ROUTE_OPTIONS = { bodyLimit: 100 * 1024 * 1024 } as const
 
@@ -323,6 +324,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
         input: input.response,
         parentResponseId: null,
         idempotencyKey: request.headers['idempotency-key'] as string | undefined,
+        client: clientAttributionForRequest(request),
       })
       if (!chat.temporary) await bumpRevision(user.id, chat.id)
       if (inserted && !chat.temporary && chat.expiresAt) {
@@ -679,6 +681,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       input,
       parentResponseId: input.parentResponseId,
       idempotencyKey: request.headers['idempotency-key'] as string | undefined,
+      client: clientAttributionForRequest(request),
     })
     await bumpRevision(user.id, id)
     reply.code(202)
@@ -693,6 +696,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       requestReceivedAt: request.requestReceivedAt,
       billingUserId: billingUserForRequest(request).id,
       actorUserId: request.adminChatAccess?.actorUser.id,
+      client: clientAttributionForRequest(request),
     })
     reply.code(202)
     return result

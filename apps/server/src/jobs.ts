@@ -9,6 +9,10 @@ export interface CodexLoginJob {
   attemptId: string
 }
 
+export interface AnalyticsJob {
+  type: 'sweep' | 'rollup-recent' | 'rollup-full'
+}
+
 export interface MaintenanceJob {
   type: 'delete-account' | 'cleanup' | 'backup-schedule' | 'scrub-response-binary-context' | 'purge-chats' | 'expire-temporary-chat' | 'expire-normal-chat' | 'rollup' | 'export' | 'backup' | 'restore' | 'billing-reconcile' | 'auto-top-up' | 'auto-top-up-sweep'
   payload?: Record<string, unknown>
@@ -56,6 +60,12 @@ export const embeddingQueue = new Queue<EmbeddingJob>('episodic-memory', {
 export const payloadRetentionQueue = new Queue('payload-retention', {
   connection,
   defaultJobOptions: { attempts: 3, backoff: { type: 'exponential', delay: 1_000 }, removeOnComplete: 100, removeOnFail: 100 },
+})
+
+// Analytics bookkeeping is frequent and cheap; keep it off the maintenance queue's single lane.
+export const analyticsQueue = new Queue<AnalyticsJob>('analytics', {
+  connection,
+  defaultJobOptions: { attempts: 2, backoff: { type: 'exponential', delay: 5_000 }, removeOnComplete: 100, removeOnFail: 100 },
 })
 
 /** Folds collaborative document update logs into their snapshot and refreshes derived Markdown. */

@@ -103,6 +103,9 @@ export async function loadUsageModelAliases(): Promise<Map<string, UsageModelIde
   return aliases
 }
 
+/** 53 weeks, so the first column of the contribution graph is always complete. */
+const CONTRIBUTION_WINDOW_MS = 53 * 7 * 86_400_000
+
 export async function loadUsageActivity(input: {
   userIds: string[] | null
   since: Date | null
@@ -110,7 +113,8 @@ export async function loadUsageActivity(input: {
   hidePrivateModels: boolean
 }) {
   const rangeWhere = and(...eligibleUsageFilters(input.since, input.userIds))
-  const allWhere = and(...eligibleUsageFilters(null, input.userIds))
+  // The contribution graph spans a year; scanning older history only costs time.
+  const contributionWhere = and(...eligibleUsageFilters(new Date(Date.now() - CONTRIBUTION_WINDOW_MS), input.userIds))
   const dayBucket = sql<string>`(${usageEvents.createdAt} at time zone ${input.timeZone})::date`
   const [summary, daily, contribution, topModels, aliases] = await Promise.all([
     db.select({
@@ -142,7 +146,7 @@ export async function loadUsageActivity(input: {
       cacheWriteTokens: sql<number>`coalesce(sum(${usageEvents.cacheWriteTokens}), 0)::bigint`,
       outputTokens: sql<number>`coalesce(sum(${usageEvents.outputTokens}), 0)::bigint`,
       costMicros: sql<number>`coalesce(sum(${usageEvents.costMicros}), 0)::bigint`,
-    }).from(usageEvents).innerJoin(users, eq(usageEvents.userId, users.id)).where(allWhere)
+    }).from(usageEvents).innerJoin(users, eq(usageEvents.userId, users.id)).where(contributionWhere)
       .groupBy(sql`1`).orderBy(sql`1 asc`),
     db.select({
       modelId: models.id,

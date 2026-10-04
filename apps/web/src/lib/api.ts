@@ -37,6 +37,7 @@ export function authenticatedFetch(input: string, init: RequestInit = {}): Promi
   const headers = new Headers(init.headers)
   for (const [key, value] of Object.entries(adminChatAccessHeaders(input))) headers.set(key, value)
   for (const [key, value] of Object.entries(runtimeAuthorizationHeaders(input))) headers.set(key, value)
+  for (const [key, value] of Object.entries(runtimeClientHeaders(input))) headers.set(key, value)
   return fetch(runtimeApiUrl(input), {
     ...init,
     headers,
@@ -114,5 +115,6 @@ import {
   isDesktopRuntime,
   runtimeApiUrl,
   runtimeAuthorizationHeaders,
+  runtimeClientHeaders,
   runtimeUrlTargetsInstance,
 } from './runtime'

@@ -144,11 +144,14 @@ export async function runCleanup(): Promise<void> {
 }
 
 export async function rebuildDailyRollups(): Promise<void> {
-  await db.delete(dailyUsageRollups)
-  await db.execute(sql`
-    insert into daily_usage_rollups (day, user_id, model_id, calls, input_tokens, output_tokens, cost_micros)
-    select date_trunc('day', created_at), user_id, model_id, count(*)::int,
-      sum(input_tokens), sum(output_tokens), sum(cost_micros)
-    from usage_events group by 1, 2, 3
-  `)
+  // One transaction, so readers never observe the table empty mid-rebuild.
+  await db.transaction(async (tx) => {
+    await tx.delete(dailyUsageRollups)
+    await tx.execute(sql`
+      insert into daily_usage_rollups (day, user_id, model_id, calls, input_tokens, output_tokens, cost_micros)
+      select date_trunc('day', created_at), user_id, model_id, count(*)::int,
+        sum(input_tokens), sum(output_tokens), sum(cost_micros)
+      from usage_events group by 1, 2, 3
+    `)
+  })
 }

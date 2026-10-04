@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ApiError, apiRequest, apiUrl, configureApi, isNetworkError, mobileApi, nativeAuthorizationHeaders } from './client'
+import { ApiError, apiRequest, apiUrl, configureApi, configureClientPlatform, isNetworkError, mobileApi, nativeAuthorizationHeaders } from './client'
 
 describe('chat transfer during navigation', () => {
   afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); configureApi({ instanceUrl: 'https://pulpo.baby', token: null }) })
@@ -221,5 +221,25 @@ describe('session changes during requests', () => {
     resolve(Response.json({ error: { code: 'unauthorized' } }, { status: 401 }))
     await expect(request).rejects.toThrow()
     expect(onUnauthorized).not.toHaveBeenCalled()
+  })
+})
+
+describe('client attribution header', () => {
+  afterEach(() => { vi.unstubAllGlobals(); configureClientPlatform(null); configureApi({ instanceUrl: 'https://pulpo.baby', token: null }) })
+  it('sends the configured platform with instance requests, including unauthenticated ones', async () => {
+    configureApi({ instanceUrl: 'https://fixture.example', token: 'test-session' })
+    configureClientPlatform('ios/1.4.2')
+    const fetch = vi.fn(async (_url: string, _init?: RequestInit) => Response.json({}))
+    vi.stubGlobal('fetch', fetch)
+    await apiRequest('/api/chats/chat/responses', { method: 'POST', body: { input: 'hi' } })
+    await apiRequest('/api/mobile/config', { auth: false })
+    expect(new Headers(fetch.mock.calls[0]![1]!.headers).get('x-pulpo-client')).toBe('ios/1.4.2')
+    expect(new Headers(fetch.mock.calls[1]![1]!.headers).get('x-pulpo-client')).toBe('ios/1.4.2')
+  })
+  it('omits the header until a platform is configured', async () => {
+    const fetch = vi.fn(async (_url: string, _init?: RequestInit) => Response.json({}))
+    vi.stubGlobal('fetch', fetch)
+    await apiRequest('/api/me')
+    expect(new Headers(fetch.mock.calls[0]![1]!.headers).has('x-pulpo-client')).toBe(false)
   })
 })

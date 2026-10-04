@@ -5,6 +5,8 @@ export function shouldPersistQuery(query: { queryKey: readonly unknown[]; state:
   if (query.state.status !== 'success' && !recoverableRefetch) return false
   if (typeof query.queryKey[1] === 'string' && query.queryKey[1].startsWith('admin-chat:')) return false
   if (typeof query.queryKey[0] === 'string' && query.queryKey[0].startsWith('admin-billing')) return false
+  // Instance-wide analytics include other users' activity; keep it out of local storage.
+  if (typeof query.queryKey[0] === 'string' && query.queryKey[0].startsWith('admin-analytics')) return false
   if (query.queryKey[0] === 'chat') {
     return !(query.state.data as { temporary?: boolean } | undefined)?.temporary
   }
