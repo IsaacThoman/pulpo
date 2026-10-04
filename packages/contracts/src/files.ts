@@ -35,6 +35,31 @@ export function isMarkdownName(name: string): boolean {
   return /\.(md|markdown)$/i.test(name)
 }
 
+function splitExtension(name: string): [base: string, extension: string] {
+  const dot = name.lastIndexOf('.')
+  // Dotfiles such as ".env" have no extension to preserve, and a very long "extension" is just text.
+  return dot > 0 && name.length - dot <= 32 ? [name.slice(0, dot), name.slice(dot)] : [name, '']
+}
+
+function truncateCodePoints(value: string, length: number): string {
+  const points = [...value]
+  return points.length > length ? points.slice(0, Math.max(0, length)).join('') : value
+}
+
+/**
+ * Picks the first free Drive-style name ("Report (2).pdf") given the lowercase names already
+ * used by live siblings. Suffixed names are truncated so they stay within the length limit.
+ */
+export function nextAvailableName(desired: string, takenLowercase: ReadonlySet<string>): string {
+  if (!takenLowercase.has(desired.toLowerCase())) return desired
+  const [base, extension] = splitExtension(desired)
+  for (let index = 2; ; index += 1) {
+    const suffix = ` (${index})${extension}`
+    const candidate = truncateCodePoints(base, FILE_NAME_MAX_LENGTH - [...suffix].length) + suffix
+    if (!takenLowercase.has(candidate.toLowerCase())) return candidate
+  }
+}
+
 export const fileNodeKindSchema = z.enum(['folder', 'doc', 'blob'])
 export const fileNodeStatusSchema = z.enum(['pending', 'ready'])
 
@@ -85,6 +110,17 @@ export const moveFileNodesSchema = z.object({
     /** Optional target name, e.g. when undoing a move that had to rename. */
     name: fileNameSchema.optional(),
   })).min(1).max(FILE_BATCH_MAX_ITEMS),
+})
+
+/**
+ * Copies a chat attachment into Files, into `parentId` (null is My files). `name` defaults to the
+ * attachment's; a taken name gets a ` (n)` suffix unless `replaceId` names the file to overwrite,
+ * which then moves to the trash.
+ */
+export const saveAttachmentToFilesSchema = z.object({
+  parentId: z.uuid().nullable().default(null),
+  name: fileNameSchema.optional(),
+  replaceId: z.uuid().optional(),
 })
 
 export const copyFileNodesSchema = z.object({

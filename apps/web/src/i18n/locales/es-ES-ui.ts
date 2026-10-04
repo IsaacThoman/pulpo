@@ -2155,6 +2155,18 @@ const esUi: Record<string, string> = {
   "Untitled chat": "Chat sin título",
   "New chat": "Nuevo chat",
   "This attachment could not be found. It may have been deleted with its chat.": "No se encontró este adjunto. Puede que se haya eliminado junto con su chat.",
+  "Saved \"{{0}}\" to Files": "Se guardó \"{{0}}\" en Archivos",
+  "Show": "Mostrar",
+  "Save {{0}}": "Guardar {{0}}",
+  "Save to Files…": "Guardar en Archivos…",
+  "Save \"{{0}}\" to Files": "Guardar \"{{0}}\" en Archivos",
+  "Choose a folder and a name.": "Elige una carpeta y un nombre.",
+  "A folder named \"{{0}}\" already exists here. Save a separate copy with a number added?": "Ya existe una carpeta llamada \"{{0}}\" aquí. ¿Guardar una copia aparte con un número añadido?",
+  "\"{{0}}\" already exists here. Overwrite it, or save a separate copy with a number added? An overwritten file moves to the trash.": "\"{{0}}\" ya existe aquí. ¿Sobrescribirlo o guardar una copia aparte con un número añadido? Un archivo sobrescrito se mueve a la papelera.",
+  "Save separately": "Guardar aparte",
+  "Overwrite": "Sobrescribir",
+  "Overwrote \"{{0}}\"": "Se sobrescribió \"{{0}}\"",
+  "The file to overwrite has changed. Try saving again.": "El archivo que se iba a sobrescribir ha cambiado. Vuelve a guardar.",
 }
 
 export default esUi

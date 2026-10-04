@@ -1,4 +1,4 @@
-import { FILE_NAME_MAX_LENGTH, type FileNameError } from '@pulpo/contracts'
+import { FILE_NAME_MAX_LENGTH, fileNameError, normalizeFileName, type FileNameError } from '@pulpo/contracts'
 
 const FILE_NAME_MESSAGES: Record<FileNameError, string> = {
   empty: 'Name is required',
@@ -11,27 +11,15 @@ export function fileNameMessage(error: FileNameError): string {
   return FILE_NAME_MESSAGES[error]
 }
 
-function splitExtension(name: string): [base: string, extension: string] {
-  const dot = name.lastIndexOf('.')
-  // Dotfiles such as ".env" have no extension to preserve, and a very long "extension" is just text.
-  return dot > 0 && name.length - dot <= 32 ? [name.slice(0, dot), name.slice(dot)] : [name, '']
-}
-
-function truncateCodePoints(value: string, length: number): string {
-  const points = [...value]
-  return points.length > length ? points.slice(0, Math.max(0, length)).join('') : value
-}
-
-/**
- * Picks the first free Drive-style name ("Report (2).pdf") given the lowercase names already
- * used by live siblings. Suffixed names are truncated so they stay within the length limit.
- */
-export function nextAvailableName(desired: string, takenLowercase: ReadonlySet<string>): string {
-  if (!takenLowercase.has(desired.toLowerCase())) return desired
-  const [base, extension] = splitExtension(desired)
-  for (let index = 2; ; index += 1) {
-    const suffix = ` (${index})${extension}`
-    const candidate = truncateCodePoints(base, FILE_NAME_MAX_LENGTH - [...suffix].length) + suffix
-    if (!takenLowercase.has(candidate.toLowerCase())) return candidate
-  }
+/** A valid Files name for an attachment: characters Files rejects become `-`, and long names are cut. */
+export function attachmentFileName(originalName: string): string {
+  const cleaned = [...normalizeFileName(originalName)]
+    .map((character) => {
+      const code = character.charCodeAt(0)
+      return character === '/' || code < 0x20 || code === 0x7f ? '-' : character
+    })
+    .slice(0, FILE_NAME_MAX_LENGTH)
+    .join('')
+    .trim()
+  return fileNameError(cleaned) ? 'Attachment' : cleaned
 }

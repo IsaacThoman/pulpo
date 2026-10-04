@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { nextAvailableName } from './names.js'
+import { nextAvailableName } from '@pulpo/contracts'
+import { attachmentFileName } from './names.js'
 
 describe('Files sibling names', () => {
   it('keeps a free name and compares case-insensitively', () => {
@@ -21,5 +22,21 @@ describe('Files sibling names', () => {
     const next = nextAvailableName(long, new Set([long]))
     expect([...next]).toHaveLength(255)
     expect(next.endsWith(' (2).md')).toBe(true)
+  })
+})
+
+describe('attachment names in Files', () => {
+  it('keeps a valid name', () => {
+    expect(attachmentFileName('  report.pdf ')).toBe('report.pdf')
+  })
+
+  it('replaces characters Files rejects and cuts long names', () => {
+    expect(attachmentFileName('a/b\u0007c.txt')).toBe('a-b-c.txt')
+    expect([...attachmentFileName('x'.repeat(300))]).toHaveLength(255)
+  })
+
+  it('falls back when nothing usable is left', () => {
+    expect(attachmentFileName('   ')).toBe('Attachment')
+    expect(attachmentFileName('..')).toBe('Attachment')
   })
 })

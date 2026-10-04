@@ -20,6 +20,7 @@ import {
   updateFileNode,
 } from './tree-service.js'
 import { copyFileNodes } from './copy-service.js'
+import { saveAttachmentToFiles } from './save-attachment.js'
 
 const publish = vi.hoisted(() => vi.fn())
 const deletedKeys = vi.hoisted(() => [] as string[])
@@ -190,5 +191,38 @@ describe.skipIf(!enabled)('Files tree PostgreSQL behavior', () => {
     const folder = await createFolder(userId, { parentId: null, name: 'Folder' })
     const child = await createFolder(userId, { parentId: folder.id, name: 'Child' })
     await expect(copyFileNodes(userId, [folder.id], child.id)).rejects.toMatchObject({ code: 'file_move_cycle' })
+  })
+
+  it('saves a chat attachment into Files as a copy, keeping both names and counting its storage', async () => {
+    const [attachment] = await db.insert(attachments).values({
+      id: randomUUID(), userId, originalName: 'report.pdf', mimeType: 'application/pdf', sizeBytes: 30, objectKey: `users/${userId}/attachments/a`, status: 'ready',
+    }).returning()
+    const folder = await createFolder(userId, { parentId: null, name: 'Work' })
+    await insertBlob(folder.id, 'report.pdf')
+    const { node: saved, replacedId } = await saveAttachmentToFiles(userId, attachment!, { parentId: folder.id })
+    expect(replacedId).toBeNull()
+    expect(saved).toMatchObject({ kind: 'blob', name: 'report (2).pdf', parentId: folder.id, status: 'ready', mimeType: 'application/pdf', sizeBytes: 30 })
+    expect(copiedKeys).toEqual([[`users/${userId}/attachments/a`, `users/${userId}/files/${saved.id}`]])
+    expect(await storageUsedBytes(db, userId)).toBe(70)
+    await db.update(users).set({ storageLimitBytes: 80 }).where(eq(users.id, userId))
+    await expect(saveAttachmentToFiles(userId, attachment!, { parentId: null })).rejects.toMatchObject({ code: 'storage_quota_exceeded' })
+  })
+
+  it('saves an attachment under a chosen name, or over a file of that name, which moves to the trash', async () => {
+    const [attachment] = await db.insert(attachments).values({
+      id: randomUUID(), userId, originalName: 'report.pdf', mimeType: 'application/pdf', sizeBytes: 5, objectKey: `users/${userId}/attachments/b`, status: 'ready',
+    }).returning()
+    const existing = await insertBlob(null, 'Q3.pdf')
+    const { node: renamed } = await saveAttachmentToFiles(userId, attachment!, { parentId: null, name: 'Notes.pdf' })
+    expect(renamed.name).toBe('Notes.pdf')
+
+    const { node, replacedId } = await saveAttachmentToFiles(userId, attachment!, { parentId: null, name: 'q3.pdf', replaceId: existing })
+    expect(replacedId).toBe(existing)
+    expect(node).toMatchObject({ name: 'q3.pdf', parentId: null, status: 'ready' })
+    expect((await listTrash(userId)).map((item) => item.id)).toEqual([existing])
+
+    // The file to overwrite must still hold that name where the user saw it.
+    await expect(saveAttachmentToFiles(userId, attachment!, { parentId: null, name: 'Other.pdf', replaceId: node.id }))
+      .rejects.toMatchObject({ code: 'file_replace_conflict' })
   })
 })

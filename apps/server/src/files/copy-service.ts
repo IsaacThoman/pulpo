@@ -1,7 +1,7 @@
 import { and, eq, inArray, sql } from 'drizzle-orm'
 import * as Y from 'yjs'
 import { DOC_SCHEMA_VERSION, ydocToMarkdown } from '@pulpo/client-core/doc-schema'
-import { FILE_TREE_MAX_DEPTH, type FileNode } from '@pulpo/contracts'
+import { FILE_TREE_MAX_DEPTH, nextAvailableName, type FileNode } from '@pulpo/contracts'
 import { assertStorageCapacity, lockAccountStorage } from '../attachments/storage-quota.js'
 import { db } from '../database/client.js'
 import { fileDocs, fileNodes } from '../database/schema.js'
@@ -11,7 +11,6 @@ import { newId } from '../lib/ids.js'
 import { getBlobStore } from '../storage/index.js'
 import type { FileNodeRow } from './access.js'
 import { mergedDocState } from './doc-state.js'
-import { nextAvailableName } from './names.js'
 import {
   chainIds,
   destinationDepth,
