@@ -1,7 +1,7 @@
 import { eq, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
-import { agentCostLimitMicrosSchema, newChatAutoExpireSchema } from '@pulpo/contracts'
+import { agentCostLimitMicrosSchema, chatSortModeSchema, newChatAutoExpireSchema } from '@pulpo/contracts'
 import { requireUser } from '../auth/service.js'
 import { db } from '../database/client.js'
 import { applicationSettings, userPreferences, users } from '../database/schema.js'
@@ -63,6 +63,9 @@ export async function registerSettingsRoutes(app: FastifyInstance): Promise<void
     }
     if ('newChatAutoExpire' in patch && !newChatAutoExpireSchema.safeParse(patch.newChatAutoExpire).success) {
       throw new AppError(400, 'invalid_new_chat_expiration', 'Choose whether new chats should expire automatically')
+    }
+    if ('chatSortMode' in patch && !chatSortModeSchema.safeParse(patch.chatSortMode).success) {
+      throw new AppError(400, 'invalid_chat_sort_mode', 'Choose a valid chat order')
     }
     if ('showPromptSuggestions' in patch && typeof patch.showPromptSuggestions !== 'boolean') {
       throw new AppError(400, 'invalid_prompt_suggestions_setting', 'Choose whether prompt suggestions should be shown')

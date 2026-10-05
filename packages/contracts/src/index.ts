@@ -1474,6 +1474,9 @@ const accountPreferenceIdsSchema = z.array(z.string().trim().min(1).max(200)).ma
 export const automaticChatExpirationSchema = z.enum(['disabled', '24h', '7d'])
 export type AutomaticChatExpiration = z.infer<typeof automaticChatExpirationSchema>
 export const newChatAutoExpireSchema = z.boolean().default(false)
+/** Unfiled sidebar chats: manual drag order, or most recently updated first under time headings. */
+export const chatSortModeSchema = z.enum(['default', 'recent'])
+export type ChatSortMode = z.infer<typeof chatSortModeSchema>
 export const ANIMATION_SPEED_MIN = 0.01
 export const ANIMATION_SPEED_MAX = 5
 export const DEFAULT_ANIMATION_SPEED = 1
@@ -1516,6 +1519,7 @@ export const managementAccountSettingsSchema = z.object({
   trashRetention: z.enum(['instant', '24h', '7d', '30d', '90d', 'indefinite']).default('30d'),
   automaticChatExpiration: automaticChatExpirationSchema.default('24h'),
   newChatAutoExpire: newChatAutoExpireSchema,
+  chatSortMode: chatSortModeSchema.default('default'),
   defaultModelId: z.string().max(120).nullable().default(null),
   generation: z.record(z.string(), z.record(z.string(), z.string())).default({}),
   favoriteModelIds: accountPreferenceIdsSchema.default([]),

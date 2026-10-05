@@ -197,6 +197,7 @@ export async function hydrateProductionScope(namespace: string): Promise<void> {
           trashRetention: preferences.trashRetention,
           automaticChatExpiration: preferences.automaticChatExpiration,
           newChatAutoExpire: preferences.newChatAutoExpire,
+          chatSortMode: preferences.chatSortMode,
         },
       }
     })
@@ -318,6 +319,7 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
     trashRetention: state.trashRetention,
     automaticChatExpiration: state.automaticChatExpiration,
     newChatAutoExpire: state.newChatAutoExpire,
+    chatSortMode: state.chatSortMode,
     favoriteModelIds: state.favoriteModelIds,
     providerOrder: state.providerOrder,
     defaultModelId: state.defaultModelId,
@@ -476,6 +478,7 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
           trashRetention: preferences.trashRetention,
           automaticChatExpiration: preferences.automaticChatExpiration,
           newChatAutoExpire: preferences.newChatAutoExpire,
+          chatSortMode: preferences.chatSortMode,
         },
         defaultModelId: preferences.defaultModelId ?? models.data?.data[0]?.id ?? state.defaultModelId,
         models: models.data ? models.data.data.map((model) => mapModel(model, preferences.favoriteModelIds)) : state.models,
