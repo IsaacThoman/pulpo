@@ -733,6 +733,8 @@ const esUi: Record<string, string> = {
   "Chat / model": "Chat / modelo",
   "Chat presets": "Ajustes preestablecidos del chat",
   "Chat width": "Ancho del chat",
+  "Chat order": "Orden de chats",
+  "Default keeps your manual drag order. Recent lists unfiled chats by last activity.": "Predeterminado mantiene el orden manual por arrastre. Recientes muestra los chats sin carpeta según su última actividad.",
   "Chats are permanently deleted immediately.": "Los chats se eliminan de forma permanente de inmediato.",
   "Chats kept on this device": "Chats guardados en este dispositivo",
   "Check for updates": "Buscar actualizaciones",

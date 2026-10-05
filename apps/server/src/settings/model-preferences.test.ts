@@ -4,7 +4,7 @@ import { normalizedPreferencePatch, preferencesWithModelDefaults } from './model
 describe('account model preferences', () => {
   it('adds clean defaults to older preference records', () => {
     expect(preferencesWithModelDefaults({ theme: 'dark' })).toEqual({
-      imageGeneration: { enabled: false, modelId: null }, speech: { modelId: null, models: {} }, theme: 'dark', animationSpeed: 1, automaticChatExpiration: '24h', newChatAutoExpire: false,
+      imageGeneration: { enabled: false, modelId: null }, speech: { modelId: null, models: {} }, theme: 'dark', animationSpeed: 1, automaticChatExpiration: '24h', newChatAutoExpire: false, chatSortMode: 'default',
       sidebarPins: { searchChats: true, files: true, usage: false, billing: false, friends: false, apiKeys: false },
       agentModes: {}, instructionPresetSelections: {}, modelWarningDismissals: {}, favoriteModelIds: [], providerOrder: [],
     })
@@ -34,6 +34,12 @@ describe('account model preferences', () => {
     expect(preferencesWithModelDefaults({ newChatAutoExpire: true }).newChatAutoExpire).toBe(true)
     expect(preferencesWithModelDefaults({ newChatAutoExpire: false }).newChatAutoExpire).toBe(false)
     expect(preferencesWithModelDefaults({ newChatAutoExpire: 'false' }).newChatAutoExpire).toBe(false)
+  })
+
+  it('preserves a valid chat order and repairs unknown values', () => {
+    expect(preferencesWithModelDefaults({ chatSortMode: 'recent' }).chatSortMode).toBe('recent')
+    expect(preferencesWithModelDefaults({ chatSortMode: 'alphabetical' }).chatSortMode).toBe('default')
+    expect(preferencesWithModelDefaults({}).chatSortMode).toBe('default')
   })
 
   it('normalizes only supplied model preference fields in a patch', () => {

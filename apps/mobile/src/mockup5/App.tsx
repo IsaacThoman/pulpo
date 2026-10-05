@@ -6338,6 +6338,7 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
   const trashChat = usePrototypeStore((state) => state.trashChat);
   const trashRetention = usePrototypeStore((state) => state.preferences.trashRetention);
   const automaticChatExpiration = usePrototypeStore((state) => state.preferences.automaticChatExpiration);
+  const chatSortMode = usePrototypeStore((state) => state.preferences.chatSortMode);
   const models = usePrototypeStore((state) => state.models);
   const previewChats = usePrototypeStore((state) => state.chats);
   const previewChatsById = useMemo(() => new Map(previewChats.map((chat) => [chat.id, chat])), [previewChats]);
@@ -6405,8 +6406,8 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
   );
   const sections = useMemo(() => {
     // Search also surfaces filed chats, since the folder list is hidden while searching.
-    return historyChatSections(filtered, folders, search.length > 0);
-  }, [filtered, folders, search]);
+    return historyChatSections(filtered, folders, search.length > 0, chatSortMode);
+  }, [chatSortMode, filtered, folders, search]);
   const { label: removeChatLabel, requiresConfirmation } = chatRemovalBehavior(trashRetention);
 
   const runChatAction = useCallback((chat: HistoryChatSummary, action: HistoryChatAction) => {
