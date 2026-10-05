@@ -26,20 +26,23 @@ import { registerChatRoutes } from './routes.js'
 
 type Handler = (request: FastifyRequest) => Promise<unknown>
 
-async function chatDetailHandler(): Promise<Handler> {
+async function chatHandler(method: 'get' | 'patch'): Promise<Handler> {
   let handler: Handler | undefined
+  const capture = (verb: string) => (path: string, value: Handler) => {
+    if (verb === method && path === '/api/chats/:id') handler = value
+  }
   const app = {
-    get: (path: string, value: Handler) => {
-      if (path === '/api/chats/:id') handler = value
-    },
+    get: capture('get'),
     post: vi.fn(),
     put: vi.fn(),
-    patch: vi.fn(),
+    patch: capture('patch'),
     delete: vi.fn(),
   } as unknown as FastifyInstance
   await registerChatRoutes(app)
   return handler!
 }
+
+const chatDetailHandler = () => chatHandler('get')
 
 function request(role: 'admin' | 'user'): FastifyRequest {
   return {
@@ -75,5 +78,19 @@ describe('chat detail access response', () => {
 
     await expect((await chatDetailHandler())(request('admin')))
       .rejects.toMatchObject({ statusCode: 404, code: 'not_found' })
+  })
+})
+
+describe('chat update during admin chat access', () => {
+  it('rejects file scope changes so the grant cannot reach the owner\'s Files', async () => {
+    const rootId = '5f0f3c1e-7f43-4e8e-9d1b-6a0c8a3c2b11'
+    const adminRequest = {
+      ...request('user'),
+      body: { fileScopeIds: [rootId] },
+      adminChatAccess: { chatId: '9db9ea5a-3af7-4b66-9f2a-c179278a0998', actorUser: { id: 'admin-1' } },
+    } as unknown as FastifyRequest
+
+    await expect((await chatHandler('patch'))(adminRequest))
+      .rejects.toMatchObject({ statusCode: 403, code: 'forbidden' })
   })
 })

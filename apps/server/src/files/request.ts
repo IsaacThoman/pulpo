@@ -27,6 +27,8 @@ export async function filesFeatureEnabled(): Promise<boolean> {
 
 export async function requireFilesUser(request: FastifyRequest): Promise<AuthenticatedUser> {
   const user = requireUser(request)
+  // Admin chat access is scoped to one chat and never extends to the owner's Files.
+  if (request.adminChatAccess) throw new AppError(403, 'forbidden', 'Files are unavailable during admin chat access', 'permission_error')
   if (!await filesFeatureEnabled()) {
     throw new AppError(403, 'files_disabled', 'Files are disabled by the administrator', 'permission_error')
   }

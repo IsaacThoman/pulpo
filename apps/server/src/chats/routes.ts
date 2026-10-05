@@ -6,7 +6,7 @@ import { createChatResponseSchema, createChatSchema, createQueuedMessageSchema, 
 import { db } from '../database/client.js'
 import { attachments, chatImportSources, chats, folders, models, queuedMessages, requestLogs, responses, usageEvents, users, workspaceLeases } from '../database/schema.js'
 import { billingUserForRequest, requireUser } from '../auth/service.js'
-import { AppError, notFound } from '../lib/errors.js'
+import { AppError, forbidden, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import { createResponse, toSnapshot } from '../responses/service.js'
 import { publishChatStarted, publishStateChange, requestCancellation } from '../responses/events.js'
@@ -579,7 +579,10 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
     const patch = updateChatSchema.parse(request.body)
-    if (patch.fileScopeIds) await assertFileScope(user.id, patch.fileScopeIds)
+    if (patch.fileScopeIds) {
+      if (request.adminChatAccess) throw forbidden('Chat file scope cannot be changed during admin chat access')
+      await assertFileScope(user.id, patch.fileScopeIds)
+    }
     const now = new Date()
     const expiresAt = patch.autoExpire === undefined
       ? undefined
