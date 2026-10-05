@@ -734,6 +734,8 @@ const esUi: Record<string, string> = {
   "Chat presets": "Ajustes preestablecidos del chat",
   "Chat width": "Ancho del chat",
   "Chat order": "Orden de chats",
+  "Double-click a file": "Doble clic en un archivo",
+  "What double-clicking a file on the Files page does. Hold Cmd or Ctrl to do the other.": "Lo que hace el doble clic en un archivo en la página Archivos. Mantén Cmd o Ctrl para hacer lo contrario.",
   "Default keeps your manual drag order. Recent lists unfiled chats by last activity.": "Predeterminado mantiene el orden manual por arrastre. Recientes muestra los chats sin carpeta según su última actividad.",
   "Chats are permanently deleted immediately.": "Los chats se eliminan de forma permanente de inmediato.",
   "Chats kept on this device": "Chats guardados en este dispositivo",

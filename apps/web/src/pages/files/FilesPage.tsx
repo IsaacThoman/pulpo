@@ -45,6 +45,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { ui, uit } from '@/i18n/ui'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/stores/auth'
+import { useSettings } from '@/stores/settings'
 import { createDoc, createFolder, fetchFolder, fetchFolderLayout, folderLayoutQueryKey, folderQueryKey, updateFolderLayout, uploadFile } from '@/features/files/api'
 import { arrangeGrid, GRID_CELL, moveInGrid, readingOrder } from '@/features/files/browser/grid-layout'
 import { filesErrorMessage } from '@/features/files/file-display'
@@ -288,16 +289,19 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
     else navigate(`/files/d/${node.id}`)
   }
 
+  const doubleClickOpensBeside = useSettings((state) => state.fileDoubleClickAction === 'openBeside')
   /**
-   * Double-click: a file opens to the right of the files page, keeping the folder in view, and in
-   * place in the panel. Cmd/Ctrl swaps it for the other view. Folders always browse in place.
+   * Double-click: on the files page a file opens in place, or to the right when the setting keeps the
+   * folder in view; in the panel it opens in place. Cmd/Ctrl swaps it for the other view. Folders
+   * always browse in place.
    */
   const openFromDoubleClick = (node: FileNode, event: MouseEvent) => {
     if (node.kind === 'folder') { open(node); return }
     // A Cmd/Ctrl-click toggles selection, so the pair of clicks would otherwise leave it unselected.
     setSelection(selectOnly(node.id))
     const swap = hasPrimaryModifier(event)
-    if (panel ? swap : !swap) openElsewhere(nodeContent(node))
+    const elsewhereByDefault = !panel && doubleClickOpensBeside && splitAvailable
+    if (elsewhereByDefault ? !swap : swap && canOpenElsewhere) openElsewhere(nodeContent(node))
     else open(node)
   }
 

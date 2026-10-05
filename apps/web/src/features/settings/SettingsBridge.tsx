@@ -26,6 +26,7 @@ const persistedKeys = [
   'defaultModelId',
   'sidebarPins',
   'chatSortMode',
+  'fileDoubleClickAction',
 ] as const
 type PersistedKey = typeof persistedKeys[number]
 type SettingsDocument = {

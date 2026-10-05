@@ -1,7 +1,7 @@
 import { eq, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
-import { agentCostLimitMicrosSchema, chatSortModeSchema, newChatAutoExpireSchema } from '@pulpo/contracts'
+import { agentCostLimitMicrosSchema, chatSortModeSchema, fileDoubleClickActionSchema, newChatAutoExpireSchema } from '@pulpo/contracts'
 import { requireUser } from '../auth/service.js'
 import { db } from '../database/client.js'
 import { applicationSettings, userPreferences, users } from '../database/schema.js'
@@ -66,6 +66,9 @@ export async function registerSettingsRoutes(app: FastifyInstance): Promise<void
     }
     if ('chatSortMode' in patch && !chatSortModeSchema.safeParse(patch.chatSortMode).success) {
       throw new AppError(400, 'invalid_chat_sort_mode', 'Choose a valid chat order')
+    }
+    if ('fileDoubleClickAction' in patch && !fileDoubleClickActionSchema.safeParse(patch.fileDoubleClickAction).success) {
+      throw new AppError(400, 'invalid_file_double_click_action', 'Choose what double-clicking a file does')
     }
     if ('showPromptSuggestions' in patch && typeof patch.showPromptSuggestions !== 'boolean') {
       throw new AppError(400, 'invalid_prompt_suggestions_setting', 'Choose whether prompt suggestions should be shown')
