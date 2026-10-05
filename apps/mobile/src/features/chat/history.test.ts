@@ -14,7 +14,7 @@ import {
 function summary(id: string, patch: Partial<HistoryChatSummary> = {}): HistoryChatSummary {
   return {
     id, title: id, modelId: 'gpt-5', time: '1:00 PM', section: 'Today',
-    pinned: false, folderId: null, sortOrder: 0, createdAt: 1_000, expiresAt: null, ...patch,
+    pinned: false, folderId: null, sortOrder: 0, createdAt: 1_000, updatedAt: 1_000, expiresAt: null, ...patch,
   }
 }
 
@@ -50,6 +50,22 @@ describe('historyChatSections', () => {
       .toEqual(['loose', 'missing-folder'])
     expect(historyChatSections([inA, loose, inB, missingFolder], folders, true)[0]?.data.map((chat) => chat.id))
       .toEqual(['loose', 'missing-folder', 'in-b', 'in-a'])
+  })
+
+  it('lists unpinned chats by last activity under time headings in recent order', () => {
+    const pinned = summary('pinned', { section: 'Pinned', pinned: true, updatedAt: 9_000 })
+    const today = summary('today', { sortOrder: 5, updatedAt: 8_000, section: 'Today' })
+    const todayOlder = summary('today-older', { sortOrder: -1, updatedAt: 7_000, section: 'Today' })
+    const older = summary('older', { sortOrder: -5, updatedAt: 1_000, section: 'Older' })
+    const filed = summary('filed', { folderId: 'a', updatedAt: 9_500, section: 'Today' })
+
+    const sections = historyChatSections([older, todayOlder, filed, pinned, today], [{ id: 'a' }], false, 'recent')
+
+    expect(sections.map((section) => [section.title, section.data.map((chat) => chat.id)])).toEqual([
+      ['Pinned', ['pinned']],
+      ['Today', ['today', 'today-older']],
+      ['Older', ['older']],
+    ])
   })
 })
 

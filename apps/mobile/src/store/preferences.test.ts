@@ -22,6 +22,10 @@ describe('production preference mapping', () => {
     expect(preferencesFromServer({}).composerSyncEnabled).toBe(true)
     expect(preferencePatchForServer('composerSyncEnabled', false)).toEqual({ composerSyncEnabled: false })
   })
+  it('shares chat order with the web sidebar and ignores unknown modes', () => {
+    expect(preferencesFromServer({ chatSortMode: 'recent' }).chatSortMode).toBe('recent')
+    expect(preferencesFromServer({ chatSortMode: 'alphabetical' }).chatSortMode).toBeUndefined()
+  })
   it('hydrates the mobile names used by the web settings bridge', () => {
     expect(preferencesFromServer({
       theme: 'dark', localAttachmentCacheMb: 96, localChatLimit: 200,
@@ -45,6 +49,7 @@ describe('production preference mapping', () => {
     expect(preferencePatchForServer('trashRetention', '90d')).toEqual({ trashRetention: '90d' })
     expect(preferencePatchForServer('automaticChatExpiration', '7d')).toEqual({ automaticChatExpiration: '7d' })
     expect(preferencePatchForServer('newChatAutoExpire', false)).toEqual({ newChatAutoExpire: false })
+    expect(preferencePatchForServer('chatSortMode', 'recent')).toEqual({ chatSortMode: 'recent' })
     expect(preferencePatchForServer('memoryEnabled', true)).toEqual({ memoryEnabled: true })
     expect(preferencePatchForServer('favoriteModelIds', ['model-b', 'model-a'])).toEqual({ favoriteModelIds: ['model-b', 'model-a'] })
     expect(preferencePatchForServer('providerOrder', ['lab-b', 'lab-a'])).toEqual({ providerOrder: ['lab-b', 'lab-a'] })
