@@ -25,7 +25,7 @@ import { createWorkspaceTools } from './tools.js'
 import { publishAdminUsage } from '../admin/usage-events.js'
 import { buildAgentSystemPrompt, buildAgentUserPrompt, buildToolsDisabledSystemPrompt, withoutAgentTools } from './policy.js'
 import { runPostResponseTasks, type PostResponseTaskResult } from '../responses/post-tasks.js'
-import { calculateCostMicros, workspaceHoldMicros, workspaceUsageMicros } from '../accounting/pricing.js'
+import { calculateCostMicros, workspaceBillableMinutes, workspaceHoldMicros, workspaceUsageMicros } from '../accounting/pricing.js'
 import { truncateUtf8 } from './output.js'
 import { buildAgentOutput, type ToolTimelineItem } from './timeline.js'
 import { messagesForPersistence } from './context.js'
@@ -56,6 +56,7 @@ import { lineageFromLeaf } from '../messages/branching.js'
 import { responseUserAttachmentIds } from '../messages/input.js'
 import { responseInputText } from '../messages/input.js'
 import { createGenerationMemoryTools } from './memory-tools.js'
+import { createFilesTools, describeFileScope, loadFileScope } from '../files/agent-tools.js'
 import { readEpisodicMemorySettings } from '../episodic-memory/settings.js'
 import { generationSystemPrompt, loadGenerationMemory } from '../responses/memory-context.js'
 import { withGenerationTimeContext } from '../responses/time-context.js'
@@ -172,8 +173,14 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
     parsePersonalizationSettings(personalizationRow?.value),
     preferenceValues,
   )
-  const [chatState] = await db.select({ temporary: chats.temporary }).from(chats)
+  const [chatState] = await db.select({ temporary: chats.temporary, fileScopeIds: chats.fileScopeIds }).from(chats)
     .where(eq(chats.id, record.response.chatId)).limit(1)
+  // Files attached to the chat, reachable only through the files tools and only while Files is on.
+  // Turns sent through admin chat access never reach the owner's Files.
+  const fileScope = parseAuthSettings(attachmentSettingsRow?.value).filesEnabled && record.response.origin !== 'admin_chat'
+    ? await loadFileScope(record.response.userId, chatState?.fileScopeIds ?? [])
+    : { roots: [], attached: [] }
+  const fileScopeContext = fileScope.roots.length ? describeFileScope(fileScope) : ''
   const memory = await loadGenerationMemory({
     chat: chatState,
     memoryEnabled: preferenceValues.memoryEnabled,
@@ -195,7 +202,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
     customInstructions,
     memoryContext,
   )
-  const currentAgentSystemPrompt = [baseAgentSystemPrompt, recallContext].filter(Boolean).join('\n\n')
+  const currentAgentSystemPrompt = [baseAgentSystemPrompt, fileScopeContext, recallContext].filter(Boolean).join('\n\n')
   if (!settings.enabled || !record.model.agentEnabled) throw new Error('Agent mode is no longer available')
   const allHistory = await db.select().from(responses).where(and(
     eq(responses.chatId, record.response.chatId),
@@ -697,6 +704,13 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
     maxOutputBytes: settings.maxToolOutputBytes,
     onOperationStarted: markToolStarted,
   })
+  const filesTools = createFilesTools({
+    userId: record.response.userId,
+    responseId,
+    scope: fileScope,
+    maxOutputBytes: settings.maxToolOutputBytes,
+    onOperationStarted: markToolStarted,
+  })
   const attachFile = async (operationId: string, path: string, name: string | undefined, signal?: AbortSignal) => {
     const [existing] = await db.select().from(attachments).where(and(
       eq(attachments.sourceResponseId, responseId), eq(attachments.sourceToolCallId, operationId), eq(attachments.status, 'ready'),
@@ -745,6 +759,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
         ...configuredWebTools,
         ...imageTools,
         ...memoryTools,
+        ...filesTools,
       ],
       messages: resumedMessages,
       thinkingLevel: initialParameters.reasoning,
@@ -1163,9 +1178,8 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
       }))
     }
     const postTaskCostMicros = postTasks.costMicros
-    workspaceCostMicros = workspaceReadyAtMs !== undefined && settings.billWorkspaces
-      ? workspaceUsageMicros(Date.now() - workspaceReadyAtMs, settings.workspacePricePerMinuteMicros)
-      : 0
+    const workspaceElapsedMs = workspaceReadyAtMs !== undefined && settings.billWorkspaces ? Date.now() - workspaceReadyAtMs : 0
+    workspaceCostMicros = workspaceUsageMicros(workspaceElapsedMs, settings.workspacePricePerMinuteMicros)
     accruedToolCostMicros = await readToolCost()
     const settlement = agentSettlementAmounts({
       totalTokens: usage.totalTokens,
@@ -1183,6 +1197,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
         costMicrosOverride: settlement.costMicrosOverride,
         additionalCostMicros: settlement.additionalCostMicros,
         inferenceReferenceCostMicros,
+        workspace: { minutes: workspaceBillableMinutes(workspaceElapsedMs), costMicros: workspaceCostMicros },
       })
       : (await releaseBudget(responseId), 0)
     const totalDurationMs = Date.now() - startedAt
@@ -1204,9 +1219,8 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
     await db.update(agentRuns).set({ status, error: errorMessage, context: { systemPrompt: agentSystemPrompt, messages: messagesForPersistence(agent.state.messages), billingTurns }, completedAt: new Date(), updatedAt: new Date() }).where(eq(agentRuns.id, runId))
     const finalResponder = lastResponder ?? { runtime: active, pricing: await getActivePricing(active.model.id) }
     await db.update(responses).set({ actualModelId: finalResponder.runtime.model.id, pricingVersionId: finalResponder.pricing.id }).where(eq(responses.id, responseId))
-    workspaceCostMicros = workspaceReadyAtMs !== undefined && settings.billWorkspaces
-      ? workspaceUsageMicros(Date.now() - workspaceReadyAtMs, settings.workspacePricePerMinuteMicros)
-      : 0
+    const workspaceElapsedMs = workspaceReadyAtMs !== undefined && settings.billWorkspaces ? Date.now() - workspaceReadyAtMs : 0
+    workspaceCostMicros = workspaceUsageMicros(workspaceElapsedMs, settings.workspacePricePerMinuteMicros)
     accruedToolCostMicros = await readToolCost()
     const settlement = agentSettlementAmounts({
       totalTokens: usage.totalTokens,
@@ -1223,6 +1237,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
         costMicrosOverride: settlement.costMicrosOverride,
         additionalCostMicros: settlement.additionalCostMicros,
         inferenceReferenceCostMicros,
+        workspace: { minutes: workspaceBillableMinutes(workspaceElapsedMs), costMicros: workspaceCostMicros },
       })
       : (await releaseBudget(responseId), 0)
     const totalDurationMs = Date.now() - startedAt

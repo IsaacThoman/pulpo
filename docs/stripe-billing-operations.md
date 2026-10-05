@@ -27,13 +27,24 @@ Configure the Stripe Billing Portal to allow customers to update payment methods
 
 ## Plan changes
 
-Monthly platform credits are granted in full when a subscription invoice is paid, so plan changes must not refund the current period:
+Subscriptions include weekly and five-hour usage allowances and do not grant platform credits. A paid invoice covers that plan's allowances for the whole period, so plan changes must not refund the current period:
 
-- **Upgrade (Eight to Fat)** is immediate. Stripe invoices the prorated difference and the upgrade only completes once that invoice is paid. No additional credits are granted mid-cycle.
+- **Upgrade (Eight to Fat)** is immediate. Stripe invoices the prorated difference and the upgrade only completes once that invoice is paid. Fat allowances apply as soon as it does.
 - **Downgrade (Fat to Eight)** switches the Stripe price with `proration_behavior: none`. Stripe issues no credit and the next renewal bills $8. Pulpo records the plan covered by the last paid invoice (`billing_subscriptions.paid_plan`) and keeps Fat benefits until the paid period ends. Switching back to Fat before renewal is free because the period was already paid at the Fat price.
 - **Cancel** sets `cancel_at_period_end`; the paid plan stays in effect until the period ends.
 
 The portal must not offer plan switching, because a portal downgrade would bypass this proration rule.
+
+## Shared usage
+
+Fat subscribers share part of their weekly allowance with the other members of their Pool. It is not extra usage: a member's draw counts against the owner's weekly allowance, and the shared limit only caps how much of it members can take.
+
+- **Shared limit.** `fatSharedWeeklyPercent` (default 50%) of the owner's weekly limit, after any per-user override. It resets with the weekly allowance. The owner can still use their whole weekly allowance themselves.
+- **Member five-hour limit.** Each member draws within their own five-hour window, capped by `sharedFiveHourLimitMicros` (default $1.00), so one member cannot use up the shared limit in one sitting.
+- **Funding order.** A request is paid from the member's own plan allowance, then shared usage, then their balance, then the Pool balance. With several Fat subscribers in a Pool, members draw from each in proportion to what they have left.
+- **Records.** Reservations record each owner's share in `budget_reservation_allowance_funders`. Settlement adds it to the owner's `weekly_usage_periods` and `shared_allowance_periods` and to the member's `shared_five_hour_usage_periods`. `usage_events.shared_cost_micros` counts as covered by a subscription.
+
+Owners see a **Shared usage** bar on the billing page. The Pool section on the Friends page shows shared usage across every Fat subscriber in the Pool, plus the viewer's own five-hour shared limit.
 
 ## Automatic top-ups
 

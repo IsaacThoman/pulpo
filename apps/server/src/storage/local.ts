@@ -1,10 +1,15 @@
 import { createReadStream, createWriteStream } from 'node:fs'
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import type { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import path from 'node:path'
 import type { BlobMetadata, BlobStore } from './blob-store.js'
+
+/** Local URLs are served by the API route that owns the object's metadata table. */
+export function localObjectRouteBase(key: string): '/api/files' | '/api/attachments' {
+  return /^users\/[^/]+\/files\//.test(key) ? '/api/files' : '/api/attachments'
+}
 
 export class LocalBlobStore implements BlobStore {
   constructor(private readonly root: string) {}
@@ -47,11 +52,24 @@ export class LocalBlobStore implements BlobStore {
     await rm(this.resolve(key), { force: true })
   }
 
+  async copy(sourceKey: string, targetKey: string): Promise<void> {
+    const target = this.resolve(targetKey)
+    const temporary = `${target}.${randomUUID()}.copy`
+    await mkdir(path.dirname(target), { recursive: true })
+    try {
+      await copyFile(this.resolve(sourceKey), temporary)
+      await rename(temporary, target)
+    } catch (error) {
+      await rm(temporary, { force: true }).catch(() => undefined)
+      throw error
+    }
+  }
+
   async createUploadUrl(key: string): Promise<string> {
-    return `/api/attachments/local-upload/${encodeURIComponent(key)}`
+    return `${localObjectRouteBase(key)}/local-upload/${encodeURIComponent(key)}`
   }
 
   async createDownloadUrl(key: string): Promise<string> {
-    return `/api/attachments/local-download/${encodeURIComponent(key)}`
+    return `${localObjectRouteBase(key)}/local-download/${encodeURIComponent(key)}`
   }
 }

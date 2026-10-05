@@ -7,6 +7,9 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { ui, uit, activeLocale } from '@/i18n/ui'
 
+/** Workspace state changes on the order of seconds; skip refreshes while the tab is hidden. */
+const WORKSPACE_REFRESH_MS = 5_000
+
 interface WorkspaceRow {
   id: string; controllerLeaseId: string | null; status: string; capacityState: string | null; queuePosition: number | null
   createdAt: string; updatedAt: string; claimedAt: string | null; lastUsedAt: string | null; expiresAt: string | null; hardExpiresAt: string | null; releasedAt: string | null
@@ -66,7 +69,7 @@ export function AdminWorkspacesPage() {
   const [terminating, setTerminating] = useState(false)
   const [terminateError, setTerminateError] = useState<string | null>(null)
   const load = useCallback(async () => setResult(await apiRequest<WorkspaceResult>('/api/admin/usage/workspaces')), [])
-  useEffect(() => { void load(); const refresh = window.setInterval(() => void load(), 2_000); const clock = window.setInterval(() => setNow(Date.now()), 1_000); return () => { clearInterval(refresh); clearInterval(clock) } }, [load])
+  useEffect(() => { void load(); const refresh = window.setInterval(() => { if (document.visibilityState === 'visible') void load() }, WORKSPACE_REFRESH_MS); const clock = window.setInterval(() => setNow(Date.now()), 1_000); return () => { clearInterval(refresh); clearInterval(clock) } }, [load])
   const rows = useMemo(() => result?.data ?? [], [result])
   const openWorkspaces = useMemo(() => [...(result?.openWorkspaces ?? [])].sort((a, b) => (stateOrder[a.lifecycleState] ?? 99) - (stateOrder[b.lifecycleState] ?? 99) || a.createdAt.localeCompare(b.createdAt)), [result])
   const policy = result?.policy

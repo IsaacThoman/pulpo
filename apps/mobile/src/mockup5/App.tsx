@@ -12,6 +12,8 @@ import { incomingFileAttachment } from '../features/chat/incomingFileAttachment'
 import { useShortcutInbox } from '../shortcuts/inbox';
 import { shortcutsScope } from '../shortcuts/native';
 import { useDictation } from '../features/chat/useDictation';
+import { DictationCancelButton, DictationStrip } from '../features/chat/DictationStrip';
+import { useDictationToolbarStyle } from '../features/chat/dictationMotion';
 import { setComposerSelection } from '../features/chat/composerSelection';
 import { ToolImagePreview } from '../components/ToolImagePreview';
 import { localComposerDraftId, mergePendingAttachments } from '@pulpo/client-core';
@@ -54,6 +56,7 @@ import {
 } from 'react';
 import {
   AccessibilityInfo,
+  ActionSheetIOS,
   ActivityIndicator,
   Alert,
   Appearance,
@@ -579,7 +582,11 @@ type Message = {
   agentMode?: boolean;
 };
 type Chat = { id: string; title: string; modelId: string; time: string; section: string; messages: Message[] };
-type SendOptions = { presetSelections: GenerationSelections; agentEnabled: boolean; temporary: boolean; autoExpire: boolean };
+type SendOptions = {
+  presetSelections: GenerationSelections; agentEnabled: boolean; temporary: boolean; autoExpire: boolean;
+  /** Dictation produced some of the message text (analytics only). */
+  usedDictation?: boolean;
+};
 type PrepareAttachments = () => Promise<PreparedAttachment[]>;
 
 function automaticExpirationDeadline(preference: 'disabled' | '24h' | '7d', now = Date.now()): number | null {
@@ -2425,6 +2432,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
         input: trimmed, modelId: selectedModel.id, presetSelections: options?.presetSelections ?? presetSelections,
         attachmentIds: prepared.map((item) => item.serverId),
         agentMode: Boolean(options?.agentEnabled && agentAvailable && selectedPrototypeModel?.agentEnabled),
+        ...(options?.usedDictation ? { usedDictation: true } : {}),
       }, prepared.map((item) => ({ id: item.serverId, name: item.name, mimeType: item.mimeType, sizeBytes: item.size ?? 0 })), activePrototypeChat?.temporary ?? false);
       return true;
     }
@@ -2542,6 +2550,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
           presetSelections: selections,
           attachmentIds: prepared.map((attachment) => attachment.serverId),
           agentMode,
+          usedDictation: options?.usedDictation,
         });
         if (options?.temporary) pendingTemporaryStart.current = { chatId: key, promise: startPromise };
         let started: Awaited<typeof startPromise>;
@@ -2565,6 +2574,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
           attachmentIds: prepared.map((attachment) => attachment.serverId),
           agentMode,
           temporary: activePrototypeChat?.temporary ?? false,
+          usedDictation: options?.usedDictation,
         });
       }
       updateStoredMessage(serverChatId, response.responseId, {
@@ -2857,7 +2867,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   );
 }
 
-type MessageAction = 'copy' | 'share' | 'reply' | 'edit' | 'regenerate' | 'delete';
+type MessageAction = 'copy' | 'share' | 'share-options' | 'share-chat' | 'reply' | 'edit' | 'regenerate' | 'delete';
 
 function useMessageActionRunner({ message, onEdit, onRegenerate }: {
   message: Message;
@@ -2874,7 +2884,7 @@ function useMessageActionRunner({ message, onEdit, onRegenerate }: {
     void queryClient.invalidateQueries({ queryKey: queryKeys.chat(namespace, message.chatId) });
   }, [instanceUrl, message.chatId, queryClient, userId]);
 
-  return useCallback((action: MessageAction) => {
+  return useCallback(function runAction(action: MessageAction): void {
     if (['edit', 'delete', 'regenerate'].includes(action)) speechPlayback.stop();
     if (action === 'copy') {
       void copyText(message.text, 'Message copied');
@@ -2882,6 +2892,24 @@ function useMessageActionRunner({ message, onEdit, onRegenerate }: {
     }
     if (action === 'share') {
       void Share.share({ message: message.text });
+      return;
+    }
+    if (action === 'share-options') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        { options: ['Share chat link', 'Share as text', 'Cancel'], cancelButtonIndex: 2 },
+        (index) => {
+          if (index === 0) runAction('share-chat');
+          if (index === 1) runAction('share');
+        },
+      );
+      return;
+    }
+    if (action === 'share-chat') {
+      const chatId = message.chatId;
+      if (!chatId) return;
+      Haptics.selectionAsync();
+      const title = usePrototypeStore.getState().chats.find((chat) => chat.id === chatId)?.title;
+      void shareServerChat(chatId).then((url) => Share.share({ message: title ? `${title}\n\n${url}` : url, url })).catch((error) => Alert.alert('Couldn’t share chat', error instanceof Error ? error.message : undefined));
       return;
     }
     if (action === 'delete') {
@@ -2969,7 +2997,8 @@ function MessageContextMenu({
       androidActions={[
         { label: 'Copy', icon: 'doc.on.doc', onPress: () => runAction('copy') },
         { label: 'Select text', icon: 'doc.text', onPress: () => selectText(message.text) },
-        { label: 'Share', icon: 'square.and.arrow.up', onPress: () => runAction('share') },
+        { label: 'Share as text', icon: 'square.and.arrow.up', onPress: () => runAction('share') },
+        ...(message.chatId ? [{ label: 'Share chat link', icon: 'square.and.arrow.up', onPress: () => runAction('share-chat') }] : []),
         { label: 'Reply', icon: 'arrowshape.turn.up.left', onPress: () => runAction('reply') },
         { label: message.role === 'user' ? 'Edit message' : 'Edit response', icon: 'pencil', onPress: () => runAction('edit') },
         ...(message.role === 'assistant' ? [{ label: 'Regenerate response', icon: 'arrow.clockwise', onPress: () => runAction('regenerate') }] : []),
@@ -2992,7 +3021,7 @@ function MessageContextMenu({
         <>
           <SwiftUIControlGroup>
             <SwiftUIButton label="Copy" systemImage="doc.on.doc" onPress={() => runAction('copy')} />
-            <SwiftUIButton label="Share" systemImage="square.and.arrow.up" onPress={() => runAction('share')} />
+            <SwiftUIButton label="Share" systemImage="square.and.arrow.up" onPress={() => runAction(message.chatId ? 'share-options' : 'share')} />
             <SwiftUIButton label="Reply" systemImage="arrowshape.turn.up.left" onPress={() => runAction('reply')} />
           </SwiftUIControlGroup>
           <SwiftUIDivider />
@@ -4287,7 +4316,15 @@ function ChatView({
     input: string;
     attachments: ComposerAttachment[];
     agentEnabled: boolean;
+    usedDictation?: boolean;
   } | null>(null);
+  // Whether dictation inserted text into the current draft (analytics only).
+  // Client-local: not persisted or synced with the draft.
+  const usedDictationRef = useRef(false);
+  useEffect(() => {
+    // Erasing the whole draft discards any dictated text with it.
+    if (!input.trim()) usedDictationRef.current = false;
+  }, [input]);
   const inputRef = useRef(input);
   const [inputSelection, setInputSelection] = useState({ start: input.length, end: input.length });
   const inputSelectionRef = useRef(inputSelection);
@@ -4331,21 +4368,21 @@ function ChatView({
       && hydratedComposerScope === `${draftNamespace ?? 'local'}\u0000${localComposerDraftId(chatId, temporary)}`,
     read: () => ({ text: inputRef.current, selection: inputSelectionRef.current }),
     apply: (value, cursor) => {
+      usedDictationRef.current = true;
       inputRef.current = value;
       setComposerSelection(setInputSelection, inputSelectionRef, { start: cursor, end: cursor });
       onChangeInput(value);
     },
   });
   const { busy: dictationBusy, isBusy: isDictationBusy } = dictation;
+  const composerToolbarStyle = useDictationToolbarStyle(dictationBusy);
   useFollowStartedChat({
     namespace: draftNamespace, chatId, textarea: composerInputRef, temporary,
     screenFocused: composerScreenFocused && keyboardLayoutEnabled && !composerFocusSuppressed,
     busy: () => sendingRef.current || handoffBusyRef.current || shelfBusyRef.current || isDictationBusy(),
     open: onRemoteChatStarted,
   });
-  const dictationLabel = dictation.phase === 'recording' ? 'Stop dictation' : dictation.phase === 'transcribing' ? 'Transcribing…' : 'Dictate';
-  const dictationDisabled = dictationBusy ? dictation.phase !== 'recording'
-    : !composerScreenFocused || networkOffline || sending || queueBusy || shelfBusy || expired || composerFocusSuppressed
+  const dictationDisabled = dictationBusy || !composerScreenFocused || networkOffline || sending || queueBusy || shelfBusy || expired || composerFocusSuppressed
       || hydratedComposerScope !== `${draftNamespace ?? 'local'}\u0000${localComposerDraftId(chatId, temporary)}`;
 
   // Draft hydration owns the selection only. Navigation intent owns focus so
@@ -4484,6 +4521,7 @@ function ChatView({
     queueEditRef.current = null;
     if (queueEdit) { onSelectModel(queueEdit.model); setDraftPresets(queueEdit.presets); }
     if (!preserved) return;
+    usedDictationRef.current = preserved.usedDictation ?? false;
     draftOwnerRef.current = preserved.attachments[0]?.ownerId ?? `draft:${Crypto.randomUUID()}`;
     onChangeInput(preserved.input);
     placeComposerCursorAtEnd(preserved.input);
@@ -4535,6 +4573,7 @@ function ChatView({
     }
 
     activeDraftRef.current = { scope, namespace: draftNamespace, draftId };
+    usedDictationRef.current = false;
     hydratedDraftScopeRef.current = null;
     draftLoadRevisionRef.current += 1;
     const revision = draftLoadRevisionRef.current;
@@ -4655,7 +4694,8 @@ function ChatView({
 
   const beginMessageEdit = useCallback((message: Message) => {
     if (messageEdit || sending || isDictationBusy()) return;
-    preservedComposerRef.current = { input, attachments, agentEnabled };
+    preservedComposerRef.current = { input, attachments, agentEnabled, usedDictation: usedDictationRef.current };
+    usedDictationRef.current = false;
     const editOwnerId = `edit:${message.id}:${Crypto.randomUUID()}`;
     draftOwnerRef.current = editOwnerId;
     const existing = message.attachments ?? [];
@@ -5057,6 +5097,7 @@ function ChatView({
       latestAttachmentsRef.current.delete(a.localId); attachmentDraftOwnersRef.current.delete(a.localId);
     }
     skipNextEdit();
+    usedDictationRef.current = false;
     inputRef.current = after.content; onChangeInput(after.content); setAttachments(next);
     composerSync?.replaceShelfContent('new', { ...sharedComposerState, content: after.content,
       attachments: after.attachments.filter((a) => a.id).map((a) => ({ id: a.id!, name: a.name, mimeType: a.mimeType, size: a.size })) });
@@ -5244,9 +5285,10 @@ function ChatView({
     sendingRef.current = true;
     setSending(true);
     let followSnapshot: ChatFollowSnapshot | null = null;
-    const submittedDraft = { input, attachments: [...attachments], agentEnabled: activeAgentEnabled };
+    const submittedDraft = { input, attachments: [...attachments], agentEnabled: activeAgentEnabled, usedDictation: usedDictationRef.current };
     const submittedDraftIdentity = activeDraftRef.current;
     const restoreSubmittedDraft = () => {
+      usedDictationRef.current = submittedDraft.usedDictation;
       onChangeInput(submittedDraft.input);
       inputRef.current = submittedDraft.input;
       setAttachments(restoreLatestDraft(submittedDraft.attachments, latestAttachmentsRef.current));
@@ -5293,7 +5335,7 @@ function ChatView({
           return onSend(
             submittedDraft.input,
             submittedDraft.attachments,
-            { presetSelections, agentEnabled: activeAgentEnabled, temporary, autoExpire },
+            { presetSelections, agentEnabled: activeAgentEnabled, temporary, autoExpire, usedDictation: submittedDraft.usedDictation },
             async () => {
               const prepared = await Promise.all(submittedDraft.attachments.map(uploadOne));
               if (prepared.some((attachment) => attachment === null)) {
@@ -5305,6 +5347,7 @@ function ChatView({
         },
         clear: () => {
           skipNextEdit();
+          usedDictationRef.current = false;
           onChangeInput('');
           inputRef.current = '';
           attachmentsRef.current = [];
@@ -5930,17 +5973,6 @@ function ChatView({
                   {!canUseAgent ? 'Choose an Agent-capable model or reduce these attachments.' : 'Turn on Agent mode to use these attachments (file type, image count, or image size).'}
                 </Text>
               ) : null}
-              {dictationBusy && (
-                <View style={styles.messageEditBanner}>
-                  {dictation.phase !== 'recording' && <ActivityIndicator size="small" />}
-                  <Text accessibilityLiveRegion="polite" style={styles.messageEditBannerText}>
-                    {dictation.phase === 'recording' ? `Recording · ${dictation.seconds}s / 90s` : dictation.phase === 'transcribing' ? 'Transcribing…' : dictation.phase === 'cancelling' ? 'Cancelling…' : 'Preparing microphone…'}
-                  </Text>
-                  <Pressable accessibilityLabel="Cancel dictation" accessibilityRole="button" onPress={dictation.cancel} style={{ minHeight: 44, justifyContent: 'center' }}>
-                    <Text style={styles.messageEditCancel}>Cancel</Text>
-                  </Pressable>
-                </View>
-              )}
               {dictation.error && <Text accessibilityRole="alert" style={styles.attachmentErrorText}>{dictation.error}</Text>}
               <View style={[styles.composerInputRow, showShelf && styles.composerShelfInputRow]}>
                 <TextInput
@@ -5973,6 +6005,12 @@ function ChatView({
                   : <MaterialIconButton label="Shelve draft" icon="archivebox" disabled={!(input.trim() || attachments.length) || shelfBusy || sending || dictationBusy} onPress={() => { void transferShelf(); }} />)}
               </View>
               <View style={[styles.composerBar, showShelf && styles.composerShelfBar]}>
+                <Reanimated.View
+                  accessibilityElementsHidden={dictationBusy}
+                  importantForAccessibility={dictationBusy ? 'no-hide-descendants' : 'auto'}
+                  pointerEvents={dictationBusy ? 'none' : 'auto'}
+                  style={[styles.composerToolbar, composerToolbarStyle]}
+                >
                 {Platform.OS === 'ios' ? (
                   <NativeAttachmentMenu onTakePhoto={takePhoto} onPickFiles={pickFiles} onPickPhotos={pickPhotos} />
                 ) : (
@@ -6036,8 +6074,8 @@ function ChatView({
                 )}
                 <View style={styles.flex} />
                 {dictationEnabled && (Platform.OS === 'ios'
-                  ? <NativeComposerIconButton label={dictationLabel} systemImage={dictation.phase === 'recording' ? 'stop.fill' : 'mic'} prominent={dictation.phase === 'recording'} disabled={dictationDisabled} onPress={dictation.phase === 'recording' ? dictation.stop : dictation.start} />
-                  : <MaterialIconButton label={dictationLabel} icon={dictation.phase === 'recording' ? 'stop.fill' : 'mic'} selected={dictation.phase === 'recording'} disabled={dictationDisabled} onPress={dictation.phase === 'recording' ? dictation.stop : dictation.start} />)}
+                  ? <NativeComposerIconButton label="Dictate" systemImage="mic" disabled={dictationDisabled} onPress={dictation.start} />
+                  : <MaterialIconButton label="Dictate" icon="mic" disabled={dictationDisabled} onPress={dictation.start} />)}
                 {Platform.OS === 'ios' ? (
                   <NativeComposerIconButton
                     disabled={dictationBusy || shelfBusy || composerAction === 'submit' && !canSend}
@@ -6048,6 +6086,21 @@ function ChatView({
                   />
                 ) : (
                   <MaterialIconButton label={composerAction === 'stop' ? 'Stop generating' : messageEdit ? queueEditRef.current ? 'Save queued message' : 'Save and resend message' : 'Send message'} icon={composerAction === 'stop' ? 'stop.fill' : 'arrow.up'} prominent disabled={dictationBusy || shelfBusy || composerAction === 'submit' && !canSend} onPress={() => composerAction === 'stop' ? onStop() : submitMessage()} />
+                )}
+                </Reanimated.View>
+                {dictationBusy && (
+                  <DictationStrip
+                    phase={dictation.phase}
+                    seconds={dictation.seconds}
+                    source={dictation.levels}
+                    colors={{ text: COLORS.text, muted: COLORS.muted, warning: COLORS.warning }}
+                    leading={Platform.OS === 'ios'
+                      ? <DictationCancelButton color={COLORS.text} disabled={dictation.phase === 'cancelling'} onPress={dictation.cancel} />
+                      : <MaterialIconButton label="Cancel dictation" icon="xmark" disabled={dictation.phase === 'cancelling'} onPress={dictation.cancel} />}
+                    trailing={Platform.OS === 'ios'
+                      ? <NativeComposerIconButton label="Finish dictation" systemImage="checkmark" prominent disabled={dictation.phase !== 'recording'} onPress={dictation.stop} />
+                      : <MaterialIconButton label="Finish dictation" icon="checkmark" prominent disabled={dictation.phase !== 'recording'} onPress={dictation.stop} />}
+                  />
                 )}
               </View>
             </ComposerSurface>
@@ -6285,6 +6338,7 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
   const trashChat = usePrototypeStore((state) => state.trashChat);
   const trashRetention = usePrototypeStore((state) => state.preferences.trashRetention);
   const automaticChatExpiration = usePrototypeStore((state) => state.preferences.automaticChatExpiration);
+  const chatSortMode = usePrototypeStore((state) => state.preferences.chatSortMode);
   const models = usePrototypeStore((state) => state.models);
   const previewChats = usePrototypeStore((state) => state.chats);
   const previewChatsById = useMemo(() => new Map(previewChats.map((chat) => [chat.id, chat])), [previewChats]);
@@ -6352,8 +6406,8 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
   );
   const sections = useMemo(() => {
     // Search also surfaces filed chats, since the folder list is hidden while searching.
-    return historyChatSections(filtered, folders, search.length > 0);
-  }, [filtered, folders, search]);
+    return historyChatSections(filtered, folders, search.length > 0, chatSortMode);
+  }, [chatSortMode, filtered, folders, search]);
   const { label: removeChatLabel, requiresConfirmation } = chatRemovalBehavior(trashRetention);
 
   const runChatAction = useCallback((chat: HistoryChatSummary, action: HistoryChatAction) => {
@@ -6747,7 +6801,8 @@ function createChatStyles(COLORS: ChatColors) { return StyleSheet.create({
   composerInputRow: { flexDirection: 'row', alignItems: 'flex-end' },
   composerShelfInputRow: { flexGrow: 1 },
   composerTextInput: { flex: 1, minWidth: 0, alignSelf: 'flex-start' },
-  composerBar: { flexDirection: 'row', alignItems: 'center', marginTop: 'auto', gap: 1 },
+  composerBar: { flexDirection: 'row', alignItems: 'center', marginTop: 'auto' },
+  composerToolbar: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 1 },
   // Preserve composer row measurements while Shelve occupies the top-right corner.
   composerShelfBar: { marginTop: Platform.OS === 'ios' ? 36 + 1 - 44 : 1 },
   composerCircle: { width: 44, height: 44, borderRadius: 22, backgroundColor: COLORS.fillStrong, alignItems: 'center', justifyContent: 'center' },

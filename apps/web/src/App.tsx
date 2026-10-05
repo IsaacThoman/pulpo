@@ -22,6 +22,10 @@ const PersonalPage = lazy(() => import('@/pages/usage/PersonalPage').then((modul
 const LeaderboardPage = lazy(() => import('@/pages/usage/LeaderboardPage').then((module) => ({ default: module.LeaderboardPage })))
 const FriendsPage = lazy(() => import('@/pages/FriendsPage').then((module) => ({ default: module.FriendsPage })))
 const ApiKeysPage = lazy(() => import('@/pages/ApiKeysPage').then((module) => ({ default: module.ApiKeysPage })))
+const FilesPage = lazy(() => import('@/pages/files/FilesPage').then((module) => ({ default: module.FilesPage })))
+const FileDocPage = lazy(() => import('@/pages/files/FileDocPage').then((module) => ({ default: module.FileDocPage })))
+const AttachmentPage = lazy(() => import('@/pages/AttachmentPage').then((module) => ({ default: module.AttachmentPage })))
+const FilesTrashPage = lazy(() => import('@/pages/files/FilesTrashPage').then((module) => ({ default: module.FilesTrashPage })))
 const BillingPage = lazy(() => import('@/pages/BillingPage').then((module) => ({ default: module.BillingPage })))
 const AdminLayout = lazy(() => import('@/pages/admin/AdminLayout').then((module) => ({ default: module.AdminLayout })))
 const AdminUsersPage = lazy(() => import('@/pages/admin/AdminUsersPage').then((module) => ({ default: module.AdminUsersPage })))
@@ -33,6 +37,7 @@ const AdminIconsPage = lazy(() => import('@/pages/admin/AdminIconsPage').then((m
 const AdminModelsPage = lazy(() => import('@/pages/admin/AdminModelsPage').then((module) => ({ default: module.AdminModelsPage })))
 const AdminUsagePage = lazy(() => import('@/pages/admin/AdminUsagePage').then((module) => ({ default: module.AdminUsagePage })))
 const AdminUsageLayout = lazy(() => import('@/pages/admin/AdminUsageLayout').then((module) => ({ default: module.AdminUsageLayout })))
+const AdminInsightsPage = lazy(() => import('@/pages/admin/AdminInsightsPage').then((module) => ({ default: module.AdminInsightsPage })))
 const AdminWorkspacesPage = lazy(() => import('@/pages/admin/AdminWorkspacesPage').then((module) => ({ default: module.AdminWorkspacesPage })))
 const AdminSettingsPage = lazy(() => import('@/pages/admin/settings/AdminSettingsPage').then((module) => ({ default: module.AdminSettingsPage })))
 const AdminBillingPage = lazy(() => import('@/pages/admin/AdminBillingPage').then((module) => ({ default: module.AdminBillingPage })))
@@ -129,6 +134,11 @@ export default function App() {
               <Route path="pool" element={<LocalizedRoute><LeaderboardPage scope="pool" /></LocalizedRoute>} />
               <Route path="leaderboard" element={<Navigate to="/usage/friends" replace />} />
             </Route>
+            <Route path="files" element={<LocalizedRoute><FilesPage /></LocalizedRoute>} />
+            <Route path="files/f/:folderId" element={<LocalizedRoute><FilesPage /></LocalizedRoute>} />
+            <Route path="files/trash" element={<LocalizedRoute><FilesTrashPage /></LocalizedRoute>} />
+            <Route path="files/d/:docId" element={<LocalizedRoute><FileDocPage /></LocalizedRoute>} />
+            <Route path="attachments/:attachmentId" element={<LocalizedRoute><AttachmentPage /></LocalizedRoute>} />
             <Route path="friends" element={<LocalizedRoute><FriendsPage /></LocalizedRoute>} />
             <Route path="friends/pool" element={<Navigate to="/friends" replace />} />
             <Route path="api-keys" element={<LocalizedRoute><ApiKeysPage /></LocalizedRoute>} />
@@ -148,6 +158,7 @@ export default function App() {
                 <Route path="usage" element={<LocalizedRoute><AdminUsageLayout /></LocalizedRoute>}>
                   <Route index element={<LocalizedRoute><LeaderboardPage scope="instance" /></LocalizedRoute>} />
                   <Route path="requests" element={<LocalizedRoute><AdminUsagePage /></LocalizedRoute>} />
+                  <Route path="insights" element={<LocalizedRoute><AdminInsightsPage /></LocalizedRoute>} />
                   <Route path="workspaces" element={<LocalizedRoute><AdminWorkspacesPage /></LocalizedRoute>} />
                 </Route>
                 <Route path="billing" element={<LocalizedRoute><RequireBilling><AdminBillingPage /></RequireBilling></LocalizedRoute>} />

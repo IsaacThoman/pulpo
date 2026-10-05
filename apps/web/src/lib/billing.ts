@@ -1,4 +1,5 @@
 import { apiRequest } from './api'
+import { formatBytes } from './attachments'
 import { chargeCentsForCredits } from './billing-pricing'
 import { formatBalance, formatDate } from './format'
 import { ui } from '@/i18n/ui'
@@ -55,7 +56,19 @@ export interface BillingSummary {
     pendingBarPercentage: number
     resetsAt: string | null
   } | null
+  /** How much of this Fat subscriber's weekly usage pool members can still draw on; null when not sharing. */
+  shared: {
+    remainingPercentage: number
+    availableBarPercentage: number
+    pendingMicros: number
+    pendingBarPercentage: number
+    resetsAt: string | null
+  } | null
+  /** Share of Fat weekly usage that pool members may draw on. */
+  sharedWeeklyPercent: number
   onHold: boolean
+  /** Admin-configured file storage included with each plan. */
+  planStorageLimitBytes: Record<BillingPlan, number>
   autoTopUp: AutoTopUpSummary
   subscription: {
     /** Plan whose benefits apply now. */
@@ -189,6 +202,11 @@ export function autoTopUpStatusLine(summary: AutoTopUpSummary): { text: string; 
 
 export function managedBillingPlan(summary: Pick<BillingSummary, 'subscription'>): BillingPlan {
   return summary.subscription?.plan ?? 'baby'
+}
+
+/** Plan storage reads as marketing copy, so whole sizes drop the trailing `.0`. */
+export function formatPlanStorage(bytes: number): string {
+  return formatBytes(bytes).replace(/\.0 /, ' ')
 }
 
 export function billingPlanName(plan: BillingPlan): string {

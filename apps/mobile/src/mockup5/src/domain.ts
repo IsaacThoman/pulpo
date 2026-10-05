@@ -3,6 +3,7 @@ export type ThemePreference = 'system' | 'light' | 'dark';
 export type TextSizePreference = 'default' | 'large' | 'extra-large';
 export type TrashRetention = 'instant' | '24h' | '7d' | '30d' | '90d' | 'indefinite';
 export type AutomaticChatExpiration = 'disabled' | '24h' | '7d';
+export type ChatSortMode = 'default' | 'recent';
 export type SessionStatus = 'signed-out' | 'signed-in' | 'pending';
 
 export interface InstanceProfile {
@@ -159,6 +160,7 @@ export interface AppPreferences {
   trashRetention: TrashRetention;
   automaticChatExpiration: AutomaticChatExpiration;
   newChatAutoExpire: boolean;
+  chatSortMode: ChatSortMode;
 }
 
 export interface PersistedPrototypeState {

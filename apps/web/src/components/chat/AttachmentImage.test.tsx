@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
+import { MemoryRouter } from 'react-router-dom'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MessageAttachmentList, PendingAttachmentChip } from './AttachmentImage'
 
 vi.hoisted(() => {
@@ -10,17 +12,24 @@ vi.hoisted(() => {
   })
 })
 
+// react-virtuoso (table previews) probes the DOM when it loads, which this stub document lacks.
+vi.mock('react-virtuoso', () => ({ TableVirtuoso: () => null }))
+
+function renderMessageAttachments() {
+  return renderToStaticMarkup(<QueryClientProvider client={new QueryClient()}><MemoryRouter><MessageAttachmentList attachments={[
+    { id: 'pdf', name: 'report.pdf', mimeType: 'application/pdf', type: 'file', size: 1_024 },
+    { id: 'zip', name: 'source.zip', mimeType: 'application/zip', type: 'file', size: 2_048 },
+  ]} /></MemoryRouter></QueryClientProvider>)
+}
+
 describe('attachment card actions', () => {
-  it('separates preview and download actions for supported message files', () => {
-    const markup = renderToStaticMarkup(<MessageAttachmentList attachments={[
-      { id: 'pdf', name: 'report.pdf', mimeType: 'application/pdf', type: 'file', size: 1_024 },
-      { id: 'zip', name: 'source.zip', mimeType: 'application/zip', type: 'file', size: 2_048 },
-    ]} />)
+  it('separates preview from the save menu (download or save to Files) for message files', () => {
+    const markup = renderMessageAttachments()
 
     expect(markup).toContain('aria-label="Preview report.pdf"')
-    expect(markup).toContain('aria-label="Download report.pdf"')
+    expect(markup).toContain('aria-label="Save report.pdf"')
     expect(markup).not.toContain('aria-label="Preview source.zip"')
-    expect(markup).toContain('aria-label="Download source.zip"')
+    expect(markup).toContain('aria-label="Save source.zip"')
   })
 
   it('keeps composer preview, download, and removal as distinct controls', () => {

@@ -21,12 +21,17 @@ import { parseAuthSettings, parseBillingSettings } from '../settings/application
 import { getBillingEntitlements, loadBillingEntitlements } from './entitlements.js'
 import { planForPriceId, stripeMode } from './stripe.js'
 import { refreshStorageLimit } from './storage-entitlements.js'
+import { mapWithConcurrency } from '../lib/concurrency.js'
+
+const BILLING_USERS_CONCURRENCY = 8
 
 const settingsPatchSchema = z.object({
   eightWeeklyLimitMicros: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
   fatWeeklyLimitMicros: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
   eightFiveHourLimitMicros: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
   fatFiveHourLimitMicros: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
+  fatSharedWeeklyPercent: z.number().int().min(0).max(100).optional(),
+  sharedFiveHourLimitMicros: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
   babyStorageLimitBytes: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
   eightStorageLimitBytes: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
   fatStorageLimitBytes: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
@@ -221,14 +226,21 @@ export async function registerAdminBillingRoutes(app: FastifyInstance): Promise<
 
   app.get('/api/admin/billing/users', async (request) => {
     requireAdmin(request)
-    const rows = await db.select({ id: users.id }).from(users)
-    const data = await Promise.all(rows.map(async ({ id }) => {
-      const entitlements = await getBillingEntitlements(id)
-      const [account] = await db.select({
+    const [rows, holdRows] = await Promise.all([
+      db.select({ id: users.id }).from(users),
+      db.select({
+        userId: billingAccounts.userId,
         holdAt: billingAccounts.holdAt,
         holdReason: billingAccounts.holdReason,
         holdReference: billingAccounts.holdReference,
-      }).from(billingAccounts).where(eq(billingAccounts.userId, id)).limit(1)
+      }).from(billingAccounts).where(isNotNull(billingAccounts.holdAt)),
+    ])
+    const holds = new Map(holdRows.map(({ userId, ...hold }) => [userId, hold]))
+    // Entitlements run a transaction per user; bound concurrency so a large
+    // instance cannot exhaust the connection pool from one admin page load.
+    const data = await mapWithConcurrency(rows, BILLING_USERS_CONCURRENCY, async ({ id }) => {
+      const entitlements = await getBillingEntitlements(id)
+      const account = holds.get(id)
       return {
         userId: id,
         subscriptionPlan: entitlements.subscriptionPlan,
@@ -247,7 +259,7 @@ export async function registerAdminBillingRoutes(app: FastifyInstance): Promise<
         storageLimitOverridden: entitlements.storageLimitOverridden,
         hold: entitlements.onHold ? account ?? null : null,
       }
-    }))
+    })
     return { data }
   })
 

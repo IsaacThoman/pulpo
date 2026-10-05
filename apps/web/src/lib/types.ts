@@ -2,6 +2,7 @@ import type {
   ChatPreset,
   QueuedMessage as ServerQueuedMessage,
   QueuedMessageAttachment as ServerQueuedMessageAttachment,
+  UsageCostItem,
 } from '@pulpo/contracts'
 import type { CatalogIconReference } from '@/lib/catalog-icons'
 
@@ -104,6 +105,8 @@ export interface Chat {
   sortOrder: number
   tags: string[]
   temporary: boolean
+  /** Files folders the agent may use (`root` means all files). */
+  fileScopeIds?: string[]
   expiresAt: number | null
   expired: boolean
   shareId?: string
@@ -147,6 +150,7 @@ export interface UsageRecord {
   cost: number
   inferenceReferenceCost: number
   subscriptionCoveredCost: number
+  costBreakdown?: UsageCostItem[] | null
   balanceAfter: number | null
   latencyMs: number
 }

@@ -1,7 +1,7 @@
-import { CreateBucketCommand, DeleteObjectCommand, GetObjectCommand, HeadBucketCommand, PutBucketCorsCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3'
+import { CopyObjectCommand, CreateBucketCommand, DeleteObjectCommand, GetObjectCommand, HeadBucketCommand, PutBucketCorsCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { Readable } from 'node:stream'
-import type { BlobMetadata, BlobStore } from './blob-store.js'
+import type { BlobDownloadOptions, BlobMetadata, BlobStore } from './blob-store.js'
 
 export interface S3BlobStoreOptions {
   endpoint: string
@@ -99,6 +99,15 @@ export class S3BlobStore implements BlobStore {
     await this.client.send(new DeleteObjectCommand({ Bucket: this.options.bucket, Key: key }))
   }
 
+  async copy(sourceKey: string, targetKey: string): Promise<void> {
+    await this.ensureReady()
+    await this.client.send(new CopyObjectCommand({
+      Bucket: this.options.bucket,
+      Key: targetKey,
+      CopySource: `${this.options.bucket}/${sourceKey.split('/').map(encodeURIComponent).join('/')}`,
+    }))
+  }
+
   async createUploadUrl(key: string, metadata: BlobMetadata, expiresInSeconds: number): Promise<string> {
     await this.ensureReady()
     return getSignedUrl(this.publicClient, new PutObjectCommand({
@@ -109,8 +118,12 @@ export class S3BlobStore implements BlobStore {
     }), { expiresIn: expiresInSeconds })
   }
 
-  async createDownloadUrl(key: string, expiresInSeconds: number): Promise<string> {
+  async createDownloadUrl(key: string, expiresInSeconds: number, options: BlobDownloadOptions = {}): Promise<string> {
     await this.ensureReady()
-    return getSignedUrl(this.publicClient, new GetObjectCommand({ Bucket: this.options.bucket, Key: key }), { expiresIn: expiresInSeconds })
+    return getSignedUrl(this.publicClient, new GetObjectCommand({
+      Bucket: this.options.bucket,
+      Key: key,
+      ResponseContentDisposition: options.contentDisposition,
+    }), { expiresIn: expiresInSeconds })
   }
 }

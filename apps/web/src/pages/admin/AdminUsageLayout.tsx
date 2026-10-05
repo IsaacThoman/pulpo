@@ -5,6 +5,7 @@ import { ui } from '@/i18n/ui'
 const TABS = [
   { to: '/admin/usage', label: "Leaderboard", end: true },
   { to: '/admin/usage/requests', label: "Requests", end: false },
+  { to: '/admin/usage/insights', label: "Insights", end: false },
   { to: '/admin/usage/workspaces', label: "Workspaces", end: false },
 ]
 

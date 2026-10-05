@@ -50,6 +50,7 @@ import {
   normalizeLanguage,
   useSettings,
   type AutomaticChatExpiration,
+  type ChatSortMode,
   type Theme,
   type TrashRetention,
 } from '@/stores/settings'
@@ -1043,6 +1044,20 @@ export function SettingsModal({
                       <SelectContent>
                         <SelectItem value="narrow">{ui("Comfortable")}</SelectItem>
                         <SelectItem value="full">{ui("Full width")}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </Row>
+                  <Row label={ui("Chat order")} hint={ui("Default keeps your manual drag order. Recent lists unfiled chats by last activity.")}>
+                    <Select
+                      value={s.chatSortMode}
+                      onValueChange={(v) => s.set('chatSortMode', v as ChatSortMode)}
+                    >
+                      <SelectTrigger className="w-40" aria-label={ui("Chat order")}>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="default">{t('sidebar.chatSort.default')}</SelectItem>
+                        <SelectItem value="recent">{t('sidebar.chatSort.recent')}</SelectItem>
                       </SelectContent>
                     </Select>
                   </Row>

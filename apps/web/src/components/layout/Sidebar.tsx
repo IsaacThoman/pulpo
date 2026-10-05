@@ -26,6 +26,7 @@ import {
   UsersRound,
   PanelLeftClose,
   PanelLeftOpen,
+  ExternalLink,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { compareChatOrder, useChat } from '@/stores/chat'
@@ -63,7 +64,8 @@ import { toggleSidebarPin, type SidebarPinKey } from '@/lib/sidebar-pins'
 import { newChatLocationState } from '@/lib/new-chat-navigation'
 import { billingPlanTier, fetchBillingSummary } from '@/lib/billing'
 import { isDesktopRuntime } from '@/lib/runtime'
-import { uit } from '@/i18n/ui'
+import { ui, uit } from '@/i18n/ui'
+import { FilesNavMenu } from '@/features/files/FilesNavMenu'
 
 type DragKind = 'folder' | 'chat'
 type ChatList = 'pinned' | 'loose' | `folder:${string}`
@@ -257,7 +259,12 @@ function DropLines({
   )
 }
 
-function ChatMenu({ chat, onRename }: { chat: Chat; onRename: () => void }) {
+/**
+ * A chat's actions, the same from its row's "⋯" button and from right-clicking the row
+ * (`atPointer` only places it at the pointer). The desktop app has no tabs, so no new-tab item.
+ */
+function ChatMenu({ chat, onRename, atPointer = false }: { chat: Chat; onRename: () => void; atPointer?: boolean }) {
+  const renaming = useRef(false)
   const { t } = useTranslation()
   const togglePin = useChat((state) => state.togglePin)
   const setChatAutoExpiration = useChat((state) => state.setChatAutoExpiration)
@@ -269,12 +276,31 @@ function ChatMenu({ chat, onRename }: { chat: Chat; onRename: () => void }) {
   const automaticChatExpiration = useSettings((state) => state.automaticChatExpiration)
   const expirationMenuAction = resolveChatExpiryMenuAction(chat.expiresAt, automaticChatExpiration)
   return (
-    <DropdownMenuContent side="right" align="start" className="w-48">
+    <DropdownMenuContent
+      side={atPointer ? 'bottom' : 'right'}
+      align="start"
+      sideOffset={atPointer ? 2 : undefined}
+      className="w-48"
+      // Start the inline rename only once the menu has closed: a modal menu traps focus until
+      // then and would pull it back out of the input. Keep focus off the trigger, too.
+      onCloseAutoFocus={(event) => {
+        if (!renaming.current) return
+        renaming.current = false
+        event.preventDefault()
+        onRename()
+      }}
+    >
+      {!isDesktopRuntime() && (
+        <DropdownMenuItem onClick={() => { window.open(`/c/${chat.id}`, '_blank', 'noopener') }}>
+          <ExternalLink />
+          {ui("Open in new tab")}
+        </DropdownMenuItem>
+      )}
       <DropdownMenuItem onClick={() => togglePin(chat.id)}>
         {chat.pinned ? <PinOff /> : <Pin />}
         {chat.pinned ? t('chat.unpin') : t('chat.pin')}
       </DropdownMenuItem>
-      <DropdownMenuItem onClick={onRename}>
+      <DropdownMenuItem onClick={() => { renaming.current = true }}>
         <Pencil />
         {t('common.rename')}
       </DropdownMenuItem>
@@ -319,6 +345,54 @@ function ChatMenu({ chat, onRename }: { chat: Chat; onRename: () => void }) {
   )
 }
 
+/**
+ * Edits a sidebar title in place. Enter or blur saves, Escape cancels, and a blank or
+ * unchanged title leaves the old one.
+ */
+function InlineTitleInput({ value, label, onCommit, onDone }: {
+  value: string
+  label: string
+  onCommit: (value: string) => void
+  onDone: () => void
+}) {
+  const [draft, setDraft] = useState(value)
+  const input = useRef<HTMLInputElement>(null)
+  const settled = useRef(false)
+
+  useEffect(() => {
+    input.current?.focus()
+    input.current?.select()
+  }, [])
+
+  const finish = (save: boolean) => {
+    if (settled.current) return
+    settled.current = true
+    const next = draft.trim()
+    if (save && next && next !== value) onCommit(next)
+    onDone()
+  }
+
+  return (
+    <input
+      ref={input}
+      value={draft}
+      aria-label={label}
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={() => finish(true)}
+      onKeyDown={(event) => {
+        event.stopPropagation()
+        if (event.key === 'Enter') { event.preventDefault(); finish(true) }
+        if (event.key === 'Escape') { event.preventDefault(); finish(false) }
+      }}
+      onClick={(event) => event.stopPropagation()}
+      onPointerDown={(event) => event.stopPropagation()}
+      onContextMenu={(event) => event.stopPropagation()}
+      draggable={false}
+      className="relative z-10 w-full min-w-0 flex-1 rounded-sm border border-ring bg-background px-1 py-px text-sm text-foreground outline-none ring-2 ring-ring/30"
+    />
+  )
+}
+
 function useShiftHeld() {
   const [shiftHeld, setShiftHeld] = useState(false)
   useEffect(() => {
@@ -340,6 +414,10 @@ function useShiftHeld() {
   }, [])
   return shiftHeld
 }
+
+/** Desktop sidebar widths, matching the classes on the sidebar below. */
+export const SIDEBAR_WIDTH = 264
+export const SIDEBAR_COLLAPSED_WIDTH = 52
 
 export function ChatRow({
   chat,
@@ -377,8 +455,9 @@ export function ChatRow({
 }) {
   const { t } = useTranslation()
   const navigate = useNavigate()
-  const [renameOpen, setRenameOpen] = useState(false)
-  const [title, setTitle] = useState(chat.title)
+  const [renaming, setRenaming] = useState(false)
+  // Right-clicking the row opens the chat's menu at the pointer instead of the browser's link menu.
+  const [menuPoint, setMenuPoint] = useState<{ x: number; y: number } | null>(null)
   const renameChat = useChat((state) => state.renameChat)
   const deleteChat = useChat((state) => state.deleteChat)
   const trashRetention = useSettings((state) => state.trashRetention)
@@ -395,11 +474,16 @@ export function ChatRow({
     <div
       data-drag-list={dragList}
       data-drag-id={dragList ? chat.id : undefined}
-      draggable={canDrag}
+      draggable={canDrag && !renaming}
       onDragStart={canDrag ? onDragStart : undefined}
       onDragOver={canDrop || canDrag ? onDragOver : undefined}
       onDrop={canDrop || canDrag ? onDrop : undefined}
       onDragEnd={canDrag ? onDragEnd : undefined}
+      onContextMenu={(event) => {
+        if (renaming) return
+        event.preventDefault()
+        setMenuPoint({ x: event.clientX, y: event.clientY })
+      }}
       className={cn(
         'group relative flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm transition-colors',
         active
@@ -411,7 +495,14 @@ export function ChatRow({
     >
       <DropLines active={canDrag || canDrop} before={showLineBefore} after={showLineAfter} />
       {/* A real link (stretched over the row) so the browser offers "Open in new tab" and honors modifier clicks. */}
-      <Link
+      {renaming ? (
+        <InlineTitleInput
+          value={chat.title}
+          label={t('sidebar.renameChat')}
+          onCommit={(next) => renameChat(chat.id, next)}
+          onDone={() => setRenaming(false)}
+        />
+      ) : <Link
         to={`/c/${chat.id}`}
         draggable={canDrag ? false : undefined}
         className="flex-1 cursor-[inherit] truncate outline-none after:absolute after:inset-0 after:rounded-lg focus-visible:after:ring-2 focus-visible:after:ring-ring"
@@ -431,7 +522,7 @@ export function ChatRow({
         }}
       >
         {chat.title}
-      </Link>
+      </Link>}
       {shiftHeld && (
         <button
           className={cn(actionClassName, 'relative hidden hover:text-destructive group-hover:block')}
@@ -489,26 +580,16 @@ export function ChatRow({
             )}
           </button>
         </DropdownMenuTrigger>
-        <ChatMenu chat={chat} onRename={() => setRenameOpen(true)} />
+        <ChatMenu chat={chat} onRename={() => setRenaming(true)} />
       </DropdownMenu>
-      <Dialog open={renameOpen} onOpenChange={setRenameOpen}>
-        <DialogContent className="sm:max-w-sm" onClick={(e) => e.stopPropagation()}>
-          <DialogHeader>
-            <DialogTitle>{t('sidebar.renameChat')}</DialogTitle>
-          </DialogHeader>
-          <Input value={title} onChange={(e) => setTitle(e.target.value)} autoFocus />
-          <DialogFooter>
-            <Button
-              onClick={() => {
-                renameChat(chat.id, title.trim() || chat.title)
-                setRenameOpen(false)
-              }}
-            >
-              {t('common.save')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {menuPoint && (
+        <DropdownMenu key={`${menuPoint.x}:${menuPoint.y}`} open onOpenChange={(open) => { if (!open) setMenuPoint(null) }} modal={false}>
+          <DropdownMenuTrigger asChild>
+            <span aria-hidden className="pointer-events-none fixed size-0" style={{ left: menuPoint.x, top: menuPoint.y }} />
+          </DropdownMenuTrigger>
+          <ChatMenu chat={chat} onRename={() => setRenaming(true)} atPointer />
+        </DropdownMenu>
+      )}
     </div>
   )
 }
@@ -553,11 +634,9 @@ function FolderGroup({
   const renameFolder = useChat((state) => state.renameFolder)
   const toggleFolderPin = useChat((state) => state.toggleFolderPin)
   const deleteFolder = useChat((state) => state.deleteFolder)
-  const [renameOpen, setRenameOpen] = useState(false)
-  const [name, setName] = useState(folder.name)
+  const [renaming, setRenaming] = useState(false)
+  const renameChosen = useRef(false)
   const list = folderListId(folder.id)
-
-  useEffect(() => setName(folder.name), [folder.name])
 
   return (
     <Collapsible open={folder.expanded} onOpenChange={() => {
@@ -568,7 +647,7 @@ function FolderGroup({
       toggleFolder(folder.id)
     }}>
       <div
-        draggable={canReorderFolder}
+        draggable={canReorderFolder && !renaming}
         onDragStart={canReorderFolder ? onFolderDragStart : undefined}
         onDragOver={onFolderDragOver}
         onDrop={onDrop}
@@ -583,13 +662,28 @@ function FolderGroup({
         )}
       >
         <DropLines active={!chatDropHighlight} before={showFolderLineBefore} after={showFolderLineAfter} />
-        <CollapsibleTrigger className="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 px-2 py-1.5">
-          <ChevronRight
-            className={cn('size-3.5 text-muted-foreground transition-transform', folder.expanded && 'rotate-90')}
-          />
-          <FolderIcon className="size-4 text-muted-foreground" />
-          <span className="flex-1 truncate text-left">{folder.name}</span>
-        </CollapsibleTrigger>
+        {renaming ? (
+          <div className="flex min-w-0 flex-1 items-center gap-1.5 px-2 py-1.5">
+            <ChevronRight
+              className={cn('size-3.5 shrink-0 text-muted-foreground transition-transform', folder.expanded && 'rotate-90')}
+            />
+            <FolderIcon className="size-4 shrink-0 text-muted-foreground" />
+            <InlineTitleInput
+              value={folder.name}
+              label={t('sidebar.renameFolder')}
+              onCommit={(next) => renameFolder(folder.id, next)}
+              onDone={() => setRenaming(false)}
+            />
+          </div>
+        ) : (
+          <CollapsibleTrigger className="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 px-2 py-1.5">
+            <ChevronRight
+              className={cn('size-3.5 text-muted-foreground transition-transform', folder.expanded && 'rotate-90')}
+            />
+            <FolderIcon className="size-4 text-muted-foreground" />
+            <span className="flex-1 truncate text-left">{folder.name}</span>
+          </CollapsibleTrigger>
+        )}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
@@ -599,12 +693,24 @@ function FolderGroup({
               <MoreHorizontal className="size-4" />
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent side="right" align="start" className="w-48">
+          <DropdownMenuContent
+            side="right"
+            align="start"
+            className="w-48"
+            // Start the inline rename only once the menu has closed: the modal menu traps focus
+            // until then and would pull it back out of the input. Keep focus off the trigger, too.
+            onCloseAutoFocus={(event) => {
+              if (!renameChosen.current) return
+              renameChosen.current = false
+              event.preventDefault()
+              setRenaming(true)
+            }}
+          >
             <DropdownMenuItem onClick={() => toggleFolderPin(folder.id)}>
               {folder.pinned ? <PinOff /> : <Pin />}
               {folder.pinned ? t('chat.unpin') : t('chat.pin')}
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setRenameOpen(true)}>
+            <DropdownMenuItem onClick={() => { renameChosen.current = true }}>
               <Pencil />
               {t('common.rename')}
             </DropdownMenuItem>
@@ -659,24 +765,6 @@ function FolderGroup({
           )
         })}
       </CollapsibleContent>
-      <Dialog open={renameOpen} onOpenChange={setRenameOpen}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle>{t('sidebar.renameFolder')}</DialogTitle>
-          </DialogHeader>
-          <Input value={name} onChange={(event) => setName(event.target.value)} autoFocus />
-          <DialogFooter>
-            <Button
-              onClick={() => {
-                renameFolder(folder.id, name.trim() || folder.name)
-                setRenameOpen(false)
-              }}
-            >
-              {t('common.save')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </Collapsible>
   )
 }
@@ -745,6 +833,7 @@ export function Sidebar({
   })
   const pendingSocialCount = (pendingFriendsQuery.data?.count ?? 0) + (pendingPoolsQuery.data?.count ?? 0)
   const apiKeysEnabled = useAuth((s) => s.apiKeysEnabled)
+  const filesEnabled = useAuth((s) => s.filesEnabled)
   const billingEnabled = useAuth((s) => s.billingEnabled)
   const billingQuery = useQuery({
     queryKey: ['billing', user?.id],
@@ -760,6 +849,7 @@ export function Sidebar({
   const [newFolderOpen, setNewFolderOpen] = useState(false)
   const [folderName, setFolderName] = useState('')
   const [activeTooltip, setActiveTooltip] = useState<string | null>(null)
+  const [filesMenuPoint, setFilesMenuPoint] = useState<{ x: number; y: number } | null>(null)
   const shiftHeld = useShiftHeld()
   const drag = useSidebarDrag()
   const pinnedZoneRef = useRef<HTMLDivElement>(null)
@@ -884,7 +974,7 @@ export function Sidebar({
     collapsed ? 'w-9' : 'w-full'
   )
 
-  const iconBtn = (label: string, onClick: () => void, icon: React.ReactNode, badge?: number) => (
+  const iconBtn = (label: string, onClick: () => void, icon: React.ReactNode, badge?: number, onContextMenu?: (event: React.MouseEvent) => void) => (
     <Tooltip
       key={label}
       open={collapsed && activeTooltip === label}
@@ -893,7 +983,7 @@ export function Sidebar({
       }}
     >
       <TooltipTrigger asChild>
-        <button className={navBtn} onClick={onClick} aria-label={label}>
+        <button className={navBtn} onClick={onClick} onContextMenu={onContextMenu} aria-label={label}>
           <span className="relative flex size-8 shrink-0 items-center justify-center">{icon}{Boolean(badge) && <span className="absolute right-0 top-0 grid min-w-3.5 place-items-center rounded-full bg-primary px-1 text-[9px] leading-3.5 text-primary-foreground">{badge! > 99 ? '99+' : badge}</span>}</span>
           <span
             className={cn(
@@ -912,7 +1002,7 @@ export function Sidebar({
   const accountNavItem = (
     key: SidebarPinKey,
     label: string,
-    path: string,
+    target: string | (() => void),
     icon: React.ReactNode,
     badge?: number,
   ) => {
@@ -920,7 +1010,7 @@ export function Sidebar({
     const action = pinned ? 'Unpin' : 'Pin'
     return (
       <div key={key} className="group/account-nav relative">
-        <DropdownMenuItem className="w-full pr-9" onClick={() => go(path)}>
+        <DropdownMenuItem className="w-full pr-9" onClick={() => typeof target === 'string' ? go(target) : target()}>
           {icon}
           <span className="flex min-w-0 flex-1 items-center gap-1.5">
             <span className="min-w-0 truncate">{label}</span>
@@ -1041,11 +1131,16 @@ export function Sidebar({
         {/* primary nav */}
         <div className="space-y-0.5 px-2">
           {iconBtn(t('chat.newChat'), startNewChat, <SquarePen className="size-4" />)}
-          {iconBtn(t('sidebar.searchChats'), onOpenSearch, <Search className="size-4" />)}
+          {sidebarPins.searchChats && iconBtn(t('sidebar.searchChats'), onOpenSearch, <Search className="size-4" />)}
+          {filesEnabled && sidebarPins.files && iconBtn(t('sidebar.files'), () => go('/files'), <FolderIcon className="size-4" />, undefined, (event) => {
+            event.preventDefault()
+            setFilesMenuPoint({ x: event.clientX, y: event.clientY })
+          })}
           {sidebarPins.usage && iconBtn(t('sidebar.usage'), () => go('/usage'), <BarChart3 className="size-4" />)}
           {billingEnabled && sidebarPins.billing && iconBtn(t('sidebar.billing'), () => go('/billing'), <CreditCard className="size-4" />)}
           {sidebarPins.friends && iconBtn(t('sidebar.friends'), () => go('/friends'), <UsersRound className="size-4" />, pendingSocialCount)}
           {apiKeysEnabled && sidebarPins.apiKeys && iconBtn(t('sidebar.apiKeys'), () => go('/api-keys'), <KeyRound className="size-4" />)}
+          {filesEnabled && <FilesNavMenu point={filesMenuPoint} onClose={() => setFilesMenuPoint(null)} go={go} />}
         </div>
 
         {/* Secondary content stays mounted so every section animates on one timeline. */}
@@ -1240,6 +1335,8 @@ export function Sidebar({
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent side="top" align="start" className="w-56">
+            {accountNavItem('searchChats', t('sidebar.searchChats'), onOpenSearch, <Search />)}
+            {filesEnabled && accountNavItem('files', t('sidebar.files'), '/files', <FolderIcon />)}
             {accountNavItem('usage', t('sidebar.usage'), '/usage', <BarChart3 />)}
             {accountNavItem('friends', t('sidebar.friends'), '/friends', <UsersRound />, pendingSocialCount)}
             {apiKeysEnabled && accountNavItem('apiKeys', t('sidebar.apiKeys'), '/api-keys', <KeyRound />)}

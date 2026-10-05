@@ -125,6 +125,7 @@ export function toPublicChat(chat: ChatRow) {
     folderId: chat.folderId,
     sortOrder: chat.sortOrder,
     temporary: chat.temporary,
+    fileScopeIds: chat.fileScopeIds,
     activeResponseId: chat.activeResponseId,
     activeBranchLeafId: chat.activeBranchLeafId,
     expiresAt: chat.expiresAt?.toISOString() ?? null,

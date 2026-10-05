@@ -34,6 +34,7 @@ import { isDesktopRuntime } from '@/lib/runtime'
 import { ui } from '@/i18n/ui'
 import { DesktopActionsTitleBarSlot, DesktopModelTitleBarSlot } from '@/components/desktop/DesktopSidebarTitleBar'
 import { useDocumentTitle } from '@/lib/document-title'
+import { useNewChatScope, usePublishChatTarget } from '@/features/side-panel/agent'
 
 const DEFAULT_SUGGESTED_PROMPTS = [
   { id: '1', translationKey: 'chat.suggestedPrompts.build' },
@@ -48,6 +49,8 @@ type SuggestedPrompt = {
   message?: string
   translationKey?: (typeof DEFAULT_SUGGESTED_PROMPTS)[number]['translationKey']
 }
+
+const NO_FILE_SCOPE: string[] = []
 
 function ChatHeaderActions({ children, desktop }: { children: ReactNode; desktop: boolean }) {
   return desktop ? <DesktopActionsTitleBarSlot>{children}</DesktopActionsTitleBarSlot> : children
@@ -145,6 +148,7 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
     return current ? {
       id: current.id, title: current.title, modelId: current.modelId,
       temporary: current.temporary, expired: current.expired, expiresAt: current.expiresAt,
+      fileScopeIds: current.fileScopeIds ?? NO_FILE_SCOPE,
     } : null
   }))
   useDocumentTitle(adminMode ? null : chat?.title)
@@ -180,6 +184,9 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
   const [temporaryError, setTemporaryError] = useState<string | null>(null)
   const setDesktopTemporaryChat = useDesktopChrome((state) => state.setTemporaryChat)
   const [messageEdit, setMessageEdit] = useState<ComposerMessageEdit | null>(null)
+  // Kept in a store so Files beside this page can add to the unsent chat.
+  const newChatFileScope = useNewChatScope((state) => state.scopeIds)
+  const setNewChatFileScope = useCallback((scopeIds: string[]) => useNewChatScope.setState({ scopeIds }), [])
   const [composerEditActive, setComposerEditActive] = useState(false)
   const [promptConfig, setPromptConfig] = useState<{ enabled: boolean; count: number; prompts: SuggestedPrompt[] }>({
     enabled: true,
@@ -331,6 +338,8 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
   }
 
   const temporaryMode = temporary || Boolean(chat?.temporary)
+  // Files beside the page add to this chat; temporary chats and admin views take no files.
+  usePublishChatTarget(adminMode || temporaryMode ? null : chat ? { kind: 'chat', id: chat.id } : { kind: 'new' })
   const desktopSidebarVisible = useDesktopChrome((state) => state.desktopSidebarVisible)
   useEffect(() => {
     setDesktopTemporaryChat(temporaryMode)
@@ -486,7 +495,7 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
                 chatWidth === 'narrow' ? 'max-w-5xl' : 'max-w-[min(100%,90rem)]'
               )}
             >
-              <Composer syncEnabled={!adminMode} onSyncControls={applyComposerControls} key="new" temporaryControlRef={temporaryComposerRef} suggestionControlRef={suggestionComposerRef} focusControlRef={focusComposerRef} onTemporaryChange={setTemporary} chatId={null} modelId={modelId} onSelectModel={selectModel} temporary={temporaryMode} autoExpire={effectiveNewChatAutoExpire} />
+              <Composer syncEnabled={!adminMode} onSyncControls={applyComposerControls} key="new" temporaryControlRef={temporaryComposerRef} suggestionControlRef={suggestionComposerRef} focusControlRef={focusComposerRef} onTemporaryChange={setTemporary} chatId={null} modelId={modelId} onSelectModel={selectModel} temporary={temporaryMode} autoExpire={effectiveNewChatAutoExpire} fileScopeIds={newChatFileScope} onFileScopeChange={adminMode ? undefined : setNewChatFileScope} />
             </div>
           </>
         ) : (
@@ -526,6 +535,8 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
                   chatId={chat.id}
                   modelId={modelId}
                   onSelectModel={selectModel}
+                  fileScopeIds={chat.fileScopeIds}
+                  onFileScopeChange={adminMode || chat.temporary ? undefined : (ids) => useChat.getState().setChatFileScope(chat.id, ids)}
                   temporary={chat.temporary}
                   autoExpire={Boolean(chat.expiresAt)}
                   messageEdit={messageEdit}

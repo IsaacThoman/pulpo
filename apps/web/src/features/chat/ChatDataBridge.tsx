@@ -1,4 +1,5 @@
 import { historyUrl } from '@/lib/chat-history'
+import { useRealtimeSocket, type PulpoSocket } from '@/lib/realtime-socket'
 import { handleSessionConnectionError } from '@/lib/session-revocation'
 import { webChatStarted } from '@/lib/chat-started'
 import { bindWebShelfSocket } from '@/lib/local-first/shelf'
@@ -7,11 +8,9 @@ import { bindWebComposerSocket } from '@/lib/local-first/composer-sync'
 import { useEffect, useMemo, useRef } from 'react'
 import { useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { io, type Socket } from 'socket.io-client'
+import { io } from 'socket.io-client'
 import type {
-  ClientToServerEvents,
   ResponseEvent,
-  ServerToClientEvents,
   StateInvalidationScope,
   SyncResult,
 } from '@pulpo/contracts'
@@ -28,7 +27,6 @@ import { isDesktopRuntime, runtimeInstanceUrl, runtimeSessionToken } from '@/lib
 import { createSyncScheduler } from './sync-scheduler'
 import { adminAccessRequiredChatId } from '@/features/admin-chat/route-access'
 
-type PulpoSocket = Socket<ServerToClientEvents, ClientToServerEvents>
 
 function tabId(): string {
   const existing = sessionStorage.getItem('pulpo-tab-id')
@@ -114,6 +112,7 @@ export function ChatDataBridge() {
     const unbindShelf = bindWebShelfSocket(userId, socket)
     const unbindComposer = bindWebComposerSocket(userId, socket)
     socketRef.current = socket
+    useRealtimeSocket.setState({ socket })
     const subscribedResponseIds = subscribedResponseIdsRef.current
 
     let eventFrame: number | undefined
@@ -304,6 +303,7 @@ export function ChatDataBridge() {
       unbindComposer()
       socket.disconnect()
       socketRef.current = null
+      if (useRealtimeSocket.getState().socket === socket) useRealtimeSocket.setState({ socket: null })
       subscribedResponseIds.clear()
     }
   }, [adminChatView, networkReady, userId, userRole, currentTabId, applyResponseEvents, applyResponseSnapshot])

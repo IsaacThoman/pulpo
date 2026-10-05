@@ -89,7 +89,11 @@ export function workspaceHoldMicros(timeoutSeconds: number, pricePerMinuteMicros
   return Math.ceil(timeoutSeconds / 60) * pricePerMinuteMicros
 }
 
+export function workspaceBillableMinutes(readyDurationMs: number): number {
+  return readyDurationMs > 0 ? Math.ceil(readyDurationMs / 60_000) : 0
+}
+
 export function workspaceUsageMicros(readyDurationMs: number, pricePerMinuteMicros: number): number {
   if (pricePerMinuteMicros <= 0 || readyDurationMs <= 0) return 0
-  return Math.ceil(readyDurationMs / 60_000) * pricePerMinuteMicros
+  return workspaceBillableMinutes(readyDurationMs) * pricePerMinuteMicros
 }

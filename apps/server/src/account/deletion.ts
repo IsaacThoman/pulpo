@@ -1,6 +1,6 @@
 import { and, eq, inArray, isNotNull, isNull, ne, sql } from 'drizzle-orm'
 import { db } from '../database/client.js'
-import { apiKeys, applicationSettings, auditEvents, attachments, backupJobs, budgetReservationFunders, budgetReservations, chats, chatShares, exportJobs, managementTokens, poolInvitations, poolMembers, pools, queuedMessages, responses, sessions, users, workspaceLeases } from '../database/schema.js'
+import { apiKeys, applicationSettings, auditEvents, attachments, backupJobs, budgetReservationAllowanceFunders, budgetReservationFunders, budgetReservations, chats, chatShares, exportJobs, fileNodes, managementTokens, poolInvitations, poolMembers, pools, queuedMessages, responses, sessions, users, workspaceLeases } from '../database/schema.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import { parseAuthSettings } from '../settings/application-settings.js'
@@ -97,6 +97,10 @@ export async function deleteAccountData(userId: string): Promise<void> {
       .innerJoin(budgetReservations, eq(budgetReservations.id, budgetReservationFunders.reservationId))
       .where(and(eq(budgetReservationFunders.userId, userId), eq(budgetReservations.status, 'pending'))).limit(1)
     if (funding) throw new Error('Waiting for existing Pool contributions to settle.')
+    const [sharedFunding] = await db.select({ id: budgetReservations.id }).from(budgetReservationAllowanceFunders)
+      .innerJoin(budgetReservations, eq(budgetReservations.id, budgetReservationAllowanceFunders.reservationId))
+      .where(and(eq(budgetReservationAllowanceFunders.ownerUserId, userId), eq(budgetReservations.status, 'pending'))).limit(1)
+    if (sharedFunding) throw new Error('Waiting for existing Pool contributions to settle.')
     const leases = await db.select().from(workspaceLeases).where(eq(workspaceLeases.userId, userId))
     for (const lease of leases) {
       if (lease.controllerLeaseId) {
@@ -109,14 +113,17 @@ export async function deleteAccountData(userId: string): Promise<void> {
       throw new Error('Waiting for outstanding upload URLs to expire before final cleanup.')
     }
     const files = await db.select({ key: attachments.objectKey }).from(attachments).where(eq(attachments.userId, userId))
+    const fileBlobs = await db.select({ key: fileNodes.objectKey }).from(fileNodes).where(and(eq(fileNodes.ownerUserId, userId), isNotNull(fileNodes.objectKey)))
     const exports = await db.select().from(exportJobs).where(eq(exportJobs.userId, userId))
     const keys = new Set<string>(files.map((file) => file.key))
+    for (const blob of fileBlobs) if (blob.key) keys.add(blob.key)
     if (user.avatarObjectKey) keys.add(user.avatarObjectKey)
     for (const job of exports) keys.add(job.objectKey ?? `exports/${userId}/${job.id}`)
     for (const key of keys) await getBlobStore().delete(key)
     for (const response of responseRows) await redis.del(`pulpo:response:${response.id}:events`, `pulpo:response:${response.id}:cancel`)
     await db.transaction(async (tx) => {
       await tx.delete(budgetReservationFunders).where(eq(budgetReservationFunders.userId, userId))
+      await tx.delete(budgetReservationAllowanceFunders).where(eq(budgetReservationAllowanceFunders.ownerUserId, userId))
       await tx.delete(pools).where(eq(pools.ownerUserId, userId))
       // Backup archives belong to the instance retention policy, not the account.
       await tx.update(backupJobs).set({ userId: null }).where(eq(backupJobs.userId, userId))

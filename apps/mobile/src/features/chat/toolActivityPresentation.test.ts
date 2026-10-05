@@ -5,6 +5,8 @@ const icons = vi.hoisted(() => ({
   FilePenLine: Symbol('FilePenLine'),
   FilePlus: Symbol('FilePlus'),
   FileText: Symbol('FileText'),
+  FolderOpen: Symbol('FolderOpen'),
+  FolderPlus: Symbol('FolderPlus'),
   FolderSearch: Symbol('FolderSearch'),
   Globe: Symbol('Globe'),
   Image: Symbol('Image'),
@@ -32,6 +34,11 @@ describe('toolActivityPresentation', () => {
     ['web_search', 'Searching the web…', icons.Search],
     ['web_fetch', 'Fetching a webpage…', icons.Globe],
     ['update_memory', 'Updating memory…', icons.FilePenLine],
+    ['files_list', 'Looking through your files…', icons.FolderOpen],
+    ['files_read', 'Reading a document…', icons.FileText],
+    ['files_write', 'Writing a document…', icons.FilePlus],
+    ['files_edit', 'Editing a document…', icons.FilePenLine],
+    ['files_create_folder', 'Creating a folder…', icons.FolderPlus],
   ])('maps %s to a friendly label and icon', (name, label, icon) => {
     expect(toolActivityPresentation(name)).toEqual({ label, icon });
   });

@@ -26,9 +26,12 @@ import { registerUsageRoutes } from './usage/routes.js'
 import { registerAdminRoutes } from './admin/routes.js'
 import { registerAdminSettingsRoutes } from './admin/settings-routes.js'
 import { registerAdminUsageRoutes } from './admin/usage-routes.js'
+import { registerAdminRequestAnalyticsRoutes } from './analytics/request-routes.js'
+import { registerAdminInsightsRoutes } from './analytics/insights-routes.js'
 import { registerAdminChatAccess } from './admin/chat-access.js'
 import { registerMessageRoutes } from './messages/routes.js'
 import { registerAttachmentRoutes } from './attachments/routes.js'
+import { registerFileRoutes } from './files/routes.js'
 import { ensureBuiltinCatalog } from './catalog/defaults.js'
 import { registerMobileRoutes } from './mobile/routes.js'
 import { registerResponseCompression } from './compression.js'
@@ -162,10 +165,13 @@ export async function buildApp() {
   await registerAdminRoutes(app)
   await registerAdminSettingsRoutes(app)
   await registerAdminUsageRoutes(app)
+  await registerAdminRequestAnalyticsRoutes(app)
+  await registerAdminInsightsRoutes(app)
   await registerAdminBillingRoutes(app)
   await registerBillingRoutes(app)
   await registerMessageRoutes(app)
   await registerAttachmentRoutes(app)
+  await registerFileRoutes(app)
   await registerSpeechRoutes(app)
   await registerImageGenerationRoutes(app)
   await registerDictationRoutes(app)

@@ -48,6 +48,20 @@
   --code-addition-background: #dafbe1;
   --code-deletion: #82071e;
   --code-deletion-background: #ffebe9;
+  /* Admin analytics charts: validated categorical order (see features/admin-analytics/palette.ts). */
+  --viz-1: #2a78d6;
+  --viz-2: #eb6834;
+  --viz-3: #1baf7a;
+  --viz-4: #eda100;
+  --viz-5: #e87ba4;
+  --viz-6: #008300;
+  --viz-7: #4a3aa7;
+  --viz-8: #e34948;
+  --viz-other: #8a8983;
+  --viz-good: #0ca30c;
+  --viz-warning: #fab219;
+  --viz-serious: #ec835a;
+  --viz-critical: #d03b3b;
 }
 
 .dark {
@@ -92,6 +106,15 @@
   --code-addition-background: #033a16;
   --code-deletion: #ffdcd7;
   --code-deletion-background: #67060c;
+  --viz-1: #3987e5;
+  --viz-2: #d95926;
+  --viz-3: #199e70;
+  --viz-4: #c98500;
+  --viz-5: #d55181;
+  --viz-6: #008300;
+  --viz-7: #9085e9;
+  --viz-8: #e66767;
+  --viz-other: #7a7972;
 }
 
 @theme inline {
@@ -190,6 +213,11 @@ html[data-desktop="true"] .desktop-sidebar-collapsed .chat-header::before {
 
   .mobile-sidebar-opener {
     display: flex;
+  }
+
+  /* A side panel shown as the only view clears the drawer button like page headers do. */
+  html:not([data-desktop="true"]) .app-side-panel[data-full] .side-panel-header {
+    padding-left: 3rem;
   }
 
   /* The chat header sits inside ChatPage's preview-panel wrapper, so match it
@@ -358,6 +386,41 @@ html[data-desktop="true"] .desktop-sidebar-collapsed .chat-header::before {
 @media (prefers-reduced-motion: reduce) {
   .composer-tray-content[data-state] {
     animation: none;
+  }
+}
+
+/* The composer toolbar and dictation bar share one grid cell and roll past each other. */
+.composer-toolbar-face {
+  grid-area: 1 / 1;
+  min-width: 0;
+  backface-visibility: hidden;
+  transition:
+    opacity 260ms cubic-bezier(0.65, 0, 0.35, 1),
+    transform 260ms cubic-bezier(0.65, 0, 0.35, 1),
+    visibility 0s;
+}
+
+.composer-toolbar-face[data-active='false'] {
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity 260ms cubic-bezier(0.65, 0, 0.35, 1),
+    transform 260ms cubic-bezier(0.65, 0, 0.35, 1),
+    visibility 0s 260ms;
+}
+
+.composer-toolbar-face[data-face='draft'][data-active='false'] {
+  transform: perspective(600px) translateY(-50%) rotateX(90deg);
+}
+
+.composer-toolbar-face[data-face='dictation'][data-active='false'] {
+  transform: perspective(600px) translateY(50%) rotateX(-90deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .composer-toolbar-face,
+  .composer-toolbar-face[data-active='false'] {
+    transform: none !important;
   }
 }
 
@@ -536,6 +599,25 @@ html[data-desktop="true"] .desktop-main-titlebar-active .app-main {
 
 html[data-desktop-os="win32"] .desktop-main-titlebar-active .app-main {
   margin-top: 0;
+}
+
+/* The docked side panel follows the main view under the desktop title bar. */
+html[data-desktop="true"] .app-side-panel {
+  z-index: 41;
+  transition: margin-top 300ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+html[data-desktop="true"] .desktop-main-titlebar-active .app-side-panel {
+  margin-top: -38px;
+}
+
+html[data-desktop-os="win32"] .desktop-main-titlebar-active .app-side-panel {
+  margin-top: 0;
+}
+
+/* On Windows the caption buttons sit over the right edge, which the panel now occupies. */
+html[data-desktop-os="win32"] .app-side-panel .side-panel-header {
+  padding-right: 138px;
 }
 
 html[data-desktop-os="win32"] .desktop-main-titlebar-active .app-main > div > header,

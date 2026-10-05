@@ -50,7 +50,11 @@ export interface PendingSubmission {
   agentMode: boolean
   temporary: boolean
   autoExpire: boolean
+  /** Files folders for the chat this submission starts; absent in older saved submissions. */
+  fileScopeIds?: string[]
   attachmentIds: string[]
+  /** Dictation produced some of the message text (analytics only). */
+  usedDictation?: boolean
   createdAt: number
   placement: 'bubble' | 'queue'
   status: 'waiting' | 'dispatching' | 'recovery'
@@ -71,7 +75,9 @@ interface SubmissionDraft {
   agentMode: boolean
   temporary: boolean
   autoExpire: boolean
+  fileScopeIds?: string[]
   attachmentIds: string[]
+  usedDictation?: boolean
 }
 
 export interface PreservedComposerDraft {
@@ -132,6 +138,7 @@ function renderSubmissionSurface(submission: PendingSubmission, records: UploadR
       attachments,
       temporary: submission.temporary,
       autoExpire: submission.autoExpire,
+      fileScopeIds: submission.fileScopeIds,
       createdAt: submission.createdAt,
     })
     return
@@ -391,6 +398,7 @@ async function processChat(chatId: string): Promise<void> {
             responseId: submission.responseId,
             presetSelections: submission.presetSelections,
             agentMode: submission.agentMode,
+            usedDictation: submission.usedDictation,
           },
         )
         useUploadOutbox.setState((current) => ({
@@ -411,6 +419,7 @@ async function processChat(chatId: string): Promise<void> {
           presetSelections: submission.presetSelections,
           attachmentIds: attachments.map((attachment) => attachment.id),
           agentMode: submission.agentMode,
+          ...(submission.usedDictation ? { usedDictation: true } : {}),
         }, attachments, submission.responseId)
         const draft = submission.composerDraft
         if (draft) await webComposerSync(draft.userId)?.completeSubmission(draft.draftId, draft.state, draft.revision)
@@ -560,6 +569,7 @@ export const useUploadOutbox = create<UploadOutboxState>()((set, get) => ({
           attachments: records.map(pendingAttachment),
           temporary: draft.temporary,
           autoExpire: draft.autoExpire,
+          fileScopeIds: draft.fileScopeIds,
           createdAt,
         })
       : { chatId: draft.chatId!, responseId }
@@ -574,7 +584,9 @@ export const useUploadOutbox = create<UploadOutboxState>()((set, get) => ({
       agentMode: draft.agentMode,
       temporary: draft.temporary,
       autoExpire: draft.autoExpire,
+      ...(draft.chatId === null && draft.fileScopeIds?.length ? { fileScopeIds: draft.fileScopeIds } : {}),
       attachmentIds: draft.attachmentIds,
+      ...(draft.usedDictation ? { usedDictation: true } : {}),
       createdAt,
       placement,
       status: 'waiting',
@@ -596,6 +608,7 @@ export const useUploadOutbox = create<UploadOutboxState>()((set, get) => ({
       presetSelections: draft.presetSelections,
       agentMode: draft.agentMode,
       attachmentIds: draft.attachmentIds,
+      ...(submission.usedDictation || draft.usedDictation ? { usedDictation: true } : {}),
       status: 'waiting' as const,
       recoveryError: undefined,
     }

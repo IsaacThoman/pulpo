@@ -17,6 +17,7 @@ import { accessibleChatCondition, temporaryChatIsExpired } from '../chats/tempor
 import { assistantEditInheritedValues } from './assistant-edit.js'
 import { resolveBranchGenerationSettings } from './generation-selection.js'
 import { scheduleChatIndex } from '../episodic-memory/queue.js'
+import { clientAttributionForRequest } from '../analytics/capture.js'
 
 async function ownedResponse(userId: string, id: string) {
   const responseId = id.endsWith(':input') ? id.slice(0, -6) : id
@@ -99,6 +100,7 @@ export async function registerMessageRoutes(app: FastifyInstance): Promise<void>
       userMessageId: original.userMessageId ?? undefined,
       branchReason: 'regenerate',
       idempotencyKey: request.headers['idempotency-key'] as string | undefined,
+      client: clientAttributionForRequest(request),
       input: {
         clientId: selection.clientId,
         timeZone: selection.timeZone,
@@ -150,6 +152,7 @@ export async function registerMessageRoutes(app: FastifyInstance): Promise<void>
         parentResponseId: original.parentResponseId,
         branchReason: 'user_edit',
         idempotencyKey,
+        client: clientAttributionForRequest(request),
         input: {
           clientId,
           timeZone,
@@ -276,7 +279,7 @@ export async function registerMessageRoutes(app: FastifyInstance): Promise<void>
       responseId: usageEvents.responseId,
       costMicros: usageEvents.costMicros,
       inferenceReferenceCostMicros: usageEvents.inferenceReferenceCostMicros,
-      subscriptionCoveredMicros: usageEvents.weeklyCostMicros,
+      subscriptionCoveredMicros: sql<number>`${usageEvents.weeklyCostMicros} + ${usageEvents.sharedCostMicros}`,
     }).from(usageEvents).where(inArray(usageEvents.responseId, turns.map((response) => response.id))) : []
     const usageCostsByResponseId = new Map(costRows.flatMap((row) => (
       row.responseId ? [[row.responseId, {

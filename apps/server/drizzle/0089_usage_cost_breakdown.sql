@@ -1,0 +1,1 @@
+ALTER TABLE "usage_events" ADD COLUMN "cost_breakdown" jsonb;

@@ -9,6 +9,8 @@ import {
 } from './database/schema.js'
 import { getBlobStore } from './storage/index.js'
 import { expireNormalChats, markExpiredChatsForPurge, purgePendingChats } from './chats/trash.js'
+import { cleanupFiles, convertMisnamedDocs } from './files/tree-service.js'
+import { scheduleStaleDocCompactions } from './files/doc-store.js'
 import { sanitizeContextForStorage } from './responses/public-output.js'
 import { persistResponseItems } from './responses/storage.js'
 import { parseBackupSettings, parseWebToolsSettings, publicWebToolsSettings } from './settings/application-settings.js'
@@ -119,6 +121,9 @@ export async function runCleanup(): Promise<void> {
   const abandoned = await db.select().from(attachments).where(and(eq(attachments.status, 'pending'), lt(attachments.createdAt, abandonedBefore)))
   for (const attachment of abandoned) await getBlobStore().delete(attachment.objectKey).catch(() => undefined)
   if (abandoned.length) await db.update(attachments).set({ status: 'deleted', updatedAt: now }).where(inArray(attachments.id, abandoned.map((row) => row.id)))
+  await cleanupFiles(now)
+  await convertMisnamedDocs()
+  await scheduleStaleDocCompactions(now)
   await expireNormalChats(now)
   await markExpiredChatsForPurge(now)
   await db.delete(sessions).where(lt(sessions.expiresAt, now))
@@ -139,11 +144,14 @@ export async function runCleanup(): Promise<void> {
 }
 
 export async function rebuildDailyRollups(): Promise<void> {
-  await db.delete(dailyUsageRollups)
-  await db.execute(sql`
-    insert into daily_usage_rollups (day, user_id, model_id, calls, input_tokens, output_tokens, cost_micros)
-    select date_trunc('day', created_at), user_id, model_id, count(*)::int,
-      sum(input_tokens), sum(output_tokens), sum(cost_micros)
-    from usage_events group by 1, 2, 3
-  `)
+  // One transaction, so readers never observe the table empty mid-rebuild.
+  await db.transaction(async (tx) => {
+    await tx.delete(dailyUsageRollups)
+    await tx.execute(sql`
+      insert into daily_usage_rollups (day, user_id, model_id, calls, input_tokens, output_tokens, cost_micros)
+      select date_trunc('day', created_at), user_id, model_id, count(*)::int,
+        sum(input_tokens), sum(output_tokens), sum(cost_micros)
+      from usage_events group by 1, 2, 3
+    `)
+  })
 }

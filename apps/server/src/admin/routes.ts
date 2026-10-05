@@ -6,7 +6,7 @@ import { usernameSchema } from '@pulpo/contracts'
 import { createPasswordHash, requireAdmin } from '../auth/service.js'
 import { clearTwoFactor, hasTwoFactor, verifySecondFactor } from '../auth/two-factor.js'
 import { db } from '../database/client.js'
-import { apiKeys, applicationSettings, attachments, auditEvents, billingAccounts, creditLedger, managementTokens, passwordCredentials, passwordResetTokens, sessions, usageEvents, userPreferences, users, userTotpCredentials } from '../database/schema.js'
+import { apiKeys, applicationSettings, attachments, auditEvents, fileNodes, billingAccounts, creditLedger, managementTokens, passwordCredentials, passwordResetTokens, sessions, usageEvents, userPreferences, users, userTotpCredentials } from '../database/schema.js'
 import { newUserStorageLimit, refreshStorageLimit } from '../billing/storage-entitlements.js'
 import { hashToken, randomToken } from '../lib/crypto.js'
 import { AppError, notFound } from '../lib/errors.js'
@@ -69,30 +69,40 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/api/admin/users', async (request) => {
     requireAdmin(request)
+    // Aggregate usage once per user instead of grouping every user row by every usage row.
+    const usageTotals = db.select({
+      userId: usageEvents.userId,
+      calls: sql<number>`count(*)`.as('calls'),
+      spentMicros: sql<number>`sum(${usageEvents.costMicros})`.as('spent_micros'),
+    }).from(usageEvents).groupBy(usageEvents.userId).as('usage_totals')
     const rows = await db.select({
       user: users,
       defaultModelId: sql<string | null>`(
         select nullif(${userPreferences.values}->>'defaultModelId', '')
         from ${userPreferences} where ${userPreferences.userId} = ${users.id}
       )`,
-      calls: sql<number>`count(${usageEvents.id})::int`,
-      spentMicros: sql<number>`coalesce(sum(${usageEvents.costMicros}), 0)::bigint`,
+      calls: sql<number>`coalesce(${usageTotals.calls}, 0)::int`,
+      spentMicros: sql<number>`coalesce(${usageTotals.spentMicros}, 0)::bigint`,
       lastActiveAt: sql<Date | null>`(
         select max(${sessions.lastSeenAt})
         from ${sessions}
         where ${sessions.userId} = ${users.id}
       )`,
-      storageBytes: sql<number>`(
-        select coalesce(sum(${attachments.sizeBytes}), 0)::bigint
+      storageBytes: sql<number>`((
+        select coalesce(sum(${attachments.sizeBytes}), 0)
         from ${attachments}
         where ${attachments.userId} = ${users.id}
           and ${attachments.status} in ('pending', 'ready')
-      )`,
+      ) + (
+        select coalesce(sum(${fileNodes.sizeBytes}), 0)
+        from ${fileNodes}
+        where ${fileNodes.ownerUserId} = ${users.id}
+      ))::bigint`,
       twoFactorEnabled: sql<boolean>`exists (
         select 1 from ${userTotpCredentials}
         where ${userTotpCredentials.userId} = ${users.id}
       )`,
-    }).from(users).leftJoin(usageEvents, eq(usageEvents.userId, users.id)).groupBy(users.id).orderBy(desc(users.createdAt))
+    }).from(users).leftJoin(usageTotals, eq(usageTotals.userId, users.id)).orderBy(desc(users.createdAt))
     return { data: rows.map((row) => {
       const { avatarObjectKey: _avatarObjectKey, ...publicUser } = row.user
       return {

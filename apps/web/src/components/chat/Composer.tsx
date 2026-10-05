@@ -1,7 +1,7 @@
 import { AttachmentWindow } from './AttachmentWindow'
 import { attachmentBatchRequiresAgent } from '@/lib/attachments'
 import { speechPlayback } from '@/features/speech/state'
-import { localComposerDraftId, mergePendingAttachments } from '@pulpo/client-core'
+import { DICTATION_MAX_SECONDS, localComposerDraftId, mergePendingAttachments } from '@pulpo/client-core'
 import { ShelvedDrafts } from './ShelvedDrafts'
 import { ComposerTray } from './ComposerTray'
 import { ModelWarningBanner } from './ModelWarningBanner'
@@ -23,6 +23,7 @@ import {
   Check,
   ChevronDown,
   CornerDownRight,
+  FolderPlus,
   ImagePlus,
   Loader2,
   Mic,
@@ -63,8 +64,12 @@ import { composerPrimaryAction } from '@/components/chat/composer-queue'
 import { canSubmitComposerDraft } from '@/components/chat/composer-upload-policy'
 import type { Attachment } from '@/lib/types'
 import { useUploadOutbox, type UploadRecord } from '@/stores/upload-outbox'
+import { FileScopeChip, FileScopePicker } from '@/features/files/FileScope'
+import { addFileScope } from '@/features/files/file-scope'
 import { apiRequest } from '@/lib/api'
 import { dictationFilename, insertDictationText, preferredDictationMimeType } from '@/lib/dictation'
+import { DictationBar } from '@/components/chat/DictationBar'
+import type { DictationPhase } from '@/components/chat/use-microphone-levels'
 import { isDesktopRuntime } from '@/lib/runtime'
 import { ui, uit } from '@/i18n/ui'
 import {
@@ -120,6 +125,8 @@ function downloadComposerAttachment(attachment: UploadRecord): void {
   }, useSettings.getState().localAttachmentCacheMb)
 }
 
+const NO_FILE_SCOPE: readonly string[] = []
+
 export function Composer({
   chatId,
   modelId,
@@ -137,6 +144,8 @@ export function Composer({
   generationControlRef,
   onTemporaryChange,
   onSelectModel,
+  fileScopeIds = NO_FILE_SCOPE,
+  onFileScopeChange,
 }: {
   chatId: string | null
   modelId: string
@@ -155,6 +164,10 @@ export function Composer({
   onTemporaryChange?: (temporary: boolean) => void
   /** Selects another model, e.g. from a model warning link. */
   onSelectModel?: (modelId: string) => void
+  /** Files items the agent may use in this chat, shown as chips. */
+  fileScopeIds?: readonly string[]
+  /** Lets the user add and remove items; without it the chips are read-only. */
+  onFileScopeChange?: (ids: string[]) => void
 }) {
   const { t } = useTranslation()
   const navigate = useNavigate()
@@ -190,7 +203,9 @@ export function Composer({
   const [queueError, setQueueError] = useState<string | null>(null)
   const [queueCollapsed, setQueueCollapsed] = useState(false)
   const [dictationError, setDictationError] = useState<string | null>(null)
-  const [dictationState, setDictationState] = useState<'idle' | 'recording' | 'transcribing'>('idle')
+  const [dictationState, setDictationState] = useState<DictationPhase>('idle')
+  const [dictationStream, setDictationStream] = useState<MediaStream | null>(null)
+  const [dictationStartedAt, setDictationStartedAt] = useState<number | null>(null)
   const [editingQueueId, setEditingQueueId] = useState<string | null>(null)
   const [queueDragId, setQueueDragId] = useState<string | null>(null)
   const [queueDrop, setQueueDrop] = useState<{ id: string; edge: 'before' | 'after' } | null>(null)
@@ -204,6 +219,14 @@ export function Composer({
   const attachmentIdsRef = useRef(attachmentIds)
   const uploadsRef = useRef<Record<string, UploadRecord>>({})
   const preservedDraftRef = useRef<{ value: string; attachmentIds: string[] } | null>(null)
+  // Whether dictation inserted text into the current draft (analytics only).
+  // Client-local: not persisted or synced with the draft.
+  const usedDictationRef = useRef(false)
+  const preservedUsedDictationRef = useRef(false)
+  useEffect(() => {
+    // Erasing the whole draft discards any dictated text with it.
+    if (!value.trim()) usedDictationRef.current = false
+  }, [value])
   const activeRecoveryIdRef = useRef<string | null>(null)
   const activeMessageEditIdRef = useRef<string | null>(null)
   const queueDragIdRef = useRef<string | null>(null)
@@ -212,6 +235,10 @@ export function Composer({
   const dictationChunksRef = useRef<Blob[]>([])
   const dictationTimerRef = useRef<number | null>(null)
   const dictationAbortRef = useRef<AbortController | null>(null)
+  /** Increments on every start and cancel so callbacks from an abandoned recording are ignored. */
+  const dictationSessionRef = useRef(0)
+  const composerToolbarRef = useRef<HTMLDivElement>(null)
+  const dictationToolbarRef = useRef<HTMLDivElement>(null)
   valueRef.current = value
   attachmentIdsRef.current = attachmentIds
 
@@ -278,6 +305,9 @@ export function Composer({
   const agentCapable = Boolean(getCatalogModel(modelId).agentEnabled)
   const canUseAgent = agentAvailable && agentCapable
   const dictationEnabled = useAuth((s) => s.dictationEnabled)
+  const filesEnabled = useAuth((s) => s.filesEnabled)
+  const [folderPickerOpen, setFolderPickerOpen] = useState(false)
+  const canScopeFiles = filesEnabled && Boolean(onFileScopeChange) && !temporary
   const instanceReady = useAuth((s) => s.instanceReady)
   const desktopCanMutate = !isDesktopRuntime() || instanceReady
   uploadsRef.current = uploads
@@ -445,6 +475,7 @@ export function Composer({
       void saveComposerDraft(userId, previous, outgoing)
     }
     draftOwnershipRef.current = draftId
+    usedDictationRef.current = false
     const incoming = userId ? runtimeComposerDraft(userId, draftId) : null
     valueRef.current = incoming?.content ?? ''
     attachmentIdsRef.current = incoming?.attachmentIds ?? []
@@ -497,7 +528,14 @@ export function Composer({
     dictationTimerRef.current = null
     mediaStreamRef.current?.getTracks().forEach((track) => track.stop())
     mediaStreamRef.current = null
+    setDictationStream(null)
   }, [])
+
+  /** Keyboard focus would otherwise fall to the page when its toolbar face becomes inert. */
+  const keepFocusInComposer = useCallback((face: HTMLElement | null) => {
+    if (!face?.contains(document.activeElement)) return
+    if (window.matchMedia?.('(pointer: fine)').matches) focusComposer()
+  }, [focusComposer])
 
   const transcribeRecording = useCallback(async (blob: Blob, mimeType: string) => {
     setDictationState('transcribing')
@@ -509,12 +547,14 @@ export function Composer({
       const result = await apiRequest<{ text: string }>('/api/dictation/transcriptions', {
         method: 'POST', body: form, signal: controller.signal,
       })
+      if (controller.signal.aborted) return
       if (!result.text.trim()) throw new Error(ui("No speech was detected in the recording"))
       const textarea = ref.current
       const start = textarea?.selectionStart ?? value.length
       const end = textarea?.selectionEnd ?? start
       setValue((current) => {
         const inserted = insertDictationText(current, result.text, start, end)
+        usedDictationRef.current = true
         requestAnimationFrame(() => {
           autosize()
           ref.current?.focus()
@@ -525,8 +565,11 @@ export function Composer({
     } catch (error) {
       if (!controller.signal.aborted) setDictationError(error instanceof Error ? error.message : 'Unable to transcribe the recording')
     } finally {
-      if (dictationAbortRef.current === controller) dictationAbortRef.current = null
-      setDictationState('idle')
+      // A cancelled transcription has already reset the UI, possibly for a newer recording.
+      if (dictationAbortRef.current === controller) {
+        dictationAbortRef.current = null
+        setDictationState('idle')
+      }
     }
   }, [autosize, value.length])
 
@@ -537,6 +580,25 @@ export function Composer({
     if (recorder && recorder.state !== 'inactive') recorder.stop()
   }, [])
 
+  /** Discards the recording or in-flight transcription and returns to the regular toolbar. */
+  const cancelDictation = useCallback(() => {
+    dictationSessionRef.current += 1
+    dictationAbortRef.current?.abort()
+    dictationAbortRef.current = null
+    const recorder = mediaRecorderRef.current
+    mediaRecorderRef.current = null
+    if (recorder) {
+      recorder.ondataavailable = null
+      recorder.onerror = null
+      recorder.onstop = null
+      if (recorder.state !== 'inactive') recorder.stop()
+    }
+    dictationChunksRef.current = []
+    releaseMicrophone()
+    setDictationState('idle')
+    keepFocusInComposer(dictationToolbarRef.current)
+  }, [keepFocusInComposer, releaseMicrophone])
+
   const startDictation = useCallback(async () => {
     speechPlayback.stop()
     setDictationError(null)
@@ -544,8 +606,17 @@ export function Composer({
       setDictationError(ui("This browser does not support microphone recording"))
       return
     }
+    const session = ++dictationSessionRef.current
+    const current = () => dictationSessionRef.current === session
+    setDictationState('preparing')
+    keepFocusInComposer(composerToolbarRef.current)
+    let stream: MediaStream | null = null
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      if (!current()) {
+        stream.getTracks().forEach((track) => track.stop())
+        return
+      }
       const preferredType = preferredDictationMimeType()
       const recorder = preferredType ? new MediaRecorder(stream, { mimeType: preferredType }) : new MediaRecorder(stream)
       mediaStreamRef.current = stream
@@ -553,12 +624,15 @@ export function Composer({
       dictationChunksRef.current = []
       recorder.ondataavailable = (event) => { if (event.data.size > 0) dictationChunksRef.current.push(event.data) }
       recorder.onerror = () => {
+        if (!current()) return
         dictationChunksRef.current = []
+        mediaRecorderRef.current = null
         setDictationError(ui("Microphone recording failed"))
         releaseMicrophone()
         setDictationState('idle')
       }
       recorder.onstop = () => {
+        if (!current()) return
         const chunks = dictationChunksRef.current
         dictationChunksRef.current = []
         mediaRecorderRef.current = null
@@ -571,22 +645,31 @@ export function Composer({
         void transcribeRecording(new Blob(chunks, { type: mimeType }), mimeType)
       }
       recorder.start()
+      setDictationStream(stream)
+      setDictationStartedAt(Date.now())
       setDictationState('recording')
-      dictationTimerRef.current = window.setTimeout(() => stopDictation(), 90_000)
+      dictationTimerRef.current = window.setTimeout(() => stopDictation(), DICTATION_MAX_SECONDS * 1000)
     } catch (error) {
+      if (!current()) {
+        stream?.getTracks().forEach((track) => track.stop())
+        return
+      }
+      mediaRecorderRef.current = null
+      if (mediaStreamRef.current !== stream) stream?.getTracks().forEach((track) => track.stop())
       releaseMicrophone()
       setDictationState('idle')
       setDictationError(error instanceof DOMException && error.name === 'NotAllowedError'
         ? 'Microphone permission was denied'
         : 'Unable to access the microphone')
     }
-  }, [releaseMicrophone, stopDictation, transcribeRecording])
+  }, [keepFocusInComposer, releaseMicrophone, stopDictation, transcribeRecording])
 
   useEffect(() => () => {
+    dictationSessionRef.current += 1
     dictationAbortRef.current?.abort()
     const recorder = mediaRecorderRef.current
     if (recorder) recorder.onstop = null
-    if (recorder?.state !== 'inactive') recorder?.stop()
+    if (recorder && recorder.state !== 'inactive') recorder.stop()
     releaseMicrophone()
   }, [releaseMicrophone])
 
@@ -613,14 +696,25 @@ export function Composer({
   }, [uploadFiles])
 
   useEffect(() => {
+    // Files dropped on the side panel belong to what it shows (a folder takes uploads).
+    const inPanel = (event: DragEvent) => event.target instanceof Element && event.target.closest('[data-side-panel]') !== null
     const hasFiles = (event: DragEvent) => event.dataTransfer?.types.includes('Files') ?? false
-    const showDropTarget = (event: DragEvent) => {
+    const ours = (event: DragEvent) => hasFiles(event) && !inPanel(event)
+    // A file dropped where the panel does not take it must not make the browser open it.
+    const refuse = (event: DragEvent) => {
       if (!hasFiles(event)) return
+      setDragging(false)
+      if (event.defaultPrevented) return
+      event.preventDefault()
+      if (event.dataTransfer) event.dataTransfer.dropEffect = 'none'
+    }
+    const showDropTarget = (event: DragEvent) => {
+      if (!ours(event)) return refuse(event)
       event.preventDefault()
       setDragging(true)
     }
     const allowDrop = (event: DragEvent) => {
-      if (!hasFiles(event)) return
+      if (!ours(event)) return refuse(event)
       event.preventDefault()
       if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy'
       setDragging(true)
@@ -630,7 +724,7 @@ export function Composer({
       setDragging(false)
     }
     const dropFiles = (event: DragEvent) => {
-      if (!hasFiles(event)) return
+      if (!ours(event)) return refuse(event)
       event.preventDefault()
       setDragging(false)
       addFiles(event.dataTransfer?.files)
@@ -654,6 +748,7 @@ export function Composer({
     if (release) releaseDraftUploads(attachmentIds)
     valueRef.current = ''
     attachmentIdsRef.current = []
+    usedDictationRef.current = false
     setValue('')
     setAttachmentIds([])
     if (userId) void deleteComposerDraft(userId, draftId)
@@ -681,6 +776,8 @@ export function Composer({
     setEditingQueueId(null)
     activeMessageEditIdRef.current = null
     if (!preserved) return
+    usedDictationRef.current = preservedUsedDictationRef.current
+    preservedUsedDictationRef.current = false
     const preservedIds = new Set(preserved.attachmentIds)
     releaseDraftUploads(attachmentIds.filter((id) => !preservedIds.has(id)))
     setValue(preserved.value)
@@ -691,6 +788,8 @@ export function Composer({
   useEffect(() => {
     if (!messageEdit || editingQueueId || activeMessageEditIdRef.current === messageEdit.messageId) return
     preservedDraftRef.current = { value, attachmentIds }
+    preservedUsedDictationRef.current = usedDictationRef.current
+    usedDictationRef.current = false
     activeMessageEditIdRef.current = messageEdit.messageId
     setValue(messageEdit.content)
     setEditAgentMode(agentModeEnabled)
@@ -721,6 +820,8 @@ export function Composer({
   useEffect(() => {
     if (recovery && !activeRecoveryIdRef.current && !messageEdit && !editingQueueId) {
       preserveComposerDraft(recovery.chatId, { value, attachmentIds })
+      preservedUsedDictationRef.current = usedDictationRef.current
+      usedDictationRef.current = false
       activeRecoveryIdRef.current = recovery.id
       setValue(recovery.content)
       setAttachmentIds(recovery.attachmentIds)
@@ -736,6 +837,8 @@ export function Composer({
     if (!chatId) return
     const preserved = takePreservedComposerDraft(chatId)
     if (!preserved) return
+    usedDictationRef.current = preservedUsedDictationRef.current
+    preservedUsedDictationRef.current = false
     setValue(preserved.value)
     setAttachmentIds(preserved.attachmentIds)
     requestAnimationFrame(autosize)
@@ -749,7 +852,7 @@ export function Composer({
     size: attachment.size,
   }))
 
-  const stageMessage = (text: string, ids: string[], submittedState?: ComposerState, revision?: number) => {
+  const stageMessage = (text: string, ids: string[], submittedState?: ComposerState, revision?: number, usedDictation = false) => {
     const staged = stageSubmission({
       composerDraft: userId && composerSync && submittedState ? { userId, draftId, state: submittedState, revision } : undefined,
       chatId,
@@ -757,8 +860,12 @@ export function Composer({
       ...generationSelection,
       temporary,
       autoExpire,
+      fileScopeIds: chatId ? undefined : [...fileScopeIds],
       attachmentIds: ids,
+      ...(usedDictation ? { usedDictation: true } : {}),
     })
+    // The new chat took the scope; the next one starts without it.
+    if (!chatId && fileScopeIds.length) onFileScopeChange?.([])
     if (!chatId && staged.chatId && !temporary) navigate(`/c/${staged.chatId}`)
   }
 
@@ -827,6 +934,7 @@ export function Composer({
         presetSelections: selections,
         agentMode: activeAgentMode && canUseAgent,
         attachmentIds,
+        ...(usedDictationRef.current ? { usedDictation: true } : {}),
       })
       clearDraft(false)
       return
@@ -834,7 +942,7 @@ export function Composer({
     setSubmitting(true)
     const submittedRevision = await composerSync?.prepareSubmission(draftId, sharedComposerState)
     setSubmitting(false)
-    stageMessage(text, attachmentIds, sharedComposerState, submittedRevision ?? undefined)
+    stageMessage(text, attachmentIds, sharedComposerState, submittedRevision ?? undefined, usedDictationRef.current)
     if (valueRef.current === value && attachmentIdsRef.current === attachmentIds) {
       skipNextEdit()
       clearDraft(false)
@@ -868,6 +976,7 @@ export function Composer({
     }
     const ids = restoreDraftAttachments(shelfDraftAttachments(after.attachments), { chatId: null, temporary: false })
     skipNextEdit()
+    usedDictationRef.current = false
     valueRef.current = after.content; attachmentIdsRef.current = ids
     setValue(after.content); setAttachmentIds(ids)
     rememberRuntimeComposerDraft(userId, 'new', { content: after.content, attachmentIds: ids, attachments: shelfDraftAttachments(after.attachments) })
@@ -903,6 +1012,8 @@ export function Composer({
     try {
       await updateQueuedMessage(chatId, messageId, { action: 'begin_edit' })
       preservedDraftRef.current = { value, attachmentIds }
+      preservedUsedDictationRef.current = usedDictationRef.current
+      usedDictationRef.current = false
       setEditingQueueId(messageId)
       setValue(message.content)
       setAttachmentIds(addExistingAttachments(message.attachments.map((attachment) => ({
@@ -1196,6 +1307,20 @@ export function Composer({
             ref.current?.focus()
           })}
         />
+        {filesEnabled && fileScopeIds.length > 0 && (
+          <div className="space-y-1.5 px-3 pt-3">
+            <div className="flex flex-wrap gap-2">
+              {fileScopeIds.map((id) => (
+                <FileScopeChip
+                  key={id}
+                  id={id}
+                  onRemove={onFileScopeChange ? () => onFileScopeChange(fileScopeIds.filter((item) => item !== id)) : undefined}
+                />
+              ))}
+            </div>
+            {!(activeAgentMode && canUseAgent) && <p className="px-1 text-xs text-muted-foreground">{ui("Turn on agent mode so the model can use these files.")}</p>}
+          </div>
+        )}
         {attachments.length > 0 && (
           <div className="space-y-2 px-3 pt-3">
             <AttachmentWindow items={attachments}>{(visible) => <div className="flex max-h-48 flex-wrap gap-2 overflow-y-auto">
@@ -1232,6 +1357,21 @@ export function Composer({
               autosize()
             }}
             onKeyDown={(e) => {
+              if (dictationState !== 'idle' && !e.nativeEvent.isComposing) {
+                if (e.key === 'Escape') {
+                  e.preventDefault()
+                  cancelDictation()
+                  return
+                }
+                if (shouldSubmitComposerKey({
+                  key: e.key, metaKey: e.metaKey, ctrlKey: e.ctrlKey, shiftKey: e.shiftKey, isComposing: false,
+                }, sendWithEnter)) {
+                  // The send shortcut finishes dictation; the draft cannot be sent until it lands.
+                  e.preventDefault()
+                  if (dictationState === 'recording') stopDictation()
+                  return
+                }
+              }
               if (e.key === 'Escape' && messageEdit && !e.nativeEvent.isComposing) {
                 e.preventDefault()
                 cancelMessageEdit()
@@ -1265,27 +1405,62 @@ export function Composer({
             {shelfBusy ? <Loader2 className="size-4 animate-spin" /> : <Archive className="size-4" />}
           </button></TooltipTrigger><TooltipContent>{ui('Shelve draft')}</TooltipContent></Tooltip>}
         </div>
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          className="hidden"
+          onChange={(event) => addFiles(event.target.files)}
+        />
         <div className="flex min-w-0 select-none items-center gap-1 px-2.5 pb-2.5">
-          <input
-            ref={fileInputRef}
-            type="file"
-            multiple
-            className="hidden"
-            onChange={(event) => addFiles(event.target.files)}
-          />
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                className="flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground"
-                aria-label={t('chat.attachFiles')}
-              >
-                <Plus className="size-4.5" />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="top">{t('chat.attachFiles')}</TooltipContent>
-          </Tooltip>
+          {canScopeFiles ? (
+            <DropdownMenu>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      type="button"
+                      className="flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground"
+                      aria-label={ui("Add files or folders")}
+                    >
+                      <Plus className="size-4.5" />
+                    </button>
+                  </DropdownMenuTrigger>
+                </TooltipTrigger>
+                <TooltipContent side="top">{ui("Add files or folders")}</TooltipContent>
+              </Tooltip>
+              <DropdownMenuContent align="start" side="top">
+                <DropdownMenuItem onSelect={() => fileInputRef.current?.click()}><Paperclip /> {t('chat.attachFiles')}</DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => setFolderPickerOpen(true)}><FolderPlus /> {ui("Add from Files…")}</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground"
+                  aria-label={t('chat.attachFiles')}
+                >
+                  <Plus className="size-4.5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="top">{t('chat.attachFiles')}</TooltipContent>
+            </Tooltip>
+          )}
+          {canScopeFiles && folderPickerOpen && (
+            <FileScopePicker
+              open={folderPickerOpen}
+              onOpenChange={(open) => { setFolderPickerOpen(open); if (!open) requestAnimationFrame(focusComposer) }}
+              selected={fileScopeIds}
+              onAdd={(ids) => {
+                onFileScopeChange?.(addFileScope(fileScopeIds, ids))
+                // Files are reached through agent tools; adding some implies agent mode.
+                if (canUseAgent && !messageEdit) setAgentMode(modelId, true)
+              }}
+            />
+          )}
 
           {activePresets.length > 0 && (
             <DropdownMenu>
@@ -1351,22 +1526,32 @@ export function Composer({
             }}
           />
 
-          <div className="flex-1" />
-
+          {/* Attachments, presets, and agent stay usable while dictating; only the trailing actions flip to the dictation bar. */}
+          {/* While dictating, reserve room for a readable waveform; presets truncate rather than squeeze it. */}
+          <div className={cn(
+            'grid flex-1 transition-[min-width] duration-[260ms] ease-[cubic-bezier(0.65,0,0.35,1)] motion-reduce:transition-none',
+            dictationState !== 'idle' ? 'min-w-44' : dictationEnabled ? 'min-w-[4.25rem]' : 'min-w-8',
+          )}>
+          <div
+            ref={composerToolbarRef}
+            className="composer-toolbar-face flex min-w-0 items-center justify-end gap-1"
+            data-face="draft"
+            data-active={dictationState === 'idle'}
+            inert={dictationState !== 'idle'}
+          >
           {dictationEnabled && <Tooltip>
             <TooltipTrigger asChild>
               <button
                 type="button"
-                disabled={!desktopCanMutate || dictationState === 'transcribing'}
-                onClick={() => dictationState === 'recording' ? stopDictation() : void startDictation()}
-                className={cn('flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground disabled:cursor-wait disabled:opacity-60', dictationState === 'recording' && 'bg-destructive/10 text-destructive')}
-                aria-label={dictationState === 'recording' ? t('chat.stopDictation') : dictationState === 'transcribing' ? t('chat.transcribing') : t('chat.dictate')}
-                aria-pressed={dictationState === 'recording'}
+                disabled={!desktopCanMutate}
+                onClick={() => void startDictation()}
+                className="flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+                aria-label={t('chat.dictate')}
               >
-                {dictationState === 'transcribing' ? <Loader2 className="size-4 animate-spin" /> : <Mic className={cn('size-4', dictationState === 'recording' && 'animate-pulse')} />}
+                <Mic className="size-4" />
               </button>
             </TooltipTrigger>
-            <TooltipContent side="top">{dictationState === 'recording' ? t('chat.stopDictation') : dictationState === 'transcribing' ? t('chat.transcribing') : t('chat.dictate')}</TooltipContent>
+            <TooltipContent side="top">{t('chat.dictate')}</TooltipContent>
           </Tooltip>}
 
           {composerPrimaryAction(Boolean(streamingResponseId) && !messageEdit, hasDraft || Boolean(editingQueueId) || Boolean(messageEdit)) === 'stop' ? (
@@ -1390,6 +1575,25 @@ export function Composer({
               {submitting ? <Loader2 className="size-4 animate-spin" /> : <ArrowUp className="size-4" />}
             </Button>
           )}
+        </div>
+        {dictationEnabled && (
+          <div
+            ref={dictationToolbarRef}
+            className="composer-toolbar-face"
+            data-face="dictation"
+            data-active={dictationState !== 'idle'}
+            inert={dictationState === 'idle'}
+          >
+            <DictationBar
+              phase={dictationState}
+              stream={dictationStream}
+              startedAt={dictationStartedAt}
+              onCancel={cancelDictation}
+              onConfirm={stopDictation}
+            />
+          </div>
+        )}
+          </div>
         </div>
         {queueError && <p role="alert" className="px-4 pb-3 text-xs text-destructive">{queueError}</p>}
         {dictationError && <p role="alert" className="px-4 pb-3 text-xs text-destructive">{dictationError}</p>}

@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { DICTATION_LEVEL_INTERVAL_MS, DICTATION_WAVEFORM_SAMPLES, normalizeDictationDecibels } from '@pulpo/client-core'
 import { DictationController, MAX_DICTATION_BYTES } from './dictation'
 
 function deferred<T>() {
@@ -7,7 +8,10 @@ function deferred<T>() {
   return { promise, resolve }
 }
 function fixture() {
-  const recorder = { prepare: vi.fn(async () => {}), record: vi.fn(), stop: vi.fn(async () => {}), release: vi.fn(), uri: 'file:///dictation.m4a', isRecording: true }
+  const recorder = {
+    prepare: vi.fn(async () => {}), record: vi.fn(), stop: vi.fn(async () => {}), release: vi.fn(), uri: 'file:///dictation.m4a', isRecording: true,
+    metering: vi.fn((): number | undefined => undefined),
+  }
   const deps = {
     permission: vi.fn(async () => true), isForeground: vi.fn(() => true), audioMode: vi.fn(async () => {}), recorder: vi.fn(() => recorder),
     size: vi.fn(() => 1234), remove: vi.fn(), transcribe: vi.fn(async () => 'Hello world'),
@@ -130,5 +134,105 @@ describe('mobile dictation lifecycle', () => {
     await vi.advanceTimersByTimeAsync(250); await run
     expect(controller.getSnapshot().error).toContain('interrupted')
     expect(deps.transcribe).not.toHaveBeenCalled()
+  })
+})
+
+describe('mobile dictation level metering', () => {
+  it('samples the recorder meter into a scrolling history while recording', async () => {
+    vi.useFakeTimers()
+    const { controller, recorder, apply } = fixture()
+    const listener = vi.fn()
+    const run = controller.start(apply)
+    await preparingSettled()
+    expect(controller.getLevels()).toHaveLength(DICTATION_WAVEFORM_SAMPLES)
+    controller.subscribeLevels(listener)
+    recorder.metering.mockReturnValueOnce(-20).mockReturnValueOnce(-6).mockReturnValueOnce(-80)
+    await vi.advanceTimersByTimeAsync(DICTATION_LEVEL_INTERVAL_MS * 3)
+    const levels = controller.getLevels()
+    expect(levels).toHaveLength(DICTATION_WAVEFORM_SAMPLES)
+    expect(levels.slice(-3)).toEqual([normalizeDictationDecibels(-20), normalizeDictationDecibels(-6), 0])
+    expect(levels.slice(0, -3).every((level) => level === 0)).toBe(true)
+    expect(listener).toHaveBeenCalledTimes(3)
+    controller.stop(); await run
+  })
+
+  it('does not notify level subscribers while the input stays silent', async () => {
+    vi.useFakeTimers()
+    const { controller, recorder, apply } = fixture()
+    const listener = vi.fn()
+    const run = controller.start(apply)
+    await preparingSettled()
+    controller.subscribeLevels(listener)
+    await vi.advanceTimersByTimeAsync(DICTATION_LEVEL_INTERVAL_MS * 5)
+    expect(recorder.metering).toHaveBeenCalledTimes(5)
+    expect(listener).not.toHaveBeenCalled()
+    controller.stop(); await run
+  })
+
+  it('clears the previous waveform when a new recording starts', async () => {
+    vi.useFakeTimers()
+    const { controller, recorder, apply } = fixture()
+    recorder.metering.mockReturnValue(-10)
+    const first = controller.start(apply)
+    await preparingSettled(); await vi.advanceTimersByTimeAsync(DICTATION_LEVEL_INTERVAL_MS * 2)
+    controller.stop(); await first
+    expect(controller.getLevels().some((level) => level > 0)).toBe(true)
+    const second = controller.start(apply)
+    expect(controller.getLevels().every((level) => level === 0)).toBe(true)
+    await preparingSettled(); controller.cancel(); await second
+  })
+
+  it('keeps recording when a meter reading fails', async () => {
+    vi.useFakeTimers()
+    const { controller, recorder, deps, apply } = fixture()
+    recorder.metering.mockImplementationOnce(() => { throw new Error('meter unavailable') }).mockReturnValue(-12)
+    const run = controller.start(apply)
+    await preparingSettled(); await vi.advanceTimersByTimeAsync(DICTATION_LEVEL_INTERVAL_MS * 2)
+    expect(controller.getSnapshot().phase).toBe('recording')
+    expect(controller.getLevels().slice(-2)).toEqual([0, normalizeDictationDecibels(-12)])
+    controller.stop(); await run
+    expect(controller.getSnapshot().error).toBeNull()
+    expect(deps.transcribe).toHaveBeenCalledOnce()
+  })
+
+  it('works with recorders that do not meter audio', async () => {
+    vi.useFakeTimers()
+    const { controller, recorder, apply } = fixture()
+    const { metering: _metering, ...unmetered } = recorder
+    const deps = { permission: async () => true, audioMode: async () => {}, recorder: () => unmetered, size: () => 10, remove: () => {}, transcribe: async () => 'ok' }
+    const plain = new DictationController(deps)
+    const run = plain.start(apply)
+    await preparingSettled(); await vi.advanceTimersByTimeAsync(DICTATION_LEVEL_INTERVAL_MS * 3)
+    expect(plain.getLevels().every((level) => level === 0)).toBe(true)
+    plain.stop(); await run
+    expect(apply).toHaveBeenCalledWith('ok')
+    expect(controller.getLevels().every((level) => level === 0)).toBe(true)
+  })
+
+  it('publishes elapsed seconds once per second instead of on every meter tick', async () => {
+    vi.useFakeTimers()
+    const { controller, apply } = fixture()
+    const run = controller.start(apply)
+    await preparingSettled()
+    const listener = vi.fn()
+    controller.subscribe(listener)
+    // Ticks land on 80 ms boundaries; the first one past three seconds is at 3040 ms.
+    await vi.advanceTimersByTimeAsync(3_040)
+    expect(controller.getSnapshot().seconds).toBe(3)
+    expect(listener).toHaveBeenCalledTimes(3)
+    controller.stop(); await run
+  })
+
+  it('unsubscribes level listeners', async () => {
+    vi.useFakeTimers()
+    const { controller, recorder, apply } = fixture()
+    recorder.metering.mockReturnValue(-10)
+    const listener = vi.fn()
+    const unsubscribe = controller.subscribeLevels(listener)
+    unsubscribe()
+    const run = controller.start(apply)
+    await preparingSettled(); await vi.advanceTimersByTimeAsync(DICTATION_LEVEL_INTERVAL_MS * 2)
+    expect(listener).not.toHaveBeenCalled()
+    controller.cancel(); await run
   })
 })

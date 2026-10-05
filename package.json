@@ -26,7 +26,8 @@
     "db:migrate": "npm run db:migrate -w @pulpo/server",
     "mobile:typecheck": "npm run typecheck -w @pulpo/mobile",
     "mobile:export": "npm run export -w @pulpo/mobile",
-    "test": "npm run build -w @pulpo/contracts && npm run build -w @pulpo/client-core && npm run build -w @isaacthoman/pulpo && npm run test -w @semantic-release/npm && npm run test -w @pulpo/contracts && npm run test -w @pulpo/client-core && npm run test -w @isaacthoman/pulpo && npm run test -w @pulpo/web && npm run test -w @pulpo/workspace-controller && npm run test -w @pulpo/server && npm run test -w @pulpo/mobile && npm run test -w @pulpo/desktop",
+    "test": "npm run test:dependency-security && npm run build -w @pulpo/contracts && npm run build -w @pulpo/client-core && npm run build -w @isaacthoman/pulpo && npm run test -w @semantic-release/npm && npm run test -w @pulpo/contracts && npm run test -w @pulpo/client-core && npm run test -w @isaacthoman/pulpo && npm run test -w @pulpo/web && npm run test -w @pulpo/workspace-controller && npm run test -w @pulpo/server && npm run test -w @pulpo/mobile && npm run test -w @pulpo/desktop",
+    "test:dependency-security": "node --test --test-timeout=10000 scripts/security/*.test.cjs",
     "lint": "oxlint --report-unused-disable-directives --deny-warnings",
     "release": "semantic-release",
     "release:dry-run": "semantic-release --dry-run --no-ci",
@@ -47,7 +48,9 @@
     "@semantic-release/github": "^12.0.9",
     "@semantic-release/npm": "file:packages/semantic-release-npm",
     "@semantic-release/release-notes-generator": "^14.1.1",
+    "braces": "file:scripts/security/vendor/braces",
     "conventional-changelog-conventionalcommits": "^10.2.1",
+    "image-size": "file:apps/desktop/vendor/appdmg-image-size",
     "oxlint": "^1.71.0",
     "react": "19.2.3",
     "react-dom": "19.2.3",
@@ -57,18 +60,24 @@
     "vitepress": "1.6.4"
   },
   "overrides": {
+    "braces": "$braces",
     "expo-modules-core": "57.0.9",
+    "image-size": "$image-size",
     "linkify-it": "6.1.0",
     "markdown-it": "15.0.0",
     "metro": "0.84.5",
     "metro-config": "0.84.5",
     "metro-transform-worker": "0.84.5",
     "nanoid": "3.3.18",
+    "node-forge": "https://codeload.github.com/digitalbazaar/forge/tar.gz/ceba34402e329f0365134f23fe19898756527d65",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-native-worklets": "0.10.1",
     "vitepress@1.6.4": {
       "vite": "6.4.3"
+    },
+    "xcode": {
+      "uuid": "^11.1.1"
     }
   }
 }

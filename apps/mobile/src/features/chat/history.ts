@@ -7,12 +7,13 @@ export type HistoryChatSummary = {
   title: string
   modelId: string
   time: string
-  /** Last-activity label shown in previews; list placement comes from sortOrder. */
+  /** Last-activity label shown in previews and as the heading in recent order. */
   section: string
   pinned: boolean
   folderId: string | null
   sortOrder: number
   createdAt: number
+  updatedAt: number
   expiresAt: number | null
 }
 
@@ -45,11 +46,13 @@ export function topChatSortOrder<T extends OrderedChat>(
 /**
  * Pinned chats, then unfiled chats, each in their manual order. Filed chats live in their folders
  * unless `includeFiled` is set (search), where they follow the unfiled chats in folder order.
+ * Recent order matches the web sidebar: unpinned chats by last activity under time headings.
  */
 export function historyChatSections(
   chats: HistoryChatSummary[],
   folders: readonly { id: string }[] = [],
   includeFiled = false,
+  order: 'default' | 'recent' = 'default',
 ): HistoryChatSection[] {
   const folderIndex = new Map(folders.map((folder, index) => [folder.id, index]))
   const pinned: HistoryChatSummary[] = []
@@ -66,7 +69,13 @@ export function historyChatSections(
   const unpinned = includeFiled ? [...loose, ...filed] : loose
   const sections: HistoryChatSection[] = []
   if (pinned.length) sections.push({ title: 'Pinned', data: pinned })
-  if (unpinned.length) sections.push({ title: 'Chats', data: unpinned })
+  if (order === 'recent') {
+    for (const chat of [...unpinned].sort((left, right) => right.updatedAt - left.updatedAt)) {
+      const last = sections.at(-1)
+      if (last && last.title === chat.section && last.title !== 'Pinned') last.data.push(chat)
+      else sections.push({ title: chat.section, data: [chat] })
+    }
+  } else if (unpinned.length) sections.push({ title: 'Chats', data: unpinned })
   return sections
 }
 
@@ -96,12 +105,15 @@ type HistoryChatSource = {
   expiresAt?: number | null
 }
 
+/** Calendar-day buckets, matching the web sidebar's recent-order headings. */
 function historySection(updatedAt: number, now: number): string {
-  const days = Math.floor((now - updatedAt) / 86_400_000)
-  if (days < 1) return 'Today'
-  if (days < 2) return 'Yesterday'
-  if (days < 7) return 'Previous 7 Days'
-  return 'Previous 30 Days'
+  const today = new Date(now)
+  const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime()
+  if (updatedAt >= startOfToday) return 'Today'
+  if (updatedAt >= startOfToday - 86_400_000) return 'Yesterday'
+  if (updatedAt >= startOfToday - 7 * 86_400_000) return 'Previous 7 Days'
+  if (updatedAt >= startOfToday - 30 * 86_400_000) return 'Previous 30 Days'
+  return 'Older'
 }
 
 let timeFormatter: Intl.DateTimeFormat | undefined
@@ -120,6 +132,7 @@ export function historyChatSummary<T extends HistoryChatSource>(chat: T, now = D
     folderId: chat.folderId,
     sortOrder: chat.sortOrder,
     createdAt: chat.createdAt,
+    updatedAt: chat.updatedAt,
     expiresAt: chat.expiresAt ?? null,
   }
 }
@@ -173,6 +186,7 @@ function historyChatSummaryEqual(left: HistoryChatSummary, right: HistoryChatSum
     && left.pinned === right.pinned
     && left.folderId === right.folderId
     && left.sortOrder === right.sortOrder
+    && left.updatedAt === right.updatedAt
     && left.expiresAt === right.expiresAt
 }
 

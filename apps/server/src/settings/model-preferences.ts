@@ -4,6 +4,7 @@ import {
   agentModesSchema,
   animationSpeedSchema,
   automaticChatExpirationSchema,
+  chatSortModeSchema,
   instructionPresetSelectionsSchema,
   modelPreferencesPatchSchema,
   modelPreferencesSchema,
@@ -16,6 +17,7 @@ export function preferencesWithModelDefaults(values?: Record<string, unknown>): 
   const parsedAnimationSpeed = animationSpeedSchema.safeParse(values?.animationSpeed)
   const parsedAutomaticChatExpiration = automaticChatExpirationSchema.safeParse(values?.automaticChatExpiration)
   const parsedNewChatAutoExpire = newChatAutoExpireSchema.safeParse(values?.newChatAutoExpire)
+  const parsedChatSortMode = chatSortModeSchema.safeParse(values?.chatSortMode)
   const parsedAgentModes = agentModesSchema.safeParse(values?.agentModes)
   const parsedInstructionPresetSelections = instructionPresetSelectionsSchema.safeParse(values?.instructionPresetSelections)
   const parsedModelWarningDismissals = modelWarningDismissalsSchema.safeParse(values?.modelWarningDismissals)
@@ -26,6 +28,7 @@ export function preferencesWithModelDefaults(values?: Record<string, unknown>): 
     animationSpeed: parsedAnimationSpeed.success ? parsedAnimationSpeed.data : animationSpeedSchema.parse(undefined),
     automaticChatExpiration: parsedAutomaticChatExpiration.success ? parsedAutomaticChatExpiration.data : '24h',
     newChatAutoExpire: parsedNewChatAutoExpire.success ? parsedNewChatAutoExpire.data : false,
+    chatSortMode: parsedChatSortMode.success ? parsedChatSortMode.data : 'default',
     sidebarPins: sidebarPinsSchema.parse(values?.sidebarPins ?? {}),
     agentModes: parsedAgentModes.success ? parsedAgentModes.data : {},
     instructionPresetSelections: parsedInstructionPresetSelections.success ? parsedInstructionPresetSelections.data : {},

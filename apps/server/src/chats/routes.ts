@@ -6,7 +6,7 @@ import { createChatResponseSchema, createChatSchema, createQueuedMessageSchema, 
 import { db } from '../database/client.js'
 import { attachments, chatImportSources, chats, folders, models, queuedMessages, requestLogs, responses, usageEvents, users, workspaceLeases } from '../database/schema.js'
 import { billingUserForRequest, requireUser } from '../auth/service.js'
-import { AppError, notFound } from '../lib/errors.js'
+import { AppError, forbidden, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import { createResponse, toSnapshot } from '../responses/service.js'
 import { publishChatStarted, publishStateChange, requestCancellation } from '../responses/events.js'
@@ -15,6 +15,7 @@ import { maintenanceQueue } from '../jobs.js'
 import { cancelChatWork, getTrashRetention, markChatsForPurge, purgeAtFor } from './trash.js'
 import { planDuplicateTree } from './duplicate.js'
 import { toPublicChat, toPublicChatResponses, withoutWorkspaceScope } from './public.js'
+import { assertFileScope } from './file-scope.js'
 import { responseAttachmentIds } from '../messages/input.js'
 import {
   accessibleChatCondition,
@@ -29,6 +30,7 @@ import { requestCostLimitContinue } from '../agent/cost-limit.js'
 import { scheduleChatIndex, scheduleUserIndex } from '../episodic-memory/queue.js'
 import { createChatExportPayload } from './export-format.js'
 import { importedModelIdentity } from './modelIdentity.js'
+import { clientAttributionForRequest } from '../analytics/capture.js'
 
 export const CHAT_IMPORT_ROUTE_OPTIONS = { bodyLimit: 100 * 1024 * 1024 } as const
 
@@ -243,6 +245,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
   app.post('/api/chats', async (request, reply) => {
     const user = requireUser(request)
     const input = createChatSchema.parse(request.body)
+    await assertFileScope(user.id, input.fileScopeIds)
     const [model] = await db.select({ id: models.id }).from(models).where(and(eq(models.id, input.modelId), eq(models.enabled, true))).limit(1)
     if (!model) throw new AppError(400, 'model_not_found', 'The selected model is unavailable')
     const id = input.clientId ?? newId()
@@ -256,6 +259,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       modelId: input.modelId,
       title: input.title ?? 'New chat',
       temporary: input.temporary,
+      fileScopeIds: input.fileScopeIds,
       sortOrder: input.temporary ? 0 : await topLooseChatSortOrder(user.id),
       expiresAt,
       createdAt,
@@ -283,6 +287,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     if (input.response.parentResponseId) {
       throw new AppError(400, 'invalid_parent_response', 'A new chat cannot start from an existing response')
     }
+    await assertFileScope(user.id, input.chat.fileScopeIds)
     const [model] = await db.select({ id: models.id }).from(models).where(and(
       eq(models.id, input.chat.modelId), eq(models.enabled, true),
     )).limit(1)
@@ -297,6 +302,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       modelId: input.chat.modelId,
       title: input.chat.title ?? 'New chat',
       temporary: input.chat.temporary,
+      fileScopeIds: input.chat.fileScopeIds,
       sortOrder: input.chat.temporary ? 0 : await topLooseChatSortOrder(user.id),
       expiresAt,
       createdAt,
@@ -318,6 +324,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
         input: input.response,
         parentResponseId: null,
         idempotencyKey: request.headers['idempotency-key'] as string | undefined,
+        client: clientAttributionForRequest(request),
       })
       if (!chat.temporary) await bumpRevision(user.id, chat.id)
       if (inserted && !chat.temporary && chat.expiresAt) {
@@ -534,7 +541,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       responseId: usageEvents.responseId,
       costMicros: usageEvents.costMicros,
       inferenceReferenceCostMicros: usageEvents.inferenceReferenceCostMicros,
-      subscriptionCoveredMicros: usageEvents.weeklyCostMicros,
+      subscriptionCoveredMicros: sql<number>`${usageEvents.weeklyCostMicros} + ${usageEvents.sharedCostMicros}`,
     }).from(usageEvents).where(inArray(usageEvents.responseId, allTurns.map((response) => response.id))) : []
     const usageCostsByResponseId = new Map(costRows.flatMap((row) => (
       row.responseId ? [[row.responseId, {
@@ -572,6 +579,10 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
     const patch = updateChatSchema.parse(request.body)
+    if (patch.fileScopeIds) {
+      if (request.adminChatAccess) throw forbidden('Chat file scope cannot be changed during admin chat access')
+      await assertFileScope(user.id, patch.fileScopeIds)
+    }
     const now = new Date()
     const expiresAt = patch.autoExpire === undefined
       ? undefined
@@ -582,6 +593,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       folderId: patch.folderId,
       modelId: patch.modelId,
       sortOrder: typeof patch.sortOrder === 'number' ? patch.sortOrder : undefined,
+      fileScopeIds: patch.fileScopeIds,
       expiresAt,
       updatedAt: now,
     }).where(and(
@@ -672,6 +684,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       input,
       parentResponseId: input.parentResponseId,
       idempotencyKey: request.headers['idempotency-key'] as string | undefined,
+      client: clientAttributionForRequest(request),
     })
     await bumpRevision(user.id, id)
     reply.code(202)
@@ -686,6 +699,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       requestReceivedAt: request.requestReceivedAt,
       billingUserId: billingUserForRequest(request).id,
       actorUserId: request.adminChatAccess?.actorUser.id,
+      client: clientAttributionForRequest(request),
     })
     reply.code(202)
     return result

@@ -41,9 +41,25 @@ function filters(input: z.infer<typeof querySchema>, includeCursor = false): SQL
   if (input.fallback) values.push(eq(requestLogs.fallbackUsed, input.fallback === 'true'))
   if (input.ocr) values.push(eq(requestLogs.ocrStatus, input.ocr))
   if (input.errorCategory) values.push(eq(generationAttempts.errorCategory, input.errorCategory))
-  if (includeCursor && input.cursor) values.push(lt(generationAttempts.startedAt, new Date(input.cursor)))
+  if (includeCursor && input.cursor) values.push(modelCallCursorFilter(input.cursor))
   return values
 }
+
+/**
+ * Cursors are `startedAt|id` so calls sharing a start time are not skipped.
+ * A bare ISO timestamp (the previous format) still works for older clients.
+ */
+export function modelCallCursorFilter(cursor: string): SQL {
+  const [startedAt, id] = cursor.split('|', 2)
+  const parsedId = z.uuid().safeParse(id)
+  if (Number.isNaN(Date.parse(startedAt ?? ''))) throw new AppError(400, 'invalid_cursor', 'The page cursor is invalid')
+  return parsedId.success
+    ? sql`(${generationAttempts.startedAt}, ${generationAttempts.id}) < (${startedAt}::timestamptz, ${parsedId.data}::uuid)`
+    : lt(generationAttempts.startedAt, new Date(startedAt!))
+}
+
+const WORKSPACE_RECONCILE_INTERVAL_MS = 10_000
+let lastWorkspaceReconcileAt = 0
 
 export async function registerAdminUsageRoutes(app: FastifyInstance): Promise<void> {
   registerAdminUsagePayloadRoutes(app)
@@ -161,7 +177,8 @@ export async function registerAdminUsageRoutes(app: FastifyInstance): Promise<vo
           outputTokens: row.usage.outputTokens,
           costMicros: Number(row.usage.costMicros),
           inferenceReferenceCostMicros: Number(row.usage.inferenceReferenceCostMicros),
-          subscriptionCoveredMicros: Number(row.usage.weeklyCostMicros),
+          subscriptionCoveredMicros: Number(row.usage.weeklyCostMicros) + Number(row.usage.sharedCostMicros),
+          costBreakdown: row.usage.costBreakdown,
         }
       }),
       nextCursor: rows.length > query.limit && last
@@ -219,7 +236,11 @@ export async function registerAdminUsageRoutes(app: FastifyInstance): Promise<vo
 
   app.get('/api/admin/usage/workspaces', async (request) => {
     requireAdmin(request)
-    await reconcileWorkspaceLeases()
+    // The page polls; reconcile at most every few seconds rather than on every read.
+    if (Date.now() - lastWorkspaceReconcileAt > WORKSPACE_RECONCILE_INTERVAL_MS) {
+      lastWorkspaceReconcileAt = Date.now()
+      await reconcileWorkspaceLeases()
+    }
     const rows = await db.select({
       lease: workspaceLeases,
       user: { id: users.id, name: users.name, email: users.email },
@@ -294,12 +315,14 @@ export async function registerAdminUsageRoutes(app: FastifyInstance): Promise<vo
     requireAdmin(request)
     const input = querySchema.parse(request.query)
     const where = and(...filters(input))
-    const [summary] = await db.select({
-      total: sql<number>`count(*)::int`, queued: sql<number>`0::int`,
+    const [[summary], daily, topModels, topUsers, topApiKeys] = await Promise.all([db.select({
+      total: sql<number>`count(*)::int`,
+      queued: sql<number>`count(*) filter (where ${generationAttempts.status} = 'queued')::int`,
       inProgress: sql<number>`count(*) filter (where ${generationAttempts.status} = 'in_progress')::int`,
       completed: sql<number>`count(*) filter (where ${generationAttempts.status} = 'completed')::int`,
       failed: sql<number>`count(*) filter (where ${generationAttempts.status} = 'failed')::int`,
-      cancelled: sql<number>`0::int`, incomplete: sql<number>`0::int`,
+      cancelled: sql<number>`count(*) filter (where ${generationAttempts.status} = 'cancelled')::int`,
+      incomplete: sql<number>`count(*) filter (where ${generationAttempts.status} = 'incomplete')::int`,
       inputTokens: sql<number>`coalesce(sum(${generationAttempts.inputTokens}), 0)::bigint`,
       cachedInputTokens: sql<number>`coalesce(sum(${generationAttempts.cachedInputTokens}), 0)::bigint`,
       cacheWriteTokens: sql<number>`coalesce(sum(${generationAttempts.cacheWriteTokens}), 0)::bigint`,
@@ -309,15 +332,15 @@ export async function registerAdminUsageRoutes(app: FastifyInstance): Promise<vo
       averageLatencyMs: sql<number>`coalesce(avg(${generationAttempts.durationMs}) filter (where ${generationAttempts.durationMs} is not null), 0)::float8`,
       averageTokensPerSecond: sql<number>`coalesce(avg((${generationAttempts.outputTokens} * 1000.0) / nullif(${generationAttempts.durationMs}, 0)) filter (where ${generationAttempts.durationMs} is not null), 0)::float8`,
       successRate: sql<number>`coalesce(count(*) filter (where ${generationAttempts.status} = 'completed')::float / nullif(count(*) filter (where ${generationAttempts.status} <> 'in_progress'), 0), 0)::float8`,
-    }).from(generationAttempts).innerJoin(requestLogs, eq(generationAttempts.requestLogId, requestLogs.id)).where(where)
-    const daily = await db.select({
+    }).from(generationAttempts).innerJoin(requestLogs, eq(generationAttempts.requestLogId, requestLogs.id)).where(where),
+    db.select({
       day: sql<string>`date_trunc('day', ${generationAttempts.startedAt})::text`, modelId: generationAttempts.modelId,
       calls: sql<number>`count(*)::int`, costMicros: sql<number>`coalesce(sum(${generationAttempts.costMicros}), 0)::bigint`,
       tokens: sql<number>`coalesce(sum(${generationAttempts.inputTokens} + ${generationAttempts.outputTokens}), 0)::bigint`,
-    }).from(generationAttempts).innerJoin(requestLogs, eq(generationAttempts.requestLogId, requestLogs.id)).where(where).groupBy(sql`date_trunc('day', ${generationAttempts.startedAt})`, generationAttempts.modelId).orderBy(asc(sql`date_trunc('day', ${generationAttempts.startedAt})`))
-    const topModels = await db.select({ id: generationAttempts.modelId, calls: sql<number>`count(*)::int`, costMicros: sql<number>`coalesce(sum(${generationAttempts.costMicros}), 0)::bigint` }).from(generationAttempts).innerJoin(requestLogs, eq(generationAttempts.requestLogId, requestLogs.id)).where(where).groupBy(generationAttempts.modelId).orderBy(desc(sql`count(*)`)).limit(10)
-    const topUsers = await db.select({ id: users.id, name: users.name, email: users.email, calls: sql<number>`count(*)::int`, costMicros: sql<number>`coalesce(sum(${generationAttempts.costMicros}), 0)::bigint` }).from(generationAttempts).innerJoin(requestLogs, eq(generationAttempts.requestLogId, requestLogs.id)).innerJoin(users, eq(requestLogs.userId, users.id)).where(where).groupBy(users.id).orderBy(desc(sql`count(*)`)).limit(10)
-    const topApiKeys = await db.select({ id: apiKeys.id, name: apiKeys.name, prefix: apiKeys.prefix, calls: sql<number>`count(*)::int`, costMicros: sql<number>`coalesce(sum(${generationAttempts.costMicros}), 0)::bigint` }).from(generationAttempts).innerJoin(requestLogs, eq(generationAttempts.requestLogId, requestLogs.id)).innerJoin(apiKeys, eq(requestLogs.apiKeyId, apiKeys.id)).where(where).groupBy(apiKeys.id).orderBy(desc(sql`count(*)`)).limit(10)
+    }).from(generationAttempts).innerJoin(requestLogs, eq(generationAttempts.requestLogId, requestLogs.id)).where(where).groupBy(sql`1`, generationAttempts.modelId).orderBy(asc(sql`1`)),
+    db.select({ id: generationAttempts.modelId, calls: sql<number>`count(*)::int`, costMicros: sql<number>`coalesce(sum(${generationAttempts.costMicros}), 0)::bigint` }).from(generationAttempts).innerJoin(requestLogs, eq(generationAttempts.requestLogId, requestLogs.id)).where(where).groupBy(generationAttempts.modelId).orderBy(desc(sql`count(*)`)).limit(10),
+    db.select({ id: users.id, name: users.name, email: users.email, calls: sql<number>`count(*)::int`, costMicros: sql<number>`coalesce(sum(${generationAttempts.costMicros}), 0)::bigint` }).from(generationAttempts).innerJoin(requestLogs, eq(generationAttempts.requestLogId, requestLogs.id)).innerJoin(users, eq(requestLogs.userId, users.id)).where(where).groupBy(users.id).orderBy(desc(sql`count(*)`)).limit(10),
+    db.select({ id: apiKeys.id, name: apiKeys.name, prefix: apiKeys.prefix, calls: sql<number>`count(*)::int`, costMicros: sql<number>`coalesce(sum(${generationAttempts.costMicros}), 0)::bigint` }).from(generationAttempts).innerJoin(requestLogs, eq(generationAttempts.requestLogId, requestLogs.id)).innerJoin(apiKeys, eq(requestLogs.apiKeyId, apiKeys.id)).where(where).groupBy(apiKeys.id).orderBy(desc(sql`count(*)`)).limit(10)])
     return { summary, daily, topModels, topUsers, topApiKeys }
   })
 
@@ -326,10 +349,10 @@ export async function registerAdminUsageRoutes(app: FastifyInstance): Promise<vo
     const input = querySchema.parse(request.query)
     // Captured agent payloads can be large and repeat across every model turn.
     // Keep them out of the usage list query, which only needs request metadata.
-    const rows = await db.select({ call: generationAttempts, log: { id: requestLogs.id, responseId: requestLogs.responseId, stickyFallbackUsed: requestLogs.stickyFallbackUsed, ocrStatus: requestLogs.ocrStatus }, user: { id: users.id, name: users.name, email: users.email }, apiKey: { id: apiKeys.id, name: apiKeys.name, prefix: apiKeys.prefix }, modelName: models.name })
+    const rows = await db.select({ startedAtText: sql<string>`${generationAttempts.startedAt}::text`, call: generationAttempts, log: { id: requestLogs.id, responseId: requestLogs.responseId, stickyFallbackUsed: requestLogs.stickyFallbackUsed, ocrStatus: requestLogs.ocrStatus }, user: { id: users.id, name: users.name, email: users.email }, apiKey: { id: apiKeys.id, name: apiKeys.name, prefix: apiKeys.prefix }, modelName: models.name })
       .from(generationAttempts).innerJoin(requestLogs, eq(generationAttempts.requestLogId, requestLogs.id)).innerJoin(users, eq(requestLogs.userId, users.id)).leftJoin(apiKeys, eq(requestLogs.apiKeyId, apiKeys.id)).leftJoin(models, eq(generationAttempts.modelId, models.id))
-      .where(and(...filters(input, true))).orderBy(desc(generationAttempts.startedAt)).limit(input.limit + 1)
-    const page = rows.slice(0, input.limit).map(({ call, log, ...relations }) => ({
+      .where(and(...filters(input, true))).orderBy(desc(generationAttempts.startedAt), desc(generationAttempts.id)).limit(input.limit + 1)
+    const page = rows.slice(0, input.limit).map(({ call, log, startedAtText: _startedAtText, ...relations }) => ({
       id: call.id, requestLogId: log.id, responseId: log.responseId, origin: call.source, purpose: call.purpose,
       status: call.status, requestedModelId: call.upstreamModelId ?? call.modelId, actualModelId: call.modelId,
       currentModelId: call.modelId, retryAttempt: call.retryAttempt, turnNumber: call.turnNumber,
@@ -342,12 +365,13 @@ export async function registerAdminUsageRoutes(app: FastifyInstance): Promise<vo
       tokensPerSecond: call.durationMs ? (call.outputTokens * 1000) / call.durationMs : null,
       createdAt: call.startedAt.toISOString(), ...relations,
     }))
-    return { data: page, nextCursor: rows.length > input.limit ? rows[input.limit - 1]!.call.startedAt.toISOString() : null }
+    const last = rows[input.limit - 1]
+    return { data: page, nextCursor: rows.length > input.limit && last ? `${last.startedAtText}|${last.call.id}` : null }
   })
 
   app.get('/api/admin/usage/requests/:id', async (request) => {
     requireAdmin(request)
-    const { id } = request.params as { id: string }
+    const { id } = z.object({ id: z.uuid() }).parse(request.params)
     const [call] = await db.select().from(generationAttempts).where(eq(generationAttempts.id, id)).limit(1)
     if (!call) throw notFound('Model call')
     const [log] = await db.select().from(requestLogs).where(eq(requestLogs.id, call.requestLogId)).limit(1)

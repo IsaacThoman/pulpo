@@ -16,6 +16,7 @@ import {
   timestamp,
   uniqueIndex,
   uuid,
+  type AnyPgColumn,
 } from 'drizzle-orm/pg-core'
 
 const halfvec = customType<{ data: number[]; driverData: string }>({
@@ -25,6 +26,12 @@ const halfvec = customType<{ data: number[]; driverData: string }>({
 })
 
 const tsvector = customType<{ data: string }>({ dataType: () => 'tsvector' })
+
+const bytea = customType<{ data: Uint8Array; driverData: Buffer }>({
+  dataType: () => 'bytea',
+  toDriver: (value) => Buffer.from(value.buffer, value.byteOffset, value.byteLength),
+  fromDriver: (value) => new Uint8Array(value.buffer, value.byteOffset, value.byteLength),
+})
 
 const timestamps = {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -450,6 +457,8 @@ export const chats = pgTable('chats', {
   pinned: boolean('pinned').notNull().default(false),
   sortOrder: integer('sort_order').notNull().default(0),
   temporary: boolean('temporary').notNull().default(false),
+  // Files items the agent may use: file_nodes ids (folders include subfolders), or 'root' for all files.
+  fileScopeIds: jsonb('file_scope_ids').$type<string[]>().notNull().default([]),
   activeBranchLeafId: uuid('active_branch_leaf_id'),
   activeResponseId: uuid('active_response_id'),
   expiresAt: timestamp('expires_at', { withTimezone: true }),
@@ -520,6 +529,10 @@ export const queuedMessages = pgTable('queued_messages', {
   presetSelections: jsonb('preset_selections').$type<Record<string, string>>().notNull().default({}),
   agentMode: boolean('agent_mode').notNull().default(false),
   attachmentIds: jsonb('attachment_ids').$type<string[]>().notNull().default([]),
+  // Analytics attribution captured when the message was queued, applied when it dispatches.
+  clientPlatform: text('client_platform'),
+  clientVersion: text('client_version'),
+  usedDictation: boolean('used_dictation'),
   position: integer('position').notNull(),
   status: text('status').notNull().default('pending'),
   error: text('error'),
@@ -676,6 +689,8 @@ export const requestLogs = pgTable('request_logs', {
   uniqueIndex('request_logs_response_unique').on(table.responseId),
   index('request_logs_created_idx').on(table.createdAt),
   index('request_logs_status_idx').on(table.status),
+  index('request_logs_user_created_idx').on(table.userId, table.createdAt),
+  index('request_logs_api_key_idx').on(table.apiKeyId).where(sql`${table.apiKeyId} is not null`),
   index('request_logs_payload_expiry_idx').on(table.payloadExpiresAt),
   index('request_logs_retained_idx').on(table.payloadExpiresAt, table.id).where(sql`${table.captureDetailedPayloads} or ${table.requestPayload} is not null or ${table.responsePayload} is not null`),
 ])
@@ -705,7 +720,10 @@ export const generationAttempts = pgTable('generation_attempts', {
   costMicros: bigint('cost_micros', { mode: 'number' }).notNull().default(0),
   startedAt: timestamp('started_at', { withTimezone: true }).notNull().defaultNow(),
   completedAt: timestamp('completed_at', { withTimezone: true }),
-}, (table) => [index('generation_attempts_log_idx').on(table.requestLogId, table.startedAt)])
+}, (table) => [
+  index('generation_attempts_log_idx').on(table.requestLogId, table.startedAt),
+  index('generation_attempts_started_idx').on(table.startedAt),
+])
 
 export const ocrAttempts = pgTable('ocr_attempts', {
   id: uuid('id').primaryKey(),
@@ -815,6 +833,103 @@ export const userMemoryDocumentRevisions = pgTable('user_memory_document_revisio
   check('user_memory_document_revisions_content_length_check', sql`char_length(${table.content}) <= 16000`),
   check('user_memory_document_revisions_revision_check', sql`${table.revision} >= 0`),
   check('user_memory_document_revisions_editor_check', sql`${table.editor} in ('user', 'agent')`),
+])
+
+/** Account-owned Files tree. Distinct from `folders`, which only groups chats. */
+export const fileNodes = pgTable('file_nodes', {
+  id: uuid('id').primaryKey(),
+  // Access always resolves through the owner today; sharing will add grants beside it.
+  ownerUserId: uuid('owner_user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  parentId: uuid('parent_id').references((): AnyPgColumn => fileNodes.id, { onDelete: 'cascade' }),
+  kind: text('kind').notNull(),
+  name: text('name').notNull(),
+  status: text('status').notNull().default('ready'),
+  mimeType: text('mime_type'),
+  sizeBytes: bigint('size_bytes', { mode: 'number' }).notNull().default(0),
+  objectKey: text('object_key'),
+  checksum: text('checksum'),
+  trashedAt: timestamp('trashed_at', { withTimezone: true }),
+  // The node the user trashed; its whole subtree shares this id so restore returns the batch.
+  trashRootId: uuid('trash_root_id'),
+  revision: integer('revision').notNull().default(0),
+  ...timestamps,
+}, (table) => [
+  uniqueIndex('file_nodes_live_name_unique').on(
+    table.ownerUserId,
+    sql`coalesce(${table.parentId}, '00000000-0000-0000-0000-000000000000'::uuid)`,
+    sql`lower(${table.name})`,
+  ).where(sql`${table.trashedAt} is null`),
+  index('file_nodes_owner_parent_idx').on(table.ownerUserId, table.parentId).where(sql`${table.trashedAt} is null`),
+  index('file_nodes_owner_trash_idx').on(table.ownerUserId, table.trashRootId).where(sql`${table.trashedAt} is not null`),
+  index('file_nodes_object_key_idx').on(table.objectKey),
+  check('file_nodes_kind_check', sql`${table.kind} in ('folder', 'doc', 'blob')`),
+  check('file_nodes_status_check', sql`${table.status} in ('pending', 'ready')`),
+  check('file_nodes_name_check', sql`char_length(${table.name}) between 1 and 255`),
+  check('file_nodes_size_check', sql`${table.sizeBytes} >= 0`),
+  check('file_nodes_blob_check', sql`(${table.kind} = 'blob') = (${table.objectKey} is not null)`),
+])
+
+/** Collaborative document state: a compacted Yjs update plus Markdown derived from it. */
+export const fileDocs = pgTable('file_docs', {
+  nodeId: uuid('node_id').primaryKey().references(() => fileNodes.id, { onDelete: 'cascade' }),
+  state: bytea('state').notNull(),
+  stateBytes: integer('state_bytes').notNull(),
+  // Log rows not yet folded into `state`; drives compaction scheduling.
+  pendingUpdates: integer('pending_updates').notNull().default(0),
+  markdown: text('markdown').notNull().default(''),
+  schemaVersion: integer('schema_version').notNull(),
+  lastEditedAt: timestamp('last_edited_at', { withTimezone: true }).notNull().defaultNow(),
+  ...timestamps,
+})
+
+/** Append-only Yjs updates awaiting compaction. Loading a doc merges `state` with every remaining row. */
+export const fileDocUpdates = pgTable('file_doc_updates', {
+  seq: bigint('seq', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+  nodeId: uuid('node_id').notNull().references(() => fileDocs.nodeId, { onDelete: 'cascade' }),
+  update: bytea('update').notNull(),
+  byteSize: integer('byte_size').notNull(),
+  origin: text('origin').notNull(),
+  actorUserId: uuid('actor_user_id').references(() => users.id, { onDelete: 'set null' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('file_doc_updates_node_seq_idx').on(table.nodeId, table.seq),
+  check('file_doc_updates_origin_check', sql`${table.origin} in ('client', 'agent', 'import', 'restore')`),
+])
+
+/**
+ * How a folder's grid view is arranged: item positions and whether they snap to cells. One row
+ * per folder that has been arranged; `folder_id` null is My files.
+ */
+export const fileFolderLayouts = pgTable('file_folder_layouts', {
+  id: uuid('id').primaryKey(),
+  ownerUserId: uuid('owner_user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  folderId: uuid('folder_id').references(() => fileNodes.id, { onDelete: 'cascade' }),
+  snapToGrid: boolean('snap_to_grid').notNull().default(true),
+  positions: jsonb('positions').$type<Record<string, { x: number; y: number }>>().notNull().default({}),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex('file_folder_layouts_owner_folder_unique').on(
+    table.ownerUserId,
+    sql`coalesce(${table.folderId}, '00000000-0000-0000-0000-000000000000'::uuid)`,
+  ),
+])
+
+/**
+ * What an agent response changed in Files, so the whole response can be undone: the Markdown a
+ * document had before the response first edited it, or an item the response created.
+ */
+export const fileAgentChanges = pgTable('file_agent_changes', {
+  id: uuid('id').primaryKey(),
+  responseId: uuid('response_id').notNull().references(() => responses.id, { onDelete: 'cascade' }),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  nodeId: uuid('node_id').notNull().references(() => fileNodes.id, { onDelete: 'cascade' }),
+  kind: text('kind').notNull(),
+  beforeMarkdown: text('before_markdown'),
+  revertedAt: timestamp('reverted_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex('file_agent_changes_response_node_unique').on(table.responseId, table.nodeId),
+  check('file_agent_changes_kind_check', sql`${table.kind} in ('edit', 'create')`),
 ])
 
 export const episodicMemoryGenerations = pgTable('episodic_memory_generations', {
@@ -948,17 +1063,21 @@ export const budgetReservations = pgTable('budget_reservations', {
   fiveHourPeriodStart: timestamp('five_hour_period_start', { withTimezone: true }),
   fiveHourReservedMicros: bigint('five_hour_reserved_micros', { mode: 'number' }).notNull().default(0),
   balanceReservedMicros: bigint('balance_reserved_micros', { mode: 'number' }).notNull().default(0),
+  // Drawn from pool members' shared Fat allowances; split per owner in budget_reservation_allowance_funders.
+  sharedReservedMicros: bigint('shared_reserved_micros', { mode: 'number' }).notNull().default(0),
+  sharedFiveHourPeriodStart: timestamp('shared_five_hour_period_start', { withTimezone: true }),
   settledAmountMicros: bigint('settled_amount_micros', { mode: 'number' }),
   settledWeeklyMicros: bigint('settled_weekly_micros', { mode: 'number' }),
   settledFiveHourMicros: bigint('settled_five_hour_micros', { mode: 'number' }),
   settledBalanceMicros: bigint('settled_balance_micros', { mode: 'number' }),
+  settledSharedMicros: bigint('settled_shared_micros', { mode: 'number' }),
   status: reservationStatusEnum('status').notNull().default('pending'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   settledAt: timestamp('settled_at', { withTimezone: true }),
 }, (table) => [
   uniqueIndex('reservation_response_unique').on(table.responseId),
   index('reservation_user_status_idx').on(table.userId, table.status),
-  check('reservation_source_split_check', sql`${table.weeklyReservedMicros} >= 0 and ${table.balanceReservedMicros} >= 0 and ${table.weeklyReservedMicros} + ${table.balanceReservedMicros} = ${table.amountMicros}`),
+  check('reservation_source_split_check', sql`${table.weeklyReservedMicros} >= 0 and ${table.sharedReservedMicros} >= 0 and ${table.balanceReservedMicros} >= 0 and ${table.weeklyReservedMicros} + ${table.sharedReservedMicros} + ${table.balanceReservedMicros} = ${table.amountMicros}`),
   check('reservation_five_hour_match_check', sql`${table.fiveHourReservedMicros} >= 0 and ${table.fiveHourReservedMicros} = ${table.weeklyReservedMicros}`),
 ])
 
@@ -971,6 +1090,19 @@ export const budgetReservationFunders = pgTable('budget_reservation_funders', {
   primaryKey({ columns: [table.reservationId, table.userId] }),
   index('budget_reservation_funders_user_idx').on(table.userId),
   check('budget_reservation_funders_amount_check', sql`${table.reservedMicros} >= 0 and (${table.settledMicros} is null or ${table.settledMicros} >= 0)`),
+])
+
+/** Pool owners whose shared Fat allowance funds part of a member's reservation. */
+export const budgetReservationAllowanceFunders = pgTable('budget_reservation_allowance_funders', {
+  reservationId: uuid('reservation_id').notNull().references(() => budgetReservations.id, { onDelete: 'cascade' }),
+  ownerUserId: uuid('owner_user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
+  weeklyPeriodStart: timestamp('weekly_period_start', { withTimezone: true }).notNull(),
+  reservedMicros: bigint('reserved_micros', { mode: 'number' }).notNull(),
+  settledMicros: bigint('settled_micros', { mode: 'number' }),
+}, (table) => [
+  primaryKey({ columns: [table.reservationId, table.ownerUserId] }),
+  index('budget_reservation_allowance_funders_owner_idx').on(table.ownerUserId, table.weeklyPeriodStart),
+  check('budget_reservation_allowance_funders_amount_check', sql`${table.reservedMicros} >= 0 and (${table.settledMicros} is null or ${table.settledMicros} >= 0)`),
 ])
 
 export const creditLedger = pgTable('credit_ledger', {
@@ -1004,12 +1136,101 @@ export const usageEvents = pgTable('usage_events', {
   weeklyCostMicros: bigint('weekly_cost_micros', { mode: 'number' }).notNull().default(0),
   fiveHourCostMicros: bigint('five_hour_cost_micros', { mode: 'number' }).notNull().default(0),
   balanceCostMicros: bigint('balance_cost_micros', { mode: 'number' }).notNull().default(0),
+  sharedCostMicros: bigint('shared_cost_micros', { mode: 'number' }).notNull().default(0),
+  // Itemized charges snapshotted at settlement; null for events settled before itemization.
+  costBreakdown: jsonb('cost_breakdown').$type<import('@pulpo/contracts').UsageCostItem[]>(),
   poolBalanceAfterMicros: bigint('pool_balance_after_micros', { mode: 'number' }),
   weeklyPeriodStart: timestamp('weekly_period_start', { withTimezone: true }),
   fiveHourPeriodStart: timestamp('five_hour_period_start', { withTimezone: true }),
   latencyMs: integer('latency_ms').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-}, (table) => [uniqueIndex('usage_response_unique').on(table.responseId), index('usage_user_created_idx').on(table.userId, table.createdAt)])
+}, (table) => [
+  uniqueIndex('usage_response_unique').on(table.responseId),
+  index('usage_user_created_idx').on(table.userId, table.createdAt),
+  index('usage_created_idx').on(table.createdAt),
+])
+
+/**
+ * One row per response for admin analytics. Rows are written at admission and
+ * finalized once the response settles. Unlike request logs they survive chat
+ * purges (the response link is cleared), so usage history stays complete.
+ */
+export const requestAnalytics = pgTable('request_analytics', {
+  id: uuid('id').primaryKey(),
+  responseId: uuid('response_id').references(() => responses.id, { onDelete: 'set null' }),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  apiKeyId: uuid('api_key_id').references(() => apiKeys.id, { onDelete: 'set null' }),
+  poolId: uuid('pool_id').references(() => pools.id, { onDelete: 'set null' }),
+  // Model ids are plain text so deleting a catalog model keeps its history.
+  requestedModelId: text('requested_model_id').notNull(),
+  answeredModelId: text('answered_model_id'),
+  plan: text('plan'),
+  origin: text('origin').notNull(),
+  clientPlatform: text('client_platform').notNull().default('unknown'),
+  clientVersion: text('client_version'),
+  // Null settings mean they were not captured (backfilled history).
+  presetSelections: jsonb('preset_selections').$type<Record<string, string>>(),
+  reasoningEffort: text('reasoning_effort'),
+  verbosity: text('verbosity'),
+  temperature: doublePrecision('temperature'),
+  maxOutputTokens: integer('max_output_tokens'),
+  instructionPresetIds: jsonb('instruction_preset_ids').$type<string[]>(),
+  customInstructions: boolean('custom_instructions'),
+  memoryEnabled: boolean('memory_enabled'),
+  agentMode: boolean('agent_mode').notNull().default(false),
+  branchReason: text('branch_reason'),
+  attachmentCount: integer('attachment_count'),
+  attachmentKinds: jsonb('attachment_kinds').$type<string[]>(),
+  usedDictation: boolean('used_dictation'),
+  inputChars: integer('input_chars'),
+  status: text('status').notNull().default('queued'),
+  errorCategory: text('error_category'),
+  retryCount: integer('retry_count').notNull().default(0),
+  fallbackUsed: boolean('fallback_used').notNull().default(false),
+  firstTokenMs: integer('first_token_ms'),
+  durationMs: integer('duration_ms'),
+  inputTokens: integer('input_tokens').notNull().default(0),
+  cachedInputTokens: integer('cached_input_tokens').notNull().default(0),
+  outputTokens: integer('output_tokens').notNull().default(0),
+  reasoningTokens: integer('reasoning_tokens').notNull().default(0),
+  costMicros: bigint('cost_micros', { mode: 'number' }).notNull().default(0),
+  toolCalls: integer('tool_calls').notNull().default(0),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  finalizedAt: timestamp('finalized_at', { withTimezone: true }),
+}, (table) => [
+  uniqueIndex('request_analytics_response_unique').on(table.responseId),
+  index('request_analytics_created_idx').on(table.createdAt),
+  index('request_analytics_user_created_idx').on(table.userId, table.createdAt),
+  index('request_analytics_pending_idx').on(table.createdAt).where(sql`${table.finalizedAt} is null`),
+])
+
+export const requestAnalyticsTools = pgTable('request_analytics_tools', {
+  analyticsId: uuid('analytics_id').notNull().references(() => requestAnalytics.id, { onDelete: 'cascade' }),
+  toolName: text('tool_name').notNull(),
+  calls: integer('calls').notNull(),
+  failures: integer('failures').notNull().default(0),
+  costMicros: bigint('cost_micros', { mode: 'number' }).notNull().default(0),
+  // Copied from the parent row so range queries avoid a join.
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.analyticsId, table.toolName] }),
+  index('request_analytics_tools_created_idx').on(table.createdAt),
+])
+
+/** Hourly request counts by dimension, refreshed from request_analytics for long-range charts. */
+export const analyticsHourlyRollups = pgTable('analytics_hourly_rollups', {
+  hour: timestamp('hour', { withTimezone: true }).notNull(),
+  modelId: text('model_id').notNull(),
+  clientPlatform: text('client_platform').notNull(),
+  origin: text('origin').notNull(),
+  plan: text('plan').notNull(),
+  agentMode: boolean('agent_mode').notNull(),
+  requests: integer('requests').notNull(),
+  failures: integer('failures').notNull(),
+  inputTokens: bigint('input_tokens', { mode: 'number' }).notNull(),
+  outputTokens: bigint('output_tokens', { mode: 'number' }).notNull(),
+  costMicros: bigint('cost_micros', { mode: 'number' }).notNull(),
+}, (table) => [primaryKey({ name: 'analytics_hourly_rollups_pk', columns: [table.hour, table.modelId, table.clientPlatform, table.origin, table.plan, table.agentMode] })])
 
 export const billingAccounts = pgTable('billing_accounts', {
   userId: uuid('user_id').primaryKey().references(() => users.id, { onDelete: 'cascade' }),
@@ -1179,6 +1400,28 @@ export const fiveHourUsagePeriods = pgTable('five_hour_usage_periods', {
   primaryKey({ columns: [table.userId, table.periodStart] }),
   index('five_hour_usage_periods_active_idx').on(table.userId, table.periodStart),
   check('five_hour_usage_periods_spent_check', sql`${table.spentMicros} >= 0`),
+])
+
+/** How much of an owner's weekly allowance pool members used, capped by the shared percentage. */
+export const sharedAllowancePeriods = pgTable('shared_allowance_periods', {
+  ownerUserId: uuid('owner_user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  periodStart: timestamp('period_start', { withTimezone: true }).notNull(),
+  spentMicros: bigint('spent_micros', { mode: 'number' }).notNull().default(0),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  primaryKey({ columns: [table.ownerUserId, table.periodStart] }),
+  check('shared_allowance_periods_spent_check', sql`${table.spentMicros} >= 0`),
+])
+
+/** Each member's own five-hour window for drawing on shared allowances. */
+export const sharedFiveHourUsagePeriods = pgTable('shared_five_hour_usage_periods', {
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  periodStart: timestamp('period_start', { withTimezone: true }).notNull(),
+  spentMicros: bigint('spent_micros', { mode: 'number' }).notNull().default(0),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  primaryKey({ columns: [table.userId, table.periodStart] }),
+  check('shared_five_hour_usage_periods_spent_check', sql`${table.spentMicros} >= 0`),
 ])
 
 export const dailyUsageRollups = pgTable('daily_usage_rollups', {

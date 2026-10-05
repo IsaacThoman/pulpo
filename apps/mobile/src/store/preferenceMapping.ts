@@ -3,6 +3,8 @@ export type ThemePreference = 'system' | 'light' | 'dark'
 export type TextSizePreference = 'default' | 'large' | 'extra-large'
 export type TrashRetentionPreference = 'instant' | '24h' | '7d' | '30d' | '90d' | 'indefinite'
 export type AutomaticChatExpirationPreference = 'disabled' | '24h' | '7d'
+/** Unfiled history chats: manual order, or most recently updated first under time headings. */
+export type ChatSortModePreference = 'default' | 'recent'
 
 export interface Preferences {
   imageGeneration: ImageGenerationPreferences
@@ -24,6 +26,7 @@ export interface Preferences {
   trashRetention: TrashRetentionPreference
   automaticChatExpiration: AutomaticChatExpirationPreference
   newChatAutoExpire: boolean
+  chatSortMode: ChatSortModePreference
   favoriteModelIds: string[]
   providerOrder: string[]
   defaultModelId: string | null
@@ -38,7 +41,7 @@ export const defaultPreferences: Preferences = {
   speech: speechPreferencesSchema.parse(undefined),
   theme: 'system', textSize: 'default', streamResponses: true, showPromptSuggestions: true, showModelWarnings: true, modelWarningDismissals: {}, showReasoning: true, memoryEnabled: false,
   haptics: true, composerSyncEnabled: true, sendWithEnter: true, attachmentCacheMb: 256, localChatLimit: 50,
-  trashRetention: '30d', automaticChatExpiration: '24h', newChatAutoExpire: false, favoriteModelIds: [], providerOrder: [], defaultModelId: null, agentModes: {},
+  trashRetention: '30d', automaticChatExpiration: '24h', newChatAutoExpire: false, chatSortMode: 'default', favoriteModelIds: [], providerOrder: [], defaultModelId: null, agentModes: {},
   generation: {},
 }
 
@@ -77,6 +80,7 @@ export function preferencesFromServer(values: Record<string, unknown>): Partial<
     result.automaticChatExpiration = values.automaticChatExpiration as AutomaticChatExpirationPreference
   }
   if (typeof values.newChatAutoExpire === 'boolean') result.newChatAutoExpire = values.newChatAutoExpire
+  if (values.chatSortMode === 'default' || values.chatSortMode === 'recent') result.chatSortMode = values.chatSortMode
   return result
 }
 
@@ -105,7 +109,7 @@ function validAgentModes(value: unknown): Preferences['agentModes'] {
 
 export function serverPreferenceKey(key: keyof Preferences): string | null {
   return key === 'attachmentCacheMb' ? 'localAttachmentCacheMb'
-    : ['imageGeneration', 'speech', 'composerSyncEnabled', 'theme', 'sendWithEnter', 'streamResponses', 'showPromptSuggestions', 'showModelWarnings', 'modelWarningDismissals', 'showReasoning', 'memoryEnabled', 'localChatLimit', 'trashRetention', 'automaticChatExpiration', 'newChatAutoExpire', 'defaultModelId', 'favoriteModelIds', 'providerOrder', 'generation', 'agentModes'].includes(key)
+    : ['imageGeneration', 'speech', 'composerSyncEnabled', 'theme', 'sendWithEnter', 'streamResponses', 'showPromptSuggestions', 'showModelWarnings', 'modelWarningDismissals', 'showReasoning', 'memoryEnabled', 'localChatLimit', 'trashRetention', 'automaticChatExpiration', 'newChatAutoExpire', 'chatSortMode', 'defaultModelId', 'favoriteModelIds', 'providerOrder', 'generation', 'agentModes'].includes(key)
       ? key
       : null
 }

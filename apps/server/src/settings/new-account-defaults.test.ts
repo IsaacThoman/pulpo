@@ -14,9 +14,10 @@ describe('new-account model defaults', () => {
       modelWarningDismissals: {},
       automaticChatExpiration: '24h',
       newChatAutoExpire: false,
+      chatSortMode: 'default',
       favoriteModelIds: [],
       providerOrder: [],
-      sidebarPins: { usage: false, billing: false, friends: false, apiKeys: false },
+      sidebarPins: { searchChats: true, files: true, usage: false, billing: false, friends: false, apiKeys: false },
     })
   })
 
@@ -36,9 +37,10 @@ describe('new-account model defaults', () => {
       modelWarningDismissals: {},
       automaticChatExpiration: '24h',
       newChatAutoExpire: false,
+      chatSortMode: 'default',
       favoriteModelIds: ['model-c', 'model-a', 'model-b'],
       providerOrder: [],
-      sidebarPins: { usage: false, billing: false, friends: false, apiKeys: false },
+      sidebarPins: { searchChats: true, files: true, usage: false, billing: false, friends: false, apiKeys: false },
     })
   })
 
