@@ -2157,6 +2157,7 @@ const esUi: Record<string, string> = {
   "This attachment could not be found. It may have been deleted with its chat.": "No se encontró este adjunto. Puede que se haya eliminado junto con su chat.",
   "Saved \"{{0}}\" to Files": "Se guardó \"{{0}}\" en Archivos",
   "Show": "Mostrar",
+  "Show in folder": "Mostrar en la carpeta",
   "Save {{0}}": "Guardar {{0}}",
   "Save to Files…": "Guardar en Archivos…",
   "Save \"{{0}}\" to Files": "Guardar \"{{0}}\" en Archivos",

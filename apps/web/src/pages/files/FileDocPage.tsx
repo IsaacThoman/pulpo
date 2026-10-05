@@ -3,7 +3,7 @@ import { Link, useParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { DOC_FRAGMENT_NAME } from '@pulpo/client-core/doc-schema'
 import { isMarkdownName, type FileConversionPreview, type FileNode } from '@pulpo/contracts'
-import { ChevronRight, CloudCheck, CloudOff, Download, HardDrive, Loader2, Pencil, TriangleAlert } from 'lucide-react'
+import { ChevronRight, CloudCheck, CloudOff, Download, FolderOpen, HardDrive, Loader2, Pencil, TriangleAlert } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { ui, uit } from '@/i18n/ui'
@@ -29,6 +29,7 @@ import type { DocSyncStatus } from '@/features/files/editor/socket-provider'
 import { useDocSession, type PresencePeer } from '@/features/files/editor/use-doc-session'
 import { FilePreviewBody } from '@/features/files/FilePreview'
 import { MarkdownConversionDialog } from '@/features/files/MarkdownConversionDialog'
+import { revealFile } from '@/features/files/reveal'
 import { PanelWindowButtons } from '@/features/side-panel/PanelControls'
 import { openBeside, panelContentPath, useMainNavigate } from '@/features/side-panel/use-panel-actions'
 import { SplitViewButton } from '@/features/side-panel/AgentActions'
@@ -201,6 +202,7 @@ function FileHeader({ node, ancestors, view, onDownload, children }: {
   const place = useMemo<FilesViewPlace | null>(() => node ? { layout: view.layout, view: { kind: 'file', id: node.id } } : null, [node, view.layout])
   const item = useMemo<AgentItem | null>(() => node ? { id: node.id } : null, [node])
   usePublishFilesView(place ?? { layout: view.layout, view: { kind: 'folder', id: null } }, item)
+  const goMain = useMainNavigate()
   return (
     <header className={cn('flex items-center gap-1.5 border-b px-4 py-1.5', view.layout === 'panel' ? 'side-panel-header' : 'mobile-page-content')}>
       <div className="min-w-0 flex-1">
@@ -208,6 +210,12 @@ function FileHeader({ node, ancestors, view, onDownload, children }: {
         {node ? <DocTitle node={node} /> : <div className="h-8" />}
       </div>
       {children}
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button variant="ghost" size="icon-sm" aria-label={ui("Show in folder")} disabled={!node} onClick={() => node && revealFile(node, goMain)}><FolderOpen /></Button>
+        </TooltipTrigger>
+        <TooltipContent side="bottom">{ui("Show in folder")}</TooltipContent>
+      </Tooltip>
       <Tooltip>
         <TooltipTrigger asChild>
           <Button variant="ghost" size="icon-sm" aria-label={ui("Download")} disabled={!node} onClick={onDownload}><Download /></Button>
