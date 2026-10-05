@@ -29,7 +29,7 @@ import type { DocSyncStatus } from '@/features/files/editor/socket-provider'
 import { useDocSession, type PresencePeer } from '@/features/files/editor/use-doc-session'
 import { FilePreviewBody } from '@/features/files/FilePreview'
 import { MarkdownConversionDialog } from '@/features/files/MarkdownConversionDialog'
-import { revealFile } from '@/features/files/reveal'
+import { revealFileInPlace } from '@/features/files/reveal'
 import { PanelWindowButtons } from '@/features/side-panel/PanelControls'
 import { openBeside, panelContentPath, useMainNavigate } from '@/features/side-panel/use-panel-actions'
 import { SplitViewButton } from '@/features/side-panel/AgentActions'
@@ -212,7 +212,7 @@ function FileHeader({ node, ancestors, view, onDownload, children }: {
       {children}
       <Tooltip>
         <TooltipTrigger asChild>
-          <Button variant="ghost" size="icon-sm" aria-label={ui("Show in folder")} disabled={!node} onClick={() => node && revealFile(node, goMain)}><FolderOpen /></Button>
+          <Button variant="ghost" size="icon-sm" aria-label={ui("Show in folder")} disabled={!node} onClick={() => node && revealFileInPlace(node, view.layout === 'panel', goMain)}><FolderOpen /></Button>
         </TooltipTrigger>
         <TooltipContent side="bottom">{ui("Show in folder")}</TooltipContent>
       </Tooltip>
