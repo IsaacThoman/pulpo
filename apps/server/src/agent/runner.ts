@@ -176,7 +176,8 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
   const [chatState] = await db.select({ temporary: chats.temporary, fileScopeIds: chats.fileScopeIds }).from(chats)
     .where(eq(chats.id, record.response.chatId)).limit(1)
   // Files attached to the chat, reachable only through the files tools and only while Files is on.
-  const fileScope = parseAuthSettings(attachmentSettingsRow?.value).filesEnabled
+  // Turns sent through admin chat access never reach the owner's Files.
+  const fileScope = parseAuthSettings(attachmentSettingsRow?.value).filesEnabled && record.response.origin !== 'admin_chat'
     ? await loadFileScope(record.response.userId, chatState?.fileScopeIds ?? [])
     : { roots: [], attached: [] }
   const fileScopeContext = fileScope.roots.length ? describeFileScope(fileScope) : ''
