@@ -272,6 +272,7 @@ export const providerConnections = pgTable('provider_connections', {
   id: uuid('id').primaryKey(),
   name: text('name').notNull(),
   type: text('type').notNull().default('openai'),
+  apiFormat: text('api_format').notNull().default('openai_responses'),
   baseUrl: text('base_url').notNull().default('https://api.openai.com/v1'),
   encryptedApiKey: text('encrypted_api_key').notNull(),
   organizationId: text('organization_id'),

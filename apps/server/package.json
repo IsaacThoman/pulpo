@@ -14,11 +14,13 @@
     "smoke:episodic-memory": "tsx scripts/episodic-memory-smoke.ts",
     "test": "vitest run",
     "test:public-api": "tsx scripts/public-api-smoke.ts",
+    "test:provider-formats": "tsx scripts/provider-formats-smoke.ts",
     "test:restore-memory": "node --max-old-space-size=96 --import tsx scripts/restore-memory-smoke.ts",
     "test:backup-memory": "node --max-old-space-size=96 --import tsx scripts/backup-memory-smoke.ts",
     "test:episodic-search": "PULPO_SEARCH_POSTGRES_TEST=1 vitest run src/episodic-memory/retrieval.postgres.test.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.123.0",
     "@aws-sdk/client-s3": "^3.972.0",
     "@aws-sdk/s3-request-presigner": "^3.972.0",
     "@earendil-works/pi-agent-core": "0.85.1",

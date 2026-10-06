@@ -15,10 +15,24 @@ type CacheAffinityMode = 'none' | 'openai_prompt_cache_key' | 'fireworks_session
 type CacheIsolationMode = 'none' | 'fireworks_prompt_cache_isolation'
 type CacheScope = 'agent_run' | 'chat' | 'user'
 type ToolResultImageMode = 'native' | 'user_message'
+type ApiFormat = 'openai_responses' | 'openai_chat_completions' | 'anthropic_messages'
+
+const DEFAULT_BASE_URLS: Record<ApiFormat, string> = {
+  openai_responses: 'https://api.openai.com/v1',
+  openai_chat_completions: 'https://api.openai.com/v1',
+  anthropic_messages: 'https://api.anthropic.com/v1',
+}
+
+function apiFormatLabel(format: ApiFormat): string {
+  if (format === 'openai_chat_completions') return ui("Chat Completions")
+  if (format === 'anthropic_messages') return ui("Anthropic Messages")
+  return ui("OpenAI Responses")
+}
 
 interface AdminProvider {
   id: string
   name: string
+  apiFormat?: ApiFormat
   baseUrl: string
   hasApiKey: boolean
   modelCount: number
@@ -43,6 +57,7 @@ import { ui, uit } from '@/i18n/ui'
 type Draft = {
   id?: string
   name: string
+  apiFormat: ApiFormat
   baseUrl: string
   apiKey: string
   apiKeyChanged: boolean
@@ -58,7 +73,8 @@ type Draft = {
 
 const emptyDraft = (): Draft => ({
   name: '',
-  baseUrl: 'https://api.openai.com/v1',
+  apiFormat: 'openai_responses',
+  baseUrl: DEFAULT_BASE_URLS.openai_responses,
   apiKey: '',
   apiKeyChanged: false,
   hasSavedApiKey: false,
@@ -102,6 +118,7 @@ export function AdminProvidersPage() {
     setDraft({
       id: p.id,
       name: p.name,
+      apiFormat: p.apiFormat ?? 'openai_responses',
       baseUrl: p.baseUrl,
       apiKey: '',
       apiKeyChanged: false,
@@ -158,7 +175,7 @@ export function AdminProvidersPage() {
     if (draft.id) {
       await apiRequest(`/api/admin/providers/${draft.id}`, {
         method: 'PATCH', body: {
-          name: draft.name.trim(), baseUrl: draft.baseUrl.trim(),
+          name: draft.name.trim(), apiFormat: draft.apiFormat, baseUrl: draft.baseUrl.trim(),
           cacheAffinityMode: draft.cacheAffinityMode,
           cacheAffinityScope: draft.cacheAffinityScope,
           cacheIsolationMode: draft.cacheIsolationMode,
@@ -172,7 +189,7 @@ export function AdminProvidersPage() {
     } else {
       await apiRequest('/api/admin/providers', {
         method: 'POST', body: {
-          name: draft.name.trim(), baseUrl: draft.baseUrl.trim(), apiKey: draft.apiKey, requestTimeoutMs: 120_000,
+          name: draft.name.trim(), apiFormat: draft.apiFormat, baseUrl: draft.baseUrl.trim(), apiKey: draft.apiKey, requestTimeoutMs: 120_000,
           cacheAffinityMode: draft.cacheAffinityMode,
           cacheAffinityScope: draft.cacheAffinityScope,
           cacheIsolationMode: draft.cacheIsolationMode,
@@ -209,6 +226,7 @@ export function AdminProvidersPage() {
             <thead>
               <tr className="border-b">
                 <th className="px-3 py-2">{ui("Name")}</th>
+                <th className="px-3 py-2">{ui("API format")}</th>
                 <th className="px-3 py-2">{ui("Base URL")}</th>
                 <th className="px-3 py-2">{ui("Linked models")}</th>
                 <th className="px-3 py-2">{ui("API key")}</th>
@@ -220,6 +238,9 @@ export function AdminProvidersPage() {
               {providers.map((p) => (
                 <tr key={p.id}>
                   <td className="px-3 py-2 font-medium">{p.name}</td>
+                  <td className="px-3 py-2">
+                    <Badge variant="outline" className="font-normal">{apiFormatLabel(p.apiFormat ?? 'openai_responses')}</Badge>
+                  </td>
                   <td className="max-w-[280px] truncate px-3 py-2">
                     <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-muted-foreground">
                       {p.baseUrl}
@@ -273,7 +294,7 @@ export function AdminProvidersPage() {
               ))}
               {!providers.length && (
                 <tr>
-                  <td colSpan={6} className="px-3 py-8 text-center text-muted-foreground"> {ui("No providers yet. Add one to reuse it across models.")} </td>
+                  <td colSpan={7} className="px-3 py-8 text-center text-muted-foreground"> {ui("No providers yet. Add one to reuse it across models.")} </td>
                 </tr>
               )}
             </tbody>
@@ -297,6 +318,28 @@ export function AdminProvidersPage() {
                   onChange={(e) => setDraft({ ...draft, name: e.target.value })}
                   autoFocus
                 />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="prov-format">{ui("API format")}</Label>
+                <Select
+                  value={draft.apiFormat}
+                  onValueChange={(apiFormat: ApiFormat) => setDraft({
+                    ...draft,
+                    apiFormat,
+                    // Follow the protocol's default endpoint unless the URL was customized.
+                    baseUrl: Object.values(DEFAULT_BASE_URLS).includes(draft.baseUrl.trim()) ? DEFAULT_BASE_URLS[apiFormat] : draft.baseUrl,
+                    // Anthropic has no prompt_cache_key; drop that transport when it is selected.
+                    cacheAffinityMode: apiFormat === 'anthropic_messages' && draft.cacheAffinityMode === 'openai_prompt_cache_key' ? 'none' : draft.cacheAffinityMode,
+                  })}
+                >
+                  <SelectTrigger id="prov-format" className="w-full"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="openai_responses">{ui("OpenAI Responses (/responses)")}</SelectItem>
+                    <SelectItem value="openai_chat_completions">{ui("OpenAI Chat Completions (/chat/completions)")}</SelectItem>
+                    <SelectItem value="anthropic_messages">{ui("Anthropic Messages (/messages)")}</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">{ui("The protocol Pulpo uses for text generation with this provider. Pulpo translates requests and responses, so chats and the public API work the same with every format.")}</p>
               </div>
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="space-y-1.5">
@@ -376,7 +419,7 @@ export function AdminProvidersPage() {
                 <Input
                   id="prov-url"
                   className="font-mono text-xs"
-                  placeholder="https://api.openai.com/v1"
+                  placeholder={DEFAULT_BASE_URLS[draft.apiFormat]}
                   value={draft.baseUrl}
                   onChange={(e) => setDraft({ ...draft, baseUrl: e.target.value })}
                 />
