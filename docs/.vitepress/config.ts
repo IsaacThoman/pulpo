@@ -8,6 +8,7 @@ const sidebar = [
       { text: 'Encrypted backups', link: '/backups' },
       { text: 'Speech and cloned voices', link: '/speech' },
       { text: 'Agent image generation', link: '/image-generation' },
+      { text: 'Provider API formats', link: '/provider-api-formats' },
       { text: 'Support', link: '/support' },
     ],
   },

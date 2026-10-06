@@ -4,8 +4,9 @@ import type { ResponseEvent } from '@pulpo/contracts'
 import { responses } from '../database/schema.js'
 import { AppError } from '../lib/errors.js'
 import { sanitizeOutputForClient } from '../responses/public-output.js'
+import { AnthropicStreamProjector, serializeAnthropicMessage } from './anthropic-codec.js'
 
-export type PublicApiProtocol = 'responses' | 'chat_completions' | 'completions'
+export type PublicApiProtocol = 'responses' | 'chat_completions' | 'completions' | 'anthropic_messages'
 
 export interface PublicGenerationRequest {
   protocol: PublicApiProtocol
@@ -588,8 +589,9 @@ function outputMessage(output: unknown) {
   return { content: content || null, refusal, toolCalls }
 }
 
-function finishReason(status: ResponseRow['status'], incompleteDetails: unknown, hasTools: boolean): 'stop' | 'length' | 'tool_calls' {
+function finishReason(status: ResponseRow['status'], incompleteDetails: unknown, hasTools: boolean): 'stop' | 'length' | 'tool_calls' | 'content_filter' {
   if (status === 'incomplete' && record(incompleteDetails)?.reason === 'max_output_tokens') return 'length'
+  if (status === 'incomplete' && record(incompleteDetails)?.reason === 'content_filter') return 'content_filter'
   return hasTools ? 'tool_calls' : 'stop'
 }
 
@@ -678,6 +680,10 @@ export function serializeCompletion(row: ResponseRow) {
 export interface StreamProjector {
   project(event: ResponseEvent): unknown[]
   finish(row: ResponseRow): unknown[]
+  /** SSE framing for one payload; defaults to a bare `data:` line. */
+  encode?(payload: unknown): string
+  /** Whether the stream ends with OpenAI's `data: [DONE]` sentinel (default true). */
+  readonly sendsDoneSentinel?: boolean
 }
 
 export class ResponsesStreamProjector implements StreamProjector {
@@ -856,11 +862,13 @@ export class LegacyCompletionStreamProjector extends CompletionStreamProjector {
 export function streamProjector(protocol: PublicApiProtocol, row: ResponseRow, includeUsage = false): StreamProjector {
   if (protocol === 'chat_completions') return new ChatCompletionStreamProjector(row, includeUsage)
   if (protocol === 'completions') return new LegacyCompletionStreamProjector(row)
+  if (protocol === 'anthropic_messages') return new AnthropicStreamProjector(row)
   return new ResponsesStreamProjector(row)
 }
 
 export function serializeProtocolResponse(protocol: PublicApiProtocol, row: ResponseRow) {
   if (protocol === 'chat_completions') return serializeChatCompletion(row)
   if (protocol === 'completions') return serializeCompletion(row)
+  if (protocol === 'anthropic_messages') return serializeAnthropicMessage(row)
   return serializePublicResponse(row)
 }

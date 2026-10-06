@@ -53,7 +53,22 @@ describe('public generation execution', () => {
     mocks.createResponse.mockResolvedValue(row)
   })
 
+  it('rejects unknown models before creating the temporary chat', async () => {
+    await expect(executePublicGeneration({
+      reply: reply(),
+      key: { id: 'key-1', userId: 'user-1' },
+      request: {
+        protocol: 'anthropic_messages', model: 'missing-model', rawInput: 'hello', displayInput: 'hello', parameters: {},
+        stream: false, background: false, publiclyStored: true, ignoredParameters: [], fingerprintValue: {},
+      },
+    })).rejects.toMatchObject({ statusCode: 400, code: 'model_not_found' })
+    expect(mocks.insertedChats).toEqual([])
+    expect(mocks.createResponse).not.toHaveBeenCalled()
+  })
+
   it('submits through createResponse with API-key attribution and the existing billing path', async () => {
+    // The idempotency lookup reads no `response` from this row; the model lookup finds the model.
+    mocks.selectRows = [{ id: 'model-1' }]
     const response = reply()
     await executePublicGeneration({
       reply: response,

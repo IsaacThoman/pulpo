@@ -45,11 +45,11 @@ async function handlers(): Promise<Map<string, Handler>> {
   return registered
 }
 
-function request(input: { body?: unknown; params?: unknown; idempotencyKey?: string } = {}): FastifyRequest {
+function request(input: { body?: unknown; params?: unknown; idempotencyKey?: string; headers?: Record<string, string> } = {}): FastifyRequest {
   return {
     body: input.body,
     params: input.params ?? {},
-    headers: input.idempotencyKey ? { 'idempotency-key': input.idempotencyKey } : {},
+    headers: { ...input.headers, ...(input.idempotencyKey ? { 'idempotency-key': input.idempotencyKey } : {}) },
     log: { info: mocks.logInfo },
   } as unknown as FastifyRequest
 }
@@ -148,5 +148,70 @@ describe('public OpenAI-compatible routes', () => {
     mocks.apiKeyModelAllowed.mockResolvedValue(false)
     await expect(handler(request({ params: { model: 'private' } }), {} as FastifyReply))
       .rejects.toMatchObject({ statusCode: 404 })
+  })
+
+  it('parses Anthropic Messages requests and delegates them to the shared generation pipeline', async () => {
+    const handler = (await handlers()).get('POST /v1/messages')!
+    const reply = {} as FastifyReply
+    await expect(handler(request({
+      body: { model: 'm', max_tokens: 64, system: 'Be brief.', messages: [{ role: 'user', content: 'hi' }], top_k: 3 },
+      idempotencyKey: 'anthropic-1',
+    }), reply)).resolves.toEqual({ ok: true })
+
+    expect(mocks.authenticateApiKey).toHaveBeenCalledWith(expect.anything(), 'responses')
+    expect(mocks.assertApiKeyModelAllowed).toHaveBeenCalledWith('key-1', 'm')
+    expect(mocks.executePublicGeneration).toHaveBeenCalledWith({
+      reply,
+      key: { id: 'key-1', userId: 'user-1' },
+      idempotencyKey: 'anthropic-1',
+      request: expect.objectContaining({
+        protocol: 'anthropic_messages', model: 'm', maxOutputTokens: 64,
+        rawInput: [{ role: 'user', content: 'hi' }], parameters: { instructions: 'Be brief.' },
+      }),
+    })
+    expect(mocks.logInfo).toHaveBeenCalledWith({ protocol: 'anthropic_messages', ignoredParameters: ['top_k'] }, 'Ignored OpenAI-compatible request parameters')
+  })
+
+  it('rejects invalid Anthropic Messages requests before queueing', async () => {
+    const handler = (await handlers()).get('POST /v1/messages')!
+    await expect(handler(request({ body: {
+      model: 'm', max_tokens: 64, messages: [{ role: 'user', content: 'hi' }], tools: [{ type: 'web_search_20250305', name: 'web_search' }],
+    } }), {} as FastifyReply)).rejects.toMatchObject({ statusCode: 400, param: 'tools.0.type' })
+    expect(mocks.executePublicGeneration).not.toHaveBeenCalled()
+  })
+
+  it('estimates Anthropic input tokens without requiring max_tokens', async () => {
+    mocks.selectRows = [{ id: 'm' }]
+    const handler = (await handlers()).get('POST /v1/messages/count_tokens')!
+    const result = await handler(request({ body: { model: 'm', messages: [{ role: 'user', content: 'hello there' }] } }), {} as FastifyReply) as { input_tokens: number }
+    expect(result.input_tokens).toBeGreaterThan(0)
+    expect(mocks.assertApiKeyModelAllowed).toHaveBeenCalledWith('key-1', 'm')
+    expect(mocks.executePublicGeneration).not.toHaveBeenCalled()
+
+    mocks.selectRows = []
+    await expect(handler(request({ body: { model: 'm', messages: [{ role: 'user', content: 'x' }] } }), {} as FastifyReply))
+      .rejects.toMatchObject({ statusCode: 404 })
+  })
+
+  it('lists models in the Anthropic shape when the anthropic-version header is present', async () => {
+    const first = { id: 'claude-a', name: 'Claude A', enabled: true, visible: true, createdAt: new Date('2026-01-01T00:00:00.000Z') }
+    const second = { id: 'claude-b', name: 'Claude B', enabled: true, visible: true, createdAt: new Date('2026-02-01T00:00:00.000Z') }
+    mocks.selectRows = [first, second]
+    const routes = await handlers()
+    const result = await routes.get('GET /v1/models')!(request({ headers: { 'anthropic-version': '2023-06-01' } }), {} as FastifyReply)
+    expect(result).toEqual({
+      data: [
+        { id: 'claude-a', type: 'model', display_name: 'Claude A', created_at: '2026-01-01T00:00:00.000Z' },
+        { id: 'claude-b', type: 'model', display_name: 'Claude B', created_at: '2026-02-01T00:00:00.000Z' },
+      ],
+      has_more: false, first_id: 'claude-a', last_id: 'claude-b',
+    })
+    const openai = await routes.get('GET /v1/models')!(request(), {} as FastifyReply) as { object: string; data: Array<{ object: string }> }
+    expect(openai.object).toBe('list')
+    expect(openai.data[0]!.object).toBe('model')
+
+    mocks.selectRows = [first]
+    await expect(routes.get('GET /v1/models/:model')!(request({ params: { model: 'claude-a' }, headers: { 'anthropic-version': '2023-06-01' } }), {} as FastifyReply))
+      .resolves.toEqual({ id: 'claude-a', type: 'model', display_name: 'Claude A', created_at: '2026-01-01T00:00:00.000Z' })
   })
 })

@@ -1,7 +1,7 @@
 import { diagnosticFetch } from '../logging/diagnostic-fetch.js'
 import { diagnosticContext, withDiagnosticContext, recordReconstructedDiagnostic } from '../logging/provider-diagnostics.js'
 import { safeErrorMessage } from '../database/errors.js'
-import OpenAI, { toFile } from 'openai'
+import { toFile } from 'openai'
 import type { AssistantMessage, Context, Message, ThinkingLevel } from '@earendil-works/pi-ai'
 import { and, asc, eq, inArray, isNull, ne, sql } from 'drizzle-orm'
 import { applyResponseEventToSnapshot, type CompactionItem, type RecallItem, type ResponseEvent, type ResponseUsage } from '@pulpo/contracts'
@@ -19,7 +19,7 @@ import {
   requestLogs,
   generationAttempts,
 } from '../database/schema.js'
-import { decryptSecret } from '../lib/crypto.js'
+import { createUpstreamTextClient, type UpstreamTextClient } from '../upstream/client.js'
 import { getConfig } from '../config.js'
 import { newId } from '../lib/ids.js'
 import { isCancellationRequested, createResponseEventPublisher, publishSnapshot } from './events.js'
@@ -169,7 +169,7 @@ async function persistItems(responseId: string, output: unknown[]): Promise<void
   })
 }
 
-async function prepareInputFiles(client: OpenAI, userId: string, input: unknown[], model: typeof models.$inferSelect, interceptor: ModelImageInterceptor, provider: ProviderImageOptions): Promise<unknown[]> {
+async function prepareInputFiles(client: UpstreamTextClient, userId: string, input: unknown[], model: typeof models.$inferSelect, interceptor: ModelImageInterceptor, provider: ProviderImageOptions): Promise<unknown[]> {
   const prepared: unknown[] = []
   const normalizedInput = await interceptOpenAIInputImages(input, model, interceptor, provider)
   for (const item of normalizedInput) {
@@ -199,9 +199,14 @@ async function prepareInputFiles(client: OpenAI, userId: string, input: unknown[
         content.push(text === null ? { type: 'input_image', image_url: dataUrl } : { type: 'input_text', text })
         continue
       }
+      // Only Responses providers host uploaded files; other protocols take the bytes inline.
+      if (!client.openai) {
+        content.push({ type: 'input_file', filename: attachment.originalName, file_data: `data:${attachment.mimeType};base64,${Buffer.from(bytes).toString('base64')}` })
+        continue
+      }
       let fileId = attachment.openaiFileId
       if (!fileId) {
-        const uploaded = await client.files.create({
+        const uploaded = await client.openai.files.create({
           file: await toFile(bytes, attachment.originalName, { type: attachment.mimeType }),
           purpose: 'user_data',
         })
@@ -219,7 +224,7 @@ async function prepareInputFiles(client: OpenAI, userId: string, input: unknown[
 }
 
 async function contextualInput(
-  client: OpenAI,
+  client: UpstreamTextClient,
   record: { response: typeof responses.$inferSelect; model: typeof models.$inferSelect },
   history: Array<typeof responses.$inferSelect>,
   requestLogId: string,
@@ -574,15 +579,13 @@ async function processGenerationAttempt(
     return
   }
   const config = getConfig()
-  const client = new OpenAI({
+  const client = createUpstreamTextClient(record.provider, {
     fetch: diagnosticFetch({ purpose: 'generation', userId: record.response.userId, providerId: record.provider.id, modelId: record.model.id, upstreamModelId: record.model.upstreamModelId }),
-    apiKey: decryptSecret(record.provider.encryptedApiKey, config.ENCRYPTION_KEY),
-    baseURL: record.provider.baseUrl,
-    organization: record.provider.organizationId ?? undefined,
-    project: record.provider.projectId ?? undefined,
-    timeout: record.provider.requestTimeoutMs,
   })
-  if (record.response.executionMode === 'background' && record.response.openaiResponseId) {
+  // Only the Responses API can resume or poll a background generation; other
+  // protocols regenerate from the stored request after a worker restart.
+  const resumable = client.openai
+  if (record.response.executionMode === 'background' && record.response.openaiResponseId && resumable) {
     const openaiResponseId = record.response.openaiResponseId
     const contextItems = (record.response.output as unknown[]).filter((item) => (
       ['pulpo_recall', 'pulpo_compaction'].includes((item as { type?: string }).type ?? '')
@@ -591,7 +594,7 @@ async function processGenerationAttempt(
     await db.update(responses).set({ status: 'in_progress', error: null, completedAt: null, updatedAt: new Date() }).where(eq(responses.id, responseId))
     try {
       try {
-        const resumed = await client.responses.retrieve(openaiResponseId, {
+        const resumed = await resumable.responses.retrieve(openaiResponseId, {
           stream: true,
           starting_after: record.response.upstreamSequence,
           ...recoveryInclude as { include?: never },
@@ -620,12 +623,12 @@ async function processGenerationAttempt(
       }
       for (let attempt = 0; attempt < 1_800; attempt += 1) {
         if (await isCancellationRequested(responseId)) {
-          await client.responses.cancel(openaiResponseId).catch(() => undefined)
+          await resumable.responses.cancel(openaiResponseId).catch(() => undefined)
           await db.update(responses).set({ status: 'cancelled', completedAt: new Date(), updatedAt: new Date() }).where(eq(responses.id, responseId))
           await releaseBudget(responseId)
           return
         }
-        const recovered = await client.responses.retrieve(openaiResponseId, recoveryInclude as { include?: never })
+        const recovered = await resumable.responses.retrieve(openaiResponseId, recoveryInclude as { include?: never })
         if (recovered.status && ['queued', 'in_progress'].includes(recovered.status)) {
           await new Promise((resolve) => setTimeout(resolve, 2_000))
           continue
@@ -829,8 +832,8 @@ async function processGenerationAttempt(
     const stream = await createUpstreamStream(client, upstreamPayload, { signal: controller.signal, headers: cacheOptions.headers }, responseId)
     for await (const rawEvent of stream) {
       if (await isCancellationRequested(responseId)) {
-        if (record.response.executionMode === 'background' && upstreamResponseId) {
-          await client.responses.cancel(upstreamResponseId).catch(() => undefined)
+        if (record.response.executionMode === 'background' && upstreamResponseId && client.openai) {
+          await client.openai.responses.cancel(upstreamResponseId).catch(() => undefined)
         }
         controller.abort()
         throw new Error('Generation cancelled')
@@ -986,8 +989,8 @@ const MAX_UPSTREAM_PARAMETER_STRIPS = 3
  * Providers differ on which sampling knobs each model accepts; a request should
  * degrade to the provider's defaults rather than fail on a knob the client set.
  */
-async function createUpstreamStream<Payload extends Record<string, unknown> & { stream: true }>(
-  client: OpenAI,
+async function createUpstreamStream<Payload extends Record<string, unknown> & { stream: true; model: string }>(
+  client: UpstreamTextClient,
   payload: Payload,
   options: { signal: AbortSignal; headers?: Record<string, string> },
   responseId: string,
@@ -995,7 +998,7 @@ async function createUpstreamStream<Payload extends Record<string, unknown> & { 
   let current: Payload = payload
   for (let strips = 0; ; strips += 1) {
     try {
-      return await client.responses.create(current as Payload & Parameters<typeof client.responses.create>[0] & { stream: true }, options)
+      return await client.responses.create(current, options)
     } catch (error) {
       const parameter = strips < MAX_UPSTREAM_PARAMETER_STRIPS ? strippableUpstreamParameter(error, current) : undefined
       if (!parameter) throw error

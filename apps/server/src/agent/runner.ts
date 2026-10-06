@@ -6,6 +6,9 @@ import { createImageGenerationTools } from '../image-generation/tool.js'
 import { selectedImageModel, executeImageGeneration, recoverSavedImageGenerations } from '../image-generation/service.js'
 import { Agent, type AgentMessage } from '@earendil-works/pi-agent-core'
 import { openAIResponsesApi } from '@earendil-works/pi-ai/api/openai-responses.lazy'
+import { openAICompletionsApi } from '@earendil-works/pi-ai/api/openai-completions.lazy'
+import { anthropicMessagesApi } from '@earendil-works/pi-ai/api/anthropic-messages.lazy'
+import { chatCompletionsSamplingParameters, piModelForProvider } from '../upstream/pi-model.js'
 import type { Api, AssistantMessage, Context, Model } from '@earendil-works/pi-ai'
 import { agentCostLimitMicros, findCostLimitItem, findCostLimitItems, toolImagePreviewSchema, type ToolImagePreview, type CompactionItem, type CostLimitItem, type RecallItem, type ResponseSnapshot } from '@pulpo/contracts'
 import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm'
@@ -276,7 +279,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
     return {
       model, provider, codex: false,
       apiKey: decryptSecret(provider.encryptedApiKey, config.ENCRYPTION_KEY),
-      piModel: { id: model.upstreamModelId, name: model.name, api: 'openai-responses', provider: 'openai', baseUrl: provider.baseUrl, reasoning: true, input: ['text', 'image'], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: model.contextWindow, maxTokens: model.maxOutputTokens },
+      piModel: piModelForProvider(model, provider),
     }
   }
   const runtimes = [runtime(record.model, record.provider)]
@@ -301,7 +304,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
     await db.update(requestLogs).set({ stickyFallbackUsed: true, fallbackUsed: true, currentModelId: active.model.id, updatedAt: new Date() }).where(eq(requestLogs.id, requestLog.id))
     await publishAdminUsage(requestLog.id, true)
   }
-  const streams = openAIResponsesApi()
+  const providerStreams = { 'openai-responses': openAIResponsesApi(), 'openai-completions': openAICompletionsApi(), 'anthropic-messages': anthropicMessagesApi() }
   const emptyUsage = { inputTokens: 0, cachedInputTokens: 0, cacheWriteTokens: 0, outputTokens: 0, reasoningTokens: 0, totalTokens: 0 }
   const persistedUsage = record.response.usage as typeof emptyUsage | null
   const publishResponseEvent = createResponseEventPublisher(record.response)
@@ -586,7 +589,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
               output_text: result.content.flatMap((part) => part.type === 'text' ? [part.text] : []).join('\n'),
             }
           }
-          const client = createCatalogModelClient(active as RuntimeModel & { apiKey: string; piModel: Model<'openai-responses'> })
+          const client = createCatalogModelClient(active)
           return client.responses.create({
             model: active.model.upstreamModelId, input: compactionInput, store: false, max_output_tokens: maxOutputTokens,
           })
@@ -866,7 +869,23 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
           sessionId: `pulpo:${record.response.userId}:${record.response.chatId}`,
         })
       }
-      return streams.streamSimple(active.piModel as Model<'openai-responses'>, preparedContext, {
+      if (active.piModel.api === 'openai-completions') {
+        return providerStreams['openai-completions'].streamSimple(active.piModel, preparedContext, {
+          ...streamOptions,
+          samplingParams: chatCompletionsSamplingParameters(providerPromptCacheParameters(active.model.promptCachingEnabled, resolvedParameters.parameters)),
+          apiKey: active.apiKey,
+        })
+      }
+      if (active.piModel.api === 'anthropic-messages') {
+        return providerStreams['anthropic-messages'].streamSimple(active.piModel, preparedContext, {
+          ...streamOptions,
+          samplingParams: undefined,
+          // Pi marks Anthropic cache breakpoints itself; follow the model's caching switch.
+          cacheRetention: active.model.promptCachingEnabled ? 'short' : 'none',
+          apiKey: active.apiKey,
+        })
+      }
+      return providerStreams['openai-responses'].streamSimple(active.piModel as Model<'openai-responses'>, preparedContext, {
         ...streamOptions,
         apiKey: active.apiKey,
       })

@@ -19,7 +19,17 @@ import {
   serializePublicResponse,
 } from './codecs.js'
 import { executePublicGeneration } from './generation.js'
+import { estimateAnthropicInputTokens, parseAnthropicMessagesRequest } from './anthropic-codec.js'
 import { CODEX_PROVIDER_ID } from '../codex/constants.js'
+
+/** Anthropic SDKs send `anthropic-version`; answer them in the Anthropic model-list shape. */
+function wantsAnthropicShape(headers: Record<string, unknown>): boolean {
+  return typeof headers['anthropic-version'] === 'string'
+}
+
+function anthropicModel(model: typeof models.$inferSelect) {
+  return { id: model.id, type: 'model', display_name: model.name, created_at: model.createdAt.toISOString() }
+}
 
 function publicModel(model: typeof models.$inferSelect) {
   return {
@@ -57,7 +67,12 @@ export async function registerPublicApiRoutes(app: FastifyInstance): Promise<voi
     const rows = await db.select().from(models).where(and(
       eq(models.enabled, true), eq(models.visible, true), ne(models.providerConnectionId, CODEX_PROVIDER_ID),
     ))
-    return { object: 'list', data: (await filterApiKeyAllowedModels(key.id, rows)).map(publicModel) }
+    const allowed = await filterApiKeyAllowedModels(key.id, rows)
+    if (wantsAnthropicShape(request.headers)) {
+      const data = allowed.map(anthropicModel)
+      return { data, has_more: false, first_id: data[0]?.id ?? null, last_id: data.at(-1)?.id ?? null }
+    }
+    return { object: 'list', data: allowed.map(publicModel) }
   })
 
   app.get('/v1/models/:model', async (request) => {
@@ -71,7 +86,7 @@ export async function registerPublicApiRoutes(app: FastifyInstance): Promise<voi
       ne(models.providerConnectionId, CODEX_PROVIDER_ID),
     )).limit(1)
     if (!model || !(await apiKeyModelAllowed(key.id, model.id))) throw notFound('Model')
-    return publicModel(model)
+    return wantsAnthropicShape(request.headers) ? anthropicModel(model) : publicModel(model)
   })
 
   app.post('/v1/responses', async (request, reply) => {
@@ -96,6 +111,27 @@ export async function registerPublicApiRoutes(app: FastifyInstance): Promise<voi
     logIgnoredParameters(request, parsed.protocol, parsed.ignoredParameters)
     await assertApiKeyModelAllowed(key.id, parsed.model)
     return executePublicGeneration({ reply, key, request: parsed, idempotencyKey: request.headers['idempotency-key'] as string | undefined })
+  })
+
+  app.post('/v1/messages', async (request, reply) => {
+    const key = await authenticateApiKey(request, 'responses')
+    const parsed = parseAnthropicMessagesRequest(request.body)
+    logIgnoredParameters(request, parsed.protocol, parsed.ignoredParameters)
+    await assertApiKeyModelAllowed(key.id, parsed.model)
+    return executePublicGeneration({ reply, key, request: parsed, idempotencyKey: request.headers['idempotency-key'] as string | undefined })
+  })
+
+  app.post('/v1/messages/count_tokens', async (request) => {
+    const key = await authenticateApiKey(request, 'responses')
+    const body = request.body && typeof request.body === 'object' && !Array.isArray(request.body) ? request.body as Record<string, unknown> : {}
+    // Counting needs no output limit; supply one so the shared parser accepts the body.
+    const parsed = parseAnthropicMessagesRequest({ max_tokens: 1, ...body, stream: false })
+    await assertApiKeyModelAllowed(key.id, parsed.model)
+    const [model] = await db.select({ id: models.id }).from(models).where(and(
+      eq(models.id, parsed.model), eq(models.enabled, true), ne(models.providerConnectionId, CODEX_PROVIDER_ID),
+    )).limit(1)
+    if (!model) throw notFound('Model')
+    return { input_tokens: estimateAnthropicInputTokens(parsed) }
   })
 
   app.get('/v1/responses/:id', async (request) => {

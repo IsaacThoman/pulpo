@@ -2,7 +2,7 @@ import { assertPublicIdentifier } from './identifiers.js'
 import { and, eq, isNull } from 'drizzle-orm'
 import type { FastifyReply } from 'fastify'
 import { db } from '../database/client.js'
-import { chats, responses } from '../database/schema.js'
+import { chats, models, responses } from '../database/schema.js'
 import { newId } from '../lib/ids.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { createRedis } from '../redis.js'
@@ -77,14 +77,14 @@ async function streamGeneration(
   const buffered: Array<{ channel: string; parsed: Record<string, unknown> }> = []
 
   const write = (payload: unknown) => {
-    if (!reply.raw.writableEnded) reply.raw.write(`data: ${JSON.stringify(payload)}\n\n`)
+    if (!reply.raw.writableEnded) reply.raw.write(projector.encode ? projector.encode(payload) : `data: ${JSON.stringify(payload)}\n\n`)
   }
   const finish = async () => {
     if (finalizing) return
     finalizing = true
     const [current] = await db.select().from(responses).where(eq(responses.id, row.id)).limit(1)
     if (current) for (const payload of projector.finish(current)) write(payload)
-    if (!reply.raw.writableEnded) reply.raw.write('data: [DONE]\n\n')
+    if (projector.sendsDoneSentinel !== false && !reply.raw.writableEnded) reply.raw.write('data: [DONE]\n\n')
     close()
   }
   const handle = async (channel: string, parsed: Record<string, unknown>) => {
@@ -136,6 +136,9 @@ export async function executePublicGeneration(input: {
   })
   let created = existing
   if (!created) {
+    // The temporary chat references the model, so reject unknown ids before inserting it.
+    const [model] = await db.select({ id: models.id }).from(models).where(eq(models.id, input.request.model)).limit(1)
+    if (!model) throw new AppError(400, 'model_not_found', 'The selected model is unavailable', 'invalid_request_error', 'model')
     const chatId = newId()
     await db.insert(chats).values({
       id: chatId,
