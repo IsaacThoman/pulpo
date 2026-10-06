@@ -1,0 +1,118 @@
+name: Validate workspace egress and publish proxy image
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - infra/workspace-egress/**
+      - .github/workflows/workspace-egress.yml
+  push:
+    branches: [main]
+    paths:
+      - infra/workspace-egress/**
+      - .github/workflows/workspace-egress.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: workspace-egress-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  validate:
+    name: Validate host rules
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Check nftables rules against the runner kernel
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nftables
+          sudo nft --check -f infra/workspace-egress/egress.nft
+
+      - name: Load rules twice in a throwaway network namespace
+        run: |
+          sudo unshare --net sh -c '
+            set -e
+            nft -f infra/workspace-egress/egress.nft
+            nft -f infra/workspace-egress/egress.nft
+            nft list table inet pulpo_workspace_egress >/dev/null
+          '
+
+      - name: Lint egress script
+        run: shellcheck infra/workspace-egress/pulpo-workspace-egress
+
+  build:
+    name: Build proxy image
+    needs: validate
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set image repository
+        id: repository
+        env:
+          REPOSITORY_OWNER: ${{ github.repository_owner }}
+        run: echo "name=ghcr.io/${REPOSITORY_OWNER,,}/pulpo-workspace-egress-proxy" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      - name: Log in to GitHub Container Registry
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build image (publish only from main)
+        id: image
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: infra/workspace-egress/proxy
+          platforms: linux/amd64
+          load: ${{ !(github.ref == 'refs/heads/main' && github.event_name != 'pull_request') }}
+          push: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
+          tags: ${{ steps.repository.outputs.name }}:sha-${{ github.sha }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          # The local docker exporter used on PRs can't hold attestations.
+          provenance: ${{ (github.ref == 'refs/heads/main' && github.event_name != 'pull_request') && 'mode=max' || 'false' }}
+          sbom: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
+          cache-from: type=gha,scope=workspace-egress-proxy
+          cache-to: type=gha,mode=max,scope=workspace-egress-proxy
+
+      - name: Smoke test proxy refuses private destinations
+        if: ${{ !(github.ref == 'refs/heads/main' && github.event_name != 'pull_request') }}
+        env:
+          IMAGE: ${{ steps.repository.outputs.name }}:sha-${{ github.sha }}
+        run: |
+          set -euo pipefail
+          printf 'port: 4750\nnetwork: ip4\n' > "$RUNNER_TEMP/config.yaml"
+          docker run -d --name proxy -p 4750:4750 \
+            -v "$RUNNER_TEMP/config.yaml:/etc/smokescreen/config.yaml:ro" "$IMAGE"
+          trap 'docker logs proxy; docker rm -f proxy' EXIT
+          for _ in $(seq 30); do curl -s -o /dev/null http://127.0.0.1:4750 && break; sleep 1; done
+          curl -fsS -o /dev/null -x http://127.0.0.1:4750 https://example.com/
+          if curl -sS -o /dev/null -m 10 -x http://127.0.0.1:4750 https://192.168.1.1/; then
+            echo 'proxy allowed a private destination' >&2
+            exit 1
+          fi
+
+      - name: Record immutable image reference
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        env:
+          IMAGE_REPOSITORY: ${{ steps.repository.outputs.name }}
+          IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
+        run: |
+          set -euo pipefail
+          [[ "$IMAGE_DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]]
+          echo "Published egress proxy: \`${IMAGE_REPOSITORY}@${IMAGE_DIGEST}\`" >> "$GITHUB_STEP_SUMMARY"

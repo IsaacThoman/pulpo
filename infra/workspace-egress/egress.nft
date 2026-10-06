@@ -1,0 +1,54 @@
+# Only this table belongs to Pulpo's egress tunnel. Never flush the full ruleset.
+# add + delete + recreate is one atomic transaction, including on first load.
+add table inet pulpo_workspace_egress
+delete table inet pulpo_workspace_egress
+table inet pulpo_workspace_egress {
+    # Pod-to-cluster destinations stay on the main routing table.
+    set cluster_ipv4 {
+        type ipv4_addr
+        flags interval
+        elements = { 10.42.0.0/16, 10.43.0.0/16 }
+    }
+
+    # Never forward pod traffic to these, even inside the tunnel provider's network.
+    set private_ipv4 {
+        type ipv4_addr
+        flags interval
+        elements = {
+            0.0.0.0/8, 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, 169.254.0.0/16,
+            172.16.0.0/12, 192.0.0.0/24, 192.0.2.0/24, 192.168.0.0/16,
+            198.18.0.0/15, 198.51.100.0/24, 203.0.113.0/24, 224.0.0.0/3
+        }
+    }
+
+    # Runs before kube-proxy DNAT, so ClusterIPs are still visible here.
+    # Pod-initiated flows to non-cluster addresses get a connection mark; every
+    # packet of those flows that leaves a pod carries the routing mark that
+    # `ip rule` sends to the tunnel table. 0x01000000 avoids kube-proxy and
+    # kube-router mark bits.
+    chain prerouting {
+        type filter hook prerouting priority mangle; policy accept;
+        iifname "cni0" ct state new ip daddr != @cluster_ipv4 ct mark set ct mark | 0x01000000
+        iifname "cni0" ct mark & 0x01000000 == 0x01000000 meta mark set meta mark | 0x01000000
+    }
+
+    # Kill switch. Routing already sends marked flows to the tunnel; this holds
+    # even if the ip rules or tunnel route are missing. Replies to connections
+    # opened from outside the pod network (NodePort, kubelet) are unaffected.
+    chain forward {
+        type filter hook forward priority -5; policy accept;
+        iifname "cni0" oifname "cni0" accept
+        iifname "cni0" meta nfproto ipv6 counter drop comment "No pod IPv6 egress"
+        iifname "cni0" ct direction original oifname != "wg-pulpo" counter drop comment "Pod egress only via tunnel"
+        iifname "cni0" oifname "wg-pulpo" ip daddr @private_ipv4 counter drop comment "No private destinations via tunnel"
+        iifname "cni0" oifname "wg-pulpo" meta l4proto != { tcp, udp } ct direction original counter drop comment "Tunnel carries TCP/UDP only"
+        # Pod MTU (1450) exceeds the tunnel MTU (1420); clamp both handshake directions.
+        oifname "wg-pulpo" tcp flags & syn == syn tcp option maxseg size > 1380 tcp option maxseg size set 1380
+        iifname "wg-pulpo" tcp flags & syn == syn tcp option maxseg size > 1380 tcp option maxseg size set 1380
+    }
+
+    chain postrouting {
+        type nat hook postrouting priority srcnat; policy accept;
+        oifname "wg-pulpo" masquerade
+    }
+}

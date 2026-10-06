@@ -1,0 +1,15 @@
+[Unit]
+Description=Pulpo workspace egress routing and kill switch
+After=local-fs.target
+Before=k3s.service wg-quick@wg-pulpo.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/pulpo-workspace-egress apply
+ExecReload=/usr/local/sbin/pulpo-workspace-egress apply
+# Keep the kill switch installed when the service stops. Rollback is explicit:
+# /usr/local/sbin/pulpo-workspace-egress remove
+
+[Install]
+WantedBy=multi-user.target

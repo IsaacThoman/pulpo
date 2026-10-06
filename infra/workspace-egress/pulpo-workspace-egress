@@ -1,0 +1,53 @@
+#!/bin/sh
+# Route pod-initiated egress through the wg-pulpo tunnel, with a kill switch.
+#
+#   apply      load the nft table and ip rules (idempotent; safe without the tunnel)
+#   route-up   add the tunnel default route (wg-quick PostUp)
+#   remove     remove the table, rules and route (explicit rollback)
+#   status     show what is installed
+set -eu
+
+RULES=/etc/pulpo/workspace-egress/egress.nft
+TABLE=pulpo_workspace_egress
+INTERFACE=wg-pulpo
+ROUTE_TABLE=7420
+MARK=0x01000000/0x01000000
+
+delete_rules() {
+    while ip -4 rule del pref "$1" 2>/dev/null; do :; done
+}
+
+case "${1:-}" in
+    apply)
+        /usr/sbin/nft -f "$RULES"
+        # Marked flows use the tunnel table. If it has no route (tunnel down),
+        # lookup falls through to the unreachable rule, never the main table.
+        delete_rules 7420
+        ip -4 rule add pref 7420 fwmark "$MARK" lookup "$ROUTE_TABLE"
+        delete_rules 7421
+        ip -4 rule add pref 7421 fwmark "$MARK" unreachable
+        ;;
+    route-up)
+        # Loose reverse-path filtering: replies arrive on the tunnel from
+        # addresses the main table routes via the LAN uplink.
+        sysctl -qw "net.ipv4.conf.$INTERFACE.rp_filter=2"
+        ip -4 route replace default dev "$INTERFACE" table "$ROUTE_TABLE"
+        ;;
+    remove)
+        delete_rules 7420
+        delete_rules 7421
+        ip -4 route flush table "$ROUTE_TABLE" 2>/dev/null || true
+        if /usr/sbin/nft list table inet "$TABLE" >/dev/null 2>&1; then
+            /usr/sbin/nft delete table inet "$TABLE"
+        fi
+        ;;
+    status)
+        ip -4 rule show | grep -E '^742[01]:' || echo 'ip rules: not installed'
+        ip -4 route show table "$ROUTE_TABLE" | grep . || echo "route table $ROUTE_TABLE: empty (tunnel down)"
+        /usr/sbin/nft list table inet "$TABLE" 2>/dev/null || echo "nft table $TABLE: not installed"
+        ;;
+    *)
+        echo "usage: $0 apply|route-up|remove|status" >&2
+        exit 2
+        ;;
+esac
