@@ -14,7 +14,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "generate:chat-preset-icons": "node scripts/generate-chat-preset-icons.mjs",
-    "test": "vitest run"
+    "test": "vitest run --exclude \"**/dist/**\""
   },
   "dependencies": {
     "zod": "^4.0.5"

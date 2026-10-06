@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build && node scripts/prerender-landing.mjs",
-    "test": "vitest run",
+    "test": "vitest run --exclude \"**/dist/**\"",
     "preview": "vite preview",
     "test:responsive": "node tests/responsive-layout.browser.mjs",
     "test:code-preview": "node tests/code-preview.browser.mjs && node tests/code-preview.browser.mjs --build",

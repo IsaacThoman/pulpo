@@ -12,7 +12,7 @@
     "typecheck": "tsc --noEmit",
     "make": "node scripts/make.mjs",
     "package": "node scripts/package.mjs",
-    "test": "vitest run && node --test --test-timeout=10000 vendor/appdmg-image-size/check.cjs"
+    "test": "vitest run --exclude \"**/dist/**\" && node --test --test-timeout=10000 vendor/appdmg-image-size/check.cjs"
   },
   "devDependencies": {
     "@electron-forge/cli": "8.0.1",

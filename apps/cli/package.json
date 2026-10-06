@@ -27,7 +27,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json --noEmit && node scripts/build.mjs",
-    "test": "vitest run",
+    "test": "vitest run --exclude \"**/dist/**\"",
     "pack:check": "npm pack --dry-run"
   },
   "dependencies": {
