@@ -2,13 +2,16 @@ import type OpenAI from 'openai'
 import { describe, expect, it, vi } from 'vitest'
 import {
   UpstreamStreamError,
+  acceptsCacheControl,
   chatCompletionsRequest,
+  chatMessagesFromEntries,
   chatUsage,
   openChatCompletionsStream,
   prefersMaxCompletionTokens,
   translateChatStream,
 } from './chat-completions.js'
 import type { ResponsesStreamEvent } from './responses-builder.js'
+import type { NeutralEntry } from './responses-input.js'
 
 const OTHER = 'https://openrouter.ai/api/v1'
 const OPENAI = 'https://api.openai.com/v1'
@@ -34,6 +37,16 @@ function delta(value: Record<string, unknown>, extra: Record<string, unknown> = 
 function apiError(status: number, message: string, param?: string) {
   return Object.assign(new Error(`${status} ${message}`), { status, error: { message, ...(param ? { param } : {}) } })
 }
+
+describe('acceptsCacheControl', () => {
+  it('matches OpenRouter hosts only', () => {
+    expect(acceptsCacheControl('https://openrouter.ai/api/v1')).toBe(true)
+    expect(acceptsCacheControl('https://eu.openrouter.ai/api/v1')).toBe(true)
+    expect(acceptsCacheControl('https://notopenrouter.ai/v1')).toBe(false)
+    expect(acceptsCacheControl(OPENAI)).toBe(false)
+    expect(acceptsCacheControl('not a url')).toBe(false)
+  })
+})
 
 describe('prefersMaxCompletionTokens', () => {
   it('matches OpenAI and Azure hosts only', () => {
@@ -130,6 +143,75 @@ describe('chatCompletionsRequest', () => {
     expect((body.messages as unknown[])[1]).toEqual({ role: 'assistant', content: null, tool_calls: [{ id: 'c', type: 'function', function: { name: 'f', arguments: '{"a":1}' } }] })
   })
 
+  it('keeps assistant text that follows tool calls in the same assistant message', () => {
+    const body = chatCompletionsRequest({
+      model: 'm',
+      input: [
+        { role: 'user', content: 'go' },
+        { type: 'function_call', call_id: 'c1', name: 'f', arguments: '{}' },
+        { role: 'assistant', content: 'Waiting on f.' },
+        { type: 'function_call', call_id: 'c2', name: 'g', arguments: '{}' },
+        { type: 'function_call_output', call_id: 'c1', output: 'one' },
+        { type: 'function_call_output', call_id: 'c2', output: 'two' },
+      ],
+    }, { baseUrl: OTHER, stream: false })
+    expect(body.messages).toEqual([
+      { role: 'user', content: 'go' },
+      { role: 'assistant', content: 'Waiting on f.', tool_calls: [
+        { id: 'c1', type: 'function', function: { name: 'f', arguments: '{}' } },
+        { id: 'c2', type: 'function', function: { name: 'g', arguments: '{}' } },
+      ] },
+      { role: 'tool', tool_call_id: 'c1', content: 'one' },
+      { role: 'tool', tool_call_id: 'c2', content: 'two' },
+    ])
+  })
+
+  it('replays reasoning_content only on tool-calling turns of the same model', () => {
+    const own = (text: string) => ({ type: 'reasoning', summary: [{ type: 'summary_text', text }], pulpo_format: 'openai_chat_completions', pulpo_model: 'm' })
+    const body = chatCompletionsRequest({
+      model: 'm',
+      input: [
+        { role: 'user', content: 'q1' },
+        own('plain answer thinking'),
+        { role: 'assistant', content: 'a1' },
+        { role: 'user', content: 'q2' },
+        own('first '),
+        own('call'),
+        { type: 'reasoning', summary: [{ type: 'summary_text', text: 'other model' }], pulpo_format: 'openai_chat_completions', pulpo_model: 'x' },
+        { type: 'reasoning', summary: [{ type: 'summary_text', text: 'anthropic' }], pulpo_format: 'anthropic_messages', pulpo_model: 'm' },
+        { role: 'assistant', content: 'Checking.' },
+        { type: 'function_call', call_id: 'c1', name: 'f', arguments: '{}' },
+        { type: 'function_call_output', call_id: 'c1', output: 'r1' },
+        own('second call'),
+        { type: 'function_call', call_id: 'c2', name: 'f', arguments: '{}' },
+        { type: 'function_call', call_id: 'c3', name: 'f', arguments: '{}' },
+        { type: 'function_call_output', call_id: 'c2', output: 'r2' },
+        { type: 'function_call_output', call_id: 'c3', output: 'r3' },
+      ],
+    }, { baseUrl: OTHER, stream: false })
+    const assistants = (body.messages as Array<Record<string, unknown>>).filter((message) => message.role === 'assistant')
+    expect(assistants[0]).toEqual({ role: 'assistant', content: 'a1' })
+    expect(assistants[1]).toMatchObject({ content: 'Checking.', reasoning_content: 'first call' })
+    expect(assistants[2]).toMatchObject({ content: null, reasoning_content: 'second call' })
+    expect(assistants[2]!.tool_calls).toHaveLength(2)
+  })
+
+  it('drops pending reasoning at the next user message', () => {
+    const messages = chatMessagesFromEntries([
+      { kind: 'user', parts: [{ type: 'text', text: 'a' }] },
+      { kind: 'reasoning', reasoning: { text: 'stale', format: 'openai_chat_completions', model: 'm' } },
+      { kind: 'user', parts: [{ type: 'text', text: 'b' }] },
+      { kind: 'function_call', callId: 'c', name: 'f', arguments: '{}' },
+    ] satisfies NeutralEntry[], { model: 'm' })
+    expect(messages.at(-1)).not.toHaveProperty('reasoning_content')
+    // Without a model to match, any Chat Completions reasoning is replayed.
+    const anyModel = chatMessagesFromEntries([
+      { kind: 'reasoning', reasoning: { text: 'r', format: 'openai_chat_completions', model: 'other' } },
+      { kind: 'function_call', callId: 'c', name: 'f', arguments: '{}' },
+    ] satisfies NeutralEntry[])
+    expect(anyModel[0]).toMatchObject({ reasoning_content: 'r' })
+  })
+
   it('maps tools, tool_choice, and parallel_tool_calls', () => {
     const tools = [
       { type: 'function', name: 'f', description: 'does f', parameters: { type: 'object' }, strict: true },
@@ -185,6 +267,13 @@ describe('chatCompletionsRequest', () => {
       model: 'm', temperature: 0.2, top_p: 0.9, top_k: 40, repetition_penalty: 1.1,
       service_tier: 'flex', prompt_cache_key: 'k', safety_identifier: 'u', cache_control: { type: 'ephemeral' },
     })
+    expect(chatCompletionsRequest({ model: 'm', input: 'x', cache_control: { type: 'ephemeral' } }, { baseUrl: 'http://vllm.internal/v1', stream: false }))
+      .not.toHaveProperty('cache_control')
+    // Admin defaults never override the derived output limit or conversation.
+    const derived = chatCompletionsRequest({ model: 'm', input: 'x', max_output_tokens: 100, max_tokens: 5, max_completion_tokens: 6, messages: [] }, { baseUrl: OTHER, stream: false })
+    expect(derived.max_tokens).toBe(100)
+    expect(derived).not.toHaveProperty('max_completion_tokens')
+    expect(derived.messages).toEqual([{ role: 'user', content: 'x' }])
     for (const key of ['include', 'truncation', 'store', 'background', 'prompt_cache_retention', 'metadata', 'previous_response_id', 'input', 'instructions', 'undefined_value']) {
       expect(body).not.toHaveProperty(key)
     }
@@ -230,7 +319,7 @@ describe('translateChatStream', () => {
       delta({ reasoning: 'thought' }),
       delta({ content: 'answer' }),
       delta({ reasoning_content: 'second' }),
-      delta({ content: ' more' }),
+      delta({ content: ' more' }, { finish_reason: 'stop' }),
     ]), 'm'))
     const response = terminal(events)
     expect(response.output.map((item) => item.type)).toEqual(['reasoning', 'message', 'reasoning', 'message'])
@@ -264,7 +353,7 @@ describe('translateChatStream', () => {
 
   it('reports OpenRouter cost and reasoning tokens', async () => {
     const events = await collect(translateChatStream(chunks([
-      delta({ content: 'x' }),
+      delta({ content: 'x' }, { finish_reason: 'stop' }),
       { choices: [], usage: { prompt_tokens: 10, completion_tokens: 8, cost: 0.0012, completion_tokens_details: { reasoning_tokens: 6 } } },
     ]), 'm'))
     expect(terminal(events).usage).toMatchObject({ cost: 0.0012, output_tokens_details: { reasoning_tokens: 6 }, total_tokens: 18 })
@@ -280,7 +369,8 @@ describe('translateChatStream', () => {
 
   it('streams refusals and ignores choices other than index 0', async () => {
     const events = await collect(translateChatStream(chunks([
-      { choices: [{ index: 1, delta: { content: 'ignored' } }, { index: 0, delta: { refusal: 'no' } }] },
+      { choices: [{ index: 1, delta: { content: 'ignored' }, finish_reason: 'stop' }, { index: 0, delta: { refusal: 'no' } }] },
+      delta({}, { finish_reason: 'stop' }),
     ]), 'm'))
     expect(terminal(events).output).toMatchObject([{ type: 'message', content: [{ type: 'refusal', refusal: 'no' }] }])
     expect(terminal(events).output_text).toBe('')
@@ -294,6 +384,64 @@ describe('translateChatStream', () => {
     const coded = await collect(translateChatStream(chunks([{ error: { code: 'bad', status: 400 } }]), 'm')).catch((caught: unknown) => caught)
     expect(coded).toMatchObject({ message: 'Provider stream failed', status: 400, code: 'bad' })
   })
+
+  it('reports partial usage before rethrowing a chunk error', async () => {
+    const events: ResponsesStreamEvent[] = []
+    const error = await (async () => {
+      for await (const event of translateChatStream(chunks([
+        delta({ content: 'partial' }),
+        { choices: [], usage: { prompt_tokens: 20, completion_tokens: 3 } },
+        { error: { message: 'overloaded', code: 502 } },
+      ]), 'm')) events.push(event)
+    })().catch((caught: unknown) => caught)
+    expect(error).toMatchObject({ message: 'overloaded', status: 502 })
+    expect(events.at(-1)).toMatchObject({ type: 'response.in_progress', response: { status: 'in_progress', output_text: 'partial', usage: { input_tokens: 20, output_tokens: 3 } } })
+    expect(events.some((event) => event.type === 'response.completed')).toBe(false)
+  })
+
+  it('fails a stream that ends without a finish reason, after reporting estimated usage', async () => {
+    const events: ResponsesStreamEvent[] = []
+    const error = await (async () => {
+      for await (const event of translateChatStream(chunks([delta({ content: 'cut off mid sentence' })]), 'm', { estimatedInputTokens: 42 })) events.push(event)
+    })().catch((caught: unknown) => caught)
+    expect(error).toBeInstanceOf(UpstreamStreamError)
+    expect(error).toMatchObject({ message: 'Provider stream ended before the response finished', status: 502 })
+    // 20 characters -> 5 estimated output tokens.
+    expect(events.at(-1)).toMatchObject({ type: 'response.in_progress', response: { output_text: 'cut off mid sentence', usage: { input_tokens: 42, output_tokens: 5 } } })
+    expect(events.some((event) => event.type === 'response.completed' || event.type === 'response.incomplete')).toBe(false)
+    const empty = await collect(translateChatStream(chunks([]), 'm')).catch((caught: unknown) => caught)
+    expect(empty).toMatchObject({ status: 502 })
+  })
+
+  it('finishes when the finish reason arrives in a chunk after usage', async () => {
+    const events = await collect(translateChatStream(chunks([
+      delta({ content: 'a' }),
+      { choices: [], usage: { prompt_tokens: 1, completion_tokens: 1 } },
+      delta({}, { finish_reason: 'stop' }),
+    ]), 'm'))
+    expect(events.at(-1)!.type).toBe('response.completed')
+  })
+
+  it('estimates usage and warns when a finished stream reports none', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const events = await collect(translateChatStream(chunks([delta({ content: 'abcdefgh' }, { finish_reason: 'stop' })]), 'm', { estimatedInputTokens: 9 }))
+    expect(terminal(events).usage).toMatchObject({ input_tokens: 9, output_tokens: 2, total_tokens: 11 })
+    expect(warn).toHaveBeenCalledTimes(1)
+    expect(JSON.parse(warn.mock.calls[0]![0] as string)).toMatchObject({ event: 'upstream.usage_missing', format: 'openai_chat_completions', model: 'm' })
+    warn.mockRestore()
+  })
+
+  it('closes open reasoning before a refusal', async () => {
+    const events = await collect(translateChatStream(chunks([
+      delta({ reasoning_content: 'hmm' }),
+      delta({ refusal: 'no' }, { finish_reason: 'stop' }),
+    ]), 'm'))
+    const reasoningDone = events.findIndex((event) => event.type === 'response.output_item.done' && (event.item as { type: string }).type === 'reasoning')
+    const refusal = events.findIndex((event) => event.type === 'response.refusal.delta')
+    expect(reasoningDone).toBeGreaterThanOrEqual(0)
+    expect(reasoningDone).toBeLessThan(refusal)
+    expect(terminal(events).output.map((item) => item.type)).toEqual(['reasoning', 'message'])
+  })
 })
 
 describe('openChatCompletionsStream', () => {
@@ -306,7 +454,7 @@ describe('openChatCompletionsStream', () => {
     vi.spyOn(console, 'info').mockImplementation(() => undefined)
     const create = vi.fn()
       .mockRejectedValueOnce(apiError(400, "Unsupported parameter: 'max_tokens' is not supported with this model. Use 'max_completion_tokens' instead.", 'max_tokens'))
-      .mockResolvedValueOnce(chunks([delta({ content: 'ok' })]))
+      .mockResolvedValueOnce(chunks([delta({ content: 'ok' }, { finish_reason: 'stop' })]))
     const signal = new AbortController().signal
     const events = await collect(await openChatCompletionsStream(client(create), payload, { baseUrl: OTHER, signal, headers: { 'x-a': '1' } }))
     expect(terminal(events).output_text).toBe('ok')
@@ -343,10 +491,66 @@ describe('openChatCompletionsStream', () => {
       .mockRejectedValueOnce(apiError(400, 'temperature unsupported'))
       .mockRejectedValueOnce(apiError(400, 'top_p unsupported'))
       .mockRejectedValueOnce(apiError(400, 'reasoning_effort unsupported'))
-      .mockRejectedValueOnce(apiError(400, 'stream_options unsupported'))
       .mockRejectedValueOnce(apiError(400, 'max_tokens unsupported'))
-    await expect(openChatCompletionsStream(client(create), { ...payload, temperature: 1, top_p: 1 }, { baseUrl: OTHER }))
-      .rejects.toThrow('max_tokens unsupported')
+      .mockRejectedValueOnce(apiError(400, 'verbosity unsupported'))
+    await expect(openChatCompletionsStream(client(create), { ...payload, temperature: 1, top_p: 1, text: { verbosity: 'low' } }, { baseUrl: OTHER }))
+      .rejects.toThrow('verbosity unsupported')
     expect(create).toHaveBeenCalledTimes(5)
+    expect(create.mock.calls[4]![0]).toMatchObject({ max_completion_tokens: 50, verbosity: 'low' })
+  })
+
+  it('never strips stream_options', async () => {
+    const rejected = apiError(400, 'stream_options is not supported')
+    const create = vi.fn().mockRejectedValue(rejected)
+    await expect(openChatCompletionsStream(client(create), payload, { baseUrl: OTHER })).rejects.toBe(rejected)
+    expect(create).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not strip parameters the provider rejects for a bad value rather than as unsupported', async () => {
+    const invalid = apiError(400, "Invalid schema for response_format 'out': 'additionalProperties' is required", 'response_format')
+    const create = vi.fn().mockRejectedValue(invalid)
+    await expect(openChatCompletionsStream(client(create), { ...payload, text: { format: { type: 'json_schema', name: 'out', schema: { type: 'object' } } } }, { baseUrl: OTHER }))
+      .rejects.toBe(invalid)
+    expect(create).toHaveBeenCalledTimes(1)
+  })
+
+  it('swaps the token limit field at most once', async () => {
+    vi.spyOn(console, 'info').mockImplementation(() => undefined)
+    const second = apiError(400, "Unsupported parameter: 'max_completion_tokens' is not supported with this model. Use 'max_tokens' instead.", 'max_completion_tokens')
+    const create = vi.fn()
+      .mockRejectedValueOnce(apiError(400, "Unsupported parameter: 'max_tokens' is not supported with this model. Use 'max_completion_tokens' instead.", 'max_tokens'))
+      .mockRejectedValueOnce(second)
+    await expect(openChatCompletionsStream(client(create), payload, { baseUrl: OTHER })).rejects.toBe(second)
+    expect(create).toHaveBeenCalledTimes(2)
+    expect(create.mock.calls[1]![0]).toHaveProperty('max_completion_tokens', 50)
+  })
+
+  it('swaps max_completion_tokens back to max_tokens for OpenAI-host bodies', async () => {
+    vi.spyOn(console, 'info').mockImplementation(() => undefined)
+    const create = vi.fn()
+      .mockRejectedValueOnce(apiError(400, 'max_completion_tokens: Extra inputs are not permitted'))
+      .mockResolvedValueOnce(chunks([]))
+    await openChatCompletionsStream(client(create), payload, { baseUrl: OPENAI })
+    expect(create.mock.calls[0]![0]).toHaveProperty('max_completion_tokens', 50)
+    expect(create.mock.calls[1]![0]).toMatchObject({ max_tokens: 50 })
+    expect(create.mock.calls[1]![0]).not.toHaveProperty('max_completion_tokens')
+  })
+
+  it('does not swap the token limit on context-length errors', async () => {
+    const tooLong = apiError(400, "This model's maximum context length is 8192 tokens; max_tokens values this large are not supported", 'max_tokens')
+    const create = vi.fn().mockRejectedValue(tooLong)
+    await expect(openChatCompletionsStream(client(create), payload, { baseUrl: OTHER })).rejects.toBe(tooLong)
+    expect(create).toHaveBeenCalledTimes(1)
+  })
+
+  it('estimates input usage from the request when the provider never reports usage', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const create = vi.fn().mockResolvedValue(chunks([delta({ content: 'abcdefgh' }, { finish_reason: 'stop' })]))
+    const events = await collect(await openChatCompletionsStream(client(create), { model: 'm', input: 'x'.repeat(400) }, { baseUrl: OTHER }))
+    const usage = terminal(events).usage!
+    expect(usage.output_tokens).toBe(2)
+    expect(usage.input_tokens).toBeGreaterThan(100)
+    expect(usage.input_tokens).toBeLessThan(130)
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('upstream.usage_missing'))
   })
 })

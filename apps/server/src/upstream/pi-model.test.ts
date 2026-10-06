@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 vi.mock('../config.js', () => ({ getConfig: () => ({ ENCRYPTION_KEY: 'a sufficiently long deployment master key for tests' }) }))
 
-import { chatCompletionsSamplingParameters, piModelForProvider } from './pi-model.js'
+import { chatCompletionsSamplingParameters, explicitReasoningEffort, piModelForProvider } from './pi-model.js'
 
 const model = { upstreamModelId: 'claude-opus-4-6', name: 'Opus', contextWindow: 200_000, maxOutputTokens: 32_000 }
 
@@ -29,6 +29,15 @@ describe('piModelForProvider', () => {
       .toMatchObject({ api: 'openai-responses', provider: 'openai', baseUrl: 'https://api.openai.com/v1' })
     expect(piModelForProvider(model, { apiFormat: 'bogus' as never, baseUrl: 'https://api.openai.com/v1' }).api).toBe('openai-responses')
   })
+
+  it('uses portable Chat Completions request fields on non-OpenAI hosts only', () => {
+    const portable = { supportsDeveloperRole: false, supportsStore: false, maxTokensField: 'max_tokens' }
+    expect(piModelForProvider(model, { apiFormat: 'openai_chat_completions', baseUrl: 'http://vllm.internal:8000/v1' }).compat).toEqual(portable)
+    expect(piModelForProvider(model, { apiFormat: 'openai_chat_completions', baseUrl: 'https://openrouter.ai/api/v1' }).compat).toEqual(portable)
+    expect(piModelForProvider(model, { apiFormat: 'openai_chat_completions', baseUrl: 'https://api.openai.com/v1' })).not.toHaveProperty('compat')
+    expect(piModelForProvider(model, { apiFormat: 'openai_chat_completions', baseUrl: 'https://x.openai.azure.com/openai' })).not.toHaveProperty('compat')
+    expect(piModelForProvider(model, { apiFormat: 'openai_responses', baseUrl: 'http://vllm.internal:8000/v1' })).not.toHaveProperty('compat')
+  })
 })
 
 describe('chatCompletionsSamplingParameters', () => {
@@ -37,6 +46,27 @@ describe('chatCompletionsSamplingParameters', () => {
       temperature: 0.4, top_p: 0.8, top_k: 20, service_tier: 'flex', parallel_tool_calls: false,
       max_output_tokens: 100, reasoning: { effort: 'high' }, include: ['x'], text: { verbosity: 'low' },
       store: false, truncation: 'auto', safety_identifier: undefined,
-    })).toEqual({ temperature: 0.4, top_p: 0.8, top_k: 20, service_tier: 'flex', parallel_tool_calls: false })
+    }, 'http://vllm.internal:8000/v1')).toEqual({ temperature: 0.4, top_p: 0.8, top_k: 20, parallel_tool_calls: false })
+  })
+
+  it('forwards OpenAI-only keys to OpenAI hosts and cache_control to OpenRouter only', () => {
+    const parameters = {
+      temperature: 0.4, service_tier: 'flex', prompt_cache_key: 'k', safety_identifier: 'u', cache_control: { type: 'ephemeral' },
+    }
+    expect(chatCompletionsSamplingParameters(parameters, 'https://api.openai.com/v1'))
+      .toEqual({ temperature: 0.4, service_tier: 'flex', prompt_cache_key: 'k', safety_identifier: 'u' })
+    expect(chatCompletionsSamplingParameters(parameters, 'https://openrouter.ai/api/v1'))
+      .toEqual({ temperature: 0.4, cache_control: { type: 'ephemeral' } })
+    expect(chatCompletionsSamplingParameters(parameters, 'http://localhost:11434/v1')).toEqual({ temperature: 0.4 })
+  })
+})
+
+describe('explicitReasoningEffort', () => {
+  it('is true only when a string effort is configured', () => {
+    expect(explicitReasoningEffort({ reasoning: { effort: 'high' } })).toBe(true)
+    expect(explicitReasoningEffort({ reasoning: { summary: 'auto' } })).toBe(false)
+    expect(explicitReasoningEffort({ reasoning: { effort: 3 } })).toBe(false)
+    expect(explicitReasoningEffort({ reasoning: 'high' })).toBe(false)
+    expect(explicitReasoningEffort({})).toBe(false)
   })
 })

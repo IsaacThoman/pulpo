@@ -37,9 +37,15 @@ import { registerPublicApiRoutes } from './routes.js'
 
 type Handler = (request: FastifyRequest, reply: FastifyReply) => Promise<unknown>
 
+const routeOptions = new Map<string, Record<string, unknown>>()
+
 async function handlers(): Promise<Map<string, Handler>> {
   const registered = new Map<string, Handler>()
-  const route = (method: string) => (url: string, handler: Handler) => registered.set(`${method} ${url}`, handler)
+  // Fastify accepts `(url, handler)` or `(url, options, handler)`; the handler is always last.
+  const route = (method: string) => (url: string, ...rest: unknown[]) => {
+    registered.set(`${method} ${url}`, rest.at(-1) as Handler)
+    if (rest.length > 1) routeOptions.set(`${method} ${url}`, rest[0] as Record<string, unknown>)
+  }
   const app = { get: route('GET'), post: route('POST') } as unknown as FastifyInstance
   await registerPublicApiRoutes(app)
   return registered
@@ -175,9 +181,29 @@ describe('public OpenAI-compatible routes', () => {
   it('rejects invalid Anthropic Messages requests before queueing', async () => {
     const handler = (await handlers()).get('POST /v1/messages')!
     await expect(handler(request({ body: {
-      model: 'm', max_tokens: 64, messages: [{ role: 'user', content: 'hi' }], tools: [{ type: 'web_search_20250305', name: 'web_search' }],
-    } }), {} as FastifyReply)).rejects.toMatchObject({ statusCode: 400, param: 'tools.0.type' })
+      model: 'm', max_tokens: 64, messages: [{ role: 'tool', content: 'hi' }],
+    } }), {} as FastifyReply)).rejects.toMatchObject({ statusCode: 400, param: 'messages.0.role' })
     expect(mocks.executePublicGeneration).not.toHaveBeenCalled()
+  })
+
+  it('drops Anthropic server tools and logs them as ignored', async () => {
+    const handler = (await handlers()).get('POST /v1/messages')!
+    await expect(handler(request({ body: {
+      model: 'm', max_tokens: 64, messages: [{ role: 'user', content: 'hi' }],
+      tools: [{ type: 'web_search_20250305', name: 'web_search' }, { name: 'lookup', input_schema: { type: 'object' } }],
+    } }), {} as FastifyReply)).resolves.toEqual({ ok: true })
+    expect(mocks.executePublicGeneration.mock.calls[0]![0].request.parameters.tools).toEqual([
+      { type: 'function', name: 'lookup', parameters: { type: 'object' } },
+    ])
+    expect(mocks.logInfo).toHaveBeenCalledWith({ protocol: 'anthropic_messages', ignoredParameters: ['tools.web_search_20250305'] }, 'Ignored OpenAI-compatible request parameters')
+  })
+
+  it('accepts Anthropic-sized request bodies on the Messages routes', async () => {
+    routeOptions.clear()
+    await handlers()
+    expect(routeOptions.get('POST /v1/messages')).toEqual({ bodyLimit: 32 * 1024 * 1024 })
+    expect(routeOptions.get('POST /v1/messages/count_tokens')).toEqual({ bodyLimit: 32 * 1024 * 1024 })
+    expect(routeOptions.has('POST /v1/responses')).toBe(false)
   })
 
   it('estimates Anthropic input tokens without requiring max_tokens', async () => {

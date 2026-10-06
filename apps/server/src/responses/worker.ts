@@ -223,6 +223,18 @@ async function prepareInputFiles(client: UpstreamTextClient, userId: string, inp
   return prepared
 }
 
+/** Collapse inlined `file_data` to a reference so budget estimates match Responses file ids. */
+function inlineFilesAsReferences(input: unknown[]): unknown[] {
+  return input.map((item) => {
+    const content = (item as { content?: unknown }).content
+    if (!Array.isArray(content)) return item
+    return { ...(item as object), content: content.map((part) => {
+      const value = part as { type?: string; file_data?: string; filename?: string }
+      return value.type === 'input_file' && typeof value.file_data === 'string' ? { type: 'input_file', filename: value.filename } : part
+    }) }
+  })
+}
+
 async function contextualInput(
   client: UpstreamTextClient,
   record: { response: typeof responses.$inferSelect; model: typeof models.$inferSelect },
@@ -811,7 +823,8 @@ async function processGenerationAttempt(
     const reservation = await resizeBudgetReservation({
       responseId,
       accruedCostMicros: sidecarCostMicros + priorGenerationCostMicros,
-      requestInput: { input, parameters },
+      // Inlined file bytes are not text tokens; reserve for them as the Responses path does for a file_id.
+      requestInput: { input: client.openai ? input : inlineFilesAsReferences(input), parameters },
       maxOutputTokens: publicOutputTokenLimit(record.model.maxOutputTokens, {
         ...parameters, ...record.response.parameters as Record<string, unknown>,
       }).max_output_tokens,
@@ -855,7 +868,9 @@ async function processGenerationAttempt(
         incomplete_details?: { reason?: string } | null
         error?: { message?: string; code?: string } | null
       } | undefined
-      if (upstreamResponse?.id) {
+      // Only Responses ids can be retrieved later; translated message ids would
+      // make a background fallback try to resume a response that does not exist.
+      if (upstreamResponse?.id && client.openai && upstreamResponse.id !== upstreamResponseId) {
         upstreamResponseId = upstreamResponse.id
         await db.update(responses).set({ openaiResponseId: upstreamResponse.id }).where(eq(responses.id, responseId))
       }

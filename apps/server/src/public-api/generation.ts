@@ -45,8 +45,13 @@ async function findIdempotentResponse(input: {
   return existing
 }
 
+// Non-streaming callers hold the request open for the whole generation. SDKs
+// retry 5xx responses, so giving up early would start duplicate billed
+// generations; wait as long as the longest supported generation instead.
+const NON_STREAMING_WAIT_ATTEMPTS = 18_000
+
 export async function waitForTerminalResponse(responseId: string) {
-  for (let attempt = 0; attempt < 1_800; attempt += 1) {
+  for (let attempt = 0; attempt < NON_STREAMING_WAIT_ATTEMPTS; attempt += 1) {
     const [row] = await db.select().from(responses).where(eq(responses.id, responseId)).limit(1)
     if (!row) throw notFound('Response')
     if (!['queued', 'in_progress'].includes(row.status)) return row
@@ -54,6 +59,8 @@ export async function waitForTerminalResponse(responseId: string) {
   }
   throw new Error('Response did not reach a terminal state')
 }
+
+const STREAM_KEEP_ALIVE_MS = 15_000
 
 async function streamGeneration(
   reply: FastifyReply,
@@ -69,7 +76,16 @@ async function streamGeneration(
     connection: 'keep-alive',
   })
   await subscriber.subscribe('pulpo:response-events', 'pulpo:response-snapshots')
-  const close = createStreamCloser(subscriber, reply.raw)
+  // Keep idle streams alive through proxies while a model reasons silently.
+  const keepAlive = setInterval(() => {
+    if (!reply.raw.writableEnded) reply.raw.write(projector.keepAlive?.() ?? ': keep-alive\n\n')
+  }, STREAM_KEEP_ALIVE_MS)
+  keepAlive.unref()
+  const closeStream = createStreamCloser(subscriber, reply.raw)
+  const close = () => {
+    clearInterval(keepAlive)
+    closeStream()
+  }
   reply.raw.once('close', close)
   let lastSequence = 0
   let replaying = true

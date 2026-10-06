@@ -64,6 +64,8 @@ describe('parseAnthropicMessagesRequest', () => {
   it('requires max_tokens and messages', () => {
     expect(() => parseAnthropicMessagesRequest({ model: 'm', messages: [{ role: 'user', content: 'hi' }] })).toThrow(ZodError)
     expect(() => parseAnthropicMessagesRequest(base({ messages: [] }))).toThrow(ZodError)
+    expect(() => parseAnthropicMessagesRequest(base({ max_tokens: -1 }))).toThrow(ZodError)
+    expect(() => parseAnthropicMessagesRequest(base({ max_tokens: 1.5 }))).toThrow(ZodError)
     expectAppError(() => parseAnthropicMessagesRequest('nope'), { code: 'validation_error' })
   })
 
@@ -158,9 +160,73 @@ describe('parseAnthropicMessagesRequest', () => {
     ])
   })
 
+  it('accepts max_tokens 0 as a cache pre-warm and generates at least one token', () => {
+    const parsed = parseAnthropicMessagesRequest(base({ max_tokens: 0 }))
+    expect(parsed.maxOutputTokens).toBe(1)
+    expect(parsed.fingerprintValue).toMatchObject({ maxOutputTokens: 1 })
+  })
+
+  it('keeps search results and tool references as text', () => {
+    const searchResult = {
+      type: 'search_result', title: 'Docs', source: 'https://docs.example/a',
+      content: [{ type: 'text', text: 'line 1' }, { type: 'text', text: 'line 2' }], citations: { enabled: true },
+    }
+    const parsed = parseAnthropicMessagesRequest(base({ messages: [
+      { role: 'user', content: [{ type: 'text', text: 'Use this:' }, searchResult, { type: 'search_result', content: [{ type: 'text', text: 'bare' }] }] },
+      { role: 'assistant', content: [{ type: 'tool_use', id: 't1', name: 'search', input: {} }] },
+      { role: 'user', content: [
+        { type: 'tool_result', tool_use_id: 't1', content: [searchResult, { type: 'tool_reference', tool_name: 'lookup' }] },
+        { type: 'tool_result', tool_use_id: 't2', content: [{ type: 'image', source: { type: 'url', url: 'https://img' } }, searchResult] },
+      ] },
+    ] }))
+    expect(parsed.rawInput).toEqual([
+      { role: 'user', content: [
+        { type: 'input_text', text: 'Use this:' },
+        { type: 'input_text', text: 'Docs — https://docs.example/a\nline 1\nline 2' },
+        { type: 'input_text', text: 'bare' },
+      ] },
+      { type: 'function_call', call_id: 't1', name: 'search', arguments: '{}' },
+      { type: 'function_call_output', call_id: 't1', output: 'Docs — https://docs.example/a\nline 1\nline 2\n[Tool reference: lookup]' },
+      { type: 'function_call_output', call_id: 't2', output: [
+        { type: 'input_image', image_url: 'https://img' },
+        { type: 'input_text', text: 'Docs — https://docs.example/a\nline 1\nline 2' },
+      ] },
+    ])
+  })
+
+  it('turns assistant compaction blocks into a developer summary', () => {
+    const parsed = parseAnthropicMessagesRequest(base({ messages: [
+      { role: 'user', content: 'start' },
+      { role: 'assistant', content: [{ type: 'text', text: 'before' }, { type: 'compaction', content: 'We fixed the bug.' }, { type: 'text', text: 'after' }] },
+      { role: 'assistant', content: [{ type: 'compaction', content: '' }] },
+      { role: 'user', content: 'next' },
+    ] }))
+    expect(parsed.rawInput).toEqual([
+      { role: 'user', content: 'start' },
+      { role: 'assistant', content: 'before' },
+      { role: 'developer', content: 'Summary of earlier conversation:\nWe fixed the bug.' },
+      { role: 'assistant', content: 'after' },
+      { role: 'user', content: 'next' },
+    ])
+  })
+
+  it('maps URL documents to file URLs', () => {
+    const parsed = parseAnthropicMessagesRequest(base({ messages: [{ role: 'user', content: [
+      { type: 'document', source: { type: 'url', url: 'https://x/spec.pdf' }, title: 'Spec' },
+      { type: 'document', source: { type: 'url', url: 'https://x/a.pdf' } },
+    ] }] }))
+    expect(parsed.rawInput).toEqual([{ role: 'user', content: [
+      { type: 'input_file', filename: 'Spec', file_url: 'https://x/spec.pdf' },
+      { type: 'input_file', filename: 'document.pdf', file_url: 'https://x/a.pdf' },
+    ] }])
+  })
+
   it('rejects unsupported blocks, roles, and sources', () => {
     const user = (block: unknown) => base({ messages: [{ role: 'user', content: [block] }] })
-    expectAppError(() => parseAnthropicMessagesRequest(user({ type: 'search_result', content: [] })), { code: 'unsupported_parameter', param: 'messages.0.content.0.type' })
+    expectAppError(() => parseAnthropicMessagesRequest(user({ type: 'container_upload', file_id: 'f' })), { code: 'unsupported_parameter', param: 'messages.0.content.0.type' })
+    expectAppError(() => parseAnthropicMessagesRequest(user({ type: 'tool_reference' })), { code: 'unsupported_parameter', param: 'messages.0.content.0.type' })
+    expectAppError(() => parseAnthropicMessagesRequest(user({ type: 'document', source: { type: 'url' } })), { param: 'messages.0.content.0.source.type' })
+    expectAppError(() => parseAnthropicMessagesRequest(user({ type: 'tool_result', tool_use_id: 't', content: [{ type: 'video' }] })), { param: 'messages.0.content.0.content.0.type' })
     expectAppError(() => parseAnthropicMessagesRequest(base({ messages: [{ role: 'assistant', content: [{ type: 'image', source: {} }] }] })), { code: 'unsupported_parameter', param: 'messages.0.content.0.type' })
     expectAppError(() => parseAnthropicMessagesRequest(base({ messages: [{ role: 'tool', content: 'x' }] })), { code: 'unsupported_parameter', param: 'messages.0.role' })
     expectAppError(() => parseAnthropicMessagesRequest(user({ type: 'image', source: { type: 'file', file_id: 'f' } })), { param: 'messages.0.content.0.source.type' })
@@ -171,7 +237,7 @@ describe('parseAnthropicMessagesRequest', () => {
     expectAppError(() => parseAnthropicMessagesRequest(base({ messages: [{ role: 'user', content: 5 }] })), { code: 'validation_error', param: 'messages.0.content' })
   })
 
-  it('converts custom tools and tool_choice, rejecting server tools', () => {
+  it('converts custom tools and tool_choice, dropping server tools', () => {
     const tools = [
       { name: 'lookup', description: 'Find', input_schema: { type: 'object', properties: { q: { type: 'string' } } }, strict: true },
       { type: 'custom', name: 'bare' },
@@ -191,7 +257,16 @@ describe('parseAnthropicMessagesRequest', () => {
     expect(auto.tool_choice).toBe('auto')
     expect(auto).not.toHaveProperty('parallel_tool_calls')
     expect(parseAnthropicMessagesRequest(base({ tool_choice: { type: 'any' } })).parameters).not.toHaveProperty('tool_choice')
-    expectAppError(() => parseAnthropicMessagesRequest(base({ tools: [{ type: 'web_search_20250305', name: 'web_search' }] })), { code: 'unsupported_parameter', param: 'tools.0.type' })
+    const withServer = parseAnthropicMessagesRequest(base({ tools: [
+      { type: 'web_search_20250305', name: 'web_search' }, ...tools, { type: 'bash_20250124', name: 'bash' }, { type: 7, name: 'odd' },
+    ] }))
+    expect((withServer.parameters.tools as Array<{ name: string }>).map((tool) => tool.name)).toEqual(['lookup', 'bare'])
+    expect(withServer.ignoredParameters).toEqual(['tools.4', 'tools.bash_20250124', 'tools.web_search_20250305'])
+    const onlyServer = parseAnthropicMessagesRequest(base({ tools: [{ type: 'web_search_20250305', name: 'web_search' }], tool_choice: { type: 'auto' } }))
+    expect(onlyServer.parameters.tools).toEqual([])
+    expect(onlyServer.parameters).not.toHaveProperty('tool_choice')
+    expect(onlyServer.ignoredParameters).toEqual(['tools.web_search_20250305'])
+    expectAppError(() => parseAnthropicMessagesRequest(base({ tools: [{ type: 'custom' }] })), { code: 'validation_error', param: 'tools.0.name' })
     expectAppError(() => parseAnthropicMessagesRequest(base({ tools, tool_choice: { type: 'tool' } })), { param: 'tool_choice.name' })
     expectAppError(() => parseAnthropicMessagesRequest(base({ tools, tool_choice: { type: 'other' } })), { param: 'tool_choice.type' })
   })
@@ -286,6 +361,28 @@ describe('serializeAnthropicMessage', () => {
     expect(failed({ message: 'too big', upstream: { status: 413 } })).toMatchObject({ statusCode: 413, type: 'request_too_large' })
     expect(failed(null)).toMatchObject({ statusCode: 500, type: 'api_error', message: 'Generation failed' })
     expect(failed({ message: 'x', upstream: { status: 503 } })).toBeInstanceOf(AppError)
+  })
+
+  it('maps overload and rate limit failures to the types clients retry on', () => {
+    const failed = (error: unknown) => {
+      try {
+        serializeAnthropicMessage(responseRow({ status: 'failed', error }))
+      } catch (caught) {
+        return caught
+      }
+      throw new Error('expected failure')
+    }
+    for (const error of [
+      { message: 'busy', upstream: { status: 529 } },
+      { message: 'busy', upstream: { status: 503 } },
+      { message: 'busy', upstream: { type: 'overloaded_error' } },
+      { message: 'Upstream is Overloaded' },
+    ]) expect(failed(error)).toMatchObject({ statusCode: 529, type: 'overloaded_error' })
+    expect(failed({ message: 'slow down', upstream: { status: 429 } })).toMatchObject({ statusCode: 429, type: 'rate_limit_error', message: 'slow down' })
+    expect(failed({ message: 'limited', category: 'rate_limit' })).toMatchObject({ statusCode: 429, type: 'rate_limit_error' })
+    expect(failed({ message: 'boom', upstream: { status: 500 } })).toMatchObject({ statusCode: 500, type: 'api_error' })
+    // Client errors keep precedence over a message that mentions overload.
+    expect(failed({ message: 'overloaded prompt', upstream: { status: 400 } })).toMatchObject({ statusCode: 400, type: 'invalid_request_error' })
   })
 })
 
@@ -438,14 +535,128 @@ describe('AnthropicStreamProjector', () => {
       .toEqual([{ type: 'error', error: { type: 'api_error', message: 'Generation cancelled' } }])
   })
 
-  // DOUBT: the non-stream serializer returns redacted_thinking (and signed thinking
-  // with empty text), but the streaming projector only opens thinking blocks on
-  // summary text deltas, so streaming clients never receive these blocks to replay.
   it('streams redacted thinking like the non-stream serializer', () => {
     const builder = new ResponsesStreamBuilder('anthropic_messages', { model: 'claude-x' })
     const events = [...builder.redactedReasoning('r', 'OPAQUE'), ...builder.reasoningDone('r'), ...builder.text('ok'), ...builder.finish({ usage: null }).events]
     const { payloads } = project(thinkingRow(), events)
     expect(payloads.some((payload) => (payload.content_block as Payload | undefined)?.type === 'redacted_thinking')).toBe(true)
+  })
+})
+
+function rawEvent(sequence: number, type: string, payload: Record<string, unknown> = {}): ResponseEvent {
+  return { responseId: RESPONSE_ID, sequence, type, payload: { type, ...payload }, emittedAt: createdAt.toISOString() } as ResponseEvent
+}
+
+function projectRaw(row: never, events: ResponseEvent[]): Payload[] {
+  const projector = new AnthropicStreamProjector(row)
+  return events.flatMap((event) => projector.project(event)) as Payload[]
+}
+
+function blocks(payloads: Payload[]): Array<{ type: string; text: string; signature?: string }> {
+  const result: Array<{ type: string; text: string; signature?: string }> = []
+  for (const payload of payloads) {
+    if (payload.type === 'content_block_start') result.push({ type: (payload.content_block as Payload).type, text: '' })
+    if (payload.type === 'content_block_delta') {
+      const delta = payload.delta as Record<string, string>
+      const block = result.at(-1)!
+      if (delta.type === 'signature_delta') block.signature = delta.signature
+      else block.text += delta.text ?? delta.thinking ?? delta.partial_json ?? ''
+    }
+  }
+  return result
+}
+
+describe('AnthropicStreamProjector backfill and dedup', () => {
+  const message = (id: string, text: string) => ({ type: 'message', id, role: 'assistant', content: [{ type: 'output_text', text }] })
+  const completed = (output: unknown[]) => ({ response: { status: 'completed', output, usage: null } })
+
+  it('encodes keep-alives as Anthropic ping events', () => {
+    expect(new AnthropicStreamProjector(responseRow()).keepAlive()).toBe('event: ping\ndata: {"type":"ping"}\n\n')
+  })
+
+  it('emits text reported only in output_item.done once, without duplicating it at completion', () => {
+    const payloads = projectRaw(responseRow(), [
+      rawEvent(1, 'response.output_item.done', { output_index: 0, item: message('msg_a', 'Whole answer') }),
+      rawEvent(2, 'response.completed', completed([message('msg_a', 'Whole answer')])),
+    ])
+    assertValidAnthropicStream(payloads)
+    expect(blocks(payloads)).toEqual([{ type: 'text', text: 'Whole answer' }])
+  })
+
+  it('emits text reported only in the completed response output', () => {
+    const payloads = projectRaw(responseRow(), [rawEvent(1, 'response.completed', completed([message('msg_b', 'Late text')]))])
+    assertValidAnthropicStream(payloads)
+    expect(blocks(payloads)).toEqual([{ type: 'text', text: 'Late text' }])
+  })
+
+  it('does not repeat streamed text when its done event arrives after another block opened', () => {
+    const payloads = projectRaw(thinkingRow(), [
+      rawEvent(1, 'response.output_text.delta', { item_id: 'msg_c', delta: 'Hi' }),
+      rawEvent(2, 'response.reasoning_summary_text.delta', { item_id: 'rs_c', summary_index: 0, delta: 'hmm' }),
+      rawEvent(3, 'response.output_item.done', { item: message('msg_c', 'Hi') }),
+      rawEvent(4, 'response.completed', completed([message('msg_c', 'Hi'), { type: 'reasoning', id: 'rs_c', summary: [{ type: 'summary_text', text: 'hmm' }] }])),
+    ])
+    assertValidAnthropicStream(payloads)
+    expect(blocks(payloads)).toEqual([{ type: 'text', text: 'Hi' }, { type: 'thinking', text: 'hmm' }])
+  })
+
+  it('does not duplicate streamed thinking when its done event arrives out of order', () => {
+    const reasoning = { type: 'reasoning', id: 'rs_d', summary: [{ type: 'summary_text', text: 'plan' }], pulpo_signature: 'SIG' }
+    const payloads = projectRaw(thinkingRow(), [
+      rawEvent(1, 'response.reasoning_summary_text.delta', { item_id: 'rs_d', summary_index: 0, delta: 'plan' }),
+      rawEvent(2, 'response.output_text.delta', { item_id: 'msg_d', delta: 'Answer' }),
+      rawEvent(3, 'response.output_item.done', { item: reasoning }),
+      rawEvent(4, 'response.output_item.done', { item: message('msg_d', 'Answer') }),
+      rawEvent(5, 'response.completed', completed([reasoning, message('msg_d', 'Answer')])),
+    ])
+    assertValidAnthropicStream(payloads)
+    expect(blocks(payloads).map((block) => block.type)).toEqual(['thinking', 'text'])
+  })
+
+  it('emits display-omitted and redacted thinking whole, only when thinking was requested', () => {
+    const omitted = { type: 'reasoning', id: 'rs_e', summary: [], pulpo_signature: 'SIG_E' }
+    const redacted = { type: 'reasoning', id: 'rs_f', summary: [], pulpo_redacted_data: 'OPAQUE' }
+    const events = [
+      rawEvent(1, 'response.output_item.done', { item: omitted }),
+      rawEvent(2, 'response.output_text.delta', { item_id: 'msg_e', delta: 'ok' }),
+      rawEvent(3, 'response.completed', completed([omitted, message('msg_e', 'ok'), redacted])),
+    ]
+    const shown = projectRaw(thinkingRow(), events)
+    assertValidAnthropicStream(shown)
+    expect(blocks(shown)).toEqual([
+      { type: 'thinking', text: '', signature: 'SIG_E' },
+      { type: 'text', text: 'ok' },
+      { type: 'redacted_thinking', text: '' },
+    ])
+    expect(shown.find((payload) => (payload.content_block as Payload | undefined)?.type === 'redacted_thinking')!.content_block).toEqual({ type: 'redacted_thinking', data: 'OPAQUE' })
+    const hidden = projectRaw(responseRow(), events)
+    assertValidAnthropicStream(hidden)
+    expect(blocks(hidden)).toEqual([{ type: 'text', text: 'ok' }])
+  })
+
+  it('ignores finished items without ids and items with no content', () => {
+    const payloads = projectRaw(thinkingRow(), [
+      rawEvent(1, 'response.output_item.done', { item: { type: 'message', content: [{ type: 'output_text', text: 'no id' }] } }),
+      rawEvent(2, 'response.output_item.done', { item: { type: 'reasoning', id: 'rs_empty', summary: [] } }),
+      rawEvent(3, 'response.completed', completed([{ type: 'reasoning', id: 'rs_empty', summary: [] }, message('msg_empty', '')])),
+    ])
+    assertValidAnthropicStream(payloads)
+    expect(blocks(payloads)).toEqual([])
+  })
+
+  it('separates multi-part reasoning summaries with newlines', () => {
+    const payloads = projectRaw(thinkingRow(), [
+      rawEvent(1, 'response.reasoning_summary_text.delta', { item_id: 'rs_g', summary_index: 0, delta: 'First ' }),
+      rawEvent(2, 'response.reasoning_summary_text.delta', { item_id: 'rs_g', summary_index: 0, delta: 'part.' }),
+      rawEvent(3, 'response.reasoning_summary_text.delta', { item_id: 'rs_g', summary_index: 1, delta: 'Second part.' }),
+      rawEvent(4, 'response.reasoning_summary_text.delta', { item_id: 'rs_h', summary_index: 1, delta: 'Other item.' }),
+      rawEvent(5, 'response.completed', completed([])),
+    ])
+    assertValidAnthropicStream(payloads)
+    expect(blocks(payloads)).toEqual([
+      { type: 'thinking', text: 'First part.\nSecond part.' },
+      { type: 'thinking', text: 'Other item.' },
+    ])
   })
 })
 

@@ -195,6 +195,18 @@ describe('createUpstreamTextClient over HTTP', () => {
     })
   })
 
+  it('never sends an ANTHROPIC_AUTH_TOKEN from the environment to an admin-configured endpoint', async () => {
+    vi.stubEnv('ANTHROPIC_AUTH_TOKEN', 'env-token')
+    try {
+      const client = createUpstreamTextClient(provider('anthropic_messages'), { maxRetries: 0 })
+      await client.responses.create({ model: 'claude-sonnet-4-5', input: 'hello', stream: false })
+      expect(requests[0]!.headers.authorization).toBeUndefined()
+      expect(requests[0]!.headers['x-api-key']).toBe('sk-test-key')
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+
   it('collects non-streaming Anthropic requests', async () => {
     const client = createUpstreamTextClient(provider('anthropic_messages'), { maxRetries: 0 })
     const response = await client.responses.create({ model: 'claude-sonnet-4-5', input: 'hello', stream: false })

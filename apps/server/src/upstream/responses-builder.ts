@@ -313,6 +313,23 @@ export class ResponsesStreamBuilder {
       .filter((item) => item.type !== 'message' || (item.content as unknown[]).length > 0)
   }
 
+  /**
+   * A `response.in_progress` snapshot carrying usage so far. Emitted before a
+   * failed stream throws, so the worker can bill tokens the provider consumed.
+   */
+  progress(usage: ResponsesUsage | null): ResponsesStreamEvent[] {
+    const events: ResponsesStreamEvent[] = []
+    this.ensureStarted(events)
+    events.push(this.event('response.in_progress', { response: this.shell('in_progress', { output: this.output(), output_text: this.outputText(), usage }) }))
+    return events
+  }
+
+  /** Rough output tokens from generated characters, for providers that omit usage. */
+  estimatedOutputTokens(): number {
+    const characters = this.items.reduce((total, state) => total + (state.kind === 'message' ? state.text.length + state.refusal.length : state.kind === 'reasoning' ? state.text.length : state.arguments.length + state.name.length), 0)
+    return Math.ceil(characters / 4)
+  }
+
   outputText(): string {
     return this.items.flatMap((state) => state.kind === 'message' ? [state.text] : []).join('')
   }

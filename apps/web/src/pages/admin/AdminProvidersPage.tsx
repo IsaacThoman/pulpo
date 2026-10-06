@@ -328,6 +328,8 @@ export function AdminProvidersPage() {
                     apiFormat,
                     // Follow the protocol's default endpoint unless the URL was customized.
                     baseUrl: Object.values(DEFAULT_BASE_URLS).includes(draft.baseUrl.trim()) ? DEFAULT_BASE_URLS[apiFormat] : draft.baseUrl,
+                    // Anthropic has no prompt_cache_key; drop that transport when it is selected.
+                    cacheAffinityMode: apiFormat === 'anthropic_messages' && draft.cacheAffinityMode === 'openai_prompt_cache_key' ? 'none' : draft.cacheAffinityMode,
                   })}
                 >
                   <SelectTrigger id="prov-format" className="w-full"><SelectValue /></SelectTrigger>

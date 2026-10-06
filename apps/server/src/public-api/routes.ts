@@ -113,7 +113,11 @@ export async function registerPublicApiRoutes(app: FastifyInstance): Promise<voi
     return executePublicGeneration({ reply, key, request: parsed, idempotencyKey: request.headers['idempotency-key'] as string | undefined })
   })
 
-  app.post('/v1/messages', async (request, reply) => {
+  // Agent clients such as Claude Code resend long histories with images and
+  // tool output; Anthropic accepts 32 MB requests, so match it here.
+  const anthropicBodyLimit = { bodyLimit: 32 * 1024 * 1024 }
+
+  app.post('/v1/messages', anthropicBodyLimit, async (request, reply) => {
     const key = await authenticateApiKey(request, 'responses')
     const parsed = parseAnthropicMessagesRequest(request.body)
     logIgnoredParameters(request, parsed.protocol, parsed.ignoredParameters)
@@ -121,7 +125,7 @@ export async function registerPublicApiRoutes(app: FastifyInstance): Promise<voi
     return executePublicGeneration({ reply, key, request: parsed, idempotencyKey: request.headers['idempotency-key'] as string | undefined })
   })
 
-  app.post('/v1/messages/count_tokens', async (request) => {
+  app.post('/v1/messages/count_tokens', anthropicBodyLimit, async (request) => {
     const key = await authenticateApiKey(request, 'responses')
     const body = request.body && typeof request.body === 'object' && !Array.isArray(request.body) ? request.body as Record<string, unknown> : {}
     // Counting needs no output limit; supply one so the shared parser accepts the body.

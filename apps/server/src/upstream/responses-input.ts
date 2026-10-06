@@ -149,6 +149,9 @@ const STRUCTURAL_KEYS = new Set([
   'service_tier', 'prompt_cache_key', 'prompt_cache_retention', 'prompt_cache_options', 'safety_identifier',
   'stream_options', 'top_logprobs', 'truncation', 'metadata', 'previous_response_id', 'conversation',
   'cache_control', 'user', 'max_tool_calls', 'context_management', 'prompt', 'moderation',
+  // Target-protocol fields Pulpo derives itself. The output limit is sized to
+  // the caller's budget, so a default must never override it.
+  'max_tokens', 'max_completion_tokens', 'messages', 'system', 'tool_choice',
 ])
 
 /**
@@ -206,4 +209,34 @@ export function neutralTextFormat(text: unknown): NeutralTextFormat {
 export function reasoningEffort(reasoning: unknown): string | undefined {
   const effort = record(reasoning)?.effort
   return typeof effort === 'string' ? effort : undefined
+}
+
+const MEDIA_TOKEN_ESTIMATE = 1_600
+
+/**
+ * Replace inline media (`data:` URLs and inlined `file_data`) with short
+ * placeholders, adding a fixed per-item allowance. Character-based token
+ * estimates would otherwise count base64 bytes as text.
+ */
+export function withoutInlineMedia(value: unknown): { value: unknown; mediaItems: number } {
+  let mediaItems = 0
+  const walk = (entry: unknown): unknown => {
+    if (typeof entry === 'string') {
+      if (entry.startsWith('data:') && entry.length > 256) {
+        mediaItems += 1
+        return '[inline media]'
+      }
+      return entry
+    }
+    if (Array.isArray(entry)) return entry.map(walk)
+    const item = record(entry)
+    if (!item) return entry
+    return Object.fromEntries(Object.entries(item).map(([key, field]) => [key, walk(field)]))
+  }
+  return { value: walk(value), mediaItems }
+}
+
+export function estimateTokensExcludingMedia(value: unknown): number {
+  const stripped = withoutInlineMedia(value)
+  return Math.max(1, Math.ceil(JSON.stringify(stripped.value ?? '').length / 4) + stripped.mediaItems * MEDIA_TOKEN_ESTIMATE)
 }

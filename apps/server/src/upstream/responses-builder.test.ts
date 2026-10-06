@@ -181,4 +181,31 @@ describe('ResponsesStreamBuilder', () => {
     expect(b.output().map((item) => item.status)).toEqual(['completed', 'in_progress'])
     expect(b.outputText()).toBe('a')
   })
+
+  it('reports progress with usage and partial output without finishing', () => {
+    const fresh = builder()
+    const usage = responsesUsage({ inputTokens: 7, outputTokens: 2 })
+    const initial = fresh.progress(usage)
+    expect(types(initial)).toEqual(['response.created', 'response.in_progress', 'response.in_progress'])
+    expect(initial.at(-1)!.response).toMatchObject({ status: 'in_progress', usage, output: [] })
+
+    const b = builder()
+    const events = [...b.text('Hi'), ...b.progress(null)]
+    expect(events.at(-1)).toMatchObject({ type: 'response.in_progress', response: { status: 'in_progress', output_text: 'Hi', usage: null } })
+    expect((events.at(-1)!.response as { output: unknown[] }).output).toHaveLength(1)
+    expect(b.isFinished).toBe(false)
+    expect(events.map((event) => event.sequence_number)).toEqual(events.map((_, index) => index))
+  })
+
+  it('estimates output tokens from generated text, reasoning, refusals, and calls', () => {
+    const b = builder()
+    expect(b.estimatedOutputTokens()).toBe(0)
+    b.reasoning('r', 'abcd')
+    b.text('efgh')
+    b.refusal('ij')
+    b.functionCall('f', { callId: 'c', name: 'fn' })
+    b.functionArguments('f', '{}')
+    // 4 + 4 + 2 + 2 + 2 = 14 characters -> ceil(14 / 4)
+    expect(b.estimatedOutputTokens()).toBe(4)
+  })
 })

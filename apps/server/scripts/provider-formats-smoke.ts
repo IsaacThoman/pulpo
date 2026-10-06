@@ -23,7 +23,7 @@ const { buildApp } = await import('../src/app.js')
 const { redis } = await import('../src/redis.js')
 const { closeDiagnostics } = await import('../src/logging/provider-diagnostics.js')
 const queues = await import('../src/jobs.js')
-const { eq } = await import('drizzle-orm')
+const { eq, desc } = await import('drizzle-orm')
 
 type Json = Record<string, unknown>
 const records = (value: unknown): Json[] => Array.isArray(value) ? value as Json[] : []
@@ -38,6 +38,10 @@ type Fixture = {
   usage?: Usage
   errorStatus?: number
   errorBody?: Json
+  /** End the stream early, without a finish reason or `message_stop`. */
+  truncate?: boolean
+  /** Anthropic `error` event after the first text delta. */
+  streamError?: Json
 }
 type Recorded = { path: string; body: Json; headers: IncomingHttpHeaders }
 
@@ -53,6 +57,7 @@ function chatStream(res: ServerResponse, body: Json, result: Fixture) {
   delta({ role: 'assistant', content: '' })
   for (const part of halves(result.reasoning ?? '')) if (part) delta({ reasoning_content: part })
   for (const part of halves(result.text ?? '')) if (part) delta({ content: part })
+  if (result.truncate) return
   const tools = result.tools ?? []
   tools.forEach((tool, index) => delta({ tool_calls: [{ index, id: tool.id ?? `call_${index}_${randomUUID().slice(0, 8)}`, type: 'function', function: { name: tool.name, arguments: '' } }] }))
   // Interleave argument fragments across parallel calls.
@@ -81,7 +86,11 @@ function anthropicStream(res: ServerResponse, body: Json, result: Fixture) {
   }
   if (result.text) {
     send('content_block_start', { index, content_block: { type: 'text', text: '' } })
-    for (const part of halves(result.text)) send('content_block_delta', { index, delta: { type: 'text_delta', text: part } })
+    for (const part of halves(result.text)) {
+      send('content_block_delta', { index, delta: { type: 'text_delta', text: part } })
+      if (result.streamError) { send('error', { error: result.streamError }); return }
+      if (result.truncate) return
+    }
     send('content_block_stop', { index }); index++
   }
   for (const tool of result.tools ?? []) {
@@ -506,6 +515,36 @@ try {
     assert(models.data.some(model => model.id === claudeModel && model.type === 'model'))
     const counted = await anthropic.messages.countTokens({ model: claudeModel, messages: [{ role: 'user', content: 'Count these tokens please' }] })
     assert(counted.input_tokens > 0 && counted.input_tokens < 100)
+  })
+
+  await check('truncated provider streams fail instead of completing, and consumed tokens are billed', async () => {
+    for (const modelId of [chatModel, claudeModel]) {
+      fixture = () => ({ text: 'Partial answer that never finish', truncate: true })
+      await assert.rejects(openai.chat.completions.create({ model: modelId, messages: [{ role: 'user', content: 'Hi' }] }), (error: unknown) => error instanceof OpenAI.APIError && error.status === 500, modelId)
+    }
+    fixture = () => ({ text: 'Overloaded halfway', streamError: { type: 'overloaded_error', message: 'Overloaded' } })
+    await assert.rejects(anthropic.messages.create({ model: claudeModel, max_tokens: 50, messages: [{ role: 'user', content: 'Hi' }] }),
+      (error: unknown) => error instanceof Anthropic.APIError && error.status === 529 && JSON.stringify(error.error).includes('overloaded_error'))
+    const [attempt] = await db.select().from(schema.generationAttempts).orderBy(desc(schema.generationAttempts.startedAt)).limit(1)
+    assert(attempt && attempt.status === 'failed' && attempt.inputTokens > 0, JSON.stringify(attempt))
+  })
+
+  await check('Claude Code style requests: server tools, cached system blocks, large bodies, and max_tokens 0', async () => {
+    fixture = () => ({ text: 'Large ok' })
+    const big = 'x'.repeat(5 * 1024 * 1024)
+    const response = await fetch(`${base}/v1/messages`, { method: 'POST', headers: { 'x-api-key': key.secret, 'anthropic-version': '2023-06-01', 'anthropic-beta': 'interleaved-thinking-2025-05-14', 'content-type': 'application/json' }, body: JSON.stringify({
+      model: chatModel, max_tokens: 0, stream: true, metadata: { user_id: `user_${'a'.repeat(80)}` },
+      system: [{ type: 'text', text: 'You are Claude Code.', cache_control: { type: 'ephemeral' } }],
+      tools: [readTool, { type: 'web_search_20250305', name: 'web_search', max_uses: 5 }],
+      messages: [{ role: 'user', content: [{ type: 'text', text: big, cache_control: { type: 'ephemeral' } }] }],
+    }) })
+    assert.equal(response.status, 200, await response.clone().text())
+    const wire = await response.text()
+    const deltas = [...wire.matchAll(/"text_delta","text":"([^"]*)"/g)].map(match => match[1]).join('')
+    assert(wire.includes('event: message_stop') && deltas === 'Large ok', wire.slice(0, 3000))
+    const sent = lastRequest().body
+    assert.deepEqual(records(sent.tools).map(tool => record(tool.function)?.name), ['read_file'])
+    assert.equal(sent.max_tokens, 1)
   })
 
   assert.equal(fixtureFailures.length, 0, `Upstream fixture failures: ${fixtureFailures.map(String).join('; ')}`)

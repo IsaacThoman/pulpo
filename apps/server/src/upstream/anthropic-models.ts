@@ -3,6 +3,8 @@ export type AnthropicModelCapabilities = {
   adaptiveThinking: boolean
   /** Thinking cannot be disabled; lowering effort is the only control. */
   thinkingAlwaysOn: boolean
+  /** Thinks adaptively when `thinking` is omitted (Claude Opus 5 / Sonnet 5 and later). */
+  thinksByDefault: boolean
   /** Accepts non-default `temperature` / `top_p`. */
   sampling: boolean
   efforts: ReadonlySet<string>
@@ -36,16 +38,17 @@ function atLeast(version: { major: number; minor: number }, major: number, minor
  */
 export function anthropicModelCapabilities(upstreamModelId: string): AnthropicModelCapabilities {
   const version = claudeModelVersion(upstreamModelId)
-  if (!version) return { adaptiveThinking: false, thinkingAlwaysOn: false, sampling: true, efforts: new Set(BASE_EFFORTS) }
+  if (!version) return { adaptiveThinking: false, thinkingAlwaysOn: false, thinksByDefault: false, sampling: true, efforts: new Set(BASE_EFFORTS) }
   const { family } = version
   if (family === 'fable' || family === 'mythos') {
-    return { adaptiveThinking: true, thinkingAlwaysOn: true, sampling: false, efforts: new Set([...BASE_EFFORTS, 'xhigh', 'max']) }
+    return { adaptiveThinking: true, thinkingAlwaysOn: true, thinksByDefault: true, sampling: false, efforts: new Set([...BASE_EFFORTS, 'xhigh', 'max']) }
   }
   if (family === 'opus') {
     const adaptive = atLeast(version, 4, 6)
     return {
       adaptiveThinking: adaptive,
       thinkingAlwaysOn: atLeast(version, 5, 5),
+      thinksByDefault: atLeast(version, 5, 0),
       sampling: !atLeast(version, 4, 7),
       efforts: new Set([...BASE_EFFORTS, ...(adaptive ? ['max'] : []), ...(atLeast(version, 4, 7) ? ['xhigh'] : [])]),
     }
@@ -55,11 +58,12 @@ export function anthropicModelCapabilities(upstreamModelId: string): AnthropicMo
     return {
       adaptiveThinking: adaptive,
       thinkingAlwaysOn: atLeast(version, 5, 5),
+      thinksByDefault: atLeast(version, 5, 0),
       sampling: !atLeast(version, 5, 0),
       efforts: new Set([...BASE_EFFORTS, ...(adaptive ? ['max'] : []), ...(atLeast(version, 5, 0) ? ['xhigh'] : [])]),
     }
   }
-  return { adaptiveThinking: false, thinkingAlwaysOn: false, sampling: true, efforts: new Set(BASE_EFFORTS) }
+  return { adaptiveThinking: false, thinkingAlwaysOn: false, thinksByDefault: false, sampling: true, efforts: new Set(BASE_EFFORTS) }
 }
 
 /** Map a Responses `reasoning.effort` onto an effort level this model accepts. */

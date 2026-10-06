@@ -146,10 +146,29 @@ describe('anthropicMessagesRequest', () => {
     expect(body).not.toHaveProperty('prompt_cache_key')
   })
 
-  it('passes admin parameters through, letting them override translated values', () => {
+  it('passes admin parameters through as defaults that never override translated values', () => {
     const body = request({ model: 'claude-opus-4-6', reasoning: { effort: 'high' }, top_k: 5, thinking: { type: 'disabled' } })
     expect(body.top_k).toBe(5)
-    expect(body.thinking).toEqual({ type: 'disabled' })
+    expect(body.thinking).toEqual({ type: 'adaptive', display: 'summarized' })
+    // An unset field is filled from the admin default.
+    expect(request({ model: 'claude-opus-4-6', thinking: { type: 'enabled', budget_tokens: 2_048 } }).thinking).toEqual({ type: 'enabled', budget_tokens: 2_048 })
+    // Derived fields are never taken from defaults.
+    const derived = request({
+      model: 'claude-opus-4-6', max_output_tokens: 1_000, max_tokens: 5, messages: [], system: 'admin', stop_sequences: ['x'], tool_choice: { type: 'any' },
+    })
+    expect(derived.max_tokens).toBe(1_000)
+    expect(derived.messages).toEqual([{ role: 'user', content: [{ type: 'text', text: 'hi' }] }])
+    expect(derived).not.toHaveProperty('system')
+    expect(derived.stop_sequences).toEqual(['x'])
+    expect(derived).not.toHaveProperty('tool_choice')
+  })
+
+  it('drops temperature whenever thinking is on and keeps it when thinking is disabled', () => {
+    expect(request({ model: 'claude-opus-4-6', reasoning: { effort: 'high' }, temperature: 0.5 })).not.toHaveProperty('temperature')
+    expect(request({ model: 'claude-haiku-4-5', reasoning: { effort: 'low' }, max_output_tokens: 8_000, temperature: 0.5 })).not.toHaveProperty('temperature')
+    const disabled = request({ model: 'claude-opus-4-6', reasoning: { effort: 'none' }, temperature: 0.5 })
+    expect(disabled.thinking).toEqual({ type: 'disabled' })
+    expect(disabled.temperature).toBe(0.5)
   })
 })
 
@@ -191,7 +210,7 @@ describe('anthropicMessagesFromEntries', () => {
     ])
   })
 
-  it('replays signed thinking only for the producing model, ahead of text', () => {
+  it('replays signed thinking only for the producing model, in its original order', () => {
     const entries: NeutralEntry[] = [
       { kind: 'user', parts: [{ type: 'text', text: 'q' }] },
       { kind: 'assistant', text: 'answer' },
@@ -203,12 +222,33 @@ describe('anthropicMessagesFromEntries', () => {
       { kind: 'reasoning', reasoning: { text: '', format: 'anthropic_messages', redactedData: 'opaque', signature: 's5' } },
     ]
     expect(anthropicMessagesFromEntries(entries, options)[1]).toEqual({ role: 'assistant', content: [
+      { type: 'text', text: 'answer' },
       { type: 'thinking', thinking: 'same', signature: 's1' },
       { type: 'thinking', thinking: 'no model', signature: 's2' },
       { type: 'redacted_thinking', data: 'opaque' },
-      { type: 'text', text: 'answer' },
     ] })
     expect(anthropicMessagesFromEntries(entries, { ...options, replayThinking: false })[1]).toEqual({ role: 'assistant', content: [{ type: 'text', text: 'answer' }] })
+  })
+
+  it('keeps interleaved thinking between text and tool use in order', () => {
+    const entries: NeutralEntry[] = [
+      { kind: 'user', parts: [{ type: 'text', text: 'q' }] },
+      { kind: 'reasoning', reasoning: { text: 't1', format: 'anthropic_messages', model: 'claude-opus-4-6', signature: 's1' } },
+      { kind: 'function_call', callId: 'c1', name: 'f', arguments: '{}' },
+      { kind: 'function_output', callId: 'c1', output: [{ type: 'text', text: 'r' }] },
+      { kind: 'reasoning', reasoning: { text: 't2', format: 'anthropic_messages', model: 'claude-opus-4-6', signature: 's2' } },
+      { kind: 'assistant', text: 'between' },
+      { kind: 'reasoning', reasoning: { text: 't3', format: 'anthropic_messages', model: 'claude-opus-4-6', signature: 's3' } },
+      { kind: 'function_call', callId: 'c2', name: 'g', arguments: '{}' },
+    ]
+    const messages = anthropicMessagesFromEntries(entries, options)
+    expect(messages[1]!.content.map((block) => block.type)).toEqual(['thinking', 'tool_use'])
+    expect(messages[3]!.content).toEqual([
+      { type: 'thinking', thinking: 't2', signature: 's2' },
+      { type: 'text', text: 'between' },
+      { type: 'thinking', thinking: 't3', signature: 's3' },
+      { type: 'tool_use', id: 'c2', name: 'g', input: {} },
+    ])
   })
 
   it('removes thinking-only assistant turns and remerges the neighbours', () => {
@@ -292,6 +332,7 @@ describe('translateAnthropicStream', () => {
       { type: 'content_block_start', index: 0, content_block: { type: 'text', text: 'pre' } },
       { type: 'content_block_start', index: 1, content_block: { type: 'tool_use', id: 't', name: 'n', input: { a: 1 } } },
       { type: 'content_block_stop', index: 1 },
+      { type: 'message_stop' },
     ]), 'claude-x'))
     expect(terminal(events).output).toMatchObject([{ type: 'message' }, { type: 'function_call', arguments: '{"a":1}' }])
     expect(terminal(events).output_text).toBe('pre')
@@ -321,6 +362,47 @@ describe('translateAnthropicStream', () => {
     const rateLimited = await collect(translateAnthropicStream(items([{ type: 'error', error: { type: 'rate_limit_error' } }]), 'x')).catch((error: unknown) => error)
     expect(rateLimited).toMatchObject({ message: 'Provider stream failed', status: 429 })
   })
+
+  it('reports partial usage before rethrowing a mid-stream error', async () => {
+    const events: ResponsesStreamEvent[] = []
+    const error = await (async () => {
+      for await (const event of translateAnthropicStream(items([
+        { type: 'message_start', message: { id: 'm', usage: { input_tokens: 12, cache_read_input_tokens: 8, output_tokens: 1 } } },
+        { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } },
+        { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'part' } },
+        { type: 'error', error: { type: 'overloaded_error', message: 'Overloaded' } },
+      ]), 'x')) events.push(event)
+    })().catch((caught: unknown) => caught)
+    expect(error).toMatchObject({ status: 529 })
+    expect(events.at(-1)).toMatchObject({
+      type: 'response.in_progress',
+      response: { status: 'in_progress', output_text: 'part', usage: { input_tokens: 20, input_tokens_details: { cached_tokens: 8 }, output_tokens: 1 } },
+    })
+  })
+
+  it('fails a stream that ends without message_stop or a stop_reason, after reporting usage', async () => {
+    const events: ResponsesStreamEvent[] = []
+    const error = await (async () => {
+      for await (const event of translateAnthropicStream(items([
+        { type: 'message_start', message: { id: 'm', usage: { input_tokens: 30, output_tokens: 1 } } },
+        { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } },
+        { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'cut' } },
+      ]), 'x')) events.push(event)
+    })().catch((caught: unknown) => caught)
+    expect(error).toBeInstanceOf(Error)
+    expect(error).toMatchObject({ message: 'Provider stream ended before the response finished', status: 502 })
+    expect(events.at(-1)).toMatchObject({ type: 'response.in_progress', response: { output_text: 'cut', usage: { input_tokens: 30, output_tokens: 1 } } })
+    expect(events.some((event) => event.type === 'response.completed')).toBe(false)
+  })
+
+  it('completes on message_stop alone', async () => {
+    const events = await collect(translateAnthropicStream(items([
+      { type: 'message_start', message: { id: 'm', usage: { input_tokens: 1 } } },
+      { type: 'content_block_start', index: 0, content_block: { type: 'text', text: 'hi' } },
+      { type: 'message_stop' },
+    ]), 'x'))
+    expect(terminal(events)).toMatchObject({ status: 'completed', output_text: 'hi' })
+  })
 })
 
 describe('openAnthropicMessagesStream', () => {
@@ -343,7 +425,7 @@ describe('openAnthropicMessagesStream', () => {
     vi.spyOn(console, 'info').mockImplementation(() => undefined)
     const create = vi.fn()
       .mockRejectedValueOnce(anthropicError(400, 'messages.1.content.0: Invalid `signature` in `thinking` block'))
-      .mockResolvedValueOnce(items([{ type: 'message_start', message: { id: 'm', model: 'claude-opus-4-6' } }]))
+      .mockResolvedValueOnce(items([{ type: 'message_start', message: { id: 'm', model: 'claude-opus-4-6' } }, { type: 'message_stop' }]))
     const events = await collect(await openAnthropicMessagesStream(client(create), withThinking, { headers: { 'x-h': '1' } }))
     expect(terminal(events).status).toBe('completed')
     expect((create.mock.calls[0]![0] as { messages: Array<{ content: unknown[] }> }).messages[1]!.content).toHaveLength(2)
@@ -376,12 +458,54 @@ describe('openAnthropicMessagesStream', () => {
     const create = vi.fn().mockRejectedValue(required)
     await expect(openAnthropicMessagesStream(client(create), { model: 'claude-sonnet-4-5', input: 'hi' }, {})).rejects.toBe(required)
     expect(create).toHaveBeenCalledTimes(1)
-    // A thinking-related 400 without replayed thinking blocks is not a signature failure.
+    // An invalid thinking value is the caller's error: it is neither a signature failure nor unsupported.
     const noBlocks = anthropicError(400, 'thinking budget too large')
-    const second = vi.fn().mockRejectedValueOnce(noBlocks).mockResolvedValueOnce(items([]))
+    const second = vi.fn().mockRejectedValue(noBlocks)
+    await expect(openAnthropicMessagesStream(client(second), { model: 'claude-haiku-4-5', input: 'hi', reasoning: { effort: 'low' } }, {})).rejects.toBe(noBlocks)
+    expect(second).toHaveBeenCalledTimes(1)
+    // With replayed thinking, a 400 that does not mention signatures leaves the history alone.
+    const unrelated = anthropicError(400, 'messages.1.content.0.thinking: field required')
+    const third = vi.fn().mockRejectedValue(unrelated)
+    await expect(openAnthropicMessagesStream(client(third), withThinking, {})).rejects.toBe(unrelated)
+    expect(third).toHaveBeenCalledTimes(1)
+  })
+
+  it('drops unsupported thinking named in a 400', async () => {
     vi.spyOn(console, 'info').mockImplementation(() => undefined)
-    await openAnthropicMessagesStream(client(second), { model: 'claude-haiku-4-5', input: 'hi', reasoning: { effort: 'low' } }, {})
-    expect(second.mock.calls[1]![0]).not.toHaveProperty('thinking')
+    const create = vi.fn()
+      .mockRejectedValueOnce(anthropicError(400, 'thinking: Extra inputs are not permitted'))
+      .mockResolvedValueOnce(items([]))
+    await openAnthropicMessagesStream(client(create), { model: 'claude-haiku-4-5', input: 'hi', reasoning: { effort: 'low' } }, {})
+    expect(create.mock.calls[0]![0]).toHaveProperty('thinking')
+    expect(create.mock.calls[1]![0]).not.toHaveProperty('thinking')
+  })
+
+  it('drops only the output_config field a rejection names', async () => {
+    vi.spyOn(console, 'info').mockImplementation(() => undefined)
+    const payload = {
+      model: 'claude-opus-4-6', input: 'hi', reasoning: { effort: 'low' },
+      text: { format: { type: 'json_schema', name: 'x', schema: { type: 'object' } } },
+    }
+    const create = vi.fn()
+      .mockRejectedValueOnce(anthropicError(400, 'output_config.format: Extra inputs are not permitted'))
+      .mockResolvedValueOnce(items([]))
+    await openAnthropicMessagesStream(client(create), payload, {})
+    expect(create.mock.calls[0]![0]).toHaveProperty('output_config', { effort: 'low', format: { type: 'json_schema', schema: { type: 'object' } } })
+    expect(create.mock.calls[1]![0]).toHaveProperty('output_config', { effort: 'low' })
+
+    // Without a named sub-field, the whole object goes.
+    const whole = vi.fn()
+      .mockRejectedValueOnce(anthropicError(400, 'output_config: Extra inputs are not permitted'))
+      .mockResolvedValueOnce(items([]))
+    await openAnthropicMessagesStream(client(whole), payload, {})
+    expect(whole.mock.calls[1]![0]).not.toHaveProperty('output_config')
+
+    // Naming every field also drops the whole object.
+    const every = vi.fn()
+      .mockRejectedValueOnce(anthropicError(400, 'output_config.effort and output_config.format are not supported'))
+      .mockResolvedValueOnce(items([]))
+    await openAnthropicMessagesStream(client(every), payload, {})
+    expect(every.mock.calls[1]![0]).not.toHaveProperty('output_config')
   })
 })
 
@@ -390,9 +514,37 @@ describe('Anthropic request constraints', () => {
 
   it('only forces tool use when thinking is off and the model allows it', () => {
     expect(anthropicMessagesRequest({ ...base, tool_choice: 'required' }, { stream: true }).tool_choice).toEqual({ type: 'any' })
+    expect(anthropicMessagesRequest({ ...base, tool_choice: 'required' }, { stream: true })).not.toHaveProperty('thinking')
     expect(anthropicMessagesRequest({ ...base, tool_choice: 'required', reasoning: { effort: 'high' } }, { stream: true })).not.toHaveProperty('tool_choice')
     expect(anthropicMessagesRequest({ ...base, model: 'claude-opus-5-5', tool_choice: { type: 'function', name: 'read' }, parallel_tool_calls: false }, { stream: true }).tool_choice)
       .toEqual({ type: 'auto', disable_parallel_tool_use: true })
+  })
+
+  it('disables default thinking to force tools on models that think by default', () => {
+    for (const model of ['claude-opus-5', 'claude-sonnet-5']) {
+      const required = anthropicMessagesRequest({ ...base, model, tool_choice: 'required' }, { stream: true })
+      expect(required.thinking).toEqual({ type: 'disabled' })
+      expect(required.tool_choice).toEqual({ type: 'any' })
+      const named = anthropicMessagesRequest({ ...base, model, tool_choice: { type: 'function', name: 'read' } }, { stream: true })
+      expect(named.thinking).toEqual({ type: 'disabled' })
+      expect(named.tool_choice).toEqual({ type: 'tool', name: 'read' })
+    }
+    // Explicit thinking wins over forcing.
+    const thinking = anthropicMessagesRequest({ ...base, model: 'claude-opus-5', tool_choice: 'required', reasoning: { effort: 'high' } }, { stream: true })
+    expect(thinking.thinking).toEqual({ type: 'adaptive', display: 'summarized' })
+    expect(thinking).not.toHaveProperty('tool_choice')
+    // Auto tool choice leaves default thinking alone.
+    expect(anthropicMessagesRequest({ ...base, model: 'claude-opus-5', tool_choice: 'auto' }, { stream: true })).not.toHaveProperty('thinking')
+    // Forcing without tools changes nothing.
+    expect(anthropicMessagesRequest({ model: 'claude-opus-5', input: 'q', tool_choice: 'required' }, { stream: true })).not.toHaveProperty('thinking')
+  })
+
+  it('downgrades forced tool use to auto on always-thinking models without disabling thinking', () => {
+    for (const model of ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-fable-1']) {
+      const body = anthropicMessagesRequest({ ...base, model, tool_choice: 'required' }, { stream: true })
+      expect(body).not.toHaveProperty('thinking')
+      expect(body).not.toHaveProperty('tool_choice')
+    }
   })
 
   it('drops custom sampling whenever thinking is on', () => {

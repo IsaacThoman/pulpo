@@ -52,6 +52,8 @@ export function createUpstreamTextClient(provider: UpstreamProvider, options: { 
   if (format === 'anthropic_messages') {
     const anthropic = new Anthropic({
       apiKey,
+      // Never pick up ANTHROPIC_AUTH_TOKEN from the environment for an admin-configured endpoint.
+      authToken: null,
       baseURL: anthropicSdkBaseUrl(provider.baseUrl),
       timeout: provider.requestTimeoutMs,
       ...(options.maxRetries !== undefined ? { maxRetries: options.maxRetries } : {}),

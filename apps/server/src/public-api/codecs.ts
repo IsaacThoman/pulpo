@@ -684,6 +684,8 @@ export interface StreamProjector {
   encode?(payload: unknown): string
   /** Whether the stream ends with OpenAI's `data: [DONE]` sentinel (default true). */
   readonly sendsDoneSentinel?: boolean
+  /** Idle keep-alive frame; defaults to an SSE comment, which every client ignores. */
+  keepAlive?(): string
 }
 
 export class ResponsesStreamProjector implements StreamProjector {

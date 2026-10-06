@@ -1,4 +1,5 @@
 import type { ProviderApiFormat } from '@pulpo/contracts'
+import { anthropicSdkBaseUrl } from './anthropic-messages.js'
 
 export const ANTHROPIC_VERSION = '2023-06-01'
 const MAX_MODEL_PAGES = 20
@@ -11,7 +12,8 @@ export function providerModelsRequest(
 ): { url: string; headers: Record<string, string> } {
   const base = `${provider.baseUrl.replace(/\/+$/, '')}/models`
   if (provider.apiFormat === 'anthropic_messages') {
-    const url = new URL(base)
+    // Generation tolerates base URLs with or without `/v1`; listing must too.
+    const url = new URL(`${anthropicSdkBaseUrl(provider.baseUrl)}/v1/models`)
     url.searchParams.set('limit', '1000')
     if (afterId) url.searchParams.set('after_id', afterId)
     return { url: url.toString(), headers: { 'x-api-key': apiKey, 'anthropic-version': ANTHROPIC_VERSION } }

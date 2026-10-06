@@ -112,16 +112,11 @@ export function anthropicMessagesFromEntries(
       message.content = [...results, ...message.content.filter((block) => block.type !== 'tool_result')]
     }
   }
-  // Thinking blocks must precede the text and tool use of their assistant turn.
+  // Keep interleaved thinking in its original order: preserved-thinking models
+  // reject reordered history. A turn that is only thinking is dropped.
   for (const message of messages) {
     if (message.role !== 'assistant') continue
-    const thinking = message.content.filter((block) => block.type === 'thinking' || block.type === 'redacted_thinking')
-    if (thinking.length && thinking.length !== message.content.length) {
-      message.content = [...thinking, ...message.content.filter((block) => block.type !== 'thinking' && block.type !== 'redacted_thinking')]
-    } else if (thinking.length) {
-      // A turn that is only thinking carries nothing the API accepts on its own.
-      message.content = []
-    }
+    if (message.content.every((block) => block.type === 'thinking' || block.type === 'redacted_thinking')) message.content = []
   }
   const nonEmpty = messages.filter((message) => message.content.length > 0)
   const merged: AnthropicMessage[] = []
@@ -180,6 +175,9 @@ export function anthropicMessagesRequest(payload: JsonRecord, options: { stream:
   const toolChoice = neutralToolChoice(payload.tool_choice)
   const disableParallel = payload.parallel_tool_calls === false
   // Forced tool use is rejected alongside thinking, and by models that always think.
+  // Models that think by default can force tools once thinking is disabled explicitly.
+  const forcing = tools.length > 0 && (toolChoice === 'required' || (Boolean(toolChoice) && typeof toolChoice === 'object'))
+  if (forcing && !thinking && capabilities.thinksByDefault && !capabilities.thinkingAlwaysOn) thinking = { type: 'disabled' }
   const canForceTools = !capabilities.thinkingAlwaysOn && (!thinking || thinking.type === 'disabled')
   let anthropicToolChoice: JsonRecord | undefined
   if (tools.length) {
@@ -190,6 +188,8 @@ export function anthropicMessagesRequest(payload: JsonRecord, options: { stream:
   }
   const messages = anthropicMessagesFromEntries(entries, { upstreamModel: model, replayThinking: true })
   return {
+    // Operator defaults fill fields Pulpo leaves unset; translated values win.
+    ...passthroughParameters(payload),
     model,
     max_tokens: maxTokens,
     ...(systemTexts.length ? { system: [{ type: 'text', text: systemTexts.join('\n\n') }] } : {}),
@@ -211,7 +211,6 @@ export function anthropicMessagesRequest(payload: JsonRecord, options: { stream:
     ...(anthropicToolChoice ? { tool_choice: anthropicToolChoice } : {}),
     ...(record(payload.cache_control) ? { cache_control: payload.cache_control } : {}),
     ...(typeof payload.safety_identifier === 'string' ? { metadata: { user_id: payload.safety_identifier } } : {}),
-    ...passthroughParameters(payload),
     stream: options.stream,
   }
 }
@@ -252,6 +251,8 @@ export async function* translateAnthropicStream(events: AsyncIterable<unknown>, 
     usage.cacheWrite = numberOr(source.cache_creation_input_tokens, usage.cacheWrite)
     usage.output = numberOr(source.output_tokens, usage.output)
   }
+  let stopped = false
+  try {
   for await (const raw of events) {
     const event = record(raw)
     if (!event) continue
@@ -289,6 +290,8 @@ export async function* translateAnthropicStream(events: AsyncIterable<unknown>, 
       const kind = blockKinds.get(index)
       if (kind === 'thinking' || kind === 'redacted_thinking') yield* builder.reasoningDone(`block:${index}`)
       else if (kind === 'tool_use') yield* builder.functionDone(`block:${index}`)
+    } else if (event.type === 'message_stop') {
+      stopped = true
     } else if (event.type === 'message_delta') {
       const delta = record(event.delta) ?? {}
       if (delta.stop_reason) stopReason = delta.stop_reason
@@ -301,12 +304,30 @@ export async function* translateAnthropicStream(events: AsyncIterable<unknown>, 
       })
     }
   }
+  } catch (error) {
+    // Report tokens consumed so far so a failed attempt is still billed.
+    yield* builder.progress(anthropicUsage(usage))
+    throw error
+  }
+  // A stream cut off before `message_stop` is a failed generation, not a complete one.
+  if (!stopped && stopReason === undefined) {
+    yield* builder.progress(anthropicUsage(usage))
+    throw Object.assign(new Error('Provider stream ended before the response finished'), { status: 502 })
+  }
   yield* builder.finish({ usage: anthropicUsage(usage), incompleteReason: incompleteReason(stopReason) }).events
 }
 
 const OPTIONAL_ANTHROPIC_PARAMETERS = new Set([
   'temperature', 'top_p', 'top_k', 'thinking', 'output_config', 'metadata', 'cache_control', 'tool_choice',
 ])
+
+/** Drop only the `output_config` field a rejection names, keeping e.g. effort when format is refused. */
+function withoutOutputConfigField(body: JsonRecord, message: string): JsonRecord {
+  const config = record(body.output_config) ?? {}
+  const named = Object.keys(config).filter((key) => new RegExp(`output_config\\.${key}\\b`).test(message))
+  if (!named.length || named.length === Object.keys(config).length) return withoutKey(body, 'output_config')
+  return { ...body, output_config: Object.fromEntries(Object.entries(config).filter(([key]) => !named.includes(key))) }
+}
 
 /** Whether a 400 is the preserved-thinking check rejecting a replayed signature. */
 function thinkingSignatureRejected(error: unknown, body: JsonRecord): boolean {
@@ -340,7 +361,7 @@ export async function openAnthropicMessagesStream(
       const parameter = rejectedOptionalParameter(error, body, optional)
       if (!parameter) throw error
       logParameterRetry('anthropic_messages', parameter, message)
-      body = withoutKey(body, parameter)
+      body = parameter === 'output_config' ? withoutOutputConfigField(body, message) : withoutKey(body, parameter)
     }
   }
 }

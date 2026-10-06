@@ -8,18 +8,34 @@ import {
   parseDataUrl,
   partsText,
   passthroughParameters,
+  estimateTokensExcludingMedia,
   reasoningEffort,
   type NeutralEntry,
   type NeutralPart,
 } from './responses-input.js'
 import { ResponsesStreamBuilder, responsesUsage, type ResponsesStreamEvent, type ResponsesUsage } from './responses-builder.js'
 import { MAX_PARAMETER_RETRIES, logParameterRetry, rejectedOptionalParameter, withoutKey } from './parameter-retry.js'
+import { upstreamErrorDetails } from '../responses/upstream-request.js'
 
 type JsonRecord = Record<string, unknown>
 type ChatMessage = JsonRecord & { role: string }
 
 function record(value: unknown): JsonRecord | undefined {
   return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as JsonRecord : undefined
+}
+
+function hostname(baseUrl: string): string {
+  try {
+    return new URL(baseUrl).hostname.toLowerCase()
+  } catch {
+    return ''
+  }
+}
+
+/** OpenRouter accepts Anthropic-style top-level `cache_control`; other Chat Completions servers do not. */
+export function acceptsCacheControl(baseUrl: string): boolean {
+  const host = hostname(baseUrl)
+  return host === 'openrouter.ai' || host.endsWith('.openrouter.ai')
 }
 
 /** OpenAI's own endpoints reject `max_tokens` on reasoning models; most compatible servers only know `max_tokens`. */
@@ -52,7 +68,7 @@ function userContent(parts: NeutralPart[]): string | JsonRecord[] {
  * Chat templates on many servers accept a single leading system message only,
  * so every system/developer entry is hoisted into one message, in order.
  */
-export function chatMessagesFromEntries(entries: NeutralEntry[]): ChatMessage[] {
+export function chatMessagesFromEntries(entries: NeutralEntry[], options: { model?: string } = {}): ChatMessage[] {
   const system = entries.flatMap((entry) => entry.kind === 'system' ? [entry.text.trim()] : []).filter(Boolean)
   const messages: ChatMessage[] = system.length ? [{ role: 'system', content: system.join('\n\n') }] : []
   let pendingImages: JsonRecord[] = []
@@ -61,21 +77,33 @@ export function chatMessagesFromEntries(entries: NeutralEntry[]): ChatMessage[] 
     messages.push({ role: 'user', content: [{ type: 'text', text: 'Images returned by the tool calls above:' }, ...pendingImages] })
     pendingImages = []
   }
+  // Thinking models such as DeepSeek and Kimi require their reasoning back on
+  // tool-calling turns; only reasoning this same model produced is replayed.
+  let pendingReasoning = ''
   for (const entry of entries) {
-    if (entry.kind === 'system' || entry.kind === 'reasoning') continue
+    if (entry.kind === 'system') continue
+    if (entry.kind === 'reasoning') {
+      const own = entry.reasoning.format === 'openai_chat_completions' && (!options.model || entry.reasoning.model === options.model)
+      pendingReasoning = own && entry.reasoning.text ? `${pendingReasoning}${entry.reasoning.text}` : pendingReasoning
+      continue
+    }
     if (entry.kind !== 'function_output') flushImages()
     if (entry.kind === 'user') {
+      pendingReasoning = ''
       messages.push({ role: 'user', content: userContent(entry.parts) })
     } else if (entry.kind === 'assistant') {
       const previous = messages.at(-1)
-      // Text that follows tool calls in the same turn becomes its own message.
-      if (previous?.role === 'assistant' && !previous.tool_calls && typeof previous.content === 'string') previous.content = `${previous.content}${entry.text}`
+      // One assistant turn carries all of its text and calls; tool messages must follow it directly.
+      if (previous?.role === 'assistant') previous.content = `${typeof previous.content === 'string' ? previous.content : ''}${entry.text}`
       else messages.push({ role: 'assistant', content: entry.text })
     } else if (entry.kind === 'function_call') {
       const previous = messages.at(-1)
       const call = { id: entry.callId, type: 'function', function: { name: entry.name, arguments: entry.arguments || '{}' } }
-      if (previous?.role === 'assistant') previous.tool_calls = [...(previous.tool_calls as unknown[] | undefined ?? []), call]
-      else messages.push({ role: 'assistant', content: null, tool_calls: [call] })
+      const target = previous?.role === 'assistant' ? previous : { role: 'assistant', content: null }
+      if (target !== previous) messages.push(target)
+      target.tool_calls = [...(target.tool_calls as unknown[] | undefined ?? []), call]
+      if (pendingReasoning && target.reasoning_content === undefined) target.reasoning_content = pendingReasoning
+      pendingReasoning = ''
     } else {
       const text = entry.output.flatMap((part) => part.type === 'text' ? [part.text] : []).join('\n')
       const images = entry.output.filter((part) => part.type === 'image')
@@ -99,7 +127,7 @@ export function chatCompletionsRequest(payload: JsonRecord, options: { baseUrl: 
   const body: JsonRecord = {
     ...passthroughParameters(payload),
     model: payload.model,
-    messages: chatMessagesFromEntries(entries),
+    messages: chatMessagesFromEntries(entries, { model: typeof payload.model === 'string' ? payload.model : undefined }),
     ...(maxTokens !== undefined ? { [prefersMaxCompletionTokens(options.baseUrl) ? 'max_completion_tokens' : 'max_tokens']: maxTokens } : {}),
     ...(typeof payload.temperature === 'number' ? { temperature: payload.temperature } : {}),
     ...(typeof payload.top_p === 'number' ? { top_p: payload.top_p } : {}),
@@ -119,7 +147,7 @@ export function chatCompletionsRequest(payload: JsonRecord, options: { baseUrl: 
     ...(typeof payload.service_tier === 'string' ? { service_tier: payload.service_tier } : {}),
     ...(typeof payload.prompt_cache_key === 'string' ? { prompt_cache_key: payload.prompt_cache_key } : {}),
     ...(typeof payload.safety_identifier === 'string' ? { safety_identifier: payload.safety_identifier } : {}),
-    ...(record(payload.cache_control) ? { cache_control: payload.cache_control } : {}),
+    ...(record(payload.cache_control) && acceptsCacheControl(options.baseUrl) ? { cache_control: payload.cache_control } : {}),
     ...(options.stream ? { stream: true, stream_options: { include_usage: true } } : { stream: false }),
   }
   return body
@@ -127,11 +155,15 @@ export function chatCompletionsRequest(payload: JsonRecord, options: { baseUrl: 
 
 const OPTIONAL_CHAT_PARAMETERS = new Set([
   'temperature', 'top_p', 'reasoning_effort', 'verbosity', 'service_tier', 'parallel_tool_calls',
-  'prompt_cache_key', 'safety_identifier', 'stream_options', 'response_format', 'cache_control',
+  'prompt_cache_key', 'safety_identifier', 'response_format', 'cache_control',
 ])
 
-/** Swap between `max_tokens` and `max_completion_tokens` when a server rejects the one we sent. */
+/**
+ * Swap between `max_tokens` and `max_completion_tokens` when a server rejects
+ * the one we sent. Context-length errors name both fields and are not swaps.
+ */
 function swappedTokenLimit(error: unknown, body: JsonRecord): JsonRecord | undefined {
+  if (/context|too (?:large|long|many)|exceed|maximum/i.test(upstreamErrorDetails(error).message)) return undefined
   const key = rejectedOptionalParameter(error, body, new Set(['max_tokens', 'max_completion_tokens']))
   if (!key) return undefined
   const other = key === 'max_tokens' ? 'max_completion_tokens' : 'max_tokens'
@@ -180,14 +212,20 @@ function chunkError(chunk: JsonRecord): UpstreamStreamError | undefined {
   )
 }
 
-/** Translate Chat Completions stream chunks into Responses API events. */
-export async function* translateChatStream(chunks: AsyncIterable<unknown>, model: string): AsyncGenerator<ResponsesStreamEvent> {
+/**
+ * Translate Chat Completions stream chunks into Responses API events.
+ * `estimatedInputTokens` stands in for usage when a server never reports it,
+ * so the generation is still billed.
+ */
+export async function* translateChatStream(chunks: AsyncIterable<unknown>, model: string, options: { estimatedInputTokens?: number } = {}): AsyncGenerator<ResponsesStreamEvent> {
   const builder = new ResponsesStreamBuilder('openai_chat_completions', { model })
   let usage: ResponsesUsage | null = null
   let finishReason: unknown
   // Reasoning that resumes after visible output starts a new reasoning item.
   let reasoningSegment = 0
   const closeReasoning = () => builder.reasoningDone(`reasoning:${reasoningSegment++}`)
+  const knownUsage = () => usage ?? responsesUsage({ inputTokens: options.estimatedInputTokens ?? 0, outputTokens: builder.estimatedOutputTokens() })
+  try {
   for await (const raw of chunks) {
     const chunk = record(raw)
     if (!chunk) continue
@@ -207,7 +245,10 @@ export async function* translateChatStream(chunks: AsyncIterable<unknown>, model
         if (builder.hasReasoning(`reasoning:${reasoningSegment}`)) yield* closeReasoning()
         yield* builder.text(delta.content)
       }
-      if (typeof delta.refusal === 'string' && delta.refusal) yield* builder.refusal(delta.refusal)
+      if (typeof delta.refusal === 'string' && delta.refusal) {
+        if (builder.hasReasoning(`reasoning:${reasoningSegment}`)) yield* closeReasoning()
+        yield* builder.refusal(delta.refusal)
+      }
       if (Array.isArray(delta.tool_calls)) {
         if (builder.hasReasoning(`reasoning:${reasoningSegment}`)) yield* closeReasoning()
         for (const [position, rawCall] of delta.tool_calls.entries()) {
@@ -225,7 +266,17 @@ export async function* translateChatStream(chunks: AsyncIterable<unknown>, model
       if (choice.finish_reason) finishReason = choice.finish_reason
     }
   }
-  yield* builder.finish({ usage, incompleteReason: incompleteReason(finishReason) }).events
+  } catch (error) {
+    yield* builder.progress(knownUsage())
+    throw error
+  }
+  // A stream cut off before any finish reason is a failed generation, not a complete one.
+  if (finishReason === undefined) {
+    yield* builder.progress(knownUsage())
+    throw new UpstreamStreamError('Provider stream ended before the response finished', 502)
+  }
+  if (!usage) console.warn(JSON.stringify({ level: 'warn', service: 'pulpo-worker', event: 'upstream.usage_missing', format: 'openai_chat_completions', model }))
+  yield* builder.finish({ usage: knownUsage(), incompleteReason: incompleteReason(finishReason) }).events
 }
 
 /** Open a Chat Completions stream, dropping optional parameters the provider rejects. */
@@ -237,16 +288,19 @@ export async function openChatCompletionsStream(
   let body = chatCompletionsRequest(payload, { baseUrl: options.baseUrl, stream: true })
   // Operator pass-through knobs degrade like the standard optional ones.
   const optional = new Set([...OPTIONAL_CHAT_PARAMETERS, ...Object.keys(passthroughParameters(payload))])
+  const estimatedInputTokens = estimateTokensExcludingMedia(body.messages)
+  let swappedLimit = false
   for (let retries = 0; ; retries += 1) {
     try {
       const stream = await client.chat.completions.create(body as never, { signal: options.signal, headers: options.headers })
-      return translateChatStream(stream as unknown as AsyncIterable<unknown>, String(payload.model))
+      return translateChatStream(stream as unknown as AsyncIterable<unknown>, String(payload.model), { estimatedInputTokens })
     } catch (error) {
       if (retries >= MAX_PARAMETER_RETRIES) throw error
-      const swapped = swappedTokenLimit(error, body)
+      const swapped = swappedLimit ? undefined : swappedTokenLimit(error, body)
+      if (swapped) swappedLimit = true
       const parameter = swapped ? undefined : rejectedOptionalParameter(error, body, optional)
       if (!swapped && !parameter) throw error
-      logParameterRetry('openai_chat_completions', parameter ?? 'max_tokens', error instanceof Error ? error.message : String(error))
+      logParameterRetry('openai_chat_completions', parameter ?? ('max_tokens' in body ? 'max_tokens' : 'max_completion_tokens'), error instanceof Error ? error.message : String(error))
       body = swapped ?? withoutKey(body, parameter!)
     }
   }

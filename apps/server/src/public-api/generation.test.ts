@@ -1,5 +1,6 @@
+import { EventEmitter } from 'node:events'
 import type { FastifyReply } from 'fastify'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   selectRows: [] as Array<Record<string, unknown>>,
@@ -27,7 +28,9 @@ vi.mock('../chats/temporary.js', () => ({
   temporaryChatExpiresAt: vi.fn(() => new Date('2026-08-28T12:00:00.000Z')),
 }))
 
-import { executePublicGeneration } from './generation.js'
+import { createRedis } from '../redis.js'
+import { readResponseEvents } from '../responses/events.js'
+import { executePublicGeneration, waitForTerminalResponse } from './generation.js'
 
 const createdAt = new Date('2026-08-27T12:00:00.000Z')
 const row = {
@@ -120,5 +123,83 @@ describe('public generation execution', () => {
     })).rejects.toMatchObject({ statusCode: 409, code: 'idempotency_conflict' })
     expect(mocks.createResponse).not.toHaveBeenCalled()
     expect(mocks.insertedChats).toHaveLength(0)
+  })
+})
+
+describe('public generation streaming keep-alive', () => {
+  function streamingReply() {
+    const raw = Object.assign(new EventEmitter(), {
+      writableEnded: false,
+      writeHead: vi.fn(),
+      write: vi.fn(),
+      end: vi.fn(function (this: { writableEnded: boolean }) { this.writableEnded = true }),
+    })
+    const reply = { request: { requestReceivedAt: createdAt }, hijack: vi.fn(), raw } as unknown as FastifyReply
+    return { reply, raw }
+  }
+
+  const streamRequest = (protocol: 'responses' | 'anthropic_messages') => ({
+    protocol, model: 'model-1', rawInput: 'hello', displayInput: 'hello', parameters: {},
+    stream: true, background: false, publiclyStored: true, ignoredParameters: [], fingerprintValue: {},
+  })
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.useFakeTimers()
+    // The model lookup and the stream's status check both read this row; it stays in progress.
+    mocks.selectRows = [{ id: 'model-1', status: 'in_progress' }]
+    mocks.createResponse.mockResolvedValue(row)
+    const subscriber = Object.assign(new EventEmitter(), { subscribe: vi.fn(async () => undefined), disconnect: vi.fn() })
+    vi.mocked(createRedis).mockReturnValue(subscriber as never)
+    vi.mocked(readResponseEvents).mockResolvedValue([])
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('writes SSE comment keep-alives every 15 seconds until the client disconnects', async () => {
+    const { reply, raw } = streamingReply()
+    await executePublicGeneration({ reply, key: { id: 'key-1', userId: 'user-1' }, request: streamRequest('responses') })
+    expect(raw.write).not.toHaveBeenCalled()
+    vi.advanceTimersByTime(14_999)
+    expect(raw.write).not.toHaveBeenCalled()
+    vi.advanceTimersByTime(1)
+    expect(raw.write).toHaveBeenCalledWith(': keep-alive\n\n')
+    vi.advanceTimersByTime(15_000)
+    expect(raw.write).toHaveBeenCalledTimes(2)
+    raw.emit('close')
+    vi.advanceTimersByTime(60_000)
+    expect(raw.write).toHaveBeenCalledTimes(2)
+    expect(raw.end).toHaveBeenCalledTimes(1)
+  })
+
+  it('uses the projector keep-alive frame for Anthropic streams', async () => {
+    const { reply, raw } = streamingReply()
+    await executePublicGeneration({ reply, key: { id: 'key-1', userId: 'user-1' }, request: streamRequest('anthropic_messages') })
+    vi.advanceTimersByTime(15_000)
+    expect(raw.write).toHaveBeenCalledWith('event: ping\ndata: {"type":"ping"}\n\n')
+  })
+})
+
+describe('waitForTerminalResponse', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('polls for up to an hour before giving up', async () => {
+    vi.useFakeTimers()
+    mocks.selectRows = [{ id: 'response-1', status: 'in_progress' }]
+    const outcome = waitForTerminalResponse('response-1').then(() => 'resolved', (error: Error) => error.message)
+    // Well past the previous six-minute limit, the request is still waiting.
+    await vi.advanceTimersByTimeAsync(10 * 60_000)
+    mocks.selectRows = [{ id: 'response-1', status: 'completed' }]
+    await vi.advanceTimersByTimeAsync(200)
+    await expect(outcome).resolves.toBe('resolved')
+
+    mocks.selectRows = [{ id: 'response-1', status: 'in_progress' }]
+    const timedOut = waitForTerminalResponse('response-1').then(() => 'resolved', (error: Error) => error.message)
+    await vi.advanceTimersByTimeAsync(18_000 * 200)
+    await expect(timedOut).resolves.toBe('Response did not reach a terminal state')
   })
 })

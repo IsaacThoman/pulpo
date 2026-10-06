@@ -37,7 +37,8 @@ const textBlockSchema = z.object({ type: z.literal('text'), text: z.string() }).
 const anthropicRequestSchema = z.object({
   model: z.string().min(1),
   messages: z.array(z.unknown()).min(1),
-  max_tokens: z.number().int().positive(),
+  // `max_tokens: 0` is Anthropic's cache pre-warm; Pulpo generates at least one token.
+  max_tokens: z.number().int().nonnegative().transform((value) => Math.max(1, value)),
   system: z.union([z.string(), z.array(textBlockSchema)]).nullish().transform((value) => value ?? undefined),
   metadata: z.object({ user_id: z.string().nullish() }).passthrough().nullish().transform((value) => value ?? undefined),
   stream: z.boolean().nullish().transform((value) => value ?? false),
@@ -72,6 +73,9 @@ function documentInput(block: JsonRecord, path: string): JsonRecord {
   if (source?.type === 'base64' && source.media_type === 'application/pdf' && typeof source.data === 'string') {
     return { type: 'input_file', filename: title ?? 'document.pdf', file_data: dataUrl('application/pdf', source.data) }
   }
+  if (source?.type === 'url' && typeof source.url === 'string') {
+    return { type: 'input_file', filename: title ?? 'document.pdf', file_url: source.url }
+  }
   if (source?.type === 'text' && typeof source.data === 'string') {
     return { type: 'input_text', text: title ? `${title}\n\n${source.data}` : source.data }
   }
@@ -79,7 +83,18 @@ function documentInput(block: JsonRecord, path: string): JsonRecord {
     const text = source.content.map((entry) => typeof entry === 'string' ? entry : record(entry)?.text).filter((value): value is string => typeof value === 'string').join('\n')
     return { type: 'input_text', text: title ? `${title}\n\n${text}` : text }
   }
-  unsupported(`${path}.source.type`, 'Documents must use base64 PDF, text, or content sources')
+  unsupported(`${path}.source.type`, 'Documents must use base64 PDF, URL, text, or content sources')
+}
+
+/** Search results and tool references carry text the model can read; keep it as text. */
+function textualBlock(block: JsonRecord): JsonRecord | undefined {
+  if (block.type === 'search_result') {
+    const content = Array.isArray(block.content) ? block.content.map((entry) => record(entry)?.text).filter((value): value is string => typeof value === 'string').join('\n') : ''
+    const header = [block.title, block.source].filter((value): value is string => typeof value === 'string' && Boolean(value)).join(' — ')
+    return { type: 'input_text', text: header ? `${header}\n${content}` : content }
+  }
+  if (block.type === 'tool_reference' && typeof block.tool_name === 'string') return { type: 'input_text', text: `[Tool reference: ${block.tool_name}]` }
+  return undefined
 }
 
 function toolResultOutput(block: JsonRecord, path: string): string | JsonRecord[] {
@@ -92,6 +107,8 @@ function toolResultOutput(block: JsonRecord, path: string): string | JsonRecord[
     if (part?.type === 'text' && typeof part.text === 'string') return { type: 'input_text', text: part.text }
     if (part?.type === 'image') return imageInput(part, `${path}.content.${index}`)
     if (part?.type === 'document') return documentInput(part, `${path}.content.${index}`)
+    const textual = part ? textualBlock(part) : undefined
+    if (textual) return textual
     unsupported(`${path}.content.${index}.type`, 'Tool results support text, image, and document content')
   })
   if (parts.every((part) => part.type === 'input_text')) return `${prefix}${parts.map((part) => part.text).join('\n')}`
@@ -141,6 +158,10 @@ function anthropicInput(messages: unknown[]): unknown[] {
             ...(typeof block.signature === 'string' && block.signature ? { pulpo_signature: block.signature } : {}),
             ...(typeof block.data === 'string' ? { pulpo_redacted_data: block.data } : {}),
           })
+        } else if (type === 'compaction') {
+          // Client-side compaction summaries stand in for the history they replaced.
+          flush()
+          if (typeof block.content === 'string' && block.content) items.push({ role: 'developer', content: `Summary of earlier conversation:\n${block.content}` })
         } else if (!type.endsWith('tool_result') && type !== 'server_tool_use' && type !== 'mcp_tool_use' && type !== 'container_upload') {
           unsupported(`${blockPath}.type`, `Assistant content type ${type} is not supported`)
         }
@@ -149,6 +170,8 @@ function anthropicInput(messages: unknown[]): unknown[] {
         parts.push(imageInput(block, blockPath))
       } else if (type === 'document') {
         parts.push(documentInput(block, blockPath))
+      } else if (textualBlock(block)) {
+        parts.push(textualBlock(block)!)
       } else if (type === 'tool_result') {
         if (typeof block.tool_use_id !== 'string') invalid('tool_result blocks require tool_use_id', blockPath)
         flush()
@@ -162,21 +185,29 @@ function anthropicInput(messages: unknown[]): unknown[] {
   return items
 }
 
-function anthropicTools(rawTools: unknown[] | undefined): unknown[] | undefined {
+/**
+ * Anthropic-hosted server tools (web search, code execution, ...) cannot run
+ * through Pulpo. Clients such as Claude Code always advertise some, so drop
+ * them and keep the custom tools rather than failing the request.
+ */
+function anthropicTools(rawTools: unknown[] | undefined, ignored: Set<string>): unknown[] | undefined {
   if (!rawTools) return undefined
-  return rawTools.map((rawTool, index) => {
+  return rawTools.flatMap((rawTool, index) => {
     const tool = record(rawTool)
     const path = `tools.${index}`
     if (!tool) invalid('Invalid tool', path)
-    if (tool.type !== undefined && tool.type !== null && tool.type !== 'custom') unsupported(`${path}.type`, 'Only custom tools are supported')
+    if (tool.type !== undefined && tool.type !== null && tool.type !== 'custom') {
+      ignored.add(`tools.${typeof tool.type === 'string' ? tool.type : index}`)
+      return []
+    }
     if (typeof tool.name !== 'string') invalid('Tools require a name', `${path}.name`)
-    return {
+    return [{
       type: 'function',
       name: tool.name,
       ...(typeof tool.description === 'string' ? { description: tool.description } : {}),
       parameters: record(tool.input_schema) ?? { type: 'object', properties: {} },
       ...(typeof tool.strict === 'boolean' ? { strict: tool.strict } : {}),
-    }
+    }]
   })
 }
 
@@ -234,7 +265,7 @@ export function parseAnthropicMessagesRequest(raw: unknown): PublicGenerationReq
   const input = anthropicRequestSchema.parse(source)
   assertPublicIdentifier(input.model, 'model')
   const system = typeof input.system === 'string' ? input.system : input.system?.map((block) => block.text).join('\n\n')
-  const tools = anthropicTools(input.tools)
+  const tools = anthropicTools(input.tools, ignored)
   const choice = anthropicToolChoice(input.tool_choice)
   const text = outputFormat(input.output_config?.format ?? input.output_format)
   const parameters = Object.fromEntries(Object.entries({
@@ -333,9 +364,14 @@ function anthropicFailure(row: ResponseRow): { status: number; type: string; mes
   const error = record(row.error)
   const upstream = record(error?.upstream)
   const message = typeof error?.message === 'string' ? error.message : `Generation ${row.status}`
-  if (typeof upstream?.status === 'number' && [400, 413, 422].includes(upstream.status)) {
-    return { status: upstream.status, type: upstream.status === 413 ? 'request_too_large' : 'invalid_request_error', message }
+  const status = typeof upstream?.status === 'number' ? upstream.status : undefined
+  if (status !== undefined && [400, 413, 422].includes(status)) {
+    return { status, type: status === 413 ? 'request_too_large' : 'invalid_request_error', message }
   }
+  // Clients such as Claude Code back off and retry on these types specifically.
+  const overloaded = status === 529 || status === 503 || upstream?.type === 'overloaded_error' || /overloaded/i.test(message)
+  if (overloaded) return { status: 529, type: 'overloaded_error', message }
+  if (status === 429 || error?.category === 'rate_limit') return { status: 429, type: 'rate_limit_error', message }
   return { status: 500, type: 'api_error', message }
 }
 
@@ -373,10 +409,17 @@ export class AnthropicStreamProjector implements StreamProjector {
   private sawToolUse = false
   private current: { key: string; block: BlockState } | undefined
   private readonly emittedTools = new Set<string>()
+  /** Output items already represented in the stream, by item id. */
+  private readonly streamedItems = new Set<string>()
+  private readonly summaryIndexes = new Map<string, unknown>()
   private readonly thinking: boolean
 
   constructor(private readonly row: ResponseRow) {
     this.thinking = showsThinking(row)
+  }
+
+  keepAlive(): string {
+    return this.encode({ type: 'ping' })
   }
 
   encode(payload: unknown): string {
@@ -435,36 +478,32 @@ export class AnthropicStreamProjector implements StreamProjector {
     const itemId = typeof payload.item_id === 'string' ? payload.item_id : String(payload.output_index ?? 0)
     if (event.type === 'response.output_text.delta' || event.type === 'response.refusal.delta') {
       if (typeof payload.delta !== 'string' || !payload.delta) return output
+      this.streamedItems.add(itemId)
       const block = this.open(`text:${itemId}`, { type: 'text', text: '' }, output)
       output.push({ type: 'content_block_delta', index: block.index, delta: { type: 'text_delta', text: payload.delta } })
     } else if (event.type === 'response.reasoning_summary_text.delta' && this.thinking) {
       if (typeof payload.delta !== 'string' || !payload.delta) return output
+      this.streamedItems.add(itemId)
+      // Separate summary parts the way the non-streaming reply joins them.
+      const previousSummary = this.summaryIndexes.get(itemId)
+      const separator = previousSummary !== undefined && previousSummary !== payload.summary_index ? '\n' : ''
+      this.summaryIndexes.set(itemId, payload.summary_index)
       const block = this.open(`thinking:${itemId}`, { type: 'thinking', thinking: '', signature: '' }, output)
-      output.push({ type: 'content_block_delta', index: block.index, delta: { type: 'thinking_delta', thinking: payload.delta } })
+      output.push({ type: 'content_block_delta', index: block.index, delta: { type: 'thinking_delta', thinking: `${separator}${payload.delta}` } })
     } else if (event.type === 'response.output_item.done') {
       const item = record(payload.item)
       const id = typeof item?.id === 'string' ? item.id : String(payload.output_index ?? 0)
       if (item?.type === 'function_call') this.emitTool(item, output)
+      // Signatures arrive with the finished item. Anthropic providers, the only
+      // ones that sign thinking, close each block before opening the next, so
+      // a signed block is still open here.
       else if (item?.type === 'reasoning' && this.current?.key === `thinking:${id}`) {
         const signature = typeof item.pulpo_signature === 'string' && item.pulpo_signature
           ? { type: 'content_block_delta', index: this.current.block.index, delta: { type: 'signature_delta', signature: item.pulpo_signature } }
           : undefined
         this.close(output, signature)
-      } else if (item?.type === 'reasoning' && this.thinking) {
-        // Redacted or display-omitted thinking streams no text but must still reach clients for replay.
-        const [block] = anthropicContent([item], true)
-        if (block) {
-          this.close(output)
-          const index = this.nextIndex++
-          if (block.type === 'redacted_thinking') output.push({ type: 'content_block_start', index, content_block: block })
-          else {
-            output.push({ type: 'content_block_start', index, content_block: { type: 'thinking', thinking: '', signature: '' } })
-            if (block.thinking) output.push({ type: 'content_block_delta', index, delta: { type: 'thinking_delta', thinking: block.thinking } })
-            if (block.signature) output.push({ type: 'content_block_delta', index, delta: { type: 'signature_delta', signature: block.signature } })
-          }
-          output.push({ type: 'content_block_stop', index })
-        }
       } else if (item?.type === 'message' && this.current?.key === `text:${id}`) this.close(output)
+      else if (item) this.emitWhole(item, output)
     } else if (event.type === 'response.completed' || event.type === 'response.incomplete') {
       const response = record(payload.response) ?? {}
       output.push(...this.final({
@@ -473,6 +512,33 @@ export class AnthropicStreamProjector implements StreamProjector {
       }, response.output, response.usage))
     }
     return output
+  }
+
+  /**
+   * Emit an item that produced no deltas as one complete block: redacted or
+   * display-omitted thinking (still needed for replay) and text that a
+   * provider reported only in the finished item.
+   */
+  private emitWhole(item: JsonRecord, output: unknown[]): void {
+    const id = typeof item.id === 'string' ? item.id : ''
+    if (!id || this.streamedItems.has(id)) return
+    if (item.type === 'reasoning' && !this.thinking) return
+    if (item.type !== 'reasoning' && item.type !== 'message') return
+    const [block] = anthropicContent([item], true)
+    this.streamedItems.add(id)
+    if (!block) return
+    this.close(output)
+    const index = this.nextIndex++
+    if (block.type === 'redacted_thinking') output.push({ type: 'content_block_start', index, content_block: block })
+    else if (block.type === 'thinking') {
+      output.push({ type: 'content_block_start', index, content_block: { type: 'thinking', thinking: '', signature: '' } })
+      if (block.thinking) output.push({ type: 'content_block_delta', index, delta: { type: 'thinking_delta', thinking: block.thinking } })
+      if (block.signature) output.push({ type: 'content_block_delta', index, delta: { type: 'signature_delta', signature: block.signature } })
+    } else {
+      output.push({ type: 'content_block_start', index, content_block: { type: 'text', text: '' } })
+      output.push({ type: 'content_block_delta', index, delta: { type: 'text_delta', text: block.text } })
+    }
+    output.push({ type: 'content_block_stop', index })
   }
 
   private final(state: Pick<ResponseRow, 'status' | 'incompleteDetails'>, finalOutput: unknown, usage: unknown): unknown[] {
@@ -485,6 +551,7 @@ export class AnthropicStreamProjector implements StreamProjector {
       for (const raw of finalOutput) {
         const item = record(raw)
         if (item?.type === 'function_call') this.emitTool(item, output)
+        else if (item) this.emitWhole(item, output)
       }
     }
     this.close(output)

@@ -20,6 +20,14 @@ describe('providerModelsRequest', () => {
     expect(providerModelsRequest({ baseUrl: 'https://api.anthropic.com/v1', apiFormat: 'anthropic_messages' }, 'k', 'claude-b').url)
       .toBe('https://api.anthropic.com/v1/models?limit=1000&after_id=claude-b')
   })
+
+  it('lists Anthropic models whether or not the base URL ends in /v1', () => {
+    for (const baseUrl of ['https://api.anthropic.com', 'https://api.anthropic.com/', 'https://api.anthropic.com/v1/']) {
+      expect(providerModelsRequest({ baseUrl, apiFormat: 'anthropic_messages' }, 'k').url).toBe('https://api.anthropic.com/v1/models?limit=1000')
+    }
+    expect(providerModelsRequest({ baseUrl: 'https://proxy.example/anthropic', apiFormat: 'anthropic_messages' }, 'k').url)
+      .toBe('https://proxy.example/anthropic/v1/models?limit=1000')
+  })
 })
 
 describe('fetchProviderModelIds', () => {

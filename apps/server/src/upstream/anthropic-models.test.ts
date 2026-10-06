@@ -41,19 +41,26 @@ describe('claudeModelVersion', () => {
 describe('anthropicModelCapabilities', () => {
   const base = ['high', 'low', 'medium']
   it.each([
-    ['claude-fable-1', { adaptiveThinking: true, thinkingAlwaysOn: true, sampling: false, efforts: [...base, 'max', 'xhigh'].sort() }],
-    ['claude-opus-4-5-20251101', { adaptiveThinking: false, thinkingAlwaysOn: false, sampling: true, efforts: base }],
-    ['claude-opus-4-6', { adaptiveThinking: true, thinkingAlwaysOn: false, sampling: true, efforts: [...base, 'max'].sort() }],
-    ['claude-opus-4-7', { adaptiveThinking: true, thinkingAlwaysOn: false, sampling: false, efforts: [...base, 'max', 'xhigh'].sort() }],
-    ['claude-opus-5-5', { adaptiveThinking: true, thinkingAlwaysOn: true, sampling: false, efforts: [...base, 'max', 'xhigh'].sort() }],
-    ['claude-sonnet-4-5', { adaptiveThinking: false, thinkingAlwaysOn: false, sampling: true, efforts: base }],
-    ['claude-sonnet-4-6', { adaptiveThinking: true, thinkingAlwaysOn: false, sampling: true, efforts: [...base, 'max'].sort() }],
-    ['claude-sonnet-5', { adaptiveThinking: true, thinkingAlwaysOn: false, sampling: false, efforts: [...base, 'max', 'xhigh'].sort() }],
-    ['claude-sonnet-5-5', { adaptiveThinking: true, thinkingAlwaysOn: true, sampling: false, efforts: [...base, 'max', 'xhigh'].sort() }],
-    ['claude-haiku-4-5', { adaptiveThinking: false, thinkingAlwaysOn: false, sampling: true, efforts: base }],
-    ['glm-4.6', { adaptiveThinking: false, thinkingAlwaysOn: false, sampling: true, efforts: base }],
+    ['claude-fable-1', { adaptiveThinking: true, thinkingAlwaysOn: true, thinksByDefault: true, sampling: false, efforts: [...base, 'max', 'xhigh'].sort() }],
+    ['claude-opus-4-5-20251101', { adaptiveThinking: false, thinkingAlwaysOn: false, thinksByDefault: false, sampling: true, efforts: base }],
+    ['claude-opus-4-6', { adaptiveThinking: true, thinkingAlwaysOn: false, thinksByDefault: false, sampling: true, efforts: [...base, 'max'].sort() }],
+    ['claude-opus-4-7', { adaptiveThinking: true, thinkingAlwaysOn: false, thinksByDefault: false, sampling: false, efforts: [...base, 'max', 'xhigh'].sort() }],
+    ['claude-opus-5-5', { adaptiveThinking: true, thinkingAlwaysOn: true, thinksByDefault: true, sampling: false, efforts: [...base, 'max', 'xhigh'].sort() }],
+    ['claude-sonnet-4-5', { adaptiveThinking: false, thinkingAlwaysOn: false, thinksByDefault: false, sampling: true, efforts: base }],
+    ['claude-sonnet-4-6', { adaptiveThinking: true, thinkingAlwaysOn: false, thinksByDefault: false, sampling: true, efforts: [...base, 'max'].sort() }],
+    ['claude-sonnet-5', { adaptiveThinking: true, thinkingAlwaysOn: false, thinksByDefault: true, sampling: false, efforts: [...base, 'max', 'xhigh'].sort() }],
+    ['claude-sonnet-5-5', { adaptiveThinking: true, thinkingAlwaysOn: true, thinksByDefault: true, sampling: false, efforts: [...base, 'max', 'xhigh'].sort() }],
+    ['claude-haiku-4-5', { adaptiveThinking: false, thinkingAlwaysOn: false, thinksByDefault: false, sampling: true, efforts: base }],
+    ['glm-4.6', { adaptiveThinking: false, thinkingAlwaysOn: false, thinksByDefault: false, sampling: true, efforts: base }],
   ])('%s', (id, expected) => {
     expect(capabilities(id)).toEqual(expected)
+  })
+
+  it('thinks by default from Opus 5 and Sonnet 5 onward', () => {
+    expect(anthropicModelCapabilities('claude-opus-5').thinksByDefault).toBe(true)
+    expect(anthropicModelCapabilities('claude-opus-5').thinkingAlwaysOn).toBe(false)
+    expect(anthropicModelCapabilities('claude-opus-4-8').thinksByDefault).toBe(false)
+    expect(anthropicModelCapabilities('claude-mythos-1').thinksByDefault).toBe(true)
   })
 })
 
