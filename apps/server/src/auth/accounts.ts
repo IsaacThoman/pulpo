@@ -125,9 +125,10 @@ const switchAccountInputSchema = z.object({ userId: idSchema })
 
 export async function registerAccountSwitchingRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/auth/accounts', async (request, reply) => {
-    const { active, others, redundant } = await readSignedInAccounts(request)
-    await deleteSessions(redundant)
-    writeOtherAccounts(reply, others)
+    // A menu refresh can finish after a switch, add, sign-in, or sign-out.
+    // Never overwrite newer cookies or revoke sessions from this stale snapshot.
+    // Explicit account mutations below still prune invalid and redundant entries.
+    const { active, others } = await readSignedInAccounts(request)
     reply.header('cache-control', 'no-store')
     return {
       accounts: [

@@ -73,7 +73,7 @@ describe.skipIf(!enabled)('account switching with PostgreSQL', () => {
     await queryClient.end()
   })
 
-  it('lists the active account first and prunes revoked, expired, and duplicate sessions', async () => {
+  it('lists valid unique accounts without changing cookies or revoking sessions', async () => {
     const personal = await session(personalId)
     const work = await session(workId)
     const staleWork = await session(workId)
@@ -83,9 +83,9 @@ describe.skipIf(!enabled)('account switching with PostgreSQL', () => {
     expect(response.statusCode).toBe(200)
     expect(response.headers['cache-control']).toBe('no-store')
     expect(response.json().accounts.map((account: { id: string; active: boolean }) => [account.id, account.active])).toEqual([[personalId, true], [workId, false]])
-    expect(setCookies(response).others).toBe(work.token)
-    expect(await sessionExists(staleWork.id)).toBe(false)
-    expect(await sessionExists(duplicateActive.id)).toBe(false)
+    expect(response.cookies).toEqual([])
+    expect(await sessionExists(staleWork.id)).toBe(true)
+    expect(await sessionExists(duplicateActive.id)).toBe(true)
     expect(await sessionExists(work.id)).toBe(true)
   })
 
@@ -121,6 +121,79 @@ describe.skipIf(!enabled)('account switching with PostgreSQL', () => {
     expect(missing.statusCode).toBe(404)
   })
 
+  it.each([2, 3])('preserves %i accounts when account lists arrive after rapid switches', async (count) => {
+    const personal = await session(personalId)
+    const work = await session(workId)
+    const third = await session(thirdId)
+    const all = count === 3 ? [personal, work, third] : [personal, work]
+    const expectedIds = count === 3 ? [personalId, workId, thirdId] : [personalId, workId]
+    const jar = new Map([
+      ['pulpo_session', personal.token],
+      ['pulpo_session_accounts', all.slice(1).map((account) => account.token).join('.')],
+    ])
+    const cookieHeader = () => [...jar].map(([name, value]) => `${name}=${value}`).join('; ')
+    const acceptCookies = (response: Parameters<typeof setCookies>[0]) => {
+      for (const entry of response.cookies) {
+        if (entry.expires && entry.expires.getTime() <= Date.now()) jar.delete(entry.name)
+        else jar.set(entry.name, entry.value)
+      }
+    }
+
+    let listReady: () => void
+    let releaseList: () => void
+    let listReleased: Promise<void>
+    app.addHook('onSend', async (request, _reply, payload) => {
+      if (request.headers['x-delay-account-list']) {
+        listReady()
+        await listReleased
+      }
+      return payload
+    })
+
+    for (let index = 0; index < 20; index++) {
+      const ready = new Promise<void>((resolve) => { listReady = resolve })
+      listReleased = new Promise<void>((resolve) => { releaseList = resolve })
+      // Opening the menu starts a list request with the pre-switch cookies.
+      const staleList = app.inject({ url: '/api/auth/accounts', headers: { cookie: cookieHeader(), 'x-delay-account-list': '1' } })
+      const listResponse = Promise.resolve(staleList)
+      await ready
+      try {
+        const target = index % 2 === 0 ? work : personal
+        const userId = index % 2 === 0 ? workId : personalId
+        const switched = await app.inject({ method: 'POST', url: '/api/auth/accounts/switch', headers: { cookie: cookieHeader() }, payload: { userId } })
+        expect(switched.statusCode).toBe(200)
+        acceptCookies(switched)
+        releaseList!()
+        const listed = await listResponse
+        acceptCookies(listed)
+
+        const visible = await app.inject({ url: '/api/auth/accounts', headers: { cookie: cookieHeader() } })
+        expect(visible.json().accounts.map((account: { id: string }) => account.id).sort()).toEqual(expectedIds.sort())
+        expect(jar.get('pulpo_session')).toBe(target.token)
+        expect(listed.cookies).toEqual([])
+      } finally {
+        releaseList!()
+        await listResponse
+      }
+    }
+    for (const account of all) expect(await sessionExists(account.id)).toBe(true)
+  })
+
+  it('prunes redundant sessions during an explicit account switch', async () => {
+    const personal = await session(personalId)
+    const work = await session(workId)
+    const staleWork = await session(workId)
+    const expired = await session(thirdId, { expiresAt: new Date(Date.now() - 1_000) })
+    const duplicateActive = await session(personalId)
+    const response = await app.inject({ method: 'POST', url: '/api/auth/accounts/switch', headers: { cookie: cookies(personal.token, [work.token, staleWork.token, expired.token, duplicateActive.token]) }, payload: { userId: workId } })
+    expect(response.statusCode).toBe(200)
+    expect(setCookies(response)).toEqual({ active: work.token, others: personal.token })
+    expect(await sessionExists(staleWork.id)).toBe(false)
+    expect(await sessionExists(duplicateActive.id)).toBe(false)
+    expect(await sessionExists(personal.id)).toBe(true)
+    expect(await sessionExists(work.id)).toBe(true)
+  })
+
   it('returns to a signed-in account after abandoning a new sign-in', async () => {
     const personal = await session(personalId)
     const response = await app.inject({ method: 'POST', url: '/api/auth/accounts/switch', headers: { cookie: cookies(undefined, [personal.token]) }, payload: { userId: personalId } })
@@ -154,6 +227,6 @@ describe.skipIf(!enabled)('account switching with PostgreSQL', () => {
     await db.update(users).set({ blocked: true }).where(eq(users.id, workId))
     const response = await app.inject({ url: '/api/auth/accounts', headers: { cookie: cookies(personal.token, [work.token]) } })
     expect(response.json().accounts.map((account: { id: string }) => account.id)).toEqual([personalId])
-    expect(setCookies(response).others).toBe('')
+    expect(response.cookies).toEqual([])
   })
 })
