@@ -51,6 +51,7 @@ import {
   useSettings,
   type AutomaticChatExpiration,
   type ChatSortMode,
+  type FileDoubleClickAction,
   type Theme,
   type TrashRetention,
 } from '@/stores/settings'
@@ -1058,6 +1059,20 @@ export function SettingsModal({
                       <SelectContent>
                         <SelectItem value="default">{t('sidebar.chatSort.default')}</SelectItem>
                         <SelectItem value="recent">{t('sidebar.chatSort.recent')}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </Row>
+                  <Row label={ui("Double-click a file")} hint={ui("What double-clicking a file on the Files page does. Hold Cmd or Ctrl to do the other.")}>
+                    <Select
+                      value={s.fileDoubleClickAction}
+                      onValueChange={(v) => s.set('fileDoubleClickAction', v as FileDoubleClickAction)}
+                    >
+                      <SelectTrigger className="w-40" aria-label={ui("Double-click a file")}>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="open">{ui("Open")}</SelectItem>
+                        <SelectItem value="openBeside">{ui("Open to the right")}</SelectItem>
                       </SelectContent>
                     </Select>
                   </Row>
