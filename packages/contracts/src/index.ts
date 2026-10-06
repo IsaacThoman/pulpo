@@ -936,11 +936,12 @@ export const providerCacheIsolationModeSchema = z.enum([
 export const providerCacheScopeSchema = z.enum(['agent_run', 'chat', 'user'])
 export const providerToolResultImageModeSchema = z.enum(['native', 'user_message'])
 /** Wire protocol Pulpo speaks to a provider's text generation endpoint. */
-export const providerApiFormatSchema = z.enum(['openai_responses', 'openai_chat_completions', 'anthropic_messages'])
+export const providerApiFormatSchema = z.enum(['openai_responses', 'openai_chat_completions', 'mistral_chat_completions', 'anthropic_messages'])
 export type ProviderApiFormat = z.infer<typeof providerApiFormatSchema>
 export const PROVIDER_API_FORMAT_DEFAULT_BASE_URLS = {
   openai_responses: 'https://api.openai.com/v1',
   openai_chat_completions: 'https://api.openai.com/v1',
+  mistral_chat_completions: 'https://api.mistral.ai/v1',
   anthropic_messages: 'https://api.anthropic.com/v1',
 } as const satisfies Record<ProviderApiFormat, string>
 
@@ -1503,6 +1504,9 @@ export const newChatAutoExpireSchema = z.boolean().default(false)
 /** Unfiled sidebar chats: manual drag order, or most recently updated first under time headings. */
 export const chatSortModeSchema = z.enum(['default', 'recent'])
 export type ChatSortMode = z.infer<typeof chatSortModeSchema>
+/** What double-clicking a file on the files page does: open it in place, or beside the folder. */
+export const fileDoubleClickActionSchema = z.enum(['open', 'openBeside'])
+export type FileDoubleClickAction = z.infer<typeof fileDoubleClickActionSchema>
 export const ANIMATION_SPEED_MIN = 0.01
 export const ANIMATION_SPEED_MAX = 5
 export const DEFAULT_ANIMATION_SPEED = 1
@@ -1546,6 +1550,7 @@ export const managementAccountSettingsSchema = z.object({
   automaticChatExpiration: automaticChatExpirationSchema.default('24h'),
   newChatAutoExpire: newChatAutoExpireSchema,
   chatSortMode: chatSortModeSchema.default('default'),
+  fileDoubleClickAction: fileDoubleClickActionSchema.default('open'),
   defaultModelId: z.string().max(120).nullable().default(null),
   generation: z.record(z.string(), z.record(z.string(), z.string())).default({}),
   favoriteModelIds: accountPreferenceIdsSchema.default([]),

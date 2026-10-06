@@ -55,6 +55,8 @@ export async function buildApp() {
     logger: { level: config.LOG_LEVEL },
     bodyLimit: 2 * 1024 * 1024,
     requestIdHeader: 'x-request-id',
+    // Local download routes carry a URL-encoded storage key, including restored object keys.
+    routerOptions: { maxParamLength: 4096 },
   })
 
   app.decorateRequest('requestReceivedAt', null)

@@ -5,6 +5,7 @@ import {
   animationSpeedSchema,
   automaticChatExpirationSchema,
   chatSortModeSchema,
+  fileDoubleClickActionSchema,
   instructionPresetSelectionsSchema,
   modelPreferencesPatchSchema,
   modelPreferencesSchema,
@@ -18,6 +19,7 @@ export function preferencesWithModelDefaults(values?: Record<string, unknown>): 
   const parsedAutomaticChatExpiration = automaticChatExpirationSchema.safeParse(values?.automaticChatExpiration)
   const parsedNewChatAutoExpire = newChatAutoExpireSchema.safeParse(values?.newChatAutoExpire)
   const parsedChatSortMode = chatSortModeSchema.safeParse(values?.chatSortMode)
+  const parsedFileDoubleClickAction = fileDoubleClickActionSchema.safeParse(values?.fileDoubleClickAction)
   const parsedAgentModes = agentModesSchema.safeParse(values?.agentModes)
   const parsedInstructionPresetSelections = instructionPresetSelectionsSchema.safeParse(values?.instructionPresetSelections)
   const parsedModelWarningDismissals = modelWarningDismissalsSchema.safeParse(values?.modelWarningDismissals)
@@ -29,6 +31,7 @@ export function preferencesWithModelDefaults(values?: Record<string, unknown>): 
     automaticChatExpiration: parsedAutomaticChatExpiration.success ? parsedAutomaticChatExpiration.data : '24h',
     newChatAutoExpire: parsedNewChatAutoExpire.success ? parsedNewChatAutoExpire.data : false,
     chatSortMode: parsedChatSortMode.success ? parsedChatSortMode.data : 'default',
+    fileDoubleClickAction: parsedFileDoubleClickAction.success ? parsedFileDoubleClickAction.data : 'open',
     sidebarPins: sidebarPinsSchema.parse(values?.sidebarPins ?? {}),
     agentModes: parsedAgentModes.success ? parsedAgentModes.data : {},
     instructionPresetSelections: parsedInstructionPresetSelections.success ? parsedInstructionPresetSelections.data : {},
