@@ -1,15 +1,27 @@
 export const FULL_BACKUP_TABLES = [
-  'users', 'friendships', 'user_blocks', 'password_credentials', 'user_totp_credentials', 'two_factor_recovery_codes', 'user_preferences', 'audit_events',
+  'users', 'friendships', 'user_blocks', 'pools', 'pool_members', 'pool_invitations', 'invite_codes',
+  'password_credentials', 'user_passkey_credentials', 'user_totp_credentials', 'two_factor_recovery_codes', 'user_preferences', 'user_provider_credentials', 'audit_events',
   'catalog_icons', 'labs', 'provider_connections', 'image_models', 'speech_models', 'speech_requests', 'speech_resource_cleanup',
   'models', 'model_pricing_versions', 'model_presets', 'model_preset_choices', 'folders', 'chats', 'responses',
   'response_items', 'response_content_parts', 'chat_shares', 'attachments', 'image_generation_requests', 'user_memory_documents', 'user_memory_document_revisions',
+  'file_nodes', 'file_docs', 'file_doc_updates', 'file_folder_layouts', 'file_agent_changes',
+  'queued_messages', 'composer_drafts', 'composer_draft_attachments', 'shelved_drafts', 'shelved_draft_attachments', 'shelf_operations',
   'episodic_memory_generations', 'chat_turn_embeddings', 'episodic_memory_metric_buckets',
   'api_keys', 'management_tokens', 'api_key_model_permissions', 'credit_ledger', 'usage_events', 'daily_usage_rollups', 'application_settings',
   'banners', 'request_logs', 'generation_attempts', 'ocr_attempts', 'ocr_cache_entries', 'chat_import_sources',
   'workspace_leases', 'agent_runs', 'tool_executions', 'diagnostic_policy', 'provider_diagnostics',
+  'billing_accounts', 'billing_subscriptions', 'billing_checkouts', 'billing_auto_top_ups', 'billing_orders', 'billing_webhook_events',
+  'weekly_usage_periods', 'five_hour_usage_periods', 'shared_allowance_periods', 'shared_five_hour_usage_periods',
+  'request_analytics', 'request_analytics_tools', 'analytics_hourly_rollups', 'idempotency_records',
 ] as const
 
 export type FullBackupTable = typeof FULL_BACKUP_TABLES[number]
+
+/** PostgreSQL bytea needs its hex input representation, not Buffer's JSON object. */
+export const FULL_BACKUP_BINARY_COLUMNS: Partial<Record<FullBackupTable, readonly string[]>> = {
+  file_docs: ['state'],
+  file_doc_updates: ['update'],
+}
 
 /**
  * PostgreSQL generated columns cannot receive explicit values during restore.
@@ -31,6 +43,12 @@ export const OPTIONAL_TABLES_IN_LEGACY_BACKUPS: readonly FullBackupTable[] = [
   'episodic_memory_generations',
   'chat_turn_embeddings',
   'episodic_memory_metric_buckets',
+  'pools', 'pool_members', 'pool_invitations', 'invite_codes', 'user_passkey_credentials', 'user_provider_credentials',
+  'file_nodes', 'file_docs', 'file_doc_updates', 'file_folder_layouts', 'file_agent_changes',
+  'queued_messages', 'composer_drafts', 'composer_draft_attachments', 'shelved_drafts', 'shelved_draft_attachments', 'shelf_operations',
+  'billing_accounts', 'billing_subscriptions', 'billing_checkouts', 'billing_auto_top_ups', 'billing_orders', 'billing_webhook_events',
+  'weekly_usage_periods', 'five_hour_usage_periods', 'shared_allowance_periods', 'shared_five_hour_usage_periods',
+  'request_analytics', 'request_analytics_tools', 'analytics_hourly_rollups', 'idempotency_records',
 ]
 
 /**
