@@ -110,6 +110,8 @@ const esES = {
     copyShareLink: 'Copiar enlace para compartir',
     deleteMessage: 'Eliminar mensaje',
     deleteMessageConfirm: '¿Eliminar este mensaje del usuario y todas las respuestas posteriores?',
+    deleteVersion: 'Eliminar esta versión',
+    deleteVersionConfirm: '¿Eliminar esta versión de la respuesta y todos los mensajes posteriores?',
     disableExpiry: 'Desactivar caducidad en',
     moveToFolder: 'Mover a carpeta',
     favorites: 'Favoritos',

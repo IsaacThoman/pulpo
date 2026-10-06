@@ -68,6 +68,32 @@ export function newestDescendantId<T extends Pick<BranchTurn, 'id' | 'parentResp
   return leafId
 }
 
+function isSameUserVariant(turn: BranchTurn, selected: BranchTurn): boolean {
+  return turn.parentResponseId === selected.parentResponseId && userBranchKey(turn) === userBranchKey(selected)
+}
+
+/** Response versions are regenerations/edits of one user message; the last one cannot be deleted on its own. */
+export function hasOtherResponseVersion(turns: BranchTurn[], selected: BranchTurn): boolean {
+  return turns.some((turn) => turn.id !== selected.id && isSameUserVariant(turn, selected))
+}
+
+/**
+ * Pick the branch to show after a deletion: the neighbouring response version,
+ * then another user-message variant, then the parent, following each to its newest leaf.
+ */
+export function leafAfterDeletion<T extends BranchTurn>(turns: T[], selected: BranchTurn, deleting: Set<string>, currentLeaf: string | null): string | null {
+  if (currentLeaf && !deleting.has(currentLeaf)) return currentLeaf
+  const remaining = turns.filter((turn) => !deleting.has(turn.id))
+  const versions = turns.filter((turn) => isSameUserVariant(turn, selected))
+  const position = versions.findIndex((turn) => turn.id === selected.id)
+  const neighbour = [...versions.slice(0, Math.max(0, position)).reverse(), ...versions.slice(position + 1)]
+    .find((turn) => !deleting.has(turn.id))
+  const variant = remaining.filter((turn) => turn.parentResponseId === selected.parentResponseId).at(-1)
+  const parent = remaining.find((turn) => turn.id === selected.parentResponseId)
+  const anchor = neighbour ?? variant ?? parent
+  return anchor ? newestDescendantId(remaining, anchor.id) : remaining.at(-1)?.id ?? null
+}
+
 export function cascadeDeletionIds(turns: BranchTurn[], selected: BranchTurn, includeUserVariant: boolean): Set<string> {
   const deleting = new Set(includeUserVariant
     ? turns.filter((turn) => turn.parentResponseId === selected.parentResponseId

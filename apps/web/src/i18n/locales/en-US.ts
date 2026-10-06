@@ -104,6 +104,8 @@ const enUS = {
     copyShareLink: 'Copy share link',
     deleteMessage: 'Delete message',
     deleteMessageConfirm: 'Delete this user message and every response that follows from it?',
+    deleteVersion: 'Delete this version',
+    deleteVersionConfirm: 'Delete this version of the response and every message that follows from it?',
     disableExpiry: 'Disable expiry in',
     moveToFolder: 'Move to folder',
     favorites: 'Favorites',

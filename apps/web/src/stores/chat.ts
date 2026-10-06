@@ -338,7 +338,7 @@ interface ChatState {
     agentMode: boolean
   }) => Promise<void>
   editAssistantMessage: (chatId: string, messageId: string, content: string) => void
-  deleteUserMessage: (chatId: string, messageId: string) => void
+  deleteMessage: (chatId: string, messageId: string) => void
   activateBranch: (chatId: string, responseId: string) => void
   stopStreaming: (responseId: string) => void
   continueWithoutAgent: (responseId: string) => Promise<void>
@@ -2046,7 +2046,7 @@ export const useChat = create<ChatState>()((set, get) => ({
     }))
       .then(() => queryClient.invalidateQueries({ queryKey: chatKey(chatId) }))
   },
-  deleteUserMessage: (chatId, messageId) => {
+  deleteMessage: (chatId, messageId) => {
     const owner = queryClient.getQueryCache().find({ queryKey: chatKey(chatId), exact: true })
     if (owner) branchHistories.delete(owner)
     void enqueueChatMutation(chatId, () => optimisticRequest('DELETE', `/api/messages/${messageId}`, undefined, {

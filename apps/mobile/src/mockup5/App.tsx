@@ -2916,8 +2916,8 @@ function useMessageActionRunner({ message, onEdit, onRegenerate }: {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
       const explanation = message.role === 'user'
         ? 'This removes the message and every response that follows from it. This cannot be undone.'
-        : 'This removes this response branch and all of its descendants. This cannot be undone.';
-      Alert.alert(message.role === 'user' ? 'Delete message?' : 'Delete response?', explanation, [
+        : 'This removes this version of the response and every message that follows from it. This cannot be undone.';
+      Alert.alert(message.role === 'user' ? 'Delete message?' : 'Delete this version?', explanation, [
         { text: 'Cancel', style: 'cancel' },
         { text: 'Delete', style: 'destructive', onPress: () => {
           if (!message.chatId) return;
@@ -2987,6 +2987,9 @@ function MessageContextMenu({
   const speak = () => { void readAloud(speechKey, message.text).then(() => { const error = speechPlayback.getSnapshot().error; if (error) Alert.alert('Read aloud', error); }).catch(error => Alert.alert('Read aloud', error.message)); };
   const speechLabel = speaking ? (speechState.phase === 'loading' ? 'Stop preparing speech' : 'Stop reading') : 'Read aloud';
   const runAction = useMessageActionRunner({ message, onEdit, onRegenerate });
+  // A response can only be deleted as one of several versions; the user message owns the last one.
+  const canDelete = message.role === 'user' || (message.branches?.length ?? 0) > 1;
+  const deleteLabel = message.role === 'user' ? 'Delete message' : 'Delete version';
   const previewText = message.text.length > 2_000
     ? `${message.text.slice(0, 1_999)}…`
     : message.text;
@@ -3003,7 +3006,7 @@ function MessageContextMenu({
         { label: message.role === 'user' ? 'Edit message' : 'Edit response', icon: 'pencil', onPress: () => runAction('edit') },
         ...(message.role === 'assistant' ? [{ label: 'Regenerate response', icon: 'arrow.clockwise', onPress: () => runAction('regenerate') }] : []),
         ...(canSpeak ? [{ label: speechLabel, icon: speaking ? 'stop.fill' : 'speaker.wave.2', onPress: speak }] : []),
-        { label: 'Delete message', icon: 'trash', destructive: true, onPress: () => runAction('delete') },
+        ...(canDelete ? [{ label: deleteLabel, icon: 'trash', destructive: true, onPress: () => runAction('delete') }] : []),
       ]}
       style={message.role === 'user' ? styles.userMessageContextHost : styles.assistantMessageContextHost}
       preview={(
@@ -3032,7 +3035,7 @@ function MessageContextMenu({
               <SwiftUIButton label="Regenerate response" systemImage="arrow.clockwise" onPress={() => runAction('regenerate')} />
             </>}
           {canSpeak && <SwiftUIButton label={speechLabel} systemImage={speaking ? 'stop.fill' : 'speaker.wave.2'} onPress={speak} />}
-          <SwiftUIButton label="Delete message" role="destructive" systemImage="trash" onPress={() => runAction('delete')} />
+          {canDelete && <SwiftUIButton label={deleteLabel} role="destructive" systemImage="trash" onPress={() => runAction('delete')} />}
         </>
       )}
     >

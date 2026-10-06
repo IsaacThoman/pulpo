@@ -474,6 +474,35 @@ function deletionIds(responses: ServerResponse[], selected: ServerResponse, incl
   return deleting
 }
 
+function newestDescendantId(responses: ServerResponse[], selectedId: string): string {
+  const newestChild = new Map(responses.map((response) => [response.parentResponseId, response.id]))
+  let leafId = selectedId
+  const seen = new Set<string>()
+  while (!seen.has(leafId)) {
+    seen.add(leafId)
+    const child = newestChild.get(leafId)
+    if (!child || seen.has(child)) break
+    leafId = child
+  }
+  return leafId
+}
+
+/** Mirrors the server: show the neighbouring version, then another prompt variant, then the parent. */
+function leafAfterDeletion(responses: ServerResponse[], selected: ServerResponse, deleting: Set<string>, currentLeaf: string | null): string | null {
+  if (currentLeaf && !deleting.has(currentLeaf)) return currentLeaf
+  const sorted = [...responses].sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id))
+  const remaining = sorted.filter((response) => !deleting.has(response.id))
+  const versions = sorted.filter((response) => response.parentResponseId === selected.parentResponseId
+    && userBranchKey(response) === userBranchKey(selected))
+  const position = versions.findIndex((response) => response.id === selected.id)
+  const neighbour = [...versions.slice(0, Math.max(0, position)).reverse(), ...versions.slice(position + 1)]
+    .find((response) => !deleting.has(response.id))
+  const variant = remaining.filter((response) => response.parentResponseId === selected.parentResponseId).at(-1)
+  const parent = remaining.find((response) => response.id === selected.parentResponseId)
+  const anchor = neighbour ?? variant ?? parent
+  return anchor ? newestDescendantId(remaining, anchor.id) : remaining.at(-1)?.id ?? null
+}
+
 /** Apply a deletion after server success without blocking on a transcript refetch. */
 export function applyConfirmedMessageDeletion(input: {
   queryClient: QueryClient
@@ -489,7 +518,7 @@ export function applyConfirmedMessageDeletion(input: {
   const deleting = deletionIds(chat.responses, selected, includeUserVariant)
   const responses = chat.responses.filter((response) => !deleting.has(response.id))
   const currentLeaf = chat.activeBranchLeafId ?? chat.activeResponseId
-  const leafId = currentLeaf && !deleting.has(currentLeaf) ? currentLeaf : responses.at(-1)?.id ?? null
+  const leafId = leafAfterDeletion(chat.responses, selected, deleting, currentLeaf)
   for (const id of deleting) {
     pendingResponses.delete(pendingKey(input.namespace, id))
     useRealtimeStore.getState().removeSnapshot(id)
