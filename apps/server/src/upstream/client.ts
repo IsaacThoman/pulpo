@@ -78,8 +78,8 @@ export function createUpstreamTextClient(provider: UpstreamProvider, options: { 
     ...(options.maxRetries !== undefined ? { maxRetries: options.maxRetries } : {}),
     ...(options.fetch ? { fetch: options.fetch } : {}),
   })
-  if (format === 'openai_chat_completions') {
-    const stream = (body: CreateBody, requestOptions?: RequestOptions) => openChatCompletionsStream(openai, body, { baseUrl: provider.baseUrl, ...requestOptions })
+  if (format === 'openai_chat_completions' || format === 'mistral_chat_completions') {
+    const stream = (body: CreateBody, requestOptions?: RequestOptions) => openChatCompletionsStream(openai, body, { baseUrl: provider.baseUrl, format, ...requestOptions })
     return {
       format,
       responses: {
