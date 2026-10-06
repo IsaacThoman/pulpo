@@ -234,13 +234,13 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
   // A file revealed from elsewhere (e.g. just saved to Files) is selected once this folder lists it.
   const reveal = useFileReveal((state) => state.target)
   useEffect(() => {
-    if (!reveal || reveal.folderId !== folderId || !byId.has(reveal.nodeId)) return
+    if (!reveal || reveal.layout !== layout || reveal.folderId !== folderId || !byId.has(reveal.nodeId)) return
     useFileReveal.setState({ target: null })
     setSelection(selectOnly(reveal.nodeId))
     requestAnimationFrame(() => {
       itemsRef.current?.querySelector<HTMLElement>(`[data-file-id="${reveal.nodeId}"]`)?.scrollIntoView({ block: 'nearest' })
     })
-  }, [byId, folderId, reveal])
+  }, [byId, folderId, layout, reveal])
 
   const changeView = (next: FilesView) => {
     setView(next)
