@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { cascadeDeletionIds, lineageFromLeaf, metadataForTurn, newestDescendantId, type BranchTurn } from './branching.js'
+import { cascadeDeletionIds, hasOtherResponseVersion, leafAfterDeletion, lineageFromLeaf, metadataForTurn, newestDescendantId, type BranchTurn } from './branching.js'
 
 const originalInput = [{ role: 'user', content: 'Original prompt' }]
 const editedInput = [{ role: 'user', content: 'Edited prompt' }]
@@ -33,6 +33,30 @@ describe('response branches', () => {
 
   it('cascades a user-message variant across its regenerated responses', () => {
     expect([...cascadeDeletionIds(turns, turns[0]!, true)]).toEqual(['first', 'regenerated', 'follow-up'])
+  })
+
+  it('only allows deleting a response version while another version remains', () => {
+    expect(hasOtherResponseVersion(turns, turns[1]!)).toBe(true)
+    expect(hasOtherResponseVersion(turns, turns[2]!)).toBe(false)
+    expect(hasOtherResponseVersion(turns, turns[3]!)).toBe(false)
+  })
+
+  it('shows the neighbouring response version after deleting the active one', () => {
+    const versions: BranchTurn[] = [
+      { id: 'v1', parentResponseId: null, input: originalInput },
+      { id: 'v2', parentResponseId: null, input: originalInput },
+      { id: 'v3', parentResponseId: null, input: originalInput },
+      { id: 'v1-follow-up', parentResponseId: 'v1', input: [{ role: 'user', content: 'Next' }] },
+      { id: 'edited', parentResponseId: null, input: editedInput },
+    ]
+    expect(leafAfterDeletion(versions, versions[1]!, new Set(['v2']), 'v2')).toBe('v1-follow-up')
+    expect(leafAfterDeletion(versions, versions[0]!, new Set(['v1', 'v1-follow-up']), 'v1-follow-up')).toBe('v2')
+    expect(leafAfterDeletion(versions, versions[1]!, new Set(['v2']), 'edited')).toBe('edited')
+  })
+
+  it('falls back to another prompt variant, then the parent, after deleting a user message', () => {
+    expect(leafAfterDeletion(turns, turns[0]!, new Set(['first', 'regenerated', 'follow-up']), 'follow-up')).toBe('edited-prompt')
+    expect(leafAfterDeletion(turns, turns[3]!, new Set(['follow-up']), 'follow-up')).toBe('regenerated')
   })
 
   it('returns only the selected lineage for display and sharing', () => {

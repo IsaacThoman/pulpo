@@ -629,7 +629,7 @@ export const MessageItem = memo(function MessageItem({
   const speechActive = speechState.key === `${chat.id}:${message.id}`
   const { t } = useTranslation()
   const editAssistantMessage = useChat((state) => state.editAssistantMessage)
-  const deleteUserMessage = useChat((state) => state.deleteUserMessage)
+  const deleteMessage = useChat((state) => state.deleteMessage)
   const stopStreaming = useChat((state) => state.stopStreaming)
   const continueWithoutAgent = useChat((state) => state.continueWithoutAgent)
   const continuePastCostLimit = useChat((state) => state.continuePastCostLimit)
@@ -748,7 +748,7 @@ export const MessageItem = memo(function MessageItem({
                     <Pencil className="size-3.5" />
                   </ActionButton>
                   {!pendingDelivery && (
-                    <ActionButton label={t('chat.deleteMessage')} onClick={() => { if (confirm(t('chat.deleteMessageConfirm'))) deleteUserMessage(chat.id, message.id) }}>
+                    <ActionButton label={t('chat.deleteMessage')} onClick={() => { if (confirm(t('chat.deleteMessageConfirm'))) deleteMessage(chat.id, message.id) }}>
                       <Trash2 className="size-3.5" />
                     </ActionButton>
                   )}
@@ -921,6 +921,11 @@ export const MessageItem = memo(function MessageItem({
                     <ActionButton label={t('chat.regenerate')} onClick={() => { speechPlayback.stop(); onRegenerate(message.id) }}>
                       <RefreshCw className="size-3.5" />
                     </ActionButton>
+                    {hasMultipleBranches(message.branch) && (
+                      <ActionButton label={t('chat.deleteVersion')} onClick={() => { if (confirm(t('chat.deleteVersionConfirm'))) { speechPlayback.stop(); deleteMessage(chat.id, message.id) } }}>
+                        <Trash2 className="size-3.5" />
+                      </ActionButton>
+                    )}
                   </>
                 )}
                 <SpeechButton messageKey={`${chat.id}:${message.id}`} text={message.content} />
