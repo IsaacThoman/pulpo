@@ -135,11 +135,25 @@ describe.skipIf(!enabled)('workspace history isolation with PostgreSQL', () => {
     const selectedScope = (await chat()).workspaceScopeId
     expect(selectedScope).not.toBe(bScope)
     expect(selectedScope).not.toBe(a.workspaceScopeId)
-    await app.inject({ method: 'DELETE', url: `/api/messages/${b.id}` })
+    expect((await app.inject({ method: 'DELETE', url: `/api/messages/${b.id}:input` })).statusCode).toBe(204)
     expect((await chat()).workspaceScopeId).toBe(selectedScope)
-    await app.inject({ method: 'DELETE', url: `/api/messages/${a.id}` })
+    expect((await app.inject({ method: 'DELETE', url: `/api/messages/${a.id}:input` })).statusCode).toBe(204)
     expect((await chat()).workspaceScopeId).not.toBe(selectedScope)
     expect(mocks.controller).not.toHaveBeenCalled()
+  })
+
+  it('deletes a response version only while another version of it remains', async () => {
+    const userMessageId = randomUUID()
+    const first = await send({ userMessageId }); await finish(first.id)
+    const second = await send({ parentResponseId: null, userMessageId, branchReason: 'regenerate' }); await finish(second.id)
+    const third = await send({ parentResponseId: null, userMessageId, branchReason: 'regenerate' }); await finish(third.id)
+    expect((await app.inject({ method: 'POST', url: `/api/messages/${second.id}/activate` })).statusCode).toBe(200)
+    expect((await app.inject({ method: 'DELETE', url: `/api/messages/${second.id}` })).statusCode).toBe(204)
+    expect((await chat()).activeBranchLeafId).toBe(first.id)
+    expect((await app.inject({ method: 'DELETE', url: `/api/messages/${first.id}` })).statusCode).toBe(204)
+    expect((await chat()).activeBranchLeafId).toBe(third.id)
+    expect((await app.inject({ method: 'DELETE', url: `/api/messages/${third.id}` })).statusCode).toBe(409)
+    expect((await chat()).activeBranchLeafId).toBe(third.id)
   })
 
   it('coalesces acquisition across managers, isolates branches, and leaves the older execution usable', async () => {
