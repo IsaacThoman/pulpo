@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build && node scripts/prerender-landing.mjs",
-    "test": "vitest run",
+    "test": "vitest run --exclude \"**/dist/**\"",
     "preview": "vite preview",
     "test:responsive": "node tests/responsive-layout.browser.mjs",
     "test:code-preview": "node tests/code-preview.browser.mjs && node tests/code-preview.browser.mjs --build",
@@ -82,6 +82,6 @@
     "playwright": "^1.63.0",
     "typescript": "~6.0.2",
     "vite": "^8.1.1",
-    "vitest": "^3.2.7"
+    "vitest": "^4.1.11"
   }
 }
