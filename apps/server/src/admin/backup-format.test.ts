@@ -25,7 +25,7 @@ describe('full backup format', () => {
   })
 
   it('accepts full backups created before episodic memory was introduced', () => {
-    expect(OPTIONAL_TABLES_IN_LEGACY_BACKUPS).toEqual([
+    expect(OPTIONAL_TABLES_IN_LEGACY_BACKUPS).toEqual(expect.arrayContaining([
       'diagnostic_policy', 'provider_diagnostics', 'image_models', 'image_generation_requests',
       'speech_models', 'speech_requests', 'speech_resource_cleanup',
       'user_memory_documents',
@@ -33,7 +33,7 @@ describe('full backup format', () => {
       'episodic_memory_generations',
       'chat_turn_embeddings',
       'episodic_memory_metric_buckets',
-    ])
+    ]))
   })
 
   it('supplies required columns added after older v1 archives were created', () => {

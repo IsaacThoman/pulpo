@@ -16,6 +16,7 @@ import { getConfig, isAllowedOrigin, isAllowedRequestOrigin } from './config.js'
 import { AppError } from './lib/errors.js'
 import { authenticateSession } from './auth/service.js'
 import { registerAuthRoutes } from './auth/routes.js'
+import { registerAccountSwitchingRoutes, signedInAccountsCookieName } from './auth/accounts.js'
 import { registerCatalogRoutes } from './catalog/routes.js'
 import { registerChatRoutes } from './chats/routes.js'
 import { registerApiKeyRoutes } from './api-keys/routes.js'
@@ -46,6 +47,7 @@ import { registerAdminBillingRoutes } from './billing/admin-routes.js'
 import { registerInviteCodeRoutes } from './invite-codes/routes.js'
 import { registerDictationRoutes } from './dictation/routes.js'
 import { registerCodexRoutes } from './codex/routes.js'
+import { anthropicErrorBody, isAnthropicApiRequest } from './public-api/anthropic-codec.js'
 
 export async function buildApp() {
   const config = getConfig()
@@ -53,6 +55,8 @@ export async function buildApp() {
     logger: { level: config.LOG_LEVEL },
     bodyLimit: 2 * 1024 * 1024,
     requestIdHeader: 'x-request-id',
+    // Local download routes carry a URL-encoded storage key, including restored object keys.
+    routerOptions: { maxParamLength: 4096 },
   })
 
   app.decorateRequest('requestReceivedAt', null)
@@ -96,7 +100,7 @@ export async function buildApp() {
   app.addHook('preValidation', async (request) => {
     if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(request.method)) return
     if (request.url.startsWith('/v1/')) return
-    const hasSession = Boolean(request.cookies[config.SESSION_COOKIE_NAME])
+    const hasSession = Boolean(request.cookies[config.SESSION_COOKIE_NAME] || request.cookies[signedInAccountsCookieName()])
     if (!hasSession) return
     const origin = request.headers.origin
     if (origin && !isAllowedRequestOrigin(origin, request.headers.host, config)) {
@@ -105,6 +109,21 @@ export async function buildApp() {
   })
 
   app.setErrorHandler((error, request, reply) => {
+    if (isAnthropicApiRequest(request.url)) {
+      // Anthropic SDKs expect their own error envelope on the Messages endpoints.
+      if (error instanceof ZodError) {
+        const issue = error.issues[0]
+        const param = issue?.path.join('.')
+        return reply.code(400).send(anthropicErrorBody(400, `${param ? `${param}: ` : ''}${issue?.message ?? 'Invalid request'}`))
+      }
+      if (error instanceof AppError) return reply.code(error.statusCode).send(anthropicErrorBody(error.statusCode, error.message))
+      const status = typeof error === 'object' && error !== null && 'statusCode' in error && typeof error.statusCode === 'number' ? error.statusCode : 500
+      if (status >= 400 && status < 500) {
+        return reply.code(status).send(anthropicErrorBody(status, status === 413 ? 'Request body is too large' : error instanceof Error ? error.message : 'Invalid request'))
+      }
+      request.log.error({ err: error }, 'Unhandled request error')
+      return reply.code(500).send(anthropicErrorBody(500, 'Internal server error'))
+    }
     if (error instanceof ZodError) {
       const issue = error.issues[0]
       return reply.code(400).send({ error: {
@@ -146,6 +165,7 @@ export async function buildApp() {
   await ensureBootstrapPreset()
   await registerMobileRoutes(app)
   await registerAuthRoutes(app)
+  await registerAccountSwitchingRoutes(app)
   await registerDeviceSessionRoutes(app)
   await registerAccountDeletionRoutes(app)
   await registerProfileRoutes(app)

@@ -22,6 +22,11 @@ type TemporaryDataPolicy =
   | 'workspace-lease'
   | 'agent-run'
   | 'tool-execution'
+  | 'composer-draft'
+  | 'composer-draft-attachment'
+  | 'shelved-draft'
+  | 'shelved-draft-attachment'
+  | 'queued-message'
 
 /**
  * Every durable backup table must explicitly declare how temporary-chat data
@@ -32,7 +37,9 @@ export const FULL_BACKUP_TEMPORARY_DATA_POLICY = {
   users: 'preserve',
   friendships: 'preserve',
   user_blocks: 'preserve',
+  pools: 'preserve', pool_members: 'preserve', pool_invitations: 'preserve', invite_codes: 'preserve',
   password_credentials: 'preserve',
+  user_passkey_credentials: 'preserve', user_provider_credentials: 'preserve',
   user_totp_credentials: 'preserve',
   two_factor_recovery_codes: 'preserve',
   user_preferences: 'preserve',
@@ -58,6 +65,9 @@ export const FULL_BACKUP_TEMPORARY_DATA_POLICY = {
   attachments: 'attachment',
   user_memory_documents: 'redact-source-response',
   user_memory_document_revisions: 'redact-source-response',
+  file_nodes: 'preserve', file_docs: 'preserve', file_doc_updates: 'preserve', file_folder_layouts: 'preserve', file_agent_changes: 'response-reference',
+  queued_messages: 'queued-message', composer_drafts: 'composer-draft', composer_draft_attachments: 'composer-draft-attachment',
+  shelved_drafts: 'shelved-draft', shelved_draft_attachments: 'shelved-draft-attachment', shelf_operations: 'preserve',
   episodic_memory_generations: 'preserve',
   chat_turn_embeddings: 'chat-turn-embedding',
   episodic_memory_metric_buckets: 'preserve',
@@ -79,6 +89,9 @@ export const FULL_BACKUP_TEMPORARY_DATA_POLICY = {
   workspace_leases: 'workspace-lease',
   agent_runs: 'agent-run',
   tool_executions: 'tool-execution',
+  billing_accounts: 'preserve', billing_subscriptions: 'preserve', billing_checkouts: 'preserve', billing_auto_top_ups: 'preserve', billing_orders: 'preserve', billing_webhook_events: 'preserve',
+  weekly_usage_periods: 'preserve', five_hour_usage_periods: 'preserve', shared_allowance_periods: 'preserve', shared_five_hour_usage_periods: 'preserve',
+  request_analytics: 'redact-response', request_analytics_tools: 'preserve', analytics_hourly_rollups: 'preserve', idempotency_records: 'preserve',
 } as const satisfies Record<FullBackupTable, TemporaryDataPolicy>
 
 export interface BackupAttachmentBlob {
@@ -113,7 +126,16 @@ export function projectFullBackup(database: FullBackupDatabase, options: FullBac
   const temporaryResponseIds = ids(temporaryResponses)
   const temporaryResponseItems = database.response_items.filter((row) => temporaryResponseIds.has(String(row.response_id)))
   const temporaryResponseItemIds = ids(temporaryResponseItems)
+  const temporaryDrafts = database.composer_drafts.filter((row) => temporaryChatIds.has(String(row.chat_id))
+    || (row.state as { temporary?: boolean } | null)?.temporary === true)
+  const temporaryDraftIds = ids(temporaryDrafts)
   const temporaryQueuedAttachmentIds = new Set(options.temporaryQueuedAttachmentIds ?? [])
+  for (const row of database.queued_messages) if (temporaryChatIds.has(String(row.chat_id))) {
+    for (const id of row.attachment_ids as string[] ?? []) temporaryQueuedAttachmentIds.add(id)
+  }
+  for (const row of temporaryDrafts) {
+    for (const attachment of (row.state as { attachments?: Array<{ id: string }> } | null)?.attachments ?? []) temporaryQueuedAttachmentIds.add(attachment.id)
+  }
   const temporaryAttachments = database.attachments.filter((row) => {
     const attachmentId = stringValue(row.id)
     const chatId = stringValue(row.chat_id)
@@ -148,6 +170,16 @@ export function projectFullBackup(database: FullBackupDatabase, options: FullBac
       case 'response-item': projected[table] = rows.filter((row) => !temporaryResponseItemIds.has(String(row.id))); break
       case 'response-content-part': projected[table] = references(rows, 'response_item_id', temporaryResponseItemIds); break
       case 'chat-reference': projected[table] = references(rows, 'chat_id', temporaryChatIds); break
+      case 'composer-draft': projected[table] = rows.filter((row) => !temporaryDraftIds.has(String(row.id))).map(row => {
+        const state = row.state as { attachments?: Array<{ id: string }> }
+        return state?.attachments ? { ...row, state: { ...state, attachments: state.attachments.filter(attachment => !temporaryAttachmentIds.has(attachment.id)) } } : row
+      }); break
+      case 'composer-draft-attachment': projected[table] = rows.filter((row) => !temporaryDraftIds.has(String(row.draft_id)) && !temporaryAttachmentIds.has(String(row.attachment_id))); break
+      case 'shelved-draft': projected[table] = rows.map(row => Array.isArray(row.attachment_data)
+        ? { ...row, attachment_data: (row.attachment_data as Array<{ id: string }>).filter(attachment => !temporaryAttachmentIds.has(attachment.id)) } : row); break
+      case 'shelved-draft-attachment': projected[table] = references(rows, 'attachment_id', temporaryAttachmentIds); break
+      case 'queued-message': projected[table] = references(rows, 'chat_id', temporaryChatIds).map(row => Array.isArray(row.attachment_ids)
+        ? { ...row, attachment_ids: (row.attachment_ids as string[]).filter(id => !temporaryAttachmentIds.has(id)) } : row); break
       case 'attachment': projected[table] = rows.filter((row) => !temporaryAttachmentIds.has(String(row.id))); break
       case 'redact-source-response': projected[table] = redactReference(rows, 'source_response_id', temporaryResponseIds); break
       case 'redact-response': projected[table] = redactReference(rows, 'response_id', temporaryResponseIds); break

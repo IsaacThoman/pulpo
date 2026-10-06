@@ -24,6 +24,8 @@ import { newId } from '../lib/ids.js'
 import { requireAdmin, requireUser } from '../auth/service.js'
 import { requireSecretRevealAuth } from '../auth/sensitive-action.js'
 import { assertSafeProviderUrl } from '../lib/url-security.js'
+import { providerApiFormat } from '../upstream/client.js'
+import { fetchProviderModelIds, providerModelsRequest, ProviderModelsError } from '../upstream/models-endpoint.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { INTERNAL_LAB_ID, INTERNAL_PROVIDER_ID, UNKNOWN_MODEL_ID } from './defaults.js'
 import { deleteCatalogModel } from './model-deletion.js'
@@ -268,6 +270,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
       await tx.insert(providerConnections).values({
         id,
         name: input.name,
+        apiFormat: input.apiFormat,
         baseUrl: input.baseUrl,
         encryptedApiKey: encryptSecret(input.apiKey, getConfig().ENCRYPTION_KEY),
         organizationId: input.organizationId,
@@ -296,7 +299,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
     const body = updateProviderSchema.parse(request.body)
     if (body.baseUrl) await assertSafeProviderUrl(body.baseUrl)
     const [updated] = await db.update(providerConnections).set({
-      name: body.name, baseUrl: body.baseUrl,
+      name: body.name, apiFormat: body.apiFormat, baseUrl: body.baseUrl,
       encryptedApiKey: body.apiKey ? encryptSecret(body.apiKey, getConfig().ENCRYPTION_KEY) : undefined,
       organizationId: body.organizationId, projectId: body.projectId,
       requestTimeoutMs: body.requestTimeoutMs,
@@ -327,12 +330,13 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
     let success = false
     let error: string | null = null
     try {
-      const response = await fetch(`${provider.baseUrl.replace(/\/$/, '')}/models`, {
-        headers: { authorization: `Bearer ${decryptSecret(provider.encryptedApiKey, getConfig().ENCRYPTION_KEY)}` },
+      const models = providerModelsRequest({ baseUrl: provider.baseUrl, apiFormat: providerApiFormat(provider) }, decryptSecret(provider.encryptedApiKey, getConfig().ENCRYPTION_KEY))
+      const response = await fetch(models.url, {
+        headers: models.headers,
         signal: AbortSignal.timeout(provider.requestTimeoutMs),
       })
       success = response.ok
-      if (!success) error = `OpenAI returned ${response.status}`
+      if (!success) error = `Provider returned ${response.status}`
     } catch (cause) {
       error = cause instanceof Error ? cause.message : 'Health check failed'
     }
@@ -370,27 +374,16 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
     const [provider] = await db.select().from(providerConnections).where(eq(providerConnections.id, id)).limit(1)
     if (!provider) throw notFound('Provider')
     await assertSafeProviderUrl(provider.baseUrl)
-    let response: Response
+    let modelIds: string[]
     try {
-      response = await fetch(`${provider.baseUrl.replace(/\/$/, '')}/models`, {
-        headers: { authorization: `Bearer ${decryptSecret(provider.encryptedApiKey, getConfig().ENCRYPTION_KEY)}` },
-        signal: AbortSignal.timeout(provider.requestTimeoutMs),
-      })
+      modelIds = await fetchProviderModelIds(
+        { baseUrl: provider.baseUrl, apiFormat: providerApiFormat(provider), requestTimeoutMs: provider.requestTimeoutMs },
+        decryptSecret(provider.encryptedApiKey, getConfig().ENCRYPTION_KEY),
+      )
     } catch (cause) {
-      throw new AppError(502, 'upstream_unreachable', cause instanceof Error ? cause.message : 'Failed to reach provider /models')
+      if (cause instanceof ProviderModelsError) throw new AppError(502, cause.code, cause.message)
+      throw cause
     }
-    if (!response.ok) {
-      throw new AppError(502, 'upstream_error', `Provider /models returned ${response.status}`)
-    }
-    const payload = await response.json() as { data?: Array<{ id?: unknown }> }
-    if (!Array.isArray(payload?.data)) {
-      throw new AppError(502, 'upstream_invalid', 'Provider /models response missing data array')
-    }
-    const modelIds = [...new Set(
-      payload.data
-        .map((item) => (typeof item?.id === 'string' ? item.id.trim() : ''))
-        .filter(Boolean),
-    )].sort((a, b) => a.localeCompare(b))
     const syncedAt = new Date()
     await db.transaction(async (tx) => {
       await tx.delete(providerUpstreamModels).where(eq(providerUpstreamModels.providerConnectionId, id))

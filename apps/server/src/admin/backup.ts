@@ -4,9 +4,11 @@ import { createReadStream } from 'node:fs'
 import { mkdtemp, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { and, eq, ne, sql } from 'drizzle-orm'
+import { and, eq, getTableName, is, ne, sql } from 'drizzle-orm'
+import { getTableConfig, PgTable } from 'drizzle-orm/pg-core'
+import * as schema from '../database/schema.js'
 import { db } from '../database/client.js'
-import { attachments, backupJobs, catalogIcons, chats, queuedMessages, speechModels, users } from '../database/schema.js'
+import { attachments, backupJobs, catalogIcons, fileNodes, speechModels, users } from '../database/schema.js'
 import { getBlobStore } from '../storage/index.js'
 import { deleteRedisKeysByPattern } from '../redis-keys.js'
 import { redis } from '../redis.js'
@@ -16,11 +18,12 @@ import {
   applyFullBackupCompatibilityDefaults,
   scrubFullBackupDetailedPayloads,
   FULL_BACKUP_EXPLICIT_COLUMNS,
+  FULL_BACKUP_BINARY_COLUMNS,
   FULL_BACKUP_TABLES,
   OPTIONAL_TABLES_IN_LEGACY_BACKUPS,
   type FullBackupTable,
 } from './backup-format.js'
-import { writeBackupArchive, type BackupArchiveEntry } from './backup-archive.js'
+import { stageBackupBlob, writeBackupArchive, type BackupArchiveEntry } from './backup-archive.js'
 import { writeBackupDatabase } from './backup-database.js'
 import { projectFullBackup, type FullBackupDatabase } from './backup-projection.js'
 import { B2BackupStore } from './b2-backup-store.js'
@@ -30,7 +33,8 @@ import { extractRestoreArchive, readSmallRestoreTable, restoreBatches, restoreRo
 import { finishRestoreUpload, openRestoreUpload } from './restore-uploads.js'
 
 const json = (value: unknown) => JSON.stringify(value, (_, item) => typeof item === 'bigint' ? item.toString() : item)
-const checksum = (value: Uint8Array) => createHash('sha256').update(value).digest('hex')
+const backupColumns = new Map((Object.values(schema) as unknown[]).filter((value): value is PgTable => is(value, PgTable))
+  .map(table => [getTableName(table), getTableConfig(table).columns.filter(column => !column.generated).map(column => column.name)]))
 
 export async function createFullBackup(jobId: string, finalAttempt = true): Promise<void> {
   const [job] = await db.select().from(backupJobs).where(eq(backupJobs.id, jobId)).limit(1)
@@ -81,11 +85,17 @@ export async function createFullBackup(jobId: string, finalAttempt = true): Prom
     }
     temporaryDirectory = await mkdtemp(join(tmpdir(), 'pulpo-backup-'))
     const archivePath = join(temporaryDirectory, `${job.id}.tar.gz`)
-    const { database: rawDatabase, avatarBlobRows, iconRows, speechBlobRows, temporaryQueuedAttachmentRows } = await db.transaction(async (tx) => {
+    const { database: rawDatabase, avatarBlobRows, iconRows, speechBlobRows, fileBlobRows } = await db.transaction(async (tx) => {
       const database: Record<string, unknown[]> = {}
       for (const [index, table] of FULL_BACKUP_TABLES.entries()) {
         const columns = FULL_BACKUP_EXPLICIT_COLUMNS[table]
-        database[table] = [...await tx.execute(sql.raw(`select ${columns?.join(', ') ?? '*'} from ${table}`))].map(row => decodePayloadRow(table, row))
+        database[table] = [...await tx.execute(sql.raw(`select ${columns?.join(', ') ?? '*'} from ${table}`))].map(row => {
+          const decoded = decodePayloadRow(table, row)
+          for (const column of FULL_BACKUP_BINARY_COLUMNS[table] ?? []) {
+            if (decoded[column] != null) decoded[column] = `\\x${Buffer.from(decoded[column] as Uint8Array).toString('hex')}`
+          }
+          return decoded
+        })
         await db.update(backupJobs).set({ progress: Math.round(((index + 1) / FULL_BACKUP_TABLES.length) * 55), updatedAt: new Date() }).where(eq(backupJobs.id, jobId))
       }
       return {
@@ -93,19 +103,18 @@ export async function createFullBackup(jobId: string, finalAttempt = true): Prom
         avatarBlobRows: await tx.select({ objectKey: users.avatarObjectKey }).from(users).where(sql`${users.avatarObjectKey} is not null`),
         iconRows: await tx.select().from(catalogIcons),
         speechBlobRows: (await tx.select({ previews: speechModels.voicePreviews, assets: speechModels.voiceAssets }).from(speechModels)).flatMap(row => [...row.previews, ...row.assets.flatMap(asset => [asset.clone, asset.watermark].filter((blob): blob is NonNullable<typeof blob> => Boolean(blob)))]),
-        temporaryQueuedAttachmentRows: await tx.select({ attachmentIds: queuedMessages.attachmentIds })
-          .from(queuedMessages).innerJoin(chats, eq(chats.id, queuedMessages.chatId)).where(eq(chats.temporary, true)),
+        fileBlobRows: await tx.select({ objectKey: fileNodes.objectKey, checksum: fileNodes.checksum }).from(fileNodes)
+          .where(and(eq(fileNodes.kind, 'blob'), eq(fileNodes.status, 'ready'))),
       }
     }, { isolationLevel: 'repeatable read', accessMode: 'read only' })
-    const { database, attachmentBlobs } = projectFullBackup(rawDatabase as FullBackupDatabase, {
-      temporaryQueuedAttachmentIds: temporaryQueuedAttachmentRows.flatMap((row) => row.attachmentIds),
-    })
+    const { database, attachmentBlobs } = projectFullBackup(rawDatabase as FullBackupDatabase)
     scrubFullBackupDetailedPayloads(database)
     const databasePath = join(temporaryDirectory, 'database.json')
     await writeBackupDatabase(databasePath, database)
     const databaseSize = (await stat(databasePath)).size
     const blobRows = [
       ...attachmentBlobs,
+      ...fileBlobRows.map(row => ({ objectKey: row.objectKey!, checksum: row.checksum })),
       ...speechBlobRows.map(row => ({ objectKey: row.objectKey!, checksum: row.checksum })),
       ...avatarBlobRows.map((avatar) => ({ objectKey: avatar.objectKey!, checksum: null })),
       ...iconRows.flatMap((icon) => [
@@ -121,10 +130,12 @@ export async function createFullBackup(jobId: string, finalAttempt = true): Prom
       for (const [index, blob] of blobRows.entries()) {
         if (includedKeys.has(blob.objectKey)) continue
         includedKeys.add(blob.objectKey)
-        const body = await getBlobStore().get(blob.objectKey)
+        const blobPath = join(temporaryDirectory!, `blob-${index}`)
+        const metadata = await stageBackupBlob(blobPath, await getBlobStore().getStream(blob.objectKey), blob.checksum)
         const entry = `blobs/${Buffer.from(blob.objectKey).toString('base64url')}`
-        blobs.push({ entry, objectKey: blob.objectKey, checksum: blob.checksum ?? checksum(body) })
-        yield { name: entry, body }
+        blobs.push({ entry, objectKey: blob.objectKey, checksum: metadata.checksum })
+        yield { name: entry, body: createReadStream(blobPath), sizeBytes: metadata.sizeBytes }
+        await rm(blobPath)
         await db.update(backupJobs).set({ progress: 55 + Math.round(((index + 1) / Math.max(blobRows.length, 1)) * 35), updatedAt: new Date() }).where(eq(backupJobs.id, jobId))
       }
       const manifest = { format: 'pulpo-instance-backup', version: 1, createdAt: new Date().toISOString(), tables: FULL_BACKUP_TABLES, blobs }
@@ -204,11 +215,13 @@ export async function restoreFullBackup(jobId: string): Promise<void> {
     }
     const logCapture = new Map<string, boolean>()
     const blobKeys = new Map<string, string>()
+    const fileBlobKeys = new Set<string>()
+    for await (const row of restoreRows(tables.get('file_nodes'))) if (typeof row.object_key === 'string') fileBlobKeys.add(row.object_key)
     for (const [index, blob] of manifest.blobs.entries()) {
       const file = files.get(blob.entry)!
       // Bound the filename even when the source key came from a previous
       // restore. Encoding the entire key grows it on every backup/restore cycle.
-      const staged = `restored/${jobId}/${createHash('sha256').update(blob.objectKey).digest('hex')}`
+      const staged = `restored/${jobId}/${fileBlobKeys.has(blob.objectKey) ? 'files/' : ''}${createHash('sha256').update(blob.objectKey).digest('hex')}`
       // Record before writing so even an interrupted/partially successful put
       // is included in rollback cleanup.
       stagedKeys.push(staged)
@@ -232,6 +245,16 @@ export async function restoreFullBackup(jobId: string): Promise<void> {
           data.ocr_attempts = ocrPayloadLogs.has(String(row.id)) ? [{ request_log_id: row.id, request_payload: true }] : []
         }
         applyFullBackupCompatibilityDefaults(data)
+        // BullMQ/provider execution state is outside the archive. Keep partial
+        // output, but terminate abandoned jobs so restored chats can send again.
+        if ((table === 'responses' && ['queued', 'in_progress'].includes(String(row.status)))
+          || ((table === 'agent_runs' || table === 'tool_executions') && ['queued', 'running'].includes(String(row.status)))) {
+          row.status = 'cancelled'
+          row.completed_at ??= new Date().toISOString()
+          row.error ??= table === 'responses'
+            ? { code: 'instance_restored', message: 'This response was interrupted by instance recovery.' }
+            : 'This execution was interrupted by instance recovery.'
+        }
         if (table === 'diagnostic_policy') row.epoch = restoredEpoch
         if (table === 'provider_diagnostics') {
           if (new Date(String(row.created_at)).getTime() + 90 * 86_400_000 <= Date.now()) continue
@@ -241,12 +264,12 @@ export async function restoreFullBackup(jobId: string): Promise<void> {
         if (table === 'ocr_attempts' && logCapture.get(String(row.request_log_id)) === false) {
           row.request_payload = null; row.response_payload = null
         }
-        const blobFields = table === 'users' ? ['avatar_object_key'] : table === 'attachments' ? ['object_key']
+        const blobFields = table === 'users' ? ['avatar_object_key'] : table === 'attachments' || table === 'file_nodes' ? ['object_key']
           : table === 'speech_models' ? ['preview_object_key'] : table === 'catalog_icons' ? ['original_object_key', 'monochrome_light_object_key', 'monochrome_dark_object_key'] : []
         for (const field of blobFields) {
           if (row[field] == null) continue
           const replacement = blobKeys.get(String(row[field]))
-          if (!replacement && table === 'attachments' && row.status !== 'ready') continue
+          if (!replacement && (table === 'attachments' || table === 'file_nodes') && row.status !== 'ready') continue
           if (!replacement) throw new Error(`Backup is missing a blob referenced by ${table}`)
           row[field] = replacement
         }
@@ -262,11 +285,13 @@ export async function restoreFullBackup(jobId: string): Promise<void> {
       }
     }
     const oldAttachmentBlobs = await db.select({ key: attachments.objectKey }).from(attachments)
+    const oldFileBlobs = await db.select({ key: fileNodes.objectKey }).from(fileNodes).where(sql`${fileNodes.objectKey} is not null`)
     const oldAvatarBlobs = await db.select({ key: users.avatarObjectKey }).from(users).where(sql`${users.avatarObjectKey} is not null`)
     const oldIconRows = await db.select().from(catalogIcons)
     const oldSpeechBlobs = (await db.select({ previews: speechModels.voicePreviews, assets: speechModels.voiceAssets }).from(speechModels)).flatMap(row => [...row.previews, ...row.assets.flatMap(asset => [asset.clone, asset.watermark].filter((blob): blob is NonNullable<typeof blob> => Boolean(blob)))].map(clip => ({ key: clip.objectKey })))
     const oldBlobs = [
       ...oldAttachmentBlobs,
+      ...oldFileBlobs.map(row => ({ key: row.key! })),
       ...oldSpeechBlobs.map(row => ({ key: row.key! })),
       ...oldAvatarBlobs.map((avatar) => ({ key: avatar.key! })),
       ...oldIconRows.flatMap((icon) => [
@@ -277,13 +302,22 @@ export async function restoreFullBackup(jobId: string): Promise<void> {
     await db.transaction(async (tx) => {
       await tx.delete(backupJobs).where(ne(backupJobs.id, jobId))
       await tx.execute(sql.raw(`truncate table ${[...FULL_BACKUP_TABLES].reverse().join(', ')} restart identity cascade`))
+      // One final INSERT lets PostgreSQL validate self-referencing parents after
+      // the whole tree exists, even when children precede parents across batches.
+      await tx.execute(sql`create temporary table pulpo_restore_file_nodes (like file_nodes including defaults) on commit drop`)
       for (const [index, table] of FULL_BACKUP_TABLES.entries()) {
         for await (const batch of restoreBatches(compatibleRows(table))) await insertBackupRows(tx, table, batch)
+        if (table === 'file_nodes') await tx.execute(sql`insert into file_nodes select * from pulpo_restore_file_nodes`)
         if (table === 'users') {
           await tx.insert(backupJobs).values({ ...job, userId: restoredAdminId!, status: 'in_progress', progress: 40, error: null, updatedAt: new Date() })
         }
         await tx.update(backupJobs).set({ progress: 40 + Math.round(((index + 1) / FULL_BACKUP_TABLES.length) * 55), updatedAt: new Date() }).where(eq(backupJobs.id, jobId))
       }
+      await tx.execute(sql`select setval(pg_get_serial_sequence('file_doc_updates', 'seq'), coalesce((select max(seq) from file_doc_updates), 0) + 1, false)`)
+      // A dispatch that already produced a response must not be sent twice.
+      await tx.execute(sql`delete from queued_messages where status = 'dispatching'
+        and exists (select 1 from responses where responses.id = queued_messages.dispatch_response_id)`)
+      await tx.execute(sql`update queued_messages set status = 'pending', error = null where status = 'dispatching'`)
       const restoredLogging = settings.find(row => row.key === 'logging')?.value as { logDetailedPayloads?: boolean; payloadRetention?: string } | undefined
       const durations: Record<string, number> = { '1h': 3600, '24h': 86400, '7d': 604800, '30d': 2592000, '90d': 7776000 }
       await tx.execute(sql`insert into diagnostic_policy (id, epoch, enabled, retention_seconds, expired_before) values (1, ${restoredEpoch}, ${restoredLogging?.logDetailedPayloads === true}, ${restoredLogging?.payloadRetention === 'indefinite' ? null : durations[restoredLogging?.payloadRetention ?? '7d'] ?? 604800}, ${typeof archivePolicy[0]?.expired_before === 'string' ? archivePolicy[0].expired_before : null})
@@ -328,12 +362,21 @@ async function insertBackupRows(
   rows: Array<Record<string, unknown>>,
 ): Promise<void> {
   rows = rows.map(row => encodePayloadRow(table, row))
-  const columns = FULL_BACKUP_EXPLICIT_COLUMNS[table]
-  if (!columns) {
-    await tx.execute(sql`insert into ${sql.raw(table)} select * from json_populate_recordset(null::${sql.raw(table)}, ${json(rows)}::json)`)
-    return
+  // Omit absent archive properties so PostgreSQL applies current defaults.
+  // Explicit null remains null; malformed required values still fail atomically.
+  const columns = FULL_BACKUP_EXPLICIT_COLUMNS[table] ?? backupColumns.get(table)!
+  const groups = new Map<string, { columns: string[]; rows: typeof rows }>()
+  for (const row of rows) {
+    const present = columns.filter(column => Object.hasOwn(row, column))
+    const key = present.join(', ')
+    const group = groups.get(key) ?? { columns: present, rows: [] }
+    group.rows.push(row); groups.set(key, group)
   }
-  const columnList = columns.join(', ')
-  await tx.execute(sql`insert into ${sql.raw(table)} (${sql.raw(columnList)})
-    select ${sql.raw(columnList)} from json_populate_recordset(null::${sql.raw(table)}, ${json(rows)}::json)`)
+  for (const group of groups.values()) {
+    if (!group.columns.length) throw new Error(`Backup contains an empty ${table} row`)
+    const target = table === 'file_nodes' ? 'pulpo_restore_file_nodes' : table
+    const columnList = sql.join(group.columns.map(column => sql.identifier(column)), sql`, `)
+    await tx.execute(sql`insert into ${sql.identifier(target)} (${columnList}) ${sql.raw(table === 'file_doc_updates' ? 'overriding system value' : '')}
+      select ${columnList} from json_populate_recordset(null::${sql.identifier(table)}, ${json(group.rows)}::json)`)
+  }
 }

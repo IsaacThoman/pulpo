@@ -22,6 +22,8 @@ export type TrashRetention = 'instant' | '24h' | '7d' | '30d' | '90d' | 'indefin
 export type AutomaticChatExpiration = 'disabled' | '24h' | '7d'
 /** Unfiled sidebar chats: manual drag order, or most recently updated first under time headings. */
 export type ChatSortMode = 'default' | 'recent'
+/** Double-clicking a file on the files page: open it in place, or to the right of the folder. */
+export type FileDoubleClickAction = 'open' | 'openBeside'
 
 /** Per-model map of preset id → selected choice id. */
 export type GenerationPrefs = Record<string, string>
@@ -63,6 +65,7 @@ export interface SettingsState {
   defaultModelId: string
   sidebarPins: SidebarPins
   chatSortMode: ChatSortMode
+  fileDoubleClickAction: FileDoubleClickAction
   /** Per-model composer preset selections. */
   generation: Record<string, GenerationPrefs>
   setTheme: (t: Theme) => void
@@ -105,6 +108,7 @@ export const DEFAULT_SETTINGS = {
   defaultModelId: '',
   sidebarPins: DEFAULT_SIDEBAR_PINS,
   chatSortMode: 'default' as ChatSortMode,
+  fileDoubleClickAction: 'open' as FileDoubleClickAction,
   generation: {},
 }
 

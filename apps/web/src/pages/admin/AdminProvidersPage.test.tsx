@@ -1,11 +1,23 @@
 // @vitest-environment jsdom
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { AdminProvidersPage } from './AdminProvidersPage'
 
 const mocks = vi.hoisted(() => ({ api: vi.fn() }))
 vi.mock('@/lib/api', () => ({ apiRequest: mocks.api }))
 afterEach(() => { cleanup(); vi.clearAllMocks() })
+beforeEach(() => {
+  HTMLElement.prototype.scrollIntoView = vi.fn()
+  HTMLElement.prototype.hasPointerCapture = vi.fn(() => false)
+  HTMLElement.prototype.releasePointerCapture = vi.fn()
+})
+
+const formatSelect = () => screen.getByRole('combobox', { name: 'API format' })
+async function chooseFormat(label: string) {
+  fireEvent.keyDown(formatSelect(), { key: 'ArrowDown' })
+  fireEvent.click(await screen.findByRole('option', { name: label }))
+}
+const baseUrlInput = () => screen.getByLabelText('Provider base URL') as HTMLInputElement
 
 function mockProviders(providers: unknown[] = []) {
   mocks.api.mockImplementation(async (path: string) => ({ data: path === '/api/admin/providers' ? providers : [] }))
@@ -45,4 +57,73 @@ it('loads saved quality and allows disabling conversion without replacing the AP
   await waitFor(() => expect(mocks.api).toHaveBeenCalledWith('/api/admin/providers/provider-1', { method: 'PATCH', body: expect.objectContaining({ convertImagesToWebp: false, webpQuality: 85 }) }))
   const patch = mocks.api.mock.calls.find(([, options]) => options?.method === 'PATCH')![1].body
   expect(patch).not.toHaveProperty('apiKey')
+})
+
+it('switches an untouched base URL to the Anthropic default and creates an Anthropic provider', async () => {
+  mockProviders()
+  render(<AdminProvidersPage />)
+  fireEvent.click(screen.getByRole('button', { name: 'Add provider' }))
+  expect(formatSelect().textContent).toBe('OpenAI Responses (/responses)')
+  expect(baseUrlInput().value).toBe('https://api.openai.com/v1')
+  await chooseFormat('Anthropic Messages (/messages)')
+  expect(formatSelect().textContent).toBe('Anthropic Messages (/messages)')
+  expect(baseUrlInput().value).toBe('https://api.anthropic.com/v1')
+  expect(baseUrlInput().placeholder).toBe('https://api.anthropic.com/v1')
+  fireEvent.change(screen.getByLabelText('Provider name'), { target: { value: 'Anthropic' } })
+  fireEvent.change(screen.getByLabelText('Provider API key'), { target: { value: 'sk-ant' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Create' }))
+  await waitFor(() => expect(mocks.api).toHaveBeenCalledWith('/api/admin/providers', { method: 'POST', body: expect.objectContaining({
+    name: 'Anthropic', apiFormat: 'anthropic_messages', baseUrl: 'https://api.anthropic.com/v1', apiKey: 'sk-ant',
+  }) }))
+})
+
+it('preserves a customized base URL when switching formats', async () => {
+  mockProviders()
+  render(<AdminProvidersPage />)
+  fireEvent.click(screen.getByRole('button', { name: 'Add provider' }))
+  fireEvent.change(baseUrlInput(), { target: { value: 'https://openrouter.ai/api/v1' } })
+  await chooseFormat('OpenAI Chat Completions (/chat/completions)')
+  expect(baseUrlInput().value).toBe('https://openrouter.ai/api/v1')
+  await chooseFormat('Anthropic Messages (/messages)')
+  expect(baseUrlInput().value).toBe('https://openrouter.ai/api/v1')
+  fireEvent.change(screen.getByLabelText('Provider name'), { target: { value: 'Router' } })
+  fireEvent.change(screen.getByLabelText('Provider API key'), { target: { value: 'k' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Create' }))
+  await waitFor(() => expect(mocks.api).toHaveBeenCalledWith('/api/admin/providers', { method: 'POST', body: expect.objectContaining({
+    apiFormat: 'anthropic_messages', baseUrl: 'https://openrouter.ai/api/v1',
+  }) }))
+})
+
+it('shows and updates the format of an existing provider', async () => {
+  mockProviders([{
+    id: 'provider-2', name: 'Claude', apiFormat: 'anthropic_messages', baseUrl: 'https://api.anthropic.com/v1', hasApiKey: true, modelCount: 0,
+    cacheAffinityMode: 'none', cacheAffinityScope: 'chat', cacheIsolationMode: 'none', cacheIsolationScope: 'user',
+    toolResultImageMode: 'native', convertImagesToWebp: false, webpQuality: 80,
+  }])
+  render(<AdminProvidersPage />)
+  expect(await screen.findByText('Anthropic Messages')).toBeTruthy()
+  fireEvent.click(await screen.findByTitle('Edit'))
+  expect(formatSelect().textContent).toBe('Anthropic Messages (/messages)')
+  fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+  await waitFor(() => expect(mocks.api).toHaveBeenCalledWith('/api/admin/providers/provider-2', { method: 'PATCH', body: expect.objectContaining({ apiFormat: 'anthropic_messages' }) }))
+  mocks.api.mockClear()
+  fireEvent.click(await screen.findByTitle('Edit'))
+  await chooseFormat('OpenAI Chat Completions (/chat/completions)')
+  expect(baseUrlInput().value).toBe('https://api.openai.com/v1')
+  fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+  await waitFor(() => expect(mocks.api).toHaveBeenCalledWith('/api/admin/providers/provider-2', { method: 'PATCH', body: expect.objectContaining({
+    apiFormat: 'openai_chat_completions', baseUrl: 'https://api.openai.com/v1',
+  }) }))
+})
+
+it('creates an explicitly configured native Mistral provider with its default endpoint', async () => {
+  mockProviders()
+  render(<AdminProvidersPage />)
+  fireEvent.click(await screen.findByRole('button', { name: 'Add provider' }))
+  await chooseFormat('Mistral Chat Completions (/chat/completions)')
+  expect(baseUrlInput().value).toBe('https://api.mistral.ai/v1')
+  fireEvent.change(screen.getByLabelText('Provider name'), { target: { value: 'Mistral' } })
+  fireEvent.change(screen.getByLabelText('Provider API key'), { target: { value: 'fixture-key' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Create' }))
+  await waitFor(() => expect(mocks.api).toHaveBeenCalledWith('/api/admin/providers', { method: 'POST', body: expect.objectContaining({ apiFormat: 'mistral_chat_completions', baseUrl: 'https://api.mistral.ai/v1' }) }))
 })
