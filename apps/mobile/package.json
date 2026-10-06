@@ -9,7 +9,7 @@
     "deploy:iphone": "bash ./scripts/deploy-iphone.sh",
     "prebuild": "expo prebuild",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run",
+    "test": "vitest run --exclude \"**/dist/**\"",
     "export": "expo export --platform all",
     "android": "expo run:android",
     "test:shortcuts:native": "swift test --package-path modules/pulpo-shortcuts"
@@ -67,9 +67,10 @@
     "zustand": "^5.0.11"
   },
   "devDependencies": {
+    "@types/node": "^24.13.2",
     "@types/react": "~19.2.2",
     "typescript": "~6.0.3",
-    "vitest": "^3.2.7"
+    "vitest": "^4.1.11"
   },
   "expo": {
     "autolinking": {
