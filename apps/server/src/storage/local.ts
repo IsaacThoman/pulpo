@@ -8,7 +8,7 @@ import type { BlobMetadata, BlobStore } from './blob-store.js'
 
 /** Local URLs are served by the API route that owns the object's metadata table. */
 export function localObjectRouteBase(key: string): '/api/files' | '/api/attachments' {
-  return /^users\/[^/]+\/files\//.test(key) ? '/api/files' : '/api/attachments'
+  return /^(?:users\/[^/]+\/files\/|restored\/[^/]+\/files\/)/.test(key) ? '/api/files' : '/api/attachments'
 }
 
 export class LocalBlobStore implements BlobStore {

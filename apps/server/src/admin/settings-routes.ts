@@ -652,7 +652,8 @@ export async function registerAdminSettingsRoutes(app: FastifyInstance): Promise
         .send(object.body)
     }
     if (job.userId !== admin.id) throw notFound('Backup')
-    return reply.type('application/gzip').header('content-disposition', `attachment; filename="pulpo-instance-${new Date().toISOString().slice(0, 10)}.tar.gz"`).send(Buffer.from(await getBlobStore().get(job.objectKey)))
+    if (job.archiveSizeBytes !== null) reply.header('content-length', job.archiveSizeBytes)
+    return reply.type('application/gzip').header('content-disposition', `attachment; filename="pulpo-instance-${new Date().toISOString().slice(0, 10)}.tar.gz"`).send(await getBlobStore().getStream(job.objectKey))
   })
   app.post('/api/admin/restore', async (request, reply) => {
     const admin = requireAdmin(request); const part = await request.file()

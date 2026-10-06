@@ -7,6 +7,7 @@ import {
   GetObjectRetentionCommand,
   HeadObjectCommand,
   ListObjectsV2Command,
+  ListObjectVersionsCommand,
   PutObjectCommand,
 } from '@aws-sdk/client-s3'
 
@@ -44,13 +45,13 @@ describe('Backblaze backup store', () => {
     vi.useFakeTimers()
     mocks.send.mockImplementation(async (command: unknown) => command instanceof GetObjectLockConfigurationCommand
       ? { ObjectLockConfiguration: { ObjectLockEnabled: 'Enabled' } }
-      : {})
+      : command instanceof ListObjectVersionsCommand ? { Versions: [{ Key: command.input.Prefix, VersionId: 'probe-version' }] } : {})
     const test = new B2BackupStore(settings).testConnection()
     await vi.runAllTimersAsync()
     await test
     expect(mocks.send.mock.calls.map(([command]) => command.constructor)).toEqual([
       GetObjectLockConfigurationCommand, PutObjectCommand, HeadObjectCommand, GetObjectCommand,
-      ListObjectsV2Command, GetObjectRetentionCommand, DeleteObjectCommand,
+      ListObjectsV2Command, GetObjectRetentionCommand, ListObjectVersionsCommand, DeleteObjectCommand,
     ])
     const probe = mocks.send.mock.calls[1]![0] as PutObjectCommand
     expect(probe.input).toMatchObject({ ObjectLockMode: 'COMPLIANCE' })
@@ -60,7 +61,7 @@ describe('Backblaze backup store', () => {
   it('rejects buckets with a default retention rule before creating a probe', async () => {
     mocks.send.mockImplementation(async (command: unknown) => command instanceof GetObjectLockConfigurationCommand
       ? { ObjectLockConfiguration: { ObjectLockEnabled: 'Enabled', Rule: { DefaultRetention: { Mode: 'COMPLIANCE', Days: 30 } } } }
-      : {})
+      : command instanceof ListObjectVersionsCommand ? { Versions: [{ Key: command.input.Prefix, VersionId: 'probe-version' }] } : {})
     await expect(new B2BackupStore(settings).testConnection()).rejects.toThrow('default retention rule')
     expect(mocks.send).toHaveBeenCalledTimes(1)
   })
@@ -70,7 +71,7 @@ describe('Backblaze backup store', () => {
     vi.mocked(fetch).mockResolvedValue(new Response(null, { status: 200 }))
     mocks.send.mockImplementation(async (command: unknown) => command instanceof GetObjectLockConfigurationCommand
       ? { ObjectLockConfiguration: { ObjectLockEnabled: 'Enabled' } }
-      : {})
+      : command instanceof ListObjectVersionsCommand ? { Versions: [{ Key: command.input.Prefix, VersionId: 'probe-version' }] } : {})
     const test = expect(new B2BackupStore(settings).testConnection()).rejects.toThrow('must be private')
     await vi.runAllTimersAsync()
     await test
@@ -89,6 +90,26 @@ describe('Backblaze backup store', () => {
       Metadata: { 'pulpo-job-id': 'job-1', 'pulpo-recipient': 'fingerprint' },
     })
     expect(JSON.stringify(command.input)).not.toContain('secret')
+  })
+
+  it('permanently deletes exact backup versions and old hide markers across pages', async () => {
+    mocks.send.mockImplementation(async (command: unknown) => {
+      if (!(command instanceof ListObjectVersionsCommand)) return {}
+      return command.input.KeyMarker ? { Versions: [{ Key: 'backup.age', VersionId: 'v2' }] }
+        : { Versions: [{ Key: 'backup.age', VersionId: 'v1' }, { Key: 'backup.age-unrelated', VersionId: 'other' }],
+          DeleteMarkers: [{ Key: 'backup.age', VersionId: 'hidden' }], IsTruncated: true, NextKeyMarker: 'backup.age', NextVersionIdMarker: 'hidden' }
+    })
+    await new B2BackupStore(settings).delete('backup.age')
+    expect(mocks.send.mock.calls.filter(([command]) => command instanceof DeleteObjectCommand).map(([command]) => command.input))
+      .toEqual(['v1', 'hidden', 'v2'].map(VersionId => ({ Bucket: settings.bucket, Key: 'backup.age', VersionId })))
+  })
+
+  it('retains retryable failure when a version is still locked', async () => {
+    mocks.send.mockImplementation(async (command: unknown) => {
+      if (command instanceof ListObjectVersionsCommand) return { Versions: [{ Key: 'backup.age', VersionId: 'locked' }] }
+      throw new Error('Object retention has not expired')
+    })
+    await expect(new B2BackupStore(settings).delete('backup.age')).rejects.toThrow('retention has not expired')
   })
 
   it('reads idempotency metadata and streams encrypted downloads', async () => {
