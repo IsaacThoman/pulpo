@@ -16,6 +16,7 @@ import { getConfig, isAllowedOrigin, isAllowedRequestOrigin } from './config.js'
 import { AppError } from './lib/errors.js'
 import { authenticateSession } from './auth/service.js'
 import { registerAuthRoutes } from './auth/routes.js'
+import { registerAccountSwitchingRoutes, signedInAccountsCookieName } from './auth/accounts.js'
 import { registerCatalogRoutes } from './catalog/routes.js'
 import { registerChatRoutes } from './chats/routes.js'
 import { registerApiKeyRoutes } from './api-keys/routes.js'
@@ -97,7 +98,7 @@ export async function buildApp() {
   app.addHook('preValidation', async (request) => {
     if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(request.method)) return
     if (request.url.startsWith('/v1/')) return
-    const hasSession = Boolean(request.cookies[config.SESSION_COOKIE_NAME])
+    const hasSession = Boolean(request.cookies[config.SESSION_COOKIE_NAME] || request.cookies[signedInAccountsCookieName()])
     if (!hasSession) return
     const origin = request.headers.origin
     if (origin && !isAllowedRequestOrigin(origin, request.headers.host, config)) {
@@ -162,6 +163,7 @@ export async function buildApp() {
   await ensureBootstrapPreset()
   await registerMobileRoutes(app)
   await registerAuthRoutes(app)
+  await registerAccountSwitchingRoutes(app)
   await registerDeviceSessionRoutes(app)
   await registerAccountDeletionRoutes(app)
   await registerProfileRoutes(app)

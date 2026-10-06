@@ -59,6 +59,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { ProfileAvatar } from '@/components/ProfileAvatar'
+import { AccountSwitcherMenuItems } from '@/components/layout/AccountSwitcher'
 import { apiRequest } from '@/lib/api'
 import { toggleSidebarPin, type SidebarPinKey } from '@/lib/sidebar-pins'
 import { newChatLocationState } from '@/lib/new-chat-navigation'
@@ -845,7 +846,8 @@ export function Sidebar({
   const billingPlan = billingEnabled ? billingQuery.data?.plan : undefined
   const sidebarPins = useSettings((s) => s.sidebarPins)
   const setSetting = useSettings((s) => s.set)
-  const logout = useAuth((s) => s.logout)
+  const signOutActiveAccount = useAuth((s) => s.signOutActiveAccount)
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false)
   const [newFolderOpen, setNewFolderOpen] = useState(false)
   const [folderName, setFolderName] = useState('')
   const [activeTooltip, setActiveTooltip] = useState<string | null>(null)
@@ -1306,7 +1308,7 @@ export function Sidebar({
 
       {/* user footer */}
       <div className="border-t border-sidebar-border p-2">
-        <DropdownMenu>
+        <DropdownMenu open={accountMenuOpen} onOpenChange={setAccountMenuOpen}>
           <DropdownMenuTrigger asChild>
             <button
               className="relative flex h-10 w-full cursor-pointer items-center gap-2 overflow-hidden rounded-lg text-left hover:bg-sidebar-accent"
@@ -1335,6 +1337,7 @@ export function Sidebar({
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent side="top" align="start" className="w-56">
+            <AccountSwitcherMenuItems open={accountMenuOpen} />
             {accountNavItem('searchChats', t('sidebar.searchChats'), onOpenSearch, <Search />)}
             {filesEnabled && accountNavItem('files', t('sidebar.files'), '/files', <FolderIcon />)}
             {accountNavItem('usage', t('sidebar.usage'), '/usage', <BarChart3 />)}
@@ -1358,9 +1361,8 @@ export function Sidebar({
             <DropdownMenuItem
               variant="destructive"
               onClick={() => {
-                logout()
-                navigate('/login')
                 onNavigate()
+                void signOutActiveAccount().then((switched) => { if (!switched) navigate('/login') })
               }}
             >
               <LogOut />
