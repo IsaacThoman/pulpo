@@ -14,6 +14,31 @@ function databaseWith(overrides: Partial<Record<keyof FullBackupDatabase, FullBa
 const rowIds = (rows: FullBackupRow[]) => rows.map((row) => row.id)
 
 describe('temporary chat backup projection', () => {
+  it('excludes temporary queued and unsent drafts while preserving accounting and safe attachment references', () => {
+    const source = databaseWith({
+      chats: [{ id: 'temporary', temporary: true }, { id: 'saved', temporary: false }],
+      responses: [{ id: 'temporary-response', chat_id: 'temporary' }],
+      queued_messages: [{ id: 'temp-queue', chat_id: 'temporary', attachment_ids: ['queued-file'] }, { id: 'saved-queue', chat_id: 'saved', attachment_ids: ['safe-file', 'queued-file'] }],
+      composer_drafts: [{ id: 'temp-draft', state: { temporary: true, attachments: [{ id: 'unsent-file' }] } },
+        { id: 'saved-draft', state: { attachments: [{ id: 'safe-file' }, { id: 'unsent-file' }] } }],
+      composer_draft_attachments: [{ draft_id: 'temp-draft', attachment_id: 'unsent-file' }, { draft_id: 'saved-draft', attachment_id: 'safe-file' }],
+      attachments: ['queued-file', 'unsent-file', 'safe-file'].map(id => ({ id, status: 'ready', object_key: id })),
+      shelved_drafts: [{ id: 'shelf', attachment_data: [{ id: 'safe-file' }, { id: 'queued-file' }] }],
+      shelved_draft_attachments: [{ draft_id: 'shelf', attachment_id: 'safe-file' }, { draft_id: 'shelf', attachment_id: 'queued-file' }],
+      request_analytics: [{ id: 'billing', response_id: 'temporary-response', cost_micros: 42 }],
+      file_agent_changes: [{ id: 'undo-temporary', response_id: 'temporary-response' }],
+    })
+    const projected = projectFullBackup(source)
+    expect(projected.database.queued_messages).toEqual([{ id: 'saved-queue', chat_id: 'saved', attachment_ids: ['safe-file'] }])
+    expect(projected.database.composer_drafts).toEqual([{ id: 'saved-draft', state: { attachments: [{ id: 'safe-file' }] } }])
+    expect(projected.database.shelved_drafts[0]!.attachment_data).toEqual([{ id: 'safe-file' }])
+    expect(projected.database.shelved_draft_attachments).toHaveLength(1)
+    expect(projected.database.attachments).toHaveLength(1)
+    expect(projected.database.request_analytics).toEqual([{ id: 'billing', response_id: null, cost_micros: 42 }])
+    expect(projected.database.file_agent_changes).toEqual([])
+    expect((source.composer_drafts[1]!.state as { attachments: unknown[] }).attachments).toHaveLength(2)
+  })
+
   it('requires every full-backup table to declare a temporary-data policy', () => {
     expect(Object.keys(FULL_BACKUP_TEMPORARY_DATA_POLICY).sort()).toEqual([...FULL_BACKUP_TABLES].sort())
   })
