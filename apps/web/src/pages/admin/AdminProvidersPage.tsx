@@ -15,16 +15,18 @@ type CacheAffinityMode = 'none' | 'openai_prompt_cache_key' | 'fireworks_session
 type CacheIsolationMode = 'none' | 'fireworks_prompt_cache_isolation'
 type CacheScope = 'agent_run' | 'chat' | 'user'
 type ToolResultImageMode = 'native' | 'user_message'
-type ApiFormat = 'openai_responses' | 'openai_chat_completions' | 'anthropic_messages'
+type ApiFormat = 'openai_responses' | 'openai_chat_completions' | 'mistral_chat_completions' | 'anthropic_messages'
 
 const DEFAULT_BASE_URLS: Record<ApiFormat, string> = {
   openai_responses: 'https://api.openai.com/v1',
   openai_chat_completions: 'https://api.openai.com/v1',
+  mistral_chat_completions: 'https://api.mistral.ai/v1',
   anthropic_messages: 'https://api.anthropic.com/v1',
 }
 
 function apiFormatLabel(format: ApiFormat): string {
   if (format === 'openai_chat_completions') return ui("Chat Completions")
+  if (format === 'mistral_chat_completions') return ui("Mistral Chat Completions")
   if (format === 'anthropic_messages') return ui("Anthropic Messages")
   return ui("OpenAI Responses")
 }
@@ -336,6 +338,7 @@ export function AdminProvidersPage() {
                   <SelectContent>
                     <SelectItem value="openai_responses">{ui("OpenAI Responses (/responses)")}</SelectItem>
                     <SelectItem value="openai_chat_completions">{ui("OpenAI Chat Completions (/chat/completions)")}</SelectItem>
+                    <SelectItem value="mistral_chat_completions">{ui("Mistral Chat Completions (/chat/completions)")}</SelectItem>
                     <SelectItem value="anthropic_messages">{ui("Anthropic Messages (/messages)")}</SelectItem>
                   </SelectContent>
                 </Select>

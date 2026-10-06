@@ -713,6 +713,8 @@ const esUi: Record<string, string> = {
   "API format": "Formato de API",
   "OpenAI Responses": "OpenAI Responses",
   "Chat Completions": "Chat Completions",
+  "Mistral Chat Completions": "Mistral Chat Completions",
+  "Mistral Chat Completions (/chat/completions)": "Mistral Chat Completions (/chat/completions)",
   "Anthropic Messages": "Anthropic Messages",
   "OpenAI Responses (/responses)": "OpenAI Responses (/responses)",
   "OpenAI Chat Completions (/chat/completions)": "OpenAI Chat Completions (/chat/completions)",
