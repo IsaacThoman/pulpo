@@ -50,16 +50,6 @@ boundaries, plus a fragmented 252-byte boundary mismatch. Each parser runs in
 a child process with a timeout so a synchronous
 boundary-search infinite loop fails safely.
 
-## Vitest worker pool
-
-The root override pins tinypool to the published 2.1.2 security release for
-[GHSA-5gmw-xhrv-c9v3](https://github.com/advisories/GHSA-5gmw-xhrv-c9v3) and
-[GHSA-85c8-ppgw-ccpr](https://github.com/advisories/GHSA-85c8-ppgw-ccpr).
-Vitest 3 still requests tinypool 1.x. Tinypool 2 drops Node 18 support, while
-this repository's CI runs Node 22 and 24; the existing Vitest suites verify
-worker compatibility. Remove the override when Vitest's dependency range
-includes a patched release.
-
 ## Temporary node-forge pin
 
 As of October 2, 2026, node-forge 1.4.0 is the latest published release and is

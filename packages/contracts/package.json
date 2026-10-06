@@ -14,14 +14,15 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "generate:chat-preset-icons": "node scripts/generate-chat-preset-icons.mjs",
-    "test": "vitest run"
+    "test": "vitest run --exclude \"**/dist/**\""
   },
   "dependencies": {
     "zod": "^4.0.5"
   },
   "devDependencies": {
+    "@types/node": "^24.13.2",
     "lucide-react": "1.27.0",
     "typescript": "~6.0.2",
-    "vitest": "^3.2.4"
+    "vitest": "^4.1.11"
   }
 }

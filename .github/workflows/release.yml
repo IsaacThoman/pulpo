@@ -232,7 +232,7 @@ jobs:
         run: npm run test -w @pulpo/server -- src/speech/backup.postgres.test.ts
 
       - name: Create disposable lossless storage databases
-        run: node --input-type=module -e 'import postgres from "postgres"; const sql = postgres(process.env.DATABASE_URL); for (const name of ["pulpo_lossless_test", "pulpo_lossless_backup_test", "pulpo_public_api_test"]) await sql.unsafe("CREATE DATABASE " + name); await sql.end();'
+        run: node --input-type=module -e 'import postgres from "postgres"; const sql = postgres(process.env.DATABASE_URL); for (const name of ["pulpo_lossless_test", "pulpo_lossless_backup_test", "pulpo_public_api_test", "pulpo_provider_formats_test"]) await sql.unsafe("CREATE DATABASE " + name); await sql.end();'
       - name: Test lossless storage migration and cutover guard
         env:
           DATABASE_URL: postgres://postgres:search-test@localhost:5432/pulpo_lossless_test
@@ -253,6 +253,14 @@ jobs:
         run: |
           npm run db:migrate -w @pulpo/server
           npm run test:public-api -w @pulpo/server
+      - name: Verify provider API formats and the Anthropic Messages endpoint end to end
+        env:
+          DATABASE_URL: postgres://postgres:search-test@localhost:5432/pulpo_provider_formats_test
+          REDIS_URL: redis://localhost:6379/15
+          ALLOW_PRIVATE_PROVIDER_URLS: 'true'
+        run: |
+          npm run db:migrate -w @pulpo/server
+          npm run test:provider-formats -w @pulpo/server
 
       - name: Test persistent preview migration recovery and reset
         env:
