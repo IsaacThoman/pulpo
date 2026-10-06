@@ -369,4 +369,24 @@ describe('optimistic response reconciliation', () => {
     expect(cached?.responses).toEqual([])
     expect(cached?.activeBranchLeafId).toBeNull()
   })
+
+  it('shows the neighbouring version after deleting the active response version', () => {
+    const queryClient = new QueryClient()
+    queryClient.setQueryData(chatKey('chat-1'), staleChat())
+    seed(queryClient)
+    for (const [responseId, second] of [['response-2', 2], ['response-3', 3]] as const) {
+      cacheOptimisticBranch({
+        queryClient, namespace, chatId: 'chat-1', sourceResponseId: 'response-1', responseId,
+        modelId: 'model-1', presetSelections: {}, createdAt: Date.parse(`2026-08-04T00:00:0${second}.000Z`),
+      })
+    }
+    queryClient.setQueryData<ServerChat>(chatKey('chat-1'), (chat) => chat && { ...chat, activeResponseId: 'response-2', activeBranchLeafId: 'response-2' })
+
+    applyConfirmedMessageDeletion({ queryClient, namespace, chatId: 'chat-1', messageId: 'response-2' })
+
+    const cached = queryClient.getQueryData<ServerChat>(chatKey('chat-1'))
+    expect(cached?.responses?.map((response) => response.id)).toEqual(['response-1', 'response-3'])
+    expect(cached?.activeBranchLeafId).toBe('response-1')
+    expect(cached?.responses?.[0]?.branches.assistant.ids).toEqual(['response-1', 'response-3'])
+  })
 })

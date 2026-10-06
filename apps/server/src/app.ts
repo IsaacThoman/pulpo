@@ -46,6 +46,7 @@ import { registerAdminBillingRoutes } from './billing/admin-routes.js'
 import { registerInviteCodeRoutes } from './invite-codes/routes.js'
 import { registerDictationRoutes } from './dictation/routes.js'
 import { registerCodexRoutes } from './codex/routes.js'
+import { anthropicErrorBody, isAnthropicApiRequest } from './public-api/anthropic-codec.js'
 
 export async function buildApp() {
   const config = getConfig()
@@ -107,6 +108,21 @@ export async function buildApp() {
   })
 
   app.setErrorHandler((error, request, reply) => {
+    if (isAnthropicApiRequest(request.url)) {
+      // Anthropic SDKs expect their own error envelope on the Messages endpoints.
+      if (error instanceof ZodError) {
+        const issue = error.issues[0]
+        const param = issue?.path.join('.')
+        return reply.code(400).send(anthropicErrorBody(400, `${param ? `${param}: ` : ''}${issue?.message ?? 'Invalid request'}`))
+      }
+      if (error instanceof AppError) return reply.code(error.statusCode).send(anthropicErrorBody(error.statusCode, error.message))
+      const status = typeof error === 'object' && error !== null && 'statusCode' in error && typeof error.statusCode === 'number' ? error.statusCode : 500
+      if (status >= 400 && status < 500) {
+        return reply.code(status).send(anthropicErrorBody(status, status === 413 ? 'Request body is too large' : error instanceof Error ? error.message : 'Invalid request'))
+      }
+      request.log.error({ err: error }, 'Unhandled request error')
+      return reply.code(500).send(anthropicErrorBody(500, 'Internal server error'))
+    }
     if (error instanceof ZodError) {
       const issue = error.issues[0]
       return reply.code(400).send({ error: {

@@ -1,0 +1,1 @@
+ALTER TABLE "provider_connections" ADD COLUMN "api_format" text DEFAULT 'openai_responses' NOT NULL;
