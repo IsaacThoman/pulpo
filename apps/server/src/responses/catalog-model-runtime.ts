@@ -1,10 +1,8 @@
 import { diagnosticFetch } from '../logging/diagnostic-fetch.js'
-import OpenAI from 'openai'
 import { and, eq } from 'drizzle-orm'
 import { db } from '../database/client.js'
 import { models, providerConnections } from '../database/schema.js'
-import { getConfig } from '../config.js'
-import { decryptSecret } from '../lib/crypto.js'
+import { createUpstreamTextClient, type UpstreamTextClient } from '../upstream/client.js'
 
 export type CatalogModelRuntime = {
   model: typeof models.$inferSelect
@@ -38,14 +36,9 @@ export async function resolveLegacyOcrCatalogModel(
   return runtime ?? null
 }
 
-export function createCatalogModelClient(runtime: CatalogModelRuntime): OpenAI {
-  return new OpenAI({
+export function createCatalogModelClient(runtime: CatalogModelRuntime): UpstreamTextClient {
+  return createUpstreamTextClient(runtime.provider, {
     fetch: diagnosticFetch({ purpose: 'internal', providerId: runtime.provider.id, modelId: runtime.model.id, upstreamModelId: runtime.model.upstreamModelId }),
-    apiKey: decryptSecret(runtime.provider.encryptedApiKey, getConfig().ENCRYPTION_KEY),
-    baseURL: runtime.provider.baseUrl,
-    organization: runtime.provider.organizationId ?? undefined,
-    project: runtime.provider.projectId ?? undefined,
-    timeout: runtime.provider.requestTimeoutMs,
     maxRetries: runtime.model.maxRetries,
   })
 }

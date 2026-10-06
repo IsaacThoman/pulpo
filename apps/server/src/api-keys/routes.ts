@@ -23,9 +23,13 @@ async function assertApiKeysEnabled(): Promise<void> {
 
 export async function authenticateApiKey(request: FastifyRequest, requiredScope: 'responses' | 'models') {
   await assertApiKeysEnabled()
+  // Anthropic clients send keys in `x-api-key`; OpenAI clients use a bearer token.
   const authorization = request.headers.authorization
-  if (!authorization?.startsWith('Bearer sk-pulpo-')) throw unauthorized('Invalid API key')
-  const secret = authorization.slice(7)
+  const headerKey = request.headers['x-api-key']
+  const secret = authorization?.startsWith('Bearer sk-pulpo-')
+    ? authorization.slice(7)
+    : typeof headerKey === 'string' && headerKey.startsWith('sk-pulpo-') ? headerKey : undefined
+  if (!secret) throw unauthorized('Invalid API key')
   const prefix = secret.split('.', 1)[0]
   const [row] = await db
     .select({ key: apiKeys, user: users })

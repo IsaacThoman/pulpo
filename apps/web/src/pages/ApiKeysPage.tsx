@@ -78,6 +78,19 @@ for await (const chunk of stream) {
   process.stdout.write(chunk.choices[0]?.delta.content ?? "");
 }`
 
+const ANTHROPIC_SNIPPET = `import Anthropic from "@anthropic-ai/sdk";
+
+const client = new Anthropic({
+  baseURL: "${runtimeInstanceUrl()}",
+  apiKey: process.env.PULPO_API_KEY,
+});
+
+const message = await client.messages.create({
+  model: "your-model-id",
+  max_tokens: 1024,
+  messages: [{ role: "user", content: "hello" }],
+});`
+
 function scopeLabel(scope: string): string {
   if (scope === 'responses') return ui('Inference')
   if (scope === 'models') return ui('List models')
@@ -380,6 +393,8 @@ export function ApiKeysPage() {
                     ['POST', '/v1/responses'],
                     ['POST', '/v1/chat/completions'],
                     ['POST', '/v1/completions'],
+                    ['POST', '/v1/messages'],
+                    ['POST', '/v1/messages/count_tokens'],
                     ['GET', '/v1/models'],
                     ['GET', '/v1/models/:model'],
                     ['GET', '/v1/responses/:id'],
@@ -400,6 +415,7 @@ export function ApiKeysPage() {
                 </div>
                 <Snippet title={ui("curl")} code={CURL_SNIPPET} />
                 <Snippet title={ui("openai (node)")} code={SDK_SNIPPET} />
+                <Snippet title={ui("@anthropic-ai/sdk (node)")} code={ANTHROPIC_SNIPPET} />
               </CardContent>
             </CollapsibleContent>
           </Card>
