@@ -125,6 +125,22 @@ export const nativeAuthResponseSchema = z.object({
 })
 export type NativeAuthResponse = z.infer<typeof nativeAuthResponseSchema>
 
+/** Accounts one client can keep signed in at once, including the active one. */
+export const MAX_SIGNED_IN_ACCOUNTS = 5
+
+export const signedInAccountSchema = z.object({
+  id: idSchema,
+  name: z.string(),
+  username: z.string(),
+  email: z.string(),
+  avatarUrl: z.string().nullable(),
+  profileColor: z.string().nullable(),
+  active: z.boolean(),
+})
+export type SignedInAccount = z.infer<typeof signedInAccountSchema>
+export const signedInAccountListSchema = z.object({ accounts: z.array(signedInAccountSchema) })
+export type SignedInAccountList = z.infer<typeof signedInAccountListSchema>
+
 export const mobileConfigSchema = z.object({
   mobileApiVersion: z.literal(1),
   instance: z.object({

@@ -1631,8 +1631,9 @@ function PrototypeRoot() {
   // Retain the focused auth input until its keyboard is fully gone. The chat
   // input can then mount and auto-focus against a clean keyboard state.
   if (authKeyboardHandoffPending) return <AuthExperience key="auth" />;
+  // Each signed-in account gets a fresh navigator, screens, and local state.
   return (
-    <NavigationContainer theme={navigationTheme} onStateChange={() => speechPlayback.stop()}>
+    <NavigationContainer key={productionUser?.id} theme={navigationTheme} onStateChange={() => speechPlayback.stop()}>
       <RootStack.Navigator
         initialRouteName="Chat"
         screenOptions={{ animation: 'default', contentStyle: { backgroundColor: isDark ? '#000000' : '#F5F5F7' }, headerShown: false, headerShadowVisible: false }}

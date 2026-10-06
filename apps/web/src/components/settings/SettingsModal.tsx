@@ -3,6 +3,7 @@ import { SpeechSettings } from '@/features/speech/SpeechSettings'
 import { refreshInstanceFeatures } from '@/lib/instance-features'
 import { DeleteAccountSettings } from './DeleteAccountSettings'
 import { DeviceSettings } from './DeviceSettings'
+import { SignedInAccountsSettings } from '@/components/layout/AccountSwitcher'
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { useTranslation } from '@/i18n/useAppTranslation'
 import { useNavigate } from 'react-router-dom'
@@ -345,7 +346,7 @@ export function SettingsModal({
   const [section, setSection] = useState<SettingsSectionId>(initialSection)
   const s = useSettings()
   const user = useAuth((a) => a.user)
-  const logout = useAuth((a) => a.logout)
+  const signOutActiveAccount = useAuth((a) => a.signOutActiveAccount)
   const billingEnabled = useAuth((a) => a.billingEnabled)
   const codexEnabled = useAuth((a) => a.codexEnabled)
   const replaceUser = useAuth((a) => a.replaceUser)
@@ -903,8 +904,9 @@ export function SettingsModal({
                   <TwoFactorSettings />
                   <DeleteAccountSettings />
                   <Separator className="my-3" />
+                  <SignedInAccountsSettings onClose={onClose} />
                   <Row label={ui("Sign out")} hint="End this session on this device.">
-                    <Button variant="outline" size="sm" onClick={() => { onClose(); logout(); navigate('/login') }}>{ui("Sign out")}</Button>
+                    <Button variant="outline" size="sm" onClick={() => { onClose(); void signOutActiveAccount().then((switched) => { if (!switched) navigate('/login') }) }}>{ui("Sign out")}</Button>
                   </Row>
                 </div>
               )}

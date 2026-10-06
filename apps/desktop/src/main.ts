@@ -15,8 +15,8 @@ import {
 } from 'electron'
 import { updateElectronApp, UpdateSourceType } from 'update-electron-app'
 import log from 'electron-log/main'
-import type { DesktopCommand, DesktopStoredSession } from './globals'
-import { clearStoredSession, loadStoredSession, storeSession } from './session-store'
+import type { DesktopCommand, DesktopSignedInAccounts, DesktopStoredSession } from './globals'
+import { clearStoredSession, loadSignedInAccounts, loadStoredSession, storeSession, storeSignedInAccounts } from './session-store'
 import {
   DESKTOP_ORIGIN,
   desktopDevelopmentRequestHeaders,
@@ -173,19 +173,37 @@ function trustedWindow(event: Electron.IpcMainInvokeEvent): BrowserWindow {
   return window
 }
 
+function validInstanceOrigin(value: string): string {
+  const instance = new URL(value)
+  const localhost = ['localhost', '127.0.0.1', '[::1]'].includes(instance.hostname)
+  if (instance.username || instance.password || (instance.protocol !== 'https:' && !(developmentUrl && localhost && instance.protocol === 'http:'))) {
+    throw new Error('Invalid instance URL.')
+  }
+  return instance.origin
+}
+
 function validStoredSession(value: unknown): DesktopStoredSession {
   if (!value || typeof value !== 'object') throw new Error('Invalid session.')
   const candidate = value as Partial<DesktopStoredSession>
   if (typeof candidate.instanceUrl !== 'string' || typeof candidate.token !== 'string' || candidate.token.length < 32 || typeof candidate.expiresAt !== 'string') {
     throw new Error('Invalid session.')
   }
-  const instance = new URL(candidate.instanceUrl)
-  const localhost = ['localhost', '127.0.0.1', '[::1]'].includes(instance.hostname)
-  if (instance.username || instance.password || (instance.protocol !== 'https:' && !(developmentUrl && localhost && instance.protocol === 'http:'))) {
-    throw new Error('Invalid instance URL.')
-  }
+  const instanceUrl = validInstanceOrigin(candidate.instanceUrl)
   if (!Number.isFinite(Date.parse(candidate.expiresAt))) throw new Error('Invalid session expiry.')
-  return { instanceUrl: instance.origin, token: candidate.token, expiresAt: candidate.expiresAt }
+  return { instanceUrl, token: candidate.token, expiresAt: candidate.expiresAt }
+}
+
+function validSignedInAccounts(value: unknown): DesktopSignedInAccounts {
+  if (!value || typeof value !== 'object') throw new Error('Invalid accounts.')
+  const candidate = value as Partial<DesktopSignedInAccounts>
+  if (typeof candidate.instanceUrl !== 'string' || !Array.isArray(candidate.accounts)) throw new Error('Invalid accounts.')
+  const accounts = candidate.accounts.map((account: unknown) => {
+    const { userId, token, expiresAt } = (account ?? {}) as Record<string, unknown>
+    if (typeof userId !== 'string' || !/^[0-9a-f-]{36}$/i.test(userId) || typeof token !== 'string' || token.length < 32
+      || typeof expiresAt !== 'string' || !Number.isFinite(Date.parse(expiresAt))) throw new Error('Invalid account.')
+    return { userId, token, expiresAt }
+  })
+  return { instanceUrl: validInstanceOrigin(candidate.instanceUrl), accounts }
 }
 
 function registerIpc(): void {
@@ -200,6 +218,14 @@ function registerIpc(): void {
   ipcMain.handle('desktop:session:clear', async (event) => {
     assertTrustedSender(event)
     await clearStoredSession()
+  })
+  ipcMain.handle('desktop:accounts:load', async (event) => {
+    assertTrustedSender(event)
+    return loadSignedInAccounts()
+  })
+  ipcMain.handle('desktop:accounts:store', async (event, value: unknown) => {
+    assertTrustedSender(event)
+    await storeSignedInAccounts(validSignedInAccounts(value))
   })
   ipcMain.handle('desktop:open-external', async (event, value: unknown) => {
     assertTrustedSender(event)

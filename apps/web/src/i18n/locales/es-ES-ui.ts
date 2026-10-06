@@ -2183,6 +2183,22 @@ const esUi: Record<string, string> = {
   "Overwrite": "Sobrescribir",
   "Overwrote \"{{0}}\"": "Se sobrescribió \"{{0}}\"",
   "The file to overwrite has changed. Try saving again.": "El archivo que se iba a sobrescribir ha cambiado. Vuelve a guardar.",
+  "Switch to {{0}}": "Cambiar a {{0}}",
+  "Could not switch accounts.": "No se pudo cambiar de cuenta.",
+  "Could not add an account.": "No se pudo añadir una cuenta.",
+  "Up to {{0}} accounts": "Hasta {{0}} cuentas",
+  "Add account": "Añadir cuenta",
+  "Continue as": "Continuar como",
+  "Signed-in accounts": "Cuentas con sesión iniciada",
+  "Stay signed in to up to {{0}} accounts on this device and switch between them.": "Mantén la sesión iniciada en hasta {{0}} cuentas en este dispositivo y cambia entre ellas.",
+  "Switch": "Cambiar",
+  "Sign out {{0}}": "Cerrar sesión de {{0}}",
+  "Could not sign out.": "No se pudo cerrar la sesión.",
+  "Sign out of all accounts": "Cerrar sesión en todas las cuentas",
+  "Sign in again before adding another account.": "Vuelve a iniciar sesión antes de añadir otra cuenta.",
+  "You can stay signed in to up to {{0}} accounts.": "Puedes mantener la sesión iniciada en hasta {{0}} cuentas.",
+  "That account is no longer signed in.": "Esa cuenta ya no tiene la sesión iniciada.",
+  "That account was signed out. Sign in to it again.": "Se cerró la sesión de esa cuenta. Vuelve a iniciar sesión en ella.",
 }
 
 export default esUi

@@ -9,6 +9,7 @@ import { browserSupportsWebAuthn, browserSupportsWebAuthnAutofill, cancelPasskey
 import { useAuth } from '@/stores/auth'
 import { isDesktopRuntime } from '@/lib/runtime'
 import { ui } from '@/i18n/ui'
+import { SignedInAccountChooser } from '@/components/layout/AccountSwitcher'
 
 export function LoginPage() {
   const { t } = useTranslation()
@@ -69,6 +70,7 @@ export function LoginPage() {
 
   return (
     <>
+      {!twoFactorStep && <SignedInAccountChooser />}
       <div className="rounded-xl border bg-card p-6 shadow-xs sm:p-8">
       <div className="mb-6">
         <h1 className="text-lg font-semibold">{twoFactorStep ? t('auth.verifyIdentity') : t('auth.welcomeBack')}</h1>

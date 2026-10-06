@@ -11,7 +11,7 @@ import {
 import { useNetworkOffline } from '../../../providers/useNetworkOffline';
 import * as Clipboard from 'expo-clipboard';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import type { PasskeyList, PasskeySummary, TwoFactorEnrollment, TwoFactorStatus } from '@pulpo/contracts';
+import { MAX_SIGNED_IN_ACCOUNTS, type PasskeyList, type PasskeySummary, type TwoFactorEnrollment, type TwoFactorStatus, type User } from '@pulpo/contracts';
 import { useQuery } from '@tanstack/react-query';
 import {
   Button as SwiftUIButton,
@@ -32,10 +32,11 @@ import {
   VStack as SwiftUIVStack,
   useNativeState,
 } from '@expo/ui/swift-ui';
-import { accessibilityHint, accessibilityValue, background, buttonStyle, contentShape, font, foregroundStyle, frame, lineLimit, multilineTextAlignment, shapes, textFieldStyle, tint } from '@expo/ui/swift-ui/modifiers';
+import { accessibilityHint, accessibilityLabel, accessibilityValue, background, buttonStyle, contentShape, font, foregroundStyle, frame, labelStyle, lineLimit, multilineTextAlignment, shapes, textFieldStyle, tint } from '@expo/ui/swift-ui/modifiers';
 import { Card, EmptyState, Field, GlassIconButton, ListRow, NativeSwitch, PageHeader, PrimaryButton, Screen, SectionTitle, Segmented } from '../components/PrototypeUI';
 import { useAppTheme } from '../theme';
 import { ProfileAvatar } from '../components/ProfileAvatar';
+import { SymbolView } from '../../../platform/SymbolView';
 import { usePrototypeStore } from '../store/prototypeStore';
 import type { RootStackParamList, SettingsSection } from '../navigation';
 import { apiRequest, mobileApi } from '../../../api/client';
@@ -65,15 +66,42 @@ export function DeleteAccountScreen({ navigation }: NativeStackScreenProps<RootS
   return <DeleteAccountForm onClose={() => navigation.goBack()} />;
 }
 
+function NativeAccountRow({ account, active, onSwitch, onSignOut }: { account: User; active: boolean; onSwitch: () => void; onSignOut: () => void }) {
+  const theme = useAppTheme();
+  return <SwiftUIHStack spacing={12}>
+    <SwiftUIButton onPress={onSwitch} modifiers={[buttonStyle('plain'), foregroundStyle('primary'), ...(active ? [accessibilityValue('Current account')] : [])]}><SwiftUIHStack spacing={12} modifiers={[contentShape(shapes.rectangle())]}><SwiftUIRNHostView matchContents><ProfileAvatar size={34} user={account} /></SwiftUIRNHostView><SwiftUIVStack alignment="leading" spacing={2}><SwiftUIText modifiers={[lineLimit(1)]}>{account.name}</SwiftUIText><SwiftUIText modifiers={[font({ textStyle: 'footnote' }), foregroundStyle('secondary'), lineLimit(1)]}>{`@${account.username}`}</SwiftUIText></SwiftUIVStack><SwiftUISpacer />{active ? <SwiftUIImage systemName="checkmark" size={15} color={theme.blue} /> : null}</SwiftUIHStack></SwiftUIButton>
+    <SwiftUIMenu label="Account options" systemImage="ellipsis.circle" modifiers={[labelStyle('iconOnly'), buttonStyle('plain'), foregroundStyle('secondary'), accessibilityLabel(`${account.name} options`)]}><SwiftUIButton label="Sign Out" role="destructive" systemImage="rectangle.portrait.and.arrow.right" onPress={onSignOut} /></SwiftUIMenu>
+  </SwiftUIHStack>;
+}
+
+function useSignedInAccounts() {
+  const user = useSessionStore((state) => state.user);
+  const accounts = useSessionStore((state) => state.accounts);
+  return useMemo(() => !user || accounts.some((account) => account.id === user.id)
+    ? accounts.map((account) => account.id === user?.id ? user : account)
+    : [user, ...accounts], [accounts, user]);
+}
+
 export function AccountScreen({ navigation }: NativeStackScreenProps<RootStackParamList, 'Account'>) {
   const theme = useAppTheme();
   const session = usePrototypeStore((state) => state.session);
   const instance = usePrototypeStore((state) => state.instance);
   const signOut = useSessionStore((state) => state.logout);
+  const addAccount = useSessionStore((state) => state.addAccount);
+  const switchAccount = useSessionStore((state) => state.switchAccount);
+  const signOutAccount = useSessionStore((state) => state.signOutAccount);
+  const signOutAll = useSessionStore((state) => state.logoutAll);
+  const accounts = useSignedInAccounts();
   const twoFactorSupported = useSessionStore((state) => state.config?.capabilities.twoFactorAuth ?? false);
   const passkeysSupported = useSessionStore((state) => state.config?.capabilities.passkeys ?? false);
   const user = session.user;
+  const canAddAccount = accounts.length < MAX_SIGNED_IN_ACCOUNTS;
+  const accountLimitFooter = canAddAccount ? undefined : `You can be signed in to up to ${MAX_SIGNED_IN_ACCOUNTS} accounts.`;
   const confirmSignOut = () => Alert.alert('Sign out?', 'End this session on this device.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Sign out', style: 'destructive', onPress: () => { void signOut(); } }]);
+  const switchTo = (account: User) => { if (account.id !== user?.id) void switchAccount(account.id).catch((error) => Alert.alert('Couldn’t switch account', error instanceof Error ? error.message : undefined)); };
+  const add = () => { void addAccount().catch((error) => Alert.alert('Couldn’t add account', error instanceof Error ? error.message : undefined)); };
+  const confirmSignOutAccount = (account: User) => account.id === user?.id ? confirmSignOut() : Alert.alert(`Sign out of ${account.name}?`, 'End this account’s session on this device.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Sign out', style: 'destructive', onPress: () => { void signOutAccount(account.id).catch((error) => Alert.alert('Couldn’t sign out', error instanceof Error ? error.message : undefined)); } }]);
+  const confirmSignOutAll = () => Alert.alert('Sign out of all accounts?', 'End every account session on this device.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Sign out all', style: 'destructive', onPress: () => { void signOutAll(); } }]);
 
   if (Platform.OS === 'ios') return <SwiftUIHost modifiers={[tint(theme.blue)]} style={styles.flex}><SwiftUIForm>
     <SwiftUISection title="Profile">
@@ -81,12 +109,16 @@ export function AccountScreen({ navigation }: NativeStackScreenProps<RootStackPa
       <SwiftUILabeledContent label="Email"><SwiftUIText modifiers={[foregroundStyle('secondary')]}>{user?.email ?? ''}</SwiftUIText></SwiftUILabeledContent>
       <NativeDestinationRow icon="person.crop.circle" title="Edit Profile" onPress={() => navigation.navigate('EditProfile')} />
     </SwiftUISection>
+    <SwiftUISection title="Accounts" footer={accountLimitFooter ? <SwiftUIText modifiers={[foregroundStyle('secondary')]}>{accountLimitFooter}</SwiftUIText> : undefined}>
+      {accounts.map((account) => <NativeAccountRow key={account.id} account={account} active={account.id === user?.id} onSwitch={() => switchTo(account)} onSignOut={() => confirmSignOutAccount(account)} />)}
+      {canAddAccount ? <SwiftUIButton label="Add Account" systemImage="person.crop.circle.badge.plus" onPress={add} /> : null}
+    </SwiftUISection>
     <SwiftUISection title="Security"><NativeDestinationRow icon="desktopcomputer" title="Devices" onPress={() => navigation.navigate('Devices')} /><NativeDestinationRow icon="lock.rotation" title="Change Password" onPress={() => navigation.navigate('ChangePassword')} />{passkeysSupported ? <NativeDestinationRow icon="person.badge.key" title="Passkeys" onPress={() => navigation.navigate('Passkeys')} /> : null}{twoFactorSupported ? <NativeDestinationRow icon="checkmark.shield" title="Two-Factor Authentication" onPress={() => navigation.navigate('TwoFactor')} /> : null}</SwiftUISection>
     <SwiftUISection title="Server"><NativeDestinationRow icon="network" title="Pulpo Instance" detail={instance.version} onPress={() => navigation.navigate('InstanceDetails')} /></SwiftUISection>
-    <SwiftUISection title="Delete account"><NativeDestinationRow icon="trash" title="Delete Account" onPress={() => navigation.navigate('DeleteAccount')} /></SwiftUISection><SwiftUISection title="Session"><SwiftUIButton label="Sign Out" role="destructive" systemImage="rectangle.portrait.and.arrow.right" onPress={confirmSignOut} /></SwiftUISection>
+    <SwiftUISection title="Delete account"><NativeDestinationRow icon="trash" title="Delete Account" onPress={() => navigation.navigate('DeleteAccount')} /></SwiftUISection><SwiftUISection title="Session"><SwiftUIButton label="Sign Out" role="destructive" systemImage="rectangle.portrait.and.arrow.right" onPress={confirmSignOut} />{accounts.length > 1 ? <SwiftUIButton label="Sign Out of All Accounts" role="destructive" systemImage="rectangle.portrait.and.arrow.right" onPress={confirmSignOutAll} /> : null}</SwiftUISection>
   </SwiftUIForm></SwiftUIHost>;
 
-  return <Screen><PageHeader title="Account" onBack={() => navigation.goBack()} /><SectionTitle>Profile</SectionTitle><Card><ListRow title="Name" value={user?.name ?? 'Pulpo Member'} /><ListRow title="Email" value={user?.email ?? ''} /><ListRow icon="person.crop.circle" title="Edit profile" last onPress={() => navigation.navigate('EditProfile')} /></Card><SectionTitle>Security</SectionTitle><Card><ListRow icon="desktopcomputer" title="Devices" onPress={() => navigation.navigate('Devices')} /><ListRow icon="lock.rotation" title="Change password" last={!passkeysSupported && !twoFactorSupported} onPress={() => navigation.navigate('ChangePassword')} />{passkeysSupported ? <ListRow icon="person.badge.key" title="Passkeys" last={!twoFactorSupported} onPress={() => navigation.navigate('Passkeys')} /> : null}{twoFactorSupported ? <ListRow icon="checkmark.shield" title="Two-factor authentication" last onPress={() => navigation.navigate('TwoFactor')} /> : null}</Card><SectionTitle>Server</SectionTitle><Card><ListRow icon="network" title="Pulpo instance" value={instance.version} last onPress={() => navigation.navigate('InstanceDetails')} /></Card><SectionTitle>Delete account</SectionTitle><Card><ListRow icon="trash" title="Delete account" destructive last onPress={() => navigation.navigate('DeleteAccount')} /></Card><SectionTitle>Session</SectionTitle><Card><ListRow icon="rectangle.portrait.and.arrow.right" iconColor={theme.red} title="Sign out" destructive last onPress={confirmSignOut} /></Card></Screen>;
+  return <Screen><PageHeader title="Account" onBack={() => navigation.goBack()} /><SectionTitle>Profile</SectionTitle><Card><ListRow title="Name" value={user?.name ?? 'Pulpo Member'} /><ListRow title="Email" value={user?.email ?? ''} /><ListRow icon="person.crop.circle" title="Edit profile" last onPress={() => navigation.navigate('EditProfile')} /></Card><SectionTitle>Accounts</SectionTitle><Card>{accounts.map((account, index) => <ListRow key={account.id} leading={<ProfileAvatar size={34} user={account} />} title={account.name} detail={`@${account.username}`} last={!canAddAccount && index === accounts.length - 1} onPress={account.id === user?.id ? undefined : () => switchTo(account)}>{account.id === user?.id ? <SymbolView name="checkmark" size={17} tintColor={theme.blue} accessibilityLabel="Current account" /> : null}<Pressable accessibilityRole="button" accessibilityLabel={`${account.name} options`} hitSlop={10} onPress={() => showActions(account.name, [{ label: 'Sign out', destructive: true, onPress: () => confirmSignOutAccount(account) }])}><SymbolView name="ellipsis" size={18} tintColor={theme.secondary} /></Pressable></ListRow>)}{canAddAccount ? <ListRow icon="plus" title="Add account" last onPress={add} /> : null}</Card>{accountLimitFooter ? <Text style={[styles.helper, { color: theme.secondary, marginTop: 8 }]}>{accountLimitFooter}</Text> : null}<SectionTitle>Security</SectionTitle><Card><ListRow icon="desktopcomputer" title="Devices" onPress={() => navigation.navigate('Devices')} /><ListRow icon="lock.rotation" title="Change password" last={!passkeysSupported && !twoFactorSupported} onPress={() => navigation.navigate('ChangePassword')} />{passkeysSupported ? <ListRow icon="person.badge.key" title="Passkeys" last={!twoFactorSupported} onPress={() => navigation.navigate('Passkeys')} /> : null}{twoFactorSupported ? <ListRow icon="checkmark.shield" title="Two-factor authentication" last onPress={() => navigation.navigate('TwoFactor')} /> : null}</Card><SectionTitle>Server</SectionTitle><Card><ListRow icon="network" title="Pulpo instance" value={instance.version} last onPress={() => navigation.navigate('InstanceDetails')} /></Card><SectionTitle>Delete account</SectionTitle><Card><ListRow icon="trash" title="Delete account" destructive last onPress={() => navigation.navigate('DeleteAccount')} /></Card><SectionTitle>Session</SectionTitle><Card><ListRow icon="rectangle.portrait.and.arrow.right" iconColor={theme.red} title="Sign out" destructive last={accounts.length < 2} onPress={confirmSignOut} />{accounts.length > 1 ? <ListRow icon="rectangle.portrait.and.arrow.right" iconColor={theme.red} title="Sign out of all accounts" destructive last onPress={confirmSignOutAll} /> : null}</Card></Screen>;
 }
 
 type PasskeyAction = 'list' | 'add' | 'rename' | 'delete';
