@@ -8,7 +8,8 @@ import { Agent, type AgentMessage } from '@earendil-works/pi-agent-core'
 import { openAIResponsesApi } from '@earendil-works/pi-ai/api/openai-responses.lazy'
 import { openAICompletionsApi } from '@earendil-works/pi-ai/api/openai-completions.lazy'
 import { anthropicMessagesApi } from '@earendil-works/pi-ai/api/anthropic-messages.lazy'
-import { chatCompletionsSamplingParameters, explicitReasoningEffort, piModelForProvider } from '../upstream/pi-model.js'
+import { mistralConversationsApi } from '@earendil-works/pi-ai/api/mistral-conversations.lazy'
+import { chatCompletionsSamplingParameters, explicitReasoningEffort, mistralAgentPayload, piModelForProvider } from '../upstream/pi-model.js'
 import type { Api, AssistantMessage, Context, Model } from '@earendil-works/pi-ai'
 import { agentCostLimitMicros, findCostLimitItem, findCostLimitItems, toolImagePreviewSchema, type ToolImagePreview, type CompactionItem, type CostLimitItem, type RecallItem, type ResponseSnapshot } from '@pulpo/contracts'
 import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm'
@@ -304,7 +305,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
     await db.update(requestLogs).set({ stickyFallbackUsed: true, fallbackUsed: true, currentModelId: active.model.id, updatedAt: new Date() }).where(eq(requestLogs.id, requestLog.id))
     await publishAdminUsage(requestLog.id, true)
   }
-  const providerStreams = { 'openai-responses': openAIResponsesApi(), 'openai-completions': openAICompletionsApi(), 'anthropic-messages': anthropicMessagesApi() }
+  const providerStreams = { 'openai-responses': openAIResponsesApi(), 'openai-completions': openAICompletionsApi(), 'anthropic-messages': anthropicMessagesApi(), 'mistral-conversations': mistralConversationsApi() }
   const emptyUsage = { inputTokens: 0, cachedInputTokens: 0, cacheWriteTokens: 0, outputTokens: 0, reasoningTokens: 0, totalTokens: 0 }
   const persistedUsage = record.response.usage as typeof emptyUsage | null
   const publishResponseEvent = createResponseEventPublisher(record.response)
@@ -875,6 +876,19 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
           reasoning: explicitReasoningEffort(resolvedParameters.parameters) ? resolvedParameters.reasoning : undefined,
           samplingParams: chatCompletionsSamplingParameters(providerPromptCacheParameters(active.model.promptCachingEnabled, resolvedParameters.parameters), active.provider.baseUrl),
           apiKey: active.apiKey,
+        })
+      }
+      if (active.piModel.api === 'mistral-conversations') {
+        return providerStreams['mistral-conversations'].streamSimple(active.piModel, preparedContext, {
+          ...streamOptions,
+          reasoning: undefined,
+          samplingParams: undefined,
+          cacheRetention: active.model.promptCachingEnabled ? 'short' : 'none',
+          apiKey: active.apiKey,
+          onPayload: async (payload, model) => {
+            const body = mistralAgentPayload(payload, resolvedParameters.parameters)
+            return await streamOptions.onPayload?.(body, model) ?? body
+          },
         })
       }
       if (active.piModel.api === 'anthropic-messages') {

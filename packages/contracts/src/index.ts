@@ -920,11 +920,12 @@ export const providerCacheIsolationModeSchema = z.enum([
 export const providerCacheScopeSchema = z.enum(['agent_run', 'chat', 'user'])
 export const providerToolResultImageModeSchema = z.enum(['native', 'user_message'])
 /** Wire protocol Pulpo speaks to a provider's text generation endpoint. */
-export const providerApiFormatSchema = z.enum(['openai_responses', 'openai_chat_completions', 'anthropic_messages'])
+export const providerApiFormatSchema = z.enum(['openai_responses', 'openai_chat_completions', 'mistral_chat_completions', 'anthropic_messages'])
 export type ProviderApiFormat = z.infer<typeof providerApiFormatSchema>
 export const PROVIDER_API_FORMAT_DEFAULT_BASE_URLS = {
   openai_responses: 'https://api.openai.com/v1',
   openai_chat_completions: 'https://api.openai.com/v1',
+  mistral_chat_completions: 'https://api.mistral.ai/v1',
   anthropic_messages: 'https://api.anthropic.com/v1',
 } as const satisfies Record<ProviderApiFormat, string>
 
