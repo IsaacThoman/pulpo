@@ -2,6 +2,8 @@ import { getTableConfig, type PgTable } from 'drizzle-orm/pg-core'
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import {
+  appStoreSubscriptions,
+  appStoreTransactions,
   backupJobs,
   billingAccounts,
   billingCheckouts,
@@ -44,6 +46,8 @@ describe('user-owned operational records', () => {
     ['billing checkouts', billingCheckouts],
     ['billing orders', billingOrders],
     ['billing subscriptions', billingSubscriptions],
+    ['App Store subscriptions', appStoreSubscriptions],
+    ['App Store transactions', appStoreTransactions],
     ['credit ledger entries', creditLedger],
     ['usage events', usageEvents],
     ['daily usage rollups', dailyUsageRollups],

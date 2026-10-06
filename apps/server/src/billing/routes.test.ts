@@ -10,6 +10,7 @@ import {
   registerBillingRoutes,
   resolvedCheckoutStatus,
   selectSummarySubscription,
+  stripeSubscriptionSummary,
 } from './routes.js'
 
 const apps: ReturnType<typeof Fastify>[] = []
@@ -68,6 +69,20 @@ describe('billing summary subscription recovery', () => {
 
   it('does not surface terminal subscriptions as manageable fallbacks', () => {
     expect(selectSummarySubscription([{ plan: 'fat', status: 'canceled' }], 'baby')).toBeNull()
+  })
+
+  it('reports the paid Stripe plan and the plan the next renewal bills', () => {
+    expect(stripeSubscriptionSummary({
+      plan: 'eight', paidPlan: 'fat', status: 'active', cancelAtPeriodEnd: false, currentPeriodEnd: new Date('2026-11-01T00:00:00Z'),
+    })).toEqual({
+      provider: 'stripe', plan: 'fat', pendingPlan: 'eight', status: 'active', cancelAtPeriodEnd: false, currentPeriodEnd: '2026-11-01T00:00:00.000Z',
+    })
+  })
+
+  it('selects an App Store subscription that provides the plan over a lapsed Stripe one', () => {
+    const stripe = stripeSubscriptionSummary({ plan: 'eight', status: 'past_due', cancelAtPeriodEnd: false, currentPeriodEnd: null })
+    const appStore = { provider: 'app_store' as const, plan: 'fat' as const, pendingPlan: null, status: 'active', cancelAtPeriodEnd: false, currentPeriodEnd: null }
+    expect(selectSummarySubscription([stripe, appStore], 'fat')).toBe(appStore)
   })
 })
 

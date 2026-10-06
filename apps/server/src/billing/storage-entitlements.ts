@@ -1,8 +1,9 @@
 import { and, eq, ne } from 'drizzle-orm'
 import { getConfig } from '../config.js'
 import { db } from '../database/client.js'
-import { applicationSettings, billingAccounts, billingSubscriptions, users } from '../database/schema.js'
+import { applicationSettings, billingAccounts, users } from '../database/schema.js'
 import { parseAuthSettings, parseBillingSettings, type BillingSettings } from '../settings/application-settings.js'
+import { loadPlanSubscriptions } from './plan-subscriptions.js'
 import { resolvePlanEntitlement, type BillingPlan } from './plans.js'
 
 type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0]
@@ -50,8 +51,7 @@ export async function loadStorageEntitlement(
       planOverride: billingAccounts.planOverride,
     }).from(billingAccounts)
       .where(eq(billingAccounts.userId, userId)).limit(1),
-    tx.select({ plan: billingSubscriptions.plan, status: billingSubscriptions.status, paidThrough: billingSubscriptions.paidThrough })
-      .from(billingSubscriptions).where(eq(billingSubscriptions.userId, userId)),
+    loadPlanSubscriptions(tx, userId),
     tx.select({ value: applicationSettings.value }).from(applicationSettings)
       .where(eq(applicationSettings.key, 'billing')).limit(1),
   ])

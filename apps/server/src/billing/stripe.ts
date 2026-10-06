@@ -5,6 +5,7 @@ import { db } from '../database/client.js'
 import { billingAccounts, billingCheckouts, billingSubscriptions, users } from '../database/schema.js'
 import { AppError } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
+import { hasActiveAppStoreSubscription } from './plan-subscriptions.js'
 import {
   chargeCentsForCredits,
   isPaidPlan,
@@ -52,6 +53,11 @@ export function priceIdForPlan(plan: PaidBillingPlan): string {
   const priceId = plan === 'eight' ? config.STRIPE_EIGHT_PRICE_ID : config.STRIPE_FAT_PRICE_ID
   if (!priceId) throw new AppError(500, 'billing_configuration_missing', 'Billing price configuration is missing')
   return priceId
+}
+
+/** An App Store subscription is managed in the subscriber's Apple account, so Pulpo cannot change it. */
+function appStoreSubscriptionConflict(): AppError {
+  return new AppError(409, 'app_store_subscription_exists', 'Your plan is billed through the App Store. Change or cancel it in your Apple account’s subscription settings.')
 }
 
 async function checkoutUser(userId: string) {
@@ -265,6 +271,7 @@ async function createSubscriptionCheckoutUnchecked(input: {
       inArray(billingSubscriptions.status, ['active', 'past_due']),
     )).limit(1)
   if (current) throw new AppError(409, 'subscription_exists', 'Choose an upgrade or switch to Baby from Compare plans')
+  if (await hasActiveAppStoreSubscription(db, input.userId)) throw appStoreSubscriptionConflict()
   const prior = await existingCheckout(input.userId, input.idempotencyKey)
   if (prior?.checkoutUrl && prior.stripeCheckoutSessionId) return { url: prior.checkoutUrl, checkoutId: prior.stripeCheckoutSessionId }
   if (prior) throw new AppError(409, 'checkout_in_progress', 'This checkout is already being created')
@@ -407,6 +414,7 @@ async function changeSubscriptionUnchecked(input: {
 }): Promise<SubscriptionChangeResult> {
   await checkoutUser(input.userId)
   const current = await currentPaidSubscription(input.userId)
+  if (!current && await hasActiveAppStoreSubscription(db, input.userId)) throw appStoreSubscriptionConflict()
   if (!current) throw new AppError(409, 'subscription_missing', 'Subscribe to a paid plan first')
 
   const stripe = getStripeClient()

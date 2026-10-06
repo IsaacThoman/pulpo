@@ -1,6 +1,6 @@
 # Pulpo software privacy policy
 
-**Effective August 27, 2026**
+**Effective October 6, 2026**
 
 ::: tip Using pulpo.baby?
 This policy covers the Pulpo mobile app and self-hosted Pulpo software. If you use the hosted service at [pulpo.baby](https://pulpo.baby), the [Pulpo hosted service privacy policy](./privacy-hosted) also applies to the information handled by that service.
@@ -30,6 +30,10 @@ To provide their features, Pulpo clients send applicable account and authenticat
 
 If you use a self-hosted or third-party Pulpo instance, its operator—not the developer merely by providing the software—controls that instance’s collection, storage, access, retention, deletion, provider configuration, and security practices. Review the operator’s privacy information before using its service.
 
+## In-app purchases
+
+When the selected server offers subscriptions in the iOS app, Apple processes purchases through the App Store under its own terms and privacy policy. The app sends Apple-signed records of your subscription transactions to the selected server so it can apply your plan. Those records identify the subscription, product, dates, and App Store storefront; they do not contain your Apple Account or payment details. The app does not offer purchases when connected to a server that does not support them.
+
 ## Memories and relevant-chat recall
 
 The Memories setting controls both the user’s editable `MEMORY.md` profile and relevant-chat recall. When Memories is enabled, the complete profile is included in eligible normal and Agent conversations. Agent mode maintains it as useful context for future conversations. Every superseded version remains restorable for 24 hours. The document is limited to 16,000 characters and is not embedded.
@@ -44,7 +48,7 @@ The administrator dashboard records hourly aggregate counts, latency histograms,
 
 ## Your choices and deletion
 
-The Pulpo app provides controls to edit certain profile information, enable or disable Memories, move individual or all conversations to Trash for deletion under the selected server’s retention settings, change servers, and sign out. When enabled by the instance administrator, use **Delete account** in web **Settings → Security** or mobile **Account** settings. Confirm your current password and authenticator or recovery code if two-factor authentication is enabled. Deletion immediately ends access and begins irreversible cleanup of account data and cancellation of subscriptions, without automatic refunds or recovery of unused credits. Background cleanup may take time; backups and payment records follow existing retention policies. If account deletion is disabled, or for other requests concerning server-held information, contact that server’s operator.
+The Pulpo app provides controls to edit certain profile information, enable or disable Memories, move individual or all conversations to Trash for deletion under the selected server’s retention settings, change servers, and sign out. When enabled by the instance administrator, use **Delete account** in web **Settings → Security** or mobile **Account** settings. Confirm your current password and authenticator or recovery code if two-factor authentication is enabled. Deletion immediately ends access and begins irreversible cleanup of account data and cancellation of subscriptions billed by the server, without automatic refunds or recovery of unused credits. Deletion cannot cancel an App Store subscription; cancel it in your Apple Account's subscription settings. Background cleanup may take time; backups and payment records follow existing retention policies. If account deletion is disabled, or for other requests concerning server-held information, contact that server’s operator.
 
 For requests involving `pulpo.baby`, see the [hosted service privacy policy](./privacy-hosted). For a different Pulpo instance, contact the organization or person operating that instance.
 

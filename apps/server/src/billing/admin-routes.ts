@@ -6,6 +6,7 @@ import { getConfig } from '../config.js'
 import { db } from '../database/client.js'
 import {
   applicationSettings,
+  appStoreSubscriptions,
   auditEvents,
   billingAccounts,
   billingOrders,
@@ -19,6 +20,7 @@ import { newId } from '../lib/ids.js'
 import { publishStateChange } from '../responses/events.js'
 import { parseAuthSettings, parseBillingSettings } from '../settings/application-settings.js'
 import { getBillingEntitlements, loadBillingEntitlements } from './entitlements.js'
+import { APP_STORE_PLAN_MONTHLY_PRICE_CENTS, PLAN_MONTHLY_PRICE_CENTS } from './plans.js'
 import { planForPriceId, stripeMode } from './stripe.js'
 import { refreshStorageLimit } from './storage-entitlements.js'
 import { mapWithConcurrency } from '../lib/concurrency.js'
@@ -65,7 +67,7 @@ export async function registerAdminBillingRoutes(app: FastifyInstance): Promise<
     const days = range === 'all' ? null : Number.parseInt(range, 10)
     const start = days ? new Date(Date.now() - days * 86_400_000) : null
     const orderFilter = start ? gte(billingOrders.paidAt, start) : isNotNull(billingOrders.paidAt)
-    const [totals, subscriberCounts, holds, failedEvents, recentOrders, recentSubscriptions, trend, settings, failedWebhookRows, holdRows] = await Promise.all([
+    const [totals, subscriberCounts, holds, failedEvents, recentOrders, recentSubscriptions, trend, settings, failedWebhookRows, holdRows, appStoreCounts, recentAppStoreSubscriptions] = await Promise.all([
       db.select({
         grossCollectedCents: sql<number>`coalesce(sum(${billingOrders.totalAmountCents}), 0)::bigint`,
         salesBeforeTaxCents: sql<number>`coalesce(sum(${billingOrders.netAmountCents}), 0)::bigint`,
@@ -145,9 +147,35 @@ export async function registerAdminBillingRoutes(app: FastifyInstance): Promise<
       }).from(billingAccounts).innerJoin(users, eq(users.id, billingAccounts.userId))
         .where(and(isNotNull(billingAccounts.holdAt), isNull(billingAccounts.holdClearedAt)))
         .orderBy(desc(billingAccounts.holdAt)),
+      db.select({
+        plan: appStoreSubscriptions.plan,
+        count: sql<number>`count(distinct ${appStoreSubscriptions.userId})::int`,
+        canceling: sql<number>`count(distinct ${appStoreSubscriptions.userId}) filter (where not ${appStoreSubscriptions.autoRenew})::int`,
+        pastDue: sql<number>`count(distinct ${appStoreSubscriptions.userId}) filter (where ${appStoreSubscriptions.status} = 'past_due')::int`,
+      }).from(appStoreSubscriptions).where(and(
+        inArray(appStoreSubscriptions.status, ['active', 'past_due']),
+        gte(appStoreSubscriptions.paidThrough, new Date()),
+      )).groupBy(appStoreSubscriptions.plan),
+      db.select({
+        userId: appStoreSubscriptions.userId,
+        userName: users.name,
+        userEmail: users.email,
+        originalTransactionId: appStoreSubscriptions.originalTransactionId,
+        environment: appStoreSubscriptions.environment,
+        plan: appStoreSubscriptions.plan,
+        status: appStoreSubscriptions.status,
+        autoRenew: appStoreSubscriptions.autoRenew,
+        expiresAt: appStoreSubscriptions.expiresAt,
+        paidThrough: appStoreSubscriptions.paidThrough,
+        updatedAt: appStoreSubscriptions.updatedAt,
+      }).from(appStoreSubscriptions).innerJoin(users, eq(users.id, appStoreSubscriptions.userId))
+        .orderBy(desc(appStoreSubscriptions.updatedAt)).limit(20),
     ])
     const eight = subscriberCounts.find((item) => item.plan === 'eight')
     const fat = subscriberCounts.find((item) => item.plan === 'fat')
+    const appStoreEight = appStoreCounts.find((item) => item.plan === 'eight')
+    const appStoreFat = appStoreCounts.find((item) => item.plan === 'fat')
+    const count = (value: number | undefined) => Number(value ?? 0)
     const orderTotals = totals[0]
     return {
       range,
@@ -162,17 +190,35 @@ export async function registerAdminBillingRoutes(app: FastifyInstance): Promise<
         creditsGrantedMicros: Number(orderTotals?.creditsGrantedMicros ?? 0),
         payments: Number(orderTotals?.payments ?? 0),
         topUps: Number(orderTotals?.topUps ?? 0),
-        activeSubscribers: Number(eight?.count ?? 0) + Number(fat?.count ?? 0),
-        monthlyRecurringCents: Number(eight?.count ?? 0) * 800 + Number(fat?.count ?? 0) * 2_400,
-        canceling: Number(eight?.canceling ?? 0) + Number(fat?.canceling ?? 0),
-        pastDue: Number(eight?.pastDue ?? 0) + Number(fat?.pastDue ?? 0),
+        activeSubscribers: count(eight?.count) + count(fat?.count) + count(appStoreEight?.count) + count(appStoreFat?.count),
+        // App Store subscriptions count at their US price before Apple's commission.
+        monthlyRecurringCents: count(eight?.count) * PLAN_MONTHLY_PRICE_CENTS.eight + count(fat?.count) * PLAN_MONTHLY_PRICE_CENTS.fat
+          + count(appStoreEight?.count) * APP_STORE_PLAN_MONTHLY_PRICE_CENTS.eight + count(appStoreFat?.count) * APP_STORE_PLAN_MONTHLY_PRICE_CENTS.fat,
+        canceling: count(eight?.canceling) + count(fat?.canceling) + count(appStoreEight?.canceling) + count(appStoreFat?.canceling),
+        pastDue: count(eight?.pastDue) + count(fat?.pastDue) + count(appStoreEight?.pastDue) + count(appStoreFat?.pastDue),
         holds: Number(holds[0]?.count ?? 0),
         failedWebhooks: Number(failedEvents[0]?.count ?? 0),
       },
-      subscribers: { eight: Number(eight?.count ?? 0), fat: Number(fat?.count ?? 0) },
+      subscribers: {
+        eight: count(eight?.count) + count(appStoreEight?.count),
+        fat: count(fat?.count) + count(appStoreFat?.count),
+        appStore: count(appStoreEight?.count) + count(appStoreFat?.count),
+      },
       trend: trend.map((item) => ({ ...item, totalCents: Number(item.totalCents), payments: Number(item.payments) })),
       recentOrders: recentOrders.map((order) => ({ ...order, product: productKind(order.stripePriceId) })),
-      recentSubscriptions,
+      recentSubscriptions: [
+        ...recentSubscriptions.map(({ stripeSubscriptionId, ...row }) => ({
+          ...row, provider: 'stripe' as const, subscriptionId: stripeSubscriptionId, sandbox: false,
+        })),
+        ...recentAppStoreSubscriptions.map(({ originalTransactionId, environment, autoRenew, expiresAt, ...row }) => ({
+          ...row,
+          provider: 'app_store' as const,
+          subscriptionId: originalTransactionId,
+          sandbox: environment === 'Sandbox',
+          cancelAtPeriodEnd: !autoRenew,
+          currentPeriodEnd: expiresAt,
+        })),
+      ].sort((left, right) => right.updatedAt.getTime() - left.updatedAt.getTime()).slice(0, 20),
       failedEvents: failedWebhookRows,
       holds: holdRows,
       reconciliation: {

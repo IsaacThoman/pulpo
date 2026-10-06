@@ -4,7 +4,6 @@ import { db } from '../database/client.js'
 import {
   applicationSettings,
   billingAccounts,
-  billingSubscriptions,
   budgetReservationAllowanceFunders,
   budgetReservationFunders,
   budgetReservations,
@@ -12,6 +11,7 @@ import {
   weeklyUsagePeriods,
 } from '../database/schema.js'
 import { parseBillingSettings } from '../settings/application-settings.js'
+import { loadPlanSubscriptions } from './plan-subscriptions.js'
 import { FIVE_HOURS_MS, fiveHourEnd, remainingPercentage, resolvePlanEntitlement, utcWeekEnd, utcWeekStart, type BillingPlan } from './plans.js'
 import { storageDefaultForPlan } from './storage-entitlements.js'
 
@@ -84,13 +84,7 @@ export async function loadBillingEntitlements(
   const fiveHourCutoff = new Date(now.getTime() - FIVE_HOURS_MS)
   const [[account], subscriptions, [setting], [period], [pendingBalance], [activeFiveHourPeriod], [activePendingFiveHour]] = await Promise.all([
     tx.select().from(billingAccounts).where(eq(billingAccounts.userId, userId)).limit(1),
-    tx.select({
-      plan: billingSubscriptions.plan,
-      paidPlan: billingSubscriptions.paidPlan,
-      status: billingSubscriptions.status,
-      paidThrough: billingSubscriptions.paidThrough,
-    })
-      .from(billingSubscriptions).where(eq(billingSubscriptions.userId, userId)),
+    loadPlanSubscriptions(tx, userId),
     tx.select({ value: applicationSettings.value }).from(applicationSettings).where(eq(applicationSettings.key, 'billing')).limit(1),
     tx.select({ spentMicros: weeklyUsagePeriods.spentMicros }).from(weeklyUsagePeriods)
       .where(and(eq(weeklyUsagePeriods.userId, userId), eq(weeklyUsagePeriods.periodStart, periodStart))).limit(1),

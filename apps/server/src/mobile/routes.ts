@@ -76,6 +76,7 @@ export async function registerMobileRoutes(app: FastifyInstance): Promise<void> 
         folders: true,
         twoFactorAuth: true,
         passkeys: true,
+        appStoreSubscriptions: getConfig().PULPO_BILLING_ENABLED && getConfig().APP_STORE_BILLING_ENABLED,
       },
     })
   })

@@ -192,6 +192,7 @@ import {
   DeleteAccountScreen,
   TrashScreen,
 } from './src/screens/MemberScreens';
+import { SubscriptionScreen } from './src/screens/SubscriptionScreen';
 import type { RootStackParamList } from './src/navigation';
 import { usePrototypeStore } from './src/store/prototypeStore';
 import { MoveToFolderSheet } from './src/components/MoveToFolderSheet';
@@ -1650,6 +1651,7 @@ function PrototypeRoot() {
         <RootStack.Screen name="InstanceDetails" component={InstanceDetailsScreen} options={{ headerShown: Platform.OS === 'ios', title: 'Pulpo Instance', headerBackTitle: 'Account' }} />
         <RootStack.Screen name="SettingsDetail" component={SettingsDetailScreen} options={{ headerShown: Platform.OS === 'ios', headerBackTitle: 'Settings' }} />
         <RootStack.Screen name="Trash" component={TrashScreen} options={{ headerShown: Platform.OS === 'ios', title: 'Trash', headerBackTitle: 'Settings' }} />
+        <RootStack.Screen name="Subscription" component={SubscriptionScreen} options={{ headerShown: Platform.OS === 'ios', title: 'Subscription', headerBackTitle: 'Settings' }} />
       </RootStack.Navigator>
     </NavigationContainer>
   );

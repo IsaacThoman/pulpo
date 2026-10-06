@@ -1,5 +1,5 @@
 import type Stripe from 'stripe'
-import { eq, inArray, or, sql } from 'drizzle-orm'
+import { eq, or, sql } from 'drizzle-orm'
 import { getConfig } from '../config.js'
 import { db } from '../database/client.js'
 import {
@@ -13,11 +13,9 @@ import {
   users,
 } from '../database/schema.js'
 import { newId } from '../lib/ids.js'
-import { poolPeerIds } from '../pools/service.js'
-import { publishStateChange } from '../responses/events.js'
 import { PLAN_MONTHLY_CREDIT_MICROS, type PaidBillingPlan } from './plans.js'
 import { getStripeClient, planForPriceId } from './stripe.js'
-import { refreshStorageLimit } from './storage-entitlements.js'
+import { publishBillingChanges, recordBillingChanges } from './state-changes.js'
 import { disableAutoTopUp, enableConfiguredAutoTopUp, failAutoTopUpAttempt, savePaymentMethod } from './auto-top-up-state.js'
 
 type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0]
@@ -636,7 +634,7 @@ async function applyCheckoutStatus(tx: Transaction, checkout: Stripe.Checkout.Se
   }).where(eq(billingCheckouts.stripeCheckoutSessionId, checkout.id))
 }
 
-async function placeBillingHold(
+export async function placeBillingHold(
   tx: Transaction,
   userId: string,
   reason: string,
@@ -846,22 +844,13 @@ export async function processStripeWebhookEvent(event: Stripe.Event): Promise<vo
       await tx.update(billingWebhookEvents).set({ status: 'processing', error: null, updatedAt: new Date() })
         .where(eq(billingWebhookEvents.providerEventId, providerEventId))
       await applyEvent(tx, event, context, changedUsers)
-      for (const userId of changedUsers) await refreshStorageLimit(tx, userId, new Date(event.created * 1_000))
-      for (const userId of [...changedUsers]) for (const peerId of await poolPeerIds(tx, userId)) changedUsers.add(peerId)
-      const revisions = changedUsers.size > 0
-        ? await tx.update(users).set({ stateRevision: sql`${users.stateRevision} + 1` })
-          .where(inArray(users.id, [...changedUsers]))
-          .returning({ userId: users.id, revision: users.stateRevision })
-        : []
+      const revisions = await recordBillingChanges(tx, changedUsers, new Date(event.created * 1_000))
       await tx.update(billingWebhookEvents).set({
         status: 'processed', processedAt: new Date(), updatedAt: new Date(),
       }).where(eq(billingWebhookEvents.providerEventId, providerEventId))
       return revisions
     })
-    await Promise.all(changes.map((change) => publishStateChange({
-      ...change,
-      scopes: ['usage', 'pool', 'billing'],
-    })))
+    await publishBillingChanges(changes)
     if (changes.length) {
       // A newly saved card tops up right away when the balance is already below the
       // threshold. Imported lazily because auto top-ups record payments through here.

@@ -1382,6 +1382,65 @@ export const billingWebhookEvents = pgTable('billing_webhook_events', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [index('billing_webhook_status_idx').on(table.status, table.receivedAt)])
 
+/** An auto-renewable App Store subscription, keyed by its original transaction. */
+export const appStoreSubscriptions = pgTable('app_store_subscriptions', {
+  originalTransactionId: text('original_transaction_id').primaryKey(),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  environment: text('environment').notNull(),
+  productId: text('product_id').notNull(),
+  // Plan the next renewal bills (the renewal product). `paidPlan` is the plan the latest
+  // transaction paid for; a downgrade only changes `plan` until the period ends.
+  plan: text('plan').notNull(),
+  paidPlan: text('paid_plan').notNull(),
+  // active, past_due (billing retry or grace period), expired, or revoked (refunded).
+  status: text('status').notNull(),
+  autoRenew: boolean('auto_renew').notNull().default(true),
+  inBillingRetry: boolean('in_billing_retry').notNull().default(false),
+  latestTransactionId: text('latest_transaction_id').notNull(),
+  currentPeriodStart: timestamp('current_period_start', { withTimezone: true }).notNull(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  gracePeriodExpiresAt: timestamp('grace_period_expires_at', { withTimezone: true }),
+  // Expiry, extended by any billing grace period; null once revoked.
+  paidThrough: timestamp('paid_through', { withTimezone: true }),
+  revokedAt: timestamp('revoked_at', { withTimezone: true }),
+  // Apple's signing times for the latest applied transaction and renewal info, so an
+  // older payload delivered late cannot overwrite newer state.
+  transactionSignedAt: timestamp('transaction_signed_at', { withTimezone: true }).notNull(),
+  renewalSignedAt: timestamp('renewal_signed_at', { withTimezone: true }),
+  ...timestamps,
+}, (table) => [
+  index('app_store_subscriptions_user_idx').on(table.userId),
+  index('app_store_subscriptions_status_idx').on(table.status),
+  check('app_store_subscriptions_environment_check', sql`${table.environment} in ('Production', 'Sandbox')`),
+  check('app_store_subscriptions_plan_check', sql`${table.plan} in ('eight', 'fat')`),
+  check('app_store_subscriptions_paid_plan_check', sql`${table.paidPlan} in ('eight', 'fat')`),
+  check('app_store_subscriptions_status_check', sql`${table.status} in ('active', 'past_due', 'expired', 'revoked')`),
+])
+
+/** Each App Store subscription transaction (purchase, renewal, or upgrade) for audit and support. */
+export const appStoreTransactions = pgTable('app_store_transactions', {
+  transactionId: text('transaction_id').primaryKey(),
+  originalTransactionId: text('original_transaction_id').notNull(),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  environment: text('environment').notNull(),
+  productId: text('product_id').notNull(),
+  plan: text('plan').notNull(),
+  transactionReason: text('transaction_reason'),
+  storefront: text('storefront'),
+  currency: text('currency'),
+  // Apple reports prices in milliunits of the storefront currency.
+  priceMilliunits: bigint('price_milliunits', { mode: 'number' }),
+  purchasedAt: timestamp('purchased_at', { withTimezone: true }).notNull(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  revokedAt: timestamp('revoked_at', { withTimezone: true }),
+  revocationReason: integer('revocation_reason'),
+  signedAt: timestamp('signed_at', { withTimezone: true }).notNull(),
+  ...timestamps,
+}, (table) => [
+  index('app_store_transactions_original_idx').on(table.originalTransactionId),
+  index('app_store_transactions_user_purchased_idx').on(table.userId, table.purchasedAt),
+])
+
 export const weeklyUsagePeriods = pgTable('weekly_usage_periods', {
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   periodStart: timestamp('period_start', { withTimezone: true }).notNull(),

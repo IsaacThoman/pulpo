@@ -2,6 +2,8 @@
 
 Pulpo uses Stripe Checkout, Billing, Tax, and the Billing Portal. Stripe is a payment processor, not Pulpo's merchant of record. The account owner is responsible for confirming taxability, registrations, returns, and remittance with a qualified adviser.
 
+The iOS app sells the same plans as App Store subscriptions instead; see [App Store billing operations](./app-store-billing-operations).
+
 ## Stripe products and prices
 
 Create these resources in both test mode and live mode. Set both products' Stripe product tax code to **Software as a service (SaaS) – personal use** (`txcd_10103000`) and set prices to **tax exclusive**.

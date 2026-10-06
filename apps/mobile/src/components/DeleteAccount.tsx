@@ -8,6 +8,9 @@ import { useQueryClient } from '@tanstack/react-query'
 import { apiRequest, mobileApi } from '../api/client'
 import { useSessionStore } from '../store/session'
 import { cacheNamespace } from '../data/database'
+import type { MobileBillingSummary } from '../types'
+
+const APP_STORE_SUBSCRIPTIONS_URL = 'https://apps.apple.com/account/subscriptions'
 
 function Button({ title, color, ...props }: { title: string; color?: string; disabled?: boolean; onPress: () => void }) {
   return Platform.OS === 'android' ? <MaterialButton label={title} variant={color ? 'destructive' : 'secondary'} {...props} /> : <RNButton title={title} color={color} {...props} />
@@ -25,6 +28,17 @@ export function DeleteAccountForm({ onClose }: { onClose: () => void }) {
   const [code, setCode] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  // Deleting the account cannot cancel a subscription Apple bills, so say so first (App Review Guideline 5.1.1(v)).
+  const appStoreBilling = useSessionStore((state) => state.config?.capabilities.appStoreSubscriptions ?? false)
+  const [appStoreRenews, setAppStoreRenews] = useState(false)
+  useEffect(() => {
+    if (!appStoreBilling) return
+    let active = true
+    void apiRequest<MobileBillingSummary>('/api/billing/summary')
+      .then((summary) => { if (active) setAppStoreRenews(summary.subscription?.provider === 'app_store' && !summary.subscription.cancelAtPeriodEnd) })
+      .catch(() => undefined)
+    return () => { active = false }
+  }, [appStoreBilling])
   useEffect(() => {
     let active = true
     void apiRequest<{ accountDeletionEnabled?: boolean; adminEmail?: string }>('/api/auth/settings')
@@ -73,7 +87,9 @@ export function DeleteAccountForm({ onClose }: { onClose: () => void }) {
       Alert.alert('Account deletion started', 'Your access has ended and server cleanup will continue. Some data on this device could not be removed. Clear this app’s local storage to remove it.')
       return
     }
-    Alert.alert('Account deletion started', 'Your access has ended. Permanent cleanup and subscription cancellation will continue automatically.')
+    Alert.alert('Account deletion started', appStoreRenews
+      ? 'Your access has ended and permanent cleanup will continue automatically. Cancel your App Store subscription in your App Store account settings to stop future charges.'
+      : 'Your access has ended. Permanent cleanup and subscription cancellation will continue automatically.')
   }
   return <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }}><KeyboardAvoidingView behavior={Platform.OS === 'android' ? 'padding' : undefined} style={{ flex: 1 }}><ScrollView contentContainerStyle={{ padding: 24, gap: 16 }} keyboardShouldPersistTaps="handled">
     <Text accessibilityRole="header" style={{ fontSize: 24, fontWeight: '600', color: theme.text }}>Delete account</Text>
@@ -87,6 +103,10 @@ export function DeleteAccountForm({ onClose }: { onClose: () => void }) {
     {!requirements && error ? <Button title="Retry" disabled={checking} onPress={() => { setError(''); void loadRequirements() }} /> : null}
     {settings?.accountDeletionEnabled && requirements ? <>
       <Text style={{ color: theme.secondary }}>Deletion is permanent. Your chats, files, memories, and shared links will be removed. Subscriptions will be canceled and unused credits forfeited, with no automatic refunds. Access ends immediately; background cleanup may take time. Backups and payment records follow existing retention policies.</Text>
+      {appStoreRenews ? <View style={{ gap: 8 }}>
+        <Text style={{ color: theme.text }}>Your Pulpo subscription is billed through the App Store. Deleting your account doesn’t cancel it, so Apple will keep charging you until you cancel it in your App Store account settings.</Text>
+        <Button title="Manage App Store subscriptions" onPress={() => { void Linking.openURL(APP_STORE_SUBSCRIPTIONS_URL) }} />
+      </View> : null}
       {Platform.OS === 'android' ? <MaterialField label="Current password" secureTextEntry autoComplete="current-password" value={password} onChangeText={setPassword} editable={!busy} /> : <><Text style={{ color: theme.text }}>Current password</Text>
       <TextInput accessibilityLabel="Current password" secureTextEntry textContentType="password" autoCapitalize="none" value={password} onChangeText={setPassword} editable={!busy} style={{ borderWidth: 1, borderColor: theme.separator, padding: 12, borderRadius: 8, color: theme.text }} /></>}
       {requirements.twoFactorEnabled ? Platform.OS === 'android' ? <MaterialField label="Authenticator or recovery code" autoComplete="one-time-code" autoCapitalize="none" autoCorrect={false} value={code} onChangeText={setCode} editable={!busy} /> : <><Text style={{ color: theme.text }}>Authenticator or recovery code</Text>
