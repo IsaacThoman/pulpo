@@ -155,6 +155,8 @@ export const mobileConfigSchema = z.object({
     dictation: z.boolean().optional().default(false),
     twoFactorAuth: z.boolean().optional().default(false),
     passkeys: z.boolean().optional().default(false),
+    // The instance accepts App Store subscriptions bought in the iOS app.
+    appStoreSubscriptions: z.boolean().optional().default(false),
   }),
 })
 export type MobileConfig = z.infer<typeof mobileConfigSchema>

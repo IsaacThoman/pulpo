@@ -13,4 +13,5 @@ export type RootStackParamList = {
   InstanceDetails: undefined;
   SettingsDetail: { section: SettingsSection };
   Trash: undefined;
+  Subscription: undefined;
 };

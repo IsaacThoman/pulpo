@@ -29,6 +29,14 @@ const configSchema = z.object({
   STRIPE_CREDIT_PRODUCT_ID: optionalEnvironmentValue(z.string().startsWith('prod_')),
   STRIPE_EIGHT_PRICE_ID: optionalEnvironmentValue(z.string().startsWith('price_')),
   STRIPE_FAT_PRICE_ID: optionalEnvironmentValue(z.string().startsWith('price_')),
+  // Auto-renewable subscriptions bought in the iOS app. Requires PULPO_BILLING_ENABLED.
+  APP_STORE_BILLING_ENABLED: booleanString,
+  APP_STORE_BUNDLE_ID: z.string().trim().min(1).default('com.isaacthoman.pulpo'),
+  APP_STORE_APP_APPLE_ID: optionalEnvironmentValue(z.coerce.number().int().positive()),
+  APP_STORE_EIGHT_PRODUCT_ID: optionalEnvironmentValue(z.string().trim().min(1).max(100)),
+  APP_STORE_FAT_PRODUCT_ID: optionalEnvironmentValue(z.string().trim().min(1).max(100)),
+  // App Review and TestFlight buy with sandbox accounts against the production server.
+  APP_STORE_ACCEPT_SANDBOX: booleanString.default(true),
   DATABASE_URL: z.string().min(1).optional(),
   POSTGRES_HOST: z.string().min(1).default('localhost'),
   POSTGRES_PORT: z.coerce.number().int().positive().default(5432),
@@ -111,6 +119,17 @@ export function parseConfig(environment: NodeJS.ProcessEnv): Config {
     const missing = required.filter((key) => !config[key])
     if (missing.length > 0) {
       throw new Error(`Billing is enabled but required configuration is missing: ${missing.join(', ')}`)
+    }
+  }
+  if (config.APP_STORE_BILLING_ENABLED) {
+    if (!config.PULPO_BILLING_ENABLED) throw new Error('APP_STORE_BILLING_ENABLED requires PULPO_BILLING_ENABLED')
+    const required = ['APP_STORE_APP_APPLE_ID', 'APP_STORE_EIGHT_PRODUCT_ID', 'APP_STORE_FAT_PRODUCT_ID'] as const
+    const missing = required.filter((key) => !config[key])
+    if (missing.length > 0) {
+      throw new Error(`App Store billing is enabled but required configuration is missing: ${missing.join(', ')}`)
+    }
+    if (config.APP_STORE_EIGHT_PRODUCT_ID === config.APP_STORE_FAT_PRODUCT_ID) {
+      throw new Error('APP_STORE_EIGHT_PRODUCT_ID and APP_STORE_FAT_PRODUCT_ID must be different products')
     }
   }
   if (config.PULPO_CLIENT_IP_MODE !== 'direct' && !config.PULPO_TRUSTED_PROXY_CIDRS.trim()) {

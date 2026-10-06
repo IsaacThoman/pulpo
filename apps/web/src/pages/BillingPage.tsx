@@ -20,7 +20,7 @@ import { formatBalance, formatDate } from '@/lib/format'
 import { creditCentsFromInput } from '@/lib/billing-pricing'
 import { apiRequest } from '@/lib/api'
 import { openExternalUrl } from '@/lib/runtime'
-import { autoTopUpActionLabel, autoTopUpSettingsError, billingPlanName, defaultAutoTopUpSettings, fetchBillingSummary, formatPlanStorage, managedBillingPlan, paymentStatusLabel, pendingBillingPlan, planChoiceDisabled, planChoiceLabel, saveAutoTopUpSettings, type BillingPlan } from '@/lib/billing'
+import { APP_STORE_SUBSCRIPTIONS_URL, appStoreManaged, autoTopUpActionLabel, autoTopUpSettingsError, billingPlanName, defaultAutoTopUpSettings, fetchBillingSummary, formatPlanStorage, managedBillingPlan, paymentStatusLabel, pendingBillingPlan, planChoiceDisabled, planChoiceLabel, saveAutoTopUpSettings, type BillingPlan } from '@/lib/billing'
 import { queryClient } from '@/lib/query-client'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
@@ -231,6 +231,9 @@ export function BillingPage() {
 
   const managedPlan = summary ? managedBillingPlan(summary) : 'baby'
   const pendingPlan = summary ? pendingBillingPlan(summary) : null
+  const billedByAppStore = summary ? appStoreManaged(summary) : false
+  // App Store prices vary by storefront and are set in App Store Connect.
+  const planPrice = billedByAppStore ? ui("Billed through the App Store") : `$${managedPlan === 'fat' ? 24 : 8}/month`
   const subscriptionSubtitle = !summary
     ? ui("Free · No subscription")
     : summary.subscription?.status === 'past_due'
@@ -238,12 +241,12 @@ export function BillingPage() {
       : !summary.subscription
         ? ui("Free · No subscription")
       : summary.subscription?.cancelAtPeriodEnd
-        ? `$${managedPlan === 'fat' ? 24 : 8}/month${summary.subscription.currentPeriodEnd ? ` · ends ${formatDate(Date.parse(summary.subscription.currentPeriodEnd))}` : ''}`
+        ? `${planPrice}${summary.subscription.currentPeriodEnd ? ` · ends ${formatDate(Date.parse(summary.subscription.currentPeriodEnd))}` : ''}`
       : pendingPlan
-        ? `$${managedPlan === 'fat' ? 24 : 8}/month · ${summary.subscription.currentPeriodEnd
+        ? `${planPrice} · ${summary.subscription.currentPeriodEnd
           ? ui("switches to {{plan}} on {{date}}", { plan: billingPlanName(pendingPlan), date: formatDate(Date.parse(summary.subscription.currentPeriodEnd)) })
           : ui("switches to {{plan}} at renewal", { plan: billingPlanName(pendingPlan) })}`
-        : `$${managedPlan === 'fat' ? 24 : 8}/month${summary.subscription?.currentPeriodEnd ? ` · renews ${formatDate(Date.parse(summary.subscription.currentPeriodEnd))}` : ''}`
+        : `${planPrice}${summary.subscription?.currentPeriodEnd ? ` · renews ${formatDate(Date.parse(summary.subscription.currentPeriodEnd))}` : ''}`
 
   const subscribed = Boolean(summary?.subscription)
   const planStorage = (plan: BillingPlan) => ui("{{storage}} of file storage", { storage: summary ? formatPlanStorage(summary.planStorageLimitBytes[plan]) : '…' })
@@ -308,12 +311,15 @@ export function BillingPage() {
                   ))}
                 </ul>
               )}
-              <div className="flex flex-wrap gap-2 pt-1">
+              {billedByAppStore ? <div className="space-y-2 pt-1">
+                <Button variant="default" onClick={() => void openExternalUrl(APP_STORE_SUBSCRIPTIONS_URL)}>{ui("Manage in App Store")}</Button>
+                <p className="text-xs text-muted-foreground">{ui("You subscribed in the Pulpo iOS app. Change or cancel this plan in your Apple account’s subscription settings.")}</p>
+              </div> : <div className="flex flex-wrap gap-2 pt-1">
                 <Button variant="default" disabled={!summary || submitting} onClick={() => setPlanOpen(true)}>
                   {subscribed ? ui("Manage plan") : ui("Compare plans")}
                 </Button>
                 {subscribed && <Button variant="ghost" onClick={() => void openPortal()} disabled={submitting}><CreditCard />{ui("Billing portal")}</Button>}
-              </div>
+              </div>}
             </PaymentOption>
 
             <PaymentOption

@@ -113,3 +113,30 @@ export interface AttachmentDraft {
   state: 'local' | 'uploading' | 'ready' | 'failed'
   error?: string
 }
+
+export type BillingPlan = 'baby' | 'eight' | 'fat'
+export type PaidBillingPlan = Exclude<BillingPlan, 'baby'>
+
+/** A paid subscription as `/api/billing/summary` reports it. */
+export interface BillingSubscription {
+  provider: 'stripe' | 'app_store'
+  /** Plan whose benefits apply now. */
+  plan: PaidBillingPlan
+  /** Plan the next renewal bills after a downgrade, or null when unchanged. */
+  pendingPlan: PaidBillingPlan | null
+  status: string
+  cancelAtPeriodEnd: boolean
+  currentPeriodEnd: string | null
+}
+
+/** The parts of `/api/billing/summary` the mobile app uses. */
+export interface MobileBillingSummary {
+  plan: BillingPlan
+  planOverridden: boolean
+  onHold: boolean
+  sharedWeeklyPercent: number
+  planStorageLimitBytes: Record<BillingPlan, number>
+  subscription: BillingSubscription | null
+  /** Products the iOS app sells, or null when the instance does not accept App Store purchases. */
+  appStore: { productIds: Record<PaidBillingPlan, string> } | null
+}

@@ -71,6 +71,8 @@ export interface BillingSummary {
   planStorageLimitBytes: Record<BillingPlan, number>
   autoTopUp: AutoTopUpSummary
   subscription: {
+    /** App Store subscriptions are bought in the iOS app and managed in the subscriber's Apple account. */
+    provider: 'stripe' | 'app_store'
     /** Plan whose benefits apply now. */
     plan: 'eight' | 'fat'
     /** Plan the next renewal bills after a downgrade, or null when unchanged. */
@@ -198,6 +200,14 @@ export function autoTopUpStatusLine(summary: AutoTopUpSummary): { text: string; 
     default:
       return null
   }
+}
+
+/** Apple's page for managing App Store subscriptions. */
+export const APP_STORE_SUBSCRIPTIONS_URL = 'https://apps.apple.com/account/subscriptions'
+
+/** Whether the plan is billed by Apple, so Pulpo's checkout and billing portal cannot change it. */
+export function appStoreManaged(summary: Pick<BillingSummary, 'subscription'>): boolean {
+  return summary.subscription?.provider === 'app_store'
 }
 
 export function managedBillingPlan(summary: Pick<BillingSummary, 'subscription'>): BillingPlan {

@@ -44,7 +44,8 @@ interface Dashboard {
     holds: number
     failedWebhooks: number
   }
-  subscribers: { eight: number; fat: number }
+  /** Plan totals include App Store subscribers; `appStore` counts them separately. */
+  subscribers: { eight: number; fat: number; appStore: number }
   trend: Array<{ day: string; totalCents: number; payments: number }>
   recentOrders: Array<{
     stripePaymentId: string
@@ -63,7 +64,11 @@ interface Dashboard {
     userId: string
     userName: string
     userEmail: string
-    stripeSubscriptionId: string
+    provider: 'stripe' | 'app_store'
+    /** Stripe subscription ID, or the App Store original transaction ID. */
+    subscriptionId: string
+    /** An App Store sandbox purchase, such as one made during App Review or in TestFlight. */
+    sandbox: boolean
     plan: 'eight' | 'fat'
     status: string
     cancelAtPeriodEnd: boolean
@@ -288,6 +293,7 @@ export function AdminBillingPage() {
           <div className="divide-y">
             <Stat label={ui("Pulpo Eight")} value={data?.subscribers.eight ?? 0} />
             <Stat label={ui("Le Pulpo Fat")} value={data?.subscribers.fat ?? 0} />
+            <Stat label={ui("Billed through the App Store")} value={data?.subscribers.appStore ?? 0} />
             <Stat label={ui("Canceling")} value={totals?.canceling ?? 0} />
             <Stat label={ui("Past due")} value={totals?.pastDue ?? 0} alert={(totals?.pastDue ?? 0) > 0} />
             <Stat label={ui("Billing holds")} value={totals?.holds ?? 0} alert={(totals?.holds ?? 0) > 0} />
@@ -384,16 +390,16 @@ export function AdminBillingPage() {
               </thead>
               <tbody className="divide-y">
                 {data.recentSubscriptions.map((row) => (
-                  <tr key={row.stripeSubscriptionId}>
+                  <tr key={`${row.provider}:${row.subscriptionId}`}>
                     <td className="max-w-48 px-3 py-2">
                       <div className="truncate">{row.userName}</div>
                       <div className="truncate text-muted-foreground">{row.userEmail}</div>
                     </td>
-                    <td className="px-3 py-2"><ProductBadge product={row.plan} /></td>
+                    <td className="px-3 py-2"><div className="flex items-center gap-1.5"><ProductBadge product={row.plan} />{row.provider === 'app_store' && <Badge variant="outline">{row.sandbox ? ui("App Store sandbox") : ui("App Store")}</Badge>}</div></td>
                     <td className="px-3 py-2"><Badge variant={row.status === 'past_due' ? 'destructive' : 'outline'}>{row.cancelAtPeriodEnd ? ui("canceling") : row.status}</Badge></td>
                     <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">{row.paidThrough ? formatDate(Date.parse(row.paidThrough)) : '—'}</td>
                     <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">{row.currentPeriodEnd ? formatDate(Date.parse(row.currentPeriodEnd)) : '—'}</td>
-                    <td className="px-3 py-2 text-right">{stripeMode && <StripeLink href={stripeSubscriptionUrl(stripeMode, row.stripeSubscriptionId)} />}</td>
+                    <td className="px-3 py-2 text-right">{stripeMode && row.provider === 'stripe' && <StripeLink href={stripeSubscriptionUrl(stripeMode, row.subscriptionId)} />}</td>
                   </tr>
                 ))}
               </tbody>

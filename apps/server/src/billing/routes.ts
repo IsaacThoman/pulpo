@@ -6,12 +6,21 @@ import { getConfig } from '../config.js'
 import { db } from '../database/client.js'
 import {
   applicationSettings,
+  appStoreSubscriptions,
   billingCheckouts,
   billingOrders,
   billingSubscriptions,
 } from '../database/schema.js'
 import { AppError } from '../lib/errors.js'
 import { parseBillingSettings } from '../settings/application-settings.js'
+import {
+  AppStorePayloadError,
+  appStoreProductIds,
+  appStoreSubscriptionSummary,
+  processAppStoreNotification,
+  syncAppStoreTransaction,
+} from './app-store.js'
+import { AppStoreSignatureError } from './app-store-signing.js'
 import { getBillingEntitlements } from './entitlements.js'
 import { loadOwnerSharedAllowance, sharedAllowanceBar } from './shared-allowance.js'
 import { getAutoTopUpSummary, removeAutoTopUpPaymentMethod, updateAutoTopUpSettings } from './auto-top-up.js'
@@ -59,6 +68,11 @@ const subscriptionCheckoutSchema = z.object({
   idempotencyKey: z.string().uuid(),
   plan: z.enum(['eight', 'fat']),
 })
+const appStoreTransactionSchema = z.object({
+  signedTransaction: z.string().min(1).max(64 * 1024),
+  signedRenewalInfo: z.string().min(1).max(64 * 1024).nullable().optional(),
+})
+const appStoreNotificationSchema = z.object({ signedPayload: z.string().min(1).max(256 * 1024) })
 
 export function isCreditOrderReason(billingReason: string): boolean {
   return billingReason === 'purchase' || billingReason === 'auto_top_up'
@@ -80,6 +94,24 @@ export function selectSummarySubscription<T extends { plan: string; paidPlan?: s
   return actionable.find((item) => subscriptionPaidPlan(item) === entitlementPlan)
     ?? actionable[0]
     ?? null
+}
+
+export function stripeSubscriptionSummary(subscription: {
+  plan: string
+  paidPlan?: string | null
+  status: string
+  cancelAtPeriodEnd: boolean
+  currentPeriodEnd: Date | null
+}) {
+  return {
+    provider: 'stripe' as const,
+    // The plan whose benefits apply now; `pendingPlan` is the price the next renewal bills.
+    plan: subscriptionPaidPlan(subscription) === 'fat' ? 'fat' as const : 'eight' as const,
+    pendingPlan: subscriptionPendingPlan(subscription),
+    status: subscription.status,
+    cancelAtPeriodEnd: subscription.cancelAtPeriodEnd,
+    currentPeriodEnd: subscription.currentPeriodEnd?.toISOString() ?? null,
+  }
 }
 
 export function availableBillingBalanceMicros(balanceMicros: number, pendingMicros: number): number {
@@ -120,10 +152,10 @@ export async function registerBillingRoutes(app: FastifyInstance): Promise<void>
 
   app.get('/api/billing/summary', async (request) => {
     const user = requireUser(request)
-    const [entitlements, subscriptions, orders, poolBalance, autoTopUp, [billingSetting]] = await Promise.all([
+    const [entitlements, subscriptions, appStoreRows, orders, poolBalance, autoTopUp, [billingSetting]] = await Promise.all([
       getBillingEntitlements(user.id),
-      db.select().from(billingSubscriptions).where(eq(billingSubscriptions.userId, user.id))
-        .orderBy(desc(billingSubscriptions.updatedAt)),
+      db.select().from(billingSubscriptions).where(eq(billingSubscriptions.userId, user.id)),
+      db.select().from(appStoreSubscriptions).where(eq(appStoreSubscriptions.userId, user.id)),
       db.select().from(billingOrders).where(eq(billingOrders.userId, user.id))
         .orderBy(desc(billingOrders.createdAt)).limit(50),
       db.transaction(async (tx) => {
@@ -145,7 +177,13 @@ export async function registerBillingRoutes(app: FastifyInstance): Promise<void>
     ])
     const settings = parseBillingSettings(billingSetting?.value)
     const sharedAllowance = poolBalance ? await db.transaction((tx) => loadOwnerSharedAllowance(tx, user.id, entitlements, settings)) : null
-    const subscription = selectSummarySubscription(subscriptions, entitlements.subscriptionPlan)
+    const now = new Date()
+    const candidates = [
+      ...subscriptions.map((row) => ({ summary: stripeSubscriptionSummary(row), updatedAt: row.updatedAt })),
+      ...appStoreRows.map((row) => ({ summary: appStoreSubscriptionSummary(row, now), updatedAt: row.updatedAt })),
+    ].sort((left, right) => right.updatedAt.getTime() - left.updatedAt.getTime()).map((candidate) => candidate.summary)
+    const subscription = selectSummarySubscription(candidates, entitlements.subscriptionPlan)
+    const appStoreProducts = appStoreProductIds()
     const fiveHour = entitlements.fiveHourRemainingPercentage === null
       ? null
       : fiveHourSummaryPercentages(entitlements)
@@ -178,14 +216,9 @@ export async function registerBillingRoutes(app: FastifyInstance): Promise<void>
         eight: settings.eightStorageLimitBytes,
         fat: settings.fatStorageLimitBytes,
       },
-      subscription: subscription ? {
-        // The plan whose benefits apply now; `pendingPlan` is the price the next renewal bills.
-        plan: subscriptionPaidPlan(subscription) === 'fat' ? 'fat' : 'eight',
-        pendingPlan: subscriptionPendingPlan(subscription),
-        status: subscription.status,
-        cancelAtPeriodEnd: subscription.cancelAtPeriodEnd,
-        currentPeriodEnd: subscription.currentPeriodEnd?.toISOString() ?? null,
-      } : null,
+      subscription,
+      // Products the iOS app sells, when App Store purchases are enabled.
+      appStore: appStoreProducts ? { productIds: appStoreProducts } : null,
       autoTopUp,
       payments: orders.map((order) => ({
         id: order.stripePaymentId,
@@ -288,6 +321,30 @@ export async function registerBillingRoutes(app: FastifyInstance): Promise<void>
     const status = resolvedCheckoutStatus(checkout?.status, order?.status)
     if (!ownerId || ownerId !== user.id || !status) throw new AppError(404, 'checkout_not_found', 'Checkout not found')
     return { status }
+  })
+
+  app.post('/api/billing/app-store/transactions', {
+    config: { rateLimit: { max: 30, timeWindow: '1 minute' } },
+  }, async (request) => {
+    const user = requireUser(request)
+    if (!appStoreProductIds()) throw new AppError(404, 'app_store_billing_disabled', 'App Store purchases are not available')
+    const input = appStoreTransactionSchema.parse(request.body)
+    return { subscription: await syncAppStoreTransaction(user.id, input) }
+  })
+
+  // App Store Server Notifications V2. Apple retries until it receives a 200 response.
+  app.post('/api/billing/webhooks/app-store', async (request) => {
+    if (!appStoreProductIds()) throw new AppError(404, 'app_store_billing_disabled', 'App Store purchases are not available')
+    const { signedPayload } = appStoreNotificationSchema.parse(request.body)
+    try {
+      await processAppStoreNotification(signedPayload)
+    } catch (error) {
+      if (error instanceof AppStoreSignatureError || error instanceof AppStorePayloadError) {
+        throw new AppError(400, 'invalid_app_store_notification', error.message)
+      }
+      throw error
+    }
+    return { received: true }
   })
 
   app.post('/api/billing/webhooks/stripe', async (request, reply) => {

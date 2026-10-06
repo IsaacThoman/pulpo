@@ -1,6 +1,6 @@
 # Pulpo hosted service privacy policy
 
-**Effective September 3, 2026**
+**Effective October 6, 2026**
 
 This policy describes how Isaac Thoman (**“Pulpo,” “we,” “us,”** or **“our”**) handles information when you use the Pulpo service hosted at [pulpo.baby](https://pulpo.baby) (the **“hosted service”**), whether through the website, the Pulpo mobile app, or another compatible client.
 
@@ -42,6 +42,8 @@ We do not use advertising SDKs, cross-service tracking, or product analytics, an
 
 If you purchase a subscription or credits, we and our payment processor handle information about the checkout, customer, subscription, order, amount, status, and refund. Payment-card details are collected and processed by the payment processor rather than stored in full by Pulpo.
 
+If you subscribe in the Pulpo iOS app, Apple processes the purchase. Apple provides us with signed records of your subscription, including transaction and subscription identifiers, the product, purchase, renewal, and expiration dates, renewal status, the App Store storefront, currency, and price, and any refund. We link those records to your Pulpo account to provide your plan. We do not receive your Apple Account or payment details.
+
 ### Communications
 
 We handle your email address and the contents of messages you send us when providing account emails, password-reset messages, service notices, or support.
@@ -66,7 +68,7 @@ We disclose information only as needed for the hosted service or as required by 
 - **AI model and tool providers.** Prompts, conversation context, attachments, tool inputs, and related instructions may be sent to providers selected for your request. Those providers process the information under their own terms and privacy policies.
 - **Network delivery and security.** Cloudflare provides DNS, reverse-proxy, traffic-protection, and secure-tunnel connectivity for the hosted service. Requests and responses pass through Cloudflare's network so Cloudflare can route, protect, and deliver the service. In doing so, Cloudflare may process information such as IP addresses, request headers, URLs, traffic-routing data, security signals, and the content transmitted in requests and responses. Cloudflare handles this information under our agreement with it and its [privacy policy](https://www.cloudflare.com/privacypolicy/).
 - **Other infrastructure providers.** Hosting, database, object-storage, email-delivery, backup, and similar vendors may process information while providing infrastructure to us.
-- **Payment processing.** Stripe processes hosted-service checkouts, subscriptions, payments, and refunds. Its handling of payment information is governed by its own privacy policy.
+- **Payment processing.** Stripe processes hosted-service checkouts, subscriptions, payments, and refunds. Apple processes subscriptions bought in the Pulpo iOS app through the App Store. Each handles payment information under its own privacy policy.
 - **People you choose to share with.** If you create a public sharing link or use a collaborative feature, the information you select may be accessible to the recipients or, for a public link, anyone who obtains that link.
 - **Legal and safety disclosures.** We may preserve or disclose information when reasonably necessary to comply with law, legal process, or valid governmental requests; protect users, Pulpo, or the public; or investigate fraud, abuse, or security incidents.
 
@@ -100,7 +102,7 @@ We retain account information and user content while needed to provide the hoste
 
 Some records may be retained longer when needed for security, fraud prevention, billing and accounting, dispute resolution, enforcement, or legal compliance. Data sent to an AI model, tool, payment, or other service provider may be retained by that provider under its agreement and privacy policy.
 
-When available, you can delete your hosted account from web **Settings → Security → Delete account** or mobile **Account → Delete account**. Deletion is irreversible: access ends immediately, followed by automatic data cleanup and subscription cancellation, without automatic refunds or recovery of unused credits. Backups and payment records follow existing retention policies. If this control is unavailable, or to request a copy of your information or help exercising an applicable privacy right, contact [support@pulpo.baby](mailto:support@pulpo.baby). We may need to verify your identity before completing a request.
+When available, you can delete your hosted account from web **Settings → Security → Delete account** or mobile **Account → Delete account**. Deletion is irreversible: access ends immediately, followed by automatic data cleanup and cancellation of subscriptions bought directly from Pulpo, without automatic refunds or recovery of unused credits. App Store subscriptions must be canceled in your Apple Account's subscription settings. Backups and payment records follow existing retention policies. If this control is unavailable, or to request a copy of your information or help exercising an applicable privacy right, contact [support@pulpo.baby](mailto:support@pulpo.baby). We may need to verify your identity before completing a request.
 
 ## Security
 

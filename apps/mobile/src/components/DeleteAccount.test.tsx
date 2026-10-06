@@ -2,11 +2,11 @@
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-const mocks = vi.hoisted(() => ({ request: vi.fn(), deleteAccount: vi.fn(), logout: vi.fn(), alert: vi.fn(), cancelQueries: vi.fn(), removeQueries: vi.fn() }))
+const mocks = vi.hoisted(() => ({ request: vi.fn(), deleteAccount: vi.fn(), logout: vi.fn(), alert: vi.fn(), cancelQueries: vi.fn(), removeQueries: vi.fn(), openURL: vi.fn(), config: null as object | null }))
 vi.mock('react-native', () => ({
   Platform: { OS: 'ios' },
   KeyboardAvoidingView: ({ children }: { children: import('react').ReactNode }) => createElement('div', null, children),
-  Alert: { alert: mocks.alert }, Linking: { openURL: vi.fn() },
+  Alert: { alert: mocks.alert }, Linking: { openURL: mocks.openURL },
   Button: ({ title, onPress, disabled }: { title: string; onPress: () => void; disabled?: boolean }) => createElement('button', { onClick: onPress, disabled }, title),
   TextInput: ({ value, onChangeText, accessibilityLabel, editable }: { value: string; onChangeText: (value: string) => void; accessibilityLabel: string; editable: boolean }) => createElement('input', { 'aria-label': accessibilityLabel, value, disabled: !editable, onChange: (event: { target: { value: string } }) => onChangeText(event.target.value) }),
   Modal: ({ children }: { children: import('react').ReactNode }) => createElement('div', null, children),
@@ -20,13 +20,13 @@ vi.mock('../mockup5/src/theme', () => ({ useAppTheme: () => ({ background: '#fff
 vi.mock('../api/client', () => ({ apiRequest: mocks.request, mobileApi: { deleteAccount: mocks.deleteAccount } }))
 vi.mock('../data/database', () => ({ cacheNamespace: () => 'instance|user' }))
 vi.mock('@tanstack/react-query', () => ({ useQueryClient: () => ({ cancelQueries: mocks.cancelQueries, removeQueries: mocks.removeQueries }) }))
-vi.mock('../store/session', () => ({ useSessionStore: Object.assign((select: (state: unknown) => unknown) => select({ user: { id: 'user', email: 'me@example.test' }, instanceUrl: 'https://instance.test' }), { getState: () => ({ logout: mocks.logout }) }) }))
+vi.mock('../store/session', () => ({ useSessionStore: Object.assign((select: (state: unknown) => unknown) => select({ user: { id: 'user', email: 'me@example.test' }, instanceUrl: 'https://instance.test', config: mocks.config }), { getState: () => ({ logout: mocks.logout }) }) }))
 import { DeleteAccountForm } from './DeleteAccount'
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
 let root: Root
 let container: HTMLDivElement
 beforeEach(() => {
-  vi.resetAllMocks(); mocks.logout.mockResolvedValue(undefined)
+  vi.resetAllMocks(); mocks.logout.mockResolvedValue(undefined); mocks.config = null
   container = document.createElement('div'); document.body.append(container); root = createRoot(container)
 })
 afterEach(async () => { await act(async () => root.unmount()); container.remove() })
@@ -103,6 +103,29 @@ describe('mobile account deletion', () => {
     mocks.request.mockImplementation(async (path: string) => path === '/api/me/deletion' ? { twoFactorEnabled: false } : { accountDeletionEnabled: true })
     await act(async () => Array.from(container.querySelectorAll('button')).find((button) => button.textContent === 'Retry')!.click())
     expect(container.querySelectorAll('input')).toHaveLength(1)
+  })
+
+  it('warns that deletion does not cancel a renewing App Store subscription', async () => {
+    mocks.config = { capabilities: { appStoreSubscriptions: true } }
+    mocks.request.mockImplementation(async (path: string) => path === '/api/me/deletion'
+      ? { twoFactorEnabled: false }
+      : path === '/api/billing/summary'
+        ? { subscription: { provider: 'app_store', cancelAtPeriodEnd: false } }
+        : { accountDeletionEnabled: true })
+    await act(async () => root.render(<DeleteAccountForm onClose={() => {}} />))
+    expect(container.textContent).toContain('Deleting your account doesn’t cancel it')
+    await act(async () => Array.from(container.querySelectorAll('button')).find((button) => button.textContent === 'Manage App Store subscriptions')!.click())
+    expect(mocks.openURL).toHaveBeenCalledWith('https://apps.apple.com/account/subscriptions')
+    await enterPassword(); await requestDeletion()
+    mocks.deleteAccount.mockResolvedValueOnce({ status: 'deletion_requested' })
+    await confirmDeletion()
+    expect(mocks.alert).toHaveBeenLastCalledWith('Account deletion started', expect.stringContaining('Cancel your App Store subscription'))
+  })
+
+  it('does not check App Store billing on instances without it', async () => {
+    await mount({ accountDeletionEnabled: true })
+    expect(mocks.request).not.toHaveBeenCalledWith('/api/billing/summary')
+    expect(container.textContent).not.toContain('App Store')
   })
 
   it('reports acceptance separately from local cleanup failures', async () => {

@@ -7,6 +7,15 @@ export const PLAN_MONTHLY_PRICE_CENTS: Record<PaidBillingPlan, number> = {
   fat: 2_400,
 }
 
+/**
+ * US prices of the App Store subscriptions, which cover Apple's commission. App Store
+ * Connect sets the price in each storefront; the iOS app shows StoreKit's localized price.
+ */
+export const APP_STORE_PLAN_MONTHLY_PRICE_CENTS: Record<PaidBillingPlan, number> = {
+  eight: 999,
+  fat: 2_999,
+}
+
 // Plans include weekly and five-hour allowances instead of monthly platform credits.
 export const PLAN_MONTHLY_CREDIT_MICROS: Record<PaidBillingPlan, number> = {
   eight: 0,

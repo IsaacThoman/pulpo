@@ -1,7 +1,7 @@
 import { protectTranscriptRequest } from '../data/transcriptResidency'
 import { CLIENT_PLATFORM_HEADER } from '@pulpo/contracts'
 import type { NativeDevice, DeviceSessionList, MobileConfig, NativeAuthResponse, PasskeyAuthenticationResponse, PasskeyCeremony, PasskeyList, PasskeyRegistrationResponse, PasskeySummary, TwoFactorEnrollment, TwoFactorRecoveryCodes, TwoFactorStatus, User } from '@pulpo/contracts'
-import type { MobileModel, ServerChat, ServerDeletedChat, ServerFolder } from '../types'
+import type { BillingSubscription, MobileBillingSummary, MobileModel, ServerChat, ServerDeletedChat, ServerFolder } from '../types'
 
 export class ApiError extends Error {
   constructor(
@@ -212,6 +212,11 @@ export const mobileApi = {
   folders: () => apiRequest<{ data: ServerFolder[] }>('/api/folders'),
   settings: () => apiRequest<{ values: Record<string, unknown>; updatedAt: string | null }>('/api/settings'),
   updateSettings: (patch: Record<string, unknown>) => apiRequest<{ values: Record<string, unknown>; updatedAt: string }>('/api/settings', { method: 'PATCH', body: patch }),
+  billingSummary: () => apiRequest<MobileBillingSummary>('/api/billing/summary'),
+  syncAppStoreTransaction: (signedTransaction: string, signedRenewalInfo: string | null) =>
+    apiRequest<{ subscription: BillingSubscription | null }>('/api/billing/app-store/transactions', {
+      method: 'POST', body: { signedTransaction, signedRenewalInfo }, timeoutMs: 30_000,
+    }),
 }
 
 export function isNetworkError(error: unknown): boolean {

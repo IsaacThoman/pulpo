@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import i18n from '@/i18n'
 import {
+  appStoreManaged,
   autoTopUpSettingsError,
   autoTopUpStatusLine,
   defaultAutoTopUpSettings,
@@ -45,13 +46,20 @@ describe('plan comparison choices', () => {
   it('uses only the Stripe subscription for plan-management state', () => {
     expect(managedBillingPlan({ subscription: null })).toBe('baby')
     expect(managedBillingPlan({ subscription: {
-      plan: 'eight', pendingPlan: null, status: 'active', cancelAtPeriodEnd: false, currentPeriodEnd: null,
+      provider: 'stripe', plan: 'eight', pendingPlan: null, status: 'active', cancelAtPeriodEnd: false, currentPeriodEnd: null,
     } })).toBe('eight')
+  })
+
+  it('recognizes plans billed through the App Store', () => {
+    const subscription = { plan: 'fat' as const, pendingPlan: null, status: 'active', cancelAtPeriodEnd: false, currentPeriodEnd: null }
+    expect(appStoreManaged({ subscription: { ...subscription, provider: 'app_store' } })).toBe(true)
+    expect(appStoreManaged({ subscription: { ...subscription, provider: 'stripe' } })).toBe(false)
+    expect(appStoreManaged({ subscription: null })).toBe(false)
   })
 
   it('keeps the paid plan current while a downgrade waits for renewal', () => {
     const summary = { subscription: {
-      plan: 'fat' as const, pendingPlan: 'eight' as const, status: 'active', cancelAtPeriodEnd: false, currentPeriodEnd: null,
+      provider: 'stripe' as const, plan: 'fat' as const, pendingPlan: 'eight' as const, status: 'active', cancelAtPeriodEnd: false, currentPeriodEnd: null,
     } }
     expect(managedBillingPlan(summary)).toBe('fat')
     expect(pendingBillingPlan(summary)).toBe('eight')

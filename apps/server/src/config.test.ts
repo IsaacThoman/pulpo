@@ -15,6 +15,33 @@ describe('server configuration', () => {
     }).PULPO_BILLING_ENABLED).toBe(true)
   })
 
+  it('requires Stripe billing and distinct products for App Store billing', () => {
+    const stripe = {
+      PULPO_BILLING_ENABLED: 'true',
+      STRIPE_SECRET_KEY: 'sk_test_example',
+      STRIPE_WEBHOOK_SECRET: 'whsec_example',
+      STRIPE_CREDIT_PRODUCT_ID: 'prod_credits',
+      STRIPE_EIGHT_PRICE_ID: 'price_eight',
+      STRIPE_FAT_PRICE_ID: 'price_fat',
+    }
+    const appStore = {
+      APP_STORE_BILLING_ENABLED: 'true',
+      APP_STORE_APP_APPLE_ID: '6740000000',
+      APP_STORE_EIGHT_PRODUCT_ID: 'baby.pulpo.eight.monthly',
+      APP_STORE_FAT_PRODUCT_ID: 'baby.pulpo.fat.monthly',
+    }
+    expect(parseConfig({}).APP_STORE_BILLING_ENABLED).toBe(false)
+    expect(() => parseConfig(appStore)).toThrow(/requires PULPO_BILLING_ENABLED/)
+    expect(() => parseConfig({ ...stripe, APP_STORE_BILLING_ENABLED: 'true' })).toThrow(/APP_STORE_APP_APPLE_ID/)
+    expect(() => parseConfig({ ...stripe, ...appStore, APP_STORE_FAT_PRODUCT_ID: appStore.APP_STORE_EIGHT_PRODUCT_ID }))
+      .toThrow(/must be different products/)
+    const config = parseConfig({ ...stripe, ...appStore })
+    expect(config.APP_STORE_APP_APPLE_ID).toBe(6_740_000_000)
+    expect(config.APP_STORE_BUNDLE_ID).toBe('com.isaacthoman.pulpo')
+    expect(config.APP_STORE_ACCEPT_SANDBOX).toBe(true)
+    expect(parseConfig({ ...stripe, ...appStore, APP_STORE_ACCEPT_SANDBOX: 'false' }).APP_STORE_ACCEPT_SANDBOX).toBe(false)
+  })
+
   it('treats empty optional workspace controller values as unset', () => {
     const config = parseConfig({
       WORKSPACE_CONTROLLER_URL: '',

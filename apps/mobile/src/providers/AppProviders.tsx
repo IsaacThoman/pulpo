@@ -13,6 +13,7 @@ import { useSessionStore } from '../store/session'
 import { isNetworkError } from '../api/client'
 import { useAppTheme } from '../theme'
 import { purgeLegacyPrototypeSnapshots } from '../mockup5/src/store/prototypeStore'
+import { AppStoreTransactionSync } from '../features/billing/AppStoreTransactionSync'
 import { RealtimeProvider } from './RealtimeProvider'
 import { ConnectivityProvider } from './ConnectivityProvider'
 import { startKeyboardStateReconciliation } from './keyboardStateReconciliation'
@@ -98,7 +99,7 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
       <KeyboardStateReconciler>
         <SafeAreaProvider>
           <QueryClientProvider client={queryClient}>
-            <ConnectivityProvider><Bootstrap><RealtimeProvider>{children}<MaterialOverlays /></RealtimeProvider></Bootstrap></ConnectivityProvider>
+            <ConnectivityProvider><Bootstrap><RealtimeProvider>{children}<MaterialOverlays /><AppStoreTransactionSync /></RealtimeProvider></Bootstrap></ConnectivityProvider>
           </QueryClientProvider>
         </SafeAreaProvider>
       </KeyboardStateReconciler>

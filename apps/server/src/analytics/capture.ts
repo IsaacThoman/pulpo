@@ -2,8 +2,9 @@ import { and, eq, inArray, isNull, lt, sql } from 'drizzle-orm'
 import type { FastifyRequest } from 'fastify'
 import { CLIENT_PLATFORM_HEADER, parseClientPlatformHeader, type ClientPlatform } from '@pulpo/contracts'
 import { db } from '../database/client.js'
-import { applicationSettings, billingAccounts, billingSubscriptions, requestAnalytics, responses, userPreferences } from '../database/schema.js'
+import { applicationSettings, billingAccounts, requestAnalytics, responses, userPreferences } from '../database/schema.js'
 import { getConfig } from '../config.js'
+import { loadPlanSubscriptions } from '../billing/plan-subscriptions.js'
 import { resolvePlanEntitlement } from '../billing/plans.js'
 import { parsePersonalizationSettings } from '../settings/application-settings.js'
 import { newId } from '../lib/ids.js'
@@ -54,12 +55,7 @@ async function planForUser(userId: string): Promise<string | null> {
   if (!getConfig().PULPO_BILLING_ENABLED) return null
   const [[account], subscriptions] = await Promise.all([
     db.select({ planOverride: billingAccounts.planOverride }).from(billingAccounts).where(eq(billingAccounts.userId, userId)).limit(1),
-    db.select({
-      plan: billingSubscriptions.plan,
-      paidPlan: billingSubscriptions.paidPlan,
-      status: billingSubscriptions.status,
-      paidThrough: billingSubscriptions.paidThrough,
-    }).from(billingSubscriptions).where(eq(billingSubscriptions.userId, userId)),
+    loadPlanSubscriptions(db, userId),
   ])
   return resolvePlanEntitlement(subscriptions, account?.planOverride).plan
 }

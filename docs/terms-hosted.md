@@ -1,6 +1,6 @@
 # Pulpo hosted service terms of service
 
-**Effective September 5, 2026**
+**Effective October 6, 2026**
 
 These Terms of Service (the **“Terms”**) are an agreement between you and Isaac Thoman, doing business as Pulpo (**“Pulpo,” “we,” “us,”** or **“our”**), concerning your access to and use of the Pulpo service hosted at [pulpo.baby](https://pulpo.baby), including through the Pulpo website, mobile app, desktop app, command-line client, or another compatible client (collectively, the **“Hosted Service”**).
 
@@ -111,11 +111,19 @@ Pulpo may offer paid monthly plans. The price, billing frequency, included benef
 
 **Paid plans renew automatically each month until canceled.** By subscribing, you authorize Pulpo and its payment processor to charge your selected payment method at the disclosed price, plus applicable taxes, on a recurring monthly basis. If a payment date falls on a date that does not occur in a particular month, the payment processor may charge on another appropriate date under its rules.
 
-You may cancel online at any time from the Hosted Service's Billing page or linked billing portal. Cancellation stops future renewals and normally takes effect at the end of the current paid billing period. Unless required by law, canceling does not provide a refund for the current period. You will retain paid-plan access through the end of the period for which payment was successfully collected, unless access is restricted under these Terms.
+Except for App Store subscriptions described below, you may cancel online at any time from the Hosted Service's Billing page or linked billing portal. Cancellation stops future renewals and normally takes effect at the end of the current paid billing period. Unless required by law, canceling does not provide a refund for the current period. You will retain paid-plan access through the end of the period for which payment was successfully collected, unless access is restricted under these Terms.
 
 Plan changes generally take effect immediately. An upgrade or downgrade may result in an immediate prorated charge or credit calculated by the payment processor. The amount and effect of a proposed plan change will be displayed or otherwise made available before confirmation when required by law.
 
 We may change recurring prices or material subscription terms prospectively. We will provide advance notice and cancellation instructions as required by law. A new price will not be charged until the applicable notice period has passed.
+
+### Subscriptions purchased through the App Store
+
+If you subscribe in the Pulpo iOS app, Apple sells the subscription as an App Store in-app purchase and charges your Apple Account. Apple's terms, including the Apple Media Services Terms and Conditions, govern the payment, automatic renewal, cancellation, and refunds for that purchase. App Store prices are set for each App Store storefront and may differ from the price of the same plan bought directly from Pulpo. An App Store subscription provides the same plan benefits as the same plan bought directly from Pulpo.
+
+App Store subscriptions renew automatically at the end of each period unless you cancel at least 24 hours before it ends. To change or cancel one, use the subscription settings of your Apple Account; the Hosted Service's Billing page and billing portal cannot change it. Plan changes follow Apple's rules: an upgrade takes effect immediately, and a downgrade takes effect at your next renewal. Request refunds for App Store purchases from Apple. If Apple refunds a purchase, the plan benefits it paid for end, and the refund is treated as a reversed payment under Section 11.
+
+Each App Store subscription belongs to the Pulpo account that bought or first restored it and cannot be moved to another account. Family Sharing does not extend Pulpo plans to other people.
 
 ## 11. Credits, usage charges, and balances
 
@@ -129,7 +137,7 @@ Credits remain available while your account is open unless they are refunded, re
 
 Unused Credits are forfeited when you request permanent account deletion, except where applicable law requires another result. Contact support before requesting deletion if you have questions about an unused balance. If Pulpo permanently discontinues the Hosted Service, we will provide a reasonable opportunity to use remaining Credits or another remedy where required by law.
 
-You are responsible for applicable taxes other than taxes imposed on Pulpo's income. Stripe currently processes Hosted Service payments; Pulpo does not store complete payment-card details.
+You are responsible for applicable taxes other than taxes imposed on Pulpo's income. Stripe currently processes payments made directly to Pulpo, and Apple processes App Store purchases. Pulpo does not store complete payment-card details. Credits are sold only directly by Pulpo and are not available as App Store purchases.
 
 ## 12. Privacy
 
@@ -137,7 +145,7 @@ Our [hosted service privacy policy](./privacy-hosted) explains how we handle inf
 
 ## 13. Suspension, termination, and account deletion
 
-You may stop using the Hosted Service at any time. You may request permanent account deletion through your account settings or, if you cannot access the deletion control, by contacting [support@pulpo.baby](mailto:support@pulpo.baby). You do not need to cancel a subscription before making a deletion request; we will address any active subscription as part of the deletion process. Deletion is handled as described in the hosted service privacy policy and does not eliminate records we must retain for billing, accounting, fraud prevention, dispute resolution, enforcement, security, or legal compliance.
+You may stop using the Hosted Service at any time. You may request permanent account deletion through your account settings or, if you cannot access the deletion control, by contacting [support@pulpo.baby](mailto:support@pulpo.baby). You do not need to cancel a subscription bought directly from Pulpo before making a deletion request; we will address it as part of the deletion process. We cannot cancel an App Store subscription for you, so cancel it in your Apple Account's subscription settings to stop future App Store charges. Deletion is handled as described in the hosted service privacy policy and does not eliminate records we must retain for billing, accounting, fraud prevention, dispute resolution, enforcement, security, or legal compliance.
 
 We may suspend or terminate access if you materially or repeatedly violate these Terms, create risk or legal exposure, fail to pay amounts due, abuse the Hosted Service, or if continued service is no longer reasonably practicable. When the issue can be cured and immediate action is not needed, we will ordinarily provide notice and a reasonable opportunity to cure or appeal.
 
