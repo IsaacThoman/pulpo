@@ -5,6 +5,7 @@ import { replaceEqualDeep } from '@tanstack/react-query'
 import {
   initialResponseDurationMs,
   mergeResponseSnapshots,
+  truncateChatTitle,
   type CreateQueuedMessageInput,
   type EmbeddedResponseSnapshot,
   type ResponseEvent,
@@ -1301,7 +1302,9 @@ export const useChat = create<ChatState>()((set, get) => ({
     }
     void optimisticRequest('DELETE', `/api/chats/${id}`).catch(() => void queryClient.invalidateQueries({ queryKey: chatsKey() }))
   },
-  renameChat: (id, title) => {
+  renameChat: (id, rawTitle) => {
+    const title = truncateChatTitle(rawTitle)
+    if (!title) return
     set((state) => ({ chats: state.chats.map((chat) => chat.id === id ? { ...chat, title } : chat) }))
     void optimisticRequest('PATCH', `/api/chats/${id}`, { title })
   },
@@ -1604,7 +1607,7 @@ export const useChat = create<ChatState>()((set, get) => ({
       content,
       modelId: generation.effectiveModelId || modelId,
       displayModelId: modelId,
-      title: (content || attachments[0]?.name || 'Image').slice(0, 200),
+      title: truncateChatTitle(content || attachments[0]?.name || '') || 'Image',
       temporary,
       expiresAt: newChatExpiresAt === null ? null : new Date(newChatExpiresAt).toISOString(),
       attachments,
@@ -1630,7 +1633,7 @@ export const useChat = create<ChatState>()((set, get) => ({
         chat: {
           clientId: id,
           modelId,
-          title: (content || attachments[0]?.name || 'Image').slice(0, 200),
+          title: truncateChatTitle(content || attachments[0]?.name || '') || 'Image',
           temporary,
           autoExpire,
           // Staging put the scope on the provisional chat.
@@ -1996,7 +1999,7 @@ export const useChat = create<ChatState>()((set, get) => ({
         : `/api/messages/${messageId}`
       const body = rejectedSend
         ? startChat ? {
-          chat: { ...startChat, clientId: chatId, modelId, title: (content || editedAttachments[0]?.name || 'Image').slice(0, 200) },
+          chat: { ...startChat, clientId: chatId, modelId, title: truncateChatTitle(content || editedAttachments[0]?.name || '') || 'Image' },
           response: responseBody,
         } : responseBody
         : { ...selection, content }

@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { startChatSchema } from '@pulpo/contracts'
+import { createOptimisticSendIdentity } from './optimisticAttachmentSend'
 
 const mocks = vi.hoisted(() => ({
   apiRequest: vi.fn(),
@@ -130,6 +132,27 @@ describe('temporary chat offline behavior', () => {
 
     expect(mocks.queueOfflineMutation).not.toHaveBeenCalled()
     expect(mocks.removeSnapshot).toHaveBeenCalledWith('generated-id')
+  })
+})
+
+describe('new chat title validation', () => {
+  it('sends the full message with an API-valid title when the draft includes a long URL', async () => {
+    const content = `Explain this meme to me\nhttps://example.com/meme?share=${'a'.repeat(250)}`
+    const identity = createOptimisticSendIdentity({ content, createId: () => crypto.randomUUID() })
+    const snapshot = {
+      responseId: identity.responseId, status: 'queued', sequence: 0, output: [], usage: null, error: null,
+      updatedAt: '2026-10-07T13:42:00.000Z',
+    }
+    mocks.apiRequest.mockResolvedValueOnce({ chat: { id: identity.chatId, title: identity.title }, response: snapshot })
+
+    await startChat({
+      chatId: identity.chatId, responseId: identity.responseId, content, modelId: 'model-1', title: identity.title,
+    })
+
+    expect(mocks.apiRequest).toHaveBeenCalledWith('/api/chats/start', expect.objectContaining({ method: 'POST' }))
+    const body = startChatSchema.parse(mocks.apiRequest.mock.calls[0]![1].body)
+    expect(body.chat.title).toHaveLength(200)
+    expect(body.response.input).toBe(content)
   })
 })
 

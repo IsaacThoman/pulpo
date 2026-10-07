@@ -1,3 +1,4 @@
+import { truncateChatTitle } from '@pulpo/contracts'
 import type { CoordinatedUploadState } from './attachmentUploadCoordinator'
 
 export interface StagedAttachment {
@@ -38,13 +39,14 @@ export function createOptimisticSendIdentity(input: {
 }): OptimisticSendIdentity {
   const responseId = input.createId()
   const trimmed = input.content.trim()
+  const title = truncateChatTitle(trimmed
+    ? trimmed.split(/\s+/).slice(0, 7).join(' ')
+    : input.firstAttachmentName ?? '') || 'Attachment chat'
   return {
     chatId: input.activeChatId ?? input.createId(),
     responseId,
     inputMessageId: `${responseId}:input`,
-    title: trimmed
-      ? trimmed.split(/\s+/).slice(0, 7).join(' ')
-      : input.firstAttachmentName ?? 'Attachment chat',
+    title,
   }
 }
 

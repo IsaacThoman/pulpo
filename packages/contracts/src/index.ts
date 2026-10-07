@@ -1776,10 +1776,18 @@ export const persistChatResponseSchema = chatSummarySchema.extend({
 })
 export type PersistChatResponse = z.infer<typeof persistChatResponseSchema>
 
+/** Chat titles are limited in UTF-16 code units, matching `String.length`. */
+export const CHAT_TITLE_MAX_LENGTH = 200
+
+/** Fits a title within the API limit without splitting a surrogate pair. */
+export function truncateChatTitle(title: string): string {
+  return title.trim().slice(0, CHAT_TITLE_MAX_LENGTH).replace(/[\uD800-\uDBFF]$/, '').trimEnd()
+}
+
 export const createChatSchema = z.object({
   clientId: idSchema.optional(),
   modelId: z.string().min(1),
-  title: z.string().trim().min(1).max(200).optional(),
+  title: z.string().trim().min(1).max(CHAT_TITLE_MAX_LENGTH).optional(),
   temporary: z.boolean().default(false),
   autoExpire: z.boolean().default(false),
   /** Files items the agent may read and edit in this chat. */
@@ -1787,7 +1795,7 @@ export const createChatSchema = z.object({
 })
 
 export const updateChatSchema = z.object({
-  title: z.string().trim().min(1).max(200).optional(),
+  title: z.string().trim().min(1).max(CHAT_TITLE_MAX_LENGTH).optional(),
   pinned: z.boolean().optional(),
   folderId: idSchema.nullable().optional(),
   modelId: z.string().min(1).optional(),

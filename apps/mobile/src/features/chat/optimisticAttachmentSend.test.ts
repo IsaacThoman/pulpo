@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { createChatSchema } from '@pulpo/contracts'
 import {
   createOptimisticSendIdentity,
   readyTranscriptAttachments,
@@ -32,6 +33,39 @@ describe('optimistic attachment sends', () => {
     })).toEqual({
       chatId: 'existing', responseId: 'response', inputMessageId: 'response:input', title: 'one two three four five six seven',
     })
+  })
+
+  it.each([
+    ['a long URL', `Explain this meme to me https://example.com/meme?share=${'a'.repeat(250)}`, 'photo.heic'],
+    ['unbroken text', '界'.repeat(201), 'photo.heic'],
+    ['a long attachment filename', '', `${'a'.repeat(220)}.heic`],
+  ])('keeps generated titles within the API limit for %s', (_scenario, content, firstAttachmentName) => {
+    const { title } = createOptimisticSendIdentity({ content, firstAttachmentName, createId: () => 'response' })
+
+    expect(title).toHaveLength(200)
+    expect(createChatSchema.safeParse({ modelId: 'model-1', title }).success).toBe(true)
+  })
+
+  it.each(['', '   '])('falls back to a default title for a blank attachment name %j', (firstAttachmentName) => {
+    const { title } = createOptimisticSendIdentity({ content: '', firstAttachmentName, createId: () => 'response' })
+
+    expect(title).toBe('Attachment chat')
+  })
+
+  it('preserves a title exactly at the API limit', () => {
+    const content = `${'a'.repeat(198)}😀`
+    const { title } = createOptimisticSendIdentity({ content, createId: () => 'response' })
+
+    expect(title).toBe(content)
+    expect(createChatSchema.safeParse({ modelId: 'model-1', title }).success).toBe(true)
+  })
+
+  it('does not split an emoji at the title limit', () => {
+    const { title } = createOptimisticSendIdentity({ content: `${'a'.repeat(199)}😀`, createId: () => 'response' })
+
+    expect(title).toBe('a'.repeat(199))
+    expect(title.isWellFormed()).toBe(true)
+    expect(createChatSchema.safeParse({ modelId: 'model-1', title }).success).toBe(true)
   })
 
   it('stages local upload state then swaps in confirmed server IDs for dispatch', () => {

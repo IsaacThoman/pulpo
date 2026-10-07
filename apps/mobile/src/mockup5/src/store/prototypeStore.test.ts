@@ -150,6 +150,20 @@ describe('prototype store', () => {
     expect(usePrototypeStore.getState().chats.some((item) => item.id === chat.id)).toBe(false);
   });
 
+  it('caps renamed titles at the API limit and ignores blank renames', () => {
+    const renameChat = vi.fn(async () => undefined);
+    configureProductionActions({ renameChat });
+    const original = usePrototypeStore.getState().chats.find((chat) => chat.id === 'c-kv')!.title;
+
+    usePrototypeStore.getState().renameChat('c-kv', '   ');
+    expect(usePrototypeStore.getState().chats.find((chat) => chat.id === 'c-kv')?.title).toBe(original);
+    expect(renameChat).not.toHaveBeenCalled();
+
+    usePrototypeStore.getState().renameChat('c-kv', `https://example.com/${'a'.repeat(250)}`);
+    expect(usePrototypeStore.getState().chats.find((chat) => chat.id === 'c-kv')?.title).toHaveLength(200);
+    expect(renameChat).toHaveBeenCalledWith('c-kv', `https://example.com/${'a'.repeat(180)}`);
+  });
+
   it('rolls back the latest optimistic action when the server rejects it', async () => {
     const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     configureProductionActions({ renameChat: async () => { throw new Error('Rename rejected'); } });
