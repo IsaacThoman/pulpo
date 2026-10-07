@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { eq } from 'drizzle-orm'
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { db, queryClient } from '../database/client.js'
-import { chats, models, providerConnections, sidebarShortcuts, users } from '../database/schema.js'
+import { chats, fileNodes, models, providerConnections, users } from '../database/schema.js'
 
 vi.mock('../responses/events.js', () => ({ publishStateChange: vi.fn(), requestCancellation: vi.fn() }))
 vi.mock('./doc-events.js', () => ({ publishDocsClosed: vi.fn() }))
@@ -13,7 +13,9 @@ vi.mock('../agent/controller.js', () => ({ releaseWorkspaceForChat: vi.fn() }))
 const { createFolder, listFolder, moveFileNodes, restoreFileNodes, trashFileNodes, updateFileNode } = await import('./tree-service.js')
 const { ensureSystemFolders } = await import('./system-folders.js')
 const { chatFolderId } = await import('./chat-items.js')
-const { archiveItems, createShortcut, createSidebarFolder, legacyFolderList, sidebarState, updateSidebarFolder } = await import('../sidebar/service.js')
+const { createShortcut } = await import('./shortcuts.js')
+const { copyFileNodes } = await import('./copy-service.js')
+const { archiveItems, createSidebarFolder, legacyFolderList, moveSidebarItems, sidebarFolderItems, sidebarState } = await import('../sidebar/service.js')
 
 const enabled = process.env.PULPO_FILES_TESTS === 'true'
 let userId: string
@@ -39,7 +41,7 @@ describe.skipIf(!enabled)('chats filed in Files folders', () => {
   })
   afterAll(async () => { await queryClient.end() })
 
-  it('creates Chats and Archive once, adopting a folder that already has the name, with an Archive shortcut', async () => {
+  it('creates Chats and Archive once, adopting a folder that already has the name, with an Archive shortcut in Chats', async () => {
     const existing = await createFolder(userId, { parentId: null, name: 'archive' })
     const first = await ensureSystemFolders(userId)
     const second = await ensureSystemFolders(userId)
@@ -47,8 +49,10 @@ describe.skipIf(!enabled)('chats filed in Files folders', () => {
     expect(first.archiveFolderId).toBe(existing.id)
     const root = await listFolder(userId, null)
     expect(root.children.map((node) => [node.name, node.systemRole])).toEqual([['archive', 'archive'], ['Chats', 'chats']])
-    const shortcuts = await db.select().from(sidebarShortcuts).where(eq(sidebarShortcuts.userId, userId))
-    expect(shortcuts.map((shortcut) => shortcut.fileNodeId)).toEqual([first.archiveFolderId])
+    const items = await sidebarFolderItems(userId, first.chatsFolderId, true)
+    expect(items).toEqual([expect.objectContaining({
+      kind: 'shortcut', name: 'Archive', target: expect.objectContaining({ kind: 'folder', id: first.archiveFolderId, systemRole: 'archive', available: true }),
+    })])
   })
 
   it('keeps built-in folders from being renamed, moved, or trashed', async () => {
@@ -67,7 +71,7 @@ describe.skipIf(!enabled)('chats filed in Files folders', () => {
     expect(work.parentId).toBe(chatsFolderId)
     expect((await listFolder(userId, work.id)).children).toEqual([expect.objectContaining({ id: filed, kind: 'chat', name: 'Filed', parentId: work.id })])
     const chatsListing = await listFolder(userId, chatsFolderId)
-    expect(chatsListing.children.map((node) => [node.name, node.kind])).toEqual([['Work', 'folder'], ['Loose', 'chat']])
+    expect(chatsListing.children.map((node) => [node.name, node.kind])).toEqual([['Work', 'folder'], ['Archive', 'shortcut'], ['Loose', 'chat']])
     expect(chatsListing.children.find((node) => node.id === loose)?.parentId).toBe(chatsFolderId)
   })
 
@@ -115,26 +119,37 @@ describe.skipIf(!enabled)('chats filed in Files folders', () => {
     expect(state.folders.find((folder) => folder.id === work.id)?.parentId).toBe(archiveFolderId)
   })
 
-  it('moves sidebar folders back to the top of the Chats folder', async () => {
+  it('moves chats and items to the top of the Chats folder', async () => {
     const { chatsFolderId } = await ensureSystemFolders(userId)
     const work = await createSidebarFolder(userId, { name: 'Work' })
     const nested = await createSidebarFolder(userId, { name: 'Nested', parentId: work.id })
-    expect((await updateSidebarFolder(userId, nested.id, { parentId: null })).parentId).toBe(chatsFolderId)
+    const chat = await insertChat(work.id)
+    const moved = await moveSidebarItems(userId, [nested.id, chat], null)
+    expect(moved.map((node) => node.parentId)).toEqual([chatsFolderId, chatsFolderId])
+    expect((await chatRow(chat)).folderId).toBeNull()
   })
 
-  it('resolves shortcuts and includes the folders they reach', async () => {
-    await ensureSystemFolders(userId)
-    const elsewhere = await createFolder(userId, { parentId: null, name: 'Projects' })
-    const inner = await createFolder(userId, { parentId: elsewhere.id, name: 'Inner' })
-    const chat = await insertChat(null, 'Starred')
-    await createShortcut(userId, 'file', elsewhere.id)
-    const shortcuts = await createShortcut(userId, 'chat', chat)
-    // Archive's shortcut comes first, created with the account's built-in folders.
-    expect(shortcuts.map((shortcut) => [shortcut.name, shortcut.kind])).toEqual([['Archive', 'folder'], ['Projects', 'folder'], ['Starred', 'chat']])
-    const state = await sidebarState(userId)
-    expect(state.folders.map((folder) => folder.id)).toEqual(expect.arrayContaining([elsewhere.id, inner.id]))
-    await trashFileNodes(userId, [elsewhere.id])
-    expect((await sidebarState(userId)).shortcuts.map((shortcut) => shortcut.name)).toEqual(['Archive', 'Starred'])
+  it('places shortcuts in any folder and resolves what they open', async () => {
+    const { chatsFolderId } = await ensureSystemFolders(userId)
+    const projects = await createFolder(userId, { parentId: null, name: 'Projects' })
+    const chat = await insertChat(null, 'Trip / plans')
+    const toFolder = await createShortcut(userId, { targetKind: 'file', targetId: projects.id })
+    const toChat = await createShortcut(userId, { targetKind: 'chat', targetId: chat, parentId: projects.id })
+    expect(toFolder).toMatchObject({ kind: 'shortcut', parentId: chatsFolderId, name: 'Projects', target: { kind: 'folder', id: projects.id, available: true } })
+    // Names Files cannot hold are made valid.
+    expect(toChat).toMatchObject({ parentId: projects.id, name: 'Trip - plans', target: { kind: 'chat', id: chat, available: true } })
+    await expect(createShortcut(userId, { targetKind: 'file', targetId: toFolder.id })).rejects.toMatchObject({ code: 'file_shortcut_to_shortcut' })
+
+    // A shortcut to a trashed item stays, marked unavailable; deleting the item removes it.
+    await trashFileNodes(userId, [chat])
+    expect((await listFolder(userId, projects.id)).children.find((node) => node.id === toChat.id)?.target).toMatchObject({ available: false })
+    await db.delete(chats).where(eq(chats.id, chat))
+    expect((await listFolder(userId, projects.id)).children.find((node) => node.id === toChat.id)).toBeUndefined()
+
+    // Shortcuts move, copy (still opening the same item), and trash like files.
+    const [copy] = await copyFileNodes(userId, [toFolder.id], projects.id)
+    const [row] = await db.select().from(fileNodes).where(eq(fileNodes.id, copy!.id))
+    expect(row).toMatchObject({ kind: 'shortcut', targetNodeId: projects.id })
   })
 
   it('creates sidebar folders idempotently with a client id, suffixing taken names', async () => {

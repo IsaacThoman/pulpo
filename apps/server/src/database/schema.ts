@@ -849,6 +849,11 @@ export const fileNodes = pgTable('file_nodes', {
   revision: integer('revision').notNull().default(0),
   // Set on the account's built-in top-level folders (see FileSystemRole).
   systemRole: text('system_role'),
+  // What a shortcut opens: another Files item or a chat. Removing the target removes its shortcuts.
+  targetNodeId: uuid('target_node_id').references((): AnyPgColumn => fileNodes.id, { onDelete: 'cascade' }),
+  // References chats(id) through a deferrable constraint added in the migration, so a backup can
+  // restore Files (which chats are filed in) before the chats that shortcuts point at.
+  targetChatId: uuid('target_chat_id'),
   ...timestamps,
 }, (table) => [
   uniqueIndex('file_nodes_owner_system_role_unique').on(table.ownerUserId, table.systemRole).where(sql`${table.systemRole} is not null`),
@@ -860,28 +865,16 @@ export const fileNodes = pgTable('file_nodes', {
   index('file_nodes_owner_parent_idx').on(table.ownerUserId, table.parentId).where(sql`${table.trashedAt} is null`),
   index('file_nodes_owner_trash_idx').on(table.ownerUserId, table.trashRootId).where(sql`${table.trashedAt} is not null`),
   index('file_nodes_object_key_idx').on(table.objectKey),
-  check('file_nodes_kind_check', sql`${table.kind} in ('folder', 'doc', 'blob')`),
+  check('file_nodes_kind_check', sql`${table.kind} in ('folder', 'doc', 'blob', 'shortcut')`),
+  // Shortcuts have exactly one target; nothing else has one.
+  check('file_nodes_shortcut_check', sql`num_nonnulls(${table.targetNodeId}, ${table.targetChatId}) = case when ${table.kind} = 'shortcut' then 1 else 0 end`),
+  index('file_nodes_target_chat_idx').on(table.targetChatId).where(sql`${table.targetChatId} is not null`),
+  index('file_nodes_target_node_idx').on(table.targetNodeId).where(sql`${table.targetNodeId} is not null`),
   check('file_nodes_status_check', sql`${table.status} in ('pending', 'ready')`),
   check('file_nodes_name_check', sql`char_length(${table.name}) between 1 and 255`),
   check('file_nodes_size_check', sql`${table.sizeBytes} >= 0`),
   check('file_nodes_blob_check', sql`(${table.kind} = 'blob') = (${table.objectKey} is not null)`),
   check('file_nodes_system_role_check', sql`${table.systemRole} is null or (${table.systemRole} in ('chats', 'archive') and ${table.kind} = 'folder' and ${table.parentId} is null)`),
-])
-
-/** Places pinned to the top of the sidebar: a Files item (folders included) or a chat. */
-export const sidebarShortcuts = pgTable('sidebar_shortcuts', {
-  id: uuid('id').primaryKey(),
-  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  targetKind: text('target_kind').notNull(),
-  fileNodeId: uuid('file_node_id').references(() => fileNodes.id, { onDelete: 'cascade' }),
-  chatId: uuid('chat_id').references(() => chats.id, { onDelete: 'cascade' }),
-  sortOrder: integer('sort_order').notNull().default(0),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-}, (table) => [
-  uniqueIndex('sidebar_shortcuts_user_file_unique').on(table.userId, table.fileNodeId).where(sql`${table.fileNodeId} is not null`),
-  uniqueIndex('sidebar_shortcuts_user_chat_unique').on(table.userId, table.chatId).where(sql`${table.chatId} is not null`),
-  index('sidebar_shortcuts_user_idx').on(table.userId, table.sortOrder),
-  check('sidebar_shortcuts_target_check', sql`(${table.targetKind} = 'file' and ${table.fileNodeId} is not null and ${table.chatId} is null) or (${table.targetKind} = 'chat' and ${table.chatId} is not null and ${table.fileNodeId} is null)`),
 ])
 
 /** Collaborative document state: a compacted Yjs update plus Markdown derived from it. */

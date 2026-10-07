@@ -119,7 +119,7 @@ export function useFileOperations() {
 
   const download = async (nodes: readonly FileNode[]) => {
     for (const node of nodes) {
-      if (node.kind === 'folder' || node.kind === 'chat') continue
+      if (node.kind === 'folder' || node.kind === 'chat' || node.kind === 'shortcut') continue
       try {
         if (node.kind === 'doc') await downloadDocMarkdown(node)
         else await downloadFile(node)

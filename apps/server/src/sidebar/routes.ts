@@ -2,29 +2,28 @@ import type { FastifyInstance, FastifyRequest } from 'fastify'
 import { z } from 'zod'
 import {
   archiveItemsSchema,
+  createShortcutSchema,
   createSidebarFolderSchema,
-  createSidebarShortcutSchema,
   fileNameSchema,
-  reorderSidebarShortcutsSchema,
-  updateSidebarFolderSchema,
+  moveSidebarItemsSchema,
+  renameSidebarItemSchema,
 } from '@pulpo/contracts'
 import { requireUser } from '../auth/service.js'
 import { db } from '../database/client.js'
 import { AppError, forbidden, notFound } from '../lib/errors.js'
 import { resolveFileAccess } from '../files/access.js'
 import { filesFeatureEnabled, parseFileInput } from '../files/request.js'
+import { createShortcut } from '../files/shortcuts.js'
 import { trashFileNodes, updateFileNode } from '../files/tree-service.js'
 import {
   archiveItems,
-  createShortcut,
   createSidebarFolder,
-  deleteShortcut,
   legacyFolderList,
-  reorderShortcuts,
-  sidebarFolderFiles,
+  moveSidebarItems,
+  renameSidebarItem,
+  sidebarFolderItems,
   sidebarState,
-  trashSidebarFolder,
-  updateSidebarFolder,
+  trashSidebarItem,
 } from './service.js'
 
 const idParams = z.object({ id: z.uuid() })
@@ -45,43 +44,39 @@ export async function registerSidebarRoutes(app: FastifyInstance): Promise<void>
     return createSidebarFolder(user.id, parseFileInput(createSidebarFolderSchema, request.body))
   })
 
-  app.patch('/api/sidebar/folders/:id', async (request) => {
+  // Subfolders, shortcuts, and files of a folder; chats come from the chat list.
+  app.get('/api/sidebar/folders/:id/items', async (request) => {
     const user = requireSidebarUser(request)
-    return updateSidebarFolder(user.id, idParams.parse(request.params).id, parseFileInput(updateSidebarFolderSchema, request.body))
+    return { items: await sidebarFolderItems(user.id, idParams.parse(request.params).id, await filesFeatureEnabled()) }
   })
 
-  app.delete('/api/sidebar/folders/:id', async (request, reply) => {
+  app.post('/api/sidebar/move', async (request) => {
     const user = requireSidebarUser(request)
-    await trashSidebarFolder(user.id, idParams.parse(request.params).id)
+    const input = moveSidebarItemsSchema.parse(request.body)
+    return { nodes: await moveSidebarItems(user.id, input.ids, input.parentId) }
+  })
+
+  app.patch('/api/sidebar/items/:id', async (request) => {
+    const user = requireSidebarUser(request)
+    return renameSidebarItem(user.id, idParams.parse(request.params).id, parseFileInput(renameSidebarItemSchema, request.body).name)
+  })
+
+  app.delete('/api/sidebar/items/:id', async (request, reply) => {
+    const user = requireSidebarUser(request)
+    await trashSidebarItem(user.id, idParams.parse(request.params).id)
     reply.code(204).send()
   })
 
-  app.get('/api/sidebar/folders/:id/files', async (request) => {
+  // A shortcut to a Files item or a chat, placed in any folder (the Chats folder by default).
+  app.post('/api/sidebar/shortcuts', async (request, reply) => {
     const user = requireSidebarUser(request)
-    return { items: await sidebarFolderFiles(user.id, idParams.parse(request.params).id, await filesFeatureEnabled()) }
+    reply.code(201)
+    return createShortcut(user.id, parseFileInput(createShortcutSchema, request.body))
   })
 
   app.post('/api/sidebar/archive', async (request) => {
     const user = requireSidebarUser(request)
     return archiveItems(user.id, archiveItemsSchema.parse(request.body))
-  })
-
-  app.post('/api/sidebar/shortcuts', async (request, reply) => {
-    const user = requireSidebarUser(request)
-    const input = createSidebarShortcutSchema.parse(request.body)
-    reply.code(201)
-    return { shortcuts: await createShortcut(user.id, input.targetKind, input.targetId) }
-  })
-
-  app.put('/api/sidebar/shortcuts/order', async (request) => {
-    const user = requireSidebarUser(request)
-    return { shortcuts: await reorderShortcuts(user.id, reorderSidebarShortcutsSchema.parse(request.body).ids) }
-  })
-
-  app.delete('/api/sidebar/shortcuts/:id', async (request, reply) => {
-    const user = requireSidebarUser(request)
-    await deleteShortcut(user.id, idParams.parse(request.params).id)
-    reply.code(204).send()
   })
 
   // The chat folder API that older mobile builds and the admin chat view still use, backed by

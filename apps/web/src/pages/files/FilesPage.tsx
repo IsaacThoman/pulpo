@@ -5,8 +5,6 @@ import { FILE_SCOPE_ROOT, MAX_CHAT_FILE_SCOPES, type FileFolderLayout, type File
 import {
   Archive,
   ArrowDown,
-  BookmarkMinus,
-  BookmarkPlus,
   ArrowUp,
   ChevronRight,
   ClipboardPaste,
@@ -26,6 +24,7 @@ import {
   Pencil,
   Plus,
   Scissors,
+  SquareArrowOutUpRight,
   SquareDashedMousePointer,
   Trash2,
   TriangleAlert,
@@ -51,7 +50,7 @@ import { useAuth } from '@/stores/auth'
 import { useSettings } from '@/stores/settings'
 import { createDoc, createFolder, fetchFolder, fetchFolderLayout, folderLayoutQueryKey, folderQueryKey, updateFolderLayout, uploadFile } from '@/features/files/api'
 import { arrangeGrid, GRID_CELL, moveInGrid, readingOrder } from '@/features/files/browser/grid-layout'
-import { filesErrorMessage } from '@/features/files/file-display'
+import { dropFolderOf, filesErrorMessage } from '@/features/files/file-display'
 import { FileMoveDialog } from '@/features/files/FileMoveDialog'
 import { useFilesPageRequest } from '@/features/files/files-page-request'
 import { useFileReveal } from '@/features/files/reveal'
@@ -81,7 +80,7 @@ import { openBeside, panelContentPath, useMainNavigate } from '@/features/side-p
 import { SelectionAction } from '@/features/files/browser/SelectionAction'
 import { useFileOperations } from '@/features/files/browser/use-file-operations'
 import { useItemDrag } from '@/features/files/browser/use-item-drag'
-import { addShortcut, archiveFiles, removeShortcut, SHORTCUTS_DROP_TARGET, shortcutFor, useSidebarState } from '@/features/sidebar/api'
+import { archiveFiles, createShortcutInteractively, useSidebarState } from '@/features/sidebar/api'
 
 const VIEW_STORAGE_KEY = 'pulpo.files.view'
 const UPLOAD_CONCURRENCY = 3
@@ -99,6 +98,13 @@ function readView(): FilesView {
 
 function isFileDrag(event: DragEvent) {
   return event.dataTransfer.types.includes('Files')
+}
+
+/** What opening a shortcut shows: its target, as if it were that item. Other items are themselves. */
+function resolveShortcut(node: FileNode): FileNode {
+  if (node.kind !== 'shortcut' || !node.target?.available) return node
+  const { target } = node
+  return { ...node, id: target.id, kind: target.kind, name: target.name, mimeType: target.mimeType, systemRole: target.systemRole, target: null }
 }
 
 function SortHeader({ label, sortKey, sort, onSort, className }: {
@@ -287,7 +293,13 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
   }
 
   /** Opens an item here: folders browse in place, files fill this view with their editor or preview. */
-  const open = (node: FileNode) => {
+  const open = (node: FileNode): void => {
+    // A shortcut opens what it points at, wherever that is.
+    if (node.kind === 'shortcut') {
+      if (!node.target?.available) ops.notify(ui("The item this shortcut opens is in the trash"), 'error')
+      else open(resolveShortcut(node))
+      return
+    }
     // Chats always open in the main view.
     if (node.kind === 'chat') goMain(`/c/${node.id}`)
     else if (node.kind === 'folder') showFolder(node.id)
@@ -303,12 +315,13 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
    * always browse in place.
    */
   const openFromDoubleClick = (node: FileNode, event: MouseEvent) => {
-    if (node.kind === 'folder' || node.kind === 'chat') { open(node); return }
+    const opens = resolveShortcut(node)
+    if (opens.kind === 'folder' || opens.kind === 'chat' || opens.kind === 'shortcut') { open(node); return }
     // A Cmd/Ctrl-click toggles selection, so the pair of clicks would otherwise leave it unselected.
     setSelection(selectOnly(node.id))
     const swap = hasPrimaryModifier(event)
     const elsewhereByDefault = !panel && doubleClickOpensBeside && splitAvailable
-    if (elsewhereByDefault ? !swap : swap && canOpenElsewhere) openElsewhere(nodeContent(node))
+    if (elsewhereByDefault ? !swap : swap && canOpenElsewhere) openElsewhere(nodeContent(opens))
     else open(node)
   }
 
@@ -559,14 +572,7 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
     },
     // Dropping into the folder the items already live in, or into one of them, does nothing.
     canDrop: (targetId, dragged) => !dragged.some((node) => node.id === targetId) && !dragged.every((node) => node.parentId === targetId),
-    onDrop: (dragged, targetId) => {
-      // Dropped on the sidebar's shortcuts, the items stay put and get shortcuts.
-      if (targetId === SHORTCUTS_DROP_TARGET) {
-        for (const node of dragged) void addShortcut(node.kind === 'chat' ? 'chat' : 'file', node.id).catch(ops.fail)
-        return
-      }
-      void ops.move(dragged, targetId)
-    },
+    onDrop: (dragged, targetId) => { void ops.move(dragged, targetId) },
   })
 
   /** Folder rows and breadcrumbs accept files dropped in from the operating system. */
@@ -635,7 +641,7 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
       const rect = event.currentTarget.getBoundingClientRect()
       openMenuAt({ x: rect.left, y: rect.bottom }, node)
     },
-    dropHandlers: node.kind === 'folder' ? dropProps(node.id) : undefined,
+    dropHandlers: dropFolderOf(node) ? dropProps(dropFolderOf(node)!, node.id) : undefined,
     onRenameCommit: async (name: string) => {
       const ok = await ops.rename(node, name)
       if (ok) setRenamingId(null)
@@ -658,12 +664,11 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
 
   const single = selectedNodes.length === 1 ? selectedNodes[0]! : null
   const canDownload = selectedNodes.length > 0 && selectedNodes.every((node) => node.kind !== 'folder' && node.kind !== 'chat')
-  // Chats are not files the agent can be given, and built-in folders stay where they are.
-  const fileSelection = selectedNodes.filter((node) => node.kind !== 'chat')
-  const hasChats = fileSelection.length < selectedNodes.length
+  // Chats and shortcuts are not files the agent can be given, and built-in folders stay where they are.
+  const fileSelection = selectedNodes.filter((node) => node.kind !== 'chat' && node.kind !== 'shortcut')
+  const hasChats = selectedNodes.some((node) => node.kind === 'chat')
   const hasSystem = selectedNodes.some((node) => node.systemRole)
   const canUseAgent = fileSelection.length > 0 && fileSelection.length <= MAX_CHAT_FILE_SCOPES
-  const singleShortcut = single ? shortcutFor(sidebar, single.id) : undefined
   const archiveSelection = async () => {
     const targets = selectedNodes
     setSelection(EMPTY_SELECTION)
@@ -685,8 +690,8 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
           <DropdownMenuShortcut>↵</DropdownMenuShortcut>
         </DropdownMenuItem>
       )}
-      {single && single.kind !== 'chat' && canOpenElsewhere && (
-        <DropdownMenuItem onSelect={() => openElsewhere(nodeContent(single))}>
+      {single && resolveShortcut(single).kind !== 'chat' && resolveShortcut(single).kind !== 'shortcut' && canOpenElsewhere && (
+        <DropdownMenuItem onSelect={() => openElsewhere(nodeContent(resolveShortcut(single)))}>
           <ElsewhereIcon /> {elsewhereLabel}<DropdownMenuShortcut>{elsewhereShortcut}</DropdownMenuShortcut>
         </DropdownMenuItem>
       )}
@@ -699,9 +704,9 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
       {single && !single.systemRole && <DropdownMenuItem onSelect={() => setRenamingId(single.id)}><Pencil /> {ui("Rename")}<DropdownMenuShortcut>{shortcutLabel('F2')}</DropdownMenuShortcut></DropdownMenuItem>}
       {!hasSystem && <DropdownMenuItem onSelect={() => setMoving(selectedNodes)}><FolderInput /> {ui("Move to…")}</DropdownMenuItem>}
       {!hasSystem && sidebar && <DropdownMenuItem onSelect={() => void archiveSelection()}><Archive /> {ui("Move to archive")}</DropdownMenuItem>}
-      {single && sidebar && (
-        <DropdownMenuItem onSelect={() => void (singleShortcut ? removeShortcut(singleShortcut.id) : addShortcut(single.kind === 'chat' ? 'chat' : 'file', single.id)).catch(ops.fail)}>
-          {singleShortcut ? <BookmarkMinus /> : <BookmarkPlus />} {singleShortcut ? ui("Remove shortcut") : ui("Add shortcut")}
+      {single && single.kind !== 'shortcut' && (
+        <DropdownMenuItem onSelect={() => void createShortcutInteractively(single.kind === 'chat' ? 'chat' : 'file', single.id, folderId).then(() => ops.refresh()).catch(ops.fail)}>
+          <SquareArrowOutUpRight /> {ui("Create shortcut…")}
         </DropdownMenuItem>
       )}
       {!hasChats && <DropdownMenuItem onSelect={() => void duplicate()}><CopyPlus /> {ui("Duplicate")}<DropdownMenuShortcut>{shortcutLabel('D', { mod: true })}</DropdownMenuShortcut></DropdownMenuItem>}
@@ -763,7 +768,7 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
         focused={keyboardFocus && selection.focus === node.id}
         cut={cutIds.has(node.id)}
         dragging={drag.draggingIds.has(node.id)}
-        dropActive={dropTarget === node.id || drag.activeTarget === node.id}
+        dropActive={dropTarget === node.id || (drag.activeTarget !== null && drag.activeTarget === dropFolderOf(node))}
         renaming={renamingId === node.id}
         {...itemHandlers(node)}
       />

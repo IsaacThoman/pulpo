@@ -63,8 +63,9 @@ export function nextAvailableName(desired: string, takenLowercase: ReadonlySet<s
 /**
  * `chat` items are chats filed in a folder. They are listed beside files and can be moved,
  * renamed, and trashed with them, but they live in the chats table, not the Files tree.
+ * `shortcut` items open another item (a folder, file, or chat) from wherever they are placed.
  */
-export const fileNodeKindSchema = z.enum(['folder', 'doc', 'blob', 'chat'])
+export const fileNodeKindSchema = z.enum(['folder', 'doc', 'blob', 'chat', 'shortcut'])
 export const fileNodeStatusSchema = z.enum(['pending', 'ready'])
 
 /**
@@ -88,6 +89,15 @@ export const fileNodeSchema = z.object({
   createdAt: z.string(),
   updatedAt: z.string(),
   systemRole: fileSystemRoleSchema.nullable().optional(),
+  /** What a shortcut opens. `available` is false while the target is in the trash. */
+  target: z.object({
+    kind: z.enum(['folder', 'doc', 'blob', 'chat']),
+    id: z.uuid(),
+    name: z.string(),
+    mimeType: z.string().nullable(),
+    systemRole: fileSystemRoleSchema.nullable(),
+    available: z.boolean(),
+  }).nullable().optional(),
 })
 
 export const createFileFolderSchema = z.object({
@@ -189,32 +199,16 @@ export interface FileListing {
   children: FileNode[]
 }
 
-/** Sidebar shortcuts point at a Files item (any kind, folders included) or a chat. */
-export const sidebarShortcutTargetSchema = z.enum(['file', 'chat'])
-export type SidebarShortcutTarget = z.infer<typeof sidebarShortcutTargetSchema>
-export const MAX_SIDEBAR_SHORTCUTS = 50
-
-export const createSidebarShortcutSchema = z.object({
-  targetKind: sidebarShortcutTargetSchema,
+/** A shortcut to a Files item or a chat, placed in `parentId` (null is My files; omitted, the Chats folder). */
+export const createShortcutSchema = z.object({
+  targetKind: z.enum(['file', 'chat']),
   targetId: z.uuid(),
+  parentId: z.uuid().nullable().optional(),
+  name: fileNameSchema.optional(),
 })
+export type CreateShortcut = z.input<typeof createShortcutSchema>
 
-export const reorderSidebarShortcutsSchema = z.object({
-  ids: z.array(z.uuid()).min(1).max(MAX_SIDEBAR_SHORTCUTS),
-})
-
-/** A shortcut with its target resolved; shortcuts whose target is gone are not listed. */
-export interface SidebarShortcut {
-  id: string
-  targetKind: SidebarShortcutTarget
-  targetId: string
-  name: string
-  /** The target's kind: a Files kind for file shortcuts, `chat` for chats. */
-  kind: FileNodeKind
-  systemRole: FileSystemRole | null
-}
-
-/** A folder the sidebar can show: the Chats and Archive trees, and folders reached by shortcuts. */
+/** A folder of the Chats and Archive trees, for the sidebar's move menu. */
 export interface SidebarFolder {
   id: string
   parentId: string | null
@@ -226,7 +220,6 @@ export interface SidebarState {
   chatsFolderId: string
   archiveFolderId: string
   folders: SidebarFolder[]
-  shortcuts: SidebarShortcut[]
 }
 
 export const createSidebarFolderSchema = z.object({
@@ -237,11 +230,13 @@ export const createSidebarFolderSchema = z.object({
   name: fileNameSchema,
 })
 
-export const updateSidebarFolderSchema = z.object({
-  name: fileNameSchema.optional(),
-  /** Null moves the folder back to the top of the Chats folder. */
-  parentId: z.uuid().nullable().optional(),
-}).refine((input) => input.name !== undefined || input.parentId !== undefined, { message: 'Nothing to update' })
+export const renameSidebarItemSchema = z.object({ name: fileNameSchema })
+
+/** Moves chats and Files items into a folder; null is the Chats folder (the top of the sidebar). */
+export const moveSidebarItemsSchema = z.object({
+  ids: z.array(z.uuid()).min(1).max(FILE_BATCH_MAX_ITEMS),
+  parentId: z.uuid().nullable(),
+})
 
 export const archiveItemsSchema = z.object({
   chatIds: z.array(z.uuid()).max(FILE_BATCH_MAX_ITEMS).default([]),
@@ -249,7 +244,6 @@ export const archiveItemsSchema = z.object({
 }).refine((input) => input.chatIds.length + input.fileIds.length > 0, { message: 'Nothing to archive' })
 
 export type CreateSidebarFolder = z.input<typeof createSidebarFolderSchema>
-export type UpdateSidebarFolder = z.input<typeof updateSidebarFolderSchema>
 export type ArchiveItems = z.input<typeof archiveItemsSchema>
 
 export interface FileUploadReservation {

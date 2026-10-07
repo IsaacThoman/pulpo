@@ -1,20 +1,20 @@
 import { useQuery } from '@tanstack/react-query'
-import type { FileNode, SidebarFolder, SidebarShortcut, SidebarShortcutTarget, SidebarState } from '@pulpo/contracts'
+import type { FileNode, SidebarFolder, SidebarState } from '@pulpo/contracts'
 import { create } from 'zustand'
 import { apiRequest } from '@/lib/api'
 import { queryClient } from '@/lib/query-client'
 import { isDesktopRuntime } from '@/lib/runtime'
 import { useAuth } from '@/stores/auth'
 import { useChat } from '@/stores/chat'
+import { ui } from '@/i18n/ui'
 
 /*
- * The sidebar shows folders from Files: the Chats folder's folders, Archive, and folders reached
- * through shortcuts. Everything here lives under ['folders', userId], which the 'folders' and
- * 'files' realtime scopes refresh.
+ * The sidebar is the Chats folder in Files: its folders, shortcuts, files, and chats. Everything
+ * here lives under ['folders', userId], which the 'folders' and 'files' realtime scopes refresh.
  */
 // 'sidebar' keeps the persisted cache apart from the old chat folder list stored at ['folders', userId].
 export const sidebarQueryKey = (userId: string | undefined) => ['folders', userId, 'sidebar'] as const
-export const sidebarFolderFilesKey = (userId: string | undefined, folderId: string) => ['folders', userId, 'files', folderId] as const
+export const sidebarItemsKey = (userId: string | undefined, folderId: string) => ['folders', userId, 'items', folderId] as const
 
 export function useSidebarState() {
   const userId = useAuth((state) => state.user?.id)
@@ -31,25 +31,26 @@ export function useSidebarState() {
   })
 }
 
-/** The Files items (not folders or chats) in an expanded folder. */
-export function useSidebarFolderFiles(folderId: string, enabled: boolean) {
+/** A folder's subfolders, shortcuts, and files (its chats come from the chat list), once open. */
+export function useSidebarItems(folderId: string | undefined, enabled = true) {
   const userId = useAuth((state) => state.user?.id)
-  const filesEnabled = useAuth((state) => state.filesEnabled)
   return useQuery({
-    queryKey: sidebarFolderFilesKey(userId, folderId),
-    queryFn: ({ signal }) => apiRequest<{ items: FileNode[] }>(`/api/sidebar/folders/${folderId}/files`, { signal }).then((result) => result.items),
-    enabled: Boolean(userId && enabled && filesEnabled),
+    queryKey: sidebarItemsKey(userId, folderId ?? ''),
+    queryFn: ({ signal }) => apiRequest<{ items: FileNode[] }>(`/api/sidebar/folders/${folderId}/items`, { signal }).then((result) => result.items),
+    enabled: Boolean(userId && folderId && enabled),
+    staleTime: 0,
     refetchOnWindowFocus: false,
   })
 }
-
-/** Drop target the Files browser's pointer drag recognizes for adding sidebar shortcuts. */
-export const SHORTCUTS_DROP_TARGET = 'sidebar-shortcuts'
 
 const currentKey = () => sidebarQueryKey(useAuth.getState().user?.id)
 const readState = () => queryClient.getQueryData<SidebarState>(currentKey())
 const writeState = (update: (state: SidebarState) => SidebarState) => {
   queryClient.setQueryData<SidebarState>(currentKey(), (state) => state && update(state))
+}
+/** Applies a change to every loaded folder listing in the sidebar. */
+const writeItems = (update: (items: FileNode[]) => FileNode[]) => {
+  queryClient.setQueriesData<FileNode[]>({ queryKey: ['folders', useAuth.getState().user?.id, 'items'] }, (items) => items && update(items))
 }
 const refresh = () => Promise.all([
   queryClient.invalidateQueries({ queryKey: ['folders', useAuth.getState().user?.id] }),
@@ -113,48 +114,48 @@ export async function createSidebarFolder(name: string, parentId?: string): Prom
   )
 }
 
-export function renameSidebarFolder(id: string, name: string): Promise<FileNode> {
-  return mutate(
-    () => writeState((state) => ({ ...state, folders: state.folders.map((folder) => folder.id === id ? { ...folder, name } : folder) })),
-    () => apiRequest<FileNode>(`/api/sidebar/folders/${id}`, { method: 'PATCH', body: { name } }),
-  )
+/** Renames a folder, file, or shortcut. */
+export function renameSidebarItem(id: string, name: string): Promise<FileNode> {
+  return mutate(() => {
+    writeState((state) => ({ ...state, folders: state.folders.map((folder) => folder.id === id ? { ...folder, name } : folder) }))
+    writeItems((items) => items.map((item) => item.id === id ? { ...item, name } : item))
+  }, () => apiRequest<FileNode>(`/api/sidebar/items/${id}`, { method: 'PATCH', body: { name } }))
 }
 
-/** Moves a folder into another one, or (null) to the top of the sidebar. */
-export function moveSidebarFolder(id: string, parentId: string | null): Promise<FileNode> {
-  const state = readState()
+/** Moves Files items (folders, files, shortcuts) into a folder, or (null) to the top of the sidebar. */
+export function moveSidebarItems(ids: string[], parentId: string | null): Promise<unknown> {
   if (parentId) useFolderExpansion.getState().setExpanded(parentId, true)
-  return mutate(
-    state ? () => writeState((current) => ({
-      ...current,
-      folders: current.folders.map((folder) => folder.id === id ? { ...folder, parentId: parentId ?? current.chatsFolderId } : folder),
-    })) : null,
-    () => apiRequest<FileNode>(`/api/sidebar/folders/${id}`, { method: 'PATCH', body: { parentId } }),
-  )
+  return mutate(() => {
+    writeState((state) => ({
+      ...state,
+      folders: state.folders.map((folder) => ids.includes(folder.id) ? { ...folder, parentId: parentId ?? state.chatsFolderId } : folder),
+    }))
+    writeItems((items) => items.filter((item) => !ids.includes(item.id)))
+  }, () => apiRequest('/api/sidebar/move', { method: 'POST', body: { ids, parentId } }))
 }
 
-/** Trashes a folder; chats in it return to the unfiled list. Files can restore it. */
-export function trashSidebarFolder(id: string): Promise<void> {
+/** Trashes a Files item; chats in a trashed folder return to the unfiled list. Files can restore it. */
+export function trashSidebarItem(id: string): Promise<void> {
   const state = readState()
-  const removed = new Set(state?.folders.filter((folder) => isWithin(state, folder.id, id)).map((folder) => folder.id))
+  const removed = new Set([id, ...state?.folders.filter((folder) => isWithin(state, folder.id, id)).map((folder) => folder.id) ?? []])
   return mutate(() => {
     writeState((current) => ({ ...current, folders: current.folders.filter((folder) => !removed.has(folder.id)) }))
+    writeItems((items) => items.filter((item) => !removed.has(item.id)))
     useChat.setState((chat) => ({
       chats: chat.chats.map((item) => item.folderId && removed.has(item.folderId) ? { ...item, folderId: null } : item),
     }))
-  }, () => apiRequest<void>(`/api/sidebar/folders/${id}`, { method: 'DELETE' }))
+  }, () => apiRequest<void>(`/api/sidebar/items/${id}`, { method: 'DELETE' }))
 }
 
-/** Moves Files items (folders included) into the Archive folder. Chats use `useChat().archiveChat`. */
+/** Moves Files items (folders included) into the Archive folder. Chats use `archiveChat`. */
 export function archiveFiles(fileIds: string[]): Promise<unknown> {
-  const state = readState()
-  return mutate(
-    state ? () => writeState((current) => ({
+  return mutate(() => {
+    writeState((current) => ({
       ...current,
       folders: current.folders.map((folder) => fileIds.includes(folder.id) ? { ...folder, parentId: current.archiveFolderId } : folder),
-    })) : null,
-    () => apiRequest('/api/sidebar/archive', { method: 'POST', body: { fileIds } }),
-  )
+    }))
+    writeItems((items) => items.filter((item) => !fileIds.includes(item.id)))
+  }, () => apiRequest('/api/sidebar/archive', { method: 'POST', body: { fileIds } }))
 }
 
 export function archiveChat(chatId: string): void {
@@ -164,29 +165,46 @@ export function archiveChat(chatId: string): void {
   void refresh()
 }
 
-export function shortcutFor(state: SidebarState | undefined, targetId: string): SidebarShortcut | undefined {
-  return state?.shortcuts.find((shortcut) => shortcut.targetId === targetId)
+/** Creates a shortcut to a Files item or a chat in `parentId` (null is My files; omitted, the Chats folder). */
+export function createShortcut(targetKind: 'file' | 'chat', targetId: string, parentId?: string | null): Promise<FileNode> {
+  if (parentId) useFolderExpansion.getState().setExpanded(parentId, true)
+  return mutate(null, () => apiRequest<FileNode>('/api/sidebar/shortcuts', { method: 'POST', body: { targetKind, targetId, parentId } }))
 }
 
-export function addShortcut(targetKind: SidebarShortcutTarget, targetId: string): Promise<unknown> {
-  return mutate(null, () => apiRequest('/api/sidebar/shortcuts', { method: 'POST', body: { targetKind, targetId } }))
+/**
+ * Asks where something should go, like a file manager's destination dialog. Resolves with the
+ * chosen folder, or null when cancelled. The Sidebar renders the dialog.
+ */
+export interface FolderPickerRequest {
+  title: string
+  action: string
+  initialFolderId: string | null
+  excludedIds?: ReadonlySet<string>
+  resolve: (folderId: string | null | undefined) => void
+}
+export const useFolderPicker = create<{ request: FolderPickerRequest | null }>()(() => ({ request: null }))
+
+/** Resolves with the chosen folder (null is My files), or undefined when cancelled. */
+export function pickFolder(options: Omit<FolderPickerRequest, 'resolve'>): Promise<string | null | undefined> {
+  return new Promise((resolve) => {
+    useFolderPicker.getState().request?.resolve(undefined)
+    useFolderPicker.setState({ request: { ...options, resolve } })
+  })
 }
 
-export function removeShortcut(id: string): Promise<void> {
-  return mutate(
-    () => writeState((state) => ({ ...state, shortcuts: state.shortcuts.filter((shortcut) => shortcut.id !== id) })),
-    () => apiRequest<void>(`/api/sidebar/shortcuts/${id}`, { method: 'DELETE' }),
-  )
-}
-
-export function reorderShortcuts(ids: string[]): Promise<unknown> {
-  return mutate(
-    () => writeState((state) => ({
-      ...state,
-      shortcuts: ids.map((id) => state.shortcuts.find((shortcut) => shortcut.id === id)).filter((shortcut): shortcut is SidebarShortcut => Boolean(shortcut)),
-    })),
-    () => apiRequest('/api/sidebar/shortcuts/order', { method: 'PUT', body: { ids } }),
-  )
+/**
+ * "Create shortcut…": choose where the shortcut goes, starting from `from` (the Chats folder by
+ * default). Without Files there is nowhere else to browse, so it goes in the Chats folder.
+ */
+export async function createShortcutInteractively(targetKind: 'file' | 'chat', targetId: string, from?: string | null): Promise<FileNode | undefined> {
+  if (!useAuth.getState().filesEnabled) return createShortcut(targetKind, targetId)
+  const destination = await pickFolder({
+    title: ui("Create shortcut"),
+    action: ui("Create here"),
+    initialFolderId: from === undefined ? readState()?.chatsFolderId ?? null : from,
+  })
+  if (destination === undefined) return undefined
+  return createShortcut(targetKind, targetId, destination)
 }
 
 const EXPANDED_KEY = 'pulpo-folder-expanded'

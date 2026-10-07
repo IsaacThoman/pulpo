@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNull } from 'drizzle-orm'
+import { and, eq, inArray, isNull, ne } from 'drizzle-orm'
 import { FILE_SCOPE_ROOT } from '@pulpo/contracts'
 import { db } from '../database/client.js'
 import { fileNodes } from '../database/schema.js'
@@ -16,6 +16,8 @@ export async function assertFileScope(userId: string, scopeIds: readonly string[
     eq(fileNodes.ownerUserId, userId),
     eq(fileNodes.status, 'ready'),
     isNull(fileNodes.trashedAt),
+    // A shortcut is not content; scope the item it opens instead.
+    ne(fileNodes.kind, 'shortcut'),
   ))
   if (found.length !== nodeIds.length) {
     throw new AppError(400, 'invalid_file_scope', 'Choose items from your files')

@@ -9,13 +9,30 @@ import {
   FileText,
   FileVideo,
   Folder,
+  ArrowUpRight,
   FolderArchive,
   MessageSquare,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { ARCHIVE_EXTENSIONS, CODE_EXTENSIONS, fileExtension, SHEET_EXTENSIONS } from './file-display'
 
-export function FileNodeIcon({ node, className }: { node: Pick<FileNode, 'kind' | 'name' | 'mimeType'> & Partial<Pick<FileNode, 'systemRole'>>; className?: string }) {
+type IconNode = Pick<FileNode, 'kind' | 'name' | 'mimeType'> & Partial<Pick<FileNode, 'systemRole' | 'target'>>
+
+/** A shortcut looks like what it opens, with an arrow in the corner as on a desktop. */
+export function FileNodeIcon({ node, className }: { node: IconNode; className?: string }) {
+  if (node.kind !== 'shortcut') return <ItemIcon node={node} className={className} />
+  const target = node.target
+  return (
+    <span className={cn('relative inline-grid shrink-0', className, !target?.available && 'opacity-60')}>
+      <ItemIcon node={target ? { kind: target.kind, name: target.name, mimeType: target.mimeType, systemRole: target.systemRole } : { kind: 'blob', name: node.name, mimeType: null }} className="size-full" />
+      <span aria-hidden className="absolute -bottom-0.5 -left-0.5 grid size-[45%] min-h-2.5 min-w-2.5 place-items-center rounded-[2px] bg-background ring-1 ring-border">
+        <ArrowUpRight className="size-full text-foreground" strokeWidth={3} />
+      </span>
+    </span>
+  )
+}
+
+function ItemIcon({ node, className }: { node: IconNode; className?: string }) {
   const classes = cn('shrink-0', className)
   if (node.kind === 'chat') return <MessageSquare className={cn(classes, 'text-sky-500')} />
   if (node.kind === 'folder' && node.systemRole === 'archive') return <FolderArchive className={cn(classes, 'fill-muted-foreground/15 text-muted-foreground')} />

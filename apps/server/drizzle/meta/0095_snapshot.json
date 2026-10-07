@@ -1,5 +1,5 @@
 {
-  "id": "8afeba30-a55a-4187-8e64-573b4b021c59",
+  "id": "14adab4f-9a43-4ce0-a202-ff2ed23055fa",
   "prevId": "b30e41f0-1cce-4881-a010-45c6b44ff399",
   "version": "7",
   "dialect": "postgresql",
@@ -5056,6 +5056,18 @@
           "primaryKey": false,
           "notNull": false
         },
+        "target_node_id": {
+          "name": "target_node_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "target_chat_id": {
+          "name": "target_chat_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -5180,6 +5192,38 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "file_nodes_target_chat_idx": {
+          "name": "file_nodes_target_chat_idx",
+          "columns": [
+            {
+              "expression": "target_chat_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"file_nodes\".\"target_chat_id\" is not null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "file_nodes_target_node_idx": {
+          "name": "file_nodes_target_node_idx",
+          "columns": [
+            {
+              "expression": "target_node_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"file_nodes\".\"target_node_id\" is not null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
@@ -5208,6 +5252,19 @@
           ],
           "onDelete": "cascade",
           "onUpdate": "no action"
+        },
+        "file_nodes_target_node_id_file_nodes_id_fk": {
+          "name": "file_nodes_target_node_id_file_nodes_id_fk",
+          "tableFrom": "file_nodes",
+          "tableTo": "file_nodes",
+          "columnsFrom": [
+            "target_node_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -5216,7 +5273,11 @@
       "checkConstraints": {
         "file_nodes_kind_check": {
           "name": "file_nodes_kind_check",
-          "value": "\"file_nodes\".\"kind\" in ('folder', 'doc', 'blob')"
+          "value": "\"file_nodes\".\"kind\" in ('folder', 'doc', 'blob', 'shortcut')"
+        },
+        "file_nodes_shortcut_check": {
+          "name": "file_nodes_shortcut_check",
+          "value": "num_nonnulls(\"file_nodes\".\"target_node_id\", \"file_nodes\".\"target_chat_id\") = case when \"file_nodes\".\"kind\" = 'shortcut' then 1 else 0 end"
         },
         "file_nodes_status_check": {
           "name": "file_nodes_status_check",
@@ -10766,174 +10827,6 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.sidebar_shortcuts": {
-      "name": "sidebar_shortcuts",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "target_kind": {
-          "name": "target_kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "file_node_id": {
-          "name": "file_node_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "chat_id": {
-          "name": "chat_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "sort_order": {
-          "name": "sort_order",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "sidebar_shortcuts_user_file_unique": {
-          "name": "sidebar_shortcuts_user_file_unique",
-          "columns": [
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "file_node_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"sidebar_shortcuts\".\"file_node_id\" is not null",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "sidebar_shortcuts_user_chat_unique": {
-          "name": "sidebar_shortcuts_user_chat_unique",
-          "columns": [
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "chat_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"sidebar_shortcuts\".\"chat_id\" is not null",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "sidebar_shortcuts_user_idx": {
-          "name": "sidebar_shortcuts_user_idx",
-          "columns": [
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "sort_order",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "sidebar_shortcuts_user_id_users_id_fk": {
-          "name": "sidebar_shortcuts_user_id_users_id_fk",
-          "tableFrom": "sidebar_shortcuts",
-          "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "sidebar_shortcuts_file_node_id_file_nodes_id_fk": {
-          "name": "sidebar_shortcuts_file_node_id_file_nodes_id_fk",
-          "tableFrom": "sidebar_shortcuts",
-          "tableTo": "file_nodes",
-          "columnsFrom": [
-            "file_node_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "sidebar_shortcuts_chat_id_chats_id_fk": {
-          "name": "sidebar_shortcuts_chat_id_chats_id_fk",
-          "tableFrom": "sidebar_shortcuts",
-          "tableTo": "chats",
-          "columnsFrom": [
-            "chat_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "sidebar_shortcuts_target_check": {
-          "name": "sidebar_shortcuts_target_check",
-          "value": "(\"sidebar_shortcuts\".\"target_kind\" = 'file' and \"sidebar_shortcuts\".\"file_node_id\" is not null and \"sidebar_shortcuts\".\"chat_id\" is null) or (\"sidebar_shortcuts\".\"target_kind\" = 'chat' and \"sidebar_shortcuts\".\"chat_id\" is not null and \"sidebar_shortcuts\".\"file_node_id\" is null)"
-        }
-      },
       "isRLSEnabled": false
     },
     "public.speech_models": {

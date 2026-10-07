@@ -1,17 +1,7 @@
-import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm'
-import {
-  FILE_TREE_MAX_DEPTH,
-  MAX_SIDEBAR_SHORTCUTS,
-  type FileNode,
-  type FileNodeKind,
-  type FileSystemRole,
-  type SidebarFolder,
-  type SidebarShortcut,
-  type SidebarShortcutTarget,
-  type SidebarState,
-} from '@pulpo/contracts'
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm'
+import { FILE_TREE_MAX_DEPTH, type FileNode, type FileSystemRole, type SidebarFolder, type SidebarState } from '@pulpo/contracts'
 import { db } from '../database/client.js'
-import { chats, fileNodes, sidebarShortcuts } from '../database/schema.js'
+import { chats, fileNodes } from '../database/schema.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import { accessibleChatCondition } from '../chats/temporary.js'
@@ -54,90 +44,10 @@ async function folderTrees(userId: string, rootIds: string[]): Promise<SidebarFo
   }))
 }
 
-export async function listShortcuts(userId: string): Promise<SidebarShortcut[]> {
-  const rows = await db.select({
-    id: sidebarShortcuts.id,
-    targetKind: sidebarShortcuts.targetKind,
-    fileNodeId: sidebarShortcuts.fileNodeId,
-    chatId: sidebarShortcuts.chatId,
-    nodeName: fileNodes.name,
-    nodeKind: fileNodes.kind,
-    nodeRole: fileNodes.systemRole,
-    nodeLive: sql<boolean>`${fileNodes.trashedAt} is null and ${fileNodes.status} = 'ready'`,
-    chatTitle: chats.title,
-    chatLive: sql<boolean>`${chats.deletedAt} is null and not ${chats.temporary}`,
-  }).from(sidebarShortcuts)
-    .leftJoin(fileNodes, eq(fileNodes.id, sidebarShortcuts.fileNodeId))
-    .leftJoin(chats, eq(chats.id, sidebarShortcuts.chatId))
-    .where(eq(sidebarShortcuts.userId, userId))
-    .orderBy(asc(sidebarShortcuts.sortOrder), asc(sidebarShortcuts.createdAt))
-  // Shortcuts to trashed items stay saved and come back if the item is restored.
-  return rows.flatMap((row): SidebarShortcut[] => {
-    if (row.targetKind === 'chat') {
-      return row.chatId && row.chatLive ? [{ id: row.id, targetKind: 'chat', targetId: row.chatId, name: row.chatTitle ?? '', kind: 'chat', systemRole: null }] : []
-    }
-    return row.fileNodeId && row.nodeLive
-      ? [{
-          id: row.id,
-          targetKind: 'file',
-          targetId: row.fileNodeId,
-          name: row.nodeName ?? '',
-          kind: row.nodeKind as FileNodeKind,
-          systemRole: (row.nodeRole as FileSystemRole | null) ?? null,
-        }]
-      : []
-  })
-}
-
-/** Everything the sidebar needs besides the chat list: its folders and shortcuts. */
+/** The account's Chats and Archive folders and the folders inside them (for moving things). */
 export async function sidebarState(userId: string): Promise<SidebarState> {
   const { chatsFolderId, archiveFolderId } = await ensureSystemFolders(userId)
-  const shortcuts = await listShortcuts(userId)
-  const roots = [chatsFolderId, archiveFolderId, ...shortcuts.filter((item) => item.kind === 'folder').map((item) => item.targetId)]
-  return { chatsFolderId, archiveFolderId, folders: await folderTrees(userId, roots), shortcuts }
-}
-
-export async function createShortcut(userId: string, targetKind: SidebarShortcutTarget, targetId: string): Promise<SidebarShortcut[]> {
-  if (targetKind === 'chat') {
-    if (!(await liveChatIds(db, userId, [targetId])).size) throw notFound('Chat')
-  } else {
-    const access = await resolveFileAccess(db, userId, targetId)
-    if (!access || access.node.trashedAt || access.node.status !== 'ready') throw notFound('File')
-  }
-  await mutateFileTree(userId, async (tx) => {
-    const [stats] = await tx.select({
-      count: sql<number>`count(*)::int`,
-      last: sql<number>`coalesce(max(${sidebarShortcuts.sortOrder}), -1)::int`,
-    }).from(sidebarShortcuts).where(eq(sidebarShortcuts.userId, userId))
-    if ((stats?.count ?? 0) >= MAX_SIDEBAR_SHORTCUTS) {
-      throw new AppError(400, 'sidebar_shortcut_limit', `The sidebar can hold at most ${MAX_SIDEBAR_SHORTCUTS} shortcuts`)
-    }
-    await tx.insert(sidebarShortcuts).values({
-      id: newId(),
-      userId,
-      targetKind,
-      fileNodeId: targetKind === 'file' ? targetId : null,
-      chatId: targetKind === 'chat' ? targetId : null,
-      sortOrder: (stats?.last ?? -1) + 1,
-    }).onConflictDoNothing()
-  }, ['folders'])
-  return listShortcuts(userId)
-}
-
-export async function deleteShortcut(userId: string, id: string): Promise<void> {
-  await mutateFileTree(userId, async (tx) => {
-    const deleted = await tx.delete(sidebarShortcuts).where(and(eq(sidebarShortcuts.id, id), eq(sidebarShortcuts.userId, userId))).returning({ id: sidebarShortcuts.id })
-    if (!deleted.length) throw notFound('Shortcut')
-  }, ['folders'])
-}
-
-export async function reorderShortcuts(userId: string, ids: string[]): Promise<SidebarShortcut[]> {
-  await mutateFileTree(userId, async (tx) => {
-    for (const [sortOrder, id] of ids.entries()) {
-      await tx.update(sidebarShortcuts).set({ sortOrder }).where(and(eq(sidebarShortcuts.id, id), eq(sidebarShortcuts.userId, userId)))
-    }
-  }, ['folders'])
-  return listShortcuts(userId)
+  return { chatsFolderId, archiveFolderId, folders: await folderTrees(userId, [chatsFolderId, archiveFolderId]) }
 }
 
 async function requireFolder(userId: string, id: string) {
@@ -173,25 +83,30 @@ export async function createSidebarFolder(userId: string, input: { id?: string; 
   })
 }
 
-export async function updateSidebarFolder(userId: string, id: string, input: { name?: string; parentId?: string | null }): Promise<FileNode> {
+/**
+ * What the sidebar shows in a folder besides its chats (which clients already have): subfolders,
+ * shortcuts, and files. Without Files, only folders and shortcuts to folders and chats.
+ */
+export async function sidebarFolderItems(userId: string, id: string, filesEnabled: boolean): Promise<FileNode[]> {
   await requireFolder(userId, id)
-  const parentId = input.parentId === undefined
-    ? undefined
-    : input.parentId ?? (await ensureSystemFolders(userId)).chatsFolderId
-  return updateFileNode(userId, id, { name: input.name, parentId })
+  const children = (await listFolder(userId, id)).children.filter((node) => node.kind !== 'chat')
+  if (filesEnabled) return children
+  return children.filter((node) => node.kind === 'folder' || (node.kind === 'shortcut' && (node.target?.kind === 'folder' || node.target?.kind === 'chat')))
 }
 
-/** Trashes a folder (restorable from Files). Its chats go back to the unfiled list. */
-export async function trashSidebarFolder(userId: string, id: string): Promise<void> {
-  await requireFolder(userId, id)
+/** Moves chats and Files items into a folder; null is the Chats folder, the top of the sidebar. */
+export async function moveSidebarItems(userId: string, ids: string[], parentId: string | null): Promise<FileNode[]> {
+  const destination = parentId ?? (await ensureSystemFolders(userId)).chatsFolderId
+  return moveFileNodes(userId, ids.map((id) => ({ id, parentId: destination })))
+}
+
+export async function renameSidebarItem(userId: string, id: string, name: string): Promise<FileNode> {
+  return updateFileNode(userId, id, { name })
+}
+
+/** Trashes an item (restorable from Files). Chats in a trashed folder return to the unfiled list. */
+export async function trashSidebarItem(userId: string, id: string): Promise<void> {
   await trashFileNodes(userId, [id])
-}
-
-/** The Files items (not folders or chats) in a folder; nothing when Files is turned off. */
-export async function sidebarFolderFiles(userId: string, id: string, filesEnabled: boolean): Promise<FileNode[]> {
-  await requireFolder(userId, id)
-  if (!filesEnabled) return []
-  return (await listFolder(userId, id)).children.filter((node) => node.kind === 'doc' || node.kind === 'blob')
 }
 
 /** Moves chats (unpinning them) and Files items into the Archive folder. */

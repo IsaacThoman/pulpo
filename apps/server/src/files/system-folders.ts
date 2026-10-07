@@ -1,7 +1,7 @@
 import { and, eq, isNull, sql } from 'drizzle-orm'
 import { nextAvailableName, type FileSystemRole } from '@pulpo/contracts'
 import { db } from '../database/client.js'
-import { fileNodes, sidebarShortcuts } from '../database/schema.js'
+import { fileNodes } from '../database/schema.js'
 import { newId } from '../lib/ids.js'
 import type { FileExecutor } from './access.js'
 import { liveSiblingNames, mutateFileTree } from './tree-service.js'
@@ -23,7 +23,7 @@ async function existingSystemFolders(executor: FileExecutor, userId: string): Pr
  * Every account has a Chats folder (the sidebar's folders live in it) and an Archive folder at the
  * top of My files. They are created the first time they are needed; a live top-level folder that
  * already has the name is adopted instead of getting a "(2)" twin. A new Archive also gets a
- * sidebar shortcut, so archived chats stay reachable from the sidebar.
+ * shortcut in the Chats folder, so archived chats stay reachable from the sidebar.
  */
 export async function ensureSystemFolders(userId: string): Promise<SystemFolderIds> {
   const existing = await existingSystemFolders(db, userId)
@@ -53,11 +53,10 @@ export async function ensureSystemFolders(userId: string): Promise<SystemFolderI
         current[role] = id
       }
       if (role === 'archive') {
-        const [last] = await tx.select({ order: sql<number>`coalesce(max(${sidebarShortcuts.sortOrder}), -1)::int` })
-          .from(sidebarShortcuts).where(eq(sidebarShortcuts.userId, userId))
-        await tx.insert(sidebarShortcuts).values({
-          id: newId(), userId, targetKind: 'file', fileNodeId: current[role], sortOrder: (last?.order ?? -1) + 1,
-        }).onConflictDoNothing()
+        await tx.insert(fileNodes).values({
+          id: newId(), ownerUserId: userId, parentId: current.chats!, kind: 'shortcut', targetNodeId: current.archive,
+          name: nextAvailableName(SYSTEM_FOLDER_NAMES.archive, await liveSiblingNames(tx, userId, current.chats!)),
+        })
       }
     }
     return { chatsFolderId: current.chats!, archiveFolderId: current.archive! }
