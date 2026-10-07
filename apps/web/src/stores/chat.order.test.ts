@@ -69,7 +69,6 @@ beforeEach(() => {
       chat('in-folder', { folderId, sortOrder: 0 }),
       chat('pinned', { pinned: true, sortOrder: 0 }),
     ],
-    folders: [{ id: folderId, name: 'Folder', pinned: false, expanded: true, sortOrder: 0 }],
   })
 })
 
@@ -150,6 +149,17 @@ describe('chat order', () => {
 
     const pinned = useChat.getState().chats.find((item) => item.id === 'pinned')
     expect(pinned).toMatchObject({ pinned: true, folderId, sortOrder: 0 })
+  })
+
+  it('archives a chat by unpinning it and filing it in the Archive folder', async () => {
+    const archiveId = '00000000-0000-4000-8000-0000000000aa'
+    useChat.getState().archiveChat('pinned', archiveId)
+
+    expect(useChat.getState().chats.find((item) => item.id === 'pinned')).toMatchObject({ pinned: false, folderId: archiveId })
+    expect(pinnedOrder()).toEqual([])
+    await vi.waitFor(() => expect(requests).toContainEqual(expect.objectContaining({
+      method: 'POST', path: expect.stringContaining('/api/sidebar/archive'), body: { chatIds: ['pinned'] },
+    })))
   })
 
   it('keeps a chat in place when opening it loads details cached before a reorder', () => {

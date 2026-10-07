@@ -673,6 +673,13 @@
       "when": 1791582575415,
       "tag": "0095_model_hidden_platforms",
       "breakpoints": true
+    },
+    {
+      "idx": 96,
+      "version": "7",
+      "when": 1791847136446,
+      "tag": "0096_files_chat_folders",
+      "breakpoints": true
     }
   ]
 }

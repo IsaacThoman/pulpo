@@ -442,7 +442,7 @@ export const useAuth = create<AuthState>()((set, get) => ({
     await queryClient.cancelQueries()
     queryClient.clear()
     const { useChat } = await import('./chat')
-    useChat.setState({ chats: [], folders: [], activeChatId: null, activeTemporaryChatId: null, streamingIds: [], responseSequences: {}, responseChatIds: {} })
+    useChat.setState({ chats: [], activeChatId: null, activeTemporaryChatId: null, streamingIds: [], responseSequences: {}, responseChatIds: {} })
     if (userId) {
       clearRuntimeComposerDrafts(userId)
       clearWebShelves()

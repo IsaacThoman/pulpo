@@ -1,7 +1,7 @@
 import { and, asc, desc, eq, inArray, isNotNull, isNull, lt, ne, sql } from 'drizzle-orm'
-import { FILE_TREE_MAX_DEPTH, isMarkdownName, nextAvailableName, type FileListing, type FileNode, type FileNodeKind } from '@pulpo/contracts'
+import { FILE_TREE_MAX_DEPTH, isMarkdownName, nextAvailableName, type FileListing, type FileNode, type FileNodeKind, type FileSystemRole, type StateInvalidationScope } from '@pulpo/contracts'
 import { db } from '../database/client.js'
-import { fileNodes } from '../database/schema.js'
+import { chats, fileNodes } from '../database/schema.js'
 import { bumpAccountRevisions, publishScopedStateChanges, type AccountRevisionChange } from '../friends/sync.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
@@ -9,6 +9,8 @@ import { getBlobStore } from '../storage/index.js'
 import { resolveFileAccess, type FileExecutor, type FileNodeRow } from './access.js'
 import { convertDocToBlobInTx } from './conversion.js'
 import { publishDocsClosed } from './doc-events.js'
+import { chatsFolderIdOf, chatToFileNode, liveChatIds, listFolderChats, moveChatsInTx } from './chat-items.js'
+import { recoverChats, trashChats } from '../chats/trash-service.js'
 
 type DatabaseTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0]
 
@@ -28,8 +30,15 @@ export function toFileNode(row: FileNodeRow): FileNode {
     trashedAt: row.trashedAt?.toISOString() ?? null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
+    systemRole: (row.systemRole as FileSystemRole | null) ?? null,
   }
 }
+
+export const systemFolderLocked = () =>
+  new AppError(400, 'file_system_folder', 'This folder is built in and cannot be renamed, moved, or trashed')
+
+/** Changes to Files that also move or trash chats must refresh chat lists too. */
+const CHAT_SCOPES: StateInvalidationScope[] = ['files', 'folders', 'chats']
 
 export const nameConflict = (name: string) =>
   new AppError(409, 'file_name_conflict', `An item named "${name}" already exists here`)
@@ -39,7 +48,11 @@ export async function lockFileTree(tx: DatabaseTransaction, userId: string): Pro
 }
 
 /** Runs a tree mutation under the account's Files lock, then tells the account's other sessions to refetch. */
-export async function mutateFileTree<T>(userId: string, mutation: (tx: DatabaseTransaction) => Promise<T>): Promise<T> {
+export async function mutateFileTree<T>(
+  userId: string,
+  mutation: (tx: DatabaseTransaction) => Promise<T>,
+  scopes: StateInvalidationScope[] = ['files', 'folders'],
+): Promise<T> {
   let changes: AccountRevisionChange[] = []
   const result = await db.transaction(async (tx) => {
     await lockFileTree(tx, userId)
@@ -47,7 +60,7 @@ export async function mutateFileTree<T>(userId: string, mutation: (tx: DatabaseT
     changes = await bumpAccountRevisions(tx, [userId])
     return value
   })
-  await publishScopedStateChanges(changes, ['files'])
+  await publishScopedStateChanges(changes, scopes)
   return result
 }
 
@@ -134,7 +147,8 @@ export async function listFolder(userId: string, parentId: string | null): Promi
       eq(fileNodes.status, 'ready'),
     )).orderBy(desc(sql`${fileNodes.kind} = 'folder'`), asc(sql`lower(${fileNodes.name})`)),
   ])
-  return { folder: folder && toFileNode(folder), ancestors: ancestors.map(toFileNode), children: children.map(toFileNode) }
+  const chatItems = await listFolderChats(db, userId, folder)
+  return { folder: folder && toFileNode(folder), ancestors: ancestors.map(toFileNode), children: [...children.map(toFileNode), ...chatItems] }
 }
 
 export async function getFileNode(userId: string, id: string): Promise<{ node: FileNode; ancestors: FileNode[] }> {
@@ -174,6 +188,7 @@ async function moveNodeInTx(tx: DatabaseTransaction, userId: string, node: FileN
   onConflict: 'fail' | 'rename'
 }): Promise<{ row: FileNodeRow; converted: boolean }> {
   if (node.status !== 'ready') throw notFound('File')
+  if (node.systemRole && (target.parentId !== node.parentId || target.name !== node.name)) throw systemFolderLocked()
   if (target.parentId !== node.parentId) {
     if (target.parentId && (await chainIds(tx, userId, target.parentId)).includes(node.id)) {
       throw new AppError(400, 'file_move_cycle', 'A folder cannot be moved into itself')
@@ -215,6 +230,7 @@ export async function updateFileNode(userId: string, id: string, input: {
   parentId?: string | null
   expectedRevision?: number
 }): Promise<FileNode> {
+  if ((await liveChatIds(db, userId, [id])).size) return updateChatItem(userId, id, input)
   const { node, converted } = await mutateFileTree(userId, async (tx) => {
     const current = await liveNode(tx, userId, id)
     if (input.expectedRevision !== undefined && input.expectedRevision !== current.revision) throw revisionConflict()
@@ -229,13 +245,30 @@ export async function updateFileNode(userId: string, id: string, input: {
   return node
 }
 
+/** Renames (retitles) or refiles a chat listed in Files. */
+async function updateChatItem(userId: string, id: string, input: { name?: string; parentId?: string | null }): Promise<FileNode> {
+  return mutateFileTree(userId, async (tx) => {
+    const chatsFolderId = await chatsFolderIdOf(tx, userId)
+    if (input.name !== undefined) {
+      await tx.update(chats).set({ title: input.name.slice(0, 200), updatedAt: new Date() }).where(and(eq(chats.id, id), eq(chats.userId, userId)))
+    }
+    if (input.parentId !== undefined) return (await moveChatsInTx(tx, userId, [{ id, parentId: input.parentId }], chatsFolderId))[0]!
+    const [row] = await tx.select().from(chats).where(and(eq(chats.id, id), eq(chats.userId, userId)))
+    return chatToFileNode(row!, chatsFolderId)
+  }, CHAT_SCOPES)
+}
+
 /** Moves several items atomically. Name clashes keep both items; the response has the final names. */
 export async function moveFileNodes(userId: string, items: Array<{ id: string; parentId: string | null; name?: string }>): Promise<FileNode[]> {
+  const chatIds = await liveChatIds(db, userId, items.map((item) => item.id))
   const { moved, converted } = await mutateFileTree(userId, async (tx) => {
-    const ids = new Set(await topLevelIds(tx, userId, items.map((item) => item.id)))
     const moved: FileNode[] = []
     const converted: string[] = []
-    for (const item of items) {
+    const chatItems = items.filter((item) => chatIds.has(item.id))
+    if (chatItems.length) moved.push(...await moveChatsInTx(tx, userId, chatItems, await chatsFolderIdOf(tx, userId)))
+    const nodeItems = items.filter((item) => !chatIds.has(item.id))
+    const ids = new Set(await topLevelIds(tx, userId, nodeItems.map((item) => item.id)))
+    for (const item of nodeItems) {
       if (!ids.delete(item.id)) continue
       const node = await liveNode(tx, userId, item.id)
       const result = await moveNodeInTx(tx, userId, node, { parentId: item.parentId, name: item.name ?? node.name, onConflict: 'rename' })
@@ -243,14 +276,17 @@ export async function moveFileNodes(userId: string, items: Array<{ id: string; p
       if (result.converted) converted.push(node.id)
     }
     return { moved, converted }
-  })
+  }, chatIds.size ? CHAT_SCOPES : undefined)
   await publishDocsClosed(converted, 'converted')
   return moved
 }
 
 export async function trashNodeInTx(tx: DatabaseTransaction, userId: string, node: FileNodeRow): Promise<string[]> {
   if (node.status !== 'ready') throw notFound('File')
+  if (node.systemRole) throw systemFolderLocked()
   const ids = (await subtree(tx, userId, node.id)).map((row) => row.id)
+  // Chats are not trashed with their folder; they go back to the sidebar's unfiled list.
+  await tx.update(chats).set({ folderId: null }).where(and(eq(chats.userId, userId), inArray(chats.folderId, ids)))
   // Descendants trashed earlier keep their own trash root so they can still be restored separately.
   const trashed = await tx.update(fileNodes).set({ trashedAt: new Date(), trashRootId: node.id, updatedAt: new Date() })
     .where(and(eq(fileNodes.ownerUserId, userId), inArray(fileNodes.id, ids), isNull(fileNodes.trashedAt)))
@@ -258,16 +294,22 @@ export async function trashNodeInTx(tx: DatabaseTransaction, userId: string, nod
   return trashed.filter((row) => row.kind === 'doc').map((row) => row.id)
 }
 
-/** Trashes several items atomically and returns the ids that became trash entries (for undo). */
+/**
+ * Trashes several items atomically and returns the ids that became trash entries (for undo).
+ * Chats among them go to the chat trash instead, after the Files items.
+ */
 export async function trashFileNodes(userId: string, ids: string[]): Promise<string[]> {
-  const { roots, docIds } = await mutateFileTree(userId, async (tx) => {
-    const roots = await topLevelIds(tx, userId, ids)
+  const chatIds = await liveChatIds(db, userId, ids)
+  const nodeIds = ids.filter((id) => !chatIds.has(id))
+  const { roots, docIds } = !nodeIds.length ? { roots: [], docIds: [] } : await mutateFileTree(userId, async (tx) => {
+    const roots = await topLevelIds(tx, userId, nodeIds)
     const docIds: string[] = []
     for (const id of roots) docIds.push(...await trashNodeInTx(tx, userId, await liveNode(tx, userId, id)))
     return { roots, docIds }
-  })
+  }, CHAT_SCOPES)
   await publishDocsClosed(docIds, 'trashed')
-  return roots
+  const trashedChats = chatIds.size ? await mutateFileTree(userId, () => trashChats(userId, [...chatIds]), CHAT_SCOPES) : []
+  return [...roots, ...trashedChats]
 }
 
 export async function trashFileNode(userId: string, id: string): Promise<void> {
@@ -290,12 +332,21 @@ export async function restoreNodeInTx(tx: DatabaseTransaction, userId: string, i
   return restored!
 }
 
+/** Restores trashed items; ids of trashed chats (from undoing a trash in Files) recover the chats. */
 export async function restoreFileNodes(userId: string, ids: string[]): Promise<FileNode[]> {
+  const nodeRows = await db.select({ id: fileNodes.id }).from(fileNodes)
+    .where(and(eq(fileNodes.ownerUserId, userId), inArray(fileNodes.id, [...new Set(ids)])))
+  const nodeIds = new Set(nodeRows.map((row) => row.id))
+  const chatIds = ids.filter((id) => !nodeIds.has(id))
   return mutateFileTree(userId, async (tx) => {
     const restored: FileNode[] = []
-    for (const id of new Set(ids)) restored.push(toFileNode(await restoreNodeInTx(tx, userId, id)))
+    for (const id of nodeIds) restored.push(toFileNode(await restoreNodeInTx(tx, userId, id)))
+    if (chatIds.length) {
+      const chatsFolderId = await chatsFolderIdOf(tx, userId)
+      restored.push(...(await recoverChats(userId, chatIds)).map((chat) => chatToFileNode(chat, chatsFolderId)))
+    }
     return restored
-  })
+  }, chatIds.length ? CHAT_SCOPES : undefined)
 }
 
 export async function restoreFileNode(userId: string, id: string): Promise<FileNode> {

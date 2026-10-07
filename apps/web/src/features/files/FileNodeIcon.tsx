@@ -9,12 +9,16 @@ import {
   FileText,
   FileVideo,
   Folder,
+  FolderArchive,
+  MessageSquare,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { ARCHIVE_EXTENSIONS, CODE_EXTENSIONS, fileExtension, SHEET_EXTENSIONS } from './file-display'
 
-export function FileNodeIcon({ node, className }: { node: Pick<FileNode, 'kind' | 'name' | 'mimeType'>; className?: string }) {
+export function FileNodeIcon({ node, className }: { node: Pick<FileNode, 'kind' | 'name' | 'mimeType'> & Partial<Pick<FileNode, 'systemRole'>>; className?: string }) {
   const classes = cn('shrink-0', className)
+  if (node.kind === 'chat') return <MessageSquare className={cn(classes, 'text-sky-500')} />
+  if (node.kind === 'folder' && node.systemRole === 'archive') return <FolderArchive className={cn(classes, 'fill-muted-foreground/15 text-muted-foreground')} />
   if (node.kind === 'folder') return <Folder className={cn(classes, 'fill-muted-foreground/15 text-muted-foreground')} />
   // The extension decides the icon; Markdown looks the same before and after it becomes editable.
   if (isMarkdownName(node.name)) return <FileText className={cn(classes, 'text-muted-foreground')} />

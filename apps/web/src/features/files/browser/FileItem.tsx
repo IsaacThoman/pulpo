@@ -114,7 +114,7 @@ export function FileItem(props: FileItemProps) {
       </span>
       <span className="hidden truncate text-sm text-muted-foreground @2xl:block">{timeAgo(Date.parse(node.updatedAt))}</span>
       <span className="hidden truncate text-sm text-muted-foreground @2xl:block">{fileKindLabel(node)}</span>
-      <span className="hidden text-right text-sm text-muted-foreground tabular-nums @lg:block">{node.kind === 'folder' ? '—' : formatBytes(node.sizeBytes)}</span>
+      <span className="hidden text-right text-sm text-muted-foreground tabular-nums @lg:block">{node.kind === 'folder' || node.kind === 'chat' ? '—' : formatBytes(node.sizeBytes)}</span>
       {menuButton}
     </div>
   )

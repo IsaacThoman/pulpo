@@ -116,14 +116,6 @@ export interface Chat {
   awaitingSummary?: boolean
 }
 
-export interface Folder {
-  id: string
-  name: string
-  pinned: boolean
-  expanded: boolean
-  sortOrder: number
-}
-
 export interface ApiKey {
   id: string
   name: string

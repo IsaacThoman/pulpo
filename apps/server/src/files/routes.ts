@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { updateFileFolderLayoutSchema, copyFileNodesSchema, createFileDocSchema, createFileFolderSchema, fileNodeIdsSchema, moveFileNodesSchema, updateFileNodeSchema } from '@pulpo/contracts'
 import { db } from '../database/client.js'
-import { notFound } from '../lib/errors.js'
+import { AppError, notFound } from '../lib/errors.js'
 import { getBlobStore } from '../storage/index.js'
 import { resolveFileAccess } from './access.js'
 import { convertBlobToDocInTx, previewMarkdownConversion } from './conversion.js'
@@ -29,6 +29,8 @@ import {
 import { registerFileUploadRoutes } from './upload-routes.js'
 import { listFileChanges, revertFileChanges } from './agent-tools.js'
 import { getFolderLayout, normalizeInput, updateFolderLayout } from './layout-service.js'
+import { liveChatIds } from './chat-items.js'
+import { ensureSystemFolders } from './system-folders.js'
 
 const idParams = z.object({ id: z.uuid() })
 
@@ -49,6 +51,8 @@ export async function registerFileRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/files', async (request) => {
     const user = await requireFilesUser(request)
     const { parentId } = z.object({ parentId: z.uuid().optional() }).parse(request.query)
+    // My files always shows the built-in Chats and Archive folders, even on a new account.
+    if (!parentId) await ensureSystemFolders(user.id)
     return listFolder(user.id, parentId ?? null)
   })
 
@@ -84,6 +88,7 @@ export async function registerFileRoutes(app: FastifyInstance): Promise<void> {
   app.post('/api/files/batch/copy', async (request) => {
     const user = await requireFilesUser(request)
     const input = copyFileNodesSchema.parse(request.body)
+    if ((await liveChatIds(db, user.id, input.ids)).size) throw new AppError(400, 'file_chat_copy', 'Chats cannot be copied here; duplicate them from the chat menu')
     return { nodes: await copyFileNodes(user.id, input.ids, input.parentId) }
   })
 
