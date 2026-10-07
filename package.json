@@ -40,7 +40,10 @@
     "local:preview:refresh": "bash ./scripts/local-preview.sh refresh",
     "local:preview:reset": "bash ./scripts/local-preview.sh reset",
     "preview": "npm run preview -w @pulpo/web",
-    "dev:android": "npm run android -w @pulpo/mobile"
+    "dev:android": "npm run android -w @pulpo/mobile",
+    "keyboard:generate": "cd apps/keyboard-ios && xcodegen generate",
+    "keyboard:test": "cd apps/keyboard-ios/PulpoKeyboardKit && swift test -c release",
+    "keyboard:build": "npm run keyboard:generate && xcodebuild -project apps/keyboard-ios/PulpoKeyboard.xcodeproj -scheme PulpoKeyboard -destination 'generic/platform=iOS Simulator' -derivedDataPath apps/keyboard-ios/build/DerivedData build"
   },
   "devDependencies": {
     "@semantic-release/commit-analyzer": "^13.0.1",

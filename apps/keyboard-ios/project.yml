@@ -1,0 +1,129 @@
+name: PulpoKeyboard
+options:
+  bundleIdPrefix: com.isaacthoman.pulpo
+  deploymentTarget:
+    iOS: "18.0"
+  developmentLanguage: en
+  createIntermediateGroups: true
+  generateEmptyDirectories: true
+settings:
+  base:
+    DEVELOPMENT_TEAM: PX72AL9366
+    CODE_SIGN_STYLE: Automatic
+    TARGETED_DEVICE_FAMILY: "1"
+    MARKETING_VERSION: "1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    SWIFT_VERSION: "6.0"
+    SWIFT_APPROACHABLE_CONCURRENCY: YES
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+    DEAD_CODE_STRIPPING: YES
+packages:
+  PulpoKeyboardKit:
+    path: PulpoKeyboardKit
+targets:
+  PulpoKeyboard:
+    type: application
+    platform: iOS
+    sources:
+      - path: App
+    dependencies:
+      - target: PulpoKeyboardExtension
+      - package: PulpoKeyboardKit
+        product: KeyboardUI
+      - package: PulpoKeyboardKit
+        product: PulpoServices
+    info:
+      path: App/Info.plist
+      properties:
+        CFBundleDisplayName: Pulpo Keyboard
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        LSRequiresIPhoneOS: true
+        UILaunchScreen: {}
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        UIBackgroundModes:
+          - audio
+        NSMicrophoneUsageDescription: Pulpo Keyboard records your voice when you tap the microphone key and sends the recording to your Pulpo account to be transcribed.
+        CFBundleURLTypes:
+          - CFBundleURLName: com.isaacthoman.pulpo.keyboard
+            CFBundleURLSchemes:
+              - pulpokeyboard
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+        ITSAppUsesNonExemptEncryption: false
+    entitlements:
+      path: App/PulpoKeyboard.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.isaacthoman.pulpo.keyboard
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.isaacthoman.pulpo.keyboard
+        PRODUCT_NAME: PulpoKeyboard
+        SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ENABLE_PREVIEWS: YES
+  PulpoKeyboardExtension:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: Extension
+      - path: LanguageData
+        buildPhase: resources
+    dependencies:
+      - package: PulpoKeyboardKit
+        product: KeyboardUI
+    info:
+      path: Extension/Info.plist
+      properties:
+        CFBundleDisplayName: Pulpo Keyboard
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.keyboard-service
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).KeyboardViewController
+          NSExtensionAttributes:
+            IsASCIICapable: false
+            PrefersRightToLeft: false
+            PrimaryLanguage: en-US
+            RequestsOpenAccess: true
+    entitlements:
+      path: Extension/PulpoKeyboardExtension.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.isaacthoman.pulpo.keyboard
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.isaacthoman.pulpo.keyboard.extension
+        PRODUCT_NAME: PulpoKeyboardExtension
+        APPLICATION_EXTENSION_API_ONLY: YES
+        SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor
+  PulpoKeyboardUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: UITests
+    dependencies:
+      - target: PulpoKeyboard
+      - package: PulpoKeyboardKit
+        product: KeyboardUI
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.isaacthoman.pulpo.keyboard.uitests
+        TEST_TARGET_NAME: PulpoKeyboard
+        GENERATE_INFOPLIST_FILE: YES
+schemes:
+  PulpoKeyboard:
+    build:
+      targets:
+        PulpoKeyboard: all
+        PulpoKeyboardExtension: all
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - PulpoKeyboardUITests
