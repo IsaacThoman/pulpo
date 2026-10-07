@@ -1,3 +1,4 @@
+import { truncateChatTitle } from '@pulpo/contracts'
 import type { CoordinatedUploadState } from './attachmentUploadCoordinator'
 
 export interface StagedAttachment {
@@ -38,15 +39,14 @@ export function createOptimisticSendIdentity(input: {
 }): OptimisticSendIdentity {
   const responseId = input.createId()
   const trimmed = input.content.trim()
-  const title = trimmed
+  const title = truncateChatTitle(trimmed
     ? trimmed.split(/\s+/).slice(0, 7).join(' ')
-    : input.firstAttachmentName ?? 'Attachment chat'
+    : input.firstAttachmentName ?? '') || 'Attachment chat'
   return {
     chatId: input.activeChatId ?? input.createId(),
     responseId,
     inputMessageId: `${responseId}:input`,
-    // Match the API's UTF-16 length limit without cutting a surrogate pair in half.
-    title: title.slice(0, 200).replace(/[\uD800-\uDBFF]$/, ''),
+    title,
   }
 }
 
