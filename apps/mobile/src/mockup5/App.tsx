@@ -737,7 +737,7 @@ function NativeComposerIconButton({
   const prominentTint = colorScheme === 'dark' ? '#f2f2f7' : '#1c1c1e';
   const prominentForeground = colorScheme === 'dark' || disabled ? '#1c1c1e' : '#ffffff';
   return (
-    <SwiftUIHost ignoreSafeArea="keyboard" style={styles.nativeComposerActionHost}>
+    <SwiftUIHost ignoreSafeArea="all" style={styles.nativeComposerActionHost}>
       <SwiftUIButton
         label={label}
         onPress={onPress}
@@ -760,7 +760,7 @@ function NativeComposerIconButton({
 function NativeComposerShelfButton({ disabled, onPress }: { disabled: boolean; onPress: () => void }) {
   const { styles } = useChatStyles();
   return (
-    <SwiftUIHost ignoreSafeArea="keyboard" style={styles.nativeComposerShelfHost}>
+    <SwiftUIHost ignoreSafeArea="all" style={styles.nativeComposerShelfHost}>
       <SwiftUIButton onPress={onPress} modifiers={[
         buttonStyle('plain'),
         foregroundStyle('secondary'),
@@ -783,7 +783,7 @@ function NativeAttachmentMenu({ onTakePhoto, onPickPhotos, onPickFiles }: {
 }) {
   const { styles } = useChatStyles();
   return (
-    <SwiftUIHost ignoreSafeArea="keyboard" style={styles.nativeComposerCircleHost}>
+    <SwiftUIHost ignoreSafeArea="all" style={styles.nativeComposerCircleHost}>
       <SwiftUIMenu
         label="Add attachment"
         systemImage="plus"
@@ -6029,7 +6029,7 @@ function ChatView({
                   ]} />
                 )}
                 {hasGenerationPresets && (Platform.OS === 'ios' ? (
-                  <SwiftUIHost ignoreSafeArea="keyboard" matchContents style={styles.effortMenuHost}>
+                  <SwiftUIHost ignoreSafeArea="all" matchContents style={styles.effortMenuHost}>
                     <SwiftUIMenu
                       label={presetLabel}
                       modifiers={[
