@@ -95,7 +95,10 @@ xcodebuild -project PulpoKeyboard.xcodeproj -scheme PulpoKeyboard \
 `KeyboardSetupTests` enables the keyboard with Full Access through the Settings app
 (run it once per simulator first). `TypingTests` types, swipes, long-presses and picks
 suggestions on real key views in the in-app preview; `InstalledKeyboardTests` does the
-same through the installed extension in a system text field. `AppearanceTests` saves
+same through the installed extension in a system text field. `KeyTouchTests` drives
+UIKit touch callbacks with deterministic overlapping contacts to cover rolling typing,
+spaces, delete ordering, batched events, and drift after a key has committed.
+`AppearanceTests` saves
 screenshots of every page and field layout. `DictationTests` and `BounceDictationTests`
 need the stub server (`python3 scripts/stub_pulpo_server.py`) and microphone permission
 (`xcrun simctl privacy <device> grant microphone com.isaacthoman.pulpo.keyboard`).

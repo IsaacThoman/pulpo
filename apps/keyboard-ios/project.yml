@@ -108,6 +108,8 @@ targets:
       - path: UITests
     dependencies:
       - target: PulpoKeyboard
+      - package: PulpoKeyboardKit
+        product: KeyboardUI
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.isaacthoman.pulpo.keyboard.uitests

@@ -57,6 +57,7 @@ final class KeysView: UIView {
     let touch: UITouch
     let began = CACurrentMediaTime()
     var keyIndex: Int
+    var key: Key
     let start: CGPoint
     var points: [CGPoint]
     var mode: Mode = .tap
@@ -69,9 +70,10 @@ final class KeysView: UIView {
     /// How many points the trail has drawn.
     var trailed = 0
 
-    init(touch: UITouch, keyIndex: Int, start: CGPoint) {
+    init(touch: UITouch, keyIndex: Int, key: Key, start: CGPoint) {
       self.touch = touch
       self.keyIndex = keyIndex
+      self.key = key
       self.start = start
       points = [start]
     }
@@ -217,7 +219,7 @@ final class KeysView: UIView {
   // MARK: Touches
 
   override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
-    for touch in touches { begin(touch, event: event) }
+    for touch in touches.sorted(by: { $0.timestamp < $1.timestamp }) { begin(touch, event: event) }
   }
 
   override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
@@ -230,14 +232,14 @@ final class KeysView: UIView {
   }
 
   override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
-    for touch in touches {
+    for touch in touches.sorted(by: { (trackings[ObjectIdentifier($0)]?.began ?? 0) < (trackings[ObjectIdentifier($1)]?.began ?? 0) }) {
       guard let tracking = trackings.removeValue(forKey: ObjectIdentifier(touch)) else { continue }
       end(tracking, at: touch.location(in: self), event: event, cancelled: false)
     }
   }
 
   override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
-    for touch in touches {
+    for touch in touches.sorted(by: { (trackings[ObjectIdentifier($0)]?.began ?? 0) < (trackings[ObjectIdentifier($1)]?.began ?? 0) }) {
       guard let tracking = trackings.removeValue(forKey: ObjectIdentifier(touch)) else { continue }
       end(tracking, at: touch.location(in: self), event: event, cancelled: true)
     }
@@ -252,15 +254,22 @@ final class KeysView: UIView {
     // A second finger during a swipe is a stray palm; ignore it.
     if trackings.values.contains(where: { $0.mode == .glide }) { return }
     let point = touch.location(in: self)
-    guard let index = keyIndex(at: point) else { return }
-    // Rolling typing: a new key commits any tap still held down, in order.
-    for other in trackings.values where other.mode == .tap && !other.committed && keyViews[other.keyIndex].key.isCharacter {
-      stats.rolled += 1
-      commitTap(other, at: other.points.last ?? other.start)
+    // Commit earlier text before handling the new key, including spaces and before
+    // touch-down actions such as delete/page. A committed finger is inert until lift.
+    for other in trackings.values.sorted(by: { $0.began < $1.began }) where other.mode == .tap && !other.committed {
+      switch other.key.action {
+      case .character, .space, .returnKey, .text:
+        stats.rolled += 1
+        commitTap(other, at: other.points.last ?? other.start)
+      default:
+        break
+      }
     }
-    let tracking = Tracking(touch: touch, keyIndex: index, start: point)
-    trackings[ObjectIdentifier(touch)] = tracking
+    // Committing a space can return from symbols to letters; hit-test that layout.
+    guard let index = keyIndex(at: point) else { return }
     let key = keyViews[index].key
+    let tracking = Tracking(touch: touch, keyIndex: index, key: key, start: point)
+    trackings[ObjectIdentifier(touch)] = tracking
     switch key.action {
     case .nextKeyboard:
       tracking.mode = .inputMode
@@ -294,6 +303,7 @@ final class KeysView: UIView {
   }
 
   private func move(_ tracking: Tracking, to point: CGPoint, event: UIEvent?) {
+    guard !tracking.committed else { return }
     switch tracking.mode {
     case .inputMode:
       if let event { delegate?.keysView(self, inputModeListWith: event) }
@@ -313,7 +323,7 @@ final class KeysView: UIView {
       trail.add(tracking.points[tracking.trailed...])
       tracking.trailed = tracking.points.count
     case .tap:
-      let key = keyViews[tracking.keyIndex].key
+      let key = tracking.key
       let dx = point.x - tracking.start.x
       let dy = point.y - tracking.start.y
       if key.action == .space {
@@ -323,7 +333,7 @@ final class KeysView: UIView {
       }
       let distance = (dx * dx + dy * dy).squareRoot()
       // Fast taps roll a few points; a swipe has to clearly leave the key.
-      if isLetter(key), !tracking.fromPageKey, trackings.count == 1, delegate?.keysViewAllowsGlide == true, distance > pitch.width * 0.7 {
+      if isLetter(key), !tracking.fromPageKey, !trackings.values.contains(where: { $0 !== tracking && !$0.committed }), delegate?.keysViewAllowsGlide == true, distance > pitch.width * 0.7 {
         startGlide(tracking)
         return
       }
@@ -334,6 +344,7 @@ final class KeysView: UIView {
       keyViews[tracking.keyIndex].isPressed = false
       tracking.timer?.invalidate()
       tracking.keyIndex = index
+      tracking.key = next
       keyViews[index].isPressed = true
       if next.isCharacter {
         showPreview(for: index)
@@ -346,19 +357,20 @@ final class KeysView: UIView {
 
   private func end(_ tracking: Tracking, at point: CGPoint, event: UIEvent?, cancelled: Bool) {
     tracking.timer?.invalidate()
+    guard !tracking.committed else { return }
     let view = keyViews.indices.contains(tracking.keyIndex) ? keyViews[tracking.keyIndex] : nil
     view?.isPressed = false
-    let key = view?.key
+    let key = tracking.key
     switch tracking.mode {
     case .inputMode:
       if let event { delegate?.keysView(self, inputModeListWith: event) }
     case .alternates:
-      if !cancelled, let key, let text = popup?.selectedOption { delegate?.keysView(self, insertAlternate: text, for: key) }
+      if !cancelled, let text = popup?.selectedOption { delegate?.keysView(self, insertAlternate: text, for: key) }
       popup?.hide()
     case .cursor:
       keyViews.forEach { $0.isDimmed = false }
       // A long press on space that never moved the cursor still types the space.
-      if !cancelled, !tracking.cursorMoved, let key, key.action == .space {
+      if !cancelled, !tracking.cursorMoved, key.action == .space {
         delegate?.keysView(self, activate: key, at: point)
       }
     case .delete:
@@ -367,15 +379,15 @@ final class KeysView: UIView {
       trail.finish()
       if !cancelled {
         let length = zip(tracking.points, tracking.points.dropFirst()).reduce(0) { $0 + hypot($1.1.x - $1.0.x, $1.1.y - $1.0.y) }
-        if length > pitch.width * 1.2, let key {
+        if length > pitch.width * 1.2 {
           delegate?.keysView(self, glide: tracking.points, start: key)
-        } else if let key {
+        } else {
           delegate?.keysView(self, activate: key, at: tracking.start)
         }
       }
     case .tap:
       popup?.hide()
-      guard var key else { return }
+      var key = key
       // The key under the finger at release wins, even if no move was delivered on the way.
       if !cancelled, let index = keyIndex(at: point), index != tracking.keyIndex, keyViews[index].key.isCharacter,
          tracking.fromPageKey || key.isCharacter {
@@ -385,7 +397,6 @@ final class KeysView: UIView {
         delegate?.keysViewShiftUp(self)
         return
       }
-      if tracking.committed { return }
       if cancelled {
         stats.cancelled += 1
         // A short, still tap the system took over was still meant as a keystroke.
@@ -404,7 +415,7 @@ final class KeysView: UIView {
     tracking.timer?.invalidate()
     keyViews[tracking.keyIndex].isPressed = false
     popup?.hide()
-    delegate?.keysView(self, activate: keyViews[tracking.keyIndex].key, at: point)
+    delegate?.keysView(self, activate: tracking.key, at: point)
   }
 
   private func isLetter(_ key: Key) -> Bool {
