@@ -3,11 +3,16 @@ import { useTranslation } from '@/i18n/useAppTranslation'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import {
+  Archive,
   BarChart3,
+  BookmarkMinus,
+  BookmarkPlus,
   CreditCard,
   ChevronRight,
   Folder as FolderIcon,
   FolderInput,
+  FolderOpen,
+  FolderPlus,
   Hourglass,
   KeyRound,
   LogOut,
@@ -26,8 +31,10 @@ import {
   UsersRound,
   PanelLeftClose,
   PanelLeftOpen,
+  PanelRight,
   ExternalLink,
 } from 'lucide-react'
+import type { FileNode, SidebarFolder, SidebarState } from '@pulpo/contracts'
 import { cn } from '@/lib/utils'
 import { compareChatOrder, useChat } from '@/stores/chat'
 import { useAuth } from '@/stores/auth'
@@ -35,7 +42,7 @@ import { useSettings } from '@/stores/settings'
 import { CHAT_TIME_GROUPS, chatTimeGroup, type ChatTimeGroup } from '@/lib/format'
 import { resolveChatExpiryMenuAction } from '@/lib/chat-expiration'
 import { chatHasStreamingResponse } from '@/lib/response-tracking'
-import type { Chat, Folder } from '@/lib/types'
+import type { Chat } from '@/lib/types'
 import { ExpiryCountdown } from '@/components/chat/ExpiryCountdown'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -57,7 +64,6 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { ProfileAvatar } from '@/components/ProfileAvatar'
 import { AccountSwitcherMenuItems } from '@/components/layout/AccountSwitcher'
 import { apiRequest } from '@/lib/api'
@@ -67,20 +73,41 @@ import { billingPlanTier, fetchBillingSummary } from '@/lib/billing'
 import { isDesktopRuntime } from '@/lib/runtime'
 import { ui, uit } from '@/i18n/ui'
 import { FilesNavMenu } from '@/features/files/FilesNavMenu'
+import { FileNodeIcon } from '@/features/files/FileNodeIcon'
+import { useFileDragActive } from '@/features/files/browser/use-item-drag'
+import { useSidePanel } from '@/features/side-panel/store'
+import { openBeside, useMainNavigate } from '@/features/side-panel/use-panel-actions'
+import { reorderList } from '@/lib/model-order'
+import {
+  SHORTCUTS_DROP_TARGET,
+  addShortcut,
+  archiveChat,
+  archiveFiles,
+  childFolders,
+  createSidebarFolder,
+  folderOutline,
+  isWithin,
+  moveSidebarFolder,
+  removeShortcut,
+  renameSidebarFolder,
+  reorderShortcuts,
+  shortcutFor,
+  trashSidebarFolder,
+  useFolderExpansion,
+  useSidebarFolderFiles,
+  useSidebarState,
+} from '@/features/sidebar/api'
 
-type DragKind = 'folder' | 'chat'
+type DragKind = 'folder' | 'chat' | 'shortcut'
 type ChatList = 'pinned' | 'loose' | `folder:${string}`
 
-type DropList = ChatList | 'folder'
+type DropList = ChatList | 'shortcuts'
 
 type DropHint =
   | { kind: 'row'; list: DropList; id: string; edge: 'before' | 'after' }
   | { kind: 'folder-target'; folderId: string }
   | { kind: 'loose-target' }
-
-function byFolderOrder(a: Folder, b: Folder) {
-  return a.sortOrder - b.sortOrder || Number(b.pinned) - Number(a.pinned)
-}
+  | { kind: 'shortcut-target' }
 
 function sameDropHint(a: DropHint | null, b: DropHint | null) {
   if (!a || !b) return a === b
@@ -95,14 +122,14 @@ function folderListId(folderId: string): ChatList {
   return `folder:${folderId}`
 }
 
-function parseFolderList(list: ChatList): string | null {
+function parseFolderList(list: DropList): string | null {
   return list.startsWith('folder:') ? list.slice('folder:'.length) : null
 }
 
-function useSidebarDrag() {
+function useSidebarDrag({ canNestFolder }: { canNestFolder: (folderId: string, targetId: string) => boolean }) {
   const [dragId, setDragId] = useState<string | null>(null)
   const [dragKind, setDragKind] = useState<DragKind | null>(null)
-  const [dragList, setDragList] = useState<ChatList | null>(null)
+  const [dragList, setDragList] = useState<DropList | null>(null)
   const [drop, setDropState] = useState<DropHint | null>(null)
   // Drops commit whatever the last dragover showed, so read it synchronously.
   const dropRef = useRef<DropHint | null>(null)
@@ -113,10 +140,12 @@ function useSidebarDrag() {
   }
   const dragIdRef = useRef<string | null>(null)
   const dragKindRef = useRef<DragKind | null>(null)
-  const dragListRef = useRef<ChatList | null>(null)
+  const dragListRef = useRef<DropList | null>(null)
   const didDragRef = useRef(false)
 
   const clearDrag = () => {
+    // Browsers send no click after a drag, so the flag only needs to outlive this event.
+    window.setTimeout(() => { didDragRef.current = false }, 0)
     dragIdRef.current = null
     dragKindRef.current = null
     dragListRef.current = null
@@ -126,7 +155,9 @@ function useSidebarDrag() {
     setDrop(null)
   }
 
-  const startDrag = (kind: DragKind, id: string, e: DragEvent, list?: ChatList) => {
+  const startDrag = (kind: DragKind, id: string, e: DragEvent, list?: DropList) => {
+    // Nested rows (a chat inside a folder) must not also start their folder's drag.
+    e.stopPropagation()
     didDragRef.current = false
     dragIdRef.current = id
     dragKindRef.current = kind
@@ -151,44 +182,53 @@ function useSidebarDrag() {
     return e.clientY < rect.top + rect.height / 2 ? 'before' : 'after'
   }
 
-  const onFolderRowDragOver = (id: string, e: DragEvent<HTMLElement>) => {
-    if (dragKindRef.current === 'chat' && dragIdRef.current) {
-      // A chat over its own folder's header reorders within the folder instead (see onSidebarDragOver).
-      if (dragListRef.current === folderListId(id)) return
+  /** A folder's header or open body: chats are filed into it, folders are moved into it. */
+  const onFolderDragOver = (folderId: string, e: DragEvent<HTMLElement>) => {
+    const kind = dragKindRef.current
+    const id = dragIdRef.current
+    if (!id) return
+    if (kind === 'chat') {
+      // A chat over its own folder reorders within the folder instead (see onSidebarDragOver).
+      if (dragListRef.current === folderListId(folderId)) return
       acceptMove(e)
-      setDrop({ kind: 'folder-target', folderId: id })
+      setDrop({ kind: 'folder-target', folderId })
       return
     }
-    if (dragKindRef.current !== 'folder' || !dragIdRef.current || dragIdRef.current === id) return
-    acceptMove(e)
-    setDrop({ kind: 'row', list: 'folder', id, edge: edgeFor(e) })
-  }
-
-  const onChatRowDragOver = (list: ChatList, id: string, e: DragEvent<HTMLElement>) => {
-    if (dragKindRef.current !== 'chat' || !dragIdRef.current || dragIdRef.current === id) return
-    acceptMove(e)
-    setDrop({ kind: 'row', list, id, edge: edgeFor(e) })
-  }
-
-  const onFolderBodyDragOver = (folderId: string, e: DragEvent<HTMLElement>) => {
-    if (dragKindRef.current !== 'chat' || !dragIdRef.current) return
-    if (dragListRef.current === folderListId(folderId)) return
+    if (kind !== 'folder' || !canNestFolder(id, folderId)) return
     acceptMove(e)
     setDrop({ kind: 'folder-target', folderId })
+  }
+
+  const onRowDragOver = (list: DropList, id: string, e: DragEvent<HTMLElement>) => {
+    const kind = dragKindRef.current
+    if (!dragIdRef.current || dragIdRef.current === id) return
+    if (list === 'shortcuts' ? kind !== 'shortcut' : kind !== 'chat') return
+    acceptMove(e)
+    setDrop({ kind: 'row', list, id, edge: edgeFor(e) })
   }
 
   /**
    * Everywhere a row does not claim the drag (gaps, headers, empty space, rows of another list),
    * snap to the nearest slot in the dragged item's list. Chats dragged into the pinned area or
-   * down into the unfiled area target those lists instead.
+   * down into the unfiled area target those lists instead; chats and folders dragged up into the
+   * shortcuts area become shortcuts, and folders dragged down to the unfiled area move to the top.
    */
-  const onSidebarDragOver = (e: DragEvent<HTMLElement>, zones: { pinnedBottom?: number; looseTop?: number }) => {
+  const onSidebarDragOver = (e: DragEvent<HTMLElement>, zones: { shortcutsBottom?: number; pinnedBottom?: number; looseTop?: number }) => {
     const kind = dragKindRef.current
     const source = dragListRef.current
     if (!kind || !dragIdRef.current) return
     acceptMove(e)
-    const list: DropList = kind === 'folder'
-      ? 'folder'
+    const inShortcuts = zones.shortcutsBottom !== undefined && e.clientY < zones.shortcutsBottom
+    if (kind !== 'shortcut' && inShortcuts) {
+      setDrop({ kind: 'shortcut-target' })
+      return
+    }
+    if (kind === 'folder') {
+      setDrop(zones.looseTop !== undefined && e.clientY >= zones.looseTop ? { kind: 'loose-target' } : null)
+      return
+    }
+    const list: DropList = kind === 'shortcut'
+      ? 'shortcuts'
       : zones.pinnedBottom !== undefined && e.clientY < zones.pinnedBottom
         ? 'pinned'
         : source !== 'loose' && zones.looseTop !== undefined && e.clientY >= zones.looseTop
@@ -222,6 +262,17 @@ function useSidebarDrag() {
     if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDrop(null)
   }
 
+  /** Drop-line props for a row in `list`. */
+  const rowLines = (list: DropList, id: string, kind: DragKind) => {
+    const isDragging = dragKind === kind && dragId === id
+    const rowDrop = drop?.kind === 'row' && drop.list === list && drop.id === id && !isDragging
+    return {
+      dragging: isDragging,
+      showLineBefore: Boolean(rowDrop && drop?.kind === 'row' && drop.edge === 'before'),
+      showLineAfter: Boolean(rowDrop && drop?.kind === 'row' && drop.edge === 'after'),
+    }
+  }
+
   return {
     dragId,
     dragKind,
@@ -233,14 +284,16 @@ function useSidebarDrag() {
     dragListRef,
     clearDrag,
     startDrag,
-    onFolderRowDragOver,
-    onChatRowDragOver,
-    onFolderBodyDragOver,
+    onFolderDragOver,
+    onRowDragOver,
     onSidebarDragOver,
     onSidebarDragLeave,
+    rowLines,
     dropRef,
   }
 }
+
+type SidebarDrag = ReturnType<typeof useSidebarDrag>
 
 function DropLines({
   active,
@@ -272,7 +325,10 @@ function ChatMenu({ chat, onRename, atPointer = false }: { chat: Chat; onRename:
   const shareChat = useChat((state) => state.shareChat)
   const deleteChat = useChat((state) => state.deleteChat)
   const moveToFolder = useChat((state) => state.moveToFolder)
-  const folders = useChat((state) => state.folders)
+  const sidebar = useSidebarState().data
+  const outline = folderOutline(sidebar)
+  const shortcut = shortcutFor(sidebar, chat.id)
+  const archived = Boolean(sidebar && chat.folderId && isWithin(sidebar, chat.folderId, sidebar.archiveFolderId))
   const trashRetention = useSettings((state) => state.trashRetention)
   const automaticChatExpiration = useSettings((state) => state.automaticChatExpiration)
   const expirationMenuAction = resolveChatExpiryMenuAction(chat.expiresAt, automaticChatExpiration)
@@ -318,19 +374,34 @@ function ChatMenu({ chat, onRename, atPointer = false }: { chat: Chat; onRename:
           <FolderInput />
           {t('chat.moveToFolder')}
         </DropdownMenuSubTrigger>
-        <DropdownMenuSubContent className="w-44">
-          <DropdownMenuItem onClick={() => moveToFolder(chat.id, null)}>
+        <DropdownMenuSubContent className="max-h-80 w-52 overflow-y-auto">
+          <DropdownMenuItem disabled={!chat.folderId} onClick={() => moveToFolder(chat.id, null)}>
             {t('chat.noFolder')}
           </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          {folders.map((f) => (
-            <DropdownMenuItem key={f.id} onClick={() => moveToFolder(chat.id, f.id)}>
-              <FolderIcon />
-              {f.name}
+          {outline.length > 0 && <DropdownMenuSeparator />}
+          {outline.map(({ folder, depth }) => (
+            <DropdownMenuItem
+              key={folder.id}
+              disabled={chat.folderId === folder.id}
+              style={{ paddingLeft: `${0.5 + depth * 0.75}rem` }}
+              onClick={() => moveToFolder(chat.id, folder.id)}
+            >
+              {folder.systemRole === 'archive' ? <Archive /> : <FolderIcon />}
+              <span className="truncate">{folder.name}</span>
             </DropdownMenuItem>
           ))}
         </DropdownMenuSubContent>
       </DropdownMenuSub>
+      {!archived && sidebar && (
+        <DropdownMenuItem onClick={() => archiveChat(chat.id)}>
+          <Archive />
+          {ui("Move to archive")}
+        </DropdownMenuItem>
+      )}
+      <DropdownMenuItem onClick={() => void (shortcut ? removeShortcut(shortcut.id) : addShortcut('chat', chat.id))}>
+        {shortcut ? <BookmarkMinus /> : <BookmarkPlus />}
+        {shortcut ? ui("Remove shortcut") : ui("Add shortcut")}
+      </DropdownMenuItem>
       <DropdownMenuItem
         onClick={() => void shareChat(chat.id).then((url) => navigator.clipboard?.writeText(url))}
       >
@@ -428,6 +499,7 @@ export function ChatRow({
   draggable: canDrag = false,
   droppable: canDrop = false,
   dragList,
+  dragId,
   dragging = false,
   showLineBefore = false,
   showLineAfter = false,
@@ -445,6 +517,8 @@ export function ChatRow({
   droppable?: boolean
   /** Identifies the reorderable list this row belongs to, for sidebar-wide drop snapping. */
   dragList?: string
+  /** The id the row stands for in its list; the chat's own id unless it is, e.g., a shortcut. */
+  dragId?: string
   dragging?: boolean
   showLineBefore?: boolean
   showLineAfter?: boolean
@@ -474,7 +548,7 @@ export function ChatRow({
   return (
     <div
       data-drag-list={dragList}
-      data-drag-id={dragList ? chat.id : undefined}
+      data-drag-id={dragList ? dragId ?? chat.id : undefined}
       draggable={canDrag && !renaming}
       onDragStart={canDrag ? onDragStart : undefined}
       onDragOver={canDrop || canDrag ? onDragOver : undefined}
@@ -595,156 +669,294 @@ export function ChatRow({
   )
 }
 
-function FolderGroup({
+/** The actions of a sidebar folder, from its "⋯" button or a right-click (`atPointer`). */
+function FolderMenu({ folder, sidebar, atPointer = false, onRename, onNewFolder, go }: {
+  folder: SidebarFolder
+  sidebar: SidebarState
+  atPointer?: boolean
+  onRename: () => void
+  onNewFolder: (parentId: string) => void
+  go: (path: string) => void
+}) {
+  const { t } = useTranslation()
+  const renameChosen = useRef(false)
+  const filesEnabled = useAuth((state) => state.filesEnabled)
+  const system = folder.systemRole !== null
+  const archived = isWithin(sidebar, folder.id, sidebar.archiveFolderId)
+  const shortcut = shortcutFor(sidebar, folder.id)
+  return (
+    <DropdownMenuContent
+      side={atPointer ? 'bottom' : 'right'}
+      align="start"
+      sideOffset={atPointer ? 2 : undefined}
+      className="w-52"
+      // Start the inline rename only once the menu has closed: the modal menu traps focus
+      // until then and would pull it back out of the input. Keep focus off the trigger, too.
+      onCloseAutoFocus={(event) => {
+        if (!renameChosen.current) return
+        renameChosen.current = false
+        event.preventDefault()
+        onRename()
+      }}
+    >
+      <DropdownMenuItem onClick={() => onNewFolder(folder.id)}>
+        <FolderPlus />
+        {ui("New folder inside")}
+      </DropdownMenuItem>
+      {!system && (
+        <DropdownMenuItem onClick={() => { renameChosen.current = true }}>
+          <Pencil />
+          {t('common.rename')}
+        </DropdownMenuItem>
+      )}
+      {filesEnabled && (
+        <DropdownMenuItem onClick={() => go(`/files/f/${folder.id}`)}>
+          <FolderOpen />
+          {ui("Open in Files")}
+        </DropdownMenuItem>
+      )}
+      <DropdownMenuItem onClick={() => void (shortcut ? removeShortcut(shortcut.id) : addShortcut('file', folder.id))}>
+        {shortcut ? <BookmarkMinus /> : <BookmarkPlus />}
+        {shortcut ? ui("Remove shortcut") : ui("Add shortcut")}
+      </DropdownMenuItem>
+      {!system && !archived && (
+        <DropdownMenuItem onClick={() => void archiveFiles([folder.id])}>
+          <Archive />
+          {ui("Move to archive")}
+        </DropdownMenuItem>
+      )}
+      {!system && (
+        <>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem variant="destructive" onClick={() => void trashSidebarFolder(folder.id)}>
+            <Trash2 />
+            {filesEnabled ? ui("Move to trash") : t('common.delete')}
+          </DropdownMenuItem>
+        </>
+      )}
+    </DropdownMenuContent>
+  )
+}
+
+/** A file in a sidebar folder or shortcut. Opens the way it does from Files. */
+function SidebarFileRow({ node, sidebar, go, shortcutId, drag, onDrop }: {
+  node: Pick<FileNode, 'id' | 'kind' | 'name' | 'mimeType'>
+  sidebar: SidebarState
+  go: (path: string) => void
+  shortcutId?: string
+  drag: SidebarDrag
+  onDrop: (e: DragEvent) => void
+}) {
+  const [menuPoint, setMenuPoint] = useState<{ x: number; y: number } | null>(null)
+  const goMain = useMainNavigate()
+  const splitAvailable = useSidePanel((state) => state.splitAvailable)
+  const shortcut = shortcutFor(sidebar, node.id)
+  const lines = shortcutId ? drag.rowLines('shortcuts', shortcutId, 'shortcut') : null
+  return (
+    <div
+      data-drag-list={shortcutId ? 'shortcuts' : undefined}
+      data-drag-id={shortcutId}
+      draggable={Boolean(shortcutId)}
+      onDragStart={shortcutId ? (e) => drag.startDrag('shortcut', shortcutId, e, 'shortcuts') : undefined}
+      onDragOver={shortcutId ? (e) => drag.onRowDragOver('shortcuts', shortcutId, e) : undefined}
+      onDrop={shortcutId ? onDrop : undefined}
+      onDragEnd={shortcutId ? drag.clearDrag : undefined}
+      onContextMenu={(event) => {
+        event.preventDefault()
+        setMenuPoint({ x: event.clientX, y: event.clientY })
+      }}
+      className={cn(
+        'group relative flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-sidebar-foreground/80 hover:bg-sidebar-accent/60',
+        lines?.dragging && 'opacity-40',
+      )}
+    >
+      <DropLines active={Boolean(shortcutId)} before={lines?.showLineBefore ?? false} after={lines?.showLineAfter ?? false} />
+      <button
+        type="button"
+        className="flex min-w-0 flex-1 cursor-[inherit] items-center gap-2 text-left outline-none after:absolute after:inset-0 after:rounded-lg focus-visible:after:ring-2 focus-visible:after:ring-ring"
+        onClick={(event) => {
+          if (event.altKey && splitAvailable) openBeside({ kind: 'file', id: node.id }, goMain)
+          else go(`/files/d/${node.id}`)
+        }}
+      >
+        <FileNodeIcon node={node} className="size-4" />
+        <span className="truncate">{node.name}</span>
+      </button>
+      {menuPoint && (
+        <DropdownMenu key={`${menuPoint.x}:${menuPoint.y}`} open onOpenChange={(open) => { if (!open) setMenuPoint(null) }} modal={false}>
+          <DropdownMenuTrigger asChild>
+            <span aria-hidden className="pointer-events-none fixed size-0" style={{ left: menuPoint.x, top: menuPoint.y }} />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent side="bottom" align="start" sideOffset={2} className="w-52">
+            {splitAvailable && (
+              <DropdownMenuItem onClick={() => openBeside({ kind: 'file', id: node.id }, goMain)}>
+                <PanelRight />
+                {ui("Open to the right")}
+              </DropdownMenuItem>
+            )}
+            <DropdownMenuItem onClick={() => void (shortcut ? removeShortcut(shortcut.id) : addShortcut('file', node.id))}>
+              {shortcut ? <BookmarkMinus /> : <BookmarkPlus />}
+              {shortcut ? ui("Remove shortcut") : ui("Add shortcut")}
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => void archiveFiles([node.id])}>
+              <Archive />
+              {ui("Move to archive")}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
+    </div>
+  )
+}
+
+/**
+ * A Files folder in the sidebar: its subfolders, the chats filed in it, and its files. Chats and
+ * folders dragged onto it move into it, and so do items dragged here from Files.
+ */
+function SidebarFolderNode({
   folder,
-  chats,
+  sidebar,
+  chatsByFolder,
   chatId,
   shiftHeld,
   onNavigate,
-  canReorderFolder,
-  folderDragging,
-  showFolderLineBefore,
-  showFolderLineAfter,
-  chatDropHighlight,
-  onFolderDragStart,
-  onFolderDragOver,
-  onDrop,
-  onFolderDragEnd,
-  folderDidDragRef,
   drag,
+  onDrop,
+  onNewFolder,
+  go,
+  shortcutId,
 }: {
-  folder: Folder
-  chats: Chat[]
+  folder: SidebarFolder
+  sidebar: SidebarState
+  chatsByFolder: ReadonlyMap<string, Chat[]>
   chatId?: string
   shiftHeld: boolean
   onNavigate: () => void
-  canReorderFolder: boolean
-  folderDragging: boolean
-  showFolderLineBefore: boolean
-  showFolderLineAfter: boolean
-  chatDropHighlight: boolean
-  onFolderDragStart: (e: DragEvent) => void
-  onFolderDragOver: (e: DragEvent<HTMLElement>) => void
+  drag: SidebarDrag
   onDrop: (e: DragEvent) => void
-  onFolderDragEnd: () => void
-  folderDidDragRef: { current: boolean }
-  drag: ReturnType<typeof useSidebarDrag>
+  onNewFolder: (parentId: string) => void
+  go: (path: string) => void
+  /** Set when this is a shortcut's folder: dragging it reorders the shortcuts. */
+  shortcutId?: string
 }) {
   const { t } = useTranslation()
-  const toggleFolder = useChat((state) => state.toggleFolder)
-  const renameFolder = useChat((state) => state.renameFolder)
-  const toggleFolderPin = useChat((state) => state.toggleFolderPin)
-  const deleteFolder = useChat((state) => state.deleteFolder)
+  // A shortcut opens independently of the same folder elsewhere in the sidebar.
+  const expansionKey = shortcutId ? `shortcut:${shortcutId}` : folder.id
+  const expanded = useFolderExpansion((state) => state.expanded[expansionKey] ?? (!shortcutId && folder.parentId === sidebar.chatsFolderId))
+  const setExpanded = useFolderExpansion((state) => state.setExpanded)
+  const fileDropActive = useFileDragActive((state) => state.target === folder.id)
+  const files = useSidebarFolderFiles(folder.id, expanded).data ?? []
   const [renaming, setRenaming] = useState(false)
-  const renameChosen = useRef(false)
+  const [menuPoint, setMenuPoint] = useState<{ x: number; y: number } | null>(null)
+  const subfolders = childFolders(sidebar, folder.id)
+  const chats = chatsByFolder.get(folder.id) ?? []
   const list = folderListId(folder.id)
+  const dragKind: DragKind | null = shortcutId ? 'shortcut' : folder.systemRole ? null : 'folder'
+  const lines = shortcutId ? drag.rowLines('shortcuts', shortcutId, 'shortcut') : drag.rowLines(list, folder.id, 'folder')
+  const dropHighlight = fileDropActive || (drag.drop?.kind === 'folder-target' && drag.drop.folderId === folder.id)
+  const FolderGlyph = folder.systemRole === 'archive' ? Archive : FolderIcon
+  const menu = (atPointer: boolean) => (
+    <FolderMenu folder={folder} sidebar={sidebar} atPointer={atPointer} onRename={() => setRenaming(true)} onNewFolder={onNewFolder} go={go} />
+  )
 
   return (
-    <Collapsible open={folder.expanded} onOpenChange={() => {
-      if (folderDidDragRef.current) {
-        folderDidDragRef.current = false
-        return
-      }
-      toggleFolder(folder.id)
-    }}>
+    <div>
       <div
-        draggable={canReorderFolder && !renaming}
-        onDragStart={canReorderFolder ? onFolderDragStart : undefined}
-        onDragOver={onFolderDragOver}
+        draggable={Boolean(dragKind) && !renaming}
+        onDragStart={dragKind ? (e) => drag.startDrag(dragKind, shortcutId ?? folder.id, e, shortcutId ? 'shortcuts' : undefined) : undefined}
+        onDragEnd={dragKind ? drag.clearDrag : undefined}
+        onDragOver={(e) => {
+          if (shortcutId && drag.dragKindRef.current === 'shortcut') drag.onRowDragOver('shortcuts', shortcutId, e)
+          else drag.onFolderDragOver(folder.id, e)
+        }}
         onDrop={onDrop}
-        data-drag-list="folder"
-        data-drag-id={folder.id}
-        onDragEnd={canReorderFolder ? onFolderDragEnd : undefined}
+        data-drag-list={shortcutId ? 'shortcuts' : undefined}
+        data-drag-id={shortcutId}
+        // Items dragged from the Files browser drop here too (see useItemDrag).
+        data-drop-target={folder.id}
+        onContextMenu={(event) => {
+          if (renaming) return
+          event.preventDefault()
+          setMenuPoint({ x: event.clientX, y: event.clientY })
+        }}
         className={cn(
           'group relative flex items-center rounded-lg text-sm text-sidebar-foreground/85 hover:bg-sidebar-accent/70',
-          canReorderFolder && 'cursor-grab active:cursor-grabbing',
-          folderDragging && 'opacity-40',
-          chatDropHighlight && 'bg-sidebar-accent ring-1 ring-foreground/20',
+          dragKind && 'active:cursor-grabbing',
+          lines.dragging && 'opacity-40',
+          dropHighlight && 'bg-sidebar-accent ring-1 ring-foreground/20',
         )}
       >
-        <DropLines active={!chatDropHighlight} before={showFolderLineBefore} after={showFolderLineAfter} />
-        {renaming ? (
-          <div className="flex min-w-0 flex-1 items-center gap-1.5 px-2 py-1.5">
-            <ChevronRight
-              className={cn('size-3.5 shrink-0 text-muted-foreground transition-transform', folder.expanded && 'rotate-90')}
-            />
-            <FolderIcon className="size-4 shrink-0 text-muted-foreground" />
+        <DropLines active={Boolean(shortcutId)} before={lines.showLineBefore} after={lines.showLineAfter} />
+        <div className="flex min-w-0 flex-1 items-center gap-1.5 px-2 py-1.5">
+          <ChevronRight className={cn('size-3.5 shrink-0 text-muted-foreground transition-transform', expanded && 'rotate-90')} />
+          <FolderGlyph className="size-4 shrink-0 text-muted-foreground" />
+          {renaming ? (
             <InlineTitleInput
               value={folder.name}
               label={t('sidebar.renameFolder')}
-              onCommit={(next) => renameFolder(folder.id, next)}
+              onCommit={(next) => void renameSidebarFolder(folder.id, next)}
               onDone={() => setRenaming(false)}
             />
-          </div>
-        ) : (
-          <CollapsibleTrigger className="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 px-2 py-1.5">
-            <ChevronRight
-              className={cn('size-3.5 text-muted-foreground transition-transform', folder.expanded && 'rotate-90')}
-            />
-            <FolderIcon className="size-4 text-muted-foreground" />
-            <span className="flex-1 truncate text-left">{folder.name}</span>
-          </CollapsibleTrigger>
-        )}
+          ) : (
+            <button
+              type="button"
+              aria-expanded={expanded}
+              className="flex-1 cursor-pointer truncate text-left outline-none after:absolute after:inset-0 after:rounded-lg focus-visible:after:ring-2 focus-visible:after:ring-ring"
+              onClick={() => {
+                if (drag.didDragRef.current) {
+                  drag.didDragRef.current = false
+                  return
+                }
+                setExpanded(expansionKey, !expanded)
+              }}
+            >
+              {folder.name}
+            </button>
+          )}
+        </div>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
-              className="invisible rounded p-0.5 text-muted-foreground hover:bg-background/60 hover:text-foreground group-hover:visible data-[state=open]:visible"
+              className="relative invisible rounded p-0.5 text-muted-foreground hover:bg-background/60 hover:text-foreground group-hover:visible data-[state=open]:visible"
               aria-label={t('sidebar.folderOptions')}
             >
               <MoreHorizontal className="size-4" />
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent
-            side="right"
-            align="start"
-            className="w-48"
-            // Start the inline rename only once the menu has closed: the modal menu traps focus
-            // until then and would pull it back out of the input. Keep focus off the trigger, too.
-            onCloseAutoFocus={(event) => {
-              if (!renameChosen.current) return
-              renameChosen.current = false
-              event.preventDefault()
-              setRenaming(true)
-            }}
-          >
-            <DropdownMenuItem onClick={() => toggleFolderPin(folder.id)}>
-              {folder.pinned ? <PinOff /> : <Pin />}
-              {folder.pinned ? t('chat.unpin') : t('chat.pin')}
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => { renameChosen.current = true }}>
-              <Pencil />
-              {t('common.rename')}
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem variant="destructive" onClick={() => deleteFolder(folder.id)}>
-              <Trash2 />
-              {t('common.delete')}
-            </DropdownMenuItem>
-          </DropdownMenuContent>
+          {menu(false)}
         </DropdownMenu>
-        <span className="mr-2 min-w-3 text-right text-xs text-muted-foreground">{chats.length}</span>
-      </div>
-      <CollapsibleContent
-        className="ml-4 space-y-0.5 border-l border-sidebar-border pl-2"
-        onDragOver={(e) => drag.onFolderBodyDragOver(folder.id, e)}
-        onDrop={onDrop}
-      >
-        {chats.length === 0 && (
-          <div
-            className={cn(
-              'rounded-md px-2 py-1 text-xs text-muted-foreground',
-              chatDropHighlight && 'bg-sidebar-accent/80 text-foreground',
-            )}
-          >
-            {chatDropHighlight ? t('sidebar.dropToAdd') : t('sidebar.empty')}
-          </div>
+        <span className="mr-2 min-w-3 text-right text-xs text-muted-foreground">{chats.length || ''}</span>
+        {menuPoint && (
+          <DropdownMenu key={`${menuPoint.x}:${menuPoint.y}`} open onOpenChange={(open) => { if (!open) setMenuPoint(null) }} modal={false}>
+            <DropdownMenuTrigger asChild>
+              <span aria-hidden className="pointer-events-none fixed size-0" style={{ left: menuPoint.x, top: menuPoint.y }} />
+            </DropdownMenuTrigger>
+            {menu(true)}
+          </DropdownMenu>
         )}
-        {chats.map((chat) => {
-          const isDragging = drag.dragKind === 'chat' && drag.dragId === chat.id
-          const rowDrop = drag.drop?.kind === 'row' && drag.drop.list === list && drag.drop.id === chat.id
-          const showLineBefore = Boolean(rowDrop && drag.drop?.kind === 'row' && drag.drop.edge === 'before' && !isDragging)
-          const showLineAfter = Boolean(rowDrop && drag.drop?.kind === 'row' && drag.drop.edge === 'after' && !isDragging)
-          return (
+      </div>
+      {expanded && (
+        <div
+          className="ml-4 space-y-0.5 border-l border-sidebar-border pl-2"
+          onDragOver={(e) => drag.onFolderDragOver(folder.id, e)}
+          onDrop={onDrop}
+        >
+          {subfolders.map((child) => (
+            <SidebarFolderNode
+              key={child.id}
+              folder={child}
+              sidebar={sidebar}
+              chatsByFolder={chatsByFolder}
+              chatId={chatId}
+              shiftHeld={shiftHeld}
+              onNavigate={onNavigate}
+              drag={drag}
+              onDrop={onDrop}
+              onNewFolder={onNewFolder}
+              go={go}
+            />
+          ))}
+          {chats.map((chat) => (
             <ChatRow
               key={chat.id}
               chat={chat}
@@ -753,20 +965,26 @@ function FolderGroup({
               onNavigate={onNavigate}
               draggable
               droppable
-              dragging={isDragging}
-              showLineBefore={showLineBefore}
-              showLineAfter={showLineAfter}
+              {...drag.rowLines(list, chat.id, 'chat')}
               didDragRef={drag.didDragRef}
               dragList={list}
               onDragStart={(e) => drag.startDrag('chat', chat.id, e, list)}
-              onDragOver={(e) => drag.onChatRowDragOver(list, chat.id, e)}
+              onDragOver={(e) => drag.onRowDragOver(list, chat.id, e)}
               onDrop={onDrop}
               onDragEnd={drag.clearDrag}
             />
-          )
-        })}
-      </CollapsibleContent>
-    </Collapsible>
+          ))}
+          {files.map((node) => (
+            <SidebarFileRow key={node.id} node={node} sidebar={sidebar} go={go} drag={drag} onDrop={onDrop} />
+          ))}
+          {subfolders.length + chats.length + files.length === 0 && (
+            <div className={cn('rounded-md px-2 py-1 text-xs text-muted-foreground', dropHighlight && 'bg-sidebar-accent/80 text-foreground')}>
+              {dropHighlight ? t('sidebar.dropToAdd') : t('sidebar.empty')}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -798,23 +1016,18 @@ export function Sidebar({
     `${chat.id}:${chat.title}:${chat.pinned}:${chat.folderId ?? ''}:${chat.modelId}:${chat.sortOrder}:${chat.temporary}:${chat.expiresAt ?? ''}:${recentOrder ? chat.updatedAt : ''}`
   )).join('|'))
   void chatListRevision
-  const folderListRevision = useChat((state) => state.folders.map((folder) => (
-    `${folder.id}:${folder.name}:${folder.pinned}:${folder.expanded}:${folder.sortOrder}`
-  )).join('|'))
-  void folderListRevision
   const chats = useChat.getState().chats.filter((chat) => !chat.temporary)
   const activeTemporaryChatId = useChat((state) => state.activeTemporaryChatId)
   const composerModelId = useChat((state) => state.composerModelId)
-  const folders = useChat.getState().folders
-  const addFolder = useChat((s) => s.addFolder)
-  const reorderFolders = useChat((s) => s.reorderFolders)
+  const sidebar = useSidebarState().data
+  const fileDrag = useFileDragActive()
+  const setFolderExpanded = useFolderExpansion((s) => s.setExpanded)
   const reorderPinnedChats = useChat((s) => s.reorderPinnedChats)
   const pinChat = useChat((s) => s.pinChat)
   const unpinChat = useChat((s) => s.unpinChat)
   const reorderFolderChats = useChat((s) => s.reorderFolderChats)
   const reorderLooseChats = useChat((s) => s.reorderLooseChats)
   const moveToFolder = useChat((s) => s.moveToFolder)
-  const toggleFolder = useChat((s) => s.toggleFolder)
   const user = useAuth((s) => s.user)
   const instanceReady = useAuth((s) => s.instanceReady)
   const networkReady = !isDesktopRuntime() || instanceReady
@@ -848,20 +1061,23 @@ export function Sidebar({
   const setSetting = useSettings((s) => s.set)
   const signOutActiveAccount = useAuth((s) => s.signOutActiveAccount)
   const [accountMenuOpen, setAccountMenuOpen] = useState(false)
-  const [newFolderOpen, setNewFolderOpen] = useState(false)
+  // The folder a new folder goes into: null for the top of the sidebar, undefined when closed.
+  const [newFolderParent, setNewFolderParent] = useState<string | null | undefined>(undefined)
   const [folderName, setFolderName] = useState('')
   const [activeTooltip, setActiveTooltip] = useState<string | null>(null)
   const [filesMenuPoint, setFilesMenuPoint] = useState<{ x: number; y: number } | null>(null)
   const shiftHeld = useShiftHeld()
-  const drag = useSidebarDrag()
+  const drag = useSidebarDrag({
+    canNestFolder: (folderId, targetId) => Boolean(sidebar)
+      && !isWithin(sidebar, targetId, folderId)
+      && sidebar!.folders.find((folder) => folder.id === folderId)?.parentId !== targetId,
+  })
+  const shortcutsZoneRef = useRef<HTMLDivElement>(null)
   const pinnedZoneRef = useRef<HTMLDivElement>(null)
   const looseZoneRef = useRef<HTMLDivElement>(null)
   const openSidebarLabel = t('sidebar.expand')
 
-  const ensureFolderExpanded = (folderId: string) => {
-    const target = useChat.getState().folders.find((folder) => folder.id === folderId)
-    if (target && !target.expanded) toggleFolder(folderId)
-  }
+  const ensureFolderExpanded = (folderId: string) => setFolderExpanded(folderId, true)
 
   /** Every drop commits exactly what the drop line or highlight showed, wherever the pointer is. */
   const handleDrop = (e: DragEvent) => {
@@ -874,8 +1090,19 @@ export function Sidebar({
     drag.clearDrag()
     if (!hint || !from) return
 
+    if (hint.kind === 'shortcut-target') {
+      if (kind === 'chat' || kind === 'folder') void addShortcut(kind === 'chat' ? 'chat' : 'file', from)
+      return
+    }
+    if (kind === 'shortcut') {
+      const ids = sidebar?.shortcuts.map((shortcut) => shortcut.id) ?? []
+      if (hint.kind === 'row' && hint.list === 'shortcuts' && hint.id !== from) void reorderShortcuts(reorderList(ids, from, hint.id, hint.edge))
+      return
+    }
     if (kind === 'folder') {
-      if (hint.kind === 'row' && hint.list === 'folder') reorderFolders(from, hint.id, hint.edge)
+      if (hint.kind === 'folder-target') void moveSidebarFolder(from, hint.folderId)
+      // Dropped on the unfiled list, a folder moves back to the top of the sidebar.
+      else if (hint.kind === 'loose-target') void moveSidebarFolder(from, null)
       return
     }
     if (kind !== 'chat') return
@@ -892,7 +1119,7 @@ export function Sidebar({
       if (sourceList !== 'loose') place(from, null)
       return
     }
-    if (hint.list === 'folder' || hint.id === from) return
+    if (hint.list === 'shortcuts' || hint.id === from) return
     const position = { targetId: hint.id, edge: hint.edge }
     if (hint.list === 'pinned') {
       if (sourceList === 'pinned') reorderPinnedChats(from, hint.id, hint.edge)
@@ -931,15 +1158,30 @@ export function Sidebar({
     setActiveTooltip(null)
   }, [collapsed])
 
-  const orderedFolders = useMemo(() => [...folders].sort(byFolderOrder), [folders])
+  const topFolders = childFolders(sidebar, sidebar?.chatsFolderId ?? '')
+  const shortcuts = sidebar?.shortcuts.filter((shortcut) => shortcut.kind === 'folder' || shortcut.kind === 'chat' || filesEnabled) ?? []
   const pinned = useMemo(() => chats.filter((c) => c.pinned).sort(compareChatOrder), [chats])
   const unpinned = useMemo(() => chats.filter((c) => !c.pinned).sort(compareChatOrder), [chats])
+  // Chats filed in folders show inside them; chats in folders the sidebar does not show stay in Files.
   const inFolders = new Map<string, Chat[]>()
-  for (const f of folders) inFolders.set(f.id, [])
   const loose: Chat[] = []
   for (const c of unpinned) {
-    if (c.folderId && inFolders.has(c.folderId)) inFolders.get(c.folderId)!.push(c)
-    else loose.push(c)
+    if (!c.folderId) loose.push(c)
+    else inFolders.set(c.folderId, [...inFolders.get(c.folderId) ?? [], c])
+  }
+  const chatsById = new Map(chats.map((chat) => [chat.id, chat]))
+  const showShortcuts = shortcuts.length > 0 || fileDrag.active
+  const shortcutDropActive = fileDrag.target === SHORTCUTS_DROP_TARGET || drag.drop?.kind === 'shortcut-target'
+  const folderNodeProps = sidebar && {
+    sidebar,
+    chatsByFolder: inFolders,
+    chatId,
+    shiftHeld,
+    onNavigate,
+    drag,
+    onDrop: handleDrop,
+    onNewFolder: (parentId: string) => setNewFolderParent(parentId),
+    go,
   }
   // Recent order lists unfiled chats by last activity under time headings; drag order stays saved underneath.
   const looseGroups: { group: ChatTimeGroup | null; chats: Chat[] }[] = []
@@ -956,6 +1198,13 @@ export function Sidebar({
     }
   } else if (loose.length > 0) {
     looseGroups.push({ group: null, chats: loose })
+  }
+  const createFolder = () => {
+    // Files names cannot contain "/", so it becomes "-" as in the migration of older folders.
+    const name = folderName.trim().replaceAll('/', '-')
+    if (name) void createSidebarFolder(name, newFolderParent ?? undefined)
+    setFolderName('')
+    setNewFolderParent(undefined)
   }
   const toggleChatSortMode = () => setSetting('chatSortMode', recentOrder ? 'default' : 'recent')
 
@@ -1041,6 +1290,7 @@ export function Sidebar({
   return (
     <aside
       onDragOver={(e) => drag.onSidebarDragOver(e, {
+        shortcutsBottom: shortcutsZoneRef.current?.getBoundingClientRect().bottom,
         pinnedBottom: pinnedZoneRef.current?.getBoundingClientRect().bottom,
         looseTop: looseZoneRef.current?.getBoundingClientRect().top,
       })}
@@ -1156,79 +1406,100 @@ export function Sidebar({
         >
           {/* chat list */}
           <div className="px-2 pb-4 pt-2">
+            {showShortcuts && (
+              <div
+                ref={shortcutsZoneRef}
+                // Items dragged from the Files browser become shortcuts here (see useItemDrag).
+                data-drop-target={SHORTCUTS_DROP_TARGET}
+                className={cn('mb-2 rounded-lg', shortcutDropActive && 'bg-sidebar-accent/40 ring-1 ring-foreground/10')}
+              >
+                <div className="px-2 pb-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                  {ui("Shortcuts")}
+                </div>
+                <div className="space-y-0.5">
+                  {sidebar && folderNodeProps && shortcuts.map((shortcut) => {
+                    if (shortcut.kind === 'folder') {
+                      const folder = sidebar.folders.find((item) => item.id === shortcut.targetId)
+                      return folder ? <SidebarFolderNode key={shortcut.id} folder={{ ...folder, name: shortcut.name }} shortcutId={shortcut.id} {...folderNodeProps} /> : null
+                    }
+                    if (shortcut.kind === 'chat') {
+                      const chat = chatsById.get(shortcut.targetId)
+                      return chat ? (
+                        <ChatRow
+                          key={shortcut.id}
+                          chat={chat}
+                          active={chat.id === chatId}
+                          shiftHeld={shiftHeld}
+                          onNavigate={onNavigate}
+                          draggable
+                          droppable
+                          {...drag.rowLines('shortcuts', shortcut.id, 'shortcut')}
+                          didDragRef={drag.didDragRef}
+                          dragList="shortcuts"
+                          dragId={shortcut.id}
+                          onDragStart={(e) => drag.startDrag('shortcut', shortcut.id, e, 'shortcuts')}
+                          onDragOver={(e) => drag.onRowDragOver('shortcuts', shortcut.id, e)}
+                          onDrop={handleDrop}
+                          onDragEnd={drag.clearDrag}
+                        />
+                      ) : null
+                    }
+                    return (
+                      <SidebarFileRow
+                        key={shortcut.id}
+                        node={{ id: shortcut.targetId, kind: shortcut.kind, name: shortcut.name, mimeType: null }}
+                        sidebar={sidebar}
+                        go={go}
+                        shortcutId={shortcut.id}
+                        drag={drag}
+                        onDrop={handleDrop}
+                      />
+                    )
+                  })}
+                  {shortcuts.length === 0 && (
+                    <div className="rounded-md px-2 py-1.5 text-xs text-muted-foreground">{ui("Drop here to add a shortcut")}</div>
+                  )}
+                </div>
+              </div>
+            )}
+
             {pinned.length > 0 && (
               <div className="mb-2" ref={pinnedZoneRef}>
                 <div className="px-2 pb-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
                   {t('sidebar.pinned')}
                 </div>
                 <div className="space-y-0.5">
-                  {pinned.map((c) => {
-                    const isDragging = drag.dragKind === 'chat' && drag.dragList === 'pinned' && drag.dragId === c.id
-                    const rowDrop = drag.drop?.kind === 'row' && drag.drop.list === 'pinned' && drag.drop.id === c.id
-                    const showLineBefore = Boolean(rowDrop && drag.drop?.kind === 'row' && drag.drop.edge === 'before' && !isDragging)
-                    const showLineAfter = Boolean(rowDrop && drag.drop?.kind === 'row' && drag.drop.edge === 'after' && !isDragging)
-                    return (
-                      <ChatRow
-                        key={c.id}
-                        chat={c}
-                        active={c.id === chatId}
-                        shiftHeld={shiftHeld}
-                        onNavigate={onNavigate}
-                        draggable
-                        droppable
-                        dragging={isDragging}
-                        showLineBefore={showLineBefore}
-                        showLineAfter={showLineAfter}
-                        didDragRef={drag.didDragRef}
-                        dragList="pinned"
-                        onDragStart={(e) => drag.startDrag('chat', c.id, e, 'pinned')}
-                        onDragOver={(e) => drag.onChatRowDragOver('pinned', c.id, e)}
-                        onDrop={handleDrop}
-                        onDragEnd={drag.clearDrag}
-                      />
-                    )
-                  })}
+                  {pinned.map((c) => (
+                    <ChatRow
+                      key={c.id}
+                      chat={c}
+                      active={c.id === chatId}
+                      shiftHeld={shiftHeld}
+                      onNavigate={onNavigate}
+                      draggable
+                      droppable
+                      {...drag.rowLines('pinned', c.id, 'chat')}
+                      dragging={drag.dragKind === 'chat' && drag.dragList === 'pinned' && drag.dragId === c.id}
+                      didDragRef={drag.didDragRef}
+                      dragList="pinned"
+                      onDragStart={(e) => drag.startDrag('chat', c.id, e, 'pinned')}
+                      onDragOver={(e) => drag.onRowDragOver('pinned', c.id, e)}
+                      onDrop={handleDrop}
+                      onDragEnd={drag.clearDrag}
+                    />
+                  ))}
                 </div>
               </div>
             )}
 
-            {orderedFolders.map((f) => {
-              const items = inFolders.get(f.id) ?? []
-              const canReorderFolder = orderedFolders.length > 1
-              const isDragging = drag.dragKind === 'folder' && drag.dragId === f.id
-              const rowDrop = drag.drop?.kind === 'row' && drag.drop.list === 'folder' && drag.drop.id === f.id
-              const showFolderLineBefore = Boolean(rowDrop && drag.drop?.kind === 'row' && drag.drop.edge === 'before' && !isDragging)
-              const showFolderLineAfter = Boolean(rowDrop && drag.drop?.kind === 'row' && drag.drop.edge === 'after' && !isDragging)
-              const chatDropHighlight =
-                drag.dragKind === 'chat'
-                && drag.drop?.kind === 'folder-target'
-                && drag.drop.folderId === f.id
-              return (
-                <FolderGroup
-                  key={f.id}
-                  folder={f}
-                  chats={items}
-                  chatId={chatId}
-                  shiftHeld={shiftHeld}
-                  onNavigate={onNavigate}
-                  canReorderFolder={canReorderFolder}
-                  folderDragging={isDragging}
-                  showFolderLineBefore={showFolderLineBefore}
-                  showFolderLineAfter={showFolderLineAfter}
-                  chatDropHighlight={chatDropHighlight}
-                  onFolderDragStart={(e) => drag.startDrag('folder', f.id, e)}
-                  onFolderDragOver={(e) => drag.onFolderRowDragOver(f.id, e)}
-                  onDrop={handleDrop}
-                  onFolderDragEnd={drag.clearDrag}
-                  folderDidDragRef={drag.didDragRef}
-                  drag={drag}
-                />
-              )
-            })}
+            {folderNodeProps && topFolders.map((folder) => (
+              <SidebarFolderNode key={folder.id} folder={folder} {...folderNodeProps} />
+            ))}
 
             <button
-              className="mt-1 flex w-full cursor-pointer items-center gap-2 rounded-lg px-2 py-1 text-xs text-muted-foreground hover:bg-sidebar-accent/70 hover:text-foreground"
-              onClick={() => setNewFolderOpen(true)}
+              className="mt-1 flex w-full cursor-pointer items-center gap-2 rounded-lg px-2 py-1 text-xs text-muted-foreground hover:bg-sidebar-accent/70 hover:text-foreground disabled:cursor-default disabled:opacity-50"
+              disabled={!sidebar}
+              onClick={() => setNewFolderParent(null)}
             >
               <Plus className="size-3.5" /> {t('sidebar.newFolder')}
             </button>
@@ -1236,8 +1507,11 @@ export function Sidebar({
             <div
               className={cn(
                 'rounded-lg',
-                drag.drop?.kind === 'loose-target' && drag.dragKind === 'chat' && 'bg-sidebar-accent/40 ring-1 ring-foreground/10',
+                ((drag.drop?.kind === 'loose-target' && drag.dragKind !== null) || (sidebar && fileDrag.target === sidebar.chatsFolderId))
+                  && 'bg-sidebar-accent/40 ring-1 ring-foreground/10',
               )}
+              // Items dragged from Files land at the top of the sidebar (in the Chats folder).
+              data-drop-target={sidebar?.chatsFolderId}
               ref={looseZoneRef}
             >
               {loose.length > 0 && (
@@ -1263,34 +1537,26 @@ export function Sidebar({
                         </div>
                       )}
                       <div className="space-y-0.5">
-                        {items.map((c) => {
-                          const isDragging = drag.dragKind === 'chat' && drag.dragId === c.id
-                          const rowDrop = drag.drop?.kind === 'row' && drag.drop.list === 'loose' && drag.drop.id === c.id
-                          const showLineBefore = Boolean(rowDrop && drag.drop?.kind === 'row' && drag.drop.edge === 'before' && !isDragging)
-                          const showLineAfter = Boolean(rowDrop && drag.drop?.kind === 'row' && drag.drop.edge === 'after' && !isDragging)
-                          return (
-                            <ChatRow
-                              key={c.id}
-                              chat={c}
-                              active={c.id === chatId}
-                              shiftHeld={shiftHeld}
-                              onNavigate={onNavigate}
-                              draggable
-                              // Recent order cannot be rearranged, so drags over these rows fall through to the
-                              // sidebar handler, which targets the unfiled list as a whole.
-                              droppable={!recentOrder}
-                              dragging={isDragging}
-                              showLineBefore={showLineBefore}
-                              showLineAfter={showLineAfter}
-                              didDragRef={drag.didDragRef}
-                              dragList={recentOrder ? undefined : 'loose'}
-                              onDragStart={(e) => drag.startDrag('chat', c.id, e, 'loose')}
-                              onDragOver={recentOrder ? undefined : (e) => drag.onChatRowDragOver('loose', c.id, e)}
-                              onDrop={recentOrder ? undefined : handleDrop}
-                              onDragEnd={drag.clearDrag}
-                            />
-                          )
-                        })}
+                        {items.map((c) => (
+                          <ChatRow
+                            key={c.id}
+                            chat={c}
+                            active={c.id === chatId}
+                            shiftHeld={shiftHeld}
+                            onNavigate={onNavigate}
+                            draggable
+                            // Recent order cannot be rearranged, so drags over these rows fall through to the
+                            // sidebar handler, which targets the unfiled list as a whole.
+                            droppable={!recentOrder}
+                            {...drag.rowLines('loose', c.id, 'chat')}
+                            didDragRef={drag.didDragRef}
+                            dragList={recentOrder ? undefined : 'loose'}
+                            onDragStart={(e) => drag.startDrag('chat', c.id, e, 'loose')}
+                            onDragOver={recentOrder ? undefined : (e) => drag.onRowDragOver('loose', c.id, e)}
+                            onDrop={recentOrder ? undefined : handleDrop}
+                            onDragEnd={drag.clearDrag}
+                          />
+                        ))}
                       </div>
                     </div>
                   ))}
@@ -1299,6 +1565,11 @@ export function Sidebar({
               {loose.length === 0 && drag.dragKind === 'chat' && drag.dragList !== 'loose' && (
                 <div className="mt-3 px-2 py-2 text-xs text-muted-foreground">
                   {t('sidebar.dropHere')}
+                </div>
+              )}
+              {drag.dragKind === 'folder' && (
+                <div className="mt-3 px-2 py-2 text-xs text-muted-foreground">
+                  {ui("Drop here to move to the top")}
                 </div>
               )}
             </div>
@@ -1372,7 +1643,7 @@ export function Sidebar({
         </DropdownMenu>
       </div>
 
-      <Dialog open={newFolderOpen} onOpenChange={setNewFolderOpen}>
+      <Dialog open={newFolderParent !== undefined} onOpenChange={(open) => { if (!open) setNewFolderParent(undefined) }}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle>{t('sidebar.newFolder')}</DialogTitle>
@@ -1381,16 +1652,11 @@ export function Sidebar({
             placeholder={t('sidebar.folderName')}
             value={folderName}
             onChange={(e) => setFolderName(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); createFolder() } }}
             autoFocus
           />
           <DialogFooter>
-            <Button
-              onClick={() => {
-                if (folderName.trim()) addFolder(folderName.trim())
-                setFolderName('')
-                setNewFolderOpen(false)
-              }}
-            >
+            <Button onClick={createFolder}>
               {t('common.create')}
             </Button>
           </DialogFooter>

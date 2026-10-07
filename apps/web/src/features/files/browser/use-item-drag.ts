@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import type { FileNode } from '@pulpo/contracts'
+import { create } from 'zustand'
 
 /** Pointer travel before a press on an item becomes a drag, so plain clicks still select. */
 const DRAG_THRESHOLD_PX = 5
@@ -24,6 +25,12 @@ export interface ItemDragState {
   /** Grid tiles keep their shape and stay under the pointer where they were grabbed. */
   tile: boolean
 }
+
+/**
+ * Whether Files items are being dragged anywhere, so drop targets outside the browser (the
+ * sidebar's shortcut area) can appear only while a drag is in progress.
+ */
+export const useFileDragActive = create<{ active: boolean; target: string | null }>()(() => ({ active: false, target: null }))
 
 const IDLE: ItemDragState = { phase: 'idle', nodes: [], origins: [], start: { x: 0, y: 0 }, releasedAt: null, homes: [], tile: false }
 
@@ -85,6 +92,7 @@ export function useItemDrag(options: {
   const setTarget = (target: string | null) => {
     activeTargetRef.current = target
     setActiveTarget(target)
+    useFileDragActive.setState({ target })
   }
 
   // The active drag, set synchronously so a release before React re-renders is still handled.
@@ -98,6 +106,7 @@ export function useItemDrag(options: {
     cleanup.current = null
     const current = session.current
     session.current = null
+    useFileDragActive.setState({ active: false, target: null })
     if (!current) return
     const target = activeTargetRef.current
     setTarget(null)
@@ -179,6 +188,7 @@ export function useItemDrag(options: {
         grab.current = tile ? { x: startX - origins[0]!.left, y: startY - origins[0]!.top } : null
         session.current = { phase: 'dragging', nodes, origins, start: { x: startX, y: startY }, releasedAt: null, homes: [], tile }
         setState(session.current)
+        useFileDragActive.setState({ active: true })
         frame = requestAnimationFrame(autoscroll)
       }
       moveEvent.preventDefault()

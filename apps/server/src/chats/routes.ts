@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import { createChatResponseSchema, createChatSchema, createQueuedMessageSchema, findCostLimitItem, reorderQueuedMessageSchema, startChatSchema, updateChatSchema, updateQueuedMessageSchema, type StateInvalidationScope } from '@pulpo/contracts'
 import { db } from '../database/client.js'
-import { attachments, chatImportSources, chats, folders, models, queuedMessages, requestLogs, responses, usageEvents, users, workspaceLeases } from '../database/schema.js'
+import { attachments, chatImportSources, chats, models, requestLogs, responses, usageEvents, users, workspaceLeases } from '../database/schema.js'
 import { billingUserForRequest, requireUser } from '../auth/service.js'
 import { AppError, forbidden, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
@@ -16,6 +16,8 @@ import { cancelChatWork, getTrashRetention, markChatsForPurge, purgeAtFor } from
 import { planDuplicateTree } from './duplicate.js'
 import { toPublicChat, toPublicChatResponses, withoutWorkspaceScope } from './public.js'
 import { assertFileScope } from './file-scope.js'
+import { chatFolderId } from '../files/chat-items.js'
+import { recoverChats, trashChats } from './trash-service.js'
 import { responseAttachmentIds } from '../messages/input.js'
 import {
   accessibleChatCondition,
@@ -583,6 +585,8 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       if (request.adminChatAccess) throw forbidden('Chat file scope cannot be changed during admin chat access')
       await assertFileScope(user.id, patch.fileScopeIds)
     }
+    // Any live folder in Files can hold chats; the Chats folder itself means unfiled.
+    const folderId = patch.folderId === undefined ? undefined : await chatFolderId(db, user.id, patch.folderId)
     const now = new Date()
     const expiresAt = patch.autoExpire === undefined
       ? undefined
@@ -590,7 +594,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     const [updated] = await db.update(chats).set({
       title: patch.title?.trim(),
       pinned: patch.pinned,
-      folderId: patch.folderId,
+      folderId,
       modelId: patch.modelId,
       sortOrder: typeof patch.sortOrder === 'number' ? patch.sortOrder : undefined,
       fileScopeIds: patch.fileScopeIds,
@@ -604,7 +608,8 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     if (patch.autoExpire && updated.expiresAt) {
       await scheduleNormalChatExpiry({ chatId: updated.id, userId: user.id, expiresAt: updated.expiresAt })
     }
-    await bumpRevision(user.id, id)
+    // Renames and moves show in Files listings, which list filed chats.
+    await bumpRevision(user.id, id, patch.title !== undefined || patch.folderId !== undefined ? ['chats', 'files', 'folders'] : undefined)
     if (patch.autoExpire !== undefined) await scheduleChatIndex(id, user.id, 'chat-expiration-change')
     return withoutWorkspaceScope(updated)
   })
@@ -612,40 +617,17 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
   app.delete('/api/chats/:id', async (request, reply) => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
-    const now = new Date()
-    const retention = await getTrashRetention(user.id)
-    const result = await db.update(chats).set({
-      deletedAt: now,
-      expiresAt: null,
-      purgeStartedAt: retention === 'instant' ? now : null,
-      updatedAt: now,
-    }).where(and(eq(chats.id, id), eq(chats.userId, user.id), isNull(chats.deletedAt))).returning({ id: chats.id })
-    if (!result.length) throw notFound('Chat')
-    await db.delete(queuedMessages).where(and(eq(queuedMessages.chatId, id), eq(queuedMessages.userId, user.id)))
-    await cancelChatWork([id])
-    if (retention === 'instant') {
-      await maintenanceQueue.add('purge-chats', { type: 'purge-chats', payload: { userId: user.id } }, {
-        jobId: `purge-chat-${id}-${Date.now()}`,
-      })
-    }
+    if (!(await trashChats(user.id, [id])).length) throw notFound('Chat')
     await bumpRevision(user.id, id)
-    await scheduleChatIndex(id, user.id, 'chat-trash')
     reply.code(204).send()
   })
 
   app.post('/api/chats/:id/recover', async (request) => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
-    const [recovered] = await db.update(chats).set({ deletedAt: null, expiresAt: null, updatedAt: new Date() }).where(and(
-      eq(chats.id, id),
-      eq(chats.userId, user.id),
-      eq(chats.temporary, false),
-      isNotNull(chats.deletedAt),
-      isNull(chats.purgeStartedAt),
-    )).returning()
+    const [recovered] = await recoverChats(user.id, [id])
     if (!recovered) throw notFound('Deleted chat')
     await bumpRevision(user.id, id)
-    await scheduleChatIndex(id, user.id, 'chat-recovery')
     return recovered
   })
 
@@ -815,100 +797,5 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     }
     await requestCostLimitContinue(id, pause.limit_micros)
     return toSnapshot(response)
-  })
-
-  app.get('/api/folders', async (request) => {
-    const user = requireUser(request)
-    if (request.adminChatAccess) {
-      return {
-        data: await db.select({ id: folders.id, name: folders.name })
-          .from(folders).where(eq(folders.userId, user.id)).orderBy(asc(folders.sortOrder), asc(folders.createdAt)),
-      }
-    }
-    return {
-      data: await db.select().from(folders)
-        .where(eq(folders.userId, user.id))
-        .orderBy(asc(folders.sortOrder), asc(folders.createdAt)),
-    }
-  })
-
-  app.post('/api/folders', async (request, reply) => {
-    const user = requireUser(request)
-    const body = request.body as { clientId?: string; name?: string }
-    const name = body.name?.trim()
-    if (!name) throw new AppError(400, 'name_required', 'Folder name is required')
-    const id = body.clientId ?? newId()
-    const [sortRow] = await db.select({
-      nextSortOrder: sql<number>`coalesce(max(${folders.sortOrder}), -1)::int + 1`,
-    }).from(folders).where(eq(folders.userId, user.id))
-    const [created] = await db.insert(folders).values({
-      id,
-      userId: user.id,
-      name,
-      sortOrder: sortRow?.nextSortOrder ?? 0,
-    }).onConflictDoNothing().returning()
-    if (!created) {
-      const [existing] = await db.select().from(folders).where(and(eq(folders.id, id), eq(folders.userId, user.id))).limit(1)
-      if (!existing) throw new AppError(409, 'folder_id_conflict', 'Folder identifier is already in use')
-      return existing
-    }
-    await bumpRevision(user.id, undefined, ['folders'])
-    reply.code(201)
-    return created
-  })
-
-  app.put('/api/folders/order', async (request) => {
-    const user = requireUser(request)
-    const body = request.body as { folderIds?: string[] }
-    const folderIds = Array.isArray(body.folderIds) ? body.folderIds.filter((id) => typeof id === 'string') : []
-    if (folderIds.length === 0 || folderIds.length > 1_000) {
-      throw new AppError(400, 'validation_error', 'Folder order must include between 1 and 1,000 folder ids')
-    }
-    if (new Set(folderIds).size !== folderIds.length) {
-      throw new AppError(400, 'validation_error', 'Folder order cannot contain duplicates')
-    }
-    const existing = await db.select({ id: folders.id }).from(folders).where(eq(folders.userId, user.id))
-    const existingIds = new Set(existing.map((folder) => folder.id))
-    if (folderIds.length !== existingIds.size || folderIds.some((folderId) => !existingIds.has(folderId))) {
-      throw new AppError(400, 'validation_error', 'Folder order must contain every folder exactly once')
-    }
-    await db.transaction(async (tx) => {
-      for (const [sortOrder, folderId] of folderIds.entries()) {
-        await tx.update(folders)
-          .set({ sortOrder, updatedAt: new Date() })
-          .where(and(eq(folders.id, folderId), eq(folders.userId, user.id)))
-      }
-    })
-    await bumpRevision(user.id, undefined, ['folders'])
-    return { data: folderIds }
-  })
-
-  app.patch('/api/folders/:id', async (request) => {
-    const user = requireUser(request)
-    const { id } = request.params as { id: string }
-    const patch = request.body as { name?: string; pinned?: boolean; sortOrder?: number }
-    const name = patch.name?.trim()
-    if (patch.name !== undefined && !name) throw new AppError(400, 'name_required', 'Folder name is required')
-    const [updated] = await db.update(folders).set({
-      name,
-      pinned: patch.pinned,
-      sortOrder: typeof patch.sortOrder === 'number' ? patch.sortOrder : undefined,
-      updatedAt: new Date(),
-    }).where(and(eq(folders.id, id), eq(folders.userId, user.id))).returning()
-    if (!updated) throw notFound('Folder')
-    await bumpRevision(user.id, undefined, ['folders'])
-    return updated
-  })
-
-  app.delete('/api/folders/:id', async (request, reply) => {
-    const user = requireUser(request)
-    const { id } = request.params as { id: string }
-    await db.transaction(async (tx) => {
-      await tx.update(chats).set({ folderId: null }).where(and(eq(chats.userId, user.id), eq(chats.folderId, id)))
-      const deleted = await tx.delete(folders).where(and(eq(folders.id, id), eq(folders.userId, user.id))).returning({ id: folders.id })
-      if (!deleted.length) throw notFound('Folder')
-    })
-    await bumpRevision(user.id, undefined, ['folders', 'chats'])
-    reply.code(204).send()
   })
 }

@@ -440,20 +440,12 @@ export const providerHealthChecks = pgTable('provider_health_checks', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 })
 
-export const folders = pgTable('folders', {
-  id: uuid('id').primaryKey(),
-  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  name: text('name').notNull(),
-  pinned: boolean('pinned').notNull().default(false),
-  sortOrder: integer('sort_order').notNull().default(0),
-  ...timestamps,
-})
-
 export const chats = pgTable('chats', {
   workspaceScopeId: uuid('workspace_scope_id').notNull().defaultRandom(),
   id: uuid('id').primaryKey(),
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  folderId: uuid('folder_id').references(() => folders.id, { onDelete: 'set null' }),
+  // The Files folder the chat lives in. Null is the sidebar's unfiled list (the Chats folder itself).
+  folderId: uuid('folder_id').references((): AnyPgColumn => fileNodes.id, { onDelete: 'set null' }),
   title: text('title').notNull().default('New chat'),
   modelId: text('model_id').notNull().references(() => models.id),
   pinned: boolean('pinned').notNull().default(false),
@@ -469,6 +461,7 @@ export const chats = pgTable('chats', {
   ...timestamps,
 }, (table) => [
   index('chats_user_updated_idx').on(table.userId, table.updatedAt),
+  index('chats_folder_idx').on(table.folderId).where(sql`${table.folderId} is not null`),
   index('chats_title_search_idx').using('gin', sql`to_tsvector('simple', ${table.title})`),
   index('chats_expiry_idx').on(table.expiresAt)
     .where(sql`${table.expiresAt} is not null and ${table.deletedAt} is null and ${table.purgeStartedAt} is null`),
@@ -837,7 +830,7 @@ export const userMemoryDocumentRevisions = pgTable('user_memory_document_revisio
   check('user_memory_document_revisions_editor_check', sql`${table.editor} in ('user', 'agent')`),
 ])
 
-/** Account-owned Files tree. Distinct from `folders`, which only groups chats. */
+/** Account-owned Files tree. Chats are filed into its folders through `chats.folder_id`. */
 export const fileNodes = pgTable('file_nodes', {
   id: uuid('id').primaryKey(),
   // Access always resolves through the owner today; sharing will add grants beside it.
@@ -854,8 +847,11 @@ export const fileNodes = pgTable('file_nodes', {
   // The node the user trashed; its whole subtree shares this id so restore returns the batch.
   trashRootId: uuid('trash_root_id'),
   revision: integer('revision').notNull().default(0),
+  // Set on the account's built-in top-level folders (see FileSystemRole).
+  systemRole: text('system_role'),
   ...timestamps,
 }, (table) => [
+  uniqueIndex('file_nodes_owner_system_role_unique').on(table.ownerUserId, table.systemRole).where(sql`${table.systemRole} is not null`),
   uniqueIndex('file_nodes_live_name_unique').on(
     table.ownerUserId,
     sql`coalesce(${table.parentId}, '00000000-0000-0000-0000-000000000000'::uuid)`,
@@ -869,6 +865,23 @@ export const fileNodes = pgTable('file_nodes', {
   check('file_nodes_name_check', sql`char_length(${table.name}) between 1 and 255`),
   check('file_nodes_size_check', sql`${table.sizeBytes} >= 0`),
   check('file_nodes_blob_check', sql`(${table.kind} = 'blob') = (${table.objectKey} is not null)`),
+  check('file_nodes_system_role_check', sql`${table.systemRole} is null or (${table.systemRole} in ('chats', 'archive') and ${table.kind} = 'folder' and ${table.parentId} is null)`),
+])
+
+/** Places pinned to the top of the sidebar: a Files item (folders included) or a chat. */
+export const sidebarShortcuts = pgTable('sidebar_shortcuts', {
+  id: uuid('id').primaryKey(),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  targetKind: text('target_kind').notNull(),
+  fileNodeId: uuid('file_node_id').references(() => fileNodes.id, { onDelete: 'cascade' }),
+  chatId: uuid('chat_id').references(() => chats.id, { onDelete: 'cascade' }),
+  sortOrder: integer('sort_order').notNull().default(0),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex('sidebar_shortcuts_user_file_unique').on(table.userId, table.fileNodeId).where(sql`${table.fileNodeId} is not null`),
+  uniqueIndex('sidebar_shortcuts_user_chat_unique').on(table.userId, table.chatId).where(sql`${table.chatId} is not null`),
+  index('sidebar_shortcuts_user_idx').on(table.userId, table.sortOrder),
+  check('sidebar_shortcuts_target_check', sql`(${table.targetKind} = 'file' and ${table.fileNodeId} is not null and ${table.chatId} is null) or (${table.targetKind} = 'chat' and ${table.chatId} is not null and ${table.fileNodeId} is null)`),
 ])
 
 /** Collaborative document state: a compacted Yjs update plus Markdown derived from it. */

@@ -20,7 +20,7 @@ import { localAccountKey, localDb } from '@/lib/local-first/database'
 import { flushOutbox } from '@/lib/local-first/outbox'
 import { queryClient } from '@/lib/query-client'
 import { useAuth } from '@/stores/auth'
-import { mergeServerChatDetails, useChat, type ServerChat, type ServerFolder } from '@/stores/chat'
+import { mergeServerChatDetails, useChat, type ServerChat } from '@/stores/chat'
 import { useCatalog } from '@/stores/catalog'
 import { coalesceResponseEvents, groupResponseEvents, outboxInvalidationQueryKeys, isTerminalSnapshot, stateInvalidationQueryKeys, syncInvalidationScopes, takeContiguousResponseEvents } from './response-sync'
 import { isDesktopRuntime, runtimeInstanceUrl, runtimeSessionToken } from '@/lib/runtime'
@@ -48,7 +48,6 @@ export function ChatDataBridge() {
   const chatId = routeChatId ?? activeTemporaryChatId ?? undefined
   const streamingIds = useChat((state) => state.streamingIds)
   const replaceSummaries = useChat((state) => state.replaceSummaries)
-  const replaceFolders = useChat((state) => state.replaceFolders)
   const setDetailedChat = useChat((state) => state.setDetailedChat)
   const setAdminAccessRequiredChat = useChat((state) => state.setAdminAccessRequiredChat)
   const applyResponseEvents = useChat((state) => state.applyResponseEvents)
@@ -69,13 +68,6 @@ export function ChatDataBridge() {
     queryFn: ({ signal }) => apiRequest<{ data: ServerChat[] }>('/api/chats', { signal }).then((response) => response.data),
     enabled: Boolean(!adminChatView && networkReady && userId && userRole !== 'pending'),
   })
-  const foldersQuery = useQuery({
-    queryKey: ['folders', userId],
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-    queryFn: ({ signal }) => apiRequest<{ data: ServerFolder[] }>('/api/folders', { signal }).then((response) => response.data),
-    enabled: Boolean(!adminChatView && networkReady && userId && userRole !== 'pending'),
-  })
   const chatQuery = useQuery({
     queryKey: ['chat', userId, chatId],
     queryFn: async ({ signal }) => {
@@ -89,7 +81,6 @@ export function ChatDataBridge() {
   })
 
   useEffect(() => { if (chatsQuery.data) replaceSummaries(chatsQuery.data) }, [chatsQuery.data, replaceSummaries])
-  useEffect(() => { if (foldersQuery.data) replaceFolders(foldersQuery.data) }, [foldersQuery.data, replaceFolders])
   useEffect(() => { if (chatQuery.data) setDetailedChat(chatQuery.data) }, [chatQuery.data, setDetailedChat])
   useEffect(() => {
     setAdminAccessRequiredChat(adminAccessRequiredChatId(chatId, chatQuery.error))

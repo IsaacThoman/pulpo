@@ -87,7 +87,7 @@ beforeEach(async () => {
     defaultModelId: model.id, showPromptSuggestions: true, sendWithEnter: true, composerSyncEnabled: true })
   useComposerSyncPreference.setState({ enabled: true, generation: '' })
   useCatalog.setState({ models: [model], loaded: true, agentAvailable: true })
-  useChat.setState({ chats: [], folders: [], activeChatId: null, activeTemporaryChatId: null,
+  useChat.setState({ chats: [], activeChatId: null, activeTemporaryChatId: null,
     streamingIds: [], responseSequences: {}, responseChatIds: {}, adminAccessRequiredChatId: null })
   useUploadOutbox.setState({ uploads: {}, submissions: [], preservedDrafts: {} })
 })

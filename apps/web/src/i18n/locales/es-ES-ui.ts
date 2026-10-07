@@ -2203,6 +2203,18 @@ const esUi: Record<string, string> = {
   "Following new-account defaults": "Usa los valores predeterminados de cuentas nuevas",
   "New-account default": "Predeterminado para cuentas nuevas",
   "Reset to defaults": "Restablecer valores predeterminados",
+  "Move to archive": "Mover al archivo",
+  "Remove shortcut": "Quitar acceso directo",
+  "Add shortcut": "Añadir acceso directo",
+  "New folder inside": "Nueva carpeta dentro",
+  "Open in Files": "Abrir en Archivos",
+  "Shortcuts": "Accesos directos",
+  "Drop here to add a shortcut": "Suelta aquí para añadir un acceso directo",
+  "Drop here to move to the top": "Suelta aquí para mover al nivel superior",
+  "This folder is built in and cannot be renamed, moved, or trashed": "Esta carpeta es del sistema y no se puede renombrar, mover ni enviar a la papelera",
+  "Chats cannot be copied here; duplicate them from the chat menu": "Los chats no se pueden copiar aquí; duplícalos desde el menú del chat",
+  "Moved \"{{0}}\" to the archive": "Se movió \"{{0}}\" al archivo",
+  "Moved {{0}} items to the archive": "Se movieron {{0}} elementos al archivo",
 }
 
 export default esUi

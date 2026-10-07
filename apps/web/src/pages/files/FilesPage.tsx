@@ -3,7 +3,10 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { FILE_SCOPE_ROOT, MAX_CHAT_FILE_SCOPES, type FileFolderLayout, type FileGridPosition, type FileListing, type FileNode } from '@pulpo/contracts'
 import {
+  Archive,
   ArrowDown,
+  BookmarkMinus,
+  BookmarkPlus,
   ArrowUp,
   ChevronRight,
   ClipboardPaste,
@@ -78,6 +81,7 @@ import { openBeside, panelContentPath, useMainNavigate } from '@/features/side-p
 import { SelectionAction } from '@/features/files/browser/SelectionAction'
 import { useFileOperations } from '@/features/files/browser/use-file-operations'
 import { useItemDrag } from '@/features/files/browser/use-item-drag'
+import { addShortcut, archiveFiles, removeShortcut, SHORTCUTS_DROP_TARGET, shortcutFor, useSidebarState } from '@/features/sidebar/api'
 
 const VIEW_STORAGE_KEY = 'pulpo.files.view'
 const UPLOAD_CONCURRENCY = 3
@@ -158,6 +162,7 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
   const agentItem = useMemo(() => ({ id: folderId ?? FILE_SCOPE_ROOT }), [folderId])
   usePublishFilesView(place, filesEnabled && !listing.isError ? agentItem : null)
   const ops = useFileOperations()
+  const sidebar = useSidebarState().data
   const clip = useFileClipboard((state) => state.clip)
   const [view, setView] = useState<FilesView>(readView)
   const [sort, setSort] = useState<FileSort>(readFileSort)
@@ -283,7 +288,9 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
 
   /** Opens an item here: folders browse in place, files fill this view with their editor or preview. */
   const open = (node: FileNode) => {
-    if (node.kind === 'folder') showFolder(node.id)
+    // Chats always open in the main view.
+    if (node.kind === 'chat') goMain(`/c/${node.id}`)
+    else if (node.kind === 'folder') showFolder(node.id)
     // The panel shows every file in place, with a way back to its folder.
     else if (panel) useSidePanel.getState().open({ kind: 'file', id: node.id })
     else navigate(`/files/d/${node.id}`)
@@ -296,7 +303,7 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
    * always browse in place.
    */
   const openFromDoubleClick = (node: FileNode, event: MouseEvent) => {
-    if (node.kind === 'folder') { open(node); return }
+    if (node.kind === 'folder' || node.kind === 'chat') { open(node); return }
     // A Cmd/Ctrl-click toggles selection, so the pair of clicks would otherwise leave it unselected.
     setSelection(selectOnly(node.id))
     const swap = hasPrimaryModifier(event)
@@ -552,7 +559,14 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
     },
     // Dropping into the folder the items already live in, or into one of them, does nothing.
     canDrop: (targetId, dragged) => !dragged.some((node) => node.id === targetId) && !dragged.every((node) => node.parentId === targetId),
-    onDrop: (dragged, targetId) => { void ops.move(dragged, targetId) },
+    onDrop: (dragged, targetId) => {
+      // Dropped on the sidebar's shortcuts, the items stay put and get shortcuts.
+      if (targetId === SHORTCUTS_DROP_TARGET) {
+        for (const node of dragged) void addShortcut(node.kind === 'chat' ? 'chat' : 'file', node.id).catch(ops.fail)
+        return
+      }
+      void ops.move(dragged, targetId)
+    },
   })
 
   /** Folder rows and breadcrumbs accept files dropped in from the operating system. */
@@ -604,7 +618,7 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
       // Touch has no double-click or hover, so a tap opens, as in mobile file browsers.
       if (lastPointerType.current === 'touch') { open(node); return }
       // Alt/Option-click opens an item in the other view, like "Open to the right" in editors.
-      if (event.altKey) {
+      if (event.altKey && node.kind !== 'chat') {
         setSelection(selectOnly(node.id))
         openElsewhere(nodeContent(node))
         return
@@ -643,8 +657,25 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
   }
 
   const single = selectedNodes.length === 1 ? selectedNodes[0]! : null
-  const canDownload = selectedNodes.length > 0 && selectedNodes.every((node) => node.kind !== 'folder')
-  const canUseAgent = selectedNodes.length > 0 && selectedNodes.length <= MAX_CHAT_FILE_SCOPES
+  const canDownload = selectedNodes.length > 0 && selectedNodes.every((node) => node.kind !== 'folder' && node.kind !== 'chat')
+  // Chats are not files the agent can be given, and built-in folders stay where they are.
+  const fileSelection = selectedNodes.filter((node) => node.kind !== 'chat')
+  const hasChats = fileSelection.length < selectedNodes.length
+  const hasSystem = selectedNodes.some((node) => node.systemRole)
+  const canUseAgent = fileSelection.length > 0 && fileSelection.length <= MAX_CHAT_FILE_SCOPES
+  const singleShortcut = single ? shortcutFor(sidebar, single.id) : undefined
+  const archiveSelection = async () => {
+    const targets = selectedNodes
+    setSelection(EMPTY_SELECTION)
+    try {
+      await archiveFiles(targets.map((node) => node.id))
+      ops.notify(targets.length === 1 ? uit`Moved "${targets[0]!.name}" to the archive` : uit`Moved ${targets.length} items to the archive`)
+    } catch (cause) {
+      ops.fail(cause)
+    } finally {
+      await ops.refresh()
+    }
+  }
   const itemMenu = (
     <>
       {selectedNodes.length > 1 && <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">{uit`${selectedNodes.length} items selected`}</DropdownMenuLabel>}
@@ -654,25 +685,35 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
           <DropdownMenuShortcut>↵</DropdownMenuShortcut>
         </DropdownMenuItem>
       )}
-      {single && canOpenElsewhere && (
+      {single && single.kind !== 'chat' && canOpenElsewhere && (
         <DropdownMenuItem onSelect={() => openElsewhere(nodeContent(single))}>
           <ElsewhereIcon /> {elsewhereLabel}<DropdownMenuShortcut>{elsewhereShortcut}</DropdownMenuShortcut>
         </DropdownMenuItem>
       )}
-      {canUseAgent && <AgentMenuItems ids={selectedNodes.map((node) => node.id)} place={place} />}
+      {canUseAgent && <AgentMenuItems ids={fileSelection.map((node) => node.id)} place={place} />}
       {canDownload && (
         <DropdownMenuItem onSelect={() => void ops.download(selectedNodes)}>
           <Download /> {ui("Download")}
         </DropdownMenuItem>
       )}
-      {single && <DropdownMenuItem onSelect={() => setRenamingId(single.id)}><Pencil /> {ui("Rename")}<DropdownMenuShortcut>{shortcutLabel('F2')}</DropdownMenuShortcut></DropdownMenuItem>}
-      <DropdownMenuItem onSelect={() => setMoving(selectedNodes)}><FolderInput /> {ui("Move to…")}</DropdownMenuItem>
-      <DropdownMenuItem onSelect={() => void duplicate()}><CopyPlus /> {ui("Duplicate")}<DropdownMenuShortcut>{shortcutLabel('D', { mod: true })}</DropdownMenuShortcut></DropdownMenuItem>
+      {single && !single.systemRole && <DropdownMenuItem onSelect={() => setRenamingId(single.id)}><Pencil /> {ui("Rename")}<DropdownMenuShortcut>{shortcutLabel('F2')}</DropdownMenuShortcut></DropdownMenuItem>}
+      {!hasSystem && <DropdownMenuItem onSelect={() => setMoving(selectedNodes)}><FolderInput /> {ui("Move to…")}</DropdownMenuItem>}
+      {!hasSystem && sidebar && <DropdownMenuItem onSelect={() => void archiveSelection()}><Archive /> {ui("Move to archive")}</DropdownMenuItem>}
+      {single && sidebar && (
+        <DropdownMenuItem onSelect={() => void (singleShortcut ? removeShortcut(singleShortcut.id) : addShortcut(single.kind === 'chat' ? 'chat' : 'file', single.id)).catch(ops.fail)}>
+          {singleShortcut ? <BookmarkMinus /> : <BookmarkPlus />} {singleShortcut ? ui("Remove shortcut") : ui("Add shortcut")}
+        </DropdownMenuItem>
+      )}
+      {!hasChats && <DropdownMenuItem onSelect={() => void duplicate()}><CopyPlus /> {ui("Duplicate")}<DropdownMenuShortcut>{shortcutLabel('D', { mod: true })}</DropdownMenuShortcut></DropdownMenuItem>}
       <DropdownMenuSeparator />
-      <DropdownMenuItem onSelect={() => setClipboard('cut')}><Scissors /> {ui("Cut")}<DropdownMenuShortcut>{shortcutLabel('X', { mod: true })}</DropdownMenuShortcut></DropdownMenuItem>
-      <DropdownMenuItem onSelect={() => setClipboard('copy')}><Copy /> {ui("Copy")}<DropdownMenuShortcut>{shortcutLabel('C', { mod: true })}</DropdownMenuShortcut></DropdownMenuItem>
-      <DropdownMenuSeparator />
-      <DropdownMenuItem variant="destructive" onSelect={() => void trashSelection()}><Trash2 /> {ui("Move to trash")}<DropdownMenuShortcut>⌫</DropdownMenuShortcut></DropdownMenuItem>
+      {!hasSystem && <DropdownMenuItem onSelect={() => setClipboard('cut')}><Scissors /> {ui("Cut")}<DropdownMenuShortcut>{shortcutLabel('X', { mod: true })}</DropdownMenuShortcut></DropdownMenuItem>}
+      {!hasChats && <DropdownMenuItem onSelect={() => setClipboard('copy')}><Copy /> {ui("Copy")}<DropdownMenuShortcut>{shortcutLabel('C', { mod: true })}</DropdownMenuShortcut></DropdownMenuItem>}
+      {!hasSystem && (
+        <>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem variant="destructive" onSelect={() => void trashSelection()}><Trash2 /> {ui("Move to trash")}<DropdownMenuShortcut>⌫</DropdownMenuShortcut></DropdownMenuItem>
+        </>
+      )}
     </>
   )
   const backgroundMenu = (
@@ -797,9 +838,9 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
         <SelectionAction label={ui("Clear selection")} onClick={() => setSelection(EMPTY_SELECTION)}><X /></SelectionAction>
         <span className="px-1.5 text-sm font-medium whitespace-nowrap tabular-nums">{selectedNodes.length === 1 ? ui("1 selected") : uit`${selectedNodes.length} selected`}</span>
         {canDownload && <SelectionAction label={ui("Download")} onClick={() => void ops.download(selectedNodes)}><Download /></SelectionAction>}
-        <SelectionAction label={ui("Move to…")} onClick={() => setMoving(selectedNodes)}><FolderInput /></SelectionAction>
-        <SelectionAction label={ui("Duplicate")} onClick={() => void duplicate()}><CopyPlus /></SelectionAction>
-        <SelectionAction label={ui("Move to trash")} destructive onClick={() => void trashSelection()}><Trash2 /></SelectionAction>
+        {!hasSystem && <SelectionAction label={ui("Move to…")} onClick={() => setMoving(selectedNodes)}><FolderInput /></SelectionAction>}
+        {!hasChats && <SelectionAction label={ui("Duplicate")} onClick={() => void duplicate()}><CopyPlus /></SelectionAction>}
+        {!hasSystem && <SelectionAction label={ui("Move to trash")} destructive onClick={() => void trashSelection()}><Trash2 /></SelectionAction>}
       </div>
     </TooltipProvider>
   )

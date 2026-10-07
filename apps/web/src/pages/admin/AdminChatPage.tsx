@@ -11,7 +11,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { queryClient } from '@/lib/query-client'
 import { isDesktopRuntime, runtimeInstanceUrl, runtimeSessionToken } from '@/lib/runtime'
-import { useChat, type ServerChat, type ServerFolder } from '@/stores/chat'
+import { useChat, type ServerChat } from '@/stores/chat'
 import { useUploadOutbox } from '@/stores/upload-outbox'
 import {
   clearAdminChatGrant,
@@ -96,7 +96,7 @@ export function AdminChatPage() {
   const cleanupTimer = useRef<number | null>(null)
   const socketRef = useRef<PulpoSocket | null>(null)
   const chat = useChat((state) => state.chats.find((item) => item.id === chatId) ?? null)
-  const folders = useChat((state) => state.folders)
+  const [folders, setFolders] = useState<Array<{ id: string; name: string }>>([])
   const streamingIds = useChat((state) => state.streamingIds)
 
   const load = async () => {
@@ -104,10 +104,10 @@ export function AdminChatPage() {
     try {
       const [detail, folderResult, shareResult] = await Promise.all([
         apiRequest<ServerChat & { deletedAt?: string | null }>(`/api/chats/${chatId}?format=compact&scope=active`),
-        apiRequest<{ data: ServerFolder[] }>('/api/folders'),
+        apiRequest<{ data: Array<{ id: string; name: string }> }>('/api/folders'),
         apiRequest<{ data: Array<{ share: { id: string; revokedAt: string | null } }> }>(`/api/chat-shares?chatId=${chatId}`),
       ])
-      useChat.getState().replaceFolders(folderResult.data.map((folder) => ({ ...folder, pinned: false, sortOrder: folder.sortOrder ?? 0 })))
+      setFolders(folderResult.data)
       useChat.getState().setDetailedChat(detail)
       useChat.getState().setActive(chatId)
       setRename(detail.title)
@@ -134,7 +134,7 @@ export function AdminChatPage() {
     cleanupTimer.current = null
     savedState.current ??= useChat.getState()
     savedUploadState.current ??= useUploadOutbox.getState()
-    useChat.setState({ chats: [], folders: [], activeChatId: null, activeTemporaryChatId: null, streamingIds: [], responseSequences: {}, responseChatIds: {} })
+    useChat.setState({ chats: [], activeChatId: null, activeTemporaryChatId: null, streamingIds: [], responseSequences: {}, responseChatIds: {} })
     useUploadOutbox.setState({ uploads: {}, submissions: [], preservedDrafts: {} })
     void load()
     return () => {

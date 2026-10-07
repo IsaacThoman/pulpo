@@ -2,9 +2,10 @@ export const FULL_BACKUP_TABLES = [
   'users', 'friendships', 'user_blocks', 'pools', 'pool_members', 'pool_invitations', 'invite_codes',
   'password_credentials', 'user_passkey_credentials', 'user_totp_credentials', 'two_factor_recovery_codes', 'user_preferences', 'user_provider_credentials', 'audit_events',
   'catalog_icons', 'labs', 'provider_connections', 'image_models', 'speech_models', 'speech_requests', 'speech_resource_cleanup',
-  'models', 'model_pricing_versions', 'model_presets', 'model_preset_choices', 'folders', 'chats', 'responses',
+  // Chats are filed in Files folders, so the Files tree is restored before them.
+  'models', 'model_pricing_versions', 'model_presets', 'model_preset_choices', 'file_nodes', 'chats', 'sidebar_shortcuts', 'responses',
   'response_items', 'response_content_parts', 'chat_shares', 'attachments', 'image_generation_requests', 'user_memory_documents', 'user_memory_document_revisions',
-  'file_nodes', 'file_docs', 'file_doc_updates', 'file_folder_layouts', 'file_agent_changes',
+  'file_docs', 'file_doc_updates', 'file_folder_layouts', 'file_agent_changes',
   'queued_messages', 'composer_drafts', 'composer_draft_attachments', 'shelved_drafts', 'shelved_draft_attachments', 'shelf_operations',
   'episodic_memory_generations', 'chat_turn_embeddings', 'episodic_memory_metric_buckets',
   'api_keys', 'management_tokens', 'api_key_model_permissions', 'credit_ledger', 'usage_events', 'daily_usage_rollups', 'application_settings',
@@ -44,7 +45,7 @@ export const OPTIONAL_TABLES_IN_LEGACY_BACKUPS: readonly FullBackupTable[] = [
   'chat_turn_embeddings',
   'episodic_memory_metric_buckets',
   'pools', 'pool_members', 'pool_invitations', 'invite_codes', 'user_passkey_credentials', 'user_provider_credentials',
-  'file_nodes', 'file_docs', 'file_doc_updates', 'file_folder_layouts', 'file_agent_changes',
+  'file_nodes', 'file_docs', 'file_doc_updates', 'file_folder_layouts', 'file_agent_changes', 'sidebar_shortcuts',
   'queued_messages', 'composer_drafts', 'composer_draft_attachments', 'shelved_drafts', 'shelved_draft_attachments', 'shelf_operations',
   'billing_accounts', 'billing_subscriptions', 'billing_checkouts', 'billing_auto_top_ups', 'billing_orders', 'billing_webhook_events',
   'weekly_usage_periods', 'five_hour_usage_periods', 'shared_allowance_periods', 'shared_five_hour_usage_periods',
@@ -157,4 +158,62 @@ export function scrubFullBackupDetailedPayloads(database: Record<string, Array<R
     }
     log.capture_detailed_payloads = capture
   }
+}
+
+type LegacyRow = Record<string, unknown>
+
+/**
+ * Backups made before chat folders moved into Files have a `folders` table instead. Each account
+ * with folders gets a Chats folder holding them, under their old ids so chats stay filed, and
+ * pinned folders become sidebar shortcuts. `rootNames` are the lowercase names already used at
+ * the top of each account's Files.
+ */
+export function legacyChatFolderRows(
+  folders: readonly LegacyRow[],
+  rootNames: ReadonlyMap<string, ReadonlySet<string>>,
+  newId: () => string,
+): { fileNodes: LegacyRow[]; shortcuts: LegacyRow[] } {
+  const fileNodes: LegacyRow[] = []
+  const shortcuts: LegacyRow[] = []
+  const chatsFolders = new Map<string, { id: string; names: Set<string> }>()
+  const freeName = (base: string, taken: Set<string>) => {
+    let name = base
+    for (let attempt = 2; taken.has(name.toLowerCase()); attempt += 1) name = `${base} (${attempt})`
+    taken.add(name.toLowerCase())
+    return name
+  }
+  const sorted = [...folders].sort((left, right) => Number(left.sort_order ?? 0) - Number(right.sort_order ?? 0))
+  for (const folder of sorted) {
+    const userId = String(folder.user_id)
+    const now = String(folder.created_at ?? new Date().toISOString())
+    let parent = chatsFolders.get(userId)
+    if (!parent) {
+      parent = { id: newId(), names: new Set() }
+      chatsFolders.set(userId, parent)
+      fileNodes.push({
+        id: parent.id, owner_user_id: userId, parent_id: null, kind: 'folder', status: 'ready',
+        name: freeName('Chats', new Set(rootNames.get(userId))), system_role: 'chats',
+        mime_type: null, size_bytes: 0, object_key: null, checksum: null, trashed_at: null, trash_root_id: null, revision: 0,
+        created_at: now, updated_at: now,
+      })
+    }
+    // Files names cannot contain "/" or control characters.
+    let base = [...String(folder.name ?? '')]
+      .map((character) => character === '/' || character.charCodeAt(0) < 0x20 || character.charCodeAt(0) === 0x7f ? '-' : character)
+      .join('').slice(0, 200).trim()
+    if (!base || base === '.' || base === '..') base = 'Folder'
+    fileNodes.push({
+      id: folder.id, owner_user_id: userId, parent_id: parent.id, kind: 'folder', status: 'ready',
+      name: freeName(base, parent.names), system_role: null,
+      mime_type: null, size_bytes: 0, object_key: null, checksum: null, trashed_at: null, trash_root_id: null, revision: 0,
+      created_at: now, updated_at: String(folder.updated_at ?? now),
+    })
+    if (folder.pinned === true) {
+      shortcuts.push({
+        id: newId(), user_id: userId, target_kind: 'file', file_node_id: folder.id, chat_id: null,
+        sort_order: shortcuts.filter((shortcut) => shortcut.user_id === userId).length, created_at: now,
+      })
+    }
+  }
+  return { fileNodes, shortcuts }
 }
