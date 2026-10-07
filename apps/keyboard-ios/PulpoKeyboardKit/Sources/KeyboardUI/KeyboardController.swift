@@ -22,8 +22,21 @@ public final class KeyboardRootView: UIView {
   var emoji: EmojiPanelView?
   let dictation: DictationPanelView
   var style: KeyboardStyle
-  /// The extension sits on the system keyboard backdrop; the in-app preview paints its own.
+  /// Paint gaps as well as caps so remote keyboard hit testing receives them.
   public var paintsBackground = false { didSet { backgroundColor = paintsBackground ? style.background : .clear } }
+
+  /// Extra bottom bezel owned by a preview host. Keep its touches in the grid
+  /// without moving the caps or the emoji/dictation panel controls.
+  public var bottomTouchPadding: CGFloat = 0
+
+  public override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
+    if mode == .keys, bottomTouchPadding > 0 {
+      var area = bounds
+      area.size.height += bottomTouchPadding
+      return area.contains(point)
+    }
+    return super.point(inside: point, with: event)
+  }
 
   enum Mode { case keys, emoji, dictation }
   var mode: Mode = .keys { didSet { if mode != oldValue { applyMode() } } }
@@ -62,12 +75,15 @@ public final class KeyboardRootView: UIView {
     dictation.isHidden = mode != .dictation
   }
 
-  /// Fingers aiming for the top row often land just above it; those belong to the keys.
+  /// Keep the lower bar edge forgiving for the top row, and forward unused bar
+  /// background or empty suggestion slots rather than letting them swallow taps.
   public override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
-    if mode == .keys, !bar.isShowingNotice, point.y >= bar.frame.maxY - 7, point.y < bar.frame.maxY, bounds.contains(point) {
-      return keys
-    }
-    return super.hitTest(point, with: event)
+    let target = super.hitTest(point, with: event)
+    guard target != nil, mode == .keys, !bar.isShowingNotice else { return target }
+    if point.y >= bar.frame.maxY - 7, point.y < bar.frame.maxY { return keys }
+    if let target, target === bar || target === self { return keys }
+    if let slot = target as? SlotControl, !slot.isEnabled { return keys }
+    return target
   }
 
   public override func layoutSubviews() {

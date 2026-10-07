@@ -40,6 +40,22 @@ final class InstalledKeyboardTests: XCTestCase {
     }
   }
 
+  func testGapsAndMarginsTypeTheClosestKeysInExtension() {
+    let q = app.key("key-q").frame
+    let a = app.key("key-a").frame
+    let f = app.key("key-f").frame
+    let g = app.key("key-g").frame
+    let points = [
+      CGPoint(x: q.minX - 2, y: q.midY),
+      CGPoint(x: a.minX - 6, y: a.minY - 5),
+      CGPoint(x: (f.maxX + g.minX) / 2 - 1, y: f.midY),
+    ]
+    for (point, expected) in zip(points, ["Q", "Qq", "Qqf"]) {
+      app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: point.x, dy: point.y)).tap()
+      waitForText(expected)
+    }
+  }
+
   func testTypesCapitalizesAndCorrectsInAnotherApp() {
     snapshot("installed-start")
     type("teh cat sat ")

@@ -24,6 +24,36 @@ final class TypingTests: XCTestCase {
     return CGPoint(x: frame.midX, y: frame.midY)
   }
 
+  func testTapsInGapsAndSideMarginsTypeTheClosestKeys() {
+    let q = app.key("key-q").frame
+    let a = app.key("key-a").frame
+    let f = app.key("key-f").frame
+    let g = app.key("key-g").frame
+    let points = [
+      CGPoint(x: 1, y: q.midY),
+      CGPoint(x: a.minX - 6, y: a.minY - 5),
+      CGPoint(x: (f.maxX + g.minX) / 2 - 1, y: f.midY),
+    ]
+    for point in points {
+      app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: point.x, dy: point.y)).tap()
+    }
+    waitForText("Qqf")
+  }
+
+  func testUnusedBarBackgroundTypesTheNearestTopRowKey() {
+    let root = app.descendants(matching: .any).matching(identifier: "pulpo-keyboard").firstMatch.frame
+    let point = CGPoint(x: 1, y: root.minY + 44 - 12)
+    app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: point.x, dy: point.y)).tap()
+    waitForText("Q")
+  }
+
+  func testBottomBezelTapReachesTheSpaceBar() {
+    let space = app.key("key-space").frame
+    let point = CGPoint(x: space.midX, y: space.maxY + 12)
+    app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: point.x, dy: point.y)).tap()
+    waitForText(" ")
+  }
+
   func testCapitalizesAndAutocorrects() {
     app.typeOnPreview("i think teh cat is wierd")
     app.key("key-numbers").tap()

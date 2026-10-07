@@ -26,6 +26,9 @@ open class PulpoKeyboardViewController: UIInputViewController, KeyboardHost {
     let controller = KeyboardController(host: self)
     self.controller = controller
     let root = controller.rootView
+    // Remote keyboard hit testing drops transparent pixels before UIKit sees
+    // them. Paint the gaps too, so every point reaches the nearest-key resolver.
+    root.paintsBackground = true
     root.translatesAutoresizingMaskIntoConstraints = false
     view.addSubview(root)
     let height = view.heightAnchor.constraint(equalToConstant: controller.preferredHeight)

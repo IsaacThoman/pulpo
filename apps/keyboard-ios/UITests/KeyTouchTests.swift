@@ -33,6 +33,93 @@ final class KeyTouchTests: XCTestCase {
     return Contact(point: CGPoint(x: view.frame.midX, y: view.frame.midY), time: time)
   }
 
+  func testGapsChooseTheClosestKeyEdgeAcrossStaggeredRows() {
+    let a = keys.keyViews.first { $0.key.identifier == "key-a" }!.frame
+    let q = keys.keyViews.first { $0.key.identifier == "key-q" }!.frame
+    // Above the left corner of A, Q is closer even though this is in A's
+    // expanded row hit area. The cap edges decide, not the row or center.
+    let point = CGPoint(x: a.minX - 6, y: a.minY - 5)
+    XCTAssertTrue(point.x >= q.minX && point.x <= q.maxX)
+    XCTAssertEqual(keys.keyViews[keys.keyIndex(at: point)!].key.identifier, "key-q")
+  }
+
+  func testSpaceWinsNearItsWideEdgeInsteadOfALetterCenter() {
+    let space = keys.keyViews.first { $0.key.identifier == "key-space" }!.frame
+    let v = keys.keyViews.first { $0.key.identifier == "key-v" }!.frame
+    let point = CGPoint(x: space.minX + 2, y: space.minY - 3)
+    XCTAssertLessThan(space.minY - point.y, point.y - v.maxY)
+    XCTAssertEqual(keys.keyViews[keys.keyIndex(at: point)!].key.identifier, "key-space")
+  }
+
+  func testNumberPadBlankResolvesToTheClosestVisibleKey() {
+    var traits = InputTraits()
+    traits.keyboard = .numberPad
+    keys.setLayout(KeyboardLayout.make(page: .letters, traits: traits, needsGlobe: false, digitHints: false), style: keys.style)
+    keys.layoutIfNeeded()
+    let blank = keys.keyViews.first { $0.key.identifier == "key-blank" }!.frame
+    let zero = keys.keyViews.first { $0.key.identifier == "key-0" }!.frame
+    let point = CGPoint(x: blank.maxX - 2, y: zero.midY)
+    let contact = Contact(point: point, time: 0)
+    keys.touchesBegan([contact], with: nil)
+    keys.touchesEnded([contact], with: nil)
+    XCTAssertEqual(recorder.activations, ["key-0"])
+  }
+
+  func testUnusedSuggestionBarSpaceRoutesToTopRow() {
+    let root = makeRoot()
+    // No suggestions: the center of the bar is bare keyboard background.
+    let point = CGPoint(x: 190, y: root.bar.frame.maxY - 12)
+    XCTAssertTrue(root.hitTest(point, with: nil) === root.keys)
+    // An unfilled suggestion slot must not swallow the touch either.
+    root.bar.setSuggestions([Suggestion(text: "test", kind: .literal)])
+    XCTAssertTrue(root.hitTest(point, with: nil) === root.keys)
+  }
+
+  func testBarControlsAndOtherPanelsKeepTheirTouches() {
+    let root = makeRoot()
+    let point = CGPoint(x: 20, y: root.bar.frame.midY)
+    XCTAssertTrue(root.hitTest(point, with: nil) is UIButton)
+    root.bar.setSuggestions([Suggestion(text: "test", kind: .literal)])
+    XCTAssertTrue(root.hitTest(point, with: nil) is SlotControl)
+    root.bar.showNotice("Test notice")
+    XCTAssertFalse(root.hitTest(CGPoint(x: 190, y: root.bar.frame.maxY - 3), with: nil) === root.keys)
+    root.mode = .dictation
+    XCTAssertFalse(root.hitTest(CGPoint(x: 190, y: root.bounds.maxY - 3), with: nil) === root.keys)
+  }
+
+  func testPreviewBottomPaddingRoutesOnlyInKeyMode() {
+    let root = makeRoot()
+    root.bottomTouchPadding = 34
+    let host = UIView(frame: CGRect(x: 0, y: 0, width: root.bounds.width, height: root.bounds.height + 34))
+    host.addSubview(root)
+    let point = CGPoint(x: root.bounds.midX, y: root.frame.maxY + 12)
+    XCTAssertTrue(host.hitTest(point, with: nil) === root.keys)
+    XCTAssertEqual(root.keys.keyViews[root.keys.keyIndex(at: root.keys.convert(point, from: host))!].key.identifier, "key-space")
+    root.mode = .dictation
+    XCTAssertTrue(host.hitTest(point, with: nil) === host)
+  }
+
+  func testAllGridGapsAndOuterMarginsRouteToKeys() {
+    for inset in [false, true] {
+      let root = makeRoot(inset: inset)
+      for y in stride(from: root.keys.frame.minY, to: root.bounds.maxY, by: 3) {
+        for x in stride(from: CGFloat(0), to: root.bounds.maxX, by: 3) {
+          let point = CGPoint(x: x, y: y)
+          XCTAssertTrue(root.hitTest(point, with: nil) === root.keys, "Unrouted gap at \(point)")
+          XCTAssertNotNil(root.keys.keyIndex(at: root.keys.convert(point, from: root)))
+        }
+      }
+    }
+  }
+
+  private func makeRoot(inset: Bool = false) -> KeyboardRootView {
+    let style = KeyboardStyle.current(dark: false, landscape: false, inset: inset)
+    let root = KeyboardRootView(style: style, layout: layout(.letters))
+    root.frame = CGRect(x: 0, y: 0, width: 393, height: style.totalHeight)
+    root.layoutIfNeeded()
+    return root
+  }
+
   func testThumbRollKeepsThePressedLetterAcrossAKeyBoundary() {
     let f = keys.keyViews.first { $0.key.identifier == "key-f" }!
     let g = keys.keyViews.first { $0.key.identifier == "key-g" }!

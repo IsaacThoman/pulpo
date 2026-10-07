@@ -40,6 +40,11 @@ the same keyboard inside the app without enabling it.
 
 ## How it works
 
+**Touch routing.** The extension paints an opaque keyboard background. Transparent
+pixels in its remote view otherwise swallow gap taps before UIKit receives them.
+The grid resolves gaps and outer margins by distance to the nearest visible key cap,
+and unused suggestion-bar space and the preview's bottom bezel forward to the grid.
+
 **Typing.** `KeyboardEngine` owns shift and caps lock, sentence capitalization, the
 double-space period, curly quotes, automatic spaces after swipes and suggestions, and
 autocorrection. It edits through a small `TextDocument` protocol, so it runs the same
@@ -97,7 +102,9 @@ xcodebuild -project PulpoKeyboard.xcodeproj -scheme PulpoKeyboard \
 suggestions on real key views in the in-app preview; `InstalledKeyboardTests` does the
 same through the installed extension in a system text field. `KeyTouchTests` drives
 UIKit touch callbacks with deterministic overlapping contacts to cover rolling typing,
-spaces, delete ordering, batched events, and drift after a key has committed.
+spaces, delete ordering, batched events, drift after a key has committed, and routing
+gaps and empty keyboard padding to the closest visible key. Preview and installed
+keyboard tests also tap between caps and in the surrounding margins.
 `AppearanceTests` saves
 screenshots of every page and field layout. `DictationTests` and `BounceDictationTests`
 need the stub server (`python3 scripts/stub_pulpo_server.py`) and microphone permission

@@ -211,12 +211,17 @@ final class KeysView: UIView {
     return centers
   }
 
+  /// Partition all keyboard space by distance to the visible cap, including gaps
+  /// between staggered rows and padding around the grid. A wide space bar must
+  /// remain easy to hit near its ends; measuring from its center would favor letters.
   func keyIndex(at point: CGPoint) -> Int? {
-    if let hit = hitRects.firstIndex(where: { $0.contains(point) }) { return hit }
     var best: (Int, CGFloat)?
     for (index, view) in keyViews.enumerated() {
-      let dx = point.x - view.frame.midX
-      let dy = point.y - view.frame.midY
+      // The number pad's empty corner is layout spacing, not a key.
+      if view.key.action == .text("") { continue }
+      let rect = view.frame
+      let dx = max(rect.minX - point.x, 0, point.x - rect.maxX)
+      let dy = max(rect.minY - point.y, 0, point.y - rect.maxY)
       let distance = dx * dx + dy * dy
       if best == nil || distance < best!.1 { best = (index, distance) }
     }

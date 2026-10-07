@@ -154,8 +154,11 @@ final class PreviewInputView: UIInputView, UIInputViewAudioFeedback {
   override func layoutSubviews() {
     super.layoutSubviews()
     backgroundColor = controller.rootView.backgroundColor
-    // The keyboard always gets its full height; any extra goes below it.
-    controller.rootView.frame = CGRect(x: 0, y: 0, width: bounds.width, height: min(bounds.height, controller.preferredHeight))
+    // The caps and panels keep their normal height; the keys also receive
+    // touches in the preview host's extra bottom bezel.
+    let root = controller.rootView
+    root.frame = CGRect(x: 0, y: 0, width: bounds.width, height: min(bounds.height, controller.preferredHeight))
+    root.bottomTouchPadding = max(0, bounds.height - root.frame.maxY)
     controller.layoutChanged(dark: traitCollection.userInterfaceStyle == .dark)
   }
 }
