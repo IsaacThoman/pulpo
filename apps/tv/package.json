@@ -1,0 +1,43 @@
+{
+  "name": "@pulpo/tv",
+  "version": "1.0.0",
+  "private": true,
+  "main": "index.ts",
+  "scripts": {
+    "start": "EXPO_TV=1 expo start",
+    "prebuild": "EXPO_TV=1 expo prebuild --platform ios",
+    "tvos": "EXPO_TV=1 expo run:ios",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --exclude \"**/dist/**\""
+  },
+  "dependencies": {
+    "@pulpo/client-core": "0.1.0",
+    "@pulpo/contracts": "0.1.0",
+    "@react-native-tvos/config-tv": "^0.1.7",
+    "@tanstack/react-query": "^5.101.4",
+    "expo": "~57.0.10",
+    "expo-application": "~57.0.1",
+    "expo-build-properties": "~57.0.8",
+    "expo-constants": "~57.0.9",
+    "expo-crypto": "~57.0.1",
+    "expo-device": "~57.0.1",
+    "expo-file-system": "~57.0.1",
+    "expo-image": "~57.0.3",
+    "expo-network": "~57.0.1",
+    "expo-secure-store": "~57.0.1",
+    "expo-splash-screen": "~57.0.5",
+    "expo-sqlite": "~57.0.1",
+    "expo-symbols": "~57.0.1",
+    "marked": "^15.0.12",
+    "react": "19.2.3",
+    "react-native": "npm:react-native-tvos@0.86.2-0",
+    "socket.io-client": "^4.8.3",
+    "zustand": "^5.0.11"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.2",
+    "@types/react": "~19.2.2",
+    "typescript": "~6.0.3",
+    "vitest": "^4.1.11"
+  }
+}

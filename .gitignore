@@ -35,6 +35,10 @@ apps/mobile/.expo/
 apps/mobile/ios/
 apps/mobile/android/
 apps/mobile/.env.local
+apps/tv/.expo/
+apps/tv/ios/
+apps/tv/android/
+apps/tv/expo-env.d.ts
 
 # Generated mobile visual QA captures (keep outside version control)
 apps/mobile/e2e/evidence/**/*.png

@@ -1,0 +1,36 @@
+# Siri Remote UI tests for the Pulpo Apple TV app. The tests drive the
+# installed app by bundle ID; the host app only exists because Xcode needs a
+# target application to launch the UI test runner.
+name: PulpoTVE2E
+options:
+  bundleIdPrefix: com.isaacthoman.pulpo.e2e
+  deploymentTarget:
+    tvOS: "26.0"
+targets:
+  E2EHost:
+    type: application
+    platform: tvOS
+    sources: [Host]
+    settings:
+      GENERATE_INFOPLIST_FILE: YES
+      PRODUCT_BUNDLE_IDENTIFIER: com.isaacthoman.pulpo.e2e.host
+      CODE_SIGNING_ALLOWED: NO
+  PulpoTVUITests:
+    type: bundle.ui-testing
+    platform: tvOS
+    sources: [Tests]
+    dependencies:
+      - target: E2EHost
+    settings:
+      GENERATE_INFOPLIST_FILE: YES
+      TEST_TARGET_NAME: E2EHost
+      CODE_SIGNING_ALLOWED: NO
+      SWIFT_VERSION: "6.0"
+schemes:
+  PulpoTVUITests:
+    build:
+      targets:
+        E2EHost: all
+        PulpoTVUITests: [test]
+    test:
+      targets: [PulpoTVUITests]

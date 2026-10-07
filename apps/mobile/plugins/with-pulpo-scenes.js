@@ -38,11 +38,12 @@ module.exports = function withPulpoScenes(config) {
     return mod
   })
   return withXcodeProject(config, (mod) => {
-    const { projectRoot, platformProjectRoot, projectName } = mod.modRequest
+    const { platformProjectRoot, projectName } = mod.modRequest
     const relativePath = `${projectName}/PulpoSceneDelegate.swift`
     const destination = path.join(platformProjectRoot, relativePath)
     fs.mkdirSync(path.dirname(destination), { recursive: true })
-    fs.copyFileSync(path.join(projectRoot, 'plugins/ios/PulpoSceneDelegate.swift'), destination)
+    // Resolved from this plugin so the Apple TV app can share it.
+    fs.copyFileSync(path.join(__dirname, 'ios/PulpoSceneDelegate.swift'), destination)
     const project = mod.modResults
     if (!project.hasFile(relativePath)) {
       project.addSourceFile(relativePath, { target: project.getFirstTarget().uuid }, project.getFirstProject().firstProject.mainGroup)
