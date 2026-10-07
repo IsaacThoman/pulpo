@@ -23,6 +23,7 @@ final class AppModel {
   private let sessionStore = SessionStore()
 
   init() {
+    Diagnostics.record("app", "launch")
     // Installed at launch: the host app's name arrives shortly after the keyboard opens us.
     HostAppObserver.shared.start()
     settings = SettingsStore().load()

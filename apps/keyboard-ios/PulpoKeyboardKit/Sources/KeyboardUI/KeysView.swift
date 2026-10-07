@@ -47,6 +47,10 @@ final class KeysView: UIView {
     var glides = 0
     var cursorSlides = 0
     var rolled = 0
+    var activations = 0
+    var retargets = 0
+    var releaseRetargets = 0
+    var functionDrifts = 0
     var maxTouchDelayMs = 0.0
     var slowTouches = 0
   }
@@ -58,6 +62,8 @@ final class KeysView: UIView {
     let began = CACurrentMediaTime()
     var keyIndex: Int
     var key: Key
+    let initialKey: Key
+    var rejectedFunctionDrift = false
     let start: CGPoint
     var points: [CGPoint]
     var mode: Mode = .tap
@@ -74,6 +80,7 @@ final class KeysView: UIView {
       self.touch = touch
       self.keyIndex = keyIndex
       self.key = key
+      initialKey = key
       self.start = start
       points = [start]
     }
@@ -216,6 +223,31 @@ final class KeysView: UIView {
     return best?.0
   }
 
+  /// A thumb rolls as it lifts. Keep the pressed key inside a small margin around
+  /// its hit area; deliberate slides and slides from 123 can still choose a new key.
+  private func tapIndex(_ tracking: Tracking, at point: CGPoint) -> Int? {
+    if !tracking.fromPageKey, hitRects.indices.contains(tracking.keyIndex),
+       hitRects[tracking.keyIndex].insetBy(dx: -pitch.width * 0.2, dy: -pitch.height * 0.15).contains(point) {
+      return tracking.keyIndex
+    }
+    guard let index = keyIndex(at: point) else { return nil }
+    if index != tracking.keyIndex, !tracking.fromPageKey, !keyViews[index].key.isCharacter {
+      // Shift/delete act on touch down. Moving a letter onto a control at lift
+      // must not silently eat or replace that letter.
+      if tracking.initialKey.isCharacter, !tracking.rejectedFunctionDrift {
+        tracking.rejectedFunctionDrift = true
+        stats.functionDrifts += 1
+      }
+      return tracking.keyIndex
+    }
+    return index
+  }
+
+  private func activate(_ key: Key, at point: CGPoint) {
+    stats.activations += 1
+    delegate?.keysView(self, activate: key, at: point)
+  }
+
   // MARK: Touches
 
   override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
@@ -338,13 +370,14 @@ final class KeysView: UIView {
         return
       }
       // Without a swipe, sliding moves the press to the key under the finger.
-      guard let index = keyIndex(at: point), index != tracking.keyIndex else { return }
+      guard let index = tapIndex(tracking, at: point), index != tracking.keyIndex else { return }
       let next = keyViews[index].key
       guard next.isCharacter || tracking.fromPageKey || key.isCharacter else { return }
       keyViews[tracking.keyIndex].isPressed = false
       tracking.timer?.invalidate()
       tracking.keyIndex = index
       tracking.key = next
+      stats.retargets += 1
       keyViews[index].isPressed = true
       if next.isCharacter {
         showPreview(for: index)
@@ -371,7 +404,7 @@ final class KeysView: UIView {
       keyViews.forEach { $0.isDimmed = false }
       // A long press on space that never moved the cursor still types the space.
       if !cancelled, !tracking.cursorMoved, key.action == .space {
-        delegate?.keysView(self, activate: key, at: point)
+        activate(key, at: point)
       }
     case .delete:
       break
@@ -382,16 +415,17 @@ final class KeysView: UIView {
         if length > pitch.width * 1.2 {
           delegate?.keysView(self, glide: tracking.points, start: key)
         } else {
-          delegate?.keysView(self, activate: key, at: tracking.start)
+          activate(key, at: tracking.start)
         }
       }
     case .tap:
       popup?.hide()
       var key = key
-      // The key under the finger at release wins, even if no move was delivered on the way.
-      if !cancelled, let index = keyIndex(at: point), index != tracking.keyIndex, keyViews[index].key.isCharacter,
+      // Apply the same tap margin when no move event arrived before release.
+      if !cancelled, let index = tapIndex(tracking, at: point), index != tracking.keyIndex, keyViews[index].key.isCharacter,
          tracking.fromPageKey || key.isCharacter {
         key = keyViews[index].key
+        stats.releaseRetargets += 1
       }
       if key.action == .shift {
         delegate?.keysViewShiftUp(self)
@@ -405,7 +439,8 @@ final class KeysView: UIView {
         stats.cancelledTapsKept += 1
       }
       if case .page = key.action, tracking.fromPageKey { return }
-      delegate?.keysView(self, activate: key, at: point)
+      let tapPoint = !tracking.fromPageKey && key == tracking.initialKey ? tracking.start : point
+      activate(key, at: tapPoint)
       if tracking.fromPageKey, key.isCharacter { delegate?.keysViewFinishedPageSlide(self) }
     }
   }
@@ -415,7 +450,8 @@ final class KeysView: UIView {
     tracking.timer?.invalidate()
     keyViews[tracking.keyIndex].isPressed = false
     popup?.hide()
-    delegate?.keysView(self, activate: tracking.key, at: point)
+    let tapPoint = !tracking.fromPageKey && tracking.key == tracking.initialKey ? tracking.start : point
+    activate(tracking.key, at: tapPoint)
   }
 
   private func isLetter(_ key: Key) -> Bool {

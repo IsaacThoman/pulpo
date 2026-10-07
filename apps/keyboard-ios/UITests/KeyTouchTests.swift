@@ -33,6 +33,56 @@ final class KeyTouchTests: XCTestCase {
     return Contact(point: CGPoint(x: view.frame.midX, y: view.frame.midY), time: time)
   }
 
+  func testThumbRollKeepsThePressedLetterAcrossAKeyBoundary() {
+    let f = keys.keyViews.first { $0.key.identifier == "key-f" }!
+    let g = keys.keyViews.first { $0.key.identifier == "key-g" }!
+    let boundary = (f.frame.maxX + g.frame.minX) / 2
+    for deliverMove in [false, true] {
+      recorder.events = []
+      let contact = Contact(point: CGPoint(x: boundary - 2, y: f.frame.midY), time: 0)
+      keys.touchesBegan([contact], with: nil)
+      contact.point.x += 5
+      if deliverMove { keys.touchesMoved([contact], with: nil) }
+      keys.touchesEnded([contact], with: nil)
+      XCTAssertEqual(recorder.activations, ["key-f"])
+    }
+  }
+
+  func testLetterCannotDisappearByDriftingOntoAFunctionKey() {
+    recorder.allowsGlide = false
+    for (letter, function) in [("key-z", "key-shift"), ("key-m", "key-delete"), ("key-v", "key-space")] {
+      recorder.events = []
+      let contact = touch(letter)
+      keys.touchesBegan([contact], with: nil)
+      contact.point = touch(function).point
+      keys.touchesMoved([contact], with: nil)
+      keys.touchesEnded([contact], with: nil)
+      XCTAssertEqual(recorder.activations, [letter])
+      XCTAssertFalse(recorder.events.contains("shift-up"))
+    }
+  }
+
+  func testDeliberateSlideCanStillSelectAnotherLetter() {
+    recorder.allowsGlide = false
+    let contact = touch("key-f")
+    keys.touchesBegan([contact], with: nil)
+    contact.point = touch("key-g").point
+    keys.touchesMoved([contact], with: nil)
+    keys.touchesEnded([contact], with: nil)
+    XCTAssertEqual(recorder.activations, ["key-g"])
+    XCTAssertEqual(recorder.activationPoints.last, contact.point)
+  }
+
+  func testSpatialCorrectionUsesTouchDownBeforeThumbRoll() {
+    let contact = touch("key-f")
+    let down = contact.point
+    keys.touchesBegan([contact], with: nil)
+    contact.point.x += keys.pitch.width * 0.35
+    keys.touchesEnded([contact], with: nil)
+    XCTAssertEqual(recorder.activations, ["key-f"])
+    XCTAssertEqual(recorder.activationPoints.last, down)
+  }
+
   func testRollingSpaceCommitsBeforeNextLetter() {
     let space = touch("key-space")
     let b = touch("key-b", time: 0.06)
@@ -155,13 +205,16 @@ final class KeyTouchTests: XCTestCase {
   private final class Recorder: KeysViewDelegate {
     var events: [String] = []
     var glides = 0
+    var allowsGlide = true
+    var activationPoints: [CGPoint] = []
     var onActivate: ((Key) -> Void)?
     var activations: [String] { events.filter { $0.hasPrefix("activate:") }.map { String($0.dropFirst(9)) } }
-    var keysViewAllowsGlide: Bool { true }
+    var keysViewAllowsGlide: Bool { allowsGlide }
     var keysViewShowsPopups: Bool { false }
     func keysView(_ view: KeysView, touchDown key: Key) { events.append("down:\(key.identifier)") }
     func keysView(_ view: KeysView, activate key: Key, at point: CGPoint) {
       events.append("activate:\(key.identifier)")
+      activationPoints.append(point)
       onActivate?(key)
     }
     func keysView(_ view: KeysView, glide points: [CGPoint], start: Key) { glides += 1 }

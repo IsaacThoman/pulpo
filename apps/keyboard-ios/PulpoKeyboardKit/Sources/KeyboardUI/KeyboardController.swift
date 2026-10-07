@@ -243,6 +243,8 @@ public final class KeyboardController: NSObject {
       "touches": stats.touches, "cancelled": stats.cancelled, "cancelledTapsKept": stats.cancelledTapsKept,
       "glides": stats.glides, "glideFallbacks": glideFallbacks, "cursorSlides": stats.cursorSlides,
       "rolled": stats.rolled, "slowTouches": stats.slowTouches, "maxTouchDelayMs": Int(stats.maxTouchDelayMs),
+      "activations": stats.activations, "retargets": stats.retargets,
+      "releaseRetargets": stats.releaseRetargets, "functionDrifts": stats.functionDrifts,
       "laggingContext": engine.laggingContextUpdates, "externalContext": engine.externalContextChanges,
     ])
     rootView.keys.stats = KeysView.Stats()
