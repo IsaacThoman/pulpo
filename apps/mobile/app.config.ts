@@ -126,7 +126,7 @@ const config: ExpoConfig = {
     'expo-sqlite',
     [
       'expo-build-properties',
-      { ios: { deploymentTarget: '26.0', useFrameworks: 'dynamic', buildReactNativeFromSource: true }, android: { compileSdkVersion: 37, targetSdkVersion: 37, buildToolsVersion: '37.0.0' } },
+      { ios: { deploymentTarget: '18.0', useFrameworks: 'dynamic', buildReactNativeFromSource: true }, android: { compileSdkVersion: 37, targetSdkVersion: 37, buildToolsVersion: '37.0.0' } },
     ],
     ['react-native-enriched-markdown', { enableMath: true }],
     [

@@ -106,6 +106,7 @@ import {
 import {
   accessibilityHint as swiftUIAccessibilityHint,
   accessibilityLabel as swiftUIAccessibilityLabel,
+  background as swiftUIBackground,
   buttonBorderShape,
   buttonStyle,
   contentShape,
@@ -125,6 +126,7 @@ import {
   textFieldStyle,
   tint,
 } from '@expo/ui/swift-ui/modifiers';
+import { glassButtonStyle, liquidGlassAvailable } from '../platform/glass';
 import { GlassView, isGlassEffectAPIAvailable } from 'expo-glass-effect';
 import * as Clipboard from 'expo-clipboard';
 import * as Crypto from 'expo-crypto';
@@ -741,7 +743,6 @@ function NativeComposerIconButton({
         onPress={onPress}
         systemImage={systemImage}
         modifiers={[
-          buttonStyle(prominent ? 'glassProminent' : 'glass'),
           buttonBorderShape('circle'),
           controlSize('regular'),
           labelStyle('iconOnly'),
@@ -749,6 +750,7 @@ function NativeComposerIconButton({
           ...(prominent ? [foregroundStyle(prominentForeground)] : []),
           swiftUIDisabled(disabled),
           swiftUIAccessibilityLabel(label),
+          ...glassButtonStyle(prominent ? 'glassProminent' : 'glass'),
         ]}
       />
     </SwiftUIHost>
@@ -786,11 +788,11 @@ function NativeAttachmentMenu({ onTakePhoto, onPickPhotos, onPickFiles }: {
         label="Add attachment"
         systemImage="plus"
         modifiers={[
-          buttonStyle('glass'),
           buttonBorderShape('circle'),
           controlSize('regular'),
           labelStyle('iconOnly'),
           swiftUIAccessibilityLabel('Add attachment'),
+          ...glassButtonStyle('glass'),
         ]}
       >
         <SwiftUIButton label="Take Photo" systemImage="camera" onPress={onTakePhoto} />
@@ -1135,13 +1137,13 @@ function RoundButton({ icon, onPress, accessibilityLabel, selected = false, sele
         <SwiftUIButton
           onPress={onPress}
           modifiers={[
-            buttonStyle(selected || tinted ? 'glassProminent' : 'glass'),
             buttonBorderShape('circle'),
             controlSize('regular'),
             ...(selected ? [tint(selectedTint), foregroundStyle(accent)] : []),
             ...(tinted && !selected ? [tint(selectedTint), foregroundStyle(selectedForeground)] : []),
             ...(!selected && selectedColor === 'teal' ? [foregroundStyle('secondary')] : []),
             swiftUIAccessibilityLabel(accessibilityLabel),
+            ...glassButtonStyle(selected || tinted ? 'glassProminent' : 'glass'),
           ]}
         >
           {icon === 'ghost' ? (
@@ -1181,7 +1183,9 @@ function DrawerNewChatButton({ isDark, onPress }: { isDark: boolean; onPress: ()
         <SwiftUIButton onPress={onPress} modifiers={[buttonStyle('plain'), swiftUIAccessibilityLabel('New Chat')]}>
           <SwiftUIHStack spacing={7.5} modifiers={[
             frame({ width: 123.75, height: 48.75 }),
-            swiftUIGlassEffect({ glass: { variant: 'regular', interactive: true, tint: glassTintColor }, shape: 'capsule' }),
+            liquidGlassAvailable
+              ? swiftUIGlassEffect({ glass: { variant: 'regular', interactive: true, tint: glassTintColor }, shape: 'capsule' })
+              : swiftUIBackground(isDark ? '#F2F2F7' : '#1C1C1E', shapes.capsule()),
           ]}>
             <SwiftUIImage systemName="square.and.pencil" size={16.875} modifiers={[foregroundStyle(foregroundColor)]} />
             <SwiftUIText modifiers={[font({ size: 14.0625, weight: 'semibold' }), foregroundStyle(foregroundColor)]}>New Chat</SwiftUIText>
@@ -3782,12 +3786,12 @@ const NativeModelMenu = memo(function NativeModelMenu({ model, models, onSelectM
           />
         )}
         modifiers={[
-          buttonStyle(tinted ? 'glassProminent' : 'glass'),
           buttonBorderShape('capsule'),
           controlSize('regular'),
           ...(tinted ? [tint('rgba(175,82,222,0.22)'), foregroundStyle(foreground)] : []),
           swiftUIAccessibilityLabel(`Model, ${model.name}`),
           swiftUIAccessibilityHint('Opens models and lab sections'),
+          ...glassButtonStyle(tinted ? 'glassProminent' : 'glass'),
         ]}
       >
         <SwiftUISection key="models" title={sectionLabel}>
@@ -6029,11 +6033,11 @@ function ChatView({
                     <SwiftUIMenu
                       label={presetLabel}
                       modifiers={[
-                        buttonStyle('glass'),
                         buttonBorderShape('capsule'),
                         controlSize('regular'),
                         swiftUIAccessibilityLabel(`Generation options, ${presetLabel}`),
                         swiftUIAccessibilityHint('Opens chat preset choices'),
+                        ...glassButtonStyle('glass'),
                       ]}
                     >
                       {(prototypeModel?.presets ?? []).map((preset) => (
