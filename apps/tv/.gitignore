@@ -1,0 +1,4 @@
+PulpoTV.xcodeproj/
+.build/
+/build/
+*.xcresult

@@ -1,0 +1,97 @@
+# XcodeGen spec for the Apple TV app. `npm run tv:project` (or
+# `xcodegen generate` in this directory) writes PulpoTV.xcodeproj, which is not
+# checked in.
+name: PulpoTV
+options:
+  bundleIdPrefix: com.isaacthoman
+  deploymentTarget:
+    tvOS: "26.0"
+  createIntermediateGroups: true
+  developmentLanguage: en
+  groupSortPosition: top
+packages:
+  PulpoKit:
+    path: PulpoKit
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    SWIFT_STRICT_CONCURRENCY: complete
+    MARKETING_VERSION: "1.0.0"
+    CURRENT_PROJECT_VERSION: "1"
+    DEVELOPMENT_TEAM: PX72AL9366
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+    ENABLE_MODULE_VERIFIER: NO
+    DEAD_CODE_STRIPPING: YES
+targets:
+  PulpoTV:
+    type: application
+    platform: tvOS
+    sources:
+      - path: PulpoTV
+        excludes: ["**/*.md"]
+    dependencies:
+      - package: PulpoKit
+    settings:
+      base:
+        # Shares the iOS app's identifier so a purchase and the
+        # `webcredentials` password association cover both platforms.
+        PRODUCT_BUNDLE_IDENTIFIER: com.isaacthoman.pulpo
+        PRODUCT_NAME: Pulpo
+        INFOPLIST_FILE: PulpoTV/Info.plist
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: Pulpo
+        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.productivity
+        INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
+        INFOPLIST_KEY_UIUserInterfaceStyle: Automatic
+        ASSETCATALOG_COMPILER_APPICON_NAME: App Icon & Top Shelf Image
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        # Lab marks like `claude` and `claude-color` would collide as symbols.
+        ASSETCATALOG_COMPILER_GENERATE_ASSET_SYMBOLS: NO
+        CODE_SIGN_ENTITLEMENTS: PulpoTV/PulpoTV.entitlements
+        CODE_SIGN_STYLE: Automatic
+      configs:
+        Debug:
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG
+  PulpoTVTests:
+    type: bundle.unit-test
+    platform: tvOS
+    sources: [PulpoTVTests]
+    dependencies:
+      - target: PulpoTV
+      - package: PulpoKit
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.isaacthoman.pulpo.tv.tests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_HOST: $(BUILT_PRODUCTS_DIR)/Pulpo.app/Pulpo
+        BUNDLE_LOADER: $(TEST_HOST)
+  PulpoTVUITests:
+    type: bundle.ui-testing
+    platform: tvOS
+    sources: [PulpoTVUITests]
+    dependencies:
+      - target: PulpoTV
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.isaacthoman.pulpo.tv.uitests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: PulpoTV
+schemes:
+  PulpoTV:
+    build:
+      targets:
+        PulpoTV: all
+        PulpoTVTests: [test]
+        PulpoTVUITests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      gatherCoverageData: true
+      coverageTargets: [PulpoTV]
+      targets:
+        - PulpoTVTests
+        - PulpoTVUITests
+        - package: PulpoKit/PulpoKitTests
+    archive:
+      config: Release

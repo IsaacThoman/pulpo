@@ -1,0 +1,44 @@
+name: Apple TV
+
+on:
+  pull_request:
+    paths:
+      - apps/tv/**
+      - .github/workflows/tvos.yml
+  push:
+    branches: [main, dev]
+    paths:
+      - apps/tv/**
+      - .github/workflows/tvos.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tvos-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Build and test
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Show toolchain
+        run: |
+          xcodebuild -version
+          xcrun simctl list runtimes available | grep -i tvos
+
+      # PulpoKit's tests run on macOS; the app's unit and Siri Remote UI tests
+      # run in a tvOS simulator against the app's built-in mock server.
+      - name: Build and test
+        env:
+          PULPO_TV_XCODEBUILD_FLAGS: CODE_SIGNING_ALLOWED=NO
+        run: bash apps/tv/scripts/tv.sh test

@@ -2,7 +2,7 @@
 
 # Pulpo
 
-A configurable self-hosted AI platform for the web, iOS, and Android.
+A configurable self-hosted AI platform for the web, iOS, Android, and Apple TV.
 
 ![GitHub Tag](https://img.shields.io/github/v/tag/isaacthoman/pulpo)
 ![GitHub Checks](https://img.shields.io/github/check-runs/isaacthoman/pulpo/main)
