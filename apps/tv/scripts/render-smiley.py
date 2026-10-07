@@ -7,6 +7,7 @@
 # smiley-justface.png (eyes and mouth only), 1600 × 1600 each.
 import sys
 
+import bmesh
 import bpy
 
 output = sys.argv[sys.argv.index("--") + 1]
@@ -31,6 +32,28 @@ except Exception as error:  # Fall back to the CPU.
     print("GPU rendering unavailable:", error)
 
 FACE = {"left eye", "right eye", "smile"}
+
+# The eyes' faces don't share vertices and carry custom normals, so they
+# render faceted. Weld and smooth every mesh, then subdivide it so low-poly
+# outlines stay round at icon sizes. The .blend file itself is not changed.
+for item in bpy.data.objects:
+    if item.type != "MESH":
+        continue
+    mesh = item.data
+    if "custom_normal" in mesh.attributes:
+        mesh.attributes.remove(mesh.attributes["custom_normal"])
+    welded = bmesh.new()
+    welded.from_mesh(mesh)
+    bmesh.ops.remove_doubles(welded, verts=welded.verts, dist=1e-4)
+    for edge in welded.edges:
+        edge.smooth = True
+    for face in welded.faces:
+        face.smooth = True
+    welded.to_mesh(mesh)
+    welded.free()
+    subdivision = item.modifiers.new("Render smoothing", "SUBSURF")
+    subdivision.levels = 0
+    subdivision.render_levels = 2
 
 
 def render(name, hidden):
