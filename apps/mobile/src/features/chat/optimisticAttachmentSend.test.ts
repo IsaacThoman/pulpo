@@ -46,6 +46,12 @@ describe('optimistic attachment sends', () => {
     expect(createChatSchema.safeParse({ modelId: 'model-1', title }).success).toBe(true)
   })
 
+  it.each(['', '   '])('falls back to a default title for a blank attachment name %j', (firstAttachmentName) => {
+    const { title } = createOptimisticSendIdentity({ content: '', firstAttachmentName, createId: () => 'response' })
+
+    expect(title).toBe('Attachment chat')
+  })
+
   it('preserves a title exactly at the API limit', () => {
     const content = `${'a'.repeat(198)}😀`
     const { title } = createOptimisticSendIdentity({ content, createId: () => 'response' })

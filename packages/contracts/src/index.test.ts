@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   applyResponseEventToSnapshot,
+  createChatSchema,
+  truncateChatTitle,
   agentCostLimitMicros,
   findCostLimitItem,
   findCostLimitItems,
@@ -1006,4 +1008,15 @@ describe('response snapshot accumulation', () => {
     expect(() => backupSettingsUpdateSchema.parse({ ...input, recipient: 'AGE-SECRET-KEY-1PRIVATE' })).toThrow()
   })
 
+  it('truncates chat titles to the API limit without splitting surrogate pairs', () => {
+    expect(truncateChatTitle('  Short title  ')).toBe('Short title')
+    expect(truncateChatTitle('a'.repeat(250))).toHaveLength(200)
+    expect(truncateChatTitle(`${'a'.repeat(198)}😀`)).toBe(`${'a'.repeat(198)}😀`)
+    expect(truncateChatTitle(`${'a'.repeat(199)}😀`)).toBe('a'.repeat(199))
+    expect(truncateChatTitle(`${'a'.repeat(199)} b`)).toBe('a'.repeat(199))
+    expect(truncateChatTitle('   ')).toBe('')
+    for (const title of ['界'.repeat(201), `${'a'.repeat(199)}😀`, `${'a'.repeat(199)} b`]) {
+      expect(createChatSchema.safeParse({ modelId: 'model-1', title: truncateChatTitle(title) }).success).toBe(true)
+    }
+  })
 })
