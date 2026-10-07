@@ -5,7 +5,7 @@ import { uit } from '@/i18n/ui'
 import { formatBytes } from '@/lib/attachments'
 import { timeAgo } from '@/lib/format'
 import { cn } from '@/lib/utils'
-import { fileKindLabel } from '../file-display'
+import { dropFolderOf, fileKindLabel } from '../file-display'
 import { FileNodeIcon } from '../FileNodeIcon'
 import { InlineRename } from './InlineRename'
 
@@ -65,7 +65,7 @@ export function FileItem(props: FileItemProps) {
     role: 'option' as const,
     'aria-selected': selected,
     // Folders are drop targets for items dragged within Files (see useItemDrag).
-    'data-drop-target': node.kind === 'folder' ? node.id : undefined,
+    'data-drop-target': dropFolderOf(node),
     draggable: false,
     onPointerDown: props.onPointerDown,
     onClick: props.onClick,
@@ -114,7 +114,7 @@ export function FileItem(props: FileItemProps) {
       </span>
       <span className="hidden truncate text-sm text-muted-foreground @2xl:block">{timeAgo(Date.parse(node.updatedAt))}</span>
       <span className="hidden truncate text-sm text-muted-foreground @2xl:block">{fileKindLabel(node)}</span>
-      <span className="hidden text-right text-sm text-muted-foreground tabular-nums @lg:block">{node.kind === 'folder' || node.kind === 'chat' ? '—' : formatBytes(node.sizeBytes)}</span>
+      <span className="hidden text-right text-sm text-muted-foreground tabular-nums @lg:block">{node.kind === 'folder' || node.kind === 'chat' || node.kind === 'shortcut' ? '—' : formatBytes(node.sizeBytes)}</span>
       {menuButton}
     </div>
   )

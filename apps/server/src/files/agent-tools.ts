@@ -1,6 +1,6 @@
 import { Type } from '@earendil-works/pi-ai'
 import type { AgentTool } from '@earendil-works/pi-agent-core'
-import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray, isNull, ne, sql } from 'drizzle-orm'
 import { FILE_SCOPE_ROOT, fileNameError, isMarkdownName, normalizeFileName } from '@pulpo/contracts'
 import { db } from '../database/client.js'
 import { fileAgentChanges, fileNodes } from '../database/schema.js'
@@ -138,6 +138,7 @@ async function childNamed(userId: string, parentId: string | null, name: string)
     parentId ? eq(fileNodes.parentId, parentId) : isNull(fileNodes.parentId),
     isNull(fileNodes.trashedAt),
     eq(fileNodes.status, 'ready'),
+    ne(fileNodes.kind, 'shortcut'),
     sql`lower(${fileNodes.name}) = ${name.toLowerCase()}`,
   )).limit(1)
   return row
@@ -149,6 +150,8 @@ async function children(userId: string, parentId: string | null): Promise<FileNo
     parentId ? eq(fileNodes.parentId, parentId) : isNull(fileNodes.parentId),
     isNull(fileNodes.trashedAt),
     eq(fileNodes.status, 'ready'),
+    // Shortcuts are navigation aids for people; the agent works with the items themselves.
+    ne(fileNodes.kind, 'shortcut'),
   )).orderBy(desc(sql`${fileNodes.kind} = 'folder'`), asc(sql`lower(${fileNodes.name})`)).limit(LIST_LIMIT + 1)
 }
 

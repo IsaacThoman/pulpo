@@ -292,8 +292,7 @@ export async function restoreFullBackup(jobId: string): Promise<void> {
         }
         yield row
       }
-      if (table === 'file_nodes') yield* legacyChatFolders.fileNodes
-      if (table === 'sidebar_shortcuts') yield* legacyChatFolders.shortcuts
+      if (table === 'file_nodes') yield* legacyChatFolders
     }
     const oldAttachmentBlobs = await db.select({ key: attachments.objectKey }).from(attachments)
     const oldFileBlobs = await db.select({ key: fileNodes.objectKey }).from(fileNodes).where(sql`${fileNodes.objectKey} is not null`)

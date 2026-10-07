@@ -170,8 +170,6 @@ describe('chat folders in backups', () => {
   it('restores the Files tree before chats, which are filed in its folders', () => {
     expect(FULL_BACKUP_TABLES).not.toContain('folders')
     expect(FULL_BACKUP_TABLES.indexOf('file_nodes')).toBeLessThan(FULL_BACKUP_TABLES.indexOf('chats'))
-    expect(FULL_BACKUP_TABLES.indexOf('chats')).toBeLessThan(FULL_BACKUP_TABLES.indexOf('sidebar_shortcuts'))
-    expect(OPTIONAL_TABLES_IN_LEGACY_BACKUPS).toContain('sidebar_shortcuts')
   })
 
   it('turns chat folders from older backups into Files folders inside a Chats folder', () => {
@@ -181,12 +179,11 @@ describe('chat folders in backups', () => {
       { id: 'f2', user_id: 'u1', name: 'work', pinned: false, sort_order: 1, created_at: '2026-01-01T00:00:00.000Z' },
       { id: 'f3', user_id: 'u1', name: 'a/b', pinned: false, sort_order: 2, created_at: '2026-01-01T00:00:00.000Z' },
     ], new Map([['u1', new Set(['chats'])]]), () => `id-${next++}`)
-    expect(rows.fileNodes.map((row) => [row.id, row.parent_id, row.name, row.system_role])).toEqual([
+    expect(rows.map((row) => [row.id, row.parent_id, row.name, row.system_role])).toEqual([
       ['id-0', null, 'Chats (2)', 'chats'],
       ['f1', 'id-0', 'Work', null],
       ['f2', 'id-0', 'work (2)', null],
       ['f3', 'id-0', 'a-b', null],
     ])
-    expect(rows.shortcuts).toEqual([expect.objectContaining({ user_id: 'u1', target_kind: 'file', file_node_id: 'f1', sort_order: 0 })])
   })
 })

@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 import { TooltipProvider } from '@/components/ui/tooltip'
-import type { SidebarState } from '@pulpo/contracts'
+import type { FileNode, SidebarState } from '@pulpo/contracts'
 import type { Chat } from '@/lib/types'
 
 const actions = vi.hoisted(() => ({
@@ -17,9 +17,7 @@ const actions = vi.hoisted(() => ({
 }))
 
 const sidebarActions = vi.hoisted(() => ({
-  moveSidebarFolder: vi.fn(),
-  addShortcut: vi.fn(),
-  reorderShortcuts: vi.fn(),
+  moveSidebarItems: vi.fn(),
 }))
 
 const sidebarState = vi.hoisted(() => ({
@@ -33,8 +31,24 @@ const sidebarState = vi.hoisted(() => ({
     { id: 'f2', parentId: 'chats', name: 'Folder f2', systemRole: null },
     { id: 'f3', parentId: 'f1', name: 'Folder f3', systemRole: null },
   ],
-  shortcuts: [],
 } as SidebarState))
+
+const node = (id: string, parentId: string, kind: FileNode['kind'], name: string, target: FileNode['target'] = null): FileNode => ({
+  id, parentId, kind, name, status: 'ready', mimeType: null, sizeBytes: 0, revision: 0, trashedAt: null,
+  createdAt: '', updatedAt: '', systemRole: null, target,
+})
+
+/** What each open folder lists besides chats: the sidebar's top level is the Chats folder. */
+const folderItems = vi.hoisted(() => ({} as Record<string, FileNode[]>))
+Object.assign(folderItems, {
+  chats: [
+    node('f1', 'chats', 'folder', 'Folder f1'),
+    node('f2', 'chats', 'folder', 'Folder f2'),
+    node('doc-1', 'chats', 'doc', 'Notes.md'),
+    node('s-proj', 'chats', 'shortcut', 'Projects', { kind: 'folder', id: 'projects', name: 'Projects', mimeType: null, systemRole: null, available: true }),
+  ],
+  f1: [node('f3', 'f1', 'folder', 'Folder f3')],
+})
 
 vi.mock('@/stores/chat', () => {
   const chat = (id: string, sortOrder: number, patch: Partial<Chat> = {}): Chat => ({
@@ -66,7 +80,7 @@ vi.mock('@/features/sidebar/api', async (importActual) => ({
   ...await importActual<typeof import('@/features/sidebar/api')>(),
   ...sidebarActions,
   useSidebarState: () => ({ data: sidebarState }),
-  useSidebarFolderFiles: () => ({ data: [] }),
+  useSidebarItems: (folderId: string | undefined) => ({ data: folderItems[folderId ?? ''] ?? [] }),
   useFolderExpansion: (select: (value: { expanded: Record<string, boolean>; setExpanded: () => void }) => unknown) =>
     select({ expanded: { f1: true, f2: true, f3: true }, setExpanded: vi.fn() }),
 }))
@@ -151,7 +165,6 @@ afterEach(() => {
   cleanup()
   restoreLayout()
   vi.clearAllMocks()
-  sidebarState.shortcuts = []
 })
 
 describe('sidebar chat dragging outside the rows', () => {
@@ -207,18 +220,31 @@ describe('sidebar chat dragging outside the rows', () => {
 
   it('moves a folder into another folder dropped on', () => {
     dragTo(folderRow('f2'), 0, folderRow('f1'))
-    expect(sidebarActions.moveSidebarFolder).toHaveBeenCalledWith('f2', 'f1')
+    expect(sidebarActions.moveSidebarItems).toHaveBeenCalledWith(['f2'], 'f1')
   })
 
   it('does not move a folder into itself or its own subfolder', () => {
     dragTo(folderRow('f1'), 0, folderRow('f3'))
     dragTo(folderRow('f3'), 0, folderRow('f1'))
-    expect(sidebarActions.moveSidebarFolder).not.toHaveBeenCalled()
+    expect(sidebarActions.moveSidebarItems).not.toHaveBeenCalled()
   })
 
   it('moves a nested folder back to the top when dropped on the unfiled list', () => {
     dragTo(folderRow('f3'), 10_000)
-    expect(sidebarActions.moveSidebarFolder).toHaveBeenCalledWith('f3', null)
+    expect(sidebarActions.moveSidebarItems).toHaveBeenCalledWith(['f3'], null)
+  })
+
+  it('moves files and shortcuts like folders', () => {
+    const file = screen.getByRole('button', { name: 'Notes.md' }).parentElement!
+    dragTo(file, 0, folderRow('f2'))
+    expect(sidebarActions.moveSidebarItems).toHaveBeenCalledWith(['doc-1'], 'f2')
+    dragTo(folderRow('projects'), 10_000)
+    expect(sidebarActions.moveSidebarItems).toHaveBeenCalledWith(['s-proj'], null)
+  })
+
+  it('files a chat dropped on a folder shortcut into the folder it opens', () => {
+    dragTo(chatRow('b'), 0, folderRow('projects'))
+    expect(actions.moveToFolder).toHaveBeenCalledWith('b', 'projects')
   })
 
   it('still drops directly on rows and folder headers', () => {
@@ -232,34 +258,5 @@ describe('sidebar chat dragging outside the rows', () => {
     dragTo(chatRow('b'), 155)
     expect(actions.reorderLooseChats).not.toHaveBeenCalled()
     expect(actions.moveToFolder).not.toHaveBeenCalled()
-  })
-})
-
-describe('sidebar shortcuts', () => {
-  const remount = () => {
-    cleanup()
-    mount()
-  }
-
-  it('adds a shortcut for a chat or folder dragged into the shortcuts', () => {
-    sidebarState.shortcuts = [{ id: 's1', targetKind: 'file', targetId: 'doc-1', name: 'Notes.md', kind: 'doc', systemRole: null }]
-    remount()
-    // The shortcut row is at 0-30, so the shortcuts end at 30.
-    dragTo(chatRow('b'), 10)
-    expect(sidebarActions.addShortcut).toHaveBeenCalledWith('chat', 'b')
-    dragTo(folderRow('f2'), 10)
-    expect(sidebarActions.addShortcut).toHaveBeenCalledWith('file', 'f2')
-    expect(actions.pinChat).not.toHaveBeenCalled()
-  })
-
-  it('reorders shortcuts', () => {
-    sidebarState.shortcuts = [
-      { id: 's1', targetKind: 'file', targetId: 'doc-1', name: 'One.md', kind: 'doc', systemRole: null },
-      { id: 's2', targetKind: 'file', targetId: 'doc-2', name: 'Two.md', kind: 'doc', systemRole: null },
-    ]
-    remount()
-    const shortcut = (id: string) => document.querySelector(`[data-drag-list="shortcuts"][data-drag-id="${id}"]`)!
-    dragTo(shortcut('s2'), 5, shortcut('s1'))
-    expect(sidebarActions.reorderShortcuts).toHaveBeenCalledWith(['s2', 's1'])
   })
 })

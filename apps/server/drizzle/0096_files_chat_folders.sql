@@ -1,25 +1,18 @@
 ALTER TABLE "file_nodes" ADD COLUMN "system_role" text;--> statement-breakpoint
+ALTER TABLE "file_nodes" ADD COLUMN "target_node_id" uuid;--> statement-breakpoint
+ALTER TABLE "file_nodes" ADD COLUMN "target_chat_id" uuid;--> statement-breakpoint
+ALTER TABLE "file_nodes" DROP CONSTRAINT "file_nodes_kind_check";--> statement-breakpoint
+ALTER TABLE "file_nodes" ADD CONSTRAINT "file_nodes_kind_check" CHECK ("file_nodes"."kind" in ('folder', 'doc', 'blob', 'shortcut'));--> statement-breakpoint
+ALTER TABLE "file_nodes" ADD CONSTRAINT "file_nodes_shortcut_check" CHECK (num_nonnulls("file_nodes"."target_node_id", "file_nodes"."target_chat_id") = case when "file_nodes"."kind" = 'shortcut' then 1 else 0 end);--> statement-breakpoint
 ALTER TABLE "file_nodes" ADD CONSTRAINT "file_nodes_system_role_check" CHECK ("file_nodes"."system_role" is null or ("file_nodes"."system_role" in ('chats', 'archive') and "file_nodes"."kind" = 'folder' and "file_nodes"."parent_id" is null));--> statement-breakpoint
+ALTER TABLE "file_nodes" ADD CONSTRAINT "file_nodes_target_node_id_file_nodes_id_fk" FOREIGN KEY ("target_node_id") REFERENCES "public"."file_nodes"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+-- Deferrable so a backup restore can insert Files before the chats shortcuts point at (see schema.ts).
+ALTER TABLE "file_nodes" ADD CONSTRAINT "file_nodes_target_chat_id_chats_id_fk" FOREIGN KEY ("target_chat_id") REFERENCES "public"."chats"("id") ON DELETE cascade ON UPDATE no action DEFERRABLE INITIALLY DEFERRED;--> statement-breakpoint
 CREATE UNIQUE INDEX "file_nodes_owner_system_role_unique" ON "file_nodes" USING btree ("owner_user_id","system_role") WHERE "file_nodes"."system_role" is not null;--> statement-breakpoint
-CREATE TABLE "sidebar_shortcuts" (
-	"id" uuid PRIMARY KEY NOT NULL,
-	"user_id" uuid NOT NULL,
-	"target_kind" text NOT NULL,
-	"file_node_id" uuid,
-	"chat_id" uuid,
-	"sort_order" integer DEFAULT 0 NOT NULL,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "sidebar_shortcuts_target_check" CHECK (("sidebar_shortcuts"."target_kind" = 'file' and "sidebar_shortcuts"."file_node_id" is not null and "sidebar_shortcuts"."chat_id" is null) or ("sidebar_shortcuts"."target_kind" = 'chat' and "sidebar_shortcuts"."chat_id" is not null and "sidebar_shortcuts"."file_node_id" is null))
-);
---> statement-breakpoint
-ALTER TABLE "sidebar_shortcuts" ADD CONSTRAINT "sidebar_shortcuts_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "sidebar_shortcuts" ADD CONSTRAINT "sidebar_shortcuts_file_node_id_file_nodes_id_fk" FOREIGN KEY ("file_node_id") REFERENCES "public"."file_nodes"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "sidebar_shortcuts" ADD CONSTRAINT "sidebar_shortcuts_chat_id_chats_id_fk" FOREIGN KEY ("chat_id") REFERENCES "public"."chats"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-CREATE UNIQUE INDEX "sidebar_shortcuts_user_file_unique" ON "sidebar_shortcuts" USING btree ("user_id","file_node_id") WHERE "sidebar_shortcuts"."file_node_id" is not null;--> statement-breakpoint
-CREATE UNIQUE INDEX "sidebar_shortcuts_user_chat_unique" ON "sidebar_shortcuts" USING btree ("user_id","chat_id") WHERE "sidebar_shortcuts"."chat_id" is not null;--> statement-breakpoint
-CREATE INDEX "sidebar_shortcuts_user_idx" ON "sidebar_shortcuts" USING btree ("user_id","sort_order");--> statement-breakpoint
+CREATE INDEX "file_nodes_target_chat_idx" ON "file_nodes" USING btree ("target_chat_id") WHERE "file_nodes"."target_chat_id" is not null;--> statement-breakpoint
+CREATE INDEX "file_nodes_target_node_idx" ON "file_nodes" USING btree ("target_node_id") WHERE "file_nodes"."target_node_id" is not null;--> statement-breakpoint
 -- Chat folders become Files folders inside each account's Chats folder, keeping their ids so
--- chats stay filed. Pinned chat folders become sidebar shortcuts.
+-- chats stay filed.
 DO $$
 DECLARE
   legacy record;
@@ -27,7 +20,6 @@ DECLARE
   base text;
   candidate text;
   attempt integer;
-  shortcut_order integer;
 BEGIN
   FOR legacy IN SELECT * FROM "folders" ORDER BY "user_id", "sort_order", "created_at" LOOP
     SELECT "id" INTO chats_folder FROM "file_nodes"
@@ -72,12 +64,6 @@ BEGIN
     END LOOP;
     INSERT INTO "file_nodes" ("id", "owner_user_id", "parent_id", "kind", "name", "created_at", "updated_at")
       VALUES (legacy."id", legacy."user_id", chats_folder, 'folder', candidate, legacy."created_at", legacy."updated_at");
-
-    IF legacy."pinned" THEN
-      SELECT coalesce(max("sort_order"), -1) + 1 INTO shortcut_order FROM "sidebar_shortcuts" WHERE "user_id" = legacy."user_id";
-      INSERT INTO "sidebar_shortcuts" ("id", "user_id", "target_kind", "file_node_id", "sort_order")
-        VALUES (gen_random_uuid(), legacy."user_id", 'file', legacy."id", shortcut_order);
-    END IF;
   END LOOP;
 END $$;--> statement-breakpoint
 ALTER TABLE "chats" DROP CONSTRAINT "chats_folder_id_folders_id_fk";--> statement-breakpoint

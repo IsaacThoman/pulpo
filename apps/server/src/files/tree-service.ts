@@ -11,6 +11,7 @@ import { convertDocToBlobInTx } from './conversion.js'
 import { publishDocsClosed } from './doc-events.js'
 import { chatsFolderIdOf, chatToFileNode, liveChatIds, listFolderChats, moveChatsInTx } from './chat-items.js'
 import { recoverChats, trashChats } from '../chats/trash-service.js'
+import { toFileNodes } from './shortcuts.js'
 
 type DatabaseTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0]
 
@@ -148,13 +149,13 @@ export async function listFolder(userId: string, parentId: string | null): Promi
     )).orderBy(desc(sql`${fileNodes.kind} = 'folder'`), asc(sql`lower(${fileNodes.name})`)),
   ])
   const chatItems = await listFolderChats(db, userId, folder)
-  return { folder: folder && toFileNode(folder), ancestors: ancestors.map(toFileNode), children: [...children.map(toFileNode), ...chatItems] }
+  return { folder: folder && toFileNode(folder), ancestors: ancestors.map(toFileNode), children: [...await toFileNodes(db, userId, children), ...chatItems] }
 }
 
 export async function getFileNode(userId: string, id: string): Promise<{ node: FileNode; ancestors: FileNode[] }> {
   const access = await resolveFileAccess(db, userId, id)
   if (!access) throw notFound('File')
-  return { node: toFileNode(access.node), ancestors: (await ancestorsOf(db, userId, access.node)).map(toFileNode) }
+  return { node: (await toFileNodes(db, userId, [access.node]))[0]!, ancestors: (await ancestorsOf(db, userId, access.node)).map(toFileNode) }
 }
 
 export const treeTooDeep = () => new AppError(400, 'file_tree_too_deep', `Folders can be nested at most ${FILE_TREE_MAX_DEPTH} levels deep`)

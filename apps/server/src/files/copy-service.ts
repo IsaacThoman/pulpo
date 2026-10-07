@@ -96,6 +96,8 @@ export async function copyFileNodes(userId: string, ids: string[], parentId: str
           id, ownerUserId: userId, parentId: root ? parentId : newIds.get(node.parentId!)!,
           kind: node.kind, name, mimeType: node.mimeType, sizeBytes: node.sizeBytes,
           checksum: node.checksum, objectKey, status: node.kind === 'blob' ? 'pending' : 'ready',
+          // A copied shortcut still opens the same item.
+          targetNodeId: node.targetNodeId, targetChatId: node.targetChatId,
         })
         if (node.kind === 'doc') {
           const state = await mergedDocState(tx, node.id)

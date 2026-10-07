@@ -3,7 +3,7 @@ export const FULL_BACKUP_TABLES = [
   'password_credentials', 'user_passkey_credentials', 'user_totp_credentials', 'two_factor_recovery_codes', 'user_preferences', 'user_provider_credentials', 'audit_events',
   'catalog_icons', 'labs', 'provider_connections', 'image_models', 'speech_models', 'speech_requests', 'speech_resource_cleanup',
   // Chats are filed in Files folders, so the Files tree is restored before them.
-  'models', 'model_pricing_versions', 'model_presets', 'model_preset_choices', 'file_nodes', 'chats', 'sidebar_shortcuts', 'responses',
+  'models', 'model_pricing_versions', 'model_presets', 'model_preset_choices', 'file_nodes', 'chats', 'responses',
   'response_items', 'response_content_parts', 'chat_shares', 'attachments', 'image_generation_requests', 'user_memory_documents', 'user_memory_document_revisions',
   'file_docs', 'file_doc_updates', 'file_folder_layouts', 'file_agent_changes',
   'queued_messages', 'composer_drafts', 'composer_draft_attachments', 'shelved_drafts', 'shelved_draft_attachments', 'shelf_operations',
@@ -45,7 +45,7 @@ export const OPTIONAL_TABLES_IN_LEGACY_BACKUPS: readonly FullBackupTable[] = [
   'chat_turn_embeddings',
   'episodic_memory_metric_buckets',
   'pools', 'pool_members', 'pool_invitations', 'invite_codes', 'user_passkey_credentials', 'user_provider_credentials',
-  'file_nodes', 'file_docs', 'file_doc_updates', 'file_folder_layouts', 'file_agent_changes', 'sidebar_shortcuts',
+  'file_nodes', 'file_docs', 'file_doc_updates', 'file_folder_layouts', 'file_agent_changes',
   'queued_messages', 'composer_drafts', 'composer_draft_attachments', 'shelved_drafts', 'shelved_draft_attachments', 'shelf_operations',
   'billing_accounts', 'billing_subscriptions', 'billing_checkouts', 'billing_auto_top_ups', 'billing_orders', 'billing_webhook_events',
   'weekly_usage_periods', 'five_hour_usage_periods', 'shared_allowance_periods', 'shared_five_hour_usage_periods',
@@ -164,17 +164,15 @@ type LegacyRow = Record<string, unknown>
 
 /**
  * Backups made before chat folders moved into Files have a `folders` table instead. Each account
- * with folders gets a Chats folder holding them, under their old ids so chats stay filed, and
- * pinned folders become sidebar shortcuts. `rootNames` are the lowercase names already used at
- * the top of each account's Files.
+ * with folders gets a Chats folder holding them, under their old ids so chats stay filed.
+ * `rootNames` are the lowercase names already used at the top of each account's Files.
  */
 export function legacyChatFolderRows(
   folders: readonly LegacyRow[],
   rootNames: ReadonlyMap<string, ReadonlySet<string>>,
   newId: () => string,
-): { fileNodes: LegacyRow[]; shortcuts: LegacyRow[] } {
+): LegacyRow[] {
   const fileNodes: LegacyRow[] = []
-  const shortcuts: LegacyRow[] = []
   const chatsFolders = new Map<string, { id: string; names: Set<string> }>()
   const freeName = (base: string, taken: Set<string>) => {
     let name = base
@@ -194,7 +192,7 @@ export function legacyChatFolderRows(
         id: parent.id, owner_user_id: userId, parent_id: null, kind: 'folder', status: 'ready',
         name: freeName('Chats', new Set(rootNames.get(userId))), system_role: 'chats',
         mime_type: null, size_bytes: 0, object_key: null, checksum: null, trashed_at: null, trash_root_id: null, revision: 0,
-        created_at: now, updated_at: now,
+        target_node_id: null, target_chat_id: null, created_at: now, updated_at: now,
       })
     }
     // Files names cannot contain "/" or control characters.
@@ -206,14 +204,8 @@ export function legacyChatFolderRows(
       id: folder.id, owner_user_id: userId, parent_id: parent.id, kind: 'folder', status: 'ready',
       name: freeName(base, parent.names), system_role: null,
       mime_type: null, size_bytes: 0, object_key: null, checksum: null, trashed_at: null, trash_root_id: null, revision: 0,
-      created_at: now, updated_at: String(folder.updated_at ?? now),
+      target_node_id: null, target_chat_id: null, created_at: now, updated_at: String(folder.updated_at ?? now),
     })
-    if (folder.pinned === true) {
-      shortcuts.push({
-        id: newId(), user_id: userId, target_kind: 'file', file_node_id: folder.id, chat_id: null,
-        sort_order: shortcuts.filter((shortcut) => shortcut.user_id === userId).length, created_at: now,
-      })
-    }
   }
-  return { fileNodes, shortcuts }
+  return fileNodes
 }

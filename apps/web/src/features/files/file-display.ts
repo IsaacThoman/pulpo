@@ -36,10 +36,18 @@ export function filePreviewKind(node: Pick<FileNode, 'kind' | 'name' | 'mimeType
   return null
 }
 
+/** The folder items dropped on `node` go into: the folder itself, or the folder a shortcut opens. */
+export function dropFolderOf(node: FileNode): string | undefined {
+  if (node.kind === 'folder') return node.id
+  if (node.kind === 'shortcut' && node.target?.kind === 'folder' && node.target.available) return node.target.id
+  return undefined
+}
+
 /** Short type description for the Kind column. */
 export function fileKindLabel(node: Pick<FileNode, 'kind' | 'name'>): string {
   if (node.kind === 'folder') return ui("Folder")
   if (node.kind === 'chat') return ui("Chat")
+  if (node.kind === 'shortcut') return ui("Shortcut")
   // The extension alone decides the type, whether or not the file is editable yet.
   if (isMarkdownName(node.name)) return ui("Markdown")
   const extension = fileExtension(node.name)
@@ -77,6 +85,7 @@ export function filesErrorMessage(error: unknown, name?: string): string {
       case 'not_found': return ui("This item no longer exists")
       case 'file_system_folder': return ui("This folder is built in and cannot be renamed, moved, or trashed")
       case 'file_chat_copy': return ui("Chats cannot be copied here; duplicate them from the chat menu")
+      case 'file_shortcut_to_shortcut': return ui("Create a shortcut to the item this shortcut opens instead")
       default: return error.message
     }
   }
