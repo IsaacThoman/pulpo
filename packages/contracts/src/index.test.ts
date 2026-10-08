@@ -402,6 +402,7 @@ describe('shared contracts', () => {
     })
     expect(modelPreferencesSchema.parse({})).toEqual({ favoriteModelIds: [], providerOrder: [] })
     expect(modelPreferencesPatchSchema.safeParse({ favoriteModelIds: [42] }).success).toBe(false)
+    expect(modelPreferencesPatchSchema.parse({ favoriteModelIds: null })).toEqual({ favoriteModelIds: null })
     expect(modelPreferencesPatchSchema.safeParse({ providerOrder: Array.from({ length: 501 }, (_, index) => `lab-${index}`) }).success).toBe(false)
   })
 
@@ -507,7 +508,7 @@ describe('shared contracts', () => {
     })
     expect(document.account).toMatchObject({
       theme: 'system', trashRetention: '30d', automaticChatExpiration: '24h', newChatAutoExpire: false,
-      nickname: '', animationSpeed: 1, showPromptSuggestions: true, showResponseCost: false, favoriteModelIds: [], agentModes: {},
+      nickname: '', animationSpeed: 1, showPromptSuggestions: true, showResponseCost: false, favoriteModelIds: null, agentModes: {},
       agentCostLimitEnabled: true, agentCostLimitMicros: 1_000_000,
       instructionPresetSelections: {},
       sidebarPins: { searchChats: true, files: true, usage: false, billing: false, friends: false, apiKeys: false },

@@ -652,6 +652,13 @@
       "when": 1791315879063,
       "tag": "0092_provider_api_format",
       "breakpoints": true
+    },
+    {
+      "idx": 93,
+      "version": "7",
+      "when": 1791479832886,
+      "tag": "0093_follow_new_account_model_defaults",
+      "breakpoints": true
     }
   ]
 }

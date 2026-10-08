@@ -6,7 +6,7 @@ describe('account model preferences', () => {
     expect(preferencesWithModelDefaults({ theme: 'dark' })).toEqual({
       imageGeneration: { enabled: false, modelId: null }, speech: { modelId: null, models: {} }, theme: 'dark', animationSpeed: 1, automaticChatExpiration: '24h', newChatAutoExpire: false, chatSortMode: 'default', fileDoubleClickAction: 'open',
       sidebarPins: { searchChats: true, files: true, usage: false, billing: false, friends: false, apiKeys: false },
-      agentModes: {}, instructionPresetSelections: {}, modelWarningDismissals: {}, favoriteModelIds: [], providerOrder: [],
+      agentModes: {}, instructionPresetSelections: {}, modelWarningDismissals: {}, defaultModelId: null, favoriteModelIds: null, providerOrder: [],
     })
   })
 
@@ -49,6 +49,7 @@ describe('account model preferences', () => {
     expect(normalizedPreferencePatch({
       theme: 'light', favoriteModelIds: ['model-b', 'model-a', 'model-b'],
     })).toEqual({ theme: 'light', favoriteModelIds: ['model-b', 'model-a'] })
+    expect(normalizedPreferencePatch({ favoriteModelIds: null })).toEqual({ favoriteModelIds: null })
   })
 
   it('rejects malformed model preference arrays', () => {

@@ -2199,6 +2199,10 @@ const esUi: Record<string, string> = {
   "You can stay signed in to up to {{0}} accounts.": "Puedes mantener la sesión iniciada en hasta {{0}} cuentas.",
   "That account is no longer signed in.": "Esa cuenta ya no tiene la sesión iniciada.",
   "That account was signed out. Sign in to it again.": "Se cerró la sesión de esa cuenta. Vuelve a iniciar sesión en ella.",
+  "Favorite models": "Modelos favoritos",
+  "Following new-account defaults": "Usa los valores predeterminados de cuentas nuevas",
+  "New-account default": "Predeterminado para cuentas nuevas",
+  "Reset to defaults": "Restablecer valores predeterminados",
 }
 
 export default esUi

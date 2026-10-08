@@ -1,49 +1,45 @@
 import { describe, expect, it } from 'vitest'
 import { parseAuthSettings } from './application-settings.js'
-import { firstUnavailableModelReference, newAccountModelReferenceIds, newAccountPreferenceValues } from './new-account-defaults.js'
+import { firstUnavailableModelReference, newAccountModelReferenceIds, withNewAccountModelDefaults } from './new-account-defaults.js'
+import { preferencesWithModelDefaults } from './model-preferences.js'
 
 describe('new-account model defaults', () => {
-  it('builds an empty account preference snapshot for legacy settings', () => {
-    const settings = parseAuthSettings({ signupEnabled: false })
-    expect(newAccountPreferenceValues(settings)).toEqual({
-      imageGeneration: { enabled: false, modelId: null }, speech: { modelId: null, models: {} },
-      defaultModelId: null,
-      animationSpeed: 1,
-      agentModes: {},
-      instructionPresetSelections: {},
-      modelWarningDismissals: {},
-      automaticChatExpiration: '24h',
-      newChatAutoExpire: false,
-      chatSortMode: 'default',
-      fileDoubleClickAction: 'open',
-      favoriteModelIds: [],
-      providerOrder: [],
-      sidebarPins: { searchChats: true, files: true, usage: false, billing: false, friends: false, apiKeys: false },
-    })
+  it('stores new accounts as following the model defaults', () => {
+    expect(preferencesWithModelDefaults()).toMatchObject({ defaultModelId: null, favoriteModelIds: null })
+    expect(preferencesWithModelDefaults({ defaultModelId: '', favoriteModelIds: 'invalid' }))
+      .toMatchObject({ defaultModelId: null, favoriteModelIds: null })
   })
 
-  it('copies the configured default and ordered favorites into a snapshot', () => {
+  it('fills unset model choices from the current new-account defaults', () => {
     const settings = parseAuthSettings({
       newAccountModelDefaults: {
         defaultModelId: 'model-a',
         favoriteModelIds: ['model-c', 'model-a', 'model-b'],
       },
     })
-    expect(newAccountPreferenceValues(settings)).toEqual({
-      imageGeneration: { enabled: false, modelId: null }, speech: { modelId: null, models: {} },
-      defaultModelId: 'model-a',
-      animationSpeed: 1,
-      agentModes: {},
-      instructionPresetSelections: {},
-      modelWarningDismissals: {},
-      automaticChatExpiration: '24h',
-      newChatAutoExpire: false,
-      chatSortMode: 'default',
-      fileDoubleClickAction: 'open',
-      favoriteModelIds: ['model-c', 'model-a', 'model-b'],
-      providerOrder: [],
-      sidebarPins: { searchChats: true, files: true, usage: false, billing: false, friends: false, apiKeys: false },
+    expect(withNewAccountModelDefaults(preferencesWithModelDefaults({ providerOrder: ['lab-a'] }), settings)).toEqual({
+      values: expect.objectContaining({
+        defaultModelId: 'model-a',
+        favoriteModelIds: ['model-c', 'model-a', 'model-b'],
+        providerOrder: ['lab-a'],
+      }),
+      followedModelDefaults: { defaultModelId: true, favoriteModelIds: true },
     })
+  })
+
+  it('keeps customized model choices, including ones equal to the defaults', () => {
+    const settings = parseAuthSettings({
+      newAccountModelDefaults: { defaultModelId: 'model-a', favoriteModelIds: ['model-a'] },
+    })
+    expect(withNewAccountModelDefaults(
+      preferencesWithModelDefaults({ defaultModelId: 'model-b', favoriteModelIds: ['model-a'] }),
+      settings,
+    )).toEqual({
+      values: expect.objectContaining({ defaultModelId: 'model-b', favoriteModelIds: ['model-a'] }),
+      followedModelDefaults: { defaultModelId: false, favoriteModelIds: false },
+    })
+    expect(withNewAccountModelDefaults(preferencesWithModelDefaults({ favoriteModelIds: [] }), settings).values)
+      .toMatchObject({ defaultModelId: 'model-a', favoriteModelIds: [] })
   })
 
   it('returns unique model references for availability validation', () => {

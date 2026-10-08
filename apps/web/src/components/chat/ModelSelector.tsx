@@ -10,7 +10,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { getCatalogModel, useCatalog } from '@/stores/catalog'
 import { ModelIcon } from '@/components/ModelIcon'
 import { ProviderLogo } from '@/components/ProviderLogo'
-import { favoriteIdsMatch, resolveProviderOrder, useModels } from '@/stores/models'
+import { resolveProviderOrder, useModels } from '@/stores/models'
 import { cn } from '@/lib/utils'
 import { useSettings } from '@/stores/settings'
 import { ui } from '@/i18n/ui'
@@ -45,7 +45,7 @@ export function ModelSelector({
   const providerOrder = useModels((s) => s.providerOrder)
   const toggleFavorite = useModels((s) => s.toggleFavorite)
   const resetFavorites = useModels((s) => s.resetFavorites)
-  const newAccountFavoriteModelIds = useModels((s) => s.newAccountFavoriteModelIds)
+  const favoritesFollowDefaults = useModels((s) => s.favoritesFollowDefaults)
   const newAccountFavoritesLoaded = useModels((s) => s.newAccountFavoritesLoaded)
   const reorderFavorites = useModels((s) => s.reorderFavorites)
   const reorderProviders = useModels((s) => s.reorderProviders)
@@ -74,7 +74,6 @@ export function ModelSelector({
   // logos next to models on favorites (and search); no logos when a provider is selected
   const showLogos = provider === null || searching
   const favoritesActive = provider === null && !searching
-  const favoritesMatchDefaults = favoriteIdsMatch(favorites, newAccountFavoriteModelIds)
   const canReorderModels = favoritesActive && rows.length > 1
   const canReorderProviders = providers.length > 1
 
@@ -363,7 +362,7 @@ export function ModelSelector({
                 </div>
               )
             })}
-            {favoritesActive && newAccountFavoritesLoaded && !favoritesMatchDefaults && (
+            {favoritesActive && newAccountFavoritesLoaded && !favoritesFollowDefaults && (
               confirmReset ? (
                 <div ref={resetConfirmationRef} className="mx-2 my-1.5 scroll-mb-2 rounded-md bg-muted/60 px-2.5 py-2 text-xs">
                   <p className="text-foreground">{t('chat.replaceFavorites')}</p>

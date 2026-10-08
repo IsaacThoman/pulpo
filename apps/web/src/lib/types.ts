@@ -156,7 +156,10 @@ export interface UsageRecord {
 }
 
 export interface MonitorUser {
+  /** Null follows the new-account default model. */
   defaultModelId?: string | null
+  /** Null follows the new-account default favorites. */
+  favoriteModelIds?: string[] | null
   deletionRequestedAt?: string | null
   deletionError?: string | null
   id: string
