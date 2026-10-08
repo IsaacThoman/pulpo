@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { canResetFavorites, FAVORITES_SECTION, resolveModelMenu } from './modelMenu'
+import { FAVORITES_SECTION, resolveModelMenu } from './modelMenu'
 const models = Array.from({ length: 12 }, (_, i) => ({ id: String(i), providerGroupId: i < 8 ? 'lab-a' : 'lab-b', lab: i < 8 ? 'Lab A' : 'Lab B' }))
 describe('shared native model menu', () => {
   it('shows all ordered favorites without inserting the current model or arbitrary alternatives', () => {
@@ -17,11 +17,5 @@ describe('shared native model menu', () => {
     expect(resolveModelMenu(models, ['11'], [], 'removed').visibleModels.map(m => m.id)).toEqual(['11'])
     const sameNames = models.map(m => ({ ...m, lab: 'Shared name' }))
     expect(resolveModelMenu(sameNames, [], [], 'lab-b').visibleModels.map(m => m.id)).toEqual(['8', '9', '10', '11'])
-  })
-  it('offers favorite reset only when loaded defaults differ from current favorites', () => {
-    expect(canResetFavorites(['a'], null)).toBe(false)
-    expect(canResetFavorites(['a', 'b'], ['a', 'b'])).toBe(false)
-    expect(canResetFavorites(['b', 'a'], ['a', 'b'])).toBe(true)
-    expect(canResetFavorites([], ['a'])).toBe(true)
   })
 })

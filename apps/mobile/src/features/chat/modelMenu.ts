@@ -16,9 +16,3 @@ export function resolveModelMenu<T extends MenuModel>(models: T[], favoriteIds: 
     : models.filter((model) => model.providerGroupId === section)
   return { sections, section, sectionLabel: sections.find((candidate) => candidate.id === section)!.label, visibleModels }
 }
-
-/** Reset is offered only once instance defaults load and the user's favorites differ from them. */
-export function canResetFavorites(favoriteIds: string[], defaultFavoriteIds: string[] | null): defaultFavoriteIds is string[] {
-  return defaultFavoriteIds !== null
-    && (favoriteIds.length !== defaultFavoriteIds.length || favoriteIds.some((id, index) => id !== defaultFavoriteIds[index]))
-}

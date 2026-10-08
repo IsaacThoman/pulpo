@@ -16,8 +16,6 @@ interface PreferenceState extends Preferences {
   generationPreferenceDirty: boolean
   agentModesPreferenceDirty: boolean
   pendingServerPreferenceKeys: Array<keyof Preferences>
-  /** Instance default favorites used by Reset favorites; null until settings load. */
-  newAccountFavoriteModelIds: string[] | null
   hydrate: () => Promise<void>
   setPreference: <K extends keyof Preferences>(key: K, value: Preferences[K]) => Promise<void>
   applyServerPreferences: (patch: Partial<Preferences>) => Promise<void>
@@ -91,7 +89,6 @@ export const usePreferencesStore = create<PreferenceState>((set, get) => ({
   generationPreferenceDirty: false,
   agentModesPreferenceDirty: false,
   pendingServerPreferenceKeys: [],
-  newAccountFavoriteModelIds: null,
   hydrate: async () => {
     try {
       const stored = await getValue<StoredPreferences>('global', 'preferences')
@@ -203,7 +200,6 @@ export const usePreferencesStore = create<PreferenceState>((set, get) => ({
       generationPreferenceDirty: false,
       agentModesPreferenceDirty: false,
       pendingServerPreferenceKeys: [],
-      newAccountFavoriteModelIds: null,
     }
     set(reset)
     await persistPreferences(persistedSnapshot(get()))
