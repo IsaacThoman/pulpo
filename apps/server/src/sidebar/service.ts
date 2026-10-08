@@ -6,7 +6,7 @@ import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import { accessibleChatCondition } from '../chats/temporary.js'
 import { resolveFileAccess } from '../files/access.js'
-import { liveChatIds } from '../files/chat-items.js'
+import { chatFolderId, liveChatIds } from '../files/chat-items.js'
 import { ensureSystemFolders } from '../files/system-folders.js'
 import {
   availableName,
@@ -19,6 +19,7 @@ import {
   treeTooDeep,
   updateFileNode,
 } from '../files/tree-service.js'
+import { topSortOrder } from '../files/order.js'
 
 /** Live folders under `rootIds` (inclusive), each listed once. */
 async function folderTrees(userId: string, rootIds: string[]): Promise<SidebarFolder[]> {
@@ -78,6 +79,7 @@ export async function createSidebarFolder(userId: string, input: { id?: string; 
       parentId,
       kind: 'folder',
       name: await availableName(tx, userId, parentId, input.name),
+      sortOrder: await topSortOrder(tx, userId, parentId),
     }).returning()
     return toFileNode(created!)
   })
@@ -100,6 +102,38 @@ export async function moveSidebarItems(userId: string, ids: string[], parentId: 
   return moveFileNodes(userId, ids.map((id) => ({ id, parentId: destination })))
 }
 
+/**
+ * Sets the order of a folder's items, chats included (null is the Chats folder). Listed items from
+ * elsewhere move in first, chats leaving the pinned list. Items not listed keep their place.
+ */
+export async function orderSidebarItems(userId: string, parentId: string | null, ids: string[]): Promise<void> {
+  if (new Set(ids).size !== ids.length) throw new AppError(400, 'validation_error', 'The order cannot list an item twice')
+  const folderId = parentId ?? (await ensureSystemFolders(userId)).chatsFolderId
+  const chatIds = [...await liveChatIds(db, userId, ids)]
+  const nodeIds = ids.filter((id) => !chatIds.includes(id))
+  const nodes = nodeIds.length
+    ? await db.select({ id: fileNodes.id, parentId: fileNodes.parentId }).from(fileNodes)
+      .where(and(eq(fileNodes.ownerUserId, userId), inArray(fileNodes.id, nodeIds), isNull(fileNodes.trashedAt)))
+    : []
+  if (nodes.length !== nodeIds.length) throw notFound('File')
+  // Moving checks for cycles, depth, and name clashes as any other move does.
+  const outside = nodes.filter((node) => node.parentId !== folderId)
+  if (outside.length) await moveFileNodes(userId, outside.map((node) => ({ id: node.id, parentId: folderId })))
+  await mutateFileTree(userId, async (tx) => {
+    const chatFolder = await chatFolderId(tx, userId, folderId)
+    const position = (column: typeof chats.id | typeof fileNodes.id) =>
+      sql`case ${column} ${sql.join(ids.map((id, index) => sql`when ${id}::uuid then ${index}::int`), sql` `)} end`
+    if (chatIds.length) {
+      await tx.update(chats).set({ folderId: chatFolder, pinned: false, sortOrder: position(chats.id) })
+        .where(and(eq(chats.userId, userId), inArray(chats.id, chatIds)))
+    }
+    if (nodeIds.length) {
+      await tx.update(fileNodes).set({ sortOrder: position(fileNodes.id) })
+        .where(and(eq(fileNodes.ownerUserId, userId), inArray(fileNodes.id, nodeIds)))
+    }
+  }, ['files', 'folders', 'chats'])
+}
+
 export async function renameSidebarItem(userId: string, id: string, name: string): Promise<FileNode> {
   return updateFileNode(userId, id, { name })
 }
@@ -116,7 +150,7 @@ export async function archiveItems(userId: string, input: { chatIds: string[]; f
   const fileIds = input.fileIds.filter((id) => !chatIds.includes(id))
   if (chatIds.length) {
     await mutateFileTree(userId, async (tx) => {
-      await tx.update(chats).set({ folderId: archiveFolderId, pinned: false })
+      await tx.update(chats).set({ folderId: archiveFolderId, pinned: false, sortOrder: await topSortOrder(tx, userId, archiveFolderId) })
         .where(and(eq(chats.userId, userId), inArray(chats.id, chatIds), isNull(chats.deletedAt), accessibleChatCondition()))
     }, ['files', 'folders', 'chats'])
   }

@@ -6,15 +6,14 @@ import { queryClient } from '@/lib/query-client'
 import { isDesktopRuntime } from '@/lib/runtime'
 import { useAuth } from '@/stores/auth'
 import { useChat } from '@/stores/chat'
+import { sidebarItemsKey, sidebarQueryKey } from './cache'
 import { ui } from '@/i18n/ui'
 
 /*
  * The sidebar is the Chats folder in Files: its folders, shortcuts, files, and chats. Everything
  * here lives under ['folders', userId], which the 'folders' and 'files' realtime scopes refresh.
  */
-// 'sidebar' keeps the persisted cache apart from the old chat folder list stored at ['folders', userId].
-export const sidebarQueryKey = (userId: string | undefined) => ['folders', userId, 'sidebar'] as const
-export const sidebarItemsKey = (userId: string | undefined, folderId: string) => ['folders', userId, 'items', folderId] as const
+export { sidebarItemsKey, sidebarQueryKey }
 
 export function useSidebarState() {
   const userId = useAuth((state) => state.user?.id)
@@ -132,6 +131,39 @@ export function moveSidebarItems(ids: string[], parentId: string | null): Promis
     }))
     writeItems((items) => items.filter((item) => !ids.includes(item.id)))
   }, () => apiRequest('/api/sidebar/move', { method: 'POST', body: { ids, parentId } }))
+}
+
+/**
+ * Puts `ids` in this order in `folderId`, chats and Files items alike; anything listed from
+ * another folder (or the pinned chats) moves in. The rest of the folder keeps its place.
+ */
+export function orderSidebarItems(folderId: string, ids: string[]): Promise<unknown> {
+  const chatsFolderId = readState()?.chatsFolderId
+  const position = new Map(ids.map((id, index) => [id, index]))
+  const userId = useAuth.getState().user?.id
+  useFolderExpansion.getState().setExpanded(folderId, true)
+  return mutate(() => {
+    useChat.setState((state) => ({
+      chats: state.chats.map((chat) => {
+        const sortOrder = position.get(chat.id)
+        return sortOrder === undefined ? chat : { ...chat, pinned: false, folderId: folderId === chatsFolderId ? null : folderId, sortOrder }
+      }),
+    }))
+    // Items listed from other folders leave those listings and join this one.
+    const moving = new Map<string, FileNode>()
+    for (const [, items] of queryClient.getQueriesData<FileNode[]>({ queryKey: ['folders', userId, 'items'] })) {
+      for (const item of items ?? []) if (position.has(item.id)) moving.set(item.id, item)
+    }
+    writeItems((items) => items.filter((item) => !moving.has(item.id)))
+    queryClient.setQueryData<FileNode[]>(sidebarItemsKey(userId, folderId), (items) => items && [
+      ...items,
+      ...[...moving.values()].map((item) => ({ ...item, parentId: folderId, sortOrder: position.get(item.id)! })),
+    ])
+    writeState((state) => ({
+      ...state,
+      folders: state.folders.map((folder) => moving.has(folder.id) ? { ...folder, parentId: folderId } : folder),
+    }))
+  }, () => apiRequest('/api/sidebar/order', { method: 'PUT', body: { parentId: folderId === chatsFolderId ? null : folderId, ids } }))
 }
 
 /** Trashes a Files item; chats in a trashed folder return to the unfiled list. Files can restore it. */

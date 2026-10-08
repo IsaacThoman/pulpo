@@ -7,6 +7,7 @@ import { resolveFileAccess, type FileExecutor, type FileNodeRow } from './access
 import { liveChatIds } from './chat-items.js'
 import { ensureSystemFolders } from './system-folders.js'
 import { assertDestination, availableName, mutateFileTree, toFileNode } from './tree-service.js'
+import { topSortOrder } from './order.js'
 
 type Target = NonNullable<FileNode['target']>
 
@@ -96,6 +97,7 @@ export async function createShortcut(userId: string, input: {
       name: await availableName(tx, userId, parentId, shortcutName(input.name ?? targetName)),
       targetNodeId: input.targetKind === 'file' ? input.targetId : null,
       targetChatId: input.targetKind === 'chat' ? input.targetId : null,
+      sortOrder: await topSortOrder(tx, userId, parentId),
     }).returning()
     return (await toFileNodes(tx, userId, [created!]))[0]!
   })

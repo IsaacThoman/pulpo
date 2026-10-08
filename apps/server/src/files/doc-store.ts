@@ -11,6 +11,7 @@ import { resolveFileAccess } from './access.js'
 import { publishDocUpdate } from './doc-events.js'
 import { docTooLarge, initialDocState, MAX_DOC_STATE_BYTES } from './doc-state.js'
 import { assertDestination, availableName, mutateFileTree, toFileNode } from './tree-service.js'
+import { topSortOrder } from './order.js'
 
 export const MAX_DOC_UPDATE_BYTES = 1_000_000
 // Re-exported for callers that import document limits from the store.
@@ -38,6 +39,7 @@ export async function createDoc(userId: string, input: { parentId: string | null
     const [node] = await tx.insert(fileNodes).values({
       id: newId(), ownerUserId: userId, parentId: input.parentId, kind: 'doc', name,
       mimeType: 'text/markdown', sizeBytes: initial.state.byteLength,
+      sortOrder: await topSortOrder(tx, userId, input.parentId),
     }).returning()
     await tx.insert(fileDocs).values({
       nodeId: node!.id, state: initial.state, stateBytes: initial.state.byteLength,

@@ -4,6 +4,7 @@ import { chats, fileNodes } from '../database/schema.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { accessibleChatCondition } from '../chats/temporary.js'
 import { resolveFileAccess, type FileExecutor, type FileNodeRow } from './access.js'
+import { topChatOrder } from './order.js'
 
 type ChatRow = typeof chats.$inferSelect
 
@@ -11,7 +12,7 @@ type ChatRow = typeof chats.$inferSelect
  * Chats filed in Files folders are listed as `chat` items. A chat with no folder sits directly
  * in the Chats folder, which is the sidebar's unfiled list.
  */
-export function chatToFileNode(chat: Pick<ChatRow, 'id' | 'folderId' | 'title' | 'createdAt' | 'updatedAt'>, chatsFolderId: string | null): FileNode {
+export function chatToFileNode(chat: Pick<ChatRow, 'id' | 'folderId' | 'title' | 'sortOrder' | 'createdAt' | 'updatedAt'>, chatsFolderId: string | null): FileNode {
   return {
     id: chat.id,
     parentId: chat.folderId ?? chatsFolderId,
@@ -25,6 +26,7 @@ export function chatToFileNode(chat: Pick<ChatRow, 'id' | 'folderId' | 'title' |
     createdAt: chat.createdAt.toISOString(),
     updatedAt: chat.updatedAt.toISOString(),
     systemRole: null,
+    sortOrder: chat.sortOrder,
   }
 }
 
@@ -69,7 +71,7 @@ export async function moveChatsInTx(executor: FileExecutor, userId: string, item
   const moved: FileNode[] = []
   for (const item of items) {
     const folderId = await chatFolderId(executor, userId, item.parentId)
-    const [row] = await executor.update(chats).set({ folderId }).where(and(eq(chats.id, item.id), liveChat(userId))).returning()
+    const [row] = await executor.update(chats).set({ folderId, sortOrder: await topChatOrder(executor, userId, folderId) }).where(and(eq(chats.id, item.id), liveChat(userId))).returning()
     if (!row) throw notFound('Chat')
     moved.push(chatToFileNode(row, chatsFolderId))
   }

@@ -19,7 +19,6 @@ import {
   Pencil,
   Pin,
   PinOff,
-  Plus,
   Search,
   Settings,
   Share2,
@@ -35,6 +34,7 @@ import {
 } from 'lucide-react'
 import type { FileNode, SidebarFolder, SidebarState } from '@pulpo/contracts'
 import { cn } from '@/lib/utils'
+import { reorderList } from '@/lib/model-order'
 import { compareChatOrder, useChat } from '@/stores/chat'
 import { useAuth } from '@/stores/auth'
 import { useSettings } from '@/stores/settings'
@@ -85,6 +85,7 @@ import {
   folderOutline,
   isWithin,
   moveSidebarItems,
+  orderSidebarItems,
   pickFolder,
   renameSidebarItem,
   trashSidebarItem,
@@ -95,9 +96,8 @@ import {
 
 /** A chat, a folder, or another Files item (a file or shortcut). */
 type DragKind = 'folder' | 'chat' | 'item'
-type ChatList = 'pinned' | 'loose' | `folder:${string}`
-
-type DropList = ChatList
+/** The pinned chats, the top of the sidebar (the Chats folder), or a folder's items. */
+type DropList = 'pinned' | 'loose' | `folder:${string}`
 
 type DropHint =
   | { kind: 'row'; list: DropList; id: string; edge: 'before' | 'after' }
@@ -113,15 +113,21 @@ function sameDropHint(a: DropHint | null, b: DropHint | null) {
   return a.kind === b.kind
 }
 
-function folderListId(folderId: string): ChatList {
+function folderListId(folderId: string): DropList {
   return `folder:${folderId}`
 }
 
-function parseFolderList(list: DropList): string | null {
-  return list.startsWith('folder:') ? list.slice('folder:'.length) : null
+/** The ids of a list's rows, top to bottom, as the sidebar shows them. */
+function listRowIds(list: DropList, root: ParentNode = document): string[] {
+  const rows = Array.from(root.querySelectorAll<HTMLElement>('[data-drag-list]')).filter((row) => row.dataset.dragList === list)
+  return [...new Set(rows.map((row) => row.dataset.dragId ?? ''))].filter(Boolean)
 }
 
-function useSidebarDrag({ canNestFolder }: { canNestFolder: (folderId: string, targetId: string) => boolean }) {
+function useSidebarDrag({ canEnter, folderOfList }: {
+  /** Whether the dragged item may go in `folderId`; a folder never goes inside itself. */
+  canEnter: (kind: DragKind, id: string, folderId: string) => boolean
+  folderOfList: (list: DropList) => string | null
+}) {
   const [dragId, setDragId] = useState<string | null>(null)
   const [dragKind, setDragKind] = useState<DragKind | null>(null)
   const [dragList, setDragList] = useState<DropList | null>(null)
@@ -177,51 +183,21 @@ function useSidebarDrag({ canNestFolder }: { canNestFolder: (folderId: string, t
     return e.clientY < rect.top + rect.height / 2 ? 'before' : 'after'
   }
 
-  /** A folder's header or open body: chats are filed into it, folders are moved into it. */
-  const onFolderDragOver = (folderId: string, e: DragEvent<HTMLElement>) => {
+  /** Only chats can be pinned; anything else can go in any folder that is not inside it. */
+  const canPlaceIn = (list: DropList) => {
     const kind = dragKindRef.current
     const id = dragIdRef.current
-    if (!id) return
-    if (kind === 'chat') {
-      // A chat over its own folder reorders within the folder instead (see onSidebarDragOver).
-      if (dragListRef.current === folderListId(folderId)) return
-      acceptMove(e)
-      setDrop({ kind: 'folder-target', folderId })
-      return
-    }
-    if (kind === 'folder' ? !canNestFolder(id, folderId) : kind !== 'item') return
-    acceptMove(e)
-    setDrop({ kind: 'folder-target', folderId })
+    if (!kind || !id) return false
+    if (list === 'pinned') return kind === 'chat'
+    const folderId = folderOfList(list)
+    return Boolean(folderId) && canEnter(kind, id, folderId!)
   }
 
-  const onRowDragOver = (list: DropList, id: string, e: DragEvent<HTMLElement>) => {
-    if (dragKindRef.current !== 'chat' || !dragIdRef.current || dragIdRef.current === id) return
-    acceptMove(e)
-    setDrop({ kind: 'row', list, id, edge: edgeFor(e) })
-  }
-
-  /**
-   * Everywhere a row does not claim the drag (gaps, headers, empty space, rows of another list),
-   * snap to the nearest slot in the dragged item's list. Chats dragged into the pinned area or
-   * down into the unfiled area target those lists instead. Folders, files, and shortcuts dragged
-   * down to the unfiled area move to the top of the sidebar.
-   */
-  const onSidebarDragOver = (e: DragEvent<HTMLElement>, zones: { pinnedBottom?: number; looseTop?: number }) => {
-    const kind = dragKindRef.current
-    const source = dragListRef.current
-    if (!kind || !dragIdRef.current) return
-    acceptMove(e)
-    if (kind !== 'chat') {
-      setDrop(zones.looseTop !== undefined && e.clientY >= zones.looseTop ? { kind: 'loose-target' } : null)
-      return
-    }
-    const list: DropList = zones.pinnedBottom !== undefined && e.clientY < zones.pinnedBottom
-        ? 'pinned'
-        : source !== 'loose' && zones.looseTop !== undefined && e.clientY >= zones.looseTop
-          ? 'loose'
-          : source ?? 'loose'
+  /** Shows the slot nearest the pointer among `list`'s rows inside the element handling the drag. */
+  const snapToList = (e: DragEvent<HTMLElement>, list: DropList) => {
     const rows = Array.from(e.currentTarget.querySelectorAll<HTMLElement>('[data-drag-list]'))
       .filter((row) => row.dataset.dragList === list)
+    const source = dragListRef.current
     if (rows.length === 0) {
       setDrop(list === 'loose' && source !== 'loose' ? { kind: 'loose-target' } : null)
       return
@@ -232,7 +208,7 @@ function useSidebarDrag({ canNestFolder }: { canNestFolder: (folderId: string, t
       return e.clientY < rect.top + rect.height / 2
     })
     if (slot < 0) slot = rows.length
-    const dragged = ids.indexOf(dragIdRef.current)
+    const dragged = ids.indexOf(dragIdRef.current ?? '')
     // Slots on either side of the dragged row leave it where it is.
     if (dragged >= 0 && (slot === dragged || slot === dragged + 1)) {
       setDrop(null)
@@ -241,6 +217,67 @@ function useSidebarDrag({ canNestFolder }: { canNestFolder: (folderId: string, t
     setDrop(slot < rows.length
       ? { kind: 'row', list, id: ids[slot]!, edge: 'before' }
       : { kind: 'row', list, id: ids.at(-1)!, edge: 'after' })
+  }
+
+  /**
+   * A folder's header. The middle files the dragged item into the folder (at its top); with
+   * `row`, the top and bottom edges place it beside the folder in the list the folder is in.
+   */
+  const onFolderDragOver = (folderId: string, e: DragEvent<HTMLElement>, row?: { list: DropList; id: string }) => {
+    const kind = dragKindRef.current
+    const id = dragIdRef.current
+    if (!kind || !id) return
+    if (row && row.id !== id && canPlaceIn(row.list)) {
+      const rect = e.currentTarget.getBoundingClientRect()
+      const band = rect.height / 4
+      if (e.clientY < rect.top + band || e.clientY > rect.bottom - band) {
+        acceptMove(e)
+        setDrop({ kind: 'row', list: row.list, id: row.id, edge: e.clientY < rect.top + band ? 'before' : 'after' })
+        return
+      }
+    }
+    if (row?.id === id || dragListRef.current === folderListId(folderId) || !canEnter(kind, id, folderId)) return
+    acceptMove(e)
+    setDrop({ kind: 'folder-target', folderId })
+  }
+
+  /** An open folder's contents: rows of that folder reorder within it; anything else goes into it. */
+  const onFolderBodyDragOver = (folderId: string, e: DragEvent<HTMLElement>) => {
+    const kind = dragKindRef.current
+    const id = dragIdRef.current
+    if (!kind || !id) return
+    const list = folderListId(folderId)
+    if (dragListRef.current === list) {
+      acceptMove(e)
+      snapToList(e, list)
+      return
+    }
+    if (!canEnter(kind, id, folderId)) return
+    acceptMove(e)
+    setDrop({ kind: 'folder-target', folderId })
+  }
+
+  const onRowDragOver = (list: DropList, id: string, e: DragEvent<HTMLElement>) => {
+    if (!dragIdRef.current || dragIdRef.current === id || !canPlaceIn(list)) return
+    acceptMove(e)
+    setDrop({ kind: 'row', list, id, edge: edgeFor(e) })
+  }
+
+  /**
+   * Everywhere a row or folder does not claim the drag (gaps, headers, empty space), snap to the
+   * nearest slot at the top level of the sidebar, or among the pinned chats for a chat dragged
+   * into the pinned area.
+   */
+  const onSidebarDragOver = (e: DragEvent<HTMLElement>, zones: { pinnedBottom?: number }) => {
+    const kind = dragKindRef.current
+    if (!kind || !dragIdRef.current) return
+    acceptMove(e)
+    const list: DropList = kind === 'chat' && zones.pinnedBottom !== undefined && e.clientY < zones.pinnedBottom ? 'pinned' : 'loose'
+    if (!canPlaceIn(list)) {
+      setDrop(null)
+      return
+    }
+    snapToList(e, list)
   }
 
   const onSidebarDragLeave = (e: DragEvent<HTMLElement>) => {
@@ -271,6 +308,7 @@ function useSidebarDrag({ canNestFolder }: { canNestFolder: (folderId: string, t
     clearDrag,
     startDrag,
     onFolderDragOver,
+    onFolderBodyDragOver,
     onRowDragOver,
     onSidebarDragOver,
     onSidebarDragLeave,
@@ -678,7 +716,8 @@ export function ChatRow({
 
 /** Shared props for everything the sidebar's folder tree renders. */
 interface TreeProps {
-  sidebar: SidebarState
+  /** Unset until the sidebar state first loads; until then only chats are listed. */
+  sidebar?: SidebarState
   chatsByFolder: ReadonlyMap<string, Chat[]>
   chatId?: string
   shiftHeld: boolean
@@ -687,6 +726,36 @@ interface TreeProps {
   onDrop: (e: DragEvent) => void
   onNewFolder: (parentId: string) => void
   go: (path: string) => void
+}
+
+type LoadedTreeProps = TreeProps & { sidebar: SidebarState }
+
+/** Where a row sits: the list it can be reordered in, if its list is in manual order. */
+interface RowPlacement {
+  list: DropList
+  reorderable: boolean
+}
+
+/** One item of a folder: a chat, or a folder, file, or shortcut. */
+type SidebarEntry = { id: string; sortOrder: number; createdAt: number; updatedAt: number } & (
+  | { kind: 'chat'; chat: Chat }
+  | { kind: 'node'; node: FileNode }
+)
+
+/**
+ * A folder's chats and Files items as one list: in their shared manual order (newest first on
+ * ties), or with `recent`, most recently updated first.
+ */
+function sidebarEntries(chats: readonly Chat[], items: readonly FileNode[], recent = false): SidebarEntry[] {
+  const entries: SidebarEntry[] = [
+    ...chats.map((chat) => ({ kind: 'chat' as const, id: chat.id, sortOrder: chat.sortOrder, createdAt: chat.createdAt, updatedAt: chat.updatedAt, chat })),
+    ...items.map((node) => ({
+      kind: 'node' as const, id: node.id, sortOrder: node.sortOrder ?? 0, createdAt: Date.parse(node.createdAt), updatedAt: Date.parse(node.updatedAt), node,
+    })),
+  ]
+  return entries.sort(recent
+    ? (left, right) => right.updatedAt - left.updatedAt
+    : (left, right) => left.sortOrder - right.sortOrder || right.createdAt - left.createdAt)
 }
 
 /** Where opening a Files item or a shortcut goes; null when a shortcut's target is in the trash. */
@@ -806,7 +875,7 @@ function PointerMenu({ point, onClose, children }: { point: { x: number; y: numb
 }
 
 /** A file, or a shortcut to a file or chat, in the sidebar. Opens the way it does from Files. */
-function SidebarItemRow({ node, sidebar, chatId, drag, onDrop, onNewFolder, go }: TreeProps & { node: FileNode }) {
+function SidebarItemRow({ node, list, reorderable, sidebar, chatId, drag, onDrop, onNewFolder, go }: LoadedTreeProps & RowPlacement & { node: FileNode }) {
   const { t } = useTranslation()
   const [menuPoint, setMenuPoint] = useState<{ x: number; y: number } | null>(null)
   const [renaming, setRenaming] = useState(false)
@@ -814,16 +883,19 @@ function SidebarItemRow({ node, sidebar, chatId, drag, onDrop, onNewFolder, go }
   const splitAvailable = useSidePanel((state) => state.splitAvailable)
   const path = itemPath(node)
   const besideId = fileTargetId(node)
-  const lines = drag.rowLines('loose', node.id, 'item')
+  const lines = drag.rowLines(list, node.id, 'item')
   const active = node.kind === 'shortcut' && node.target?.kind === 'chat' && node.target.id === chatId
   const menu = (atPointer: boolean) => (
     <ItemMenu node={node} sidebar={sidebar} atPointer={atPointer} onRename={() => setRenaming(true)} onNewFolder={onNewFolder} go={go} />
   )
   return (
     <div
+      data-drag-list={reorderable ? list : undefined}
+      data-drag-id={reorderable ? node.id : undefined}
       draggable={!renaming}
-      onDragStart={(e) => drag.startDrag('item', node.id, e)}
+      onDragStart={(e) => drag.startDrag('item', node.id, e, list)}
       onDragEnd={drag.clearDrag}
+      onDragOver={reorderable ? (e) => drag.onRowDragOver(list, node.id, e) : undefined}
       onDrop={onDrop}
       onContextMenu={(event) => {
         if (renaming) return
@@ -838,6 +910,7 @@ function SidebarItemRow({ node, sidebar, chatId, drag, onDrop, onNewFolder, go }
         !path && 'opacity-60',
       )}
     >
+      <DropLines active before={lines.showLineBefore} after={lines.showLineAfter} />
       <FileNodeIcon node={node} className="size-4" />
       {renaming ? (
         <InlineTitleInput value={node.name} label={t('common.rename')} onCommit={(next) => void renameSidebarItem(node.id, next)} onDone={() => setRenaming(false)} />
@@ -848,6 +921,10 @@ function SidebarItemRow({ node, sidebar, chatId, drag, onDrop, onNewFolder, go }
           className="min-w-0 flex-1 cursor-[inherit] truncate text-left outline-none after:absolute after:inset-0 after:rounded-lg focus-visible:after:ring-2 focus-visible:after:ring-ring"
           onClick={(event) => {
             if (!path) return
+            if (drag.didDragRef.current) {
+              drag.didDragRef.current = false
+              return
+            }
             if (event.altKey && besideId && splitAvailable) openBeside({ kind: 'file', id: besideId }, goMain)
             else go(path)
           }}
@@ -871,37 +948,57 @@ function SidebarItemRow({ node, sidebar, chatId, drag, onDrop, onNewFolder, go }
   )
 }
 
-/** A folder's subfolders, shortcuts, and files, in the order a file manager lists them. */
-function SidebarItems({ items, ...props }: TreeProps & { items: readonly FileNode[] }) {
-  const sorted = [...items].sort((left, right) => (
-    Number(right.kind === 'folder') - Number(left.kind === 'folder')
-    || left.name.localeCompare(right.name, undefined, { numeric: true, sensitivity: 'base' })
-  ))
-  return sorted.map((node) => {
-    if (node.kind === 'folder') {
-      return <SidebarFolderNode key={node.id} folder={{ id: node.id, name: node.name, systemRole: node.systemRole ?? null }} {...props} />
-    }
-    // A shortcut to a folder opens in place, like the folder itself.
-    if (node.kind === 'shortcut' && node.target?.kind === 'folder' && node.target.available) {
-      const target = { id: node.target.id, name: node.name, systemRole: node.target.systemRole }
-      return <SidebarFolderNode key={node.id} folder={target} shortcut={node} {...props} />
-    }
-    return <SidebarItemRow key={node.id} node={node} {...props} />
-  })
+/** One item of a folder, whatever it is, at its place in the folder's list. */
+function SidebarEntryRow({ entry, list, reorderable, ...props }: TreeProps & RowPlacement & { entry: SidebarEntry }) {
+  const { drag, chatId, shiftHeld, onNavigate, onDrop } = props
+  if (entry.kind === 'chat') {
+    const chat = entry.chat
+    return (
+      <ChatRow
+        chat={chat}
+        active={chat.id === chatId}
+        shiftHeld={shiftHeld}
+        onNavigate={onNavigate}
+        draggable
+        // Rows in recent order cannot be rearranged, so drags over them fall through to the
+        // sidebar handler, which targets the top of the list as a whole.
+        droppable={reorderable}
+        {...drag.rowLines(list, chat.id, 'chat')}
+        didDragRef={drag.didDragRef}
+        dragList={reorderable ? list : undefined}
+        onDragStart={(e) => drag.startDrag('chat', chat.id, e, list)}
+        onDragOver={reorderable ? (e) => drag.onRowDragOver(list, chat.id, e) : undefined}
+        onDrop={reorderable ? onDrop : undefined}
+        onDragEnd={drag.clearDrag}
+      />
+    )
+  }
+  const node = entry.node
+  const { sidebar } = props
+  if (!sidebar) return null
+  if (node.kind === 'folder') {
+    return <SidebarFolderNode folder={{ id: node.id, name: node.name, systemRole: node.systemRole ?? null }} list={list} reorderable={reorderable} {...props} sidebar={sidebar} />
+  }
+  // A shortcut to a folder opens in place, like the folder itself.
+  if (node.kind === 'shortcut' && node.target?.kind === 'folder' && node.target.available) {
+    const target = { id: node.target.id, name: node.name, systemRole: node.target.systemRole }
+    return <SidebarFolderNode folder={target} shortcut={node} list={list} reorderable={reorderable} {...props} sidebar={sidebar} />
+  }
+  return <SidebarItemRow node={node} list={list} reorderable={reorderable} {...props} sidebar={sidebar} />
 }
 
 /**
- * A Files folder in the sidebar: its subfolders, shortcuts, files, and the chats filed in it.
- * Chats and items dragged onto it move into it, and so do items dragged here from Files.
+ * A Files folder in the sidebar and, once open, its items (chats included) in their shared order.
+ * Things dragged onto it move into it, and so do items dragged here from Files.
  * With `shortcut`, this is a shortcut to the folder: it opens the folder, but dragging, renaming,
  * and deleting act on the shortcut.
  */
-function SidebarFolderNode({ folder, shortcut, ...props }: TreeProps & {
+function SidebarFolderNode({ folder, shortcut, list, reorderable, ...props }: LoadedTreeProps & RowPlacement & {
   folder: { id: string; name: string; systemRole: SidebarFolder['systemRole'] }
   shortcut?: FileNode
 }) {
   const { t } = useTranslation()
-  const { sidebar, chatsByFolder, chatId, shiftHeld, onNavigate, drag, onDrop, onNewFolder, go } = props
+  const { sidebar, chatsByFolder, drag, onDrop, onNewFolder, go } = props
   // A shortcut opens independently of the folder it points at.
   const expansionKey = shortcut ? `shortcut:${shortcut.id}` : folder.id
   const expanded = useFolderExpansion((state) => state.expanded[expansionKey] ?? false)
@@ -911,23 +1008,27 @@ function SidebarFolderNode({ folder, shortcut, ...props }: TreeProps & {
   const [renaming, setRenaming] = useState(false)
   const [menuPoint, setMenuPoint] = useState<{ x: number; y: number } | null>(null)
   const chats = chatsByFolder.get(folder.id) ?? []
-  const list = folderListId(folder.id)
+  const contentsList = folderListId(folder.id)
   const dragged = shortcut ? { kind: 'item' as const, id: shortcut.id } : folder.systemRole ? null : { kind: 'folder' as const, id: folder.id }
-  const lines = drag.rowLines(list, dragged?.id ?? folder.id, dragged?.kind ?? 'folder')
+  const rowId = dragged?.id ?? folder.id
+  const lines = drag.rowLines(list, rowId, dragged?.kind ?? 'folder')
   const dropHighlight = fileDropActive || (drag.drop?.kind === 'folder-target' && drag.drop.folderId === folder.id)
   const FolderGlyph = folder.systemRole === 'archive' ? Archive : FolderIcon
   const menuNode = shortcut ?? { id: folder.id, kind: 'folder' as const, name: folder.name, systemRole: folder.systemRole }
   const menu = (atPointer: boolean) => (
     <ItemMenu node={menuNode} folder sidebar={sidebar} atPointer={atPointer} onRename={() => setRenaming(true)} onNewFolder={onNewFolder} go={go} />
   )
+  const entries = sidebarEntries(chats, items)
 
   return (
     <div>
       <div
+        data-drag-list={reorderable ? list : undefined}
+        data-drag-id={reorderable ? rowId : undefined}
         draggable={Boolean(dragged) && !renaming}
-        onDragStart={dragged ? (e) => drag.startDrag(dragged.kind, dragged.id, e) : undefined}
+        onDragStart={dragged ? (e) => drag.startDrag(dragged.kind, dragged.id, e, list) : undefined}
         onDragEnd={dragged ? drag.clearDrag : undefined}
-        onDragOver={(e) => drag.onFolderDragOver(folder.id, e)}
+        onDragOver={(e) => drag.onFolderDragOver(folder.id, e, reorderable ? { list, id: rowId } : undefined)}
         onDrop={onDrop}
         // Items dragged from the Files browser drop here too (see useItemDrag).
         data-drop-target={folder.id}
@@ -943,6 +1044,7 @@ function SidebarFolderNode({ folder, shortcut, ...props }: TreeProps & {
           dropHighlight && 'bg-sidebar-accent ring-1 ring-foreground/20',
         )}
       >
+        <DropLines active before={lines.showLineBefore} after={lines.showLineAfter} />
         <div className="flex min-w-0 flex-1 items-center gap-1.5 px-2 py-1.5">
           <ChevronRight className={cn('size-3.5 shrink-0 text-muted-foreground transition-transform', expanded && 'rotate-90')} />
           {shortcut ? <FileNodeIcon node={shortcut} className="size-4" /> : <FolderGlyph className="size-4 shrink-0 text-muted-foreground" />}
@@ -987,29 +1089,11 @@ function SidebarFolderNode({ folder, shortcut, ...props }: TreeProps & {
       {expanded && (
         <div
           className="ml-4 space-y-0.5 border-l border-sidebar-border pl-2"
-          onDragOver={(e) => drag.onFolderDragOver(folder.id, e)}
+          onDragOver={(e) => drag.onFolderBodyDragOver(folder.id, e)}
           onDrop={onDrop}
         >
-          <SidebarItems items={items} {...props} />
-          {chats.map((chat) => (
-            <ChatRow
-              key={chat.id}
-              chat={chat}
-              active={chat.id === chatId}
-              shiftHeld={shiftHeld}
-              onNavigate={onNavigate}
-              draggable
-              droppable
-              {...drag.rowLines(list, chat.id, 'chat')}
-              didDragRef={drag.didDragRef}
-              dragList={list}
-              onDragStart={(e) => drag.startDrag('chat', chat.id, e, list)}
-              onDragOver={(e) => drag.onRowDragOver(list, chat.id, e)}
-              onDrop={onDrop}
-              onDragEnd={drag.clearDrag}
-            />
-          ))}
-          {items.length + chats.length === 0 && (
+          {entries.map((entry) => <SidebarEntryRow key={entry.id} entry={entry} list={contentsList} reorderable {...props} />)}
+          {entries.length === 0 && (
             <div className={cn('rounded-md px-2 py-1 text-xs text-muted-foreground', dropHighlight && 'bg-sidebar-accent/80 text-foreground')}>
               {dropHighlight ? t('sidebar.dropToAdd') : t('sidebar.empty')}
             </div>
@@ -1057,8 +1141,6 @@ export function Sidebar({
   const reorderPinnedChats = useChat((s) => s.reorderPinnedChats)
   const pinChat = useChat((s) => s.pinChat)
   const unpinChat = useChat((s) => s.unpinChat)
-  const reorderFolderChats = useChat((s) => s.reorderFolderChats)
-  const reorderLooseChats = useChat((s) => s.reorderLooseChats)
   const moveToFolder = useChat((s) => s.moveToFolder)
   const user = useAuth((s) => s.user)
   const instanceReady = useAuth((s) => s.instanceReady)
@@ -1099,13 +1181,16 @@ export function Sidebar({
   const [activeTooltip, setActiveTooltip] = useState<string | null>(null)
   const [filesMenuPoint, setFilesMenuPoint] = useState<{ x: number; y: number } | null>(null)
   const shiftHeld = useShiftHeld()
+  const folderOfList = (list: DropList): string | null => {
+    if (list === 'pinned') return null
+    if (list === 'loose') return sidebar?.chatsFolderId ?? null
+    return list.slice('folder:'.length)
+  }
   const drag = useSidebarDrag({
-    canNestFolder: (folderId, targetId) => Boolean(sidebar)
-      && !isWithin(sidebar, targetId, folderId)
-      && sidebar!.folders.find((folder) => folder.id === folderId)?.parentId !== targetId,
+    canEnter: (kind, id, folderId) => kind !== 'folder' || !isWithin(sidebar, folderId, id),
+    folderOfList,
   })
   const pinnedZoneRef = useRef<HTMLDivElement>(null)
-  const looseZoneRef = useRef<HTMLDivElement>(null)
   const openSidebarLabel = t('sidebar.expand')
 
   const ensureFolderExpanded = (folderId: string) => setFolderExpanded(folderId, true)
@@ -1119,48 +1204,31 @@ export function Sidebar({
     const kind = drag.dragKindRef.current
     const sourceList = drag.dragListRef.current
     drag.clearDrag()
-    if (!hint || !from) return
-
-    if (kind === 'folder' || kind === 'item') {
-      if (hint.kind === 'folder-target') void moveSidebarItems([from], hint.folderId)
-      // Dropped on the unfiled list, folders, files, and shortcuts move to the top of the sidebar.
-      else if (hint.kind === 'loose-target') void moveSidebarItems([from], null)
-      return
-    }
-    if (kind !== 'chat') return
-    // Pinned chats dropped anywhere else leave the pinned list for the folder or unfiled list they landed in.
+    if (!hint || !from || !kind) return
+    // Pinned chats dropped anywhere else leave the pinned list.
     const place = sourceList === 'pinned' ? unpinChat : moveToFolder
 
-    if (hint.kind === 'folder-target') {
-      if (sourceList === folderListId(hint.folderId)) return
-      place(from, hint.folderId)
-      ensureFolderExpanded(hint.folderId)
-      return
-    }
-    if (hint.kind === 'loose-target') {
-      if (sourceList !== 'loose') place(from, null)
+    // Dropped on a folder, or below everything at the top level: to the top of that folder.
+    if (hint.kind === 'folder-target' || hint.kind === 'loose-target') {
+      const folderId = hint.kind === 'folder-target' ? hint.folderId : null
+      if (hint.kind === 'loose-target' && sourceList === 'loose') return
+      if (kind === 'chat') place(from, folderId)
+      else void moveSidebarItems([from], folderId)
+      if (folderId) ensureFolderExpanded(folderId)
       return
     }
     if (hint.id === from) return
-    const position = { targetId: hint.id, edge: hint.edge }
     if (hint.list === 'pinned') {
+      if (kind !== 'chat') return
       if (sourceList === 'pinned') reorderPinnedChats(from, hint.id, hint.edge)
-      else pinChat(from, position)
+      else pinChat(from, { targetId: hint.id, edge: hint.edge })
       return
     }
-    if (hint.list === 'loose') {
-      if (sourceList === 'loose') reorderLooseChats(from, hint.id, hint.edge)
-      else place(from, null, position)
-      return
-    }
-    const folderId = parseFolderList(hint.list)
+    // Chats, folders, files, and shortcuts share one order in each folder.
+    const folderId = folderOfList(hint.list)
     if (!folderId) return
-    if (sourceList === hint.list) {
-      reorderFolderChats(folderId, from, hint.id, hint.edge)
-    } else {
-      place(from, folderId, position)
-      ensureFolderExpanded(folderId)
-    }
+    const ids = listRowIds(hint.list).filter((id) => id !== from)
+    void orderSidebarItems(folderId, reorderList([...ids, from], from, hint.id, hint.edge))
   }
 
   const go = (path: string) => {
@@ -1180,18 +1248,18 @@ export function Sidebar({
     setActiveTooltip(null)
   }, [collapsed])
 
-  // The sidebar is the Chats folder: its folders, shortcuts, and files, then its chats.
+  // The sidebar is the Chats folder: its chats, folders, files, and shortcuts, as one list.
   const rootItems = useSidebarItems(sidebar?.chatsFolderId).data ?? []
   const pinned = useMemo(() => chats.filter((c) => c.pinned).sort(compareChatOrder), [chats])
-  const unpinned = useMemo(() => chats.filter((c) => !c.pinned).sort(compareChatOrder), [chats])
   // Chats filed in folders show inside them; chats in folders the sidebar does not show stay in Files.
   const inFolders = new Map<string, Chat[]>()
   const loose: Chat[] = []
-  for (const c of unpinned) {
+  for (const c of chats) {
+    if (c.pinned) continue
     if (!c.folderId) loose.push(c)
     else inFolders.set(c.folderId, [...inFolders.get(c.folderId) ?? [], c])
   }
-  const treeProps: TreeProps | undefined = sidebar && {
+  const treeProps: TreeProps = {
     sidebar,
     chatsByFolder: inFolders,
     chatId,
@@ -1202,21 +1270,22 @@ export function Sidebar({
     onNewFolder: (parentId: string) => setNewFolderParent(parentId),
     go,
   }
-  // Recent order lists unfiled chats by last activity under time headings; drag order stays saved underneath.
-  const looseGroups: { group: ChatTimeGroup | null; chats: Chat[] }[] = []
+  // Recent order lists the top level by last activity under time headings; the manual order stays saved underneath.
+  const rootEntries = sidebarEntries(loose, rootItems, recentOrder)
+  const rootGroups: { group: ChatTimeGroup | null; entries: SidebarEntry[] }[] = []
   if (recentOrder) {
-    const byGroup = new Map<ChatTimeGroup, Chat[]>()
-    for (const c of [...loose].sort((a, b) => b.updatedAt - a.updatedAt)) {
-      const group = chatTimeGroup(c.updatedAt)
+    const byGroup = new Map<ChatTimeGroup, SidebarEntry[]>()
+    for (const entry of rootEntries) {
+      const group = chatTimeGroup(entry.updatedAt)
       if (!byGroup.has(group)) byGroup.set(group, [])
-      byGroup.get(group)!.push(c)
+      byGroup.get(group)!.push(entry)
     }
     for (const group of CHAT_TIME_GROUPS) {
-      const items = byGroup.get(group)
-      if (items) looseGroups.push({ group, chats: items })
+      const entries = byGroup.get(group)
+      if (entries) rootGroups.push({ group, entries })
     }
-  } else if (loose.length > 0) {
-    looseGroups.push({ group: null, chats: loose })
+  } else if (rootEntries.length > 0) {
+    rootGroups.push({ group: null, entries: rootEntries })
   }
   const createFolder = () => {
     // Files names cannot contain "/", so it becomes "-" as in the migration of older folders.
@@ -1310,7 +1379,6 @@ export function Sidebar({
     <aside
       onDragOver={(e) => drag.onSidebarDragOver(e, {
         pinnedBottom: pinnedZoneRef.current?.getBoundingClientRect().bottom,
-        looseTop: looseZoneRef.current?.getBoundingClientRect().top,
       })}
       onDragLeave={drag.onSidebarDragLeave}
       onDrop={handleDrop}
@@ -1453,85 +1521,62 @@ export function Sidebar({
               </div>
             )}
 
-            {treeProps && <div className="space-y-0.5"><SidebarItems items={rootItems} {...treeProps} /></div>}
-
-            <button
-              className="mt-1 flex w-full cursor-pointer items-center gap-2 rounded-lg px-2 py-1 text-xs text-muted-foreground hover:bg-sidebar-accent/70 hover:text-foreground disabled:cursor-default disabled:opacity-50"
-              disabled={!sidebar}
-              onClick={() => setNewFolderParent(null)}
-            >
-              <Plus className="size-3.5" /> {t('sidebar.newFolder')}
-            </button>
-
             <div
               className={cn(
                 'rounded-lg',
-                ((drag.drop?.kind === 'loose-target' && drag.dragKind !== null) || (sidebar && fileDrag.target === sidebar.chatsFolderId))
+                (drag.drop?.kind === 'loose-target' || (sidebar && fileDrag.target === sidebar.chatsFolderId))
                   && 'bg-sidebar-accent/40 ring-1 ring-foreground/10',
               )}
               // Items dragged from Files land at the top of the sidebar (in the Chats folder).
               data-drop-target={sidebar?.chatsFolderId}
-              ref={looseZoneRef}
             >
-              {loose.length > 0 && (
-                <div className="mt-3">
-                  <div className="flex px-2 pb-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+              <div className="flex items-center px-2 pb-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                <button
+                  type="button"
+                  className="cursor-pointer uppercase tracking-wider underline-offset-2 hover:text-foreground hover:underline focus-visible:text-foreground focus-visible:underline focus-visible:outline-none"
+                  onClick={toggleChatSortMode}
+                  aria-label={t('sidebar.chatSort.toggle', {
+                    mode: t(recentOrder ? 'sidebar.chatSort.recent' : 'sidebar.chatSort.default'),
+                    next: t(recentOrder ? 'sidebar.chatSort.default' : 'sidebar.chatSort.recent'),
+                  })}
+                >
+                  {t(recentOrder ? 'sidebar.chatSort.recent' : 'sidebar.chatSort.default')}
+                </button>
+                <Tooltip>
+                  <TooltipTrigger asChild>
                     <button
                       type="button"
-                      className="cursor-pointer uppercase tracking-wider underline-offset-2 hover:text-foreground hover:underline focus-visible:text-foreground focus-visible:underline focus-visible:outline-none"
-                      onClick={toggleChatSortMode}
-                      aria-label={t('sidebar.chatSort.toggle', {
-                        mode: t(recentOrder ? 'sidebar.chatSort.recent' : 'sidebar.chatSort.default'),
-                        next: t(recentOrder ? 'sidebar.chatSort.default' : 'sidebar.chatSort.recent'),
-                      })}
+                      className="ml-auto flex size-5 cursor-pointer items-center justify-center rounded text-muted-foreground hover:bg-sidebar-accent hover:text-foreground disabled:cursor-default disabled:opacity-50"
+                      disabled={!sidebar}
+                      onClick={() => setNewFolderParent(null)}
+                      aria-label={t('sidebar.newFolder')}
                     >
-                      {t(recentOrder ? 'sidebar.chatSort.recent' : 'sidebar.chatSort.default')}
+                      <FolderPlus className="size-3.5" />
                     </button>
-                  </div>
-                  {looseGroups.map(({ group, chats: items }) => (
-                    <div key={group ?? 'default'} className={cn(group && group !== looseGroups[0]!.group && 'mt-3')}>
-                      {group && (
-                        <div className="px-2 pb-1 pt-1 text-[11px] font-medium text-muted-foreground/80">
-                          {t(`sidebar.groups.${group}`)}
-                        </div>
-                      )}
-                      <div className="space-y-0.5">
-                        {items.map((c) => (
-                          <ChatRow
-                            key={c.id}
-                            chat={c}
-                            active={c.id === chatId}
-                            shiftHeld={shiftHeld}
-                            onNavigate={onNavigate}
-                            draggable
-                            // Recent order cannot be rearranged, so drags over these rows fall through to the
-                            // sidebar handler, which targets the unfiled list as a whole.
-                            droppable={!recentOrder}
-                            {...drag.rowLines('loose', c.id, 'chat')}
-                            didDragRef={drag.didDragRef}
-                            dragList={recentOrder ? undefined : 'loose'}
-                            onDragStart={(e) => drag.startDrag('chat', c.id, e, 'loose')}
-                            onDragOver={recentOrder ? undefined : (e) => drag.onRowDragOver('loose', c.id, e)}
-                            onDrop={recentOrder ? undefined : handleDrop}
-                            onDragEnd={drag.clearDrag}
-                          />
-                        ))}
-                      </div>
+                  </TooltipTrigger>
+                  <TooltipContent side="right">{t('sidebar.newFolder')}</TooltipContent>
+                </Tooltip>
+              </div>
+              {rootGroups.map(({ group, entries }) => (
+                <div key={group ?? 'default'} className={cn(group && group !== rootGroups[0]!.group && 'mt-3')}>
+                  {group && (
+                    <div className="px-2 pb-1 pt-1 text-[11px] font-medium text-muted-foreground/80">
+                      {t(`sidebar.groups.${group}`)}
                     </div>
-                  ))}
+                  )}
+                  <div className="space-y-0.5">
+                    {entries.map((entry) => (
+                      <SidebarEntryRow key={entry.id} entry={entry} list="loose" reorderable={!recentOrder} {...treeProps} />
+                    ))}
+                  </div>
                 </div>
-              )}
-              {loose.length === 0 && drag.dragKind === 'chat' && drag.dragList !== 'loose' && (
-                <div className="mt-3 px-2 py-2 text-xs text-muted-foreground">
-                  {t('sidebar.dropHere')}
+              ))}
+              {drag.dragKind !== null && drag.dragList !== 'loose' && (
+                <div className="mt-1 px-2 py-2 text-xs text-muted-foreground">
+                  {rootEntries.length === 0 ? t('sidebar.dropHere') : ui("Drop here to move to the top")}
                 </div>
-              )}
-              {(drag.dragKind === 'folder' || drag.dragKind === 'item') && (
-                <div className="mt-3 px-2 py-2 text-xs text-muted-foreground">
-                  {ui("Drop here to move to the top")}
-                </div>
-              )}
-            </div>
+                )}
+              </div>
           </div>
         </div>
       </div>

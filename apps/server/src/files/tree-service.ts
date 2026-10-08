@@ -12,6 +12,7 @@ import { publishDocsClosed } from './doc-events.js'
 import { chatsFolderIdOf, chatToFileNode, liveChatIds, listFolderChats, moveChatsInTx } from './chat-items.js'
 import { recoverChats, trashChats } from '../chats/trash-service.js'
 import { toFileNodes } from './shortcuts.js'
+import { topSortOrder } from './order.js'
 
 type DatabaseTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0]
 
@@ -32,6 +33,7 @@ export function toFileNode(row: FileNodeRow): FileNode {
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     systemRole: (row.systemRole as FileSystemRole | null) ?? null,
+    sortOrder: row.sortOrder,
   }
 }
 
@@ -171,6 +173,7 @@ export async function createFolder(userId: string, input: { parentId: string | n
     await assertNameAvailable(tx, userId, input.parentId, input.name)
     const [created] = await tx.insert(fileNodes).values({
       id: newId(), ownerUserId: userId, parentId: input.parentId, kind: 'folder', name: input.name,
+      sortOrder: await topSortOrder(tx, userId, input.parentId),
     }).returning()
     return toFileNode(created!)
   })
@@ -206,6 +209,7 @@ async function moveNodeInTx(tx: DatabaseTransaction, userId: string, node: FileN
   }
   const [updated] = await tx.update(fileNodes).set({
     name, parentId: target.parentId, revision: sql`${fileNodes.revision} + 1`, updatedAt: new Date(),
+    ...target.parentId !== node.parentId ? { sortOrder: await topSortOrder(tx, userId, target.parentId) } : {},
   }).where(eq(fileNodes.id, node.id)).returning()
   if (updated!.kind === 'doc' && !isMarkdownName(name)) return { row: await convertDocToBlobInTx(tx, userId, updated!), converted: true }
   return { row: updated!, converted: false }

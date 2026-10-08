@@ -8,9 +8,7 @@ import type { FileNode, SidebarState } from '@pulpo/contracts'
 import type { Chat } from '@/lib/types'
 
 const actions = vi.hoisted(() => ({
-  reorderLooseChats: vi.fn(),
   reorderPinnedChats: vi.fn(),
-  reorderFolderChats: vi.fn(),
   moveToFolder: vi.fn(),
   pinChat: vi.fn(),
   unpinChat: vi.fn(),
@@ -18,6 +16,7 @@ const actions = vi.hoisted(() => ({
 
 const sidebarActions = vi.hoisted(() => ({
   moveSidebarItems: vi.fn(),
+  orderSidebarItems: vi.fn(),
 }))
 
 const sidebarState = vi.hoisted(() => ({
@@ -33,21 +32,21 @@ const sidebarState = vi.hoisted(() => ({
   ],
 } as SidebarState))
 
-const node = (id: string, parentId: string, kind: FileNode['kind'], name: string, target: FileNode['target'] = null): FileNode => ({
+const node = (id: string, parentId: string, kind: FileNode['kind'], name: string, sortOrder: number, target: FileNode['target'] = null): FileNode => ({
   id, parentId, kind, name, status: 'ready', mimeType: null, sizeBytes: 0, revision: 0, trashedAt: null,
-  createdAt: '', updatedAt: '', systemRole: null, target,
+  createdAt: '', updatedAt: '', systemRole: null, sortOrder, target,
 })
 
 /** What each open folder lists besides chats: the sidebar's top level is the Chats folder. */
 const folderItems = vi.hoisted(() => ({} as Record<string, FileNode[]>))
 Object.assign(folderItems, {
   chats: [
-    node('f1', 'chats', 'folder', 'Folder f1'),
-    node('f2', 'chats', 'folder', 'Folder f2'),
-    node('doc-1', 'chats', 'doc', 'Notes.md'),
-    node('s-proj', 'chats', 'shortcut', 'Projects', { kind: 'folder', id: 'projects', name: 'Projects', mimeType: null, systemRole: null, available: true }),
+    node('f1', 'chats', 'folder', 'Folder f1', 1),
+    node('doc-1', 'chats', 'doc', 'Notes.md', 3),
+    node('f2', 'chats', 'folder', 'Folder f2', 4),
+    node('s-proj', 'chats', 'shortcut', 'Projects', 5, { kind: 'folder', id: 'projects', name: 'Projects', mimeType: null, systemRole: null, available: true }),
   ],
-  f1: [node('f3', 'f1', 'folder', 'Folder f3')],
+  f1: [node('f3', 'f1', 'folder', 'Folder f3', 1)],
 })
 
 vi.mock('@/stores/chat', () => {
@@ -58,8 +57,8 @@ vi.mock('@/stores/chat', () => {
   const state = {
     chats: [
       chat('p1', 0, { pinned: true }), chat('p2', 1, { pinned: true }),
-      chat('x1', 0, { folderId: 'f1' }), chat('x2', 1, { folderId: 'f1' }),
-      chat('a', 0), chat('b', 1), chat('c', 2),
+      chat('x1', 0, { folderId: 'f1' }), chat('x2', 2, { folderId: 'f1' }),
+      chat('a', 0), chat('b', 2), chat('c', 6),
     ],
     streamingIds: [] as string[],
     responseChatIds: {} as Record<string, string>,
@@ -101,9 +100,11 @@ const { Sidebar } = await import('./Sidebar')
 const ROW_HEIGHT = 30
 
 /**
- * jsdom has no layout, so stack every reorderable row 30px apart in document order:
- * p1 0, p2 30, x1 60, x2 90, a 120, b 150, c 180 (shortcut rows come first when there are any).
- * Folder headers are not reorderable rows. Other elements span their rows.
+ * jsdom has no layout, so stack every reorderable row 30px apart in document order. Chats and
+ * Files items share one order in each folder:
+ *   pinned p1 0, p2 30
+ *   top level a 60, f1 90 [x1 120, f3 150, x2 180], b 210, Notes.md 240, f2 270, Projects 300, c 330
+ * Other elements span their rows.
  */
 function layOutRows() {
   const original = Element.prototype.getBoundingClientRect
@@ -167,15 +168,45 @@ afterEach(() => {
   vi.clearAllMocks()
 })
 
-describe('sidebar chat dragging outside the rows', () => {
-  it('moves an unfiled chat to the end when dropped below the list', () => {
+const fileRow = () => screen.getByRole('button', { name: 'Notes.md' }).parentElement!
+const TOP_LEVEL = ['a', 'f1', 'b', 'doc-1', 'f2', 's-proj', 'c']
+
+describe('sidebar dragging', () => {
+  it('moves an item to the end of the top level when dropped below everything', () => {
     dragTo(chatRow('a'), 10_000)
-    expect(actions.reorderLooseChats).toHaveBeenCalledWith('a', 'c', 'after')
+    expect(sidebarActions.orderSidebarItems).toHaveBeenCalledWith('chats', ['f1', 'b', 'doc-1', 'f2', 's-proj', 'c', 'a'])
   })
 
-  it('moves an unfiled chat to the top when dragged above the list', () => {
-    dragTo(chatRow('c'), 110)
-    expect(actions.reorderLooseChats).toHaveBeenCalledWith('c', 'a', 'before')
+  it('moves an item to the top when dragged above the list', () => {
+    dragTo(chatRow('c'), 61)
+    expect(sidebarActions.orderSidebarItems).toHaveBeenCalledWith('chats', ['c', 'a', 'f1', 'b', 'doc-1', 'f2', 's-proj'])
+  })
+
+  it('reorders chats and folders together inside a folder', () => {
+    dragTo(chatRow('x2'), 125, chatRow('x1').parentElement!)
+    expect(sidebarActions.orderSidebarItems).toHaveBeenCalledWith('f1', ['x2', 'x1', 'f3'])
+    expect(actions.moveToFolder).not.toHaveBeenCalled()
+  })
+
+  it('places an item beside a folder from the edge of its header', () => {
+    dragTo(chatRow('c'), 91, folderRow('f1'))
+    expect(sidebarActions.orderSidebarItems).toHaveBeenCalledWith('chats', ['a', 'c', 'f1', 'b', 'doc-1', 'f2', 's-proj'])
+    dragTo(fileRow(), 119, folderRow('f1'))
+    expect(sidebarActions.orderSidebarItems).toHaveBeenCalledWith('chats', ['a', 'f1', 'doc-1', 'b', 'f2', 's-proj', 'c'])
+  })
+
+  it('files anything dropped on the middle of a folder into it', () => {
+    dragTo(chatRow('b'), 285, folderRow('f2'))
+    expect(actions.moveToFolder).toHaveBeenCalledWith('b', 'f2')
+    dragTo(fileRow(), 285, folderRow('f2'))
+    expect(sidebarActions.moveSidebarItems).toHaveBeenCalledWith(['doc-1'], 'f2')
+    dragTo(folderRow('f2'), 105, folderRow('f1'))
+    expect(sidebarActions.moveSidebarItems).toHaveBeenCalledWith(['f2'], 'f1')
+  })
+
+  it('moves a folder chat out to the top level when dragged into a gap there', () => {
+    dragTo(chatRow('x1'), 10_000)
+    expect(sidebarActions.orderSidebarItems).toHaveBeenCalledWith('chats', [...TOP_LEVEL, 'x1'])
   })
 
   it('reorders pinned chats from the header or the gaps between them', () => {
@@ -183,80 +214,55 @@ describe('sidebar chat dragging outside the rows', () => {
     expect(actions.reorderPinnedChats).toHaveBeenCalledWith('p2', 'p1', 'before')
   })
 
-  it('reorders a chat within its folder from the folder header', () => {
-    dragTo(chatRow('x2'), 70)
-    expect(actions.reorderFolderChats).toHaveBeenCalledWith('f1', 'x2', 'x1', 'before')
-    expect(actions.moveToFolder).not.toHaveBeenCalled()
-  })
-
-  it('moves a folder chat into the unfiled list when dragged down there', () => {
-    dragTo(chatRow('x1'), 10_000)
-    expect(actions.moveToFolder).toHaveBeenCalledWith('x1', null, { targetId: 'c', edge: 'after' })
-  })
-
-  it('pins a chat dragged into the pinned section at that spot', () => {
+  it('pins a chat dragged into the pinned section at that spot, but not other items', () => {
     dragTo(chatRow('b'), 5)
     expect(actions.pinChat).toHaveBeenCalledWith('b', { targetId: 'p1', edge: 'before' })
     dragTo(chatRow('x1'), 50, chatRow('p2'))
     expect(actions.pinChat).toHaveBeenCalledWith('x1', { targetId: 'p2', edge: 'after' })
-    expect(actions.moveToFolder).not.toHaveBeenCalled()
+    dragTo(fileRow(), 5)
+    expect(actions.pinChat).toHaveBeenCalledTimes(2)
   })
 
-  it('unpins a pinned chat dragged into the unfiled list', () => {
+  it('unpins a pinned chat dropped among the items or on a folder', () => {
     dragTo(chatRow('p1'), 10_000)
-    expect(actions.unpinChat).toHaveBeenCalledWith('p1', null, { targetId: 'c', edge: 'after' })
-    dragTo(chatRow('p2'), 155, chatRow('b'))
-    expect(actions.unpinChat).toHaveBeenCalledWith('p2', null, { targetId: 'b', edge: 'before' })
+    expect(sidebarActions.orderSidebarItems).toHaveBeenCalledWith('chats', [...TOP_LEVEL, 'p1'])
+    dragTo(chatRow('p2'), 125, chatRow('x1'))
+    expect(sidebarActions.orderSidebarItems).toHaveBeenCalledWith('f1', ['p2', 'x1', 'f3', 'x2'])
+    dragTo(chatRow('p1'), 285, folderRow('f2'))
+    expect(actions.unpinChat).toHaveBeenCalledWith('p1', 'f2')
     expect(actions.reorderPinnedChats).not.toHaveBeenCalled()
   })
 
-  it('unpins a pinned chat dropped on a folder or among its chats', () => {
-    dragTo(chatRow('p1'), 150, folderRow('f2'))
-    expect(actions.unpinChat).toHaveBeenCalledWith('p1', 'f2')
-    dragTo(chatRow('p2'), 110, chatRow('x2'))
-    expect(actions.unpinChat).toHaveBeenCalledWith('p2', 'f1', { targetId: 'x2', edge: 'after' })
-    expect(actions.moveToFolder).not.toHaveBeenCalled()
-  })
-
-  it('moves a folder into another folder dropped on', () => {
-    dragTo(folderRow('f2'), 0, folderRow('f1'))
-    expect(sidebarActions.moveSidebarItems).toHaveBeenCalledWith(['f2'], 'f1')
-  })
-
   it('does not move a folder into itself or its own subfolder', () => {
-    dragTo(folderRow('f1'), 0, folderRow('f3'))
-    dragTo(folderRow('f3'), 0, folderRow('f1'))
+    dragTo(folderRow('f1'), 165, folderRow('f3'))
+    dragTo(folderRow('f1'), 152, folderRow('f3'))
     expect(sidebarActions.moveSidebarItems).not.toHaveBeenCalled()
+    expect(sidebarActions.orderSidebarItems).not.toHaveBeenCalled()
   })
 
-  it('moves a nested folder back to the top when dropped on the unfiled list', () => {
+  it('moves a nested folder back to the top level when dropped there', () => {
     dragTo(folderRow('f3'), 10_000)
-    expect(sidebarActions.moveSidebarItems).toHaveBeenCalledWith(['f3'], null)
+    expect(sidebarActions.orderSidebarItems).toHaveBeenCalledWith('chats', [...TOP_LEVEL, 'f3'])
   })
 
-  it('moves files and shortcuts like folders', () => {
-    const file = screen.getByRole('button', { name: 'Notes.md' }).parentElement!
-    dragTo(file, 0, folderRow('f2'))
-    expect(sidebarActions.moveSidebarItems).toHaveBeenCalledWith(['doc-1'], 'f2')
+  it('moves shortcuts like any other item', () => {
     dragTo(folderRow('projects'), 10_000)
-    expect(sidebarActions.moveSidebarItems).toHaveBeenCalledWith(['s-proj'], null)
+    expect(sidebarActions.orderSidebarItems).toHaveBeenCalledWith('chats', ['a', 'f1', 'b', 'doc-1', 'f2', 'c', 's-proj'])
   })
 
   it('files a chat dropped on a folder shortcut into the folder it opens', () => {
-    dragTo(chatRow('b'), 0, folderRow('projects'))
+    dragTo(chatRow('b'), 315, folderRow('projects'))
     expect(actions.moveToFolder).toHaveBeenCalledWith('b', 'projects')
   })
 
-  it('still drops directly on rows and folder headers', () => {
-    dragTo(chatRow('a'), 185, chatRow('c'))
-    expect(actions.reorderLooseChats).toHaveBeenCalledWith('a', 'c', 'before')
-    dragTo(chatRow('b'), 0, folderRow('f2'))
-    expect(actions.moveToFolder).toHaveBeenCalledWith('b', 'f2')
+  it('still drops directly on rows', () => {
+    dragTo(chatRow('a'), 335, chatRow('c'))
+    expect(sidebarActions.orderSidebarItems).toHaveBeenCalledWith('chats', ['f1', 'b', 'doc-1', 'f2', 's-proj', 'a', 'c'])
   })
 
-  it('leaves a chat in place when released next to where it started', () => {
-    dragTo(chatRow('b'), 155)
-    expect(actions.reorderLooseChats).not.toHaveBeenCalled()
+  it('leaves an item in place when released next to where it started', () => {
+    dragTo(chatRow('b'), 215)
+    expect(sidebarActions.orderSidebarItems).not.toHaveBeenCalled()
     expect(actions.moveToFolder).not.toHaveBeenCalled()
   })
 })

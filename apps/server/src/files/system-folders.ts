@@ -5,6 +5,7 @@ import { fileNodes } from '../database/schema.js'
 import { newId } from '../lib/ids.js'
 import type { FileExecutor } from './access.js'
 import { liveSiblingNames, mutateFileTree } from './tree-service.js'
+import { bottomSortOrder } from './order.js'
 
 export interface SystemFolderIds {
   chatsFolderId: string
@@ -55,6 +56,8 @@ export async function ensureSystemFolders(userId: string): Promise<SystemFolderI
       if (role === 'archive') {
         await tx.insert(fileNodes).values({
           id: newId(), ownerUserId: userId, parentId: current.chats!, kind: 'shortcut', targetNodeId: current.archive,
+          // Below the chats already there; new chats go above it.
+          sortOrder: await bottomSortOrder(tx, userId, current.chats!),
           name: nextAvailableName(SYSTEM_FOLDER_NAMES.archive, await liveSiblingNames(tx, userId, current.chats!)),
         })
       }

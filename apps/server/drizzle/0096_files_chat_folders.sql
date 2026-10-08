@@ -1,6 +1,7 @@
 ALTER TABLE "file_nodes" ADD COLUMN "system_role" text;--> statement-breakpoint
 ALTER TABLE "file_nodes" ADD COLUMN "target_node_id" uuid;--> statement-breakpoint
 ALTER TABLE "file_nodes" ADD COLUMN "target_chat_id" uuid;--> statement-breakpoint
+ALTER TABLE "file_nodes" ADD COLUMN "sort_order" integer DEFAULT 0 NOT NULL;--> statement-breakpoint
 ALTER TABLE "file_nodes" DROP CONSTRAINT "file_nodes_kind_check";--> statement-breakpoint
 ALTER TABLE "file_nodes" ADD CONSTRAINT "file_nodes_kind_check" CHECK ("file_nodes"."kind" in ('folder', 'doc', 'blob', 'shortcut'));--> statement-breakpoint
 ALTER TABLE "file_nodes" ADD CONSTRAINT "file_nodes_shortcut_check" CHECK (num_nonnulls("file_nodes"."target_node_id", "file_nodes"."target_chat_id") = case when "file_nodes"."kind" = 'shortcut' then 1 else 0 end);--> statement-breakpoint
@@ -62,8 +63,9 @@ BEGIN
       attempt := attempt + 1;
       candidate := base || ' (' || attempt || ')';
     END LOOP;
-    INSERT INTO "file_nodes" ("id", "owner_user_id", "parent_id", "kind", "name", "created_at", "updated_at")
-      VALUES (legacy."id", legacy."user_id", chats_folder, 'folder', candidate, legacy."created_at", legacy."updated_at");
+    -- Folders were listed above the unfiled chats, so they start above them, in their old order.
+    INSERT INTO "file_nodes" ("id", "owner_user_id", "parent_id", "kind", "name", "sort_order", "created_at", "updated_at")
+      VALUES (legacy."id", legacy."user_id", chats_folder, 'folder', candidate, legacy."sort_order" - 1000000, legacy."created_at", legacy."updated_at");
   END LOOP;
 END $$;--> statement-breakpoint
 ALTER TABLE "chats" DROP CONSTRAINT "chats_folder_id_folders_id_fk";--> statement-breakpoint
