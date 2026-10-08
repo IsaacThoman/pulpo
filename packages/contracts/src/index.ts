@@ -880,7 +880,8 @@ export const modelPreferencesSchema = z.object({
   providerOrder: orderedPreferenceIdsSchema.default([]),
 })
 export const modelPreferencesPatchSchema = z.object({
-  favoriteModelIds: orderedPreferenceIdsSchema.optional(),
+  /** Null returns the account to following the new-account default favorites. */
+  favoriteModelIds: orderedPreferenceIdsSchema.nullable().optional(),
   providerOrder: orderedPreferenceIdsSchema.optional(),
 })
 export type ModelPreferences = z.infer<typeof modelPreferencesSchema>
@@ -917,12 +918,17 @@ export const instructionPresetSelectionsSchema = z.record(
   z.boolean(),
 ).refine((value) => Object.keys(value).length <= 500, 'Too many instruction preset selections')
 
-/** Instance defaults copied into each account when it is created. */
+/** Instance defaults followed by accounts until they customize their own model choices. */
 export const newAccountModelDefaultsSchema = z.object({
   defaultModelId: z.string().trim().min(1).max(120).nullable().default(null),
   favoriteModelIds: orderedPreferenceIdsSchema.default([]),
 })
 export type NewAccountModelDefaults = z.infer<typeof newAccountModelDefaultsSchema>
+/** Which account model choices are unset and therefore follow the new-account defaults. */
+export interface FollowedModelDefaults {
+  defaultModelId: boolean
+  favoriteModelIds: boolean
+}
 
 export const providerCacheAffinityModeSchema = z.enum([
   'none',
@@ -1553,7 +1559,8 @@ export const managementAccountSettingsSchema = z.object({
   fileDoubleClickAction: fileDoubleClickActionSchema.default('open'),
   defaultModelId: z.string().max(120).nullable().default(null),
   generation: z.record(z.string(), z.record(z.string(), z.string())).default({}),
-  favoriteModelIds: accountPreferenceIdsSchema.default([]),
+  /** Null follows the instance's new-account default favorites. */
+  favoriteModelIds: accountPreferenceIdsSchema.nullable().default(null),
   providerOrder: accountPreferenceIdsSchema.default([]),
   sidebarPins: sidebarPinsSchema.default(() => sidebarPinsSchema.parse({})),
 })

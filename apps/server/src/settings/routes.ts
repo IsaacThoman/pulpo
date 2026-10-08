@@ -12,6 +12,7 @@ import { DEFAULT_TRASH_RETENTION, parseTrashRetention, trashRetentionValues } fr
 import { normalizedPreferencePatch, preferencesWithModelDefaults } from './model-preferences.js'
 import { automaticChatExpirationValues, parseAutomaticChatExpiration } from '../chats/expiration.js'
 import { parseAuthSettings, parsePersonalizationSettings } from './application-settings.js'
+import { withNewAccountModelDefaults } from './new-account-defaults.js'
 import { deleteUserEpisodicMemory } from '../episodic-memory/indexer.js'
 import { scheduleUserIndex } from '../episodic-memory/queue.js'
 import {
@@ -38,15 +39,19 @@ export async function registerSettingsRoutes(app: FastifyInstance): Promise<void
         .where(eq(applicationSettings.key, 'personalization'))
         .limit(1),
     ])
-    const values = preferencesWithModelDefaults(row?.values as Record<string, unknown> | undefined)
-    const newAccountFavoriteModelIds = parseAuthSettings(authSetting?.value).newAccountModelDefaults.favoriteModelIds
+    const authSettings = parseAuthSettings(authSetting?.value)
+    const { values, followedModelDefaults } = withNewAccountModelDefaults(
+      preferencesWithModelDefaults(row?.values as Record<string, unknown> | undefined),
+      authSettings,
+    )
     return {
       values: {
         ...values,
         trashRetention: parseTrashRetention(values?.trashRetention ?? DEFAULT_TRASH_RETENTION),
         automaticChatExpiration: parseAutomaticChatExpiration(values?.automaticChatExpiration),
       },
-      newAccountFavoriteModelIds,
+      followedModelDefaults,
+      newAccountFavoriteModelIds: authSettings.newAccountModelDefaults.favoriteModelIds,
       instructionPresets: parsePersonalizationSettings(personalizationSetting?.value).instructionPresets,
       updatedAt: row?.updatedAt.toISOString() ?? null,
     }
@@ -132,7 +137,15 @@ export async function registerSettingsRoutes(app: FastifyInstance): Promise<void
         await scheduleUserIndex(user.id, 'memory-consent-enabled')
       }
     }
-    return { values: saved!.values, updatedAt: saved!.updatedAt.toISOString() }
+    const [authSetting] = await db.select({ value: applicationSettings.value })
+      .from(applicationSettings)
+      .where(eq(applicationSettings.key, 'auth'))
+      .limit(1)
+    const { values } = withNewAccountModelDefaults(
+      preferencesWithModelDefaults(saved!.values as Record<string, unknown>),
+      parseAuthSettings(authSetting?.value),
+    )
+    return { values, updatedAt: saved!.updatedAt.toISOString() }
   })
 
   app.get('/api/memory-document', async (request) => {

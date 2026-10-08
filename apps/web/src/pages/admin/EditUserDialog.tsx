@@ -20,6 +20,8 @@ export function EditUserDialog({ user, billingEnabled, onSave, onClose }: {
 }) {
   const initialModelId = user.defaultModelId || null
   const [defaultModelId, setDefaultModelId] = useState(initialModelId)
+  const [resetFavorites, setResetFavorites] = useState(false)
+  const favoritesFollowDefaults = resetFavorites || !user.favoriteModelIds
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const models = useQuery({
@@ -40,6 +42,7 @@ export function EditUserDialog({ user, billingEnabled, onSave, onClose }: {
         ...(billingEnabled ? { inviteCodeQuota: Number(values.get('inviteCodeQuota') ?? 0) } : {}),
         ...(password ? { password } : {}),
         ...(defaultModelId !== initialModelId ? { defaultModelId } : {}),
+        ...(resetFavorites ? { favoriteModelIds: null } : {}),
       })
       onClose()
     } catch (error) {
@@ -80,7 +83,7 @@ export function EditUserDialog({ user, billingEnabled, onSave, onClose }: {
               onValueChange={(value) => setDefaultModelId(value === AUTOMATIC_MODEL_VALUE ? null : value)}>
               <SelectTrigger id="edit-user-default-model" className="w-full min-w-0"><SelectValue /></SelectTrigger>
               <SelectContent>
-                {defaultModelOptions(models.data?.data ?? [], defaultModelId).map((option) =>
+                {defaultModelOptions(models.data?.data ?? [], defaultModelId, ui('New-account default')).map((option) =>
                   <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}
               </SelectContent>
             </Select>
@@ -89,6 +92,21 @@ export function EditUserDialog({ user, billingEnabled, onSave, onClose }: {
               <p role="alert" className="text-xs text-destructive">{ui('Could not load models.')}</p>
               <Button type="button" variant="outline" size="sm" disabled={models.isFetching} onClick={() => void models.refetch()}>{ui('Retry')}</Button>
             </div>}
+          </div>
+          <div className="space-y-1.5">
+            <Label id="edit-user-favorites">{ui('Favorite models')}</Label>
+            {favoritesFollowDefaults
+              ? <p aria-labelledby="edit-user-favorites" className="text-xs text-muted-foreground">{ui('Following new-account defaults')}</p>
+              : <div className="flex items-start justify-between gap-2">
+                <p aria-labelledby="edit-user-favorites" className="min-w-0 text-sm break-words">
+                  {user.favoriteModelIds!.length
+                    ? user.favoriteModelIds!.map((id) => models.data?.data.find((model) => model.id === id)?.name ?? id).join(', ')
+                    : ui('None')}
+                </p>
+                <Button type="button" variant="outline" size="sm" className="shrink-0" onClick={() => setResetFavorites(true)}>
+                  {ui('Reset to defaults')}
+                </Button>
+              </div>}
           </div>
           {billingEnabled && <div className="space-y-1.5">
             <Label htmlFor="edit-user-invite-quota">{ui('Invite code quota')}</Label>

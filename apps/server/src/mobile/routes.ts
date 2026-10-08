@@ -189,7 +189,7 @@ export async function registerMobileRoutes(app: FastifyInstance): Promise<void> 
         userId,
         passwordHash: await createPasswordHash(input.password),
       })
-      await insertNewAccountPreferences(tx, userId, auth)
+      await insertNewAccountPreferences(tx, userId)
     })
     const [created] = await db.select().from(users).where(eq(users.id, userId)).limit(1)
     const session = await createNativeSession(userId, input.deviceLabel, request, { appType: input.appType, platform: input.platform })

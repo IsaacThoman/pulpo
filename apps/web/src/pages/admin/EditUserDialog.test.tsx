@@ -53,7 +53,7 @@ describe('Edit user default model', () => {
 
   it.each([
     ['Model B (model-b)', 'model-b'],
-    ['Automatic (first available)', null],
+    ['New-account default', null],
   ])('saves %s alongside other edits', async (label, defaultModelId) => {
     mount()
     await choose(label!)
@@ -74,11 +74,11 @@ describe('Edit user default model', () => {
     await waitFor(() => expect(save).toHaveBeenLastCalledWith('target', expect.objectContaining({ defaultModelId: 'model-b' })))
   })
 
-  it('uses Automatic for a missing preference, including an empty catalog', async () => {
+  it('uses the new-account default for a missing preference, including an empty catalog', async () => {
     mocks.request.mockResolvedValue({ data: [] })
     mount({ ...user, defaultModelId: null })
     await waitFor(() => expect(selector().disabled).toBe(false))
-    expect(selector().textContent).toBe('Automatic (first available)')
+    expect(selector().textContent).toBe('New-account default')
   })
 
   it('loads fresh state when switching users', async () => {
@@ -87,7 +87,7 @@ describe('Edit user default model', () => {
     first.unmount()
     mount({ ...user, id: 'second', defaultModelId: null })
     await waitFor(() => expect(selector().disabled).toBe(false))
-    expect(selector().textContent).toBe('Automatic (first available)')
+    expect(selector().textContent).toBe('New-account default')
     expect(mocks.request).toHaveBeenLastCalledWith('/api/admin/users/second/models', expect.anything())
   })
 
@@ -130,5 +130,30 @@ describe('Edit user default model', () => {
     expect(close).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
     await waitFor(() => expect(close).toHaveBeenCalledOnce())
+  })
+})
+
+describe('Edit user favorites', () => {
+  it('shows when favorites follow the new-account defaults', async () => {
+    mount({ ...user, favoriteModelIds: null })
+    expect(screen.getByText('Following new-account defaults')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Reset to defaults' })).toBeNull()
+  })
+
+  it('lists customized favorites and resets them to follow the defaults on save', async () => {
+    mount({ ...user, favoriteModelIds: ['model-b', 'retired'] })
+    await screen.findByText('Model B, retired')
+    fireEvent.click(screen.getByRole('button', { name: 'Reset to defaults' }))
+    expect(screen.getByText('Following new-account defaults')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(save).toHaveBeenCalledWith('target', expect.objectContaining({ favoriteModelIds: null })))
+  })
+
+  it('leaves customized favorites alone unless reset', async () => {
+    mount({ ...user, favoriteModelIds: [] })
+    expect(screen.getByText('None')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(save).toHaveBeenCalledOnce())
+    expect(save.mock.calls[0][1]).not.toHaveProperty('favoriteModelIds')
   })
 })

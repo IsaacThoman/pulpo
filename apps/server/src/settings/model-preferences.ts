@@ -23,6 +23,10 @@ export function preferencesWithModelDefaults(values?: Record<string, unknown>): 
   const parsedAgentModes = agentModesSchema.safeParse(values?.agentModes)
   const parsedInstructionPresetSelections = instructionPresetSelectionsSchema.safeParse(values?.instructionPresetSelections)
   const parsedModelWarningDismissals = modelWarningDismissalsSchema.safeParse(values?.modelWarningDismissals)
+  const modelPreferences = modelPreferencesSchema.parse({
+    favoriteModelIds: Array.isArray(values?.favoriteModelIds) ? values.favoriteModelIds : undefined,
+    providerOrder: values?.providerOrder,
+  })
   return {
     ...values,
     imageGeneration: imageGenerationPreferencesSchema.catch({ enabled: false, modelId: null }).parse(values?.imageGeneration),
@@ -36,10 +40,10 @@ export function preferencesWithModelDefaults(values?: Record<string, unknown>): 
     agentModes: parsedAgentModes.success ? parsedAgentModes.data : {},
     instructionPresetSelections: parsedInstructionPresetSelections.success ? parsedInstructionPresetSelections.data : {},
     modelWarningDismissals: parsedModelWarningDismissals.success ? parsedModelWarningDismissals.data : {},
-    ...modelPreferencesSchema.parse({
-      favoriteModelIds: values?.favoriteModelIds,
-      providerOrder: values?.providerOrder,
-    }),
+    // Unset model choices stay null so they follow the current new-account defaults.
+    defaultModelId: typeof values?.defaultModelId === 'string' && values.defaultModelId ? values.defaultModelId : null,
+    favoriteModelIds: Array.isArray(values?.favoriteModelIds) ? modelPreferences.favoriteModelIds : null,
+    providerOrder: modelPreferences.providerOrder,
   }
 }
 
