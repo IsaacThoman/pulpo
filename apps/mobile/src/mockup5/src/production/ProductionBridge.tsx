@@ -436,9 +436,6 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
     if (!settings.data) return
     if (usePrototypeStore.getState().productionNamespace !== namespace) return
     const patch = preferencesFromServer(settings.data.values)
-    usePreferencesStore.setState({
-      newAccountFavoriteModelIds: Array.isArray(settings.data.newAccountFavoriteModelIds) ? settings.data.newAccountFavoriteModelIds : null,
-    })
     void usePreferencesStore.getState().applyServerPreferences(patch)
   }, [namespace, settings.data])
 
