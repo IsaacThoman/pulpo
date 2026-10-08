@@ -192,7 +192,7 @@ export function legacyChatFolderRows(
         id: parent.id, owner_user_id: userId, parent_id: null, kind: 'folder', status: 'ready',
         name: freeName('Chats', new Set(rootNames.get(userId))), system_role: 'chats',
         mime_type: null, size_bytes: 0, object_key: null, checksum: null, trashed_at: null, trash_root_id: null, revision: 0,
-        target_node_id: null, target_chat_id: null, created_at: now, updated_at: now,
+        target_node_id: null, target_chat_id: null, sort_order: 0, created_at: now, updated_at: now,
       })
     }
     // Files names cannot contain "/" or control characters.
@@ -204,7 +204,9 @@ export function legacyChatFolderRows(
       id: folder.id, owner_user_id: userId, parent_id: parent.id, kind: 'folder', status: 'ready',
       name: freeName(base, parent.names), system_role: null,
       mime_type: null, size_bytes: 0, object_key: null, checksum: null, trashed_at: null, trash_root_id: null, revision: 0,
-      target_node_id: null, target_chat_id: null, created_at: now, updated_at: String(folder.updated_at ?? now),
+      // Above the unfiled chats, in their old order, as the migration places them.
+      target_node_id: null, target_chat_id: null, sort_order: Number(folder.sort_order ?? 0) - 1_000_000,
+      created_at: now, updated_at: String(folder.updated_at ?? now),
     })
   }
   return fileNodes

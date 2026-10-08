@@ -89,6 +89,8 @@ export const fileNodeSchema = z.object({
   createdAt: z.string(),
   updatedAt: z.string(),
   systemRole: fileSystemRoleSchema.nullable().optional(),
+  /** Position among the folder's items, chats included: ascending, newest first on ties. */
+  sortOrder: z.number().int().optional(),
   /** What a shortcut opens. `available` is false while the target is in the trash. */
   target: z.object({
     kind: z.enum(['folder', 'doc', 'blob', 'chat']),
@@ -236,6 +238,15 @@ export const renameSidebarItemSchema = z.object({ name: fileNameSchema })
 export const moveSidebarItemsSchema = z.object({
   ids: z.array(z.uuid()).min(1).max(FILE_BATCH_MAX_ITEMS),
   parentId: z.uuid().nullable(),
+})
+
+/**
+ * The order of a folder's items, chats included; null is the Chats folder. Listed items from
+ * other folders move in first.
+ */
+export const orderSidebarItemsSchema = z.object({
+  parentId: z.uuid().nullable(),
+  ids: z.array(z.uuid()).min(1).max(10_000),
 })
 
 export const archiveItemsSchema = z.object({

@@ -854,6 +854,8 @@ export const fileNodes = pgTable('file_nodes', {
   // References chats(id) through a deferrable constraint added in the migration, so a backup can
   // restore Files (which chats are filed in) before the chats that shortcuts point at.
   targetChatId: uuid('target_chat_id'),
+  // Position among the folder's items, chats included (see files/order.ts).
+  sortOrder: integer('sort_order').notNull().default(0),
   ...timestamps,
 }, (table) => [
   uniqueIndex('file_nodes_owner_system_role_unique').on(table.ownerUserId, table.systemRole).where(sql`${table.systemRole} is not null`),

@@ -14,6 +14,7 @@ vi.mock('../database/client.js', () => ({ db: {
 vi.mock('../auth/service.js', () => ({ requireUser: () => ({ id: 'owner' }), billingUserForRequest: () => ({ id: 'owner' }) }))
 vi.mock('../responses/service.js', () => ({ createResponse: mocks.createResponse, toSnapshot: (response: { id: string }) => ({ responseId: response.id }) }))
 vi.mock('../responses/events.js', () => ({ publishChatStarted: mocks.publish, publishStateChange: vi.fn(), requestCancellation: vi.fn() }))
+vi.mock('../files/order.js', () => ({ topChatOrder: async () => -1 }))
 import { registerChatRoutes } from './routes.js'
 
 type Handler = (request: FastifyRequest, reply: FastifyReply) => Promise<unknown>
@@ -26,7 +27,7 @@ let reply: FastifyReply
 beforeEach(async () => {
   vi.clearAllMocks()
   mocks.inserted = [chat]
-  mocks.selects = [[{ id: 'model' }], [{ sortOrder: -1 }], [chat]]
+  mocks.selects = [[{ id: 'model' }], [chat]]
   mocks.createResponse.mockResolvedValue({ id: responseId })
   mocks.publish.mockResolvedValue(undefined)
   await registerChatRoutes({

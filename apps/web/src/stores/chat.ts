@@ -37,6 +37,7 @@ import { BranchSelectionIntents } from '@/lib/branch-selection-intents'
 import { BranchHistoryCache } from '@/lib/branch-history-cache'
 import { reorderList } from '@/lib/model-order'
 import { useAuth } from './auth'
+import { sidebarItemsFloor } from '@/features/sidebar/cache'
 import { adminChatAccessActive, adminChatAccountKey } from '@/features/admin-chat/access'
 
 function applySortOrders(ids: string[]): Map<string, number> {
@@ -67,6 +68,11 @@ function topSortOrder(chats: Chat[]): number {
   return chats.reduce((min, chat) => Math.min(min, chat.sortOrder), 1) - 1
 }
 
+/** The top of a folder's list, above its chats and the Files items the sidebar shows there. */
+function topOrderIn(chats: Chat[], folderId: string | null): number {
+  return Math.min(topSortOrder(chatListMembers(chats, folderId)), sidebarItemsFloor(folderId) - 1)
+}
+
 type ChatListPosition = { targetId: string; edge: 'before' | 'after' }
 
 function insertChatId(ids: string[], id: string, position: ChatListPosition | undefined): string[] {
@@ -92,7 +98,7 @@ function commitChatPlacement(id: string, nextIds: string[], patch: Partial<Pick<
   }
 }
 
-/** Places an unpinned chat in a folder (at its end by default) or the unfiled list (at its top by default). */
+/** Places an unpinned chat in a folder or the unfiled list, at its top unless `position` says otherwise. */
 function placeInChatList(
   id: string,
   folderId: string | null,
@@ -103,12 +109,13 @@ function placeInChatList(
   const destination = chatListMembers(chats, folderId).filter((chat) => chat.id !== id)
   const destIds = orderedChatIds(destination)
 
-  if (!folderId && !(position && destIds.includes(position.targetId))) {
-    const sortOrder = topSortOrder(destination)
+  if (!(position && destIds.includes(position.targetId))) {
+    const sortOrder = topOrderIn(chats.filter((chat) => chat.id !== id), folderId)
     useChat.setState((state) => ({
-      chats: state.chats.map((chat) => chat.id === id ? { ...chat, ...patch, folderId: null, sortOrder } : chat),
+      chats: state.chats.map((chat) => chat.id === id ? { ...chat, ...patch, folderId, sortOrder } : chat),
     }))
-    void optimisticRequest('PATCH', `/api/chats/${id}`, { ...patch, folderId: null, sortOrder })
+    // The server places it above everything in the folder, Files items included.
+    void optimisticRequest('PATCH', `/api/chats/${id}`, { ...patch, folderId })
     return
   }
 
@@ -656,7 +663,7 @@ function cacheOptimisticTurn(input: {
         modelId: input.displayModelId,
         pinned: false,
         folderId: null,
-        sortOrder: input.temporary ? 0 : topSortOrder(looseChats(useChat.getState().chats)),
+        sortOrder: input.temporary ? 0 : topOrderIn(useChat.getState().chats, null),
         temporary: input.temporary,
         expiresAt: input.temporary ? new Date(input.createdAt + 48 * 60 * 60 * 1_000).toISOString() : input.expiresAt,
         createdAt,
@@ -1266,11 +1273,12 @@ export const useChat = create<ChatState>()((set, get) => ({
       .filter((item) => item.pinned)
       .reduce((max, item) => Math.max(max, item.sortOrder), -1)
     // Unpinned chats return to the top of their folder or the unfiled list.
-    const sortOrder = nextPinned ? maxPinnedOrder + 1 : topSortOrder(chatListMembers(others, chat.folderId))
+    const sortOrder = nextPinned ? maxPinnedOrder + 1 : topOrderIn(others, chat.folderId)
     set((state) => ({
       chats: state.chats.map((item) => item.id === id ? { ...item, pinned: nextPinned, sortOrder } : item),
     }))
-    void optimisticRequest('PATCH', `/api/chats/${id}`, { pinned: nextPinned, sortOrder })
+    // Refiled in its folder, the server places it above that folder's Files items too.
+    void optimisticRequest('PATCH', `/api/chats/${id}`, nextPinned ? { pinned: true, sortOrder } : { pinned: false, folderId: chat.folderId })
   },
   moveToFolder: (id, folderId, position) => {
     if (get().chats.find((chat) => chat.id === id)?.pinned) {

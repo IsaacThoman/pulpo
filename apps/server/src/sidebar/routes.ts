@@ -6,6 +6,7 @@ import {
   createSidebarFolderSchema,
   fileNameSchema,
   moveSidebarItemsSchema,
+  orderSidebarItemsSchema,
   renameSidebarItemSchema,
 } from '@pulpo/contracts'
 import { requireUser } from '../auth/service.js'
@@ -20,6 +21,7 @@ import {
   createSidebarFolder,
   legacyFolderList,
   moveSidebarItems,
+  orderSidebarItems,
   renameSidebarItem,
   sidebarFolderItems,
   sidebarState,
@@ -54,6 +56,13 @@ export async function registerSidebarRoutes(app: FastifyInstance): Promise<void>
     const user = requireSidebarUser(request)
     const input = moveSidebarItemsSchema.parse(request.body)
     return { nodes: await moveSidebarItems(user.id, input.ids, input.parentId) }
+  })
+
+  app.put('/api/sidebar/order', async (request) => {
+    const user = requireSidebarUser(request)
+    const input = orderSidebarItemsSchema.parse(request.body)
+    await orderSidebarItems(user.id, input.parentId, input.ids)
+    return { ids: input.ids }
   })
 
   app.patch('/api/sidebar/items/:id', async (request) => {

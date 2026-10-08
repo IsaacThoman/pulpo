@@ -17,6 +17,7 @@ import { planDuplicateTree } from './duplicate.js'
 import { toPublicChat, toPublicChatResponses, withoutWorkspaceScope } from './public.js'
 import { assertFileScope } from './file-scope.js'
 import { chatFolderId } from '../files/chat-items.js'
+import { topChatOrder } from '../files/order.js'
 import { recoverChats, trashChats } from './trash-service.js'
 import { responseAttachmentIds } from '../messages/input.js'
 import {
@@ -45,19 +46,9 @@ async function requestedNormalChatExpiry(userId: string, enabled: boolean, now: 
   return expiresAt
 }
 
-/** New and newly persisted chats go to the top of the manually ordered, unfiled chat list. */
+/** New and newly persisted chats go to the top of the unfiled chats, above any Files items there. */
 async function topLooseChatSortOrder(userId: string): Promise<number> {
-  const [row] = await db.select({ sortOrder: sql<number>`coalesce(min(${chats.sortOrder}), 1)::int - 1` })
-    .from(chats)
-    .where(and(
-      eq(chats.userId, userId),
-      isNull(chats.folderId),
-      eq(chats.pinned, false),
-      eq(chats.temporary, false),
-      isNull(chats.deletedAt),
-    ))
-    .limit(1)
-  return row?.sortOrder ?? 0
+  return topChatOrder(db, userId, null)
 }
 
 export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
@@ -596,7 +587,10 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       pinned: patch.pinned,
       folderId,
       modelId: patch.modelId,
-      sortOrder: typeof patch.sortOrder === 'number' ? patch.sortOrder : undefined,
+      // Refiled without a position, a chat goes to the top of its new folder.
+      sortOrder: typeof patch.sortOrder === 'number'
+        ? patch.sortOrder
+        : folderId === undefined ? undefined : await topChatOrder(db, user.id, folderId),
       fileScopeIds: patch.fileScopeIds,
       expiresAt,
       updatedAt: now,

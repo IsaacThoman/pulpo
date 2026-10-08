@@ -1,5 +1,5 @@
 {
-  "id": "14adab4f-9a43-4ce0-a202-ff2ed23055fa",
+  "id": "2d122005-4538-4075-afbf-1bac231a1c8a",
   "prevId": "b30e41f0-1cce-4881-a010-45c6b44ff399",
   "version": "7",
   "dialect": "postgresql",
@@ -5067,6 +5067,13 @@
           "type": "uuid",
           "primaryKey": false,
           "notNull": false
+        },
+        "sort_order": {
+          "name": "sort_order",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
         },
         "created_at": {
           "name": "created_at",

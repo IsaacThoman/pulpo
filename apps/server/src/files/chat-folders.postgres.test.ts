@@ -15,7 +15,8 @@ const { ensureSystemFolders } = await import('./system-folders.js')
 const { chatFolderId } = await import('./chat-items.js')
 const { createShortcut } = await import('./shortcuts.js')
 const { copyFileNodes } = await import('./copy-service.js')
-const { archiveItems, createSidebarFolder, legacyFolderList, moveSidebarItems, sidebarFolderItems, sidebarState } = await import('../sidebar/service.js')
+const { archiveItems, createSidebarFolder, legacyFolderList, moveSidebarItems, orderSidebarItems, sidebarFolderItems, sidebarState } = await import('../sidebar/service.js')
+const { topChatOrder } = await import('./order.js')
 
 const enabled = process.env.PULPO_FILES_TESTS === 'true'
 let userId: string
@@ -150,6 +151,33 @@ describe.skipIf(!enabled)('chats filed in Files folders', () => {
     const [copy] = await copyFileNodes(userId, [toFolder.id], projects.id)
     const [row] = await db.select().from(fileNodes).where(eq(fileNodes.id, copy!.id))
     expect(row).toMatchObject({ kind: 'shortcut', targetNodeId: projects.id })
+  })
+
+  it('keeps chats and Files items in one order, putting new and moved items on top', async () => {
+    const { chatsFolderId } = await ensureSystemFolders(userId)
+    const chat = await insertChat(null, 'Older chat')
+    const work = await createSidebarFolder(userId, { name: 'Work' })
+    const inner = await createSidebarFolder(userId, { name: 'Inner', parentId: work.id })
+    const order = async (folderId: string) => (await listFolder(userId, folderId)).children
+      .sort((left, right) => left.sortOrder! - right.sortOrder! || right.createdAt.localeCompare(left.createdAt))
+      .map((node) => node.name)
+    // The Archive shortcut starts below the chats; the chat created after it sits above it.
+    expect(await order(chatsFolderId)).toEqual(['Work', 'Older chat', 'Archive'])
+
+    await moveFileNodes(userId, [{ id: chat, parentId: work.id }])
+    expect(await order(work.id)).toEqual(['Older chat', 'Inner'])
+
+    // One order for a folder, moving in what is listed from elsewhere and unpinning chats.
+    await db.update(chats).set({ pinned: true }).where(eq(chats.id, chat))
+    const archiveShortcut = (await listFolder(userId, chatsFolderId)).children.find((node) => node.kind === 'shortcut')!
+    await orderSidebarItems(userId, null, [archiveShortcut.id, chat, work.id])
+    expect(await order(chatsFolderId)).toEqual(['Archive', 'Older chat', 'Work'])
+    expect(await chatRow(chat)).toMatchObject({ folderId: null, pinned: false })
+    await orderSidebarItems(userId, work.id, [inner.id])
+    expect(await order(work.id)).toEqual(['Inner'])
+
+    // A new chat goes above everything at the top level.
+    expect(await topChatOrder(db, userId, null)).toBe(-1)
   })
 
   it('creates sidebar folders idempotently with a client id, suffixing taken names', async () => {

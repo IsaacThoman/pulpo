@@ -138,10 +138,13 @@ describe('chat order', () => {
     })))
   })
 
-  it('unpins a chat into a folder', () => {
+  it('unpins a chat to the top of a folder, leaving the server to place it above the folder\'s files', async () => {
     useChat.getState().unpinChat('pinned', folderId)
 
-    expect(useChat.getState().chats.find((item) => item.id === 'pinned')).toMatchObject({ pinned: false, folderId, sortOrder: 1 })
+    expect(useChat.getState().chats.find((item) => item.id === 'pinned')).toMatchObject({ pinned: false, folderId, sortOrder: -1 })
+    await vi.waitFor(() => expect(requests).toContainEqual(expect.objectContaining({
+      method: 'PATCH', path: expect.stringContaining('/api/chats/pinned'), body: { pinned: false, folderId },
+    })))
   })
 
   it('keeps a pinned chat in place when it is filed into a folder', () => {
