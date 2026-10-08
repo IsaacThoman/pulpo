@@ -217,7 +217,7 @@ import { subscribeToResponse, useRealtimeStore } from '../providers/realtimeStor
 import { shouldShowConnectionBanner } from '../providers/realtimeConnection';
 import { startComposerFocusTransition } from '../providers/composerAutoFocus';
 import { usePreferencesStore } from '../store/preferences';
-import { FAVORITES_SECTION, resolveModelMenu } from '../features/chat/modelMenu';
+import { canResetFavorites, FAVORITES_SECTION, resolveModelMenu } from '../features/chat/modelMenu';
 import { aiIconSource, useCatalogIconCacheRevision } from './src/production/AiIconAssets';
 import { SafeMarkdown } from '../components/SafeMarkdown';
 import { ModelWarningBanner } from './src/components/ModelWarningBanner';
@@ -3741,13 +3741,21 @@ function useModelMenu(models: Model[]) {
   const [requestedSection, setSection] = useState(FAVORITES_SECTION);
   const favoriteIds = usePreferencesStore((state) => state.favoriteModelIds);
   const providerOrder = usePreferencesStore((state) => state.providerOrder);
+  const defaultFavoriteIds = usePreferencesStore((state) => state.newAccountFavoriteModelIds);
+  const resetFavoriteModels = usePrototypeStore((state) => state.resetFavoriteModels);
   const menu = useMemo(() => resolveModelMenu(models, favoriteIds, providerOrder, requestedSection), [models, favoriteIds, providerOrder, requestedSection]);
   useEffect(() => { if (menu.section !== requestedSection) setSection(menu.section); }, [menu.section, requestedSection]);
-  return { ...menu, setSection };
+  const resetFavorites = menu.section === FAVORITES_SECTION && canResetFavorites(favoriteIds, defaultFavoriteIds)
+    ? () => Alert.alert('Replace favorites with defaults?', undefined, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Reset favorites', style: 'destructive', onPress: () => resetFavoriteModels(defaultFavoriteIds) },
+    ])
+    : undefined;
+  return { ...menu, setSection, resetFavorites };
 }
 
 function AndroidModelMenu({ model, models, onSelectModel }: { model: Model; models: Model[]; onSelectModel: (model: Model) => void }) {
-  const { sections, section, sectionLabel, visibleModels, setSection } = useModelMenu(models);
+  const { sections, section, sectionLabel, visibleModels, setSection, resetFavorites } = useModelMenu(models);
   return <MaterialMenu centered label={`Model, ${model.name}`} text={model.name} image={model.icon} icon="chevron.down" sections={[{
     id: 'models', title: sectionLabel,
     actions: visibleModels.length ? visibleModels.map((option) => ({ id: option.id, label: option.name, image: option.menuIcon ?? option.icon, selected: option.id === model.id, onPress: () => onSelectModel(option) }))
@@ -3757,7 +3765,7 @@ function AndroidModelMenu({ model, models, onSelectModel }: { model: Model; mode
       const labModel = candidate.id === FAVORITES_SECTION ? undefined : models.find((option) => option.providerGroupId === candidate.id);
       return { id: candidate.id, label: candidate.label, image: labModel ? labModel.labIcon ?? labModel.icon : undefined, icon: labModel ? undefined : 'star', selected: candidate.id === section, keepOpen: true, onPress: () => { setSection(candidate.id); Haptics.selectionAsync(); } };
     }) },
-  }]} />;
+  }, ...(resetFavorites ? [{ label: 'Reset favorites', icon: 'arrow.counterclockwise', onPress: resetFavorites }] : [])]} />;
 }
 
 const NativeModelMenu = memo(function NativeModelMenu({ model, models, onSelectModel, tinted = false }: { model: Model; models: Model[]; onSelectModel: (model: Model) => void; tinted?: boolean }) {
@@ -3765,7 +3773,7 @@ const NativeModelMenu = memo(function NativeModelMenu({ model, models, onSelectM
   const colorScheme = useColorScheme();
   const foreground = colorScheme === 'dark' ? '#f2f2f7' : '#1c1c1e';
   const [labsMenuRevision, setLabsMenuRevision] = useState(0);
-  const { sections: modelSections, section, sectionLabel, visibleModels, setSection } = useModelMenu(models);
+  const { sections: modelSections, section, sectionLabel, visibleModels, setSection, resetFavorites } = useModelMenu(models);
 
   return (
     <SwiftUIHost key={tinted ? 'tinted' : 'default'} matchContents style={styles.modelMenuHost}>
@@ -3842,6 +3850,9 @@ const NativeModelMenu = memo(function NativeModelMenu({ model, models, onSelectM
             </SwiftUIButton>
           ))}
         </SwiftUIMenu>
+        {resetFavorites && (
+          <SwiftUIButton key="reset-favorites" label="Reset favorites" systemImage="arrow.counterclockwise" onPress={resetFavorites} />
+        )}
       </SwiftUIMenu>
     </SwiftUIHost>
   );

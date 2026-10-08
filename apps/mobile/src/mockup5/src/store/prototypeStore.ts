@@ -40,6 +40,7 @@ type PrototypeActions = {
   deleteMessageCascade: (chatId: string, messageId: string) => void;
   setDefaultModel: (id: string) => void;
   toggleFavoriteModel: (id: string) => void;
+  resetFavoriteModels: (ids: string[]) => void;
 };
 
 export type PrototypeStore = PersistedPrototypeState & PrototypeActions;
@@ -318,6 +319,16 @@ export const usePrototypeStore = create<PrototypeStore>()((set, get) => ({
     runOptimisticAction(`model:${modelId}:favorite`, productionActions.toggleFavoriteModel(modelId, favorite), () => {
       if (previous === undefined) return;
       set((state) => ({ models: state.models.map((model) => model.id === modelId ? { ...model, favorite: previous } : model) }));
+      void usePreferencesStore.getState().setPreference('favoriteModelIds', previousIds);
+    });
+  },
+  resetFavoriteModels: (ids) => {
+    const previousModels = get().models;
+    const previousIds = usePreferencesStore.getState().favoriteModelIds;
+    const next = [...ids];
+    set((state) => ({ models: state.models.map((model) => ({ ...model, favorite: next.includes(model.id) })) }));
+    runOptimisticAction('preference:favoriteModelIds', productionActions.setPreference('favoriteModelIds', next), () => {
+      set({ models: previousModels });
       void usePreferencesStore.getState().setPreference('favoriteModelIds', previousIds);
     });
   },
