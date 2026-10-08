@@ -60,10 +60,9 @@ struct AgentModeMenuContent: View {
         }
     }
     // The native style and view identity remain fixed across both states.
-    .buttonStyle(.glassProminent)
+    .modifier(AgentModeButtonStyle())
     .buttonBorderShape(.circle)
     .controlSize(.regular)
-    .tint(.clear)
     .menuOrder(.fixed)
     .disabled(!model.available)
     .accessibilityLabel("Agent options, \(enabled ? "Pulpo Agent" : "Disabled")")
@@ -76,6 +75,18 @@ struct AgentModeMenuContent: View {
       Text(title)
     } icon: {
       Image(asset).resizable().frame(width: 20, height: 20).foregroundStyle(.primary)
+    }
+  }
+}
+
+/// Liquid Glass on iOS 26. Earlier versions use the same gray fill as the
+/// other composer buttons (see `glassButtonStyle` in src/platform/glass.ts).
+private struct AgentModeButtonStyle: ViewModifier {
+  func body(content: Content) -> some View {
+    if #available(iOS 26.0, *) {
+      content.buttonStyle(.glassProminent).tint(.clear)
+    } else {
+      content.buttonStyle(.borderedProminent).tint(Color(uiColor: .systemGray5))
     }
   }
 }

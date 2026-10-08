@@ -5,7 +5,7 @@ Pod::Spec.new do |s|
   s.description    = 'An app-local Expo module for native fullscreen document previews.'
   s.author         = 'Pulpo'
   s.homepage       = 'https://docs.expo.dev/modules/'
-  s.platforms      = { :ios => '26.0' }
+  s.platforms      = { :ios => '18.0' }
   s.source         = { git: '' }
   s.static_framework = true
 

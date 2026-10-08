@@ -5,7 +5,7 @@ Pod::Spec.new do |s|
   s.description = 'Secure session bridge and API client for Pulpo App Intents.'
   s.author = 'Pulpo'
   s.homepage = 'https://github.com/IsaacThoman/pulpo'
-  s.platforms = { :ios => '26.0' }
+  s.platforms = { :ios => '18.0' }
   s.source = { git: '' }
   s.static_framework = true
   s.dependency 'ExpoModulesCore'
