@@ -136,7 +136,9 @@ struct GetPulpoModelsIntent: AppIntent {
 }
 
 struct OpenPulpoChatIntent: AppIntent {
-  static let supportedModes: IntentModes = .foreground(.immediate)
+  @available(iOS 26.0, *) static var supportedModes: IntentModes { .foreground(.immediate) }
+  // Pre-iOS 26 equivalent of supportedModes.
+  static let openAppWhenRun = true
   static let title: LocalizedStringResource = "Open Chat in Pulpo"
   static let description = IntentDescription("Open a saved chat in Pulpo without sending a message.", categoryName: "Open")
   static let authenticationPolicy: IntentAuthenticationPolicy = .requiresAuthentication
@@ -153,7 +155,9 @@ struct OpenPulpoChatIntent: AppIntent {
 }
 
 struct NewPulpoChatIntent: AppIntent {
-  static let supportedModes: IntentModes = .foreground(.immediate)
+  @available(iOS 26.0, *) static var supportedModes: IntentModes { .foreground(.immediate) }
+  // Pre-iOS 26 equivalent of supportedModes.
+  static let openAppWhenRun = true
   static let title: LocalizedStringResource = "New Chat in Pulpo"
   static let description = IntentDescription("Open the new-chat composer. Existing drafts are preserved. Nothing is sent until you tap Send.", categoryName: "Open")
   static let authenticationPolicy: IntentAuthenticationPolicy = .requiresAuthentication

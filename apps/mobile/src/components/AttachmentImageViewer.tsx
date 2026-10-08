@@ -23,7 +23,6 @@ import {
 import {
   accessibilityLabel,
   buttonBorderShape,
-  buttonStyle,
   controlSize,
   font,
   foregroundStyle,
@@ -31,6 +30,7 @@ import {
   lineLimit,
   truncationMode,
 } from '@expo/ui/swift-ui/modifiers'
+import { glassButtonStyle } from '../platform/glass'
 import { StatusBar } from 'expo-status-bar'
 import { Gesture, GestureDetector } from 'react-native-gesture-handler'
 import Reanimated, {
@@ -90,11 +90,11 @@ function GalleryMetadata({ count, name, onPress, reduceTransparency }: {
           <SwiftUIButton
             onPress={onPress}
             modifiers={[
-              buttonStyle('glass'),
               buttonBorderShape('capsule'),
               controlSize('regular'),
               frame({ minHeight: 44 }),
               accessibilityLabel(label),
+              ...glassButtonStyle('glass'),
             ]}
           >
             <SwiftUIVStack alignment="center" spacing={1}>
