@@ -73,7 +73,7 @@ await registerCodexRoutes(app)
 await registerCatalogRoutes(app)
 const reply = { code: vi.fn().mockReturnThis(), send: vi.fn() } as unknown as FastifyReply
 const request = (body?: unknown, role = 'admin') => ({
-  user: { id: '00000000-0000-7000-8000-000000000001', role }, body,
+  user: { id: '00000000-0000-7000-8000-000000000001', role }, body, headers: {},
   params: { attemptId: '00000000-0000-7000-8000-000000000001' },
 }) as unknown as FastifyRequest
 const call = (route: string, body?: unknown, role?: string) => handlers.get(route)!(request(body, role), reply)
