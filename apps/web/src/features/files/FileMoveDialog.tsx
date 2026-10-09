@@ -25,7 +25,8 @@ export function FolderBrowser({ folderId, onNavigate, excludedIds, files }: {
   const userId = useAuth((state) => state.user?.id)
   // Shared through the query cache with the picker's owner, which may check names against it.
   const listing = useQuery({ queryKey: folderQueryKey(userId, folderId), queryFn: () => fetchFolder(folderId), enabled: Boolean(userId) })
-  const children = listing.data?.children ?? []
+  // Chats filed in a folder are not destinations or files to pick.
+  const children = (listing.data?.children ?? []).filter((node) => node.kind !== 'chat')
   const shown = files ? children : children.filter((child) => child.kind === 'folder')
   const trail = [...(listing.data?.ancestors ?? []), ...(listing.data?.folder ? [listing.data.folder] : [])]
   return (

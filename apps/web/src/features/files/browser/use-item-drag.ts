@@ -25,6 +25,28 @@ export interface ItemDragState {
   tile: boolean
 }
 
+/**
+ * A view outside the browser that places dragged items itself (the sidebar), showing where they
+ * would land the way its own drags do.
+ */
+export interface ItemDropZone {
+  /** Shows where `nodes` would land at the pointer. False when the pointer is not over the zone. */
+  hover: (x: number, y: number, nodes: FileNode[]) => boolean
+  /** Places `nodes` where the zone last showed. False when there was no valid place. */
+  drop: (nodes: FileNode[]) => boolean
+  /** Clears what the zone shows. */
+  leave: () => void
+}
+
+let itemDropZone: ItemDropZone | null = null
+
+export function registerItemDropZone(zone: ItemDropZone): () => void {
+  itemDropZone = zone
+  return () => {
+    if (itemDropZone === zone) itemDropZone = null
+  }
+}
+
 const IDLE: ItemDragState = { phase: 'idle', nodes: [], origins: [], start: { x: 0, y: 0 }, releasedAt: null, homes: [], tile: false }
 
 /**
@@ -86,6 +108,8 @@ export function useItemDrag(options: {
     activeTargetRef.current = target
     setActiveTarget(target)
   }
+  // Whether the pointer is over the drop zone, which then decides where items land.
+  const overZone = useRef(false)
 
   // The active drag, set synchronously so a release before React re-renders is still handled.
   const session = useRef<ItemDragState | null>(null)
@@ -98,14 +122,21 @@ export function useItemDrag(options: {
     cleanup.current = null
     const current = session.current
     session.current = null
-    if (!current) return
+    const zoneDrop = overZone.current
+    overZone.current = false
+    if (!current) {
+      itemDropZone?.leave()
+      return
+    }
     const target = activeTargetRef.current
     setTarget(null)
     const releasedAt = chipRef.current?.firstElementChild?.getBoundingClientRect() ?? null
     const canvas = optionsRef.current.canvas
     const canvasElement = canvas?.element()
     const over = document.elementFromPoint(pointer.current.x, pointer.current.y)
-    if (dropped && target !== null) {
+    if (dropped && zoneDrop && itemDropZone?.drop(current.nodes)) {
+      setState({ ...current, phase: 'dropping', releasedAt })
+    } else if (dropped && target !== null) {
       const targetId = target === 'root' ? null : target
       setState({ ...current, phase: 'dropping', releasedAt })
       optionsRef.current.onDrop(current.nodes, targetId)
@@ -118,6 +149,7 @@ export function useItemDrag(options: {
       })
       setState(IDLE)
     } else {
+      itemDropZone?.leave()
       const homes = current.nodes.map((node, index) => rowRect(node.id, scope.current) ?? current.origins[index] ?? current.origins[0]!)
       setState({ ...current, phase: 'returning', releasedAt, homes })
     }
@@ -155,6 +187,12 @@ export function useItemDrag(options: {
     }
 
     const hitTest = () => {
+      overZone.current = Boolean(itemDropZone?.hover(pointer.current.x, pointer.current.y, session.current?.nodes ?? []))
+      if (overZone.current) {
+        if (activeTargetRef.current !== null) setTarget(null)
+        return
+      }
+      itemDropZone?.leave()
       const element = document.elementFromPoint(pointer.current.x, pointer.current.y)
       const target = element?.closest<HTMLElement>('[data-drop-target]')?.dataset.dropTarget ?? null
       const nodes = session.current?.nodes ?? []

@@ -123,6 +123,7 @@ export function toPublicChat(chat: ChatRow) {
     modelId: chat.modelId,
     pinned: chat.pinned,
     folderId: chat.folderId,
+    inFilesRoot: chat.inFilesRoot,
     sortOrder: chat.sortOrder,
     temporary: chat.temporary,
     fileScopeIds: chat.fileScopeIds,

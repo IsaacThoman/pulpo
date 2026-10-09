@@ -33,6 +33,7 @@ import { registerAdminChatAccess } from './admin/chat-access.js'
 import { registerMessageRoutes } from './messages/routes.js'
 import { registerAttachmentRoutes } from './attachments/routes.js'
 import { registerFileRoutes } from './files/routes.js'
+import { registerSidebarRoutes } from './sidebar/routes.js'
 import { ensureBuiltinCatalog } from './catalog/defaults.js'
 import { registerMobileRoutes } from './mobile/routes.js'
 import { registerResponseCompression } from './compression.js'
@@ -192,6 +193,7 @@ export async function buildApp() {
   await registerMessageRoutes(app)
   await registerAttachmentRoutes(app)
   await registerFileRoutes(app)
+  await registerSidebarRoutes(app)
   await registerSpeechRoutes(app)
   await registerImageGenerationRoutes(app)
   await registerDictationRoutes(app)

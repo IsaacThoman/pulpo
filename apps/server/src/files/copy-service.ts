@@ -21,6 +21,7 @@ import {
   toFileNode,
   treeTooDeep,
 } from './tree-service.js'
+import { topSortOrder } from './order.js'
 
 type DatabaseTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0]
 
@@ -80,6 +81,7 @@ export async function copyFileNodes(userId: string, ids: string[], parentId: str
     const taken = await liveSiblingNames(tx, userId, parentId)
     const newIds = new Map<string, string>()
     const rootIds: string[] = []
+    let top = await topSortOrder(tx, userId, parentId)
     const blobCopies: Array<{ id: string; source: string; target: string }> = []
     for (const tree of trees) {
       for (const node of tree) {
@@ -96,6 +98,10 @@ export async function copyFileNodes(userId: string, ids: string[], parentId: str
           id, ownerUserId: userId, parentId: root ? parentId : newIds.get(node.parentId!)!,
           kind: node.kind, name, mimeType: node.mimeType, sizeBytes: node.sizeBytes,
           checksum: node.checksum, objectKey, status: node.kind === 'blob' ? 'pending' : 'ready',
+          // A copied shortcut still opens the same item.
+          targetNodeId: node.targetNodeId, targetChatId: node.targetChatId,
+          // Copies land at the top of the destination; their contents keep their order.
+          sortOrder: root ? top-- : node.sortOrder,
         })
         if (node.kind === 'doc') {
           const state = await mergedDocState(tx, node.id)

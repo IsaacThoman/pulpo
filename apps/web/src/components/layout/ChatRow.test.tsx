@@ -2,6 +2,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ChatRow } from './Sidebar'
 import type { Chat } from '@/lib/types'
 
@@ -40,10 +41,12 @@ function Location() {
 
 function mount(props: Partial<Parameters<typeof ChatRow>[0]> = {}) {
   const onNavigate = vi.fn()
-  render(<MemoryRouter initialEntries={['/']}>
-    <ChatRow chat={chat} active={false} shiftHeld={false} onNavigate={onNavigate} {...props} />
-    <Routes><Route path="*" element={<Location />} /></Routes>
-  </MemoryRouter>)
+  render(<QueryClientProvider client={new QueryClient()}>
+    <MemoryRouter initialEntries={['/']}>
+      <ChatRow chat={chat} active={false} shiftHeld={false} onNavigate={onNavigate} {...props} />
+      <Routes><Route path="*" element={<Location />} /></Routes>
+    </MemoryRouter>
+  </QueryClientProvider>)
   return { onNavigate, link: screen.getByRole('link', { name: chat.title }) }
 }
 

@@ -56,7 +56,6 @@ export const FULL_BACKUP_TEMPORARY_DATA_POLICY = {
   model_pricing_versions: 'preserve',
   model_presets: 'preserve',
   model_preset_choices: 'preserve',
-  folders: 'preserve',
   chats: 'chat',
   responses: 'response',
   response_items: 'response-item',
