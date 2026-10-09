@@ -136,8 +136,9 @@ export function moveSidebarItems(ids: string[], parentId: string | null): Promis
 /**
  * Puts `ids` in this order in `folderId`, chats and Files items alike; anything listed from
  * another folder (or the pinned chats) moves in. The rest of the folder keeps its place.
+ * `incoming` are items arriving from outside the sidebar (dragged from Files), shown at once.
  */
-export function orderSidebarItems(folderId: string, ids: string[]): Promise<unknown> {
+export function orderSidebarItems(folderId: string, ids: string[], incoming: readonly FileNode[] = []): Promise<unknown> {
   const chatsFolderId = readState()?.chatsFolderId
   const position = new Map(ids.map((id, index) => [id, index]))
   const userId = useAuth.getState().user?.id
@@ -154,6 +155,7 @@ export function orderSidebarItems(folderId: string, ids: string[]): Promise<unkn
     for (const [, items] of queryClient.getQueriesData<FileNode[]>({ queryKey: ['folders', userId, 'items'] })) {
       for (const item of items ?? []) if (position.has(item.id)) moving.set(item.id, item)
     }
+    for (const item of incoming) if (item.kind !== 'chat' && !moving.has(item.id)) moving.set(item.id, item)
     writeItems((items) => items.filter((item) => !moving.has(item.id)))
     queryClient.setQueryData<FileNode[]>(sidebarItemsKey(userId, folderId), (items) => items && [
       ...items,

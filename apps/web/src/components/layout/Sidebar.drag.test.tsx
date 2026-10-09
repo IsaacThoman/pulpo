@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
-import { cleanup, createEvent, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, createEvent, fireEvent, render, screen } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import type { FileNode, SidebarState } from '@pulpo/contracts'
 import type { Chat } from '@/lib/types'
+import type { ItemDropZone } from '@/features/files/browser/use-item-drag'
 
 const actions = vi.hoisted(() => ({
   reorderPinnedChats: vi.fn(),
@@ -48,6 +49,15 @@ Object.assign(folderItems, {
   ],
   f1: [node('f3', 'f1', 'folder', 'Folder f3', 1)],
 })
+
+/** The zone the sidebar registers for items dragged in from the Files browser. */
+const filesZone = vi.hoisted(() => ({ current: null as ItemDropZone | null }))
+vi.mock('@/features/files/browser/use-item-drag', () => ({
+  registerItemDropZone: (zone: ItemDropZone) => {
+    filesZone.current = zone
+    return () => undefined
+  },
+}))
 
 vi.mock('@/stores/chat', () => {
   const chat = (id: string, sortOrder: number, patch: Partial<Chat> = {}): Chat => ({
@@ -140,7 +150,7 @@ function mount() {
 }
 
 const chatRow = (id: string) => screen.getByRole('link', { name: `Chat ${id}` }).parentElement!
-const folderRow = (id: string) => document.querySelector(`aside [draggable][data-drop-target="${id}"]`)!
+const folderRow = (id: string) => document.querySelector(`aside [data-folder-row="${id}"]`)!
 
 /** Drag `source` and release it at `clientY` over `target` (default: empty sidebar space no row claims). */
 function dragTo(source: Element, clientY: number, target: Element = document.querySelector('aside .overflow-y-auto')!) {
@@ -264,5 +274,50 @@ describe('sidebar dragging', () => {
     dragTo(chatRow('b'), 215)
     expect(sidebarActions.orderSidebarItems).not.toHaveBeenCalled()
     expect(actions.moveToFolder).not.toHaveBeenCalled()
+  })
+})
+
+describe('dropping items dragged from Files', () => {
+  const fromFiles = (id: string, kind: FileNode['kind'] = 'doc') => node(id, 'elsewhere', kind, `Item ${id}`, 0)
+
+  /** Hovers `nodes` over `target` at `clientY` and releases them; returns whether the sidebar took them. */
+  function dropFromFiles(nodes: FileNode[], target: Element, clientY: number) {
+    document.elementFromPoint = () => target
+    const zone = filesZone.current!
+    let placed = false
+    act(() => { expect(zone.hover(10, clientY, nodes)).toBe(true) })
+    act(() => { placed = zone.drop(nodes) })
+    return placed
+  }
+
+  it('places them where the line shows, together and in order', () => {
+    const nodes = [fromFiles('n1'), fromFiles('n2')]
+    expect(dropFromFiles(nodes, chatRow('b'), 212)).toBe(true)
+    expect(sidebarActions.orderSidebarItems).toHaveBeenCalledWith('chats', ['a', 'f1', 'n1', 'n2', 'b', 'doc-1', 'f2', 's-proj', 'c'], nodes)
+  })
+
+  it('files them into a folder from its middle, and beside it from its edges', () => {
+    const nodes = [fromFiles('n1')]
+    dropFromFiles(nodes, folderRow('f2'), 285)
+    expect(sidebarActions.moveSidebarItems).toHaveBeenCalledWith(['n1'], 'f2')
+    dropFromFiles(nodes, folderRow('f2'), 271)
+    expect(sidebarActions.orderSidebarItems).toHaveBeenCalledWith('chats', ['a', 'f1', 'b', 'doc-1', 'n1', 'f2', 's-proj', 'c'], nodes)
+  })
+
+  it('snaps to the nearest top-level slot from empty space', () => {
+    const nodes = [fromFiles('n1')]
+    dropFromFiles(nodes, document.querySelector('aside .overflow-y-auto')!, 10_000)
+    expect(sidebarActions.orderSidebarItems).toHaveBeenCalledWith('chats', [...TOP_LEVEL, 'n1'], nodes)
+  })
+
+  it('does not put a folder inside itself', () => {
+    expect(dropFromFiles([node('f1', 'chats', 'folder', 'Folder f1', 1)], folderRow('f3'), 165)).toBe(false)
+    expect(sidebarActions.moveSidebarItems).not.toHaveBeenCalled()
+    expect(sidebarActions.orderSidebarItems).not.toHaveBeenCalled()
+  })
+
+  it('leaves drags outside the sidebar to Files', () => {
+    document.elementFromPoint = () => document.body
+    expect(filesZone.current!.hover(10, 10, [fromFiles('n1')])).toBe(false)
   })
 })
