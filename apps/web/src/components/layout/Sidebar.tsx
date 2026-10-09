@@ -73,7 +73,7 @@ import { isDesktopRuntime } from '@/lib/runtime'
 import { ui, uit } from '@/i18n/ui'
 import { FilesNavMenu } from '@/features/files/FilesNavMenu'
 import { FileNodeIcon } from '@/features/files/FileNodeIcon'
-import { useFileDragActive } from '@/features/files/browser/use-item-drag'
+import { registerItemDropZone } from '@/features/files/browser/use-item-drag'
 import { FolderPickerDialog } from '@/features/sidebar/FolderPickerDialog'
 import { useSidePanel } from '@/features/side-panel/store'
 import { openBeside, useMainNavigate } from '@/features/side-panel/use-panel-actions'
@@ -280,6 +280,47 @@ function useSidebarDrag({ canEnter, folderOfList }: {
     snapToList(e, list)
   }
 
+  /**
+   * Where items dragged in from the Files browser would land with the pointer over `element`,
+   * the same as for a drag within the sidebar: between rows, beside a folder from the edges of
+   * its row, into a folder from its middle or open contents, or the nearest slot at the top level.
+   */
+  const filesDropHint = (aside: HTMLElement, element: Element, y: number, nodes: readonly FileNode[]): DropHint | null => {
+    if (nodes.some((node) => node.systemRole)) return null
+    const ids = new Set(nodes.map((node) => node.id))
+    const fits = (folderId: string | null) => Boolean(folderId)
+      && nodes.every((node) => node.kind !== 'folder' || canEnter('folder', node.id, folderId!))
+    const beside = (row: HTMLElement, band: number): DropHint | null => {
+      const list = row.dataset.dragList as DropList | undefined
+      const id = row.dataset.dragId
+      if (!list || list === 'pinned' || !id || ids.has(id) || !fits(folderOfList(list))) return null
+      const rect = row.getBoundingClientRect()
+      if (y < rect.top + band * rect.height) return { kind: 'row', list, id, edge: 'before' }
+      if (y > rect.bottom - band * rect.height) return { kind: 'row', list, id, edge: 'after' }
+      return null
+    }
+    const folderRow = element.closest<HTMLElement>('[data-folder-row]')
+    if (folderRow) {
+      const folderId = folderRow.dataset.folderRow!
+      return beside(folderRow, 1 / 4) ?? (fits(folderId) && !ids.has(folderRow.dataset.dragId ?? folderId) ? { kind: 'folder-target', folderId } : null)
+    }
+    const row = element.closest<HTMLElement>('[data-drag-list]')
+    if (row && row.dataset.dragList !== 'pinned') return beside(row, 1 / 2)
+    const body = element.closest<HTMLElement>('[data-folder-body]')
+    if (body) return fits(body.dataset.folderBody!) ? { kind: 'folder-target', folderId: body.dataset.folderBody! } : null
+    if (!fits(folderOfList('loose'))) return null
+    const rows = Array.from(aside.querySelectorAll<HTMLElement>('[data-drag-list]'))
+      .filter((candidate) => candidate.dataset.dragList === 'loose' && !ids.has(candidate.dataset.dragId ?? ''))
+    if (rows.length === 0) return { kind: 'loose-target' }
+    const slot = rows.findIndex((candidate) => {
+      const rect = candidate.getBoundingClientRect()
+      return y < rect.top + rect.height / 2
+    })
+    return slot < 0
+      ? { kind: 'row', list: 'loose', id: rows.at(-1)!.dataset.dragId!, edge: 'after' }
+      : { kind: 'row', list: 'loose', id: rows[slot]!.dataset.dragId!, edge: 'before' }
+  }
+
   const onSidebarDragLeave = (e: DragEvent<HTMLElement>) => {
     // Leaving the sidebar cancels the drop, so stop showing where it would land.
     if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDrop(null)
@@ -314,6 +355,8 @@ function useSidebarDrag({ canEnter, folderOfList }: {
     onSidebarDragLeave,
     rowLines,
     dropRef,
+    setDrop,
+    filesDropHint,
   }
 }
 
@@ -1005,7 +1048,6 @@ function SidebarFolderNode({ folder, shortcut, list, reorderable, ...props }: Lo
   const expansionKey = shortcut ? `shortcut:${shortcut.id}` : folder.id
   const expanded = useFolderExpansion((state) => state.expanded[expansionKey] ?? false)
   const setExpanded = useFolderExpansion((state) => state.setExpanded)
-  const fileDropActive = useFileDragActive((state) => state.target === folder.id)
   const items = useSidebarItems(folder.id, expanded).data ?? []
   const [renaming, setRenaming] = useState(false)
   const [menuPoint, setMenuPoint] = useState<{ x: number; y: number } | null>(null)
@@ -1014,7 +1056,7 @@ function SidebarFolderNode({ folder, shortcut, list, reorderable, ...props }: Lo
   const dragged = shortcut ? { kind: 'item' as const, id: shortcut.id } : folder.systemRole ? null : { kind: 'folder' as const, id: folder.id }
   const rowId = dragged?.id ?? folder.id
   const lines = drag.rowLines(list, rowId, dragged?.kind ?? 'folder')
-  const dropHighlight = fileDropActive || (drag.drop?.kind === 'folder-target' && drag.drop.folderId === folder.id)
+  const dropHighlight = drag.drop?.kind === 'folder-target' && drag.drop.folderId === folder.id
   const FolderGlyph = folder.systemRole === 'archive' ? Archive : FolderIcon
   const menuNode = shortcut ?? { id: folder.id, kind: 'folder' as const, name: folder.name, systemRole: folder.systemRole }
   const menu = (atPointer: boolean) => (
@@ -1032,8 +1074,7 @@ function SidebarFolderNode({ folder, shortcut, list, reorderable, ...props }: Lo
         onDragEnd={dragged ? drag.clearDrag : undefined}
         onDragOver={(e) => drag.onFolderDragOver(folder.id, e, reorderable ? { list, id: rowId } : undefined)}
         onDrop={onDrop}
-        // Items dragged from the Files browser drop here too (see useItemDrag).
-        data-drop-target={folder.id}
+        data-folder-row={folder.id}
         onContextMenu={(event) => {
           if (renaming) return
           event.preventDefault()
@@ -1091,6 +1132,7 @@ function SidebarFolderNode({ folder, shortcut, list, reorderable, ...props }: Lo
       {expanded && (
         <div
           className="ml-4 space-y-0.5 border-l border-sidebar-border pl-2"
+          data-folder-body={folder.id}
           onDragOver={(e) => drag.onFolderBodyDragOver(folder.id, e)}
           onDrop={onDrop}
         >
@@ -1138,7 +1180,6 @@ export function Sidebar({
   const activeTemporaryChatId = useChat((state) => state.activeTemporaryChatId)
   const composerModelId = useChat((state) => state.composerModelId)
   const sidebar = useSidebarState().data
-  const fileDrag = useFileDragActive()
   const setFolderExpanded = useFolderExpansion((s) => s.setExpanded)
   const reorderPinnedChats = useChat((s) => s.reorderPinnedChats)
   const pinChat = useChat((s) => s.pinChat)
@@ -1232,6 +1273,41 @@ export function Sidebar({
     const ids = listRowIds(hint.list).filter((id) => id !== from)
     void orderSidebarItems(folderId, reorderList([...ids, from], from, hint.id, hint.edge))
   }
+
+  /** Places items dragged in from the Files browser where the sidebar showed (see useItemDrag). */
+  const dropFromFiles = (nodes: FileNode[]): boolean => {
+    const hint = drag.dropRef.current
+    drag.setDrop(null)
+    if (!hint || hint.kind === 'row' && hint.list === 'pinned') return false
+    const ids = nodes.map((node) => node.id)
+    if (hint.kind !== 'row') {
+      const folderId = hint.kind === 'folder-target' ? hint.folderId : null
+      void moveSidebarItems(ids, folderId)
+      return true
+    }
+    const folderId = folderOfList(hint.list)
+    if (!folderId) return false
+    // Several items stay together, in their order, at the spot shown.
+    const rest = listRowIds(hint.list).filter((id) => !ids.includes(id))
+    const at = rest.indexOf(hint.id) + (hint.edge === 'after' ? 1 : 0)
+    void orderSidebarItems(folderId, [...rest.slice(0, at), ...ids, ...rest.slice(at)], nodes)
+    return true
+  }
+  const asideRef = useRef<HTMLElement>(null)
+  const filesZone = useRef({ dropFromFiles, drag })
+  filesZone.current = { dropFromFiles, drag }
+  useEffect(() => registerItemDropZone({
+    hover: (x, y, nodes) => {
+      const aside = asideRef.current
+      const element = document.elementFromPoint(x, y)
+      if (!aside || !element || !aside.contains(element)) return false
+      const { drag: current } = filesZone.current
+      current.setDrop(current.filesDropHint(aside, element, y, nodes))
+      return true
+    },
+    drop: (nodes) => filesZone.current.dropFromFiles(nodes),
+    leave: () => filesZone.current.drag.setDrop(null),
+  }), [])
 
   const go = (path: string) => {
     navigate(path)
@@ -1379,6 +1455,7 @@ export function Sidebar({
 
   return (
     <aside
+      ref={asideRef}
       onDragOver={(e) => drag.onSidebarDragOver(e, {
         pinnedBottom: pinnedZoneRef.current?.getBoundingClientRect().bottom,
       })}
@@ -1526,11 +1603,8 @@ export function Sidebar({
             <div
               className={cn(
                 'rounded-lg',
-                (drag.drop?.kind === 'loose-target' || (sidebar && fileDrag.target === sidebar.chatsFolderId))
-                  && 'bg-sidebar-accent/40 ring-1 ring-foreground/10',
+                drag.drop?.kind === 'loose-target' && 'bg-sidebar-accent/40 ring-1 ring-foreground/10',
               )}
-              // Items dragged from Files land at the top of the sidebar (in the Chats folder).
-              data-drop-target={sidebar?.chatsFolderId}
             >
               <div className="flex items-center px-2 pb-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
                 <button
