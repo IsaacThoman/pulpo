@@ -27,6 +27,7 @@ import { requireCodexEnabled } from '../codex/policy.js'
 import { CODEX_PI_PROVIDER_ID, CODEX_PROVIDER_ID } from '../codex/constants.js'
 import { detailedPayloadPolicy } from '../logging/detailed-payload-retention.js'
 import { discardRequestAnalytics, recordRequestAdmission, type ClientAttribution } from '../analytics/capture.js'
+import { assertModelsAvailableOnPlatform } from '../catalog/model-platforms.js'
 
 export interface CreateResponseOptions {
   requestReceivedAt?: Date | null
@@ -136,6 +137,7 @@ export async function createResponse(options: CreateResponseOptions) {
   const resolved = await resolveResponseGeneration(options.input.modelId, options.input.presetSelections)
   const [model] = await db.select().from(models).where(and(eq(models.id, resolved.effectiveModelId), eq(models.enabled, true))).limit(1)
   if (!model) throw new AppError(400, 'model_not_found', 'The selected model is unavailable', 'invalid_request_error', 'model')
+  await assertModelsAvailableOnPlatform([options.input.modelId, model.id], options.client)
   if (model.providerConnectionId === CODEX_PROVIDER_ID) {
     await requireCodexEnabled()
     if (options.apiKeyId) {

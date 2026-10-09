@@ -1,7 +1,7 @@
 import { and, asc, desc, eq, isNull, ne, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
-import { chatPresetsSchema, createModelSchema, createProviderSchema, secretRevealInputSchema, updateProviderSchema, type ChatPreset } from '@pulpo/contracts'
+import { chatPresetsSchema, createModelSchema, createProviderSchema, modelHiddenPlatformsSchema, secretRevealInputSchema, updateProviderSchema, type ChatPreset } from '@pulpo/contracts'
 import { db } from '../database/client.js'
 import {
   auditEvents,
@@ -33,6 +33,8 @@ import { modelWarningLinkError } from '@pulpo/client-core'
 import { parseAgentSettings } from '../settings/application-settings.js'
 import { catalogIconUrls, requireCatalogIcon } from './icon-service.js'
 import { userModelEligibility } from './user-models.js'
+import { isModelHiddenOnPlatform, modelPlatformForClient } from './model-platforms.js'
+import { clientAttributionForRequest } from '../analytics/capture.js'
 import { CODEX_LAB_ID, CODEX_PROVIDER_ID, isCodexModelId, isManagedLabId, isManagedProviderId } from '../codex/constants.js'
 import {
   COMPACTION_MIN_THRESHOLD_TOKENS,
@@ -169,7 +171,13 @@ async function replacePresets(tx: Parameters<Parameters<typeof db.transaction>[0
 export async function registerCatalogRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/models', async (request) => {
     const user = requireUser(request)
-    const { codexAvailable, condition } = await userModelEligibility(user.id)
+    const platform = modelPlatformForClient(clientAttributionForRequest(request))
+    const { codexAvailable, condition } = await userModelEligibility(user.id, db, platform)
+    // Preset choices may not redirect a store app to a model it cannot use.
+    const platformHiddenIds = new Set(platform
+      ? (await db.select({ id: models.id, hiddenPlatforms: models.hiddenPlatforms }).from(models))
+        .filter((model) => isModelHiddenOnPlatform(model, platform)).map((model) => model.id)
+      : [])
     const rows = await db
       .select({ model: models, pricing: modelPricingVersions, lab: labs, provider: providerConnections })
       .from(models)
@@ -212,19 +220,20 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
       lab: lab ? { id: lab.id, name: lab.name, logo: lab.logo, customIcon: customIcon(lab.customIconId) } : null,
       iconLight: model.iconLight,
       iconDark: model.iconDark,
-      presets: await Promise.all((await db.select().from(modelPresets).where(eq(modelPresets.modelId, model.id)).orderBy(modelPresets.sortOrder)).map(async (preset) => ({
-        id: preset.publicId, name: preset.name, icon: preset.icon,
-        defaultChoiceId: preset.defaultChoiceId
-          ? (await db.select({ publicId: modelPresetChoices.publicId })
-            .from(modelPresetChoices)
-            .where(eq(modelPresetChoices.id, preset.defaultChoiceId))
-            .limit(1))[0]?.publicId ?? null
-          : null,
-        choices: (await db.select().from(modelPresetChoices).where(eq(modelPresetChoices.presetId, preset.id)).orderBy(modelPresetChoices.sortOrder)).map((choice) => ({
-          id: choice.publicId, displayName: choice.displayName, icon: choice.icon,
-          action: { type: choice.actionType, ...(choice.action as Record<string, unknown>) },
-        })),
-      }))),
+      presets: (await Promise.all((await db.select().from(modelPresets).where(eq(modelPresets.modelId, model.id)).orderBy(modelPresets.sortOrder)).map(async (preset) => {
+        const allChoices = await db.select().from(modelPresetChoices).where(eq(modelPresetChoices.presetId, preset.id)).orderBy(modelPresetChoices.sortOrder)
+        const choices = allChoices.filter((choice) => !(choice.actionType === 'redirect' && platformHiddenIds.has(String((choice.action as { modelId?: unknown }).modelId))))
+        const defaultChoice = allChoices.find((choice) => choice.id === preset.defaultChoiceId)
+        return {
+          id: preset.publicId, name: preset.name, icon: preset.icon, hidden: allChoices.length > 0 && choices.length === 0,
+          // A default that redirects to a hidden model falls back to the first remaining choice.
+          defaultChoiceId: defaultChoice ? (choices.includes(defaultChoice) ? defaultChoice : choices[0])?.publicId ?? null : null,
+          choices: choices.map((choice) => ({
+            id: choice.publicId, displayName: choice.displayName, icon: choice.icon,
+            action: { type: choice.actionType, ...(choice.action as Record<string, unknown>) },
+          })),
+        }
+      }))).filter((preset) => !preset.hidden).map(({ hidden: _, ...preset }) => preset),
     }))) }
   })
 
@@ -621,6 +630,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
         sortOrder,
         enabled: input.enabled,
         visible: input.visible,
+        hiddenPlatforms: input.hiddenPlatforms,
         logo: input.logo,
         customIconId: input.customIconId,
         systemPrompt: input.systemPrompt,
@@ -682,6 +692,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
     const promptCachingEnabled = createModelSchema.shape.promptCachingEnabled.removeDefault().optional().parse(body.promptCachingEnabled)
     const warningMessage = createModelSchema.shape.warningMessage.removeDefault().optional().parse(body.warningMessage)
     const warningDismissDays = createModelSchema.shape.warningDismissDays.removeDefault().optional().parse(body.warningDismissDays)
+    const hiddenPlatforms = modelHiddenPlatformsSchema.optional().parse(body.hiddenPlatforms)
     const compactionPatch = z.object({
       compactionEnabled: z.boolean().optional(),
       compactionThresholdTokens: z.number().int().min(2_000).max(1_000_000).optional(),
@@ -711,6 +722,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
       sortOrder: labChanged ? sortOrder : undefined,
       enabled: typeof body.enabled === 'boolean' ? body.enabled : undefined,
       visible: typeof body.visible === 'boolean' ? body.visible : undefined,
+      hiddenPlatforms,
       logo: typeof body.logo === 'string' ? body.logo : body.logo === null ? null : undefined,
       customIconId: typeof body.customIconId === 'string' ? body.customIconId : body.customIconId === null ? null : undefined,
       systemPrompt: typeof body.systemPrompt === 'string' ? body.systemPrompt : undefined,

@@ -365,6 +365,8 @@ export const models = pgTable('models', {
   sortOrder: integer('sort_order').notNull().default(0),
   enabled: boolean('enabled').notNull().default(true),
   visible: boolean('visible').notNull().default(true),
+  // Native store apps (`ios`, `android`) that must not list or use this model.
+  hiddenPlatforms: jsonb('hidden_platforms').$type<string[]>().notNull().default([]),
   logo: text('logo'),
   customIconId: uuid('custom_icon_id').references(() => catalogIcons.id),
   systemPrompt: text('system_prompt').notNull().default(''),

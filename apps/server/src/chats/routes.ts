@@ -30,6 +30,7 @@ import { requestCostLimitContinue } from '../agent/cost-limit.js'
 import { scheduleChatIndex, scheduleUserIndex } from '../episodic-memory/queue.js'
 import { createChatExportPayload } from './export-format.js'
 import { importedModelIdentity } from './modelIdentity.js'
+import { assertModelsAvailableOnPlatform } from '../catalog/model-platforms.js'
 import { clientAttributionForRequest } from '../analytics/capture.js'
 
 export const CHAT_IMPORT_ROUTE_OPTIONS = { bodyLimit: 100 * 1024 * 1024 } as const
@@ -248,6 +249,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     await assertFileScope(user.id, input.fileScopeIds)
     const [model] = await db.select({ id: models.id }).from(models).where(and(eq(models.id, input.modelId), eq(models.enabled, true))).limit(1)
     if (!model) throw new AppError(400, 'model_not_found', 'The selected model is unavailable')
+    await assertModelsAvailableOnPlatform([model.id], clientAttributionForRequest(request))
     const id = input.clientId ?? newId()
     const createdAt = new Date()
     const expiresAt = input.temporary
@@ -292,6 +294,8 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       eq(models.id, input.chat.modelId), eq(models.enabled, true),
     )).limit(1)
     if (!model) throw new AppError(400, 'model_not_found', 'The selected model is unavailable')
+    // Check before inserting so a rejected start does not leave an empty chat behind.
+    await assertModelsAvailableOnPlatform([model.id, input.response.modelId], clientAttributionForRequest(request))
     const createdAt = new Date()
     const expiresAt = input.chat.temporary
       ? temporaryChatExpiresAt(createdAt)
@@ -712,6 +716,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     return { queuedMessage: await updateQueuedMessage(user.id, id, messageId, input, {
       billingUserId: billingUserForRequest(request).id,
       actorUserId: request.adminChatAccess?.actorUser.id,
+      client: clientAttributionForRequest(request),
     }) }
   })
 

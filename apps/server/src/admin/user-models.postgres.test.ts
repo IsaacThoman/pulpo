@@ -97,6 +97,20 @@ describe.skipIf(!enabled)('administrator default models with PostgreSQL', () => 
     expect((await choices()).json().data.map((model: { id: string }) => model.id)).toEqual(['available', 'second'])
   })
 
+  it('hides store-hidden models only from that store app’s catalog', async () => {
+    const saved = await app.inject({ method: 'PATCH', url: '/api/admin/models/second', payload: { hiddenPlatforms: ['ios'] } })
+    expect(saved.statusCode).toBe(200)
+    expect((await app.inject('/api/admin/models')).json().data.find((model: { id: string }) => model.id === 'second').hiddenPlatforms).toEqual(['ios'])
+    expect((await app.inject({ method: 'PATCH', url: '/api/admin/models/second', payload: { hiddenPlatforms: ['windows'] } })).statusCode).toBe(400)
+    actorId = targetId
+    const catalog = async (client?: string) => (await app.inject({ url: '/api/models', headers: client ? { 'x-pulpo-client': client } : {} }))
+      .json().data.map((model: { id: string }) => model.id)
+    expect(await catalog('ios/1.4.0')).toEqual(['available'])
+    expect(await catalog('android/1.4.0')).toEqual(['available', 'second'])
+    expect(await catalog('web')).toEqual(['available', 'second'])
+    expect(await catalog()).toEqual(['available', 'second'])
+  })
+
   it('excludes a disconnected target’s Codex models', async () => {
     await connect(targetId)
     await db.update(userProviderCredentials).set({ status: 'expired' }).where(eq(userProviderCredentials.userId, targetId))

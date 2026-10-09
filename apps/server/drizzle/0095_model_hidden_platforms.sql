@@ -1,0 +1,1 @@
+ALTER TABLE "models" ADD COLUMN "hidden_platforms" jsonb DEFAULT '[]'::jsonb NOT NULL;
