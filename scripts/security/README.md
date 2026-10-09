@@ -3,6 +3,23 @@
 Run `npm run test:dependency-security`. These tests also run at the start of
 `npm test` and exercise the installed dependencies through their consumers.
 
+## Release-note Handlebars compiler
+
+The lockfile updates Handlebars from 4.7.9 to 4.7.10 within
+`conventional-changelog-writer`'s existing dependency range. This fixes the
+critical [AST type confusion](https://github.com/advisories/GHSA-8r5x-fm3f-whwj)
+and [own property check bypass](https://github.com/advisories/GHSA-p8wg-vrv2-v86f)
+advisories, as well as the
+[inline precompiled template embedding](https://github.com/advisories/GHSA-xw65-4hp5-5hc7)
+advisory. No new override is required.
+
+Regression tests resolve Handlebars through the changelog writer, reject a
+malformed `Program.blockParams` in both compilation APIs, and verify that a
+prototype's own `constructor` remains inaccessible even when prototype methods
+are allowed. An integration test generates release notes through
+`@semantic-release/release-notes-generator` and checks the summary and GitHub
+commit/comparison links.
+
 ## Temporary braces fork
 
 As of October 3, 2026, braces 3.0.3 is the latest published release and all
