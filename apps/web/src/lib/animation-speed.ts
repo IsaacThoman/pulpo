@@ -9,6 +9,7 @@ export const DEFAULT_CHART_ANIMATION_DURATION_MS = 400
 
 let currentSpeed = DEFAULT_ANIMATION_SPEED
 let controllerStarted = false
+let documentUpdateScheduled = false
 
 export function normalizeAnimationSpeed(value: unknown): number {
   return typeof value === 'number'
@@ -48,8 +49,16 @@ function animationsFor(target: EventTarget | Node | null, subtree = false): Anim
   return target.getAnimations({ subtree })
 }
 
-function updateAnimationsFromEvent(event: Event): void {
-  updateAnimations(animationsFor(event.target))
+// Start events arrive by the hundreds in one frame when many elements transition at once
+// (a theme switch restyles every `transition-colors` element), and each per-target
+// getAnimations() call is expensive. Retime everything once per frame instead.
+function scheduleDocumentUpdate(): void {
+  if (documentUpdateScheduled) return
+  documentUpdateScheduled = true
+  requestAnimationFrame(() => {
+    documentUpdateScheduled = false
+    updateAnimations(document.getAnimations())
+  })
 }
 
 export function applyAnimationSpeed(value: unknown): number {
@@ -67,8 +76,10 @@ export function startAnimationSpeedController(initialSpeed: unknown): void {
     || typeof document.addEventListener !== 'function') return
   controllerStarted = true
 
-  document.addEventListener('animationstart', updateAnimationsFromEvent, true)
-  document.addEventListener('transitionrun', updateAnimationsFromEvent, true)
+  if (typeof document.getAnimations === 'function' && typeof requestAnimationFrame === 'function') {
+    document.addEventListener('animationstart', scheduleDocumentUpdate, true)
+    document.addEventListener('transitionrun', scheduleDocumentUpdate, true)
+  }
 
   if (typeof MutationObserver === 'undefined') return
   const observer = new MutationObserver((records) => {
