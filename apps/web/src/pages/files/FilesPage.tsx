@@ -58,6 +58,7 @@ import { useFileClipboard } from '@/features/files/browser/clipboard'
 import { FileContextMenu, type ContextMenuPoint } from '@/features/files/browser/FileContextMenu'
 import { FileDragOverlay } from '@/features/files/browser/FileDragOverlay'
 import { FileItem, type FileDropHandlers } from '@/features/files/browser/FileItem'
+import { isSidebarItemDrag, readSidebarItem } from '@/features/sidebar/drag-data'
 import {
   clickSelect,
   EMPTY_SELECTION,
@@ -575,30 +576,42 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
     onDrop: (dragged, targetId) => { void ops.move(dragged, targetId) },
   })
 
-  /** Folder rows and breadcrumbs accept files dropped in from the operating system. */
+  /** Moves an item dragged out of the sidebar (a chat, folder, file, or shortcut) into `targetId`. */
+  const dropSidebarItem = (event: DragEvent, targetId: string | null) => {
+    const node = readSidebarItem(event.dataTransfer)
+    if (node) void ops.move([node], targetId)
+  }
+
+  /**
+   * Folder rows and breadcrumbs accept files dropped in from the operating system, and items
+   * dragged out of the sidebar.
+   */
   const dropProps = (targetId: string | null, key = targetId ?? 'root'): FileDropHandlers => ({
     onDragOver: (event) => {
-      if (!isFileDrag(event)) return
+      const fromSidebar = isSidebarItemDrag(event.dataTransfer)
+      if (!fromSidebar && !isFileDrag(event)) return
       event.preventDefault()
       event.stopPropagation()
-      event.dataTransfer.dropEffect = 'copy'
+      event.dataTransfer.dropEffect = fromSidebar ? 'move' : 'copy'
       setDropTarget(key)
     },
     onDragLeave: (event) => {
       if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropTarget((current) => current === key ? null : current)
     },
     onDrop: (event) => {
-      if (!isFileDrag(event)) return
+      const fromSidebar = isSidebarItemDrag(event.dataTransfer)
+      if (!fromSidebar && !isFileDrag(event)) return
       event.preventDefault()
       event.stopPropagation()
       setDropTarget(null)
-      void upload([...event.dataTransfer.files], targetId)
+      if (fromSidebar) dropSidebarItem(event, targetId)
+      else void upload([...event.dataTransfer.files], targetId)
     },
   })
 
   const pageDrop = {
     onDragOver: (event: DragEvent) => {
-      if (!isFileDrag(event)) return
+      if (!isFileDrag(event) && !isSidebarItemDrag(event.dataTransfer)) return
       event.preventDefault()
       setDropTarget('page')
     },
@@ -606,6 +619,12 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
       if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropTarget(null)
     },
     onDrop: (event: DragEvent) => {
+      if (isSidebarItemDrag(event.dataTransfer)) {
+        event.preventDefault()
+        setDropTarget(null)
+        dropSidebarItem(event, folderId)
+        return
+      }
       if (!isFileDrag(event)) return
       event.preventDefault()
       setDropTarget(null)

@@ -75,6 +75,7 @@ import { FilesNavMenu } from '@/features/files/FilesNavMenu'
 import { FileNodeIcon } from '@/features/files/FileNodeIcon'
 import { registerItemDropZone } from '@/features/files/browser/use-item-drag'
 import { FolderPickerDialog } from '@/features/sidebar/FolderPickerDialog'
+import { writeSidebarItem } from '@/features/sidebar/drag-data'
 import { useSidePanel } from '@/features/side-panel/store'
 import { openBeside, useMainNavigate } from '@/features/side-panel/use-panel-actions'
 import {
@@ -156,7 +157,8 @@ function useSidebarDrag({ canEnter, folderOfList }: {
     setDrop(null)
   }
 
-  const startDrag = (kind: DragKind, id: string, e: DragEvent, list?: DropList) => {
+  /** `item` lets folders in Files take the drag too. */
+  const startDrag = (kind: DragKind, id: string, e: DragEvent, list?: DropList, item?: Pick<FileNode, 'id' | 'kind' | 'name' | 'parentId'>) => {
     // Nested rows (a chat inside a folder) must not also start their folder's drag.
     e.stopPropagation()
     didDragRef.current = false
@@ -169,6 +171,7 @@ function useSidebarDrag({ canEnter, folderOfList }: {
     e.dataTransfer.effectAllowed = 'move'
     e.dataTransfer.setData('text/plain', id)
     e.dataTransfer.setData('application/x-pulpo-drag', kind)
+    if (item) writeSidebarItem(e.dataTransfer, item)
   }
 
   const acceptMove = (e: DragEvent) => {
@@ -803,6 +806,11 @@ function sidebarEntries(chats: readonly Chat[], items: readonly FileNode[], rece
     : (left, right) => left.sortOrder - right.sortOrder || right.createdAt - left.createdAt)
 }
 
+/** A chat as the Files item it is, for dragging into a folder in Files. */
+function chatDragItem(chat: Chat, sidebar: SidebarState | undefined) {
+  return { id: chat.id, kind: 'chat' as const, name: chat.title, parentId: chat.folderId ?? sidebar?.chatsFolderId ?? null }
+}
+
 /** Where opening a Files item or a shortcut goes; null when a shortcut's target is in the trash. */
 function itemPath(node: FileNode): string | null {
   const target = node.kind === 'shortcut' ? node.target : { kind: node.kind, id: node.id, available: true }
@@ -938,7 +946,7 @@ function SidebarItemRow({ node, list, reorderable, sidebar, chatId, drag, onDrop
       data-drag-list={reorderable ? list : undefined}
       data-drag-id={reorderable ? node.id : undefined}
       draggable={!renaming}
-      onDragStart={(e) => drag.startDrag('item', node.id, e, list)}
+      onDragStart={(e) => drag.startDrag('item', node.id, e, list, node)}
       onDragEnd={drag.clearDrag}
       onDragOver={reorderable ? (e) => drag.onRowDragOver(list, node.id, e) : undefined}
       onDrop={onDrop}
@@ -1011,7 +1019,7 @@ function SidebarEntryRow({ entry, list, reorderable, ...props }: TreeProps & Row
         {...drag.rowLines(list, chat.id, 'chat')}
         didDragRef={drag.didDragRef}
         dragList={reorderable ? list : undefined}
-        onDragStart={(e) => drag.startDrag('chat', chat.id, e, list)}
+        onDragStart={(e) => drag.startDrag('chat', chat.id, e, list, chatDragItem(chat, props.sidebar))}
         onDragOver={reorderable ? (e) => drag.onRowDragOver(list, chat.id, e) : undefined}
         onDrop={reorderable ? onDrop : undefined}
         onDragEnd={drag.clearDrag}
@@ -1022,12 +1030,12 @@ function SidebarEntryRow({ entry, list, reorderable, ...props }: TreeProps & Row
   const { sidebar } = props
   if (!sidebar) return null
   if (node.kind === 'folder') {
-    return <SidebarFolderNode folder={{ id: node.id, name: node.name, systemRole: node.systemRole ?? null }} list={list} reorderable={reorderable} {...props} sidebar={sidebar} />
+    return <SidebarFolderNode folder={{ id: node.id, name: node.name, systemRole: node.systemRole ?? null }} node={node} list={list} reorderable={reorderable} {...props} sidebar={sidebar} />
   }
   // A shortcut to a folder opens in place, like the folder itself.
   if (node.kind === 'shortcut' && node.target?.kind === 'folder' && node.target.available) {
     const target = { id: node.target.id, name: node.name, systemRole: node.target.systemRole }
-    return <SidebarFolderNode folder={target} shortcut={node} list={list} reorderable={reorderable} {...props} sidebar={sidebar} />
+    return <SidebarFolderNode folder={target} node={node} shortcut={node} list={list} reorderable={reorderable} {...props} sidebar={sidebar} />
   }
   return <SidebarItemRow node={node} list={list} reorderable={reorderable} {...props} sidebar={sidebar} />
 }
@@ -1038,8 +1046,10 @@ function SidebarEntryRow({ entry, list, reorderable, ...props }: TreeProps & Row
  * With `shortcut`, this is a shortcut to the folder: it opens the folder, but dragging, renaming,
  * and deleting act on the shortcut.
  */
-function SidebarFolderNode({ folder, shortcut, list, reorderable, ...props }: LoadedTreeProps & RowPlacement & {
+function SidebarFolderNode({ folder, node, shortcut, list, reorderable, ...props }: LoadedTreeProps & RowPlacement & {
   folder: { id: string; name: string; systemRole: SidebarFolder['systemRole'] }
+  /** The Files item this row is: the folder, or the shortcut to it. */
+  node: FileNode
   shortcut?: FileNode
 }) {
   const { t } = useTranslation()
@@ -1070,7 +1080,7 @@ function SidebarFolderNode({ folder, shortcut, list, reorderable, ...props }: Lo
         data-drag-list={reorderable ? list : undefined}
         data-drag-id={reorderable ? rowId : undefined}
         draggable={Boolean(dragged) && !renaming}
-        onDragStart={dragged ? (e) => drag.startDrag(dragged.kind, dragged.id, e, list) : undefined}
+        onDragStart={dragged ? (e) => drag.startDrag(dragged.kind, dragged.id, e, list, node) : undefined}
         onDragEnd={dragged ? drag.clearDrag : undefined}
         onDragOver={(e) => drag.onFolderDragOver(folder.id, e, reorderable ? { list, id: rowId } : undefined)}
         onDrop={onDrop}
@@ -1590,7 +1600,7 @@ export function Sidebar({
                       dragging={drag.dragKind === 'chat' && drag.dragList === 'pinned' && drag.dragId === c.id}
                       didDragRef={drag.didDragRef}
                       dragList="pinned"
-                      onDragStart={(e) => drag.startDrag('chat', c.id, e, 'pinned')}
+                      onDragStart={(e) => drag.startDrag('chat', c.id, e, 'pinned', chatDragItem(c, sidebar))}
                       onDragOver={(e) => drag.onRowDragOver('pinned', c.id, e)}
                       onDrop={handleDrop}
                       onDragEnd={drag.clearDrag}
