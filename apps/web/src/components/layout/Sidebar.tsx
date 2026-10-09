@@ -350,8 +350,9 @@ function ChatMenu({ chat, onRename, atPointer = false }: { chat: Chat; onRename:
   const deleteChat = useChat((state) => state.deleteChat)
   const moveToFolder = useChat((state) => state.moveToFolder)
   const sidebar = useSidebarState().data
-  const outline = folderOutline(sidebar)
   const filesEnabled = useAuth((state) => state.filesEnabled)
+  // Without Files, nothing shows what is in Archive, so chats are not moved there.
+  const outline = folderOutline(sidebar).filter(({ folder }) => filesEnabled || !isWithin(sidebar, folder.id, sidebar!.archiveFolderId))
   const archived = Boolean(sidebar && chat.folderId && isWithin(sidebar, chat.folderId, sidebar.archiveFolderId))
   const trashRetention = useSettings((state) => state.trashRetention)
   const automaticChatExpiration = useSettings((state) => state.automaticChatExpiration)
@@ -425,7 +426,8 @@ function ChatMenu({ chat, onRename, atPointer = false }: { chat: Chat; onRename:
           )}
         </DropdownMenuSubContent>
       </DropdownMenuSub>
-      {!archived && sidebar && (
+      {/* The Archive folder is only reachable through Files. */}
+      {!archived && sidebar && filesEnabled && (
         <DropdownMenuItem onClick={() => archiveChat(chat.id)}>
           <Archive />
           {ui("Move to archive")}
@@ -842,7 +844,7 @@ function ItemMenu({ node, folder, sidebar, atPointer = false, onRename, onNewFol
           {ui("Create shortcut…")}
         </DropdownMenuItem>
       )}
-      {!system && !archived && (
+      {!system && !archived && filesEnabled && (
         <DropdownMenuItem onClick={() => void archiveFiles([node.id])}>
           <Archive />
           {ui("Move to archive")}

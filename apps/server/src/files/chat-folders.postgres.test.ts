@@ -42,7 +42,7 @@ describe.skipIf(!enabled)('chats filed in Files folders', () => {
   })
   afterAll(async () => { await queryClient.end() })
 
-  it('creates Chats and Archive once, adopting a folder that already has the name, with an Archive shortcut in Chats', async () => {
+  it('creates Chats and Archive once, adopting a folder that already has the name, with nothing in Chats', async () => {
     const existing = await createFolder(userId, { parentId: null, name: 'archive' })
     const first = await ensureSystemFolders(userId)
     const second = await ensureSystemFolders(userId)
@@ -50,10 +50,7 @@ describe.skipIf(!enabled)('chats filed in Files folders', () => {
     expect(first.archiveFolderId).toBe(existing.id)
     const root = await listFolder(userId, null)
     expect(root.children.map((node) => [node.name, node.systemRole])).toEqual([['archive', 'archive'], ['Chats', 'chats']])
-    const items = await sidebarFolderItems(userId, first.chatsFolderId, true)
-    expect(items).toEqual([expect.objectContaining({
-      kind: 'shortcut', name: 'Archive', target: expect.objectContaining({ kind: 'folder', id: first.archiveFolderId, systemRole: 'archive', available: true }),
-    })])
+    expect(await sidebarFolderItems(userId, first.chatsFolderId, true)).toEqual([])
   })
 
   it('keeps built-in folders from being renamed, moved, or trashed', async () => {
@@ -72,7 +69,7 @@ describe.skipIf(!enabled)('chats filed in Files folders', () => {
     expect(work.parentId).toBe(chatsFolderId)
     expect((await listFolder(userId, work.id)).children).toEqual([expect.objectContaining({ id: filed, kind: 'chat', name: 'Filed', parentId: work.id })])
     const chatsListing = await listFolder(userId, chatsFolderId)
-    expect(chatsListing.children.map((node) => [node.name, node.kind])).toEqual([['Work', 'folder'], ['Archive', 'shortcut'], ['Loose', 'chat']])
+    expect(chatsListing.children.map((node) => [node.name, node.kind])).toEqual([['Work', 'folder'], ['Loose', 'chat']])
     expect(chatsListing.children.find((node) => node.id === loose)?.parentId).toBe(chatsFolderId)
   })
 
@@ -161,17 +158,17 @@ describe.skipIf(!enabled)('chats filed in Files folders', () => {
     const order = async (folderId: string) => (await listFolder(userId, folderId)).children
       .sort((left, right) => left.sortOrder! - right.sortOrder! || right.createdAt.localeCompare(left.createdAt))
       .map((node) => node.name)
-    // The Archive shortcut starts below the chats; the chat created after it sits above it.
-    expect(await order(chatsFolderId)).toEqual(['Work', 'Older chat', 'Archive'])
+    expect(await order(chatsFolderId)).toEqual(['Work', 'Older chat'])
 
     await moveFileNodes(userId, [{ id: chat, parentId: work.id }])
     expect(await order(work.id)).toEqual(['Older chat', 'Inner'])
 
     // One order for a folder, moving in what is listed from elsewhere and unpinning chats.
     await db.update(chats).set({ pinned: true }).where(eq(chats.id, chat))
-    const archiveShortcut = (await listFolder(userId, chatsFolderId)).children.find((node) => node.kind === 'shortcut')!
-    await orderSidebarItems(userId, null, [archiveShortcut.id, chat, work.id])
-    expect(await order(chatsFolderId)).toEqual(['Archive', 'Older chat', 'Work'])
+    const notes = await createSidebarFolder(userId, { name: 'Notes' })
+    expect(await order(chatsFolderId)).toEqual(['Notes', 'Work'])
+    await orderSidebarItems(userId, null, [work.id, chat, notes.id])
+    expect(await order(chatsFolderId)).toEqual(['Work', 'Older chat', 'Notes'])
     expect(await chatRow(chat)).toMatchObject({ folderId: null, pinned: false })
     await orderSidebarItems(userId, work.id, [inner.id])
     expect(await order(work.id)).toEqual(['Inner'])

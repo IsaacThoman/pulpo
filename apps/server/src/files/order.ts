@@ -26,17 +26,6 @@ export async function topSortOrder(executor: FileExecutor, userId: string, paren
   return Number(rows[0]?.top ?? 0)
 }
 
-/** The order that puts an item below everything in `parentId`. */
-export async function bottomSortOrder(executor: FileExecutor, userId: string, parentId: string): Promise<number> {
-  const rows = await executor.execute<{ bottom: number }>(sql`
-    select (coalesce(greatest(
-      (select max(sort_order) from file_nodes where owner_user_id = ${userId} and parent_id = ${parentId}::uuid and trashed_at is null),
-      (select max(c.sort_order) from chats c where ${chatsIn(userId, parentId)})
-    ), -1) + 1)::int as bottom
-  `)
-  return Number(rows[0]?.bottom ?? 0)
-}
-
 /** The order that puts a chat at the top of folder `folderId`, or of the unfiled chats (null). */
 export async function topChatOrder(executor: FileExecutor, userId: string, folderId: string | null): Promise<number> {
   if (folderId) return topSortOrder(executor, userId, folderId)
