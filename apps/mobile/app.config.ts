@@ -141,10 +141,10 @@ const config: ExpoConfig = {
       'expo-splash-screen',
       {
         backgroundColor: '#FFFFFF',
-        image: './assets/pulpo-smiley.png',
+        image: './assets/pulpo-splash.png',
         imageWidth: 112,
         resizeMode: 'contain',
-        dark: { backgroundColor: '#000000', image: './assets/pulpo-smiley.png' },
+        dark: { backgroundColor: '#000000', image: './assets/pulpo-splash.png' },
       },
     ],
   ],
