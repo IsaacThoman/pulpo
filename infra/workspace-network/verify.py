@@ -48,6 +48,9 @@ def main():
     parser.add_argument('--controller-nodeport', type=int, default=30443)
     parser.add_argument('--expect-ping', choices=['allowed', 'blocked'], default='blocked')
     parser.add_argument('--expect-ipv6', choices=['allowed', 'blocked'], default='blocked')
+    parser.add_argument('--egress', choices=['proxy', 'direct'], default='proxy',
+                        help='proxy: workspaces have no DNS and reach the internet only via --proxy-url')
+    parser.add_argument('--proxy-url', default='http://10.43.47.50:4750')
     args = parser.parse_args()
     if args.pods[0] == args.pods[1]:
         parser.error('two distinct pods are required')
@@ -127,6 +130,8 @@ def main():
                 'peer_ip': peer['status']['podIP'], 'udp_port': UDP_PORT, 'dns_ip': args.dns_ip,
                 'peer_ipv6': addresses[1 - index] + '%eth0' if addresses[1 - index] else None,
                 'expect_ipv6': args.expect_ipv6 == 'allowed',
+                'expect_dns': args.egress == 'direct',
+                'proxy': args.proxy_url if args.egress == 'proxy' else None,
             }
             result = subprocess.run(KUBE + ['exec', '-i', pod['metadata']['name'], '--', 'python3', '-', json.dumps(config)],
                                     input=probe, text=True, capture_output=True, timeout=25)

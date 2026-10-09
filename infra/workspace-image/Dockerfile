@@ -61,6 +61,7 @@ RUN apt-get update \
     && useradd --uid 1000 --gid 1000 --create-home --shell /bin/bash agent \
     && install --directory --owner=agent --group=agent --mode=0755 /workspace \
     && printf 'agent ALL=(ALL) NOPASSWD: ALL\n' > /etc/sudoers.d/agent \
+    && printf 'Defaults env_keep += "HTTP_PROXY HTTPS_PROXY http_proxy https_proxy NO_PROXY no_proxy"\n' >> /etc/sudoers.d/agent \
     && chmod 0440 /etc/sudoers.d/agent \
     && visudo --check \
     && apt-get clean \

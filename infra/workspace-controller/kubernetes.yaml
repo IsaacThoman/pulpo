@@ -95,6 +95,10 @@ spec:
               value: "100"
             - name: PULPO_WORKSPACE_IMAGE
               value: ghcr.io/your-org/pulpo-agent-workspace@sha256:REPLACE_WITH_WORKSPACE_DIGEST
+            # Workspaces get no DNS and may only reach this proxy. Must match the
+            # pulpo-workspace-egress-proxy Service clusterIP below.
+            - name: PULPO_WORKSPACE_EGRESS_PROXY_URL
+              value: http://10.43.47.50:4750
             - name: PULPO_CONTROLLER_TOKEN
               valueFrom:
                 secretKeyRef:
@@ -155,19 +159,128 @@ spec:
       ports:
         - protocol: TCP
           port: 8787
+  # Proxy only: no DNS, no direct internet. See infra/workspace-egress.
   egress:
     - to:
-        - namespaceSelector:
+        - podSelector:
             matchLabels:
-              kubernetes.io/metadata.name: kube-system
-          podSelector:
-            matchLabels:
-              k8s-app: kube-dns
+              app.kubernetes.io/name: pulpo-workspace-egress-proxy
       ports:
-        - protocol: UDP
-          port: 53
         - protocol: TCP
-          port: 53
+          port: 4750
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pulpo-workspace-egress-proxy
+  namespace: pulpo-workspaces
+data:
+  config.yaml: |
+    port: 4750
+    network: ip4
+    # Resolve directly through the egress tunnel, not the LAN's DNS server.
+    resolver_addresses: ["1.1.1.1:53", "9.9.9.9:53"]
+    # Smokescreen already denies RFC 1918, CGNAT, loopback, link-local and
+    # multicast after resolution. Add the remaining special-purpose ranges.
+    deny_ranges:
+      - 0.0.0.0/8
+      - 192.0.0.0/24
+      - 192.0.2.0/24
+      - 198.18.0.0/15
+      - 198.51.100.0/24
+      - 203.0.113.0/24
+      - 240.0.0.0/4
+    connect_timeout: 10s
+    deny_message_extra: "Pulpo workspaces may only reach public internet addresses."
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pulpo-workspace-egress-proxy
+  namespace: pulpo-workspaces
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: pulpo-workspace-egress-proxy
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: pulpo-workspace-egress-proxy
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      priorityClassName: pulpo-workspace-controller
+      containers:
+        - name: proxy
+          image: ghcr.io/your-org/pulpo-workspace-egress-proxy@sha256:REPLACE_WITH_PROXY_DIGEST
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: proxy
+              containerPort: 4750
+          readinessProbe:
+            tcpSocket:
+              port: proxy
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: "1"
+              memory: 256Mi
+          volumeMounts:
+            - name: config
+              mountPath: /etc/smokescreen
+              readOnly: true
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            capabilities:
+              drop: ["ALL"]
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+        - name: config
+          configMap:
+            name: pulpo-workspace-egress-proxy
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pulpo-workspace-egress-proxy
+  namespace: pulpo-workspaces
+spec:
+  # Fixed so workspaces can use the proxy without DNS. Must be inside the
+  # cluster's service CIDR (K3s default 10.43.0.0/16).
+  clusterIP: 10.43.47.50
+  selector:
+    app.kubernetes.io/name: pulpo-workspace-egress-proxy
+  ports:
+    - name: proxy
+      port: 4750
+      targetPort: proxy
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: pulpo-workspace-egress-proxy
+  namespace: pulpo-workspaces
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: pulpo-workspace-egress-proxy
+  policyTypes: ["Ingress", "Egress"]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: pulpo-workspace
+      ports:
+        - protocol: TCP
+          port: 4750
+  egress:
     - to:
         - ipBlock:
             cidr: 0.0.0.0/0
@@ -179,6 +292,10 @@ spec:
               - 172.16.0.0/12
               - 192.168.0.0/16
       ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
         - protocol: TCP
           port: 80
         - protocol: TCP

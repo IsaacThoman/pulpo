@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """Socket-only checks, executed inside a workspace by verify.py. Installs nothing."""
 import concurrent.futures
+import errno
 import json
 import os
 import socket
 import struct
 import sys
+import urllib.parse
 import urllib.request
 
 
@@ -61,12 +63,23 @@ def dns(host):
             raise RuntimeError('DNS response had no successful answer')
 
 
-def https():
-    # Bypass environment proxy settings so this tests the pod's own egress.
-    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+def https(proxy=None):
+    # Without a proxy, bypass environment settings to test the pod's own egress.
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({'https': proxy} if proxy else {}))
     with opener.open('https://example.com/', timeout=8) as response:
         if response.status != 200 or not response.read(64):
             raise RuntimeError('HTTPS download failed')
+
+
+def proxy_connect(proxy, host, port):
+    # A proxy refusal counts as blocked, like a refused direct connection.
+    address = urllib.parse.urlsplit(proxy)
+    with socket.create_connection((address.hostname, address.port), timeout=12) as sock:
+        sock.settimeout(12)
+        sock.sendall(f'CONNECT {host}:{port} HTTP/1.1\r\nHost: {host}:{port}\r\n\r\n'.encode())
+        status = sock.recv(512).split(b'\r\n', 1)[0]
+        if status.split()[1:2] != [b'200']:
+            raise ConnectionRefusedError(errno.ECONNREFUSED, 'proxy refused: ' + status.decode(errors='replace'))
 
 
 def main():
@@ -78,10 +91,17 @@ def main():
         jobs.append((label, False, tcp, tuple(target)))
     jobs.extend([
         ('peer UDP', False, udp, (config['peer_ip'], config['udp_port'])),
-        ('cluster DNS UDP', True, dns, (config['dns_ip'],)),
-        ('cluster DNS TCP', True, tcp, (config['dns_ip'], 53)),
-        ('public HTTPS download', True, https, ()),
+        ('cluster DNS UDP', config.get('expect_dns', True), dns, (config['dns_ip'],)),
+        ('cluster DNS TCP', config.get('expect_dns', True), tcp, (config['dns_ip'], 53)),
     ])
+    if config.get('proxy'):
+        # Workspaces have no resolver in proxy mode, so test direct egress by IP.
+        jobs.append(('direct public TCP 443', False, tcp, ('1.1.1.1', 443)))
+        jobs.append(('proxied public HTTPS download', True, https, (config['proxy'],)))
+        for label, target in config['blocked_tcp'].items():
+            jobs.append(('proxied ' + label, False, proxy_connect, (config['proxy'], *target)))
+    else:
+        jobs.append(('public HTTPS download', True, https, ()))
     if config.get('peer_ipv6'):
         jobs.extend([
             ('peer IPv6 TCP', config['expect_ipv6'], tcp, (config['peer_ipv6'], 41874)),
@@ -97,7 +117,6 @@ def main():
         except OSError as error:
             # Only network refusal/timeout/unreachable counts as blocked.
             # Missing privileges or broken probes must fail, never count as isolation.
-            import errno
             if isinstance(error, TimeoutError) or error.errno in {
                 errno.ECONNREFUSED, errno.ENETUNREACH, errno.EHOSTUNREACH,
             }:
