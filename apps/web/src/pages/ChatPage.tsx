@@ -273,6 +273,8 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
   useEffect(() => {
     setMessageEdit(null)
     setComposerEditActive(false)
+    // Once a chat is open, its own flag controls temporary mode.
+    if (chatId) setTemporary(false)
   }, [chatId])
 
   const beginMessageEdit = useCallback((message: Message) => {
@@ -337,7 +339,7 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
     navigate('/', { state: newChatLocationState(true, modelId) })
   }
 
-  const temporaryMode = temporary || Boolean(chat?.temporary)
+  const temporaryMode = chatId ? Boolean(chat?.temporary) : temporary
   // Files beside the page add to this chat; temporary chats and admin views take no files.
   usePublishChatTarget(adminMode || temporaryMode ? null : chat ? { kind: 'chat', id: chat.id } : { kind: 'new' })
   const desktopSidebarVisible = useDesktopChrome((state) => state.desktopSidebarVisible)
