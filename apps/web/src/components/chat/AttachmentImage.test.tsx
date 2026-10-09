@@ -7,7 +7,7 @@ import { MessageAttachmentList, PendingAttachmentChip } from './AttachmentImage'
 vi.hoisted(() => {
   const mediaQuery = { matches: false, addEventListener: () => undefined }
   Object.assign(globalThis, {
-    document: { documentElement: { classList: { toggle: () => undefined } } },
+    document: { documentElement: { classList: { contains: () => false, toggle: () => undefined } } },
     window: { matchMedia: () => mediaQuery },
   })
 })

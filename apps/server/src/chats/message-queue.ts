@@ -12,6 +12,7 @@ import { parseAgentSettings } from '../settings/application-settings.js'
 import { attachmentsRequireAgentMode } from '../attachments/policy.js'
 import { accessibleChatCondition } from './temporary.js'
 import { canPromoteQueueHead, nextQueuePosition, reorderQueueIds } from './message-queue-policy.js'
+import { assertModelsAvailableOnPlatform } from '../catalog/model-platforms.js'
 
 type QueueRow = typeof queuedMessages.$inferSelect
 
@@ -23,13 +24,14 @@ async function bumpQueueRevision(userId: string, chatId: string): Promise<void> 
   if (updated) await publishStateChange({ userId, revision: updated.revision, chatId })
 }
 
-async function validateQueueInput(userId: string, chatId: string, input: CreateQueuedMessageInput): Promise<void> {
+async function validateQueueInput(userId: string, chatId: string, input: CreateQueuedMessageInput, client?: ClientAttribution | null): Promise<void> {
   await assertAccessibleChat(userId, chatId)
 
   const generation = await resolveResponseGeneration(input.modelId, input.presetSelections)
   const [model] = await db.select({ id: models.id, agentEnabled: models.agentEnabled })
     .from(models).where(and(eq(models.id, generation.effectiveModelId), eq(models.enabled, true))).limit(1)
   if (!model) throw new AppError(400, 'model_not_found', 'The selected model is unavailable')
+  await assertModelsAvailableOnPlatform([input.modelId, model.id], client)
 
   const attachmentRows = input.attachmentIds.length
     ? await db.select({ id: attachments.id, mimeType: attachments.mimeType }).from(attachments).where(and(
@@ -110,7 +112,7 @@ export async function createQueuedMessage(
   attribution: { billingUserId?: string; actorUserId?: string | null; requestReceivedAt?: Date | null; client?: ClientAttribution | null } = {},
 ): Promise<{ queuedMessage: QueuedMessage | null }> {
   const requestReceivedAt = attribution.requestReceivedAt ?? new Date()
-  await validateQueueInput(userId, chatId, input)
+  await validateQueueInput(userId, chatId, input, attribution.client)
   const id = input.clientId ?? newId()
   await db.transaction(async (tx) => {
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`pulpo-message-queue:${chatId}`}))`)
@@ -164,7 +166,7 @@ export async function updateQueuedMessage(
   chatId: string,
   id: string,
   input: UpdateQueuedMessageInput,
-  attribution: { billingUserId?: string; actorUserId?: string | null } = {},
+  attribution: { billingUserId?: string; actorUserId?: string | null; client?: ClientAttribution | null } = {},
 ): Promise<QueuedMessage | null> {
   await assertAccessibleChat(userId, chatId)
   if (input.action === 'save_edit') {
@@ -174,7 +176,7 @@ export async function updateQueuedMessage(
       presetSelections: input.presetSelections,
       attachmentIds: input.attachmentIds,
       agentMode: input.agentMode,
-    })
+    }, attribution.client)
   }
   await db.transaction(async (tx) => {
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`pulpo-message-queue:${chatId}`}))`)

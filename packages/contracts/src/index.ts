@@ -1047,6 +1047,14 @@ export type ChatPreset = z.infer<typeof chatPresetSchema>
 
 export const UNKNOWN_MODEL_ID = 'pulpo-unknown-model'
 
+/** Native store apps where an admin can hide a catalog model, e.g. for App Store or Play Store review. */
+export const modelHiddenPlatformSchema = z.enum(['ios', 'android'])
+export type ModelHiddenPlatform = z.infer<typeof modelHiddenPlatformSchema>
+export const modelHiddenPlatformsSchema = z.array(modelHiddenPlatformSchema).max(2)
+  .transform((platforms) => [...new Set(platforms)])
+/** Error code returned when a native app sends a request with a model hidden on its platform. */
+export const MODEL_UNAVAILABLE_ON_PLATFORM_ERROR = 'model_unavailable_on_platform'
+
 export const DEFAULT_MINIMUM_OUTPUT_RESERVATION_TOKENS = 8_000
 export const minimumOutputReservationTokensSchema = z.number().int().min(1).max(2_147_483_647)
 
@@ -1061,6 +1069,7 @@ export const createModelSchema = z.object({
   warningDismissDays: modelWarningDismissDaysSchema.default(DEFAULT_MODEL_WARNING_DISMISS_DAYS),
   enabled: z.boolean().default(true),
   visible: z.boolean().default(true),
+  hiddenPlatforms: modelHiddenPlatformsSchema.default([]),
   logo: z.string().max(120).nullable().default(null),
   customIconId: idSchema.nullable().default(null),
   systemPrompt: z.string().max(100_000).default(''),
