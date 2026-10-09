@@ -349,6 +349,7 @@ export const labs = pgTable('labs', {
   name: text('name').notNull(),
   logo: text('logo').notNull(),
   customIconId: uuid('custom_icon_id').references(() => catalogIcons.id),
+  sortOrder: integer('sort_order').notNull().default(0),
   ...timestamps,
 })
 

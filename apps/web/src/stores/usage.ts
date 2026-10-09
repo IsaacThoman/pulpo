@@ -14,6 +14,7 @@ interface AdminUserRow {
     inviteCodeQuota?: number
   }
   defaultModelId: string | null
+  favoriteModelIds?: string[] | null
   lastActiveAt: string | null
   storageBytes: number
   twoFactorEnabled: boolean
@@ -40,6 +41,7 @@ function mapAdmin(row: AdminUserRow): MonitorUser {
     deletionRequestedAt: row.user.deletionRequestedAt, deletionError: row.user.deletionError,
     inviteCodeQuota: row.user.inviteCodeQuota ?? 0,
     defaultModelId: row.defaultModelId || null,
+    favoriteModelIds: row.favoriteModelIds ?? null,
   }
 }
 

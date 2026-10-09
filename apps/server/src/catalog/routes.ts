@@ -1,4 +1,4 @@
-import { and, asc, eq, isNull, ne, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, isNull, ne, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { chatPresetsSchema, createModelSchema, createProviderSchema, secretRevealInputSchema, updateProviderSchema, type ChatPreset } from '@pulpo/contracts'
@@ -180,7 +180,8 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
       .leftJoin(labs, eq(models.labId, labs.id))
       .innerJoin(providerConnections, eq(models.providerConnectionId, providerConnections.id))
       .where(condition)
-      .orderBy(asc(models.sortOrder), asc(models.createdAt))
+      // Lab order is the default model-menu lab order for accounts that have not reordered labs.
+      .orderBy(sql`${labs.sortOrder} asc nulls last`, asc(models.sortOrder), asc(models.createdAt))
     const [agentRow] = await db.select().from(applicationSettings).where(eq(applicationSettings.key, 'agent')).limit(1)
     const iconRows = await db.select().from(catalogIcons)
     const iconById = new Map(iconRows.map((icon) => [icon.id, icon]))
@@ -416,7 +417,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
   app.get('/api/admin/labs', async (request) => {
     requireAdmin(request)
     const [labRows, modelRows] = await Promise.all([
-      db.select().from(labs).where(ne(labs.id, CODEX_LAB_ID)).orderBy(labs.createdAt),
+      db.select().from(labs).where(ne(labs.id, CODEX_LAB_ID)).orderBy(asc(labs.sortOrder), asc(labs.createdAt)),
       db.select({
         id: models.id,
         labId: models.labId,
@@ -447,7 +448,8 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
       customIconId: z.uuid().nullable().default(null),
     }).parse(request.body)
     if (input.customIconId) await requireCatalogIcon(input.customIconId)
-    const [created] = await db.insert(labs).values({ id: newId(), ...input }).returning()
+    const [last] = await db.select({ sortOrder: labs.sortOrder }).from(labs).orderBy(desc(labs.sortOrder)).limit(1)
+    const [created] = await db.insert(labs).values({ id: newId(), ...input, sortOrder: last ? last.sortOrder + 1 : 0 }).returning()
     reply.code(201)
     return created
   })
@@ -465,6 +467,28 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
     const [updated] = await db.update(labs).set({ ...body, updatedAt: new Date() }).where(eq(labs.id, id)).returning()
     if (!updated) throw notFound('Lab')
     return updated
+  })
+
+  app.put('/api/admin/labs/order', async (request) => {
+    const admin = requireAdmin(request)
+    const { labIds } = z.object({ labIds: z.array(z.string()).max(1_000) }).parse(request.body)
+    if (new Set(labIds).size !== labIds.length) {
+      throw new AppError(400, 'validation_error', 'Lab order cannot contain duplicates')
+    }
+    const existing = await db.select({ id: labs.id }).from(labs).where(ne(labs.id, CODEX_LAB_ID))
+    const existingIds = new Set(existing.map((lab) => lab.id))
+    if (labIds.length !== existingIds.size || labIds.some((labId) => !existingIds.has(labId))) {
+      throw new AppError(400, 'validation_error', 'Lab order must contain every lab exactly once')
+    }
+    await db.transaction(async (tx) => {
+      for (const [sortOrder, labId] of labIds.entries()) {
+        await tx.update(labs).set({ sortOrder, updatedAt: new Date() }).where(eq(labs.id, labId))
+      }
+      await tx.insert(auditEvents).values({
+        id: newId(), actorUserId: admin.id, action: 'labs.reorder', targetType: 'lab', targetId: null,
+      })
+    })
+    return { data: labIds }
   })
 
   app.put('/api/admin/labs/:id/models/order', async (request) => {
