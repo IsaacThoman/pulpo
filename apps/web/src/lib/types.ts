@@ -102,6 +102,8 @@ export interface Chat {
   updatedAt: number
   pinned: boolean
   folderId: string | null
+  /** At the top of My files rather than in the Chats folder (folderId is null either way). */
+  inFilesRoot?: boolean
   sortOrder: number
   tags: string[]
   temporary: boolean

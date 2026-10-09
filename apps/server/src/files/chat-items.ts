@@ -4,18 +4,18 @@ import { chats, fileNodes } from '../database/schema.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { accessibleChatCondition } from '../chats/temporary.js'
 import { resolveFileAccess, type FileExecutor, type FileNodeRow } from './access.js'
-import { topChatOrder } from './order.js'
+import { topChatOrder, topSortOrder } from './order.js'
 
 type ChatRow = typeof chats.$inferSelect
 
 /**
  * Chats filed in Files folders are listed as `chat` items. A chat with no folder sits directly
- * in the Chats folder, which is the sidebar's unfiled list.
+ * in the Chats folder, which is the sidebar's unfiled list, unless it is at the top of My files.
  */
-export function chatToFileNode(chat: Pick<ChatRow, 'id' | 'folderId' | 'title' | 'sortOrder' | 'createdAt' | 'updatedAt'>, chatsFolderId: string | null): FileNode {
+export function chatToFileNode(chat: Pick<ChatRow, 'id' | 'folderId' | 'inFilesRoot' | 'title' | 'sortOrder' | 'createdAt' | 'updatedAt'>, chatsFolderId: string | null): FileNode {
   return {
     id: chat.id,
-    parentId: chat.folderId ?? chatsFolderId,
+    parentId: chat.inFilesRoot ? null : chat.folderId ?? chatsFolderId,
     kind: 'chat',
     name: chat.title,
     status: 'ready',
@@ -37,12 +37,17 @@ const liveChat = (userId: string) => and(
   accessibleChatCondition(),
 )
 
-/** The chats inside `folder` (none at the top of My files). */
+/** The chats inside `folder` (null is the top of My files). */
 export async function listFolderChats(executor: FileExecutor, userId: string, folder: FileNodeRow | null): Promise<FileNode[]> {
-  if (!folder) return []
+  if (!folder) {
+    const rows = await executor.select().from(chats).where(and(liveChat(userId), isNull(chats.folderId), eq(chats.inFilesRoot, true)))
+    return rows.map((chat) => chatToFileNode(chat, null))
+  }
   const rows = await executor.select().from(chats).where(and(
     liveChat(userId),
-    folder.systemRole === 'chats' ? or(eq(chats.folderId, folder.id), isNull(chats.folderId)) : eq(chats.folderId, folder.id),
+    folder.systemRole === 'chats'
+      ? or(eq(chats.folderId, folder.id), and(isNull(chats.folderId), eq(chats.inFilesRoot, false)))
+      : eq(chats.folderId, folder.id),
   ))
   return rows.map((chat) => chatToFileNode(chat, folder.systemRole === 'chats' ? folder.id : null))
 }
@@ -66,12 +71,18 @@ export async function chatFolderId(executor: FileExecutor, userId: string, paren
   return access.node.systemRole === 'chats' ? null : access.node.id
 }
 
-/** Files chats into folders. Returns them as items, as they now appear in Files. */
+/**
+ * Files chats into folders (null is the top of My files), at the top of each. Moving a chat in
+ * Files takes it out of the pinned chats, as dragging it out of them does. Returns them as items,
+ * as they now appear in Files.
+ */
 export async function moveChatsInTx(executor: FileExecutor, userId: string, items: Array<{ id: string; parentId: string | null }>, chatsFolderId: string | null): Promise<FileNode[]> {
   const moved: FileNode[] = []
   for (const item of items) {
-    const folderId = await chatFolderId(executor, userId, item.parentId)
-    const [row] = await executor.update(chats).set({ folderId, sortOrder: await topChatOrder(executor, userId, folderId) }).where(and(eq(chats.id, item.id), liveChat(userId))).returning()
+    const inFilesRoot = item.parentId === null
+    const folderId = inFilesRoot ? null : await chatFolderId(executor, userId, item.parentId)
+    const sortOrder = inFilesRoot ? await topSortOrder(executor, userId, null) : await topChatOrder(executor, userId, folderId)
+    const [row] = await executor.update(chats).set({ folderId, inFilesRoot, pinned: false, sortOrder }).where(and(eq(chats.id, item.id), liveChat(userId))).returning()
     if (!row) throw notFound('Chat')
     moved.push(chatToFileNode(row, chatsFolderId))
   }

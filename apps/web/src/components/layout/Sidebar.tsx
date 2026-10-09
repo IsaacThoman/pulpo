@@ -1343,7 +1343,8 @@ export function Sidebar({
   const inFolders = new Map<string, Chat[]>()
   const loose: Chat[] = []
   for (const c of chats) {
-    if (c.pinned) continue
+    // Chats at the top of My files are in Files only.
+    if (c.pinned || c.inFilesRoot) continue
     if (!c.folderId) loose.push(c)
     else inFolders.set(c.folderId, [...inFolders.get(c.folderId) ?? [], c])
   }

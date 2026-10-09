@@ -147,7 +147,7 @@ export function orderSidebarItems(folderId: string, ids: string[], incoming: rea
     useChat.setState((state) => ({
       chats: state.chats.map((chat) => {
         const sortOrder = position.get(chat.id)
-        return sortOrder === undefined ? chat : { ...chat, pinned: false, folderId: folderId === chatsFolderId ? null : folderId, sortOrder }
+        return sortOrder === undefined ? chat : { ...chat, pinned: false, folderId: folderId === chatsFolderId ? null : folderId, inFilesRoot: false, sortOrder }
       }),
     }))
     // Items listed from other folders leave those listings and join this one.

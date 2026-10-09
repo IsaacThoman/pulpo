@@ -1767,6 +1767,8 @@ export const chatSummarySchema = z.object({
   modelId: z.string(),
   pinned: z.boolean(),
   folderId: idSchema.nullable(),
+  /** At the top of My files rather than in the Chats folder (folderId is null either way). */
+  inFilesRoot: z.boolean().optional(),
   sortOrder: z.number().int().optional(),
   temporary: z.boolean(),
   fileScopeIds: z.array(z.string()).default([]),

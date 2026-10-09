@@ -53,9 +53,12 @@ function orderedChatIds(chats: Chat[]): string[] {
   return [...chats].sort(compareChatOrder).map((chat) => chat.id)
 }
 
-/** Unpinned, non-temporary chats that are not filed in a folder: the sidebar's unfiled list. */
+/**
+ * Unpinned, non-temporary chats that are not filed in a folder (nor at the top of My files): the
+ * sidebar's unfiled list.
+ */
 function looseChats(chats: Chat[]): Chat[] {
-  return chats.filter((chat) => !chat.pinned && !chat.temporary && !chat.folderId)
+  return chats.filter((chat) => !chat.pinned && !chat.temporary && !chat.folderId && !chat.inFilesRoot)
 }
 
 function chatListMembers(chats: Chat[], folderId: string | null): Chat[] {
@@ -87,7 +90,7 @@ function commitChatPlacement(id: string, nextIds: string[], patch: Partial<Pick<
   const sortOrder = orders.get(id) ?? nextIds.length - 1
   useChat.setState((state) => ({
     chats: state.chats.map((chat) => {
-      if (chat.id === id) return { ...chat, ...patch, sortOrder }
+      if (chat.id === id) return { ...chat, ...patch, ...'folderId' in patch ? { inFilesRoot: false } : {}, sortOrder }
       const nextOrder = orders.get(chat.id)
       return nextOrder === undefined ? chat : { ...chat, sortOrder: nextOrder }
     }),
@@ -112,7 +115,7 @@ function placeInChatList(
   if (!(position && destIds.includes(position.targetId))) {
     const sortOrder = topOrderIn(chats.filter((chat) => chat.id !== id), folderId)
     useChat.setState((state) => ({
-      chats: state.chats.map((chat) => chat.id === id ? { ...chat, ...patch, folderId, sortOrder } : chat),
+      chats: state.chats.map((chat) => chat.id === id ? { ...chat, ...patch, folderId, inFilesRoot: false, sortOrder } : chat),
     }))
     // The server places it above everything in the folder, Files items included.
     void optimisticRequest('PATCH', `/api/chats/${id}`, { ...patch, folderId })
@@ -176,6 +179,7 @@ export interface ServerChat {
   modelId: string
   pinned: boolean
   folderId: string | null
+  inFilesRoot?: boolean
   sortOrder?: number
   temporary?: boolean
   fileScopeIds?: string[]
@@ -504,6 +508,7 @@ function toChat(
     updatedAt: Date.parse(row.updatedAt),
     pinned: row.pinned,
     folderId: row.folderId,
+    inFilesRoot: row.inFilesRoot ?? current?.inFilesRoot ?? false,
     sortOrder: row.sortOrder ?? current?.sortOrder ?? 0,
     tags: current?.tags ?? [],
     temporary: row.temporary ?? current?.temporary ?? false,
@@ -1024,7 +1029,7 @@ export const useChat = create<ChatState>()((set, get) => ({
       // Detail rows are often served from a cache that predates reorders, pins, or folder moves, so
       // the summary list and local mutations stay authoritative for where a known chat sits in the sidebar.
       const chat = current
-        ? { ...fromDetail, pinned: current.pinned, folderId: current.folderId, sortOrder: current.sortOrder }
+        ? { ...fromDetail, pinned: current.pinned, folderId: current.folderId, inFilesRoot: current.inFilesRoot, sortOrder: current.sortOrder }
         : fromDetail
       const chats = current ? state.chats.map((item) => item.id === row.id ? chat : item) : [chat, ...state.chats]
       return {
@@ -1283,7 +1288,7 @@ export const useChat = create<ChatState>()((set, get) => ({
   moveToFolder: (id, folderId, position) => {
     if (get().chats.find((chat) => chat.id === id)?.pinned) {
       // Pinned chats keep their pinned position; the folder applies once they are unpinned.
-      set((state) => ({ chats: state.chats.map((chat) => chat.id === id ? { ...chat, folderId } : chat) }))
+      set((state) => ({ chats: state.chats.map((chat) => chat.id === id ? { ...chat, folderId, inFilesRoot: false } : chat) }))
       void optimisticRequest('PATCH', `/api/chats/${id}`, { folderId })
       return
     }
@@ -1319,7 +1324,7 @@ export const useChat = create<ChatState>()((set, get) => ({
   },
   archiveChat: (id, archiveFolderId) => {
     set((state) => ({
-      chats: state.chats.map((chat) => chat.id === id ? { ...chat, pinned: false, folderId: archiveFolderId } : chat),
+      chats: state.chats.map((chat) => chat.id === id ? { ...chat, pinned: false, folderId: archiveFolderId, inFilesRoot: false } : chat),
     }))
     void optimisticRequest('POST', '/api/sidebar/archive', { chatIds: [id] })
   },

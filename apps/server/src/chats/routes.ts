@@ -586,6 +586,8 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       title: patch.title?.trim(),
       pinned: patch.pinned,
       folderId,
+      // Filed by folder (or unfiled), a chat is no longer at the top of My files.
+      inFilesRoot: folderId === undefined ? undefined : false,
       modelId: patch.modelId,
       // Refiled without a position, a chat goes to the top of its new folder.
       sortOrder: typeof patch.sortOrder === 'number'

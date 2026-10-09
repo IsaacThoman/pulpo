@@ -13,7 +13,7 @@ describe('public chat DTOs', () => {
   it('only exposes client-supported chat fields', () => {
     const row = {
       workspaceScopeId: 'private-workspace-scope',
-      id: '00000000-0000-4000-8000-000000000001', userId: 'private-user', folderId: null,
+      id: '00000000-0000-4000-8000-000000000001', userId: 'private-user', folderId: null, inFilesRoot: false,
       title: 'Chat', modelId: 'model-1', pinned: false, sortOrder: 0, temporary: false,
       fileScopeIds: ['root'],
       activeBranchLeafId: null, activeResponseId: null, expiresAt: null, deletedAt: null,

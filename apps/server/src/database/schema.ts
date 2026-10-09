@@ -444,8 +444,10 @@ export const chats = pgTable('chats', {
   workspaceScopeId: uuid('workspace_scope_id').notNull().defaultRandom(),
   id: uuid('id').primaryKey(),
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  // The Files folder the chat lives in. Null is the sidebar's unfiled list (the Chats folder itself).
+  // The Files folder the chat lives in. Null is the sidebar's unfiled list (the Chats folder itself),
+  // or the top of My files when in_files_root is set.
   folderId: uuid('folder_id').references((): AnyPgColumn => fileNodes.id, { onDelete: 'set null' }),
+  inFilesRoot: boolean('in_files_root').notNull().default(false),
   title: text('title').notNull().default('New chat'),
   modelId: text('model_id').notNull().references(() => models.id),
   pinned: boolean('pinned').notNull().default(false),
@@ -462,6 +464,7 @@ export const chats = pgTable('chats', {
 }, (table) => [
   index('chats_user_updated_idx').on(table.userId, table.updatedAt),
   index('chats_folder_idx').on(table.folderId).where(sql`${table.folderId} is not null`),
+  check('chats_files_root_check', sql`not ${table.inFilesRoot} or ${table.folderId} is null`),
   index('chats_title_search_idx').using('gin', sql`to_tsvector('simple', ${table.title})`),
   index('chats_expiry_idx').on(table.expiresAt)
     .where(sql`${table.expiresAt} is not null and ${table.deletedAt} is null and ${table.purgeStartedAt} is null`),

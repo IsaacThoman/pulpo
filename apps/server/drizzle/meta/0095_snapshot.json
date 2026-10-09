@@ -3181,6 +3181,13 @@
           "primaryKey": false,
           "notNull": false
         },
+        "in_files_root": {
+          "name": "in_files_root",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
         "title": {
           "name": "title",
           "type": "text",
@@ -3381,7 +3388,12 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "chats_files_root_check": {
+          "name": "chats_files_root_check",
+          "value": "not \"chats\".\"in_files_root\" or \"chats\".\"folder_id\" is null"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.codex_login_attempts": {
