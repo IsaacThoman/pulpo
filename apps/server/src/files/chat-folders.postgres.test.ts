@@ -92,6 +92,21 @@ describe.skipIf(!enabled)('chats filed in Files folders', () => {
     expect((await chatRow(chat)).deletedAt).toBeNull()
   })
 
+  it('puts chats at the top of My files, apart from the Chats folder, unpinning them', async () => {
+    const { chatsFolderId } = await ensureSystemFolders(userId)
+    const chat = await insertChat(null, 'Rooted')
+    await db.update(chats).set({ pinned: true }).where(eq(chats.id, chat))
+    const [moved] = await moveFileNodes(userId, [{ id: chat, parentId: null }])
+    expect(moved).toMatchObject({ id: chat, kind: 'chat', parentId: null })
+    expect(await chatRow(chat)).toMatchObject({ folderId: null, inFilesRoot: true, pinned: false })
+    expect((await listFolder(userId, null)).children.map((node) => node.name)).toContain('Rooted')
+    expect((await listFolder(userId, chatsFolderId)).children.map((node) => node.name)).not.toContain('Rooted')
+    // Placed in the sidebar again, it is back in the Chats folder.
+    await orderSidebarItems(userId, null, [chat])
+    expect(await chatRow(chat)).toMatchObject({ folderId: null, inFilesRoot: false })
+    expect((await listFolder(userId, chatsFolderId)).children.map((node) => node.name)).toContain('Rooted')
+  })
+
   it('returns chats to the unfiled list when their folder is trashed', async () => {
     const work = await createSidebarFolder(userId, { name: 'Work' })
     const nested = await createSidebarFolder(userId, { name: 'Nested', parentId: work.id })

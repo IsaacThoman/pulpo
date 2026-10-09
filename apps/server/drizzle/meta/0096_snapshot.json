@@ -1,5 +1,5 @@
 {
-  "id": "93a8b40f-d32e-4c26-8b57-092a71ea639d",
+  "id": "3bebdc02-0d5a-4957-a5d3-7f5fc863d8f9",
   "prevId": "c96e6c75-7a51-41b6-a6b0-7fa4f0db158a",
   "version": "7",
   "dialect": "postgresql",
@@ -3181,6 +3181,13 @@
           "primaryKey": false,
           "notNull": false
         },
+        "in_files_root": {
+          "name": "in_files_root",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
         "title": {
           "name": "title",
           "type": "text",
@@ -3381,7 +3388,12 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "chats_files_root_check": {
+          "name": "chats_files_root_check",
+          "value": "not \"chats\".\"in_files_root\" or \"chats\".\"folder_id\" is null"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.codex_login_attempts": {

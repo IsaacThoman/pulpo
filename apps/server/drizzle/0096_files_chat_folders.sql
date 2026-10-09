@@ -76,4 +76,7 @@ UPDATE "chats" SET "folder_id" = NULL
   );--> statement-breakpoint
 ALTER TABLE "chats" ADD CONSTRAINT "chats_folder_id_file_nodes_id_fk" FOREIGN KEY ("folder_id") REFERENCES "public"."file_nodes"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "chats_folder_idx" ON "chats" USING btree ("folder_id") WHERE "chats"."folder_id" is not null;--> statement-breakpoint
+-- Chats can also sit at the top of My files, outside the Chats folder.
+ALTER TABLE "chats" ADD COLUMN "in_files_root" boolean DEFAULT false NOT NULL;--> statement-breakpoint
+ALTER TABLE "chats" ADD CONSTRAINT "chats_files_root_check" CHECK (not "chats"."in_files_root" or "chats"."folder_id" is null);--> statement-breakpoint
 DROP TABLE "folders" CASCADE;

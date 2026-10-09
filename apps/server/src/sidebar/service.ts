@@ -124,7 +124,7 @@ export async function orderSidebarItems(userId: string, parentId: string | null,
     const position = (column: typeof chats.id | typeof fileNodes.id) =>
       sql`case ${column} ${sql.join(ids.map((id, index) => sql`when ${id}::uuid then ${index}::int`), sql` `)} end`
     if (chatIds.length) {
-      await tx.update(chats).set({ folderId: chatFolder, pinned: false, sortOrder: position(chats.id) })
+      await tx.update(chats).set({ folderId: chatFolder, inFilesRoot: false, pinned: false, sortOrder: position(chats.id) })
         .where(and(eq(chats.userId, userId), inArray(chats.id, chatIds)))
     }
     if (nodeIds.length) {
@@ -150,7 +150,7 @@ export async function archiveItems(userId: string, input: { chatIds: string[]; f
   const fileIds = input.fileIds.filter((id) => !chatIds.includes(id))
   if (chatIds.length) {
     await mutateFileTree(userId, async (tx) => {
-      await tx.update(chats).set({ folderId: archiveFolderId, pinned: false, sortOrder: await topSortOrder(tx, userId, archiveFolderId) })
+      await tx.update(chats).set({ folderId: archiveFolderId, inFilesRoot: false, pinned: false, sortOrder: await topSortOrder(tx, userId, archiveFolderId) })
         .where(and(eq(chats.userId, userId), inArray(chats.id, chatIds), isNull(chats.deletedAt), accessibleChatCondition()))
     }, ['files', 'folders', 'chats'])
   }

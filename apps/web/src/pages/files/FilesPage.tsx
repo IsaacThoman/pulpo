@@ -905,7 +905,7 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
       if (!listing.isError) openMenuAt({ x: event.clientX, y: event.clientY }, null)
     },
   }
-  const dropHighlight = dropTarget === 'page' && 'rounded-2xl bg-primary/5 outline-2 -outline-offset-8 outline-dashed outline-primary/40'
+  const dropHighlight = dropTarget === 'page' && 'rounded-2xl bg-primary/5'
   const overlays = (
     <>
       {marquee && (
