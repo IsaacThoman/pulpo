@@ -659,6 +659,13 @@
       "when": 1791479832886,
       "tag": "0093_follow_new_account_model_defaults",
       "breakpoints": true
+    },
+    {
+      "idx": 94,
+      "version": "7",
+      "when": 1791481918148,
+      "tag": "0094_lab_sort_order",
+      "breakpoints": true
     }
   ]
 }

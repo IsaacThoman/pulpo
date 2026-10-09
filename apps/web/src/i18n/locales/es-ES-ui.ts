@@ -778,7 +778,7 @@ const esUi: Record<string, string> = {
   "Compacted context": "Contexto compactado",
   "Compacted summary": "Resumen compactado",
   "Compacting context…": "Compactando contexto...",
-  "Company marks shown in the model picker. Use the arrows to set the order of models within each lab.": "Logotipos de empresa que se muestran en el selector de modelos. Usa las flechas para ordenar los modelos de cada laboratorio.",
+  "Company marks shown in the model picker. Use the arrows to set the default lab order and the order of models within each lab. Accounts that have not reordered labs themselves follow the default lab order.": "Logotipos de empresa que se muestran en el selector de modelos. Usa las flechas para definir el orden predeterminado de los laboratorios y el orden de los modelos de cada laboratorio. Las cuentas que no hayan reordenado los laboratorios siguen el orden predeterminado.",
   "Compare mixture-of-experts vs dense models": "Comparar la mezcla de expertos frente a los modelos densos",
   "Compare plans": "Comparar planes",
   "Completed": "Completado",
