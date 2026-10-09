@@ -13,7 +13,7 @@ const localStorageStub = {
 vi.stubGlobal('localStorage', localStorageStub)
 vi.stubGlobal('navigator', { onLine: true })
 vi.stubGlobal('document', {
-  documentElement: { classList: { toggle: vi.fn() } },
+  documentElement: { classList: { contains: () => false, toggle: vi.fn() } },
 })
 vi.stubGlobal('window', {
   localStorage: localStorageStub,

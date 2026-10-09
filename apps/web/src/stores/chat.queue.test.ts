@@ -7,7 +7,7 @@ vi.stubGlobal('localStorage', {
   setItem: (key: string, value: string) => storage.set(key, value),
   removeItem: (key: string) => storage.delete(key),
 })
-vi.stubGlobal('document', { documentElement: { classList: { toggle: vi.fn() } } })
+vi.stubGlobal('document', { documentElement: { classList: { contains: () => false, toggle: vi.fn() } } })
 vi.stubGlobal('window', {
   matchMedia: () => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() }),
   setTimeout,

@@ -37,19 +37,25 @@ describe('animation speed', () => {
     expect(updatePlaybackRate).toHaveBeenCalledWith(2.5)
   })
 
-  it('updates animations launched after the controller starts', () => {
+  it('retimes animations launched after the controller starts once per frame', () => {
+    const frames: FrameRequestCallback[] = []
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => frames.push(callback))
     const updatePlaybackRate = vi.fn()
     const animation = { playbackRate: 1, updatePlaybackRate } as unknown as Animation
+    const getAnimations = vi.fn(() => [animation])
+    Object.defineProperty(document, 'getAnimations', { configurable: true, value: getAnimations })
     const element = document.createElement('div')
-    Object.defineProperty(element, 'getAnimations', {
-      configurable: true,
-      value: () => [animation],
-    })
     document.body.append(element)
 
     startAnimationSpeedController(3)
+    getAnimations.mockClear()
+    for (let i = 0; i < 100; i++) element.dispatchEvent(new Event('transitionrun', { bubbles: true }))
     element.dispatchEvent(new Event('animationstart', { bubbles: true }))
+    expect(frames).toHaveLength(1)
+    frames[0](0)
 
+    expect(getAnimations).toHaveBeenCalledTimes(1)
     expect(updatePlaybackRate).toHaveBeenCalledWith(3)
+    vi.unstubAllGlobals()
   })
 })
