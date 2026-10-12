@@ -81,9 +81,16 @@ export async function buildApp() {
   await app.register(cors, {
     origin: (origin, callback) => callback(null, !origin || isAllowedOrigin(origin, config)),
     credentials: true,
-    exposedHeaders: ['x-speech-duration-seconds'],
+    exposedHeaders: ['x-speech-duration-seconds', 'retry-after'],
   })
-  await app.register(rateLimit, { max: 300, timeWindow: '1 minute', keyGenerator: (request) => resolveClientIp(request.raw, config) ?? request.ip })
+  await app.register(rateLimit, {
+    max: 300,
+    timeWindow: '1 minute',
+    keyGenerator: (request) => resolveClientIp(request.raw, config) ?? request.ip,
+    errorResponseBuilder: (_request, context) => new AppError(
+      context.statusCode, 'rate_limit_exceeded', `Rate limit exceeded, retry in ${context.after}`, 'rate_limit_error',
+    ),
+  })
   await app.register(multipart, { limits: { fileSize: 20 * 1024 * 1024 * 1024, files: 1 } })
 
   app.decorateRequest('user', null)
