@@ -5,6 +5,10 @@ vi.mock('@/lib/local-first/database', () => ({ clearLocalUserData: vi.fn() }))
 vi.mock('@/lib/local-first/composer-sync', () => ({ clearWebComposerSync: vi.fn() }))
 vi.mock('@/lib/local-first/composer-drafts', () => ({ clearRuntimeComposerDrafts: vi.fn() }))
 vi.mock('./chat', () => ({ useChat: { setState: vi.fn() } }))
+vi.mock('@/lib/passkeys', () => ({
+  authenticateWithPasskey: vi.fn(async () => ({})),
+  passkeyErrorMessage: (_error: unknown, fallback: string) => fallback,
+}))
 
 Object.defineProperty(window, 'matchMedia', { value: () => ({ matches: false, addEventListener() {} }), configurable: true })
 const { useAuth } = await import('./auth')
@@ -62,6 +66,58 @@ it('does not restore a stale bootstrap session after logout', async () => {
   await pending
   expect(useAuth.getState().user).toBeNull()
   expect(localStorage.getItem('pulpo-profile')).toBeNull()
+})
+
+it.each(['login', 'signup', 'setup', 'passkey'] as const)('keeps a successful %s when the signed-out bootstrap finishes later', async (action) => {
+  const pending = useAuth.getState().bootstrap()
+  const startupRequests = [...requests]
+  const auth = useAuth.getState()
+  const signingIn = action === 'login'
+    ? auth.login(user.email, 'test-password')
+    : action === 'passkey'
+      ? auth.passkeyLogin()
+      : auth[action](user.name, user.username, user.email, 'test-password')
+  if (action === 'passkey') {
+    requests.at(-1)!.resolve({ ceremonyToken: 'test-ceremony', options: {} })
+    await vi.waitFor(() => expect(requests.at(-1)!.path).toBe('/api/auth/passkey/verify'))
+  }
+  requests.at(-1)!.resolve({ user })
+  expect(await signingIn).toEqual({ ok: true })
+  expect(useAuth.getState().user?.id).toBe(user.id)
+
+  for (const request of startupRequests) {
+    if (request.path === '/api/me') request.resolve({ error: { code: 'unauthorized' } }, 401)
+    else request.resolve(request.path.endsWith('setup-status') ? { required: false } : { signupEnabled: true })
+  }
+  await pending
+  expect(useAuth.getState().user?.id).toBe(user.id)
+  expect(JSON.parse(localStorage.getItem('pulpo-profile')!).id).toBe(user.id)
+  expect(useAuth.getState().checkingSession).toBe(false)
+})
+
+it('does not replace a new login with the previous account from a delayed bootstrap', async () => {
+  const pending = useAuth.getState().bootstrap()
+  const startupRequests = [...requests]
+  const signingIn = useAuth.getState().login(user.email, 'test-password')
+  requests.at(-1)!.resolve({ user })
+  expect(await signingIn).toEqual({ ok: true })
+  const previousUser = { ...user, id: 'previous-account', email: 'previous@example.test' }
+  for (const request of startupRequests) {
+    request.resolve(request.path === '/api/me' ? { user: previousUser } : request.path.endsWith('setup-status') ? { required: false } : {})
+  }
+  await pending
+  expect(useAuth.getState().user?.id).toBe(user.id)
+  expect(JSON.parse(localStorage.getItem('pulpo-profile')!).id).toBe(user.id)
+})
+
+it('still accepts the startup session when a later login fails', async () => {
+  const pending = useAuth.getState().bootstrap()
+  const signingIn = useAuth.getState().login(user.email, 'wrong-password')
+  requests.at(-1)!.resolve({ error: { code: 'unauthorized', message: 'Invalid credentials' } }, 401)
+  expect(await signingIn).toEqual({ ok: false, error: 'Invalid credentials' })
+  respond()
+  await pending
+  expect(useAuth.getState().user?.id).toBe(user.id)
 })
 
 
