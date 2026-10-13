@@ -15,6 +15,7 @@ interface AdminUserRow {
   }
   defaultModelId: string | null
   favoriteModelIds?: string[] | null
+  grantedModelIds?: string[]
   lastActiveAt: string | null
   storageBytes: number
   twoFactorEnabled: boolean
@@ -42,6 +43,7 @@ function mapAdmin(row: AdminUserRow): MonitorUser {
     inviteCodeQuota: row.user.inviteCodeQuota ?? 0,
     defaultModelId: row.defaultModelId || null,
     favoriteModelIds: row.favoriteModelIds ?? null,
+    grantedModelIds: row.grantedModelIds ?? [],
   }
 }
 

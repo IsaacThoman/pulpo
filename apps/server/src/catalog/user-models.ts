@@ -5,6 +5,7 @@ import { codexEnabled } from '../codex/policy.js'
 import { CODEX_PI_PROVIDER_ID, CODEX_PROVIDER_ID } from '../codex/constants.js'
 import type { ModelHiddenPlatform } from '@pulpo/contracts'
 import { modelShownOnPlatformCondition } from './model-platforms.js'
+import { modelAccessibleToUserCondition } from './model-access.js'
 
 type CatalogDatabase = Pick<typeof db, 'select'>
 
@@ -21,6 +22,7 @@ export async function userModelEligibility(userId: string, database: CatalogData
       eq(models.enabled, true), eq(models.visible, true),
       codexAvailable && credential?.status === 'connected' ? undefined : ne(models.providerConnectionId, CODEX_PROVIDER_ID),
       modelShownOnPlatformCondition(platform),
+      modelAccessibleToUserCondition(userId),
     ),
   }
 }

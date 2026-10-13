@@ -23,6 +23,7 @@ vi.mock('../database/client.js', () => ({
 vi.mock('../responses/service.js', () => ({ createResponse: mocks.createResponse }))
 vi.mock('../redis.js', () => ({ createRedis: vi.fn() }))
 vi.mock('../responses/events.js', () => ({ readResponseEvents: vi.fn() }))
+vi.mock('../catalog/model-access.js', () => ({ assertModelsAccessibleToUser: vi.fn(async () => undefined) }))
 vi.mock('../chats/temporary.js', () => ({
   accessibleChatCondition: vi.fn(() => ({})),
   temporaryChatExpiresAt: vi.fn(() => new Date('2026-08-28T12:00:00.000Z')),
