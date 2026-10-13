@@ -54,6 +54,7 @@ vi.mock('../redis.js', () => ({ redis: {} }))
 vi.mock('./events.js', () => ({ publishSnapshot: state.snapshot, createResponseEventPublisher: vi.fn(), isCancellationRequested: vi.fn() }))
 vi.mock('../admin/usage-events.js', () => ({ publishAdminUsage: state.usage }))
 vi.mock('../agent/runner.js', () => ({ processAgentGeneration: state.agent }))
+vi.mock('../catalog/model-access.js', () => ({ assertModelsAccessibleToUser: vi.fn(async () => undefined) }))
 
 import { CODEX_PROVIDER_ID } from '../codex/constants.js'
 import { createResponse } from './service.js'

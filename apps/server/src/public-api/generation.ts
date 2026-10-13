@@ -7,6 +7,7 @@ import { newId } from '../lib/ids.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { createRedis } from '../redis.js'
 import { createResponse } from '../responses/service.js'
+import { assertModelsAccessibleToUser } from '../catalog/model-access.js'
 import { readResponseEvents } from '../responses/events.js'
 import { accessibleChatCondition, temporaryChatExpiresAt } from '../chats/temporary.js'
 import { createStreamCloser } from './stream-cleanup.js'
@@ -155,6 +156,7 @@ export async function executePublicGeneration(input: {
     // The temporary chat references the model, so reject unknown ids before inserting it.
     const [model] = await db.select({ id: models.id }).from(models).where(eq(models.id, input.request.model)).limit(1)
     if (!model) throw new AppError(400, 'model_not_found', 'The selected model is unavailable', 'invalid_request_error', 'model')
+    await assertModelsAccessibleToUser([model.id], input.key.userId)
     const chatId = newId()
     await db.insert(chats).values({
       id: chatId,

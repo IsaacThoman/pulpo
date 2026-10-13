@@ -14,6 +14,7 @@ vi.mock('../database/client.js', () => ({ db: {
 vi.mock('../auth/service.js', () => ({ requireUser: () => ({ id: 'owner' }), billingUserForRequest: () => ({ id: 'owner' }) }))
 vi.mock('../responses/service.js', () => ({ createResponse: mocks.createResponse, toSnapshot: (response: { id: string }) => ({ responseId: response.id }) }))
 vi.mock('../responses/events.js', () => ({ publishChatStarted: mocks.publish, publishStateChange: vi.fn(), requestCancellation: vi.fn() }))
+vi.mock('../catalog/model-access.js', () => ({ assertModelsAccessibleToUser: vi.fn(async () => undefined) }))
 import { registerChatRoutes } from './routes.js'
 
 type Handler = (request: FastifyRequest, reply: FastifyReply) => Promise<unknown>

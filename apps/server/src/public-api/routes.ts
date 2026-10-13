@@ -21,6 +21,7 @@ import {
 import { executePublicGeneration } from './generation.js'
 import { estimateAnthropicInputTokens, parseAnthropicMessagesRequest } from './anthropic-codec.js'
 import { CODEX_PROVIDER_ID } from '../codex/constants.js'
+import { modelAccessibleToUserCondition } from '../catalog/model-access.js'
 
 /** Anthropic SDKs send `anthropic-version`; answer them in the Anthropic model-list shape. */
 function wantsAnthropicShape(headers: Record<string, unknown>): boolean {
@@ -66,6 +67,7 @@ export async function registerPublicApiRoutes(app: FastifyInstance): Promise<voi
     const key = await authenticateApiKey(request, 'models')
     const rows = await db.select().from(models).where(and(
       eq(models.enabled, true), eq(models.visible, true), ne(models.providerConnectionId, CODEX_PROVIDER_ID),
+      modelAccessibleToUserCondition(key.userId),
     ))
     const allowed = await filterApiKeyAllowedModels(key.id, rows)
     if (wantsAnthropicShape(request.headers)) {
@@ -84,6 +86,7 @@ export async function registerPublicApiRoutes(app: FastifyInstance): Promise<voi
       eq(models.enabled, true),
       eq(models.visible, true),
       ne(models.providerConnectionId, CODEX_PROVIDER_ID),
+      modelAccessibleToUserCondition(key.userId),
     )).limit(1)
     if (!model || !(await apiKeyModelAllowed(key.id, model.id))) throw notFound('Model')
     return wantsAnthropicShape(request.headers) ? anthropicModel(model) : publicModel(model)
@@ -133,6 +136,7 @@ export async function registerPublicApiRoutes(app: FastifyInstance): Promise<voi
     await assertApiKeyModelAllowed(key.id, parsed.model)
     const [model] = await db.select({ id: models.id }).from(models).where(and(
       eq(models.id, parsed.model), eq(models.enabled, true), ne(models.providerConnectionId, CODEX_PROVIDER_ID),
+      modelAccessibleToUserCondition(key.userId),
     )).limit(1)
     if (!model) throw notFound('Model')
     return { input_tokens: estimateAnthropicInputTokens(parsed) }

@@ -9,6 +9,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { Transform } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import { readTextFile, resolveReadableVmPath } from './read.js'
+import { saveLargeOutput } from './saved-output.js'
 
 const port = Number(process.env.PORT ?? 8787)
 const token = process.env.PULPO_WORKSPACE_TOKEN
@@ -17,6 +18,8 @@ const maxBody = Number(process.env.PULPO_WORKSPACE_MAX_BODY ?? 20 * 1024 * 1024)
 const maxImageBytes = Number(process.env.PULPO_WORKSPACE_MAX_IMAGE_BYTES ?? 20 * 1024 * 1024)
 const maxExportBytes = Number(process.env.PULPO_WORKSPACE_MAX_EXPORT_BYTES ?? 25 * 1024 * 1024)
 const maxFileBytes = Number(process.env.PULPO_WORKSPACE_MAX_FILE_BYTES ?? 1_000 * 1024 * 1024)
+const maxCommandOutputBytes = 10_000_000
+const savedOutputRoot = resolve(process.env.PULPO_WORKSPACE_TOOL_OUTPUT_DIR ?? '/tmp/pulpo-tool-output')
 if (!token || token.length < 32) throw new Error('PULPO_WORKSPACE_TOKEN must contain at least 32 characters')
 
 type Operation = { id: string; status: 'running' | 'completed' | 'failed' | 'cancelled'; output: string; exitCode: number | null; error?: string; details?: Record<string, unknown>; startedAt: string; completedAt?: string }
@@ -129,6 +132,7 @@ async function execute(id: string, type: string, args: Record<string, unknown>):
 
 async function finishOperation(operation: Operation, type: string, args: Record<string, unknown>): Promise<void> {
   const id = operation.id
+  let outputComplete = true
   try {
     if (type === 'bash') {
       const command = String(args.command ?? '')
@@ -138,7 +142,7 @@ async function finishOperation(operation: Operation, type: string, args: Record<
         children.set(id, child)
         const chunks: Buffer[] = []; let bytes = 0
         const collect = (chunk: Buffer) => {
-          if (bytes >= 10_000_000) return
+          if (bytes >= maxCommandOutputBytes) { outputComplete = false; return }
           chunks.push(chunk); bytes += chunk.length
           operation.output = Buffer.concat(chunks).toString('utf8')
         }
@@ -176,6 +180,10 @@ async function finishOperation(operation: Operation, type: string, args: Record<
       })
     } else if (type === 'stat') operation.output = JSON.stringify(await stat(workspacePath(args.path)))
     else throw new Error(`Unknown operation type: ${type}`)
+    if (['bash', 'list', 'find', 'grep'].includes(type)) {
+      const saved = await saveLargeOutput(savedOutputRoot, id, operation.output, outputComplete)
+      if (saved) operation.details = { ...operation.details, ...saved }
+    }
     if (operation.status !== 'cancelled') operation.status = 'completed'
   } catch (error) {
     operation.status = operation.status === 'cancelled' ? 'cancelled' : 'failed'

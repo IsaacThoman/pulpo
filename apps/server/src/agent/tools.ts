@@ -1,11 +1,14 @@
 import type { ToolImagePreview } from '@pulpo/contracts'
 import { Type } from '@earendil-works/pi-ai'
 import type { AgentTool } from '@earendil-works/pi-agent-core'
-import type { WorkspaceManager } from './controller.js'
+import type { WorkspaceManager, WorkspaceOperation } from './controller.js'
+import { savedToolOutput } from './tool-output-budget.js'
 import { boundLegacyReadOutput, isBoundedReadDetails, parseAgentReadArguments, READ_MAX_LINE_LIMIT, READ_MAX_OUTPUT_BYTES } from './bounded-read.js'
 
 const textResult = (output: string, details: unknown = {}) => ({ content: [{ type: 'text' as const, text: output }], details })
 const record = (value: unknown): Record<string, unknown> => value && typeof value === 'object' ? value as Record<string, unknown> : {}
+const savedOutputDetails = (details: unknown) => savedToolOutput(details) ?? {}
+const workspaceOutputResult = (operation: WorkspaceOperation) => textResult(operation.output, savedOutputDetails(operation.details))
 
 export function createWorkspaceTools(
   manager: WorkspaceManager,
@@ -59,13 +62,13 @@ export function createWorkspaceTools(
         await onOperationStarted?.(id)
         onUpdate?.(textResult('Command started…'))
       })
-      return textResult(result.output, { exitCode: result.exitCode })
+      return textResult(result.output, { exitCode: result.exitCode, ...savedOutputDetails(result.details) })
     }),
     tool('write', 'Create or replace a UTF-8 file in the workspace.', Type.Object({ path: Type.String(), content: Type.String() }), async (id, args, signal) => textResult((await manager.execute(id, 'write', record(args), signal, undefined, started(id))).output)),
     tool('edit', 'Replace one exact text occurrence in a workspace file.', Type.Object({ path: Type.String(), oldText: Type.String(), newText: Type.String() }), async (id, args, signal) => textResult((await manager.execute(id, 'edit', record(args), signal, undefined, started(id))).output)),
-    tool('ls', 'List files in a workspace directory.', Type.Object({ path: Type.Optional(Type.String()) }), async (id, args, signal) => textResult((await manager.execute(id, 'list', record(args), signal, undefined, started(id))).output)),
-    tool('find', 'Find files in the workspace.', Type.Object({ pattern: Type.String(), path: Type.Optional(Type.String()) }), async (id, args, signal) => textResult((await manager.execute(id, 'find', record(args), signal, undefined, started(id))).output)),
-    tool('grep', 'Search workspace files with ripgrep.', Type.Object({ pattern: Type.String(), path: Type.Optional(Type.String()) }), async (id, args, signal) => textResult((await manager.execute(id, 'grep', record(args), signal, undefined, started(id))).output)),
+    tool('ls', 'List files in a workspace directory.', Type.Object({ path: Type.Optional(Type.String()) }), async (id, args, signal) => workspaceOutputResult(await manager.execute(id, 'list', record(args), signal, undefined, started(id)))),
+    tool('find', 'Find files in the workspace.', Type.Object({ pattern: Type.String(), path: Type.Optional(Type.String()) }), async (id, args, signal) => workspaceOutputResult(await manager.execute(id, 'find', record(args), signal, undefined, started(id)))),
+    tool('grep', 'Search workspace files with ripgrep.', Type.Object({ pattern: Type.String(), path: Type.Optional(Type.String()) }), async (id, args, signal) => workspaceOutputResult(await manager.execute(id, 'grep', record(args), signal, undefined, started(id)))),
     tool('attach_file', 'Attach a completed workspace file to your response so the user can download it. Use this for files you created for the user, not for intermediate files.', Type.Object({ path: Type.String(), name: Type.Optional(Type.String()) }), async (id, args, signal) => {
       if (!onAttachFile) throw new Error('File attachments are unavailable')
       const values = record(args)
