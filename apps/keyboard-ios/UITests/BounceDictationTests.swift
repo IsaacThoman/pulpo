@@ -12,7 +12,7 @@ final class BounceDictationTests: XCTestCase {
     // Sign in once through the app.
     let app = XCUIApplication()
     app.launchArguments = ["-PKResetSettings"]
-    app.launchEnvironment["PK_TEST_LOGIN"] = "http://localhost:8091|tester@example.com|correct horse"
+    app.launchEnvironment["PK_TEST_LOGIN"] = "http://127.0.0.1:8091|tester@example.com|correct horse"
     app.launch()
     sleep(3)
     let signedIn = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'Stub Tester' OR value CONTAINS 'Stub Tester'")).firstMatch

@@ -14,7 +14,7 @@ final class DictationTests: XCTestCase {
     try XCTSkipUnless(stubAvailable(), "Start scripts/stub_pulpo_server.py first")
     let app = XCUIApplication()
     app.launchArguments = ["-PKPreview", "-PKResetLearning", "-PKResetSettings"]
-    app.launchEnvironment["PK_TEST_LOGIN"] = "http://localhost:8091|tester@example.com|correct horse"
+    app.launchEnvironment["PK_TEST_LOGIN"] = "http://127.0.0.1:8091|tester@example.com|correct horse"
     app.launch()
     XCTAssertTrue(app.key("key-q").waitForExistence(timeout: 8))
     sleep(2)

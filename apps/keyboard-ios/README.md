@@ -53,19 +53,23 @@ against `UITextDocumentProxy`, a `UITextView`, or a test double.
 **Autocorrect and prediction.** The dictionary is a memory-mapped trie of 160k words.
 `SpellCorrector` runs a weighted Damerau-Levenshtein search over it where substitution
 costs come from how far each touch landed from the intended key. `Suggester` combines
-that with a bigram language model and the person's learned words; a typed word is only
+that with an interpolated bigram/trigram language model and the person's learned words; a typed word is only
 replaced when the correction is clearly more likely. Deleting right after an
 autocorrection restores the typed word and stops correcting it. Contacts' names and iOS
-text replacements come from `UILexicon`.
+text replacements come from `UILexicon`. Apostrophes, accents, internal capitals, and
+low-confidence names are preserved. Contextual continuations also feed completions;
+unknown histories fall back to frequent safe words.
 
 **Slide to type.** `GlideDecoder` picks candidate words by the letters nearest the start
 and end of the swipe, rejects any whose letters the finger never passed in order, and
-scores the rest on letter alignment, how much of the path the word explains, unexplained
+scores the rest on letter alignment, how much of the path the word explains in order, unexplained
 sharp turns, extra length, and the language model.
 
 **Learning.** Words the person types twice, or keeps by undoing a correction or picking
 the quoted literal, become valid. Learned words and word pairs are stored on device in
-the App Group and can be cleared in the app. Nothing is learned in password, username,
+the App Group and can be cleared in the app. Decoder choices are learned only when
+accepted by another edit or keyboard dismissal, so undo and swipe alternatives do not
+reinforce discarded results. Nothing is learned in password, username,
 one-time code, email, URL, or other private fields.
 
 **Dictation.** iOS doesn't let keyboard extensions use the microphone, so the mic key
@@ -86,8 +90,10 @@ it the keyboard still types, corrects, predicts and swipes using defaults.
 cd apps/keyboard-ios/PulpoKeyboardKit && swift test -c release
 ```
 
-Covers dictionary loading, autocorrection cases, predictions, the typing state machine,
-and a synthetic swipe benchmark (600 frequent words with noisy, corner-cutting paths).
+Covers dictionary loading, spelling and literal-preservation cases, contextual predictions,
+the typing state machine, a full personal dictionary, and independent noisy swipe sets.
+For the reproducible quality audit and Gboard comparison, see
+[the keyboard quality audit](QUALITY_AUDIT.md).
 
 UI tests run on a simulator:
 
@@ -124,6 +130,9 @@ so the same paths can be replayed into, for example, Gboard on an Android emulat
 
 - AOSP LatinIME `en_US_wordlist.combined.gz` (Apache 2.0): words, frequencies and spelling shortcuts.
 - Tatoeba English sentences, `eng_sentences.tsv.bz2` (CC-BY 2.0 FR): next-word statistics.
+- Almeida & Hidalgo, [SMS Spam Collection](https://doi.org/10.24432/C5CC84), UCI (CC BY 4.0):
+  optional conversational bigrams. Only deduplicated ham messages are used; a stable
+  20% holdout is excluded from training. The compiled dictionary uses this input.
 - Unicode `emoji-test.txt` (Unicode License v3): emoji, order and skin tones.
 
 `scripts/extra_words.tsv` and `scripts/extra_shortcuts.tsv` add newer words and safe
@@ -133,5 +142,8 @@ contraction fixes. To rebuild:
 python3 scripts/build_language_data.py \
   --wordlist en_US_wordlist.combined.gz \
   --sentences eng_sentences.tsv.bz2 \
-  --emoji emoji-test.txt
+  --emoji emoji-test.txt --messages SMSSpamCollection
 ```
+
+Source versions and checksums are recorded in [LanguageData/README.md](LanguageData/README.md).
+Test the importer with `python3 -m unittest discover -s scripts -p 'test_language_data.py'`.
