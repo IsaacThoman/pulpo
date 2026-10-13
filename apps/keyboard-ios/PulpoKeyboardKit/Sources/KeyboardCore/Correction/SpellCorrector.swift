@@ -75,7 +75,7 @@ public final class SpellCorrector {
     switch length {
     case ...1: 0
     case 2: 3.3
-    case 3: 3.9
+    case 3: 4.3
     case 4: 5.2
     case 5...6: 7.0
     default: 9.0
@@ -177,7 +177,7 @@ public final class SpellCorrector {
         let deleted = rows[current + i - 1] + costs.deletion[i - 1]
         if deleted < value { value = deleted }
         if i >= 2, depth >= 2, typed[i - 1] == previous, typed[i - 2] == byte, typed[i - 1] != byte {
-          let transposed = rows[grand + i - 2] + Self.transposition(byte, previous!)
+          let transposed = rows[grand + i - 2] + Self.transposition(byte, previous!) + (depth == 2 && i == 2 ? Self.firstLetterPenalty : 0)
           if transposed < value { value = transposed }
         }
         rows[current + i] = value
@@ -232,11 +232,21 @@ public final class SpellCorrector {
 
   /// Direct cost between a typed word and a candidate key, for personal words outside the trie.
   public func cost(of word: TypedWord, against candidate: String) -> Double {
+    costEvaluator(for: word)(TextNormalizer.key(candidate))
+  }
+
+  /// Prepare the typed word once when matching a large personal vocabulary.
+  /// Candidate keys have already been normalized by PersonalDictionary.
+  func costEvaluator(for word: TypedWord) -> (String) -> Double {
     let keyed = word.keyed
     let typed = keyed.bytes
-    let target = Array(TextNormalizer.key(candidate).utf8)
-    guard !typed.isEmpty else { return .infinity }
     let costs = Costs(typed: typed, taps: keyed.taps, geometry: geometry)
+    return { candidateKey in Self.cost(costs: costs, target: Array(candidateKey.utf8)) }
+  }
+
+  private static func cost(costs: Costs, target: [UInt8]) -> Double {
+    let typed = costs.typed
+    guard !typed.isEmpty else { return .infinity }
     let n = typed.count
     let width = n + 1
     var rows = [Double](repeating: 0, count: (target.count + 1) * width)
@@ -251,7 +261,7 @@ public final class SpellCorrector {
       for i in 1...n {
         var value = min(rows[parent + i - 1] + costs.substitution(i - 1, byte), rows[parent + i] + insertion, rows[current + i - 1] + costs.deletion[i - 1])
         if i >= 2, depth >= 2, typed[i - 1] == previous, typed[i - 2] == byte, typed[i - 1] != byte {
-          value = min(value, rows[(depth - 2) * width + i - 2] + Self.transposition(byte, previous!))
+          value = min(value, rows[(depth - 2) * width + i - 2] + Self.transposition(byte, previous!) + (depth == 2 && i == 2 ? Self.firstLetterPenalty : 0))
         }
         rows[current + i] = value
       }

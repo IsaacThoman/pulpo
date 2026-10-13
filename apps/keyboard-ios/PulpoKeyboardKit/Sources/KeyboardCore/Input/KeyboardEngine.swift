@@ -61,6 +61,9 @@ public final class KeyboardEngine {
   var composing = TypedWord(text: "")
   var lastEdit: LastEdit = .none
   var rejected: Set<String> = []
+  /// Decoder choices are tentative until the next edit or keyboard dismissal.
+  /// Undoing or replacing one must not teach the original mistake.
+  private var pendingLearning: (word: String, context: (word: String?, sentenceStart: Bool))?
   /// After a swipe, a space is owed before the next word but not before punctuation.
   public private(set) var phantomSpace = false
   private var lastShiftTap: TimeInterval = -1
@@ -68,6 +71,7 @@ public final class KeyboardEngine {
   private var typedWhileShiftHeld = false
   private var expectedContext: String?
   private var lastOwnEdit: TimeInterval = -10
+  private var lastSpaceTime: TimeInterval = -.infinity
   /// Counters for on-device diagnostics; no text is recorded.
   public private(set) var laggingContextUpdates = 0
   public private(set) var externalContextChanges = 0
@@ -96,6 +100,7 @@ public final class KeyboardEngine {
   /// Types one key. Letters follow the shift state; `tap` feeds the spatial typo model.
   public func insertCharacter(_ key: String, tap: KeyPoint? = nil) {
     guard let first = key.first else { return }
+    acceptPendingLearning()
     let isLetter = first.isLetter
     var text = key
     if isLetter, shift.isActive || shiftHeld { text = key.uppercased() }
@@ -136,7 +141,10 @@ public final class KeyboardEngine {
   }
 
   public func insertSpace() {
+    acceptPendingLearning()
+    let now = clock()
     defer {
+      lastSpaceTime = now
       if page != .letters { page = .letters }
       finishEdit()
     }
@@ -150,7 +158,7 @@ public final class KeyboardEngine {
       commitComposing(separator: " ")
       return
     }
-    if settings.doubleSpacePeriod, policy.smartSpacing, lastEditEndedWithSpace, before.hasSuffix(" ") {
+    if settings.doubleSpacePeriod, policy.smartSpacing, lastEditEndedWithSpace, now - lastSpaceTime < 0.8, before.hasSuffix(" ") {
       let trimmed = before.dropLast()
       if let previous = trimmed.last, previous.isLetter || previous.isNumber || previous == ")" || previous == "\u{201D}" || previous == "\"" {
         document.deleteBackward()
@@ -172,6 +180,7 @@ public final class KeyboardEngine {
   }
 
   public func insertReturn() {
+    acceptPendingLearning()
     phantomSpace = false
     if !composing.isEmpty {
       commitComposing(separator: "\n")
@@ -185,6 +194,7 @@ public final class KeyboardEngine {
   /// Inserts text from outside the key grid (emoji, dictation, `.com`).
   public func insertText(_ text: String, spacing: Bool = false) {
     guard !text.isEmpty else { return }
+    acceptPendingLearning()
     if !composing.isEmpty {
       learn(composing.text)
       composing = TypedWord(text: "")
@@ -216,6 +226,7 @@ public final class KeyboardEngine {
   // MARK: Deletion
 
   public func deleteBackward() {
+    pendingLearning = nil
     phantomSpace = false
     switch lastEdit {
     case let .autocorrected(original, inserted, separator) where before.hasSuffix(inserted + separator):
@@ -249,6 +260,7 @@ public final class KeyboardEngine {
 
   /// Deletes back to the start of the previous word, as delete-key repeat does once it speeds up.
   public func deleteWordBackward() {
+    pendingLearning = nil
     phantomSpace = false
     let text = before
     guard !text.isEmpty else { return }
@@ -311,9 +323,10 @@ public final class KeyboardEngine {
     switch suggestion.kind {
     case .alternative:
       if case let .glided(word, alternatives) = lastEdit, before.hasSuffix(word) {
+        let originalContext = pendingLearning?.context ?? context
         for _ in 0..<word.count { document.deleteBackward() }
         document.insertText(text)
-        learn(text, context: context)
+        pendingLearning = (text, originalContext)
         lastEdit = .glided(word: text, alternatives: alternatives)
         phantomSpace = true
         finishEdit()
@@ -332,6 +345,7 @@ public final class KeyboardEngine {
     default:
       break
     }
+    acceptPendingLearning()
     if !composing.isEmpty {
       for _ in 0..<composing.text.count { document.deleteBackward() }
       composing = TypedWord(text: "")
@@ -349,7 +363,7 @@ public final class KeyboardEngine {
   /// Decodes a swipe and inserts the best word with automatic spacing.
   @discardableResult
   public func insertGlide(_ points: [KeyPoint]) -> [GlideCandidate] {
-    guard let glide else { return [] }
+    guard policy.allowsGlide, let glide else { return [] }
     // Decode before touching the document, so a path that fits no word changes nothing.
     var candidates = glide.decode(points, context: languageContext(), limit: 4)
     guard !candidates.isEmpty else { return [] }
@@ -361,6 +375,7 @@ public final class KeyboardEngine {
       finishEdit()
       return []
     }
+    acceptPendingLearning()
     let transform: (String) -> String = { word in
       switch self.shift {
       case .locked: word.uppercased()
@@ -375,7 +390,7 @@ public final class KeyboardEngine {
       document.insertText(" ")
     }
     document.insertText(word)
-    learn(word, context: wordContext)
+    pendingLearning = (word, wordContext)
     let alternatives = candidates.dropFirst().map { candidate -> String in
       let text = transform(candidate.text)
       return policy.smartQuotes ? Self.curlyApostrophes(text) : text
@@ -401,7 +416,7 @@ public final class KeyboardEngine {
       let inserted = policy.smartQuotes ? Self.curlyApostrophes(replacement) : replacement
       for _ in 0..<typed.text.count { document.deleteBackward() }
       document.insertText(inserted + separator)
-      learn(replacement, context: context)
+      pendingLearning = (replacement, context)
       lastEdit = .autocorrected(original: typed, inserted: inserted, separator: separator)
     } else {
       document.insertText(separator)
@@ -431,6 +446,12 @@ public final class KeyboardEngine {
     personal.learn(stored, after: context.word)
   }
 
+  private func acceptPendingLearning() {
+    guard let pending = pendingLearning else { return }
+    pendingLearning = nil
+    learn(pending.word, context: pending.context)
+  }
+
   // MARK: Context
 
   /// Re-reads the document after the host changed text or moved the cursor.
@@ -450,6 +471,7 @@ public final class KeyboardEngine {
         externalContextChanges += 1
         phantomSpace = false
         lastEdit = .none
+        pendingLearning = nil
         deriveComposing()
       }
       expectedContext = current
@@ -506,7 +528,19 @@ public final class KeyboardEngine {
   func languageContext() -> LanguageContext {
     guard let model = suggester?.model else { return .unknown }
     let previous = previousWord()
-    return model.context(previousWord: previous.word, sentenceStart: previous.sentenceStart)
+    // Read the preceding word from the same cursor window. Sentence punctuation
+    // ends the history, so predictions never borrow context from another sentence.
+    var prefix = before.dropLast(composing.text.count)
+    while let last = prefix.last, !Self.isWordCharacter(last) { prefix = prefix.dropLast() }
+    if let word = previous.word { prefix = prefix.dropLast(word.count) }
+    while let last = prefix.last, last.isWhitespace && !last.isNewline { prefix = prefix.dropLast() }
+    var preceding = ""
+    while let last = prefix.last, Self.isWordCharacter(last) {
+      preceding.insert(last, at: preceding.startIndex)
+      prefix = prefix.dropLast()
+    }
+    return model.context(previousWord: previous.word, sentenceStart: previous.sentenceStart,
+                         precedingWord: preceding.isEmpty ? nil : preceding.replacingOccurrences(of: "\u{2019}", with: "'"))
   }
 
   func atSentenceStart(_ text: String) -> Bool {
@@ -584,6 +618,7 @@ public final class KeyboardEngine {
 
   /// Persists learned words; call when the keyboard goes away.
   public func save() {
+    acceptPendingLearning()
     personal?.save()
   }
 }

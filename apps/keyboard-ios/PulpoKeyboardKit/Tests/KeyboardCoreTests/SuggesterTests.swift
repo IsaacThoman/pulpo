@@ -21,17 +21,12 @@ struct SuggesterTests {
     return suggester.suggestions(for: typed(text), context: context, autocorrect: true).autocorrection
   }
 
-  @Test(arguments: [
-    ("teh", "the"), ("hwllo", "hello"), ("recieve", "receive"), ("becuase", "because"), ("adress", "address"),
-    ("definately", "definitely"), ("wierd", "weird"), ("thw", "the"), ("tommorow", "tomorrow"), ("dont", "don't"),
-    ("im", "I'm"), ("i", "I"), ("iphone", "iPhone"), ("cant", "can't"), ("somthing", "something"), ("wouldnt", "wouldn't"),
-    ("Teh", "The"), ("TEH", "THE"), ("thier", "their"), ("yuo", "you"), ("acheive", "achieve"), ("goign", "going"),
-  ])
+  @Test(arguments: KeyboardQualityTests.typos + [("i", "I"), ("iphone", "iPhone"), ("Teh", "The"), ("TEH", "THE")])
   func correctsCommonTypos(input: String, expected: String) {
-    #expect(correction(input, after: "and") == expected)
+    #expect((correction(input, after: "and") ?? input) == expected)
   }
 
-  @Test(arguments: ["hello", "form", "its", "well", "were", "lol", "ok", "the", "a", "Monday", "email", "app", "AI"])
+  @Test(arguments: KeyboardQualityTests.literals)
   func leavesRealWordsAlone(word: String) {
     #expect(correction(word, after: "and") == nil)
   }
@@ -54,6 +49,53 @@ struct SuggesterTests {
     #expect(suggester.predictions(context: model.context(previousWord: "thank", sentenceStart: false)).slots.map(\.text).contains("you"))
     #expect(suggester.predictions(context: model.context(previousWord: nil, sentenceStart: true)).slots.map(\.text).contains("I"))
     #expect(suggester.predictions(context: model.context(previousWord: "going", sentenceStart: false)).slots.map(\.text).contains("to"))
+  }
+
+  @Test func predictionsUseTwoWordsOfContext() {
+    let context = model.context(previousWord: "my", sentenceStart: false, precedingWord: "on")
+    #expect(context.trigram != nil)
+    #expect(model.predictions(in: context, limit: 3).map(\.word).contains("way"))
+    let greeting = model.context(previousWord: "are", sentenceStart: false, precedingWord: "how")
+    #expect(model.predictions(in: greeting, limit: 3).first?.word == "you")
+  }
+
+  @Test func unknownAndSparseHistoriesStillOfferSafePredictions() {
+    let context = model.context(previousWord: "Zorbly", sentenceStart: false)
+    let words = model.predictions(in: context, limit: 3).map(\.word)
+    #expect(words.count == 3)
+    #expect(!words.contains { model.personal.isBlocked($0) })
+    #expect(model.predictions(in: context, limit: 0).isEmpty)
+    model.personal.forget(words[0])
+    #expect(!model.predictions(in: context, limit: 3).map(\.word).contains(words[0]))
+  }
+
+  @Test func forgettingASentenceCapitalizedPredictionHidesItsOtherForms() {
+    let personal = model.personal
+    personal.pin("hello")
+    personal.learn("hello", after: "say")
+    personal.forget("Hello")
+    #expect(personal.count(of: "hello") == 0)
+    #expect(personal.pairCount("say", "hello") == 0)
+    #expect(personal.isBlocked("hello"))
+    #expect(personal.isBlocked("HELLO"))
+    #expect(!suggester.predictions(context: model.context(previousWord: "say", sentenceStart: false)).slots.map(\.text).contains("hello"))
+    personal.pin("hello")
+    #expect(!personal.isBlocked("Hello"))
+  }
+
+  @Test func contextAlsoGuidesCompletions() {
+    let context = model.context(previousWord: "my", sentenceStart: false, precedingWord: "on")
+    let set = suggester.suggestions(for: typed("wa"), context: context, autocorrect: false)
+    #expect(set.slots.map(\.text).contains("way"))
+    #expect(set.autocorrection == nil)
+    model.personal.pin("Zorbly")
+    let personal = suggester.suggestions(for: typed("Zor"), context: .unknown, autocorrect: false)
+    #expect(personal.slots.map(\.text).contains("Zorbly"))
+  }
+
+  @Test func dictionaryErrorEntriesAreNotValidSpellings() {
+    #expect(!suggester.isValid("wierd"))
+    #expect(correction("wierd", after: "is") == "weird")
   }
 
   @Test func appliesTextReplacements() {
@@ -80,6 +122,16 @@ struct SuggesterTests {
     #expect(suggester.suggestions(for: word, context: context, autocorrect: true).autocorrection == "cat")
   }
 
+  @Test(arguments: ["we're", "we’re", "don't", "don’t", "I'll", "ill", "résumé", "naïve", "café", "fooBar", "SwiftUI", "TypeScript", "Thoman", "Mireya", "npm", "pnpm"])
+  func preservesIntentionalSpelling(word: String) {
+    #expect(correction(word, after: "and") == nil)
+  }
+
+  @Test(arguments: [("youre", "you're"), ("theres", "there's"), ("togther", "together")])
+  func prefersSafeSpellingOverAnUnrelatedFrequentWord(input: String, expected: String) {
+    #expect(correction(input, after: "and") == expected)
+  }
+
   @Test func suggestionsAreFastEnoughForEveryKeystroke() {
     let context = model.context(previousWord: "the", sentenceStart: false)
     let words = ["t", "th", "the", "thw", "inter", "interes", "internat", "becuase", "acommodate", "xylophon"]
@@ -92,5 +144,25 @@ struct SuggesterTests {
     }
     print("Slowest suggestion pass: \(worst)")
     #expect(worst < .milliseconds(25))
+  }
+
+  @Test func suggestionsStayResponsiveWithAFullPersonalDictionary() {
+    let personal = PersonalDictionary(url: nil)
+    for index in 0..<PersonalDictionary.maximumWords {
+      var number = index
+      var suffix = ""
+      for _ in 0..<4 {
+        suffix.append(Character(UnicodeScalar(97 + number % 26)!))
+        number /= 26
+      }
+      personal.pin("name" + suffix)
+    }
+    let (_, suggester, _) = Fixtures.stack(personal: personal)
+    let clock = ContinuousClock()
+    let time = (0..<3).map { _ in clock.measure {
+      _ = suggester.suggestions(for: TypedWord(text: "nametyp"), context: .unknown, autocorrect: true)
+    } }.min()!
+    print("Full personal dictionary suggestion time: \(time)")
+    #expect(time < .milliseconds(25))
   }
 }

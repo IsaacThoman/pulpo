@@ -13,7 +13,7 @@ struct KeyboardEngineTests {
   @Test func autocorrectsOnSpaceAndPunctuation() {
     let (engine, document) = Fixtures.engine()
     engine.type("i think teh cat is wierd.")
-    #expect(document.text == "I think the cat is weird.")
+    #expect(document.text == "I think the cat is weird.", "Actual text: \(document.text)")
   }
 
   @Test func deleteRightAfterAutocorrectRestoresTheTypedWord() {
@@ -39,6 +39,26 @@ struct KeyboardEngineTests {
     let (engine, document) = Fixtures.engine(settings: settings)
     engine.type("ok  so")
     #expect(document.text == "Ok  so")
+  }
+
+  @Test func doubleSpaceAfterAPauseStaysTwoSpaces() {
+    let (engine, document) = Fixtures.engine()
+    var time = 10.0
+    engine.clock = { time }
+    engine.type("hello ")
+    time += 2
+    engine.insertSpace()
+    #expect(document.text == "Hello  ")
+  }
+
+  @Test func disabledSwipeDoesNotEditOrLearn() {
+    var settings = KeyboardSettings()
+    settings.swipeTyping = false
+    let (engine, document) = Fixtures.engine("and ", settings: settings)
+    var generator = SeededGenerator(state: 1)
+    #expect(engine.insertGlide(SyntheticSwipe.points(for: "hello", noise: 0, generator: &generator)).isEmpty)
+    #expect(document.text == "and ")
+    #expect(engine.suggester!.model.personal.totalCount == 0)
   }
 
   @Test func shiftTapAndCapsLock() {
@@ -128,6 +148,35 @@ struct KeyboardEngineTests {
     #expect(document.text == "I want \(alternative.text)")
   }
 
+  @Test func replacingOrDeletingASwipeDoesNotTeachTheWrongWord() throws {
+    let (engine, _) = Fixtures.engine("I want ")
+    var generator = SeededGenerator(state: 9)
+    engine.insertGlide(SyntheticSwipe.points(for: "to", noise: 0, generator: &generator))
+    let personal = engine.suggester!.model.personal
+    #expect(personal.count(of: "to") == 0)
+    let alternative = try #require(engine.suggestions.slots.first { $0.text != "to" })
+    engine.select(alternative)
+    engine.insertSpace()
+    #expect(personal.count(of: "to") == 0)
+    #expect(personal.pairCount("want", alternative.text) == 1)
+    #expect(personal.pairCount("to", alternative.text) == 0)
+    engine.insertGlide(SyntheticSwipe.points(for: "hello", noise: 0, generator: &generator))
+    engine.deleteBackward()
+    engine.save()
+    #expect(personal.count(of: "hello") == 0)
+  }
+
+  @Test func undoingAutocorrectDoesNotTeachTheCorrection() {
+    let (engine, _) = Fixtures.engine("and ")
+    engine.type("teh ")
+    let personal = engine.suggester!.model.personal
+    #expect(personal.count(of: "the") == 0)
+    engine.deleteBackward()
+    engine.insertSpace()
+    #expect(personal.count(of: "the") == 0)
+    #expect(personal.isKnown("teh"))
+  }
+
   @Test func suggestionTapAddsASpaceThatPunctuationTakesBack() throws {
     let (engine, document) = Fixtures.engine("I like ")
     engine.type("beau")
@@ -141,6 +190,16 @@ struct KeyboardEngineTests {
   @Test func predictionsAppearAfterASpace() {
     let (engine, _) = Fixtures.engine("Thank ")
     #expect(engine.suggestions.slots.map(\.text).contains("you"))
+  }
+
+  @Test func cursorContextIncludesTwoWordsButStopsAtSentenceBoundaries() {
+    let (engine, _) = Fixtures.engine("on my ")
+    #expect(engine.suggestions.slots.map(\.text).contains("way"))
+    #expect(engine.languageContext().trigram != nil)
+    let (separate, _) = Fixtures.engine("on. my ")
+    #expect(separate.languageContext().trigram == nil)
+    let (newline, _) = Fixtures.engine("on\nmy ")
+    #expect(newline.languageContext().trigram == nil)
   }
 
   @Test func deleteWordRemovesThePreviousWord() {

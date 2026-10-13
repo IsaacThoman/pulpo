@@ -21,11 +21,13 @@ public final class GlideDecoder {
   public var shapeSigma = 0.32
   public var shapeWeight = 10.0
   public var languageWeight = 0.9
-  public var passageRadius = 0.95
+  public var passageRadius = 1.1
   /// Sharp turns in the swipe should sit on a letter of the word.
   public var cornerSigma = 0.45
   public var cornerAngle = 0.9
   public var maximumCandidates = 6_000
+  public var endpointRadius = 1.5
+  public var endpointLetterLimit = 4
 
   public init(model: LanguageModel, geometry: LetterGeometry = .qwerty) {
     self.model = model
@@ -77,8 +79,8 @@ public final class GlideDecoder {
     let gestureLength = Self.length(of: points)
     let samples = Self.resample(points, count: sampleCount)
     let corners = Self.corners(in: samples, length: gestureLength, threshold: cornerAngle)
-    let starts = geometry.letters(near: first, radius: 1.25, limit: 3)
-    let ends = geometry.letters(near: last, radius: 1.25, limit: 3)
+    let starts = geometry.letters(near: first, radius: endpointRadius, limit: endpointLetterLimit)
+    let ends = geometry.letters(near: last, radius: endpointRadius, limit: endpointLetterLimit)
     guard !starts.isEmpty, !ends.isEmpty else { return [] }
 
     var scored: [String: Double] = [:]
@@ -114,8 +116,9 @@ public final class GlideDecoder {
         }
       }
     }
-    for word in model.personal.knownWords {
-      let key = Array(TextNormalizer.key(word).utf8)
+    for entry in model.personal.knownEntries {
+      let word = entry.text
+      let key = Array(entry.key.utf8)
       guard key.count >= 2, let head = key.first, let tail = key.last, starts.contains(head), ends.contains(tail),
             key.allSatisfy({ $0 >= 97 && $0 <= 122 }) else { continue }
       consider(text: word, id: lexicon.id(of: word), key: key)
@@ -167,14 +170,22 @@ public final class GlideDecoder {
 
     // How far the swipe strays from the ideal path, which rejects words that skip
     // a corner the finger clearly made.
-    var stray = 0.0
+    // Match the path in order. Taking the nearest segment independently lets a
+    // word explain a loop by jumping backwards and forwards along its template.
+    // This monotonic alignment has the same O(samples * letters) work as the
+    // nearest-segment search, but preserves the direction of the gesture.
+    var previousShape = [Double](repeating: .infinity, count: k - 1)
+    var shapeRow = previousShape
+    previousShape[0] = 0
     for sample in samples {
-      var best = Double.infinity
+      var runningMinimum = Double.infinity
       for index in 1..<k {
-        best = min(best, Self.segmentDistanceSquared(sample, template[index - 1], template[index]))
+        runningMinimum = min(runningMinimum, previousShape[index - 1])
+        shapeRow[index - 1] = runningMinimum + Self.segmentDistanceSquared(sample, template[index - 1], template[index])
       }
-      stray += best
+      swap(&previousShape, &shapeRow)
     }
+    let stray = previousShape[k - 2]
     let shapeScore = shapeWeight * stray / Double(n) / (2 * shapeSigma * shapeSigma)
 
     // A turn the word's letters don't explain means the finger was going somewhere else.

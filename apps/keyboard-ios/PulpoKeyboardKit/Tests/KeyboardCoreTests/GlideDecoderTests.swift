@@ -31,6 +31,14 @@ struct GlideDecoderTests {
     #expect(decode("dont", after: "I").contains("don't"))
   }
 
+  @Test func decodesUnsmoothedKeyCenterPaths() {
+    for word in ["hello", "there", "keyboard", "minimum", "people", "tomorrow"] {
+      let points = TextNormalizer.key(word).utf8.compactMap { glide.geometry.center($0) }
+      let context = model.context(previousWord: nil, sentenceStart: true)
+      #expect(glide.decode(points, context: context).first?.text.lowercased() == word)
+    }
+  }
+
   @Test func accuracyOnNoisySwipes() throws {
     let lexicon = model.lexicon
     // The most frequent swipeable words, which is what people swipe most.
@@ -65,5 +73,27 @@ struct GlideDecoderTests {
     #expect(Double(top1) / total > 0.8)
     #expect(Double(top3) / total > 0.93)
     #expect(worst < .milliseconds(60))
+  }
+
+  @Test func accuracyOnIndependentStressGestures() {
+    let lexicon = model.lexicon
+    let ids = (0..<lexicon.wordCount).filter { lexicon.flags($0).contains(.glide) && lexicon.keyLength($0) >= 3 }
+      .sorted { lexicon.frequency($0) != lexicon.frequency($1) ? lexicon.frequency($0) > lexicon.frequency($1) : $0 < $1 }
+    var seen = Set<String>()
+    let words = ids.compactMap { id -> String? in
+      let word = lexicon.display(id)
+      return word == word.lowercased() && seen.insert(word).inserted ? word : nil
+    }.prefix(1200)
+    var top1 = 0, top3 = 0
+    for (index, word) in words.enumerated() {
+      var generator = SeededGenerator(state: UInt64(index + 1897))
+      let points = SyntheticSwipe.points(for: word, noise: 0.35, generator: &generator)
+      let candidates = glide.decode(points, context: .unknown, limit: 3).map(\.text)
+      if candidates.first == word { top1 += 1 }
+      if candidates.contains(word) { top3 += 1 }
+    }
+    print("Independent stress swipes: \(top1)/\(words.count) top1, \(top3) top3")
+    #expect(Double(top1) / Double(words.count) > 0.85)
+    #expect(Double(top3) / Double(words.count) > 0.95)
   }
 }

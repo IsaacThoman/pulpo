@@ -8,6 +8,8 @@ public struct WordFlags: OptionSet, Sendable {
   public static let capitalized = WordFlags(rawValue: 1 << 2)
   public static let abbreviation = WordFlags(rawValue: 1 << 3)
   public static let informal = WordFlags(rawValue: 1 << 4)
+  /// AOSP spelling-error entries carry shortcuts; they are never valid literals.
+  public static let notAWord = WordFlags(rawValue: 1 << 5)
 }
 
 /// One node of the key trie. Every node owns the contiguous word range `lo..<hi`
@@ -50,6 +52,11 @@ public final class Lexicon: @unchecked Sendable {
   private let bigramIDs: MappedArray<UInt32>
   private let bigramScores: MappedArray<UInt8>
   private let bigramBackoffs: MappedArray<UInt8>
+  private let trigramHistories: MappedArray<UInt64>?
+  private let trigramOffsets: MappedArray<UInt32>?
+  private let trigramIDs: MappedArray<UInt32>?
+  private let trigramScores: MappedArray<UInt8>?
+  private let trigramWeights: MappedArray<UInt8>?
 
   public enum LoadError: Error { case badHeader, missingSection(String), badMetadata }
 
@@ -116,6 +123,17 @@ public final class Lexicon: @unchecked Sendable {
     bigramScores = MappedArray(base: bigramScoreSection.0, byteCount: bigramScoreSection.1)
     let backoffSection = try section("BGBO")
     bigramBackoffs = MappedArray(base: backoffSection.0, byteCount: backoffSection.1)
+    // Optional sections keep dictionaries built before trigram support readable.
+    trigramHistories = sections["TGHI"].map { MappedArray(base: $0.0, byteCount: $0.1) }
+    trigramOffsets = sections["TGOF"].map { MappedArray(base: $0.0, byteCount: $0.1) }
+    trigramIDs = sections["TGID"].map { MappedArray(base: $0.0, byteCount: $0.1) }
+    trigramScores = sections["TGSC"].map { MappedArray(base: $0.0, byteCount: $0.1) }
+    trigramWeights = sections["TGWT"].map { MappedArray(base: $0.0, byteCount: $0.1) }
+    if let histories = trigramHistories {
+      guard let offsets = trigramOffsets, let ids = trigramIDs, let scores = trigramScores, let weights = trigramWeights,
+            offsets.count == histories.count + 1, weights.count == histories.count,
+            ids.count == scores.count, Int(offsets[offsets.count - 1]) == ids.count else { throw LoadError.badHeader }
+    }
 
     let shortcutSection = try section("SHRT")
     var table: [String: String] = [:]
@@ -259,6 +277,34 @@ public final class Lexicon: @unchecked Sendable {
       return -Double(bigramScores[position]) / bigramQuant
     }
     return -Double(bigramBackoffs[history]) / bigramQuant + unigramLogProbability(id)
+  }
+
+  public func trigramHistory(preceding: Int, previous: Int) -> Int? {
+    guard let histories = trigramHistories else { return nil }
+    let key = UInt64(preceding) << 32 | UInt64(previous)
+    var low = 0, high = histories.count
+    while low < high {
+      let middle = (low + high) / 2
+      if histories[middle] < key { low = middle + 1 } else { high = middle }
+    }
+    return low < histories.count && histories[low] == key ? low : nil
+  }
+
+  public func trigramSuccessors(of history: Int) -> Range<Int> {
+    guard let offsets = trigramOffsets else { return 0..<0 }
+    return Int(offsets[history])..<Int(offsets[history + 1])
+  }
+
+  public func trigramSuccessor(at position: Int) -> (id: Int, logProbability: Double) {
+    (Int(trigramIDs![position]), -Double(trigramScores![position]) / bigramQuant)
+  }
+
+  public func trigramWeight(of history: Int) -> Double { Double(trigramWeights![history]) / 255 }
+
+  /// Frequent safe words, retrieved from the trie without scanning the lexicon
+  /// at keyboard startup. Used when a history has few or no successors.
+  public func frequentWords(limit: Int) -> [Int] {
+    SpellCorrector(lexicon: self).completions(of: [(node: 0, cost: 0)], limit: limit, excluding: 0).map(\.id)
   }
 }
 

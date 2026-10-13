@@ -5,6 +5,7 @@ public struct LanguageContext: Sendable, Equatable {
   /// Lexicon history index, or `nil` when the previous word is unknown.
   public var history: Int?
   public var previousWord: String?
+  public var trigram: Int? = nil
 
   public static let unknown = LanguageContext(history: nil, previousWord: nil)
 }
@@ -14,16 +15,21 @@ public final class LanguageModel {
   public let lexicon: Lexicon
   public let personal: PersonalDictionary
   static let floor = -26.0
+  private lazy var fallbackWords = lexicon.frequentWords(limit: 32)
 
   public init(lexicon: Lexicon, personal: PersonalDictionary) {
     self.lexicon = lexicon
     self.personal = personal
   }
 
-  public func context(previousWord: String?, sentenceStart: Bool) -> LanguageContext {
+  public func context(previousWord: String?, sentenceStart: Bool, precedingWord: String? = nil) -> LanguageContext {
     if sentenceStart { return LanguageContext(history: lexicon.sentenceStart, previousWord: nil) }
     guard let previousWord, !previousWord.isEmpty else { return .unknown }
-    return LanguageContext(history: lexicon.id(of: previousWord), previousWord: previousWord)
+    let history = lexicon.id(of: previousWord)
+    let trigram = precedingWord.flatMap { lexicon.id(of: $0) }.flatMap { earlier in
+      history.flatMap { lexicon.trigramHistory(preceding: earlier, previous: $0) }
+    }
+    return LanguageContext(history: history, previousWord: previousWord, trigram: trigram)
   }
 
   /// Personal evidence gets more weight as the person types more.
@@ -35,6 +41,17 @@ public final class LanguageModel {
   public func logProbability(of word: String, id: Int?, in context: LanguageContext) -> Double {
     var probability = 0.0
     if let id { probability = exp(lexicon.logProbability(of: id, after: context.history)) }
+    if let trigram = context.trigram {
+      let weight = lexicon.trigramWeight(of: trigram)
+      var conditional = 0.0
+      if let id {
+        for position in lexicon.trigramSuccessors(of: trigram) {
+          let entry = lexicon.trigramSuccessor(at: position)
+          if entry.id == id { conditional = exp(entry.logProbability); break }
+        }
+      }
+      probability = (1 - weight) * probability + weight * conditional
+    }
     let weight = personalWeight
     if weight > 0 {
       var personalProbability = 0.0
@@ -57,6 +74,16 @@ public final class LanguageModel {
   /// Likely next words, best first. Words flagged as never-suggest are skipped.
   public func predictions(in context: LanguageContext, limit: Int) -> [(word: String, logProbability: Double)] {
     var scored: [String: Double] = [:]
+    guard limit > 0 else { return [] }
+    func add(_ id: Int) {
+      guard !lexicon.flags(id).contains(.neverSuggest) else { return }
+      let word = lexicon.display(id)
+      guard !personal.isBlocked(word) else { return }
+      scored[word] = max(scored[word] ?? -.infinity, logProbability(of: word, id: id, in: context))
+    }
+    if let trigram = context.trigram {
+      for position in lexicon.trigramSuccessors(of: trigram) { add(lexicon.trigramSuccessor(at: position).id) }
+    }
     if let history = context.history {
       for position in lexicon.successors(of: history) {
         let entry = lexicon.successor(at: position)
@@ -71,6 +98,10 @@ public final class LanguageModel {
       for (word, _) in personal.successors(of: previous).prefix(limit * 2) where !personal.isBlocked(word) {
         scored[word] = max(scored[word] ?? -.infinity, logProbability(of: word, id: lexicon.id(of: word), in: context))
       }
+    }
+    // Unknown names and sparse histories should still offer usable next words.
+    if scored.count < limit {
+      for id in fallbackWords { add(id) }
     }
     return scored.map { ($0.key, $0.value) }
       .sorted { $0.1 != $1.1 ? $0.1 > $1.1 : $0.0 < $1.0 }

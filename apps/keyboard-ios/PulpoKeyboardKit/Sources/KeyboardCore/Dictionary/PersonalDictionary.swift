@@ -24,6 +24,7 @@ public final class PersonalDictionary {
   private var pairs: [String: Int] = [:]
   private var successors: [String: [String: Int]] = [:]
   private var blocked: Set<String> = []
+  private var blockedKeys: Set<String> = []
   private var byKey: [String: [String]] = [:]
   private(set) public var totalCount = 0
   private var dirty = false
@@ -31,6 +32,11 @@ public final class PersonalDictionary {
   /// Names and other words that are valid but never persisted (contacts, text replacements).
   private var transientWords: Set<String> = []
   private var transientByKey: [String: [String]] = [:]
+  struct KnownWord {
+    var text: String
+    var key: String
+  }
+  private var knownCache: [KnownWord]?
 
   public init(url: URL?) {
     self.url = url
@@ -39,10 +45,12 @@ public final class PersonalDictionary {
     words = snapshot.words
     pairs = snapshot.pairs
     blocked = Set(snapshot.blocked)
+    blockedKeys = Set(snapshot.blocked.map(TextNormalizer.key))
     rebuildIndexes()
   }
 
   private func rebuildIndexes() {
+    knownCache = nil
     byKey = [:]
     totalCount = 0
     for (word, entry) in words {
@@ -60,6 +68,7 @@ public final class PersonalDictionary {
 
   public func learn(_ word: String, after previous: String?, pinned: Bool = false) {
     guard !word.isEmpty, word.count <= 40 else { return }
+    knownCache = nil
     let now = Date().timeIntervalSince1970
     if var entry = words[word] {
       entry.count += 1
@@ -71,7 +80,9 @@ public final class PersonalDictionary {
       byKey[TextNormalizer.key(word), default: []].append(word)
     }
     totalCount += 1
-    blocked.remove(word)
+    let learnedKey = TextNormalizer.key(word)
+    blocked = blocked.filter { TextNormalizer.key($0) != learnedKey }
+    blockedKeys.remove(learnedKey)
     if let previous, !previous.isEmpty {
       let history = previous.lowercased()
       pairs[history + "\u{1F}" + word, default: 0] += 1
@@ -82,6 +93,7 @@ public final class PersonalDictionary {
   }
 
   public func pin(_ word: String) {
+    knownCache = nil
     if words[word] == nil {
       learn(word, after: nil, pinned: true)
     } else {
@@ -92,14 +104,21 @@ public final class PersonalDictionary {
 
   /// Removes a learned word and hides it from suggestions, including dictionary words.
   public func forget(_ word: String) {
-    if let entry = words.removeValue(forKey: word) {
-      totalCount -= entry.count
-      let key = TextNormalizer.key(word)
-      byKey[key]?.removeAll { $0 == word }
+    knownCache = nil
+    let key = TextNormalizer.key(word)
+    let forms = byKey.removeValue(forKey: key) ?? []
+    for form in forms {
+      if let entry = words.removeValue(forKey: form) { totalCount -= entry.count }
     }
-    pairs = pairs.filter { !$0.key.hasSuffix("\u{1F}" + word) }
-    for history in successors.keys { successors[history]?.removeValue(forKey: word) }
+    pairs = pairs.filter { pair, _ in
+      let target = pair.split(separator: "\u{1F}", maxSplits: 1).last.map(String.init) ?? ""
+      return TextNormalizer.key(target) != key
+    }
+    for history in successors.keys {
+      successors[history] = successors[history]?.filter { TextNormalizer.key($0.key) != key }
+    }
     blocked.insert(word)
+    blockedKeys.insert(key)
     dirty = true
   }
 
@@ -107,6 +126,7 @@ public final class PersonalDictionary {
     words = [:]
     pairs = [:]
     blocked = []
+    blockedKeys = []
     rebuildIndexes()
     dirty = true
     save()
@@ -134,7 +154,9 @@ public final class PersonalDictionary {
     return entry.pinned || entry.count >= 2
   }
 
-  public func isBlocked(_ word: String) -> Bool { blocked.contains(word) }
+  public func isBlocked(_ word: String) -> Bool {
+    !blockedKeys.isEmpty && blockedKeys.contains(TextNormalizer.key(word))
+  }
 
   public func count(of word: String) -> Int { words[word]?.count ?? 0 }
 
@@ -157,10 +179,30 @@ public final class PersonalDictionary {
 
   /// Every known word, for fuzzy matching. Bounded by `maximumWords`.
   public var knownWords: [String] {
-    words.keys.filter(isKnown) + transientWords.filter { words[$0] == nil }
+    knownEntries.map(\.text)
+  }
+
+  /// Normalized forms are indexed when learned, rather than decomposed thousands
+  /// of times on every keystroke. The cache is invalidated by vocabulary changes.
+  var knownEntries: [KnownWord] {
+    if let knownCache { return knownCache }
+    var entries: [KnownWord] = []
+    var seen = Set<String>()
+    for (key, forms) in byKey {
+      for word in forms where isKnown(word) && seen.insert(word).inserted {
+        entries.append(KnownWord(text: word, key: key))
+      }
+    }
+    for (key, forms) in transientByKey {
+      for word in forms where seen.insert(word).inserted { entries.append(KnownWord(text: word, key: key)) }
+    }
+    entries.sort { $0.text < $1.text }
+    knownCache = entries
+    return entries
   }
 
   public func setTransientWords(_ list: [String]) {
+    knownCache = nil
     transientWords = Set(list.filter { !$0.isEmpty && !$0.contains(" ") })
     transientByKey = Dictionary(grouping: transientWords, by: TextNormalizer.key)
   }

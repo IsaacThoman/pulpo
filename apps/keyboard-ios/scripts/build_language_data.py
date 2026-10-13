@@ -15,6 +15,7 @@ import argparse
 import bz2
 import collections
 import gzip
+import hashlib
 import json
 import math
 import re
@@ -30,6 +31,7 @@ FLAG_GLIDE = 1 << 1
 FLAG_CAPITALIZED = 1 << 2
 FLAG_ABBREVIATION = 1 << 3
 FLAG_INFORMAL = 1 << 4
+FLAG_NOT_A_WORD = 1 << 5
 
 # Bigram log probabilities are stored as round(-ln p * QUANT) in a byte.
 QUANT = 12.0
@@ -63,6 +65,7 @@ def parse_wordlist(path):
           'freq': int(fields.get('originalFreq', fields['f'])),
           'flags': fields.get('flags', ''),
           'offensive': fields.get('possibly_offensive') == 'true' or fields.get('flags') == 'offensive',
+          'not_a_word': fields.get('not_a_word') == 'true',
         }
       elif line.startswith('  shortcut=') and current is not None:
         fields = dict(part.split('=', 1) for part in line.strip().split(','))
@@ -95,6 +98,25 @@ def sentence_tokens(text):
       yield tokens
 
 
+def message_training_texts(path):
+  """Deduplicated, non-spam SMS. Reserve a stable 20% for external evaluation.
+
+  Only existing lexicon forms are counted below; messages and identifiers are
+  never embedded in the dictionary. Source: Almeida & Hidalgo, UCI (CC BY 4.0).
+  """
+  seen = set()
+  with open_text(path) as handle:
+    for line in handle:
+      label, separator, text = line.rstrip('\n').partition('\t')
+      key = text.strip().casefold()
+      if label != 'ham' or not separator or not key or key in seen:
+        continue
+      seen.add(key)
+      if hashlib.sha256(key.encode('utf-8')).digest()[0] % 5 == 0:
+        continue
+      yield text
+
+
 def build(args):
   words, shortcuts = parse_wordlist(args.wordlist)
   extra = parse_extra_words(ROOT / 'scripts' / 'extra_words.tsv')
@@ -102,6 +124,7 @@ def build(args):
     entry = words.setdefault(word, {'freq': freq, 'flags': 'extra', 'offensive': False})
     entry['freq'] = max(entry['freq'], freq)
     entry['offensive'] = False
+    entry['not_a_word'] = False
 
   # Count Tatoeba unigrams and bigrams over lexicon forms. Tatoeba leans heavily on
   # two example names, so sentences that use them are skipped.
@@ -118,6 +141,8 @@ def build(args):
 
   unigrams = collections.Counter()
   bigrams = collections.Counter()
+  trigrams = collections.Counter()
+  message_bigrams = collections.Counter()
   START = '<s>'
   sentences = 0
   with open_text(args.sentences) as handle:
@@ -126,19 +151,39 @@ def build(args):
       if len(parts) < 3:
         continue
       text = parts[2]
-      if any(name in text for name in SKIPPED_NAMES):
+      if SKIPPED_NAMES.intersection(TOKEN.findall(text)):
         continue
       sentences += 1
       for clause_index, tokens in enumerate(sentence_tokens(text)):
         previous = START if clause_index == 0 else None
+        preceding = None
         for index, token in enumerate(tokens):
           word = resolve(token, index == 0 and clause_index == 0)
           if word is None:
             previous = None
+            preceding = None
             continue
           unigrams[word] += 1
           if previous is not None:
             bigrams[(previous, word)] += 1
+            if preceding is not None and preceding != START:
+              trigrams[(preceding, previous, word)] += 1
+          preceding = previous
+          previous = word
+
+  message_count = 0
+  if args.messages:
+    for text in message_training_texts(args.messages):
+      message_count += 1
+      for clause_index, tokens in enumerate(sentence_tokens(text)):
+        previous = START if clause_index == 0 else None
+        for index, token in enumerate(tokens):
+          word = resolve(token, index == 0)
+          if word is None or words[word].get('not_a_word') or any(c.isdigit() for c in token):
+            previous = None
+            continue
+          if previous is not None:
+            message_bigrams[(previous, word)] += 1
           previous = word
 
   # Calibrate AOSP's 0-255 log-frequency scale to natural-log probabilities using
@@ -170,6 +215,8 @@ def build(args):
     flags = 0
     if entry['offensive']:
       flags |= FLAG_NEVER_SUGGEST
+    if entry.get('not_a_word'):
+      flags |= FLAG_NOT_A_WORD | FLAG_NEVER_SUGGEST
     if word[:1].isupper():
       flags |= FLAG_CAPITALIZED
     if 'abbreviation' in entry['flags']:
@@ -266,24 +313,40 @@ def build(args):
     history_total[a] += c
     history_types[a] += 1
   discount = 0.75
+  message_successors = collections.defaultdict(collections.Counter)
+  for (history, word), frequency in message_bigrams.items():
+    if word in index_of and (history == START or history in index_of):
+      message_successors[history][word] = frequency
   bigram_offsets = [0]
   bigram_ids = []
   bigram_scores = []
   backoffs = []
   for i in range(count + 1):
     history = START if i == count else displays[i]
-    successors = sorted(by_first.get(history, []), key=lambda x: -x[1])[:args.max_successors]
+    successors = dict(by_first.get(history, []))
     total_h = history_total[history]
-    if total_h:
-      backoff = discount * history_types[history] / total_h
-      backoffs.append(min(255, int(round(-math.log(max(backoff, 1e-9)) * QUANT))))
-      for word, c in successors:
-        j = index_of[word]
-        p = (c - discount) / total_h + backoff * math.exp(unigram_logp(j))
-        bigram_ids.append(j)
-        bigram_scores.append(min(255, int(round(-math.log(p) * QUANT))))
-    else:
-      backoffs.append(0)
+    backoff = discount * history_types[history] / total_h if total_h else 1.0
+    messages = message_successors[history]
+    total_m = sum(messages.values())
+    # A small conversational corpus supplements the larger general-English
+    # corpus. Sparse message histories get little weight; the maximum is 45%.
+    message_weight = 0.45 * total_m / (total_m + 20)
+    for word, frequency in messages.items():
+      if frequency >= 2:
+        successors.setdefault(word, 0)
+    probabilities = []
+    for word, frequency in successors.items():
+      j = index_of[word]
+      p_general = max(0, frequency - discount) / total_h if total_h else 0
+      p_general += backoff * math.exp(unigram_logp(j))
+      p_message = messages[word] / total_m if total_m else 0
+      p = (1 - message_weight) * p_general + message_weight * p_message
+      probabilities.append((word, p))
+    backoff *= 1 - message_weight
+    backoffs.append(min(255, int(round(-math.log(max(backoff, 1e-9)) * QUANT))))
+    for word, p in sorted(probabilities, key=lambda item: (-item[1], item[0]))[:args.max_successors]:
+      bigram_ids.append(index_of[word])
+      bigram_scores.append(min(255, int(round(-math.log(p) * QUANT))))
     bigram_offsets.append(len(bigram_ids))
 
   # Shortcuts: keep spelling fixes for non-words and apostrophe/case fixes that are
@@ -293,7 +356,7 @@ def build(args):
     source_entry = words.get(source)
     target_entry = words.get(target)
     same_key = normalize_key(source) == normalize_key(target)
-    if source_entry is None or (same_key and target_entry and target_entry['freq'] > source_entry['freq']):
+    if source_entry is None or source_entry.get('not_a_word') or (same_key and target_entry and target_entry['freq'] > source_entry['freq']):
       shortcut_lines.append(f'{normalize_key(source)}\t{target}')
   for line in (ROOT / 'scripts' / 'extra_shortcuts.tsv').read_text(encoding='utf-8').splitlines():
     if line.strip() and not line.startswith('#'):
@@ -335,6 +398,33 @@ def build(args):
   sections.append((b'BGID', struct.pack(f'<{len(bigram_ids)}I', *bigram_ids)))
   sections.append((b'BGSC', bytes(bigram_scores)))
   sections.append((b'BGBO', bytes(backoffs)))
+  # Frequent two-word histories provide longer context without a neural model
+  # or an unbounded extension working set. Histories and successors are sorted
+  # for memory-mapped binary lookup; low-count histories back off to bigrams.
+  trigram_histories = collections.defaultdict(collections.Counter)
+  for (a, b, c), frequency in trigrams.items():
+    if frequency >= 3 and a in index_of and b in index_of and c in index_of:
+      trigram_histories[(a, b)][c] = frequency
+  frequent = sorted(trigram_histories, key=lambda h: (-sum(trigram_histories[h].values()), h))[:40_000]
+  frequent.sort(key=lambda h: (index_of[h[0]], index_of[h[1]]))
+  trigram_keys, trigram_offsets, trigram_ids, trigram_scores, trigram_weights = [], [0], [], [], []
+  for history in frequent:
+    successors = trigram_histories[history]
+    total_h = sum(successors.values())
+    # The interpolation weight grows with observed support. A sparse trigram
+    # should not overwhelm a well-established bigram or a learned phrase.
+    weight = total_h / (total_h + 20)
+    trigram_weights.append(round(weight * 255))
+    trigram_keys.append((index_of[history[0]] << 32) | index_of[history[1]])
+    for word, frequency in sorted(successors.items(), key=lambda item: (-item[1], item[0]))[:24]:
+      trigram_ids.append(index_of[word])
+      trigram_scores.append(min(255, round(-math.log(frequency / total_h) * QUANT)))
+    trigram_offsets.append(len(trigram_ids))
+  sections.append((b'TGHI', struct.pack(f'<{len(trigram_keys)}Q', *trigram_keys)))
+  sections.append((b'TGOF', struct.pack(f'<{len(trigram_offsets)}I', *trigram_offsets)))
+  sections.append((b'TGID', struct.pack(f'<{len(trigram_ids)}I', *trigram_ids)))
+  sections.append((b'TGSC', bytes(trigram_scores)))
+  sections.append((b'TGWT', bytes(trigram_weights)))
   sections.append((b'SHRT', '\n'.join(shortcut_lines).encode('utf-8')))
   meta = {
     'version': FORMAT_VERSION,
@@ -343,8 +433,12 @@ def build(args):
     'unigramIntercept': intercept,
     'unigramSlope': slope,
     'bigramQuant': QUANT,
+    'trigramHistories': len(trigram_keys),
+    'messageTrainingCount': message_count,
     'sources': ['AOSP LatinIME en_US wordlist (Apache-2.0)', 'Tatoeba English sentences (CC-BY 2.0 FR)'],
   }
+  if args.messages:
+    meta['sources'].append('Almeida & Hidalgo, SMS Spam Collection, UCI, DOI 10.24432/C5CC84 (CC BY 4.0); deduplicated ham training partition')
   sections.append((b'META', json.dumps(meta, sort_keys=True).encode('utf-8')))
 
   # Layout: magic, version, section count, table of (tag, offset, length), 8-byte aligned payloads.
@@ -432,6 +526,7 @@ def main():
   parser.add_argument('--wordlist', required=True)
   parser.add_argument('--sentences', required=True)
   parser.add_argument('--emoji', required=True)
+  parser.add_argument('--messages', help='Optional UCI SMSSpamCollection file for conversational bigrams (ham only; stable 20%% holdout).')
   parser.add_argument('--max-successors', type=int, default=48)
   args = parser.parse_args()
   build(args)
