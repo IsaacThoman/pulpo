@@ -239,6 +239,15 @@ struct KeyboardEngineTests {
     #expect(document.text == "teh@")
   }
 
+  @Test(arguments: ["test@exmaple.com", "https://exmaple.com", "www.exmaple.com", "@recieve", "#recieve", "my_recieve"])
+  func identifiersInsideChatAreKeptLiteral(token: String) {
+    let (engine, document) = Fixtures.engine("and ")
+    engine.type(token + " ")
+    #expect(document.text == "and " + token + " ")
+    #expect(engine.suggester!.model.personal.count(of: "exmaple") == 0)
+    #expect(engine.suggester!.model.personal.count(of: "recieve") == 0)
+  }
+
   @Test func transcriptsJoinTheSurroundingText() {
     let (engine, document) = Fixtures.engine("so")
     engine.insertTranscript("Then we left.")

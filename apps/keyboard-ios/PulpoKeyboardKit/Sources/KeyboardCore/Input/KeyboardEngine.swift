@@ -411,6 +411,7 @@ public final class KeyboardEngine {
   private func commitComposing(separator: String) {
     let typed = composing
     let context = previousWord()
+    let literalToken = composingLiteralToken
     refreshSuggestions()
     if let replacement = suggestions.autocorrection, replacement != typed.text {
       let inserted = policy.smartQuotes ? Self.curlyApostrophes(replacement) : replacement
@@ -420,7 +421,7 @@ public final class KeyboardEngine {
       lastEdit = .autocorrected(original: typed, inserted: inserted, separator: separator)
     } else {
       document.insertText(separator)
-      learn(typed.text, context: context)
+      if !literalToken { learn(typed.text, context: context) }
       lastEdit = separator == " " ? .space : .typed
     }
     composing = TypedWord(text: "")
@@ -502,6 +503,16 @@ public final class KeyboardEngine {
   var cursorInsideWord: Bool {
     guard let next = document.documentContextAfterInput?.first else { return false }
     return Self.isWordCharacter(next)
+  }
+
+  /// Addresses, handles and code identifiers also occur inside ordinary chat
+  /// fields. Their fragments must not be treated as prose at punctuation.
+  var composingLiteralToken: Bool {
+    guard !composing.isEmpty, let token = before.split(whereSeparator: \.isWhitespace).last else { return false }
+    let lowered = token.lowercased()
+    return token.contains("@") || token.hasPrefix("#") || token.contains("_")
+      || token.contains("://") || lowered.hasPrefix("www.")
+      || ["http", "https", "ftp", "mailto"].contains(lowered)
   }
 
   func previousWord() -> (word: String?, sentenceStart: Bool) {
@@ -589,6 +600,10 @@ public final class KeyboardEngine {
     }
     if cursorInsideWord {
       storedSuggestions = .empty
+      return
+    }
+    if composingLiteralToken {
+      storedSuggestions = policy.showsSuggestions ? SuggestionSet(slots: [Suggestion(text: composing.text, kind: .literal)]) : .empty
       return
     }
     let context = languageContext()
