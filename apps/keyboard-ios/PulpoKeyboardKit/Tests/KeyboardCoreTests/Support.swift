@@ -100,7 +100,7 @@ struct SeededGenerator: RandomNumberGenerator {
 
 enum SyntheticSwipe {
   /// A human-ish swipe: noisy letter targets joined by a smoothed curve.
-  static func points(for word: String, noise: Double, generator: inout SeededGenerator, geometry: LetterGeometry = .qwerty) -> [KeyPoint] {
+  static func points(for word: String, noise: Double, generator: inout SeededGenerator, geometry: LetterGeometry = .qwerty, smoothingRadius: Int = 3) -> [KeyPoint] {
     var targets: [KeyPoint] = []
     var previous: UInt8 = 0
     for byte in TextNormalizer.key(word).utf8 where byte != previous {
@@ -121,7 +121,7 @@ enum SyntheticSwipe {
       }
     }
     dense.append(targets[targets.count - 1])
-    let radius = 3
+    let radius = smoothingRadius
     var points: [KeyPoint] = []
     for index in dense.indices {
       let window = dense[max(0, index - radius)...min(dense.count - 1, index + radius)]

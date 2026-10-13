@@ -17,6 +17,8 @@ public final class GlideDecoder {
   public var sampleCount = 64
   /// Spread of letter hits around key centers, in key pitches.
   public var alignmentSigma = 0.38
+  /// Calibration for the number of distinct letter targets in a word.
+  public var alignmentLengthExponent = 0.5
   /// Spread of the swipe around the word's ideal path.
   public var shapeSigma = 0.32
   public var shapeWeight = 10.0
@@ -28,6 +30,8 @@ public final class GlideDecoder {
   public var maximumCandidates = 6_000
   public var endpointRadius = 1.5
   public var endpointLetterLimit = 4
+  public var extraLengthSigma = 0.15
+  public var shortenedLengthSigma = 0.3
 
   public init(model: LanguageModel, geometry: LetterGeometry = .qwerty) {
     self.model = model
@@ -71,6 +75,7 @@ public final class GlideDecoder {
   }
 
   public func decode(_ rawPoints: [KeyPoint], context: LanguageContext, limit: Int = 5) -> [GlideCandidate] {
+    guard limit > 0 else { return [] }
     var points: [KeyPoint] = []
     for point in rawPoints where points.last.map({ $0.distanceSquared(to: point) > 0.0004 }) ?? true {
       points.append(point)
@@ -86,7 +91,6 @@ public final class GlideDecoder {
     var scored: [String: Double] = [:]
     var template: [KeyPoint] = []
     template.reserveCapacity(32)
-    var examined = 0
 
     func consider(text: String, id: Int?, key: some Collection<UInt8>) {
       template.removeAll(keepingCapacity: true)
@@ -103,18 +107,35 @@ public final class GlideDecoder {
       if score > scored[text] ?? -.infinity { scored[text] = score }
     }
 
+    // Merge the frequency-ordered endpoint buckets instead of exhausting the
+    // nearest bucket first. Endpoint likelihood and unigram frequency prioritize
+    // promising words while keeping the same bounded candidate budget.
+    var frontier = BinaryHeap<(priority: Double, position: Int, end: Int, penalty: Double)> {
+      $0.priority != $1.priority ? $0.priority > $1.priority : $0.position < $1.position
+    }
+    func enqueue(position: Int, end: Int, penalty: Double) {
+      guard position < end else { return }
+      let id = lexicon.glideWord(at: position)
+      frontier.push((languageWeight * lexicon.unigramLogProbability(id) - penalty, position, end, penalty))
+    }
     for start in starts {
       for end in ends {
-        for position in lexicon.glideBucket(first: start, last: end) {
-          examined += 1
-          if examined > maximumCandidates { break }
-          let id = lexicon.glideWord(at: position)
-          let display = lexicon.display(id)
-          if model.personal.isBlocked(display) { continue }
-          let length = lexicon.keyLength(id)
-          consider(text: display, id: id, key: (0..<length).lazy.map { self.lexicon.keyByte(id, $0) })
-        }
+        let bucket = lexicon.glideBucket(first: start, last: end)
+        let penalty = (first.distanceSquared(to: geometry.center(start)!) + last.distanceSquared(to: geometry.center(end)!))
+          / (2 * alignmentSigma * alignmentSigma)
+        enqueue(position: bucket.lowerBound, end: bucket.upperBound, penalty: penalty)
       }
+    }
+    var examined = 0
+    while examined < maximumCandidates, let next = frontier.pop() {
+      examined += 1
+      let id = lexicon.glideWord(at: next.position)
+      let display = lexicon.display(id)
+      if !model.personal.isBlocked(display) {
+        let length = lexicon.keyLength(id)
+        consider(text: display, id: id, key: (0..<length).lazy.map { self.lexicon.keyByte(id, $0) })
+      }
+      enqueue(position: next.position + 1, end: next.end, penalty: next.penalty)
     }
     for entry in model.personal.knownEntries {
       let word = entry.text
@@ -166,7 +187,7 @@ public final class GlideDecoder {
       swap(&previousRow, &row)
     }
     let alignment = previousRow[n - 1]
-    let alignmentScore = alignment / (2 * alignmentSigma * alignmentSigma)
+    let alignmentScore = alignment / (2 * alignmentSigma * alignmentSigma) / pow(Double(k) / 5, alignmentLengthExponent)
 
     // How far the swipe strays from the ideal path, which rejects words that skip
     // a corner the finger clearly made.
@@ -197,7 +218,8 @@ public final class GlideDecoder {
     }
     // Extra travel the word doesn't account for; cutting corners short is normal.
     let logRatio = log(gestureLength / max(templateLength, 0.6))
-    let lengthScore = logRatio > 0 ? logRatio * logRatio / (2 * 0.15 * 0.15) : logRatio * logRatio / (2 * 0.3 * 0.3)
+    let lengthSigma = logRatio > 0 ? extraLengthSigma : shortenedLengthSigma
+    let lengthScore = logRatio * logRatio / (2 * lengthSigma * lengthSigma)
     return -(alignmentScore + shapeScore + cornerScore + lengthScore)
   }
 
