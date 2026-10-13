@@ -10,7 +10,7 @@ public struct LanguageContext: Sendable, Equatable {
   public static let unknown = LanguageContext(history: nil, previousWord: nil)
 }
 
-/// Mixes the static bigram model with what the person has typed before.
+/// Interpolates bounded static word histories with what the person has typed before.
 public final class LanguageModel {
   public let lexicon: Lexicon
   public let personal: PersonalDictionary
@@ -86,12 +86,9 @@ public final class LanguageModel {
     }
     if let history = context.history {
       for position in lexicon.successors(of: history) {
-        let entry = lexicon.successor(at: position)
-        guard !lexicon.flags(entry.id).contains(.neverSuggest) else { continue }
-        let word = lexicon.display(entry.id)
-        if personal.isBlocked(word) { continue }
-        scored[word] = max(scored[word] ?? -.infinity, logProbability(of: word, id: entry.id, in: context))
-        if scored.count >= limit * 4 { break }
+        // The table is already bounded. Trigram candidates must not consume the
+        // bigram budget: an interpolated backoff word can outrank either list.
+        add(lexicon.successor(at: position).id)
       }
     }
     if let previous = context.previousWord {
@@ -100,9 +97,7 @@ public final class LanguageModel {
       }
     }
     // Unknown names and sparse histories should still offer usable next words.
-    if scored.count < limit {
-      for id in fallbackWords { add(id) }
-    }
+    for id in fallbackWords { add(id) }
     return scored.map { ($0.key, $0.value) }
       .sorted { $0.1 != $1.1 ? $0.1 > $1.1 : $0.0 < $1.0 }
       .prefix(limit)

@@ -18,8 +18,10 @@ import gzip
 import hashlib
 import json
 import math
+import os
 import re
 import struct
+import tempfile
 import unicodedata
 from pathlib import Path
 
@@ -117,6 +119,25 @@ def message_training_texts(path):
       yield text
 
 
+def conversation_training_texts(paths):
+  """Only message text from explicit Topical-Chat training files, deduplicated.
+
+  Reading sets, metadata and evaluation splits are not used. The caller chooses
+  the training partition; train.json is the published 8,628-conversation split.
+  """
+  seen = set()
+  for path in paths:
+    with open_text(path) as handle:
+      conversations = json.load(handle)
+    for conversation in conversations.values():
+      for turn in conversation['content']:
+        text = turn['message']
+        key = text.strip().casefold()
+        if key and key not in seen:
+          seen.add(key)
+          yield text
+
+
 def build(args):
   words, shortcuts = parse_wordlist(args.wordlist)
   extra = parse_extra_words(ROOT / 'scripts' / 'extra_words.tsv')
@@ -143,6 +164,9 @@ def build(args):
   bigrams = collections.Counter()
   trigrams = collections.Counter()
   message_bigrams = collections.Counter()
+  message_trigrams = collections.Counter()
+  conversation_bigrams = collections.Counter()
+  conversation_trigrams = collections.Counter()
   START = '<s>'
   sentences = 0
   with open_text(args.sentences) as handle:
@@ -172,18 +196,32 @@ def build(args):
           previous = word
 
   message_count = 0
+  conversation_count = 0
+  sources = []
   if args.messages:
-    for text in message_training_texts(args.messages):
-      message_count += 1
+    sources.append((message_training_texts(args.messages), message_bigrams, message_trigrams))
+  if args.conversations:
+    sources.append((conversation_training_texts(args.conversations), conversation_bigrams, conversation_trigrams))
+  for source, domain_bigrams, domain_trigrams in sources:
+    for text in source:
+      if domain_bigrams is message_bigrams:
+        message_count += 1
+      else:
+        conversation_count += 1
       for clause_index, tokens in enumerate(sentence_tokens(text)):
         previous = START if clause_index == 0 else None
+        preceding = None
         for index, token in enumerate(tokens):
           word = resolve(token, index == 0)
           if word is None or words[word].get('not_a_word') or any(c.isdigit() for c in token):
             previous = None
+            preceding = None
             continue
           if previous is not None:
-            message_bigrams[(previous, word)] += 1
+            domain_bigrams[(previous, word)] += 1
+            if preceding is not None and preceding != START:
+              domain_trigrams[(preceding, previous, word)] += 1
+          preceding = previous
           previous = word
 
   # Calibrate AOSP's 0-255 log-frequency scale to natural-log probabilities using
@@ -317,6 +355,10 @@ def build(args):
   for (history, word), frequency in message_bigrams.items():
     if word in index_of and (history == START or history in index_of):
       message_successors[history][word] = frequency
+  conversation_successors = collections.defaultdict(collections.Counter)
+  for (history, word), frequency in conversation_bigrams.items():
+    if word in index_of and (history == START or history in index_of):
+      conversation_successors[history][word] = frequency
   bigram_offsets = [0]
   bigram_ids = []
   bigram_scores = []
@@ -331,18 +373,26 @@ def build(args):
     # A small conversational corpus supplements the larger general-English
     # corpus. Sparse message histories get little weight; the maximum is 45%.
     message_weight = 0.45 * total_m / (total_m + 20)
-    for word, frequency in messages.items():
-      if frequency >= 2:
-        successors.setdefault(word, 0)
+    conversations = conversation_successors[history]
+    total_c = sum(conversations.values())
+    conversation_weight = 0.45 * total_c / (total_c + 40)
+    for domain in (messages, conversations):
+      for word, frequency in domain.items():
+        if frequency >= 2:
+          successors.setdefault(word, 0)
     probabilities = []
     for word, frequency in successors.items():
       j = index_of[word]
       p_general = max(0, frequency - discount) / total_h if total_h else 0
       p_general += backoff * math.exp(unigram_logp(j))
       p_message = messages[word] / total_m if total_m else 0
-      p = (1 - message_weight) * p_general + message_weight * p_message
+      p_conversation = conversations[word] / total_c if total_c else 0
+      # Keep domains separate: a much larger topical corpus must not erase
+      # supported short-message phrases through raw count pooling.
+      p = (1 - conversation_weight) * p_general + conversation_weight * p_conversation
+      p = (1 - message_weight) * p + message_weight * p_message
       probabilities.append((word, p))
-    backoff *= 1 - message_weight
+    backoff *= (1 - message_weight) * (1 - conversation_weight)
     backoffs.append(min(255, int(round(-math.log(max(backoff, 1e-9)) * QUANT))))
     for word, p in sorted(probabilities, key=lambda item: (-item[1], item[0]))[:args.max_successors]:
       bigram_ids.append(index_of[word])
@@ -405,7 +455,27 @@ def build(args):
   for (a, b, c), frequency in trigrams.items():
     if frequency >= 3 and a in index_of and b in index_of and c in index_of:
       trigram_histories[(a, b)][c] = frequency
-  frequent = sorted(trigram_histories, key=lambda h: (-sum(trigram_histories[h].values()), h))[:40_000]
+  message_trigram_histories = collections.defaultdict(collections.Counter)
+  for (a, b, c), frequency in message_trigrams.items():
+    if frequency >= 2 and a in index_of and b in index_of and c in index_of:
+      message_trigram_histories[(a, b)][c] = frequency
+  conversation_trigram_histories = collections.defaultdict(collections.Counter)
+  for (a, b, c), frequency in conversation_trigrams.items():
+    if frequency >= 2 and a in index_of and b in index_of and c in index_of:
+      conversation_trigram_histories[(a, b)][c] = frequency
+  # Reserve room for all supported conversational histories, then fill from the
+  # general corpus. Rare one-off message phrases never enter this table.
+  ranked_messages = sorted(message_trigram_histories, key=lambda h: (-sum(message_trigram_histories[h].values()), h))
+  frequent = set(ranked_messages[:20_000])
+  ranked_conversations = sorted(conversation_trigram_histories, key=lambda h: (-sum(conversation_trigram_histories[h].values()), h))
+  # Reserve up to half the bounded table for conversational histories.
+  frequent.update(ranked_conversations[:20_000])
+  general_histories = sorted(trigram_histories, key=lambda h: (-sum(trigram_histories[h].values()), h))
+  for history in general_histories:
+    if len(frequent) >= 40_000:
+      break
+    frequent.add(history)
+  frequent = list(frequent)
   frequent.sort(key=lambda h: (index_of[h[0]], index_of[h[1]]))
   trigram_keys, trigram_offsets, trigram_ids, trigram_scores, trigram_weights = [], [0], [], [], []
   for history in frequent:
@@ -414,11 +484,28 @@ def build(args):
     # The interpolation weight grows with observed support. A sparse trigram
     # should not overwhelm a well-established bigram or a learned phrase.
     weight = total_h / (total_h + 20)
+    messages = message_trigram_histories[history]
+    total_m = sum(messages.values())
+    message_weight = 0.45 * total_m / (total_m + 12)
+    conversations = conversation_trigram_histories[history]
+    total_c = sum(conversations.values())
+    conversation_weight = 0.45 * total_c / (total_c + 20)
+    # Store the combined conditional distribution and its single backoff weight.
+    # Runtime interpolation is unchanged and still works with older dictionaries.
+    general_weight = (1 - message_weight) * (1 - conversation_weight) * weight
+    conversation_weight *= 1 - message_weight
+    weight = general_weight + conversation_weight + message_weight
+    probabilities = {}
+    for word in successors.keys() | messages.keys() | conversations.keys():
+      p_general = successors[word] / total_h if total_h else 0
+      p_message = messages[word] / total_m if total_m else 0
+      p_conversation = conversations[word] / total_c if total_c else 0
+      probabilities[word] = (general_weight * p_general + conversation_weight * p_conversation + message_weight * p_message) / weight
     trigram_weights.append(round(weight * 255))
     trigram_keys.append((index_of[history[0]] << 32) | index_of[history[1]])
-    for word, frequency in sorted(successors.items(), key=lambda item: (-item[1], item[0]))[:24]:
+    for word, probability in sorted(probabilities.items(), key=lambda item: (-item[1], item[0]))[:24]:
       trigram_ids.append(index_of[word])
-      trigram_scores.append(min(255, round(-math.log(frequency / total_h) * QUANT)))
+      trigram_scores.append(min(255, round(-math.log(probability) * QUANT)))
     trigram_offsets.append(len(trigram_ids))
   sections.append((b'TGHI', struct.pack(f'<{len(trigram_keys)}Q', *trigram_keys)))
   sections.append((b'TGOF', struct.pack(f'<{len(trigram_offsets)}I', *trigram_offsets)))
@@ -435,10 +522,13 @@ def build(args):
     'bigramQuant': QUANT,
     'trigramHistories': len(trigram_keys),
     'messageTrainingCount': message_count,
+    'conversationTrainingCount': conversation_count,
     'sources': ['AOSP LatinIME en_US wordlist (Apache-2.0)', 'Tatoeba English sentences (CC-BY 2.0 FR)'],
   }
   if args.messages:
     meta['sources'].append('Almeida & Hidalgo, SMS Spam Collection, UCI, DOI 10.24432/C5CC84 (CC BY 4.0); deduplicated ham training partition')
+  if args.conversations:
+    meta['sources'].append('Amazon Topical-Chat (CDLA-Sharing 1.0); aggregate n-gram statistics from deduplicated training turns')
   sections.append((b'META', json.dumps(meta, sort_keys=True).encode('utf-8')))
 
   # Layout: magic, version, section count, table of (tag, offset, length), 8-byte aligned payloads.
@@ -456,7 +546,18 @@ def build(args):
   out += payload
   output = ROOT / 'LanguageData' / 'en_US.pkdict'
   output.parent.mkdir(parents=True, exist_ok=True)
-  output.write_bytes(out)
+  # Replace the file atomically: an open keyboard/test process may still have the
+  # previous dictionary memory-mapped while a developer rebuilds language data.
+  temporary = None
+  try:
+    with tempfile.NamedTemporaryFile(dir=output.parent, prefix='.pkdict-', delete=False) as handle:
+      temporary = Path(handle.name)
+      handle.write(out)
+    os.chmod(temporary, 0o644)
+    os.replace(temporary, output)
+  finally:
+    if temporary is not None:
+      temporary.unlink(missing_ok=True)
   print(f'{output.name}: {count} words, {len(nodes)} trie nodes, {len(bigram_ids)} bigrams, '
         f'{len(shortcut_lines)} shortcuts, {sentences} sentences, {len(out) / 1e6:.1f} MB')
   print(f'unigram ln p = {intercept:.3f} + {slope:.4f} * f')
@@ -526,7 +627,8 @@ def main():
   parser.add_argument('--wordlist', required=True)
   parser.add_argument('--sentences', required=True)
   parser.add_argument('--emoji', required=True)
-  parser.add_argument('--messages', help='Optional UCI SMSSpamCollection file for conversational bigrams (ham only; stable 20%% holdout).')
+  parser.add_argument('--messages', help='Optional UCI SMSSpamCollection file for conversational n-grams (ham only; stable 20%% holdout).')
+  parser.add_argument('--conversations', action='append', default=[], help='Optional Topical-Chat training JSON. Never pass validation/test splits.')
   parser.add_argument('--max-successors', type=int, default=48)
   args = parser.parse_args()
   build(args)

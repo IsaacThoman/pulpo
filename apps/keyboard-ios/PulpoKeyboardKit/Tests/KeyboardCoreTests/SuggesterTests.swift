@@ -59,6 +59,14 @@ struct SuggesterTests {
     #expect(model.predictions(in: greeting, limit: 3).first?.word == "you")
   }
 
+  @Test(arguments: [("computing", "power"), ("ballet", "dancers"), ("Christmas", "trees"), ("fact", "about")])
+  func smallerSuggestionStripsDoNotDiscardBetterBackoffCandidates(preceding: String, previous: String) {
+    let context = model.context(previousWord: previous, sentenceStart: false, precedingWord: preceding)
+    let expanded = model.predictions(in: context, limit: 20).map(\.word)
+    #expect(model.predictions(in: context, limit: 3).map(\.word) == Array(expanded.prefix(3)))
+    #expect(model.predictions(in: context, limit: 1).map(\.word) == Array(expanded.prefix(1)))
+  }
+
   @Test func unknownAndSparseHistoriesStillOfferSafePredictions() {
     let context = model.context(previousWord: "Zorbly", sentenceStart: false)
     let words = model.predictions(in: context, limit: 3).map(\.word)

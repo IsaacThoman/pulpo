@@ -3,7 +3,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from build_language_data import message_training_texts, parse_wordlist, sentence_tokens
+import json
+from build_language_data import conversation_training_texts, message_training_texts, parse_wordlist, sentence_tokens
+from prepare_prediction_holdout import next_word_cases
 
 
 class LanguageDataTests(unittest.TestCase):
@@ -28,6 +30,19 @@ class LanguageDataTests(unittest.TestCase):
 
   def test_sentence_boundaries_do_not_join_unrelated_words(self):
     self.assertEqual(list(sentence_tokens("I'm here. Are you?")), [["I'm", 'here'], ['Are', 'you']])
+
+  def test_conversations_use_turns_only_and_exclude_training_duplicates(self):
+    def conversation(messages):
+      return {'c': {'article_url': 'Never train on metadata', 'content': [{'message': m, 'agent': 'Never train on speaker IDs'} for m in messages]}}
+    with tempfile.TemporaryDirectory() as directory:
+      train = Path(directory) / 'train.json'
+      test = Path(directory) / 'test.json'
+      train.write_text(json.dumps(conversation(['Hello there', 'hello there', 'Meet me tomorrow'])))
+      test.write_text(json.dumps(conversation(['HELLO  there', 'Call me. See you later!'])))
+      self.assertEqual(list(conversation_training_texts([train])), ['Hello there', 'Meet me tomorrow'])
+      self.assertEqual(list(next_word_cases(test, [train])), [
+        {'prefix': 'Call', 'expected': 'me'}, {'prefix': 'See', 'expected': 'you'}, {'prefix': 'See you', 'expected': 'later'},
+      ])
 
 
 if __name__ == '__main__':

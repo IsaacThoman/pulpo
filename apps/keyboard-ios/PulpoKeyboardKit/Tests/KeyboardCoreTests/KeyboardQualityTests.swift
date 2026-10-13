@@ -85,6 +85,8 @@ struct KeyboardQualityTests {
     let lexicon = try Lexicon(url: dictionary)
     let model = LanguageModel(lexicon: lexicon, personal: PersonalDictionary(url: nil))
     var top1 = 0, top3 = 0, total = 0
+    var rows: [WordResult] = []
+    let export = ProcessInfo.processInfo.environment["PK_HOLDOUT_REPORT"]
     for item in items {
       guard let expected = lexicon.id(of: item.expected), !lexicon.flags(expected).contains(.neverSuggest) else { continue }
       let parts = item.prefix.split(separator: " ").map(String.init)
@@ -93,8 +95,36 @@ struct KeyboardQualityTests {
       total += 1
       if words.first == item.expected.lowercased() { top1 += 1 }
       if words.contains(item.expected.lowercased()) { top3 += 1 }
+      if export != nil { rows.append(WordResult(input: item.prefix, expected: item.expected, output: words.first ?? "", suggestions: words)) }
     }
     print("Prediction holdout: \(top1)/\(total) top1, \(top3)/\(total) top3; dictionary \(dictionary.path)")
+    if let export { try JSONEncoder().encode(rows).write(to: URL(fileURLWithPath: export), options: .atomic) }
+  }
+
+  @Test(.enabled(if: ProcessInfo.processInfo.environment["PK_CONTEXT_SWIPE_HOLDOUT"] != nil))
+  func evaluateContextualSwipesOnUnseenMessages() throws {
+    struct Item: Codable { var prefix: String; var expected: String }
+    let path = ProcessInfo.processInfo.environment["PK_CONTEXT_SWIPE_HOLDOUT"]!
+    let items = try JSONDecoder().decode([Item].self, from: Data(contentsOf: URL(fileURLWithPath: path)))
+    let dictionary = ProcessInfo.processInfo.environment["PK_HOLDOUT_DICTIONARY"].map { URL(fileURLWithPath: $0) }
+      ?? Fixtures.languageData.appendingPathComponent("en_US.pkdict")
+    let lexicon = try Lexicon(url: dictionary)
+    let model = LanguageModel(lexicon: lexicon, personal: PersonalDictionary(url: nil))
+    let glide = GlideDecoder(model: model)
+    var top1 = 0, top3 = 0, total = 0
+    // Systematic sampling limits correlated words from the same utterance.
+    for (index, item) in items.enumerated() where index % 41 == 0 {
+      guard let id = lexicon.id(of: item.expected), lexicon.flags(id).contains(.glide), lexicon.keyLength(id) >= 3 else { continue }
+      let parts = item.prefix.split(separator: " ").map(String.init)
+      let context = model.context(previousWord: parts.last, sentenceStart: false, precedingWord: parts.count > 1 ? parts[parts.count - 2] : nil)
+      var generator = SeededGenerator(state: UInt64(index + 25_397))
+      let points = SyntheticSwipe.points(for: item.expected, noise: 0.3, generator: &generator)
+      let result = glide.decode(points, context: context, limit: 3).map { $0.text.lowercased() }
+      total += 1
+      if result.first == item.expected.lowercased() { top1 += 1 }
+      if result.contains(item.expected.lowercased()) { top3 += 1 }
+    }
+    print("Contextual unseen-message swipes: \(top1)/\(total) top1, \(top3) top3; dictionary \(dictionary.path)")
   }
 
   @Test(.enabled(if: ProcessInfo.processInfo.environment["PK_QUALITY_REPORT"] != nil))
