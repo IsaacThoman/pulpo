@@ -82,6 +82,7 @@ import { createProviderCostCapture } from './provider-cost.js'
 import { detailedPayloadCaptureIsActive } from '../logging/detailed-payload-retention.js'
 import { loadAgentPromptImages } from './prompt-images.js'
 import { adaptToolResultImagesForProvider, type ToolResultImageMode } from './tool-result-images.js'
+import { boundToolOutputContent, boundToolResultMessages } from './tool-output-budget.js'
 import { CODEX_PROVIDER_ID } from '../codex/constants.js'
 import { codexErrorRequiresReauthentication, createCodexModels, markCodexReauthenticationRequired, safeCodexErrorMessage } from '../codex/credential-store.js'
 import { codexInferenceReferenceCostMicros } from '../codex/reference-cost.js'
@@ -234,7 +235,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
     generationSystemPrompt(memory.enabled, currentAgentSystemPrompt, systemPromptFromAgentContext(existingRun?.context)),
     record.response, startedAt,
   )
-  let resumedMessages = existingRun ? messagesFromAgentContext(existingRun.context) : parentMessages
+  let resumedMessages = boundToolResultMessages(existingRun ? messagesFromAgentContext(existingRun.context) : parentMessages)
   if (!memory.enabled) resumedMessages = withoutMemoryToolMessages(resumedMessages)
   await db.insert(agentRuns).values({ id: runId, responseId, status: 'running', context: { systemPrompt: agentSystemPrompt, messages: resumedMessages }, startedAt: new Date() }).onConflictDoUpdate({ target: agentRuns.responseId, set: { status: 'running', updatedAt: new Date() } })
   const [requestLog] = await db.select().from(requestLogs).where(eq(requestLogs.responseId, responseId)).limit(1)
@@ -910,6 +911,10 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
       if (toolsDisabled || manager.continuedWithoutAgent) return { block: true, reason: 'Agent tools were disabled at the user’s request' }
       if (toolCalls >= settings.maxToolCalls) return { block: true, reason: `Tool call limit (${settings.maxToolCalls}) reached` }
       return await waitAtCostLimit(signal) ? undefined : { block: true, reason: 'Stopped at the cost limit' }
+    },
+    afterToolCall: async ({ toolCall, result }) => {
+      const content = boundToolOutputContent(toolCall.name, result.content, result.details)
+      return content ? { content } : undefined
     },
   })
   let lastRunPersistAt = 0
