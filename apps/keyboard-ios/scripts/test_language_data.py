@@ -4,11 +4,19 @@ import unittest
 from pathlib import Path
 
 import json
-from build_language_data import conversation_training_texts, message_training_texts, parse_wordlist, sentence_tokens
+from build_language_data import conversation_training_texts, message_training_texts, parse_wordlist, quantize_interpolation_weight, sentence_tokens
 from prepare_prediction_holdout import next_word_cases
 
 
 class LanguageDataTests(unittest.TestCase):
+  def test_finite_history_support_never_quantizes_away_backoff(self):
+    for support in [1, 20, 1_000, 20_000, 1_000_000, 1_000_000_000]:
+      weight = support / (support + 20)
+      stored = quantize_interpolation_weight(weight)
+      self.assertGreater(stored, 0)
+      self.assertLess(stored / 255, 1)
+    self.assertEqual(quantize_interpolation_weight(0), 0)
+
   def test_spelling_error_flags_and_shortcuts_survive_import(self):
     with tempfile.TemporaryDirectory() as directory:
       path = Path(directory) / 'words.combined'

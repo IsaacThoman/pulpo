@@ -39,6 +39,15 @@ FLAG_NOT_A_WORD = 1 << 5
 QUANT = 12.0
 
 
+def quantize_interpolation_weight(weight):
+  """Keep one representable unit of lower-order evidence after quantization.
+
+  Finite support cannot establish certainty, especially when a bounded table
+  omits continuations. The reader also applies this bound to older dictionaries.
+  """
+  return min(254, max(0, round(weight * 255)))
+
+
 def open_text(path):
   path = str(path)
   if path.endswith('.gz'):
@@ -501,7 +510,7 @@ def build(args):
       p_message = messages[word] / total_m if total_m else 0
       p_conversation = conversations[word] / total_c if total_c else 0
       probabilities[word] = (general_weight * p_general + conversation_weight * p_conversation + message_weight * p_message) / weight
-    trigram_weights.append(round(weight * 255))
+    trigram_weights.append(quantize_interpolation_weight(weight))
     trigram_keys.append((index_of[history[0]] << 32) | index_of[history[1]])
     for word, probability in sorted(probabilities.items(), key=lambda item: (-item[1], item[0]))[:24]:
       trigram_ids.append(index_of[word])

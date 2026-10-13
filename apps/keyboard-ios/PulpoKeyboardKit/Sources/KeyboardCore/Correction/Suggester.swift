@@ -251,14 +251,34 @@ public final class Suggester {
       // adding or dropping letters does not establish that a name is wrong.
       if context.previousWord != nil, typed.first?.isUppercase == true,
          typed.dropFirst().allSatisfy(\.isLowercase),
-         !Self.isSingleTransposition(typedKey, TextNormalizer.key(best.text)) { return nil }
+         !Self.isSingleTransposition(typedKey, TextNormalizer.key(best.text)),
+         !hasDirectedSubstitutions(word.keyed, target: TextNormalizer.key(best.text)) { return nil }
       // A short unknown token can just as easily be slang or an abbreviation.
       // Require more evidence than finding a nearby dictionary word. Judge the
       // strongest eligible correction first: rejecting it must not expose an
       // unrelated, weaker fallback to autocorrection.
       let minimumFamiliarity = typedKey.count <= 4 ? -14.5 : -20.8
       let familiarity = (best.id.map { lexicon.unigramLogProbability($0) } ?? -13) - best.cost
-      guard familiarity >= minimumFamiliarity else { return nil }
+      let bestKey = TextNormalizer.key(best.text)
+      // A singleton suffix on a short unknown token often belongs to slang or
+      // an abbreviation ("meh"). Removing it needs evidence of a doubled key
+      // or a neighboring key brushed while finishing the word.
+      if typedKey.count <= 4, typedKey.count == bestKey.count + 1,
+         typedKey.hasPrefix(bestKey), !hasPlausibleFinalBrush(word) { return nil }
+      // A common word with one missing interior vowel can have a low combined
+      // prior/edit score despite an otherwise clear winner. Keep lexical
+      // familiarity and separation from competing explanations distinct.
+      let canonical = best.id.map { lexicon.display($0) } ?? best.text
+      let missingInteriorVowel = Self.hasSingleInteriorVowelOmission(typedKey, bestKey)
+      let runnerUp = ranked.first { candidate in
+        !candidate.isCompletion && TextNormalizer.key(candidate.text) != bestKey &&
+        candidate.cost <= maximumCost && candidate.text != typed
+      }
+      let unambiguousOmission = missingInteriorVowel &&
+        canonical.first?.isLowercase == true &&
+        (best.id.map { lexicon.unigramLogProbability($0) } ?? -26) >= -13 &&
+        best.score - (runnerUp?.score ?? -.infinity) >= 3
+      guard familiarity >= minimumFamiliarity || (typedKey.count <= 4 && unambiguousOmission) else { return nil }
       let sameLetters = TextNormalizer.key(best.text) == typedKey
       // A lone letter is only ever fixed by a shortcut such as i -> I.
       return typed.count > 1 || sameLetters ? best : nil
@@ -274,18 +294,15 @@ public final class Suggester {
     let keyed = word.keyed
     guard let best = ranked.first(where: { candidate in
       guard !candidate.isCompletion, candidate.cost <= 3.3 else { return false }
-      let target = Array(TextNormalizer.key(candidate.text).utf8)
-      guard target.count == keyed.bytes.count, target != keyed.bytes else { return false }
-      for index in target.indices where target[index] != keyed.bytes[index] {
-        guard let point = keyed.taps[index], let center = corrector.geometry.center(keyed.bytes[index]),
-              let destination = corrector.geometry.center(target[index]) else { return false }
-        let distance = center.distance(to: destination)
-        let towardTarget = ((point.x - center.x) * (destination.x - center.x) +
-          (point.y - center.y) * (destination.y - center.y)) / distance
-        guard towardTarget > 0.4 else { return false }
-      }
-      return true
+      return hasDirectedSubstitutions(keyed, target: TextNormalizer.key(candidate.text))
     }) else { return nil }
+    // A weaker fallback must not win only because a stronger alternative has
+    // no supporting touch evidence. That is uncertainty between explanations,
+    // not positive evidence for the lower-ranked edit.
+    let strongestAlternative = ranked.first {
+      !$0.isCompletion && TextNormalizer.key($0.text) != typedKey
+    }
+    guard strongestAlternative?.text == best.text else { return nil }
     let typedScore = ranked.first { !$0.isCompletion && $0.text == typed }?.score
       ?? ranked.first { !$0.isCompletion && TextNormalizer.key($0.text) == typedKey }?.score
       ?? model.logProbability(of: typed, id: lexicon.id(of: typed), in: .unknown)
@@ -296,8 +313,54 @@ public final class Suggester {
     }
     // A lowercase case alias (cst -> CST) keeps the original non-word confidence
     // when touch evidence supports an edit; it remains literal without that evidence.
-    if best.score - typedScore >= (literalCase ? validWordMargin : 0) { return best }
+    var margin = literalCase ? validWordMargin : 0
+    // Context that reverses the unigram ordering supplies evidence independent
+    // of a generic preference for a more common spelling. Preserve the stronger
+    // margin when an edit only replaces a rare valid word with a frequent one.
+    if literalCase, let targetID = best.id, let sourceID = lexicon.id(of: typed),
+       lexicon.unigramLogProbability(targetID) <= lexicon.unigramLogProbability(sourceID) {
+      margin = min(margin, 5.0)
+    }
+    if best.score - typedScore >= margin { return best }
     return nil
+  }
+
+  private func hasPlausibleFinalBrush(_ word: TypedWord) -> Bool {
+    let source = word.keyed
+    guard source.bytes.count >= 2 else { return false }
+    let last = source.bytes.count - 1
+    if source.bytes[last] == source.bytes[last - 1] { return true }
+    guard let preceding = corrector.geometry.center(source.bytes[last - 1]),
+          let suffix = corrector.geometry.center(source.bytes[last]) else { return false }
+    // The same neighboring-key radius used by the weighted edit model.
+    if preceding.distanceSquared(to: suffix) <= 1.3 { return true }
+    return source.taps[last].map { preceding.distanceSquared(to: $0) <= 1.3 } ?? false
+  }
+
+  private func hasDirectedSubstitutions(_ source: (bytes: [UInt8], taps: [KeyPoint?]), target: String) -> Bool {
+    let destination = Array(target.utf8)
+    guard destination.count == source.bytes.count, destination != source.bytes else { return false }
+    for index in destination.indices where destination[index] != source.bytes[index] {
+      guard let point = source.taps[index], let center = corrector.geometry.center(source.bytes[index]),
+            let target = corrector.geometry.center(destination[index]) else { return false }
+      let distance = center.distance(to: target)
+      let projection = ((point.x - center.x) * (target.x - center.x) +
+        (point.y - center.y) * (target.y - center.y)) / distance
+      guard projection > 0.4 else { return false }
+    }
+    return true
+  }
+
+  private static func hasSingleInteriorVowelOmission(_ source: String, _ target: String) -> Bool {
+    let typed = Array(source.utf8), candidate = Array(target.utf8)
+    guard candidate.count == typed.count + 1, typed.count >= 2,
+          typed.first == candidate.first, typed.last == candidate.last else { return false }
+    for index in 1..<(candidate.count - 1) where "aeiou".utf8.contains(candidate[index]) {
+      var removed = candidate
+      removed.remove(at: index)
+      if removed == typed { return true }
+    }
+    return false
   }
 
   private static func isSingleTransposition(_ typed: String, _ target: String) -> Bool {

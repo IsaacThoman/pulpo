@@ -299,7 +299,12 @@ public final class Lexicon: @unchecked Sendable {
     (Int(trigramIDs![position]), -Double(trigramScores![position]) / bigramQuant)
   }
 
-  public func trigramWeight(of history: Int) -> Double { Double(trigramWeights![history]) / 255 }
+  public func trigramWeight(of history: Int) -> Double {
+    // A finite history always leaves some evidence for the shorter context.
+    // Older dictionaries round sufficiently supported histories to 255, which
+    // otherwise gives every continuation omitted from the bounded table zero.
+    Double(min(trigramWeights![history], 254)) / 255
+  }
 
   /// Frequent safe words, retrieved from the trie without scanning the lexicon
   /// at keyboard startup. Used when a history has few or no successors.

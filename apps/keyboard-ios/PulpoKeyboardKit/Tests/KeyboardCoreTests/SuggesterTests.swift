@@ -226,4 +226,61 @@ struct SuggesterTests {
     print("Full personal dictionary suggestion time: \(time)")
     #expect(time < .milliseconds(25))
   }
+  @Test func shortMissingVowelsCanHaveAnUnambiguousFamiliarTarget() {
+    let context = LanguageContext.unknown
+    #expect(suggester.suggestions(for: TypedWord(text: "hllo"), context: context, autocorrect: true).autocorrection == "hello")
+    for literal in ["nah", "cuz", "bruh", "JSON", "API"] {
+      #expect(suggester.suggestions(for: TypedWord(text: literal), context: context, autocorrect: true).autocorrection == nil)
+    }
+  }
+
+  @Test func shortFinalBrushesKeepTypoRecallWithoutRemovingDistantSuffixes() {
+    #expect(correction("thes", after: "and") == "the")
+    #expect(correction("thed", after: "and") == "the")
+    for literal in ["meh", "yous"] {
+      #expect(correction(literal, after: "and") == nil)
+    }
+  }
+
+  @Test func titleCaseSubstitutionsNeedDirectedTouchEvidence() {
+    let context = model.context(previousWord: "wrote", sentenceStart: false, precedingWord: "I")
+    var word = typed("Pleade")
+    #expect(suggester.suggestions(for: word, context: context, autocorrect: true).autocorrection == nil)
+    #expect(suggester.suggestions(for: TypedWord(text: word.text), context: context, autocorrect: true).autocorrection == nil)
+    let d = LetterGeometry.qwerty.center(Character("d").asciiValue!)!
+    let s = LetterGeometry.qwerty.center(Character("s").asciiValue!)!
+    word.taps[4] = KeyPoint(x: d.x + (s.x - d.x) * 0.48, y: d.y + (s.y - d.y) * 0.48)
+    #expect(suggester.suggestions(for: word, context: context, autocorrect: true).autocorrection == "Please")
+    word.taps[4] = KeyPoint(x: d.x - (s.x - d.x) * 0.48, y: d.y - (s.y - d.y) * 0.48)
+    #expect(suggester.suggestions(for: word, context: context, autocorrect: true).autocorrection == nil)
+  }
+
+  @Test func contextCanReverseUnigramPreferenceWithDirectedTouches() {
+    let context = model.context(previousWord: "I", sentenceStart: false)
+    var word = typed("has")
+    #expect(suggester.suggestions(for: word, context: context, autocorrect: true).autocorrection == nil)
+    let s = LetterGeometry.qwerty.center(Character("s").asciiValue!)!
+    let d = LetterGeometry.qwerty.center(Character("d").asciiValue!)!
+    word.taps[2] = KeyPoint(x: s.x + (d.x - s.x) * 0.48, y: s.y + (d.y - s.y) * 0.48)
+    #expect(suggester.suggestions(for: word, context: context, autocorrect: true).autocorrection == "had")
+  }
+
+  @Test func validWordAutocorrectionDoesNotFallThroughToAWeakerExplanation() {
+    let context = model.context(previousWord: "a", sentenceStart: false, precedingWord: "take")
+    var word = typed("test")
+    let s = LetterGeometry.qwerty.center(Character("s").asciiValue!)!
+    let x = LetterGeometry.qwerty.center(Character("x").asciiValue!)!
+    word.taps[2] = KeyPoint(x: s.x + (x.x - s.x) * 0.48, y: s.y + (x.y - s.y) * 0.48)
+    #expect(suggester.suggestions(for: word, context: context, autocorrect: true).autocorrection == nil)
+  }
+
+  @Test func rareValidWordsKeepProtectionAgainstMoreFrequentNeighbors() {
+    let context = model.context(previousWord: "to", sentenceStart: false)
+    var word = typed("hone")
+    let n = LetterGeometry.qwerty.center(Character("n").asciiValue!)!
+    let m = LetterGeometry.qwerty.center(Character("m").asciiValue!)!
+    word.taps[2] = KeyPoint(x: n.x + (m.x - n.x) * 0.48, y: n.y + (m.y - n.y) * 0.48)
+    #expect(suggester.suggestions(for: word, context: context, autocorrect: true).autocorrection == nil)
+  }
+
 }
