@@ -25,6 +25,14 @@ calls can reserve their costs. Actual usage is settled; unused funds become
 available again. A long-running call can temporarily reserve all remaining funds
 and prevent another request from starting.
 
+Each internal model call (image OCR, compaction summaries, titles) extends the
+hold by its own estimated cost before it starts. A call that fails is not
+billed, so exactly its extension is given back under the reservation lock. Holds
+that other calls added in the meantime stay in place, and nothing happens once
+the reservation is settled or released. Retries, such as compaction dropping
+older history after the summary request overflows, therefore hold one attempt
+at a time instead of accumulating.
+
 ## Per-model configuration
 
 In **Admin → Models**, edit **Minimum output allocation** beside **Max output
@@ -62,7 +70,7 @@ reserved, and its incurred cost is settled even if its output is rejected.
 
 ## Verification
 
-- `npm run test -w @pulpo/server -- src/accounting src/billing/allocation.test.ts`
+- `npm run test -w @pulpo/server -- src/accounting src/billing/allocation.test.ts src/responses/model-calls.test.ts`
 - With a migrated disposable `pulpo_budget_test` database, set `DATABASE_URL` and
   `PULPO_BUDGET_POSTGRES_TEST=1` to run the accounting PostgreSQL tests.
 - `npm run test:public-api -w @pulpo/server` exercises actual request/queue/worker

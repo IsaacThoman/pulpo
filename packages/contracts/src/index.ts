@@ -538,6 +538,10 @@ export const compactionItemSchema = z.object({
   error: z.string().optional(),
   covered_through_response_id: idSchema.optional(),
   before_agent_turn: z.number().int().positive().optional(),
+  /** Absent on legacy items, which kept recent turns verbatim instead of user messages. */
+  strategy: z.literal('user_messages').optional(),
+  tokens_after: z.number().int().nonnegative().optional(),
+  token_source: z.enum(['usage', 'estimate']).optional(),
 })
 export type CompactionItem = z.infer<typeof compactionItemSchema>
 
@@ -1090,7 +1094,7 @@ export const createModelSchema = z.object({
   minimumOutputReservationTokens: minimumOutputReservationTokensSchema.default(DEFAULT_MINIMUM_OUTPUT_RESERVATION_TOKENS),
   compactionEnabled: z.boolean().default(true),
   compactionThresholdTokens: z.number().int().min(2_000).max(1_000_000).default(100_000),
-  compactionRetainedTurns: z.number().int().min(1).max(32).default(4),
+  compactionRetainedUserTokens: z.number().int().min(0).max(100_000).default(20_000),
   executionMode: executionModeSchema.default('stream'),
   tags: z.array(z.string()).default([]),
   allowedParameters: z.array(z.string()).default([]),

@@ -1,9 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
+  ContextOverflowError,
   GenerationAttemptError,
   canFallbackAfterGenerationError,
   classifyGenerationError,
   completionTokensPerSecond,
+  isContextOverflowError,
   isModelSticky,
   isSlowCompletion,
   markModelSticky,
@@ -107,5 +109,28 @@ describe('shared model fallback policy', () => {
     expect(canFallbackAfterGenerationError(new GenerationAttemptError('timeout', true))).toBe(false)
     expect(canFallbackAfterGenerationError(new GenerationAttemptError('timeout', false))).toBe(true)
     expect(canFallbackAfterGenerationError(new Error('timeout'), true)).toBe(false)
+  })
+})
+
+describe('isContextOverflowError', () => {
+  it.each([
+    'Your input exceeds the context window of this model. Please adjust your input and try again.',
+    'prompt is too long: 213462 tokens > 200000 maximum',
+    "400 This model's maximum context length is 128000 tokens. However, your messages resulted in 130000 tokens.",
+    'Prompt contains 140000 tokens, too large for model with 131072 maximum context length',
+  ])('matches provider overflow text: %s', (message) => {
+    expect(isContextOverflowError(new Error(message))).toBe(true)
+    expect(isContextOverflowError(new GenerationAttemptError('Generation failed', false, new Error(message)))).toBe(true)
+  })
+
+  it('matches the Responses error code and redacted Codex overflows', () => {
+    expect(isContextOverflowError(Object.assign(new Error('400 Bad request'), { status: 400, error: { code: 'context_length_exceeded', message: 'Too long' } }))).toBe(true)
+    expect(isContextOverflowError(new ContextOverflowError('Codex rejected the request'))).toBe(true)
+  })
+
+  it('ignores rate limits and other failures', () => {
+    expect(isContextOverflowError(new Error('ThrottlingException: Too many tokens, rate limit reached'))).toBe(false)
+    expect(isContextOverflowError(new Error('Internal server error'))).toBe(false)
+    expect(isContextOverflowError('Request failed')).toBe(false)
   })
 })

@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { eq, inArray, sql } from 'drizzle-orm'
 import { db, queryClient } from '../database/client.js'
 import { agentRuns, apiKeys, applicationSettings, billingAccounts, budgetReservationAllowanceFunders, budgetReservations, fiveHourUsagePeriods, sharedAllowancePeriods, sharedFiveHourUsagePeriods, creditLedger, budgetReservationFunders, chats, generationAttempts, models, modelPricingVersions, pools, poolMembers, providerConnections, requestLogs, responses, toolExecutions, users, usageEvents, weeklyUsagePeriods } from '../database/schema.js'
-import { chargeMeteredUsage, extendBudgetReservationFixedCost, releaseBudget, reserveBudget, resizeBudgetReservation, retainBudgetReservation, settleBudget } from './service.js'
+import { chargeMeteredUsage, extendBudgetReservationFixedCost, releaseBudget, releaseBudgetReservationFixedCost, reserveBudget, resizeBudgetReservation, retainBudgetReservation, settleBudget } from './service.js'
 
 vi.mock('../responses/events.js', () => ({ publishStateChange: vi.fn() }))
 vi.mock('../config.js', async original => {
@@ -182,6 +182,67 @@ describe.skipIf(!enabled)('budget-aware reservations in PostgreSQL', () => {
     expect(next).toEqual({ amountMicros: 20_000, maxOutputTokens: 16_999 })
     await releaseBudget(input.responseId)
     expect((await reserveBudget(await request(userId, 32_000))).maxOutputTokens).toBe(19_999)
+  })
+
+  it('gives back a failed sidecar hold without releasing holds added since', async () => {
+    const userId = await account(20_000), input = await request(userId, 32_000)
+    await reserveBudget(input)
+    await retainBudgetReservation(input.responseId, 1_000)
+    await extendBudgetReservationFixedCost(input.responseId, 5_000)
+    // Another sidecar extends while the first call is still running.
+    await extendBudgetReservationFixedCost(input.responseId, 2_000)
+    await releaseBudgetReservationFixedCost(input.responseId, 5_000)
+    expect(await reservation(input.responseId)).toMatchObject({ amountMicros: 3_000, balanceReservedMicros: 3_000 })
+    const funders = await db.select().from(budgetReservationFunders).where(eq(budgetReservationFunders.reservationId, (await reservation(input.responseId)).id))
+    expect(funders.reduce((sum, row) => sum + row.reservedMicros, 0)).toBe(3_000)
+    await extendBudgetReservationFixedCost(input.responseId, 4_000)
+    await Promise.all([
+      releaseBudgetReservationFixedCost(input.responseId, 4_000),
+      extendBudgetReservationFixedCost(input.responseId, 1_000),
+    ])
+    expect((await reservation(input.responseId)).amountMicros).toBe(4_000)
+    await releaseBudgetReservationFixedCost(input.responseId, 10_000)
+    expect((await reservation(input.responseId)).amountMicros).toBe(0)
+    expect((await reserveBudget(await request(userId, 32_000))).maxOutputTokens).toBe(19_999)
+  })
+
+  it('does not stack the holds of failed retries past the balance', async () => {
+    const userId = await account(10_000), input = await request(userId, 1_000)
+    await reserveBudget(input)
+    for (let attempt = 0; attempt < 3; attempt++) {
+      await extendBudgetReservationFixedCost(input.responseId, 6_000)
+      await releaseBudgetReservationFixedCost(input.responseId, 6_000)
+    }
+    expect((await reservation(input.responseId)).amountMicros).toBe(1_001)
+    await extendBudgetReservationFixedCost(input.responseId, 6_000)
+    await expect(extendBudgetReservationFixedCost(input.responseId, 6_000)).rejects.toMatchObject({ code: 'insufficient_balance' })
+    expect((await reservation(input.responseId)).amountMicros).toBe(7_001)
+  })
+
+  it('returns released sidecar holds to the allowance and balance they came from', async () => {
+    const userId = await account(2_000, 20_000, 8_000), input = await request(userId)
+    await reserveBudget(input)
+    await retainBudgetReservation(input.responseId, 1_000)
+    await extendBudgetReservationFixedCost(input.responseId, 9_000)
+    expect(await reservation(input.responseId)).toMatchObject({ amountMicros: 10_000, weeklyReservedMicros: 8_000, fiveHourReservedMicros: 8_000, balanceReservedMicros: 2_000 })
+    await releaseBudgetReservationFixedCost(input.responseId, 9_000)
+    expect(await reservation(input.responseId)).toMatchObject({ amountMicros: 1_000, weeklyReservedMicros: 1_000, fiveHourReservedMicros: 1_000, balanceReservedMicros: 0 })
+  })
+
+  it('ignores sidecar releases once the reservation is settled, released, or missing', async () => {
+    const userId = await account(20_000), input = await request(userId, 32_000)
+    await reserveBudget(input)
+    await retainBudgetReservation(input.responseId, 1_000)
+    await settleBudget({ responseId: input.responseId, usage, latencyMs: 1 })
+    const settled = await reservation(input.responseId)
+    await releaseBudgetReservationFixedCost(input.responseId, 500)
+    expect(await reservation(input.responseId)).toEqual(settled)
+    const cancelled = await request(userId, 32_000)
+    await reserveBudget(cancelled)
+    await releaseBudget(cancelled.responseId)
+    await expect(releaseBudgetReservationFixedCost(cancelled.responseId, 500)).resolves.toBeUndefined()
+    await expect(releaseBudgetReservationFixedCost(randomUUID(), 500)).resolves.toBeUndefined()
+    await expect(releaseBudgetReservationFixedCost(cancelled.responseId, -1)).rejects.toMatchObject({ code: 'invalid_reservation_amount' })
   })
 
   it('coordinates a reservation resize with metered charges', async () => {

@@ -680,6 +680,13 @@
       "when": 1791903652249,
       "tag": "0096_model_user_grants",
       "breakpoints": true
+    },
+    {
+      "idx": 97,
+      "version": "7",
+      "when": 1791918830549,
+      "tag": "0097_compaction_retained_user_tokens",
+      "breakpoints": true
     }
   ]
 }

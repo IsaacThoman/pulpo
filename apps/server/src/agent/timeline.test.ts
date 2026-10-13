@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildAgentOutput, type ToolTimelineItem } from './timeline.js'
+import { buildAgentOutput, nextAgentDisplayTurn, type ToolTimelineItem } from './timeline.js'
 
 describe('buildAgentOutput', () => {
   it('keeps recalled chats before agent work in persisted output', () => {
@@ -206,5 +206,39 @@ describe('buildAgentOutput', () => {
       : (item as { type?: string }).type)).toEqual([
       'pre', 'message', 'mid', 'message',
     ])
+  })
+
+  it('places a mid-run compaction before the next display turn after compacted history', () => {
+    const base = {
+      type: 'pulpo_compaction' as const, status: 'completed' as const, model_id: 'model', strategy: 'user_messages' as const,
+      estimated_tokens: 200_000, threshold_tokens: 100_000, retained_turns: [], retained_context: [], retained_context_turns: [],
+      summary: 'summary', started_at: new Date(0).toISOString(),
+    }
+    const first = { role: 'assistant', content: [{ type: 'toolCall', id: 't1', name: 'bash', arguments: {} }] } as never
+    const second = { role: 'assistant', content: [{ type: 'text', text: 'Done.' }] } as never
+    // This run's messages before compaction are archived; state restarts with retained user messages and the summary.
+    const archived = [{ role: 'user', content: 'ask', timestamp: 0 } as never, first, { role: 'toolResult', toolCallId: 't1', content: [] } as never]
+    const state = [{ role: 'user', content: 'ask', timestamp: 0 } as never, { role: 'user', content: 'summary', timestamp: 0 } as never]
+    const skipMessageCount = state.length
+    const beforeAgentTurn = nextAgentDisplayTurn([...archived, ...state.slice(skipMessageCount)])
+    expect(beforeAgentTurn).toBe(2)
+    const output = buildAgentOutput({
+      messages: [...archived, ...state.slice(skipMessageCount), second],
+      skipMessageCount: 0,
+      toolItems: new Map([['t1', { id: 't1', type: 'pulpo_tool', tool: 'bash', arguments: {}, status: 'completed', output: 'ok' }]]),
+      compactionItems: [{ ...base, id: 'mid', phase: 'agent_mid_run', before_agent_turn: beforeAgentTurn }],
+      terminal: true,
+    })
+    expect(output.map((item) => (item as { id?: string; type?: string }).id ?? (item as { type?: string }).type)).toEqual(['t1', 'mid', 'agent:2:0:message'])
+  })
+
+  it('numbers the next display turn from assistant messages only', () => {
+    expect(nextAgentDisplayTurn([])).toBe(1)
+    expect(nextAgentDisplayTurn([
+      { role: 'user', content: 'a', timestamp: 0 },
+      { role: 'assistant', content: [] } as never,
+      { role: 'toolResult', toolCallId: 't', content: [] } as never,
+      { role: 'assistant', content: [] } as never,
+    ])).toBe(3)
   })
 })

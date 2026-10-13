@@ -382,7 +382,9 @@ export const models = pgTable('models', {
   minimumOutputReservationTokens: integer('minimum_output_reservation_tokens').notNull().default(8_000),
   compactionEnabled: boolean('compaction_enabled').notNull().default(true),
   compactionThresholdTokens: integer('compaction_threshold_tokens').notNull().default(100_000),
+  /** Deprecated and unused since migration 0097; kept for old pods during rolling deploys. Drop in a later migration. */
   compactionRetainedTurns: integer('compaction_retained_turns').notNull().default(4),
+  compactionRetainedUserTokens: integer('compaction_retained_user_tokens').notNull().default(20_000),
   executionMode: executionModeEnum('execution_mode').notNull().default('stream'),
   tags: jsonb('tags').notNull().default([]),
   allowedParameters: jsonb('allowed_parameters').notNull().default([]),
