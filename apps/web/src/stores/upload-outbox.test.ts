@@ -114,7 +114,7 @@ beforeEach(() => {
       folderId: null, sortOrder: 0, tags: [], temporary: false, expiresAt: null, expired: false,
       provisional: false,
     }],
-    folders: [], activeChatId: chatId, activeTemporaryChatId: null, streamingIds: [],
+    activeChatId: chatId, activeTemporaryChatId: null, streamingIds: [],
     responseSequences: {}, responseChatIds: {},
   })
   useUploadOutbox.setState({ uploads: {}, submissions: [], preservedDrafts: {} })

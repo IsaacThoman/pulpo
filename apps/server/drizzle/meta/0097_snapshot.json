@@ -1,5 +1,5 @@
 {
-  "id": "b82ea39b-255e-4f34-92cc-10581fd4007d",
+  "id": "9d06f1f9-8328-4dab-89e7-406b1636fbeb",
   "prevId": "f44b8154-7a06-4457-bfcf-926c2364ee44",
   "version": "7",
   "dialect": "postgresql",
@@ -1073,12 +1073,6 @@
         },
         "five_hour_limit_override_micros": {
           "name": "five_hour_limit_override_micros",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "daily_limit_override_micros": {
-          "name": "daily_limit_override_micros",
           "type": "bigint",
           "primaryKey": false,
           "notNull": false
@@ -3187,6 +3181,13 @@
           "primaryKey": false,
           "notNull": false
         },
+        "in_files_root": {
+          "name": "in_files_root",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
         "title": {
           "name": "title",
           "type": "text",
@@ -3295,6 +3296,22 @@
           "method": "btree",
           "with": {}
         },
+        "chats_folder_idx": {
+          "name": "chats_folder_idx",
+          "columns": [
+            {
+              "expression": "folder_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"chats\".\"folder_id\" is not null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "chats_title_search_idx": {
           "name": "chats_title_search_idx",
           "columns": [
@@ -3341,10 +3358,10 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "chats_folder_id_folders_id_fk": {
-          "name": "chats_folder_id_folders_id_fk",
+        "chats_folder_id_file_nodes_id_fk": {
+          "name": "chats_folder_id_file_nodes_id_fk",
           "tableFrom": "chats",
-          "tableTo": "folders",
+          "tableTo": "file_nodes",
           "columnsFrom": [
             "folder_id"
           ],
@@ -3371,7 +3388,12 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "chats_files_root_check": {
+          "name": "chats_files_root_check",
+          "value": "not \"chats\".\"in_files_root\" or \"chats\".\"folder_id\" is null"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.codex_login_attempts": {
@@ -3882,72 +3904,6 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.daily_usage_periods": {
-      "name": "daily_usage_periods",
-      "schema": "",
-      "columns": {
-        "user_id": {
-          "name": "user_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "period_start": {
-          "name": "period_start",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "spent_micros": {
-          "name": "spent_micros",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "daily_usage_periods_user_id_users_id_fk": {
-          "name": "daily_usage_periods_user_id_users_id_fk",
-          "tableFrom": "daily_usage_periods",
-          "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "daily_usage_periods_user_id_period_start_pk": {
-          "name": "daily_usage_periods_user_id_period_start_pk",
-          "columns": [
-            "user_id",
-            "period_start"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "daily_usage_periods_spent_check": {
-          "name": "daily_usage_periods_spent_check",
-          "value": "\"daily_usage_periods\".\"spent_micros\" >= 0"
-        }
-      },
       "isRLSEnabled": false
     },
     "public.daily_usage_rollups": {
@@ -5106,6 +5062,43 @@
           "notNull": true,
           "default": 0
         },
+        "system_role": {
+          "name": "system_role",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "target_node_id": {
+          "name": "target_node_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "target_chat_id": {
+          "name": "target_chat_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "sort_order": {
+          "name": "sort_order",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "color": {
+          "name": "color",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "icon": {
+          "name": "icon",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -5122,6 +5115,28 @@
         }
       },
       "indexes": {
+        "file_nodes_owner_system_role_unique": {
+          "name": "file_nodes_owner_system_role_unique",
+          "columns": [
+            {
+              "expression": "owner_user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "system_role",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"file_nodes\".\"system_role\" is not null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "file_nodes_live_name_unique": {
           "name": "file_nodes_live_name_unique",
           "columns": [
@@ -5208,6 +5223,38 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "file_nodes_target_chat_idx": {
+          "name": "file_nodes_target_chat_idx",
+          "columns": [
+            {
+              "expression": "target_chat_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"file_nodes\".\"target_chat_id\" is not null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "file_nodes_target_node_idx": {
+          "name": "file_nodes_target_node_idx",
+          "columns": [
+            {
+              "expression": "target_node_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"file_nodes\".\"target_node_id\" is not null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
@@ -5236,6 +5283,19 @@
           ],
           "onDelete": "cascade",
           "onUpdate": "no action"
+        },
+        "file_nodes_target_node_id_file_nodes_id_fk": {
+          "name": "file_nodes_target_node_id_file_nodes_id_fk",
+          "tableFrom": "file_nodes",
+          "tableTo": "file_nodes",
+          "columnsFrom": [
+            "target_node_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -5244,7 +5304,11 @@
       "checkConstraints": {
         "file_nodes_kind_check": {
           "name": "file_nodes_kind_check",
-          "value": "\"file_nodes\".\"kind\" in ('folder', 'doc', 'blob')"
+          "value": "\"file_nodes\".\"kind\" in ('folder', 'doc', 'blob', 'shortcut')"
+        },
+        "file_nodes_shortcut_check": {
+          "name": "file_nodes_shortcut_check",
+          "value": "num_nonnulls(\"file_nodes\".\"target_node_id\", \"file_nodes\".\"target_chat_id\") = case when \"file_nodes\".\"kind\" = 'shortcut' then 1 else 0 end"
         },
         "file_nodes_status_check": {
           "name": "file_nodes_status_check",
@@ -5261,6 +5325,10 @@
         "file_nodes_blob_check": {
           "name": "file_nodes_blob_check",
           "value": "(\"file_nodes\".\"kind\" = 'blob') = (\"file_nodes\".\"object_key\" is not null)"
+        },
+        "file_nodes_system_role_check": {
+          "name": "file_nodes_system_role_check",
+          "value": "\"file_nodes\".\"system_role\" is null or (\"file_nodes\".\"system_role\" in ('chats', 'archive') and \"file_nodes\".\"kind\" = 'folder' and \"file_nodes\".\"parent_id\" is null)"
         }
       },
       "isRLSEnabled": false
@@ -5351,79 +5419,6 @@
           "value": "\"five_hour_usage_periods\".\"spent_micros\" >= 0"
         }
       },
-      "isRLSEnabled": false
-    },
-    "public.folders": {
-      "name": "folders",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "pinned": {
-          "name": "pinned",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "sort_order": {
-          "name": "sort_order",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "folders_user_id_users_id_fk": {
-          "name": "folders_user_id_users_id_fk",
-          "tableFrom": "folders",
-          "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.friendships": {
