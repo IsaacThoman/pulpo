@@ -39,6 +39,54 @@ struct GlideDecoderTests {
     }
   }
 
+  @Test func toleratesSmallLoopOnRepeatedLetter() {
+    let start = glide.geometry.center(Character("s").asciiValue!)!
+    let end = glide.geometry.center(Character("e").asciiValue!)!
+    var points = [start, end]
+    // A small loop at the doubled letter adds real travel without another key.
+    for step in 1...16 {
+      let angle = Double(step) * 2 * .pi / 16
+      points.append(KeyPoint(x: end.x + 0.25 * sin(angle), y: end.y + 0.25 * (1 - cos(angle))))
+    }
+    let context = model.context(previousWord: "will", sentenceStart: false)
+    #expect(glide.decode(points, context: context, limit: 4).first?.text == "see")
+  }
+
+  @Test(arguments: ["to", "type", "hello", "address", "happened", "keyboard", "tomorrow", "weekend"])
+  func scorePruningPreservesRankingAndScores(word: String) {
+    var generator = SeededGenerator(state: 87)
+    let points = SyntheticSwipe.points(for: word, noise: 0.3, generator: &generator)
+    for context in [LanguageContext.unknown, model.context(previousWord: "you", sentenceStart: false)] {
+      // Asking for every candidate keeps the top-result bound inactive.
+      let reference = glide.decode(points, context: context, limit: .max)
+      for limit in [1, 4, 10] {
+        #expect(glide.decode(points, context: context, limit: limit) == Array(reference.prefix(limit)))
+      }
+    }
+  }
+
+  @Test func scorePruningPreservesTies() {
+    glide.languageWeight = 0
+    let points = "to".utf8.compactMap { glide.geometry.center($0) }
+    let reference = glide.decode(points, context: .unknown, limit: .max)
+    for limit in [1, 3, 5] {
+      #expect(glide.decode(points, context: .unknown, limit: limit) == Array(reference.prefix(limit)))
+    }
+  }
+
+  @Test func scorePruningPreservesPersonalAndDictionaryDuplicates() {
+    let personal = PersonalDictionary(url: nil)
+    personal.pin("hello")
+    personal.pin("hellooo")
+    let (_, _, decoder) = Fixtures.stack(personal: personal)
+    let points = "hello".utf8.compactMap { decoder.geometry.center($0) }
+    let reference = decoder.decode(points, context: .unknown, limit: .max)
+    #expect(reference.contains { $0.text == "hellooo" })
+    for limit in [1, 4] {
+      #expect(decoder.decode(points, context: .unknown, limit: limit) == Array(reference.prefix(limit)))
+    }
+  }
+
   @Test func accuracyOnNoisySwipes() throws {
     let lexicon = model.lexicon
     // The most frequent swipeable words, which is what people swipe most.

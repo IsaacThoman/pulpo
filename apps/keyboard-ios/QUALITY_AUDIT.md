@@ -1,12 +1,71 @@
 # Keyboard quality audit — October 13, 2026
 
-Pulpo is substantially safer and more contextual than the starting branch. The
-follow-up improves prediction coverage on unseen conversations and swipe tolerance,
-including a favorable live Gboard comparison on one conversation sample. Gboard
-still leads on the original single-word prediction probes. These tests do **not**
-establish that either
-keyboard is the best overall. Fast human typing, Gboard on iOS, multilingual input,
-and physical-device latency remain unmeasured.
+The user's real-use feedback exposed a gap in the earlier synthetic evaluations.
+Recorded human gestures score far below generated center paths. Current evidence
+supports specific improvements, not an overall real-use lead over Gboard. Gboard
+on iOS, multilingual input, and physical-device latency remain unmeasured.
+
+## Further iteration: recorded human swipe paths
+
+Baseline is `19937ca3`. Fresh agents froze their cases before consulting earlier
+benchmarks. An independently authored 953-case conversational swipe suite found
+failures with rounded corners, sparse samples, thumb offsets and missing release
+points. This led to a separate evaluation using the
+[How-We-Swipe research dataset](https://osf.io/sj67f/), rather than further relying
+on generated paths. The public dataset is MIT licensed by Leiva, Kim, Cui, Bi and
+Oulasvirta. Archive SHA-256:
+`c7e6398d630906d664654d8f5a7ba2b1531882636fd110d8d6c05a723ca00874`.
+
+`scripts/prepare_human_swipes.py` reconstructs the collection keyboard's geometry
+(10 columns, four rows, one-pixel cap margin), keeps original start and release
+positions, removes practice sentences and stationary contacts, and separates
+publisher-accepted attempts from failed attempts. A stable hash splits participants
+80/20; a second hash selects 3,000 gestures per stratum without consulting outputs.
+The main metric uses accepted, nonstationary traces, including out-of-vocabulary
+words and short words the core cannot decode. It is an offline decoder metric;
+it does not measure the UIKit recognizer, actual user intent, or host integration.
+Failed attempts are retained in separate files and are not included in this table.
+
+| Recorded gestures | Before top-1 | After top-1 | Before top-3 | After top-3 |
+| --- | ---: | ---: | ---: | ---: |
+| Development, 3,000 gestures, 834 participants | 1,940 (64.67%) | 1,988 (66.27%) | 2,160 (72.00%) | 2,202 (73.40%) |
+| Frozen verification, 3,000 gestures, 241 different participants | 1,894 (63.13%) | 1,928 (64.27%) | 2,119 (70.63%) | 2,152 (71.73%) |
+| Verification dictionary-known subset, 2,774 gestures | 1,887 (68.02%) | 1,921 (69.25%) | 2,109 (76.03%) | 2,142 (77.22%) |
+
+Verification first-choice changes comprise 50 gains and 16 losses. Development
+and verification case-file SHA-256 respectively:
+`7be99646d9d0f06e6f55b3bf65145293cffc99273c53f654305fc481c5768988`
+and `92d23ec82684e56389c8c3c730f41cb9aceb8532d8b24bd38663d39a02fdc2a1`.
+
+The accepted decoder keeps the original ordered center and path matching. It
+relaxes interior passage radius from 1.1 to 1.25 pitches and the extra-travel
+standard deviation from .15 to .25. Ordinary human overtravel was being penalized
+too strongly. Exact score bounds skip expensive shape calculations when a
+candidate cannot reach the current top results. Tests compare both rankings and
+floating scores against an unpruned search, including ties and personal entries.
+Verification on the Mac measured approximately .73 ms median and 2.00 ms p95;
+these are desktop timings, not iPhone latency.
+
+A more permissive inward-curve approximation raised the independent authored
+suite's first-choice accuracy from 90.24% to 94.86%, but reduced human development
+accuracy from 1,940 to 1,828. It was rejected. The selected decoder instead scores
+92.34% on that authored suite. A measured tradeoff remains: 3,000 additional
+rounded synthetic paths decline from 2,514 to 2,502 top-1 and 2,874 to 2,872 top-3.
+The original fixed 500-case rounded top-3 guard moves from .965 to .96, with a
+new six-seed aggregate regression guard. Other profile thresholds remain intact.
+This is an explicit small synthetic regression accepted for the independently
+verified human improvement.
+
+A live Gboard replay uses the first 100 eligible multi-letter, dictionary-known
+verification gestures, spanning 73 participants. Both decoders receive identical
+prepared spatial paths. Pulpo scores **75/100** first choices both before and
+after this change; Gboard scores **74/100**. This small sample does not demonstrate
+a lead or a gain. Gboard version is `15.1.08.726012951-preload-arm64-v8a` on Android
+API 36, not Gboard iOS. Replay simplifies paths with .04-pitch tolerance and caps
+segments at .6 pitches; Android samples are injected 20 ms apart. Median replay
+duration is 1.291 s, maximum 5.230 s. Original recorded timing is retained in the
+prepared audit data but is not replayed. No natural-speed or physical-device
+comparison is claimed.
 
 ## Follow-up: prediction coverage and swipe search
 

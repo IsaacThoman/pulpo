@@ -23,14 +23,14 @@ public final class GlideDecoder {
   public var shapeSigma = 0.32
   public var shapeWeight = 10.0
   public var languageWeight = 0.9
-  public var passageRadius = 1.1
+  public var passageRadius = 1.25
   /// Sharp turns in the swipe should sit on a letter of the word.
   public var cornerSigma = 0.45
   public var cornerAngle = 0.9
   public var maximumCandidates = 6_000
   public var endpointRadius = 1.5
   public var endpointLetterLimit = 4
-  public var extraLengthSigma = 0.15
+  public var extraLengthSigma = 0.25
   public var shortenedLengthSigma = 0.3
 
   public init(model: LanguageModel, geometry: LetterGeometry = .qwerty) {
@@ -101,10 +101,16 @@ public final class GlideDecoder {
         previousByte = byte
       }
       guard template.count >= 2 else { return }
-      guard let spatial = spatialScore(samples: samples, gestureLength: gestureLength, template: template, corners: corners) else { return }
-      let logP = model.logProbability(of: text, id: id, in: context)
-      let score = spatial + languageWeight * logP
+      let languageScore = languageWeight * model.logProbability(of: text, id: id, in: context)
+      // All spatial penalties are nonnegative. The current top results provide
+      // a safe score bound before the more expensive path-shape alignment.
+      let cutoff = scored.count >= limit ? scored.values.min()! : -.infinity
+      guard let spatial = spatialScore(samples: samples, gestureLength: gestureLength, template: template, corners: corners, minimumScore: cutoff - languageScore) else { return }
+      let score = spatial + languageScore
       if score > scored[text] ?? -.infinity { scored[text] = score }
+      if scored.count > limit, let worst = scored.min(by: {
+        $0.value != $1.value ? $0.value < $1.value : $0.key > $1.key
+      }) { scored.removeValue(forKey: worst.key) }
     }
 
     // Merge the frequency-ordered endpoint buckets instead of exhausting the
@@ -152,12 +158,18 @@ public final class GlideDecoder {
 
   /// Log-likelihood that the swipe was meant to trace `template`, or `nil` when it
   /// clearly was not (wrong length, or a letter the swipe never passed).
-  func spatialScore(samples: [KeyPoint], gestureLength: Double, template: [KeyPoint], corners: [KeyPoint] = []) -> Double? {
+  func spatialScore(samples: [KeyPoint], gestureLength: Double, template: [KeyPoint], corners: [KeyPoint] = [], minimumScore: Double = -.infinity) -> Double? {
     var templateLength = 0.0
     for index in 1..<template.count { templateLength += template[index - 1].distance(to: template[index]) }
     let ratio = gestureLength / max(templateLength, 0.6)
     if templateLength > 1.5, ratio < 0.5 || ratio > 2.4 { return nil }
     if templateLength <= 1.5, gestureLength > templateLength + 3.5 { return nil }
+
+    // Extra travel the word doesn't account for; cutting corners short is normal.
+    let logRatio = log(gestureLength / max(templateLength, 0.6))
+    let lengthSigma = logRatio > 0 ? extraLengthSigma : shortenedLengthSigma
+    let lengthScore = logRatio * logRatio / (2 * lengthSigma * lengthSigma)
+    if lengthScore > -minimumScore + 1e-10 { return nil }
 
     // Every interior letter must be passed, in order.
     let n = samples.count
@@ -189,6 +201,17 @@ public final class GlideDecoder {
     let alignment = previousRow[n - 1]
     let alignmentScore = alignment / (2 * alignmentSigma * alignmentSigma) / pow(Double(k) / 5, alignmentLengthExponent)
 
+    if alignmentScore + lengthScore > -minimumScore + 1e-10 { return nil }
+
+    // A turn the word's letters don't explain means the finger was going somewhere else.
+    var cornerScore = 0.0
+    for corner in corners {
+      var nearest = Double.infinity
+      for letter in template { nearest = min(nearest, corner.distanceSquared(to: letter)) }
+      cornerScore += min(6, nearest / (2 * cornerSigma * cornerSigma))
+    }
+    if alignmentScore + cornerScore + lengthScore > -minimumScore + 1e-10 { return nil }
+
     // How far the swipe strays from the ideal path, which rejects words that skip
     // a corner the finger clearly made.
     // Match the path in order. Taking the nearest segment independently lets a
@@ -209,17 +232,6 @@ public final class GlideDecoder {
     let stray = previousShape[k - 2]
     let shapeScore = shapeWeight * stray / Double(n) / (2 * shapeSigma * shapeSigma)
 
-    // A turn the word's letters don't explain means the finger was going somewhere else.
-    var cornerScore = 0.0
-    for corner in corners {
-      var nearest = Double.infinity
-      for letter in template { nearest = min(nearest, corner.distanceSquared(to: letter)) }
-      cornerScore += min(6, nearest / (2 * cornerSigma * cornerSigma))
-    }
-    // Extra travel the word doesn't account for; cutting corners short is normal.
-    let logRatio = log(gestureLength / max(templateLength, 0.6))
-    let lengthSigma = logRatio > 0 ? extraLengthSigma : shortenedLengthSigma
-    let lengthScore = logRatio * logRatio / (2 * lengthSigma * lengthSigma)
     return -(alignmentScore + shapeScore + cornerScore + lengthScore)
   }
 
