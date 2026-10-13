@@ -37,8 +37,10 @@ final class MockDocument: TextDocument {
 
   /// Simulates the text proxy reporting the document a few characters behind.
   var lag = 0
+  /// Holds a complete earlier proxy snapshot while the engine edits the real document.
+  var contextBeforeOverride: String?
 
-  var documentContextBeforeInput: String? { String(text[..<cursor].dropLast(lag)) }
+  var documentContextBeforeInput: String? { contextBeforeOverride ?? String(text[..<cursor].dropLast(lag)) }
   var documentContextAfterInput: String? { String(text[cursor...]) }
   var selectedText: String? { nil }
   var hasText: Bool { !text.isEmpty }

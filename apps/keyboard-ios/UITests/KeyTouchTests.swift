@@ -277,6 +277,53 @@ final class KeyTouchTests: XCTestCase {
     XCTAssertEqual(recorder.events, ["down:key-shift", "down:key-a", "activate:key-a", "down:key-b", "activate:key-b", "shift-up"])
   }
 
+  func testGlideIncludesTheFinalLiftLocation() {
+    let contact = touch("key-h")
+    let start = contact.point
+    keys.touchesBegan([contact], with: nil)
+    contact.point = touch("key-e").point
+    keys.touchesMoved([contact], with: nil)
+    contact.point = touch("key-l").point
+    keys.touchesMoved([contact], with: nil)
+    contact.point = touch("key-o").point
+    keys.touchesEnded([contact], with: nil)
+    XCTAssertEqual(recorder.glidePaths.first?.first, start)
+    XCTAssertEqual(recorder.glidePaths.first?.last, contact.point)
+  }
+
+  func testGlideIncludesCoalescedLiftSamplesAndDeduplicatesTheLift() {
+    let contact = touch("key-h")
+    keys.touchesBegan([contact], with: nil)
+    contact.point = touch("key-e").point
+    keys.touchesMoved([contact], with: nil)
+    let middle = touch("key-l")
+    let end = touch("key-o")
+    contact.point = end.point
+    keys.touchesEnded([contact], with: ContactEvent(samples: [middle, end]))
+    XCTAssertEqual(recorder.glidePaths.first?.suffix(2), [middle.point, end.point])
+    XCTAssertEqual(recorder.glidePaths.first?.count, 4)
+  }
+
+  func testLiftCompletesAShortGlideWithoutDuplicatingTheLastSample() {
+    let contact = touch("key-f")
+    let start = contact.point
+    keys.touchesBegan([contact], with: nil)
+    contact.point.x += keys.pitch.width * 0.8
+    keys.touchesMoved([contact], with: nil)
+    contact.point.x += keys.pitch.width * 0.8
+    keys.touchesEnded([contact], with: nil)
+    XCTAssertEqual(recorder.glidePaths.first?.count, 3)
+    XCTAssertEqual(recorder.glidePaths.first?.first, start)
+    XCTAssertEqual(recorder.glidePaths.first?.last, contact.point)
+
+    let next = touch("key-f")
+    keys.touchesBegan([next], with: nil)
+    next.point = touch("key-h").point
+    keys.touchesMoved([next], with: nil)
+    keys.touchesEnded([next], with: nil)
+    XCTAssertEqual(recorder.glidePaths.last?.count, 2)
+  }
+
   private final class Contact: UITouch {
     var point: CGPoint
     let time: TimeInterval
@@ -289,9 +336,19 @@ final class KeyTouchTests: XCTestCase {
     override var timestamp: TimeInterval { time }
   }
 
+  private final class ContactEvent: UIEvent {
+    let samples: [UITouch]
+    init(samples: [UITouch]) {
+      self.samples = samples
+      super.init()
+    }
+    override func coalescedTouches(for touch: UITouch) -> [UITouch]? { samples }
+  }
+
   private final class Recorder: KeysViewDelegate {
     var events: [String] = []
     var glides = 0
+    var glidePaths: [[CGPoint]] = []
     var allowsGlide = true
     var activationPoints: [CGPoint] = []
     var onActivate: ((Key) -> Void)?
@@ -304,7 +361,10 @@ final class KeyTouchTests: XCTestCase {
       activationPoints.append(point)
       onActivate?(key)
     }
-    func keysView(_ view: KeysView, glide points: [CGPoint], start: Key) { glides += 1 }
+    func keysView(_ view: KeysView, glide points: [CGPoint], start: Key) {
+      glides += 1
+      glidePaths.append(points)
+    }
     func keysViewShiftUp(_ view: KeysView) { events.append("shift-up") }
     func keysView(_ view: KeysView, insertAlternate text: String, for key: Key) {}
     func keysViewRepeatDelete(_ view: KeysView, wholeWord: Bool) {}

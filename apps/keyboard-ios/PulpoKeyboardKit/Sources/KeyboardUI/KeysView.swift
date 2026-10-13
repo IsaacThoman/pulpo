@@ -262,8 +262,7 @@ final class KeysView: UIView {
   override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
     for touch in touches {
       guard let tracking = trackings[ObjectIdentifier(touch)] else { continue }
-      let samples = event?.coalescedTouches(for: touch) ?? [touch]
-      for sample in samples { tracking.points.append(sample.location(in: self)) }
+      appendSamples(for: touch, event: event, to: tracking)
       move(tracking, to: touch.location(in: self), event: event)
     }
   }
@@ -271,6 +270,7 @@ final class KeysView: UIView {
   override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
     for touch in touches.sorted(by: { (trackings[ObjectIdentifier($0)]?.began ?? 0) < (trackings[ObjectIdentifier($1)]?.began ?? 0) }) {
       guard let tracking = trackings.removeValue(forKey: ObjectIdentifier(touch)) else { continue }
+      appendSamples(for: touch, event: event, to: tracking)
       end(tracking, at: touch.location(in: self), event: event, cancelled: false)
     }
   }
@@ -280,6 +280,18 @@ final class KeysView: UIView {
       guard let tracking = trackings.removeValue(forKey: ObjectIdentifier(touch)) else { continue }
       end(tracking, at: touch.location(in: self), event: event, cancelled: true)
     }
+  }
+
+  /// The lift can be farther along than the last move event. Preserve its
+  /// coalesced samples and final location because the decoder anchors the last
+  /// letter to the final path point. UIKit can repeat that point in the batch.
+  private func appendSamples(for touch: UITouch, event: UIEvent?, to tracking: Tracking) {
+    for sample in event?.coalescedTouches(for: touch) ?? [] {
+      let point = sample.location(in: self)
+      if tracking.points.last != point { tracking.points.append(point) }
+    }
+    let point = touch.location(in: self)
+    if tracking.points.last != point { tracking.points.append(point) }
   }
 
   private func begin(_ touch: UITouch, event: UIEvent?) {

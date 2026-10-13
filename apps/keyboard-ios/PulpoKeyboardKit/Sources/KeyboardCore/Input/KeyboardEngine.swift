@@ -69,7 +69,10 @@ public final class KeyboardEngine {
   private var lastShiftTap: TimeInterval = -1
   private var shiftHeld = false
   private var typedWhileShiftHeld = false
+  /// Optimistic cursor context, updated by our edits before the asynchronous proxy catches up.
   private var expectedContext: String?
+  private var expectedAfterContext = ""
+  private var expectedSelection: String?
   private var lastOwnEdit: TimeInterval = -10
   private var lastSpaceTime: TimeInterval = -.infinity
   /// Counters for on-device diagnostics; no text is recorded.
@@ -85,7 +88,7 @@ public final class KeyboardEngine {
   }
 
   var personal: PersonalDictionary? { suggester?.model.personal }
-  var before: String { document.documentContextBeforeInput ?? "" }
+  var before: String { expectedContext ?? document.documentContextBeforeInput ?? "" }
 
   // MARK: Characters
 
@@ -108,17 +111,17 @@ public final class KeyboardEngine {
 
     if phantomSpace {
       phantomSpace = false
-      if Self.isWordCharacter(first) { document.insertText(" ") }
+      if Self.isWordCharacter(first) { insertDocumentText(" ") }
     }
     if case .acceptedSuggestion(autoSpace: true) = lastEdit, Self.spaceSwapPunctuation.contains(first), policy.smartSpacing, before.hasSuffix(" ") {
-      document.deleteBackward()
+      deleteDocumentBackward()
     }
 
     if !composing.isEmpty, Self.autocorrectSeparators.contains(first) {
       commitComposing(separator: text)
     } else {
       if !composing.isEmpty, !Self.isWordCharacter(Character(String(text.prefix(1)))) { learn(composing.text) }
-      document.insertText(text)
+      insertDocumentText(text)
       if let typedCharacter = text.first, Self.isWordCharacter(typedCharacter), !(typedCharacter == "\u{2019}" && composing.isEmpty) {
         composing.append(text, tap: tap)
       } else {
@@ -150,7 +153,7 @@ public final class KeyboardEngine {
     }
     if phantomSpace {
       phantomSpace = false
-      document.insertText(" ")
+      insertDocumentText(" ")
       lastEdit = .space
       return
     }
@@ -161,13 +164,13 @@ public final class KeyboardEngine {
     if settings.doubleSpacePeriod, policy.smartSpacing, lastEditEndedWithSpace, now - lastSpaceTime < 0.8, before.hasSuffix(" ") {
       let trimmed = before.dropLast()
       if let previous = trimmed.last, previous.isLetter || previous.isNumber || previous == ")" || previous == "\u{201D}" || previous == "\"" {
-        document.deleteBackward()
-        document.insertText(". ")
+        deleteDocumentBackward()
+        insertDocumentText(". ")
         lastEdit = .none
         return
       }
     }
-    document.insertText(" ")
+    insertDocumentText(" ")
     lastEdit = .space
   }
 
@@ -185,7 +188,7 @@ public final class KeyboardEngine {
     if !composing.isEmpty {
       commitComposing(separator: "\n")
     } else {
-      document.insertText("\n")
+      insertDocumentText("\n")
     }
     lastEdit = .none
     finishEdit()
@@ -204,7 +207,7 @@ public final class KeyboardEngine {
       output = " " + output
     }
     phantomSpace = false
-    document.insertText(output)
+    insertDocumentText(output)
     lastEdit = .typed
     finishEdit()
   }
@@ -230,8 +233,8 @@ public final class KeyboardEngine {
     phantomSpace = false
     switch lastEdit {
     case let .autocorrected(original, inserted, separator) where before.hasSuffix(inserted + separator):
-      for _ in 0..<(inserted + separator).count { document.deleteBackward() }
-      document.insertText(original.text)
+      for _ in 0..<(inserted + separator).count { deleteDocumentBackward() }
+      insertDocumentText(original.text)
       rejected.insert(original.text)
       if policy.learns { personal?.pin(original.text) }
       composing = original
@@ -239,7 +242,7 @@ public final class KeyboardEngine {
       finishEdit(deriveComposing: false)
       return
     case let .glided(word, _) where before.hasSuffix(word):
-      for _ in 0..<word.count { document.deleteBackward() }
+      for _ in 0..<word.count { deleteDocumentBackward() }
       composing = TypedWord(text: "")
       lastEdit = .none
       finishEdit()
@@ -248,10 +251,10 @@ public final class KeyboardEngine {
       break
     }
     if let selected = document.selectedText, !selected.isEmpty {
-      document.deleteBackward()
+      deleteDocumentBackward()
       composing = TypedWord(text: "")
     } else {
-      document.deleteBackward()
+      deleteDocumentBackward()
       if !composing.isEmpty { composing.removeLast() }
     }
     lastEdit = .none
@@ -278,7 +281,7 @@ public final class KeyboardEngine {
     } else if index > text.startIndex {
       count += 1
     }
-    for _ in 0..<max(count, 1) { document.deleteBackward() }
+    for _ in 0..<max(count, 1) { deleteDocumentBackward() }
     composing = TypedWord(text: "")
     lastEdit = .none
     finishEdit()
@@ -324,8 +327,8 @@ public final class KeyboardEngine {
     case .alternative:
       if case let .glided(word, alternatives) = lastEdit, before.hasSuffix(word) {
         let originalContext = pendingLearning?.context ?? context
-        for _ in 0..<word.count { document.deleteBackward() }
-        document.insertText(text)
+        for _ in 0..<word.count { deleteDocumentBackward() }
+        insertDocumentText(text)
         pendingLearning = (text, originalContext)
         lastEdit = .glided(word: text, alternatives: alternatives)
         phantomSpace = true
@@ -336,7 +339,7 @@ public final class KeyboardEngine {
       if !composing.isEmpty {
         rejected.insert(composing.text)
         if policy.learns { personal?.pin(composing.text) }
-        document.insertText(" ")
+        insertDocumentText(" ")
         composing = TypedWord(text: "")
         lastEdit = .acceptedSuggestion(autoSpace: true)
         finishEdit()
@@ -347,13 +350,13 @@ public final class KeyboardEngine {
     }
     acceptPendingLearning()
     if !composing.isEmpty {
-      for _ in 0..<composing.text.count { document.deleteBackward() }
+      for _ in 0..<composing.text.count { deleteDocumentBackward() }
       composing = TypedWord(text: "")
     } else if let previous = before.last, !previous.isWhitespace, !"([{\u{201C}\u{2018}".contains(previous) {
       text = " " + text
     }
     phantomSpace = false
-    document.insertText(text + " ")
+    insertDocumentText(text + " ")
     learn(text.trimmingCharacters(in: .whitespaces), context: context)
     lastEdit = .acceptedSuggestion(autoSpace: true)
     if case .once = shift { shift = .off }
@@ -387,9 +390,9 @@ public final class KeyboardEngine {
     if policy.smartQuotes { word = Self.curlyApostrophes(word) }
     let wordContext = previousWord()
     if let previous = before.last, phantomSpace || (!previous.isWhitespace && !"([{\u{201C}\u{2018}/@#-".contains(previous)) {
-      document.insertText(" ")
+      insertDocumentText(" ")
     }
-    document.insertText(word)
+    insertDocumentText(word)
     pendingLearning = (word, wordContext)
     let alternatives = candidates.dropFirst().map { candidate -> String in
       let text = transform(candidate.text)
@@ -415,12 +418,12 @@ public final class KeyboardEngine {
     refreshSuggestions()
     if let replacement = suggestions.autocorrection, replacement != typed.text {
       let inserted = policy.smartQuotes ? Self.curlyApostrophes(replacement) : replacement
-      for _ in 0..<typed.text.count { document.deleteBackward() }
-      document.insertText(inserted + separator)
+      for _ in 0..<typed.text.count { deleteDocumentBackward() }
+      insertDocumentText(inserted + separator)
       pendingLearning = (replacement, context)
       lastEdit = .autocorrected(original: typed, inserted: inserted, separator: separator)
     } else {
-      document.insertText(separator)
+      insertDocumentText(separator)
       if !literalToken { learn(typed.text, context: context) }
       lastEdit = separator == " " ? .space : .typed
     }
@@ -457,41 +460,77 @@ public final class KeyboardEngine {
 
   /// Re-reads the document after the host changed text or moved the cursor.
   public func documentDidChange() {
-    let current = before
-    let expected = expectedContext ?? ""
-    if current != expected {
-      // The proxy can report the document a beat behind our own fast edits. Text that
-      // is a prefix of what we just typed is that lag, not the host changing things.
-      if !current.isEmpty, clock() - lastOwnEdit < 1, expected.hasPrefix(current) {
-        laggingContextUpdates += 1
-        return
+    let current = document.documentContextBeforeInput ?? ""
+    let after = document.documentContextAfterInput ?? ""
+    let selection = document.selectedText.flatMap { $0.isEmpty ? nil : $0 }
+    if let expected = expectedContext {
+      let sameCursorTail = after == expectedAfterContext && selection == expectedSelection
+      if current != expected || !sameCursorTail {
+        // A shorter prefix can be a delayed own-edit snapshot only while the
+        // other side of the cursor and its selection still match. Moving left
+        // also shortens the prefix, but exposes a different suffix.
+        if sameCursorTail, !current.isEmpty, clock() - lastOwnEdit < 1, expected.hasPrefix(current) {
+          laggingContextUpdates += 1
+          return
+        }
+        // Long documents only expose a window before the cursor, which slides as
+        // we type. An empty expected context cannot establish a shared window.
+        let windowShift = sameCursorTail && !expected.isEmpty && current.count >= 24
+          && (expected.hasSuffix(current) || current.hasSuffix(expected))
+        expectedContext = current
+        expectedAfterContext = after
+        expectedSelection = selection
+        if !windowShift {
+          externalContextChanges += 1
+          phantomSpace = false
+          lastEdit = .none
+          pendingLearning = nil
+          deriveComposing()
+        }
       }
-      // Long documents only expose a window before the cursor, which slides as we type.
-      let windowShift = current.count >= 24 && (expected.hasSuffix(current) || current.hasSuffix(expected))
-      if !windowShift {
-        externalContextChanges += 1
-        phantomSpace = false
-        lastEdit = .none
-        pendingLearning = nil
-        deriveComposing()
-      }
+    } else {
       expectedContext = current
+      expectedAfterContext = after
+      expectedSelection = selection
+      deriveComposing()
     }
     // Traits can arrive after the context, so shift and suggestions are always refreshed.
     updateAutomaticShift()
     suggestionsStale = true
   }
 
+  /// Keep reads during multi-step replacements and delayed proxy callbacks on
+  /// the document we have requested, rather than an earlier host snapshot.
+  private func insertDocumentText(_ text: String) {
+    prepareExpectedContext()
+    expectedContext = before + text
+    expectedSelection = nil
+    document.insertText(text)
+  }
+
+  private func deleteDocumentBackward() {
+    prepareExpectedContext()
+    if expectedSelection == nil { expectedContext = String(before.dropLast()) }
+    expectedSelection = nil
+    document.deleteBackward()
+  }
+
+  private func prepareExpectedContext() {
+    guard expectedContext == nil else { return }
+    expectedContext = document.documentContextBeforeInput ?? ""
+    expectedAfterContext = document.documentContextAfterInput ?? ""
+    expectedSelection = document.selectedText.flatMap { $0.isEmpty ? nil : $0 }
+  }
+
   private func finishEdit(deriveComposing derive: Bool = false) {
     if derive { deriveComposing() }
     updateAutomaticShift()
     suggestionsStale = true
-    expectedContext = before
     lastOwnEdit = clock()
   }
 
   private func deriveComposing() {
-    let text = before
+    let text = expectedSelection == nil ? before : ""
     var word = ""
     for character in text.reversed() {
       guard Self.isWordCharacter(character) else { break }

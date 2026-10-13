@@ -285,6 +285,56 @@ struct KeyboardEngineTests {
     #expect(engine.laggingContextUpdates == 1)
   }
 
+  @Test func cursorMoveDuringFastTypingIsNotMistakenForProxyLag() {
+    let (engine, document) = Fixtures.engine()
+    engine.clock = { 100 }
+    engine.type("hello teh")
+    document.moveCursor(to: 5)
+    engine.documentDidChange()
+    #expect(engine.composingText == "Hello")
+    #expect(engine.laggingContextUpdates == 0)
+    engine.select(Suggestion(text: "hello", kind: .correction))
+    #expect(document.text == "hello  teh")
+  }
+
+  @Test func delayedSwipeAcknowledgmentPreservesAlternativesAndWordDeletion() throws {
+    let (engine, document) = Fixtures.engine("say ")
+    document.contextBeforeOverride = document.text
+    let points = "helo".utf8.compactMap { engine.glide!.geometry.center($0) }
+    let candidates = engine.insertGlide(points)
+    #expect(candidates.first?.text == "hello")
+    let alternatives = engine.suggestions
+    document.contextBeforeOverride = nil
+    engine.documentDidChange()
+    #expect(engine.phantomSpace)
+    #expect(engine.composingText.isEmpty)
+    #expect(engine.suggestions == alternatives)
+    let alternative = try #require(alternatives.slots.first { $0.text != candidates.first?.text })
+    engine.select(alternative)
+    #expect(document.text == "say " + alternative.text)
+    engine.deleteBackward()
+    #expect(document.text == "say ")
+  }
+
+  @Test func delayedAutocorrectAcknowledgmentPreservesUndo() {
+    let (engine, document) = Fixtures.engine("say ")
+    engine.type("teh")
+    document.contextBeforeOverride = document.text
+    engine.insertSpace()
+    #expect(document.text == "say the ")
+    document.contextBeforeOverride = nil
+    engine.documentDidChange()
+    engine.deleteBackward()
+    #expect(document.text == "say teh")
+  }
+
+  @Test func initiallyAttachingToLongContextFindsTheComposingWord() {
+    let (engine, document) = Fixtures.engine("this is a long enough message with teh")
+    #expect(engine.composingText == "teh")
+    engine.insertSpace()
+    #expect(document.text == "this is a long enough message with the ")
+  }
+
   @Test func clearedFieldIsNotMistakenForLag() {
     let (engine, document) = Fixtures.engine()
     engine.type("hi there")
