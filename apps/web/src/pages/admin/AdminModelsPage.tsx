@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { DEFAULT_MINIMUM_OUTPUT_RESERVATION_TOKENS, DEFAULT_MODEL_WARNING_DISMISS_DAYS, minimumOutputReservationTokensSchema, chatPresetsSchema, type ChatPreset, type ChatPresetAction, type ChatPresetChoice, type ChatPresetIcon } from '@pulpo/contracts'
+import { DEFAULT_MINIMUM_OUTPUT_RESERVATION_TOKENS, DEFAULT_MODEL_WARNING_DISMISS_DAYS, minimumOutputReservationTokensSchema, chatPresetsSchema, type ChatPreset, type ChatPresetAction, type ChatPresetChoice, type ChatPresetIcon, type ModelHiddenPlatform } from '@pulpo/contracts'
 import { modelWarningLinkError } from '@pulpo/client-core'
 import { ArrowDown, ArrowUp, Check, ChevronsUpDown, ChevronRight, Copy, Pencil, Plus, Search, Trash2 } from 'lucide-react'
 import { apiRequest } from '@/lib/api'
@@ -51,6 +51,7 @@ interface AdminModel {
   warningDismissDays: number
   enabled: boolean
   visible: boolean
+  hiddenPlatforms: ModelHiddenPlatform[]
   logo: string | null
   customIconId: string | null
   systemPrompt: string
@@ -89,7 +90,7 @@ interface Provider { id: string; name: string; baseUrl?: string }
 interface Lab { id: string; name: string; logo?: string; customIconId: string | null }
 
 const empty = (providerConnectionId = '', labId: string | null = null): AdminModel => ({
-  id: '', providerConnectionId, labId, upstreamModelId: '', name: '', description: '', warningMessage: '', warningDismissDays: DEFAULT_MODEL_WARNING_DISMISS_DAYS, enabled: true, visible: true, logo: null, customIconId: null, systemPrompt: '', agentEnabled: false, agentInstructions: '', defaultParameters: {}, interceptImagesWithOcr: false,
+  id: '', providerConnectionId, labId, upstreamModelId: '', name: '', description: '', warningMessage: '', warningDismissDays: DEFAULT_MODEL_WARNING_DISMISS_DAYS, enabled: true, visible: true, hiddenPlatforms: [], logo: null, customIconId: null, systemPrompt: '', agentEnabled: false, agentInstructions: '', defaultParameters: {}, interceptImagesWithOcr: false,
   contextWindow: 128_000, maxOutputTokens: 16_384, minimumOutputReservationTokens: DEFAULT_MINIMUM_OUTPUT_RESERVATION_TOKENS, executionMode: 'stream', tags: [], allowedParameters: [],
   compactionEnabled: true, compactionThresholdTokens: 100_000, compactionRetainedTurns: 4,
   useProviderCost: false, promptCachingEnabled: false,
@@ -202,6 +203,8 @@ export function AdminModelsPage() {
                     <Badge variant="outline" className="max-w-full font-normal"><span className="truncate" title={model.id}>{model.id}</span></Badge>
                     <Badge variant="secondary" className="font-normal">{model.executionMode}</Badge>
                     {!model.visible && <Badge variant="secondary" className="font-normal">{ui("hidden")}</Badge>}
+                    {model.hiddenPlatforms?.includes('ios') && <Badge variant="secondary" className="font-normal">{ui("hidden on iOS")}</Badge>}
+                    {model.hiddenPlatforms?.includes('android') && <Badge variant="secondary" className="font-normal">{ui("hidden on Android")}</Badge>}
                   </div>
                   <div className="mt-0.5 truncate text-xs text-muted-foreground">
                     {model.description || model.upstreamModelId} · {formatNumber(model.contextWindow)} {ui("ctx")} </div>
@@ -535,6 +538,8 @@ function ModelEditorBody({
       <div className="grid grid-cols-2 gap-4">
         <ToggleRow label={ui("Enabled")} checked={draft.enabled} onChange={(enabled) => setDraft({ ...draft, enabled })} />
         <ToggleRow label={ui("Visible in picker")} checked={draft.visible} onChange={(visible) => setDraft({ ...draft, visible })} />
+        <ToggleRow label={ui("Hide in iOS app")} description={ui("App Store build. Requests from it cannot use this model.")} checked={draft.hiddenPlatforms.includes('ios')} onChange={(hidden) => setDraft({ ...draft, hiddenPlatforms: withHiddenPlatform(draft.hiddenPlatforms, 'ios', hidden) })} />
+        <ToggleRow label={ui("Hide in Android app")} description={ui("Google Play build. Requests from it cannot use this model.")} checked={draft.hiddenPlatforms.includes('android')} onChange={(hidden) => setDraft({ ...draft, hiddenPlatforms: withHiddenPlatform(draft.hiddenPlatforms, 'android', hidden) })} />
       </div>
 
       <Separator />
@@ -993,6 +998,11 @@ function Field({ label, children, className }: { label: string; children: ReactN
       {children}
     </div>
   )
+}
+
+function withHiddenPlatform(platforms: ModelHiddenPlatform[], platform: ModelHiddenPlatform, hidden: boolean): ModelHiddenPlatform[] {
+  const others = platforms.filter((value) => value !== platform)
+  return hidden ? [...others, platform] : others
 }
 
 function ToggleRow({

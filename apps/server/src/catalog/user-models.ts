@@ -3,10 +3,12 @@ import { db } from '../database/client.js'
 import { models, providerConnections, userProviderCredentials } from '../database/schema.js'
 import { codexEnabled } from '../codex/policy.js'
 import { CODEX_PI_PROVIDER_ID, CODEX_PROVIDER_ID } from '../codex/constants.js'
+import type { ModelHiddenPlatform } from '@pulpo/contracts'
+import { modelShownOnPlatformCondition } from './model-platforms.js'
 
 type CatalogDatabase = Pick<typeof db, 'select'>
 
-export async function userModelEligibility(userId: string, database: CatalogDatabase = db) {
+export async function userModelEligibility(userId: string, database: CatalogDatabase = db, platform: ModelHiddenPlatform | null = null) {
   const codexAvailable = await codexEnabled(database)
   const [credential] = await database.select({ status: userProviderCredentials.status })
     .from(userProviderCredentials).where(and(
@@ -18,6 +20,7 @@ export async function userModelEligibility(userId: string, database: CatalogData
     condition: and(
       eq(models.enabled, true), eq(models.visible, true),
       codexAvailable && credential?.status === 'connected' ? undefined : ne(models.providerConnectionId, CODEX_PROVIDER_ID),
+      modelShownOnPlatformCondition(platform),
     ),
   }
 }

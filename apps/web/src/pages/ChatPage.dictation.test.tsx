@@ -158,7 +158,8 @@ it('swaps the toolbar for a live waveform and inserts the transcript when finish
   await view.recording()
   expect(media.getUserMedia).toHaveBeenCalledWith({ audio: true })
   expect(media.recorders[0]!.mimeType).toBe('audio/webm;codecs=opus')
-  expect(media.contexts).toBe(1)
+  // The recording DOM can commit before the waveform's passive effect runs.
+  await waitFor(() => expect(media.contexts).toBe(1))
   expect(view.getByTestId('dictation-waveform')).toBeTruthy()
   expect(view.getByRole('button', { name: 'Send message' }).hasAttribute('disabled')).toBe(true)
 
