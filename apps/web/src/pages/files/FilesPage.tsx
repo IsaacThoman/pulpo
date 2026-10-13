@@ -58,7 +58,7 @@ import { useFileClipboard } from '@/features/files/browser/clipboard'
 import { FileContextMenu, type ContextMenuPoint } from '@/features/files/browser/FileContextMenu'
 import { FileDragOverlay } from '@/features/files/browser/FileDragOverlay'
 import { FileItem, type FileDropHandlers } from '@/features/files/browser/FileItem'
-import { isSidebarItemDrag, readSidebarItem } from '@/features/sidebar/drag-data'
+import { isSidebarItemDrag, readSidebarItems } from '@/features/sidebar/drag-data'
 import {
   clickSelect,
   EMPTY_SELECTION,
@@ -576,10 +576,10 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
     onDrop: (dragged, targetId) => { void ops.move(dragged, targetId) },
   })
 
-  /** Moves an item dragged out of the sidebar (a chat, folder, file, or shortcut) into `targetId`. */
+  /** Moves items dragged out of the sidebar (chats, folders, files, or shortcuts) into `targetId`. */
   const dropSidebarItem = (event: DragEvent, targetId: string | null) => {
-    const node = readSidebarItem(event.dataTransfer)
-    if (node) void ops.move([node], targetId)
+    const nodes = readSidebarItems(event.dataTransfer).filter((node) => node.id !== targetId)
+    if (nodes.length) void ops.move(nodes, targetId)
   }
 
   /**

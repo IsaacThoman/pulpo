@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isSidebarItemDrag, readSidebarItem, writeSidebarItem } from './drag-data'
+import { isSidebarItemDrag, readSidebarItems, writeSidebarItems } from './drag-data'
 
 function transfer() {
   const data = new Map<string, string>()
@@ -11,15 +11,21 @@ function transfer() {
 }
 
 describe('sidebar drag data', () => {
-  it('carries a sidebar item to folders in Files', () => {
+  it('carries sidebar items to folders in Files, in order', () => {
     const dataTransfer = transfer()
     expect(isSidebarItemDrag(dataTransfer)).toBe(false)
-    writeSidebarItem(dataTransfer, { id: 'chat-1', kind: 'chat', name: 'Trip planning', parentId: 'chats' })
+    writeSidebarItems(dataTransfer, [
+      { id: 'chat-1', kind: 'chat', name: 'Trip planning', parentId: 'chats' },
+      { id: 'doc-1', kind: 'doc', name: 'Notes.md', parentId: 'f1' },
+    ])
     expect(isSidebarItemDrag(dataTransfer)).toBe(true)
-    expect(readSidebarItem(dataTransfer)).toMatchObject({ id: 'chat-1', kind: 'chat', name: 'Trip planning', parentId: 'chats', status: 'ready' })
+    expect(readSidebarItems(dataTransfer)).toMatchObject([
+      { id: 'chat-1', kind: 'chat', name: 'Trip planning', parentId: 'chats', status: 'ready' },
+      { id: 'doc-1', kind: 'doc', name: 'Notes.md', parentId: 'f1', status: 'ready' },
+    ])
   })
 
-  it('ignores drags without a readable item', () => {
-    expect(readSidebarItem(transfer())).toBeNull()
+  it('ignores drags without readable items', () => {
+    expect(readSidebarItems(transfer())).toEqual([])
   })
 })

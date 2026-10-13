@@ -18,6 +18,12 @@ const actions = vi.hoisted(() => ({
 const sidebarActions = vi.hoisted(() => ({
   moveSidebarItems: vi.fn(),
   orderSidebarItems: vi.fn(),
+  createSidebarFolder: vi.fn(),
+  renameSidebarItem: vi.fn(),
+  moveSidebarSelection: vi.fn(),
+  trashSidebarSelection: vi.fn(),
+  // The listings below stand in for the query cache the sidebar reads loaded items from.
+  findSidebarItem: (id: string) => Object.values(folderItems).flat().find((item) => item.id === id),
 }))
 
 const sidebarState = vi.hoisted(() => ({
@@ -342,5 +348,90 @@ describe('right-clicking empty sidebar space', () => {
     fireEvent.contextMenu(chatRow('a'), { clientX: 20, clientY: 60 })
     expect(await screen.findByRole('menuitem', { name: 'Rename' })).toBeTruthy()
     expect(screen.queryByRole('menuitem', { name: /Sort by/ })).toBeNull()
+  })
+})
+
+describe('creating a folder', () => {
+  afterEach(() => {
+    folderItems.chats = folderItems.chats!.filter((item) => item.id !== 'f-new')
+  })
+
+  it('adds an untitled folder and renames it in place', async () => {
+    sidebarActions.createSidebarFolder.mockImplementation(async (name: string) => {
+      const created = node('f-new', 'chats', 'folder', name, 0)
+      folderItems.chats = [created, ...folderItems.chats!]
+      return created
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'New folder' }))
+    const input = await screen.findByRole<HTMLInputElement>('textbox', { name: 'Rename folder' })
+    expect(sidebarActions.createSidebarFolder).toHaveBeenCalledWith('Untitled folder', undefined)
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(input.value).toBe('Untitled folder')
+    expect(document.activeElement).toBe(input)
+
+    fireEvent.change(input, { target: { value: 'Projects 2026' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    expect(sidebarActions.renameSidebarItem).toHaveBeenCalledWith('f-new', 'Projects 2026')
+    expect(screen.queryByRole('textbox', { name: 'Rename folder' })).toBeNull()
+  })
+})
+
+describe('selecting several rows', () => {
+  const link = (id: string) => screen.getByRole('link', { name: `Chat ${id}` })
+  const selected = () => Array.from(document.querySelectorAll<HTMLElement>('[data-sidebar-select]'))
+    .filter((row) => row.className.includes('bg-sky-500/15'))
+    .map((row) => row.dataset.sidebarSelect)
+
+  it('toggles rows with Cmd/Ctrl-click and selects ranges with Shift-click', () => {
+    fireEvent.click(link('a'), { metaKey: true })
+    fireEvent.click(link('b'), { ctrlKey: true })
+    expect(selected()).toEqual(['a', 'b'])
+    fireEvent.click(screen.getByRole('button', { name: 'Notes.md' }), { shiftKey: true })
+    expect(selected()).toEqual(['b', 'doc-1'])
+    fireEvent.click(screen.getByRole('button', { name: 'Folder f2' }), { metaKey: true })
+    expect(selected()).toEqual(['b', 'doc-1', 'f2'])
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(selected()).toEqual([])
+  })
+
+  it('clears the selection on a plain click', () => {
+    fireEvent.click(link('a'), { metaKey: true })
+    fireEvent.click(link('c'))
+    expect(selected()).toEqual([])
+  })
+
+  it('opens one menu for the whole selection from any selected row', async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Notes.md' }), { metaKey: true })
+    fireEvent.click(link('a'), { metaKey: true })
+    fireEvent.contextMenu(chatRow('a'), { clientX: 20, clientY: 60 })
+    expect(await screen.findByText('2 selected')).toBeTruthy()
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Move to trash' }))
+    expect(sidebarActions.trashSidebarSelection).toHaveBeenCalledWith(['a', 'doc-1'])
+    expect(selected()).toEqual([])
+  })
+
+  it('leaves rows outside the selection to their own menus', async () => {
+    fireEvent.click(link('a'), { metaKey: true })
+    fireEvent.click(link('b'), { metaKey: true })
+    fireEvent.contextMenu(chatRow('c'), { clientX: 20, clientY: 330 })
+    expect(await screen.findByRole('menuitem', { name: 'Rename' })).toBeTruthy()
+    expect(screen.queryByText('2 selected')).toBeNull()
+    expect(selected()).toEqual([])
+  })
+
+  it('drags the selection together, in sidebar order', () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Notes.md' }), { metaKey: true })
+    fireEvent.click(link('a'), { metaKey: true })
+    dragTo(chatRow('a'), 285, folderRow('f2'))
+    expect(sidebarActions.moveSidebarSelection).toHaveBeenCalledWith(['a', 'doc-1'], 'f2', { unpin: true })
+    dragTo(fileRow(), 10_000)
+    expect(sidebarActions.orderSidebarItems).toHaveBeenCalledWith('chats', ['f1', 'b', 'f2', 's-proj', 'c', 'a', 'doc-1'], undefined)
+  })
+
+  it('keeps a selected folder from being dragged into itself', () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Folder f1' }), { metaKey: true })
+    fireEvent.click(link('b'), { metaKey: true })
+    dragTo(chatRow('b'), 165, document.querySelector('[data-folder-row="f3"]')!)
+    expect(sidebarActions.moveSidebarSelection).not.toHaveBeenCalled()
   })
 })

@@ -224,6 +224,52 @@ export function archiveChat(chatId: string): void {
   void refresh()
 }
 
+/** A folder, file, or shortcut from any sidebar listing loaded so far. */
+export function findSidebarItem(id: string): FileNode | undefined {
+  for (const [, items] of queryClient.getQueriesData<FileNode[]>({ queryKey: ['folders', useAuth.getState().user?.id, 'items'] })) {
+    const item = items?.find((candidate) => candidate.id === id)
+    if (item) return item
+  }
+  return undefined
+}
+
+/** Splits selected sidebar ids into chats and Files items. */
+function splitSelection(ids: readonly string[]) {
+  const chats = new Map(useChat.getState().chats.map((chat) => [chat.id, chat]))
+  return { chats: ids.flatMap((id) => chats.get(id) ?? []), itemIds: ids.filter((id) => !chats.has(id)) }
+}
+
+/**
+ * Moves selected chats and Files items to the top of a folder, or (null) of the sidebar, keeping
+ * their order. With `unpin`, pinned chats leave the pinned list (as when dragged out of it).
+ */
+export function moveSidebarSelection(ids: readonly string[], folderId: string | null, { unpin = false } = {}): Promise<unknown> {
+  const chatsFolderId = readState()?.chatsFolderId
+  const target = folderId === chatsFolderId ? null : folderId
+  const { chats, itemIds } = splitSelection(ids)
+  const store = useChat.getState()
+  // Each moved chat or item lands on top, so file them last-first.
+  for (const chat of [...chats].reverse()) {
+    if (unpin && chat.pinned) store.unpinChat(chat.id, target)
+    else if (chat.folderId !== target || chat.inFilesRoot) store.moveToFolder(chat.id, target)
+  }
+  return itemIds.length ? moveSidebarItems([...itemIds].reverse(), target) : Promise.resolve()
+}
+
+/** Moves selected chats and Files items into the Archive folder. */
+export function archiveSidebarSelection(ids: readonly string[]): Promise<unknown> {
+  const { chats, itemIds } = splitSelection(ids)
+  for (const chat of chats) archiveChat(chat.id)
+  return itemIds.length ? archiveFiles(itemIds) : Promise.resolve()
+}
+
+/** Trashes selected chats (to the chat trash) and Files items (restorable from Files). */
+export async function trashSidebarSelection(ids: readonly string[]): Promise<void> {
+  const { chats, itemIds } = splitSelection(ids)
+  for (const chat of chats) useChat.getState().deleteChat(chat.id)
+  await Promise.all(itemIds.map((id) => trashSidebarItem(id)))
+}
+
 /** Creates a shortcut to a Files item or a chat in `parentId` (null is My files; omitted, the Chats folder). */
 export function createShortcut(targetKind: 'file' | 'chat', targetId: string, parentId?: string | null): Promise<FileNode> {
   if (parentId) useFolderExpansion.getState().setExpanded(parentId, true)

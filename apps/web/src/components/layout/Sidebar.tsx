@@ -47,12 +47,12 @@ import { resolveChatExpiryMenuAction } from '@/lib/chat-expiration'
 import { chatHasStreamingResponse } from '@/lib/response-tracking'
 import type { Chat } from '@/lib/types'
 import { ExpiryCountdown } from '@/components/chat/ExpiryCountdown'
-import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
@@ -61,14 +61,6 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
 import { ProfileAvatar } from '@/components/ProfileAvatar'
 import { AccountSwitcherMenuItems } from '@/components/layout/AccountSwitcher'
 import { apiRequest } from '@/lib/api'
@@ -81,7 +73,9 @@ import { FilesNavMenu } from '@/features/files/FilesNavMenu'
 import { FileNodeIcon } from '@/features/files/FileNodeIcon'
 import { registerItemDropZone } from '@/features/files/browser/use-item-drag'
 import { FolderPickerDialog } from '@/features/sidebar/FolderPickerDialog'
-import { writeSidebarItem } from '@/features/sidebar/drag-data'
+import { writeSidebarItems, type SidebarDragItem } from '@/features/sidebar/drag-data'
+import { clickSelect, EMPTY_SELECTION, selectOnly, type FileSelection } from '@/features/files/browser/selection'
+import { isEditableTarget } from '@/features/files/browser/shortcuts'
 import { useFileClipboard } from '@/features/files/browser/clipboard'
 import { useFileOperations } from '@/features/files/browser/use-file-operations'
 import { useSidePanel } from '@/features/side-panel/store'
@@ -89,17 +83,21 @@ import { openBeside, useMainNavigate } from '@/features/side-panel/use-panel-act
 import {
   archiveChat,
   archiveFiles,
+  archiveSidebarSelection,
   createShortcutInteractively,
   createSidebarFolder,
+  findSidebarItem,
   folderOutline,
   isWithin,
   moveSidebarItems,
+  moveSidebarSelection,
   newSidebarFile,
   orderSidebarItems,
   refreshSidebar,
   pickFolder,
   renameSidebarItem,
   trashSidebarItem,
+  trashSidebarSelection,
   useFolderExpansion,
   useSidebarItems,
   uploadToSidebar,
@@ -135,10 +133,12 @@ function listRowIds(list: DropList, root: ParentNode = document): string[] {
   return [...new Set(rows.map((row) => row.dataset.dragId ?? ''))].filter(Boolean)
 }
 
-function useSidebarDrag({ canEnter, folderOfList }: {
-  /** Whether the dragged item may go in `folderId`; a folder never goes inside itself. */
-  canEnter: (kind: DragKind, id: string, folderId: string) => boolean
+function useSidebarDrag({ canEnter, folderOfList, groupOf }: {
+  /** Whether the dragged item `id` may go in `folderId`; a folder never goes inside itself. */
+  canEnter: (id: string, folderId: string) => boolean
   folderOfList: (list: DropList) => string | null
+  /** The selected items a row drags along when it is one of several selected, in sidebar order. */
+  groupOf: (id: string) => SidebarDragItem[] | null
 }) {
   const [dragId, setDragId] = useState<string | null>(null)
   const [dragKind, setDragKind] = useState<DragKind | null>(null)
@@ -155,6 +155,8 @@ function useSidebarDrag({ canEnter, folderOfList }: {
   const dragKindRef = useRef<DragKind | null>(null)
   const dragListRef = useRef<DropList | null>(null)
   const didDragRef = useRef(false)
+  const groupRef = useRef<SidebarDragItem[] | null>(null)
+  const [dragGroup, setDragGroup] = useState<readonly string[] | null>(null)
 
   const clearDrag = () => {
     // Browsers send no click after a drag, so the flag only needs to outlive this event.
@@ -162,6 +164,8 @@ function useSidebarDrag({ canEnter, folderOfList }: {
     dragIdRef.current = null
     dragKindRef.current = null
     dragListRef.current = null
+    groupRef.current = null
+    setDragGroup(null)
     setDragId(null)
     setDragKind(null)
     setDragList(null)
@@ -173,6 +177,9 @@ function useSidebarDrag({ canEnter, folderOfList }: {
     // Nested rows (a chat inside a folder) must not also start their folder's drag.
     e.stopPropagation()
     didDragRef.current = false
+    const group = groupOf(id)
+    groupRef.current = group
+    setDragGroup(group && group.map((member) => member.id))
     dragIdRef.current = id
     dragKindRef.current = kind
     dragListRef.current = list ?? null
@@ -182,8 +189,15 @@ function useSidebarDrag({ canEnter, folderOfList }: {
     e.dataTransfer.effectAllowed = 'move'
     e.dataTransfer.setData('text/plain', id)
     e.dataTransfer.setData('application/x-pulpo-drag', kind)
-    if (item) writeSidebarItem(e.dataTransfer, item)
+    const items = group ?? (item ? [item] : [])
+    if (items.length) writeSidebarItems(e.dataTransfer, items)
   }
+
+  /** Whether `id` is the dragged row or one of the selected items dragged with it. */
+  const isDragged = (id: string) => groupRef.current ? groupRef.current.some((member) => member.id === id) : id === dragIdRef.current
+  /** Whether everything dragged may go in `folderId`. */
+  const fitsIn = (folderId: string) => (groupRef.current?.map((member) => member.id) ?? [dragIdRef.current!]).every((id) => canEnter(id, folderId))
+  const onlyChats = () => groupRef.current ? groupRef.current.every((member) => member.kind === 'chat') : dragKindRef.current === 'chat'
 
   const acceptMove = (e: DragEvent) => {
     e.preventDefault()
@@ -202,15 +216,16 @@ function useSidebarDrag({ canEnter, folderOfList }: {
     const kind = dragKindRef.current
     const id = dragIdRef.current
     if (!kind || !id) return false
-    if (list === 'pinned') return kind === 'chat'
+    if (list === 'pinned') return onlyChats()
     const folderId = folderOfList(list)
-    return Boolean(folderId) && canEnter(kind, id, folderId!)
+    return Boolean(folderId) && fitsIn(folderId!)
   }
 
   /** Shows the slot nearest the pointer among `list`'s rows inside the element handling the drag. */
   const snapToList = (e: DragEvent<HTMLElement>, list: DropList) => {
+    // Selected rows dragged together leave the list while they move.
     const rows = Array.from(e.currentTarget.querySelectorAll<HTMLElement>('[data-drag-list]'))
-      .filter((row) => row.dataset.dragList === list)
+      .filter((row) => row.dataset.dragList === list && !(groupRef.current && isDragged(row.dataset.dragId ?? '')))
     const source = dragListRef.current
     if (rows.length === 0) {
       setDrop(list === 'loose' && source !== 'loose' ? { kind: 'loose-target' } : null)
@@ -241,7 +256,7 @@ function useSidebarDrag({ canEnter, folderOfList }: {
     const kind = dragKindRef.current
     const id = dragIdRef.current
     if (!kind || !id) return
-    if (row && row.id !== id && canPlaceIn(row.list)) {
+    if (row && !isDragged(row.id) && canPlaceIn(row.list)) {
       const rect = e.currentTarget.getBoundingClientRect()
       const band = rect.height / 4
       if (e.clientY < rect.top + band || e.clientY > rect.bottom - band) {
@@ -250,7 +265,7 @@ function useSidebarDrag({ canEnter, folderOfList }: {
         return
       }
     }
-    if (row?.id === id || dragListRef.current === folderListId(folderId) || !canEnter(kind, id, folderId)) return
+    if ((row && isDragged(row.id)) || dragListRef.current === folderListId(folderId) || !fitsIn(folderId)) return
     acceptMove(e)
     setDrop({ kind: 'folder-target', folderId })
   }
@@ -266,13 +281,13 @@ function useSidebarDrag({ canEnter, folderOfList }: {
       snapToList(e, list)
       return
     }
-    if (!canEnter(kind, id, folderId)) return
+    if (!fitsIn(folderId)) return
     acceptMove(e)
     setDrop({ kind: 'folder-target', folderId })
   }
 
   const onRowDragOver = (list: DropList, id: string, e: DragEvent<HTMLElement>) => {
-    if (!dragIdRef.current || dragIdRef.current === id || !canPlaceIn(list)) return
+    if (!dragIdRef.current || isDragged(id) || !canPlaceIn(list)) return
     acceptMove(e)
     setDrop({ kind: 'row', list, id, edge: edgeFor(e) })
   }
@@ -286,7 +301,7 @@ function useSidebarDrag({ canEnter, folderOfList }: {
     const kind = dragKindRef.current
     if (!kind || !dragIdRef.current) return
     acceptMove(e)
-    const list: DropList = kind === 'chat' && zones.pinnedBottom !== undefined && e.clientY < zones.pinnedBottom ? 'pinned' : 'loose'
+    const list: DropList = onlyChats() && zones.pinnedBottom !== undefined && e.clientY < zones.pinnedBottom ? 'pinned' : 'loose'
     if (!canPlaceIn(list)) {
       setDrop(null)
       return
@@ -303,7 +318,7 @@ function useSidebarDrag({ canEnter, folderOfList }: {
     if (nodes.some((node) => node.systemRole)) return null
     const ids = new Set(nodes.map((node) => node.id))
     const fits = (folderId: string | null) => Boolean(folderId)
-      && nodes.every((node) => node.kind !== 'folder' || canEnter('folder', node.id, folderId!))
+      && nodes.every((node) => canEnter(node.id, folderId!))
     const beside = (row: HTMLElement, band: number): DropHint | null => {
       const list = row.dataset.dragList as DropList | undefined
       const id = row.dataset.dragId
@@ -342,7 +357,7 @@ function useSidebarDrag({ canEnter, folderOfList }: {
 
   /** Drop-line props for a row in `list`. */
   const rowLines = (list: DropList, id: string, kind: DragKind) => {
-    const isDragging = dragKind === kind && dragId === id
+    const isDragging = dragGroup ? dragGroup.includes(id) : dragKind === kind && dragId === id
     const rowDrop = drop?.kind === 'row' && drop.list === list && drop.id === id && !isDragging
     return {
       dragging: isDragging,
@@ -360,6 +375,7 @@ function useSidebarDrag({ canEnter, folderOfList }: {
     dragIdRef,
     dragKindRef,
     dragListRef,
+    groupRef,
     clearDrag,
     startDrag,
     onFolderDragOver,
@@ -591,6 +607,17 @@ function useShiftHeld() {
   return shiftHeld
 }
 
+/** A row's part in the sidebar's multi-selection: Cmd/Ctrl-click toggles it, Shift-click selects a range. */
+interface RowSelection {
+  selected: boolean
+  /** Handles a click; true when it changed the selection instead of opening the row. */
+  onClick: (event: ReactMouseEvent) => boolean
+  /** Handles a right-click; true when it opened the menu for the whole selection instead of the row's. */
+  onContextMenu: (event: ReactMouseEvent) => boolean
+}
+
+const SELECTED_ROW = 'bg-sky-500/15 text-sidebar-foreground hover:bg-sky-500/20 dark:bg-sky-400/15'
+
 /** Desktop sidebar widths, matching the classes on the sidebar below. */
 export const SIDEBAR_WIDTH = 264
 export const SIDEBAR_COLLAPSED_WIDTH = 52
@@ -612,10 +639,12 @@ export function ChatRow({
   onDrop,
   onDragEnd,
   didDragRef,
+  selection,
 }: {
   chat: Chat
   active: boolean
   shiftHeld: boolean
+  selection?: RowSelection
   onNavigate?: () => void
   draggable?: boolean
   droppable?: boolean
@@ -653,13 +682,14 @@ export function ChatRow({
     <div
       data-drag-list={dragList}
       data-drag-id={dragList ? dragId ?? chat.id : undefined}
+      data-sidebar-select={selection ? chat.id : undefined}
       draggable={canDrag && !renaming}
       onDragStart={canDrag ? onDragStart : undefined}
       onDragOver={canDrop || canDrag ? onDragOver : undefined}
       onDrop={canDrop || canDrag ? onDrop : undefined}
       onDragEnd={canDrag ? onDragEnd : undefined}
       onContextMenu={(event) => {
-        if (renaming) return
+        if (renaming || selection?.onContextMenu(event)) return
         event.preventDefault()
         setMenuPoint({ x: event.clientX, y: event.clientY })
       }}
@@ -668,6 +698,7 @@ export function ChatRow({
         active
           ? 'bg-sidebar-accent text-sidebar-accent-foreground'
           : 'text-sidebar-foreground/80 hover:bg-sidebar-accent/60',
+        selection?.selected && SELECTED_ROW,
         canDrag && 'active:cursor-grabbing',
         dragging && 'opacity-40',
       )}
@@ -691,6 +722,7 @@ export function ChatRow({
             e.preventDefault()
             return
           }
+          if (selection?.onClick(e)) return
           const modified = e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0
           if (modified) {
             if (!isDesktopRuntime()) return
@@ -784,8 +816,13 @@ interface TreeProps {
   drag: SidebarDrag
   onDrop: (e: DragEvent) => void
   onNewFolder: (parentId: string) => void
+  /** A folder just created from the sidebar, which opens for renaming once it appears. */
+  newFolderId: string | null
+  onNewFolderNamed: () => void
   /** Opens the empty-space menu for an open folder. */
   onSpaceMenu: (event: ReactMouseEvent, folderId: string) => void
+  /** The multi-selection as it concerns the row for `id`. */
+  selection: (id: string) => RowSelection
   go: (path: string) => void
 }
 
@@ -1016,6 +1053,73 @@ function SpaceMenuContent({ folderId, onNewChat, onNewFolder, onUpload, go }: {
   )
 }
 
+/** The actions for several selected rows, from right-clicking one of them. */
+function SelectionMenuContent({ ids, sidebar, onDone }: { ids: string[]; sidebar: SidebarState; onDone: () => void }) {
+  const { t } = useTranslation()
+  const filesEnabled = useAuth((state) => state.filesEnabled)
+  const trashRetention = useSettings((state) => state.trashRetention)
+  // Without Files, nothing shows what is in Archive, so nothing is moved there.
+  const outline = folderOutline(sidebar).filter(({ folder }) => filesEnabled || !isWithin(sidebar, folder.id, sidebar.archiveFolderId))
+  // A selected folder cannot go inside itself.
+  const holdsSelected = (folderId: string) => ids.some((id) => isWithin(sidebar, folderId, id))
+  const move = (folderId: string | null) => {
+    void moveSidebarSelection(ids, folderId)
+    onDone()
+  }
+  const moveElsewhere = async () => {
+    const destination = await pickFolder({ title: uit`Move ${ids.length} items`, action: ui("Move here"), initialFolderId: sidebar.chatsFolderId })
+    if (destination !== undefined) move(destination)
+  }
+  return (
+    <DropdownMenuContent side="bottom" align="start" sideOffset={2} className="w-52">
+      <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">{uit`${ids.length} selected`}</DropdownMenuLabel>
+      <DropdownMenuSub>
+        <DropdownMenuSubTrigger>
+          <FolderInput />
+          {t('chat.moveToFolder')}
+        </DropdownMenuSubTrigger>
+        <DropdownMenuSubContent className="max-h-80 w-52 overflow-y-auto">
+          <DropdownMenuItem onClick={() => move(null)}>
+            {t('chat.noFolder')}
+          </DropdownMenuItem>
+          {outline.length > 0 && <DropdownMenuSeparator />}
+          {outline.map(({ folder, depth }) => (
+            <DropdownMenuItem
+              key={folder.id}
+              disabled={holdsSelected(folder.id)}
+              style={{ paddingLeft: `${0.5 + depth * 0.75}rem` }}
+              onClick={() => move(folder.id)}
+            >
+              {folder.systemRole === 'archive' ? <Archive /> : <FolderIcon />}
+              <span className="truncate">{folder.name}</span>
+            </DropdownMenuItem>
+          ))}
+          {filesEnabled && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => void moveElsewhere()}>
+                <FolderOpen />
+                {ui("Other folder…")}
+              </DropdownMenuItem>
+            </>
+          )}
+        </DropdownMenuSubContent>
+      </DropdownMenuSub>
+      {filesEnabled && (
+        <DropdownMenuItem onClick={() => { void archiveSidebarSelection(ids); onDone() }}>
+          <Archive />
+          {ui("Move to archive")}
+        </DropdownMenuItem>
+      )}
+      <DropdownMenuSeparator />
+      <DropdownMenuItem variant="destructive" onClick={() => { void trashSidebarSelection(ids); onDone() }}>
+        <Trash2 />
+        {trashRetention === 'instant' ? t('common.delete') : ui("Move to trash")}
+      </DropdownMenuItem>
+    </DropdownMenuContent>
+  )
+}
+
 /** A right-click menu at the pointer, with the same styling as the "⋯" menus. */
 function PointerMenu({ point, onClose, children }: { point: { x: number; y: number } | null; onClose: () => void; children: ReactNode }) {
   if (!point) return null
@@ -1030,7 +1134,7 @@ function PointerMenu({ point, onClose, children }: { point: { x: number; y: numb
 }
 
 /** A file, or a shortcut to a file or chat, in the sidebar. Opens the way it does from Files. */
-function SidebarItemRow({ node, list, reorderable, sidebar, chatId, drag, onDrop, onNewFolder, go }: LoadedTreeProps & RowPlacement & { node: FileNode }) {
+function SidebarItemRow({ node, list, reorderable, sidebar, chatId, drag, onDrop, onNewFolder, go, ...props }: LoadedTreeProps & RowPlacement & { node: FileNode }) {
   const { t } = useTranslation()
   const [menuPoint, setMenuPoint] = useState<{ x: number; y: number } | null>(null)
   const [renaming, setRenaming] = useState(false)
@@ -1040,6 +1144,7 @@ function SidebarItemRow({ node, list, reorderable, sidebar, chatId, drag, onDrop
   const besideId = fileTargetId(node)
   const lines = drag.rowLines(list, node.id, 'item')
   const active = node.kind === 'shortcut' && node.target?.kind === 'chat' && node.target.id === chatId
+  const selection = props.selection(node.id)
   const menu = (atPointer: boolean) => (
     <ItemMenu node={node} sidebar={sidebar} atPointer={atPointer} onRename={() => setRenaming(true)} onNewFolder={onNewFolder} go={go} />
   )
@@ -1047,13 +1152,14 @@ function SidebarItemRow({ node, list, reorderable, sidebar, chatId, drag, onDrop
     <div
       data-drag-list={reorderable ? list : undefined}
       data-drag-id={reorderable ? node.id : undefined}
+      data-sidebar-select={node.id}
       draggable={!renaming}
       onDragStart={(e) => drag.startDrag('item', node.id, e, list, node)}
       onDragEnd={drag.clearDrag}
       onDragOver={reorderable ? (e) => drag.onRowDragOver(list, node.id, e) : undefined}
       onDrop={onDrop}
       onContextMenu={(event) => {
-        if (renaming) return
+        if (renaming || selection.onContextMenu(event)) return
         event.preventDefault()
         setMenuPoint({ x: event.clientX, y: event.clientY })
       }}
@@ -1061,6 +1167,7 @@ function SidebarItemRow({ node, list, reorderable, sidebar, chatId, drag, onDrop
       className={cn(
         'group relative flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm transition-colors',
         active ? 'bg-sidebar-accent text-sidebar-accent-foreground' : 'text-sidebar-foreground/80 hover:bg-sidebar-accent/60',
+        selection.selected && SELECTED_ROW,
         lines.dragging && 'opacity-40',
         !path && 'opacity-60',
       )}
@@ -1072,14 +1179,14 @@ function SidebarItemRow({ node, list, reorderable, sidebar, chatId, drag, onDrop
       ) : (
         <button
           type="button"
-          disabled={!path}
           className="min-w-0 flex-1 cursor-[inherit] truncate text-left outline-none after:absolute after:inset-0 after:rounded-lg focus-visible:after:ring-2 focus-visible:after:ring-ring"
           onClick={(event) => {
-            if (!path) return
             if (drag.didDragRef.current) {
               drag.didDragRef.current = false
               return
             }
+            // Shortcuts to trashed items cannot open, but can still be selected.
+            if (selection.onClick(event) || !path) return
             if (event.altKey && besideId && splitAvailable) openBeside({ kind: 'file', id: besideId }, goMain)
             else go(path)
           }}
@@ -1125,6 +1232,7 @@ function SidebarEntryRow({ entry, list, reorderable, ...props }: TreeProps & Row
         onDragOver={reorderable ? (e) => drag.onRowDragOver(list, chat.id, e) : undefined}
         onDrop={reorderable ? onDrop : undefined}
         onDragEnd={drag.clearDrag}
+        selection={props.selection(chat.id)}
       />
     )
   }
@@ -1155,18 +1263,22 @@ function SidebarFolderNode({ folder, node, shortcut, list, reorderable, ...props
   shortcut?: FileNode
 }) {
   const { t } = useTranslation()
-  const { sidebar, chatsByFolder, drag, onDrop, onNewFolder, go } = props
+  const { sidebar, chatsByFolder, drag, onDrop, onNewFolder, newFolderId, onNewFolderNamed, go } = props
   // A shortcut opens independently of the folder it points at.
   const expansionKey = shortcut ? `shortcut:${shortcut.id}` : folder.id
   const expanded = useFolderExpansion((state) => state.expanded[expansionKey] ?? false)
   const setExpanded = useFolderExpansion((state) => state.setExpanded)
   const items = useSidebarItems(folder.id, expanded).data ?? []
-  const [renaming, setRenaming] = useState(false)
+  const [renamingState, setRenaming] = useState(false)
+  // A new folder starts out renaming, as in Files.
+  const renaming = renamingState || (!shortcut && newFolderId === folder.id)
   const [menuPoint, setMenuPoint] = useState<{ x: number; y: number } | null>(null)
   const chats = chatsByFolder.get(folder.id) ?? []
   const contentsList = folderListId(folder.id)
   const dragged = shortcut ? { kind: 'item' as const, id: shortcut.id } : folder.systemRole ? null : { kind: 'folder' as const, id: folder.id }
   const rowId = dragged?.id ?? folder.id
+  // Built-in folders cannot be moved or trashed, so they are not selectable either.
+  const selection = dragged ? props.selection(rowId) : undefined
   const lines = drag.rowLines(list, rowId, dragged?.kind ?? 'folder')
   const dropHighlight = drag.drop?.kind === 'folder-target' && drag.drop.folderId === folder.id
   const FolderGlyph = folder.systemRole === 'archive' ? Archive : FolderIcon
@@ -1187,13 +1299,15 @@ function SidebarFolderNode({ folder, node, shortcut, list, reorderable, ...props
         onDragOver={(e) => drag.onFolderDragOver(folder.id, e, reorderable ? { list, id: rowId } : undefined)}
         onDrop={onDrop}
         data-folder-row={folder.id}
+        data-sidebar-select={selection ? rowId : undefined}
         onContextMenu={(event) => {
-          if (renaming) return
+          if (renaming || selection?.onContextMenu(event)) return
           event.preventDefault()
           setMenuPoint({ x: event.clientX, y: event.clientY })
         }}
         className={cn(
           'group relative flex items-center rounded-lg text-sm text-sidebar-foreground/85 hover:bg-sidebar-accent/70',
+          selection?.selected && SELECTED_ROW,
           dragged && 'active:cursor-grabbing',
           lines.dragging && 'opacity-40',
           dropHighlight && 'bg-sidebar-accent ring-1 ring-foreground/20',
@@ -1208,18 +1322,22 @@ function SidebarFolderNode({ folder, node, shortcut, list, reorderable, ...props
               value={shortcut?.name ?? folder.name}
               label={t('sidebar.renameFolder')}
               onCommit={(next) => void renameSidebarItem(shortcut?.id ?? folder.id, next)}
-              onDone={() => setRenaming(false)}
+              onDone={() => {
+                setRenaming(false)
+                if (newFolderId === folder.id) onNewFolderNamed()
+              }}
             />
           ) : (
             <button
               type="button"
               aria-expanded={expanded}
               className="flex-1 cursor-pointer truncate text-left outline-none after:absolute after:inset-0 after:rounded-lg focus-visible:after:ring-2 focus-visible:after:ring-ring"
-              onClick={() => {
+              onClick={(event) => {
                 if (drag.didDragRef.current) {
                   drag.didDragRef.current = false
                   return
                 }
+                if (selection?.onClick(event)) return
                 setExpanded(expansionKey, !expanded)
               }}
             >
@@ -1331,9 +1449,7 @@ export function Sidebar({
   const setSetting = useSettings((s) => s.set)
   const signOutActiveAccount = useAuth((s) => s.signOutActiveAccount)
   const [accountMenuOpen, setAccountMenuOpen] = useState(false)
-  // The folder a new folder goes into: null for the top of the sidebar, undefined when closed.
-  const [newFolderParent, setNewFolderParent] = useState<string | null | undefined>(undefined)
-  const [folderName, setFolderName] = useState('')
+  const [newFolderId, setNewFolderId] = useState<string | null>(null)
   const [activeTooltip, setActiveTooltip] = useState<string | null>(null)
   const [filesMenuPoint, setFilesMenuPoint] = useState<{ x: number; y: number } | null>(null)
   const shiftHeld = useShiftHeld()
@@ -1342,9 +1458,73 @@ export function Sidebar({
     if (list === 'loose') return sidebar?.chatsFolderId ?? null
     return list.slice('folder:'.length)
   }
+  // Rows selected with Cmd/Ctrl- and Shift-clicks, to drag, move, or trash together as in Files.
+  const [selection, setSelection] = useState<FileSelection>(EMPTY_SELECTION)
+  const [selectionMenu, setSelectionMenu] = useState<{ x: number; y: number; ids: string[] } | null>(null)
+  /** The selectable rows, top to bottom, as the sidebar shows them. */
+  const selectableIds = () => [...new Set(Array.from(
+    asideRef.current?.querySelectorAll<HTMLElement>('[data-sidebar-select]') ?? [],
+    (row) => row.dataset.sidebarSelect!,
+  ))]
+  /** The selected rows still shown, in sidebar order. */
+  const selectedIds = () => selectableIds().filter((id) => selection.ids.has(id))
+  const dragItem = (id: string): SidebarDragItem | undefined => {
+    const chat = chats.find((candidate) => candidate.id === id)
+    return chat ? chatDragItem(chat, sidebar) : findSidebarItem(id)
+  }
+  const rowSelection = (id: string): RowSelection => ({
+    selected: selection.ids.has(id),
+    onClick: (event) => {
+      const toggle = event.metaKey || event.ctrlKey
+      if (!toggle && !event.shiftKey) {
+        if (selection.ids.size) setSelection(EMPTY_SELECTION)
+        return false
+      }
+      event.preventDefault()
+      window.getSelection()?.removeAllRanges()
+      const order = selectableIds()
+      // Starting from nothing, the open chat counts as selected, so Shift-click spans from it.
+      const base = selection.ids.size === 0 && chatId && order.includes(chatId) ? selectOnly(chatId) : selection
+      setSelection(clickSelect(base, order, id, { toggle, range: event.shiftKey }))
+      return true
+    },
+    onContextMenu: (event) => {
+      if (sidebar && selection.ids.has(id) && selection.ids.size > 1) {
+        event.preventDefault()
+        setSelectionMenu({ x: event.clientX, y: event.clientY, ids: selectedIds() })
+        return true
+      }
+      // Right-clicking a row outside the selection acts on that row alone.
+      if (selection.ids.size) setSelection(EMPTY_SELECTION)
+      return false
+    },
+  })
+  useEffect(() => {
+    if (!selection.ids.size) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !isEditableTarget(event.target)) setSelection(EMPTY_SELECTION)
+    }
+    // Clicking outside the sidebar (its menus aside) ends the selection.
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as Element | null
+      if (!target || asideRef.current?.contains(target) || target.closest('[role="menu"]')) return
+      setSelection(EMPTY_SELECTION)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    window.addEventListener('pointerdown', onPointerDown)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('pointerdown', onPointerDown)
+    }
+  }, [selection])
   const drag = useSidebarDrag({
-    canEnter: (kind, id, folderId) => kind !== 'folder' || !isWithin(sidebar, folderId, id),
+    canEnter: (id, folderId) => !isWithin(sidebar, folderId, id),
     folderOfList,
+    groupOf: (id) => {
+      if (!selection.ids.has(id) || selection.ids.size < 2) return null
+      const items = selectedIds().flatMap((selected) => dragItem(selected) ?? [])
+      return items.length > 1 ? items : null
+    },
   })
   const pinnedZoneRef = useRef<HTMLDivElement>(null)
   const openSidebarLabel = t('sidebar.expand')
@@ -1359,8 +1539,13 @@ export function Sidebar({
     const from = drag.dragIdRef.current
     const kind = drag.dragKindRef.current
     const sourceList = drag.dragListRef.current
+    const group = drag.groupRef.current
     drag.clearDrag()
     if (!hint || !from || !kind) return
+    if (group) {
+      dropGroup(hint, group.map((member) => member.id))
+      return
+    }
     // Pinned chats dropped anywhere else leave the pinned list.
     const place = sourceList === 'pinned' ? unpinChat : moveToFolder
 
@@ -1387,6 +1572,38 @@ export function Sidebar({
     void orderSidebarItems(folderId, reorderList([...ids, from], from, hint.id, hint.edge))
   }
 
+  /** Puts `ids` together, in their order, at a drop line in a folder's list. */
+  const placeAtLine = (hint: Extract<DropHint, { kind: 'row' }>, ids: readonly string[], incoming?: FileNode[]): boolean => {
+    const folderId = folderOfList(hint.list)
+    if (!folderId) return false
+    const rest = listRowIds(hint.list).filter((id) => !ids.includes(id))
+    const at = rest.indexOf(hint.id) + (hint.edge === 'after' ? 1 : 0)
+    void orderSidebarItems(folderId, [...rest.slice(0, at), ...ids, ...rest.slice(at)], incoming)
+    return true
+  }
+
+  /** Drops several selected rows together, in their order, where the sidebar showed. */
+  const dropGroup = (hint: DropHint, ids: string[]) => {
+    if (hint.kind !== 'row') {
+      const folderId = hint.kind === 'folder-target' ? hint.folderId : null
+      void moveSidebarSelection(ids, folderId, { unpin: true })
+      if (folderId) ensureFolderExpanded(folderId)
+      return
+    }
+    if (ids.includes(hint.id)) return
+    if (hint.list !== 'pinned') {
+      placeAtLine(hint, ids)
+      return
+    }
+    // Each chat goes right after the one before it, starting at the line shown.
+    let target: { id: string; edge: 'before' | 'after' } = { id: hint.id, edge: hint.edge }
+    for (const id of ids) {
+      if (useChat.getState().chats.find((chat) => chat.id === id)?.pinned) reorderPinnedChats(id, target.id, target.edge)
+      else pinChat(id, { targetId: target.id, edge: target.edge })
+      target = { id, edge: 'after' }
+    }
+  }
+
   /** Places items dragged in from the Files browser where the sidebar showed (see useItemDrag). */
   const dropFromFiles = (nodes: FileNode[]): boolean => {
     const hint = drag.dropRef.current
@@ -1398,13 +1615,8 @@ export function Sidebar({
       void moveSidebarItems(ids, folderId)
       return true
     }
-    const folderId = folderOfList(hint.list)
-    if (!folderId) return false
     // Several items stay together, in their order, at the spot shown.
-    const rest = listRowIds(hint.list).filter((id) => !ids.includes(id))
-    const at = rest.indexOf(hint.id) + (hint.edge === 'after' ? 1 : 0)
-    void orderSidebarItems(folderId, [...rest.slice(0, at), ...ids, ...rest.slice(at)], nodes)
-    return true
+    return placeAtLine(hint, ids, nodes)
   }
   const asideRef = useRef<HTMLElement>(null)
   const filesZone = useRef({ dropFromFiles, drag })
@@ -1461,6 +1673,13 @@ export function Sidebar({
     if (!c.folderId) loose.push(c)
     else inFolders.set(c.folderId, [...inFolders.get(c.folderId) ?? [], c])
   }
+  /**
+   * Creates an untitled folder and renames it in place, as in Files. The server picks a free name,
+   * so renaming starts once the folder is listed under its final name.
+   */
+  const newFolder = (parentId?: string) => {
+    void createSidebarFolder(ui("Untitled folder"), parentId).then((node) => setNewFolderId(node.id))
+  }
   const treeProps: TreeProps = {
     sidebar,
     chatsByFolder: inFolders,
@@ -1469,8 +1688,11 @@ export function Sidebar({
     onNavigate,
     drag,
     onDrop: handleDrop,
-    onNewFolder: (parentId: string) => setNewFolderParent(parentId),
+    onNewFolder: (parentId: string) => newFolder(parentId),
+    newFolderId,
+    onNewFolderNamed: () => setNewFolderId(null),
     onSpaceMenu: (event, folderId) => openSpaceMenu(event, folderId),
+    selection: rowSelection,
     go,
   }
   // Recent order lists the top level by last activity under time headings; the manual order stays saved underneath.
@@ -1489,13 +1711,6 @@ export function Sidebar({
     }
   } else if (rootEntries.length > 0) {
     rootGroups.push({ group: null, entries: rootEntries })
-  }
-  const createFolder = () => {
-    // Files names cannot contain "/", so it becomes "-" as in the migration of older folders.
-    const name = folderName.trim().replaceAll('/', '-')
-    if (name) void createSidebarFolder(name, newFolderParent ?? undefined)
-    setFolderName('')
-    setNewFolderParent(undefined)
   }
   const toggleChatSortMode = () => setSetting('chatSortMode', recentOrder ? 'default' : 'recent')
 
@@ -1674,6 +1889,9 @@ export function Sidebar({
         onContextMenu={(event) => {
           if (!(event.target as Element).closest('[data-sidebar-nav]')) openSpaceMenu(event, null)
         }}
+        onClick={(event) => {
+          if (selection.ids.size && !(event.target as Element).closest('[data-sidebar-select]')) setSelection(EMPTY_SELECTION)
+        }}
       >
         {/* primary nav */}
         <div className="space-y-0.5 px-2" data-sidebar-nav>
@@ -1717,13 +1935,13 @@ export function Sidebar({
                       draggable
                       droppable
                       {...drag.rowLines('pinned', c.id, 'chat')}
-                      dragging={drag.dragKind === 'chat' && drag.dragList === 'pinned' && drag.dragId === c.id}
                       didDragRef={drag.didDragRef}
                       dragList="pinned"
                       onDragStart={(e) => drag.startDrag('chat', c.id, e, 'pinned', chatDragItem(c, sidebar))}
                       onDragOver={(e) => drag.onRowDragOver('pinned', c.id, e)}
                       onDrop={handleDrop}
                       onDragEnd={drag.clearDrag}
+                      selection={rowSelection(c.id)}
                     />
                   ))}
                 </div>
@@ -1754,7 +1972,7 @@ export function Sidebar({
                       type="button"
                       className="ml-auto flex size-5 cursor-pointer items-center justify-center rounded text-muted-foreground hover:bg-sidebar-accent hover:text-foreground disabled:cursor-default disabled:opacity-50"
                       disabled={!sidebar}
-                      onClick={() => setNewFolderParent(null)}
+                      onClick={() => newFolder()}
                       aria-label={t('sidebar.newFolder')}
                     >
                       <FolderPlus className="size-3.5" />
@@ -1859,13 +2077,18 @@ export function Sidebar({
           <SpaceMenuContent
             folderId={spaceMenu.folderId ?? sidebar.chatsFolderId}
             onNewChat={spaceMenu.folderId ? undefined : startNewChat}
-            onNewFolder={() => setNewFolderParent(spaceMenu.folderId)}
+            onNewFolder={() => newFolder(spaceMenu.folderId ?? undefined)}
             onUpload={() => {
               uploadTarget.current = spaceMenu.folderId ?? sidebar.chatsFolderId
               uploadInput.current?.click()
             }}
             go={go}
           />
+        )}
+      </PointerMenu>
+      <PointerMenu point={selectionMenu} onClose={() => setSelectionMenu(null)}>
+        {selectionMenu && sidebar && (
+          <SelectionMenuContent ids={selectionMenu.ids} sidebar={sidebar} onDone={() => setSelection(EMPTY_SELECTION)} />
         )}
       </PointerMenu>
       <input
@@ -1879,25 +2102,6 @@ export function Sidebar({
           if (uploadTarget.current) void uploadToSidebar(uploadTarget.current, files)
         }}
       />
-      <Dialog open={newFolderParent !== undefined} onOpenChange={(open) => { if (!open) setNewFolderParent(undefined) }}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle>{t('sidebar.newFolder')}</DialogTitle>
-          </DialogHeader>
-          <Input
-            placeholder={t('sidebar.folderName')}
-            value={folderName}
-            onChange={(e) => setFolderName(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); createFolder() } }}
-            autoFocus
-          />
-          <DialogFooter>
-            <Button onClick={createFolder}>
-              {t('common.create')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </aside>
   )
 }
