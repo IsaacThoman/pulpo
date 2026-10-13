@@ -684,8 +684,15 @@
     {
       "idx": 97,
       "version": "7",
-      "when": 1791918830549,
-      "tag": "0097_compaction_retained_user_tokens",
+      "when": 1791926446864,
+      "tag": "0097_files_chat_folders",
+      "breakpoints": true
+    },
+    {
+      "idx": 98,
+      "version": "7",
+      "when": 1791928022757,
+      "tag": "0098_compaction_retained_user_tokens",
       "breakpoints": true
     }
   ]

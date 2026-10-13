@@ -19,6 +19,7 @@ import {
   trashNodeInTx,
   treeTooDeep,
 } from './tree-service.js'
+import { topSortOrder } from './order.js'
 
 type AttachmentRow = typeof attachments.$inferSelect
 
@@ -66,6 +67,7 @@ export async function saveAttachmentToFiles(
     await tx.insert(fileNodes).values({
       id, ownerUserId: userId, parentId, kind: 'blob', name, status: 'pending',
       mimeType: attachment.mimeType, sizeBytes: attachment.sizeBytes, checksum: attachment.checksum, objectKey,
+      sortOrder: await topSortOrder(tx, userId, parentId),
     })
   })
   if (closedDocs.length) await publishDocsClosed(closedDocs, 'trashed')

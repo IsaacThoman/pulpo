@@ -25,6 +25,7 @@ vi.mock('@/features/files/api', async (importOriginal) => ({
   fetchFolder: async () => ({ folder: null, ancestors: [], children: [
     { id: 'document', name: 'Notes.md', kind: 'doc', sizeBytes: 0, updatedAt: '2026-10-06T00:00:00Z' },
     { id: 'folder', name: 'Projects', kind: 'folder', updatedAt: '2026-10-06T00:00:00Z' },
+    { id: 'sidebar', name: 'Sidebar', kind: 'folder', systemRole: 'chats', updatedAt: '2026-10-06T00:00:00Z' },
   ] }),
   fetchFolderLayout: async () => ({ folderId: null, positions: {}, snapToGrid: true }),
 }))
@@ -123,4 +124,25 @@ it('applies a changed preference to an already open browser', async () => {
   await doubleClick('Notes.md')
   expect(screen.getByTestId('location').textContent).toBe('/files')
   expect(useSidePanel.getState().content).toEqual({ kind: 'file', id: 'document' })
+})
+
+describe('menus of built-in folders', () => {
+  const unavailable = ['Rename', 'Color and icon…', 'Move to…', 'Cut', 'Move to trash']
+  // Menu items' names end with their keyboard shortcut.
+  const menuItem = (name: string) => screen.getByRole('menuitem', { name: new RegExp(`^${name}`) })
+
+  it('lists the actions they do not allow, unavailable', async () => {
+    showFiles()
+    fireEvent.contextMenu(await screen.findByRole('option', { name: /Sidebar/ }))
+    await screen.findByRole('menuitem', { name: /^Copy/ })
+    for (const name of unavailable) expect(menuItem(name).getAttribute('aria-disabled')).toBe('true')
+    expect(menuItem('Copy').getAttribute('aria-disabled')).toBeNull()
+  })
+
+  it('leaves the same actions available for other folders', async () => {
+    showFiles()
+    fireEvent.contextMenu(await screen.findByRole('option', { name: /Projects/ }))
+    await screen.findByRole('menuitem', { name: /^Copy/ })
+    for (const name of unavailable) expect(menuItem(name).getAttribute('aria-disabled')).toBeNull()
+  })
 })

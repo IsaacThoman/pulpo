@@ -135,7 +135,7 @@ default 20,000) sets the retained-token budget. It is available in
 quarter of the auto-compact limit, so small-window models still shrink after
 compaction.
 
-Migration `0097_compaction_retained_user_tokens` adds the column. The old
+Migration `0098_compaction_retained_user_tokens` adds the column. The old
 `compaction_retained_turns` column is deprecated and unused, and is kept only so
 pods running the previous release keep working during a rolling deploy. A
 later migration will drop it.
