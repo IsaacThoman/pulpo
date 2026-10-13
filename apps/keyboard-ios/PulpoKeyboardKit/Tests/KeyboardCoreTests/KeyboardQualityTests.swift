@@ -127,6 +127,45 @@ struct KeyboardQualityTests {
     print("Contextual unseen-message swipes: \(top1)/\(total) top1, \(top3) top3; dictionary \(dictionary.path)")
   }
 
+  @Test(.enabled(if: ProcessInfo.processInfo.environment["PK_TYPING_HOLDOUT"] != nil))
+  func evaluateCleanTypingOnUnseenContexts() throws {
+    struct Item: Codable { var prefix: String; var expected: String }
+    let items = try JSONDecoder().decode([Item].self, from: Data(contentsOf: URL(fileURLWithPath: ProcessInfo.processInfo.environment["PK_TYPING_HOLDOUT"]!)))
+    let dictionary = ProcessInfo.processInfo.environment["PK_HOLDOUT_DICTIONARY"].map { URL(fileURLWithPath: $0) }
+      ?? Fixtures.languageData.appendingPathComponent("en_US.pkdict")
+    let lexicon = try Lexicon(url: dictionary)
+    let model = LanguageModel(lexicon: lexicon, personal: PersonalDictionary(url: nil))
+    let suggester = Suggester(model: model, corrector: SpellCorrector(lexicon: lexicon))
+    var changed: [WordResult] = [], total = 0
+    let noise = Double(ProcessInfo.processInfo.environment["PK_TYPING_NOISE"] ?? "0") ?? 0
+    for (index, item) in items.enumerated() where index % 41 == 0 {
+      guard let id = lexicon.id(of: item.expected), !lexicon.flags(id).contains(.neverSuggest) else { continue }
+      let parts = item.prefix.split(separator: " ").map(String.init)
+      let context = model.context(previousWord: parts.last, sentenceStart: false, precedingWord: parts.count > 1 ? parts[parts.count - 2] : nil)
+      var generator = SeededGenerator(state: UInt64(index + 39_041))
+      let taps = item.expected.map { character -> KeyPoint? in
+        guard let byte = TextNormalizer.key(String(character)).utf8.first, let center = LetterGeometry.qwerty.center(byte) else { return nil }
+        // Condition jitter on actually registering the intended letter. This
+        // measures unwanted correction of clean text, not mistap recovery.
+        if noise > 0 {
+          for _ in 0..<16 {
+            let point = KeyPoint(x: center.x + generator.gaussian(noise), y: center.y + generator.gaussian(noise))
+            if LetterGeometry.qwerty.nearestLetter(to: point) == byte { return point }
+          }
+        }
+        return center
+      }
+      let set = suggester.suggestions(for: TypedWord(text: item.expected, taps: taps), context: context, autocorrect: true)
+      let output = set.autocorrection ?? item.expected
+      total += 1
+      if output != item.expected { changed.append(WordResult(input: item.prefix, expected: item.expected, output: output, suggestions: set.slots.map(\.text))) }
+    }
+    print("Clean known-word typing: \(changed.count)/\(total) changed, noise \(noise); dictionary \(dictionary.path)")
+    if let output = ProcessInfo.processInfo.environment["PK_HOLDOUT_REPORT"] {
+      try JSONEncoder().encode(changed).write(to: URL(fileURLWithPath: output), options: .atomic)
+    }
+  }
+
   @Test(.enabled(if: ProcessInfo.processInfo.environment["PK_QUALITY_REPORT"] != nil))
   func auditQuality() throws {
     let (model, suggester, glide) = Fixtures.stack()

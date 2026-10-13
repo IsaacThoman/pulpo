@@ -58,7 +58,7 @@ public final class Suggester {
   public let corrector: SpellCorrector
   /// The person's iOS text replacements, keyed by lowercased shortcut.
   public var textReplacements: [String: String] = [:]
-  /// Margin a near-miss must beat a valid typed word by before replacing it.
+  /// Margin a near-miss must beat a case-exact valid word by, in addition to touch evidence.
   public var validWordMargin = 7.0
   static let completionPenalty = 1.5
   static let ambiguousLiterals: Set<String> = ["ill", "its", "lets", "were", "well", "hell", "shell", "wed", "id"]
@@ -80,8 +80,9 @@ public final class Suggester {
       guard !lexicon.flags(id).contains(.notAWord) else { continue }
       let display = lexicon.display(id)
       if display == normalized { return true }
-      // "Hello" and "HELLO" are fine when "hello" is a word.
-      if display == lowered, normalized != lowered { return true }
+      // Case alone must not turn a known name or acronym into a misspelling:
+      // lowercase "nfl" and "brady" are still NFL and Brady, not ngl and brandy.
+      if display.lowercased() == lowered { return true }
       // Diacritics are intentional spelling, even when only the unaccented form
       // is in the lexicon. Never silently turn café into cafe.
       if normalized.decomposedStringWithCanonicalMapping.unicodeScalars.contains(where: { $0.properties.generalCategory == .nonspacingMark }),
@@ -185,7 +186,7 @@ public final class Suggester {
     }
     // Internal capitals usually identify a name, brand, or code identifier.
     let hasInternalCapitals = typed.dropFirst().contains(where: { $0.isUppercase }) && typed.contains(where: { $0.isLowercase })
-    let autocorrection = autocorrect && !rejected.contains(typed) && !hasInternalCapitals ? choose(from: ranked, typed: typed, valid: valid) : nil
+    let autocorrection = autocorrect && !rejected.contains(typed) && !hasInternalCapitals ? choose(from: ranked, word: word, valid: valid) : nil
 
     // Built best-first, then centered: the strongest candidate takes the middle slot.
     var ordered: [Suggestion] = []
@@ -206,9 +207,16 @@ public final class Suggester {
     return SuggestionSet(slots: SuggestionSet.centered(ordered), autocorrection: autocorrection?.text)
   }
 
-  private func choose(from ranked: [Candidate], typed: String, valid: Bool) -> Candidate? {
+  private func choose(from ranked: [Candidate], word: TypedWord, valid: Bool) -> Candidate? {
+    let typed = word.text
     let typedKey = TextNormalizer.key(typed)
     if personal.isKnown(typed) || personal.isKnown(typed.lowercased()) { return nil }
+    // Keep established mixed-case brand spellings such as iphone -> iPhone.
+    // Plain title case and all-caps aliases stay as typed unless explicitly chosen.
+    if typed == typed.lowercased(), let canonical = ranked.first(where: {
+      !$0.isCompletion && $0.text.lowercased() == typed &&
+      $0.text.contains(where: \.isLowercase) && $0.text.dropFirst().contains(where: \.isUppercase)
+    }) { return canonical }
     if !Self.ambiguousLiterals.contains(typedKey), typed == typed.lowercased(),
        let shortcut = lexicon.shortcuts[typedKey],
        shortcut != typed.replacingOccurrences(of: "\u{2019}", with: "'"),
@@ -238,11 +246,38 @@ public final class Suggester {
     }
     // Preserve apostrophes, accents and capitalization already accepted by the
     // dictionary. They can distinguish meanings: we're/were and ill/I'll.
-    guard let best = ranked.first(where: { !$0.isCompletion && TextNormalizer.key($0.text) != typedKey }) else { return nil }
+    if typed.contains("'") || typed.contains("\u{2019}") ||
+       typed.decomposedStringWithCanonicalMapping.unicodeScalars.contains(where: { $0.properties.generalCategory == .nonspacingMark }) { return nil }
+    // Context alone cannot distinguish intentional "too" from "to", or "play"
+    // from "pay". For a valid word, require evidence at each substituted key.
+    // Missing/extra letters and centered (or absent) touches remain literal;
+    // alternatives are still available in the strip.
+    let keyed = word.keyed
+    guard let best = ranked.first(where: { candidate in
+      guard !candidate.isCompletion, candidate.cost <= 3.3 else { return false }
+      let target = Array(TextNormalizer.key(candidate.text).utf8)
+      guard target.count == keyed.bytes.count, target != keyed.bytes else { return false }
+      for index in target.indices where target[index] != keyed.bytes[index] {
+        guard let point = keyed.taps[index], let center = corrector.geometry.center(keyed.bytes[index]),
+              let destination = corrector.geometry.center(target[index]) else { return false }
+        let distance = center.distance(to: destination)
+        let towardTarget = ((point.x - center.x) * (destination.x - center.x) +
+          (point.y - center.y) * (destination.y - center.y)) / distance
+        guard towardTarget > 0.4 else { return false }
+      }
+      return true
+    }) else { return nil }
     let typedScore = ranked.first { !$0.isCompletion && $0.text == typed }?.score
       ?? ranked.first { !$0.isCompletion && TextNormalizer.key($0.text) == typedKey }?.score
       ?? model.logProbability(of: typed, id: lexicon.id(of: typed), in: .unknown)
-    if best.cost <= 3.3, best.score - typedScore >= validWordMargin { return best }
+    let normalized = typed.replacingOccurrences(of: "\u{2019}", with: "'")
+    let literalCase = lexicon.words(forKey: typedKey).contains {
+      !lexicon.flags($0).contains(.notAWord) &&
+      (lexicon.display($0) == normalized || lexicon.display($0) == normalized.lowercased())
+    }
+    // A lowercase case alias (cst -> CST) keeps the original non-word confidence
+    // when touch evidence supports an edit; it remains literal without that evidence.
+    if best.score - typedScore >= (literalCase ? validWordMargin : 0) { return best }
     return nil
   }
 

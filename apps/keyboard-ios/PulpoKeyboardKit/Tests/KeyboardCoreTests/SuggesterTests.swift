@@ -31,6 +31,29 @@ struct SuggesterTests {
     #expect(correction(word, after: "and") == nil)
   }
 
+  @Test(arguments: [
+    ("the nfl", "nfl"), ("and", "espn"), ("was", "katy"), ("follow", "brady"),
+    ("to", "play"), ("you", "too"), ("of", "god"), ("really", "I'm"),
+    ("to", "as"), ("think", "in"), ("I", "liked"), ("it", "was"), ("to", "pass"),
+  ])
+  func preservesValidWordsAgainstStrongContext(previous: String, word: String) {
+    let context = model.context(previousWord: previous.split(separator: " ").last.map(String.init), sentenceStart: false)
+    #expect(suggester.isValid(word))
+    #expect(suggester.suggestions(for: typed(word), context: context, autocorrect: true).autocorrection == nil)
+    #expect(suggester.suggestions(for: TypedWord(text: word), context: context, autocorrect: true).autocorrection == nil)
+  }
+
+  @Test func validWordMistapsStillUseTouchEvidence() {
+    let context = model.context(previousWord: "think", sentenceStart: false, precedingWord: "I")
+    var nearMiss = typed("in")
+    let n = LetterGeometry.qwerty.center(Character("n").asciiValue!)!
+    nearMiss.taps[1] = KeyPoint(x: n.x + 0.45, y: n.y)
+    #expect(suggester.suggestions(for: nearMiss, context: context, autocorrect: true).autocorrection == "I'm")
+    #expect(suggester.suggestions(for: typed("in"), context: context, autocorrect: true).autocorrection == nil)
+    nearMiss.taps[1] = KeyPoint(x: n.x, y: n.y - 0.45)
+    #expect(suggester.suggestions(for: nearMiss, context: context, autocorrect: true).autocorrection == nil)
+  }
+
   @Test func putsTheBestSuggestionInTheMiddle() {
     let context = model.context(previousWord: "and", sentenceStart: false)
     let set = suggester.suggestions(for: typed("teh"), context: context, autocorrect: true)

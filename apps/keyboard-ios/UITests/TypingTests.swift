@@ -61,6 +61,13 @@ final class TypingTests: XCTestCase {
     waitForText("I think the cat is weird.")
   }
 
+  func testContextPreservesValidWordsAndLowercaseAcronyms() {
+    app.typeOnPreview("the nfl and espn ")
+    waitForText("The nfl and espn ")
+    app.typeOnPreview("i think in ")
+    waitForText("The nfl and espn I think in ")
+  }
+
   func testDeleteRightAfterAutocorrectRestoresTheWord() {
     app.typeOnPreview("and teh ")
     waitForText("And the ")
