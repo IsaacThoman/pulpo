@@ -1052,8 +1052,13 @@ export const modelHiddenPlatformSchema = z.enum(['ios', 'android'])
 export type ModelHiddenPlatform = z.infer<typeof modelHiddenPlatformSchema>
 export const modelHiddenPlatformsSchema = z.array(modelHiddenPlatformSchema).max(2)
   .transform((platforms) => [...new Set(platforms)])
+/** Users granted a restricted model. Admins always have access and need no grant. */
+export const modelAllowedUserIdsSchema = z.array(idSchema).max(10_000)
+  .transform((userIds) => [...new Set(userIds)])
 /** Error code returned when a native app sends a request with a model hidden on its platform. */
 export const MODEL_UNAVAILABLE_ON_PLATFORM_ERROR = 'model_unavailable_on_platform'
+/** Error code returned when a request names a restricted model the user has not been granted. */
+export const MODEL_ACCESS_DENIED_ERROR = 'model_access_denied'
 
 export const DEFAULT_MINIMUM_OUTPUT_RESERVATION_TOKENS = 8_000
 export const minimumOutputReservationTokensSchema = z.number().int().min(1).max(2_147_483_647)
@@ -1070,6 +1075,8 @@ export const createModelSchema = z.object({
   enabled: z.boolean().default(true),
   visible: z.boolean().default(true),
   hiddenPlatforms: modelHiddenPlatformsSchema.default([]),
+  restricted: z.boolean().default(false),
+  allowedUserIds: modelAllowedUserIdsSchema.default([]),
   logo: z.string().max(120).nullable().default(null),
   customIconId: idSchema.nullable().default(null),
   systemPrompt: z.string().max(100_000).default(''),

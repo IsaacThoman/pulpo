@@ -13,6 +13,7 @@ import { attachmentsRequireAgentMode } from '../attachments/policy.js'
 import { accessibleChatCondition } from './temporary.js'
 import { canPromoteQueueHead, nextQueuePosition, reorderQueueIds } from './message-queue-policy.js'
 import { assertModelsAvailableOnPlatform } from '../catalog/model-platforms.js'
+import { assertModelsAccessibleToUser } from '../catalog/model-access.js'
 
 type QueueRow = typeof queuedMessages.$inferSelect
 
@@ -32,6 +33,7 @@ async function validateQueueInput(userId: string, chatId: string, input: CreateQ
     .from(models).where(and(eq(models.id, generation.effectiveModelId), eq(models.enabled, true))).limit(1)
   if (!model) throw new AppError(400, 'model_not_found', 'The selected model is unavailable')
   await assertModelsAvailableOnPlatform([input.modelId, model.id], client)
+  await assertModelsAccessibleToUser([input.modelId, model.id], userId)
 
   const attachmentRows = input.attachmentIds.length
     ? await db.select({ id: attachments.id, mimeType: attachments.mimeType }).from(attachments).where(and(

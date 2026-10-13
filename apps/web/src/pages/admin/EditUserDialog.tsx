@@ -12,6 +12,10 @@ import type { MonitorUser } from '@/lib/types'
 import { ui } from '@/i18n/ui'
 import { AUTOMATIC_MODEL_VALUE, defaultModelOptions } from './settings/new-account-model-defaults-logic'
 
+function sameIds(left: string[], right: string[]): boolean {
+  return left.length === right.length && left.every((id) => right.includes(id))
+}
+
 export function EditUserDialog({ user, billingEnabled, onSave, onClose }: {
   user: MonitorUser
   billingEnabled: boolean
@@ -28,6 +32,15 @@ export function EditUserDialog({ user, billingEnabled, onSave, onClose }: {
     queryKey: ['admin-user-models', runtimeAccountKey(user.id)],
     queryFn: ({ signal }) => apiRequest<{ data: { id: string; name: string }[] }>(`/api/admin/users/${user.id}/models`, { signal }),
   })
+  const initialGrantedModelIds = user.grantedModelIds ?? []
+  const [grantedModelIds, setGrantedModelIds] = useState(initialGrantedModelIds)
+  const restrictedModels = useQuery({
+    queryKey: ['admin-restricted-models'],
+    queryFn: async ({ signal }) => (await apiRequest<{ data: { id: string; name: string; restricted: boolean }[] }>('/api/admin/models', { signal }))
+      .data.filter((model) => model.restricted),
+  })
+  const toggleGrant = (modelId: string, granted: boolean) => setGrantedModelIds((current) =>
+    granted ? [...current, modelId] : current.filter((id) => id !== modelId))
 
   const save = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -43,6 +56,10 @@ export function EditUserDialog({ user, billingEnabled, onSave, onClose }: {
         ...(password ? { password } : {}),
         ...(defaultModelId !== initialModelId ? { defaultModelId } : {}),
         ...(resetFavorites ? { favoriteModelIds: null } : {}),
+        // The patch only manages restricted models; grants kept on unrestricted models stay untouched.
+        ...(!sameIds(grantedModelIds, initialGrantedModelIds) ? {
+          grantedModelIds: grantedModelIds.filter((id) => restrictedModels.data?.some((model) => model.id === id)),
+        } : {}),
       })
       onClose()
     } catch (error) {
@@ -108,6 +125,16 @@ export function EditUserDialog({ user, billingEnabled, onSave, onClose }: {
                 </Button>
               </div>}
           </div>
+          {user.role !== 'admin' && !!restrictedModels.data?.length && <div className="space-y-1.5">
+            <Label id="edit-user-restricted-models">{ui('Restricted models')}</Label>
+            <p className="text-xs text-muted-foreground">{ui('Checked models are available to this user.')}</p>
+            <div role="group" aria-labelledby="edit-user-restricted-models" className="space-y-1 rounded-md border p-2">
+              {restrictedModels.data.map((model) => <label key={model.id} className="flex min-w-0 cursor-pointer items-center gap-2 text-sm">
+                <input type="checkbox" className="size-4 shrink-0 accent-primary" checked={grantedModelIds.includes(model.id)} onChange={(event) => toggleGrant(model.id, event.target.checked)} />
+                <span className="truncate">{model.name}</span>
+              </label>)}
+            </div>
+          </div>}
           {billingEnabled && <div className="space-y-1.5">
             <Label htmlFor="edit-user-invite-quota">{ui('Invite code quota')}</Label>
             <Input id="edit-user-invite-quota" name="inviteCodeQuota" type="number" min={0} max={1000} defaultValue={user.inviteCodeQuota ?? 0} />

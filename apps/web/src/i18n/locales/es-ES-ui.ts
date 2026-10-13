@@ -2209,6 +2209,19 @@ const esUi: Record<string, string> = {
   "Following new-account defaults": "Usa los valores predeterminados de cuentas nuevas",
   "New-account default": "Predeterminado para cuentas nuevas",
   "Reset to defaults": "Restablecer valores predeterminados",
+  "Allowed users": "Usuarios permitidos",
+  "Add users": "Añadir usuarios",
+  "Search by name, username, or email…": "Buscar por nombre, usuario o correo…",
+  "Search users": "Buscar usuarios",
+  "Loading users…": "Cargando usuarios…",
+  "No matching users": "No hay usuarios que coincidan",
+  "No users selected. Only admins can use this model.": "No hay usuarios seleccionados. Solo los administradores pueden usar este modelo.",
+  "Restricted · 1 user": "Restringido · 1 usuario",
+  "Restricted · {{count}} users": "Restringido · {{count}} usuarios",
+  "Restrict access": "Restringir acceso",
+  "Only selected users can see and use this model. Admins always have access.": "Solo los usuarios seleccionados pueden ver y usar este modelo. Los administradores siempre tienen acceso.",
+  "Restricted models": "Modelos restringidos",
+  "Checked models are available to this user.": "Los modelos marcados están disponibles para este usuario.",
 }
 
 export default esUi

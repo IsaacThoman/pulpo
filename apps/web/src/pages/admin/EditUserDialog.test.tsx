@@ -88,7 +88,7 @@ describe('Edit user default model', () => {
     mount({ ...user, id: 'second', defaultModelId: null })
     await waitFor(() => expect(selector().disabled).toBe(false))
     expect(selector().textContent).toBe('New-account default')
-    expect(mocks.request).toHaveBeenLastCalledWith('/api/admin/users/second/models', expect.anything())
+    expect(mocks.request).toHaveBeenCalledWith('/api/admin/users/second/models', expect.anything())
   })
 
   it('offers retry after a loading failure without losing form edits', async () => {
@@ -155,5 +155,38 @@ describe('Edit user favorites', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
     await waitFor(() => expect(save).toHaveBeenCalledOnce())
     expect(save.mock.calls[0][1]).not.toHaveProperty('favoriteModelIds')
+  })
+})
+
+describe('Edit user restricted models', () => {
+  beforeEach(() => {
+    mocks.request.mockImplementation(async (path: string) => ({ data: path === '/api/admin/models'
+      ? [{ id: 'open', name: 'Open', restricted: false }, { id: 'pro', name: 'Pro', restricted: true }, { id: 'lab', name: 'Lab', restricted: true }]
+      : [{ id: 'model-a', name: 'Model A' }] }))
+  })
+
+  it('grants and revokes restricted models with checkboxes', async () => {
+    mount({ ...user, grantedModelIds: ['pro', 'open'] })
+    const group = await screen.findByRole('group', { name: 'Restricted models' })
+    const pro = screen.getByRole('checkbox', { name: 'Pro' }) as HTMLInputElement
+    const lab = screen.getByRole('checkbox', { name: 'Lab' }) as HTMLInputElement
+    expect(group.textContent).not.toContain('Open')
+    expect([pro.checked, lab.checked]).toEqual([true, false])
+    fireEvent.click(pro)
+    fireEvent.click(lab)
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(save).toHaveBeenCalledWith('target', expect.objectContaining({ grantedModelIds: ['lab'] })))
+  })
+
+  it('omits unchanged grants and hides the section for admins', async () => {
+    mount({ ...user, grantedModelIds: ['pro'] })
+    await screen.findByRole('group', { name: 'Restricted models' })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(save).toHaveBeenCalledOnce())
+    expect(save.mock.calls[0][1]).not.toHaveProperty('grantedModelIds')
+    cleanup()
+    mount({ ...user, id: 'root', role: 'admin' })
+    await waitFor(() => expect(mocks.request).toHaveBeenCalledWith('/api/admin/models', expect.anything()))
+    expect(screen.queryByRole('group', { name: 'Restricted models' })).toBeNull()
   })
 })
