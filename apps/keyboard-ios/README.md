@@ -59,11 +59,17 @@ autocorrection restores the typed word and stops correcting it. Contacts' names 
 text replacements come from `UILexicon`. Apostrophes, accents, internal capitals, and
 low-confidence names are preserved. Contextual continuations also feed completions;
 unknown histories fall back to frequent safe words.
+Known names and acronyms are valid regardless of case. Changing a valid word
+requires directed touch evidence; centered or absent touches keep it literal,
+with alternatives still available in the suggestion strip.
 
 **Slide to type.** `GlideDecoder` picks candidate words by the letters nearest the start
 and end of the swipe, rejects any whose letters the finger never passed in order, and
 scores the rest on letter alignment, how much of the path the word explains in order, unexplained
 sharp turns, extra length, and the language model.
+Frequency-ordered endpoint buckets are merged by endpoint likelihood and word
+frequency, so a noisy endpoint cannot exhaust the budget before nearby buckets
+are searched. Letter alignment is calibrated for word length.
 
 **Learning.** Words the person types twice, or keeps by undoing a correction or picking
 the quoted literal, become valid. Learned words and word pairs are stored on device in
@@ -131,8 +137,11 @@ so the same paths can be replayed into, for example, Gboard on an Android emulat
 - AOSP LatinIME `en_US_wordlist.combined.gz` (Apache 2.0): words, frequencies and spelling shortcuts.
 - Tatoeba English sentences, `eng_sentences.tsv.bz2` (CC-BY 2.0 FR): next-word statistics.
 - Almeida & Hidalgo, [SMS Spam Collection](https://doi.org/10.24432/C5CC84), UCI (CC BY 4.0):
-  optional conversational bigrams. Only deduplicated ham messages are used; a stable
+  optional conversational n-grams. Only deduplicated ham messages are used; a stable
   20% holdout is excluded from training. The compiled dictionary uses this input.
+- [Amazon Topical-Chat](https://github.com/alexa/Topical-Chat) `conversations/train.json`
+  (CDLA-Sharing 1.0): aggregate statistics from human conversation. Only the published
+  training partition is used, with validation/test partitions reserved for evaluation.
 - Unicode `emoji-test.txt` (Unicode License v3): emoji, order and skin tones.
 
 `scripts/extra_words.tsv` and `scripts/extra_shortcuts.tsv` add newer words and safe
@@ -142,8 +151,15 @@ contraction fixes. To rebuild:
 python3 scripts/build_language_data.py \
   --wordlist en_US_wordlist.combined.gz \
   --sentences eng_sentences.tsv.bz2 \
-  --emoji emoji-test.txt --messages SMSSpamCollection
+  --emoji emoji-test.txt --messages SMSSpamCollection \
+  --conversations train.json
 ```
 
 Source versions and checksums are recorded in [LanguageData/README.md](LanguageData/README.md).
 Test the importer with `python3 -m unittest discover -s scripts -p 'test_language_data.py'`.
+Export an independent prediction corpus with
+`python3 scripts/prepare_prediction_holdout.py --input test_freq.json --exclude train.json --output /tmp/keyboard-test.json`.
+From `PulpoKeyboardKit`, evaluate with
+`PK_PREDICTION_HOLDOUT=/tmp/keyboard-test.json swift test -c release --filter evaluateExternalPredictionHoldout`.
+Use `PK_HOLDOUT_DICTIONARY` to compare an earlier binary and `PK_HOLDOUT_REPORT` to
+export per-case results outside the checkout.

@@ -1,12 +1,156 @@
 # Keyboard quality audit — October 13, 2026
 
-Pulpo is substantially safer and more contextual than the starting branch. It is
-competitive with Gboard on this small controlled swipe replay, while Gboard still
-leads on the single-word prediction set. These tests do **not** establish that either
+Pulpo is substantially safer and more contextual than the starting branch. The
+follow-up improves prediction coverage on unseen conversations and swipe tolerance,
+including a favorable live Gboard comparison on one conversation sample. Gboard
+still leads on the original single-word prediction probes. These tests do **not**
+establish that either
 keyboard is the best overall. Fast human typing, Gboard on iOS, multilingual input,
 and physical-device latency remain unmeasured.
 
-## Measured results
+## Follow-up: prediction coverage and swipe search
+
+Baseline for this round: `911020d5`. Improvements: `41ce1692` (prediction data and
+candidate retrieval), `3b12ff79` (swipe search and alignment), and `c6b7a240`
+(valid-word safeguards). The earlier engine
+was rebuilt separately; both versions received identical inputs and empty personal
+dictionaries. The source dataset and sampling tools are recorded in
+`LanguageData/README.md` and `scripts/prepare_prediction_holdout.py`.
+
+### Predictions on unseen text
+
+Topical-Chat supplies 183,511 deduplicated human conversation turns from its
+published training split. Validation and test conversations are excluded from
+training; evaluation also removes exact training-turn duplicates after case and
+whitespace normalization. General-English, topical-conversation and SMS n-grams
+are interpolated as separate distributions, preventing the much larger topical
+corpus from overwhelming supported short-message phrases.
+[Amazon's dataset and published partitions](https://github.com/alexa/Topical-Chat).
+
+| Evaluation | Before top-1 | After top-1 | Before top-3 | After top-3 |
+| --- | ---: | ---: | ---: | ---: |
+| Conversation test, frequent topics, 198,391 known targets | 29,754 (15.00%) | **44,999 (22.68%)** | 50,104 (25.25%) | **72,102 (36.34%)** |
+| Conversation test, rare topics, 196,796 known targets | 28,690 (14.58%) | **39,588 (20.12%)** | 49,740 (25.28%) | **65,304 (33.18%)** |
+| Reserved SMS cases, 9,167 known targets | 1,115 (12.16%) | **1,165 (12.71%)** | 2,064 (22.52%) | **2,092 (22.82%)** |
+
+The live comparison systematically samples 50 eligible next-word cases from each
+conversation test split, with at least three words of prefix. Eligibility requires
+an ASCII alphabetic target in Pulpo's safe dictionary; no model output is consulted
+when selecting cases. Gboard receives the **full** prefix in its native text field;
+Pulpo uses its last two words. The expected word was visible in Pulpo's three slots
+on **39/100** cases (previously 27/100), versus **29/100** for live Gboard. Pulpo
+alone hit 15 cases; Gboard alone hit five. Gboard sometimes uses a strip slot for an
+emoji; the metric counts the word's actual visibility, not an expanded candidate list.
+
+This sample favors conversation about the dataset's topics. Pulpo was trained on
+its training partition; Gboard's training distribution is unknown. Crowdworker
+conversation is not representative of every chat. These results do not establish
+an overall real-use lead, and Gboard iOS remains unmeasured.
+
+The original small utility probes are slightly worse: one-word-context visibility
+is **27/40** (previously 28/40, Gboard 31/40), and two-word-context visibility is
+**21/24** (previously 22/24, Gboard 20/24). Examples include “can you help” giving
+way to “can you imagine/believe/pls”, and “I am going” giving way to “I am in”.
+Those alternatives can be valid, but the original intended-continuation gap remains.
+The broader improvement is supported by the independent test partitions rather
+than adjustments to force these fixed examples.
+
+Candidate retrieval also now examines the complete bounded bigram list. Previously,
+trigram candidates could fill the result-dependent budget before backed-off bigram
+candidates were examined. A regression checks that reducing the visible strip does
+not silently change which static candidates rank highest.
+
+### Swipe accuracy and cost
+
+The decoder merges endpoint buckets with the existing heap implementation,
+prioritizing endpoint likelihood and unigram frequency within the same **6,000
+lexicon-candidate cap**. It previously exhausted the nearest bucket first, starving
+other plausible start/end letters. Letter-alignment costs now compensate partly
+for the number of distinct targets, reducing a bias against longer words.
+
+| Identical 3,000-path profile | Before top-1 | After top-1 | Before top-3 | After top-3 |
+| --- | ---: | ---: | ---: | ---: |
+| Moderate noise | 2,881 (96.03%) | **2,897 (96.57%)** | 2,992 | **2,997** |
+| Higher noise | 2,562 (85.40%) | **2,614 (87.13%)** | 2,847 (94.90%) | **2,876 (95.87%)** |
+
+Calibration used different gesture seeds from verification. The expanded independent
+verification includes rounded corners, sparse samples, systematic offset and drifting
+endpoints. Across 5,000 paths, top-1 rose from **4,522 to 4,584**, and top-3 from
+**4,868 to 4,919**. Drifting endpoints alone improved from 445/500 to 460/500 top-1
+and 478/500 to 492/500 top-3. Rounded corners improved from 415/500 to 428/500 top-1.
+Four gesture-style regressions now run in the normal suite.
+
+Swiping expected words from unseen conversation contexts, using 3,776 systematically
+sampled synthetic paths with sigma 0.30 target noise, improved from **3,439/3,776
+(91.08%) to 3,518/3,776 (93.17%)** top-1. Top-3 rose from 3,702 to 3,723. This
+combines the prediction and decoder changes; it does not isolate either contribution.
+
+A fresh live replay of the same 100 prepared spatial paths scored **Pulpo 88/100
+top-1, 100/100 top-3**, and **Gboard 89/100 top-1**. Gboard scored 87/100 in the
+initial run. This small difference and run-to-run variation do not demonstrate a
+swipe lead. The repeated live gestures remained deliberately slow: median 1.54 s,
+maximum 8.40 s. Natural-speed human gestures are still required.
+
+Sequential release audit runs on the Mac measured approximately **1.44 ms median,
+3.58 ms p95** for moderate-noise decoding, versus 1.05 ms and 3.41 ms before. These
+are indicative desktop measurements with the Android emulator running, not physical
+iPhone measurements or a comparison of Gboard decoder latency. Dictionary size rose
+from **12.49 MB to 12.91 MB**, retaining memory mapping and the 40,000-history cap.
+
+### Keep prediction strength from damaging intentional typing
+
+The sentence-context audit caught failures that the isolated literal probes missed:
+`nfl → ngl`, `espn → esp`, `brady → brandy`, `play → pay`, `too → to`, and `I'm → In`.
+Some were already present before the new model. Case-insensitive names and acronyms
+now count as valid spellings. A valid word stays literal when touches are centered
+or absent; a substitution needs directed displacement toward each changed letter.
+Missing/extra letters in valid words are offered as alternatives instead of silently
+applied. Explicit apostrophes and accents remain protected. Known spelling shortcuts,
+mixed-case brand spelling (`iphone → iPhone`), and evidence-supported mistaps remain
+under regression coverage.
+
+On 4,810 systematically sampled known words from the frequent-topic conversation
+test, automatic changes fell from **33 to four**, including a reduction from **20 to
+zero changes to the letters themselves** (ignoring case, accents and apostrophes).
+The four remaining changes were `whats → what's`, `cant → can't`, `i'm → I'm`, and
+`wont → won't`. With sigma 0.25 touch jitter conditioned on still registering the
+intended letter in the geometry model, changes fell from **31 to four** and letter
+changes from **18 to zero**. An additional 4,800 known-word cases from the rare-topic
+test had four formatting/shortcut changes and zero letter changes. This is a clean
+input surrogate, not a measured human unwanted-correction rate; unknown names and
+genuine mistypes require separate evaluation.
+
+### Follow-up verification
+
+- Release core suite: **71 declared tests**, including parameterized cases and opt-in
+  benchmarks, plus **two service tests**. Full audit, calibration, independent
+  verification, contextual swipe, external prediction and replay runs completed.
+- **Four Python importer/evaluation tests pass.** The live sample reproduces exactly
+  from the committed tool; rebuilding the dictionary reproduces identical bytes.
+- iPhone SE, iOS 26.5: **all 40 typing, touch, setup and installed-extension tests pass**,
+  including swipe entry and alternatives. No UIKit layout changes were required.
+- Spelling remains **60/60** and exact literal preservation **50/50**.
+
+To reproduce the external prediction and live comparison samples, download the pinned
+Topical-Chat files identified in `LanguageData/README.md`, then run from `apps/keyboard-ios`:
+
+```bash
+python3 scripts/prepare_prediction_holdout.py --input test_freq.json --exclude train.json --output /tmp/test-next.json
+PK_PREDICTION_HOLDOUT=/tmp/test-next.json swift test -c release --package-path PulpoKeyboardKit --filter evaluateExternalPredictionHoldout
+python3 scripts/prepare_prediction_holdout.py --input test_freq.json --input test_rare.json --exclude train.json --sample-per-file 50 --dictionary LanguageData/en_US.pkdict --output /tmp/live-next.json --gboard-output /tmp/gboard-corpus/comparison-cases.json
+# Copy the audit's comparison-paths.json into /tmp/gboard-corpus as well.
+bash scripts/gboard_benchmark/run.sh emulator-5556 /tmp/gboard-corpus /tmp/gboard-live contextualPredictions
+```
+
+For the expanded gesture experiment, use `PK_GLIDE_CALIBRATE` with an earlier audit
+JSON, `PK_GLIDE_VERIFY=1` for the independent seeds, and `PK_GLIDE_RESULTS` for an
+explicit external result path. `PK_CONTEXT_SWIPE_HOLDOUT` evaluates contextual swipes
+using the exported prediction corpus. `PK_TYPING_HOLDOUT` evaluates known-word
+preservation, and `PK_TYPING_NOISE=0.25` adds deterministic within-key touch jitter.
+`PK_HOLDOUT_REPORT` exports the changed words for inspection. Keep all result JSON and raw UI evidence
+outside the checkout.
+
+## Initial measured results
 
 Baseline: `baf26581`, the branch head before this audit. The baseline was rebuilt
 separately and evaluated with the same corpus, vocabulary order, and gesture seeds.
