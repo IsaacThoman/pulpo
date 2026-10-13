@@ -39,6 +39,32 @@ export const DEFAULT_FAT_FIVE_HOUR_LIMIT_MICROS = 1_500_000
 export const DEFAULT_FAT_SHARED_WEEKLY_PERCENT = 50
 export const DEFAULT_SHARED_FIVE_HOUR_LIMIT_MICROS = 1_000_000
 
+export const usageTierSchema = z.object({
+  /** Lifetime payments before tax, net of refunds. */
+  minPaidCents: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+  minDaysSinceFirstPayment: z.number().int().min(0).max(3_650),
+  dailyLimitMicros: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+})
+
+export type UsageTier = z.infer<typeof usageTierSchema>
+
+// Tiers only rise with payment history; the first tier is everyone's starting point.
+export const usageTiersSchema = z.array(usageTierSchema).min(1).max(10)
+  .refine((tiers) => tiers[0]!.minPaidCents === 0 && tiers[0]!.minDaysSinceFirstPayment === 0, 'The first usage tier cannot have requirements')
+  .refine((tiers) => tiers.every((tier, index) => index === 0 || (
+    tier.minPaidCents >= tiers[index - 1]!.minPaidCents
+    && tier.minDaysSinceFirstPayment >= tiers[index - 1]!.minDaysSinceFirstPayment
+  )), 'Usage tier requirements cannot decrease')
+
+export const DEFAULT_USAGE_TIERS: UsageTier[] = [
+  { minPaidCents: 0, minDaysSinceFirstPayment: 0, dailyLimitMicros: 3_000_000 },
+  // The smallest payment possible, a $5 top-up, reaches tier 1.
+  { minPaidCents: 500, minDaysSinceFirstPayment: 0, dailyLimitMicros: 10_000_000 },
+  { minPaidCents: 5_000, minDaysSinceFirstPayment: 7, dailyLimitMicros: 25_000_000 },
+  { minPaidCents: 15_000, minDaysSinceFirstPayment: 14, dailyLimitMicros: 75_000_000 },
+  { minPaidCents: 50_000, minDaysSinceFirstPayment: 30, dailyLimitMicros: 250_000_000 },
+]
+
 export const billingSettingsSchema = z.object({
   eightWeeklyLimitMicros: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).default(DEFAULT_EIGHT_WEEKLY_LIMIT_MICROS),
   fatWeeklyLimitMicros: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).default(DEFAULT_FAT_WEEKLY_LIMIT_MICROS),
@@ -51,6 +77,8 @@ export const billingSettingsSchema = z.object({
   babyStorageLimitBytes: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).default(DEFAULT_BABY_STORAGE_LIMIT_BYTES),
   eightStorageLimitBytes: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).default(DEFAULT_EIGHT_STORAGE_LIMIT_BYTES),
   fatStorageLimitBytes: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).default(DEFAULT_FAT_STORAGE_LIMIT_BYTES),
+  // Invalid stored tiers fall back to the defaults without resetting other billing settings.
+  usageTiers: usageTiersSchema.catch(() => DEFAULT_USAGE_TIERS.map((tier) => ({ ...tier }))),
   lastReconciledAt: z.string().nullable().default(null),
   lastReconcileError: z.string().nullable().default(null),
 })

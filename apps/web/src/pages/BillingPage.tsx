@@ -39,6 +39,7 @@ import { Separator } from '@/components/ui/separator'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { SubscriptionUsageBars } from '@/components/SubscriptionUsageBars'
 import { AutoTopUpDialog, AutoTopUpStatus, MoneyInput } from '@/components/billing/AutoTopUp'
+import { DailyUsageLimit } from '@/components/billing/DailyUsageLimit'
 import { ui, uit } from '@/i18n/ui'
 
 const CREDIT_AMOUNTS = [10, 25, 50, 100] as const
@@ -344,6 +345,13 @@ export function BillingPage() {
           </div>
 
           {planError && !planOpen && <p className="text-sm text-destructive">{planError}</p>}
+
+          {summary?.daily && (
+            <section className="space-y-3">
+              <SectionHeading title={ui("Daily usage limit")} description={ui("Your usage tier caps how much you can use each day across plan usage and credits. Tiers go up automatically as your payment history grows.")} />
+              <DailyUsageLimit daily={summary.daily} tiers={summary.usageTiers} />
+            </section>
+          )}
 
           <section className="space-y-3">
             <div className="flex items-end justify-between gap-3"><SectionHeading title={ui("Payment history")} description={ui("Credit purchases and subscription invoices.")} /></div>

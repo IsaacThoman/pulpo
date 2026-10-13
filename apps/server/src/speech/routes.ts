@@ -12,6 +12,7 @@ import { decryptSecret } from '../lib/crypto.js'
 import { getConfig } from '../config.js'
 import { newId } from '../lib/ids.js'
 import { chargeMeteredUsage } from '../accounting/service.js'
+import { assertDailySpendAvailable } from '../billing/usage-tiers.js'
 import { generateSpeech, speechCost } from './provider.js'
 import { cleanupSpeechPreview } from './preview.js'
 import { applyVoiceWatermark, registerSpeechAssetRoutes } from './assets.js'
@@ -115,6 +116,7 @@ export async function registerSpeechRoutes(app: FastifyInstance) {
     validateVoiceAssets({ ...model, voices: model.voices.filter(voice => voice.id === input.voice) }, row.voiceAssets ?? [])
     const clone = row.voiceAssets?.find(a => a.voiceId === input.voice)?.clone
     await assertSafeProviderUrl(provider.baseUrl)
+    await assertDailySpendAvailable(user.id)
     const claims = await db.insert(speechRequests).values({ userId: user.id, requestId: input.requestId }).onConflictDoNothing().returning()
     if (!claims.length) throw new AppError(409, 'speech_duplicate_request', 'This speech request was already submitted')
     const controller = new AbortController()

@@ -2,7 +2,9 @@ import { randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { eq, inArray, sql } from 'drizzle-orm'
 import { db, queryClient } from '../database/client.js'
-import { agentRuns, apiKeys, applicationSettings, billingAccounts, budgetReservationAllowanceFunders, budgetReservations, fiveHourUsagePeriods, sharedAllowancePeriods, sharedFiveHourUsagePeriods, creditLedger, budgetReservationFunders, chats, generationAttempts, models, modelPricingVersions, pools, poolMembers, providerConnections, requestLogs, responses, toolExecutions, users, usageEvents, weeklyUsagePeriods } from '../database/schema.js'
+import { agentRuns, apiKeys, applicationSettings, billingAccounts, billingOrders, dailyUsagePeriods, budgetReservationAllowanceFunders, budgetReservations, fiveHourUsagePeriods, sharedAllowancePeriods, sharedFiveHourUsagePeriods, creditLedger, budgetReservationFunders, chats, generationAttempts, models, modelPricingVersions, pools, poolMembers, providerConnections, requestLogs, responses, toolExecutions, users, usageEvents, weeklyUsagePeriods } from '../database/schema.js'
+import { utcDayStart } from '../billing/plans.js'
+import { assertDailySpendAvailable } from '../billing/usage-tiers.js'
 import { chargeMeteredUsage, extendBudgetReservationFixedCost, releaseBudget, reserveBudget, resizeBudgetReservation, retainBudgetReservation, settleBudget } from './service.js'
 
 vi.mock('../responses/events.js', () => ({ publishStateChange: vi.fn() }))
@@ -395,6 +397,86 @@ describe.skipIf(!enabled)('budget-aware reservations in PostgreSQL', () => {
     expect(await spent(sharedAllowancePeriods, owner)).toBe(10_000)
     expect(await spent(sharedFiveHourUsagePeriods, member)).toBe(10_000)
     expect((await db.select().from(users).where(eq(users.id, member)))[0]?.balanceMicros).toBe(500)
+  })
+
+  describe('daily spend caps', () => {
+    const TIER_0_CAP = 3_000_000
+    async function spendToday(userId: string, micros: number) {
+      await db.insert(dailyUsagePeriods).values({ userId, periodStart: utcDayStart(), spentMicros: micros })
+    }
+    async function dailySpent(userId: string) {
+      const [row] = await db.select().from(dailyUsagePeriods).where(eq(dailyUsagePeriods.userId, userId))
+      return row?.spentMicros ?? 0
+    }
+    async function payment(userId: string, netCents: number, paidDaysAgo: number, refundedCents = 0) {
+      await db.insert(billingOrders).values({
+        stripePaymentId: randomUUID(), userId, stripePriceId: 'price_test', billingReason: 'purchase', status: refundedCents ? 'refunded' : 'paid', currency: 'usd',
+        subtotalAmountCents: netCents, netAmountCents: netCents, totalAmountCents: netCents, refundedAmountCents: refundedCents,
+        paidAt: new Date(Date.now() - paidDaysAgo * 24 * 60 * 60 * 1_000),
+      })
+    }
+
+    it('caps reservations at the rest of the tier 0 daily limit and records settled spend', async () => {
+      const userId = await account(10_000_000)
+      await spendToday(userId, TIER_0_CAP - 10_001)
+      const input = await request(userId)
+      expect(await reserveBudget(input)).toEqual({ amountMicros: 10_001, maxOutputTokens: 10_000 })
+      await expect(extendBudgetReservationFixedCost(input.responseId, 1)).rejects.toMatchObject({ code: 'daily_spend_limit_reached' })
+      await settleBudget({ responseId: input.responseId, usage, latencyMs: 1 })
+      expect(await dailySpent(userId)).toBe(TIER_0_CAP - 10_001 + 101)
+      expect(await reserveBudget(await request(userId))).toEqual({ amountMicros: 9_900, maxOutputTokens: 9_899 })
+      await expect(reserveBudget(await request(userId))).rejects.toMatchObject({ statusCode: 402, code: 'daily_spend_limit_reached' })
+    })
+
+    it('counts pending reservations against the daily limit', async () => {
+      const userId = await account(10_000_000)
+      await spendToday(userId, TIER_0_CAP - 20_000)
+      await reserveBudget(await request(userId, 12_000))
+      await expect(reserveBudget(await request(userId))).rejects.toMatchObject({ code: 'daily_spend_limit_reached' })
+    })
+
+    it('raises the limit with net payments and time since the first payment', async () => {
+      const userId = await account(100_000_000)
+      await spendToday(userId, 20_000_000)
+      await expect(reserveBudget(await request(userId))).rejects.toMatchObject({ code: 'daily_spend_limit_reached' })
+      await payment(userId, 6_000, 8)
+      expect((await reserveBudget(await request(userId))).maxOutputTokens).toBe(16_000)
+      await db.update(dailyUsagePeriods).set({ spentMicros: 24_999_000 }).where(eq(dailyUsagePeriods.userId, userId))
+      await expect(reserveBudget(await request(userId))).rejects.toMatchObject({ code: 'daily_spend_limit_reached' })
+    })
+
+    it('ignores refunded payments', async () => {
+      const userId = await account(100_000_000)
+      await payment(userId, 6_000, 8, 6_000)
+      await spendToday(userId, TIER_0_CAP)
+      await expect(reserveBudget(await request(userId))).rejects.toMatchObject({ code: 'daily_spend_limit_reached' })
+    })
+
+    it('never caps below the plan weekly allowance', async () => {
+      const userId = await account(0, 5_000_000)
+      await spendToday(userId, TIER_0_CAP)
+      expect((await reserveBudget(await request(userId))).maxOutputTokens).toBe(16_000)
+    })
+
+    it('applies admin overrides and exempts admins', async () => {
+      const userId = await account(10_000_000), adminId = await account(10_000_000)
+      await db.insert(billingAccounts).values({ userId, dailyLimitOverrideMicros: 0 })
+      await db.update(users).set({ role: 'admin' }).where(eq(users.id, adminId))
+      await spendToday(adminId, 1_000_000_000)
+      await expect(reserveBudget(await request(userId, 100))).rejects.toMatchObject({ code: 'daily_spend_limit_reached' })
+      expect((await reserveBudget(await request(adminId))).maxOutputTokens).toBe(16_000)
+      // Admin accounts cannot be deleted during cleanup.
+      await db.update(users).set({ role: 'user' }).where(eq(users.id, adminId))
+    })
+
+    it('records metered usage and refuses new metered work once the limit is used', async () => {
+      const userId = await account(10_000_000)
+      await spendToday(userId, TIER_0_CAP - 5_000)
+      await assertDailySpendAvailable(userId)
+      await chargeMeteredUsage({ userId, costMicros: 5_000, type: 'speech' })
+      expect(await dailySpent(userId)).toBe(TIER_0_CAP)
+      await expect(assertDailySpendAvailable(userId)).rejects.toMatchObject({ code: 'daily_spend_limit_reached' })
+    })
   })
 
   it('does not share Eight allowances or allowances outside the pool', async () => {
