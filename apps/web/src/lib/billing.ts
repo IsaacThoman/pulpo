@@ -301,12 +301,6 @@ export function planChoiceDisabled(
   return false
 }
 
-export function usageTierRequirement(tier: UsageTier): string {
-  if (tier.minPaidCents === 0 && tier.minDaysSinceFirstPayment === 0) return ui("New accounts")
-  if (tier.minDaysSinceFirstPayment === 0) return ui("{{amount}} paid", { amount: formatBalance(tier.minPaidCents / 100) })
-  return ui("{{amount}} paid and {{days}} days since first payment", { amount: formatBalance(tier.minPaidCents / 100), days: tier.minDaysSinceFirstPayment })
-}
-
 export function nextUsageTierHint(daily: DailySpendSummary, now = Date.now()): string | null {
   const next = daily.next
   if (!next || daily.limitOverridden) return null

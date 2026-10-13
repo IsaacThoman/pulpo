@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { nextUsageTierHint, usageTierRequirement, type DailySpendSummary, type UsageTier } from '@/lib/billing'
-import { DailyUsageLimit } from './DailyUsageLimit'
+import { nextUsageTierHint, type DailySpendSummary, type UsageTier } from '@/lib/billing'
+import { ServiceTierInfo } from './ServiceTierInfo'
 
 const tiers: UsageTier[] = [
   { minPaidCents: 0, minDaysSinceFirstPayment: 0, dailyLimitMicros: 3_000_000 },
@@ -28,12 +28,8 @@ function daily(overrides: Partial<DailySpendSummary> = {}): DailySpendSummary {
   }
 }
 
-describe('DailyUsageLimit', () => {
+describe('ServiceTierInfo', () => {
   const now = Date.parse('2026-10-13T12:00:00.000Z')
-
-  it('describes tier requirements', () => {
-    expect(tiers.map(usageTierRequirement)).toEqual(['New accounts', '$5.00 paid', '$50.00 paid and 7 days since first payment'])
-  })
 
   it('explains what the next tier needs', () => {
     expect(nextUsageTierHint(daily(), now)).toBe('Pay $42.00 more and wait until Oct 17, 2026 to reach tier 2 ($25.00 per day).')
@@ -45,11 +41,29 @@ describe('DailyUsageLimit', () => {
     expect(nextUsageTierHint(daily({ next: null }), now)).toBeNull()
   })
 
-  it('shows today\'s usage and highlights the current tier', () => {
-    const html = renderToStaticMarkup(<DailyUsageLimit daily={daily()} tiers={tiers} />)
-    expect(html).toContain('Tier 1')
+  it('shows today\'s usage and each tier\'s requirements', () => {
+    const html = renderToStaticMarkup(<ServiceTierInfo daily={daily()} tiers={tiers} now={now} />)
     expect(html).toContain('$2.50 of $10.00 used today')
     expect(html).toContain('aria-label="Daily usage" aria-valuenow="75"')
-    expect(html).toMatch(/<tr[^>]*aria-current="true"[^>]*><td[^>]*>1<\/td><td[^>]*>\$5\.00 paid/)
+    expect(html).toContain('Pay $42.00 more and wait until Oct 17, 2026 to reach tier 2 ($25.00 per day).')
+    expect(html).toContain('No payment needed')
+    expect(html).toContain('$25')
+    // Only the current tier is marked, and only it carries the current-tier label.
+    expect(html.match(/aria-current="true"/g)).toHaveLength(1)
+    expect(html).toMatch(/aria-current="true"[\s\S]*Tier 1[\s\S]*Current tier/)
+  })
+
+  it('marks which requirements are met', () => {
+    const html = renderToStaticMarkup(<ServiceTierInfo daily={daily()} tiers={tiers} now={now} />)
+    // $5 paid is met; $50 paid and 7 days since the first payment (3 days ago) are not.
+    expect(html.match(/aria-label="Met"/g)).toHaveLength(2)
+    expect(html.match(/aria-label="Not met yet"/g)).toHaveLength(2)
+  })
+
+  it('drops the current tier when an admin set the limit', () => {
+    const html = renderToStaticMarkup(<ServiceTierInfo daily={daily({ limitOverridden: true })} tiers={tiers} now={now} />)
+    expect(html).toContain('Custom limit')
+    expect(html).toContain('An admin set a custom daily limit for your account.')
+    expect(html).not.toContain('Current tier')
   })
 })

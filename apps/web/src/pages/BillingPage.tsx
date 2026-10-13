@@ -6,6 +6,7 @@ import {
   ArrowLeft,
   Check,
   CreditCard,
+  Gauge,
   Loader2,
   Plus,
   ReceiptText,
@@ -39,7 +40,7 @@ import { Separator } from '@/components/ui/separator'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { SubscriptionUsageBars } from '@/components/SubscriptionUsageBars'
 import { AutoTopUpDialog, AutoTopUpStatus, MoneyInput } from '@/components/billing/AutoTopUp'
-import { DailyUsageLimit } from '@/components/billing/DailyUsageLimit'
+import { ServiceTierDialog } from '@/components/billing/ServiceTierInfo'
 import { ui, uit } from '@/i18n/ui'
 
 const CREDIT_AMOUNTS = [10, 25, 50, 100] as const
@@ -82,6 +83,7 @@ export function BillingPage() {
   const [topUpError, setTopUpError] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [planOpen, setPlanOpen] = useState(false)
+  const [tierOpen, setTierOpen] = useState(false)
   const [planError, setPlanError] = useState('')
   const [autoTopUpOpen, setAutoTopUpOpen] = useState(false)
   const [saveCardForAutoTopUp, setSaveCardForAutoTopUp] = useState(false)
@@ -257,6 +259,11 @@ export function BillingPage() {
           <div>
             <h2 className="text-xl font-semibold tracking-tight">{ui("Billing")}</h2>
             <p className="mt-1 max-w-2xl text-sm text-muted-foreground">{ui("There are two ways to pay for usage: buy credits and pay as you go, or subscribe to a monthly plan. You can use either one or both.")}</p>
+            {summary?.daily && (
+              <button type="button" className="mt-2 inline-flex items-center gap-1.5 text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline" onClick={() => setTierOpen(true)}>
+                <Gauge className="size-3.5" />{ui("Service tier info")}
+              </button>
+            )}
           </div>
 
           {checkoutReturned && (
@@ -346,13 +353,6 @@ export function BillingPage() {
 
           {planError && !planOpen && <p className="text-sm text-destructive">{planError}</p>}
 
-          {summary?.daily && (
-            <section className="space-y-3">
-              <SectionHeading title={ui("Daily usage limit")} description={ui("Your usage tier caps how much you can use each day across plan usage and credits. Tiers go up automatically as your payment history grows.")} />
-              <DailyUsageLimit daily={summary.daily} tiers={summary.usageTiers} />
-            </section>
-          )}
-
           <section className="space-y-3">
             <div className="flex items-end justify-between gap-3"><SectionHeading title={ui("Payment history")} description={ui("Credit purchases and subscription invoices.")} /></div>
             <div className="overflow-hidden rounded-xl border">
@@ -427,6 +427,8 @@ export function BillingPage() {
         availableBalanceMicros={summary?.availableBalanceMicros}
         onSaved={refreshBilling}
       />
+
+      {summary?.daily && <ServiceTierDialog open={tierOpen} onOpenChange={setTierOpen} daily={summary.daily} tiers={summary.usageTiers} />}
 
       <Dialog open={planOpen} onOpenChange={(open) => { setPlanOpen(open); if (!open) setPlanError('') }}>
         <DialogContent className="sm:max-w-5xl">
