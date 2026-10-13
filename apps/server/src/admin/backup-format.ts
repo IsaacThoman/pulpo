@@ -3,7 +3,7 @@ export const FULL_BACKUP_TABLES = [
   'password_credentials', 'user_passkey_credentials', 'user_totp_credentials', 'two_factor_recovery_codes', 'user_preferences', 'user_provider_credentials', 'audit_events',
   'catalog_icons', 'labs', 'provider_connections', 'image_models', 'speech_models', 'speech_requests', 'speech_resource_cleanup',
   // Chats are filed in Files folders, so the Files tree is restored before them.
-  'models', 'model_pricing_versions', 'model_presets', 'model_preset_choices', 'file_nodes', 'chats', 'responses',
+  'models', 'model_user_grants', 'model_pricing_versions', 'model_presets', 'model_preset_choices', 'file_nodes', 'chats', 'responses',
   'response_items', 'response_content_parts', 'chat_shares', 'attachments', 'image_generation_requests', 'user_memory_documents', 'user_memory_document_revisions',
   'file_docs', 'file_doc_updates', 'file_folder_layouts', 'file_agent_changes',
   'queued_messages', 'composer_drafts', 'composer_draft_attachments', 'shelved_drafts', 'shelved_draft_attachments', 'shelf_operations',

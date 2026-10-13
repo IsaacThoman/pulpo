@@ -83,7 +83,7 @@ export function filesErrorMessage(error: unknown, name?: string): string {
       case 'file_not_text': return ui("This file isn't plain text, so it can't be edited")
       case 'file_not_markdown': return ui("Only .md and .markdown files can be edited")
       case 'not_found': return ui("This item no longer exists")
-      case 'file_system_folder': return ui("This folder is built in and cannot be renamed, moved, or trashed")
+      case 'file_system_folder': return ui("This folder is built in and cannot be renamed, moved, trashed, or recolored")
       case 'file_chat_copy': return ui("Chats cannot be copied here; duplicate them from the chat menu")
       case 'file_shortcut_to_shortcut': return ui("Create a shortcut to the item this shortcut opens instead")
       default: return error.message

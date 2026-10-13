@@ -34,6 +34,7 @@ import { scheduleChatIndex, scheduleUserIndex } from '../episodic-memory/queue.j
 import { createChatExportPayload } from './export-format.js'
 import { importedModelIdentity } from './modelIdentity.js'
 import { assertModelsAvailableOnPlatform } from '../catalog/model-platforms.js'
+import { assertModelsAccessibleToUser } from '../catalog/model-access.js'
 import { clientAttributionForRequest } from '../analytics/capture.js'
 
 export const CHAT_IMPORT_ROUTE_OPTIONS = { bodyLimit: 100 * 1024 * 1024 } as const
@@ -243,6 +244,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     const [model] = await db.select({ id: models.id }).from(models).where(and(eq(models.id, input.modelId), eq(models.enabled, true))).limit(1)
     if (!model) throw new AppError(400, 'model_not_found', 'The selected model is unavailable')
     await assertModelsAvailableOnPlatform([model.id], clientAttributionForRequest(request))
+    await assertModelsAccessibleToUser([model.id], user.id)
     const id = input.clientId ?? newId()
     const createdAt = new Date()
     const expiresAt = input.temporary
@@ -289,6 +291,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     if (!model) throw new AppError(400, 'model_not_found', 'The selected model is unavailable')
     // Check before inserting so a rejected start does not leave an empty chat behind.
     await assertModelsAvailableOnPlatform([model.id, input.response.modelId], clientAttributionForRequest(request))
+    await assertModelsAccessibleToUser([model.id, input.response.modelId], user.id)
     const createdAt = new Date()
     const expiresAt = input.chat.temporary
       ? temporaryChatExpiresAt(createdAt)

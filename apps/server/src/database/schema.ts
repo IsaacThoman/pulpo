@@ -367,6 +367,8 @@ export const models = pgTable('models', {
   visible: boolean('visible').notNull().default(true),
   // Native store apps (`ios`, `android`) that must not list or use this model.
   hiddenPlatforms: jsonb('hidden_platforms').$type<string[]>().notNull().default([]),
+  // Restricted models are listed and usable only by admins and users with a grant.
+  restricted: boolean('restricted').notNull().default(false),
   logo: text('logo'),
   customIconId: uuid('custom_icon_id').references(() => catalogIcons.id),
   systemPrompt: text('system_prompt').notNull().default(''),
@@ -398,6 +400,13 @@ export const models = pgTable('models', {
   iconDark: text('icon_dark'),
   ...timestamps,
 }, (table) => [check('models_minimum_output_reservation_positive', sql`${table.minimumOutputReservationTokens} > 0`)])
+
+export const modelUserGrants = pgTable('model_user_grants', {
+  modelId: text('model_id').notNull().references(() => models.id, { onDelete: 'cascade' }),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  grantedBy: uuid('granted_by').references(() => users.id, { onDelete: 'set null' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [primaryKey({ columns: [table.modelId, table.userId] }), index('model_user_grants_user_idx').on(table.userId)])
 
 export const modelPricingVersions = pgTable('model_pricing_versions', {
   id: uuid('id').primaryKey(),

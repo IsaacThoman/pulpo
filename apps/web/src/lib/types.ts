@@ -154,6 +154,8 @@ export interface MonitorUser {
   defaultModelId?: string | null
   /** Null follows the new-account default favorites. */
   favoriteModelIds?: string[] | null
+  /** Restricted catalog models this user was granted. */
+  grantedModelIds?: string[]
   deletionRequestedAt?: string | null
   deletionError?: string | null
   id: string

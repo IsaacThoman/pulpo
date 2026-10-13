@@ -13,19 +13,33 @@ export class ApiError extends Error {
   readonly status: number
   readonly code: string
   readonly body?: unknown
+  readonly retryAfterMs?: number
 
   constructor(
     status: number,
     code: string,
     message: string,
     body?: unknown,
+    retryAfterMs?: number,
   ) {
     super(message)
     this.name = 'ApiError'
     this.status = status
     this.code = code
     this.body = body
+    this.retryAfterMs = retryAfterMs
   }
+}
+
+function retryAfterMs(response: Response): number | undefined {
+  const value = response.headers.get('retry-after')?.trim()
+  if (!value) return undefined
+  const delay = /^\d+$/.test(value)
+    ? Number(value) * 1_000
+    : /^[a-z]/i.test(value) ? Date.parse(value) - Date.now() : NaN
+  // Larger delays overflow browser timers and would cause an immediate retry.
+  if (!Number.isFinite(delay) || delay > 2_147_483_647) return undefined
+  return Math.max(0, delay)
 }
 
 export interface ApiRequestOptions extends Omit<RequestInit, 'body'> {
@@ -67,6 +81,7 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
       body?.error?.code ?? 'request_failed',
       body?.error?.message ?? `Request failed (${response.status})`,
       body,
+      retryAfterMs(response),
     )
   }
   return body as T
@@ -83,6 +98,7 @@ export async function fetchApiBlobResponse(input: string, init: RequestInit = {}
       body?.error?.code ?? 'resource_request_failed',
       body?.error?.message ?? `Resource request failed (${response.status})`,
       body,
+      retryAfterMs(response),
     )
   }
   return response

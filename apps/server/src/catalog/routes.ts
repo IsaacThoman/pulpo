@@ -1,7 +1,7 @@
-import { and, asc, desc, eq, isNull, ne, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray, isNull, ne, notInArray, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
-import { chatPresetsSchema, createModelSchema, createProviderSchema, modelHiddenPlatformsSchema, secretRevealInputSchema, updateProviderSchema, type ChatPreset } from '@pulpo/contracts'
+import { chatPresetsSchema, createModelSchema, createProviderSchema, modelAllowedUserIdsSchema, modelHiddenPlatformsSchema, secretRevealInputSchema, updateProviderSchema, type ChatPreset } from '@pulpo/contracts'
 import { db } from '../database/client.js'
 import {
   auditEvents,
@@ -11,6 +11,8 @@ import {
   modelPresetChoices,
   modelPresets,
   models,
+  modelUserGrants,
+  users,
   providerConnections,
   speechModels,
   imageModels,
@@ -34,6 +36,7 @@ import { parseAgentSettings } from '../settings/application-settings.js'
 import { catalogIconUrls, requireCatalogIcon } from './icon-service.js'
 import { userModelEligibility } from './user-models.js'
 import { isModelHiddenOnPlatform, modelPlatformForClient } from './model-platforms.js'
+import { inaccessibleModelIds } from './model-access.js'
 import { clientAttributionForRequest } from '../analytics/capture.js'
 import { CODEX_LAB_ID, CODEX_PROVIDER_ID, isCodexModelId, isManagedLabId, isManagedProviderId } from '../codex/constants.js'
 import {
@@ -168,16 +171,44 @@ async function replacePresets(tx: Parameters<Parameters<typeof db.transaction>[0
   }
 }
 
+async function modelGrantUserIds(modelId?: string): Promise<Map<string, string[]>> {
+  const rows = await db.select({ modelId: modelUserGrants.modelId, userId: modelUserGrants.userId }).from(modelUserGrants)
+    .where(modelId ? eq(modelUserGrants.modelId, modelId) : undefined)
+    .orderBy(asc(modelUserGrants.createdAt))
+  const grants = new Map<string, string[]>()
+  for (const row of rows) grants.set(row.modelId, [...grants.get(row.modelId) ?? [], row.userId])
+  return grants
+}
+
+async function validateGrantUsers(userIds: string[]): Promise<void> {
+  if (!userIds.length) return
+  const found = await db.select({ id: users.id }).from(users).where(inArray(users.id, userIds))
+  if (found.length !== userIds.length) throw new AppError(400, 'invalid_model_grant', 'One or more selected users no longer exist')
+}
+
+/** Replaces the users granted a model, keeping existing grants so their history is preserved. */
+async function replaceModelGrants(tx: Parameters<Parameters<typeof db.transaction>[0]>[0], modelId: string, userIds: string[], adminId: string): Promise<void> {
+  await tx.delete(modelUserGrants).where(and(
+    eq(modelUserGrants.modelId, modelId),
+    userIds.length ? notInArray(modelUserGrants.userId, userIds) : undefined,
+  ))
+  if (userIds.length) {
+    await tx.insert(modelUserGrants).values(userIds.map((userId) => ({ modelId, userId, grantedBy: adminId }))).onConflictDoNothing()
+  }
+}
+
 export async function registerCatalogRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/models', async (request) => {
     const user = requireUser(request)
     const platform = modelPlatformForClient(clientAttributionForRequest(request))
     const { codexAvailable, condition } = await userModelEligibility(user.id, db, platform)
-    // Preset choices may not redirect a store app to a model it cannot use.
-    const platformHiddenIds = new Set(platform
-      ? (await db.select({ id: models.id, hiddenPlatforms: models.hiddenPlatforms }).from(models))
-        .filter((model) => isModelHiddenOnPlatform(model, platform)).map((model) => model.id)
-      : [])
+    // Preset choices may not redirect to a model this store app or user cannot use.
+    const unusableIds = await inaccessibleModelIds(user.id)
+    if (platform) {
+      for (const model of await db.select({ id: models.id, hiddenPlatforms: models.hiddenPlatforms }).from(models)) {
+        if (isModelHiddenOnPlatform(model, platform)) unusableIds.add(model.id)
+      }
+    }
     const rows = await db
       .select({ model: models, pricing: modelPricingVersions, lab: labs, provider: providerConnections })
       .from(models)
@@ -222,7 +253,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
       iconDark: model.iconDark,
       presets: (await Promise.all((await db.select().from(modelPresets).where(eq(modelPresets.modelId, model.id)).orderBy(modelPresets.sortOrder)).map(async (preset) => {
         const allChoices = await db.select().from(modelPresetChoices).where(eq(modelPresetChoices.presetId, preset.id)).orderBy(modelPresetChoices.sortOrder)
-        const choices = allChoices.filter((choice) => !(choice.actionType === 'redirect' && platformHiddenIds.has(String((choice.action as { modelId?: unknown }).modelId))))
+        const choices = allChoices.filter((choice) => !(choice.actionType === 'redirect' && unusableIds.has(String((choice.action as { modelId?: unknown }).modelId))))
         const defaultChoice = allChoices.find((choice) => choice.id === preset.defaultChoiceId)
         return {
           id: preset.publicId, name: preset.name, icon: preset.icon, hidden: allChoices.length > 0 && choices.length === 0,
@@ -544,8 +575,10 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
       .leftJoin(modelPricingVersions, and(eq(models.id, modelPricingVersions.modelId), isNull(modelPricingVersions.effectiveTo)))
       .where(and(ne(models.id, UNKNOWN_MODEL_ID), ne(models.providerConnectionId, CODEX_PROVIDER_ID)))
       .orderBy(asc(models.sortOrder), asc(models.createdAt))
+    const grantsByModel = await modelGrantUserIds()
     return { data: await Promise.all(rows.map(async ({ model, pricing }) => ({
       ...model,
+      allowedUserIds: grantsByModel.get(model.id) ?? [],
       inputPriceMicros: pricing?.inputPriceMicros ?? 0,
       cachedInputPriceMicros: pricing?.cachedInputPriceMicros ?? 0,
       cacheWritePriceMicros: pricing?.cacheWritePriceMicros ?? 0,
@@ -614,6 +647,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
     await validateWarningLinks(input.id, input.warningMessage)
     if (input.customIconId) await requireCatalogIcon(input.customIconId)
     await validatePresets(input.id, raw.presets, input.allowedParameters)
+    await validateGrantUsers(input.allowedUserIds)
     const pricingId = newId()
     const labId = input.labId ?? INTERNAL_LAB_ID
     const sortOrder = await nextModelSortOrder(labId)
@@ -631,6 +665,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
         enabled: input.enabled,
         visible: input.visible,
         hiddenPlatforms: input.hiddenPlatforms,
+        restricted: input.restricted,
         logo: input.logo,
         customIconId: input.customIconId,
         systemPrompt: input.systemPrompt,
@@ -669,6 +704,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
         perRequestPriceMicros: input.perRequestPriceMicros,
       })
       await replacePresets(tx, input.id, raw.presets)
+      await replaceModelGrants(tx, input.id, input.allowedUserIds, admin.id)
       await tx.insert(auditEvents).values({
         id: newId(), actorUserId: admin.id, action: 'model.create', targetType: 'model', targetId: input.id,
       })
@@ -693,6 +729,8 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
     const warningMessage = createModelSchema.shape.warningMessage.removeDefault().optional().parse(body.warningMessage)
     const warningDismissDays = createModelSchema.shape.warningDismissDays.removeDefault().optional().parse(body.warningDismissDays)
     const hiddenPlatforms = modelHiddenPlatformsSchema.optional().parse(body.hiddenPlatforms)
+    const restricted = z.boolean().optional().parse(body.restricted)
+    const allowedUserIds = modelAllowedUserIdsSchema.optional().parse(body.allowedUserIds)
     const compactionPatch = z.object({
       compactionEnabled: z.boolean().optional(),
       compactionThresholdTokens: z.number().int().min(2_000).max(1_000_000).optional(),
@@ -707,6 +745,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
     if (parsedPresets) await validatePresets(id, parsedPresets, effectiveAllowed)
     if (body.fallbackModelId !== undefined) await validateFallback(id, typeof body.fallbackModelId === 'string' ? body.fallbackModelId : null)
     await validateWarningLinks(id, warningMessage)
+    if (allowedUserIds) await validateGrantUsers(allowedUserIds)
     const currentLabId = current.labId ?? INTERNAL_LAB_ID
     const requestedLabId = typeof body.labId === 'string' ? body.labId : body.labId === null ? INTERNAL_LAB_ID : currentLabId
     const labChanged = requestedLabId !== currentLabId
@@ -723,6 +762,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
       enabled: typeof body.enabled === 'boolean' ? body.enabled : undefined,
       visible: typeof body.visible === 'boolean' ? body.visible : undefined,
       hiddenPlatforms,
+      restricted,
       logo: typeof body.logo === 'string' ? body.logo : body.logo === null ? null : undefined,
       customIconId: typeof body.customIconId === 'string' ? body.customIconId : body.customIconId === null ? null : undefined,
       systemPrompt: typeof body.systemPrompt === 'string' ? body.systemPrompt : undefined,
@@ -767,8 +807,9 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
       })
     }
     if (parsedPresets) await db.transaction((tx) => replacePresets(tx, id, parsedPresets))
+    if (allowedUserIds) await db.transaction((tx) => replaceModelGrants(tx, id, allowedUserIds, admin.id))
     await db.insert(auditEvents).values({ id: newId(), actorUserId: admin.id, action: 'model.update', targetType: 'model', targetId: id })
-    return updated
+    return { ...updated, allowedUserIds: (await modelGrantUserIds(id)).get(id) ?? [] }
   })
 
   app.delete('/api/admin/models/:id', async (request, reply) => {

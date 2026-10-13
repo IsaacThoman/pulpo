@@ -117,4 +117,19 @@ describe('agent workspace tools', () => {
     expect(result.content).toEqual([{ type: 'text', text: 'Attached report.pdf (456 bytes)' }])
     expect(result.details).toEqual({ attachment: { id: 'file-1', name: 'report.pdf', mimeType: 'application/pdf', sizeBytes: 456 } })
   })
+
+  it('passes saved full-output locations from the workspace to the output budget', async () => {
+    const saved = { fullOutputPath: '/tmp/pulpo-tool-output/abc.txt', fullOutputBytes: 200_000, fullOutputComplete: true }
+    const execute = vi.fn().mockResolvedValue({ output: 'output', exitCode: 0, details: { ...saved, unrelated: true } })
+    const tools = createWorkspaceTools({ execute } as unknown as WorkspaceManager, 1_000)
+
+    const bash = await tools.find((candidate) => candidate.name === 'bash')!.execute('bash-1', { command: 'cat big.log' })
+    const grep = await tools.find((candidate) => candidate.name === 'grep')!.execute('grep-1', { pattern: 'x' })
+    execute.mockResolvedValueOnce({ output: 'a.txt', exitCode: 0 })
+    const ls = await tools.find((candidate) => candidate.name === 'ls')!.execute('ls-1', {})
+
+    expect(bash.details).toEqual({ exitCode: 0, ...saved })
+    expect(grep.details).toEqual(saved)
+    expect(ls.details).toEqual({})
+  })
 })

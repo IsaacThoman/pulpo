@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { DEFAULT_MINIMUM_OUTPUT_RESERVATION_TOKENS, DEFAULT_MODEL_WARNING_DISMISS_DAYS, minimumOutputReservationTokensSchema, chatPresetsSchema, type ChatPreset, type ChatPresetAction, type ChatPresetChoice, type ChatPresetIcon, type ModelHiddenPlatform } from '@pulpo/contracts'
 import { modelWarningLinkError } from '@pulpo/client-core'
-import { ArrowDown, ArrowUp, Check, ChevronsUpDown, ChevronRight, Copy, Pencil, Plus, Search, Trash2 } from 'lucide-react'
+import { ArrowDown, ArrowUp, Check, ChevronsUpDown, ChevronRight, Copy, Lock, Pencil, Plus, Search, Trash2 } from 'lucide-react'
 import { apiRequest } from '@/lib/api'
 import { formatNumber } from '@/lib/format'
 import { cn } from '@/lib/utils'
@@ -39,6 +39,8 @@ import {
   type ManagedCodexModelSettings,
   validManagedCodexSettings,
 } from './codex-model-settings'
+import { ModelAccessEditor } from './ModelAccessEditor'
+import { useAdminUserDirectory, type UserDirectory } from './user-directory'
 
 interface AdminModel {
   id: string
@@ -52,6 +54,8 @@ interface AdminModel {
   enabled: boolean
   visible: boolean
   hiddenPlatforms: ModelHiddenPlatform[]
+  restricted: boolean
+  allowedUserIds: string[]
   logo: string | null
   customIconId: string | null
   systemPrompt: string
@@ -90,7 +94,7 @@ interface Provider { id: string; name: string; baseUrl?: string }
 interface Lab { id: string; name: string; logo?: string; customIconId: string | null }
 
 const empty = (providerConnectionId = '', labId: string | null = null): AdminModel => ({
-  id: '', providerConnectionId, labId, upstreamModelId: '', name: '', description: '', warningMessage: '', warningDismissDays: DEFAULT_MODEL_WARNING_DISMISS_DAYS, enabled: true, visible: true, hiddenPlatforms: [], logo: null, customIconId: null, systemPrompt: '', agentEnabled: false, agentInstructions: '', defaultParameters: {}, interceptImagesWithOcr: false,
+  id: '', providerConnectionId, labId, upstreamModelId: '', name: '', description: '', warningMessage: '', warningDismissDays: DEFAULT_MODEL_WARNING_DISMISS_DAYS, enabled: true, visible: true, hiddenPlatforms: [], restricted: false, allowedUserIds: [], logo: null, customIconId: null, systemPrompt: '', agentEnabled: false, agentInstructions: '', defaultParameters: {}, interceptImagesWithOcr: false,
   contextWindow: 128_000, maxOutputTokens: 16_384, minimumOutputReservationTokens: DEFAULT_MINIMUM_OUTPUT_RESERVATION_TOKENS, executionMode: 'stream', tags: [], allowedParameters: [],
   compactionEnabled: true, compactionThresholdTokens: 100_000, compactionRetainedTurns: 4,
   useProviderCost: false, promptCachingEnabled: false,
@@ -107,12 +111,13 @@ export function AdminModelsPage() {
   const [providers, setProviders] = useState<Provider[]>([])
   const [labs, setLabs] = useState<Lab[]>([])
   const [query, setQuery] = useState('')
-  const [filter, setFilter] = useState<'all' | 'visible' | 'hidden' | 'enabled' | 'disabled'>('visible')
+  const [filter, setFilter] = useState<'all' | 'visible' | 'hidden' | 'enabled' | 'disabled' | 'restricted'>('visible')
   const [draft, setDraft] = useState<AdminModel | null>(null)
   const [codexDraft, setCodexDraft] = useState<ManagedCodexModelSettings | null>(null)
   const [creating, setCreating] = useState(false)
   const [presetEditorValid, setPresetEditorValid] = useState(true)
   const [paramsValid, setParamsValid] = useState(true)
+  const userDirectory = useAdminUserDirectory(!!draft?.restricted || models.some((model) => model.restricted))
   const customIcons = useCatalogIcons((state) => state.icons)
   const loadIcons = useCatalogIcons((state) => state.load)
 
@@ -127,7 +132,7 @@ export function AdminModelsPage() {
   }
   useEffect(() => { void Promise.all([load(), loadIcons()]) }, [loadIcons])
   useEffect(() => { setPresetEditorValid(true); setParamsValid(true) }, [draft?.id])
-  const filtered = useMemo(() => models.filter((model) => `${model.name} ${model.id} ${model.upstreamModelId}`.toLowerCase().includes(query.toLowerCase()) && (filter === 'all' || (filter === 'visible' ? model.visible : filter === 'hidden' ? !model.visible : filter === 'enabled' ? model.enabled : !model.enabled))), [models, query, filter])
+  const filtered = useMemo(() => models.filter((model) => `${model.name} ${model.id} ${model.upstreamModelId}`.toLowerCase().includes(query.toLowerCase()) && (filter === 'all' || (filter === 'visible' ? model.visible : filter === 'hidden' ? !model.visible : filter === 'enabled' ? model.enabled : filter === 'restricted' ? model.restricted : !model.enabled))), [models, query, filter])
   const presetErrors = draft ? validatePresetDrafts(draft.presets, draft.id, draft.allowedParameters, models) : []
   const warningLinkError = draft ? modelWarningLinkError(draft.id, draft.warningMessage ?? '', models) : null
 
@@ -180,7 +185,7 @@ export function AdminModelsPage() {
         <Select value={filter} onValueChange={(v: typeof filter) => setFilter(v)}>
           <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
           <SelectContent>
-            {(['visible', 'hidden', 'all', 'enabled', 'disabled'] as const).map((v) => (
+            {(['visible', 'hidden', 'all', 'enabled', 'disabled', 'restricted'] as const).map((v) => (
               <SelectItem key={v} value={v} className="capitalize">{v}</SelectItem>
             ))}
           </SelectContent>
@@ -205,6 +210,15 @@ export function AdminModelsPage() {
                     {!model.visible && <Badge variant="secondary" className="font-normal">{ui("hidden")}</Badge>}
                     {model.hiddenPlatforms?.includes('ios') && <Badge variant="secondary" className="font-normal">{ui("hidden on iOS")}</Badge>}
                     {model.hiddenPlatforms?.includes('android') && <Badge variant="secondary" className="font-normal">{ui("hidden on Android")}</Badge>}
+                    {model.restricted && (
+                      <Badge
+                        variant="secondary"
+                        className="font-normal"
+                        title={model.allowedUserIds.map((id) => userDirectory.users.find((user) => user.id === id)?.name).filter(Boolean).join(', ') || undefined}
+                      >
+                        <Lock /> {model.allowedUserIds.length === 1 ? ui("Restricted · 1 user") : ui("Restricted · {{count}} users", { count: model.allowedUserIds.length })}
+                      </Badge>
+                    )}
                   </div>
                   <div className="mt-0.5 truncate text-xs text-muted-foreground">
                     {model.description || model.upstreamModelId} · {formatNumber(model.contextWindow)} {ui("ctx")} </div>
@@ -263,6 +277,7 @@ export function AdminModelsPage() {
                 labs={labs}
                 customIcons={customIcons}
                 models={models}
+                userDirectory={userDirectory}
                 presetErrors={presetErrors}
                 warningLinkError={warningLinkError}
                 onPresetValidityChange={setPresetEditorValid}
@@ -398,6 +413,7 @@ function ModelEditorBody({
   labs,
   customIcons,
   models,
+  userDirectory,
   presetErrors,
   warningLinkError,
   onPresetValidityChange,
@@ -410,6 +426,7 @@ function ModelEditorBody({
   labs: Lab[]
   customIcons: AdminCatalogIcon[]
   models: AdminModel[]
+  userDirectory: UserDirectory
   presetErrors: string[]
   warningLinkError: string | null
   onPresetValidityChange: (valid: boolean) => void
@@ -540,7 +557,9 @@ function ModelEditorBody({
         <ToggleRow label={ui("Visible in picker")} checked={draft.visible} onChange={(visible) => setDraft({ ...draft, visible })} />
         <ToggleRow label={ui("Hide in iOS app")} description={ui("App Store build. Requests from it cannot use this model.")} checked={draft.hiddenPlatforms.includes('ios')} onChange={(hidden) => setDraft({ ...draft, hiddenPlatforms: withHiddenPlatform(draft.hiddenPlatforms, 'ios', hidden) })} />
         <ToggleRow label={ui("Hide in Android app")} description={ui("Google Play build. Requests from it cannot use this model.")} checked={draft.hiddenPlatforms.includes('android')} onChange={(hidden) => setDraft({ ...draft, hiddenPlatforms: withHiddenPlatform(draft.hiddenPlatforms, 'android', hidden) })} />
+        <ToggleRow label={ui("Restrict access")} description={ui("Only selected users can see and use this model. Admins always have access.")} checked={draft.restricted} onChange={(restricted) => setDraft({ ...draft, restricted })} />
       </div>
+      {draft.restricted && <ModelAccessEditor allowedUserIds={draft.allowedUserIds} directory={userDirectory} onChange={(allowedUserIds) => setDraft({ ...draft, allowedUserIds })} />}
 
       <Separator />
 

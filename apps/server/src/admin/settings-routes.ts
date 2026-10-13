@@ -126,8 +126,9 @@ export async function registerAdminSettingsRoutes(app: FastifyInstance): Promise
       const authSettings = authSettingsSchema.parse(values.auth)
       const referencedModelIds = newAccountModelReferenceIds(authSettings)
       if (referencedModelIds.length) {
+        // New accounts hold no grants, so restricted models cannot be their defaults.
         const available = await db.select({ id: models.id }).from(models)
-          .where(and(eq(models.enabled, true), eq(models.visible, true)))
+          .where(and(eq(models.enabled, true), eq(models.visible, true), eq(models.restricted, false)))
         const missing = firstUnavailableModelReference(referencedModelIds, available.map((model) => model.id))
         if (missing) {
           throw new AppError(400, 'new_account_model_unavailable', `Configured model ${missing} is unavailable`)

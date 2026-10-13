@@ -2214,7 +2214,7 @@ const esUi: Record<string, string> = {
   "Open in Files": "Abrir en Archivos",
   "Sort by": "Ordenar por",
   "Drop here to move to the top": "Suelta aquí para mover al nivel superior",
-  "This folder is built in and cannot be renamed, moved, or trashed": "Esta carpeta es del sistema y no se puede renombrar, mover ni enviar a la papelera",
+  "This folder is built in and cannot be renamed, moved, trashed, or recolored": "Esta carpeta es del sistema y no se puede renombrar, mover, enviar a la papelera ni cambiar de color",
   "Chats cannot be copied here; duplicate them from the chat menu": "Los chats no se pueden copiar aquí; duplícalos desde el menú del chat",
   "Moved \"{{0}}\" to the archive": "Se movió \"{{0}}\" al archivo",
   "Moved {{0}} items to the archive": "Se movieron {{0}} elementos al archivo",
@@ -2269,6 +2269,19 @@ const esUi: Record<string, string> = {
   "Wrench": "Llave inglesa",
   "Leaf": "Hoja",
   "Coffee": "Café",
+  "Allowed users": "Usuarios permitidos",
+  "Add users": "Añadir usuarios",
+  "Search by name, username, or email…": "Buscar por nombre, usuario o correo…",
+  "Search users": "Buscar usuarios",
+  "Loading users…": "Cargando usuarios…",
+  "No matching users": "No hay usuarios que coincidan",
+  "No users selected. Only admins can use this model.": "No hay usuarios seleccionados. Solo los administradores pueden usar este modelo.",
+  "Restricted · 1 user": "Restringido · 1 usuario",
+  "Restricted · {{count}} users": "Restringido · {{count}} usuarios",
+  "Restrict access": "Restringir acceso",
+  "Only selected users can see and use this model. Admins always have access.": "Solo los usuarios seleccionados pueden ver y usar este modelo. Los administradores siempre tienen acceso.",
+  "Restricted models": "Modelos restringidos",
+  "Checked models are available to this user.": "Los modelos marcados están disponibles para este usuario.",
 }
 
 export default esUi

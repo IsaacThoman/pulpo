@@ -15,13 +15,49 @@ function installDesktopWindow(): void {
 
 afterEach(() => {
   resetRuntimeClientPlatformForTests()
+  vi.useRealTimers()
   vi.restoreAllMocks()
   Reflect.deleteProperty(globalThis, 'fetch')
   Reflect.deleteProperty(globalThis, 'window')
   Reflect.deleteProperty(globalThis, 'localStorage')
 })
 
+describe('Retry-After metadata', () => {
+  it.each([
+    ['60', 60_000],
+    ['Mon, 12 Oct 2026 12:01:00 GMT', 60_000],
+    ['Mon, 12 Oct 2026 11:59:00 GMT', 0],
+    ['0', 0],
+    ['-1', undefined],
+    ['1.5', undefined],
+    ['2147484', undefined],
+    ['9'.repeat(400), undefined],
+    ['invalid', undefined],
+    ['', undefined],
+  ])('parses %s for API and blob errors', async (retryAfter, expected) => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-10-12T12:00:00Z'))
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ error: { code: 'rate_limit_exceeded' } }, {
+      status: 429, headers: { 'retry-after': retryAfter as string },
+    })))
+
+    await expect(apiRequest('/api/me')).rejects.toMatchObject({ status: 429, retryAfterMs: expected })
+    await expect(fetchApiBlob('/api/attachments/image')).rejects.toMatchObject({ status: 429, retryAfterMs: expected })
+  })
+})
+
 describe('desktop resource transport', () => {
+  it('keeps the desktop session active when requests are rate limited', async () => {
+    installDesktopWindow()
+    const unauthorized = vi.fn()
+    configureDesktopRuntime({ instanceUrl: 'https://one.example', token: 's'.repeat(43), onUnauthorized: unauthorized })
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({}, { status: 429, headers: { 'retry-after': '60' } })))
+
+    await expect(apiRequest('/api/me')).rejects.toMatchObject({ status: 429, retryAfterMs: 60_000 })
+    await expect(fetchApiBlob('/api/users/user/avatar')).rejects.toMatchObject({ status: 429, retryAfterMs: 60_000 })
+    expect(unauthorized).not.toHaveBeenCalled()
+  })
+
   it('keeps browser blob requests relative and cookie-authenticated', async () => {
     const fetchMock = vi.fn(async (_input: string | URL | Request, _init?: RequestInit) => new Response(new Blob(['image'])))
     vi.stubGlobal('fetch', fetchMock)
