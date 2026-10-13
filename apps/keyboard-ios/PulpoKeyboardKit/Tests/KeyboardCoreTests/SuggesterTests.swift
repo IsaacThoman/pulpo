@@ -163,6 +163,36 @@ struct SuggesterTests {
     #expect(correction(input, after: "and") == expected)
   }
 
+  @Test func aCompletionRetainsItsCorrectionEvidence() {
+    let context = model.context(previousWord: "you", sentenceStart: false, precedingWord: "do")
+    let word = typed("hav")
+    let have = suggester.candidates(for: word, context: context).first { $0.text == "have" }
+    #expect(have != nil)
+    #expect(have?.isCompletion == false)
+    #expect(have?.cost == SpellCorrector.insertionCost)
+    #expect(suggester.suggestions(for: word, context: context, autocorrect: true).autocorrection == "have")
+  }
+
+  @Test(arguments: [("I", "said", "nah"), ("I", "am", "meh"), (nil, "sounds", "sus"), ("that", "was", "bruh")])
+  func preservesUncertainShortConversationalTokens(preceding: String?, previous: String, word: String) {
+    let context = model.context(previousWord: previous, sentenceStart: false, precedingWord: preceding)
+    let set = suggester.suggestions(for: typed(word), context: context, autocorrect: true)
+    #expect(set.autocorrection == nil)
+    #expect(set.slots.contains { $0.text == word && $0.kind == .literal })
+  }
+
+  @Test(arguments: ["Soren", "Noor", "Asha"])
+  func preservesNewNamesWithinASentence(word: String) {
+    #expect(!suggester.isValid(word))
+    #expect(correction(word, after: "with") == nil)
+  }
+
+  @Test func sentenceInitialCapitalizationStillAllowsSpellingCorrection() {
+    #expect(correction("Helllo") == "Hello")
+    #expect(correction("Teh", after: "and") == "The")
+    #expect(correction("cant", after: "I") == "can't")
+  }
+
   @Test func suggestionsAreFastEnoughForEveryKeystroke() {
     let context = model.context(previousWord: "the", sentenceStart: false)
     let words = ["t", "th", "the", "thw", "inter", "interes", "internat", "becuase", "acommodate", "xylophon"]

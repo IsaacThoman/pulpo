@@ -101,7 +101,13 @@ public final class Suggester {
     var byText: [String: Candidate] = [:]
     func add(_ candidate: Candidate) {
       guard !personal.isBlocked(candidate.text), !rejected.contains(candidate.text) else { return }
-      if let existing = byText[candidate.text], existing.score >= candidate.score { return }
+      if let existing = byText[candidate.text] {
+        // Finishing a prefix and correcting a missing final letter can name the
+        // same word. Keep its real edit cost and eligibility for a separator.
+        if existing.isCompletion != candidate.isCompletion {
+          if !existing.isCompletion { return }
+        } else if existing.score >= candidate.score { return }
+      }
       byText[candidate.text] = candidate
     }
     let typed = word.text
@@ -186,7 +192,7 @@ public final class Suggester {
     }
     // Internal capitals usually identify a name, brand, or code identifier.
     let hasInternalCapitals = typed.dropFirst().contains(where: { $0.isUppercase }) && typed.contains(where: { $0.isLowercase })
-    let autocorrection = autocorrect && !rejected.contains(typed) && !hasInternalCapitals ? choose(from: ranked, word: word, valid: valid) : nil
+    let autocorrection = autocorrect && !rejected.contains(typed) && !hasInternalCapitals ? choose(from: ranked, word: word, valid: valid, context: context) : nil
 
     // Built best-first, then centered: the strongest candidate takes the middle slot.
     var ordered: [Suggestion] = []
@@ -207,7 +213,7 @@ public final class Suggester {
     return SuggestionSet(slots: SuggestionSet.centered(ordered), autocorrection: autocorrection?.text)
   }
 
-  private func choose(from ranked: [Candidate], word: TypedWord, valid: Bool) -> Candidate? {
+  private func choose(from ranked: [Candidate], word: TypedWord, valid: Bool, context: LanguageContext) -> Candidate? {
     let typed = word.text
     let typedKey = TextNormalizer.key(typed)
     if personal.isKnown(typed) || personal.isKnown(typed.lowercased()) { return nil }
@@ -236,10 +242,23 @@ public final class Suggester {
         // Rare dictionary abbreviations are poor defaults for unknown literals.
         !($0.text.count > 1 && $0.text.allSatisfy(\.isUppercase) && !typed.allSatisfy(\.isUppercase)) &&
         !($0.id.map { lexicon.flags($0).contains(.capitalized) && lexicon.frequency($0) < 100 } ?? false) &&
-        // Familiarity is context-independent: sparse sentence statistics must
-        // not suppress an obvious typo such as "cat is wierd".
+        // Keep rare dictionary entries from winning when sparse context gives
+        // every candidate the same language probability floor.
         ($0.id.map { lexicon.unigramLogProbability($0) } ?? -13) - $0.cost >= -20.8
       }) else { return nil }
+      // A new title-cased word inside a sentence can be a name. A clear
+      // adjacent transposition still supplies positive typing-error evidence;
+      // adding or dropping letters does not establish that a name is wrong.
+      if context.previousWord != nil, typed.first?.isUppercase == true,
+         typed.dropFirst().allSatisfy(\.isLowercase),
+         !Self.isSingleTransposition(typedKey, TextNormalizer.key(best.text)) { return nil }
+      // A short unknown token can just as easily be slang or an abbreviation.
+      // Require more evidence than finding a nearby dictionary word. Judge the
+      // strongest eligible correction first: rejecting it must not expose an
+      // unrelated, weaker fallback to autocorrection.
+      let minimumFamiliarity = typedKey.count <= 4 ? -14.5 : -20.8
+      let familiarity = (best.id.map { lexicon.unigramLogProbability($0) } ?? -13) - best.cost
+      guard familiarity >= minimumFamiliarity else { return nil }
       let sameLetters = TextNormalizer.key(best.text) == typedKey
       // A lone letter is only ever fixed by a shortcut such as i -> I.
       return typed.count > 1 || sameLetters ? best : nil
@@ -279,6 +298,14 @@ public final class Suggester {
     // when touch evidence supports an edit; it remains literal without that evidence.
     if best.score - typedScore >= (literalCase ? validWordMargin : 0) { return best }
     return nil
+  }
+
+  private static func isSingleTransposition(_ typed: String, _ target: String) -> Bool {
+    let source = Array(typed.utf8), destination = Array(target.utf8)
+    guard source.count == destination.count else { return false }
+    let changed = source.indices.filter { source[$0] != destination[$0] }
+    guard changed.count == 2, changed[1] == changed[0] + 1 else { return false }
+    return source[changed[0]] == destination[changed[1]] && source[changed[1]] == destination[changed[0]]
   }
 
   public func predictions(context: LanguageContext) -> SuggestionSet {
