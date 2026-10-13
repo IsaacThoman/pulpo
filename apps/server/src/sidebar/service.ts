@@ -135,7 +135,7 @@ export async function orderSidebarItems(userId: string, parentId: string | null,
 }
 
 export async function renameSidebarItem(userId: string, id: string, name: string): Promise<FileNode> {
-  return updateFileNode(userId, id, { name })
+  return updateFileNode(userId, id, { name, onConflict: 'rename' })
 }
 
 /** Trashes an item (restorable from Files). Chats in a trashed folder return to the unfiled list. */

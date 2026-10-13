@@ -234,6 +234,8 @@ export async function updateFileNode(userId: string, id: string, input: {
   name?: string
   parentId?: string | null
   expectedRevision?: number
+  /** With `rename`, a name already taken in the folder gets a " (n)" suffix instead of failing. */
+  onConflict?: 'fail' | 'rename'
 }): Promise<FileNode> {
   if ((await liveChatIds(db, userId, [id])).size) return updateChatItem(userId, id, input)
   const { node, converted } = await mutateFileTree(userId, async (tx) => {
@@ -242,7 +244,7 @@ export async function updateFileNode(userId: string, id: string, input: {
     const result = await moveNodeInTx(tx, userId, current, {
       parentId: input.parentId === undefined ? current.parentId : input.parentId,
       name: input.name ?? current.name,
-      onConflict: 'fail',
+      onConflict: input.onConflict ?? 'fail',
     })
     return { node: toFileNode(result.row), converted: result.converted }
   })

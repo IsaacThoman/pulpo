@@ -15,7 +15,7 @@ const { ensureSystemFolders } = await import('./system-folders.js')
 const { chatFolderId } = await import('./chat-items.js')
 const { createShortcut } = await import('./shortcuts.js')
 const { copyFileNodes } = await import('./copy-service.js')
-const { archiveItems, createSidebarFolder, legacyFolderList, moveSidebarItems, orderSidebarItems, sidebarFolderItems, sidebarState } = await import('../sidebar/service.js')
+const { archiveItems, createSidebarFolder, legacyFolderList, moveSidebarItems, orderSidebarItems, renameSidebarItem, sidebarFolderItems, sidebarState } = await import('../sidebar/service.js')
 const { topChatOrder } = await import('./order.js')
 
 const enabled = process.env.PULPO_FILES_TESTS === 'true'
@@ -199,6 +199,15 @@ describe.skipIf(!enabled)('chats filed in Files folders', () => {
     const other = await createSidebarFolder(userId, { name: 'work' })
     expect(replay.id).toBe(first.id)
     expect(other.name).toBe('work (2)')
+  })
+
+  it('suffixes a taken name when renaming from the sidebar, but lets an item change its own case', async () => {
+    await createSidebarFolder(userId, { name: 'Work' })
+    await createSidebarFolder(userId, { name: 'Work (2)' })
+    const fresh = await createSidebarFolder(userId, { name: 'Untitled folder' })
+    expect((await renameSidebarItem(userId, fresh.id, 'work')).name).toBe('work (3)')
+    expect((await renameSidebarItem(userId, fresh.id, 'WORK (3)')).name).toBe('WORK (3)')
+    await expect(updateFileNode(userId, fresh.id, { name: 'Work' })).rejects.toMatchObject({ code: 'file_name_conflict' })
   })
 
   it('lists folders for older clients by path, including other folders holding chats', async () => {
