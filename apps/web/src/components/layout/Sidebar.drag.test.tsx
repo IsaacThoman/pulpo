@@ -321,3 +321,26 @@ describe('dropping items dragged from Files', () => {
     expect(filesZone.current!.hover(10, 10, [fromFiles('n1')])).toBe(false)
   })
 })
+
+describe('right-clicking empty sidebar space', () => {
+  const menuItems = () => screen.queryAllByRole('menuitem').map((item) => item.textContent?.trim())
+
+  it('offers the top-level actions on empty space', async () => {
+    fireEvent.contextMenu(document.querySelector('aside .overflow-y-auto')!, { clientX: 20, clientY: 600 })
+    expect(await screen.findByRole('menuitem', { name: /Sort by/ })).toBeTruthy()
+    expect(menuItems()).toEqual(expect.arrayContaining(['New chat', 'New folder', 'New file', 'Upload files', 'Paste', 'Open in Files']))
+  })
+
+  it('scopes the menu to an open folder, without sorting or a new chat', async () => {
+    fireEvent.contextMenu(document.querySelector('[data-folder-body="f2"]')!, { clientX: 20, clientY: 280 })
+    expect(await screen.findByRole('menuitem', { name: 'New folder' })).toBeTruthy()
+    expect(menuItems()).not.toContain('New chat')
+    expect(screen.queryByRole('menuitem', { name: /Sort by/ })).toBeNull()
+  })
+
+  it('leaves rows to their own menus', async () => {
+    fireEvent.contextMenu(chatRow('a'), { clientX: 20, clientY: 60 })
+    expect(await screen.findByRole('menuitem', { name: 'Rename' })).toBeTruthy()
+    expect(screen.queryByRole('menuitem', { name: /Sort by/ })).toBeNull()
+  })
+})

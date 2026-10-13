@@ -1,10 +1,14 @@
-import { useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type DragEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
 import { useTranslation } from '@/i18n/useAppTranslation'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import {
   Archive,
+  ArrowDownUp,
   BarChart3,
+  ClipboardPaste,
+  FilePlus2,
+  Upload,
   CreditCard,
   ChevronRight,
   Folder as FolderIcon,
@@ -37,7 +41,7 @@ import { cn } from '@/lib/utils'
 import { reorderList } from '@/lib/model-order'
 import { compareChatOrder, useChat } from '@/stores/chat'
 import { useAuth } from '@/stores/auth'
-import { useSettings } from '@/stores/settings'
+import { useSettings, type ChatSortMode } from '@/stores/settings'
 import { CHAT_TIME_GROUPS, chatTimeGroup, type ChatTimeGroup } from '@/lib/format'
 import { resolveChatExpiryMenuAction } from '@/lib/chat-expiration'
 import { chatHasStreamingResponse } from '@/lib/response-tracking'
@@ -49,6 +53,8 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuSub,
   DropdownMenuSubContent,
@@ -76,6 +82,8 @@ import { FileNodeIcon } from '@/features/files/FileNodeIcon'
 import { registerItemDropZone } from '@/features/files/browser/use-item-drag'
 import { FolderPickerDialog } from '@/features/sidebar/FolderPickerDialog'
 import { writeSidebarItem } from '@/features/sidebar/drag-data'
+import { useFileClipboard } from '@/features/files/browser/clipboard'
+import { useFileOperations } from '@/features/files/browser/use-file-operations'
 import { useSidePanel } from '@/features/side-panel/store'
 import { openBeside, useMainNavigate } from '@/features/side-panel/use-panel-actions'
 import {
@@ -86,12 +94,15 @@ import {
   folderOutline,
   isWithin,
   moveSidebarItems,
+  newSidebarFile,
   orderSidebarItems,
+  refreshSidebar,
   pickFolder,
   renameSidebarItem,
   trashSidebarItem,
   useFolderExpansion,
   useSidebarItems,
+  uploadToSidebar,
   useSidebarState,
 } from '@/features/sidebar/api'
 
@@ -773,6 +784,8 @@ interface TreeProps {
   drag: SidebarDrag
   onDrop: (e: DragEvent) => void
   onNewFolder: (parentId: string) => void
+  /** Opens the empty-space menu for an open folder. */
+  onSpaceMenu: (event: ReactMouseEvent, folderId: string) => void
   go: (path: string) => void
 }
 
@@ -907,6 +920,95 @@ function ItemMenu({ node, folder, sidebar, atPointer = false, onRename, onNewFol
           <DropdownMenuItem variant="destructive" onClick={() => void trashSidebarItem(node.id)}>
             <Trash2 />
             {shortcut ? ui("Delete shortcut") : filesEnabled ? ui("Move to trash") : t('common.delete')}
+          </DropdownMenuItem>
+        </>
+      )}
+    </DropdownMenuContent>
+  )
+}
+
+/** Where a right-click on empty sidebar space opened its menu: the top level (null) or a folder. */
+type SpaceMenu = { x: number; y: number; folderId: string | null }
+
+/**
+ * The menu for empty space at the top level of the sidebar (the Chats folder) or inside an open
+ * folder, like the empty-space menu in Files. Sorting applies to the top level only.
+ */
+function SpaceMenuContent({ folderId, onNewChat, onNewFolder, onUpload, go }: {
+  folderId: string
+  /** Given at the top level only, with the sort choice. */
+  onNewChat?: () => void
+  onNewFolder: () => void
+  onUpload: () => void
+  go: (path: string) => void
+}) {
+  const { t } = useTranslation()
+  const filesEnabled = useAuth((state) => state.filesEnabled)
+  const clip = useFileClipboard((state) => state.clip)
+  const ops = useFileOperations()
+  const recentOrder = useSettings((state) => state.chatSortMode === 'recent')
+  const setSetting = useSettings((state) => state.set)
+  const paste = async () => {
+    if (!clip) return
+    if (clip.mode === 'cut') {
+      useFileClipboard.setState({ clip: null })
+      await ops.move(clip.nodes, folderId)
+    } else {
+      await ops.copy(clip.nodes, folderId)
+    }
+    await refreshSidebar()
+  }
+  return (
+    <DropdownMenuContent side="bottom" align="start" sideOffset={2} className="w-52">
+      {onNewChat && (
+        <DropdownMenuItem onClick={onNewChat}>
+          <SquarePen />
+          {t('chat.newChat')}
+        </DropdownMenuItem>
+      )}
+      <DropdownMenuItem onClick={onNewFolder}>
+        <FolderPlus />
+        {t('sidebar.newFolder')}
+      </DropdownMenuItem>
+      {filesEnabled && (
+        <>
+          <DropdownMenuItem onClick={() => void newSidebarFile(folderId).then((node) => go(`/files/d/${node.id}`), (cause) => ops.fail(cause))}>
+            <FilePlus2 />
+            {ui("New file")}
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={onUpload}>
+            <Upload />
+            {ui("Upload files")}
+          </DropdownMenuItem>
+          <DropdownMenuItem disabled={!clip} onClick={() => void paste()}>
+            <ClipboardPaste />
+            {clip ? (clip.nodes.length === 1 ? uit`Paste "${clip.nodes[0]!.name}"` : uit`Paste ${clip.nodes.length} items`) : ui("Paste")}
+          </DropdownMenuItem>
+        </>
+      )}
+      {onNewChat && (
+        <>
+          <DropdownMenuSeparator />
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger>
+              <ArrowDownUp />
+              {ui("Sort by")}
+            </DropdownMenuSubTrigger>
+            <DropdownMenuSubContent>
+              <DropdownMenuRadioGroup value={recentOrder ? 'recent' : 'default'} onValueChange={(mode) => setSetting('chatSortMode', mode as ChatSortMode)}>
+                <DropdownMenuRadioItem value="default">{t('sidebar.chatSort.default')}</DropdownMenuRadioItem>
+                <DropdownMenuRadioItem value="recent">{t('sidebar.chatSort.recent')}</DropdownMenuRadioItem>
+              </DropdownMenuRadioGroup>
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
+        </>
+      )}
+      {filesEnabled && (
+        <>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onClick={() => go(`/files/f/${folderId}`)}>
+            <FolderOpen />
+            {ui("Open in Files")}
           </DropdownMenuItem>
         </>
       )}
@@ -1143,6 +1245,7 @@ function SidebarFolderNode({ folder, node, shortcut, list, reorderable, ...props
         <div
           className="ml-4 space-y-0.5 border-l border-sidebar-border pl-2"
           data-folder-body={folder.id}
+          onContextMenu={(event) => props.onSpaceMenu(event, folder.id)}
           onDragOver={(e) => drag.onFolderBodyDragOver(folder.id, e)}
           onDrop={onDrop}
         >
@@ -1324,6 +1427,16 @@ export function Sidebar({
     onNavigate()
   }
 
+  // Right-clicking empty space: rows and folders open their own menus first (preventing this).
+  const [spaceMenu, setSpaceMenu] = useState<SpaceMenu | null>(null)
+  const openSpaceMenu = (event: ReactMouseEvent, folderId: string | null) => {
+    if (event.defaultPrevented || !sidebar) return
+    event.preventDefault()
+    setSpaceMenu({ x: event.clientX, y: event.clientY, folderId })
+  }
+  const uploadInput = useRef<HTMLInputElement>(null)
+  const uploadTarget = useRef<string | null>(null)
+
   const startNewChat = () => {
     useChat.getState().abandonTemporaryChat()
     navigate('/', {
@@ -1357,6 +1470,7 @@ export function Sidebar({
     drag,
     onDrop: handleDrop,
     onNewFolder: (parentId: string) => setNewFolderParent(parentId),
+    onSpaceMenu: (event, folderId) => openSpaceMenu(event, folderId),
     go,
   }
   // Recent order lists the top level by last activity under time headings; the manual order stays saved underneath.
@@ -1555,9 +1669,14 @@ export function Sidebar({
       </div>
 
       {/* The complete menu shares one scroll position; the header and account stay anchored. */}
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div
+        className="min-h-0 flex-1 overflow-y-auto"
+        onContextMenu={(event) => {
+          if (!(event.target as Element).closest('[data-sidebar-nav]')) openSpaceMenu(event, null)
+        }}
+      >
         {/* primary nav */}
-        <div className="space-y-0.5 px-2">
+        <div className="space-y-0.5 px-2" data-sidebar-nav>
           {iconBtn(t('chat.newChat'), startNewChat, <SquarePen className="size-4" />)}
           {sidebarPins.searchChats && iconBtn(t('sidebar.searchChats'), onOpenSearch, <Search className="size-4" />)}
           {filesEnabled && sidebarPins.files && iconBtn(t('sidebar.files'), () => go('/files'), <FolderIcon className="size-4" />, undefined, (event) => {
@@ -1735,6 +1854,31 @@ export function Sidebar({
       </div>
 
       <FolderPickerDialog />
+      <PointerMenu point={spaceMenu} onClose={() => setSpaceMenu(null)}>
+        {spaceMenu && sidebar && (
+          <SpaceMenuContent
+            folderId={spaceMenu.folderId ?? sidebar.chatsFolderId}
+            onNewChat={spaceMenu.folderId ? undefined : startNewChat}
+            onNewFolder={() => setNewFolderParent(spaceMenu.folderId)}
+            onUpload={() => {
+              uploadTarget.current = spaceMenu.folderId ?? sidebar.chatsFolderId
+              uploadInput.current?.click()
+            }}
+            go={go}
+          />
+        )}
+      </PointerMenu>
+      <input
+        ref={uploadInput}
+        type="file"
+        multiple
+        hidden
+        onChange={(event) => {
+          const files = [...event.target.files ?? []]
+          event.target.value = ''
+          if (uploadTarget.current) void uploadToSidebar(uploadTarget.current, files)
+        }}
+      />
       <Dialog open={newFolderParent !== undefined} onOpenChange={(open) => { if (!open) setNewFolderParent(undefined) }}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>

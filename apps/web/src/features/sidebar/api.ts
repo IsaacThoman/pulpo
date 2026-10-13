@@ -8,6 +8,9 @@ import { useAuth } from '@/stores/auth'
 import { useChat } from '@/stores/chat'
 import { sidebarItemsKey, sidebarQueryKey } from './cache'
 import { ui } from '@/i18n/ui'
+import { createDoc, uploadFile } from '@/features/files/api'
+import { filesErrorMessage } from '@/features/files/file-display'
+import { useFileToasts } from '@/features/files/browser/toasts'
 
 /*
  * The sidebar is the Chats folder in Files: its folders, shortcuts, files, and chats. Everything
@@ -55,6 +58,9 @@ const refresh = () => Promise.all([
   queryClient.invalidateQueries({ queryKey: ['folders', useAuth.getState().user?.id] }),
   queryClient.invalidateQueries({ queryKey: ['files', useAuth.getState().user?.id] }),
 ])
+
+/** Refetches the sidebar and Files listings after a change made elsewhere (e.g. a paste). */
+export const refreshSidebar = refresh
 
 /** Runs a sidebar change shown at once, then confirmed (or undone) by refetching. */
 async function mutate<T>(optimistic: (() => void) | null, request: () => Promise<T>): Promise<T> {
@@ -166,6 +172,25 @@ export function orderSidebarItems(folderId: string, ids: string[], incoming: rea
       folders: state.folders.map((folder) => moving.has(folder.id) ? { ...folder, parentId: folderId } : folder),
     }))
   }, () => apiRequest('/api/sidebar/order', { method: 'PUT', body: { parentId: folderId === chatsFolderId ? null : folderId, ids } }))
+}
+
+/** Creates an untitled Markdown file at the top of `folderId` (the Files server picks a free name). */
+export function newSidebarFile(folderId: string): Promise<FileNode> {
+  useFolderExpansion.getState().setExpanded(folderId, true)
+  return mutate(null, () => createDoc(folderId, `${ui("Untitled")}.md`))
+}
+
+/** Uploads files to the top of `folderId`, one at a time, reporting failures as toasts. */
+export async function uploadToSidebar(folderId: string, files: readonly File[]): Promise<void> {
+  useFolderExpansion.getState().setExpanded(folderId, true)
+  for (const file of files) {
+    try {
+      await uploadFile(folderId, file)
+    } catch (cause) {
+      useFileToasts.getState().show({ message: filesErrorMessage(cause, file.name), tone: 'error' })
+    }
+    await refresh()
+  }
 }
 
 /** Trashes a Files item; chats in a trashed folder return to the unfiled list. Files can restore it. */

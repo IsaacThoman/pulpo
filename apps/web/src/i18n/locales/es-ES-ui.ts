@@ -2212,6 +2212,7 @@ const esUi: Record<string, string> = {
   "Move to archive": "Mover al archivo",
   "New folder inside": "Nueva carpeta dentro",
   "Open in Files": "Abrir en Archivos",
+  "Sort by": "Ordenar por",
   "Drop here to move to the top": "Suelta aquí para mover al nivel superior",
   "This folder is built in and cannot be renamed, moved, or trashed": "Esta carpeta es del sistema y no se puede renombrar, mover ni enviar a la papelera",
   "Chats cannot be copied here; duplicate them from the chat menu": "Los chats no se pueden copiar aquí; duplícalos desde el menú del chat",
