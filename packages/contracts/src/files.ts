@@ -145,7 +145,10 @@ export const updateFileNodeSchema = z.object({
   parentId: z.uuid().nullable().optional(),
   expectedRevision: z.number().int().nonnegative().optional(),
   ...fileAppearanceFields,
-}).refine((input) => Object.values(input).some((value) => value !== undefined), { message: 'Nothing to update' })
+}).refine(
+  (input) => [input.name, input.parentId, input.color, input.icon].some((value) => value !== undefined),
+  { message: 'Nothing to update' },
+)
 
 /** Upper bound on items in one batch request; a selection larger than this is split by the client. */
 export const FILE_BATCH_MAX_ITEMS = 500
