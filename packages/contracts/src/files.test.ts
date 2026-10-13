@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { fileNameError, fileNameSchema, isMarkdownName, normalizeFileName, updateFileNodeSchema } from './files.js'
+import { fileNameError, fileNameSchema, isMarkdownName, normalizeFileName, updateFileNodeSchema, updateSidebarItemSchema } from './files.js'
 
 describe('Files names', () => {
   it('normalizes to trimmed NFC', () => {
@@ -17,9 +17,14 @@ describe('Files names', () => {
     expect(fileNameSchema.safeParse('   ').success).toBe(false)
   })
 
-  it('requires a rename or move in updates', () => {
+  it('requires a rename, move, or new look in updates', () => {
     expect(updateFileNodeSchema.safeParse({ expectedRevision: 1 }).success).toBe(false)
     expect(updateFileNodeSchema.safeParse({ parentId: null }).success).toBe(true)
+    expect(updateFileNodeSchema.safeParse({ color: null }).success).toBe(true)
+    expect(updateFileNodeSchema.safeParse({ icon: 'rocket' }).success).toBe(true)
+    expect(updateFileNodeSchema.safeParse({ icon: 'unicorn' }).success).toBe(false)
+    expect(updateSidebarItemSchema.safeParse({}).success).toBe(false)
+    expect(updateSidebarItemSchema.safeParse({ color: 'teal' }).success).toBe(true)
   })
 })
 

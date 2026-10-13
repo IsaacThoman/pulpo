@@ -60,8 +60,35 @@ export function nextAvailableName(desired: string, takenLowercase: ReadonlySet<s
   }
 }
 
-export const fileNodeKindSchema = z.enum(['folder', 'doc', 'blob'])
+/**
+ * `chat` items are chats filed in a folder. They are listed beside files and can be moved,
+ * renamed, and trashed with them, but they live in the chats table, not the Files tree.
+ * `shortcut` items open another item (a folder, file, or chat) from wherever they are placed.
+ */
+export const fileNodeKindSchema = z.enum(['folder', 'doc', 'blob', 'chat', 'shortcut'])
 export const fileNodeStatusSchema = z.enum(['pending', 'ready'])
+
+/**
+ * Folders every account has at the top of My files. `chats` is the Sidebar folder: the sidebar
+ * shows its contents (chats directly in it are the sidebar's unfiled list). `archive` is where
+ * "Move to archive" puts things. System folders cannot be renamed, moved, trashed, or recolored.
+ */
+export const fileSystemRoleSchema = z.enum(['chats', 'archive'])
+export type FileSystemRole = z.infer<typeof fileSystemRoleSchema>
+
+/** Colors a file or folder can be given; without one it keeps its kind's own color. */
+export const FILE_COLORS = ['red', 'orange', 'yellow', 'green', 'teal', 'blue', 'purple', 'pink', 'gray'] as const
+export const fileColorSchema = z.enum(FILE_COLORS)
+export type FileColor = z.infer<typeof fileColorSchema>
+
+/** Icons a file or folder can show instead of its kind's own. */
+export const FILE_ICONS = [
+  'star', 'heart', 'bookmark', 'flag', 'book', 'briefcase', 'code', 'music', 'image', 'camera',
+  'film', 'graduation-cap', 'home', 'globe', 'lightbulb', 'flask', 'rocket', 'gamepad', 'shopping-cart', 'plane',
+  'wallet', 'calendar', 'lock', 'users', 'sparkles', 'palette', 'pen', 'wrench', 'leaf', 'coffee',
+] as const
+export const fileIconSchema = z.enum(FILE_ICONS)
+export type FileIcon = z.infer<typeof fileIconSchema>
 
 export const fileNodeSchema = z.object({
   id: z.uuid(),
@@ -75,6 +102,22 @@ export const fileNodeSchema = z.object({
   trashedAt: z.string().nullable(),
   createdAt: z.string(),
   updatedAt: z.string(),
+  systemRole: fileSystemRoleSchema.nullable().optional(),
+  color: fileColorSchema.nullable().optional(),
+  icon: fileIconSchema.nullable().optional(),
+  /** Position among the folder's items, chats included: ascending, newest first on ties. */
+  sortOrder: z.number().int().optional(),
+  /** What a shortcut opens. `available` is false while the target is in the trash. */
+  target: z.object({
+    kind: z.enum(['folder', 'doc', 'blob', 'chat']),
+    id: z.uuid(),
+    name: z.string(),
+    mimeType: z.string().nullable(),
+    systemRole: fileSystemRoleSchema.nullable(),
+    color: fileColorSchema.nullable().optional(),
+    icon: fileIconSchema.nullable().optional(),
+    available: z.boolean(),
+  }).nullable().optional(),
 })
 
 export const createFileFolderSchema = z.object({
@@ -91,11 +134,21 @@ export const createFileDocSchema = z.object({
   markdown: z.string().max(FILE_DOC_MAX_MARKDOWN_LENGTH).optional(),
 })
 
+/** A file's or folder's color and icon; null puts back its kind's own. */
+const fileAppearanceFields = {
+  color: fileColorSchema.nullable().optional(),
+  icon: fileIconSchema.nullable().optional(),
+}
+
 export const updateFileNodeSchema = z.object({
   name: fileNameSchema.optional(),
   parentId: z.uuid().nullable().optional(),
   expectedRevision: z.number().int().nonnegative().optional(),
-}).refine((input) => input.name !== undefined || input.parentId !== undefined, { message: 'Nothing to update' })
+  ...fileAppearanceFields,
+}).refine(
+  (input) => [input.name, input.parentId, input.color, input.icon].some((value) => value !== undefined),
+  { message: 'Nothing to update' },
+)
 
 /** Upper bound on items in one batch request; a selection larger than this is split by the client. */
 export const FILE_BATCH_MAX_ITEMS = 500
@@ -175,6 +228,67 @@ export interface FileListing {
   ancestors: FileNode[]
   children: FileNode[]
 }
+
+/** A shortcut to a Files item or a chat, placed in `parentId` (null is My files; omitted, the Chats folder). */
+export const createShortcutSchema = z.object({
+  targetKind: z.enum(['file', 'chat']),
+  targetId: z.uuid(),
+  parentId: z.uuid().nullable().optional(),
+  name: fileNameSchema.optional(),
+})
+export type CreateShortcut = z.input<typeof createShortcutSchema>
+
+/** A folder of the Chats and Archive trees, for the sidebar's move menu. */
+export interface SidebarFolder {
+  id: string
+  parentId: string | null
+  name: string
+  systemRole: FileSystemRole | null
+}
+
+export interface SidebarState {
+  chatsFolderId: string
+  archiveFolderId: string
+  folders: SidebarFolder[]
+}
+
+export const createSidebarFolderSchema = z.object({
+  /** Client-chosen id, so a folder created offline keeps its identity when replayed. */
+  id: z.uuid().optional(),
+  /** Defaults to the Chats folder. */
+  parentId: z.uuid().nullable().optional(),
+  name: fileNameSchema,
+})
+
+/** Renames a sidebar item or changes its color and icon. */
+export const updateSidebarItemSchema = z.object({
+  name: fileNameSchema.optional(),
+  ...fileAppearanceFields,
+}).refine((input) => Object.values(input).some((value) => value !== undefined), { message: 'Nothing to update' })
+
+/** Moves chats and Files items into a folder; null is the Chats folder (the top of the sidebar). */
+export const moveSidebarItemsSchema = z.object({
+  ids: z.array(z.uuid()).min(1).max(FILE_BATCH_MAX_ITEMS),
+  parentId: z.uuid().nullable(),
+})
+
+/**
+ * The order of a folder's items, chats included; null is the Chats folder. Listed items from
+ * other folders move in first.
+ */
+export const orderSidebarItemsSchema = z.object({
+  parentId: z.uuid().nullable(),
+  ids: z.array(z.uuid()).min(1).max(10_000),
+})
+
+export const archiveItemsSchema = z.object({
+  chatIds: z.array(z.uuid()).max(FILE_BATCH_MAX_ITEMS).default([]),
+  fileIds: z.array(z.uuid()).max(FILE_BATCH_MAX_ITEMS).default([]),
+}).refine((input) => input.chatIds.length + input.fileIds.length > 0, { message: 'Nothing to archive' })
+
+export type CreateSidebarFolder = z.input<typeof createSidebarFolderSchema>
+export type UpdateSidebarItem = z.infer<typeof updateSidebarItemSchema>
+export type ArchiveItems = z.input<typeof archiveItemsSchema>
 
 export interface FileUploadReservation {
   node: FileNode

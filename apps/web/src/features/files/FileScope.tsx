@@ -108,7 +108,8 @@ export function FileScopePicker({
     queryFn: () => fetchFolder(folderId),
     enabled: Boolean(open && userId),
   })
-  const children = listing.data?.children ?? []
+  // Chats filed in folders are listed by Files but cannot be given to the agent as files.
+  const children = (listing.data?.children ?? []).filter((node) => node.kind !== 'chat' && node.kind !== 'shortcut')
   const trail = [...(listing.data?.ancestors ?? []), ...(listing.data?.folder ? [listing.data.folder] : [])]
   const current = folderId ?? FILE_SCOPE_ROOT
   // Items inside an added folder stay pickable: adding them points the agent at them.

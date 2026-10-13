@@ -68,7 +68,9 @@ export function useFileOperations() {
     )
   }
 
-  const copy = async (nodes: readonly FileNode[], parentId: string | null, verb: 'copy' | 'duplicate' = 'copy') => {
+  const copy = async (all: readonly FileNode[], parentId: string | null, verb: 'copy' | 'duplicate' = 'copy') => {
+    // Chats filed here are moved, never copied, from Files.
+    const nodes = all.filter((node) => node.kind !== 'chat')
     if (!nodes.length) return
     const created = await run(() => copyFileNodes(nodes.map((node) => node.id), parentId))
     if (!created) return
@@ -117,7 +119,7 @@ export function useFileOperations() {
 
   const download = async (nodes: readonly FileNode[]) => {
     for (const node of nodes) {
-      if (node.kind === 'folder') continue
+      if (node.kind === 'folder' || node.kind === 'chat' || node.kind === 'shortcut') continue
       try {
         if (node.kind === 'doc') await downloadDocMarkdown(node)
         else await downloadFile(node)
