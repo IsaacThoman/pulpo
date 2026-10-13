@@ -30,8 +30,9 @@ def main():
     scene.cycles.device = 'CPU'
     scene.cycles.samples = args.samples
     scene.cycles.seed = 0
-    # The source uses emission shaders for its sculpted shading. Denoising can
-    # soften their facet edges, so preserve the rendered pixels directly.
+    # The flattened source uses emission shaders and stored appearance normals
+    # for its original sculpted shading. Denoising can soften the facet edges,
+    # so preserve the rendered pixels directly.
     scene.cycles.use_denoising = False
     scene.cycles.use_adaptive_sampling = True
     scene.cycles.adaptive_threshold = 0.001
