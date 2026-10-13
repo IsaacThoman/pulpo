@@ -861,6 +861,9 @@ export const fileNodes = pgTable('file_nodes', {
   targetChatId: uuid('target_chat_id'),
   // Position among the folder's items, chats included (see files/order.ts).
   sortOrder: integer('sort_order').notNull().default(0),
+  // A chosen FileColor and FileIcon; null keeps the kind's own.
+  color: text('color'),
+  icon: text('icon'),
   ...timestamps,
 }, (table) => [
   uniqueIndex('file_nodes_owner_system_role_unique').on(table.ownerUserId, table.systemRole).where(sql`${table.systemRole} is not null`),

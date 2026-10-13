@@ -2,6 +2,8 @@ ALTER TABLE "file_nodes" ADD COLUMN "system_role" text;--> statement-breakpoint
 ALTER TABLE "file_nodes" ADD COLUMN "target_node_id" uuid;--> statement-breakpoint
 ALTER TABLE "file_nodes" ADD COLUMN "target_chat_id" uuid;--> statement-breakpoint
 ALTER TABLE "file_nodes" ADD COLUMN "sort_order" integer DEFAULT 0 NOT NULL;--> statement-breakpoint
+ALTER TABLE "file_nodes" ADD COLUMN "color" text;--> statement-breakpoint
+ALTER TABLE "file_nodes" ADD COLUMN "icon" text;--> statement-breakpoint
 ALTER TABLE "file_nodes" DROP CONSTRAINT "file_nodes_kind_check";--> statement-breakpoint
 ALTER TABLE "file_nodes" ADD CONSTRAINT "file_nodes_kind_check" CHECK ("file_nodes"."kind" in ('folder', 'doc', 'blob', 'shortcut'));--> statement-breakpoint
 ALTER TABLE "file_nodes" ADD CONSTRAINT "file_nodes_shortcut_check" CHECK (num_nonnulls("file_nodes"."target_node_id", "file_nodes"."target_chat_id") = case when "file_nodes"."kind" = 'shortcut' then 1 else 0 end);--> statement-breakpoint
@@ -12,7 +14,7 @@ ALTER TABLE "file_nodes" ADD CONSTRAINT "file_nodes_target_chat_id_chats_id_fk" 
 CREATE UNIQUE INDEX "file_nodes_owner_system_role_unique" ON "file_nodes" USING btree ("owner_user_id","system_role") WHERE "file_nodes"."system_role" is not null;--> statement-breakpoint
 CREATE INDEX "file_nodes_target_chat_idx" ON "file_nodes" USING btree ("target_chat_id") WHERE "file_nodes"."target_chat_id" is not null;--> statement-breakpoint
 CREATE INDEX "file_nodes_target_node_idx" ON "file_nodes" USING btree ("target_node_id") WHERE "file_nodes"."target_node_id" is not null;--> statement-breakpoint
--- Chat folders become Files folders inside each account's Chats folder, keeping their ids so
+-- Chat folders become Files folders inside each account's Sidebar folder, keeping their ids so
 -- chats stay filed.
 DO $$
 DECLARE
@@ -26,25 +28,25 @@ BEGIN
     SELECT "id" INTO chats_folder FROM "file_nodes"
       WHERE "owner_user_id" = legacy."user_id" AND "system_role" = 'chats';
     IF chats_folder IS NULL THEN
-      -- A live top-level folder already named Chats becomes the Chats folder.
+      -- A live top-level folder already named Sidebar becomes the Sidebar folder.
       UPDATE "file_nodes" SET "system_role" = 'chats'
         WHERE "id" = (
           SELECT "id" FROM "file_nodes"
           WHERE "owner_user_id" = legacy."user_id" AND "parent_id" IS NULL AND "trashed_at" IS NULL
-            AND "kind" = 'folder' AND "status" = 'ready' AND lower("name") = 'chats'
+            AND "kind" = 'folder' AND "status" = 'ready' AND lower("name") = 'sidebar'
           LIMIT 1
         )
         RETURNING "id" INTO chats_folder;
     END IF;
     IF chats_folder IS NULL THEN
-      candidate := 'Chats';
+      candidate := 'Sidebar';
       attempt := 1;
       WHILE EXISTS (
         SELECT 1 FROM "file_nodes" WHERE "owner_user_id" = legacy."user_id" AND "parent_id" IS NULL
           AND "trashed_at" IS NULL AND lower("name") = lower(candidate)
       ) LOOP
         attempt := attempt + 1;
-        candidate := 'Chats (' || attempt || ')';
+        candidate := 'Sidebar (' || attempt || ')';
       END LOOP;
       chats_folder := gen_random_uuid();
       INSERT INTO "file_nodes" ("id", "owner_user_id", "parent_id", "kind", "name", "system_role")
@@ -76,7 +78,7 @@ UPDATE "chats" SET "folder_id" = NULL
   );--> statement-breakpoint
 ALTER TABLE "chats" ADD CONSTRAINT "chats_folder_id_file_nodes_id_fk" FOREIGN KEY ("folder_id") REFERENCES "public"."file_nodes"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "chats_folder_idx" ON "chats" USING btree ("folder_id") WHERE "chats"."folder_id" is not null;--> statement-breakpoint
--- Chats can also sit at the top of My files, outside the Chats folder.
+-- Chats can also sit at the top of My files, outside the Sidebar folder.
 ALTER TABLE "chats" ADD COLUMN "in_files_root" boolean DEFAULT false NOT NULL;--> statement-breakpoint
 ALTER TABLE "chats" ADD CONSTRAINT "chats_files_root_check" CHECK (not "chats"."in_files_root" or "chats"."folder_id" is null);--> statement-breakpoint
 DROP TABLE "folders" CASCADE;

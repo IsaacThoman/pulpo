@@ -20,6 +20,7 @@ import {
   LogOut,
   Loader2,
   MoreHorizontal,
+  Palette,
   Pencil,
   Pin,
   PinOff,
@@ -72,6 +73,8 @@ import { ui, uit } from '@/i18n/ui'
 import { FilesNavMenu } from '@/features/files/FilesNavMenu'
 import { FileNodeIcon } from '@/features/files/FileNodeIcon'
 import { registerItemDropZone } from '@/features/files/browser/use-item-drag'
+import { AppearanceDialog } from '@/features/files/AppearanceDialog'
+import { editAppearance, hasAppearance } from '@/features/files/appearance'
 import { FolderPickerDialog } from '@/features/sidebar/FolderPickerDialog'
 import { writeSidebarItems, type SidebarDragItem } from '@/features/sidebar/drag-data'
 import { clickSelect, EMPTY_SELECTION, selectOnly, type FileSelection } from '@/features/files/browser/selection'
@@ -882,7 +885,7 @@ function fileTargetId(node: FileNode): string | null {
  * (`atPointer`). `folder` adds the folder actions.
  */
 function ItemMenu({ node, folder, sidebar, atPointer = false, onRename, onNewFolder, go }: {
-  node: Pick<FileNode, 'id' | 'kind' | 'name'> & Partial<Pick<FileNode, 'target' | 'systemRole'>>
+  node: FileNode
   folder?: boolean
   sidebar: SidebarState
   atPointer?: boolean
@@ -898,8 +901,8 @@ function ItemMenu({ node, folder, sidebar, atPointer = false, onRename, onNewFol
   const system = Boolean(node.systemRole)
   const shortcut = node.kind === 'shortcut'
   const archived = isWithin(sidebar, node.id, sidebar.archiveFolderId)
-  const path = itemPath(node as FileNode)
-  const besideId = fileTargetId(node as FileNode)
+  const path = itemPath(node)
+  const besideId = fileTargetId(node)
   return (
     <DropdownMenuContent
       side={atPointer ? 'bottom' : 'right'}
@@ -933,10 +936,15 @@ function ItemMenu({ node, folder, sidebar, atPointer = false, onRename, onNewFol
           {ui("Open to the right")}
         </DropdownMenuItem>
       )}
-      {!system && (
-        <DropdownMenuItem onClick={() => { renameChosen.current = true }}>
-          <Pencil />
-          {t('common.rename')}
+      {/* Built-in folders list the actions they do not allow, unavailable, as in Files. */}
+      <DropdownMenuItem disabled={system} onClick={() => { renameChosen.current = true }}>
+        <Pencil />
+        {t('common.rename')}
+      </DropdownMenuItem>
+      {!shortcut && (
+        <DropdownMenuItem disabled={system} onClick={() => editAppearance([node])}>
+          <Palette />
+          {ui("Color and icon…")}
         </DropdownMenuItem>
       )}
       {!shortcut && (
@@ -945,21 +953,17 @@ function ItemMenu({ node, folder, sidebar, atPointer = false, onRename, onNewFol
           {ui("Create shortcut…")}
         </DropdownMenuItem>
       )}
-      {!system && !archived && filesEnabled && (
-        <DropdownMenuItem onClick={() => void archiveFiles([node.id])}>
+      {!archived && filesEnabled && (
+        <DropdownMenuItem disabled={system} onClick={() => void archiveFiles([node.id])}>
           <Archive />
           {ui("Move to archive")}
         </DropdownMenuItem>
       )}
-      {!system && (
-        <>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem variant="destructive" onClick={() => void trashSidebarItem(node.id)}>
-            <Trash2 />
-            {shortcut ? ui("Delete shortcut") : filesEnabled ? ui("Move to trash") : t('common.delete')}
-          </DropdownMenuItem>
-        </>
-      )}
+      <DropdownMenuSeparator />
+      <DropdownMenuItem variant="destructive" disabled={system} onClick={() => void trashSidebarItem(node.id)}>
+        <Trash2 />
+        {shortcut ? ui("Delete shortcut") : filesEnabled ? ui("Move to trash") : t('common.delete')}
+      </DropdownMenuItem>
     </DropdownMenuContent>
   )
 }
@@ -1070,6 +1074,8 @@ function SelectionMenuContent({ ids, sidebar, onDone }: { ids: string[]; sidebar
     const destination = await pickFolder({ title: uit`Move ${ids.length} items`, action: ui("Move here"), initialFolderId: sidebar.chatsFolderId })
     if (destination !== undefined) move(destination)
   }
+  // Files and folders among the selection can be given a color and icon; chats are left out.
+  const styled = ids.flatMap((id) => findSidebarItem(id) ?? []).filter(hasAppearance)
   return (
     <DropdownMenuContent side="bottom" align="start" sideOffset={2} className="w-52">
       <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">{uit`${ids.length} selected`}</DropdownMenuLabel>
@@ -1105,6 +1111,12 @@ function SelectionMenuContent({ ids, sidebar, onDone }: { ids: string[]; sidebar
           )}
         </DropdownMenuSubContent>
       </DropdownMenuSub>
+      {styled.length > 0 && (
+        <DropdownMenuItem onClick={() => editAppearance(styled)}>
+          <Palette />
+          {ui("Color and icon…")}
+        </DropdownMenuItem>
+      )}
       {filesEnabled && (
         <DropdownMenuItem onClick={() => { void archiveSidebarSelection(ids); onDone() }}>
           <Archive />
@@ -1282,7 +1294,7 @@ function SidebarFolderNode({ folder, node, shortcut, list, reorderable, ...props
   const lines = drag.rowLines(list, rowId, dragged?.kind ?? 'folder')
   const dropHighlight = drag.drop?.kind === 'folder-target' && drag.drop.folderId === folder.id
   const FolderGlyph = folder.systemRole === 'archive' ? Archive : FolderIcon
-  const menuNode = shortcut ?? { id: folder.id, kind: 'folder' as const, name: folder.name, systemRole: folder.systemRole }
+  const menuNode = shortcut ?? node
   const menu = (atPointer: boolean) => (
     <ItemMenu node={menuNode} folder sidebar={sidebar} atPointer={atPointer} onRename={() => setRenaming(true)} onNewFolder={onNewFolder} go={go} />
   )
@@ -1316,7 +1328,9 @@ function SidebarFolderNode({ folder, node, shortcut, list, reorderable, ...props
         <DropLines active before={lines.showLineBefore} after={lines.showLineAfter} />
         <div className="flex min-w-0 flex-1 items-center gap-1.5 px-2 py-1.5">
           <ChevronRight className={cn('size-3.5 shrink-0 text-muted-foreground transition-transform', expanded && 'rotate-90')} />
-          {shortcut ? <FileNodeIcon node={shortcut} className="size-4" /> : <FolderGlyph className="size-4 shrink-0 text-muted-foreground" />}
+          {shortcut || node.color || node.icon
+            ? <FileNodeIcon node={shortcut ?? node} className="size-4" />
+            : <FolderGlyph className="size-4 shrink-0 text-muted-foreground" />}
           {renaming ? (
             <InlineTitleInput
               value={shortcut?.name ?? folder.name}
@@ -2072,6 +2086,7 @@ export function Sidebar({
       </div>
 
       <FolderPickerDialog />
+      <AppearanceDialog />
       <PointerMenu point={spaceMenu} onClose={() => setSpaceMenu(null)}>
         {spaceMenu && sidebar && (
           <SpaceMenuContent

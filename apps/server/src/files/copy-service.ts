@@ -100,6 +100,7 @@ export async function copyFileNodes(userId: string, ids: string[], parentId: str
           checksum: node.checksum, objectKey, status: node.kind === 'blob' ? 'pending' : 'ready',
           // A copied shortcut still opens the same item.
           targetNodeId: node.targetNodeId, targetChatId: node.targetChatId,
+          color: node.color, icon: node.icon,
           // Copies land at the top of the destination; their contents keep their order.
           sortOrder: root ? top-- : node.sortOrder,
         })

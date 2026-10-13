@@ -1,5 +1,5 @@
 import { and, eq, inArray } from 'drizzle-orm'
-import { FILE_NAME_MAX_LENGTH, type FileNode, type FileSystemRole } from '@pulpo/contracts'
+import { FILE_NAME_MAX_LENGTH, type FileColor, type FileIcon, type FileNode, type FileSystemRole } from '@pulpo/contracts'
 import { chats, fileNodes } from '../database/schema.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
@@ -41,6 +41,9 @@ export async function shortcutTargets(executor: FileExecutor, userId: string, ro
         name: node.name,
         mimeType: node.mimeType,
         systemRole: (node.systemRole as FileSystemRole | null) ?? null,
+        // A shortcut looks like what it opens.
+        color: (node.color as FileColor | null) ?? null,
+        icon: (node.icon as FileIcon | null) ?? null,
         available: !node.trashedAt && node.status === 'ready',
       })
     }

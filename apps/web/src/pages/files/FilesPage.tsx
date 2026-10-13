@@ -21,6 +21,7 @@ import {
   Maximize2,
   PanelRight,
   Loader2,
+  Palette,
   Pencil,
   Plus,
   Scissors,
@@ -58,6 +59,7 @@ import { useFileClipboard } from '@/features/files/browser/clipboard'
 import { FileContextMenu, type ContextMenuPoint } from '@/features/files/browser/FileContextMenu'
 import { FileDragOverlay } from '@/features/files/browser/FileDragOverlay'
 import { FileItem, type FileDropHandlers } from '@/features/files/browser/FileItem'
+import { editAppearance, hasAppearance } from '@/features/files/appearance'
 import { isSidebarItemDrag, readSidebarItems } from '@/features/sidebar/drag-data'
 import {
   clickSelect,
@@ -397,7 +399,8 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
   }
 
   const setClipboard = (mode: 'cut' | 'copy', targets = selectedNodes) => {
-    if (!targets.length) return
+    // Built-in folders cannot move, so they cannot be cut.
+    if (!targets.length || mode === 'cut' && targets.some((node) => node.systemRole)) return
     useFileClipboard.setState({ clip: { mode, nodes: targets } })
     if (mode === 'copy') {
       ops.notify(targets.length === 1 ? uit`Copied "${targets[0]!.name}"` : uit`Copied ${targets.length} items`)
@@ -423,7 +426,7 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
 
   const startRename = () => {
     const target = selection.focus && selection.ids.has(selection.focus) ? byId.get(selection.focus) : selectedNodes[0]
-    if (target && selectedNodes.length === 1) setRenamingId(target.id)
+    if (target && selectedNodes.length === 1 && !target.systemRole) setRenamingId(target.id)
   }
 
   const gridColumns = () => {
@@ -473,7 +476,7 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
     }
     if (key === 'F2') { event.preventDefault(); startRename(); return }
     if (key === 'Delete' || key === 'Backspace') {
-      if (selectedNodes.length) { event.preventDefault(); void trashSelection() }
+      if (selectedNodes.length && !selectedNodes.some((node) => node.systemRole)) { event.preventDefault(); void trashSelection() }
       return
     }
     if (key === ' ') {
@@ -687,6 +690,8 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
   const fileSelection = selectedNodes.filter((node) => node.kind !== 'chat' && node.kind !== 'shortcut')
   const hasChats = selectedNodes.some((node) => node.kind === 'chat')
   const hasSystem = selectedNodes.some((node) => node.systemRole)
+  // Files and folders in the selection can be given a color and icon; chats and shortcuts are left out.
+  const canStyle = selectedNodes.some(hasAppearance)
   const canUseAgent = fileSelection.length > 0 && fileSelection.length <= MAX_CHAT_FILE_SCOPES
   const archiveSelection = async () => {
     const targets = selectedNodes
@@ -720,9 +725,11 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
           <Download /> {ui("Download")}
         </DropdownMenuItem>
       )}
-      {single && !single.systemRole && <DropdownMenuItem onSelect={() => setRenamingId(single.id)}><Pencil /> {ui("Rename")}<DropdownMenuShortcut>{shortcutLabel('F2')}</DropdownMenuShortcut></DropdownMenuItem>}
-      {!hasSystem && <DropdownMenuItem onSelect={() => setMoving(selectedNodes)}><FolderInput /> {ui("Move to…")}</DropdownMenuItem>}
-      {!hasSystem && sidebar && <DropdownMenuItem onSelect={() => void archiveSelection()}><Archive /> {ui("Move to archive")}</DropdownMenuItem>}
+      {/* Built-in folders list the actions they do not allow, unavailable, so every folder's menu reads the same. */}
+      {single && <DropdownMenuItem disabled={Boolean(single.systemRole)} onSelect={() => setRenamingId(single.id)}><Pencil /> {ui("Rename")}<DropdownMenuShortcut>{shortcutLabel('F2')}</DropdownMenuShortcut></DropdownMenuItem>}
+      {canStyle && <DropdownMenuItem disabled={hasSystem} onSelect={() => editAppearance(selectedNodes)}><Palette /> {ui("Color and icon…")}</DropdownMenuItem>}
+      <DropdownMenuItem disabled={hasSystem} onSelect={() => setMoving(selectedNodes)}><FolderInput /> {ui("Move to…")}</DropdownMenuItem>
+      {sidebar && <DropdownMenuItem disabled={hasSystem} onSelect={() => void archiveSelection()}><Archive /> {ui("Move to archive")}</DropdownMenuItem>}
       {single && single.kind !== 'shortcut' && (
         <DropdownMenuItem onSelect={() => void createShortcutInteractively(single.kind === 'chat' ? 'chat' : 'file', single.id, folderId).then(() => ops.refresh()).catch(ops.fail)}>
           <SquareArrowOutUpRight /> {ui("Create shortcut…")}
@@ -730,14 +737,10 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
       )}
       {!hasChats && <DropdownMenuItem onSelect={() => void duplicate()}><CopyPlus /> {ui("Duplicate")}<DropdownMenuShortcut>{shortcutLabel('D', { mod: true })}</DropdownMenuShortcut></DropdownMenuItem>}
       <DropdownMenuSeparator />
-      {!hasSystem && <DropdownMenuItem onSelect={() => setClipboard('cut')}><Scissors /> {ui("Cut")}<DropdownMenuShortcut>{shortcutLabel('X', { mod: true })}</DropdownMenuShortcut></DropdownMenuItem>}
+      <DropdownMenuItem disabled={hasSystem} onSelect={() => setClipboard('cut')}><Scissors /> {ui("Cut")}<DropdownMenuShortcut>{shortcutLabel('X', { mod: true })}</DropdownMenuShortcut></DropdownMenuItem>
       {!hasChats && <DropdownMenuItem onSelect={() => setClipboard('copy')}><Copy /> {ui("Copy")}<DropdownMenuShortcut>{shortcutLabel('C', { mod: true })}</DropdownMenuShortcut></DropdownMenuItem>}
-      {!hasSystem && (
-        <>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem variant="destructive" onSelect={() => void trashSelection()}><Trash2 /> {ui("Move to trash")}<DropdownMenuShortcut>⌫</DropdownMenuShortcut></DropdownMenuItem>
-        </>
-      )}
+      <DropdownMenuSeparator />
+      <DropdownMenuItem variant="destructive" disabled={hasSystem} onSelect={() => void trashSelection()}><Trash2 /> {ui("Move to trash")}<DropdownMenuShortcut>⌫</DropdownMenuShortcut></DropdownMenuItem>
     </>
   )
   const backgroundMenu = (
@@ -863,6 +866,7 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
         <span className="px-1.5 text-sm font-medium whitespace-nowrap tabular-nums">{selectedNodes.length === 1 ? ui("1 selected") : uit`${selectedNodes.length} selected`}</span>
         {canDownload && <SelectionAction label={ui("Download")} onClick={() => void ops.download(selectedNodes)}><Download /></SelectionAction>}
         {!hasSystem && <SelectionAction label={ui("Move to…")} onClick={() => setMoving(selectedNodes)}><FolderInput /></SelectionAction>}
+        {canStyle && !hasSystem && <SelectionAction label={ui("Color and icon…")} onClick={() => editAppearance(selectedNodes)}><Palette /></SelectionAction>}
         {!hasChats && <SelectionAction label={ui("Duplicate")} onClick={() => void duplicate()}><CopyPlus /></SelectionAction>}
         {!hasSystem && <SelectionAction label={ui("Move to trash")} destructive onClick={() => void trashSelection()}><Trash2 /></SelectionAction>}
       </div>

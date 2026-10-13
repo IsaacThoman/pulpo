@@ -1,5 +1,5 @@
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm'
-import { FILE_TREE_MAX_DEPTH, type FileNode, type FileSystemRole, type SidebarFolder, type SidebarState } from '@pulpo/contracts'
+import { FILE_TREE_MAX_DEPTH, type FileNode, type FileSystemRole, type SidebarFolder, type SidebarState, type UpdateSidebarItem } from '@pulpo/contracts'
 import { db } from '../database/client.js'
 import { chats, fileNodes } from '../database/schema.js'
 import { AppError, notFound } from '../lib/errors.js'
@@ -134,8 +134,9 @@ export async function orderSidebarItems(userId: string, parentId: string | null,
   }, ['files', 'folders', 'chats'])
 }
 
-export async function renameSidebarItem(userId: string, id: string, name: string): Promise<FileNode> {
-  return updateFileNode(userId, id, { name, onConflict: 'rename' })
+/** Renames an item (a taken name gets a " (n)" suffix) or changes its color and icon. */
+export async function updateSidebarItem(userId: string, id: string, input: UpdateSidebarItem): Promise<FileNode> {
+  return updateFileNode(userId, id, { ...input, onConflict: 'rename' })
 }
 
 /** Trashes an item (restorable from Files). Chats in a trashed folder return to the unfiled list. */

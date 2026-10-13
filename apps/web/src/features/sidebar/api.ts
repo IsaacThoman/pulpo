@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import type { FileNode, SidebarFolder, SidebarState } from '@pulpo/contracts'
+import type { FileColor, FileIcon, FileListing, FileNode, SidebarFolder, SidebarState } from '@pulpo/contracts'
 import { create } from 'zustand'
 import { apiRequest } from '@/lib/api'
 import { queryClient } from '@/lib/query-client'
@@ -8,7 +8,7 @@ import { useAuth } from '@/stores/auth'
 import { useChat } from '@/stores/chat'
 import { sidebarItemsKey, sidebarQueryKey } from './cache'
 import { ui } from '@/i18n/ui'
-import { createDoc, uploadFile } from '@/features/files/api'
+import { createDoc, folderQueryKey, uploadFile } from '@/features/files/api'
 import { filesErrorMessage } from '@/features/files/file-display'
 import { useFileToasts } from '@/features/files/browser/toasts'
 
@@ -125,6 +125,24 @@ export function renameSidebarItem(id: string, name: string): Promise<FileNode> {
     writeState((state) => ({ ...state, folders: state.folders.map((folder) => folder.id === id ? { ...folder, name } : folder) }))
     writeItems((items) => items.map((item) => item.id === id ? { ...item, name } : item))
   }, () => apiRequest<FileNode>(`/api/sidebar/items/${id}`, { method: 'PATCH', body: { name } }))
+}
+
+/**
+ * Changes files' and folders' color or icon (null puts back their kind's own) wherever the sidebar
+ * and Files show them, shortcuts to them included.
+ */
+export function setItemAppearance(ids: readonly string[], appearance: { color?: FileColor | null; icon?: FileIcon | null }): Promise<unknown> {
+  const changed = new Set(ids)
+  const restyle = (item: FileNode): FileNode => {
+    if (changed.has(item.id)) return { ...item, ...appearance }
+    if (item.kind === 'shortcut' && item.target && changed.has(item.target.id)) return { ...item, target: { ...item.target, ...appearance } }
+    return item
+  }
+  return mutate(() => {
+    writeItems((items) => items.map(restyle))
+    queryClient.setQueriesData<FileListing>({ queryKey: folderQueryKey(useAuth.getState().user?.id, null).slice(0, -1) }, (listing) =>
+      listing && { ...listing, children: listing.children.map(restyle) })
+  }, () => Promise.all(ids.map((id) => apiRequest<FileNode>(`/api/sidebar/items/${id}`, { method: 'PATCH', body: appearance }))))
 }
 
 /** Moves Files items (folders, files, shortcuts) into a folder, or (null) to the top of the sidebar. */

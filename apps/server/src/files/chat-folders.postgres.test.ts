@@ -15,7 +15,7 @@ const { ensureSystemFolders } = await import('./system-folders.js')
 const { chatFolderId } = await import('./chat-items.js')
 const { createShortcut } = await import('./shortcuts.js')
 const { copyFileNodes } = await import('./copy-service.js')
-const { archiveItems, createSidebarFolder, legacyFolderList, moveSidebarItems, orderSidebarItems, renameSidebarItem, sidebarFolderItems, sidebarState } = await import('../sidebar/service.js')
+const { archiveItems, createSidebarFolder, legacyFolderList, moveSidebarItems, orderSidebarItems, sidebarFolderItems, updateSidebarItem, sidebarState } = await import('../sidebar/service.js')
 const { topChatOrder } = await import('./order.js')
 
 const enabled = process.env.PULPO_FILES_TESTS === 'true'
@@ -42,14 +42,14 @@ describe.skipIf(!enabled)('chats filed in Files folders', () => {
   })
   afterAll(async () => { await queryClient.end() })
 
-  it('creates Chats and Archive once, adopting a folder that already has the name, with nothing in Chats', async () => {
+  it('creates Sidebar and Archive once, adopting a folder that already has the name, with nothing in Sidebar', async () => {
     const existing = await createFolder(userId, { parentId: null, name: 'archive' })
     const first = await ensureSystemFolders(userId)
     const second = await ensureSystemFolders(userId)
     expect(second).toEqual(first)
     expect(first.archiveFolderId).toBe(existing.id)
     const root = await listFolder(userId, null)
-    expect(root.children.map((node) => [node.name, node.systemRole])).toEqual([['archive', 'archive'], ['Chats', 'chats']])
+    expect(root.children.map((node) => [node.name, node.systemRole])).toEqual([['archive', 'archive'], ['Sidebar', 'chats']])
     expect(await sidebarFolderItems(userId, first.chatsFolderId, true)).toEqual([])
   })
 
@@ -201,12 +201,27 @@ describe.skipIf(!enabled)('chats filed in Files folders', () => {
     expect(other.name).toBe('work (2)')
   })
 
+  it('colors files and folders without changing their content, and shortcuts look like their targets', async () => {
+    const { chatsFolderId } = await ensureSystemFolders(userId)
+    const work = await createSidebarFolder(userId, { name: 'Work' })
+    const shortcut = await createShortcut(userId, { targetKind: 'file', targetId: work.id })
+    const styled = await updateSidebarItem(userId, work.id, { color: 'teal', icon: 'rocket' })
+    expect(styled).toMatchObject({ name: 'Work', color: 'teal', icon: 'rocket', revision: work.revision, updatedAt: work.updatedAt })
+    expect((await sidebarFolderItems(userId, chatsFolderId, true)).find((item) => item.id === shortcut.id)?.target)
+      .toMatchObject({ color: 'teal', icon: 'rocket' })
+    expect(await updateSidebarItem(userId, work.id, { icon: null })).toMatchObject({ color: 'teal', icon: null })
+    const [copy] = await copyFileNodes(userId, [work.id], chatsFolderId)
+    expect(copy).toMatchObject({ color: 'teal', icon: null })
+    await expect(updateSidebarItem(userId, chatsFolderId, { color: 'red' })).rejects.toMatchObject({ code: 'file_system_folder' })
+    await expect(updateSidebarItem(userId, await insertChat(), { color: 'red' })).rejects.toMatchObject({ code: 'validation_error' })
+  })
+
   it('suffixes a taken name when renaming from the sidebar, but lets an item change its own case', async () => {
     await createSidebarFolder(userId, { name: 'Work' })
     await createSidebarFolder(userId, { name: 'Work (2)' })
     const fresh = await createSidebarFolder(userId, { name: 'Untitled folder' })
-    expect((await renameSidebarItem(userId, fresh.id, 'work')).name).toBe('work (3)')
-    expect((await renameSidebarItem(userId, fresh.id, 'WORK (3)')).name).toBe('WORK (3)')
+    expect((await updateSidebarItem(userId, fresh.id, { name: 'work' })).name).toBe('work (3)')
+    expect((await updateSidebarItem(userId, fresh.id, { name: 'WORK (3)' })).name).toBe('WORK (3)')
     await expect(updateFileNode(userId, fresh.id, { name: 'Work' })).rejects.toMatchObject({ code: 'file_name_conflict' })
   })
 

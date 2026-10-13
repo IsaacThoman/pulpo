@@ -7,7 +7,7 @@ import {
   fileNameSchema,
   moveSidebarItemsSchema,
   orderSidebarItemsSchema,
-  renameSidebarItemSchema,
+  updateSidebarItemSchema,
 } from '@pulpo/contracts'
 import { requireUser } from '../auth/service.js'
 import { db } from '../database/client.js'
@@ -22,7 +22,7 @@ import {
   legacyFolderList,
   moveSidebarItems,
   orderSidebarItems,
-  renameSidebarItem,
+  updateSidebarItem,
   sidebarFolderItems,
   sidebarState,
   trashSidebarItem,
@@ -67,7 +67,7 @@ export async function registerSidebarRoutes(app: FastifyInstance): Promise<void>
 
   app.patch('/api/sidebar/items/:id', async (request) => {
     const user = requireSidebarUser(request)
-    return renameSidebarItem(user.id, idParams.parse(request.params).id, parseFileInput(renameSidebarItemSchema, request.body).name)
+    return updateSidebarItem(user.id, idParams.parse(request.params).id, parseFileInput(updateSidebarItemSchema, request.body))
   })
 
   app.delete('/api/sidebar/items/:id', async (request, reply) => {

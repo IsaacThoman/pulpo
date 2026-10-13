@@ -11,7 +11,7 @@ export interface SystemFolderIds {
   archiveFolderId: string
 }
 
-const SYSTEM_FOLDER_NAMES: Record<FileSystemRole, string> = { chats: 'Chats', archive: 'Archive' }
+const SYSTEM_FOLDER_NAMES: Record<FileSystemRole, string> = { chats: 'Sidebar', archive: 'Archive' }
 
 async function existingSystemFolders(executor: FileExecutor, userId: string): Promise<Partial<Record<FileSystemRole, string>>> {
   const rows = await executor.select({ id: fileNodes.id, role: fileNodes.systemRole }).from(fileNodes)
@@ -20,7 +20,7 @@ async function existingSystemFolders(executor: FileExecutor, userId: string): Pr
 }
 
 /**
- * Every account has a Chats folder (the sidebar's folders live in it) and an Archive folder at the
+ * Every account has a Sidebar folder (what the sidebar shows) and an Archive folder at the
  * top of My files. They are created the first time they are needed; a live top-level folder that
  * already has the name is adopted instead of getting a "(2)" twin.
  */

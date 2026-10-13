@@ -172,15 +172,15 @@ describe('chat folders in backups', () => {
     expect(FULL_BACKUP_TABLES.indexOf('file_nodes')).toBeLessThan(FULL_BACKUP_TABLES.indexOf('chats'))
   })
 
-  it('turns chat folders from older backups into Files folders inside a Chats folder', () => {
+  it('turns chat folders from older backups into Files folders inside a Sidebar folder', () => {
     let next = 0
     const rows = legacyChatFolderRows([
       { id: 'f1', user_id: 'u1', name: 'Work', pinned: true, sort_order: 0, created_at: '2026-01-01T00:00:00.000Z' },
       { id: 'f2', user_id: 'u1', name: 'work', pinned: false, sort_order: 1, created_at: '2026-01-01T00:00:00.000Z' },
       { id: 'f3', user_id: 'u1', name: 'a/b', pinned: false, sort_order: 2, created_at: '2026-01-01T00:00:00.000Z' },
-    ], new Map([['u1', new Set(['chats'])]]), () => `id-${next++}`)
+    ], new Map([['u1', new Set(['sidebar'])]]), () => `id-${next++}`)
     expect(rows.map((row) => [row.id, row.parent_id, row.name, row.system_role])).toEqual([
-      ['id-0', null, 'Chats (2)', 'chats'],
+      ['id-0', null, 'Sidebar (2)', 'chats'],
       ['f1', 'id-0', 'Work', null],
       ['f2', 'id-0', 'work (2)', null],
       ['f3', 'id-0', 'a-b', null],

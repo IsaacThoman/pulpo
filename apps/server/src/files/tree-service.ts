@@ -1,5 +1,5 @@
 import { and, asc, desc, eq, inArray, isNotNull, isNull, lt, ne, sql } from 'drizzle-orm'
-import { FILE_TREE_MAX_DEPTH, isMarkdownName, nextAvailableName, type FileListing, type FileNode, type FileNodeKind, type FileSystemRole, type StateInvalidationScope } from '@pulpo/contracts'
+import { FILE_TREE_MAX_DEPTH, isMarkdownName, nextAvailableName, type FileColor, type FileIcon, type FileListing, type FileNode, type FileNodeKind, type FileSystemRole, type StateInvalidationScope } from '@pulpo/contracts'
 import { db } from '../database/client.js'
 import { chats, fileNodes } from '../database/schema.js'
 import { bumpAccountRevisions, publishScopedStateChanges, type AccountRevisionChange } from '../friends/sync.js'
@@ -33,12 +33,14 @@ export function toFileNode(row: FileNodeRow): FileNode {
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     systemRole: (row.systemRole as FileSystemRole | null) ?? null,
+    color: (row.color as FileColor | null) ?? null,
+    icon: (row.icon as FileIcon | null) ?? null,
     sortOrder: row.sortOrder,
   }
 }
 
 export const systemFolderLocked = () =>
-  new AppError(400, 'file_system_folder', 'This folder is built in and cannot be renamed, moved, or trashed')
+  new AppError(400, 'file_system_folder', 'This folder is built in and cannot be renamed, moved, trashed, or recolored')
 
 /** Changes to Files that also move or trash chats must refresh chat lists too. */
 const CHAT_SCOPES: StateInvalidationScope[] = ['files', 'folders', 'chats']
@@ -236,11 +238,26 @@ export async function updateFileNode(userId: string, id: string, input: {
   expectedRevision?: number
   /** With `rename`, a name already taken in the folder gets a " (n)" suffix instead of failing. */
   onConflict?: 'fail' | 'rename'
+  color?: FileColor | null
+  icon?: FileIcon | null
 }): Promise<FileNode> {
-  if ((await liveChatIds(db, userId, [id])).size) return updateChatItem(userId, id, input)
+  const restyled = input.color !== undefined || input.icon !== undefined
+  if ((await liveChatIds(db, userId, [id])).size) {
+    if (restyled) throw new AppError(400, 'validation_error', 'Chats cannot be given a color or icon')
+    return updateChatItem(userId, id, input)
+  }
   const { node, converted } = await mutateFileTree(userId, async (tx) => {
-    const current = await liveNode(tx, userId, id)
+    let current = await liveNode(tx, userId, id)
     if (input.expectedRevision !== undefined && input.expectedRevision !== current.revision) throw revisionConflict()
+    if (restyled) {
+      if (current.systemRole) throw systemFolderLocked()
+      // Appearance is not content: the revision and modified time stay as they are.
+      const [restyledRow] = await tx.update(fileNodes).set({
+        ...input.color !== undefined ? { color: input.color } : {},
+        ...input.icon !== undefined ? { icon: input.icon } : {},
+      }).where(eq(fileNodes.id, current.id)).returning()
+      current = restyledRow!
+    }
     const result = await moveNodeInTx(tx, userId, current, {
       parentId: input.parentId === undefined ? current.parentId : input.parentId,
       name: input.name ?? current.name,
