@@ -4,7 +4,7 @@ import { eq, inArray, sql } from 'drizzle-orm'
 import { db, queryClient } from '../database/client.js'
 import { agentRuns, apiKeys, applicationSettings, billingAccounts, billingOrders, dailyUsagePeriods, budgetReservationAllowanceFunders, budgetReservations, fiveHourUsagePeriods, sharedAllowancePeriods, sharedFiveHourUsagePeriods, creditLedger, budgetReservationFunders, chats, generationAttempts, models, modelPricingVersions, pools, poolMembers, providerConnections, requestLogs, responses, toolExecutions, users, usageEvents, weeklyUsagePeriods } from '../database/schema.js'
 import { utcDayStart } from '../billing/plans.js'
-import { assertDailySpendAvailable } from '../billing/usage-tiers.js'
+import { assertDailySpendAvailable, loadDailySpend } from '../billing/usage-tiers.js'
 import { chargeMeteredUsage, extendBudgetReservationFixedCost, releaseBudget, reserveBudget, resizeBudgetReservation, retainBudgetReservation, settleBudget } from './service.js'
 
 vi.mock('../responses/events.js', () => ({ publishStateChange: vi.fn() }))
@@ -461,12 +461,12 @@ describe.skipIf(!enabled)('budget-aware reservations in PostgreSQL', () => {
     it('applies admin overrides and exempts admins', async () => {
       const userId = await account(10_000_000), adminId = await account(10_000_000)
       await db.insert(billingAccounts).values({ userId, dailyLimitOverrideMicros: 0 })
-      await db.update(users).set({ role: 'admin' }).where(eq(users.id, adminId))
       await spendToday(adminId, 1_000_000_000)
       await expect(reserveBudget(await request(userId, 100))).rejects.toMatchObject({ code: 'daily_spend_limit_reached' })
-      expect((await reserveBudget(await request(adminId))).maxOutputTokens).toBe(16_000)
-      // Admin accounts cannot be deleted during cleanup.
-      await db.update(users).set({ role: 'user' }).where(eq(users.id, adminId))
+      // The database refuses to delete the last administrator, so pass the role
+      // directly instead of promoting a fixture account.
+      const spend = await db.transaction((tx) => loadDailySpend(tx, { userId: adminId, role: 'admin', weeklyLimitMicros: 0 }))
+      expect(spend).toMatchObject({ limitMicros: null, remainingMicros: null, spentMicros: 1_000_000_000 })
     })
 
     it('records metered usage and refuses new metered work once the limit is used', async () => {
