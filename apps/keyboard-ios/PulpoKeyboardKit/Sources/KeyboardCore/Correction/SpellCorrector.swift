@@ -75,7 +75,8 @@ public final class SpellCorrector {
     switch length {
     case ...1: 0
     case 2: 3.3
-    case 3: 4.3
+    // A centered adjacent-key substitution at the beginning costs 3.2 + 1.2.
+    case 3: 4.4
     case 4: 5.2
     case 5...6: 7.0
     default: 9.0
