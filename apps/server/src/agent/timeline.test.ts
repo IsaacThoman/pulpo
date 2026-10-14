@@ -30,6 +30,23 @@ describe('buildAgentOutput', () => {
     expect(output.at(-1)).toEqual(costLimit)
   })
 
+  it('keeps what the reply changed in Files after everything else', () => {
+    const fileChanges = { type: 'pulpo_file_changes' as const, id: 'file-changes', count: 2 }
+    const output = buildAgentOutput({
+      messages: [
+        { role: 'assistant', content: [{ type: 'toolCall', id: 't1', name: 'bash', arguments: {} }] } as never,
+        { role: 'toolResult', toolCallId: 't1', toolName: 'bash', content: [{ type: 'text', text: 'ok' }] } as never,
+        { role: 'assistant', content: [{ type: 'text', text: 'Saved your plan.' }] } as never,
+      ],
+      skipMessageCount: 0,
+      toolItems: new Map([['t1', { id: 't1', type: 'pulpo_tool', tool: 'bash', arguments: {}, status: 'completed', output: 'ok' }]]),
+      fileChangesItem: fileChanges,
+      terminal: true,
+    }) as Array<{ type?: string }>
+    expect(output.map((item) => item.type)).toEqual(['pulpo_tool', 'message', 'pulpo_file_changes'])
+    expect(output.at(-1)).toEqual(fileChanges)
+  })
+
   it('places the cost limit pause after the tool calls of the turn it interrupted', () => {
     const costLimit = {
       id: 'response:cost-limit', type: 'pulpo_cost_limit' as const, status: 'continued' as const,

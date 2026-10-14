@@ -21,6 +21,8 @@ const excluded = {
   export_jobs: 'Operational transfer jobs',
   backup_jobs: 'Operational transfer jobs',
   restore_uploads: 'The active restore transfer must survive its own import',
+  file_changes: 'Undo history and pending agent suggestions for Files; inline document suggestions are kept in file_docs',
+  file_versions: 'Earlier and proposed contents of uploaded files, kept only for undo and review',
 }
 const tables = (Object.values(schema) as unknown[]).filter((value): value is PgTable => is(value, PgTable))
 

@@ -11,6 +11,7 @@ import { getBlobStore } from './storage/index.js'
 import { expireNormalChats, markExpiredChatsForPurge, purgePendingChats } from './chats/trash.js'
 import { cleanupFiles, convertMisnamedDocs } from './files/tree-service.js'
 import { scheduleStaleDocCompactions } from './files/doc-store.js'
+import { cleanupFileChanges } from './files/agent/changes.js'
 import { sanitizeContextForStorage } from './responses/public-output.js'
 import { persistResponseItems } from './responses/storage.js'
 import { parseBackupSettings, parseWebToolsSettings, publicWebToolsSettings } from './settings/application-settings.js'
@@ -122,6 +123,7 @@ export async function runCleanup(): Promise<void> {
   for (const attachment of abandoned) await getBlobStore().delete(attachment.objectKey).catch(() => undefined)
   if (abandoned.length) await db.update(attachments).set({ status: 'deleted', updatedAt: now }).where(inArray(attachments.id, abandoned.map((row) => row.id)))
   await cleanupFiles(now)
+  await cleanupFileChanges(now)
   await convertMisnamedDocs()
   await scheduleStaleDocCompactions(now)
   await expireNormalChats(now)

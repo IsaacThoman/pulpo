@@ -92,3 +92,69 @@
   white-space: nowrap;
   user-select: none;
 }
+
+/* Suggestions: green insertions, red struck deletions, and whole blocks marked with a bar beside them. */
+.pulpo-doc-editor {
+  --pulpo-suggestion-insert: oklch(0.5 0.14 155);
+  --pulpo-suggestion-insert-bg: oklch(0.72 0.17 155 / 0.16);
+  --pulpo-suggestion-delete: oklch(0.52 0.19 25);
+  --pulpo-suggestion-delete-bg: oklch(0.7 0.19 25 / 0.12);
+  --pulpo-suggestion-focus: oklch(0.6 0.15 240);
+}
+.dark .pulpo-doc-editor {
+  --pulpo-suggestion-insert: oklch(0.82 0.14 155);
+  --pulpo-suggestion-insert-bg: oklch(0.7 0.15 155 / 0.2);
+  --pulpo-suggestion-delete: oklch(0.78 0.14 25);
+  --pulpo-suggestion-delete-bg: oklch(0.65 0.19 25 / 0.18);
+  --pulpo-suggestion-focus: oklch(0.75 0.13 240);
+}
+
+.pulpo-doc-editor .pulpo-suggestion-insert {
+  color: var(--pulpo-suggestion-insert);
+  background: var(--pulpo-suggestion-insert-bg);
+  text-decoration: underline;
+  text-decoration-color: var(--pulpo-suggestion-insert);
+  text-underline-offset: 3px;
+}
+.pulpo-doc-editor .pulpo-suggestion-delete {
+  color: var(--pulpo-suggestion-delete);
+  background: var(--pulpo-suggestion-delete-bg);
+  text-decoration: line-through;
+  text-decoration-color: var(--pulpo-suggestion-delete);
+}
+/* Links inside take the suggestion's color too, so what changes stays obvious. */
+.pulpo-doc-editor .pulpo-suggestion-insert a, .pulpo-doc-editor a .pulpo-suggestion-insert { color: var(--pulpo-suggestion-insert); }
+.pulpo-doc-editor .pulpo-suggestion-delete a, .pulpo-doc-editor a .pulpo-suggestion-delete { color: var(--pulpo-suggestion-delete); }
+
+.pulpo-doc-editor [data-suggestion] { position: relative; }
+.pulpo-doc-editor [data-suggestion='insert'] { background: var(--pulpo-suggestion-insert-bg); }
+.pulpo-doc-editor [data-suggestion='delete'] {
+  background: var(--pulpo-suggestion-delete-bg);
+  color: var(--pulpo-suggestion-delete);
+  text-decoration: line-through;
+  text-decoration-color: var(--pulpo-suggestion-delete);
+}
+/*
+ * A bar in the gutter marks a suggested block without moving its text. Elements that clip
+ * their overflow (tables, code blocks) or have no content (rules) are marked by a border instead.
+ */
+.pulpo-doc-editor [data-suggestion]:not(table, tr, td, th, pre, hr)::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -0.75rem;
+  width: 3px;
+  border-radius: 2px;
+  pointer-events: none;
+}
+.pulpo-doc-editor li[data-suggestion]::before { left: -2.25rem; }
+.pulpo-doc-editor ul[data-type='taskList'] > li[data-suggestion]::before { left: -1rem; }
+.pulpo-doc-editor [data-suggestion='insert']::before { background: var(--pulpo-suggestion-insert); }
+.pulpo-doc-editor [data-suggestion='delete']::before { background: var(--pulpo-suggestion-delete); }
+.pulpo-doc-editor table[data-suggestion] { outline: 2px solid; outline-offset: -1px; }
+.pulpo-doc-editor pre[data-suggestion] { border-left-width: 3px; }
+.pulpo-doc-editor table[data-suggestion='insert'], .pulpo-doc-editor pre[data-suggestion='insert'] { outline-color: var(--pulpo-suggestion-insert); border-left-color: var(--pulpo-suggestion-insert); }
+.pulpo-doc-editor table[data-suggestion='delete'], .pulpo-doc-editor pre[data-suggestion='delete'] { outline-color: var(--pulpo-suggestion-delete); border-left-color: var(--pulpo-suggestion-delete); }
+.pulpo-doc-editor hr[data-suggestion='insert'] { border-top: 2px solid var(--pulpo-suggestion-insert); }
+.pulpo-doc-editor hr[data-suggestion='delete'] { border-top: 2px dashed var(--pulpo-suggestion-delete); }

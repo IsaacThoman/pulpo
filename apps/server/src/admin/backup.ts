@@ -8,7 +8,7 @@ import { and, eq, getTableName, is, ne, sql } from 'drizzle-orm'
 import { getTableConfig, PgTable } from 'drizzle-orm/pg-core'
 import * as schema from '../database/schema.js'
 import { db } from '../database/client.js'
-import { attachments, backupJobs, catalogIcons, fileNodes, speechModels, users } from '../database/schema.js'
+import { attachments, backupJobs, catalogIcons, fileNodes, fileVersions, speechModels, users } from '../database/schema.js'
 import { getBlobStore } from '../storage/index.js'
 import { deleteRedisKeysByPattern } from '../redis-keys.js'
 import { redis } from '../redis.js'
@@ -296,12 +296,15 @@ export async function restoreFullBackup(jobId: string): Promise<void> {
     }
     const oldAttachmentBlobs = await db.select({ key: attachments.objectKey }).from(attachments)
     const oldFileBlobs = await db.select({ key: fileNodes.objectKey }).from(fileNodes).where(sql`${fileNodes.objectKey} is not null`)
+    // Kept versions of uploaded files are not in backups; the restore truncates them with their files.
+    const oldFileVersionBlobs = await db.select({ key: fileVersions.objectKey }).from(fileVersions)
     const oldAvatarBlobs = await db.select({ key: users.avatarObjectKey }).from(users).where(sql`${users.avatarObjectKey} is not null`)
     const oldIconRows = await db.select().from(catalogIcons)
     const oldSpeechBlobs = (await db.select({ previews: speechModels.voicePreviews, assets: speechModels.voiceAssets }).from(speechModels)).flatMap(row => [...row.previews, ...row.assets.flatMap(asset => [asset.clone, asset.watermark].filter((blob): blob is NonNullable<typeof blob> => Boolean(blob)))].map(clip => ({ key: clip.objectKey })))
     const oldBlobs = [
       ...oldAttachmentBlobs,
       ...oldFileBlobs.map(row => ({ key: row.key! })),
+      ...oldFileVersionBlobs,
       ...oldSpeechBlobs.map(row => ({ key: row.key! })),
       ...oldAvatarBlobs.map((avatar) => ({ key: avatar.key! })),
       ...oldIconRows.flatMap((icon) => [

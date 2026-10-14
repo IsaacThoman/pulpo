@@ -165,7 +165,6 @@ describe.skipIf(!enabled)('full application backup audit with PostgreSQL and loc
     await db.insert(schema.fileDocs).values({ nodeId, state: initial.state, stateBytes: initial.state.byteLength, pendingUpdates: 1, markdown: initial.markdown, schemaVersion: DOC_SCHEMA_VERSION })
     await db.insert(schema.fileDocUpdates).values({ nodeId, update, byteSize: update.byteLength, origin: 'client', actorUserId: userId })
     await db.insert(schema.fileFolderLayouts).values({ id: randomUUID(), ownerUserId: userId, folderId: parentId, positions: { [nodeId]: { x: 12, y: 34 } } })
-    await db.insert(schema.fileAgentChanges).values({ id: randomUUID(), responseId, userId, nodeId, kind: 'edit', beforeMarkdown: '# Before' })
     await db.insert(schema.sessions).values({ id: randomUUID(), userId, tokenHash: 'old-session', expiresAt: new Date(Date.now() + 86400000) })
 
     const durableTables = FULL_BACKUP_TABLES.filter(table => OPTIONAL_TABLES_IN_LEGACY_BACKUPS.includes(table) && table !== 'file_nodes' && table !== 'diagnostic_policy')
@@ -189,6 +188,19 @@ describe.skipIf(!enabled)('full application backup audit with PostgreSQL and loc
     const [next] = await db.insert(schema.fileDocUpdates).values({ nodeId, update, byteSize: update.byteLength, origin: 'client' }).returning()
     expect(next!.seq).toBeGreaterThan(1)
   }, 30000)
+
+  it('deletes kept versions of uploaded files that a restore leaves behind', async () => {
+    const nodeId = randomUUID(), fileKey = `users/${userId}/files/current`, versionKey = `users/${userId}/files/kept`
+    await context.store!.put(fileKey, Buffer.from('current'), { contentType: 'text/plain' })
+    await context.store!.put(versionKey, Buffer.from('kept'), { contentType: 'text/plain' })
+    await db.insert(schema.fileNodes).values({ id: nodeId, ownerUserId: userId, kind: 'blob', name: 'data.txt', objectKey: fileKey, checksum: hash(Buffer.from('current')), sizeBytes: 7 })
+    await db.insert(schema.fileVersions).values({ objectKey: versionKey, userId, nodeId, sizeBytes: 4 })
+    await restore(await backup())
+    expect(await db.select().from(schema.fileVersions)).toEqual([])
+    await expect(context.store!.get(versionKey)).rejects.toThrow()
+    const [file] = await db.select().from(schema.fileNodes).where(eq(schema.fileNodes.id, nodeId))
+    expect((await context.store!.get(file!.objectKey!)).toString()).toBe('current')
+  })
 
   it('restores old v1 archives with new tables and required columns absent', async () => {
     const archive = await rewriteArchive(await backup(), database => {
