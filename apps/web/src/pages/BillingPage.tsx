@@ -259,11 +259,6 @@ export function BillingPage() {
           <div>
             <h2 className="text-xl font-semibold tracking-tight">{ui("Billing")}</h2>
             <p className="mt-1 max-w-2xl text-sm text-muted-foreground">{ui("There are two ways to pay for usage: buy credits and pay as you go, or subscribe to a monthly plan. You can use either one or both.")}</p>
-            {summary?.daily && (
-              <button type="button" className="mt-2 inline-flex items-center gap-1.5 text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline" onClick={() => setTierOpen(true)}>
-                <Gauge className="size-3.5" />{ui("Service tier info")}
-              </button>
-            )}
           </div>
 
           {checkoutReturned && (
@@ -344,9 +339,16 @@ export function BillingPage() {
                 )}
                 <AutoTopUpStatus className="mt-4" autoTopUp={summary?.autoTopUp} />
               </div>
-              <div className="flex flex-wrap gap-2 pt-1">
-                <Button variant="default" onClick={() => { resetTopUp(); setTopUpOpen(true) }}><Plus />{ui("Add credits")}</Button>
-                <Button variant="ghost" disabled={!summary} onClick={() => setAutoTopUpOpen(true)}><Zap />{autoTopUpActionLabel(summary?.autoTopUp)}</Button>
+              <div className="pt-1">
+                <div className="flex flex-wrap gap-2">
+                  <Button variant="default" onClick={() => { resetTopUp(); setTopUpOpen(true) }}><Plus />{ui("Add credits")}</Button>
+                  <Button variant="ghost" disabled={!summary} onClick={() => setAutoTopUpOpen(true)}><Zap />{autoTopUpActionLabel(summary?.autoTopUp)}</Button>
+                </div>
+                {summary?.daily && (
+                  <button type="button" className="mt-3 inline-flex items-center gap-1.5 text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline" onClick={() => setTierOpen(true)}>
+                    <Gauge className="size-3.5" />{ui("Service tier info")}
+                  </button>
+                )}
               </div>
             </PaymentOption>
           </div>

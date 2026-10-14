@@ -33,7 +33,7 @@ export function ServiceTierInfo({ daily, tiers, now = Date.now() }: { daily: Dai
   const hint = nextUsageTierHint(daily, now)
   return (
     <div className="space-y-6 py-2">
-      <div className="rounded-lg border p-4">
+      <div>
         <div className="flex items-baseline justify-between gap-4">
           <div className="text-sm font-semibold">{daily.limitOverridden ? ui("Custom limit") : ui("Tier {{tier}}", { tier: daily.tier })}</div>
           <div className="text-xs tabular-nums text-muted-foreground">{ui("{{spent}} of {{limit}} used today", { spent: usd(daily.spentMicros), limit: usd(daily.limitMicros) })}</div>
