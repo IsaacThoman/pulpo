@@ -20,6 +20,7 @@ authenticated Pulpo workspace daemon that executes requested tools.
 - Poppler PDF inspection and rendering tools
 - FFmpeg and ffprobe for audio/video processing and inspection
 - An installed-package inventory at `/opt/pulpo/PACKAGES.md`
+- The `pulpo files` CLI (`/usr/local/bin/pulpo`) for the Files attached to a chat
 - Passwordless `sudo` inside the disposable sandbox
 
 The image supports `linux/amd64` and `linux/arm64`. Node.js archives are pinned
@@ -54,6 +55,22 @@ directory is `/workspace`.
 
 The daemon requires a per-workspace `PULPO_WORKSPACE_TOKEN` and is intended to
 be reachable only through the private workspace controller.
+
+## Files CLI
+
+Agents reach the user's Pulpo Files with `pulpo files ls|tree|cat|grep|pull|status|push|mkdir|mv|rm`
+inside bash commands (`pulpo files --help` documents it for the model). Pulled
+items land in `/workspace/files`, and `/workspace/.pulpo/files.json` remembers
+what was pulled so `status` and `push` can work out local changes.
+
+No Pulpo credential enters the workspace. The CLI sends each request over the
+daemon's unix socket (`PULPO_RELAY_SOCKET`, default `/tmp/pulpo-relay.sock`),
+naming the bash operation it runs in (`PULPO_OPERATION_ID`, set by the daemon).
+The daemon holds the request until the Pulpo server, which is already polling
+that operation, answers it, so the CLI only works while its bash command runs.
+Everything inside the workspace, the daemon included, is agent-controlled: the
+server validates each request and applies the chat's Files access itself.
+`PULPO_RELAY_TIMEOUT_MS` (default 15 minutes) bounds how long a request waits.
 
 ## Publishing
 

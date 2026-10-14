@@ -1,7 +1,8 @@
 import { and, asc, desc, eq, inArray, isNotNull, isNull, lt, ne, sql } from 'drizzle-orm'
 import { FILE_TREE_MAX_DEPTH, isMarkdownName, nextAvailableName, type FileColor, type FileIcon, type FileListing, type FileNode, type FileNodeKind, type FileSystemRole, type StateInvalidationScope } from '@pulpo/contracts'
+import { assertStorageCapacity } from '../attachments/storage-quota.js'
 import { db } from '../database/client.js'
-import { chats, fileNodes } from '../database/schema.js'
+import { chats, fileNodes, fileVersions } from '../database/schema.js'
 import { bumpAccountRevisions, publishScopedStateChanges, type AccountRevisionChange } from '../friends/sync.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
@@ -37,6 +38,7 @@ export function toFileNode(row: FileNodeRow): FileNode {
     icon: (row.icon as FileIcon | null) ?? null,
     sortOrder: row.sortOrder,
     pinned: row.pinned,
+    suggestion: row.suggestionChangeId ? { changeId: row.suggestionChangeId } : null,
   }
 }
 
@@ -53,14 +55,20 @@ export async function lockFileTree(tx: DatabaseTransaction, userId: string): Pro
   await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`pulpo-files:${userId}`}))`)
 }
 
-/** Runs a tree mutation under the account's Files lock, then tells the account's other sessions to refetch. */
+/**
+ * Runs a tree mutation under the account's Files lock, then tells the account's other sessions to
+ * refetch. With `reserveBytes`, the account's storage lock is taken first and the allowance checked.
+ */
 export async function mutateFileTree<T>(
   userId: string,
   mutation: (tx: DatabaseTransaction) => Promise<T>,
   scopes: StateInvalidationScope[] = ['files', 'folders'],
+  options: { reserveBytes?: number } = {},
 ): Promise<T> {
   let changes: AccountRevisionChange[] = []
   const result = await db.transaction(async (tx) => {
+    // Storage before tree, matching upload reservations, so the two locks cannot deadlock.
+    if (options.reserveBytes !== undefined) await assertStorageCapacity(tx, userId, options.reserveBytes, { perFileLimit: false })
     await lockFileTree(tx, userId)
     const value = await mutation(tx)
     changes = await bumpAccountRevisions(tx, [userId])
@@ -170,39 +178,49 @@ export async function assertDestination(executor: FileExecutor, userId: string, 
   if (await destinationDepth(executor, userId, parentId) > FILE_TREE_MAX_DEPTH) throw treeTooDeep()
 }
 
+export async function createFolderInTx(tx: DatabaseTransaction, userId: string, input: {
+  parentId: string | null
+  name: string
+  suggestionChangeId?: string | null
+}): Promise<FileNodeRow> {
+  await assertDestination(tx, userId, input.parentId)
+  await assertNameAvailable(tx, userId, input.parentId, input.name)
+  const [created] = await tx.insert(fileNodes).values({
+    id: newId(), ownerUserId: userId, parentId: input.parentId, kind: 'folder', name: input.name,
+    sortOrder: await topSortOrder(tx, userId, input.parentId), suggestionChangeId: input.suggestionChangeId ?? null,
+  }).returning()
+  return created!
+}
+
 export async function createFolder(userId: string, input: { parentId: string | null; name: string }): Promise<FileNode> {
-  return mutateFileTree(userId, async (tx) => {
-    await assertDestination(tx, userId, input.parentId)
-    await assertNameAvailable(tx, userId, input.parentId, input.name)
-    const [created] = await tx.insert(fileNodes).values({
-      id: newId(), ownerUserId: userId, parentId: input.parentId, kind: 'folder', name: input.name,
-      sortOrder: await topSortOrder(tx, userId, input.parentId),
-    }).returning()
-    return toFileNode(created!)
-  })
+  return mutateFileTree(userId, async (tx) => toFileNode(await createFolderInTx(tx, userId, input)))
 }
 
 const revisionConflict = () => new AppError(409, 'file_revision_conflict', 'This item changed on another device. Refresh and try again.')
+
+/** Checks that `node` can go into `parentId`: a live folder that is not inside it, within the depth limit. */
+export async function assertMovable(tx: DatabaseTransaction, userId: string, node: FileNodeRow, parentId: string | null): Promise<void> {
+  if (parentId === node.parentId) return
+  if (parentId && (await chainIds(tx, userId, parentId)).includes(node.id)) {
+    throw new AppError(400, 'file_move_cycle', 'A folder cannot be moved into itself')
+  }
+  const height = Math.max(...(await subtree(tx, userId, node.id)).map((row) => row.depth))
+  if (await destinationDepth(tx, userId, parentId) + height > FILE_TREE_MAX_DEPTH) throw treeTooDeep()
+}
 
 /**
  * Moves and/or renames one live node inside a tree transaction. On a name clash it either fails
  * (explicit renames) or keeps both by suffixing, the way file managers do for moves. Renaming an
  * editable document away from .md turns it into an ordinary file holding its Markdown.
  */
-async function moveNodeInTx(tx: DatabaseTransaction, userId: string, node: FileNodeRow, target: {
+export async function moveNodeInTx(tx: DatabaseTransaction, userId: string, node: FileNodeRow, target: {
   parentId: string | null
   name: string
   onConflict: 'fail' | 'rename'
 }): Promise<{ row: FileNodeRow; converted: boolean }> {
   if (node.status !== 'ready') throw notFound('File')
   if (node.systemRole && (target.parentId !== node.parentId || target.name !== node.name)) throw systemFolderLocked()
-  if (target.parentId !== node.parentId) {
-    if (target.parentId && (await chainIds(tx, userId, target.parentId)).includes(node.id)) {
-      throw new AppError(400, 'file_move_cycle', 'A folder cannot be moved into itself')
-    }
-    const height = Math.max(...(await subtree(tx, userId, node.id)).map((row) => row.depth))
-    if (await destinationDepth(tx, userId, target.parentId) + height > FILE_TREE_MAX_DEPTH) throw treeTooDeep()
-  }
+  await assertMovable(tx, userId, node, target.parentId)
   if (target.parentId === node.parentId && target.name === node.name) return { row: node, converted: false }
   const taken = await liveSiblingNames(tx, userId, target.parentId, node.id)
   let name = target.name
@@ -390,18 +408,26 @@ export async function listTrash(userId: string): Promise<FileNode[]> {
 }
 
 /**
- * Deletes stored objects before rows so a failed purge can be retried without orphaning blobs.
- * Returns the purged document ids so open editors can be closed after commit.
+ * Permanently deletes items and everything below them, live or trashed, inside a tree
+ * transaction. Stored objects (current contents and kept versions) go before rows so a failed
+ * purge can be retried without orphaning blobs; a transaction that does more work after the
+ * purge passes `deferredKeys` instead and deletes them after commit, so a rollback never leaves
+ * rows without their objects. Returns the purged document ids so open editors can be closed
+ * after commit. Callers decide what may be purged.
  */
-async function purgeNodes(tx: DatabaseTransaction, userId: string, rootIds: string[]): Promise<string[]> {
+export async function purgeNodesInTx(tx: DatabaseTransaction, userId: string, rootIds: string[], deferredKeys?: string[]): Promise<string[]> {
   if (!rootIds.length) return []
   const ids = new Set<string>()
   for (const rootId of rootIds) for (const row of await subtree(tx, userId, rootId)) ids.add(row.id)
   if (!ids.size) return []
   const rows = await tx.select({ id: fileNodes.id, kind: fileNodes.kind, key: fileNodes.objectKey }).from(fileNodes)
     .where(and(eq(fileNodes.ownerUserId, userId), inArray(fileNodes.id, [...ids])))
-  for (const row of rows) if (row.key) await getBlobStore().delete(row.key)
-  // Children, document state, and update logs cascade from their parents.
+  const versions = await tx.select({ key: fileVersions.objectKey }).from(fileVersions)
+    .where(and(eq(fileVersions.userId, userId), inArray(fileVersions.nodeId, [...ids])))
+  const keys = [...rows.flatMap((row) => row.key ?? []), ...versions.map((version) => version.key)]
+  if (deferredKeys) deferredKeys.push(...keys)
+  else for (const key of keys) await getBlobStore().delete(key)
+  // Children, document state, update logs, versions, and change rows cascade from their nodes.
   await tx.delete(fileNodes).where(and(eq(fileNodes.ownerUserId, userId), inArray(fileNodes.id, rootIds)))
   return rows.filter((row) => row.kind === 'doc').map((row) => row.id)
 }
@@ -417,7 +443,7 @@ export async function deleteFileNodes(userId: string, ids: string[]): Promise<vo
         throw new AppError(409, 'file_not_trashed', 'Move this item to the trash before deleting it permanently')
       }
     }
-    return purgeNodes(tx, userId, unique)
+    return purgeNodesInTx(tx, userId, unique)
   }).then((docIds) => publishDocsClosed(docIds, 'deleted'))
 }
 
@@ -432,7 +458,7 @@ export async function emptyTrash(userId: string): Promise<void> {
       isNotNull(fileNodes.trashedAt),
       eq(fileNodes.trashRootId, fileNodes.id),
     ))
-    return purgeNodes(tx, userId, roots.map((row) => row.id))
+    return purgeNodesInTx(tx, userId, roots.map((row) => row.id))
   }).then((docIds) => publishDocsClosed(docIds, 'deleted'))
 }
 
@@ -450,7 +476,7 @@ export async function cleanupFiles(now = new Date()): Promise<void> {
   for (const row of [...abandoned, ...expired]) byUser.set(row.userId, [...byUser.get(row.userId) ?? [], row.id])
   for (const [userId, ids] of byUser) {
     // One account's storage failure must not block cleanup for the others.
-    await mutateFileTree(userId, (tx) => purgeNodes(tx, userId, ids))
+    await mutateFileTree(userId, (tx) => purgeNodesInTx(tx, userId, ids))
       .then((docIds) => publishDocsClosed(docIds, 'deleted'))
       .catch(() => undefined)
   }

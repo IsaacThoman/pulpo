@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
-import { updateFileFolderLayoutSchema, copyFileNodesSchema, createFileDocSchema, createFileFolderSchema, fileNodeIdsSchema, moveFileNodesSchema, updateFileNodeSchema } from '@pulpo/contracts'
+import { updateFileFolderLayoutSchema, copyFileNodesSchema, createFileDocSchema, createFileFolderSchema, fileNodeIdsSchema, moveFileNodesSchema, updateFileNodeSchema, type FileChangeConflictBody } from '@pulpo/contracts'
 import { db } from '../database/client.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { getBlobStore } from '../storage/index.js'
@@ -27,25 +27,55 @@ import {
   updateFileNode,
 } from './tree-service.js'
 import { registerFileUploadRoutes } from './upload-routes.js'
-import { listFileChanges, revertFileChanges } from './agent-tools.js'
 import { getFolderLayout, normalizeInput, updateFolderLayout } from './layout-service.js'
 import { liveChatIds } from './chat-items.js'
 import { ensureSystemFolders } from './system-folders.js'
+import { listFileChanges } from './agent/changes.js'
+import { FileChangesConflictError, redoFileChanges, undoFileChanges } from './agent/history.js'
+import { reviewFileChange, reviewNodeSuggestion, reviewReplyChanges } from './agent/review.js'
 
 const idParams = z.object({ id: z.uuid() })
+const changeParams = z.object({ changeId: z.uuid() })
+const reviewParams = z.object({ id: z.uuid(), action: z.enum(['accept', 'reject']) })
 
 export async function registerFileRoutes(app: FastifyInstance): Promise<void> {
-  // What an agent response changed in Files, and undoing all of it.
+  // What an agent reply changed in Files: undo and redo its direct changes, review its suggestions.
   app.get('/api/responses/:id/file-changes', async (request) => {
     const user = await requireFilesUser(request)
-    const { id } = idParams.parse(request.params)
-    return { changes: await listFileChanges(user.id, id) }
+    return listFileChanges(user.id, idParams.parse(request.params).id)
   })
 
-  app.post('/api/responses/:id/file-changes/revert', async (request) => {
+  for (const direction of ['undo', 'redo'] as const) {
+    app.post(`/api/responses/:id/file-changes/${direction}`, async (request, reply) => {
+      const user = await requireFilesUser(request)
+      const { id } = idParams.parse(request.params)
+      try {
+        return await (direction === 'undo' ? undoFileChanges : redoFileChanges)(user.id, id)
+      } catch (error) {
+        if (!(error instanceof FileChangesConflictError)) throw error
+        const body: FileChangeConflictBody = { error: { code: 'file_changes_conflict', message: error.message, conflicts: error.conflicts } }
+        return reply.code(409).send(body)
+      }
+    })
+  }
+
+  app.post('/api/responses/:id/file-changes/:action', async (request) => {
     const user = await requireFilesUser(request)
-    const { id } = idParams.parse(request.params)
-    return revertFileChanges(user.id, id)
+    const { id, action } = reviewParams.parse(request.params)
+    return reviewReplyChanges(user.id, id, action)
+  })
+
+  app.post('/api/file-changes/:changeId/:action', async (request) => {
+    const user = await requireFilesUser(request)
+    const { changeId } = changeParams.parse(request.params)
+    const { action } = reviewParams.pick({ action: true }).parse(request.params)
+    return reviewFileChange(user.id, changeId, action)
+  })
+
+  app.post('/api/files/:id/suggestion/:action', async (request) => {
+    const user = await requireFilesUser(request)
+    const { id, action } = reviewParams.parse(request.params)
+    return reviewNodeSuggestion(user.id, id, action)
   })
 
   app.get('/api/files', async (request) => {

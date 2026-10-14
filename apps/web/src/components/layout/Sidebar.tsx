@@ -71,6 +71,7 @@ import { isDesktopRuntime } from '@/lib/runtime'
 import { ui, uit } from '@/i18n/ui'
 import { FilesNavMenu } from '@/features/files/FilesNavMenu'
 import { FileNodeIcon } from '@/features/files/FileNodeIcon'
+import { SuggestedBadge } from '@/features/files/FileSuggestion'
 import { registerItemDropZone } from '@/features/files/browser/use-item-drag'
 import { AppearanceDialog } from '@/features/files/AppearanceDialog'
 import { editAppearance, hasAppearance } from '@/features/files/appearance'
@@ -1231,6 +1232,7 @@ function SidebarItemRow({ node, list, reorderable, sidebar, chatId, drag, onDrop
           {node.name}
         </button>
       )}
+      {node.suggestion && !renaming && <SuggestedBadge />}
       {props.shiftHeld && <QuickTrashButton label={trashLabel(node, filesEnabled, t('common.delete'))} onClick={() => void trashSidebarSelection([node.id])} />}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>

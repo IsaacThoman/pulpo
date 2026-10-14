@@ -61,6 +61,42 @@ git -C "${temporary_directory}" status --short
 printf 'print("pulpo-python-ok")\n' > "${temporary_directory}/smoke.py"
 assert_equal pulpo-python-ok "$(python3 "${temporary_directory}/smoke.py")" 'Python executes a script'
 
+pulpo files --help | grep -q 'pulpo files pull'
+pulpo files push --help | grep -q -- '--force'
+if pulpo files ls > /dev/null 2>&1; then
+  echo 'FAIL: pulpo files ran outside an agent bash command' >&2
+  exit 1
+fi
+
+# Run `pulpo files` inside a daemon bash operation and answer its relay request as Pulpo would.
+readonly daemon_url='http://127.0.0.1:18787'
+readonly daemon_token="$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')"
+PORT=18787 PULPO_WORKSPACE_TOKEN="${daemon_token}" PULPO_WORKSPACE_ROOT="${temporary_directory}" \
+  PULPO_RELAY_SOCKET="${temporary_directory}/relay.sock" PULPO_WORKSPACE_TOOL_OUTPUT_DIR="${temporary_directory}/tool-output" \
+  node /opt/pulpo-workspace-daemon/index.js > "${temporary_directory}/daemon.log" 2>&1 &
+readonly daemon_pid=$!
+trap 'kill "${daemon_pid}" 2> /dev/null || true; rm -rf "${temporary_directory}"' EXIT
+daemon() { curl --silent --show-error --fail-with-body -H "authorization: Bearer ${daemon_token}" -H 'content-type: application/json' "$@"; }
+for _ in $(seq 100); do curl --silent --fail "${daemon_url}/healthz" > /dev/null && break; sleep 0.1; done
+daemon -X POST "${daemon_url}/v1/operations" -d '{"id":"smoke-relay","type":"bash","args":{"command":"pulpo files cat Notes.md"}}' > /dev/null
+request_id=''
+for _ in $(seq 20); do
+  request_id="$(daemon "${daemon_url}/v1/operations/smoke-relay?waitMs=1000" | jq -r '.relay.pending[0].id // empty')"
+  [[ -n "${request_id}" ]] && break
+done
+if [[ -z "${request_id}" ]]; then
+  echo 'FAIL: pulpo files did not reach the daemon relay socket' >&2
+  cat "${temporary_directory}/daemon.log" >&2
+  exit 1
+fi
+daemon -X POST "${daemon_url}/v1/relay/${request_id}" -d '{"ok":true,"output":"pulpo-relay-ok"}' > /dev/null
+relay_output=''
+for _ in $(seq 20); do
+  operation="$(daemon "${daemon_url}/v1/operations/smoke-relay?waitMs=1000")"
+  if [[ "$(jq -r .status <<< "${operation}")" != running ]]; then relay_output="$(jq -r .output <<< "${operation}")"; break; fi
+done
+assert_equal pulpo-relay-ok "${relay_output}" 'pulpo files prints the answer relayed by the daemon'
+
 if [[ -e /var/run/secrets/kubernetes.io/serviceaccount/token ]]; then
   echo 'FAIL: Kubernetes service-account token is mounted' >&2
   exit 1

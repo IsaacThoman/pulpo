@@ -8,8 +8,10 @@ import {
   truncateChatTitle,
   type CreateQueuedMessageInput,
   type EmbeddedResponseSnapshot,
+  type FileAccessMode,
   type ResponseEvent,
   type ResponseSnapshot,
+  type UpdateChatInput,
   type UpdateQueuedMessageInput,
 } from '@pulpo/contracts'
 import {
@@ -41,6 +43,7 @@ import { pinnedItemsCeiling, sidebarItemsFloor } from '@/features/sidebar/cache'
 import { useFileToasts } from '@/features/files/browser/toasts'
 import { filesErrorMessage } from '@/features/files/file-display'
 import { adminChatAccessActive, adminChatAccountKey } from '@/features/admin-chat/access'
+import { scopedFileAccess } from '@/features/files/file-scope'
 
 function applySortOrders(ids: string[]): Map<string, number> {
   return new Map(ids.map((id, index) => [id, index]))
@@ -195,6 +198,7 @@ export interface ServerChat {
   sortOrder?: number
   temporary?: boolean
   fileScopeIds?: string[]
+  fileScopeAccess?: Record<string, FileAccessMode>
   expiresAt?: string | null
   createdAt: string
   updatedAt: string
@@ -223,6 +227,7 @@ interface PendingMessageInput {
   temporary: boolean
   autoExpire: boolean
   fileScopeIds?: string[]
+  fileScopeAccess?: Record<string, FileAccessMode>
   createdAt?: number
 }
 
@@ -294,6 +299,8 @@ interface ChatState {
   renameChat: (id: string, title: string) => void
   /** Sets the Files folders the agent may use in a saved chat. */
   setChatFileScope: (id: string, fileScopeIds: string[]) => void
+  /** Sets what the agent may do with one item of a saved chat's Files scope. */
+  setChatFileAccess: (id: string, scopeId: string, mode: FileAccessMode) => void
   togglePin: (id: string) => void
   /** Resolves once the server has it, so it can be undone. */
   moveToFolder: (id: string, folderId: string | null, position?: ChatListPosition) => Promise<void>
@@ -528,6 +535,7 @@ function toChat(
     tags: current?.tags ?? [],
     temporary: row.temporary ?? current?.temporary ?? false,
     fileScopeIds: row.fileScopeIds ?? current?.fileScopeIds ?? [],
+    fileScopeAccess: row.fileScopeAccess ?? current?.fileScopeAccess ?? {},
     expiresAt: row.expiresAt === undefined
       ? current?.expiresAt ?? null
       : row.expiresAt === null ? null : Date.parse(row.expiresAt),
@@ -941,6 +949,29 @@ function enqueueChatMutation<T>(chatId: string, operation: () => Promise<T>): Pr
   return result
 }
 
+/**
+ * Saves a change to a chat's Files scope in order with the chat's other requests, so it lands
+ * after the request that creates the chat. A chat that is still provisional needs no request:
+ * the one that creates it sends the scope as it is then. If the server refuses the change, the
+ * chat shows what it had before (unless it changed again since) and is read back.
+ */
+function saveChatFileScope(
+  id: string,
+  patch: Pick<UpdateChatInput, 'fileScopeIds' | 'fileScopeAccess'>,
+  { current, revert }: { current: (chat: Chat) => boolean; revert: Pick<Chat, 'fileScopeIds' | 'fileScopeAccess'> },
+): void {
+  void enqueueChatMutation(id, async () => {
+    if (useChat.getState().chats.find((chat) => chat.id === id)?.provisional) return
+    await optimisticRequest('PATCH', `/api/chats/${id}`, patch)
+  }).catch(() => {
+    useChat.setState((state) => ({
+      chats: state.chats.map((chat) => chat.id === id && current(chat) ? { ...chat, ...revert } : chat),
+    }))
+    void queryClient.invalidateQueries({ queryKey: chatsKey() })
+    void queryClient.invalidateQueries({ queryKey: chatKey(id) })
+  })
+}
+
 function failOptimisticResponse(
   chatId: string,
   responseId: string,
@@ -1295,8 +1326,26 @@ export const useChat = create<ChatState>()((set, get) => ({
     void optimisticRequest('PATCH', `/api/chats/${id}`, { title })
   },
   setChatFileScope: (id, fileScopeIds) => {
-    set((state) => ({ chats: state.chats.map((chat) => chat.id === id ? { ...chat, fileScopeIds } : chat) }))
-    void optimisticRequest('PATCH', `/api/chats/${id}`, { fileScopeIds })
+    const chat = get().chats.find((item) => item.id === id)
+    if (!chat) return
+    // The server drops the modes of removed items too.
+    const fileScopeAccess = scopedFileAccess(fileScopeIds, chat.fileScopeAccess ?? {})
+    set((state) => ({ chats: state.chats.map((item) => item.id === id ? { ...item, fileScopeIds, fileScopeAccess } : item) }))
+    saveChatFileScope(id, { fileScopeIds }, {
+      current: (item) => item.fileScopeIds === fileScopeIds,
+      revert: { fileScopeIds: chat.fileScopeIds, fileScopeAccess: chat.fileScopeAccess },
+    })
+  },
+  setChatFileAccess: (id, scopeId, mode) => {
+    const chat = get().chats.find((item) => item.id === id)
+    if (!chat) return
+    const fileScopeAccess = { ...chat.fileScopeAccess, [scopeId]: mode }
+    set((state) => ({ chats: state.chats.map((item) => item.id === id ? { ...item, fileScopeAccess } : item) }))
+    // Only the changed entry: the server merges it into the chat's other modes.
+    saveChatFileScope(id, { fileScopeAccess: { [scopeId]: mode } }, {
+      current: (item) => item.fileScopeAccess === fileScopeAccess,
+      revert: { fileScopeAccess: chat.fileScopeAccess },
+    })
   },
   togglePin: (id) => {
     const chat = get().chats.find((item) => item.id === id)
@@ -1390,6 +1439,7 @@ export const useChat = create<ChatState>()((set, get) => ({
             tags: [],
             temporary: input.temporary,
             fileScopeIds: input.fileScopeIds ?? [],
+            fileScopeAccess: scopedFileAccess(input.fileScopeIds ?? [], input.fileScopeAccess ?? {}),
             expiresAt: input.temporary ? timestamp + 48 * 60 * 60 * 1_000 : newChatExpiresAt,
             expired: false,
             provisional: true,
@@ -1565,6 +1615,7 @@ export const useChat = create<ChatState>()((set, get) => ({
           autoExpire,
           // Staging put the scope on the provisional chat.
           fileScopeIds: currentChat?.fileScopeIds ?? [],
+          fileScopeAccess: currentChat?.fileScopeAccess ?? {},
         },
         response: responseBody,
       }

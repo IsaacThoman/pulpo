@@ -62,6 +62,8 @@ const controllerWarmRequest: WarmRequest = { spec: defaultSpec, capacity: defaul
 const warmRequests = new Map<string, WarmRequest>()
 const leases = new Map<string, Lease>()
 const activeOperations = new Map<string, Set<string>>()
+/** Open proxied requests per lease: a long-polled operation is in use even when its last request began seconds ago. */
+const openRequests = new Map<string, number>()
 const capacityTracker = new CapacityTracker({ maxActiveTotal: maxActiveWorkspacesTotal })
 let reconcileInFlight: Promise<void> | undefined
 let warmClaimTail: Promise<void> = Promise.resolve()
@@ -323,7 +325,7 @@ async function workspaceInventory(instanceId: string) {
     const annotations = pod.metadata?.annotations ?? {}
     const leaseId = labels['pulpo.dev/lease-id']
     const lease = leaseId ? leases.get(leaseId) : undefined
-    const activeOperationCount = leaseId && lease && Date.now() - lease.lastUsedAt < 2_000 ? activeOperations.get(leaseId)?.size ?? 0 : 0
+    const activeOperationCount = leaseId && lease && (Date.now() - lease.lastUsedAt < 2_000 || openRequests.has(leaseId)) ? activeOperations.get(leaseId)?.size ?? 0 : 0
     const ready = isPodReady(pod)
     const podState = labels['pulpo.dev/state']
     const lifecycleState = pod.metadata?.deletionTimestamp
@@ -412,6 +414,12 @@ const handler = async (request: IncomingMessage, response: ServerResponse) => {
     const match = url.pathname.match(/^\/v1\/leases\/([^/]+)(\/.*)?$/); const lease = match ? leases.get(match[1]!) : undefined
     if (!lease || lease.instanceId !== instanceId) return json(response, 404, { error: 'lease_not_found' })
     if (request.method === 'DELETE' && !match?.[2]) { await core.deleteNamespacedPod({ namespace, name: lease.podName }); leases.delete(lease.id); activeOperations.delete(lease.id); return json(response, 200, { status: 'released' }) }
+    openRequests.set(lease.id, (openRequests.get(lease.id) ?? 0) + 1)
+    response.once('close', () => {
+      const remaining = (openRequests.get(lease.id) ?? 1) - 1
+      if (remaining > 0) openRequests.set(lease.id, remaining)
+      else openRequests.delete(lease.id)
+    })
     const upstream = await proxy(lease, request, match?.[2] || '/', url.search)
     response.writeHead(upstream.status, {
       'content-type': upstream.headers.get('content-type') ?? 'application/json',

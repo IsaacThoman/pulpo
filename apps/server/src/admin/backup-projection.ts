@@ -65,7 +65,7 @@ export const FULL_BACKUP_TEMPORARY_DATA_POLICY = {
   attachments: 'attachment',
   user_memory_documents: 'redact-source-response',
   user_memory_document_revisions: 'redact-source-response',
-  file_nodes: 'preserve', file_docs: 'preserve', file_doc_updates: 'preserve', file_folder_layouts: 'preserve', file_agent_changes: 'response-reference',
+  file_nodes: 'preserve', file_docs: 'preserve', file_doc_updates: 'preserve', file_folder_layouts: 'preserve',
   queued_messages: 'queued-message', composer_drafts: 'composer-draft', composer_draft_attachments: 'composer-draft-attachment',
   shelved_drafts: 'shelved-draft', shelved_draft_attachments: 'shelved-draft-attachment', shelf_operations: 'preserve',
   episodic_memory_generations: 'preserve',

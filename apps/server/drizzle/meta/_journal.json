@@ -708,6 +708,13 @@
       "when": 1791939840596,
       "tag": "0100_file_node_pins",
       "breakpoints": true
+    },
+    {
+      "idx": 101,
+      "version": "7",
+      "when": 1791992824383,
+      "tag": "0101_agent_file_access",
+      "breakpoints": true
     }
   ]
 }

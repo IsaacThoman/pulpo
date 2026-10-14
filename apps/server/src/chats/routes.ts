@@ -1,5 +1,5 @@
 import { historyPageQuery, loadHistoryPage } from './history-page.js'
-import { and, asc, desc, eq, inArray, isNotNull, isNull, ne, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray, isNotNull, isNull, ne, sql, type SQL } from 'drizzle-orm'
 import { createHash } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import { createChatResponseSchema, createChatSchema, createQueuedMessageSchema, findCostLimitItem, reorderQueuedMessageSchema, startChatSchema, updateChatSchema, updateQueuedMessageSchema, type StateInvalidationScope } from '@pulpo/contracts'
@@ -15,7 +15,7 @@ import { maintenanceQueue } from '../jobs.js'
 import { cancelChatWork, getTrashRetention, markChatsForPurge, purgeAtFor } from './trash.js'
 import { planDuplicateTree } from './duplicate.js'
 import { toPublicChat, toPublicChatResponses, withoutWorkspaceScope } from './public.js'
-import { assertFileScope } from './file-scope.js'
+import { assertFileScope, mergedFileAccessSql, scopedFileAccess } from './file-scope.js'
 import { chatFolderId } from '../files/chat-items.js'
 import { topChatOrder, topSortOrder } from '../files/order.js'
 import { recoverChats, trashChats } from './trash-service.js'
@@ -257,6 +257,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       title: input.title ?? 'New chat',
       temporary: input.temporary,
       fileScopeIds: input.fileScopeIds,
+      fileScopeAccess: scopedFileAccess(input.fileScopeIds, input.fileScopeAccess),
       sortOrder: input.temporary ? 0 : await topLooseChatSortOrder(user.id),
       expiresAt,
       createdAt,
@@ -303,6 +304,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       title: input.chat.title ?? 'New chat',
       temporary: input.chat.temporary,
       fileScopeIds: input.chat.fileScopeIds,
+      fileScopeAccess: scopedFileAccess(input.chat.fileScopeIds, input.chat.fileScopeAccess),
       sortOrder: input.chat.temporary ? 0 : await topLooseChatSortOrder(user.id),
       expiresAt,
       createdAt,
@@ -585,9 +587,12 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
     const patch = updateChatSchema.parse(request.body)
-    if (patch.fileScopeIds) {
+    let fileScopeAccess: SQL | undefined
+    if (patch.fileScopeIds || patch.fileScopeAccess) {
       if (request.adminChatAccess) throw forbidden('Chat file scope cannot be changed during admin chat access')
-      await assertFileScope(user.id, patch.fileScopeIds)
+      if (patch.fileScopeIds) await assertFileScope(user.id, patch.fileScopeIds)
+      // Modes follow their entries: removed entries lose theirs, and unchanged ones keep them.
+      fileScopeAccess = mergedFileAccessSql(patch.fileScopeIds, patch.fileScopeAccess ?? {})
     }
     // Any live folder in Files can hold chats; the Chats folder itself means unfiled.
     const folderId = patch.folderId === undefined ? undefined : await chatFolderId(db, user.id, patch.folderId)
@@ -609,6 +614,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
         : patch.pinned === undefined ? sql`case when ${chats.pinned} then ${chats.sortOrder} else ${await topChatOrder(db, user.id, folderId)} end`
         : await topChatOrder(db, user.id, folderId),
       fileScopeIds: patch.fileScopeIds,
+      fileScopeAccess,
       expiresAt,
       updatedAt: now,
     }).where(and(
