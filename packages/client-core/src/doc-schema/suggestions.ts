@@ -1,6 +1,6 @@
 import { Extension, Mark, mergeAttributes, type AnyExtension } from '@tiptap/core'
 import type { Mark as ProseMirrorMark, Node as ProseMirrorNode } from '@tiptap/pm/model'
-import type { Transform } from '@tiptap/pm/transform'
+import { Transform } from '@tiptap/pm/transform'
 
 /**
  * Inline suggestions: proposed changes stored in the document itself, Google Docs style.
@@ -135,8 +135,39 @@ export function hasSuggestions(node: ProseMirrorNode): boolean {
 }
 
 /** Every unresolved hunk in document order. */
-export function listSuggestions(_doc: ProseMirrorNode): SuggestionHunk[] {
-  throw new Error('Not implemented')
+export function listSuggestions(doc: ProseMirrorNode): SuggestionHunk[] {
+  const hunks = new Map<string, SuggestionHunk>()
+  // Where each hunk's previous insert or delete piece sat, to put line breaks between blocks.
+  const lastBlock = new Map<string, number>()
+  // A block suggestion's text already includes everything inside it.
+  const coveredUntil = new Map<string, number>()
+  const add = (ref: SuggestionRef, text: string, from: number, to: number, block: number) => {
+    if (from < (coveredUntil.get(ref.id) ?? -1)) return
+    let hunk = hunks.get(ref.id)
+    if (!hunk) hunks.set(ref.id, hunk = { id: ref.id, changeId: ref.changeId, inserted: '', deleted: '', from, to })
+    hunk.to = Math.max(hunk.to, to)
+    const field = ref.kind === 'insert' ? 'inserted' : 'deleted'
+    const key = `${ref.kind}|${ref.id}`
+    if (hunk[field] && lastBlock.get(key) !== block) hunk[field] += '\n'
+    hunk[field] += text
+    lastBlock.set(key, block)
+  }
+  doc.descendants((node, pos) => {
+    const block = parseBlockSuggestion(node.attrs[SUGGESTION_BLOCK_ATTR])
+    if (block) {
+      add(block, node.textBetween(0, node.content.size, '\n', '\n'), pos, pos + node.nodeSize, pos)
+      coveredUntil.set(block.id, Math.max(coveredUntil.get(block.id) ?? -1, pos + node.nodeSize))
+    }
+    const ref = node.isInline ? inlineSuggestion(node) : null
+    if (ref) add(ref, node.isText ? node.text ?? '' : node.type.spec.leafText?.(node) ?? '\n', pos, pos + node.nodeSize, doc.resolve(pos).start())
+    return true
+  })
+  return [...hunks.values()]
+}
+
+/** Accepting an insertion or rejecting a deletion keeps the content; the other two remove it. */
+function removesContent(kind: SuggestionKind, action: SuggestionAction): boolean {
+  return (kind === 'insert') === (action === 'reject')
 }
 
 /**
@@ -144,13 +175,55 @@ export function listSuggestions(_doc: ProseMirrorNode): SuggestionHunk[] {
  * or a plain Transform on the server). Accepting an insertion or rejecting a deletion keeps the
  * content and drops the marker; the other two remove the content.
  */
-export function resolveSuggestions<T extends Transform>(_tr: T, _match: (ref: SuggestionRef) => boolean, _action: SuggestionAction): T {
-  throw new Error('Not implemented')
+export function resolveSuggestions<T extends Transform>(tr: T, match: (ref: SuggestionRef) => boolean, action: SuggestionAction): T {
+  const unmark: Array<{ from: number; to: number; mark: ProseMirrorMark }> = []
+  const clear: number[] = []
+  const remove: Array<{ from: number; to: number; block: boolean }> = []
+  tr.doc.descendants((node, pos) => {
+    const block = parseBlockSuggestion(node.attrs[SUGGESTION_BLOCK_ATTR])
+    if (block && match(block)) {
+      if (removesContent(block.kind, action)) {
+        remove.push({ from: pos, to: pos + node.nodeSize, block: true })
+        return false
+      }
+      clear.push(pos)
+    }
+    if (!node.isInline) return true
+    const to = pos + node.nodeSize
+    for (const mark of node.marks) {
+      const ref = suggestionFromMark(mark)
+      if (!ref || !match(ref)) continue
+      if (removesContent(ref.kind, action)) {
+        const last = remove.at(-1)
+        if (last && !last.block && last.to === pos) last.to = to
+        else remove.push({ from: pos, to, block: false })
+      } else {
+        const last = unmark.at(-1)
+        if (last && last.to === pos && last.mark.eq(mark)) last.to = to
+        else unmark.push({ from: pos, to, mark })
+      }
+    }
+    return true
+  })
+  // Neither of these moves positions, so the removals below can still use the ones collected.
+  for (const { from, to, mark } of unmark) tr.removeMark(from, to, mark)
+  for (const pos of clear) tr.setNodeAttribute(pos, SUGGESTION_BLOCK_ATTR, null)
+  const start = tr.steps.length
+  for (const { from, to, block } of remove.reverse()) {
+    const mapping = tr.mapping.slice(start)
+    const range = { from: mapping.map(from, 1), to: mapping.map(to, -1) }
+    if (range.from >= range.to) continue
+    // deleteRange also removes a container the block was the only child of, keeping it valid.
+    if (block) tr.deleteRange(range.from, range.to)
+    else tr.delete(range.from, range.to)
+  }
+  return tr
 }
 
 /** The document with every suggestion rejected (`base`) or accepted (`proposed`). */
-export function docView(doc: ProseMirrorNode, _view: DocView): ProseMirrorNode {
-  return doc
+export function docView(doc: ProseMirrorNode, view: DocView): ProseMirrorNode {
+  if (!hasSuggestions(doc)) return doc
+  return resolveSuggestions(new Transform(doc), () => true, view === 'base' ? 'reject' : 'accept').doc
 }
 
 export interface MergeMarkdownResult {
@@ -161,20 +234,5 @@ export interface MergeMarkdownResult {
   hunks: number
 }
 
-/**
- * Rewrites `current` so that its proposed view becomes `markdown`, leaving every part the
- * Markdown does not change exactly as it was (other suggestions included).
- *
- * - `suggest`: new insertions and deletions become suggestions tagged with `changeId`.
- * - `write`: they apply directly.
- *
- * Either way, content an earlier suggestion inserted and the Markdown drops is removed outright,
- * and content an earlier suggestion deletes stays where it is.
- */
-export function mergeMarkdown(
-  _current: ProseMirrorNode,
-  _markdown: string,
-  _options: { mode: 'suggest' | 'write'; changeId: string; newId?: () => string },
-): MergeMarkdownResult {
-  throw new Error('Not implemented')
-}
+/** Rewrites a document so its proposed view reads like pushed Markdown; see merge.ts. */
+export { mergeMarkdown } from './merge.js'
