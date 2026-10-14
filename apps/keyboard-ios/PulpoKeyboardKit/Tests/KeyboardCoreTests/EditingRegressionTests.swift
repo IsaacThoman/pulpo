@@ -137,6 +137,16 @@ struct EditingRegressionTests {
     #expect(!document.text.contains(" "), "\(document.text)")
   }
 
+  @Test func sentenceEndingInsideClosingQuotesCapitalizes() {
+    let (engine, document) = Fixtures.engine("He said \u{201C}hi.\u{201D} ")
+    #expect(engine.shift == .once(automatic: true))
+    engine.type("then (ok.) so")
+    #expect(document.text == "He said \u{201C}hi.\u{201D} Then (ok.) So")
+    let (other, otherDocument) = Fixtures.engine("the dogs\u{2019} ")
+    other.type("toys")
+    #expect(otherDocument.text == "the dogs\u{2019} toys")
+  }
+
   @Test func wordCapitalizationAppliesAfterTheOwedSwipeSpace() {
     var traits = InputTraits()
     traits.capitalization = .words

@@ -144,6 +144,8 @@ public final class KeyboardEngine {
   // MARK: Characters
 
   static let sentenceEnders: Set<Character> = [".", "!", "?"]
+  /// Closing quotes and brackets can follow a sentence's end: `He said “Hi.” Then`.
+  static let sentenceClosers: Set<Character> = [")", "]", "}", "\"", "'", "\u{201D}", "\u{2019}"]
   static let autocorrectSeparators: Set<Character> = [".", ",", "!", "?", ";", ":", ")", "\"", "\u{201D}"]
   static let spaceSwapPunctuation: Set<Character> = [".", ",", "!", "?", ";", ":"]
   /// Roughly the few hundred most frequent words: "you", "like", "from", "good".
@@ -887,8 +889,10 @@ public final class KeyboardEngine {
       sawSpace = true
       trimmed = trimmed.dropLast()
     }
-    guard let last = trimmed.last else { return true }
-    return sawSpace && Self.sentenceEnders.contains(last)
+    guard trimmed.last != nil else { return true }
+    guard sawSpace else { return false }
+    while let last = trimmed.last, Self.sentenceClosers.contains(last) { trimmed = trimmed.dropLast() }
+    return trimmed.last.map(Self.sentenceEnders.contains) == true
   }
 
   public func updateAutomaticShift() {
