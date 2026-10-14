@@ -104,6 +104,36 @@ describe('DocEditor suggestions', () => {
     expect(listSuggestions(editor().state.doc).map((hunk) => hunk.id)).toEqual([first!.id, ...rest.map((hunk) => hunk.id)])
   })
 
+  it('keeps the card for a hovered suggestion while the pointer moves onto it', async () => {
+    const server = suggestingServer()
+    const { view, element, editor } = mount(server)
+    await waitFor(() => expect(element()?.querySelector('.pulpo-suggestion-insert')).toBeTruthy())
+    const [first, ...rest] = listSuggestions(editor().state.doc)
+    fireEvent.mouseOver(element()!.querySelector(`[data-suggestion-id="${first!.id}"]`)!)
+    const card = await view.findByRole('dialog', { name: 'Suggestion' })
+    expect(card.textContent).toContain('Replace “editor” with “CLI”')
+
+    // A browser fires the pointer events, which React turns into the card's onPointerEnter,
+    // before the editor's mouseleave.
+    fireEvent.pointerEnter(card)
+    fireEvent.mouseLeave(element()!, { relatedTarget: card })
+    await new Promise((resolve) => setTimeout(resolve, 400))
+    fireEvent.click(within(view.getByRole('dialog', { name: 'Suggestion' })).getByRole('button', { name: 'Reject suggestion' }))
+    expect(listSuggestions(editor().state.doc).map((hunk) => hunk.id)).toEqual(rest.map((hunk) => hunk.id))
+  })
+
+  it('hides the hovered suggestion card once the pointer leaves it', async () => {
+    const server = suggestingServer()
+    const { view, element, editor } = mount(server)
+    await waitFor(() => expect(element()?.querySelector('.pulpo-suggestion-insert')).toBeTruthy())
+    fireEvent.mouseOver(element()!.querySelector(`[data-suggestion-id="${listSuggestions(editor().state.doc)[0]!.id}"]`)!)
+    const card = await view.findByRole('dialog', { name: 'Suggestion' })
+    fireEvent.pointerEnter(card)
+    fireEvent.mouseLeave(element()!, { relatedTarget: card })
+    fireEvent.pointerLeave(card)
+    await waitFor(() => expect(view.queryByRole('dialog', { name: 'Suggestion' })).toBeNull())
+  })
+
   it('steps through suggestions from the review bar', async () => {
     const server = suggestingServer()
     const { view, element, editor } = mount(server)
