@@ -596,10 +596,12 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       // Filed by folder (or unfiled), a chat is no longer at the top of My files.
       inFilesRoot: folderId === undefined ? undefined : false,
       modelId: patch.modelId,
-      // Refiled without a position, a chat goes to the top of its new folder.
-      sortOrder: typeof patch.sortOrder === 'number'
-        ? patch.sortOrder
-        : folderId === undefined ? undefined : await topChatOrder(db, user.id, folderId),
+      // Refiled without a position, a chat goes to the top of its new folder; one that stays
+      // pinned keeps its place in the pinned list.
+      sortOrder: typeof patch.sortOrder === 'number' ? patch.sortOrder
+        : folderId === undefined ? undefined
+        : patch.pinned === undefined ? sql`case when ${chats.pinned} then ${chats.sortOrder} else ${await topChatOrder(db, user.id, folderId)} end`
+        : await topChatOrder(db, user.id, folderId),
       fileScopeIds: patch.fileScopeIds,
       expiresAt,
       updatedAt: now,

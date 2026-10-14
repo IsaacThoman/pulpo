@@ -26,8 +26,15 @@ vi.mock('@/features/files/api', async (importOriginal) => ({
     { id: 'document', name: 'Notes.md', kind: 'doc', sizeBytes: 0, updatedAt: '2026-10-06T00:00:00Z' },
     { id: 'folder', name: 'Projects', kind: 'folder', updatedAt: '2026-10-06T00:00:00Z' },
     { id: 'sidebar', name: 'Sidebar', kind: 'folder', systemRole: 'chats', updatedAt: '2026-10-06T00:00:00Z' },
+    { id: 'plans', name: 'Plans.md', kind: 'doc', sizeBytes: 0, pinned: true, updatedAt: '2026-10-06T00:00:00Z' },
   ] }),
   fetchFolderLayout: async () => ({ folderId: null, positions: {}, snapToGrid: true }),
+}))
+
+const pinSidebarItems = vi.hoisted(() => vi.fn(async () => undefined))
+vi.mock('@/features/sidebar/api', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@/features/sidebar/api')>(),
+  pinSidebarItems,
 }))
 
 function Location() {
@@ -58,7 +65,7 @@ beforeEach(() => {
   useSettings.setState({ fileDoubleClickAction: 'open' })
   useSidePanel.setState({ content: null, lastContent: null, splitAvailable: true })
 })
-afterEach(() => { cleanup(); vi.unstubAllGlobals() })
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.clearAllMocks() })
 
 async function doubleClick(name: string, ctrlKey = false) {
   const item = await screen.findByRole('option', { name: new RegExp(name) })
@@ -127,7 +134,7 @@ it('applies a changed preference to an already open browser', async () => {
 })
 
 describe('menus of built-in folders', () => {
-  const unavailable = ['Rename', 'Color and icon…', 'Move to…', 'Cut', 'Move to trash']
+  const unavailable = ['Pin', 'Rename', 'Color and icon…', 'Move to…', 'Cut', 'Move to trash']
   // Menu items' names end with their keyboard shortcut.
   const menuItem = (name: string) => screen.getByRole('menuitem', { name: new RegExp(`^${name}`) })
 
@@ -144,5 +151,22 @@ describe('menus of built-in folders', () => {
     fireEvent.contextMenu(await screen.findByRole('option', { name: /Projects/ }))
     await screen.findByRole('menuitem', { name: /^Copy/ })
     for (const name of unavailable) expect(menuItem(name).getAttribute('aria-disabled')).toBeNull()
+  })
+})
+
+describe('pinning', () => {
+  it('marks pinned items, and pins or unpins the selection from its menu', async () => {
+    showFiles()
+    const plans = await screen.findByRole('option', { name: /Plans.md/ })
+    expect(plans.querySelector('[aria-label="Pinned to the sidebar"]')).toBeTruthy()
+    expect((await screen.findByRole('option', { name: /Notes.md/ })).querySelector('[aria-label="Pinned to the sidebar"]')).toBeNull()
+
+    fireEvent.contextMenu(plans)
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Unpin' }))
+    expect(pinSidebarItems).toHaveBeenCalledWith(['plans'], false, [expect.objectContaining({ id: 'plans' })])
+
+    fireEvent.contextMenu(await screen.findByRole('option', { name: /Notes.md/ }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Pin' }))
+    expect(pinSidebarItems).toHaveBeenCalledWith(['document'], true, [expect.objectContaining({ id: 'document' })])
   })
 })

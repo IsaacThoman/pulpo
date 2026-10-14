@@ -17,3 +17,12 @@ export function sidebarItemsFloor(folderId: string | null): number {
   const items = queryClient.getQueryData<FileNode[]>(sidebarItemsKey(userId, id)) ?? []
   return items.reduce((min, item) => Math.min(min, item.sortOrder ?? 0), Infinity)
 }
+
+/**
+ * The last place in the sidebar's pinned list among the pinned Files items it has loaded, or -1.
+ * Pinned chats share the list, so a chat pinned at its end goes after this.
+ */
+export function pinnedItemsCeiling(): number {
+  const state = queryClient.getQueryData<SidebarState>(sidebarQueryKey(useAuth.getState().user?.id))
+  return (state?.pinnedItems ?? []).reduce((max, item) => Math.max(max, item.sortOrder ?? 0), -1)
+}

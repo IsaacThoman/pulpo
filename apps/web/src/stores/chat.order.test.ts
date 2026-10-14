@@ -24,10 +24,11 @@ vi.stubGlobal('fetch', vi.fn((input: string | URL | Request, init?: RequestInit)
   return Promise.resolve(new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } }))
 }))
 
-const [{ compareChatOrder, useChat }, { useAuth }, { queryClient }] = await Promise.all([
+const [{ compareChatOrder, useChat }, { useAuth }, { queryClient }, { sidebarQueryKey }] = await Promise.all([
   import('./chat'),
   import('./auth'),
   import('@/lib/query-client'),
+  import('@/features/sidebar/cache'),
 ])
 
 const userId = '00000000-0000-4000-8000-000000000001'
@@ -114,18 +115,18 @@ describe('chat order', () => {
     expect(looseOrder()).toEqual(['pinned', 'c', 'a', 'b'])
   })
 
-  it('pins a chat at the dropped position and keeps its folder', async () => {
-    useChat.setState((state) => ({ chats: [...state.chats, chat('pinned-2', { pinned: true, sortOrder: 1 })] }))
-    useChat.getState().pinChat('in-folder', { targetId: 'pinned-2', edge: 'before' })
+  it('pins a chat at the end of the pinned list, after pinned files and folders, keeping its folder', async () => {
+    queryClient.setQueryData(sidebarQueryKey(userId), {
+      chatsFolderId: 'chats', archiveFolderId: 'archive', folders: [],
+      pinnedItems: [{ id: 'pinned-folder', parentId: 'chats', kind: 'folder', name: 'Work', status: 'ready', mimeType: null, sizeBytes: 0, revision: 0, trashedAt: null, createdAt: '', updatedAt: '', sortOrder: 4, pinned: true }],
+    })
+    useChat.getState().togglePin('in-folder')
 
-    expect(pinnedOrder()).toEqual(['pinned', 'in-folder', 'pinned-2'])
-    expect(useChat.getState().chats.find((item) => item.id === 'in-folder')).toMatchObject({ pinned: true, folderId })
+    expect(pinnedOrder()).toEqual(['pinned', 'in-folder'])
+    expect(useChat.getState().chats.find((item) => item.id === 'in-folder')).toMatchObject({ pinned: true, folderId, sortOrder: 5 })
     await vi.waitFor(() => expect(requests).toContainEqual(expect.objectContaining({
-      method: 'PUT', body: { chatIds: ['pinned', 'in-folder', 'pinned-2'] },
+      method: 'PATCH', path: expect.stringContaining('/api/chats/in-folder'), body: { pinned: true, sortOrder: 5 },
     })))
-    expect(requests).toContainEqual(expect.objectContaining({
-      method: 'PATCH', path: expect.stringContaining('/api/chats/in-folder'), body: { pinned: true, sortOrder: 1 },
-    }))
   })
 
   it('unpins a chat into the dropped position of the unfiled list', async () => {

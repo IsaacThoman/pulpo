@@ -12,7 +12,7 @@ type ChatRow = typeof chats.$inferSelect
  * Chats filed in Files folders are listed as `chat` items. A chat with no folder sits directly
  * in the Chats folder, which is the sidebar's unfiled list, unless it is at the top of My files.
  */
-export function chatToFileNode(chat: Pick<ChatRow, 'id' | 'folderId' | 'inFilesRoot' | 'title' | 'sortOrder' | 'createdAt' | 'updatedAt'>, chatsFolderId: string | null): FileNode {
+export function chatToFileNode(chat: Pick<ChatRow, 'id' | 'folderId' | 'inFilesRoot' | 'title' | 'pinned' | 'sortOrder' | 'createdAt' | 'updatedAt'>, chatsFolderId: string | null): FileNode {
   return {
     id: chat.id,
     parentId: chat.inFilesRoot ? null : chat.folderId ?? chatsFolderId,
@@ -27,6 +27,7 @@ export function chatToFileNode(chat: Pick<ChatRow, 'id' | 'folderId' | 'inFilesR
     updatedAt: chat.updatedAt.toISOString(),
     systemRole: null,
     sortOrder: chat.sortOrder,
+    pinned: chat.pinned,
   }
 }
 
@@ -72,19 +73,20 @@ export async function chatFolderId(executor: FileExecutor, userId: string, paren
 }
 
 /**
- * Files chats into folders (null is the top of My files), at the top of each. Moving a chat in
- * Files takes it out of the pinned chats, as dragging it out of them does. Returns them as items,
- * as they now appear in Files.
+ * Files chats into folders (null is the top of My files), at the top of each. Pinned chats stay
+ * pinned, in their place in the pinned list, as other Files items do. Returns them as items, as
+ * they now appear in Files.
  */
 export async function moveChatsInTx(executor: FileExecutor, userId: string, items: Array<{ id: string; parentId: string | null }>, chatsFolderId: string | null): Promise<FileNode[]> {
   const moved: FileNode[] = []
   for (const item of items) {
+    const [chat] = await executor.select({ pinned: chats.pinned }).from(chats).where(and(eq(chats.id, item.id), liveChat(userId)))
+    if (!chat) throw notFound('Chat')
     const inFilesRoot = item.parentId === null
     const folderId = inFilesRoot ? null : await chatFolderId(executor, userId, item.parentId)
-    const sortOrder = inFilesRoot ? await topSortOrder(executor, userId, null) : await topChatOrder(executor, userId, folderId)
-    const [row] = await executor.update(chats).set({ folderId, inFilesRoot, pinned: false, sortOrder }).where(and(eq(chats.id, item.id), liveChat(userId))).returning()
-    if (!row) throw notFound('Chat')
-    moved.push(chatToFileNode(row, chatsFolderId))
+    const sortOrder = chat.pinned ? undefined : inFilesRoot ? await topSortOrder(executor, userId, null) : await topChatOrder(executor, userId, folderId)
+    const [row] = await executor.update(chats).set({ folderId, inFilesRoot, sortOrder }).where(and(eq(chats.id, item.id), liveChat(userId))).returning()
+    moved.push(chatToFileNode(row!, chatsFolderId))
   }
   return moved
 }

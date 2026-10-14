@@ -2224,6 +2224,7 @@ const esUi: Record<string, string> = {
   "The item this shortcut opens is in the trash": "El elemento que abre este acceso directo está en la papelera",
   "Item options": "Opciones del elemento",
   "Shortcut": "Acceso directo",
+  "Pinned to the sidebar": "Fijado en la barra lateral",
   "Create a shortcut to the item this shortcut opens instead": "Crea un acceso directo al elemento que abre este acceso directo",
   "Create shortcut": "Crear acceso directo",
   "Create here": "Crear aquí",

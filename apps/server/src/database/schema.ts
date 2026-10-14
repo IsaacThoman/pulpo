@@ -870,8 +870,11 @@ export const fileNodes = pgTable('file_nodes', {
   // References chats(id) through a deferrable constraint added in the migration, so a backup can
   // restore Files (which chats are filed in) before the chats that shortcuts point at.
   targetChatId: uuid('target_chat_id'),
-  // Position among the folder's items, chats included (see files/order.ts).
+  // Position among the folder's items, chats included (see files/order.ts). While pinned, the
+  // position in the sidebar's pinned list instead, as for chats.
   sortOrder: integer('sort_order').notNull().default(0),
+  // Listed with the pinned chats at the top of the sidebar rather than in its folder there.
+  pinned: boolean('pinned').notNull().default(false),
   // A chosen FileColor and FileIcon; null keeps the kind's own.
   color: text('color'),
   icon: text('icon'),
@@ -896,6 +899,9 @@ export const fileNodes = pgTable('file_nodes', {
   check('file_nodes_size_check', sql`${table.sizeBytes} >= 0`),
   check('file_nodes_blob_check', sql`(${table.kind} = 'blob') = (${table.objectKey} is not null)`),
   check('file_nodes_system_role_check', sql`${table.systemRole} is null or (${table.systemRole} in ('chats', 'archive') and ${table.kind} = 'folder' and ${table.parentId} is null)`),
+  // The Sidebar folder is the sidebar itself, so it cannot be pinned there.
+  check('file_nodes_pinned_check', sql`not ${table.pinned} or ${table.systemRole} is distinct from 'chats'`),
+  index('file_nodes_owner_pinned_idx').on(table.ownerUserId).where(sql`${table.pinned}`),
 ])
 
 /** Collaborative document state: a compacted Yjs update plus Markdown derived from it. */

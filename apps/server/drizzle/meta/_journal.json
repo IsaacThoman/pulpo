@@ -701,6 +701,13 @@
       "when": 1791936826692,
       "tag": "0099_compaction_retained_user_tokens",
       "breakpoints": true
+    },
+    {
+      "idx": 100,
+      "version": "7",
+      "when": 1791939840596,
+      "tag": "0100_file_node_pins",
+      "breakpoints": true
     }
   ]
 }

@@ -15,8 +15,12 @@ const { ensureSystemFolders } = await import('./system-folders.js')
 const { chatFolderId } = await import('./chat-items.js')
 const { createShortcut } = await import('./shortcuts.js')
 const { copyFileNodes } = await import('./copy-service.js')
-const { archiveItems, createSidebarFolder, legacyFolderList, moveSidebarItems, orderSidebarItems, sidebarFolderItems, updateSidebarItem, sidebarState } = await import('../sidebar/service.js')
+const {
+  archiveItems, createSidebarFolder, legacyFolderList, moveSidebarItems, orderPinnedItems, orderSidebarItems, pinSidebarItems,
+  sidebarFolderItems, updateSidebarItem, sidebarState,
+} = await import('../sidebar/service.js')
 const { topChatOrder } = await import('./order.js')
+const { createDoc } = await import('./doc-store.js')
 
 const enabled = process.env.PULPO_FILES_TESTS === 'true'
 let userId: string
@@ -92,18 +96,18 @@ describe.skipIf(!enabled)('chats filed in Files folders', () => {
     expect((await chatRow(chat)).deletedAt).toBeNull()
   })
 
-  it('puts chats at the top of My files, apart from the Chats folder, unpinning them', async () => {
+  it('puts chats at the top of My files, apart from the Chats folder, keeping their pin', async () => {
     const { chatsFolderId } = await ensureSystemFolders(userId)
     const chat = await insertChat(null, 'Rooted')
-    await db.update(chats).set({ pinned: true }).where(eq(chats.id, chat))
+    await db.update(chats).set({ pinned: true, sortOrder: 7 }).where(eq(chats.id, chat))
     const [moved] = await moveFileNodes(userId, [{ id: chat, parentId: null }])
-    expect(moved).toMatchObject({ id: chat, kind: 'chat', parentId: null })
-    expect(await chatRow(chat)).toMatchObject({ folderId: null, inFilesRoot: true, pinned: false })
+    expect(moved).toMatchObject({ id: chat, kind: 'chat', parentId: null, pinned: true })
+    expect(await chatRow(chat)).toMatchObject({ folderId: null, inFilesRoot: true, pinned: true, sortOrder: 7 })
     expect((await listFolder(userId, null)).children.map((node) => node.name)).toContain('Rooted')
     expect((await listFolder(userId, chatsFolderId)).children.map((node) => node.name)).not.toContain('Rooted')
-    // Placed in the sidebar again, it is back in the Chats folder.
+    // Placed in the sidebar again, it is back in the Chats folder, out of the pinned list.
     await orderSidebarItems(userId, null, [chat])
-    expect(await chatRow(chat)).toMatchObject({ folderId: null, inFilesRoot: false })
+    expect(await chatRow(chat)).toMatchObject({ folderId: null, inFilesRoot: false, pinned: false })
     expect((await listFolder(userId, chatsFolderId)).children.map((node) => node.name)).toContain('Rooted')
   })
 
@@ -223,6 +227,95 @@ describe.skipIf(!enabled)('chats filed in Files folders', () => {
     expect((await updateSidebarItem(userId, fresh.id, { name: 'work' })).name).toBe('work (3)')
     expect((await updateSidebarItem(userId, fresh.id, { name: 'WORK (3)' })).name).toBe('WORK (3)')
     await expect(updateFileNode(userId, fresh.id, { name: 'Work' })).rejects.toMatchObject({ code: 'file_name_conflict' })
+  })
+
+  it('pins folders, files, and shortcuts with the chats, listing them under Pinned instead of in their folder', async () => {
+    const { chatsFolderId } = await ensureSystemFolders(userId)
+    const work = await createSidebarFolder(userId, { name: 'Work' })
+    const projects = await createFolder(userId, { parentId: null, name: 'Projects' })
+    const shortcut = await createShortcut(userId, { targetKind: 'file', targetId: projects.id })
+    const chat = await insertChat(null, 'Pinned chat')
+    await db.update(chats).set({ pinned: true, sortOrder: 0 }).where(eq(chats.id, chat))
+
+    // Pinned after what is already pinned, in the order given, wherever they are in Files.
+    await pinSidebarItems(userId, [projects.id, work.id, shortcut.id], true)
+    const pinned = (await sidebarState(userId)).pinnedItems!
+    expect(pinned.map((node) => [node.name, node.pinned]).sort()).toEqual([['Projects', true], ['Projects', true], ['Work', true]])
+    const order = new Map(pinned.map((node) => [node.id, node.sortOrder]))
+    expect([order.get(projects.id), order.get(work.id), order.get(shortcut.id)]).toEqual([1, 2, 3])
+    // The sidebar no longer lists them in their folder; Files still does, marked.
+    expect(await sidebarFolderItems(userId, chatsFolderId, true)).toEqual([])
+    expect((await listFolder(userId, chatsFolderId)).children.find((node) => node.id === work.id)).toMatchObject({ pinned: true })
+    // Pinning again leaves them in place.
+    await pinSidebarItems(userId, [work.id], true)
+    expect((await sidebarState(userId)).pinnedItems!.find((node) => node.id === work.id)?.sortOrder).toBe(2)
+    // A pinned folder's subfolders are known to the sidebar, so nothing is dragged into itself.
+    const inner = await createFolder(userId, { parentId: projects.id, name: 'Inner' })
+    expect((await sidebarState(userId)).folders.find((folder) => folder.id === inner.id)?.parentId).toBe(projects.id)
+
+    // One order for the pinned list, chats included; unpinned items rejoin the top of their folder.
+    await orderPinnedItems(userId, [work.id, chat, shortcut.id, projects.id])
+    expect((await chatRow(chat)).sortOrder).toBe(1)
+    await pinSidebarItems(userId, [work.id, chat], false)
+    expect(await chatRow(chat)).toMatchObject({ pinned: false, folderId: null })
+    expect((await sidebarFolderItems(userId, chatsFolderId, true)).map((node) => node.id)).toEqual([work.id])
+    const chatsOrder = (await listFolder(userId, chatsFolderId)).children.filter((node) => !node.pinned)
+      .sort((left, right) => left.sortOrder! - right.sortOrder!).map((node) => node.id)
+    expect(chatsOrder).toEqual([work.id, chat])
+    // Ordering the pinned list pins what it lists.
+    await orderPinnedItems(userId, [chat, shortcut.id])
+    expect(await chatRow(chat)).toMatchObject({ pinned: true, sortOrder: 0 })
+  })
+
+  it('keeps items pinned when they move, unless placed in the sidebar outside the pinned list', async () => {
+    const { chatsFolderId } = await ensureSystemFolders(userId)
+    const work = await createSidebarFolder(userId, { name: 'Work' })
+    const notes = await createSidebarFolder(userId, { name: 'Notes' })
+    const other = await createFolder(userId, { parentId: null, name: 'Other' })
+    const chat = await insertChat(null, 'Chat')
+    const row = async (id: string) => (await db.select().from(fileNodes).where(eq(fileNodes.id, id)))[0]!
+    await pinSidebarItems(userId, [work.id, notes.id, other.id, chat], true)
+    const place = (await row(work.id)).sortOrder
+
+    // Moving in Files, or with the sidebar's move menu, keeps the item's place in the pinned list.
+    await moveFileNodes(userId, [{ id: work.id, parentId: other.id }])
+    expect(await row(work.id)).toMatchObject({ parentId: other.id, pinned: true, sortOrder: place })
+    await moveSidebarItems(userId, [work.id, chat], notes.id)
+    expect(await row(work.id)).toMatchObject({ parentId: notes.id, pinned: true, sortOrder: place })
+    expect(await chatRow(chat)).toMatchObject({ folderId: notes.id, pinned: true })
+    // Dragged out of the pinned list, even into the folder it is already in, it is unpinned.
+    await moveSidebarItems(userId, [work.id, chat], notes.id, { unpin: true })
+    expect(await row(work.id)).toMatchObject({ parentId: notes.id, pinned: false })
+    expect(await chatRow(chat)).toMatchObject({ folderId: notes.id, pinned: false })
+    await pinSidebarItems(userId, [notes.id], true)
+    await orderSidebarItems(userId, null, [notes.id])
+    expect(await row(notes.id)).toMatchObject({ pinned: false })
+    await archiveItems(userId, { chatIds: [], fileIds: [other.id] })
+    expect(await row(other.id)).toMatchObject({ pinned: false })
+    // Renaming or recoloring leaves the pin alone.
+    await pinSidebarItems(userId, [notes.id], true)
+    await updateSidebarItem(userId, notes.id, { name: 'Notes 2', color: 'red' })
+    expect(await row(notes.id)).toMatchObject({ pinned: true })
+    // Copies are not pinned.
+    const [copy] = await copyFileNodes(userId, [notes.id], chatsFolderId)
+    expect(copy).toMatchObject({ pinned: false })
+  })
+
+  it('pins Archive but not the Sidebar folder, and lists only folders without Files', async () => {
+    const { chatsFolderId, archiveFolderId } = await ensureSystemFolders(userId)
+    await expect(pinSidebarItems(userId, [chatsFolderId], true)).rejects.toMatchObject({ code: 'file_system_folder' })
+    await expect(orderPinnedItems(userId, [chatsFolderId])).rejects.toMatchObject({ code: 'file_system_folder' })
+    const folder = await createFolder(userId, { parentId: null, name: 'Folder' })
+    const doc = await createDoc(userId, { parentId: null, name: 'Notes.md' })
+    await pinSidebarItems(userId, [archiveFolderId, folder.id, doc.id], true)
+    expect((await sidebarState(userId)).pinnedItems!.map((node) => node.id).sort()).toEqual([archiveFolderId, folder.id, doc.id].sort())
+    expect((await sidebarState(userId, false)).pinnedItems!.map((node) => node.id).sort()).toEqual([archiveFolderId, folder.id].sort())
+    // Trashed items leave the list, and return with their pin when restored.
+    await trashFileNodes(userId, [folder.id])
+    expect((await sidebarState(userId)).pinnedItems!.map((node) => node.id)).not.toContain(folder.id)
+    await restoreFileNodes(userId, [folder.id])
+    expect((await sidebarState(userId)).pinnedItems!.map((node) => node.id)).toContain(folder.id)
+    await expect(pinSidebarItems(userId, [randomUUID()], true)).rejects.toMatchObject({ code: 'not_found' })
   })
 
   it('lists folders for older clients by path, including other folders holding chats', async () => {

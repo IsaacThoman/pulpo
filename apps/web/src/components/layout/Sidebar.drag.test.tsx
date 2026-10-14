@@ -9,21 +9,21 @@ import type { Chat } from '@/lib/types'
 import type { ItemDropZone } from '@/features/files/browser/use-item-drag'
 
 const actions = vi.hoisted(() => ({
-  reorderPinnedChats: vi.fn(),
   moveToFolder: vi.fn(),
-  pinChat: vi.fn(),
   unpinChat: vi.fn(),
 }))
 
 const sidebarActions = vi.hoisted(() => ({
   moveSidebarItems: vi.fn(),
   orderSidebarItems: vi.fn(),
+  orderPinnedItems: vi.fn(),
+  pinSidebarItems: vi.fn(),
   createSidebarFolder: vi.fn(),
   renameSidebarItem: vi.fn(),
   moveSidebarSelection: vi.fn(),
   trashSidebarSelection: vi.fn(),
   // The listings below stand in for the query cache the sidebar reads loaded items from.
-  findSidebarItem: (id: string) => Object.values(folderItems).flat().find((item) => item.id === id),
+  findSidebarItem: (id: string) => [...sidebarState.pinnedItems ?? [], ...Object.values(folderItems).flat()].find((item) => item.id === id),
 }))
 
 const sidebarState = vi.hoisted(() => ({
@@ -185,68 +185,71 @@ afterEach(() => {
 })
 
 const fileRow = () => screen.getByRole('button', { name: 'Notes.md' }).parentElement!
+const listRowIds = (list = 'pinned') => Array.from(document.querySelectorAll<HTMLElement>(`[data-drag-list="${list}"]`), (row) => row.dataset.dragId)
 const TOP_LEVEL = ['a', 'f1', 'b', 'doc-1', 'f2', 's-proj', 'c']
 
 describe('sidebar dragging', () => {
   it('moves an item to the end of the top level when dropped below everything', () => {
     dragTo(chatRow('a'), 10_000)
-    expect(sidebarActions.orderSidebarItems).toHaveBeenCalledWith('chats', ['f1', 'b', 'doc-1', 'f2', 's-proj', 'c', 'a'])
+    expect(sidebarActions.orderSidebarItems).toHaveBeenCalledWith('chats', ['f1', 'b', 'doc-1', 'f2', 's-proj', 'c', 'a'], undefined)
   })
 
   it('moves an item to the top when dragged above the list', () => {
     dragTo(chatRow('c'), 61)
-    expect(sidebarActions.orderSidebarItems).toHaveBeenCalledWith('chats', ['c', 'a', 'f1', 'b', 'doc-1', 'f2', 's-proj'])
+    expect(sidebarActions.orderSidebarItems).toHaveBeenCalledWith('chats', ['c', 'a', 'f1', 'b', 'doc-1', 'f2', 's-proj'], undefined)
   })
 
   it('reorders chats and folders together inside a folder', () => {
     dragTo(chatRow('x2'), 125, chatRow('x1').parentElement!)
-    expect(sidebarActions.orderSidebarItems).toHaveBeenCalledWith('f1', ['x2', 'x1', 'f3'])
+    expect(sidebarActions.orderSidebarItems).toHaveBeenCalledWith('f1', ['x2', 'x1', 'f3'], undefined)
     expect(actions.moveToFolder).not.toHaveBeenCalled()
   })
 
   it('places an item beside a folder from the edge of its header', () => {
     dragTo(chatRow('c'), 91, folderRow('f1'))
-    expect(sidebarActions.orderSidebarItems).toHaveBeenCalledWith('chats', ['a', 'c', 'f1', 'b', 'doc-1', 'f2', 's-proj'])
+    expect(sidebarActions.orderSidebarItems).toHaveBeenCalledWith('chats', ['a', 'c', 'f1', 'b', 'doc-1', 'f2', 's-proj'], undefined)
     dragTo(fileRow(), 119, folderRow('f1'))
-    expect(sidebarActions.orderSidebarItems).toHaveBeenCalledWith('chats', ['a', 'f1', 'doc-1', 'b', 'f2', 's-proj', 'c'])
+    expect(sidebarActions.orderSidebarItems).toHaveBeenCalledWith('chats', ['a', 'f1', 'doc-1', 'b', 'f2', 's-proj', 'c'], undefined)
   })
 
   it('files anything dropped on the middle of a folder into it', () => {
     dragTo(chatRow('b'), 285, folderRow('f2'))
     expect(actions.moveToFolder).toHaveBeenCalledWith('b', 'f2')
     dragTo(fileRow(), 285, folderRow('f2'))
-    expect(sidebarActions.moveSidebarItems).toHaveBeenCalledWith(['doc-1'], 'f2')
+    expect(sidebarActions.moveSidebarItems).toHaveBeenCalledWith(['doc-1'], 'f2', { unpin: false })
     dragTo(folderRow('f2'), 105, folderRow('f1'))
-    expect(sidebarActions.moveSidebarItems).toHaveBeenCalledWith(['f2'], 'f1')
+    expect(sidebarActions.moveSidebarItems).toHaveBeenCalledWith(['f2'], 'f1', { unpin: false })
   })
 
   it('moves a folder chat out to the top level when dragged into a gap there', () => {
     dragTo(chatRow('x1'), 10_000)
-    expect(sidebarActions.orderSidebarItems).toHaveBeenCalledWith('chats', [...TOP_LEVEL, 'x1'])
+    expect(sidebarActions.orderSidebarItems).toHaveBeenCalledWith('chats', [...TOP_LEVEL, 'x1'], undefined)
   })
 
   it('reorders pinned chats from the header or the gaps between them', () => {
     dragTo(chatRow('p2'), -10)
-    expect(actions.reorderPinnedChats).toHaveBeenCalledWith('p2', 'p1', 'before')
+    expect(sidebarActions.orderPinnedItems).toHaveBeenCalledWith(['p2', 'p1'], undefined)
   })
 
-  it('pins a chat dragged into the pinned section at that spot, but not other items', () => {
+  it('pins anything dragged into the pinned section at that spot', () => {
     dragTo(chatRow('b'), 5)
-    expect(actions.pinChat).toHaveBeenCalledWith('b', { targetId: 'p1', edge: 'before' })
+    expect(sidebarActions.orderPinnedItems).toHaveBeenCalledWith(['b', 'p1', 'p2'], undefined)
     dragTo(chatRow('x1'), 50, chatRow('p2'))
-    expect(actions.pinChat).toHaveBeenCalledWith('x1', { targetId: 'p2', edge: 'after' })
+    expect(sidebarActions.orderPinnedItems).toHaveBeenCalledWith(['p1', 'p2', 'x1'], undefined)
     dragTo(fileRow(), 5)
-    expect(actions.pinChat).toHaveBeenCalledTimes(2)
+    expect(sidebarActions.orderPinnedItems).toHaveBeenCalledWith(['doc-1', 'p1', 'p2'], undefined)
+    dragTo(folderRow('f2'), 25)
+    expect(sidebarActions.orderPinnedItems).toHaveBeenCalledWith(['p1', 'f2', 'p2'], undefined)
   })
 
   it('unpins a pinned chat dropped among the items or on a folder', () => {
     dragTo(chatRow('p1'), 10_000)
-    expect(sidebarActions.orderSidebarItems).toHaveBeenCalledWith('chats', [...TOP_LEVEL, 'p1'])
+    expect(sidebarActions.orderSidebarItems).toHaveBeenCalledWith('chats', [...TOP_LEVEL, 'p1'], undefined)
     dragTo(chatRow('p2'), 125, chatRow('x1'))
-    expect(sidebarActions.orderSidebarItems).toHaveBeenCalledWith('f1', ['p2', 'x1', 'f3', 'x2'])
+    expect(sidebarActions.orderSidebarItems).toHaveBeenCalledWith('f1', ['p2', 'x1', 'f3', 'x2'], undefined)
     dragTo(chatRow('p1'), 285, folderRow('f2'))
     expect(actions.unpinChat).toHaveBeenCalledWith('p1', 'f2')
-    expect(actions.reorderPinnedChats).not.toHaveBeenCalled()
+    expect(sidebarActions.orderPinnedItems).not.toHaveBeenCalled()
   })
 
   it('does not move a folder into itself or its own subfolder', () => {
@@ -258,12 +261,12 @@ describe('sidebar dragging', () => {
 
   it('moves a nested folder back to the top level when dropped there', () => {
     dragTo(folderRow('f3'), 10_000)
-    expect(sidebarActions.orderSidebarItems).toHaveBeenCalledWith('chats', [...TOP_LEVEL, 'f3'])
+    expect(sidebarActions.orderSidebarItems).toHaveBeenCalledWith('chats', [...TOP_LEVEL, 'f3'], undefined)
   })
 
   it('moves shortcuts like any other item', () => {
     dragTo(folderRow('projects'), 10_000)
-    expect(sidebarActions.orderSidebarItems).toHaveBeenCalledWith('chats', ['a', 'f1', 'b', 'doc-1', 'f2', 'c', 's-proj'])
+    expect(sidebarActions.orderSidebarItems).toHaveBeenCalledWith('chats', ['a', 'f1', 'b', 'doc-1', 'f2', 'c', 's-proj'], undefined)
   })
 
   it('files a chat dropped on a folder shortcut into the folder it opens', () => {
@@ -273,13 +276,67 @@ describe('sidebar dragging', () => {
 
   it('still drops directly on rows', () => {
     dragTo(chatRow('a'), 335, chatRow('c'))
-    expect(sidebarActions.orderSidebarItems).toHaveBeenCalledWith('chats', ['f1', 'b', 'doc-1', 'f2', 's-proj', 'a', 'c'])
+    expect(sidebarActions.orderSidebarItems).toHaveBeenCalledWith('chats', ['f1', 'b', 'doc-1', 'f2', 's-proj', 'a', 'c'], undefined)
   })
 
   it('leaves an item in place when released next to where it started', () => {
     dragTo(chatRow('b'), 215)
     expect(sidebarActions.orderSidebarItems).not.toHaveBeenCalled()
     expect(actions.moveToFolder).not.toHaveBeenCalled()
+  })
+})
+
+describe('pinned folders and files', () => {
+  const pinnedFolder = { ...node('pf', 'elsewhere', 'folder', 'Pinned folder', 2), pinned: true }
+  const pinnedZone = () => document.querySelector('[data-pinned-zone]')!
+
+  // Listed after the pinned chats: p1 0, p2 30, Pinned folder 60, then the top level from a 90.
+  beforeEach(() => {
+    cleanup()
+    sidebarState.pinnedItems = [pinnedFolder]
+    mount()
+  })
+  afterEach(() => { delete sidebarState.pinnedItems })
+
+  it('lists them with the pinned chats, in one order', () => {
+    expect(listRowIds()).toEqual(['p1', 'p2', 'pf'])
+    expect(pinnedZone().contains(folderRow('pf'))).toBe(true)
+  })
+
+  it('reorders them with the pinned chats', () => {
+    dragTo(folderRow('pf'), -10)
+    expect(sidebarActions.orderPinnedItems).toHaveBeenCalledWith(['pf', 'p1', 'p2'], undefined)
+  })
+
+  it('unpins one dropped among the items or on a folder', () => {
+    dragTo(folderRow('pf'), 10_000)
+    expect(sidebarActions.orderSidebarItems).toHaveBeenCalledWith('chats', [...TOP_LEVEL, 'pf'], undefined)
+    dragTo(folderRow('pf'), 315, folderRow('f2'))
+    expect(sidebarActions.moveSidebarItems).toHaveBeenCalledWith(['pf'], 'f2', { unpin: true })
+  })
+
+  it('pins and unpins from the item menu', async () => {
+    fireEvent.contextMenu(folderRow('pf'), { clientX: 20, clientY: 60 })
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Unpin' }))
+    expect(sidebarActions.pinSidebarItems).toHaveBeenCalledWith(['pf'], false, [pinnedFolder])
+    cleanup()
+    mount()
+    fireEvent.contextMenu(fileRow(), { clientX: 20, clientY: 270 })
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Pin' }))
+    expect(sidebarActions.pinSidebarItems).toHaveBeenCalledWith(['doc-1'], true, [folderItems.chats![1]])
+  })
+
+  it('pins a selection unless all of it is pinned already', async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Pinned folder' }), { metaKey: true })
+    fireEvent.click(screen.getByRole('button', { name: 'Notes.md' }), { metaKey: true })
+    fireEvent.contextMenu(fileRow(), { clientX: 20, clientY: 270 })
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Pin' }))
+    expect(sidebarActions.pinSidebarItems).toHaveBeenCalledWith(['pf', 'doc-1'], true)
+    fireEvent.click(screen.getByRole('button', { name: 'Pinned folder' }), { metaKey: true })
+    fireEvent.click(screen.getByRole('link', { name: 'Chat p1' }), { metaKey: true })
+    fireEvent.contextMenu(folderRow('pf'), { clientX: 20, clientY: 60 })
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Unpin' }))
+    expect(sidebarActions.pinSidebarItems).toHaveBeenCalledWith(['p1', 'pf'], false)
   })
 })
 
@@ -305,7 +362,7 @@ describe('dropping items dragged from Files', () => {
   it('files them into a folder from its middle, and beside it from its edges', () => {
     const nodes = [fromFiles('n1')]
     dropFromFiles(nodes, folderRow('f2'), 285)
-    expect(sidebarActions.moveSidebarItems).toHaveBeenCalledWith(['n1'], 'f2')
+    expect(sidebarActions.moveSidebarItems).toHaveBeenCalledWith(['n1'], 'f2', { unpin: true })
     dropFromFiles(nodes, folderRow('f2'), 271)
     expect(sidebarActions.orderSidebarItems).toHaveBeenCalledWith('chats', ['a', 'f1', 'b', 'doc-1', 'n1', 'f2', 's-proj', 'c'], nodes)
   })
@@ -314,6 +371,15 @@ describe('dropping items dragged from Files', () => {
     const nodes = [fromFiles('n1')]
     dropFromFiles(nodes, document.querySelector('aside .overflow-y-auto')!, 10_000)
     expect(sidebarActions.orderSidebarItems).toHaveBeenCalledWith('chats', [...TOP_LEVEL, 'n1'], nodes)
+  })
+
+  it('pins them where the line shows in the pinned list', () => {
+    const nodes = [fromFiles('n1'), fromFiles('n2')]
+    expect(dropFromFiles(nodes, chatRow('p2'), 31)).toBe(true)
+    expect(sidebarActions.orderPinnedItems).toHaveBeenCalledWith(['p1', 'n1', 'n2', 'p2'], nodes)
+    // From the Pinned heading, the nearest slot in the pinned list.
+    expect(dropFromFiles(nodes, document.querySelector('[data-pinned-zone]')!, -10)).toBe(true)
+    expect(sidebarActions.orderPinnedItems).toHaveBeenCalledWith(['n1', 'n2', 'p1', 'p2'], nodes)
   })
 
   it('does not put a folder inside itself', () => {
