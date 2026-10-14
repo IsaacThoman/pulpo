@@ -329,6 +329,23 @@ public final class Lexicon: @unchecked Sendable {
 public enum TextNormalizer {
   /// Lowercased, diacritic-free, apostrophe-free lookup key.
   public static func key(_ word: String) -> String {
+    // Most words are ASCII, which compatibility decomposition leaves unchanged and
+    // which has no combining marks: lowercasing and dropping apostrophes suffices.
+    // This runs for many candidates on every keystroke and swipe.
+    let utf8 = word.utf8
+    guard !utf8.contains(where: { $0 >= 0x80 }) else { return unicodeKey(word) }
+    return String(unsafeUninitializedCapacity: utf8.count) { buffer in
+      var count = 0
+      for byte in utf8 where byte != UInt8(ascii: "'") {
+        buffer[count] = byte >= UInt8(ascii: "A") && byte <= UInt8(ascii: "Z") ? byte + 32 : byte
+        count += 1
+      }
+      return count
+    }
+  }
+
+  /// The general form, for text outside ASCII.
+  static func unicodeKey(_ word: String) -> String {
     var result = ""
     result.reserveCapacity(word.utf8.count)
     for scalar in word.lowercased().decomposedStringWithCompatibilityMapping.unicodeScalars {
