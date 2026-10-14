@@ -87,6 +87,56 @@ struct GlideDecoderTests {
     }
   }
 
+  @Test(arguments: ["could", "would", "should", "ahead", "read", "road"])
+  func retainsIntendedEndpointOutsideFourNearestLetters(word: String) {
+    var points = TextNormalizer.key(word).utf8.compactMap { glide.geometry.center($0) }
+    // An off-center lift lands closer to four other keys than the intended d.
+    // This is authored geometry, not a reconstruction of a user's touch trace.
+    points[points.count - 1].x += 0.85
+    points[points.count - 1].y += 0.85
+    let end = points.last!
+    let intended = TextNormalizer.key(word).utf8.last!
+    #expect(!glide.geometry.letters(near: end, radius: 1.5, limit: 4).contains(intended))
+    #expect(glide.geometry.letters(near: end, radius: glide.endpointRadius, limit: glide.endpointLetterLimit).contains(intended))
+    #expect(glide.decode(points, context: .unknown).first?.text == word)
+  }
+
+  @Test(arguments: Array("abcdefghijklmnopqrstuvwxyz".utf8))
+  func tinyWobblesDoNotDecodeAsNearbyShortWords(letter: UInt8) {
+    let start = glide.geometry.center(letter)!
+    for distance in [0.02, 0.1, 0.2] {
+      let end = KeyPoint(x: start.x + distance, y: start.y + distance / 2)
+      #expect(glide.decode([start, end], context: .unknown).isEmpty)
+    }
+  }
+
+  @Test(arguments: ["we", "as", "to", "is"])
+  func shortSwipesRetainCommonTwoLetterWords(word: String) {
+    let centers = word.utf8.compactMap { glide.geometry.center($0) }
+    let start = centers[0], end = centers[1]
+    for fraction in [1.0, 0.8] {
+      let trim = (1 - fraction) / 2
+      let points = [
+        KeyPoint(x: start.x + (end.x - start.x) * trim, y: start.y + (end.y - start.y) * trim),
+        KeyPoint(x: end.x - (end.x - start.x) * trim, y: end.y - (end.y - start.y) * trim),
+      ]
+      #expect(glide.decode(points, context: .unknown).contains { TextNormalizer.key($0.text) == word })
+    }
+  }
+
+  @Test(arguments: ["could", "would", "should", "ahead", "read", "road"])
+  func endpointPruningPreservesRankingForOffCenterLifts(word: String) {
+    var points = TextNormalizer.key(word).utf8.compactMap { glide.geometry.center($0) }
+    points[points.count - 1].x += 0.85
+    points[points.count - 1].y += 0.85
+    for context in [LanguageContext.unknown, model.context(previousWord: "you", sentenceStart: false)] {
+      let reference = glide.decode(points, context: context, limit: .max)
+      for limit in [1, 4, 10] {
+        #expect(glide.decode(points, context: context, limit: limit) == Array(reference.prefix(limit)))
+      }
+    }
+  }
+
   @Test func accuracyOnNoisySwipes() throws {
     let lexicon = model.lexicon
     // The most frequent swipeable words, which is what people swipe most.

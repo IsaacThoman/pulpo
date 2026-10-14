@@ -28,8 +28,10 @@ public final class GlideDecoder {
   public var cornerSigma = 0.45
   public var cornerAngle = 0.9
   public var maximumCandidates = 6_000
-  public var endpointRadius = 1.5
-  public var endpointLetterLimit = 4
+  /// Early finger lifts can leave the intended key outside the nearest four.
+  /// Broader endpoints cost more scoring work; the candidate budget stays bounded.
+  public var endpointRadius = 1.75
+  public var endpointLetterLimit = 8
   public var extraLengthSigma = 0.25
   public var shortenedLengthSigma = 0.3
 
@@ -162,7 +164,10 @@ public final class GlideDecoder {
     var templateLength = 0.0
     for index in 1..<template.count { templateLength += template[index - 1].distance(to: template[index]) }
     let ratio = gestureLength / max(templateLength, 0.6)
-    if templateLength > 1.5, ratio < 0.5 || ratio > 2.4 { return nil }
+    // Short words still require travel between distinct letters. Otherwise a
+    // nearly stationary touch can fit a neighboring two-letter endpoint pair.
+    if ratio < 0.5 { return nil }
+    if templateLength > 1.5, ratio > 2.4 { return nil }
     if templateLength <= 1.5, gestureLength > templateLength + 3.5 { return nil }
 
     // Extra travel the word doesn't account for; cutting corners short is normal.
@@ -170,6 +175,14 @@ public final class GlideDecoder {
     let lengthSigma = logRatio > 0 ? extraLengthSigma : shortenedLengthSigma
     let lengthScore = logRatio * logRatio / (2 * lengthSigma * lengthSigma)
     if lengthScore > -minimumScore + 1e-10 { return nil }
+
+    // Endpoint hits are part of every valid monotonic alignment. Their penalty
+    // alone can safely reject candidates before scanning the interior samples.
+    let k = template.count
+    let endpointError = samples[0].distanceSquared(to: template[0])
+      + samples[samples.count - 1].distanceSquared(to: template[k - 1])
+    let alignmentScale = 2 * alignmentSigma * alignmentSigma * pow(Double(k) / 5, alignmentLengthExponent)
+    if endpointError / alignmentScale + lengthScore > -minimumScore + 1e-10 { return nil }
 
     // Every interior letter must be passed, in order.
     let n = samples.count
@@ -185,7 +198,6 @@ public final class GlideDecoder {
 
     // Monotonic alignment of letters to swipe samples: first letter at the start,
     // last letter at the end, interior letters wherever they fit best in order.
-    let k = template.count
     var previousRow = [Double](repeating: .infinity, count: n)
     var row = [Double](repeating: .infinity, count: n)
     previousRow[0] = samples[0].distanceSquared(to: template[0])
