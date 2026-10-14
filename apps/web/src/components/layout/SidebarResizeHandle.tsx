@@ -13,10 +13,13 @@ import {
 /** How long the sidebar takes to open or fold (its `duration-300`). */
 const SIDEBAR_TRANSITION_MS = 300
 const KEYBOARD_STEP = 16
+/** Drags this close to the default width settle on it. */
+const DEFAULT_WIDTH_SNAP = 8
 
 /**
  * The desktop sidebar's edge: drag it to resize the sidebar, in past the snap point to fold it to
- * its rail, and the rail's edge out to open it again. Double-click restores the default width.
+ * its rail, and the rail's edge out to open it again. Drags settle on the default width when near
+ * it, and double-click restores it.
  */
 export function SidebarResizeHandle({
   width,
@@ -74,7 +77,7 @@ export function SidebarResizeHandle({
         callbacks.current.onOpenChange(open)
       }
       if (!open) return
-      latest = clamp(next)
+      latest = clamp(Math.abs(next - DEFAULT_SIDEBAR_WIDTH) <= DEFAULT_WIDTH_SNAP ? DEFAULT_SIDEBAR_WIDTH : next)
       applySidebarWidth(latest)
     }
     const end = () => {
@@ -122,8 +125,8 @@ export function SidebarResizeHandle({
         className={cn(
           'sidebar-resize-handle absolute inset-y-0 -left-0.5 w-2 outline-none',
           collapsed ? 'cursor-e-resize' : 'cursor-col-resize',
-          'after:absolute after:inset-y-0 after:left-px after:w-0.5 after:transition-colors hover:after:bg-sky-500/60 focus-visible:after:bg-sky-500',
-          resizing && 'after:bg-sky-500',
+          'after:absolute after:inset-y-0 after:left-px after:w-0.5 after:transition-colors hover:after:bg-foreground/20 focus-visible:after:bg-foreground/30',
+          resizing && 'after:bg-foreground/30',
         )}
       />
     </div>
