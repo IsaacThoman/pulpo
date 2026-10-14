@@ -165,7 +165,6 @@ describe.skipIf(!enabled)('full application backup audit with PostgreSQL and loc
     await db.insert(schema.fileDocs).values({ nodeId, state: initial.state, stateBytes: initial.state.byteLength, pendingUpdates: 1, markdown: initial.markdown, schemaVersion: DOC_SCHEMA_VERSION })
     await db.insert(schema.fileDocUpdates).values({ nodeId, update, byteSize: update.byteLength, origin: 'client', actorUserId: userId })
     await db.insert(schema.fileFolderLayouts).values({ id: randomUUID(), ownerUserId: userId, folderId: parentId, positions: { [nodeId]: { x: 12, y: 34 } } })
-    await db.insert(schema.fileAgentChanges).values({ id: randomUUID(), responseId, userId, nodeId, kind: 'edit', beforeMarkdown: '# Before' })
     await db.insert(schema.sessions).values({ id: randomUUID(), userId, tokenHash: 'old-session', expiresAt: new Date(Date.now() + 86400000) })
 
     const durableTables = FULL_BACKUP_TABLES.filter(table => OPTIONAL_TABLES_IN_LEGACY_BACKUPS.includes(table) && table !== 'file_nodes' && table !== 'diagnostic_policy')

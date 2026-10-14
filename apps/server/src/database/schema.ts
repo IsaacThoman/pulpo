@@ -466,6 +466,8 @@ export const chats = pgTable('chats', {
   temporary: boolean('temporary').notNull().default(false),
   // Files items the agent may use: file_nodes ids (folders include subfolders), or 'root' for all files.
   fileScopeIds: jsonb('file_scope_ids').$type<string[]>().notNull().default([]),
+  // What the agent may do with each scope entry ('read' | 'suggest' | 'write'), keyed like file_scope_ids.
+  fileScopeAccess: jsonb('file_scope_access').$type<Record<string, string>>().notNull().default({}),
   activeBranchLeafId: uuid('active_branch_leaf_id'),
   activeResponseId: uuid('active_response_id'),
   expiresAt: timestamp('expires_at', { withTimezone: true }),
@@ -873,6 +875,9 @@ export const fileNodes = pgTable('file_nodes', {
   // A chosen FileColor and FileIcon; null keeps the kind's own.
   color: text('color'),
   icon: text('icon'),
+  // Set while the item is an agent's suggestion awaiting review (see file_changes). Not a foreign
+  // key: backups leave out change history, and a restored suggestion can still be reviewed.
+  suggestionChangeId: uuid('suggestion_change_id'),
   ...timestamps,
 }, (table) => [
   uniqueIndex('file_nodes_owner_system_role_unique').on(table.ownerUserId, table.systemRole).where(sql`${table.systemRole} is not null`),
@@ -942,21 +947,50 @@ export const fileFolderLayouts = pgTable('file_folder_layouts', {
 ])
 
 /**
- * What an agent response changed in Files, so the whole response can be undone: the Markdown a
- * document had before the response first edited it, or an item the response created.
+ * What an agent reply did to Files, one row per (reply, item, kind of change). Write-mode rows
+ * hold the item's state before and after the reply so the reply can be undone and redone;
+ * Suggest-mode rows hold the proposed state until the owner accepts or rejects it. Documents
+ * changed in Suggest mode carry their proposals inline as marks tagged with the row's id.
  */
-export const fileAgentChanges = pgTable('file_agent_changes', {
+export const fileChanges = pgTable('file_changes', {
   id: uuid('id').primaryKey(),
+  seq: bigint('seq', { mode: 'number' }).notNull().generatedAlwaysAsIdentity(),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  chatId: uuid('chat_id').notNull().references(() => chats.id, { onDelete: 'cascade' }),
   responseId: uuid('response_id').notNull().references(() => responses.id, { onDelete: 'cascade' }),
+  nodeId: uuid('node_id').notNull().references(() => fileNodes.id, { onDelete: 'cascade' }),
+  mode: text('mode').notNull(),
+  kind: text('kind').notNull(),
+  status: text('status').notNull(),
+  before: jsonb('before').$type<Record<string, unknown>>(),
+  after: jsonb('after').$type<Record<string, unknown>>(),
+  ...timestamps,
+}, (table) => [
+  uniqueIndex('file_changes_response_node_kind_unique').on(table.responseId, table.nodeId, table.kind),
+  index('file_changes_user_created_idx').on(table.userId, table.createdAt),
+  index('file_changes_node_idx').on(table.nodeId),
+  index('file_changes_chat_pending_idx').on(table.chatId).where(sql`${table.status} = 'pending'`),
+  check('file_changes_mode_check', sql`${table.mode} in ('write', 'suggest')`),
+  check('file_changes_kind_check', sql`${table.kind} in ('create', 'update', 'move', 'trash')`),
+  check('file_changes_status_check', sql`${table.status} in ('applied', 'undone', 'pending', 'accepted', 'rejected')`),
+])
+
+/**
+ * Stored content of an uploaded file that is not its current content: what an agent replaced
+ * (kept for undo) or proposed (awaiting review). Counts toward the owner's storage.
+ */
+export const fileVersions = pgTable('file_versions', {
+  objectKey: text('object_key').primaryKey(),
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   nodeId: uuid('node_id').notNull().references(() => fileNodes.id, { onDelete: 'cascade' }),
-  kind: text('kind').notNull(),
-  beforeMarkdown: text('before_markdown'),
-  revertedAt: timestamp('reverted_at', { withTimezone: true }),
+  sizeBytes: bigint('size_bytes', { mode: 'number' }).notNull(),
+  mimeType: text('mime_type'),
+  checksum: text('checksum'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
-  uniqueIndex('file_agent_changes_response_node_unique').on(table.responseId, table.nodeId),
-  check('file_agent_changes_kind_check', sql`${table.kind} in ('edit', 'create')`),
+  index('file_versions_user_idx').on(table.userId),
+  index('file_versions_node_idx').on(table.nodeId),
+  check('file_versions_size_check', sql`${table.sizeBytes} >= 0`),
 ])
 
 export const episodicMemoryGenerations = pgTable('episodic_memory_generations', {

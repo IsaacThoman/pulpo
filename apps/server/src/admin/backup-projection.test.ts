@@ -26,7 +26,6 @@ describe('temporary chat backup projection', () => {
       shelved_drafts: [{ id: 'shelf', attachment_data: [{ id: 'safe-file' }, { id: 'queued-file' }] }],
       shelved_draft_attachments: [{ draft_id: 'shelf', attachment_id: 'safe-file' }, { draft_id: 'shelf', attachment_id: 'queued-file' }],
       request_analytics: [{ id: 'billing', response_id: 'temporary-response', cost_micros: 42 }],
-      file_agent_changes: [{ id: 'undo-temporary', response_id: 'temporary-response' }],
     })
     const projected = projectFullBackup(source)
     expect(projected.database.queued_messages).toEqual([{ id: 'saved-queue', chat_id: 'saved', attachment_ids: ['safe-file'] }])
@@ -35,7 +34,6 @@ describe('temporary chat backup projection', () => {
     expect(projected.database.shelved_draft_attachments).toHaveLength(1)
     expect(projected.database.attachments).toHaveLength(1)
     expect(projected.database.request_analytics).toEqual([{ id: 'billing', response_id: null, cost_micros: 42 }])
-    expect(projected.database.file_agent_changes).toEqual([])
     expect((source.composer_drafts[1]!.state as { attachments: unknown[] }).attachments).toHaveLength(2)
   })
 

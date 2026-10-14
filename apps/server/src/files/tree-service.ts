@@ -36,6 +36,7 @@ export function toFileNode(row: FileNodeRow): FileNode {
     color: (row.color as FileColor | null) ?? null,
     icon: (row.icon as FileIcon | null) ?? null,
     sortOrder: row.sortOrder,
+    suggestion: row.suggestionChangeId ? { changeId: row.suggestionChangeId } : null,
   }
 }
 

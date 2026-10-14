@@ -6,6 +6,9 @@ import { Node as ProseMirrorNode, type Schema } from '@tiptap/pm/model'
 import StarterKit from '@tiptap/starter-kit'
 import { updateYFragment, yXmlFragmentToProsemirrorJSON } from '@tiptap/y-tiptap'
 import type * as Y from 'yjs'
+import { docView, type DocView } from './suggestions.js'
+
+export * from './suggestions.js'
 
 // Re-exporting these types keeps the extensions' command typings (toggleBold, insertTable, …)
 // visible to editors that build on this schema through the emitted declarations.
@@ -53,17 +56,30 @@ export function docJSONToMarkdown(json: JSONContent): string {
   return markdownManager().serialize(json)
 }
 
-export function ydocToMarkdown(doc: Y.Doc): string {
-  return docJSONToMarkdown(yXmlFragmentToProsemirrorJSON(doc.getXmlFragment(DOC_FRAGMENT_NAME)))
+/** The document as a ProseMirror node, suggestions included. */
+export function ydocToNode(doc: Y.Doc): ProseMirrorNode {
+  return ProseMirrorNode.fromJSON(docSchema(), yXmlFragmentToProsemirrorJSON(doc.getXmlFragment(DOC_FRAGMENT_NAME)))
 }
 
 /**
- * Rewrites the document to match `source` as a minimal diff. Callers must use this instead of
+ * The document's Markdown. `base` (the default, for previews, downloads, and search) leaves out
+ * pending suggestions; `proposed` reads as if they were all accepted, which is what agents see.
+ */
+export function ydocToMarkdown(doc: Y.Doc, view: DocView = 'base'): string {
+  return docJSONToMarkdown(docView(ydocToNode(doc), view).toJSON())
+}
+
+/**
+ * Rewrites the document to match `node` as a minimal diff. Callers must use this instead of
  * replacing state: replicas that still hold the old content would merge it back in.
  */
-export function applyMarkdownToYDoc(doc: Y.Doc, source: string, origin?: unknown): void {
-  const node = ProseMirrorNode.fromJSON(docSchema(), markdownToDocJSON(source))
+export function applyNodeToYDoc(doc: Y.Doc, node: ProseMirrorNode, origin?: unknown): void {
   doc.transact(() => {
     updateYFragment(doc, doc.getXmlFragment(DOC_FRAGMENT_NAME), node, { mapping: new Map(), isOMark: new Map() })
   }, origin)
+}
+
+/** Rewrites the document to match `source` as a minimal diff (see `applyNodeToYDoc`). */
+export function applyMarkdownToYDoc(doc: Y.Doc, source: string, origin?: unknown): void {
+  applyNodeToYDoc(doc, ProseMirrorNode.fromJSON(docSchema(), markdownToDocJSON(source)), origin)
 }

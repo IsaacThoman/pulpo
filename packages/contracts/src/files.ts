@@ -107,6 +107,11 @@ export const fileNodeSchema = z.object({
   icon: fileIconSchema.nullable().optional(),
   /** Position among the folder's items, chats included: ascending, newest first on ties. */
   sortOrder: z.number().int().optional(),
+  /**
+   * Set while the item is an agent's suggestion the owner has not accepted yet: it was created by
+   * an agent working in Suggest mode, and rejecting the suggestion deletes it.
+   */
+  suggestion: z.object({ changeId: z.uuid() }).nullable().optional(),
   /** What a shortcut opens. `available` is false while the target is in the trash. */
   target: z.object({
     kind: z.enum(['folder', 'doc', 'blob', 'chat']),
@@ -337,4 +342,82 @@ export interface FileConversionPreview {
   converted: string
   /** False when only line endings or trailing whitespace would change. */
   changed: boolean
+}
+
+/**
+ * What an agent may do with a Files item attached to a chat. `read`: look only. `suggest`: its
+ * changes wait for the owner to accept or reject them (documents show them inline). `write`: its
+ * changes apply right away and can be undone per reply.
+ */
+export const FILE_ACCESS_MODES = ['read', 'suggest', 'write'] as const
+export const fileAccessModeSchema = z.enum(FILE_ACCESS_MODES)
+export type FileAccessMode = z.infer<typeof fileAccessModeSchema>
+export const DEFAULT_FILE_ACCESS_MODE: FileAccessMode = 'suggest'
+
+/** The kinds of change an agent makes to Files. `update` is new content; `move` includes renames. */
+export const fileChangeKindSchema = z.enum(['create', 'update', 'move', 'trash'])
+export type FileChangeKind = z.infer<typeof fileChangeKindSchema>
+
+/**
+ * `applied`/`undone`: a Write-mode change and whether the reply's undo is in effect.
+ * `pending`/`accepted`/`rejected`: a Suggest-mode change awaiting or after the owner's review.
+ */
+export const fileChangeStatusSchema = z.enum(['applied', 'undone', 'pending', 'accepted', 'rejected'])
+export type FileChangeStatus = z.infer<typeof fileChangeStatusSchema>
+
+/** One item an agent reply changed, as listed under that reply. */
+export interface FileChangeSummary {
+  id: string
+  nodeId: string
+  /** The item's current name; it may since have been renamed. */
+  name: string
+  nodeKind: 'folder' | 'doc' | 'blob'
+  mimeType: string | null
+  kind: FileChangeKind
+  mode: 'write' | 'suggest'
+  status: FileChangeStatus
+  /** Unresolved inline suggestions, for a document changed in Suggest mode. */
+  pendingSuggestions?: number
+  /** For moves: where the item was and where it goes. Paths are from the top of My files. */
+  fromPath?: string
+  toPath?: string
+  /** For new content of an uploaded file: the sizes before and after. */
+  fromSizeBytes?: number
+  toSizeBytes?: number
+  /** False once the item is permanently deleted or the change expired. */
+  available: boolean
+}
+
+export interface FileChangesResponse {
+  changes: FileChangeSummary[]
+  /** Every Write-mode change is applied and can be undone together. */
+  canUndo: boolean
+  /** Every Write-mode change is undone and can be redone together. */
+  canRedo: boolean
+}
+
+/**
+ * Why an undo or redo was refused: the item changed after the agent's reply. Documents carry
+ * the Markdown the reply left (`expected`) and what is there now (`current`).
+ */
+export interface FileChangeConflict {
+  changeId: string
+  nodeId: string
+  name: string
+  kind: FileChangeKind
+  reason: 'edited' | 'moved' | 'trashed' | 'deleted' | 'restored' | 'replaced'
+  expected?: string
+  current?: string
+}
+
+export interface FileChangeConflictBody {
+  error: { code: 'file_changes_conflict'; message: string; conflicts: FileChangeConflict[] }
+}
+
+/** A reply's response item announcing it changed Files; the details come from the changes API. */
+export interface FileChangesItem {
+  type: 'pulpo_file_changes'
+  id: string
+  /** Items the reply changed so far. */
+  count: number
 }

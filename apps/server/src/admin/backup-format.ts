@@ -5,7 +5,7 @@ export const FULL_BACKUP_TABLES = [
   // Chats are filed in Files folders, so the Files tree is restored before them.
   'models', 'model_user_grants', 'model_pricing_versions', 'model_presets', 'model_preset_choices', 'file_nodes', 'chats', 'responses',
   'response_items', 'response_content_parts', 'chat_shares', 'attachments', 'image_generation_requests', 'user_memory_documents', 'user_memory_document_revisions',
-  'file_docs', 'file_doc_updates', 'file_folder_layouts', 'file_agent_changes',
+  'file_docs', 'file_doc_updates', 'file_folder_layouts',
   'queued_messages', 'composer_drafts', 'composer_draft_attachments', 'shelved_drafts', 'shelved_draft_attachments', 'shelf_operations',
   'episodic_memory_generations', 'chat_turn_embeddings', 'episodic_memory_metric_buckets',
   'api_keys', 'management_tokens', 'api_key_model_permissions', 'credit_ledger', 'usage_events', 'daily_usage_rollups', 'application_settings',
@@ -45,7 +45,7 @@ export const OPTIONAL_TABLES_IN_LEGACY_BACKUPS: readonly FullBackupTable[] = [
   'chat_turn_embeddings',
   'episodic_memory_metric_buckets',
   'pools', 'pool_members', 'pool_invitations', 'invite_codes', 'user_passkey_credentials', 'user_provider_credentials',
-  'file_nodes', 'file_docs', 'file_doc_updates', 'file_folder_layouts', 'file_agent_changes',
+  'file_nodes', 'file_docs', 'file_doc_updates', 'file_folder_layouts',
   'queued_messages', 'composer_drafts', 'composer_draft_attachments', 'shelved_drafts', 'shelved_draft_attachments', 'shelf_operations',
   'billing_accounts', 'billing_subscriptions', 'billing_checkouts', 'billing_auto_top_ups', 'billing_orders', 'billing_webhook_events',
   'weekly_usage_periods', 'five_hour_usage_periods', 'shared_allowance_periods', 'shared_five_hour_usage_periods',

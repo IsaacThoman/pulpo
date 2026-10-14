@@ -1,5 +1,5 @@
 import { and, eq, inArray, isNull, ne } from 'drizzle-orm'
-import { FILE_SCOPE_ROOT } from '@pulpo/contracts'
+import { FILE_SCOPE_ROOT, type FileAccessMode } from '@pulpo/contracts'
 import { db } from '../database/client.js'
 import { fileNodes } from '../database/schema.js'
 import { AppError } from '../lib/errors.js'
@@ -22,4 +22,12 @@ export async function assertFileScope(userId: string, scopeIds: readonly string[
   if (found.length !== nodeIds.length) {
     throw new AppError(400, 'invalid_file_scope', 'Choose items from your files')
   }
+}
+
+/** Keeps the access modes of entries still in the scope; entries without one use the default. */
+export function scopedFileAccess(scopeIds: readonly string[], access: Readonly<Record<string, string>>): Record<string, FileAccessMode> {
+  const ids = new Set(scopeIds)
+  return Object.fromEntries(Object.entries(access).filter((entry): entry is [string, FileAccessMode] => (
+    ids.has(entry[0]) && (entry[1] === 'read' || entry[1] === 'suggest' || entry[1] === 'write')
+  )))
 }
