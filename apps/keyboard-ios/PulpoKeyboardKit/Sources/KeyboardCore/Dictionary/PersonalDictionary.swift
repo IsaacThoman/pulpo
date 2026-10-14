@@ -136,15 +136,20 @@ public final class PersonalDictionary {
   }
 
   private func prune() {
-    let keptWords = words.sorted { score($0.value) > score($1.value) }.prefix(Self.maximumWords * 9 / 10)
-    words = Dictionary(uniqueKeysWithValues: keptWords.map { ($0.key, $0.value) })
-    let keptPairs = pairs.sorted { $0.value > $1.value }.prefix(Self.maximumPairs * 9 / 10)
+    // One reference time keeps the ordering consistent while sorting; equal
+    // scores and counts fall back to the text, independent of hashing order.
+    let now = Date().timeIntervalSince1970
+    let keptWords = words.map { (word: $0.key, entry: $0.value, score: Self.score($0.value, now: now)) }
+      .sorted { $0.score != $1.score ? $0.score > $1.score : $0.word < $1.word }
+      .prefix(Self.maximumWords * 9 / 10)
+    words = Dictionary(uniqueKeysWithValues: keptWords.map { ($0.word, $0.entry) })
+    let keptPairs = pairs.sorted { $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key }.prefix(Self.maximumPairs * 9 / 10)
     pairs = Dictionary(uniqueKeysWithValues: keptPairs.map { ($0.key, $0.value) })
     rebuildIndexes()
   }
 
-  private func score(_ word: Word) -> Double {
-    let ageDays = (Date().timeIntervalSince1970 - word.lastUsed) / 86_400
+  private static func score(_ word: Word, now: Double) -> Double {
+    let ageDays = (now - word.lastUsed) / 86_400
     return Double(word.count) * (word.pinned ? 4 : 1) / (1 + ageDays / 30)
   }
 
@@ -171,8 +176,11 @@ public final class PersonalDictionary {
     successors[previous.lowercased()]?.values.reduce(0, +) ?? 0
   }
 
+  /// Most frequent first. Equal counts are ordered by word, so predictions do not
+  /// depend on the process's dictionary hashing order.
   public func successors(of previous: String) -> [(word: String, count: Int)] {
-    (successors[previous.lowercased()] ?? [:]).map { ($0.key, $0.value) }.sorted { $0.count > $1.count }
+    (successors[previous.lowercased()] ?? [:]).map { ($0.key, $0.value) }
+      .sorted { $0.count != $1.count ? $0.count > $1.count : $0.word < $1.word }
   }
 
   /// Known personal and transient words with the same lookup key.
