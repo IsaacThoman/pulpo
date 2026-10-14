@@ -66,6 +66,11 @@ struct TapSlipCorrectionTests {
     #expect(correction(centered(typed), after: previous) == expected)
   }
 
+  @Test(arguments: ["Pletcher", "Wilmoth", "Gonzalez", "Minuster"])
+  func titleCasedUnknownWordsInsideASentenceStayLiteral(name: String) {
+    #expect(correction(centered(name), after: "to") == nil)
+  }
+
   @Test func twoSlipsNeedStrongContextAndNoCloseRival() {
     #expect(correction(centered("vofeo"), after: "play") == "video")
     // Two dropped letters are not two touch slips, however common the result.
