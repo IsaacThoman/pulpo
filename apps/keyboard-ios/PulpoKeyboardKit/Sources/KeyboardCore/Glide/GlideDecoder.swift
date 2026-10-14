@@ -61,6 +61,21 @@ public final class GlideDecoder {
   /// timestamp don't look infinitely fast. Gestures shorter than two spans
   /// decode as if they had no times.
   public var speedWindow = 0.03
+  /// Recorded swipes often lift past the last letter, continuing along the final
+  /// stroke. That letter may be credited this far beyond its key, in pitches, at
+  /// a Gaussian cost; a word whose last stroke points elsewhere gets no credit.
+  public var endOvershootLimit = 0.8
+  public var endOvershootSigma = 0.5
+  /// A finger that slows to a stop meant to end where it lifted, so the credit
+  /// scales with lift-off speed (the last `liftWindow` seconds, relative to the
+  /// gesture's average): none below the floor, all of it from the ceiling.
+  /// Without usable times there is no credit, as before.
+  public var overshootSpeedFloor = 0.1
+  public var overshootSpeedCeiling = 0.5
+  public var liftWindow = 0.05
+  /// With a known previous word, the language model's likeliest continuations are
+  /// also scored when their first or last key lies outside the endpoint buckets.
+  public var contextSeedLimit = 16
 
   public init(model: LanguageModel, geometry: LetterGeometry = .qwerty) {
     self.model = model
@@ -220,6 +235,12 @@ public final class GlideDecoder {
     let arcSamples = Self.resample(points, count: sampleCount)
     let corners = Self.corners(in: arcSamples, length: gestureLength, threshold: cornerAngle)
     let cues = timed ? timingCues(points: points, times: times, length: gestureLength) : nil
+    // Lift-off speed comes from the raw touches: deduplication drops the slow
+    // final samples of a finger that came to rest.
+    let lift = timed ? rawTimes.flatMap { Self.liftSpeed(points: rawPoints, times: $0, window: liftWindow) } : nil
+    let overshoot = lift.map {
+      endOvershootLimit * min(1, max(0, ($0 - overshootSpeedFloor) / max(overshootSpeedCeiling - overshootSpeedFloor, 1e-6)))
+    } ?? 0
     let samples = cues?.samples ?? arcSamples
     let starts = geometry.letters(near: first, radius: endpointRadius, limit: endpointLetterLimit)
     let ends = geometry.letters(near: last, radius: endpointRadius, limit: endpointLetterLimit)
@@ -238,16 +259,17 @@ public final class GlideDecoder {
         previousByte = byte
       }
       guard template.count >= 2 else { return }
+      let travel = overshoot > 0 ? Self.extendLastLetter(&template, to: last, limit: overshoot, sigma: endOvershootSigma) : 0
       let languageScore = languageWeight * model.logProbability(of: text, id: id, in: context)
-      // Spatial penalties are nonnegative apart from the bounded timing credit.
-      // The current top results provide a safe score bound before the more
-      // expensive path-shape alignment.
+      // Spatial penalties, including the overshoot cost, are nonnegative apart
+      // from the bounded timing credit. The current top results provide a safe
+      // score bound before the more expensive path-shape alignment.
       let cutoff = scored.count >= limit ? scored.values.min()! : -.infinity
       guard let spatial = spatialScore(samples: samples, gestureLength: gestureLength, template: template, corners: corners,
                                        letterCost: cues?.letterCost, letterCredit: cues?.letterCredit ?? 0,
                                        pauses: cues?.pauses ?? [], varianceScale: cues?.varianceScale ?? 1,
-                                       minimumScore: cutoff - languageScore) else { return }
-      let score = spatial + languageScore
+                                       minimumScore: cutoff - languageScore + travel) else { return }
+      let score = spatial - travel + languageScore
       if score > scored[text] ?? -.infinity { scored[text] = score }
       if scored.count > limit, let worst = scored.min(by: {
         $0.value != $1.value ? $0.value < $1.value : $0.key > $1.key
@@ -284,6 +306,15 @@ public final class GlideDecoder {
       }
       enqueue(position: next.position + 1, end: next.end, penalty: next.penalty)
     }
+    // A strongly predicted word is still scored when a noisy endpoint left its
+    // first or last key outside the buckets above; the spatial score decides.
+    if contextSeedLimit > 0, context.history != nil {
+      for (word, _) in model.predictions(in: context, limit: contextSeedLimit) {
+        guard let id = lexicon.id(of: word), lexicon.flags(id).contains(.glide) else { continue }
+        let length = lexicon.keyLength(id)
+        consider(text: word, id: id, key: (0..<length).lazy.map { self.lexicon.keyByte(id, $0) })
+      }
+    }
     for entry in model.personal.knownEntries {
       let word = entry.text
       let key = Array(entry.key.utf8)
@@ -295,6 +326,39 @@ public final class GlideDecoder {
       .sorted { $0.score != $1.score ? $0.score > $1.score : $0.text < $1.text }
       .prefix(limit)
       .map { $0 }
+  }
+
+  /// Speed over the last `window` seconds relative to the gesture's average speed,
+  /// or `nil` when the times can't tell (missing, all equal, or too short).
+  static func liftSpeed(points: [KeyPoint], times rawTimes: [Double], window: Double) -> Double? {
+    guard let times = cleanTimes(rawTimes, count: points.count), let end = times.last, let start = times.first else { return nil }
+    let duration = end - start
+    guard duration > 2 * window else { return nil }
+    let total = length(of: points)
+    guard total > 0 else { return nil }
+    var index = points.count - 1
+    var travelled = 0.0
+    repeat {
+      travelled += points[index - 1].distance(to: points[index])
+      index -= 1
+    } while index > 0 && end - times[index] < window
+    let span = end - times[index]
+    guard span > 0 else { return nil }
+    return (travelled / span) / (total / duration)
+  }
+
+  /// Moves the template's last letter forward along its final stroke to where
+  /// the finger lifted, up to `limit` pitches, and returns the Gaussian cost.
+  static func extendLastLetter(_ template: inout [KeyPoint], to lift: KeyPoint, limit: Double, sigma: Double) -> Double {
+    let k = template.count
+    let a = template[k - 2], b = template[k - 1]
+    let dx = b.x - a.x, dy = b.y - a.y
+    let norm = (dx * dx + dy * dy).squareRoot()
+    guard norm > 0 else { return 0 }
+    let shift = min(limit, max(0, ((lift.x - b.x) * dx + (lift.y - b.y) * dy) / norm))
+    guard shift > 0 else { return 0 }
+    template[k - 1] = KeyPoint(x: b.x + dx / norm * shift, y: b.y + dy / norm * shift)
+    return shift * shift / (2 * sigma * sigma)
   }
 
   /// Log-likelihood that the swipe was meant to trace `template`, or `nil` when it
