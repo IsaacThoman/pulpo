@@ -1,7 +1,22 @@
 import type { JSONContent } from '@tiptap/core'
+import { Node as ProseMirrorNode } from '@tiptap/pm/model'
 import { describe, expect, it } from 'vitest'
 import * as Y from 'yjs'
-import { applyMarkdownToYDoc, markdownToDocJSON, ydocToMarkdown } from './index.js'
+import {
+  applyMarkdownToYDoc,
+  docJSONToMarkdown,
+  docSchema,
+  DOC_SCHEMA_VERSION,
+  formatBlockSuggestion,
+  hasSuggestions,
+  markdownToDocJSON,
+  parseBlockSuggestion,
+  SUGGESTION_BLOCK_ATTR,
+  SUGGESTION_DELETE_MARK,
+  SUGGESTION_INSERT_MARK,
+  suggestionFromMark,
+  ydocToMarkdown,
+} from './index.js'
 
 const sample = `# Plan
 
@@ -76,5 +91,59 @@ describe('document schema', () => {
     const started = performance.now()
     expect(markdownToDocJSON(long).content).toHaveLength(4000 + 80 * 2)
     expect(performance.now() - started).toBeLessThan(1500)
+  })
+})
+
+describe('suggestion schema', () => {
+  const schema = docSchema()
+
+  it('adds the suggestion marks and the block attribute', () => {
+    expect(DOC_SCHEMA_VERSION).toBe(2)
+    const insert = schema.marks[SUGGESTION_INSERT_MARK]!.create({ id: 'h1', changeId: 'c1' })
+    expect(insert.type.spec.inclusive).toBe(false)
+    expect(insert.type.spec.parseDOM).toBeUndefined()
+    expect(insert.type.spec.toDOM!(insert, true)).toEqual(['span', { class: 'pulpo-suggestion-insert', 'data-suggestion-id': 'h1', 'data-change-id': 'c1' }, 0])
+    const remove = schema.marks[SUGGESTION_DELETE_MARK]!.create({ id: 'h1', changeId: 'c1' })
+    expect(remove.type.spec.toDOM!(remove, true)).toEqual(['span', { class: 'pulpo-suggestion-delete', 'data-suggestion-id': 'h1', 'data-change-id': 'c1' }, 0])
+    // A text can be inserted or deleted, never both.
+    expect(remove.addToSet([insert])).toEqual([remove])
+    expect(suggestionFromMark(insert)).toEqual({ kind: 'insert', changeId: 'c1', id: 'h1' })
+    expect(suggestionFromMark(schema.marks.bold!.create())).toBeNull()
+
+    for (const name of ['paragraph', 'heading', 'blockquote', 'bulletList', 'orderedList', 'listItem', 'taskList', 'taskItem', 'codeBlock', 'horizontalRule', 'table', 'tableRow', 'tableCell', 'tableHeader']) {
+      expect(schema.nodes[name]!.spec.attrs?.[SUGGESTION_BLOCK_ATTR], name).toEqual({ default: null })
+    }
+    const value = formatBlockSuggestion({ kind: 'delete', changeId: 'c1', id: 'h2' })
+    const paragraph = schema.nodes.paragraph!.create({ [SUGGESTION_BLOCK_ATTR]: value })
+    expect(paragraph.type.spec.toDOM!(paragraph)).toEqual(['p', { 'data-suggestion': 'delete', 'data-suggestion-id': 'h2', 'data-change-id': 'c1' }, 0])
+    expect(schema.nodes.paragraph!.spec.toDOM!(schema.nodes.paragraph!.create())).toEqual(['p', {}, 0])
+    expect(parseBlockSuggestion(value)).toEqual({ kind: 'delete', changeId: 'c1', id: 'h2' })
+    expect(parseBlockSuggestion('bogus|c1|h2')).toBeNull()
+  })
+
+  it('lets code carry suggestions while still excluding formatting', () => {
+    for (const mark of Object.values(schema.marks)) {
+      const suggestion = mark.name === SUGGESTION_INSERT_MARK || mark.name === SUGGESTION_DELETE_MARK
+      expect(schema.marks.code!.excludes(mark), mark.name).toBe(!suggestion)
+      expect(schema.nodes.codeBlock!.allowsMarkType(mark), mark.name).toBe(suggestion)
+    }
+  })
+
+  it('never reads suggestions from Markdown or HTML in it', () => {
+    const json = markdownToDocJSON('<span class="pulpo-suggestion-insert" data-suggestion-id="x" data-change-id="y">hi</span>\n\n<p data-suggestion="insert|y|x">para</p>')
+    expect(hasSuggestions(ProseMirrorNode.fromJSON(schema, json))).toBe(false)
+  })
+
+  it('serializes suggestion marks as plain text if they ever reach Markdown', () => {
+    const mark = (name: string) => schema.marks[name]!.create({ id: 'h1', changeId: 'c1' })
+    const paragraph = schema.nodes.paragraph!.create(null, [
+      schema.text('Keep '),
+      schema.text('this', [mark(SUGGESTION_DELETE_MARK)]),
+      schema.text('that', [schema.marks.bold!.create(), mark(SUGGESTION_INSERT_MARK)]),
+      schema.text(' word.'),
+    ])
+    const doc = schema.nodes.doc!.create(null, paragraph)
+    expect(hasSuggestions(doc)).toBe(true)
+    expect(docJSONToMarkdown(doc.toJSON())).toBe('Keep this**that** word.')
   })
 })

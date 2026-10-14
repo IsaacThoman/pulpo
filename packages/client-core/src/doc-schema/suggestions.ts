@@ -1,4 +1,5 @@
-import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
+import { Extension, Mark, mergeAttributes, type AnyExtension } from '@tiptap/core'
+import type { Mark as ProseMirrorMark, Node as ProseMirrorNode } from '@tiptap/pm/model'
 import type { Transform } from '@tiptap/pm/transform'
 
 /**
@@ -19,6 +20,12 @@ export const SUGGESTION_INSERT_MARK = 'suggestionInsert'
 export const SUGGESTION_DELETE_MARK = 'suggestionDelete'
 export const SUGGESTION_BLOCK_ATTR = 'suggestion'
 
+/** Every block node type, so a suggestion can insert or delete any of them whole. */
+const SUGGESTION_BLOCK_TYPES = [
+  'paragraph', 'heading', 'blockquote', 'bulletList', 'orderedList', 'listItem', 'taskList', 'taskItem',
+  'codeBlock', 'horizontalRule', 'table', 'tableRow', 'tableCell', 'tableHeader',
+]
+
 export type SuggestionKind = 'insert' | 'delete'
 export type SuggestionAction = 'accept' | 'reject'
 export type DocView = 'base' | 'proposed'
@@ -38,6 +45,7 @@ export interface SuggestionHunk {
   deleted: string
   /** Document position of the hunk's first piece. */
   from: number
+  /** Document position where the hunk's last piece ends. */
   to: number
 }
 
@@ -50,6 +58,80 @@ export function parseBlockSuggestion(value: unknown): SuggestionRef | null {
   const [kind, changeId, id] = value.split('|')
   if ((kind !== 'insert' && kind !== 'delete') || !changeId || !id) return null
   return { kind, changeId, id }
+}
+
+/** The suggestion an inline mark stands for, if it is a suggestion mark. */
+export function suggestionFromMark(mark: ProseMirrorMark): SuggestionRef | null {
+  const kind = mark.type.name === SUGGESTION_INSERT_MARK ? 'insert' : mark.type.name === SUGGESTION_DELETE_MARK ? 'delete' : null
+  const { id, changeId } = mark.attrs
+  return kind && typeof id === 'string' && typeof changeId === 'string' ? { kind, changeId, id } : null
+}
+
+function suggestionMark(name: string, className: string) {
+  return Mark.create({
+    name,
+    // Typing next to a suggestion is the user's own text, not part of it.
+    inclusive: false,
+    excludes: `${SUGGESTION_INSERT_MARK} ${SUGGESTION_DELETE_MARK}`,
+    addAttributes() {
+      return {
+        id: { default: null, renderHTML: (attrs) => ({ 'data-suggestion-id': attrs.id }) },
+        changeId: { default: null, renderHTML: (attrs) => ({ 'data-change-id': attrs.changeId }) },
+      }
+    },
+    // No parseHTML: pasted or imported HTML must never smuggle in suggestions.
+    renderHTML({ HTMLAttributes }) {
+      return ['span', mergeAttributes({ class: className }, HTMLAttributes), 0]
+    },
+  })
+}
+
+/** The suggestion marks and block attribute; part of `createDocExtensions()`. */
+export function createSuggestionExtensions(): AnyExtension[] {
+  return [
+    suggestionMark(SUGGESTION_INSERT_MARK, 'pulpo-suggestion-insert'),
+    suggestionMark(SUGGESTION_DELETE_MARK, 'pulpo-suggestion-delete'),
+    Extension.create({
+      name: 'suggestionBlocks',
+      addGlobalAttributes() {
+        return [{
+          types: SUGGESTION_BLOCK_TYPES,
+          attributes: {
+            [SUGGESTION_BLOCK_ATTR]: {
+              default: null,
+              // Splitting a suggested block starts a block of the user's own.
+              keepOnSplit: false,
+              parseHTML: () => null,
+              renderHTML: (attrs) => {
+                const ref = parseBlockSuggestion(attrs[SUGGESTION_BLOCK_ATTR])
+                return ref ? { 'data-suggestion': ref.kind, 'data-suggestion-id': ref.id, 'data-change-id': ref.changeId } : {}
+              },
+            },
+          },
+        }]
+      },
+    }),
+  ]
+}
+
+function inlineSuggestion(node: ProseMirrorNode): SuggestionRef | null {
+  for (const mark of node.marks) {
+    const ref = suggestionFromMark(mark)
+    if (ref) return ref
+  }
+  return null
+}
+
+/** Whether `node` or anything inside it carries a suggestion. */
+export function hasSuggestions(node: ProseMirrorNode): boolean {
+  if (parseBlockSuggestion(node.attrs[SUGGESTION_BLOCK_ATTR]) || inlineSuggestion(node)) return true
+  let found = false
+  node.descendants((child) => {
+    if (found) return false
+    found = !!parseBlockSuggestion(child.attrs[SUGGESTION_BLOCK_ATTR]) || !!inlineSuggestion(child)
+    return !found
+  })
+  return found
 }
 
 /** Every unresolved hunk in document order. */

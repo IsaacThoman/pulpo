@@ -1,21 +1,26 @@
 import { flattenExtensions, getExtensionField, getSchema, type AnyExtension, type JSONContent, type MarkdownTokenizer } from '@tiptap/core'
+import { Code } from '@tiptap/extension-code'
+import { CodeBlock } from '@tiptap/extension-code-block'
 import { TaskItem, TaskList } from '@tiptap/extension-list'
 import { TableKit } from '@tiptap/extension-table'
 import { MarkdownManager } from '@tiptap/markdown'
 import type { Schema } from '@tiptap/pm/model'
 import StarterKit from '@tiptap/starter-kit'
+import { createSuggestionExtensions, SUGGESTION_DELETE_MARK, SUGGESTION_INSERT_MARK } from './suggestions.js'
 
 // Re-exporting these types keeps the extensions' command typings (toggleBold, insertTable, …)
 // visible to editors that build on this schema through the emitted declarations.
 export type { StarterKitOptions } from '@tiptap/starter-kit'
 export type { TaskListOptions } from '@tiptap/extension-list'
 export type { TableKitOptions } from '@tiptap/extension-table'
+export type { CodeOptions } from '@tiptap/extension-code'
+export type { CodeBlockOptions } from '@tiptap/extension-code-block'
 
 /**
  * Bump whenever the editor's node or mark set changes. Servers refuse collaborative joins from
  * other versions, because y-prosemirror silently drops content an older schema cannot represent.
  */
-export const DOC_SCHEMA_VERSION = 1
+export const DOC_SCHEMA_VERSION = 2
 /** The Y.XmlFragment that holds a document; matches TipTap Collaboration's default field. */
 export const DOC_FRAGMENT_NAME = 'default'
 
@@ -23,10 +28,15 @@ export const DOC_FRAGMENT_NAME = 'default'
 export function createDocExtensions(): AnyExtension[] {
   return [
     // History comes from Yjs, so ProseMirror's own undo stack stays off.
-    StarterKit.configure({ undoRedo: false, link: { openOnClick: false, autolink: true } }),
+    StarterKit.configure({ undoRedo: false, code: false, codeBlock: false, link: { openOnClick: false, autolink: true } }),
+    // Inline code still excludes every formatting mark (TipTap's default is all marks), but it
+    // and code blocks must be able to carry suggestions.
+    Code.extend({ excludes: 'bold code italic link strike underline' }),
+    CodeBlock.extend({ marks: `${SUGGESTION_INSERT_MARK} ${SUGGESTION_DELETE_MARK}` }),
     TaskList,
     TaskItem.configure({ nested: true }),
     TableKit.configure({ table: { resizable: false } }),
+    ...createSuggestionExtensions(),
   ]
 }
 
@@ -99,6 +109,7 @@ export function markdownToDocJSON(source: string): JSONContent {
   return markdownManager().parse(source)
 }
 
+/** Serializes a document without suggestions; resolve them first (see `docView`). */
 export function docJSONToMarkdown(json: JSONContent): string {
   return markdownManager().serialize(json)
 }
