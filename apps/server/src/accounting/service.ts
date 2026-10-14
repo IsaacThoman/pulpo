@@ -639,35 +639,59 @@ export async function retainBudgetReservation(responseId: string, amountMicros: 
   await db.transaction(async tx => {
     const [reservation] = await tx.select().from(budgetReservations).where(eq(budgetReservations.responseId, responseId)).for('update')
     if (!reservation || reservation.status !== 'pending') throw new AppError(409, 'reservation_missing', 'Budget reservation is unavailable')
-    // Nothing to release when usage outran the estimate; settlement covers the overrun.
-    if (amountMicros >= reservation.amountMicros) return
-    if (reservation.poolId) await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`pool:${reservation.poolId}`}))`)
-    const funders = await tx.select().from(budgetReservationFunders).where(eq(budgetReservationFunders.reservationId, reservation.id))
-    const allowanceFunders = await tx.select().from(budgetReservationAllowanceFunders).where(eq(budgetReservationAllowanceFunders.reservationId, reservation.id))
-    const ids = [...new Set([reservation.userId, ...funders.map(row => row.userId), ...allowanceFunders.map(row => row.ownerUserId)])].sort()
-    await tx.select({ id: users.id }).from(users).where(inArray(users.id, ids)).orderBy(users.id).for('update')
-    // This only returns unused funds; revoked keys and billing holds must not
-    // prevent retaining already incurred costs or change the original funders.
-    const allocation = allocateSettlementMicros(amountMicros, reservation.weeklyReservedMicros, reservation.fiveHourReservedMicros)
-    const shared = allocateSharedSettlementMicros(allocation.balanceMicros, allowanceFunders.map(row => ({ userId: row.ownerUserId, reservedMicros: row.reservedMicros })))
-    const sharedMicros = totalMicros(shared)
-    const balanceMicros = allocation.balanceMicros - sharedMicros
-    const funding = allocatePoolBalanceMicros({ amountMicros: balanceMicros, callerUserId: reservation.userId,
-      balances: funders.map(row => ({ userId: row.userId, availableMicros: row.reservedMicros })) })
-    for (const funder of funders) await tx.update(budgetReservationFunders).set({ reservedMicros: funding.get(funder.userId) ?? 0 })
-      .where(and(eq(budgetReservationFunders.reservationId, reservation.id), eq(budgetReservationFunders.userId, funder.userId)))
-    for (const funder of allowanceFunders) await tx.update(budgetReservationAllowanceFunders).set({ reservedMicros: shared.get(funder.ownerUserId) ?? 0 })
-      .where(and(eq(budgetReservationAllowanceFunders.reservationId, reservation.id), eq(budgetReservationAllowanceFunders.ownerUserId, funder.ownerUserId)))
-    await tx.update(budgetReservations).set({ amountMicros, weeklyReservedMicros: allocation.weeklyMicros,
-      fiveHourReservedMicros: allocation.fiveHourMicros, sharedReservedMicros: sharedMicros, balanceReservedMicros: balanceMicros,
-    }).where(eq(budgetReservations.id, reservation.id))
+    await shrinkLockedReservation(tx, reservation, amountMicros)
   })
+}
+
+/** Lower a locked pending reservation to `amountMicros` among its existing funders. */
+async function shrinkLockedReservation(
+  tx: Transaction,
+  reservation: typeof budgetReservations.$inferSelect,
+  amountMicros: number,
+): Promise<void> {
+  // Nothing to release when usage outran the estimate; settlement covers the overrun.
+  if (amountMicros >= reservation.amountMicros) return
+  if (reservation.poolId) await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`pool:${reservation.poolId}`}))`)
+  const funders = await tx.select().from(budgetReservationFunders).where(eq(budgetReservationFunders.reservationId, reservation.id))
+  const allowanceFunders = await tx.select().from(budgetReservationAllowanceFunders).where(eq(budgetReservationAllowanceFunders.reservationId, reservation.id))
+  const ids = [...new Set([reservation.userId, ...funders.map(row => row.userId), ...allowanceFunders.map(row => row.ownerUserId)])].sort()
+  await tx.select({ id: users.id }).from(users).where(inArray(users.id, ids)).orderBy(users.id).for('update')
+  // This only returns unused funds; revoked keys and billing holds must not
+  // prevent retaining already incurred costs or change the original funders.
+  const allocation = allocateSettlementMicros(amountMicros, reservation.weeklyReservedMicros, reservation.fiveHourReservedMicros)
+  const shared = allocateSharedSettlementMicros(allocation.balanceMicros, allowanceFunders.map(row => ({ userId: row.ownerUserId, reservedMicros: row.reservedMicros })))
+  const sharedMicros = totalMicros(shared)
+  const balanceMicros = allocation.balanceMicros - sharedMicros
+  const funding = allocatePoolBalanceMicros({ amountMicros: balanceMicros, callerUserId: reservation.userId,
+    balances: funders.map(row => ({ userId: row.userId, availableMicros: row.reservedMicros })) })
+  for (const funder of funders) await tx.update(budgetReservationFunders).set({ reservedMicros: funding.get(funder.userId) ?? 0 })
+    .where(and(eq(budgetReservationFunders.reservationId, reservation.id), eq(budgetReservationFunders.userId, funder.userId)))
+  for (const funder of allowanceFunders) await tx.update(budgetReservationAllowanceFunders).set({ reservedMicros: shared.get(funder.ownerUserId) ?? 0 })
+    .where(and(eq(budgetReservationAllowanceFunders.reservationId, reservation.id), eq(budgetReservationAllowanceFunders.ownerUserId, funder.ownerUserId)))
+  await tx.update(budgetReservations).set({ amountMicros, weeklyReservedMicros: allocation.weeklyMicros,
+    fiveHourReservedMicros: allocation.fiveHourMicros, sharedReservedMicros: sharedMicros, balanceReservedMicros: balanceMicros,
+  }).where(eq(budgetReservations.id, reservation.id))
 }
 
 export async function extendBudgetReservationFixedCost(responseId: string, additionalMicros: number): Promise<void> {
   if (!Number.isSafeInteger(additionalMicros) || additionalMicros < 0) throw new AppError(400, 'invalid_reservation_amount', 'Additional reservation must be a non-negative integer')
   if (additionalMicros === 0) return
   await updateReservationAmount(responseId, (_capacity, amountMicros) => ({ amountMicros: amountMicros + additionalMicros }))
+}
+
+/**
+ * Give back a fixed-cost extension whose call failed without incurring cost.
+ * Subtracts from the current hold so extensions other calls made meanwhile stay
+ * funded, and does nothing once the reservation is settled, released, or gone.
+ */
+export async function releaseBudgetReservationFixedCost(responseId: string, releasedMicros: number): Promise<void> {
+  if (!Number.isSafeInteger(releasedMicros) || releasedMicros < 0) throw new AppError(400, 'invalid_reservation_amount', 'Released reservation must be a non-negative integer')
+  if (releasedMicros === 0) return
+  await db.transaction(async tx => {
+    const [reservation] = await tx.select().from(budgetReservations).where(eq(budgetReservations.responseId, responseId)).for('update')
+    if (!reservation || reservation.status !== 'pending') return
+    await shrinkLockedReservation(tx, reservation, Math.max(0, reservation.amountMicros - releasedMicros))
+  })
 }
 
 export async function releaseBudget(responseId: string): Promise<void> {

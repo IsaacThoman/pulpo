@@ -694,6 +694,13 @@
       "when": 1791935022542,
       "tag": "0098_usage_tiers",
       "breakpoints": true
+    },
+    {
+      "idx": 99,
+      "version": "7",
+      "when": 1791936826692,
+      "tag": "0099_compaction_retained_user_tokens",
+      "breakpoints": true
     }
   ]
 }
