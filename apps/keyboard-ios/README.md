@@ -68,6 +68,12 @@ double-space period, curly quotes, automatic spaces after swipes and suggestions
 autocorrection. It edits through a small `TextDocument` protocol, so it runs the same
 against `UITextDocumentProxy`, a `UITextView`, or a test double.
 
+Sliding left from delete selects whole words. The suggestion bar previews them,
+lifting deletes them, and an Undo chip restores them. A delete that would undo an
+autocorrection waits for the lift, so a swipe that starts there never teaches the
+typo. Long-press strips open away from the screen edge with the first option over
+the key. Phone fields get a `+*#` page, and holding 0 types `+`.
+
 **Autocorrect and prediction.** The dictionary is a memory-mapped trie of 160k words.
 `SpellCorrector` runs a weighted Damerau-Levenshtein search over it where substitution
 costs come from how far each touch landed from the intended key. `Suggester` combines
@@ -97,7 +103,9 @@ the quoted literal, become valid. Learned words and word pairs are stored on dev
 the App Group and can be cleared in the app. Decoder choices are learned only when
 accepted by another edit or keyboard dismissal, so undo and swipe alternatives do not
 reinforce discarded results. Nothing is learned in password, username,
-one-time code, email, URL, or other private fields.
+one-time code, email, URL, or other private fields. A dictionary word typed once
+is already offered as a completion, and habitual sentence openers replace the
+default ones. `I` and names keep their capitals when learned.
 
 **Emoji.** The picker keeps full glyphs inside its grid in portrait and compact
 landscape, with recent choices and remembered skin tones. The suggestion bar also

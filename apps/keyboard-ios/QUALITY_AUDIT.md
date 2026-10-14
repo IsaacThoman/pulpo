@@ -47,6 +47,97 @@ speed reference comes from the browser phones used for the recordings; iPhone
 `HumanSwipeAuditTests` now replays recorded times by default.
 `PK_HUMAN_TIMING=none` reproduces the earlier spatial-only metric.
 
+### Suggestion-bar keystroke savings
+
+Earlier prediction audits counted next-word hits only. A new benchmark has an
+ideal typist enter held-out messages letter by letter through `KeyboardEngine`.
+The typist taps the intended word as soon as any slot shows it, and the automatic
+space counts. If space would wrongly change a correct word, the typist taps or
+undoes it. Each conversation starts with an empty personal dictionary, so learning
+within the session counts. Sources:
+
+- Topical-Chat validation turns for development; its frequent- and rare-topic
+  test turns for verification.
+- The dictionary builder's held-out SMS partition.
+- Out-of-domain Taskmaster-1 written dialogs (CC BY 4.0, pinned commit).
+
+Turns matching any training turn, training SMS or Tatoeba sentence were removed.
+Inputs, salts and acceptance criteria were frozen before the suggestion code was
+read; frozen definition SHA-256
+`43a22174db095d3f60ae92b75ec9e560fd04debe418e17eb233f24241ca39fc7`.
+
+| Frozen verification, evaluated once | Before | After |
+| --- | ---: | ---: |
+| Keystroke savings | 41.75% | **45.04%** |
+| Next-word top-3 at a word start | 30.07% | **31.21%** |
+| Top-3 at the start of a message | 24.93% | **28.89%** |
+| Intended word visible after 1 / 2 / 3 letters | 55.7 / 65.8 / 65.6% | **61.1 / 69.7 / 72.5%** |
+| Wrong automatic change of a valid word | 63 | 62 |
+| Engine text diverging from intent | 69 | **8** |
+
+Every source improved on verification: SMS +2.69, Taskmaster +4.28, frequent
+topics +2.92 and rare topics +3.17 points. Development rose from 42.11% to
+45.45%. The causes:
+
+- **Emoji displaced words.** Nearly every three-letter prefix starts some emoji
+  keyword (`tha` → 🙏 for "thanks"), so the emoji slot often replaced the only
+  completion. After everyday words such as `you` or `from` it replaced a
+  prediction. An emoji may now take a word's slot only for:
+  - an uncommon whole-word match
+  - a distinctive phrase such as `red hea`
+  - a partial word whose emoji matches another visible word (`piz` beside `pizza`)
+- **Learning lost capitals.** Typing `I` twice learned lowercase `i`, which then
+  disabled its own correction and was predicted; `Netflix` became `netflix`.
+  Learning now keeps a lowercase form only when that spelling really exists.
+- **Short unknown literals took a slot.** An unknown one- or two-letter prefix
+  used a slot that space already covers; it now gets a third completion. Unknown
+  words of three or more letters (`nah`, `sus`) still show a tappable literal.
+- **Session learning.** Dictionary words typed once in a session become
+  completions, and personal learning records how sentences start, so a habitual
+  `Okay` or `Sure` can replace the fixed openers.
+- **Duplicates and joins.** `I’m` no longer appears twice (curly versus straight
+  apostrophe), and choosing a word after a hyphen or slash no longer inserts a space.
+
+Human swipes and the Topical-Chat next-word holdout (84,587 / 137,406) are
+unchanged. The typist never mistypes, so typo recovery is outside this benchmark.
+Phones that already learned lowercase `i` no longer get it predicted, but the
+correction to `I` stays disabled for them. The emoji cutoff (log probability −8)
+was tuned on development data.
+Prepare with `scripts/prepare_ksr_benchmark.py`, run
+`PK_KSR_BENCH=<cases> swift test -c release --filter measureKeystrokeSavings`, and
+compare reports with `scripts/summarize_ksr_benchmark.py`.
+
+### Everyday interaction parity
+
+A frozen 56-item checklist compared daily interactions with the Apple keyboard
+and Gboard (SHA-256
+`98703ae7ee2e2c8d895c7e8aeabc9e87e4c9db771e986a2c5ef3d27c1df2b135`). It used an
+iOS 26.5 simulator and Gboard 15.1 on the Android emulator; Gboard iOS behavior
+is from documentation and was not run. Three gaps were found and fixed:
+
+- **Long-press strips on right-side keys** typed the far end of the strip when
+  released in place: `o → õ`, `u → ū`, `i → ì`, and `.com → .us`. Leftward strips
+  now mirror, as on Apple's keyboard and Gboard, so the first option sits above
+  the key. Selection moves one cell at a time from where the finger rested.
+- **Phone fields** could not type `+`, `*` or `#`, and name-or-phone fields showed
+  digits only. Phone pads now have a `+*#` page, holding 0 types `+`, and
+  name-or-phone fields use letters.
+- **Swipe left from delete**, Gboard's word deletion, was missing. One word is
+  selected after about 0.6 key widths, then one more per key width; Gboard
+  measured about one word at 60 dp, two at 100 dp and three at 135 dp. The bar
+  previews the words, lifting deletes them, returning to the key cancels, and an
+  Undo chip restores them until the next edit. A delete that would revert an
+  autocorrection or swiped word now acts on lift, about 100 ms later, so a swipe
+  never teaches the typo.
+
+Thirteen new core tests and 17 new UI tests cover these paths, including rolls,
+second fingers, cancellation and number pads. The deletion distances were
+calibrated against Android dp, not checked on a phone. Delete still removes one
+character on touch-down, as Apple's does; cancelling a swipe leaves that one
+character deleted. One-handed mode, emoji search in the picker and smart dashes
+remain unimplemented; `--` stays literal because command-line flags are common in
+this app's chats.
+
 ## Further iteration: emoji suggestions and stale choices
 
 The suggestion bar now offers one explicitly chosen emoji alongside word choices.
