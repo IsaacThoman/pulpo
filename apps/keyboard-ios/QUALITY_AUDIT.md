@@ -107,6 +107,63 @@ Prepare with `scripts/prepare_ksr_benchmark.py`, run
 `PK_KSR_BENCH=<cases> swift test -c release --filter measureKeystrokeSavings`, and
 compare reports with `scripts/summarize_ksr_benchmark.py`.
 
+### Randomized editing fuzzer
+
+A deterministic fuzzer drives `KeyboardEngine` with seeded sequences of taps,
+swipes, punctuation, shift, Backspace, word deletion, fresh and stale
+suggestions, emoji, dictation, field switches and dismissals. Host pastes,
+cursor moves, selections and edits arrive late, re-entrantly or not at all,
+through a simulated proxy that can lag, truncate or hide context. Nineteen
+invariants, the operation grammar and the seed ranges were frozen before the
+engine was read. Examples:
+
+- text after the cursor never changes;
+- edits stay inside the current token;
+- a multi-character Backspace exactly undoes the previous word edit;
+- stale suggestions change nothing;
+- capitalization follows the field;
+- private and address fields learn nothing;
+- the same seed always produces the same result.
+
+Failures shrink to minimal sequences, and the 17 found now replay as permanent
+regression tests. A 1,800-operation run is part of the normal suite;
+`PK_FUZZ_ITERATIONS` enables long runs.
+
+| Violations per 120,000 operations, truthful hosts / all | Before | After |
+| --- | ---: | ---: |
+| Development seeds 1–600 | 232 / 296 | 5 / 14 |
+| Held-out seeds 1,000,001–1,000,600 | 178 / 259 | 8 / 23 |
+| Second held-out range 3,000,001–3,000,600, never consulted | 201 / 264 | 7 / 16 |
+
+These are counts in a simulated host, not rates on a device. No crashes, timeouts
+or nondeterminism occurred in a further 760,000 operations. Seven editing bugs
+were fixed:
+
+1. A suggestion tapped before an existing space doubled it: `beautiful  world`.
+2. Typing after dictation, `.com`, a word delete or a selection didn't continue
+   the existing word, so a correction could rewrite part of it (`spacedLee`).
+3. A word delete with selected text also removed the preceding letter.
+4. Pastes, cursor moves, selections and cleared fields can reach the proxy
+   before their callback. A keystroke then acted on remembered text: a second
+   space deleted a letter, Backspace over a selection removed an extra character,
+   and a swipe after a cleared field doubled a space. The engine now reads the
+   proxy before every edit. Earlier states of its own edits and sliding context
+   windows are still treated as lag.
+5. Email, URL, username and private fields no longer get automatic spaces around
+   swipes. Several swiped words in such a field now join without spaces.
+6. Word-capitalized fields didn't capitalize a word after an owed swipe space.
+7. A sentence closed by a quote (`He said “hi.” then`) didn't capitalize the next
+   word.
+
+Several oracle corrections are recorded with the results, for example releasing a
+held Shift on dismissal; one was a harness mistake that caused all 43 frozen-baseline
+capitalization reports. The remaining violations come from a host edit that recreates
+one of the keyboard's own states within a second, such as a rejected insertion or a
+host undo. That is indistinguishable from proxy lag; two known-issue tests track it.
+Reading the proxy on every keystroke is new on-device behavior. Web views, Flutter and
+React Native fields need watching through the `laggingContextUpdates` and
+`externalContextChanges` diagnostics.
+
 ### Everyday interaction parity
 
 A frozen 56-item checklist compared daily interactions with the Apple keyboard
