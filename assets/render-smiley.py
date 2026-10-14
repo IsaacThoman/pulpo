@@ -3,6 +3,9 @@
 From the repository root:
     blender --background assets/smiley.blend --python-exit-code 1 \
         --python assets/render-smiley.py -- --size 8192
+
+Every mesh other than the eyes and smile renders as the body, so variants such as
+assets/pumpkin/pumpkin.blend render with --name and --output.
 """
 
 import argparse
@@ -17,13 +20,14 @@ def main():
     parser.add_argument('--size', type=int, default=8192)
     parser.add_argument('--samples', type=int, default=256)
     parser.add_argument('--output', type=Path, default=Path(__file__).parent / 'highres')
+    parser.add_argument('--name', default='pulpo-smiley', help='filename prefix for the layers')
     args = parser.parse_args(sys.argv[sys.argv.index('--') + 1:] if '--' in sys.argv else [])
     if args.size < 1 or args.samples < 1:
         parser.error('--size and --samples must be positive')
 
     scene = bpy.context.scene
-    body = scene.objects['yellow']
     face = [scene.objects[name] for name in ('left eye', 'right eye', 'smile')]
+    body = [obj for obj in scene.objects if obj.type == 'MESH' and obj not in face]
     args.output.mkdir(parents=True, exist_ok=True)
 
     scene.render.engine = 'CYCLES'
@@ -49,12 +53,14 @@ def main():
     scene.render.image_settings.color_depth = '8'
     scene.render.image_settings.compression = 100
 
-    for filename, show_body, show_face in (
-        ('pulpo-smiley', True, True),
-        ('pulpo-smiley-noface', True, False),
-        ('pulpo-smiley-justface', False, True),
+    for suffix, show_body, show_face in (
+        ('', True, True),
+        ('-noface', True, False),
+        ('-justface', False, True),
     ):
-        body.hide_render = not show_body
+        filename = args.name + suffix
+        for obj in body:
+            obj.hide_render = not show_body
         for obj in face:
             obj.hide_render = not show_face
         scene.render.filepath = str(args.output.resolve() / f'{filename}.png')
