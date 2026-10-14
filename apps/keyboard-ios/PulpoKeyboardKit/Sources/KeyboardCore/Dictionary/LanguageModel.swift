@@ -93,7 +93,10 @@ public final class LanguageModel {
     }
     if let previous = context.previousWord {
       for (word, _) in personal.successors(of: previous).prefix(limit * 2) where !personal.isBlocked(word) {
-        scored[word] = max(scored[word] ?? -.infinity, logProbability(of: word, id: lexicon.id(of: word), in: context))
+        let id = lexicon.id(of: word)
+        // Older personal dictionaries learned the pronoun as "i".
+        if let id, lexicon.display(id) == word, lexicon.flags(id).contains(.neverSuggest) { continue }
+        scored[word] = max(scored[word] ?? -.infinity, logProbability(of: word, id: id, in: context))
       }
     }
     // Unknown names and sparse histories should still offer usable next words.

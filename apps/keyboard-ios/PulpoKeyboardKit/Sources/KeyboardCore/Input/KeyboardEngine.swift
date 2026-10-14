@@ -587,7 +587,14 @@ public final class KeyboardEngine {
     var stored = normalized
     if let first = normalized.first, first.isUppercase, normalized.dropFirst().allSatisfy({ $0.isLowercase }) {
       let lowered = normalized.lowercased()
-      if context.sentenceStart ? !suggester.isValid(normalized) || suggester.isValid(lowered) : suggester.isValid(lowered) {
+      // Validity ignores case for names, so require a real lowercase spelling:
+      // "I" and "Netflix" must not be learned, then predicted, as "i" and "netflix".
+      let lexicon = suggester.lexicon
+      let lowercaseSpelling = personal.isKnown(lowered) || lexicon.isSupplementalLiteral(lowered) ||
+        lexicon.words(forKey: TextNormalizer.key(lowered)).contains {
+          lexicon.display($0) == lowered && !lexicon.flags($0).contains(.notAWord)
+        }
+      if context.sentenceStart ? !suggester.isValid(normalized) || lowercaseSpelling : lowercaseSpelling {
         stored = lowered
       }
     }
