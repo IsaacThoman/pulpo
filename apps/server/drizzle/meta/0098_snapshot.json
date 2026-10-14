@@ -1,5 +1,5 @@
 {
-  "id": "7e5607db-9ecc-4360-b688-e6a8daa7e05a",
+  "id": "92843d9c-4776-47fd-99ea-9ff3cf33c745",
   "prevId": "9d06f1f9-8328-4dab-89e7-406b1636fbeb",
   "version": "7",
   "dialect": "postgresql",
@@ -1073,6 +1073,12 @@
         },
         "five_hour_limit_override_micros": {
           "name": "five_hour_limit_override_micros",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "daily_limit_override_micros": {
+          "name": "daily_limit_override_micros",
           "type": "bigint",
           "primaryKey": false,
           "notNull": false
@@ -3904,6 +3910,72 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.daily_usage_periods": {
+      "name": "daily_usage_periods",
+      "schema": "",
+      "columns": {
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "period_start": {
+          "name": "period_start",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "spent_micros": {
+          "name": "spent_micros",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "daily_usage_periods_user_id_users_id_fk": {
+          "name": "daily_usage_periods_user_id_users_id_fk",
+          "tableFrom": "daily_usage_periods",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "daily_usage_periods_user_id_period_start_pk": {
+          "name": "daily_usage_periods_user_id_period_start_pk",
+          "columns": [
+            "user_id",
+            "period_start"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "daily_usage_periods_spent_check": {
+          "name": "daily_usage_periods_spent_check",
+          "value": "\"daily_usage_periods\".\"spent_micros\" >= 0"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.daily_usage_rollups": {
@@ -7082,13 +7154,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": 4
-        },
-        "compaction_retained_user_tokens": {
-          "name": "compaction_retained_user_tokens",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 20000
         },
         "execution_mode": {
           "name": "execution_mode",

@@ -11,6 +11,7 @@ import { parseDictationSettings } from '../settings/application-settings.js'
 import { GroqTranscriptionError, transcribeWithGroq } from './groq.js'
 import { chargeMeteredUsage } from '../accounting/service.js'
 import { dictationUsageMicros } from './billing.js'
+import { assertDailySpendAvailable } from '../billing/usage-tiers.js'
 
 export const MAX_DICTATION_BYTES = 10 * 1024 * 1024
 const SUPPORTED_AUDIO_TYPES = new Set([
@@ -28,6 +29,7 @@ export async function registerDictationRoutes(app: FastifyInstance): Promise<voi
     if (!settings.enabled || !settings.encryptedGroqApiKey) {
       throw new AppError(404, 'dictation_disabled', 'Dictation is not enabled')
     }
+    if (settings.billUsers) await assertDailySpendAvailable(user.id)
 
     let part: Awaited<ReturnType<typeof request.file>> = undefined
     try {

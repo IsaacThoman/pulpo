@@ -5,6 +5,7 @@ import { calculateCostMicros, calculateReservationMicros, type Pricing } from '.
 import { extendBudgetReservationFixedCost, getActivePricing, releaseBudgetReservationFixedCost } from '../accounting/service.js'
 import { db } from '../database/client.js'
 import { safeErrorMessage } from '../database/errors.js'
+import { DAILY_SPEND_LIMIT_CODE } from '../billing/usage-tiers.js'
 import { generationAttempts } from '../database/schema.js'
 import { AppError } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
@@ -19,8 +20,9 @@ export const EMPTY_USAGE: ResponseUsage = {
   totalTokens: 0,
 }
 
+/** Optional extra spend is skipped when the account cannot fund it or its daily cap is used up. */
 export function isInsufficientBalanceError(error: unknown): boolean {
-  return error instanceof AppError && error.code === 'insufficient_balance'
+  return error instanceof AppError && (error.code === 'insufficient_balance' || error.code === DAILY_SPEND_LIMIT_CODE)
 }
 
 export function modelCallUsage(usage: unknown): ResponseUsage {

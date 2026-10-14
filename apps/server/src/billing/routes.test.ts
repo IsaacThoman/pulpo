@@ -5,6 +5,7 @@ import {
   autoTopUpSettingsSchema,
   availableBillingBalanceMicros,
   billingLimitPercentage,
+  dailySpendSummary,
   fiveHourSummaryPercentages,
   isCreditOrderReason,
   registerBillingRoutes,
@@ -129,5 +130,26 @@ describe('automatic top-up settings', () => {
     expect(isCreditOrderReason('purchase')).toBe(true)
     expect(isCreditOrderReason('auto_top_up')).toBe(true)
     expect(isCreditOrderReason('subscription_cycle')).toBe(false)
+  })
+})
+
+describe('daily spend summary', () => {
+  const spend = {
+    tier: 1, next: null, limitMicros: 10_000_000, limitOverridden: false, spentMicros: 2_000_000, pendingMicros: 1_000_000,
+    remainingMicros: 7_000_000, paidCents: 800, firstPaidAt: new Date('2026-10-10T00:00:00Z'),
+    periodStart: new Date('2026-10-13T00:00:00Z'), resetAt: new Date('2026-10-14T00:00:00Z'),
+  }
+
+  it('reports remaining and reserved shares of the daily limit', () => {
+    expect(dailySpendSummary(spend)).toMatchObject({
+      tier: 1, remainingPercentage: 70, availableBarPercentage: 70, pendingBarPercentage: 10,
+      resetsAt: '2026-10-14T00:00:00.000Z', firstPaidAt: '2026-10-10T00:00:00.000Z',
+    })
+  })
+
+  it('shows a zero limit as used up and hides exempt accounts', () => {
+    expect(dailySpendSummary({ ...spend, limitMicros: 0, remainingMicros: 0, limitOverridden: true })).toMatchObject({ remainingPercentage: 0, availableBarPercentage: 0 })
+    expect(dailySpendSummary({ ...spend, limitMicros: null, remainingMicros: null })).toBeNull()
+    expect(dailySpendSummary(null)).toBeNull()
   })
 })
