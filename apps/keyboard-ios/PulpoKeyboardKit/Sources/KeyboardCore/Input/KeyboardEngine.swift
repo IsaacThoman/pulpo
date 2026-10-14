@@ -81,6 +81,19 @@ public final class KeyboardEngine {
   private var expectedDocumentIdentifier: UUID?
   private var expectedAfterContext = ""
   private var expectedSelection: String?
+  private struct ContextAvailability: Equatable {
+    let before: Bool
+    let after: Bool
+  }
+  private struct ObservedContext: Equatable {
+    let before: String?
+    let after: String?
+    let selection: String?
+  }
+  private var observedContextAvailability: ContextAvailability?
+  private var observedPrivateContext: Bool?
+  private var ownEditDepth = 0
+  private var recentObservedOwnContexts: [(context: ObservedContext, time: TimeInterval)] = []
   private struct ContextSnapshot: Equatable {
     let before: String
     let after: String
@@ -476,22 +489,39 @@ public final class KeyboardEngine {
   /// Re-reads the document after the host changed text or moved the cursor.
   public func documentDidChange() {
     let identifier = document.documentIdentifier
-    if identifier != expectedDocumentIdentifier {
+    let rawBefore = document.documentContextBeforeInput
+    let rawAfter = document.documentContextAfterInput
+    let current = rawBefore ?? ""
+    let after = rawAfter ?? ""
+    let selection = document.selectedText.flatMap { $0.isEmpty ? nil : $0 }
+    let availability = ContextAvailability(before: rawBefore != nil, after: rawAfter != nil)
+    let availabilityChanged = observedContextAvailability.map { $0 != availability } ?? false
+    let privacyChanged = observedPrivateContext.map { $0 != traits.isPrivate } ?? false
+    observedContextAvailability = availability
+    observedPrivateContext = traits.isPrivate
+    let now = clock()
+    recentObservedOwnContexts.removeAll { now - $0.time >= 1 }
+    let matchesExpected = current == expectedContext && after == expectedAfterContext && selection == expectedSelection
+    let observed = ObservedContext(before: rawBefore, after: rawAfter, selection: selection)
+    // UIKit can represent a natural empty cursor edge as nil. Preserve exact
+    // acknowledgments and raw states observed around our own edits; a new loss
+    // of visibility otherwise invalidates the old document's reversible state.
+    let visibilityChanged = availabilityChanged && !matchesExpected &&
+      !recentObservedOwnContexts.contains(where: { $0.context == observed })
+    if identifier != expectedDocumentIdentifier || privacyChanged || visibilityChanged {
       expectedDocumentIdentifier = identifier
       if expectedContext != nil { externalContextChanges += 1 }
-      // A different field can match an old snapshot or even the exact expected
-      // text. Its edits must never inherit the previous field's undo or spacing.
+      // A different field or privacy context can match a prior snapshot. Its
+      // edits must never inherit the previous field's undo, spacing, or learning.
       expectedContext = nil
       recentOwnContexts.removeAll()
+      recentObservedOwnContexts.removeAll()
       phantomSpace = false
       lastEdit = .none
       pendingLearning = nil
       rejected.removeAll()
       composing = TypedWord(text: "")
     }
-    let current = document.documentContextBeforeInput ?? ""
-    let after = document.documentContextAfterInput ?? ""
-    let selection = document.selectedText.flatMap { $0.isEmpty ? nil : $0 }
     if let expected = expectedContext {
       let sameCursorTail = after == expectedAfterContext && selection == expectedSelection
       if current != expected || !sameCursorTail {
@@ -501,7 +531,7 @@ public final class KeyboardEngine {
         recentOwnContexts.removeAll { now - $0.time >= 1 }
         let observed = ContextSnapshot(before: current, after: after, selection: selection)
         // A truly cleared field takes precedence over an earlier empty snapshot.
-        if (!current.isEmpty || document.hasText), recentOwnContexts.contains(where: { $0.context == observed }) {
+        if (!current.isEmpty || document.hasText || ownEditDepth > 0), recentOwnContexts.contains(where: { $0.context == observed }) {
           laggingContextUpdates += 1
           return
         }
@@ -515,6 +545,7 @@ public final class KeyboardEngine {
         if !windowShift {
           externalContextChanges += 1
           recentOwnContexts.removeAll()
+          recentObservedOwnContexts.removeAll()
           phantomSpace = false
           lastEdit = .none
           pendingLearning = nil
@@ -539,6 +570,8 @@ public final class KeyboardEngine {
     rememberOwnContext()
     expectedContext = before + text
     expectedSelection = nil
+    ownEditDepth += 1
+    defer { ownEditDepth -= 1 }
     document.insertText(text)
   }
 
@@ -547,14 +580,20 @@ public final class KeyboardEngine {
     rememberOwnContext()
     if expectedSelection == nil { expectedContext = String(before.dropLast()) }
     expectedSelection = nil
+    ownEditDepth += 1
+    defer { ownEditDepth -= 1 }
     document.deleteBackward()
   }
 
   private func prepareExpectedContext() {
     guard expectedContext == nil else { return }
     expectedDocumentIdentifier = document.documentIdentifier
-    expectedContext = document.documentContextBeforeInput ?? ""
-    expectedAfterContext = document.documentContextAfterInput ?? ""
+    let rawBefore = document.documentContextBeforeInput
+    let rawAfter = document.documentContextAfterInput
+    observedContextAvailability = ContextAvailability(before: rawBefore != nil, after: rawAfter != nil)
+    observedPrivateContext = traits.isPrivate
+    expectedContext = rawBefore ?? ""
+    expectedAfterContext = rawAfter ?? ""
     expectedSelection = document.selectedText.flatMap { $0.isEmpty ? nil : $0 }
   }
 
@@ -562,7 +601,12 @@ public final class KeyboardEngine {
     let now = clock()
     recentOwnContexts.removeAll { now - $0.time >= 1 }
     recentOwnContexts.append((ContextSnapshot(before: before, after: expectedAfterContext, selection: expectedSelection), now))
+    recentObservedOwnContexts.removeAll { now - $0.time >= 1 }
+    recentObservedOwnContexts.append((ObservedContext(
+      before: document.documentContextBeforeInput, after: document.documentContextAfterInput,
+      selection: document.selectedText.flatMap { $0.isEmpty ? nil : $0 }), now))
     if recentOwnContexts.count > 64 { recentOwnContexts.removeFirst(recentOwnContexts.count - 64) }
+    if recentObservedOwnContexts.count > 64 { recentObservedOwnContexts.removeFirst(recentObservedOwnContexts.count - 64) }
   }
 
   private func finishEdit(deriveComposing derive: Bool = false) {
