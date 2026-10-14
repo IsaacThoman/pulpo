@@ -1,7 +1,7 @@
 import type { ToolImagePreview } from '@pulpo/contracts'
 import { Type } from '@earendil-works/pi-ai'
 import type { AgentTool } from '@earendil-works/pi-agent-core'
-import type { WorkspaceManager, WorkspaceOperation } from './controller.js'
+import type { RelayRequest, RelayResult, WorkspaceManager, WorkspaceOperation } from './controller.js'
 import { savedToolOutput } from './tool-output-budget.js'
 import { boundLegacyReadOutput, isBoundedReadDetails, parseAgentReadArguments, READ_MAX_LINE_LIMIT, READ_MAX_OUTPUT_BYTES } from './bounded-read.js'
 
@@ -16,6 +16,8 @@ export function createWorkspaceTools(
   onOperationStarted?: (operationId: string) => void | Promise<void>,
   onAttachFile?: (operationId: string, path: string, name: string | undefined, signal?: AbortSignal) => Promise<{ id: string; name: string; mimeType: string; sizeBytes: number }>,
   onImagePreview?: (operationId: string, path: string, data: string) => Promise<ToolImagePreview>,
+  /** Answers `pulpo files` requests made by the bash command `operationId`; without it they are refused. */
+  onRelay?: (operationId: string, request: RelayRequest, signal?: AbortSignal) => Promise<RelayResult>,
 ): AgentTool[] {
   const tool = (name: string, description: string, parameters: ReturnType<typeof Type.Object>, execute: AgentTool['execute']): AgentTool => ({ name, label: name, description, parameters, executionMode: 'sequential', execute })
   const started = (operationId: string) => () => onOperationStarted?.(operationId)
@@ -61,7 +63,7 @@ export function createWorkspaceTools(
       const result = await manager.execute(id, 'bash', { ...values, timeoutMs: Math.min(Number(values.timeoutMs ?? commandTimeoutMs), commandTimeoutMs) }, signal, (output) => onUpdate?.(textResult(output)), async () => {
         await onOperationStarted?.(id)
         onUpdate?.(textResult('Command started…'))
-      })
+      }, onRelay && ((request, relaySignal) => onRelay(id, request, relaySignal)))
       return textResult(result.output, { exitCode: result.exitCode, ...savedOutputDetails(result.details) })
     }),
     tool('write', 'Create or replace a UTF-8 file in the workspace.', Type.Object({ path: Type.String(), content: Type.String() }), async (id, args, signal) => textResult((await manager.execute(id, 'write', record(args), signal, undefined, started(id))).output)),

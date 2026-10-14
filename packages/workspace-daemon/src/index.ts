@@ -2,7 +2,7 @@ import { StagedFiles } from './staged-files.js'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { createWriteStream } from 'node:fs'
-import { link, lstat, mkdir, open, readFile, readdir, realpath, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { chmod, link, lstat, mkdir, open, readFile, readdir, realpath, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { constants } from 'node:fs'
 import { dirname, isAbsolute, resolve, relative } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
@@ -20,6 +20,13 @@ const maxExportBytes = Number(process.env.PULPO_WORKSPACE_MAX_EXPORT_BYTES ?? 25
 const maxFileBytes = Number(process.env.PULPO_WORKSPACE_MAX_FILE_BYTES ?? 1_000 * 1024 * 1024)
 const maxCommandOutputBytes = 10_000_000
 const savedOutputRoot = resolve(process.env.PULPO_WORKSPACE_TOOL_OUTPUT_DIR ?? '/tmp/pulpo-tool-output')
+const relaySocket = resolve(process.env.PULPO_RELAY_SOCKET ?? '/tmp/pulpo-relay.sock')
+const relayTimeoutMs = Number(process.env.PULPO_RELAY_TIMEOUT_MS ?? 900_000)
+const maxRelayBody = 1024 * 1024
+const maxPollWaitMs = 25_000
+const outputPollIntervalMs = 250
+const relayUnavailable = 'pulpo files only works while the bash command that started it is running'
+const bodyTooLarge = 'Request body is too large'
 if (!token || token.length < 32) throw new Error('PULPO_WORKSPACE_TOKEN must contain at least 32 characters')
 
 type Operation = { id: string; status: 'running' | 'completed' | 'failed' | 'cancelled'; output: string; exitCode: number | null; error?: string; details?: Record<string, unknown>; startedAt: string; completedAt?: string }
@@ -27,6 +34,45 @@ const stagedFiles = new StagedFiles()
 const operations = new Map<string, Operation>()
 const children = new Map<string, ChildProcess>()
 const journalRoot = resolve(root, '.pulpo', 'operations')
+
+/** CLI requests held open on the relay socket until Pulpo answers. Never journaled: they die with the process. */
+type RelayRequest = { id: string; operationId: string; command: string; args: Record<string, unknown>; settle: (status: number, value: unknown) => boolean }
+const relayRequests = new Map<string, RelayRequest>()
+/** Per running operation: output revisions let a long-poll return output its poller has not seen yet. */
+type LiveOperation = { outputRevision: number; servedRevision: number; wake: Set<() => void> }
+const live = new Map<string, LiveOperation>()
+
+function pendingRelay(operationId: string): RelayRequest[] { return [...relayRequests.values()].filter((request) => request.operationId === operationId) }
+function wake(operationId: string): void { for (const check of [...live.get(operationId)?.wake ?? []]) check() }
+
+/** Held CLI requests fail once their bash command stops, and long-polls return at once. */
+function stopped(operation: Operation): void {
+  for (const request of pendingRelay(operation.id)) request.settle(409, { ok: false, error: relayUnavailable })
+  wake(operation.id)
+}
+
+function operationView(operation: Operation) {
+  const state = live.get(operation.id); if (state) state.servedRevision = state.outputRevision
+  return { ...operation, relay: { version: 1, pending: pendingRelay(operation.id).map(({ id, command, args }) => ({ id, command, args })) } }
+}
+
+/** Waits until the operation stops, a relay request arrives, unseen output is 250 ms into this poll, or waitMs passes. */
+function waitForChange(operation: Operation, waitMs: number, response: ServerResponse): Promise<void> {
+  const state = live.get(operation.id)
+  if (!state || operation.status !== 'running' || pendingRelay(operation.id).length || response.destroyed) return Promise.resolve()
+  const startedAt = Date.now()
+  return new Promise((done) => {
+    let outputTimer: NodeJS.Timeout | undefined
+    const finish = () => { clearTimeout(deadline); clearTimeout(outputTimer); state.wake.delete(check); response.off('close', finish); done() }
+    const check = () => {
+      if (operation.status !== 'running' || pendingRelay(operation.id).length) return finish()
+      if (state.outputRevision !== state.servedRevision && !outputTimer) outputTimer = setTimeout(finish, Math.max(0, outputPollIntervalMs - (Date.now() - startedAt)))
+    }
+    const deadline = setTimeout(finish, waitMs)
+    state.wake.add(check); response.once('close', finish)
+    check()
+  })
+}
 
 function journalPath(id: string): string { return resolve(journalRoot, `${createHash('sha256').update(id).digest('hex')}.json`) }
 async function saveOperation(operation: Operation): Promise<void> { await mkdir(journalRoot, { recursive: true }); await writeFile(journalPath(operation.id), JSON.stringify(operation), 'utf8') }
@@ -39,16 +85,18 @@ async function findOperation(id: string): Promise<Operation | undefined> {
   } catch { return undefined }
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> { return Boolean(value) && typeof value === 'object' && !Array.isArray(value) }
+
 function json(response: ServerResponse, status: number, value: unknown): void {
   response.writeHead(status, { 'content-type': 'application/json' })
   response.end(JSON.stringify(value))
 }
 
-async function body(request: IncomingMessage): Promise<Buffer> {
+async function body(request: IncomingMessage, limit = maxBody): Promise<Buffer> {
   const chunks: Buffer[] = []; let size = 0
   for await (const chunk of request) {
     const value = Buffer.from(chunk); size += value.length
-    if (size > maxBody) throw new Error('Request body is too large')
+    if (size > limit) throw new Error(bodyTooLarge)
     chunks.push(value)
   }
   return Buffer.concat(chunks)
@@ -124,7 +172,7 @@ async function execute(id: string, type: string, args: Record<string, unknown>):
   const existing = await findOperation(id)
   if (existing) return existing
   const operation: Operation = { id, status: 'running', output: '', exitCode: null, startedAt: new Date().toISOString() }
-  operations.set(id, operation)
+  operations.set(id, operation); live.set(id, { outputRevision: 0, servedRevision: 0, wake: new Set() })
   await saveOperation(operation)
   void finishOperation(operation, type, args)
   return operation
@@ -138,13 +186,15 @@ async function finishOperation(operation: Operation, type: string, args: Record<
       const command = String(args.command ?? '')
       const timeoutMs = Math.min(Number(args.timeoutMs ?? 600_000), 3_600_000)
       operation.output = await new Promise<string>((resolveOutput, reject) => {
-        const child = spawn('/bin/bash', ['-lc', command], { cwd: workspacePath(args.cwd), env: { ...process.env, HOME: '/home/agent' }, detached: true })
+        const child = spawn('/bin/bash', ['-lc', command], { cwd: workspacePath(args.cwd), env: { ...process.env, HOME: '/home/agent', PULPO_OPERATION_ID: id, PULPO_RELAY_SOCKET: relaySocket }, detached: true })
         children.set(id, child)
         const chunks: Buffer[] = []; let bytes = 0
         const collect = (chunk: Buffer) => {
           if (bytes >= maxCommandOutputBytes) { outputComplete = false; return }
           chunks.push(chunk); bytes += chunk.length
           operation.output = Buffer.concat(chunks).toString('utf8')
+          const state = live.get(id); if (state) state.outputRevision += 1
+          wake(id)
         }
         child.stdout?.on('data', collect); child.stderr?.on('data', collect)
         const timer = setTimeout(() => killProcessGroup(child, 'SIGKILL'), timeoutMs)
@@ -190,6 +240,7 @@ async function finishOperation(operation: Operation, type: string, args: Record<
     operation.error = error instanceof Error ? error.message : String(error)
   }
   operation.completedAt = new Date().toISOString()
+  stopped(operation); live.delete(id)
   await saveOperation(operation)
 }
 
@@ -237,20 +288,72 @@ const server = createServer(async (request, response) => {
     }
     const match = url.pathname.match(/^\/v1\/operations\/([^/]+)(?:\/(cancel))?$/)
     if (request.method === 'GET' && match) {
-      const operation = await findOperation(match[1]!); return operation ? json(response, 200, operation) : json(response, 404, { error: 'not_found' })
+      const operation = await findOperation(match[1]!); if (!operation) return json(response, 404, { error: 'not_found' })
+      const waitMs = Math.min(Number(url.searchParams.get('waitMs')) || 0, maxPollWaitMs)
+      if (waitMs > 0) await waitForChange(operation, waitMs, response)
+      if (response.destroyed) return
+      return json(response, 200, operationView(operation))
     }
     if (request.method === 'POST' && match?.[2] === 'cancel') {
       const operation = await findOperation(match[1]!); if (!operation) return json(response, 404, { error: 'not_found' })
-      operation.status = 'cancelled'
+      operation.status = 'cancelled'; stopped(operation)
       const child = children.get(operation.id); if (child) killProcessGroup(child, 'SIGTERM')
-      await saveOperation(operation); return json(response, 202, operation)
+      await saveOperation(operation); return json(response, 202, operationView(operation))
     }
     if (request.method === 'POST' && url.pathname === '/v1/operations') {
       const input = JSON.parse((await body(request)).toString('utf8')) as { id?: string; type?: string; args?: Record<string, unknown> }
-      return json(response, 200, await execute(input.id ?? randomUUID(), String(input.type ?? ''), input.args ?? {}))
+      return json(response, 200, operationView(await execute(input.id ?? randomUUID(), String(input.type ?? ''), input.args ?? {})))
+    }
+    const relayMatch = url.pathname.match(/^\/v1\/relay\/([^/]+)$/)
+    if (request.method === 'POST' && relayMatch) {
+      const result = JSON.parse((await body(request)).toString('utf8')) as unknown
+      if (!isRecord(result) || typeof result.ok !== 'boolean') throw new Error('Invalid relay result')
+      return relayRequests.get(relayMatch[1]!)?.settle(200, result) ? json(response, 200, { ok: true }) : json(response, 404, { error: 'not_found' })
     }
     json(response, 404, { error: 'not_found' })
   } catch (error) { json(response, 400, { error: error instanceof Error ? error.message : String(error) }) }
 })
+
+/** `pulpo files` in bash children reaches Pulpo through this socket; the server answers via POST /v1/relay/:id. */
+const relayServer = createServer(async (request, response) => {
+  try {
+    if (request.method !== 'POST' || new URL(request.url ?? '/', 'http://relay').pathname !== '/v1/requests') return json(response, 404, { ok: false, error: 'not_found' })
+    const input = JSON.parse((await body(request, maxRelayBody)).toString('utf8')) as unknown
+    if (!isRecord(input) || typeof input.operationId !== 'string' || typeof input.command !== 'string' || !input.command || !isRecord(input.args)) {
+      return json(response, 400, { ok: false, error: 'Invalid relay request' })
+    }
+    const operation = operations.get(input.operationId)
+    if (operation?.status !== 'running' || !children.has(operation.id)) return json(response, 409, { ok: false, error: relayUnavailable })
+    if (response.destroyed) return
+    const id = randomUUID()
+    const timer = setTimeout(() => settle(504, { ok: false, error: 'Pulpo did not answer in time' }), relayTimeoutMs)
+    const settle = (status: number, value: unknown) => {
+      if (!relayRequests.delete(id)) return false
+      clearTimeout(timer); json(response, status, value); return true
+    }
+    relayRequests.set(id, { id, operationId: operation.id, command: input.command, args: input.args, settle })
+    response.once('close', () => { relayRequests.delete(id); clearTimeout(timer) })
+    wake(operation.id)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    json(response, message === bodyTooLarge ? 413 : 400, { ok: false, error: message })
+  }
+})
+
+async function listenRelay(): Promise<void> {
+  await rm(relaySocket, { force: true })
+  await new Promise<void>((resolveListen, reject) => {
+    relayServer.once('error', reject)
+    relayServer.listen(relaySocket, () => { relayServer.off('error', reject); resolveListen() })
+  })
+  await chmod(relaySocket, 0o600)
+}
+
+/** A relay failure only costs bash commands `pulpo files`; every other tool keeps working. */
+export const relayReady = listenRelay().then(() => true, (error: unknown) => {
+  process.stderr.write(`pulpo relay socket unavailable at ${relaySocket}: ${error instanceof Error ? error.message : String(error)}\n`)
+  return false
+})
+export { server, relayServer }
 
 server.listen(port, '0.0.0.0', () => process.stdout.write(`pulpo workspace daemon listening on ${(server.address() as import('node:net').AddressInfo).port}\n`))
