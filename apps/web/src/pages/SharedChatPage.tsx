@@ -57,7 +57,7 @@ function SharedResponseView({ response }: { response: SharedResponse }) {
       {prompt && (
         <article className="group flex min-w-0 max-w-full flex-col items-end gap-1">
           <div className="min-w-0 max-w-[85%] rounded-[1.25rem] rounded-br-md border border-foreground/[0.04] bg-secondary/85 px-4 py-2.5 text-[15px] leading-7 shadow-sm [overflow-wrap:anywhere]">
-            <Markdown content={prompt} />
+            <Markdown content={prompt} breaks />
           </div>
         </article>
       )}

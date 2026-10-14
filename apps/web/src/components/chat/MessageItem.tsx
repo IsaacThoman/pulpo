@@ -735,7 +735,7 @@ export const MessageItem = memo(function MessageItem({
               <MessageAttachmentList attachments={message.attachments} />
             </div>
           )}
-          {message.content ? <Markdown content={message.content} /> : null}
+          {message.content ? <Markdown content={message.content} breaks /> : null}
         </div>
         <div className="flex items-center gap-1">
             <div className={cn("flex items-center gap-0.5 transition-opacity group-hover:opacity-100 focus-within:opacity-100", speechActive ? "opacity-100" : "opacity-0")}>
