@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import * as Y from 'yjs'
 import {
   applyNodeToYDoc,
+  docSchema,
   docView,
   hasSuggestions,
   listSuggestions,
@@ -294,6 +295,58 @@ describe('mergeMarkdown', () => {
     const result = expectConsistent(doc, `Start ${words('b')} end.`)
     expect(performance.now() - started).toBeLessThan(2000)
     expect(listSuggestions(result.doc)).toHaveLength(1)
+  })
+
+  describe('blocks whose Markdown is easy to get wrong', () => {
+    const schema = docSchema()
+    const p = (...content: Array<string | ProseMirrorNode>) => schema.nodes.paragraph!.create(null, content.map((part) => typeof part === 'string' ? schema.text(part) : part))
+    const br = () => schema.nodes.hardBreak!.create()
+    const list = (type: 'bulletList' | 'orderedList', ...items: string[]) => schema.nodes[type]!.create(null, items.map((text) => schema.nodes.listItem!.create(null, p(text))))
+    const cell = (type: 'tableCell' | 'tableHeader', ...content: Array<string | ProseMirrorNode>) => schema.nodes[type]!.create(null, p(...content))
+    const doc = schema.nodes.doc!.create(null, [
+      p('Untouched words here.'),
+      list('bulletList', 'first list'),
+      list('bulletList', 'second list'),
+      list('orderedList', 'one'),
+      list('orderedList', 'other'),
+      schema.nodes.table!.create(null, [
+        schema.nodes.tableRow!.create(null, [cell('tableHeader', 'Head')]),
+        schema.nodes.tableRow!.create(null, [cell('tableCell', 'line one', br(), 'line two')]),
+      ]),
+      p('ends with a break', br()),
+      p('a', br(), br(), 'b'),
+      p('- not a list'),
+      p('Last paragraph.'),
+    ])
+
+    it('stay as they are when pushed back unchanged', () => {
+      for (const markdown of [md(doc), `${md(doc)}\n`, `${md(doc)}\n\n`]) {
+        expect(suggest(doc, markdown)).toMatchObject({ changed: false, hunks: 0 })
+        expect(write(doc, markdown).changed).toBe(false)
+      }
+    })
+
+    it('stay as they are when an edit elsewhere is pushed', () => {
+      const markdown = md(doc).replace('Untouched words', 'Touched words').replace('Last paragraph.', 'Last paragraph, revised.')
+      for (const mode of ['suggest', 'write'] as const) {
+        const result = mergeMarkdown(doc, markdown, { mode, changeId: 'c1' })
+        expect(result.hunks).toBe(2)
+        for (let index = 1; index < doc.childCount - 1; index++) expect(result.doc.child(index), `block ${index}`).toBe(doc.child(index))
+        expect(md(docView(result.doc, 'proposed'))).toBe(markdown)
+      }
+    })
+  })
+
+  it('suggests adding or removing line breaks as whole blocks, which Yjs can keep', () => {
+    const doc = parse('First line\nsecond line, then more.\n\nLine one  \nline two.')
+    const result = expectConsistent(doc, 'First line  \nsecond line, then more.\n\nLine one line two.')
+    // Both blocks change next to each other, so they make one hunk: deletions, then insertions.
+    expect(pieces(result.doc)).toEqual([
+      'delete:c1:c1-1:First line\nsecond line, then more.', 'delete:c1:c1-1:Line oneline two.',
+      'insert:c1:c1-1:First linesecond line, then more.', 'insert:c1:c1-1:Line one line two.',
+    ])
+    // Write mode needs no suggestion, so the break changes inline.
+    expect(pieces(write(doc, 'First line  \nsecond line, then more.').doc)).toEqual([])
   })
 })
 

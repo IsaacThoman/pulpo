@@ -1,5 +1,5 @@
-import { Fragment, Node as ProseMirrorNode, type Mark } from '@tiptap/pm/model'
-import { docJSONToMarkdown, markdownToDocJSON } from './schema.js'
+import { Fragment, type Mark, type Node as ProseMirrorNode } from '@tiptap/pm/model'
+import { docToMarkdown, markdownToDoc } from './schema.js'
 import {
   docView,
   formatBlockSuggestion,
@@ -16,10 +16,10 @@ import {
 /*
  * How a merge works: at each level of the tree, the old blocks (minus those a suggestion
  * already deletes) are diffed against the new ones, two blocks matching when their proposed
- * views read the same in Markdown. Matched blocks stay untouched. Between matches, blocks of
- * the same kind that are alike enough pair up and get merged recursively, down to a word diff
- * inside paragraphs, headings, and code blocks; the rest become whole-block insertions and
- * deletions.
+ * views read the same in Markdown, as written or once read back. Matched blocks stay
+ * untouched. Between matches, blocks of the same kind that are alike enough pair up and get
+ * merged recursively, down to a word diff inside paragraphs, headings, and code blocks; the
+ * rest become whole-block insertions and deletions.
  */
 
 type Mode = 'suggest' | 'write'
@@ -63,12 +63,11 @@ export function mergeMarkdown(
   markdown: string,
   options: { mode: 'suggest' | 'write'; changeId: string; newId?: () => string },
 ): MergeMarkdownResult {
-  const json = markdownToDocJSON(markdown)
-  // Serializing is lossy in places (adjacent lists, blank lines), so pushing back exactly what
-  // was pulled cannot be told apart block by block; compare whole documents first.
-  const proposed = docJSONToMarkdown(docView(current, 'proposed').toJSON())
-  if (markdown === proposed || docJSONToMarkdown(json) === proposed) return { doc: current, changed: false, hunks: 0 }
-  const target = ProseMirrorNode.fromJSON(current.type.schema, json)
+  const target = markdownToDoc(markdown, current.type.schema)
+  // Pushing back exactly what was pulled (give or take final newlines) changes nothing, even
+  // where Markdown is lossy (blank paragraphs, …) and blocks would not match one by one.
+  const proposed = docToMarkdown(docView(current, 'proposed'))
+  if (markdown.replace(/\n+$/, '') === proposed.replace(/\n+$/, '') || docToMarkdown(target) === proposed) return { doc: current, changed: false, hunks: 0 }
   const merge = new Merge(current, options.mode, options.changeId, options.newId ?? randomId)
   const children = merge.children(current, target, (child) => current.type.create(current.attrs, child), options.mode)
   const doc = current.type.create(current.attrs, Fragment.fromArray(children), current.marks)
@@ -95,7 +94,7 @@ function proposedNode(node: ProseMirrorNode): ProseMirrorNode | null {
 
 /** A block's Markdown in context: whether two blocks read the same decides if they match. */
 function serialize(node: ProseMirrorNode | null, wrap: Wrap): string {
-  return node ? docJSONToMarkdown(wrap(node).toJSON()) : '\u0000removed'
+  return node ? docToMarkdown(wrap(node)) : '\u0000removed'
 }
 
 /**
@@ -294,6 +293,8 @@ interface Piece {
 interface Token {
   key: string
   space: boolean
+  /** A node other than text, such as a line break. */
+  atom: boolean
   /** Slices of pieces, as offsets into each piece (inline nodes are 0 to 1). */
   parts: Array<{ piece: number; from: number; to: number }>
 }
@@ -329,7 +330,7 @@ function tokenize(block: ProseMirrorNode): { pieces: Piece[]; tokens: Token[] } 
         const size = pieceSize(pieces[piece]!.node)
         parts.push({ piece, from: Math.max(start, offset) - offset, to: Math.min(end, offset + size) - offset })
       }
-      tokens.push({ key: `${key}\u0000${match[0]}`, space: !match[0].trim(), parts })
+      tokens.push({ key: `${key}\u0000${match[0]}`, space: !match[0].trim(), atom: false, parts })
     }
   }
   pieces.forEach(({ node, hidden }, piece) => {
@@ -344,7 +345,7 @@ function tokenize(block: ProseMirrorNode): { pieces: Piece[]; tokens: Token[] } 
       run!.text += node.text
     } else {
       flush()
-      tokens.push({ key: `\u0001${node.type.name}:${JSON.stringify(node.attrs)}:${markKey(node.marks)}`, space: false, parts: [{ piece, from: 0, to: 1 }] })
+      tokens.push({ key: `\u0001${node.type.name}:${JSON.stringify(node.attrs)}:${markKey(node.marks)}`, space: false, atom: true, parts: [{ piece, from: 0, to: 1 }] })
     }
   })
   flush()
@@ -435,7 +436,17 @@ class Merge {
     const newKeys = new Map<number, string>()
     const oldKey = (i: number) => oldKeys.get(i) ?? oldKeys.set(i, serialize(oldView(i), wrap)).get(i)!
     const newKey = (j: number) => newKeys.get(j) ?? newKeys.set(j, serialize(next[j]!, wrap)).get(j)!
-    const equal = (i: number, j: number) => visible[i]!.eq(next[j]!) || oldKey(i) === newKey(j)
+    // A block the agent left alone reads back as its Markdown after one trip through the
+    // parser, which may differ from the block's own serialization where that is lossy.
+    const normalKeys = new Map<number, string>()
+    const normalKey = (i: number) => normalKeys.get(i) ?? normalKeys.set(i, oldView(i) ? docToMarkdown(markdownToDoc(oldKey(i), old.type.schema)) : oldKey(i)).get(i)!
+    // Reading back only shifts whitespace and structure, so blocks with other words differ anyway.
+    const oldWordsOnly = new Map<number, string>()
+    const newWordsOnly = new Map<number, string>()
+    const wordsOnly = (node: ProseMirrorNode | null) => node?.textContent.replace(/\s+/g, '') ?? ''
+    const sameWords = (i: number, j: number) =>
+      (oldWordsOnly.get(i) ?? oldWordsOnly.set(i, wordsOnly(oldView(i))).get(i)!) === (newWordsOnly.get(j) ?? newWordsOnly.set(j, wordsOnly(next[j]!)).get(j)!)
+    const equal = (i: number, j: number) => visible[i]!.eq(next[j]!) || oldKey(i) === newKey(j) || (sameWords(i, j) && normalKey(i) === newKey(j))
 
     const oldWords = new Map<number, Map<string, number>>()
     const newWords = new Map<number, Map<string, number>>()
@@ -471,20 +482,32 @@ class Merge {
       if (op.kind === 'delete') deletes.push(op.old)
       else if (op.kind === 'insert') inserts.push(op.new)
       else {
+        const merged = op.kind === 'same' ? visible[op.old]! : this.node(visible[op.old]!, next[op.new]!, wrap, mode)
+        if (!merged) {
+          deletes.push(op.old)
+          inserts.push(op.new)
+          continue
+        }
         flush()
-        keep(op.old, op.kind === 'same' ? visible[op.old]! : this.node(visible[op.old]!, next[op.new]!, wrap, mode))
+        keep(op.old, merged)
       }
     }
     flush()
     return out
   }
 
-  /** Merges two paired blocks of the same kind. */
-  private node(old: ProseMirrorNode, fresh: ProseMirrorNode, wrap: Wrap, mode: Mode): ProseMirrorNode {
+  /**
+   * Merges two paired blocks of the same kind, or returns null when only replacing the whole
+   * block can express the change.
+   */
+  private node(old: ProseMirrorNode, fresh: ProseMirrorNode, wrap: Wrap, mode: Mode): ProseMirrorNode | null {
     // A block that is itself a pending insertion is edited in place: its whole content is
     // already a suggestion.
     const inner: Mode = blockSuggestion(old) === 'insert' ? 'write' : mode
-    if (old.isTextblock) return old.type.create(old.attrs, this.inline(old, fresh, inner), old.marks)
+    if (old.isTextblock) {
+      const content = this.inline(old, fresh, inner)
+      return content && old.type.create(old.attrs, content, old.marks)
+    }
     const childWrap: Wrap = (child) => wrap(old.type.create(old.attrs, child))
     if (old.type.name === 'tableRow' && old.childCount === fresh.childCount) {
       // Cells pair up by column: a Markdown table cannot insert or delete a single cell.
@@ -492,15 +515,19 @@ class Merge {
       old.forEach((cell, _, index) => {
         const next = fresh.child(index)
         const same = cell.eq(next) || serialize(proposedNode(cell), childWrap) === serialize(next, childWrap)
-        cells.push(same ? cell : this.node(cell, next, childWrap, inner))
+        cells.push(same ? cell : this.node(cell, next, childWrap, inner)!)
       })
       return old.type.create(old.attrs, cells, old.marks)
     }
     return old.type.create(old.attrs, Fragment.fromArray(this.children(old, fresh, childWrap, inner)), old.marks)
   }
 
-  /** Word-level diff of two textblocks' inline content. */
-  private inline(old: ProseMirrorNode, fresh: ProseMirrorNode, mode: Mode): Fragment {
+  /**
+   * Word-level diff of two textblocks' inline content, or null when it would suggest adding or
+   * removing a line break: Yjs keeps no marks on nodes other than text, so a break cannot be
+   * marked as a suggestion.
+   */
+  private inline(old: ProseMirrorNode, fresh: ProseMirrorNode, mode: Mode): Fragment | null {
     const before = tokenize(old)
     const after = tokenize(fresh)
     const pairs = commonSubsequence(before.tokens.length, after.tokens.length, (i, j) => before.tokens[i]!.key === after.tokens[j]!.key)
@@ -515,6 +542,7 @@ class Merge {
         ops.splice(k, 1, { kind: 'delete', old: op.old }, { kind: 'insert', new: op.new })
       }
     }
+    if (mode === 'suggest' && ops.some((op) => op.kind === 'delete' ? before.tokens[op.old]!.atom : op.kind === 'insert' && after.tokens[op.new]!.atom)) return null
 
     const out: ProseMirrorNode[] = []
     let cursor = 0
