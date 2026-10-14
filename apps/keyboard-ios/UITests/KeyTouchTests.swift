@@ -386,6 +386,126 @@ final class KeyTouchTests: XCTestCase {
     XCTAssertEqual(recorder.glidePaths.last?.count, 2)
   }
 
+  func testCoalescedMoveRecognizesALoopBeforeLongPressCanTakeIt() {
+    let contact = touch("key-w")
+    let start = contact.point
+    keys.touchesBegan([contact], with: nil)
+    let turn = touch("key-o")
+    let returned = touch("key-w")
+    keys.touchesMoved([contact], with: ContactEvent(samples: [turn, returned]))
+    XCTAssertEqual(keys.stats.glides, 1, "The completed loop must own the gesture before the alternate timer can fire")
+    keys.touchesEnded([contact], with: nil)
+    XCTAssertEqual(recorder.glidePaths.first, [start, turn.point, start])
+    XCTAssertTrue(recorder.activations.isEmpty)
+  }
+
+  func testSmallCoalescedMoveLoopsRemainTaps() {
+    for direction: CGFloat in [-1, 1] {
+      recorder.events = []
+      let contact = touch("key-w")
+      let start = contact.point
+      keys.touchesBegan([contact], with: nil)
+      let turn = Contact(point: CGPoint(x: start.x + direction * keys.pitch.width * 0.4, y: start.y), time: 0.04)
+      keys.touchesMoved([contact], with: ContactEvent(samples: [turn, contact]))
+      XCTAssertEqual(keys.stats.glides, 0)
+      keys.touchesEnded([contact], with: nil)
+      XCTAssertEqual(recorder.activations, ["key-w"])
+      XCTAssertTrue(recorder.glidePaths.isEmpty)
+    }
+  }
+
+  func testColorsDoNotInvalidateASwipe() {
+    let contact = touch("key-h")
+    keys.touchesBegan([contact], with: nil)
+    contact.point = touch("key-e").point
+    keys.touchesMoved([contact], with: nil)
+    let original = keys.style
+    keys.setLayout(keys.layout, style: KeyboardStyle(modern: original.modern, dark: !original.dark, landscape: original.landscape, inset: original.inset))
+    keys.layoutIfNeeded()
+    contact.point = touch("key-o").point
+    keys.touchesEnded([contact], with: nil)
+    XCTAssertEqual(recorder.glidePaths.count, 1)
+    XCTAssertTrue(recorder.activations.isEmpty)
+  }
+
+  func testResizingCancelsAPendingLetterWithoutTypingIt() {
+    let contact = touch("key-a")
+    keys.touchesBegan([contact], with: nil)
+    keys.frame.size.width = 700
+    keys.setNeedsLayout()
+    keys.layoutIfNeeded()
+    keys.touchesEnded([contact], with: nil)
+    XCTAssertTrue(recorder.activations.isEmpty)
+    XCTAssertTrue(recorder.glidePaths.isEmpty)
+  }
+
+  func testPageKeySlideSurvivesItsOwnLetterGeometryChange() {
+    let contact = touch("key-numbers")
+    recorder.onTouchDown = { [unowned self] key in
+      if case .page = key.action { keys.setLayout(layout(.numbers), style: keys.style) }
+    }
+    keys.touchesBegan([contact], with: nil)
+    contact.point = touch("key-1").point
+    keys.touchesMoved([contact], with: nil)
+    keys.touchesEnded([contact], with: nil)
+    XCTAssertEqual(recorder.activations, ["key-1"])
+    XCTAssertEqual(recorder.pageSlideFinishes, 1)
+  }
+
+  func testSameBoundsMetricChangeRefreshesGeometry() {
+    let oldCenters = keys.letterCenters
+    let oldLayouts = recorder.layouts
+    let insetStyle = KeyboardStyle(modern: true, dark: false, landscape: false, inset: true)
+    keys.setLayout(keys.layout, style: insetStyle)
+    keys.layoutIfNeeded()
+    XCTAssertNotEqual(keys.letterCenters, oldCenters)
+    XCTAssertEqual(recorder.layouts, oldLayouts + 1)
+  }
+
+  func testResizingDuringASwipeDoesNotDecodeMixedCoordinateFrames() {
+    let contact = touch("key-t")
+    keys.touchesBegan([contact], with: nil)
+    contact.point = touch("key-y").point
+    keys.touchesMoved([contact], with: nil)
+    XCTAssertEqual(keys.stats.glides, 1)
+    keys.frame.size.width = 700
+    keys.setNeedsLayout()
+    keys.layoutIfNeeded()
+    contact.point = touch("key-s").point
+    keys.touchesMoved([contact], with: nil)
+    keys.touchesEnded([contact], with: nil)
+    XCTAssertTrue(recorder.glidePaths.isEmpty)
+    XCTAssertTrue(recorder.activations.isEmpty)
+    // The first new gesture after rotation still works normally.
+    let next = touch("key-h")
+    keys.touchesBegan([next], with: nil)
+    next.point = touch("key-o").point
+    keys.touchesMoved([next], with: nil)
+    keys.touchesEnded([next], with: nil)
+    XCTAssertEqual(recorder.glidePaths.count, 1)
+  }
+
+  func testAnIgnoredContactCannotContaminateTheNextSwipe() {
+    let first = touch("key-t")
+    let palm = touch("key-a", time: 0.1)
+    keys.touchesBegan([first], with: nil)
+    first.point = touch("key-p").point
+    keys.touchesMoved([first], with: nil)
+    keys.touchesBegan([palm], with: nil)
+    first.point = touch("key-s").point
+    keys.touchesEnded([first], with: nil)
+    let next = touch("key-w", time: 0.3)
+    let nextStart = next.point
+    keys.touchesBegan([next], with: nil)
+    next.point = touch("key-e").point
+    keys.touchesMoved([next], with: nil)
+    keys.touchesEnded([next], with: nil)
+    keys.touchesEnded([palm], with: nil)
+    XCTAssertEqual(recorder.glidePaths.count, 2)
+    XCTAssertEqual(recorder.glidePaths.last, [nextStart, next.point])
+    XCTAssertTrue(recorder.activations.isEmpty)
+  }
+
   private final class Contact: UITouch {
     var point: CGPoint
     let time: TimeInterval
@@ -412,12 +532,15 @@ final class KeyTouchTests: XCTestCase {
     var glides = 0
     var glidePaths: [[CGPoint]] = []
     var allowsGlide = true
+    var layouts = 0
     var activationPoints: [CGPoint] = []
     var onActivate: ((Key) -> Void)?
+    var onTouchDown: ((Key) -> Void)?
+    var pageSlideFinishes = 0
     var activations: [String] { events.filter { $0.hasPrefix("activate:") }.map { String($0.dropFirst(9)) } }
     var keysViewAllowsGlide: Bool { allowsGlide }
     var keysViewShowsPopups: Bool { false }
-    func keysView(_ view: KeysView, touchDown key: Key) { events.append("down:\(key.identifier)") }
+    func keysView(_ view: KeysView, touchDown key: Key) { events.append("down:\(key.identifier)"); onTouchDown?(key) }
     func keysView(_ view: KeysView, activate key: Key, at point: CGPoint) {
       events.append("activate:\(key.identifier)")
       activationPoints.append(point)
@@ -432,7 +555,7 @@ final class KeyTouchTests: XCTestCase {
     func keysViewRepeatDelete(_ view: KeysView, wholeWord: Bool) {}
     func keysView(_ view: KeysView, moveCursor offset: Int) {}
     func keysView(_ view: KeysView, inputModeListWith event: UIEvent) {}
-    func keysViewFinishedPageSlide(_ view: KeysView) {}
-    func keysViewDidLayout(_ view: KeysView) {}
+    func keysViewFinishedPageSlide(_ view: KeysView) { pageSlideFinishes += 1 }
+    func keysViewDidLayout(_ view: KeysView) { layouts += 1 }
   }
 }

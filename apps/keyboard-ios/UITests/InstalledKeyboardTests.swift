@@ -90,6 +90,35 @@ final class InstalledKeyboardTests: XCTestCase {
     waitForText("To")
   }
 
+  /// Centered paths isolate native geometry/routing from natural swipe variation.
+  /// These target words and their immediate contexts come from a reported failure.
+  func testReportedSwipeWordsInSentenceContexts() throws {
+    if ProcessInfo.processInfo.operatingSystemVersion.majorVersion < 26 {
+      throw XCTSkip("Multi-point touch synthesis doesn't reach keyboard extensions before iOS 26")
+    }
+    func swipe(_ word: String) throws {
+      try TouchPath.swipe(through: word.map { letter in
+        let frame = app.key("key-\(letter)").frame
+        return CGPoint(x: frame.midX, y: frame.midY)
+      })
+    }
+    type("of how ")
+    try swipe("well")
+    waitForText("Of how well")
+    type(" the keyboard ")
+    try swipe("types")
+    waitForText("Of how well the keyboard types")
+    type(" mediocre at ")
+    try swipe("best")
+    waitForText("Of how well the keyboard types mediocre at best")
+    type(" my best ")
+    try swipe("friend")
+    waitForText("Of how well the keyboard types mediocre at best my best friend")
+    type(" in ")
+    try swipe("the")
+    waitForText("Of how well the keyboard types mediocre at best my best friend in the")
+  }
+
   func testKeyPopupsAppear() throws {
     // The app passes the key to the extension, which shows its balloon on appear.
     for letter in ["q", "g", "p"] {

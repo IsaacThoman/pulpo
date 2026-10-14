@@ -157,7 +157,23 @@ final class KeysView: UIView {
       }
     }
     trail.layer.frame = bounds
-    if bounds.size != lastLaidOutSize || layoutGeneration != lastNotifiedGeneration {
+    let centers = letterCenters
+    let geometryChanged = pitch != lastLaidOutPitch || centers != lastLaidOutCenters
+    if geometryChanged {
+      // A path that began before rotation or a metric change cannot be decoded
+      // against the new key frames. Preserve page-key slides and modifier owners.
+      let invalidated = trackings.filter { $0.value.initialKey.isCharacter || $0.value.mode == .glide }
+      for (identifier, tracking) in invalidated {
+        tracking.timer?.invalidate()
+        trackings.removeValue(forKey: identifier)
+        if keyViews.indices.contains(tracking.keyIndex) { keyViews[tracking.keyIndex].isPressed = false }
+        if tracking.initialKey.action == .shift { delegate?.keysViewShiftUp(self) }
+      }
+      if !invalidated.isEmpty { popup?.hide(); trail.finish() }
+      lastLaidOutPitch = pitch
+      lastLaidOutCenters = centers
+    }
+    if geometryChanged || bounds.size != lastLaidOutSize || layoutGeneration != lastNotifiedGeneration {
       lastLaidOutSize = bounds.size
       lastNotifiedGeneration = layoutGeneration
       delegate?.keysViewDidLayout(self)
@@ -165,6 +181,8 @@ final class KeysView: UIView {
   }
 
   private var lastLaidOutSize: CGSize = .zero
+  private var lastLaidOutPitch: CGSize = .zero
+  private var lastLaidOutCenters: [Character: CGPoint] = [:]
   private var layoutGeneration = 0
   private var lastNotifiedGeneration = -1
 
@@ -384,15 +402,17 @@ final class KeysView: UIView {
     case .tap:
       let key = tracking.key
       let dx = point.x - tracking.start.x
-      let dy = point.y - tracking.start.y
       if key.action == .space {
         // A thumb tap drifts; only a deliberate slide moves the cursor.
         if abs(dx) > 30 { enterCursorMode(tracking) }
         return
       }
-      let distance = (dx * dx + dy * dy).squareRoot()
-      // Fast taps roll a few points; a swipe has to clearly leave the key.
-      if isLetter(key), !tracking.fromPageKey, !trackings.values.contains(where: { $0 !== tracking && !$0.committed }), delegate?.keysViewAllowsGlide == true, distance > pitch.width * 0.7 {
+      // A coalesced batch can leave the key and return before its main touch.
+      // Small thumb rolls stay taps; a swipe must clearly leave the pressed key.
+      let hasLeftInitialKey = tracking.points.contains {
+        hypot($0.x - tracking.start.x, $0.y - tracking.start.y) > pitch.width * 0.7
+      }
+      if isLetter(key), !tracking.fromPageKey, !trackings.values.contains(where: { $0 !== tracking && !$0.committed }), delegate?.keysViewAllowsGlide == true, hasLeftInitialKey {
         startGlide(tracking)
         return
       }
