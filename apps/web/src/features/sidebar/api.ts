@@ -144,7 +144,7 @@ async function putBack(before: readonly Placement[], pinnedBefore: readonly stri
   }
 }
 
-/** "Moved "Notes"" for one item, "Moved 3 items" for several. */
+/** "Moved "Notes" to the trash" for one item, "Moved 3 items to the trash" for several. */
 function describe(places: readonly Placement[], one: (name: string) => string, many: (count: number) => string): string {
   return places.length === 1 ? one(places[0]!.name) : many(places.length)
 }
@@ -251,11 +251,8 @@ export async function orderSidebarItems(folderId: string, ids: string[], incomin
   const chatsFolderId = readState()?.chatsFolderId
   const position = new Map(ids.map((id, index) => [id, index]))
   const userId = useAuth.getState().user?.id
-  // What arrives from another folder or the pinned list was moved, which can be undone.
-  const moved = placements(ids, incoming).filter((place) => place.parentId !== folderId || place.pinned)
-  const pinnedBefore = pinnedOrder()
   useFolderExpansion.getState().setExpanded(folderId, true)
-  const done = await mutate(() => {
+  await mutate(() => {
     useChat.setState((state) => ({
       chats: state.chats.map((chat) => {
         const sortOrder = position.get(chat.id)
@@ -279,9 +276,6 @@ export async function orderSidebarItems(folderId: string, ids: string[], incomin
       folders: state.folders.map((folder) => moving.has(folder.id) ? { ...folder, parentId: folderId } : folder),
     }))
   }, () => apiRequest('/api/sidebar/order', { method: 'PUT', body: { parentId: folderId === chatsFolderId ? null : folderId, ids } }))
-  if (done && moved.length) {
-    announce(describe(moved, (name) => uit`Moved "${name}"`, (total) => uit`Moved ${total} items`), () => putBack(moved, pinnedBefore))
-  }
 }
 
 /** Where the pinned list ends: after the pinned chats and Files items. */
@@ -422,19 +416,12 @@ function splitSelection(ids: readonly string[]) {
 
 /**
  * Moves chats and Files items to the top of a folder, or (null) of the sidebar, keeping their
- * order, and offers to undo it. Pinned ones stay pinned unless `unpin` takes them out of the
- * pinned list, as dragging them out of it does. `nodes` are Files items among them the sidebar may
- * not have loaded (e.g. dragged in from Files).
+ * order. Pinned ones stay pinned unless `unpin` takes them out of the pinned list, as dragging
+ * them out of it does. The move shows in place, so it needs no toast.
  */
-export async function moveSidebarSelection(
-  ids: readonly string[],
-  folderId: string | null,
-  { unpin = false, nodes = [] }: { unpin?: boolean; nodes?: readonly FileNode[] } = {},
-): Promise<void> {
+export async function moveSidebarSelection(ids: readonly string[], folderId: string | null, { unpin = false } = {}): Promise<void> {
   const chatsFolderId = readState()?.chatsFolderId ?? null
   const target = folderId === chatsFolderId ? null : folderId
-  const before = placements(ids, nodes)
-  const pinnedBefore = pinnedOrder()
   const { chats, itemIds } = splitSelection(ids)
   const store = useChat.getState()
   const chatRequests: Promise<void>[] = []
@@ -443,11 +430,8 @@ export async function moveSidebarSelection(
     if (unpin && chat.pinned) chatRequests.push(store.unpinChat(chat.id, target))
     else if (chat.folderId !== target || chat.inFilesRoot) chatRequests.push(store.moveToFolder(chat.id, target))
   }
-  const itemsMoved = itemIds.length ? await moveSidebarItems([...itemIds].reverse(), target, { unpin }) : true
+  if (itemIds.length) await moveSidebarItems([...itemIds].reverse(), target, { unpin })
   await Promise.all(chatRequests)
-  if (!itemsMoved) return
-  const moved = before.filter((place) => place.parentId !== (target ?? chatsFolderId) || (unpin && place.pinned))
-  if (moved.length) announce(describe(moved, (name) => uit`Moved "${name}"`, (total) => uit`Moved ${total} items`), () => putBack(moved, pinnedBefore))
 }
 
 /** Moves chats and Files items into the Archive folder, unpinning them, and offers to undo it. */

@@ -23,7 +23,8 @@ function count(nodes: readonly FileNode[], one: (name: string) => string, many: 
 
 /**
  * Every tree action the browser offers. Each one refreshes Files views, confirms with a toast
- * that can undo it, and reports failures as an error toast instead of throwing.
+ * that can undo it unless the change shows in place (a move or rename), and reports failures as
+ * an error toast instead of throwing.
  */
 export function useFileOperations() {
   const queryClient = useQueryClient()
@@ -58,13 +59,12 @@ export function useFileOperations() {
     if (!moving.length) return
     const moved = await run(() => moveFileNodes(moving.map((node) => ({ id: node.id, parentId }))))
     if (!moved) return
-    // The server skips items whose folder is also being moved; undo exactly what it moved.
+    // A move shows in place, as in the sidebar, so it only needs a toast when names changed to
+    // keep both copies. The server skips items whose folder is also being moved; undo exactly what it moved.
     const originals = new Map(moving.map((node) => [node.id, node]))
-    const renamed = moved.some((node) => originals.get(node.id)?.name !== node.name)
+    if (!moved.some((node) => originals.get(node.id)?.name !== node.name)) return
     undoable(
-      renamed
-        ? count(moving, (name) => uit`Moved "${name}" and kept both copies`, (total) => uit`Moved ${total} items; some were renamed to keep both`)
-        : count(moving, (name) => uit`Moved "${name}"`, (total) => uit`Moved ${total} items`),
+      count(moving, (name) => uit`Moved "${name}" and kept both copies`, (total) => uit`Moved ${total} items; some were renamed to keep both`),
       () => moveFileNodes(moved.map((node) => originals.get(node.id)!).map((node) => ({ id: node.id, parentId: node.parentId, name: node.name }))),
     )
   }

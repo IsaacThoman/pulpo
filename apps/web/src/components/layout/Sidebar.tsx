@@ -1662,7 +1662,7 @@ export function Sidebar({
     const ids = nodes.map((node) => node.id)
     if (hint.kind !== 'row') {
       const folderId = hint.kind === 'folder-target' ? hint.folderId : null
-      void moveSidebarSelection(ids, folderId, { unpin: true, nodes })
+      void moveSidebarSelection(ids, folderId, { unpin: true })
       return true
     }
     // Several items stay together, in their order, at the spot shown.
