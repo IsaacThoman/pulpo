@@ -7,8 +7,9 @@ import { isDesktopRuntime } from '@/lib/runtime'
 import { useAuth } from '@/stores/auth'
 import { topOrderIn, useChat } from '@/stores/chat'
 import { pinnedItemsCeiling, sidebarItemsKey, sidebarQueryKey } from './cache'
-import { ui } from '@/i18n/ui'
-import { createDoc, folderQueryKey, uploadFile } from '@/features/files/api'
+import { useSettings } from '@/stores/settings'
+import { ui, uit } from '@/i18n/ui'
+import { createDoc, folderQueryKey, moveFileNodes, uploadFile } from '@/features/files/api'
 import { filesErrorMessage } from '@/features/files/file-display'
 import { useFileToasts } from '@/features/files/browser/toasts'
 
@@ -70,15 +71,85 @@ const refresh = () => Promise.all([
 /** Refetches the sidebar and Files listings after a change made elsewhere (e.g. a paste). */
 export const refreshSidebar = refresh
 
-/** Runs a sidebar change shown at once, then confirmed (or undone) by refetching. */
-async function mutate<T>(optimistic: (() => void) | null, request: () => Promise<T>): Promise<T> {
+/**
+ * Runs a sidebar change shown at once, then confirmed (or undone) by refetching. A failure is
+ * reported in a toast, as in Files, and resolves to undefined.
+ */
+async function mutate<T>(optimistic: (() => void) | null, request: () => Promise<T>, name?: string): Promise<T | undefined> {
   optimistic?.()
   try {
     return await request()
+  } catch (cause) {
+    useFileToasts.getState().show({ message: filesErrorMessage(cause, name), tone: 'error' })
+    return undefined
   } finally {
     await refresh()
   }
 }
+
+/** Where a chat or Files item is, to put it back when a change is undone. */
+interface Placement {
+  id: string
+  name: string
+  /** The Files folder it is in; null is the top of My files. */
+  parentId: string | null
+  pinned: boolean
+}
+
+/** Where `ids` are now. `nodes` are Files items among them the sidebar may not have loaded. */
+function placements(ids: readonly string[], nodes: readonly FileNode[] = []): Placement[] {
+  const chatsFolderId = readState()?.chatsFolderId ?? null
+  const chats = new Map(useChat.getState().chats.map((chat) => [chat.id, chat]))
+  return ids.flatMap((id) => {
+    const chat = chats.get(id)
+    if (chat) return [{ id, name: chat.title, parentId: chat.inFilesRoot ? null : chat.folderId ?? chatsFolderId, pinned: chat.pinned }]
+    const node = nodes.find((candidate) => candidate.id === id) ?? findSidebarItem(id)
+    return node ? [{ id, name: node.name, parentId: node.parentId, pinned: Boolean(node.pinned) }] : []
+  })
+}
+
+/** The pinned list, chats and Files items, in order. */
+function pinnedOrder(): string[] {
+  return [
+    ...useChat.getState().chats.filter((chat) => chat.pinned).map((chat) => ({ id: chat.id, sortOrder: chat.sortOrder, createdAt: chat.createdAt })),
+    ...readPinned().map((item) => ({ id: item.id, sortOrder: item.sortOrder ?? 0, createdAt: Date.parse(item.createdAt) })),
+  ].sort((left, right) => left.sortOrder - right.sortOrder || right.createdAt - left.createdAt).map((entry) => entry.id)
+}
+
+/**
+ * Puts chats and Files items back where `before` found them, and back in the pinned list, in its
+ * old order (`pinnedBefore`), if they were pinned. Throws when the server refuses.
+ */
+async function putBack(before: readonly Placement[], pinnedBefore: readonly string[]): Promise<void> {
+  const chatsFolderId = readState()?.chatsFolderId
+  const byParent = new Map<string | null, string[]>()
+  for (const place of before) byParent.set(place.parentId, [...byParent.get(place.parentId) ?? [], place.id])
+  useChat.setState((state) => ({
+    chats: state.chats.map((chat) => {
+      const place = before.find((candidate) => candidate.id === chat.id)
+      return place ? { ...chat, folderId: place.parentId === chatsFolderId ? null : place.parentId, inFilesRoot: place.parentId === null } : chat
+    }),
+  }))
+  try {
+    // Only Files moves things to the top of My files; the sidebar moves the rest, with Files off too.
+    await Promise.all([...byParent].map(([parentId, ids]) => parentId === null
+      ? moveFileNodes(ids.map((id) => ({ id, parentId: null })))
+      : apiRequest('/api/sidebar/move', { method: 'POST', body: { ids, parentId } })))
+    if (before.some((place) => place.pinned)) {
+      const current = new Set([...pinnedOrder(), ...before.map((place) => place.id)])
+      await apiRequest('/api/sidebar/pinned', { method: 'PUT', body: { ids: pinnedBefore.filter((id) => current.has(id)) } })
+    }
+  } finally {
+    await Promise.all([refresh(), queryClient.invalidateQueries({ queryKey: ['chats', useAuth.getState().user?.id] })])
+  }
+}
+
+/** "Moved "Notes"" for one item, "Moved 3 items" for several. */
+function describe(places: readonly Placement[], one: (name: string) => string, many: (count: number) => string): string {
+  return places.length === 1 ? one(places[0]!.name) : many(places.length)
+}
+
+const announce = (message: string, undo?: () => Promise<unknown>) => useFileToasts.getState().show({ message, undo })
 
 export function sortFolders(folders: readonly SidebarFolder[]): SidebarFolder[] {
   return [...folders].sort((left, right) => left.name.localeCompare(right.name, undefined, { numeric: true, sensitivity: 'base' }))
@@ -116,7 +187,7 @@ export function isWithin(state: SidebarState | undefined, folderId: string, ance
   return false
 }
 
-export async function createSidebarFolder(name: string, parentId?: string): Promise<FileNode> {
+export async function createSidebarFolder(name: string, parentId?: string): Promise<FileNode | undefined> {
   const id = crypto.randomUUID()
   const parent = parentId ?? readState()?.chatsFolderId
   useFolderExpansion.getState().setExpanded(id, true)
@@ -128,13 +199,13 @@ export async function createSidebarFolder(name: string, parentId?: string): Prom
 }
 
 /** Renames a folder, file, or shortcut. */
-export function renameSidebarItem(id: string, name: string): Promise<FileNode> {
+export function renameSidebarItem(id: string, name: string): Promise<FileNode | undefined> {
   const rename = (item: FileNode) => item.id === id ? { ...item, name } : item
   return mutate(() => {
     writeState((state) => ({ ...state, folders: state.folders.map((folder) => folder.id === id ? { ...folder, name } : folder) }))
     writeItems((items) => items.map(rename))
     writePinned((items) => items.map(rename))
-  }, () => apiRequest<FileNode>(`/api/sidebar/items/${id}`, { method: 'PATCH', body: { name } }))
+  }, () => apiRequest<FileNode>(`/api/sidebar/items/${id}`, { method: 'PATCH', body: { name } }), name)
 }
 
 /**
@@ -159,7 +230,7 @@ export function setItemAppearance(ids: readonly string[], appearance: { color?: 
  * Moves Files items (folders, files, shortcuts) into a folder, or (null) to the top of the sidebar.
  * Pinned ones stay pinned unless `unpin` takes them out of the pinned list, as dragging them does.
  */
-export function moveSidebarItems(ids: string[], parentId: string | null, { unpin = false } = {}): Promise<unknown> {
+function moveSidebarItems(ids: string[], parentId: string | null, { unpin = false } = {}): Promise<unknown> {
   if (parentId) useFolderExpansion.getState().setExpanded(parentId, true)
   return mutate(() => {
     writeState((state) => ({
@@ -176,12 +247,15 @@ export function moveSidebarItems(ids: string[], parentId: string | null, { unpin
  * another folder (or the pinned list) moves in. The rest of the folder keeps its place.
  * `incoming` are items arriving from outside the sidebar (dragged from Files), shown at once.
  */
-export function orderSidebarItems(folderId: string, ids: string[], incoming: readonly FileNode[] = []): Promise<unknown> {
+export async function orderSidebarItems(folderId: string, ids: string[], incoming: readonly FileNode[] = []): Promise<void> {
   const chatsFolderId = readState()?.chatsFolderId
   const position = new Map(ids.map((id, index) => [id, index]))
   const userId = useAuth.getState().user?.id
+  // What arrives from another folder or the pinned list was moved, which can be undone.
+  const moved = placements(ids, incoming).filter((place) => place.parentId !== folderId || place.pinned)
+  const pinnedBefore = pinnedOrder()
   useFolderExpansion.getState().setExpanded(folderId, true)
-  return mutate(() => {
+  const done = await mutate(() => {
     useChat.setState((state) => ({
       chats: state.chats.map((chat) => {
         const sortOrder = position.get(chat.id)
@@ -205,6 +279,9 @@ export function orderSidebarItems(folderId: string, ids: string[], incoming: rea
       folders: state.folders.map((folder) => moving.has(folder.id) ? { ...folder, parentId: folderId } : folder),
     }))
   }, () => apiRequest('/api/sidebar/order', { method: 'PUT', body: { parentId: folderId === chatsFolderId ? null : folderId, ids } }))
+  if (done && moved.length) {
+    announce(describe(moved, (name) => uit`Moved "${name}"`, (total) => uit`Moved ${total} items`), () => putBack(moved, pinnedBefore))
+  }
 }
 
 /** Where the pinned list ends: after the pinned chats and Files items. */
@@ -279,7 +356,7 @@ export function orderPinnedItems(ids: string[], incoming: readonly FileNode[] = 
 }
 
 /** Creates an untitled Markdown file at the top of `folderId` (the Files server picks a free name). */
-export function newSidebarFile(folderId: string): Promise<FileNode> {
+export function newSidebarFile(folderId: string): Promise<FileNode | undefined> {
   useFolderExpansion.getState().setExpanded(folderId, true)
   return mutate(null, () => createDoc(folderId, `${ui("Untitled")}.md`))
 }
@@ -297,10 +374,13 @@ export async function uploadToSidebar(folderId: string, files: readonly File[]):
   }
 }
 
-/** Trashes a Files item; chats in a trashed folder return to the unfiled list. Files can restore it. */
-export function trashSidebarItem(id: string): Promise<void> {
+/**
+ * Trashes Files items; chats in a trashed folder return to the unfiled list. Resolves with the ids
+ * to restore them by (Files can restore them too).
+ */
+function trashItems(ids: readonly string[]): Promise<string[] | undefined> {
   const state = readState()
-  const removed = new Set([id, ...state?.folders.filter((folder) => isWithin(state, folder.id, id)).map((folder) => folder.id) ?? []])
+  const removed = new Set([...ids, ...state?.folders.filter((folder) => ids.some((id) => isWithin(state, folder.id, id))).map((folder) => folder.id) ?? []])
   return mutate(() => {
     writeState((current) => ({ ...current, folders: current.folders.filter((folder) => !removed.has(folder.id)) }))
     writeItems((items) => items.filter((item) => !removed.has(item.id)))
@@ -308,11 +388,11 @@ export function trashSidebarItem(id: string): Promise<void> {
     useChat.setState((chat) => ({
       chats: chat.chats.map((item) => item.folderId && removed.has(item.folderId) ? { ...item, folderId: null } : item),
     }))
-  }, () => apiRequest<void>(`/api/sidebar/items/${id}`, { method: 'DELETE' }))
+  }, () => apiRequest<{ ids: string[] }>('/api/sidebar/trash', { method: 'POST', body: { ids } }).then((result) => result.ids))
 }
 
-/** Moves Files items (folders included) into the Archive folder, unpinning them. Chats use `archiveChat`. */
-export function archiveFiles(fileIds: string[]): Promise<unknown> {
+/** Moves Files items (folders included) into the Archive folder, unpinning them. */
+function archiveFiles(fileIds: string[]): Promise<unknown> {
   return mutate(() => {
     writeState((current) => ({
       ...current,
@@ -321,13 +401,6 @@ export function archiveFiles(fileIds: string[]): Promise<unknown> {
     writeItems((items) => items.filter((item) => !fileIds.includes(item.id)))
     writePinned((items) => items.filter((item) => !fileIds.includes(item.id)))
   }, () => apiRequest('/api/sidebar/archive', { method: 'POST', body: { fileIds } }))
-}
-
-export function archiveChat(chatId: string): void {
-  const archiveFolderId = readState()?.archiveFolderId
-  if (!archiveFolderId) return
-  useChat.getState().archiveChat(chatId, archiveFolderId)
-  void refresh()
 }
 
 /** A folder, file, or shortcut from the pinned list or any sidebar listing loaded so far. */
@@ -348,38 +421,86 @@ function splitSelection(ids: readonly string[]) {
 }
 
 /**
- * Moves selected chats and Files items to the top of a folder, or (null) of the sidebar, keeping
- * their order. With `unpin`, pinned chats leave the pinned list (as when dragged out of it).
+ * Moves chats and Files items to the top of a folder, or (null) of the sidebar, keeping their
+ * order, and offers to undo it. Pinned ones stay pinned unless `unpin` takes them out of the
+ * pinned list, as dragging them out of it does. `nodes` are Files items among them the sidebar may
+ * not have loaded (e.g. dragged in from Files).
  */
-export function moveSidebarSelection(ids: readonly string[], folderId: string | null, { unpin = false } = {}): Promise<unknown> {
-  const chatsFolderId = readState()?.chatsFolderId
+export async function moveSidebarSelection(
+  ids: readonly string[],
+  folderId: string | null,
+  { unpin = false, nodes = [] }: { unpin?: boolean; nodes?: readonly FileNode[] } = {},
+): Promise<void> {
+  const chatsFolderId = readState()?.chatsFolderId ?? null
   const target = folderId === chatsFolderId ? null : folderId
+  const before = placements(ids, nodes)
+  const pinnedBefore = pinnedOrder()
   const { chats, itemIds } = splitSelection(ids)
   const store = useChat.getState()
+  const chatRequests: Promise<void>[] = []
   // Each moved chat or item lands on top, so file them last-first.
   for (const chat of [...chats].reverse()) {
-    if (unpin && chat.pinned) store.unpinChat(chat.id, target)
-    else if (chat.folderId !== target || chat.inFilesRoot) store.moveToFolder(chat.id, target)
+    if (unpin && chat.pinned) chatRequests.push(store.unpinChat(chat.id, target))
+    else if (chat.folderId !== target || chat.inFilesRoot) chatRequests.push(store.moveToFolder(chat.id, target))
   }
-  return itemIds.length ? moveSidebarItems([...itemIds].reverse(), target, { unpin }) : Promise.resolve()
+  const itemsMoved = itemIds.length ? await moveSidebarItems([...itemIds].reverse(), target, { unpin }) : true
+  await Promise.all(chatRequests)
+  if (!itemsMoved) return
+  const moved = before.filter((place) => place.parentId !== (target ?? chatsFolderId) || (unpin && place.pinned))
+  if (moved.length) announce(describe(moved, (name) => uit`Moved "${name}"`, (total) => uit`Moved ${total} items`), () => putBack(moved, pinnedBefore))
 }
 
-/** Moves selected chats and Files items into the Archive folder. */
-export function archiveSidebarSelection(ids: readonly string[]): Promise<unknown> {
+/** Moves chats and Files items into the Archive folder, unpinning them, and offers to undo it. */
+export async function archiveSidebarSelection(ids: readonly string[], nodes: readonly FileNode[] = []): Promise<void> {
+  const archiveFolderId = readState()?.archiveFolderId
+  if (!archiveFolderId) return
+  const before = placements(ids, nodes)
+  const pinnedBefore = pinnedOrder()
   const { chats, itemIds } = splitSelection(ids)
-  for (const chat of chats) archiveChat(chat.id)
-  return itemIds.length ? archiveFiles(itemIds) : Promise.resolve()
+  const chatRequests = chats.map((chat) => useChat.getState().archiveChat(chat.id, archiveFolderId))
+  const itemsArchived = itemIds.length ? await archiveFiles(itemIds) : true
+  await Promise.all(chatRequests)
+  await refresh()
+  if (!itemsArchived || !before.length) return
+  announce(
+    describe(before, (name) => uit`Moved "${name}" to the archive`, (total) => uit`Moved ${total} items to the archive`),
+    () => putBack(before, pinnedBefore),
+  )
 }
 
-/** Trashes selected chats (to the chat trash) and Files items (restorable from Files). */
+/**
+ * Trashes chats (to the chat trash, or for good with instant retention) and Files items (to the
+ * Files trash), and offers to undo it.
+ */
 export async function trashSidebarSelection(ids: readonly string[]): Promise<void> {
+  const before = placements(ids)
   const { chats, itemIds } = splitSelection(ids)
-  for (const chat of chats) useChat.getState().deleteChat(chat.id)
-  await Promise.all(itemIds.map((id) => trashSidebarItem(id)))
+  const deleted = chats.map((chat) => useChat.getState().deleteChat(chat.id))
+  const roots = itemIds.length ? await trashItems(itemIds) : []
+  if (!roots || !before.length) return
+  // Chats deleted right away cannot come back.
+  const forGood = chats.length > 0 && useSettings.getState().trashRetention === 'instant'
+  const chatIds = forGood ? [] : chats.map((chat) => chat.id)
+  announce(
+    forGood
+      ? describe(before, (name) => uit`Deleted "${name}"`, (total) => uit`Deleted ${total} items`)
+      : describe(before, (name) => uit`Moved "${name}" to the trash`, (total) => uit`Moved ${total} items to the trash`),
+    roots.length || chatIds.length ? async () => {
+      await Promise.all(deleted)
+      try {
+        await Promise.all([
+          roots.length ? apiRequest('/api/sidebar/restore', { method: 'POST', body: { ids: roots } }) : undefined,
+          chatIds.length ? useChat.getState().recoverChats(chatIds) : undefined,
+        ])
+      } finally {
+        await refresh()
+      }
+    } : undefined,
+  )
 }
 
 /** Creates a shortcut to a Files item or a chat in `parentId` (null is My files; omitted, the Chats folder). */
-export function createShortcut(targetKind: 'file' | 'chat', targetId: string, parentId?: string | null): Promise<FileNode> {
+export function createShortcut(targetKind: 'file' | 'chat', targetId: string, parentId?: string | null): Promise<FileNode | undefined> {
   if (parentId) useFolderExpansion.getState().setExpanded(parentId, true)
   return mutate(null, () => apiRequest<FileNode>('/api/sidebar/shortcuts', { method: 'POST', body: { targetKind, targetId, parentId } }))
 }

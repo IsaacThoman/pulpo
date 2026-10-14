@@ -5,6 +5,7 @@ import {
   createShortcutSchema,
   createSidebarFolderSchema,
   fileNameSchema,
+  fileNodeIdsSchema,
   moveSidebarItemsSchema,
   orderPinnedItemsSchema,
   orderSidebarItemsSchema,
@@ -17,7 +18,7 @@ import { AppError, forbidden, notFound } from '../lib/errors.js'
 import { resolveFileAccess } from '../files/access.js'
 import { filesFeatureEnabled, parseFileInput } from '../files/request.js'
 import { createShortcut } from '../files/shortcuts.js'
-import { trashFileNodes, updateFileNode } from '../files/tree-service.js'
+import { restoreFileNodes, trashFileNodes, updateFileNode } from '../files/tree-service.js'
 import {
   archiveItems,
   createSidebarFolder,
@@ -87,6 +88,18 @@ export async function registerSidebarRoutes(app: FastifyInstance): Promise<void>
   app.patch('/api/sidebar/items/:id', async (request) => {
     const user = requireSidebarUser(request)
     return updateSidebarItem(user.id, idParams.parse(request.params).id, parseFileInput(updateSidebarItemSchema, request.body))
+  })
+
+  // Trashes items (restorable from Files, or right away with /api/sidebar/restore); returns the
+  // ids to restore, which the server may have narrowed to the topmost of nested items.
+  app.post('/api/sidebar/trash', async (request) => {
+    const user = requireSidebarUser(request)
+    return { ids: await trashFileNodes(user.id, fileNodeIdsSchema.parse(request.body).ids) }
+  })
+
+  app.post('/api/sidebar/restore', async (request) => {
+    const user = requireSidebarUser(request)
+    return { nodes: await restoreFileNodes(user.id, fileNodeIdsSchema.parse(request.body).ids) }
   })
 
   app.delete('/api/sidebar/items/:id', async (request, reply) => {

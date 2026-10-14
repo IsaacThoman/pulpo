@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, createEvent, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, createEvent, fireEvent, render, screen, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
@@ -8,13 +8,7 @@ import type { FileNode, SidebarState } from '@pulpo/contracts'
 import type { Chat } from '@/lib/types'
 import type { ItemDropZone } from '@/features/files/browser/use-item-drag'
 
-const actions = vi.hoisted(() => ({
-  moveToFolder: vi.fn(),
-  unpinChat: vi.fn(),
-}))
-
 const sidebarActions = vi.hoisted(() => ({
-  moveSidebarItems: vi.fn(),
   orderSidebarItems: vi.fn(),
   orderPinnedItems: vi.fn(),
   pinSidebarItems: vi.fn(),
@@ -56,6 +50,12 @@ Object.assign(folderItems, {
   f1: [node('f3', 'f1', 'folder', 'Folder f3', 1)],
 })
 
+const chatActions = vi.hoisted(() => ({ duplicateChats: vi.fn(), copyChatShareLink: vi.fn() }))
+vi.mock('@/features/chat/chat-actions', async (importActual) => ({
+  ...await importActual<typeof import('@/features/chat/chat-actions')>(),
+  ...chatActions,
+}))
+
 /** The zone the sidebar registers for items dragged in from the Files browser. */
 const filesZone = vi.hoisted(() => ({ current: null as ItemDropZone | null }))
 vi.mock('@/features/files/browser/use-item-drag', () => ({
@@ -80,7 +80,6 @@ vi.mock('@/stores/chat', () => {
     responseChatIds: {} as Record<string, string>,
     activeTemporaryChatId: null,
     composerModelId: 'model',
-    ...actions,
   }
   return {
     compareChatOrder: (a: Chat, b: Chat) => a.sortOrder - b.sortOrder || b.createdAt - a.createdAt,
@@ -202,7 +201,7 @@ describe('sidebar dragging', () => {
   it('reorders chats and folders together inside a folder', () => {
     dragTo(chatRow('x2'), 125, chatRow('x1').parentElement!)
     expect(sidebarActions.orderSidebarItems).toHaveBeenCalledWith('f1', ['x2', 'x1', 'f3'], undefined)
-    expect(actions.moveToFolder).not.toHaveBeenCalled()
+    expect(sidebarActions.moveSidebarSelection).not.toHaveBeenCalled()
   })
 
   it('places an item beside a folder from the edge of its header', () => {
@@ -214,11 +213,11 @@ describe('sidebar dragging', () => {
 
   it('files anything dropped on the middle of a folder into it', () => {
     dragTo(chatRow('b'), 285, folderRow('f2'))
-    expect(actions.moveToFolder).toHaveBeenCalledWith('b', 'f2')
+    expect(sidebarActions.moveSidebarSelection).toHaveBeenCalledWith(['b'], 'f2', { unpin: false })
     dragTo(fileRow(), 285, folderRow('f2'))
-    expect(sidebarActions.moveSidebarItems).toHaveBeenCalledWith(['doc-1'], 'f2', { unpin: false })
+    expect(sidebarActions.moveSidebarSelection).toHaveBeenCalledWith(['doc-1'], 'f2', { unpin: false })
     dragTo(folderRow('f2'), 105, folderRow('f1'))
-    expect(sidebarActions.moveSidebarItems).toHaveBeenCalledWith(['f2'], 'f1', { unpin: false })
+    expect(sidebarActions.moveSidebarSelection).toHaveBeenCalledWith(['f2'], 'f1', { unpin: false })
   })
 
   it('moves a folder chat out to the top level when dragged into a gap there', () => {
@@ -248,14 +247,14 @@ describe('sidebar dragging', () => {
     dragTo(chatRow('p2'), 125, chatRow('x1'))
     expect(sidebarActions.orderSidebarItems).toHaveBeenCalledWith('f1', ['p2', 'x1', 'f3', 'x2'], undefined)
     dragTo(chatRow('p1'), 285, folderRow('f2'))
-    expect(actions.unpinChat).toHaveBeenCalledWith('p1', 'f2')
+    expect(sidebarActions.moveSidebarSelection).toHaveBeenCalledWith(['p1'], 'f2', { unpin: true })
     expect(sidebarActions.orderPinnedItems).not.toHaveBeenCalled()
   })
 
   it('does not move a folder into itself or its own subfolder', () => {
     dragTo(folderRow('f1'), 165, folderRow('f3'))
     dragTo(folderRow('f1'), 152, folderRow('f3'))
-    expect(sidebarActions.moveSidebarItems).not.toHaveBeenCalled()
+    expect(sidebarActions.moveSidebarSelection).not.toHaveBeenCalled()
     expect(sidebarActions.orderSidebarItems).not.toHaveBeenCalled()
   })
 
@@ -271,7 +270,7 @@ describe('sidebar dragging', () => {
 
   it('files a chat dropped on a folder shortcut into the folder it opens', () => {
     dragTo(chatRow('b'), 315, folderRow('projects'))
-    expect(actions.moveToFolder).toHaveBeenCalledWith('b', 'projects')
+    expect(sidebarActions.moveSidebarSelection).toHaveBeenCalledWith(['b'], 'projects', { unpin: false })
   })
 
   it('still drops directly on rows', () => {
@@ -282,7 +281,7 @@ describe('sidebar dragging', () => {
   it('leaves an item in place when released next to where it started', () => {
     dragTo(chatRow('b'), 215)
     expect(sidebarActions.orderSidebarItems).not.toHaveBeenCalled()
-    expect(actions.moveToFolder).not.toHaveBeenCalled()
+    expect(sidebarActions.moveSidebarSelection).not.toHaveBeenCalled()
   })
 })
 
@@ -312,7 +311,7 @@ describe('pinned folders and files', () => {
     dragTo(folderRow('pf'), 10_000)
     expect(sidebarActions.orderSidebarItems).toHaveBeenCalledWith('chats', [...TOP_LEVEL, 'pf'], undefined)
     dragTo(folderRow('pf'), 315, folderRow('f2'))
-    expect(sidebarActions.moveSidebarItems).toHaveBeenCalledWith(['pf'], 'f2', { unpin: true })
+    expect(sidebarActions.moveSidebarSelection).toHaveBeenCalledWith(['pf'], 'f2', { unpin: true })
   })
 
   it('pins and unpins from the item menu', async () => {
@@ -362,7 +361,7 @@ describe('dropping items dragged from Files', () => {
   it('files them into a folder from its middle, and beside it from its edges', () => {
     const nodes = [fromFiles('n1')]
     dropFromFiles(nodes, folderRow('f2'), 285)
-    expect(sidebarActions.moveSidebarItems).toHaveBeenCalledWith(['n1'], 'f2', { unpin: true })
+    expect(sidebarActions.moveSidebarSelection).toHaveBeenCalledWith(['n1'], 'f2', { unpin: true, nodes })
     dropFromFiles(nodes, folderRow('f2'), 271)
     expect(sidebarActions.orderSidebarItems).toHaveBeenCalledWith('chats', ['a', 'f1', 'b', 'doc-1', 'n1', 'f2', 's-proj', 'c'], nodes)
   })
@@ -384,7 +383,7 @@ describe('dropping items dragged from Files', () => {
 
   it('does not put a folder inside itself', () => {
     expect(dropFromFiles([node('f1', 'chats', 'folder', 'Folder f1', 1)], folderRow('f3'), 165)).toBe(false)
-    expect(sidebarActions.moveSidebarItems).not.toHaveBeenCalled()
+    expect(sidebarActions.moveSidebarSelection).not.toHaveBeenCalled()
     expect(sidebarActions.orderSidebarItems).not.toHaveBeenCalled()
   })
 
@@ -414,6 +413,43 @@ describe('right-clicking empty sidebar space', () => {
     fireEvent.contextMenu(chatRow('a'), { clientX: 20, clientY: 60 })
     expect(await screen.findByRole('menuitem', { name: 'Rename' })).toBeTruthy()
     expect(screen.queryByRole('menuitem', { name: /Sort by/ })).toBeNull()
+  })
+})
+
+describe('menus of folders, files, and chats', () => {
+  it('moves a folder from its menu, but not into itself or its own subfolders', async () => {
+    fireEvent.contextMenu(folderRow('f1'), { clientX: 20, clientY: 90 })
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Move to folder' }))
+    const option = async (name: string) => screen.findByRole('menuitem', { name })
+    expect((await option('Folder f1')).getAttribute('aria-disabled')).toBe('true')
+    expect((await option('Folder f3')).getAttribute('aria-disabled')).toBe('true')
+    fireEvent.click(await option('Folder f2'))
+    expect(sidebarActions.moveSidebarSelection).toHaveBeenCalledWith(['f1'], 'f2')
+  })
+
+  it('opens files and folders in a new tab', async () => {
+    const open = vi.spyOn(window, 'open').mockReturnValue(null)
+    fireEvent.contextMenu(fileRow(), { clientX: 20, clientY: 240 })
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Open in new tab' }))
+    expect(open).toHaveBeenCalledWith('/files/d/doc-1', '_blank', 'noopener')
+    open.mockRestore()
+  })
+
+  it('trashes a file or folder in one click while Shift is held, as chats are', () => {
+    act(() => { fireEvent.keyDown(window, { key: 'Shift' }) })
+    fireEvent.click(within(fileRow()).getByRole('button', { name: 'Move to trash' }))
+    expect(sidebarActions.trashSidebarSelection).toHaveBeenCalledWith(['doc-1'])
+    fireEvent.click(within(folderRow('f2') as HTMLElement).getByRole('button', { name: 'Move to trash' }))
+    expect(sidebarActions.trashSidebarSelection).toHaveBeenCalledWith(['f2'])
+    fireEvent.click(within(chatRow('a')).getByRole('button', { name: /chat$/ }))
+    expect(sidebarActions.trashSidebarSelection).toHaveBeenCalledWith(['a'])
+    act(() => { fireEvent.keyUp(window, { key: 'Shift' }) })
+  })
+
+  it('duplicates a chat from its menu', async () => {
+    fireEvent.contextMenu(chatRow('a'), { clientX: 20, clientY: 60 })
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Duplicate' }))
+    expect(chatActions.duplicateChats).toHaveBeenCalledWith([expect.objectContaining({ id: 'a' })])
   })
 })
 
