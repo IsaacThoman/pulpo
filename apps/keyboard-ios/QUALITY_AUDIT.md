@@ -83,6 +83,25 @@ The frozen typo-set SHA-256 hashes are
 `c13df5b4da1bf57200411569e29004a5f45818a2d95a2d8df78f8e9d33f68806`
 and `e7f1f338fd2c06fb9a68ce1e3f37a9e804a1facac367b0573f46e14d62a22e7e`.
 
+Final verification after merging `dev` at `70a62ec7`: **188 KeyboardCore tests
+in 18 suites**, plus **two PulpoServices tests**, pass in Release. The broad
+**71-test iOS 26.5 native run** passes, followed by seven focused notched-phone
+picker checks and **11 post-merge native checks** of the final grid, suggestions,
+spacing, completion and correction undo. **Seven iOS 18.1 checks** pass for grid
+geometry, safe areas, scrolling, accessibility, supported emoji and explicit
+replacement/append workflows. All **20 Python tests** pass. The full standalone
+keyboard **Release simulator build** succeeds with `PulpoKeyboard.icon`; both
+modern layers and generated legacy rasters are verified, including the installed
+iOS 18 fallback icon. The icon is referenced from the existing mobile asset and
+is assigned only to the keyboard companion app.
+
+One earlier concurrent run hit the existing 60 ms decode ceiling at 151 ms while
+multiple benchmark suites and simulator builds competed for the host. Its
+isolated retry passes at 3.2 ms; the full merged serialized run passes with a
+5.8 ms maximum. `npm run keyboard:test` now explicitly serializes suites rather
+than relaxing the ceiling. These host timings are not physical iPhone latency
+measurements. No new physical iPhone build was installed in this iteration.
+
 ## Further iteration: typing confidence and native input
 
 Blind evaluations now include clean literals as well as intended corrections.
