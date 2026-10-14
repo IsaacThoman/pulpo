@@ -27,6 +27,7 @@ vi.mock('@/features/files/api', async (importOriginal) => ({
     { id: 'folder', name: 'Projects', kind: 'folder', updatedAt: '2026-10-06T00:00:00Z' },
     { id: 'sidebar', name: 'Sidebar', kind: 'folder', systemRole: 'chats', updatedAt: '2026-10-06T00:00:00Z' },
     { id: 'plans', name: 'Plans.md', kind: 'doc', sizeBytes: 0, pinned: true, updatedAt: '2026-10-06T00:00:00Z' },
+    { id: 'trip', name: 'Trip', kind: 'chat', sizeBytes: 0, updatedAt: '2026-10-06T00:00:00Z' },
   ] }),
   fetchFolderLayout: async () => ({ folderId: null, positions: {}, snapToGrid: true }),
 }))
@@ -35,6 +36,12 @@ const pinSidebarItems = vi.hoisted(() => vi.fn(async () => undefined))
 vi.mock('@/features/sidebar/api', async (importOriginal) => ({
   ...await importOriginal<typeof import('@/features/sidebar/api')>(),
   pinSidebarItems,
+}))
+
+const chatActions = vi.hoisted(() => ({ duplicateChats: vi.fn(async () => []), copyChatShareLink: vi.fn(async () => undefined) }))
+vi.mock('@/features/chat/chat-actions', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@/features/chat/chat-actions')>(),
+  ...chatActions,
 }))
 
 function Location() {
@@ -168,5 +175,18 @@ describe('pinning', () => {
     fireEvent.contextMenu(await screen.findByRole('option', { name: /Notes.md/ }))
     fireEvent.click(await screen.findByRole('menuitem', { name: 'Pin' }))
     expect(pinSidebarItems).toHaveBeenCalledWith(['document'], true, [expect.objectContaining({ id: 'document' })])
+  })
+})
+
+describe('chats in Files', () => {
+  it('offers what the chat menu does: a share link and duplicating', async () => {
+    showFiles()
+    fireEvent.contextMenu(await screen.findByRole('option', { name: /Trip/ }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Copy share link' }))
+    expect(chatActions.copyChatShareLink).toHaveBeenCalledWith('trip')
+
+    fireEvent.contextMenu(await screen.findByRole('option', { name: /Trip/ }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: /^Duplicate/ }))
+    expect(chatActions.duplicateChats).toHaveBeenCalledWith([{ id: 'trip', title: 'Trip' }])
   })
 })

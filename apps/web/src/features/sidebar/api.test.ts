@@ -3,32 +3,42 @@ import type { FileListing, FileNode, SidebarState } from '@pulpo/contracts'
 import type { Chat } from '@/lib/types'
 
 const storage = new Map<string, string>()
-vi.stubGlobal('localStorage', {
+const localStorageStub = {
   getItem: (key: string) => storage.get(key) ?? null,
   setItem: (key: string, value: string) => storage.set(key, value),
   removeItem: (key: string) => storage.delete(key),
-})
+}
+vi.stubGlobal('localStorage', localStorageStub)
 vi.stubGlobal('document', { documentElement: { classList: { contains: () => false, toggle: vi.fn() } } })
 vi.stubGlobal('window', {
   matchMedia: () => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() }),
+  localStorage: localStorageStub,
   setTimeout,
   clearTimeout,
 })
 
 const requests: Array<{ path: string; method?: string; body?: unknown }> = []
-// Requests never settle, so the optimistic state stays in place to inspect.
+/** The server's answer to a request; by default none, so the optimistic state stays in place to inspect. */
+let respond: (path: string, method: string) => Response | null = () => null
 vi.stubGlobal('fetch', vi.fn((input: string | URL | Request, init?: RequestInit) => {
   requests.push({ path: String(input), method: init?.method, body: typeof init?.body === 'string' ? JSON.parse(init.body) : undefined })
-  return new Promise<Response>(() => undefined)
+  const response = respond(String(input), init?.method ?? 'GET')
+  return response ? Promise.resolve(response) : new Promise<Response>(() => undefined)
 }))
+const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
 
-const [{ orderPinnedItems, pinSidebarItems }, { useChat }, { useAuth }, { queryClient }, { sidebarItemsKey, sidebarQueryKey }, { folderQueryKey }] = await Promise.all([
+const [
+  { archiveSidebarSelection, moveSidebarSelection, orderPinnedItems, pinSidebarItems, trashSidebarSelection },
+  { useChat }, { useAuth }, { useSettings }, { queryClient }, { sidebarItemsKey, sidebarQueryKey }, { folderQueryKey }, { useFileToasts },
+] = await Promise.all([
   import('./api'),
   import('@/stores/chat'),
   import('@/stores/auth'),
+  import('@/stores/settings'),
   import('@/lib/query-client'),
   import('./cache'),
   import('@/features/files/api'),
+  import('@/features/files/browser/toasts'),
 ])
 
 const userId = '00000000-0000-4000-8000-000000000001'
@@ -53,6 +63,9 @@ const chatOf = (id: string) => useChat.getState().chats.find((candidate) => cand
 
 beforeEach(() => {
   requests.splice(0)
+  respond = () => null
+  useFileToasts.setState({ toasts: [] })
+  useSettings.setState({ trashRetention: '30d' })
   queryClient.clear()
   useAuth.setState({ user: {
     id: userId, name: 'Test', email: 'test@example.com', username: 'test_user', avatarUrl: null, profileColor: null, role: 'user', initials: 'T',
@@ -104,5 +117,63 @@ describe('pinning sidebar items', () => {
     expect(chatOf('pinned-chat')).toMatchObject({ pinned: true, sortOrder: 2 })
     expect(listing('chats').map((node) => node.id)).toEqual(['notes'])
     expect(requests).toContainEqual(expect.objectContaining({ method: 'PUT', body: { ids: ['work', 'pinned-folder', 'pinned-chat'] } }))
+  })
+})
+
+describe('undoing sidebar changes', () => {
+  const toasts = () => useFileToasts.getState().toasts
+  const sent = (method: string, path: string) => requests.filter((request) => request.method === method && request.path.endsWith(path)).map((request) => request.body)
+
+  it('moves items and puts them back on undo', async () => {
+    respond = () => json({ nodes: [] })
+    await moveSidebarSelection(['work'], 'f9')
+
+    expect(sent('POST', '/api/sidebar/move')).toEqual([{ ids: ['work'], parentId: 'f9' }])
+    expect(toasts()).toEqual([expect.objectContaining({ message: 'Moved "work"', undo: expect.any(Function) })])
+    await toasts()[0]!.undo!()
+    expect(sent('POST', '/api/sidebar/move')).toEqual([{ ids: ['work'], parentId: 'f9' }, { ids: ['work'], parentId: 'chats' }])
+  })
+
+  it('does not announce a move that changes nothing', async () => {
+    respond = () => json({ nodes: [] })
+    await moveSidebarSelection(['loose'], null)
+    expect(toasts()).toEqual([])
+  })
+
+  it('trashes chats and items, and restores both on undo', async () => {
+    respond = (path, method) => method === 'DELETE' ? new Response(null, { status: 204 })
+      : path.endsWith('/api/sidebar/trash') ? json({ ids: ['notes'] }) : json({})
+    await trashSidebarSelection(['notes', 'loose'])
+
+    expect(sent('POST', '/api/sidebar/trash')).toEqual([{ ids: ['notes'] }])
+    expect(useChat.getState().chats.map((chat) => chat.id)).toEqual(['pinned-chat'])
+    expect(toasts()).toEqual([expect.objectContaining({ message: 'Moved 2 items to the trash', undo: expect.any(Function) })])
+    await toasts()[0]!.undo!()
+    expect(sent('POST', '/api/sidebar/restore')).toEqual([{ ids: ['notes'] }])
+    expect(sent('POST', '/api/chats/loose/recover')).toHaveLength(1)
+  })
+
+  it('says chats deleted right away are gone, without an undo', async () => {
+    useSettings.setState({ trashRetention: 'instant' })
+    respond = () => new Response(null, { status: 204 })
+    await trashSidebarSelection(['loose'])
+    expect(toasts()).toEqual([expect.objectContaining({ message: 'Deleted "loose"', undo: undefined })])
+  })
+
+  it('archives a pinned item and puts it back, pinned in its old place, on undo', async () => {
+    respond = () => json({})
+    await archiveSidebarSelection(['pinned-folder'])
+
+    expect(sent('POST', '/api/sidebar/archive')).toEqual([{ fileIds: ['pinned-folder'] }])
+    expect(toasts()).toEqual([expect.objectContaining({ message: 'Moved "pinned-folder" to the archive' })])
+    await toasts()[0]!.undo!()
+    expect(sent('POST', '/api/sidebar/move')).toEqual([{ ids: ['pinned-folder'], parentId: 'elsewhere' }])
+    expect(sent('PUT', '/api/sidebar/pinned')).toEqual([{ ids: ['pinned-chat', 'pinned-folder'] }])
+  })
+
+  it('reports a failure in a toast instead of throwing', async () => {
+    respond = () => json({ error: { code: 'file_move_cycle', message: 'cycle' } }, 400)
+    await expect(moveSidebarSelection(['work'], 'f9')).resolves.toBeUndefined()
+    expect(toasts()).toEqual([expect.objectContaining({ message: 'A folder cannot be moved into itself', tone: 'error' })])
   })
 })

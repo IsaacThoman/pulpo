@@ -113,7 +113,8 @@ export function useFileOperations() {
     if (name === node.name) return true
     const renamed = await run(() => updateFileNode(node.id, { name, expectedRevision: node.revision }), name)
     if (!renamed) return false
-    undoable(uit`Renamed to "${name}"`, () => updateFileNode(node.id, { name: node.name }))
+    // A name already taken gets a " (n)" suffix, so say which name it got.
+    undoable(uit`Renamed to "${renamed.name}"`, () => updateFileNode(node.id, { name: node.name }))
     return true
   }
 

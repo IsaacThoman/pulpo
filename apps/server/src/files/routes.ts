@@ -156,9 +156,10 @@ export async function registerFileRoutes(app: FastifyInstance): Promise<void> {
     return readDocMarkdown(user.id, idParams.parse(request.params).id)
   })
 
+  // A name already taken in the folder gets a " (n)" suffix, as renames in the sidebar do.
   app.patch('/api/files/:id', async (request) => {
     const user = await requireFilesUser(request)
-    return updateFileNode(user.id, idParams.parse(request.params).id, parseFileInput(updateFileNodeSchema, request.body))
+    return updateFileNode(user.id, idParams.parse(request.params).id, { ...parseFileInput(updateFileNodeSchema, request.body), onConflict: 'rename' })
   })
 
   app.post('/api/files/:id/trash', async (request, reply) => {
