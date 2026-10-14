@@ -16,6 +16,17 @@ emoji without deleting the words. Space and punctuation never apply emoji.
 The picker and bar share recent choices and preferred skin tones. Private,
 address, numeric, selected-text and technical-identifier contexts suppress emoji.
 
+The picker uses three rows in compact landscape rather than squeezing five
+30-point glyph rows into 22-point cells. Empty sections contribute no section
+padding, and the explicitly sized grid opts out of automatic safe-area insets.
+iOS 26 vertical scroll-edge effects are hidden because the fixed header and
+footer already sit outside the viewport. A realized-window regression exposes
+the combined empty-section and safe-area offset; category controls and Recents
+also have native coverage. Initial and horizontally scrolled notched-simulator
+captures did not reproduce the exact first-row blur in the user's physical-phone
+screenshot; the mask configuration is explicit, but a matching physical-device
+replay is not claimed. The system-owned lower keyboard bezel is preserved.
+
 The matcher checks all 1,922 canonical names meeting its three-character minimum,
 as well as an independently frozen set of aliases, prefixes, Unicode variants and
 negative controls. The index is built off the typing thread. An optimized macOS

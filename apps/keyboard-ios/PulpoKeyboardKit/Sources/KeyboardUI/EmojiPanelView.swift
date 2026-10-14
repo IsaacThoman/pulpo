@@ -24,7 +24,7 @@ final class EmojiPanelView: UIView, UICollectionViewDataSource, UICollectionView
   private var toneTarget: Emoji?
   private var deleteTimer: Timer?
   private var deleteRepeats = 0
-  static let rows: CGFloat = 5
+  private var rows: CGFloat { style.landscape ? 3 : 5 }
 
   static let symbols: [String: String] = [
     "recents": "clock", "smileys": "face.smiling", "animals": "pawprint", "food": "fork.knife",
@@ -47,6 +47,13 @@ final class EmojiPanelView: UIView, UICollectionViewDataSource, UICollectionView
     header.font = .systemFont(ofSize: 12, weight: .semibold)
     addSubview(header)
     collection.backgroundColor = .clear
+    // The header and toolbar already sit outside the grid. Host safe areas and
+    // vertical scroll-edge masks must not shift or obscure its first row.
+    collection.contentInsetAdjustmentBehavior = .never
+    if #available(iOS 26, *) {
+      collection.topEdgeEffect.isHidden = true
+      collection.bottomEdgeEffect.isHidden = true
+    }
     collection.showsHorizontalScrollIndicator = false
     collection.dataSource = self
     collection.delegate = self
@@ -93,6 +100,7 @@ final class EmojiPanelView: UIView, UICollectionViewDataSource, UICollectionView
     header.textColor = style.secondaryLabel
     abc.tintColor = style.label
     delete.tintColor = style.label
+    setNeedsLayout()
     updateSelectedCategory()
   }
 
@@ -170,12 +178,14 @@ final class EmojiPanelView: UIView, UICollectionViewDataSource, UICollectionView
   }
 
   func collectionView(_ collectionView: UICollectionView, layout: UICollectionViewLayout, sizeForItemAt indexPath: IndexPath) -> CGSize {
-    let height = floor(collectionView.bounds.height / Self.rows)
+    // The compact landscape keyboard needs fewer rows to keep the emoji glyphs
+    // from overlapping one another and clipping at the grid's upper/lower edge.
+    let height = floor(collectionView.bounds.height / rows)
     return CGSize(width: max(40, height + 4), height: height)
   }
 
   func collectionView(_ collectionView: UICollectionView, layout: UICollectionViewLayout, insetForSectionAt section: Int) -> UIEdgeInsets {
-    UIEdgeInsets(top: 0, left: 6, bottom: 0, right: 10)
+    sections[section].emoji.isEmpty ? .zero : UIEdgeInsets(top: 0, left: 6, bottom: 0, right: 10)
   }
 
   func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
@@ -212,6 +222,13 @@ final class EmojiPanelView: UIView, UICollectionViewDataSource, UICollectionView
   @objc private func categoryTapped(_ sender: UIButton) {
     let section = sender.tag
     guard sections.indices.contains(section) else { return }
+    if section == 0 {
+      // Keep the current grid stable while inserting, then show the latest
+      // history when the person returns to Frequently Used.
+      reloadRecents()
+      collection.reloadData()
+      collection.layoutIfNeeded()
+    }
     if sections[section].emoji.isEmpty {
       collection.setContentOffset(.zero, animated: false)
     } else if let attributes = collection.layoutAttributesForItem(at: IndexPath(item: 0, section: section)) {
