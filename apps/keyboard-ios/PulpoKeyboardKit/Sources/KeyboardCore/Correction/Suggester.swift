@@ -258,52 +258,17 @@ public final class Suggester {
          let match = ranked.first(where: { !$0.isCompletion && $0.text == Self.matchCase(of: typed, to: shortcut) }) {
         return match
       }
-      let maximumCost = typedKey.count >= 7 ? 6.5 : 4.5
-      guard let best = ranked.first(where: {
-        !$0.isCompletion && $0.text != typed && $0.cost <= maximumCost &&
-        // Rare dictionary abbreviations are poor defaults for unknown literals.
-        !($0.text.count > 1 && $0.text.allSatisfy(\.isUppercase) && !typed.allSatisfy(\.isUppercase)) &&
-        !($0.id.map { lexicon.flags($0).contains(.capitalized) && lexicon.frequency($0) < 100 } ?? false) &&
-        // Keep rare dictionary entries from winning when sparse context gives
-        // every candidate the same language probability floor.
-        ($0.id.map { lexicon.unigramLogProbability($0) } ?? -13) - $0.cost >= -20.8
-      }) else { return nil }
-      // A new title-cased word inside a sentence can be a name. A clear
-      // adjacent transposition still supplies positive typing-error evidence;
-      // adding or dropping letters does not establish that a name is wrong.
-      if context.previousWord != nil, typed.first?.isUppercase == true,
-         typed.dropFirst().allSatisfy(\.isLowercase),
-         !Self.isSingleTransposition(typedKey, TextNormalizer.key(best.text)),
-         !hasDirectedSubstitutions(word.keyed, target: TextNormalizer.key(best.text)) { return nil }
-      // A short unknown token can just as easily be slang or an abbreviation.
-      // Require more evidence than finding a nearby dictionary word. Judge the
-      // strongest eligible correction first: rejecting it must not expose an
-      // unrelated, weaker fallback to autocorrection.
-      let minimumFamiliarity = typedKey.count <= 4 ? -14.5 : -20.8
-      let familiarity = (best.id.map { lexicon.unigramLogProbability($0) } ?? -13) - best.cost
-      let bestKey = TextNormalizer.key(best.text)
-      // A singleton suffix on a short unknown token often belongs to slang or
-      // an abbreviation ("meh"). Removing it needs evidence of a doubled key
-      // or a neighboring key brushed while finishing the word.
-      if typedKey.count <= 4, typedKey.count == bestKey.count + 1,
-         typedKey.hasPrefix(bestKey), !hasPlausibleFinalBrush(word) { return nil }
-      // A common word with one missing interior vowel can have a low combined
-      // prior/edit score despite an otherwise clear winner. Keep lexical
-      // familiarity and separation from competing explanations distinct.
-      let canonical = best.id.map { lexicon.display($0) } ?? best.text
-      let missingInteriorVowel = Self.hasSingleInteriorVowelOmission(typedKey, bestKey)
-      let runnerUp = ranked.first { candidate in
-        !candidate.isCompletion && TextNormalizer.key(candidate.text) != bestKey &&
-        candidate.cost <= maximumCost && candidate.text != typed
-      }
-      let unambiguousOmission = missingInteriorVowel &&
-        canonical.first?.isLowercase == true &&
-        (best.id.map { lexicon.unigramLogProbability($0) } ?? -26) >= -13 &&
-        best.score - (runnerUp?.score ?? -.infinity) >= 3
-      guard familiarity >= minimumFamiliarity || (typedKey.count <= 4 && unambiguousOmission) else { return nil }
-      let sameLetters = TextNormalizer.key(best.text) == typedKey
-      // A lone letter is only ever fixed by a shortcut such as i -> I.
-      return typed.count > 1 || sameLetters ? best : nil
+      let single = nonwordCorrection(from: ranked, word: word, context: context)
+      // A missed or mistyped space joins two words into one unknown token.
+      guard let split = spaceSplit(for: word, context: context) else { return single }
+      // Two words must explain the letters better than any single word, including
+      // one too uncertain to apply (Mybe stays literal rather than becoming My be).
+      if let rival = ranked.first(where: { !$0.isCompletion && $0.text != typed }), rival.score >= split.score { return single }
+      // A closed compound is the normal spelling of its halves typed without a
+      // space: anyrhing is anything, not any thing.
+      let joined = TextNormalizer.key(split.text.replacingOccurrences(of: " ", with: ""))
+      if ranked.contains(where: { !$0.isCompletion && TextNormalizer.key($0.text) == joined }) { return single }
+      return split
     }
     // Preserve apostrophes, accents and capitalization already accepted by the
     // dictionary. They can distinguish meanings: we're/were and ill/I'll.
@@ -345,6 +310,148 @@ public final class Suggester {
     }
     if best.score - typedScore >= margin { return best }
     return nil
+  }
+
+
+  /// The single-word correction for an unknown literal, or nil to keep it.
+  private func nonwordCorrection(from ranked: [Candidate], word: TypedWord, context: LanguageContext) -> Candidate? {
+    let typedKey = TextNormalizer.key(word.text)
+    let standard = typedKey.count >= 7 ? 6.5 : 4.5
+    return nonwordCorrection(from: ranked, word: word, context: context, maximumCost: standard)
+  }
+
+  private func nonwordCorrection(from ranked: [Candidate], word: TypedWord, context: LanguageContext, maximumCost: Double) -> Candidate? {
+    let typed = word.text
+    let typedKey = TextNormalizer.key(typed)
+    guard let best = ranked.first(where: {
+      !$0.isCompletion && $0.text != typed && $0.cost <= maximumCost &&
+      // Rare dictionary abbreviations are poor defaults for unknown literals.
+      !($0.text.count > 1 && $0.text.allSatisfy(\.isUppercase) && !typed.allSatisfy(\.isUppercase)) &&
+      !($0.id.map { lexicon.flags($0).contains(.capitalized) && lexicon.frequency($0) < 100 } ?? false) &&
+      // Keep rare dictionary entries from winning when sparse context gives
+      // every candidate the same language probability floor.
+      ($0.id.map { lexicon.unigramLogProbability($0) } ?? -13) - $0.cost >= -20.8
+    }) else { return nil }
+    // A new title-cased word inside a sentence can be a name. A clear
+    // adjacent transposition still supplies positive typing-error evidence;
+    // adding or dropping letters does not establish that a name is wrong.
+    if context.previousWord != nil, typed.first?.isUppercase == true,
+       typed.dropFirst().allSatisfy(\.isLowercase),
+       !Self.isSingleTransposition(typedKey, TextNormalizer.key(best.text)),
+       !hasDirectedSubstitutions(word.keyed, target: TextNormalizer.key(best.text)) { return nil }
+    // A short unknown token can just as easily be slang or an abbreviation.
+    // Require more evidence than finding a nearby dictionary word. Judge the
+    // strongest eligible correction first: rejecting it must not expose an
+    // unrelated, weaker fallback to autocorrection.
+    let minimumFamiliarity = typedKey.count <= 4 ? -14.5 : -20.8
+    let familiarity = (best.id.map { lexicon.unigramLogProbability($0) } ?? -13) - best.cost
+    let bestKey = TextNormalizer.key(best.text)
+    // A singleton suffix on a short unknown token often belongs to slang or
+    // an abbreviation ("meh"). Removing it needs evidence of a doubled key
+    // or a neighboring key brushed while finishing the word.
+    if typedKey.count <= 4, typedKey.count == bestKey.count + 1,
+       typedKey.hasPrefix(bestKey), !hasPlausibleFinalBrush(word) { return nil }
+    // A common word with one missing interior vowel can have a low combined
+    // prior/edit score despite an otherwise clear winner. Keep lexical
+    // familiarity and separation from competing explanations distinct.
+    let canonical = best.id.map { lexicon.display($0) } ?? best.text
+    let missingInteriorVowel = Self.hasSingleInteriorVowelOmission(typedKey, bestKey)
+    let runnerUp = ranked.first { candidate in
+      !candidate.isCompletion && TextNormalizer.key(candidate.text) != bestKey &&
+      candidate.cost <= maximumCost && candidate.text != typed
+    }
+    let unambiguousOmission = missingInteriorVowel &&
+      canonical.first?.isLowercase == true &&
+      (best.id.map { lexicon.unigramLogProbability($0) } ?? -26) >= -13 &&
+      best.score - (runnerUp?.score ?? -.infinity) >= 3
+    guard familiarity >= minimumFamiliarity || (typedKey.count <= 4 && unambiguousOmission) else { return nil }
+    let sameLetters = TextNormalizer.key(best.text) == typedKey
+    // A lone letter is only ever fixed by a shortcut such as i -> I.
+    return typed.count > 1 || sameLetters ? best : nil
+  }
+
+  // MARK: Space errors
+
+  /// Expected cost of a space the finger never registered, like a dropped letter.
+  static let missedSpaceCost = 4.0
+  /// A two-word reading must be plausible on its own, not just better than a weak single word.
+  static let minimumSplitScore = -24.0
+  /// Each half must be an ordinary word, not an obscure entry that happens to fit.
+  static let minimumSplitPartFamiliarity = -16.0
+  /// Largest edit inside one half of a split: about one touch-directed slip.
+  static let maximumSplitPartCost = 3.3
+  /// Bottom-row letters directly above the space bar.
+  static let spaceRowLetters: Set<UInt8> = Set("xcvbn".utf8)
+
+  /// Reads an unknown token as two words joined by a missed space ("thatsuper") or
+  /// by a space tap that registered on a letter above the space bar ("stormsbon").
+  func spaceSplit(for word: TypedWord, context: LanguageContext) -> Candidate? {
+    let typed = Array(word.text)
+    guard typed.count >= 3, typed.count <= 30,
+          typed.allSatisfy({ ($0.isASCII && $0.isLetter) || $0 == "'" || $0 == "\u{2019}" }) else { return nil }
+    // A new title-cased token inside a sentence may be a name (Newberry), and
+    // internal capitals are excluded upstream as code or brand spellings.
+    if context.previousWord != nil, typed[0].isUppercase { return nil }
+    let geometry = corrector.geometry
+    let taps = typed.indices.map { $0 < word.taps.count ? word.taps[$0] : nil }
+    var best: Candidate?
+    func consider(_ first: Range<Int>, _ second: Range<Int>, cost: Double) {
+      let firstText = String(typed[first]), secondText = String(typed[second])
+      guard let firstKey = firstText.last, let secondKey = secondText.first,
+            firstKey.isLetter, secondKey.isLetter else { return }
+      let exactFirst = splitPart(firstText)
+      let exactSecond = splitPart(secondText)
+      // At most one half may also carry a small typing slip ("inrhe" -> in the).
+      guard exactFirst != nil || exactSecond != nil else { return }
+      let a = exactFirst ?? correctedSplitPart(TypedWord(text: firstText, taps: Array(taps[first])), context: context)
+      guard let a else { return }
+      let next = model.context(previousWord: a.text, sentenceStart: false, precedingWord: context.previousWord)
+      let b = exactSecond ?? correctedSplitPart(TypedWord(text: secondText, taps: Array(taps[second])), context: next)
+      guard let b else { return }
+      let score = model.logProbability(of: a.text, id: a.id, in: context) - a.cost
+        + model.logProbability(of: b.text, id: b.id, in: next) - b.cost - cost
+      guard score >= Self.minimumSplitScore, score > best?.score ?? -.infinity else { return }
+      best = Candidate(text: a.text + " " + b.text, id: nil, cost: cost + a.cost + b.cost, score: score, isCompletion: false)
+    }
+    for index in 1..<typed.count {
+      consider(0..<index, index..<typed.count, cost: Self.missedSpaceCost)
+      guard index < typed.count - 1, let byte = typed[index].lowercased().utf8.first,
+            Self.spaceRowLetters.contains(byte), let center = geometry.center(byte) else { continue }
+      // Substitution cost toward the space row, one pitch below the letter's center.
+      let drop = (center.y + 1) - (taps[index]?.y ?? center.y)
+      consider(0..<index, (index + 1)..<typed.count, cost: 0.8 + 2.4 * drop * drop)
+    }
+    return best
+  }
+
+  private func splitPart(_ text: String) -> (text: String, id: Int?, cost: Double)? {
+    let key = TextNormalizer.key(text)
+    if key.count == 1, key != "a", key != "i" { return nil }
+    guard !personal.isBlocked(text), isValid(text) else { return nil }
+    guard let id = lexicon.id(of: text) else {
+      return personal.isKnown(text) ? (text, nil, 0) : nil
+    }
+    let flags = lexicon.flags(id)
+    guard !flags.contains(.notAWord), !flags.contains(.neverSuggest),
+          lexicon.unigramLogProbability(id) >= Self.minimumSplitPartFamiliarity else { return nil }
+    return (Self.matchCase(of: text, to: lexicon.display(id)), id, 0)
+  }
+
+  private func correctedSplitPart(_ part: TypedWord, context: LanguageContext) -> (text: String, id: Int?, cost: Double)? {
+    let length = TextNormalizer.key(part.text).count
+    guard length >= 2 else { return nil }
+    let bound = min(SpellCorrector.bound(forLength: length), Self.maximumSplitPartCost)
+    var best: (text: String, id: Int?, cost: Double, score: Double)?
+    for match in corrector.search(part, maximumCost: bound, prefixCost: 0).words {
+      let flags = lexicon.flags(match.id)
+      guard !flags.contains(.notAWord), !flags.contains(.neverSuggest),
+            lexicon.unigramLogProbability(match.id) >= Self.minimumSplitPartFamiliarity else { continue }
+      let display = Self.matchCase(of: part.text, to: lexicon.display(match.id))
+      guard !personal.isBlocked(display), TextNormalizer.key(display).count > 1 || ["a", "i"].contains(TextNormalizer.key(display)) else { continue }
+      let score = model.logProbability(of: display, id: match.id, in: context) - match.cost
+      if score > best?.score ?? -.infinity { best = (display, match.id, match.cost, score) }
+    }
+    return best.map { ($0.text, $0.id, $0.cost) }
   }
 
   private func hasPlausibleFinalBrush(_ word: TypedWord) -> Bool {
