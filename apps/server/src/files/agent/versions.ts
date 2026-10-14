@@ -101,9 +101,12 @@ function referencesObject(objectKey: string | typeof fileVersions.objectKey) {
 
 /**
  * Called when content stops being current or proposed: it stays as a version while a change
- * row needs it, and is otherwise deleted once the transaction commits.
+ * row needs it, and is otherwise deleted once the transaction commits. Content that is a
+ * file's current content (say, a proposal accepted meanwhile) is never touched.
  */
 export async function releaseBlob(tx: DatabaseTransaction, effects: CommitEffects, userId: string, nodeId: string, snapshot: BlobSnapshot): Promise<void> {
+  const [current] = await tx.select({ id: fileNodes.id }).from(fileNodes).where(eq(fileNodes.objectKey, snapshot.objectKey)).limit(1)
+  if (current) return dropVersion(tx, snapshot.objectKey)
   const [needed] = await tx.select({ id: fileChanges.id }).from(fileChanges)
     .where(and(eq(fileChanges.nodeId, nodeId), referencesObject(snapshot.objectKey))).limit(1)
   if (needed) return keepVersion(tx, userId, nodeId, snapshot)

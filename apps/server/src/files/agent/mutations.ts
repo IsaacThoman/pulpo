@@ -207,7 +207,8 @@ export async function updateBlobChange(reply: ReplyContext, node: FileNodeRow, b
       await supersedeProposals(tx, effects, reply, current.id)
       await keepVersion(tx, reply.userId, current.id, content)
       await recordChange(tx, reply, { nodeId: current.id, mode: 'suggest', kind: 'update', before: blobSnapshot(current), after: content })
-      const replaced = parseBlobSnapshot(existing?.after)
+      // An earlier proposal of this reply the owner already reviewed is not this one's to drop.
+      const replaced = existing?.status === 'pending' ? parseBlobSnapshot(existing.after) : null
       if (replaced) await releaseBlob(tx, effects, reply.userId, current.id, replaced)
       return { status: 'suggested', version: blobVersion(content) }
     }, { reserveBytes: bytes.byteLength })

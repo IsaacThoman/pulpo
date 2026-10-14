@@ -177,6 +177,28 @@ describe.skipIf(!enabled)('agent file changes', () => {
       expect(await files.content(rejected)).toBe('old')
     })
 
+    it('keeps a proposal the owner accepted while the reply runs when the agent proposes again', async () => {
+      const projects = await files.folder('Projects')
+      const data = await files.blob('data.txt', projects, 'v0')
+      await files.attach({ [projects]: 'suggest' })
+      await files.newReply('in_progress')
+      await pushFile('/workspace/data.txt', 'Projects/data.txt', 'p1')
+      const [row] = await db.select().from(fileChanges).where(eq(fileChanges.nodeId, data))
+      await reviewFileChange(files.userId, row!.id, 'accept')
+      expect(await files.content(data)).toBe('p1')
+      // The same reply proposes again: a new suggestion that starts from the accepted content.
+      const pulled = (await files.ok('pull', { path: 'Projects/data.txt', dest: '/workspace/data.txt' })).data as { files: Array<{ version: string }> }
+      files.put('/workspace/data.txt', 'p2')
+      const pushed = await files.ok('push', { items: [{ local: '/workspace/data.txt', remote: 'Projects/data.txt', base: { nodeId: data, version: pulled.files[0]!.version } }] })
+      expect((pushed.data as { results: Array<{ status: string }> }).results[0]).toMatchObject({ status: 'suggested' })
+      expect(await files.content(data)).toBe('p1')
+      const [reopened] = await db.select().from(fileChanges).where(eq(fileChanges.nodeId, data))
+      expect(reopened).toMatchObject({ status: 'pending', before: { objectKey: (await files.node(data))!.objectKey } })
+      await reviewFileChange(files.userId, row!.id, 'reject')
+      expect(await files.content(data)).toBe('p1')
+      expect(await versionContents(data)).toEqual([])
+    })
+
     it('accepts a reply in the order the agent worked, and rejects new items last', async () => {
       const projects = await files.folder('Projects')
       const plan = await files.blob('plan.txt', projects, 'plan')

@@ -1,4 +1,4 @@
-import { and, asc, count, eq, inArray, lt, ne } from 'drizzle-orm'
+import { and, asc, count, eq, inArray, lt, ne, sql } from 'drizzle-orm'
 import { z } from 'zod'
 import { listSuggestions, ydocToNode } from '@pulpo/client-core/doc-schema'
 import type { FileChangeKind, FileChangeStatus, FileChangesResponse, FileChangeSummary } from '@pulpo/contracts'
@@ -41,7 +41,7 @@ export async function findChange(executor: FileExecutor, responseId: string, nod
 /**
  * Records a change. A repeated change of the same kind to the same item in one reply folds into
  * its row: `before` stays what the reply started from, while `after` and the status follow the
- * latest change.
+ * latest change. A suggestion the owner already reviewed starts over as a new one.
  */
 export async function recordChange(tx: DatabaseTransaction, reply: ReplyContext, input: {
   id?: string
@@ -57,7 +57,12 @@ export async function recordChange(tx: DatabaseTransaction, reply: ReplyContext,
     nodeId: input.nodeId, mode: input.mode, kind: input.kind, status, before: input.before ?? null, after: input.after ?? null,
   }).onConflictDoUpdate({
     target: [fileChanges.responseId, fileChanges.nodeId, fileChanges.kind],
-    set: { after: input.after ?? null, status, updatedAt: new Date() },
+    set: {
+      before: sql`case when ${fileChanges.mode} = 'suggest' and ${fileChanges.status} <> 'pending' then excluded.before else ${fileChanges.before} end`,
+      after: input.after ?? null,
+      status,
+      updatedAt: new Date(),
+    },
   }).returning()
   return row!
 }
