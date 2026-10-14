@@ -1,5 +1,5 @@
 import { and, eq, ne, sql } from 'drizzle-orm'
-import { mergeMarkdown, ydocToNode } from '@pulpo/client-core/doc-schema'
+import { listSuggestions, mergeMarkdown, ydocToNode } from '@pulpo/client-core/doc-schema'
 import { FILE_TREE_MAX_DEPTH, isMarkdownName } from '@pulpo/contracts'
 import { fileChanges, fileNodes } from '../../database/schema.js'
 import { AppError, notFound } from '../../lib/errors.js'
@@ -20,7 +20,7 @@ import {
 } from '../tree-service.js'
 import { deleteChange, findChange, parsePlace, recordChange, setChangeStatus, updateCreation, type FileChangeRow, type Place, type ReplyContext } from './changes.js'
 import { deleteObjects, mutateAgentFiles, TREE_AND_CHAT_SCOPES, type CommitEffects, type DatabaseTransaction } from './commit.js'
-import { loadDocInTx, lockDocs, markdownVersion, proposedMarkdown, writeDocInTx } from './docs.js'
+import { baseMarkdown, loadDocInTx, lockDocs, markdownVersion, proposedMarkdown, writeDocInTx } from './docs.js'
 import { FilesCommandError } from './scope.js'
 import {
   blobSnapshot,
@@ -161,14 +161,19 @@ export async function updateDocChange(reply: ReplyContext, nodeId: string, markd
     await writeDocInTx(tx, effects, { nodeId: node.id, doc, node: merged.doc, actorUserId: reply.userId, origin: 'agent' })
     // Read back from the Y document, so undo compares against exactly what it holds.
     const written = ydocToNode(doc)
-    // A suggestion that only revised text earlier suggestions inserted stays with those.
-    const ownHunks = mode === 'write' || existing || merged.hunks > 0
     if (folded === 'creation') await updateCreation(tx, reply, node.id, { doc: written.toJSON() })
-    if (!folded && ownHunks) {
-      await recordChange(tx, reply, {
-        id: changeId, nodeId: node.id, mode, kind: 'update',
-        ...mode === 'write' ? { before: { doc: current.toJSON() }, after: { doc: written.toJSON() } } : {},
-      })
+    if (!folded && mode === 'write') {
+      await recordChange(tx, reply, { id: changeId, nodeId: node.id, mode, kind: 'update', before: { doc: current.toJSON() }, after: { doc: written.toJSON() } })
+    }
+    if (!folded && mode === 'suggest') {
+      // A push that only revised text earlier suggestions inserted leaves those to hold it, and
+      // one that took back everything this reply suggested leaves nothing to review.
+      if (listSuggestions(written).some((hunk) => hunk.changeId === changeId)) {
+        // The base before the suggestion tells whether the owner later accepted or rejected it.
+        await recordChange(tx, reply, { id: changeId, nodeId: node.id, mode, kind: 'update', before: { markdown: baseMarkdown(current) } })
+      } else if (existing) {
+        await deleteChange(tx, existing.id)
+      }
     }
     const direct = folded === 'creation' || (!folded && mode === 'write')
     return { status: direct ? 'updated' : 'suggested', version: markdownVersion(proposedMarkdown(written)), hunks: merged.hunks }

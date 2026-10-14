@@ -7,6 +7,7 @@ import { fileChanges, fileNodes, fileVersions } from '../../database/schema.js'
 import { newId } from '../../lib/ids.js'
 import type { FileExecutor, FileNodeRow } from '../access.js'
 import { loadYDoc } from '../doc-store.js'
+import { baseMarkdown } from './docs.js'
 import type { DatabaseTransaction } from './commit.js'
 import { filesPathOf } from './scope.js'
 import { deleteUnusedVersions, parseBlobSnapshot } from './versions.js'
@@ -87,10 +88,17 @@ export async function countFileChanges(responseId: string): Promise<number> {
   return row?.value ?? 0
 }
 
-/** Unresolved hunks of one document suggestion; undefined when the document cannot be read. */
-async function pendingHunks(nodeId: string, changeId: string): Promise<number | undefined> {
+/**
+ * A document suggestion's unresolved hunks and, once none remain, how the owner resolved them
+ * in the editor: rejected when the document reads as it did before the suggestion, accepted
+ * (at least in part) otherwise. Nothing when the document cannot be read.
+ */
+async function docSuggestionState(nodeId: string, change: FileChangeRow): Promise<{ hunks: number; resolvedAs: FileChangeStatus } | undefined> {
   try {
-    return listSuggestions(ydocToNode(await loadYDoc(nodeId))).filter((hunk) => hunk.changeId === changeId).length
+    const doc = ydocToNode(await loadYDoc(nodeId))
+    const hunks = listSuggestions(doc).filter((hunk) => hunk.changeId === change.id).length
+    const before = (change.before as { markdown?: unknown } | null)?.markdown
+    return { hunks, resolvedAs: typeof before === 'string' && baseMarkdown(doc) === before ? 'rejected' : 'accepted' }
   } catch {
     return undefined
   }
@@ -117,7 +125,7 @@ function blobSummary(change: FileChangeRow, node: FileNodeRow, keptKeys: Set<str
   return { fromSizeBytes: before?.sizeBytes, toSizeBytes: after?.sizeBytes, available }
 }
 
-async function summarize(userId: string, { change, node }: ChangeWithNode, keptKeys: Set<string>): Promise<FileChangeSummary> {
+async function summarize(userId: string, { change, node }: ChangeWithNode, keptKeys: Set<string>): Promise<FileChangeSummary & { resolvedAs?: FileChangeStatus }> {
   const summary: FileChangeSummary = {
     id: change.id,
     nodeId: node.id,
@@ -132,7 +140,8 @@ async function summarize(userId: string, { change, node }: ChangeWithNode, keptK
   if (change.kind === 'move') Object.assign(summary, await movePaths(userId, change))
   if (change.kind === 'update' && node.kind === 'blob') Object.assign(summary, blobSummary(change, node, keptKeys))
   if (change.kind === 'update' && node.kind === 'doc' && change.mode === 'suggest') {
-    summary.pendingSuggestions = await pendingHunks(node.id, change.id)
+    const state = await docSuggestionState(node.id, change)
+    if (state) return { ...summary, pendingSuggestions: state.hunks, resolvedAs: state.resolvedAs }
   }
   return summary
 }
@@ -149,13 +158,14 @@ export async function listFileChanges(userId: string, responseId: string): Promi
   const kept = rows.length ? await db.select({ key: fileVersions.objectKey }).from(fileVersions)
     .where(inArray(fileVersions.nodeId, [...new Set(rows.map((row) => row.node.id))])) : []
   const keptKeys = new Set(kept.map((row) => row.key))
-  const changes = await Promise.all(rows.map((row) => summarize(userId, row, keptKeys)))
-  const resolved = changes.filter((change) => change.status === 'pending' && change.pendingSuggestions === 0)
-  if (resolved.length) {
-    await db.update(fileChanges).set({ status: 'accepted', updatedAt: new Date() })
-      .where(and(inArray(fileChanges.id, resolved.map((change) => change.id)), eq(fileChanges.status, 'pending')))
-    for (const change of resolved) change.status = 'accepted'
+  const summaries = await Promise.all(rows.map((row) => summarize(userId, row, keptKeys)))
+  for (const summary of summaries) {
+    if (summary.status !== 'pending' || summary.pendingSuggestions !== 0 || !summary.resolvedAs) continue
+    await db.update(fileChanges).set({ status: summary.resolvedAs, updatedAt: new Date() })
+      .where(and(eq(fileChanges.id, summary.id), eq(fileChanges.status, 'pending')))
+    summary.status = summary.resolvedAs
   }
+  const changes: FileChangeSummary[] = summaries.map(({ resolvedAs: _resolvedAs, ...summary }) => summary)
   const writes = changes.filter((change) => change.mode === 'write')
   return {
     changes,
