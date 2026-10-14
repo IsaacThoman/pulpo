@@ -26,6 +26,7 @@ enum Fixtures {
 
 /// A text field with the cursor at `cursor`.
 final class MockDocument: TextDocument {
+  var documentIdentifier: UUID?
   var text: String
   var cursor: String.Index
   var deletions = 0
@@ -43,9 +44,11 @@ final class MockDocument: TextDocument {
   var onWillEdit: (() -> Void)?
   /// A host selection snapshot without changing this fixture's physical cursor.
   var selectionOverride: String?
+  /// Fields may withhold surrounding text while still accepting edits.
+  var hidesContext = false
 
-  var documentContextBeforeInput: String? { contextBeforeOverride ?? String(text[..<cursor].dropLast(lag)) }
-  var documentContextAfterInput: String? { String(text[cursor...]) }
+  var documentContextBeforeInput: String? { hidesContext ? nil : contextBeforeOverride ?? String(text[..<cursor].dropLast(lag)) }
+  var documentContextAfterInput: String? { hidesContext ? nil : String(text[cursor...]) }
   var selectedText: String? { selectionOverride }
   var hasText: Bool { !text.isEmpty }
 

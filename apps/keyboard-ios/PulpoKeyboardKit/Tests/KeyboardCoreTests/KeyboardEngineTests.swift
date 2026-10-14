@@ -439,4 +439,111 @@ struct KeyboardEngineTests {
     #expect(engine.externalContextChanges == 1)
     #expect(engine.laggingContextUpdates == 0)
   }
+
+  @Test func anotherDocumentWithIdenticalTextDoesNotInheritAutocorrectUndo() {
+    let (engine, document) = Fixtures.engine("say ")
+    document.documentIdentifier = UUID()
+    engine.documentDidChange()
+    engine.clock = { 100 }
+    engine.type("teh ")
+    #expect(document.text == "say the ")
+    // Another field can contain precisely the same text as the previous field.
+    document.documentIdentifier = UUID()
+    engine.documentDidChange()
+    let deletions = document.deletions
+    engine.deleteBackward()
+    #expect(document.text == "say the")
+    #expect(document.deletions == deletions + 1)
+    #expect(engine.suggester!.model.personal.count(of: "the") == 0)
+  }
+
+  @Test func anotherDocumentMatchingARecentPrefixGetsItsOwnComposition() {
+    let (engine, document) = Fixtures.engine("say ")
+    document.documentIdentifier = UUID()
+    engine.documentDidChange()
+    engine.clock = { 100 }
+    engine.type("teh")
+    document.text = "say t"
+    document.cursor = document.text.endIndex
+    document.documentIdentifier = UUID()
+    engine.documentDidChange()
+    #expect(engine.composingText == "t")
+    #expect(engine.laggingContextUpdates == 0)
+    engine.insertSpace()
+    #expect(document.text == "say t ")
+  }
+
+  @Test(arguments: [false, true])
+  func hiddenDocumentDoesNotInheritWordUndo(swipe: Bool) {
+    let (engine, document) = Fixtures.engine()
+    document.documentIdentifier = UUID()
+    engine.documentDidChange()
+    engine.clock = { 100 }
+    if swipe {
+      engine.insertGlide("helo".utf8.compactMap { engine.glide!.geometry.center($0) })
+    } else {
+      engine.type("teh ")
+    }
+    document.text = "secret"
+    document.cursor = document.text.endIndex
+    document.hidesContext = true
+    document.documentIdentifier = UUID()
+    engine.documentDidChange()
+    let deletions = document.deletions
+    engine.deleteBackward()
+    #expect(document.text == "secre")
+    #expect(document.deletions == deletions + 1)
+    #expect(engine.composingText.isEmpty)
+    #expect(engine.laggingContextUpdates == 0)
+  }
+
+  @Test func anotherDocumentDoesNotInheritSwipeSpacingOrTentativeLearning() {
+    let (engine, document) = Fixtures.engine()
+    document.documentIdentifier = UUID()
+    engine.documentDidChange()
+    engine.clock = { 100 }
+    engine.insertGlide("helo".utf8.compactMap { engine.glide!.geometry.center($0) })
+    #expect(engine.phantomSpace)
+    document.text = "secret"
+    document.cursor = document.text.endIndex
+    document.hidesContext = true
+    document.documentIdentifier = UUID()
+    var traits = engine.traits
+    traits.capitalization = .none
+    engine.traits = traits
+    engine.documentDidChange()
+    #expect(!engine.phantomSpace)
+    engine.insertCharacter("a")
+    #expect(document.text == "secreta")
+    #expect(engine.suggester!.model.personal.count(of: "hello") == 0)
+  }
+
+  @Test func identifiedDocumentStillIgnoresItsOwnDelayedSnapshots() {
+    let (engine, document) = Fixtures.engine("say ")
+    document.documentIdentifier = UUID()
+    engine.documentDidChange()
+    engine.clock = { 100 }
+    engine.type("teh")
+    document.contextBeforeOverride = document.text
+    engine.insertSpace()
+    engine.documentDidChange()
+    #expect(engine.laggingContextUpdates == 1)
+    document.contextBeforeOverride = nil
+    engine.deleteBackward()
+    #expect(document.text == "say teh")
+  }
+
+  @Test func identifiedDocumentCanStillBeExplicitlyCleared() {
+    let (engine, document) = Fixtures.engine()
+    document.documentIdentifier = UUID()
+    engine.documentDidChange()
+    engine.clock = { 100 }
+    engine.type("hi there")
+    document.text = ""
+    document.cursor = document.text.endIndex
+    engine.documentDidChange()
+    #expect(engine.composingText.isEmpty)
+    #expect(engine.shift == .once(automatic: true))
+    #expect(engine.laggingContextUpdates == 0)
+  }
 }

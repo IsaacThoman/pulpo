@@ -30,6 +30,7 @@ public final class ProxyDocument: TextDocument {
     self.proxy = proxy
   }
 
+  public var documentIdentifier: UUID? { proxy.documentIdentifier }
   public var documentContextBeforeInput: String? { proxy.documentContextBeforeInput }
   public var documentContextAfterInput: String? { proxy.documentContextAfterInput }
   public var selectedText: String? { proxy.selectedText }

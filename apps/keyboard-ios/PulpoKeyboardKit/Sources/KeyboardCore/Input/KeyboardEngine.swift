@@ -2,12 +2,19 @@ import Foundation
 
 /// The text the keyboard edits. `UITextDocumentProxy` is adapted to this in KeyboardUI.
 public protocol TextDocument: AnyObject {
+  /// Stable for one input document, even when another document has identical text.
+  var documentIdentifier: UUID? { get }
   var documentContextBeforeInput: String? { get }
   var documentContextAfterInput: String? { get }
   var selectedText: String? { get }
   var hasText: Bool { get }
   func insertText(_ text: String)
   func deleteBackward()
+}
+
+extension TextDocument {
+  /// Hosts without document identity retain text-based context reconciliation.
+  public var documentIdentifier: UUID? { nil }
 }
 
 public enum ShiftState: Equatable, Sendable {
@@ -71,6 +78,7 @@ public final class KeyboardEngine {
   private var typedWhileShiftHeld = false
   /// Optimistic cursor context, updated by our edits before the asynchronous proxy catches up.
   private var expectedContext: String?
+  private var expectedDocumentIdentifier: UUID?
   private var expectedAfterContext = ""
   private var expectedSelection: String?
   private struct ContextSnapshot: Equatable {
@@ -467,6 +475,20 @@ public final class KeyboardEngine {
 
   /// Re-reads the document after the host changed text or moved the cursor.
   public func documentDidChange() {
+    let identifier = document.documentIdentifier
+    if identifier != expectedDocumentIdentifier {
+      expectedDocumentIdentifier = identifier
+      if expectedContext != nil { externalContextChanges += 1 }
+      // A different field can match an old snapshot or even the exact expected
+      // text. Its edits must never inherit the previous field's undo or spacing.
+      expectedContext = nil
+      recentOwnContexts.removeAll()
+      phantomSpace = false
+      lastEdit = .none
+      pendingLearning = nil
+      rejected.removeAll()
+      composing = TypedWord(text: "")
+    }
     let current = document.documentContextBeforeInput ?? ""
     let after = document.documentContextAfterInput ?? ""
     let selection = document.selectedText.flatMap { $0.isEmpty ? nil : $0 }
@@ -530,6 +552,7 @@ public final class KeyboardEngine {
 
   private func prepareExpectedContext() {
     guard expectedContext == nil else { return }
+    expectedDocumentIdentifier = document.documentIdentifier
     expectedContext = document.documentContextBeforeInput ?? ""
     expectedAfterContext = document.documentContextAfterInput ?? ""
     expectedSelection = document.selectedText.flatMap { $0.isEmpty ? nil : $0 }
