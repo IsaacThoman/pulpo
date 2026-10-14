@@ -310,6 +310,23 @@ final class KeyTouchTests: XCTestCase {
     }
   }
 
+  func testGlideCarriesTouchAndCoalescedTimestamps() {
+    let contact = touch("key-h", time: 10)
+    keys.touchesBegan([contact], with: nil)
+    let e = touch("key-e", time: 10.016)
+    let l = touch("key-l", time: 10.033)
+    contact.point = l.point
+    contact.time = l.time
+    keys.touchesMoved([contact], with: ContactEvent(samples: [e, l]))
+    let o = touch("key-o", time: 10.05)
+    contact.point = o.point
+    contact.time = o.time
+    keys.touchesEnded([contact], with: ContactEvent(samples: [o]))
+    // The main touch repeats the last coalesced sample; neither list doubles it.
+    XCTAssertEqual(recorder.glidePaths.first, [touch("key-h").point, e.point, l.point, o.point])
+    XCTAssertEqual(recorder.glideTimes.first, [10, 10.016, 10.033, 10.05])
+  }
+
   func testCoalescedLiftCanContainTheEntireShortSwipe() {
     let contact = touch("key-w")
     let start = contact.point
@@ -508,7 +525,7 @@ final class KeyTouchTests: XCTestCase {
 
   private final class Contact: UITouch {
     var point: CGPoint
-    let time: TimeInterval
+    var time: TimeInterval
     init(point: CGPoint, time: TimeInterval) {
       self.point = point
       self.time = time
@@ -531,6 +548,7 @@ final class KeyTouchTests: XCTestCase {
     var events: [String] = []
     var glides = 0
     var glidePaths: [[CGPoint]] = []
+    var glideTimes: [[TimeInterval]] = []
     var allowsGlide = true
     var layouts = 0
     var activationPoints: [CGPoint] = []
@@ -546,9 +564,10 @@ final class KeyTouchTests: XCTestCase {
       activationPoints.append(point)
       onActivate?(key)
     }
-    func keysView(_ view: KeysView, glide points: [CGPoint], start: Key) {
+    func keysView(_ view: KeysView, glide points: [CGPoint], times: [TimeInterval], start: Key) {
       glides += 1
       glidePaths.append(points)
+      glideTimes.append(times)
     }
     func keysViewShiftUp(_ view: KeysView) { events.append("shift-up") }
     func keysView(_ view: KeysView, insertAlternate text: String, for key: Key) {}

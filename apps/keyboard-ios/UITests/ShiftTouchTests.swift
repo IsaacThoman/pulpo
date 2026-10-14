@@ -90,7 +90,7 @@ final class ShiftTouchTests: XCTestCase {
     func keysView(_ view: KeysView, touchDown key: Key) { if key.action == .shift { engine.shiftDown() } }
     func keysView(_ view: KeysView, activate key: Key, at point: CGPoint) { if case let .character(text) = key.action { engine.insertCharacter(text) } }
     func keysViewShiftUp(_ view: KeysView) { shiftUps += 1; engine.shiftUp() }
-    func keysView(_ view: KeysView, glide points: [CGPoint], start: Key) {}
+    func keysView(_ view: KeysView, glide points: [CGPoint], times: [TimeInterval], start: Key) {}
     func keysView(_ view: KeysView, insertAlternate text: String, for key: Key) {}
     func keysViewRepeatDelete(_ view: KeysView, wholeWord: Bool) {}
     func keysView(_ view: KeysView, moveCursor offset: Int) {}

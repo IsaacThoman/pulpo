@@ -555,8 +555,8 @@ extension KeyboardController: KeysViewDelegate {
     sync()
   }
 
-  func keysView(_ view: KeysView, glide points: [CGPoint], start: Key) {
-    if engine.insertGlide(points.map(normalized)).isEmpty, case .character(let text) = start.action {
+  func keysView(_ view: KeysView, glide points: [CGPoint], times: [TimeInterval], start: Key) {
+    if engine.insertGlide(points.map(normalized), times: times).isEmpty, case .character(let text) = start.action {
       // No word fits the path: it was a sloppy tap, so type the key it started on.
       glideFallbacks += 1
       engine.insertCharacter(text, tap: points.first.map(normalized))

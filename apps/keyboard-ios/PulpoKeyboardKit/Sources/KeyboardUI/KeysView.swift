@@ -7,8 +7,9 @@ protocol KeysViewDelegate: AnyObject {
   /// A completed tap, on touch up. `point` is in the keys view.
   func keysView(_ view: KeysView, activate key: Key, at point: CGPoint)
   func keysView(_ view: KeysView, insertAlternate text: String, for key: Key)
-  /// A swipe. `start` is the key it began on, typed instead if no word fits.
-  func keysView(_ view: KeysView, glide points: [CGPoint], start: Key)
+  /// A swipe. `times` holds each point's touch timestamp. `start` is the key it
+  /// began on, typed instead if no word fits.
+  func keysView(_ view: KeysView, glide points: [CGPoint], times: [TimeInterval], start: Key)
   func keysViewRepeatDelete(_ view: KeysView, wholeWord: Bool)
   func keysView(_ view: KeysView, moveCursor offset: Int)
   func keysViewShiftUp(_ view: KeysView)
@@ -66,6 +67,8 @@ final class KeysView: UIView {
     var rejectedFunctionDrift = false
     let start: CGPoint
     var points: [CGPoint]
+    /// Touch timestamps parallel to `points`; the decoder reads where the finger slowed.
+    var times: [TimeInterval]
     var mode: Mode = .tap
     var timer: Timer?
     var cursorAnchor: CGFloat = 0
@@ -83,6 +86,7 @@ final class KeysView: UIView {
       initialKey = key
       self.start = start
       points = [start]
+      times = [touch.timestamp]
     }
   }
 
@@ -313,13 +317,18 @@ final class KeysView: UIView {
   /// The lift can be farther along than the last move event. Preserve its
   /// coalesced samples and final location because the decoder anchors the last
   /// letter to the final path point. UIKit can repeat that point in the batch.
+  /// Coalesced samples carry their own timestamps, so a batch keeps its timing.
   private func appendSamples(for touch: UITouch, event: UIEvent?, to tracking: Tracking) {
     for sample in event?.coalescedTouches(for: touch) ?? [] {
-      let point = sample.location(in: self)
-      if tracking.points.last != point { tracking.points.append(point) }
+      append(sample.location(in: self), at: sample.timestamp, to: tracking)
     }
-    let point = touch.location(in: self)
-    if tracking.points.last != point { tracking.points.append(point) }
+    append(touch.location(in: self), at: touch.timestamp, to: tracking)
+  }
+
+  private func append(_ point: CGPoint, at time: TimeInterval, to tracking: Tracking) {
+    guard tracking.points.last != point else { return }
+    tracking.points.append(point)
+    tracking.times.append(time)
   }
 
   private func begin(_ touch: UITouch, event: UIEvent?) {
@@ -465,7 +474,7 @@ final class KeysView: UIView {
       if !cancelled {
         // Entering glide already requires deliberately leaving the pressed
         // key. Another 1.2-pitch gate drops adjacent-letter words like we/as.
-        delegate?.keysView(self, glide: tracking.points, start: key)
+        delegate?.keysView(self, glide: tracking.points, times: tracking.times, start: key)
       }
     case .tap:
       popup?.hide()
