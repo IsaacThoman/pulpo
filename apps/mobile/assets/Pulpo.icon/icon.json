@@ -10,7 +10,7 @@
           "image-name" : "pulpo-smiley-justface.png",
           "name" : "pulpo-smiley-justface",
           "position" : {
-            "scale" : 0.1,
+            "scale" : 0.095,
             "translation-in-points" : [
               0,
               0
@@ -22,7 +22,7 @@
           "image-name" : "pulpo-smiley-noface.png",
           "name" : "pulpo-smiley-noface",
           "position" : {
-            "scale" : 0.1,
+            "scale" : 0.095,
             "translation-in-points" : [
               0,
               0
