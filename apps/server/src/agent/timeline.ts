@@ -1,5 +1,5 @@
 import type { AgentMessage } from '@earendil-works/pi-agent-core'
-import type { CompactionItem, CostLimitItem, RecallItem, ToolImagePreview } from '@pulpo/contracts'
+import type { CompactionItem, CostLimitItem, FileChangesItem, RecallItem, ToolImagePreview } from '@pulpo/contracts'
 
 export type ToolTimelineItem = {
   id: string
@@ -98,7 +98,10 @@ function pushAssistantParts(
   }
 }
 
-/** Ordered response.output: workspace → (reasoning|message|tool)* preserving turn order, with each cost limit pause after its turn. */
+/**
+ * Ordered response.output: workspace → (reasoning|message|tool)* preserving turn order, with each
+ * cost limit pause after its turn, and what the reply changed in Files last.
+ */
 export function buildAgentOutput(options: {
   messages: AgentMessage[]
   skipMessageCount: number
@@ -108,6 +111,7 @@ export function buildAgentOutput(options: {
   compactionItems?: CompactionItem[]
   recallItems?: RecallItem[]
   costLimitItems?: CostLimitItem[]
+  fileChangesItem?: FileChangesItem
   /** Model-turn durations keyed by 1-based assistant turn index in this run. */
   turnDurationsMs?: Map<number, number>
   /** Last message is still streaming (use in_progress status). */
@@ -123,6 +127,7 @@ export function buildAgentOutput(options: {
     compactionItems = [],
     recallItems = [],
     costLimitItems = [],
+    fileChangesItem,
     turnDurationsMs,
     streaming = false,
     terminal = false,
@@ -171,6 +176,7 @@ export function buildAgentOutput(options: {
   }
 
   output.push(...costLimitItems.filter((item) => !output.includes(item)))
+  if (fileChangesItem) output.push(fileChangesItem)
 
   if (terminal) {
     for (const entry of output) {
