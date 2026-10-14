@@ -15,12 +15,16 @@ vi.stubGlobal('window', {
 })
 
 const requests: Array<{ path: string; method?: string; body?: unknown }> = []
+let refuse = false
 vi.stubGlobal('fetch', vi.fn((input: string | URL | Request, init?: RequestInit) => {
   requests.push({
     path: String(input),
     method: init?.method,
     body: typeof init?.body === 'string' ? JSON.parse(init.body) : undefined,
   })
+  if (refuse && init?.method === 'PATCH') {
+    return Promise.resolve(new Response(JSON.stringify({ error: { code: 'not_found', message: 'Chat not found' } }), { status: 404, headers: { 'content-type': 'application/json' } }))
+  }
   return Promise.resolve(new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } }))
 }))
 
@@ -43,6 +47,7 @@ function chat(overrides: Partial<Chat> = {}): Chat {
 
 beforeEach(() => {
   requests.splice(0)
+  refuse = false
   queryClient.clear()
   useAuth.setState({ user: {
     id: userId, name: 'Test', email: 'test@example.com', username: 'test_user', avatarUrl: null, profileColor: null, role: 'user', initials: 'T',
@@ -70,6 +75,30 @@ describe('chat Files access modes', () => {
     await vi.waitFor(() => expect(requests).toContainEqual({
       method: 'PATCH', path: expect.stringContaining('/api/chats/chat-1'), body: { fileScopeIds: [plan] },
     }))
+  })
+
+  it('shows the previous mode again when the server refuses the change', async () => {
+    refuse = true
+    useChat.getState().setChatFileAccess('chat-1', notes, 'write')
+    expect(useChat.getState().chats[0]!.fileScopeAccess).toEqual({ [plan]: 'write', [notes]: 'write' })
+    await vi.waitFor(() => expect(useChat.getState().chats[0]!.fileScopeAccess).toEqual({ [plan]: 'write', [notes]: 'read' }))
+  })
+
+  it('keeps a newer change when an older one is refused', async () => {
+    refuse = true
+    useChat.getState().setChatFileScope('chat-1', [plan])
+    useChat.setState((state) => ({ chats: state.chats.map((item) => ({ ...item, fileScopeIds: [notes] })) }))
+    await vi.waitFor(() => expect(requests).toHaveLength(1))
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(useChat.getState().chats[0]!.fileScopeIds).toEqual([notes])
+  })
+
+  it('sends nothing for a chat the server has not created yet', async () => {
+    useChat.setState((state) => ({ chats: state.chats.map((item) => ({ ...item, provisional: true })) }))
+    useChat.getState().setChatFileAccess('chat-1', notes, 'write')
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(requests).toEqual([])
+    expect(useChat.getState().chats[0]!.fileScopeAccess).toEqual({ [plan]: 'write', [notes]: 'write' })
   })
 
   it('reads modes from the server', () => {
