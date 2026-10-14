@@ -4,11 +4,14 @@ import { describe, expect, it } from 'vitest'
 import * as Y from 'yjs'
 import {
   applyMarkdownToYDoc,
+  applyNodeToYDoc,
   docJSONToMarkdown,
   docSchema,
+  docToMarkdown,
   DOC_SCHEMA_VERSION,
   formatBlockSuggestion,
   hasSuggestions,
+  markdownToDoc,
   markdownToDocJSON,
   parseBlockSuggestion,
   SUGGESTION_BLOCK_ATTR,
@@ -91,6 +94,57 @@ describe('document schema', () => {
     const started = performance.now()
     expect(markdownToDocJSON(long).content).toHaveLength(4000 + 80 * 2)
     expect(performance.now() - started).toBeLessThan(1500)
+  })
+})
+
+describe('Markdown round trips', () => {
+  const schema = docSchema()
+  const p = (...content: Array<string | ProseMirrorNode>) => schema.nodes.paragraph!.create(null, content.map((part) => typeof part === 'string' ? schema.text(part) : part))
+  const br = () => schema.nodes.hardBreak!.create()
+  const doc = (...content: ProseMirrorNode[]) => schema.nodes.doc!.create(null, content)
+  const list = (type: 'bulletList' | 'orderedList', ...items: string[]) => schema.nodes[type]!.create(null, items.map((text) => schema.nodes.listItem!.create(null, p(text))))
+  const table = (...rows: ProseMirrorNode[][]) => schema.nodes.table!.create(null, rows.map((cells) => schema.nodes.tableRow!.create(null, cells)))
+  const cell = (type: 'tableCell' | 'tableHeader', ...content: Array<string | ProseMirrorNode>) => schema.nodes[type]!.create(null, p(...content))
+
+  it.each([
+    ['a line break in a table cell', doc(table([cell('tableHeader', 'Head')], [cell('tableCell', 'one', br(), 'two')]))],
+    ['adjacent bullet lists', doc(list('bulletList', 'a'), list('bulletList', 'b'), list('bulletList', 'c'))],
+    ['adjacent ordered lists', doc(list('orderedList', 'a'), list('orderedList', 'b'), list('orderedList', 'c'))],
+    ['adjacent nested lists', doc(schema.nodes.bulletList!.create(null, schema.nodes.listItem!.create(null, [p('outer'), list('orderedList', 'a'), list('orderedList', 'b')])))],
+    ['a line break ending a paragraph', doc(p('end', br()), p('next'))],
+    ['a line break starting a paragraph', doc(p(br(), 'start'))],
+    ['two line breaks in a row', doc(p('a', br(), br(), 'b'))],
+    ['a paragraph of only line breaks', doc(p(br()), p(br(), br()))],
+    ['a line break next to spaces', doc(p('a ', br(), ' b'))],
+    ['a line break in a heading', doc(schema.nodes.heading!.create({ level: 2 }, [schema.text('a'), br(), schema.text('b')]))],
+    ['paragraphs that look like blocks', doc(p('- dash'), p('+ plus'), p('1. one'), p('7) seven'), p('# hash'), p('---'), p('==='), p('line\n- dash\n2. two'))],
+  ])('keeps %s', (_, node) => {
+    node.check()
+    const markdown = docToMarkdown(node)
+    expect(markdownToDoc(markdown).eq(node)).toBe(true)
+    expect(docToMarkdown(markdownToDoc(markdown))).toBe(markdown)
+  })
+
+  it('repairs what the parser gets wrong instead of producing invalid documents', () => {
+    for (const source of ['>', '> ', '1. a\n2. \n', '- [ ] ', '- a\n-', 'x ****bold**** y']) {
+      const parsed = markdownToDoc(source)
+      parsed.check()
+      expect(() => docToMarkdown(parsed)).not.toThrow()
+    }
+    expect(markdownToDoc('>').toString()).toBe('doc(blockquote(paragraph))')
+    expect(docToMarkdown(markdownToDoc('1. a\n2. \n'))).toBe('1. a\n2. ')
+    // Documents already holding invalid content still serialize.
+    const invalid = { type: 'doc', content: [{ type: 'orderedList', content: [{ type: 'listItem', content: [] }] }] }
+    expect(docJSONToMarkdown(invalid)).toBe('1. ')
+    expect(markdownToDoc('').childCount).toBe(0)
+  })
+
+  it('refuses to write an invalid document to a Y.Doc', () => {
+    const ydoc = new Y.Doc()
+    applyMarkdownToYDoc(ydoc, 'Keep me.')
+    const invalid = schema.nodes.doc!.create(null, schema.nodes.blockquote!.create())
+    expect(() => applyNodeToYDoc(ydoc, invalid)).toThrow(/invalid document/)
+    expect(ydocToMarkdown(ydoc)).toBe('Keep me.')
   })
 })
 

@@ -1,4 +1,6 @@
-import { EditorState } from '@tiptap/pm/state'
+import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
+import { EditorState, TextSelection } from '@tiptap/pm/state'
+import { Transform } from '@tiptap/pm/transform'
 import { describe, expect, it } from 'vitest'
 import * as Y from 'yjs'
 import {
@@ -9,8 +11,11 @@ import {
   formatBlockSuggestion,
   hasSuggestions,
   listSuggestions,
+  resolveNode,
   resolveSuggestions,
   SUGGESTION_BLOCK_ATTR,
+  SUGGESTION_DELETE_MARK,
+  SUGGESTION_INSERT_MARK,
   ydocToMarkdown,
   ydocToNode,
 } from './index.js'
@@ -162,5 +167,58 @@ describe('resolveSuggestions', () => {
     const rejected = resolve(doc, 'reject')
     rejected.check()
     expect(md(rejected)).toBe('Keep.')
+  })
+
+  it('keeps table cells and documents that lose all their content', () => {
+    const schema = docSchema()
+    const inserted = (text: string) => schema.nodes.paragraph!.create({ [SUGGESTION_BLOCK_ATTR]: formatBlockSuggestion({ kind: 'insert', changeId: 'c1', id: 'h1' }) }, schema.text(text))
+    const cell = (type: 'tableCell' | 'tableHeader', content: ProseMirrorNode) => schema.nodes[type]!.create(null, content)
+    const table = schema.nodes.table!.create(null, [
+      schema.nodes.tableRow!.create(null, [cell('tableHeader', schema.nodes.paragraph!.create(null, schema.text('Head')))]),
+      schema.nodes.tableRow!.create(null, [cell('tableCell', inserted('new'))]),
+    ])
+    const rejected = resolve(schema.nodes.doc!.create(null, table), 'reject')
+    rejected.check()
+    expect(rejected.firstChild!.lastChild!.firstChild!.toString()).toBe('tableCell(paragraph)')
+    expect(resolveNode(schema.nodes.doc!.create(null, inserted('only')), () => true, 'reject')!.toString()).toBe('doc(paragraph)')
+    expect(resolveNode(inserted('gone'), () => true, 'reject')).toBeNull()
+  })
+
+  it('keeps an editor selection on the same text', () => {
+    // The selection sits between hunks, inside the range the single step replaces.
+    const doc = suggest(parse('Alpha beta gamma delta.\n\nEpsilon zeta.'), 'Alpha gamma delta.\n\nNew paragraph.\n\nEpsilon zeta eta.').doc
+    let position = -1
+    doc.descendants((node, pos) => {
+      if (node.isText && node.text!.includes('delta')) position = pos + node.text!.indexOf('delta')
+    })
+    for (const action of ['accept', 'reject'] as const) {
+      const state = EditorState.create({ doc, selection: TextSelection.create(doc, position, position + 5) })
+      const tr = resolveSuggestions(state.tr, () => true, action)
+      expect(tr.steps).toHaveLength(1)
+      const next = state.apply(tr)
+      expect(next.doc.textBetween(next.selection.from, next.selection.to)).toBe('delta')
+    }
+  })
+
+  it('resolves tens of thousands of hunks in one step', () => {
+    const schema = docSchema()
+    const mark = (name: string, id: number) => schema.marks[name]!.create({ id: `h${id}`, changeId: 'c1' })
+    const items = Array.from({ length: 20_000 }, (_, i) => schema.nodes.listItem!.create(
+      i % 4 ? null : { [SUGGESTION_BLOCK_ATTR]: formatBlockSuggestion({ kind: 'delete', changeId: 'c1', id: `b${i}` }) },
+      schema.nodes.paragraph!.create(null, [schema.text(`item ${i} `), schema.text('old', [mark(SUGGESTION_DELETE_MARK, i)]), schema.text('new', [mark(SUGGESTION_INSERT_MARK, i)])]),
+    ))
+    const doc = schema.nodes.doc!.create(null, schema.nodes.bulletList!.create(null, items))
+    for (const action of ['accept', 'reject'] as const) {
+      const started = performance.now()
+      const tr = resolveSuggestions(new Transform(doc), () => true, action)
+      expect(performance.now() - started).toBeLessThan(1000)
+      expect(tr.steps).toHaveLength(1)
+      expect(tr.doc.eq(docView(doc, action === 'accept' ? 'proposed' : 'base'))).toBe(true)
+      expect(tr.doc.firstChild!.childCount).toBe(action === 'accept' ? 15_000 : 20_000)
+      expect(hasSuggestions(tr.doc)).toBe(false)
+    }
+    const started = performance.now()
+    docView(doc, 'proposed')
+    expect(performance.now() - started).toBeLessThan(1000)
   })
 })
