@@ -160,13 +160,17 @@ public final class KeyboardEngine {
     acceptPendingLearning()
     let isLetter = first.isLetter
     var text = key
-    if isLetter, shift.isActive || shiftHeld { text = key.uppercased() }
     if first == "'" || first == "\"", policy.smartQuotes { text = curlyQuote(for: first) }
 
     if phantomSpace {
       phantomSpace = false
-      if Self.isWordCharacter(first) { insertDocumentText(" ") }
+      if Self.isWordCharacter(first) {
+        insertDocumentText(" ")
+        // The owed space starts a word, which can change word capitalization.
+        updateAutomaticShift()
+      }
     }
+    if isLetter, shift.isActive || shiftHeld { text = key.uppercased() }
     if case .acceptedSuggestion(autoSpace: true) = lastEdit, Self.spaceSwapPunctuation.contains(first), policy.smartSpacing, before.hasSuffix(" ") {
       deleteDocumentBackward()
     }

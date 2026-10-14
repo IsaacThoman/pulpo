@@ -136,6 +136,15 @@ struct EditingRegressionTests {
     engine.type("x")
     #expect(!document.text.contains(" "), "\(document.text)")
   }
+
+  @Test func wordCapitalizationAppliesAfterTheOwedSwipeSpace() {
+    var traits = InputTraits()
+    traits.capitalization = .words
+    let (engine, document) = Fixtures.engine(traits: traits)
+    engine.insertGlide("helo".utf8.compactMap { engine.glide!.geometry.center($0) })
+    engine.type("s")
+    #expect(document.text == "Hello S")
+  }
 }
 
 /// A proxy that exposes only the last `window` characters before the cursor.
