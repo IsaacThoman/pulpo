@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { eq } from 'drizzle-orm'
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { db, queryClient } from '../../database/client.js'
@@ -253,6 +254,39 @@ describe.skipIf(!enabled)('agent file changes', () => {
       expect(await files.node(added.nodeId)).toBeUndefined()
       expect(objects.has(addedKey)).toBe(false)
       expect(await files.node(mine)).toMatchObject({ parentId: projects, trashedAt: null })
+      expect(await files.content(mine)).toBe('mine')
+    })
+
+    it('keeps the owner\'s trashed and uploading items when a suggested folder is deleted', async () => {
+      const projects = await files.folder('Projects')
+      const trashed = await files.blob('trashed.txt', projects, 'trashed')
+      await files.attach({ [projects]: 'suggest' })
+      await files.ok('mkdir', { path: 'Projects/New' })
+      const [suggested] = await db.select().from(fileNodes).where(eq(fileNodes.parentId, projects)).then((rows) => rows.filter((row) => row.name === 'New'))
+      await moveFileNodes(files.userId, [{ id: trashed, parentId: suggested!.id }])
+      await trashFileNode(files.userId, trashed)
+      const uploading = randomUUID()
+      await db.insert(fileNodes).values({ id: uploading, ownerUserId: files.userId, parentId: suggested!.id, kind: 'blob', name: 'upload.bin', status: 'pending', objectKey: `users/${files.userId}/files/${uploading}` })
+      // The agent withdraws its own suggestion.
+      expect((await files.ok('rm', { path: 'Projects/New', recursive: true })).output).toMatch(/which you had suggested adding/)
+      expect(await files.node(suggested!.id)).toBeUndefined()
+      expect(await files.node(uploading)).toMatchObject({ parentId: projects, status: 'pending' })
+      expect(await files.node(trashed)).toMatchObject({ parentId: projects, trashRootId: trashed })
+      expect((await restoreFileNode(files.userId, trashed)).parentId).toBe(projects)
+    })
+
+    it('keeps the owner\'s items in a suggested folder the owner trashed', async () => {
+      const projects = await files.folder('Projects')
+      const mine = await files.blob('mine.txt', projects, 'mine')
+      await files.attach({ [projects]: 'suggest' })
+      await files.ok('mkdir', { path: 'Projects/New' })
+      const [suggested] = await db.select().from(fileNodes).where(eq(fileNodes.parentId, projects)).then((rows) => rows.filter((row) => row.name === 'New'))
+      await moveFileNodes(files.userId, [{ id: mine, parentId: suggested!.id }])
+      await trashFileNode(files.userId, suggested!.id)
+      await reviewNodeSuggestion(files.userId, suggested!.id, 'reject')
+      expect(await files.node(mine)).toMatchObject({ parentId: projects, trashRootId: mine })
+      expect((await files.node(mine))!.trashedAt).not.toBeNull()
+      expect(await restoreFileNode(files.userId, mine)).toMatchObject({ parentId: projects, trashedAt: null })
       expect(await files.content(mine)).toBe('mine')
     })
 

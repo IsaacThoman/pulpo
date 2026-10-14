@@ -11,6 +11,7 @@ import {
   assertDestination,
   assertMovable,
   assertNameAvailable,
+  availableName,
   createFolderInTx,
   moveNodeInTx,
   purgeNodesInTx,
@@ -248,9 +249,35 @@ export async function moveChange(reply: ReplyContext, nodeId: string, target: Pl
 }
 
 /**
+ * Moves one of the owner's items out of a suggestion about to be deleted, into `parentId`. Live
+ * items move like any item; items still uploading take a free name there; trashed ones stay in
+ * the trash, as their own trash entry, so restoring them brings back only them.
+ */
+async function rescueFromSuggestion(tx: DatabaseTransaction, userId: string, node: FileNodeRow, parentId: string | null): Promise<void> {
+  if (!node.trashedAt && node.status === 'ready') {
+    await moveNodeInTx(tx, userId, node, { parentId, name: node.name, onConflict: 'rename' })
+    return
+  }
+  const name = node.trashedAt ? node.name : await availableName(tx, userId, parentId, node.name)
+  await tx.update(fileNodes).set({ parentId, name, revision: sql`${fileNodes.revision} + 1` }).where(eq(fileNodes.id, node.id))
+  if (node.trashedAt && node.trashRootId !== node.id) {
+    await tx.execute(sql`
+      with recursive inside(id, depth) as (
+        select ${node.id}::uuid, 0
+        union all
+        select child.id, inside.depth + 1 from file_nodes child join inside on child.parent_id = inside.id
+        where inside.depth < ${FILE_TREE_MAX_DEPTH * 2}
+      )
+      update file_nodes set trash_root_id = ${node.id}
+      where id in (select id from inside) and trash_root_id = ${node.trashRootId}
+    `)
+  }
+}
+
+/**
  * Permanently deletes items that are (part of) the suggestion `changeId`. Items inside them that
- * are not part of it, such as the owner's own files, are kept: they move up to where the
- * suggestion sits.
+ * are not part of it, such as the owner's own files, live, uploading, or trashed, are kept: they
+ * move up to where the suggestion sits.
  */
 export async function purgeSuggestedInTx(tx: DatabaseTransaction, effects: CommitEffects, userId: string, changeId: string, rootIds: string[]): Promise<void> {
   for (const rootId of rootIds) {
@@ -264,13 +291,9 @@ export async function purgeSuggestedInTx(tx: DatabaseTransaction, effects: Commi
         join tree on node.parent_id = tree.id
         where tree.suggestion_change_id = ${changeId} and tree.depth < ${FILE_TREE_MAX_DEPTH * 2}
       )
-      select tree.id::text as id from tree join file_nodes node on node.id = tree.id
-      where tree.depth > 0 and tree.suggestion_change_id is distinct from ${changeId} and node.trashed_at is null and node.status = 'ready'
+      select id::text as id from tree where depth > 0 and suggestion_change_id is distinct from ${changeId}
     `)
-    for (const { id } of foreign) {
-      const node = (await resolveFileAccess(tx, userId, id))!.node
-      await moveNodeInTx(tx, userId, node, { parentId: root.parentId, name: node.name, onConflict: 'rename' })
-    }
+    for (const { id } of foreign) await rescueFromSuggestion(tx, userId, (await resolveFileAccess(tx, userId, id))!.node, root.parentId)
   }
   effects.closedDocs.push({ ids: await purgeNodesInTx(tx, userId, rootIds, effects.deletedKeys), reason: 'deleted' })
 }
