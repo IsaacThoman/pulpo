@@ -621,10 +621,6 @@ interface RowSelection {
 
 const SELECTED_ROW = 'bg-sky-500/15 text-sidebar-foreground hover:bg-sky-500/20 dark:bg-sky-400/15'
 
-/** Desktop sidebar widths, matching the classes on the sidebar below. */
-export const SIDEBAR_WIDTH = 264
-export const SIDEBAR_COLLAPSED_WIDTH = 52
-
 export function ChatRow({
   chat,
   active,
@@ -1831,7 +1827,8 @@ export function Sidebar({
                 'transition-[width] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]'
             ),
         mobile && !mobileOpen && '-translate-x-full',
-        !mobile && (collapsed ? 'desktop-collapsed-sidebar w-[52px]' : 'w-[264px]')
+        // The open width is the user's, set by AppLayout through `--sidebar-width`.
+        !mobile && (collapsed ? 'desktop-collapsed-sidebar w-[52px]' : 'w-(--sidebar-width)')
       )}
     >
       {!mobile && isDesktopRuntime() && (
