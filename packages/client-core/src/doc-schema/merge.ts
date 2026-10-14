@@ -32,9 +32,14 @@ type Wrap = (node: ProseMirrorNode) => ProseMirrorNode
  */
 const MAX_EDIT_DISTANCE = 2000
 /** Gaps of unmatched blocks with more candidate pairs than this get paired greedily. */
-const MAX_PAIRING_CELLS = 40_000
+const MAX_PAIRING_CELLS = 2500
 const PAIRING_LOOKAHEAD = 8
 const PAIRING_SKIP_COST = 0.05
+/**
+ * Word lookups block pairing may spend in one merge. Past it, blocks of the same kind count as
+ * alike enough, so they still pair in order without comparing their words.
+ */
+const MAX_SIMILARITY_WORK = 4_000_000
 /** How alike (Dice coefficient over words) two blocks must be to diff one into the other. */
 const MIN_SIMILARITY = 0.3
 
@@ -116,26 +121,31 @@ function pairKey(node: ProseMirrorNode): string {
   }
 }
 
-function words(node: ProseMirrorNode | null): Map<string, number> {
-  const bag = new Map<string, number>()
+interface WordBag {
+  counts: Map<string, number>
+  total: number
+}
+
+function words(node: ProseMirrorNode | null): WordBag {
+  const counts = new Map<string, number>()
+  let total = 0
   const text = node?.textBetween(0, node.content.size, ' ', ' ') ?? ''
   for (const [token] of text.matchAll(TOKEN)) {
     if (!WORD.test(token)) continue
     const word = token.toLowerCase()
-    bag.set(word, (bag.get(word) ?? 0) + 1)
+    counts.set(word, (counts.get(word) ?? 0) + 1)
+    total++
   }
-  return bag
+  return { counts, total }
 }
 
-function similarity(a: Map<string, number>, b: Map<string, number>): number {
-  let total = 0
+/** Dice coefficient of two word bags; costs the smaller bag's distinct words. */
+function similarity(a: WordBag, b: WordBag): number {
+  if (!a.total && !b.total) return 1
+  const [small, large] = a.counts.size <= b.counts.size ? [a, b] : [b, a]
   let shared = 0
-  for (const count of a.values()) total += count
-  for (const [word, count] of b) {
-    total += count
-    shared += Math.min(count, a.get(word) ?? 0)
-  }
-  return total ? (2 * shared) / total : 1
+  for (const [word, count] of small.counts) shared += Math.min(count, large.counts.get(word) ?? 0)
+  return (2 * shared) / (a.total + b.total)
 }
 
 /**
@@ -207,7 +217,7 @@ function editScript(pairs: Array<[number, number]>, oldLength: number, newLength
   let i = 0
   let j = 0
   for (const [oldIndex, newIndex] of [...pairs, [oldLength, newLength] satisfies [number, number]]) {
-    ops.push(...gap(i, oldIndex, j, newIndex))
+    for (const op of gap(i, oldIndex, j, newIndex)) ops.push(op)
     if (oldIndex < oldLength) ops.push({ kind: 'same', old: oldIndex, new: newIndex })
     i = oldIndex + 1
     j = newIndex + 1
@@ -391,6 +401,7 @@ class Hunk {
 class Merge {
   hunks = 0
   private readonly ids = new Set<string>()
+  private similarityWork = 0
 
   constructor(current: ProseMirrorNode, readonly mode: Mode, readonly changeId: string, private readonly generateId: () => string) {
     current.descendants((node) => {
@@ -412,6 +423,12 @@ class Merge {
       }
     }
     throw new Error('Could not generate a unique suggestion id')
+  }
+
+  private similarity(a: WordBag, b: WordBag): number {
+    if (this.similarityWork > MAX_SIMILARITY_WORK) return MIN_SIMILARITY
+    this.similarityWork += Math.min(a.counts.size, b.counts.size) + 1
+    return similarity(a, b)
   }
 
   /** The merged children of `old`, so that their proposed view matches those of `fresh`. */
@@ -448,19 +465,28 @@ class Merge {
       (oldWordsOnly.get(i) ?? oldWordsOnly.set(i, wordsOnly(oldView(i))).get(i)!) === (newWordsOnly.get(j) ?? newWordsOnly.set(j, wordsOnly(next[j]!)).get(j)!)
     const equal = (i: number, j: number) => visible[i]!.eq(next[j]!) || oldKey(i) === newKey(j) || (sameWords(i, j) && normalKey(i) === newKey(j))
 
-    const oldWords = new Map<number, Map<string, number>>()
-    const newWords = new Map<number, Map<string, number>>()
+    const oldWords = new Map<number, WordBag>()
+    const newWords = new Map<number, WordBag>()
     const oldBag = (i: number) => oldWords.get(i) ?? oldWords.set(i, words(oldView(i))).get(i)!
     const newBag = (j: number) => newWords.get(j) ?? newWords.set(j, words(next[j]!)).get(j)!
 
-    const alike = (i: number, j: number) => oldView(i) !== null && pairKey(visible[i]!) === pairKey(next[j]!) ? similarity(oldBag(i), newBag(j)) : -1
+    const alike = (i: number, j: number) => oldView(i) !== null && pairKey(visible[i]!) === pairKey(next[j]!) ? this.similarity(oldBag(i), newBag(j)) : -1
     const pairs = commonSubsequence(visible.length, next.length, equal)
     const ops = editScript(pairs, visible.length, next.length, (oldFrom, oldTo, newFrom, newTo) => pairBlocks(oldFrom, oldTo, newFrom, newTo, alike))
 
-    const out: ProseMirrorNode[] = [...hiddenAfter[0]!]
+    // A block an earlier suggestion inserted that only moved keeps its suggestion, not this one.
+    const moved = new Map<string, number[]>()
+    for (const op of ops) {
+      if (op.kind !== 'delete' || blockSuggestion(visible[op.old]!) !== 'insert') continue
+      const key = normalKey(op.old)
+      moved.set(key, [...moved.get(key) ?? [], op.old])
+    }
+
+    const out: ProseMirrorNode[] = []
+    for (const hidden of hiddenAfter[0]!) out.push(hidden)
     const keep = (i: number, node: ProseMirrorNode | null) => {
       if (node) out.push(node)
-      out.push(...hiddenAfter[i + 1]!)
+      for (const hidden of hiddenAfter[i + 1]!) out.push(hidden)
     }
     let deletes: number[] = []
     let inserts: number[] = []
@@ -473,7 +499,10 @@ class Merge {
         const blank = node.type.name === 'paragraph' && !oldView(i)?.textContent.trim() && blockSuggestion(node) !== 'insert'
         keep(i, blank ? node : hunk.delete(node))
       }
-      for (const j of inserts) out.push(hunk.insert(next[j]!))
+      for (const j of inserts) {
+        const earlier = moved.size ? moved.get(newKey(j))?.shift() : undefined
+        out.push(earlier === undefined ? hunk.insert(next[j]!) : visible[earlier]!)
+      }
       hunk.close()
       deletes = []
       inserts = []
@@ -535,12 +564,14 @@ class Merge {
       ...Array.from({ length: oldTo - oldFrom }, (_, k): Op => ({ kind: 'delete', old: oldFrom + k })),
       ...Array.from({ length: newTo - newFrom }, (_, k): Op => ({ kind: 'insert', new: newFrom + k })),
     ])
-    // A lone space between two changes joins them into one hunk ("the quick" → "a slow").
+    // A lone space between two changes joins them into one hunk ("the quick" → "a slow"),
+    // unless an earlier suggestion inserted it: that one keeps it.
     for (let k = 1; k < ops.length - 1; k++) {
       const op = ops[k]!
-      if (op.kind === 'same' && ops[k - 1]!.kind !== 'same' && ops[k + 1]!.kind !== 'same' && before.tokens[op.old]!.space) {
-        ops.splice(k, 1, { kind: 'delete', old: op.old }, { kind: 'insert', new: op.new })
-      }
+      if (op.kind !== 'same' || ops[k - 1]!.kind === 'same' || ops[k + 1]!.kind === 'same') continue
+      const token = before.tokens[op.old]!
+      if (!token.space || token.parts.some(({ piece }) => inlineSuggestion(before.pieces[piece]!.node) === 'insert')) continue
+      ops.splice(k, 1, { kind: 'delete', old: op.old }, { kind: 'insert', new: op.new })
     }
     if (mode === 'suggest' && ops.some((op) => op.kind === 'delete' ? before.tokens[op.old]!.atom : op.kind === 'insert' && after.tokens[op.new]!.atom)) return null
 

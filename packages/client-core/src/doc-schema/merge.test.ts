@@ -348,6 +348,34 @@ describe('mergeMarkdown', () => {
     // Write mode needs no suggestion, so the break changes inline.
     expect(pieces(write(doc, 'First line  \nsecond line, then more.').doc)).toEqual([])
   })
+
+  it('never hands an earlier suggestion over to a later change', () => {
+    // A block the earlier change inserted, now moved, keeps that change.
+    const first = suggest(parse('Alpha.\n\nBeta.\n\nGamma.'), 'Alpha.\n\nInserted earlier.\n\nBeta.\n\nGamma.', 'c1').doc
+    const moved = expectConsistentFrom(first, 'Alpha.\n\nBeta.\n\nGamma.\n\nInserted earlier.', 'c2')
+    expect(pieces(moved)).toEqual(['insert:c1:c1-1:Inserted earlier.'])
+    // So does a space it inserted between two changes.
+    const spaced = suggest(parse('one two'), 'one big two', 'c1').doc
+    const around = expectConsistentFrom(spaced, 'uno big dos', 'c2')
+    expect(pieces(around).filter((piece) => piece.startsWith('insert:c1'))).toEqual(['insert:c1:c1-1:big '])
+  })
+
+  it('handles huge rewrites without deep call stacks', () => {
+    const words = (seed: string) => Array.from({ length: 80_000 }, (_, i) => `${seed}${i}`).join(' ')
+    const result = suggest(parse(`Start ${words('a')} end.`), `Start ${words('b')} end.`)
+    expect(listSuggestions(result.doc)).toHaveLength(1)
+  })
+
+  it('bounds the work of pairing up long runs of changed blocks', () => {
+    const block = (seed: string, i: number) => Array.from({ length: 400 }, (_, k) => `${seed}${i}w${k}`).join(' ')
+    const doc = parse(Array.from({ length: 150 }, (_, i) => block('x', i)).join('\n\n'))
+    let started = performance.now()
+    expect(suggest(doc, Array.from({ length: 150 }, (_, i) => block('y', i)).join('\n\n')).hunks).toBe(1)
+    expect(performance.now() - started).toBeLessThan(2000)
+    started = performance.now()
+    expect(suggest(doc, Array.from({ length: 150 }, (_, i) => block('x', i).replace(`x${i}w5 `, '')).join('\n\n')).hunks).toBe(150)
+    expect(performance.now() - started).toBeLessThan(2000)
+  })
 })
 
 /** Like `expectConsistent`, for documents that already hold suggestions. */
