@@ -33,6 +33,8 @@ export interface FileScope {
   attached: AttachedFileItem[]
   /** The access mode of each attached entry, keyed like `chats.file_scope_ids`. */
   modes: ReadonlyMap<string, FileAccessMode>
+  /** The chat's stored scope this was loaded from. */
+  source: { ids: readonly string[]; access: Readonly<Record<string, string>> }
 }
 
 export function isAllFiles(scope: FileScope): boolean {
@@ -109,7 +111,7 @@ export async function loadFileScope(userId: string, scopeIds: readonly string[],
     const location = rootId === id && chain.length > 1 ? chain.slice(1).reverse().map(nameOf).join('/') : null
     attached.push({ path, node: row, location, mode })
   }
-  return { userId, roots, attached, modes }
+  return { userId, roots, attached, modes, source: { ids: [...scopeIds], access: { ...access } } }
 }
 
 /**
@@ -121,6 +123,24 @@ export async function loadChatFileScope(userId: string, chatId: string): Promise
     .from(chats).where(and(eq(chats.id, chatId), eq(chats.userId, userId), isNull(chats.deletedAt))).limit(1)
   if (!chat || chat.temporary || !await filesFeatureEnabled()) return null
   return loadFileScope(userId, chat.scopeIds, chat.access)
+}
+
+function sameAccess(left: Readonly<Record<string, string>>, right: Readonly<Record<string, string>>): boolean {
+  const keys = Object.keys(left)
+  return keys.length === Object.keys(right).length && keys.every((key) => left[key] === right[key])
+}
+
+/**
+ * Inside a change's transaction: fails unless the chat's attached items and their access are
+ * still what `scope` was loaded from. The chat row stays share-locked until the transaction
+ * ends, so a change to them made meanwhile waits for this one.
+ */
+export async function assertScopeCurrent(executor: FileExecutor, chatId: string, scope: FileScope): Promise<void> {
+  const [chat] = await executor.select({ ids: chats.fileScopeIds, access: chats.fileScopeAccess }).from(chats)
+    .where(eq(chats.id, chatId)).for('share')
+  const unchanged = chat && chat.ids.length === scope.source.ids.length && chat.ids.every((id, index) => id === scope.source.ids[index])
+    && sameAccess(chat.access, scope.source.access)
+  if (!unchanged) throw new FilesCommandError('The items attached to this chat or their access just changed; run the command again')
 }
 
 /**
@@ -138,11 +158,11 @@ export async function modeFor(scope: FileScope, nodeId: string | null, executor:
 }
 
 /** Attached items inside an item (not the item itself): their own modes apply to them. */
-export async function attachedInside(scope: FileScope, nodeId: string): Promise<AttachedFileItem[]> {
+export async function attachedInside(scope: FileScope, nodeId: string, executor: FileExecutor = db): Promise<AttachedFileItem[]> {
   const inside: AttachedFileItem[] = []
   for (const item of scope.attached) {
     if (!item.node || item.node.id === nodeId) continue
-    if ((await chainIds(db, scope.userId, item.node.id)).includes(nodeId)) inside.push(item)
+    if ((await chainIds(executor, scope.userId, item.node.id)).includes(nodeId)) inside.push(item)
   }
   return inside
 }

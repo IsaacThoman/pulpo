@@ -17,6 +17,7 @@ describe('describeFileScope', () => {
         { path: 'Projects/data.csv', node: node('d', 'data.csv', 'blob'), location: null, mode: 'write' },
       ],
       modes: new Map(),
+      source: { ids: [], access: {} },
     }
     const prompt = describeFileScope(scope)
     expect(prompt).toMatch(/^# Files\n/)
@@ -35,6 +36,7 @@ describe('describeFileScope', () => {
       roots: [{ label: '', node: null }],
       attached: [{ path: '', node: null, location: null, mode: 'write' }],
       modes: new Map([['root', 'write']]),
+      source: { ids: ['root'], access: { root: 'write' } },
     })
     expect(prompt).toContain('- All of their files (you can edit it directly)')
     expect(prompt).toContain('Paths start at the top of their Files')

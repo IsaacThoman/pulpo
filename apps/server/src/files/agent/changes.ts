@@ -19,6 +19,11 @@ export interface ReplyContext {
   userId: string
   chatId: string
   responseId: string
+  /**
+   * Re-checks inside the change's transaction what the command decided outside it (the access
+   * mode), so a change the user makes to the chat's attached items meanwhile is never ignored.
+   */
+  guard?: (tx: DatabaseTransaction) => Promise<void>
 }
 
 /** Where an item is, as move rows record it: its folder (null: the top of My files) and its name. */

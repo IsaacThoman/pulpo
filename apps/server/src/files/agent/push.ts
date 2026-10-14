@@ -5,7 +5,7 @@ import { db } from '../../database/client.js'
 import { applicationSettings } from '../../database/schema.js'
 import { parseAuthSettings } from '../../settings/application-settings.js'
 import type { FileNodeRow } from '../access.js'
-import { readOnlyMessage, workspacePath, type CommandContext, type CommandOutput } from './command-context.js'
+import { guardedReply, readOnlyMessage, workspacePath, type CommandContext, type CommandOutput } from './command-context.js'
 import { createBlobChange, createDocChange, updateBlobChange, updateDocChange, type ContentResult } from './mutations.js'
 import { failureMessage } from './failures.js'
 import { FilesCommandError, locateParent, locateOptional, modeFor } from './scope.js'
@@ -102,16 +102,17 @@ async function pushExisting(ctx: CommandContext, node: FileNodeRow, path: string
     if (item.base.nodeId !== node.id) return { status: 'conflict', nodeId: node.id, message: `"${path}" is now a different item than the one you pulled; pull it again` }
   }
   const expected = item.force ? null : item.base!.version
+  const reply = guardedReply(ctx, mode, (executor) => modeFor(ctx.scope, node.id, executor))
   if (node.kind === 'doc') {
     const markdown = await readMarkdown(ctx, local, limits)
-    return contentOutcome(await updateDocChange(ctx, node.id, markdown, mode, expected), path, node.id)
+    return contentOutcome(await updateDocChange(reply, node.id, markdown, mode, expected), path, node.id)
   }
   // Settle what can be settled before storing a copy of the bytes.
-  const view = await agentBlobView(db, ctx.chatId, node)
+  const view = await agentBlobView(db, ctx.chatId, node, async () => mode)
   if (expected !== null && blobVersion(view) !== expected) return { ...conflict(path, blobVersion(view)), nodeId: node.id }
   const bytes = await readUpload(ctx, local, limits)
   if (contentChecksum(bytes) === view.checksum) return contentOutcome({ status: 'unchanged', version: blobVersion(view) }, path, node.id)
-  return contentOutcome(await updateBlobChange(ctx, node, bytes, mode, expected), path, node.id)
+  return contentOutcome(await updateBlobChange(reply, node, bytes, mode, expected), path, node.id)
 }
 
 async function pushNew(ctx: CommandContext, local: string, item: PushItem, limits: PushLimits): Promise<Outcome> {
@@ -122,11 +123,13 @@ async function pushNew(ctx: CommandContext, local: string, item: PushItem, limit
     }
   }
   const { parent, name, path } = await locateParent(ctx.scope, item.remote)
-  const mode = await modeFor(ctx.scope, parent.node?.id ?? null)
+  const parentId = parent.node?.id ?? null
+  const mode = await modeFor(ctx.scope, parentId)
   if (mode !== 'write' && mode !== 'suggest') return { status: 'denied', message: readOnlyMessage(parent.path) }
+  const reply = guardedReply(ctx, mode, (executor) => modeFor(ctx.scope, parentId, executor))
   const created = isMarkdownName(name)
-    ? await createDocChange(ctx, parent.node?.id ?? null, name, await readMarkdown(ctx, local, limits), mode)
-    : await createBlobChange(ctx, parent.node?.id ?? null, name, await readUpload(ctx, local, limits), mode)
+    ? await createDocChange(reply, parentId, name, await readMarkdown(ctx, local, limits), mode)
+    : await createBlobChange(reply, parentId, name, await readUpload(ctx, local, limits), mode)
   const message = created.status === 'created' ? `Created "${path}"` : `Suggested the new file "${path}"; it waits for the user to accept it`
   return { status: created.status, message, nodeId: created.node.id, version: created.version }
 }

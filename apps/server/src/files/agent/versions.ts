@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import { and, desc, eq, sql } from 'drizzle-orm'
 import { z } from 'zod'
+import type { FileAccessMode } from '@pulpo/contracts'
 import { mimeTypeFromName } from '../../attachments/generated.js'
 import { canonicalUploadedMimeType } from '../../attachments/policy.js'
 import { db } from '../../database/client.js'
@@ -127,9 +128,14 @@ export async function pendingBlobProposal(executor: FileExecutor, chatId: string
   return row && after ? { id: row.id, responseId: row.responseId, after } : null
 }
 
-/** What an agent in `chatId` sees of an uploaded file: its own pending proposal, else the file. */
-export async function agentBlobView(executor: FileExecutor, chatId: string, node: FileNodeRow): Promise<BlobSnapshot> {
-  return (await pendingBlobProposal(executor, chatId, node.id))?.after ?? blobSnapshot(node)
+/**
+ * What an agent in `chatId` sees of an uploaded file: its chat's pending proposal while it may
+ * only suggest changes to the file (`mode`, asked only when there is one), else the file itself,
+ * which is what its direct changes replace.
+ */
+export async function agentBlobView(executor: FileExecutor, chatId: string, node: FileNodeRow, mode: () => Promise<FileAccessMode | null>): Promise<BlobSnapshot> {
+  const proposal = await pendingBlobProposal(executor, chatId, node.id)
+  return proposal && await mode() === 'suggest' ? proposal.after : blobSnapshot(node)
 }
 
 /** Kept contents no change row needs any more. */

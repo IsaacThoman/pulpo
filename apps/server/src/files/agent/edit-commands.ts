@@ -1,6 +1,6 @@
 import type { FileAccessMode } from '@pulpo/contracts'
-import type { FileNodeRow } from '../access.js'
-import { changeMode, joinPath, stricterMode, type CommandContext, type CommandOutput } from './command-context.js'
+import type { FileExecutor, FileNodeRow } from '../access.js'
+import { changeMode, guardedReply, joinPath, stricterMode, type CommandContext, type CommandOutput } from './command-context.js'
 import { createFolderChange, moveChange, trashChange } from './mutations.js'
 import { attachedInside, FilesCommandError, locateExisting, locateOptional, locateParent, modeFor, splitPath, type Located } from './scope.js'
 
@@ -8,10 +8,10 @@ import { attachedInside, FilesCommandError, locateExisting, locateOptional, loca
  * The mode for moving or deleting an item with everything inside: the strictest of its own and
  * of the attached items within it, which the user may have protected more than their folder.
  */
-async function wholeItemMode(ctx: CommandContext, located: Located & { node: FileNodeRow }): Promise<FileAccessMode | null> {
-  let mode = await modeFor(ctx.scope, located.node.id)
+async function wholeItemMode(ctx: CommandContext, located: Located & { node: FileNodeRow }, executor?: FileExecutor): Promise<FileAccessMode | null> {
+  let mode = await modeFor(ctx.scope, located.node.id, executor)
   if (mode === 'read') return mode
-  for (const item of await attachedInside(ctx.scope, located.node.id)) {
+  for (const item of await attachedInside(ctx.scope, located.node.id, executor)) {
     if (item.mode === 'read') {
       throw new FilesCommandError(`"${located.path}" holds "${item.path}", which is read only. Leave it out, or ask the user to allow changes to it.`)
     }
@@ -21,8 +21,9 @@ async function wholeItemMode(ctx: CommandContext, located: Located & { node: Fil
 }
 
 async function createFolderAt(ctx: CommandContext, parent: Located, name: string, path: string): Promise<string> {
-  const mode = changeMode(await modeFor(ctx.scope, parent.node?.id ?? null), parent.path)
-  const { status } = await createFolderChange(ctx, parent.node?.id ?? null, name, mode)
+  const parentId = parent.node?.id ?? null
+  const mode = changeMode(await modeFor(ctx.scope, parentId), parent.path)
+  const { status } = await createFolderChange(guardedReply(ctx, mode, (executor) => modeFor(ctx.scope, parentId, executor)), parentId, name, mode)
   ctx.changed = true
   return status === 'created' ? `Created the folder "${path}/"` : `Suggested the new folder "${path}/"; it waits for the user to accept it`
 }
@@ -63,10 +64,12 @@ export async function mvCommand(ctx: CommandContext, args: { from: string; to: s
   const source = await locateExisting(ctx.scope, args.from)
   if (!source.node) throw new FilesCommandError('The top of My files cannot be moved')
   const target = await moveTarget(ctx, source, args.to)
-  const sourceMode = await wholeItemMode(ctx, { ...source, node: source.node })
-  const targetMode = await modeFor(ctx.scope, target.parent.node?.id ?? null)
-  const mode = changeMode(stricterMode(sourceMode, targetMode), sourceMode === 'read' ? source.path : target.parent.path)
-  const result = await moveChange(ctx, source.node.id, { parentId: target.parent.node?.id ?? null, name: target.name }, mode)
+  const item = { ...source, node: source.node }
+  const parentId = target.parent.node?.id ?? null
+  const modeIn = async (executor?: FileExecutor) => stricterMode(await wholeItemMode(ctx, item, executor), await modeFor(ctx.scope, parentId, executor))
+  const sourceMode = await wholeItemMode(ctx, item)
+  const mode = changeMode(await modeIn(), sourceMode === 'read' ? source.path : target.parent.path)
+  const result = await moveChange(guardedReply(ctx, mode, modeIn), source.node.id, { parentId, name: target.name }, mode)
   if (result === 'unchanged') return { output: `"${source.path}" is already there` }
   ctx.changed = true
   return {
@@ -83,8 +86,9 @@ export async function rmCommand(ctx: CommandContext, args: { path: string; recur
   if (located.node.kind === 'folder' && !args.recursive) {
     throw new FilesCommandError(`"${located.path}" is a folder; use pulpo files rm -r to delete it with everything inside`)
   }
-  const mode = changeMode(await wholeItemMode(ctx, { ...located, node: located.node }), located.path)
-  const result = await trashChange(ctx, located.node.id, mode)
+  const item = { ...located, node: located.node }
+  const mode = changeMode(await wholeItemMode(ctx, item), located.path)
+  const result = await trashChange(guardedReply(ctx, mode, (executor) => wholeItemMode(ctx, item, executor)), located.node.id, mode)
   ctx.changed = true
   const messages = {
     trashed: `Moved "${located.path}" to the trash; the user can restore it from there`,

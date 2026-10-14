@@ -10,7 +10,7 @@ import { formatSize, joinPath, type CommandContext, type CommandOutput } from '.
 import { readProposedMarkdown } from './docs.js'
 import { createLineMatcher } from './matcher.js'
 import { MODE_LABELS } from './prompt.js'
-import { FilesCommandError, isAllFiles, locateExisting, scopePathOf, type Located } from './scope.js'
+import { FilesCommandError, isAllFiles, locateExisting, modeFor, scopePathOf, type Located } from './scope.js'
 import { agentBlobView, readsAsText } from './versions.js'
 import { walkTree, type WalkedNode } from './walk.js'
 
@@ -113,7 +113,7 @@ async function readBlobText(key: string): Promise<string> {
  */
 async function agentText(ctx: CommandContext, node: FileNodeRow): Promise<string | null> {
   if (node.kind === 'doc') return readProposedMarkdown(node.id)
-  const view = await agentBlobView(db, ctx.chatId, node)
+  const view = await agentBlobView(db, ctx.chatId, node, () => modeFor(ctx.scope, node.id))
   if (!readsAsText(node.name, view.mimeType) || view.sizeBytes > TEXT_READ_LIMIT_BYTES) return null
   try {
     return await readBlobText(view.objectKey)

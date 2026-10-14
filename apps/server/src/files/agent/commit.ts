@@ -26,10 +26,18 @@ export const TREE_AND_CHAT_SCOPES: StateInvalidationScope[] = ['files', 'folders
 export async function mutateAgentFiles<T>(
   userId: string,
   work: (tx: DatabaseTransaction, effects: CommitEffects) => Promise<T>,
-  options: { reserveBytes?: number; scopes?: StateInvalidationScope[] } = {},
+  options: {
+    reserveBytes?: number
+    scopes?: StateInvalidationScope[]
+    /** Re-checks, under the locks, what the change was decided from. */
+    guard?: (tx: DatabaseTransaction) => Promise<void>
+  } = {},
 ): Promise<T> {
   const effects: CommitEffects = { docUpdates: [], closedDocs: [], deletedKeys: [] }
-  const result = await mutateFileTree(userId, (tx) => work(tx, effects), options.scopes, { reserveBytes: options.reserveBytes })
+  const result = await mutateFileTree(userId, async (tx) => {
+    await options.guard?.(tx)
+    return work(tx, effects)
+  }, options.scopes, { reserveBytes: options.reserveBytes })
   await runCommitEffects(effects)
   return result
 }

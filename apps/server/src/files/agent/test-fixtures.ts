@@ -75,20 +75,26 @@ export async function filesFixture(options: { storageLimitBytes?: number } = {})
     workspace,
     /** Counts the relay announced after changes, newest last. */
     changes,
+    /** Starts another chat with a reply; `relay` and `attach` work on it from then on. */
+    async newChat() {
+      fixture.chatId = randomUUID()
+      await db.insert(chats).values({ id: fixture.chatId, userId, modelId: model })
+      return fixture.newReply()
+    },
     /** Starts another agent reply in the chat; `relay` talks for it from then on. */
     async newReply(status: 'in_progress' | 'completed' = 'completed') {
       const responseId = randomUUID()
-      await db.insert(responses).values({ id: responseId, chatId, userId, modelId: model, input: [], status })
+      await db.insert(responses).values({ id: responseId, chatId: fixture.chatId, userId, modelId: model, input: [], status })
       fixture.responseId = responseId
       return responseId
     },
     async attach(entries: Record<string, FileAccessMode | undefined>) {
       const access = Object.fromEntries(Object.entries(entries).filter((entry): entry is [string, FileAccessMode] => Boolean(entry[1])))
-      await db.update(chats).set({ fileScopeIds: Object.keys(entries), fileScopeAccess: access }).where(eq(chats.id, chatId))
+      await db.update(chats).set({ fileScopeIds: Object.keys(entries), fileScopeAccess: access }).where(eq(chats.id, fixture.chatId))
     },
     async relay(command: string, args: unknown) {
       const handler = createFilesRelay({
-        userId, chatId, responseId: fixture.responseId, workspace, maxOutputBytes: 50_000,
+        userId, chatId: fixture.chatId, responseId: fixture.responseId, workspace, maxOutputBytes: 50_000,
         onChanged: (count) => { changes.push(count) },
       })
       return handler('operation', { id: randomUUID(), command, args })
