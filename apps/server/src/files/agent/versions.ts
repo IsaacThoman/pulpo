@@ -4,7 +4,7 @@ import { z } from 'zod'
 import { mimeTypeFromName } from '../../attachments/generated.js'
 import { canonicalUploadedMimeType } from '../../attachments/policy.js'
 import { db } from '../../database/client.js'
-import { fileChanges, fileVersions } from '../../database/schema.js'
+import { fileChanges, fileNodes, fileVersions } from '../../database/schema.js'
 import { newId } from '../../lib/ids.js'
 import { getBlobStore } from '../../storage/index.js'
 import type { FileExecutor, FileNodeRow } from '../access.js'
@@ -66,6 +66,11 @@ export async function storeBlob(userId: string, name: string, bytes: Uint8Array,
   }
   await getBlobStore().put(snapshot.objectKey, bytes, { contentType: snapshot.mimeType, contentLength: bytes.byteLength })
   return snapshot
+}
+
+/** Makes `content` an uploaded file's current content. */
+export async function setBlobContent(tx: DatabaseTransaction, nodeId: string, content: BlobSnapshot): Promise<void> {
+  await tx.update(fileNodes).set({ ...content, revision: sql`${fileNodes.revision} + 1`, updatedAt: new Date() }).where(eq(fileNodes.id, nodeId))
 }
 
 /** Records a non-current content so it counts toward storage and is deleted with its file. */

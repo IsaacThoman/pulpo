@@ -92,7 +92,7 @@ export async function treeCommand(ctx: CommandContext, args: { path?: string; de
     lines.push(`${start.path || 'My files'}${start.node?.kind === 'doc' || start.node?.kind === 'blob' ? '' : '/'}`)
     if (start.node && start.node.kind !== 'folder') continue
     const walked = await walkTree(ctx.userId, { id: start.node?.id ?? null, path: start.path }, {
-      maxDepth: args.depth ?? 3, maxNodes: TREE_LIMIT - lines.length,
+      maxDepth: args.depth ?? 3, maxNodes: Math.max(0, TREE_LIMIT - lines.length),
     })
     truncated ||= walked.truncated
     for (const item of walked.nodes) lines.push(`${'  '.repeat(item.depth)}${item.node.name}${item.node.kind === 'folder' ? '/' : ''}`)

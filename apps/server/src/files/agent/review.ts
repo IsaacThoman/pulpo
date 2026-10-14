@@ -10,7 +10,7 @@ import { listFileChanges, parsePlace, setChangeStatus, type FileChangeRow } from
 import { mutateAgentFiles, TREE_AND_CHAT_SCOPES, type CommitEffects, type DatabaseTransaction } from './commit.js'
 import { loadDocInTx, lockDocs, writeDocInTx } from './docs.js'
 import { purgeSuggestedInTx } from './mutations.js'
-import { blobSnapshot, dropVersion, parseBlobSnapshot, releaseBlob } from './versions.js'
+import { blobSnapshot, dropVersion, parseBlobSnapshot, releaseBlob, setBlobContent } from './versions.js'
 
 interface Review {
   tx: DatabaseTransaction
@@ -38,7 +38,7 @@ async function reviewBlob({ tx, effects, userId, row, node, action }: Review): P
   if (action === 'reject') return releaseBlob(tx, effects, userId, node.id, proposed)
   if (node.kind !== 'blob') throw stale(`"${node.name}" is no longer an uploaded file, so the suggested content cannot replace it`)
   const previous = blobSnapshot(node)
-  await tx.update(fileNodes).set({ ...proposed, updatedAt: new Date() }).where(eq(fileNodes.id, node.id))
+  await setBlobContent(tx, node.id, proposed)
   await dropVersion(tx, proposed.objectKey)
   await releaseBlob(tx, effects, userId, node.id, previous)
 }

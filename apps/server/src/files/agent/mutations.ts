@@ -28,8 +28,8 @@ import {
   parseBlobSnapshot,
   pendingBlobProposal,
   releaseBlob,
+  setBlobContent,
   storeBlob,
-  type BlobSnapshot,
 } from './versions.js'
 
 export type ChangeMode = 'write' | 'suggest'
@@ -154,10 +154,6 @@ export async function updateDocChange(reply: ReplyContext, nodeId: string, markd
   })
 }
 
-async function setBlobContent(tx: DatabaseTransaction, nodeId: string, content: BlobSnapshot): Promise<void> {
-  await tx.update(fileNodes).set({ ...content, revision: sql`${fileNodes.revision} + 1`, updatedAt: new Date() }).where(eq(fileNodes.id, nodeId))
-}
-
 /** A newer proposal of content for a file replaces this chat's earlier ones from other replies. */
 async function supersedeProposals(tx: DatabaseTransaction, effects: CommitEffects, reply: ReplyContext, nodeId: string): Promise<void> {
   const older = await tx.select().from(fileChanges).where(and(
@@ -209,7 +205,6 @@ export async function updateBlobChange(reply: ReplyContext, node: FileNodeRow, b
     if (!kept) await deleteObjects([content.objectKey])
   }
 }
-
 
 export async function moveChange(reply: ReplyContext, nodeId: string, target: Place, mode: ChangeMode): Promise<'moved' | 'suggested' | 'unchanged'> {
   return mutateAgentFiles(reply.userId, async (tx) => {

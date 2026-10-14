@@ -9,7 +9,7 @@ import { moveNodeInTx, restoreNodeInTx, trashNodeInTx } from '../tree-service.js
 import { listFileChanges, parsePlace, setChangeStatus, type FileChangeRow } from './changes.js'
 import { mutateAgentFiles, TREE_AND_CHAT_SCOPES, type CommitEffects, type DatabaseTransaction } from './commit.js'
 import { docFromJSON, loadDocInTx, lockDocs, proposedMarkdown, writeDocInTx } from './docs.js'
-import { dropVersion, hasVersion, keepVersion, parseBlobSnapshot } from './versions.js'
+import { dropVersion, hasVersion, keepVersion, parseBlobSnapshot, setBlobContent } from './versions.js'
 
 type Direction = 'undo' | 'redo'
 
@@ -95,7 +95,7 @@ async function replaceBlob({ tx, userId, row, node, from, to }: Step): Promise<F
   if (node.trashedAt) return conflictFor(row, node, 'trashed')
   if (node.kind !== 'blob' || !expected || node.objectKey !== expected.objectKey) return conflictFor(row, node, 'replaced')
   if (!target || !await hasVersion(tx, target.objectKey)) return conflictFor(row, node, 'deleted')
-  await tx.update(fileNodes).set({ ...target, updatedAt: new Date() }).where(eq(fileNodes.id, node.id))
+  await setBlobContent(tx, node.id, target)
   // The two contents trade places: the target is current again, the other is kept for redo.
   await dropVersion(tx, target.objectKey)
   await keepVersion(tx, userId, node.id, expected)
