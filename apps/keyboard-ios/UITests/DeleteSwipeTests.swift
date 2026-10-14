@@ -158,7 +158,7 @@ final class DeleteSwipeTests: XCTestCase {
     var keysViewShowsPopups: Bool { false }
     func keysView(_ view: KeysView, touchDown key: Key) {}
     func keysView(_ view: KeysView, activate key: Key, at point: CGPoint) { activations.append(key.identifier) }
-    func keysView(_ view: KeysView, glide points: [CGPoint], start: Key) {}
+    func keysView(_ view: KeysView, glide points: [CGPoint], times: [TimeInterval], start: Key) {}
     func keysViewShiftUp(_ view: KeysView) {}
     func keysView(_ view: KeysView, insertAlternate text: String, for key: Key) {}
     func keysViewRepeatDelete(_ view: KeysView, wholeWord: Bool) {}
