@@ -4,7 +4,7 @@ import * as Y from 'yjs'
 import { applyNodeToYDoc, listSuggestions, resolveSuggestions, ydocToMarkdown, ydocToNode } from '@pulpo/client-core/doc-schema'
 import { Transform } from '@tiptap/pm/transform'
 import { db, queryClient } from '../../database/client.js'
-import { fileChanges } from '../../database/schema.js'
+import { fileChanges, fileNodes } from '../../database/schema.js'
 import { appendDocUpdate, loadYDoc, readDocMarkdown } from '../doc-store.js'
 import { listFileChanges } from './changes.js'
 import { FileChangesConflictError, redoFileChanges, undoFileChanges } from './history.js'
@@ -178,6 +178,23 @@ describe.skipIf(!enabled)('agent document changes', () => {
     expect(await db.select().from(fileChanges).where(eq(fileChanges.responseId, files.responseId))).toEqual([])
     expect(ydocToMarkdown(await loadYDoc(plan), 'proposed')).toBe('Alpha\n\nNewer idea')
     expect((await listFileChanges(files.userId, first)).changes[0]).toMatchObject({ status: 'pending', pendingSuggestions: 1 })
+  })
+
+  it('keeps a document the reply created once the owner edited it', async () => {
+    const projects = await files.folder('Projects')
+    await files.attach({ [projects]: 'write' })
+    files.put('/workspace/files/Projects/New.md', 'draft')
+    const created = ((await files.ok('push', { items: [{ local: '/workspace/files/Projects/New.md', remote: 'Projects/New.md', base: null }] })).data as PushData).results[0]!
+    // The reply's own later edit is part of its creation.
+    expect(await edit('Projects/New.md', () => 'final')).toMatchObject({ status: 'updated' })
+    await ownerEdit(created.nodeId!, 'final\n\nowner')
+    const error = await undoFileChanges(files.userId, files.responseId).catch((caught: unknown) => caught)
+    expect((error as FileChangesConflictError).conflicts).toEqual([expect.objectContaining({
+      nodeId: created.nodeId, kind: 'create', reason: 'edited', expected: 'final', current: 'final\n\nowner',
+    })])
+    await ownerEdit(created.nodeId!, 'final')
+    await undoFileChanges(files.userId, files.responseId)
+    expect((await db.select().from(fileNodes).where(eq(fileNodes.id, created.nodeId!)))[0]!.trashedAt).not.toBeNull()
   })
 
   it('edits documents the agent added directly', async () => {

@@ -18,7 +18,7 @@ import {
   systemFolderLocked,
   trashNodeInTx,
 } from '../tree-service.js'
-import { deleteChange, findChange, parsePlace, recordChange, setChangeStatus, type FileChangeRow, type Place, type ReplyContext } from './changes.js'
+import { deleteChange, findChange, parsePlace, recordChange, setChangeStatus, updateCreation, type FileChangeRow, type Place, type ReplyContext } from './changes.js'
 import { deleteObjects, mutateAgentFiles, TREE_AND_CHAT_SCOPES, type CommitEffects, type DatabaseTransaction } from './commit.js'
 import { loadDocInTx, lockDocs, markdownVersion, proposedMarkdown, writeDocInTx } from './docs.js'
 import { FilesCommandError } from './scope.js'
@@ -34,6 +34,8 @@ import {
 } from './versions.js'
 
 export type ChangeMode = 'write' | 'suggest'
+/** What a reply put into an item it created: a document's JSON, or an uploaded file's object key. */
+type CreatedContent = { doc?: unknown; objectKey?: string }
 export type CreateStatus = 'created' | 'suggested'
 
 export interface ContentResult {
@@ -89,8 +91,12 @@ async function newItemPlan(tx: DatabaseTransaction, userId: string, parentId: st
   return { suggestionChangeId: mode === 'suggest' ? rowId : null, rowId }
 }
 
-async function recordCreation(tx: DatabaseTransaction, reply: ReplyContext, node: FileNodeRow, rowId: string | null, mode: ChangeMode): Promise<CreateStatus> {
-  if (rowId) await recordChange(tx, reply, { id: rowId, nodeId: node.id, mode, kind: 'create', after: { parentId: node.parentId, name: node.name } })
+/**
+ * Records a new item. `content` (a document's JSON or a file's object key) is what undo checks
+ * is still there, so it never discards what someone else wrote into the item since.
+ */
+async function recordCreation(tx: DatabaseTransaction, reply: ReplyContext, node: FileNodeRow, rowId: string | null, mode: ChangeMode, content: CreatedContent = {}): Promise<CreateStatus> {
+  if (rowId) await recordChange(tx, reply, { id: rowId, nodeId: node.id, mode, kind: 'create', after: { parentId: node.parentId, name: node.name, ...content } })
   return node.suggestionChangeId ? 'suggested' : 'created'
 }
 
@@ -106,8 +112,9 @@ export async function createDocChange(reply: ReplyContext, parentId: string | nu
   return mutateAgentFiles(reply.userId, async (tx) => {
     const plan = await newItemPlan(tx, reply.userId, parentId, mode)
     const node = await createDocInTx(tx, reply.userId, { parentId, name, markdown, exactName: true, suggestionChangeId: plan.suggestionChangeId })
-    const status = await recordCreation(tx, reply, node, plan.rowId, mode)
-    return { node, status, version: markdownVersion(proposedMarkdown(ydocToNode(await loadDocInTx(tx, node.id)))) }
+    const created = ydocToNode(await loadDocInTx(tx, node.id))
+    const status = await recordCreation(tx, reply, node, plan.rowId, mode, { doc: created.toJSON() })
+    return { node, status, version: markdownVersion(proposedMarkdown(created)) }
   })
 }
 
@@ -123,7 +130,7 @@ export async function createBlobChange(reply: ReplyContext, parentId: string | n
         id: newId(), ownerUserId: reply.userId, parentId, kind: 'blob', name, ...content,
         sortOrder: await topSortOrder(tx, reply.userId, parentId), suggestionChangeId: plan.suggestionChangeId,
       }).returning()
-      return { node: node!, status: await recordCreation(tx, reply, node!, plan.rowId, mode), version: blobVersion(content) }
+      return { node: node!, status: await recordCreation(tx, reply, node!, plan.rowId, mode, { objectKey: content.objectKey }), version: blobVersion(content) }
     }, { reserveBytes: bytes.byteLength })
   } catch (error) {
     await deleteObjects([content.objectKey])
@@ -156,6 +163,7 @@ export async function updateDocChange(reply: ReplyContext, nodeId: string, markd
     const written = ydocToNode(doc)
     // A suggestion that only revised text earlier suggestions inserted stays with those.
     const ownHunks = mode === 'write' || existing || merged.hunks > 0
+    if (folded === 'creation') await updateCreation(tx, reply, node.id, { doc: written.toJSON() })
     if (!folded && ownHunks) {
       await recordChange(tx, reply, {
         id: changeId, nodeId: node.id, mode, kind: 'update',
@@ -200,6 +208,7 @@ export async function updateBlobChange(reply: ReplyContext, node: FileNodeRow, b
         assertRowMode(existing, 'write')
         await setBlobContent(tx, current.id, content)
         if (!folded) await recordChange(tx, reply, { nodeId: current.id, mode: 'write', kind: 'update', before: blobSnapshot(current), after: content })
+        if (folded === 'creation') await updateCreation(tx, reply, current.id, { objectKey: content.objectKey })
         await supersedeProposals(tx, effects, reply, current.id)
         await releaseBlob(tx, effects, reply.userId, current.id, blobSnapshot(current))
         return { status: folded === 'suggestion' ? 'suggested' : 'updated', version: blobVersion(content) }

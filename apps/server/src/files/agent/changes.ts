@@ -67,6 +67,12 @@ export async function recordChange(tx: DatabaseTransaction, reply: ReplyContext,
   return row!
 }
 
+/** Later changes a reply made to an item it created fold into the creation's `after`. */
+export async function updateCreation(tx: DatabaseTransaction, reply: ReplyContext, nodeId: string, patch: Record<string, unknown>): Promise<void> {
+  await tx.update(fileChanges).set({ after: sql`coalesce(${fileChanges.after}, '{}'::jsonb) || ${JSON.stringify(patch)}::jsonb`, updatedAt: new Date() })
+    .where(and(eq(fileChanges.responseId, reply.responseId), eq(fileChanges.nodeId, nodeId), eq(fileChanges.kind, 'create')))
+}
+
 export async function deleteChange(tx: DatabaseTransaction, id: string): Promise<void> {
   await tx.delete(fileChanges).where(eq(fileChanges.id, id))
 }

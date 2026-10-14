@@ -140,6 +140,28 @@ describe.skipIf(!enabled)('agent file changes', () => {
       expect((await conflictsOf(redoFileChanges(files.userId, reply))).map((conflict) => conflict.reason)).toEqual(['restored'])
     })
 
+    it('keeps items the reply created once others put their work in them', async () => {
+      const projects = await files.folder('Projects')
+      await files.attach({ [projects]: 'write' })
+      await files.ok('mkdir', { path: 'Projects/New' })
+      const created = await pushFile('/workspace/a.txt', 'Projects/New/a.txt', 'a')
+      const folder = (await files.node(created.nodeId))!.parentId!
+      const reply = files.responseId
+      // The owner adds a file of their own, and another reply replaces the agent's file.
+      const mine = await files.blob('mine.txt', folder, 'mine')
+      await files.newReply()
+      await pushFile('/workspace/a.txt', 'Projects/New/a.txt', 'b')
+      const conflicts = await conflictsOf(undoFileChanges(files.userId, reply))
+      expect(conflicts.map((conflict) => [conflict.nodeId, conflict.reason]).sort()).toEqual([[created.nodeId, 'replaced'], [folder, 'edited']].sort())
+      expect(await files.node(folder)).toMatchObject({ trashedAt: null })
+      expect(await files.node(mine)).toMatchObject({ trashedAt: null })
+      // Without others' work in them, they go.
+      await undoFileChanges(files.userId, files.responseId)
+      await trashFileNode(files.userId, mine)
+      await undoFileChanges(files.userId, reply)
+      expect((await files.node(folder))!.trashedAt).not.toBeNull()
+    })
+
     it('waits for the reply to finish', async () => {
       const projects = await files.folder('Projects')
       await files.attach({ [projects]: 'write' })
