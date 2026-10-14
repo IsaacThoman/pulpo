@@ -46,3 +46,56 @@ SHA-256 checksums (these inputs are **not** used by the builder):
 
 Rebuild with the command in the parent README. Match these input checksums to
 reproduce this dictionary; upstream downloads can change.
+
+## Literal-only spelling vocabulary
+
+`en_US.validwords.txt` contains 5,784 additional accepted spellings from the
+[English Speller Database (ESDB)](https://github.com/en-wl/wordlist/tree/1e5b7d3a72f47a71da5d28686c1dd4b397178485),
+revision `1e5b7d3a72f47a71da5d28686c1dd4b397178485`. The export uses size 60,
+American English, variant level 1, and excludes abbreviation parts of speech:
+`./scowl word-list 60 A 1 --wo-poses=abbr`. ESDB recommends size 60 for spelling
+dictionaries and deliberately excludes some valid but easily confused rare forms.
+The applicable copyright and permission notice is retained in [ESDB-LICENSE.txt](ESDB-LICENSE.txt).
+
+The importer keeps only exact lowercase ASCII spellings of at least three letters.
+It excludes all existing display spellings case-insensitively, including AOSP
+`not_a_word` entries, and all explicit shortcut sources. Uppercase names and
+abbreviations from the export are excluded. Apostrophes remain significant:
+an existing `diff's` entry does not claim that `diffs` is already accepted.
+No per-word exceptions are applied. The filtered UTF-8 resource has SHA-256
+`271ef667373f216e12a3eea5a992f52499c90190de21cafd98b5b4c6175d27bb`.
+
+The optional `VWRD` PKD1 section contains this list. It accepts and preserves typed
+literals, including their casing, while existing alternatives remain available.
+The supplement adds no calibrated language probabilities, correction targets,
+predictions, or glide candidates; personal learning still applies to accepted
+words. Older dictionaries without
+the section remain readable. The appender leaves every original section payload,
+word ID, and language statistic unchanged.
+
+To reproduce the filtered resource from the pinned upstream source, outside the checkout:
+
+```bash
+git clone https://github.com/en-wl/wordlist.git /tmp/pulpo-esdb
+git -C /tmp/pulpo-esdb checkout 1e5b7d3a72f47a71da5d28686c1dd4b397178485
+cd /tmp/pulpo-esdb
+make
+./scowl word-list 60 A 1 --wo-poses=abbr > /tmp/pulpo-esdb-american60.txt
+```
+
+From `apps/keyboard-ios`, run:
+
+```bash
+python3 scripts/build_validation_words.py \
+  --dictionary LanguageData/en_US.pkdict --words /tmp/pulpo-esdb-american60.txt \
+  --filtered-output /tmp/en_US.validwords.txt --output /tmp/en_US.pkdict
+```
+
+A frozen audit of 571 clear English literals reduced rejected spellings from 16 to
+6 and unwanted replacements from two to zero. All 42 curated typo controls retained
+their previous outputs. Of 3,787 independently generated unknown typing errors,
+four became valid spellings (`rial`, `ens` twice, and `wold`). Exact target correction
+recall changed from 3,324 to 3,323: preserving the valid noun `wold` also preserves
+that spelling when the intended word was `would`. The other three outputs had
+previously been unrelated corrections. A broad CMUdict import was rejected because
+names such as `Thier` and `Wich` would disable useful spelling corrections.

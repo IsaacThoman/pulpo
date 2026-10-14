@@ -25,6 +25,8 @@ import tempfile
 import unicodedata
 from pathlib import Path
 
+from build_validation_words import select_validation_words, validation_payload
+
 ROOT = Path(__file__).resolve().parent.parent
 FORMAT_VERSION = 1
 
@@ -522,6 +524,11 @@ def build(args):
   sections.append((b'TGSC', bytes(trigram_scores)))
   sections.append((b'TGWT', bytes(trigram_weights)))
   sections.append((b'SHRT', '\n'.join(shortcut_lines).encode('utf-8')))
+  if args.validation_wordlist:
+    validation_words = select_validation_words(
+      args.validation_wordlist, displays, [line.split('\t', 1)[0] for line in shortcut_lines]
+    )
+    sections.append((b'VWRD', validation_payload(validation_words)))
   meta = {
     'version': FORMAT_VERSION,
     'locale': 'en_US',
@@ -638,6 +645,8 @@ def main():
   parser.add_argument('--emoji', required=True)
   parser.add_argument('--messages', help='Optional UCI SMSSpamCollection file for conversational n-grams (ham only; stable 20%% holdout).')
   parser.add_argument('--conversations', action='append', default=[], help='Optional Topical-Chat training JSON. Never pass validation/test splits.')
+  parser.add_argument('--validation-wordlist', type=Path, default=ROOT / 'LanguageData' / 'en_US.validwords.txt',
+                      help='Literal-only spellings, filtered against existing displays and shortcuts; defaults to the pinned ESDB supplement.')
   parser.add_argument('--max-successors', type=int, default=48)
   args = parser.parse_args()
   build(args)

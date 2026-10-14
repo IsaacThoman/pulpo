@@ -163,7 +163,12 @@ The checked-in audit records source checksums, aggregate results and tradeoffs.
 - Unicode `emoji-test.txt` (Unicode License v3): emoji, order and skin tones.
 
 `scripts/extra_words.tsv` and `scripts/extra_shortcuts.tsv` add newer words and safe
-contraction fixes. To rebuild:
+contraction fixes. `LanguageData/en_US.validwords.txt` adds accepted literal spellings
+from the pinned American ESDB spelling list. This supplement adds no word IDs,
+language-model priors, correction targets, predictions, or glide buckets. Personal
+learning still applies to words the user accepts.
+The full builder includes this resource by default; `--validation-wordlist` can select
+a different spelling-list input. To rebuild:
 
 ```bash
 python3 scripts/build_language_data.py \
@@ -174,7 +179,18 @@ python3 scripts/build_language_data.py \
 ```
 
 Source versions and checksums are recorded in [LanguageData/README.md](LanguageData/README.md).
+To append the literal-only section without rebuilding any existing language tables:
+
+```bash
+python3 scripts/build_validation_words.py \
+  --dictionary LanguageData/en_US.pkdict --words LanguageData/en_US.validwords.txt \
+  --output /tmp/en_US.pkdict
+```
+
+The appender preserves every existing section payload and replaces the output
+atomically. Review the output before replacing the bundled dictionary.
 Test the importer with `python3 -m unittest discover -s scripts -p 'test_language_data.py'`.
+Test the literal-only importer with `python3 -m unittest discover -s scripts -p 'test_validation_words.py'`.
 Export an independent prediction corpus with
 `python3 scripts/prepare_prediction_holdout.py --input test_freq.json --exclude train.json --output /tmp/keyboard-test.json`.
 From `PulpoKeyboardKit`, evaluate with

@@ -193,6 +193,14 @@ struct SuggesterTests {
     #expect(correction("cant", after: "I") == "can't")
   }
 
+  @Test(arguments: ["amd", "bern"])
+  func spellingShortcutsDoNotReplaceValidCaseAliases(word: String) {
+    #expect(suggester.isValid(word))
+    for previous in ["and", "with", "the"] {
+      #expect(correction(word, after: previous) == nil)
+    }
+  }
+
   @Test func suggestionsAreFastEnoughForEveryKeystroke() {
     let context = model.context(previousWord: "the", sentenceStart: false)
     let words = ["t", "th", "the", "thw", "inter", "interes", "internat", "becuase", "acommodate", "xylophon"]

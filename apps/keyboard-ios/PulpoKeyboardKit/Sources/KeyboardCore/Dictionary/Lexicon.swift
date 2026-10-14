@@ -44,6 +44,8 @@ public final class Lexicon: @unchecked Sendable {
   private let displayOffsets: MappedArray<UInt32>
   private let frequencies: MappedArray<UInt8>
   private let wordFlags: MappedArray<UInt8>
+  /// Accepted spellings without word IDs or language-model priors.
+  private let supplementalLiterals: Set<String>
   private let trie: UnsafeRawPointer
   let nodeCount: Int
   private let glideOffsets: MappedArray<UInt32>
@@ -108,6 +110,12 @@ public final class Lexicon: @unchecked Sendable {
     frequencies = MappedArray(base: frequencySection.0, byteCount: frequencySection.1)
     let flagSection = try section("WFLG")
     wordFlags = MappedArray(base: flagSection.0, byteCount: flagSection.1)
+    if let literals = sections["VWRD"] {
+      let text = String(decoding: UnsafeRawBufferPointer(start: literals.0, count: literals.1), as: UTF8.self)
+      supplementalLiterals = Set(text.split(separator: "\n").map(String.init))
+    } else {
+      supplementalLiterals = []
+    }
     let trieSection = try section("TRIE")
     trie = trieSection.0
     nodeCount = trieSection.1 / 16
@@ -180,6 +188,11 @@ public final class Lexicon: @unchecked Sendable {
 
   @inline(__always) public func frequency(_ id: Int) -> UInt8 { frequencies[id] }
   @inline(__always) public func flags(_ id: Int) -> WordFlags { WordFlags(rawValue: wordFlags[id]) }
+
+  /// Uses the spelling itself, preserving apostrophes rather than normalized trie keys.
+  public func isSupplementalLiteral(_ word: String) -> Bool {
+    supplementalLiterals.contains(word.lowercased())
+  }
 
   /// Natural-log unigram probability calibrated from the AOSP frequency byte.
   @inline(__always) public func unigramLogProbability(_ id: Int) -> Double {

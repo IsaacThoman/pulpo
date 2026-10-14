@@ -89,7 +89,7 @@ public final class Suggester {
          TextNormalizer.key(display) == TextNormalizer.key(normalized) { return true }
     }
     if personal.isKnown(lowered) && word.first?.isUppercase == true { return true }
-    return false
+    return lexicon.isSupplementalLiteral(normalized)
   }
 
   public func isCorrectable(_ word: String) -> Bool {
@@ -217,6 +217,9 @@ public final class Suggester {
     let typed = word.text
     let typedKey = TextNormalizer.key(typed)
     if personal.isKnown(typed) || personal.isKnown(typed.lowercased()) { return nil }
+    // Supplemental spellings have no calibrated prior. Keep their literal even
+    // when a frequent neighbor and an edge touch would beat an arbitrary floor.
+    if lexicon.isSupplementalLiteral(typed) { return nil }
     // Keep established mixed-case brand spellings such as iphone -> iPhone.
     // Plain title case and all-caps aliases stay as typed unless explicitly chosen.
     if typed == typed.lowercased(), let canonical = ranked.first(where: {
@@ -225,6 +228,7 @@ public final class Suggester {
     }) { return canonical }
     if !Self.ambiguousLiterals.contains(typedKey), typed == typed.lowercased(),
        let shortcut = lexicon.shortcuts[typedKey],
+       (!valid || TextNormalizer.key(shortcut) == typedKey),
        shortcut != typed.replacingOccurrences(of: "\u{2019}", with: "'"),
        let match = ranked.first(where: { !$0.isCompletion && $0.text == shortcut }) {
       return match
