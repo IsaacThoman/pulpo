@@ -1887,7 +1887,6 @@ const esUi: Record<string, string> = {
   "Restored {{0}} items": "Se restauraron {{0}} elementos",
   "Deleted \"{{0}}\" forever": "Se eliminó «{{0}}» definitivamente",
   "Deleted {{0}} items forever": "Se eliminaron {{0}} elementos definitivamente",
-  "Renamed to \"{{0}}\"": "Se cambió el nombre a «{{0}}»",
   "Folder": "Carpeta",
   "File": "Archivo",
   "Copied \"{{0}}\"": "Se copió «{{0}}»",

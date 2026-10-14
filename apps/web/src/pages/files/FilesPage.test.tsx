@@ -189,4 +189,13 @@ describe('chats in Files', () => {
     fireEvent.click(await screen.findByRole('menuitem', { name: /^Duplicate/ }))
     expect(chatActions.duplicateChats).toHaveBeenCalledWith([{ id: 'trip', title: 'Trip' }])
   })
+
+  it('calls trashing a chat deleting it when trashed chats are deleted right away', async () => {
+    useSettings.setState({ trashRetention: 'instant' })
+    showFiles()
+    fireEvent.contextMenu(await screen.findByRole('option', { name: /Trip/ }))
+    expect(await screen.findByRole('menuitem', { name: /^Delete/ })).toBeTruthy()
+    expect(screen.queryByRole('menuitem', { name: /^Move to trash/ })).toBeNull()
+    useSettings.setState({ trashRetention: '30d' })
+  })
 })

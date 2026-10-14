@@ -329,6 +329,8 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
   }
 
   const doubleClickOpensBeside = useSettings((state) => state.fileDoubleClickAction === 'openBeside')
+  // With instant retention, chats are deleted for good, which the sidebar's menus say too.
+  const instantRetention = useSettings((state) => state.trashRetention === 'instant')
   /**
    * Double-click: on the files page a file opens in place, or to the right when the setting keeps the
    * folder in view; in the panel it opens in place. Cmd/Ctrl swaps it for the other view. Folders
@@ -710,6 +712,7 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
   // Chats and shortcuts are not files the agent can be given, and built-in folders stay where they are.
   const fileSelection = selectedNodes.filter((node) => node.kind !== 'chat' && node.kind !== 'shortcut')
   const hasChats = selectedNodes.some((node) => node.kind === 'chat')
+  const trashLabel = hasChats && instantRetention && selectedNodes.every((node) => node.kind === 'chat') ? ui("Delete") : ui("Move to trash")
   const hasSystem = selectedNodes.some((node) => node.systemRole)
   // Files and folders in the selection can be given a color and icon; chats and shortcuts are left out.
   const canStyle = selectedNodes.some(hasAppearance)
@@ -761,7 +764,7 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
       <DropdownMenuItem disabled={hasSystem} onSelect={() => setClipboard('cut')}><Scissors /> {ui("Cut")}<DropdownMenuShortcut>{shortcutLabel('X', { mod: true })}</DropdownMenuShortcut></DropdownMenuItem>
       {!hasChats && <DropdownMenuItem onSelect={() => setClipboard('copy')}><Copy /> {ui("Copy")}<DropdownMenuShortcut>{shortcutLabel('C', { mod: true })}</DropdownMenuShortcut></DropdownMenuItem>}
       <DropdownMenuSeparator />
-      <DropdownMenuItem variant="destructive" disabled={hasSystem} onSelect={() => void trashSelection()}><Trash2 /> {ui("Move to trash")}<DropdownMenuShortcut>⌫</DropdownMenuShortcut></DropdownMenuItem>
+      <DropdownMenuItem variant="destructive" disabled={hasSystem} onSelect={() => void trashSelection()}><Trash2 /> {trashLabel}<DropdownMenuShortcut>⌫</DropdownMenuShortcut></DropdownMenuItem>
     </>
   )
   const backgroundMenu = (
@@ -889,7 +892,7 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
         {!hasSystem && <SelectionAction label={ui("Move to…")} onClick={() => setMoving(selectedNodes)}><FolderInput /></SelectionAction>}
         {canStyle && !hasSystem && <SelectionAction label={ui("Color and icon…")} onClick={() => editAppearance(selectedNodes)}><Palette /></SelectionAction>}
         <SelectionAction label={ui("Duplicate")} onClick={() => void duplicate()}><CopyPlus /></SelectionAction>
-        {!hasSystem && <SelectionAction label={ui("Move to trash")} destructive onClick={() => void trashSelection()}><Trash2 /></SelectionAction>}
+        {!hasSystem && <SelectionAction label={trashLabel} destructive onClick={() => void trashSelection()}><Trash2 /></SelectionAction>}
       </div>
     </TooltipProvider>
   )
