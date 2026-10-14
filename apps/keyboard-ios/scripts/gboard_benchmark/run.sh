@@ -11,7 +11,11 @@ TASK_BT="$TASK_SDK/build-tools/${PK_ANDROID_BUILD_TOOLS:-36.0.0}"
 TASK_PLATFORM="$TASK_SDK/platforms/android-36/android.jar"
 case "$TASK_DEVICE" in emulator-*) ;; *) echo 'This harness requires an Android emulator.' >&2; exit 1 ;; esac
 mkdir -p "$TASK_OUTPUT/classes" "$TASK_OUTPUT/dex" "$TASK_OUTPUT/assets"
-python3 "$TASK_SOURCE/prepare_paths.py" "$TASK_CORPUS/comparison-paths.json" "$TASK_OUTPUT/replay-paths.json"
+if [ "$TASK_MODE" = recordedSwipes ]; then
+  python3 "$TASK_SOURCE/prepare_paths.py" --timing recorded "$TASK_CORPUS/comparison-paths.json" "$TASK_OUTPUT/replay-paths.json"
+else
+  python3 "$TASK_SOURCE/prepare_paths.py" "$TASK_CORPUS/comparison-paths.json" "$TASK_OUTPUT/replay-paths.json"
+fi
 cp "$TASK_OUTPUT/replay-paths.json" "$TASK_OUTPUT/assets/swipes.json"
 cp "$TASK_CORPUS/comparison-cases.json" "$TASK_OUTPUT/assets/cases.json"
 javac --release 17 -classpath "$TASK_PLATFORM" -d "$TASK_OUTPUT/classes" "$TASK_SOURCE"/*.java

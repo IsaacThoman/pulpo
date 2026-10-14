@@ -67,6 +67,20 @@ duration is 1.291 s, maximum 5.230 s. Original recorded timing is retained in th
 prepared audit data but is not replayed. No natural-speed or physical-device
 comparison is claimed.
 
+The new `recordedSwipes` harness mode preserves all 7,736 raw samples and their
+timestamps for these same 100 cases, with absolute replay deadlines and explicit
+submission-lateness diagnostics. Raw-path Pulpo scores **76/100** before and after;
+the observed live Gboard result is also **76/100**. However, **37/100 gestures fail
+the preregistered timing tolerance** (per-gesture p95 lateness at most 8 ms and
+maximum at most 32 ms). Across events, p95 lateness is 11 ms and maximum 219 ms.
+Android injection IPC sometimes stalls. No cases were removed: compliant gestures
+score 48/63 and noncompliant gestures 28/37. This run is retained as a diagnostic,
+and cannot establish strict original-time parity. Original requested duration is
+152.775 seconds overall, with median .9655 seconds per gesture. The preparation
+tests ensure that timestamps remain paired with the correct spatial samples,
+including revisits to the same coordinate; the existing uniform replay geometry
+is unchanged.
+
 ## Follow-up: prediction coverage and swipe search
 
 Baseline for this round: `911020d5`. Improvements: `41ce1692` (prediction data and
