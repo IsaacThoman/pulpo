@@ -3334,6 +3334,7 @@ const ToolStepRow = memo(function ToolStepRow({ step }: { step: Extract<Timeline
 function CompactionStepContent({ step }: { step: Extract<TimelineStep, { kind: 'compaction' }> }) {
   const { styles } = useChatStyles();
   const item = step.compaction;
+  const retained = item.retained_turns ?? [];
   return (
     <View style={styles.compactionDetail}>
       {item.error ? <Text style={styles.compactionError}>{item.error}</Text> : null}
@@ -3343,10 +3344,10 @@ function CompactionStepContent({ step }: { step: Extract<TimelineStep, { kind: '
           <SafeMarkdown selectable={Platform.OS !== 'android'} compact>{item.summary}</SafeMarkdown>
         </View>
       ) : null}
-      {item.retained_turns.length ? (
+      {retained.length ? (
         <View style={styles.compactionSection}>
           <Text style={styles.compactionSectionTitle}>Kept verbatim</Text>
-          {item.retained_turns.map((entry, index) => (
+          {retained.map((entry, index) => (
             <View key={`${entry.role}:${index}`} style={styles.compactionTurn}>
               <Text style={styles.compactionRole}>{entry.role}</Text>
               <Text selectable style={styles.compactionContent}>{entry.content}</Text>

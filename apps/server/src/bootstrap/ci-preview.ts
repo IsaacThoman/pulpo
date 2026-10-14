@@ -70,7 +70,7 @@ export const CI_PREVIEW_MODEL = {
   maxOutputTokens: 16_384,
   compactionEnabled: true,
   compactionThresholdTokens: 96_000,
-  compactionRetainedTurns: 4,
+  compactionRetainedUserTokens: 20_000,
   executionMode: 'stream' as const,
   tags: ['Reasoning', 'Agent'],
   allowedParameters: [],

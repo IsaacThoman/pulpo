@@ -43,6 +43,19 @@ describe('response public output sanitization', () => {
     expect(source[0]!.retained_context).toHaveLength(1)
   })
 
+  it('passes user_messages compaction items through with their display fields', () => {
+    const source = [{
+      id: 'response-1:compaction:pre_response', type: 'pulpo_compaction', phase: 'pre_response', status: 'completed',
+      strategy: 'user_messages', model_id: 'model-1', estimated_tokens: 120_000, threshold_tokens: 115_200,
+      tokens_after: 24_000, token_source: 'usage', covered_through_response_id: 'response-0',
+      retained_turns: [{ role: 'user', content: 'Keep the Postgres schema' }],
+      retained_context: [], retained_context_turns: [],
+      summary: 'Useful summary', started_at: new Date(0).toISOString(), duration_ms: 12,
+    }]
+
+    expect(sanitizeOutputForClient(source)).toEqual(source)
+  })
+
   it('handles circular diagnostic values defensively', () => {
     const circular: Record<string, unknown> = { type: 'diagnostic' }
     circular.self = circular
