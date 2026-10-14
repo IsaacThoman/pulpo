@@ -87,7 +87,10 @@ scores the rest on letter alignment, how much of the path the word explains in o
 sharp turns, extra length, and the language model.
 Frequency-ordered endpoint buckets are merged by endpoint likelihood and word
 frequency, so a noisy endpoint cannot exhaust the budget before nearby buckets
-are searched. Letter alignment is calibrated for word length.
+are searched. Letter alignment is calibrated for word length. Touch timestamps add timing
+evidence: letters are expected where the finger slowed, not in fast transit,
+and unexplained pauses count against a word. Without usable times the decoder
+is purely spatial.
 
 **Learning.** Words the person types twice, or keeps by undoing a correction or picking
 the quoted literal, become valid. Learned words and word pairs are stored on device in

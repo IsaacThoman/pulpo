@@ -5,6 +5,48 @@ Recorded human gestures score far below generated center paths. Current evidence
 supports specific improvements, not an overall real-use lead over Gboard. Gboard
 on iOS, multilingual input, and physical-device latency remain unmeasured.
 
+## Blind sweep loop: round 1
+
+Each sweep agent froze its own benchmark and acceptance criteria before reading
+the implementation it audited, tuned only on development data, and evaluated a
+verification set once. The orchestrator reproduced every reported number on the
+integrated branch before accepting a change.
+
+### Touch timing in swipe decoding
+
+The decoder previously discarded touch timestamps. Recorded human swipes slow
+down on intended letters: interior letters sit at a median 0.54× the gesture's
+median speed, against 1.06× across all samples. The keyboard now passes
+`UITouch` and coalesced-touch timestamps through to `GlideDecoder`. It charges
+interior letters placed in fast transit and penalizes slowdowns no letter
+explains. Samples are spaced by a 25% time and 75% distance blend, and spatial
+variance widens for fast gestures, capped at 1.5×. Missing, constant, non-finite
+or very short timing decodes exactly as before.
+
+A fresh 3,000-gesture verification sample was frozen before the decoder was read.
+It comes from the verify-participant pool and excludes the existing verify ids
+(salt `swipe-timing-r1-fresh-verify-v1:`, 238 participants, SHA-256
+`0ec83d39426508baad445af9ad756f4899c914b954db9aa5ca3ed970e085dbef`).
+
+| Recorded gestures, top-1 / top-3 of 3,000 | Spatial only | With touch times |
+| --- | ---: | ---: |
+| Development (tuning) | 2,004 / 2,238 | **2,037 / 2,252** |
+| Existing verification | 1,953 / 2,192 | **1,995 / 2,225** |
+| Fresh verification, evaluated once | 1,957 / 2,220 | **2,004 / 2,235** |
+
+On fresh verification, 69 first choices were fixed and 22 broken (exact sign test
+p = 8.2e-7). Its top-3 gain is small (+15, p = 0.04). Development is unchanged
+when timing is degraded: equal times, four-sample bursts, ±8 ms reordering, 4×
+faster or slower and constant speed all decode at or above the spatial-only
+2,004. Mean host decode time rose 2%. Using slow points to relocate the first or
+last letter, a pause penalty alone, uncapped speed tolerance (−81 top-1 with 4×
+fast times) and a pairwise reranker were rejected. The 14 key-pitch-per-second
+speed reference comes from the browser phones used for the recordings; iPhone
+120 Hz sampling has not been measured on a device.
+
+`HumanSwipeAuditTests` now replays recorded times by default.
+`PK_HUMAN_TIMING=none` reproduces the earlier spatial-only metric.
+
 ## Further iteration: emoji suggestions and stale choices
 
 The suggestion bar now offers one explicitly chosen emoji alongside word choices.
