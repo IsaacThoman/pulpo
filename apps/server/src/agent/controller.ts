@@ -20,6 +20,9 @@ const MAX_VIEW_IMAGE_BYTES = 20 * 1024 * 1024
 const MAX_EXPORT_FILE_BYTES = 25 * 1024 * 1024
 const POLL_INTERVAL_MS = 250
 const LONG_POLL_WAIT_MS = 10_000
+const POLL_ATTEMPTS = 3
+const POLL_RETRY_MS = 500
+const RELAY_ANSWER_TIMEOUT_MS = 10_000
 
 /** A `pulpo files` call from a bash command, held by the workspace daemon until Pulpo answers. Agent-controlled input. */
 export interface RelayRequest { id: string; command: string; args: unknown }
@@ -352,39 +355,58 @@ export class WorkspaceManager {
   }
 
   /**
-   * Answers each new `pulpo files` request. A result whose delivery failed is kept and sent again
-   * while the daemon still lists the request; a 404 means the CLI is gone, not that the lease expired.
+   * Answers each new `pulpo files` request. Only requests the daemon still lists are remembered:
+   * an answer whose delivery failed transiently (resent as is), or null once the daemon refused one
+   * for good (4xx; 404 means the CLI is gone, not that the lease expired). Answers go out even after
+   * the reply was stopped, because the change they report may already be committed; a short
+   * timeout of their own bounds that.
    */
   private async answerRelay(
     leaseId: string,
     operation: WorkspaceOperation,
-    relayed: Map<string, RelayResult>,
+    unsettled: Map<string, RelayResult | null>,
     onRelay: ((request: RelayRequest, signal?: AbortSignal) => Promise<RelayResult>) | undefined,
     signal?: AbortSignal,
   ): Promise<boolean> {
+    const pending = (Array.isArray(operation.relay?.pending) ? operation.relay.pending : [])
+      .filter((request) => typeof request?.id === 'string' && request.id && request.id.length <= 200 && typeof request.command === 'string')
+    const listed = new Set(pending.map((request) => request.id))
+    for (const id of unsettled.keys()) if (!listed.has(id)) unsettled.delete(id)
     let answered = false
-    for (const request of Array.isArray(operation.relay?.pending) ? operation.relay.pending : []) {
-      if (signal?.aborted) break
-      if (typeof request?.id !== 'string' || !request.id || request.id.length > 200 || typeof request.command !== 'string') continue
-      let result = relayed.get(request.id)
-      if (!result) {
-        answered = true
-        result = onRelay
-          ? await onRelay({ id: request.id, command: request.command, args: request.args }, signal)
-            .catch((error: unknown): RelayResult => ({ ok: false, error: error instanceof Error ? error.message : String(error) }))
-          : { ok: false, error: 'Files are not available in this chat' }
-        relayed.set(request.id, result)
-      }
+    for (const request of pending) {
+      const retry = unsettled.get(request.id)
+      if (retry === null || (!retry && signal?.aborted)) continue
+      const result = retry ?? (onRelay
+        ? await onRelay({ id: request.id, command: request.command, args: request.args }, signal)
+          .catch((error: unknown): RelayResult => ({ ok: false, error: error instanceof Error ? error.message : String(error) }))
+        : { ok: false, error: 'Files are not available in this chat' })
+      if (!retry) answered = true
+      unsettled.delete(request.id)
       try {
         await (await this.request(`/v1/leases/${leaseId}/v1/relay/${encodeURIComponent(request.id)}`, {
-          method: 'POST', signal, headers: { 'content-type': 'application/json' }, body: JSON.stringify(result),
+          method: 'POST', signal: AbortSignal.timeout(RELAY_ANSWER_TIMEOUT_MS), headers: { 'content-type': 'application/json' }, body: JSON.stringify(result),
         })).arrayBuffer()
       } catch (error) {
-        if (signal?.aborted || (error instanceof ControllerRequestError && error.status === 404)) continue
-        console.warn('Workspace relay answer was not delivered', { operationId: operation.id, requestId: request.id, error: error instanceof Error ? error.message : String(error) })
+        const details = { operationId: operation.id, requestId: request.id, error: error instanceof Error ? error.message : String(error) }
+        if (error instanceof ControllerRequestError && error.status < 500) {
+          if (error.status !== 404) { console.warn('Workspace daemon refused a relay answer', details); unsettled.set(request.id, null) }
+          continue
+        }
+        if (!retry) console.warn('Workspace relay answer was not delivered; retrying', details)
+        unsettled.set(request.id, result)
       }
     }
     return answered
+  }
+
+  /** Retries transient poll failures (network blips, 5xx) a few times; a 4xx or repeated failure is final. */
+  private async poll(path: string, signal?: AbortSignal): Promise<WorkspaceOperation> {
+    for (let attempt = 1; ; attempt += 1) {
+      try { return await (await this.request(path, { signal })).json() as WorkspaceOperation } catch (error) {
+        if (signal?.aborted || attempt >= POLL_ATTEMPTS || (error instanceof ControllerRequestError && error.status < 500)) throw error
+        await wait(POLL_RETRY_MS * attempt)
+      }
+    }
   }
 
   async execute(
@@ -412,12 +434,12 @@ export class WorkspaceManager {
     let operation = await response.json() as WorkspaceOperation
     let previousOutput = ''
     let polledAt = 0
-    const relayed = new Map<string, RelayResult>()
+    const unsettled = new Map<string, RelayResult | null>()
     const stop = async (): Promise<never> => { await this.cancel(operationId); throw signal?.reason ?? new Error('Operation cancelled') }
     while (operation.status === 'running') {
       if (signal?.aborted) await stop()
       if (operation.output !== previousOutput) { previousOutput = operation.output; onUpdate?.(operation.output) }
-      const answered = await this.answerRelay(leaseId, operation, relayed, onRelay, signal)
+      const answered = await this.answerRelay(leaseId, operation, unsettled, onRelay, signal)
       if (signal?.aborted) await stop()
       // Long-polls wait for news on the daemon (output news only after 250 ms), so this floor never delays an honest
       // daemon; it keeps one that answers instantly from spinning the loop.
@@ -426,9 +448,12 @@ export class WorkspaceManager {
       else if (!answered) await wait(Math.max(0, POLL_INTERVAL_MS - (Date.now() - polledAt)))
       polledAt = Date.now()
       try {
-        operation = await (await this.request(`/v1/leases/${leaseId}/v1/operations/${operationId}${longPoll ? `?waitMs=${LONG_POLL_WAIT_MS}` : ''}`, { signal })).json() as WorkspaceOperation
+        operation = await this.poll(`/v1/leases/${leaseId}/v1/operations/${operationId}${longPoll ? `?waitMs=${LONG_POLL_WAIT_MS}` : ''}`, signal)
       } catch (error) {
         if (signal?.aborted) await stop()
+        // Nobody will watch this command any more: stop it, so its held `pulpo files` calls fail now
+        // instead of waiting out the daemon's relay timeout.
+        await this.cancel(operationId)
         throw error
       }
     }

@@ -11,7 +11,7 @@ vi.mock('../database/client.js', () => ({ db: {} }))
 
 import { WorkspaceManager, type RelayResult } from './controller.js'
 
-type Call = { path: string; method: string; body?: unknown; at: number }
+type Call = { path: string; method: string; body?: unknown; aborted: boolean; at: number }
 type Handler = (path: string, init: { method?: string; body?: unknown; signal?: AbortSignal }) => Response | Promise<Response>
 
 const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json' } })
@@ -24,7 +24,7 @@ let calls: Call[]
 /** A manager already holding lease `lease-1`, talking to a scripted controller. */
 function manager(handler: Handler): WorkspaceManager {
   mocks.request.mockImplementation(async (path: string, init: { method?: string; body?: unknown; signal?: AbortSignal } = {}) => {
-    calls.push({ path, method: init.method ?? 'GET', body: typeof init.body === 'string' ? JSON.parse(init.body) : init.body, at: Date.now() })
+    calls.push({ path, method: init.method ?? 'GET', body: typeof init.body === 'string' ? JSON.parse(init.body) : init.body, aborted: init.signal?.aborted ?? false, at: Date.now() })
     return handler(path, init)
   })
   return Object.assign(new WorkspaceManager('response', 'chat', 'user'), { controllerLeaseId: 'lease-1', staged: true })
@@ -130,12 +130,71 @@ describe('workspace relay while a bash command runs', () => {
     expect(calls.at(-1)).toMatchObject({ path: '/v1/leases/lease-1/v1/operations/op/cancel', method: 'POST' })
   })
 
-  it('stops after a relay answer when aborted while Pulpo handled it', async () => {
+  it('still delivers an answer whose change committed while the reply was stopped, then cancels', async () => {
     const controller = new AbortController()
-    const workspace = manager(daemon([running({ version: 1, pending: [ls] }), completed('ok')]))
-    const onRelay = async (): Promise<RelayResult> => { controller.abort(new Error('Generation cancelled')); return { ok: false, error: 'cancelled' } }
+    const push = { id: 'req-2', command: 'push', args: { items: [] } }
+    const workspace = manager(daemon([running({ version: 1, pending: [push, ls] }), completed('ok')]))
+    const onRelay = vi.fn(async (): Promise<RelayResult> => { controller.abort(new Error('Generation cancelled')); return { ok: true, output: 'updated Plan.md' } })
+
     await expect(workspace.execute('op', 'bash', {}, controller.signal, undefined, undefined, onRelay)).rejects.toThrow('Generation cancelled')
+
+    expect(onRelay).toHaveBeenCalledOnce()
+    expect(relayPosts()).toEqual([expect.objectContaining({ path: '/v1/leases/lease-1/v1/relay/req-2', body: { ok: true, output: 'updated Plan.md' }, aborted: false })])
     expect(calls.at(-1)?.path).toBe('/v1/leases/lease-1/v1/operations/op/cancel')
+  })
+
+  it('treats other 4xx answers as final instead of retrying them', async () => {
+    const onRelay = vi.fn(async (): Promise<RelayResult> => ({ ok: true, output: 'x' }))
+    const listed = running({ version: 1, pending: [ls] })
+    const workspace = manager(daemon([listed, listed, listed, completed('ok')], 400))
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+
+    await workspace.execute('op', 'bash', {}, undefined, undefined, undefined, onRelay)
+
+    expect(onRelay).toHaveBeenCalledOnce()
+    expect(relayPosts()).toHaveLength(1)
+    expect(warn).toHaveBeenCalledOnce()
+    warn.mockRestore()
+  })
+
+  it('keeps no answer once it is delivered or its request is gone', async () => {
+    const onRelay = vi.fn(async (): Promise<RelayResult> => ({ ok: true, output: 'x' }))
+    const listed = running({ version: 1, pending: [ls] })
+    // A daemon listing a delivered request again gets a fresh answer: nothing was retained.
+    await manager(daemon([listed, listed, completed('ok')])).execute('op', 'bash', {}, undefined, undefined, undefined, onRelay)
+    expect(onRelay).toHaveBeenCalledTimes(2)
+
+    // An undelivered answer is dropped once the daemon stops listing its request.
+    onRelay.mockClear(); calls = []
+    let relayFailures = 1
+    const scripted = daemon([listed, running({ version: 1, pending: [] }), listed, completed('ok')])
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    await manager((path, init) => path.includes('/v1/relay/') && relayFailures-- > 0 ? json({ error: 'boom' }, 502) : scripted(path, init))
+      .execute('op', 'bash', {}, undefined, undefined, undefined, onRelay)
+    expect(onRelay).toHaveBeenCalledTimes(2)
+    warn.mockRestore()
+  })
+
+  it('retries a transient poll failure', async () => {
+    let failures = 1
+    const scripted = daemon([running({ version: 1, pending: [] }), completed('ok')])
+    const workspace = manager((path, init) => init.method !== 'POST' && failures-- > 0 ? json({ error: 'bad gateway' }, 502) : scripted(path, init))
+    expect((await workspace.execute('op', 'bash', {})).output).toBe('ok')
+    expect(polls()).toHaveLength(2)
+  })
+
+  it('cancels the command when polling fails for good, so held pulpo files calls end', async () => {
+    for (const status of [503, 404]) {
+      calls = []
+      const workspace = manager((path, init) => {
+        if (init.method === 'POST' && path.endsWith('/v1/operations')) return json(running({ version: 1, pending: [] }))
+        if (path.endsWith('/cancel')) return json({ id: 'op', status: 'cancelled' }, 202)
+        return json({ error: 'unavailable' }, status)
+      })
+      await expect(workspace.execute('op', 'bash', {})).rejects.toThrow(`(${status})`)
+      expect(polls()).toHaveLength(status === 404 ? 1 : 3)
+      expect(calls.at(-1)).toMatchObject({ path: '/v1/leases/lease-1/v1/operations/op/cancel', method: 'POST' })
+    }
   })
 })
 
