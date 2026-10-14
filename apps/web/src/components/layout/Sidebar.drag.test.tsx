@@ -207,8 +207,18 @@ describe('sidebar dragging', () => {
   it('places an item beside a folder from the edge of its header', () => {
     dragTo(chatRow('c'), 91, folderRow('f1'))
     expect(sidebarActions.orderSidebarItems).toHaveBeenCalledWith('chats', ['a', 'c', 'f1', 'b', 'doc-1', 'f2', 's-proj'], undefined)
-    dragTo(fileRow(), 119, folderRow('f1'))
-    expect(sidebarActions.orderSidebarItems).toHaveBeenCalledWith('chats', ['a', 'f1', 'doc-1', 'b', 'f2', 's-proj', 'c'], undefined)
+    // The Projects shortcut is closed.
+    dragTo(fileRow(), 329, folderRow('projects'))
+    expect(sidebarActions.orderSidebarItems).toHaveBeenCalledWith('chats', ['a', 'f1', 'b', 'f2', 's-proj', 'doc-1', 'c'], undefined)
+  })
+
+  it('files an item dropped on the bottom edge of an open folder into it, where its contents start', () => {
+    dragTo(chatRow('c'), 119, folderRow('f1'))
+    expect(sidebarActions.moveSidebarSelection).toHaveBeenCalledWith(['c'], 'f1', { unpin: false })
+    // f2 is open and empty.
+    dragTo(fileRow(), 299, folderRow('f2'))
+    expect(sidebarActions.moveSidebarSelection).toHaveBeenCalledWith(['doc-1'], 'f2', { unpin: false })
+    expect(sidebarActions.orderSidebarItems).not.toHaveBeenCalled()
   })
 
   it('files anything dropped on the middle of a folder into it', () => {
@@ -364,6 +374,15 @@ describe('dropping items dragged from Files', () => {
     expect(sidebarActions.moveSidebarSelection).toHaveBeenCalledWith(['n1'], 'f2', { unpin: true, nodes })
     dropFromFiles(nodes, folderRow('f2'), 271)
     expect(sidebarActions.orderSidebarItems).toHaveBeenCalledWith('chats', ['a', 'f1', 'b', 'doc-1', 'n1', 'f2', 's-proj', 'c'], nodes)
+    dropFromFiles(nodes, folderRow('projects'), 329)
+    expect(sidebarActions.orderSidebarItems).toHaveBeenCalledWith('chats', ['a', 'f1', 'b', 'doc-1', 'f2', 's-proj', 'n1', 'c'], nodes)
+  })
+
+  it('files them into an open folder from the bottom edge of its header too', () => {
+    const nodes = [fromFiles('n1')]
+    dropFromFiles(nodes, folderRow('f2'), 299)
+    expect(sidebarActions.moveSidebarSelection).toHaveBeenCalledWith(['n1'], 'f2', { unpin: true, nodes })
+    expect(sidebarActions.orderSidebarItems).not.toHaveBeenCalled()
   })
 
   it('snaps to the nearest top-level slot from empty space', () => {

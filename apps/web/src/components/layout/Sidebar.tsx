@@ -135,6 +135,25 @@ function listRowIds(list: DropList, root: ParentNode = document): string[] {
   return [...new Set(rows.map((row) => row.dataset.dragId ?? ''))].filter(Boolean)
 }
 
+/** Which half of `row` a pointer at `y` is over, so whether a drop there goes before or after it. */
+function rowEdge(row: Element, y: number): 'before' | 'after' {
+  const rect = row.getBoundingClientRect()
+  return y < rect.top + rect.height / 2 ? 'before' : 'after'
+}
+
+/**
+ * The edge of a folder's row a pointer at `y` places things beside the folder from, or null where
+ * they go into it. An open folder's contents start right below its row, so its bottom edge files
+ * them in, at the top, rather than after everything inside it.
+ */
+function folderRowEdge(row: HTMLElement, y: number): 'before' | 'after' | null {
+  const rect = row.getBoundingClientRect()
+  const band = rect.height / 4
+  if (y < rect.top + band) return 'before'
+  if (y > rect.bottom - band && row.dataset.folderOpen === undefined) return 'after'
+  return null
+}
+
 function useSidebarDrag({ canEnter, folderOfList, groupOf }: {
   /** Whether the dragged item `id` may go in `folderId`; a folder never goes inside itself. */
   canEnter: (id: string, folderId: string) => boolean
@@ -207,11 +226,6 @@ function useSidebarDrag({ canEnter, folderOfList, groupOf }: {
     didDragRef.current = true
   }
 
-  const edgeFor = (e: DragEvent<HTMLElement>): 'before' | 'after' => {
-    const rect = e.currentTarget.getBoundingClientRect()
-    return e.clientY < rect.top + rect.height / 2 ? 'before' : 'after'
-  }
-
   /** Anything can be pinned, or go in any folder that is not inside it. */
   const canPlaceIn = (list: DropList) => {
     const kind = dragKindRef.current
@@ -251,18 +265,17 @@ function useSidebarDrag({ canEnter, folderOfList, groupOf }: {
 
   /**
    * A folder's header. The middle files the dragged item into the folder (at its top); with
-   * `row`, the top and bottom edges place it beside the folder in the list the folder is in.
+   * `row`, the edges place it beside the folder in the list the folder is in (see folderRowEdge).
    */
   const onFolderDragOver = (folderId: string, e: DragEvent<HTMLElement>, row?: { list: DropList; id: string }) => {
     const kind = dragKindRef.current
     const id = dragIdRef.current
     if (!kind || !id) return
     if (row && !isDragged(row.id) && canPlaceIn(row.list)) {
-      const rect = e.currentTarget.getBoundingClientRect()
-      const band = rect.height / 4
-      if (e.clientY < rect.top + band || e.clientY > rect.bottom - band) {
+      const edge = folderRowEdge(e.currentTarget, e.clientY)
+      if (edge) {
         acceptMove(e)
-        setDrop({ kind: 'row', list: row.list, id: row.id, edge: e.clientY < rect.top + band ? 'before' : 'after' })
+        setDrop({ kind: 'row', list: row.list, id: row.id, edge })
         return
       }
     }
@@ -290,7 +303,7 @@ function useSidebarDrag({ canEnter, folderOfList, groupOf }: {
   const onRowDragOver = (list: DropList, id: string, e: DragEvent<HTMLElement>) => {
     if (!dragIdRef.current || isDragged(id) || !canPlaceIn(list)) return
     acceptMove(e)
-    setDrop({ kind: 'row', list, id, edge: edgeFor(e) })
+    setDrop({ kind: 'row', list, id, edge: rowEdge(e.currentTarget, e.clientY) })
   }
 
   /**
@@ -320,22 +333,19 @@ function useSidebarDrag({ canEnter, folderOfList, groupOf }: {
     const ids = new Set(nodes.map((node) => node.id))
     const fits = (folderId: string | null) => Boolean(folderId)
       && nodes.every((node) => canEnter(node.id, folderId!))
-    const beside = (row: HTMLElement, band: number): DropHint | null => {
+    const beside = (row: HTMLElement, edge: 'before' | 'after' | null): DropHint | null => {
       const list = row.dataset.dragList as DropList | undefined
       const id = row.dataset.dragId
-      if (!list || !id || ids.has(id) || (list !== 'pinned' && !fits(folderOfList(list)))) return null
-      const rect = row.getBoundingClientRect()
-      if (y < rect.top + band * rect.height) return { kind: 'row', list, id, edge: 'before' }
-      if (y > rect.bottom - band * rect.height) return { kind: 'row', list, id, edge: 'after' }
-      return null
+      if (!edge || !list || !id || ids.has(id) || (list !== 'pinned' && !fits(folderOfList(list)))) return null
+      return { kind: 'row', list, id, edge }
     }
     const folderRow = element.closest<HTMLElement>('[data-folder-row]')
     if (folderRow) {
       const folderId = folderRow.dataset.folderRow!
-      return beside(folderRow, 1 / 4) ?? (fits(folderId) && !ids.has(folderRow.dataset.dragId ?? folderId) ? { kind: 'folder-target', folderId } : null)
+      return beside(folderRow, folderRowEdge(folderRow, y)) ?? (fits(folderId) && !ids.has(folderRow.dataset.dragId ?? folderId) ? { kind: 'folder-target', folderId } : null)
     }
     const row = element.closest<HTMLElement>('[data-drag-list]')
-    if (row) return beside(row, 1 / 2)
+    if (row) return beside(row, rowEdge(row, y))
     const body = element.closest<HTMLElement>('[data-folder-body]')
     if (body) return fits(body.dataset.folderBody!) ? { kind: 'folder-target', folderId: body.dataset.folderBody! } : null
     const list: DropList = element.closest('[data-pinned-zone]') ? 'pinned' : 'loose'
@@ -1341,6 +1351,7 @@ function SidebarFolderNode({ folder, node, shortcut, list, reorderable, ...props
         onDragOver={(e) => drag.onFolderDragOver(folder.id, e, reorderable ? { list, id: rowId } : undefined)}
         onDrop={onDrop}
         data-folder-row={folder.id}
+        data-folder-open={expanded || undefined}
         data-sidebar-select={selection ? rowId : undefined}
         onContextMenu={(event) => {
           if (renaming || selection?.onContextMenu(event)) return
