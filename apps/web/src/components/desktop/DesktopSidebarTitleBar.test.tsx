@@ -29,7 +29,7 @@ describe('desktop sidebar title bar', () => {
     expect(markup).toContain('border-sidebar-border')
     expect(markup).toContain('w-[52px]')
     expect(markup).toContain('left-[52px]')
-    expect(markup).toContain('w-[212px]')
+    expect(markup).toContain('w-[calc(var(--sidebar-width)_-_52px)]')
     expect(markup).toContain('z-[42]')
     expect(markup).toContain('-translate-y-[54px]')
     expect(markup).toContain('transition-transform')
