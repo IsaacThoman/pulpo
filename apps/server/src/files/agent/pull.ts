@@ -35,7 +35,8 @@ async function writeLocal(ctx: CommandContext, local: string, body: Uint8Array |
 async function pullFile(ctx: CommandContext, node: FileNodeRow, remote: string, local: string): Promise<PulledFile> {
   if (node.kind === 'doc') {
     const markdown = await readProposedMarkdown(node.id)
-    const bytes = Buffer.from(markdown, 'utf8')
+    // A text file ends with a newline, so a line the agent appends (echo >>) starts a new one.
+    const bytes = Buffer.from(markdown && !markdown.endsWith('\n') ? `${markdown}\n` : markdown, 'utf8')
     await writeLocal(ctx, local, bytes, bytes.byteLength)
     return { remote, local, nodeId: node.id, version: markdownVersion(markdown), kind: 'doc', sizeBytes: bytes.byteLength }
   }

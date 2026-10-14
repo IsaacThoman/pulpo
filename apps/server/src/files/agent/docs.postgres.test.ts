@@ -53,6 +53,14 @@ describe.skipIf(!enabled)('agent document changes', () => {
   })
   afterAll(async () => { await queryClient.end() })
 
+  it('pulls documents ending in a newline, so appended lines start new ones', async () => {
+    const projects = await files.folder('Projects')
+    const notes = await files.doc('Notes.md', projects, '# Notes\n\n- first note')
+    await files.attach({ [projects]: 'write' })
+    expect(await edit('Projects/Notes.md', (markdown) => `${markdown}- second note\n`)).toMatchObject({ status: 'updated' })
+    expect((await readDocMarkdown(files.userId, notes)).markdown).toBe('# Notes\n\n- first note\n- second note')
+  })
+
   it('edits documents directly in Write mode, live and undoable', async () => {
     const projects = await files.folder('Projects')
     const plan = await files.doc('Plan.md', projects, '# Plan\n\nFirst step')
@@ -148,7 +156,7 @@ describe.skipIf(!enabled)('agent document changes', () => {
     await files.newReply()
     // The next reply starts from the proposed view, earlier suggestions included.
     await edit('Projects/Plan.md', (markdown) => {
-      expect(markdown).toBe('Alpha one\n\nBeta')
+      expect(markdown).toBe('Alpha one\n\nBeta\n')
       return markdown.replace('Beta', 'Beta two')
     })
     await reviewReplyChanges(files.userId, files.responseId, 'accept')

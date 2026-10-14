@@ -142,7 +142,7 @@ describe.skipIf(!enabled)('pulpo files relay', () => {
     ])
     expect(pulled[0]).toMatchObject({ nodeId: data, version: (await files.node(data))!.checksum, sizeBytes: 8 })
     expect(pulled[1]).toMatchObject({ nodeId: plan, version: expect.stringMatching(/^[0-9a-f]{64}$/) })
-    expect(files.workspace.files.get('/workspace/files/Projects/Plan.md')?.toString()).toBe('# Plan')
+    expect(files.workspace.files.get('/workspace/files/Projects/Plan.md')?.toString()).toBe('# Plan\n')
     expect(files.workspace.files.get('/workspace/files/Projects/Drafts/data.csv')?.toString()).toBe('a,b\n1,2\n')
     const [single] = await pull('Projects/Drafts/data.csv', '/workspace/elsewhere/data.csv')
     expect(single).toMatchObject({ local: '/workspace/elsewhere/data.csv', remote: 'Projects/Drafts/data.csv' })
