@@ -23,6 +23,8 @@ import {
   Loader2,
   Palette,
   Pencil,
+  Pin,
+  PinOff,
   Plus,
   Scissors,
   SquareArrowOutUpRight,
@@ -83,7 +85,7 @@ import { openBeside, panelContentPath, useMainNavigate } from '@/features/side-p
 import { SelectionAction } from '@/features/files/browser/SelectionAction'
 import { useFileOperations } from '@/features/files/browser/use-file-operations'
 import { useItemDrag } from '@/features/files/browser/use-item-drag'
-import { archiveFiles, createShortcutInteractively, useSidebarState } from '@/features/sidebar/api'
+import { archiveFiles, createShortcutInteractively, pinSidebarItems, useSidebarState } from '@/features/sidebar/api'
 
 const VIEW_STORAGE_KEY = 'pulpo.files.view'
 const UPLOAD_CONCURRENCY = 3
@@ -693,6 +695,18 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
   // Files and folders in the selection can be given a color and icon; chats and shortcuts are left out.
   const canStyle = selectedNodes.some(hasAppearance)
   const canUseAgent = fileSelection.length > 0 && fileSelection.length <= MAX_CHAT_FILE_SCOPES
+  // Pins whatever is not pinned yet; once everything is, unpins it all. The Sidebar folder is the
+  // sidebar itself, so it cannot be pinned there.
+  const pinning = selectedNodes.some((node) => !node.pinned)
+  const pinSelection = async () => {
+    try {
+      await pinSidebarItems(selectedNodes.map((node) => node.id), pinning, selectedNodes)
+    } catch (cause) {
+      ops.fail(cause)
+    } finally {
+      await ops.refresh()
+    }
+  }
   const archiveSelection = async () => {
     const targets = selectedNodes
     setSelection(EMPTY_SELECTION)
@@ -725,6 +739,9 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
           <Download /> {ui("Download")}
         </DropdownMenuItem>
       )}
+      <DropdownMenuItem disabled={selectedNodes.some((node) => node.systemRole === 'chats')} onSelect={() => void pinSelection()}>
+        {pinning ? <Pin /> : <PinOff />} {pinning ? ui("Pin") : ui("Unpin")}
+      </DropdownMenuItem>
       {/* Built-in folders list the actions they do not allow, unavailable, so every folder's menu reads the same. */}
       {single && <DropdownMenuItem disabled={Boolean(single.systemRole)} onSelect={() => setRenamingId(single.id)}><Pencil /> {ui("Rename")}<DropdownMenuShortcut>{shortcutLabel('F2')}</DropdownMenuShortcut></DropdownMenuItem>}
       {canStyle && <DropdownMenuItem disabled={hasSystem} onSelect={() => editAppearance(selectedNodes)}><Palette /> {ui("Color and icon…")}</DropdownMenuItem>}

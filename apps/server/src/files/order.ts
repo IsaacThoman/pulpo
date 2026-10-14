@@ -4,7 +4,8 @@ import type { FileExecutor } from './access.js'
 /*
  * Chats and Files items in a folder share one manual order: `sort_order` ascending, newest first
  * on ties. Chats with no folder sit in the account's Chats folder. New and moved items go to the
- * top, above everything already there.
+ * top, above everything already there. Pinned chats and items are listed apart, in the sidebar's
+ * pinned list, where `sort_order` is their place in that list instead.
  */
 
 /** Chats listed in `parentId`: those filed there, plus the unfiled ones when it is the Chats folder. */
@@ -23,7 +24,7 @@ export async function topSortOrder(executor: FileExecutor, userId: string, paren
   const rows = await executor.execute<{ top: number }>(sql`
     select (coalesce(least(
       (select min(sort_order) from file_nodes
-        where owner_user_id = ${userId} and parent_id is not distinct from ${parentId}::uuid and trashed_at is null),
+        where owner_user_id = ${userId} and parent_id is not distinct from ${parentId}::uuid and trashed_at is null and not pinned),
       (select min(c.sort_order) from chats c where ${parentId ? chatsIn(userId, parentId) : rootChats(userId)})
     ), 1) - 1)::int as top
   `)
@@ -43,4 +44,15 @@ export async function topChatOrder(executor: FileExecutor, userId: string, folde
     where c.user_id = ${userId} and c.folder_id is null and not c.in_files_root and not c.pinned and not c.temporary and c.deleted_at is null
   `)
   return Number(fallback[0]?.top ?? 0)
+}
+
+/** The order that puts a chat or item at the end of the sidebar's pinned list. */
+export async function pinnedEndOrder(executor: FileExecutor, userId: string): Promise<number> {
+  const rows = await executor.execute<{ next_order: number }>(sql`
+    select (coalesce(greatest(
+      (select max(sort_order) from file_nodes where owner_user_id = ${userId} and pinned and trashed_at is null),
+      (select max(c.sort_order) from chats c where c.user_id = ${userId} and c.pinned and not c.temporary and c.deleted_at is null)
+    ), -1) + 1)::int as next_order
+  `)
+  return Number(rows[0]?.next_order ?? 0)
 }

@@ -192,7 +192,7 @@ export function legacyChatFolderRows(
         id: parent.id, owner_user_id: userId, parent_id: null, kind: 'folder', status: 'ready',
         name: freeName('Sidebar', new Set(rootNames.get(userId))), system_role: 'chats',
         mime_type: null, size_bytes: 0, object_key: null, checksum: null, trashed_at: null, trash_root_id: null, revision: 0,
-        target_node_id: null, target_chat_id: null, sort_order: 0, color: null, icon: null, created_at: now, updated_at: now,
+        target_node_id: null, target_chat_id: null, sort_order: 0, pinned: false, color: null, icon: null, created_at: now, updated_at: now,
       })
     }
     // Files names cannot contain "/" or control characters.
@@ -204,9 +204,9 @@ export function legacyChatFolderRows(
       id: folder.id, owner_user_id: userId, parent_id: parent.id, kind: 'folder', status: 'ready',
       name: freeName(base, parent.names), system_role: null,
       mime_type: null, size_bytes: 0, object_key: null, checksum: null, trashed_at: null, trash_root_id: null, revision: 0,
-      // Above the unfiled chats, in their old order, as the migration places them.
+      // Above the unfiled chats (or the pinned chats, for pinned folders), in their old order.
       target_node_id: null, target_chat_id: null, sort_order: Number(folder.sort_order ?? 0) - 1_000_000,
-      color: null, icon: null, created_at: now, updated_at: String(folder.updated_at ?? now),
+      pinned: folder.pinned === true, color: null, icon: null, created_at: now, updated_at: String(folder.updated_at ?? now),
     })
   }
   return fileNodes

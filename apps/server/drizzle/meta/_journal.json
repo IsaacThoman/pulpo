@@ -687,6 +687,13 @@
       "when": 1791926446864,
       "tag": "0097_files_chat_folders",
       "breakpoints": true
+    },
+    {
+      "idx": 98,
+      "version": "7",
+      "when": 1791936787702,
+      "tag": "0098_file_node_pins",
+      "breakpoints": true
     }
   ]
 }

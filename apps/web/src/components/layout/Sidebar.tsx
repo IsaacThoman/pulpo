@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type DragEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type DragEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
 import { useTranslation } from '@/i18n/useAppTranslation'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
@@ -40,7 +40,7 @@ import {
 import type { FileNode, SidebarFolder, SidebarState } from '@pulpo/contracts'
 import { cn } from '@/lib/utils'
 import { reorderList } from '@/lib/model-order'
-import { compareChatOrder, useChat } from '@/stores/chat'
+import { useChat } from '@/stores/chat'
 import { useAuth } from '@/stores/auth'
 import { useSettings, type ChatSortMode } from '@/stores/settings'
 import { CHAT_TIME_GROUPS, chatTimeGroup, type ChatTimeGroup } from '@/lib/format'
@@ -95,7 +95,9 @@ import {
   moveSidebarItems,
   moveSidebarSelection,
   newSidebarFile,
+  orderPinnedItems,
   orderSidebarItems,
+  pinSidebarItems,
   refreshSidebar,
   pickFolder,
   renameSidebarItem,
@@ -109,7 +111,7 @@ import {
 
 /** A chat, a folder, or another Files item (a file or shortcut). */
 type DragKind = 'folder' | 'chat' | 'item'
-/** The pinned chats, the top of the sidebar (the Chats folder), or a folder's items. */
+/** The pinned list, the top of the sidebar (the Chats folder), or a folder's items. */
 type DropList = 'pinned' | 'loose' | `folder:${string}`
 
 type DropHint =
@@ -200,7 +202,6 @@ function useSidebarDrag({ canEnter, folderOfList, groupOf }: {
   const isDragged = (id: string) => groupRef.current ? groupRef.current.some((member) => member.id === id) : id === dragIdRef.current
   /** Whether everything dragged may go in `folderId`. */
   const fitsIn = (folderId: string) => (groupRef.current?.map((member) => member.id) ?? [dragIdRef.current!]).every((id) => canEnter(id, folderId))
-  const onlyChats = () => groupRef.current ? groupRef.current.every((member) => member.kind === 'chat') : dragKindRef.current === 'chat'
 
   const acceptMove = (e: DragEvent) => {
     e.preventDefault()
@@ -214,12 +215,12 @@ function useSidebarDrag({ canEnter, folderOfList, groupOf }: {
     return e.clientY < rect.top + rect.height / 2 ? 'before' : 'after'
   }
 
-  /** Only chats can be pinned; anything else can go in any folder that is not inside it. */
+  /** Anything can be pinned, or go in any folder that is not inside it. */
   const canPlaceIn = (list: DropList) => {
     const kind = dragKindRef.current
     const id = dragIdRef.current
     if (!kind || !id) return false
-    if (list === 'pinned') return onlyChats()
+    if (list === 'pinned') return true
     const folderId = folderOfList(list)
     return Boolean(folderId) && fitsIn(folderId!)
   }
@@ -297,14 +298,13 @@ function useSidebarDrag({ canEnter, folderOfList, groupOf }: {
 
   /**
    * Everywhere a row or folder does not claim the drag (gaps, headers, empty space), snap to the
-   * nearest slot at the top level of the sidebar, or among the pinned chats for a chat dragged
-   * into the pinned area.
+   * nearest slot at the top level of the sidebar, or in the pinned list for a drag into its area.
    */
   const onSidebarDragOver = (e: DragEvent<HTMLElement>, zones: { pinnedBottom?: number }) => {
     const kind = dragKindRef.current
     if (!kind || !dragIdRef.current) return
     acceptMove(e)
-    const list: DropList = onlyChats() && zones.pinnedBottom !== undefined && e.clientY < zones.pinnedBottom ? 'pinned' : 'loose'
+    const list: DropList = zones.pinnedBottom !== undefined && e.clientY < zones.pinnedBottom ? 'pinned' : 'loose'
     if (!canPlaceIn(list)) {
       setDrop(null)
       return
@@ -315,7 +315,8 @@ function useSidebarDrag({ canEnter, folderOfList, groupOf }: {
   /**
    * Where items dragged in from the Files browser would land with the pointer over `element`,
    * the same as for a drag within the sidebar: between rows, beside a folder from the edges of
-   * its row, into a folder from its middle or open contents, or the nearest slot at the top level.
+   * its row, into a folder from its middle or open contents, or the nearest slot at the top level
+   * or in the pinned list.
    */
   const filesDropHint = (aside: HTMLElement, element: Element, y: number, nodes: readonly FileNode[]): DropHint | null => {
     if (nodes.some((node) => node.systemRole)) return null
@@ -325,7 +326,7 @@ function useSidebarDrag({ canEnter, folderOfList, groupOf }: {
     const beside = (row: HTMLElement, band: number): DropHint | null => {
       const list = row.dataset.dragList as DropList | undefined
       const id = row.dataset.dragId
-      if (!list || list === 'pinned' || !id || ids.has(id) || !fits(folderOfList(list))) return null
+      if (!list || !id || ids.has(id) || (list !== 'pinned' && !fits(folderOfList(list)))) return null
       const rect = row.getBoundingClientRect()
       if (y < rect.top + band * rect.height) return { kind: 'row', list, id, edge: 'before' }
       if (y > rect.bottom - band * rect.height) return { kind: 'row', list, id, edge: 'after' }
@@ -337,20 +338,21 @@ function useSidebarDrag({ canEnter, folderOfList, groupOf }: {
       return beside(folderRow, 1 / 4) ?? (fits(folderId) && !ids.has(folderRow.dataset.dragId ?? folderId) ? { kind: 'folder-target', folderId } : null)
     }
     const row = element.closest<HTMLElement>('[data-drag-list]')
-    if (row && row.dataset.dragList !== 'pinned') return beside(row, 1 / 2)
+    if (row) return beside(row, 1 / 2)
     const body = element.closest<HTMLElement>('[data-folder-body]')
     if (body) return fits(body.dataset.folderBody!) ? { kind: 'folder-target', folderId: body.dataset.folderBody! } : null
-    if (!fits(folderOfList('loose'))) return null
+    const list: DropList = element.closest('[data-pinned-zone]') ? 'pinned' : 'loose'
+    if (list === 'loose' && !fits(folderOfList('loose'))) return null
     const rows = Array.from(aside.querySelectorAll<HTMLElement>('[data-drag-list]'))
-      .filter((candidate) => candidate.dataset.dragList === 'loose' && !ids.has(candidate.dataset.dragId ?? ''))
-    if (rows.length === 0) return { kind: 'loose-target' }
+      .filter((candidate) => candidate.dataset.dragList === list && !ids.has(candidate.dataset.dragId ?? ''))
+    if (rows.length === 0) return list === 'loose' ? { kind: 'loose-target' } : null
     const slot = rows.findIndex((candidate) => {
       const rect = candidate.getBoundingClientRect()
       return y < rect.top + rect.height / 2
     })
     return slot < 0
-      ? { kind: 'row', list: 'loose', id: rows.at(-1)!.dataset.dragId!, edge: 'after' }
-      : { kind: 'row', list: 'loose', id: rows[slot]!.dataset.dragId!, edge: 'before' }
+      ? { kind: 'row', list, id: rows.at(-1)!.dataset.dragId!, edge: 'after' }
+      : { kind: 'row', list, id: rows[slot]!.dataset.dragId!, edge: 'before' }
   }
 
   const onSidebarDragLeave = (e: DragEvent<HTMLElement>) => {
@@ -936,6 +938,11 @@ function ItemMenu({ node, folder, sidebar, atPointer = false, onRename, onNewFol
           {ui("Open to the right")}
         </DropdownMenuItem>
       )}
+      {/* The Sidebar folder is the sidebar itself; Archive can be pinned like any folder. */}
+      <DropdownMenuItem disabled={node.systemRole === 'chats'} onClick={() => void pinSidebarItems([node.id], !node.pinned, [node])}>
+        {node.pinned ? <PinOff /> : <Pin />}
+        {node.pinned ? t('chat.unpin') : t('chat.pin')}
+      </DropdownMenuItem>
       {/* Built-in folders list the actions they do not allow, unavailable, as in Files. */}
       <DropdownMenuItem disabled={system} onClick={() => { renameChosen.current = true }}>
         <Pencil />
@@ -1076,9 +1083,16 @@ function SelectionMenuContent({ ids, sidebar, onDone }: { ids: string[]; sidebar
   }
   // Files and folders among the selection can be given a color and icon; chats are left out.
   const styled = ids.flatMap((id) => findSidebarItem(id) ?? []).filter(hasAppearance)
+  // Pins whatever is not pinned yet; once everything is, unpins it all.
+  const chats = new Map(useChat.getState().chats.map((chat) => [chat.id, chat]))
+  const pinning = ids.some((id) => !(chats.get(id)?.pinned ?? findSidebarItem(id)?.pinned))
   return (
     <DropdownMenuContent side="bottom" align="start" sideOffset={2} className="w-52">
       <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">{uit`${ids.length} selected`}</DropdownMenuLabel>
+      <DropdownMenuItem onClick={() => { void pinSidebarItems(ids, pinning); onDone() }}>
+        {pinning ? <Pin /> : <PinOff />}
+        {pinning ? t('chat.pin') : t('chat.unpin')}
+      </DropdownMenuItem>
       <DropdownMenuSub>
         <DropdownMenuSubTrigger>
           <FolderInput />
@@ -1426,8 +1440,6 @@ export function Sidebar({
   const composerModelId = useChat((state) => state.composerModelId)
   const sidebar = useSidebarState().data
   const setFolderExpanded = useFolderExpansion((s) => s.setExpanded)
-  const reorderPinnedChats = useChat((s) => s.reorderPinnedChats)
-  const pinChat = useChat((s) => s.pinChat)
   const unpinChat = useChat((s) => s.unpinChat)
   const moveToFolder = useChat((s) => s.moveToFolder)
   const user = useAuth((s) => s.user)
@@ -1560,40 +1572,41 @@ export function Sidebar({
       dropGroup(hint, group.map((member) => member.id))
       return
     }
-    // Pinned chats dropped anywhere else leave the pinned list.
-    const place = sourceList === 'pinned' ? unpinChat : moveToFolder
+    // Pinned items dropped anywhere else leave the pinned list.
+    const fromPinned = sourceList === 'pinned'
 
     // Dropped on a folder, or below everything at the top level: to the top of that folder.
     if (hint.kind === 'folder-target' || hint.kind === 'loose-target') {
       const folderId = hint.kind === 'folder-target' ? hint.folderId : null
       if (hint.kind === 'loose-target' && sourceList === 'loose') return
-      if (kind === 'chat') place(from, folderId)
-      else void moveSidebarItems([from], folderId)
+      if (kind === 'chat') (fromPinned ? unpinChat : moveToFolder)(from, folderId)
+      else void moveSidebarItems([from], folderId, { unpin: fromPinned })
       if (folderId) ensureFolderExpanded(folderId)
       return
     }
     if (hint.id === from) return
-    if (hint.list === 'pinned') {
-      if (kind !== 'chat') return
-      if (sourceList === 'pinned') reorderPinnedChats(from, hint.id, hint.edge)
-      else pinChat(from, { targetId: hint.id, edge: hint.edge })
-      return
-    }
-    // Chats, folders, files, and shortcuts share one order in each folder.
-    const folderId = folderOfList(hint.list)
-    if (!folderId) return
+    // Chats, folders, files, and shortcuts share one order in each folder and in the pinned list.
     const ids = listRowIds(hint.list).filter((id) => id !== from)
-    void orderSidebarItems(folderId, reorderList([...ids, from], from, hint.id, hint.edge))
+    placeInList(hint.list, reorderList([...ids, from], from, hint.id, hint.edge))
   }
 
-  /** Puts `ids` together, in their order, at a drop line in a folder's list. */
-  const placeAtLine = (hint: Extract<DropHint, { kind: 'row' }>, ids: readonly string[], incoming?: FileNode[]): boolean => {
-    const folderId = folderOfList(hint.list)
+  /** Saves the order of a folder's list or the pinned list; listed items from elsewhere join it. */
+  const placeInList = (list: DropList, ids: string[], incoming?: FileNode[]): boolean => {
+    if (list === 'pinned') {
+      void orderPinnedItems(ids, incoming)
+      return true
+    }
+    const folderId = folderOfList(list)
     if (!folderId) return false
+    void orderSidebarItems(folderId, ids, incoming)
+    return true
+  }
+
+  /** Puts `ids` together, in their order, at a drop line. */
+  const placeAtLine = (hint: Extract<DropHint, { kind: 'row' }>, ids: readonly string[], incoming?: FileNode[]): boolean => {
     const rest = listRowIds(hint.list).filter((id) => !ids.includes(id))
     const at = rest.indexOf(hint.id) + (hint.edge === 'after' ? 1 : 0)
-    void orderSidebarItems(folderId, [...rest.slice(0, at), ...ids, ...rest.slice(at)], incoming)
-    return true
+    return placeInList(hint.list, [...rest.slice(0, at), ...ids, ...rest.slice(at)], incoming)
   }
 
   /** Drops several selected rows together, in their order, where the sidebar showed. */
@@ -1605,28 +1618,18 @@ export function Sidebar({
       return
     }
     if (ids.includes(hint.id)) return
-    if (hint.list !== 'pinned') {
-      placeAtLine(hint, ids)
-      return
-    }
-    // Each chat goes right after the one before it, starting at the line shown.
-    let target: { id: string; edge: 'before' | 'after' } = { id: hint.id, edge: hint.edge }
-    for (const id of ids) {
-      if (useChat.getState().chats.find((chat) => chat.id === id)?.pinned) reorderPinnedChats(id, target.id, target.edge)
-      else pinChat(id, { targetId: target.id, edge: target.edge })
-      target = { id, edge: 'after' }
-    }
+    placeAtLine(hint, ids)
   }
 
   /** Places items dragged in from the Files browser where the sidebar showed (see useItemDrag). */
   const dropFromFiles = (nodes: FileNode[]): boolean => {
     const hint = drag.dropRef.current
     drag.setDrop(null)
-    if (!hint || hint.kind === 'row' && hint.list === 'pinned') return false
+    if (!hint) return false
     const ids = nodes.map((node) => node.id)
     if (hint.kind !== 'row') {
       const folderId = hint.kind === 'folder-target' ? hint.folderId : null
-      void moveSidebarItems(ids, folderId)
+      void moveSidebarItems(ids, folderId, { unpin: true })
       return true
     }
     // Several items stay together, in their order, at the spot shown.
@@ -1677,7 +1680,8 @@ export function Sidebar({
 
   // The sidebar is the Chats folder: its chats, folders, files, and shortcuts, as one list.
   const rootItems = useSidebarItems(sidebar?.chatsFolderId).data ?? []
-  const pinned = useMemo(() => chats.filter((c) => c.pinned).sort(compareChatOrder), [chats])
+  // Pinned chats and Files items share one order above it, wherever they are in Files.
+  const pinnedEntries = sidebarEntries(chats.filter((c) => c.pinned), sidebar?.pinnedItems ?? [])
   // Chats filed in folders show inside them; chats in folders the sidebar does not show stay in Files.
   const inFolders = new Map<string, Chat[]>()
   const loose: Chat[] = []
@@ -1933,30 +1937,14 @@ export function Sidebar({
         >
           {/* chat list */}
           <div className="px-2 pb-4 pt-2">
-            {pinned.length > 0 && (
-              <div className="mb-2" ref={pinnedZoneRef}>
+            {pinnedEntries.length > 0 && (
+              <div className="mb-2" ref={pinnedZoneRef} data-pinned-zone>
                 <div className="px-2 pb-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
                   {t('sidebar.pinned')}
                 </div>
                 <div className="space-y-0.5">
-                  {pinned.map((c) => (
-                    <ChatRow
-                      key={c.id}
-                      chat={c}
-                      active={c.id === chatId}
-                      shiftHeld={shiftHeld}
-                      onNavigate={onNavigate}
-                      draggable
-                      droppable
-                      {...drag.rowLines('pinned', c.id, 'chat')}
-                      didDragRef={drag.didDragRef}
-                      dragList="pinned"
-                      onDragStart={(e) => drag.startDrag('chat', c.id, e, 'pinned', chatDragItem(c, sidebar))}
-                      onDragOver={(e) => drag.onRowDragOver('pinned', c.id, e)}
-                      onDrop={handleDrop}
-                      onDragEnd={drag.clearDrag}
-                      selection={rowSelection(c.id)}
-                    />
+                  {pinnedEntries.map((entry) => (
+                    <SidebarEntryRow key={entry.id} entry={entry} list="pinned" reorderable {...treeProps} />
                   ))}
                 </div>
               </div>

@@ -5,8 +5,9 @@ import { chats, fileNodes } from '../database/schema.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import { accessibleChatCondition } from '../chats/temporary.js'
-import { resolveFileAccess } from '../files/access.js'
+import { resolveFileAccess, type FileExecutor } from '../files/access.js'
 import { chatFolderId, liveChatIds } from '../files/chat-items.js'
+import { toFileNodes } from '../files/shortcuts.js'
 import { ensureSystemFolders } from '../files/system-folders.js'
 import {
   availableName,
@@ -19,7 +20,17 @@ import {
   treeTooDeep,
   updateFileNode,
 } from '../files/tree-service.js'
-import { topSortOrder } from '../files/order.js'
+import { pinnedEndOrder, topChatOrder, topSortOrder } from '../files/order.js'
+
+type DatabaseTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0]
+
+/** Sets a sort order column to each listed id's position in `ids`. */
+const listPosition = (ids: readonly string[], column: typeof chats.id | typeof fileNodes.id) =>
+  sql`case ${column} ${sql.join(ids.map((id, index) => sql`when ${id}::uuid then ${index}::int`), sql` `)} end`
+
+/** Without Files, the sidebar shows only folders and shortcuts to folders and chats. */
+const shownWithoutFiles = (node: FileNode) =>
+  node.kind === 'folder' || (node.kind === 'shortcut' && (node.target?.kind === 'folder' || node.target?.kind === 'chat'))
 
 /** Live folders under `rootIds` (inclusive), each listed once. */
 async function folderTrees(userId: string, rootIds: string[]): Promise<SidebarFolder[]> {
@@ -45,10 +56,25 @@ async function folderTrees(userId: string, rootIds: string[]): Promise<SidebarFo
   }))
 }
 
-/** The account's Chats and Archive folders and the folders inside them (for moving things). */
-export async function sidebarState(userId: string): Promise<SidebarState> {
+/** Pinned folders, files, and shortcuts, wherever they are in Files. */
+async function pinnedItems(userId: string, filesEnabled: boolean): Promise<FileNode[]> {
+  const rows = await db.select().from(fileNodes).where(and(
+    eq(fileNodes.ownerUserId, userId), eq(fileNodes.pinned, true), isNull(fileNodes.trashedAt), eq(fileNodes.status, 'ready'),
+  ))
+  const nodes = await toFileNodes(db, userId, rows)
+  return filesEnabled ? nodes : nodes.filter(shownWithoutFiles)
+}
+
+/**
+ * The pinned Files items, and the folders the sidebar can show (for moving things): the Chats and
+ * Archive folders and pinned folders, with the folders inside them.
+ */
+export async function sidebarState(userId: string, filesEnabled = true): Promise<SidebarState> {
   const { chatsFolderId, archiveFolderId } = await ensureSystemFolders(userId)
-  return { chatsFolderId, archiveFolderId, folders: await folderTrees(userId, [chatsFolderId, archiveFolderId]) }
+  const pinned = await pinnedItems(userId, filesEnabled)
+  const pinnedFolderIds = pinned.filter((node) => node.kind === 'folder').map((node) => node.id)
+  const folders = await folderTrees(userId, [chatsFolderId, archiveFolderId, ...pinnedFolderIds])
+  return { chatsFolderId, archiveFolderId, folders, pinnedItems: pinned }
 }
 
 async function requireFolder(userId: string, id: string) {
@@ -87,18 +113,58 @@ export async function createSidebarFolder(userId: string, input: { id?: string; 
 
 /**
  * What the sidebar shows in a folder besides its chats (which clients already have): subfolders,
- * shortcuts, and files. Without Files, only folders and shortcuts to folders and chats.
+ * shortcuts, and files, except pinned ones, which it lists under Pinned. Without Files, only
+ * folders and shortcuts to folders and chats.
  */
 export async function sidebarFolderItems(userId: string, id: string, filesEnabled: boolean): Promise<FileNode[]> {
   await requireFolder(userId, id)
-  const children = (await listFolder(userId, id)).children.filter((node) => node.kind !== 'chat')
-  if (filesEnabled) return children
-  return children.filter((node) => node.kind === 'folder' || (node.kind === 'shortcut' && (node.target?.kind === 'folder' || node.target?.kind === 'chat')))
+  const children = (await listFolder(userId, id)).children.filter((node) => node.kind !== 'chat' && !node.pinned)
+  return filesEnabled ? children : children.filter(shownWithoutFiles)
 }
 
-/** Moves chats and Files items into a folder; null is the Chats folder, the top of the sidebar. */
-export async function moveSidebarItems(userId: string, ids: string[], parentId: string | null): Promise<FileNode[]> {
+const pinnedNodes = (executor: FileExecutor, userId: string, ids: readonly string[]) => ids.length
+  ? executor.select({ id: fileNodes.id, parentId: fileNodes.parentId }).from(fileNodes)
+    .where(and(eq(fileNodes.ownerUserId, userId), inArray(fileNodes.id, [...ids]), eq(fileNodes.pinned, true)))
+  : Promise.resolve([])
+
+/**
+ * Unpins whichever of `ids` are pinned, putting each back at the top of its folder (unfiled chats
+ * at the top of the sidebar). `chatIds` are the ones that are chats.
+ */
+async function unpinInTx(tx: DatabaseTransaction, userId: string, ids: readonly string[], chatIds: ReadonlySet<string> = new Set()): Promise<void> {
+  const nodes = new Map((await pinnedNodes(tx, userId, ids.filter((id) => !chatIds.has(id)))).map((node) => [node.id, node]))
+  // One at a time, last first, so several unpinned into one folder keep the order given.
+  for (const id of [...ids].reverse()) {
+    const node = nodes.get(id)
+    if (node) {
+      await tx.update(fileNodes).set({ pinned: false, sortOrder: await topSortOrder(tx, userId, node.parentId) }).where(eq(fileNodes.id, id))
+      continue
+    }
+    if (!chatIds.has(id)) continue
+    const [chat] = await tx.select({ pinned: chats.pinned, folderId: chats.folderId, inFilesRoot: chats.inFilesRoot }).from(chats).where(eq(chats.id, id))
+    if (!chat?.pinned) continue
+    const sortOrder = chat.inFilesRoot ? await topSortOrder(tx, userId, null) : await topChatOrder(tx, userId, chat.folderId)
+    await tx.update(chats).set({ pinned: false, sortOrder }).where(eq(chats.id, id))
+  }
+}
+
+/** Unpins pinned chats (`chatIds`) and Files items among `ids` before they are put somewhere, even where they are. */
+async function unpinBeforePlacing(userId: string, ids: readonly string[], chatIds: ReadonlySet<string> = new Set()): Promise<void> {
+  const pinnedChats = chatIds.size
+    ? await db.select({ id: chats.id }).from(chats).where(and(inArray(chats.id, [...chatIds]), eq(chats.pinned, true)))
+    : []
+  if (pinnedChats.length || (await pinnedNodes(db, userId, ids)).length) {
+    await mutateFileTree(userId, (tx) => unpinInTx(tx, userId, ids, chatIds), pinnedChats.length ? ['files', 'folders', 'chats'] : undefined)
+  }
+}
+
+/**
+ * Moves chats and Files items into a folder; null is the Chats folder, the top of the sidebar.
+ * Pinned ones stay pinned unless `unpin` takes them out of the pinned list.
+ */
+export async function moveSidebarItems(userId: string, ids: string[], parentId: string | null, { unpin = false } = {}): Promise<FileNode[]> {
   const destination = parentId ?? (await ensureSystemFolders(userId)).chatsFolderId
+  if (unpin) await unpinBeforePlacing(userId, ids, await liveChatIds(db, userId, ids))
   return moveFileNodes(userId, ids.map((id) => ({ id, parentId: destination })))
 }
 
@@ -121,17 +187,78 @@ export async function orderSidebarItems(userId: string, parentId: string | null,
   if (outside.length) await moveFileNodes(userId, outside.map((node) => ({ id: node.id, parentId: folderId })))
   await mutateFileTree(userId, async (tx) => {
     const chatFolder = await chatFolderId(tx, userId, folderId)
-    const position = (column: typeof chats.id | typeof fileNodes.id) =>
-      sql`case ${column} ${sql.join(ids.map((id, index) => sql`when ${id}::uuid then ${index}::int`), sql` `)} end`
     if (chatIds.length) {
-      await tx.update(chats).set({ folderId: chatFolder, inFilesRoot: false, pinned: false, sortOrder: position(chats.id) })
+      await tx.update(chats).set({ folderId: chatFolder, inFilesRoot: false, pinned: false, sortOrder: listPosition(ids, chats.id) })
         .where(and(eq(chats.userId, userId), inArray(chats.id, chatIds)))
     }
     if (nodeIds.length) {
-      await tx.update(fileNodes).set({ sortOrder: position(fileNodes.id) })
+      await tx.update(fileNodes).set({ pinned: false, sortOrder: listPosition(ids, fileNodes.id) })
         .where(and(eq(fileNodes.ownerUserId, userId), inArray(fileNodes.id, nodeIds)))
     }
   }, ['files', 'folders', 'chats'])
+}
+
+/** The account's live, ready Files items among `ids`; throws unless every one of them is. */
+async function requireLiveNodes(executor: FileExecutor, userId: string, ids: readonly string[]) {
+  if (!ids.length) return []
+  const nodes = await executor.select({ id: fileNodes.id, parentId: fileNodes.parentId, systemRole: fileNodes.systemRole, pinned: fileNodes.pinned })
+    .from(fileNodes)
+    .where(and(eq(fileNodes.ownerUserId, userId), inArray(fileNodes.id, [...ids]), isNull(fileNodes.trashedAt), eq(fileNodes.status, 'ready')))
+  if (nodes.length !== new Set(ids).size) throw notFound('File')
+  return nodes
+}
+
+const sidebarFolderNotPinnable = () =>
+  new AppError(400, 'file_system_folder', 'The Sidebar folder is the sidebar itself and cannot be pinned to it')
+
+/**
+ * Pins chats and Files items after those already pinned, in the order given, or unpins them, each
+ * back to the top of its folder (unfiled chats to the top of the sidebar). Items stay where they
+ * are in Files either way.
+ */
+export async function pinSidebarItems(userId: string, ids: string[], pinned: boolean): Promise<void> {
+  const chatIds = await liveChatIds(db, userId, ids)
+  const nodeIds = ids.filter((id) => !chatIds.has(id))
+  await mutateFileTree(userId, async (tx) => {
+    const nodes = await requireLiveNodes(tx, userId, nodeIds)
+    if (!pinned) {
+      await unpinInTx(tx, userId, ids, chatIds)
+      return
+    }
+    if (nodes.some((node) => node.systemRole === 'chats')) throw sidebarFolderNotPinnable()
+    const alreadyPinned = new Set([
+      ...nodes.filter((node) => node.pinned).map((node) => node.id),
+      ...chatIds.size ? (await tx.select({ id: chats.id }).from(chats).where(and(inArray(chats.id, [...chatIds]), eq(chats.pinned, true)))).map((row) => row.id) : [],
+    ])
+    let sortOrder = await pinnedEndOrder(tx, userId)
+    for (const id of ids) {
+      if (alreadyPinned.has(id)) continue
+      if (chatIds.has(id)) await tx.update(chats).set({ pinned: true, sortOrder: sortOrder++ }).where(eq(chats.id, id))
+      else await tx.update(fileNodes).set({ pinned: true, sortOrder: sortOrder++ }).where(eq(fileNodes.id, id))
+    }
+  }, chatIds.size ? ['files', 'folders', 'chats'] : ['files', 'folders'])
+}
+
+/**
+ * Sets the order of the sidebar's pinned list, chats included. Listed items not yet pinned are
+ * pinned where they are; items not listed keep their place.
+ */
+export async function orderPinnedItems(userId: string, ids: string[]): Promise<void> {
+  if (new Set(ids).size !== ids.length) throw new AppError(400, 'validation_error', 'The order cannot list an item twice')
+  const chatIds = [...await liveChatIds(db, userId, ids)]
+  const nodeIds = ids.filter((id) => !chatIds.includes(id))
+  await mutateFileTree(userId, async (tx) => {
+    const nodes = await requireLiveNodes(tx, userId, nodeIds)
+    if (nodes.some((node) => node.systemRole === 'chats')) throw sidebarFolderNotPinnable()
+    if (chatIds.length) {
+      await tx.update(chats).set({ pinned: true, sortOrder: listPosition(ids, chats.id) })
+        .where(and(eq(chats.userId, userId), inArray(chats.id, chatIds)))
+    }
+    if (nodeIds.length) {
+      await tx.update(fileNodes).set({ pinned: true, sortOrder: listPosition(ids, fileNodes.id) })
+        .where(and(eq(fileNodes.ownerUserId, userId), inArray(fileNodes.id, nodeIds)))
+    }
+  }, chatIds.length ? ['files', 'folders', 'chats'] : ['files', 'folders'])
 }
 
 /** Renames an item (a taken name gets a " (n)" suffix) or changes its color and icon. */
@@ -144,7 +271,7 @@ export async function trashSidebarItem(userId: string, id: string): Promise<void
   await trashFileNodes(userId, [id])
 }
 
-/** Moves chats (unpinning them) and Files items into the Archive folder. */
+/** Moves chats and Files items into the Archive folder, unpinning them. */
 export async function archiveItems(userId: string, input: { chatIds: string[]; fileIds: string[] }): Promise<{ archiveFolderId: string }> {
   const { archiveFolderId } = await ensureSystemFolders(userId)
   const chatIds = [...await liveChatIds(db, userId, [...input.chatIds, ...input.fileIds])]
@@ -155,7 +282,10 @@ export async function archiveItems(userId: string, input: { chatIds: string[]; f
         .where(and(eq(chats.userId, userId), inArray(chats.id, chatIds), isNull(chats.deletedAt), accessibleChatCondition()))
     }, ['files', 'folders', 'chats'])
   }
-  if (fileIds.length) await moveFileNodes(userId, fileIds.map((id) => ({ id, parentId: archiveFolderId })))
+  if (fileIds.length) {
+    await unpinBeforePlacing(userId, fileIds)
+    await moveFileNodes(userId, fileIds.map((id) => ({ id, parentId: archiveFolderId })))
+  }
   return { archiveFolderId }
 }
 

@@ -37,7 +37,7 @@ import { BranchSelectionIntents } from '@/lib/branch-selection-intents'
 import { BranchHistoryCache } from '@/lib/branch-history-cache'
 import { reorderList } from '@/lib/model-order'
 import { useAuth } from './auth'
-import { sidebarItemsFloor } from '@/features/sidebar/cache'
+import { pinnedItemsCeiling, sidebarItemsFloor } from '@/features/sidebar/cache'
 import { adminChatAccessActive, adminChatAccountKey } from '@/features/admin-chat/access'
 
 function applySortOrders(ids: string[]): Map<string, number> {
@@ -72,7 +72,7 @@ function topSortOrder(chats: Chat[]): number {
 }
 
 /** The top of a folder's list, above its chats and the Files items the sidebar shows there. */
-function topOrderIn(chats: Chat[], folderId: string | null): number {
+export function topOrderIn(chats: Chat[], folderId: string | null): number {
   return Math.min(topSortOrder(chatListMembers(chats, folderId)), sidebarItemsFloor(folderId) - 1)
 }
 
@@ -279,11 +279,8 @@ interface ChatState {
   setChatFileScope: (id: string, fileScopeIds: string[]) => void
   togglePin: (id: string) => void
   moveToFolder: (id: string, folderId: string | null, position?: ChatListPosition) => void
-  /** Pins a chat at `position` in the pinned list, or at its end. */
-  pinChat: (id: string, position?: ChatListPosition) => void
   /** Unpins a chat into a folder or the unfiled list, like `moveToFolder` does for unpinned chats. */
   unpinChat: (id: string, folderId: string | null, position?: ChatListPosition) => void
-  reorderPinnedChats: (fromId: string, toId: string, edge: 'before' | 'after') => void
   reorderFolderChats: (folderId: string, fromId: string, toId: string, edge: 'before' | 'after') => void
   reorderLooseChats: (fromId: string, toId: string, edge: 'before' | 'after') => void
   shareChat: (id: string) => Promise<string>
@@ -1274,9 +1271,10 @@ export const useChat = create<ChatState>()((set, get) => ({
     if (!chat) return
     const nextPinned = !chat.pinned
     const others = get().chats.filter((item) => item.id !== id)
+    // Pinned Files items share the pinned list, so a chat pinned now goes after them too.
     const maxPinnedOrder = others
       .filter((item) => item.pinned)
-      .reduce((max, item) => Math.max(max, item.sortOrder), -1)
+      .reduce((max, item) => Math.max(max, item.sortOrder), pinnedItemsCeiling())
     // Unpinned chats return to the top of their folder or the unfiled list.
     const sortOrder = nextPinned ? maxPinnedOrder + 1 : topOrderIn(others, chat.folderId)
     set((state) => ({
@@ -1294,19 +1292,9 @@ export const useChat = create<ChatState>()((set, get) => ({
     }
     placeInChatList(id, folderId, position)
   },
-  pinChat: (id, position) => {
-    const chat = get().chats.find((item) => item.id === id)
-    if (!chat || chat.pinned || chat.temporary) return
-    // The chat keeps its folder, so unpinning returns it there.
-    const pinnedIds = orderedChatIds(get().chats.filter((item) => item.pinned && item.id !== id))
-    commitChatPlacement(id, insertChatId(pinnedIds, id, position), { pinned: true })
-  },
   unpinChat: (id, folderId, position) => {
     if (!get().chats.find((chat) => chat.id === id)?.pinned) return
     placeInChatList(id, folderId, position, { pinned: false })
-  },
-  reorderPinnedChats: (fromId, toId, edge) => {
-    reorderChatList(orderedChatIds(get().chats.filter((chat) => chat.pinned)), fromId, toId, edge)
   },
   reorderFolderChats: (folderId, fromId, toId, edge) => {
     reorderChatList(orderedChatIds(chatListMembers(get().chats, folderId)), fromId, toId, edge)
