@@ -1,5 +1,5 @@
 import { historyPageQuery, loadHistoryPage } from './history-page.js'
-import { and, asc, desc, eq, inArray, isNotNull, isNull, ne, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray, isNotNull, isNull, ne, sql, type SQL } from 'drizzle-orm'
 import { createHash } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import { createChatResponseSchema, createChatSchema, createQueuedMessageSchema, findCostLimitItem, reorderQueuedMessageSchema, startChatSchema, updateChatSchema, updateQueuedMessageSchema, type StateInvalidationScope } from '@pulpo/contracts'
@@ -15,7 +15,7 @@ import { maintenanceQueue } from '../jobs.js'
 import { cancelChatWork, getTrashRetention, markChatsForPurge, purgeAtFor } from './trash.js'
 import { planDuplicateTree } from './duplicate.js'
 import { toPublicChat, toPublicChatResponses, withoutWorkspaceScope } from './public.js'
-import { assertFileScope, scopedFileAccess } from './file-scope.js'
+import { assertFileScope, mergedFileAccessSql, scopedFileAccess } from './file-scope.js'
 import { chatFolderId } from '../files/chat-items.js'
 import { topChatOrder } from '../files/order.js'
 import { recoverChats, trashChats } from './trash-service.js'
@@ -581,15 +581,12 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
     const patch = updateChatSchema.parse(request.body)
-    let fileScopeAccess: Record<string, string> | undefined
+    let fileScopeAccess: SQL | undefined
     if (patch.fileScopeIds || patch.fileScopeAccess) {
       if (request.adminChatAccess) throw forbidden('Chat file scope cannot be changed during admin chat access')
       if (patch.fileScopeIds) await assertFileScope(user.id, patch.fileScopeIds)
-      const [current] = await db.select({ fileScopeIds: chats.fileScopeIds, fileScopeAccess: chats.fileScopeAccess })
-        .from(chats).where(and(eq(chats.id, id), eq(chats.userId, user.id))).limit(1)
-      if (!current) throw notFound('Chat')
       // Modes follow their entries: removed entries lose theirs, and unchanged ones keep them.
-      fileScopeAccess = scopedFileAccess(patch.fileScopeIds ?? current.fileScopeIds, { ...current.fileScopeAccess, ...patch.fileScopeAccess })
+      fileScopeAccess = mergedFileAccessSql(patch.fileScopeIds, patch.fileScopeAccess ?? {})
     }
     // Any live folder in Files can hold chats; the Chats folder itself means unfiled.
     const folderId = patch.folderId === undefined ? undefined : await chatFolderId(db, user.id, patch.folderId)
