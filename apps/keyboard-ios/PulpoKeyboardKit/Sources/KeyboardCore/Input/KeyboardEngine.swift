@@ -143,6 +143,8 @@ public final class KeyboardEngine {
   static let sentenceEnders: Set<Character> = [".", "!", "?"]
   static let autocorrectSeparators: Set<Character> = [".", ",", "!", "?", ";", ":", ")", "\"", "\u{201D}"]
   static let spaceSwapPunctuation: Set<Character> = [".", ",", "!", "?", ";", ":"]
+  /// Roughly the few hundred most frequent words: "you", "like", "from", "good".
+  static let commonWordLogProbability = -8.0
 
   static func isWordCharacter(_ character: Character) -> Bool {
     character.isLetter || character.isNumber || character == "'" || character == "\u{2019}"
@@ -918,12 +920,39 @@ public final class KeyboardEngine {
       } else if let index = storedSuggestions.slots.indices.reversed().first(where: {
         storedSuggestions.slots[$0].kind != .literal && !storedSuggestions.slots[$0].isAutocorrection && $0 != 1
       }) {
+        guard emojiMayReplace(emoji, slot: index, query: query, matcher: emojiSuggester) else { continue }
         storedSuggestions.slots[index] = suggestion
       } else { return }
       offeredEmoji = OfferedEmoji(value: value, query: query, before: current,
                                   after: expectedAfterContext, documentID: expectedDocumentIdentifier,
                                   appends: appends)
       return
+    }
+  }
+
+  /// Whether a matched emoji may take a word's place in a full strip. Space
+  /// never applies an emoji, so the word it displaces is the cost.
+  private func emojiMayReplace(_ emoji: Emoji, slot index: Int, query: String, matcher: EmojiSuggester) -> Bool {
+    // Everyday words also occur in emoji names and keywords ("face with steam
+    // from nose", "sign of the horns", "love-you gesture"). They rarely ask for
+    // an emoji, and their slot predicts or completes the next word.
+    let lexicon = suggester?.model.lexicon
+    func isCommon(_ word: Substring) -> Bool {
+      guard let lexicon, let id = lexicon.id(of: String(word)) else { return false }
+      return lexicon.unigramLogProbability(id) > Self.commonWordLogProbability
+    }
+    let words = query.split(separator: " ")
+    if matcher.suggestions(for: query, limit: 1, prefixes: false).first == emoji {
+      return words.contains { !isCommon($0) }
+    }
+    // Nearly every three-letter prefix starts some emoji keyword ("tha" ->
+    // thanks, "thi" -> thinking). A partial word may replace a word only when
+    // it continues a distinctive phrase ("red hea") or another visible word
+    // names the same emoji ("piz" beside "pizza").
+    if words.count > 1 { return words.dropLast().contains { !isCommon($0) } }
+    return storedSuggestions.slots.indices.contains { other in
+      other != index && storedSuggestions.slots[other].kind != .emoji &&
+        matcher.suggestions(for: storedSuggestions.slots[other].text, limit: 1, prefixes: false).first == emoji
     }
   }
 

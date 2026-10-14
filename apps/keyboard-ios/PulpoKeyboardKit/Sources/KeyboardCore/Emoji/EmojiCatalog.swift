@@ -118,7 +118,8 @@ public struct EmojiSuggester: Sendable {
   /// Matches complete names, individual name words, CLDR keywords and prefixes.
   /// At least three letters are required; unrelated substrings and spelling
   /// mistakes are never expanded. Selection remains an explicit user action.
-  public func suggestions(for query: String, limit: Int = 3) -> [Emoji] {
+  /// Without `prefixes`, only complete terms match.
+  public func suggestions(for query: String, limit: Int = 3, prefixes: Bool = true) -> [Emoji] {
     guard limit > 0, query.count <= Self.maximumLength else { return [] }
     let key = Self.normalized(query)
     guard key.count >= Self.minimumLength, !Self.ignoredWords.contains(key) else { return [] }
@@ -149,7 +150,7 @@ public struct EmojiSuggester: Sendable {
     if let exact { add(Match(id: exact, rank: -1)) }
     for position in lower..<index.count {
       let term = index[position]
-      guard term.key.hasPrefix(key) else { break }
+      guard term.key.hasPrefix(key), prefixes || term.key == key else { break }
       let penalty = term.key == key ? 0 : 200
       for match in term.matches { add(Match(id: match.id, rank: match.rank + penalty)) }
       if best.count == count, best.last!.rank < 200 { break }
