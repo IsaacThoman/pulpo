@@ -1,5 +1,5 @@
 import { Readable } from 'node:stream'
-import { and, eq, inArray } from 'drizzle-orm'
+import { and, asc, eq, inArray } from 'drizzle-orm'
 import { FILE_TREE_MAX_DEPTH } from '@pulpo/contracts'
 import { db } from '../../database/client.js'
 import { fileChanges } from '../../database/schema.js'
@@ -31,7 +31,7 @@ async function pendingNotes(ctx: CommandContext, nodes: FileNodeRow[]): Promise<
   const ids = nodes.map((node) => node.id)
   const rows = ids.length ? await db.select({ nodeId: fileChanges.nodeId, kind: fileChanges.kind, after: fileChanges.after }).from(fileChanges).where(and(
     eq(fileChanges.chatId, ctx.chatId), eq(fileChanges.status, 'pending'), inArray(fileChanges.nodeId, ids),
-  )) : []
+  )).orderBy(asc(fileChanges.seq)) : []
   for (const row of rows) {
     if (row.kind === 'update') add(row.nodeId, 'you suggested new content, not accepted yet')
     if (row.kind === 'trash') add(row.nodeId, 'you suggested deleting it')
