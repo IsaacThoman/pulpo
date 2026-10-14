@@ -70,6 +70,9 @@ BEGIN
       VALUES (legacy."id", legacy."user_id", chats_folder, 'folder', candidate, legacy."sort_order" - 1000000, legacy."created_at", legacy."updated_at");
   END LOOP;
 END $$;--> statement-breakpoint
+-- Drizzle applies every pending migration in one transaction. Check the rows inserted above now,
+-- or their deferred checks stay pending and any later ALTER TABLE "file_nodes" fails.
+SET CONSTRAINTS "file_nodes_target_chat_id_chats_id_fk" IMMEDIATE;--> statement-breakpoint
 ALTER TABLE "chats" DROP CONSTRAINT "chats_folder_id_folders_id_fk";--> statement-breakpoint
 -- Defensive: a chat filed under another account's folder id would break the new constraint.
 UPDATE "chats" SET "folder_id" = NULL
