@@ -171,6 +171,13 @@ public final class KeyboardEngine {
       commitComposing(separator: text)
     } else {
       if !composing.isEmpty, !Self.isWordCharacter(Character(String(text.prefix(1)))) { learn(composing.text) }
+      // Text inserted outside the key grid, or left by a deletion, can end in a word
+      // the composition does not track. Continue that word rather than starting a
+      // fragment that a correction would replace on its own.
+      if composing.isEmpty, Self.isWordCharacter(first), Self.endsInsideWord(before) {
+        // A replaced selection also continues the word before it.
+        composing = TypedWord(text: Self.trailingWord(of: before))
+      }
       insertDocumentText(text)
       if let typedCharacter = text.first, Self.isWordCharacter(typedCharacter), !(typedCharacter == "\u{2019}" && composing.isEmpty) {
         composing.append(text, tap: tap)
@@ -750,13 +757,21 @@ public final class KeyboardEngine {
   }
 
   private func deriveComposing() {
-    let text = expectedSelection == nil ? before : ""
-    var word = ""
-    for character in text.reversed() {
-      guard Self.isWordCharacter(character) else { break }
-      word.insert(character, at: word.startIndex)
-    }
+    let word = expectedSelection == nil ? Self.trailingWord(of: before) : ""
     if composing.text != word { composing = TypedWord(text: word) }
+  }
+
+  static func trailingWord(of text: String) -> String {
+    String(text.reversed().prefix(while: isWordCharacter).reversed())
+  }
+
+  /// Whether the text ends in a letter or digit, or an apostrophe inside a word (`don’`).
+  static func endsInsideWord(_ text: String) -> Bool {
+    var characters = text.reversed().makeIterator()
+    guard let last = characters.next() else { return false }
+    if last.isLetter || last.isNumber { return true }
+    guard last == "'" || last == "\u{2019}", let previous = characters.next() else { return false }
+    return previous.isLetter || previous.isNumber
   }
 
   var cursorInsideWord: Bool {
