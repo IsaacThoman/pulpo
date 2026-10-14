@@ -291,6 +291,68 @@ final class KeyTouchTests: XCTestCase {
     XCTAssertEqual(recorder.glidePaths.first?.last, contact.point)
   }
 
+  func testAdjacentLetterSwipesReachTheDecoder() {
+    for (first, last) in [("key-w", "key-e"), ("key-a", "key-s")] {
+      recorder.events = []
+      recorder.glidePaths = []
+      let contact = touch(first)
+      let start = contact.point
+      let end = touch(last).point
+      keys.touchesBegan([contact], with: nil)
+      contact.point = CGPoint(x: (start.x + end.x) / 2, y: (start.y + end.y) / 2)
+      keys.touchesMoved([contact], with: nil)
+      contact.point = end
+      keys.touchesMoved([contact], with: nil)
+      keys.touchesEnded([contact], with: nil)
+      XCTAssertEqual(recorder.glidePaths.count, 1)
+      XCTAssertEqual(recorder.glidePaths.first?.last, end)
+      XCTAssertTrue(recorder.activations.isEmpty)
+    }
+  }
+
+  func testCoalescedLiftCanContainTheEntireShortSwipe() {
+    let contact = touch("key-w")
+    let start = contact.point
+    let end = touch("key-e")
+    let middle = Contact(point: CGPoint(x: (start.x + end.point.x) / 2, y: start.y), time: 0.04)
+    keys.touchesBegan([contact], with: nil)
+    contact.point = end.point
+    keys.touchesEnded([contact], with: ContactEvent(samples: [middle, end]))
+    XCTAssertEqual(recorder.glidePaths.first, [start, middle.point, end.point])
+    XCTAssertTrue(recorder.activations.isEmpty)
+  }
+
+  func testCoalescedLoopCanReturnToTheStartingKeyBeforeLift() {
+    let contact = touch("key-w")
+    let start = contact.point
+    let turn = touch("key-o")
+    let end = touch("key-w")
+    keys.touchesBegan([contact], with: nil)
+    keys.touchesEnded([contact], with: ContactEvent(samples: [turn, end]))
+    XCTAssertEqual(recorder.glidePaths.first, [start, turn.point, start])
+    XCTAssertTrue(recorder.activations.isEmpty)
+  }
+
+  func testSmallCoalescedThumbRollsRemainTaps() {
+    for letter in "qwertyuiopasdfghjklzxcvbnm" {
+      for direction: CGFloat in [-1, 1] {
+        recorder.events = []
+        recorder.glidePaths = []
+        let identifier = "key-\(letter)"
+        let contact = touch(identifier)
+        let start = contact.point
+        let middle = Contact(point: CGPoint(x: start.x + direction * keys.pitch.width * 0.2, y: start.y), time: 0.04)
+        let end = Contact(point: CGPoint(x: start.x + direction * keys.pitch.width * 0.4, y: start.y), time: 0.08)
+        keys.touchesBegan([contact], with: nil)
+        contact.point = end.point
+        keys.touchesEnded([contact], with: ContactEvent(samples: [middle, end]))
+        XCTAssertTrue(recorder.glidePaths.isEmpty)
+        XCTAssertEqual(recorder.activations, [identifier])
+        XCTAssertEqual(recorder.activationPoints.last, start)
+      }
+    }
+  }
+
   func testGlideIncludesCoalescedLiftSamplesAndDeduplicatesTheLift() {
     let contact = touch("key-h")
     keys.touchesBegan([contact], with: nil)

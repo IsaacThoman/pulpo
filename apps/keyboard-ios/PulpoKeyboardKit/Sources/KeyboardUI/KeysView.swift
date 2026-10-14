@@ -271,6 +271,16 @@ final class KeysView: UIView {
     for touch in touches.sorted(by: { (trackings[ObjectIdentifier($0)]?.began ?? 0) < (trackings[ObjectIdentifier($1)]?.began ?? 0) }) {
       guard let tracking = trackings.removeValue(forKey: ObjectIdentifier(touch)) else { continue }
       appendSamples(for: touch, event: event, to: tracking)
+      // A fast gesture can arrive entirely in the lift's coalesced batch.
+      // Require intermediate samples before promoting a release-only tap.
+      if tracking.mode == .tap, tracking.points.count > 2 {
+        // A loop may return to its first key before lift. Its earlier departure
+        // still distinguishes it from a tap that merely rolled at release.
+        let departure = tracking.points.first {
+          hypot($0.x - tracking.start.x, $0.y - tracking.start.y) > pitch.width * 0.7
+        }
+        move(tracking, to: departure ?? touch.location(in: self), event: event)
+      }
       end(tracking, at: touch.location(in: self), event: event, cancelled: false)
     }
   }
@@ -407,6 +417,11 @@ final class KeysView: UIView {
 
   private func end(_ tracking: Tracking, at point: CGPoint, event: UIEvent?, cancelled: Bool) {
     tracking.timer?.invalidate()
+    // A Shift contact can slide onto a letter or commit during a thumb roll.
+    // Release the original modifier owner on every terminal path.
+    defer {
+      if tracking.initialKey.action == .shift { delegate?.keysViewShiftUp(self) }
+    }
     guard !tracking.committed else { return }
     let view = keyViews.indices.contains(tracking.keyIndex) ? keyViews[tracking.keyIndex] : nil
     view?.isPressed = false
@@ -428,12 +443,9 @@ final class KeysView: UIView {
     case .glide:
       trail.finish()
       if !cancelled {
-        let length = zip(tracking.points, tracking.points.dropFirst()).reduce(0) { $0 + hypot($1.1.x - $1.0.x, $1.1.y - $1.0.y) }
-        if length > pitch.width * 1.2 {
-          delegate?.keysView(self, glide: tracking.points, start: key)
-        } else {
-          activate(key, at: tracking.start)
-        }
+        // Entering glide already requires deliberately leaving the pressed
+        // key. Another 1.2-pitch gate drops adjacent-letter words like we/as.
+        delegate?.keysView(self, glide: tracking.points, start: key)
       }
     case .tap:
       popup?.hide()
@@ -444,10 +456,7 @@ final class KeysView: UIView {
         key = keyViews[index].key
         stats.releaseRetargets += 1
       }
-      if key.action == .shift {
-        delegate?.keysViewShiftUp(self)
-        return
-      }
+      if key.action == .shift { return }
       if cancelled {
         stats.cancelled += 1
         // A short, still tap the system took over was still meant as a keystroke.
@@ -551,11 +560,15 @@ final class KeysView: UIView {
   }
 
   func cancelAllTouches() {
-    for tracking in trackings.values { tracking.timer?.invalidate() }
+    let cancelled = Array(trackings.values)
+    for tracking in cancelled { tracking.timer?.invalidate() }
     trackings = [:]
     keyViews.forEach { $0.isPressed = false; $0.isDimmed = false }
     popup?.hide()
     trail.finish()
+    for tracking in cancelled where tracking.initialKey.action == .shift {
+      delegate?.keysViewShiftUp(self)
+    }
   }
 
   private func schedule(after delay: TimeInterval, _ action: @escaping @MainActor () -> Void) -> Timer {

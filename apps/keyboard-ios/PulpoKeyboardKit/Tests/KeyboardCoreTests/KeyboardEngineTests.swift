@@ -364,4 +364,79 @@ struct KeyboardEngineTests {
     engine.type("zorbly ")
     #expect(personal.count(of: "zorbly") >= 1)
   }
+
+  @Test func synchronousStaleCallbackAfterIdlePreservesTheRequestedEdit() {
+    let (engine, document) = Fixtures.engine("say ")
+    engine.clock = { 200 }
+    document.onWillEdit = { engine.documentDidChange() }
+    engine.type("teh ")
+    #expect(document.text == "say the ")
+    #expect(engine.before == document.text)
+    document.onWillEdit = nil
+    engine.deleteBackward()
+    #expect(document.text == "say teh")
+  }
+  @Test func expiredOwnSnapshotIsAcceptedAsAnExternalChange() {
+    let (engine, document) = Fixtures.engine("say ")
+    var now = 100.0
+    engine.clock = { now }
+    engine.type("teh ")
+    now += 2
+    document.text = "say teh"
+    document.cursor = document.text.endIndex
+    engine.documentDidChange()
+    #expect(engine.composingText == "teh")
+    #expect(engine.before == "say teh")
+    #expect(engine.externalContextChanges == 1)
+  }
+
+  @Test func staleSnapshotAfterAutocorrectionPreservesUndo() {
+    let (engine, document) = Fixtures.engine("say ")
+    engine.type("teh")
+    let old = document.text
+    engine.insertSpace()
+    #expect(document.text == "say the ")
+    document.contextBeforeOverride = old
+    engine.documentDidChange()
+    document.contextBeforeOverride = nil
+    engine.deleteBackward()
+    #expect(document.text == "say teh")
+  }
+  @Test func staleSnapshotAfterSwipeAlternativePreservesPhantomSpace() throws {
+    let (engine, document) = Fixtures.engine("say ")
+    let points = "helo".utf8.compactMap { engine.glide!.geometry.center($0) }
+    let candidates = engine.insertGlide(points)
+    #expect(candidates.first?.text == "hello")
+    let old = document.text
+    let alternative = try #require(engine.suggestions.slots.first { $0.text != "hello" })
+    engine.select(alternative)
+    let chosen = document.text
+    document.contextBeforeOverride = old
+    engine.documentDidChange()
+    document.contextBeforeOverride = nil
+    engine.insertCharacter("a")
+    #expect(document.text == chosen + " a")
+  }
+  @Test func staleEmptySnapshotDoesNotRecapitalizeSecondLetter() {
+    let (engine, document) = Fixtures.engine()
+    engine.insertCharacter("a")
+    document.contextBeforeOverride = ""
+    engine.documentDidChange()
+    document.contextBeforeOverride = nil
+    engine.insertCharacter("b")
+    #expect(document.text == "Ab")
+  }
+
+  @Test func selectionChangeIsNotMistakenForAnEarlierOwnSnapshot() {
+    let (engine, document) = Fixtures.engine()
+    engine.type("hi")
+    // Selecting the whole field has the same before/after text as its initial
+    // empty state, but its nonempty selection makes it a new cursor context.
+    document.contextBeforeOverride = ""
+    document.selectionOverride = document.text
+    engine.documentDidChange()
+    #expect(engine.composingText.isEmpty)
+    #expect(engine.externalContextChanges == 1)
+    #expect(engine.laggingContextUpdates == 0)
+  }
 }

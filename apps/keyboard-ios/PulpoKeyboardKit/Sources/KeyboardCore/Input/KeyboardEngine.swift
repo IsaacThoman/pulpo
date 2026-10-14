@@ -73,7 +73,14 @@ public final class KeyboardEngine {
   private var expectedContext: String?
   private var expectedAfterContext = ""
   private var expectedSelection: String?
-  private var lastOwnEdit: TimeInterval = -10
+  private struct ContextSnapshot: Equatable {
+    let before: String
+    let after: String
+    let selection: String?
+  }
+  /// Old proxy snapshots can arrive after a replacement has finished. Remember
+  /// only recently requested states, rather than treating every prefix as lag.
+  private var recentOwnContexts: [(context: ContextSnapshot, time: TimeInterval)] = []
   private var lastSpaceTime: TimeInterval = -.infinity
   /// Counters for on-device diagnostics; no text is recorded.
   public private(set) var laggingContextUpdates = 0
@@ -466,10 +473,13 @@ public final class KeyboardEngine {
     if let expected = expectedContext {
       let sameCursorTail = after == expectedAfterContext && selection == expectedSelection
       if current != expected || !sameCursorTail {
-        // A shorter prefix can be a delayed own-edit snapshot only while the
-        // other side of the cursor and its selection still match. Moving left
-        // also shortens the prefix, but exposes a different suffix.
-        if sameCursorTail, !current.isEmpty, clock() - lastOwnEdit < 1, expected.hasPrefix(current) {
+        // Match both sides of the cursor and selection so an external cursor
+        // move cannot be confused with a delayed snapshot of one of our edits.
+        let now = clock()
+        recentOwnContexts.removeAll { now - $0.time >= 1 }
+        let observed = ContextSnapshot(before: current, after: after, selection: selection)
+        // A truly cleared field takes precedence over an earlier empty snapshot.
+        if (!current.isEmpty || document.hasText), recentOwnContexts.contains(where: { $0.context == observed }) {
           laggingContextUpdates += 1
           return
         }
@@ -482,6 +492,7 @@ public final class KeyboardEngine {
         expectedSelection = selection
         if !windowShift {
           externalContextChanges += 1
+          recentOwnContexts.removeAll()
           phantomSpace = false
           lastEdit = .none
           pendingLearning = nil
@@ -503,6 +514,7 @@ public final class KeyboardEngine {
   /// the document we have requested, rather than an earlier host snapshot.
   private func insertDocumentText(_ text: String) {
     prepareExpectedContext()
+    rememberOwnContext()
     expectedContext = before + text
     expectedSelection = nil
     document.insertText(text)
@@ -510,6 +522,7 @@ public final class KeyboardEngine {
 
   private func deleteDocumentBackward() {
     prepareExpectedContext()
+    rememberOwnContext()
     if expectedSelection == nil { expectedContext = String(before.dropLast()) }
     expectedSelection = nil
     document.deleteBackward()
@@ -522,11 +535,17 @@ public final class KeyboardEngine {
     expectedSelection = document.selectedText.flatMap { $0.isEmpty ? nil : $0 }
   }
 
+  private func rememberOwnContext() {
+    let now = clock()
+    recentOwnContexts.removeAll { now - $0.time >= 1 }
+    recentOwnContexts.append((ContextSnapshot(before: before, after: expectedAfterContext, selection: expectedSelection), now))
+    if recentOwnContexts.count > 64 { recentOwnContexts.removeFirst(recentOwnContexts.count - 64) }
+  }
+
   private func finishEdit(deriveComposing derive: Bool = false) {
     if derive { deriveComposing() }
     updateAutomaticShift()
     suggestionsStale = true
-    lastOwnEdit = clock()
   }
 
   private func deriveComposing() {

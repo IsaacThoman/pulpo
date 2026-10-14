@@ -39,19 +39,25 @@ final class MockDocument: TextDocument {
   var lag = 0
   /// Holds a complete earlier proxy snapshot while the engine edits the real document.
   var contextBeforeOverride: String?
+  /// A synchronous proxy callback delivered before the host applies an edit.
+  var onWillEdit: (() -> Void)?
+  /// A host selection snapshot without changing this fixture's physical cursor.
+  var selectionOverride: String?
 
   var documentContextBeforeInput: String? { contextBeforeOverride ?? String(text[..<cursor].dropLast(lag)) }
   var documentContextAfterInput: String? { String(text[cursor...]) }
-  var selectedText: String? { nil }
+  var selectedText: String? { selectionOverride }
   var hasText: Bool { !text.isEmpty }
 
   func insertText(_ inserted: String) {
+    onWillEdit?()
     let offset = text.distance(from: text.startIndex, to: cursor)
     text.insert(contentsOf: inserted, at: cursor)
     cursor = text.index(text.startIndex, offsetBy: offset + inserted.count)
   }
 
   func deleteBackward() {
+    onWillEdit?()
     guard cursor > text.startIndex else { return }
     deletions += 1
     let offset = text.distance(from: text.startIndex, to: cursor)
