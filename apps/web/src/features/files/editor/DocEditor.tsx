@@ -26,6 +26,7 @@ import {
 import { ui } from '@/i18n/ui'
 import { cn } from '@/lib/utils'
 import { sessionColor, sessionLabel } from './presence'
+import { revealSuggestion } from './suggestion-layout'
 import { useSuggestionReview } from './suggestion-review'
 import { SuggestionTyping } from './suggestion-typing'
 import { SuggestionBar, SuggestionCard } from './SuggestionReview'
@@ -130,11 +131,16 @@ function DocEditorView({ editor, editable, width, toolbarSlot, onSuggestionsReso
   onSuggestionsResolved?: () => void
 }) {
   const review = useSuggestionReview(editor, onSuggestionsResolved)
+  const header = useRef<HTMLDivElement>(null)
   const content = useRef<HTMLDivElement>(null)
   const active = review.active
+  const step = (direction: 1 | -1) => {
+    const target = review.go(direction)
+    if (target) revealSuggestion(editor.view, target, header.current)
+  }
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="sticky top-0 z-10 flex flex-wrap items-center gap-2 border-b bg-background/95 px-4 py-1.5 backdrop-blur sm:px-6">
+      <div ref={header} className="sticky top-0 z-10 flex flex-wrap items-center gap-2 border-b bg-background/95 px-4 py-1.5 backdrop-blur sm:px-6">
         <div className="min-w-0 flex-1 overflow-x-auto"><DocToolbar editor={editor} /></div>
         {toolbarSlot}
         {review.hunks.length > 0 && (
@@ -143,7 +149,7 @@ function DocEditorView({ editor, editable, width, toolbarSlot, onSuggestionsReso
               hunks={review.hunks}
               active={active}
               editable={editable}
-              onStep={review.go}
+              onStep={step}
               onResolveAll={(action) => review.resolve(() => true, action)}
             />
           </div>
@@ -157,7 +163,7 @@ function DocEditorView({ editor, editable, width, toolbarSlot, onSuggestionsReso
         width === 'narrow' && 'max-w-5xl',
       )}>
         {/* Its own stacking context, so the suggestion card stays under the sticky toolbar. */}
-        <div ref={content} className="relative isolate">
+        <div ref={content} className="relative isolate" onKeyDown={review.onKeyDown}>
           <EditorContent editor={editor} />
           {active && <style>{activeHunkStyle(active.id)}</style>}
           {active && (
@@ -165,6 +171,7 @@ function DocEditorView({ editor, editable, width, toolbarSlot, onSuggestionsReso
               key={active.id}
               editor={editor}
               hunk={active}
+              anchor={review.anchor}
               editable={editable}
               container={content}
               onResolve={(action) => review.resolve((ref) => ref.id === active.id, action)}

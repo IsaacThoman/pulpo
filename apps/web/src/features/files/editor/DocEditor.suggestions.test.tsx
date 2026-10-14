@@ -163,6 +163,60 @@ describe('DocEditor suggestions', () => {
     await waitFor(() => expect(view.getByRole('dialog', { name: 'Suggestion' }).textContent).toContain(describeHunk(second!)))
   })
 
+  it('closes the card with Escape until the cursor leaves the suggestion', async () => {
+    const server = suggestingServer()
+    const { view, element, editor } = mount(server)
+    await waitFor(() => expect(element()?.querySelector('.pulpo-suggestion-insert')).toBeTruthy())
+    const [first] = listSuggestions(editor().state.doc)
+    editor().commands.setTextSelection(first!.from + 1)
+    await view.findByRole('dialog', { name: 'Suggestion' })
+
+    fireEvent.keyDown(element()!, { key: 'Escape' })
+    await waitFor(() => expect(view.queryByRole('dialog', { name: 'Suggestion' })).toBeNull())
+    editor().commands.setTextSelection(first!.from + 2)
+    expect(view.queryByRole('dialog', { name: 'Suggestion' })).toBeNull()
+    editor().commands.setTextSelection(1)
+    await waitFor(() => expect(view.getByRole('toolbar', { name: 'Suggestions' }).textContent).not.toContain('Suggestion 1 of'))
+    editor().commands.setTextSelection(first!.from + 1)
+    await view.findByRole('dialog', { name: 'Suggestion' })
+  })
+
+  it('accepts and rejects the suggestion at the cursor with shortcuts', async () => {
+    const server = suggestingServer()
+    const { element, editor } = mount(server)
+    await waitFor(() => expect(element()?.querySelector('.pulpo-suggestion-insert')).toBeTruthy())
+    const [first, second, ...rest] = listSuggestions(editor().state.doc)
+    const ids = () => listSuggestions(editor().state.doc).map((hunk) => hunk.id)
+
+    editor().commands.setTextSelection(first!.from + 1)
+    fireEvent.keyDown(element()!, { key: 'Enter', ctrlKey: true, altKey: true })
+    expect(ids()).toEqual([second!.id, ...rest.map((hunk) => hunk.id)])
+    expect(editor().state.doc.textContent).toContain('Ship the CLI soon.')
+
+    editor().commands.setTextSelection(listSuggestions(editor().state.doc)[0]!.from + 1)
+    fireEvent.keyDown(element()!, { key: 'Backspace', ctrlKey: true, altKey: true })
+    expect(ids()).toEqual(rest.map((hunk) => hunk.id))
+    expect(editor().state.doc.textContent).not.toContain(second!.inserted.trim())
+  })
+
+  it('keeps keyboard focus in the document when the card closes or resolves', async () => {
+    const server = suggestingServer()
+    const { view, element, editor } = mount(server)
+    await waitFor(() => expect(element()?.querySelector('.pulpo-suggestion-insert')).toBeTruthy())
+    editor().commands.setTextSelection(listSuggestions(editor().state.doc)[0]!.from + 1)
+    let card = await view.findByRole('dialog', { name: 'Suggestion' })
+    within(card).getByRole('button', { name: 'Reject suggestion' }).focus()
+    fireEvent.keyDown(document.activeElement!, { key: 'Escape' })
+    expect(document.activeElement).toBe(element())
+
+    editor().commands.setTextSelection(listSuggestions(editor().state.doc)[1]!.from + 1)
+    card = await view.findByRole('dialog', { name: 'Suggestion' })
+    const accept = within(card).getByRole('button', { name: 'Accept suggestion' })
+    accept.focus()
+    fireEvent.click(accept)
+    expect(document.activeElement).toBe(element())
+  })
+
   it('steps through suggestions from the review bar', async () => {
     const server = suggestingServer()
     const { view, element, editor } = mount(server)

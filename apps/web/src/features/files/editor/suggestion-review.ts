@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { listSuggestions, resolveSuggestions, type SuggestionAction, type SuggestionHunk, type SuggestionRef } from '@pulpo/client-core/doc-schema'
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
-import { Selection } from '@tiptap/pm/state'
+import { Selection, type EditorState } from '@tiptap/pm/state'
 import { useEditorState, type Editor } from '@tiptap/react'
 import { ui, uit } from '@/i18n/ui'
+import { hasPrimaryModifier } from '../browser/shortcuts'
 import { SUGGESTION_REVIEW_META } from './suggestion-typing'
 
 const hunkCache = new WeakMap<ProseMirrorNode, SuggestionHunk[]>()
@@ -64,6 +65,24 @@ export function describeHunk(hunk: Pick<SuggestionHunk, 'inserted' | 'deleted'>)
  */
 const HOVER_GRACE_MS = 250
 
+/** The card's shortcuts: Mod-Alt-Enter accepts and Mod-Alt-Backspace rejects. */
+export function suggestionShortcut(event: Pick<KeyboardEvent, 'key' | 'altKey' | 'shiftKey' | 'metaKey' | 'ctrlKey'>): SuggestionAction | null {
+  if (!event.altKey || event.shiftKey || !hasPrimaryModifier(event)) return null
+  return event.key === 'Enter' ? 'accept' : event.key === 'Backspace' ? 'reject' : null
+}
+
+/** The document position under the pointer, when there is one. */
+function pointerPos(editor: Editor, event: MouseEvent): number | null {
+  try {
+    return editor.view.posAtCoords({ left: event.clientX, top: event.clientY })?.pos ?? null
+  } catch {
+    // Measuring fails while the view updates, or without layout.
+    return null
+  }
+}
+
+type Hover = { id: string; at: number | null }
+
 /**
  * The document's suggestions and the one being looked at: the hunk under the pointer, else the
  * one at the cursor. Accepting and rejecting go through the editor so its undo covers them.
@@ -72,33 +91,39 @@ export function useSuggestionReview(editor: Editor, onResolved?: () => void) {
   // The hunk last stepped to, and where that put the cursor. While the cursor stays there that
   // hunk is the one looked at, even when the position also falls inside or next to another.
   const stepped = useRef<{ id: string; pos: number } | null>(null)
-  const { hunks, cursorId } = useEditorState({
+  const cursorHunkId = useCallback((state: EditorState) => {
+    const list = docSuggestions(state.doc)
+    const pos = state.selection.from
+    const step = stepped.current
+    return step?.pos === pos && list.some((hunk) => hunk.id === step.id) ? step.id : hunkAt(list, pos)?.id ?? null
+  }, [])
+  const { hunks, cursorId, cursorPos } = useEditorState({
     editor,
     selector: ({ editor: current }) => {
-      const list = docSuggestions(current.state.doc)
-      const pos = current.state.selection.from
-      const step = stepped.current
-      const cursorId = step?.pos === pos && list.some((hunk) => hunk.id === step.id) ? step.id : hunkAt(list, pos)?.id ?? null
-      return { hunks: list, cursorId }
+      const cursorId = cursorHunkId(current.state)
+      return { hunks: docSuggestions(current.state.doc), cursorId, cursorPos: cursorId ? current.state.selection.from : null }
     },
     // The list only changes with the document, and is then a new array.
-    equalityFn: (a, b) => b !== null && a.hunks === b.hunks && a.cursorId === b.cursorId,
+    equalityFn: (a, b) => b !== null && a.hunks === b.hunks && a.cursorId === b.cursorId && a.cursorPos === b.cursorPos,
   })
-  const [hoverId, setHoverId] = useState<string | null>(null)
+  // The hunk under the pointer, and the position the pointer reached it at.
+  const [hover, setHover] = useState<Hover | null>(null)
+  // The hunk at the cursor whose card Escape closed, until the cursor leaves it.
+  const [dismissedId, setDismissedId] = useState<string | null>(null)
   const hoverTimer = useRef<number | undefined>(undefined)
   // The hunk whose card is showing, for the pointer handlers.
   const shownId = useRef<string | null>(null)
 
   const keepHover = useCallback(() => window.clearTimeout(hoverTimer.current), [])
-  /** Hovers `id`, or nothing, unless the pointer gets back to the card or its suggestion first. */
-  const hoverSoon = useCallback((id: string | null) => {
+  /** Hovers `next`, or nothing, unless the pointer gets back to the card or its suggestion first. */
+  const hoverSoon = useCallback((next: Hover | null) => {
     window.clearTimeout(hoverTimer.current)
-    hoverTimer.current = window.setTimeout(() => setHoverId(id), HOVER_GRACE_MS)
+    hoverTimer.current = window.setTimeout(() => setHover(next), HOVER_GRACE_MS)
   }, [])
   const releaseHover = useCallback(() => hoverSoon(null), [hoverSoon])
   const clearHover = () => {
     window.clearTimeout(hoverTimer.current)
-    setHoverId(null)
+    setHover(null)
   }
 
   useEffect(() => {
@@ -107,13 +132,16 @@ export function useSuggestionReview(editor: Editor, onResolved?: () => void) {
       const id = (event.target as Element | null)?.closest?.('[data-suggestion-id]')?.getAttribute('data-suggestion-id') ?? null
       if (id === shownId.current) {
         keepHover()
-      } else if (id && !shownId.current) {
+        return
+      }
+      const next = id ? { id, at: pointerPos(editor, event) } : null
+      if (next && !shownId.current) {
         keepHover()
-        setHoverId(id)
+        setHover(next)
       } else {
         // On the way to the card the pointer may cross other suggestions, or the block suggestion
         // around an inline one; they only take the card over once the pointer stays.
-        hoverSoon(id)
+        hoverSoon(next)
       }
     }
     // Moving onto the card keeps the suggestion. React runs the card's onPointerEnter before this
@@ -130,29 +158,66 @@ export function useSuggestionReview(editor: Editor, onResolved?: () => void) {
     }
   }, [editor, keepHover, hoverSoon, releaseHover])
 
-  const active = hunks.find((hunk) => hunk.id === hoverId) ?? hunks.find((hunk) => hunk.id === cursorId) ?? null
+  useEffect(() => {
+    if (dismissedId && dismissedId !== cursorId) setDismissedId(null)
+  }, [cursorId, dismissedId])
+
+  const hovered = hover && hunks.find((hunk) => hunk.id === hover.id)
+  const atCursor = cursorId === dismissedId ? undefined : hunks.find((hunk) => hunk.id === cursorId)
+  const active = hovered || atCursor || null
+  // The card goes under the line looked at in a long hunk: the one pointed at, or the cursor's.
+  const anchor = hover && hovered ? hover.at : atCursor ? cursorPos : null
   useLayoutEffect(() => {
     shownId.current = active?.id ?? null
   })
 
-  const go = (direction: 1 | -1) => {
+  /** Steps to the next or previous hunk and puts the cursor there; the caller scrolls to it. */
+  const go = (direction: 1 | -1): SuggestionHunk | null => {
     const target = adjacentHunk(hunks, editor.state.selection.from, active?.id ?? null, direction)
-    if (!target) return
+    if (!target) return null
     clearHover()
+    setDismissedId(null)
     const { tr } = editor.state
     const selection = Selection.near(tr.doc.resolve(target.from))
     stepped.current = { id: target.id, pos: selection.from }
-    editor.view.dispatch(tr.setSelection(selection).scrollIntoView())
+    editor.view.dispatch(tr.setSelection(selection))
     editor.view.focus()
+    return target
   }
 
   const resolve = (match: (ref: SuggestionRef) => boolean, action: SuggestionAction) => {
     const tr = resolveSuggestions(editor.state.tr.setMeta(SUGGESTION_REVIEW_META, true), match, action)
     if (!tr.docChanged) return
+    // A keyboard user's focus is on the button used, which can go with the card or the bar;
+    // it moves back to the document rather than falling to the page.
+    const refocus = document.activeElement instanceof HTMLButtonElement
     clearHover()
     editor.view.dispatch(tr)
+    if (refocus) editor.view.focus()
     onResolved?.()
   }
 
-  return { hunks, active, go, resolve, keepHover, releaseHover }
+  /**
+   * For the editor and its card: Escape closes the card, and the shortcuts resolve the hunk at the
+   * cursor. Both read the editor's state, which can be ahead of the last render.
+   */
+  const onKeyDown = (event: KeyboardEvent<HTMLElement>) => {
+    const atCursorNow = cursorHunkId(editor.state)
+    if (event.key === 'Escape') {
+      if (!active) return
+      event.preventDefault()
+      event.stopPropagation()
+      clearHover()
+      setDismissedId(atCursorNow)
+      if (!editor.view.dom.contains(event.target as Node)) editor.view.focus()
+      return
+    }
+    const action = suggestionShortcut(event)
+    const target = atCursorNow ?? active?.id
+    if (!action || !target || !editor.isEditable) return
+    event.preventDefault()
+    resolve((ref) => ref.id === target, action)
+  }
+
+  return { hunks, active, anchor, go, resolve, keepHover, releaseHover, onKeyDown }
 }

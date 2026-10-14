@@ -4,6 +4,8 @@ import type { Editor } from '@tiptap/react'
 import { Check, ChevronDown, ChevronUp, MessageSquareDiff, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { ui, uit } from '@/i18n/ui'
+import { isAppleShortcut, shortcutLabel } from '../browser/shortcuts'
+import { cardSpot } from './suggestion-layout'
 import { describeHunk } from './suggestion-review'
 
 /**
@@ -21,14 +23,15 @@ export function SuggestionBar({ hunks, active, editable, onStep, onResolveAll }:
   const index = active ? hunks.findIndex((hunk) => hunk.id === active.id) : -1
   return (
     <div role="toolbar" aria-label={ui("Suggestions")} className="flex w-full flex-wrap items-center gap-1 text-xs text-muted-foreground">
-      <MessageSquareDiff className="size-3.5 shrink-0 text-sky-600 dark:text-sky-400" />
-      <span className="mr-1 tabular-nums" aria-live="polite">
+      <MessageSquareDiff className="mr-1 size-3.5 shrink-0 text-sky-600 dark:text-sky-400" />
+      {/* Before the count, whose width changes as it goes from "3 suggestions" to "Suggestion 1 of 3". */}
+      <Button variant="ghost" size="icon-sm" className="size-6" aria-label={ui("Previous suggestion")} title={ui("Previous suggestion")} onMouseDown={(event) => event.preventDefault()} onClick={() => onStep(-1)}><ChevronUp /></Button>
+      <Button variant="ghost" size="icon-sm" className="size-6" aria-label={ui("Next suggestion")} title={ui("Next suggestion")} onMouseDown={(event) => event.preventDefault()} onClick={() => onStep(1)}><ChevronDown /></Button>
+      <span className="ml-1 tabular-nums" aria-live="polite">
         {index >= 0
           ? uit`Suggestion ${index + 1} of ${hunks.length}`
           : hunks.length === 1 ? ui("1 suggestion") : uit`${hunks.length} suggestions`}
       </span>
-      <Button variant="ghost" size="icon-sm" className="size-6" aria-label={ui("Previous suggestion")} title={ui("Previous suggestion")} onMouseDown={(event) => event.preventDefault()} onClick={() => onStep(-1)}><ChevronUp /></Button>
-      <Button variant="ghost" size="icon-sm" className="size-6" aria-label={ui("Next suggestion")} title={ui("Next suggestion")} onMouseDown={(event) => event.preventDefault()} onClick={() => onStep(1)}><ChevronDown /></Button>
       {editable && (
         <span className="ml-auto flex items-center gap-1">
           <Button variant="ghost" size="sm" className="h-6 gap-1 px-2 text-xs" onMouseDown={(event) => event.preventDefault()} onClick={() => onResolveAll('accept')}>
@@ -44,14 +47,19 @@ export function SuggestionBar({ hunks, active, editable, onStep, onResolveAll }:
 }
 
 const CARD_WIDTH = 288
+/** The shortcuts `suggestionShortcut` handles, for tooltips and assistive technology. */
+const ACCEPT_KEYS = { label: shortcutLabel(isAppleShortcut() ? '↵' : 'Enter', { mod: true, alt: true }), aria: `${isAppleShortcut() ? 'Meta' : 'Control'}+Alt+Enter` }
+const REJECT_KEYS = { label: shortcutLabel(isAppleShortcut() ? '⌫' : 'Backspace', { mod: true, alt: true }), aria: `${isAppleShortcut() ? 'Meta' : 'Control'}+Alt+Backspace` }
 
 /**
  * A small card under the suggestion being looked at: what it changes, and Accept / Reject for
  * whoever can edit. Positioned inside `container`, which wraps the editor and scrolls with it.
  */
-export function SuggestionCard({ editor, hunk, editable, container, onResolve, onPointerEnter, onPointerLeave }: {
+export function SuggestionCard({ editor, hunk, anchor, editable, container, onResolve, onPointerEnter, onPointerLeave }: {
   editor: Editor
   hunk: SuggestionHunk
+  /** Where in the hunk the pointer or cursor is. */
+  anchor: number | null
   editable: boolean
   container: RefObject<HTMLElement | null>
   onResolve: (action: SuggestionAction) => void
@@ -65,10 +73,9 @@ export function SuggestionCard({ editor, hunk, editable, container, onResolve, o
       const box = container.current?.getBoundingClientRect()
       if (!box) return
       try {
-        const start = editor.view.coordsAtPos(hunk.from, 1)
-        const end = editor.view.coordsAtPos(hunk.to, -1)
-        const left = Math.max(0, Math.min(start.left - box.left, box.width - CARD_WIDTH))
-        setPosition({ top: Math.max(start.bottom, end.bottom) - box.top + 6, left })
+        const spot = cardSpot(editor.view, hunk, anchor)
+        const left = Math.max(0, Math.min(spot.left - box.left, box.width - CARD_WIDTH))
+        setPosition({ top: spot.top - box.top, left })
       } catch {
         // The hunk is gone from the view while the document updates.
         setPosition(null)
@@ -83,7 +90,7 @@ export function SuggestionCard({ editor, hunk, editable, container, onResolve, o
       editor.off('update', place)
       observer?.disconnect()
     }
-  }, [container, editor, hunk.from, hunk.to])
+  }, [anchor, container, editor, hunk])
 
   if (!position) return null
   return (
@@ -100,8 +107,8 @@ export function SuggestionCard({ editor, hunk, editable, container, onResolve, o
       <span className="min-w-0 flex-1 break-words">{describeHunk(hunk)}</span>
       {editable && (
         <span className="flex shrink-0 items-center gap-0.5">
-          <Button variant="ghost" size="icon-sm" className="size-7 text-emerald-600 hover:text-emerald-700 dark:text-emerald-400" aria-label={ui("Accept suggestion")} title={ui("Accept suggestion")} onClick={() => onResolve('accept')}><Check /></Button>
-          <Button variant="ghost" size="icon-sm" className="size-7 text-red-600 hover:text-red-700 dark:text-red-400" aria-label={ui("Reject suggestion")} title={ui("Reject suggestion")} onClick={() => onResolve('reject')}><X /></Button>
+          <Button variant="ghost" size="icon-sm" className="size-7 text-emerald-600 hover:text-emerald-700 dark:text-emerald-400" aria-label={ui("Accept suggestion")} aria-keyshortcuts={ACCEPT_KEYS.aria} title={`${ui("Accept suggestion")} (${ACCEPT_KEYS.label})`} onClick={() => onResolve('accept')}><Check /></Button>
+          <Button variant="ghost" size="icon-sm" className="size-7 text-red-600 hover:text-red-700 dark:text-red-400" aria-label={ui("Reject suggestion")} aria-keyshortcuts={REJECT_KEYS.aria} title={`${ui("Reject suggestion")} (${REJECT_KEYS.label})`} onClick={() => onResolve('reject')}><X /></Button>
         </span>
       )}
     </div>

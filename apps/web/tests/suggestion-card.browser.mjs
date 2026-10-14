@@ -79,6 +79,56 @@ try {
   })
   assert.equal(covered, 'toolbar', 'the toolbar stays on top of the card')
 
+  // The step buttons stay put while the count next to them changes width.
+  await open()
+  const next = page.getByRole('button', { name: 'Next suggestion' })
+  const bar = page.getByRole('toolbar', { name: 'Suggestions' })
+  const count = Number((await bar.textContent()).match(/(\d+) suggestions/)[1])
+  const nextBox = await next.boundingBox()
+  await next.click()
+  assert.deepEqual(await next.boundingBox(), nextBox, 'Next stays put when the count changes')
+  await next.click()
+  assert.match(await bar.textContent(), new RegExp(`Suggestion 2 of ${count}`))
+
+  // Stepping either way shows each suggestion below the toolbar, with its card in view.
+  await open()
+  const shown = () => page.evaluate(() => {
+    const card = document.querySelector('[data-suggestion-card]')
+    const id = card.getAttribute('data-suggestion-card')
+    const text = document.querySelector(`[data-suggestion-id="${id}"]`).getClientRects()[0]
+    return {
+      id,
+      textTop: text.top,
+      headerBottom: document.querySelector('[aria-label="Formatting"]').closest('.sticky').getBoundingClientRect().bottom,
+      cardBottom: card.getBoundingClientRect().bottom,
+      frameBottom: document.querySelector('[data-scroller]').getBoundingClientRect().bottom,
+    }
+  })
+  for (const button of [...Array(count).fill('Next suggestion'), ...Array(count).fill('Previous suggestion')]) {
+    await page.getByRole('button', { name: button }).click()
+    const { id, textTop, headerBottom, cardBottom, frameBottom } = await shown()
+    assert.ok(textTop >= headerBottom, `${button} shows ${id} below the toolbar`)
+    assert.ok(cardBottom <= frameBottom, `${button} shows the card of ${id}`)
+  }
+
+  // In a long suggestion the card goes under the line pointed at, not after the last line.
+  const long = suggestion('long')
+  await long.scrollIntoViewIfNeeded()
+  const longBox = await long.boundingBox()
+  assert.ok(longBox.height > 150, 'the long suggestion spans several lines')
+  await page.mouse.move(longBox.x + 40, longBox.y + 10, { steps: 6 })
+  await page.locator('[data-suggestion-card="long"]').waitFor()
+  const longCard = await card.boundingBox()
+  assert.ok(longCard.y - longBox.y < 50, 'the card is under the first line')
+
+  // The shortcut accepts the suggestion at the cursor.
+  await open()
+  await suggestion('swap', '.pulpo-suggestion-delete').click()
+  await card.waitFor()
+  await page.keyboard.press('ControlOrMeta+Alt+Enter')
+  await card.waitFor({ state: 'detached' })
+  assert.equal(await page.locator('[data-suggestion-id="swap"]').count(), 0, 'the shortcut accepts the suggestion')
+
   assert.deepEqual(errors, [])
   console.log('suggestion card stays reachable while hovered')
 } finally {
