@@ -100,7 +100,19 @@ multiple benchmark suites and simulator builds competed for the host. Its
 isolated retry passes at 3.2 ms; the full merged serialized run passes with a
 5.8 ms maximum. `npm run keyboard:test` now explicitly serializes suites rather
 than relaxing the ceiling. These host timings are not physical iPhone latency
-measurements. No new physical iPhone build was installed in this iteration.
+measurements. A subsequent device deployment installed and launched the standalone keyboard's
+Release 1.0 (1) on an iPhone 15 Pro. Before installation, the deployer verified
+`com.isaacthoman.pulpo.keyboard`, its embedded keyboard-service extension, and
+SHA-256 equality of bundled emoji/dictionary data with this checkout. Device
+app enumeration confirms the installed keyboard identifier. Physical typing feel
+and the user's original finger traces remain for real-use testing.
+
+`PULPO_IOS_APP=keyboard npm run deploy:iphone` now selects that native target
+explicitly, using a separate build cache. Bundle checks reject the main app,
+wrong/missing extensions, and stale resources. Five new guard/dispatch tests,
+all 25 keyboard Python tests, and ten existing mobile deployment orchestration
+tests pass. Unknown targets and missing keyboard scripts fail without falling
+back to the main app.
 
 ## Further iteration: typing confidence and native input
 

@@ -42,6 +42,20 @@ General › Keyboard › Keyboards › Add New Keyboard, pick Pulpo Keyboard, op
 turn on Allow Full Access. The app's Try It screen also has an in-app preview that runs
 the same keyboard inside the app without enabling it.
 
+## Install a Release build on an iPhone
+
+From the repository root, explicitly select the keyboard target:
+
+```bash
+PULPO_IOS_APP=keyboard npm run deploy:iphone
+```
+
+This builds the standalone `PulpoKeyboard` scheme in Release, verifies the app
+and embedded keyboard identifiers plus current emoji/dictionary resources, then
+installs and opens `com.isaacthoman.pulpo.keyboard`. Set `PULPO_IOS_DEVICE` to a
+paired device name or UDID to override the default `Isaac iphone`. Build output
+uses a separate keyboard cache; logs are printed only if deployment fails.
+
 ## How it works
 
 **Touch routing.** The extension paints an opaque keyboard background. Transparent
