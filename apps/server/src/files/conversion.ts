@@ -7,6 +7,7 @@ import { FILE_DOC_MAX_MARKDOWN_LENGTH, isMarkdownName, type FileConversionPrevie
 import { db } from '../database/client.js'
 import { fileDocs, fileNodes } from '../database/schema.js'
 import { AppError, notFound } from '../lib/errors.js'
+import { newId } from '../lib/ids.js'
 import { getBlobStore } from '../storage/index.js'
 import type { FileNodeRow } from './access.js'
 import { initialDocState, mergedDocState } from './doc-state.js'
@@ -86,7 +87,8 @@ export async function convertDocToBlobInTx(tx: DatabaseTransaction, userId: stri
   const doc = new Y.Doc()
   Y.applyUpdate(doc, await mergedDocState(tx, node.id))
   const bytes = Buffer.from(ydocToMarkdown(doc), 'utf8')
-  const objectKey = `users/${userId}/files/${node.id}`
+  // A fresh key: the node's earlier objects may still be kept as versions under their own keys.
+  const objectKey = `users/${userId}/files/${newId()}`
   await getBlobStore().put(objectKey, bytes, { contentType: 'text/plain', contentLength: bytes.byteLength })
   await tx.delete(fileDocs).where(eq(fileDocs.nodeId, node.id))
   const [row] = await tx.update(fileNodes).set({
