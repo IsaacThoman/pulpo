@@ -3,8 +3,8 @@ import { docJSONToMarkdown, markdownToDocJSON } from './schema.js'
 import {
   docView,
   formatBlockSuggestion,
-  hasSuggestions,
   parseBlockSuggestion,
+  resolveNode,
   suggestionFromMark,
   SUGGESTION_BLOCK_ATTR,
   SUGGESTION_DELETE_MARK,
@@ -88,27 +88,9 @@ function inlineSuggestion(node: ProseMirrorNode): SuggestionKind | undefined {
   return undefined
 }
 
-/**
- * `node` with every suggestion accepted, or null when accepting removes it. Only feeds
- * comparisons, so it skips the position bookkeeping `resolveSuggestions` needs.
- */
+/** `node` with every suggestion accepted, or null when that removes it. */
 function proposedNode(node: ProseMirrorNode): ProseMirrorNode | null {
-  if (!hasSuggestions(node)) return node
-  const kind = blockSuggestion(node)
-  if (kind === 'delete') return null
-  const children: ProseMirrorNode[] = []
-  node.forEach((child) => {
-    if (child.isInline) {
-      const inline = inlineSuggestion(child)
-      if (inline === 'delete') return
-      children.push(inline ? child.mark(child.marks.filter((mark) => !isSuggestionMark(mark))) : child)
-    } else {
-      const view = proposedNode(child)
-      if (view) children.push(view)
-    }
-  })
-  if (!children.length && !node.type.validContent(Fragment.empty)) return null
-  return node.type.create(kind ? { ...node.attrs, [SUGGESTION_BLOCK_ATTR]: null } : node.attrs, Fragment.fromArray(children), node.marks)
+  return resolveNode(node, () => true, 'accept')
 }
 
 /** A block's Markdown in context: whether two blocks read the same decides if they match. */

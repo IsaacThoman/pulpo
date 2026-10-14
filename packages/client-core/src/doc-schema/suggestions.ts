@@ -1,6 +1,7 @@
 import { Extension, Mark, mergeAttributes, type AnyExtension } from '@tiptap/core'
-import type { Mark as ProseMirrorMark, Node as ProseMirrorNode } from '@tiptap/pm/model'
-import { Transform } from '@tiptap/pm/transform'
+import { Fragment, type Mark as ProseMirrorMark, type Node as ProseMirrorNode } from '@tiptap/pm/model'
+import { Transaction } from '@tiptap/pm/state'
+import { ReplaceStep, StepMap, type Transform } from '@tiptap/pm/transform'
 
 /**
  * Inline suggestions: proposed changes stored in the document itself, Google Docs style.
@@ -170,60 +171,133 @@ function removesContent(kind: SuggestionKind, action: SuggestionAction): boolean
   return (kind === 'insert') === (action === 'reject')
 }
 
+interface Resolution {
+  match: (ref: SuggestionRef) => boolean
+  action: SuggestionAction
+  /**
+   * How positions move, as StepMap ranges (start, old size, new size) in the original
+   * document, in order. Marker changes do not move anything.
+   */
+  ranges?: number[]
+}
+
+/**
+ * The content of `node` (which starts at `start`) with the selected suggestions resolved, or
+ * the very same fragment when nothing in it changes.
+ */
+function resolveContent(node: ProseMirrorNode, start: number, resolution: Resolution): Fragment {
+  const { match, action, ranges } = resolution
+  let children: ProseMirrorNode[] | undefined
+  node.forEach((child, offset, index) => {
+    let next: ProseMirrorNode | null = child
+    if (child.isInline) {
+      for (const mark of child.marks) {
+        const ref = suggestionFromMark(mark)
+        if (!ref || !match(ref)) continue
+        if (removesContent(ref.kind, action)) {
+          ranges?.push(start + offset, child.nodeSize, 0)
+          next = null
+        } else {
+          next = child.mark(mark.removeFromSet(child.marks))
+        }
+        break
+      }
+    } else {
+      next = resolveBlock(child, start + offset, resolution)
+    }
+    if (next === child && !children) return
+    if (!children) {
+      children = []
+      for (let kept = 0; kept < index; kept++) children.push(node.child(kept))
+    }
+    if (next) children.push(next)
+  })
+  // Rebuilding joins text the removed markers used to split, as it was before the suggestion.
+  return children ? Fragment.fromArray(children) : node.content
+}
+
+/** `node` (at `pos`) with the selected suggestions resolved, or null when that removes it. */
+function resolveBlock(node: ProseMirrorNode, pos: number, resolution: Resolution): ProseMirrorNode | null {
+  const { ranges } = resolution
+  const block = parseBlockSuggestion(node.attrs[SUGGESTION_BLOCK_ATTR])
+  const own = block && resolution.match(block) ? block : null
+  if (own && removesContent(own.kind, resolution.action)) {
+    ranges?.push(pos, node.nodeSize, 0)
+    return null
+  }
+  const first = ranges?.length ?? 0
+  const content = resolveContent(node, pos + 1, resolution)
+  if (!own && content === node.content) return node
+  const attrs = own ? { ...node.attrs, [SUGGESTION_BLOCK_ATTR]: null } : node.attrs
+  if (node.type.validContent(content)) return node.type.create(attrs, content, node.marks)
+  // Removing children left the node invalid. Like deleting them in an editor would: an emptied
+  // container goes too, except a table cell, which keeps an empty paragraph so its row stays
+  // whole; other content gets what it needs added (an item's first paragraph, …).
+  const cell = node.type.spec.tableRole === 'cell' || node.type.spec.tableRole === 'header_cell'
+  const fixed = content.size || cell ? node.type.createAndFill(attrs, content, node.marks) : null
+  if (ranges) {
+    ranges.length = first
+    if (fixed) ranges.push(pos + 1, node.content.size, fixed.content.size)
+    else ranges.push(pos, node.nodeSize, 0)
+  }
+  return fixed
+}
+
+/** `doc` with the selected suggestions resolved; a document left empty gets an empty paragraph. */
+function resolveDoc(doc: ProseMirrorNode, resolution: Resolution): ProseMirrorNode {
+  const content = resolveContent(doc, 0, resolution)
+  if (content === doc.content) return doc
+  if (content.size) return doc.type.create(doc.attrs, content, doc.marks)
+  const filled = doc.type.createAndFill(doc.attrs, content, doc.marks) ?? doc.type.create(doc.attrs, content, doc.marks)
+  if (resolution.ranges) {
+    resolution.ranges.length = 0
+    resolution.ranges.push(0, doc.content.size, filled.content.size)
+  }
+  return filled
+}
+
+/**
+ * `node` with the hunks `match` selects accepted or rejected, or null when that removes it
+ * (a document is never removed: it keeps an empty paragraph).
+ */
+export function resolveNode(node: ProseMirrorNode, match: (ref: SuggestionRef) => boolean, action: SuggestionAction): ProseMirrorNode | null {
+  return node.type === node.type.schema.topNodeType ? resolveDoc(node, { match, action }) : resolveBlock(node, 0, { match, action })
+}
+
 /**
  * Accepts or rejects the hunks `match` selects, appending steps to `tr` (an editor transaction
  * or a plain Transform on the server). Accepting an insertion or rejecting a deletion keeps the
  * content and drops the marker; the other two remove the content.
+ *
+ * The result is built in one pass and applied as a single step over the range that changed,
+ * so resolving thousands of hunks stays cheap. An editor transaction's selection still moves
+ * as if each piece had been removed on its own.
  */
 export function resolveSuggestions<T extends Transform>(tr: T, match: (ref: SuggestionRef) => boolean, action: SuggestionAction): T {
-  const unmark: Array<{ from: number; to: number; mark: ProseMirrorMark }> = []
-  const clear: number[] = []
-  const remove: Array<{ from: number; to: number; block: boolean }> = []
-  tr.doc.descendants((node, pos) => {
-    const block = parseBlockSuggestion(node.attrs[SUGGESTION_BLOCK_ATTR])
-    if (block && match(block)) {
-      if (removesContent(block.kind, action)) {
-        remove.push({ from: pos, to: pos + node.nodeSize, block: true })
-        return false
-      }
-      clear.push(pos)
-    }
-    if (!node.isInline) return true
-    const to = pos + node.nodeSize
-    for (const mark of node.marks) {
-      const ref = suggestionFromMark(mark)
-      if (!ref || !match(ref)) continue
-      if (removesContent(ref.kind, action)) {
-        const last = remove.at(-1)
-        if (last && !last.block && last.to === pos) last.to = to
-        else remove.push({ from: pos, to, block: false })
-      } else {
-        const last = unmark.at(-1)
-        if (last && last.to === pos && last.mark.eq(mark)) last.to = to
-        else unmark.push({ from: pos, to, mark })
-      }
-    }
-    return true
-  })
-  // Neither of these moves positions, so the removals below can still use the ones collected.
-  for (const { from, to, mark } of unmark) tr.removeMark(from, to, mark)
-  for (const pos of clear) tr.setNodeAttribute(pos, SUGGESTION_BLOCK_ATTR, null)
-  const start = tr.steps.length
-  for (const { from, to, block } of remove.reverse()) {
-    const mapping = tr.mapping.slice(start)
-    const range = { from: mapping.map(from, 1), to: mapping.map(to, -1) }
-    if (range.from >= range.to) continue
-    // deleteRange also removes a container the block was the only child of, keeping it valid.
-    if (block) tr.deleteRange(range.from, range.to)
-    else tr.delete(range.from, range.to)
+  const ranges: number[] = []
+  const before = tr.doc
+  const after = resolveDoc(before, { match, action, ranges })
+  if (after === before) return tr
+  const start = before.content.findDiffStart(after.content)
+  if (start === null) return tr
+  let { a: endBefore, b: endAfter } = before.content.findDiffEnd(after.content)!
+  // Repeated content can make the two ends cross the start; widen both by the same amount.
+  const overlap = start - Math.min(endBefore, endAfter)
+  if (overlap > 0) {
+    endBefore += overlap
+    endAfter += overlap
   }
+  const selection = tr instanceof Transaction ? tr.selection : undefined
+  const step = new ReplaceStep(start, endBefore, after.slice(start, endAfter))
+  if (step.apply(before).doc?.eq(after)) tr.step(step)
+  else tr.replaceWith(0, before.content.size, after.content)
+  if (selection && tr instanceof Transaction) tr.setSelection(selection.map(tr.doc, new StepMap(ranges)))
   return tr
 }
 
 /** The document with every suggestion rejected (`base`) or accepted (`proposed`). */
 export function docView(doc: ProseMirrorNode, view: DocView): ProseMirrorNode {
-  if (!hasSuggestions(doc)) return doc
-  return resolveSuggestions(new Transform(doc), () => true, view === 'base' ? 'reject' : 'accept').doc
+  return resolveDoc(doc, { match: () => true, action: view === 'base' ? 'reject' : 'accept' })
 }
 
 export interface MergeMarkdownResult {
