@@ -1,4 +1,4 @@
-import { getSchema, type AnyExtension, type JSONContent } from '@tiptap/core'
+import { flattenExtensions, getExtensionField, getSchema, type AnyExtension, type JSONContent, type MarkdownTokenizer } from '@tiptap/core'
 import { TaskItem, TaskList } from '@tiptap/extension-list'
 import { TableKit } from '@tiptap/extension-table'
 import { MarkdownManager } from '@tiptap/markdown'
@@ -38,8 +38,60 @@ export function docSchema(): Schema {
   return schema
 }
 
+const ORDERED_LIST_ITEM = /^\s*[0-9A-Za-z]+[.)]\s/
+const TASK_LIST_ITEM = /^\s*[-+*]\s+\[[ xX]\]\s/
+
+/** `src` up to (not including) its `count`th line break. */
+function leadingLines(src: string, count: number): string {
+  let end = -1
+  for (let line = 0; line < count; line++) {
+    end = src.indexOf('\n', end + 1)
+    if (end < 0) return src
+  }
+  return src.slice(0, end)
+}
+
+function firstNonBlankLine(src: string): string {
+  for (let start = 0; ;) {
+    const end = src.indexOf('\n', start)
+    const line = src.slice(start, end < 0 ? undefined : end)
+    if (line.trim() || end < 0) return line
+    start = end + 1
+  }
+}
+
+/**
+ * TipTap's ordered list, task list, and table tokenizers split the entire rest of the document
+ * into lines at every block, which makes parsing quadratic (seconds for a few thousand
+ * paragraphs). These skip them, or hand them only the lines they read, wherever the leading
+ * lines rule out a match.
+ */
+function withLinearTokenizer(flattened: AnyExtension): AnyExtension {
+  // Kits must not add their (unguarded) extensions a second time.
+  const extension = getExtensionField(flattened, 'addExtensions') ? flattened.extend({ addExtensions: () => [] }) : flattened
+  const tokenizer = getExtensionField<MarkdownTokenizer | undefined>(extension, 'markdownTokenizer')
+  if (!tokenizer) return extension
+  const { start, tokenize } = tokenizer
+  const guard = (applies: (src: string) => boolean): MarkdownTokenizer => ({
+    ...tokenizer,
+    tokenize: (src, tokens, lexer) => applies(src) ? tokenize(src, tokens, lexer) : undefined,
+  })
+  switch (extension.name) {
+    case 'orderedList':
+      return extension.extend({ markdownTokenizer: guard((src) => ORDERED_LIST_ITEM.test(leadingLines(src, 1))) })
+    case 'taskList':
+      return extension.extend({ markdownTokenizer: guard((src) => TASK_LIST_ITEM.test(firstNonBlankLine(src))) })
+    case 'table':
+      // `start` only reads the header and delimiter rows.
+      if (typeof start !== 'function') return extension
+      return extension.extend({ markdownTokenizer: { ...tokenizer, start: (src: string) => start(leadingLines(src, 2)) } satisfies MarkdownTokenizer })
+    default:
+      return extension
+  }
+}
+
 function markdownManager(): MarkdownManager {
-  markdown ??= new MarkdownManager({ extensions: createDocExtensions() })
+  markdown ??= new MarkdownManager({ extensions: flattenExtensions(createDocExtensions()).map(withLinearTokenizer) })
   return markdown
 }
 
