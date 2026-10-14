@@ -170,7 +170,7 @@ function StepDuration({ ms, live }: { ms?: number; live?: boolean }) {
 
 function ActivityToolRow({ tool }: { tool: ToolItem }) {
   const [open, setOpen] = useState(false)
-  const Icon = toolActivityPresentation(tool.tool).icon
+  const Icon = toolActivityPresentation(tool.tool, tool.arguments).icon
   const running = tool.status === 'running'
   const failed = tool.status === 'failed' || tool.isError
   const hasBody = tool.arguments !== undefined || Boolean(tool.output) || Boolean(tool.imagePreview)
@@ -506,7 +506,7 @@ function ActivityBlock({
       return workspaceLabel(workspace)
     }
     if (pausedCostLimit) return costLimitStepLabel(pausedCostLimit, true)
-    if (runningTool) return toolActivityPresentation(runningTool.tool).label
+    if (runningTool) return toolActivityPresentation(runningTool.tool, runningTool.arguments).label
     if (active && hasTools) return ui("Working…")
     if (active) return ui("Thinking…")
     if (recall && !hasOtherActivity) {
@@ -534,7 +534,7 @@ function ActivityBlock({
     if (workspaceFailed) return <XCircle className="size-3.5 shrink-0 text-destructive" />
     if (pausedCostLimit) return <Pause className="size-3.5 shrink-0" />
     if (runningTool) {
-      const Icon = toolActivityPresentation(runningTool.tool).icon
+      const Icon = toolActivityPresentation(runningTool.tool, runningTool.arguments).icon
       return <Icon className="size-3.5 shrink-0 animate-pulse" />
     }
     if (active && hasTools) return <Wrench className="size-3.5 shrink-0 animate-pulse" />
