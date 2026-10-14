@@ -36,7 +36,10 @@ public final class PersonalDictionary {
     var text: String
     var key: String
   }
-  private var knownCache: [KnownWord]?
+  private var knownCache: [KnownWord]? {
+    didSet { if knownCache == nil { usedCache = nil } }
+  }
+  private var usedCache: [KnownWord]?
 
   public init(url: URL?) {
     self.url = url
@@ -198,6 +201,15 @@ public final class PersonalDictionary {
     }
     entries.sort { $0.text < $1.text }
     knownCache = entries
+    return entries
+  }
+
+  /// Every learned spelling, including words typed only once. These are not
+  /// valid literals until `isKnown`; callers may still offer them as completions.
+  var usedEntries: [KnownWord] {
+    if let usedCache { return usedCache }
+    let entries = byKey.flatMap { key, forms in forms.map { KnownWord(text: $0, key: key) } }.sorted { $0.text < $1.text }
+    usedCache = entries
     return entries
   }
 

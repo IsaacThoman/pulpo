@@ -175,6 +175,12 @@ public final class Suggester {
     for entry in personal.knownEntries where entry.key.count > typedKey.count && entry.key.hasPrefix(typedKey) {
       addCompletion(entry.text, id: lexicon.id(of: entry.text))
     }
+    // Conversations repeat their topic words. A dictionary word typed once is
+    // already weighted by the personal model; offer it as a completion before
+    // it becomes a valid personal spelling. Unknown one-off tokens stay out.
+    for entry in personal.usedEntries where entry.key.count > typedKey.count && entry.key.hasPrefix(typedKey) {
+      if let id = lexicon.id(of: entry.text) { addCompletion(entry.text, id: id) }
+    }
     return byText.values.sorted { $0.score != $1.score ? $0.score > $1.score : $0.text < $1.text }
   }
 

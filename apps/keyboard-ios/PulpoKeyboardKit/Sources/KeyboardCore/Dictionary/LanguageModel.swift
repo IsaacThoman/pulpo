@@ -17,6 +17,9 @@ public final class LanguageModel {
   static let floor = -26.0
   private lazy var fallbackWords = lexicon.frequentWords(limit: 32)
 
+  /// Personal pair history for the start of a sentence. Never typed text.
+  public static let sentenceStartHistory = "\u{2}"
+
   public init(lexicon: Lexicon, personal: PersonalDictionary) {
     self.lexicon = lexicon
     self.personal = personal
@@ -30,6 +33,12 @@ public final class LanguageModel {
       history.flatMap { lexicon.trigramHistory(preceding: earlier, previous: $0) }
     }
     return LanguageContext(history: history, previousWord: previousWord, trigram: trigram)
+  }
+
+  /// People open messages and sentences in habitual ways ("Okay", "Sure"), so
+  /// personal pairs also remember what started a sentence.
+  private func personalHistory(_ context: LanguageContext) -> String? {
+    context.previousWord ?? (context.history == lexicon.sentenceStart ? Self.sentenceStartHistory : nil)
   }
 
   /// Personal evidence gets more weight as the person types more.
@@ -57,7 +66,7 @@ public final class LanguageModel {
       var personalProbability = 0.0
       let count = Double(personal.count(of: word))
       if count > 0 { personalProbability = count / Double(max(personal.totalCount, 1)) }
-      if let previous = context.previousWord {
+      if let previous = personalHistory(context) {
         let pair = Double(personal.pairCount(previous, word))
         let history = Double(personal.historyCount(previous))
         if pair > 0, history > 0 { personalProbability = 0.7 * pair / history + 0.3 * personalProbability }
@@ -91,7 +100,7 @@ public final class LanguageModel {
         add(lexicon.successor(at: position).id)
       }
     }
-    if let previous = context.previousWord {
+    if let previous = personalHistory(context) {
       for (word, _) in personal.successors(of: previous).prefix(limit * 2) where !personal.isBlocked(word) {
         let id = lexicon.id(of: word)
         // Older personal dictionaries learned the pronoun as "i".

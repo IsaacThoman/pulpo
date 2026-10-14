@@ -598,7 +598,7 @@ public final class KeyboardEngine {
         stored = lowered
       }
     }
-    personal.learn(stored, after: context.word)
+    personal.learn(stored, after: context.word ?? (context.sentenceStart ? LanguageModel.sentenceStartHistory : nil))
   }
 
   private func acceptPendingLearning() {
