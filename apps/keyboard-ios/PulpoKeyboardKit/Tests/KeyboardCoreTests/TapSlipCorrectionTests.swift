@@ -2,7 +2,8 @@ import Foundation
 import Testing
 @testable import KeyboardCore
 
-/// Tap slips found by the frozen tap benchmark: missed or mistyped spaces.
+/// Tap slips found by the frozen tap benchmark: missed or mistyped spaces,
+/// skipped apostrophes, and doubly mistyped words that context clearly identifies.
 struct TapSlipCorrectionTests {
   let model: LanguageModel
   let suggester: Suggester
@@ -58,6 +59,17 @@ struct TapSlipCorrectionTests {
     let r = LetterGeometry.qwerty.center(Character("r").asciiValue!)!
     word.taps[3] = KeyPoint(x: r.x + 0.4, y: r.y)
     #expect(correction(word, after: "making", preceding: "not") == "anything")
+  }
+
+  @Test(arguments: [("think", "shes", "she's"), ("think", "hes", "he's"), ("and", "whats", "what's")])
+  func skippedApostrophesAreRestoredBeforeDroppingALetter(previous: String, typed: String, expected: String) {
+    #expect(correction(centered(typed), after: previous) == expected)
+  }
+
+  @Test func twoSlipsNeedStrongContextAndNoCloseRival() {
+    #expect(correction(centered("vofeo"), after: "play") == "video")
+    // Two dropped letters are not two touch slips, however common the result.
+    #expect(suggester.suggestions(for: centered("theeat"), context: .unknown, autocorrect: true).autocorrection != "that")
   }
 
   @Test func committedSplitsReplaceTheTokenAndUndoRestoresIt() {

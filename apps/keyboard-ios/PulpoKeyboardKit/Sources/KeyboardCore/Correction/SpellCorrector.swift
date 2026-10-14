@@ -51,9 +51,10 @@ public final class SpellCorrector {
   public var maximumVisitedNodes = 60_000
 
   // Costs are negative log-probabilities of each slip, so they trade off directly
-  // against the language model.
-  static let insertionCost = 4.0
-  static let deletionCost = 4.0
+  // against the language model. A letter the typist skipped is more common than
+  // an unexplained extra one; doubled taps and brushed neighbors stay cheaper.
+  static let insertionCost = 3.5
+  static let deletionCost = 5.0
   static let doubledLetterCost = 1.6
   static let transpositionCost = 3.0
   static let firstLetterPenalty = 1.2

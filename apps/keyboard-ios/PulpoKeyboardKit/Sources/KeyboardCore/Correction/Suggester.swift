@@ -312,12 +312,26 @@ public final class Suggester {
     return nil
   }
 
+  /// A restored apostrophe may trail a letter-dropping correction by this much.
+  static let apostropheRestorationMargin = 10.0
+  /// Extra edit cost an unknown literal may need when context strongly supports
+  /// one clearly separated correction of about the same length.
+  static let extendedCost = 3.0
+  static let extendedContextScore = -14.0
 
   /// The single-word correction for an unknown literal, or nil to keep it.
   private func nonwordCorrection(from ranked: [Candidate], word: TypedWord, context: LanguageContext) -> Candidate? {
     let typedKey = TextNormalizer.key(word.text)
     let standard = typedKey.count >= 7 ? 6.5 : 4.5
-    return nonwordCorrection(from: ranked, word: word, context: context, maximumCost: standard)
+    if let best = nonwordCorrection(from: ranked, word: word, context: context, maximumCost: standard) { return best }
+    // Two touch slips in one word ("vofeo" -> video) exceed the ordinary edit
+    // budget. Accept them only with strong context and no close competitor.
+    guard let best = nonwordCorrection(from: ranked, word: word, context: context, maximumCost: standard + Self.extendedCost),
+          best.cost > standard, best.score >= Self.extendedContextScore else { return nil }
+    let bestKey = TextNormalizer.key(best.text)
+    guard abs(bestKey.count - typedKey.count) <= 1 else { return nil }
+    let runnerUp = ranked.first { !$0.isCompletion && TextNormalizer.key($0.text) != bestKey && $0.text != word.text }
+    return best.score - (runnerUp?.score ?? -.infinity) >= 3 ? best : nil
   }
 
   private func nonwordCorrection(from ranked: [Candidate], word: TypedWord, context: LanguageContext, maximumCost: Double) -> Candidate? {
@@ -332,6 +346,14 @@ public final class Suggester {
       // every candidate the same language probability floor.
       ($0.id.map { lexicon.unigramLogProbability($0) } ?? -13) - $0.cost >= -20.8
     }) else { return nil }
+    // The apostrophe sits on another keyboard page and is often skipped. The
+    // same letters with it restored (shes -> she's) beat dropping a typed letter.
+    if best.cost > 0, TextNormalizer.key(best.text).count < typedKey.count, let restored = ranked.first(where: { candidate in
+      !candidate.isCompletion && candidate.cost == 0 && candidate.text.contains("'") &&
+      TextNormalizer.key(candidate.text) == typedKey &&
+      !(candidate.id.map { lexicon.flags($0).contains(.capitalized) && lexicon.frequency($0) < 100 } ?? false) &&
+      (candidate.id.map { lexicon.unigramLogProbability($0) } ?? -26) >= -20.8
+    }), restored.score + Self.apostropheRestorationMargin >= best.score { return restored }
     // A new title-cased word inside a sentence can be a name. A clear
     // adjacent transposition still supplies positive typing-error evidence;
     // adding or dropping letters does not establish that a name is wrong.
