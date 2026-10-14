@@ -86,6 +86,20 @@ downloaded corpora, recordings, result bundles, or device artifacts are committe
 The standalone native keyboard's Release simulator build also succeeds. This
 iteration has not installed a new build on the physical iPhone.
 
+An additional isolated app-hosted native callback suite passes five test methods:
+816/816 cases match direct-engine entered text and displayed top-three candidates
+with identical delivered coordinates. These comprise 432 authored swipes and 384
+recorded-path deliveries (372 swipes and 12 correctly recognized tiny taps).
+All 804 recognized swipe paths retain exact sample counts and coordinates within
+1e-6 point across individual moves, coalesced batches, batched release, and batched
+move/release delivery. Another
+1,248 tiny tap-roll controls and 48 word insertions across consecutive sequences
+pass, including ignored concurrent contacts and terminated stray cancellations.
+Initial alternative-only differences on `as`/`we` came from sub-ULP coordinate
+roundtrips near a hard length threshold; exact delivered-coordinate comparison
+resolves them. No epsilon or production source change was made. These are synthetic
+UIKit callback tests, not physical OS timing/coalescing or the user's finger traces.
+
 ## Further iteration: recorded human swipe paths
 
 Baseline is `19937ca3`. Fresh agents froze their cases before consulting earlier
@@ -229,6 +243,40 @@ rose from 1.411/2.606 to 1.835/3.202 ms. The candidate builder, extra test and
 dictionary activation were reverted; the shipped sentence-start table remains
 unchanged. Positive average human results and a corrected demonstration passage
 were insufficient grounds to accept these new clean-input failures.
+
+### Additional bounded calibration experiment
+
+A further isolated fit kept the accepted search and rejection rules fixed and
+calibrated positive shape, path-length, and language multipliers. Development
+participants were split before results into 2,279 training gestures from 625
+people and 721 validation gestures from 209 different people. A bounded search
+and regularized fit used training only; one selected candidate reached validation.
+It improved training first choices by 32 but improved actual production validation
+only 472 to 474, below its preregistered minimum gain of eight. Top-three validation
+improved 525 to 532. The candidate was rejected; final verification was untouched.
+
+An initial offline comparison incorrectly used lowercase surface forms instead
+of the benchmark's accent/apostrophe-normalized keys. The corrected baseline
+reproduces the accepted 2,004/2,238 development first/top-three totals exactly.
+All 3,000 direct-decoder top-five arrays and scores match at limits five and 100;
+feature sums reproduce scores within 1e-6. The unchanged candidate's direct and
+offline validation first/top-three outputs agree on all 721 cases after correction.
+No scoring defaults, training artifact, or runtime dependency from this experiment
+entered the branch.
+
+A separate blind investigator froze 3,230 additional controls spanning 1,242
+words before inspecting decoder results. With case and accents folded but
+apostrophes retained, baseline first/top-three results are 1,562/1,657 of 1,696
+clean paths, 922/978 of 999 offset paths, 187/251 of 413 rounded stress paths,
+and 106/121 of 122 loop paths. These independently generated rounded paths expose
+substantial remaining weakness; their severity differs from earlier synthetic
+profiles, so the rates are not interchangeable. All 60 absent targets and eight
+known one-point/no-motion cases remain in overall totals of 2,777/3,007 of 3,230.
+Production lookup-key matching would count 2,791 first choices because it also
+removes apostrophes; that conflates words such as `well` and `we'll`, so the
+stricter 2,777 total is retained here. No calibration candidate reached this
+blind control gate. Frozen corpus SHA-256:
+`4aa29667f9bccef06d4c622d5a94d9c8a7140d873bc6668a859061e5898c5d82`.
 
 ## Follow-up: prediction coverage and swipe search
 
