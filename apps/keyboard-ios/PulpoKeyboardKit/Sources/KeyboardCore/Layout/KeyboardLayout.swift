@@ -103,6 +103,7 @@ public struct KeyboardLayout: Equatable, Sendable {
   }
 
   public static func make(page: KeyboardPage, traits: InputTraits, needsGlobe: Bool, digitHints: Bool) -> KeyboardLayout {
+    if traits.keyboard == .phonePad { return phonePad(symbols: page != .letters, needsGlobe: needsGlobe) }
     if traits.isNumeric { return numberPad(decimal: traits.keyboard == .decimalPad, needsGlobe: needsGlobe) }
     let top: [KeyRow]
     switch page {
@@ -190,6 +191,32 @@ public struct KeyboardLayout: Equatable, Sendable {
       : needsGlobe ? Key(action: .nextKeyboard, label: "globe", style: .function, identifier: "key-globe")
       : Key(action: .text(""), label: "", style: .function, identifier: "key-blank")
     rows.append(KeyRow(keys: [corner, Key(action: .character("0"), label: "0"), Key(action: .delete, label: "delete", style: .function, identifier: "key-delete")]))
+    return KeyboardLayout(rows: rows, isNumberPad: true)
+  }
+
+  /// The phone pad: digits with a `+*#` page for international prefixes, codes,
+  /// pauses and formatting. Holding 0 also types "+", as on Gboard's dialer pad.
+  static func phonePad(symbols: Bool, needsGlobe: Bool) -> KeyboardLayout {
+    let delete = Key(action: .delete, label: "delete", style: .function, identifier: "key-delete")
+    guard symbols else {
+      var digits = numberPad(decimal: false, needsGlobe: false)
+      let toggle = Key(action: .page(.symbols), label: "+*#", style: .function, identifier: "key-phone-symbols")
+      let zero = Key(action: .character("0"), label: "0", alternates: ["+"], hint: "+")
+      digits.rows[3] = KeyRow(keys: [toggle, zero, delete])
+      return digits
+    }
+    let symbolRows = needsGlobe ? ["+*#", "(-)", ",;"] : ["+*#", "(-)", ",.;"]
+    var rows = symbolRows.map { row in
+      KeyRow(keys: row.map { Key(action: .character(String($0)), label: String($0)) })
+    }
+    if needsGlobe {
+      rows[2].keys.insert(Key(action: .nextKeyboard, label: "globe", style: .function, identifier: "key-globe"), at: 0)
+    }
+    rows.append(KeyRow(keys: [
+      Key(action: .page(.letters), label: "123", style: .function, identifier: "key-phone-digits"),
+      Key(action: .space, label: "space", identifier: "key-space"),
+      delete,
+    ]))
     return KeyboardLayout(rows: rows, isNumberPad: true)
   }
 }

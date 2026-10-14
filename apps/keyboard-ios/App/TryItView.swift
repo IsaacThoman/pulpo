@@ -11,7 +11,7 @@ struct TryItView: View {
 
   /// Field types to try the keyboard's layouts with.
   enum FieldKind: String, CaseIterable, Identifiable {
-    case text = "Text", email = "Email", url = "Web", number = "Number"
+    case text = "Text", email = "Email", url = "Web", number = "Number", phone = "Phone"
 
     var id: String { rawValue }
 
@@ -21,6 +21,7 @@ struct TryItView: View {
       case .email: .emailAddress
       case .url: .URL
       case .number: .numberPad
+      case .phone: .phonePad
       }
     }
   }

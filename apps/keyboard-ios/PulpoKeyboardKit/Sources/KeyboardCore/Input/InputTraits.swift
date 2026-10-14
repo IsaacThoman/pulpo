@@ -3,7 +3,7 @@ import Foundation
 /// The host text field's traits, mirrored from UIKit so the engine stays testable on macOS.
 public struct InputTraits: Equatable, Sendable {
   public enum Keyboard: Sendable {
-    case standard, email, url, webSearch, twitter, numberPad, decimalPad, numbersAndPunctuation, asciiCapable
+    case standard, email, url, webSearch, twitter, numberPad, decimalPad, phonePad, numbersAndPunctuation, asciiCapable
   }
 
   public enum Capitalization: Sendable {
@@ -43,7 +43,7 @@ public struct InputTraits: Equatable, Sendable {
     isSecure || contentType.map(Self.privateContentTypes.contains) == true
   }
 
-  public var isNumeric: Bool { keyboard == .numberPad || keyboard == .decimalPad }
+  public var isNumeric: Bool { keyboard == .numberPad || keyboard == .decimalPad || keyboard == .phonePad }
 }
 
 /// What the engine is allowed to do in the current field.

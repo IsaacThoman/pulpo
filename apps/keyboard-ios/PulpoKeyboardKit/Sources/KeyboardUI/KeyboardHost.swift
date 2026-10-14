@@ -53,7 +53,10 @@ extension InputTraits {
     case .URL: keyboard = .url
     case .webSearch: keyboard = .webSearch
     case .twitter: keyboard = .twitter
-    case .numberPad, .asciiCapableNumberPad, .phonePad, .namePhonePad: keyboard = .numberPad
+    case .numberPad, .asciiCapableNumberPad: keyboard = .numberPad
+    case .phonePad: keyboard = .phonePad
+    // Names or numbers: the letters keyboard, whose 123 page has the digits.
+    case .namePhonePad: keyboard = .standard
     case .decimalPad: keyboard = .decimalPad
     case .numbersAndPunctuation: keyboard = .numbersAndPunctuation
     case .asciiCapable: keyboard = .asciiCapable

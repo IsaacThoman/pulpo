@@ -523,6 +523,10 @@ extension KeyboardController: KeysViewDelegate {
 
   func keysView(_ view: KeysView, activate key: Key, at point: CGPoint) {
     switch key.action {
+    case .character(let text) where engine.traits.keyboard == .phonePad && engine.page != .letters:
+      // One symbol at a time on the phone pad, then back to the digits.
+      engine.insertCharacter(text)
+      engine.page = .letters
     case .character(let text):
       let isLetter = text.count == 1 && text.first?.isLetter == true
       engine.insertCharacter(text, tap: isLetter && engine.page == .letters ? normalized(point) : nil)

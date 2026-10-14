@@ -112,7 +112,8 @@ final class KeyView: UIView {
       name = "face.smiling"
       accessibilityLabel = "emoji"
     case .space:
-      label.text = style.modern ? "" : "space"
+      // The wide iOS 26 space bar is blank; a pad-sized space key needs its name.
+      label.text = style.modern && key.flexible ? "" : "space"
       label.font = style.functionFont
       accessibilityLabel = "space"
     case .returnKey:
