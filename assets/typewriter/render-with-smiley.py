@@ -7,6 +7,9 @@ overlaps the smiley's lower right.
 From the repository root, after build-typewriter.py has written typewriter.blend:
     blender --background assets/typewriter/typewriter.blend --python-exit-code 1 \
         --python assets/typewriter/render-with-smiley.py -- --size 2048
+
+Add --layers assets/typewriter/layers to also render aligned transparent body,
+face, and typewriter PNGs. Stack them in that order without moving or resizing.
 """
 
 import argparse
@@ -77,7 +80,10 @@ def main():
     parser.add_argument('--smiley-size', type=float, default=0.48,
                         help='smiley diameter in metres; scales in place without reframing')
     parser.add_argument('--output', type=Path, default=HERE / 'pulpo-typewriter.png')
+    parser.add_argument('--layers', type=Path, help='directory for the three aligned PNG layers')
     args = parser.parse_args(sys.argv[sys.argv.index('--') + 1:] if '--' in sys.argv else [])
+    if args.size < 1 or args.samples < 1:
+        parser.error('--size and --samples must be positive')
 
     scene = bpy.context.scene
     typewriter = scene.objects['Typewriter']
@@ -118,7 +124,25 @@ def main():
     scene.view_settings.view_transform = 'Standard'
     scene.view_settings.look = 'None'
     scene.render.filepath = str(args.output.resolve())
+    args.output.parent.mkdir(parents=True, exist_ok=True)
     bpy.ops.render.render(write_still=True)
+
+    if args.layers:
+        args.layers.mkdir(parents=True, exist_ok=True)
+        body = [obj for obj in smiley_parts if obj.name == 'yellow']
+        face = [obj for obj in smiley_parts if obj not in body]
+        # Keep the full scene's camera and transforms for every layer. The
+        # foreground typewriter occludes the smiley when composited last.
+        for filename, visible in (
+            ('pulpo-smiley-noface', body),
+            ('pulpo-smiley-justface', face),
+            ('typewriter', typewriter_parts),
+        ):
+            for obj in smiley_parts + typewriter_parts:
+                obj.hide_render = obj not in visible
+            scene.render.filepath = str(args.layers.resolve() / f'{filename}.png')
+            print(f'Rendering layer {filename} at {args.size} × {args.size}', flush=True)
+            bpy.ops.render.render(write_still=True)
 
 
 if __name__ == '__main__':
