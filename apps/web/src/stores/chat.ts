@@ -39,7 +39,9 @@ import { BranchSelectionIntents } from '@/lib/branch-selection-intents'
 import { BranchHistoryCache } from '@/lib/branch-history-cache'
 import { reorderList } from '@/lib/model-order'
 import { useAuth } from './auth'
-import { sidebarItemsFloor } from '@/features/sidebar/cache'
+import { pinnedItemsCeiling, sidebarItemsFloor } from '@/features/sidebar/cache'
+import { useFileToasts } from '@/features/files/browser/toasts'
+import { filesErrorMessage } from '@/features/files/file-display'
 import { adminChatAccessActive, adminChatAccountKey } from '@/features/admin-chat/access'
 import { scopedFileAccess } from '@/features/files/file-scope'
 
@@ -75,7 +77,7 @@ function topSortOrder(chats: Chat[]): number {
 }
 
 /** The top of a folder's list, above its chats and the Files items the sidebar shows there. */
-function topOrderIn(chats: Chat[], folderId: string | null): number {
+export function topOrderIn(chats: Chat[], folderId: string | null): number {
   return Math.min(topSortOrder(chatListMembers(chats, folderId)), sidebarItemsFloor(folderId) - 1)
 }
 
@@ -87,8 +89,19 @@ function insertChatId(ids: string[], id: string, position: ChatListPosition | un
     : [...ids, id]
 }
 
+/**
+ * Resolves once the server has a change to the chat list. A refusal is reported in a toast, and
+ * the list refetched to undo it here.
+ */
+function settled(requests: Promise<unknown>[]): Promise<void> {
+  return Promise.all(requests).then(() => undefined, (cause: unknown) => {
+    useFileToasts.getState().show({ message: filesErrorMessage(cause), tone: 'error' })
+    void queryClient.invalidateQueries({ queryKey: chatsKey() })
+  })
+}
+
 /** Saves a chat's new list along with the full order of that list. */
-function commitChatPlacement(id: string, nextIds: string[], patch: Partial<Pick<Chat, 'pinned' | 'folderId'>>) {
+function commitChatPlacement(id: string, nextIds: string[], patch: Partial<Pick<Chat, 'pinned' | 'folderId'>>): Promise<void> {
   const orders = applySortOrders(nextIds)
   const sortOrder = orders.get(id) ?? nextIds.length - 1
   useChat.setState((state) => ({
@@ -98,10 +111,10 @@ function commitChatPlacement(id: string, nextIds: string[], patch: Partial<Pick<
       return nextOrder === undefined ? chat : { ...chat, sortOrder: nextOrder }
     }),
   }))
-  void optimisticRequest('PATCH', `/api/chats/${id}`, { ...patch, sortOrder })
-  if (nextIds.length > 1) {
-    void optimisticRequest('PUT', '/api/chats/order', { chatIds: nextIds })
-  }
+  return settled([
+    optimisticRequest('PATCH', `/api/chats/${id}`, { ...patch, sortOrder }),
+    ...nextIds.length > 1 ? [optimisticRequest('PUT', '/api/chats/order', { chatIds: nextIds })] : [],
+  ])
 }
 
 /** Places an unpinned chat in a folder or the unfiled list, at its top unless `position` says otherwise. */
@@ -110,7 +123,7 @@ function placeInChatList(
   folderId: string | null,
   position: ChatListPosition | undefined,
   patch: Partial<Pick<Chat, 'pinned'>> = {},
-) {
+): Promise<void> {
   const { chats } = useChat.getState()
   const destination = chatListMembers(chats, folderId).filter((chat) => chat.id !== id)
   const destIds = orderedChatIds(destination)
@@ -121,11 +134,10 @@ function placeInChatList(
       chats: state.chats.map((chat) => chat.id === id ? { ...chat, ...patch, folderId, inFilesRoot: false, sortOrder } : chat),
     }))
     // The server places it above everything in the folder, Files items included.
-    void optimisticRequest('PATCH', `/api/chats/${id}`, { ...patch, folderId })
-    return
+    return settled([optimisticRequest('PATCH', `/api/chats/${id}`, { ...patch, folderId })])
   }
 
-  commitChatPlacement(id, insertChatId(destIds, id, position), { ...patch, folderId })
+  return commitChatPlacement(id, insertChatId(destIds, id, position), { ...patch, folderId })
 }
 
 function reorderChatList(ids: string[], fromId: string, toId: string, edge: 'before' | 'after') {
@@ -278,24 +290,27 @@ interface ChatState {
   abandonTemporaryChat: (id?: string) => void
   markTemporaryExpired: (id: string) => void
   setChatAutoExpiration: (id: string, enabled: boolean) => void
-  deleteChat: (id: string) => void
+  /** Moves a chat to the trash (or deletes it, with instant retention); resolves once the server has. */
+  deleteChat: (id: string) => Promise<void>
+  /** Brings trashed chats back, e.g. to undo deleting them. */
+  recoverChats: (ids: readonly string[]) => Promise<void>
+  /** Copies a chat, history included, beside the original. Resolves with the copy's id. */
+  duplicateChat: (id: string) => Promise<string>
   renameChat: (id: string, title: string) => void
   /** Sets the Files folders the agent may use in a saved chat. */
   setChatFileScope: (id: string, fileScopeIds: string[]) => void
   /** Sets what the agent may do with one item of a saved chat's Files scope. */
   setChatFileAccess: (id: string, scopeId: string, mode: FileAccessMode) => void
   togglePin: (id: string) => void
-  moveToFolder: (id: string, folderId: string | null, position?: ChatListPosition) => void
-  /** Pins a chat at `position` in the pinned list, or at its end. */
-  pinChat: (id: string, position?: ChatListPosition) => void
+  /** Resolves once the server has it, so it can be undone. */
+  moveToFolder: (id: string, folderId: string | null, position?: ChatListPosition) => Promise<void>
   /** Unpins a chat into a folder or the unfiled list, like `moveToFolder` does for unpinned chats. */
-  unpinChat: (id: string, folderId: string | null, position?: ChatListPosition) => void
-  reorderPinnedChats: (fromId: string, toId: string, edge: 'before' | 'after') => void
+  unpinChat: (id: string, folderId: string | null, position?: ChatListPosition) => Promise<void>
   reorderFolderChats: (folderId: string, fromId: string, toId: string, edge: 'before' | 'after') => void
   reorderLooseChats: (fromId: string, toId: string, edge: 'before' | 'after') => void
   shareChat: (id: string) => Promise<string>
-  /** Unpins a chat and files it in the Archive folder. */
-  archiveChat: (id: string, archiveFolderId: string) => void
+  /** Unpins a chat and files it in the Archive folder; resolves once the server has it. */
+  archiveChat: (id: string, archiveFolderId: string) => Promise<void>
   sendMessage: (chatId: string | null, content: string, modelId: string, attachments?: Attachment[], temporary?: boolean, autoExpire?: boolean, staged?: StagedSendOptions) => string
   stagePendingMessage: (input: PendingMessageInput) => { chatId: string; responseId: string }
   stagePendingQueuedMessage: (input: PendingQueuedMessageInput) => void
@@ -1288,7 +1303,21 @@ export const useChat = create<ChatState>()((set, get) => ({
     if (userId && useSettings.getState().trashRetention === 'instant') {
       void clearLocalChats(userId, [id]).catch(() => undefined)
     }
-    void optimisticRequest('DELETE', `/api/chats/${id}`).catch(() => void queryClient.invalidateQueries({ queryKey: chatsKey() }))
+    return settled([optimisticRequest('DELETE', `/api/chats/${id}`)])
+  },
+  recoverChats: async (ids) => {
+    try {
+      await Promise.all(ids.map((id) => apiRequest(`/api/chats/${id}/recover`, { method: 'POST' })))
+    } finally {
+      // The chat list puts recovered chats back where they were.
+      await queryClient.invalidateQueries({ queryKey: chatsKey() })
+    }
+  },
+  duplicateChat: async (id) => {
+    const copy = await apiRequest<ServerChat>(`/api/chats/${id}/duplicate`, { method: 'POST' })
+    queryClient.setQueryData(chatsKey(), (rows: ServerChat[] | undefined) => rows && [...rows.filter((row) => row.id !== copy.id), copy])
+    set((state) => ({ chats: [...state.chats.filter((chat) => chat.id !== copy.id), toChat(copy)] }))
+    return copy.id
   },
   renameChat: (id, rawTitle) => {
     const title = truncateChatTitle(rawTitle)
@@ -1323,9 +1352,10 @@ export const useChat = create<ChatState>()((set, get) => ({
     if (!chat) return
     const nextPinned = !chat.pinned
     const others = get().chats.filter((item) => item.id !== id)
+    // Pinned Files items share the pinned list, so a chat pinned now goes after them too.
     const maxPinnedOrder = others
       .filter((item) => item.pinned)
-      .reduce((max, item) => Math.max(max, item.sortOrder), -1)
+      .reduce((max, item) => Math.max(max, item.sortOrder), pinnedItemsCeiling())
     // Unpinned chats return to the top of their folder or the unfiled list.
     const sortOrder = nextPinned ? maxPinnedOrder + 1 : topOrderIn(others, chat.folderId)
     set((state) => ({
@@ -1338,24 +1368,13 @@ export const useChat = create<ChatState>()((set, get) => ({
     if (get().chats.find((chat) => chat.id === id)?.pinned) {
       // Pinned chats keep their pinned position; the folder applies once they are unpinned.
       set((state) => ({ chats: state.chats.map((chat) => chat.id === id ? { ...chat, folderId, inFilesRoot: false } : chat) }))
-      void optimisticRequest('PATCH', `/api/chats/${id}`, { folderId })
-      return
+      return settled([optimisticRequest('PATCH', `/api/chats/${id}`, { folderId })])
     }
-    placeInChatList(id, folderId, position)
-  },
-  pinChat: (id, position) => {
-    const chat = get().chats.find((item) => item.id === id)
-    if (!chat || chat.pinned || chat.temporary) return
-    // The chat keeps its folder, so unpinning returns it there.
-    const pinnedIds = orderedChatIds(get().chats.filter((item) => item.pinned && item.id !== id))
-    commitChatPlacement(id, insertChatId(pinnedIds, id, position), { pinned: true })
+    return placeInChatList(id, folderId, position)
   },
   unpinChat: (id, folderId, position) => {
-    if (!get().chats.find((chat) => chat.id === id)?.pinned) return
-    placeInChatList(id, folderId, position, { pinned: false })
-  },
-  reorderPinnedChats: (fromId, toId, edge) => {
-    reorderChatList(orderedChatIds(get().chats.filter((chat) => chat.pinned)), fromId, toId, edge)
+    if (!get().chats.find((chat) => chat.id === id)?.pinned) return Promise.resolve()
+    return placeInChatList(id, folderId, position, { pinned: false })
   },
   reorderFolderChats: (folderId, fromId, toId, edge) => {
     reorderChatList(orderedChatIds(chatListMembers(get().chats, folderId)), fromId, toId, edge)
@@ -1375,7 +1394,7 @@ export const useChat = create<ChatState>()((set, get) => ({
     set((state) => ({
       chats: state.chats.map((chat) => chat.id === id ? { ...chat, pinned: false, folderId: archiveFolderId, inFilesRoot: false } : chat),
     }))
-    void optimisticRequest('POST', '/api/sidebar/archive', { chatIds: [id] })
+    return settled([optimisticRequest('POST', '/api/sidebar/archive', { chatIds: [id] })])
   },
 
   stagePendingMessage: (input) => {

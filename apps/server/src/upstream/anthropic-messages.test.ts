@@ -134,6 +134,28 @@ describe('anthropicMessagesRequest', () => {
     expect(request({ model: 'm', tool_choice: 'required' })).not.toHaveProperty('tool_choice')
   })
 
+  it('accepts compacted history: consecutive user messages and a summarizer turn with tools disabled', () => {
+    const tools = [{ type: 'function', name: 'lookup', parameters: { type: 'object' } }]
+    const body = request({
+      input: [
+        { role: 'developer', content: 'system' },
+        { role: 'user', content: [{ type: 'input_text', text: 'kept' }] },
+        { role: 'user', content: [{ type: 'input_text', text: 'summary' }] },
+        { type: 'function_call', call_id: 'call_1', name: 'lookup', arguments: '{}' },
+        { type: 'function_call_output', call_id: 'call_1', output: 'result' },
+        { role: 'user', content: [{ type: 'input_text', text: 'summarize' }] },
+      ],
+      tools,
+      tool_choice: 'none',
+    })
+    expect(body.tool_choice).toEqual({ type: 'none' })
+    expect(body.messages).toEqual([
+      { role: 'user', content: [{ type: 'text', text: 'kept' }, { type: 'text', text: 'summary' }] },
+      { role: 'assistant', content: [{ type: 'tool_use', id: 'call_1', name: 'lookup', input: {} }] },
+      { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'call_1', content: [{ type: 'text', text: 'result' }] }, { type: 'text', text: 'summarize' }] },
+    ])
+  })
+
   it('maps json_schema output, cache_control, and safety_identifier', () => {
     const body = request({
       model: 'claude-opus-4-6', reasoning: { effort: 'low' },

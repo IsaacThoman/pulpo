@@ -8,8 +8,8 @@ import {
 
 const model: ManagedCodexModelSettings = {
   id: 'codex:gpt-test', name: 'GPT Test', upstreamModelId: 'gpt-test', contextWindow: 200_000,
-  maxOutputTokens: 32_000, minimumOutputReservationTokens: 8_000, compactionThresholdTokens: 100_000, compactionRetainedTurns: 4,
-  maximumCompactionThresholdTokens: 195_904,
+  maxOutputTokens: 32_000, minimumOutputReservationTokens: 8_000, compactionThresholdTokens: 100_000, compactionRetainedUserTokens: 20_000,
+  maximumCompactionThresholdTokens: 180_000,
 }
 
 describe('managed Codex model settings', () => {
@@ -22,15 +22,19 @@ describe('managed Codex model settings', () => {
     expect(validManagedCodexSettings(model)).toBe(true)
     expect(validManagedCodexSettings({ ...model, minimumOutputReservationTokens: 0 })).toBe(false)
     expect(validManagedCodexSettings({ ...model, minimumOutputReservationTokens: 1_500 })).toBe(true)
-    expect(validManagedCodexSettings({ ...model, compactionThresholdTokens: 196_000 })).toBe(false)
-    expect(validManagedCodexSettings({ ...model, compactionRetainedTurns: 0 })).toBe(false)
+    expect(validManagedCodexSettings({ ...model, compactionThresholdTokens: 180_001 })).toBe(false)
+    expect(validManagedCodexSettings({ ...model, compactionRetainedUserTokens: 0 })).toBe(true)
+    expect(validManagedCodexSettings({ ...model, compactionRetainedUserTokens: 100_000 })).toBe(true)
+    expect(validManagedCodexSettings({ ...model, compactionRetainedUserTokens: 100_001 })).toBe(false)
+    expect(validManagedCodexSettings({ ...model, compactionRetainedUserTokens: -1 })).toBe(false)
+    expect(validManagedCodexSettings({ ...model, compactionRetainedUserTokens: 1.5 })).toBe(false)
   })
 
   it('builds a restricted patch without managed model fields', () => {
     expect(managedCodexSettingsPatch(model)).toEqual({
       minimumOutputReservationTokens: 8_000,
       compactionThresholdTokens: 100_000,
-      compactionRetainedTurns: 4,
+      compactionRetainedUserTokens: 20_000,
     })
   })
 })

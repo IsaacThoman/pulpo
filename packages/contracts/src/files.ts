@@ -105,8 +105,13 @@ export const fileNodeSchema = z.object({
   systemRole: fileSystemRoleSchema.nullable().optional(),
   color: fileColorSchema.nullable().optional(),
   icon: fileIconSchema.nullable().optional(),
-  /** Position among the folder's items, chats included: ascending, newest first on ties. */
+  /**
+   * Position among the folder's items, chats included: ascending, newest first on ties. While
+   * pinned, the position in the sidebar's pinned list instead.
+   */
   sortOrder: z.number().int().optional(),
+  /** Listed under Pinned at the top of the sidebar (and not in its folder there); Files marks it. */
+  pinned: z.boolean().optional(),
   /**
    * Set while the item is an agent's suggestion the owner has not accepted yet: it was created by
    * an agent working in Suggest mode, and rejecting the suggestion deletes it.
@@ -243,7 +248,10 @@ export const createShortcutSchema = z.object({
 })
 export type CreateShortcut = z.input<typeof createShortcutSchema>
 
-/** A folder of the Chats and Archive trees, for the sidebar's move menu. */
+/**
+ * A folder of the Chats and Archive trees, for the sidebar's move menu, or of a pinned folder's
+ * tree (whose top folder's parent may be missing from the list).
+ */
 export interface SidebarFolder {
   id: string
   parentId: string | null
@@ -255,6 +263,11 @@ export interface SidebarState {
   chatsFolderId: string
   archiveFolderId: string
   folders: SidebarFolder[]
+  /**
+   * Pinned folders, files, and shortcuts, wherever they are in Files; pinned chats come from the
+   * chat list. They share one order with the pinned chats (`sortOrder`).
+   */
+  pinnedItems?: FileNode[]
 }
 
 export const createSidebarFolderSchema = z.object({
@@ -271,10 +284,15 @@ export const updateSidebarItemSchema = z.object({
   ...fileAppearanceFields,
 }).refine((input) => Object.values(input).some((value) => value !== undefined), { message: 'Nothing to update' })
 
-/** Moves chats and Files items into a folder; null is the Chats folder (the top of the sidebar). */
+/**
+ * Moves chats and Files items into a folder; null is the Chats folder (the top of the sidebar).
+ * Pinned ones stay pinned unless `unpin` takes them out of the pinned list, as dragging them out
+ * of it does.
+ */
 export const moveSidebarItemsSchema = z.object({
   ids: z.array(z.uuid()).min(1).max(FILE_BATCH_MAX_ITEMS),
   parentId: z.uuid().nullable(),
+  unpin: z.boolean().optional(),
 })
 
 /**
@@ -286,6 +304,20 @@ export const orderSidebarItemsSchema = z.object({
   ids: z.array(z.uuid()).min(1).max(10_000),
 })
 
+/**
+ * Pins chats and Files items, in this order after those already pinned, or unpins them, each back
+ * to the top of its folder. Pinned items stay where they are in Files.
+ */
+export const pinSidebarItemsSchema = z.object({
+  ids: z.array(z.uuid()).min(1).max(FILE_BATCH_MAX_ITEMS),
+  pinned: z.boolean(),
+})
+
+/** The order of the sidebar's pinned list, chats included. Listed items not yet pinned are pinned. */
+export const orderPinnedItemsSchema = z.object({
+  ids: z.array(z.uuid()).min(1).max(10_000),
+})
+
 export const archiveItemsSchema = z.object({
   chatIds: z.array(z.uuid()).max(FILE_BATCH_MAX_ITEMS).default([]),
   fileIds: z.array(z.uuid()).max(FILE_BATCH_MAX_ITEMS).default([]),
@@ -294,6 +326,7 @@ export const archiveItemsSchema = z.object({
 export type CreateSidebarFolder = z.input<typeof createSidebarFolderSchema>
 export type UpdateSidebarItem = z.infer<typeof updateSidebarItemSchema>
 export type ArchiveItems = z.input<typeof archiveItemsSchema>
+export type PinSidebarItems = z.input<typeof pinSidebarItemsSchema>
 
 export interface FileUploadReservation {
   node: FileNode

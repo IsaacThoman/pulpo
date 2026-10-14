@@ -98,6 +98,11 @@ function pushAssistantParts(
   }
 }
 
+/** The turn number buildAgentOutput gives the next assistant message of these display messages. */
+export function nextAgentDisplayTurn(displayMessages: readonly AgentMessage[]): number {
+  return 1 + displayMessages.filter((message) => message.role === 'assistant').length
+}
+
 /**
  * Ordered response.output: workspace → (reasoning|message|tool)* preserving turn order, with each
  * cost limit pause after its turn, and what the reply changed in Files last.

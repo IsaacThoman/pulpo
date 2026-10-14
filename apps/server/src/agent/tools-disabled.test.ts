@@ -2,7 +2,8 @@ import { Agent, type AgentTool } from '@earendil-works/pi-agent-core'
 import { createAssistantMessageEventStream, Type, type AssistantMessage, type Context, type Model } from '@earendil-works/pi-ai'
 import { expect, it, vi } from 'vitest'
 import { buildAgentSystemPrompt, buildToolsDisabledSystemPrompt, withoutAgentTools } from './policy.js'
-import { prepareCompactedAgentNextTurn } from './compaction.js'
+import { createAgentCompactor, type AgentRequestFrame } from './compaction.js'
+import { summaryMessageText } from '../compaction/prompt.js'
 
 const model: Model<'openai-responses'> = {
   id: 'test', name: 'Test', api: 'openai-responses', provider: 'test', baseUrl: 'https://example.invalid',
@@ -22,16 +23,31 @@ it.each([false, true])('removes tools and agent instructions from the next model
       throw new Error('Workspace tool skipped because the user chose to continue without agent tools')
     },
   }
-  const compactMessages = vi.fn(async () => [{ role: 'user' as const, content: 'Earlier work summary', timestamp: 1 }])
+  const summarize = vi.fn(async (_history: unknown[], _frame: AgentRequestFrame) => 'Earlier work summary')
+  let counts = compact ? [200, 10] : [10]
+  const compactor = createAgentCompactor({
+    responseId: 'resp',
+    settings: () => ({ enabled: true, modelId: 'test', thresholdTokens: 100, contextWindow: 100_000, retainedUserTokens: 20_000, summaryMaxTokens: 1_000 }),
+    items: () => [],
+    summarize,
+    updateItem: async () => undefined,
+    contextTokens: () => {
+      const [tokens = 0, ...rest] = counts
+      counts = rest
+      return { tokens, source: 'estimate' }
+    },
+    // The test history is tiny; treat each message as a long turn so compacting is worthwhile.
+    historyTokens: (messages) => messages.length * 10_000,
+  })
   const agent = new Agent({
     initialState: { model, systemPrompt: buildAgentSystemPrompt('Model policy', 'Agent policy'), tools: [tool] },
     prepareNextTurnWithContext: async ({ context }) => {
       if (disabled) context = withoutAgentTools(context, disabledPrompt)
-      const next = await prepareCompactedAgentNextTurn({
-        context, completedModelTurns: 1, estimatedTokens: compact ? 200 : 10, thresholdTokens: 100,
-        willContinue: true, compact: compactMessages, adopt: () => undefined,
+      const compacted = await compactor({
+        phase: 'agent_mid_run', systemPrompt: context.systemPrompt, tools: context.tools ?? [], messages: context.messages, beforeAgentTurn: 2,
       })
-      return next ?? (disabled ? { context } : undefined)
+      if (compacted) return { context: { ...context, messages: compacted } }
+      return disabled ? { context } : undefined
     },
     streamFn: (_model, context) => {
       requests.push({ ...context, messages: [...context.messages], tools: context.tools?.slice() })
@@ -60,7 +76,15 @@ it.each([false, true])('removes tools and agent instructions from the next model
   expect(requests[1]!.tools).toEqual([])
   expect(requests[1]!.systemPrompt).toBe(disabledPrompt)
   expect(JSON.stringify(requests[1])).not.toContain('Agent policy')
-  expect(compactMessages).toHaveBeenCalledTimes(compact ? 1 : 0)
+  expect(summarize).toHaveBeenCalledTimes(compact ? 1 : 0)
+  if (compact) {
+    // The summarizer sees the same tool-free frame as the next request.
+    expect(summarize.mock.calls[0]![1]).toMatchObject({ systemPrompt: disabledPrompt, tools: [] })
+    expect(requests[1]!.messages).toMatchObject([
+      { role: 'user', content: [{ type: 'text', text: 'Inspect my files' }] },
+      { role: 'user', content: [{ type: 'text', text: summaryMessageText('Earlier work summary') }] },
+    ])
+  }
   expect(agent.state.systemPrompt).toBe(disabledPrompt)
   expect(agent.state.tools).toEqual([])
 })

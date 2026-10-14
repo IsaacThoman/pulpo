@@ -8,8 +8,6 @@ import { ui, uit } from '@/i18n/ui'
 import { cn } from '@/lib/utils'
 import { FILE_COLOR_CLASSES, FILE_ICON_GLYPHS, useAppearanceEditor } from './appearance'
 import { FileNodeIcon } from './FileNodeIcon'
-import { useFileToasts } from './browser/toasts'
-import { filesErrorMessage } from './file-display'
 
 function colorLabel(color: FileColor): string {
   switch (color) {
@@ -87,9 +85,8 @@ function AppearancePicker({ nodes, onDone }: { nodes: FileNode[]; onDone: () => 
   }))
   const choose = (change: { color?: FileColor | null } | { icon?: FileIcon | null }) => {
     setAppearance((current) => ({ ...current, ...change }))
-    void setItemAppearance(nodes.map((node) => node.id), change).catch((cause) => {
-      useFileToasts.getState().show({ message: filesErrorMessage(cause, nodes.length === 1 ? nodes[0]!.name : undefined), tone: 'error' })
-    })
+    // Failures are reported in a toast.
+    void setItemAppearance(nodes.map((node) => node.id), change)
   }
   const single = nodes.length === 1 ? nodes[0]! : null
   const preview = { ...nodes[0]!, color: appearance.color ?? null, icon: appearance.icon ?? null }

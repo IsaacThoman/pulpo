@@ -30,7 +30,7 @@ import { findCostLimitItem, workspaceContinueWithoutAgentAvailableAtMs, type Com
 import type { Chat, Message } from '@/lib/types'
 import { hasMultipleBranches } from '@/lib/message-branches'
 import { getCatalogModel } from '@/stores/catalog'
-import { formatCost, formatDuration, formatSecondsLabel, timeAgo } from '@/lib/format'
+import { formatCost, formatDuration, formatNumber, formatSecondsLabel, timeAgo } from '@/lib/format'
 import { useChat } from '@/stores/chat'
 import { selectAvailableChatIds } from '@/lib/chat-availability'
 import { useSettings } from '@/stores/settings'
@@ -277,10 +277,18 @@ function CostLimitPrompt({
   )
 }
 
+function compactionTokensLabel(item: CompactionItem): string | null {
+  if (typeof item.estimated_tokens !== 'number' || typeof item.tokens_after !== 'number') return null
+  return ui("Context: {{before}} → {{after}} tokens", { before: formatNumber(item.estimated_tokens), after: formatNumber(item.tokens_after) })
+}
+
 function CompactionStepRow({ item }: { item: CompactionItem }) {
   const [open, setOpen] = useState(false)
   const active = item.status === 'in_progress'
   const failed = item.status === 'failed'
+  // Items are never parsed, so schema defaults do not apply to stored or streamed output.
+  const retained = item.retained_turns ?? []
+  const tokens = compactionTokensLabel(item)
   return (
     <Collapsible open={open} onOpenChange={setOpen} className="min-w-0">
       <CollapsibleTrigger className="flex w-full cursor-pointer items-center gap-1.5 rounded-md py-0.5 text-left text-[12px] text-muted-foreground hover:text-foreground">
@@ -292,12 +300,13 @@ function CompactionStepRow({ item }: { item: CompactionItem }) {
       <CollapsibleContent>
         <div className="mt-2 space-y-3 pl-4 text-xs">
           {item.error ? <p className="text-destructive">{item.error}</p> : null}
+          {tokens ? <p className="tabular-nums text-muted-foreground">{tokens}</p> : null}
           {item.summary ? <div><div className="mb-1 font-medium text-foreground/80">{ui("Compacted summary")}</div><Markdown content={item.summary} /></div> : null}
-          {item.retained_turns.length ? (
+          {retained.length ? (
             <div>
               <div className="mb-1 font-medium text-foreground/80">{ui("Kept verbatim")}</div>
               <div className="space-y-1.5">
-                {item.retained_turns.map((entry, index) => (
+                {retained.map((entry, index) => (
                   <div key={`${entry.role}:${index}`} className="rounded-md bg-muted/40 px-2 py-1.5">
                     <div className="mb-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{entry.role}</div>
                     <pre className="whitespace-pre-wrap break-words font-sans text-[12px] leading-5">{entry.content}</pre>
@@ -728,7 +737,7 @@ export const MessageItem = memo(function MessageItem({
               <MessageAttachmentList attachments={message.attachments} />
             </div>
           )}
-          {message.content ? <Markdown content={message.content} /> : null}
+          {message.content ? <Markdown content={message.content} breaks /> : null}
         </div>
         <div className="flex items-center gap-1">
             <div className={cn("flex items-center gap-0.5 transition-opacity group-hover:opacity-100 focus-within:opacity-100", speechActive ? "opacity-100" : "opacity-0")}>

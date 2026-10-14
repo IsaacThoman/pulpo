@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type DragEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type DragEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
 import { useTranslation } from '@/i18n/useAppTranslation'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
@@ -7,6 +7,7 @@ import {
   ArrowDownUp,
   BarChart3,
   ClipboardPaste,
+  CopyPlus,
   FilePlus2,
   Upload,
   CreditCard,
@@ -40,14 +41,12 @@ import {
 import type { FileNode, SidebarFolder, SidebarState } from '@pulpo/contracts'
 import { cn } from '@/lib/utils'
 import { reorderList } from '@/lib/model-order'
-import { compareChatOrder, useChat } from '@/stores/chat'
+import { useChat } from '@/stores/chat'
 import { useAuth } from '@/stores/auth'
 import { useSettings, type ChatSortMode } from '@/stores/settings'
 import { CHAT_TIME_GROUPS, chatTimeGroup, type ChatTimeGroup } from '@/lib/format'
-import { resolveChatExpiryMenuAction } from '@/lib/chat-expiration'
 import { chatHasStreamingResponse } from '@/lib/response-tracking'
 import type { Chat } from '@/lib/types'
-import { ExpiryCountdown } from '@/components/chat/ExpiryCountdown'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import {
   DropdownMenu,
@@ -84,23 +83,23 @@ import { useFileClipboard } from '@/features/files/browser/clipboard'
 import { useFileOperations } from '@/features/files/browser/use-file-operations'
 import { useSidePanel } from '@/features/side-panel/store'
 import { openBeside, useMainNavigate } from '@/features/side-panel/use-panel-actions'
+import { copyChatShareLink, duplicateChats } from '@/features/chat/chat-actions'
+import { ChatExpiryMenuItem } from '@/features/chat/ChatExpiryMenuItem'
 import {
-  archiveChat,
-  archiveFiles,
   archiveSidebarSelection,
   createShortcutInteractively,
   createSidebarFolder,
   findSidebarItem,
   folderOutline,
   isWithin,
-  moveSidebarItems,
   moveSidebarSelection,
   newSidebarFile,
+  orderPinnedItems,
   orderSidebarItems,
+  pinSidebarItems,
   refreshSidebar,
   pickFolder,
   renameSidebarItem,
-  trashSidebarItem,
   trashSidebarSelection,
   useFolderExpansion,
   useSidebarItems,
@@ -110,7 +109,7 @@ import {
 
 /** A chat, a folder, or another Files item (a file or shortcut). */
 type DragKind = 'folder' | 'chat' | 'item'
-/** The pinned chats, the top of the sidebar (the Chats folder), or a folder's items. */
+/** The pinned list, the top of the sidebar (the Chats folder), or a folder's items. */
 type DropList = 'pinned' | 'loose' | `folder:${string}`
 
 type DropHint =
@@ -201,7 +200,6 @@ function useSidebarDrag({ canEnter, folderOfList, groupOf }: {
   const isDragged = (id: string) => groupRef.current ? groupRef.current.some((member) => member.id === id) : id === dragIdRef.current
   /** Whether everything dragged may go in `folderId`. */
   const fitsIn = (folderId: string) => (groupRef.current?.map((member) => member.id) ?? [dragIdRef.current!]).every((id) => canEnter(id, folderId))
-  const onlyChats = () => groupRef.current ? groupRef.current.every((member) => member.kind === 'chat') : dragKindRef.current === 'chat'
 
   const acceptMove = (e: DragEvent) => {
     e.preventDefault()
@@ -215,12 +213,12 @@ function useSidebarDrag({ canEnter, folderOfList, groupOf }: {
     return e.clientY < rect.top + rect.height / 2 ? 'before' : 'after'
   }
 
-  /** Only chats can be pinned; anything else can go in any folder that is not inside it. */
+  /** Anything can be pinned, or go in any folder that is not inside it. */
   const canPlaceIn = (list: DropList) => {
     const kind = dragKindRef.current
     const id = dragIdRef.current
     if (!kind || !id) return false
-    if (list === 'pinned') return onlyChats()
+    if (list === 'pinned') return true
     const folderId = folderOfList(list)
     return Boolean(folderId) && fitsIn(folderId!)
   }
@@ -298,14 +296,13 @@ function useSidebarDrag({ canEnter, folderOfList, groupOf }: {
 
   /**
    * Everywhere a row or folder does not claim the drag (gaps, headers, empty space), snap to the
-   * nearest slot at the top level of the sidebar, or among the pinned chats for a chat dragged
-   * into the pinned area.
+   * nearest slot at the top level of the sidebar, or in the pinned list for a drag into its area.
    */
   const onSidebarDragOver = (e: DragEvent<HTMLElement>, zones: { pinnedBottom?: number }) => {
     const kind = dragKindRef.current
     if (!kind || !dragIdRef.current) return
     acceptMove(e)
-    const list: DropList = onlyChats() && zones.pinnedBottom !== undefined && e.clientY < zones.pinnedBottom ? 'pinned' : 'loose'
+    const list: DropList = zones.pinnedBottom !== undefined && e.clientY < zones.pinnedBottom ? 'pinned' : 'loose'
     if (!canPlaceIn(list)) {
       setDrop(null)
       return
@@ -316,7 +313,8 @@ function useSidebarDrag({ canEnter, folderOfList, groupOf }: {
   /**
    * Where items dragged in from the Files browser would land with the pointer over `element`,
    * the same as for a drag within the sidebar: between rows, beside a folder from the edges of
-   * its row, into a folder from its middle or open contents, or the nearest slot at the top level.
+   * its row, into a folder from its middle or open contents, or the nearest slot at the top level
+   * or in the pinned list.
    */
   const filesDropHint = (aside: HTMLElement, element: Element, y: number, nodes: readonly FileNode[]): DropHint | null => {
     if (nodes.some((node) => node.systemRole)) return null
@@ -326,7 +324,7 @@ function useSidebarDrag({ canEnter, folderOfList, groupOf }: {
     const beside = (row: HTMLElement, band: number): DropHint | null => {
       const list = row.dataset.dragList as DropList | undefined
       const id = row.dataset.dragId
-      if (!list || list === 'pinned' || !id || ids.has(id) || !fits(folderOfList(list))) return null
+      if (!list || !id || ids.has(id) || (list !== 'pinned' && !fits(folderOfList(list)))) return null
       const rect = row.getBoundingClientRect()
       if (y < rect.top + band * rect.height) return { kind: 'row', list, id, edge: 'before' }
       if (y > rect.bottom - band * rect.height) return { kind: 'row', list, id, edge: 'after' }
@@ -338,20 +336,21 @@ function useSidebarDrag({ canEnter, folderOfList, groupOf }: {
       return beside(folderRow, 1 / 4) ?? (fits(folderId) && !ids.has(folderRow.dataset.dragId ?? folderId) ? { kind: 'folder-target', folderId } : null)
     }
     const row = element.closest<HTMLElement>('[data-drag-list]')
-    if (row && row.dataset.dragList !== 'pinned') return beside(row, 1 / 2)
+    if (row) return beside(row, 1 / 2)
     const body = element.closest<HTMLElement>('[data-folder-body]')
     if (body) return fits(body.dataset.folderBody!) ? { kind: 'folder-target', folderId: body.dataset.folderBody! } : null
-    if (!fits(folderOfList('loose'))) return null
+    const list: DropList = element.closest('[data-pinned-zone]') ? 'pinned' : 'loose'
+    if (list === 'loose' && !fits(folderOfList('loose'))) return null
     const rows = Array.from(aside.querySelectorAll<HTMLElement>('[data-drag-list]'))
-      .filter((candidate) => candidate.dataset.dragList === 'loose' && !ids.has(candidate.dataset.dragId ?? ''))
-    if (rows.length === 0) return { kind: 'loose-target' }
+      .filter((candidate) => candidate.dataset.dragList === list && !ids.has(candidate.dataset.dragId ?? ''))
+    if (rows.length === 0) return list === 'loose' ? { kind: 'loose-target' } : null
     const slot = rows.findIndex((candidate) => {
       const rect = candidate.getBoundingClientRect()
       return y < rect.top + rect.height / 2
     })
     return slot < 0
-      ? { kind: 'row', list: 'loose', id: rows.at(-1)!.dataset.dragId!, edge: 'after' }
-      : { kind: 'row', list: 'loose', id: rows[slot]!.dataset.dragId!, edge: 'before' }
+      ? { kind: 'row', list, id: rows.at(-1)!.dataset.dragId!, edge: 'after' }
+      : { kind: 'row', list, id: rows[slot]!.dataset.dragId!, edge: 'before' }
   }
 
   const onSidebarDragLeave = (e: DragEvent<HTMLElement>) => {
@@ -422,18 +421,10 @@ function ChatMenu({ chat, onRename, atPointer = false }: { chat: Chat; onRename:
   const renaming = useRef(false)
   const { t } = useTranslation()
   const togglePin = useChat((state) => state.togglePin)
-  const setChatAutoExpiration = useChat((state) => state.setChatAutoExpiration)
-  const shareChat = useChat((state) => state.shareChat)
-  const deleteChat = useChat((state) => state.deleteChat)
-  const moveToFolder = useChat((state) => state.moveToFolder)
   const sidebar = useSidebarState().data
   const filesEnabled = useAuth((state) => state.filesEnabled)
-  // Without Files, nothing shows what is in Archive, so chats are not moved there.
-  const outline = folderOutline(sidebar).filter(({ folder }) => filesEnabled || !isWithin(sidebar, folder.id, sidebar!.archiveFolderId))
   const archived = Boolean(sidebar && chat.folderId && isWithin(sidebar, chat.folderId, sidebar.archiveFolderId))
   const trashRetention = useSettings((state) => state.trashRetention)
-  const automaticChatExpiration = useSettings((state) => state.automaticChatExpiration)
-  const expirationMenuAction = resolveChatExpiryMenuAction(chat.expiresAt, automaticChatExpiration)
   return (
     <DropdownMenuContent
       side={atPointer ? 'bottom' : 'right'}
@@ -463,49 +454,18 @@ function ChatMenu({ chat, onRename, atPointer = false }: { chat: Chat; onRename:
         <Pencil />
         {t('common.rename')}
       </DropdownMenuItem>
-      {expirationMenuAction && (
-        <DropdownMenuItem onClick={() => setChatAutoExpiration(chat.id, expirationMenuAction.kind === 'enable')}>
-          <Hourglass className={cn(expirationMenuAction.kind === 'disable' && 'text-teal-500 dark:text-teal-400')} />
-          {expirationMenuAction.kind === 'disable' && chat.expiresAt !== null
-            ? <span>{t('chat.disableExpiry')} <ExpiryCountdown expiresAt={chat.expiresAt} /></span>
-            : expirationMenuAction.kind === 'enable' ? expirationMenuAction.label : null}
-        </DropdownMenuItem>
+      <ChatExpiryMenuItem chat={chat} />
+      {sidebar && (
+        <MoveToFolderSub
+          sidebar={sidebar}
+          current={chat.folderId}
+          onMove={(folderId) => void moveSidebarSelection([chat.id], folderId)}
+          onOther={() => void moveInteractively([{ id: chat.id, name: chat.title }], sidebar, chat.folderId ?? sidebar.chatsFolderId)}
+        />
       )}
-      <DropdownMenuSub>
-        <DropdownMenuSubTrigger>
-          <FolderInput />
-          {t('chat.moveToFolder')}
-        </DropdownMenuSubTrigger>
-        <DropdownMenuSubContent className="max-h-80 w-52 overflow-y-auto">
-          <DropdownMenuItem disabled={!chat.folderId} onClick={() => moveToFolder(chat.id, null)}>
-            {t('chat.noFolder')}
-          </DropdownMenuItem>
-          {outline.length > 0 && <DropdownMenuSeparator />}
-          {outline.map(({ folder, depth }) => (
-            <DropdownMenuItem
-              key={folder.id}
-              disabled={chat.folderId === folder.id}
-              style={{ paddingLeft: `${0.5 + depth * 0.75}rem` }}
-              onClick={() => moveToFolder(chat.id, folder.id)}
-            >
-              {folder.systemRole === 'archive' ? <Archive /> : <FolderIcon />}
-              <span className="truncate">{folder.name}</span>
-            </DropdownMenuItem>
-          ))}
-          {filesEnabled && sidebar && (
-            <>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => void moveChatInteractively(chat, sidebar)}>
-                <FolderOpen />
-                {ui("Other folder…")}
-              </DropdownMenuItem>
-            </>
-          )}
-        </DropdownMenuSubContent>
-      </DropdownMenuSub>
       {/* The Archive folder is only reachable through Files. */}
       {!archived && sidebar && filesEnabled && (
-        <DropdownMenuItem onClick={() => archiveChat(chat.id)}>
+        <DropdownMenuItem onClick={() => void archiveSidebarSelection([chat.id])}>
           <Archive />
           {ui("Move to archive")}
         </DropdownMenuItem>
@@ -514,14 +474,16 @@ function ChatMenu({ chat, onRename, atPointer = false }: { chat: Chat; onRename:
         <SquareArrowOutUpRight />
         {ui("Create shortcut…")}
       </DropdownMenuItem>
-      <DropdownMenuItem
-        onClick={() => void shareChat(chat.id).then((url) => navigator.clipboard?.writeText(url))}
-      >
+      <DropdownMenuItem onClick={() => void duplicateChats([chat])}>
+        <CopyPlus />
+        {ui("Duplicate")}
+      </DropdownMenuItem>
+      <DropdownMenuItem onClick={() => void copyChatShareLink(chat.id)}>
         <Share2 />
         {t('chat.copyShareLink')}
       </DropdownMenuItem>
       <DropdownMenuSeparator />
-      <DropdownMenuItem variant="destructive" onClick={() => deleteChat(chat.id)}>
+      <DropdownMenuItem variant="destructive" onClick={() => void trashSidebarSelection([chat.id])}>
         <Trash2 />
         {trashRetention === 'instant' ? t('common.delete') : t('chat.trash')}
       </DropdownMenuItem>
@@ -529,16 +491,70 @@ function ChatMenu({ chat, onRename, atPointer = false }: { chat: Chat; onRename:
   )
 }
 
-/** Files a chat in any folder of Files, chosen in the destination dialog. */
-async function moveChatInteractively(chat: Chat, sidebar: SidebarState) {
+/**
+ * "Move to folder": the sidebar's folders and Archive, or (with Files) any folder in Files. The
+ * folder things are in now (`current`, null for the top of the sidebar) and folders they cannot
+ * go in (`blocked`, e.g. a folder's own subfolders) are unavailable.
+ */
+function MoveToFolderSub({ sidebar, current, blocked, onMove, onOther }: {
+  sidebar: SidebarState
+  current?: string | null
+  blocked?: (folderId: string) => boolean
+  onMove: (folderId: string | null) => void
+  onOther: () => void
+}) {
+  const { t } = useTranslation()
+  const filesEnabled = useAuth((state) => state.filesEnabled)
+  // Without Files, nothing shows what is in Archive, so nothing is moved there.
+  const outline = folderOutline(sidebar).filter(({ folder }) => filesEnabled || !isWithin(sidebar, folder.id, sidebar.archiveFolderId))
+  return (
+    <DropdownMenuSub>
+      <DropdownMenuSubTrigger>
+        <FolderInput />
+        {t('chat.moveToFolder')}
+      </DropdownMenuSubTrigger>
+      <DropdownMenuSubContent className="max-h-80 w-52 overflow-y-auto">
+        <DropdownMenuItem disabled={current === null} onClick={() => onMove(null)}>
+          {t('chat.noFolder')}
+        </DropdownMenuItem>
+        {outline.length > 0 && <DropdownMenuSeparator />}
+        {outline.map(({ folder, depth }) => (
+          <DropdownMenuItem
+            key={folder.id}
+            disabled={current === folder.id || Boolean(blocked?.(folder.id))}
+            style={{ paddingLeft: `${0.5 + depth * 0.75}rem` }}
+            onClick={() => onMove(folder.id)}
+          >
+            {folder.systemRole === 'archive' ? <Archive /> : <FolderIcon />}
+            <span className="truncate">{folder.name}</span>
+          </DropdownMenuItem>
+        ))}
+        {filesEnabled && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={onOther}>
+              <FolderOpen />
+              {ui("Other folder…")}
+            </DropdownMenuItem>
+          </>
+        )}
+      </DropdownMenuSubContent>
+    </DropdownMenuSub>
+  )
+}
+
+/** Moves chats and Files items into any folder of Files, chosen in the destination dialog. */
+async function moveInteractively(items: readonly { id: string; name: string }[], sidebar: SidebarState, initialFolderId: string) {
   const destination = await pickFolder({
-    title: uit`Move "${chat.title}"`,
+    title: items.length === 1 ? uit`Move "${items[0]!.name}"` : uit`Move ${items.length} items`,
     action: ui("Move here"),
-    initialFolderId: chat.folderId ?? sidebar.chatsFolderId,
+    initialFolderId,
+    // A folder cannot go inside itself.
+    excludedIds: new Set(items.map((item) => item.id)),
   })
   if (destination === undefined) return
-  // My files and the Chats folder both mean the sidebar's unfiled list.
-  useChat.getState().moveToFolder(chat.id, destination === sidebar.chatsFolderId ? null : destination)
+  // My files and the Chats folder both mean the top of the sidebar.
+  await moveSidebarSelection(items.map((item) => item.id), destination === sidebar.chatsFolderId ? null : destination)
 }
 
 /**
@@ -622,9 +638,26 @@ interface RowSelection {
 
 const SELECTED_ROW = 'bg-sky-500/15 text-sidebar-foreground hover:bg-sky-500/20 dark:bg-sky-400/15'
 
-/** Desktop sidebar widths, matching the classes on the sidebar below. */
-export const SIDEBAR_WIDTH = 264
-export const SIDEBAR_COLLAPSED_WIDTH = 52
+/** Shown in place of a row's "⋯" button while Shift is held, to trash the row in one click. */
+function QuickTrashButton({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button
+      className="relative hidden rounded p-0.5 text-muted-foreground hover:bg-background/60 hover:text-destructive group-hover:block"
+      onClick={(event) => {
+        event.stopPropagation()
+        onClick()
+      }}
+      aria-label={label}
+    >
+      <Trash2 className="size-4" />
+    </button>
+  )
+}
+
+/** What trashing a folder, file, or shortcut is called: shortcuts are deleted, and without Files nothing shows the trash. */
+function trashLabel(node: Pick<FileNode, 'kind'>, filesEnabled: boolean, deleteLabel: string): string {
+  return node.kind === 'shortcut' ? ui("Delete shortcut") : filesEnabled ? ui("Move to trash") : deleteLabel
+}
 
 export function ChatRow({
   chat,
@@ -671,7 +704,6 @@ export function ChatRow({
   // Right-clicking the row opens the chat's menu at the pointer instead of the browser's link menu.
   const [menuPoint, setMenuPoint] = useState<{ x: number; y: number } | null>(null)
   const renameChat = useChat((state) => state.renameChat)
-  const deleteChat = useChat((state) => state.deleteChat)
   const trashRetention = useSettings((state) => state.trashRetention)
   const generating = useChat((state) => chatHasStreamingResponse(
     chat.id,
@@ -739,16 +771,10 @@ export function ChatRow({
         {chat.title}
       </Link>}
       {shiftHeld && (
-        <button
-          className={cn(actionClassName, 'relative hidden hover:text-destructive group-hover:block')}
-          onClick={(e) => {
-            e.stopPropagation()
-            deleteChat(chat.id)
-          }}
-          aria-label={uit`${trashRetention === 'instant' ? t('common.delete') : t('chat.trash')} chat`}
-        >
-          <Trash2 className="size-4" />
-        </button>
+        <QuickTrashButton
+          label={uit`${trashRetention === 'instant' ? t('common.delete') : t('chat.trash')} chat`}
+          onClick={() => void trashSidebarSelection([chat.id])}
+        />
       )}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
@@ -903,7 +929,9 @@ function ItemMenu({ node, folder, sidebar, atPointer = false, onRename, onNewFol
   const shortcut = node.kind === 'shortcut'
   const archived = isWithin(sidebar, node.id, sidebar.archiveFolderId)
   const path = itemPath(node)
+  const opens = path && (filesEnabled || !path.startsWith('/files')) ? path : null
   const besideId = fileTargetId(node)
+  const parentId = node.parentId === sidebar.chatsFolderId ? null : node.parentId
   return (
     <DropdownMenuContent
       side={atPointer ? 'bottom' : 'right'}
@@ -925,10 +953,17 @@ function ItemMenu({ node, folder, sidebar, atPointer = false, onRename, onNewFol
           {ui("New folder inside")}
         </DropdownMenuItem>
       )}
-      {path && (filesEnabled || !path.startsWith('/files')) && (
-        <DropdownMenuItem onClick={() => go(path)}>
+      {opens && (
+        <DropdownMenuItem onClick={() => go(opens)}>
           <FolderOpen />
           {folder ? ui("Open in Files") : ui("Open")}
+        </DropdownMenuItem>
+      )}
+      {/* The desktop app has no tabs. */}
+      {opens && !isDesktopRuntime() && (
+        <DropdownMenuItem onClick={() => { window.open(opens, '_blank', 'noopener') }}>
+          <ExternalLink />
+          {ui("Open in new tab")}
         </DropdownMenuItem>
       )}
       {besideId && splitAvailable && (
@@ -937,6 +972,11 @@ function ItemMenu({ node, folder, sidebar, atPointer = false, onRename, onNewFol
           {ui("Open to the right")}
         </DropdownMenuItem>
       )}
+      {/* The Sidebar folder is the sidebar itself; Archive can be pinned like any folder. */}
+      <DropdownMenuItem disabled={node.systemRole === 'chats'} onClick={() => void pinSidebarItems([node.id], !node.pinned, [node])}>
+        {node.pinned ? <PinOff /> : <Pin />}
+        {node.pinned ? t('chat.unpin') : t('chat.pin')}
+      </DropdownMenuItem>
       {/* Built-in folders list the actions they do not allow, unavailable, as in Files. */}
       <DropdownMenuItem disabled={system} onClick={() => { renameChosen.current = true }}>
         <Pencil />
@@ -948,6 +988,16 @@ function ItemMenu({ node, folder, sidebar, atPointer = false, onRename, onNewFol
           {ui("Color and icon…")}
         </DropdownMenuItem>
       )}
+      {!system && (
+        <MoveToFolderSub
+          sidebar={sidebar}
+          current={parentId}
+          // A folder cannot go inside itself.
+          blocked={(folderId) => isWithin(sidebar, folderId, node.id)}
+          onMove={(folderId) => void moveSidebarSelection([node.id], folderId)}
+          onOther={() => void moveInteractively([node], sidebar, node.parentId ?? sidebar.chatsFolderId)}
+        />
+      )}
       {!shortcut && (
         <DropdownMenuItem onClick={() => void createShortcutInteractively('file', node.id)}>
           <SquareArrowOutUpRight />
@@ -955,15 +1005,15 @@ function ItemMenu({ node, folder, sidebar, atPointer = false, onRename, onNewFol
         </DropdownMenuItem>
       )}
       {!archived && filesEnabled && (
-        <DropdownMenuItem disabled={system} onClick={() => void archiveFiles([node.id])}>
+        <DropdownMenuItem disabled={system} onClick={() => void archiveSidebarSelection([node.id])}>
           <Archive />
           {ui("Move to archive")}
         </DropdownMenuItem>
       )}
       <DropdownMenuSeparator />
-      <DropdownMenuItem variant="destructive" disabled={system} onClick={() => void trashSidebarItem(node.id)}>
+      <DropdownMenuItem variant="destructive" disabled={system} onClick={() => void trashSidebarSelection([node.id])}>
         <Trash2 />
-        {shortcut ? ui("Delete shortcut") : filesEnabled ? ui("Move to trash") : t('common.delete')}
+        {trashLabel(node, filesEnabled, t('common.delete'))}
       </DropdownMenuItem>
     </DropdownMenuContent>
   )
@@ -1014,7 +1064,7 @@ function SpaceMenuContent({ folderId, onNewChat, onNewFolder, onUpload, go }: {
       </DropdownMenuItem>
       {filesEnabled && (
         <>
-          <DropdownMenuItem onClick={() => void newSidebarFile(folderId).then((node) => go(`/files/d/${node.id}`), (cause) => ops.fail(cause))}>
+          <DropdownMenuItem onClick={() => void newSidebarFile(folderId).then((node) => { if (node) go(`/files/d/${node.id}`) })}>
             <FilePlus2 />
             {ui("New file")}
           </DropdownMenuItem>
@@ -1063,55 +1113,29 @@ function SelectionMenuContent({ ids, sidebar, onDone }: { ids: string[]; sidebar
   const { t } = useTranslation()
   const filesEnabled = useAuth((state) => state.filesEnabled)
   const trashRetention = useSettings((state) => state.trashRetention)
-  // Without Files, nothing shows what is in Archive, so nothing is moved there.
-  const outline = folderOutline(sidebar).filter(({ folder }) => filesEnabled || !isWithin(sidebar, folder.id, sidebar.archiveFolderId))
   // A selected folder cannot go inside itself.
   const holdsSelected = (folderId: string) => ids.some((id) => isWithin(sidebar, folderId, id))
   const move = (folderId: string | null) => {
     void moveSidebarSelection(ids, folderId)
     onDone()
   }
-  const moveElsewhere = async () => {
-    const destination = await pickFolder({ title: uit`Move ${ids.length} items`, action: ui("Move here"), initialFolderId: sidebar.chatsFolderId })
-    if (destination !== undefined) move(destination)
+  const moveElsewhere = () => {
+    onDone()
+    void moveInteractively(ids.map((id) => ({ id, name: '' })), sidebar, sidebar.chatsFolderId)
   }
   // Files and folders among the selection can be given a color and icon; chats are left out.
   const styled = ids.flatMap((id) => findSidebarItem(id) ?? []).filter(hasAppearance)
+  // Pins whatever is not pinned yet; once everything is, unpins it all.
+  const chats = new Map(useChat.getState().chats.map((chat) => [chat.id, chat]))
+  const pinning = ids.some((id) => !(chats.get(id)?.pinned ?? findSidebarItem(id)?.pinned))
   return (
     <DropdownMenuContent side="bottom" align="start" sideOffset={2} className="w-52">
       <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">{uit`${ids.length} selected`}</DropdownMenuLabel>
-      <DropdownMenuSub>
-        <DropdownMenuSubTrigger>
-          <FolderInput />
-          {t('chat.moveToFolder')}
-        </DropdownMenuSubTrigger>
-        <DropdownMenuSubContent className="max-h-80 w-52 overflow-y-auto">
-          <DropdownMenuItem onClick={() => move(null)}>
-            {t('chat.noFolder')}
-          </DropdownMenuItem>
-          {outline.length > 0 && <DropdownMenuSeparator />}
-          {outline.map(({ folder, depth }) => (
-            <DropdownMenuItem
-              key={folder.id}
-              disabled={holdsSelected(folder.id)}
-              style={{ paddingLeft: `${0.5 + depth * 0.75}rem` }}
-              onClick={() => move(folder.id)}
-            >
-              {folder.systemRole === 'archive' ? <Archive /> : <FolderIcon />}
-              <span className="truncate">{folder.name}</span>
-            </DropdownMenuItem>
-          ))}
-          {filesEnabled && (
-            <>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => void moveElsewhere()}>
-                <FolderOpen />
-                {ui("Other folder…")}
-              </DropdownMenuItem>
-            </>
-          )}
-        </DropdownMenuSubContent>
-      </DropdownMenuSub>
+      <DropdownMenuItem onClick={() => { void pinSidebarItems(ids, pinning); onDone() }}>
+        {pinning ? <Pin /> : <PinOff />}
+        {pinning ? t('chat.pin') : t('chat.unpin')}
+      </DropdownMenuItem>
+      <MoveToFolderSub sidebar={sidebar} blocked={holdsSelected} onMove={move} onOther={moveElsewhere} />
       {styled.length > 0 && (
         <DropdownMenuItem onClick={() => editAppearance(styled)}>
           <Palette />
@@ -1149,6 +1173,7 @@ function PointerMenu({ point, onClose, children }: { point: { x: number; y: numb
 /** A file, or a shortcut to a file or chat, in the sidebar. Opens the way it does from Files. */
 function SidebarItemRow({ node, list, reorderable, sidebar, chatId, drag, onDrop, onNewFolder, go, ...props }: LoadedTreeProps & RowPlacement & { node: FileNode }) {
   const { t } = useTranslation()
+  const filesEnabled = useAuth((state) => state.filesEnabled)
   const [menuPoint, setMenuPoint] = useState<{ x: number; y: number } | null>(null)
   const [renaming, setRenaming] = useState(false)
   const goMain = useMainNavigate()
@@ -1208,10 +1233,14 @@ function SidebarItemRow({ node, list, reorderable, sidebar, chatId, drag, onDrop
         </button>
       )}
       {node.suggestion && !renaming && <SuggestedBadge />}
+      {props.shiftHeld && <QuickTrashButton label={trashLabel(node, filesEnabled, t('common.delete'))} onClick={() => void trashSidebarSelection([node.id])} />}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button
-            className="relative invisible rounded p-0.5 text-muted-foreground hover:bg-background/60 hover:text-foreground group-hover:visible data-[state=open]:visible"
+            className={cn(
+              'relative invisible rounded p-0.5 text-muted-foreground hover:bg-background/60 hover:text-foreground group-hover:visible data-[state=open]:visible',
+              props.shiftHeld && 'group-hover:hidden',
+            )}
             aria-label={ui("Item options")}
           >
             <MoreHorizontal className="size-4" />
@@ -1277,6 +1306,7 @@ function SidebarFolderNode({ folder, node, shortcut, list, reorderable, ...props
   shortcut?: FileNode
 }) {
   const { t } = useTranslation()
+  const filesEnabled = useAuth((state) => state.filesEnabled)
   const { sidebar, chatsByFolder, drag, onDrop, onNewFolder, newFolderId, onNewFolderNamed, go } = props
   // A shortcut opens independently of the folder it points at.
   const expansionKey = shortcut ? `shortcut:${shortcut.id}` : folder.id
@@ -1361,10 +1391,17 @@ function SidebarFolderNode({ folder, node, shortcut, list, reorderable, ...props
             </button>
           )}
         </div>
+        {/* Built-in folders cannot be trashed. */}
+        {props.shiftHeld && dragged && (
+          <QuickTrashButton label={trashLabel(menuNode, filesEnabled, t('common.delete'))} onClick={() => void trashSidebarSelection([menuNode.id])} />
+        )}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
-              className="relative invisible rounded p-0.5 text-muted-foreground hover:bg-background/60 hover:text-foreground group-hover:visible data-[state=open]:visible"
+              className={cn(
+                'relative invisible rounded p-0.5 text-muted-foreground hover:bg-background/60 hover:text-foreground group-hover:visible data-[state=open]:visible',
+                props.shiftHeld && dragged && 'group-hover:hidden',
+              )}
               aria-label={t('sidebar.folderOptions')}
             >
               <MoreHorizontal className="size-4" />
@@ -1428,10 +1465,6 @@ export function Sidebar({
   const composerModelId = useChat((state) => state.composerModelId)
   const sidebar = useSidebarState().data
   const setFolderExpanded = useFolderExpansion((s) => s.setExpanded)
-  const reorderPinnedChats = useChat((s) => s.reorderPinnedChats)
-  const pinChat = useChat((s) => s.pinChat)
-  const unpinChat = useChat((s) => s.unpinChat)
-  const moveToFolder = useChat((s) => s.moveToFolder)
   const user = useAuth((s) => s.user)
   const instanceReady = useAuth((s) => s.instanceReady)
   const networkReady = !isDesktopRuntime() || instanceReady
@@ -1562,40 +1595,40 @@ export function Sidebar({
       dropGroup(hint, group.map((member) => member.id))
       return
     }
-    // Pinned chats dropped anywhere else leave the pinned list.
-    const place = sourceList === 'pinned' ? unpinChat : moveToFolder
+    // Pinned items dropped anywhere else leave the pinned list.
+    const fromPinned = sourceList === 'pinned'
 
     // Dropped on a folder, or below everything at the top level: to the top of that folder.
     if (hint.kind === 'folder-target' || hint.kind === 'loose-target') {
       const folderId = hint.kind === 'folder-target' ? hint.folderId : null
       if (hint.kind === 'loose-target' && sourceList === 'loose') return
-      if (kind === 'chat') place(from, folderId)
-      else void moveSidebarItems([from], folderId)
+      void moveSidebarSelection([from], folderId, { unpin: fromPinned })
       if (folderId) ensureFolderExpanded(folderId)
       return
     }
     if (hint.id === from) return
-    if (hint.list === 'pinned') {
-      if (kind !== 'chat') return
-      if (sourceList === 'pinned') reorderPinnedChats(from, hint.id, hint.edge)
-      else pinChat(from, { targetId: hint.id, edge: hint.edge })
-      return
-    }
-    // Chats, folders, files, and shortcuts share one order in each folder.
-    const folderId = folderOfList(hint.list)
-    if (!folderId) return
+    // Chats, folders, files, and shortcuts share one order in each folder and in the pinned list.
     const ids = listRowIds(hint.list).filter((id) => id !== from)
-    void orderSidebarItems(folderId, reorderList([...ids, from], from, hint.id, hint.edge))
+    placeInList(hint.list, reorderList([...ids, from], from, hint.id, hint.edge))
   }
 
-  /** Puts `ids` together, in their order, at a drop line in a folder's list. */
-  const placeAtLine = (hint: Extract<DropHint, { kind: 'row' }>, ids: readonly string[], incoming?: FileNode[]): boolean => {
-    const folderId = folderOfList(hint.list)
+  /** Saves the order of a folder's list or the pinned list; listed items from elsewhere join it. */
+  const placeInList = (list: DropList, ids: string[], incoming?: FileNode[]): boolean => {
+    if (list === 'pinned') {
+      void orderPinnedItems(ids, incoming)
+      return true
+    }
+    const folderId = folderOfList(list)
     if (!folderId) return false
+    void orderSidebarItems(folderId, ids, incoming)
+    return true
+  }
+
+  /** Puts `ids` together, in their order, at a drop line. */
+  const placeAtLine = (hint: Extract<DropHint, { kind: 'row' }>, ids: readonly string[], incoming?: FileNode[]): boolean => {
     const rest = listRowIds(hint.list).filter((id) => !ids.includes(id))
     const at = rest.indexOf(hint.id) + (hint.edge === 'after' ? 1 : 0)
-    void orderSidebarItems(folderId, [...rest.slice(0, at), ...ids, ...rest.slice(at)], incoming)
-    return true
+    return placeInList(hint.list, [...rest.slice(0, at), ...ids, ...rest.slice(at)], incoming)
   }
 
   /** Drops several selected rows together, in their order, where the sidebar showed. */
@@ -1607,28 +1640,18 @@ export function Sidebar({
       return
     }
     if (ids.includes(hint.id)) return
-    if (hint.list !== 'pinned') {
-      placeAtLine(hint, ids)
-      return
-    }
-    // Each chat goes right after the one before it, starting at the line shown.
-    let target: { id: string; edge: 'before' | 'after' } = { id: hint.id, edge: hint.edge }
-    for (const id of ids) {
-      if (useChat.getState().chats.find((chat) => chat.id === id)?.pinned) reorderPinnedChats(id, target.id, target.edge)
-      else pinChat(id, { targetId: target.id, edge: target.edge })
-      target = { id, edge: 'after' }
-    }
+    placeAtLine(hint, ids)
   }
 
   /** Places items dragged in from the Files browser where the sidebar showed (see useItemDrag). */
   const dropFromFiles = (nodes: FileNode[]): boolean => {
     const hint = drag.dropRef.current
     drag.setDrop(null)
-    if (!hint || hint.kind === 'row' && hint.list === 'pinned') return false
+    if (!hint) return false
     const ids = nodes.map((node) => node.id)
     if (hint.kind !== 'row') {
       const folderId = hint.kind === 'folder-target' ? hint.folderId : null
-      void moveSidebarItems(ids, folderId)
+      void moveSidebarSelection(ids, folderId, { unpin: true, nodes })
       return true
     }
     // Several items stay together, in their order, at the spot shown.
@@ -1679,7 +1702,8 @@ export function Sidebar({
 
   // The sidebar is the Chats folder: its chats, folders, files, and shortcuts, as one list.
   const rootItems = useSidebarItems(sidebar?.chatsFolderId).data ?? []
-  const pinned = useMemo(() => chats.filter((c) => c.pinned).sort(compareChatOrder), [chats])
+  // Pinned chats and Files items share one order above it, wherever they are in Files.
+  const pinnedEntries = sidebarEntries(chats.filter((c) => c.pinned), sidebar?.pinnedItems ?? [])
   // Chats filed in folders show inside them; chats in folders the sidebar does not show stay in Files.
   const inFolders = new Map<string, Chat[]>()
   const loose: Chat[] = []
@@ -1694,7 +1718,7 @@ export function Sidebar({
    * so renaming starts once the folder is listed under its final name.
    */
   const newFolder = (parentId?: string) => {
-    void createSidebarFolder(ui("Untitled folder"), parentId).then((node) => setNewFolderId(node.id))
+    void createSidebarFolder(ui("Untitled folder"), parentId).then((node) => { if (node) setNewFolderId(node.id) })
   }
   const treeProps: TreeProps = {
     sidebar,
@@ -1833,7 +1857,8 @@ export function Sidebar({
                 'transition-[width] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]'
             ),
         mobile && !mobileOpen && '-translate-x-full',
-        !mobile && (collapsed ? 'desktop-collapsed-sidebar w-[52px]' : 'w-[264px]')
+        // The open width is the user's, set by AppLayout through `--sidebar-width`.
+        !mobile && (collapsed ? 'desktop-collapsed-sidebar w-[52px]' : 'w-(--sidebar-width)')
       )}
     >
       {!mobile && isDesktopRuntime() && (
@@ -1935,30 +1960,14 @@ export function Sidebar({
         >
           {/* chat list */}
           <div className="px-2 pb-4 pt-2">
-            {pinned.length > 0 && (
-              <div className="mb-2" ref={pinnedZoneRef}>
+            {pinnedEntries.length > 0 && (
+              <div className="mb-2" ref={pinnedZoneRef} data-pinned-zone>
                 <div className="px-2 pb-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
                   {t('sidebar.pinned')}
                 </div>
                 <div className="space-y-0.5">
-                  {pinned.map((c) => (
-                    <ChatRow
-                      key={c.id}
-                      chat={c}
-                      active={c.id === chatId}
-                      shiftHeld={shiftHeld}
-                      onNavigate={onNavigate}
-                      draggable
-                      droppable
-                      {...drag.rowLines('pinned', c.id, 'chat')}
-                      didDragRef={drag.didDragRef}
-                      dragList="pinned"
-                      onDragStart={(e) => drag.startDrag('chat', c.id, e, 'pinned', chatDragItem(c, sidebar))}
-                      onDragOver={(e) => drag.onRowDragOver('pinned', c.id, e)}
-                      onDrop={handleDrop}
-                      onDragEnd={drag.clearDrag}
-                      selection={rowSelection(c.id)}
-                    />
+                  {pinnedEntries.map((entry) => (
+                    <SidebarEntryRow key={entry.id} entry={entry} list="pinned" reorderable {...treeProps} />
                   ))}
                 </div>
               </div>

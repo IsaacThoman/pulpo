@@ -8,8 +8,9 @@ charge for tokens that were never generated.
 The accounting transaction chooses the largest affordable output limit up to the
 request/catalog ceiling, and reserves its entire estimated cost. Available funds
 include the tighter of the weekly and five-hour subscription allowances, then
-eligible account/pool balances. Other pending reservations and API-key monthly
-and lifetime budgets constrain the same calculation. Account locks cover reading
+eligible account/pool balances. Other pending reservations, API-key monthly
+and lifetime budgets, and the caller's daily usage tier cap (see
+[Usage tiers](stripe-billing-operations.md#usage-tiers)) constrain the same calculation. Account locks cover reading
 availability and writing reservations, including resizes and settlement.
 
 Before each provider call, the worker recalculates using the prepared input and
@@ -24,6 +25,14 @@ unused output capacity is released so agent tools and optional post-response
 calls can reserve their costs. Actual usage is settled; unused funds become
 available again. A long-running call can temporarily reserve all remaining funds
 and prevent another request from starting.
+
+Each internal model call (image OCR, compaction summaries, titles) extends the
+hold by its own estimated cost before it starts. A call that fails is not
+billed, so exactly its extension is given back under the reservation lock. Holds
+that other calls added in the meantime stay in place, and nothing happens once
+the reservation is settled or released. Retries, such as compaction dropping
+older history after the summary request overflows, therefore hold one attempt
+at a time instead of accumulating.
 
 ## Per-model configuration
 
@@ -62,7 +71,7 @@ reserved, and its incurred cost is settled even if its output is rejected.
 
 ## Verification
 
-- `npm run test -w @pulpo/server -- src/accounting src/billing/allocation.test.ts`
+- `npm run test -w @pulpo/server -- src/accounting src/billing/allocation.test.ts src/responses/model-calls.test.ts`
 - With a migrated disposable `pulpo_budget_test` database, set `DATABASE_URL` and
   `PULPO_BUDGET_POSTGRES_TEST=1` to run the accounting PostgreSQL tests.
 - `npm run test:public-api -w @pulpo/server` exercises actual request/queue/worker

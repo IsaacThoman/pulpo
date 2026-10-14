@@ -37,8 +37,22 @@ vi.mock('@/features/files/api', async (importOriginal) => ({
     { id: 'folder', name: 'Projects', kind: 'folder', updatedAt: '2026-10-06T00:00:00Z' },
     { id: 'sidebar', name: 'Sidebar', kind: 'folder', systemRole: 'chats', updatedAt: '2026-10-06T00:00:00Z' },
     { id: 'suggested', name: 'Draft.md', kind: 'doc', sizeBytes: 0, updatedAt: '2026-10-06T00:00:00Z', suggestion: { changeId: 'change' } },
+    { id: 'plans', name: 'Plans.md', kind: 'doc', sizeBytes: 0, pinned: true, updatedAt: '2026-10-06T00:00:00Z' },
+    { id: 'trip', name: 'Trip', kind: 'chat', sizeBytes: 0, updatedAt: '2026-10-06T00:00:00Z' },
   ] },
   fetchFolderLayout: async () => ({ folderId: null, positions: {}, snapToGrid: true }),
+}))
+
+const pinSidebarItems = vi.hoisted(() => vi.fn(async () => undefined))
+vi.mock('@/features/sidebar/api', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@/features/sidebar/api')>(),
+  pinSidebarItems,
+}))
+
+const chatActions = vi.hoisted(() => ({ duplicateChats: vi.fn(async () => []), copyChatShareLink: vi.fn(async () => undefined) }))
+vi.mock('@/features/chat/chat-actions', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@/features/chat/chat-actions')>(),
+  ...chatActions,
 }))
 
 function Location() {
@@ -69,7 +83,7 @@ beforeEach(() => {
   useSettings.setState({ fileDoubleClickAction: 'open' })
   useSidePanel.setState({ content: null, lastContent: null, splitAvailable: true })
 })
-afterEach(() => { cleanup(); vi.unstubAllGlobals() })
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.clearAllMocks() })
 
 async function doubleClick(name: string, ctrlKey = false) {
   const item = await screen.findByRole('option', { name: new RegExp(name) })
@@ -138,7 +152,7 @@ it('applies a changed preference to an already open browser', async () => {
 })
 
 describe('menus of built-in folders', () => {
-  const unavailable = ['Rename', 'Color and icon…', 'Move to…', 'Cut', 'Move to trash']
+  const unavailable = ['Pin', 'Rename', 'Color and icon…', 'Move to…', 'Cut', 'Move to trash']
   // Menu items' names end with their keyboard shortcut.
   const menuItem = (name: string) => screen.getByRole('menuitem', { name: new RegExp(`^${name}`) })
 
@@ -187,5 +201,44 @@ describe('inside a folder an agent suggested', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Reject folder' }))
     await vi.waitFor(() => expect(resolveFileSuggestion).toHaveBeenCalledWith('plan', 'reject'))
     await vi.waitFor(() => expect(useSidePanel.getState().content).toEqual({ kind: 'folder', id: 'projects' }))
+  })
+})
+
+describe('pinning', () => {
+  it('marks pinned items, and pins or unpins the selection from its menu', async () => {
+    showFiles()
+    const plans = await screen.findByRole('option', { name: /Plans.md/ })
+    expect(plans.querySelector('[aria-label="Pinned to the sidebar"]')).toBeTruthy()
+    expect((await screen.findByRole('option', { name: /Notes.md/ })).querySelector('[aria-label="Pinned to the sidebar"]')).toBeNull()
+
+    fireEvent.contextMenu(plans)
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Unpin' }))
+    expect(pinSidebarItems).toHaveBeenCalledWith(['plans'], false, [expect.objectContaining({ id: 'plans' })])
+
+    fireEvent.contextMenu(await screen.findByRole('option', { name: /Notes.md/ }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Pin' }))
+    expect(pinSidebarItems).toHaveBeenCalledWith(['document'], true, [expect.objectContaining({ id: 'document' })])
+  })
+})
+
+describe('chats in Files', () => {
+  it('offers what the chat menu does: a share link and duplicating', async () => {
+    showFiles()
+    fireEvent.contextMenu(await screen.findByRole('option', { name: /Trip/ }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Copy share link' }))
+    expect(chatActions.copyChatShareLink).toHaveBeenCalledWith('trip')
+
+    fireEvent.contextMenu(await screen.findByRole('option', { name: /Trip/ }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: /^Duplicate/ }))
+    expect(chatActions.duplicateChats).toHaveBeenCalledWith([{ id: 'trip', title: 'Trip' }])
+  })
+
+  it('calls trashing a chat deleting it when trashed chats are deleted right away', async () => {
+    useSettings.setState({ trashRetention: 'instant' })
+    showFiles()
+    fireEvent.contextMenu(await screen.findByRole('option', { name: /Trip/ }))
+    expect(await screen.findByRole('menuitem', { name: /^Delete/ })).toBeTruthy()
+    expect(screen.queryByRole('menuitem', { name: /^Move to trash/ })).toBeNull()
+    useSettings.setState({ trashRetention: '30d' })
   })
 })

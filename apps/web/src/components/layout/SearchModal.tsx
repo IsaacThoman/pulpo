@@ -18,11 +18,9 @@ const MAX_QUERY_LENGTH = 200
 export function SearchModal({
   open,
   onClose,
-  onQueryPresenceChange,
 }: {
   open: boolean
   onClose: () => void
-  onQueryPresenceChange?: (hasQuery: boolean) => void
 }) {
   const [query, setQuery] = useState('')
   const [cursor, setCursor] = useState(0)
@@ -42,10 +40,6 @@ export function SearchModal({
       escapedRef.current = false
     }
   }, [open])
-
-  useEffect(() => {
-    onQueryPresenceChange?.(open && query.trim().length > 0)
-  }, [onQueryPresenceChange, open, query])
 
   useEffect(() => {
     const q = query.trim()

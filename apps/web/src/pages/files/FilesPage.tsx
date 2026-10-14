@@ -24,8 +24,11 @@ import {
   Loader2,
   Palette,
   Pencil,
+  Pin,
+  PinOff,
   Plus,
   Scissors,
+  Share2,
   SquareArrowOutUpRight,
   SquareDashedMousePointer,
   Trash2,
@@ -86,7 +89,10 @@ import { openBeside, panelContentPath, useMainNavigate } from '@/features/side-p
 import { SelectionAction } from '@/features/files/browser/SelectionAction'
 import { useFileOperations } from '@/features/files/browser/use-file-operations'
 import { useItemDrag } from '@/features/files/browser/use-item-drag'
-import { archiveFiles, createShortcutInteractively, useSidebarState } from '@/features/sidebar/api'
+import { archiveSidebarSelection, createShortcutInteractively, pinSidebarItems, useSidebarState } from '@/features/sidebar/api'
+import { copyChatShareLink, duplicateChats } from '@/features/chat/chat-actions'
+import { ChatExpiryMenuItem } from '@/features/chat/ChatExpiryMenuItem'
+import { useChat } from '@/stores/chat'
 
 const VIEW_STORAGE_KEY = 'pulpo.files.view'
 const UPLOAD_CONCURRENCY = 3
@@ -111,6 +117,17 @@ function resolveShortcut(node: FileNode): FileNode {
   if (node.kind !== 'shortcut' || !node.target?.available) return node
   const { target } = node
   return { ...node, id: target.id, kind: target.kind, name: target.name, mimeType: target.mimeType, systemRole: target.systemRole, target: null }
+}
+
+/** What the chat menu offers for a chat that Files offers nowhere else: its expiry and share link. */
+function FilesChatMenuItems({ chatId }: { chatId: string }) {
+  const chat = useChat((state) => state.chats.find((candidate) => candidate.id === chatId))
+  return (
+    <>
+      {chat && <ChatExpiryMenuItem chat={chat} />}
+      <DropdownMenuItem onSelect={() => void copyChatShareLink(chatId)}><Share2 /> {ui("Copy share link")}</DropdownMenuItem>
+    </>
+  )
 }
 
 function SortHeader({ label, sortKey, sort, onSort, className }: {
@@ -316,6 +333,8 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
   }
 
   const doubleClickOpensBeside = useSettings((state) => state.fileDoubleClickAction === 'openBeside')
+  // With instant retention, chats are deleted for good, which the sidebar's menus say too.
+  const instantRetention = useSettings((state) => state.trashRetention === 'instant')
   /**
    * Double-click: on the files page a file opens in place, or to the right when the setting keeps the
    * folder in view; in the panel it opens in place. Cmd/Ctrl swaps it for the other view. Folders
@@ -423,9 +442,13 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
     }
   }
 
+  /** Files are copied; chats are duplicated with their history, as from the chat menu. */
   const duplicate = async (targets = selectedNodes) => {
-    const created = await ops.copy(targets, folderId, 'duplicate')
-    if (created?.length) setSelection({ ids: new Set(created.map((node) => node.id)), anchor: created[0]!.id, focus: created.at(-1)!.id })
+    const chats = targets.filter((node) => node.kind === 'chat').map((node) => ({ id: node.id, title: node.name }))
+    const [created, chatCopies] = await Promise.all([ops.copy(targets, folderId, 'duplicate'), duplicateChats(chats)])
+    if (chatCopies.length) await ops.refresh()
+    const ids = [...created?.map((node) => node.id) ?? [], ...chatCopies]
+    if (ids.length) setSelection({ ids: new Set(ids), anchor: ids[0]!, focus: ids.at(-1)! })
   }
 
   const startRename = () => {
@@ -693,6 +716,7 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
   // Chats and shortcuts are not files the agent can be given, and built-in folders stay where they are.
   const fileSelection = selectedNodes.filter((node) => node.kind !== 'chat' && node.kind !== 'shortcut')
   const hasChats = selectedNodes.some((node) => node.kind === 'chat')
+  const trashLabel = hasChats && instantRetention && selectedNodes.every((node) => node.kind === 'chat') ? ui("Delete") : ui("Move to trash")
   const hasSystem = selectedNodes.some((node) => node.systemRole)
   // Files and folders in the selection can be given a color and icon; chats and shortcuts are left out.
   const canStyle = selectedNodes.some(hasAppearance)
@@ -707,17 +731,13 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
       ops.fail(cause)
     }
   }
-  const archiveSelection = async () => {
+  // Pins whatever is not pinned yet; once everything is, unpins it all. The Sidebar folder is the
+  // sidebar itself, so it cannot be pinned there.
+  const pinning = selectedNodes.some((node) => !node.pinned)
+  const archiveSelection = () => {
     const targets = selectedNodes
     setSelection(EMPTY_SELECTION)
-    try {
-      await archiveFiles(targets.map((node) => node.id))
-      ops.notify(targets.length === 1 ? uit`Moved "${targets[0]!.name}" to the archive` : uit`Moved ${targets.length} items to the archive`)
-    } catch (cause) {
-      ops.fail(cause)
-    } finally {
-      await ops.refresh()
-    }
+    void archiveSidebarSelection(targets.map((node) => node.id), targets)
   }
   const itemMenu = (
     <>
@@ -746,22 +766,26 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
           <Download /> {ui("Download")}
         </DropdownMenuItem>
       )}
+      <DropdownMenuItem disabled={selectedNodes.some((node) => node.systemRole === 'chats')} onSelect={() => void pinSidebarItems(selectedNodes.map((node) => node.id), pinning, selectedNodes)}>
+        {pinning ? <Pin /> : <PinOff />} {pinning ? ui("Pin") : ui("Unpin")}
+      </DropdownMenuItem>
       {/* Built-in folders list the actions they do not allow, unavailable, so every folder's menu reads the same. */}
       {single && <DropdownMenuItem disabled={Boolean(single.systemRole)} onSelect={() => setRenamingId(single.id)}><Pencil /> {ui("Rename")}<DropdownMenuShortcut>{shortcutLabel('F2')}</DropdownMenuShortcut></DropdownMenuItem>}
       {canStyle && <DropdownMenuItem disabled={hasSystem} onSelect={() => editAppearance(selectedNodes)}><Palette /> {ui("Color and icon…")}</DropdownMenuItem>}
       <DropdownMenuItem disabled={hasSystem} onSelect={() => setMoving(selectedNodes)}><FolderInput /> {ui("Move to…")}</DropdownMenuItem>
-      {sidebar && <DropdownMenuItem disabled={hasSystem} onSelect={() => void archiveSelection()}><Archive /> {ui("Move to archive")}</DropdownMenuItem>}
+      {sidebar && <DropdownMenuItem disabled={hasSystem} onSelect={archiveSelection}><Archive /> {ui("Move to archive")}</DropdownMenuItem>}
       {single && single.kind !== 'shortcut' && (
         <DropdownMenuItem onSelect={() => void createShortcutInteractively(single.kind === 'chat' ? 'chat' : 'file', single.id, folderId).then(() => ops.refresh()).catch(ops.fail)}>
           <SquareArrowOutUpRight /> {ui("Create shortcut…")}
         </DropdownMenuItem>
       )}
-      {!hasChats && <DropdownMenuItem onSelect={() => void duplicate()}><CopyPlus /> {ui("Duplicate")}<DropdownMenuShortcut>{shortcutLabel('D', { mod: true })}</DropdownMenuShortcut></DropdownMenuItem>}
+      {single?.kind === 'chat' && <FilesChatMenuItems chatId={single.id} />}
+      <DropdownMenuItem onSelect={() => void duplicate()}><CopyPlus /> {ui("Duplicate")}<DropdownMenuShortcut>{shortcutLabel('D', { mod: true })}</DropdownMenuShortcut></DropdownMenuItem>
       <DropdownMenuSeparator />
       <DropdownMenuItem disabled={hasSystem} onSelect={() => setClipboard('cut')}><Scissors /> {ui("Cut")}<DropdownMenuShortcut>{shortcutLabel('X', { mod: true })}</DropdownMenuShortcut></DropdownMenuItem>
       {!hasChats && <DropdownMenuItem onSelect={() => setClipboard('copy')}><Copy /> {ui("Copy")}<DropdownMenuShortcut>{shortcutLabel('C', { mod: true })}</DropdownMenuShortcut></DropdownMenuItem>}
       <DropdownMenuSeparator />
-      <DropdownMenuItem variant="destructive" disabled={hasSystem} onSelect={() => void trashSelection()}><Trash2 /> {ui("Move to trash")}<DropdownMenuShortcut>⌫</DropdownMenuShortcut></DropdownMenuItem>
+      <DropdownMenuItem variant="destructive" disabled={hasSystem} onSelect={() => void trashSelection()}><Trash2 /> {trashLabel}<DropdownMenuShortcut>⌫</DropdownMenuShortcut></DropdownMenuItem>
     </>
   )
   const backgroundMenu = (
@@ -888,8 +912,8 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
         {canDownload && <SelectionAction label={ui("Download")} onClick={() => void ops.download(selectedNodes)}><Download /></SelectionAction>}
         {!hasSystem && <SelectionAction label={ui("Move to…")} onClick={() => setMoving(selectedNodes)}><FolderInput /></SelectionAction>}
         {canStyle && !hasSystem && <SelectionAction label={ui("Color and icon…")} onClick={() => editAppearance(selectedNodes)}><Palette /></SelectionAction>}
-        {!hasChats && <SelectionAction label={ui("Duplicate")} onClick={() => void duplicate()}><CopyPlus /></SelectionAction>}
-        {!hasSystem && <SelectionAction label={ui("Move to trash")} destructive onClick={() => void trashSelection()}><Trash2 /></SelectionAction>}
+        <SelectionAction label={ui("Duplicate")} onClick={() => void duplicate()}><CopyPlus /></SelectionAction>
+        {!hasSystem && <SelectionAction label={trashLabel} destructive onClick={() => void trashSelection()}><Trash2 /></SelectionAction>}
       </div>
     </TooltipProvider>
   )

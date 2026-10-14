@@ -37,6 +37,7 @@ export function toFileNode(row: FileNodeRow): FileNode {
     color: (row.color as FileColor | null) ?? null,
     icon: (row.icon as FileIcon | null) ?? null,
     sortOrder: row.sortOrder,
+    pinned: row.pinned,
     suggestion: row.suggestionChangeId ? { changeId: row.suggestionChangeId } : null,
   }
 }
@@ -227,9 +228,11 @@ export async function moveNodeInTx(tx: DatabaseTransaction, userId: string, node
     if (target.onConflict === 'fail') throw nameConflict(name)
     name = nextAvailableName(name, taken)
   }
+  // Moved elsewhere, an item goes to the top of its new folder; a pinned one keeps its place in
+  // the pinned list.
   const [updated] = await tx.update(fileNodes).set({
     name, parentId: target.parentId, revision: sql`${fileNodes.revision} + 1`, updatedAt: new Date(),
-    ...target.parentId !== node.parentId ? { sortOrder: await topSortOrder(tx, userId, target.parentId) } : {},
+    ...target.parentId !== node.parentId && !node.pinned ? { sortOrder: await topSortOrder(tx, userId, target.parentId) } : {},
   }).where(eq(fileNodes.id, node.id)).returning()
   if (updated!.kind === 'doc' && !isMarkdownName(name)) return { row: await convertDocToBlobInTx(tx, userId, updated!), converted: true }
   return { row: updated!, converted: false }

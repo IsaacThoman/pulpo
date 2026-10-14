@@ -5,8 +5,11 @@ import {
   createShortcutSchema,
   createSidebarFolderSchema,
   fileNameSchema,
+  fileNodeIdsSchema,
   moveSidebarItemsSchema,
+  orderPinnedItemsSchema,
   orderSidebarItemsSchema,
+  pinSidebarItemsSchema,
   updateSidebarItemSchema,
 } from '@pulpo/contracts'
 import { requireUser } from '../auth/service.js'
@@ -15,13 +18,15 @@ import { AppError, forbidden, notFound } from '../lib/errors.js'
 import { resolveFileAccess } from '../files/access.js'
 import { filesFeatureEnabled, parseFileInput } from '../files/request.js'
 import { createShortcut } from '../files/shortcuts.js'
-import { trashFileNodes, updateFileNode } from '../files/tree-service.js'
+import { restoreFileNodes, trashFileNodes, updateFileNode } from '../files/tree-service.js'
 import {
   archiveItems,
   createSidebarFolder,
   legacyFolderList,
   moveSidebarItems,
+  orderPinnedItems,
   orderSidebarItems,
+  pinSidebarItems,
   updateSidebarItem,
   sidebarFolderItems,
   sidebarState,
@@ -38,7 +43,7 @@ function requireSidebarUser(request: FastifyRequest) {
 }
 
 export async function registerSidebarRoutes(app: FastifyInstance): Promise<void> {
-  app.get('/api/sidebar', async (request) => sidebarState(requireSidebarUser(request).id))
+  app.get('/api/sidebar', async (request) => sidebarState(requireSidebarUser(request).id, await filesFeatureEnabled()))
 
   app.post('/api/sidebar/folders', async (request, reply) => {
     const user = requireSidebarUser(request)
@@ -55,7 +60,7 @@ export async function registerSidebarRoutes(app: FastifyInstance): Promise<void>
   app.post('/api/sidebar/move', async (request) => {
     const user = requireSidebarUser(request)
     const input = moveSidebarItemsSchema.parse(request.body)
-    return { nodes: await moveSidebarItems(user.id, input.ids, input.parentId) }
+    return { nodes: await moveSidebarItems(user.id, input.ids, input.parentId, { unpin: input.unpin }) }
   })
 
   app.put('/api/sidebar/order', async (request) => {
@@ -65,9 +70,36 @@ export async function registerSidebarRoutes(app: FastifyInstance): Promise<void>
     return { ids: input.ids }
   })
 
+  // Pins or unpins chats and Files items alike.
+  app.post('/api/sidebar/pin', async (request) => {
+    const user = requireSidebarUser(request)
+    const input = pinSidebarItemsSchema.parse(request.body)
+    await pinSidebarItems(user.id, input.ids, input.pinned)
+    return { ids: input.ids, pinned: input.pinned }
+  })
+
+  app.put('/api/sidebar/pinned', async (request) => {
+    const user = requireSidebarUser(request)
+    const input = orderPinnedItemsSchema.parse(request.body)
+    await orderPinnedItems(user.id, input.ids)
+    return { ids: input.ids }
+  })
+
   app.patch('/api/sidebar/items/:id', async (request) => {
     const user = requireSidebarUser(request)
     return updateSidebarItem(user.id, idParams.parse(request.params).id, parseFileInput(updateSidebarItemSchema, request.body))
+  })
+
+  // Trashes items (restorable from Files, or right away with /api/sidebar/restore); returns the
+  // ids to restore, which the server may have narrowed to the topmost of nested items.
+  app.post('/api/sidebar/trash', async (request) => {
+    const user = requireSidebarUser(request)
+    return { ids: await trashFileNodes(user.id, fileNodeIdsSchema.parse(request.body).ids) }
+  })
+
+  app.post('/api/sidebar/restore', async (request) => {
+    const user = requireSidebarUser(request)
+    return { nodes: await restoreFileNodes(user.id, fileNodeIdsSchema.parse(request.body).ids) }
   })
 
   app.delete('/api/sidebar/items/:id', async (request, reply) => {
@@ -89,7 +121,7 @@ export async function registerSidebarRoutes(app: FastifyInstance): Promise<void>
   })
 
   // The chat folder API that older mobile builds and the admin chat view still use, backed by
-  // the Chats folder in Files. Pinning and manual folder order no longer exist and are ignored.
+  // the Chats folder in Files. Folder pinning and manual order are not offered here and are ignored.
   const legacyFolder = (folder: { id: string; name: string }) => ({
     id: folder.id,
     name: folder.name,

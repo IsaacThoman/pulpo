@@ -382,7 +382,9 @@ export const models = pgTable('models', {
   minimumOutputReservationTokens: integer('minimum_output_reservation_tokens').notNull().default(8_000),
   compactionEnabled: boolean('compaction_enabled').notNull().default(true),
   compactionThresholdTokens: integer('compaction_threshold_tokens').notNull().default(100_000),
+  /** Deprecated and unused since migration 0099; kept for old pods during rolling deploys. Drop in a later migration. */
   compactionRetainedTurns: integer('compaction_retained_turns').notNull().default(4),
+  compactionRetainedUserTokens: integer('compaction_retained_user_tokens').notNull().default(20_000),
   executionMode: executionModeEnum('execution_mode').notNull().default('stream'),
   tags: jsonb('tags').notNull().default([]),
   allowedParameters: jsonb('allowed_parameters').notNull().default([]),
@@ -870,8 +872,11 @@ export const fileNodes = pgTable('file_nodes', {
   // References chats(id) through a deferrable constraint added in the migration, so a backup can
   // restore Files (which chats are filed in) before the chats that shortcuts point at.
   targetChatId: uuid('target_chat_id'),
-  // Position among the folder's items, chats included (see files/order.ts).
+  // Position among the folder's items, chats included (see files/order.ts). While pinned, the
+  // position in the sidebar's pinned list instead, as for chats.
   sortOrder: integer('sort_order').notNull().default(0),
+  // Listed with the pinned chats at the top of the sidebar rather than in its folder there.
+  pinned: boolean('pinned').notNull().default(false),
   // A chosen FileColor and FileIcon; null keeps the kind's own.
   color: text('color'),
   icon: text('icon'),
@@ -899,6 +904,9 @@ export const fileNodes = pgTable('file_nodes', {
   check('file_nodes_size_check', sql`${table.sizeBytes} >= 0`),
   check('file_nodes_blob_check', sql`(${table.kind} = 'blob') = (${table.objectKey} is not null)`),
   check('file_nodes_system_role_check', sql`${table.systemRole} is null or (${table.systemRole} in ('chats', 'archive') and ${table.kind} = 'folder' and ${table.parentId} is null)`),
+  // The Sidebar folder is the sidebar itself, so it cannot be pinned there.
+  check('file_nodes_pinned_check', sql`not ${table.pinned} or ${table.systemRole} is distinct from 'chats'`),
+  index('file_nodes_owner_pinned_idx').on(table.ownerUserId).where(sql`${table.pinned}`),
 ])
 
 /** Collaborative document state: a compacted Yjs update plus Markdown derived from it. */
@@ -1299,6 +1307,8 @@ export const billingAccounts = pgTable('billing_accounts', {
   planOverride: text('plan_override'),
   weeklyLimitOverrideMicros: bigint('weekly_limit_override_micros', { mode: 'number' }),
   fiveHourLimitOverrideMicros: bigint('five_hour_limit_override_micros', { mode: 'number' }),
+  // Replaces the usage tier's daily spend cap when set.
+  dailyLimitOverrideMicros: bigint('daily_limit_override_micros', { mode: 'number' }),
   storageLimitOverrideBytes: bigint('storage_limit_override_bytes', { mode: 'number' }),
   holdAt: timestamp('hold_at', { withTimezone: true }),
   holdReason: text('hold_reason'),
@@ -1450,6 +1460,17 @@ export const weeklyUsagePeriods = pgTable('weekly_usage_periods', {
 }, (table) => [
   primaryKey({ columns: [table.userId, table.periodStart] }),
   check('weekly_usage_periods_spent_check', sql`${table.spentMicros} >= 0`),
+])
+
+/** Everything a user spent per UTC day, enforced by their usage tier's daily cap. */
+export const dailyUsagePeriods = pgTable('daily_usage_periods', {
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  periodStart: timestamp('period_start', { withTimezone: true }).notNull(),
+  spentMicros: bigint('spent_micros', { mode: 'number' }).notNull().default(0),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  primaryKey({ columns: [table.userId, table.periodStart] }),
+  check('daily_usage_periods_spent_check', sql`${table.spentMicros} >= 0`),
 ])
 
 export const fiveHourUsagePeriods = pgTable('five_hour_usage_periods', {

@@ -33,6 +33,37 @@ export interface AutoTopUpSummary {
   } | null
 }
 
+export interface UsageTier {
+  minPaidCents: number
+  minDaysSinceFirstPayment: number
+  dailyLimitMicros: number
+}
+
+export interface DailySpendSummary {
+  tier: number
+  /** An admin set this account's daily limit. */
+  limitOverridden: boolean
+  limitMicros: number
+  spentMicros: number
+  pendingMicros: number
+  remainingMicros: number
+  remainingPercentage: number
+  availableBarPercentage: number
+  pendingBarPercentage: number
+  resetsAt: string
+  /** Lifetime payments before tax, net of refunds. */
+  paidCents: number
+  firstPaidAt: string | null
+  next: {
+    tier: number
+    dailyLimitMicros: number
+    remainingPaidCents: number
+    minDaysSinceFirstPayment: number
+    /** When the waiting period ends; null before the first payment or when there is none. */
+    availableAt: string | null
+  } | null
+}
+
 export interface BillingSummary {
   plan: BillingPlan
   planOverridden: boolean
@@ -66,6 +97,9 @@ export interface BillingSummary {
   } | null
   /** Share of Fat weekly usage that pool members may draw on. */
   sharedWeeklyPercent: number
+  /** Null when the account has no daily cap. */
+  daily: DailySpendSummary | null
+  usageTiers: UsageTier[]
   onHold: boolean
   /** Admin-configured file storage included with each plan. */
   planStorageLimitBytes: Record<BillingPlan, number>
@@ -265,4 +299,19 @@ export function planChoiceDisabled(
   if (plan === 'baby') return cancelAtPeriodEnd
   if (scheduledSwitch && plan === pendingPlan) return !cancelAtPeriodEnd
   return false
+}
+
+export function nextUsageTierHint(daily: DailySpendSummary, now = Date.now()): string | null {
+  const next = daily.next
+  if (!next || daily.limitOverridden) return null
+  const values = { tier: next.tier, limit: formatBalance(next.dailyLimitMicros / 1_000_000), amount: formatBalance(next.remainingPaidCents / 100) }
+  const waitUntil = next.availableAt && Date.parse(next.availableAt) > now ? formatDate(Date.parse(next.availableAt)) : null
+  const waitsForFirstPayment = next.minDaysSinceFirstPayment > 0 && !next.availableAt
+  if (next.remainingPaidCents > 0) {
+    if (waitUntil) return ui("Pay {{amount}} more and wait until {{date}} to reach tier {{tier}} ({{limit}} per day).", { ...values, date: waitUntil })
+    if (waitsForFirstPayment) return ui("Pay {{amount}} more and wait {{days}} days after your first payment to reach tier {{tier}} ({{limit}} per day).", { ...values, days: next.minDaysSinceFirstPayment })
+    return ui("Pay {{amount}} more to reach tier {{tier}} ({{limit}} per day).", values)
+  }
+  if (waitUntil) return ui("You reach tier {{tier}} ({{limit}} per day) on {{date}}.", { ...values, date: waitUntil })
+  return null
 }

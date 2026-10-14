@@ -17,8 +17,9 @@ import { maintenanceQueue } from '../jobs.js'
 import { AppError } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import { publishStateChange } from '../responses/events.js'
-import { parseAuthSettings, parseBillingSettings } from '../settings/application-settings.js'
+import { parseAuthSettings, parseBillingSettings, usageTiersSchema } from '../settings/application-settings.js'
 import { getBillingEntitlements, loadBillingEntitlements } from './entitlements.js'
+import { loadDailySpend } from './usage-tiers.js'
 import { planForPriceId, stripeMode } from './stripe.js'
 import { refreshStorageLimit } from './storage-entitlements.js'
 import { mapWithConcurrency } from '../lib/concurrency.js'
@@ -35,6 +36,7 @@ const settingsPatchSchema = z.object({
   babyStorageLimitBytes: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
   eightStorageLimitBytes: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
   fatStorageLimitBytes: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
+  usageTiers: usageTiersSchema.optional(),
 })
 
 async function billingSettings() {
@@ -227,7 +229,7 @@ export async function registerAdminBillingRoutes(app: FastifyInstance): Promise<
   app.get('/api/admin/billing/users', async (request) => {
     requireAdmin(request)
     const [rows, holdRows] = await Promise.all([
-      db.select({ id: users.id }).from(users),
+      db.select({ id: users.id, role: users.role }).from(users),
       db.select({
         userId: billingAccounts.userId,
         holdAt: billingAccounts.holdAt,
@@ -238,8 +240,11 @@ export async function registerAdminBillingRoutes(app: FastifyInstance): Promise<
     const holds = new Map(holdRows.map(({ userId, ...hold }) => [userId, hold]))
     // Entitlements run a transaction per user; bound concurrency so a large
     // instance cannot exhaust the connection pool from one admin page load.
-    const data = await mapWithConcurrency(rows, BILLING_USERS_CONCURRENCY, async ({ id }) => {
-      const entitlements = await getBillingEntitlements(id)
+    const data = await mapWithConcurrency(rows, BILLING_USERS_CONCURRENCY, async ({ id, role }) => {
+      const { entitlements, daily } = await db.transaction(async (tx) => {
+        const entitlements = await loadBillingEntitlements(tx, id)
+        return { entitlements, daily: await loadDailySpend(tx, { userId: id, role, weeklyLimitMicros: entitlements.weeklyLimitMicros }) }
+      })
       const account = holds.get(id)
       return {
         userId: id,
@@ -257,6 +262,10 @@ export async function registerAdminBillingRoutes(app: FastifyInstance): Promise<
         fiveHourLimitOverridden: entitlements.fiveHourLimitOverridden,
         storageLimitBytes: entitlements.storageLimitBytes,
         storageLimitOverridden: entitlements.storageLimitOverridden,
+        usageTier: daily?.tier ?? 0,
+        dailyLimitMicros: daily?.limitMicros ?? null,
+        dailySpentMicros: daily?.spentMicros ?? 0,
+        dailyLimitOverridden: daily?.limitOverridden ?? false,
         hold: entitlements.onHold ? account ?? null : null,
       }
     })
@@ -324,6 +333,30 @@ export async function registerAdminBillingRoutes(app: FastifyInstance): Promise<
     })
     await notifyBillingChange(id)
     return { weeklyLimitMicros }
+  })
+
+  app.patch('/api/admin/billing/users/:id/daily-limit', async (request) => {
+    const admin = requireAdmin(request)
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
+    const { dailyLimitMicros } = z.object({
+      dailyLimitMicros: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).nullable(),
+    }).parse(request.body)
+    const [user] = await db.select({ id: users.id }).from(users).where(eq(users.id, id)).limit(1)
+    if (!user) throw new AppError(404, 'user_not_found', 'User not found')
+    await db.transaction(async (tx) => {
+      await tx.insert(billingAccounts).values({ userId: id, dailyLimitOverrideMicros: dailyLimitMicros })
+        .onConflictDoUpdate({
+          target: billingAccounts.userId,
+          set: { dailyLimitOverrideMicros: dailyLimitMicros, updatedAt: new Date() },
+        })
+      await tx.insert(auditEvents).values({
+        id: newId(), actorUserId: admin.id,
+        action: dailyLimitMicros === null ? 'billing.daily_limit.reset' : 'billing.daily_limit.update',
+        targetType: 'user', targetId: id, metadata: { dailyLimitMicros },
+      })
+    })
+    await notifyBillingChange(id)
+    return { dailyLimitMicros }
   })
 
   app.patch('/api/admin/billing/users/:id/five-hour-limit', async (request) => {

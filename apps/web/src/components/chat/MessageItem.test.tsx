@@ -817,6 +817,46 @@ describe('view_image tool details', () => {
   })
 })
 
+describe('context compaction details', () => {
+  const text = (value: string) => ({ type: 'message', content: [{ type: 'output_text', text: value }] })
+  const compaction = (overrides: Record<string, unknown>) => ({
+    id: 'response-1:compaction:agent_mid_run:1', type: 'pulpo_compaction', phase: 'agent_mid_run', status: 'completed',
+    model_id: 'model-1', estimated_tokens: 120_000, threshold_tokens: 115_200, summary: 'Summary of the work so far',
+    started_at: '2026-10-13T00:00:00.000Z', duration_ms: 1_200, ...overrides,
+  })
+  const expand = async (item: Record<string, unknown>) => {
+    const { MessageItem } = await import('./MessageItem')
+    const view = render(<TooltipProvider><MessageItem
+      chat={chat}
+      message={assistant({ outputItems: [text('Before'), item, text('After')] })}
+      streaming={false}
+      onRegenerate={() => undefined}
+    /></TooltipProvider>)
+    fireEvent.click(view.getByText('Compacted context'))
+    return view
+  }
+
+  it('shows the context size before and after and the kept user messages', async () => {
+    const { getByText } = await expand(compaction({
+      strategy: 'user_messages', tokens_after: 24_000, token_source: 'usage',
+      retained_turns: [{ role: 'user', content: 'Keep the Postgres schema' }],
+      retained_context: [], retained_context_turns: [],
+    }))
+
+    expect(getByText('Context: 120.0K → 24.0K tokens')).toBeTruthy()
+    expect(getByText('Keep the Postgres schema')).toBeTruthy()
+    expect(getByText('Summary of the work so far')).toBeTruthy()
+  })
+
+  it('expands items without retained turns or token counts', async () => {
+    const { getByText, queryByText } = await expand(compaction({}))
+
+    expect(getByText('Summary of the work so far')).toBeTruthy()
+    expect(queryByText('Kept verbatim')).toBeNull()
+    expect(queryByText(/^Context:/)).toBeNull()
+  })
+})
+
 describe('read aloud actions', () => {
   it('adds read aloud immediately after regenerate and supports user messages', async () => {
     const { MessageItem } = await import('./MessageItem')

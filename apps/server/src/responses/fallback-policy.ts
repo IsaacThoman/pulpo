@@ -1,3 +1,6 @@
+import { isContextOverflow, type AssistantMessage } from '@earendil-works/pi-ai'
+import { upstreamErrorDetails } from './upstream-request.js'
+
 export const MAX_MODEL_CHAIN_LENGTH = 8
 
 export type GenerationErrorCategory =
@@ -46,6 +49,24 @@ export class GenerationAttemptError extends Error {
     super(message)
     this.name = 'GenerationAttemptError'
   }
+}
+
+/** A provider context overflow whose message was redacted before it reached the retry loop. */
+export class ContextOverflowError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'ContextOverflowError'
+  }
+}
+
+/** pi-ai's provider overflow patterns applied to a thrown upstream error. */
+export function isContextOverflowError(error: unknown): boolean {
+  const source = error instanceof GenerationAttemptError && error.upstreamError ? error.upstreamError : error
+  if (source instanceof ContextOverflowError) return true
+  const details = upstreamErrorDetails(source)
+  if (details.code === 'context_length_exceeded') return true
+  const messages = new Set([details.message, source instanceof Error ? source.message : String(source)])
+  return [...messages].some((errorMessage) => isContextOverflow({ stopReason: 'error', errorMessage } as AssistantMessage))
 }
 
 export function modelStickyKey(modelId: string): string {

@@ -17,7 +17,7 @@ import { planDuplicateTree } from './duplicate.js'
 import { toPublicChat, toPublicChatResponses, withoutWorkspaceScope } from './public.js'
 import { assertFileScope, mergedFileAccessSql, scopedFileAccess } from './file-scope.js'
 import { chatFolderId } from '../files/chat-items.js'
-import { topChatOrder } from '../files/order.js'
+import { topChatOrder, topSortOrder } from '../files/order.js'
 import { recoverChats, trashChats } from './trash-service.js'
 import { responseAttachmentIds } from '../messages/input.js'
 import {
@@ -419,6 +419,10 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     const chatId = newId()
     const plan = planDuplicateTree(sourceResponses, newId)
     const now = new Date()
+    // The copy sits beside the original in its folder; a pinned original's order is its place
+    // in the pinned list, so the unpinned copy goes to the top of the folder instead.
+    const sortOrder = !source.pinned ? source.sortOrder
+      : source.inFilesRoot ? await topSortOrder(db, user.id, null) : await topChatOrder(db, user.id, source.folderId)
     const title = source.title.endsWith(' copy') ? source.title : `${source.title} copy`
     const activeResponseId = source.activeResponseId ? plan.responseIds.get(source.activeResponseId) ?? null : null
     const activeBranchLeafId = source.activeBranchLeafId ? plan.responseIds.get(source.activeBranchLeafId) ?? null : null
@@ -430,6 +434,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
         userId: user.id,
         title: title.slice(0, 200),
         pinned: false,
+        sortOrder,
         temporary: false,
         activeResponseId,
         activeBranchLeafId,
@@ -454,10 +459,11 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
         })
       }
     })
-    await bumpRevision(user.id, chatId)
+    // The copy shows in Files listings, which list filed chats.
+    await bumpRevision(user.id, chatId, ['chats', 'files', 'folders'])
     await scheduleChatIndex(chatId, user.id, 'chat-duplicate')
     reply.code(201)
-    return { ...withoutWorkspaceScope(source), id: chatId, title: title.slice(0, 200), pinned: false, temporary: false, activeResponseId, activeBranchLeafId, expiresAt: null, createdAt: now, updatedAt: now }
+    return { ...withoutWorkspaceScope(source), id: chatId, title: title.slice(0, 200), pinned: false, sortOrder, temporary: false, activeResponseId, activeBranchLeafId, expiresAt: null, createdAt: now, updatedAt: now }
   })
 
   app.put('/api/chats/order', async (request) => {
@@ -601,10 +607,12 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       // Filed by folder (or unfiled), a chat is no longer at the top of My files.
       inFilesRoot: folderId === undefined ? undefined : false,
       modelId: patch.modelId,
-      // Refiled without a position, a chat goes to the top of its new folder.
-      sortOrder: typeof patch.sortOrder === 'number'
-        ? patch.sortOrder
-        : folderId === undefined ? undefined : await topChatOrder(db, user.id, folderId),
+      // Refiled without a position, a chat goes to the top of its new folder; one that stays
+      // pinned keeps its place in the pinned list.
+      sortOrder: typeof patch.sortOrder === 'number' ? patch.sortOrder
+        : folderId === undefined ? undefined
+        : patch.pinned === undefined ? sql`case when ${chats.pinned} then ${chats.sortOrder} else ${await topChatOrder(db, user.id, folderId)} end`
+        : await topChatOrder(db, user.id, folderId),
       fileScopeIds: patch.fileScopeIds,
       fileScopeAccess,
       expiresAt,
