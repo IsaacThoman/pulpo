@@ -2,7 +2,7 @@ import { and, eq, ne, sql } from 'drizzle-orm'
 import { mergeMarkdown, ydocToNode } from '@pulpo/client-core/doc-schema'
 import { FILE_TREE_MAX_DEPTH, isMarkdownName } from '@pulpo/contracts'
 import { fileChanges, fileNodes } from '../../database/schema.js'
-import { notFound } from '../../lib/errors.js'
+import { AppError, notFound } from '../../lib/errors.js'
 import { newId } from '../../lib/ids.js'
 import { resolveFileAccess, type FileNodeRow } from '../access.js'
 import { createDocInTx } from '../doc-store.js'
@@ -58,6 +58,16 @@ export async function liveNodeInTx(tx: DatabaseTransaction, userId: string, id: 
 async function foldedInto(tx: DatabaseTransaction, reply: ReplyContext, node: FileNodeRow): Promise<'suggestion' | 'creation' | null> {
   if (node.suggestionChangeId) return 'suggestion'
   return (await findChange(tx, reply.responseId, node.id, 'create'))?.mode === 'write' ? 'creation' : null
+}
+
+/** The Markdown parser rejects a few malformed inputs; the agent can fix the file and push again. */
+function parsedMarkdown<T>(parse: () => T): T {
+  try {
+    return parse()
+  } catch (error) {
+    if (error instanceof AppError || error instanceof FilesCommandError) throw error
+    throw new FilesCommandError(`Pulpo could not read this Markdown (${error instanceof Error ? error.message : String(error)}); simplify the part you changed and push again`)
+  }
 }
 
 function assertRowMode(existing: FileChangeRow | undefined, mode: ChangeMode): void {
@@ -138,7 +148,7 @@ export async function updateDocChange(reply: ReplyContext, nodeId: string, markd
     const existing = folded ? undefined : await findChange(tx, reply.responseId, node.id, 'update')
     assertRowMode(existing, mode)
     const changeId = existing?.id ?? newId()
-    const merged = mergeMarkdown(current, markdown, { mode: folded ? 'write' : mode, changeId })
+    const merged = parsedMarkdown(() => mergeMarkdown(current, markdown, { mode: folded ? 'write' : mode, changeId }))
     if (!merged.changed) return { status: 'unchanged', version }
     await writeDocInTx(tx, effects, { nodeId: node.id, doc, node: merged.doc, actorUserId: reply.userId, origin: 'agent' })
     // Read back from the Y document, so undo compares against exactly what it holds.

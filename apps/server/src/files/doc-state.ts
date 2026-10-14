@@ -19,9 +19,16 @@ export async function mergedDocState(tx: DatabaseTransaction, nodeId: string): P
 /** Past this size a document stops accepting edits; keeps loads and compaction bounded. */
 export const MAX_DOC_STATE_BYTES = 8_000_000
 export const docTooLarge = () => new AppError(413, 'doc_too_large', 'This document is too large to edit')
+export const unreadableMarkdown = () => new AppError(422, 'markdown_unreadable', 'This Markdown could not be read; simplify it and try again')
+
 export function initialDocState(markdown?: string): { state: Uint8Array; markdown: string } {
   const doc = new Y.Doc()
-  if (markdown?.trim()) applyMarkdownToYDoc(doc, markdown, 'import')
+  try {
+    if (markdown?.trim()) applyMarkdownToYDoc(doc, markdown, 'import')
+  } catch {
+    // The Markdown parser rejects a few malformed inputs.
+    throw unreadableMarkdown()
+  }
   const state = Y.encodeStateAsUpdate(doc)
   if (state.byteLength > MAX_DOC_STATE_BYTES) throw docTooLarge()
   return { state, markdown: ydocToMarkdown(doc) }

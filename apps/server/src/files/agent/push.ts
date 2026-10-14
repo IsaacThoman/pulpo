@@ -85,7 +85,9 @@ function contentOutcome(result: ContentResult, path: string, nodeId: string): Ou
     updated: `Saved "${path}"`,
     suggested: result.hunks === undefined
       ? `Suggested new content for "${path}"; it waits for the user to accept it`
-      : `Suggested ${result.hunks} change${result.hunks === 1 ? '' : 's'} to "${path}"; they wait for the user to accept them`,
+      : result.hunks
+        ? `Suggested ${result.hunks} change${result.hunks === 1 ? '' : 's'} to "${path}"; they wait for the user to accept them`
+        : `Revised your suggested changes to "${path}"; they wait for the user to accept them`,
     unchanged: `"${path}" already has this content`,
   }
   return { status, message: messages[status], nodeId, version }
