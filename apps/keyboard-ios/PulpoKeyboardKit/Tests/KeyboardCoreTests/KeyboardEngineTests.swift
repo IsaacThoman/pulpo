@@ -294,7 +294,8 @@ struct KeyboardEngineTests {
     #expect(engine.composingText == "Hello")
     #expect(engine.laggingContextUpdates == 0)
     engine.select(Suggestion(text: "hello", kind: .correction))
-    #expect(document.text == "hello  teh")
+    // Replaced at the moved cursor; the following space is reused, not doubled.
+    #expect(document.text == "hello teh")
   }
 
   @Test func delayedSwipeAcknowledgmentPreservesAlternativesAndWordDeletion() throws {

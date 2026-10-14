@@ -465,6 +465,8 @@ public final class KeyboardEngine {
     guard suggestion.sourceContext == nil || suggestion.sourceContext == suggestionContext else { return }
     let context = previousWord()
     let needsCase = shift.isActive && composing.isEmpty
+    // Editing before existing whitespace must not leave a double space.
+    let autoSpace = expectedAfterContext.first?.isWhitespace != true
     var text = needsCase ? Suggester.matchCase(of: "A", to: suggestion.text) : suggestion.text
     if policy.smartQuotes { text = Self.curlyApostrophes(text) }
     switch suggestion.kind {
@@ -482,9 +484,9 @@ public final class KeyboardEngine {
       if !composing.isEmpty {
         rejected.insert(composing.text)
         if policy.learns { personal?.pin(composing.text) }
-        insertDocumentText(" ")
+        if autoSpace { insertDocumentText(" ") }
         composing = TypedWord(text: "")
-        lastEdit = .acceptedSuggestion(autoSpace: true)
+        lastEdit = .acceptedSuggestion(autoSpace: autoSpace)
         finishEdit()
         return
       }
@@ -500,9 +502,9 @@ public final class KeyboardEngine {
       text = " " + text
     }
     phantomSpace = false
-    insertDocumentText(text + " ")
+    insertDocumentText(autoSpace ? text + " " : text)
     learn(text.trimmingCharacters(in: .whitespaces), context: context)
-    lastEdit = .acceptedSuggestion(autoSpace: true)
+    lastEdit = .acceptedSuggestion(autoSpace: autoSpace)
     if case .once = shift { shift = .off }
     finishEdit()
   }
