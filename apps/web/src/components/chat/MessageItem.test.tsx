@@ -1,8 +1,10 @@
 // @vitest-environment jsdom
 
-import { afterEach, beforeEach, describe, expect, it, onTestFinished } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { MemoryRouter } from 'react-router-dom'
 import type { Chat, Message } from '@/lib/types'
 import i18n from '@/i18n'
 import { TooltipProvider } from '@/components/ui/tooltip'
@@ -26,6 +28,9 @@ Object.defineProperty(window, 'localStorage', {
   configurable: true,
   value: storage,
 })
+
+const filesApi = vi.hoisted(() => ({ fetchFileChanges: vi.fn() }))
+vi.mock('@/features/files/api', async (actual) => ({ ...await actual<object>(), fetchFileChanges: filesApi.fetchFileChanges }))
 
 const { useSettings } = await import('@/stores/settings')
 
@@ -845,4 +850,50 @@ it('retains an unsaved assistant edit across virtual row remounts and clears it 
   fireEvent.click(remounted.getByRole('button', { name: 'Cancel' }))
   expect(editDrafts.size).toBe(0)
   expect(remounted.getByText('Original answer')).toBeTruthy()
+})
+
+describe('Files changes under a reply', () => {
+  const item = { type: 'pulpo_file_changes', id: 'file-changes', count: 1 }
+
+  it('lists what a finished reply changed instead of showing the raw output item', async () => {
+    filesApi.fetchFileChanges.mockResolvedValue({
+      changes: [{ id: 'c1', nodeId: 'n1', name: 'Plan.md', nodeKind: 'doc', mimeType: null, kind: 'update', mode: 'write', status: 'applied', available: true }],
+      canUndo: true,
+      canRedo: false,
+    })
+    const [{ MessageItem }, { useAuth }] = await Promise.all([import('./MessageItem'), import('@/stores/auth')])
+    useAuth.setState({ user: { id: 'user' } } as never)
+    onTestFinished(() => useAuth.setState({ user: null }))
+    const view = render(
+      <QueryClientProvider client={new QueryClient()}>
+        <MemoryRouter>
+          <TooltipProvider><MessageItem chat={chat} message={assistant({ content: 'Done', outputItems: [item] })} streaming={false} onRegenerate={() => undefined} /></TooltipProvider>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    )
+    expect(await view.findByText('Changed 1 item')).toBeTruthy()
+    expect(filesApi.fetchFileChanges).toHaveBeenCalledWith('response-1')
+    expect(view.container.textContent).not.toContain('pulpo file changes')
+  })
+
+  it('waits for the reply to finish', async () => {
+    const { MessageItem } = await import('./MessageItem')
+    const markup = renderToStaticMarkup(<MessageItem chat={chat} message={assistant({ content: 'Working', done: false, outputItems: [item] })} streaming onRegenerate={() => undefined} />)
+    expect(markup).not.toContain('pulpo file changes')
+    expect(markup).not.toContain('data-file-changes')
+  })
+
+  it('labels pulpo files commands in the activity', async () => {
+    const { MessageItem } = await import('./MessageItem')
+    const markup = renderToStaticMarkup(<MessageItem
+      chat={chat}
+      message={assistant({
+        done: false,
+        outputItems: [{ type: 'pulpo_tool', id: 'tool-1', tool: 'bash', status: 'running', arguments: { command: 'cd /workspace/files && pulpo files push' } }],
+      })}
+      streaming
+      onRegenerate={() => undefined}
+    />)
+    expect(markup).toContain('Saving to Files…')
+  })
 })

@@ -1,4 +1,14 @@
-import type { FileConversionPreview, FileFolderLayout, FileListing, FileNode, FileUploadReservation, MoveFileNodes, UpdateFileFolderLayout, UpdateFileNode } from '@pulpo/contracts'
+import type {
+  FileChangesResponse,
+  FileConversionPreview,
+  FileFolderLayout,
+  FileListing,
+  FileNode,
+  FileUploadReservation,
+  MoveFileNodes,
+  UpdateFileFolderLayout,
+  UpdateFileNode,
+} from '@pulpo/contracts'
 import { formatAttachmentSizeLimit } from '@pulpo/client-core'
 import { ApiError, apiRequest, authenticatedFetch, downloadApiFile, fetchApiBlob } from '@/lib/api'
 import { uit } from '@/i18n/ui'
@@ -152,4 +162,26 @@ export async function fetchFileBlob(node: FileNode): Promise<Blob> {
   const response = await fetch(url)
   if (!response.ok) throw new ApiError(response.status, 'file_download_failed', uit`Download failed (${response.status})`)
   return response.blob()
+}
+
+/** Every reply's list of Files changes; under the Files prefix so Files updates refresh them. */
+export const allFileChangesQueryKey = (userId: string | undefined) => [...filesQueryKey(userId), 'changes'] as const
+export const fileChangesQueryKey = (userId: string | undefined, responseId: string) =>
+  [...allFileChangesQueryKey(userId), responseId] as const
+
+export function fetchFileChanges(responseId: string): Promise<FileChangesResponse> {
+  return apiRequest<FileChangesResponse>(`/api/responses/${responseId}/file-changes`)
+}
+
+/**
+ * Acts on all of a reply's changes: `undo`/`redo` its Write-mode changes, `accept`/`reject` its
+ * pending suggestions. Undo and redo fail with `file_changes_conflict` when items changed since.
+ */
+export function updateFileChanges(responseId: string, action: 'undo' | 'redo' | 'accept' | 'reject'): Promise<FileChangesResponse> {
+  return apiRequest<FileChangesResponse>(`/api/responses/${responseId}/file-changes/${action}`, { method: 'POST' })
+}
+
+/** Accepts or rejects one suggested change (for a document, all of its suggestions from that reply). */
+export function resolveFileChange(changeId: string, action: 'accept' | 'reject'): Promise<FileChangesResponse> {
+  return apiRequest<FileChangesResponse>(`/api/file-changes/${changeId}/${action}`, { method: 'POST' })
 }

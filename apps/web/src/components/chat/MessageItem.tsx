@@ -34,6 +34,7 @@ import { formatCost, formatDuration, formatSecondsLabel, timeAgo } from '@/lib/f
 import { useChat } from '@/stores/chat'
 import { selectAvailableChatIds } from '@/lib/chat-availability'
 import { useSettings } from '@/stores/settings'
+import { useAuth } from '@/stores/auth'
 import { useUploadOutbox } from '@/stores/upload-outbox'
 import { Markdown } from './Markdown'
 import { MessageAttachmentList } from './AttachmentImage'
@@ -59,7 +60,7 @@ import { ui, activeLocale } from '@/i18n/ui'
 import { toolActivityPresentation } from './tool-activity-presentation'
 import { UsageCostBreakdown } from '@/components/usage/UsageCostBreakdown'
 import { FileChangesBar } from '@/features/files/FileChangesBar'
-import { changedFiles } from '@/features/files/file-changes'
+import { fileChangesItem } from '@/features/files/file-changes'
 
 function CopyButton({ text }: { text: string }) {
   const { t } = useTranslation()
@@ -636,6 +637,7 @@ export const MessageItem = memo(function MessageItem({
   const returnSubmissionToComposer = useUploadOutbox((state) => state.returnSubmissionToComposer)
   const showReasoning = useSettings((s) => s.showReasoning)
   const showResponseCost = useSettings((s) => s.showResponseCost)
+  const filesEnabled = useAuth((s) => s.filesEnabled)
   const [editing, setEditing] = useState(() => editDrafts?.has(message.id) ?? false)
   const [draft, setDraft] = useState(() => editDrafts?.get(message.id) ?? message.content)
   useEffect(() => {
@@ -766,7 +768,7 @@ export const MessageItem = memo(function MessageItem({
   const outputItems = message.outputItems ?? []
   const otherItems = outputItems.filter((item) => {
     const type = (item as { type?: string }).type
-    return type && !['message', 'reasoning', 'pulpo_tool', 'pulpo_workspace', 'pulpo_attachment', 'pulpo_compaction', 'pulpo_recall', 'pulpo_cost_limit'].includes(type)
+    return type && !['message', 'reasoning', 'pulpo_tool', 'pulpo_workspace', 'pulpo_attachment', 'pulpo_compaction', 'pulpo_recall', 'pulpo_cost_limit', 'pulpo_file_changes'].includes(type)
   })
   const costLimit = findCostLimitItem(outputItems)
   const lastActivityIndex = activitySegments.length - 1
@@ -898,7 +900,7 @@ export const MessageItem = memo(function MessageItem({
           )}
         </div>
 
-        {message.done && !chat.expired && changedFiles(message.outputItems) && <FileChangesBar responseId={message.id} />}
+        {message.done && !chat.expired && filesEnabled && fileChangesItem(outputItems) && <FileChangesBar responseId={message.id} />}
 
         {(message.done || hasMultipleBranches(message.branch)) && (
           <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-1">
