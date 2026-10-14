@@ -23,6 +23,9 @@ public final class PersonalDictionary {
   private var words: [String: Word] = [:]
   private var pairs: [String: Int] = [:]
   private var successors: [String: [String: Int]] = [:]
+  /// The sum of each history's successor counts. The language model reads it for
+  /// every candidate it scores, including thousands per swipe.
+  private var historyTotals: [String: Int] = [:]
   private var blocked: Set<String> = []
   private var blockedKeys: Set<String> = []
   private var byKey: [String: [String]] = [:]
@@ -65,13 +68,20 @@ public final class PersonalDictionary {
       let parts = pair.split(separator: "\u{1F}", maxSplits: 1)
       if parts.count == 2 { successors[String(parts[0]), default: [:]][String(parts[1])] = count }
     }
+    rebuildHistoryTotals()
+  }
+
+  private func rebuildHistoryTotals() {
+    historyTotals = successors.mapValues { $0.values.reduce(0, +) }
   }
 
   // MARK: Learning
 
   public func learn(_ word: String, after previous: String?, pinned: Bool = false) {
     guard !word.isEmpty, word.count <= 40 else { return }
-    knownCache = nil
+    // `knownEntries` lists exactly the known words, so it stays valid unless this changes.
+    let wasKnown = isKnown(word)
+    let learnedKey = TextNormalizer.key(word)
     let now = Date().timeIntervalSince1970
     if var entry = words[word] {
       entry.count += 1
@@ -80,27 +90,32 @@ public final class PersonalDictionary {
       words[word] = entry
     } else {
       words[word] = Word(count: 1, lastUsed: now, pinned: pinned)
-      byKey[TextNormalizer.key(word), default: []].append(word)
+      byKey[learnedKey, default: []].append(word)
     }
+    // Repeating a known word, the usual case, leaves the fuzzy-match index valid.
+    if isKnown(word) != wasKnown { knownCache = nil }
     totalCount += 1
-    let learnedKey = TextNormalizer.key(word)
-    blocked = blocked.filter { TextNormalizer.key($0) != learnedKey }
-    blockedKeys.remove(learnedKey)
+    // `blockedKeys` holds exactly the keys of `blocked`.
+    if blockedKeys.remove(learnedKey) != nil {
+      blocked = blocked.filter { TextNormalizer.key($0) != learnedKey }
+    }
     if let previous, !previous.isEmpty {
       let history = previous.lowercased()
       pairs[history + "\u{1F}" + word, default: 0] += 1
       successors[history, default: [:]][word, default: 0] += 1
+      historyTotals[history, default: 0] += 1
     }
     dirty = true
     if words.count > Self.maximumWords || pairs.count > Self.maximumPairs { prune() }
   }
 
   public func pin(_ word: String) {
-    knownCache = nil
     if words[word] == nil {
       learn(word, after: nil, pinned: true)
     } else {
+      let wasKnown = isKnown(word)
       words[word]?.pinned = true
+      if isKnown(word) != wasKnown { knownCache = nil }
       dirty = true
     }
   }
@@ -120,6 +135,7 @@ public final class PersonalDictionary {
     for history in successors.keys {
       successors[history] = successors[history]?.filter { TextNormalizer.key($0.key) != key }
     }
+    rebuildHistoryTotals()
     blocked.insert(word)
     blockedKeys.insert(key)
     dirty = true
@@ -173,7 +189,7 @@ public final class PersonalDictionary {
   }
 
   public func historyCount(_ previous: String) -> Int {
-    successors[previous.lowercased()]?.values.reduce(0, +) ?? 0
+    historyTotals[previous.lowercased()] ?? 0
   }
 
   /// Most frequent first. Equal counts are ordered by word, so predictions do not
