@@ -49,7 +49,6 @@ export function AppLayout() {
   // Set while a drag on its edge sizes the sidebar directly, without its transitions.
   const [sidebarTracking, setSidebarTracking] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
-  const [searchHasQuery, setSearchHasQuery] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [settingsMounted, setSettingsMounted] = useState(false)
   const [settingsSection, setSettingsSection] = useState<SettingsSectionId>('general')
@@ -64,8 +63,8 @@ export function AppLayout() {
   const panelNeedsRoomFrom = (width: number) => panelOpen && !adminChatView
     && !splitFits(frameWidth - width) && splitFits(frameWidth - SIDEBAR_COLLAPSED_WIDTH)
   const panelNeedsSidebarRoom = panelNeedsRoomFrom(sidebarWidth)
-  const sidebarMakesRoom = !mobile && !collapsed && !searchHasQuery && !keepSidebar && panelNeedsSidebarRoom
-  const sidebarCollapsed = mobile || collapsed || searchHasQuery || sidebarMakesRoom
+  const sidebarMakesRoom = !mobile && !collapsed && !keepSidebar && panelNeedsSidebarRoom
+  const sidebarCollapsed = mobile || collapsed || sidebarMakesRoom
   useEffect(() => { if (!panelNeedsSidebarRoom) setKeepSidebar(false) }, [panelNeedsSidebarRoom])
   // Too narrow for two views even without the sidebar (phones): the panel becomes the only view,
   // in the layout rather than over it; the main view stays mounted and returns when it closes.
@@ -288,11 +287,7 @@ export function AppLayout() {
         {searchOpen && <Suspense fallback={null}>
           <SearchModal
             open={searchOpen}
-            onClose={() => {
-              setSearchOpen(false)
-              setSearchHasQuery(false)
-            }}
-            onQueryPresenceChange={setSearchHasQuery}
+            onClose={() => setSearchOpen(false)}
           />
         </Suspense>}
         {settingsMounted && <Suspense fallback={null}>
