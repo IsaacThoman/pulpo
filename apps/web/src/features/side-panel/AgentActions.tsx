@@ -1,12 +1,13 @@
 import type { ReactElement } from 'react'
-import { Columns2, MessageSquarePlus, SquarePen } from 'lucide-react'
+import { useLocation } from 'react-router-dom'
+import { Columns2, MessageSquarePlus, PanelLeft, SquarePen } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { DropdownMenuItem } from '@/components/ui/dropdown-menu'
+import { DropdownMenuItem, DropdownMenuShortcut } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { ui } from '@/i18n/ui'
 import { addToChat, openInNewChat, splitView, useChatTarget, type FilesViewPlace } from './agent'
 import { useSidePanel, type PanelContent } from './store'
-import { useMainNavigate } from './use-panel-actions'
+import { mainViewContent, useMainNavigate } from './use-panel-actions'
 
 function TipButton({ tip, children }: { tip: string; children: ReactElement }) {
   return (
@@ -27,6 +28,25 @@ export function SplitViewButton({ view }: { view: PanelContent }) {
     <TipButton tip={ui("Split view: move this to the side and open a chat")}>
       <Button variant="ghost" size="icon-sm" aria-label={ui("Split view")} onClick={() => splitView(view, go)}><Columns2 /></Button>
     </TipButton>
+  )
+}
+
+/**
+ * "Open to the left" for a chat's menu, the mirror of "Open to the right": what the main view shows
+ * moves into the panel and the chat opens beside it. Offered only when the main view shows
+ * something the panel can hold and there is room for both; otherwise it would just open the chat.
+ */
+export function OpenChatToLeftItem({ chatId, shortcut }: { chatId: string; shortcut?: string }) {
+  const go = useMainNavigate()
+  const { pathname } = useLocation()
+  const available = useSidePanel((state) => state.splitAvailable)
+  const view = mainViewContent(pathname)
+  if (!view || !available) return null
+  return (
+    <DropdownMenuItem onSelect={() => splitView(view, go, chatId)}>
+      <PanelLeft /> {ui("Open to the left")}
+      {shortcut && <DropdownMenuShortcut>{shortcut}</DropdownMenuShortcut>}
+    </DropdownMenuItem>
   )
 }
 

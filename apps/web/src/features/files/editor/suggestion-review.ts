@@ -101,11 +101,16 @@ export function useSuggestionReview(editor: Editor, onResolved?: () => void) {
         releaseHover()
       }
     }
+    // Moving onto the card keeps the suggestion. React runs the card's onPointerEnter before this
+    // mouseleave, so starting the timer here would hide the card under the pointer.
+    const leave = (event: MouseEvent) => {
+      if (!(event.relatedTarget as Element | null)?.closest?.('[data-suggestion-card]')) releaseHover()
+    }
     dom.addEventListener('mouseover', over)
-    dom.addEventListener('mouseleave', releaseHover)
+    dom.addEventListener('mouseleave', leave)
     return () => {
       dom.removeEventListener('mouseover', over)
-      dom.removeEventListener('mouseleave', releaseHover)
+      dom.removeEventListener('mouseleave', leave)
       window.clearTimeout(leaveTimer.current)
     }
   }, [editor, keepHover, releaseHover])

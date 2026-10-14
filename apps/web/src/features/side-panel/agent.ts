@@ -77,10 +77,10 @@ export function targetScope(target: ChatTarget | null, chats = useChat.getState(
 /** Navigates the main view (see `useMainNavigate`). */
 type Go = (pathname: string) => void
 
-/** Moves a files view from the main view into the panel, leaving the main view for a chat. */
-export function splitView(view: PanelContent, go: Go): void {
+/** Moves a files view from the main view into the panel, leaving the main view for a chat: a new one, or `chatId`. */
+export function splitView(view: PanelContent, go: Go, chatId?: string): void {
   useSidePanel.getState().open(view)
-  go('/')
+  go(chatId ? `/c/${chatId}` : '/')
 }
 
 /**

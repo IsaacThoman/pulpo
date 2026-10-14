@@ -1932,6 +1932,7 @@ const esUi: Record<string, string> = {
   "Close side panel": "Cerrar el panel lateral",
   "Folders open in the Files view.": "Las carpetas se abren en la vista de Archivos.",
   "Open to the right": "Abrir a la derecha",
+  "Open to the left": "Abrir a la izquierda",
   "Close panel": "Cerrar panel",
   "Snap to grid": "Ajustar a la cuadrícula",
   "Sort: {{0}}": "Ordenar: {{0}}",
