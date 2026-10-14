@@ -1,9 +1,76 @@
-# Keyboard quality audit — October 13, 2026
+# Keyboard quality audit — October 14, 2026
 
 The user's real-use feedback exposed a gap in the earlier synthetic evaluations.
 Recorded human gestures score far below generated center paths. Current evidence
 supports specific improvements, not an overall real-use lead over Gboard. Gboard
 on iOS, multilingual input, and physical-device latency remain unmeasured.
+
+## Further iteration: emoji suggestions and stale choices
+
+The suggestion bar now offers one explicitly chosen emoji alongside word choices.
+It indexes supported Unicode names and CLDR 48 English keywords, with prefixes,
+compact compounds such as `thumbsup`, and matching phrase suffixes such as
+`red heart`. The literal and automatic correction remain available. A tap
+replaces an unfinished matching phrase; after a committed space it appends the
+emoji without deleting the words. Space and punctuation never apply emoji.
+The picker and bar share recent choices and preferred skin tones. Private,
+address, numeric, selected-text and technical-identifier contexts suppress emoji.
+
+The matcher checks all 1,922 canonical names meeting its three-character minimum,
+as well as an independently frozen set of aliases, prefixes, Unicode variants and
+negative controls. The index is built off the typing thread. An optimized macOS
+probe measured 36.8 ms initialization, 2.34 MB incremental physical footprint,
+2.8 µs p95 across 10,000 lookups, and 51.3 µs maximum. These are host measurements,
+not physical iPhone latency claims. The installed simulator extension used 32 MB
+physical footprint with emoji suggestions active. Catalog keywords add 128,570
+bytes; pinned source hashes, import steps and the Unicode license are recorded in
+[LanguageData/README.md](LanguageData/README.md).
+
+A separate blind input-state sweep froze 22 development and 16 verification cases
+before consulting the implementation. It found old swipe alternatives could fall
+through to generic completion handling, deleting a newly composing or externally
+changed word while the bar was refreshing. Engine-generated choices now carry a
+private document-state generation, invalidated by edits, field changes and policy
+changes. Selection reconciles pending host edits before checking that generation;
+ordinary delayed own-edit acknowledgments preserve a valid choice. Invalid swipe
+alternatives no longer fall through. Frozen development improves 18/22 to 20/22;
+verification improves 15/16 to 16/16. The two unchanged development failures assume
+an explicit space after an already auto-spaced word is deduplicated, which is not
+the current keyboard contract. This is a stale-selection fix, not a decoder gain.
+Nineteen reusable freshness tests include edits arriving before host callbacks.
+
+An independent emoji workflow sweep froze 20 development and 12 verification
+scenarios before reviewing the implementation. All pass: names and related words,
+multiword replacement, Unicode prefixes, tap/swipe transitions, committed append,
+spacing, stale choices, field/cursor/privacy changes and delayed acknowledgments.
+Tests select actual displayed engine slots instead of injecting emoji candidates.
+
+A fresh blind stress runner combines 134 clean tap controls, 90 typo executions,
+120 authored noisy ambiguity gestures and 360 salted-ID-selected recorded human
+gestures in known and unknown context. Baseline is 134/134 literal preservation,
+78/90 typo repair, 250/360 human contextual top-1 and 279/360 top-3; unknown-context
+scores are 245/360 and 274/360. Authored noisy swipe top-1 at noise 0.22/0.38/0.50
+is 32/27/23 of 40; top-3 is 39/37/30. Inputs and acceptance criteria were frozen
+before results (manifest SHA-256
+`57a63e97e01ea67a8c4216e70f35a43ba212419dde998a3037d61c86fbd543a4`).
+The recorded subset is selected from development data and excludes previously
+reported passage words; it is not a new held-out human test. Contextual candidate
+seeding and expanding endpoint-key admission from eight to twelve both fail the
+predeclared gain threshold: neither changes top-1 or top-3 totals. Both are
+rejected, with production scoring and final human verification untouched. The
+opt-in `BlindInputStressTests` runner enforces gains without new clean-literal,
+typo-repair or top-three regressions; raw inputs and reports stay outside Git.
+
+A second authored tap sweep freezes 60 development typos and 60 clean controls,
+then 40 independent verification typos and 50 clean controls. Current rules repair
+57/60 and 39/40, preserving all 110 clean literals. Remaining cases are `desicion`
+(outside the search bound), `maintainance` (retrieved but low confidence), valid
+`planing`, and ambiguous `My collegue` (both `college` and `colleague` are retrieved).
+There are fewer than three safely repairable development misses, so no bounds or
+confidence rules are changed. These authored scores are not real-use error rates.
+The frozen typo-set SHA-256 hashes are
+`c13df5b4da1bf57200411569e29004a5f45818a2d95a2d8df78f8e9d33f68806`
+and `e7f1f338fd2c06fb9a68ce1e3f37a9e804a1facac367b0573f46e14d62a22e7e`.
 
 ## Further iteration: typing confidence and native input
 
