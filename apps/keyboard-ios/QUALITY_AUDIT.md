@@ -5,6 +5,87 @@ Recorded human gestures score far below generated center paths. Current evidence
 supports specific improvements, not an overall real-use lead over Gboard. Gboard
 on iOS, multilingual input, and physical-device latency remain unmeasured.
 
+## Further iteration: typing confidence and native input
+
+Blind evaluations now include clean literals as well as intended corrections.
+One frozen 140-case audit improves exact correction from 78/90 to 80/90 and
+literal preservation from 44/50 to 49/50. A second 80-case audit retains 29/32
+corrections while improving literals from 37/48 to 46/48. A separate 218-token
+clean corpus improves from 215/218 to 218/218. These are authored probes, not
+measured human error rates. Unknown title-case name protection deliberately loses
+some unassisted name-like typo recall; directed touch evidence can still permit
+correction. Initial names such as `Tre` and `Teo` remain difficult cases.
+
+The correction changes preserve real edit costs when a correction duplicates a
+completion, require the strongest eligible alternative to justify changing a
+literal, recover familiar short words with a missing interior vowel, and protect
+uncertain chat tokens. Three-letter search now admits the existing first-key
+adjacent substitution cost of 4.4, recovering examples such as `yhe` and `jow`.
+Frozen nonword retrieval improves 64/75 to 66/75; two additional held-out sets
+retain their correction scores, with no new changes across 156 literal controls.
+Wider two-letter searches were rejected after changing `qa`, `ty`, `mc`, and `mi`.
+
+The trigram reader and builder also reserve a nonzero backoff probability:
+quantization previously made 72 histories assign all mass to stored successors,
+collapsing omitted words to the same probability floor. Aggregate next-word
+top-1/top-3 totals on 395,187 held-out conversation cases remain 84,587/137,406;
+this repairs confidence ordering rather than establishing a prediction gain.
+
+The literal vocabulary adds 5,784 pinned ESDB spellings without adding static
+prediction, correction, or swipe targets. A 571-word clean audit reduces unknown
+spellings from 16 to six and unwanted replacements from two to zero. Among 3,787
+generated unknown errors, exact correction changes 3,324 to 3,323: the accepted
+noun `wold` can also be a typo for `would`. All 21 previous dictionary section
+payloads are byte-identical. Provenance, filtering, license, and this tradeoff are
+recorded in [LanguageData/README.md](LanguageData/README.md).
+
+Native routing tests exposed failures beyond decoder scoring:
+
+- Release coordinates and coalesced samples were lost; the decoder now receives
+  the final endpoint, including fast gestures delivered in the release batch.
+- Out-and-back paths contained in one move batch could remain taps until release,
+  allowing the alternate-key timer to take the gesture. Intermediate departures
+  now establish swipe ownership immediately. Actual key centers and pitch also
+  trigger geometry refreshes; resizing cancels paths spanning incompatible frames.
+  Dark appearance changes preserve active gestures, as do page-key slides.
+- A redundant end-of-gesture length gate discarded recognized adjacent-key swipes
+  such as `we` and `as`. Looping gestures and ordinary small tap rolls have separate
+  regression controls.
+- Held Shift could stay active after sliding, rolling, or cancellation. Terminal
+  paths now release the original modifier owner.
+- Multi-step edits could read stale host snapshots. A bounded one-second cache of
+  exact own-edit snapshots preserves composition and undo while distinguishing
+  selection and cursor changes. An external same-document edit that exactly
+  matches a recent own snapshot remains intrinsically ambiguous during that window.
+- Different fields could match those snapshots and inherit word undo or spacing.
+  A hidden field containing `secret` could lose five characters on one Backspace.
+  Document identity changes now reset that state. Native verification additionally
+  caught UIKit returning a nil document ID during startup despite its nonoptional
+  Swift signature; the adapter reads it optionally to avoid a UUID bridge trap.
+- Context loss with an unchanged document ID could likewise retain destructive
+  word undo. Explicit privacy changes and distinguishable visibility transitions
+  now invalidate it. Bounded raw optional snapshots preserve ordinary nil-at-empty
+  cursor edges, first-word tap evidence, swipe alternatives and reentrant own edits.
+  Loss of context that exactly matches a recent natural-nil snapshot without any
+  identity or privacy change remains indistinguishable from host lag. The code
+  preserves lag behavior in that case; universal context-loss detection is not claimed.
+
+A context-only real-word transposition proposal was rejected even after passing
+686,089 clean-token controls: it changed legitimate `too sacred` into `too scared`.
+That counterexample shows why a large clean corpus alone cannot establish semantic
+safety. The branch retains the requirement for directed touch evidence before
+automatically changing ordinary valid words.
+
+Accepted-code verification for this iteration: **128 optimized Swift tests in
+13 suites**, **61 iOS 26.5 simulator tests**, and **17 Python tests** pass. The
+native pass includes the installed extension, the five reported target words,
+rolling and coalesced touches, Shift, page slides, geometry changes, and typing.
+One earlier UI runner was terminated with SIGTERM during popup capture; its
+isolated retry and the complete final 61-test run both passed. No raw evidence,
+downloaded corpora, recordings, result bundles, or device artifacts are committed.
+The standalone native keyboard's Release simulator build also succeeds. This
+iteration has not installed a new build on the physical iPhone.
+
 ## Further iteration: recorded human swipe paths
 
 Baseline is `19937ca3`. Fresh agents froze their cases before consulting earlier
@@ -80,6 +161,74 @@ and cannot establish strict original-time parity. Original requested duration is
 tests ensure that timestamps remain paired with the correct spatial samples,
 including revisits to the same coordinate; the existing uniform replay geometry
 is unchanged.
+
+### Follow-up from the user's swiped passage
+
+The reported substitutions were `well → will`, `types → asphalt`, `best → breezy`,
+`friend → friends`, and `the → Tré`. The user confirmed mostly swiping. Actual
+touch paths and device personalization state were unavailable. A fresh investigator
+froze 680 word/context/path cases before reading scoring code. All five words
+decode correctly with centered and mild noisy inputs in the intended contexts.
+A centered `types` path cannot admit `asphalt`: their initial keys are about 3.64
+pitches apart. Thus these results do not establish the cause of every reported
+failure. An installed-extension test now checks the five words with visible key
+geometry and their immediate sentence contexts.
+
+The investigation exposed endpoint candidate loss under drift or shortened lifts.
+The intended key could fall outside the nearest four even when the entire path
+fit it well. Endpoints now admit the nearest eight within 1.75 pitches, retaining
+the 6,000-candidate budget. An admissible endpoint-error bound skips hopeless
+candidates before interior alignment; ordered results and scores are checked
+against unrestricted scoring. Full integration caught nearly stationary touches
+being admitted as short words. The existing minimum path/template length ratio
+of .5 now applies to short templates too, with tiny-wobble checks at every key
+and explicit short adjacent-word controls.
+
+| Same frozen inputs | Prior integrated top-1 / top-3 | Wider endpoints with safety guard |
+| --- | ---: | ---: |
+| Human development, 3,000 | 1,988 / 2,202 | 2,004 / 2,238 |
+| Human verification, 3,000 | 1,928 / 2,152 | 1,953 / 2,192 |
+| Dictionary-known verification, 2,774 | 1,921 / 2,142 | 1,946 / 2,182 |
+| Fresh authored cases, 680 | 587 / 622 | 609 / 654 |
+
+Verification has 32 first-choice gains and seven losses, including `morning →
+Niebuhr`, `you → thou`, and `unique → unguarded`. No outputs were excluded.
+Additional legitimate-competitor and pinned-`Tré` controls improve 140/176 to
+144/176 with no added first-choice losses. Two severely shortened `types` probes
+remain wrong. One development `we` trace moving only about .10 pitch is now
+declined by the safety rule; it would not meet native swipe activation either.
+
+The standard rounded 500-case probe loses one top-three result (482 to 481),
+while a separate 3,000-path rounded audit gains four first and four top-three
+results. A paired alternating-order Mac benchmark measures median .696 to
+1.183 ms and p95 1.952 to 2.200 ms. Physical iPhone timing remains unmeasured.
+Relative to `19937ca3`, frozen human verification improves from 1,894/2,119 to
+1,953/2,192 first/top-three choices. The final 65.10% first-choice result still
+leaves a substantial accuracy gap; it is not evidence of world-class performance.
+
+Sentence-start contractions remain a separate model weakness. The bounded initial
+history retains only 48 successors and about .65 of its quantized observed mass.
+Frequent omitted words can receive a severely discounted prior: an ideal `she's`
+path can lose to `she`. Apostrophe tokenization and dictionary lookup were checked;
+the training data contains the contraction. Three broad probability-redistribution
+experiments were rejected after reducing held-out validation prediction quality.
+
+A 256-successor initial-history proposal improved frozen contraction probes from
+936/1,440 to 1,143/1,440 and improved recorded sentence-start verification. With
+the new endpoint decoder, verification heads improved 485/537 to 494/543
+first/top-three choices across 718 gestures from 206 participants. Development
+had already missed its original strict top-three criterion by two cases before
+the endpoint combination; that tradeoff was disclosed.
+
+The proposal was nevertheless **rejected** after another independent clean-path
+check. Across 780 unique recorded sentence-head target spellings, centered first
+choices declined from 625 to 609 (17 losses and one gain), including `dose → does`,
+`seven → even`, `note → nope`, and `leg → let`. The new capacity merely moved the
+probability cliff to other words. Sentence-start Mac median/p95 decoding also
+rose from 1.411/2.606 to 1.835/3.202 ms. The candidate builder, extra test and
+dictionary activation were reverted; the shipped sentence-start table remains
+unchanged. Positive average human results and a corrected demonstration passage
+were insufficient grounds to accept these new clean-input failures.
 
 ## Follow-up: prediction coverage and swipe search
 

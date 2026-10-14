@@ -47,6 +47,13 @@ SHA-256 checksums (these inputs are **not** used by the builder):
 Rebuild with the command in the parent README. Match these input checksums to
 reproduce this dictionary; upstream downloads can change.
 
+The bundled file preserves the original language-table payloads and appends the
+literal vocabulary below. The current full builder additionally caps saturated
+trigram interpolation bytes at 254: it normalizes 72 legacy values of 255. The
+runtime already applies that same cap, so this full-rebuild difference is
+semantically equivalent, but those 72 bytes will not be identical to this bundle.
+The literal-section appender reproduces the bundle without changing those tables.
+
 ## Literal-only spelling vocabulary
 
 `en_US.validwords.txt` contains 5,784 additional accepted spellings from the
