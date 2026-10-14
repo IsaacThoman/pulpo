@@ -18,6 +18,7 @@ import type { PulpoSocket } from '@/lib/realtime-socket'
 import { DocEditor } from './DocEditor'
 import { FakeServer, FakeSocket } from './fake-doc-server.test.helpers'
 import { SocketIOYProvider } from './socket-provider'
+import { describeHunk } from './suggestion-review'
 
 afterEach(cleanup)
 
@@ -47,6 +48,9 @@ function serverWith(content: unknown[]): FakeServer {
 }
 
 const insertMark = (id: string) => ({ type: 'suggestionInsert', attrs: { id, changeId: 'change-2' } })
+
+/** Longer than the card's grace period after the pointer leaves its suggestion. */
+const pastGrace = () => new Promise((resolve) => setTimeout(resolve, 400))
 
 function mount(server: FakeServer, editable = true) {
   const doc = new Y.Doc()
@@ -117,7 +121,7 @@ describe('DocEditor suggestions', () => {
     // before the editor's mouseleave.
     fireEvent.pointerEnter(card)
     fireEvent.mouseLeave(element()!, { relatedTarget: card })
-    await new Promise((resolve) => setTimeout(resolve, 400))
+    await pastGrace()
     fireEvent.click(within(view.getByRole('dialog', { name: 'Suggestion' })).getByRole('button', { name: 'Reject suggestion' }))
     expect(listSuggestions(editor().state.doc).map((hunk) => hunk.id)).toEqual(rest.map((hunk) => hunk.id))
   })
@@ -132,6 +136,31 @@ describe('DocEditor suggestions', () => {
     fireEvent.mouseLeave(element()!, { relatedTarget: card })
     fireEvent.pointerLeave(card)
     await waitFor(() => expect(view.queryByRole('dialog', { name: 'Suggestion' })).toBeNull())
+  })
+
+  it('keeps the card while the pointer crosses another suggestion on the way to it', async () => {
+    const server = suggestingServer()
+    const { view, element, editor } = mount(server)
+    await waitFor(() => expect(element()?.querySelector('.pulpo-suggestion-insert')).toBeTruthy())
+    const [first, second] = listSuggestions(editor().state.doc)
+    fireEvent.mouseOver(element()!.querySelector(`[data-suggestion-id="${first!.id}"]`)!)
+    const card = await view.findByRole('dialog', { name: 'Suggestion' })
+    fireEvent.mouseOver(element()!.querySelector(`[data-suggestion-id="${second!.id}"]`)!)
+    expect(card.textContent).toContain(describeHunk(first!))
+    fireEvent.pointerEnter(card)
+    await pastGrace()
+    expect(view.getByRole('dialog', { name: 'Suggestion' }).textContent).toContain(describeHunk(first!))
+  })
+
+  it('moves the card to another suggestion the pointer stays on', async () => {
+    const server = suggestingServer()
+    const { view, element, editor } = mount(server)
+    await waitFor(() => expect(element()?.querySelector('.pulpo-suggestion-insert')).toBeTruthy())
+    const [first, second] = listSuggestions(editor().state.doc)
+    fireEvent.mouseOver(element()!.querySelector(`[data-suggestion-id="${first!.id}"]`)!)
+    await view.findByRole('dialog', { name: 'Suggestion' })
+    fireEvent.mouseOver(element()!.querySelector(`[data-suggestion-id="${second!.id}"]`)!)
+    await waitFor(() => expect(view.getByRole('dialog', { name: 'Suggestion' }).textContent).toContain(describeHunk(second!)))
   })
 
   it('steps through suggestions from the review bar', async () => {
@@ -191,6 +220,19 @@ describe('nested and block suggestions', () => {
     const card = await view.findByRole('dialog', { name: 'Suggestion' })
     expect(card.textContent).toContain('Add “brave”')
     fireEvent.click(within(card).getByRole('button', { name: 'Accept suggestion' }))
+    expect(listSuggestions(editor().state.doc).map((hunk) => hunk.id)).toEqual(['outer'])
+  })
+
+  it('keeps the card for an inner suggestion while the pointer crosses the block around it', async () => {
+    const { view, element, editor } = mount(nested())
+    await waitFor(() => expect(element()?.querySelector('[data-suggestion="insert"]')).toBeTruthy())
+    fireEvent.mouseOver(element()!.querySelector('[data-suggestion-id="inner"]')!)
+    const card = await view.findByRole('dialog', { name: 'Suggestion' })
+    expect(card.textContent).toContain('Add “brave”')
+    fireEvent.mouseOver(element()!.querySelector('[data-suggestion-id="outer"]')!)
+    fireEvent.pointerEnter(card)
+    await pastGrace()
+    fireEvent.click(within(view.getByRole('dialog', { name: 'Suggestion' })).getByRole('button', { name: 'Accept suggestion' }))
     expect(listSuggestions(editor().state.doc).map((hunk) => hunk.id)).toEqual(['outer'])
   })
 

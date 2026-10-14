@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { listSuggestions, resolveSuggestions, type SuggestionAction, type SuggestionHunk, type SuggestionRef } from '@pulpo/client-core/doc-schema'
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
 import { Selection } from '@tiptap/pm/state'
@@ -58,7 +58,10 @@ export function describeHunk(hunk: Pick<SuggestionHunk, 'inserted' | 'deleted'>)
   return ui("Change the layout")
 }
 
-/** How long the card stays after the pointer leaves a suggestion, so it can be reached. */
+/**
+ * How long the card stays after the pointer leaves its suggestion, for plain text or another
+ * suggestion, so it can be reached across whatever lies between.
+ */
 const HOVER_GRACE_MS = 250
 
 /**
@@ -82,23 +85,35 @@ export function useSuggestionReview(editor: Editor, onResolved?: () => void) {
     equalityFn: (a, b) => b !== null && a.hunks === b.hunks && a.cursorId === b.cursorId,
   })
   const [hoverId, setHoverId] = useState<string | null>(null)
-  const leaveTimer = useRef<number | undefined>(undefined)
+  const hoverTimer = useRef<number | undefined>(undefined)
+  // The hunk whose card is showing, for the pointer handlers.
+  const shownId = useRef<string | null>(null)
 
-  const keepHover = useCallback(() => window.clearTimeout(leaveTimer.current), [])
-  const releaseHover = useCallback(() => {
-    window.clearTimeout(leaveTimer.current)
-    leaveTimer.current = window.setTimeout(() => setHoverId(null), HOVER_GRACE_MS)
+  const keepHover = useCallback(() => window.clearTimeout(hoverTimer.current), [])
+  /** Hovers `id`, or nothing, unless the pointer gets back to the card or its suggestion first. */
+  const hoverSoon = useCallback((id: string | null) => {
+    window.clearTimeout(hoverTimer.current)
+    hoverTimer.current = window.setTimeout(() => setHoverId(id), HOVER_GRACE_MS)
   }, [])
+  const releaseHover = useCallback(() => hoverSoon(null), [hoverSoon])
+  const clearHover = () => {
+    window.clearTimeout(hoverTimer.current)
+    setHoverId(null)
+  }
 
   useEffect(() => {
     const dom = editor.view.dom
     const over = (event: MouseEvent) => {
       const id = (event.target as Element | null)?.closest?.('[data-suggestion-id]')?.getAttribute('data-suggestion-id') ?? null
-      if (id) {
+      if (id === shownId.current) {
+        keepHover()
+      } else if (id && !shownId.current) {
         keepHover()
         setHoverId(id)
       } else {
-        releaseHover()
+        // On the way to the card the pointer may cross other suggestions, or the block suggestion
+        // around an inline one; they only take the card over once the pointer stays.
+        hoverSoon(id)
       }
     }
     // Moving onto the card keeps the suggestion. React runs the card's onPointerEnter before this
@@ -111,16 +126,19 @@ export function useSuggestionReview(editor: Editor, onResolved?: () => void) {
     return () => {
       dom.removeEventListener('mouseover', over)
       dom.removeEventListener('mouseleave', leave)
-      window.clearTimeout(leaveTimer.current)
+      window.clearTimeout(hoverTimer.current)
     }
-  }, [editor, keepHover, releaseHover])
+  }, [editor, keepHover, hoverSoon, releaseHover])
 
   const active = hunks.find((hunk) => hunk.id === hoverId) ?? hunks.find((hunk) => hunk.id === cursorId) ?? null
+  useLayoutEffect(() => {
+    shownId.current = active?.id ?? null
+  })
 
   const go = (direction: 1 | -1) => {
     const target = adjacentHunk(hunks, editor.state.selection.from, active?.id ?? null, direction)
     if (!target) return
-    setHoverId(null)
+    clearHover()
     const { tr } = editor.state
     const selection = Selection.near(tr.doc.resolve(target.from))
     stepped.current = { id: target.id, pos: selection.from }
@@ -131,7 +149,7 @@ export function useSuggestionReview(editor: Editor, onResolved?: () => void) {
   const resolve = (match: (ref: SuggestionRef) => boolean, action: SuggestionAction) => {
     const tr = resolveSuggestions(editor.state.tr.setMeta(SUGGESTION_REVIEW_META, true), match, action)
     if (!tr.docChanged) return
-    setHoverId(null)
+    clearHover()
     editor.view.dispatch(tr)
     onResolved?.()
   }

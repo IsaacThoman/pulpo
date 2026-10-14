@@ -156,7 +156,8 @@ function DocEditorView({ editor, editable, width, toolbarSlot, onSuggestionsReso
         width === 'wide' && 'max-w-[min(100%,90rem)]',
         width === 'narrow' && 'max-w-5xl',
       )}>
-        <div ref={content} className="relative">
+        {/* Its own stacking context, so the suggestion card stays under the sticky toolbar. */}
+        <div ref={content} className="relative isolate">
           <EditorContent editor={editor} />
           {active && <style>{activeHunkStyle(active.id)}</style>}
           {active && (
