@@ -1,0 +1,69 @@
+{
+  "fill" : "automatic",
+  "groups" : [
+    {
+      "layers" : [
+        {
+          "image-name" : "typewriter.png",
+          "name" : "typewriter",
+          "position" : {
+            "scale" : 0.6,
+            "translation-in-points" : [
+              54,
+              27
+            ]
+          }
+        },
+        {
+          "image-name" : "pulpo-smiley-justface.png",
+          "name" : "pulpo-smiley-justface",
+          "position" : {
+            "scale" : 0.55,
+            "translation-in-points" : [
+              65,
+              -2
+            ]
+          }
+        },
+        {
+          "image-name" : "pulpo-smiley-noface.png",
+          "name" : "pulpo-smiley-noface",
+          "position" : {
+            "scale" : 0.55,
+            "translation-in-points" : [
+              65,
+              -2
+            ]
+          }
+        }
+      ],
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.5
+      },
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.3
+      }
+    },
+    {
+      "layers" : [
+
+      ],
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.5
+      },
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.3
+      }
+    }
+  ],
+  "supported-platforms" : {
+    "circles" : [
+      "watchOS"
+    ],
+    "squares" : "shared"
+  }
+}
