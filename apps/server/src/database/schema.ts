@@ -1265,6 +1265,8 @@ export const billingAccounts = pgTable('billing_accounts', {
   planOverride: text('plan_override'),
   weeklyLimitOverrideMicros: bigint('weekly_limit_override_micros', { mode: 'number' }),
   fiveHourLimitOverrideMicros: bigint('five_hour_limit_override_micros', { mode: 'number' }),
+  // Replaces the usage tier's daily spend cap when set.
+  dailyLimitOverrideMicros: bigint('daily_limit_override_micros', { mode: 'number' }),
   storageLimitOverrideBytes: bigint('storage_limit_override_bytes', { mode: 'number' }),
   holdAt: timestamp('hold_at', { withTimezone: true }),
   holdReason: text('hold_reason'),
@@ -1416,6 +1418,17 @@ export const weeklyUsagePeriods = pgTable('weekly_usage_periods', {
 }, (table) => [
   primaryKey({ columns: [table.userId, table.periodStart] }),
   check('weekly_usage_periods_spent_check', sql`${table.spentMicros} >= 0`),
+])
+
+/** Everything a user spent per UTC day, enforced by their usage tier's daily cap. */
+export const dailyUsagePeriods = pgTable('daily_usage_periods', {
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  periodStart: timestamp('period_start', { withTimezone: true }).notNull(),
+  spentMicros: bigint('spent_micros', { mode: 'number' }).notNull().default(0),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  primaryKey({ columns: [table.userId, table.periodStart] }),
+  check('daily_usage_periods_spent_check', sql`${table.spentMicros} >= 0`),
 ])
 
 export const fiveHourUsagePeriods = pgTable('five_hour_usage_periods', {

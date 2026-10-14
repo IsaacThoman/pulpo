@@ -1,9 +1,10 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { AlertTriangle, CreditCard, ExternalLink, RefreshCw, Repeat2, UsersRound, WalletCards } from 'lucide-react'
+import { AlertTriangle, CreditCard, ExternalLink, Gauge, Minus, Plus, RefreshCw, Repeat2, UsersRound, WalletCards } from 'lucide-react'
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis, matchByDataKey } from 'recharts'
 import { apiRequest } from '@/lib/api'
 import { formatBalance, formatDate } from '@/lib/format'
+import type { UsageTier } from '@/lib/billing'
 import { stripeDashboardUrl, stripePaymentUrl, stripeSubscriptionUrl, stripeWebhooksUrl, type StripeMode } from '@/lib/stripe-dashboard'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -98,6 +99,7 @@ interface BillingSettings {
   babyStorageLimitBytes: number
   eightStorageLimitBytes: number
   fatStorageLimitBytes: number
+  usageTiers: UsageTier[]
   lastReconciledAt: string | null
   lastReconcileError: string | null
 }
@@ -327,6 +329,8 @@ export function AdminBillingPage() {
         </Panel>
       </div>
 
+      {settingsQuery.data && <UsageTiersPanel tiers={settingsQuery.data.usageTiers} onSaved={() => void settingsQuery.refetch()} />}
+
       <Panel icon={<CreditCard className="size-3" />} title={ui("Recent payments")} extra={<span className="text-xs text-muted-foreground">{(data?.recentOrders.length ?? 0).toLocaleString(activeLocale())}</span>}>
         {data?.recentOrders.length ? (
           <div className="max-h-96 overflow-auto">
@@ -485,6 +489,106 @@ function Panel({ icon, title, extra, children }: { icon: ReactNode; title: strin
         {extra}
       </div>
       {children}
+    </div>
+  )
+}
+
+interface UsageTierDraft { paid: string; days: string; limit: string }
+
+function usageTierDrafts(tiers: UsageTier[]): UsageTierDraft[] {
+  return tiers.map((tier) => ({
+    paid: (tier.minPaidCents / 100).toFixed(2),
+    days: String(tier.minDaysSinceFirstPayment),
+    limit: (tier.dailyLimitMicros / 1_000_000).toFixed(2),
+  }))
+}
+
+/** Parses the drafts, or returns null when a value is invalid or a requirement decreases. */
+function parseUsageTierDrafts(drafts: UsageTierDraft[]): UsageTier[] | null {
+  const tiers = drafts.map((draft, index) => ({
+    minPaidCents: index === 0 ? 0 : Math.round(Number(draft.paid) * 100),
+    minDaysSinceFirstPayment: index === 0 ? 0 : Number(draft.days),
+    dailyLimitMicros: Math.round(Number(draft.limit) * 1_000_000),
+  }))
+  const valid = tiers.length > 0 && tiers.every((tier, index) => {
+    const previous = tiers[index - 1]
+    return Number.isFinite(tier.minPaidCents) && tier.minPaidCents >= 0
+      && Number.isInteger(tier.minDaysSinceFirstPayment) && tier.minDaysSinceFirstPayment >= 0 && tier.minDaysSinceFirstPayment <= 3_650
+      && Number.isFinite(tier.dailyLimitMicros) && tier.dailyLimitMicros >= 0
+      && (!previous || (tier.minPaidCents >= previous.minPaidCents && tier.minDaysSinceFirstPayment >= previous.minDaysSinceFirstPayment))
+  })
+  return valid ? tiers : null
+}
+
+function UsageTiersPanel({ tiers, onSaved }: { tiers: UsageTier[]; onSaved: () => void }) {
+  const [drafts, setDrafts] = useState(() => usageTierDrafts(tiers))
+  const [saving, setSaving] = useState(false)
+  const [message, setMessage] = useState('')
+  useEffect(() => { setDrafts(usageTierDrafts(tiers)) }, [tiers])
+  const parsed = parseUsageTierDrafts(drafts)
+  const update = (index: number, patch: Partial<UsageTierDraft>) => setDrafts((current) => current.map((draft, i) => i === index ? { ...draft, ...patch } : draft))
+
+  const save = async () => {
+    if (!parsed) return
+    setSaving(true)
+    setMessage('')
+    try {
+      await apiRequest('/api/admin/billing/settings', { method: 'PATCH', body: { usageTiers: parsed } })
+      setMessage(ui("Usage tiers saved."))
+      onSaved()
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : ui("Could not save usage tiers."))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Panel
+      icon={<Gauge className="size-3" />}
+      title={ui("Usage tiers")}
+      extra={<Button size="sm" onClick={() => void save()} disabled={saving || !parsed}>{saving ? ui("Saving…") : ui("Save")}</Button>}
+    >
+      <div className="space-y-3 px-3 py-3">
+        <p className="text-xs text-muted-foreground">{ui("Each tier caps a user's total daily spend, including plan usage and credits. Users move up once their lifetime payments before tax, net of refunds, and the days since their first payment both meet a tier. A daily limit never falls below the user's plan weekly allowance. Admins are exempt.")}</p>
+        <div className="overflow-x-auto">
+          <table className="data-table min-w-max text-xs">
+            <thead>
+              <tr className="border-b text-muted-foreground">
+                <th className="px-2 py-1.5 text-left font-normal">{ui("Tier")}</th>
+                <th className="px-2 py-1.5 text-left font-normal">{ui("Total paid")}</th>
+                <th className="px-2 py-1.5 text-left font-normal">{ui("Days since first payment")}</th>
+                <th className="px-2 py-1.5 text-left font-normal">{ui("Daily limit")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {drafts.map((draft, index) => (
+                <tr key={index}>
+                  <td className="px-2 py-1.5 tabular-nums">{index}</td>
+                  <td className="px-2 py-1.5"><DollarInput aria-label={ui("Total paid for tier {{tier}}", { tier: index })} value={draft.paid} disabled={index === 0} onChange={(paid) => update(index, { paid })} /></td>
+                  <td className="px-2 py-1.5"><Input aria-label={ui("Days since first payment for tier {{tier}}", { tier: index })} className="h-8 w-24 text-xs tabular-nums" type="number" min="0" step="1" value={draft.days} disabled={index === 0} onChange={(event) => update(index, { days: event.target.value })} /></td>
+                  <td className="px-2 py-1.5"><DollarInput aria-label={ui("Daily limit for tier {{tier}}", { tier: index })} value={draft.limit} onChange={(limit) => update(index, { limit })} /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button size="sm" variant="outline" disabled={drafts.length >= 10} onClick={() => setDrafts((current) => [...current, { ...current[current.length - 1]! }])}><Plus />{ui("Add tier")}</Button>
+          <Button size="sm" variant="ghost" disabled={drafts.length <= 1} onClick={() => setDrafts((current) => current.slice(0, -1))}><Minus />{ui("Remove last tier")}</Button>
+          {!parsed && <span className="text-xs text-destructive">{ui("Requirements cannot decrease from one tier to the next.")}</span>}
+          {message && <span className="text-xs text-muted-foreground">{message}</span>}
+        </div>
+      </div>
+    </Panel>
+  )
+}
+
+function DollarInput({ value, onChange, disabled, 'aria-label': ariaLabel }: { value: string; onChange: (value: string) => void; disabled?: boolean; 'aria-label': string }) {
+  return (
+    <div className="relative">
+      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">$</span>
+      <Input aria-label={ariaLabel} className="h-8 w-28 pl-6 text-xs tabular-nums" type="number" min="0" step="0.01" value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)} />
     </div>
   )
 }

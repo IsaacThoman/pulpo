@@ -40,6 +40,11 @@ export function formatUsd(usd: number): string {
   return currencyUsd(usd, 4)
 }
 
+/** Headline prices drop the cents when they are whole: "$25", "$2.50". */
+export function formatHeadlinePrice(usd: number): string {
+  return currencyUsd(usd, Number.isInteger(usd) ? 0 : 2)
+}
+
 /** Account balances are human-facing currency and always use cents. */
 export function formatBalance(usd: number): string {
   return currencyUsd(usd, 2)
