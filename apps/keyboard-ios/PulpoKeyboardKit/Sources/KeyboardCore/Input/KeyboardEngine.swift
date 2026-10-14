@@ -122,6 +122,9 @@ public final class KeyboardEngine {
   /// Old proxy snapshots can arrive after a replacement has finished. Remember
   /// only recently requested states, rather than treating every prefix as lag.
   private var recentOwnContexts: [(context: ContextSnapshot, time: TimeInterval)] = []
+  /// Earlier states of our own edits, regardless of age. Polling the proxy never
+  /// treats a return to one of them as external: only host callbacks decide that.
+  private var ownContextHistory: [ContextSnapshot] = []
   private var lastSpaceTime: TimeInterval = -.infinity
   /// Counters for on-device diagnostics; no text is recorded.
   public private(set) var laggingContextUpdates = 0
@@ -153,6 +156,7 @@ public final class KeyboardEngine {
   /// Types one key. Letters follow the shift state; `tap` feeds the spatial typo model.
   public func insertCharacter(_ key: String, tap: KeyPoint? = nil) {
     guard let first = key.first else { return }
+    reconcilePendingHostChanges()
     acceptPendingLearning()
     let isLetter = first.isLetter
     var text = key
@@ -201,6 +205,7 @@ public final class KeyboardEngine {
   }
 
   public func insertSpace() {
+    reconcilePendingHostChanges()
     acceptPendingLearning()
     let now = clock()
     defer {
@@ -240,6 +245,7 @@ public final class KeyboardEngine {
   }
 
   public func insertReturn() {
+    reconcilePendingHostChanges()
     acceptPendingLearning()
     phantomSpace = false
     if !composing.isEmpty {
@@ -254,6 +260,7 @@ public final class KeyboardEngine {
   /// Inserts text from outside the key grid (emoji, dictation, `.com`).
   public func insertText(_ text: String, spacing: Bool = false) {
     guard !text.isEmpty else { return }
+    reconcilePendingHostChanges()
     acceptPendingLearning()
     if !composing.isEmpty {
       learn(composing.text)
@@ -286,6 +293,7 @@ public final class KeyboardEngine {
   // MARK: Deletion
 
   public func deleteBackward() {
+    reconcilePendingHostChanges()
     pendingLearning = nil
     phantomSpace = false
     switch lastEdit {
@@ -320,6 +328,7 @@ public final class KeyboardEngine {
 
   /// Deletes back to the start of the previous word, as delete-key repeat does once it speeds up.
   public func deleteWordBackward() {
+    reconcilePendingHostChanges()
     pendingLearning = nil
     phantomSpace = false
     if expectedSelection != nil || document.selectedText?.isEmpty == false {
@@ -529,6 +538,7 @@ public final class KeyboardEngine {
   @discardableResult
   public func insertGlide(_ points: [KeyPoint], times: [Double]? = nil) -> [GlideCandidate] {
     guard policy.allowsGlide, let glide else { return [] }
+    reconcilePendingHostChanges()
     // Decode before touching the document, so a path that fits no word changes nothing.
     var candidates = glide.decode(points, times: times, context: languageContext(), limit: 4)
     guard !candidates.isEmpty else { return [] }
@@ -657,6 +667,7 @@ public final class KeyboardEngine {
       // edits must never inherit the previous field's undo, spacing, or learning.
       expectedContext = nil
       recentOwnContexts.removeAll()
+      ownContextHistory.removeAll()
       recentObservedOwnContexts.removeAll()
       phantomSpace = false
       lastEdit = .none
@@ -688,6 +699,7 @@ public final class KeyboardEngine {
           invalidateSuggestionContext()
           externalContextChanges += 1
           recentOwnContexts.removeAll()
+          ownContextHistory.removeAll()
           recentObservedOwnContexts.removeAll()
           phantomSpace = false
           lastEdit = .none
@@ -728,6 +740,31 @@ public final class KeyboardEngine {
     document.deleteBackward()
   }
 
+  /// Host pastes, cursor moves and selections can reach the proxy before their
+  /// callback. Reconcile before an edit that relies on the remembered context, so
+  /// it cannot delete, space or correct around text no longer at the cursor.
+  /// Known delayed snapshots of our own edits are still recognized as lag.
+  private func reconcilePendingHostChanges() {
+    guard expectedContext != nil, ownEditDepth == 0 else { return }
+    let rawBefore = document.documentContextBeforeInput
+    let rawAfter = document.documentContextAfterInput
+    // A field that withholds its context has nothing to reconcile against.
+    guard rawBefore != nil || rawAfter != nil else { return }
+    let selection = document.selectedText.flatMap { $0.isEmpty ? nil : $0 }
+    let observed = ContextSnapshot(before: rawBefore ?? "", after: rawAfter ?? "", selection: selection)
+    if document.documentIdentifier == expectedDocumentIdentifier, let expected = expectedContext {
+      // Proxies can expose only a window around the cursor; a sliding window is not a change.
+      func consistent(_ live: String, _ known: String, _ windowed: (String, String) -> Bool) -> Bool {
+        live == known || (!live.isEmpty && windowed(known, live)) || (!known.isEmpty && windowed(live, known))
+      }
+      let unchanged = selection == expectedSelection
+        && consistent(observed.before, expected) { $0.hasSuffix($1) }
+        && consistent(observed.after, expectedAfterContext) { $0.hasPrefix($1) }
+      guard !unchanged, !ownContextHistory.contains(observed) else { return }
+    }
+    documentDidChange()
+  }
+
   private func prepareExpectedContext() {
     guard expectedContext == nil else { return }
     expectedDocumentIdentifier = document.documentIdentifier
@@ -749,6 +786,8 @@ public final class KeyboardEngine {
       before: document.documentContextBeforeInput, after: document.documentContextAfterInput,
       selection: document.selectedText.flatMap { $0.isEmpty ? nil : $0 }), now))
     if recentOwnContexts.count > 64 { recentOwnContexts.removeFirst(recentOwnContexts.count - 64) }
+    ownContextHistory.append(ContextSnapshot(before: before, after: expectedAfterContext, selection: expectedSelection))
+    if ownContextHistory.count > 64 { ownContextHistory.removeFirst(ownContextHistory.count - 64) }
     if recentObservedOwnContexts.count > 64 { recentObservedOwnContexts.removeFirst(recentObservedOwnContexts.count - 64) }
   }
 

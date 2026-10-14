@@ -76,6 +76,71 @@ struct EditingRegressionTests {
     selecting.deleteWordBackward()
     #expect(host.text == "T")
   }
+
+  @Test func pendingPasteIsReconciledBeforeBackspace() throws {
+    let (engine, document) = Fixtures.engine("The ")
+    document.insertText("👍")  // The host pastes; its callback has not arrived yet.
+    engine.deleteBackward()
+    #expect(document.text == "The ")
+    engine.documentDidChange()
+    #expect(engine.composingText.isEmpty)
+    engine.type("cat ")
+    #expect(document.text == "The cat ")
+  }
+
+  @Test func pendingCursorMoveIsReconciledBeforeSpace() {
+    let (engine, document) = Fixtures.engine()
+    engine.clock = { 100 }
+    engine.type("rito ")
+    document.moveCursor(to: 1)  // No callback yet.
+    engine.insertSpace()
+    #expect(document.text == "R ito ")
+  }
+
+  @Test func pendingClearIsReconciledBeforeASwipe() {
+    let (engine, document) = Fixtures.engine("$")
+    document.text = "Sent. "
+    document.cursor = document.text.endIndex
+    var generator = SeededGenerator(state: 11420)
+    engine.insertGlide(SyntheticSwipe.points(for: "hello", noise: 0, generator: &generator))
+    #expect(document.text == "Sent. Hello")
+  }
+
+  @Test func shortProxyWindowsDoNotLookLikePendingEdits() {
+    let backing = MockDocument("We met yesterday and ")
+    let document = WindowedDocument(backing, window: 12)
+    let (_, suggester, glide) = Fixtures.stack()
+    let engine = KeyboardEngine(document: document, suggester: suggester, glide: glide)
+    engine.clock = { 100 }
+    engine.documentDidChange()
+    engine.type("teh ")
+    #expect(backing.text == "We met yesterday and the ")
+    engine.deleteBackward()
+    #expect(backing.text == "We met yesterday and teh")
+    engine.insertSpace()
+    engine.insertGlide("helo".utf8.compactMap { engine.glide!.geometry.center($0) })
+    #expect(engine.phantomSpace)
+    engine.type("x")
+    #expect(backing.text == "We met yesterday and teh hello x")
+  }
+}
+
+/// A proxy that exposes only the last `window` characters before the cursor.
+private final class WindowedDocument: TextDocument {
+  let backing: MockDocument
+  let window: Int
+
+  init(_ backing: MockDocument, window: Int) {
+    self.backing = backing
+    self.window = window
+  }
+
+  var documentContextBeforeInput: String? { backing.documentContextBeforeInput.map { String($0.suffix(window)) } }
+  var documentContextAfterInput: String? { backing.documentContextAfterInput }
+  var selectedText: String? { backing.selectedText }
+  var hasText: Bool { backing.hasText }
+  func insertText(_ text: String) { backing.insertText(text) }
+  func deleteBackward() { backing.deleteBackward() }
 }
 
 /// A mock field whose selection is real: insertion and deletion replace it.
