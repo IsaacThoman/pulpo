@@ -33,8 +33,9 @@ statistics. AOSP `not_a_word` flags remain distinct from valid literals, and saf
 spelling shortcuts are retained. Trigram histories require at least three observations,
 in general English or two observations within a conversational domain, with at most
 24 successors per history. Supported SMS histories and up to 20,000 frequent
-topical histories are reserved within the 40,000-history cap. The original emoji
-catalog is unchanged.
+topical histories are reserved within the 40,000-history cap. Emoji names,
+sequences, order and skin tones are preserved; the English annotations below
+add search keywords.
 
 Evaluation uses unseen turns from the published splits; exact training-turn
 duplicates are excluded after case/whitespace normalization. Evaluation source
@@ -106,3 +107,53 @@ recall changed from 3,324 to 3,323: preserving the valid noun `wold` also preser
 that spelling when the intended word was `would`. The other three outputs had
 previously been unrelated corrections. A broad CMUdict import was rejected because
 names such as `Thier` and `Wich` would disable useful spelling corrections.
+
+## Emoji search annotations
+
+`emoji.json` retains its Unicode 18.0 catalog of 1,923 base emoji and adds English
+keywords from [Unicode CLDR 48](https://github.com/unicode-org/cldr/tree/acd6d88ae493633240e19a87a721076a8a75c310),
+revision `acd6d88ae493633240e19a87a721076a8a75c310` (the `release-48` tag),
+under [Unicode License v3](UNICODE-LICENSE.txt). The original catalog had SHA-256
+`48dcbaaf05396140fdc2d5e0c88c678bbbc6728e112b3f373b29c58dab591704`.
+The source XML files remain outside the repository:
+
+| Input | SHA-256 |
+| --- | --- |
+| [`common/annotations/en.xml`](https://raw.githubusercontent.com/unicode-org/cldr/acd6d88ae493633240e19a87a721076a8a75c310/common/annotations/en.xml) | `8511aadd046fdba2f0ffe590266ced8bbf48175ad139b2675d85d7141057b235` |
+| [`common/annotationsDerived/en.xml`](https://raw.githubusercontent.com/unicode-org/cldr/acd6d88ae493633240e19a87a721076a8a75c310/common/annotationsDerived/en.xml) | `d76bd041c8c9e7b00b716aff8b7d9dbf509877010e191d5efd068be2553e066e` |
+
+The importer merges keyword annotations and CLDR speech names by emoji sequence,
+ignoring variation selector U+FE0F for lookup. Only sequences already in the
+catalog are retained. Keywords are deduplicated and sorted deterministically;
+inherited placeholders are excluded. It annotates 1,914 base emoji. Nine newer
+emoji remain searchable by their existing Unicode names. The compact optional
+`k` field adds 128,570 bytes, bringing the resource to 242,085 bytes with SHA-256
+`2085015d3bd75b7046aecd244b1961230b37fd25ac8aca475c7bc4afabba8117`.
+Old catalogs without `k` still decode and support name matching.
+
+For a full language-data rebuild, repeat `--emoji-annotations` for both XML files
+in the builder command from the parent README. To reproduce only the keyword
+enrichment from the original or current catalog, run from `apps/keyboard-ios`
+after downloading and checking the two inputs above:
+
+```bash
+PYTHONPATH=scripts python3 - <<'PY'
+import json
+from pathlib import Path
+from build_language_data import add_emoji_keywords
+
+path = Path('LanguageData/emoji.json')
+catalog = json.loads(path.read_text(encoding='utf-8'))
+add_emoji_keywords(catalog, [Path('/tmp/cldr-en.xml'), Path('/tmp/cldr-derived-en.xml')])
+path.write_text(json.dumps(catalog, ensure_ascii=False, separators=(',', ':')), encoding='utf-8')
+PY
+python3 -m unittest discover -s scripts -p 'test_emoji_keywords.py'
+```
+
+Search builds a sorted index of complete names, name words, suffix phrases and
+CLDR terms, retaining at most 12 ranked emoji per term. It finds prefixes by
+binary search without storing every possible prefix. Names precede keywords;
+prefixes follow exact matches; catalog order breaks ties. Case and accents are
+folded for lookup, compounds also support spellings such as `thumbsup`, and
+queries need at least three characters. Emoji suggestions are explicitly chosen
+alternatives and do not change spelling-correction probabilities or decisions.

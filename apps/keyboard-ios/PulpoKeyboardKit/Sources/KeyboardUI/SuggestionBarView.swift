@@ -128,7 +128,7 @@ final class SuggestionBarView: UIView {
 
   @objc private func slotHeld(_ recognizer: UILongPressGestureRecognizer) {
     guard recognizer.state == .began, let slot = recognizer.view as? SlotControl, let suggestion = slot.suggestion,
-          suggestion.kind != .literal else { return }
+          suggestion.kind != .literal, suggestion.kind != .emoji else { return }
     KeyboardFeedback.current?.emphasis()
     pendingForget = suggestion
     showNotice("Stop suggesting \u{201C}\(suggestion.text)\u{201D}?", action: "Remove") { [weak self] in
@@ -186,9 +186,14 @@ final class SlotControl: UIControl {
     }
     isEnabled = true
     label.text = suggestion.text
-    label.font = suggestion.isAutocorrection ? style.suggestionEmphasisFont : style.suggestionFont
+    if suggestion.kind == .emoji {
+      label.font = .systemFont(ofSize: 24)
+      accessibilityLabel = "\(suggestion.accessibilityLabel ?? "Emoji"), \(suggestion.text)"
+    } else {
+      label.font = suggestion.isAutocorrection ? style.suggestionEmphasisFont : style.suggestionFont
+      accessibilityLabel = suggestion.accessibilityLabel ?? suggestion.text
+    }
     label.textColor = style.label
-    accessibilityLabel = suggestion.text
     accessibilityValue = suggestion.isAutocorrection ? "autocorrection" : nil
   }
 

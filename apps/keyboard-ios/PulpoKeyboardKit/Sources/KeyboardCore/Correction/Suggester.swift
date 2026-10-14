@@ -8,17 +8,25 @@ public struct Suggestion: Hashable, Sendable {
     case completion
     case prediction
     case alternative
+    /// An explicitly chosen emoji; never applied by autocorrection.
+    case emoji
   }
 
   public var text: String
   public var kind: Kind
   /// The candidate that a space or punctuation will apply.
   public var isAutocorrection: Bool
+  public var accessibilityLabel: String?
+  /// Engine-generated choices belong to the text state that produced them.
+  /// Nil keeps standalone suggestion construction compatible with direct clients.
+  var sourceContext: UUID?
 
-  public init(text: String, kind: Kind, isAutocorrection: Bool = false) {
+  public init(text: String, kind: Kind, isAutocorrection: Bool = false, accessibilityLabel: String? = nil) {
     self.text = text
     self.kind = kind
     self.isAutocorrection = isAutocorrection
+    self.accessibilityLabel = accessibilityLabel
+    sourceContext = nil
   }
 }
 

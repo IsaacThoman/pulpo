@@ -36,10 +36,28 @@ public final class KeyboardEngine {
   public let document: TextDocument
   public let suggester: Suggester?
   public let glide: GlideDecoder?
-  public var settings: KeyboardSettings { didSet { policy = InputPolicy(traits: traits, settings: settings) } }
+  /// A supported-glyph index, prepared off the typing thread by the host.
+  public var emojiSuggester: EmojiSuggester? { didSet { invalidateSuggestionContext() } }
+  public var emojiHistory: EmojiHistory? { didSet { invalidateSuggestionContext() } }
+  private struct OfferedEmoji {
+    let value: String
+    let query: String
+    let before: String
+    let after: String
+    let documentID: UUID?
+    let appends: Bool
+  }
+  private var offeredEmoji: OfferedEmoji?
+  public var settings: KeyboardSettings {
+    didSet {
+      policy = InputPolicy(traits: traits, settings: settings)
+      if settings != oldValue { invalidateSuggestionContext() }
+    }
+  }
   public var traits = InputTraits() {
     didSet {
       policy = InputPolicy(traits: traits, settings: settings)
+      if traits != oldValue { invalidateSuggestionContext() }
       if traits.keyboard == .numbersAndPunctuation { page = .numbers }
     }
   }
@@ -53,6 +71,8 @@ public final class KeyboardEngine {
   }
   private var storedSuggestions = SuggestionSet.empty
   private var suggestionsStale = true
+  /// The bar updates asynchronously; choices from an earlier edit cannot edit new text.
+  private var suggestionContext = UUID()
   /// Monotonic time source, injectable for tests.
   public var clock: () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }
 
@@ -347,22 +367,29 @@ public final class KeyboardEngine {
   // MARK: Suggestions and swipes
 
   public func select(_ suggestion: Suggestion) {
+    // Host edits can precede their text-change callback. Reconcile displayed
+    // choices before trusting their generation, preserving known own-edit lag.
+    if suggestion.sourceContext != nil { documentDidChange() }
+    if suggestion.kind == .emoji {
+      selectEmoji(suggestion)
+      return
+    }
+    guard suggestion.sourceContext == nil || suggestion.sourceContext == suggestionContext else { return }
     let context = previousWord()
     let needsCase = shift.isActive && composing.isEmpty
     var text = needsCase ? Suggester.matchCase(of: "A", to: suggestion.text) : suggestion.text
     if policy.smartQuotes { text = Self.curlyApostrophes(text) }
     switch suggestion.kind {
     case .alternative:
-      if case let .glided(word, alternatives) = lastEdit, before.hasSuffix(word) {
-        let originalContext = pendingLearning?.context ?? context
-        for _ in 0..<word.count { deleteDocumentBackward() }
-        insertDocumentText(text)
-        pendingLearning = (text, originalContext)
-        lastEdit = .glided(word: text, alternatives: alternatives)
-        phantomSpace = true
-        finishEdit()
-        return
-      }
+      guard case let .glided(word, alternatives) = lastEdit, before.hasSuffix(word) else { return }
+      let originalContext = pendingLearning?.context ?? context
+      for _ in 0..<word.count { deleteDocumentBackward() }
+      insertDocumentText(text)
+      pendingLearning = (text, originalContext)
+      lastEdit = .glided(word: text, alternatives: alternatives)
+      phantomSpace = true
+      finishEdit()
+      return
     case .literal:
       if !composing.isEmpty {
         rejected.insert(composing.text)
@@ -511,6 +538,7 @@ public final class KeyboardEngine {
     if identifier != expectedDocumentIdentifier || privacyChanged || visibilityChanged {
       expectedDocumentIdentifier = identifier
       if expectedContext != nil { externalContextChanges += 1 }
+      invalidateSuggestionContext()
       // A different field or privacy context can match a prior snapshot. Its
       // edits must never inherit the previous field's undo, spacing, or learning.
       expectedContext = nil
@@ -543,6 +571,7 @@ public final class KeyboardEngine {
         expectedAfterContext = after
         expectedSelection = selection
         if !windowShift {
+          invalidateSuggestionContext()
           externalContextChanges += 1
           recentOwnContexts.removeAll()
           recentObservedOwnContexts.removeAll()
@@ -609,7 +638,13 @@ public final class KeyboardEngine {
     if recentObservedOwnContexts.count > 64 { recentObservedOwnContexts.removeFirst(recentObservedOwnContexts.count - 64) }
   }
 
+  private func invalidateSuggestionContext() {
+    suggestionContext = UUID()
+    suggestionsStale = true
+  }
+
   private func finishEdit(deriveComposing derive: Bool = false) {
+    invalidateSuggestionContext()
     if derive { deriveComposing() }
     updateAutomaticShift()
     suggestionsStale = true
@@ -714,21 +749,35 @@ public final class KeyboardEngine {
 
   public func refreshSuggestions() {
     suggestionsStale = false
-    guard policy.showsSuggestions || policy.autocorrects || policy.appliesTextReplacements, let suggester else {
+    defer {
+      offerEmojiSuggestion()
+      for index in storedSuggestions.slots.indices {
+        storedSuggestions.slots[index].sourceContext = suggestionContext
+      }
+    }
+    guard policy.showsSuggestions || policy.autocorrects || policy.appliesTextReplacements else {
+      storedSuggestions = .empty
+      return
+    }
+    if cursorInsideWord || expectedSelection != nil {
       storedSuggestions = .empty
       return
     }
     if case let .glided(word, alternatives) = lastEdit {
+      guard policy.showsSuggestions else {
+        storedSuggestions = .empty
+        return
+      }
       let ordered = [Suggestion(text: word, kind: .alternative)] + alternatives.prefix(2).map { Suggestion(text: $0, kind: .alternative) }
       storedSuggestions = SuggestionSet(slots: SuggestionSet.centered(ordered))
       return
     }
-    if cursorInsideWord {
-      storedSuggestions = .empty
-      return
-    }
     if composingLiteralToken {
       storedSuggestions = policy.showsSuggestions ? SuggestionSet(slots: [Suggestion(text: composing.text, kind: .literal)]) : .empty
+      return
+    }
+    guard let suggester else {
+      storedSuggestions = .empty
       return
     }
     let context = languageContext()
@@ -747,6 +796,68 @@ public final class KeyboardEngine {
     var set = suggester.suggestions(for: composing, context: context, autocorrect: policy.autocorrects, replacements: policy.appliesTextReplacements, rejected: rejected)
     if !policy.showsSuggestions { set.slots = [] }
     storedSuggestions = set
+  }
+
+  /// Keep a word's literal and automatic correction available. Emoji occupy only
+  /// the weakest remaining slot and require a tap; space still commits the word.
+  private func offerEmojiSuggestion() {
+    offeredEmoji = nil
+    guard policy.showsSuggestions, !cursorInsideWord, expectedSelection == nil,
+          !composingLiteralToken, let emojiSuggester else { return }
+    let current = before
+    let appends = composing.isEmpty && current.last == " "
+    var text = current
+    if appends {
+      while text.last == " " { text.removeLast() }
+    }
+    guard let last = text.last, last.isLetter,
+          let token = text.split(whereSeparator: \.isWhitespace).last,
+          !token.contains(where: { "@#_/\\.:=+0123456789-".contains($0) }) else { return }
+    // Search only the current phrase, bounded to eight words / eighty characters.
+    // Longest matching suffix permits "red heart" without consuming "I want".
+    let phrase = String(text.suffix(81).reversed().prefix(while: {
+      $0.isLetter || $0 == " " || $0 == "'" || $0 == "\u{2019}"
+    }).reversed())
+    let words = phrase.split(separator: " ")
+    guard !words.isEmpty else { return }
+    for start in max(0, words.count - 8)..<words.count {
+      let query = String(phrase[words[start].startIndex...])
+      guard query.count <= 80,
+            let emoji = emojiSuggester.suggestions(for: query, limit: 1).first else { continue }
+      let value = emojiHistory?.preferred(for: emoji) ?? emoji.value
+      let suggestion = Suggestion(text: value, kind: .emoji, accessibilityLabel: "\(emoji.name) emoji")
+      if storedSuggestions.slots.count < 3 {
+        storedSuggestions.slots.append(suggestion)
+      } else if let index = storedSuggestions.slots.indices.reversed().first(where: {
+        storedSuggestions.slots[$0].kind != .literal && !storedSuggestions.slots[$0].isAutocorrection && $0 != 1
+      }) {
+        storedSuggestions.slots[index] = suggestion
+      } else { return }
+      offeredEmoji = OfferedEmoji(value: value, query: query, before: current,
+                                  after: expectedAfterContext, documentID: expectedDocumentIdentifier,
+                                  appends: appends)
+      return
+    }
+  }
+
+  private func selectEmoji(_ suggestion: Suggestion) {
+    guard suggestion.sourceContext == suggestionContext,
+          let offered = offeredEmoji, suggestion.text == offered.value,
+          policy.showsSuggestions, !cursorInsideWord, expectedSelection == nil,
+          before == offered.before, expectedAfterContext == offered.after,
+          document.documentIdentifier == offered.documentID else { return }
+    if !offered.appends {
+      guard before.hasSuffix(offered.query) else { return }
+      for _ in offered.query { deleteDocumentBackward() }
+    }
+    pendingLearning = nil
+    composing = TypedWord(text: "")
+    insertDocumentText(offered.value)
+    emojiHistory?.use(offered.value)
+    phantomSpace = true
+    lastEdit = .acceptedSuggestion(autoSpace: false)
+    if case .once = shift { shift = .off }
+    finishEdit()
   }
 
   /// The word currently being typed, for display and tests.

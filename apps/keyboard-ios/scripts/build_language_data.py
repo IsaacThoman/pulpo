@@ -5,6 +5,7 @@ Inputs (download once, see README "Language data"):
   --wordlist  AOSP LatinIME en_US_wordlist.combined(.gz)   Apache-2.0
   --sentences Tatoeba eng_sentences.tsv(.bz2)              CC-BY 2.0 FR
   --emoji     Unicode emoji-test.txt                       Unicode License v3
+  --emoji-annotations Unicode CLDR English annotations XML (repeatable), Unicode-3.0
 
 Outputs:
   LanguageData/en_US.pkdict  memory-mapped lexicon, trie, glide buckets and bigrams
@@ -23,6 +24,7 @@ import re
 import struct
 import tempfile
 import unicodedata
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 from build_validation_words import select_validation_words, validation_payload
@@ -593,7 +595,45 @@ TONES = ['\U0001F3FB', '\U0001F3FC', '\U0001F3FD', '\U0001F3FE', '\U0001F3FF']
 LINE = re.compile(r'^([0-9A-F ]+?)\s*;\s*fully-qualified\s*#\s*(\S+)\s+E(\d+\.\d+)\s+(.+)$')
 
 
-def build_emoji(path):
+def emoji_annotation_keywords(paths):
+  """Collect Unicode CLDR English keywords by base sequence, ignoring VS16.
+
+  Both common/annotations/en.xml and common/annotationsDerived/en.xml may be
+  supplied. Only sequences present in our catalog will be retained. No downloaded
+  source text is needed on-device and old catalogs without annotations still work.
+  """
+  annotations = collections.defaultdict(set)
+  for path in paths:
+    root = ET.parse(path).getroot()
+    language = root.find('./identity/language')
+    if language is None or language.get('type') != 'en':
+      raise ValueError(f'Expected English CLDR annotations: {path}')
+    for annotation in root.findall('./annotations/annotation'):
+      sequence = annotation.get('cp', '').replace('\ufe0f', '')
+      if not sequence:
+        continue
+      for keyword in (annotation.text or '').split('|'):
+        keyword = keyword.strip()
+        if keyword and keyword not in {'↑↑↑', '∅∅∅'}:
+          annotations[sequence].add(keyword)
+  return {sequence: sorted(keywords, key=lambda keyword: (keyword.casefold(), keyword))
+          for sequence, keywords in annotations.items()}
+
+
+def add_emoji_keywords(catalog, annotation_paths):
+  """Enrich a catalog without changing its names, order, versions or skin tones."""
+  annotations = emoji_annotation_keywords(annotation_paths)
+  for category in catalog['categories']:
+    for emoji in category['emoji']:
+      keywords = annotations.get(emoji['e'].replace('\ufe0f', ''), [])
+      if keywords:
+        emoji['k'] = keywords
+      else:
+        emoji.pop('k', None)
+  return catalog
+
+
+def build_emoji(path, annotation_paths=()):
   group = None
   ordered = []
   by_base = {}
@@ -633,8 +673,11 @@ def build_emoji(path):
           item['t'] = entry['t']
         items.append(item)
     categories.append({'id': identifier, 'name': name, 'emoji': items})
+  catalog = {'version': version, 'categories': categories}
+  if annotation_paths:
+    add_emoji_keywords(catalog, annotation_paths)
   output = ROOT / 'LanguageData' / 'emoji.json'
-  output.write_text(json.dumps({'version': version, 'categories': categories}, ensure_ascii=False, separators=(',', ':')), encoding='utf-8')
+  output.write_text(json.dumps(catalog, ensure_ascii=False, separators=(',', ':')), encoding='utf-8')
   print(f'{output.name}: Emoji {version}, {sum(len(c["emoji"]) for c in categories)} emoji, {output.stat().st_size / 1e3:.0f} KB')
 
 
@@ -643,6 +686,8 @@ def main():
   parser.add_argument('--wordlist', required=True)
   parser.add_argument('--sentences', required=True)
   parser.add_argument('--emoji', required=True)
+  parser.add_argument('--emoji-annotations', type=Path, action='append', default=[],
+                      help='Optional Unicode CLDR English annotations XML; repeat for annotationsDerived/en.xml.')
   parser.add_argument('--messages', help='Optional UCI SMSSpamCollection file for conversational n-grams (ham only; stable 20%% holdout).')
   parser.add_argument('--conversations', action='append', default=[], help='Optional Topical-Chat training JSON. Never pass validation/test splits.')
   parser.add_argument('--validation-wordlist', type=Path, default=ROOT / 'LanguageData' / 'en_US.validwords.txt',
@@ -650,7 +695,7 @@ def main():
   parser.add_argument('--max-successors', type=int, default=48)
   args = parser.parse_args()
   build(args)
-  build_emoji(args.emoji)
+  build_emoji(args.emoji, args.emoji_annotations)
 
 
 if __name__ == '__main__':

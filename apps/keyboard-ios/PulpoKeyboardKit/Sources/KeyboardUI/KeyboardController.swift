@@ -116,6 +116,28 @@ public final class KeyboardController: NSObject {
   let haptics: KeyboardFeedback
   private var barUpdateScheduled = false
   private var glideFallbacks = 0
+  private let emojiHistory: EmojiHistory
+  private var emojiCatalog: EmojiCatalog?
+  private var pendingEmojiPresentation = false
+
+  /// Catalog decoding, glyph checks and keyword indexing stay off the first-key
+  /// path. Preview controllers share this work for the lifetime of the process.
+  private static let emojiResources: Task<(catalog: EmojiCatalog, suggester: EmojiSuggester)?, Never> = {
+    guard let url = KeyboardResources.url("emoji", "json") else { return Task { nil } }
+    let unsupportedKey = "emojiUnsupported2-\(UIDevice.current.systemVersion)"
+    return Task.detached(priority: .utility) {
+      guard let catalog = try? EmojiCatalog.load(url: url) else { return nil }
+      let unsupported: Set<String>
+      if let cached = UserDefaults.standard.stringArray(forKey: unsupportedKey) {
+        unsupported = Set(cached)
+      } else {
+        unsupported = Set(catalog.categories.flatMap(\.emoji).map(\.value).filter { !EmojiPanelView.drawsAsOneGlyph($0) })
+        UserDefaults.standard.set(Array(unsupported), forKey: unsupportedKey)
+      }
+      let supported = catalog.filtered { !unsupported.contains($0.value) }
+      return (supported, EmojiSuggester(catalog: supported))
+    }
+  }()
   public var onHeightChange: ((CGFloat) -> Void)?
 
   public init(host: KeyboardHost) {
@@ -126,6 +148,9 @@ public final class KeyboardController: NSObject {
       try? LanguageStack(dictionaryURL: $0, personalURL: AppGroup.personalDictionaryURL(fallback: support))
     }
     engine = KeyboardEngine(document: host.document, suggester: stack?.suggester, glide: stack?.glide, settings: settings)
+    let emojiDefaults = AppGroup.isWritable ? (AppGroup.defaults ?? .standard) : .standard
+    emojiHistory = EmojiHistory(defaults: emojiDefaults)
+    engine.emojiHistory = emojiHistory
     engine.traits = host.inputTraits
     let style = KeyboardStyle.current(dark: host.inputTraits.prefersDarkAppearance == true, landscape: false, inset: !host.isInsideApp)
     rootView = KeyboardRootView(style: style, layout: KeyboardLayout.make(page: .letters, traits: host.inputTraits, needsGlobe: host.needsInputModeSwitchKey, digitHints: settings.digitHints))
@@ -145,12 +170,25 @@ public final class KeyboardController: NSObject {
     }
     engine.documentDidChange()
     sync()
+    let resources = Self.emojiResources
+    Task { [weak self] in
+      guard let prepared = await resources.value, let self else { return }
+      self.emojiCatalog = prepared.catalog
+      self.engine.emojiSuggester = prepared.suggester
+      self.engine.refreshSuggestions()
+      self.sync()
+      if self.pendingEmojiPresentation {
+        self.pendingEmojiPresentation = false
+        if self.isVisible, self.rootView.mode == .keys { self.showEmoji() }
+      }
+    }
   }
 
   // MARK: Host events
 
   public func hostWillAppear() {
     isVisible = true
+    pendingEmojiPresentation = false
     settings = settingsStore.load()
     engine.settings = settings
     KeyboardFeedback.current = haptics
@@ -172,6 +210,7 @@ public final class KeyboardController: NSObject {
 
   public func hostDidDisappear() {
     isVisible = false
+    pendingEmojiPresentation = false
     engine.save()
     recordDiagnostics()
     stopLevelUpdates()
@@ -287,6 +326,7 @@ public final class KeyboardController: NSObject {
   // MARK: Suggestions
 
   private func select(_ suggestion: Suggestion) {
+    pendingEmojiPresentation = false
     engine.select(suggestion)
     sync()
   }
@@ -302,9 +342,11 @@ public final class KeyboardController: NSObject {
 
   private func showEmoji() {
     if rootView.emoji == nil {
-      guard let url = KeyboardResources.url("emoji", "json"), let catalog = try? EmojiCatalog.load(url: url) else { return }
-      let defaults = AppGroup.isWritable ? (AppGroup.defaults ?? .standard) : .standard
-      let panel = EmojiPanelView(style: rootView.style, catalog: catalog, history: EmojiHistory(defaults: defaults))
+      guard let catalog = emojiCatalog else {
+        pendingEmojiPresentation = true
+        return
+      }
+      let panel = EmojiPanelView(style: rootView.style, catalog: catalog, history: emojiHistory)
       panel.delegate = self
       rootView.insertSubview(panel, belowSubview: rootView.dictation)
       rootView.emoji = panel
@@ -316,6 +358,7 @@ public final class KeyboardController: NSObject {
   // MARK: Dictation
 
   private func startDictation() {
+    pendingEmojiPresentation = false
     rootView.mode = .dictation
     account = AccountSnapshot.load()
     guard host?.hasFullAccess == true, let bridge else {
@@ -460,6 +503,10 @@ public final class KeyboardController: NSObject {
 
 extension KeyboardController: KeysViewDelegate {
   func keysView(_ view: KeysView, touchDown key: Key) {
+    switch key.action {
+    case .emoji: break
+    default: pendingEmojiPresentation = false
+    }
     feedback(for: key)
     switch key.action {
     case .shift:

@@ -78,6 +78,18 @@ accepted by another edit or keyboard dismissal, so undo and swipe alternatives d
 reinforce discarded results. Nothing is learned in password, username,
 one-time code, email, URL, or other private fields.
 
+**Emoji.** The picker keeps full glyphs inside its grid in portrait and compact
+landscape, with recent choices and remembered skin tones. The suggestion bar also
+matches English Unicode names, prefixes and CLDR keywords: `pizza`, `happy`,
+`thanks`, `thumbsup` and `red heart`, for example. One emoji choice shares the bar
+with the typed word and its strongest correction; space never applies an emoji.
+Tapping replaces only the matching unfinished phrase. After a committed space,
+it appends the emoji while preserving the words. Names and keywords are indexed
+once off the typing thread, using only glyphs supported by the current OS.
+Private, email, URL, numeric and identifier contexts suppress these suggestions.
+Choices from earlier edits or fields cannot replace newer text while the bar
+refreshes. Keyword sources and licenses are in [LanguageData/README.md](LanguageData/README.md).
+
 **Dictation.** iOS doesn't let keyboard extensions use the microphone, so the mic key
 opens the app, which records, uploads the audio to Pulpo's
 `/api/dictation/transcriptions`, and hands the transcript back through the App Group
