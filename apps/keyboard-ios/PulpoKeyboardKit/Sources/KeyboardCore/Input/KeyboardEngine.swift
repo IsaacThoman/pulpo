@@ -837,11 +837,22 @@ public final class KeyboardEngine {
   /// Addresses, handles and code identifiers also occur inside ordinary chat
   /// fields. Their fragments must not be treated as prose at punctuation.
   var composingLiteralToken: Bool {
-    guard !composing.isEmpty, let token = before.split(whereSeparator: \.isWhitespace).last else { return false }
+    guard !composing.isEmpty, let token = Self.lastToken(of: Substring(before)) else { return false }
     let lowered = token.lowercased()
     return token.contains("@") || token.hasPrefix("#") || token.contains("_")
       || token.contains("://") || lowered.hasPrefix("www.")
       || ["http", "https", "ftp", "mailto"].contains(lowered)
+  }
+
+  /// The last whitespace-separated token, as `split(whereSeparator:).last` finds it,
+  /// read from the end so long documents cost nothing extra per keystroke.
+  static func lastToken(of text: Substring) -> Substring? {
+    var end = text.endIndex
+    while end > text.startIndex, text[text.index(before: end)].isWhitespace { end = text.index(before: end) }
+    guard end > text.startIndex else { return nil }
+    var start = end
+    while start > text.startIndex, !text[text.index(before: start)].isWhitespace { start = text.index(before: start) }
+    return text[start..<end]
   }
 
   func previousWord() -> (word: String?, sentenceStart: Bool) {
@@ -977,12 +988,12 @@ public final class KeyboardEngine {
           !composingLiteralToken, let emojiSuggester else { return }
     let current = before
     let appends = composing.isEmpty && current.last == " "
-    var text = current
+    var text = Substring(current)
     if appends {
       while text.last == " " { text.removeLast() }
     }
     guard let last = text.last, last.isLetter,
-          let token = text.split(whereSeparator: \.isWhitespace).last,
+          let token = Self.lastToken(of: text),
           !token.contains(where: { "@#_/\\.:=+0123456789-".contains($0) }) else { return }
     // Search only the current phrase, bounded to eight words / eighty characters.
     // Longest matching suffix permits "red heart" without consuming "I want".
