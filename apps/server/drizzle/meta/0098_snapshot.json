@@ -1,5 +1,5 @@
 {
-  "id": "9fd0f964-77cf-4c92-be3a-eea483876d06",
+  "id": "92843d9c-4776-47fd-99ea-9ff3cf33c745",
   "prevId": "9d06f1f9-8328-4dab-89e7-406b1636fbeb",
   "version": "7",
   "dialect": "postgresql",
@@ -1073,6 +1073,12 @@
         },
         "five_hour_limit_override_micros": {
           "name": "five_hour_limit_override_micros",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "daily_limit_override_micros": {
+          "name": "daily_limit_override_micros",
           "type": "bigint",
           "primaryKey": false,
           "notNull": false
@@ -3906,6 +3912,72 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.daily_usage_periods": {
+      "name": "daily_usage_periods",
+      "schema": "",
+      "columns": {
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "period_start": {
+          "name": "period_start",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "spent_micros": {
+          "name": "spent_micros",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "daily_usage_periods_user_id_users_id_fk": {
+          "name": "daily_usage_periods_user_id_users_id_fk",
+          "tableFrom": "daily_usage_periods",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "daily_usage_periods_user_id_period_start_pk": {
+          "name": "daily_usage_periods_user_id_period_start_pk",
+          "columns": [
+            "user_id",
+            "period_start"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "daily_usage_periods_spent_check": {
+          "name": "daily_usage_periods_spent_check",
+          "value": "\"daily_usage_periods\".\"spent_micros\" >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
     "public.daily_usage_rollups": {
       "name": "daily_usage_rollups",
       "schema": "",
@@ -5087,13 +5159,6 @@
           "notNull": true,
           "default": 0
         },
-        "pinned": {
-          "name": "pinned",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
         "color": {
           "name": "color",
           "type": "text",
@@ -5262,22 +5327,6 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
-        },
-        "file_nodes_owner_pinned_idx": {
-          "name": "file_nodes_owner_pinned_idx",
-          "columns": [
-            {
-              "expression": "owner_user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"file_nodes\".\"pinned\"",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
         }
       },
       "foreignKeys": {
@@ -5352,10 +5401,6 @@
         "file_nodes_system_role_check": {
           "name": "file_nodes_system_role_check",
           "value": "\"file_nodes\".\"system_role\" is null or (\"file_nodes\".\"system_role\" in ('chats', 'archive') and \"file_nodes\".\"kind\" = 'folder' and \"file_nodes\".\"parent_id\" is null)"
-        },
-        "file_nodes_pinned_check": {
-          "name": "file_nodes_pinned_check",
-          "value": "not \"file_nodes\".\"pinned\" or \"file_nodes\".\"system_role\" is distinct from 'chats'"
         }
       },
       "isRLSEnabled": false

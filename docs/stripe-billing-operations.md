@@ -46,6 +46,26 @@ Fat subscribers share part of their weekly allowance with the other members of t
 
 Owners see a **Shared usage** bar on the billing page. The Pool section on the Friends page shows shared usage across every Fat subscriber in the Pool, plus the viewer's own five-hour shared limit.
 
+## Usage tiers
+
+Every account has a daily spend cap set by its usage tier. It limits how much one account can run up in a day, for example after a stolen card buys a large credit pack. It is not a balance check: the cap applies even when credit remains.
+
+| Tier | Requirement | Daily cap |
+| --- | --- | --- |
+| 0 | New accounts | $3 |
+| 1 | $5 paid (any first payment) | $10 |
+| 2 | $50 paid and 7 days since first payment | $25 |
+| 3 | $150 paid and 14 days | $75 |
+| 4 | $500 paid and 30 days | $250 |
+
+- **Payments.** "Paid" is the lifetime total of `billing_orders.net_amount_cents` (before tax, including the platform fee) minus refunds, across credit purchases, automatic top-ups, and subscription invoices. The waiting period counts from the first payment that was not fully refunded. A refund lowers the tier on the next request.
+- **What counts.** The cap covers everything the account spends in a UTC day: plan allowance, shared usage, its own balance, and Pool balance. Settled generation and metered charges accumulate in `daily_usage_periods`, and pending reservations count until they settle.
+- **Enforcement.** Reservations, resizes, and tool holds are limited to what remains, so a request near the cap gets a shorter output limit before it is refused with `402 daily_spend_limit_reached`. Optional calls such as titles skip instead of failing. Speech and dictation, charged after the provider call, are refused up front once the cap is used up.
+- **Exceptions.** A cap never falls below the plan's weekly allowance. Admins are exempt. An admin can set a per-user daily limit in **Admin → Users**, which replaces the tier cap.
+- **Configuration.** Edit the tiers in **Admin → Billing → Usage tiers** (`usageTiers` in the `billing` setting). Requirements cannot decrease from one tier to the next. Caps apply only when billing is enabled.
+
+Users see their tier, today's spend, and what the next tier needs on the billing page.
+
 ## Automatic top-ups
 
 Users can save a card and have Pulpo add credit when their available balance falls below a threshold they choose. A card is saved either through a card-only Checkout (`mode: setup`) or by ticking "Use this card for automatic top-ups" when buying credits (`setup_future_usage: off_session`). Both collect a billing address so tax can be calculated later.

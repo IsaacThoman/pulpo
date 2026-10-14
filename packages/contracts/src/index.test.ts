@@ -308,15 +308,19 @@ describe('shared contracts', () => {
     const policy = createModelSchema.pick({
       compactionEnabled: true,
       compactionThresholdTokens: true,
-      compactionRetainedTurns: true,
+      compactionRetainedUserTokens: true,
     })
     expect(policy.parse({})).toEqual({
       compactionEnabled: true,
       compactionThresholdTokens: 100_000,
-      compactionRetainedTurns: 4,
+      compactionRetainedUserTokens: 20_000,
     })
+    expect(policy.parse({ compactionRetainedUserTokens: 0 }).compactionRetainedUserTokens).toBe(0)
+    expect(policy.parse({ compactionRetainedUserTokens: 100_000 }).compactionRetainedUserTokens).toBe(100_000)
     expect(policy.safeParse({ compactionThresholdTokens: 1_999 }).success).toBe(false)
-    expect(policy.safeParse({ compactionRetainedTurns: 33 }).success).toBe(false)
+    expect(policy.safeParse({ compactionRetainedUserTokens: 100_001 }).success).toBe(false)
+    expect(policy.safeParse({ compactionRetainedUserTokens: -1 }).success).toBe(false)
+    expect(policy.safeParse({ compactionRetainedUserTokens: 1.5 }).success).toBe(false)
   })
 
   it('validates additive custom catalog icon references', () => {
