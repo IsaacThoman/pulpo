@@ -416,6 +416,7 @@ public final class KeyboardEngine {
   /// delete key already removed on touch down is restored by undo as well.
   @discardableResult
   public func deleteWordsBackward(_ count: Int, originalContext: String? = nil) -> WordDeletion? {
+    reconcilePendingHostChanges()
     let start = before
     let length = Self.wordDeletionSuffix(of: start, words: count).count
     guard length > 0 else { return nil }
@@ -443,6 +444,7 @@ public final class KeyboardEngine {
   /// nothing, if the text or cursor changed since.
   @discardableResult
   public func undo(_ deletion: WordDeletion) -> Bool {
+    reconcilePendingHostChanges()
     guard canUndo(deletion), !deletion.removed.isEmpty else { return false }
     acceptPendingLearning()
     phantomSpace = false
