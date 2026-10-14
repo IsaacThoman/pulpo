@@ -55,6 +55,8 @@ public struct InputPolicy: Equatable, Sendable {
   public var capitalization: InputTraits.Capitalization
   public var smartQuotes: Bool
   public var smartSpacing: Bool
+  /// Spaces owed around swiped words. Addresses, identifiers and secrets never get them.
+  public var autoSpaces: Bool
   public var allowsGlide: Bool
 
   public init(traits: InputTraits, settings: KeyboardSettings) {
@@ -67,6 +69,7 @@ public struct InputPolicy: Equatable, Sendable {
     capitalization = settings.autoCapitalization && !addressLike ? traits.capitalization : .none
     smartQuotes = settings.smartPunctuation && traits.smartQuotes != false && plain
     smartSpacing = settings.smartPunctuation && plain
+    autoSpaces = plain
     allowsGlide = settings.swipeTyping && !traits.isNumeric && !traits.isSecure
   }
 }

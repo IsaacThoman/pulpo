@@ -123,6 +123,19 @@ struct EditingRegressionTests {
     engine.type("x")
     #expect(backing.text == "We met yesterday and teh hello x")
   }
+
+  @Test(arguments: ["emailAddress", "URL", "username"])
+  func addressAndPrivateFieldsDoNotOweSwipeSpaces(contentType: String) {
+    var traits = InputTraits()
+    traits.contentType = contentType
+    traits.capitalization = .none
+    traits.keyboard = contentType == "emailAddress" ? .email : contentType == "URL" ? .url : .standard
+    let (engine, document) = Fixtures.engine(traits: traits)
+    engine.insertGlide("helo".utf8.compactMap { engine.glide!.geometry.center($0) })
+    #expect(!engine.phantomSpace)
+    engine.type("x")
+    #expect(!document.text.contains(" "), "\(document.text)")
+  }
 }
 
 /// A proxy that exposes only the last `window` characters before the cursor.

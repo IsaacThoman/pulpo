@@ -561,7 +561,7 @@ public final class KeyboardEngine {
     var word = transform(best.text)
     if policy.smartQuotes { word = Self.curlyApostrophes(word) }
     let wordContext = previousWord()
-    if let previous = before.last, phantomSpace || (!previous.isWhitespace && !"([{\u{201C}\u{2018}/@#-".contains(previous)) {
+    if policy.autoSpaces, let previous = before.last, phantomSpace || (!previous.isWhitespace && !"([{\u{201C}\u{2018}/@#-".contains(previous)) {
       insertDocumentText(" ")
     }
     insertDocumentText(word)
@@ -571,7 +571,7 @@ public final class KeyboardEngine {
       return policy.smartQuotes ? Self.curlyApostrophes(text) : text
     }
     lastEdit = .glided(word: word, alternatives: alternatives)
-    phantomSpace = true
+    phantomSpace = policy.autoSpaces
     if case .once = shift { shift = .off }
     finishEdit()
     return candidates
