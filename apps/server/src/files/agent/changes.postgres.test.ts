@@ -202,6 +202,20 @@ describe.skipIf(!enabled)('agent file changes', () => {
       expect(await db.select().from(fileNodes).where(eq(fileNodes.name, 'Other')).then((rows) => rows.filter((row) => row.ownerUserId === files.userId))).toEqual([])
     })
 
+    it('leaves items in place when their suggested move and deletion are rejected', async () => {
+      const projects = await files.folder('Projects')
+      const plan = await files.blob('plan.txt', projects, 'plan')
+      await files.attach({ [projects]: 'suggest' })
+      await files.ok('mv', { from: 'Projects/plan.txt', to: 'Projects/renamed.txt' })
+      await files.ok('rm', { path: 'Projects/plan.txt' })
+      const rejected = await reviewReplyChanges(files.userId, files.responseId, 'reject')
+      expect(rejected.changes.map((change) => [change.kind, change.status, change.fromPath, change.toPath])).toEqual([
+        ['move', 'rejected', 'Projects/plan.txt', 'Projects/renamed.txt'], ['trash', 'rejected', undefined, undefined],
+      ])
+      expect(await files.node(plan)).toMatchObject({ name: 'plan.txt', trashedAt: null })
+      expect((await files.ok('ls', { path: 'Projects' })).output).not.toMatch(/suggested/)
+    })
+
     it('keeps the owner\'s items when a suggested folder is rejected', async () => {
       const projects = await files.folder('Projects')
       const mine = await files.blob('mine.txt', projects, 'mine')
