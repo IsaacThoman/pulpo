@@ -131,7 +131,7 @@ public final class Suggester {
     }
     let bound = SpellCorrector.bound(forLength: typedKey.utf8.count)
     if bound > 0 {
-      let costOfKey = corrector.costEvaluator(for: word)
+      let costOfKey = corrector.costEvaluator(for: word, bound: bound)
       for entry in personal.knownEntries {
         let known = entry.text, knownKey = entry.key
         guard abs(knownKey.utf8.count - typedKey.utf8.count) <= 2, knownKey.first == typedKey.first || knownKey.utf8.count > 3 else { continue }
@@ -172,7 +172,8 @@ public final class Suggester {
         addCompletion(lexicon.display(id), id: id)
       }
     }
-    for entry in personal.knownEntries where entry.key.count > typedKey.count && entry.key.hasPrefix(typedKey) {
+    let typedLength = typedKey.count
+    for entry in personal.knownEntries where entry.key.hasPrefix(typedKey) && entry.key.count > typedLength {
       addCompletion(entry.text, id: lexicon.id(of: entry.text))
     }
     // Conversations repeat their topic words. A dictionary word typed once is

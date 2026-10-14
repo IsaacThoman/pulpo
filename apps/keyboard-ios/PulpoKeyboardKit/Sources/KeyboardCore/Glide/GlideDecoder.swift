@@ -317,7 +317,8 @@ public final class GlideDecoder {
     }
     for entry in model.personal.knownEntries {
       let word = entry.text
-      let key = Array(entry.key.utf8)
+      // Read the key in place; most learned words fail the endpoint check.
+      let key = entry.key.utf8
       guard key.count >= 2, let head = key.first, let tail = key.last, starts.contains(head), ends.contains(tail),
             key.allSatisfy({ $0 >= 97 && $0 <= 122 }) else { continue }
       consider(text: word, id: lexicon.id(of: word), key: key)

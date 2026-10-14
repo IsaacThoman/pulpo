@@ -239,36 +239,52 @@ public final class SpellCorrector {
 
   /// Prepare the typed word once when matching a large personal vocabulary.
   /// Candidate keys have already been normalized by PersonalDictionary.
-  func costEvaluator(for word: TypedWord) -> (String) -> Double {
+  /// - Parameter bound: Costs above it are only reported as greater than it,
+  ///   which lets a clearly different candidate stop after a few letters.
+  func costEvaluator(for word: TypedWord, bound: Double = .infinity) -> (String) -> Double {
     let keyed = word.keyed
     let typed = keyed.bytes
     let costs = Costs(typed: typed, taps: keyed.taps, geometry: geometry)
-    return { candidateKey in Self.cost(costs: costs, target: Array(candidateKey.utf8)) }
+    var rows: [Double] = []
+    return { candidateKey in Self.cost(costs: costs, target: candidateKey.utf8, bound: bound, rows: &rows) }
   }
 
-  private static func cost(costs: Costs, target: [UInt8]) -> Double {
+  /// The same recurrence as `search`, over three reused rows.
+  private static func cost(costs: Costs, target: String.UTF8View, bound: Double, rows: inout [Double]) -> Double {
     let typed = costs.typed
     guard !typed.isEmpty else { return .infinity }
     let n = typed.count
     let width = n + 1
-    var rows = [Double](repeating: 0, count: (target.count + 1) * width)
-    for i in 1...n { rows[i] = rows[i - 1] + costs.deletion[i - 1] }
-    for depth in stride(from: 1, through: target.count, by: 1) {
-      let byte = target[depth - 1]
-      let previous: UInt8? = depth >= 2 ? target[depth - 2] : nil
-      let insertion = costs.insertion(byte, previous: previous, position: depth - 1)
-      let parent = (depth - 1) * width
-      let current = depth * width
-      rows[current] = rows[parent] + insertion
-      for i in 1...n {
-        var value = min(rows[parent + i - 1] + costs.substitution(i - 1, byte), rows[parent + i] + insertion, rows[current + i - 1] + costs.deletion[i - 1])
-        if i >= 2, depth >= 2, typed[i - 1] == previous, typed[i - 2] == byte, typed[i - 1] != byte {
-          value = min(value, rows[(depth - 2) * width + i - 2] + Self.transposition(byte, previous!) + (depth == 2 && i == 2 ? Self.firstLetterPenalty : 0))
+    if rows.count < 3 * width { rows = [Double](repeating: 0, count: 3 * width) }
+    return rows.withUnsafeMutableBufferPointer { rows in
+      var grand = 0, parent = width, current = 2 * width
+      rows[parent] = 0
+      for i in 1...n { rows[parent + i] = rows[parent + i - 1] + costs.deletion[i - 1] }
+      var parentMinimum = 0.0
+      var previous: UInt8?
+      var depth = 0
+      for byte in target {
+        depth += 1
+        let insertion = costs.insertion(byte, previous: previous, position: depth - 1)
+        rows[current] = rows[parent] + insertion
+        var minimum = rows[current]
+        for i in 1...n {
+          var value = min(rows[parent + i - 1] + costs.substitution(i - 1, byte), rows[parent + i] + insertion, rows[current + i - 1] + costs.deletion[i - 1])
+          if i >= 2, depth >= 2, typed[i - 1] == previous, typed[i - 2] == byte, typed[i - 1] != byte {
+            value = min(value, rows[grand + i - 2] + Self.transposition(byte, previous!) + (depth == 2 && i == 2 ? Self.firstLetterPenalty : 0))
+          }
+          rows[current + i] = value
+          if value < minimum { minimum = value }
         }
-        rows[current + i] = value
+        // Every later cell adds a nonnegative cost to a cell of the last two
+        // rows, so the final cost cannot come back under the bound.
+        if min(minimum, parentMinimum) > bound { return .infinity }
+        (grand, parent, current) = (parent, current, grand)
+        parentMinimum = minimum
+        previous = byte
       }
+      return rows[parent + n]
     }
-    return rows[target.count * width + n]
   }
 }
 
