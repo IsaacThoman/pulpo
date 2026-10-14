@@ -1,5 +1,5 @@
 import { and, eq, inArray, isNull, ne, sql } from 'drizzle-orm'
-import { DEFAULT_FILE_ACCESS_MODE, FILE_SCOPE_ROOT, fileAccessModeSchema, fileNameError, normalizeFileName, type FileAccessMode } from '@pulpo/contracts'
+import { DEFAULT_FILE_ACCESS_MODE, FILE_SCOPE_ROOT, fileAccessModeSchema, fileNameError, nextAvailableName, normalizeFileName, type FileAccessMode } from '@pulpo/contracts'
 import { db } from '../../database/client.js'
 import { chats, fileNodes } from '../../database/schema.js'
 import type { FileExecutor, FileNodeRow } from '../access.js'
@@ -78,12 +78,11 @@ export async function loadFileScope(userId: string, scopeIds: readonly string[],
   const roots: FileScopeRoot[] = all ? [{ label: '', node: null }] : []
   const rootLabels = new Map<string, string>()
   if (!all) {
-    const used = new Map<string, number>()
+    const used = new Set<string>()
     for (const row of live) {
       if (chains.get(row.id)!.slice(1).some((id) => byId.has(id))) continue
-      const count = (used.get(row.name.toLowerCase()) ?? 0) + 1
-      used.set(row.name.toLowerCase(), count)
-      const label = count > 1 ? `${row.name} (${count})` : row.name
+      const label = nextAvailableName(row.name, used)
+      used.add(label.toLowerCase())
       rootLabels.set(row.id, label)
       roots.push({ label, node: row })
     }

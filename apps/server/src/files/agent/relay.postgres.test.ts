@@ -76,13 +76,14 @@ describe.skipIf(!enabled)('pulpo files relay', () => {
     const work = await files.folder('Work')
     const notesA = await files.folder('Notes', work)
     const notesB = await files.folder('Notes')
+    const notesC = await files.folder('Notes (2)', work)
     const plan = await files.doc('Plan.md', notesA, 'a')
     await files.doc('Plan.md', notesB, 'b')
-    await files.attach({ [notesA]: 'suggest', [notesB]: 'read', [plan]: 'write' })
+    await files.attach({ [notesA]: 'suggest', [notesB]: 'read', [notesC]: undefined, [plan]: 'write' })
     const scope = (await loadChatFileScope(files.userId, files.chatId))!
-    expect(scope.roots.map((root) => root.label)).toEqual(['Notes', 'Notes (2)'])
+    expect(scope.roots.map((root) => root.label)).toEqual(['Notes', 'Notes (2)', 'Notes (2) (2)'])
     expect(scope.attached.map((item) => [item.path, item.location, item.mode])).toEqual([
-      ['Notes', 'Work', 'suggest'], ['Notes (2)', null, 'read'], ['Notes/Plan.md', null, 'write'],
+      ['Notes', 'Work', 'suggest'], ['Notes (2)', null, 'read'], ['Notes (2) (2)', 'Work', 'suggest'], ['Notes/Plan.md', null, 'write'],
     ])
     expect((await files.ok('cat', { path: 'notes (2)/plan.md' })).output).toBe('b')
     expect(await modeFor(scope, plan)).toBe('write')
