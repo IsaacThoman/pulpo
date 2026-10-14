@@ -126,7 +126,7 @@ const config: ExpoConfig = {
     'expo-sqlite',
     [
       'expo-build-properties',
-      { ios: { deploymentTarget: '26.0', useFrameworks: 'dynamic', buildReactNativeFromSource: true }, android: { compileSdkVersion: 37, targetSdkVersion: 37, buildToolsVersion: '37.0.0' } },
+      { ios: { deploymentTarget: '18.0', useFrameworks: 'dynamic', buildReactNativeFromSource: true }, android: { compileSdkVersion: 37, targetSdkVersion: 37, buildToolsVersion: '37.0.0' } },
     ],
     ['react-native-enriched-markdown', { enableMath: true }],
     [
@@ -141,10 +141,10 @@ const config: ExpoConfig = {
       'expo-splash-screen',
       {
         backgroundColor: '#FFFFFF',
-        image: './assets/pulpo-smiley.png',
+        image: './assets/pulpo-splash.png',
         imageWidth: 112,
         resizeMode: 'contain',
-        dark: { backgroundColor: '#000000', image: './assets/pulpo-smiley.png' },
+        dark: { backgroundColor: '#000000', image: './assets/pulpo-splash.png' },
       },
     ],
   ],

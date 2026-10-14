@@ -9,10 +9,10 @@ import {
 import {
   accessibilityLabel,
   buttonBorderShape,
-  buttonStyle,
   controlSize,
   frame,
 } from '@expo/ui/swift-ui/modifiers'
+import { glassButtonStyle } from '../platform/glass'
 import { useAppTheme } from '../theme'
 
 /** The only Router UI primitive still needed by the public-share route. */
@@ -29,10 +29,10 @@ export function GlassIconButton({ colorScheme, icon, label, onPress }: {
       <SwiftUIButton
         onPress={onPress}
         modifiers={[
-          buttonStyle('glass'),
           buttonBorderShape('circle'),
           controlSize('regular'),
           accessibilityLabel(label),
+          ...glassButtonStyle('glass'),
         ]}
       >
         <SwiftUIImage systemName={icon as never} size={18} modifiers={[frame({ width: 28, height: 28 })]} />

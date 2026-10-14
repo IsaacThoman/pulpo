@@ -15,6 +15,7 @@ import { parseAuthSettings } from '../settings/application-settings.js'
 import { modelPermissionAllows } from './model-permissions.js'
 import { apiKeyOwnerCanSpend } from './access.js'
 import { CODEX_PROVIDER_ID, isCodexModelId } from '../codex/constants.js'
+import { modelAccessibleToUserCondition } from '../catalog/model-access.js'
 
 async function assertApiKeysEnabled(): Promise<void> {
   const [setting] = await db.select().from(applicationSettings).where(eq(applicationSettings.key, 'auth')).limit(1)
@@ -112,6 +113,7 @@ export async function registerApiKeyRoutes(app: FastifyInstance): Promise<void> 
     // Match the public model catalog and its fallback/preset permission rules.
     const rows = await db.select({ id: models.id, name: models.name }).from(models).where(and(
       eq(models.enabled, true), eq(models.visible, true), ne(models.providerConnectionId, CODEX_PROVIDER_ID),
+      modelAccessibleToUserCondition(user.id),
     )).orderBy(asc(models.sortOrder), asc(models.createdAt))
     return { data: await filterApiKeyAllowedModels(key.id, rows) }
   })

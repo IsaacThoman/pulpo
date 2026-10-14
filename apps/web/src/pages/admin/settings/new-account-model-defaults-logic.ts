@@ -34,9 +34,13 @@ export function withDefaultModel(
   return { ...value, defaultModelId }
 }
 
-export function defaultModelOptions(models: Pick<AvailableModel, 'id' | 'name'>[], selectedId: string | null) {
+export function defaultModelOptions(
+  models: Pick<AvailableModel, 'id' | 'name'>[],
+  selectedId: string | null,
+  automaticLabel = ui("Automatic (first available)"),
+) {
   const options = [
-    { value: AUTOMATIC_MODEL_VALUE, label: ui("Automatic (first available)") },
+    { value: AUTOMATIC_MODEL_VALUE, label: automaticLabel },
     ...models.map((model) => ({ value: model.id, label: modelOptionLabel(model) })),
   ]
   if (selectedId && !models.some((model) => model.id === selectedId)) {

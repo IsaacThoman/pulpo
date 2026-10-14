@@ -158,6 +158,12 @@ if (typeof window !== 'undefined') {
 let bootstrapPromise: Promise<void> | null = null
 let bootstrapVersion = 0
 
+/** A startup check describes the credentials before a later auth transition. */
+function invalidateBootstrap(): void {
+  bootstrapVersion += 1
+  bootstrapPromise = null
+}
+
 export const useAuth = create<AuthState>()((set, get) => ({
   user: cachedProfile,
   checkingSession: true,
@@ -345,6 +351,7 @@ export const useAuth = create<AuthState>()((set, get) => ({
       const response = isDesktopRuntime()
         ? await apiRequest<NativeAuthResponse>('/api/mobile/auth/login', { method: 'POST', body: { email, password, twoFactorCode, ...desktopDevice() } })
         : await apiRequest<AuthResponse>('/api/auth/login', { method: 'POST', body: { email, password, twoFactorCode } })
+      invalidateBootstrap()
       const user = normalizeUser(response.user)
       if (isDesktopRuntime() && 'session' in response) {
         const session = (response as NativeAuthResponse).session
@@ -367,6 +374,7 @@ export const useAuth = create<AuthState>()((set, get) => ({
       if (isDesktopRuntime()) {
         configureDesktopRuntime({ instanceUrl: get().instanceUrl, token: null, onUnauthorized: () => { void get().handleDesktopUnauthorized() } })
         const response = await authenticateDesktopPasskey()
+        invalidateBootstrap()
         configureDesktopRuntime({ instanceUrl: get().instanceUrl, token: response.session.token, onUnauthorized: () => { void get().handleDesktopUnauthorized() } })
         await storeDesktopSession({ instanceUrl: get().instanceUrl, ...response.session })
         const user = normalizeUser(response.user)
@@ -379,6 +387,7 @@ export const useAuth = create<AuthState>()((set, get) => ({
       const response = await apiRequest<AuthResponse>('/api/auth/passkey/verify', {
         method: 'POST', body: { ceremonyToken: ceremony.ceremonyToken, response: assertion },
       })
+      invalidateBootstrap()
       const user = normalizeUser(response.user)
       cacheProfile(user)
       set({ user, checkingSession: false })
@@ -395,6 +404,7 @@ export const useAuth = create<AuthState>()((set, get) => ({
       const response = isDesktopRuntime()
         ? await apiRequest<NativeAuthResponse>('/api/mobile/auth/signup', { method: 'POST', body: { name, username, email, password, ...desktopDevice() } })
         : await apiRequest<AuthResponse>('/api/auth/signup', { method: 'POST', body: { name, username, email, password } })
+      invalidateBootstrap()
       const user = normalizeUser(response.user)
       if (isDesktopRuntime() && 'session' in response) {
         const session = (response as NativeAuthResponse).session
@@ -414,6 +424,7 @@ export const useAuth = create<AuthState>()((set, get) => ({
       const response = isDesktopRuntime()
         ? await apiRequest<NativeAuthResponse>('/api/mobile/auth/setup', { method: 'POST', body: { name, username, email, password, ...desktopDevice() } })
         : await apiRequest<AuthResponse>('/api/auth/setup', { method: 'POST', body: { name, username, email, password } })
+      invalidateBootstrap()
       const user = normalizeUser(response.user)
       if (isDesktopRuntime() && 'session' in response) {
         const session = (response as NativeAuthResponse).session
@@ -429,8 +440,7 @@ export const useAuth = create<AuthState>()((set, get) => ({
   },
 
   logout: async (localOnly = false) => {
-    bootstrapVersion += 1
-    bootstrapPromise = null
+    invalidateBootstrap()
     const userId = get().user?.id
     set({ user: null, checkingSession: false })
     cacheProfile(null)
@@ -442,7 +452,7 @@ export const useAuth = create<AuthState>()((set, get) => ({
     await queryClient.cancelQueries()
     queryClient.clear()
     const { useChat } = await import('./chat')
-    useChat.setState({ chats: [], folders: [], activeChatId: null, activeTemporaryChatId: null, streamingIds: [], responseSequences: {}, responseChatIds: {} })
+    useChat.setState({ chats: [], activeChatId: null, activeTemporaryChatId: null, streamingIds: [], responseSequences: {}, responseChatIds: {} })
     if (userId) {
       clearRuntimeComposerDrafts(userId)
       clearWebShelves()
@@ -528,7 +538,7 @@ export const useAuth = create<AuthState>()((set, get) => ({
     const user = get().user
     if (!user) return
     await prepareToAddAccount(user)
-    bootstrapVersion += 1
+    invalidateBootstrap()
     if (isDesktopRuntime()) configureDesktopRuntime({ instanceUrl: get().instanceUrl, token: null, onUnauthorized: () => { void get().handleDesktopUnauthorized() } })
     set({ user: null, checkingSession: false })
     cacheProfile(null)
@@ -538,7 +548,7 @@ export const useAuth = create<AuthState>()((set, get) => ({
 
   switchAccount: async (userId) => {
     const user = normalizeUser(await activateSignedInAccount(userId, get().user) as ServerUser)
-    bootstrapVersion += 1
+    invalidateBootstrap()
     cacheProfile(user)
     await forgetActiveAccountQueries()
     window.location.assign('/')

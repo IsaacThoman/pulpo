@@ -14,6 +14,7 @@
     "test:attachment-scroll": "node tests/attachment-scroll.browser.mjs",
     "test:table-preview": "node tests/table-preview.browser.mjs",
     "test:sidebar-animation": "node tests/sidebar-animation.browser.mjs",
+    "test:suggestion-card": "node tests/suggestion-card.browser.mjs",
     "capture:landing": "node scripts/capture-landing-screenshots.mjs"
   },
   "dependencies": {
@@ -40,6 +41,7 @@
     "@tiptap/extension-collaboration": "^3.31.3",
     "@tiptap/extension-collaboration-caret": "^3.31.3",
     "@tiptap/extensions": "^3.31.3",
+    "@tiptap/pm": "^3.31.3",
     "@tiptap/react": "^3.31.3",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

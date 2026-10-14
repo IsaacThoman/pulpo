@@ -12,13 +12,11 @@ export function resetFavoriteIds(newAccountFavoriteModelIds: string[]): string[]
   return [...newAccountFavoriteModelIds]
 }
 
-export function favoriteIdsMatch(left: string[], right: string[]): boolean {
-  return left.length === right.length && left.every((id, index) => id === right[index])
-}
-
 interface ModelsState {
   ownerUserId: string | null
   favoriteModelIds: string[]
+  /** True while the account has not customized favorites and follows the new-account defaults. */
+  favoritesFollowDefaults: boolean
   newAccountFavoriteModelIds: string[]
   newAccountFavoritesLoaded: boolean
   providerOrder: string[]
@@ -33,6 +31,7 @@ export const useModels = create<ModelsState>()(
     (set, get) => ({
       ownerUserId: null,
       favoriteModelIds: [],
+      favoritesFollowDefaults: false,
       newAccountFavoriteModelIds: [],
       newAccountFavoritesLoaded: false,
       providerOrder: [...CATALOG_PROVIDERS],
@@ -41,10 +40,14 @@ export const useModels = create<ModelsState>()(
           favoriteModelIds: get().favoriteModelIds.includes(id)
             ? get().favoriteModelIds.filter((favoriteId) => favoriteId !== id)
             : [...get().favoriteModelIds, id],
+          favoritesFollowDefaults: false,
         }),
-      resetFavorites: () => set({ favoriteModelIds: resetFavoriteIds(get().newAccountFavoriteModelIds) }),
+      resetFavorites: () => set({
+        favoriteModelIds: resetFavoriteIds(get().newAccountFavoriteModelIds),
+        favoritesFollowDefaults: true,
+      }),
       reorderFavorites: (fromId, toId, edge) =>
-        set({ favoriteModelIds: reorderList(get().favoriteModelIds, fromId, toId, edge) }),
+        set({ favoriteModelIds: reorderList(get().favoriteModelIds, fromId, toId, edge), favoritesFollowDefaults: false }),
       reorderProviders: (fromId, toId, edge, available) =>
         set({
           providerOrder: reorderList(appendMissingOrder(get().providerOrder, available), fromId, toId, edge),
@@ -55,6 +58,7 @@ export const useModels = create<ModelsState>()(
       partialize: (state) => ({
         ownerUserId: state.ownerUserId,
         favoriteModelIds: state.favoriteModelIds,
+        favoritesFollowDefaults: state.favoritesFollowDefaults,
         providerOrder: state.providerOrder,
       }),
     }

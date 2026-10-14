@@ -45,3 +45,14 @@ describe('theme while signed out', () => {
     expect(isDark()).toBe(false)
   })
 })
+
+describe('theme switching', () => {
+  it('swaps the theme without leaving transitions disabled', () => {
+    storage.set('pulpo-profile', '{"id":"u1"}')
+    settings.applyTheme('light')
+    const styles = document.head.querySelectorAll('style').length
+    settings.applyTheme('dark')
+    expect(isDark()).toBe(true)
+    expect(document.head.querySelectorAll('style').length).toBe(styles)
+  })
+})

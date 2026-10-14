@@ -2,8 +2,10 @@ import { withDiagnosticContext, recordReconstructedDiagnostic } from '../logging
 import { eq } from 'drizzle-orm'
 import type { ResponseUsage } from '@pulpo/contracts'
 import { calculateCostMicros, calculateReservationMicros, type Pricing } from '../accounting/pricing.js'
-import { extendBudgetReservationFixedCost, getActivePricing } from '../accounting/service.js'
+import { extendBudgetReservationFixedCost, getActivePricing, releaseBudgetReservationFixedCost } from '../accounting/service.js'
 import { db } from '../database/client.js'
+import { safeErrorMessage } from '../database/errors.js'
+import { DAILY_SPEND_LIMIT_CODE } from '../billing/usage-tiers.js'
 import { generationAttempts } from '../database/schema.js'
 import { AppError } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
@@ -18,8 +20,9 @@ export const EMPTY_USAGE: ResponseUsage = {
   totalTokens: 0,
 }
 
+/** Optional extra spend is skipped when the account cannot fund it or its daily cap is used up. */
 export function isInsufficientBalanceError(error: unknown): boolean {
-  return error instanceof AppError && error.code === 'insufficient_balance'
+  return error instanceof AppError && (error.code === 'insufficient_balance' || error.code === DAILY_SPEND_LIMIT_CODE)
 }
 
 export function modelCallUsage(usage: unknown): ResponseUsage {
@@ -98,22 +101,21 @@ export async function trackInternalModelCall<T extends { usage?: unknown; id?: s
   }
 }
 
+/** Extends the response's hold for one sidecar call; returns the micros held, or null when an optional call is unfundable. */
 export async function reserveInternalModelCall(input: {
   responseId: string
   modelId: string
   requestInput: unknown
   maxOutputTokens: number
   required?: boolean
-}): Promise<boolean> {
+}): Promise<number | null> {
   const pricing = await getActivePricing(input.modelId)
+  const reservedMicros = calculateReservationMicros(input.requestInput, input.maxOutputTokens, pricing)
   try {
-    await extendBudgetReservationFixedCost(
-      input.responseId,
-      calculateReservationMicros(input.requestInput, input.maxOutputTokens, pricing),
-    )
-    return true
+    await extendBudgetReservationFixedCost(input.responseId, reservedMicros)
+    return reservedMicros
   } catch (error) {
-    if (!input.required && isInsufficientBalanceError(error)) return false
+    if (!input.required && isInsufficientBalanceError(error)) return null
     throw error
   }
 }
@@ -130,24 +132,34 @@ export async function trackBilledInternalModelCall<T extends { usage?: unknown; 
   retryAttempt?: number
   invoke: () => Promise<T>
 }): Promise<{ result: T; costMicros: number } | { skipped: true; costMicros: 0 }> {
-  const reserved = await reserveInternalModelCall({
+  const reservedMicros = await reserveInternalModelCall({
     responseId: input.responseId,
     modelId: input.modelId,
     requestInput: input.requestInput,
     maxOutputTokens: input.maxOutputTokens,
     required: input.required,
   })
-  if (!reserved) return { skipped: true, costMicros: 0 }
-  const pricing = await getActivePricing(input.modelId)
-  const result = await trackInternalModelCall({
-    requestLogId: input.requestLogId,
-    modelId: input.modelId,
-    upstreamModelId: input.upstreamModelId,
-    purpose: input.purpose,
-    retryAttempt: input.retryAttempt,
-    pricing,
-    invoke: input.invoke,
-    requestInput: input.requestInput,
-  })
-  return { result, costMicros: calculateCostMicros(modelCallUsage(result.usage), pricing) }
+  if (reservedMicros === null) return { skipped: true, costMicros: 0 }
+  try {
+    const pricing = await getActivePricing(input.modelId)
+    const result = await trackInternalModelCall({
+      requestLogId: input.requestLogId,
+      modelId: input.modelId,
+      upstreamModelId: input.upstreamModelId,
+      purpose: input.purpose,
+      retryAttempt: input.retryAttempt,
+      pricing,
+      invoke: input.invoke,
+      requestInput: input.requestInput,
+    })
+    return { result, costMicros: calculateCostMicros(modelCallUsage(result.usage), pricing) }
+  } catch (error) {
+    // A failed call is never billed, so retries (e.g. summarizer overflow drops) must not stack its hold.
+    try {
+      await releaseBudgetReservationFixedCost(input.responseId, reservedMicros)
+    } catch (releaseError) {
+      console.warn(JSON.stringify({ level: 'warn', service: 'pulpo-accounting', event: 'billing.release_failed', responseId: input.responseId, purpose: input.purpose, error: safeErrorMessage(releaseError) }))
+    }
+    throw error
+  }
 }

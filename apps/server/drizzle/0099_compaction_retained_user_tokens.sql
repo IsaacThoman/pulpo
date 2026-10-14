@@ -1,0 +1,1 @@
+ALTER TABLE "models" ADD COLUMN "compaction_retained_user_tokens" integer DEFAULT 20000 NOT NULL;

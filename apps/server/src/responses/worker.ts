@@ -2,7 +2,7 @@ import { diagnosticFetch } from '../logging/diagnostic-fetch.js'
 import { diagnosticContext, withDiagnosticContext, recordReconstructedDiagnostic } from '../logging/provider-diagnostics.js'
 import { safeErrorMessage } from '../database/errors.js'
 import { toFile } from 'openai'
-import type { AssistantMessage, Context, Message, ThinkingLevel } from '@earendil-works/pi-ai'
+import { isContextOverflow, type AssistantMessage, type Context, type Message, type ThinkingLevel } from '@earendil-works/pi-ai'
 import { and, asc, eq, inArray, isNull, ne, sql } from 'drizzle-orm'
 import { applyResponseEventToSnapshot, type CompactionItem, type RecallItem, type ResponseEvent, type ResponseUsage } from '@pulpo/contracts'
 import { db } from '../database/client.js'
@@ -36,10 +36,21 @@ import { EMPTY_USAGE, providerReportedCostMicros, trackBilledInternalModelCall }
 import { providerCacheRequestOptions, providerPromptCacheParameters } from './provider-cache.js'
 import { createModelImageInterceptor, interceptOpenAIInputImages, type ModelImageInterceptor } from './image-ocr.js'
 import { modelImageRendition, type ProviderImageOptions } from './model-image.js'
-import { sanitizeContextForStorage, sanitizeOutputForClient } from './public-output.js'
-import { COMPACTION_PROMPT, compactConversation, retainedEntries } from './compaction.js'
-import { shouldCompactContext } from './compaction-policy.js'
-import { splitCodexConversationExchanges, type CodexConversationExchange } from './codex-compaction.js'
+import { sanitizeOutputForClient } from './public-output.js'
+import {
+  canRetryOverflowWithCompaction,
+  codexConversation,
+  compactCodexConversation,
+  compactResponsesConversation,
+  preResponseCompactionItem,
+  responsesConversation,
+  summaryRequestParameters,
+} from './compaction.js'
+import { piUserTextMessage } from '../compaction/pi-history.js'
+import { summaryMaxOutputTokens } from '../compaction/policy.js'
+import { SUMMARIZATION_PROMPT } from '../compaction/prompt.js'
+import { responsesUserTextItem } from '../compaction/responses-history.js'
+import { CompactionError, CompactionOverflowError } from '../compaction/summarize.js'
 import { temporaryChatIsExpired } from '../chats/temporary.js'
 import { normalChatIsExpired } from '../chats/expiration.js'
 import { resolveModelParameters } from './model-parameters.js'
@@ -50,10 +61,12 @@ import { responseAttachmentIds, responseInputText } from '../messages/input.js'
 import { recalledChatContext } from '../episodic-memory/automatic-recall.js'
 import { loadGenerationMemory } from './memory-context.js'
 import {
+  ContextOverflowError,
   GenerationAttemptError,
   MAX_MODEL_CHAIN_LENGTH,
   canFallbackAfterGenerationError,
   classifyGenerationError,
+  isContextOverflowError,
   completionTokensPerSecond,
   fallbackModelAttemptLimit,
   isModelSticky,
@@ -64,10 +77,10 @@ import {
 import { codexEnabled, codexDisabledError } from '../codex/policy.js'
 import { startCodexGeneration } from '../codex/generation-policy.js'
 import { CODEX_PROVIDER_ID } from '../codex/constants.js'
-import { codexErrorRequiresReauthentication, createCodexModels, markCodexReauthenticationRequired, redactedCodexError } from '../codex/credential-store.js'
+import { codexErrorRequiresReauthentication, createCodexModels, markCodexReauthenticationRequired, redactedCodexError, safeCodexErrorMessage } from '../codex/credential-store.js'
 import { codexInferenceReferenceCostMicros } from '../codex/reference-cost.js'
 import { agentThinkingLevel } from '../agent/model-parameters.js'
-import { calculateCostMicros, estimateInputTokens } from '../accounting/pricing.js'
+import { calculateCostMicros } from '../accounting/pricing.js'
 import { generationTimeContext, TIME_CONTEXT_INSTRUCTIONS, withGenerationTimeContext } from './time-context.js'
 
 type UpstreamEvent = { type: string; [key: string]: unknown }
@@ -235,6 +248,17 @@ function inlineFilesAsReferences(input: unknown[]): unknown[] {
   })
 }
 
+type ContextCompaction = {
+  /** Compact even below the limit: the provider rejected this context as too long. */
+  force: boolean
+  /** Request parameters the main request sends (tools, instructions, cache identity). */
+  requestParameters: Record<string, unknown>
+  headers?: Record<string, string>
+  prepareInput: (input: unknown[]) => Promise<unknown[]>
+  onUpdate: (item: CompactionItem) => Promise<void>
+  onBilledCost: (costMicros: number) => void
+}
+
 async function contextualInput(
   client: UpstreamTextClient,
   record: { response: typeof responses.$inferSelect; model: typeof models.$inferSelect },
@@ -244,8 +268,7 @@ async function contextualInput(
   memoryContext: string,
   publicApi: boolean,
   startedAt: number,
-  onCompactionUpdate: (item: CompactionItem) => Promise<void>,
-  onBilledCost: (costMicros: number) => void,
+  compaction: ContextCompaction,
 ): Promise<{ input: unknown[]; compactionItems: CompactionItem[] }> {
   const [[preferences], [personalizationRow]] = publicApi ? [[], []] : await Promise.all([
     db.select().from(userPreferences).where(eq(userPreferences.userId, record.response.userId)).limit(1),
@@ -265,44 +288,44 @@ async function contextualInput(
     context.push({ role: 'developer', content: TIME_CONTEXT_INSTRUCTIONS })
     context.push({ role: 'developer', content: timeContext })
   }
-  const existingItem = (record.response.output as unknown[]).find((raw): raw is CompactionItem => {
-    const item = raw as Partial<CompactionItem>
-    return item.type === 'pulpo_compaction' && item.phase === 'pre_response'
-  })
-  const compacted = await compactConversation({
+  const existingItem = preResponseCompactionItem(record.response.output)
+  const summaryParameters = summaryRequestParameters(compaction.requestParameters)
+  const compacted = await compactResponsesConversation({
     responseId: record.response.id,
-    modelId: record.model.id,
-    enabled: record.model.compactionEnabled,
-    thresholdTokens: record.model.compactionThresholdTokens,
-    retainedTurns: record.model.compactionRetainedTurns,
-    fixedContext: context,
-    currentInput: record.response.input as unknown[],
-    history,
+    model: record.model,
+    parent: history.at(-1),
+    conversation: responsesConversation(history),
     existingItem,
-    invoke: async (older) => {
-      const compactionInput = [{ role: 'user' as const, content: `${COMPACTION_PROMPT}\n\n${JSON.stringify(older)}` }]
-      const maxOutputTokens = Math.min(2_000, record.model.maxOutputTokens)
+    force: compaction.force,
+    fixedContext: context,
+    tools: Array.isArray(summaryParameters.tools) ? summaryParameters.tools : undefined,
+    instructions: typeof summaryParameters.instructions === 'string' ? summaryParameters.instructions : undefined,
+    summarize: async (conversation) => {
+      // The real request with the summary prompt appended, so its prefix matches the cached main request.
+      const input = await compaction.prepareInput([...context, ...conversation, responsesUserTextItem(SUMMARIZATION_PROMPT)])
+      const maxOutputTokens = summaryMaxOutputTokens(record.model.maxOutputTokens)
       const billed = await trackBilledInternalModelCall({
         responseId: record.response.id,
         requestLogId,
         modelId: record.model.id,
         upstreamModelId: record.model.upstreamModelId,
         purpose: 'compaction',
-        requestInput: compactionInput,
+        requestInput: { input: client.openai ? input : inlineFilesAsReferences(input), parameters: summaryParameters },
         maxOutputTokens,
         required: true,
-        invoke: () => client.responses.create({
+        invoke: () => createSummaryResponse(client, {
+          ...summaryParameters,
           model: record.model.upstreamModelId,
-          input: compactionInput,
+          input,
           store: false,
           max_output_tokens: maxOutputTokens,
-        }),
+        }, compaction.headers, record.response.id),
       })
       if ('skipped' in billed) throw new Error('Insufficient balance for conversation compaction')
-      onBilledCost(billed.costMicros)
+      compaction.onBilledCost(billed.costMicros)
       return billed.result.output_text
     },
-    onUpdate: onCompactionUpdate,
+    onUpdate: compaction.onUpdate,
   })
   if (!compacted.item && existingItem) {
     const updatedAt = new Date()
@@ -313,15 +336,60 @@ async function contextualInput(
   return { input: [...context, ...compacted.conversation, ...(record.response.input as unknown[])], compactionItems: compacted.item ? [compacted.item] : [] }
 }
 
-function codexAssistantText(output: unknown): string {
-  if (!Array.isArray(output)) return ''
-  return output.flatMap((item) => {
-    const content = (item as { content?: unknown[] }).content
-    return Array.isArray(content) ? content.flatMap((part) => {
-      const value = part as { type?: string; text?: string }
-      return value.type === 'output_text' && value.text ? [value.text] : []
-    }) : []
-  }).join('\n')
+/** Non-streaming summarizer call; a provider context overflow drops the oldest history and retries. */
+async function createSummaryResponse(client: UpstreamTextClient, body: Record<string, unknown> & { model: string }, headers: Record<string, string> | undefined, responseId: string) {
+  try {
+    return await withStrippedParameters(body, responseId, (payload) => client.responses.create({ ...payload, stream: false }, { headers }))
+  } catch (error) {
+    if (!isContextOverflowError(error)) throw error
+    throw new CompactionOverflowError(`Context compaction request exceeded the model context window: ${safeErrorMessage(error)}`, { cause: error })
+  }
+}
+
+/** Persist and publish a compaction item ahead of the response output; returns the new sequence. */
+async function publishCompactionUpdate(
+  response: typeof responses.$inferSelect,
+  publishResponseEvent: ReturnType<typeof createResponseEventPublisher>,
+  sequence: number,
+  item: CompactionItem,
+  leadingItems: unknown[],
+): Promise<number> {
+  const next = sequence + 1
+  const emittedAt = new Date().toISOString()
+  const publicItem = sanitizeOutputForClient([item])[0]
+  await publishResponseEvent({ responseId: response.id, sequence: next, type: 'pulpo.compaction.updated', payload: publicItem, emittedAt })
+  const updatedAt = new Date(emittedAt)
+  await db.update(responses).set({
+    status: 'in_progress',
+    output: [...leadingItems, item],
+    lastSequence: next,
+    startedAt: response.startedAt ?? updatedAt,
+    updatedAt,
+  }).where(eq(responses.id, response.id))
+  const [updated] = await db.select().from(responses).where(eq(responses.id, response.id)).limit(1)
+  if (updated) await publishSnapshot(toSnapshot(updated))
+  return next
+}
+
+/** Ancestors of a response, oldest first, stopping at a deleted or missing turn. */
+async function responseLineage(response: typeof responses.$inferSelect): Promise<Array<typeof responses.$inferSelect>> {
+  const allHistory = await db
+    .select()
+    .from(responses)
+    .where(and(eq(responses.chatId, response.chatId), ne(responses.id, response.id), isNull(responses.deletedAt)))
+    .orderBy(asc(responses.createdAt), asc(responses.id))
+  const byId = new Map(allHistory.map((turn) => [turn.id, turn]))
+  const lineage: typeof allHistory = []
+  let parentId = response.parentResponseId
+  const seen = new Set<string>()
+  while (parentId && !seen.has(parentId)) {
+    seen.add(parentId)
+    const parent = byId.get(parentId)
+    if (!parent) break
+    lineage.push(parent)
+    parentId = parent.parentResponseId
+  }
+  return lineage.reverse()
 }
 
 function codexUsage(message: AssistantMessage): ResponseUsage {
@@ -353,91 +421,59 @@ async function codexCurrentUserMessage(response: typeof responses.$inferSelect):
   return { role: 'user', content: content.length === 1 && content[0]?.type === 'text' ? content[0].text : content, timestamp: response.createdAt.getTime() }
 }
 
+/** Codex rejected the request as too long; the provider text is withheld like other Codex errors. */
+const CODEX_CONTEXT_OVERFLOW_MESSAGE = 'Codex rejected the request because the conversation exceeds the model context window.'
+
 async function processCodexGenerationAttempt(
   record: { response: typeof responses.$inferSelect; model: typeof models.$inferSelect; provider: typeof providerConnections.$inferSelect },
   startedAt: number,
+  options: { forceCompaction?: boolean } = {},
 ): Promise<void> {
   const responseId = record.response.id
   const publishResponseEvent = createResponseEventPublisher(record.response)
-  const allHistory = await db.select().from(responses).where(and(
-    eq(responses.chatId, record.response.chatId), ne(responses.id, responseId), isNull(responses.deletedAt),
-  )).orderBy(asc(responses.createdAt), asc(responses.id))
-  const byId = new Map(allHistory.map((turn) => [turn.id, turn]))
-  const lineage: typeof allHistory = []
-  let parentId = record.response.parentResponseId
-  const seen = new Set<string>()
-  while (parentId && !seen.has(parentId)) {
-    seen.add(parentId)
-    const parent = byId.get(parentId)
-    if (!parent) break
-    lineage.push(parent)
-    parentId = parent.parentResponseId
-  }
-  lineage.reverse()
-  const checkpoint = lineage.findLast((turn) => (turn.output as unknown[]).some((raw) => {
-    const item = raw as Partial<CompactionItem>
-    return item.type === 'pulpo_compaction' && item.phase === 'pre_response' && item.status === 'completed'
-  }))
-  const checkpointOutput = Array.isArray(checkpoint?.output) ? checkpoint.output : []
-  const checkpointItem = checkpointOutput.find((raw: unknown) => {
-    const item = raw as Partial<CompactionItem>
-    return item.type === 'pulpo_compaction' && item.phase === 'pre_response' && item.status === 'completed'
-  }) as CompactionItem | undefined
-  const coveredIndex = checkpointItem?.covered_through_response_id
-    ? lineage.findIndex((turn) => turn.id === checkpointItem.covered_through_response_id)
-    : -1
-  const effectiveLineage = coveredIndex >= 0 ? lineage.slice(coveredIndex + 1) : lineage
-  const reusableCheckpoint = coveredIndex >= 0 ? checkpointItem : undefined
-  const priorSummaryMessage: Message | undefined = reusableCheckpoint?.summary
-    ? { role: 'user', content: `Earlier conversation summary:\n${reusableCheckpoint.summary}`, timestamp: checkpoint?.createdAt.getTime() ?? Date.now() }
-    : undefined
-  const exchanges: Array<CodexConversationExchange<Message>> = []
-  for (const turn of effectiveLineage) {
-    const exchange: Message[] = []
-    const userText = responseInputText(turn.input)
-    if (userText) exchange.push({ role: 'user', content: userText, timestamp: turn.createdAt.getTime() })
-    const assistantText = codexAssistantText(turn.output)
-    if (assistantText) exchange.push({
-      role: 'assistant', content: [{ type: 'text', text: assistantText }], api: 'openai-codex-responses',
-      provider: 'openai-codex', model: turn.actualModelId ?? turn.modelId,
-      usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
-      stopReason: 'stop', timestamp: turn.completedAt?.getTime() ?? turn.updatedAt.getTime(),
-    })
-    if (exchange.length) exchanges.push({ responseId: turn.id, messages: exchange })
-  }
+  const lineage = await responseLineage(record.response)
   const currentMessage = await codexCurrentUserMessage(record.response)
-  const messages = [...(priorSummaryMessage ? [priorSummaryMessage] : []), ...exchanges.flatMap((exchange) => exchange.messages), currentMessage]
-  const context: Context = {
-    systemPrompt: withGenerationTimeContext(record.model.systemPrompt, record.response, startedAt) || undefined,
-    messages,
-  }
+  const systemPrompt = withGenerationTimeContext(record.model.systemPrompt, record.response, startedAt) || undefined
   const codex = createCodexModels(record.response.userId)
   const piModel = codex.getModel('openai-codex', record.model.upstreamModelId)
   if (!piModel) throw new Error('The pinned Pi Codex catalog no longer contains this model')
-  const contextItems: unknown[] = []
-  const estimatedTokens = estimateInputTokens(context)
-  if (shouldCompactContext({
-    enabled: record.model.compactionEnabled,
-    estimatedTokens,
-    thresholdTokens: record.model.compactionThresholdTokens,
-    unitCount: exchanges.length,
-    retainedUnits: record.model.compactionRetainedTurns,
-  })) {
-    const split = splitCodexConversationExchanges(exchanges, record.model.compactionRetainedTurns)
-    const older = [...(priorSummaryMessage ? [priorSummaryMessage] : []), ...split.older]
-    const retained = split.retained
-    const [requestLog] = await db.select({ id: requestLogs.id }).from(requestLogs).where(eq(requestLogs.responseId, responseId)).limit(1)
-    if (requestLog && older.length) {
-      const prompt = `${COMPACTION_PROMPT}\n\n${JSON.stringify(older)}`
-      const maxOutputTokens = Math.min(2_000, record.model.maxOutputTokens)
+  // The summarizer shares the main stream's session so both reuse one prompt cache.
+  const sessionId = `pulpo:${record.response.userId}:${record.response.chatId}`
+  let sequence = record.response.lastSequence
+  const [requestLog] = await db.select({ id: requestLogs.id }).from(requestLogs).where(eq(requestLogs.responseId, responseId)).limit(1)
+  // Compaction billed by an earlier attempt is reused, not re-billed, so carry its cost forward.
+  const [priorSidecars] = requestLog
+    ? await db.select({ total: sql<number>`coalesce(sum(${generationAttempts.costMicros}), 0)::bigint` })
+      .from(generationAttempts).where(and(eq(generationAttempts.requestLogId, requestLog.id), eq(generationAttempts.source, 'tool')))
+    : []
+  let sidecarCostMicros = Number(priorSidecars?.total ?? 0)
+  const conversation = codexConversation(lineage)
+  // Runs before the try below so compaction errors never reach the reauthentication check.
+  const compacted = requestLog ? await compactCodexConversation({
+    responseId,
+    model: record.model,
+    parent: lineage.at(-1),
+    conversation,
+    existingItem: preResponseCompactionItem(record.response.output),
+    force: options.forceCompaction,
+    systemPrompt,
+    summarize: async (messages) => {
+      const summaryContext: Context = { systemPrompt, messages: [...messages, piUserTextMessage(SUMMARIZATION_PROMPT)] }
+      const maxOutputTokens = summaryMaxOutputTokens(record.model.maxOutputTokens)
       const billed = await trackBilledInternalModelCall({
         responseId, requestLogId: requestLog.id, modelId: record.model.id, upstreamModelId: record.model.upstreamModelId,
-        purpose: 'compaction', requestInput: prompt, maxOutputTokens, required: true,
+        purpose: 'compaction', requestInput: summaryContext, maxOutputTokens, required: true,
         invoke: async () => {
-          const result = await codex.completeSimple(piModel, { messages: [{ role: 'user', content: prompt, timestamp: Date.now() }] }, {
-            reasoning: 'low', maxTokens: maxOutputTokens, maxRetries: 0, transport: 'auto',
-            sessionId: `pulpo:${record.response.userId}:${record.response.chatId}:compaction`,
+          // completeSimple resolves provider failures as error messages instead of rejecting.
+          const result = await codex.completeSimple(piModel, summaryContext, {
+            reasoning: 'low', maxTokens: maxOutputTokens, maxRetries: 0, timeoutMs: record.provider.requestTimeoutMs, transport: 'auto', sessionId,
           })
+          if (result.stopReason === 'error' || result.stopReason === 'aborted') {
+            if (isContextOverflow(result, piModel.contextWindow)) throw new CompactionOverflowError()
+            const error = new Error(result.errorMessage ?? 'Codex request failed')
+            if (codexErrorRequiresReauthentication(error)) await markCodexReauthenticationRequired(record.response.userId, 'Your Codex connection needs to be renewed.')
+            throw new CompactionError(`Context compaction failed: ${safeCodexErrorMessage(error)}`)
+          }
           return {
             id: result.responseId,
             usage: codexUsage(result),
@@ -445,24 +481,16 @@ async function processCodexGenerationAttempt(
           }
         },
       })
-      if (!('skipped' in billed)) {
-        context.messages = [
-          { role: 'user', content: `Earlier conversation summary:\n${billed.result.output_text}`, timestamp: Date.now() },
-          ...retained,
-          currentMessage,
-        ]
-        contextItems.push({
-          id: `compaction_${responseId}`, type: 'pulpo_compaction', phase: 'pre_response', status: 'completed',
-          model_id: record.model.id, estimated_tokens: estimatedTokens, threshold_tokens: record.model.compactionThresholdTokens,
-          retained_turns: retainedEntries(retained),
-          retained_context: sanitizeContextForStorage(retained),
-          retained_context_turns: sanitizeContextForStorage(split.retainedExchanges) as unknown[][],
-          covered_through_response_id: split.coveredThroughResponseId ?? reusableCheckpoint?.covered_through_response_id,
-          summary: billed.result.output_text, started_at: new Date().toISOString(), duration_ms: 0,
-        })
-      }
-    }
-  }
+      if ('skipped' in billed) throw new Error('Insufficient balance for conversation compaction')
+      sidecarCostMicros += billed.costMicros
+      return billed.result.output_text
+    },
+    onUpdate: async (item) => {
+      sequence = await publishCompactionUpdate(record.response, publishResponseEvent, sequence, item, [])
+    },
+  }) : { conversation }
+  const context: Context = { systemPrompt, messages: [...compacted.conversation, currentMessage] }
+  const contextItems: unknown[] = compacted.item ? [compacted.item] : []
   const controller = new AbortController()
   const cancellationPoll = setInterval(() => {
     void isCancellationRequested(responseId).then((cancelled) => { if (cancelled) controller.abort() }).catch(() => undefined)
@@ -471,7 +499,6 @@ async function processCodexGenerationAttempt(
   const messageId = `msg_${responseId}`
   let text = ''
   let reasoning = ''
-  let sequence = record.response.lastSequence
   let lastSnapshot = 0
   const output = () => [
     ...contextItems,
@@ -482,7 +509,7 @@ async function processCodexGenerationAttempt(
     .where(eq(responses.id, responseId))
   try {
     const reservation = await resizeBudgetReservation({
-      responseId, accruedCostMicros: 0, requestInput: context,
+      responseId, accruedCostMicros: sidecarCostMicros, requestInput: context,
       maxOutputTokens: publicOutputTokenLimit(record.model.maxOutputTokens, record.response.parameters as Record<string, unknown>).max_output_tokens,
       minimumOutputReservationTokens: record.model.minimumOutputReservationTokens,
       pricing: await getActivePricing(record.model.id),
@@ -493,7 +520,7 @@ async function processCodexGenerationAttempt(
       maxRetries: 0,
       timeoutMs: record.provider.requestTimeoutMs,
       transport: 'auto',
-      sessionId: `pulpo:${record.response.userId}:${record.response.chatId}`,
+      sessionId,
       signal: controller.signal,
     })
     let finalMessage: AssistantMessage | undefined
@@ -511,7 +538,10 @@ async function processCodexGenerationAttempt(
           type: 'response.reasoning_summary_text.delta', item_id: `reasoning_${responseId}`, output_index: 0, summary_index: 0, delta: event.delta,
         }, emittedAt: new Date().toISOString() })
       } else if (event.type === 'done') finalMessage = event.message
-      else if (event.type === 'error') throw new Error(event.error.errorMessage ?? 'Codex generation failed')
+      else if (event.type === 'error') {
+        const message = event.error.errorMessage ?? 'Codex generation failed'
+        throw isContextOverflow(event.error, piModel.contextWindow) ? new ContextOverflowError(message) : new Error(message)
+      }
       if (Date.now() - lastSnapshot > 250) {
         await db.update(responses).set({ output: output(), lastSequence: sequence, updatedAt: new Date() }).where(eq(responses.id, responseId))
         const [snapshot] = await db.select().from(responses).where(eq(responses.id, responseId)).limit(1)
@@ -533,11 +563,10 @@ async function processCodexGenerationAttempt(
       incompleteDetails: finalMessage.stopReason === 'length' ? { reason: 'max_output_tokens' } : null,
       lastSequence: sequence, openaiResponseId: finalMessage.responseId ?? null, completedAt, updatedAt: completedAt,
     }).where(eq(responses.id, responseId))
-    const [requestLog] = await db.select({ id: requestLogs.id }).from(requestLogs).where(eq(requestLogs.responseId, responseId)).limit(1)
-    let additionalCostMicros = 0
+    let additionalCostMicros = sidecarCostMicros
     if (requestLog) {
       const postTasks = await runPostResponseTasks(record, record, terminalOutput, requestLog.id)
-      additionalCostMicros = postTasks.costMicros
+      additionalCostMicros += postTasks.costMicros
       if (postTasks.error && codexErrorRequiresReauthentication(postTasks.error)) {
         await markCodexReauthenticationRequired(record.response.userId, 'Your Codex connection needs to be renewed.')
       }
@@ -557,11 +586,13 @@ async function processCodexGenerationAttempt(
       const completedAt = new Date()
       await db.update(responses).set({ status: 'cancelled', output: output(), lastSequence: sequence, completedAt, updatedAt: completedAt })
         .where(eq(responses.id, responseId))
-      await releaseBudget(responseId)
+      await settleWithSidecars({ responseId, usage: null, latencyMs: Date.now() - startedAt, additionalCostMicros: sidecarCostMicros })
       const [snapshot] = await db.select().from(responses).where(eq(responses.id, responseId)).limit(1)
       if (snapshot) await publishSnapshot(toSnapshot(snapshot))
       return
     }
+    // Overflow texts mention tokens, which the reauthentication check would misread.
+    if (error instanceof ContextOverflowError) throw new ContextOverflowError(CODEX_CONTEXT_OVERFLOW_MESSAGE)
     if (codexErrorRequiresReauthentication(error)) {
       await markCodexReauthenticationRequired(record.response.userId, 'Your Codex connection needs to be renewed.')
     }
@@ -574,7 +605,7 @@ async function processCodexGenerationAttempt(
 async function processGenerationAttempt(
   responseId: string,
   modelId: string,
-  options: { willRetry?: boolean } = {},
+  options: { willRetry?: boolean; forceCompaction?: boolean } = {},
 ): Promise<void> {
   const startedAt = Date.now()
   const [record] = await db
@@ -587,7 +618,7 @@ async function processGenerationAttempt(
   if (!record || ['completed', 'cancelled'].includes(record.response.status)) return
   const publishResponseEvent = createResponseEventPublisher(record.response)
   if (record.provider.id === CODEX_PROVIDER_ID) {
-    await processCodexGenerationAttempt(record, startedAt)
+    await processCodexGenerationAttempt(record, startedAt, { forceCompaction: options.forceCompaction })
     return
   }
   const config = getConfig()
@@ -691,23 +722,7 @@ async function processGenerationAttempt(
       throw error
     }
   }
-  const allHistory = await db
-    .select()
-    .from(responses)
-    .where(and(eq(responses.chatId, record.response.chatId), ne(responses.id, responseId), isNull(responses.deletedAt)))
-    .orderBy(asc(responses.createdAt), asc(responses.id))
-  const byId = new Map(allHistory.map((turn) => [turn.id, turn]))
-  const history: typeof allHistory = []
-  let parentId = record.response.parentResponseId
-  const seenParents = new Set<string>()
-  while (parentId && !seenParents.has(parentId)) {
-    seenParents.add(parentId)
-    const parent = byId.get(parentId)
-    if (!parent) break
-    history.push(parent)
-    parentId = parent.parentResponseId
-  }
-  history.reverse()
+  const history = await responseLineage(record.response)
   const [requestLog] = await db.select({
     id: requestLogs.id,
     apiKeyId: requestLogs.apiKeyId,
@@ -763,23 +778,29 @@ async function processGenerationAttempt(
       updatedAt: new Date(emittedAt),
     }).where(eq(responses.id, responseId))
   }
-  const contextual = await contextualInput(client, record, history, requestLog.id, recallItem, memory.memoryContext, publicApi, startedAt, async (item) => {
-    sequence += 1
-    const emittedAt = new Date().toISOString()
-    const publicItem = sanitizeOutputForClient([item])[0]
-    await publishResponseEvent({ responseId, sequence, type: 'pulpo.compaction.updated', payload: publicItem, emittedAt })
-    const updatedAt = new Date(emittedAt)
-    await db.update(responses).set({
-      status: 'in_progress',
-      output: [...recallItems, item],
-      lastSequence: sequence,
-      startedAt: record.response.startedAt ?? updatedAt,
-      updatedAt,
-    }).where(eq(responses.id, responseId))
-    const [updated] = await db.select().from(responses).where(eq(responses.id, responseId)).limit(1)
-    if (updated) await publishSnapshot(toSnapshot(updated))
-  }, (costMicros) => { sidecarCostMicros += costMicros })
-  const input = await prepareInputFiles(client, record.response.userId, contextual.input, record.model, imageInterceptor, record.provider)
+  const parameters = resolveModelParameters(record.model, record.response.parameters, { publicApi })
+  const cacheOptions = providerCacheRequestOptions(record.provider, {
+    userId: record.response.userId,
+    chatId: record.response.chatId,
+    runId: record.response.id,
+  })
+  // Shared by the main request and the summarizer so both hit the same prompt cache.
+  const requestParameters = {
+    ...providerPromptCacheParameters(record.model.promptCachingEnabled, parameters),
+    ...promptCacheKeyParameter(publicApi ? parameters : {}, cacheOptions.promptCacheKey),
+  }
+  const prepareInput = (items: unknown[]) => prepareInputFiles(client, record.response.userId, items, record.model, imageInterceptor, record.provider)
+  const contextual = await contextualInput(client, record, history, requestLog.id, recallItem, memory.memoryContext, publicApi, startedAt, {
+    force: options.forceCompaction === true,
+    requestParameters,
+    headers: cacheOptions.headers,
+    prepareInput,
+    onUpdate: async (item) => {
+      sequence = await publishCompactionUpdate(record.response, publishResponseEvent, sequence, item, recallItems)
+    },
+    onBilledCost: (costMicros) => { sidecarCostMicros += costMicros },
+  })
+  const input = await prepareInput(contextual.input)
   const contextItems: unknown[] = [...recallItems, ...contextual.compactionItems]
   let output: unknown[] = [...contextItems]
   let outputStarted = generationOutputHasStarted(output)
@@ -812,14 +833,6 @@ async function processGenerationAttempt(
   const firstToken = firstTokenTimeout(controller, record.model.firstTokenTimeoutEnabled ? record.model.firstTokenTimeoutSeconds * 1000 : undefined)
   try {
     await db.update(responses).set({ status: 'in_progress', error: null, completedAt: null, startedAt: new Date(), updatedAt: new Date() }).where(eq(responses.id, responseId))
-    const parameters = resolveModelParameters(record.model, record.response.parameters, {
-      publicApi: Boolean(requestLog.apiKeyId),
-    })
-    const cacheOptions = providerCacheRequestOptions(record.provider, {
-      userId: record.response.userId,
-      chatId: record.response.chatId,
-      runId: record.response.id,
-    })
     const reservation = await resizeBudgetReservation({
       responseId,
       accruedCostMicros: sidecarCostMicros + priorGenerationCostMicros,
@@ -833,9 +846,8 @@ async function processGenerationAttempt(
     })
     await db.update(responses).set({ pricingVersionId: pricing.id }).where(eq(responses.id, responseId))
     const upstreamPayload = {
-      ...providerPromptCacheParameters(record.model.promptCachingEnabled, parameters),
+      ...requestParameters,
       max_output_tokens: reservation.maxOutputTokens,
-      ...promptCacheKeyParameter(requestLog.apiKeyId ? parameters : {}, cacheOptions.promptCacheKey),
       model: record.model.upstreamModelId,
       input: input as never,
       stream: true as const,
@@ -984,6 +996,24 @@ async function processGenerationAttempt(
   }
 }
 
+/** A context overflow before any output is retried once with a forced compaction. */
+async function canCompactAfterOverflow(
+  error: unknown,
+  model: typeof models.$inferSelect,
+  response: typeof responses.$inferSelect,
+): Promise<boolean> {
+  // Read the attempt's output only for an actual overflow.
+  if (!isContextOverflowError(error)) return false
+  const [current] = await db.select({ output: responses.output }).from(responses).where(eq(responses.id, response.id)).limit(1)
+  return canRetryOverflowWithCompaction({
+    error,
+    enabled: model.compactionEnabled,
+    hasHistory: Boolean(response.parentResponseId),
+    modelId: model.id,
+    output: current?.output,
+  })
+}
+
 /** Provider status, code, and param persisted with a failure so public clients see the real rejection. */
 function upstreamErrorFields(error: unknown): { upstream?: { status: number; code?: string; param?: string; type?: string } } {
   const source = error instanceof GenerationAttemptError && error.upstreamError ? error.upstreamError : error
@@ -1010,10 +1040,18 @@ async function createUpstreamStream<Payload extends Record<string, unknown> & { 
   options: { signal: AbortSignal; headers?: Record<string, string> },
   responseId: string,
 ) {
+  return withStrippedParameters(payload, responseId, (current) => client.responses.create(current, options))
+}
+
+async function withStrippedParameters<Payload extends Record<string, unknown>, Result>(
+  payload: Payload,
+  responseId: string,
+  create: (payload: Payload) => Promise<Result>,
+): Promise<Result> {
   let current: Payload = payload
   for (let strips = 0; ; strips += 1) {
     try {
-      return await client.responses.create(current, options)
+      return await create(current)
     } catch (error) {
       const parameter = strips < MAX_UPSTREAM_PARAMETER_STRIPS ? strippableUpstreamParameter(error, current) : undefined
       if (!parameter) throw error
@@ -1063,6 +1101,8 @@ export async function processGeneration(responseId: string): Promise<void> {
   let attemptLimit = primaryModelAttemptLimit(base.model)
   let retryDelaySeconds = base.model.retryDelaySeconds
   let lastError: unknown
+  // The model whose context overflowed once; its later attempts compact first.
+  let overflowCompactionModelId: string | undefined
   const visited = new Set<string>()
 
   while (model && visited.size < MAX_MODEL_CHAIN_LENGTH && !visited.has(model.id)) {
@@ -1090,7 +1130,7 @@ export async function processGeneration(responseId: string): Promise<void> {
       try {
         const actualPricing = await getActivePricing(model.id)
         await db.update(responses).set({ pricingVersionId: actualPricing.id, actualModelId: model.id }).where(eq(responses.id, responseId))
-        await withDiagnosticContext({ requestLogId: base.log.id, modelCallId: attemptId, purpose: 'generation', metadata: { retryAttempt: attempt + 1, fallbackFromModelId: fallbackFrom } }, () => processGenerationAttempt(responseId, model!.id, { willRetry: true }))
+        await withDiagnosticContext({ requestLogId: base.log.id, modelCallId: attemptId, purpose: 'generation', metadata: { retryAttempt: attempt + 1, fallbackFromModelId: fallbackFrom } }, () => processGenerationAttempt(responseId, model!.id, { willRetry: true, forceCompaction: overflowCompactionModelId === model!.id }))
         const [completed] = await db.select().from(responses).where(eq(responses.id, responseId)).limit(1)
         if (model.providerConnectionId === CODEX_PROVIDER_ID) await recordReconstructedDiagnostic({ requestLogId: base.log.id, modelCallId: attemptId, purpose: 'generation', providerId: CODEX_PROVIDER_ID, modelId: model.id, upstreamModelId: model.upstreamModelId }, { input: base.response.input, parameters: base.response.parameters }, { output: completed?.output, usage: completed?.usage }, { retryAttempt: attempt + 1 }, completed?.status ?? 'completed')
         const usage = completed?.usage as ResponseUsage | null
@@ -1121,6 +1161,12 @@ export async function processGeneration(responseId: string): Promise<void> {
         lastError = error
         const category = classifyGenerationError(error)
         await db.update(generationAttempts).set({ status: 'failed', errorCategory: category, errorMessage: safeErrorMessage(error), durationMs: Date.now() - attemptStarted, completedAt: new Date() }).where(eq(generationAttempts.id, attemptId))
+        if (!overflowCompactionModelId && await canCompactAfterOverflow(error, model, base.response)) {
+          // One extra attempt that compacts before resending.
+          overflowCompactionModelId = model.id
+          attemptLimit += 1
+          continue
+        }
         if (!canFallbackAfterGenerationError(error)) { model = undefined; break }
         if (attempt + 1 < attemptLimit && retryDelaySeconds > 0) await new Promise((resolve) => setTimeout(resolve, retryDelaySeconds * 1000))
       }

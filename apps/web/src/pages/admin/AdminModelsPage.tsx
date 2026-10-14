@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { DEFAULT_MINIMUM_OUTPUT_RESERVATION_TOKENS, DEFAULT_MODEL_WARNING_DISMISS_DAYS, minimumOutputReservationTokensSchema, chatPresetsSchema, type ChatPreset, type ChatPresetAction, type ChatPresetChoice, type ChatPresetIcon } from '@pulpo/contracts'
+import { DEFAULT_MINIMUM_OUTPUT_RESERVATION_TOKENS, DEFAULT_MODEL_WARNING_DISMISS_DAYS, minimumOutputReservationTokensSchema, chatPresetsSchema, type ChatPreset, type ChatPresetAction, type ChatPresetChoice, type ChatPresetIcon, type ModelHiddenPlatform } from '@pulpo/contracts'
 import { modelWarningLinkError } from '@pulpo/client-core'
-import { ArrowDown, ArrowUp, Check, ChevronsUpDown, ChevronRight, Copy, Pencil, Plus, Search, Trash2 } from 'lucide-react'
+import { ArrowDown, ArrowUp, Check, ChevronsUpDown, ChevronRight, Copy, Lock, Pencil, Plus, Search, Trash2 } from 'lucide-react'
 import { apiRequest } from '@/lib/api'
 import { formatNumber } from '@/lib/format'
 import { cn } from '@/lib/utils'
@@ -35,10 +35,15 @@ import type { AdminCatalogIcon, CatalogIconReference } from '@/lib/catalog-icons
 import { ui, uit } from '@/i18n/ui'
 import {
   compactionContextPercent,
+  DEFAULT_RETAINED_USER_TOKENS,
   managedCodexSettingsPatch,
+  MAX_RETAINED_USER_TOKENS,
   type ManagedCodexModelSettings,
   validManagedCodexSettings,
+  validRetainedUserTokens,
 } from './codex-model-settings'
+import { ModelAccessEditor } from './ModelAccessEditor'
+import { useAdminUserDirectory, type UserDirectory } from './user-directory'
 
 interface AdminModel {
   id: string
@@ -51,6 +56,9 @@ interface AdminModel {
   warningDismissDays: number
   enabled: boolean
   visible: boolean
+  hiddenPlatforms: ModelHiddenPlatform[]
+  restricted: boolean
+  allowedUserIds: string[]
   logo: string | null
   customIconId: string | null
   systemPrompt: string
@@ -64,7 +72,7 @@ interface AdminModel {
   minimumOutputReservationTokens: number
   compactionEnabled: boolean
   compactionThresholdTokens: number
-  compactionRetainedTurns: number
+  compactionRetainedUserTokens: number
   executionMode: 'stream' | 'background'
   tags: string[]
   allowedParameters: string[]
@@ -89,9 +97,9 @@ interface Provider { id: string; name: string; baseUrl?: string }
 interface Lab { id: string; name: string; logo?: string; customIconId: string | null }
 
 const empty = (providerConnectionId = '', labId: string | null = null): AdminModel => ({
-  id: '', providerConnectionId, labId, upstreamModelId: '', name: '', description: '', warningMessage: '', warningDismissDays: DEFAULT_MODEL_WARNING_DISMISS_DAYS, enabled: true, visible: true, logo: null, customIconId: null, systemPrompt: '', agentEnabled: false, agentInstructions: '', defaultParameters: {}, interceptImagesWithOcr: false,
+  id: '', providerConnectionId, labId, upstreamModelId: '', name: '', description: '', warningMessage: '', warningDismissDays: DEFAULT_MODEL_WARNING_DISMISS_DAYS, enabled: true, visible: true, hiddenPlatforms: [], restricted: false, allowedUserIds: [], logo: null, customIconId: null, systemPrompt: '', agentEnabled: false, agentInstructions: '', defaultParameters: {}, interceptImagesWithOcr: false,
   contextWindow: 128_000, maxOutputTokens: 16_384, minimumOutputReservationTokens: DEFAULT_MINIMUM_OUTPUT_RESERVATION_TOKENS, executionMode: 'stream', tags: [], allowedParameters: [],
-  compactionEnabled: true, compactionThresholdTokens: 100_000, compactionRetainedTurns: 4,
+  compactionEnabled: true, compactionThresholdTokens: 100_000, compactionRetainedUserTokens: DEFAULT_RETAINED_USER_TOKENS,
   useProviderCost: false, promptCachingEnabled: false,
   inputPriceMicros: 0, cachedInputPriceMicros: 0, cacheWritePriceMicros: 0, outputPriceMicros: 0, perRequestPriceMicros: 0,
   presets: [],
@@ -106,12 +114,13 @@ export function AdminModelsPage() {
   const [providers, setProviders] = useState<Provider[]>([])
   const [labs, setLabs] = useState<Lab[]>([])
   const [query, setQuery] = useState('')
-  const [filter, setFilter] = useState<'all' | 'visible' | 'hidden' | 'enabled' | 'disabled'>('visible')
+  const [filter, setFilter] = useState<'all' | 'visible' | 'hidden' | 'enabled' | 'disabled' | 'restricted'>('visible')
   const [draft, setDraft] = useState<AdminModel | null>(null)
   const [codexDraft, setCodexDraft] = useState<ManagedCodexModelSettings | null>(null)
   const [creating, setCreating] = useState(false)
   const [presetEditorValid, setPresetEditorValid] = useState(true)
   const [paramsValid, setParamsValid] = useState(true)
+  const userDirectory = useAdminUserDirectory(!!draft?.restricted || models.some((model) => model.restricted))
   const customIcons = useCatalogIcons((state) => state.icons)
   const loadIcons = useCatalogIcons((state) => state.load)
 
@@ -126,7 +135,7 @@ export function AdminModelsPage() {
   }
   useEffect(() => { void Promise.all([load(), loadIcons()]) }, [loadIcons])
   useEffect(() => { setPresetEditorValid(true); setParamsValid(true) }, [draft?.id])
-  const filtered = useMemo(() => models.filter((model) => `${model.name} ${model.id} ${model.upstreamModelId}`.toLowerCase().includes(query.toLowerCase()) && (filter === 'all' || (filter === 'visible' ? model.visible : filter === 'hidden' ? !model.visible : filter === 'enabled' ? model.enabled : !model.enabled))), [models, query, filter])
+  const filtered = useMemo(() => models.filter((model) => `${model.name} ${model.id} ${model.upstreamModelId}`.toLowerCase().includes(query.toLowerCase()) && (filter === 'all' || (filter === 'visible' ? model.visible : filter === 'hidden' ? !model.visible : filter === 'enabled' ? model.enabled : filter === 'restricted' ? model.restricted : !model.enabled))), [models, query, filter])
   const presetErrors = draft ? validatePresetDrafts(draft.presets, draft.id, draft.allowedParameters, models) : []
   const warningLinkError = draft ? modelWarningLinkError(draft.id, draft.warningMessage ?? '', models) : null
 
@@ -149,7 +158,7 @@ export function AdminModelsPage() {
 
   const canSave = !!draft?.id && !!draft?.name && !!draft?.upstreamModelId && !!draft.providerConnectionId && !!draft.labId
     && draft.compactionThresholdTokens >= 2_000 && draft.compactionThresholdTokens <= 1_000_000
-    && draft.compactionRetainedTurns >= 1 && draft.compactionRetainedTurns <= 32
+    && validRetainedUserTokens(draft.compactionRetainedUserTokens)
     && minimumOutputReservationTokensSchema.safeParse(draft.minimumOutputReservationTokens).success
     && !warningLinkError
     && presetErrors.length === 0 && presetEditorValid && paramsValid
@@ -179,7 +188,7 @@ export function AdminModelsPage() {
         <Select value={filter} onValueChange={(v: typeof filter) => setFilter(v)}>
           <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
           <SelectContent>
-            {(['visible', 'hidden', 'all', 'enabled', 'disabled'] as const).map((v) => (
+            {(['visible', 'hidden', 'all', 'enabled', 'disabled', 'restricted'] as const).map((v) => (
               <SelectItem key={v} value={v} className="capitalize">{v}</SelectItem>
             ))}
           </SelectContent>
@@ -202,6 +211,17 @@ export function AdminModelsPage() {
                     <Badge variant="outline" className="max-w-full font-normal"><span className="truncate" title={model.id}>{model.id}</span></Badge>
                     <Badge variant="secondary" className="font-normal">{model.executionMode}</Badge>
                     {!model.visible && <Badge variant="secondary" className="font-normal">{ui("hidden")}</Badge>}
+                    {model.hiddenPlatforms?.includes('ios') && <Badge variant="secondary" className="font-normal">{ui("hidden on iOS")}</Badge>}
+                    {model.hiddenPlatforms?.includes('android') && <Badge variant="secondary" className="font-normal">{ui("hidden on Android")}</Badge>}
+                    {model.restricted && (
+                      <Badge
+                        variant="secondary"
+                        className="font-normal"
+                        title={model.allowedUserIds.map((id) => userDirectory.users.find((user) => user.id === id)?.name).filter(Boolean).join(', ') || undefined}
+                      >
+                        <Lock /> {model.allowedUserIds.length === 1 ? ui("Restricted · 1 user") : ui("Restricted · {{count}} users", { count: model.allowedUserIds.length })}
+                      </Badge>
+                    )}
                   </div>
                   <div className="mt-0.5 truncate text-xs text-muted-foreground">
                     {model.description || model.upstreamModelId} · {formatNumber(model.contextWindow)} {ui("ctx")} </div>
@@ -260,6 +280,7 @@ export function AdminModelsPage() {
                 labs={labs}
                 customIcons={customIcons}
                 models={models}
+                userDirectory={userDirectory}
                 presetErrors={presetErrors}
                 warningLinkError={warningLinkError}
                 onPresetValidityChange={setPresetEditorValid}
@@ -317,7 +338,7 @@ export function ManagedCodexSettingsEditor({
       <MinimumOutputAllocationField value={model.minimumOutputReservationTokens} onChange={(minimumOutputReservationTokens) => onChange({ ...model, minimumOutputReservationTokens })} />
       <div className="rounded-lg border bg-muted/20 p-3">
         <div className="text-sm font-medium">{ui("Automatic context compaction")}</div>
-        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{ui("Pulpo summarizes older context at the configured threshold. Managed Codex models keep compaction enabled to prevent context-limit failures.")}</p>
+        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{ui("Pulpo summarizes older context at the configured threshold or 90% of the context window, whichever is lower. Managed Codex models keep compaction enabled to prevent context-limit failures.")}</p>
       </div>
       <div className="grid grid-cols-2 gap-3">
         <Field label={ui("Threshold tokens")}>
@@ -333,17 +354,7 @@ export function ManagedCodexSettingsEditor({
             {compactionContextPercent(model.compactionThresholdTokens, model.contextWindow)}% {ui("of context")} · {ui("maximum")} {formatNumber(model.maximumCompactionThresholdTokens)}
           </div>
         </Field>
-        <Field label={ui("Recent exchanges kept")}>
-          <Input
-            type="number"
-            min={1}
-            max={32}
-            className="tabular-nums"
-            value={model.compactionRetainedTurns}
-            onChange={(event) => onChange({ ...model, compactionRetainedTurns: Number(event.target.value) })}
-          />
-          <div className="mt-1 text-[11px] text-muted-foreground">{ui("Kept verbatim after each summary")}</div>
-        </Field>
+        <RetainedUserTokensField value={model.compactionRetainedUserTokens} onChange={(compactionRetainedUserTokens) => onChange({ ...model, compactionRetainedUserTokens })} />
       </div>
     </div>
   )
@@ -375,7 +386,7 @@ export function ManagedCodexModelsSection({
                   <Badge variant="outline" className="font-normal">{ui("Managed")}</Badge>
                 </div>
                 <div className="mt-0.5 truncate text-xs text-muted-foreground">
-                  {formatNumber(model.contextWindow)} {ui("ctx")} · {ui("compacts at")} {formatNumber(model.compactionThresholdTokens)} · {ui("keeps")} {model.compactionRetainedTurns} {ui("exchanges")}
+                  {formatNumber(model.contextWindow)} {ui("ctx")} · {ui("compacts at")} {formatNumber(model.compactionThresholdTokens)} · {ui("keeps {{count}} user-message tokens", { count: formatNumber(model.compactionRetainedUserTokens) })}
                 </div>
               </div>
             </div>
@@ -395,6 +406,7 @@ function ModelEditorBody({
   labs,
   customIcons,
   models,
+  userDirectory,
   presetErrors,
   warningLinkError,
   onPresetValidityChange,
@@ -407,6 +419,7 @@ function ModelEditorBody({
   labs: Lab[]
   customIcons: AdminCatalogIcon[]
   models: AdminModel[]
+  userDirectory: UserDirectory
   presetErrors: string[]
   warningLinkError: string | null
   onPresetValidityChange: (valid: boolean) => void
@@ -535,7 +548,11 @@ function ModelEditorBody({
       <div className="grid grid-cols-2 gap-4">
         <ToggleRow label={ui("Enabled")} checked={draft.enabled} onChange={(enabled) => setDraft({ ...draft, enabled })} />
         <ToggleRow label={ui("Visible in picker")} checked={draft.visible} onChange={(visible) => setDraft({ ...draft, visible })} />
+        <ToggleRow label={ui("Hide in iOS app")} description={ui("App Store build. Requests from it cannot use this model.")} checked={draft.hiddenPlatforms.includes('ios')} onChange={(hidden) => setDraft({ ...draft, hiddenPlatforms: withHiddenPlatform(draft.hiddenPlatforms, 'ios', hidden) })} />
+        <ToggleRow label={ui("Hide in Android app")} description={ui("Google Play build. Requests from it cannot use this model.")} checked={draft.hiddenPlatforms.includes('android')} onChange={(hidden) => setDraft({ ...draft, hiddenPlatforms: withHiddenPlatform(draft.hiddenPlatforms, 'android', hidden) })} />
+        <ToggleRow label={ui("Restrict access")} description={ui("Only selected users can see and use this model. Admins always have access.")} checked={draft.restricted} onChange={(restricted) => setDraft({ ...draft, restricted })} />
       </div>
+      {draft.restricted && <ModelAccessEditor allowedUserIds={draft.allowedUserIds} directory={userDirectory} onChange={(allowedUserIds) => setDraft({ ...draft, allowedUserIds })} />}
 
       <Separator />
 
@@ -601,7 +618,7 @@ function ModelEditorBody({
         <div className="mt-3 rounded-lg border bg-muted/20 p-3">
           <ToggleRow
             label={ui("Enable context compaction")}
-            description={ui("Summarize older context when the token threshold is reached. Chat and agent turns share this limit; agent runs also compact mid-turn if live context grows.")}
+            description={ui("Summarize older context at the token threshold or 90% of the context window, whichever is lower. Chat and agent turns share this limit; agent runs also compact mid-turn if live context grows.")}
             checked={draft.compactionEnabled}
             onChange={(compactionEnabled) => setDraft({ ...draft, compactionEnabled })}
           />
@@ -610,9 +627,7 @@ function ModelEditorBody({
               <Field label={ui("Threshold tokens")}>
                 <Input type="number" min={2000} max={1000000} className="tabular-nums" value={draft.compactionThresholdTokens} onChange={(e) => setDraft({ ...draft, compactionThresholdTokens: Number(e.target.value) })} />
               </Field>
-              <Field label={ui("Recent turns kept")}>
-                <Input type="number" min={1} max={32} className="tabular-nums" value={draft.compactionRetainedTurns} onChange={(e) => setDraft({ ...draft, compactionRetainedTurns: Number(e.target.value) })} />
-              </Field>
+              <RetainedUserTokensField value={draft.compactionRetainedUserTokens} onChange={(compactionRetainedUserTokens) => setDraft({ ...draft, compactionRetainedUserTokens })} />
             </div>
           )}
         </div>
@@ -798,7 +813,7 @@ function ModelEditorBody({
                 intercept_images_with_ocr: draft.interceptImagesWithOcr,
                 compaction_enabled: draft.compactionEnabled,
                 compaction_threshold_tokens: draft.compactionThresholdTokens,
-                compaction_retained_turns: draft.compactionRetainedTurns,
+                compaction_retained_user_tokens: draft.compactionRetainedUserTokens,
                 meta: {
                   model_logo: draft.logo,
                   description: draft.description,
@@ -986,6 +1001,15 @@ function MinimumOutputAllocationField({ value, onChange }: { value: number; onCh
   )
 }
 
+function RetainedUserTokensField({ value, onChange }: { value: number; onChange: (value: number) => void }) {
+  return (
+    <Field label={ui("Kept user-message tokens")}>
+      <Input aria-label={ui("Kept user-message tokens")} type="number" min={0} max={MAX_RETAINED_USER_TOKENS} step={1_000} className="tabular-nums" value={value} onChange={(event) => onChange(Number(event.target.value))} />
+      <div className="mt-1 text-[11px] text-muted-foreground">{ui("Recent user messages, up to this many tokens, are kept word for word next to the summary.")}</div>
+    </Field>
+  )
+}
+
 function Field({ label, children, className }: { label: string; children: ReactNode; className?: string }) {
   return (
     <div className={cn('space-y-1.5', className)}>
@@ -993,6 +1017,11 @@ function Field({ label, children, className }: { label: string; children: ReactN
       {children}
     </div>
   )
+}
+
+function withHiddenPlatform(platforms: ModelHiddenPlatform[], platform: ModelHiddenPlatform, hidden: boolean): ModelHiddenPlatform[] {
+  const others = platforms.filter((value) => value !== platform)
+  return hidden ? [...others, platform] : others
 }
 
 function ToggleRow({

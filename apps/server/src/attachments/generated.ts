@@ -30,8 +30,13 @@ function generatedName(path: string, requestedName?: string): string {
   return name
 }
 
+/** The MIME type a file name's extension implies, if it is one Pulpo knows. */
+export function mimeTypeFromName(name: string): string | undefined {
+  return MIME_TYPES[extname(name).toLowerCase()]
+}
+
 function generatedMimeType(name: string, data: Uint8Array): string {
-  const expected = MIME_TYPES[extname(name).toLowerCase()] ?? 'application/octet-stream'
+  const expected = mimeTypeFromName(name) ?? 'application/octet-stream'
   if (!expected.startsWith('image/')) return expected
   const detected = detectImageMime(data)
   if (!detected || detected !== expected) throw new Error('Image contents do not match the filename')

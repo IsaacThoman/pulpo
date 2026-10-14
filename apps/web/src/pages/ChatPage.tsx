@@ -1,4 +1,4 @@
-import type { ComposerState } from '@pulpo/contracts'
+import type { ComposerState, FileAccessMode } from '@pulpo/contracts'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { useTranslation } from '@/i18n/useAppTranslation'
@@ -35,6 +35,7 @@ import { ui } from '@/i18n/ui'
 import { DesktopActionsTitleBarSlot, DesktopModelTitleBarSlot } from '@/components/desktop/DesktopSidebarTitleBar'
 import { useDocumentTitle } from '@/lib/document-title'
 import { useNewChatScope, usePublishChatTarget } from '@/features/side-panel/agent'
+import { NO_FILE_ACCESS, scopedFileAccess } from '@/features/files/file-scope'
 
 const DEFAULT_SUGGESTED_PROMPTS = [
   { id: '1', translationKey: 'chat.suggestedPrompts.build' },
@@ -149,6 +150,7 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
       id: current.id, title: current.title, modelId: current.modelId,
       temporary: current.temporary, expired: current.expired, expiresAt: current.expiresAt,
       fileScopeIds: current.fileScopeIds ?? NO_FILE_SCOPE,
+      fileScopeAccess: current.fileScopeAccess ?? NO_FILE_ACCESS,
     } : null
   }))
   useDocumentTitle(adminMode ? null : chat?.title)
@@ -186,7 +188,14 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
   const [messageEdit, setMessageEdit] = useState<ComposerMessageEdit | null>(null)
   // Kept in a store so Files beside this page can add to the unsent chat.
   const newChatFileScope = useNewChatScope((state) => state.scopeIds)
-  const setNewChatFileScope = useCallback((scopeIds: string[]) => useNewChatScope.setState({ scopeIds }), [])
+  const newChatFileAccess = useNewChatScope((state) => state.access)
+  const setNewChatFileScope = useCallback((scopeIds: string[]) => useNewChatScope.setState((state) => ({
+    scopeIds,
+    access: scopedFileAccess(scopeIds, state.access),
+  })), [])
+  const setNewChatFileAccess = useCallback((id: string, mode: FileAccessMode) => useNewChatScope.setState((state) => ({
+    access: { ...state.access, [id]: mode },
+  })), [])
   const [composerEditActive, setComposerEditActive] = useState(false)
   const [promptConfig, setPromptConfig] = useState<{ enabled: boolean; count: number; prompts: SuggestedPrompt[] }>({
     enabled: true,
@@ -495,7 +504,7 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
                 chatWidth === 'narrow' ? 'max-w-5xl' : 'max-w-[min(100%,90rem)]'
               )}
             >
-              <Composer syncEnabled={!adminMode} onSyncControls={applyComposerControls} key="new" temporaryControlRef={temporaryComposerRef} suggestionControlRef={suggestionComposerRef} focusControlRef={focusComposerRef} onTemporaryChange={setTemporary} chatId={null} modelId={modelId} onSelectModel={selectModel} temporary={temporaryMode} autoExpire={effectiveNewChatAutoExpire} fileScopeIds={newChatFileScope} onFileScopeChange={adminMode ? undefined : setNewChatFileScope} />
+              <Composer syncEnabled={!adminMode} onSyncControls={applyComposerControls} key="new" temporaryControlRef={temporaryComposerRef} suggestionControlRef={suggestionComposerRef} focusControlRef={focusComposerRef} onTemporaryChange={setTemporary} chatId={null} modelId={modelId} onSelectModel={selectModel} temporary={temporaryMode} autoExpire={effectiveNewChatAutoExpire} fileScopeIds={newChatFileScope} fileScopeAccess={newChatFileAccess} onFileScopeChange={adminMode ? undefined : setNewChatFileScope} onFileAccessChange={setNewChatFileAccess} />
             </div>
           </>
         ) : (
@@ -537,6 +546,8 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
                   onSelectModel={selectModel}
                   fileScopeIds={chat.fileScopeIds}
                   onFileScopeChange={adminMode || chat.temporary ? undefined : (ids) => useChat.getState().setChatFileScope(chat.id, ids)}
+                  fileScopeAccess={chat.fileScopeAccess}
+                  onFileAccessChange={(id, mode) => useChat.getState().setChatFileAccess(chat.id, id, mode)}
                   temporary={chat.temporary}
                   autoExpire={Boolean(chat.expiresAt)}
                   messageEdit={messageEdit}

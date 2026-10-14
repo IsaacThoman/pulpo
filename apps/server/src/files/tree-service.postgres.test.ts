@@ -63,7 +63,7 @@ describe.skipIf(!enabled)('Files tree PostgreSQL behavior', () => {
     const listing = await listFolder(userId, nested.id)
     expect(listing.ancestors.map((node) => node.name)).toEqual(['Docs'])
     expect(listing.children.map((node) => node.name)).toEqual(['Zed', 'a.txt'])
-    expect(publish).toHaveBeenCalledWith(expect.objectContaining({ userId, scopes: ['files'] }))
+    expect(publish).toHaveBeenCalledWith(expect.objectContaining({ userId, scopes: ['files', 'folders'] }))
   })
 
   it('rejects case-insensitive sibling conflicts and moves into descendants', async () => {

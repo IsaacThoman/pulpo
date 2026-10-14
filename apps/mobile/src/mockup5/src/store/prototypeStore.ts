@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { randomUUID } from 'expo-crypto';
 import { create } from 'zustand';
+import { truncateChatTitle } from '@pulpo/contracts';
 import type {
   AppPreferences, PersistedPrototypeState,
   PrototypeChat, PrototypeFolder, PrototypeMessage, SessionState,
@@ -149,7 +150,8 @@ export const usePrototypeStore = create<PrototypeStore>()((set, get) => ({
   discardChat: (chatId) => set((state) => ({ chats: state.chats.filter((chat) => chat.id !== chatId) })),
   renameChat: (chatId, title) => {
     const previous = get().chats.find((chat) => chat.id === chatId);
-    const trimmed = title.trim();
+    const trimmed = truncateChatTitle(title);
+    if (!trimmed) return;
     set((state) => ({ chats: state.chats.map((chat) => chat.id === chatId ? { ...chat, title: trimmed, updatedAt: Date.now() } : chat) }));
     runOptimisticAction(`chat:${chatId}:title`, productionActions.renameChat(chatId, trimmed), () => {
       if (!previous) return;

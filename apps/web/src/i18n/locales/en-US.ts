@@ -166,7 +166,6 @@ const enUS = {
     collapse: 'Collapse sidebar',
     createFolder: 'Create folder',
     expand: 'Expand sidebar',
-    folderName: 'Folder name',
     files: 'Files',
     friends: 'Friends',
     logout: 'Log out',

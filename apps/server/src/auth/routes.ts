@@ -208,7 +208,7 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
         storageLimitBytes: await newUserStorageLimit(tx),
       })
       await tx.insert(passwordCredentials).values({ userId, passwordHash: await createPasswordHash(input.password) })
-      await insertNewAccountPreferences(tx, userId, authSettings)
+      await insertNewAccountPreferences(tx, userId)
     })
     await createSession(userId, request, reply)
     const [created] = await db.select().from(users).where(eq(users.id, userId)).limit(1)

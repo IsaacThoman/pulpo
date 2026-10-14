@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react'
 import { normalizeSidebarPins } from '@/lib/sidebar-pins'
 import { useQuery } from '@tanstack/react-query'
-import { modelPreferencesSchema } from '@pulpo/contracts'
+import { modelPreferencesSchema, type FollowedModelDefaults } from '@pulpo/contracts'
 import { LatestValueQueue } from '@pulpo/client-core'
 import { apiRequest, ApiError, isNetworkError } from '@/lib/api'
 import { enforceAttachmentQuota } from '@/lib/local-first/attachment-cache'
@@ -31,6 +31,7 @@ const persistedKeys = [
 type PersistedKey = typeof persistedKeys[number]
 type SettingsDocument = {
   values: Record<string, unknown>
+  followedModelDefaults?: FollowedModelDefaults
   newAccountFavoriteModelIds?: string[]
 }
 
@@ -62,7 +63,8 @@ async function persistSettings(userId: string, body: Record<string, unknown>): P
 function modelPreferencesSnapshot() {
   const state = useModels.getState()
   return {
-    favoriteModelIds: state.favoriteModelIds,
+    // Null keeps following the new-account defaults instead of pinning today's list.
+    favoriteModelIds: state.favoritesFollowDefaults ? null : state.favoriteModelIds,
     providerOrder: state.providerOrder,
   }
 }
@@ -114,6 +116,7 @@ export function SettingsBridge() {
       useModels.setState({
         ownerUserId: userId,
         favoriteModelIds: [],
+        favoritesFollowDefaults: false,
         newAccountFavoriteModelIds: [],
         newAccountFavoritesLoaded: false,
         providerOrder: [],
@@ -144,13 +147,18 @@ export function SettingsBridge() {
       }
       useSettings.setState(next)
       const modelPreferences = modelPreferencesSchema.parse(remote.values)
+      const favoritesFollowDefaults = remote.followedModelDefaults?.favoriteModelIds ?? false
       const newAccountFavoriteModelIds = remote.newAccountFavoriteModelIds ?? []
       const newAccountFavoritesLoaded = Array.isArray(remote.newAccountFavoriteModelIds)
       const localModels = modelPreferencesSnapshot()
-      const matchesLocal = JSON.stringify(modelPreferences) === JSON.stringify(localModels)
+      const matchesLocal = JSON.stringify({
+        favoriteModelIds: favoritesFollowDefaults ? null : modelPreferences.favoriteModelIds,
+        providerOrder: modelPreferences.providerOrder,
+      }) === JSON.stringify(localModels)
       if (!modelsDirty.current || matchesLocal) {
         useModels.setState({
           ...modelPreferences,
+          favoritesFollowDefaults,
           ownerUserId: userId,
           newAccountFavoriteModelIds,
           newAccountFavoritesLoaded,
@@ -209,7 +217,11 @@ export function SettingsBridge() {
     let timer: number | undefined
     const unsubscribe = useModels.subscribe((state, previous) => {
       if (!modelsHydrated.current || applyingRemote.current || state.ownerUserId !== userId) return
-      if (state.favoriteModelIds === previous.favoriteModelIds && state.providerOrder === previous.providerOrder) return
+      if (
+        state.favoriteModelIds === previous.favoriteModelIds
+        && state.favoritesFollowDefaults === previous.favoritesFollowDefaults
+        && state.providerOrder === previous.providerOrder
+      ) return
       modelsDirty.current = true
       window.clearTimeout(timer)
       timer = window.setTimeout(() => {

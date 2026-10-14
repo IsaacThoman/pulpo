@@ -1,5 +1,5 @@
 import { decodePayloadRow, encodePayloadRow } from '../database/lossless-json.js'
-import { createHash, randomInt } from 'node:crypto'
+import { createHash, randomInt, randomUUID } from 'node:crypto'
 import { createReadStream } from 'node:fs'
 import { mkdtemp, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -8,7 +8,7 @@ import { and, eq, getTableName, is, ne, sql } from 'drizzle-orm'
 import { getTableConfig, PgTable } from 'drizzle-orm/pg-core'
 import * as schema from '../database/schema.js'
 import { db } from '../database/client.js'
-import { attachments, backupJobs, catalogIcons, fileNodes, speechModels, users } from '../database/schema.js'
+import { attachments, backupJobs, catalogIcons, fileNodes, fileVersions, speechModels, users } from '../database/schema.js'
 import { getBlobStore } from '../storage/index.js'
 import { deleteRedisKeysByPattern } from '../redis-keys.js'
 import { redis } from '../redis.js'
@@ -20,6 +20,7 @@ import {
   FULL_BACKUP_EXPLICIT_COLUMNS,
   FULL_BACKUP_BINARY_COLUMNS,
   FULL_BACKUP_TABLES,
+  legacyChatFolderRows,
   OPTIONAL_TABLES_IN_LEGACY_BACKUPS,
   type FullBackupTable,
 } from './backup-format.js'
@@ -216,7 +217,15 @@ export async function restoreFullBackup(jobId: string): Promise<void> {
     const logCapture = new Map<string, boolean>()
     const blobKeys = new Map<string, string>()
     const fileBlobKeys = new Set<string>()
-    for await (const row of restoreRows(tables.get('file_nodes'))) if (typeof row.object_key === 'string') fileBlobKeys.add(row.object_key)
+    const rootFileNames = new Map<string, Set<string>>()
+    for await (const row of restoreRows(tables.get('file_nodes'))) {
+      if (typeof row.object_key === 'string') fileBlobKeys.add(row.object_key)
+      if (row.parent_id == null && row.trashed_at == null) {
+        const owner = String(row.owner_user_id)
+        rootFileNames.set(owner, (rootFileNames.get(owner) ?? new Set()).add(String(row.name).toLowerCase()))
+      }
+    }
+    const legacyChatFolders = legacyChatFolderRows(await readSmallRestoreTable(tables.get('folders')), rootFileNames, randomUUID)
     for (const [index, blob] of manifest.blobs.entries()) {
       const file = files.get(blob.entry)!
       // Bound the filename even when the source key came from a previous
@@ -283,15 +292,19 @@ export async function restoreFullBackup(jobId: string): Promise<void> {
         }
         yield row
       }
+      if (table === 'file_nodes') yield* legacyChatFolders
     }
     const oldAttachmentBlobs = await db.select({ key: attachments.objectKey }).from(attachments)
     const oldFileBlobs = await db.select({ key: fileNodes.objectKey }).from(fileNodes).where(sql`${fileNodes.objectKey} is not null`)
+    // Kept versions of uploaded files are not in backups; the restore truncates them with their files.
+    const oldFileVersionBlobs = await db.select({ key: fileVersions.objectKey }).from(fileVersions)
     const oldAvatarBlobs = await db.select({ key: users.avatarObjectKey }).from(users).where(sql`${users.avatarObjectKey} is not null`)
     const oldIconRows = await db.select().from(catalogIcons)
     const oldSpeechBlobs = (await db.select({ previews: speechModels.voicePreviews, assets: speechModels.voiceAssets }).from(speechModels)).flatMap(row => [...row.previews, ...row.assets.flatMap(asset => [asset.clone, asset.watermark].filter((blob): blob is NonNullable<typeof blob> => Boolean(blob)))].map(clip => ({ key: clip.objectKey })))
     const oldBlobs = [
       ...oldAttachmentBlobs,
       ...oldFileBlobs.map(row => ({ key: row.key! })),
+      ...oldFileVersionBlobs,
       ...oldSpeechBlobs.map(row => ({ key: row.key! })),
       ...oldAvatarBlobs.map((avatar) => ({ key: avatar.key! })),
       ...oldIconRows.flatMap((icon) => [

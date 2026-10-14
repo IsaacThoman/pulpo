@@ -33,6 +33,7 @@ import { registerAdminChatAccess } from './admin/chat-access.js'
 import { registerMessageRoutes } from './messages/routes.js'
 import { registerAttachmentRoutes } from './attachments/routes.js'
 import { registerFileRoutes } from './files/routes.js'
+import { registerSidebarRoutes } from './sidebar/routes.js'
 import { ensureBuiltinCatalog } from './catalog/defaults.js'
 import { registerMobileRoutes } from './mobile/routes.js'
 import { registerResponseCompression } from './compression.js'
@@ -81,9 +82,16 @@ export async function buildApp() {
   await app.register(cors, {
     origin: (origin, callback) => callback(null, !origin || isAllowedOrigin(origin, config)),
     credentials: true,
-    exposedHeaders: ['x-speech-duration-seconds'],
+    exposedHeaders: ['x-speech-duration-seconds', 'retry-after'],
   })
-  await app.register(rateLimit, { max: 300, timeWindow: '1 minute', keyGenerator: (request) => resolveClientIp(request.raw, config) ?? request.ip })
+  await app.register(rateLimit, {
+    max: 300,
+    timeWindow: '1 minute',
+    keyGenerator: (request) => resolveClientIp(request.raw, config) ?? request.ip,
+    errorResponseBuilder: (_request, context) => new AppError(
+      context.statusCode, 'rate_limit_exceeded', `Rate limit exceeded, retry in ${context.after}`, 'rate_limit_error',
+    ),
+  })
   await app.register(multipart, { limits: { fileSize: 20 * 1024 * 1024 * 1024, files: 1 } })
 
   app.decorateRequest('user', null)
@@ -192,6 +200,7 @@ export async function buildApp() {
   await registerMessageRoutes(app)
   await registerAttachmentRoutes(app)
   await registerFileRoutes(app)
+  await registerSidebarRoutes(app)
   await registerSpeechRoutes(app)
   await registerImageGenerationRoutes(app)
   await registerDictationRoutes(app)

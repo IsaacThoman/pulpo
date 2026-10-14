@@ -9,6 +9,7 @@ export * from './usage-cost.js'
 export * from './admin-analytics.js'
 import type { ComposerAck, ComposerSnapshot, ComposerWrite } from './composer.js'
 import type { DocAck, DocClosedEvent, DocJoinInput, DocJoinResult, DocUpdateMessage } from './files.js'
+import { fileAccessModeSchema } from './files.js'
 export * from './composer.js'
 import { z } from 'zod'
 import { DEFAULT_MAX_INLINE_IMAGES, MAX_CONFIGURABLE_INLINE_IMAGES, MAX_MESSAGE_ATTACHMENTS } from './attachment-limits.js'
@@ -538,6 +539,10 @@ export const compactionItemSchema = z.object({
   error: z.string().optional(),
   covered_through_response_id: idSchema.optional(),
   before_agent_turn: z.number().int().positive().optional(),
+  /** Absent on legacy items, which kept recent turns verbatim instead of user messages. */
+  strategy: z.literal('user_messages').optional(),
+  tokens_after: z.number().int().nonnegative().optional(),
+  token_source: z.enum(['usage', 'estimate']).optional(),
 })
 export type CompactionItem = z.infer<typeof compactionItemSchema>
 
@@ -748,6 +753,9 @@ function applyAgentEventOutput(output: unknown[], event: ResponseEvent): unknown
   if (event.type === 'pulpo.agent.cost_limit' && typeof payload.id === 'string') {
     return upsertOutputItem(output, (item) => item.type === 'pulpo_cost_limit' && item.id === payload.id, payload)
   }
+  if (event.type === 'pulpo.agent.files.changed') {
+    return upsertOutputItem(output, (item) => item.type === 'pulpo_file_changes', payload)
+  }
   if (event.type === 'pulpo.agent.attachment.created' && typeof payload.attachment_id === 'string') {
     return upsertOutputItem(output, (item) => item.type === 'pulpo_attachment' && item.attachment_id === payload.attachment_id, payload)
   }
@@ -880,7 +888,8 @@ export const modelPreferencesSchema = z.object({
   providerOrder: orderedPreferenceIdsSchema.default([]),
 })
 export const modelPreferencesPatchSchema = z.object({
-  favoriteModelIds: orderedPreferenceIdsSchema.optional(),
+  /** Null returns the account to following the new-account default favorites. */
+  favoriteModelIds: orderedPreferenceIdsSchema.nullable().optional(),
   providerOrder: orderedPreferenceIdsSchema.optional(),
 })
 export type ModelPreferences = z.infer<typeof modelPreferencesSchema>
@@ -917,12 +926,17 @@ export const instructionPresetSelectionsSchema = z.record(
   z.boolean(),
 ).refine((value) => Object.keys(value).length <= 500, 'Too many instruction preset selections')
 
-/** Instance defaults copied into each account when it is created. */
+/** Instance defaults followed by accounts until they customize their own model choices. */
 export const newAccountModelDefaultsSchema = z.object({
   defaultModelId: z.string().trim().min(1).max(120).nullable().default(null),
   favoriteModelIds: orderedPreferenceIdsSchema.default([]),
 })
 export type NewAccountModelDefaults = z.infer<typeof newAccountModelDefaultsSchema>
+/** Which account model choices are unset and therefore follow the new-account defaults. */
+export interface FollowedModelDefaults {
+  defaultModelId: boolean
+  favoriteModelIds: boolean
+}
 
 export const providerCacheAffinityModeSchema = z.enum([
   'none',
@@ -1041,6 +1055,19 @@ export type ChatPreset = z.infer<typeof chatPresetSchema>
 
 export const UNKNOWN_MODEL_ID = 'pulpo-unknown-model'
 
+/** Native store apps where an admin can hide a catalog model, e.g. for App Store or Play Store review. */
+export const modelHiddenPlatformSchema = z.enum(['ios', 'android'])
+export type ModelHiddenPlatform = z.infer<typeof modelHiddenPlatformSchema>
+export const modelHiddenPlatformsSchema = z.array(modelHiddenPlatformSchema).max(2)
+  .transform((platforms) => [...new Set(platforms)])
+/** Users granted a restricted model. Admins always have access and need no grant. */
+export const modelAllowedUserIdsSchema = z.array(idSchema).max(10_000)
+  .transform((userIds) => [...new Set(userIds)])
+/** Error code returned when a native app sends a request with a model hidden on its platform. */
+export const MODEL_UNAVAILABLE_ON_PLATFORM_ERROR = 'model_unavailable_on_platform'
+/** Error code returned when a request names a restricted model the user has not been granted. */
+export const MODEL_ACCESS_DENIED_ERROR = 'model_access_denied'
+
 export const DEFAULT_MINIMUM_OUTPUT_RESERVATION_TOKENS = 8_000
 export const minimumOutputReservationTokensSchema = z.number().int().min(1).max(2_147_483_647)
 
@@ -1055,6 +1082,9 @@ export const createModelSchema = z.object({
   warningDismissDays: modelWarningDismissDaysSchema.default(DEFAULT_MODEL_WARNING_DISMISS_DAYS),
   enabled: z.boolean().default(true),
   visible: z.boolean().default(true),
+  hiddenPlatforms: modelHiddenPlatformsSchema.default([]),
+  restricted: z.boolean().default(false),
+  allowedUserIds: modelAllowedUserIdsSchema.default([]),
   logo: z.string().max(120).nullable().default(null),
   customIconId: idSchema.nullable().default(null),
   systemPrompt: z.string().max(100_000).default(''),
@@ -1068,7 +1098,7 @@ export const createModelSchema = z.object({
   minimumOutputReservationTokens: minimumOutputReservationTokensSchema.default(DEFAULT_MINIMUM_OUTPUT_RESERVATION_TOKENS),
   compactionEnabled: z.boolean().default(true),
   compactionThresholdTokens: z.number().int().min(2_000).max(1_000_000).default(100_000),
-  compactionRetainedTurns: z.number().int().min(1).max(32).default(4),
+  compactionRetainedUserTokens: z.number().int().min(0).max(100_000).default(20_000),
   executionMode: executionModeSchema.default('stream'),
   tags: z.array(z.string()).default([]),
   allowedParameters: z.array(z.string()).default([]),
@@ -1553,7 +1583,8 @@ export const managementAccountSettingsSchema = z.object({
   fileDoubleClickAction: fileDoubleClickActionSchema.default('open'),
   defaultModelId: z.string().max(120).nullable().default(null),
   generation: z.record(z.string(), z.record(z.string(), z.string())).default({}),
-  favoriteModelIds: accountPreferenceIdsSchema.default([]),
+  /** Null follows the instance's new-account default favorites. */
+  favoriteModelIds: accountPreferenceIdsSchema.nullable().default(null),
   providerOrder: accountPreferenceIdsSchema.default([]),
   sidebarPins: sidebarPinsSchema.default(() => sidebarPinsSchema.parse({})),
 })
@@ -1753,6 +1784,14 @@ export const FILE_SCOPE_ROOT = 'root'
 export const MAX_CHAT_FILE_SCOPES = 20
 export const fileScopeIdsSchema = z.array(z.union([z.literal(FILE_SCOPE_ROOT), idSchema])).max(MAX_CHAT_FILE_SCOPES)
   .transform((ids) => [...new Set(ids.map((id) => id.toLowerCase()))])
+/**
+ * What the agent may do with each scope entry, keyed like `fileScopeIds`. Entries without one use
+ * `DEFAULT_FILE_ACCESS_MODE`; an item inside an attached folder follows the nearest attached
+ * entry above it.
+ */
+export const fileScopeAccessSchema = z.record(z.union([z.literal(FILE_SCOPE_ROOT), idSchema]), fileAccessModeSchema)
+  .refine((access) => Object.keys(access).length <= MAX_CHAT_FILE_SCOPES, { message: 'Too many file scope entries' })
+  .transform((access) => Object.fromEntries(Object.entries(access).map(([id, mode]) => [id.toLowerCase(), mode])))
 
 export const chatSummarySchema = z.object({
   id: idSchema,
@@ -1760,9 +1799,12 @@ export const chatSummarySchema = z.object({
   modelId: z.string(),
   pinned: z.boolean(),
   folderId: idSchema.nullable(),
+  /** At the top of My files rather than in the Chats folder (folderId is null either way). */
+  inFilesRoot: z.boolean().optional(),
   sortOrder: z.number().int().optional(),
   temporary: z.boolean(),
   fileScopeIds: z.array(z.string()).default([]),
+  fileScopeAccess: z.record(z.string(), fileAccessModeSchema).default({}),
   expiresAt: isoDateSchema.nullable().optional(),
   updatedAt: isoDateSchema,
   activeResponseId: idSchema.nullable(),
@@ -1776,24 +1818,34 @@ export const persistChatResponseSchema = chatSummarySchema.extend({
 })
 export type PersistChatResponse = z.infer<typeof persistChatResponseSchema>
 
+/** Chat titles are limited in UTF-16 code units, matching `String.length`. */
+export const CHAT_TITLE_MAX_LENGTH = 200
+
+/** Fits a title within the API limit without splitting a surrogate pair. */
+export function truncateChatTitle(title: string): string {
+  return title.trim().slice(0, CHAT_TITLE_MAX_LENGTH).replace(/[\uD800-\uDBFF]$/, '').trimEnd()
+}
+
 export const createChatSchema = z.object({
   clientId: idSchema.optional(),
   modelId: z.string().min(1),
-  title: z.string().trim().min(1).max(200).optional(),
+  title: z.string().trim().min(1).max(CHAT_TITLE_MAX_LENGTH).optional(),
   temporary: z.boolean().default(false),
   autoExpire: z.boolean().default(false),
-  /** Files items the agent may read and edit in this chat. */
+  /** Files items the agent may work with in this chat. */
   fileScopeIds: fileScopeIdsSchema.default([]),
+  fileScopeAccess: fileScopeAccessSchema.default({}),
 })
 
 export const updateChatSchema = z.object({
-  title: z.string().trim().min(1).max(200).optional(),
+  title: z.string().trim().min(1).max(CHAT_TITLE_MAX_LENGTH).optional(),
   pinned: z.boolean().optional(),
   folderId: idSchema.nullable().optional(),
   modelId: z.string().min(1).optional(),
   sortOrder: z.number().int().optional(),
   autoExpire: z.boolean().optional(),
   fileScopeIds: fileScopeIdsSchema.optional(),
+  fileScopeAccess: fileScopeAccessSchema.optional(),
 })
 export type UpdateChatInput = z.infer<typeof updateChatSchema>
 

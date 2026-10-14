@@ -117,4 +117,34 @@ describe('agent workspace tools', () => {
     expect(result.content).toEqual([{ type: 'text', text: 'Attached report.pdf (456 bytes)' }])
     expect(result.details).toEqual({ attachment: { id: 'file-1', name: 'report.pdf', mimeType: 'application/pdf', sizeBytes: 456 } })
   })
+
+  it('routes pulpo files relay requests from bash to onRelay with the operation id', async () => {
+    const request = { id: 'relay-1', command: 'cat', args: { path: 'Notes.md' } }
+    const execute = vi.fn(async (_id: string, _type: string, _args: unknown, _signal: unknown, _onUpdate: unknown, _onStarted: unknown,
+      relay?: (request: unknown, signal?: AbortSignal) => Promise<unknown>) => ({ output: JSON.stringify(await relay?.(request)), exitCode: 0 }))
+    const onRelay = vi.fn().mockResolvedValue({ ok: true, output: '# Notes' })
+    const tools = createWorkspaceTools({ execute } as unknown as WorkspaceManager, 1_000, undefined, undefined, undefined, onRelay)
+
+    const result = await tools.find((candidate) => candidate.name === 'bash')!.execute('bash-7', { command: 'pulpo files cat Notes.md' })
+
+    expect(onRelay).toHaveBeenCalledWith('bash-7', request, undefined)
+    expect(result.content).toEqual([{ type: 'text', text: '{"ok":true,"output":"# Notes"}' }])
+    await createWorkspaceTools({ execute } as unknown as WorkspaceManager, 1_000).find((candidate) => candidate.name === 'bash')!.execute('bash-8', { command: 'true' })
+    expect(execute.mock.calls.at(-1)?.[6]).toBeUndefined()
+  })
+
+  it('passes saved full-output locations from the workspace to the output budget', async () => {
+    const saved = { fullOutputPath: '/tmp/pulpo-tool-output/abc.txt', fullOutputBytes: 200_000, fullOutputComplete: true }
+    const execute = vi.fn().mockResolvedValue({ output: 'output', exitCode: 0, details: { ...saved, unrelated: true } })
+    const tools = createWorkspaceTools({ execute } as unknown as WorkspaceManager, 1_000)
+
+    const bash = await tools.find((candidate) => candidate.name === 'bash')!.execute('bash-1', { command: 'cat big.log' })
+    const grep = await tools.find((candidate) => candidate.name === 'grep')!.execute('grep-1', { pattern: 'x' })
+    execute.mockResolvedValueOnce({ output: 'a.txt', exitCode: 0 })
+    const ls = await tools.find((candidate) => candidate.name === 'ls')!.execute('ls-1', {})
+
+    expect(bash.details).toEqual({ exitCode: 0, ...saved })
+    expect(grep.details).toEqual(saved)
+    expect(ls.details).toEqual({})
+  })
 })

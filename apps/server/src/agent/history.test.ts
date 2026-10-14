@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { AgentMessage } from '@earendil-works/pi-agent-core'
-import { resolveAgentParentMessages, systemPromptFromAgentContext, withoutMemoryToolMessages, type AgentHistoryResponse } from './history.js'
+import { agentRunDisplayState, resolveAgentParentMessages, resumedRunContinues, systemPromptFromAgentContext, withoutMemoryToolMessages, type AgentHistoryResponse } from './history.js'
 
 const now = new Date('2026-08-08T12:00:00.000Z')
 
@@ -25,6 +25,29 @@ describe('Agent parent history', () => {
     expect(systemPromptFromAgentContext({ systemPrompt: 'original instructions' })).toBe('original instructions')
     expect(systemPromptFromAgentContext({ systemPrompt: 42 })).toBeUndefined()
     expect(systemPromptFromAgentContext({})).toBeUndefined()
+  })
+
+  it('restores display bookkeeping saved with a run', () => {
+    const archived = [{ role: 'assistant', content: [{ type: 'text', text: 'before compaction' }] }]
+    expect(agentRunDisplayState({ messages: [], displayStart: 2, archivedMessages: archived, promptRecorded: true }))
+      .toEqual({ displayStart: 2, archivedMessages: archived, promptRecorded: true })
+    // Runs saved by older code fall back to the caller's defaults.
+    expect(agentRunDisplayState({ messages: [] })).toEqual({ archivedMessages: [], promptRecorded: false })
+    expect(agentRunDisplayState({ displayStart: -1, archivedMessages: 'bad', promptRecorded: 'yes' })).toEqual({ archivedMessages: [], promptRecorded: false })
+    expect(agentRunDisplayState(null)).toEqual({ archivedMessages: [], promptRecorded: false })
+  })
+
+  it('continues a resumed run whose prompt is recorded, even right after compaction', () => {
+    // Crash during the first request after a mid-run or recovery compaction: [retained prompt, summary] with displayStart 2.
+    const compacted = agentRunDisplayState({ messages: [{}, {}], displayStart: 2, archivedMessages: [], promptRecorded: true })
+    expect(resumedRunContinues(compacted, 2, compacted.displayStart!)).toBe(true)
+    // Crash before the prompt was recorded, for example right after pre-response compaction.
+    const notStarted = agentRunDisplayState({ messages: [{}, {}], displayStart: 2, archivedMessages: [], promptRecorded: false })
+    expect(resumedRunContinues(notStarted, 2, notStarted.displayStart!)).toBe(false)
+    // Runs saved by older code compare lengths.
+    const legacy = agentRunDisplayState({ messages: [{}, {}, {}], displayStart: 2 })
+    expect(resumedRunContinues(legacy, 3, legacy.displayStart!)).toBe(true)
+    expect(resumedRunContinues(legacy, 2, legacy.displayStart!)).toBe(false)
   })
 
   it('uses the immediate parent Agent context unchanged', () => {

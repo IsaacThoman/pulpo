@@ -81,6 +81,14 @@ export function utcMonthEnd(value = new Date()): Date {
   return new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth() + 1, 1))
 }
 
+export function utcDayStart(value = new Date()): Date {
+  return new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate()))
+}
+
+export function utcDayEnd(value = new Date()): Date {
+  return new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate() + 1))
+}
+
 export function utcWeekStart(value = new Date()): Date {
   const date = new Date(value)
   const day = date.getUTCDay()

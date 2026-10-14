@@ -170,7 +170,16 @@ export function applyTheme(theme: Theme) {
   const effective = signedIn() ? theme : 'system'
   const dark =
     effective === 'dark' || (effective === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)
-  document.documentElement.classList.toggle('dark', dark)
+  const root = document.documentElement
+  if (root.classList.contains('dark') === dark) return
+  // Swap colors instantly. Otherwise every `transition-colors` element animates at once,
+  // which repaints the whole page for several frames on large chats.
+  const pauseTransitions = document.createElement('style')
+  pauseTransitions.textContent = '*,*::before,*::after{transition:none!important}'
+  document.head.appendChild(pauseTransitions)
+  root.classList.toggle('dark', dark)
+  void getComputedStyle(document.body).color
+  pauseTransitions.remove()
 }
 
 export function applyLanguage(language: Language) {

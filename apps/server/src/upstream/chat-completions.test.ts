@@ -229,6 +229,26 @@ describe('chatCompletionsRequest', () => {
     expect(none).not.toHaveProperty('parallel_tool_calls')
   })
 
+  it('accepts compacted history: consecutive user messages and a summarizer turn with tools disabled', () => {
+    const tools = [{ type: 'function', name: 'lookup', parameters: { type: 'object' } }]
+    const body = chatCompletionsRequest({
+      model: 'm',
+      input: [
+        { role: 'user', content: [{ type: 'input_text', text: 'kept' }] },
+        { role: 'user', content: [{ type: 'input_text', text: 'summary' }] },
+        { role: 'user', content: [{ type: 'input_text', text: 'summarize' }] },
+      ],
+      tools,
+      tool_choice: 'none',
+    }, { baseUrl: OTHER, stream: false })
+    expect(body.tool_choice).toBe('none')
+    expect(body.messages).toEqual([
+      { role: 'user', content: 'kept' },
+      { role: 'user', content: 'summary' },
+      { role: 'user', content: 'summarize' },
+    ])
+  })
+
   it('maps structured output formats, reasoning effort, and verbosity', () => {
     const schema = chatCompletionsRequest({
       model: 'm', input: 'x', reasoning: { effort: 'high', summary: 'auto' },

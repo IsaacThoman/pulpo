@@ -3,8 +3,10 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { FILE_SCOPE_ROOT, MAX_CHAT_FILE_SCOPES, type FileFolderLayout, type FileGridPosition, type FileListing, type FileNode } from '@pulpo/contracts'
 import {
+  Archive,
   ArrowDown,
   ArrowUp,
+  Check,
   ChevronRight,
   ClipboardPaste,
   Copy,
@@ -20,9 +22,14 @@ import {
   Maximize2,
   PanelRight,
   Loader2,
+  Palette,
   Pencil,
+  Pin,
+  PinOff,
   Plus,
   Scissors,
+  Share2,
+  SquareArrowOutUpRight,
   SquareDashedMousePointer,
   Trash2,
   TriangleAlert,
@@ -48,14 +55,18 @@ import { useAuth } from '@/stores/auth'
 import { useSettings } from '@/stores/settings'
 import { createDoc, createFolder, fetchFolder, fetchFolderLayout, folderLayoutQueryKey, folderQueryKey, updateFolderLayout, uploadFile } from '@/features/files/api'
 import { arrangeGrid, GRID_CELL, moveInGrid, readingOrder } from '@/features/files/browser/grid-layout'
-import { filesErrorMessage } from '@/features/files/file-display'
+import { dropFolderOf, filesErrorMessage } from '@/features/files/file-display'
 import { FileMoveDialog } from '@/features/files/FileMoveDialog'
+import { FileSuggestionBanner } from '@/features/files/FileSuggestion'
+import { useResolveFileSuggestion } from '@/features/files/use-file-suggestion'
 import { useFilesPageRequest } from '@/features/files/files-page-request'
 import { useFileReveal } from '@/features/files/reveal'
 import { useFileClipboard } from '@/features/files/browser/clipboard'
 import { FileContextMenu, type ContextMenuPoint } from '@/features/files/browser/FileContextMenu'
 import { FileDragOverlay } from '@/features/files/browser/FileDragOverlay'
 import { FileItem, type FileDropHandlers } from '@/features/files/browser/FileItem'
+import { editAppearance, hasAppearance } from '@/features/files/appearance'
+import { isSidebarItemDrag, readSidebarItems } from '@/features/sidebar/drag-data'
 import {
   clickSelect,
   EMPTY_SELECTION,
@@ -71,13 +82,17 @@ import {
 import { readFileSort, sortFileNodes, toggleFileSort, uniqueChildName, writeFileSort, type FileSort, type FileSortKey } from '@/features/files/browser/sort'
 import { hasPrimaryModifier, isAppleShortcut, isEditableTarget, shortcutLabel } from '@/features/files/browser/shortcuts'
 import { useSidePanel, type PanelContent } from '@/features/side-panel/store'
-import { AgentMenuItems, SplitViewButton } from '@/features/side-panel/AgentActions'
-import { usePublishFilesView, type FilesViewPlace } from '@/features/side-panel/agent'
+import { AgentMenuItems, OpenChatToLeftItem, SplitViewButton } from '@/features/side-panel/AgentActions'
+import { splitView, usePublishFilesView, type FilesViewPlace } from '@/features/side-panel/agent'
 import { PanelWindowButtons } from '@/features/side-panel/PanelControls'
 import { openBeside, panelContentPath, useMainNavigate } from '@/features/side-panel/use-panel-actions'
 import { SelectionAction } from '@/features/files/browser/SelectionAction'
 import { useFileOperations } from '@/features/files/browser/use-file-operations'
 import { useItemDrag } from '@/features/files/browser/use-item-drag'
+import { archiveSidebarSelection, createShortcutInteractively, pinSidebarItems, useSidebarState } from '@/features/sidebar/api'
+import { copyChatShareLink, duplicateChats } from '@/features/chat/chat-actions'
+import { ChatExpiryMenuItem } from '@/features/chat/ChatExpiryMenuItem'
+import { useChat } from '@/stores/chat'
 
 const VIEW_STORAGE_KEY = 'pulpo.files.view'
 const UPLOAD_CONCURRENCY = 3
@@ -95,6 +110,24 @@ function readView(): FilesView {
 
 function isFileDrag(event: DragEvent) {
   return event.dataTransfer.types.includes('Files')
+}
+
+/** What opening a shortcut shows: its target, as if it were that item. Other items are themselves. */
+function resolveShortcut(node: FileNode): FileNode {
+  if (node.kind !== 'shortcut' || !node.target?.available) return node
+  const { target } = node
+  return { ...node, id: target.id, kind: target.kind, name: target.name, mimeType: target.mimeType, systemRole: target.systemRole, target: null }
+}
+
+/** What the chat menu offers for a chat that Files offers nowhere else: its expiry and share link. */
+function FilesChatMenuItems({ chatId }: { chatId: string }) {
+  const chat = useChat((state) => state.chats.find((candidate) => candidate.id === chatId))
+  return (
+    <>
+      {chat && <ChatExpiryMenuItem chat={chat} />}
+      <DropdownMenuItem onSelect={() => void copyChatShareLink(chatId)}><Share2 /> {ui("Copy share link")}</DropdownMenuItem>
+    </>
+  )
 }
 
 function SortHeader({ label, sortKey, sort, onSort, className }: {
@@ -158,6 +191,8 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
   const agentItem = useMemo(() => ({ id: folderId ?? FILE_SCOPE_ROOT }), [folderId])
   usePublishFilesView(place, filesEnabled && !listing.isError ? agentItem : null)
   const ops = useFileOperations()
+  const resolveFileSuggestion = useResolveFileSuggestion()
+  const sidebar = useSidebarState().data
   const clip = useFileClipboard((state) => state.clip)
   const [view, setView] = useState<FilesView>(readView)
   const [sort, setSort] = useState<FileSort>(readFileSort)
@@ -282,26 +317,37 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
   }
 
   /** Opens an item here: folders browse in place, files fill this view with their editor or preview. */
-  const open = (node: FileNode) => {
-    if (node.kind === 'folder') showFolder(node.id)
+  const open = (node: FileNode): void => {
+    // A shortcut opens what it points at, wherever that is.
+    if (node.kind === 'shortcut') {
+      if (!node.target?.available) ops.notify(ui("The item this shortcut opens is in the trash"), 'error')
+      else open(resolveShortcut(node))
+      return
+    }
+    // Chats always open in the main view.
+    if (node.kind === 'chat') goMain(`/c/${node.id}`)
+    else if (node.kind === 'folder') showFolder(node.id)
     // The panel shows every file in place, with a way back to its folder.
     else if (panel) useSidePanel.getState().open({ kind: 'file', id: node.id })
     else navigate(`/files/d/${node.id}`)
   }
 
   const doubleClickOpensBeside = useSettings((state) => state.fileDoubleClickAction === 'openBeside')
+  // With instant retention, chats are deleted for good, which the sidebar's menus say too.
+  const instantRetention = useSettings((state) => state.trashRetention === 'instant')
   /**
    * Double-click: on the files page a file opens in place, or to the right when the setting keeps the
    * folder in view; in the panel it opens in place. Cmd/Ctrl swaps it for the other view. Folders
    * always browse in place.
    */
   const openFromDoubleClick = (node: FileNode, event: MouseEvent) => {
-    if (node.kind === 'folder') { open(node); return }
+    const opens = resolveShortcut(node)
+    if (opens.kind === 'folder' || opens.kind === 'chat' || opens.kind === 'shortcut') { open(node); return }
     // A Cmd/Ctrl-click toggles selection, so the pair of clicks would otherwise leave it unselected.
     setSelection(selectOnly(node.id))
     const swap = hasPrimaryModifier(event)
     const elsewhereByDefault = !panel && doubleClickOpensBeside && splitAvailable
-    if (elsewhereByDefault ? !swap : swap && canOpenElsewhere) openElsewhere(nodeContent(node))
+    if (elsewhereByDefault ? !swap : swap && canOpenElsewhere) openElsewhere(nodeContent(opens))
     else open(node)
   }
 
@@ -376,7 +422,8 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
   }
 
   const setClipboard = (mode: 'cut' | 'copy', targets = selectedNodes) => {
-    if (!targets.length) return
+    // Built-in folders cannot move, so they cannot be cut.
+    if (!targets.length || mode === 'cut' && targets.some((node) => node.systemRole)) return
     useFileClipboard.setState({ clip: { mode, nodes: targets } })
     if (mode === 'copy') {
       ops.notify(targets.length === 1 ? uit`Copied "${targets[0]!.name}"` : uit`Copied ${targets.length} items`)
@@ -395,14 +442,18 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
     }
   }
 
+  /** Files are copied; chats are duplicated with their history, as from the chat menu. */
   const duplicate = async (targets = selectedNodes) => {
-    const created = await ops.copy(targets, folderId, 'duplicate')
-    if (created?.length) setSelection({ ids: new Set(created.map((node) => node.id)), anchor: created[0]!.id, focus: created.at(-1)!.id })
+    const chats = targets.filter((node) => node.kind === 'chat').map((node) => ({ id: node.id, title: node.name }))
+    const [created, chatCopies] = await Promise.all([ops.copy(targets, folderId, 'duplicate'), duplicateChats(chats)])
+    if (chatCopies.length) await ops.refresh()
+    const ids = [...created?.map((node) => node.id) ?? [], ...chatCopies]
+    if (ids.length) setSelection({ ids: new Set(ids), anchor: ids[0]!, focus: ids.at(-1)! })
   }
 
   const startRename = () => {
     const target = selection.focus && selection.ids.has(selection.focus) ? byId.get(selection.focus) : selectedNodes[0]
-    if (target && selectedNodes.length === 1) setRenamingId(target.id)
+    if (target && selectedNodes.length === 1 && !target.systemRole) setRenamingId(target.id)
   }
 
   const gridColumns = () => {
@@ -452,7 +503,7 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
     }
     if (key === 'F2') { event.preventDefault(); startRename(); return }
     if (key === 'Delete' || key === 'Backspace') {
-      if (selectedNodes.length) { event.preventDefault(); void trashSelection() }
+      if (selectedNodes.length && !selectedNodes.some((node) => node.systemRole)) { event.preventDefault(); void trashSelection() }
       return
     }
     if (key === ' ') {
@@ -555,30 +606,42 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
     onDrop: (dragged, targetId) => { void ops.move(dragged, targetId) },
   })
 
-  /** Folder rows and breadcrumbs accept files dropped in from the operating system. */
+  /** Moves items dragged out of the sidebar (chats, folders, files, or shortcuts) into `targetId`. */
+  const dropSidebarItem = (event: DragEvent, targetId: string | null) => {
+    const nodes = readSidebarItems(event.dataTransfer).filter((node) => node.id !== targetId)
+    if (nodes.length) void ops.move(nodes, targetId)
+  }
+
+  /**
+   * Folder rows and breadcrumbs accept files dropped in from the operating system, and items
+   * dragged out of the sidebar.
+   */
   const dropProps = (targetId: string | null, key = targetId ?? 'root'): FileDropHandlers => ({
     onDragOver: (event) => {
-      if (!isFileDrag(event)) return
+      const fromSidebar = isSidebarItemDrag(event.dataTransfer)
+      if (!fromSidebar && !isFileDrag(event)) return
       event.preventDefault()
       event.stopPropagation()
-      event.dataTransfer.dropEffect = 'copy'
+      event.dataTransfer.dropEffect = fromSidebar ? 'move' : 'copy'
       setDropTarget(key)
     },
     onDragLeave: (event) => {
       if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropTarget((current) => current === key ? null : current)
     },
     onDrop: (event) => {
-      if (!isFileDrag(event)) return
+      const fromSidebar = isSidebarItemDrag(event.dataTransfer)
+      if (!fromSidebar && !isFileDrag(event)) return
       event.preventDefault()
       event.stopPropagation()
       setDropTarget(null)
-      void upload([...event.dataTransfer.files], targetId)
+      if (fromSidebar) dropSidebarItem(event, targetId)
+      else void upload([...event.dataTransfer.files], targetId)
     },
   })
 
   const pageDrop = {
     onDragOver: (event: DragEvent) => {
-      if (!isFileDrag(event)) return
+      if (!isFileDrag(event) && !isSidebarItemDrag(event.dataTransfer)) return
       event.preventDefault()
       setDropTarget('page')
     },
@@ -586,6 +649,12 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
       if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropTarget(null)
     },
     onDrop: (event: DragEvent) => {
+      if (isSidebarItemDrag(event.dataTransfer)) {
+        event.preventDefault()
+        setDropTarget(null)
+        dropSidebarItem(event, folderId)
+        return
+      }
       if (!isFileDrag(event)) return
       event.preventDefault()
       setDropTarget(null)
@@ -603,10 +672,13 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
       if (renamingId === node.id || drag.consumeClick()) return
       // Touch has no double-click or hover, so a tap opens, as in mobile file browsers.
       if (lastPointerType.current === 'touch') { open(node); return }
-      // Alt/Option-click opens an item in the other view, like "Open to the right" in editors.
-      if (event.altKey) {
+      // Alt/Option-click opens an item in the other view, like "Open to the right" in editors. A chat
+      // opens to the left, with this folder moved beside it; in the panel, chats already open there.
+      const opens = resolveShortcut(node)
+      if (event.altKey && (opens.kind === 'chat' ? !panel && splitAvailable : opens.kind !== 'shortcut')) {
         setSelection(selectOnly(node.id))
-        openElsewhere(nodeContent(node))
+        if (opens.kind === 'chat') splitView(place.view, goMain, opens.id)
+        else openElsewhere(nodeContent(opens))
         return
       }
       setSelection(clickSelect(selection, order, node.id, { toggle: hasPrimaryModifier(event), range: event.shiftKey }))
@@ -621,7 +693,7 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
       const rect = event.currentTarget.getBoundingClientRect()
       openMenuAt({ x: rect.left, y: rect.bottom }, node)
     },
-    dropHandlers: node.kind === 'folder' ? dropProps(node.id) : undefined,
+    dropHandlers: dropFolderOf(node) ? dropProps(dropFolderOf(node)!, node.id) : undefined,
     onRenameCommit: async (name: string) => {
       const ok = await ops.rename(node, name)
       if (ok) setRenamingId(null)
@@ -643,8 +715,33 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
   }
 
   const single = selectedNodes.length === 1 ? selectedNodes[0]! : null
-  const canDownload = selectedNodes.length > 0 && selectedNodes.every((node) => node.kind !== 'folder')
-  const canUseAgent = selectedNodes.length > 0 && selectedNodes.length <= MAX_CHAT_FILE_SCOPES
+  const canDownload = selectedNodes.length > 0 && selectedNodes.every((node) => node.kind !== 'folder' && node.kind !== 'chat')
+  // Chats and shortcuts are not files the agent can be given, and built-in folders stay where they are.
+  const fileSelection = selectedNodes.filter((node) => node.kind !== 'chat' && node.kind !== 'shortcut')
+  const hasChats = selectedNodes.some((node) => node.kind === 'chat')
+  const trashLabel = hasChats && instantRetention && selectedNodes.every((node) => node.kind === 'chat') ? ui("Delete") : ui("Move to trash")
+  const hasSystem = selectedNodes.some((node) => node.systemRole)
+  // Files and folders in the selection can be given a color and icon; chats and shortcuts are left out.
+  const canStyle = selectedNodes.some(hasAppearance)
+  const canUseAgent = fileSelection.length > 0 && fileSelection.length <= MAX_CHAT_FILE_SCOPES
+  // Items inside a suggested folder share its suggestion; only the folder's banner acts on it.
+  const suggestionRootItem = single?.suggestion && single.suggestion.changeId !== listing.data?.folder?.suggestion?.changeId ? single : null
+  const resolveSuggestion = async (node: FileNode, action: 'accept' | 'reject') => {
+    try {
+      await resolveFileSuggestion(node, action)
+      ops.notify(action === 'accept' ? uit`Kept "${node.name}"` : uit`Deleted "${node.name}"`)
+    } catch (cause) {
+      ops.fail(cause)
+    }
+  }
+  // Pins whatever is not pinned yet; once everything is, unpins it all. The Sidebar folder is the
+  // sidebar itself, so it cannot be pinned there.
+  const pinning = selectedNodes.some((node) => !node.pinned)
+  const archiveSelection = () => {
+    const targets = selectedNodes
+    setSelection(EMPTY_SELECTION)
+    void archiveSidebarSelection(targets.map((node) => node.id), targets)
+  }
   const itemMenu = (
     <>
       {selectedNodes.length > 1 && <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">{uit`${selectedNodes.length} items selected`}</DropdownMenuLabel>}
@@ -654,25 +751,46 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
           <DropdownMenuShortcut>↵</DropdownMenuShortcut>
         </DropdownMenuItem>
       )}
-      {single && canOpenElsewhere && (
-        <DropdownMenuItem onSelect={() => openElsewhere(nodeContent(single))}>
+      {single && resolveShortcut(single).kind !== 'chat' && resolveShortcut(single).kind !== 'shortcut' && canOpenElsewhere && (
+        <DropdownMenuItem onSelect={() => openElsewhere(nodeContent(resolveShortcut(single)))}>
           <ElsewhereIcon /> {elsewhereLabel}<DropdownMenuShortcut>{elsewhereShortcut}</DropdownMenuShortcut>
         </DropdownMenuItem>
       )}
-      {canUseAgent && <AgentMenuItems ids={selectedNodes.map((node) => node.id)} place={place} />}
+      {/* In the panel, Open already shows a chat beside it. */}
+      {single && resolveShortcut(single).kind === 'chat' && !panel && <OpenChatToLeftItem chatId={resolveShortcut(single).id} shortcut={elsewhereShortcut} />}
+      {suggestionRootItem && (
+        <>
+          <DropdownMenuItem onSelect={() => void resolveSuggestion(suggestionRootItem, 'accept')}><Check /> {ui("Accept suggestion")}</DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => void resolveSuggestion(suggestionRootItem, 'reject')}><X /> {ui("Reject suggestion")}</DropdownMenuItem>
+          <DropdownMenuSeparator />
+        </>
+      )}
+      {canUseAgent && <AgentMenuItems ids={fileSelection.map((node) => node.id)} place={place} />}
       {canDownload && (
         <DropdownMenuItem onSelect={() => void ops.download(selectedNodes)}>
           <Download /> {ui("Download")}
         </DropdownMenuItem>
       )}
-      {single && <DropdownMenuItem onSelect={() => setRenamingId(single.id)}><Pencil /> {ui("Rename")}<DropdownMenuShortcut>{shortcutLabel('F2')}</DropdownMenuShortcut></DropdownMenuItem>}
-      <DropdownMenuItem onSelect={() => setMoving(selectedNodes)}><FolderInput /> {ui("Move to…")}</DropdownMenuItem>
+      <DropdownMenuItem disabled={selectedNodes.some((node) => node.systemRole === 'chats')} onSelect={() => void pinSidebarItems(selectedNodes.map((node) => node.id), pinning, selectedNodes)}>
+        {pinning ? <Pin /> : <PinOff />} {pinning ? ui("Pin") : ui("Unpin")}
+      </DropdownMenuItem>
+      {/* Built-in folders list the actions they do not allow, unavailable, so every folder's menu reads the same. */}
+      {single && <DropdownMenuItem disabled={Boolean(single.systemRole)} onSelect={() => setRenamingId(single.id)}><Pencil /> {ui("Rename")}<DropdownMenuShortcut>{shortcutLabel('F2')}</DropdownMenuShortcut></DropdownMenuItem>}
+      {canStyle && <DropdownMenuItem disabled={hasSystem} onSelect={() => editAppearance(selectedNodes)}><Palette /> {ui("Color and icon…")}</DropdownMenuItem>}
+      <DropdownMenuItem disabled={hasSystem} onSelect={() => setMoving(selectedNodes)}><FolderInput /> {ui("Move to…")}</DropdownMenuItem>
+      {sidebar && <DropdownMenuItem disabled={hasSystem} onSelect={archiveSelection}><Archive /> {ui("Move to archive")}</DropdownMenuItem>}
+      {single && single.kind !== 'shortcut' && (
+        <DropdownMenuItem onSelect={() => void createShortcutInteractively(single.kind === 'chat' ? 'chat' : 'file', single.id, folderId).then(() => ops.refresh()).catch(ops.fail)}>
+          <SquareArrowOutUpRight /> {ui("Create shortcut…")}
+        </DropdownMenuItem>
+      )}
+      {single?.kind === 'chat' && <FilesChatMenuItems chatId={single.id} />}
       <DropdownMenuItem onSelect={() => void duplicate()}><CopyPlus /> {ui("Duplicate")}<DropdownMenuShortcut>{shortcutLabel('D', { mod: true })}</DropdownMenuShortcut></DropdownMenuItem>
       <DropdownMenuSeparator />
-      <DropdownMenuItem onSelect={() => setClipboard('cut')}><Scissors /> {ui("Cut")}<DropdownMenuShortcut>{shortcutLabel('X', { mod: true })}</DropdownMenuShortcut></DropdownMenuItem>
-      <DropdownMenuItem onSelect={() => setClipboard('copy')}><Copy /> {ui("Copy")}<DropdownMenuShortcut>{shortcutLabel('C', { mod: true })}</DropdownMenuShortcut></DropdownMenuItem>
+      <DropdownMenuItem disabled={hasSystem} onSelect={() => setClipboard('cut')}><Scissors /> {ui("Cut")}<DropdownMenuShortcut>{shortcutLabel('X', { mod: true })}</DropdownMenuShortcut></DropdownMenuItem>
+      {!hasChats && <DropdownMenuItem onSelect={() => setClipboard('copy')}><Copy /> {ui("Copy")}<DropdownMenuShortcut>{shortcutLabel('C', { mod: true })}</DropdownMenuShortcut></DropdownMenuItem>}
       <DropdownMenuSeparator />
-      <DropdownMenuItem variant="destructive" onSelect={() => void trashSelection()}><Trash2 /> {ui("Move to trash")}<DropdownMenuShortcut>⌫</DropdownMenuShortcut></DropdownMenuItem>
+      <DropdownMenuItem variant="destructive" disabled={hasSystem} onSelect={() => void trashSelection()}><Trash2 /> {trashLabel}<DropdownMenuShortcut>⌫</DropdownMenuShortcut></DropdownMenuItem>
     </>
   )
   const backgroundMenu = (
@@ -722,7 +840,7 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
         focused={keyboardFocus && selection.focus === node.id}
         cut={cutIds.has(node.id)}
         dragging={drag.draggingIds.has(node.id)}
-        dropActive={dropTarget === node.id || drag.activeTarget === node.id}
+        dropActive={dropTarget === node.id || (drag.activeTarget !== null && drag.activeTarget === dropFolderOf(node))}
         renaming={renamingId === node.id}
         {...itemHandlers(node)}
       />
@@ -797,9 +915,10 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
         <SelectionAction label={ui("Clear selection")} onClick={() => setSelection(EMPTY_SELECTION)}><X /></SelectionAction>
         <span className="px-1.5 text-sm font-medium whitespace-nowrap tabular-nums">{selectedNodes.length === 1 ? ui("1 selected") : uit`${selectedNodes.length} selected`}</span>
         {canDownload && <SelectionAction label={ui("Download")} onClick={() => void ops.download(selectedNodes)}><Download /></SelectionAction>}
-        <SelectionAction label={ui("Move to…")} onClick={() => setMoving(selectedNodes)}><FolderInput /></SelectionAction>
+        {!hasSystem && <SelectionAction label={ui("Move to…")} onClick={() => setMoving(selectedNodes)}><FolderInput /></SelectionAction>}
+        {canStyle && !hasSystem && <SelectionAction label={ui("Color and icon…")} onClick={() => editAppearance(selectedNodes)}><Palette /></SelectionAction>}
         <SelectionAction label={ui("Duplicate")} onClick={() => void duplicate()}><CopyPlus /></SelectionAction>
-        <SelectionAction label={ui("Move to trash")} destructive onClick={() => void trashSelection()}><Trash2 /></SelectionAction>
+        {!hasSystem && <SelectionAction label={trashLabel} destructive onClick={() => void trashSelection()}><Trash2 /></SelectionAction>}
       </div>
     </TooltipProvider>
   )
@@ -840,7 +959,7 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
       if (!listing.isError) openMenuAt({ x: event.clientX, y: event.clientY }, null)
     },
   }
-  const dropHighlight = dropTarget === 'page' && 'rounded-2xl bg-primary/5 outline-2 -outline-offset-8 outline-dashed outline-primary/40'
+  const dropHighlight = dropTarget === 'page' && 'rounded-2xl bg-primary/5'
   const overlays = (
     <>
       {marquee && (
@@ -929,6 +1048,17 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
         {panel ? <PanelWindowButtons content={place.view} /> : <SplitViewButton view={place.view} />}
         {fileInputElement}
       </header>
+      {listing.data?.folder?.suggestion && (
+        <FileSuggestionBanner
+          node={listing.data.folder}
+          ancestors={listing.data.ancestors}
+          onRejected={(root) => {
+            // The suggested folder is gone with everything in it; show the folder that held it.
+            if (panel) useSidePanel.getState().open({ kind: 'folder', id: root.parentId })
+            else navigate(root.parentId ? `/files/f/${root.parentId}` : '/files', { replace: true })
+          }}
+        />
+      )}
       <ScrollArea className="min-h-0 flex-1" horizontal={view === 'grid'} {...scrollHandlers}>
         <div ref={bodyRef} className={cn('min-h-full px-4 py-3', !panel && 'mx-auto max-w-6xl', dropHighlight, marquee && 'select-none')}>
           <div ref={widthProbe} aria-hidden className="h-0 w-full" />

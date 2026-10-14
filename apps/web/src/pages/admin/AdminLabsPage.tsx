@@ -111,6 +111,24 @@ export function AdminLabsPage() {
     }
   }
 
+  const moveLab = async (index: number, direction: -1 | 1) => {
+    const target = index + direction
+    if (target < 0 || target >= labs.length) return
+    const reordered = [...labs]
+    ;[reordered[index], reordered[target]] = [reordered[target], reordered[index]]
+    setLabs(reordered)
+    try {
+      await apiRequest('/api/admin/labs/order', {
+        method: 'PUT',
+        body: { labIds: reordered.map((lab) => lab.id) },
+      })
+      await useCatalog.getState().load()
+    } catch (error) {
+      await load()
+      throw error
+    }
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2">
@@ -120,7 +138,7 @@ export function AdminLabsPage() {
         <Button size="sm" onClick={openAdd}>
           <Plus /> {ui("Add lab")} </Button>
       </div>
-      <p className="text-sm text-muted-foreground"> {ui("Company marks shown in the model picker. Use the arrows to set the order of models within each lab.")} </p>
+      <p className="text-sm text-muted-foreground"> {ui("Company marks shown in the model picker. Use the arrows to set the default lab order and the order of models within each lab. Accounts that have not reordered labs themselves follow the default lab order.")} </p>
 
       <Card className="gap-0 rounded-lg py-0 shadow-none">
         <CardContent className="overflow-x-auto px-0 py-0">
@@ -134,10 +152,34 @@ export function AdminLabsPage() {
               </tr>
             </thead>
             <tbody>
-              {labs.map((lab) => (
+              {labs.map((lab, labIndex) => (
                 <tr key={lab.id}>
                   <td className="px-3 py-2">
                     <div className="flex items-center gap-3">
+                      <div className="flex flex-col">
+                        <Button
+                          size="icon-sm"
+                          variant="ghost"
+                          className="h-4"
+                          title={uit`Move ${lab.name} up`}
+                          aria-label={uit`Move ${lab.name} up`}
+                          disabled={labIndex === 0}
+                          onClick={() => void moveLab(labIndex, -1)}
+                        >
+                          <ArrowUp className="size-3.5" />
+                        </Button>
+                        <Button
+                          size="icon-sm"
+                          variant="ghost"
+                          className="h-4"
+                          title={uit`Move ${lab.name} down`}
+                          aria-label={uit`Move ${lab.name} down`}
+                          disabled={labIndex === labs.length - 1}
+                          onClick={() => void moveLab(labIndex, 1)}
+                        >
+                          <ArrowDown className="size-3.5" />
+                        </Button>
+                      </div>
                       <AiLogo icon={lab.logo} customIcon={findCustomIcon(customIcons, lab.customIconId)} className="size-5" />
                       <span className="font-medium">{lab.name}</span>
                     </div>

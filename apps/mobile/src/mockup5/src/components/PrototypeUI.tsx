@@ -40,6 +40,7 @@ import {
   textInputAutocapitalization,
   tint,
 } from '@expo/ui/swift-ui/modifiers';
+import { glassButtonStyle } from '../../../platform/glass';
 import { useAppTheme } from '../theme';
 import { SETTINGS_CONTENT_MAX } from '../../../responsive';
 
@@ -61,7 +62,7 @@ export function PageHeader({ title, subtitle, onBack, right }: { title: string; 
 
 export function GlassIconButton({ icon, label, onPress }: { icon: string; label: string; onPress: () => void }) {
   const theme = useAppTheme();
-  if (Platform.OS === 'ios') return <SwiftUIHost matchContents style={styles.iconButton}><SwiftUIButton onPress={onPress} modifiers={[buttonStyle('glass'), buttonBorderShape('circle'), controlSize('regular'), swiftUIAccessibilityLabel(label)]}><SwiftUIImage systemName={icon as never} size={18} modifiers={[frame({ width: 28, height: 28 })]} /></SwiftUIButton></SwiftUIHost>;
+  if (Platform.OS === 'ios') return <SwiftUIHost matchContents style={styles.iconButton}><SwiftUIButton onPress={onPress} modifiers={[buttonBorderShape('circle'), controlSize('regular'), swiftUIAccessibilityLabel(label), ...glassButtonStyle('glass')]}><SwiftUIImage systemName={icon as never} size={18} modifiers={[frame({ width: 28, height: 28 })]} /></SwiftUIButton></SwiftUIHost>;
   if (Platform.OS === 'android') return <MaterialIconButton icon={icon} label={label} onPress={onPress} />;
   return <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}><View style={[styles.glassFill, { backgroundColor: theme.fillStrong }]}><SymbolView name={icon as never} size={18} tintColor={theme.text} weight="semibold" /></View></Pressable>;
 }
@@ -156,7 +157,7 @@ function NativeField(props: TextInputProps) {
 
 export function PrimaryButton({ label, onPress, disabled = false, loading = false, variant = 'primary', icon }: { label: string; onPress: () => void; disabled?: boolean; loading?: boolean; variant?: 'primary' | 'secondary' | 'destructive' | 'plain'; icon?: string }) {
   const theme = useAppTheme();
-  if (Platform.OS === 'ios' && !loading) return <SwiftUIHost style={styles.nativeButton}><SwiftUIButton label={label} systemImage={icon as never} role={variant === 'destructive' ? 'destructive' : 'default'} onPress={onPress} modifiers={[buttonStyle(variant === 'primary' ? 'glassProminent' : variant === 'plain' ? 'plain' : 'glass'), controlSize('large'), frame({ maxWidth: Infinity, minHeight: 48 }), ...(variant === 'destructive' ? [tint(theme.red)] : []), swiftUIDisabled(disabled), swiftUIAccessibilityLabel(label)]} /></SwiftUIHost>;
+  if (Platform.OS === 'ios' && !loading) return <SwiftUIHost style={styles.nativeButton}><SwiftUIButton label={label} systemImage={icon as never} role={variant === 'destructive' ? 'destructive' : 'default'} onPress={onPress} modifiers={[controlSize('large'), frame({ maxWidth: Infinity, minHeight: 48 }), ...(variant === 'destructive' ? [tint(theme.red)] : []), swiftUIDisabled(disabled), swiftUIAccessibilityLabel(label), ...(variant === 'plain' ? [buttonStyle('plain')] : glassButtonStyle(variant === 'primary' ? 'glassProminent' : 'glass'))]} /></SwiftUIHost>;
   if (Platform.OS === 'android') return <MaterialButton label={label} onPress={onPress} disabled={disabled} loading={loading} variant={variant} icon={icon} />;
   const colors = variant === 'primary' ? { bg: theme.accent, text: theme.accentText } : variant === 'destructive' ? { bg: `${theme.red}18`, text: theme.red } : variant === 'plain' ? { bg: 'transparent', text: theme.blue } : { bg: theme.fillStrong, text: theme.text };
   return <Pressable accessibilityRole="button" accessibilityState={{ disabled, busy: loading }} disabled={disabled || loading} onPress={onPress} style={({ pressed }) => [styles.button, { backgroundColor: colors.bg, opacity: disabled ? 0.42 : pressed ? 0.72 : 1 }]}>{loading ? <ActivityIndicator color={colors.text} /> : <>{icon ? <SymbolView name={icon as never} size={16} tintColor={colors.text} weight="semibold" /> : null}<Text style={[styles.buttonText, { color: colors.text }]}>{label}</Text></>}</Pressable>;
