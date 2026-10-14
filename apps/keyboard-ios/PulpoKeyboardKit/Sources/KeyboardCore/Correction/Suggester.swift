@@ -215,12 +215,16 @@ public final class Suggester {
     } else if valid {
       ordered = [Suggestion(text: typed, kind: .literal)]
     }
-    for candidate in ranked where candidate.text != typed && !ordered.contains(where: { $0.text == candidate.text }) {
+    // Smart quotes type ’; the dictionary spells it '. Show "I’m" once, not twice.
+    let plainTyped = typed.replacingOccurrences(of: "\u{2019}", with: "'")
+    for candidate in ranked where candidate.text != typed && candidate.text != plainTyped && !ordered.contains(where: { $0.text == candidate.text }) {
       ordered.append(Suggestion(text: candidate.text, kind: candidate.isCompletion ? .completion : .correction))
       if ordered.count == 3 { break }
     }
-    if autocorrection == nil, !valid {
-      // Unknown words keep their literal in the left slot so tapping it keeps them.
+    // Unknown words keep their literal in the left slot so tapping it keeps them.
+    // One or two unknown letters are almost always an unfinished word, and space
+    // already keeps them, so a full strip offers a third completion instead.
+    if autocorrection == nil, !valid, typed.count > 2 || ordered.count < 3 {
       ordered = Array(ordered.prefix(2))
       ordered.insert(Suggestion(text: typed, kind: .literal), at: min(1, ordered.count))
     }

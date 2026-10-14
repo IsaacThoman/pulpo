@@ -495,7 +495,8 @@ public final class KeyboardEngine {
     if !composing.isEmpty {
       for _ in 0..<composing.text.count { deleteDocumentBackward() }
       composing = TypedWord(text: "")
-    } else if let previous = before.last, !previous.isWhitespace, !"([{\u{201C}\u{2018}".contains(previous) {
+    } else if let previous = before.last, !previous.isWhitespace, !"([{\u{201C}\u{2018}-/".contains(previous) {
+      // Hyphens and slashes join words: left-handed, and/or.
       text = " " + text
     }
     phantomSpace = false
