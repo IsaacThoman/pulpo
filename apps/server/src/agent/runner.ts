@@ -11,7 +11,7 @@ import { anthropicMessagesApi } from '@earendil-works/pi-ai/api/anthropic-messag
 import { mistralConversationsApi } from '@earendil-works/pi-ai/api/mistral-conversations.lazy'
 import { chatCompletionsSamplingParameters, explicitReasoningEffort, mistralAgentPayload, piModelForProvider } from '../upstream/pi-model.js'
 import type { Api, AssistantMessage, Context, Model } from '@earendil-works/pi-ai'
-import { agentCostLimitMicros, findCostLimitItem, findCostLimitItems, toolImagePreviewSchema, type ToolImagePreview, type CompactionItem, type CostLimitItem, type RecallItem, type ResponseSnapshot } from '@pulpo/contracts'
+import { agentCostLimitMicros, findCostLimitItem, findCostLimitItems, toolImagePreviewSchema, type ToolImagePreview, type CompactionItem, type CostLimitItem, type FileChangesItem, type RecallItem, type ResponseSnapshot } from '@pulpo/contracts'
 import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm'
 import { db } from '../database/client.js'
 import { agentRuns, applicationSettings, attachments, chats, generationAttempts, models, providerConnections, requestLogs, responses, toolExecutions, userPreferences } from '../database/schema.js'
@@ -60,6 +60,9 @@ import { lineageFromLeaf } from '../messages/branching.js'
 import { responseUserAttachmentIds } from '../messages/input.js'
 import { responseInputText } from '../messages/input.js'
 import { createGenerationMemoryTools } from './memory-tools.js'
+import { describeFileScope } from '../files/agent/prompt.js'
+import { createFilesRelay } from '../files/agent/relay.js'
+import { loadChatFileScope } from '../files/agent/scope.js'
 import { readEpisodicMemorySettings } from '../episodic-memory/settings.js'
 import { generationSystemPrompt, loadGenerationMemory } from '../responses/memory-context.js'
 import { withGenerationTimeContext } from '../responses/time-context.js'
@@ -179,7 +182,11 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
   )
   const [chatState] = await db.select({ temporary: chats.temporary, fileScopeIds: chats.fileScopeIds }).from(chats)
     .where(eq(chats.id, record.response.chatId)).limit(1)
-  const fileScopeContext = ''
+  // Files attached to the chat, reached only through `pulpo files` in bash and only while Files is
+  // on. Turns sent through admin chat access never reach the owner's Files; temporary chats have none.
+  const filesAllowed = parseAuthSettings(attachmentSettingsRow?.value).filesEnabled && record.response.origin !== 'admin_chat' && !chatState?.temporary
+  const fileScope = filesAllowed ? await loadChatFileScope(record.response.userId, record.response.chatId) : null
+  const fileScopeContext = fileScope?.roots.length ? describeFileScope(fileScope) : ''
   const memory = await loadGenerationMemory({
     chat: chatState,
     memoryEnabled: preferenceValues.memoryEnabled,
@@ -386,6 +393,9 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
   ))
   const recallItems: RecallItem[] = recallItem ? [recallItem] : []
   const costLimitItems = findCostLimitItems(record.response.output as unknown[])
+  let fileChangesItem = (record.response.output as unknown[]).find((raw): raw is FileChangesItem => (
+    (raw as { type?: string } | null)?.type === 'pulpo_file_changes'
+  ))
   let workspaceItem: Record<string, unknown> | undefined
   let workspaceStartedAtMs: number | undefined
   let workspaceReadyAtMs: number | undefined
@@ -455,6 +465,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
         compactionItems,
         recallItems,
         costLimitItems,
+        fileChangesItem,
         turnDurationsMs,
         streaming: false,
         terminal: true,
@@ -722,6 +733,21 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
     await snapshotIfDue()
     return stored
   }
+  // `pulpo files` commands from bash, answered with the chat's scope as it is when each arrives.
+  const filesRelay = filesAllowed ? createFilesRelay({
+    userId: record.response.userId,
+    chatId: record.response.chatId,
+    responseId,
+    workspace: manager,
+    maxOutputBytes: settings.maxToolOutputBytes,
+    onChanged: async (count) => {
+      // Changes folded into other replies' suggestions leave this reply nothing to list.
+      if (!count && !fileChangesItem) return
+      fileChangesItem = { type: 'pulpo_file_changes', id: 'file-changes', count }
+      await emit('pulpo.agent.files.changed', { ...fileChangesItem })
+      await snapshotIfDue()
+    },
+  }) : undefined
   let agentAbortReason: 'response_timeout' | 'cancellation' | 'turn_limit' | undefined
   const abortTimer = setTimeout(() => {
     agentAbortReason ??= 'response_timeout'
@@ -747,7 +773,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
           })
           imagePreviews.set(toolCallId, preview)
           return preview
-        }),
+        }, filesRelay),
         ...configuredWebTools,
         ...imageTools,
         ...memoryTools,
