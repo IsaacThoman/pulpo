@@ -1929,6 +1929,7 @@ const esUi: Record<string, string> = {
   "This file isn't Markdown, so it can't be edited here.": "Este archivo no es Markdown, así que no se puede editar aquí.",
   "Side panel": "Panel lateral",
   "Resize side panel": "Cambiar el tamaño del panel lateral",
+  "Resize sidebar": "Cambiar el tamaño de la barra lateral",
   "Close side panel": "Cerrar el panel lateral",
   "Folders open in the Files view.": "Las carpetas se abren en la vista de Archivos.",
   "Open to the right": "Abrir a la derecha",
