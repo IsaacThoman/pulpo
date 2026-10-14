@@ -697,6 +697,8 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
   // Files and folders in the selection can be given a color and icon; chats and shortcuts are left out.
   const canStyle = selectedNodes.some(hasAppearance)
   const canUseAgent = fileSelection.length > 0 && fileSelection.length <= MAX_CHAT_FILE_SCOPES
+  // Items inside a suggested folder share its suggestion; only the folder's banner acts on it.
+  const suggestionRootItem = single?.suggestion && single.suggestion.changeId !== listing.data?.folder?.suggestion?.changeId ? single : null
   const resolveSuggestion = async (node: FileNode, action: 'accept' | 'reject') => {
     try {
       await resolveFileSuggestion(node, action)
@@ -731,10 +733,10 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
           <ElsewhereIcon /> {elsewhereLabel}<DropdownMenuShortcut>{elsewhereShortcut}</DropdownMenuShortcut>
         </DropdownMenuItem>
       )}
-      {single?.suggestion && (
+      {suggestionRootItem && (
         <>
-          <DropdownMenuItem onSelect={() => void resolveSuggestion(single, 'accept')}><Check /> {ui("Accept suggestion")}</DropdownMenuItem>
-          <DropdownMenuItem onSelect={() => void resolveSuggestion(single, 'reject')}><X /> {ui("Reject suggestion")}</DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => void resolveSuggestion(suggestionRootItem, 'accept')}><Check /> {ui("Accept suggestion")}</DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => void resolveSuggestion(suggestionRootItem, 'reject')}><X /> {ui("Reject suggestion")}</DropdownMenuItem>
           <DropdownMenuSeparator />
         </>
       )}
@@ -1020,10 +1022,11 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
       {listing.data?.folder?.suggestion && (
         <FileSuggestionBanner
           node={listing.data.folder}
-          onRejected={() => {
-            const parentId = listing.data?.folder?.parentId ?? null
-            if (panel) useSidePanel.getState().open({ kind: 'folder', id: parentId })
-            else navigate(parentId ? `/files/f/${parentId}` : '/files', { replace: true })
+          ancestors={listing.data.ancestors}
+          onRejected={(root) => {
+            // The suggested folder is gone with everything in it; show the folder that held it.
+            if (panel) useSidePanel.getState().open({ kind: 'folder', id: root.parentId })
+            else navigate(root.parentId ? `/files/f/${root.parentId}` : '/files', { replace: true })
           }}
         />
       )}
