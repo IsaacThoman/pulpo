@@ -4,8 +4,8 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { createWriteStream } from 'node:fs'
 import { chmod, link, lstat, mkdir, open, readFile, readdir, realpath, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { constants } from 'node:fs'
-import { dirname, isAbsolute, resolve, relative } from 'node:path'
-import { createHash, randomUUID } from 'node:crypto'
+import { dirname, isAbsolute, join, resolve, relative } from 'node:path'
+import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { Transform } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import { readTextFile, resolveReadableVmPath } from './read.js'
@@ -22,6 +22,7 @@ const maxCommandOutputBytes = 10_000_000
 const savedOutputRoot = resolve(process.env.PULPO_WORKSPACE_TOOL_OUTPUT_DIR ?? '/tmp/pulpo-tool-output')
 const relaySocket = resolve(process.env.PULPO_RELAY_SOCKET ?? '/tmp/pulpo-relay.sock')
 const relayTimeoutMs = Number(process.env.PULPO_RELAY_TIMEOUT_MS ?? 900_000)
+const relayHandshakeMs = Number(process.env.PULPO_RELAY_HANDSHAKE_MS ?? 5_000)
 const maxRelayBody = 1024 * 1024
 const maxPollWaitMs = 25_000
 const outputPollIntervalMs = 250
@@ -38,8 +39,11 @@ const journalRoot = resolve(root, '.pulpo', 'operations')
 /** CLI requests held open on the relay socket until Pulpo answers. Never journaled: they die with the process. */
 type RelayRequest = { id: string; operationId: string; command: string; args: Record<string, unknown>; settle: (status: number, value: unknown) => boolean }
 const relayRequests = new Map<string, RelayRequest>()
-/** Per running operation: output revisions let a long-poll return output its poller has not seen yet. */
-type LiveOperation = { outputRevision: number; servedRevision: number; wake: Set<() => void> }
+/**
+ * Per running operation: output revisions let a long-poll return output its poller has not seen yet.
+ * Only relay-aware servers long-poll, so `longPolled` tells whether anyone will answer `pulpo files`.
+ */
+type LiveOperation = { outputRevision: number; servedRevision: number; longPolled: boolean; wake: Set<() => void> }
 const live = new Map<string, LiveOperation>()
 
 function pendingRelay(operationId: string): RelayRequest[] { return [...relayRequests.values()].filter((request) => request.operationId === operationId) }
@@ -107,7 +111,8 @@ async function writeRequestFile(request: IncomingMessage, target: string): Promi
   if (!Number.isSafeInteger(expectedBytes) || expectedBytes < 0 || expectedBytes > maxFileBytes) {
     throw new Error('File size is missing or exceeds the workspace limit')
   }
-  const temporary = `${target}.${randomUUID()}.upload`
+  // Hidden and short: `pulpo files status` must not see it, and long target names must still fit NAME_MAX.
+  const temporary = join(dirname(target), `.${randomBytes(6).toString('hex')}.pulpo-upload`)
   const checksum = request.headers['x-pulpo-file-checksum']
   const hash = createHash('sha256')
   let sizeBytes = 0
@@ -172,7 +177,7 @@ async function execute(id: string, type: string, args: Record<string, unknown>):
   const existing = await findOperation(id)
   if (existing) return existing
   const operation: Operation = { id, status: 'running', output: '', exitCode: null, startedAt: new Date().toISOString() }
-  operations.set(id, operation); live.set(id, { outputRevision: 0, servedRevision: 0, wake: new Set() })
+  operations.set(id, operation); live.set(id, { outputRevision: 0, servedRevision: 0, longPolled: false, wake: new Set() })
   await saveOperation(operation)
   void finishOperation(operation, type, args)
   return operation
@@ -290,7 +295,10 @@ const server = createServer(async (request, response) => {
     if (request.method === 'GET' && match) {
       const operation = await findOperation(match[1]!); if (!operation) return json(response, 404, { error: 'not_found' })
       const waitMs = Math.min(Number(url.searchParams.get('waitMs')) || 0, maxPollWaitMs)
-      if (waitMs > 0) await waitForChange(operation, waitMs, response)
+      if (waitMs > 0) {
+        const state = live.get(operation.id); if (state) state.longPolled = true
+        await waitForChange(operation, waitMs, response)
+      }
       if (response.destroyed) return
       return json(response, 200, operationView(operation))
     }
@@ -326,13 +334,18 @@ const relayServer = createServer(async (request, response) => {
     if (operation?.status !== 'running' || !children.has(operation.id)) return json(response, 409, { ok: false, error: relayUnavailable })
     if (response.destroyed) return
     const id = randomUUID()
+    const state = live.get(operation.id)
     const timer = setTimeout(() => settle(504, { ok: false, error: 'Pulpo did not answer in time' }), relayTimeoutMs)
+    // Older Pulpo servers poll without waitMs and never answer; fail fast instead of holding the CLI for the full timeout.
+    const handshake = state?.longPolled ? undefined : setTimeout(() => {
+      if (!state?.longPolled) settle(503, { ok: false, error: 'This Pulpo server does not support pulpo files yet' })
+    }, relayHandshakeMs)
     const settle = (status: number, value: unknown) => {
       if (!relayRequests.delete(id)) return false
-      clearTimeout(timer); json(response, status, value); return true
+      clearTimeout(timer); clearTimeout(handshake); json(response, status, value); return true
     }
     relayRequests.set(id, { id, operationId: operation.id, command: input.command, args: input.args, settle })
-    response.once('close', () => { relayRequests.delete(id); clearTimeout(timer) })
+    response.once('close', () => { relayRequests.delete(id); clearTimeout(timer); clearTimeout(handshake) })
     wake(operation.id)
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)

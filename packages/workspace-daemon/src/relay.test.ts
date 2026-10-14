@@ -21,7 +21,7 @@ beforeAll(async () => {
   socket = join(root, 'relay.sock')
   Object.assign(process.env, {
     PULPO_WORKSPACE_TOKEN: token, PORT: '0', PULPO_WORKSPACE_ROOT: root, PULPO_RELAY_SOCKET: socket,
-    PULPO_WORKSPACE_TOOL_OUTPUT_DIR: join(root, 'tool-output'), PULPO_RELAY_TIMEOUT_MS: '1500',
+    PULPO_WORKSPACE_TOOL_OUTPUT_DIR: join(root, 'tool-output'), PULPO_RELAY_TIMEOUT_MS: '1500', PULPO_RELAY_HANDSHAKE_MS: '500',
   })
   // A tiny relay client for bash commands; the real CLI is covered by cli-main.test.ts.
   await writeFile(join(root, 'client.mjs'), `
@@ -155,10 +155,36 @@ describe('workspace daemon relay', () => {
 
   it('times out requests Pulpo never answers', async () => {
     const operation = await bash('sleep 30')
+    await poll(operation.id, 50)
     const startedAt = Date.now()
     expect(await socketRequest(JSON.stringify({ operationId: operation.id, command: 'ls', args: {} }))).toEqual({ status: 504, body: { ok: false, error: 'Pulpo did not answer in time' } })
     expect(Date.now() - startedAt).toBeGreaterThanOrEqual(1_400)
     expect((await poll(operation.id)).operation.relay.pending).toEqual([])
+    await api('POST', `/v1/operations/${operation.id}/cancel`)
+  })
+
+  it('fails fast when the server polling the command cannot answer relay requests', async () => {
+    const operation = await bash('sleep 30')
+    await poll(operation.id)
+    const startedAt = Date.now()
+    const held = socketRequest(JSON.stringify({ operationId: operation.id, command: 'ls', args: {} }))
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    await poll(operation.id)
+    expect(await held).toEqual({ status: 503, body: { ok: false, error: 'This Pulpo server does not support pulpo files yet' } })
+    expect(Date.now() - startedAt).toBeGreaterThanOrEqual(450)
+    expect(Date.now() - startedAt).toBeLessThan(1_400)
+    expect((await poll(operation.id)).operation.relay.pending).toEqual([])
+    await api('POST', `/v1/operations/${operation.id}/cancel`)
+  })
+
+  it('waits for a relay-aware server that starts long-polling after the request', async () => {
+    const operation = await bash('sleep 30')
+    const held = socketRequest(JSON.stringify({ operationId: operation.id, command: 'ls', args: {} }))
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    const [pending] = await pendingRequest(operation.id)
+    await new Promise((resolve) => setTimeout(resolve, 400))
+    await api('POST', `/v1/relay/${pending!.id}`, { ok: true, output: 'answered' })
+    expect(await held).toEqual({ status: 200, body: { ok: true, output: 'answered' } })
     await api('POST', `/v1/operations/${operation.id}/cancel`)
   })
 
@@ -175,6 +201,30 @@ describe('workspace daemon relay', () => {
 
   it('rejects malformed answers', async () => {
     expect((await api('POST', '/v1/relay/anything', { output: 'no ok flag' })).status).toBe(400)
+  })
+})
+
+describe('workspace daemon uploads', () => {
+  it('stages uploads under a short hidden name, so long names fit and status never sees them', async () => {
+    const directory = join(root, 'files', 'Uploads')
+    const target = join(directory, `${'n'.repeat(240)}.md`)
+    const firstHalf = Buffer.from('# Up'); const secondHalf = Buffer.from('load\n')
+    const uploaded = new Promise<number>((resolve, reject) => {
+      const outgoing = request(`${base}/v1/files?path=${encodeURIComponent(target)}`, {
+        method: 'PUT', headers: { authorization: `Bearer ${token}`, 'content-length': firstHalf.length + secondHalf.length },
+      }, (response) => { response.resume(); response.on('end', () => resolve(response.statusCode ?? 0)) })
+      outgoing.on('error', reject)
+      outgoing.write(firstHalf)
+      void (async () => {
+        await expect.poll(async () => (await readdir(directory).catch(() => [])).length).toBe(1)
+        const [temporary] = await readdir(directory)
+        expect(temporary).toMatch(/^\.[0-9a-f]{12}\.pulpo-upload$/)
+        outgoing.end(secondHalf)
+      })().catch(reject)
+    })
+    expect(await uploaded).toBe(201)
+    expect(await readdir(directory)).toEqual([`${'n'.repeat(240)}.md`])
+    expect(await readFile(target, 'utf8')).toBe('# Upload\n')
   })
 })
 

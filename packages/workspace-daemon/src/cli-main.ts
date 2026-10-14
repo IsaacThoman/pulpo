@@ -1,7 +1,7 @@
 import { rm, stat } from 'node:fs/promises'
 import { basename, join, relative, resolve, sep } from 'node:path'
 import { helpText, parseCli, UsageError, type Invocation } from './cli-args.js'
-import { isInside, localStatus, planPush, pruneEmptyDirectories, readManifest, remotePath, sameRemote, sha256File, updateManifest, type PushItem } from './cli-manifest.js'
+import { isInside, localStatus, planPush, pruneEmptyDirectories, readManifest, remotePath, sameRemote, sha256File, updateManifest, type ManifestEntry, type PushItem } from './cli-manifest.js'
 import { DEFAULT_RELAY_SOCKET, OUTSIDE_AGENT_BASH, RelayUnavailableError, sendRelayRequest, type RelayAnswer } from './cli-relay.js'
 
 export interface CliContext {
@@ -60,11 +60,11 @@ export async function runCli(argv: string[], context: CliContext): Promise<numbe
       case 'push': return await push(invocation, context)
       case 'cat': return await each(context, 'cat', invocation.paths, (path) => ({ path }))
       case 'mkdir': return await each(context, 'mkdir', invocation.paths, (path) => ({ path, ...(invocation.parents ? { parents: true } : {}) }))
-      case 'rm': return await each(context, 'rm', invocation.paths, (path) => ({ path, ...(invocation.recursive ? { recursive: true } : {}) }), (path) => forget(context, path))
+      case 'rm': return await each(context, 'rm', invocation.paths, (path) => ({ path, ...(invocation.recursive ? { recursive: true } : {}) }), (path) => forget(context, path, null))
       case 'mv': {
-        const from = remotePath(invocation.from, context.mirrorRoot)
-        print(context, (await call(context, 'mv', { from, to: remotePath(invocation.to, context.mirrorRoot) })).output)
-        await forget(context, from)
+        const from = remotePath(invocation.from, context.mirrorRoot); const to = remotePath(invocation.to, context.mirrorRoot)
+        print(context, (await call(context, 'mv', { from, to })).output)
+        await forget(context, from, to)
         return 0
       }
       case 'ls': return await single(context, 'ls', { ...optionalPath(context, invocation.path), ...(invocation.recursive ? { recursive: true } : {}) })
@@ -131,43 +131,47 @@ async function pull(invocation: Command<'pull'>, context: CliContext): Promise<n
   print(context, answer.output)
   const files = (isRecord(answer.data) && Array.isArray(answer.data.files) ? answer.data.files : []).filter((file): file is PulledFile => isRecord(file)
     && typeof file.remote === 'string' && typeof file.local === 'string' && typeof file.nodeId === 'string' && typeof file.version === 'string')
-  if (files.length) {
-    await updateManifest(context.manifestPath, async (manifest) => {
-      for (const file of files) {
-        const local = resolve(file.local)
-        const sha256 = await sha256File(local).catch(() => undefined)
-        if (sha256) manifest.files[local] = { remote: file.remote, nodeId: file.nodeId, version: file.version, sha256 }
-      }
-    })
+  // Hash before taking the manifest lock: a pull can bring hundreds of MiB.
+  const entries: Array<[string, ManifestEntry]> = []
+  for (const file of files) {
+    const local = resolve(file.local)
+    const sha256 = await sha256File(local).catch(() => undefined)
+    if (sha256) entries.push([local, { remote: file.remote, nodeId: file.nodeId, version: file.version, sha256 }])
   }
+  if (entries.length) await updateManifest(context.manifestPath, (manifest) => { for (const [local, entry] of entries) manifest.files[local] = entry })
   return 0
 }
 
 async function status(context: CliContext): Promise<number> {
   const manifest = await readManifest(context.manifestPath)
-  const { modified, added, deleted } = await localStatus(context.mirrorRoot, manifest)
+  const { modified, added, deleted, detached } = await localStatus(context.mirrorRoot, manifest)
   const list = (files: Array<{ local: string; remote: string }>) => files.map(({ local, remote }) => `  ${remote}  (${local})\n`).join('')
-  if (!modified.length && !added.length && !deleted.length) {
+  if (!modified.length && !added.length && !deleted.length && !detached.length) {
     context.stdout(Object.keys(manifest.files).length ? 'No local changes.\n' : `No local changes. Nothing has been pulled yet; new files under ${context.mirrorRoot} would show here.\n`)
     return 0
   }
   if (modified.length) context.stdout(`Modified (\`pulpo files push\` saves them):\n${list(modified)}`)
   if (added.length) context.stdout(`New (\`pulpo files push\` creates them in Files):\n${list(added)}`)
   if (deleted.length) context.stdout(`Deleted locally (still in Files; \`pulpo files rm <path>\` deletes one there):\n${list(deleted)}`)
+  if (detached.length) {
+    context.stdout(`Moved or trashed in Files (push with --to <path>, pull the new path, or delete the copy):\n${detached
+      .map(({ local, remote, to }) => `  ${remote}${to === null ? ' (trashed)' : ` (moved to "${to}")`}  (${local})\n`).join('')}`)
+  }
   return 0
 }
 
 async function push(invocation: Command<'push'>, context: CliContext): Promise<number> {
   const manifest = await readManifest(context.manifestPath)
-  const items = await planPush({
+  const { items, refused } = await planPush({
     mirrorRoot: context.mirrorRoot, manifest, force: invocation.force, to: invocation.to,
     locals: invocation.locals.map((local) => resolve(context.cwd, local)),
   })
+  for (const { remote, message } of refused) context.stdout(`skipped ${remote}: ${message}\n`)
   if (!items.length) {
-    context.stdout(invocation.locals.length ? 'Nothing to push: those files have no changes.\n' : `Nothing to push: no modified or new files under ${context.mirrorRoot}.\n`)
-    return 0
+    if (!refused.length) context.stdout(invocation.locals.length ? 'Nothing to push: those files have no changes.\n' : `Nothing to push: no modified or new files under ${context.mirrorRoot}.\n`)
+    return refused.length ? 1 : 0
   }
-  let failed = false; let conflicts = false
+  let failed = refused.length > 0; let conflicts = false
   for (let index = 0; index < items.length; index += PUSH_BATCH) {
     const batch = items.slice(index, index + PUSH_BATCH)
     const answer = await call(context, 'push', { items: batch.map(({ local, remote, base, force }) => ({ local, remote, base, ...(force ? { force } : {}) })) })
@@ -206,23 +210,26 @@ async function recordPush(context: CliContext, batch: PushItem[], results: PushR
 }
 
 /**
- * After mv/rm the old Files path is gone. Unchanged mirror copies are removed so a later bare
- * `push` cannot recreate the item; edited copies stay and are reported.
+ * After mv/rm the old Files path is gone. Unchanged mirror copies are removed; other copies keep
+ * a tombstone so a later plain `push` reports the move instead of recreating the item.
  */
-async function forget(context: CliContext, remote: string): Promise<void> {
+async function forget(context: CliContext, remote: string, to: string | null): Promise<void> {
   if (!remote) return
   const removed: string[] = []; const kept: string[] = []
   await updateManifest(context.manifestPath, async (manifest) => {
     for (const [local, entry] of Object.entries(manifest.files)) {
       if (!sameRemote(entry.remote, remote) && !entry.remote.toLowerCase().startsWith(`${remote.toLowerCase()}/`)) continue
       delete manifest.files[local]
-      if (!isInside(local, context.mirrorRoot)) continue
       const sha256 = await sha256File(local).catch(() => undefined)
-      if (sha256 === entry.sha256) { await rm(local, { force: true }); removed.push(local) } else if (sha256) kept.push(local)
+      if (!sha256) continue
+      const mirrored = isInside(local, context.mirrorRoot)
+      if (mirrored && sha256 === entry.sha256) { await rm(local, { force: true }); removed.push(local); continue }
+      manifest.moved[local] = { remote: entry.remote, to }
+      if (mirrored) kept.push(local)
     }
   })
   await pruneEmptyDirectories(removed, context.mirrorRoot)
   if (removed.length === 1) context.stdout(`Removed the local copy ${removed[0]}.\n`)
   else if (removed.length) context.stdout(`Removed ${removed.length} unchanged local copies under ${context.mirrorRoot}.\n`)
-  for (const local of kept) context.stdout(`Kept ${local}: it has unpushed edits and no longer matches an item in Files. Push it with --to <path> or delete it.\n`)
+  for (const local of kept) context.stdout(`Kept ${local}: it has unpushed edits. ${to === null ? 'Push it with --to <path> to keep it, or delete it.' : 'Pull the new path, or push this copy with --to <path>.'}\n`)
 }
