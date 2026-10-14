@@ -3,12 +3,14 @@ import { cleanup, fireEvent, render, waitFor, within } from '@testing-library/re
 import {
   applyMarkdownToYDoc,
   applyNodeToYDoc,
+  docSchema,
   listSuggestions,
   mergeMarkdown,
   SUGGESTION_DELETE_MARK,
   ydocToMarkdown,
   ydocToNode,
 } from '@pulpo/client-core/doc-schema'
+import { Node as ProseMirrorNode } from '@tiptap/pm/model'
 import type { Editor } from '@tiptap/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import * as Y from 'yjs'
@@ -36,6 +38,15 @@ function suggestingServer(): FakeServer {
   applyNodeToYDoc(server.doc, merged.doc)
   return server
 }
+
+/** A server document built from ProseMirror JSON content, for suggestions Markdown cannot set up. */
+function serverWith(content: unknown[]): FakeServer {
+  const server = new FakeServer()
+  applyNodeToYDoc(server.doc, ProseMirrorNode.fromJSON(docSchema(), { type: 'doc', content }))
+  return server
+}
+
+const insertMark = (id: string) => ({ type: 'suggestionInsert', attrs: { id, changeId: 'change-2' } })
 
 function mount(server: FakeServer, editable = true) {
   const doc = new Y.Doc()
@@ -129,5 +140,59 @@ describe('DocEditor suggestions', () => {
     const typed = editor().state.doc.nodeAt(inside)!
     expect(typed.text?.startsWith('X')).toBe(true)
     expect(typed.marks.map((mark) => mark.type.name)).not.toContain(SUGGESTION_DELETE_MARK)
+  })
+})
+
+describe('nested and block suggestions', () => {
+  // A paragraph the agent suggested adding, and later a word suggested inside it.
+  const nested = () => serverWith([
+    { type: 'paragraph', content: [{ type: 'text', text: 'Intro' }] },
+    { type: 'paragraph', attrs: { suggestion: 'insert|change-1|outer' }, content: [
+      { type: 'text', text: 'brave', marks: [insertMark('inner')] },
+      { type: 'text', text: ' new world' },
+    ] },
+  ])
+
+  it('acts on the innermost suggestion at the cursor', async () => {
+    const { view, element, editor } = mount(nested())
+    await waitFor(() => expect(element()?.querySelector('[data-suggestion="insert"]')).toBeTruthy())
+    const inner = listSuggestions(editor().state.doc).find((hunk) => hunk.id === 'inner')!
+    editor().commands.setTextSelection(inner.from + 2)
+    const card = await view.findByRole('dialog', { name: 'Suggestion' })
+    expect(card.textContent).toContain('Add “brave”')
+    fireEvent.click(within(card).getByRole('button', { name: 'Accept suggestion' }))
+    expect(listSuggestions(editor().state.doc).map((hunk) => hunk.id)).toEqual(['outer'])
+  })
+
+  it('steps through nested suggestions without getting stuck', async () => {
+    const { view, element } = mount(nested())
+    await waitFor(() => expect(element()?.querySelector('[data-suggestion="insert"]')).toBeTruthy())
+    const bar = () => view.getByRole('toolbar', { name: 'Suggestions' }).textContent
+    const next = () => fireEvent.click(view.getByRole('button', { name: 'Next suggestion' }))
+    next()
+    expect(bar()).toContain('Suggestion 1 of 2')
+    expect(view.getByRole('dialog', { name: 'Suggestion' }).textContent).toContain('Add “brave new world”')
+    next()
+    expect(bar()).toContain('Suggestion 2 of 2')
+    expect(view.getByRole('dialog', { name: 'Suggestion' }).textContent).toContain('Add “brave”')
+    next()
+    expect(bar()).toContain('Suggestion 1 of 2')
+    fireEvent.click(view.getByRole('button', { name: 'Previous suggestion' }))
+    expect(bar()).toContain('Suggestion 2 of 2')
+  })
+
+  it('keeps a paragraph suggested for deletion once the user writes in it', async () => {
+    const server = serverWith([
+      { type: 'paragraph', content: [{ type: 'text', text: 'Keep me' }] },
+      { type: 'paragraph', attrs: { suggestion: 'delete|change-1|gone' }, content: [{ type: 'text', text: 'Old words' }] },
+    ])
+    const { view, element, editor } = mount(server)
+    await waitFor(() => expect(element()?.querySelector('[data-suggestion="delete"]')).toBeTruthy())
+    const block = listSuggestions(editor().state.doc)[0]!
+    editor().chain().setTextSelection(block.to - 1).insertContent(' and mine').run()
+    expect(listSuggestions(editor().state.doc)).toEqual([])
+    expect(element()!.querySelector('[data-suggestion]')).toBeNull()
+    await waitFor(() => expect(view.queryByRole('toolbar', { name: 'Suggestions' })).toBeNull())
+    await waitFor(() => expect(ydocToMarkdown(server.doc, 'proposed')).toBe('Keep me\n\nOld words and mine'))
   })
 })

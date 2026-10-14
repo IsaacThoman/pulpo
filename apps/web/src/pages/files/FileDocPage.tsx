@@ -193,16 +193,20 @@ interface FileViewContext {
 
 const PAGE_VIEW: FileViewContext = { layout: 'page' }
 
-/** A suggested file's banner; rejecting deletes the file, so its view closes or shows its folder. */
-function SuggestionBanner({ node, view }: { node: FileNode | undefined; view: FileViewContext }) {
+/**
+ * A suggested file's banner. Rejecting deletes the suggestion (the file, or the suggested folder
+ * it is in), so the view closes or shows the folder that held it.
+ */
+function SuggestionBanner({ node, ancestors, view }: { node: FileNode | undefined; ancestors: FileNode[]; view: FileViewContext }) {
   const navigate = useNavigate()
   if (!node?.suggestion) return null
   return (
     <FileSuggestionBanner
       node={node}
-      onRejected={() => {
+      ancestors={ancestors}
+      onRejected={(root) => {
         if (view.layout === 'panel') useSidePanel.getState().close()
-        else navigate(node.parentId ? `/files/f/${node.parentId}` : '/files', { replace: true })
+        else navigate(root.parentId ? `/files/f/${root.parentId}` : '/files', { replace: true })
       }}
     />
   )
@@ -277,7 +281,7 @@ function OpenDoc({ userId, docId, view }: { userId: string; docId: string; view:
         <Presence peers={peers} />
         <SyncIndicator status={status} />
       </FileHeader>
-      <SuggestionBanner node={node} view={view} />
+      <SuggestionBanner node={node} ancestors={ancestors} view={view} />
 
       {(problem || notice) && (
         <div role="alert" className={cn('flex items-center gap-2 border-b px-4 py-2 text-sm sm:px-6', problem ? 'bg-amber-500/10 text-amber-700 dark:text-amber-300' : 'bg-destructive/5 text-destructive')}>
@@ -369,7 +373,7 @@ function MarkdownFileView({ node, ancestors, view }: { node: FileNode; ancestors
           {busy ? <Loader2 className="animate-spin" /> : <Pencil />} {ui("Edit")}
         </Button>
       </FileHeader>
-      <SuggestionBanner node={node} view={view} />
+      <SuggestionBanner node={node} ancestors={ancestors} view={view} />
       {notice && (
         <div role="alert" className="flex items-center gap-2 border-b bg-destructive/5 px-4 py-2 text-sm text-destructive sm:px-6">
           <TriangleAlert className="size-4 shrink-0" />
@@ -407,7 +411,7 @@ function BlobFileView({ node, ancestors, view }: { node: FileNode; ancestors: Fi
       >
         <span className="hidden text-xs text-muted-foreground tabular-nums sm:inline">{formatBytes(node.sizeBytes)}</span>
       </FileHeader>
-      <SuggestionBanner node={node} view={view} />
+      <SuggestionBanner node={node} ancestors={ancestors} view={view} />
       {notice && <p role="alert" className="border-b bg-destructive/5 px-4 py-2 text-sm text-destructive sm:px-6">{notice}</p>}
       <div className="min-h-0 flex-1 overflow-auto bg-muted/20 p-4">
         <FilePreviewBody node={node} />

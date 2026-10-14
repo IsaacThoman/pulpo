@@ -24,12 +24,20 @@ const resolveFileSuggestion = vi.hoisted(() => vi.fn(async () => null))
 vi.mock('@/features/files/api', async (importOriginal) => ({
   ...await importOriginal<typeof import('@/features/files/api')>(),
   resolveFileSuggestion,
-  fetchFolder: async () => ({ folder: null, ancestors: [], children: [
+  fetchFolder: async (folderId: string | null) => folderId === 'plan-drafts' ? {
+    // A folder inside the suggested folder Plan, holding more of the same suggestion.
+    folder: { id: 'plan-drafts', parentId: 'plan', name: 'Drafts', kind: 'folder', updatedAt: '2026-10-06T00:00:00Z', suggestion: { changeId: 'plan-change' } },
+    ancestors: [
+      { id: 'projects', parentId: null, name: 'Projects', kind: 'folder', updatedAt: '2026-10-06T00:00:00Z' },
+      { id: 'plan', parentId: 'projects', name: 'Plan', kind: 'folder', updatedAt: '2026-10-06T00:00:00Z', suggestion: { changeId: 'plan-change' } },
+    ],
+    children: [{ id: 'plan-notes', parentId: 'plan-drafts', name: 'notes.md', kind: 'doc', sizeBytes: 0, updatedAt: '2026-10-06T00:00:00Z', suggestion: { changeId: 'plan-change' } }],
+  } : { folder: null, ancestors: [], children: [
     { id: 'document', name: 'Notes.md', kind: 'doc', sizeBytes: 0, updatedAt: '2026-10-06T00:00:00Z' },
     { id: 'folder', name: 'Projects', kind: 'folder', updatedAt: '2026-10-06T00:00:00Z' },
     { id: 'sidebar', name: 'Sidebar', kind: 'folder', systemRole: 'chats', updatedAt: '2026-10-06T00:00:00Z' },
     { id: 'suggested', name: 'Draft.md', kind: 'doc', sizeBytes: 0, updatedAt: '2026-10-06T00:00:00Z', suggestion: { changeId: 'change' } },
-  ] }),
+  ] },
   fetchFolderLayout: async () => ({ folderId: null, positions: {}, snapToGrid: true }),
 }))
 
@@ -37,13 +45,13 @@ function Location() {
   return <output data-testid="location">{useLocation().pathname}</output>
 }
 
-function showFiles(panel = false) {
+function showFiles(panel = false, folderId: string | null = null) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } })
   render(
     <QueryClientProvider client={client}>
       <MemoryRouter initialEntries={['/files']}>
         <TooltipProvider>
-          {panel ? <FolderPanelView folderId={null} /> : <FilesPage />}
+          {panel ? <FolderPanelView folderId={folderId} /> : <FilesPage />}
         </TooltipProvider>
         <Location />
       </MemoryRouter>
@@ -163,5 +171,21 @@ describe('items an agent suggested', () => {
     fireEvent.contextMenu(await screen.findByRole('option', { name: /Notes\.md/ }))
     await screen.findByRole('menuitem', { name: /^Copy/ })
     expect(screen.queryByRole('menuitem', { name: 'Accept suggestion' })).toBeNull()
+  })
+})
+
+describe('inside a folder an agent suggested', () => {
+  it('reviews the folder as a whole and then shows the folder that held it', async () => {
+    useSidePanel.setState({ content: { kind: 'folder', id: 'plan-drafts' } })
+    showFiles(true, 'plan-drafts')
+    const item = await screen.findByRole('option', { name: /notes\.md/ })
+    fireEvent.contextMenu(item)
+    await screen.findByRole('menuitem', { name: /^Copy/ })
+    expect(screen.queryByRole('menuitem', { name: 'Reject suggestion' })).toBeNull()
+
+    expect(screen.getByText(/part of the folder “Plan” an agent suggested/)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Reject folder' }))
+    await vi.waitFor(() => expect(resolveFileSuggestion).toHaveBeenCalledWith('plan', 'reject'))
+    await vi.waitFor(() => expect(useSidePanel.getState().content).toEqual({ kind: 'folder', id: 'projects' }))
   })
 })

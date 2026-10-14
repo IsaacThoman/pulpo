@@ -11,6 +11,7 @@ import {
   type FileAccessMode,
   type ResponseEvent,
   type ResponseSnapshot,
+  type UpdateChatInput,
   type UpdateQueuedMessageInput,
 } from '@pulpo/contracts'
 import {
@@ -933,6 +934,29 @@ function enqueueChatMutation<T>(chatId: string, operation: () => Promise<T>): Pr
   return result
 }
 
+/**
+ * Saves a change to a chat's Files scope in order with the chat's other requests, so it lands
+ * after the request that creates the chat. A chat that is still provisional needs no request:
+ * the one that creates it sends the scope as it is then. If the server refuses the change, the
+ * chat shows what it had before (unless it changed again since) and is read back.
+ */
+function saveChatFileScope(
+  id: string,
+  patch: Pick<UpdateChatInput, 'fileScopeIds' | 'fileScopeAccess'>,
+  { current, revert }: { current: (chat: Chat) => boolean; revert: Pick<Chat, 'fileScopeIds' | 'fileScopeAccess'> },
+): void {
+  void enqueueChatMutation(id, async () => {
+    if (useChat.getState().chats.find((chat) => chat.id === id)?.provisional) return
+    await optimisticRequest('PATCH', `/api/chats/${id}`, patch)
+  }).catch(() => {
+    useChat.setState((state) => ({
+      chats: state.chats.map((chat) => chat.id === id && current(chat) ? { ...chat, ...revert } : chat),
+    }))
+    void queryClient.invalidateQueries({ queryKey: chatsKey() })
+    void queryClient.invalidateQueries({ queryKey: chatKey(id) })
+  })
+}
+
 function failOptimisticResponse(
   chatId: string,
   responseId: string,
@@ -1273,18 +1297,26 @@ export const useChat = create<ChatState>()((set, get) => ({
     void optimisticRequest('PATCH', `/api/chats/${id}`, { title })
   },
   setChatFileScope: (id, fileScopeIds) => {
+    const chat = get().chats.find((item) => item.id === id)
+    if (!chat) return
     // The server drops the modes of removed items too.
-    set((state) => ({ chats: state.chats.map((chat) => chat.id === id
-      ? { ...chat, fileScopeIds, fileScopeAccess: scopedFileAccess(fileScopeIds, chat.fileScopeAccess ?? {}) }
-      : chat) }))
-    void optimisticRequest('PATCH', `/api/chats/${id}`, { fileScopeIds })
+    const fileScopeAccess = scopedFileAccess(fileScopeIds, chat.fileScopeAccess ?? {})
+    set((state) => ({ chats: state.chats.map((item) => item.id === id ? { ...item, fileScopeIds, fileScopeAccess } : item) }))
+    saveChatFileScope(id, { fileScopeIds }, {
+      current: (item) => item.fileScopeIds === fileScopeIds,
+      revert: { fileScopeIds: chat.fileScopeIds, fileScopeAccess: chat.fileScopeAccess },
+    })
   },
   setChatFileAccess: (id, scopeId, mode) => {
-    set((state) => ({ chats: state.chats.map((chat) => chat.id === id
-      ? { ...chat, fileScopeAccess: { ...chat.fileScopeAccess, [scopeId]: mode } }
-      : chat) }))
+    const chat = get().chats.find((item) => item.id === id)
+    if (!chat) return
+    const fileScopeAccess = { ...chat.fileScopeAccess, [scopeId]: mode }
+    set((state) => ({ chats: state.chats.map((item) => item.id === id ? { ...item, fileScopeAccess } : item) }))
     // Only the changed entry: the server merges it into the chat's other modes.
-    void optimisticRequest('PATCH', `/api/chats/${id}`, { fileScopeAccess: { [scopeId]: mode } })
+    saveChatFileScope(id, { fileScopeAccess: { [scopeId]: mode } }, {
+      current: (item) => item.fileScopeAccess === fileScopeAccess,
+      revert: { fileScopeAccess: chat.fileScopeAccess },
+    })
   },
   togglePin: (id) => {
     const chat = get().chats.find((item) => item.id === id)
