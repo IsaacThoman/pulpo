@@ -13,6 +13,7 @@ import { useAuth } from '@/stores/auth'
 import { useSettings } from '@/stores/settings'
 import { Markdown } from '@/components/chat/Markdown'
 import {
+  allFileChangesQueryKey,
   convertToDoc,
   downloadDocMarkdown,
   downloadFile,
@@ -243,7 +244,11 @@ function FileHeader({ node, ancestors, view, onDownload, children }: {
   )
 }
 
+/** Time for a resolved suggestion to reach the server before replies recount what is pending. */
+const SUGGESTION_SYNC_DELAY_MS = 1_500
+
 function OpenDoc({ userId, docId, view }: { userId: string; docId: string; view: FileViewContext }) {
+  const queryClient = useQueryClient()
   const nodeQuery = useQuery({ queryKey: fileNodeQueryKey(userId, docId), queryFn: () => fetchFileNode(docId) })
   const { session, status, peers } = useDocSession(userId, docId)
   const [everSynced, setEverSynced] = useState(false)
@@ -285,7 +290,13 @@ function OpenDoc({ userId, docId, view }: { userId: string; docId: string; view:
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         {session ? (
-          <DocEditor key={docId} session={session} editable={editable} width={view.layout === 'panel' ? 'fill' : chatWidth === 'full' ? 'wide' : 'narrow'} />
+          <DocEditor
+            key={docId}
+            session={session}
+            editable={editable}
+            width={view.layout === 'panel' ? 'fill' : chatWidth === 'full' ? 'wide' : 'narrow'}
+            onSuggestionsResolved={() => window.setTimeout(() => void queryClient.invalidateQueries({ queryKey: allFileChangesQueryKey(userId) }), SUGGESTION_SYNC_DELAY_MS)}
+          />
         ) : (
           <div className="grid h-64 place-items-center"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>
         )}
