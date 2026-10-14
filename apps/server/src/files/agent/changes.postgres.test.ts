@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { eq } from 'drizzle-orm'
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { db, queryClient } from '../../database/client.js'
@@ -139,6 +140,28 @@ describe.skipIf(!enabled)('agent file changes', () => {
       expect((await conflictsOf(redoFileChanges(files.userId, reply))).map((conflict) => conflict.reason)).toEqual(['restored'])
     })
 
+    it('keeps items the reply created once others put their work in them', async () => {
+      const projects = await files.folder('Projects')
+      await files.attach({ [projects]: 'write' })
+      await files.ok('mkdir', { path: 'Projects/New' })
+      const created = await pushFile('/workspace/a.txt', 'Projects/New/a.txt', 'a')
+      const folder = (await files.node(created.nodeId))!.parentId!
+      const reply = files.responseId
+      // The owner adds a file of their own, and another reply replaces the agent's file.
+      const mine = await files.blob('mine.txt', folder, 'mine')
+      await files.newReply()
+      await pushFile('/workspace/a.txt', 'Projects/New/a.txt', 'b')
+      const conflicts = await conflictsOf(undoFileChanges(files.userId, reply))
+      expect(conflicts.map((conflict) => [conflict.nodeId, conflict.reason]).sort()).toEqual([[created.nodeId, 'replaced'], [folder, 'edited']].sort())
+      expect(await files.node(folder)).toMatchObject({ trashedAt: null })
+      expect(await files.node(mine)).toMatchObject({ trashedAt: null })
+      // Without others' work in them, they go.
+      await undoFileChanges(files.userId, files.responseId)
+      await trashFileNode(files.userId, mine)
+      await undoFileChanges(files.userId, reply)
+      expect((await files.node(folder))!.trashedAt).not.toBeNull()
+    })
+
     it('waits for the reply to finish', async () => {
       const projects = await files.folder('Projects')
       await files.attach({ [projects]: 'write' })
@@ -175,6 +198,28 @@ describe.skipIf(!enabled)('agent file changes', () => {
       // Reviewed suggestions stay reviewed.
       await reviewFileChange(files.userId, changeFor(rejected), 'accept')
       expect(await files.content(rejected)).toBe('old')
+    })
+
+    it('keeps a proposal the owner accepted while the reply runs when the agent proposes again', async () => {
+      const projects = await files.folder('Projects')
+      const data = await files.blob('data.txt', projects, 'v0')
+      await files.attach({ [projects]: 'suggest' })
+      await files.newReply('in_progress')
+      await pushFile('/workspace/data.txt', 'Projects/data.txt', 'p1')
+      const [row] = await db.select().from(fileChanges).where(eq(fileChanges.nodeId, data))
+      await reviewFileChange(files.userId, row!.id, 'accept')
+      expect(await files.content(data)).toBe('p1')
+      // The same reply proposes again: a new suggestion that starts from the accepted content.
+      const pulled = (await files.ok('pull', { path: 'Projects/data.txt', dest: '/workspace/data.txt' })).data as { files: Array<{ version: string }> }
+      files.put('/workspace/data.txt', 'p2')
+      const pushed = await files.ok('push', { items: [{ local: '/workspace/data.txt', remote: 'Projects/data.txt', base: { nodeId: data, version: pulled.files[0]!.version } }] })
+      expect((pushed.data as { results: Array<{ status: string }> }).results[0]).toMatchObject({ status: 'suggested' })
+      expect(await files.content(data)).toBe('p1')
+      const [reopened] = await db.select().from(fileChanges).where(eq(fileChanges.nodeId, data))
+      expect(reopened).toMatchObject({ status: 'pending', before: { objectKey: (await files.node(data))!.objectKey } })
+      await reviewFileChange(files.userId, row!.id, 'reject')
+      expect(await files.content(data)).toBe('p1')
+      expect(await versionContents(data)).toEqual([])
     })
 
     it('accepts a reply in the order the agent worked, and rejects new items last', async () => {
@@ -231,6 +276,39 @@ describe.skipIf(!enabled)('agent file changes', () => {
       expect(await files.node(added.nodeId)).toBeUndefined()
       expect(objects.has(addedKey)).toBe(false)
       expect(await files.node(mine)).toMatchObject({ parentId: projects, trashedAt: null })
+      expect(await files.content(mine)).toBe('mine')
+    })
+
+    it('keeps the owner\'s trashed and uploading items when a suggested folder is deleted', async () => {
+      const projects = await files.folder('Projects')
+      const trashed = await files.blob('trashed.txt', projects, 'trashed')
+      await files.attach({ [projects]: 'suggest' })
+      await files.ok('mkdir', { path: 'Projects/New' })
+      const [suggested] = await db.select().from(fileNodes).where(eq(fileNodes.parentId, projects)).then((rows) => rows.filter((row) => row.name === 'New'))
+      await moveFileNodes(files.userId, [{ id: trashed, parentId: suggested!.id }])
+      await trashFileNode(files.userId, trashed)
+      const uploading = randomUUID()
+      await db.insert(fileNodes).values({ id: uploading, ownerUserId: files.userId, parentId: suggested!.id, kind: 'blob', name: 'upload.bin', status: 'pending', objectKey: `users/${files.userId}/files/${uploading}` })
+      // The agent withdraws its own suggestion.
+      expect((await files.ok('rm', { path: 'Projects/New', recursive: true })).output).toMatch(/which you had suggested adding/)
+      expect(await files.node(suggested!.id)).toBeUndefined()
+      expect(await files.node(uploading)).toMatchObject({ parentId: projects, status: 'pending' })
+      expect(await files.node(trashed)).toMatchObject({ parentId: projects, trashRootId: trashed })
+      expect((await restoreFileNode(files.userId, trashed)).parentId).toBe(projects)
+    })
+
+    it('keeps the owner\'s items in a suggested folder the owner trashed', async () => {
+      const projects = await files.folder('Projects')
+      const mine = await files.blob('mine.txt', projects, 'mine')
+      await files.attach({ [projects]: 'suggest' })
+      await files.ok('mkdir', { path: 'Projects/New' })
+      const [suggested] = await db.select().from(fileNodes).where(eq(fileNodes.parentId, projects)).then((rows) => rows.filter((row) => row.name === 'New'))
+      await moveFileNodes(files.userId, [{ id: mine, parentId: suggested!.id }])
+      await trashFileNode(files.userId, suggested!.id)
+      await reviewNodeSuggestion(files.userId, suggested!.id, 'reject')
+      expect(await files.node(mine)).toMatchObject({ parentId: projects, trashRootId: mine })
+      expect((await files.node(mine))!.trashedAt).not.toBeNull()
+      expect(await restoreFileNode(files.userId, mine)).toMatchObject({ parentId: projects, trashedAt: null })
       expect(await files.content(mine)).toBe('mine')
     })
 

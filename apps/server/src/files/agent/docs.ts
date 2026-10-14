@@ -14,6 +14,11 @@ export function proposedMarkdown(node: DocNode): string {
   return docJSONToMarkdown(docView(node, 'proposed').toJSON())
 }
 
+/** What the owner reads in a document: its Markdown with every pending suggestion rejected. */
+export function baseMarkdown(node: DocNode): string {
+  return docJSONToMarkdown(docView(node, 'base').toJSON())
+}
+
 /** The opaque version the agent sees for a document: a hash of its proposed Markdown. */
 export function markdownVersion(markdown: string): string {
   return createHash('sha256').update(markdown).digest('hex')

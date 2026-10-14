@@ -1,4 +1,4 @@
-import { and, asc, count, eq, inArray, lt, ne } from 'drizzle-orm'
+import { and, asc, count, eq, inArray, lt, ne, sql } from 'drizzle-orm'
 import { z } from 'zod'
 import { listSuggestions, ydocToNode } from '@pulpo/client-core/doc-schema'
 import type { FileChangeKind, FileChangeStatus, FileChangesResponse, FileChangeSummary } from '@pulpo/contracts'
@@ -7,6 +7,7 @@ import { fileChanges, fileNodes, fileVersions } from '../../database/schema.js'
 import { newId } from '../../lib/ids.js'
 import type { FileExecutor, FileNodeRow } from '../access.js'
 import { loadYDoc } from '../doc-store.js'
+import { baseMarkdown } from './docs.js'
 import type { DatabaseTransaction } from './commit.js'
 import { filesPathOf } from './scope.js'
 import { deleteUnusedVersions, parseBlobSnapshot } from './versions.js'
@@ -18,6 +19,11 @@ export interface ReplyContext {
   userId: string
   chatId: string
   responseId: string
+  /**
+   * Re-checks inside the change's transaction what the command decided outside it (the access
+   * mode), so a change the user makes to the chat's attached items meanwhile is never ignored.
+   */
+  guard?: (tx: DatabaseTransaction) => Promise<void>
 }
 
 /** Where an item is, as move rows record it: its folder (null: the top of My files) and its name. */
@@ -41,7 +47,7 @@ export async function findChange(executor: FileExecutor, responseId: string, nod
 /**
  * Records a change. A repeated change of the same kind to the same item in one reply folds into
  * its row: `before` stays what the reply started from, while `after` and the status follow the
- * latest change.
+ * latest change. A suggestion the owner already reviewed starts over as a new one.
  */
 export async function recordChange(tx: DatabaseTransaction, reply: ReplyContext, input: {
   id?: string
@@ -57,9 +63,20 @@ export async function recordChange(tx: DatabaseTransaction, reply: ReplyContext,
     nodeId: input.nodeId, mode: input.mode, kind: input.kind, status, before: input.before ?? null, after: input.after ?? null,
   }).onConflictDoUpdate({
     target: [fileChanges.responseId, fileChanges.nodeId, fileChanges.kind],
-    set: { after: input.after ?? null, status, updatedAt: new Date() },
+    set: {
+      before: sql`case when ${fileChanges.mode} = 'suggest' and ${fileChanges.status} <> 'pending' then excluded.before else ${fileChanges.before} end`,
+      after: input.after ?? null,
+      status,
+      updatedAt: new Date(),
+    },
   }).returning()
   return row!
+}
+
+/** Later changes a reply made to an item it created fold into the creation's `after`. */
+export async function updateCreation(tx: DatabaseTransaction, reply: ReplyContext, nodeId: string, patch: Record<string, unknown>): Promise<void> {
+  await tx.update(fileChanges).set({ after: sql`coalesce(${fileChanges.after}, '{}'::jsonb) || ${JSON.stringify(patch)}::jsonb`, updatedAt: new Date() })
+    .where(and(eq(fileChanges.responseId, reply.responseId), eq(fileChanges.nodeId, nodeId), eq(fileChanges.kind, 'create')))
 }
 
 export async function deleteChange(tx: DatabaseTransaction, id: string): Promise<void> {
@@ -76,10 +93,17 @@ export async function countFileChanges(responseId: string): Promise<number> {
   return row?.value ?? 0
 }
 
-/** Unresolved hunks of one document suggestion; undefined when the document cannot be read. */
-async function pendingHunks(nodeId: string, changeId: string): Promise<number | undefined> {
+/**
+ * A document suggestion's unresolved hunks and, once none remain, how the owner resolved them
+ * in the editor: rejected when the document reads as it did before the suggestion, accepted
+ * (at least in part) otherwise. Nothing when the document cannot be read.
+ */
+async function docSuggestionState(nodeId: string, change: FileChangeRow): Promise<{ hunks: number; resolvedAs: FileChangeStatus } | undefined> {
   try {
-    return listSuggestions(ydocToNode(await loadYDoc(nodeId))).filter((hunk) => hunk.changeId === changeId).length
+    const doc = ydocToNode(await loadYDoc(nodeId))
+    const hunks = listSuggestions(doc).filter((hunk) => hunk.changeId === change.id).length
+    const before = (change.before as { markdown?: unknown } | null)?.markdown
+    return { hunks, resolvedAs: typeof before === 'string' && baseMarkdown(doc) === before ? 'rejected' : 'accepted' }
   } catch {
     return undefined
   }
@@ -106,7 +130,7 @@ function blobSummary(change: FileChangeRow, node: FileNodeRow, keptKeys: Set<str
   return { fromSizeBytes: before?.sizeBytes, toSizeBytes: after?.sizeBytes, available }
 }
 
-async function summarize(userId: string, { change, node }: ChangeWithNode, keptKeys: Set<string>): Promise<FileChangeSummary> {
+async function summarize(userId: string, { change, node }: ChangeWithNode, keptKeys: Set<string>): Promise<FileChangeSummary & { resolvedAs?: FileChangeStatus }> {
   const summary: FileChangeSummary = {
     id: change.id,
     nodeId: node.id,
@@ -121,7 +145,8 @@ async function summarize(userId: string, { change, node }: ChangeWithNode, keptK
   if (change.kind === 'move') Object.assign(summary, await movePaths(userId, change))
   if (change.kind === 'update' && node.kind === 'blob') Object.assign(summary, blobSummary(change, node, keptKeys))
   if (change.kind === 'update' && node.kind === 'doc' && change.mode === 'suggest') {
-    summary.pendingSuggestions = await pendingHunks(node.id, change.id)
+    const state = await docSuggestionState(node.id, change)
+    if (state) return { ...summary, pendingSuggestions: state.hunks, resolvedAs: state.resolvedAs }
   }
   return summary
 }
@@ -138,13 +163,14 @@ export async function listFileChanges(userId: string, responseId: string): Promi
   const kept = rows.length ? await db.select({ key: fileVersions.objectKey }).from(fileVersions)
     .where(inArray(fileVersions.nodeId, [...new Set(rows.map((row) => row.node.id))])) : []
   const keptKeys = new Set(kept.map((row) => row.key))
-  const changes = await Promise.all(rows.map((row) => summarize(userId, row, keptKeys)))
-  const resolved = changes.filter((change) => change.status === 'pending' && change.pendingSuggestions === 0)
-  if (resolved.length) {
-    await db.update(fileChanges).set({ status: 'accepted', updatedAt: new Date() })
-      .where(and(inArray(fileChanges.id, resolved.map((change) => change.id)), eq(fileChanges.status, 'pending')))
-    for (const change of resolved) change.status = 'accepted'
+  const summaries = await Promise.all(rows.map((row) => summarize(userId, row, keptKeys)))
+  for (const summary of summaries) {
+    if (summary.status !== 'pending' || summary.pendingSuggestions !== 0 || !summary.resolvedAs) continue
+    await db.update(fileChanges).set({ status: summary.resolvedAs, updatedAt: new Date() })
+      .where(and(eq(fileChanges.id, summary.id), eq(fileChanges.status, 'pending')))
+    summary.status = summary.resolvedAs
   }
+  const changes: FileChangeSummary[] = summaries.map(({ resolvedAs: _resolvedAs, ...summary }) => summary)
   const writes = changes.filter((change) => change.mode === 'write')
   return {
     changes,

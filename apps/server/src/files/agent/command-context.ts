@@ -1,8 +1,9 @@
 import { posix } from 'node:path'
 import type { FileAccessMode } from '@pulpo/contracts'
 import type { WorkspaceManager } from '../../agent/controller.js'
+import type { FileExecutor } from '../access.js'
 import type { ReplyContext } from './changes.js'
-import { FilesCommandError, type FileScope } from './scope.js'
+import { assertScopeCurrent, FilesCommandError, type FileScope } from './scope.js'
 
 /** What Pulpo needs from the agent's workspace: files written into it (pull) and read from it (push). */
 export type FilesWorkspace = Pick<WorkspaceManager, 'writeWorkspaceFile' | 'readWorkspaceFile'>
@@ -43,6 +44,20 @@ const MODE_ORDER: FileAccessMode[] = ['read', 'suggest', 'write']
 export function stricterMode(left: FileAccessMode | null, right: FileAccessMode | null): FileAccessMode | null {
   if (!left || !right) return null
   return MODE_ORDER[Math.min(MODE_ORDER.indexOf(left), MODE_ORDER.indexOf(right))]!
+}
+
+/**
+ * The reply context for a change decided as `mode`: under the change's locks, the chat's scope
+ * must be unchanged and `current` (the same decision, re-made in the transaction) must agree.
+ */
+export function guardedReply(ctx: CommandContext, mode: 'write' | 'suggest', current: (executor: FileExecutor) => Promise<FileAccessMode | null>): ReplyContext {
+  return {
+    userId: ctx.userId, chatId: ctx.chatId, responseId: ctx.responseId,
+    guard: async (tx) => {
+      await assertScopeCurrent(tx, ctx.chatId, ctx.scope)
+      if (await current(tx) !== mode) throw new FilesCommandError('What you may do with this item just changed; run the command again')
+    },
+  }
 }
 
 /** The mode a change may use, or a FilesCommandError when the agent may not change `path`. */

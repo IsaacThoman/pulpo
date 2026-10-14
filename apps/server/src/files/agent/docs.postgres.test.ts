@@ -4,7 +4,7 @@ import * as Y from 'yjs'
 import { applyNodeToYDoc, listSuggestions, resolveSuggestions, ydocToMarkdown, ydocToNode } from '@pulpo/client-core/doc-schema'
 import { Transform } from '@tiptap/pm/transform'
 import { db, queryClient } from '../../database/client.js'
-import { fileChanges } from '../../database/schema.js'
+import { fileChanges, fileNodes } from '../../database/schema.js'
 import { appendDocUpdate, loadYDoc, readDocMarkdown } from '../doc-store.js'
 import { listFileChanges } from './changes.js'
 import { FileChangesConflictError, redoFileChanges, undoFileChanges } from './history.js'
@@ -108,7 +108,7 @@ describe.skipIf(!enabled)('agent document changes', () => {
     const suggested = await edit('Projects/Plan.md', (markdown) => markdown.replace('First', 'Second'))
     expect(suggested).toMatchObject({ status: 'suggested', message: expect.stringMatching(/Suggested 1 change to/) })
     const [row] = await db.select().from(fileChanges).where(eq(fileChanges.nodeId, plan))
-    expect(row).toMatchObject({ mode: 'suggest', kind: 'update', status: 'pending', before: null, after: null })
+    expect(row).toMatchObject({ mode: 'suggest', kind: 'update', status: 'pending', before: { markdown: '# Plan\n\nFirst step' }, after: null })
     // The owner still reads the document as it was; the agent reads it as if accepted.
     expect((await readDocMarkdown(files.userId, plan)).markdown).toBe('# Plan\n\nFirst step')
     expect((await files.ok('cat', { path: 'Projects/Plan.md' })).output).toBe('# Plan\n\nSecond step')
@@ -129,22 +129,40 @@ describe.skipIf(!enabled)('agent document changes', () => {
     const projects = await files.folder('Projects')
     const plan = await files.doc('Plan.md', projects, 'Keep this')
     const notes = await files.doc('Notes.md', projects, 'Draft')
+    const ideas = await files.doc('Ideas.md', projects, 'Maybe')
     await files.attach({ [projects]: 'suggest' })
     await edit('Projects/Plan.md', () => 'Keep that')
     await edit('Projects/Notes.md', () => 'Final')
+    await edit('Projects/Ideas.md', () => 'Certainly')
     const rows = await db.select().from(fileChanges).where(eq(fileChanges.responseId, files.responseId))
     await reviewFileChange(files.userId, rows.find((row) => row.nodeId === plan)!.id, 'reject')
     expect(ydocToMarkdown(await loadYDoc(plan), 'proposed')).toBe('Keep this')
 
-    // The owner accepts in the editor: a plain Yjs update, no API call.
-    const replica = await loadYDoc(notes)
-    const vector = Y.encodeStateVector(replica)
-    applyNodeToYDoc(replica, resolveSuggestions(new Transform(ydocToNode(replica)), () => true, 'accept').doc)
-    await appendDocUpdate({ nodeId: notes, actorUserId: files.userId, update: Y.encodeStateAsUpdate(replica, vector), origin: 'client' })
+    // The owner resolves the others in the editor: plain Yjs updates, no API call.
+    const resolveInEditor = async (nodeId: string, action: 'accept' | 'reject') => {
+      const replica = await loadYDoc(nodeId)
+      const vector = Y.encodeStateVector(replica)
+      applyNodeToYDoc(replica, resolveSuggestions(new Transform(ydocToNode(replica)), () => true, action).doc)
+      await appendDocUpdate({ nodeId, actorUserId: files.userId, update: Y.encodeStateAsUpdate(replica, vector), origin: 'client' })
+    }
+    await resolveInEditor(notes, 'accept')
+    await resolveInEditor(ideas, 'reject')
     const listed = await listFileChanges(files.userId, files.responseId)
-    expect(listed.changes.map((change) => [change.nodeId === plan, change.status, change.pendingSuggestions])).toEqual(expect.arrayContaining([
-      [true, 'rejected', 0], [false, 'accepted', 0],
-    ]))
+    const status = (nodeId: string) => listed.changes.find((change) => change.nodeId === nodeId)
+    expect(status(plan)).toMatchObject({ status: 'rejected', pendingSuggestions: 0 })
+    expect(status(notes)).toMatchObject({ status: 'accepted', pendingSuggestions: 0 })
+    expect(status(ideas)).toMatchObject({ status: 'rejected', pendingSuggestions: 0 })
+  })
+
+  it('drops a document suggestion the agent took back in the same reply', async () => {
+    const projects = await files.folder('Projects')
+    const plan = await files.doc('Plan.md', projects, 'Alpha')
+    await files.attach({ [projects]: 'suggest' })
+    await edit('Projects/Plan.md', (markdown) => `${markdown}\nBeta\n`)
+    expect(await db.select().from(fileChanges).where(eq(fileChanges.nodeId, plan))).toHaveLength(1)
+    await edit('Projects/Plan.md', () => 'Alpha\n')
+    expect(await db.select().from(fileChanges).where(eq(fileChanges.nodeId, plan))).toEqual([])
+    expect(ydocToMarkdown(await loadYDoc(plan), 'proposed')).toBe('Alpha')
   })
 
   it('keeps each reply\'s suggestions to a document apart', async () => {
@@ -178,6 +196,23 @@ describe.skipIf(!enabled)('agent document changes', () => {
     expect(await db.select().from(fileChanges).where(eq(fileChanges.responseId, files.responseId))).toEqual([])
     expect(ydocToMarkdown(await loadYDoc(plan), 'proposed')).toBe('Alpha\n\nNewer idea')
     expect((await listFileChanges(files.userId, first)).changes[0]).toMatchObject({ status: 'pending', pendingSuggestions: 1 })
+  })
+
+  it('keeps a document the reply created once the owner edited it', async () => {
+    const projects = await files.folder('Projects')
+    await files.attach({ [projects]: 'write' })
+    files.put('/workspace/files/Projects/New.md', 'draft')
+    const created = ((await files.ok('push', { items: [{ local: '/workspace/files/Projects/New.md', remote: 'Projects/New.md', base: null }] })).data as PushData).results[0]!
+    // The reply's own later edit is part of its creation.
+    expect(await edit('Projects/New.md', () => 'final')).toMatchObject({ status: 'updated' })
+    await ownerEdit(created.nodeId!, 'final\n\nowner')
+    const error = await undoFileChanges(files.userId, files.responseId).catch((caught: unknown) => caught)
+    expect((error as FileChangesConflictError).conflicts).toEqual([expect.objectContaining({
+      nodeId: created.nodeId, kind: 'create', reason: 'edited', expected: 'final', current: 'final\n\nowner',
+    })])
+    await ownerEdit(created.nodeId!, 'final')
+    await undoFileChanges(files.userId, files.responseId)
+    expect((await db.select().from(fileNodes).where(eq(fileNodes.id, created.nodeId!)))[0]!.trashedAt).not.toBeNull()
   })
 
   it('edits documents the agent added directly', async () => {

@@ -1,6 +1,6 @@
-import { and, asc, eq, inArray } from 'drizzle-orm'
+import { and, asc, eq, inArray, sql } from 'drizzle-orm'
 import { ydocToNode } from '@pulpo/client-core/doc-schema'
-import type { FileChangeConflict, FileChangeKind, FileChangesResponse } from '@pulpo/contracts'
+import { FILE_TREE_MAX_DEPTH, type FileChangeConflict, type FileChangeKind, type FileChangesResponse } from '@pulpo/contracts'
 import { db } from '../../database/client.js'
 import { fileChanges, fileNodes, responses } from '../../database/schema.js'
 import { AppError } from '../../lib/errors.js'
@@ -47,6 +47,45 @@ async function trashAgain({ tx, effects, userId, row, node }: Step): Promise<Fil
   if (node.trashedAt) return conflictFor(row, node, 'trashed')
   effects.closedDocs.push({ ids: await trashNodeInTx(tx, userId, node), reason: 'trashed' })
   return null
+}
+
+/**
+ * Whether a folder the reply created now holds anything the reply did not put there (this
+ * reply's own items inside are undone before it): the owner's files, or chats filed in it.
+ */
+async function holdsOthersWork(tx: DatabaseTransaction, row: FileChangeRow, folderId: string): Promise<boolean> {
+  const [result] = await tx.execute<{ held: boolean }>(sql`
+    with recursive inside(id, depth) as (
+      select ${folderId}::uuid, 0
+      union all
+      select child.id, inside.depth + 1 from file_nodes child join inside on child.parent_id = inside.id
+      where child.trashed_at is null and inside.depth < ${FILE_TREE_MAX_DEPTH * 2}
+    )
+    select exists (
+      select 1 from inside where depth > 0 and not exists (
+        select 1 from file_changes created
+        where created.response_id = ${row.responseId} and created.node_id = inside.id and created.kind = 'create'
+      )
+    ) or exists (
+      select 1 from chats where chats.folder_id in (select id from inside) and chats.deleted_at is null
+    ) as held
+  `)
+  return Boolean(result?.held)
+}
+
+/** Undoing a creation trashes the item, unless someone else's work is in it by now. */
+async function undoCreation(step: Step): Promise<FileChangeConflict | null> {
+  const { tx, row, node } = step
+  if (node.trashedAt) return conflictFor(row, node, 'trashed')
+  const created = (step.from ?? {}) as { doc?: unknown; objectKey?: string }
+  if (node.kind === 'doc' && created.doc) {
+    const current = ydocToNode(await loadDocInTx(tx, node.id))
+    const expected = docFromJSON(created.doc)
+    if (!current.eq(expected)) return conflictFor(row, node, 'edited', { expected: proposedMarkdown(expected), current: proposedMarkdown(current) })
+  }
+  if (node.kind === 'blob' && created.objectKey && node.objectKey !== created.objectKey) return conflictFor(row, node, 'replaced')
+  if (node.kind === 'folder' && await holdsOthersWork(tx, row, node.id)) return conflictFor(row, node, 'edited')
+  return trashAgain(step)
 }
 
 async function restoreAgain({ tx, userId, row, node }: Step): Promise<FileChangeConflict | null> {
@@ -103,7 +142,7 @@ async function replaceBlob({ tx, userId, row, node, from, to }: Step): Promise<F
 }
 
 const STEPS: Record<FileChangeKind, Record<Direction, (step: Step) => Promise<FileChangeConflict | null>>> = {
-  create: { undo: trashAgain, redo: restoreAgain },
+  create: { undo: undoCreation, redo: restoreAgain },
   trash: { undo: restoreAgain, redo: trashAgain },
   move: { undo: moveBack, redo: moveBack },
   update: {

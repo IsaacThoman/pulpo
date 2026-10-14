@@ -1,5 +1,5 @@
 import { and, eq, ne, sql } from 'drizzle-orm'
-import { mergeMarkdown, ydocToNode } from '@pulpo/client-core/doc-schema'
+import { listSuggestions, mergeMarkdown, ydocToNode } from '@pulpo/client-core/doc-schema'
 import { FILE_TREE_MAX_DEPTH, isMarkdownName } from '@pulpo/contracts'
 import { fileChanges, fileNodes } from '../../database/schema.js'
 import { AppError, notFound } from '../../lib/errors.js'
@@ -11,15 +11,16 @@ import {
   assertDestination,
   assertMovable,
   assertNameAvailable,
+  availableName,
   createFolderInTx,
   moveNodeInTx,
   purgeNodesInTx,
   systemFolderLocked,
   trashNodeInTx,
 } from '../tree-service.js'
-import { deleteChange, findChange, parsePlace, recordChange, setChangeStatus, type FileChangeRow, type Place, type ReplyContext } from './changes.js'
+import { deleteChange, findChange, parsePlace, recordChange, setChangeStatus, updateCreation, type FileChangeRow, type Place, type ReplyContext } from './changes.js'
 import { deleteObjects, mutateAgentFiles, TREE_AND_CHAT_SCOPES, type CommitEffects, type DatabaseTransaction } from './commit.js'
-import { loadDocInTx, lockDocs, markdownVersion, proposedMarkdown, writeDocInTx } from './docs.js'
+import { baseMarkdown, loadDocInTx, lockDocs, markdownVersion, proposedMarkdown, writeDocInTx } from './docs.js'
 import { FilesCommandError } from './scope.js'
 import {
   blobSnapshot,
@@ -33,6 +34,8 @@ import {
 } from './versions.js'
 
 export type ChangeMode = 'write' | 'suggest'
+/** What a reply put into an item it created: a document's JSON, or an uploaded file's object key. */
+type CreatedContent = { doc?: unknown; objectKey?: string }
 export type CreateStatus = 'created' | 'suggested'
 
 export interface ContentResult {
@@ -41,6 +44,11 @@ export interface ContentResult {
   version: string
   /** New document hunks, for documents. */
   hunks?: number
+}
+
+/** A change for an agent reply, checked against the reply's guard under the locks. */
+function mutateReply<T>(reply: ReplyContext, work: Parameters<typeof mutateAgentFiles<T>>[1], options: Parameters<typeof mutateAgentFiles<T>>[2] = {}): Promise<T> {
+  return mutateAgentFiles(reply.userId, work, { ...options, guard: reply.guard })
 }
 
 /** A live, ready item inside a tree transaction. */
@@ -88,13 +96,17 @@ async function newItemPlan(tx: DatabaseTransaction, userId: string, parentId: st
   return { suggestionChangeId: mode === 'suggest' ? rowId : null, rowId }
 }
 
-async function recordCreation(tx: DatabaseTransaction, reply: ReplyContext, node: FileNodeRow, rowId: string | null, mode: ChangeMode): Promise<CreateStatus> {
-  if (rowId) await recordChange(tx, reply, { id: rowId, nodeId: node.id, mode, kind: 'create', after: { parentId: node.parentId, name: node.name } })
+/**
+ * Records a new item. `content` (a document's JSON or a file's object key) is what undo checks
+ * is still there, so it never discards what someone else wrote into the item since.
+ */
+async function recordCreation(tx: DatabaseTransaction, reply: ReplyContext, node: FileNodeRow, rowId: string | null, mode: ChangeMode, content: CreatedContent = {}): Promise<CreateStatus> {
+  if (rowId) await recordChange(tx, reply, { id: rowId, nodeId: node.id, mode, kind: 'create', after: { parentId: node.parentId, name: node.name, ...content } })
   return node.suggestionChangeId ? 'suggested' : 'created'
 }
 
 export async function createFolderChange(reply: ReplyContext, parentId: string | null, name: string, mode: ChangeMode) {
-  return mutateAgentFiles(reply.userId, async (tx) => {
+  return mutateReply(reply, async (tx) => {
     const plan = await newItemPlan(tx, reply.userId, parentId, mode)
     const node = await createFolderInTx(tx, reply.userId, { parentId, name, suggestionChangeId: plan.suggestionChangeId })
     return { node, status: await recordCreation(tx, reply, node, plan.rowId, mode) }
@@ -102,11 +114,12 @@ export async function createFolderChange(reply: ReplyContext, parentId: string |
 }
 
 export async function createDocChange(reply: ReplyContext, parentId: string | null, name: string, markdown: string, mode: ChangeMode) {
-  return mutateAgentFiles(reply.userId, async (tx) => {
+  return mutateReply(reply, async (tx) => {
     const plan = await newItemPlan(tx, reply.userId, parentId, mode)
     const node = await createDocInTx(tx, reply.userId, { parentId, name, markdown, exactName: true, suggestionChangeId: plan.suggestionChangeId })
-    const status = await recordCreation(tx, reply, node, plan.rowId, mode)
-    return { node, status, version: markdownVersion(proposedMarkdown(ydocToNode(await loadDocInTx(tx, node.id)))) }
+    const created = ydocToNode(await loadDocInTx(tx, node.id))
+    const status = await recordCreation(tx, reply, node, plan.rowId, mode, { doc: created.toJSON() })
+    return { node, status, version: markdownVersion(proposedMarkdown(created)) }
   })
 }
 
@@ -114,7 +127,7 @@ export async function createDocChange(reply: ReplyContext, parentId: string | nu
 export async function createBlobChange(reply: ReplyContext, parentId: string | null, name: string, bytes: Uint8Array, mode: ChangeMode) {
   const content = await storeBlob(reply.userId, name, bytes)
   try {
-    return await mutateAgentFiles(reply.userId, async (tx) => {
+    return await mutateReply(reply, async (tx) => {
       const plan = await newItemPlan(tx, reply.userId, parentId, mode)
       await assertDestination(tx, reply.userId, parentId)
       await assertNameAvailable(tx, reply.userId, parentId, name)
@@ -122,7 +135,7 @@ export async function createBlobChange(reply: ReplyContext, parentId: string | n
         id: newId(), ownerUserId: reply.userId, parentId, kind: 'blob', name, ...content,
         sortOrder: await topSortOrder(tx, reply.userId, parentId), suggestionChangeId: plan.suggestionChangeId,
       }).returning()
-      return { node: node!, status: await recordCreation(tx, reply, node!, plan.rowId, mode), version: blobVersion(content) }
+      return { node: node!, status: await recordCreation(tx, reply, node!, plan.rowId, mode, { objectKey: content.objectKey }), version: blobVersion(content) }
     }, { reserveBytes: bytes.byteLength })
   } catch (error) {
     await deleteObjects([content.objectKey])
@@ -136,7 +149,7 @@ export async function createBlobChange(reply: ReplyContext, parentId: string | n
  * `expectedVersion` (null: forced) must still match what the agent last pulled.
  */
 export async function updateDocChange(reply: ReplyContext, nodeId: string, markdown: string, mode: ChangeMode, expectedVersion: string | null): Promise<ContentResult> {
-  return mutateAgentFiles(reply.userId, async (tx, effects) => {
+  return mutateReply(reply, async (tx, effects) => {
     await lockDocs(tx, [nodeId])
     const node = await liveNodeInTx(tx, reply.userId, nodeId)
     if (node.kind !== 'doc') throw new FilesCommandError('This item is no longer a Markdown document; pull it again')
@@ -153,13 +166,19 @@ export async function updateDocChange(reply: ReplyContext, nodeId: string, markd
     await writeDocInTx(tx, effects, { nodeId: node.id, doc, node: merged.doc, actorUserId: reply.userId, origin: 'agent' })
     // Read back from the Y document, so undo compares against exactly what it holds.
     const written = ydocToNode(doc)
-    // A suggestion that only revised text earlier suggestions inserted stays with those.
-    const ownHunks = mode === 'write' || existing || merged.hunks > 0
-    if (!folded && ownHunks) {
-      await recordChange(tx, reply, {
-        id: changeId, nodeId: node.id, mode, kind: 'update',
-        ...mode === 'write' ? { before: { doc: current.toJSON() }, after: { doc: written.toJSON() } } : {},
-      })
+    if (folded === 'creation') await updateCreation(tx, reply, node.id, { doc: written.toJSON() })
+    if (!folded && mode === 'write') {
+      await recordChange(tx, reply, { id: changeId, nodeId: node.id, mode, kind: 'update', before: { doc: current.toJSON() }, after: { doc: written.toJSON() } })
+    }
+    if (!folded && mode === 'suggest') {
+      // A push that only revised text earlier suggestions inserted leaves those to hold it, and
+      // one that took back everything this reply suggested leaves nothing to review.
+      if (listSuggestions(written).some((hunk) => hunk.changeId === changeId)) {
+        // The base before the suggestion tells whether the owner later accepted or rejected it.
+        await recordChange(tx, reply, { id: changeId, nodeId: node.id, mode, kind: 'update', before: { markdown: baseMarkdown(current) } })
+      } else if (existing) {
+        await deleteChange(tx, existing.id)
+      }
     }
     const direct = folded === 'creation' || (!folded && mode === 'write')
     return { status: direct ? 'updated' : 'suggested', version: markdownVersion(proposedMarkdown(written)), hunks: merged.hunks }
@@ -187,10 +206,12 @@ export async function updateBlobChange(reply: ReplyContext, node: FileNodeRow, b
   const content = await storeBlob(reply.userId, node.name, bytes, node.mimeType)
   let kept = false
   try {
-    const result = await mutateAgentFiles(reply.userId, async (tx, effects): Promise<ContentResult> => {
+    const result = await mutateReply(reply, async (tx, effects): Promise<ContentResult> => {
       const current = await liveNodeInTx(tx, reply.userId, node.id)
       if (current.kind !== 'blob') throw new FilesCommandError('This item is no longer an uploaded file; pull it again')
-      const view = (await pendingBlobProposal(tx, reply.chatId, current.id))?.after ?? blobSnapshot(current)
+      // The chat's pending proposal is what the agent works from only while it may only suggest.
+      const proposal = mode === 'suggest' ? await pendingBlobProposal(tx, reply.chatId, current.id) : null
+      const view = proposal?.after ?? blobSnapshot(current)
       if (expectedVersion !== null && blobVersion(view) !== expectedVersion) return { status: 'conflict', version: blobVersion(view) }
       if (view.checksum === content.checksum) return { status: 'unchanged', version: blobVersion(view) }
       const folded = await foldedInto(tx, reply, current)
@@ -199,6 +220,7 @@ export async function updateBlobChange(reply: ReplyContext, node: FileNodeRow, b
         assertRowMode(existing, 'write')
         await setBlobContent(tx, current.id, content)
         if (!folded) await recordChange(tx, reply, { nodeId: current.id, mode: 'write', kind: 'update', before: blobSnapshot(current), after: content })
+        if (folded === 'creation') await updateCreation(tx, reply, current.id, { objectKey: content.objectKey })
         await supersedeProposals(tx, effects, reply, current.id)
         await releaseBlob(tx, effects, reply.userId, current.id, blobSnapshot(current))
         return { status: folded === 'suggestion' ? 'suggested' : 'updated', version: blobVersion(content) }
@@ -207,7 +229,8 @@ export async function updateBlobChange(reply: ReplyContext, node: FileNodeRow, b
       await supersedeProposals(tx, effects, reply, current.id)
       await keepVersion(tx, reply.userId, current.id, content)
       await recordChange(tx, reply, { nodeId: current.id, mode: 'suggest', kind: 'update', before: blobSnapshot(current), after: content })
-      const replaced = parseBlobSnapshot(existing?.after)
+      // An earlier proposal of this reply the owner already reviewed is not this one's to drop.
+      const replaced = existing?.status === 'pending' ? parseBlobSnapshot(existing.after) : null
       if (replaced) await releaseBlob(tx, effects, reply.userId, current.id, replaced)
       return { status: 'suggested', version: blobVersion(content) }
     }, { reserveBytes: bytes.byteLength })
@@ -219,7 +242,7 @@ export async function updateBlobChange(reply: ReplyContext, node: FileNodeRow, b
 }
 
 export async function moveChange(reply: ReplyContext, nodeId: string, target: Place, mode: ChangeMode): Promise<'moved' | 'suggested' | 'unchanged'> {
-  return mutateAgentFiles(reply.userId, async (tx) => {
+  return mutateReply(reply, async (tx) => {
     const node = await liveNodeInTx(tx, reply.userId, nodeId)
     if (node.systemRole) throw systemFolderLocked()
     if (node.kind === 'doc' && !isMarkdownName(target.name)) {
@@ -247,9 +270,35 @@ export async function moveChange(reply: ReplyContext, nodeId: string, target: Pl
 }
 
 /**
+ * Moves one of the owner's items out of a suggestion about to be deleted, into `parentId`. Live
+ * items move like any item; items still uploading take a free name there; trashed ones stay in
+ * the trash, as their own trash entry, so restoring them brings back only them.
+ */
+async function rescueFromSuggestion(tx: DatabaseTransaction, userId: string, node: FileNodeRow, parentId: string | null): Promise<void> {
+  if (!node.trashedAt && node.status === 'ready') {
+    await moveNodeInTx(tx, userId, node, { parentId, name: node.name, onConflict: 'rename' })
+    return
+  }
+  const name = node.trashedAt ? node.name : await availableName(tx, userId, parentId, node.name)
+  await tx.update(fileNodes).set({ parentId, name, revision: sql`${fileNodes.revision} + 1` }).where(eq(fileNodes.id, node.id))
+  if (node.trashedAt && node.trashRootId !== node.id) {
+    await tx.execute(sql`
+      with recursive inside(id, depth) as (
+        select ${node.id}::uuid, 0
+        union all
+        select child.id, inside.depth + 1 from file_nodes child join inside on child.parent_id = inside.id
+        where inside.depth < ${FILE_TREE_MAX_DEPTH * 2}
+      )
+      update file_nodes set trash_root_id = ${node.id}
+      where id in (select id from inside) and trash_root_id = ${node.trashRootId}
+    `)
+  }
+}
+
+/**
  * Permanently deletes items that are (part of) the suggestion `changeId`. Items inside them that
- * are not part of it, such as the owner's own files, are kept: they move up to where the
- * suggestion sits.
+ * are not part of it, such as the owner's own files, live, uploading, or trashed, are kept: they
+ * move up to where the suggestion sits.
  */
 export async function purgeSuggestedInTx(tx: DatabaseTransaction, effects: CommitEffects, userId: string, changeId: string, rootIds: string[]): Promise<void> {
   for (const rootId of rootIds) {
@@ -263,23 +312,25 @@ export async function purgeSuggestedInTx(tx: DatabaseTransaction, effects: Commi
         join tree on node.parent_id = tree.id
         where tree.suggestion_change_id = ${changeId} and tree.depth < ${FILE_TREE_MAX_DEPTH * 2}
       )
-      select tree.id::text as id from tree join file_nodes node on node.id = tree.id
-      where tree.depth > 0 and tree.suggestion_change_id is distinct from ${changeId} and node.trashed_at is null and node.status = 'ready'
+      select id::text as id from tree where depth > 0 and suggestion_change_id is distinct from ${changeId}
     `)
-    for (const { id } of foreign) {
-      const node = (await resolveFileAccess(tx, userId, id))!.node
-      await moveNodeInTx(tx, userId, node, { parentId: root.parentId, name: node.name, onConflict: 'rename' })
-    }
+    for (const { id } of foreign) await rescueFromSuggestion(tx, userId, (await resolveFileAccess(tx, userId, id))!.node, root.parentId)
   }
   effects.closedDocs.push({ ids: await purgeNodesInTx(tx, userId, rootIds, effects.deletedKeys), reason: 'deleted' })
 }
 
+async function suggestedInChat(tx: DatabaseTransaction, changeId: string, chatId: string): Promise<boolean> {
+  const [row] = await tx.select({ chatId: fileChanges.chatId }).from(fileChanges).where(eq(fileChanges.id, changeId)).limit(1)
+  return row?.chatId === chatId
+}
+
 export async function trashChange(reply: ReplyContext, nodeId: string, mode: ChangeMode): Promise<'trashed' | 'suggested' | 'withdrawn'> {
-  return mutateAgentFiles(reply.userId, async (tx, effects) => {
+  return mutateReply(reply, async (tx, effects) => {
     const node = await liveNodeInTx(tx, reply.userId, nodeId)
     if (node.systemRole) throw systemFolderLocked()
-    // Deleting something the agent suggested adding withdraws (that part of) the suggestion.
-    if (node.suggestionChangeId) {
+    // Deleting something this chat's agent suggested adding withdraws (that part of) the
+    // suggestion; another chat's suggestion is the owner's to review, so it is trashed like any item.
+    if (node.suggestionChangeId && await suggestedInChat(tx, node.suggestionChangeId, reply.chatId)) {
       await purgeSuggestedInTx(tx, effects, reply.userId, node.suggestionChangeId, [node.id])
       return 'withdrawn'
     }

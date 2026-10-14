@@ -185,6 +185,22 @@ describe.skipIf(!enabled)('pulpo files relay', () => {
     expect(await files.error('mv', { from: 'Projects/plan.txt', to: 'Projects/moved.txt' })).toMatch(/read only/)
   })
 
+  it('keeps attached items inside a folder as protected as the user made them', async () => {
+    const work = await files.folder('Work')
+    const sub = await files.folder('Sub', work)
+    const secret = await files.doc('Secret.md', sub, 'secret')
+    const other = await files.folder('Other', work)
+    const draft = await files.doc('Draft.md', other, 'draft')
+    await files.attach({ [work]: 'write', [secret]: 'read', [draft]: 'suggest' })
+    expect(await files.error('rm', { path: 'Work/Sub', recursive: true })).toMatch(/"Work\/Sub" holds "Work\/Sub\/Secret\.md", which is read only/)
+    expect(await files.error('mv', { from: 'Work/Sub', to: 'Work/Moved' })).toMatch(/which is read only/)
+    expect(await files.node(secret)).toMatchObject({ parentId: sub, trashedAt: null })
+    // A folder holding an item attached for suggestions can only be suggested away.
+    expect((await files.ok('rm', { path: 'Work/Other', recursive: true })).output).toMatch(/^Suggested deleting "Work\/Other"/)
+    expect((await files.ok('mv', { from: 'Work/Other', to: 'Work/Renamed' })).output).toMatch(/^Suggested moving/)
+    expect(await files.node(other)).toMatchObject({ name: 'Other', trashedAt: null })
+  })
+
   it('writes uploaded files directly, checking the pulled version', async () => {
     const projects = await files.folder('Projects')
     const data = await files.blob('data.csv', projects, 'v1')

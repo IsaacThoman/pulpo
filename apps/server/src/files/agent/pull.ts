@@ -5,7 +5,7 @@ import { getBlobStore } from '../../storage/index.js'
 import type { FileNodeRow } from '../access.js'
 import { formatSize, workspacePath, type CommandContext, type CommandOutput } from './command-context.js'
 import { markdownVersion, readProposedMarkdown } from './docs.js'
-import { FilesCommandError, locateExisting } from './scope.js'
+import { FilesCommandError, locateExisting, modeFor } from './scope.js'
 import { agentBlobView, blobVersion } from './versions.js'
 import { walkTree } from './walk.js'
 
@@ -40,7 +40,7 @@ async function pullFile(ctx: CommandContext, node: FileNodeRow, remote: string, 
     await writeLocal(ctx, local, bytes, bytes.byteLength)
     return { remote, local, nodeId: node.id, version: markdownVersion(markdown), kind: 'doc', sizeBytes: bytes.byteLength }
   }
-  const view = await agentBlobView(db, ctx.chatId, node)
+  const view = await agentBlobView(db, ctx.chatId, node, () => modeFor(ctx.scope, node.id))
   const body = await getBlobStore().getStream(view.objectKey)
   try {
     await writeLocal(ctx, local, body, view.sizeBytes)
