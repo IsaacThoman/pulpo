@@ -20,12 +20,15 @@ vi.mock('@/stores/auth', () => ({
 vi.mock('@/features/side-panel/agent', () => ({ usePublishFilesView: () => undefined }))
 vi.mock('@/features/side-panel/AgentActions', () => ({ AgentMenuItems: () => null, SplitViewButton: () => null }))
 vi.mock('@/features/side-panel/PanelControls', () => ({ PanelWindowButtons: () => null }))
+const resolveFileSuggestion = vi.hoisted(() => vi.fn(async () => null))
 vi.mock('@/features/files/api', async (importOriginal) => ({
   ...await importOriginal<typeof import('@/features/files/api')>(),
+  resolveFileSuggestion,
   fetchFolder: async () => ({ folder: null, ancestors: [], children: [
     { id: 'document', name: 'Notes.md', kind: 'doc', sizeBytes: 0, updatedAt: '2026-10-06T00:00:00Z' },
     { id: 'folder', name: 'Projects', kind: 'folder', updatedAt: '2026-10-06T00:00:00Z' },
     { id: 'sidebar', name: 'Sidebar', kind: 'folder', systemRole: 'chats', updatedAt: '2026-10-06T00:00:00Z' },
+    { id: 'suggested', name: 'Draft.md', kind: 'doc', sizeBytes: 0, updatedAt: '2026-10-06T00:00:00Z', suggestion: { changeId: 'change' } },
   ] }),
   fetchFolderLayout: async () => ({ folderId: null, positions: {}, snapToGrid: true }),
 }))
@@ -144,5 +147,21 @@ describe('menus of built-in folders', () => {
     fireEvent.contextMenu(await screen.findByRole('option', { name: /Projects/ }))
     await screen.findByRole('menuitem', { name: /^Copy/ })
     for (const name of unavailable) expect(menuItem(name).getAttribute('aria-disabled')).toBeNull()
+  })
+})
+
+describe('items an agent suggested', () => {
+  it.each(['list', 'grid'])('are marked in %s view and can be accepted or rejected from their menu', async (view) => {
+    localStorage.setItem('pulpo.files.view', view)
+    showFiles()
+    const item = await screen.findByRole('option', { name: /Draft\.md/ })
+    expect(item.textContent).toContain('Suggested')
+    expect((await screen.findByRole('option', { name: /Notes\.md/ })).textContent).not.toContain('Suggested')
+    fireEvent.contextMenu(item)
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Reject suggestion' }))
+    await vi.waitFor(() => expect(resolveFileSuggestion).toHaveBeenCalledWith('suggested', 'reject'))
+    fireEvent.contextMenu(await screen.findByRole('option', { name: /Notes\.md/ }))
+    await screen.findByRole('menuitem', { name: /^Copy/ })
+    expect(screen.queryByRole('menuitem', { name: 'Accept suggestion' })).toBeNull()
   })
 })

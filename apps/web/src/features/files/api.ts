@@ -185,3 +185,8 @@ export function updateFileChanges(responseId: string, action: 'undo' | 'redo' | 
 export function resolveFileChange(changeId: string, action: 'accept' | 'reject'): Promise<FileChangesResponse> {
   return apiRequest<FileChangesResponse>(`/api/file-changes/${changeId}/${action}`, { method: 'POST' })
 }
+
+/** Accepts or rejects an item an agent suggested creating; rejecting deletes it (`node` is then null). */
+export async function resolveFileSuggestion(id: string, action: 'accept' | 'reject'): Promise<FileNode | null> {
+  return (await apiRequest<{ node: FileNode | null }>(`/api/files/${id}/suggestion/${action}`, { method: 'POST' })).node
+}
