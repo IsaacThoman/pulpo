@@ -8,7 +8,7 @@ import { fileChanges } from '../../database/schema.js'
 import { appendDocUpdate, loadYDoc, readDocMarkdown } from '../doc-store.js'
 import { listFileChanges } from './changes.js'
 import { FileChangesConflictError, redoFileChanges, undoFileChanges } from './history.js'
-import { reviewFileChange } from './review.js'
+import { reviewFileChange, reviewReplyChanges } from './review.js'
 import { filesFixture, requireDisposableDatabase, type FilesFixture } from './test-fixtures.js'
 
 const objects = vi.hoisted(() => new Map<string, Buffer>())
@@ -137,6 +137,24 @@ describe.skipIf(!enabled)('agent document changes', () => {
     expect(listed.changes.map((change) => [change.nodeId === plan, change.status, change.pendingSuggestions])).toEqual(expect.arrayContaining([
       [true, 'rejected', 0], [false, 'accepted', 0],
     ]))
+  })
+
+  it('keeps each reply\'s suggestions to a document apart', async () => {
+    const projects = await files.folder('Projects')
+    const plan = await files.doc('Plan.md', projects, 'Alpha\n\nBeta')
+    await files.attach({ [projects]: 'suggest' })
+    await edit('Projects/Plan.md', (markdown) => markdown.replace('Alpha', 'Alpha one'))
+    const first = files.responseId
+    await files.newReply()
+    // The next reply starts from the proposed view, earlier suggestions included.
+    await edit('Projects/Plan.md', (markdown) => {
+      expect(markdown).toBe('Alpha one\n\nBeta')
+      return markdown.replace('Beta', 'Beta two')
+    })
+    await reviewReplyChanges(files.userId, files.responseId, 'accept')
+    expect(ydocToMarkdown(await loadYDoc(plan))).toBe('Alpha\n\nBeta two')
+    expect(ydocToMarkdown(await loadYDoc(plan), 'proposed')).toBe('Alpha one\n\nBeta two')
+    expect((await listFileChanges(files.userId, first)).changes[0]).toMatchObject({ status: 'pending', pendingSuggestions: 1 })
   })
 
   it('edits documents the agent added directly', async () => {
