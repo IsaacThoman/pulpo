@@ -419,15 +419,16 @@ public final class KeyboardEngine {
   }
 
   /// Decodes a swipe and inserts the best word with automatic spacing.
+  /// - Parameter times: Touch timestamps in seconds, one per point, when known.
   @discardableResult
-  public func insertGlide(_ points: [KeyPoint]) -> [GlideCandidate] {
+  public func insertGlide(_ points: [KeyPoint], times: [Double]? = nil) -> [GlideCandidate] {
     guard policy.allowsGlide, let glide else { return [] }
     // Decode before touching the document, so a path that fits no word changes nothing.
-    var candidates = glide.decode(points, context: languageContext(), limit: 4)
+    var candidates = glide.decode(points, times: times, context: languageContext(), limit: 4)
     guard !candidates.isEmpty else { return [] }
     if !composing.isEmpty {
       commitComposing(separator: " ")
-      candidates = glide.decode(points, context: languageContext(), limit: 4)
+      candidates = glide.decode(points, times: times, context: languageContext(), limit: 4)
     }
     guard let best = candidates.first else {
       finishEdit()

@@ -10,7 +10,8 @@ public struct GlideCandidate: Equatable, Sendable {
 /// Candidates come from the dictionary buckets for the letters nearest the start
 /// and end of the swipe. Each must pass near its letters in order; survivors are
 /// scored on letter alignment, on how much of the swipe the word's ideal path
-/// explains, and on the language model.
+/// explains, and on the language model. With touch times, letters are also
+/// expected where the finger slowed down rather than in fast transit.
 public final class GlideDecoder {
   public let model: LanguageModel
   public var geometry: LetterGeometry
@@ -34,6 +35,32 @@ public final class GlideDecoder {
   public var endpointLetterLimit = 8
   public var extraLengthSigma = 0.25
   public var shortenedLengthSigma = 0.3
+  /// Touch times, when given, add four cues measured from recorded human swipes.
+  /// Interior letters sit where the finger slows down: fast transit costs up to
+  /// about this many log-likelihood units per letter. Zero ignores the cue.
+  public var letterSpeedWeight = 2.0
+  /// Speeds, relative to the gesture's median, below which a letter costs nothing
+  /// and above which the cost stops growing.
+  public var letterSpeedFloor = 0.6
+  public var letterSpeedCeiling = 1.6
+  /// Slowing down away from every letter of a word counts against it, like an
+  /// unexplained corner. Pauses are stretches below `pauseSpeed` times the median.
+  public var pauseWeight = 0.5
+  public var pauseSpeed = 0.4
+  public var pauseSigma = 0.45
+  /// Share of elapsed time, versus travelled distance, in sample spacing, so slow
+  /// stretches near letters are sampled more densely than fast transit.
+  public var timeShare = 0.25
+  /// Fast gestures land farther from key centers. Spatial variance grows by this
+  /// gain per multiple of `speedSigmaReference` key pitches per second, up to
+  /// `speedSigmaMaximum` so implausible timestamps can't discard the path.
+  public var speedSigmaGain = 1.0
+  public var speedSigmaReference = 14.0
+  public var speedSigmaMaximum = 1.5
+  /// Shortest time span for a speed estimate, so coalesced bursts sharing a
+  /// timestamp don't look infinitely fast. Gestures shorter than two spans
+  /// decode as if they had no times.
+  public var speedWindow = 0.03
 
   public init(model: LanguageModel, geometry: LetterGeometry = .qwerty) {
     self.model = model
@@ -76,16 +103,124 @@ public final class GlideDecoder {
     return result
   }
 
-  public func decode(_ rawPoints: [KeyPoint], context: LanguageContext, limit: Int = 5) -> [GlideCandidate] {
+  /// Samples evenly spaced in a blend of travelled distance and elapsed time, so
+  /// slow stretches get more samples. `timeShare` 0 is pure arc length.
+  static func resample(_ points: [KeyPoint], times: [Double], count: Int, timeShare: Double) -> (points: [KeyPoint], times: [Double])? {
+    guard points.count > 1, count > 1, points.count == times.count else { return nil }
+    let duration = times[times.count - 1] - times[0]
+    let total = length(of: points)
+    guard duration > 0, total > 0 else { return nil }
+    var progress = [Double](repeating: 0, count: points.count)
+    var travelled = 0.0
+    for index in 1..<points.count {
+      travelled += points[index - 1].distance(to: points[index])
+      progress[index] = (1 - timeShare) * travelled / total + timeShare * (times[index] - times[0]) / duration
+    }
+    var resultPoints: [KeyPoint] = []
+    var resultTimes: [Double] = []
+    resultPoints.reserveCapacity(count)
+    resultTimes.reserveCapacity(count)
+    var segment = 0
+    for j in 0..<count {
+      let target = Double(j) / Double(count - 1) * progress[points.count - 1]
+      while segment < points.count - 2, progress[segment + 1] < target { segment += 1 }
+      let span = progress[segment + 1] - progress[segment]
+      let t = span > 0 ? min(1, max(0, (target - progress[segment]) / span)) : 1
+      let a = points[segment], b = points[segment + 1]
+      resultPoints.append(KeyPoint(x: a.x + t * (b.x - a.x), y: a.y + t * (b.y - a.y)))
+      resultTimes.append(times[segment] + t * (times[segment + 1] - times[segment]))
+    }
+    resultPoints[0] = points[0]
+    resultPoints[count - 1] = points[points.count - 1]
+    return (resultPoints, resultTimes)
+  }
+
+  /// Each sample's speed relative to the gesture's median speed, or `nil` when
+  /// the times can't tell slow from fast (missing, constant, or too short).
+  static func relativeSpeeds(samples: [KeyPoint], times: [Double], minimumSpan: Double) -> [Double]? {
+    let n = times.count
+    guard n > 4, samples.count == n, let first = times.first, let last = times.last, last - first >= 2 * minimumSpan else { return nil }
+    var travelled = [Double](repeating: 0, count: n)
+    for j in 1..<n { travelled[j] = travelled[j - 1] + samples[j - 1].distance(to: samples[j]) }
+    guard travelled[n - 1] > 0 else { return nil }
+    var speeds = [Double](repeating: 0, count: n)
+    for j in 0..<n {
+      var lower = max(0, j - 2), upper = min(n - 1, j + 2)
+      while times[upper] - times[lower] < minimumSpan, lower > 0 || upper < n - 1 {
+        lower = max(0, lower - 1)
+        upper = min(n - 1, upper + 1)
+      }
+      let span = times[upper] - times[lower]
+      guard span > 0 else { return nil }
+      speeds[j] = (travelled[upper] - travelled[lower]) / span
+    }
+    let median = speeds.sorted()[n / 2]
+    guard median > 0, median.isFinite else { return nil }
+    for j in 0..<n { speeds[j] /= median }
+    return speeds
+  }
+
+  /// Nondecreasing times for the deduplicated points, or `nil`. Small
+  /// reorderings are clamped rather than rejected.
+  static func cleanTimes(_ times: [Double], count: Int) -> [Double]? {
+    guard times.count == count, times.allSatisfy(\.isFinite) else { return nil }
+    var result = times
+    for index in result.indices.dropFirst() where result[index] < result[index - 1] { result[index] = result[index - 1] }
+    return result
+  }
+
+  /// What touch times add to the spatial evidence; neutral when they're absent.
+  struct TimingCues {
+    var samples: [KeyPoint]
+    /// Nonnegative cost of putting an interior letter at each sample, in squared
+    /// key pitches, and the share every interior letter is credited back.
+    var letterCost: [Double]?
+    var letterCredit = 0.0
+    var pauses: [KeyPoint] = []
+    var varianceScale = 1.0
+  }
+
+  func timingCues(points: [KeyPoint], times: [Double], length: Double) -> TimingCues? {
+    guard let times = Self.cleanTimes(times, count: points.count) else { return nil }
+    let duration = times[times.count - 1] - times[0]
+    guard duration >= 2 * speedWindow,
+          let blended = Self.resample(points, times: times, count: sampleCount, timeShare: timeShare),
+          let speeds = Self.relativeSpeeds(samples: blended.points, times: blended.times, minimumSpan: speedWindow) else { return nil }
+    var cues = TimingCues(samples: blended.points)
+    cues.varianceScale = min(speedSigmaMaximum, 1 + speedSigmaGain * max(0, length / duration / speedSigmaReference - 1))
+    if letterSpeedWeight > 0 {
+      let scale = letterSpeedWeight * 2 * alignmentSigma * alignmentSigma * cues.varianceScale
+      let span = max(letterSpeedCeiling - letterSpeedFloor, 1e-6)
+      let raw = speeds.map { scale * min(1, max(0, ($0 - letterSpeedFloor) / span)) }
+      // A letter's slowdown can peak a sample away from its closest point.
+      let cost = raw.indices.map { raw[max(0, $0 - 1)...min(raw.count - 1, $0 + 1)].min()! }
+      cues.letterCost = cost
+      // Credit the cheapest interior cost back to every interior letter. Real
+      // swipes always slow somewhere, so this is usually zero, but a constant
+      // speed (times without information) then changes no word's score.
+      cues.letterCredit = cost[1..<(cost.count - 1)].min() ?? 0
+    }
+    if pauseWeight > 0 { cues.pauses = Self.pauses(in: blended.points, speeds: speeds, threshold: pauseSpeed) }
+    return cues
+  }
+
+  /// - Parameter times: Optional touch timestamps in seconds, one per point.
+  ///   Without them (or when they carry no usable timing), decoding is purely spatial.
+  public func decode(_ rawPoints: [KeyPoint], times rawTimes: [Double]? = nil, context: LanguageContext, limit: Int = 5) -> [GlideCandidate] {
     guard limit > 0 else { return [] }
+    let timed = rawTimes.map { $0.count == rawPoints.count && $0.allSatisfy(\.isFinite) } ?? false
     var points: [KeyPoint] = []
-    for point in rawPoints where points.last.map({ $0.distanceSquared(to: point) > 0.0004 }) ?? true {
+    var times: [Double] = []
+    for (index, point) in rawPoints.enumerated() where points.last.map({ $0.distanceSquared(to: point) > 0.0004 }) ?? true {
       points.append(point)
+      if timed, let rawTimes { times.append(rawTimes[index]) }
     }
     guard points.count >= 2, let first = points.first, let last = points.last else { return [] }
     let gestureLength = Self.length(of: points)
-    let samples = Self.resample(points, count: sampleCount)
-    let corners = Self.corners(in: samples, length: gestureLength, threshold: cornerAngle)
+    let arcSamples = Self.resample(points, count: sampleCount)
+    let corners = Self.corners(in: arcSamples, length: gestureLength, threshold: cornerAngle)
+    let cues = timed ? timingCues(points: points, times: times, length: gestureLength) : nil
+    let samples = cues?.samples ?? arcSamples
     let starts = geometry.letters(near: first, radius: endpointRadius, limit: endpointLetterLimit)
     let ends = geometry.letters(near: last, radius: endpointRadius, limit: endpointLetterLimit)
     guard !starts.isEmpty, !ends.isEmpty else { return [] }
@@ -104,10 +239,14 @@ public final class GlideDecoder {
       }
       guard template.count >= 2 else { return }
       let languageScore = languageWeight * model.logProbability(of: text, id: id, in: context)
-      // All spatial penalties are nonnegative. The current top results provide
-      // a safe score bound before the more expensive path-shape alignment.
+      // Spatial penalties are nonnegative apart from the bounded timing credit.
+      // The current top results provide a safe score bound before the more
+      // expensive path-shape alignment.
       let cutoff = scored.count >= limit ? scored.values.min()! : -.infinity
-      guard let spatial = spatialScore(samples: samples, gestureLength: gestureLength, template: template, corners: corners, minimumScore: cutoff - languageScore) else { return }
+      guard let spatial = spatialScore(samples: samples, gestureLength: gestureLength, template: template, corners: corners,
+                                       letterCost: cues?.letterCost, letterCredit: cues?.letterCredit ?? 0,
+                                       pauses: cues?.pauses ?? [], varianceScale: cues?.varianceScale ?? 1,
+                                       minimumScore: cutoff - languageScore) else { return }
       let score = spatial + languageScore
       if score > scored[text] ?? -.infinity { scored[text] = score }
       if scored.count > limit, let worst = scored.min(by: {
@@ -160,7 +299,9 @@ public final class GlideDecoder {
 
   /// Log-likelihood that the swipe was meant to trace `template`, or `nil` when it
   /// clearly was not (wrong length, or a letter the swipe never passed).
-  func spatialScore(samples: [KeyPoint], gestureLength: Double, template: [KeyPoint], corners: [KeyPoint] = [], minimumScore: Double = -.infinity) -> Double? {
+  func spatialScore(samples: [KeyPoint], gestureLength: Double, template: [KeyPoint], corners: [KeyPoint] = [],
+                    letterCost: [Double]? = nil, letterCredit: Double = 0, pauses: [KeyPoint] = [], varianceScale: Double = 1,
+                    minimumScore: Double = -.infinity) -> Double? {
     var templateLength = 0.0
     for index in 1..<template.count { templateLength += template[index - 1].distance(to: template[index]) }
     let ratio = gestureLength / max(templateLength, 0.6)
@@ -170,19 +311,24 @@ public final class GlideDecoder {
     if templateLength > 1.5, ratio > 2.4 { return nil }
     if templateLength <= 1.5, gestureLength > templateLength + 3.5 { return nil }
 
+    let k = template.count
+    let alignmentScale = 2 * alignmentSigma * alignmentSigma * varianceScale * pow(Double(k) / 5, alignmentLengthExponent)
+    // Interior letter speed costs are nonnegative inside the alignment. The
+    // per-letter credit comes off afterwards, so the early bounds allow for it.
+    let speedCredit = letterCost == nil ? 0 : Double(max(0, k - 2)) * letterCredit / alignmentScale
+    let bound = -minimumScore + speedCredit + 1e-10
+
     // Extra travel the word doesn't account for; cutting corners short is normal.
     let logRatio = log(gestureLength / max(templateLength, 0.6))
     let lengthSigma = logRatio > 0 ? extraLengthSigma : shortenedLengthSigma
     let lengthScore = logRatio * logRatio / (2 * lengthSigma * lengthSigma)
-    if lengthScore > -minimumScore + 1e-10 { return nil }
+    if lengthScore > bound { return nil }
 
     // Endpoint hits are part of every valid monotonic alignment. Their penalty
     // alone can safely reject candidates before scanning the interior samples.
-    let k = template.count
     let endpointError = samples[0].distanceSquared(to: template[0])
       + samples[samples.count - 1].distanceSquared(to: template[k - 1])
-    let alignmentScale = 2 * alignmentSigma * alignmentSigma * pow(Double(k) / 5, alignmentLengthExponent)
-    if endpointError / alignmentScale + lengthScore > -minimumScore + 1e-10 { return nil }
+    if endpointError / alignmentScale + lengthScore > bound { return nil }
 
     // Every interior letter must be passed, in order.
     let n = samples.count
@@ -204,14 +350,21 @@ public final class GlideDecoder {
     for letter in 1..<k {
       let center = template[letter]
       var runningMinimum = Double.infinity
-      for j in 0..<n {
-        runningMinimum = min(runningMinimum, previousRow[j])
-        row[j] = runningMinimum + samples[j].distanceSquared(to: center)
+      if let letterCost, letter < k - 1 {
+        for j in 0..<n {
+          runningMinimum = min(runningMinimum, previousRow[j])
+          row[j] = runningMinimum + samples[j].distanceSquared(to: center) + letterCost[j]
+        }
+      } else {
+        for j in 0..<n {
+          runningMinimum = min(runningMinimum, previousRow[j])
+          row[j] = runningMinimum + samples[j].distanceSquared(to: center)
+        }
       }
       swap(&previousRow, &row)
     }
     let alignment = previousRow[n - 1]
-    let alignmentScore = alignment / (2 * alignmentSigma * alignmentSigma) / pow(Double(k) / 5, alignmentLengthExponent)
+    let alignmentScore = alignment / (2 * alignmentSigma * alignmentSigma * varianceScale) / pow(Double(k) / 5, alignmentLengthExponent) - speedCredit
 
     if alignmentScore + lengthScore > -minimumScore + 1e-10 { return nil }
 
@@ -221,6 +374,12 @@ public final class GlideDecoder {
       var nearest = Double.infinity
       for letter in template { nearest = min(nearest, corner.distanceSquared(to: letter)) }
       cornerScore += min(6, nearest / (2 * cornerSigma * cornerSigma))
+    }
+    // So does slowing down away from every letter.
+    for pause in pauses {
+      var nearest = Double.infinity
+      for letter in template { nearest = min(nearest, pause.distanceSquared(to: letter)) }
+      cornerScore += pauseWeight * min(6, nearest / (2 * pauseSigma * pauseSigma))
     }
     if alignmentScore + cornerScore + lengthScore > -minimumScore + 1e-10 { return nil }
 
@@ -242,9 +401,31 @@ public final class GlideDecoder {
       swap(&previousShape, &shapeRow)
     }
     let stray = previousShape[k - 2]
-    let shapeScore = shapeWeight * stray / Double(n) / (2 * shapeSigma * shapeSigma)
+    let shapeScore = shapeWeight * stray / Double(n) / (2 * shapeSigma * shapeSigma * varianceScale)
 
     return -(alignmentScore + shapeScore + cornerScore + lengthScore)
+  }
+
+  /// The slowest point of each interior stretch slower than `threshold` times the
+  /// median speed. The ends are excluded: touch-down and lift are anchored anyway.
+  static func pauses(in samples: [KeyPoint], speeds: [Double], threshold: Double) -> [KeyPoint] {
+    let n = samples.count
+    let margin = max(2, n / 10)
+    guard n > margin * 2 else { return [] }
+    var result: [KeyPoint] = []
+    var i = margin
+    while i < n - margin {
+      if speeds[i] < threshold {
+        var best = i
+        while i < n - margin, speeds[i] < threshold {
+          if speeds[i] < speeds[best] { best = i }
+          i += 1
+        }
+        result.append(samples[best])
+      }
+      i += 1
+    }
+    return result
   }
 
   /// Points where the swipe turns sharply, measured over about a third of a key.
