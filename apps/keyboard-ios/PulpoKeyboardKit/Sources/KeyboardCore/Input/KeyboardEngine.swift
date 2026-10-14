@@ -315,6 +315,16 @@ public final class KeyboardEngine {
     phantomSpace = false
     let text = before
     guard !text.isEmpty else { return }
+    let count = Self.wordDeletionLength(in: Substring(text))
+    for _ in 0..<max(count, 1) { deleteDocumentBackward() }
+    composing = TypedWord(text: "")
+    lastEdit = .none
+    finishEdit()
+  }
+
+  /// Characters one word deletion removes from the end of `text`: trailing
+  /// spaces, then a word, or a single punctuation mark when no word precedes.
+  static func wordDeletionLength(in text: Substring) -> Int {
     var count = 0
     var index = text.endIndex
     while index > text.startIndex, text[text.index(before: index)].isWhitespace {
@@ -329,10 +339,86 @@ public final class KeyboardEngine {
     } else if index > text.startIndex {
       count += 1
     }
-    for _ in 0..<max(count, 1) { deleteDocumentBackward() }
+    return count
+  }
+
+  /// The text before the cursor that `count` word deletions would remove.
+  static func wordDeletionSuffix(of text: String, words count: Int) -> Substring {
+    var remaining = Substring(text)
+    for _ in 0..<max(count, 0) {
+      let length = wordDeletionLength(in: remaining)
+      guard length > 0 else { break }
+      remaining = remaining.dropLast(length)
+    }
+    return text[remaining.endIndex...]
+  }
+
+  /// Text a delete-key swipe would remove, for previewing before the finger lifts.
+  public func wordDeletionPreview(words count: Int) -> String {
+    String(Self.wordDeletionSuffix(of: before, words: count))
+  }
+
+  /// The text before the cursor as the engine currently understands it.
+  public var contextBeforeCursor: String { before }
+
+  /// Whether the next delete would act on the last edit as a whole: undo an
+  /// autocorrection or remove a swiped word. A delete-key swipe must not do either.
+  public var deleteUndoesLastEdit: Bool {
+    switch lastEdit {
+    case let .autocorrected(_, inserted, separator): before.hasSuffix(inserted + separator)
+    case let .glided(word, _): before.hasSuffix(word)
+    default: false
+    }
+  }
+
+  /// Text removed by a delete-key swipe, which can be put back while the cursor
+  /// stays where the deletion left it.
+  public struct WordDeletion: Equatable, Sendable {
+    public let removed: String
+    let remaining: String
+    let documentID: UUID?
+  }
+
+  /// Deletes `count` words before the cursor in one step. `originalContext` is
+  /// the text before the cursor when the gesture began, so a character the
+  /// delete key already removed on touch down is restored by undo as well.
+  @discardableResult
+  public func deleteWordsBackward(_ count: Int, originalContext: String? = nil) -> WordDeletion? {
+    let start = before
+    let length = Self.wordDeletionSuffix(of: start, words: count).count
+    guard length > 0 else { return nil }
+    pendingLearning = nil
+    phantomSpace = false
+    for _ in 0..<length { deleteDocumentBackward() }
     composing = TypedWord(text: "")
     lastEdit = .none
-    finishEdit()
+    finishEdit(deriveComposing: true)
+    let remaining = before
+    var removed = String(start.suffix(length))
+    if let original = originalContext, original.count > remaining.count, original.hasPrefix(remaining) {
+      removed = String(original.dropFirst(remaining.count))
+    }
+    return WordDeletion(removed: removed, remaining: remaining, documentID: document.documentIdentifier)
+  }
+
+  /// Whether `deletion` can still be undone: same document, cursor unmoved.
+  public func canUndo(_ deletion: WordDeletion) -> Bool {
+    deletion.documentID == document.documentIdentifier && before == deletion.remaining
+      && expectedSelection == nil
+  }
+
+  /// Puts back the text a delete-key swipe removed. Returns false, changing
+  /// nothing, if the text or cursor changed since.
+  @discardableResult
+  public func undo(_ deletion: WordDeletion) -> Bool {
+    guard canUndo(deletion), !deletion.removed.isEmpty else { return false }
+    acceptPendingLearning()
+    phantomSpace = false
+    insertDocumentText(deletion.removed)
+    lastEdit = .none
+    composing = TypedWord(text: "")
+    finishEdit(deriveComposing: true)
+    return true
   }
 
   // MARK: Shift

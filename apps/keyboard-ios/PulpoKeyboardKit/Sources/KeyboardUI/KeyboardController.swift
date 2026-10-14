@@ -119,6 +119,15 @@ public final class KeyboardController: NSObject {
   private let emojiHistory: EmojiHistory
   private var emojiCatalog: EmojiCatalog?
   private var pendingEmojiPresentation = false
+  /// A delete press that would undo an autocorrection or swiped word waits for
+  /// lift (or repeat), so a word swipe that follows never teaches the typo.
+  private var deferredDelete = false
+  /// The text before the cursor when delete went down, so undo restores it all.
+  private var deleteStartContext: String?
+  /// Words a delete swipe would remove, shown in the bar until the finger lifts.
+  private var deletionPreview: (text: String, words: Int)?
+  /// The last delete swipe, offered as Undo until the next edit.
+  private var wordDeletionUndo: KeyboardEngine.WordDeletion?
 
   /// Catalog decoding, glyph checks and keyword indexing stay off the first-key
   /// path. Preview controllers share this work for the lifetime of the process.
@@ -163,6 +172,7 @@ public final class KeyboardController: NSObject {
     rootView.bar.onForget = { [weak self] in self?.forget($0) }
     rootView.bar.onMicrophone = { [weak self] in self?.startDictation() }
     rootView.bar.onSettings = { [weak self] in self?.host?.openApp(URL(string: "\(AppGroup.urlScheme)://settings")!) }
+    rootView.bar.onUndo = { [weak self] in self?.undoWordDeletion() }
     rootView.dictation.onStop = { [weak self] in self?.stopDictation() }
     rootView.dictation.onCancel = { [weak self] in self?.cancelDictation() }
     dictationObserver = DarwinNotifications.observe(DictationBridge.stateNotification) { [weak self] in
@@ -189,6 +199,7 @@ public final class KeyboardController: NSObject {
   public func hostWillAppear() {
     isVisible = true
     pendingEmojiPresentation = false
+    resetDeleteGesture()
     settings = settingsStore.load()
     engine.settings = settings
     KeyboardFeedback.current = haptics
@@ -211,6 +222,7 @@ public final class KeyboardController: NSObject {
   public func hostDidDisappear() {
     isVisible = false
     pendingEmojiPresentation = false
+    resetDeleteGesture()
     engine.save()
     recordDiagnostics()
     stopLevelUpdates()
@@ -287,8 +299,23 @@ public final class KeyboardController: NSObject {
     DispatchQueue.main.async { [weak self] in
       guard let self else { return }
       self.barUpdateScheduled = false
-      self.rootView.bar.setSuggestions(self.engine.suggestions.slots)
+      self.renderBar()
     }
+  }
+
+  /// The bar shows a delete swipe's preview, then Undo until the next edit,
+  /// and otherwise suggestions.
+  private func renderBar() {
+    if let preview = deletionPreview {
+      rootView.bar.showDeletionPreview(engine.traits.isPrivate ? nil : preview.text, words: preview.words)
+      return
+    }
+    if let undo = wordDeletionUndo, engine.canUndo(undo) {
+      rootView.bar.showUndo()
+      return
+    }
+    wordDeletionUndo = nil
+    rootView.bar.setSuggestions(engine.suggestions.slots)
   }
 
   private func recordDiagnostics() {
@@ -297,6 +324,7 @@ public final class KeyboardController: NSObject {
     Diagnostics.record("keyboard", "session", [
       "touches": stats.touches, "cancelled": stats.cancelled, "cancelledTapsKept": stats.cancelledTapsKept,
       "glides": stats.glides, "glideFallbacks": glideFallbacks, "cursorSlides": stats.cursorSlides,
+      "deleteSwipes": stats.deleteSwipes,
       "rolled": stats.rolled, "slowTouches": stats.slowTouches, "maxTouchDelayMs": Int(stats.maxTouchDelayMs),
       "activations": stats.activations, "retargets": stats.retargets,
       "releaseRetargets": stats.releaseRetargets, "functionDrifts": stats.functionDrifts,
@@ -327,6 +355,8 @@ public final class KeyboardController: NSObject {
 
   private func select(_ suggestion: Suggestion) {
     pendingEmojiPresentation = false
+    flushDeferredDelete()
+    wordDeletionUndo = nil
     engine.select(suggestion)
     sync()
   }
@@ -338,9 +368,33 @@ public final class KeyboardController: NSObject {
     sync()
   }
 
+  // MARK: Delete gestures
+
+  private func flushDeferredDelete() {
+    guard deferredDelete else { return }
+    deferredDelete = false
+    engine.deleteBackward()
+  }
+
+  private func resetDeleteGesture() {
+    deferredDelete = false
+    deleteStartContext = nil
+    deletionPreview = nil
+    wordDeletionUndo = nil
+  }
+
+  private func undoWordDeletion() {
+    guard let undo = wordDeletionUndo else { return }
+    wordDeletionUndo = nil
+    engine.undo(undo)
+    sync()
+  }
+
   // MARK: Emoji
 
   private func showEmoji() {
+    flushDeferredDelete()
+    wordDeletionUndo = nil
     if rootView.emoji == nil {
       guard let catalog = emojiCatalog else {
         pendingEmojiPresentation = true
@@ -359,6 +413,8 @@ public final class KeyboardController: NSObject {
 
   private func startDictation() {
     pendingEmojiPresentation = false
+    flushDeferredDelete()
+    wordDeletionUndo = nil
     rootView.mode = .dictation
     account = AccountSnapshot.load()
     guard host?.hasFullAccess == true, let bridge else {
@@ -507,11 +563,20 @@ extension KeyboardController: KeysViewDelegate {
     case .emoji: break
     default: pendingEmojiPresentation = false
     }
+    // Keep edits in touch order: a held delete's pending action lands first.
+    if key.action != .delete { flushDeferredDelete() }
+    wordDeletionUndo = nil
     feedback(for: key)
     switch key.action {
     case .shift:
       engine.shiftDown()
     case .delete:
+      deferredDelete = false
+      deleteStartContext = engine.contextBeforeCursor
+      if engine.deleteUndoesLastEdit {
+        deferredDelete = true
+        return
+      }
       engine.deleteBackward()
     case .page(let page):
       engine.page = page
@@ -570,6 +635,12 @@ extension KeyboardController: KeysViewDelegate {
 
   func keysViewRepeatDelete(_ view: KeysView, wholeWord: Bool) {
     if settings.sounds { UIDevice.current.playInputClick() }
+    if deferredDelete {
+      // The held press acts now; repeat continues from here.
+      flushDeferredDelete()
+      sync()
+      return
+    }
     if wholeWord { engine.deleteWordBackward() } else { engine.deleteBackward() }
     sync()
   }
@@ -594,6 +665,29 @@ extension KeyboardController: KeysViewDelegate {
 
   func keysViewFinishedPageSlide(_ view: KeysView) {
     engine.page = .letters
+    sync()
+  }
+
+  func keysViewDeleteEnded(_ view: KeysView) {
+    guard deferredDelete else { return }
+    flushDeferredDelete()
+    sync()
+  }
+
+  func keysView(_ view: KeysView, previewWordDeletion words: Int) {
+    // A swipe replaces the press's own action, including undoing a correction.
+    deferredDelete = false
+    let text = words > 0 ? engine.wordDeletionPreview(words: words) : ""
+    deletionPreview = text.isEmpty ? nil : (text, words)
+    if words > 0 { haptics.tick() }
+    renderBar()
+  }
+
+  func keysView(_ view: KeysView, commitWordDeletion words: Int) {
+    deferredDelete = false
+    deletionPreview = nil
+    wordDeletionUndo = engine.deleteWordsBackward(words, originalContext: deleteStartContext)
+    deleteStartContext = nil
     sync()
   }
 

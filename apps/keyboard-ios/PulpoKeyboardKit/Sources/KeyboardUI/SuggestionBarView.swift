@@ -7,6 +7,7 @@ final class SuggestionBarView: UIView {
   var onForget: ((Suggestion) -> Void)?
   var onMicrophone: (() -> Void)?
   var onSettings: (() -> Void)?
+  var onUndo: (() -> Void)?
 
   private var style: KeyboardStyle
   private let slots = (0..<3).map { _ in SlotControl() }
@@ -14,6 +15,10 @@ final class SuggestionBarView: UIView {
   private let microphone = UIButton(type: .system)
   private let settings = UIButton(type: .system)
   private let notice = NoticeView()
+  /// What a delete swipe will remove, while the finger is down.
+  private let deletionLabel = UILabel()
+  /// Puts back the words a delete swipe removed, until the next edit.
+  private let undo = UIButton(type: .system)
   private(set) var suggestions: [Suggestion] = []
   private var pendingForget: Suggestion?
 
@@ -37,6 +42,16 @@ final class SuggestionBarView: UIView {
     settings.accessibilityIdentifier = "keyboard-settings"
     settings.addTarget(self, action: #selector(settingsTapped), for: .touchUpInside)
     addSubview(settings)
+    deletionLabel.textAlignment = .center
+    deletionLabel.lineBreakMode = .byTruncatingHead
+    deletionLabel.accessibilityIdentifier = "deletion-preview"
+    deletionLabel.isHidden = true
+    addSubview(deletionLabel)
+    undo.accessibilityIdentifier = "undo-delete"
+    undo.accessibilityLabel = "Undo delete"
+    undo.addTarget(self, action: #selector(undoTapped), for: .touchUpInside)
+    undo.isHidden = true
+    addSubview(undo)
     notice.isHidden = true
     addSubview(notice)
     applyStyle(style)
@@ -54,13 +69,76 @@ final class SuggestionBarView: UIView {
     for divider in dividers { divider.backgroundColor = style.divider.cgColor }
     slots.forEach { $0.apply(style) }
     notice.apply(style)
-    setSuggestions(suggestions)
+    var configuration = UIButton.Configuration.plain()
+    configuration.image = UIImage(systemName: "arrow.uturn.backward", withConfiguration: UIImage.SymbolConfiguration(pointSize: 15, weight: .medium))
+    configuration.imagePadding = 6
+    configuration.attributedTitle = AttributedString("Undo", attributes: AttributeContainer([.font: style.suggestionFont]))
+    configuration.baseForegroundColor = style.label
+    configuration.background.backgroundColor = style.dark ? UIColor(white: 1, alpha: 0.14) : UIColor(white: 1, alpha: 0.75)
+    configuration.background.cornerRadius = 9
+    configuration.contentInsets = NSDirectionalEdgeInsets(top: 4, leading: 14, bottom: 4, trailing: 16)
+    undo.configuration = configuration
+    switch accessory {
+    case .suggestions: setSuggestions(suggestions)
+    case .deletion(let text, let words): showDeletionPreview(text, words: words)
+    case .undo: showUndo()
+    }
+  }
+
+  private enum Accessory: Equatable {
+    case suggestions
+    case deletion(String?, Int)
+    case undo
+  }
+  private var accessory = Accessory.suggestions
+
+  /// Replaces the suggestions with what a delete swipe will remove. `text` is
+  /// nil in private fields, which show only a count.
+  func showDeletionPreview(_ text: String?, words: Int) {
+    accessory = .deletion(text, words)
+    hideSuggestionSlots()
+    undo.isHidden = true
+    deletionLabel.isHidden = false
+    let symbol = NSTextAttachment(image: UIImage(systemName: "delete.left", withConfiguration: UIImage.SymbolConfiguration(pointSize: 15, weight: .regular))!.withTintColor(style.secondaryLabel, renderingMode: .alwaysOriginal))
+    let line = NSMutableAttributedString(attachment: symbol)
+    line.append(NSAttributedString(string: "  "))
+    let shown = text?.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "\n", with: " ")
+    if let shown, !shown.isEmpty {
+      line.append(NSAttributedString(string: shown, attributes: [
+        .font: style.suggestionFont, .foregroundColor: style.label,
+        .strikethroughStyle: NSUnderlineStyle.single.rawValue, .strikethroughColor: style.secondaryLabel,
+      ]))
+    } else {
+      line.append(NSAttributedString(string: words == 1 ? "1 word" : "\(words) words", attributes: [.font: style.suggestionFont, .foregroundColor: style.label]))
+    }
+    deletionLabel.attributedText = line
+    deletionLabel.accessibilityLabel = shown.map { "Delete \($0)" } ?? "Delete \(words) words"
+    setNeedsLayout()
+  }
+
+  /// Offers to put back what the last delete swipe removed.
+  func showUndo() {
+    accessory = .undo
+    hideSuggestionSlots()
+    deletionLabel.isHidden = true
+    undo.isHidden = false
+    setNeedsLayout()
+  }
+
+  private func hideSuggestionSlots() {
+    pendingForget = nil
+    slots.forEach { $0.isHidden = true }
+    dividers.forEach { $0.isHidden = true }
+    settings.isHidden = true
   }
 
   var microphoneVisible = true { didSet { setNeedsLayout() } }
 
   func setSuggestions(_ suggestions: [Suggestion]) {
     self.suggestions = suggestions
+    accessory = .suggestions
+    deletionLabel.isHidden = true
+    undo.isHidden = true
     pendingForget = nil
     let showSlots = !suggestions.isEmpty
     for (index, slot) in slots.enumerated() {
@@ -102,6 +180,11 @@ final class SuggestionBarView: UIView {
     }
     CATransaction.commit()
     notice.frame = bounds
+    let content = CGRect(x: 0, y: 0, width: bounds.width - micWidth - inset, height: bounds.height)
+    deletionLabel.frame = content.insetBy(dx: 16, dy: 0)
+    let undoSize = undo.sizeThatFits(CGSize(width: content.width, height: bounds.height))
+    let undoHeight = min(bounds.height - 8, max(30, undoSize.height))
+    undo.frame = CGRect(x: content.midX - undoSize.width / 2, y: (bounds.height - undoHeight) / 2, width: undoSize.width, height: undoHeight)
   }
 
   func setMicrophoneActive(_ active: Bool) {
@@ -145,6 +228,11 @@ final class SuggestionBarView: UIView {
 
   @objc private func settingsTapped() {
     onSettings?()
+  }
+
+  @objc private func undoTapped() {
+    KeyboardFeedback.current?.key(function: true)
+    onUndo?()
   }
 }
 

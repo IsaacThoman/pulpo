@@ -20,6 +20,19 @@ protocol KeysViewDelegate: AnyObject {
   func keysViewDidLayout(_ view: KeysView)
   var keysViewAllowsGlide: Bool { get }
   var keysViewShowsPopups: Bool { get }
+  /// Delete was released without sliding into a word swipe (also after repeats).
+  func keysViewDeleteEnded(_ view: KeysView)
+  /// Sliding left from delete selects whole words; `words` is 0 when the finger
+  /// returns to the key, which cancels.
+  func keysView(_ view: KeysView, previewWordDeletion words: Int)
+  /// The finger lifted from a delete swipe: delete the previewed words.
+  func keysView(_ view: KeysView, commitWordDeletion words: Int)
+}
+
+extension KeysViewDelegate {
+  func keysViewDeleteEnded(_ view: KeysView) {}
+  func keysView(_ view: KeysView, previewWordDeletion words: Int) {}
+  func keysView(_ view: KeysView, commitWordDeletion words: Int) {}
 }
 
 /// The key grid. Handles all touches itself so typing is never delayed by gesture
@@ -47,6 +60,7 @@ final class KeysView: UIView {
     var cancelledTapsKept = 0
     var glides = 0
     var cursorSlides = 0
+    var deleteSwipes = 0
     var rolled = 0
     var activations = 0
     var retargets = 0
@@ -58,7 +72,7 @@ final class KeysView: UIView {
   var stats = Stats()
 
   private final class Tracking {
-    enum Mode { case tap, glide, alternates, cursor, delete, inputMode }
+    enum Mode { case tap, glide, alternates, cursor, delete, deleteSwipe, inputMode }
     let touch: UITouch
     let began = CACurrentMediaTime()
     var keyIndex: Int
@@ -76,6 +90,8 @@ final class KeysView: UIView {
     var committed = false
     var fromPageKey = false
     var cursorMoved = false
+    /// Words a delete swipe currently selects.
+    var deleteWords = 0
     /// How many points the trail has drawn.
     var trailed = 0
 
@@ -303,6 +319,8 @@ final class KeysView: UIView {
         }
         move(tracking, to: departure ?? touch.location(in: self), event: event)
       }
+      // A quick flick off delete can arrive entirely in the lift's batch.
+      if tracking.mode == .delete { move(tracking, to: touch.location(in: self), event: event) }
       end(tracking, at: touch.location(in: self), event: event, cancelled: false)
     }
   }
@@ -338,7 +356,7 @@ final class KeysView: UIView {
     stats.maxTouchDelayMs = max(stats.maxTouchDelayMs, delay)
     if delay > 50 { stats.slowTouches += 1 }
     // A second finger during a swipe is a stray palm; ignore it.
-    if trackings.values.contains(where: { $0.mode == .glide }) { return }
+    if trackings.values.contains(where: { $0.mode == .glide || $0.mode == .deleteSwipe }) { return }
     let point = touch.location(in: self)
     // Commit earlier text before handling the new key, including spaces and before
     // touch-down actions such as delete/page. A committed finger is inert until lift.
@@ -404,7 +422,17 @@ final class KeysView: UIView {
         delegate?.keysView(self, moveCursor: offset)
       }
     case .delete:
-      break
+      // Like Gboard, sliding left from delete selects whole words. Only before
+      // repeat starts, and only for a lone finger, so rolls are never misread.
+      // The lift path has already removed this finger from `trackings`.
+      guard !layout.isNumberPad, tracking.repeats == 0, !trackings.values.contains(where: { $0 !== tracking }),
+            deleteSwipeWords(from: tracking.start, to: point) > 0 else { return }
+      stats.deleteSwipes += 1
+      tracking.mode = .deleteSwipe
+      tracking.timer?.invalidate()
+      updateDeleteSwipe(tracking, to: point)
+    case .deleteSwipe:
+      updateDeleteSwipe(tracking, to: point)
     case .glide:
       trail.add(tracking.points[tracking.trailed...])
       tracking.trailed = tracking.points.count
@@ -468,7 +496,13 @@ final class KeysView: UIView {
         activate(key, at: point)
       }
     case .delete:
-      break
+      delegate?.keysViewDeleteEnded(self)
+    case .deleteSwipe:
+      if !cancelled, tracking.deleteWords > 0 {
+        delegate?.keysView(self, commitWordDeletion: tracking.deleteWords)
+      } else if tracking.deleteWords > 0 {
+        delegate?.keysView(self, previewWordDeletion: 0)
+      }
     case .glide:
       trail.finish()
       if !cancelled {
@@ -535,8 +569,25 @@ final class KeysView: UIView {
     KeyboardFeedback.current?.emphasis()
   }
 
+  /// Words selected by a delete swipe: the first once the finger is clearly off
+  /// the key's center (beyond any thumb roll), then one more per key width,
+  /// close to Gboard's spacing.
+  func deleteSwipeWords(from start: CGPoint, to point: CGPoint) -> Int {
+    let distance = start.x - point.x
+    let entry = pitch.width * 0.6
+    guard distance >= entry, pitch.width > 0 else { return 0 }
+    return 1 + Int((distance - entry) / pitch.width)
+  }
+
+  private func updateDeleteSwipe(_ tracking: Tracking, to point: CGPoint) {
+    let words = deleteSwipeWords(from: tracking.start, to: point)
+    guard words != tracking.deleteWords else { return }
+    tracking.deleteWords = words
+    delegate?.keysView(self, previewWordDeletion: words)
+  }
+
   private func repeatDelete(_ tracking: Tracking) {
-    guard trackings[ObjectIdentifier(tracking.touch)] != nil else { return }
+    guard trackings[ObjectIdentifier(tracking.touch)] != nil, tracking.mode == .delete else { return }
     tracking.repeats += 1
     // After a short run of characters, delete whole words, like the system keyboard.
     let wholeWord = tracking.repeats > 14
@@ -600,6 +651,9 @@ final class KeysView: UIView {
     for tracking in cancelled where tracking.initialKey.action == .shift {
       delegate?.keysViewShiftUp(self)
     }
+    if cancelled.contains(where: { $0.mode == .deleteSwipe && $0.deleteWords > 0 }) {
+      delegate?.keysView(self, previewWordDeletion: 0)
+    }
   }
 
   private func schedule(after delay: TimeInterval, _ action: @escaping @MainActor () -> Void) -> Timer {
@@ -621,7 +675,10 @@ final class KeysView: UIView {
     delegate?.keysView(self, touchDown: view.key)
     if view.key.action == .shift { delegate?.keysViewShiftUp(self); return }
     if case .page = view.key.action { return }
-    if view.key.action == .delete { return }
+    if view.key.action == .delete {
+      delegate?.keysViewDeleteEnded(self)
+      return
+    }
     delegate?.keysView(self, activate: view.key, at: CGPoint(x: view.frame.midX, y: view.frame.midY))
   }
 }
