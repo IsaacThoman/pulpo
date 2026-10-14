@@ -33,6 +33,10 @@ open PulpoKeyboard.xcodeproj
 From the repository root, `npm run keyboard:test` runs the engine tests and
 `npm run keyboard:build` builds the app for the simulator.
 
+The app icon references the shared `apps/mobile/assets/PulpoKeyboard.icon`
+Icon Composer asset. Build with Xcode 26 or later and XcodeGen 2.45.1 or later;
+Xcode also generates raster icon variants for iOS 18 from this asset.
+
 To use the keyboard on a simulator or device, run the app, then in Settings go to
 General › Keyboard › Keyboards › Add New Keyboard, pick Pulpo Keyboard, open it and
 turn on Allow Full Access. The app's Try It screen also has an in-app preview that runs
@@ -105,10 +109,11 @@ it the keyboard still types, corrects, predicts and swipes using defaults.
 ## Tests
 
 ```bash
-cd apps/keyboard-ios/PulpoKeyboardKit && swift test -c release
+cd apps/keyboard-ios/PulpoKeyboardKit && swift test -c release --no-parallel
 ```
 
-Covers dictionary loading, spelling and literal-preservation cases, contextual predictions,
+The suites run serially so their timing checks do not compete with other swipe
+benchmarks. Covers dictionary loading, spelling and literal-preservation cases, contextual predictions,
 the typing state machine, a full personal dictionary, and independent noisy swipe sets.
 For the reproducible quality audit and Gboard comparison, see
 [the keyboard quality audit](QUALITY_AUDIT.md).

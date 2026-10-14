@@ -26,6 +26,9 @@ targets:
     platform: iOS
     sources:
       - path: App
+      - path: ../mobile/assets/PulpoKeyboard.icon
+        type: file
+        buildPhase: resources
     dependencies:
       - target: PulpoKeyboardExtension
       - package: PulpoKeyboardKit
@@ -64,7 +67,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.isaacthoman.pulpo.keyboard
         PRODUCT_NAME: PulpoKeyboard
         SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor
-        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_APPICON_NAME: PulpoKeyboard
         ENABLE_PREVIEWS: YES
   PulpoKeyboardExtension:
     type: app-extension

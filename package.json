@@ -42,7 +42,7 @@
     "preview": "npm run preview -w @pulpo/web",
     "dev:android": "npm run android -w @pulpo/mobile",
     "keyboard:generate": "cd apps/keyboard-ios && xcodegen generate",
-    "keyboard:test": "cd apps/keyboard-ios/PulpoKeyboardKit && swift test -c release",
+    "keyboard:test": "cd apps/keyboard-ios/PulpoKeyboardKit && swift test -c release --no-parallel",
     "keyboard:build": "npm run keyboard:generate && xcodebuild -project apps/keyboard-ios/PulpoKeyboard.xcodeproj -scheme PulpoKeyboard -destination 'generic/platform=iOS Simulator' -derivedDataPath apps/keyboard-ios/build/DerivedData build"
   },
   "devDependencies": {
