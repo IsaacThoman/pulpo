@@ -378,7 +378,7 @@ describe('dropping items dragged from Files', () => {
   it('files them into a folder from its middle, and beside it from its edges', () => {
     const nodes = [fromFiles('n1')]
     dropFromFiles(nodes, folderRow('f2'), 285)
-    expect(sidebarActions.moveSidebarSelection).toHaveBeenCalledWith(['n1'], 'f2', { unpin: true, nodes })
+    expect(sidebarActions.moveSidebarSelection).toHaveBeenCalledWith(['n1'], 'f2', { unpin: true })
     dropFromFiles(nodes, folderRow('f2'), 271)
     expect(sidebarActions.orderSidebarItems).toHaveBeenCalledWith('chats', ['a', 'f1', 'b', 'doc-1', 'n1', 'f2', 's-proj', 'c'], nodes)
     dropFromFiles(nodes, folderRow('projects'), 329)
@@ -388,7 +388,7 @@ describe('dropping items dragged from Files', () => {
   it('files them into an open folder from the bottom edge of its header too', () => {
     const nodes = [fromFiles('n1')]
     dropFromFiles(nodes, folderRow('f2'), 299)
-    expect(sidebarActions.moveSidebarSelection).toHaveBeenCalledWith(['n1'], 'f2', { unpin: true, nodes })
+    expect(sidebarActions.moveSidebarSelection).toHaveBeenCalledWith(['n1'], 'f2', { unpin: true })
     expect(sidebarActions.orderSidebarItems).not.toHaveBeenCalled()
   })
 

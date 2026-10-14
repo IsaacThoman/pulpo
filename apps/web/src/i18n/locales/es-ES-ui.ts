@@ -1875,8 +1875,6 @@ const esUi: Record<string, string> = {
   "Move {{0}} items": "Mover {{0}} elementos",
   "Moved \"{{0}}\" and kept both copies": "Se movió «{{0}}» y se conservaron ambas copias",
   "Moved {{0}} items; some were renamed to keep both": "Se movieron {{0}} elementos; algunos se renombraron para conservar ambos",
-  "Moved \"{{0}}\"": "Se movió «{{0}}»",
-  "Moved {{0}} items": "Se movieron {{0}} elementos",
   "Duplicated \"{{0}}\"": "Se duplicó «{{0}}»",
   "Duplicated {{0}} items": "Se duplicaron {{0}} elementos",
   "Pasted \"{{0}}\"": "Se pegó «{{0}}»",
