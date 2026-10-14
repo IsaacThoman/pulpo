@@ -179,6 +179,30 @@ describe('pulpo files over the relay socket', () => {
     expect(sizes).toEqual([200, 5])
   })
 
+  it('after mv, a plain push of an edited copy reports the move instead of recreating the item', async () => {
+    const { run, calls, context, put, manifest } = await harness((call) => {
+      if (call.command === 'pull') return pullPlan()(call)
+      if (call.command === 'mv') return { body: { ok: true, output: 'Moved Projects/Plan.md into Archive' } }
+      const items = call.args.items as Array<{ local: string; remote: string }>
+      return { body: { ok: true, output: 'created', data: { results: items.map(({ local, remote }) => ({ local, remote, status: 'created', message: '', nodeId: 'node-9', version: 'v9' })) } } }
+    })
+    const local = join(context.mirrorRoot, 'Projects/Plan.md')
+    await run('pull', 'Projects/Plan.md')
+    await put(local, '# Plan\n\nEdited.\n')
+
+    expect((await run('mv', 'Projects/Plan.md', 'Archive')).stdout).toContain(`Kept ${local}: it has unpushed edits. Pull the new path`)
+    expect((await run('status')).stdout).toBe(`Moved or trashed in Files (push with --to <path>, pull the new path, or delete the copy):\n  Projects/Plan.md (moved to "Archive")  (${local})\n`)
+    expect(await run('push')).toEqual({
+      code: 1, stderr: '',
+      stdout: 'skipped Projects/Plan.md: Projects/Plan.md was moved in Files (to "Archive"). Pull it from its new path, or push this copy with --to <path>.\n',
+    })
+    expect(calls.filter((call) => call.command === 'push')).toEqual([])
+
+    expect((await run('push', local, '--to', 'Archive/Plan.md')).code).toBe(0)
+    expect(calls.at(-1)?.args).toEqual({ items: [{ local, remote: 'Archive/Plan.md', base: null }] })
+    expect(await manifest()).toEqual({ version: 1, files: { [local]: { remote: 'Archive/Plan.md', nodeId: 'node-9', version: 'v9', sha256: sha('# Plan\n\nEdited.\n') } } })
+  })
+
   it('after rm and mv forgets the old path and removes unchanged mirror copies', async () => {
     const { run, context, manifest, put } = await harness(async (call) => {
       if (call.command !== 'pull') return { body: { ok: true, output: `${call.command} done` } }
