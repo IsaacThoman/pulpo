@@ -259,7 +259,7 @@ export async function purgeSuggestedInTx(tx: DatabaseTransaction, effects: Commi
       await moveNodeInTx(tx, userId, node, { parentId: root.parentId, name: node.name, onConflict: 'rename' })
     }
   }
-  effects.closedDocs.push({ ids: await purgeNodesInTx(tx, userId, rootIds), reason: 'deleted' })
+  effects.closedDocs.push({ ids: await purgeNodesInTx(tx, userId, rootIds, effects.deletedKeys), reason: 'deleted' })
 }
 
 export async function trashChange(reply: ReplyContext, nodeId: string, mode: ChangeMode): Promise<'trashed' | 'suggested' | 'withdrawn'> {

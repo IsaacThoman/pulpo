@@ -222,10 +222,14 @@ describe.skipIf(!enabled)('agent file changes', () => {
       await files.attach({ [projects]: 'suggest' })
       await files.ok('mkdir', { path: 'Projects/New' })
       const [suggested] = await db.select().from(fileNodes).where(eq(fileNodes.parentId, projects)).then((rows) => rows.filter((row) => row.name === 'New'))
+      const added = await pushFile('/workspace/added.txt', 'Projects/New/added.txt', 'added')
+      const addedKey = (await files.node(added.nodeId))!.objectKey!
       // The owner files something of their own inside the suggested folder.
       await moveFileNodes(files.userId, [{ id: mine, parentId: suggested!.id }])
       expect(await reviewNodeSuggestion(files.userId, suggested!.id, 'reject')).toEqual({ node: null })
       expect(await files.node(suggested!.id)).toBeUndefined()
+      expect(await files.node(added.nodeId)).toBeUndefined()
+      expect(objects.has(addedKey)).toBe(false)
       expect(await files.node(mine)).toMatchObject({ parentId: projects, trashedAt: null })
       expect(await files.content(mine)).toBe('mine')
     })

@@ -407,10 +407,12 @@ export async function listTrash(userId: string): Promise<FileNode[]> {
 /**
  * Permanently deletes items and everything below them, live or trashed, inside a tree
  * transaction. Stored objects (current contents and kept versions) go before rows so a failed
- * purge can be retried without orphaning blobs. Returns the purged document ids so open editors
- * can be closed after commit. Callers decide what may be purged.
+ * purge can be retried without orphaning blobs; a transaction that does more work after the
+ * purge passes `deferredKeys` instead and deletes them after commit, so a rollback never leaves
+ * rows without their objects. Returns the purged document ids so open editors can be closed
+ * after commit. Callers decide what may be purged.
  */
-export async function purgeNodesInTx(tx: DatabaseTransaction, userId: string, rootIds: string[]): Promise<string[]> {
+export async function purgeNodesInTx(tx: DatabaseTransaction, userId: string, rootIds: string[], deferredKeys?: string[]): Promise<string[]> {
   if (!rootIds.length) return []
   const ids = new Set<string>()
   for (const rootId of rootIds) for (const row of await subtree(tx, userId, rootId)) ids.add(row.id)
@@ -419,8 +421,9 @@ export async function purgeNodesInTx(tx: DatabaseTransaction, userId: string, ro
     .where(and(eq(fileNodes.ownerUserId, userId), inArray(fileNodes.id, [...ids])))
   const versions = await tx.select({ key: fileVersions.objectKey }).from(fileVersions)
     .where(and(eq(fileVersions.userId, userId), inArray(fileVersions.nodeId, [...ids])))
-  for (const row of rows) if (row.key) await getBlobStore().delete(row.key)
-  for (const version of versions) await getBlobStore().delete(version.key)
+  const keys = [...rows.flatMap((row) => row.key ?? []), ...versions.map((version) => version.key)]
+  if (deferredKeys) deferredKeys.push(...keys)
+  else for (const key of keys) await getBlobStore().delete(key)
   // Children, document state, update logs, versions, and change rows cascade from their nodes.
   await tx.delete(fileNodes).where(and(eq(fileNodes.ownerUserId, userId), inArray(fileNodes.id, rootIds)))
   return rows.filter((row) => row.kind === 'doc').map((row) => row.id)
