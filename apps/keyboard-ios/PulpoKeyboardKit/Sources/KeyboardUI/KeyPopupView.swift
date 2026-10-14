@@ -10,6 +10,9 @@ final class KeyPopupView: UIView {
   private(set) var selectedIndex = 0
   private var bubble: CGRect = .zero
   private var cellWidth: CGFloat = 0
+  /// The displayed index of the default option, above the key.
+  private(set) var baseIndex = 0
+  private var anchorX: CGFloat = 0
   private var style: KeyboardStyle
 
   init(style: KeyboardStyle) {
@@ -29,18 +32,41 @@ final class KeyPopupView: UIView {
 
   /// Shows a single character above `keyRect` (in this view's superview coordinates).
   func showPreview(_ text: String, keyRect: CGRect, in bounds: CGRect, style: KeyboardStyle) {
-    configure(options: [text], keyRect: keyRect, in: bounds, style: style, cell: keyRect.width + 20, preferredIndex: 0)
+    configure(options: [text], keyRect: keyRect, in: bounds, style: style, cell: keyRect.width + 20, rightward: nil)
     selection.isHidden = true
   }
 
-  /// Shows alternates and selects the one nearest the finger.
-  func showAlternates(_ options: [String], keyRect: CGRect, in bounds: CGRect, style: KeyboardStyle) {
-    configure(options: options, keyRect: keyRect, in: bounds, style: style, cell: max(keyRect.width, 30), preferredIndex: 0)
+  /// Shows alternates with the first option selected. The strip opens away from
+  /// the nearer screen edge; when it opens leftward the order is mirrored, as on
+  /// the system keyboard and Gboard, so the first option sits above the key.
+  /// Selection then follows the finger relative to `anchorX` (default: the key's
+  /// center), so a long press released in place types the first option.
+  func showAlternates(_ options: [String], keyRect: CGRect, in bounds: CGRect, style: KeyboardStyle, anchorX: CGFloat? = nil) {
+    let layout = Self.stripLayout(keyRect: keyRect, in: bounds, count: options.count)
+    let display = layout.rightward ? options : options.reversed()
+    configure(options: display, keyRect: keyRect, in: bounds, style: style, cell: layout.cell, rightward: display.count > 1 ? layout.rightward : nil)
+    baseIndex = layout.rightward ? 0 : max(display.count - 1, 0)
+    self.anchorX = anchorX ?? keyRect.midX
     selection.isHidden = false
-    select(0)
+    select(baseIndex)
   }
 
-  private func configure(options: [String], keyRect: CGRect, in bounds: CGRect, style: KeyboardStyle, cell: CGFloat, preferredIndex: Int) {
+  /// Which way a strip opens and how wide its cells are. Cells match the key
+  /// unless that would leave the screen; wide keys such as .com then narrow
+  /// their cells to fit on the roomier side, keeping the first option over the key.
+  static func stripLayout(keyRect: CGRect, in bounds: CGRect, count: Int) -> (rightward: Bool, cell: CGFloat) {
+    let natural = max(keyRect.width, 30)
+    let count = CGFloat(max(count, 1))
+    let rightRoom = bounds.maxX - 2 - (keyRect.minX - 4) - 8
+    let leftRoom = keyRect.maxX + 4 - (bounds.minX + 2) - 8
+    if natural * count <= rightRoom { return (true, natural) }
+    if natural * count <= leftRoom { return (false, natural) }
+    let rightward = rightRoom >= leftRoom
+    return (rightward, max(30, (rightward ? rightRoom : leftRoom) / count))
+  }
+
+  /// `rightward` is nil for a single centered balloon.
+  private func configure(options: [String], keyRect: CGRect, in bounds: CGRect, style: KeyboardStyle, cell: CGFloat, rightward: Bool?) {
     self.style = style
     self.options = options
     cellWidth = cell
@@ -49,9 +75,13 @@ final class KeyPopupView: UIView {
     let neck = min(11, max(4, available * 0.2))
     let height = min(keyRect.height + 12, available - neck)
     let width = cell * CGFloat(options.count) + (options.count > 1 ? 8 : 0)
-    var x = options.count > 1 ? keyRect.minX - 4 : keyRect.midX - width / 2
-    if x + width > bounds.maxX - 2 { x = options.count > 1 ? keyRect.maxX + 4 - width : bounds.maxX - 2 - width }
-    x = max(bounds.minX + 2, x)
+    var x: CGFloat
+    switch rightward {
+    case true?: x = keyRect.minX - 4
+    case false?: x = keyRect.maxX + 4 - width
+    case nil: x = keyRect.midX - width / 2
+    }
+    x = max(bounds.minX + 2, min(x, bounds.maxX - 2 - width))
     bubble = CGRect(x: x, y: keyRect.minY - neck - height, width: width, height: height)
 
     let radius = style.cornerRadius + 2
@@ -93,6 +123,7 @@ final class KeyPopupView: UIView {
       label.minimumScaleFactor = 0.5
       let cellX = options.count > 1 ? bubble.minX + 4 + CGFloat(index) * cell : bubble.minX
       label.frame = CGRect(x: cellX, y: bubble.minY, width: options.count > 1 ? cell : bubble.width, height: bubble.height)
+        .insetBy(dx: options.count > 1 ? 2 : 0, dy: 0)
       addSubview(label)
       return label
     }
@@ -102,10 +133,13 @@ final class KeyPopupView: UIView {
     isHidden = false
   }
 
-  /// Picks the alternate under `x` (superview coordinates).
+  /// Picks an alternate by how far the finger has moved from where the strip
+  /// opened (superview coordinates): one cell per option.
   func track(x: CGFloat) {
-    guard options.count > 1 else { return }
-    let index = Int(((x - bubble.minX - 4) / cellWidth).rounded(.down))
+    guard options.count > 1, cellWidth > 0 else { return }
+    let steps = ((x - anchorX) / cellWidth).rounded()
+    guard steps.isFinite else { return }
+    let index = baseIndex + Int(max(-100, min(100, steps)))
     select(min(max(index, 0), options.count - 1))
   }
 

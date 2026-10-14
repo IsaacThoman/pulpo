@@ -84,3 +84,33 @@ enum TouchPath {
     if !ok { throw error ?? NSError(domain: "TouchPath", code: 1) }
   }
 }
+
+/// Types through the in-app keyboard preview from a clean state.
+@MainActor
+class PreviewTypingTestCase: XCTestCase {
+  var app: XCUIApplication!
+
+  override func setUp() {
+    continueAfterFailure = false
+    app = XCUIApplication()
+    app.launchArguments = ["-PKPreview", "-PKResetLearning", "-PKResetSettings"]
+    app.launch()
+    XCTAssertTrue(app.key("key-q").waitForExistence(timeout: 8))
+  }
+
+  func waitForText(_ expected: String, timeout: TimeInterval = 3, file: StaticString = #filePath, line: UInt = #line) {
+    let deadline = Date().addingTimeInterval(timeout)
+    while Date() < deadline, app.previewText != expected { usleep(100_000) }
+    XCTAssertEqual(app.previewText, expected, file: file, line: line)
+  }
+
+  /// Empties the field with the Try It screen's Clear button.
+  func clearText() {
+    let button = app.navigationBars.buttons["Clear"]
+    if button.exists, button.isEnabled { button.tap() }
+    waitForText("")
+  }
+
+  /// The distance between neighboring letter keys.
+  var keyPitch: CGFloat { app.key("key-w").frame.minX - app.key("key-q").frame.minX }
+}

@@ -564,8 +564,10 @@ final class KeysView: UIView {
     options = options.map { upper && $0.first?.isLetter == true ? $0.uppercased() : $0 }
     tracking.mode = .alternates
     let popup = ensurePopup(in: host)
-    popup.showAlternates(options, keyRect: convert(view.frame, to: host), in: host.bounds, style: style)
-    if let point = tracking.points.last { popup.track(x: convert(point, to: host).x) }
+    // Selection moves relative to where the finger rests now, so releasing in
+    // place types the first option (the base letter, or the digit with hints).
+    let finger = tracking.points.last.map { convert($0, to: host).x }
+    popup.showAlternates(options, keyRect: convert(view.frame, to: host), in: host.bounds, style: style, anchorX: finger)
     KeyboardFeedback.current?.emphasis()
   }
 
