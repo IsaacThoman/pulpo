@@ -1,12 +1,13 @@
 import type { DragEvent, MouseEvent, PointerEvent } from 'react'
 import type { FileNode } from '@pulpo/contracts'
-import { MoreHorizontal } from 'lucide-react'
-import { uit } from '@/i18n/ui'
+import { MoreHorizontal, Pin } from 'lucide-react'
+import { ui, uit } from '@/i18n/ui'
 import { formatBytes } from '@/lib/attachments'
 import { timeAgo } from '@/lib/format'
 import { cn } from '@/lib/utils'
-import { fileKindLabel } from '../file-display'
+import { dropFolderOf, fileKindLabel } from '../file-display'
 import { FileNodeIcon } from '../FileNodeIcon'
+import { SuggestedBadge } from '../FileSuggestion'
 import { InlineRename } from './InlineRename'
 
 export interface FileDropHandlers {
@@ -60,12 +61,22 @@ export function FileItem(props: FileItemProps) {
       <MoreHorizontal className="size-4" />
     </button>
   )
+  // Pinned items are also listed under Pinned at the top of the sidebar.
+  const pin = node.pinned && (
+    <Pin
+      role="img"
+      aria-label={ui("Pinned to the sidebar")}
+      className={cn('size-3.5 shrink-0 text-muted-foreground', view === 'grid' ? 'absolute top-2.5 left-2.5' : '-ml-1.5')}
+    >
+      <title>{ui("Pinned to the sidebar")}</title>
+    </Pin>
+  )
   const shared = {
     'data-file-id': node.id,
     role: 'option' as const,
     'aria-selected': selected,
     // Folders are drop targets for items dragged within Files (see useItemDrag).
-    'data-drop-target': node.kind === 'folder' ? node.id : undefined,
+    'data-drop-target': dropFolderOf(node),
     draggable: false,
     onPointerDown: props.onPointerDown,
     onClick: props.onClick,
@@ -90,6 +101,8 @@ export function FileItem(props: FileItemProps) {
       >
         <FileNodeIcon node={node} className="size-11" />
         {name}
+        {node.suggestion && <SuggestedBadge className={cn('absolute top-1.5 bg-background/80', node.pinned ? 'left-7' : 'left-1.5')} />}
+        {pin}
         <div className="absolute top-1 right-1">{menuButton}</div>
       </div>
     )
@@ -111,10 +124,12 @@ export function FileItem(props: FileItemProps) {
       <span className="flex min-w-0 items-center gap-3 py-2">
         <FileNodeIcon node={node} className="size-5" />
         {name}
+        {node.suggestion && !renaming && <SuggestedBadge />}
+        {!renaming && pin}
       </span>
       <span className="hidden truncate text-sm text-muted-foreground @2xl:block">{timeAgo(Date.parse(node.updatedAt))}</span>
       <span className="hidden truncate text-sm text-muted-foreground @2xl:block">{fileKindLabel(node)}</span>
-      <span className="hidden text-right text-sm text-muted-foreground tabular-nums @lg:block">{node.kind === 'folder' ? '—' : formatBytes(node.sizeBytes)}</span>
+      <span className="hidden text-right text-sm text-muted-foreground tabular-nums @lg:block">{node.kind === 'folder' || node.kind === 'chat' || node.kind === 'shortcut' ? '—' : formatBytes(node.sizeBytes)}</span>
       {menuButton}
     </div>
   )

@@ -1,7 +1,8 @@
 import { and, asc, desc, eq, inArray, isNotNull, isNull, lt, ne, sql } from 'drizzle-orm'
-import { FILE_TREE_MAX_DEPTH, isMarkdownName, nextAvailableName, type FileListing, type FileNode, type FileNodeKind } from '@pulpo/contracts'
+import { FILE_TREE_MAX_DEPTH, isMarkdownName, nextAvailableName, type FileColor, type FileIcon, type FileListing, type FileNode, type FileNodeKind, type FileSystemRole, type StateInvalidationScope } from '@pulpo/contracts'
+import { assertStorageCapacity } from '../attachments/storage-quota.js'
 import { db } from '../database/client.js'
-import { fileNodes } from '../database/schema.js'
+import { chats, fileNodes, fileVersions } from '../database/schema.js'
 import { bumpAccountRevisions, publishScopedStateChanges, type AccountRevisionChange } from '../friends/sync.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
@@ -9,6 +10,10 @@ import { getBlobStore } from '../storage/index.js'
 import { resolveFileAccess, type FileExecutor, type FileNodeRow } from './access.js'
 import { convertDocToBlobInTx } from './conversion.js'
 import { publishDocsClosed } from './doc-events.js'
+import { chatsFolderIdOf, chatToFileNode, liveChatIds, listFolderChats, moveChatsInTx } from './chat-items.js'
+import { recoverChats, trashChats } from '../chats/trash-service.js'
+import { toFileNodes } from './shortcuts.js'
+import { topSortOrder } from './order.js'
 
 type DatabaseTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0]
 
@@ -28,8 +33,20 @@ export function toFileNode(row: FileNodeRow): FileNode {
     trashedAt: row.trashedAt?.toISOString() ?? null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
+    systemRole: (row.systemRole as FileSystemRole | null) ?? null,
+    color: (row.color as FileColor | null) ?? null,
+    icon: (row.icon as FileIcon | null) ?? null,
+    sortOrder: row.sortOrder,
+    pinned: row.pinned,
+    suggestion: row.suggestionChangeId ? { changeId: row.suggestionChangeId } : null,
   }
 }
+
+export const systemFolderLocked = () =>
+  new AppError(400, 'file_system_folder', 'This folder is built in and cannot be renamed, moved, trashed, or recolored')
+
+/** Changes to Files that also move or trash chats must refresh chat lists too. */
+const CHAT_SCOPES: StateInvalidationScope[] = ['files', 'folders', 'chats']
 
 export const nameConflict = (name: string) =>
   new AppError(409, 'file_name_conflict', `An item named "${name}" already exists here`)
@@ -38,16 +55,26 @@ export async function lockFileTree(tx: DatabaseTransaction, userId: string): Pro
   await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`pulpo-files:${userId}`}))`)
 }
 
-/** Runs a tree mutation under the account's Files lock, then tells the account's other sessions to refetch. */
-export async function mutateFileTree<T>(userId: string, mutation: (tx: DatabaseTransaction) => Promise<T>): Promise<T> {
+/**
+ * Runs a tree mutation under the account's Files lock, then tells the account's other sessions to
+ * refetch. With `reserveBytes`, the account's storage lock is taken first and the allowance checked.
+ */
+export async function mutateFileTree<T>(
+  userId: string,
+  mutation: (tx: DatabaseTransaction) => Promise<T>,
+  scopes: StateInvalidationScope[] = ['files', 'folders'],
+  options: { reserveBytes?: number } = {},
+): Promise<T> {
   let changes: AccountRevisionChange[] = []
   const result = await db.transaction(async (tx) => {
+    // Storage before tree, matching upload reservations, so the two locks cannot deadlock.
+    if (options.reserveBytes !== undefined) await assertStorageCapacity(tx, userId, options.reserveBytes, { perFileLimit: false })
     await lockFileTree(tx, userId)
     const value = await mutation(tx)
     changes = await bumpAccountRevisions(tx, [userId])
     return value
   })
-  await publishScopedStateChanges(changes, ['files'])
+  await publishScopedStateChanges(changes, scopes)
   return result
 }
 
@@ -134,13 +161,14 @@ export async function listFolder(userId: string, parentId: string | null): Promi
       eq(fileNodes.status, 'ready'),
     )).orderBy(desc(sql`${fileNodes.kind} = 'folder'`), asc(sql`lower(${fileNodes.name})`)),
   ])
-  return { folder: folder && toFileNode(folder), ancestors: ancestors.map(toFileNode), children: children.map(toFileNode) }
+  const chatItems = await listFolderChats(db, userId, folder)
+  return { folder: folder && toFileNode(folder), ancestors: ancestors.map(toFileNode), children: [...await toFileNodes(db, userId, children), ...chatItems] }
 }
 
 export async function getFileNode(userId: string, id: string): Promise<{ node: FileNode; ancestors: FileNode[] }> {
   const access = await resolveFileAccess(db, userId, id)
   if (!access) throw notFound('File')
-  return { node: toFileNode(access.node), ancestors: (await ancestorsOf(db, userId, access.node)).map(toFileNode) }
+  return { node: (await toFileNodes(db, userId, [access.node]))[0]!, ancestors: (await ancestorsOf(db, userId, access.node)).map(toFileNode) }
 }
 
 export const treeTooDeep = () => new AppError(400, 'file_tree_too_deep', `Folders can be nested at most ${FILE_TREE_MAX_DEPTH} levels deep`)
@@ -150,37 +178,49 @@ export async function assertDestination(executor: FileExecutor, userId: string, 
   if (await destinationDepth(executor, userId, parentId) > FILE_TREE_MAX_DEPTH) throw treeTooDeep()
 }
 
+export async function createFolderInTx(tx: DatabaseTransaction, userId: string, input: {
+  parentId: string | null
+  name: string
+  suggestionChangeId?: string | null
+}): Promise<FileNodeRow> {
+  await assertDestination(tx, userId, input.parentId)
+  await assertNameAvailable(tx, userId, input.parentId, input.name)
+  const [created] = await tx.insert(fileNodes).values({
+    id: newId(), ownerUserId: userId, parentId: input.parentId, kind: 'folder', name: input.name,
+    sortOrder: await topSortOrder(tx, userId, input.parentId), suggestionChangeId: input.suggestionChangeId ?? null,
+  }).returning()
+  return created!
+}
+
 export async function createFolder(userId: string, input: { parentId: string | null; name: string }): Promise<FileNode> {
-  return mutateFileTree(userId, async (tx) => {
-    await assertDestination(tx, userId, input.parentId)
-    await assertNameAvailable(tx, userId, input.parentId, input.name)
-    const [created] = await tx.insert(fileNodes).values({
-      id: newId(), ownerUserId: userId, parentId: input.parentId, kind: 'folder', name: input.name,
-    }).returning()
-    return toFileNode(created!)
-  })
+  return mutateFileTree(userId, async (tx) => toFileNode(await createFolderInTx(tx, userId, input)))
 }
 
 const revisionConflict = () => new AppError(409, 'file_revision_conflict', 'This item changed on another device. Refresh and try again.')
+
+/** Checks that `node` can go into `parentId`: a live folder that is not inside it, within the depth limit. */
+export async function assertMovable(tx: DatabaseTransaction, userId: string, node: FileNodeRow, parentId: string | null): Promise<void> {
+  if (parentId === node.parentId) return
+  if (parentId && (await chainIds(tx, userId, parentId)).includes(node.id)) {
+    throw new AppError(400, 'file_move_cycle', 'A folder cannot be moved into itself')
+  }
+  const height = Math.max(...(await subtree(tx, userId, node.id)).map((row) => row.depth))
+  if (await destinationDepth(tx, userId, parentId) + height > FILE_TREE_MAX_DEPTH) throw treeTooDeep()
+}
 
 /**
  * Moves and/or renames one live node inside a tree transaction. On a name clash it either fails
  * (explicit renames) or keeps both by suffixing, the way file managers do for moves. Renaming an
  * editable document away from .md turns it into an ordinary file holding its Markdown.
  */
-async function moveNodeInTx(tx: DatabaseTransaction, userId: string, node: FileNodeRow, target: {
+export async function moveNodeInTx(tx: DatabaseTransaction, userId: string, node: FileNodeRow, target: {
   parentId: string | null
   name: string
   onConflict: 'fail' | 'rename'
 }): Promise<{ row: FileNodeRow; converted: boolean }> {
   if (node.status !== 'ready') throw notFound('File')
-  if (target.parentId !== node.parentId) {
-    if (target.parentId && (await chainIds(tx, userId, target.parentId)).includes(node.id)) {
-      throw new AppError(400, 'file_move_cycle', 'A folder cannot be moved into itself')
-    }
-    const height = Math.max(...(await subtree(tx, userId, node.id)).map((row) => row.depth))
-    if (await destinationDepth(tx, userId, target.parentId) + height > FILE_TREE_MAX_DEPTH) throw treeTooDeep()
-  }
+  if (node.systemRole && (target.parentId !== node.parentId || target.name !== node.name)) throw systemFolderLocked()
+  await assertMovable(tx, userId, node, target.parentId)
   if (target.parentId === node.parentId && target.name === node.name) return { row: node, converted: false }
   const taken = await liveSiblingNames(tx, userId, target.parentId, node.id)
   let name = target.name
@@ -188,8 +228,11 @@ async function moveNodeInTx(tx: DatabaseTransaction, userId: string, node: FileN
     if (target.onConflict === 'fail') throw nameConflict(name)
     name = nextAvailableName(name, taken)
   }
+  // Moved elsewhere, an item goes to the top of its new folder; a pinned one keeps its place in
+  // the pinned list.
   const [updated] = await tx.update(fileNodes).set({
     name, parentId: target.parentId, revision: sql`${fileNodes.revision} + 1`, updatedAt: new Date(),
+    ...target.parentId !== node.parentId && !node.pinned ? { sortOrder: await topSortOrder(tx, userId, target.parentId) } : {},
   }).where(eq(fileNodes.id, node.id)).returning()
   if (updated!.kind === 'doc' && !isMarkdownName(name)) return { row: await convertDocToBlobInTx(tx, userId, updated!), converted: true }
   return { row: updated!, converted: false }
@@ -214,14 +257,32 @@ export async function updateFileNode(userId: string, id: string, input: {
   name?: string
   parentId?: string | null
   expectedRevision?: number
+  /** With `rename`, a name already taken in the folder gets a " (n)" suffix instead of failing. */
+  onConflict?: 'fail' | 'rename'
+  color?: FileColor | null
+  icon?: FileIcon | null
 }): Promise<FileNode> {
+  const restyled = input.color !== undefined || input.icon !== undefined
+  if ((await liveChatIds(db, userId, [id])).size) {
+    if (restyled) throw new AppError(400, 'validation_error', 'Chats cannot be given a color or icon')
+    return updateChatItem(userId, id, input)
+  }
   const { node, converted } = await mutateFileTree(userId, async (tx) => {
-    const current = await liveNode(tx, userId, id)
+    let current = await liveNode(tx, userId, id)
     if (input.expectedRevision !== undefined && input.expectedRevision !== current.revision) throw revisionConflict()
+    if (restyled) {
+      if (current.systemRole) throw systemFolderLocked()
+      // Appearance is not content: the revision and modified time stay as they are.
+      const [restyledRow] = await tx.update(fileNodes).set({
+        ...input.color !== undefined ? { color: input.color } : {},
+        ...input.icon !== undefined ? { icon: input.icon } : {},
+      }).where(eq(fileNodes.id, current.id)).returning()
+      current = restyledRow!
+    }
     const result = await moveNodeInTx(tx, userId, current, {
       parentId: input.parentId === undefined ? current.parentId : input.parentId,
       name: input.name ?? current.name,
-      onConflict: 'fail',
+      onConflict: input.onConflict ?? 'fail',
     })
     return { node: toFileNode(result.row), converted: result.converted }
   })
@@ -229,13 +290,30 @@ export async function updateFileNode(userId: string, id: string, input: {
   return node
 }
 
+/** Renames (retitles) or refiles a chat listed in Files. */
+async function updateChatItem(userId: string, id: string, input: { name?: string; parentId?: string | null }): Promise<FileNode> {
+  return mutateFileTree(userId, async (tx) => {
+    const chatsFolderId = await chatsFolderIdOf(tx, userId)
+    if (input.name !== undefined) {
+      await tx.update(chats).set({ title: input.name.slice(0, 200), updatedAt: new Date() }).where(and(eq(chats.id, id), eq(chats.userId, userId)))
+    }
+    if (input.parentId !== undefined) return (await moveChatsInTx(tx, userId, [{ id, parentId: input.parentId }], chatsFolderId))[0]!
+    const [row] = await tx.select().from(chats).where(and(eq(chats.id, id), eq(chats.userId, userId)))
+    return chatToFileNode(row!, chatsFolderId)
+  }, CHAT_SCOPES)
+}
+
 /** Moves several items atomically. Name clashes keep both items; the response has the final names. */
 export async function moveFileNodes(userId: string, items: Array<{ id: string; parentId: string | null; name?: string }>): Promise<FileNode[]> {
+  const chatIds = await liveChatIds(db, userId, items.map((item) => item.id))
   const { moved, converted } = await mutateFileTree(userId, async (tx) => {
-    const ids = new Set(await topLevelIds(tx, userId, items.map((item) => item.id)))
     const moved: FileNode[] = []
     const converted: string[] = []
-    for (const item of items) {
+    const chatItems = items.filter((item) => chatIds.has(item.id))
+    if (chatItems.length) moved.push(...await moveChatsInTx(tx, userId, chatItems, await chatsFolderIdOf(tx, userId)))
+    const nodeItems = items.filter((item) => !chatIds.has(item.id))
+    const ids = new Set(await topLevelIds(tx, userId, nodeItems.map((item) => item.id)))
+    for (const item of nodeItems) {
       if (!ids.delete(item.id)) continue
       const node = await liveNode(tx, userId, item.id)
       const result = await moveNodeInTx(tx, userId, node, { parentId: item.parentId, name: item.name ?? node.name, onConflict: 'rename' })
@@ -243,14 +321,17 @@ export async function moveFileNodes(userId: string, items: Array<{ id: string; p
       if (result.converted) converted.push(node.id)
     }
     return { moved, converted }
-  })
+  }, chatIds.size ? CHAT_SCOPES : undefined)
   await publishDocsClosed(converted, 'converted')
   return moved
 }
 
 export async function trashNodeInTx(tx: DatabaseTransaction, userId: string, node: FileNodeRow): Promise<string[]> {
   if (node.status !== 'ready') throw notFound('File')
+  if (node.systemRole) throw systemFolderLocked()
   const ids = (await subtree(tx, userId, node.id)).map((row) => row.id)
+  // Chats are not trashed with their folder; they go back to the sidebar's unfiled list.
+  await tx.update(chats).set({ folderId: null }).where(and(eq(chats.userId, userId), inArray(chats.folderId, ids)))
   // Descendants trashed earlier keep their own trash root so they can still be restored separately.
   const trashed = await tx.update(fileNodes).set({ trashedAt: new Date(), trashRootId: node.id, updatedAt: new Date() })
     .where(and(eq(fileNodes.ownerUserId, userId), inArray(fileNodes.id, ids), isNull(fileNodes.trashedAt)))
@@ -258,16 +339,22 @@ export async function trashNodeInTx(tx: DatabaseTransaction, userId: string, nod
   return trashed.filter((row) => row.kind === 'doc').map((row) => row.id)
 }
 
-/** Trashes several items atomically and returns the ids that became trash entries (for undo). */
+/**
+ * Trashes several items atomically and returns the ids that became trash entries (for undo).
+ * Chats among them go to the chat trash instead, after the Files items.
+ */
 export async function trashFileNodes(userId: string, ids: string[]): Promise<string[]> {
-  const { roots, docIds } = await mutateFileTree(userId, async (tx) => {
-    const roots = await topLevelIds(tx, userId, ids)
+  const chatIds = await liveChatIds(db, userId, ids)
+  const nodeIds = ids.filter((id) => !chatIds.has(id))
+  const { roots, docIds } = !nodeIds.length ? { roots: [], docIds: [] } : await mutateFileTree(userId, async (tx) => {
+    const roots = await topLevelIds(tx, userId, nodeIds)
     const docIds: string[] = []
     for (const id of roots) docIds.push(...await trashNodeInTx(tx, userId, await liveNode(tx, userId, id)))
     return { roots, docIds }
-  })
+  }, CHAT_SCOPES)
   await publishDocsClosed(docIds, 'trashed')
-  return roots
+  const trashedChats = chatIds.size ? await mutateFileTree(userId, () => trashChats(userId, [...chatIds]), CHAT_SCOPES) : []
+  return [...roots, ...trashedChats]
 }
 
 export async function trashFileNode(userId: string, id: string): Promise<void> {
@@ -290,12 +377,21 @@ export async function restoreNodeInTx(tx: DatabaseTransaction, userId: string, i
   return restored!
 }
 
+/** Restores trashed items; ids of trashed chats (from undoing a trash in Files) recover the chats. */
 export async function restoreFileNodes(userId: string, ids: string[]): Promise<FileNode[]> {
+  const nodeRows = await db.select({ id: fileNodes.id }).from(fileNodes)
+    .where(and(eq(fileNodes.ownerUserId, userId), inArray(fileNodes.id, [...new Set(ids)])))
+  const nodeIds = new Set(nodeRows.map((row) => row.id))
+  const chatIds = ids.filter((id) => !nodeIds.has(id))
   return mutateFileTree(userId, async (tx) => {
     const restored: FileNode[] = []
-    for (const id of new Set(ids)) restored.push(toFileNode(await restoreNodeInTx(tx, userId, id)))
+    for (const id of nodeIds) restored.push(toFileNode(await restoreNodeInTx(tx, userId, id)))
+    if (chatIds.length) {
+      const chatsFolderId = await chatsFolderIdOf(tx, userId)
+      restored.push(...(await recoverChats(userId, chatIds)).map((chat) => chatToFileNode(chat, chatsFolderId)))
+    }
     return restored
-  })
+  }, chatIds.length ? CHAT_SCOPES : undefined)
 }
 
 export async function restoreFileNode(userId: string, id: string): Promise<FileNode> {
@@ -312,18 +408,26 @@ export async function listTrash(userId: string): Promise<FileNode[]> {
 }
 
 /**
- * Deletes stored objects before rows so a failed purge can be retried without orphaning blobs.
- * Returns the purged document ids so open editors can be closed after commit.
+ * Permanently deletes items and everything below them, live or trashed, inside a tree
+ * transaction. Stored objects (current contents and kept versions) go before rows so a failed
+ * purge can be retried without orphaning blobs; a transaction that does more work after the
+ * purge passes `deferredKeys` instead and deletes them after commit, so a rollback never leaves
+ * rows without their objects. Returns the purged document ids so open editors can be closed
+ * after commit. Callers decide what may be purged.
  */
-async function purgeNodes(tx: DatabaseTransaction, userId: string, rootIds: string[]): Promise<string[]> {
+export async function purgeNodesInTx(tx: DatabaseTransaction, userId: string, rootIds: string[], deferredKeys?: string[]): Promise<string[]> {
   if (!rootIds.length) return []
   const ids = new Set<string>()
   for (const rootId of rootIds) for (const row of await subtree(tx, userId, rootId)) ids.add(row.id)
   if (!ids.size) return []
   const rows = await tx.select({ id: fileNodes.id, kind: fileNodes.kind, key: fileNodes.objectKey }).from(fileNodes)
     .where(and(eq(fileNodes.ownerUserId, userId), inArray(fileNodes.id, [...ids])))
-  for (const row of rows) if (row.key) await getBlobStore().delete(row.key)
-  // Children, document state, and update logs cascade from their parents.
+  const versions = await tx.select({ key: fileVersions.objectKey }).from(fileVersions)
+    .where(and(eq(fileVersions.userId, userId), inArray(fileVersions.nodeId, [...ids])))
+  const keys = [...rows.flatMap((row) => row.key ?? []), ...versions.map((version) => version.key)]
+  if (deferredKeys) deferredKeys.push(...keys)
+  else for (const key of keys) await getBlobStore().delete(key)
+  // Children, document state, update logs, versions, and change rows cascade from their nodes.
   await tx.delete(fileNodes).where(and(eq(fileNodes.ownerUserId, userId), inArray(fileNodes.id, rootIds)))
   return rows.filter((row) => row.kind === 'doc').map((row) => row.id)
 }
@@ -339,7 +443,7 @@ export async function deleteFileNodes(userId: string, ids: string[]): Promise<vo
         throw new AppError(409, 'file_not_trashed', 'Move this item to the trash before deleting it permanently')
       }
     }
-    return purgeNodes(tx, userId, unique)
+    return purgeNodesInTx(tx, userId, unique)
   }).then((docIds) => publishDocsClosed(docIds, 'deleted'))
 }
 
@@ -354,7 +458,7 @@ export async function emptyTrash(userId: string): Promise<void> {
       isNotNull(fileNodes.trashedAt),
       eq(fileNodes.trashRootId, fileNodes.id),
     ))
-    return purgeNodes(tx, userId, roots.map((row) => row.id))
+    return purgeNodesInTx(tx, userId, roots.map((row) => row.id))
   }).then((docIds) => publishDocsClosed(docIds, 'deleted'))
 }
 
@@ -372,7 +476,7 @@ export async function cleanupFiles(now = new Date()): Promise<void> {
   for (const row of [...abandoned, ...expired]) byUser.set(row.userId, [...byUser.get(row.userId) ?? [], row.id])
   for (const [userId, ids] of byUser) {
     // One account's storage failure must not block cleanup for the others.
-    await mutateFileTree(userId, (tx) => purgeNodes(tx, userId, ids))
+    await mutateFileTree(userId, (tx) => purgeNodesInTx(tx, userId, ids))
       .then((docIds) => publishDocsClosed(docIds, 'deleted'))
       .catch(() => undefined)
   }

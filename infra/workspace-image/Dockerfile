@@ -84,6 +84,9 @@ COPY infra/workspace-image/scripts/package-smoke-test.py /opt/pulpo/package-smok
 
 COPY --chmod=0755 infra/workspace-image/scripts/smoke-test.sh /usr/local/bin/pulpo-workspace-smoke-test
 COPY --from=daemon-build /src/dist /opt/pulpo-workspace-daemon
+# `pulpo files` lets agent bash commands reach the chat's Files through the daemon's relay socket.
+RUN printf '#!/bin/sh\nexec /usr/local/bin/node /opt/pulpo-workspace-daemon/cli.js "$@"\n' > /usr/local/bin/pulpo \
+    && chmod 0755 /usr/local/bin/pulpo
 
 ENV DEBIAN_FRONTEND=
 USER agent

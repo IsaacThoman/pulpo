@@ -17,6 +17,7 @@ import { getBlobStore } from '../storage/index.js'
 import { resolveFileAccess } from './access.js'
 import { parseFileInput, requireFilesUser } from './request.js'
 import { availableName, deleteFileNode, lockFileTree, mutateFileTree, toFileNode } from './tree-service.js'
+import { topSortOrder } from './order.js'
 
 const idParams = z.object({ id: z.uuid() })
 
@@ -55,6 +56,7 @@ export async function registerFileUploadRoutes(app: FastifyInstance): Promise<vo
       const [node] = await tx.insert(fileNodes).values({
         id, ownerUserId: user.id, parentId: input.parentId, kind: 'blob', name, status: 'pending',
         mimeType: input.mimeType, sizeBytes: input.sizeBytes, objectKey,
+        sortOrder: await topSortOrder(tx, user.id, input.parentId),
       }).returning()
       const uploadUrl = await getBlobStore().createUploadUrl(objectKey, { contentType: input.mimeType, contentLength: input.sizeBytes }, 900)
       return { node: toFileNode(node!), uploadUrl }

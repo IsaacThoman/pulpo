@@ -22,6 +22,8 @@ export function stateInvalidationQueryKeys(scope: StateInvalidationScope, userId
   if (scope === 'pool') {
     return [['pool', userId], ['pool-pending-count', userId], ['pool-usage', userId]]
   }
+  // The sidebar's folders and shortcuts are part of Files.
+  if (scope === 'files') return [['files', userId], ['folders', userId]]
   return [[scope, userId]]
 }
 
@@ -103,8 +105,9 @@ export function outboxInvalidationQueryKeys(paths: readonly string[], userId: st
   const add = (key: string[]) => keys.set(JSON.stringify(key), key)
   for (const path of paths) {
     if (path.startsWith('/api/settings')) { add(['settings', userId]); continue }
-    if (path.startsWith('/api/folders')) add(['folders', userId])
-    if (/^\/api\/(chats|folders|messages|responses)(\/|$)/.test(path)) {
+    if (path.startsWith('/api/folders') || path.startsWith('/api/sidebar')) add(['folders', userId])
+    if (path.startsWith('/api/sidebar')) add(['files', userId])
+    if (/^\/api\/(chats|folders|messages|responses|sidebar)(\/|$)/.test(path)) {
       add(['chats', userId])
       add(['deleted-chats', userId])
       const chatId = /^\/api\/chats\/([^/?]+)/.exec(path)?.[1]

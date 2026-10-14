@@ -114,7 +114,7 @@ beforeEach(() => {
       folderId: null, sortOrder: 0, tags: [], temporary: false, expiresAt: null, expired: false,
       provisional: false,
     }],
-    folders: [], activeChatId: chatId, activeTemporaryChatId: null, streamingIds: [],
+    activeChatId: chatId, activeTemporaryChatId: null, streamingIds: [],
     responseSequences: {}, responseChatIds: {},
   })
   useUploadOutbox.setState({ uploads: {}, submissions: [], preservedDrafts: {} })
@@ -269,6 +269,62 @@ describe('upload outbox', () => {
     requests[0]!.resolve({})
     await processing
     expect(useChat.getState().chats[0]?.provisional).toBe(false)
+  })
+
+  it('starts a new chat with its Files scope and the mode of each item', async () => {
+    useChat.setState({ chats: [], activeChatId: null })
+    const fileId = '00000000-0000-4000-8000-0000000000a1'
+    const staged = useUploadOutbox.getState().stageSubmission({
+      ...draft([], 'edit my plan'),
+      chatId: null,
+      agentMode: true,
+      fileScopeIds: [fileId, 'root'],
+      fileScopeAccess: { [fileId]: 'write' },
+    })
+
+    expect(useChat.getState().chats.find((chat) => chat.id === staged.chatId)).toMatchObject({
+      fileScopeIds: [fileId, 'root'],
+      fileScopeAccess: { [fileId]: 'write' },
+    })
+    const processing = processUploadOutboxChat(staged.chatId)
+    await vi.waitFor(() => expect(requests).toHaveLength(1))
+    expect(requests[0]).toMatchObject({
+      path: '/api/chats/start',
+      body: { chat: expect.objectContaining({ fileScopeIds: [fileId, 'root'], fileScopeAccess: { [fileId]: 'write' } }) },
+    })
+    requests[0]!.resolve({})
+    await processing
+  })
+
+  it('saves a mode changed while the new chat is being created after the chat exists', async () => {
+    useChat.setState({ chats: [], activeChatId: null })
+    const fileId = '00000000-0000-4000-8000-0000000000a1'
+    useUploadOutbox.setState({ uploads: { image: { ...upload('image', 'uploading'), chatId: null } } })
+    const staged = useUploadOutbox.getState().stageSubmission({
+      ...draft(['image'], 'edit my plan'), chatId: null, fileScopeIds: [fileId], fileScopeAccess: { [fileId]: 'read' },
+    })
+
+    // Before the chat is sent, the change only updates what the start request will send.
+    useChat.getState().setChatFileAccess(staged.chatId, fileId, 'suggest')
+    await Promise.resolve()
+    expect(requests).toHaveLength(0)
+    useUploadOutbox.setState({ uploads: { image: { ...upload('image', 'ready'), chatId: null } } })
+    const processing = processUploadOutboxChat(staged.chatId)
+    await vi.waitFor(() => expect(requests).toHaveLength(1))
+    expect(requests[0]).toMatchObject({ path: '/api/chats/start', body: { chat: expect.objectContaining({ fileScopeAccess: { [fileId]: 'suggest' } }) } })
+
+    // While it is on its way, a change waits for the chat to exist.
+    useChat.getState().setChatFileAccess(staged.chatId, fileId, 'write')
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(requests).toHaveLength(1)
+    requests[0]!.resolve({})
+    await vi.waitFor(() => expect(requests).toHaveLength(2))
+    expect(requests[1]).toMatchObject({
+      path: `/api/chats/${staged.chatId}`, method: 'PATCH', body: { fileScopeAccess: { [fileId]: 'write' } },
+    })
+    requests[1]!.resolve({})
+    await processing
+    expect(useChat.getState().chats.find((chat) => chat.id === staged.chatId)?.fileScopeAccess).toEqual({ [fileId]: 'write' })
   })
 
   it('promotes the queued follower when a provisional head is discarded', async () => {

@@ -2,6 +2,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import type { FileNode } from '@pulpo/contracts'
 import { uit } from '@/i18n/ui'
 import { useAuth } from '@/stores/auth'
+import { useSettings } from '@/stores/settings'
 import {
   copyFileNodes,
   deleteFileNodes,
@@ -68,7 +69,9 @@ export function useFileOperations() {
     )
   }
 
-  const copy = async (nodes: readonly FileNode[], parentId: string | null, verb: 'copy' | 'duplicate' = 'copy') => {
+  const copy = async (all: readonly FileNode[], parentId: string | null, verb: 'copy' | 'duplicate' = 'copy') => {
+    // Chats filed here are moved, never copied, from Files.
+    const nodes = all.filter((node) => node.kind !== 'chat')
     if (!nodes.length) return
     const created = await run(() => copyFileNodes(nodes.map((node) => node.id), parentId))
     if (!created) return
@@ -84,10 +87,16 @@ export function useFileOperations() {
     if (!nodes.length) return
     const roots = await run(() => trashFileNodes(nodes.map((node) => node.id)))
     if (!roots) return
-    undoable(
-      count(nodes, (name) => uit`Moved "${name}" to the trash`, (total) => uit`Moved ${total} items to the trash`),
-      () => restoreFileNodes(roots),
-    )
+    // With instant retention, chats are deleted for good rather than trashed, so they cannot come
+    // back; the sidebar says the same.
+    const chatIds = new Set(nodes.filter((node) => node.kind === 'chat').map((node) => node.id))
+    const forGood = chatIds.size > 0 && useSettings.getState().trashRetention === 'instant'
+    const restorable = forGood ? roots.filter((id) => !chatIds.has(id)) : roots
+    const message = forGood
+      ? count(nodes, (name) => uit`Deleted "${name}"`, (total) => uit`Deleted ${total} items`)
+      : count(nodes, (name) => uit`Moved "${name}" to the trash`, (total) => uit`Moved ${total} items to the trash`)
+    if (restorable.length) undoable(message, () => restoreFileNodes(restorable))
+    else show({ message })
   }
 
   const restore = async (nodes: readonly FileNode[]) => {
@@ -109,15 +118,13 @@ export function useFileOperations() {
   /** Resolves false when the rename was rejected, so an inline editor can stay open. */
   const rename = async (node: FileNode, name: string): Promise<boolean> => {
     if (name === node.name) return true
-    const renamed = await run(() => updateFileNode(node.id, { name, expectedRevision: node.revision }), name)
-    if (!renamed) return false
-    undoable(uit`Renamed to "${name}"`, () => updateFileNode(node.id, { name: node.name }))
-    return true
+    // A rename shows in place, as in the sidebar, so it needs no toast.
+    return Boolean(await run(() => updateFileNode(node.id, { name, expectedRevision: node.revision }), name))
   }
 
   const download = async (nodes: readonly FileNode[]) => {
     for (const node of nodes) {
-      if (node.kind === 'folder') continue
+      if (node.kind === 'folder' || node.kind === 'chat' || node.kind === 'shortcut') continue
       try {
         if (node.kind === 'doc') await downloadDocMarkdown(node)
         else await downloadFile(node)

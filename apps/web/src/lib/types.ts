@@ -1,5 +1,6 @@
 import type {
   ChatPreset,
+  FileAccessMode,
   QueuedMessage as ServerQueuedMessage,
   QueuedMessageAttachment as ServerQueuedMessageAttachment,
   UsageCostItem,
@@ -102,11 +103,15 @@ export interface Chat {
   updatedAt: number
   pinned: boolean
   folderId: string | null
+  /** At the top of My files rather than in the Chats folder (folderId is null either way). */
+  inFilesRoot?: boolean
   sortOrder: number
   tags: string[]
   temporary: boolean
   /** Files folders the agent may use (`root` means all files). */
   fileScopeIds?: string[]
+  /** What the agent may do with each of them; missing entries use the default mode. */
+  fileScopeAccess?: Record<string, FileAccessMode>
   expiresAt: number | null
   expired: boolean
   shareId?: string
@@ -114,14 +119,6 @@ export interface Chat {
   provisional?: boolean
   /** Keep a locally started chat until a summaries response acknowledges it. */
   awaitingSummary?: boolean
-}
-
-export interface Folder {
-  id: string
-  name: string
-  pinned: boolean
-  expanded: boolean
-  sortOrder: number
 }
 
 export interface ApiKey {

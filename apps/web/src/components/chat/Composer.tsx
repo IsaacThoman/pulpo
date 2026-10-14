@@ -12,7 +12,7 @@ import { useFollowStartedChat } from './use-follow-started-chat'
 import { useMenuTriggerFocus } from './use-menu-trigger-focus'
 import { registerComposerFocus } from './composer-focus'
 import { webComposerSync } from '@/lib/local-first/composer-sync'
-import { MAX_MESSAGE_ATTACHMENTS, type ComposerState } from '@pulpo/contracts'
+import { MAX_MESSAGE_ATTACHMENTS, type ComposerState, type FileAccessMode } from '@pulpo/contracts'
 import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, useSyncExternalStore, type Ref, type DragEvent as ReactDragEvent } from 'react'
 import { useTranslation } from '@/i18n/useAppTranslation'
 import { useNavigate } from 'react-router-dom'
@@ -65,7 +65,7 @@ import { canSubmitComposerDraft } from '@/components/chat/composer-upload-policy
 import type { Attachment } from '@/lib/types'
 import { useUploadOutbox, type UploadRecord } from '@/stores/upload-outbox'
 import { FileScopeChip, FileScopePicker } from '@/features/files/FileScope'
-import { addFileScope } from '@/features/files/file-scope'
+import { addFileScope, fileAccessMode, NO_FILE_ACCESS, scopedFileAccess, type FileScopeAccess } from '@/features/files/file-scope'
 import { apiRequest } from '@/lib/api'
 import { dictationFilename, insertDictationText, preferredDictationMimeType } from '@/lib/dictation'
 import { DictationBar } from '@/components/chat/DictationBar'
@@ -146,6 +146,8 @@ export function Composer({
   onSelectModel,
   fileScopeIds = NO_FILE_SCOPE,
   onFileScopeChange,
+  fileScopeAccess = NO_FILE_ACCESS,
+  onFileAccessChange,
 }: {
   chatId: string | null
   modelId: string
@@ -168,6 +170,10 @@ export function Composer({
   fileScopeIds?: readonly string[]
   /** Lets the user add and remove items; without it the chips are read-only. */
   onFileScopeChange?: (ids: string[]) => void
+  /** What the agent may do with each item. */
+  fileScopeAccess?: FileScopeAccess
+  /** Changes an item's mode; offered only where the scope itself can change. */
+  onFileAccessChange?: (id: string, mode: FileAccessMode) => void
 }) {
   const { t } = useTranslation()
   const navigate = useNavigate()
@@ -861,6 +867,7 @@ export function Composer({
       temporary,
       autoExpire,
       fileScopeIds: chatId ? undefined : [...fileScopeIds],
+      fileScopeAccess: chatId ? undefined : scopedFileAccess(fileScopeIds, fileScopeAccess),
       attachmentIds: ids,
       ...(usedDictation ? { usedDictation: true } : {}),
     })
@@ -1314,6 +1321,8 @@ export function Composer({
                 <FileScopeChip
                   key={id}
                   id={id}
+                  mode={fileAccessMode(fileScopeAccess, id)}
+                  onModeChange={onFileScopeChange && onFileAccessChange ? (mode) => onFileAccessChange(id, mode) : undefined}
                   onRemove={onFileScopeChange ? () => onFileScopeChange(fileScopeIds.filter((item) => item !== id)) : undefined}
                 />
               ))}

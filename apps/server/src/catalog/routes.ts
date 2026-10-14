@@ -42,17 +42,18 @@ import { CODEX_LAB_ID, CODEX_PROVIDER_ID, isCodexModelId, isManagedLabId, isMana
 import {
   COMPACTION_MIN_THRESHOLD_TOKENS,
   maximumCompactionThreshold,
-} from '../responses/compaction-policy.js'
+} from '../compaction/policy.js'
 
 type PresetInput = ChatPreset[]
 const RESERVED_PARAMETERS = new Set(['model', 'input', 'stream', 'store', 'metadata'])
 const codexModelSettingsPatchSchema = z.object({
   minimumOutputReservationTokens: createModelSchema.shape.minimumOutputReservationTokens.removeDefault().optional(),
   compactionThresholdTokens: z.number().int().min(COMPACTION_MIN_THRESHOLD_TOKENS).optional(),
-  compactionRetainedTurns: z.number().int().min(1).max(32).optional(),
+  compactionRetainedUserTokens: createModelSchema.shape.compactionRetainedUserTokens.removeDefault().optional(),
 }).strict().refine((value) => Object.keys(value).length > 0, { message: 'At least one model setting is required' })
 
 function codexModelSettings(model: typeof models.$inferSelect) {
+  const maximumCompactionThresholdTokens = maximumCompactionThreshold(model.contextWindow)
   return {
     id: model.id,
     name: model.name,
@@ -60,9 +61,10 @@ function codexModelSettings(model: typeof models.$inferSelect) {
     contextWindow: model.contextWindow,
     maxOutputTokens: model.maxOutputTokens,
     minimumOutputReservationTokens: model.minimumOutputReservationTokens,
-    compactionThresholdTokens: model.compactionThresholdTokens,
-    compactionRetainedTurns: model.compactionRetainedTurns,
-    maximumCompactionThresholdTokens: maximumCompactionThreshold(model.contextWindow),
+    // Values saved under the older, higher maximum would block every save; autoCompactLimit caps them the same way.
+    compactionThresholdTokens: Math.min(model.compactionThresholdTokens, maximumCompactionThresholdTokens),
+    compactionRetainedUserTokens: model.compactionRetainedUserTokens,
+    maximumCompactionThresholdTokens,
   }
 }
 
@@ -622,7 +624,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
         minimumOutputReservationTokens: body.minimumOutputReservationTokens,
         compactionEnabled: true,
         compactionThresholdTokens: body.compactionThresholdTokens,
-        compactionRetainedTurns: body.compactionRetainedTurns,
+        compactionRetainedUserTokens: body.compactionRetainedUserTokens,
         updatedAt: new Date(),
       }).where(and(eq(models.id, modelId), eq(models.providerConnectionId, CODEX_PROVIDER_ID))).returning()
       if (!row) throw notFound('Codex model')
@@ -679,7 +681,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
         minimumOutputReservationTokens: input.minimumOutputReservationTokens,
         compactionEnabled: input.compactionEnabled,
         compactionThresholdTokens: input.compactionThresholdTokens,
-        compactionRetainedTurns: input.compactionRetainedTurns,
+        compactionRetainedUserTokens: input.compactionRetainedUserTokens,
         executionMode: input.executionMode,
         tags: input.tags,
         allowedParameters: input.allowedParameters,
@@ -734,7 +736,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
     const compactionPatch = z.object({
       compactionEnabled: z.boolean().optional(),
       compactionThresholdTokens: z.number().int().min(2_000).max(1_000_000).optional(),
-      compactionRetainedTurns: z.number().int().min(1).max(32).optional(),
+      compactionRetainedUserTokens: createModelSchema.shape.compactionRetainedUserTokens.removeDefault().optional(),
     }).parse(body)
     const [current] = await db.select().from(models).where(eq(models.id, id)).limit(1)
     if (!current) throw notFound('Model')
@@ -776,7 +778,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
       maxOutputTokens: typeof body.maxOutputTokens === 'number' ? body.maxOutputTokens : undefined,
       compactionEnabled: compactionPatch.compactionEnabled,
       compactionThresholdTokens: compactionPatch.compactionThresholdTokens,
-      compactionRetainedTurns: compactionPatch.compactionRetainedTurns,
+      compactionRetainedUserTokens: compactionPatch.compactionRetainedUserTokens,
       executionMode: body.executionMode === 'background' ? 'background' : body.executionMode === 'stream' ? 'stream' : undefined,
       tags: Array.isArray(body.tags) ? body.tags : undefined,
       allowedParameters: Array.isArray(body.allowedParameters) ? body.allowedParameters : undefined,

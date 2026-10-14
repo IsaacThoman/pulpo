@@ -172,7 +172,6 @@ const esES = {
     collapse: 'Contraer barra lateral',
     createFolder: 'Crear carpeta',
     expand: 'Expandir barra lateral',
-    folderName: 'Nombre de la carpeta',
     files: 'Archivos',
     friends: 'Amigos',
     logout: 'Cerrar sesión',

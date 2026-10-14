@@ -5,7 +5,7 @@ import { responses } from '../../apps/server/src/database/schema.js'
 import assert from 'node:assert/strict'
 import { branchMetadataIndex, metadataForTurn } from '../../apps/server/src/messages/branching.js'
 import { eq, asc, and, isNull } from 'drizzle-orm'
-import { compactConversation } from '../../apps/server/src/responses/compaction.js'
+import { compactResponsesConversation, responsesConversation } from '../../apps/server/src/responses/compaction.js'
 import { estimateInputTokens } from '../../apps/server/src/accounting/pricing.js'
 if (process.env.DATABASE_URL !== 'postgres://postgres:bench@127.0.0.1:55439/pulpo') throw new Error('Expected isolated database')
 const out = process.env.BENCH_OUTPUT ?? '/tmp/pulpo-longchat-benchmark'
@@ -23,7 +23,8 @@ for (const c of cases.filter((c: any) => c.kind === 'plain' && [10,1000,5000,200
   assert.deepEqual(indexed, branchExpected)
   const start = performance.now()
   let compactionInputTokens = 0
-  const compacted = await compactConversation({ responseId: c.lastResponseId, modelId: c.modelId, enabled: true, thresholdTokens: 100000, retainedTurns: 4, fixedContext: [], currentInput: [{ role: 'user', content: 'continue' }], history, invoke: async older => { compactionInputTokens = estimateInputTokens(older); return 'Synthetic summary; no inference was called.' }, onUpdate: async () => {} })
+  const model = { id: c.modelId, contextWindow: 200000, maxOutputTokens: 32000, compactionEnabled: true, compactionThresholdTokens: 100000, compactionRetainedUserTokens: 20000 }
+  const compacted = await compactResponsesConversation({ responseId: c.lastResponseId, model, conversation: responsesConversation(history), fixedContext: [], summarize: async older => { compactionInputTokens = estimateInputTokens(older); return 'Synthetic summary; no inference was called.' }, onUpdate: async () => {} })
   results.push({ kind: c.kind, turns: c.turns, preparationMs: performance.now() - start, indexedBranchMs, compacted: Boolean(compacted.item), compactionInputTokens, resultingContextTokens: estimateInputTokens(compacted.conversation) })
 }
 // Detect cross-request impact of the same-process synchronous work.

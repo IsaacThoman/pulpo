@@ -60,8 +60,35 @@ export function nextAvailableName(desired: string, takenLowercase: ReadonlySet<s
   }
 }
 
-export const fileNodeKindSchema = z.enum(['folder', 'doc', 'blob'])
+/**
+ * `chat` items are chats filed in a folder. They are listed beside files and can be moved,
+ * renamed, and trashed with them, but they live in the chats table, not the Files tree.
+ * `shortcut` items open another item (a folder, file, or chat) from wherever they are placed.
+ */
+export const fileNodeKindSchema = z.enum(['folder', 'doc', 'blob', 'chat', 'shortcut'])
 export const fileNodeStatusSchema = z.enum(['pending', 'ready'])
+
+/**
+ * Folders every account has at the top of My files. `chats` is the Sidebar folder: the sidebar
+ * shows its contents (chats directly in it are the sidebar's unfiled list). `archive` is where
+ * "Move to archive" puts things. System folders cannot be renamed, moved, trashed, or recolored.
+ */
+export const fileSystemRoleSchema = z.enum(['chats', 'archive'])
+export type FileSystemRole = z.infer<typeof fileSystemRoleSchema>
+
+/** Colors a file or folder can be given; without one it keeps its kind's own color. */
+export const FILE_COLORS = ['red', 'orange', 'yellow', 'green', 'teal', 'blue', 'purple', 'pink', 'gray'] as const
+export const fileColorSchema = z.enum(FILE_COLORS)
+export type FileColor = z.infer<typeof fileColorSchema>
+
+/** Icons a file or folder can show instead of its kind's own. */
+export const FILE_ICONS = [
+  'star', 'heart', 'bookmark', 'flag', 'book', 'briefcase', 'code', 'music', 'image', 'camera',
+  'film', 'graduation-cap', 'home', 'globe', 'lightbulb', 'flask', 'rocket', 'gamepad', 'shopping-cart', 'plane',
+  'wallet', 'calendar', 'lock', 'users', 'sparkles', 'palette', 'pen', 'wrench', 'leaf', 'coffee',
+] as const
+export const fileIconSchema = z.enum(FILE_ICONS)
+export type FileIcon = z.infer<typeof fileIconSchema>
 
 export const fileNodeSchema = z.object({
   id: z.uuid(),
@@ -75,6 +102,32 @@ export const fileNodeSchema = z.object({
   trashedAt: z.string().nullable(),
   createdAt: z.string(),
   updatedAt: z.string(),
+  systemRole: fileSystemRoleSchema.nullable().optional(),
+  color: fileColorSchema.nullable().optional(),
+  icon: fileIconSchema.nullable().optional(),
+  /**
+   * Position among the folder's items, chats included: ascending, newest first on ties. While
+   * pinned, the position in the sidebar's pinned list instead.
+   */
+  sortOrder: z.number().int().optional(),
+  /** Listed under Pinned at the top of the sidebar (and not in its folder there); Files marks it. */
+  pinned: z.boolean().optional(),
+  /**
+   * Set while the item is an agent's suggestion the owner has not accepted yet: it was created by
+   * an agent working in Suggest mode, and rejecting the suggestion deletes it.
+   */
+  suggestion: z.object({ changeId: z.uuid() }).nullable().optional(),
+  /** What a shortcut opens. `available` is false while the target is in the trash. */
+  target: z.object({
+    kind: z.enum(['folder', 'doc', 'blob', 'chat']),
+    id: z.uuid(),
+    name: z.string(),
+    mimeType: z.string().nullable(),
+    systemRole: fileSystemRoleSchema.nullable(),
+    color: fileColorSchema.nullable().optional(),
+    icon: fileIconSchema.nullable().optional(),
+    available: z.boolean(),
+  }).nullable().optional(),
 })
 
 export const createFileFolderSchema = z.object({
@@ -91,11 +144,21 @@ export const createFileDocSchema = z.object({
   markdown: z.string().max(FILE_DOC_MAX_MARKDOWN_LENGTH).optional(),
 })
 
+/** A file's or folder's color and icon; null puts back its kind's own. */
+const fileAppearanceFields = {
+  color: fileColorSchema.nullable().optional(),
+  icon: fileIconSchema.nullable().optional(),
+}
+
 export const updateFileNodeSchema = z.object({
   name: fileNameSchema.optional(),
   parentId: z.uuid().nullable().optional(),
   expectedRevision: z.number().int().nonnegative().optional(),
-}).refine((input) => input.name !== undefined || input.parentId !== undefined, { message: 'Nothing to update' })
+  ...fileAppearanceFields,
+}).refine(
+  (input) => [input.name, input.parentId, input.color, input.icon].some((value) => value !== undefined),
+  { message: 'Nothing to update' },
+)
 
 /** Upper bound on items in one batch request; a selection larger than this is split by the client. */
 export const FILE_BATCH_MAX_ITEMS = 500
@@ -176,6 +239,95 @@ export interface FileListing {
   children: FileNode[]
 }
 
+/** A shortcut to a Files item or a chat, placed in `parentId` (null is My files; omitted, the Chats folder). */
+export const createShortcutSchema = z.object({
+  targetKind: z.enum(['file', 'chat']),
+  targetId: z.uuid(),
+  parentId: z.uuid().nullable().optional(),
+  name: fileNameSchema.optional(),
+})
+export type CreateShortcut = z.input<typeof createShortcutSchema>
+
+/**
+ * A folder of the Chats and Archive trees, for the sidebar's move menu, or of a pinned folder's
+ * tree (whose top folder's parent may be missing from the list).
+ */
+export interface SidebarFolder {
+  id: string
+  parentId: string | null
+  name: string
+  systemRole: FileSystemRole | null
+}
+
+export interface SidebarState {
+  chatsFolderId: string
+  archiveFolderId: string
+  folders: SidebarFolder[]
+  /**
+   * Pinned folders, files, and shortcuts, wherever they are in Files; pinned chats come from the
+   * chat list. They share one order with the pinned chats (`sortOrder`).
+   */
+  pinnedItems?: FileNode[]
+}
+
+export const createSidebarFolderSchema = z.object({
+  /** Client-chosen id, so a folder created offline keeps its identity when replayed. */
+  id: z.uuid().optional(),
+  /** Defaults to the Chats folder. */
+  parentId: z.uuid().nullable().optional(),
+  name: fileNameSchema,
+})
+
+/** Renames a sidebar item or changes its color and icon. */
+export const updateSidebarItemSchema = z.object({
+  name: fileNameSchema.optional(),
+  ...fileAppearanceFields,
+}).refine((input) => Object.values(input).some((value) => value !== undefined), { message: 'Nothing to update' })
+
+/**
+ * Moves chats and Files items into a folder; null is the Chats folder (the top of the sidebar).
+ * Pinned ones stay pinned unless `unpin` takes them out of the pinned list, as dragging them out
+ * of it does.
+ */
+export const moveSidebarItemsSchema = z.object({
+  ids: z.array(z.uuid()).min(1).max(FILE_BATCH_MAX_ITEMS),
+  parentId: z.uuid().nullable(),
+  unpin: z.boolean().optional(),
+})
+
+/**
+ * The order of a folder's items, chats included; null is the Chats folder. Listed items from
+ * other folders move in first.
+ */
+export const orderSidebarItemsSchema = z.object({
+  parentId: z.uuid().nullable(),
+  ids: z.array(z.uuid()).min(1).max(10_000),
+})
+
+/**
+ * Pins chats and Files items, in this order after those already pinned, or unpins them, each back
+ * to the top of its folder. Pinned items stay where they are in Files.
+ */
+export const pinSidebarItemsSchema = z.object({
+  ids: z.array(z.uuid()).min(1).max(FILE_BATCH_MAX_ITEMS),
+  pinned: z.boolean(),
+})
+
+/** The order of the sidebar's pinned list, chats included. Listed items not yet pinned are pinned. */
+export const orderPinnedItemsSchema = z.object({
+  ids: z.array(z.uuid()).min(1).max(10_000),
+})
+
+export const archiveItemsSchema = z.object({
+  chatIds: z.array(z.uuid()).max(FILE_BATCH_MAX_ITEMS).default([]),
+  fileIds: z.array(z.uuid()).max(FILE_BATCH_MAX_ITEMS).default([]),
+}).refine((input) => input.chatIds.length + input.fileIds.length > 0, { message: 'Nothing to archive' })
+
+export type CreateSidebarFolder = z.input<typeof createSidebarFolderSchema>
+export type UpdateSidebarItem = z.infer<typeof updateSidebarItemSchema>
+export type ArchiveItems = z.input<typeof archiveItemsSchema>
+export type PinSidebarItems = z.input<typeof pinSidebarItemsSchema>
+
 export interface FileUploadReservation {
   node: FileNode
   uploadUrl: string
@@ -223,4 +375,82 @@ export interface FileConversionPreview {
   converted: string
   /** False when only line endings or trailing whitespace would change. */
   changed: boolean
+}
+
+/**
+ * What an agent may do with a Files item attached to a chat. `read`: look only. `suggest`: its
+ * changes wait for the owner to accept or reject them (documents show them inline). `write`: its
+ * changes apply right away and can be undone per reply.
+ */
+export const FILE_ACCESS_MODES = ['read', 'suggest', 'write'] as const
+export const fileAccessModeSchema = z.enum(FILE_ACCESS_MODES)
+export type FileAccessMode = z.infer<typeof fileAccessModeSchema>
+export const DEFAULT_FILE_ACCESS_MODE: FileAccessMode = 'suggest'
+
+/** The kinds of change an agent makes to Files. `update` is new content; `move` includes renames. */
+export const fileChangeKindSchema = z.enum(['create', 'update', 'move', 'trash'])
+export type FileChangeKind = z.infer<typeof fileChangeKindSchema>
+
+/**
+ * `applied`/`undone`: a Write-mode change and whether the reply's undo is in effect.
+ * `pending`/`accepted`/`rejected`: a Suggest-mode change awaiting or after the owner's review.
+ */
+export const fileChangeStatusSchema = z.enum(['applied', 'undone', 'pending', 'accepted', 'rejected'])
+export type FileChangeStatus = z.infer<typeof fileChangeStatusSchema>
+
+/** One item an agent reply changed, as listed under that reply. */
+export interface FileChangeSummary {
+  id: string
+  nodeId: string
+  /** The item's current name; it may since have been renamed. */
+  name: string
+  nodeKind: 'folder' | 'doc' | 'blob'
+  mimeType: string | null
+  kind: FileChangeKind
+  mode: 'write' | 'suggest'
+  status: FileChangeStatus
+  /** Unresolved inline suggestions, for a document changed in Suggest mode. */
+  pendingSuggestions?: number
+  /** For moves: where the item was and where it goes. Paths are from the top of My files. */
+  fromPath?: string
+  toPath?: string
+  /** For new content of an uploaded file: the sizes before and after. */
+  fromSizeBytes?: number
+  toSizeBytes?: number
+  /** False once the item is permanently deleted or the change expired. */
+  available: boolean
+}
+
+export interface FileChangesResponse {
+  changes: FileChangeSummary[]
+  /** Every Write-mode change is applied and can be undone together. */
+  canUndo: boolean
+  /** Every Write-mode change is undone and can be redone together. */
+  canRedo: boolean
+}
+
+/**
+ * Why an undo or redo was refused: the item changed after the agent's reply. Documents carry
+ * the Markdown the reply left (`expected`) and what is there now (`current`).
+ */
+export interface FileChangeConflict {
+  changeId: string
+  nodeId: string
+  name: string
+  kind: FileChangeKind
+  reason: 'edited' | 'moved' | 'trashed' | 'deleted' | 'restored' | 'replaced'
+  expected?: string
+  current?: string
+}
+
+export interface FileChangeConflictBody {
+  error: { code: 'file_changes_conflict'; message: string; conflicts: FileChangeConflict[] }
+}
+
+/** A reply's response item announcing it changed Files; the details come from the changes API. */
+export interface FileChangesItem {
+  type: 'pulpo_file_changes'
+  id: string
+  /** Items the reply changed so far. */
+  count: number
 }
