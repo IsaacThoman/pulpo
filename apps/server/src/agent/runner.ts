@@ -741,6 +741,8 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
     workspace: manager,
     maxOutputBytes: settings.maxToolOutputBytes,
     onChanged: async (count) => {
+      // Changes folded into other replies' suggestions leave this reply nothing to list.
+      if (!count && !fileChangesItem) return
       fileChangesItem = { type: 'pulpo_file_changes', id: 'file-changes', count }
       await emit('pulpo.agent.files.changed', { ...fileChangesItem })
       await snapshotIfDue()
