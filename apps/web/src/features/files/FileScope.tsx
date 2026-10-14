@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { FILE_SCOPE_ROOT, MAX_CHAT_FILE_SCOPES, type FileNode } from '@pulpo/contracts'
-import { Check, ChevronRight, HardDrive, Loader2, X } from 'lucide-react'
+import { DEFAULT_FILE_ACCESS_MODE, FILE_ACCESS_MODES, FILE_SCOPE_ROOT, MAX_CHAT_FILE_SCOPES, type FileAccessMode, type FileNode } from '@pulpo/contracts'
+import { Check, ChevronRight, Eye, HardDrive, Loader2, MessageSquareDiff, PencilLine, X, type LucideIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { ui, uit } from '@/i18n/ui'
 import { cn } from '@/lib/utils'
@@ -25,26 +26,103 @@ function useScopeNode(id: string): { node: FileNode | null; missing: boolean } {
   return { node, missing: !root && (query.isError || Boolean(node?.trashedAt)) }
 }
 
+const ACCESS_ICONS: Record<FileAccessMode, LucideIcon> = { read: Eye, suggest: MessageSquareDiff, write: PencilLine }
+
+/** How each mode reads where it is chosen. */
+function accessModeCopy(mode: FileAccessMode): { label: string; description: string } {
+  switch (mode) {
+    case 'read': return { label: ui("Read only"), description: ui("The agent can look but not change anything") }
+    case 'suggest': return { label: ui("Suggest changes"), description: ui("You accept or reject each change") }
+    case 'write': return { label: ui("Edit directly"), description: ui("Changes apply right away, and you can undo them") }
+  }
+}
+
+function accessHint(mode: FileAccessMode, folder: boolean): string {
+  switch (mode) {
+    case 'read': return folder
+      ? ui("The agent can read files in this folder and its subfolders, but not change them")
+      : ui("The agent can read this file, but not change it")
+    case 'suggest': return folder
+      ? ui("The agent can suggest changes to files in this folder and its subfolders for you to accept or reject")
+      : ui("The agent can suggest changes to this file for you to accept or reject")
+    case 'write': return folder
+      ? ui("The agent can read and edit files in this folder and its subfolders")
+      : ui("The agent can read and edit this file")
+  }
+}
+
+/** The chip's mode: a menu when it can change, otherwise just its icon. */
+function AccessModeControl({ mode, name, onModeChange, onOpenChange }: {
+  mode: FileAccessMode
+  name: string
+  onModeChange?: (mode: FileAccessMode) => void
+  onOpenChange: (open: boolean) => void
+}) {
+  const Icon = ACCESS_ICONS[mode]
+  const label = uit`Agent access to ${name}: ${accessModeCopy(mode).label}`
+  if (!onModeChange) return <Icon className="size-3.5 shrink-0 text-muted-foreground" role="img" aria-label={label} />
+  return (
+    <DropdownMenu onOpenChange={onOpenChange}>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          aria-label={label}
+          data-access-mode={mode}
+          className={cn(
+            'grid size-6 shrink-0 cursor-pointer place-items-center rounded-md text-muted-foreground hover:bg-background/70 hover:text-foreground data-[state=open]:bg-background/70',
+            mode === 'write' && 'text-amber-600 dark:text-amber-400',
+          )}
+        >
+          <Icon className="size-3.5" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" side="top" className="w-72">
+        <DropdownMenuLabel className="truncate text-xs font-normal text-muted-foreground">{uit`What the agent can do with ${name}`}</DropdownMenuLabel>
+        <DropdownMenuRadioGroup value={mode} onValueChange={(value) => onModeChange(value as FileAccessMode)}>
+          {FILE_ACCESS_MODES.map((option) => {
+            const OptionIcon = ACCESS_ICONS[option]
+            const copy = accessModeCopy(option)
+            return (
+              <DropdownMenuRadioItem key={option} value={option} className="items-start">
+                <OptionIcon className="mt-0.5 text-muted-foreground" />
+                <span className="flex min-w-0 flex-col">
+                  <span>{copy.label}{option === DEFAULT_FILE_ACCESS_MODE && <span className="ml-1.5 text-xs text-muted-foreground">{ui("Default")}</span>}</span>
+                  <span className="text-xs text-muted-foreground">{copy.description}</span>
+                </span>
+              </DropdownMenuRadioItem>
+            )
+          })}
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
+
 /**
  * One file or folder the agent can use, shown in the composer like an attachment. Clicking it
- * shows the item beside the chat.
+ * shows the item beside the chat; its mode says what the agent may do with it.
  */
-export function FileScopeChip({ id, onRemove, className }: { id: string; onRemove?: () => void; className?: string }) {
+export function FileScopeChip({ id, mode = DEFAULT_FILE_ACCESS_MODE, onModeChange, onRemove, className }: {
+  id: string
+  mode?: FileAccessMode
+  /** Offered where the chat's scope can change. */
+  onModeChange?: (mode: FileAccessMode) => void
+  onRemove?: () => void
+  className?: string
+}) {
   const { node, missing } = useScopeNode(id)
   const openBeside = useOpenBeside()
+  // The open menu says what the tooltip would.
+  const [menuOpen, setMenuOpen] = useState(false)
   const root = id === FILE_SCOPE_ROOT
   const show = () => {
     if (root) openBeside({ kind: 'folder', id: null })
     else if (node) openBeside(node.kind === 'folder' ? { kind: 'folder', id: node.id } : { kind: 'file', id: node.id })
   }
   const name = root ? ui("My files") : node?.name ?? null
-  const hint = missing
-    ? ui("This item is no longer available")
-    : root || node?.kind === 'folder'
-      ? ui("The agent can read and edit files in this folder and its subfolders")
-      : ui("The agent can read and edit this file")
+  const hint = missing ? ui("This item is no longer available") : accessHint(mode, root || node?.kind === 'folder')
   return (
-    <Tooltip>
+    <Tooltip open={menuOpen ? false : undefined}>
       <TooltipTrigger asChild>
         <span className={cn(
           'inline-flex h-8 max-w-56 items-center gap-1.5 rounded-lg bg-muted pr-1 pl-2.5 text-sm',
@@ -56,6 +134,7 @@ export function FileScopeChip({ id, onRemove, className }: { id: string; onRemov
             ? <HardDrive className="size-4 shrink-0 text-sky-600 dark:text-sky-400" aria-hidden="true" />
             : node ? <FileNodeIcon node={node} className="size-4 shrink-0" /> : <span className="size-4 shrink-0" />}
           <button type="button" disabled={missing || (!root && !node)} className="min-w-0 cursor-pointer truncate hover:underline disabled:cursor-default disabled:no-underline" onClick={show}>{name ?? '…'}</button>
+          {!missing && <AccessModeControl mode={mode} name={name ?? ui("item")} onModeChange={onModeChange} onOpenChange={setMenuOpen} />}
           {onRemove && (
             <button
               type="button"
@@ -132,7 +211,7 @@ export function FileScopePicker({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>{ui("Add from Files")}</DialogTitle>
-          <DialogDescription>{ui("The agent can read and edit what you add. Folders include their subfolders.")}</DialogDescription>
+          <DialogDescription>{ui("The agent can suggest changes to what you add, for you to accept or reject; each item's menu changes that. Folders include their subfolders.")}</DialogDescription>
         </DialogHeader>
         <nav aria-label={ui("Folder path")} className="flex min-w-0 flex-wrap items-center gap-0.5 text-sm">
           <button type="button" className="flex cursor-pointer items-center gap-1 rounded px-1.5 py-0.5 hover:bg-accent" onClick={() => setFolderId(null)}>

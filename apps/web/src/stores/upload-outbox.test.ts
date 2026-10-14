@@ -271,6 +271,31 @@ describe('upload outbox', () => {
     expect(useChat.getState().chats[0]?.provisional).toBe(false)
   })
 
+  it('starts a new chat with its Files scope and the mode of each item', async () => {
+    useChat.setState({ chats: [], activeChatId: null })
+    const fileId = '00000000-0000-4000-8000-0000000000a1'
+    const staged = useUploadOutbox.getState().stageSubmission({
+      ...draft([], 'edit my plan'),
+      chatId: null,
+      agentMode: true,
+      fileScopeIds: [fileId, 'root'],
+      fileScopeAccess: { [fileId]: 'write' },
+    })
+
+    expect(useChat.getState().chats.find((chat) => chat.id === staged.chatId)).toMatchObject({
+      fileScopeIds: [fileId, 'root'],
+      fileScopeAccess: { [fileId]: 'write' },
+    })
+    const processing = processUploadOutboxChat(staged.chatId)
+    await vi.waitFor(() => expect(requests).toHaveLength(1))
+    expect(requests[0]).toMatchObject({
+      path: '/api/chats/start',
+      body: { chat: expect.objectContaining({ fileScopeIds: [fileId, 'root'], fileScopeAccess: { [fileId]: 'write' } }) },
+    })
+    requests[0]!.resolve({})
+    await processing
+  })
+
   it('promotes the queued follower when a provisional head is discarded', async () => {
     useChat.setState({ chats: [], activeChatId: null })
     useUploadOutbox.setState({ uploads: {

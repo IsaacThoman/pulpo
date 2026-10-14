@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { create } from 'zustand'
 import { focusComposer } from '@/components/chat/composer-focus'
-import { addFileScope } from '@/features/files/file-scope'
+import { addFileScope, NO_FILE_ACCESS, type FileScopeAccess } from '@/features/files/file-scope'
 import { useChat } from '@/stores/chat'
 import { useSidePanel, type PanelContent } from './store'
 
@@ -27,8 +27,8 @@ export type ChatTarget = { kind: 'new' } | { kind: 'chat'; id: string }
 
 export const useChatTarget = create<{ target: ChatTarget | null }>()(() => ({ target: null }))
 
-/** Files items for the unsent new chat; the new-chat composer shows them as chips. */
-export const useNewChatScope = create<{ scopeIds: string[] }>()(() => ({ scopeIds: [] }))
+/** Files items for the unsent new chat and their modes; the new-chat composer shows them as chips. */
+export const useNewChatScope = create<{ scopeIds: string[]; access: FileScopeAccess }>()(() => ({ scopeIds: [], access: NO_FILE_ACCESS }))
 
 /** The files views on screen, so Cmd/Ctrl+J can act on what the user is looking at. */
 export const useFilesViews = create<{ page: (FilesViewPlace & { item: AgentItem }) | null; panel: (FilesViewPlace & { item: AgentItem }) | null }>()(() => ({ page: null, panel: null }))
@@ -90,7 +90,7 @@ export function splitView(view: PanelContent, go: Go): void {
  */
 export function openInNewChat(ids: string[], place: FilesViewPlace | null, go: Go): void {
   if (place?.layout === 'page' && useSidePanel.getState().splitAvailable) useSidePanel.getState().open(place.view)
-  useNewChatScope.setState({ scopeIds: addFileScope([], ids) })
+  useNewChatScope.setState({ scopeIds: addFileScope([], ids), access: NO_FILE_ACCESS })
   go('/')
   // Already on the new-chat page, nothing remounts to take focus.
   requestAnimationFrame(() => focusComposer())

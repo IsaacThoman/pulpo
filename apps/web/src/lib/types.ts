@@ -1,5 +1,6 @@
 import type {
   ChatPreset,
+  FileAccessMode,
   QueuedMessage as ServerQueuedMessage,
   QueuedMessageAttachment as ServerQueuedMessageAttachment,
   UsageCostItem,
@@ -109,6 +110,8 @@ export interface Chat {
   temporary: boolean
   /** Files folders the agent may use (`root` means all files). */
   fileScopeIds?: string[]
+  /** What the agent may do with each of them; missing entries use the default mode. */
+  fileScopeAccess?: Record<string, FileAccessMode>
   expiresAt: number | null
   expired: boolean
   shareId?: string
