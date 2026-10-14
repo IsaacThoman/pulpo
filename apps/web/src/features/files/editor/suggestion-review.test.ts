@@ -31,6 +31,14 @@ describe('moving between hunks', () => {
     expect(hunkAt([hunk('a', 5, 9), hunk('b', 9, 12)], 9)?.id).toBe('b')
   })
 
+  it('prefers the innermost of nested hunks', () => {
+    const nested = [hunk('block', 10, 40), hunk('word', 11, 16)]
+    expect(hunkAt(nested, 11)?.id).toBe('word')
+    expect(hunkAt(nested, 13)?.id).toBe('word')
+    expect(hunkAt(nested, 20)?.id).toBe('block')
+    expect(hunkAt(nested, 40)?.id).toBe('block')
+  })
+
   it('steps from the active hunk, wrapping around', () => {
     expect(adjacentHunk(hunks, 0, 'a', 1)?.id).toBe('b')
     expect(adjacentHunk(hunks, 0, 'c', 1)?.id).toBe('a')

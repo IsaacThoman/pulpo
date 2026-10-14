@@ -4,6 +4,7 @@ import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
 import { Selection } from '@tiptap/pm/state'
 import { useEditorState, type Editor } from '@tiptap/react'
 import { ui, uit } from '@/i18n/ui'
+import { SUGGESTION_REVIEW_META } from './suggestion-typing'
 
 const hunkCache = new WeakMap<ProseMirrorNode, SuggestionHunk[]>()
 
@@ -17,9 +18,16 @@ export function docSuggestions(doc: ProseMirrorNode): SuggestionHunk[] {
   return hunks
 }
 
-/** The hunk the cursor is in or touching; between two, the one starting there. */
+function innermost(hunks: readonly SuggestionHunk[]): SuggestionHunk | null {
+  return hunks.reduce<SuggestionHunk | null>((best, hunk) => !best || hunk.to - hunk.from < best.to - best.from ? hunk : best, null)
+}
+
+/**
+ * The hunk the cursor is in or touching: the innermost when one sits inside another (text
+ * suggested inside a suggested block), and between two, the one starting there.
+ */
 export function hunkAt(hunks: readonly SuggestionHunk[], pos: number): SuggestionHunk | null {
-  return hunks.find((hunk) => hunk.from <= pos && pos < hunk.to) ?? hunks.find((hunk) => hunk.to === pos) ?? null
+  return innermost(hunks.filter((hunk) => hunk.from <= pos && pos < hunk.to)) ?? innermost(hunks.filter((hunk) => hunk.to === pos))
 }
 
 /** The next or previous hunk from the active one (or the cursor), wrapping around. */
@@ -58,11 +66,17 @@ const HOVER_GRACE_MS = 250
  * one at the cursor. Accepting and rejecting go through the editor so its undo covers them.
  */
 export function useSuggestionReview(editor: Editor, onResolved?: () => void) {
+  // The hunk last stepped to, and where that put the cursor. While the cursor stays there that
+  // hunk is the one looked at, even when the position also falls inside or next to another.
+  const stepped = useRef<{ id: string; pos: number } | null>(null)
   const { hunks, cursorId } = useEditorState({
     editor,
     selector: ({ editor: current }) => {
       const list = docSuggestions(current.state.doc)
-      return { hunks: list, cursorId: hunkAt(list, current.state.selection.from)?.id ?? null }
+      const pos = current.state.selection.from
+      const step = stepped.current
+      const cursorId = step?.pos === pos && list.some((hunk) => hunk.id === step.id) ? step.id : hunkAt(list, pos)?.id ?? null
+      return { hunks: list, cursorId }
     },
     // The list only changes with the document, and is then a new array.
     equalityFn: (a, b) => b !== null && a.hunks === b.hunks && a.cursorId === b.cursorId,
@@ -103,12 +117,14 @@ export function useSuggestionReview(editor: Editor, onResolved?: () => void) {
     if (!target) return
     setHoverId(null)
     const { tr } = editor.state
-    editor.view.dispatch(tr.setSelection(Selection.near(tr.doc.resolve(target.from))).scrollIntoView())
+    const selection = Selection.near(tr.doc.resolve(target.from))
+    stepped.current = { id: target.id, pos: selection.from }
+    editor.view.dispatch(tr.setSelection(selection).scrollIntoView())
     editor.view.focus()
   }
 
   const resolve = (match: (ref: SuggestionRef) => boolean, action: SuggestionAction) => {
-    const tr = resolveSuggestions(editor.state.tr, match, action)
+    const tr = resolveSuggestions(editor.state.tr.setMeta(SUGGESTION_REVIEW_META, true), match, action)
     if (!tr.docChanged) return
     setHoverId(null)
     editor.view.dispatch(tr)
