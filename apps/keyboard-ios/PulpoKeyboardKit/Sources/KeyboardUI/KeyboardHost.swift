@@ -30,7 +30,12 @@ public final class ProxyDocument: TextDocument {
     self.proxy = proxy
   }
 
-  public var documentIdentifier: UUID? { proxy.documentIdentifier }
+  public var documentIdentifier: UUID? {
+    // UIKit can return nil before the extension attaches to a document, despite
+    // importing this Objective-C property as a nonoptional UUID. KVC keeps that
+    // bootstrap nil optional instead of trapping in Foundation's UUID bridge.
+    (proxy as? NSObject)?.value(forKey: #keyPath(UITextDocumentProxy.documentIdentifier)) as? UUID
+  }
   public var documentContextBeforeInput: String? { proxy.documentContextBeforeInput }
   public var documentContextAfterInput: String? { proxy.documentContextAfterInput }
   public var selectedText: String? { proxy.selectedText }
