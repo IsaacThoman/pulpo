@@ -2,7 +2,16 @@ import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRe
 import { Outlet, useLocation } from 'react-router-dom'
 import { PanelLeftOpen } from 'lucide-react'
 import { TooltipProvider } from '@/components/ui/tooltip'
-import { Sidebar, SIDEBAR_COLLAPSED_WIDTH, SIDEBAR_WIDTH } from './Sidebar'
+import { Sidebar } from './Sidebar'
+import { SidebarResizeHandle } from './SidebarResizeHandle'
+import {
+  applySidebarWidth,
+  clampSidebarWidth,
+  readSidebarWidth,
+  SIDEBAR_COLLAPSED_WIDTH,
+  sidebarMaxWidth,
+  writeSidebarWidth,
+} from './sidebar-width'
 import { SettingsDialogProvider, type SettingsSectionId } from '@/components/settings/settings-dialog'
 import { ChatDataBridge } from '@/features/chat/ChatDataBridge'
 import { SettingsBridge } from '@/features/settings/SettingsBridge'
@@ -34,6 +43,11 @@ export function AppLayout() {
   const [keepSidebar, setKeepSidebar] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
   const [sidebarTransitions, setSidebarTransitions] = useState(true)
+  // The open desktop sidebar's width is kept as set; what shows is clamped to the room there is now.
+  const [preferredSidebarWidth, setPreferredSidebarWidth] = useState(readSidebarWidth)
+  const sidebarWidth = clampSidebarWidth(preferredSidebarWidth, frameWidth)
+  // Set while a drag on its edge sizes the sidebar directly, without its transitions.
+  const [sidebarTracking, setSidebarTracking] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
   const [searchHasQuery, setSearchHasQuery] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -47,8 +61,9 @@ export function AppLayout() {
   // An open side panel that fits only without the sidebar folds the sidebar away (without changing
   // the user's own choice), so the sidebar gives way before the panel does. It returns once there
   // is room again or the panel closes.
-  const panelNeedsSidebarRoom = panelOpen && !adminChatView
-    && !splitFits(frameWidth - SIDEBAR_WIDTH) && splitFits(frameWidth - SIDEBAR_COLLAPSED_WIDTH)
+  const panelNeedsRoomFrom = (width: number) => panelOpen && !adminChatView
+    && !splitFits(frameWidth - width) && splitFits(frameWidth - SIDEBAR_COLLAPSED_WIDTH)
+  const panelNeedsSidebarRoom = panelNeedsRoomFrom(sidebarWidth)
   const sidebarMakesRoom = !mobile && !collapsed && !searchHasQuery && !keepSidebar && panelNeedsSidebarRoom
   const sidebarCollapsed = mobile || collapsed || searchHasQuery || sidebarMakesRoom
   useEffect(() => { if (!panelNeedsSidebarRoom) setKeepSidebar(false) }, [panelNeedsSidebarRoom])
@@ -65,6 +80,16 @@ export function AppLayout() {
   }
   const toggleDesktopSidebarRef = useRef(toggleDesktopSidebar)
   toggleDesktopSidebarRef.current = toggleDesktopSidebar
+  const setDesktopSidebarOpen = (open: boolean) => {
+    if (open === sidebarCollapsed) toggleDesktopSidebar()
+  }
+  const changeSidebarWidth = (width: number) => {
+    setPreferredSidebarWidth(width)
+    writeSidebarWidth(width)
+    // Widened past the room an open panel needs, the sidebar keeps its width and the panel waits.
+    if (panelNeedsRoomFrom(clampSidebarWidth(width, frameWidth))) setKeepSidebar(true)
+  }
+  const sidebarTransitionsActive = sidebarTransitions && !sidebarTracking
   const desktopTitleBarVisible = isDesktopRuntime() && !adminChatView
   const mainUsesDesktopTitleBar = !mobile && !sidebarCollapsed
   const previousPathRef = useRef(location.pathname)
@@ -113,6 +138,10 @@ export function AppLayout() {
     observer.observe(frame)
     return () => observer.disconnect()
   }, [])
+
+  useLayoutEffect(() => {
+    applySidebarWidth(sidebarWidth)
+  }, [sidebarWidth])
 
   useEffect(() => {
     if (sidebarTransitions) return
@@ -189,7 +218,7 @@ export function AppLayout() {
         <DesktopSidebarTitleBar
           collapsed={sidebarCollapsed}
           compact={mobile}
-          transitions={sidebarTransitions}
+          transitions={sidebarTransitionsActive}
           visible={desktopTitleBarVisible}
           animationSpeed={animationSpeed}
         />
@@ -225,7 +254,7 @@ export function AppLayout() {
             collapsed={mobile ? false : sidebarCollapsed}
             mobile={mobile}
             mobileOpen={mobileOpen}
-            transitions={sidebarTransitions}
+            transitions={sidebarTransitionsActive}
             onToggle={() => mobile ? setMobileOpen(false) : toggleDesktopSidebar()}
             onNavigate={() => setMobileOpen(false)}
             onOpenSearch={() => {
@@ -236,6 +265,15 @@ export function AppLayout() {
               setMobileOpen(false)
               openSettings('general')
             }}
+          />}
+          {!adminChatView && !mobile && <SidebarResizeHandle
+            width={sidebarWidth}
+            maxWidth={sidebarMaxWidth(frameWidth)}
+            collapsed={sidebarCollapsed}
+            animationSpeed={animationSpeed}
+            onTrackingChange={setSidebarTracking}
+            onOpenChange={setDesktopSidebarOpen}
+            onWidthChange={changeSidebarWidth}
           />}
           <SidePanelLayout mobile={mobile} full={panelFull} enabled={!adminChatView}>
             <main className={cn('app-main min-w-0 flex-1 overflow-hidden', panelFull && 'hidden')}>

@@ -83,7 +83,7 @@ export function DesktopSidebarTitleBar({
               className={cn(
                 'desktop-sidebar-titlebar-expanded absolute inset-y-0 left-[52px] z-10 bg-sidebar motion-reduce:transition-none',
                 transitions && 'transition-[width] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]',
-                collapsed ? 'w-0' : 'w-[212px]',
+                collapsed ? 'w-0' : 'w-[calc(var(--sidebar-width)_-_52px)]',
               )}
             >
               <div
