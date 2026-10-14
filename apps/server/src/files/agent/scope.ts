@@ -165,7 +165,8 @@ export async function childNamed(userId: string, parentId: string | null, name: 
     eq(fileNodes.status, 'ready'),
     // Shortcuts are navigation aids for people; the agent works with the items themselves.
     ne(fileNodes.kind, 'shortcut'),
-    sql`lower(${fileNodes.name}) = ${name.toLowerCase()}`,
+    // Both sides in SQL: JavaScript and PostgreSQL lowercase some letters (İ) differently.
+    sql`lower(${fileNodes.name}) = lower(${name})`,
   )).limit(1)
   return row
 }
