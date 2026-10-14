@@ -322,6 +322,14 @@ public final class KeyboardEngine {
   public func deleteWordBackward() {
     pendingLearning = nil
     phantomSpace = false
+    if expectedSelection != nil || document.selectedText?.isEmpty == false {
+      // Like Backspace, a selection is the whole deletion.
+      deleteDocumentBackward()
+      composing = TypedWord(text: "")
+      lastEdit = .none
+      finishEdit()
+      return
+    }
     let text = before
     guard !text.isEmpty else { return }
     let count = Self.wordDeletionLength(in: Substring(text))

@@ -60,4 +60,55 @@ struct EditingRegressionTests {
     other.type("teh")
     #expect(other.composingText == "don\u{2019}teh")
   }
+
+  @Test func wordDeleteRemovesOnlyTheSelection() {
+    let (engine, document) = Fixtures.engine()
+    let host = SelectingDocument(document)
+    let selecting = KeyboardEngine(document: host, suggester: engine.suggester, glide: engine.glide)
+    selecting.documentDidChange()
+    selecting.type("te5")
+    host.select(last: 1)
+    selecting.documentDidChange()
+    selecting.deleteWordBackward()
+    #expect(host.text == "Te")
+    // A selection whose callback has not arrived yet is still the whole deletion.
+    host.select(last: 1)
+    selecting.deleteWordBackward()
+    #expect(host.text == "T")
+  }
+}
+
+/// A mock field whose selection is real: insertion and deletion replace it.
+private final class SelectingDocument: TextDocument {
+  let backing: MockDocument
+  var selection = 0
+
+  init(_ backing: MockDocument) { self.backing = backing }
+
+  var text: String { backing.text }
+  var documentIdentifier: UUID? { backing.documentIdentifier }
+  var documentContextBeforeInput: String? { String(backing.text[..<start]) }
+  var documentContextAfterInput: String? { String(backing.text[backing.cursor...]) }
+  var selectedText: String? { selection > 0 ? String(backing.text[start..<backing.cursor]) : nil }
+  var hasText: Bool { backing.hasText }
+  private var start: String.Index { backing.text.index(backing.cursor, offsetBy: -selection) }
+
+  func select(last count: Int) { selection = count }
+
+  func insertText(_ text: String) {
+    removeSelection()
+    backing.insertText(text)
+  }
+
+  func deleteBackward() {
+    if selection > 0 { removeSelection() } else { backing.deleteBackward() }
+  }
+
+  private func removeSelection() {
+    guard selection > 0 else { return }
+    let from = start
+    backing.text.removeSubrange(from..<backing.cursor)
+    backing.cursor = from
+    selection = 0
+  }
 }
