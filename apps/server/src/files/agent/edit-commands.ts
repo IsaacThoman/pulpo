@@ -1,6 +1,24 @@
+import type { FileAccessMode } from '@pulpo/contracts'
+import type { FileNodeRow } from '../access.js'
 import { changeMode, joinPath, stricterMode, type CommandContext, type CommandOutput } from './command-context.js'
 import { createFolderChange, moveChange, trashChange } from './mutations.js'
-import { FilesCommandError, locateExisting, locateOptional, locateParent, modeFor, splitPath, type Located } from './scope.js'
+import { attachedInside, FilesCommandError, locateExisting, locateOptional, locateParent, modeFor, splitPath, type Located } from './scope.js'
+
+/**
+ * The mode for moving or deleting an item with everything inside: the strictest of its own and
+ * of the attached items within it, which the user may have protected more than their folder.
+ */
+async function wholeItemMode(ctx: CommandContext, located: Located & { node: FileNodeRow }): Promise<FileAccessMode | null> {
+  let mode = await modeFor(ctx.scope, located.node.id)
+  if (mode === 'read') return mode
+  for (const item of await attachedInside(ctx.scope, located.node.id)) {
+    if (item.mode === 'read') {
+      throw new FilesCommandError(`"${located.path}" holds "${item.path}", which is read only. Leave it out, or ask the user to allow changes to it.`)
+    }
+    mode = stricterMode(mode, item.mode)
+  }
+  return mode
+}
 
 async function createFolderAt(ctx: CommandContext, parent: Located, name: string, path: string): Promise<string> {
   const mode = changeMode(await modeFor(ctx.scope, parent.node?.id ?? null), parent.path)
@@ -45,7 +63,7 @@ export async function mvCommand(ctx: CommandContext, args: { from: string; to: s
   const source = await locateExisting(ctx.scope, args.from)
   if (!source.node) throw new FilesCommandError('The top of My files cannot be moved')
   const target = await moveTarget(ctx, source, args.to)
-  const sourceMode = await modeFor(ctx.scope, source.node.id)
+  const sourceMode = await wholeItemMode(ctx, { ...source, node: source.node })
   const targetMode = await modeFor(ctx.scope, target.parent.node?.id ?? null)
   const mode = changeMode(stricterMode(sourceMode, targetMode), sourceMode === 'read' ? source.path : target.parent.path)
   const result = await moveChange(ctx, source.node.id, { parentId: target.parent.node?.id ?? null, name: target.name }, mode)
@@ -65,7 +83,7 @@ export async function rmCommand(ctx: CommandContext, args: { path: string; recur
   if (located.node.kind === 'folder' && !args.recursive) {
     throw new FilesCommandError(`"${located.path}" is a folder; use pulpo files rm -r to delete it with everything inside`)
   }
-  const mode = changeMode(await modeFor(ctx.scope, located.node.id), located.path)
+  const mode = changeMode(await wholeItemMode(ctx, { ...located, node: located.node }), located.path)
   const result = await trashChange(ctx, located.node.id, mode)
   ctx.changed = true
   const messages = {

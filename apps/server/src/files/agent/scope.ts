@@ -137,6 +137,16 @@ export async function modeFor(scope: FileScope, nodeId: string | null, executor:
   return scope.modes.get(FILE_SCOPE_ROOT) ?? null
 }
 
+/** Attached items inside an item (not the item itself): their own modes apply to them. */
+export async function attachedInside(scope: FileScope, nodeId: string): Promise<AttachedFileItem[]> {
+  const inside: AttachedFileItem[] = []
+  for (const item of scope.attached) {
+    if (!item.node || item.node.id === nodeId) continue
+    if ((await chainIds(db, scope.userId, item.node.id)).includes(nodeId)) inside.push(item)
+  }
+  return inside
+}
+
 export function splitPath(path: string): string[] {
   const segments = path.trim().replace(/^\/+|\/+$/g, '').split('/').map((segment) => normalizeFileName(segment)).filter(Boolean)
   if (segments.some((segment) => segment === '.' || segment === '..')) throw new FilesCommandError('Paths cannot contain "." or ".." segments')
