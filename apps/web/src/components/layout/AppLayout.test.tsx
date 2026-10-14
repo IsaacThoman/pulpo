@@ -135,7 +135,7 @@ describe('desktop sidebar edge', () => {
     pointer('pointermove', 254)
     expect(sidebarWidth()).toBe('254px')
     pointer('pointermove', 900)
-    expect(sidebarWidth()).toBe('480px')
+    expect(sidebarWidth()).toBe('385px')
     pointer('pointermove', 340)
     expect(sidebarWidth()).toBe('340px')
     pointer('pointerup', 340)
@@ -184,12 +184,12 @@ describe('desktop sidebar edge', () => {
   })
 
   it('resizes and toggles from the keyboard, and double-click restores the default', () => {
-    localStorage.setItem('pulpo.sidebar.width', '400')
+    localStorage.setItem('pulpo.sidebar.width', '360')
     const view = mount()
     const sidebar = view.container.querySelector('aside')!
-    expect(edge().getAttribute('aria-valuenow')).toBe('400')
+    expect(edge().getAttribute('aria-valuenow')).toBe('360')
     fireEvent.keyDown(edge(), { key: 'ArrowLeft' })
-    expect(edge().getAttribute('aria-valuenow')).toBe('384')
+    expect(edge().getAttribute('aria-valuenow')).toBe('344')
     fireEvent.keyDown(edge(), { key: 'Enter' })
     expect(sidebar.getAttribute('data-collapsed')).toBe('true')
     fireEvent.doubleClick(edge())
@@ -198,12 +198,16 @@ describe('desktop sidebar edge', () => {
     expect(localStorage.getItem('pulpo.sidebar.width')).toBe('264')
   })
 
-  it('leaves the main view its minimum in a narrow window', () => {
+  it('caps a saved width, and leaves the main view its minimum in a narrow window', () => {
     localStorage.setItem('pulpo.sidebar.width', '480')
-    vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(800)
+    const frameWidth = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(1200)
     mount()
-    expect(sidebarWidth()).toBe('440px')
-    expect(edge().getAttribute('aria-valuemax')).toBe('440')
+    expect(sidebarWidth()).toBe('385px')
+    expect(edge().getAttribute('aria-valuemax')).toBe('385')
+    frameWidth.mockReturnValue(720)
+    act(() => { window.dispatchEvent(new Event('resize')) })
+    expect(sidebarWidth()).toBe('360px')
+    expect(edge().getAttribute('aria-valuemax')).toBe('360')
   })
 
   it('is not offered on mobile', () => {

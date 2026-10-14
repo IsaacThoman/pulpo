@@ -4,7 +4,7 @@ import { MAIN_VIEW_MIN_WIDTH } from '@/features/side-panel/store'
 export const SIDEBAR_COLLAPSED_WIDTH = 52
 export const DEFAULT_SIDEBAR_WIDTH = 264
 export const SIDEBAR_MIN_WIDTH = 200
-export const SIDEBAR_MAX_WIDTH = 480
+export const SIDEBAR_MAX_WIDTH = 385
 /** Dragging the edge in past this folds the sidebar to its rail; dragging the rail out past it opens it. */
 export const SIDEBAR_SNAP_WIDTH = (SIDEBAR_COLLAPSED_WIDTH + SIDEBAR_MIN_WIDTH) / 2
 const WIDTH_STORAGE_KEY = 'pulpo.sidebar.width'
