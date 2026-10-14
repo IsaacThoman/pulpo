@@ -153,7 +153,9 @@ export async function updateDocChange(reply: ReplyContext, nodeId: string, markd
     await writeDocInTx(tx, effects, { nodeId: node.id, doc, node: merged.doc, actorUserId: reply.userId, origin: 'agent' })
     // Read back from the Y document, so undo compares against exactly what it holds.
     const written = ydocToNode(doc)
-    if (!folded) {
+    // A suggestion that only revised text earlier suggestions inserted stays with those.
+    const ownHunks = mode === 'write' || existing || merged.hunks > 0
+    if (!folded && ownHunks) {
       await recordChange(tx, reply, {
         id: changeId, nodeId: node.id, mode, kind: 'update',
         ...mode === 'write' ? { before: { doc: current.toJSON() }, after: { doc: written.toJSON() } } : {},

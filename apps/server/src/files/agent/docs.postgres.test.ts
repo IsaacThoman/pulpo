@@ -157,6 +157,21 @@ describe.skipIf(!enabled)('agent document changes', () => {
     expect((await listFileChanges(files.userId, first)).changes[0]).toMatchObject({ status: 'pending', pendingSuggestions: 1 })
   })
 
+  it('folds a revision of an earlier suggested paragraph into that suggestion', async () => {
+    const projects = await files.folder('Projects')
+    const plan = await files.doc('Plan.md', projects, 'Alpha')
+    await files.attach({ [projects]: 'suggest' })
+    await edit('Projects/Plan.md', (markdown) => `${markdown}\n\nNew idea`)
+    const first = files.responseId
+    await files.newReply()
+    expect(await edit('Projects/Plan.md', (markdown) => markdown.replace('New idea', 'Newer idea'))).toMatchObject({
+      status: 'suggested', message: expect.stringMatching(/^Revised your suggested changes/),
+    })
+    expect(await db.select().from(fileChanges).where(eq(fileChanges.responseId, files.responseId))).toEqual([])
+    expect(ydocToMarkdown(await loadYDoc(plan), 'proposed')).toBe('Alpha\n\nNewer idea')
+    expect((await listFileChanges(files.userId, first)).changes[0]).toMatchObject({ status: 'pending', pendingSuggestions: 1 })
+  })
+
   it('edits documents the agent added directly', async () => {
     const projects = await files.folder('Projects')
     await files.attach({ [projects]: 'suggest' })
