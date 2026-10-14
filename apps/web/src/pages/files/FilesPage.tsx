@@ -6,6 +6,7 @@ import {
   Archive,
   ArrowDown,
   ArrowUp,
+  Check,
   ChevronRight,
   ClipboardPaste,
   Copy,
@@ -53,6 +54,8 @@ import { createDoc, createFolder, fetchFolder, fetchFolderLayout, folderLayoutQu
 import { arrangeGrid, GRID_CELL, moveInGrid, readingOrder } from '@/features/files/browser/grid-layout'
 import { dropFolderOf, filesErrorMessage } from '@/features/files/file-display'
 import { FileMoveDialog } from '@/features/files/FileMoveDialog'
+import { FileSuggestionBanner } from '@/features/files/FileSuggestion'
+import { useResolveFileSuggestion } from '@/features/files/use-file-suggestion'
 import { useFilesPageRequest } from '@/features/files/files-page-request'
 import { useFileReveal } from '@/features/files/reveal'
 import { useFileClipboard } from '@/features/files/browser/clipboard'
@@ -171,6 +174,7 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
   const agentItem = useMemo(() => ({ id: folderId ?? FILE_SCOPE_ROOT }), [folderId])
   usePublishFilesView(place, filesEnabled && !listing.isError ? agentItem : null)
   const ops = useFileOperations()
+  const resolveFileSuggestion = useResolveFileSuggestion()
   const sidebar = useSidebarState().data
   const clip = useFileClipboard((state) => state.clip)
   const [view, setView] = useState<FilesView>(readView)
@@ -693,6 +697,14 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
   // Files and folders in the selection can be given a color and icon; chats and shortcuts are left out.
   const canStyle = selectedNodes.some(hasAppearance)
   const canUseAgent = fileSelection.length > 0 && fileSelection.length <= MAX_CHAT_FILE_SCOPES
+  const resolveSuggestion = async (node: FileNode, action: 'accept' | 'reject') => {
+    try {
+      await resolveFileSuggestion(node, action)
+      ops.notify(action === 'accept' ? uit`Kept "${node.name}"` : uit`Deleted "${node.name}"`)
+    } catch (cause) {
+      ops.fail(cause)
+    }
+  }
   const archiveSelection = async () => {
     const targets = selectedNodes
     setSelection(EMPTY_SELECTION)
@@ -718,6 +730,13 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
         <DropdownMenuItem onSelect={() => openElsewhere(nodeContent(resolveShortcut(single)))}>
           <ElsewhereIcon /> {elsewhereLabel}<DropdownMenuShortcut>{elsewhereShortcut}</DropdownMenuShortcut>
         </DropdownMenuItem>
+      )}
+      {single?.suggestion && (
+        <>
+          <DropdownMenuItem onSelect={() => void resolveSuggestion(single, 'accept')}><Check /> {ui("Accept suggestion")}</DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => void resolveSuggestion(single, 'reject')}><X /> {ui("Reject suggestion")}</DropdownMenuItem>
+          <DropdownMenuSeparator />
+        </>
       )}
       {canUseAgent && <AgentMenuItems ids={fileSelection.map((node) => node.id)} place={place} />}
       {canDownload && (
@@ -998,6 +1017,16 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
         {panel ? <PanelWindowButtons content={place.view} /> : <SplitViewButton view={place.view} />}
         {fileInputElement}
       </header>
+      {listing.data?.folder?.suggestion && (
+        <FileSuggestionBanner
+          node={listing.data.folder}
+          onRejected={() => {
+            const parentId = listing.data?.folder?.parentId ?? null
+            if (panel) useSidePanel.getState().open({ kind: 'folder', id: parentId })
+            else navigate(parentId ? `/files/f/${parentId}` : '/files', { replace: true })
+          }}
+        />
+      )}
       <ScrollArea className="min-h-0 flex-1" horizontal={view === 'grid'} {...scrollHandlers}>
         <div ref={bodyRef} className={cn('min-h-full px-4 py-3', !panel && 'mx-auto max-w-6xl', dropHighlight, marquee && 'select-none')}>
           <div ref={widthProbe} aria-hidden className="h-0 w-full" />

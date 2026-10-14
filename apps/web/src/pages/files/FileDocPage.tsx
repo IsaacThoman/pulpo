@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { DOC_FRAGMENT_NAME } from '@pulpo/client-core/doc-schema'
 import { isMarkdownName, type FileConversionPreview, type FileNode } from '@pulpo/contracts'
@@ -13,6 +13,7 @@ import { useAuth } from '@/stores/auth'
 import { useSettings } from '@/stores/settings'
 import { Markdown } from '@/components/chat/Markdown'
 import {
+  allFileChangesQueryKey,
   convertToDoc,
   downloadDocMarkdown,
   downloadFile,
@@ -28,6 +29,7 @@ import { DocEditor } from '@/features/files/editor/DocEditor'
 import type { DocSyncStatus } from '@/features/files/editor/socket-provider'
 import { useDocSession, type PresencePeer } from '@/features/files/editor/use-doc-session'
 import { FilePreviewBody } from '@/features/files/FilePreview'
+import { FileSuggestionBanner } from '@/features/files/FileSuggestion'
 import { MarkdownConversionDialog } from '@/features/files/MarkdownConversionDialog'
 import { revealFileInPlace } from '@/features/files/reveal'
 import { PanelWindowButtons } from '@/features/side-panel/PanelControls'
@@ -191,6 +193,21 @@ interface FileViewContext {
 
 const PAGE_VIEW: FileViewContext = { layout: 'page' }
 
+/** A suggested file's banner; rejecting deletes the file, so its view closes or shows its folder. */
+function SuggestionBanner({ node, view }: { node: FileNode | undefined; view: FileViewContext }) {
+  const navigate = useNavigate()
+  if (!node?.suggestion) return null
+  return (
+    <FileSuggestionBanner
+      node={node}
+      onRejected={() => {
+        if (view.layout === 'panel') useSidePanel.getState().close()
+        else navigate(node.parentId ? `/files/f/${node.parentId}` : '/files', { replace: true })
+      }}
+    />
+  )
+}
+
 /** Title bar shared by every file view; in the side panel it adds full-page and close buttons. */
 function FileHeader({ node, ancestors, view, onDownload, children }: {
   node: FileNode | undefined
@@ -227,7 +244,11 @@ function FileHeader({ node, ancestors, view, onDownload, children }: {
   )
 }
 
+/** Time for a resolved suggestion to reach the server before replies recount what is pending. */
+const SUGGESTION_SYNC_DELAY_MS = 1_500
+
 function OpenDoc({ userId, docId, view }: { userId: string; docId: string; view: FileViewContext }) {
+  const queryClient = useQueryClient()
   const nodeQuery = useQuery({ queryKey: fileNodeQueryKey(userId, docId), queryFn: () => fetchFileNode(docId) })
   const { session, status, peers } = useDocSession(userId, docId)
   const [everSynced, setEverSynced] = useState(false)
@@ -256,6 +277,7 @@ function OpenDoc({ userId, docId, view }: { userId: string; docId: string; view:
         <Presence peers={peers} />
         <SyncIndicator status={status} />
       </FileHeader>
+      <SuggestionBanner node={node} view={view} />
 
       {(problem || notice) && (
         <div role="alert" className={cn('flex items-center gap-2 border-b px-4 py-2 text-sm sm:px-6', problem ? 'bg-amber-500/10 text-amber-700 dark:text-amber-300' : 'bg-destructive/5 text-destructive')}>
@@ -268,7 +290,13 @@ function OpenDoc({ userId, docId, view }: { userId: string; docId: string; view:
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         {session ? (
-          <DocEditor key={docId} session={session} editable={editable} width={view.layout === 'panel' ? 'fill' : chatWidth === 'full' ? 'wide' : 'narrow'} />
+          <DocEditor
+            key={docId}
+            session={session}
+            editable={editable}
+            width={view.layout === 'panel' ? 'fill' : chatWidth === 'full' ? 'wide' : 'narrow'}
+            onSuggestionsResolved={() => window.setTimeout(() => void queryClient.invalidateQueries({ queryKey: allFileChangesQueryKey(userId) }), SUGGESTION_SYNC_DELAY_MS)}
+          />
         ) : (
           <div className="grid h-64 place-items-center"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>
         )}
@@ -341,6 +369,7 @@ function MarkdownFileView({ node, ancestors, view }: { node: FileNode; ancestors
           {busy ? <Loader2 className="animate-spin" /> : <Pencil />} {ui("Edit")}
         </Button>
       </FileHeader>
+      <SuggestionBanner node={node} view={view} />
       {notice && (
         <div role="alert" className="flex items-center gap-2 border-b bg-destructive/5 px-4 py-2 text-sm text-destructive sm:px-6">
           <TriangleAlert className="size-4 shrink-0" />
@@ -378,6 +407,7 @@ function BlobFileView({ node, ancestors, view }: { node: FileNode; ancestors: Fi
       >
         <span className="hidden text-xs text-muted-foreground tabular-nums sm:inline">{formatBytes(node.sizeBytes)}</span>
       </FileHeader>
+      <SuggestionBanner node={node} view={view} />
       {notice && <p role="alert" className="border-b bg-destructive/5 px-4 py-2 text-sm text-destructive sm:px-6">{notice}</p>}
       <div className="min-h-0 flex-1 overflow-auto bg-muted/20 p-4">
         <FilePreviewBody node={node} />

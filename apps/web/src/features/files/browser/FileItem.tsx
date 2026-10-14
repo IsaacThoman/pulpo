@@ -7,6 +7,7 @@ import { timeAgo } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { dropFolderOf, fileKindLabel } from '../file-display'
 import { FileNodeIcon } from '../FileNodeIcon'
+import { SuggestedBadge } from '../FileSuggestion'
 import { InlineRename } from './InlineRename'
 
 export interface FileDropHandlers {
@@ -90,6 +91,7 @@ export function FileItem(props: FileItemProps) {
       >
         <FileNodeIcon node={node} className="size-11" />
         {name}
+        {node.suggestion && <SuggestedBadge className="absolute top-1.5 left-1.5 bg-background/80" />}
         <div className="absolute top-1 right-1">{menuButton}</div>
       </div>
     )
@@ -111,6 +113,7 @@ export function FileItem(props: FileItemProps) {
       <span className="flex min-w-0 items-center gap-3 py-2">
         <FileNodeIcon node={node} className="size-5" />
         {name}
+        {node.suggestion && !renaming && <SuggestedBadge />}
       </span>
       <span className="hidden truncate text-sm text-muted-foreground @2xl:block">{timeAgo(Date.parse(node.updatedAt))}</span>
       <span className="hidden truncate text-sm text-muted-foreground @2xl:block">{fileKindLabel(node)}</span>
