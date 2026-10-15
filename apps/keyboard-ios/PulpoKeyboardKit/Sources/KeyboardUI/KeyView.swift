@@ -161,6 +161,11 @@ final class KeyView: UIView {
     }
   }
 
+  override var accessibilityCustomActions: [UIAccessibilityCustomAction]? {
+    get { (superview as? KeysView)?.accessibilityActions(for: self) }
+    set {}
+  }
+
   override func accessibilityActivate() -> Bool {
     (superview as? KeysView)?.activateForAccessibility(self)
     return true

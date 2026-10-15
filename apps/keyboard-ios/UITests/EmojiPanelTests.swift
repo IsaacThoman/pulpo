@@ -40,7 +40,7 @@ final class EmojiPanelTests: XCTestCase {
       let panel = try makePanel(style: style, width: landscape ? 667 : 320)
       let buttons = panel.subviews.compactMap { $0 as? UIButton }
         + panel.subviews.compactMap { $0 as? UIStackView }.flatMap { $0.arrangedSubviews.compactMap { $0 as? UIButton } }
-      XCTAssertEqual(buttons.count, 11)
+      XCTAssertEqual(buttons.count, 12, "ABC, delete, search and nine categories")
       for button in buttons {
         let rect = button.convert(button.bounds, to: panel)
         XCTAssertTrue(panel.bounds.contains(rect), "\(button.accessibilityLabel ?? button.currentTitle ?? "button") leaves panel")

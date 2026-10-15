@@ -23,6 +23,8 @@ struct PulpoKeyboardApp: App {
 struct HomeView: View {
   @Environment(AppModel.self) private var model
   @State private var confirmClear = false
+  /// Shared with the keyboard, which also changes it from the emoji key's menu.
+  @AppStorage(OneHandedStore.key, store: AppGroup.defaults) private var oneHanded: OneHandedMode = .off
   @State private var path: [Screen] = ProcessInfo.processInfo.arguments.contains("-PKPreview") ? [.tryIt] : []
 
   enum Screen: Hashable {
@@ -71,10 +73,16 @@ struct HomeView: View {
             .disabled(!model.settings.swipeTyping)
           Toggle("Character Preview", isOn: $model.settings.keyPopups)
           Toggle("Number Hints on Top Row", isOn: $model.settings.digitHints)
+          Picker("One-Handed Keyboard", selection: $oneHanded) {
+            Text("Off").tag(OneHandedMode.off)
+            Text("Left").tag(OneHandedMode.left)
+            Text("Right").tag(OneHandedMode.right)
+          }
+          .accessibilityIdentifier("one-handed-setting")
         } header: {
           Text("Typing")
         } footer: {
-          Text("Double-tapping the space bar types a period. Slide to Type lets you swipe across letters to write a word.")
+          Text("Double-tapping the space bar types a period. Slide to Type lets you swipe across letters to write a word. Touch and hold the emoji key to switch to a one-handed keyboard.")
         }
 
         Section("Feedback") {

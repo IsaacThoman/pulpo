@@ -15,12 +15,16 @@ public enum KeyboardResources {
 }
 
 /// The keyboard's root view: suggestion bar over the key grid, or a full-height
-/// emoji or dictation panel.
+/// emoji or dictation panel. Emoji search puts its search row over the keys.
+/// A one-handed layout narrows the bar and keys against one edge, with side
+/// controls in the space left over.
 public final class KeyboardRootView: UIView {
   let bar: SuggestionBarView
   let keys: KeysView
   var emoji: EmojiPanelView?
   let dictation: DictationPanelView
+  let search: EmojiSearchBarView
+  let sidePanel: OneHandedPanelView
   var style: KeyboardStyle
   /// Paint gaps as well as caps so remote keyboard hit testing receives them.
   public var paintsBackground = false { didSet { backgroundColor = paintsBackground ? style.background : .clear } }
@@ -30,7 +34,7 @@ public final class KeyboardRootView: UIView {
   public var bottomTouchPadding: CGFloat = 0
 
   public override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
-    if mode == .keys, bottomTouchPadding > 0 {
+    if showsKeys, bottomTouchPadding > 0 {
       var area = bounds
       area.size.height += bottomTouchPadding
       return area.contains(point)
@@ -38,18 +42,43 @@ public final class KeyboardRootView: UIView {
     return super.point(inside: point, with: event)
   }
 
-  enum Mode { case keys, emoji, dictation }
+  enum Mode { case keys, emoji, dictation, emojiSearch }
   var mode: Mode = .keys { didSet { if mode != oldValue { applyMode() } } }
+  /// The key grid is showing, for typing or for the emoji search field.
+  var showsKeys: Bool { mode == .keys || mode == .emojiSearch }
+
+  /// The chosen one-handed layout. It applies only where the keyboard can dock.
+  var oneHanded: OneHandedMode = .off {
+    didSet {
+      guard oneHanded != oldValue else { return }
+      setNeedsLayout()
+      layoutIfNeeded()
+    }
+  }
+
+  /// Whether this width and orientation leave room to dock the keys.
+  var canDock: Bool { !style.landscape && OneHandedMode.right.keysWidth(in: Double(bounds.width)) < bounds.width }
+
+  /// The key area's width: narrower when docked.
+  var keysWidth: CGFloat {
+    style.landscape ? bounds.width : CGFloat(oneHanded.keysWidth(in: Double(bounds.width)))
+  }
 
   init(style: KeyboardStyle, layout: KeyboardLayout) {
     self.style = style
     bar = SuggestionBarView(style: style)
     keys = KeysView(layout: layout, style: style)
     dictation = DictationPanelView(style: style)
+    search = EmojiSearchBarView(style: style)
+    sidePanel = OneHandedPanelView(style: style)
     super.init(frame: .zero)
     accessibilityIdentifier = "pulpo-keyboard"
     addSubview(bar)
     addSubview(keys)
+    search.isHidden = true
+    addSubview(search)
+    sidePanel.isHidden = true
+    addSubview(sidePanel)
     dictation.isHidden = true
     addSubview(dictation)
     keys.popupHost = self
@@ -63,6 +92,8 @@ public final class KeyboardRootView: UIView {
     bar.applyStyle(style)
     dictation.applyStyle(style)
     emoji?.applyStyle(style)
+    search.applyStyle(style)
+    sidePanel.applyStyle(style)
     if paintsBackground { backgroundColor = style.background }
     setNeedsLayout()
   }
@@ -70,17 +101,22 @@ public final class KeyboardRootView: UIView {
   private func applyMode() {
     keys.cancelAllTouches()
     bar.isHidden = mode != .keys
-    keys.isHidden = mode != .keys
+    search.isHidden = mode != .emojiSearch
+    keys.isHidden = !showsKeys
     emoji?.isHidden = mode != .emoji
     dictation.isHidden = mode != .dictation
+    sidePanel.isHidden = !showsKeys || keysWidth >= bounds.width
   }
 
   /// Keep the lower bar edge forgiving for the top row, and forward unused bar
   /// background or empty suggestion slots rather than letting them swallow taps.
+  /// The one-handed side controls keep their own strip.
   public override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
     let target = super.hitTest(point, with: event)
-    guard target != nil, mode == .keys, !bar.isShowingNotice else { return target }
-    if point.y >= bar.frame.maxY - 7, point.y < bar.frame.maxY { return keys }
+    guard target != nil, showsKeys, mode == .emojiSearch || !bar.isShowingNotice else { return target }
+    if !sidePanel.isHidden, sidePanel.frame.contains(point) { return target }
+    let row: UIView = mode == .keys ? bar : search
+    if point.y >= row.frame.maxY - 7, point.y < row.frame.maxY { return keys }
     if let target, target === bar || target === self { return keys }
     if let slot = target as? SlotControl, !slot.isEnabled { return keys }
     return target
@@ -88,8 +124,15 @@ public final class KeyboardRootView: UIView {
 
   public override func layoutSubviews() {
     super.layoutSubviews()
-    bar.frame = CGRect(x: 0, y: 0, width: bounds.width, height: style.barHeight)
-    keys.frame = CGRect(x: 0, y: style.barHeight, width: bounds.width, height: bounds.height - style.barHeight)
+    let width = keysWidth
+    let panelWidth = bounds.width - width
+    let x = oneHanded == .right ? panelWidth : 0
+    bar.frame = CGRect(x: x, y: 0, width: width, height: style.barHeight)
+    search.frame = bar.frame
+    keys.frame = CGRect(x: x, y: style.barHeight, width: width, height: bounds.height - style.barHeight)
+    sidePanel.side = oneHanded
+    sidePanel.frame = CGRect(x: oneHanded == .right ? 0 : width, y: 0, width: panelWidth, height: bounds.height)
+    sidePanel.isHidden = !showsKeys || panelWidth <= 0
     emoji?.frame = bounds
     dictation.frame = bounds
   }
@@ -118,7 +161,15 @@ public final class KeyboardController: NSObject {
   private var glideFallbacks = 0
   private let emojiHistory: EmojiHistory
   private var emojiCatalog: EmojiCatalog?
+  private var emojiSuggester: EmojiSuggester?
   private var pendingEmojiPresentation = false
+  /// The emoji search field's text, while searching from the picker.
+  private var emojiSearch: EmojiSearchQuery?
+  /// Shift for the search field, apart from the document's shift state.
+  private var searchShift: ShiftState = .off
+  /// The document a search started in; another field ends the search.
+  private var searchDocument: UUID?
+  private let oneHandedStore: OneHandedStore
   /// A delete press that would undo an autocorrection or swiped word waits for
   /// lift (or repeat), so a word swipe that follows never teaches the typo.
   private var deferredDelete = false
@@ -159,6 +210,7 @@ public final class KeyboardController: NSObject {
     engine = KeyboardEngine(document: host.document, suggester: stack?.suggester, glide: stack?.glide, settings: settings)
     let emojiDefaults = AppGroup.isWritable ? (AppGroup.defaults ?? .standard) : .standard
     emojiHistory = EmojiHistory(defaults: emojiDefaults)
+    oneHandedStore = OneHandedStore(defaults: emojiDefaults)
     engine.emojiHistory = emojiHistory
     engine.traits = host.inputTraits
     let style = KeyboardStyle.current(dark: host.inputTraits.prefersDarkAppearance == true, landscape: false, inset: !host.isInsideApp)
@@ -173,6 +225,14 @@ public final class KeyboardController: NSObject {
     rootView.bar.onMicrophone = { [weak self] in self?.startDictation() }
     rootView.bar.onSettings = { [weak self] in self?.host?.openApp(URL(string: "\(AppGroup.urlScheme)://settings")!) }
     rootView.bar.onUndo = { [weak self] in self?.undoWordDeletion() }
+    rootView.search.onBack = { [weak self] in self?.endEmojiSearch(showingPanel: true) }
+    rootView.search.onSelect = { [weak self] in self?.insertSearchResult($0) }
+    rootView.sidePanel.onExpand = { [weak self] in self?.chooseOneHanded(.off) }
+    rootView.sidePanel.onMove = { [weak self] in
+      guard let self else { return }
+      self.chooseOneHanded(self.rootView.oneHanded.flipped)
+    }
+    rootView.oneHanded = oneHandedStore.load()
     rootView.dictation.onStop = { [weak self] in self?.stopDictation() }
     rootView.dictation.onCancel = { [weak self] in self?.cancelDictation() }
     dictationObserver = DarwinNotifications.observe(DictationBridge.stateNotification) { [weak self] in
@@ -184,6 +244,7 @@ public final class KeyboardController: NSObject {
     Task { [weak self] in
       guard let prepared = await resources.value, let self else { return }
       self.emojiCatalog = prepared.catalog
+      self.emojiSuggester = prepared.suggester
       self.engine.emojiSuggester = prepared.suggester
       self.engine.refreshSuggestions()
       self.sync()
@@ -208,6 +269,9 @@ public final class KeyboardController: NSObject {
     if host?.hasFullAccess == true { KeyboardHeartbeat.record(hasFullAccess: true) }
     engine.traits = host?.inputTraits ?? InputTraits()
     engine.page = engine.traits.keyboard == .numbersAndPunctuation ? .numbers : .letters
+    emojiSearch = nil
+    searchShift = .off
+    rootView.oneHanded = oneHandedStore.load()
     rootView.mode = .keys
     engine.documentDidChange()
     sync()
@@ -231,6 +295,13 @@ public final class KeyboardController: NSObject {
 
   public func documentDidChange() {
     let traits = host?.inputTraits ?? InputTraits()
+    let identifier = host?.document.documentIdentifier
+    let otherDocument = identifier != nil && searchDocument != nil && identifier != searchDocument
+    if isSearching, traits != engine.traits || otherDocument {
+      // Another field: its keyboard starts over, as after reappearing.
+      emojiSearch = nil
+      rootView.mode = .keys
+    }
     if traits != engine.traits {
       engine.traits = traits
       engine.page = traits.keyboard == .numbersAndPunctuation ? .numbers : .letters
@@ -275,6 +346,17 @@ public final class KeyboardController: NSObject {
   // MARK: Rendering
 
   private func sync() {
+    if isSearching {
+      if layoutKey != "emojiSearch" {
+        layoutKey = "emojiSearch"
+        rootView.keys.setLayout(KeyboardLayout.emojiSearch(), style: rootView.style)
+      } else if rootView.keys.style != rootView.style {
+        rootView.keys.setLayout(rootView.keys.layout, style: rootView.style)
+      }
+      rootView.keys.shift = searchShift
+      rootView.keys.returnEnabled = true
+      return
+    }
     let traits = engine.traits
     let needsGlobe = host?.needsInputModeSwitchKey ?? false
     let key = "\(engine.page)|\(traits.keyboard)|\(traits.returnKey)|\(needsGlobe)|\(settings.digitHints)"
@@ -333,15 +415,23 @@ public final class KeyboardController: NSObject {
     rootView.keys.stats = KeysView.Stats()
   }
 
-  private func updateGeometry() {
-    guard engine.page == .letters, let stack, rootView.keys.bounds.width > 0 else { return }
+  /// Letter centers in key pitches, from the key frames on screen. A docked
+  /// one-handed grid has narrower pitches, so the same layout normalizes to the
+  /// same geometry and taps and swipes keep their meaning.
+  var letterGeometry: LetterGeometry? {
     let pitch = rootView.keys.pitch
     let centers = rootView.keys.letterCenters
-    guard centers.count == 26, pitch.width > 1 else { return }
-    stack.setGeometry(LetterGeometry(centers: centers.mapValues { KeyPoint(x: $0.x / pitch.width, y: $0.y / pitch.height) }))
+    guard centers.count == 26, pitch.width > 1, rootView.keys.bounds.width > 0 else { return nil }
+    return LetterGeometry(centers: centers.mapValues { KeyPoint(x: $0.x / pitch.width, y: $0.y / pitch.height) })
   }
 
-  private func normalized(_ point: CGPoint) -> KeyPoint {
+  private func updateGeometry() {
+    guard engine.page == .letters, !isSearching, let stack, let geometry = letterGeometry else { return }
+    stack.setGeometry(geometry)
+  }
+
+  /// A point in the key grid, in key pitches.
+  func normalized(_ point: CGPoint) -> KeyPoint {
     let pitch = rootView.keys.pitch
     return KeyPoint(x: point.x / pitch.width, y: point.y / pitch.height)
   }
@@ -407,6 +497,104 @@ public final class KeyboardController: NSObject {
       rootView.setNeedsLayout()
     }
     rootView.mode = .emoji
+  }
+
+  // MARK: Emoji search
+
+  /// The search row and its letter keys are showing.
+  private var isSearching: Bool { emojiSearch != nil && rootView.mode == .emojiSearch }
+
+  private func beginEmojiSearch() {
+    guard emojiSuggester != nil else { return }
+    emojiSearch = EmojiSearchQuery()
+    searchShift = .off
+    searchDocument = host?.document.documentIdentifier
+    rootView.mode = .emojiSearch
+    sync()
+    refreshSearchResults()
+  }
+
+  /// Leaves search for the picker, or for the letters.
+  private func endEmojiSearch(showingPanel: Bool) {
+    guard emojiSearch != nil else { return }
+    emojiSearch = nil
+    searchShift = .off
+    if showingPanel {
+      showEmoji()
+      rootView.emoji?.searchEnded()
+    } else {
+      engine.page = .letters
+      rootView.mode = .keys
+    }
+    sync()
+  }
+
+  private func editSearch(_ edit: (inout EmojiSearchQuery) -> Void) {
+    guard var query = emojiSearch else { return }
+    edit(&query)
+    guard query != emojiSearch else { return }
+    emojiSearch = query
+    refreshSearchResults()
+  }
+
+  private func typeInSearch(_ text: String) {
+    let typed = searchShift.isActive ? text.uppercased() : text
+    if case .once = searchShift {
+      searchShift = .off
+      rootView.keys.shift = .off
+    }
+    editSearch { $0.append(typed) }
+  }
+
+  private func refreshSearchResults() {
+    guard let query = emojiSearch, let suggester = emojiSuggester else { return }
+    rootView.search.show(query: query.text, results: EmojiSearch.results(for: query, suggester: suggester, history: emojiHistory))
+  }
+
+  /// A picked result goes into the document. Search stays open with its query,
+  /// so several emoji can be added; the strip keeps its order meanwhile.
+  private func insertSearchResult(_ result: EmojiSearchResult) {
+    emojiHistory.use(result.value)
+    engine.insertText(result.value)
+    sync()
+  }
+
+  /// Search keys edit the query; ABC leaves for the letters.
+  private func searchTouchDown(_ key: Key) {
+    feedback(for: key)
+    switch key.action {
+    case .shift:
+      searchShift = searchShift.isActive ? .off : .once(automatic: false)
+      rootView.keys.shift = searchShift
+    case .delete:
+      editSearch { $0.deleteBackward() }
+    case .page:
+      endEmojiSearch(showingPanel: false)
+    default:
+      break
+    }
+  }
+
+  private func searchActivate(_ key: Key) {
+    switch key.action {
+    case .character(let text), .text(let text):
+      typeInSearch(text)
+    case .space:
+      editSearch { $0.append(" ") }
+    case .emoji:
+      endEmojiSearch(showingPanel: true)
+    default:
+      break
+    }
+  }
+
+  // MARK: One-handed
+
+  /// Docks the keys, switches sides or expands, and remembers the choice.
+  private func chooseOneHanded(_ mode: OneHandedMode) {
+    guard mode != rootView.oneHanded else { return }
+    oneHandedStore.save(mode)
+    rootView.oneHanded = mode
   }
 
   // MARK: Dictation
@@ -485,6 +673,7 @@ public final class KeyboardController: NSObject {
   }
 
   private func finishDictation() {
+    emojiSearch = nil
     connectTimeout?.invalidate()
     stopLevelUpdates()
     rootView.bar.setMicrophoneActive(false)
@@ -559,6 +748,7 @@ public final class KeyboardController: NSObject {
 
 extension KeyboardController: KeysViewDelegate {
   func keysView(_ view: KeysView, touchDown key: Key) {
+    if isSearching { return searchTouchDown(key) }
     switch key.action {
     case .emoji: break
     default: pendingEmojiPresentation = false
@@ -587,6 +777,7 @@ extension KeyboardController: KeysViewDelegate {
   }
 
   func keysView(_ view: KeysView, activate key: Key, at point: CGPoint) {
+    if isSearching { return searchActivate(key) }
     switch key.action {
     case .character(let text) where engine.traits.keyboard == .phonePad && engine.page != .letters:
       // One symbol at a time on the phone pad, then back to the digits.
@@ -616,6 +807,7 @@ extension KeyboardController: KeysViewDelegate {
   }
 
   func keysView(_ view: KeysView, insertAlternate text: String, for key: Key) {
+    if isSearching { return typeInSearch(text) }
     if case .text = key.action {
       engine.insertText(text)
     } else {
@@ -625,6 +817,7 @@ extension KeyboardController: KeysViewDelegate {
   }
 
   func keysView(_ view: KeysView, glide points: [CGPoint], times: [TimeInterval], start: Key) {
+    guard !isSearching else { return }
     if engine.insertGlide(points.map(normalized), times: times).isEmpty, case .character(let text) = start.action {
       // No word fits the path: it was a sloppy tap, so type the key it started on.
       glideFallbacks += 1
@@ -635,6 +828,7 @@ extension KeyboardController: KeysViewDelegate {
 
   func keysViewRepeatDelete(_ view: KeysView, wholeWord: Bool) {
     if settings.sounds { UIDevice.current.playInputClick() }
+    if isSearching { return editSearch { wholeWord ? $0.deleteWordsBackward(1) : $0.deleteBackward() } }
     if deferredDelete {
       // The held press acts now; repeat continues from here.
       flushDeferredDelete()
@@ -646,11 +840,14 @@ extension KeyboardController: KeysViewDelegate {
   }
 
   func keysView(_ view: KeysView, moveCursor offset: Int) {
+    // The search field has no cursor; the document's must not move behind it.
+    guard !isSearching else { return }
     host?.adjustTextPosition(byCharacterOffset: offset)
     haptics.tick()
   }
 
   func keysViewShiftUp(_ view: KeysView) {
+    guard !isSearching else { return }
     engine.shiftUp()
     sync()
   }
@@ -669,12 +866,13 @@ extension KeyboardController: KeysViewDelegate {
   }
 
   func keysViewDeleteEnded(_ view: KeysView) {
-    guard deferredDelete else { return }
+    guard deferredDelete, !isSearching else { return }
     flushDeferredDelete()
     sync()
   }
 
   func keysView(_ view: KeysView, previewWordDeletion words: Int) {
+    if isSearching { return }
     // A swipe replaces the press's own action, including undoing a correction.
     deferredDelete = false
     let text = words > 0 ? engine.wordDeletionPreview(words: words) : ""
@@ -684,6 +882,7 @@ extension KeyboardController: KeysViewDelegate {
   }
 
   func keysView(_ view: KeysView, commitWordDeletion words: Int) {
+    if isSearching { return editSearch { $0.deleteWordsBackward(words) } }
     deferredDelete = false
     deletionPreview = nil
     wordDeletionUndo = engine.deleteWordsBackward(words, originalContext: deleteStartContext)
@@ -691,8 +890,13 @@ extension KeyboardController: KeysViewDelegate {
     sync()
   }
 
-  var keysViewAllowsGlide: Bool { stack != nil && engine.policy.allowsGlide && engine.page == .letters }
+  var keysViewAllowsGlide: Bool { !isSearching && stack != nil && engine.policy.allowsGlide && engine.page == .letters }
   var keysViewShowsPopups: Bool { settings.keyPopups }
+  var keysViewOneHandedMode: OneHandedMode? { rootView.canDock ? rootView.oneHanded : nil }
+
+  func keysView(_ view: KeysView, chooseOneHanded mode: OneHandedMode) {
+    chooseOneHanded(mode)
+  }
 }
 
 extension KeyboardController: EmojiPanelDelegate {
@@ -704,6 +908,10 @@ extension KeyboardController: EmojiPanelDelegate {
   func emojiPanelDelete(_ panel: EmojiPanelView, wholeWord: Bool) {
     if wholeWord { engine.deleteWordBackward() } else { engine.deleteBackward() }
     sync()
+  }
+
+  func emojiPanelSearch(_ panel: EmojiPanelView) {
+    beginEmojiSearch()
   }
 
   func emojiPanelClose(_ panel: EmojiPanelView) {

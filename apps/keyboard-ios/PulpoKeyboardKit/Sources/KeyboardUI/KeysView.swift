@@ -27,12 +27,19 @@ protocol KeysViewDelegate: AnyObject {
   func keysView(_ view: KeysView, previewWordDeletion words: Int)
   /// The finger lifted from a delete swipe: delete the previewed words.
   func keysView(_ view: KeysView, commitWordDeletion words: Int)
+  /// Where holding the emoji key's menu starts, or nil when the keyboard can't
+  /// dock here (landscape, narrow screens) and holding it is an ordinary press.
+  var keysViewOneHandedMode: OneHandedMode? { get }
+  /// A one-handed layout was picked from the emoji key's menu.
+  func keysView(_ view: KeysView, chooseOneHanded mode: OneHandedMode)
 }
 
 extension KeysViewDelegate {
   func keysViewDeleteEnded(_ view: KeysView) {}
   func keysView(_ view: KeysView, previewWordDeletion words: Int) {}
   func keysView(_ view: KeysView, commitWordDeletion words: Int) {}
+  var keysViewOneHandedMode: OneHandedMode? { nil }
+  func keysView(_ view: KeysView, chooseOneHanded mode: OneHandedMode) {}
 }
 
 /// The key grid. Handles all touches itself so typing is never delayed by gesture
@@ -72,7 +79,7 @@ final class KeysView: UIView {
   var stats = Stats()
 
   private final class Tracking {
-    enum Mode { case tap, glide, alternates, cursor, delete, deleteSwipe, inputMode }
+    enum Mode { case tap, glide, alternates, cursor, delete, deleteSwipe, inputMode, menu }
     let touch: UITouch
     let began = CACurrentMediaTime()
     var keyIndex: Int
@@ -404,6 +411,7 @@ final class KeysView: UIView {
     delegate?.keysView(self, touchDown: key)
     showPreview(for: index)
     scheduleAlternates(tracking)
+    if key.action == .emoji { scheduleMenu(tracking) }
   }
 
   private func move(_ tracking: Tracking, to point: CGPoint, event: UIEvent?) {
@@ -411,7 +419,7 @@ final class KeysView: UIView {
     switch tracking.mode {
     case .inputMode:
       if let event { delegate?.keysView(self, inputModeListWith: event) }
-    case .alternates:
+    case .alternates, .menu:
       if let popup, let host = popupHost { popup.track(x: convert(point, to: host).x) }
     case .cursor:
       let step: CGFloat = 9
@@ -488,6 +496,16 @@ final class KeysView: UIView {
       if let event { delegate?.keysView(self, inputModeListWith: event) }
     case .alternates:
       if !cancelled, let text = popup?.selectedOption { delegate?.keysView(self, insertAlternate: text, for: key) }
+      popup?.hide()
+    case .menu:
+      // Lifting well beside the menu leaves the layout as it was.
+      if !cancelled, let popup, let host = popupHost, let choice = popup.selectedOption.flatMap(OneHandedMode.init(rawValue:)) {
+        let x = convert(point, to: host).x
+        let bubble = popup.bubbleFrame
+        if x >= bubble.minX - Self.menuSlack, x <= bubble.maxX + Self.menuSlack {
+          delegate?.keysView(self, chooseOneHanded: choice)
+        }
+      }
       popup?.hide()
     case .cursor:
       keyViews.forEach { $0.isDimmed = false }
@@ -602,6 +620,46 @@ final class KeysView: UIView {
     tracking.timer = schedule(after: 0.42) { [weak self] in
       guard let self, tracking.mode == .tap, !tracking.committed else { return }
       self.showAlternates(for: tracking)
+    }
+  }
+
+  // MARK: One-handed menu
+
+  static let menuOptions: [(mode: OneHandedMode, symbol: String, name: String)] = [
+    (.left, "keyboard.onehanded.left", "Keyboard docked left"),
+    (.off, "keyboard", "Full width keyboard"),
+    (.right, "keyboard.onehanded.right", "Keyboard docked right"),
+  ]
+  private static let menuSlack: CGFloat = 44
+
+  /// Holding the emoji key offers the one-handed layouts, like holding the
+  /// globe or emoji key on Apple's keyboard.
+  private func scheduleMenu(_ tracking: Tracking) {
+    guard delegate?.keysViewOneHandedMode != nil else { return }
+    tracking.timer?.invalidate()
+    tracking.timer = schedule(after: 0.45) { [weak self] in
+      guard let self, tracking.mode == .tap, !tracking.committed, tracking.key.action == .emoji,
+            let current = self.delegate?.keysViewOneHandedMode, let host = self.popupHost else { return }
+      tracking.mode = .menu
+      let view = self.keyViews[tracking.keyIndex]
+      let options = Self.menuOptions
+      let finger = tracking.points.last.map { self.convert($0, to: host).x }
+      self.ensurePopup(in: host).showMenu(options.map(\.mode.rawValue), symbols: options.map(\.symbol),
+                                          selected: options.firstIndex { $0.mode == current } ?? 1,
+                                          keyRect: self.convert(view.frame, to: host), in: host.bounds, style: self.style, anchorX: finger)
+      KeyboardFeedback.current?.emphasis()
+    }
+  }
+
+  /// VoiceOver can't hold a key, so the emoji key offers the layouts as actions.
+  func accessibilityActions(for view: KeyView) -> [UIAccessibilityCustomAction]? {
+    guard view.key.action == .emoji, let current = delegate?.keysViewOneHandedMode else { return nil }
+    return Self.menuOptions.filter { $0.mode != current }.map { option in
+      UIAccessibilityCustomAction(name: option.name) { [weak self] _ in
+        guard let self else { return false }
+        self.delegate?.keysView(self, chooseOneHanded: option.mode)
+        return true
+      }
     }
   }
 

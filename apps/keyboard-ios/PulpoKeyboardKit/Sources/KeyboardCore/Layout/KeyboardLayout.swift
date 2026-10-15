@@ -114,6 +114,17 @@ public struct KeyboardLayout: Equatable, Sendable {
     return KeyboardLayout(rows: top + [bottomRow(page: page, traits: traits, needsGlobe: needsGlobe)], isNumberPad: false)
   }
 
+  /// Letters for the emoji picker's search field: the QWERTY rows, then ABC to
+  /// leave search, the emoji key to return to the picker, and space between words.
+  public static func emojiSearch() -> KeyboardLayout {
+    let bottom = KeyRow(keys: [
+      Key(action: .page(.letters), label: "ABC", width: 1.25, style: .function, identifier: "key-letters"),
+      Key(action: .emoji, label: "emoji", width: 1.25, style: .function, identifier: "key-emoji"),
+      Key(action: .space, label: "space", flexible: true, identifier: "key-space"),
+    ])
+    return KeyboardLayout(rows: letterRows(digitHints: false) + [bottom], isNumberPad: false)
+  }
+
   static func letterRows(digitHints: Bool) -> [KeyRow] {
     let digits = Array("1234567890").map(String.init)
     let first = Array("qwertyuiop").enumerated().map { index, letter -> Key in

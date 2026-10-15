@@ -65,6 +65,8 @@ public struct EmojiSuggester: Sendable {
   }
   private let emoji: [Emoji]
   private let exactNames: [String: Int]
+  /// Every value, including skin-tone variants, to its base emoji.
+  private let byValue: [String: Int]
   private let index: [Term]
   private static let locale = Locale(identifier: "en_US_POSIX")
   private static let minimumLength = 3
@@ -76,6 +78,12 @@ public struct EmojiSuggester: Sendable {
     self.emoji = emoji
     exactNames = Dictionary(emoji.enumerated().map { (Self.foldedName($0.element.name), $0.offset) },
                             uniquingKeysWith: min)
+    var byValue: [String: Int] = [:]
+    for (id, entry) in emoji.enumerated() {
+      byValue[entry.value] = byValue[entry.value] ?? id
+      for tone in entry.tones ?? [] { byValue[tone] = byValue[tone] ?? id }
+    }
+    self.byValue = byValue
     var matches: [String: [Int: Int]] = [:]
 
     func add(_ term: String, id: Int, rank: Int) {
@@ -156,6 +164,81 @@ public struct EmojiSuggester: Sendable {
       if best.count == count, best.last!.rank < 200 { break }
     }
     return best.map { emoji[$0.id] }
+  }
+
+  /// The base emoji for `value`, which may also be one of its skin-tone variants.
+  public func emoji(for value: String) -> Emoji? {
+    byValue[value].map { emoji[$0] }
+  }
+
+  public static let maximumSearchResults = 60
+
+  /// Matches for the emoji picker's search field. Unlike `suggestions`, any
+  /// query searches from its first letter, because the person asked to search:
+  /// names, name words, compact names, CLDR keywords and their prefixes. A
+  /// phrase continues names in order ("red hea"). When too few names continue
+  /// the whole phrase, emoji with a term starting every word are added after
+  /// them ("heart red"). Complete terms rank before prefixes. `preferred`
+  /// gives recent or popular emoji a small lead (1-2) over equally good matches.
+  public func search(_ query: String, limit: Int = 48, preferring preferred: [String: Int] = [:]) -> [Emoji] {
+    let count = min(limit, Self.maximumSearchResults)
+    guard count > 0, query.count <= Self.maximumLength else { return [] }
+    let key = Self.normalized(query)
+    guard !key.isEmpty else { return [] }
+    var ranks: [Int: Int] = [:]
+    if let exact = exactNames[Self.foldedName(query)] { ranks[exact] = -1 }
+    if Self.isSearchText(query) {
+      collect(prefix: key, into: &ranks)
+      let words = key.split(separator: " ").map(String.init).filter { !Self.ignoredWords.contains($0) }
+      if ranks.count < count, words.count > 1 {
+        // Postings are bounded per term, so candidates come from any word and
+        // are then checked against every word of their own name and keywords.
+        let found = words.map { word -> [Int: Int] in
+          var matches: [Int: Int] = [:]
+          collect(prefix: word, into: &matches)
+          return matches
+        }
+        let candidates = Set(found.flatMap(\.keys)).subtracting(ranks.keys).sorted().prefix(Self.maximumWordCandidates)
+        for id in candidates {
+          let terms = Self.searchWords(of: emoji[id])
+          guard words.allSatisfy({ word in terms.contains { $0.hasPrefix(word) } }) else { continue }
+          ranks[id] = 300 + found.reduce(0) { $0 + ($1[id] ?? 250) }
+        }
+      }
+    }
+    if !preferred.isEmpty {
+      for (id, rank) in ranks { if let lead = preferred[emoji[id].value] { ranks[id] = rank - min(max(lead, 0), 2) } }
+    }
+    return ranks.sorted { $0.value != $1.value ? $0.value < $1.value : $0.key < $1.key }
+      .prefix(count).map { emoji[$0.key] }
+  }
+
+  private static let maximumWordCandidates = 800
+
+  /// The words of an emoji's name and keywords, as the index normalizes them.
+  private static func searchWords(of entry: Emoji) -> Set<String> {
+    var words: Set<String> = []
+    for text in [entry.name] + (entry.keywords ?? []) {
+      for word in normalized(text).split(separator: " ") { words.insert(String(word)) }
+    }
+    return words
+  }
+
+  /// Every emoji with a term starting with `key`, at its best rank.
+  private func collect(prefix key: String, into ranks: inout [Int: Int]) {
+    var lower = 0, upper = index.count
+    while lower < upper {
+      let middle = lower + (upper - lower) / 2
+      if index[middle].key < key { lower = middle + 1 } else { upper = middle }
+    }
+    for position in lower..<index.count {
+      let term = index[position]
+      guard term.key.hasPrefix(key) else { break }
+      let penalty = term.key == key ? 0 : 200
+      for match in term.matches where match.rank + penalty < ranks[match.id] ?? .max {
+        ranks[match.id] = match.rank + penalty
+      }
+    }
   }
 
   private static func foldedName(_ text: String) -> String {

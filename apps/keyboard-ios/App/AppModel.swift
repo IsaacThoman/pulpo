@@ -44,7 +44,15 @@ final class AppModel {
   private func applyTestArguments() {
     let arguments = ProcessInfo.processInfo.arguments
     if arguments.contains("-PKResetLearning") { clearLearnedWords() }
-    if arguments.contains("-PKResetSettings") { settings = KeyboardSettings() }
+    if arguments.contains("-PKResetSettings") {
+      settings = KeyboardSettings()
+      OneHandedStore(defaults: AppGroup.defaults).save(.off)
+    }
+    // -PKOneHanded left|right docks the keyboard for one-handed UI tests.
+    if let flag = arguments.firstIndex(of: "-PKOneHanded"), arguments.indices.contains(flag + 1),
+       let mode = OneHandedMode(rawValue: arguments[flag + 1]) {
+      OneHandedStore(defaults: AppGroup.defaults).save(mode)
+    }
     if arguments.contains("-PKSignOut") { signOut(remote: false) }
     AppGroup.defaults?.set(ProcessInfo.processInfo.environment["PK_DEBUG_POPUP"], forKey: "debugPopupKey")
     // PK_TEST_LOGIN=instance|email|password signs in through the real login request.

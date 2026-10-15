@@ -5,16 +5,20 @@ import UIKit
 protocol EmojiPanelDelegate: AnyObject {
   func emojiPanel(_ panel: EmojiPanelView, insert emoji: String)
   func emojiPanelDelete(_ panel: EmojiPanelView, wholeWord: Bool)
+  /// The search field was tapped: type a query on the letter keys.
+  func emojiPanelSearch(_ panel: EmojiPanelView)
   func emojiPanelClose(_ panel: EmojiPanelView)
 }
 
-/// Emoji grid with categories, recents and skin tones, in the keyboard's footprint.
+/// Emoji grid with categories, recents and skin tones, in the keyboard's footprint,
+/// under a search field and the current category's name.
 final class EmojiPanelView: UIView, UICollectionViewDataSource, UICollectionViewDelegate, UICollectionViewDelegateFlowLayout {
   weak var delegate: EmojiPanelDelegate?
   private var style: KeyboardStyle
   private let history: EmojiHistory
   private var sections: [(id: String, name: String, emoji: [Emoji])] = []
   private let header = UILabel()
+  private let searchField = UIButton(type: .system)
   private let collection: UICollectionView
   private let toolbar = UIStackView()
   private var categoryButtons: [UIButton] = []
@@ -45,7 +49,16 @@ final class EmojiPanelView: UIView, UICollectionViewDataSource, UICollectionView
     reloadRecents()
 
     header.font = .systemFont(ofSize: 12, weight: .semibold)
+    header.textAlignment = .right
+    header.adjustsFontSizeToFitWidth = true
+    header.minimumScaleFactor = 0.8
     addSubview(header)
+    searchField.contentHorizontalAlignment = .leading
+    searchField.accessibilityLabel = "Search Emoji"
+    searchField.accessibilityTraits = .searchField
+    searchField.accessibilityIdentifier = "emoji-search-open"
+    searchField.addTarget(self, action: #selector(searchTapped), for: .touchUpInside)
+    addSubview(searchField)
     collection.backgroundColor = .clear
     // The header and toolbar already sit outside the grid. Host safe areas and
     // vertical scroll-edge masks must not shift or obscure its first row.
@@ -98,6 +111,15 @@ final class EmojiPanelView: UIView, UICollectionViewDataSource, UICollectionView
   func applyStyle(_ style: KeyboardStyle) {
     self.style = style
     header.textColor = style.secondaryLabel
+    var field = UIButton.Configuration.plain()
+    field.image = UIImage(systemName: "magnifyingglass", withConfiguration: UIImage.SymbolConfiguration(pointSize: 12, weight: .medium))
+    field.imagePadding = 5
+    field.attributedTitle = AttributedString("Search Emoji", attributes: AttributeContainer([.font: UIFont.systemFont(ofSize: 15)]))
+    field.baseForegroundColor = style.secondaryLabel
+    field.background.backgroundColor = style.dark ? UIColor(white: 1, alpha: 0.14) : UIColor(white: 1, alpha: 0.75)
+    field.background.cornerRadius = 8
+    field.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 9, bottom: 0, trailing: 9)
+    searchField.configuration = field
     abc.tintColor = style.label
     delete.tintColor = style.label
     setNeedsLayout()
@@ -153,8 +175,13 @@ final class EmojiPanelView: UIView, UICollectionViewDataSource, UICollectionView
   override func layoutSubviews() {
     super.layoutSubviews()
     let toolbarHeight: CGFloat = 40
-    header.frame = CGRect(x: 14, y: 6, width: bounds.width - 28, height: 18)
-    collection.frame = CGRect(x: 0, y: 26, width: bounds.width, height: bounds.height - 26 - toolbarHeight)
+    // The field and the category name share the top line, so the grid keeps
+    // the rows that fit full glyphs in portrait and compact landscape.
+    let top: CGFloat = 28
+    let fieldWidth = min(320, (bounds.width * 0.55).rounded())
+    searchField.frame = CGRect(x: 8, y: 3, width: fieldWidth, height: 24)
+    header.frame = CGRect(x: searchField.frame.maxX + 10, y: 5, width: max(0, bounds.width - searchField.frame.maxX - 24), height: 18)
+    collection.frame = CGRect(x: 0, y: top, width: bounds.width, height: bounds.height - top - toolbarHeight)
     abc.frame = CGRect(x: 4, y: bounds.height - toolbarHeight, width: 50, height: toolbarHeight)
     delete.frame = CGRect(x: bounds.width - 50, y: bounds.height - toolbarHeight, width: 46, height: toolbarHeight)
     toolbar.frame = CGRect(x: abc.frame.maxX, y: bounds.height - toolbarHeight, width: delete.frame.minX - abc.frame.maxX, height: toolbarHeight)
@@ -265,6 +292,22 @@ final class EmojiPanelView: UIView, UICollectionViewDataSource, UICollectionView
       toneTarget = nil
       tonePicker.hide()
     }
+  }
+
+  // MARK: Search
+
+  @objc private func searchTapped() {
+    KeyboardFeedback.current?.key(function: true)
+    delegate?.emojiPanelSearch(self)
+  }
+
+  /// Back from search: show what was just picked if recents are in view.
+  func searchEnded() {
+    guard collection.contentOffset.x <= 1 || visibleSection == 0 else { return }
+    reloadRecents()
+    collection.reloadData()
+    collection.setContentOffset(.zero, animated: false)
+    updateSelectedCategory()
   }
 
   // MARK: Toolbar

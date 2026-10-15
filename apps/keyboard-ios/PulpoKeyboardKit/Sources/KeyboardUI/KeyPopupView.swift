@@ -5,6 +5,8 @@ import UIKit
 final class KeyPopupView: UIView {
   private let shape = CAShapeLayer()
   private var labels: [UILabel] = []
+  /// Menu cells drawn as symbols instead of text.
+  private var symbolViews: [UIImageView] = []
   private let selection = CALayer()
   private(set) var options: [String] = []
   private(set) var selectedIndex = 0
@@ -51,6 +53,20 @@ final class KeyPopupView: UIView {
     select(baseIndex)
   }
 
+  /// A menu of symbols above `keyRect` with `selected` highlighted and centered
+  /// over the key where the screen allows. `options` name the choices; the
+  /// finger moves the selection one cell at a time from `anchorX`.
+  func showMenu(_ options: [String], symbols: [String], selected: Int, keyRect: CGRect, in bounds: CGRect, style: KeyboardStyle, anchorX: CGFloat? = nil) {
+    let cell = max(keyRect.width, 44)
+    let index = min(max(selected, 0), max(options.count - 1, 0))
+    let x = keyRect.midX - 4 - cell * (CGFloat(index) + 0.5)
+    configure(options: options, keyRect: keyRect, in: bounds, style: style, cell: cell, rightward: true, preferredX: x, symbols: symbols)
+    baseIndex = index
+    self.anchorX = anchorX ?? keyRect.midX
+    selection.isHidden = false
+    select(index)
+  }
+
   /// Which way a strip opens and how wide its cells are. Cells match the key
   /// unless that would leave the screen; wide keys such as .com then narrow
   /// their cells to fit on the roomier side, keeping the first option over the key.
@@ -66,7 +82,8 @@ final class KeyPopupView: UIView {
   }
 
   /// `rightward` is nil for a single centered balloon.
-  private func configure(options: [String], keyRect: CGRect, in bounds: CGRect, style: KeyboardStyle, cell: CGFloat, rightward: Bool?) {
+  private func configure(options: [String], keyRect: CGRect, in bounds: CGRect, style: KeyboardStyle, cell: CGFloat, rightward: Bool?,
+                         preferredX: CGFloat? = nil, symbols: [String]? = nil) {
     self.style = style
     self.options = options
     cellWidth = cell
@@ -77,7 +94,7 @@ final class KeyPopupView: UIView {
     let width = cell * CGFloat(options.count) + (options.count > 1 ? 8 : 0)
     var x: CGFloat
     switch rightward {
-    case true?: x = keyRect.minX - 4
+    case true?: x = preferredX ?? keyRect.minX - 4
     case false?: x = keyRect.maxX + 4 - width
     case nil: x = keyRect.midX - width / 2
     }
@@ -127,6 +144,16 @@ final class KeyPopupView: UIView {
       addSubview(label)
       return label
     }
+    symbolViews.forEach { $0.removeFromSuperview() }
+    symbolViews = (symbols ?? []).enumerated().map { index, name in
+      labels[index].text = nil
+      let view = UIImageView(image: UIImage(systemName: name, withConfiguration: UIImage.SymbolConfiguration(pointSize: min(24, height * 0.5), weight: .regular)))
+      view.contentMode = .center
+      view.tintColor = style.label
+      view.frame = labels[index].frame
+      addSubview(view)
+      return view
+    }
     selection.backgroundColor = style.accent.cgColor
     selection.cornerRadius = style.cornerRadius
     CATransaction.commit()
@@ -151,9 +178,13 @@ final class KeyPopupView: UIView {
     selection.frame = CGRect(x: bubble.minX + 4 + CGFloat(index) * cellWidth, y: bubble.minY + 5, width: cellWidth, height: bubble.height - 10)
     CATransaction.commit()
     for (offset, label) in labels.enumerated() { label.textColor = offset == index ? .white : style.label }
+    for (offset, view) in symbolViews.enumerated() { view.tintColor = offset == index ? .white : style.label }
   }
 
   var selectedOption: String? { options.indices.contains(selectedIndex) ? options[selectedIndex] : nil }
+
+  /// The balloon or strip, in this view's superview coordinates.
+  var bubbleFrame: CGRect { bubble }
 
   func hide() {
     isHidden = true
