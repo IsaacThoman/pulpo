@@ -824,6 +824,8 @@ public final class KeyboardEngine {
   /// Counts a swiped word the person deleted or replaced in this context.
   private func rejectGlide(_ word: String, context: (word: String?, sentenceStart: Bool)) {
     guard policy.learns else { return }
+    // Bounded for a long-lived keyboard; recent rejections are the ones that matter.
+    if rejectedGlides.count >= 256 { rejectedGlides.removeAll() }
     rejectedGlides[Self.glideRejectionKey(word, context: context), default: 0] += 1
   }
 
