@@ -47,16 +47,25 @@ public final class LanguageModel {
     return min(0.35, total / (total + 400))
   }
 
-  public func logProbability(of word: String, id: Int?, in context: LanguageContext) -> Double {
+  /// - Parameter normalizingOmissions: Whether words a bounded successor table
+  ///   omits share its omitted mass (the default), or keep only the stored backoff.
+  public func logProbability(of word: String, id: Int?, in context: LanguageContext, normalizingOmissions: Bool = true) -> Double {
     var probability = 0.0
-    if let id { probability = exp(lexicon.logProbability(of: id, after: context.history)) }
+    if let id { probability = exp(lexicon.logProbability(of: id, after: context.history, normalizingOmissions: normalizingOmissions)) }
     if let trigram = context.trigram {
       let weight = lexicon.trigramWeight(of: trigram)
       var conditional = 0.0
       if let id {
+        var listed = false
         for position in lexicon.trigramSuccessors(of: trigram) {
           let entry = lexicon.trigramSuccessor(at: position)
-          if entry.id == id { conditional = exp(entry.logProbability); break }
+          if entry.id == id { conditional = exp(entry.logProbability); listed = true; break }
+        }
+        if !listed, normalizingOmissions {
+          // The table keeps only the strongest continuations. An omitted word
+          // shares the omitted mass by its bigram probability, below every listed one.
+          let omission = lexicon.trigramOmission(of: trigram)
+          conditional = min(probability * omission.factor, exp(omission.weakest))
         }
       }
       probability = (1 - weight) * probability + weight * conditional

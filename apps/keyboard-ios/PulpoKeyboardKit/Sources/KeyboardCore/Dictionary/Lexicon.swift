@@ -59,6 +59,12 @@ public final class Lexicon: @unchecked Sendable {
   private let trigramIDs: MappedArray<UInt32>?
   private let trigramScores: MappedArray<UInt8>?
   private let trigramWeights: MappedArray<UInt8>?
+  /// exp(-score / quant) for every quantized log-probability byte.
+  private let probabilityOfScore: [Double]
+  /// Unigram probability for every frequency byte.
+  private let unigramProbability: [Double]
+  private let omissionLock = NSLock()
+  private var trigramOmissions: [Int: (factor: Double, weakest: Double)] = [:]
 
   public enum LoadError: Error { case badHeader, missingSection(String), badMetadata }
 
@@ -97,6 +103,8 @@ public final class Lexicon: @unchecked Sendable {
     unigramIntercept = intercept
     unigramSlope = slope
     bigramQuant = quant
+    probabilityOfScore = (0..<256).map { exp(-Double($0) / quant) }
+    unigramProbability = (0..<256).map { exp(intercept + slope * Double($0)) }
 
     keyBytes = try section("WKEY").0
     let keyOffsetSection = try section("WKOF")
@@ -281,15 +289,69 @@ public final class Lexicon: @unchecked Sendable {
   }
 
   /// Interpolated bigram probability; falls back to the history's backoff weight.
-  public func logProbability(of id: Int, after history: Int?) -> Double {
+  /// `normalizingOmissions: false` keeps the stored backoff alone for words the
+  /// bounded table omits, as dictionaries scored them before normalization.
+  public func logProbability(of id: Int, after history: Int?, normalizingOmissions: Bool = true) -> Double {
     guard let history else { return unigramLogProbability(id) }
     let range = successors(of: history)
     if range.isEmpty { return unigramLogProbability(id) }
     let target = UInt32(id)
-    for position in range where bigramIDs[position] == target {
-      return -Double(bigramScores[position]) / bigramQuant
+    if !normalizingOmissions {
+      for position in range where bigramIDs[position] == target {
+        return -Double(bigramScores[position]) / bigramQuant
+      }
+      return -Double(bigramBackoffs[history]) / bigramQuant + unigramLogProbability(id)
     }
-    return -Double(bigramBackoffs[history]) / bigramQuant + unigramLogProbability(id)
+    var listedMass = 0.0, listedUnigramMass = 0.0, weakest = 0.0
+    for position in range {
+      let score = Int(bigramScores[position])
+      let successor = bigramIDs[position]
+      if successor == target { return -Double(score) / bigramQuant }
+      listedMass += probabilityOfScore[score]
+      listedUnigramMass += unigramProbability[Int(frequencies[Int(successor)])]
+      weakest = max(weakest, Double(score))
+    }
+    return unlistedLogProbability(
+      unigramLogProbability(id), backoff: -Double(bigramBackoffs[history]) / bigramQuant,
+      listedMass: listedMass, listedLowerMass: listedUnigramMass, weakest: -weakest / bigramQuant)
+  }
+
+  /// A bounded successor table drops the mass of every continuation it omits.
+  /// The stored backoff only covers words never seen after the history, so a
+  /// frequent word that merely missed the cut fell several nats below its prior
+  /// ("of the players", sentence-initial "Maybe"). Spread the omitted mass in
+  /// proportion to the lower-order model (Katz normalization), never above the
+  /// weakest listed successor, so stored continuations keep their order.
+  func unlistedLogProbability(_ lower: Double, backoff: Double, listedMass: Double, listedLowerMass: Double, weakest: Double) -> Double {
+    let stored = backoff + lower
+    let omitted = max(0, 1 - listedMass), remaining = max(1e-6, 1 - listedLowerMass)
+    guard omitted > 0 else { return stored }
+    let normalized = min(lower + log(omitted / remaining), weakest)
+    return max(stored, normalized)
+  }
+
+  /// Omitted trigram mass relative to the bigram mass of the listed successors,
+  /// and the weakest listed successor. Cached per history on first use.
+  public func trigramOmission(of history: Int) -> (factor: Double, weakest: Double) {
+    omissionLock.lock()
+    if let cached = trigramOmissions[history] {
+      omissionLock.unlock()
+      return cached
+    }
+    omissionLock.unlock()
+    let previous = trigramHistories.map { Int($0[history] & 0xffff_ffff) }
+    var listedMass = 0.0, listedLowerMass = 0.0, weakest = 0.0
+    for position in trigramSuccessors(of: history) {
+      let entry = trigramSuccessor(at: position)
+      listedMass += exp(entry.logProbability)
+      listedLowerMass += exp(logProbability(of: entry.id, after: previous))
+      weakest = min(weakest, entry.logProbability)
+    }
+    let value = (factor: max(0, 1 - listedMass) / max(1e-6, 1 - listedLowerMass), weakest: weakest)
+    omissionLock.lock()
+    trigramOmissions[history] = value
+    omissionLock.unlock()
+    return value
   }
 
   public func trigramHistory(preceding: Int, previous: Int) -> Int? {

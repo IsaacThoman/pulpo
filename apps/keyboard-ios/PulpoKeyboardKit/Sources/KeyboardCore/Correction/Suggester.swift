@@ -275,24 +275,34 @@ public final class Suggester {
     // dictionary. They can distinguish meanings: we're/were and ill/I'll.
     if typed.contains("'") || typed.contains("\u{2019}") ||
        typed.decomposedStringWithCanonicalMapping.unicodeScalars.contains(where: { $0.properties.generalCategory == .nonspacingMark }) { return nil }
+    // Valid-word protection was calibrated with omitted continuations scored by
+    // the stored backoff alone: "I has" and "think in" stay clearly unlikely, and
+    // the margins below keep their meaning. Normalized omissions serve splits,
+    // unknown words and the strip.
+    let protected = ranked.map { candidate -> Candidate in
+      var rescored = candidate
+      rescored.score = model.logProbability(of: candidate.text, id: candidate.id, in: context, normalizingOmissions: false)
+        - candidate.cost - (candidate.isCompletion ? Self.completionPenalty : 0)
+      return rescored
+    }.sorted { $0.score != $1.score ? $0.score > $1.score : $0.text < $1.text }
     // Context alone cannot distinguish intentional "too" from "to", or "play"
     // from "pay". For a valid word, require evidence at each substituted key.
     // Missing/extra letters and centered (or absent) touches remain literal;
     // alternatives are still available in the strip.
     let keyed = word.keyed
-    guard let best = ranked.first(where: { candidate in
+    guard let best = protected.first(where: { candidate in
       guard !candidate.isCompletion, candidate.cost <= 3.3 else { return false }
       return hasDirectedSubstitutions(keyed, target: TextNormalizer.key(candidate.text))
     }) else { return nil }
     // A weaker fallback must not win only because a stronger alternative has
     // no supporting touch evidence. That is uncertainty between explanations,
     // not positive evidence for the lower-ranked edit.
-    let strongestAlternative = ranked.first {
+    let strongestAlternative = protected.first {
       !$0.isCompletion && TextNormalizer.key($0.text) != typedKey
     }
     guard strongestAlternative?.text == best.text else { return nil }
-    let typedScore = ranked.first { !$0.isCompletion && $0.text == typed }?.score
-      ?? ranked.first { !$0.isCompletion && TextNormalizer.key($0.text) == typedKey }?.score
+    let typedScore = protected.first { !$0.isCompletion && $0.text == typed }?.score
+      ?? protected.first { !$0.isCompletion && TextNormalizer.key($0.text) == typedKey }?.score
       ?? model.logProbability(of: typed, id: lexicon.id(of: typed), in: .unknown)
     let normalized = typed.replacingOccurrences(of: "\u{2019}", with: "'")
     let literalCase = lexicon.words(forKey: typedKey).contains {
