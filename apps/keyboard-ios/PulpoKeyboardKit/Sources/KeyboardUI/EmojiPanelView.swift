@@ -232,6 +232,27 @@ final class EmojiPanelView: UIView, UICollectionViewDataSource, UICollectionView
     updateSelectedCategory()
   }
 
+  func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
+    PerfLog.trackFrames(true)
+  }
+
+  func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
+    if !decelerate { scrollingStopped() }
+  }
+
+  func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
+    scrollingStopped()
+  }
+
+  private func scrollingStopped() {
+    PerfLog.trackFrames(false)
+    if collection.contentOffset.x <= 1 {
+      PerfLog.event("emojiScrollStart")
+    } else if collection.contentOffset.x >= collection.contentSize.width - collection.bounds.width - 1 {
+      PerfLog.event("emojiScrollEnd")
+    }
+  }
+
   private var visibleSection: Int {
     let probe = CGPoint(x: collection.contentOffset.x + 30, y: collection.bounds.height / 2)
     if let path = collection.indexPathForItem(at: probe) { return path.section }

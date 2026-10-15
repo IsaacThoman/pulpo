@@ -554,6 +554,7 @@ public final class KeyboardController: NSObject {
       PerfLog.event("emojiPanelCreated")
     }
     rootView.mode = .emoji
+    PerfLog.event("emojiPanelShown", after: 1)
   }
 
   // MARK: Emoji search
@@ -574,6 +575,7 @@ public final class KeyboardController: NSObject {
   /// Leaves search for the picker, or for the letters.
   private func endEmojiSearch(showingPanel: Bool) {
     guard emojiSearch != nil else { return }
+    PerfLog.event("emojiSearchEnded")
     emojiSearch = nil
     searchShift = .off
     if showingPanel {
@@ -982,6 +984,7 @@ extension KeyboardController: EmojiPanelDelegate {
     PerfLog.event("emojiClosed")
     rootView.mode = .keys
     sync()
+    PerfLog.event("emojiClosedSettled", after: 1)
   }
 }
 #endif

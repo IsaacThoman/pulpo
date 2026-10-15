@@ -3,6 +3,7 @@ import Foundation
 #if PK_PERF_LOG
 import Darwin
 import os
+import QuartzCore
 #endif
 
 /// Main-thread timings and memory for measuring the keyboard, compiled only into
@@ -27,10 +28,22 @@ enum PerfLog {
     #endif
   }
 
-  /// A milestone, with the time since the process started and its memory footprint.
+  /// A milestone, with the time since the process started and its memory: the
+  /// footprint (what jetsam compares with the process's limit), its peak so far,
+  /// and how much the system says is left before the limit (0 where none applies,
+  /// as in the simulator).
   @inline(__always) static func event(_ name: StaticString) {
     #if PK_PERF_LOG
-    logger.notice("PKPERF event=\("\(name)", privacy: .public) sinceLaunchMs=\(sinceLaunch(), format: .fixed(precision: 1), privacy: .public) footprintMB=\(footprint(), format: .fixed(precision: 2), privacy: .public)")
+    let memory = memory()
+    logger.notice("PKPERF event=\("\(name)", privacy: .public) sinceLaunchMs=\(sinceLaunch(), format: .fixed(precision: 1), privacy: .public) footprintMB=\(memory.footprint, format: .fixed(precision: 2), privacy: .public) peakMB=\(memory.peak, format: .fixed(precision: 2), privacy: .public) limitRemainingMB=\(memory.remaining, format: .fixed(precision: 2), privacy: .public)")
+    #endif
+  }
+
+  /// Like `event`, `delay` seconds later, once the main thread has let go of
+  /// what the moment released.
+  @inline(__always) static func event(_ name: StaticString, after delay: TimeInterval) {
+    #if PK_PERF_LOG
+    DispatchQueue.main.asyncAfter(deadline: .now() + delay) { event(name) }
     #endif
   }
 
@@ -48,6 +61,22 @@ enum PerfLog {
     #endif
   }
 
+  /// Records display frame intervals under `frame` while `on`, such as while a
+  /// grid scrolls. `flush` reports them with the number that missed a refresh.
+  @inline(__always) static func trackFrames(_ on: Bool) {
+    #if PK_PERF_LOG
+    if on, frameLink == nil {
+      let tracker = FrameTracker()
+      let link = CADisplayLink(target: tracker, selector: #selector(FrameTracker.tick(_:)))
+      link.add(to: .main, forMode: .common)
+      frameLink = link
+    } else if !on, let link = frameLink {
+      link.invalidate()
+      frameLink = nil
+    }
+    #endif
+  }
+
   /// Logs each timing's count, median, 95th percentile and maximum, then resets.
   static func flush(_ reason: StaticString) {
     #if PK_PERF_LOG
@@ -55,6 +84,12 @@ enum PerfLog {
       let sorted = values.sorted()
       let p50 = sorted[sorted.count / 2], p95 = sorted[min(sorted.count - 1, sorted.count * 95 / 100)]
       logger.notice("PKPERF summary=\(name, privacy: .public) reason=\("\(reason)", privacy: .public) n=\(sorted.count, privacy: .public) p50=\(p50, format: .fixed(precision: 3), privacy: .public) p95=\(p95, format: .fixed(precision: 3), privacy: .public) max=\(sorted.last!, format: .fixed(precision: 3), privacy: .public) over16=\(sorted.filter { $0 > 16 }.count, privacy: .public)")
+    }
+    if !frameIntervals.isEmpty {
+      let late = frameIntervals.filter { $0.interval > $0.expected * 1.5 }.count
+      let sorted = frameIntervals.map(\.interval).sorted()
+      logger.notice("PKPERF frames reason=\("\(reason)", privacy: .public) n=\(sorted.count, privacy: .public) late=\(late, privacy: .public) p50=\(sorted[sorted.count / 2], format: .fixed(precision: 2), privacy: .public) p95=\(sorted[min(sorted.count - 1, sorted.count * 95 / 100)], format: .fixed(precision: 2), privacy: .public) max=\(sorted.last!, format: .fixed(precision: 2), privacy: .public)")
+      frameIntervals = []
     }
     samples = [:]
     event("flush")
@@ -65,6 +100,8 @@ enum PerfLog {
   private static let logger = Logger(subsystem: "com.isaacthoman.pulpo.keyboard.perf", category: "perf")
   private static var samples: [String: [Double]] = [:]
   private static var logged: Set<String> = []
+  private static var frameLink: CADisplayLink?
+  fileprivate static var frameIntervals: [(interval: Double, expected: Double)] = []
 
   private static func sinceLaunch() -> Double {
     var info = kinfo_proc()
@@ -76,14 +113,28 @@ enum PerfLog {
     return (Date().timeIntervalSince1970 - started) * 1000
   }
 
-  private static func footprint() -> Double {
+  private static func memory() -> (footprint: Double, peak: Double, remaining: Double) {
     var info = task_vm_info_data_t()
     var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<integer_t>.size)
     let result = withUnsafeMutablePointer(to: &info) {
       $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { task_info(task_self_trap(), task_flavor_t(TASK_VM_INFO), $0, &count) }
     }
-    return result == KERN_SUCCESS ? Double(info.phys_footprint) / 1_048_576 : -1
+    guard result == KERN_SUCCESS else { return (-1, -1, -1) }
+    let megabyte = 1_048_576.0
+    return (Double(info.phys_footprint) / megabyte, Double(info.ledger_phys_footprint_peak) / megabyte, Double(info.limit_bytes_remaining) / megabyte)
   }
   #endif
 }
+
+#if PK_PERF_LOG
+private final class FrameTracker: NSObject {
+  private var last: CFTimeInterval = 0
+
+  @objc func tick(_ link: CADisplayLink) {
+    defer { last = link.timestamp }
+    guard last > 0 else { return }
+    PerfLog.frameIntervals.append(((link.timestamp - last) * 1000, (link.targetTimestamp - link.timestamp) * 1000))
+  }
+}
+#endif
 #endif
