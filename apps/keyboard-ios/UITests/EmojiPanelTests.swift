@@ -24,8 +24,11 @@ final class EmojiPanelTests: XCTestCase {
         let cells = collection.visibleCells.compactMap { $0 as? EmojiCell }
         XCTAssertFalse(cells.isEmpty)
         for cell in cells {
-          XCTAssertLessThanOrEqual(cell.label.font.lineHeight, cell.label.bounds.height + 1,
+          XCTAssertLessThanOrEqual(UIFont.systemFont(ofSize: EmojiCell.pointSize).lineHeight, cell.bounds.height + 1,
                                    "Emoji clipped in \(landscape ? "landscape" : "portrait") \(inset ? "installed" : "preview")")
+          XCTAssertEqual(cell.imageView.image?.size, cell.imageView.frame.size, "The emoji is drawn for the cell")
+          XCTAssertTrue(cell.contentView.bounds.contains(cell.imageView.frame))
+          XCTAssertEqual(cell.imageView.image?.cgImage?.bitsPerComponent, 8, "Drawn as a label's backing store is, to show the same pixels")
           XCTAssertGreaterThanOrEqual(cell.frame.minY, collection.bounds.minY)
           XCTAssertLessThanOrEqual(cell.frame.maxY, collection.bounds.maxY, "Emoji row crosses the grid edge")
         }
@@ -90,7 +93,7 @@ final class EmojiPanelTests: XCTestCase {
     recents.sendActions(for: .touchUpInside)
     collection.layoutIfNeeded()
     XCTAssertEqual(panel.collectionView(collection, numberOfItemsInSection: 0), 1)
-    XCTAssertEqual((collection.cellForItem(at: IndexPath(item: 0, section: 0)) as? EmojiCell)?.label.text, "😀")
+    XCTAssertEqual((collection.cellForItem(at: IndexPath(item: 0, section: 0)) as? EmojiCell)?.emoji, "😀")
     XCTAssertEqual(panel.subviews.compactMap { $0 as? UILabel }.first?.text, "FREQUENTLY USED")
   }
 
@@ -138,6 +141,74 @@ final class EmojiPanelTests: XCTestCase {
     collection.swipeRight()
     snapshot("preview-picker-returned")
     XCTAssertTrue(app.buttons["emoji-abc"].isHittable)
+  }
+
+  /// The private emoji font, and the cut images drawn with it, show the same
+  /// pixels as the system font in the grid's, the search strip's and the bar's boxes.
+  func testEmojiFontDrawsLikeTheSystemFont() throws {
+    XCTAssertNotEqual(EmojiFont.ofSize(30), UIFont.systemFont(ofSize: 30), "No private copy of the emoji font")
+    let boxes: [(CGFloat, CGSize)] = [(30, CGSize(width: 42, height: 38)), (30, CGSize(width: 43, height: 33)), (27, CGSize(width: 42, height: 38)), (24, CGSize(width: 97.5, height: 44))]
+    let traits = UITraitCollection(displayScale: 3)
+    for (size, box) in boxes {
+      let images = EmojiImages(pointSize: size, limit: 8)
+      for emoji in ["😀", "👍🏽", "🇺🇸", "🧑‍💻", "#️⃣", "❤️"] {
+        let system = try pixels(box: box) { self.label(emoji, font: .systemFont(ofSize: size), box: box).drawText(in: CGRect(origin: .zero, size: box)) }
+        XCTAssertEqual(try pixels(box: box) { self.label(emoji, font: EmojiFont.ofSize(size), box: box).drawText(in: CGRect(origin: .zero, size: box)) }, system,
+                       "\(emoji) at \(size) pt in \(box)")
+        let drawn = images.image(emoji, size: box, traits: traits)
+        XCTAssertLessThan(drawn.frame.width * drawn.frame.height, box.width * box.height * 0.8, "\(emoji) isn't cut to its pixels")
+        XCTAssertEqual(try pixels(box: box) { drawn.image.draw(in: drawn.frame) }, system, "\(emoji) image at \(size) pt in \(box)")
+      }
+    }
+  }
+
+  /// A new copy takes over after `usesPerCopy` labels, so no copy collects every emoji.
+  func testEmojiFontCopiesTakeTurns() {
+    EmojiFont.releaseCurrent()
+    let fonts = (0...EmojiFont.usesPerCopy).map { _ in EmojiFont.ofSize(30) }
+    XCTAssertTrue(fonts.dropLast().allSatisfy { $0 === fonts[0] })
+    XCTAssertFalse(fonts.last === fonts[0])
+  }
+
+  /// Drawing hundreds of different emoji for the grid leaves only the cached images
+  /// and one font copy's decoded emoji in memory, not every emoji drawn (48 KB each).
+  func testDrawingManyEmojiKeepsMemoryBounded() throws {
+    let emoji = (0x1F300...0x1FAFF).compactMap { Unicode.Scalar($0).map { String(Character($0)) } }.filter(EmojiPanelView.drawsAsOneGlyph)
+    XCTAssertGreaterThanOrEqual(emoji.count, 800)
+    let images = EmojiImages(pointSize: EmojiCell.pointSize, limit: 48)
+    let traits = UITraitCollection(displayScale: 3)
+    let before = footprint()
+    for value in emoji.prefix(800) {
+      autoreleasepool { _ = images.image(value, size: CGSize(width: 42, height: 38), traits: traits) }
+    }
+    let growth = footprint() - before
+    XCTAssertLessThan(growth, 16, "Drawing 800 emoji grew the footprint by \(growth) MB")
+  }
+
+  private func footprint() -> Double {
+    var info = task_vm_info_data_t()
+    var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<integer_t>.size)
+    _ = withUnsafeMutablePointer(to: &info) {
+      $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { task_info(task_self_trap(), task_flavor_t(TASK_VM_INFO), $0, &count) }
+    }
+    return Double(info.phys_footprint) / 1_048_576
+  }
+
+  private func label(_ text: String, font: UIFont, box: CGSize) -> UILabel {
+    let label = UILabel(frame: CGRect(origin: .zero, size: box))
+    label.font = font
+    label.textAlignment = .center
+    label.text = text
+    return label
+  }
+
+  /// What `draw` paints in an 8-bit sRGB box at 3x, as in a label's backing store.
+  private func pixels(box: CGSize, _ draw: () -> Void) throws -> Data {
+    let format = UIGraphicsImageRendererFormat.preferred()
+    format.scale = 3
+    format.preferredRange = .standard
+    let image = UIGraphicsImageRenderer(size: box, format: format).image { _ in draw() }
+    return try XCTUnwrap(image.cgImage?.dataProvider?.data as Data?)
   }
 
   private func makePanel(style: KeyboardStyle, width: CGFloat) throws -> EmojiPanelView {

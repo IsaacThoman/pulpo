@@ -44,10 +44,11 @@ final class KeyPopupView: UIView {
   /// the system keyboard and Gboard, so the first option sits above the key.
   /// Selection then follows the finger relative to `anchorX` (default: the key's
   /// center), so a long press released in place types the first option.
-  func showAlternates(_ options: [String], keyRect: CGRect, in bounds: CGRect, style: KeyboardStyle, anchorX: CGFloat? = nil) {
+  /// `emoji` options are drawn with `EmojiFont`.
+  func showAlternates(_ options: [String], keyRect: CGRect, in bounds: CGRect, style: KeyboardStyle, anchorX: CGFloat? = nil, emoji: Bool = false) {
     let layout = Self.stripLayout(keyRect: keyRect, in: bounds, count: options.count)
     let display = layout.rightward ? options : options.reversed()
-    configure(options: display, keyRect: keyRect, in: bounds, style: style, cell: layout.cell, rightward: display.count > 1 ? layout.rightward : nil)
+    configure(options: display, keyRect: keyRect, in: bounds, style: style, cell: layout.cell, rightward: display.count > 1 ? layout.rightward : nil, emoji: emoji)
     baseIndex = layout.rightward ? 0 : max(display.count - 1, 0)
     self.anchorX = anchorX ?? keyRect.midX
     selection.isHidden = false
@@ -84,7 +85,7 @@ final class KeyPopupView: UIView {
 
   /// `rightward` is nil for a single centered balloon.
   private func configure(options: [String], keyRect: CGRect, in bounds: CGRect, style: KeyboardStyle, cell: CGFloat, rightward: Bool?,
-                         preferredX: CGFloat? = nil, symbols: [String]? = nil) {
+                         preferredX: CGFloat? = nil, symbols: [String]? = nil, emoji: Bool = false) {
     self.style = style
     self.options = options
     cellWidth = cell
@@ -145,7 +146,11 @@ final class KeyPopupView: UIView {
       label.textAlignment = .center
       label.textColor = style.label
       // Top-row balloons have less headroom; the letter shrinks to fit rather than clip.
-      label.font = options.count > 1 ? .systemFont(ofSize: min(26, height * 0.7)) : style.popupFont.withSize(min(style.popupFont.pointSize, height * 0.8))
+      if emoji {
+        label.font = EmojiFont.ofSize(min(26, height * 0.7))
+      } else {
+        label.font = options.count > 1 ? .systemFont(ofSize: min(26, height * 0.7)) : style.popupFont.withSize(min(style.popupFont.pointSize, height * 0.8))
+      }
       label.adjustsFontSizeToFitWidth = true
       label.minimumScaleFactor = 0.5
       let cellX = options.count > 1 ? bubble.minX + 4 + CGFloat(index) * cell : bubble.minX

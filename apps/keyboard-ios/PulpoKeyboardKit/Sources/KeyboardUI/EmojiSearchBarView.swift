@@ -5,7 +5,7 @@ import UIKit
 /// back to the picker, the search field showing the typed query, and a strip of
 /// matching emoji. A keyboard can't focus a text field inside its own view, so
 /// the field is a label over the keyboard's own query buffer, as on Gboard.
-final class EmojiSearchBarView: UIView {
+final class EmojiSearchBarView: UIView, UIScrollViewDelegate {
   var onBack: (() -> Void)?
   var onSelect: ((EmojiSearchResult) -> Void)?
 
@@ -17,6 +17,7 @@ final class EmojiSearchBarView: UIView {
   private(set) var query = ""
   private(set) var results: [EmojiSearchResult] = []
   private var cells: [EmojiResultControl] = []
+  private let images = EmojiImages(pointSize: 27, limit: 24)
 
   init(style: KeyboardStyle) {
     self.style = style
@@ -38,6 +39,7 @@ final class EmojiSearchBarView: UIView {
       strip.rightEdgeEffect.isHidden = true
     }
     strip.accessibilityIdentifier = "emoji-search-results"
+    strip.delegate = self
     addSubview(strip)
     empty.text = "No emoji found"
     empty.font = .systemFont(ofSize: 15)
@@ -97,6 +99,37 @@ final class EmojiSearchBarView: UIView {
       view.frame = CGRect(x: CGFloat(index) * cell, y: 0, width: cell, height: height)
     }
     strip.contentSize = CGSize(width: CGFloat(cells.count) * cell, height: height)
+    showImages(redraw: true)
+  }
+
+  func scrollViewDidScroll(_ scrollView: UIScrollView) {
+    showImages(redraw: false)
+  }
+
+  /// Results draw their emoji once they come within half a strip of view; a query
+  /// can find 48, and each keystroke can change them all.
+  private func showImages(redraw: Bool) {
+    let near = strip.bounds.insetBy(dx: -strip.bounds.width / 2, dy: 0)
+    for cell in cells where !cell.bounds.isEmpty {
+      if !cell.frame.intersects(near) {
+        cell.imageView.image = nil
+      } else if redraw || cell.imageView.image == nil {
+        let drawn = images.image(cell.result.value, size: cell.bounds.size, traits: traitCollection)
+        cell.imageView.image = drawn.image
+        cell.imageView.frame = drawn.frame
+      }
+    }
+  }
+
+  /// Empties the strip, and lets go of its images, when search closes.
+  func clear() {
+    show(query: "", results: [])
+    images.removeAll()
+  }
+
+  /// Lets go of the images no result shows.
+  func releaseCachedImages() {
+    images.removeAll()
   }
 
   @objc private func backTapped() {
@@ -210,7 +243,7 @@ final class SearchFieldView: UIView {
 /// One emoji in the results strip.
 final class EmojiResultControl: UIControl {
   let result: EmojiSearchResult
-  private let label = UILabel()
+  let imageView = UIImageView()
   private let highlight = CALayer()
 
   init(result: EmojiSearchResult) {
@@ -220,11 +253,7 @@ final class EmojiResultControl: UIControl {
     highlight.cornerCurve = .continuous
     highlight.opacity = 0
     layer.addSublayer(highlight)
-    label.text = result.value
-    label.font = .systemFont(ofSize: 27)
-    label.textAlignment = .center
-    label.isUserInteractionEnabled = false
-    addSubview(label)
+    addSubview(imageView)
     isAccessibilityElement = true
     accessibilityTraits = .keyboardKey
     accessibilityLabel = result.name
@@ -239,7 +268,6 @@ final class EmojiResultControl: UIControl {
 
   override func layoutSubviews() {
     super.layoutSubviews()
-    label.frame = bounds
     CATransaction.begin()
     CATransaction.setDisableActions(true)
     highlight.frame = bounds.insetBy(dx: 2, dy: 4)

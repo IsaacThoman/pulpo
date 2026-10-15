@@ -29,7 +29,10 @@ public enum KeyboardResources {
 public final class KeyboardRootView: UIView {
   let bar: SuggestionBarView
   let keys: KeysView
+  /// The picker, while it shows.
   var emoji: EmojiPanelView?
+  /// Where the last picker was scrolled, for the next one.
+  var emojiOffset: CGFloat = 0
   let dictation: DictationPanelView
   let search: EmojiSearchBarView
   let sidePanel: OneHandedPanelView
@@ -114,6 +117,18 @@ public final class KeyboardRootView: UIView {
     emoji?.isHidden = mode != .emoji
     dictation.isHidden = mode != .dictation
     sidePanel.isHidden = !showsKeys || keysWidth >= bounds.width
+    if mode != .emoji { releaseEmoji() }
+    if mode != .emojiSearch { search.clear() }
+  }
+
+  /// Lets go of the picker, with its cells and their emoji images; the next one
+  /// opens where this one was left.
+  func releaseEmoji() {
+    guard let panel = emoji else { return }
+    emojiOffset = panel.scrollOffset
+    panel.removeFromSuperview()
+    emoji = nil
+    EmojiFont.releaseCurrent()
   }
 
   /// Keep the lower bar edge forgiving for the top row, and forward unused bar
@@ -336,8 +351,19 @@ public final class KeyboardController: NSObject {
     recordDiagnostics()
     stopLevelUpdates()
     rootView.keys.cancelAllTouches()
+    // The keyboard reappears on the letters.
+    rootView.releaseEmoji()
     PerfLog.end("disappear", start)
     PerfLog.flush("disappear")
+  }
+
+  /// Frees what the keyboard can draw again: the emoji images the picker and
+  /// the search strip keep for scrolling back, and the font copy that drew them.
+  public func didReceiveMemoryWarning() {
+    PerfLog.event("memoryWarning")
+    rootView.emoji?.releaseCachedImages()
+    rootView.search.releaseCachedImages()
+    EmojiFont.releaseCurrent()
   }
 
   public func documentDidChange() {
@@ -548,6 +574,7 @@ public final class KeyboardController: NSObject {
       }
       let panel = EmojiPanelView(style: rootView.style, catalog: catalog, history: emojiHistory)
       panel.delegate = self
+      if rootView.emojiOffset > 0 { panel.scrollOffset = rootView.emojiOffset }
       rootView.insertSubview(panel, belowSubview: rootView.dictation)
       rootView.emoji = panel
       rootView.setNeedsLayout()
@@ -580,6 +607,8 @@ public final class KeyboardController: NSObject {
     searchShift = .off
     if showingPanel {
       showEmoji()
+      // The picker is built again; place its grid before asking what it shows.
+      rootView.layoutIfNeeded()
       rootView.emoji?.searchEnded()
     } else {
       engine.page = .letters

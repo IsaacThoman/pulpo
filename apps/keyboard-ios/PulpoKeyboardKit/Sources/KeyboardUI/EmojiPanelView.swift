@@ -28,6 +28,8 @@ final class EmojiPanelView: UIView, UICollectionViewDataSource, UICollectionView
   private var toneTarget: Emoji?
   private var deleteTimer: Timer?
   private var deleteRepeats = 0
+  private var pendingOffset: CGFloat?
+  private let images = EmojiImages(pointSize: EmojiCell.pointSize, limit: 48)
   private var rows: CGFloat { style.landscape ? 3 : 5 }
 
   static let symbols: [String: String] = [
@@ -186,7 +188,27 @@ final class EmojiPanelView: UIView, UICollectionViewDataSource, UICollectionView
     delete.frame = CGRect(x: bounds.width - 50, y: bounds.height - toolbarHeight, width: 46, height: toolbarHeight)
     toolbar.frame = CGRect(x: abc.frame.maxX, y: bounds.height - toolbarHeight, width: delete.frame.minX - abc.frame.maxX, height: toolbarHeight)
     collection.collectionViewLayout.invalidateLayout()
+    if let offset = pendingOffset, collection.bounds.width > 0 {
+      pendingOffset = nil
+      collection.layoutIfNeeded()
+      collection.contentOffset.x = min(offset, max(0, collection.contentSize.width - collection.bounds.width))
+    }
     updateSelectedCategory()
+  }
+
+  /// Lets go of the images no cell shows.
+  func releaseCachedImages() {
+    images.removeAll()
+  }
+
+  /// How far the grid is scrolled. A picker built again after the last one was
+  /// released opens where that one was left.
+  var scrollOffset: CGFloat {
+    get { pendingOffset ?? collection.contentOffset.x }
+    set {
+      pendingOffset = newValue
+      setNeedsLayout()
+    }
   }
 
   // MARK: Grid
@@ -198,10 +220,27 @@ final class EmojiPanelView: UIView, UICollectionViewDataSource, UICollectionView
   func collectionView(_ collectionView: UICollectionView, cellForItemAt indexPath: IndexPath) -> UICollectionViewCell {
     let cell = collectionView.dequeueReusableCell(withReuseIdentifier: "emoji", for: indexPath) as! EmojiCell
     let emoji = sections[indexPath.section].emoji[indexPath.item]
-    cell.label.text = indexPath.section == 0 ? emoji.value : history.preferred(for: emoji)
+    show(emoji, in: cell, at: indexPath)
     cell.accessibilityLabel = emoji.name
     cell.accessibilityIdentifier = "emoji-\(emoji.value)"
     return cell
+  }
+
+  private func show(_ emoji: Emoji, in cell: EmojiCell, at indexPath: IndexPath) {
+    let value = indexPath.section == 0 ? emoji.value : history.preferred(for: emoji)
+    let size = collectionView(collection, layout: collection.collectionViewLayout, sizeForItemAt: indexPath)
+    cell.show(value, images.image(value, size: size, traits: collection.traitCollection))
+  }
+
+  // Cells waiting for reuse let go of their images; one shown again without
+  // being dequeued, as when a scroll turns back, gets its image back.
+  func collectionView(_ collectionView: UICollectionView, willDisplay cell: UICollectionViewCell, forItemAt indexPath: IndexPath) {
+    guard let cell = cell as? EmojiCell, cell.imageView.image == nil else { return }
+    show(sections[indexPath.section].emoji[indexPath.item], in: cell, at: indexPath)
+  }
+
+  func collectionView(_ collectionView: UICollectionView, didEndDisplaying cell: UICollectionViewCell, forItemAt indexPath: IndexPath) {
+    (cell as? EmojiCell)?.imageView.image = nil
   }
 
   func collectionView(_ collectionView: UICollectionView, layout: UICollectionViewLayout, sizeForItemAt indexPath: IndexPath) -> CGSize {
@@ -297,7 +336,7 @@ final class EmojiPanelView: UIView, UICollectionViewDataSource, UICollectionView
       guard let tones = emoji.tones, let cell = collection.cellForItem(at: path) else { return }
       toneTarget = emoji
       let rect = cell.convert(cell.bounds, to: self).insetBy(dx: 2, dy: 2)
-      tonePicker.showAlternates([emoji.value] + tones, keyRect: rect, in: bounds, style: style)
+      tonePicker.showAlternates([emoji.value] + tones, keyRect: rect, in: bounds, style: style, emoji: true)
       tonePicker.track(x: recognizer.location(in: self).x)
       KeyboardFeedback.current?.emphasis()
     case .changed:
@@ -366,22 +405,24 @@ final class EmojiPanelView: UIView, UICollectionViewDataSource, UICollectionView
 }
 
 final class EmojiCell: UICollectionViewCell {
-  let label = UILabel()
+  static let pointSize: CGFloat = 30
+  private(set) var emoji: String?
+  let imageView = UIImageView()
 
   override init(frame: CGRect) {
     super.init(frame: frame)
-    label.font = .systemFont(ofSize: 30)
-    label.textAlignment = .center
-    contentView.addSubview(label)
+    contentView.addSubview(imageView)
     isAccessibilityElement = true
     accessibilityTraits = .keyboardKey
   }
 
   required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
 
-  override func layoutSubviews() {
-    super.layoutSubviews()
-    label.frame = contentView.bounds
+  /// Shows `emoji`, drawn for a box the size of the cell.
+  func show(_ emoji: String, _ drawn: DrawnEmoji) {
+    self.emoji = emoji
+    imageView.image = drawn.image
+    imageView.frame = drawn.frame
   }
 
   override var isHighlighted: Bool {
@@ -391,4 +432,5 @@ final class EmojiCell: UICollectionViewCell {
     }
   }
 }
+
 #endif

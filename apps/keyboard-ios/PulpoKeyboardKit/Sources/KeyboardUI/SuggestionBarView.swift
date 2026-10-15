@@ -251,6 +251,8 @@ final class SlotControl: UIControl {
   private let highlight = CALayer()
   private(set) var suggestion: Suggestion?
   private var style: KeyboardStyle?
+  /// The label holds an `EmojiFont`.
+  private var showsEmoji = false
 
   override init(frame: CGRect) {
     super.init(frame: frame)
@@ -283,14 +285,16 @@ final class SlotControl: UIControl {
       return
     }
     isEnabled = true
-    label.text = suggestion.text
     if suggestion.kind == .emoji {
-      label.font = .systemFont(ofSize: 24)
+      // Each new emoji gets a fresh font, so the slot doesn't gather every emoji it shows.
+      if !showsEmoji || label.text != suggestion.text { label.font = EmojiFont.ofSize(24) }
       accessibilityLabel = "\(suggestion.accessibilityLabel ?? "Emoji"), \(suggestion.text)"
     } else {
       label.font = suggestion.isAutocorrection ? style.suggestionEmphasisFont : style.suggestionFont
       accessibilityLabel = suggestion.accessibilityLabel ?? suggestion.text
     }
+    showsEmoji = suggestion.kind == .emoji
+    label.text = suggestion.text
     label.textColor = style.label
     accessibilityValue = suggestion.isAutocorrection ? "autocorrection" : nil
   }
