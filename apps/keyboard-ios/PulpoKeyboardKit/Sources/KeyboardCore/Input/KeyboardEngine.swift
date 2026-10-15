@@ -81,12 +81,34 @@ public final class KeyboardEngine {
     case typed
     case space
     case autocorrected(original: TypedWord, inserted: String, separator: String)
+    /// A space tap read as the bottom-row letter it landed near: `original` was
+    /// replaced by `inserted`; `composing` is what to resume after an undo.
+    case joinedSpaceSlip(original: String, inserted: String, separator: String, composing: TypedWord)
     case acceptedSuggestion(autoSpace: Bool)
     case glided(word: String, alternatives: [String])
   }
 
   var composing = TypedWord(text: "")
   var lastEdit: LastEdit = .none
+  /// A space tap close enough to the bottom letter row that it may have been a
+  /// letter. Valid only while the text before the cursor is `anchor` plus the
+  /// word being composed; replacing from offset `keep` reads it as one word.
+  struct SpaceSlip {
+    let point: KeyPoint
+    /// The word the slip committed, as typed and as inserted. Nil when the slip
+    /// followed an intended space and came before the next word.
+    let first: TypedWord?
+    let firstText: String?
+    let context: LanguageContext
+    let learningContext: (word: String?, sentenceStart: Bool)
+    let anchor: String
+    let keep: Int
+    /// Text inserted ahead of the joined word: the intended space a double-space
+    /// period turned into ". ".
+    let prefix: String
+    let periodInserted: Bool
+  }
+  var spaceSlip: SpaceSlip?
   var rejected: Set<String> = []
   /// Decoder choices are tentative until the next edit or keyboard dismissal.
   /// Undoing or replacing one must not teach the original mistake.
@@ -177,8 +199,10 @@ public final class KeyboardEngine {
       deleteDocumentBackward()
     }
 
+    let slip = spaceSlip
+    spaceSlip = nil
     if !composing.isEmpty, Self.autocorrectSeparators.contains(first) {
-      commitComposing(separator: text)
+      if let slip, joinSpaceSlip(slip, separator: text) {} else { commitComposing(separator: text) }
     } else {
       if !composing.isEmpty, !Self.isWordCharacter(Character(String(text.prefix(1)))) { learn(composing.text) }
       // Text inserted outside the key grid, or left by a deletion, can end in a word
@@ -195,6 +219,7 @@ public final class KeyboardEngine {
         composing = TypedWord(text: "")
       }
       lastEdit = .typed
+      if let slip, Self.isWordCharacter(first), before == slip.anchor + composing.text { spaceSlip = slip }
     }
 
     if shiftHeld { typedWhileShiftHeld = true }
@@ -210,10 +235,14 @@ public final class KeyboardEngine {
     return opening ? "\u{201C}" : "\u{201D}"
   }
 
-  public func insertSpace() {
+  /// - Parameter tap: Where the space bar was touched, in the letter geometry's
+  ///   units. A touch at its top edge may have been a bottom-row letter.
+  public func insertSpace(tap: KeyPoint? = nil) {
     reconcilePendingHostChanges()
     acceptPendingLearning()
     let now = clock()
+    let slip = spaceSlip
+    spaceSlip = nil
     defer {
       lastSpaceTime = now
       if page != .letters { page = .letters }
@@ -225,33 +254,93 @@ public final class KeyboardEngine {
       lastEdit = .space
       return
     }
+    // Only a tap the letter row could have produced is worth remembering.
+    let slipPoint = tap.flatMap { point in policy.autocorrects && suggester?.spaceSlipLetter(at: point) != nil ? point : nil }
     if !composing.isEmpty {
+      if let slip, joinSpaceSlip(slip, separator: " ") { return }
+      let first = composing
+      let context = languageContext()
+      let learningContext = previousWord()
+      let literal = composingLiteralToken
       commitComposing(separator: " ")
+      var inserted = first.text
+      if case let .autocorrected(_, text, _) = lastEdit { inserted = text }
+      guard !literal, before.hasSuffix(inserted + " ") else { return }
+      let start = before.count - inserted.count - 1
+      if let slipPoint {
+        spaceSlip = SpaceSlip(point: slipPoint, first: first, firstText: inserted.replacingOccurrences(of: "\u{2019}", with: "'"),
+                              context: context, learningContext: learningContext, anchor: before, keep: start, prefix: "", periodInserted: false)
+      }
       return
     }
+    // Two spaces in a row: the first may have been the word's last letter.
+    if let slip, slip.first != nil, before == slip.anchor, joinSpaceSlip(slip, separator: " ") { return }
+    let followsSpace = lastEditEndedWithSpace && before.hasSuffix(" ") && before.dropLast().last?.isLetter == true
+    let leadingContext = followsSpace ? languageContext() : nil
+    let leadingLearning = previousWord()
     if settings.doubleSpacePeriod, policy.smartSpacing, lastEditEndedWithSpace, now - lastSpaceTime < 0.8, before.hasSuffix(" ") {
       let trimmed = before.dropLast()
       if let previous = trimmed.last, previous.isLetter || previous.isNumber || previous == ")" || previous == "\u{201D}" || previous == "\"" {
         deleteDocumentBackward()
         insertDocumentText(". ")
         lastEdit = .none
+        if let slipPoint, let leadingContext {
+          spaceSlip = SpaceSlip(point: slipPoint, first: nil, firstText: nil, context: leadingContext, learningContext: leadingLearning,
+                                anchor: before, keep: before.count - 2, prefix: " ", periodInserted: true)
+        }
         return
       }
     }
     insertDocumentText(" ")
     lastEdit = .space
+    if let slipPoint, let leadingContext {
+      spaceSlip = SpaceSlip(point: slipPoint, first: nil, firstText: nil, context: leadingContext, learningContext: leadingLearning,
+                            anchor: before, keep: before.count - 1, prefix: "", periodInserted: false)
+    }
+  }
+
+  /// Reads the remembered space tap as a bottom-row letter when the joined word
+  /// clearly beats the words as typed ("ha e" -> have). Undo restores them.
+  private func joinSpaceSlip(_ slip: SpaceSlip, separator: String) -> Bool {
+    guard let suggester, policy.autocorrects, expectedSelection == nil, !cursorInsideWord,
+          slip.keep >= 0, slip.keep <= before.count else { return false }
+    let second: TypedWord? = composing.isEmpty ? nil : composing
+    if let second {
+      guard before == slip.anchor + second.text, !rejected.contains(second.text), !composingLiteralToken else { return false }
+    } else {
+      guard slip.first != nil, before == slip.anchor else { return false }
+    }
+    var secondText: String?
+    if second != nil {
+      refreshSuggestions()
+      secondText = (suggestions.autocorrection ?? composing.text).replacingOccurrences(of: "\u{2019}", with: "'")
+    }
+    guard let joined = suggester.spaceSlipJoin(first: slip.first, firstText: slip.firstText, slip: slip.point, second: second, secondText: secondText,
+                                               context: slip.context, uncapitalize: slip.periodInserted) else { return false }
+    let original = String(before.dropFirst(slip.keep))
+    var text = joined.text
+    if policy.smartQuotes { text = Self.curlyApostrophes(text) }
+    let inserted = slip.prefix + text
+    for _ in 0..<original.count { deleteDocumentBackward() }
+    insertDocumentText(inserted + separator)
+    pendingLearning = (joined.text, slip.learningContext)
+    lastEdit = .joinedSpaceSlip(original: original, inserted: inserted, separator: separator, composing: second ?? TypedWord(text: ""))
+    composing = TypedWord(text: "")
+    return true
   }
 
   private var lastEditEndedWithSpace: Bool {
     switch lastEdit {
     case .space: true
     case let .autocorrected(_, _, separator): separator == " "
+    case let .joinedSpaceSlip(_, _, separator, _): separator == " "
     default: false
     }
   }
 
   public func insertReturn() {
     reconcilePendingHostChanges()
+    spaceSlip = nil
     acceptPendingLearning()
     phantomSpace = false
     if !composing.isEmpty {
@@ -267,6 +356,7 @@ public final class KeyboardEngine {
   public func insertText(_ text: String, spacing: Bool = false) {
     guard !text.isEmpty else { return }
     reconcilePendingHostChanges()
+    spaceSlip = nil
     acceptPendingLearning()
     if !composing.isEmpty {
       learn(composing.text)
@@ -300,6 +390,7 @@ public final class KeyboardEngine {
 
   public func deleteBackward() {
     reconcilePendingHostChanges()
+    spaceSlip = nil
     pendingLearning = nil
     phantomSpace = false
     switch lastEdit {
@@ -311,6 +402,14 @@ public final class KeyboardEngine {
       composing = original
       lastEdit = .none
       finishEdit(deriveComposing: false)
+      return
+    case let .joinedSpaceSlip(original, inserted, separator, resumed) where before.hasSuffix(inserted + separator):
+      for _ in 0..<(inserted + separator).count { deleteDocumentBackward() }
+      insertDocumentText(original)
+      composing = resumed.isEmpty || !before.hasSuffix(resumed.text) ? TypedWord(text: "") : resumed
+      if !resumed.isEmpty { rejected.insert(resumed.text) }
+      lastEdit = .none
+      finishEdit(deriveComposing: composing.isEmpty)
       return
     case let .glided(word, _) where before.hasSuffix(word):
       for _ in 0..<word.count { deleteDocumentBackward() }
@@ -335,6 +434,7 @@ public final class KeyboardEngine {
   /// Deletes back to the start of the previous word, as delete-key repeat does once it speeds up.
   public func deleteWordBackward() {
     reconcilePendingHostChanges()
+    spaceSlip = nil
     pendingLearning = nil
     phantomSpace = false
     if expectedSelection != nil || document.selectedText?.isEmpty == false {
@@ -398,6 +498,7 @@ public final class KeyboardEngine {
   public var deleteUndoesLastEdit: Bool {
     switch lastEdit {
     case let .autocorrected(_, inserted, separator): before.hasSuffix(inserted + separator)
+    case let .joinedSpaceSlip(_, inserted, separator, _): before.hasSuffix(inserted + separator)
     case let .glided(word, _): before.hasSuffix(word)
     default: false
     }
@@ -421,6 +522,7 @@ public final class KeyboardEngine {
     let length = Self.wordDeletionSuffix(of: start, words: count).count
     guard length > 0 else { return nil }
     pendingLearning = nil
+    spaceSlip = nil
     phantomSpace = false
     for _ in 0..<length { deleteDocumentBackward() }
     composing = TypedWord(text: "")
@@ -447,6 +549,7 @@ public final class KeyboardEngine {
     reconcilePendingHostChanges()
     guard canUndo(deletion), !deletion.removed.isEmpty else { return false }
     acceptPendingLearning()
+    spaceSlip = nil
     phantomSpace = false
     insertDocumentText(deletion.removed)
     lastEdit = .none
@@ -487,6 +590,7 @@ public final class KeyboardEngine {
   // MARK: Suggestions and swipes
 
   public func select(_ suggestion: Suggestion) {
+    spaceSlip = nil
     // Host edits can precede their text-change callback. Reconcile displayed
     // choices before trusting their generation, preserving known own-edit lag.
     if suggestion.sourceContext != nil { documentDidChange() }
@@ -547,6 +651,7 @@ public final class KeyboardEngine {
   public func insertGlide(_ points: [KeyPoint], times: [Double]? = nil) -> [GlideCandidate] {
     guard policy.allowsGlide, let glide else { return [] }
     reconcilePendingHostChanges()
+    spaceSlip = nil
     // Decode before touching the document, so a path that fits no word changes nothing.
     var candidates = glide.decode(points, times: times, context: languageContext(), limit: 4)
     guard !candidates.isEmpty else { return [] }
@@ -680,6 +785,7 @@ public final class KeyboardEngine {
       phantomSpace = false
       lastEdit = .none
       pendingLearning = nil
+      spaceSlip = nil
       rejected.removeAll()
       composing = TypedWord(text: "")
     }
@@ -712,6 +818,7 @@ public final class KeyboardEngine {
           phantomSpace = false
           lastEdit = .none
           pendingLearning = nil
+          spaceSlip = nil
           deriveComposing()
         }
       }

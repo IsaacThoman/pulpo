@@ -457,6 +457,103 @@ public final class Suggester {
     return best
   }
 
+  // MARK: Letters that landed on the space bar
+
+  /// Bottom-row letters whose keys border the space bar.
+  static let spaceBarNeighbors: [UInt8] = Array("zxcvbnm".utf8)
+  /// A space tap farther than this from every bordering letter is an intended space.
+  static let maximumSpaceSlipDistance = 0.8
+  /// The joined reading must beat the words as committed by this much.
+  static let spaceSlipMargin = 1.0
+  /// A letter tap rarely reaches the space bar; this prior comes on top of the distance cost.
+  static let spaceSlipExtraCost = 1.0
+
+  /// The bordering letter a space tap most likely belonged to, and its distance.
+  func spaceSlipLetter(at point: KeyPoint) -> (letter: Character, distance: Double)? {
+    var best: (Character, Double)?
+    for byte in Self.spaceBarNeighbors {
+      guard let center = corrector.geometry.center(byte), point.y > center.y, abs(point.x - center.x) <= 0.75 else { continue }
+      let distance = center.distance(to: point)
+      if distance < best?.1 ?? .infinity { best = (Character(UnicodeScalar(byte)), distance) }
+    }
+    guard let best, best.1 <= Self.maximumSpaceSlipDistance else { return nil }
+    return best
+  }
+
+  /// Reads `first`, a space tap at `slip`, then `second` as one word whose
+  /// bottom-row letter landed on the space bar ("ha e" -> have). `firstText` and
+  /// `secondText` are what the words were committed or would commit as; nil
+  /// `first` means the slip came first ("is  eat" -> is beat), nil `second` that
+  /// it came last ("bee  " -> been). `uncapitalize` undoes a capital that only a
+  /// double-space period added. Returns the joined word only when it beats the
+  /// words as committed by a clear margin.
+  func spaceSlipJoin(first: TypedWord?, firstText: String?, slip: KeyPoint, second: TypedWord?, secondText: String?,
+                     context: LanguageContext, uncapitalize: Bool = false) -> Candidate? {
+    guard first != nil || second != nil, let (letter, distance) = spaceSlipLetter(at: slip) else { return nil }
+    let parts = [first, second].compactMap { $0 }
+    // Acronyms and identifiers (RB, iOS) stay separate words.
+    guard parts.allSatisfy({
+      isCorrectable($0.text) && !$0.text.contains("'") && !$0.text.contains("\u{2019}") && !$0.text.dropFirst().contains(where: \.isUppercase)
+    }) else { return nil }
+    let firstTyped = first?.text ?? ""
+    var secondTyped = second?.text ?? ""
+    if uncapitalize, let initial = secondTyped.first, initial.isUppercase, secondTyped.dropFirst().allSatisfy(\.isLowercase) {
+      secondTyped = initial.lowercased() + secondTyped.dropFirst()
+    }
+    let text = firstTyped + String(letter) + secondTyped
+    guard text.count <= 30 else { return nil }
+    func padded(_ word: TypedWord?) -> [KeyPoint?] {
+      guard let word else { return [] }
+      return word.text.indices.enumerated().map { $0.offset < word.taps.count ? word.taps[$0.offset] : nil }
+    }
+    let joined = TypedWord(text: text, taps: padded(first) + [slip] + padded(second))
+    let joinedKey = TextNormalizer.key(text)
+    let slipCost = 0.8 + 2.4 * distance * distance + Self.spaceSlipExtraCost
+    guard let best = candidates(for: joined, context: context).first(where: { candidate in
+      guard !candidate.isCompletion, candidate.cost <= min(SpellCorrector.bound(forLength: joinedKey.count), 4.5),
+            let id = candidate.id, !lexicon.flags(id).contains(.neverSuggest),
+            // A rare name is no reason to merge two typed words ("a tony" is not Antony).
+            !(lexicon.flags(id).contains(.capitalized) && lexicon.frequency(id) < 100),
+            lexicon.unigramLogProbability(id) >= Self.minimumSplitPartFamiliarity else { return false }
+      // The landed letter is kept: a word that drops it ("Ha ha" -> Haha) is a
+      // missing space, not a letter on the space bar.
+      let length = TextNormalizer.key(candidate.text).count
+      return length >= joinedKey.count && length <= joinedKey.count + 1
+    }) else { return nil }
+    // The words as they stand, each scored in its own context. The word just
+    // typed may read better as its own correction: "have s" is "have a", not havens.
+    var separate = 0.0
+    var previous = context
+    if let first, let firstText {
+      var reading = model.logProbability(of: firstText, id: lexicon.id(of: firstText), in: context) - corrector.cost(of: first, against: firstText)
+      // "z normal" is "a normal", not abnormal.
+      if TextNormalizer.key(first.text).count == 1 {
+        for word in ["a", "I"] where TextNormalizer.key(word) != TextNormalizer.key(first.text) {
+          reading = max(reading, model.logProbability(of: word, id: lexicon.id(of: word), in: context) - corrector.cost(of: first, against: word))
+        }
+      }
+      separate += reading
+      previous = model.context(previousWord: firstText, sentenceStart: false, precedingWord: context.previousWord)
+    }
+    if let second, let secondText {
+      let committed = model.logProbability(of: secondText, id: lexicon.id(of: secondText), in: previous) - corrector.cost(of: second, against: secondText)
+      // A space ended it, so it is not unfinished; it may still be mistyped.
+      let typedLength = TextNormalizer.key(second.text).count
+      var alternative = candidates(for: second, context: previous).first { !$0.isCompletion }?.score ?? -.infinity
+      // One letter is never corrected on its own, but "s" tapped beside a is "a".
+      if typedLength == 1 {
+        for word in ["a", "I"] where TextNormalizer.key(word) != TextNormalizer.key(second.text) {
+          alternative = max(alternative, model.logProbability(of: word, id: lexicon.id(of: word), in: previous) - corrector.cost(of: second, against: word))
+        }
+      }
+      separate += max(committed, alternative)
+    }
+    guard best.score - slipCost - separate >= Self.spaceSlipMargin else { return nil }
+    var result = best
+    result.text = Self.matchCase(of: firstTyped.isEmpty ? secondTyped : firstTyped, to: best.text)
+    return result
+  }
+
   private func splitPart(_ text: String) -> (text: String, id: Int?, cost: Double)? {
     let key = TextNormalizer.key(text)
     if key.count == 1, key != "a", key != "i" { return nil }

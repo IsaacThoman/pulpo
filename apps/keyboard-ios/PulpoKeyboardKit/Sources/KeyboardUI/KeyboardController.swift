@@ -830,7 +830,8 @@ extension KeyboardController: KeysViewDelegate {
       let isLetter = text.count == 1 && text.first?.isLetter == true
       engine.insertCharacter(text, tap: isLetter && engine.page == .letters ? normalized(point) : nil)
     case .space:
-      engine.insertSpace()
+      // A touch at the top of the space bar may have been a bottom-row letter.
+      engine.insertSpace(tap: engine.page == .letters ? normalized(point) : nil)
     case .returnKey:
       guard engine.returnKeyEnabled else { return }
       engine.insertReturn()
