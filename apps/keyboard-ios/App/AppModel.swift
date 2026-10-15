@@ -144,6 +144,9 @@ final class AppModel {
 
   func clearLearnedWords() {
     PersonalDictionary(url: AppGroup.personalDictionaryURL(fallback: nil)).clear()
+    let touch = TouchModel(url: AppGroup.touchModelURL(fallback: nil))
+    touch.reset()
+    touch.save()
   }
 
   // MARK: Deep links

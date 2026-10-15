@@ -451,7 +451,7 @@ public final class Suggester {
       guard index < typed.count - 1, let byte = typed[index].lowercased().utf8.first,
             Self.spaceRowLetters.contains(byte), let center = geometry.center(byte) else { continue }
       // Substitution cost toward the space row, one pitch below the letter's center.
-      let drop = (center.y + 1) - (taps[index]?.y ?? center.y)
+      let drop = (center.y + 1) - (taps[index].map { corrector.adjusted($0, aimingAt: byte).y } ?? center.y)
       consider(0..<index, (index + 1)..<typed.count, cost: 0.8 + 2.4 * drop * drop)
     }
     return best
@@ -472,6 +472,7 @@ public final class Suggester {
   func spaceSlipLetter(at point: KeyPoint) -> (letter: Character, distance: Double)? {
     var best: (Character, Double)?
     for byte in Self.spaceBarNeighbors {
+      // Raw touch: a learned downward offset shifts intended spaces just as much.
       guard let center = corrector.geometry.center(byte), point.y > center.y, abs(point.x - center.x) <= 0.75 else { continue }
       let distance = center.distance(to: point)
       if distance < best?.1 ?? .infinity { best = (Character(UnicodeScalar(byte)), distance) }
@@ -600,8 +601,9 @@ public final class Suggester {
     let destination = Array(target.utf8)
     guard destination.count == source.bytes.count, destination != source.bytes else { return false }
     for index in destination.indices where destination[index] != source.bytes[index] {
-      guard let point = source.taps[index], let center = corrector.geometry.center(source.bytes[index]),
+      guard let tap = source.taps[index], let center = corrector.geometry.center(source.bytes[index]),
             let target = corrector.geometry.center(destination[index]) else { return false }
+      let point = corrector.adjusted(tap, aimingAt: source.bytes[index])
       let distance = center.distance(to: target)
       let projection = ((point.x - center.x) * (target.x - center.x) +
         (point.y - center.y) * (target.y - center.y)) / distance

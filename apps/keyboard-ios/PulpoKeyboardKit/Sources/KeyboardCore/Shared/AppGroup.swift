@@ -35,6 +35,16 @@ public enum AppGroup {
     if writable, let url = containerURL { return url.appendingPathComponent("PersonalDictionary.json") }
     return fallback?.appendingPathComponent("PersonalDictionary.json")
   }
+
+  /// Learned per-key tap offsets, cleared together with learned words.
+  public static func touchModelURL(fallback: URL?) -> URL? {
+    touchModelURL(fallback: fallback, writable: isWritable)
+  }
+
+  public static func touchModelURL(fallback: URL?, writable: Bool) -> URL? {
+    if writable, let url = containerURL { return url.appendingPathComponent("TouchModel.json") }
+    return fallback?.appendingPathComponent("TouchModel.json")
+  }
 }
 
 /// What the keyboard last reported about itself, so the app's setup screen can show

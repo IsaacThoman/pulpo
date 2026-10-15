@@ -205,13 +205,13 @@ public final class KeyboardController: NSObject {
   /// gives overlapping instances one set of learned words to save.
   private static var sharedStack: (stack: LanguageStack, personalURL: URL?)?
 
-  private static func languageStack(personalURL: URL?) -> LanguageStack? {
+  private static func languageStack(personalURL: URL?, touchURL: URL?) -> LanguageStack? {
     if let shared = sharedStack, shared.personalURL == personalURL {
       shared.stack.personal.reloadIfChangedOnDisk()
       return shared.stack
     }
     guard let url = KeyboardResources.url("en_US", "pkdict"),
-          let stack = try? LanguageStack(dictionaryURL: url, personalURL: personalURL) else { return nil }
+          let stack = try? LanguageStack(dictionaryURL: url, personalURL: personalURL, touchURL: touchURL) else { return nil }
     sharedStack = (stack, personalURL)
     return stack
   }
@@ -227,7 +227,8 @@ public final class KeyboardController: NSObject {
     // Probing the App Group writes a file; do it once.
     let writable = AppGroup.isWritable
     let stackStart = PerfLog.begin()
-    stack = Self.languageStack(personalURL: AppGroup.personalDictionaryURL(fallback: support, writable: writable))
+    stack = Self.languageStack(personalURL: AppGroup.personalDictionaryURL(fallback: support, writable: writable),
+                               touchURL: AppGroup.touchModelURL(fallback: support, writable: writable))
     PerfLog.end("init.stack", stackStart)
     engine = KeyboardEngine(document: host.document, suggester: stack?.suggester, glide: stack?.glide, settings: settings)
     let emojiDefaults = writable ? (AppGroup.defaults ?? .standard) : .standard

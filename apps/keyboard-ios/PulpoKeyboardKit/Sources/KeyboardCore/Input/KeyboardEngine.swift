@@ -113,6 +113,8 @@ public final class KeyboardEngine {
   /// Decoder choices are tentative until the next edit or keyboard dismissal.
   /// Undoing or replacing one must not teach the original mistake.
   private var pendingLearning: (word: String, context: (word: String?, sentenceStart: Bool))?
+  /// The taps behind a pending autocorrection, learned as aimed at its letters once kept.
+  private var pendingTouch: (typed: TypedWord, intended: String)?
   /// After a swipe, a space is owed before the next word but not before punctuation.
   public private(set) var phantomSpace = false
   private var lastShiftTap: TimeInterval = -1
@@ -324,6 +326,7 @@ public final class KeyboardEngine {
     for _ in 0..<original.count { deleteDocumentBackward() }
     insertDocumentText(inserted + separator)
     pendingLearning = (joined.text, slip.learningContext)
+    pendingTouch = nil
     lastEdit = .joinedSpaceSlip(original: original, inserted: inserted, separator: separator, composing: second ?? TypedWord(text: ""))
     composing = TypedWord(text: "")
     return true
@@ -612,6 +615,7 @@ public final class KeyboardEngine {
       for _ in 0..<word.count { deleteDocumentBackward() }
       insertDocumentText(text)
       pendingLearning = (text, originalContext)
+      pendingTouch = nil
       lastEdit = .glided(word: text, alternatives: alternatives)
       phantomSpace = true
       finishEdit()
@@ -679,6 +683,7 @@ public final class KeyboardEngine {
     }
     insertDocumentText(word)
     pendingLearning = (word, wordContext)
+    pendingTouch = nil
     let alternatives = candidates.dropFirst().map { candidate -> String in
       let text = transform(candidate.text)
       return policy.smartQuotes ? Self.curlyApostrophes(text) : text
@@ -706,10 +711,14 @@ public final class KeyboardEngine {
       for _ in 0..<typed.text.count { deleteDocumentBackward() }
       insertDocumentText(inserted + separator)
       pendingLearning = (replacement, context)
+      pendingTouch = (typed, replacement)
       lastEdit = .autocorrected(original: typed, inserted: inserted, separator: separator)
     } else {
       insertDocumentText(separator)
-      if !literalToken { learn(typed.text, context: context) }
+      if !literalToken {
+        learn(typed.text, context: context)
+        if suggester?.isValid(typed.text) == true { learnTouch(typed, intended: typed.text) }
+      }
       lastEdit = separator == " " ? .space : .typed
     }
     composing = TypedWord(text: "")
@@ -743,9 +752,18 @@ public final class KeyboardEngine {
   }
 
   private func acceptPendingLearning() {
+    let touch = pendingTouch
+    pendingTouch = nil
     guard let pending = pendingLearning else { return }
     pendingLearning = nil
+    if let touch, touch.intended == pending.word { learnTouch(touch.typed, intended: touch.intended) }
     learn(pending.word, context: pending.context)
+  }
+
+  /// Teaches the touch model where taps for `intended` landed. Never in private fields.
+  private func learnTouch(_ typed: TypedWord, intended: String) {
+    guard policy.learns, let corrector = suggester?.corrector, let touch = corrector.touch else { return }
+    touch.learn(typed, intended: intended, geometry: corrector.geometry)
   }
 
   // MARK: Context
@@ -1188,5 +1206,6 @@ public final class KeyboardEngine {
   public func save(inBackground: Bool = false) {
     acceptPendingLearning()
     if inBackground { personal?.saveInBackground() } else { personal?.save() }
+    suggester?.corrector.touch?.save(inBackground: inBackground)
   }
 }

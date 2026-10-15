@@ -9,11 +9,15 @@ public final class LanguageStack {
   public let suggester: Suggester
   public let glide: GlideDecoder
 
-  public init(dictionaryURL: URL, personalURL: URL?) throws {
+  public let touch: TouchModel
+
+  public init(dictionaryURL: URL, personalURL: URL?, touchURL: URL? = nil) throws {
     lexicon = try Lexicon(url: dictionaryURL)
     personal = PersonalDictionary(url: personalURL)
     model = LanguageModel(lexicon: lexicon, personal: personal)
     corrector = SpellCorrector(lexicon: lexicon)
+    touch = TouchModel(url: touchURL)
+    corrector.touch = touch
     suggester = Suggester(model: model, corrector: corrector)
     glide = GlideDecoder(model: model)
   }

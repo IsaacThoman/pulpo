@@ -48,6 +48,8 @@ public struct SpellMatch: Equatable, Sendable {
 public final class SpellCorrector {
   public let lexicon: Lexicon
   public var geometry: LetterGeometry
+  /// The person's learned tap offsets; substitutions are measured from them.
+  public var touch: TouchModel?
   public var maximumVisitedNodes = 60_000
 
   // Costs are negative log-probabilities of each slip, so they trade off directly
@@ -97,10 +99,15 @@ public final class SpellCorrector {
     let points: [KeyPoint?]
     let deletion: [Double]
     let geometry: LetterGeometry
+    /// Learned offsets, applied only to real touches.
+    let offsets: [KeyPoint]?
+    let touched: [Bool]
 
-    init(typed: [UInt8], taps: [KeyPoint?], geometry: LetterGeometry) {
+    init(typed: [UInt8], taps: [KeyPoint?], geometry: LetterGeometry, offsets: [KeyPoint]? = nil) {
       self.typed = typed
       self.geometry = geometry
+      self.offsets = offsets
+      touched = typed.indices.map { taps.indices.contains($0) && taps[$0] != nil }
       points = typed.indices.map { taps.indices.contains($0) ? (taps[$0] ?? geometry.center(typed[$0])) : geometry.center(typed[$0]) }
       deletion = typed.indices.map { index in
         var cost = SpellCorrector.deletionCost
@@ -120,7 +127,12 @@ public final class SpellCorrector {
       let typedByte = typed[index]
       if typedByte == byte { return 0 }
       var cost = SpellCorrector.substitutionCap
-      if let point = points[index], let target = geometry.center(byte) {
+      if var point = points[index], let target = geometry.center(byte) {
+        // Measure from where this person's taps for the target key usually land.
+        if let offsets, touched[index], byte >= 97, byte <= 122 {
+          let offset = offsets[Int(byte - 97)]
+          point = KeyPoint(x: point.x - offset.x, y: point.y - offset.y)
+        }
         cost = min(cost, 0.8 + 2.4 * point.distanceSquared(to: target))
       }
       if SpellCorrector.vowels.contains(typedByte), SpellCorrector.vowels.contains(byte) { cost = min(cost, 3.8) }
@@ -146,7 +158,7 @@ public final class SpellCorrector {
     guard n > 0 else { return Result() }
     let bound = maximumCost ?? Self.bound(forLength: n)
     let prefixBound = prefixCost ?? Self.prefixBound(forLength: n)
-    let costs = Costs(typed: typed, taps: keyed.taps, geometry: geometry)
+    let costs = Costs(typed: typed, taps: keyed.taps, geometry: geometry, offsets: learnedOffsets)
     let maxDepth = n + Int(bound / Self.doubledLetterCost) + 1
     let width = n + 1
     var rows = [Double](repeating: 0, count: (maxDepth + 1) * width)
@@ -244,9 +256,22 @@ public final class SpellCorrector {
   func costEvaluator(for word: TypedWord, bound: Double = .infinity) -> (String) -> Double {
     let keyed = word.keyed
     let typed = keyed.bytes
-    let costs = Costs(typed: typed, taps: keyed.taps, geometry: geometry)
+    let costs = Costs(typed: typed, taps: keyed.taps, geometry: geometry, offsets: learnedOffsets)
     var rows: [Double] = []
     return { candidateKey in Self.cost(costs: costs, target: candidateKey.utf8, bound: bound, rows: &rows) }
+  }
+
+  /// Offsets worth applying: none until the person has typed enough to learn from.
+  var learnedOffsets: [KeyPoint]? {
+    guard let touch, touch.weight >= TouchModel.minimumWeight else { return nil }
+    return touch.offsets
+  }
+
+  /// A touch as if it had been aimed with no personal offset at the key `byte`.
+  @inline(__always) func adjusted(_ point: KeyPoint, aimingAt byte: UInt8) -> KeyPoint {
+    guard let touch, touch.weight >= TouchModel.minimumWeight else { return point }
+    let offset = touch.offset(byte)
+    return KeyPoint(x: point.x - offset.x, y: point.y - offset.y)
   }
 
   /// The same recurrence as `search`, over three reused rows.
