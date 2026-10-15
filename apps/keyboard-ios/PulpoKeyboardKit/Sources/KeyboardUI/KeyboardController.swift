@@ -4,7 +4,15 @@ import UIKit
 /// Finds the bundled dictionary and emoji data, in the extension or (for the app's
 /// preview) inside the embedded extension bundle.
 public enum KeyboardResources {
+  /// A language data directory to read instead of the bundles, for tests that
+  /// run the controller outside the app.
+  public static var directory: URL?
+
   public static func url(_ name: String, _ ext: String) -> URL? {
+    if let directory {
+      let url = directory.appendingPathComponent(name).appendingPathExtension(ext)
+      return FileManager.default.fileExists(atPath: url.path) ? url : nil
+    }
     if let url = Bundle.main.url(forResource: name, withExtension: ext) { return url }
     if let plugins = Bundle.main.builtInPlugInsURL,
        let bundle = Bundle(url: plugins.appendingPathComponent("PulpoKeyboardExtension.appex")) {
@@ -268,16 +276,21 @@ public final class KeyboardController: NSObject {
     let resources = Self.emojiResources
     Task { [weak self] in
       guard let prepared = await resources.value, let self else { return }
-      PerfLog.event("emojiReady")
-      self.emojiCatalog = prepared.catalog
-      self.emojiSuggester = prepared.suggester
-      self.engine.emojiSuggester = prepared.suggester
-      self.engine.refreshSuggestions()
-      self.sync()
-      if self.pendingEmojiPresentation {
-        self.pendingEmojiPresentation = false
-        if self.isVisible, self.rootView.mode == .keys { self.showEmoji() }
-      }
+      self.emojiResourcesLoaded(catalog: prepared.catalog, suggester: prepared.suggester)
+    }
+  }
+
+  /// The emoji index arrives off the typing path, at any point between touches.
+  func emojiResourcesLoaded(catalog: EmojiCatalog, suggester: EmojiSuggester) {
+    PerfLog.event("emojiReady")
+    emojiCatalog = catalog
+    emojiSuggester = suggester
+    engine.emojiSuggester = suggester
+    engine.refreshSuggestions()
+    sync()
+    if pendingEmojiPresentation {
+      pendingEmojiPresentation = false
+      if isVisible, rootView.mode == .keys { showEmoji() }
     }
   }
 
