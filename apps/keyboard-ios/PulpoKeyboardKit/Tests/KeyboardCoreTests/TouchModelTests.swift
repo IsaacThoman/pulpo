@@ -53,6 +53,23 @@ struct TouchModelTests {
     #expect(abs(restored.offset(Character("h").asciiValue!).y - model.offset(Character("h").asciiValue!).y) < 1e-9)
   }
 
+  @Test func clearingInTheAppSticksWhileTheKeyboardStaysAlive() throws {
+    let url = FileManager.default.temporaryDirectory.appendingPathComponent("touch-\(UUID().uuidString).json")
+    defer { try? FileManager.default.removeItem(at: url) }
+    let keyboard = TouchModel(url: url)
+    for _ in 0..<20 { keyboard.learn(taps("hello", offset: KeyPoint(x: -0.1, y: 0.15)), intended: "hello", geometry: Self.geometry) }
+    keyboard.save(inBackground: true)
+    #expect(!keyboard.reloadIfChangedOnDisk())
+    // The app resets the file; the keyboard process still holds its offsets.
+    let app = TouchModel(url: url)
+    app.reset()
+    app.save()
+    #expect(keyboard.reloadIfChangedOnDisk())
+    #expect(keyboard.weight == 0)
+    keyboard.save()
+    #expect(TouchModel(url: url).weight == 0)
+  }
+
   @Test func offsetsApplyOnlyOnceThereIsEnoughEvidence() {
     let (_, suggester, _) = Fixtures.stack()
     let touch = TouchModel(url: nil)

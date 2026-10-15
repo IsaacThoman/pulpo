@@ -208,6 +208,7 @@ public final class KeyboardController: NSObject {
   private static func languageStack(personalURL: URL?, touchURL: URL?) -> LanguageStack? {
     if let shared = sharedStack, shared.personalURL == personalURL {
       shared.stack.personal.reloadIfChangedOnDisk()
+      shared.stack.touch.reloadIfChangedOnDisk()
       return shared.stack
     }
     guard let url = KeyboardResources.url("en_US", "pkdict"),
@@ -288,6 +289,7 @@ public final class KeyboardController: NSObject {
     resetDeleteGesture()
     // The app can clear learned words while this process stays alive.
     stack?.personal.reloadIfChangedOnDisk()
+    stack?.touch.reloadIfChangedOnDisk()
     settings = settingsStore.load()
     engine.settings = settings
     KeyboardFeedback.current = haptics

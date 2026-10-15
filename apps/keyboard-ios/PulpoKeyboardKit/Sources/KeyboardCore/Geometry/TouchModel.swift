@@ -34,14 +34,48 @@ public final class TouchModel {
   /// Off while evaluating a fixed model, or for fields that must not teach it.
   public var isLearning = true
 
+  /// The file as this process last read or wrote it, so a reset written by the
+  /// app is noticed while the keyboard process stays alive.
+  private let stamp = StampBox()
+
+  private final class StampBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: PersonalDictionary.FileStamp?
+    var value: PersonalDictionary.FileStamp? {
+      get { lock.withLock { stored } }
+      set { lock.withLock { stored = newValue } }
+    }
+  }
+
   public init(url: URL?) {
     self.url = url
-    guard let url, let data = try? Data(contentsOf: url),
+    guard let url else { return }
+    load(from: url)
+    stamp.value = PersonalDictionary.FileStamp(url: url)
+  }
+
+  private func load(from url: URL) {
+    guard let data = try? Data(contentsOf: url),
           let snapshot = try? JSONDecoder().decode(Snapshot.self, from: data),
           snapshot.version == 1, snapshot.keys.count == 26 else { return }
     for (index, values) in snapshot.keys.enumerated() where values.count == 3 && values.allSatisfy(\.isFinite) {
       sums[index] = (values[0], values[1], max(0, min(values[2], Self.maximumWeight)))
     }
+  }
+
+  /// Rereads the offsets when another process, such as the app clearing learned
+  /// data, changed the file. Pending writes from this process finish first.
+  @discardableResult
+  public func reloadIfChangedOnDisk() -> Bool {
+    guard let url else { return false }
+    let current = Self.writeQueue.sync { PersonalDictionary.FileStamp(url: url) }
+    guard current != stamp.value else { return false }
+    sums = Array(repeating: (0, 0, 0), count: 26)
+    cache = nil
+    dirty = false
+    load(from: url)
+    stamp.value = current
+    return true
   }
 
   /// Total accepted taps the model has learned from, after forgetting.
@@ -113,8 +147,12 @@ public final class TouchModel {
   public func save(inBackground: Bool = false) {
     guard dirty, let url, let data = try? JSONEncoder().encode(Snapshot(keys: sums.map { [$0.x, $0.y, $0.weight] })) else { return }
     dirty = false
-    let write = { try? data.write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication]) }
-    if inBackground { Self.writeQueue.async { _ = write() } } else { _ = write() }
+    let stamp = stamp
+    let write = {
+      try? data.write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+      stamp.value = PersonalDictionary.FileStamp(url: url)
+    }
+    if inBackground { Self.writeQueue.async(execute: write) } else { Self.writeQueue.sync(execute: write) }
   }
 
   private static let writeQueue = DispatchQueue(label: "com.isaacthoman.pulpo.keyboard.touch-model", qos: .utility)
