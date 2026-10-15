@@ -46,8 +46,17 @@ public final class PersonalDictionary {
 
   public init(url: URL?) {
     self.url = url
-    guard let url, let data = try? Data(contentsOf: url),
-          let snapshot = try? JSONDecoder().decode(Snapshot.self, from: data) else { return }
+    load()
+  }
+
+  private func load() {
+    guard let url else { return }
+    // Read after any save still being written, and note which file was read.
+    let data = Self.files.sync { () -> Data? in
+      fileState.stamp = FileStamp(url: url)
+      return try? Data(contentsOf: url)
+    }
+    guard let data, let snapshot = try? JSONDecoder().decode(Snapshot.self, from: data) else { return }
     words = snapshot.words
     pairs = snapshot.pairs
     blocked = Set(snapshot.blocked)
@@ -289,17 +298,96 @@ public final class PersonalDictionary {
 
   // MARK: Persistence
 
-  public func save() {
-    guard dirty, let url else { return }
-    let snapshot = Snapshot(words: words, pairs: pairs, blocked: Array(blocked))
-    do {
-      try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-      try JSONEncoder().encode(snapshot).write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
-      dirty = false
-    } catch {
-      // Learning is best effort; a later save retries.
+  /// Reads and writes of learned-word files, in order. Saves can leave the typing
+  /// thread while a later load still sees them.
+  private static let files = DispatchQueue(label: "com.isaacthoman.pulpo.keyboard.personal-dictionary", qos: .utility)
+
+  /// The file as this instance last read or wrote it. Only used on `files`.
+  private final class FileState: @unchecked Sendable {
+    var stamp: FileStamp?
+    var failedWrite = false
+  }
+  private let fileState = FileState()
+
+  /// Identifies one version of a file: atomic saves replace the inode.
+  struct FileStamp: Equatable, Sendable {
+    let device: Int64
+    let inode: UInt64
+    let size: Int64
+    let modified: Int64
+    let modifiedNanoseconds: Int
+
+    init?(url: URL) {
+      var info = stat()
+      guard stat(url.path, &info) == 0 else { return nil }
+      device = Int64(info.st_dev)
+      inode = UInt64(info.st_ino)
+      size = Int64(info.st_size)
+      modified = Int64(info.st_mtimespec.tv_sec)
+      modifiedNanoseconds = Int(info.st_mtimespec.tv_nsec)
     }
   }
 
-  public var hasUnsavedChanges: Bool { dirty }
+  public func save() {
+    guard let url, let snapshot = pendingSnapshot() else { return }
+    let state = fileState
+    Self.files.sync { Self.write(snapshot, to: url, state: state) }
+  }
+
+  /// Like `save`, but encodes and writes off the calling thread. Writes stay in
+  /// order, and loading waits for them.
+  public func saveInBackground() {
+    guard let url, let snapshot = pendingSnapshot() else { return }
+    let state = fileState
+    Self.files.async { Self.write(snapshot, to: url, state: state) }
+    #if os(iOS)
+    // A hidden keyboard can be suspended; ask for time to finish the write.
+    ProcessInfo.processInfo.performExpiringActivity(withReason: "Saving learned words") { expired in
+      if !expired { Self.files.sync {} }
+    }
+    #endif
+  }
+
+  private func pendingSnapshot() -> Snapshot? {
+    // A failed write is retried by the next save, as before.
+    let retry = Self.files.sync { () -> Bool in
+      defer { fileState.failedWrite = false }
+      return fileState.failedWrite
+    }
+    guard dirty || retry else { return nil }
+    dirty = false
+    return Snapshot(words: words, pairs: pairs, blocked: Array(blocked))
+  }
+
+  private static func write(_ snapshot: Snapshot, to url: URL, state: FileState) {
+    do {
+      try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+      try JSONEncoder().encode(snapshot).write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+      state.stamp = FileStamp(url: url)
+    } catch {
+      // Learning is best effort; a later save retries.
+      state.failedWrite = true
+    }
+  }
+
+  /// Rereads the file when another process (the app clearing learned words, or
+  /// its preview keyboard) replaced it since this instance read or wrote it.
+  /// Returns whether anything was reloaded.
+  @discardableResult
+  public func reloadIfChangedOnDisk() -> Bool {
+    guard let url else { return false }
+    let state = fileState
+    let changed = Self.files.sync { FileStamp(url: url) != state.stamp }
+    guard changed else { return false }
+    words = [:]
+    pairs = [:]
+    blocked = []
+    blockedKeys = []
+    rebuildIndexes()
+    dirty = false
+    load()
+    return true
+  }
+
+  public var hasUnsavedChanges: Bool { dirty || Self.files.sync { fileState.failedWrite } }
 }

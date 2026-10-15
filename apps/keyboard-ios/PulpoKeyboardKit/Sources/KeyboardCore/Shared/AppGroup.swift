@@ -27,7 +27,12 @@ public enum AppGroup {
 
   /// Learned words live in the group when possible so the app can show and clear them.
   public static func personalDictionaryURL(fallback: URL?) -> URL? {
-    if isWritable, let url = containerURL { return url.appendingPathComponent("PersonalDictionary.json") }
+    personalDictionaryURL(fallback: fallback, writable: isWritable)
+  }
+
+  /// For callers that already probed `isWritable`, which writes a file.
+  public static func personalDictionaryURL(fallback: URL?, writable: Bool) -> URL? {
+    if writable, let url = containerURL { return url.appendingPathComponent("PersonalDictionary.json") }
     return fallback?.appendingPathComponent("PersonalDictionary.json")
   }
 }

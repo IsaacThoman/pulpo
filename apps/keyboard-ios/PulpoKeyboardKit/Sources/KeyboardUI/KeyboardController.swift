@@ -200,15 +200,34 @@ public final class KeyboardController: NSObject {
   }()
   public var onHeightChange: ((CGFloat) -> Void)?
 
+  /// One language stack per process. iOS builds a new controller for every
+  /// presentation; sharing keeps the parsed learned words and warmed caches, and
+  /// gives overlapping instances one set of learned words to save.
+  private static var sharedStack: (stack: LanguageStack, personalURL: URL?)?
+
+  private static func languageStack(personalURL: URL?) -> LanguageStack? {
+    if let shared = sharedStack, shared.personalURL == personalURL {
+      shared.stack.personal.reloadIfChangedOnDisk()
+      return shared.stack
+    }
+    guard let url = KeyboardResources.url("en_US", "pkdict"),
+          let stack = try? LanguageStack(dictionaryURL: url, personalURL: personalURL) else { return nil }
+    sharedStack = (stack, personalURL)
+    return stack
+  }
+
+  /// Diagnostics rewrite a small file; keep that off the typing thread, in order.
+  private static let diagnosticsQueue = DispatchQueue(label: "com.isaacthoman.pulpo.keyboard.diagnostics", qos: .utility)
+
   public init(host: KeyboardHost) {
     self.host = host
     settings = SettingsStore().load()
     let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-    stack = KeyboardResources.url("en_US", "pkdict").flatMap {
-      try? LanguageStack(dictionaryURL: $0, personalURL: AppGroup.personalDictionaryURL(fallback: support))
-    }
+    // Probing the App Group writes a file; do it once.
+    let writable = AppGroup.isWritable
+    stack = Self.languageStack(personalURL: AppGroup.personalDictionaryURL(fallback: support, writable: writable))
     engine = KeyboardEngine(document: host.document, suggester: stack?.suggester, glide: stack?.glide, settings: settings)
-    let emojiDefaults = AppGroup.isWritable ? (AppGroup.defaults ?? .standard) : .standard
+    let emojiDefaults = writable ? (AppGroup.defaults ?? .standard) : .standard
     emojiHistory = EmojiHistory(defaults: emojiDefaults)
     oneHandedStore = OneHandedStore(defaults: emojiDefaults)
     engine.emojiHistory = emojiHistory
@@ -261,6 +280,8 @@ public final class KeyboardController: NSObject {
     isVisible = true
     pendingEmojiPresentation = false
     resetDeleteGesture()
+    // The app can clear learned words while this process stays alive.
+    stack?.personal.reloadIfChangedOnDisk()
     settings = settingsStore.load()
     engine.settings = settings
     KeyboardFeedback.current = haptics
@@ -287,7 +308,7 @@ public final class KeyboardController: NSObject {
     isVisible = false
     pendingEmojiPresentation = false
     resetDeleteGesture()
-    engine.save()
+    engine.save(inBackground: true)
     recordDiagnostics()
     stopLevelUpdates()
     rootView.keys.cancelAllTouches()
@@ -402,8 +423,8 @@ public final class KeyboardController: NSObject {
 
   private func recordDiagnostics() {
     let stats = rootView.keys.stats
-    guard stats.touches > 0, AppGroup.isWritable else { return }
-    Diagnostics.record("keyboard", "session", [
+    guard stats.touches > 0 else { return }
+    let fields: [String: Int] = [
       "touches": stats.touches, "cancelled": stats.cancelled, "cancelledTapsKept": stats.cancelledTapsKept,
       "glides": stats.glides, "glideFallbacks": glideFallbacks, "cursorSlides": stats.cursorSlides,
       "deleteSwipes": stats.deleteSwipes,
@@ -411,8 +432,12 @@ public final class KeyboardController: NSObject {
       "activations": stats.activations, "retargets": stats.retargets,
       "releaseRetargets": stats.releaseRetargets, "functionDrifts": stats.functionDrifts,
       "laggingContext": engine.laggingContextUpdates, "externalContext": engine.externalContextChanges,
-    ])
+    ]
     rootView.keys.stats = KeysView.Stats()
+    Self.diagnosticsQueue.async {
+      guard AppGroup.isWritable else { return }
+      Diagnostics.record("keyboard", "session", fields)
+    }
   }
 
   /// Letter centers in key pitches, from the key frames on screen. A docked
@@ -453,7 +478,7 @@ public final class KeyboardController: NSObject {
 
   private func forget(_ suggestion: Suggestion) {
     stack?.personal.forget(suggestion.text)
-    stack?.personal.save()
+    stack?.personal.saveInBackground()
     engine.refreshSuggestions()
     sync()
   }

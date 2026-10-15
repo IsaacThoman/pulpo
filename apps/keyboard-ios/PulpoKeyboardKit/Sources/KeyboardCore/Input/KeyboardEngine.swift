@@ -1077,8 +1077,9 @@ public final class KeyboardEngine {
   }
 
   /// Persists learned words; call when the keyboard goes away.
-  public func save() {
+  /// - Parameter inBackground: Encode and write off the calling thread.
+  public func save(inBackground: Bool = false) {
     acceptPendingLearning()
-    personal?.save()
+    if inBackground { personal?.saveInBackground() } else { personal?.save() }
   }
 }
