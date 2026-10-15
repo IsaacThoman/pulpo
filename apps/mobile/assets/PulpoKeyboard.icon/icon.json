@@ -4,6 +4,7 @@
     {
       "layers" : [
         {
+          "hidden" : false,
           "image-name" : "typewriter.png",
           "name" : "typewriter",
           "position" : {
@@ -20,8 +21,8 @@
           "position" : {
             "scale" : 0.55,
             "translation-in-points" : [
-              65,
-              -2
+              88,
+              -8.499999999999886
             ]
           }
         },
@@ -37,6 +38,13 @@
           }
         }
       ],
+      "position" : {
+        "scale" : 0.85,
+        "translation-in-points" : [
+          -27,
+          0
+        ]
+      },
       "shadow" : {
         "kind" : "neutral",
         "opacity" : 0.5
