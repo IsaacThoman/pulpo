@@ -405,6 +405,45 @@ simulator; if a device blocks it, the guide shows "Not confirmed yet" rather tha
 Off. The iOS 26.5 simulator opens Settings on its main page, so the steps also name
 the path to the app's keyboard settings.
 
+### Swipe workflow around the decoder
+
+Before the swipe code was read, 117 scenarios were frozen (SHA-256
+`2a4eb262a58a2bd68d822b128fe9f9a832946645c8c950ddb49f9d97f67e58bf`). They cover
+spacing, bar alternatives, deletion, capitalization, contractions, punctuation,
+mixing taps and swipes, new words, learning and privacy.
+`SwipeWorkflowTests` runs them through `KeyboardEngine` on ideal paths, and
+`SwipeGestureTests` runs them as touches on the real key views through the
+controller. Measurable scenarios went from 92/112 to 104/112.
+
+Fixes:
+
+- **Capitalization.** It now applies after the space a swipe adds (`Hello.` +
+  swipe → `Hello. How`), in word- and all-caps fields, and past opening quotes and
+  brackets, for taps too.
+- **Spacing and joins.** No space follows a straight opening quote. Swiping in
+  front of an existing word types a real space between them. `'s` attaches to a
+  swiped word (`dog's`).
+- **Rejected swipes.** A swiped word deleted or replaced twice after the same
+  word stops winning there and is offered as the first alternative. This is kept
+  for the session only, capped at 256 entries, and never recorded in private
+  fields.
+- **New words.** A word the decoder could not produce, typed in place of a
+  deleted swipe that started and ended on its first and last letters, becomes
+  swipeable at once rather than after a second use.
+- **Recovery.** Deleting a swipe makes the autocorrection it triggered on the
+  previous word undoable, and that correction is learned only if the swipe is
+  kept.
+- **Learning and gestures.** Choices learn their dictionary spelling, not caps
+  lock or a capitalized alternative. A press that starts on Shift or another
+  function key no longer begins a swipe.
+
+The remaining failures are decoder ranking on ideal paths (`there` decodes as
+`the`; `nasa` as `NASA's`) and the two-use rule for new swipe words. On human-v2
+in-context data, committed (2,166 of 3,000) and reachable (2,374) are unchanged,
+and the bar offers a one-tap fix for 24.9% of wrong swipes. Undecodable words that
+were swiped wrong, deleted and typed once now commit on the next swipe 7 of 13
+times instead of 0. Editing-fuzzer violations on held-out seeds are unchanged.
+
 ### Everyday interaction parity
 
 A frozen 56-item checklist compared daily interactions with the Apple keyboard
