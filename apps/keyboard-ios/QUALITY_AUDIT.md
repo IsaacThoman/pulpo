@@ -483,13 +483,47 @@ Cold start remains about 400 ms in the simulator. Simulator figures are Mac CPU
 timings, and several runs happened under heavy machine load, so only medians
 and memory are reliable.
 
-The sweep also found a serious open risk. CoreText keeps every emoji image it has
-drawn for the life of the process, so scrolling through every picker category took
-the simulator extension from about 30 MB to **141 MB**. A keyboard extension is
-terminated at roughly 50–70 MB. A separate sweep is measuring which memory category
-this is and bounding it. Learned words now stay in memory while the keyboard is
-hidden, about 3 MB. If the process is killed within about 20 ms of dismissal, that
-session's learning can be lost.
+The sweep also found that browsing every emoji category took the simulator
+extension from about 30 MB to **141 MB**. A follow-up sweep traced it. CoreText
+decodes each emoji from Apple Color Emoji's 96 px strike (36 KB, held in a 48 KB
+block) and keeps the image in a cache owned by the font. That cache has no limit
+and empties only under system-wide memory pressure, and the system emoji font
+lives as long as the process. At 140 MB, 108 MB was dirty heap and nothing was
+purgeable. Apple defines the jetsam limit against exactly this dirty footprint,
+and posting a memory warning freed nothing.
+
+The keyboard now draws emoji in four ways that bound this memory:
+
+- **Font copies.** Emoji use private copies of the same font face, read from the
+  same file and replaced every 16 uses, so each copy's cache goes away with it.
+- **Images.** The picker and search results show small images drawn once in the
+  label's own 8-bit sRGB format, cut to the drawn pixels and cached in a bounded
+  LRU.
+- **Release.** Off-screen cells drop their images, the picker is freed whenever it
+  isn't showing, and memory warnings clear the caches.
+
+| Simulator footprint, median of 3 | Before | After |
+| --- | ---: | ---: |
+| Every category, both directions twice | 141.2 MB | **42.7 MB** |
+| After 20 emoji searches | 144.3 MB | **38.5 MB** |
+| Peak, iOS 26.5 | 154.5 MB | **43.2 MB** |
+| Peak, iOS 18.1, one run | 152 MB | **41.0 MB** |
+
+Rendering is pixel-identical: 10 emoji at 9 sizes on iOS 26.5 and 18.1, plus the
+installed picker's search row and all five emoji rows. Late frames while scrolling
+fell from 4.9% to 2.7%. A smaller strike would visibly shrink emoji, and Apple's
+private cache-disabling attribute is private API, so neither was used. Still to
+check on a device:
+
+- Whether the extension's sandbox can read the system emoji font file. If not,
+  emoji fall back to the unbounded system font, and `PK_PERF_LOG` builds log
+  `emojiFontUnavailable`.
+- The real per-process limit; `limitRemainingMB` is logged but reads 0 in the
+  simulator.
+
+Learned words now stay in memory while the keyboard is hidden, about 3 MB. If the
+process is killed within about 20 ms of dismissal, that session's learning can be
+lost.
 
 ### Emoji search and one-handed layouts
 
