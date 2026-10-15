@@ -149,6 +149,19 @@ final class KeyTouchTests: XCTestCase {
     }
   }
 
+  func testSlideFromShiftAcrossLettersTypesTheLastLetterInsteadOfSwiping() {
+    let contact = touch("key-shift")
+    keys.touchesBegan([contact], with: nil)
+    for letter in ["key-z", "key-a", "key-s", "key-e"] {
+      contact.point = touch(letter).point
+      keys.touchesMoved([contact], with: nil)
+    }
+    keys.touchesEnded([contact], with: nil)
+    XCTAssertTrue(recorder.glidePaths.isEmpty)
+    XCTAssertEqual(recorder.activations, ["key-e"])
+    XCTAssertTrue(recorder.events.contains("shift-up"))
+  }
+
   func testDeliberateSlideCanStillSelectAnotherLetter() {
     recorder.allowsGlide = false
     let contact = touch("key-f")

@@ -461,7 +461,10 @@ final class KeysView: UIView {
       let hasLeftInitialKey = tracking.points.contains {
         hypot($0.x - tracking.start.x, $0.y - tracking.start.y) > pitch.width * 0.7
       }
-      if isLetter(key), !tracking.fromPageKey, !trackings.values.contains(where: { $0 !== tracking && !$0.committed }), delegate?.keysViewAllowsGlide == true, hasLeftInitialKey {
+      // Only a press that began on a letter swipes. Sliding off Shift or another
+      // function key onto the letters types the key it ends on, as on iOS.
+      if isLetter(key), isLetter(tracking.initialKey), !tracking.fromPageKey,
+         !trackings.values.contains(where: { $0 !== tracking && !$0.committed }), delegate?.keysViewAllowsGlide == true, hasLeftInitialKey {
         startGlide(tracking)
         return
       }
