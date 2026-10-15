@@ -42,11 +42,9 @@ struct PerformanceBenchmarkTests {
     var letters: Distribution
     var spaces: Distribution
     var deletes: Distribution
+    /// Every key. UIKit does not report the keyboard's own edits back through
+    /// textDidChange, so this is all the main-thread work a key causes here.
     var all: Distribution
-    /// The host's text-change callback and any bar pass it causes.
-    var callbacks: Distribution
-    /// Everything one key costs the main thread: edit, bar, callback, bar.
-    var keystrokes: Distribution
     var stallsOver16ms: Int
     var stallsOver8ms: Int
     var words: Int
@@ -216,16 +214,17 @@ struct PerformanceBenchmarkTests {
   }
 
   /// Types the corpus as the controller does: an engine edit, then one bar pass.
-  static func type(stack: LanguageStack, label: String, trace: Trace?) -> TypingReport {
+  static func type(stack: LanguageStack, emoji: EmojiSuggester, label: String, trace: Trace?) -> TypingReport {
     let document = MockDocument()
     let engine = KeyboardEngine(document: document, suggester: stack.suggester, glide: stack.glide)
+    // The keyboard offers an emoji for the typed phrase on every bar pass.
+    engine.emojiSuggester = emoji
     var time = 1_000.0
     engine.clock = { time }
     engine.documentDidChange()
     _ = engine.suggestions
     let (steps, words) = steps()
     var letters: [Double] = [], spaces: [Double] = [], deletes: [Double] = [], all: [Double] = []
-    var callbacks: [Double] = [], keystrokes: [Double] = []
     for (index, step) in steps.enumerated() {
       time += 0.18
       let start = now()
@@ -241,28 +240,18 @@ struct PerformanceBenchmarkTests {
       _ = engine.suggestions
       let elapsed = milliseconds(since: start)
       trace?.record(label, engine, document)
-      // The host then reports the edit through textDidChange, and the controller
-      // reconciles the document and refreshes the bar again if it went stale.
-      let callbackStart = now()
-      engine.documentDidChange()
-      _ = engine.suggestions
-      let callback = milliseconds(since: callbackStart)
       if index > 0 {
         all.append(elapsed)
-        callbacks.append(callback)
-        keystrokes.append(elapsed + callback)
         switch step {
         case .character, .punctuation: letters.append(elapsed)
         case .space: spaces.append(elapsed)
         case .delete: deletes.append(elapsed)
         }
       }
-      trace?.record(label + "+cb", engine, document)
     }
     return TypingReport(letters: Distribution(letters), spaces: Distribution(spaces), deletes: Distribution(deletes),
-                        all: Distribution(all), callbacks: Distribution(callbacks), keystrokes: Distribution(keystrokes),
-                        stallsOver16ms: keystrokes.filter { $0 > 16 }.count,
-                        stallsOver8ms: keystrokes.filter { $0 > 8 }.count, words: words, keystrokeCount: steps.count, personalWrites: 0)
+                        all: Distribution(all), stallsOver16ms: all.filter { $0 > 16 }.count,
+                        stallsOver8ms: all.filter { $0 > 8 }.count, words: words, keystrokeCount: steps.count, personalWrites: 0)
   }
 
   struct HumanItem: Decodable {
@@ -273,11 +262,12 @@ struct PerformanceBenchmarkTests {
   }
 
   /// Recorded swipes inserted after their sentence's earlier words, then one bar pass.
-  static func swipe(stack: LanguageStack, items: [HumanItem], label: String, trace: Trace?) -> Distribution {
+  static func swipe(stack: LanguageStack, emoji: EmojiSuggester, items: [HumanItem], label: String, trace: Trace?) -> Distribution {
     var samples: [Double] = []
     for item in items {
       let document = MockDocument()
       let engine = KeyboardEngine(document: document, suggester: stack.suggester, glide: stack.glide)
+      engine.emojiSuggester = emoji
       engine.documentDidChange()
       if let sentence = item.sentence {
         let words = sentence.split(separator: " ").map(String.init)
@@ -353,6 +343,8 @@ struct PerformanceBenchmarkTests {
     let fullURL = directory.appendingPathComponent("full.json")
     let snapshot = Self.fullPersonalSnapshot(lexicon: firstLexicon)
     try snapshot.write(to: fullURL)
+    // The same dictionary can seed a simulator's App Group for on-device runs.
+    if let path = environment["PK_PERF_SNAPSHOT"] { try snapshot.write(to: URL(fileURLWithPath: path)) }
     report.persistence["fullFileKilobytes"] = Double(snapshot.count) / 1024
     var loadTimes: [Double] = []
     for _ in 0..<5 {
@@ -371,13 +363,13 @@ struct PerformanceBenchmarkTests {
     let mtimeBefore = (try? FileManager.default.attributesOfItem(atPath: fullURL.path)[.modificationDate]) as? Date
     for repetition in 0..<3 {
       let stack = try LanguageStack(dictionaryURL: dictionaryURL, personalURL: directory.appendingPathComponent("typing-\(repetition).json"))
-      let result = Self.type(stack: stack, label: "empty", trace: repetition == 0 ? trace : nil)
+      let result = Self.type(stack: stack, emoji: emojiSuggester, label: "empty", trace: repetition == 0 ? trace : nil)
       report.typing["empty-\(repetition)"] = result
     }
     report.footprintMegabytes["afterTypingEmpty"] = Self.footprintMegabytes() - baseFootprint
     for repetition in 0..<3 {
       let stack = repetition == 0 ? fullStack : try LanguageStack(dictionaryURL: dictionaryURL, personalURL: fullURL)
-      var result = Self.type(stack: stack, label: "full", trace: repetition == 0 ? trace : nil)
+      var result = Self.type(stack: stack, emoji: emojiSuggester, label: "full", trace: repetition == 0 ? trace : nil)
       let mtimeAfter = (try? FileManager.default.attributesOfItem(atPath: fullURL.path)[.modificationDate]) as? Date
       result.personalWrites = mtimeAfter == mtimeBefore ? 0 : 1
       report.typing["full-\(repetition)"] = result
@@ -411,11 +403,10 @@ struct PerformanceBenchmarkTests {
     if let path = environment["PK_HUMAN_SWIPES"] {
       var items = try JSONDecoder().decode([HumanItem].self, from: Data(contentsOf: URL(fileURLWithPath: path)))
       items = Array(items.prefix(Int(environment["PK_PERF_SWIPES"] ?? "300") ?? 300))
-      report.swipes["empty"] = Self.swipe(stack: emptyStack, items: items, label: "swipe-empty", trace: trace)
+      report.swipes["empty"] = Self.swipe(stack: emptyStack, emoji: emojiSuggester, items: items, label: "swipe-empty", trace: trace)
       let swipeFull = try LanguageStack(dictionaryURL: dictionaryURL, personalURL: fullURL)
-      report.swipes["full"] = Self.swipe(stack: swipeFull, items: items, label: "swipe-full", trace: trace)
+      report.swipes["full"] = Self.swipe(stack: swipeFull, emoji: emojiSuggester, items: items, label: "swipe-full", trace: trace)
     }
-    _ = emojiSuggester
 
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
