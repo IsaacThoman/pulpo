@@ -5,6 +5,7 @@ import UIKit
 final class KeyPopupView: UIView {
   private let shape = CAShapeLayer()
   private var labels: [UILabel] = []
+  private var labelPool: [UILabel] = []
   /// Menu cells drawn as symbols instead of text.
   private var symbolViews: [UIImageView] = []
   private let selection = CALayer()
@@ -128,9 +129,18 @@ final class KeyPopupView: UIView {
     shape.path = path.cgPath
     shape.fillColor = style.popup.cgColor
     shape.shadowOpacity = style.dark ? 0.5 : 0.22
-    labels.forEach { $0.removeFromSuperview() }
+    // Every key press shows a balloon; reuse its labels rather than building new ones.
+    labels.forEach { $0.isHidden = true }
     labels = options.enumerated().map { index, text in
-      let label = UILabel()
+      let label: UILabel
+      if index < labelPool.count {
+        label = labelPool[index]
+      } else {
+        label = UILabel()
+        labelPool.append(label)
+        addSubview(label)
+      }
+      label.isHidden = false
       label.text = text
       label.textAlignment = .center
       label.textColor = style.label
@@ -141,7 +151,6 @@ final class KeyPopupView: UIView {
       let cellX = options.count > 1 ? bubble.minX + 4 + CGFloat(index) * cell : bubble.minX
       label.frame = CGRect(x: cellX, y: bubble.minY, width: options.count > 1 ? cell : bubble.width, height: bubble.height)
         .insetBy(dx: options.count > 1 ? 2 : 0, dy: 0)
-      addSubview(label)
       return label
     }
     symbolViews.forEach { $0.removeFromSuperview() }
