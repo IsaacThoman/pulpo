@@ -1,3 +1,4 @@
+import AVFoundation
 import SwiftUI
 
 /// Shown when the keyboard opens the app to record. The person returns to their
@@ -5,6 +6,7 @@ import SwiftUI
 struct DictationSessionView: View {
   @Environment(AppModel.self) private var model
   @Environment(\.dismiss) private var dismiss
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   private var dictation: DictationService { model.dictation }
 
@@ -38,7 +40,8 @@ struct DictationSessionView: View {
         Image(systemName: "mic.fill")
           .font(.system(size: 44))
           .foregroundStyle(.tint)
-          .symbolEffect(.pulse)
+          .symbolEffect(.pulse, isActive: !reduceMotion)
+          .accessibilityHidden(true)
         Text("Listening").font(.title2.weight(.semibold))
         LevelBars(levels: dictation.levels)
           .frame(height: 64)
@@ -97,9 +100,33 @@ struct DictationSessionView: View {
       }
       .controlSize(.large)
     case .failed:
-      Button("Close") { dismiss() }
+      VStack(spacing: 12) {
+        // Offer the fix for the two failures the person can fix from here.
+        if model.session == nil {
+          Button {
+            model.route = .account
+          } label: {
+            Text("Sign In to Pulpo").frame(maxWidth: .infinity)
+          }
+          .buttonStyle(.borderedProminent)
+          .accessibilityIdentifier("dictation-sign-in")
+        } else if AVAudioApplication.shared.recordPermission == .denied {
+          Button {
+            if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
+          } label: {
+            Text("Open Settings").frame(maxWidth: .infinity)
+          }
+          .buttonStyle(.borderedProminent)
+          .accessibilityHint("Allow microphone access for Pulpo Keyboard.")
+        }
+        Button {
+          dismiss()
+        } label: {
+          Text("Close").frame(maxWidth: .infinity)
+        }
         .buttonStyle(.bordered)
-        .controlSize(.large)
+      }
+      .controlSize(.large)
     default:
       EmptyView()
     }
@@ -121,6 +148,7 @@ struct BackHint: View {
 
 struct LevelBars: View {
   let levels: [Float]
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   var body: some View {
     GeometryReader { proxy in
@@ -136,7 +164,7 @@ struct LevelBars: View {
         }
       }
       .frame(maxHeight: .infinity)
-      .animation(.linear(duration: 0.05), value: levels)
+      .animation(reduceMotion ? nil : .linear(duration: 0.05), value: levels)
     }
   }
 }

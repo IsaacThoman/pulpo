@@ -44,7 +44,15 @@ struct SignInView: View {
         }
         if let error {
           Section {
-            Text(error).foregroundStyle(.red)
+            // Primary text keeps the message readable; the symbol carries the color.
+            Label {
+              Text(error)
+            } icon: {
+              Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.red)
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Couldn't sign in. \(error)")
+            .accessibilityIdentifier("sign-in-error")
           }
         }
         Section {
@@ -85,6 +93,9 @@ struct SignInView: View {
       error = needsCode && !code.isEmpty ? failure.message : nil
     } catch {
       self.error = error.localizedDescription
+    }
+    if let error {
+      AccessibilityNotification.Announcement("Couldn't sign in. \(error)").post()
     }
   }
 }

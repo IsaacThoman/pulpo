@@ -44,4 +44,20 @@ final class DictationTests: XCTestCase {
     app.descendants(matching: .any).matching(identifier: "dictation-cancel").firstMatch.tap()
     XCTAssertTrue(app.key("key-q").waitForExistence(timeout: 3))
   }
+
+  /// If the app's recorder opens signed out, its error leads straight to sign-in.
+  func testRecorderOffersSignInWhenSignedOut() {
+    let app = XCUIApplication()
+    app.launchArguments = ["-PKSignOut"]
+    app.launch()
+    XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "sign-in").firstMatch.waitForExistence(timeout: 8))
+    app.open(URL(string: "pulpokeyboard://dictate?request=\(UUID().uuidString)")!)
+    let confirm = XCUIApplication(bundleIdentifier: "com.apple.springboard").buttons["Open"]
+    if confirm.waitForExistence(timeout: 3) { confirm.tap() }
+    let signIn = app.descendants(matching: .any).matching(identifier: "dictation-sign-in").firstMatch
+    XCTAssertTrue(signIn.waitForExistence(timeout: 6), app.debugDescription)
+    snapshot("dictation-recorder-signed-out")
+    signIn.tap()
+    XCTAssertTrue(app.textFields["email"].waitForExistence(timeout: 5), "Sign-in should open:\n\(app.debugDescription)")
+  }
 }

@@ -44,8 +44,21 @@ public struct PulpoError: Error, Equatable, LocalizedError, Sendable {
   public var needsTwoFactor: Bool { code == "two_factor_required" }
 
   public static func network(_ error: Error) -> PulpoError {
-    PulpoError(status: 0, code: "network", message: "Couldn't reach Pulpo. Check your connection and try again.")
+    switch (error as? URLError)?.code {
+    case .notConnectedToInternet?, .networkConnectionLost?, .dataNotAllowed?, .internationalRoamingOff?:
+      PulpoError(status: 0, code: "offline", message: "You're offline. Connect to the internet and try again.")
+    case .cannotFindHost?, .dnsLookupFailed?, .cannotConnectToHost?:
+      PulpoError(status: 0, code: "network", message: "Couldn't find that Pulpo server. Check the address and try again.")
+    case .timedOut?:
+      PulpoError(status: 0, code: "network", message: "Pulpo took too long to respond. Try again in a moment.")
+    case .serverCertificateUntrusted?, .serverCertificateHasBadDate?, .serverCertificateNotYetValid?, .serverCertificateHasUnknownRoot?, .secureConnectionFailed?:
+      PulpoError(status: 0, code: "network", message: "Couldn't connect securely to that Pulpo server.")
+    default:
+      PulpoError(status: 0, code: "network", message: "Couldn't reach Pulpo. Check your connection and try again.")
+    }
   }
+
+  public var isOffline: Bool { code == "offline" }
 }
 
 /// The handful of Pulpo endpoints the keyboard app uses.

@@ -19,4 +19,15 @@ struct PulpoClientTests {
     #expect(!error.isUnauthorized)
     #expect(PulpoClient.error(status: 401, data: Data()).isUnauthorized)
   }
+
+  @Test func explainsNetworkFailuresByCause() {
+    let offline = PulpoError.network(URLError(.notConnectedToInternet))
+    #expect(offline.isOffline)
+    #expect(offline.message.contains("offline"))
+    let missingHost = PulpoError.network(URLError(.cannotFindHost))
+    #expect(!missingHost.isOffline)
+    #expect(missingHost.message.contains("address"))
+    #expect(PulpoError.network(URLError(.timedOut)).message.contains("too long"))
+    #expect(PulpoError.network(CocoaError(.fileReadUnknown)).message == "Couldn't reach Pulpo. Check your connection and try again.")
+  }
 }
