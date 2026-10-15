@@ -23,12 +23,14 @@ struct PulpoKeyboardApp: App {
 struct HomeView: View {
   @Environment(AppModel.self) private var model
   @State private var confirmClear = false
+  @State private var confirmReset = false
+  @State private var clearedLearnedWords = false
   /// Shared with the keyboard, which also changes it from the emoji key's menu.
   @AppStorage(OneHandedStore.key, store: AppGroup.defaults) private var oneHanded: OneHandedMode = .off
   @State private var path: [Screen] = ProcessInfo.processInfo.arguments.contains("-PKPreview") ? [.tryIt] : []
 
   enum Screen: Hashable {
-    case tryIt
+    case tryIt, tips, privacy
   }
 
   var body: some View {
@@ -36,19 +38,7 @@ struct HomeView: View {
     NavigationStack(path: $path) {
       List {
         Section {
-          HStack(spacing: 14) {
-            Image("PulpoSmiley")
-              .resizable()
-              .interpolation(.high)
-              .frame(width: 52, height: 52)
-            VStack(alignment: .leading, spacing: 2) {
-              Text("Pulpo Keyboard").font(.title2.weight(.semibold))
-              Text("Swipe typing, on-device autocorrect, and Pulpo dictation.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-            }
-          }
-          .padding(.vertical, 4)
+          AppHeader()
         }
 
         SetupSection()
@@ -58,21 +48,40 @@ struct HomeView: View {
             Label("Try It", systemImage: "keyboard")
           }
           .accessibilityIdentifier("try-it")
+          NavigationLink(value: Screen.tips) {
+            Label("Tips & Gestures", systemImage: "lightbulb")
+          }
+          .accessibilityIdentifier("tips")
         }
 
         AccountSection()
 
-        Section {
-          Toggle("Auto-Correction", isOn: $model.settings.autocorrect)
-          Toggle("Predictive Text", isOn: $model.settings.predictions)
-          Toggle("Auto-Capitalization", isOn: $model.settings.autoCapitalization)
-          Toggle("\u{201C}.\u{201D} Shortcut", isOn: $model.settings.doubleSpacePeriod)
-          Toggle("Smart Punctuation", isOn: $model.settings.smartPunctuation)
-          Toggle("Slide to Type", isOn: $model.settings.swipeTyping)
-          Toggle("Show Slide Trail", isOn: $model.settings.swipeTrail)
+        if model.keyboardEnabled, !model.fullAccess {
+          Section {
+            Label("Until Full Access is on, Pulpo Keyboard uses its default settings and changes here don't reach it.", systemImage: "info.circle")
+              .font(.subheadline)
+              .foregroundStyle(.secondary)
+              .accessibilityIdentifier("settings-need-full-access")
+          }
+        }
+
+        Section("Typing") {
+          SettingToggle("Auto-Correction", detail: "Fixes misspelled words when you type a space or punctuation.", isOn: $model.settings.autocorrect)
+          SettingToggle("Predictive Text", detail: "Suggests words above the keys as you type.", isOn: $model.settings.predictions)
+          SettingToggle("Auto-Capitalization", detail: "Capitalizes the first word of each sentence.", isOn: $model.settings.autoCapitalization)
+          SettingToggle("\u{201C}.\u{201D} Shortcut", detail: "Double-tap the space bar to type a period and a space.", isOn: $model.settings.doubleSpacePeriod)
+          SettingToggle("Smart Punctuation", detail: "Uses curly quotes and fixes the space around punctuation.", isOn: $model.settings.smartPunctuation)
+        }
+
+        Section("Slide to Type") {
+          SettingToggle("Slide to Type", detail: "Slide across the letters of a word, then lift.", isOn: $model.settings.swipeTyping)
+          SettingToggle("Show Slide Trail", detail: "Draws a line behind your finger as you slide.", isOn: $model.settings.swipeTrail)
             .disabled(!model.settings.swipeTyping)
-          Toggle("Character Preview", isOn: $model.settings.keyPopups)
-          Toggle("Number Hints on Top Row", isOn: $model.settings.digitHints)
+        }
+
+        Section {
+          SettingToggle("Character Preview", detail: "Shows a larger letter above your finger as you type.", isOn: $model.settings.keyPopups)
+          SettingToggle("Number Hints on Top Row", detail: "Shows a number on each top-row key. Touch and hold to type it.", isOn: $model.settings.digitHints)
           Picker("One-Handed Keyboard", selection: $oneHanded) {
             Text("Off").tag(OneHandedMode.off)
             Text("Left").tag(OneHandedMode.left)
@@ -80,14 +89,16 @@ struct HomeView: View {
           }
           .accessibilityIdentifier("one-handed-setting")
         } header: {
-          Text("Typing")
+          Text("Keys")
         } footer: {
-          Text("Double-tapping the space bar types a period. Slide to Type lets you swipe across letters to write a word. Touch and hold the emoji key to switch to a one-handed keyboard.")
+          Text("You can also touch and hold the emoji key to switch to a one-handed keyboard.")
         }
 
-        Section("Feedback") {
-          Toggle("Haptic Feedback", isOn: $model.settings.haptics)
-          Toggle("Sound", isOn: $model.settings.sounds)
+        Section {
+          SettingToggle("Haptic Feedback", detail: "A light tap with each key. Needs Full Access.", isOn: $model.settings.haptics)
+          SettingToggle("Sound", detail: "Key clicks, when Keyboard Clicks is on in Settings › Sounds & Haptics.", isOn: $model.settings.sounds)
+        } header: {
+          Text("Feedback")
         }
 
         Section {
@@ -100,16 +111,28 @@ struct HomeView: View {
         } header: {
           Text("Dictation")
         } footer: {
-          Text("Keyboards can't use the microphone, so Pulpo Keyboard briefly opens this app to record. Keeping the microphone ready lets your next dictation start right away without leaving your app. iOS shows the microphone indicator while it's ready.")
+          Text("Keyboards can't use the microphone, so Pulpo Keyboard briefly opens this app to record. Keeping the microphone ready lets your next dictation start right away without leaving your app. iOS shows the microphone indicator while it's ready, and nothing is recorded until you start a dictation.")
         }
 
         Section {
-          Toggle("Learn New Words", isOn: $model.settings.learnWords)
+          SettingToggle("Learn New Words", detail: "Remembers words you type often, on this iPhone only.", isOn: $model.settings.learnWords)
           Button("Clear Learned Words", role: .destructive) { confirmClear = true }
+            .accessibilityIdentifier("clear-learned-words")
+          NavigationLink(value: Screen.privacy) {
+            Text("Full Access & Privacy")
+          }
+          .accessibilityIdentifier("privacy")
         } header: {
           Text("Privacy")
         } footer: {
           Text("Everything you type stays on this device. Autocorrect, predictions and learned words never leave it. Only dictation recordings you start are sent to your Pulpo account. Passwords and other private fields are never learned.")
+        }
+
+        Section {
+          Button("Reset Keyboard Settings", role: .destructive) { confirmReset = true }
+            .accessibilityIdentifier("reset-settings")
+        } footer: {
+          Text("Turns the settings above back to their defaults. Learned words and your Pulpo account stay as they are.")
         }
 
         Section("About") {
@@ -121,11 +144,33 @@ struct HomeView: View {
       }
       .navigationTitle("Keyboard")
       .navigationBarTitleDisplayMode(.inline)
-      .navigationDestination(for: Screen.self) { _ in TryItView() }
+      .navigationDestination(for: Screen.self) { screen in
+        switch screen {
+        case .tryIt: TryItView()
+        case .tips: TipsView()
+        case .privacy: PrivacyView()
+        }
+      }
       .confirmationDialog("Clear all learned words?", isPresented: $confirmClear, titleVisibility: .visible) {
-        Button("Clear Learned Words", role: .destructive) { model.clearLearnedWords() }
+        Button("Clear Learned Words", role: .destructive) {
+          model.clearLearnedWords()
+          clearedLearnedWords = true
+        }
       } message: {
         Text("Pulpo Keyboard forgets the words it learned from your typing.")
+      }
+      .confirmationDialog("Reset keyboard settings?", isPresented: $confirmReset, titleVisibility: .visible) {
+        Button("Reset Settings", role: .destructive) { model.resetSettings() }
+      } message: {
+        Text("Every setting goes back to its default. Learned words and your Pulpo account stay as they are.")
+      }
+      .alert("Learned Words Cleared", isPresented: $clearedLearnedWords) {
+        Button("OK", role: .cancel) {}
+      } message: {
+        Text(model.settings.learnWords ? "Pulpo Keyboard starts learning again as you type." : "Learn New Words is off, so nothing new will be learned.")
+      }
+      .fullScreenCover(isPresented: $model.showSetupGuide) {
+        SetupGuideView()
       }
       .sheet(isPresented: Binding(get: { model.route == .account && model.session == nil }, set: { if !$0 { model.route = nil } })) {
         SignInView()
@@ -137,47 +182,118 @@ struct HomeView: View {
   }
 }
 
+/// The app's name and what it does, stacked at accessibility text sizes.
+struct AppHeader: View {
+  @Environment(\.dynamicTypeSize) private var typeSize
+
+  var body: some View {
+    let layout = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 10)) : AnyLayout(HStackLayout(spacing: 14))
+    layout {
+      Image("PulpoSmiley")
+        .resizable()
+        .interpolation(.high)
+        .frame(width: 52, height: 52)
+        .accessibilityHidden(true)
+      VStack(alignment: .leading, spacing: 2) {
+        Text("Pulpo Keyboard").font(.title2.weight(.semibold))
+        Text("Swipe typing, on-device autocorrect, and Pulpo dictation.")
+          .font(.subheadline)
+          .foregroundStyle(.secondary)
+      }
+    }
+    .padding(.vertical, 4)
+    .accessibilityElement(children: .combine)
+    .accessibilityAddTraits(.isHeader)
+  }
+}
+
+/// A switch with a one-line explanation under its title.
+struct SettingToggle: View {
+  let title: LocalizedStringKey
+  let detail: LocalizedStringKey
+  @Binding var isOn: Bool
+
+  init(_ title: LocalizedStringKey, detail: LocalizedStringKey, isOn: Binding<Bool>) {
+    self.title = title
+    self.detail = detail
+    _isOn = isOn
+  }
+
+  var body: some View {
+    Toggle(isOn: $isOn) {
+      Text(title)
+      Text(detail)
+    }
+  }
+}
+
 struct SetupSection: View {
   @Environment(AppModel.self) private var model
 
   var body: some View {
     Section {
-      SetupRow(done: model.keyboardEnabled, title: "Add Pulpo Keyboard", detail: "Settings › General › Keyboard › Keyboards › Add New Keyboard")
-      SetupRow(done: model.fullAccess, title: "Allow Full Access", detail: "Needed for dictation, haptics, and syncing settings with the keyboard. Your typing stays on this device.")
-      if !model.setupComplete {
+      if model.setupComplete {
+        Label {
+          VStack(alignment: .leading, spacing: 2) {
+            Text("Ready to Use")
+            Text("Switch to Pulpo Keyboard with \u{1F310} in any app.")
+              .font(.footnote)
+              .foregroundStyle(.secondary)
+          }
+        } icon: {
+          Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("setup-ready-row")
+        Button("Setup Guide") { model.showSetupGuide = true }
+          .accessibilityIdentifier("setup-guide")
+      } else {
+        SetupRow(title: "Add Pulpo Keyboard", status: model.addKeyboardStatus)
+        SetupRow(title: "Allow Full Access", status: model.fullAccessStatus)
+        SetupRow(title: "Switch to Pulpo Keyboard", status: model.switchStatus)
+        Button {
+          model.showSetupGuide = true
+        } label: {
+          Label("Continue Setup", systemImage: "list.number")
+        }
+        .accessibilityIdentifier("continue-setup")
         Button {
           model.openSystemSettings()
         } label: {
           Label("Open Settings", systemImage: "gear")
         }
+        .accessibilityHint("Opens the Settings app. Keyboards is under Apps, Pulpo Keyboard.")
       }
     } header: {
       Text("Setup")
     } footer: {
       if !model.setupComplete {
-        Text("In Settings, tap Keyboards, turn on Pulpo Keyboard, then turn on Allow Full Access. When typing, tap or hold \u{1F310} to switch to it.")
+        Text("In Settings, open Apps › Pulpo Keyboard › Keyboards, then turn on Pulpo Keyboard and Allow Full Access. When typing, touch and hold \u{1F310} to switch to it.")
       }
     }
   }
 }
 
 struct SetupRow: View {
-  let done: Bool
   let title: String
-  let detail: String
+  let status: StepStatus
 
   var body: some View {
-    HStack(alignment: .top, spacing: 12) {
-      Image(systemName: done ? "checkmark.circle.fill" : "circle")
-        .font(.title3)
-        .foregroundStyle(done ? Color.green : Color.secondary)
-      VStack(alignment: .leading, spacing: 2) {
+    // Side by side while both fit on one line, otherwise the status goes underneath.
+    ViewThatFits(in: .horizontal) {
+      HStack(spacing: 8) {
+        Text(title).fixedSize()
+        Spacer(minLength: 8)
+        StatusBadge(status: status).fixedSize()
+      }
+      VStack(alignment: .leading, spacing: 4) {
         Text(title)
-        Text(detail).font(.footnote).foregroundStyle(.secondary)
+        StatusBadge(status: status)
       }
     }
-    .accessibilityElement(children: .combine)
-    .accessibilityValue(done ? "Done" : "Not done")
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel(title)
+    .accessibilityValue(status.label)
   }
 }
 
@@ -206,7 +322,9 @@ struct AccountSection: View {
     } header: {
       Text("Pulpo Account")
     } footer: {
-      Text("Dictation uses the same transcription as Pulpo and is billed to your Pulpo account.")
+      Text(model.session == nil
+        ? "Sign in to dictate. Dictation uses the same transcription as Pulpo and is billed to your Pulpo account. Typing doesn't need an account."
+        : "Dictation uses the same transcription as Pulpo and is billed to your Pulpo account.")
     }
     .sheet(isPresented: $signingIn) { SignInView() }
   }

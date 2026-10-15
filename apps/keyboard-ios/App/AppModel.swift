@@ -13,14 +13,37 @@ final class AppModel {
     case setup, account, settings, dictation
   }
 
+  /// Full Access as far as the app can tell. iOS doesn't tell the app, so it is
+  /// learned from the installed keyboard, which has to have appeared once.
+  enum FullAccessState: Equatable {
+    case unknown, on, off
+  }
+
+  /// What the person came back to after setup sent them to Settings.
+  enum SettingsReturn: Equatable {
+    case pending, keyboardMissing, fullAccessUnconfirmed
+  }
+
   var settings: KeyboardSettings { didSet { if settings != oldValue { settingsStore.save(settings) } } }
   private(set) var keyboardEnabled = false
-  private(set) var fullAccess = false
+  private(set) var fullAccessState = FullAccessState.unknown
+  /// Whether the installed keyboard has appeared in a text field since setup started.
+  private(set) var keyboardSeen = false
+  private(set) var settingsReturn: SettingsReturn?
   private(set) var session: StoredSession?
   var route: Route?
+  /// The step-by-step setup guide, shown on first launch until it's finished or skipped.
+  var showSetupGuide = false {
+    didSet { if oldValue, !showSetupGuide { UserDefaults.standard.set(true, forKey: Self.setupGuideSeenKey) } }
+  }
   let dictation: DictationService
   private let settingsStore = SettingsStore()
   private let sessionStore = SessionStore()
+  @ObservationIgnored private var appearanceObservers: [DarwinNotifications.Observation] = []
+
+  static let setupGuideSeenKey = "setupGuideSeen"
+  /// When the app last saw the installed keyboard appear without Full Access.
+  static let limitedKeyboardSeenKey = "limitedKeyboardSeenAt"
 
   init() {
     Diagnostics.record("app", "launch")
@@ -34,8 +57,21 @@ final class AppModel {
     dictation.onUnauthorized = { [weak self] in self?.signOut(remote: false) }
     publishAccount()
     refreshStatus()
+    observeKeyboardAppearances()
     #if DEBUG
     applyTestArguments()
+    #endif
+    showSetupGuide = !UserDefaults.standard.bool(forKey: Self.setupGuideSeenKey) && !setupComplete && !Self.suppressesSetupGuide
+  }
+
+  /// UI tests launch straight into a screen; only `-PKOnboarding` asks for the guide.
+  private static var suppressesSetupGuide: Bool {
+    #if DEBUG
+    let arguments = ProcessInfo.processInfo.arguments
+    if arguments.contains("-PKOnboarding") { return false }
+    return arguments.contains { $0.hasPrefix("-PK") }
+    #else
+    false
     #endif
   }
 
@@ -54,6 +90,13 @@ final class AppModel {
       OneHandedStore(defaults: AppGroup.defaults).save(mode)
     }
     if arguments.contains("-PKSignOut") { signOut(remote: false) }
+    // -PKOnboarding starts setup over: the guide unseen and the keyboard never observed.
+    if arguments.contains("-PKOnboarding") {
+      UserDefaults.standard.removeObject(forKey: Self.setupGuideSeenKey)
+      UserDefaults.standard.removeObject(forKey: Self.limitedKeyboardSeenKey)
+      KeyboardHeartbeat.clear()
+      refreshStatus()
+    }
     AppGroup.defaults?.set(ProcessInfo.processInfo.environment["PK_DEBUG_POPUP"], forKey: "debugPopupKey")
     // PK_TEST_LOGIN=instance|email|password signs in through the real login request.
     if let login = ProcessInfo.processInfo.environment["PK_TEST_LOGIN"]?.split(separator: "|").map(String.init), login.count == 3 {
@@ -67,19 +110,60 @@ final class AppModel {
   func refreshStatus() {
     let keyboards = UserDefaults.standard.object(forKey: "AppleKeyboards") as? [String] ?? []
     keyboardEnabled = keyboards.contains(Self.extensionIdentifier)
-    if let heartbeat = KeyboardHeartbeat.load() {
-      fullAccess = heartbeat.hasFullAccess && keyboardEnabled
+    let heartbeat = KeyboardHeartbeat.load()
+    let limitedSeenAt = UserDefaults.standard.object(forKey: Self.limitedKeyboardSeenKey) as? Date
+    keyboardSeen = keyboardEnabled && (heartbeat != nil || limitedSeenAt != nil)
+    if !keyboardEnabled {
+      fullAccessState = .unknown
     } else {
-      fullAccess = false
+      switch KeyboardHeartbeat.fullAccess(heartbeat: heartbeat, limitedSeenAt: limitedSeenAt) {
+      case true?: fullAccessState = .on
+      case false?: fullAccessState = .off
+      case nil: fullAccessState = .unknown
+      }
+    }
+    if settingsReturn != nil {
+      settingsReturn = !keyboardEnabled ? .keyboardMissing : fullAccessState == .on ? nil : .fullAccessUnconfirmed
     }
     settings = settingsStore.load()
   }
 
+  var fullAccess: Bool { fullAccessState == .on }
   var setupComplete: Bool { keyboardEnabled && fullAccess }
 
+  /// Opens this app's page in Settings, which lists Keyboards once the extension is installed.
   func openSystemSettings() {
     guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+    settingsReturn = .pending
     UIApplication.shared.open(url)
+  }
+
+  /// The installed keyboard announces itself each time it appears, which confirms
+  /// setup live while the guide or Try It is on screen.
+  private func observeKeyboardAppearances() {
+    appearanceObservers = [true, false].map { full in
+      DarwinNotifications.observe(KeyboardHeartbeat.appearedNotification(fullAccess: full)) { [weak self] in
+        MainActor.assumeIsolated { self?.keyboardAppeared(fullAccess: full) }
+      }
+    }
+  }
+
+  private func keyboardAppeared(fullAccess: Bool) {
+    if fullAccess {
+      // Recorded here too, so the result doesn't wait on the keyboard's own write.
+      KeyboardHeartbeat.record(hasFullAccess: true)
+      UserDefaults.standard.removeObject(forKey: Self.limitedKeyboardSeenKey)
+    } else {
+      UserDefaults.standard.set(Date(), forKey: Self.limitedKeyboardSeenKey)
+    }
+    refreshStatus()
+  }
+
+  // MARK: Settings
+
+  func resetSettings() {
+    settings = KeyboardSettings()
+    OneHandedStore(defaults: AppGroup.defaults).save(.off)
   }
 
   // MARK: Account
@@ -158,14 +242,19 @@ final class AppModel {
       let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
       let request = items.first { $0.name == "request" }?.value.flatMap(UUID.init(uuidString:))
       let host = items.first { $0.name == "host" }?.value
+      // The recorder and sign-in are presented over the home screen, not the guide.
+      showSetupGuide = false
       route = .dictation
       if let request { dictation.start(request: request, fromURL: true, host: host) }
     case "account":
+      showSetupGuide = false
       route = .account
     case "settings":
       route = .settings
     default:
+      // The keyboard sends people here when Full Access is missing.
       route = .setup
+      showSetupGuide = true
     }
   }
 }

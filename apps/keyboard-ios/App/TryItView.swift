@@ -7,6 +7,7 @@ struct TryItView: View {
   @State private var text = ""
   @State private var usePreview = !ProcessInfo.processInfo.arguments.contains("-PKSystemKeyboard")
   @State private var field = FieldKind.text
+  @State private var showTips = false
   @FocusState private var systemFocused: Bool
 
   /// Field types to try the keyboard's layouts with.
@@ -55,10 +56,19 @@ struct TryItView: View {
           .focused($systemFocused)
           .accessibilityIdentifier("system-text")
           .onAppear { systemFocused = true }
-        if !model.setupComplete {
-          Text("Turn on Pulpo Keyboard in Settings, then tap \u{1F310} to switch to it here.")
+        if model.keyboardEnabled {
+          Text("If another keyboard shows up, touch and hold \u{1F310} and choose Pulpo Keyboard.")
             .font(.footnote)
             .foregroundStyle(.secondary)
+        } else {
+          VStack(alignment: .leading, spacing: 6) {
+            Text("Pulpo Keyboard isn't turned on yet. The In-App Preview works without it.")
+              .font(.footnote)
+              .foregroundStyle(.secondary)
+            Button("Continue Setup") { model.showSetupGuide = true }
+              .font(.footnote.weight(.semibold))
+              .accessibilityIdentifier("try-it-setup")
+          }
         }
       }
       Spacer(minLength: 0)
@@ -68,8 +78,27 @@ struct TryItView: View {
     .navigationTitle("Try It")
     .navigationBarTitleDisplayMode(.inline)
     .toolbar {
-      Button("Clear") { text = "" }
-        .disabled(text.isEmpty)
+      ToolbarItemGroup(placement: .topBarTrailing) {
+        Button {
+          showTips = true
+        } label: {
+          Label("Tips", systemImage: "lightbulb")
+        }
+        .accessibilityIdentifier("try-it-tips")
+        Button("Clear") { text = "" }
+          .disabled(text.isEmpty)
+      }
+    }
+    .sheet(isPresented: $showTips) {
+      NavigationStack {
+        TipsView()
+          .toolbar {
+            ToolbarItem(placement: .confirmationAction) {
+              Button("Done") { showTips = false }
+            }
+          }
+      }
+      .presentationDetents([.medium, .large])
     }
   }
 }
