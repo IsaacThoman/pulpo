@@ -299,6 +299,52 @@ character deleted. One-handed mode, emoji search in the picker and smart dashes
 remain unimplemented; `--` stays literal because command-line flags are common in
 this app's chats.
 
+### Responsiveness and memory
+
+An opt-in benchmark (`PK_PERF=1`) types a 527-word chat corpus through
+`KeyboardEngine` the way the controller does: one edit and one suggestion-bar pass
+per key. It also inserts 300 recorded swipes in context, once with an empty
+personal dictionary and once with a full one (5,000 words and 20,000 pairs, the
+stored maximum). Every performance change must leave its trace of document states
+and bars byte-identical. `PK_PERF_LOG` builds and the opt-in `UITests/PerformanceTests`
+measure the installed extension. The protocol and targets were frozen before the
+code was read.
+
+| Full personal dictionary | Before | After |
+| --- | ---: | ---: |
+| Letter key, host p50 / p95 | 1.27 / 3.30 ms | **0.38 / 1.93 ms** |
+| Space, host p95 / maximum | 8.1 / 23 ms | **2.7 / 11.8 ms** |
+| Keys over 16 ms, of 2,700 | 11 | **0** |
+| Swipe in context, host p50 / p95 | 6.8 / 20 ms | **2.7 / 8.4 ms** |
+| Warm re-show, view loaded to appeared, simulator | 68.5 ms | **31.5 ms** |
+| Main-thread work at dismissal, simulator | 28–41 ms | **0.5–1.6 ms** |
+| Memory growth per warm re-show | +0.67 MB | **+0.04 MB** |
+
+What changed:
+
+- Personal-dictionary indexes are updated incrementally instead of rebuilt.
+  Fuzzy matching over learned words stops once past the bound, and pruning and
+  predictions work from learned pairs directly.
+- ASCII keys skip Unicode decomposition, and the last token is read from the end
+  of the document.
+- Key preview labels are reused, and dismissed keyboards release their views.
+- Learned words stay loaded between presentations and are saved off the main
+  thread. They reload if the app clears them.
+- Ties in learned-word ordering now break by text, not by the process's hash seed,
+  which had made predictions vary between launches.
+
+Cold start remains about 400 ms in the simulator. Simulator figures are Mac CPU
+timings, and several runs happened under heavy machine load, so only medians
+and memory are reliable.
+
+The sweep also found a serious open risk. CoreText keeps every emoji image it has
+drawn for the life of the process, so scrolling through every picker category took
+the simulator extension from about 30 MB to **141 MB**. A keyboard extension is
+terminated at roughly 50–70 MB. A separate sweep is measuring which memory category
+this is and bounding it. Learned words now stay in memory while the keyboard is
+hidden, about 3 MB. If the process is killed within about 20 ms of dismissal, that
+session's learning can be lost.
+
 ### Emoji search and one-handed layouts
 
 These were the two largest remaining parity gaps. A 41-item acceptance checklist
