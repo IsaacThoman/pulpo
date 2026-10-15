@@ -151,6 +151,71 @@ swipes are unchanged. Run with `PK_TAP_BENCH=<cases> swift test -c release
 --filter TapCorrectionBenchmark`; `scripts/prepare_tap_benchmark.py` regenerates
 the cases.
 
+### Tap typing, round 2: n-gram backoff, space-bar slips and personal offsets
+
+A second tap sweep froze a fresh benchmark before reading the correction code.
+Its sentences come from Topical-Chat's rare-topic validation conversations, which
+no earlier benchmark used. Six typists type them: the four original thumb personas
+plus two from a second touch model with per-person offset fields, correlated
+scatter and heavy-tailed slips. The benchmark also includes:
+
+- clean-tapped sentences, with 4,230 words tagged as one slip from a more common
+  word;
+- adaptation sentences from separate conversations;
+- 2,377 misspellings whose targets were absent from round 1;
+- 1,405 new controls, including legitimate rare words after a context favoring a
+  common neighbor.
+
+Tuning used only the original four personas on round-1 development conversations.
+Fresh-verification SHA-256 `ea32f587…`; full hashes and the acceptance criteria are
+with the results.
+
+- **Unlisted words keep their probability.** Successor lists are capped (48 bigram
+  and 24 trigram successors), and a word that missed the cut fell several nats below
+  its own prior: `players` after "of the" scored −19.4 against a −9.3 unigram, and
+  sentence-initial `maybe` scored 6 nats low. Omitted words now share the omitted
+  mass, capped at the weakest listed successor, so stored predictions keep their
+  order. Valid-word protection still uses the old backoff. Most of the gain is
+  missed spaces now splitting correctly (`theplayers` → `the players`).
+- **Bottom-row letters on the space bar.** The keyboard passes the space tap's
+  location. A space within 0.8 pitches of `z`–`m` is read back into the word when
+  that clearly reads better (`ha e` → `have`). Backspace restores the original. It
+  never applies with autocorrection off, in private fields, or to acronyms and
+  rare names.
+- **Personal tap offsets.** Words the person keeps teach one shrinkage-regularized
+  offset per letter key, applied to substitution costs after 40 taps. Each offset is
+  capped at 0.4 pitches, and a single sample cannot move it more than 0.45. Only 26
+  offsets are stored (`TouchModel.json` in the App Group). "Clear learned words"
+  resets them, and a running keyboard rereads the file, so the clear sticks. Private
+  fields never teach them.
+
+| Tap benchmark, word error rate | Before | After | After a 200-sentence adaptation |
+| --- | ---: | ---: | ---: |
+| Fresh verification, six typists | 10.84% | **9.80%** | **9.21%** |
+| Fresh verification, original thumb model | 10.15% | 9.01% | — |
+| Fresh verification, second touch model | 12.20% | 11.38% | — |
+| Round-1 verification | 10.44% | 9.88% | — |
+
+On fresh verification, typo-fix rate rose from 67.8% to 70.5% (72.3% adapted).
+Clean words changed inside noisy sentences went from 65 to 62. Words changed in
+clean-tapped sentences stayed at 38 of 33,036, and none of the controls built to
+tempt a real-word correction changed. Letters landing on the space bar were fixed
+in 175 of 350 cases, up from 21; missed spaces were fixed in 1,383 of 2,528, up
+from 1,118.
+
+The backoff change misses two predeclared guards. Three more of 1,405 controls
+changed, and nonword misspellings fixed or harmed went from 1,282 / 355 to
+1,281 / 363. A few unknown tokens now split into two words (`fleenor` →
+`flee or`, `forsaw` → `for saw`). It was kept because it delivers most of the
+word-error gain. Human swipes and the editing fuzzer are unchanged, and
+keystroke savings are unchanged within 0.01 points.
+
+Re-correcting a valid word once the next word is known (`I lie it` → `I like it`)
+was rejected: it gained at most 0.05 points and changed legitimate text such as
+`too seriously`. The space-bar join assumes the bar's top edge sits about half a
+pitch below the bottom-row centers, which needs a device check. Learned offsets are
+not separated by orientation or one-handed layout.
+
 ### Suggestion-bar keystroke savings
 
 Earlier prediction audits counted next-word hits only. A new benchmark has an

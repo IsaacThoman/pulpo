@@ -78,7 +78,9 @@ the key. Phone fields get a `+*#` page, and holding 0 types `+`.
 `SpellCorrector` runs a weighted Damerau-Levenshtein search over it where substitution
 costs come from how far each touch landed from the intended key. An unknown token can
 be split into two words when a space was missed or landed on the letter row above the
-space bar. `Suggester` combines
+space bar. A space tap at the top edge of the space bar can be read back as the
+bottom-row letter above it. Per-key tap offsets learned from kept words adapt the
+typo model to the person; they are cleared with learned words. `Suggester` combines
 that with an interpolated bigram/trigram language model and the person's learned words; a typed word is only
 replaced when the correction is clearly more likely. Deleting right after an
 autocorrection restores the typed word and stops correcting it. Contacts' names and iOS
