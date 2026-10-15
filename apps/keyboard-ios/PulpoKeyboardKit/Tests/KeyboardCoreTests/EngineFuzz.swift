@@ -362,6 +362,9 @@ final class FuzzRun {
     var autocorrect: Bool
     /// Before-texts an undo of this entry may restore.
     var acceptable: [String]
+    /// A swipe that also committed and corrected the word being typed. Undoing
+    /// the swipe leaves the correction, which the next Backspace may undo exactly.
+    var swipeCorrection = false
   }
 
   struct Net {
@@ -940,6 +943,7 @@ final class FuzzRun {
 
     // I6: Backspace.
     if isBackspace {
+      var remainingCorrection: ChainEntry?
       let multi = net.removed > 1 || !net.inserted.isEmpty
       if !preSelection.isEmpty, net.removed > 0 {
         fail("backspaceDeletedTooMuch", "deleted beyond the selection", tag: "selection")
@@ -951,6 +955,9 @@ final class FuzzRun {
             fail("undoInexact", "multi-character delete is not an exact undo (expected one of \(acceptable.map(\.debugDescription)))")
           } else if last.autocorrect, chain.count == 1 {
             undidAutocorrect = true
+          } else if last.swipeCorrection, chain.count == 1, postBefore.suffix(32) != last.preBefore.suffix(32) {
+            // Only the swipe was removed; the correction it applied is the next unit.
+            remainingCorrection = ChainEntry(preBefore: last.preBefore, inserted: "", autocorrect: true, acceptable: [last.preBefore])
           }
         } else {
           fail("backspaceDeletedTooMuch", "multi-character delete without a preceding word edit",
@@ -961,7 +968,7 @@ final class FuzzRun {
           fail("backspaceNoop", "Backspace did nothing")
         }
       }
-      chain = []
+      chain = remainingCorrection.map { [$0] } ?? []
       contextChangedSinceChain = false
     }
 
@@ -1078,7 +1085,8 @@ final class FuzzRun {
           acceptable.append(stem)
           if stem.hasSuffix(" ") { acceptable.append(String(stem.dropLast())) }
         }
-        let entry = ChainEntry(preBefore: preBefore, inserted: net.inserted, autocorrect: autocorrect, acceptable: acceptable)
+        var entry = ChainEntry(preBefore: preBefore, inserted: net.inserted, autocorrect: autocorrect, acceptable: acceptable)
+        entry.swipeCorrection = glideCalled && net.removedText.contains(where: \.isLetter)
         if net.removed > 0, let last = chain.last, net.removed <= last.inserted.count + 1 {
           chain.append(entry)
         } else {

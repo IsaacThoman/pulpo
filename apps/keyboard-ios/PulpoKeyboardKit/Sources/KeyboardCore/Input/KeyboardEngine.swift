@@ -91,7 +91,25 @@ public final class KeyboardEngine {
     /// replaced by `inserted`; `composing` is what to resume after an undo.
     case joinedSpaceSlip(original: String, inserted: String, separator: String, composing: TypedWord)
     case acceptedSuggestion(autoSpace: Bool)
-    case glided(word: String, alternatives: [String])
+    case glided(Glide)
+  }
+
+  /// A swiped word as inserted, with the bar's other readings of the same path.
+  struct Glide: Equatable {
+    /// Inserted forms, after Shift and smart quotes.
+    var word: String
+    var alternatives: [String]
+    /// The decoder's spelling of each inserted form. Learning keeps it: a capital
+    /// from Shift or a sentence start is not part of the word, a proper noun's is.
+    var spellings: [String: String]
+    /// A space was typed after the word because another word follows the cursor.
+    var spaced: Bool
+    /// Where the swipe began and ended, in letter-geometry units.
+    var start: KeyPoint
+    var end: KeyPoint
+
+    /// The text the swipe left before the cursor.
+    var text: String { spaced ? word + " " : word }
   }
 
   var composing = TypedWord(text: "")
@@ -117,10 +135,36 @@ public final class KeyboardEngine {
   var spaceSlip: SpaceSlip?
   var rejected: Set<String> = []
   /// Decoder choices are tentative until the next edit or keyboard dismissal.
-  /// Undoing or replacing one must not teach the original mistake.
-  private var pendingLearning: (word: String, context: (word: String?, sentenceStart: Bool))?
+  /// Undoing or replacing one must not teach the original mistake. A `verbatim`
+  /// word is learned with its own capitalization.
+  private var pendingLearning: (word: String, context: (word: String?, sentenceStart: Bool), verbatim: Bool)?
   /// The taps behind a pending autocorrection, learned as aimed at its letters once kept.
   private var pendingTouch: (typed: TypedWord, intended: String)?
+  /// An autocorrection a swipe applied to the word typed before it, as a space
+  /// would have. It is learned when the swipe is, and deleting the swipe makes
+  /// it undoable again.
+  private struct CorrectionBeforeGlide {
+    let edit: LastEdit
+    let learning: (word: String, context: (word: String?, sentenceStart: Bool), verbatim: Bool)?
+    let touch: (typed: TypedWord, intended: String)?
+  }
+  private var correctionBeforeGlide: CorrectionBeforeGlide?
+  /// Swiped words the person deleted or replaced, counted by the word before
+  /// them. A word rejected `glideRejectionLimit` times in one context stops
+  /// winning there and is offered as the first alternative instead. Kept for
+  /// the keyboard's lifetime only, and never recorded in private fields.
+  private var rejectedGlides: [String: Int] = [:]
+  static let glideRejectionLimit = 2
+  /// A swipe the person deleted, until the next word is committed in its place.
+  /// Typing a word there that the decoder could not have produced, starting and
+  /// ending where the swipe did, makes that word swipeable at once instead of
+  /// after a second use: the person has shown it is what they swipe.
+  private struct DeletedGlide {
+    let anchor: String
+    let start: KeyPoint
+    let end: KeyPoint
+  }
+  private var deletedGlide: DeletedGlide?
   /// After a swipe, a space is owed before the next word but not before punctuation.
   public private(set) var phantomSpace = false
   private var lastShiftTap: TimeInterval = -1
@@ -188,6 +232,7 @@ public final class KeyboardEngine {
   static let sentenceEnders: Set<Character> = [".", "!", "?"]
   /// Closing quotes and brackets can follow a sentence's end: `He said “Hi.” Then`.
   static let sentenceClosers: Set<Character> = [")", "]", "}", "\"", "'", "\u{201D}", "\u{2019}"]
+  static let sentenceOpeners: Set<Character> = ["(", "[", "{", "\"", "'", "\u{201C}", "\u{2018}"]
   static let autocorrectSeparators: Set<Character> = [".", ",", "!", "?", ";", ":", ")", "\"", "\u{201D}"]
   static let spaceSwapPunctuation: Set<Character> = [".", ",", "!", "?", ";", ":"]
   /// Roughly the few hundred most frequent words: "you", "like", "from", "good".
@@ -208,7 +253,8 @@ public final class KeyboardEngine {
 
     if phantomSpace {
       phantomSpace = false
-      if Self.isWordCharacter(first) {
+      // An apostrophe joins the swiped word, as in Gboard: "dog" + 's -> dog's.
+      if Self.isWordCharacter(first), first != "'", first != "\u{2019}" {
         insertDocumentText(" ")
         // The owed space starts a word, which can change word capitalization.
         updateAutomaticShift()
@@ -217,6 +263,13 @@ public final class KeyboardEngine {
     if isLetter, shift.isActive || shiftHeld { text = key.uppercased() }
     if case .acceptedSuggestion(autoSpace: true) = lastEdit, Self.spaceSwapPunctuation.contains(first), policy.smartSpacing, before.hasSuffix(" ") {
       deleteDocumentBackward()
+    }
+    // Punctuation after a word swiped in front of another moves its space along:
+    // "Hello |world" + swipe + "," -> Hello big, world
+    var respace = false
+    if case let .glided(glide) = lastEdit, glide.spaced, Self.spaceSwapPunctuation.contains(first), policy.smartSpacing, before.hasSuffix(glide.text) {
+      deleteDocumentBackward()
+      respace = true
     }
 
     let slip = spaceSlip
@@ -241,6 +294,7 @@ public final class KeyboardEngine {
       lastEdit = .typed
       if let slip, Self.isWordCharacter(first), before == slip.anchor + composing.text { spaceSlip = slip }
     }
+    if respace { insertDocumentText(" ") }
 
     if shiftHeld { typedWhileShiftHeld = true }
     if case .once = shift { shift = .off }
@@ -343,7 +397,7 @@ public final class KeyboardEngine {
     let inserted = slip.prefix + text
     for _ in 0..<original.count { deleteDocumentBackward() }
     insertDocumentText(inserted + separator)
-    pendingLearning = (joined.text, slip.learningContext)
+    pendingLearning = (joined.text, slip.learningContext, false)
     pendingTouch = nil
     lastEdit = .joinedSpaceSlip(original: original, inserted: inserted, separator: separator, composing: second ?? TypedWord(text: ""))
     composing = TypedWord(text: "")
@@ -414,6 +468,8 @@ public final class KeyboardEngine {
     spaceSlip = nil
     pendingLearning = nil
     phantomSpace = false
+    let correction = correctionBeforeGlide
+    correctionBeforeGlide = nil
     switch lastEdit {
     case let .autocorrected(original, inserted, separator) where before.hasSuffix(inserted + separator):
       for _ in 0..<(inserted + separator).count { deleteDocumentBackward() }
@@ -432,10 +488,19 @@ public final class KeyboardEngine {
       lastEdit = .none
       finishEdit(deriveComposing: composing.isEmpty)
       return
-    case let .glided(word, _) where before.hasSuffix(word):
-      for _ in 0..<word.count { deleteDocumentBackward() }
+    case let .glided(glide) where before.hasSuffix(glide.text):
+      for _ in 0..<glide.text.count { deleteDocumentBackward() }
       composing = TypedWord(text: "")
+      rejectGlide(glide.word, context: previousWord())
+      deletedGlide = DeletedGlide(anchor: before, start: glide.start, end: glide.end)
       lastEdit = .none
+      // The swipe had committed and corrected the word typed before it; with the
+      // swipe gone, the next delete undoes that correction, as after a space.
+      if let correction, case let .autocorrected(_, inserted, separator) = correction.edit, before.hasSuffix(inserted + separator) {
+        lastEdit = correction.edit
+        pendingLearning = correction.learning
+        pendingTouch = correction.touch
+      }
       finishEdit()
       return
     default:
@@ -457,6 +522,7 @@ public final class KeyboardEngine {
     reconcilePendingHostChanges()
     spaceSlip = nil
     pendingLearning = nil
+    correctionBeforeGlide = nil
     phantomSpace = false
     if expectedSelection != nil || document.selectedText?.isEmpty == false {
       // Like Backspace, a selection is the whole deletion.
@@ -520,7 +586,7 @@ public final class KeyboardEngine {
     switch lastEdit {
     case let .autocorrected(_, inserted, separator): before.hasSuffix(inserted + separator)
     case let .joinedSpaceSlip(_, inserted, separator, _): before.hasSuffix(inserted + separator)
-    case let .glided(word, _): before.hasSuffix(word)
+    case let .glided(glide): before.hasSuffix(glide.text)
     default: false
     }
   }
@@ -543,6 +609,7 @@ public final class KeyboardEngine {
     let length = Self.wordDeletionSuffix(of: start, words: count).count
     guard length > 0 else { return nil }
     pendingLearning = nil
+    correctionBeforeGlide = nil
     spaceSlip = nil
     phantomSpace = false
     for _ in 0..<length { deleteDocumentBackward() }
@@ -612,6 +679,7 @@ public final class KeyboardEngine {
 
   public func select(_ suggestion: Suggestion) {
     spaceSlip = nil
+    deletedGlide = nil
     // Host edits can precede their text-change callback. Reconcile displayed
     // choices before trusting their generation, preserving known own-edit lag.
     if suggestion.sourceContext != nil { reconcileBeforeSelection() }
@@ -628,14 +696,20 @@ public final class KeyboardEngine {
     if policy.smartQuotes { text = Self.curlyApostrophes(text) }
     switch suggestion.kind {
     case .alternative:
-      guard case let .glided(word, alternatives) = lastEdit, before.hasSuffix(word) else { return }
+      guard case var .glided(glide) = lastEdit, before.hasSuffix(glide.text) else { return }
       let originalContext = pendingLearning?.context ?? context
-      for _ in 0..<word.count { deleteDocumentBackward() }
-      insertDocumentText(text)
-      pendingLearning = (text, originalContext)
+      for _ in 0..<glide.text.count { deleteDocumentBackward() }
+      insertDocumentText(glide.spaced ? text + " " : text)
+      if text != glide.word { rejectGlide(glide.word, context: originalContext) }
+      // Choosing a word is the strongest sign it belongs here.
+      if policy.learns { rejectedGlides[Self.glideRejectionKey(text, context: originalContext)] = nil }
+      let spelling = glide.spellings[suggestion.text] ?? glide.spellings[text]
+      pendingLearning = (spelling ?? text, originalContext, spelling != nil)
       pendingTouch = nil
-      lastEdit = .glided(word: text, alternatives: alternatives)
-      phantomSpace = true
+      if let spelling { glide.spellings[text] = spelling }
+      glide.word = text
+      lastEdit = .glided(glide)
+      phantomSpace = policy.autoSpaces && !glide.spaced
       finishEdit()
       return
     case .literal:
@@ -655,7 +729,7 @@ public final class KeyboardEngine {
     if !composing.isEmpty {
       for _ in 0..<composing.text.count { deleteDocumentBackward() }
       composing = TypedWord(text: "")
-    } else if let previous = before.last, !previous.isWhitespace, !"([{\u{201C}\u{2018}-/".contains(previous) {
+    } else if let previous = before.last, !previous.isWhitespace, !"([{\u{201C}\u{2018}-/".contains(previous), !Self.endsInOpeningQuote(before) {
       // Hyphens and slashes join words: left-handed, and/or.
       text = " " + text
     }
@@ -674,43 +748,97 @@ public final class KeyboardEngine {
     guard policy.allowsGlide, let glide else { return [] }
     reconcilePendingHostChanges()
     spaceSlip = nil
+    deletedGlide = nil
     // Decode before touching the document, so a path that fits no word changes nothing.
     var candidates = glide.decode(points, times: times, context: languageContext(), limit: 4)
     guard !candidates.isEmpty else { return [] }
+    var correction: CorrectionBeforeGlide?
     if !composing.isEmpty {
       commitComposing(separator: " ")
+      if case .autocorrected = lastEdit {
+        // Held until the swipe is kept, so deleting the swipe can still undo it.
+        correction = CorrectionBeforeGlide(edit: lastEdit, learning: pendingLearning, touch: pendingTouch)
+        pendingLearning = nil
+        pendingTouch = nil
+      }
       candidates = glide.decode(points, times: times, context: languageContext(), limit: 4)
     }
-    guard let best = candidates.first else {
+    guard !candidates.isEmpty else {
+      if let correction {
+        pendingLearning = correction.learning
+        pendingTouch = correction.touch
+      }
       finishEdit()
       return []
     }
     acceptPendingLearning()
-    let transform: (String) -> String = { word in
-      switch self.shift {
-      case .locked: word.uppercased()
-      case .once: Suggester.matchCase(of: "A", to: word)
-      case .off: word
-      }
-    }
-    var word = transform(best.text)
-    if policy.smartQuotes { word = Self.curlyApostrophes(word) }
+    correctionBeforeGlide = correction
     let wordContext = previousWord()
-    if policy.autoSpaces, let previous = before.last, phantomSpace || (!previous.isWhitespace && !"([{\u{201C}\u{2018}/@#-".contains(previous)) {
+    candidates = preferringUnrejected(candidates, context: wordContext)
+    if policy.autoSpaces, let previous = before.last,
+       phantomSpace || (!previous.isWhitespace && !"([{\u{201C}\u{2018}/@#-".contains(previous) && !Self.endsInOpeningQuote(before)) {
       insertDocumentText(" ")
+      // The space can start a sentence or a word: "Hello." + swipe -> Hello. How
+      updateAutomaticShift()
     }
-    insertDocumentText(word)
-    pendingLearning = (word, wordContext)
+    let allCaps = shift == .locked || (shift == .once(automatic: true) && policy.capitalization == .allCharacters)
+    let transform: (String) -> String = { word in
+      var text = allCaps ? word.uppercased() : self.shift.isActive ? Suggester.matchCase(of: "A", to: word) : word
+      if self.policy.smartQuotes { text = Self.curlyApostrophes(text) }
+      return text
+    }
+    let word = transform(candidates[0].text)
+    // With a word after the cursor, its separating space is typed now rather than owed.
+    let spaced = policy.autoSpaces && expectedAfterContext.first.map { $0.isLetter || $0.isNumber } == true
+    insertDocumentText(spaced ? word + " " : word)
+    pendingLearning = (candidates[0].text, wordContext, true)
     pendingTouch = nil
-    let alternatives = candidates.dropFirst().map { candidate -> String in
+    var spellings = [word: candidates[0].text]
+    var alternatives: [String] = []
+    for candidate in candidates.dropFirst() {
       let text = transform(candidate.text)
-      return policy.smartQuotes ? Self.curlyApostrophes(text) : text
+      alternatives.append(text)
+      spellings[text] = spellings[text] ?? candidate.text
     }
-    lastEdit = .glided(word: word, alternatives: alternatives)
-    phantomSpace = policy.autoSpaces
+    lastEdit = .glided(Glide(word: word, alternatives: alternatives, spellings: spellings, spaced: spaced,
+                             start: points[0], end: points[points.count - 1]))
+    phantomSpace = policy.autoSpaces && !spaced
     if case .once = shift { shift = .off }
     finishEdit()
     return candidates
+  }
+
+  /// Whether `text` ends in a straight quote that opens rather than closes:
+  /// after the start, a space or an opening bracket, as `curlyQuote` decides.
+  static func endsInOpeningQuote(_ text: String) -> Bool {
+    guard let last = text.last, last == "\"" || last == "'" else { return false }
+    guard let previous = text.dropLast().last else { return true }
+    return previous.isWhitespace || "([{\u{201C}\u{2018}-".contains(previous)
+  }
+
+  static func glideRejectionKey(_ word: String, context: (word: String?, sentenceStart: Bool)) -> String {
+    let history = context.word?.lowercased() ?? (context.sentenceStart ? "\u{2}" : "")
+    return history + "\u{1F}" + word.replacingOccurrences(of: "\u{2019}", with: "'").lowercased()
+  }
+
+  /// Counts a swiped word the person deleted or replaced in this context.
+  private func rejectGlide(_ word: String, context: (word: String?, sentenceStart: Bool)) {
+    guard policy.learns else { return }
+    rejectedGlides[Self.glideRejectionKey(word, context: context), default: 0] += 1
+  }
+
+  /// Moves the best candidate the person has not repeatedly rejected here to the
+  /// front. The decoder's order is kept otherwise, so the demoted word is the
+  /// first alternative, one tap away.
+  private func preferringUnrejected(_ candidates: [GlideCandidate], context: (word: String?, sentenceStart: Bool)) -> [GlideCandidate] {
+    guard policy.learns, !rejectedGlides.isEmpty else { return candidates }
+    func rejected(_ candidate: GlideCandidate) -> Bool {
+      rejectedGlides[Self.glideRejectionKey(candidate.text, context: context), default: 0] >= Self.glideRejectionLimit
+    }
+    guard let first = candidates.first, rejected(first), let index = candidates.firstIndex(where: { !rejected($0) }) else { return candidates }
+    var reordered = candidates
+    reordered.insert(reordered.remove(at: index), at: 0)
+    return reordered
   }
 
   static func curlyApostrophes(_ text: String) -> String {
@@ -723,19 +851,26 @@ public final class KeyboardEngine {
     let typed = composing
     let context = previousWord()
     let literalToken = composingLiteralToken
+    let deleted = deletedGlide
+    deletedGlide = nil
     refreshSuggestions()
     if let replacement = suggestions.autocorrection, replacement != typed.text {
       let inserted = policy.smartQuotes ? Self.curlyApostrophes(replacement) : replacement
       for _ in 0..<typed.text.count { deleteDocumentBackward() }
       insertDocumentText(inserted + separator)
-      pendingLearning = (replacement, context)
+      pendingLearning = (replacement, context, false)
       pendingTouch = (typed, replacement)
       lastEdit = .autocorrected(original: typed, inserted: inserted, separator: separator)
     } else {
       insertDocumentText(separator)
       if !literalToken {
-        learn(typed.text, context: context)
+        let swipeable = isSwipeable(typed.text)
+        let stored = learn(typed.text, context: context)
         if suggester?.isValid(typed.text) == true { learnTouch(typed, intended: typed.text) }
+        if let stored, let deleted, !swipeable, before == deleted.anchor + typed.text + separator,
+           fitsEndpoints(stored, start: deleted.start, end: deleted.end) {
+          personal?.pin(stored)
+        }
       }
       lastEdit = separator == " " ? .space : .typed
     }
@@ -743,17 +878,19 @@ public final class KeyboardEngine {
   }
 
   /// Records a committed word. `context` is the word before it, taken before the
-  /// word's own text changed the document.
-  private func learn(_ word: String, context: (word: String?, sentenceStart: Bool)? = nil) {
-    guard policy.learns, let personal, let suggester else { return }
+  /// word's own text changed the document. A `verbatim` word is a dictionary or
+  /// learned spelling, whose capitals are its own.
+  @discardableResult
+  private func learn(_ word: String, context: (word: String?, sentenceStart: Bool)? = nil, verbatim: Bool = false) -> String? {
+    guard policy.learns, let personal, let suggester else { return nil }
     let context = context ?? previousWord()
     let trimmed = word.trimmingCharacters(in: CharacterSet(charactersIn: "'\u{2019}"))
     guard trimmed.count > 1 || trimmed == "I" || trimmed == "a",
-          trimmed.allSatisfy({ $0.isLetter || $0 == "'" || $0 == "\u{2019}" }) else { return }
+          trimmed.allSatisfy({ $0.isLetter || $0 == "'" || $0 == "\u{2019}" }) else { return nil }
     let normalized = trimmed.replacingOccurrences(of: "\u{2019}", with: "'")
     // A capital from sentence capitalization is not part of the word; elsewhere it marks a name.
     var stored = normalized
-    if let first = normalized.first, first.isUppercase, normalized.dropFirst().allSatisfy({ $0.isLowercase }) {
+    if !verbatim, let first = normalized.first, first.isUppercase, normalized.dropFirst().allSatisfy({ $0.isLowercase }) {
       let lowered = normalized.lowercased()
       // Validity ignores case for names, so require a real lowercase spelling:
       // "I" and "Netflix" must not be learned, then predicted, as "i" and "netflix".
@@ -767,15 +904,45 @@ public final class KeyboardEngine {
       }
     }
     personal.learn(stored, after: context.word ?? (context.sentenceStart ? LanguageModel.sentenceStartHistory : nil))
+    return stored
+  }
+
+  /// Whether the decoder can already produce `word`: a swipe-eligible dictionary
+  /// spelling, in any case, or a known learned word.
+  private func isSwipeable(_ word: String) -> Bool {
+    guard let model = suggester?.model else { return true }
+    let normalized = word.replacingOccurrences(of: "\u{2019}", with: "'")
+    if model.personal.isKnown(normalized) || model.personal.isKnown(normalized.lowercased()) { return true }
+    let lexicon = model.lexicon
+    return lexicon.words(forKey: TextNormalizer.key(normalized)).contains {
+      lexicon.flags($0).contains(.glide) && lexicon.display($0).lowercased() == normalized.lowercased()
+    }
+  }
+
+  /// Whether a swipe from `start` to `end` could have been aimed at `word`'s first and last letters.
+  private func fitsEndpoints(_ word: String, start: KeyPoint, end: KeyPoint) -> Bool {
+    guard let geometry = glide?.geometry else { return false }
+    let key = TextNormalizer.key(word).utf8
+    guard key.count >= 2, let first = key.first.flatMap(geometry.center), let last = key.last.flatMap(geometry.center) else { return false }
+    return first.distance(to: start) <= 1.5 && last.distance(to: end) <= 1.5
   }
 
   private func acceptPendingLearning() {
+    if let correction = correctionBeforeGlide {
+      correctionBeforeGlide = nil
+      if let learning = correction.learning {
+        if let touch = correction.touch, touch.intended == learning.word { learnTouch(touch.typed, intended: touch.intended) }
+        learn(learning.word, context: learning.context, verbatim: learning.verbatim)
+      }
+    }
     let touch = pendingTouch
     pendingTouch = nil
     guard let pending = pendingLearning else { return }
     pendingLearning = nil
     if let touch, touch.intended == pending.word { learnTouch(touch.typed, intended: touch.intended) }
-    learn(pending.word, context: pending.context)
+    // A kept swipe clears earlier rejections of the word in its context.
+    if case .glided = lastEdit, policy.learns { rejectedGlides[Self.glideRejectionKey(pending.word, context: pending.context)] = nil }
+    learn(pending.word, context: pending.context, verbatim: pending.verbatim)
   }
 
   /// Teaches the touch model where taps for `intended` landed. Never in private fields.
@@ -822,6 +989,8 @@ public final class KeyboardEngine {
       phantomSpace = false
       lastEdit = .none
       pendingLearning = nil
+      correctionBeforeGlide = nil
+      deletedGlide = nil
       spaceSlip = nil
       rejected.removeAll()
       composing = TypedWord(text: "")
@@ -863,6 +1032,8 @@ public final class KeyboardEngine {
           phantomSpace = false
           lastEdit = .none
           pendingLearning = nil
+          correctionBeforeGlide = nil
+          deletedGlide = nil
           spaceSlip = nil
           deriveComposing()
         }
@@ -1070,6 +1241,11 @@ public final class KeyboardEngine {
 
   func atSentenceStart(_ text: String) -> Bool {
     var trimmed = Substring(text)
+    // Opening quotes and brackets belong to the sentence they start: “Hello, Hi. (See
+    while let last = trimmed.last, Self.sentenceOpeners.contains(last) {
+      if (last == "\"" || last == "'") && !Self.endsInOpeningQuote(String(trimmed.suffix(2))) { break }
+      trimmed = trimmed.dropLast()
+    }
     var sawSpace = false
     while let last = trimmed.last, last.isWhitespace {
       if last.isNewline { return true }
@@ -1115,16 +1291,18 @@ public final class KeyboardEngine {
       storedSuggestions = .empty
       return
     }
-    if cursorInsideWord || expectedSelection != nil {
+    // A swipe before a following word leaves the cursor at that word's start, not inside it.
+    let glidedBeforeWord: Bool = if case let .glided(glide) = lastEdit { glide.spaced } else { false }
+    if (cursorInsideWord && !glidedBeforeWord) || expectedSelection != nil {
       storedSuggestions = .empty
       return
     }
-    if case let .glided(word, alternatives) = lastEdit {
+    if case let .glided(glide) = lastEdit {
       guard policy.showsSuggestions else {
         storedSuggestions = .empty
         return
       }
-      let ordered = [Suggestion(text: word, kind: .alternative)] + alternatives.prefix(2).map { Suggestion(text: $0, kind: .alternative) }
+      let ordered = [Suggestion(text: glide.word, kind: .alternative)] + glide.alternatives.prefix(2).map { Suggestion(text: $0, kind: .alternative) }
       storedSuggestions = SuggestionSet(slots: SuggestionSet.centered(ordered))
       return
     }
@@ -1234,6 +1412,7 @@ public final class KeyboardEngine {
       for _ in offered.query { deleteDocumentBackward() }
     }
     pendingLearning = nil
+    correctionBeforeGlide = nil
     composing = TypedWord(text: "")
     insertDocumentText(offered.value)
     emojiHistory?.use(offered.value)
