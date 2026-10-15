@@ -333,6 +333,46 @@ Reading the proxy on every keystroke is new on-device behavior. Web views, Flutt
 React Native fields need watching through the `laggingContextUpdates` and
 `externalContextChanges` diagnostics.
 
+### Suggestion taps that did nothing
+
+A full native run once left `I want red heart` unchanged after ❤️ was tapped in the
+installed extension. A controller harness now runs the extension's view
+controller, controller, engine and suggestion bar in the UI test bundle. It drives
+them against a simulated text proxy whose host applies and reports the keyboard's
+edits on a schedule set by each test.
+
+Taps were reconciled through the host-callback path. That path treats any of the
+keyboard's own earlier states older than one second as a host undo, and taps
+typically land 1.4–1.6 s after the last key. If the proxy still showed the text
+before the last key, the displayed choice was voided and the tap ignored. Taps now
+reconcile the way keystrokes do, so the keyboard's own earlier states count as lag
+at any age. Real host edits, another field and newly hidden context still reject
+the choice.
+
+A host that reports the keyboard's edits back may now deliver those reports up to
+four seconds late without rolling the text back. Such a rollback had let a re-shown
+❤️ turn `red heart` into `r❤️`. Hosts that never report edits back keep the
+one-second rule. The emoji index arriving, and trait changes that leave the input
+policy alone, no longer void displayed choices.
+
+On frozen held-out controller seeds, ignored fresh taps fell from 66 of 368 to 4 of
+359, and no stale choice applied. Engine fuzz counts on held-out seeds are unchanged
+after one oracle correction. The native failure did not recur in 83 baseline and 60
+fixed emoji taps, or in 150 and 60 word taps, at load averages up to 420. On iOS 26.5
+the proxy updates as soon as the keyboard edits, and SwiftUI hosts send no callbacks
+for the keyboard's own edits.
+
+The same harness found two related problems:
+
+- **"Stop suggesting" did nothing.** Every bar refresh cleared the word behind an
+  open offer.
+- **Holding an emoji or a kept literal dropped the tap.** A hold now begins only on
+  words that can be forgotten.
+
+The remaining risk: a host undo whose proxy update lands before its callback could
+now be tapped through, and for hosts that report edits back, an undo within four
+seconds reads as lag.
+
 ### Everyday interaction parity
 
 A frozen 56-item checklist compared daily interactions with the Apple keyboard
