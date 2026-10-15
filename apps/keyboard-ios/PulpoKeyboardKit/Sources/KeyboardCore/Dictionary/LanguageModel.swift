@@ -101,7 +101,7 @@ public final class LanguageModel {
       }
     }
     if let previous = personalHistory(context) {
-      for (word, _) in personal.successors(of: previous).prefix(limit * 2) where !personal.isBlocked(word) {
+      for (word, _) in personal.successors(of: previous, limit: limit * 2) where !personal.isBlocked(word) {
         let id = lexicon.id(of: word)
         // Older personal dictionaries learned the pronoun as "i".
         if let id, lexicon.display(id) == word, lexicon.flags(id).contains(.neverSuggest) { continue }

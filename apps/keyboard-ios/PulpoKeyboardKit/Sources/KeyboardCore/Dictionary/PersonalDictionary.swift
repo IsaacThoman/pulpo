@@ -155,13 +155,40 @@ public final class PersonalDictionary {
     // One reference time keeps the ordering consistent while sorting; equal
     // scores and counts fall back to the text, independent of hashing order.
     let now = Date().timeIntervalSince1970
-    let keptWords = words.map { (word: $0.key, entry: $0.value, score: Self.score($0.value, now: now)) }
-      .sorted { $0.score != $1.score ? $0.score > $1.score : $0.word < $1.word }
-      .prefix(Self.maximumWords * 9 / 10)
-    words = Dictionary(uniqueKeysWithValues: keptWords.map { ($0.word, $0.entry) })
-    let keptPairs = pairs.sorted { $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key }.prefix(Self.maximumPairs * 9 / 10)
-    pairs = Dictionary(uniqueKeysWithValues: keptPairs.map { ($0.key, $0.value) })
-    rebuildIndexes()
+    // This runs on the typing thread when a new word passes the limit. Remove the
+    // evicted entries from the indexes instead of rebuilding them from scratch.
+    let wordLimit = Self.maximumWords * 9 / 10
+    if words.count > wordLimit {
+      let ranked = words.map { (word: $0.key, entry: $0.value, score: Self.score($0.value, now: now)) }
+        .sorted { $0.score != $1.score ? $0.score > $1.score : $0.word < $1.word }
+      for evicted in ranked[wordLimit...] {
+        words.removeValue(forKey: evicted.word)
+        totalCount -= evicted.entry.count
+        let key = TextNormalizer.key(evicted.word)
+        if var forms = byKey[key] {
+          forms.removeAll { $0 == evicted.word }
+          byKey[key] = forms.isEmpty ? nil : forms
+        }
+      }
+      knownCache = nil
+    }
+    let pairLimit = Self.maximumPairs * 9 / 10
+    if pairs.count > pairLimit {
+      let ranked = pairs.sorted { $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key }
+      for (pair, count) in ranked[pairLimit...] {
+        pairs.removeValue(forKey: pair)
+        let parts = pair.split(separator: "\u{1F}", maxSplits: 1)
+        guard parts.count == 2 else { continue }
+        let history = String(parts[0])
+        successors[history]?.removeValue(forKey: String(parts[1]))
+        if successors[history]?.isEmpty == true {
+          successors.removeValue(forKey: history)
+          historyTotals.removeValue(forKey: history)
+        } else {
+          historyTotals[history, default: 0] -= count
+        }
+      }
+    }
   }
 
   private static func score(_ word: Word, now: Double) -> Double {
@@ -197,6 +224,23 @@ public final class PersonalDictionary {
   public func successors(of previous: String) -> [(word: String, count: Int)] {
     (successors[previous.lowercased()] ?? [:]).map { ($0.key, $0.value) }
       .sorted { $0.count != $1.count ? $0.count > $1.count : $0.word < $1.word }
+  }
+
+  /// The first `limit` of `successors(of:)`, without sorting every successor of a
+  /// frequent history on each prediction pass.
+  public func successors(of previous: String, limit: Int) -> [(word: String, count: Int)] {
+    guard limit > 0, let table = successors[previous.lowercased()] else { return [] }
+    var top: [(word: String, count: Int)] = []
+    top.reserveCapacity(limit + 1)
+    for (word, count) in table {
+      func precedes(_ other: (word: String, count: Int)) -> Bool {
+        count != other.count ? count > other.count : word < other.word
+      }
+      if top.count == limit, let last = top.last, !precedes(last) { continue }
+      top.insert((word, count), at: top.firstIndex { precedes($0) } ?? top.count)
+      if top.count > limit { top.removeLast() }
+    }
+    return top
   }
 
   /// Known personal and transient words with the same lookup key.

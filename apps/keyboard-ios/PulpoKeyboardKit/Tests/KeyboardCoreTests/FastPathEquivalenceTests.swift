@@ -28,6 +28,50 @@ struct FastPathEquivalenceTests {
     }
   }
 
+  @Test func limitedSuccessorsMatchTheSortedPrefix() {
+    let personal = PersonalDictionary(url: nil)
+    var generator = SeededGenerator(state: 5)
+    for _ in 0..<3_000 {
+      let history = ["the", "i", "you", "zorbex"].randomElement(using: &generator)!
+      // Few distinct counts, so ties are ordered by word.
+      personal.learn("w\(Int.random(in: 0..<400, using: &generator))", after: history)
+    }
+    for history in ["the", "I", "you", "zorbex", "missing"] {
+      let sorted = personal.successors(of: history)
+      for limit in [0, 1, 6, 50, 1_000] {
+        let fast = personal.successors(of: history, limit: limit)
+        #expect(fast.map(\.word) == sorted.prefix(limit).map(\.word))
+        #expect(fast.map(\.count) == sorted.prefix(limit).map(\.count))
+      }
+    }
+  }
+
+  @Test func pruningKeepsIndexesEqualToARebuild() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent("pk-prune-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let url = directory.appendingPathComponent("PersonalDictionary.json")
+    let personal = PersonalDictionary(url: url)
+    var generator = SeededGenerator(state: 77)
+    var previous: String?
+    // Past both limits, so words and pairs are pruned several times.
+    for _ in 0..<(PersonalDictionary.maximumWords * 5) {
+      let word = "w" + String(Int.random(in: 0..<(PersonalDictionary.maximumWords * 2), using: &generator), radix: 36)
+      personal.learn(word, after: previous)
+      previous = Bool.random(using: &generator) ? word : "w" + String(Int.random(in: 0..<300, using: &generator), radix: 36)
+    }
+    personal.forget(previous!)
+    personal.save()
+    // A fresh load builds every index from the stored words and pairs.
+    let rebuilt = PersonalDictionary(url: url)
+    #expect(personal.knownWords == rebuilt.knownWords)
+    #expect(personal.totalCount == rebuilt.totalCount)
+    for history in (0..<300).map({ "w" + String($0, radix: 36) }) {
+      #expect(personal.historyCount(history) == rebuilt.historyCount(history))
+      #expect(personal.successors(of: history).map { "\($0.word)\($0.count)" } == rebuilt.successors(of: history).map { "\($0.word)\($0.count)" })
+    }
+  }
+
   @Test func boundedPersonalCostsAgreeWithinTheBound() {
     let corrector = SpellCorrector(lexicon: Fixtures.lexicon)
     let candidates = ["hello", "help", "yellow", "hell", "hollow", "jello", "he", "helloo", "ehllo", "world", "h", ""]
