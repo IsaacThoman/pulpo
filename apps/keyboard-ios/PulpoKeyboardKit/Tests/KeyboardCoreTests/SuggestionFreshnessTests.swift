@@ -235,6 +235,106 @@ struct SuggestionFreshnessTests {
     #expect(document.text == "Please the ")
   }
 
+  /// On a loaded device the tap can land seconds after the last key while the
+  /// proxy still reports the text before it. The person saw the choice for the
+  /// text they typed, so it applies; a keystroke at that moment would as well.
+  @Test(arguments: ["word", "emoji"])
+  func displayedChoicesApplyWhileTheProxyTrailsTheTapBySeconds(kind: String) throws {
+    let (engine, document) = Fixtures.engine("I want ")
+    var now = 100.0
+    engine.clock = { now }
+    engine.emojiSuggester = EngineFuzz.emojiIndex
+    let typed = kind == "word" ? "beau" : "red heart"
+    engine.type(String(typed.dropLast()))
+    document.contextBeforeOverride = document.text
+    now += 0.3
+    engine.type(String(typed.last!))
+    let shown = try pick(engine, kind: kind == "word" ? .completion : .emoji, text: kind == "word" ? "beautiful" : nil)
+    now += 2.5
+    engine.select(shown)
+    document.contextBeforeOverride = nil
+    #expect(document.text == (kind == "word" ? "I want beautiful " : "I want \u{2764}\u{FE0F}"))
+  }
+
+  /// A host that reports our edits as it applies them can fall seconds behind on
+  /// a loaded device. Its late report of an earlier key is lag, not an undo: the
+  /// shown choice stays current and applies to the text the person typed.
+  @Test func lateReportsFromAnEchoingHostKeepTheDisplayedChoice() throws {
+    let (engine, document) = Fixtures.engine("I want ")
+    var now = 100.0
+    engine.clock = { now }
+    engine.emojiSuggester = EngineFuzz.emojiIndex
+    for character in "red hea" {
+      now += 0.25
+      engine.type(String(character))
+      engine.documentDidChange()
+    }
+    now += 0.25
+    engine.type("r")
+    let reported = document.text
+    now += 0.25
+    engine.type("t")
+    let shown = try pick(engine, kind: .emoji)
+    now += 1.3
+    document.contextBeforeOverride = reported
+    engine.documentDidChange()
+    #expect(engine.suggestions.slots.contains(shown))
+    engine.select(shown)
+    document.contextBeforeOverride = nil
+    #expect(document.text == "I want \u{2764}\u{FE0F}")
+  }
+
+  /// The emoji index finishes off the typing path, possibly between a bar
+  /// refresh and a tap. It changes what may be offered next, not the text.
+  @Test func emojiIndexArrivalKeepsDisplayedChoices() throws {
+    let (engine, document) = Fixtures.engine("I want ")
+    engine.type("beau")
+    let shown = try pick(engine, kind: .completion, text: "beautiful")
+    engine.emojiSuggester = EngineFuzz.emojiIndex
+    engine.select(shown)
+    #expect(document.text == "I want beautiful ")
+  }
+
+  /// Hosts re-send traits with text callbacks. Changes that keep the input policy
+  /// keep the shown choices; changes to the policy still void them.
+  @Test func onlyPolicyChangingTraitsInvalidateDisplayedChoices() throws {
+    let (engine, document) = Fixtures.engine("Please ")
+    engine.type("teh")
+    let shown = try pick(engine, kind: .correction, text: "the")
+    var traits = engine.traits
+    traits.prefersDarkAppearance = true
+    traits.returnKey = .send
+    engine.traits = traits
+    engine.documentDidChange()
+    engine.select(shown)
+    #expect(document.text == "Please the ")
+
+    let (other, otherDocument) = Fixtures.engine("Please ")
+    other.type("teh")
+    let otherShown = try pick(other, kind: .correction, text: "the")
+    var email = other.traits
+    email.keyboard = .email
+    other.traits = email
+    other.select(otherShown)
+    #expect(otherDocument.text == "Please teh")
+  }
+
+  /// A field that starts withholding its context at the tap gives no ground for
+  /// the choice, which was shown for text the keyboard can no longer see.
+  @Test func newlyWithheldContextStillVoidsAChoiceAtTheTap() throws {
+    let (engine, document) = Fixtures.engine("Please ")
+    document.documentIdentifier = UUID()
+    engine.documentDidChange()
+    var now = 100.0
+    engine.clock = { now }
+    engine.type("teh")
+    let shown = try pick(engine, kind: .correction, text: "the")
+    now += 2
+    document.hidesContext = true
+    engine.select(shown)
+    #expect(document.text == "Please teh")
+  }
+
   @Test func selectingACurrentChoiceSurvivesReentrantOwnEditCallbacks() throws {
     let (engine, document) = Fixtures.engine("Please ")
     engine.type("teh")

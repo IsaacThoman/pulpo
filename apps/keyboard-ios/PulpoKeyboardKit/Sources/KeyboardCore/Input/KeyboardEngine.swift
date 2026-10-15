@@ -36,9 +36,11 @@ public final class KeyboardEngine {
   public let document: TextDocument
   public let suggester: Suggester?
   public let glide: GlideDecoder?
-  /// A supported-glyph index, prepared off the typing thread by the host.
-  public var emojiSuggester: EmojiSuggester? { didSet { invalidateSuggestionContext() } }
-  public var emojiHistory: EmojiHistory? { didSet { invalidateSuggestionContext() } }
+  /// A supported-glyph index, prepared off the typing thread by the host. It can
+  /// land between a bar refresh and a tap; it changes what may be offered next,
+  /// not what the displayed choices would do to the text, so they stay current.
+  public var emojiSuggester: EmojiSuggester? { didSet { suggestionsStale = true } }
+  public var emojiHistory: EmojiHistory? { didSet { suggestionsStale = true } }
   private struct OfferedEmoji {
     let value: String
     let query: String
@@ -56,8 +58,12 @@ public final class KeyboardEngine {
   }
   public var traits = InputTraits() {
     didSet {
+      let previous = policy
       policy = InputPolicy(traits: traits, settings: settings)
-      if traits != oldValue { invalidateSuggestionContext() }
+      // Hosts re-send traits with text callbacks. Appearance or return-key
+      // changes leave the policy, and so the displayed choices, as they were.
+      if policy != previous || traits.isPrivate != oldValue.isPrivate { invalidateSuggestionContext() }
+      if traits != oldValue { suggestionsStale = true }
       if traits.keyboard == .numbersAndPunctuation { page = .numbers }
     }
   }
@@ -146,9 +152,21 @@ public final class KeyboardEngine {
   /// Old proxy snapshots can arrive after a replacement has finished. Remember
   /// only recently requested states, rather than treating every prefix as lag.
   private var recentOwnContexts: [(context: ContextSnapshot, time: TimeInterval)] = []
-  /// Earlier states of our own edits, regardless of age. Polling the proxy never
-  /// treats a return to one of them as external: only host callbacks decide that.
-  private var ownContextHistory: [ContextSnapshot] = []
+  /// Earlier states of our own edits, regardless of age, numbered in the order
+  /// they were reached. Polling the proxy never treats a return to one of them
+  /// as external: only host callbacks decide that.
+  private var ownContextHistory: [(context: ContextSnapshot, sequence: Int)] = []
+  /// Primitive edits made so far, which is also the number of the state the
+  /// latest one requested.
+  private var ownEditSequence = 0
+  private var lastOwnEditTime: TimeInterval = -.infinity
+  /// The latest of our own states a host callback has reported. A host that
+  /// reports our edits as it applies them falls behind on a loaded device, and
+  /// its late reports then move forward through our states, seconds after the
+  /// keys. A host that never reported our edits is held to the one-second rule:
+  /// a report of an earlier state from it is far more likely an undo.
+  private var echoedOwnSequence: Int?
+  static let echoingHostLagLimit: TimeInterval = 4
   private var lastSpaceTime: TimeInterval = -.infinity
   /// Counters for on-device diagnostics; no text is recorded.
   public private(set) var laggingContextUpdates = 0
@@ -596,7 +614,7 @@ public final class KeyboardEngine {
     spaceSlip = nil
     // Host edits can precede their text-change callback. Reconcile displayed
     // choices before trusting their generation, preserving known own-edit lag.
-    if suggestion.sourceContext != nil { documentDidChange() }
+    if suggestion.sourceContext != nil { reconcileBeforeSelection() }
     if suggestion.kind == .emoji {
       selectEmoji(suggestion)
       return
@@ -799,6 +817,7 @@ public final class KeyboardEngine {
       expectedContext = nil
       recentOwnContexts.removeAll()
       ownContextHistory.removeAll()
+      echoedOwnSequence = nil
       recentObservedOwnContexts.removeAll()
       phantomSpace = false
       lastEdit = .none
@@ -815,8 +834,15 @@ public final class KeyboardEngine {
         let now = clock()
         recentOwnContexts.removeAll { now - $0.time >= 1 }
         let observed = ContextSnapshot(before: current, after: after, selection: selection)
+        // The first matching state at or after the latest report: a multi-step
+        // replacement passes through some states twice, and a host catching up
+        // reaches the earlier one first.
+        let reached = ownContextHistory.first { $0.context == observed && $0.sequence >= (echoedOwnSequence ?? 0) }?.sequence
+        let recent = recentOwnContexts.contains { $0.context == observed }
+        let catchingUp = echoedOwnSequence != nil && reached != nil && now - lastOwnEditTime < Self.echoingHostLagLimit
         // A truly cleared field takes precedence over an earlier empty snapshot.
-        if (!current.isEmpty || document.hasText || ownEditDepth > 0), recentOwnContexts.contains(where: { $0.context == observed }) {
+        if (!current.isEmpty || document.hasText || ownEditDepth > 0), recent || catchingUp {
+          if let reached { echoedOwnSequence = reached }
           laggingContextUpdates += 1
           return
         }
@@ -832,6 +858,7 @@ public final class KeyboardEngine {
           externalContextChanges += 1
           recentOwnContexts.removeAll()
           ownContextHistory.removeAll()
+          echoedOwnSequence = nil
           recentObservedOwnContexts.removeAll()
           phantomSpace = false
           lastEdit = .none
@@ -839,6 +866,9 @@ public final class KeyboardEngine {
           spaceSlip = nil
           deriveComposing()
         }
+      } else if ownEditSequence > 0, !ownContextHistory.isEmpty {
+        // The host reported the state our latest edit requested.
+        echoedOwnSequence = ownEditSequence
       }
     } else {
       expectedContext = current
@@ -893,9 +923,26 @@ public final class KeyboardEngine {
       let unchanged = selection == expectedSelection
         && consistent(observed.before, expected) { $0.hasSuffix($1) }
         && consistent(observed.after, expectedAfterContext) { $0.hasPrefix($1) }
-      guard !unchanged, !ownContextHistory.contains(observed) else { return }
+      guard !unchanged, !ownContextHistory.contains(where: { $0.context == observed }) else { return }
     }
     documentDidChange()
+  }
+
+  /// A tap polls the proxy rather than answering a host callback, so it reconciles
+  /// like a keystroke: earlier states of our own edits are lag at any age. On a
+  /// loaded device the host can trail the bar by seconds, and a choice the person
+  /// saw for the text they typed must still apply. Other host changes, another
+  /// field and newly withheld context still invalidate the choice.
+  private func reconcileBeforeSelection() {
+    let rawBefore = document.documentContextBeforeInput
+    let rawAfter = document.documentContextAfterInput
+    let hidden = rawBefore == nil && rawAfter == nil
+    let wasVisible = observedContextAvailability.map { $0.before || $0.after } ?? false
+    if expectedContext == nil || (hidden && wasVisible) {
+      documentDidChange()
+    } else {
+      reconcilePendingHostChanges()
+    }
   }
 
   private func prepareExpectedContext() {
@@ -919,7 +966,9 @@ public final class KeyboardEngine {
       before: document.documentContextBeforeInput, after: document.documentContextAfterInput,
       selection: document.selectedText.flatMap { $0.isEmpty ? nil : $0 }), now))
     if recentOwnContexts.count > 64 { recentOwnContexts.removeFirst(recentOwnContexts.count - 64) }
-    ownContextHistory.append(ContextSnapshot(before: before, after: expectedAfterContext, selection: expectedSelection))
+    ownContextHistory.append((ContextSnapshot(before: before, after: expectedAfterContext, selection: expectedSelection), ownEditSequence))
+    ownEditSequence += 1
+    lastOwnEditTime = now
     if ownContextHistory.count > 64 { ownContextHistory.removeFirst(ownContextHistory.count - 64) }
     if recentObservedOwnContexts.count > 64 { recentObservedOwnContexts.removeFirst(recentObservedOwnContexts.count - 64) }
   }

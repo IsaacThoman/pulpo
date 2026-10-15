@@ -391,6 +391,23 @@ struct KeyboardEngineTests {
     #expect(engine.externalContextChanges == 1)
   }
 
+  /// A host that already reported the text our edits requested and then reports
+  /// an earlier state has gone back, as an undo does, however it echoes edits.
+  @Test func echoingHostReturningToAnEarlierOwnStateIsAnExternalChange() {
+    let (engine, document) = Fixtures.engine("say ")
+    var now = 100.0
+    engine.clock = { now }
+    engine.type("teh ")
+    engine.documentDidChange()
+    now += 2
+    document.text = "say teh"
+    document.cursor = document.text.endIndex
+    engine.documentDidChange()
+    #expect(engine.composingText == "teh")
+    #expect(engine.before == "say teh")
+    #expect(engine.externalContextChanges == 1)
+  }
+
   @Test func staleSnapshotAfterAutocorrectionPreservesUndo() {
     let (engine, document) = Fixtures.engine("say ")
     engine.type("teh")
