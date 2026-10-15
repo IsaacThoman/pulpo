@@ -220,12 +220,15 @@ public final class KeyboardController: NSObject {
   private static let diagnosticsQueue = DispatchQueue(label: "com.isaacthoman.pulpo.keyboard.diagnostics", qos: .utility)
 
   public init(host: KeyboardHost) {
+    let initStart = PerfLog.begin()
     self.host = host
     settings = SettingsStore().load()
     let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
     // Probing the App Group writes a file; do it once.
     let writable = AppGroup.isWritable
+    let stackStart = PerfLog.begin()
     stack = Self.languageStack(personalURL: AppGroup.personalDictionaryURL(fallback: support, writable: writable))
+    PerfLog.end("init.stack", stackStart)
     engine = KeyboardEngine(document: host.document, suggester: stack?.suggester, glide: stack?.glide, settings: settings)
     let emojiDefaults = writable ? (AppGroup.defaults ?? .standard) : .standard
     emojiHistory = EmojiHistory(defaults: emojiDefaults)
@@ -259,9 +262,11 @@ public final class KeyboardController: NSObject {
     }
     engine.documentDidChange()
     sync()
+    PerfLog.end("init.total", initStart)
     let resources = Self.emojiResources
     Task { [weak self] in
       guard let prepared = await resources.value, let self else { return }
+      PerfLog.event("emojiReady")
       self.emojiCatalog = prepared.catalog
       self.emojiSuggester = prepared.suggester
       self.engine.emojiSuggester = prepared.suggester
@@ -305,6 +310,7 @@ public final class KeyboardController: NSObject {
   }
 
   public func hostDidDisappear() {
+    let start = PerfLog.begin()
     isVisible = false
     pendingEmojiPresentation = false
     resetDeleteGesture()
@@ -312,9 +318,13 @@ public final class KeyboardController: NSObject {
     recordDiagnostics()
     stopLevelUpdates()
     rootView.keys.cancelAllTouches()
+    PerfLog.end("disappear", start)
+    PerfLog.flush("disappear")
   }
 
   public func documentDidChange() {
+    let start = PerfLog.begin()
+    defer { PerfLog.end("documentDidChange", start) }
     let traits = host?.inputTraits ?? InputTraits()
     let identifier = host?.document.documentIdentifier
     let otherDocument = identifier != nil && searchDocument != nil && identifier != searchDocument
@@ -401,8 +411,11 @@ public final class KeyboardController: NSObject {
     barUpdateScheduled = true
     DispatchQueue.main.async { [weak self] in
       guard let self else { return }
+      let start = PerfLog.begin()
       self.barUpdateScheduled = false
       self.renderBar()
+      PerfLog.end("bar", start)
+      PerfLog.firstEvent("firstBar")
     }
   }
 
@@ -520,6 +533,7 @@ public final class KeyboardController: NSObject {
       rootView.insertSubview(panel, belowSubview: rootView.dictation)
       rootView.emoji = panel
       rootView.setNeedsLayout()
+      PerfLog.event("emojiPanelCreated")
     }
     rootView.mode = .emoji
   }
@@ -774,6 +788,8 @@ public final class KeyboardController: NSObject {
 extension KeyboardController: KeysViewDelegate {
   func keysView(_ view: KeysView, touchDown key: Key) {
     if isSearching { return searchTouchDown(key) }
+    let start = PerfLog.begin()
+    defer { PerfLog.end("touchDown", start) }
     switch key.action {
     case .emoji: break
     default: pendingEmojiPresentation = false
@@ -803,6 +819,8 @@ extension KeyboardController: KeysViewDelegate {
 
   func keysView(_ view: KeysView, activate key: Key, at point: CGPoint) {
     if isSearching { return searchActivate(key) }
+    let start = PerfLog.begin()
+    defer { PerfLog.end(key.action == .space ? "activate.space" : "activate", start) }
     switch key.action {
     case .character(let text) where engine.traits.keyboard == .phonePad && engine.page != .letters:
       // One symbol at a time on the phone pad, then back to the digits.
@@ -843,6 +861,8 @@ extension KeyboardController: KeysViewDelegate {
 
   func keysView(_ view: KeysView, glide points: [CGPoint], times: [TimeInterval], start: Key) {
     guard !isSearching else { return }
+    let begin = PerfLog.begin()
+    defer { PerfLog.end("glide", begin) }
     if engine.insertGlide(points.map(normalized), times: times).isEmpty, case .character(let text) = start.action {
       // No word fits the path: it was a sloppy tap, so type the key it started on.
       glideFallbacks += 1
@@ -940,6 +960,7 @@ extension KeyboardController: EmojiPanelDelegate {
   }
 
   func emojiPanelClose(_ panel: EmojiPanelView) {
+    PerfLog.event("emojiClosed")
     rootView.mode = .keys
     sync()
   }

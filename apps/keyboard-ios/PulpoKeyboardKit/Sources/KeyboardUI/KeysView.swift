@@ -301,6 +301,8 @@ final class KeysView: UIView {
   // MARK: Touches
 
   override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+    let start = PerfLog.begin()
+    defer { PerfLog.end("touchesBegan", start) }
     for touch in touches.sorted(by: { $0.timestamp < $1.timestamp }) { begin(touch, event: event) }
   }
 
@@ -313,6 +315,8 @@ final class KeysView: UIView {
   }
 
   override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
+    let start = PerfLog.begin()
+    defer { PerfLog.end("touchesEnded", start) }
     for touch in touches.sorted(by: { (trackings[ObjectIdentifier($0)]?.began ?? 0) < (trackings[ObjectIdentifier($1)]?.began ?? 0) }) {
       guard let tracking = trackings.removeValue(forKey: ObjectIdentifier(touch)) else { continue }
       appendSamples(for: touch, event: event, to: tracking)

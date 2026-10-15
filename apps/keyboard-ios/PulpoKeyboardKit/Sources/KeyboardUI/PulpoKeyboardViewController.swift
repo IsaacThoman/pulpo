@@ -28,8 +28,10 @@ nonisolated private final class ViewRelease: @unchecked Sendable {
   init(_ view: UIView) { self.view = view }
 
   @MainActor func perform() {
+    let start = PerfLog.begin()
     view?.removeFromSuperview()
     view = nil
+    PerfLog.end("detach", start)
   }
 }
 
@@ -48,6 +50,7 @@ open class PulpoKeyboardViewController: UIInputViewController, KeyboardHost {
   }
 
   open override func viewDidLoad() {
+    PerfLog.event("viewDidLoad")
     super.viewDidLoad()
     proxyDocument = ProxyDocument(proxy: textDocumentProxy)
     let controller = KeyboardController(host: self)
@@ -78,21 +81,26 @@ open class PulpoKeyboardViewController: UIInputViewController, KeyboardHost {
       let entries = lexicon.entries.map { (userInput: $0.userInput, documentText: $0.documentText) }
       DispatchQueue.main.async { self?.controller?.applySupplementaryLexicon(entries) }
     }
+    PerfLog.event("viewDidLoadEnd")
   }
 
   open override func viewWillAppear(_ animated: Bool) {
     super.viewWillAppear(animated)
+    PerfLog.event("viewWillAppear")
     controller?.hostWillAppear()
   }
 
   open override func viewDidLayoutSubviews() {
     super.viewDidLayoutSubviews()
+    PerfLog.firstEvent("firstLayout")
     controller?.layoutChanged(dark: traitCollection.userInterfaceStyle == .dark)
     removeSystemTouchDelays()
   }
 
   open override func viewDidAppear(_ animated: Bool) {
     super.viewDidAppear(animated)
+    PerfLog.event("viewDidAppear")
+    PerfLog.flushSoon()
     removeSystemTouchDelays()
   }
 
