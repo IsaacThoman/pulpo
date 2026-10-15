@@ -47,6 +47,110 @@ speed reference comes from the browser phones used for the recordings; iPhone
 `HumanSwipeAuditTests` now replays recorded times by default.
 `PK_HUMAN_TIMING=none` reproduces the earlier spatial-only metric.
 
+### Swipes in sentence context and lift overshoot
+
+A separate blind sweep replayed recorded gestures after the real preceding words
+of their sentences, also through `KeyboardEngine`, to check the committed word,
+sentence-start capitals and one-tap reachability. A 4,000-gesture fresh
+verification sample (salt `pk-swipe-context-r1-fresh-verify-v3:`, 239
+participants, SHA-256
+`97dfa883788a20bd788a414bce676912e156902b342904ffcf0ff30755ffb0f8`) excludes
+every earlier sample. An earlier draw overlapped the timing sweep's sample and was
+retired after only its baseline total had been seen. Untimed and slow-to-a-stop
+clean controls cover 1,500 frequent words and 2,000 held-out conversation tokens
+in context.
+
+Real preceding words lift first choices by about three points on natural phrases
+and are neutral on random word lists. Development misses with context, by cause:
+
+| Cause | Misses of 903 |
+| --- | ---: |
+| Word not in the dictionary, nearly all in random word lists | 188 |
+| Start or end key outside the search, mostly truncated recordings | 172 |
+| Shape filters, including 45 tap-length `i` and `a` gestures | 158 |
+| Another word's shape fits better | 148 |
+| Language model outweighs a better shape | 83 |
+| Short-word ambiguity | 71 |
+| Inflections, unswipeable acronyms, nested paths, identical paths, foreign words | 83 |
+
+Language-model reweighting was swept over weights from 0.6 to 1.4, along with
+trigram fallback changes, unigram mixing and relative floors. None gained.
+Recorded swipes often lift past the final key along the last stroke: median 0.2
+and 90th percentile 0.8 key pitches. The decoder now lets the last letter sit up
+to 0.8 pitches further along that stroke at a Gaussian cost. The credit scales
+with lift-off speed, so a deliberate stop, or a swipe without times, gets none.
+With a known previous word, the 16 likeliest continuations are also scored when a
+noisy endpoint kept them out of the search.
+
+| Recorded gestures, timing on, top-1 / top-3 | Before | After |
+| --- | ---: | ---: |
+| Fresh verification in context, 4,000 | 2,723 / 2,956 | **2,757 / 2,996** |
+| Fresh verification, unknown context | 2,616 / 2,907 | **2,651 / 2,945** |
+| Existing verification in context, 3,000 | 2,078 / 2,264 | **2,110 / 2,292** |
+| Existing verification, unknown context | 1,995 / 2,225 | **2,018 / 2,242** |
+| Development, unknown context | 2,037 / 2,252 | **2,066 / 2,276** |
+
+Fresh-verification first choices had 47 gains and 13 losses. Spatial-only
+decoding is unchanged, and clean controls show zero flips with and without
+timing. Sentence-start capitals remain 594/595. Median in-context decode time
+rose from 1.36 to 1.47 ms on the Mac. A fixed vertical touch offset of 0.10 key
+heights gained 25–62 development gestures, but it cost clean words and was not
+adopted. Recorded touches sit 0.07, 0.21 and 0.29 key heights below the top,
+middle and bottom row centers. That offset is constant in key units across
+keyboard sizes, so the reconstructed collection geometry is being checked before
+anything is tuned against it. Run the in-context audit with `PK_CONTEXT_SWIPES`
+(and `PK_CONTEXT_CLEAN` for controls) in `HumanSwipeContextTests`.
+
+### Tap-typing correction with simulated thumbs
+
+A blind tap benchmark types 1,500 held-out Topical-Chat sentences per split, each
+with four simulated thumb personas. The touch model applies per-key scatter, thumb
+undershoot and a downward bias. Letters go through a key-rectangle hit test that
+includes the space bar, so dropped, doubled and swapped letters, missed spaces and
+skipped apostrophes arise from the touches. About 2,500 real misspelling pairs per
+split come from Wikipedia's machine-readable list and Mitton's corpora. About
+1,330 clean controls per split cover names, brands, slang, abbreviations,
+contractions, code and foreign words. Splits are disjoint by conversation, target
+word and token. Development SHA-256 `bf4aac4a…`, verification `226bb178…`. The
+largest gap was missed or mistyped spaces. Changes:
+
+- **Space splitting.** An unknown token may be read as two words when the space
+  was missed (`wantto`) or the space tap landed on `x`–`n` above the space bar.
+  The tap's drop toward the space bar counts as evidence, and one half may carry
+  one small slip (`inrhe` → `in the`). Splits must beat every single-word reading.
+  Closed compounds stay joined (`anyrhing` → `anything`). Valid words, camelCase
+  and mid-sentence title case are never split.
+- **Edit costs.** A skipped letter costs 3.5 instead of 4.0 and an unexplained
+  extra letter 5.0.
+- **Apostrophes and double slips.** A skipped apostrophe is restored (`shes` →
+  `she's`). Two slips in one word (`vofeo` → `video`) are fixed only with strong
+  context and a clear lead over the runner-up.
+
+| Tap benchmark | Development before → after | Verification before → after |
+| --- | ---: | ---: |
+| Word error rate | 13.09% → **10.37%** | 13.23% → **10.44%** |
+| Character error rate | 3.26% → 2.77% | 3.38% → 2.86% |
+| Typo words fixed | 58.5% → 67.6% | 58.6% → 67.7% |
+| Clean words wrongly changed | 66 → 62 of 37,726 | 37 → 34 of 37,582 |
+| Real misspellings fixed / changed to a wrong word | 1,228 / 394 → 1,260 / 362 | 1,229 / 358 → 1,253 / 334 |
+| Controls wrongly changed | 71 → 63 | 104 → 88 |
+
+Verification word error rate falls for every persona. Careful goes from 3.89% to
+2.81% and one-thumb from 17.72% to 14.49%; without autocorrection the rate is
+31.26%. The single predeclared verification run included one more change: context
+could correct capitalized words mid-sentence. A later ablation showed it gained
+0.06 points but changed real names (`Carrey` → `Carey`). It was removed, so the
+committed figures come from that post-hoc ablation and are not a second blind run.
+
+New harms include some unknown compounds and slang: `lowkey` splits, `finna` →
+`fine`, `golang` → `going`. Undo restores the literal and stops correcting it. The
+touch model is literature-informed, not fitted to real touch logs, and assumes a
+space bar spanning the middle five key widths. Real-word slips such as `lie` for
+`like` remain deliberately protected and are the largest residual class. Human
+swipes are unchanged. Run with `PK_TAP_BENCH=<cases> swift test -c release
+--filter TapCorrectionBenchmark`; `scripts/prepare_tap_benchmark.py` regenerates
+the cases.
+
 ### Suggestion-bar keystroke savings
 
 Earlier prediction audits counted next-word hits only. A new benchmark has an

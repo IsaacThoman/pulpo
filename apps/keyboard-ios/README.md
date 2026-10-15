@@ -76,7 +76,9 @@ the key. Phone fields get a `+*#` page, and holding 0 types `+`.
 
 **Autocorrect and prediction.** The dictionary is a memory-mapped trie of 160k words.
 `SpellCorrector` runs a weighted Damerau-Levenshtein search over it where substitution
-costs come from how far each touch landed from the intended key. `Suggester` combines
+costs come from how far each touch landed from the intended key. An unknown token can
+be split into two words when a space was missed or landed on the letter row above the
+space bar. `Suggester` combines
 that with an interpolated bigram/trigram language model and the person's learned words; a typed word is only
 replaced when the correction is clearly more likely. Deleting right after an
 autocorrection restores the typed word and stops correcting it. Contacts' names and iOS
@@ -96,7 +98,7 @@ frequency, so a noisy endpoint cannot exhaust the budget before nearby buckets
 are searched. Letter alignment is calibrated for word length. Touch timestamps add timing
 evidence: letters are expected where the finger slowed, not in fast transit,
 and unexplained pauses count against a word. Without usable times the decoder
-is purely spatial.
+is purely spatial. A fast lift may overshoot the last letter along the final stroke.
 
 **Learning.** Words the person types twice, or keeps by undoing a correction or picking
 the quoted literal, become valid. Learned words and word pairs are stored on device in
