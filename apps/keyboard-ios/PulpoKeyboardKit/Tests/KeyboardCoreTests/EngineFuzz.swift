@@ -350,6 +350,9 @@ final class FuzzRun {
     var version: Int
     var state: [String]
     var slots: [Suggestion]
+    /// Shown while a host change or field switch had not reached the engine: the
+    /// bar described an earlier document, so no later tap on it counts as fresh.
+    var pending = false
   }
 
   /// One step of the word-unit chain: an edit that inserted or replaced a whole word.
@@ -715,7 +718,8 @@ final class FuzzRun {
       checkDesync(op)
     default: break
     }
-    captures.append(Capture(version: version, state: trueState(), slots: engine.suggestions.slots))
+    captures.append(Capture(version: version, state: trueState(), slots: engine.suggestions.slots,
+                            pending: pendingExternal || pendingField))
     for character in host.text.unicodeScalars { fingerprint = (fingerprint ^ UInt64(character.value)) &* 0x100_0000_01b3 }
     fingerprint = (fingerprint ^ UInt64(host.cursor)) &* 0x100_0000_01b3
   }
@@ -989,7 +993,7 @@ final class FuzzRun {
         let sameVersion = stale.capture.version == preVersion
         let sameState = sameVersion || stale.capture.state == trueStateBefore(preBefore, preAfter, preSelection)
         equivalentExists = preSuggestions.contains { $0.text == tapped.text && $0.kind == tapped.kind }
-        if sameVersion { fresh = true }
+        if sameVersion, !stale.capture.pending { fresh = true }
         if !sameState, !equivalentExists, net.edited, host.text != preText {
           fail("staleSuggestionApplied", "stale \(tapped.kind) \(tapped.text.debugDescription) edited text")
         }
