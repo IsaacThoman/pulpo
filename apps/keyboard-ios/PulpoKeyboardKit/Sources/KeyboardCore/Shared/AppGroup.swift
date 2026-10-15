@@ -64,6 +64,29 @@ public struct KeyboardHeartbeat: Codable, Equatable, Sendable {
     guard let data = defaults?.data(forKey: key) else { return nil }
     return try? JSONDecoder().decode(KeyboardHeartbeat.self, from: data)
   }
+
+  public static func clear(defaults: UserDefaults? = AppGroup.defaults) {
+    defaults?.removeObject(forKey: key)
+  }
+
+  /// Posted by the installed keyboard each time it appears, so the app can confirm
+  /// setup live while it is on screen. Two names carry the Full Access state,
+  /// because without Full Access the keyboard can't write to the App Group.
+  public static func appearedNotification(fullAccess: Bool) -> String {
+    "\(AppGroup.identifier).keyboardAppeared.\(fullAccess ? "full" : "limited")"
+  }
+
+  /// Full Access as last observed: the newer of the keyboard's own heartbeat (only
+  /// written with Full Access) and the app's record of seeing it appear without.
+  /// Nil when the keyboard has never been seen since setup started.
+  public static func fullAccess(heartbeat: KeyboardHeartbeat?, limitedSeenAt: Date?) -> Bool? {
+    switch (heartbeat, limitedSeenAt) {
+    case (nil, nil): nil
+    case (let heartbeat?, nil): heartbeat.hasFullAccess
+    case (nil, .some): false
+    case (let heartbeat?, let limited?): heartbeat.lastSeen > limited ? heartbeat.hasFullAccess : false
+    }
+  }
 }
 
 /// The signed-in Pulpo account as the keyboard sees it. The session token never

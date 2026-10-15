@@ -323,7 +323,12 @@ public final class KeyboardController: NSObject {
     KeyboardFeedback.current = haptics
     haptics.enabled = settings.haptics && host?.hasFullAccess == true
     account = AccountSnapshot.load()
-    if host?.hasFullAccess == true { KeyboardHeartbeat.record(hasFullAccess: true) }
+    // Only the installed keyboard reports setup; the app's in-app preview always
+    // has "Full Access" and would otherwise mark setup done before it is.
+    if let host, !host.isInsideApp {
+      if host.hasFullAccess { KeyboardHeartbeat.record(hasFullAccess: true) }
+      DarwinNotifications.post(KeyboardHeartbeat.appearedNotification(fullAccess: host.hasFullAccess))
+    }
     engine.traits = host?.inputTraits ?? InputTraits()
     engine.page = engine.traits.keyboard == .numbersAndPunctuation ? .numbers : .letters
     emojiSearch = nil
