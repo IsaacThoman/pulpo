@@ -11,10 +11,16 @@ import Testing
 ///
 /// `PK_TAP_RAW=1` also replays sentences with autocorrect off. `PK_TAP_BASELINE`
 /// asserts that clean text, controls and misspelling fixes do not regress.
+///
+/// Round-2 manifests (`scripts/prepare_tap_benchmark_r2.py`) add space touches,
+/// per-word noise labels, clean-tapped sentences with "vulnerable" words (a more
+/// frequent real word is one slip away) and per-persona adaptation sentences.
+/// `PK_TAP_ADAPT=1` first replays each persona's adaptation sentences into one
+/// learning touch model, then scores that persona's sentences with it frozen.
 struct TapCorrectionBenchmarkTests {
   enum Event: Decodable {
     case key(String, KeyPoint)
-    case space
+    case space(KeyPoint?)
     case punctuation(String)
     case bar(Int)
 
@@ -24,7 +30,12 @@ struct TapCorrectionBenchmarkTests {
       case "k":
         let key = try container.decode(String.self)
         self = .key(key, KeyPoint(x: try container.decode(Double.self), y: try container.decode(Double.self)))
-      case "s": self = .space
+      case "s":
+        if let x = try container.decodeIfPresent(Double.self), let y = try container.decodeIfPresent(Double.self) {
+          self = .space(KeyPoint(x: x, y: y))
+        } else {
+          self = .space(nil)
+        }
       case "p": self = .punctuation(try container.decode(String.self))
       default: self = .bar(try container.decode(Int.self))
       }
@@ -36,6 +47,14 @@ struct TapCorrectionBenchmarkTests {
     let exact: Bool
     let cognitive: Bool
     let typed: String
+    let noise: [String]?
+    let sentenceStart: Bool?
+    let vulnerable: Bool?
+  }
+
+  struct PersonaInfo: Decodable {
+    let name: String
+    let model: String?
   }
 
   struct SentenceRun: Decodable {
@@ -69,7 +88,10 @@ struct TapCorrectionBenchmarkTests {
   struct Manifest: Decodable {
     let version: String
     let split: String
+    let personas: [PersonaInfo]?
     let sentences: [SentenceRun]
+    let clean: [SentenceRun]?
+    let adaptation: [SentenceRun]?
     let misspellings: [Misspelling]
     let controls: [Control]
   }
@@ -117,6 +139,20 @@ struct TapCorrectionBenchmarkTests {
     var characters = 0
   }
 
+  struct CleanCounts: Codable, Equatable {
+    var words = 0
+    var changed = 0
+    var vulnerable = 0
+    var vulnerableChanged = 0
+    var visible = 0
+  }
+
+  struct ClassCounts: Codable, Equatable {
+    var words = 0
+    var fixed = 0
+    var visible = 0
+  }
+
   struct WordCounts: Codable, Equatable {
     var items = 0
     var fixed = 0
@@ -131,6 +167,9 @@ struct TapCorrectionBenchmarkTests {
     let sentenceSummary: [String: Counts]
     let misspellingSummary: [String: WordCounts]
     let controlSummary: [String: WordCounts]
+    let cleanSummary: [String: CleanCounts]?
+    let noiseSummary: [String: ClassCounts]?
+    let clean: [SentenceResult]?
     let sentences: [SentenceResult]
     let misspellings: [WordResult]
     let controls: [WordResult]
@@ -203,10 +242,12 @@ struct TapCorrectionBenchmarkTests {
     let document: MockDocument
     var time = 1_000.0
 
-    init(prefix: String, autocorrect: Bool) {
+    init(prefix: String, autocorrect: Bool, touch: TouchModel? = nil) {
       document = MockDocument(prefix)
       let model = LanguageModel(lexicon: Fixtures.lexicon, personal: PersonalDictionary(url: nil))
-      let suggester = Suggester(model: model, corrector: SpellCorrector(lexicon: Fixtures.lexicon))
+      let corrector = SpellCorrector(lexicon: Fixtures.lexicon)
+      corrector.touch = touch
+      let suggester = Suggester(model: model, corrector: corrector)
       var settings = KeyboardSettings()
       settings.autocorrect = autocorrect
       engine = KeyboardEngine(document: document, suggester: suggester, glide: GlideDecoder(model: model), settings: settings)
@@ -227,8 +268,8 @@ struct TapCorrectionBenchmarkTests {
           }
           engine.insertCharacter(lower, tap: point)
           time += 0.25
-        case .space:
-          engine.insertSpace()
+        case let .space(point):
+          engine.insertSpace(tap: point)
           time += 0.25
         case let .punctuation(character):
           engine.insertCharacter(character)
@@ -248,10 +289,33 @@ struct TapCorrectionBenchmarkTests {
     let includeRaw = environment["PK_TAP_RAW"] == "1"
     let started = ProcessInfo.processInfo.systemUptime
 
-    var sentences: [SentenceResult] = []
-    var sentenceSummary: [String: Counts] = [:]
-    for run in manifest.sentences {
-      let session = Session(prefix: "", autocorrect: true)
+    let models = Dictionary((manifest.personas ?? []).map { ($0.name, $0.model ?? "thumb") }, uniquingKeysWith: { a, _ in a })
+    func groups(_ persona: String) -> [String] {
+      ["all", persona] + (models[persona].map { ["model-" + $0] } ?? [])
+    }
+
+    // Personal touch adaptation: one learner per persona, trained on its own
+    // adaptation sentences, then frozen for scoring.
+    var touchModels: [String: TouchModel] = [:]
+    if environment["PK_TAP_ADAPT"] == "1", let adaptation = manifest.adaptation {
+      for run in adaptation {
+        let touch = touchModels[run.persona] ?? TouchModel(url: nil)
+        touchModels[run.persona] = touch
+        _ = Session(prefix: "", autocorrect: true, touch: touch).replay(run.events)
+      }
+      for (persona, touch) in touchModels.sorted(by: { $0.key < $1.key }) {
+        touch.isLearning = false
+        let shown = ["e", "g", "h", "p", "q", "z", "m"].map { letter -> String in
+          let offset = touch.offset(letter.utf8.first!)
+          return letter + String(format: "(%+.2f,%+.2f)", offset.x, offset.y)
+        }
+        print("TAP ADAPT \(manifest.split) \(persona): weight \(Int(touch.weight)) " + shown.joined(separator: " "))
+      }
+    }
+
+    /// Replays one typed sentence from an empty field and scores it word by word.
+    func score(_ run: SentenceRun, raw includeRaw: Bool) -> SentenceResult {
+      let session = Session(prefix: "", autocorrect: true, touch: touchModels[run.persona])
       let bars = session.replay(run.events)
       let output = session.document.text
       var raw: String?
@@ -267,17 +331,24 @@ struct TapCorrectionBenchmarkTests {
       let visible = reference.indices.map { index in
         (bars[index] ?? []).contains { Self.normalized($0).lowercased() == reference[index] }
       }
-      let exact = run.words.map(\.exact)
-      let result = SentenceResult(
+      return SentenceResult(
         id: run.id, persona: run.persona, reference: run.reference, output: output, raw: raw,
         wordErrors: Self.distance(reference, produced), words: reference.count,
         characterErrors: Self.distance(Array(Self.canonical(run.reference)), Array(Self.canonical(output))),
         characters: Self.canonical(run.reference).count,
         caseWordErrors: Self.distance(Self.words(run.reference, folding: false), Self.words(output, folding: false)),
         rawWordErrors: raw.map { Self.distance(reference, Self.words($0)) },
-        exact: exact, correct: correct, visible: visible)
+        exact: run.words.map(\.exact), correct: correct, visible: visible)
+    }
+
+    var sentences: [SentenceResult] = []
+    var sentenceSummary: [String: Counts] = [:]
+    var noiseSummary: [String: ClassCounts] = [:]
+    for run in manifest.sentences {
+      let result = score(run, raw: includeRaw)
+      let exact = result.exact, correct = result.correct, visible = result.visible
       sentences.append(result)
-      for group in ["all", run.persona] {
+      for group in groups(run.persona) {
         var counts = sentenceSummary[group, default: Counts()]
         counts.items += 1
         counts.errors += result.wordErrors
@@ -298,6 +369,37 @@ struct TapCorrectionBenchmarkTests {
           }
         }
         sentenceSummary[group] = counts
+      }
+      for (index, word) in run.words.enumerated() where index < correct.count {
+        var classes = Set(word.noise ?? [])
+        if word.sentenceStart == true { classes.insert(word.exact ? "start-clean" : "start-noisy") }
+        for name in classes {
+          var counts = noiseSummary[name, default: ClassCounts()]
+          counts.words += 1
+          if correct[index] { counts.fixed += 1 }
+          if visible[index] { counts.visible += 1 }
+          noiseSummary[name] = counts
+        }
+      }
+    }
+
+    var cleanResults: [SentenceResult] = []
+    var cleanSummary: [String: CleanCounts] = [:]
+    for run in manifest.clean ?? [] {
+      let result = score(run, raw: false)
+      cleanResults.append(result)
+      for group in groups(run.persona) {
+        var counts = cleanSummary[group, default: CleanCounts()]
+        for (index, word) in run.words.enumerated() where index < result.correct.count {
+          counts.words += 1
+          if !result.correct[index] { counts.changed += 1 }
+          if result.visible[index] { counts.visible += 1 }
+          if word.vulnerable == true {
+            counts.vulnerable += 1
+            if !result.correct[index] { counts.vulnerableChanged += 1 }
+          }
+        }
+        cleanSummary[group] = counts
       }
     }
 
@@ -349,6 +451,9 @@ struct TapCorrectionBenchmarkTests {
 
     let report = Report(version: manifest.version, split: manifest.split, sentenceSummary: sentenceSummary,
                         misspellingSummary: misspellingSummary, controlSummary: controlSummary,
+                        cleanSummary: manifest.clean == nil ? nil : cleanSummary,
+                        noiseSummary: noiseSummary.isEmpty ? nil : noiseSummary,
+                        clean: manifest.clean == nil ? nil : cleanResults,
                         sentences: sentences, misspellings: misspellings, controls: controls)
     if let path = environment["PK_TAP_REPORT"] {
       let encoder = JSONEncoder()
@@ -363,6 +468,15 @@ struct TapCorrectionBenchmarkTests {
         + " caseWER \(percent(c.caseErrors, c.units))" + (includeRaw ? " rawWER \(percent(c.rawErrors, c.units))" : "")
         + " clean changed \(c.cleanChanged)/\(c.cleanWords) noisy fixed \(c.noisyFixed)/\(c.noisyWords)"
         + " noisy visible \(c.noisyVisible)/\(c.noisyWords) all visible \(c.allVisible)/\(c.cleanWords + c.noisyWords)")
+    }
+    for group in cleanSummary.keys.sorted() {
+      let c = cleanSummary[group]!
+      print("TAP CLEAN \(manifest.split) \(group): changed \(c.changed)/\(c.words) vulnerable changed \(c.vulnerableChanged)/\(c.vulnerable)"
+        + " visible \(c.visible)/\(c.words)")
+    }
+    for group in noiseSummary.keys.sorted() {
+      let c = noiseSummary[group]!
+      print("TAP NOISE \(manifest.split) \(group): fixed \(c.fixed)/\(c.words) visible \(c.visible)")
     }
     for group in misspellingSummary.keys.sorted() {
       let c = misspellingSummary[group]!
@@ -381,8 +495,12 @@ struct TapCorrectionBenchmarkTests {
       #expect(now.cleanChanged <= before.cleanChanged, "More clean sentence words changed")
       #expect(now.errors <= before.errors, "Sentence word errors regressed")
       #expect(controlSummary["all"]!.harmful <= baseline.controlSummary["all"]!.harmful, "More controls changed")
-      let nonword = misspellingSummary["nonword"]!, nonwordBefore = baseline.misspellingSummary["nonword"]!
-      #expect(nonword.fixed >= nonwordBefore.fixed && nonword.harmful <= nonwordBefore.harmful, "Misspelling fixes regressed")
+      if let nonword = misspellingSummary["nonword"], let nonwordBefore = baseline.misspellingSummary["nonword"] {
+        #expect(nonword.fixed >= nonwordBefore.fixed && nonword.harmful <= nonwordBefore.harmful, "Misspelling fixes regressed")
+      }
+      if let clean = cleanSummary["all"], let cleanBefore = baseline.cleanSummary?["all"] {
+        #expect(clean.changed <= cleanBefore.changed, "More clean-typed words changed")
+      }
     }
   }
 }
