@@ -299,6 +299,47 @@ character deleted. One-handed mode, emoji search in the picker and smart dashes
 remain unimplemented; `--` stays literal because command-line flags are common in
 this app's chats.
 
+### Corrected geometry for recorded swipes
+
+`scripts/prepare_human_swipes.py` divided the logged keyboard height by four
+rows. The collection app (`luileito/swipetest`) derives key height from four rows,
+but it sizes the logged canvas to three letter rows plus a 0.7-high dummy space
+row. A row is therefore height/3.7. Every recorded touch had been placed 0.04, 0.12
+and 0.20 rows too low on the top, middle and bottom rows. The authors' own
+statistics scripts made the same division.
+
+The app never logs a press on the dummy row. Under the corrected geometry, none of
+103,240 logged touch-downs falls past that boundary, and per-size maxima sit on it
+to within about a pixel. Under the old geometry, 1.3% would have. Horizontal
+residuals are within ±0.17 key widths with no trend. After correction, touch-downs
+land 0.02–0.09 rows below key centers; the participant median is 0.06, which is
+ordinary finger offset.
+
+All frozen samples were regenerated (`human-v2`) with identical gesture selection
+and only the y coordinates changed. Earlier sections report old-geometry
+absolutes; comparisons made within one geometry remain valid.
+
+| Recorded gestures, timing on, top-1 / top-3 | Old geometry | Corrected | Corrected and retuned |
+| --- | ---: | ---: | ---: |
+| Development, 3,000 | 2,066 / 2,276 | 2,100 / 2,301 | **2,112 / 2,306** |
+| Verification, 3,000 | 2,018 / 2,242 | 2,058 / 2,265 | **2,065 / 2,277** |
+| Fresh verification in context, 4,000 | 2,757 / 2,996 | 2,805 / 3,031 | **2,818 / 3,039** |
+
+Retuning on corrected development data:
+
+- the corner penalty sigma loosened from 0.45 to 0.5;
+- the overshoot speed floor fell from 0.1 to 0.05;
+- interior passage widened from 1.25 to 1.3 pitches.
+
+Verification, evaluated once, had 25 first-choice fixes and 8 breaks. Untimed clean
+controls and synthetic guards held. The minimum-jerk clean-context control lost one
+near-tie: `story` now outranks `sport` by a small margin, and top-3 is unchanged.
+Lower alignment and higher shape sigmas would gain about 50 more recorded first
+choices but fail the rounded synthetic guard, so they were not adopted. A vertical
+touch-offset model gained only 7 of 1,644 among iOS participants and was not
+adopted either. The collection keyboard's keys are taller than Pulpo's (aspect 1.56
+against about 1.3–1.44), so its vertical noise understates iPhone noise in key units.
+
 ### Responsiveness and memory
 
 An opt-in benchmark (`PK_PERF=1`) types a 527-word chat corpus through
