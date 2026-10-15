@@ -316,6 +316,8 @@ public final class KeyboardController: NSObject {
     let start = PerfLog.begin()
     isVisible = false
     pendingEmojiPresentation = false
+    // An offer to forget a word belongs to what was on screen.
+    rootView.bar.hideNotice()
     resetDeleteGesture()
     engine.save(inBackground: true)
     recordDiagnostics()

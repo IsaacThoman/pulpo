@@ -69,10 +69,12 @@ final class EmojiSuggestionTests: XCTestCase {
       XCTAssertTrue(suggestion.label.contains(item.emoji), suggestion.label)
       if index == 0 {
         snapshot("\(installed ? "installed" : "preview")-emoji-suggestion")
+        // Holding an emoji is a slow tap: no Forget Word offer, and lifting picks it.
         suggestion.press(forDuration: 0.6)
         XCTAssertFalse(app.key("notice").exists, "Emoji must not offer Forget Word")
+      } else {
+        suggestion.tap()
       }
-      suggestion.tap()
       let field = installed ? (app.textViews["system-text"].exists ? app.textViews["system-text"] : app.textFields["system-text"]) : app.textViews["preview-text"]
       let matches = NSPredicate(format: "value == %@", item.expected)
       expectation(for: matches, evaluatedWith: field)

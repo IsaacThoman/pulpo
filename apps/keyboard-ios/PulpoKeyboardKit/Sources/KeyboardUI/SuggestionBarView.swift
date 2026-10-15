@@ -20,7 +20,6 @@ final class SuggestionBarView: UIView {
   /// Puts back the words a delete swipe removed, until the next edit.
   private let undo = UIButton(type: .system)
   private(set) var suggestions: [Suggestion] = []
-  private var pendingForget: Suggestion?
 
   init(style: KeyboardStyle) {
     self.style = style
@@ -126,7 +125,8 @@ final class SuggestionBarView: UIView {
   }
 
   private func hideSuggestionSlots() {
-    pendingForget = nil
+    // A delete swipe's preview and Undo need the bar; an open offer would cover them.
+    hideNotice()
     slots.forEach { $0.isHidden = true }
     dividers.forEach { $0.isHidden = true }
     settings.isHidden = true
@@ -139,7 +139,6 @@ final class SuggestionBarView: UIView {
     accessory = .suggestions
     deletionLabel.isHidden = true
     undo.isHidden = true
-    pendingForget = nil
     let showSlots = !suggestions.isEmpty
     for (index, slot) in slots.enumerated() {
       let suggestion = suggestions.indices.contains(index) ? suggestions[index] : nil
@@ -209,15 +208,26 @@ final class SuggestionBarView: UIView {
     onSelect?(suggestion)
   }
 
+  /// Only learned and dictionary words can be forgotten. Holding anything else
+  /// is a slow tap: a recognized hold would cancel the touch and drop it.
+  static func canForget(_ suggestion: Suggestion?) -> Bool {
+    guard let suggestion else { return false }
+    return suggestion.kind != .literal && suggestion.kind != .emoji
+  }
+
   @objc private func slotHeld(_ recognizer: UILongPressGestureRecognizer) {
     guard recognizer.state == .began, let slot = recognizer.view as? SlotControl, let suggestion = slot.suggestion,
-          suggestion.kind != .literal, suggestion.kind != .emoji else { return }
+          Self.canForget(suggestion) else { return }
     KeyboardFeedback.current?.emphasis()
-    pendingForget = suggestion
+    offerToForget(suggestion)
+  }
+
+  /// Asks before forgetting a word. The offer names its word, so it stays good
+  /// while the bar refreshes underneath it, as it does on every host callback.
+  func offerToForget(_ suggestion: Suggestion) {
     showNotice("Stop suggesting \u{201C}\(suggestion.text)\u{201D}?", action: "Remove") { [weak self] in
-      guard let self, let pending = self.pendingForget else { return }
-      self.onForget?(pending)
-      self.hideNotice()
+      self?.onForget?(suggestion)
+      self?.hideNotice()
     }
   }
 
@@ -302,6 +312,13 @@ final class SlotControl: UIControl {
 
   override var isHighlighted: Bool {
     didSet { highlight.opacity = isHighlighted ? 1 : 0 }
+  }
+
+  /// A recognized hold cancels the touch. Where holding has nothing to offer,
+  /// it must not begin, so a slow tap still lands on lift.
+  override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+    if gestureRecognizer is UILongPressGestureRecognizer { return SuggestionBarView.canForget(suggestion) }
+    return super.gestureRecognizerShouldBegin(gestureRecognizer)
   }
 }
 
