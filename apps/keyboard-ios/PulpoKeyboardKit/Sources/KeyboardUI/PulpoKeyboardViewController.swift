@@ -7,12 +7,39 @@ final class KeyboardInputView: UIInputView, UIInputViewAudioFeedback {
   var enableInputClicksWhenVisible: Bool { true }
 }
 
+/// UIKit keeps each dismissed keyboard's input view alive after its controller is
+/// released (in the simulator, one view hierarchy, about 0.5 MB, per presentation).
+/// Detaching the keyboard's own views when the controller goes away frees them.
+nonisolated private final class ViewDetacher {
+  weak var view: UIView?
+
+  deinit {
+    guard let view else { return }
+    let release = ViewRelease(view)
+    // UIKit releases a controller while presenting the next keyboard. Tearing down
+    // the old views then would delay the new one, so wait until it is on screen.
+    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { MainActor.assumeIsolated { release.perform() } }
+  }
+}
+
+nonisolated private final class ViewRelease: @unchecked Sendable {
+  private var view: UIView?
+
+  init(_ view: UIView) { self.view = view }
+
+  @MainActor func perform() {
+    view?.removeFromSuperview()
+    view = nil
+  }
+}
+
 /// The keyboard extension's principal class. The extension target subclasses it so
 /// `NSExtensionPrincipalClass` resolves inside the extension module.
 open class PulpoKeyboardViewController: UIInputViewController, KeyboardHost {
   private var controller: KeyboardController?
   private var proxyDocument: ProxyDocument?
   private var heightConstraint: NSLayoutConstraint?
+  private let detacher = ViewDetacher()
 
   open override func loadView() {
     let input = KeyboardInputView(frame: .zero, inputViewStyle: .keyboard)
@@ -31,6 +58,7 @@ open class PulpoKeyboardViewController: UIInputViewController, KeyboardHost {
     root.paintsBackground = true
     root.translatesAutoresizingMaskIntoConstraints = false
     view.addSubview(root)
+    detacher.view = root
     let height = view.heightAnchor.constraint(equalToConstant: controller.preferredHeight)
     height.priority = UILayoutPriority(999)
     NSLayoutConstraint.activate([
