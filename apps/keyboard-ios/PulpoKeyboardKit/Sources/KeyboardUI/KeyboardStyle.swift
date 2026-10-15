@@ -10,17 +10,21 @@ struct KeyboardStyle: Equatable {
   /// Inside the system's iOS 26+ keyboard container, which already pads the top
   /// and bottom, so the keys land where the system keyboard's do.
   let inset: Bool
+  /// The Bold Text accessibility setting, which the system keyboard also follows.
+  let bold: Bool
 
-  init(modern: Bool, dark: Bool, landscape: Bool, inset: Bool = false) {
+  init(modern: Bool, dark: Bool, landscape: Bool, inset: Bool = false, bold: Bool = false) {
     self.modern = modern
     self.dark = dark
     self.landscape = landscape
     self.inset = inset && modern
+    self.bold = bold
   }
 
   static func current(dark: Bool, landscape: Bool, inset: Bool = false) -> KeyboardStyle {
-    if #available(iOS 26, *) { return KeyboardStyle(modern: true, dark: dark, landscape: landscape, inset: inset) }
-    return KeyboardStyle(modern: false, dark: dark, landscape: landscape)
+    let bold = UIAccessibility.isBoldTextEnabled
+    if #available(iOS 26, *) { return KeyboardStyle(modern: true, dark: dark, landscape: landscape, inset: inset, bold: bold) }
+    return KeyboardStyle(modern: false, dark: dark, landscape: landscape, bold: bold)
   }
 
   // MARK: Metrics
@@ -89,14 +93,16 @@ struct KeyboardStyle: Equatable {
 
   // MARK: Type
 
-  var lowercaseLetterFont: UIFont { .systemFont(ofSize: landscape ? 21 : 23, weight: .regular) }
-  var uppercaseLetterFont: UIFont { .systemFont(ofSize: landscape ? 19.5 : 21.5, weight: .regular) }
-  var symbolFont: UIFont { .systemFont(ofSize: landscape ? 20 : 22, weight: .regular) }
-  var functionFont: UIFont { .systemFont(ofSize: modern ? 18 : 16, weight: .regular) }
-  var popupFont: UIFont { .systemFont(ofSize: 34, weight: .regular) }
-  var hintFont: UIFont { .systemFont(ofSize: 10, weight: .medium) }
-  var suggestionFont: UIFont { .systemFont(ofSize: 17, weight: .regular) }
-  var suggestionEmphasisFont: UIFont { .systemFont(ofSize: 17, weight: .semibold) }
-  var symbolConfiguration: UIImage.SymbolConfiguration { UIImage.SymbolConfiguration(pointSize: modern ? 19 : 18, weight: .regular) }
+  private var textWeight: UIFont.Weight { bold ? .semibold : .regular }
+
+  var lowercaseLetterFont: UIFont { .systemFont(ofSize: landscape ? 21 : 23, weight: textWeight) }
+  var uppercaseLetterFont: UIFont { .systemFont(ofSize: landscape ? 19.5 : 21.5, weight: textWeight) }
+  var symbolFont: UIFont { .systemFont(ofSize: landscape ? 20 : 22, weight: textWeight) }
+  var functionFont: UIFont { .systemFont(ofSize: modern ? 18 : 16, weight: textWeight) }
+  var popupFont: UIFont { .systemFont(ofSize: 34, weight: textWeight) }
+  var hintFont: UIFont { .systemFont(ofSize: 10, weight: bold ? .bold : .medium) }
+  var suggestionFont: UIFont { .systemFont(ofSize: 17, weight: textWeight) }
+  var suggestionEmphasisFont: UIFont { .systemFont(ofSize: 17, weight: bold ? .bold : .semibold) }
+  var symbolConfiguration: UIImage.SymbolConfiguration { UIImage.SymbolConfiguration(pointSize: modern ? 19 : 18, weight: bold ? .semibold : .regular) }
 }
 #endif

@@ -655,9 +655,25 @@ final class KeysView: UIView {
     }
   }
 
-  /// VoiceOver can't hold a key, so the emoji key offers the layouts as actions.
+  /// VoiceOver can't hold a key, so the emoji key offers the layouts as actions and
+  /// keys with a long-press strip (accents, digits, punctuation) offer its options.
   func accessibilityActions(for view: KeyView) -> [UIAccessibilityCustomAction]? {
-    guard view.key.action == .emoji, let current = delegate?.keysViewOneHandedMode else { return nil }
+    if view.key.action != .emoji {
+      let key = view.key
+      var options = key.alternates
+      if case .character(let base) = key.action { options.removeAll { $0 == base } }
+      guard !options.isEmpty else { return nil }
+      let upper = shift.isActive
+      return options.map { option in
+        let text = upper && option.first?.isLetter == true ? option.uppercased() : option
+        return UIAccessibilityCustomAction(name: text) { [weak self] _ in
+          guard let self else { return false }
+          self.delegate?.keysView(self, insertAlternate: text, for: key)
+          return true
+        }
+      }
+    }
+    guard let current = delegate?.keysViewOneHandedMode else { return nil }
     return Self.menuOptions.filter { $0.mode != current }.map { option in
       UIAccessibilityCustomAction(name: option.name) { [weak self] _ in
         guard let self else { return false }
