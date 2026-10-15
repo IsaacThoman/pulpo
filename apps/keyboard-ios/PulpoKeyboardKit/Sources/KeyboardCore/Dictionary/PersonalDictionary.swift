@@ -100,6 +100,8 @@ public final class PersonalDictionary {
     } else {
       words[word] = Word(count: 1, lastUsed: now, pinned: pinned)
       byKey[learnedKey, default: []].append(word)
+      // Once-used words are offered as completions before they become known.
+      usedCache = nil
     }
     // Repeating a known word, the usual case, leaves the fuzzy-match index valid.
     if isKnown(word) != wasKnown { knownCache = nil }
