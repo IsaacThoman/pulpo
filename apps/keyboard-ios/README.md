@@ -120,6 +120,15 @@ once off the typing thread, using only glyphs supported by the current OS.
 Private, email, URL, numeric and identifier contexts suppress these suggestions.
 Choices from earlier edits or fields cannot replace newer text while the bar
 refreshes. Keyword sources and licenses are in [LanguageData/README.md](LanguageData/README.md).
+Search Emoji in the picker opens a search row above the letter keys. The query stays
+in the keyboard until a result is tapped, multi-word queries narrow in any order,
+and recent then popular emoji break ties.
+
+**One-handed keyboard.** Touch and hold the emoji key, slide to a layout docked left or
+right and lift. Docked keys keep about 82% of the width, at least 332 points; side controls
+expand the keyboard or move it to the other edge. The choice is remembered and is also
+in the app's settings. Landscape always uses the full width. Key geometry, swipe decoding
+and tap correction all come from the narrowed grid.
 
 **Dictation.** iOS doesn't let keyboard extensions use the microphone, so the mic key
 opens the app, which records, uploads the audio to Pulpo's

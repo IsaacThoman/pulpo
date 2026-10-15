@@ -299,6 +299,40 @@ character deleted. One-handed mode, emoji search in the picker and smart dashes
 remain unimplemented; `--` stays literal because command-line flags are common in
 this app's chats.
 
+### Emoji search and one-handed layouts
+
+These were the two largest remaining parity gaps. A 41-item acceptance checklist
+was frozen before the UI code was read (SHA-256
+`5c54f826cc175f7766619ec1aa6f1d6c2a582981f84d1cc374ea22d149b822de`).
+
+- **Emoji search.** The picker's Search Emoji field opens a Gboard-style search
+  row (back, query and a scrolling result strip) above QWERTY keys. The query is
+  the keyboard's own buffer, so nothing reaches the document until a result is
+  tapped. Matching reuses the CLDR name and keyword index from the first letter.
+  Multi-word queries narrow in any order, recent then popular emoji break ties,
+  skin tones and recents are shared with the picker, and the height is unchanged
+  in portrait and compact landscape.
+- **One-handed layouts.** Holding the emoji key offers docked left, full width or
+  docked right. Docked layouts keep about 82% of the width, at least 332 points,
+  so letters stay 26 points wide. Expand and switch-side controls fill the
+  remaining strip. The choice persists in the App Group and in Settings, and
+  VoiceOver reaches it through emoji-key actions. Key frames, pitch and
+  normalization all come from the narrowed grid, so taps and swipes use matching
+  geometry.
+
+Forty items pass. The exception is a globe-key menu, which iOS does not allow
+third-party keyboards to extend. Twenty-three core tests and 25 UI tests were
+added, including docked swipes and boundary taps on both sides in the preview and
+the installed keyboard. An existing 84-test regression set passes on an iPhone 17
+Pro Max simulator. The human swipe benchmark is unchanged. Risks:
+
+- Docked keys are narrower in points while the swipe and tap thresholds are in
+  key pitches, and no real docked recordings exist.
+- Search results come from capped per-term lists, so a common word combined with
+  a rare one can miss matches.
+- Long-pressing a search result offers no skin-tone popup, because it would be
+  clipped above the keyboard.
+
 ## Further iteration: emoji suggestions and stale choices
 
 The suggestion bar now offers one explicitly chosen emoji alongside word choices.
