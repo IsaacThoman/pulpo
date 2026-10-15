@@ -211,6 +211,23 @@ final class EmojiPanelTests: XCTestCase {
     return try XCTUnwrap(image.cgImage?.dataProvider?.data as Data?)
   }
 
+  /// iOS 27 draws a soft scroll-edge blur over a horizontal strip as short as the
+  /// search results, blurring every result. No bar ever overlaps the keyboard's
+  /// scroll views, so all four edges stay clear.
+  func testKeyboardScrollViewsHideEdgeBlur() throws {
+    guard #available(iOS 26, *) else { throw XCTSkip("Scroll edge effects arrived in iOS 26") }
+    let style = KeyboardStyle(modern: true, dark: false, landscape: false, inset: true)
+    let panel = try makePanel(style: style, width: 393)
+    let search = EmojiSearchBarView(style: style)
+    let views = panel.subviews.compactMap { $0 as? UIScrollView } + search.subviews.compactMap { $0 as? UIScrollView }
+    XCTAssertEqual(views.count, 2)
+    for view in views {
+      for effect in [view.topEdgeEffect, view.bottomEdgeEffect, view.leftEdgeEffect, view.rightEdgeEffect] {
+        XCTAssertTrue(effect.isHidden, "\(type(of: view)) draws an edge blur")
+      }
+    }
+  }
+
   private func makePanel(style: KeyboardStyle, width: CGFloat) throws -> EmojiPanelView {
     let values = ["😀", "😃", "😄", "😁", "😆", "😅", "😂", "🙂", "🙃", "😉", "😊", "😇", "🥰", "😍", "🤩", "😘", "😗", "☺️", "😚", "😙"]
     let names = [("smileys", "Smileys"), ("animals", "Animals"), ("food", "Food"), ("activity", "Activity"), ("travel", "Travel"), ("objects", "Objects"), ("symbols", "Symbols"), ("flags", "Flags")]

@@ -63,12 +63,9 @@ final class EmojiPanelView: UIView, UICollectionViewDataSource, UICollectionView
     addSubview(searchField)
     collection.backgroundColor = .clear
     // The header and toolbar already sit outside the grid. Host safe areas and
-    // vertical scroll-edge masks must not shift or obscure its first row.
+    // scroll-edge effects must not shift or obscure its first row or columns.
     collection.contentInsetAdjustmentBehavior = .never
-    if #available(iOS 26, *) {
-      collection.topEdgeEffect.isHidden = true
-      collection.bottomEdgeEffect.isHidden = true
-    }
+    collection.hideScrollEdgeEffects()
     collection.showsHorizontalScrollIndicator = false
     collection.dataSource = self
     collection.delegate = self

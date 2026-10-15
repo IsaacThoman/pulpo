@@ -34,10 +34,9 @@ final class EmojiSearchBarView: UIView, UIScrollViewDelegate {
     strip.alwaysBounceHorizontal = true
     strip.delaysContentTouches = false
     strip.contentInsetAdjustmentBehavior = .never
-    if #available(iOS 26, *) {
-      strip.leftEdgeEffect.isHidden = true
-      strip.rightEdgeEffect.isHidden = true
-    }
+    // iOS 27 draws the top edge effect over a horizontal strip this short,
+    // blurring every result.
+    strip.hideScrollEdgeEffects()
     strip.accessibilityIdentifier = "emoji-search-results"
     strip.delegate = self
     addSubview(strip)
@@ -141,6 +140,19 @@ final class EmojiSearchBarView: UIView, UIScrollViewDelegate {
     KeyboardFeedback.current?.key()
     UIDevice.current.playInputClick()
     onSelect?(sender.result)
+  }
+}
+
+extension UIScrollView {
+  /// No bar ever overlaps the keyboard's scroll views, so the system's soft
+  /// edge blur would only obscure content.
+  func hideScrollEdgeEffects() {
+    if #available(iOS 26, *) {
+      topEdgeEffect.isHidden = true
+      bottomEdgeEffect.isHidden = true
+      leftEdgeEffect.isHidden = true
+      rightEdgeEffect.isHidden = true
+    }
   }
 }
 
