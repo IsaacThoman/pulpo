@@ -219,7 +219,9 @@ final class ControllerHarness {
   var engine: KeyboardEngine { controller.engine }
   var bar: SuggestionBarView { controller.rootView.bar }
 
-  init(text: String = "", optimistic: Bool = false, emptyAsNil: Bool = false) {
+  /// - Parameter waitsForEmoji: Wait for the emoji index, which can take minutes
+  ///   on a loaded simulator. Scenarios that never show an emoji can skip it.
+  init(text: String = "", optimistic: Bool = false, emptyAsNil: Bool = false, waitsForEmoji: Bool = true) {
     KeyboardResources.directory = Self.languageData
     Self.forgetLearnedWords()
     proxy = SimulatedProxy(text: text)
@@ -230,7 +232,7 @@ final class ControllerHarness {
     viewController.view.frame = CGRect(x: 0, y: 0, width: 402, height: controller.preferredHeight)
     engine.clock = { [unowned self] in self.now }
     appear()
-    _ = pump(until: { self.engine.emojiSuggester != nil }, timeout: 120)
+    if waitsForEmoji { _ = pump(until: { self.engine.emojiSuggester != nil }, timeout: 120) }
     pump()
   }
 
