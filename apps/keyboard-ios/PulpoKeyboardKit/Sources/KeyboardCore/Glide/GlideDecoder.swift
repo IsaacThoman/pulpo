@@ -24,9 +24,9 @@ public final class GlideDecoder {
   public var shapeSigma = 0.32
   public var shapeWeight = 10.0
   public var languageWeight = 0.9
-  public var passageRadius = 1.25
+  public var passageRadius = 1.3
   /// Sharp turns in the swipe should sit on a letter of the word.
-  public var cornerSigma = 0.45
+  public var cornerSigma = 0.5
   public var cornerAngle = 0.9
   public var maximumCandidates = 6_000
   /// Early finger lifts can leave the intended key outside the nearest four.
@@ -70,7 +70,7 @@ public final class GlideDecoder {
   /// scales with lift-off speed (the last `liftWindow` seconds, relative to the
   /// gesture's average): none below the floor, all of it from the ceiling.
   /// Without usable times there is no credit, as before.
-  public var overshootSpeedFloor = 0.1
+  public var overshootSpeedFloor = 0.05
   public var overshootSpeedCeiling = 0.5
   public var liftWindow = 0.05
   /// With a known previous word, the language model's likeliest continuations are
