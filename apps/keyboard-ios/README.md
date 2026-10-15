@@ -37,7 +37,10 @@ The app icon references the shared `apps/mobile/assets/PulpoKeyboard.icon`
 Icon Composer asset. Build with Xcode 26 or later and XcodeGen 2.45.1 or later;
 Xcode also generates raster icon variants for iOS 18 from this asset.
 
-To use the keyboard on a simulator or device, run the app, then in Settings go to
+The app opens a setup guide on first launch. It checks each step live, explains Full
+Access and privacy, and confirms setup when you switch to Pulpo Keyboard in its field.
+Reopen it from Setup on the home screen. To set the keyboard up manually on a simulator
+or device, run the app, then in Settings go to
 General › Keyboard › Keyboards › Add New Keyboard, pick Pulpo Keyboard, open it and
 turn on Allow Full Access. The app's Try It screen also has an in-app preview that runs
 the same keyboard inside the app without enabling it.

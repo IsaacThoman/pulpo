@@ -373,6 +373,38 @@ The remaining risk: a host undo whose proxy update lands before its callback cou
 now be tapped through, and for hosts that report edits back, an undo within four
 seconds reads as lag.
 
+### Companion app onboarding and accessibility
+
+A frozen 49-item checklist (SHA-256
+`40c4f4cb9f92f496f7a23943266de8e12d3ad6a510837a466792b3c66d4bf313`) covered
+onboarding, settings, Try It, accessibility and error states. The app scored 18
+pass, 22 partial and 9 fail before the changes, and 47 pass and 2 partial after.
+
+- **Setup guide.** First launch opens a three-step guide: add the keyboard, allow
+  Full Access, switch to it. Status is spelled out (Done, To do, Not confirmed
+  yet, Off) and updates when the app returns from Settings. Switching keyboards
+  in the guide's own field confirms Full Access. The installed keyboard signals
+  the app on every appearance, so the guide can say Off rather than trusting an
+  old record. A bug that let the in-app preview mark Full Access as done was fixed.
+- **Privacy page.** It explains that the keyboard never connects to the internet
+  and that only dictation recordings are sent, from the app.
+- **Tips and settings.** Eleven tips cover the gestures Gboard users expect.
+  Settings are grouped, each switch has a description, and there is a confirmed
+  reset.
+- **Errors.** Network failures name their cause. A signed-out dictation offers
+  Sign In, and a denied microphone offers Open Settings.
+- **Accessibility.** Layouts stack at the largest text sizes, the pulsing
+  microphone respects Reduce Motion, the keyboard follows Bold Text, and keys with
+  long-press options offer them as VoiceOver actions.
+
+`SetupGuideTests` drives the real Settings app from a removed keyboard with Full
+Access off through to confirmed setup. Keyboard-enabled detection reads the
+system's list of enabled keyboards, which is long-standing but undocumented. The
+signal from the keyboard without Full Access has only been verified in the
+simulator; if a device blocks it, the guide shows "Not confirmed yet" rather than
+Off. The iOS 26.5 simulator opens Settings on its main page, so the steps also name
+the path to the app's keyboard settings.
+
 ### Everyday interaction parity
 
 A frozen 56-item checklist compared daily interactions with the Apple keyboard
