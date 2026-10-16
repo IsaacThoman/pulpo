@@ -1,0 +1,19 @@
+R31 supplemental independent blind final seal
+Final seal UTC: 2026-10-16T07:24:28.827303+00:00
+Payload: /tmp/pulpo-r31-sealed-v1.json
+Original author-sealed payload SHA256: a7067871f9f61e2b8d4d6378c259e8fbd7c9e1ac5fcbaa4db5a50c5b4ac891de
+Unchanged-byte final payload SHA256: a7067871f9f61e2b8d4d6378c259e8fbd7c9e1ac5fcbaa4db5a50c5b4ac891de
+Counts: 46 rows; 8 useful semantic families; 3 actions.
+Initial seal timing deviation: the original author seal preceded runner dynamic capability smoke validation. This supplement records successful dynamic capability validation followed by static validation and an unchanged-byte final seal before reveal. It does not retroactively claim that dynamic validation preceded the original seal.
+Opaque dynamic validation: PASS (exit 0). Command: cd /tmp/pulpo-r31-6eb3ff2a && python3 apps/keyboard-ios/audits/multilingual-emoji-r31/smoke-runner.py .
+Dynamic coverage, per the supplied smoke contract: all three actions; all supported action/parameter surfaces (search query; wrapper query, recents, limit; fixture query, entries, spanishAliases); two arbitrary distinct n/ñ pairs including NFD. Smoke code was not read. Smoke output was captured opaquely without displaying or inspecting its contents; stderr length was zero.
+Opaque static validation: PASS (exit 0). Command: cd /tmp/pulpo-r31-6eb3ff2a && python3 apps/keyboard-ios/audits/multilingual-emoji-r31/validate.py /tmp/pulpo-r31-sealed-v1.json /tmp/pulpo-r31-exclusions.json
+Static coverage: permitted schema/fields, action coverage, wrapper recents/limit coverage, English/Spanish/mixed useful strata, minimum independent useful families, fresh discriminating n/ñ fixture including NFD, and validator exclusion checks. Validator reported payloadNotDisplayed=true.
+Access boundary: only the four permitted packet files were read directly as text. Payload bytes were hashed; payload schema was checked only through the authorized opaque validator. Exclusions were consumed only by that validator, not inspected directly. No smoke source, application source, R27, development examples, hidden results, or original metadata was read. No hidden payload was executed or queried against any implementation. No device, network, or Git operations were performed.
+Mutation boundary: no payload bytes, expectations, queries, targets, or original metadata were changed. This supplemental metadata file is the only file written directly by this validation work.
+Limitations: the nonempty acceptable-set schema cannot express an empty-output limit expectation; this preexisting ambiguity is documented without edits. Passing capability/schema validation does not establish heldout semantic correctness or full product/cost-gate acceptance. Dynamic smoke implementation and individual results were deliberately not inspected; capability coverage relies on its supplied contract and successful exit.
+Packet SHA256 values (verified before validation and again at final seal):
+author-contract.md: 7297f5e32870a7d2323d6e5a31482a42d31c35fd440dac285eb612d44df273dd
+schema.json: c5013e0c7b19c60f33f6d8f6d87d8619b0fe6f716700106f774d39ba78ef6aef
+api-map.md: e14c4029d6b667aea38cae1c625f35eb8f1cac1a4a4bb44d646683459a6148cc
+validate.py: 86a6bbacced2b59452103a349f0788b07eeccbf4feac2bbbd706f556b1cd073e

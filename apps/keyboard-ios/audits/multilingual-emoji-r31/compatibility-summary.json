@@ -1,0 +1,11 @@
+{
+  "queries": 7374,
+  "changedSearchRows": 784,
+  "lostAlternativesQueries": [],
+  "changedEnglishRelativeOrder": [],
+  "changedContextualRows": [],
+  "changedSingleASCII": [],
+  "inputsSHA256": "1d70b37a60f8a18d17a34beb8cd18f28d24978a520788332cf8f757bdfe4219c",
+  "allChangedRawRows": "/tmp/pulpo-r31-compatibility-changes.json",
+  "finalSourceRecheck": true
+}

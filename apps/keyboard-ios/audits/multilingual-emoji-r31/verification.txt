@@ -1,0 +1,84 @@
+Parent 6eb3ff2ae2d831fba2e8b292b8978ffdcf3ff995, original isolated checkout clean.
+Independent implementation checkout /tmp/pulpo-r31-6eb3ff2a; no parent edits.
+No push, merge, deployment or physical-device operation.
+
+Focused initial: swift test -c release --no-parallel --filter Emoji => exit0,
+60 tests/6 suites. Initial resource-generation command used the wrong cwd and
+failed ModuleNotFoundError; resource then generated correctly from repo root.
+
+Final product after normalized short-prefix guard:
+swift test -c release --no-parallel => exit0,
+444 core tests/65 suites with unchanged existing5knownissues;3service tests pass.
+Exact normal core-test delta:5 meaningful new tests. No thresholds or issue
+allowances changed. Raw full test output stays /tmp/pulpo-r31-final-full.txt.
+Python annotation tests =>4pass. Pinned Spanish XML SHA256 matches documented
+CLDR48 inputs; independently regenerated object equals resource; existing English
+fields unchanged after dropping s. Resource SHA256
+ d201157dd725d8e8af6ef91ed56aee867bf52dc0d3cb314e649a8614b3876edd
+242085->286829 bytes, +44744 (1914 speech names, not Spanish keyword sets).
+
+7374 exposed/default-limit search and contextual query comparisons:
+English names, keywords, tokens, prefixes, all original R27 input/reference rows,
+source-review inputs, parent16 diagnostics, R31development.784 changed search
+rows,0 lost baselinealternatives,0 changed baseline relativeorder,0 changed
+contextualarrays,0 changed singleASCII lists. Full raw arrays stay outsideGit.
+No claim that all added alternatives are semantically useful follows from this.
+
+Four preliminary paired cost batches passed numeric thresholds but were not
+quiet-host admission evidence. First batch overlapped compilation near its end;
+second showed swift-frontend before measurement; third showed xcodebuild before;
+fourth detected xcodebuild before/during/after. First two predate the normalized
+short-prefix refinement. All summaries retained, never select a favorable sample.
+Public binary/runner frozen before independent quiet-host confirmation.
+Memory method is OSresident/peak, not allocation-profiler attribution. Artificial
+16-index stress is separated from singleton production peak; decodedcatalogshared.
+
+Runner actions search/wrapper/fixture smoke pass; arbitrary caña/cana AND
+monteña/montena fixtures withNFD bothwork, not a fixed-word harness. Blind author
+initially sealed before dynamic smoke; unchanged bytes were independently
+final-sealed after smoke/staticvalidation. That sequence deviation is retained.
+No source/dev/results reached originalauthor except normativepacket and opaque
+validator; implementer has not read sealed payload at this checkpoint.
+
+Other failed development commands (not product failures): two root-relative
+file edits/copies executed with keyboard-ios cwd failed FileNotFoundError/cp;
+repeated from root successfully. Several exploratory rg/sed guesses named paths
+that do not exist (Sources, build-emoji.py, PreviewViewController, PreviewDocument,
+InputTraits, Settings/KeyboardSettings, Layout/Key); actual files then located.
+A ps+rg probe with no matching build process returned1 as an empty search.
+
+Device tools attempted once each before fallback, both error:
+Device list failed: The device command failed (exit code 127).
+Tool still reports iOS/Android available; no platform-unavailable claim.
+Only permitted UUID1EDC5D9A-7E25-432A-B5B1-9A8B702306A7 queried:
+content_size=large;ConnectHardwareKeyboard global preference=false. Neither
+changed. Planned native source is inactive .swift.txt, not normal opt-in tests;
+no native build, input, render or timing evidence exists at this checkpoint.
+No protected/other UUID driven; unrelated repository untouched. No Gboard/KSR.
+
+Final adjudication: independentREJECT before reveal; no blind execution or tuning.
+New default48/limit1 localized membership violation, plus unavailable quiet-host
+cost gate. Product restored byte-for-byte to6eb3ff2a. Original R27 unchanged.
+
+Native work already in flight: both Debug build-for-testing invocations exit0;
+no build logs read. Candidate interaction test-without-building exit0:2/2 pass,
+no failures/skips. XCresult structured summary archived, not rawlogs. Hosted real
+UITextView selection/private18cases +9 realXCUIsearch/pick flows,3configuredmodes.
+Executed selection source differs from pre-run plan only to select combining/ZWJ
+Unicode itself. No hidden payload read, expectations altered, or native speedclaim.
+Native costcomparison remains UNRUN due core rejection. Temporary normal test
+files removed; generated ignored projects regenerated without dangling references.
+Baseline simulator app reinstalled ONLYassigned17, embeddedresourcehashbaseline.
+content_size stilllarge, hardwarekeyboardfalse; originalstatesnevermutated.
+
+Other harmless failed commands during closure: simctl terminate returned code3,
+'found nothing to terminate' (test app alreadyclosed); subsequent baseline install
+succeeded and resource hash verified. git status with another-worktree absolute
+path failed outside-repository; rerun inside baseline checkout confirmedclean.
+Restored Python suite:3/3pass. Full release restoration run recorded below.
+
+Restored documented release command exit0:
+✔ Test run with 3 tests in 1 suite passed after 0.001 seconds.
+━ Test run with 439 tests in 64 suites passed after 10.443 seconds with 5 known issues.
+Final net tracked production diff outside R31audit directory:EMPTY.
+Parent checkout remainedclean; baseline native helpercheckout clean aftercleanup.

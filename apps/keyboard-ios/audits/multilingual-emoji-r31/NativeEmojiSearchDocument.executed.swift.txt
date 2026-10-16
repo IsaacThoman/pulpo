@@ -1,0 +1,73 @@
+import KeyboardCore
+import UIKit
+import XCTest
+@testable import KeyboardUI
+@testable import PulpoKeyboard
+
+/// The real preview host owns UTF-16 selection and suffix; search keys must
+/// preserve both until a visible result control is explicitly activated.
+@MainActor
+final class EmojiSearchDocumentTests: XCTestCase {
+  private func descendants(_ view: UIView) -> [UIView] {
+    [view] + view.subviews.flatMap(descendants)
+  }
+
+  private func pump() { RunLoop.main.run(until: Date().addingTimeInterval(0.02)) }
+
+  func testMultilingualSearchPreservesSelectedUnicodeAndSuffixInAllConfiguredLanguages() throws {
+    let originalSettings = SettingsStore().load()
+    defer { SettingsStore().save(originalSettings) }
+    let window = UIWindow(windowScene: try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first))
+    window.rootViewController = UIViewController()
+    window.makeKeyAndVisible()
+    defer { window.isHidden = true; window.rootViewController = nil }
+    let text = UITextView(frame: CGRect(x: 0, y: 80, width: window.bounds.width, height: 160))
+    window.rootViewController!.view.addSubview(text)
+    let host = PreviewHost(textView: text) { _ in }
+    let controller = KeyboardController(host: host, dictationBridge: nil)
+    controller.rootView.frame = CGRect(x: 0, y: 280, width: window.bounds.width, height: controller.preferredHeight)
+    window.rootViewController!.view.addSubview(controller.rootView)
+    controller.hostWillAppear()
+    defer { controller.hostDidDisappear(); host.invalidate() }
+    let deadline = Date().addingTimeInterval(60)
+    while controller.engine.emojiSuggester == nil && Date() < deadline { pump() }
+    XCTAssertNotNil(controller.engine.emojiSuggester)
+
+    for language in KeyboardLanguage.allCases {
+      controller.rootView.bar.onLanguage?(language)
+      XCTAssertEqual(controller.engine.settings.language, language)
+      // These are real UITextView traits, not query-content labels.
+      for kind in 0..<6 {
+        text.isSecureTextEntry = kind == 1
+        text.textContentType = [nil, .password, .username, .oneTimeCode, .emailAddress, .URL][kind]
+        text.keyboardType = kind == 4 ? .emailAddress : (kind == 5 ? .URL : .default)
+        let original = "Izq 👩🏽‍💻 cafe\u{301} 👩‍💻 👨‍👩‍👧‍👦 fin"
+        text.text = original
+        let range = (original as NSString).range(of: "cafe\u{301} 👩‍💻")
+        text.selectedRange = range
+        controller.documentDidChange()
+        controller.keysView(controller.rootView.keys, activate: Key(action: .emoji, label: "emoji"), at: .zero)
+        controller.rootView.layoutIfNeeded()
+        controller.emojiPanelSearch(try XCTUnwrap(controller.rootView.emoji))
+        for letter in "red corazon" {
+          let action: KeyAction = letter == " " ? .space : .character(String(letter))
+          let key = try XCTUnwrap(controller.rootView.keys.keyViews.first { $0.key.action == action })
+          XCTAssertTrue(key.accessibilityActivate())
+          controller.rootView.layoutIfNeeded()
+        }
+        XCTAssertEqual(controller.rootView.search.query, "red corazon")
+        XCTAssertEqual(text.text, original)
+        XCTAssertEqual(text.selectedRange, range)
+        let result = try XCTUnwrap(descendants(controller.rootView.search).compactMap { $0 as? EmojiResultControl }.first { $0.result.value == "❤️" })
+        XCTAssertFalse(result.isHidden)
+        XCTAssertGreaterThan(result.bounds.width, 0)
+        XCTAssertNotNil(result.imageView.image, "Native glyph must be rendered, not merely present in alias data")
+        result.sendActions(for: .touchUpInside)
+        XCTAssertEqual(text.text, original.replacingOccurrences(of: "cafe\u{301} 👩‍💻", with: "❤️"))
+        XCTAssertEqual((text.text as NSString).substring(from: text.selectedRange.location), " 👨‍👩‍👧‍👦 fin")
+        controller.rootView.search.onBack?()
+        controller.keysView(controller.rootView.keys, activate: Key(action: .page(.letters), label: "ABC"), at: .zero)
+      }
+    }
+  }
+}

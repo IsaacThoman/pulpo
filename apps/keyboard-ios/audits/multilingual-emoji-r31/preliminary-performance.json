@@ -1,0 +1,275 @@
+[
+  {
+    "batch": 1,
+    "summary": {
+      "baseline": {
+        "buildMs": {
+          "min": 24.804708,
+          "median": 25.523146,
+          "p95": 26.843709,
+          "max": 27.298167
+        },
+        "queryP95Ms": {
+          "min": 0.138875,
+          "median": 0.141542,
+          "p95": 0.144375,
+          "max": 0.144709
+        },
+        "queryMaxMs": {
+          "min": 0.862084,
+          "median": 0.9167915,
+          "p95": 0.974958,
+          "max": 1.002708
+        },
+        "perExtraIndexRSS": {
+          "min": 1197124.2666666666,
+          "median": 1197670.4,
+          "p95": 1204770.1333333333,
+          "max": 1206954.6666666667
+        },
+        "peakRSS": {
+          "min": 12599296,
+          "median": 12599296.0,
+          "p95": 12632064,
+          "max": 12681216
+        },
+        "stress16PeakRSS": {
+          "min": 30556160,
+          "median": 30564352.0,
+          "p95": 30687232,
+          "max": 30703616
+        }
+      },
+      "candidate": {
+        "buildMs": {
+          "min": 32.5615,
+          "median": 33.2286665,
+          "p95": 35.047125,
+          "max": 35.141334
+        },
+        "queryP95Ms": {
+          "min": 0.25125,
+          "median": 0.264146,
+          "p95": 0.267792,
+          "max": 0.320583
+        },
+        "queryMaxMs": {
+          "min": 1.055167,
+          "median": 1.125792,
+          "p95": 1.330709,
+          "max": 1.444166
+        },
+        "perExtraIndexRSS": {
+          "min": 2009770.6666666667,
+          "median": 2016324.2666666666,
+          "p95": 2032708.2666666666,
+          "max": 2032708.2666666666
+        },
+        "peakRSS": {
+          "min": 13434880,
+          "median": 13451264.0,
+          "p95": 13680640,
+          "max": 13729792
+        },
+        "stress16PeakRSS": {
+          "min": 43696128,
+          "median": 43819008.0,
+          "p95": 43925504,
+          "max": 43941888
+        }
+      }
+    },
+    "gates": {
+      "constructionMedian": true,
+      "constructionP95": true,
+      "queryP95": true,
+      "queryPeak": true,
+      "retainedExtra": true,
+      "productionPeakExtra": true
+    },
+    "quietHostAvailable": false,
+    "reason": "initial compilation overlapping near last trial; candidate subsequently refined"
+  },
+  {
+    "batch": 2,
+    "summary": {
+      "baseline": {
+        "buildMs": {
+          "min": 25.537917,
+          "median": 26.478708,
+          "p95": 31.215708,
+          "max": 31.685417
+        },
+        "queryP95Ms": {
+          "min": 0.139458,
+          "median": 0.143292,
+          "p95": 0.160583,
+          "max": 0.164667
+        },
+        "queryMaxMs": {
+          "min": 0.870292,
+          "median": 0.904083,
+          "p95": 1.131625,
+          "max": 1.341583
+        },
+        "perExtraIndexRSS": {
+          "min": 1197124.2666666666,
+          "median": 1205862.4,
+          "p95": 1241907.2,
+          "max": 1287782.4
+        },
+        "peakRSS": {
+          "min": 12599296,
+          "median": 12599296.0,
+          "p95": 13418496,
+          "max": 13467648
+        },
+        "stress16PeakRSS": {
+          "min": 30556160,
+          "median": 30769152.0,
+          "p95": 32014336,
+          "max": 32653312
+        }
+      },
+      "candidate": {
+        "buildMs": {
+          "min": 33.192125,
+          "median": 33.750021000000004,
+          "p95": 36.06475,
+          "max": 39.777
+        },
+        "queryP95Ms": {
+          "min": 0.257875,
+          "median": 0.262625,
+          "p95": 0.268791,
+          "max": 0.293083
+        },
+        "queryMaxMs": {
+          "min": 1.035416,
+          "median": 1.0928545,
+          "p95": 1.320083,
+          "max": 1.431084
+        },
+        "perExtraIndexRSS": {
+          "min": 2016324.2666666666,
+          "median": 2018508.8,
+          "p95": 2037077.3333333333,
+          "max": 2076398.9333333333
+        },
+        "peakRSS": {
+          "min": 13418496,
+          "median": 13475840.0,
+          "p95": 13565952,
+          "max": 13631488
+        },
+        "stress16PeakRSS": {
+          "min": 43696128,
+          "median": 43794432.0,
+          "p95": 44122112,
+          "max": 44564480
+        }
+      }
+    },
+    "gates": {
+      "constructionMedian": true,
+      "constructionP95": true,
+      "queryP95": true,
+      "queryPeak": true,
+      "retainedExtra": true,
+      "productionPeakExtra": true
+    },
+    "quietHostAvailable": false,
+    "reason": "competing swift-frontend recorded before batch; candidate subsequently refined"
+  },
+  {
+    "batch": 3,
+    "summary": {
+      "baseline": {
+        "buildMs": {
+          "min": 23.7905,
+          "median": 24.8981255,
+          "p95": 25.658083,
+          "max": 27.06025
+        },
+        "queryP95Ms": {
+          "min": 0.135084,
+          "median": 0.138646,
+          "p95": 0.144,
+          "max": 0.14425
+        },
+        "queryMaxMs": {
+          "min": 0.873792,
+          "median": 0.8904369999999999,
+          "p95": 0.95125,
+          "max": 0.958541
+        },
+        "perExtraIndexRSS": {
+          "min": 1197124.2666666666,
+          "median": 1197124.2666666666,
+          "p95": 1198216.5333333334,
+          "max": 1223338.6666666667
+        },
+        "peakRSS": {
+          "min": 12599296,
+          "median": 12599296.0,
+          "p95": 12615680,
+          "max": 12648448
+        },
+        "stress16PeakRSS": {
+          "min": 30556160,
+          "median": 30556160.0,
+          "p95": 30605312,
+          "max": 30949376
+        }
+      },
+      "candidate": {
+        "buildMs": {
+          "min": 31.373416,
+          "median": 32.2641665,
+          "p95": 32.9295,
+          "max": 33.705792
+        },
+        "queryP95Ms": {
+          "min": 0.2375,
+          "median": 0.242729,
+          "p95": 0.252,
+          "max": 0.252041
+        },
+        "queryMaxMs": {
+          "min": 0.988,
+          "median": 1.0389165,
+          "p95": 1.146834,
+          "max": 1.286541
+        },
+        "perExtraIndexRSS": {
+          "min": 2016324.2666666666,
+          "median": 2016324.2666666666,
+          "p95": 2032708.2666666666,
+          "max": 2070937.6
+        },
+        "peakRSS": {
+          "min": 13500416,
+          "median": 13500416.0,
+          "p95": 13500416,
+          "max": 13533184
+        },
+        "stress16PeakRSS": {
+          "min": 43745280,
+          "median": 43745280.0,
+          "p95": 43991040,
+          "max": 44564480
+        }
+      }
+    },
+    "gates": {
+      "constructionMedian": true,
+      "constructionP95": true,
+      "queryP95": true,
+      "queryPeak": true,
+      "retainedExtra": true,
+      "productionPeakExtra": true
+    },
+    "quietHostAvailable": false,
+    "reason": "xcodebuild present before batch; absent after"
+  }
+]

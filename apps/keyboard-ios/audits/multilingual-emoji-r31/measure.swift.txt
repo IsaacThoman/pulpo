@@ -1,0 +1,122 @@
+import Foundation
+import Darwin
+
+struct Input: Codable {
+  let version: Int
+  let families: [String]
+  let cases: [Row]
+}
+struct Row: Codable {
+  struct Entry: Codable { let emoji: String; let name: String; let keywords: [String] }
+  struct Alias: Codable { let emoji: String; let name: String }
+  let id: String
+  let family: String
+  let action: String
+  let query: String
+  let acceptable: [String]
+  let maxRank: Int
+  let role: String
+  let stratum: String?
+  let recents: [String]?
+  let limit: Int?
+  let entries: [Entry]?
+  let spanishAliases: [Alias]?
+  let forbidden: [String]?
+  let equivalentTo: String?
+}
+func milliseconds(_ start: UInt64) -> Double { Double(DispatchTime.now().uptimeNanoseconds-start)/1e6 }
+func resident() -> UInt64 {
+  var info = mach_task_basic_info()
+  var count = mach_msg_type_number_t(MemoryLayout<mach_task_basic_info>.size / MemoryLayout<natural_t>.size)
+  let result = withUnsafeMutablePointer(to: &info) {
+    $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+      task_info(mach_task_self_, task_flavor_t(MACH_TASK_BASIC_INFO), $0, &count)
+    }
+  }
+  return result == KERN_SUCCESS ? info.resident_size : 0
+}
+func emit(_ object: Any, _ path: String) throws {
+  try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted,.sortedKeys,.withoutEscapingSlashes])
+    .write(to: URL(fileURLWithPath:path))
+}
+@main struct Measure {
+  static func main() throws {
+    let args=CommandLine.arguments
+    let catalog=try EmojiCatalog.load(url:URL(fileURLWithPath:args[1]))
+    let before=resident(), start=DispatchTime.now().uptimeNanoseconds
+    let index=EmojiSuggester(catalog:catalog)
+    let build=milliseconds(start), after=resident()
+    if args[2] == "perf" {
+      let inputs=try JSONDecoder().decode([String].self,from:Data(contentsOf:URL(fileURLWithPath:args[3])))
+      for i in 0..<100 { _=index.search(inputs[i % inputs.count]) }
+      var times:[Double]=[], checksum=0
+      for i in 0..<1200 {
+        let t=DispatchTime.now().uptimeNanoseconds
+        checksum += index.search(inputs[i % inputs.count]).count
+        times.append(milliseconds(t))
+      }
+      times.sort()
+      var productionUsage=rusage(); getrusage(RUSAGE_SELF,&productionUsage)
+      var retained=[index]
+      let first=resident()
+      for _ in 0..<15 { retained.append(EmojiSuggester(catalog:catalog)) }
+      let full=resident()
+      var usage=rusage(); getrusage(RUSAGE_SELF,&usage)
+      withExtendedLifetime(retained) {
+        try! emit(["buildMs":build,"beforeRSS":before,"afterRSS":after,"retained16RSS":full,
+          "perExtraIndexRSS":Double(Int64(full)-Int64(first))/15,"peakRSS":productionUsage.ru_maxrss,"stress16PeakRSS":usage.ru_maxrss,
+          "queryP95Ms":times[Int(Double(times.count-1)*0.95)],"queryMaxMs":times.last!,
+          "queryMedianMs":times[times.count/2],"queryCount":times.count,"checksum":checksum],args[4])
+      }
+      return
+    }
+    let input=try JSONDecoder().decode(Input.self,from:Data(contentsOf:URL(fileURLWithPath:args[2])))
+    var results:[[String:Any]]=[], valuesByID:[String:[String]]=[:]
+    for row in input.cases {
+      var search=index
+      var available=Set(catalog.categories.flatMap(\.emoji).map(\.value))
+      if row.action == "fixture" {
+        let aliases=Dictionary((row.spanishAliases ?? []).map { ($0.emoji,$0.name) },uniquingKeysWith:{a,_ in a})
+        let entries=(row.entries ?? []).map { entry -> [String:Any] in
+          var object:[String:Any] = ["e":entry.emoji,"n":entry.name,"k":entry.keywords,"v":1]
+          if let name=aliases[entry.emoji] { object["s"]=name }
+          return object
+        }
+        let data=try JSONSerialization.data(withJSONObject:["version":"fixture","categories":[["id":"fixture","name":"Fixture","emoji":entries]]])
+        search=EmojiSuggester(catalog:try JSONDecoder().decode(EmojiCatalog.self,from:data))
+        available=Set((row.entries ?? []).map(\.emoji))
+      }
+      var values:[String]
+      if row.action == "wrapper" {
+        let suite="R31-audit-"+UUID().uuidString
+        let defaults=UserDefaults(suiteName:suite)!
+        let history=EmojiHistory(defaults:defaults)
+        for recent in (row.recents ?? []).reversed() { history.use(recent) }
+        values=EmojiSearch.results(for:EmojiSearchQuery(row.query),suggester:search,history:history,limit:row.limit ?? 48).map(\.value)
+        defaults.removePersistentDomain(forName:suite)
+      } else {
+        values=search.search(row.query).map(\.value)
+      }
+      valuesByID[row.id]=values
+      let rank=values.firstIndex { row.acceptable.contains($0) }.map { $0+1 }
+      let unavailable=row.acceptable.filter { !available.contains($0) }
+      let forbidden=values.filter { (row.forbidden ?? []).contains($0) }
+      results.append(["id":row.id,"family":row.family,"action":row.action,"role":row.role,
+        "stratum":row.stratum ?? "control","query":row.query,"acceptable":row.acceptable,
+        "maxRank":row.maxRank,"values":values,"unavailable":unavailable,
+        "rank":rank as Any? ?? NSNull(),"forbiddenFound":forbidden,
+        "passed":rank.map { $0<=row.maxRank && forbidden.isEmpty } ?? false,
+        "acceptedTop8":Array(values.prefix(8).filter { row.acceptable.contains($0) }),
+        "equivalentTo":row.equivalentTo as Any? ?? NSNull()])
+    }
+    for i in results.indices {
+      if let ref=results[i]["equivalentTo"] as? String {
+        let equal=(results[i]["values"] as? [String])==valuesByID[ref]
+        results[i]["equivalentPassed"]=equal
+        results[i]["passed"]=(results[i]["passed"] as! Bool) && equal
+      }
+    }
+    try emit(["buildMs":build,"rows":results],args[3])
+    print("rows=\(results.count) buildMs=\(build)")
+  }
+}

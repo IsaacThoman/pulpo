@@ -1,0 +1,70 @@
+import UIKit
+import XCTest
+@testable import KeyboardUI
+
+/// Audit-only fresh-process native timings. Not a normal opt-in regression.
+@MainActor
+final class NativeEmojiCostTests: XCTestCase {
+  func testFreshProcessEmojiInitializationAndFirstSearch() throws {
+    let environment = ProcessInfo.processInfo.environment
+    let output = try XCTUnwrap(environment["R31_NATIVE_REPORT"])
+    let directory = try XCTUnwrap(environment["R31_NATIVE_DATA"])
+    KeyboardResources.directory = URL(fileURLWithPath: directory)
+    defer { KeyboardResources.directory = nil }
+    func ms(_ start: CFTimeInterval) -> Double { (CACurrentMediaTime()-start)*1000 }
+    let decodeStart = CACurrentMediaTime()
+    let catalog = try EmojiCatalog.load(url: URL(fileURLWithPath: directory).appendingPathComponent("emoji.json"))
+    let decode = ms(decodeStart), indexStart = CACurrentMediaTime()
+    let index = EmojiSuggester(catalog: catalog)
+    let construction = ms(indexStart), searchStart = CACurrentMediaTime()
+    let values = index.search("red corazon").map(\.value)
+    let firstSearch = ms(searchStart)
+    let host = R31CostHost()
+    let start = CACurrentMediaTime()
+    let controller = KeyboardController(host: host, dictationBridge: nil)
+    controller.rootView.frame = CGRect(x: 0, y: 0, width: 402, height: controller.preferredHeight)
+    controller.hostWillAppear()
+    let syncInit = ms(start), deadline = Date().addingTimeInterval(120)
+    while controller.engine.emojiSuggester == nil && Date() < deadline {
+      RunLoop.main.run(until: Date().addingTimeInterval(0.005))
+    }
+    let ready = ms(start)
+    XCTAssertNotNil(controller.engine.emojiSuggester)
+    let panelStart = CACurrentMediaTime()
+    controller.keysView(controller.rootView.keys, activate: Key(action: .emoji, label: "emoji"), at: .zero)
+    controller.rootView.layoutIfNeeded()
+    controller.emojiPanelSearch(try XCTUnwrap(controller.rootView.emoji))
+    for c in "red corazon" {
+      controller.keysView(controller.rootView.keys, activate: Key(action: c == " " ? .space : .character(String(c)), label: String(c)), at: .zero)
+      controller.rootView.layoutIfNeeded()
+    }
+    let firstUIQuery = ms(panelStart)
+    XCTAssertEqual(host.document.documentContextBeforeInput, "")
+    let report: [String: Any] = ["pid": getpid(), "configuration": "Debug iOS27 simulator, not physical or compositor timing", "decodeMs": decode,
+      "publicIndexMs": construction, "firstCoreSearchMs": firstSearch, "coreValues":values,
+      "controllerSyncInitMs":syncInit,"controllerEmojiReadyMs":ready,"panelOpenAndFirstQueryLayoutMs":firstUIQuery,
+      "stripValues":controller.rootView.search.results.map(\.value),"glyphCachePresentAfter":UserDefaults.standard.object(forKey:"emojiUnsupported2-\(UIDevice.current.systemVersion)") != nil]
+    controller.hostDidDisappear()
+    let path = URL(fileURLWithPath: output).appendingPathExtension("\(getpid()).json")
+    try JSONSerialization.data(withJSONObject:report,options:[.sortedKeys,.prettyPrinted]).write(to:path)
+  }
+}
+@MainActor private final class R31CostHost: KeyboardHost {
+  let document: TextDocument = R31CostDocument()
+  var inputTraits = InputTraits()
+  let needsInputModeSwitchKey = false
+  let hasFullAccess = true
+  let isInsideApp = true
+  func advanceToNextInputMode() {}
+  func handleInputModeList(from view: UIView, with event: UIEvent) {}
+  func adjustTextPosition(byCharacterOffset offset: Int) {}
+  func openApp(_ url: URL) {}
+}
+private final class R31CostDocument: TextDocument {
+  var documentContextBeforeInput: String? { "" }
+  var documentContextAfterInput: String? { "" }
+  var selectedText: String? { nil }
+  var hasText: Bool { false }
+  func insertText(_ text: String) { XCTFail("Search must not insert into host") }
+  func deleteBackward() { XCTFail("Search must not delete from host") }
+}

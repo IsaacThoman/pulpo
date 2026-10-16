@@ -1,0 +1,35 @@
+import json,subprocess,statistics,time,hashlib
+from pathlib import Path
+root=Path(__file__).resolve().parents[4]
+audit=Path(__file__).resolve().parent
+out=Path('/tmp/pulpo-r31-performance');out.mkdir(exist_ok=True)
+versions={'baseline':('/tmp/pulpo-r31-baseline/measure','/tmp/pulpo-r31-baseline/emoji.json'),'candidate':('/tmp/pulpo-r31-measure',str(root/'apps/keyboard-ios/LanguageData/emoji.json'))}
+def competing():
+ return [p for p in subprocess.check_output(['ps','-Ao','comm'],text=True).splitlines() if any(p.endswith('/'+c) for c in ['swift-frontend','swiftc','clang','xcodebuild'])]
+hostBefore=competing()
+competingThroughout=[]
+samples=[]
+for trial in range(-2,12):
+ competingThroughout.extend(competing())
+ for name in (['baseline','candidate'] if trial%2==0 else ['candidate','baseline']):
+  binary,catalog=versions[name];dest=out/f'{trial}-{name}.json'
+  subprocess.run([binary,catalog,'perf','/tmp/pulpo-r31-perf-queries.json',str(dest)],check=True)
+  if trial>=0:samples.append(dict(trial=trial,version=name,**json.loads(dest.read_text())))
+def p95(x):return sorted(x)[int((len(x)-1)*.95+.5)]
+summary={}
+for name in versions:
+ rows=[r for r in samples if r['version']==name];summary[name]={}
+ for field in ['buildMs','queryP95Ms','queryMaxMs','perExtraIndexRSS','peakRSS','stress16PeakRSS']:
+  v=[r[field] for r in rows]
+  summary[name][field]={'min':min(v),'median':statistics.median(v),'p95':p95(v),'max':max(v)}
+a,b=summary['baseline'],summary['candidate']
+gates={'constructionMedian':b['buildMs']['median']<=min(60,2*a['buildMs']['median']),
+ 'constructionP95':b['buildMs']['p95']<=min(60,2*a['buildMs']['p95']),
+ 'queryP95':b['queryP95Ms']['p95']<=min(2,max(2*a['queryP95Ms']['p95'],a['queryP95Ms']['p95']+.25)),
+ 'queryPeak':b['queryMaxMs']['max']<=10,
+ 'retainedExtra':b['perExtraIndexRSS']['median']-a['perExtraIndexRSS']['median']<=2*1024**2,
+ 'productionPeakExtra':b['peakRSS']['median']-a['peakRSS']['median']<=4*1024**2}
+report={'samples':samples,'summary':summary,'gates':gates,'pairedBuildRatios':[next(r['buildMs'] for r in samples if r['trial']==i and r['version']=='candidate')/next(r['buildMs'] for r in samples if r['trial']==i and r['version']=='baseline') for i in range(12)],'competingBuildProcessesBefore':hostBefore,'competingBuildProcessesDuring':sorted(set(competingThroughout)),'competingBuildProcessesAfter':competing(),'memoryMethod':'mach_task_basic_info resident_size; production peak getrusage before retained stress. Retained experiment independently constructs16 indexes sharing decoded catalog; delta15 /15. Stress16 peak reported separately, not product singleton footprint. No allocation profiler attribution. OS RSS is noisy and includes allocator slack.'}
+report['quietHostAvailable']=not report['competingBuildProcessesBefore'] and not report['competingBuildProcessesAfter'] and not report['competingBuildProcessesDuring']
+(audit/'performance.json').write_text(json.dumps(report,indent=2)+'\n')
+print(json.dumps({'summary':summary,'gates':gates},indent=2))
