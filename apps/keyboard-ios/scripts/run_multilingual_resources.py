@@ -20,6 +20,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("stage", choices=["baseline", "candidate", "heldout"])
     parser.add_argument("--derived-data", type=Path, required=True)
+    parser.add_argument("--xctestrun", type=Path, help="Use archived build products (e.g. frozen baseline for held-out comparison)")
     parser.add_argument("--output", type=Path, default=Path("/tmp/pulpo-resource-sweep"))
     parser.add_argument("--repetitions", type=int, default=3)
     parser.add_argument("--held-out", action="store_true")
@@ -30,8 +31,10 @@ def main():
     if args.stage == "heldout" and not args.held_out:
         parser.error("heldout stage requires --held-out")
     args.output.mkdir(parents=True, exist_ok=True)
-    command = ["xcodebuild", "-project", "PulpoKeyboard.xcodeproj", "-scheme", "PulpoKeyboard",
-               "-destination", f"platform=iOS Simulator,id={DEVICE}", "-derivedDataPath", str(args.derived_data.resolve()),
+    build = (["-xctestrun", str(args.xctestrun.resolve())] if args.xctestrun else
+             ["-project", "PulpoKeyboard.xcodeproj", "-scheme", "PulpoKeyboard",
+              "-derivedDataPath", str(args.derived_data.resolve())])
+    command = ["xcodebuild"] + build + ["-destination", f"platform=iOS Simulator,id={DEVICE}",
                "-parallel-testing-enabled", "NO", "test-without-building"]
     for mode in ["en_US", "es", "en_es"]:
         label = f"{args.stage}-{mode}"

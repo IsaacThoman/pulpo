@@ -215,8 +215,11 @@ final class EmojiPanelView: UIView, UICollectionViewDataSource, UICollectionView
     collection.collectionViewLayout.invalidateLayout()
     if let offset = pendingOffset, collection.bounds.width > 0 {
       pendingOffset = nil
-      collection.layoutIfNeeded()
-      collection.contentOffset.x = min(offset, max(0, collection.contentSize.width - collection.bounds.width))
+      // Prepare geometry without creating the starting viewport's cells/images.
+      // Restore the saved position before UICollectionView lays out its cells.
+      let layout = collection.collectionViewLayout
+      layout.prepare()
+      collection.contentOffset.x = min(offset, max(0, layout.collectionViewContentSize.width - collection.bounds.width))
     }
     updateSelectedCategory()
   }
