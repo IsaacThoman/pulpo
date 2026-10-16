@@ -40,3 +40,10 @@ Spanish utility results likewise do not override its legacy retrieval losses or
 initialization cost. Their original oracles, unavailable cases and failed gates
 remain unchanged. These controls protect future independently evaluated fixes;
 they do not approve either rejected implementation.
+
+After both guards were committed, the parent `npm run keyboard:test` Release
+command exits zero: **441 core functions / 65 suites plus three service functions**,
+with the same five known issues and no new allowance. Core execution was 9.998s;
+service execution was 0.001s. Output is retained outside Git at
+`/tmp/pulpo-parent-regression-full.txt`. This is the current integrated core gate;
+it does not include either rejected product candidate.

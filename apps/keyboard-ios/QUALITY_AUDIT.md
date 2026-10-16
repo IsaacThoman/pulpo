@@ -650,6 +650,35 @@ exploratory oracle misses remain in `audits/companion-ux-r24/`; parent evidence 
 in `parent-integration.md`. VoiceOver, the disabled-keyboard setup action and
 physical usability remain unproven. The separate retention failure remains open.
 
+R26's transcript-boundary candidate remains rejected despite its bounded
+**48→93/120** result. A new informed adversary silently changes the fully visible
+host prefix after marker deletion or punctuation insertion, keeping the identifier
+and suffix. The candidate then writes punctuation/spacing into the replacement.
+All three language stacks reproduce it; callback-based controls had missed this
+path. R27's Spanish emoji queries improve **8→18/18**, but it loses established
+English `vicuna` and `sao` results and the coconut alternative for `pina`, while
+index construction rises roughly **26→238ms**. Neither production policy is
+imported. Exact evidence and independent limitations are preserved in
+`audits/phrase-insertion-r26/` and `audits/multilingual-emoji-r27/`.
+
+Two small normal guards protect those observable regressions. Both pass current
+source; isolated frozen candidates compile then fail with twelve R26 and six R27
+assertions. The current parent Release gate passes **441 core functions / 65 suites
+and three service functions**, with the same five known issues. See
+`audits/parent-regressions-r26-r27.md`. Derived audit-verifier repairs also make
+repository path checks nonvacuous and retain integrity checks under Python `-O`;
+their provenance notes distinguish older optimized smoke runs from verification.
+
+R29 confirms an unfixed cross-process reset gap. In a parent replay against all
+24 current Core source files, a separate process completes clear and a fresh read
+has zero words; releasing a previously prepared background write restores two old
+words, and the retained writer's reload returns false. This is one deterministic
+macOS public-API/filesystem schedule, not observed installed-iOS frequency. No
+post-clear learning occurs. Ordinary same-process preview navigation is not
+proved broken, and tap reset has only analogous source evidence. No product fix
+is included; `audits/learning-reset-r29/` retains the baseline schedules and
+ownership/observation limits while a separate implementation round continues.
+
 ### Rejected technical-token expansion
 
 The first technical-text candidate makes every whitespace token containing a
