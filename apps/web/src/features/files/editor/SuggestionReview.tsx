@@ -22,7 +22,7 @@ export function SuggestionBar({ hunks, active, editable, onStep, onResolveAll }:
   if (!hunks.length) return null
   const index = active ? hunks.findIndex((hunk) => hunk.id === active.id) : -1
   return (
-    <div role="toolbar" aria-label={ui("Suggestions")} className="flex w-full flex-wrap items-center gap-1 text-xs text-muted-foreground">
+    <div role="toolbar" aria-label={ui("Suggestions")} data-suggestion-bar className="flex w-full flex-wrap items-center gap-1 text-xs text-muted-foreground">
       <MessageSquareDiff className="mr-1 size-3.5 shrink-0 text-sky-600 dark:text-sky-400" />
       {/* Before the count, whose width changes as it goes from "3 suggestions" to "Suggestion 1 of 3". */}
       <Button variant="ghost" size="icon-sm" className="size-6" aria-label={ui("Previous suggestion")} title={ui("Previous suggestion")} onMouseDown={(event) => event.preventDefault()} onClick={() => onStep(-1)}><ChevronUp /></Button>

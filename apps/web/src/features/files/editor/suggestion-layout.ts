@@ -38,8 +38,16 @@ export function revealSuggestion(view: EditorView, hunk: SuggestionHunk, header:
   const frame = scroller?.getBoundingClientRect() ?? { top: 0, bottom: window.innerHeight }
   const top = Math.max(frame.top, header?.getBoundingClientRect().bottom ?? frame.top) + REVEAL_MARGIN
   const bottom = frame.bottom - REVEAL_MARGIN
-  const textTop = view.coordsAtPos(hunk.from, 1).top
-  if (textTop >= top && cardSpot(view, hunk, hunk.from).top + CARD_ROOM <= bottom) return
+  let textTop: number
+  let cardTop: number
+  try {
+    textTop = view.coordsAtPos(hunk.from, 1).top
+    cardTop = cardSpot(view, hunk, hunk.from).top
+  } catch {
+    // Measuring fails while the view updates.
+    return
+  }
+  if (textTop >= top && cardTop + CARD_ROOM <= bottom) return
   const by = textTop - (top + (bottom - top) / 3)
   if (scroller) scroller.scrollTop += by
   else window.scrollBy(0, by)

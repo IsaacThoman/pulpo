@@ -129,6 +129,41 @@ try {
   await card.waitFor({ state: 'detached' })
   assert.equal(await page.locator('[data-suggestion-id="swap"]').count(), 0, 'the shortcut accepts the suggestion')
 
+  // Escape closes the card until the cursor leaves its suggestion.
+  await open()
+  await suggestion('swap', '.pulpo-suggestion-insert').click()
+  await card.waitFor()
+  await page.keyboard.press('Escape')
+  await card.waitFor({ state: 'detached' })
+  await page.keyboard.press('ArrowRight')
+  await page.waitForTimeout(300)
+  assert.equal(await card.count(), 0, 'the card stays closed while the cursor stays in the suggestion')
+  await page.keyboard.press('Home')
+  await suggestion('swap', '.pulpo-suggestion-insert').click()
+  await card.waitFor()
+
+  // Rejecting with the shortcut keeps the line break before the suggestion, and the keys' repeats
+  // while held leave the suggestion after it alone.
+  await open()
+  await suggestion('afterbreak').scrollIntoViewIfNeeded()
+  await page.evaluate(() => {
+    const { editor } = document.querySelector('.pulpo-doc-editor')
+    editor.view.focus()
+    editor.commands.setTextSelection(editor.view.posAtDOM(editor.view.dom.querySelector('[data-suggestion-id="afterbreak"]'), 0))
+  })
+  await page.keyboard.down('ControlOrMeta')
+  await page.keyboard.down('Alt')
+  await page.keyboard.down('Backspace')
+  await page.keyboard.down('Backspace')
+  await page.keyboard.up('Backspace')
+  await page.keyboard.up('Alt')
+  await page.keyboard.up('ControlOrMeta')
+  const lines = await page.evaluate(() => {
+    const line = [...document.querySelectorAll('.pulpo-doc-editor p')].find((paragraph) => paragraph.textContent.startsWith('Line one'))
+    return { text: line.textContent, breaks: line.querySelectorAll('br:not(.ProseMirror-trailingBreak)').length, adjacent: Boolean(line.querySelector('[data-suggestion-id="adjacent"]')) }
+  })
+  assert.deepEqual(lines, { text: 'Line onehere tail.', breaks: 1, adjacent: true })
+
   // On a touch screen, tapping another suggestion moves the card at once.
   const touch = await browser.newPage({ viewport: { width: 1000, height: 600 }, hasTouch: true })
   touch.on('pageerror', (error) => errors.push(error.message))

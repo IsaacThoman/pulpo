@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { listSuggestions, resolveSuggestions, type SuggestionAction, type SuggestionHunk, type SuggestionRef } from '@pulpo/client-core/doc-schema'
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
-import { Selection, type EditorState } from '@tiptap/pm/state'
-import { useEditorState, type Editor } from '@tiptap/react'
+import { Plugin, PluginKey, Selection, type EditorState } from '@tiptap/pm/state'
+import { Extension, useEditorState, type Editor } from '@tiptap/react'
 import { ui, uit } from '@/i18n/ui'
 import { hasPrimaryModifier } from '../browser/shortcuts'
 import { SUGGESTION_REVIEW_META } from './suggestion-typing'
@@ -65,11 +65,40 @@ export function describeHunk(hunk: Pick<SuggestionHunk, 'inserted' | 'deleted'>)
  */
 const HOVER_GRACE_MS = 250
 
-/** The card's shortcuts: Mod-Alt-Enter accepts and Mod-Alt-Backspace rejects. */
-export function suggestionShortcut(event: Pick<KeyboardEvent, 'key' | 'altKey' | 'shiftKey' | 'metaKey' | 'ctrlKey'>): SuggestionAction | null {
-  if (!event.altKey || event.shiftKey || !hasPrimaryModifier(event)) return null
+/**
+ * The card's shortcuts: Mod-Alt-Enter accepts and Mod-Alt-Backspace rejects. Not with AltGr, which
+ * Windows reports as Ctrl-Alt: someone typing ą or € may still hold it when they press Backspace.
+ */
+export function suggestionShortcut(event: globalThis.KeyboardEvent): SuggestionAction | null {
+  if (!event.altKey || event.shiftKey || !hasPrimaryModifier(event) || event.getModifierState('AltGraph')) return null
   return event.key === 'Enter' ? 'accept' : event.key === 'Backspace' ? 'reject' : null
 }
+
+/** What each editor's suggestion review does with a key typed in its document. */
+const reviewKeys = new WeakMap<Editor, (event: globalThis.KeyboardEvent) => boolean>()
+
+/**
+ * Hands keys typed in the document to `useSuggestionReview` before the editor handles them itself:
+ * it takes any Backspace, whatever the modifiers, to delete a line break before the cursor.
+ */
+export const SuggestionReviewKeys = Extension.create({
+  name: 'suggestionReviewKeys',
+  // Ahead of the keymaps.
+  priority: 1000,
+  addProseMirrorPlugins() {
+    const editor = this.editor
+    return [new Plugin({
+      key: new PluginKey('suggestionReviewKeys'),
+      props: {
+        handleKeyDown: (_view, event) => {
+          if (!reviewKeys.get(editor)?.(event)) return false
+          event.stopPropagation()
+          return true
+        },
+      },
+    })]
+  },
+})
 
 /** The document position under the pointer, when there is one. */
 function pointerPos(editor: Editor, event: MouseEvent): number | null {
@@ -82,10 +111,18 @@ function pointerPos(editor: Editor, event: MouseEvent): number | null {
 }
 
 /**
- * The hunk under the pointer, the position the pointer reached it at, and the hunk the cursor was
- * in when it got there.
+ * The hunk under the pointer, how far into it the pointer reached it, and the hunk the cursor was
+ * in then.
  */
-type Hover = { id: string; at: number | null; cursorId: string | null }
+type Hover = { id: string; offset: number | null; cursorId: string | null }
+
+/**
+ * Whether the pointer's suggestion is still the one looked at: until the cursor moves into another
+ * suggestion, as tapping it on a touch screen does, which is then the newer of the two.
+ */
+function hoverHolds(hover: Hover, cursorId: string | null): boolean {
+  return cursorId === null || cursorId === hover.cursorId || cursorId === hover.id
+}
 
 /**
  * The document's suggestions and the one being looked at: the hunk under the pointer, else the
@@ -110,7 +147,6 @@ export function useSuggestionReview(editor: Editor, onResolved?: () => void) {
     // The list only changes with the document, and is then a new array.
     equalityFn: (a, b) => b !== null && a.hunks === b.hunks && a.cursorId === b.cursorId && a.cursorPos === b.cursorPos,
   })
-  // The hunk under the pointer, and the position the pointer reached it at.
   const [hover, setHover] = useState<Hover | null>(null)
   // The hunk at the cursor whose card Escape closed, until the cursor leaves it.
   const [dismissedId, setDismissedId] = useState<string | null>(null)
@@ -147,7 +183,9 @@ export function useSuggestionReview(editor: Editor, onResolved?: () => void) {
         keepHover()
         return
       }
-      const next = id ? { id, at: pointerPos(editor, event), cursorId: cursorHunkId(editor.state) } : null
+      const hunk = id ? docSuggestions(editor.state.doc).find((item) => item.id === id) : undefined
+      const pos = hunk ? pointerPos(editor, event) : null
+      const next = id ? { id, offset: hunk && pos !== null ? pos - hunk.from : null, cursorId: cursorHunkId(editor.state) } : null
       if (next && !shownId.current) {
         keepHover()
         // Before React shows the card, so the pointer moving straight on is handled as leaving it.
@@ -177,15 +215,11 @@ export function useSuggestionReview(editor: Editor, onResolved?: () => void) {
     if (dismissedId && dismissedId !== cursorId) setDismissedId(null)
   }, [cursorId, dismissedId])
 
-  // The pointer's suggestion, until the cursor moves into another one, as tapping it on a touch
-  // screen does; that is the newer of the two.
-  const hovered = hover && (cursorId === null || cursorId === hover.cursorId || cursorId === hover.id)
-    ? hunks.find((hunk) => hunk.id === hover.id)
-    : undefined
+  const hovered = hover && hoverHolds(hover, cursorId) ? hunks.find((hunk) => hunk.id === hover.id) : undefined
   const atCursor = cursorId === dismissedId ? undefined : hunks.find((hunk) => hunk.id === cursorId)
   const active = hovered || atCursor || null
   // The card goes under the line looked at in a long hunk: the one pointed at, or the cursor's.
-  const anchor = hover && hovered ? hover.at : atCursor ? cursorPos : null
+  const anchor = hover && hovered ? (hover.offset === null ? null : hovered.from + hover.offset) : atCursor ? cursorPos : null
   useLayoutEffect(() => {
     shownId.current = active?.id ?? null
   })
@@ -209,32 +243,50 @@ export function useSuggestionReview(editor: Editor, onResolved?: () => void) {
     if (!tr.docChanged) return
     // A keyboard user's focus is on the button used, which can go with the card or the bar;
     // it moves back to the document rather than falling to the page.
-    const refocus = document.activeElement instanceof HTMLButtonElement
+    const refocus = Boolean(document.activeElement?.closest('[data-suggestion-card], [data-suggestion-bar]'))
     clearHover()
     editor.view.dispatch(tr)
     if (refocus) editor.view.focus()
   }
 
   /**
-   * For the editor and its card: Escape closes the card, and the shortcuts resolve the hunk at the
-   * cursor. Both read the editor's state, which can be ahead of the last render.
+   * Escape closes the card, and the shortcuts resolve the hunk it is for, or else the one at the
+   * cursor. Reads the editor's state, which can be ahead of the last render. True when handled.
    */
-  const onKeyDown = (event: KeyboardEvent<HTMLElement>) => {
-    const atCursorNow = cursorHunkId(editor.state)
+  const handleKey = (event: globalThis.KeyboardEvent): boolean => {
+    if (event.isComposing) return false
+    const cursorNow = cursorHunkId(editor.state)
+    const hoveredNow = hover && hoverHolds(hover, cursorNow) && docSuggestions(editor.state.doc).some((hunk) => hunk.id === hover.id) ? hover.id : null
     if (event.key === 'Escape') {
-      if (!active) return
-      event.preventDefault()
-      event.stopPropagation()
+      if (!hoveredNow && (!cursorNow || cursorNow === dismissedId)) return false
       clearHover()
-      setDismissedId(atCursorNow)
-      if (!editor.view.dom.contains(event.target as Node)) editor.view.focus()
-      return
+      setDismissedId(cursorNow)
+      return true
     }
     const action = suggestionShortcut(event)
-    const target = atCursorNow ?? active?.id
-    if (!action || !target || !editor.isEditable) return
+    const target = hoveredNow ?? cursorNow
+    if (!action || !target || !editor.isEditable) return false
+    // Holding the keys down would go on to resolve the next suggestion.
+    if (!event.repeat) resolve((ref) => ref.id === target, action)
+    return true
+  }
+  useLayoutEffect(() => {
+    reviewKeys.set(editor, handleKey)
+    return () => {
+      reviewKeys.delete(editor)
+    }
+  })
+
+  /** The same keys elsewhere around the document: on the card, the review bar and the toolbar. */
+  const onKeyDown = (event: KeyboardEvent<HTMLElement>) => {
+    const target = event.target as Element
+    // Keys in the document went to `handleKey` already; keys in portals, such as menus, aren't ours.
+    if (editor.view.dom.contains(target) || !event.currentTarget.contains(target)) return
+    if (!handleKey(event.nativeEvent)) return
     event.preventDefault()
-    resolve((ref) => ref.id === target, action)
+    event.stopPropagation()
+    // The card is gone with the button that had focus.
+    if (event.key === 'Escape' && target.closest('[data-suggestion-card]')) editor.view.focus()
   }
 
   return { hunks, active, anchor, go, resolve, keepHover, releaseHover, onKeyDown }

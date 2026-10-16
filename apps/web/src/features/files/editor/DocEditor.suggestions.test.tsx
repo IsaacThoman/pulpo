@@ -52,6 +52,8 @@ const insertMark = (id: string) => ({ type: 'suggestionInsert', attrs: { id, cha
 
 /** Longer than the card's grace period after the pointer leaves its suggestion. */
 const pastGrace = () => new Promise((resolve) => setTimeout(resolve, 400))
+/** Lets React render what the last change led to, so an assertion that nothing showed means something. */
+const settle = () => act(() => new Promise<void>((resolve) => setTimeout(resolve, 50)))
 
 function mount(server: FakeServer, editable = true) {
   const doc = new Y.Doc()
@@ -175,6 +177,7 @@ describe('DocEditor suggestions', () => {
     fireEvent.keyDown(element()!, { key: 'Escape' })
     await waitFor(() => expect(view.queryByRole('dialog', { name: 'Suggestion' })).toBeNull())
     editor().commands.setTextSelection(first!.from + 2)
+    await settle()
     expect(view.queryByRole('dialog', { name: 'Suggestion' })).toBeNull()
     editor().commands.setTextSelection(1)
     await waitFor(() => expect(view.getByRole('toolbar', { name: 'Suggestions' }).textContent).not.toContain('Suggestion 1 of'))
@@ -198,6 +201,132 @@ describe('DocEditor suggestions', () => {
     fireEvent.keyDown(element()!, { key: 'Backspace', ctrlKey: true, altKey: true })
     expect(ids()).toEqual(rest.map((hunk) => hunk.id))
     expect(editor().state.doc.textContent).not.toContain(second!.inserted.trim())
+  })
+
+  it('leaves Escape to the page when no card is open', async () => {
+    const server = suggestingServer()
+    const { view, element, editor } = mount(server)
+    await waitFor(() => expect(element()?.querySelector('.pulpo-suggestion-insert')).toBeTruthy())
+    const reached = vi.fn()
+    window.addEventListener('keydown', reached)
+    try {
+      fireEvent.keyDown(element()!, { key: 'Escape' })
+      expect(reached).toHaveBeenCalledTimes(1)
+      editor().commands.setTextSelection(listSuggestions(editor().state.doc)[0]!.from + 1)
+      await view.findByRole('dialog', { name: 'Suggestion' })
+      fireEvent.keyDown(element()!, { key: 'Escape' })
+      expect(reached).toHaveBeenCalledTimes(1)
+    } finally {
+      window.removeEventListener('keydown', reached)
+    }
+  })
+
+  it('leaves Escape to an input method that is composing', async () => {
+    const server = suggestingServer()
+    const { view, element, editor } = mount(server)
+    await waitFor(() => expect(element()?.querySelector('.pulpo-suggestion-insert')).toBeTruthy())
+    editor().commands.setTextSelection(listSuggestions(editor().state.doc)[0]!.from + 1)
+    await view.findByRole('dialog', { name: 'Suggestion' })
+    fireEvent.keyDown(element()!, { key: 'Escape', isComposing: true })
+    await settle()
+    expect(view.queryByRole('dialog', { name: 'Suggestion' })).not.toBeNull()
+  })
+
+  it('closes the card with Escape from the review bar', async () => {
+    const server = suggestingServer()
+    const { view, element, editor } = mount(server)
+    await waitFor(() => expect(element()?.querySelector('.pulpo-suggestion-insert')).toBeTruthy())
+    editor().commands.setTextSelection(listSuggestions(editor().state.doc)[0]!.from + 1)
+    await view.findByRole('dialog', { name: 'Suggestion' })
+    const acceptAll = view.getByRole('button', { name: /Accept all/ })
+    acceptAll.focus()
+    fireEvent.keyDown(acceptAll, { key: 'Escape' })
+    await waitFor(() => expect(view.queryByRole('dialog', { name: 'Suggestion' })).toBeNull())
+    expect(document.activeElement).toBe(acceptAll)
+  })
+
+  it('shows a closed card again when stepping to its suggestion', async () => {
+    const { view, element, editor } = mount(serverWith([
+      { type: 'paragraph', content: [{ type: 'text', text: 'Only ' }, { type: 'text', text: 'this', marks: [insertMark('only')] }] },
+    ]))
+    await waitFor(() => expect(element()?.querySelector('.pulpo-suggestion-insert')).toBeTruthy())
+    editor().commands.setTextSelection(listSuggestions(editor().state.doc)[0]!.from)
+    await view.findByRole('dialog', { name: 'Suggestion' })
+    fireEvent.keyDown(element()!, { key: 'Escape' })
+    await waitFor(() => expect(view.queryByRole('dialog', { name: 'Suggestion' })).toBeNull())
+    fireEvent.click(view.getByRole('button', { name: 'Next suggestion' }))
+    await view.findByRole('dialog', { name: 'Suggestion' })
+  })
+
+  it('resolves the suggestion whose card shows with the shortcuts', async () => {
+    const server = suggestingServer()
+    const { view, element, editor } = mount(server)
+    await waitFor(() => expect(element()?.querySelector('.pulpo-suggestion-insert')).toBeTruthy())
+    const [first, second] = listSuggestions(editor().state.doc)
+    editor().commands.setTextSelection(first!.from + 1)
+    await view.findByRole('dialog', { name: 'Suggestion' })
+    fireEvent.mouseOver(element()!.querySelector(`[data-suggestion-id="${second!.id}"]`)!)
+    await waitFor(() => expect(view.getByRole('dialog', { name: 'Suggestion' }).textContent).toContain(describeHunk(second!)))
+    fireEvent.keyDown(element()!, { key: 'Enter', ctrlKey: true, altKey: true })
+    expect(listSuggestions(editor().state.doc).map((hunk) => hunk.id)).toContain(first!.id)
+    expect(listSuggestions(editor().state.doc).map((hunk) => hunk.id)).not.toContain(second!.id)
+  })
+
+  it('does not resolve with the shortcuts held down, with AltGr or Shift, or for viewers', async () => {
+    const server = suggestingServer()
+    const { element, editor } = mount(server)
+    await waitFor(() => expect(element()?.querySelector('.pulpo-suggestion-insert')).toBeTruthy())
+    const ids = () => listSuggestions(editor().state.doc).map((hunk) => hunk.id)
+    const before = ids()
+    editor().commands.setTextSelection(listSuggestions(editor().state.doc)[0]!.from + 1)
+    fireEvent.keyDown(element()!, { key: 'Backspace', ctrlKey: true, altKey: true, repeat: true })
+    fireEvent.keyDown(element()!, { key: 'Backspace', ctrlKey: true, altKey: true, modifierAltGraph: true })
+    fireEvent.keyDown(element()!, { key: 'Enter', ctrlKey: true, altKey: true, shiftKey: true })
+    expect(ids()).toEqual(before)
+    // Once resolved, the held keys' repeats leave the next suggestion alone.
+    fireEvent.keyDown(element()!, { key: 'Backspace', ctrlKey: true, altKey: true })
+    editor().commands.setTextSelection(listSuggestions(editor().state.doc)[0]!.from + 1)
+    fireEvent.keyDown(element()!, { key: 'Backspace', ctrlKey: true, altKey: true, repeat: true })
+    expect(ids()).toEqual(before.slice(1))
+    cleanup()
+
+    const viewer = mount(suggestingServer(), false)
+    await waitFor(() => expect(viewer.element()?.querySelector('.pulpo-suggestion-insert')).toBeTruthy())
+    const viewerIds = () => listSuggestions(viewer.editor().state.doc).map((hunk) => hunk.id)
+    const shown = viewerIds()
+    viewer.editor().commands.setTextSelection(listSuggestions(viewer.editor().state.doc)[0]!.from + 1)
+    fireEvent.keyDown(viewer.element()!, { key: 'Enter', ctrlKey: true, altKey: true })
+    expect(viewerIds()).toEqual(shown)
+  })
+
+  it('keeps a line break before the suggestion rejected with the shortcut', async () => {
+    const { element, editor } = mount(serverWith([
+      { type: 'paragraph', content: [
+        { type: 'text', text: 'First line' },
+        { type: 'hardBreak' },
+        { type: 'text', text: 'new words', marks: [insertMark('added')] },
+        { type: 'text', text: ' tail' },
+      ] },
+    ]))
+    await waitFor(() => expect(element()?.querySelector('.pulpo-suggestion-insert')).toBeTruthy())
+    editor().commands.setTextSelection(listSuggestions(editor().state.doc)[0]!.from)
+    fireEvent.keyDown(element()!, { key: 'Backspace', ctrlKey: true, altKey: true })
+    const paragraph = editor().state.doc.firstChild!
+    expect(paragraph.content.content.map((node) => node.isText ? node.text : node.type.name)).toEqual(['First line', 'hardBreak', ' tail'])
+  })
+
+  it('leaves focus on a control outside the review when resolving', async () => {
+    const server = suggestingServer()
+    const { view, element } = mount(server)
+    await waitFor(() => expect(element()?.querySelector('.pulpo-suggestion-insert')).toBeTruthy())
+    const outside = document.body.appendChild(document.createElement('button'))
+    try {
+      outside.focus()
+      fireEvent.click(view.getByRole('button', { name: /Accept all/ }))
+      expect(document.activeElement).toBe(outside)
+    } finally {
+      outside.remove()
+    }
   })
 
   it('keeps keyboard focus in the document when the card closes or resolves', async () => {

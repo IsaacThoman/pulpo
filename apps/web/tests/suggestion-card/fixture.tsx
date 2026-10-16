@@ -17,7 +17,7 @@ const paragraph = (...content: unknown[]) => ({ type: 'paragraph', content })
 const filler = (from: number, to: number) => Array.from({ length: to - from + 1 }, (_, index) => paragraph(text(`Filler line ${from + index}.`)))
 
 // A suggested replacement, a word suggested inside a suggested paragraph, a long suggested
-// paragraph, and enough text to scroll.
+// paragraph, two suggestions after a line break, and enough text to scroll.
 const server = new FakeServer()
 applyNodeToYDoc(server.doc, ProseMirrorNode.fromJSON(docSchema(), { type: 'doc', content: [
   paragraph(text('hey this is a '), text('stinky', [mark('suggestionDelete', 'swap')]), text('awesome', [mark('suggestionInsert', 'swap')]), text(' test')),
@@ -26,6 +26,7 @@ applyNodeToYDoc(server.doc, ProseMirrorNode.fromJSON(docSchema(), { type: 'doc',
   ...filler(1, 30),
   { ...paragraph(text('A long suggested paragraph. '.repeat(40).trim())), attrs: { suggestion: 'insert|change-1|long' } },
   ...filler(31, 45),
+  paragraph(text('Line one'), { type: 'hardBreak' }, text('starts', [mark('suggestionInsert', 'afterbreak')]), text('here', [mark('suggestionInsert', 'adjacent')]), text(' tail.')),
 ] }))
 
 const doc = new Y.Doc()

@@ -27,7 +27,7 @@ import { ui } from '@/i18n/ui'
 import { cn } from '@/lib/utils'
 import { sessionColor, sessionLabel } from './presence'
 import { revealSuggestion } from './suggestion-layout'
-import { useSuggestionReview } from './suggestion-review'
+import { SuggestionReviewKeys, useSuggestionReview } from './suggestion-review'
 import { SuggestionTyping } from './suggestion-typing'
 import { SuggestionBar, SuggestionCard } from './SuggestionReview'
 import type { DocSession } from './use-doc-session'
@@ -139,7 +139,7 @@ function DocEditorView({ editor, editable, width, toolbarSlot, onSuggestionsReso
     if (target) revealSuggestion(editor.view, target, header.current)
   }
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className="flex min-h-0 flex-1 flex-col" onKeyDown={review.onKeyDown}>
       <div ref={header} className="sticky top-0 z-10 flex flex-wrap items-center gap-2 border-b bg-background/95 px-4 py-1.5 backdrop-blur sm:px-6">
         <div className="min-w-0 flex-1 overflow-x-auto"><DocToolbar editor={editor} /></div>
         {toolbarSlot}
@@ -155,15 +155,16 @@ function DocEditorView({ editor, editable, width, toolbarSlot, onSuggestionsReso
           </div>
         )}
       </div>
-      {/* Match the chat column so documents read at the same width as conversations. */}
+      {/* Match the chat column so documents read at the same width as conversations. The room at
+          the bottom fits the card of a suggestion on the last line. */}
       <div className={cn(
-        'mx-auto w-full flex-1',
-        width === 'fill' ? 'px-5 py-5' : 'px-4 py-8 sm:px-6',
+        'mx-auto w-full flex-1 pb-24',
+        width === 'fill' ? 'px-5 pt-5' : 'px-4 pt-8 sm:px-6',
         width === 'wide' && 'max-w-[min(100%,90rem)]',
         width === 'narrow' && 'max-w-5xl',
       )}>
         {/* Its own stacking context, so the suggestion card stays under the sticky toolbar. */}
-        <div ref={content} className="relative isolate" onKeyDown={review.onKeyDown}>
+        <div ref={content} className="relative isolate">
           <EditorContent editor={editor} />
           {active && <style>{activeHunkStyle(active.id)}</style>}
           {active && (
@@ -199,6 +200,7 @@ export function DocEditor({ session, editable, width = 'narrow', toolbarSlot, on
     extensions: [
       ...createDocExtensions(),
       SuggestionTyping,
+      SuggestionReviewKeys,
       Placeholder.configure({ placeholder: ui("Start writing…") }),
       Collaboration.configure({ document: session.doc }),
       CollaborationCaret.configure({
