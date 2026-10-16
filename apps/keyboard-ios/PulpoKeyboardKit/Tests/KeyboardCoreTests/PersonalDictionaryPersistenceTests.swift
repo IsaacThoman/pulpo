@@ -16,12 +16,13 @@ struct PersonalDictionaryPersistenceTests {
     defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
     let personal = PersonalDictionary(url: url)
     for round in 0..<20 {
-      personal.learn("zorbex\(round)", after: "the")
-      personal.learn("zorbex\(round)", after: "the")
+      try learningEventually({ personal.learn("zorbex\(round)", after: "the") }, result: { personal.persistenceResult })
+      try learningEventually({ personal.learn("zorbex\(round)", after: "the") }, result: { personal.persistenceResult })
       personal.saveInBackground()
     }
+    try finishLearning(personal)
     #expect(!personal.hasUnsavedChanges)
-    // Loading waits for queued writes.
+    // Completion is explicit; constructors never wait behind background I/O.
     let reloaded = PersonalDictionary(url: url)
     #expect((0..<20).allSatisfy { reloaded.isKnown("zorbex\($0)") })
     #expect(reloaded.pairCount("the", "zorbex19") == 2)
@@ -43,6 +44,7 @@ struct PersonalDictionaryPersistenceTests {
     b.forget("there")
     a.save()
     b.saveInBackground()
+    try finishLearning(b)
     let reloadedA = PersonalDictionary(url: first), reloadedB = PersonalDictionary(url: second)
     #expect(reloadedA.knownWords == reloadedB.knownWords)
     #expect(reloadedA.totalCount == reloadedB.totalCount)
@@ -57,11 +59,13 @@ struct PersonalDictionaryPersistenceTests {
     shared.learn("zorbex", after: nil)
     shared.learn("zorbex", after: nil)
     shared.saveInBackground()
-    // Its own save is not a change.
+    try finishLearning(shared)
+    // Its own completed save is not a change.
     #expect(!shared.reloadIfChangedOnDisk())
     #expect(shared.isKnown("zorbex"))
     // The app clears learned words through its own instance.
-    PersonalDictionary(url: url).clear()
+    let app = PersonalDictionary(url: url)
+    try learningEventually({ app.clear() }, result: { app.persistenceResult })
     #expect(shared.reloadIfChangedOnDisk())
     #expect(!shared.isKnown("zorbex"))
     #expect(shared.totalCount == 0)

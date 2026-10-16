@@ -41,28 +41,33 @@ struct TouchModelTests {
   }
 
   @Test func persistsOnlyOffsetsAndRestoresThem() throws {
-    let url = FileManager.default.temporaryDirectory.appendingPathComponent("touch-\(UUID().uuidString).json")
-    defer { try? FileManager.default.removeItem(at: url) }
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent("touch-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let url = directory.appendingPathComponent("TouchModel.json")
+    defer { try? FileManager.default.removeItem(at: directory) }
     let model = TouchModel(url: url)
     for _ in 0..<20 { model.learn(taps("hello", offset: KeyPoint(x: -0.1, y: 0.15)), intended: "hello", geometry: Self.geometry) }
     model.save()
-    let text = try String(contentsOf: url, encoding: .utf8)
-    #expect(!text.contains("hello"))
+    let data = try Data(contentsOf: LearnedDataPersistence.storageURL(for: url))
+    #expect(data.range(of: Data("hello".utf8)) == nil)
     let restored = TouchModel(url: url)
     #expect(abs(restored.weight - model.weight) < 1e-9)
     #expect(abs(restored.offset(Character("h").asciiValue!).y - model.offset(Character("h").asciiValue!).y) < 1e-9)
   }
 
   @Test func clearingInTheAppSticksWhileTheKeyboardStaysAlive() throws {
-    let url = FileManager.default.temporaryDirectory.appendingPathComponent("touch-\(UUID().uuidString).json")
-    defer { try? FileManager.default.removeItem(at: url) }
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent("touch-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let url = directory.appendingPathComponent("TouchModel.json")
+    defer { try? FileManager.default.removeItem(at: directory) }
     let keyboard = TouchModel(url: url)
     for _ in 0..<20 { keyboard.learn(taps("hello", offset: KeyPoint(x: -0.1, y: 0.15)), intended: "hello", geometry: Self.geometry) }
     keyboard.save(inBackground: true)
+    try finishLearning(keyboard)
     #expect(!keyboard.reloadIfChangedOnDisk())
     // The app resets the file; the keyboard process still holds its offsets.
     let app = TouchModel(url: url)
-    app.reset()
+    try learningEventually({ app.reset() }, result: { app.persistenceResult })
     app.save()
     #expect(keyboard.reloadIfChangedOnDisk())
     #expect(keyboard.weight == 0)

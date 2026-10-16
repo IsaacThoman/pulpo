@@ -635,7 +635,7 @@ public final class KeyboardController: NSObject {
   }
 
   private func forget(_ suggestion: Suggestion) {
-    stack?.personal.forget(suggestion.text)
+    guard stack?.personal.forget(suggestion.text) == true else { return }
     stack?.personal.saveInBackground()
     engine.refreshSuggestions()
     sync()

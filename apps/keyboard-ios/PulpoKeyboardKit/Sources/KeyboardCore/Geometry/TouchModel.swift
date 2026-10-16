@@ -8,7 +8,7 @@ import Foundation
 ///
 /// Only letter offsets and counts are stored: no text, no touch sequences.
 public final class TouchModel {
-  struct Snapshot: Codable {
+  struct Snapshot: Codable, Equatable, Sendable {
     var version = 1
     /// Per letter a-z: summed x offset, summed y offset, weight.
     var keys: [[Double]]
@@ -34,48 +34,42 @@ public final class TouchModel {
   /// Off while evaluating a fixed model, or for fields that must not teach it.
   public var isLearning = true
 
-  /// The file as this process last read or wrote it, so a reset written by the
-  /// app is noticed while the keyboard process stays alive.
-  private let stamp = StampBox()
-
-  private final class StampBox: @unchecked Sendable {
-    private let lock = NSLock()
-    private var stored: PersonalDictionary.FileStamp?
-    var value: PersonalDictionary.FileStamp? {
-      get { lock.withLock { stored } }
-      set { lock.withLock { stored = newValue } }
-    }
-  }
+  private var persistence: LearningSession?
+  public private(set) var persistenceResult: LearningPersistenceResult = .ok
 
   public init(url: URL?) {
     self.url = url
-    guard let url else { return }
-    load(from: url)
-    stamp.value = PersonalDictionary.FileStamp(url: url)
-  }
-
-  private func load(from url: URL) {
-    guard let data = try? Data(contentsOf: url),
-          let snapshot = try? JSONDecoder().decode(Snapshot.self, from: data),
-          snapshot.version == 1, snapshot.keys.count == 26 else { return }
-    for (index, values) in snapshot.keys.enumerated() where values.count == 3 && values.allSatisfy(\.isFinite) {
-      sums[index] = (values[0], values[1], max(0, min(values[2], Self.maximumWeight)))
+    if let url {
+      persistence = LearningSession(url: url, kind: .touch)
+      reloadIfChangedOnDisk()
     }
   }
 
-  /// Rereads the offsets when another process, such as the app clearing learned
-  /// data, changed the file. Pending writes from this process finish first.
+  var snapshot: Snapshot { Snapshot(keys: sums.map { [$0.x, $0.y, $0.weight] }) }
+
+  private func adopt(_ value: LearningPayload?) -> Bool {
+    guard case let .touch(snapshot) = value, snapshot != self.snapshot else { return false }
+    sums = snapshot.keys.map { ($0[0], $0[1], $0[2]) }
+    cache = nil
+    return true
+  }
+
+  static func applying(_ operations: [LearningMutation], to snapshot: Snapshot) -> Snapshot {
+    let model = TouchModel(url: nil)
+    _ = model.adopt(.touch(snapshot))
+    for operation in operations {
+      if case let .touch(samples) = operation { model.learnLocally(samples) }
+    }
+    return model.snapshot
+  }
+
   @discardableResult
   public func reloadIfChangedOnDisk() -> Bool {
-    guard let url else { return false }
-    let current = Self.writeQueue.sync { PersonalDictionary.FileStamp(url: url) }
-    guard current != stamp.value else { return false }
-    sums = Array(repeating: (0, 0, 0), count: 26)
-    cache = nil
-    dirty = false
-    load(from: url)
-    stamp.value = current
-    return true
+    guard let persistence else { persistenceResult = .ok; return false }
+    let outcome = persistence.observe()
+    persistenceResult = outcome.result
+    guard outcome.result == .ok else { return false }
+    return adopt(outcome.payload)
   }
 
   /// Total accepted taps the model has learned from, after forgetting.
@@ -107,16 +101,37 @@ public final class TouchModel {
 
   /// Learns from a word the person kept: each tap was aimed at the letter at the
   /// same position of `intended`. Words whose letters do not line up are skipped.
-  public func learn(_ word: TypedWord, intended: String, geometry: LetterGeometry) {
-    guard isLearning else { return }
+  @discardableResult
+  public func learn(_ word: TypedWord, intended: String, geometry: LetterGeometry) -> Bool {
+    guard isLearning else { persistenceResult = .invalid; return false }
     let keyed = word.keyed
     let target = Array(TextNormalizer.key(intended).utf8)
-    guard target.count == keyed.bytes.count, target.count >= 2 else { return }
-    let current = offsets
+    guard target.count == keyed.bytes.count, target.count >= 2, target.count <= 40 else { persistenceResult = .invalid; return false }
+    var samples: [TouchSample] = []
     for (index, byte) in target.enumerated() {
       guard byte >= 97, byte <= 122, let tap = keyed.taps[index], let center = geometry.center(byte) else { continue }
-      let slot = Int(byte - 97)
-      var dx = tap.x - center.x, dy = tap.y - center.y
+      let dx = tap.x - center.x, dy = tap.y - center.y
+      guard dx.isFinite, dy.isFinite else { persistenceResult = .invalid; return false }
+      samples.append(TouchSample(slot: Int(byte - 97), dx: dx, dy: dy))
+    }
+    guard !samples.isEmpty else { persistenceResult = .invalid; return false }
+    if let persistence {
+      let outcome = persistence.admit(.touch(samples))
+      persistenceResult = outcome.result
+      guard outcome.result == .ok else { return false }
+      _ = adopt(outcome.payload)
+    }
+    learnLocally(samples)
+    persistenceResult = .ok
+    return true
+  }
+
+  private func learnLocally(_ samples: [TouchSample]) {
+    // This reference is deliberately held constant for the whole kept word.
+    let current = offsets
+    for sample in samples {
+      let slot = sample.slot
+      var dx = sample.dx, dy = sample.dy
       // Robust update: clamp around the current estimate.
       let ex = dx - current[slot].x, ey = dy - current[slot].y
       let distance = (ex * ex + ey * ey).squareRoot()
@@ -136,24 +151,28 @@ public final class TouchModel {
     dirty = true
   }
 
-  public func reset() {
+  @discardableResult
+  public func reset() -> Bool {
+    if let persistence {
+      let outcome = persistence.clear()
+      persistenceResult = outcome.result
+      if outcome.result == .ok || outcome.result == .cleanup { _ = adopt(outcome.payload) }
+      return outcome.result == .ok
+    }
     sums = Array(repeating: (0, 0, 0), count: 26)
     cache = nil
     dirty = true
+    persistenceResult = .ok
+    return true
   }
 
-  /// Writes the offsets if they changed. The snapshot is a few hundred bytes,
-  /// so it is encoded here; `inBackground` only moves the file write off this thread.
-  public func save(inBackground: Bool = false) {
-    guard dirty, let url, let data = try? JSONEncoder().encode(Snapshot(keys: sums.map { [$0.x, $0.y, $0.weight] })) else { return }
-    dirty = false
-    let stamp = stamp
-    let write = {
-      try? data.write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
-      stamp.value = PersonalDictionary.FileStamp(url: url)
-    }
-    if inBackground { Self.writeQueue.async(execute: write) } else { Self.writeQueue.sync(execute: write) }
+  @discardableResult
+  public func save(inBackground: Bool = false) -> Bool {
+    guard let persistence else { persistenceResult = .ok; return true }
+    if inBackground { persistence.saveInBackground(); return true }
+    let outcome = persistence.save()
+    persistenceResult = outcome.result
+    if outcome.result == .ok { _ = adopt(outcome.payload); dirty = false }
+    return outcome.result == .ok
   }
-
-  private static let writeQueue = DispatchQueue(label: "com.isaacthoman.pulpo.keyboard.touch-model", qos: .utility)
 }

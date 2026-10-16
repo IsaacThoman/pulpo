@@ -2,19 +2,44 @@ import Foundation
 
 /// Words and word pairs learned from what the person types. Stored on device only.
 public final class PersonalDictionary {
-  struct Word: Codable {
+  struct Word: Codable, Equatable, Sendable {
     var count: Int
     var lastUsed: Double
     /// Set when the person explicitly kept the word (reverted an autocorrection
     /// or picked their literal spelling), which makes it valid immediately.
     var pinned: Bool
+
+    init(count: Int, lastUsed: Double, pinned: Bool) {
+      self.count = count; self.lastUsed = lastUsed; self.pinned = pinned
+    }
+    private enum CodingKeys: String, CodingKey { case count, lastUsed, pinned }
+    init(from decoder: Decoder) throws {
+      let values = try decoder.container(keyedBy: CodingKeys.self)
+      count = try values.decode(Int.self, forKey: .count)
+      lastUsed = try values.decode(Double.self, forKey: .lastUsed)
+      pinned = try values.decodeIfPresent(Bool.self, forKey: .pinned) ?? false
+    }
   }
 
-  struct Snapshot: Codable {
+  struct Snapshot: Codable, Equatable, Sendable {
     var version = 1
+    var pairEncoding = 1
     var words: [String: Word] = [:]
     var pairs: [String: Int] = [:]
     var blocked: [String] = []
+
+    init(version: Int = 1, pairEncoding: Int = 1, words: [String: Word] = [:], pairs: [String: Int] = [:], blocked: [String] = []) {
+      self.version = version; self.pairEncoding = pairEncoding; self.words = words; self.pairs = pairs; self.blocked = blocked
+    }
+    private enum CodingKeys: String, CodingKey { case version, pairEncoding, words, pairs, blocked }
+    init(from decoder: Decoder) throws {
+      let values = try decoder.container(keyedBy: CodingKeys.self)
+      version = try values.decodeIfPresent(Int.self, forKey: .version) ?? 1
+      pairEncoding = try values.decodeIfPresent(Int.self, forKey: .pairEncoding) ?? 1
+      words = try values.decode([String: Word].self, forKey: .words)
+      pairs = try values.decodeIfPresent([String: Int].self, forKey: .pairs) ?? [:]
+      blocked = try values.decodeIfPresent([String].self, forKey: .blocked) ?? []
+    }
   }
 
   public static let maximumWords = 5_000
@@ -32,6 +57,8 @@ public final class PersonalDictionary {
   private(set) public var totalCount = 0
   private var dirty = false
   private let url: URL?
+  private var persistence: LearningSession?
+  public private(set) var persistenceResult: LearningPersistenceResult = .ok
   /// Names and other words that are valid but never persisted (contacts, text replacements).
   private var transientWords: Set<String> = []
   private var transientByKey: [String: [String]] = [:]
@@ -51,17 +78,85 @@ public final class PersonalDictionary {
 
   private func load() {
     guard let url else { return }
-    // Read after any save still being written, and note which file was read.
-    let data = Self.files.sync { () -> Data? in
-      fileState.stamp = FileStamp(url: url)
-      return try? Data(contentsOf: url)
-    }
-    guard let data, let snapshot = try? JSONDecoder().decode(Snapshot.self, from: data) else { return }
+    persistence = LearningSession(url: url, kind: .dictionary)
+    reloadIfChangedOnDisk()
+  }
+
+  var snapshot: Snapshot { Snapshot(pairEncoding: 2, words: words, pairs: pairs, blocked: Array(blocked).sorted()) }
+
+  private func adopt(_ value: LearningPayload?) -> Bool {
+    guard case let .dictionary(snapshot) = value else { return false }
+    guard snapshot != self.snapshot else { return false }
     words = snapshot.words
-    pairs = snapshot.pairs
+    if snapshot.pairEncoding == 2 {
+      pairs = snapshot.pairs
+    } else {
+      pairs = Dictionary(uniqueKeysWithValues: snapshot.pairs.map { key, count in
+        let components = Self.splitPair(key, encoding: snapshot.pairEncoding)!
+        return (Self.pairKey(components.history, components.target), count)
+      })
+    }
     blocked = Set(snapshot.blocked)
     blockedKeys = Set(snapshot.blocked.map(TextNormalizer.key))
     rebuildIndexes()
+    return true
+  }
+
+  /// Length-prefixed UTF-8 keeps arbitrary public history/target strings
+  /// lossless. Version-1 delimiter keys are imported with their original split.
+  static func pairKey(_ history: String, _ target: String) -> String {
+    "\(history.utf8.count):" + history + target
+  }
+  static func splitPair(_ key: String, encoding: Int) -> (history: String, target: String)? {
+    if encoding == 1 {
+      let parts = key.split(separator: "\u{1F}", maxSplits: 1, omittingEmptySubsequences: false)
+      guard parts.count == 2 else { return nil }
+      return (String(parts[0]), String(parts[1]))
+    }
+    guard encoding == 2, let colon = key.utf8.firstIndex(of: 58) else { return nil }
+    let bytes = key.utf8
+    let lengthText = String(decoding: bytes[..<colon], as: UTF8.self)
+    guard !lengthText.isEmpty, lengthText.count <= 3, lengthText.allSatisfy(\.isNumber),
+          let length = Int(lengthText), lengthText == String(length), length <= 256 else { return nil }
+    let start = bytes.index(after: colon)
+    guard let end = bytes.index(start, offsetBy: length, limitedBy: bytes.endIndex),
+          let history = String(bytes: bytes[start..<end], encoding: .utf8),
+          let target = String(bytes: bytes[end...], encoding: .utf8) else { return nil }
+    return (history, target)
+  }
+
+  static func pruningLegacy(_ snapshot: Snapshot) -> Snapshot {
+    let model = PersonalDictionary(url: nil)
+    _ = model.adopt(.dictionary(snapshot))
+    if snapshot.words.count > maximumWords || snapshot.pairs.count > maximumPairs { model.prune() }
+    return model.snapshot
+  }
+
+  static func applying(_ operations: [LearningMutation], to snapshot: Snapshot) throws -> Snapshot {
+    let model = PersonalDictionary(url: nil)
+    _ = model.adopt(.dictionary(snapshot))
+    for operation in operations {
+      switch operation {
+      case let .learn(word, previous, pinned, time):
+        guard model.totalCount < Int.max, model.count(of: word) < Int.max else { throw LearningPersistenceResult.capacity }
+        if let previous, !previous.isEmpty {
+          guard model.pairCount(previous, word) < Int.max, model.historyCount(previous) < Int.max else { throw LearningPersistenceResult.capacity }
+        }
+        model.learnLocally(word, after: previous, pinned: pinned, time: time)
+      case let .pin(word, time):
+        guard model.words[word] != nil || model.totalCount < Int.max else { throw LearningPersistenceResult.capacity }
+        model.pinLocally(word, time: time)
+      default: break
+      }
+    }
+    return model.snapshot
+  }
+
+  static func forgetting(_ word: String, in snapshot: Snapshot) -> Snapshot {
+    let model = PersonalDictionary(url: nil)
+    _ = model.adopt(.dictionary(snapshot))
+    model.forgetLocally(word)
+    return model.snapshot
   }
 
   private func rebuildIndexes() {
@@ -74,8 +169,7 @@ public final class PersonalDictionary {
     }
     successors = [:]
     for (pair, count) in pairs {
-      let parts = pair.split(separator: "\u{1F}", maxSplits: 1)
-      if parts.count == 2 { successors[String(parts[0]), default: [:]][String(parts[1])] = count }
+      if let parts = Self.splitPair(pair, encoding: 2) { successors[parts.history, default: [:]][parts.target] = count }
     }
     rebuildHistoryTotals()
   }
@@ -86,12 +180,26 @@ public final class PersonalDictionary {
 
   // MARK: Learning
 
-  public func learn(_ word: String, after previous: String?, pinned: Bool = false) {
-    guard !word.isEmpty, word.count <= 40 else { return }
+  @discardableResult
+  public func learn(_ word: String, after previous: String?, pinned: Bool = false) -> Bool {
+    guard !word.isEmpty, word.count <= 40 else { persistenceResult = .invalid; return false }
+    let time = Date().timeIntervalSince1970
+    if let persistence {
+      let outcome = persistence.admit(.learn(word, previous, pinned, time))
+      persistenceResult = outcome.result
+      guard outcome.result == .ok else { return false }
+      _ = adopt(outcome.payload)
+    }
+    learnLocally(word, after: previous, pinned: pinned, time: time)
+    persistenceResult = .ok
+    return true
+  }
+
+  private func learnLocally(_ word: String, after previous: String?, pinned: Bool, time: Double) {
     // `knownEntries` lists exactly the known words, so it stays valid unless this changes.
     let wasKnown = isKnown(word)
     let learnedKey = TextNormalizer.key(word)
-    let now = Date().timeIntervalSince1970
+    let now = time
     if var entry = words[word] {
       entry.count += 1
       entry.lastUsed = now
@@ -112,7 +220,7 @@ public final class PersonalDictionary {
     }
     if let previous, !previous.isEmpty {
       let history = previous.lowercased()
-      pairs[history + "\u{1F}" + word, default: 0] += 1
+      pairs[Self.pairKey(history, word), default: 0] += 1
       successors[history, default: [:]][word, default: 0] += 1
       historyTotals[history, default: 0] += 1
     }
@@ -120,9 +228,24 @@ public final class PersonalDictionary {
     if words.count > Self.maximumWords || pairs.count > Self.maximumPairs { prune() }
   }
 
-  public func pin(_ word: String) {
+  @discardableResult
+  public func pin(_ word: String) -> Bool {
+    guard !word.isEmpty, word.count <= 40 else { persistenceResult = .invalid; return false }
+    let time = Date().timeIntervalSince1970
+    if let persistence {
+      let outcome = persistence.admit(.pin(word, time))
+      persistenceResult = outcome.result
+      guard outcome.result == .ok else { return false }
+      _ = adopt(outcome.payload)
+    }
+    pinLocally(word, time: time)
+    persistenceResult = .ok
+    return true
+  }
+
+  private func pinLocally(_ word: String, time: Double) {
     if words[word] == nil {
-      learn(word, after: nil, pinned: true)
+      learnLocally(word, after: nil, pinned: true, time: time)
     } else {
       let wasKnown = isKnown(word)
       words[word]?.pinned = true
@@ -132,7 +255,20 @@ public final class PersonalDictionary {
   }
 
   /// Removes a learned word and hides it from suggestions, including dictionary words.
-  public func forget(_ word: String) {
+  @discardableResult
+  public func forget(_ word: String) -> Bool {
+    if let persistence {
+      let outcome = persistence.forget(word)
+      persistenceResult = outcome.result
+      if outcome.result == .ok { _ = adopt(outcome.payload) }
+      return outcome.result == .ok
+    }
+    forgetLocally(word)
+    persistenceResult = .ok
+    return true
+  }
+
+  private func forgetLocally(_ word: String) {
     knownCache = nil
     let key = TextNormalizer.key(word)
     let forms = byKey.removeValue(forKey: key) ?? []
@@ -140,7 +276,7 @@ public final class PersonalDictionary {
       if let entry = words.removeValue(forKey: form) { totalCount -= entry.count }
     }
     pairs = pairs.filter { pair, _ in
-      let target = pair.split(separator: "\u{1F}", maxSplits: 1).last.map(String.init) ?? ""
+      let target = Self.splitPair(pair, encoding: 2)?.target ?? ""
       return TextNormalizer.key(target) != key
     }
     for history in successors.keys {
@@ -152,14 +288,22 @@ public final class PersonalDictionary {
     dirty = true
   }
 
-  public func clear() {
+  @discardableResult
+  public func clear() -> Bool {
+    if let persistence {
+      let outcome = persistence.clear()
+      persistenceResult = outcome.result
+      if outcome.result == .ok || outcome.result == .cleanup { _ = adopt(outcome.payload) }
+      return outcome.result == .ok
+    }
     words = [:]
     pairs = [:]
     blocked = []
     blockedKeys = []
     rebuildIndexes()
     dirty = true
-    save()
+    persistenceResult = .ok
+    return true
   }
 
   private func prune() {
@@ -185,13 +329,21 @@ public final class PersonalDictionary {
     }
     let pairLimit = Self.maximumPairs * 9 / 10
     if pairs.count > pairLimit {
-      let ranked = pairs.sorted { $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key }
-      for (pair, count) in ranked[pairLimit...] {
+      // Decode once per pair, preserving the legacy tie order without parsing
+      // strings at every comparison during a word-boundary capacity prune.
+      let ranked = pairs.map { pair in
+        let parts = Self.splitPair(pair.key, encoding: 2)!
+        return (key: pair.key, value: pair.value, order: parts.history + "\u{1F}" + parts.target)
+      }.sorted {
+        if $0.value != $1.value { return $0.value > $1.value }
+        return $0.order != $1.order ? $0.order < $1.order : $0.key < $1.key
+      }
+      for entry in ranked[pairLimit...] {
+        let pair = entry.key, count = entry.value
         pairs.removeValue(forKey: pair)
-        let parts = pair.split(separator: "\u{1F}", maxSplits: 1)
-        guard parts.count == 2 else { continue }
-        let history = String(parts[0])
-        successors[history]?.removeValue(forKey: String(parts[1]))
+        guard let parts = Self.splitPair(pair, encoding: 2) else { continue }
+        let history = parts.history
+        successors[history]?.removeValue(forKey: parts.target)
         if successors[history]?.isEmpty == true {
           successors.removeValue(forKey: history)
           historyTotals.removeValue(forKey: history)
@@ -300,18 +452,6 @@ public final class PersonalDictionary {
 
   // MARK: Persistence
 
-  /// Reads and writes of learned-word files, in order. Saves can leave the typing
-  /// thread while a later load still sees them.
-  private static let files = DispatchQueue(label: "com.isaacthoman.pulpo.keyboard.personal-dictionary", qos: .utility)
-
-  /// The file as this instance last read or wrote it. Only used on `files`.
-  private final class FileState: @unchecked Sendable {
-    var stamp: FileStamp?
-    var failedWrite = false
-  }
-  private let fileState = FileState()
-
-  /// Identifies one version of a file: atomic saves replace the inode.
   struct FileStamp: Equatable, Sendable {
     let device: Int64
     let inode: UInt64
@@ -330,66 +470,28 @@ public final class PersonalDictionary {
     }
   }
 
-  public func save() {
-    guard let url, let snapshot = pendingSnapshot() else { return }
-    let state = fileState
-    Self.files.sync { Self.write(snapshot, to: url, state: state) }
+  @discardableResult
+  public func save() -> Bool {
+    guard let persistence else { persistenceResult = .ok; return true }
+    let outcome = persistence.save()
+    persistenceResult = outcome.result
+    if outcome.result == .ok { _ = adopt(outcome.payload); dirty = false }
+    return outcome.result == .ok
   }
 
-  /// Like `save`, but encodes and writes off the calling thread. Writes stay in
-  /// order, and loading waits for them.
   public func saveInBackground() {
-    guard let url, let snapshot = pendingSnapshot() else { return }
-    let state = fileState
-    Self.files.async { Self.write(snapshot, to: url, state: state) }
-    #if os(iOS)
-    // A hidden keyboard can be suspended; ask for time to finish the write.
-    ProcessInfo.processInfo.performExpiringActivity(withReason: "Saving learned words") { expired in
-      if !expired { Self.files.sync {} }
-    }
-    #endif
+    persistence?.saveInBackground()
   }
 
-  private func pendingSnapshot() -> Snapshot? {
-    // A failed write is retried by the next save, as before.
-    let retry = Self.files.sync { () -> Bool in
-      defer { fileState.failedWrite = false }
-      return fileState.failedWrite
-    }
-    guard dirty || retry else { return nil }
-    dirty = false
-    return Snapshot(words: words, pairs: pairs, blocked: Array(blocked))
-  }
-
-  private static func write(_ snapshot: Snapshot, to url: URL, state: FileState) {
-    do {
-      try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-      try JSONEncoder().encode(snapshot).write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
-      state.stamp = FileStamp(url: url)
-    } catch {
-      // Learning is best effort; a later save retries.
-      state.failedWrite = true
-    }
-  }
-
-  /// Rereads the file when another process (the app clearing learned words, or
-  /// its preview keyboard) replaced it since this instance read or wrote it.
-  /// Returns whether anything was reloaded.
+  /// Observation occurs at ownership/word boundaries, never on query/letter paths.
   @discardableResult
   public func reloadIfChangedOnDisk() -> Bool {
-    guard let url else { return false }
-    let state = fileState
-    let changed = Self.files.sync { FileStamp(url: url) != state.stamp }
-    guard changed else { return false }
-    words = [:]
-    pairs = [:]
-    blocked = []
-    blockedKeys = []
-    rebuildIndexes()
-    dirty = false
-    load()
-    return true
+    guard let persistence else { persistenceResult = .ok; return false }
+    let outcome = persistence.observe()
+    persistenceResult = outcome.result
+    guard outcome.result == .ok else { return false }
+    return adopt(outcome.payload)
   }
 
-  public var hasUnsavedChanges: Bool { dirty || Self.files.sync { fileState.failedWrite } }
+  public var hasUnsavedChanges: Bool { persistence?.hasUnsavedChanges ?? dirty }
 }

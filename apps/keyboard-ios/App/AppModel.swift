@@ -296,11 +296,16 @@ final class AppModel {
 
   // MARK: Learned words
 
-  func clearLearnedWords() {
-    PersonalDictionary(url: AppGroup.personalDictionaryURL(fallback: nil)).clear()
-    let touch = TouchModel(url: AppGroup.touchModelURL(fallback: nil))
-    touch.reset()
-    touch.save()
+  var learningResetError: String?
+
+  @discardableResult
+  func clearLearnedWords() -> Bool {
+    let result = LearnedDataPersistence.clear(
+      dictionaryURL: AppGroup.personalDictionaryURL(fallback: nil),
+      touchURL: AppGroup.touchModelURL(fallback: nil)
+    )
+    learningResetError = result == .ok ? nil : "Couldn’t clear learned words. Please try again."
+    return result == .ok
   }
 
   // MARK: Deep links
