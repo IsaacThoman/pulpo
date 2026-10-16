@@ -106,7 +106,7 @@ public final class TouchModel {
     guard isLearning else { persistenceResult = .invalid; return false }
     let keyed = word.keyed
     let target = Array(TextNormalizer.key(intended).utf8)
-    guard target.count == keyed.bytes.count, target.count >= 2, target.count <= 40 else { persistenceResult = .invalid; return false }
+    guard target.count == keyed.bytes.count, target.count >= 2 else { persistenceResult = .invalid; return false }
     var samples: [TouchSample] = []
     for (index, byte) in target.enumerated() {
       guard byte >= 97, byte <= 122, let tap = keyed.taps[index], let center = geometry.center(byte) else { continue }
